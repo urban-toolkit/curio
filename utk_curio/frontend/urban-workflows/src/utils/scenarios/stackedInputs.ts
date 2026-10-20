@@ -7,19 +7,27 @@
  * The rules are `stack_inputs`'s in `utk_curio/sandbox/util/scenario_stack.py`,
  * which an exported notebook calls; both twins read `stackedInputs.cases.json`:
  *
- * - a table (a list of records, a dict of columns, or a dict of values, which
- *   is one row) keeps its rows, and a column one input lacks is empty (null)
- *   in its rows;
+ * - a table (a list of records, a dict of columns, a dict of values, which is
+ *   one row, or a frame as the sandbox writes it) keeps its rows, and a column
+ *   one input lacks is empty (null) in its rows. A frame with no rows is a
+ *   table still. A GeoDataFrame's rows leave its geometry out, so its
+ *   coordinate system does not matter: a chart draws a map from the input's
+ *   own dataset, `input_<k>`, never from `inputs`;
  * - a value (a number, a text, true or false, or a list of them) is one row
- *   each under `value`;
- * - inputs of different kinds, an input with no value, one that cannot be read
- *   as rows, and one that already has a `scenario` or `scenario_name` column
- *   are refused, with a message naming the input. A refusal is returned, never
- *   thrown, so the chart can show it.
+ *   each under `value`; a number that is none (NaN) is a row with no value;
+ * - an Autark node's one layer is that layer's rows;
+ * - inputs of different kinds, an input with no value, one that carries
+ *   several tables or layers (a tuple, a list of frames), one that cannot be
+ *   read as rows, and one that already has a `scenario` or `scenario_name`
+ *   column are refused, with a message naming the input. A refusal is
+ *   returned, never thrown, so the chart can show it.
  *
- * Python's rules for GeoDataFrames, coordinate systems and rasters have no
- * JSON form; they stay its own. Pure: no input is changed.
+ * A value reaches it as the plain value it holds (utils/grammarInput), a frame
+ * and an input's several outputs as the sandbox writes them, which Python
+ * reads with its `parseInput`. Rasters are Python's alone: a chart takes none.
+ * Pure: no input is changed.
  */
+import { toRows } from "../rowSource";
 import { SCENARIO_FIELD, SCENARIO_NAME_FIELD } from "./scenarioColors";
 
 /** The column each stacked row holds its circle in. */
@@ -36,7 +44,9 @@ export interface StackEntry {
   scenario: string | null;
   /** The box's name, or the node's. */
   name: string;
-  /** Its value: records, a dict of columns or of values, a value or a list of them. */
+  /** Its value: records, a dict of columns or of values, a value or a list of
+   * them, a frame as the sandbox writes it, or the several outputs of one
+   * input (`{dataType: "outputs", data}`). */
   value: unknown;
 }
 
@@ -48,6 +58,9 @@ type Part = { kind: Kind; rows: Row[]; columns: string[] };
 
 const KIND_WORDS: Record<Exclude<Kind, "empty">, string> = { table: "a table", value: "a value" };
 
+/** The dataTypes of the sandbox's envelopes around a frame (`parseOutput`). */
+const FRAME_TYPES = new Set(["dataframe", "geodataframe"]);
+
 const isRecord = (value: unknown): value is Row =>
   value !== null && typeof value === "object" && !Array.isArray(value);
 
@@ -55,6 +68,23 @@ const isScalar = (value: unknown): boolean =>
   typeof value === "string" || typeof value === "number" || typeof value === "boolean";
 
 const has = (row: Row, column: string): boolean => Object.prototype.hasOwnProperty.call(row, column);
+
+/** Whether *value* is a frame as the sandbox writes it: a DataFrame's columns,
+ * or a GeoDataFrame's FeatureCollection, under its `dataType`. */
+export function isFrameEnvelope(value: unknown): value is { dataType: string; data: unknown } {
+  return isRecord(value) && typeof value.dataType === "string" && FRAME_TYPES.has(value.dataType) && "data" in value;
+}
+
+/** The several outputs of one input, as the sandbox writes a tuple and an Autark node hands on its layers. */
+const isBundle = (value: unknown): value is { dataType: "outputs"; data: unknown[] } =>
+  isRecord(value) && value.dataType === "outputs" && Array.isArray(value.data);
+
+/** The layers of a bundle whose every output names its layer, as an Autark node's do; else null. */
+function namedLayers(value: unknown): Array<{ name: string; layer: unknown }> | null {
+  if (!isBundle(value) || value.data.length === 0) return null;
+  const named = value.data.every((item) => isRecord(item) && typeof item.layerName === "string" && item.layerName !== "");
+  return named ? value.data.map((item) => ({ name: String((item as Row).layerName), layer: item })) : null;
+}
 
 function labelOf(position: number, name: string): string {
   return name ? `input_${position} (${name})` : `input_${position}`;
@@ -67,13 +97,44 @@ function columnsOf(rows: readonly Row[]): string[] {
   return columns;
 }
 
+/** A frame's rows: a DataFrame's columns read row by row, or a GeoDataFrame's
+ * features' properties, which leave its geometry out. */
+function frameRows(frame: { dataType: string; data: unknown }): { rows: Row[]; columns: string[] } {
+  const data = frame.data;
+  if (frame.dataType === "geodataframe") {
+    const features: any[] = isRecord(data) && Array.isArray(data.features) ? data.features : [];
+    const rows = features.map((feature) => ({ ...(isRecord(feature?.properties) ? feature.properties : {}) }));
+    return { rows, columns: columnsOf(rows) };
+  }
+  if (!isRecord(data)) return { rows: [], columns: [] };
+  return { rows: toRows({ data }), columns: Object.keys(data) };
+}
+
 /** The rows *value* adds, with its kind and its columns, or why it adds none. */
-function partOf(label: string, value: unknown): Part | { refusal: string } {
+function partOf(label: string, given: unknown): Part | { refusal: string } {
+  let value = given;
+  // An Autark node's layers: the one it hands on alone is its rows.
+  const layers = namedLayers(value);
+  if (layers && layers.length > 1) {
+    return {
+      refusal: `${WHO}: ${label} carries ${layers.length} layers (${layers.map((one) => one.name).join(", ")}). `
+        + "Connect a node that hands on one layer.",
+    };
+  }
+  if (layers) value = layers[0].layer;
   if (value === null || value === undefined) {
     return {
       refusal: `${WHO}: ${label} has no value. Run the node that feeds it, and check that its code returns its result.`,
     };
   }
+  if (isBundle(value) || (Array.isArray(value) && value.length > 0 && value.every(isFrameEnvelope))) {
+    const count = isBundle(value) ? value.data.length : (value as unknown[]).length;
+    return {
+      refusal: `${WHO}: ${label} carries ${count} tables. Connect a node that returns one table, `
+        + "or pick the table to compare in a node between them.",
+    };
+  }
+  if (isFrameEnvelope(value)) return { kind: "table", ...frameRows(value) };
   if (isRecord(value)) {
     const entries = Object.entries(value);
     if (entries.length === 0) return { kind: "empty", rows: [], columns: [] };
@@ -93,7 +154,10 @@ function partOf(label: string, value: unknown): Part | { refusal: string } {
   }
   if (Array.isArray(value)) {
     if (value.length === 0) return { kind: "empty", rows: [], columns: [] };
-    if (value.every(isRecord)) return { kind: "table", rows: value as Row[], columns: columnsOf(value as Row[]) };
+    // A frame among records is no record: Python reads it as the frame it is.
+    if (value.every((item) => isRecord(item) && !isFrameEnvelope(item))) {
+      return { kind: "table", rows: value as Row[], columns: columnsOf(value as Row[]) };
+    }
     if (value.every(isScalar)) {
       return { kind: "value", rows: value.map((item) => ({ [VALUE_FIELD]: item })), columns: [VALUE_FIELD] };
     }

@@ -19,6 +19,7 @@ import { VisInteractionType } from "../../../constants";
 // (vega's `_vgsid_`), and a select's signal is read off its store on a
 // restore, as vega-lite's is.
 jest.mock("vega", () => {
+  const { datasetsRead, unrecognizedDataset } = require("../../_support/vegaViewDatasets");
   const views: any[] = [];
   const changeset = () => {
     const cs: any = { remove: () => cs, insert: () => cs, modify: () => cs };
@@ -78,7 +79,11 @@ jest.mock("vega", () => {
       if (!(name in this.signals)) throw new Error(`Unrecognized signal name: "${name}"`);
       this.listeners[name] = listener;
     }
-    change() { return this; }
+    // As vega's, a view holds only the datasets its spec reads.
+    change(name: string) {
+      if (!datasetsRead(this.spec).has(name)) throw unrecognizedDataset(name);
+      return this;
+    }
   }
   return { changeset, View, parse: (spec: any) => spec, Warn: 2, __views: views };
 }, { virtual: true });

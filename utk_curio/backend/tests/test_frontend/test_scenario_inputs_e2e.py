@@ -15,6 +15,11 @@ of its own for ``scenario_name``, which the boxes' colors replace.
 
 The chart is read as SVG, from the view the page keeps (``view.toSVG()``).
 
+A second dataflow joins a bar chart of Baseline's rows to a chart that reads
+``inputs`` alone by a direct interaction edge. vega-lite builds only the
+datasets a spec reads, so that chart's view holds no ``input_0``: a bar
+hovered lights Baseline's row in ``inputs``, and nothing on the page fails.
+
 Run::
 
     CURIO_TESTING=1 pytest utk_curio/backend/tests/test_frontend/test_scenario_inputs_e2e.py -v
@@ -29,6 +34,7 @@ from typing import TYPE_CHECKING
 
 from .utils import (
     api_json,
+    assert_in_view,
     close_scenario_details,
     close_scenario_drawer,
     frame_nodes,
@@ -229,3 +235,144 @@ def test_a_chart_reading_inputs_names_and_colors_its_rows_by_their_boxes(
     page.get_by_test_id("open-dataflow-link").wait_for(state="visible", timeout=45000)
     node_locator(page, CHART).wait_for(state="visible", timeout=45000)
     _assert_drawn(page, [BASELINE["name"], RENAMED], "on the dashboard", timeout_s=90.0)
+
+
+PICK = "si-pick"
+LIT = "si-lit"
+
+#: Baseline's rows as bars: hovering one selects its row.
+PICK_SPEC = json.dumps({
+    "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
+    "params": [{"name": "highlight", "select": {"type": "point", "on": "pointerover"}}],
+    "mark": {"type": "bar", "stroke": "black"},
+    "encoding": {
+        "x": {"field": "segment", "type": "nominal"},
+        "y": {"field": "sunlight", "type": "quantitative"},
+        "color": {"value": "#4c78a8"},
+    },
+}, indent=2)
+
+#: Every stacked row as a point, red once the selection reaches its row.
+LIT_SPEC = json.dumps({
+    "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
+    "data": {"name": "inputs"},
+    "mark": {"type": "point", "filled": True, "size": 400, "opacity": 1},
+    "encoding": {
+        "x": {"field": "segment", "type": "nominal"},
+        "y": {"field": "sunlight", "type": "quantitative"},
+        "color": {"condition": {"test": "datum.interacted === '1'", "value": "red"}, "value": "blue"},
+    },
+}, indent=2)
+
+
+def _linked_spec() -> dict:
+    """The two boxes' rows on a chart that reads ``inputs`` alone, joined by a
+    direct interaction edge to a bar chart of Baseline's rows."""
+    spec = _spec()
+    flow = spec["dataflow"]
+    flow["name"] = flow["provenance_id"] = "Scenario inputs linked"
+    flow["nodes"] = [node for node in flow["nodes"] if node["id"] != CHART] + [
+        _node(PICK, CHART_TYPE, 1400, -400, PICK_SPEC, "Pick"),
+        _node(LIT, CHART_TYPE, 1400, 300, LIT_SPEC, "Lit"),
+    ]
+    flow["edges"] = [edge for edge in flow["edges"] if edge["target"] != CHART] + [
+        {"id": "e-base-pick", "source": BASE, "target": PICK, "sourceHandle": "out", "targetHandle": "in"},
+        {"id": "e-base-lit", "source": BASE, "target": LIT, "sourceHandle": "out", "targetHandle": "in"},
+        {"id": "e-tall-lit", "source": TALL, "target": LIT, "sourceHandle": "out", "targetHandle": "in_1"},
+        {
+            "id": f"reactflow__edge-{PICK}in/out-{LIT}in/out", "type": "Interaction",
+            "source": PICK, "target": LIT, "sourceHandle": "in/out", "targetHandle": "in/out",
+        },
+    ]
+    return spec
+
+
+# Where the chart's red points sit: how many bands of columns and how many bands
+# of rows its red pixels take. A segment's two rows share its column and sit at
+# different heights, so one point lit is one band each way. [-1, -1] before it
+# drew.
+_RED_BANDS_JS = """(id) => {
+    const c = document.querySelector('#vega' + id + ' canvas');
+    if (!c || !c.width || !c.height) return [-1, -1];
+    const w = c.width, h = c.height;
+    const px = c.getContext('2d').getImageData(0, 0, w, h).data;
+    const across = new Array(w).fill(0), down = new Array(h).fill(0);
+    for (let y = 0; y < h; y++) {
+        for (let x = 0; x < w; x++) {
+            const i = (y * w + x) * 4;
+            if (px[i] > 200 && px[i + 1] < 60 && px[i + 2] < 60 && px[i + 3] > 200) {
+                across[x] += 1;
+                down[y] += 1;
+            }
+        }
+    }
+    const bands = (counts) => {
+        let found = 0, last = -100;
+        counts.forEach((count, at) => {
+            if (count < 2) return;
+            if (at - last > 4) found += 1;
+            last = at;
+        });
+        return found;
+    };
+    return [bands(across), bands(down)];
+}"""
+
+
+def test_a_selection_from_a_linked_chart_lights_its_row_on_a_chart_reading_inputs_alone(
+    app_frontend: "FrontendPage", current_server: str, page,
+):
+    require_project_page()
+    require_user_auth()
+    page.emulate_media(reduced_motion="reduce")
+    failures: list[str] = []
+    page.on("pageerror", lambda error: failures.append(str(error)))
+    page.on("console", lambda message: failures.append(message.text) if message.type == "error" else None)
+    spec = _linked_spec()
+    stub_login_and_enter_workflow(
+        page,
+        frontend_url=app_frontend.base_url,
+        backend_url=current_server,
+        name="Scenario Inputs Linked",
+        username="scenario_inputs_linked_e2e",
+        project_name="Scenario inputs linked",
+        project_spec=spec,
+    )
+    require_owner_view(page)
+    for node in spec["dataflow"]["nodes"]:
+        node_locator(page, node["id"]).wait_for(state="visible", timeout=45000)
+
+    run_all_and_wait(page, timeout_ms=240000)
+    for node_id in (BASE, TALL, PICK, LIT):
+        status = wait_for_node_settled(page, node_id, timeout_ms=120000)
+        assert status == "done", f"{node_id} ended {status}: {read_node_error_text(node_locator(page, node_id))}"
+    for node_id in (PICK, LIT):
+        page.locator(f"#vega{node_id} canvas").first.wait_for(state="attached", timeout=60000)
+    page.wait_for_timeout(1500)
+    frame_nodes(page, [PICK, LIT])
+    assert page.evaluate(_RED_BANDS_JS, LIT) == [0, 0], "a row was lit before any selection"
+
+    # Hover across the bars until the selection reaches the chart reading inputs.
+    box = page.locator(f"#vega{PICK} canvas").first.bounding_box()
+    assert box, "the bar chart has no canvas box"
+    lit = [0, 0]
+    y = box["y"] + box["height"] * 0.75
+    for fraction in (0.8, 0.6, 0.4, 0.2):
+        page.mouse.move(*assert_in_view(page, box["x"] + box["width"] * fraction, y, f"the bars at {fraction:.0%} across"))
+        for _ in range(20):
+            page.wait_for_timeout(250)
+            lit = page.evaluate(_RED_BANDS_JS, LIT)
+            if lit[0] > 0:
+                break
+        if lit[0] > 0:
+            break
+    # Let a late redraw, if one comes, land before the chart is read again.
+    page.wait_for_timeout(1500)
+    lit = page.evaluate(_RED_BANDS_JS, LIT)
+
+    unrecognized = [failure for failure in failures if "Unrecognized data set" in failure]
+    assert unrecognized == [], f"a selection reached a dataset the chart's view lacks: {unrecognized}"
+    assert page.get_by_text("Something went wrong here.").count() == 0, "a node shows its error screen"
+    assert node_locator(page, LIT).is_visible(), "the chart reading inputs is gone from the canvas"
+    # Baseline's hovered row is lit, and Twice as tall's row in its column is not.
+    assert lit == [1, 1], f"the chart reading inputs shows red in {lit} (column, row) bands, not one row ({failures[-5:]})"

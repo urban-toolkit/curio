@@ -442,6 +442,127 @@ describe("prepareVegaInputs stacks every input for a spec that reads inputs", ()
   });
 });
 
+describe("prepareVegaInputs stacks what arrives as Python's stack_inputs stacks it", () => {
+  const BASE = { scenario: "s-base", name: "Baseline", color: "#2a9d8f" };
+  const TALL = { scenario: "s-tall", name: "Twice as tall", color: "#e76f51" };
+  const INPUTS = { data: { name: "inputs" }, mark: "bar", encoding: { x: { field: "scenario_name" }, y: { field: "pop" } } };
+  const frame = (columns: Record<string, unknown[]>) => ({ dataType: "dataframe", data: columns });
+  /** A GeoDataFrame as the sandbox writes one: its rows in a FeatureCollection that names its CRS. */
+  const geo = (crs: string, rows: Array<Record<string, unknown>>) => ({
+    dataType: "geodataframe",
+    data: {
+      type: "FeatureCollection",
+      geometry_name: "geometry",
+      crs: { type: "name", properties: { name: crs } },
+      features: rows.map((properties) => ({ type: "Feature", properties, geometry: polygon })),
+    },
+  });
+  const both = (...inputs: any[]) => ({ dataType: "outputs", data: inputs });
+  const stackedOf = (prepared: { datasets: { name: string; values: any[] }[] }) =>
+    prepared.datasets.find((d) => d.name === "inputs")?.values;
+  const refusedWith = (detail: string) => ({ emptyReason: "input-type-rejected", detail });
+
+  test("one wired input that carries a tuple of tables is refused: it carries two", async () => {
+    // One label: the graph wires one input, whatever the input carries.
+    const prepared = await prepareVegaInputs(both(frame({ pop: [1] }), frame({ pop: [2] })), INPUTS, [BASE]);
+    expect(prepared).toMatchObject(refusedWith(
+      'The dataset "inputs": input_0 (Baseline) carries 2 tables. Connect a node that returns one table, '
+        + "or pick the table to compare in a node between them.",
+    ));
+    expect(stackedOf(prepared)).toEqual([]);
+  });
+
+  test("guard: the same tuple read as input_0 and input_1 by a spec that never names inputs is read as before", async () => {
+    const spec = { layer: [{ mark: "bar" }, { data: { name: "input_1" }, mark: "point" }] };
+    const prepared = await prepareVegaInputs(both(frame({ pop: [1] }), frame({ pop: [2] })), spec, [BASE]);
+    expect(prepared.emptyReason).toBeUndefined();
+    expect(prepared.datasets).toEqual([
+      { name: "input_0", values: [{ pop: 1, __row_index__: 0, __input__: 0 }] },
+      { name: "input_1", values: [{ pop: 2, __row_index__: 0, __input__: 1 }] },
+    ]);
+  });
+
+  test("one wired input that carries an Autark node's two layers is refused by their names", async () => {
+    const layer = (name: string) => ({ ...geo("urn:ogc:def:crs:EPSG::4326", [{ pop: 1 }]), layerName: name });
+    const prepared = await prepareVegaInputs(both(layer("roads"), layer("buildings")), INPUTS, [BASE]);
+    expect(prepared).toMatchObject(refusedWith(
+      'The dataset "inputs": input_0 (Baseline) carries 2 layers (roads, buildings). Connect a node that hands on one layer.',
+    ));
+  });
+
+  test("a Python node's list of tables carries two tables, and is never stacked as its envelopes' keys", async () => {
+    const tables = { dataType: "list", data: [frame({ pop: [1] }), frame({ pop: [2] })] };
+    const prepared = await prepareVegaInputs(tables, INPUTS, [BASE]);
+    expect(prepared).toMatchObject(refusedWith(
+      'The dataset "inputs": input_0 (Baseline) carries 2 tables. Connect a node that returns one table, '
+        + "or pick the table to compare in a node between them.",
+    ));
+    expect(stackedOf(prepared)).toEqual([]);
+  });
+
+  test("a table with no rows is a table: beside a value it is refused", async () => {
+    const prepared = await prepareVegaInputs(both(frame({ pop: [] }), { dataType: "int", data: 3 }), INPUTS, [BASE, TALL]);
+    expect(prepared).toMatchObject(refusedWith(
+      'The dataset "inputs" stacks inputs of one kind, and these differ: input_0 (Baseline) is a table, '
+        + "input_1 (Twice as tall) is a value. Connect outcomes of the same kind.",
+    ));
+  });
+
+  test("a float that is no number, which the sandbox writes as null, is a value row with no value", async () => {
+    const prepared = await prepareVegaInputs({ dataType: "float", data: null }, INPUTS, [BASE]);
+    expect(prepared.emptyReason).toBeUndefined();
+    expect(stackedOf(prepared)).toEqual([{ value: null, __input__: 0, scenario: "s-base", scenario_name: "Baseline" }]);
+
+    const listed = { dataType: "list", data: [{ dataType: "float", data: 1.5 }, { dataType: "float", data: null }] };
+    const values = await prepareVegaInputs(listed, INPUTS, [BASE]);
+    expect(stackedOf(values)!.map((row: any) => row.value)).toEqual([1.5, null]);
+  });
+
+  test("a GeoDataFrame beside a DataFrame, and two coordinate systems: both stack, their geometry left out", async () => {
+    const mixed = await prepareVegaInputs(
+      both(geo("urn:ogc:def:crs:EPSG::4326", [{ zip: "a", pop: 1 }]), frame({ zip: ["b"], pop: [2] })),
+      INPUTS,
+      [BASE, TALL],
+    );
+    expect(mixed.emptyReason).toBeUndefined();
+    expect(stackedOf(mixed)).toEqual([
+      { zip: "a", pop: 1, __row_index__: 0, __input__: 0, scenario: "s-base", scenario_name: "Baseline" },
+      { zip: "b", pop: 2, __row_index__: 0, __input__: 1, scenario: "s-tall", scenario_name: "Twice as tall" },
+    ]);
+
+    const crs = await prepareVegaInputs(
+      both(geo("urn:ogc:def:crs:EPSG::4326", [{ pop: 1 }]), geo("urn:ogc:def:crs:EPSG::3857", [{ pop: 2 }])),
+      INPUTS,
+      [BASE, TALL],
+    );
+    expect(crs.emptyReason).toBeUndefined();
+    expect(stackedOf(crs)!.map((row: any) => [row.scenario_name, row.pop])).toEqual([["Baseline", 1], ["Twice as tall", 2]]);
+  });
+
+  test("the rows of inputs never carry geometry, from one input or several; a view reading input_0 keeps its own", async () => {
+    const shapes = (name?: string) => ({ ...(name ? { data: { name } } : {}), mark: "geoshape" });
+    const bars = { data: { name: "inputs" }, mark: "bar", encoding: { x: { field: "scenario_name" }, y: { field: "pop" } } };
+
+    const one = await prepareVegaInputs(geo("urn:ogc:def:crs:EPSG::4326", [{ pop: 1 }]), { layer: [shapes(), bars] }, [BASE]);
+    expect(one.emptyReason).toBeUndefined();
+    expect(named(one, "input_0")![0].geometry.type).toBe("Feature");
+    expect(stackedOf(one)).toEqual([{ pop: 1, __row_index__: 0, __input__: 0, scenario: "s-base", scenario_name: "Baseline" }]);
+
+    const two = await prepareVegaInputs(
+      both(geo("urn:ogc:def:crs:EPSG::4326", [{ pop: 1 }]), geo("urn:ogc:def:crs:EPSG::4326", [{ pop: 2 }])),
+      { layer: [shapes("input_0"), bars] },
+      [BASE, TALL],
+    );
+    expect(named(two, "input_0")![0].geometry.type).toBe("Feature");
+    expect(stackedOf(two)!.every((row: any) => !("geometry" in row))).toBe(true);
+  });
+});
+
+/** The dataset *name* among what *prepared* holds. */
+function named(prepared: { datasets: { name: string; values: any[] }[] }, name: string) {
+  return prepared.datasets.find((d) => d.name === name)?.values;
+}
+
 describe("unresolvable geometry", () => {
   test("a geoshape over data with no geometry reports it", async () => {
     const { emptyReason } = await prepareVegaInput(

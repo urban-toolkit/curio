@@ -8,8 +8,10 @@ import { act, renderHook, waitFor } from "@testing-library/react";
 // Only what useVega calls on the library. A view records the spec it was built
 // from, the changesets it is handed and its signal listeners; its scenegraph
 // and its top-level signals are whatever the test sets. As in vega, a listener
-// is added only to a top-level signal.
+// is added only to a top-level signal, and a change goes only to a dataset the
+// view holds.
 jest.mock("vega", () => {
+  const { datasetsRead, unrecognizedDataset } = require("../_support/vegaViewDatasets");
   const views: any[] = [];
   const changeset = () => {
     const ops: any[] = [];
@@ -42,7 +44,11 @@ jest.mock("vega", () => {
       if (!View.signals.includes(name)) throw new Error(`Unrecognized signal name: "${name}"`);
       this.listeners[name] = fn;
     }
-    change(name: string, cs: any) { this.changes.push({ name, ops: cs.ops }); return this; }
+    change(name: string, cs: any) {
+      if (!datasetsRead(this.spec).has(name)) throw unrecognizedDataset(name);
+      this.changes.push({ name, ops: cs.ops });
+      return this;
+    }
   }
   return { changeset, View, parse: (spec: any) => spec, Warn: 2, __views: views };
 }, { virtual: true });

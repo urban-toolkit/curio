@@ -79,6 +79,16 @@ export function scaleLabelsOf(inputs: readonly InputScenario[], scenarios: reado
   ];
 }
 
+/**
+ * The labels a chart reading `inputs` draws `scenario_name` with
+ * (utils/scenarios/scenarioScales): *labels*, `scaleLabelsOf`'s, when an input
+ * comes from a box; none when no input does, so the spec's own colors and
+ * order stand.
+ */
+export function boxFill(labels: readonly ScenarioLabel[]): readonly ScenarioLabel[] | null {
+  return labels.some((label) => label.scenario != null) ? labels : null;
+}
+
 /** The wired inputs of node *nodeId*, in circle order, each with its box. */
 export function inputScenarios(
   nodeId: string,
