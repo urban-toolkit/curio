@@ -39,7 +39,8 @@ dev/134 corrects two things this module could not do, both proven by the owner's
   ``y.field: "neighborhood"`` over a frame whose name column is ``community``,
   which the schema cannot know and a reader of the columns can. A spec that
   names the dataset ``inputs`` reads its inputs stacked, with the columns the
-  stack adds beside theirs (``INPUTS_FIELDS``).
+  stack adds beside theirs (``INPUTS_FIELDS``) and without a GeoDataFrame's
+  geometry, so a view of it that draws one is refused.
 """
 
 from __future__ import annotations
@@ -75,9 +76,12 @@ def _parse_json(content: str) -> tuple[object | None, str | None]:
         return None, f"the document is not valid JSON: {exc}"
 
 
-def validate_vega_lite(content: str, *, columns: list | None = None) -> dict:
+def validate_vega_lite(
+    content: str, *, columns: list | None = None, geometry_columns: list | None = None,
+) -> dict:
     """A Vega-Lite document, against the schema ``altair`` bundles offline —
-    and (dev/134) against the columns its input actually has."""
+    and (dev/134) against the columns its input actually has, of which
+    *geometry_columns* are not in the dataset ``inputs``."""
     payload, error = _parse_json(content)
     if error:
         return {"status": STATUS_INVALID, "detail": _detail(error)}
@@ -99,7 +103,7 @@ def validate_vega_lite(content: str, *, columns: list | None = None) -> dict:
         alt.Chart.from_dict(spec, validate=True)
     except Exception as exc:  # noqa: BLE001  (altair raises SchemaValidationError)
         return {"status": STATUS_INVALID, "detail": _vega_message(exc)}
-    fields = check_vega_fields(payload, columns)
+    fields = check_vega_fields(payload, columns, geometry_columns)
     if fields is not None:
         return fields
     return {"status": STATUS_VALID}
@@ -161,30 +165,34 @@ def _transform_outputs(spec: dict) -> tuple[set, bool]:
     return produced, opaque
 
 
-def _field_refs(spec: dict, path: str = "") -> list[tuple[str, str]]:
-    """Every ``(json path, field name)`` an encoding or a transform reads.
+def _field_refs(spec: dict, path: str = "") -> list[tuple[str, str, bool]]:
+    """Every ``(json path, field name, whether its view reads inputs)`` an
+    encoding or a transform reads. A view reads the dataset its own ``data``
+    names, else the one of the view it sits in.
 
     Only string fields: ``{"repeat": "column"}`` and a bare ``count`` aggregate
     name no column, and inventing one would produce a false refusal.
     """
-    refs: list[tuple[str, str]] = []
+    refs: list[tuple[str, str, bool]] = []
 
-    def _walk(node: object, where: str) -> None:
+    def _walk(node: object, where: str, on_inputs: bool) -> None:
         if isinstance(node, dict):
+            if isinstance(node.get("data"), dict):
+                on_inputs = _names_inputs(node["data"])
             for key, value in node.items():
                 if key == "field" and isinstance(value, str):
-                    refs.append((f"{where}.field", value))
+                    refs.append((f"{where}.field", value, on_inputs))
                 elif key == "groupby" and isinstance(value, list):
                     for i, name in enumerate(value):
                         if isinstance(name, str):
-                            refs.append((f"{where}.groupby[{i}]", name))
+                            refs.append((f"{where}.groupby[{i}]", name, on_inputs))
                 else:
-                    _walk(value, f"{where}.{key}" if where else key)
+                    _walk(value, f"{where}.{key}" if where else key, on_inputs)
         elif isinstance(node, list):
             for index, item in enumerate(node):
-                _walk(item, f"{where}[{index}]")
+                _walk(item, f"{where}[{index}]", on_inputs)
 
-    _walk(spec, path)
+    _walk(spec, path, False)
     return refs
 
 
@@ -227,7 +235,9 @@ def reads_inputs(spec: object) -> bool:
     )
 
 
-def check_vega_fields(payload: dict, columns: list | None) -> dict | None:
+def check_vega_fields(
+    payload: dict, columns: list | None, geometry_columns: list | None = None,
+) -> dict | None:
     """dev/134 (closes dev/129 **F3**): does this document read columns that
     exist?
 
@@ -237,6 +247,9 @@ def check_vega_fields(payload: dict, columns: list | None) -> dict | None:
     the SAME bounded artifact preview the generation request was handed
     (``DEC-063``: never refuse a model for ignoring something it was not told),
     so when they are unknown this check does not run at all.
+
+    A view that reads ``inputs`` reads none of *geometry_columns*: the stack
+    leaves a GeoDataFrame's geometry out of its rows, as the preamble says.
     """
     if not columns:
         return None
@@ -246,7 +259,18 @@ def check_vega_fields(payload: dict, columns: list | None) -> dict | None:
     if opaque:
         return None  # a transform creates names this module cannot enumerate
     known |= produced
-    for where, field in _field_refs(payload):
+    left_out = {str(c) for c in geometry_columns or ()} - produced
+    for where, field, on_inputs in _field_refs(payload):
+        if on_inputs and field in left_out:
+            return {
+                "status": STATUS_INVALID,
+                "detail": _detail(
+                    f"{where} reads {field!r}, a geometry column, but the dataset "
+                    f"{INPUTS_DATASET!r} stacks its inputs' rows without their geometry; "
+                    f"a view that draws it reads one input's own dataset, input_0 for "
+                    f"the first circle, input_1 for the second"
+                ),
+            }
         if field in known:
             continue
         available = ", ".join(sorted(str(c) for c in columns)[:20])
@@ -292,8 +316,11 @@ def _vega_message(exc: Exception) -> str:
 _MAX_SCHEMA_ERRORS = 5
 
 
-def validate_autk_grammar(content: str, *, columns: list | None = None) -> dict:
-    """An Autark document, against the grammar's own JSON Schema.
+def validate_autk_grammar(
+    content: str, *, columns: list | None = None, geometry_columns: list | None = None,
+) -> dict:
+    """An Autark document, against the grammar's own JSON Schema. A map reads
+    each table with its geometry, so *geometry_columns* change nothing here.
 
     The schema is the vendored copy of what autk-grammar publishes
     (``contracts.AUTK_SCHEMA_PATH``). Two rules sit on top, because no schema
@@ -507,8 +534,13 @@ def validate(
     grammar_id: object = None,
     content_kind: object = None,
     columns: list | None = None,
+    geometry_columns: list | None = None,
 ) -> dict:
     """Validate a non-executable node's content. See the module docstring.
+
+    *columns* are the ones the node's inputs have (``upstream_schema.columns_of``),
+    and *geometry_columns* those of them only a GeoDataFrame's geometry fills
+    (``upstream_schema.geometry_columns_of``).
 
     ``content_kind`` is the roster's for this template; a kind of ``none``
     authors nothing (it renders or forwards its input), so a marker in its
@@ -557,7 +589,7 @@ def validate(
             ),
         }
     try:
-        return validator(text, columns=columns)
+        return validator(text, columns=columns, geometry_columns=geometry_columns)
     except Exception as exc:  # noqa: BLE001
         log.warning("Document validation failed for %s", grammar or suffix, exc_info=True)
         return {"status": STATUS_UNCHECKED,

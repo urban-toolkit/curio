@@ -590,13 +590,13 @@ class VerifiedRounds:
             self._carry(unresolved)
             return CONTINUE
         roster_row = (self.loop_templates or {}).get(str(self.node_type).split("@", 1)[0]) or {}
+        upstream = (self.extra_inputs or {}).get("upstreamOutputs")
         document = document_validation.validate(
             self.node_type, resolved,
             grammar_id=workflow_spec.grammar_id_of(self.node_type, self.loop_templates),
             content_kind=roster_row.get("contentKind"),
-            columns=upstream_schema.columns_of(
-                (self.extra_inputs or {}).get("upstreamOutputs")
-            ),
+            columns=upstream_schema.columns_of(upstream),
+            geometry_columns=upstream_schema.geometry_columns_of(upstream),
         )
         if document["status"] == document_validation.STATUS_INVALID:
             refusal = document_validation.refusal_text(
