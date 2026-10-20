@@ -1,10 +1,10 @@
 /**
- * The Data Catalog's Add on a dataflow a hosted guest never saved
- * (`isHostedGuest`: a guest on a Curio started with --deploy, where every
- * visitor shares the one guest account). Adding a dataset needs a saved
- * dataflow, and such a guest cannot save one, so the Add tells it to sign in
- * rather than doing nothing. On a dataflow it has, its Add goes on as before;
- * the local shared guest and a signed-in account keep today's behavior.
+ * The Data Catalog's Add, Remove and Publish on a dataflow a hosted guest never
+ * saved (`isHostedGuest`: a guest on a Curio started with --deploy, where every
+ * visitor shares the one guest account). Each needs a saved dataflow, and such
+ * a guest cannot save one, so each tells it to sign in rather than doing
+ * nothing. On a dataflow it has, its actions go on as before; the local shared
+ * guest and a signed-in account keep today's behavior.
  */
 import React from "react";
 import { renderHook, act } from "@testing-library/react";
@@ -121,15 +121,32 @@ function renderDrawerAs(value: UserContextValue) {
 
 type DrawerResult = { current: ReturnType<typeof useDatasetCatalogDrawer> };
 
-/** Add, then accept the confirmation the Data Catalog asks for first (#196). */
-async function add(result: DrawerResult) {
-  await act(async () => {
-    await result.current.onInstall(DATASET as never);
-  });
+/** Accept the confirmation the action just raised (#196, #197). */
+async function confirm(result: DrawerResult) {
   const pending = result.current.confirmAction;
   expect(pending).not.toBeNull();
   await act(async () => {
     await pending!.run();
+  });
+}
+
+async function add(result: DrawerResult) {
+  await act(async () => {
+    await result.current.onInstall(DATASET as never);
+  });
+  await confirm(result);
+}
+
+async function remove(result: DrawerResult) {
+  await act(async () => {
+    await result.current.onUninstall(DATASET as never);
+  });
+  await confirm(result);
+}
+
+async function publish(result: DrawerResult) {
+  await act(async () => {
+    await result.current.onPublish(DATASET.id);
   });
 }
 
@@ -140,39 +157,85 @@ function signInToasts(): string[] {
 }
 
 let installSpy: jest.SpyInstance;
+let uninstallSpy: jest.SpyInstance;
+let publishSpy: jest.SpyInstance;
+let usageSpy: jest.SpyInstance;
 
 beforeEach(() => {
   jest.clearAllMocks();
   installSpy = jest.spyOn(datasetCatalogApi, "installToDataflow").mockResolvedValue(INSTALLED as never);
+  uninstallSpy = jest.spyOn(datasetCatalogApi, "uninstallFromDataflow").mockResolvedValue({ id: DATASET.id } as never);
+  publishSpy = jest.spyOn(datasetCatalogApi, "publishDataset").mockResolvedValue(INSTALLED as never);
+  usageSpy = jest.spyOn(datasetCatalogApi, "datasetUsage").mockResolvedValue([] as never);
 });
 
 afterEach(() => {
   installSpy.mockRestore();
+  uninstallSpy.mockRestore();
+  publishSpy.mockRestore();
+  usageSpy.mockRestore();
 });
 
 describe("a hosted guest", () => {
-  it("is told to sign in when it adds a dataset to a dataflow it never saved", async () => {
-    // Never saved: no id, and none comes back, since a guest's save is skipped.
-    mockProjectId = null;
-    mockEnsureProjectId.mockResolvedValue(null);
-    const { result } = renderDrawerAs(HOSTED_GUEST);
+  describe("on a dataflow it never saved", () => {
+    beforeEach(() => {
+      // No id, and none comes back, since a guest's save is skipped.
+      mockProjectId = null;
+      mockEnsureProjectId.mockResolvedValue(null);
+    });
 
-    await add(result);
+    it("is told to sign in when it adds a dataset", async () => {
+      const { result } = renderDrawerAs(HOSTED_GUEST);
 
-    expect(mockShowToast).toHaveBeenCalledWith("Sign in to add datasets.", "warning");
-    expect(installSpy).not.toHaveBeenCalled();
+      await add(result);
+
+      expect(mockShowToast).toHaveBeenCalledWith("Sign in to add datasets.", "warning");
+      expect(installSpy).not.toHaveBeenCalled();
+    });
+
+    it("is told to sign in when it removes a dataset", async () => {
+      const { result } = renderDrawerAs(HOSTED_GUEST);
+
+      await remove(result);
+
+      expect(mockShowToast).toHaveBeenCalledWith("Sign in to remove datasets.", "warning");
+      expect(uninstallSpy).not.toHaveBeenCalled();
+    });
+
+    it("is told to sign in when it publishes a dataset", async () => {
+      const { result } = renderDrawerAs(HOSTED_GUEST);
+
+      await publish(result);
+
+      expect(mockShowToast).toHaveBeenCalledWith("Sign in to publish datasets.", "warning");
+      expect(publishSpy).not.toHaveBeenCalled();
+    });
   });
 
-  it("adds a dataset to a dataflow it has, as before", async () => {
-    mockProjectId = "flow-1";
-    mockEnsureProjectId.mockResolvedValue("flow-1");
-    const { result } = renderDrawerAs(HOSTED_GUEST);
+  describe("on a dataflow it has", () => {
+    beforeEach(() => {
+      mockProjectId = "flow-1";
+      mockEnsureProjectId.mockResolvedValue("flow-1");
+    });
 
-    await add(result);
+    it("adds a dataset, as before", async () => {
+      const { result } = renderDrawerAs(HOSTED_GUEST);
 
-    expect(installSpy).toHaveBeenCalledTimes(1);
-    expect(installSpy.mock.calls[0].slice(0, 2)).toEqual(["flow-1", DATASET.id]);
-    expect(signInToasts()).toEqual([]);
+      await add(result);
+
+      expect(installSpy).toHaveBeenCalledTimes(1);
+      expect(installSpy.mock.calls[0].slice(0, 2)).toEqual(["flow-1", DATASET.id]);
+      expect(signInToasts()).toEqual([]);
+    });
+
+    it("removes a dataset, as before", async () => {
+      const { result } = renderDrawerAs(HOSTED_GUEST);
+
+      await remove(result);
+
+      expect(uninstallSpy).toHaveBeenCalledWith("flow-1", DATASET.id);
+      expect(signInToasts()).toEqual([]);
+    });
   });
 });
 
@@ -180,27 +243,59 @@ describe.each([
   ["the local shared guest", LOCAL_GUEST],
   ["a signed-in account", SIGNED_IN_USER],
 ])("%s", (_who, value) => {
-  it("adds a dataset to a dataflow never saved, once the save has created it", async () => {
-    mockProjectId = null;
-    mockEnsureProjectId.mockResolvedValue("flow-new");
-    const { result } = renderDrawerAs(value);
+  describe("on a dataflow never saved, once the save has created it", () => {
+    beforeEach(() => {
+      mockProjectId = null;
+      mockEnsureProjectId.mockResolvedValue("flow-new");
+    });
 
-    await add(result);
+    it("adds a dataset to it", async () => {
+      const { result } = renderDrawerAs(value);
 
-    expect(installSpy).toHaveBeenCalledTimes(1);
-    expect(installSpy.mock.calls[0].slice(0, 2)).toEqual(["flow-new", DATASET.id]);
-    expect(signInToasts()).toEqual([]);
+      await add(result);
+
+      expect(installSpy).toHaveBeenCalledTimes(1);
+      expect(installSpy.mock.calls[0].slice(0, 2)).toEqual(["flow-new", DATASET.id]);
+      expect(signInToasts()).toEqual([]);
+    });
+
+    it("removes a dataset from it", async () => {
+      const { result } = renderDrawerAs(value);
+
+      await remove(result);
+
+      expect(uninstallSpy).toHaveBeenCalledWith("flow-new", DATASET.id);
+      expect(signInToasts()).toEqual([]);
+    });
+
+    it("publishes a dataset from it", async () => {
+      const { result } = renderDrawerAs(value);
+
+      await publish(result);
+
+      expect(publishSpy).toHaveBeenCalledWith(DATASET.id, expect.objectContaining({ dataflowId: "flow-new" }));
+      expect(signInToasts()).toEqual([]);
+    });
   });
 
-  it("is not told to sign in when that save fails", async () => {
-    // ensureProjectId says why its save failed; the Add adds nothing to that.
-    mockProjectId = null;
-    mockEnsureProjectId.mockResolvedValue(null);
-    const { result } = renderDrawerAs(value);
+  describe("when that save fails", () => {
+    beforeEach(() => {
+      // ensureProjectId says why its save failed; the action adds nothing to that.
+      mockProjectId = null;
+      mockEnsureProjectId.mockResolvedValue(null);
+    });
 
-    await add(result);
+    it("is not told to sign in when it adds, removes or publishes", async () => {
+      const { result } = renderDrawerAs(value);
 
-    expect(installSpy).not.toHaveBeenCalled();
-    expect(signInToasts()).toEqual([]);
+      await add(result);
+      await remove(result);
+      await publish(result);
+
+      expect(installSpy).not.toHaveBeenCalled();
+      expect(uninstallSpy).not.toHaveBeenCalled();
+      expect(publishSpy).not.toHaveBeenCalled();
+      expect(signInToasts()).toEqual([]);
+    });
   });
 });
