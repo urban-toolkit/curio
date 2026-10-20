@@ -23,8 +23,9 @@ layer becomes the tiles SCOUT writes. Changes from SCOUT's file:
   out.
 
 Each line Curio changed ends with a ``# Curio:`` comment that quotes its entry
-above. Lines that differ from SCOUT's only in quotes, spacing, line breaks or
-order have none.
+above, or sits in a changed block (a new function, a rewritten call) whose
+first line has one. Comment and docstring lines, and lines that differ from
+SCOUT's only in quotes, spacing, line breaks, order or punctuation, have none.
 """
 
 import pandas as pd

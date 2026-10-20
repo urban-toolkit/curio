@@ -34,8 +34,9 @@ Every function keeps SCOUT's name and arithmetic. The changes:
   unused imports and its commented-out usage example are left out.
 
 Each line Curio changed ends with a ``# Curio:`` comment that quotes its entry
-above. Lines that differ from SCOUT's only in quotes, spacing, line breaks or
-order have none.
+above, or sits in a changed block (a new function, a rewritten call) whose
+first line has one. Comment and docstring lines, and lines that differ from
+SCOUT's only in quotes, spacing, line breaks, order or punctuation, have none.
 """
 
 import numpy as np
