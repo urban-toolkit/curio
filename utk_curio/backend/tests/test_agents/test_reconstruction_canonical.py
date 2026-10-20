@@ -427,8 +427,10 @@ class TestTheShippedCorpus:
         answering komar41's review, step 6.2), ``curio.scout@1`` (that plan,
         step 10). chicago-rain-wind-routing charts its routes with Scout's
         Bars, example 06 its scenarios' mean sunlight, and
-        chicago-loop-shadow-towers its scenarios' mean shadow (that plan, step
-        6.3)."""
+        chicago-loop-shadow-towers its scenarios' mean shadow;
+        lower-manhattan-park-shade charts its parks with Scout's Dots with a
+        range and takes its changes in shadow with Raster Calculators (that
+        plan, step 6.3)."""
         needs_package_templates = {}
         for path in example_paths():
             spec = json.loads(path.read_text(encoding="utf-8"))
@@ -488,6 +490,8 @@ class TestTheShippedCorpus:
             "model.scout.deep-umbra/accumulated-shadow",
         ]
         assert needs_package_templates["lower-manhattan-park-shade"] == [
+            "curio.scout/dots-with-a-range",
+            "curio.scout/raster-calculator",
             "curio.scout/rasterize-buildings",
             "model.scout.deep-umbra/accumulated-shadow",
         ]

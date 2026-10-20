@@ -536,72 +536,61 @@
       },
       {
         "id": "park-shade-chart",
-        "type": "curio.builtin/compare-scenarios",
+        "type": "curio.scout/dots-with-a-range",
         "x": 5230,
         "y": 1000,
         "width": 1000,
         "height": 600,
-        "content": "# Compare Scenarios writes this code from its inputs: each input, under the\n# id and the name of its scenario. It is written again when they change.\nreturn curio_stack_scenarios([\n    (\"existing\", \"Existing\", [!! input_0 !!]),\n    (\"towers-removed\", \"Towers removed\", [!! input_1 !!]),\n    (\"height-cap\", \"Height cap\", [!! input_2 !!]),\n])\n",
+        "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v6.json\",\n  \"data\": {\n    \"name\": \"inputs\"\n  },\n  \"transform\": [\n    {\n      \"joinaggregate\": [\n        {\n          \"op\": \"min\",\n          \"field\": \"[!! value !!]\",\n          \"as\": \"curio_lowest\"\n        },\n        {\n          \"op\": \"max\",\n          \"field\": \"[!! value !!]\",\n          \"as\": \"curio_highest\"\n        }\n      ],\n      \"groupby\": [\n        \"[!! category !!]\"\n      ]\n    },\n    {\n      \"calculate\": \"datum.curio_highest - datum.curio_lowest\",\n      \"as\": \"curio_range\"\n    },\n    {\n      \"window\": [\n        {\n          \"op\": \"row_number\",\n          \"as\": \"curio_rank\"\n        }\n      ],\n      \"groupby\": [\n        \"[!! category !!]\"\n      ]\n    }\n  ],\n  \"width\": 300,\n  \"height\": {\n    \"step\": 13\n  },\n  \"encoding\": {\n    \"y\": {\n      \"field\": \"[!! category !!]\",\n      \"type\": \"nominal\",\n      \"title\": \"[!! y_title !!]\",\n      \"sort\": {\n        \"field\": \"curio_range\",\n        \"op\": \"max\",\n        \"order\": \"descending\"\n      }\n    }\n  },\n  \"layer\": [\n    {\n      \"transform\": [\n        {\n          \"filter\": \"datum.curio_rank === 1\"\n        }\n      ],\n      \"mark\": {\n        \"type\": \"rule\",\n        \"color\": \"#9ca3af\",\n        \"strokeWidth\": 2\n      },\n      \"encoding\": {\n        \"x\": {\n          \"field\": \"curio_lowest\",\n          \"type\": \"quantitative\",\n          \"title\": \"[!! x_title !!]\"\n        },\n        \"x2\": {\n          \"field\": \"curio_highest\"\n        }\n      }\n    },\n    {\n      \"mark\": {\n        \"type\": \"point\",\n        \"filled\": true,\n        \"size\": 60,\n        \"opacity\": 1,\n        \"tooltip\": true\n      },\n      \"encoding\": {\n        \"x\": {\n          \"field\": \"[!! value !!]\",\n          \"type\": \"quantitative\",\n          \"title\": \"[!! x_title !!]\"\n        },\n        \"color\": {\n          \"field\": \"scenario_name\",\n          \"type\": \"nominal\",\n          \"title\": \"Scenario\",\n          \"legend\": {\n            \"orient\": \"bottom\"\n          }\n        }\n      }\n    }\n  ]\n}\n",
         "out": "DEFAULT",
         "in": "DEFAULT",
-        "goal": "Chart each park's mean minutes of shadow in the three scenarios, a bar per scenario.",
+        "goal": "Chart each park's mean minutes of shadow in the three scenarios, a dot per scenario on a rule from the park's lowest to its highest.",
         "metadata": {
           "keywords": [],
-          "compareScenarios": {
-            "inputs": [
-              {
-                "scenario": "existing",
-                "name": "Existing",
-                "color": "#2a9d8f"
-              },
-              {
-                "scenario": "towers-removed",
-                "name": "Towers removed",
-                "color": "#e76f51"
-              },
-              {
-                "scenario": "height-cap",
-                "name": "Height cap",
-                "color": "#6a4c93"
-              }
-            ],
-            "chart": {
-              "preset": "grouped-bar",
-              "x": "park",
-              "y": "mean_min",
-              "aggregate": "none"
+          "widgets": [
+            {
+              "name": "category",
+              "type": "text",
+              "label": "Category column",
+              "default": "category",
+              "value": "park"
             },
-            "mode": "chart"
-          }
+            {
+              "name": "value",
+              "type": "text",
+              "label": "Value column",
+              "default": "value",
+              "value": "mean_min"
+            },
+            {
+              "name": "x_title",
+              "type": "text",
+              "label": "X axis title",
+              "default": "",
+              "value": "mean_min"
+            },
+            {
+              "name": "y_title",
+              "type": "text",
+              "label": "Y axis title",
+              "default": "",
+              "value": "park"
+            }
+          ]
         },
         "title": "Minutes of shadow per park"
       },
       {
         "id": "park-shade-removed-change",
-        "type": "curio.builtin/compare-scenarios",
+        "type": "curio.scout/raster-calculator",
         "x": 4550,
         "y": 1452,
-        "content": "# Compare Scenarios writes this code from its inputs: input_1 minus input_0,\n# each under the id and the name of its scenario. It is written again when\n# they change.\nreturn curio_difference_scenarios([\n    (\"existing\", \"Existing\", [!! input_0 !!]),\n    (\"towers-removed\", \"Towers removed\", [!! input_1 !!]),\n])\n",
+        "content": "# Towers removed's accumulated shadow, on input_1, minus Existing's, on\n# input_0, cell by cell, in minutes: below zero where removing the towers\n# takes shadow away, 0 where nothing changes.\nfrom scout_rasters.raster_algebra import raster_calculate\n\nreturn raster_calculate(\"subtract\", [input_1, input_0], output_file=curio_output_file)\n",
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "Take the change in the accumulated shadow from Existing to Towers removed, cell by cell.",
         "metadata": {
-          "keywords": [],
-          "compareScenarios": {
-            "inputs": [
-              {
-                "scenario": "existing",
-                "name": "Existing",
-                "color": "#2a9d8f"
-              },
-              {
-                "scenario": "towers-removed",
-                "name": "Towers removed",
-                "color": "#e76f51"
-              }
-            ],
-            "mode": "difference"
-          }
+          "keywords": []
         },
         "title": "Shadow change, Towers removed"
       },
@@ -621,33 +610,15 @@
       },
       {
         "id": "park-shade-removed-park-change",
-        "type": "curio.builtin/compare-scenarios",
+        "type": "curio.builtin/computation-analysis",
         "x": 5450,
         "y": 0,
-        "content": "# Compare Scenarios writes this code from its inputs: input_1 minus input_0,\n# each under the id and the name of its scenario. It is written again when\n# they change.\nreturn curio_difference_scenarios([\n    (\"existing\", \"Existing\", [!! input_0 !!]),\n    (\"towers-removed\", \"Towers removed\", [!! input_1 !!]),\n], key=\"park\")\n",
+        "content": "# Towers removed's shade per park, on input_1, minus Existing's, on input_0,\n# matched by the park's name: in each number column, Towers removed's value\n# minus Existing's, and change says whether any of them differs. Both\n# scenarios measure the context's parks, so each park is on both sides;\n# its outline and its other values are Towers removed's.\nimport numpy as np\nimport pandas as pd\n\nbefore = input_0.reset_index(drop=True)\nafter = input_1.set_index(\"park\").loc[before[\"park\"]].reset_index()\nnumbers = [\n    column for column in before.columns\n    if column not in (\"park\", before.geometry.name) and column in after.columns\n    and pd.api.types.is_numeric_dtype(before[column]) and not pd.api.types.is_bool_dtype(before[column])\n]\nchanged = np.zeros(len(before), dtype=bool)\nfor column in numbers:\n    was = before[column].astype(\"float64\").to_numpy()\n    now = after[column].astype(\"float64\").to_numpy()\n    after[column] = now - was\n    changed |= (np.isnan(was) != np.isnan(now)) | (~np.isnan(was) & ~np.isnan(now) & (now != was))\nafter.insert(1, \"change\", np.where(changed, \"changed\", \"unchanged\"))\nreturn after\n",
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "Take each park's change in shade from Existing to Towers removed, its mean minutes of shadow among them, matched by the park's name.",
         "metadata": {
-          "keywords": [],
-          "compareScenarios": {
-            "inputs": [
-              {
-                "scenario": "existing",
-                "name": "Existing",
-                "color": "#2a9d8f"
-              },
-              {
-                "scenario": "towers-removed",
-                "name": "Towers removed",
-                "color": "#e76f51"
-              }
-            ],
-            "mode": "difference",
-            "difference": {
-              "key": "park"
-            }
-          }
+          "keywords": []
         },
         "title": "Park shade change, Towers removed"
       },
@@ -667,30 +638,15 @@
       },
       {
         "id": "park-shade-capped-change",
-        "type": "curio.builtin/compare-scenarios",
+        "type": "curio.scout/raster-calculator",
         "x": 4550,
         "y": 2382,
-        "content": "# Compare Scenarios writes this code from its inputs: input_1 minus input_0,\n# each under the id and the name of its scenario. It is written again when\n# they change.\nreturn curio_difference_scenarios([\n    (\"existing\", \"Existing\", [!! input_0 !!]),\n    (\"height-cap\", \"Height cap\", [!! input_1 !!]),\n])\n",
+        "content": "# Height cap's accumulated shadow, on input_1, minus Existing's, on\n# input_0, cell by cell, in minutes: below zero where cutting the towers down\n# takes shadow away, 0 where nothing changes.\nfrom scout_rasters.raster_algebra import raster_calculate\n\nreturn raster_calculate(\"subtract\", [input_1, input_0], output_file=curio_output_file)\n",
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "Take the change in the accumulated shadow from Existing to Height cap, cell by cell.",
         "metadata": {
-          "keywords": [],
-          "compareScenarios": {
-            "inputs": [
-              {
-                "scenario": "existing",
-                "name": "Existing",
-                "color": "#2a9d8f"
-              },
-              {
-                "scenario": "height-cap",
-                "name": "Height cap",
-                "color": "#6a4c93"
-              }
-            ],
-            "mode": "difference"
-          }
+          "keywords": []
         },
         "title": "Shadow change, Height cap"
       },
@@ -710,33 +666,15 @@
       },
       {
         "id": "park-shade-capped-park-change",
-        "type": "curio.builtin/compare-scenarios",
+        "type": "curio.builtin/computation-analysis",
         "x": 5450,
         "y": 500,
-        "content": "# Compare Scenarios writes this code from its inputs: input_1 minus input_0,\n# each under the id and the name of its scenario. It is written again when\n# they change.\nreturn curio_difference_scenarios([\n    (\"existing\", \"Existing\", [!! input_0 !!]),\n    (\"height-cap\", \"Height cap\", [!! input_1 !!]),\n], key=\"park\")\n",
+        "content": "# Height cap's shade per park, on input_1, minus Existing's, on input_0,\n# matched by the park's name: in each number column, Height cap's value\n# minus Existing's, and change says whether any of them differs. Both\n# scenarios measure the context's parks, so each park is on both sides;\n# its outline and its other values are Height cap's.\nimport numpy as np\nimport pandas as pd\n\nbefore = input_0.reset_index(drop=True)\nafter = input_1.set_index(\"park\").loc[before[\"park\"]].reset_index()\nnumbers = [\n    column for column in before.columns\n    if column not in (\"park\", before.geometry.name) and column in after.columns\n    and pd.api.types.is_numeric_dtype(before[column]) and not pd.api.types.is_bool_dtype(before[column])\n]\nchanged = np.zeros(len(before), dtype=bool)\nfor column in numbers:\n    was = before[column].astype(\"float64\").to_numpy()\n    now = after[column].astype(\"float64\").to_numpy()\n    after[column] = now - was\n    changed |= (np.isnan(was) != np.isnan(now)) | (~np.isnan(was) & ~np.isnan(now) & (now != was))\nafter.insert(1, \"change\", np.where(changed, \"changed\", \"unchanged\"))\nreturn after\n",
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "Take each park's change in shade from Existing to Height cap, its mean minutes of shadow among them, matched by the park's name.",
         "metadata": {
-          "keywords": [],
-          "compareScenarios": {
-            "inputs": [
-              {
-                "scenario": "existing",
-                "name": "Existing",
-                "color": "#2a9d8f"
-              },
-              {
-                "scenario": "height-cap",
-                "name": "Height cap",
-                "color": "#6a4c93"
-              }
-            ],
-            "mode": "difference",
-            "difference": {
-              "key": "park"
-            }
-          }
+          "keywords": []
         },
         "title": "Park shade change, Height cap"
       },

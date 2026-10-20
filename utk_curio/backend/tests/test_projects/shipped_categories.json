@@ -506,6 +506,7 @@
   "dataflows/lower-manhattan-park-shade": {
     "tags": [
       "Autark",
+      "Vega-Lite",
       "Pandas",
       "SCOUT"
     ],
