@@ -1225,7 +1225,83 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
         await act(async () => {
           await result.current.applyGrammar!(JSON.stringify({ map: { layerRefs: [{ dataRef: 'table_osm_roads' }] } }));
         });
-        expect(lastRunSpec()?.data.map((s: any) => s.outputTableName)).toEqual(['table_osm_roads', 'table_osm_water']);
+        expect(lastRunSpec()?.data.map((s: any) => s.outputTableName)).toEqual(['table_osm_roads']);
+      });
+
+      // autk-db makes the first table it loads the workspace's extent, and the
+      // first polygon table its crop layer, and clips every later table to
+      // both. So the grammar gets only the input's tables the document names,
+      // in the order they arrived: its map's layers, its plot's table and the
+      // map that plot links to, and its compute blocks' tables (#886).
+      describe('only the tables the document names reach autk-db', () => {
+        const square = (x: number, y: number) => ({
+          type: 'Polygon',
+          coordinates: [[[x, y], [x + 0.01, y], [x + 0.01, y + 0.01], [x, y + 0.01], [x, y]]],
+        });
+        // One polygon at (x, y), as a Python node's GeoDataFrame arrives.
+        const cells = (x: number, y: number, layerName?: string) => ({
+          dataType: 'geodataframe',
+          ...(layerName ? { layerName } : {}),
+          data: { type: 'FeatureCollection', features: [{ type: 'Feature', geometry: square(x, y), properties: { pop: 1 } }] },
+        });
+        const run = async (input: any, spec: object) => {
+          const result = await callBehavior(useAutkGrammarBehavior, { outputCallback: jest.fn(), input });
+          await act(async () => {
+            await result.current.applyGrammar!(JSON.stringify(spec));
+          });
+        };
+        const handed = () => lastRunSpec()?.data.map((s: any) => s.outputTableName);
+
+        test("Renzo's repro: a Python node returns two cities, a first, and a map of b gets b alone", async () => {
+          await run(
+            { dataType: 'dict', data: { a: cells(-46.63, -23.55), b: cells(-87.63, 41.88) } },
+            { map: { layerRefs: [{ dataRef: 'b' }] } },
+          );
+          expect(handed()).toEqual(['b']);
+        });
+
+        test('a plot gets its table and the table of the map it links to', async () => {
+          await run(
+            { dataType: 'outputs', data: [cells(0, 0, 'a'), cells(1, 1, 'b'), cells(2, 2, 'c')] },
+            { plot: { dataRef: 'b', mapRef: 'c', mark: 'bar', axis: ['pop', '@transform'], transform: { preset: 'binning-1d' } } },
+          );
+          expect(handed()).toEqual(['b', 'c']);
+        });
+
+        test('a compute block gets its table and the layer a uniform reads from', async () => {
+          await run(
+            { dataType: 'outputs', data: [cells(0, 0, 'a'), cells(1, 1, 'b'), cells(2, 2, 'c')] },
+            {
+              compute: [{ dataRef: 'b', wglsFunction: '', uniforms: { near: { fromFeature: { layer: 'c', path: 'pop' } } } }],
+              map: { layerRefs: [{ dataRef: 'b' }] },
+            },
+          );
+          expect(handed()).toEqual(['b', 'c']);
+        });
+
+        test('a raster the document does not draw is left out too', async () => {
+          const { fetchRaster } = jest.requireMock('../../../services/api') as { fetchRaster: jest.Mock };
+          fetchRaster.mockResolvedValueOnce({
+            ok: true,
+            bytes: new ArrayBuffer(16),
+            meta: {
+              width: 40, height: 30, count: 1, crs: 'EPSG:32616', crsWkt: null,
+              transform: [30, 0, 447000, 0, -30, 4637000], nodata: -9999,
+            },
+          });
+          // The grammar as autk-grammar builds it: a raster loads through its data adapter.
+          const { AutkGrammar } = jest.requireMock('@urban-toolkit/autk-grammar') as { AutkGrammar: jest.Mock };
+          AutkGrammar.mockImplementationOnce(() => ({
+            data: {},
+            dataAdapter: { resolveSource: jest.fn(async (db: any) => db) },
+            run: jest.fn().mockResolvedValue(undefined),
+          }));
+          await run(
+            { dataType: 'outputs', data: [{ path: 'art-r', dataType: 'raster' }, cells(1, 1, 'b')] },
+            { map: { layerRefs: [{ dataRef: 'b' }] } },
+          );
+          expect(handed()).toEqual(['b']);
+        });
       });
 
       test('a compute step reads its input once', async () => {

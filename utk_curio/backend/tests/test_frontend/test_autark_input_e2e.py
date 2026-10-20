@@ -8,11 +8,13 @@ Done. A layer autk-db refuses, here for a polygon that collapses on its 1 cm
 grid, gives autk-db's reason alone, with no CRS advice (#899). A DataFrame with
 a geometry column is drawn. A node with several inputs draws a layer from each
 (#662), and a layer chip on an input of one frame with no layer name draws that
-frame, whatever the chip names.
+frame, whatever the chip names. A table the document does not draw, loaded
+first, would clip the one it draws, so only the tables it names are loaded (#886).
 
 The first test needs no WebGPU. The others run the Autark node, which does: they
 skip without an adapter unless ``CURIO_REQUIRE_HARDWARE_WEBGPU=1`` (CI's GPU job),
-except the flat polygon, several-inputs and layer chip tests, which fail without one.
+except the flat polygon, several-inputs, layer chip and two-city tests, which fail
+without one.
 
 Run::
 
@@ -116,6 +118,26 @@ GRID_LOADER = (
     "        cells.append(box(x, y, x + 0.005, y + 0.005))\n"
     "        pop.append(i * 10 + j)\n"
     'return gpd.GeoDataFrame({"pop": pop}, geometry=cells, crs="EPSG:4326")\n'
+)
+
+# The grid above in two cities, Sao Paulo's as "a", first, and Chicago's as "b"
+# (Renzo's repro in #886). autk-db makes the first table it loads the
+# workspace's extent and crop layer, so a map of "b" handed "a" as well draws
+# nothing.
+TWO_CITIES_LOADER = (
+    "import geopandas as gpd\n"
+    "from shapely.geometry import box\n"
+    "\n"
+    "cities = {}\n"
+    'for name, (x0, y0) in [("a", (-46.66, -23.58)), ("b", (-87.70, 41.86))]:\n'
+    "    cells, pop = [], []\n"
+    "    for i in range(10):\n"
+    "        for j in range(10):\n"
+    "            x, y = x0 + 0.006 * i, y0 + 0.006 * j\n"
+    "            cells.append(box(x, y, x + 0.005, y + 0.005))\n"
+    "            pop.append(i * 10 + j)\n"
+    '    cities[name] = gpd.GeoDataFrame({"pop": pop}, geometry=cells, crs="EPSG:4326")\n'
+    "return cities\n"
 )
 
 # A box and a polygon with no area: its three points lie on one line, so it
@@ -442,3 +464,33 @@ def test_a_layer_chip_draws_the_one_frame_its_input_carries(
     detail = read_node_error_text(node_locator(page, AUTK_ID)) if status == "error" else ""
     assert status == "done", f"the map did not draw its input through the layer chip: {detail}"
     assert_autark_map_drawn(page, AUTK_ID, timeout=60000, attach_as="a GeoDataFrame through a layer chip")
+
+
+def test_a_table_the_document_does_not_draw_leaves_the_others_whole(
+    app_frontend: "FrontendPage", current_server: str, page,
+):
+    """#886: a Python node returns two cities' cells, ``a`` first, and the
+    Autark node's map draws ``b`` alone. autk-db makes the first table it loads
+    the workspace's extent and the first polygon table its crop layer, and
+    clips every later table to them, so the node hands autk-db only the tables
+    its document names, and the map draws ``b``."""
+    b_only = json.dumps({"map": {"layerRefs": [{
+        "dataRef": "b",
+        "getFnv": "pop",
+        "getFnvType": "quantitative",
+        "colorMapInterpolator": "interpolateViridis",
+    }]}}, indent=2)
+    # A Python node returns the dict, as Renzo's map data node does.
+    spec = _spec(TWO_CITIES_LOADER, b_only)
+    for node in spec["dataflow"]["nodes"]:
+        if node["id"] == LOADER_ID:
+            node["type"] = "curio.builtin/computation-analysis"
+    _open(page, app_frontend, current_server, username="autark_input_two_cities", spec=spec)
+    adapter = webgpu_adapter(page)
+    assert adapter, f"drawing an Autark map needs a WebGPU adapter, which CI's GPU job has: {adapter}"
+
+    run_all_and_wait(page, timeout_ms=180000)
+    status = wait_for_node_settled(page, AUTK_ID, node_type="autk-grammar", timeout_ms=120000)
+    detail = read_node_error_text(node_locator(page, AUTK_ID)) if status == "error" else ""
+    assert status == "done", f"the map of b did not draw: {detail}"
+    assert_autark_map_drawn(page, AUTK_ID, timeout=60000, attach_as="b, beside a table it does not draw")
