@@ -843,13 +843,13 @@
       "expected": "{\"encoding\": {\"y\": {\"field\": \"rain\\\\.mm\", \"title\": \"Mean rain.mm\"}}}"
     },
     {
-      "name": "a column chip on its own in a Vega-Lite field, with a bracket or a backslash in its name",
+      "name": "a column chip on its own in a Vega-Lite field: a bracket in its name escaped, a backslash taken as an escape and kept",
       "language": "json",
       "grammar": "vega-lite",
       "code": "{\"encoding\": {\"x\": {\"field\": [!! input_0.a[1] !!]}, \"y\": {\"field\": [!! input_0.back\\slash !!]}}}",
       "widgets": [],
       "inputs": [{"slot": 0, "columns": ["a[1]", "back\\slash"]}],
-      "expected": "{\"encoding\": {\"x\": {\"field\": \"a\\\\[1\\\\]\"}, \"y\": {\"field\": \"back\\\\\\\\slash\"}}}"
+      "expected": "{\"encoding\": {\"x\": {\"field\": \"a\\\\[1\\\\]\"}, \"y\": {\"field\": \"back\\\\slash\"}}}"
     },
     {
       "name": "a widget's text in a Vega-Lite field, on its own and inside the field's own text",
@@ -985,6 +985,49 @@
       "code": "{\"opacity\": NaN, \"encoding\": {\"y\": {\"field\": \"[!! y !!]\"}}}",
       "widgets": [{"name": "y", "type": "text", "default": "rain.mm"}],
       "expected": "{\"opacity\": NaN, \"encoding\": {\"y\": {\"field\": \"rain.mm\"}}}"
+    },
+    {
+      "name": "a name that already holds a backslash is taken as escaped by hand, and written as it is",
+      "language": "json",
+      "grammar": "vega-lite",
+      "code": "{\"encoding\": {\"y\": {\"field\": \"[!! y !!]\"}, \"x\": {\"field\": [!! y !!]}}, \"transform\": [{\"fold\": [!! columns !!]}]}",
+      "widgets": [
+        {"name": "y", "type": "text", "default": "rain\\.mm"},
+        {"name": "columns", "type": "text-list", "default": ["rain\\.mm", "c.d"]}
+      ],
+      "expected": "{\"encoding\": {\"y\": {\"field\": \"rain\\\\.mm\"}, \"x\": {\"field\": \"rain\\\\.mm\"}}, \"transform\": [{\"fold\": [\"rain\\\\.mm\", \"c\\\\.d\"]}]}"
+    },
+    {
+      "name": "a key named field inside data, datasets or usermeta is no field",
+      "language": "json",
+      "grammar": "vega-lite",
+      "code": "{\"data\": {\"values\": [{\"field\": \"[!! y !!]\"}]}, \"datasets\": {\"rows\": [{\"field\": \"[!! y !!]\"}]}, \"usermeta\": {\"field\": \"[!! y !!]\"}, \"encoding\": {\"y\": {\"field\": \"[!! y !!]\"}}}",
+      "widgets": [{"name": "y", "type": "text", "default": "rain.mm"}],
+      "expected": "{\"data\": {\"values\": [{\"field\": \"rain.mm\"}]}, \"datasets\": {\"rows\": [{\"field\": \"rain.mm\"}]}, \"usermeta\": {\"field\": \"rain.mm\"}, \"encoding\": {\"y\": {\"field\": \"rain\\\\.mm\"}}}"
+    },
+    {
+      "name": "a Vega-Lite spec nested deeper than its places are read writes the names as they are",
+      "language": "json",
+      "grammar": "vega-lite",
+      "code": "{\"encoding\": {\"y\": {\"field\": \"[!! y !!]\"}}, \"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}",
+      "widgets": [{"name": "y", "type": "text", "default": "rain.mm"}],
+      "expected": "{\"encoding\": {\"y\": {\"field\": \"rain.mm\"}}, \"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}"
+    },
+    {
+      "name": "characters of a placeholder in a spec's own text take no chip's place",
+      "language": "json",
+      "grammar": "vega-lite",
+      "code": "{\"title\": \"[!! y !!]\", \"encoding\": {\"y\": {\"field\": \"\ue0000\ue001\"}}}",
+      "widgets": [{"name": "y", "type": "text", "default": "rain.mm"}],
+      "expected": "{\"title\": \"rain.mm\", \"encoding\": {\"y\": {\"field\": \"\ue0000\ue001\"}}}"
+    },
+    {
+      "name": "a spec's JSON escapes of a placeholder's characters take no chip's place",
+      "language": "json",
+      "grammar": "vega-lite",
+      "code": "{\"title\": \"[!! y !!]\", \"encoding\": {\"y\": {\"field\": \"\\ue0000\\ue001\"}}}",
+      "widgets": [{"name": "y", "type": "text", "default": "rain.mm"}],
+      "expected": "{\"title\": \"rain.mm\", \"encoding\": {\"y\": {\"field\": \"\\ue0000\\ue001\"}}}"
     }
   ]
 }

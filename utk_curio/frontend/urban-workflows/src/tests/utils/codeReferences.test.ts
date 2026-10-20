@@ -310,6 +310,18 @@ describe("closing up circles, with names inside f-strings", () => {
   });
 });
 
+describe("a Vega-Lite spec nested 5,000 deep", () => {
+  // The browser reads a spec's places walking it, and a walk that deep
+  // overflowed the stack, in the Widgets tab's render too.
+  test("writes its names as they are, and does not overflow the stack", () => {
+    const deep = '{"a": '.repeat(5000) + '{"field": "[!! y !!]"}' + "}".repeat(5000);
+    const scope = { widgets: normalizeWidgets([{ name: "y", type: "text", default: "rain.mm" }]), inputs: [], shared: [] };
+    const result = resolveReferences(deep, scope, "json", "vega-lite");
+    expect(result.problems).toEqual([]);
+    expect(result.code).toBe(deep.replace("[!! y !!]", "rain.mm"));
+  });
+});
+
 describe("literals", () => {
   test("Python spells booleans and nothing its own way", () => {
     expect(widgetLiteral(true, "python")).toBe("True");

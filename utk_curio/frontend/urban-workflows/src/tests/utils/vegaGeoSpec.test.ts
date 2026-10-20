@@ -318,6 +318,21 @@ describe("normalizeGeoSpec value coercion", () => {
     expect(values[1].geometry).toBeNull();
     expect(values[2].geometry).toBe("x");
   });
+
+  test("a field escaped for Vega-Lite coerces the column it names (issue 1042)", () => {
+    // A chip writes the column `the.geom` as the field `the\.geom`, which
+    // Vega-Lite reads as that column.
+    const values: any[] = [{ zip: "60601", "the.geom": geometry() }];
+    const spec: any = {
+      mark: "geoshape",
+      encoding: { shape: { field: "the\\.geom", type: "geojson" } },
+    };
+
+    normalizeGeoSpec(spec, values, { geometryName: "the.geom" });
+
+    expect(values[0]["the.geom"]).toEqual({ type: "Feature", geometry: geometry() });
+    expect(Object.keys(values[0]).sort()).toEqual(["the.geom", "zip"]);
+  });
 });
 
 describe("rewindRingsClockwise", () => {

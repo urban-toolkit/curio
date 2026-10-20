@@ -988,11 +988,13 @@ def _rain_table(circle: int) -> dict:
 
 class TestAColumnWhoseNameHoldsADot:
     """Vega-Lite reads a ``.`` or a ``[`` in a field as a path into the row
-    (issue 1042): ``rain.mm`` is ``mm`` inside ``rain``, and the column
-    ``rain.mm`` is written ``rain\\.mm``. The check reads a field the same
-    way, so it accepts the escaped spelling of a column, refuses the one that
-    reads nothing with the spelling that reads it, and Solve checks a Scout
-    chart's spec with its chips written as the canvas writes them."""
+    (issue 1042), and the column ``rain.mm`` is written ``rain\\.mm``. Where
+    Vega-Lite escapes a field itself (an aggregate, a bin transform, a
+    condition's test), ``rain.mm`` draws the column too. So a field names a
+    column when its text, or its text unescaped, is the column's name: both
+    spellings pass, and a path through a column, ``zone.id`` beside a column
+    ``zone``, names none. Solve checks a Scout chart's spec with its chips
+    written as the canvas writes them."""
 
     SCHEMA = "https://vega.github.io/schema/vega-lite/v6.json"
     COLUMNS = ["rain.mm", "cost", "zone"]
@@ -1023,15 +1025,45 @@ class TestAColumnWhoseNameHoldsADot:
         assert self._verdict(spec) == {"status": dv.STATUS_VALID}
         assert self._verdict(self._bars("rain\\.mm")) == {"status": dv.STATUS_VALID}
 
-    def test_a_dotted_field_written_as_it_is_reads_a_path_and_is_refused_with_the_spelling_that_reads_it(self):
-        verdict = self._verdict(self._bars("rain.mm"))
-        assert verdict["status"] == dv.STATUS_INVALID
-        assert "transform[0].aggregate[0].field reads 'rain', which is not a column" in verdict["detail"]
-        assert 'the column \'rain.mm\' is written "rain\\\\.mm" in the JSON' in verdict["detail"]
+    def test_a_dotted_column_written_as_it_is_passes_where_vega_lite_escapes_it_itself(self):
+        """Vega-Lite 6 draws these over the column ``rain.mm``: an aggregate
+        transform, an aggregated encoding, a bin transform and a condition's
+        test each escape the field before they read it."""
+        assert self._verdict(self._bars("rain.mm")) == {"status": dv.STATUS_VALID}
+        encoded = {
+            "mark": "bar",
+            "encoding": {
+                "x": {"field": "zone", "type": "nominal"},
+                "y": {"field": "rain.mm", "type": "quantitative", "aggregate": "mean"},
+            },
+        }
+        assert self._verdict(encoded) == {"status": dv.STATUS_VALID}
+        binned = {
+            "transform": [{"bin": True, "field": "rain.mm", "as": "rain_bin"}],
+            "mark": "bar",
+            "encoding": {"x": {"field": "rain_bin", "type": "quantitative"}},
+        }
+        assert self._verdict(binned) == {"status": dv.STATUS_VALID}
+        conditioned = {
+            "mark": "point",
+            "encoding": {
+                "x": {"field": "cost", "type": "quantitative"},
+                "color": {"condition": {"test": {"field": "rain.mm", "gt": 50}, "value": "red"}, "value": "grey"},
+            },
+        }
+        assert self._verdict(conditioned) == {"status": dv.STATUS_VALID}
 
-    def test_a_path_into_a_column_reads_that_column(self):
-        spec = {"mark": "point", "encoding": {"x": {"field": "place.name", "type": "nominal"}}}
-        assert self._verdict(spec, columns=["place", "cost"]) == {"status": dv.STATUS_VALID}
+    def test_a_path_through_a_column_names_no_column_and_is_refused(self):
+        """``zone.id`` beside a column ``zone`` reads ``datum.zone.id``,
+        which no row holds."""
+        through_zone = {"mark": "point", "encoding": {"x": {"field": "zone.id", "type": "nominal"}}}
+        verdict = self._verdict(through_zone)
+        assert verdict["status"] == dv.STATUS_INVALID
+        assert "encoding.x.field reads 'zone.id', which is not a column" in verdict["detail"]
+        through_place = {"mark": "point", "encoding": {"x": {"field": "place.name", "type": "nominal"}}}
+        verdict = self._verdict(through_place, columns=["place", "cost"])
+        assert verdict["status"] == dv.STATUS_INVALID
+        assert "encoding.x.field reads 'place.name', which is not a column" in verdict["detail"]
 
     def test_a_dotted_geometry_is_left_out_of_inputs_unless_a_lookup_brings_it_by_its_escaped_name(self):
         draws = {
@@ -1040,6 +1072,11 @@ class TestAColumnWhoseNameHoldsADot:
             "encoding": {"shape": {"field": "the\\.geom", "type": "geojson"}},
         }
         refused = self._verdict(draws, columns=["zone", "the.geom"], geometry=["the.geom"])
+        assert refused["status"] == dv.STATUS_INVALID
+        assert "encoding.shape.field reads 'the.geom', a geometry column" in refused["detail"]
+        # The column's name as it is, the other spelling that names it.
+        plain = {**draws, "encoding": {"shape": {"field": "the.geom", "type": "geojson"}}}
+        refused = self._verdict(plain, columns=["zone", "the.geom"], geometry=["the.geom"])
         assert refused["status"] == dv.STATUS_INVALID
         assert "encoding.shape.field reads 'the.geom', a geometry column" in refused["detail"]
         looked_up = {
