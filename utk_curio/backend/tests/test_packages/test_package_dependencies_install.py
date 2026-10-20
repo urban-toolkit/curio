@@ -14,7 +14,8 @@ whose lockfile names the package, and the examples' seeding. The Add review's
 probe, and the agents', resolve the packages a package needs from the catalog.
 
 The packages are this module's own, in a catalog of its own, so the rule is
-pinned on them and on no package Curio ships.
+pinned on them and on no package Curio ships. The last test reads the shipped
+catalog and names no package in it.
 """
 
 from __future__ import annotations
@@ -418,3 +419,15 @@ class TestTheReviewsResolveThePackagesAPackageNeeds:
 
         assert [package["dirName"] for package in report["packages"]] == [top]
         assert report["conflicts"] == []
+
+
+def test_every_shipped_package_names_only_packages_the_shipped_catalog_holds():
+    """An add of any shipped package, and the examples' seeding, finds every
+    package it needs in the shipped catalog, at a version its entry allows."""
+    from utk_curio.backend.app.packages.application.package_dependencies import PackageFolder
+    from utk_curio.backend.app.packages.domain.package_closure import required_packages
+
+    shipped = PackageFolder(Path(__file__).resolve().parents[4] / "packages").snapshot()
+    assert len(shipped) > 5, sorted(shipped)
+    for dir_name in shipped:
+        assert set(required_packages([dir_name], {}, shipped)) <= set(shipped), dir_name

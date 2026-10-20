@@ -313,7 +313,7 @@ Each entry names a *behavior key* (a string), not a JS module path. The same key
 
 ```jsonc
 "kind": "model",
-"dependencies": { "js": {}, "packages": {},
+"dependencies": { "js": {}, "packages": { "curio.scout@1": "*" },
                   "python": { "numpy": "", "onnxruntime": ">=1.17", "pyproj": ">=3.7.2", "rasterio": ">=1.4" } },
 "model": { "type": "image-to-image", "runtime": "onnx", "entry": "models/deep_umbra.onnx", ... },
 "templates": [
@@ -335,6 +335,8 @@ from deep_umbra import accumulated_shadow
 model = curio_load_model("model.scout.deep-umbra")
 return accumulated_shadow(input_0, season=[!! season !!], model=model, output_file=curio_output_file)
 ```
+
+`deep_umbra` imports `tile_bounds` from `scout_rasters`, the module of the Scout package, which Deep Umbra names in `dependencies.packages`. Adding Deep Umbra adds Scout too (§3.8, "Packages a package needs").
 
 A model package's template may ship no `source`: DDRNet23-Slim's Image Segmentation ([`packages/model.curio.ddrnet23-slim@1`](../packages/model.curio.ddrnet23-slim@1/manifest.json)) opens with the cell the backend writes for its model's type (`model_default_cell` in [`packages/application/model_packages.py`](../utk_curio/backend/app/packages/application/model_packages.py), served with the starters):
 
