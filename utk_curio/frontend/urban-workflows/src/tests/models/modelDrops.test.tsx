@@ -134,8 +134,7 @@ describe("the node a model card's drop makes", () => {
 });
 
 describe("a model card dropped on the canvas goes through the Node Catalog's card drop", () => {
-  /** A canvas as MainCanvas renders it; *more* adds to the drop's options
-   *  (untyped, as `openModelCatalog` is new). */
+  /** A canvas as MainCanvas renders it; *more* adds to the drop's options. */
   function canvas(added: string[] = [], more: Record<string, unknown> = {}) {
     const createNode = jest.fn();
     const showToast = jest.fn();
@@ -188,26 +187,38 @@ describe("a model card dropped on the canvas goes through the Node Catalog's car
     );
   });
 
-  test("with the Model Catalog drawer closed, opens it with the drop's Add, and makes the node once the model is added", () => {
-    // MainCanvas opens the drawer with the request (`openModelCatalogDrawer({ addRequest })`).
-    const opened: PackageAddRequest[] = [];
-    const { createNode, showToast, card, drop } = canvas([], {
-      openModelCatalog: (request: PackageAddRequest) => void opened.push(request),
-    });
+  /** An open Model Catalog drawer that takes every Add asked of it, and the
+   *  Adds it was asked for. */
+  function openModelDrawer(): PackageAddRequest[] {
+    const requests: PackageAddRequest[] = [];
+    function ModelDrawer() {
+      usePackageAddRequests((request) => {
+        requests.push(request);
+        return true;
+      });
+      return null;
+    }
+    render(<ModelDrawer />);
+    return requests;
+  }
+
+  test("of a model the dataflow declares, as every Models dropdown row is, makes its node at once, with no Add", () => {
+    // The dropdown lists only the dataflow's models (ModelsPaletteDropdown.test.tsx).
+    const requests = openModelDrawer();
+    const { createNode, showToast, card, drop } = canvas(["curio.builtin@1", "model.scout.deep-umbra@1"]);
     drop();
-    expect(opened.map((r) => [r.dirName, r.kind])).toEqual([["model.scout.deep-umbra@1", "model"]]);
-    expect(showToast).not.toHaveBeenCalled();
-    expect(createNode).not.toHaveBeenCalled();
-    act(() => opened[0].onAdded());
+    expect(createNode).toHaveBeenCalledTimes(1);
     expect(createNode).toHaveBeenCalledWith(card.nodes[0], { x: 1, y: 2 });
+    expect(requests).toEqual([]);
+    expect(showToast).not.toHaveBeenCalled();
   });
 
-  test("a hosted guest's drop of a model the dataflow lacks is refused, and opens no drawer", () => {
-    const openModelCatalog = jest.fn();
-    const { createNode, showToast, drop } = canvas([], { hostedGuest: true, openModelCatalog });
+  test("a hosted guest's drop of a model the dataflow lacks is refused before any drawer is asked", () => {
+    const requests = openModelDrawer();
+    const { createNode, showToast, drop } = canvas([], { hostedGuest: true });
     drop();
     expect(showToast).toHaveBeenCalledWith(guestAddRefusal("Deep Umbra (accumulated shadows)"), "warning");
-    expect(openModelCatalog).not.toHaveBeenCalled();
+    expect(requests).toEqual([]);
     expect(createNode).not.toHaveBeenCalled();
   });
 });

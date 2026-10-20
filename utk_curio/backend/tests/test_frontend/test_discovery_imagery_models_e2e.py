@@ -11,8 +11,9 @@ What only a browser settles here:
 * a key-gated source, with no key, says so and opens API Settings at its row;
 * with a key, a service row's dialog takes the recorded answers and the images
   land as one collection in the Data Catalog;
-* a model added from Hugging Face lands in the Model Catalog, goes onto example
-  10's second Image Segmentation node by a drag from the left rail, and runs;
+* a model added from Hugging Face lands in the Model Catalog. The left rail's
+  Models dropdown lists it once it is added to the dataflow, and from there it
+  goes onto example 10's second Image Segmentation node by a drag, and runs;
 * a model dropped on the empty canvas becomes an Image Segmentation node that
   names it, as a dataset dropped there becomes a Data Loading node.
 
@@ -33,6 +34,7 @@ from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 from playwright.sync_api import expect
 
 from .test_discovery_catalog import _goto_discovery, _require_recorded_corpus
+from .test_model_catalog_e2e import MODEL_DRAWER, _add_to_project, _card, _close_drawer, _open_drawer
 from .utils import (
     CANVAS_DROP_TARGET,
     REPO_ROOT,
@@ -285,13 +287,23 @@ def test_a_hugging_face_model_goes_onto_a_node_and_runs(
     assert len(added) == 1, models
     model_id = added[0]["packageId"]
 
-    # Back on the canvas: drag it from the left rail onto route 2's node.
+    # Back on the canvas. The left rail's Models dropdown lists the dataflow's
+    # models: DDRNet23-Slim, which example 10 declares, and not the new model,
+    # which only the account holds.
     page.goto(canvas_url)
     node_locator(page, ROUTE_TWO).locator("[data-curio-node-output]").wait_for(
         state="visible", timeout=300000
     )
     page.get_by_title("Open model palette").click()
     model_row = f'#models-palette [data-model-id="{model_id}"]'
+    expect(page.locator(f'#models-palette [data-model-id="{DDRNET}"]')).to_be_visible(timeout=30000)
+    expect(page.locator(model_row)).to_have_count(0)
+
+    # Added to the dataflow in the Model Catalog drawer, it is listed there;
+    # drag it onto route 2's node.
+    drawer = _open_drawer(page, "Model Catalog", MODEL_DRAWER)
+    _add_to_project(page, _card(drawer, added[0]["dirName"]), added[0]["name"])
+    _close_drawer(page, MODEL_DRAWER)
     expect(page.locator(model_row)).to_be_visible(timeout=30000)
     assert page.evaluate(_DRAG_MODEL_ONTO_NODE_JS, {"modelSelector": model_row, "nodeId": ROUTE_TWO}) == "ok"
     page.wait_for_function(

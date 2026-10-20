@@ -290,21 +290,23 @@ describe("the canvas Model Catalog drawer", () => {
     expect(confirm).not.toHaveTextContent("Keeps the model");
   });
 
-  test("opened by a drop of a model the dataflow lacks, runs the drop's Add once it has its listings", async () => {
+  /** A card of the open drawer dropped on the canvas, of a model the dataflow
+   *  lacks: the canvas asks the open drawer for its Add (`usePackageCardDrop`).
+   *  The drawer looks the model up in its listings, which a card dragged from
+   *  it has, so the drop comes once they are in. */
+  async function dropDeepUmbrasCard(onAdded: () => void) {
+    renderModelDrawer();
+    await modelCard("model.scout.deep-umbra@1");
+    let taken = false;
+    act(() => {
+      taken = packages.requestPackageAdd({ dirName: "model.scout.deep-umbra@1", kind: "model", onAdded });
+    });
+    expect(taken).toBe(true);
+  }
+
+  test("a card dropped on the canvas, of a model the dataflow lacks, runs the drawer's Add", async () => {
     const onAdded = jest.fn();
-    // What the provider passes when a drop opened the drawer. Untyped: the
-    // prop is new.
-    const props: any = {
-      presented: true,
-      onRequestClose: jest.fn(),
-      onExitComplete: jest.fn(),
-      addRequest: { dirName: "model.scout.deep-umbra@1", kind: "model", onAdded },
-    };
-    render(
-      <MemoryRouter>
-        <ModelCatalogDrawer {...props} />
-      </MemoryRouter>,
-    );
+    await dropDeepUmbrasCard(onAdded);
     const review = await screen.findByRole("dialog", { name: "" });
     expect(review).toHaveTextContent('Add "Deep Umbra (accumulated shadows)"');
     expect(onAdded).not.toHaveBeenCalled();
@@ -319,17 +321,7 @@ describe("the canvas Model Catalog drawer", () => {
 
   test("a drop's Add whose review is cancelled adds nothing and makes no node", async () => {
     const onAdded = jest.fn();
-    const props: any = {
-      presented: true,
-      onRequestClose: jest.fn(),
-      onExitComplete: jest.fn(),
-      addRequest: { dirName: "model.scout.deep-umbra@1", kind: "model", onAdded },
-    };
-    render(
-      <MemoryRouter>
-        <ModelCatalogDrawer {...props} />
-      </MemoryRouter>,
-    );
+    await dropDeepUmbrasCard(onAdded);
     const review = await screen.findByRole("dialog", { name: "" });
     await act(async () => {
       fireEvent.click(within(review).getByRole("button", { name: "Cancel" }));
