@@ -266,3 +266,63 @@ describe("trillToNotebook with inputs named input_k", () => {
     expect(cell.source).toContain("def node_m(input_0=None, input_1=None):");
   });
 });
+
+describe("trillToNotebook with a chart that reads its inputs stacked", () => {
+  /** load feeds base, in the Baseline box, and free, in no box; both feed the chart. */
+  function stackedChart(chartSpec: string): TrillSpec {
+    const flow = spec(
+      [
+        { id: "load", type: NodeType.DATA_LOADING, content: "return 1\n" },
+        { id: "base", type: NodeType.COMPUTATION_ANALYSIS, content: "return input_0\n" },
+        { id: "free", type: NodeType.COMPUTATION_ANALYSIS, content: "return input_0\n", title: "Free node" } as NodeSpec,
+        { id: "v", type: NodeType.VIS_VEGA, content: chartSpec },
+      ],
+      [
+        ["load", "base"],
+        ["load", "free"],
+        ["base", "v", "in"],
+        ["free", "v", "in_1"],
+      ],
+    );
+    flow.dataflow.scenarios = [{ id: "s-base", name: "Baseline", color: "#2a9d8f", nodes: ["base"] }];
+    return flow;
+  }
+  const chartCell = (nb: ReturnType<typeof trillToNotebook>) =>
+    codeCells(nb).find((c) => c.source.includes("_spec = {"))!.source;
+
+  it("draws scenario_name in the boxes' colors and order, then an input from no box, as the canvas does", () => {
+    const chart = '{"data": {"name": "inputs"}, "mark": "bar", "encoding": {"color": {"field": "scenario_name", "type": "nominal"}}}';
+    const source = chartCell(trillToNotebook(stackedChart(chart)));
+    const embedded = JSON.parse(source.split("_spec = ")[1].split("\n\n")[0]);
+    expect(embedded.encoding.color.scale).toEqual({ domain: ["Baseline", "Free node"], range: ["#2a9d8f", "#8a8f98"] });
+  });
+
+  it("stacks its inputs with utk_curio's stack_inputs, each under its box, as the canvas does", () => {
+    const source = chartCell(trillToNotebook(stackedChart('{"data": {"name": "inputs"}, "mark": "bar"}')));
+    expect(source).toContain("from utk_curio.sandbox.util.scenario_stack import input_rows, stack_inputs");
+    expect(source).toContain(
+      [
+        '_spec["datasets"]["inputs"] = stack_inputs([',
+        '    ("s-base", "Baseline", result_base),',
+        '    (None, "Free node", result_free),',
+        "])",
+      ].join("\n"),
+    );
+    // Each input is its own dataset too, a value as rows as the stacking reads
+    // it, and the spec keeps reading inputs.
+    expect(source).toContain('_spec["datasets"]["input_0"] = input_rows(result_base)');
+    expect(source).toContain('_spec["datasets"]["input_1"] = input_rows(result_free)');
+    expect(source).not.toContain("to_dict(");
+    expect(source).not.toContain('_spec["data"] =');
+  });
+
+  it("a chart that does not read inputs stacks nothing and imports nothing of Curio's", () => {
+    const source = chartCell(trillToNotebook(stackedChart('{"mark": "bar"}')));
+    expect(source).not.toContain("utk_curio");
+    expect(source).not.toContain("stack_inputs");
+    expect(source).toContain('_spec["datasets"]["input_1"] = result_free.to_dict(orient="records")');
+    expect(source).toContain('_spec["data"] = {"name": "input_0"}');
+    // The same dataflow's chart that reads inputs does.
+    expect(chartCell(trillToNotebook(stackedChart('{"data": {"name": "inputs"}, "mark": "bar"}')))).toContain("stack_inputs(");
+  });
+});

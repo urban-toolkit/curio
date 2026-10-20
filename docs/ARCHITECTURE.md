@@ -341,6 +341,40 @@ the one rule, read by a run and by a save, for which outputs are saved whatever 
 node's own toggle says: what a pinned tile reads and what a scenario's context and
 outcomes produce.
 
+### Scenarios in charts and maps
+
+A chart outside the scenario boxes names and colors what each box feeds it from the
+box its input comes from:
+
+- `src/utils/scenarios/inputScenarios.ts` is the one lookup: for each wired circle of a
+  node, the node feeding it, the box that node is in (`scenarioOfNode`) and the label
+  the input's rows carry (`inputLabelOf`: the box's id, name and color, else the
+  feeding node's name and `NO_SCENARIO_COLOR`). `scenarioColors.ts` holds the label
+  type, the `scenario` and `scenario_name` columns, `scenarioScale` and
+  `tableTextColor`.
+- A Vega-Lite spec that names the dataset `inputs` anywhere (`readsInputs` in
+  `src/utils/vegaDatasets.ts`, which makes `usesNamedDatasets` true for it) gets every
+  input's rows stacked in circle order, each with `__input__`, `scenario` and
+  `scenario_name`. `prepareVegaInputs` (`utils/vegaInput.ts`) builds the dataset with
+  `stackInputs` (`utils/scenarios/stackedInputs.ts`), from each frame's rows or, for
+  such a spec only, an input that is a value (`readGrammarInput`'s `values`). A
+  refusal is an `emptyReason` the node shows. `useVega` takes the labels as
+  `inputLabels`, stacks again on every compile and every new input, and judges an empty
+  render over the stacked rows. Its twins in Python are `stack_inputs` and
+  `input_rows` (`inputRows`, one input's own rows) in
+  `utk_curio/sandbox/util/scenario_stack.py`, which share `stack_scenarios`' rules and
+  which an exported notebook's chart cell imports (`NotebookConvertor.ts`, with the
+  boxes at `dataflow.scenarios`). `stackedInputs.cases.json` pins both, for Jest and
+  for `test_scenario_inputs.py`.
+- `adapters/node/vegaBehavior.ts` fills a spec that reads `inputs` with its own
+  inputs' labels (`withScenarioScales`, `utils/scenarios/scenarioScales.ts`), each box
+  once in the order `dataflow.scenarios` lists the boxes, then the inputs from no box in
+  circle order (`scaleLabelsOf`), and any other spec with an upstream Compare Scenarios
+  node's labels (`upstreamCompareLabels`). For the first, a change to any label's id,
+  name or color, or to the boxes' order, draws the chart again and stacks its rows
+  again; for the second, only what the scales draw. Both redraw the way the Compare
+  node's Chart tab draws (below). The exported notebook fills its chart cell the same way.
+
 ### Comparing scenarios
 
 The Compare Scenarios node (`curio.builtin/compare-scenarios`) is a Python code
@@ -368,11 +402,11 @@ node whose code it writes itself:
   chart reads on input_0, directly or through nodes of one input each, and the
   labels its chart draws with (`chartLabels`, which `CompareScenariosBody.tsx` uses
   too). `adapters/node/vegaBehavior.ts` passes the spec through `withScenarioScales`
-  (`scenarioScales.ts`) before `useVega` compiles it: every color, fill or stroke on
-  `scenario_name` takes the presets' `scenarioScale` (on a text mark, the Table
-  preset's `tableTextColor` shades), and every position, offset or facet on it takes
-  the names as its order, over what the spec writes, as `withScenarioColors` does for
-  a map layer. When the scenarios' names or colors change (`scenarioScale`), the
+  (`src/utils/scenarios/scenarioScales.ts`) before `useVega` compiles it: every color,
+  fill or stroke on `scenario_name` takes `scenarioScale` (on a text mark, the Table
+  preset's `tableTextColor` shades, both in `scenarioColors.ts`), and every position,
+  offset or facet on it takes the names as its order, over what the spec writes, as
+  `withScenarioColors` does for a map layer. When the scenarios' names or colors change (`scenarioScale`), the
   behavior draws the chart again the way `CompareChart.tsx` draws:
   `handleCompileGrammar` with `recordsProvenance` and `forwardsInput` off for that
   draw, so no version and no hand-off. It also sets `keepsSelection`, and `useVega`
@@ -383,7 +417,7 @@ node whose code it writes itself:
   the selection from the view the one before it built. It does not redraw during a
   run, which draws the chart itself. `scenarioScales.cases.json`
   pins the fill for Jest and for the Vega-Lite check in
-  `test_compare_scenarios_node.py`.
+  `test_scenario_inputs.py`.
 - The SCOUT Comparison package (`packages/scout.comparison@1`) holds seven Vega-Lite
   templates for comparisons no preset draws. Each names `behavior: vega` and
   `grammarId: vega-lite`, and its `.vl.json` starter is the node's whole content

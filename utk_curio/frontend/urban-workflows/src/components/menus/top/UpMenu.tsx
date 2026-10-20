@@ -338,6 +338,11 @@ export default function UpMenu() {
             workflowNameRef.current,
             "",
             packages,
+            undefined,
+            undefined,
+            undefined,
+            // A chart reading `inputs` names its rows by the boxes its inputs come from.
+            scenarios,
         );
         const notebook = trillToNotebook(trillSpec);
         const content = serializeNotebook(notebook);
