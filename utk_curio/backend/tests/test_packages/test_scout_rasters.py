@@ -302,6 +302,7 @@ def test_every_shipped_dataflow_with_a_raster_node_declares_the_package():
         "docs/examples/dataflows/quad-cities-flood-vulnerability.json",
     }, with_a_raster_node
     assert with_a_node == declaring == with_a_raster_node | {
+        "docs/examples/06-back-bay-road-sunlight.json",
         "docs/examples/dataflows/chicago-rain-wind-routing.json",
         "docs/examples/dataflows/scenario-comparison-charts.json",
     }, (with_a_node, declaring)

@@ -51,7 +51,9 @@
   "06-back-bay-road-sunlight": {
     "tags": [
       "Autark",
-      "GPU compute"
+      "Vega-Lite",
+      "GPU compute",
+      "SCOUT"
     ],
     "data_type": [
       "Geometries",

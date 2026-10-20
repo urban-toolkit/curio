@@ -16,8 +16,8 @@ and chicago-loop-shadow-towers since SCOUT's raster nodes declare it for the
 dataflows they are in (2026-10-18). Both are Scout's nodes since 2026-10-20
 (``curio.scout@1``): the package declares ``SCOUT`` and its two raster
 templates ``Rasters``, so the placement did not move. The routing dataflow
-gained ``Vega-Lite`` when its four charts became Scout's Bars nodes
-(2026-10-20).
+gained ``Vega-Lite`` when its four charts became Scout's Bars nodes, and
+example 06 ``Vega-Lite`` and ``SCOUT`` when its chart did (2026-10-20).
 The automatic sections must reproduce it from the files alone, and the
 hand-set ones live in the files themselves.
 """
