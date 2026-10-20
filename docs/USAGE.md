@@ -940,13 +940,14 @@ The Scout package (`curio.scout@1`) has fifteen charts that compare scenarios:
 strips**, **Stacked bars with totals**, **Donuts**, **Weighted matrix**, **Dots with a
 range**, **Bars**, **Grouped bars**, **Lines**, **Points**, **Pie**, **Lollipops** and
 **Table**. Each is a Vega-Lite node that takes one input per scenario: connect each
-scenario's outcome to one of its circles, in the order the chart draws them. Its spec
-reads its inputs as the dataset `inputs`, every row named by the scenario box its input
-comes from, and draws each scenario in its box's color. Set the columns it plots in its
-**Widgets** tab, and how Bars, Grouped bars, Lines, Pie and Lollipops combine a
-scenario's rows (**Combine**: mean, sum, median, minimum, maximum, a count of rows, or
-none). A new node's widgets hold their own names (`y`, `part`), so the chart says which
-column its inputs lack until you set them. A new chart opens with its template's spec,
+scenario's outcome to one of its circles. Its spec reads its inputs as the dataset
+`inputs` ([Every input in one dataset](#every-input-in-one-dataset)), every row named by
+the scenario box its input comes from, and draws each scenario in its box's color, in
+the order the dataflow lists the boxes. Set the columns it plots in its **Widgets** tab,
+and the Vega-Lite aggregate Bars, Grouped bars, Lines, Pie and Lollipops combine a
+scenario's rows with (**Combine**: `mean`, `sum`, `median`, `min`, `max` or `count`). A
+new node's widgets hold their own names (`y`, `part`), so the chart says which column
+its inputs lack until you set them. A new chart opens with its template's spec,
 which you can edit. The [package's README](../packages/curio.scout@1/README.md) lists
 each chart's widgets. Add the package to a dataflow from the Node Catalog drawer; the
 charts are then under **Scout** in the Tools panel's **Node Catalog** dropdown.
