@@ -216,9 +216,18 @@ def scenario_cards_wear_one_kind_color(ctx: Ctx) -> None:
     ctx.narrator.type_into(page.get_by_role("searchbox", name="Search scenarios"), "Riverside")
 
     cards = page.locator("main article[data-scenario-key]")
-    # Held from the sort, which moves the selection onto Cool roofs, through the
-    # read: every run meets what a busy runner meets now and then, no frame
-    # between the selected card's style changing and the read (#1041).
+    # The drawer follows the first card. Its graph marks the scenario, and its
+    # info rows grow, once the scenario's details answer.
+    drawer = page.locator('[data-curio-browse-drawer="true"]')
+    # "Recently edited" puts Riverside flood, saved last, first. Once its first
+    # scenario is in the drawer, the cards are drawn, so the sort below moves
+    # the selection onto Cool roofs on a drawn card, which fades its border in.
+    expect(drawer.get_by_role("heading", name="Levee raised", level=2)).to_be_visible(
+        timeout=30000
+    )
+    # Held from the sort through the read: every run meets what a busy runner
+    # meets now and then, no frame between the selected card's style changing
+    # and the read (#1041).
     with _animations_held(page):
         page.get_by_role("combobox", name="Sort scenarios").select_option("name")
         expect(cards).to_have_count(5, timeout=30000)
@@ -226,10 +235,6 @@ def scenario_cards_wear_one_kind_color(ctx: Ctx) -> None:
             ["Cool roofs", "Levee raised", "Marsh restored", "Pumps added", "Street trees"],
             timeout=30000,
         )
-
-        # The drawer follows the first card. Its graph marks the scenario, and
-        # its info rows grow, once the scenario's details answer.
-        drawer = page.locator('[data-curio-browse-drawer="true"]')
         expect(drawer.get_by_role("heading", name="Cool roofs", level=2)).to_be_visible(
             timeout=30000
         )
