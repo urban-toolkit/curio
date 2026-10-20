@@ -1,14 +1,20 @@
-"""Scenes on the Provenance window: its graph, panning it, and reverting."""
+"""Scenes on the provenance drawer: a loaded dataflow's history, moving
+around it, and reverting."""
 from __future__ import annotations
 
 from ..utils import assert_header_shows_save, save_dataflow_and_settle_header
 from .framework import Ctx, walkthrough
 from .steps import (
+    PROVENANCE_PANEL,
+    await_canvas_nodes,
+    await_provenance_history,
+    canvas_graph,
+    close_provenance,
     load_example_spec,
     open_provenance,
-    show_every_version,
-    canvas_graph,
-    await_canvas_nodes,
+    open_version,
+    provenance_counts,
+    put_version_on_canvas,
     version_graph,
 )
 
@@ -24,15 +30,16 @@ PROVENANCE_EXAMPLE = "01-vega-lite-chained-transforms.json"
     slug="provenance-graph-of-a-loaded-dataflow",
     example=PROVENANCE_EXAMPLE,
     refs=[186],
-    title="Loaded dataflows get a real provenance graph",
+    title="Loaded dataflows get a real provenance history",
     premise="Open a saved dataflow, then read its version history.",
     note="loadParsedTrill now snapshots each version from the arrays it was handed, "
         "not from the React Flow store, which is one commit stale inside its own "
         "synchronous load loop.",
     tests=["src/tests/hook/useWorkflowOperations.loadProvenance.test.ts",
            "test_frontend/test_walkthrough_baselines.py"],
-    clip_selector='[data-curio-modal-shell="true"]',
+    clip_selector=PROVENANCE_PANEL,
     fit_reactflow=False,
+    catalog_calendar=True,
 )
 def provenance_graph_of_a_loaded_dataflow(ctx: Ctx) -> None:
     spec = load_example_spec(PROVENANCE_EXAMPLE)["dataflow"]
@@ -40,28 +47,33 @@ def provenance_graph_of_a_loaded_dataflow(ctx: Ctx) -> None:
 
     ctx.say("An example dataflow, opened from the gallery",
             "Every node and edge came from the saved spec.")
-    dialog = open_provenance(ctx)
+    panel = open_provenance(ctx)
 
-    versions = dialog.locator(".react-flow__node")
+    versions = panel.locator("[data-provenance-item]")
     assert versions.count() == 1 + node_count + edge_count, (
-        f"the graph has {versions.count()} versions; one per loaded node and "
+        f"the history lists {versions.count()} versions; one per loaded node and "
         f"edge plus the initial one would be {1 + node_count + edge_count}"
+    )
+    newest = versions.last
+    assert newest.get_attribute("data-provenance-current") == "true", (
+        "the drawer does not mark the newest version as the one on the canvas"
     )
 
     ctx.say("One version per node, then one per connection",
-            "The window opens on the newest.")
+            "The newest is the one on the canvas.")
+    open_version(ctx.page, newest, click=ctx.click)
 
     # The load-bearing check. DataflowThumbnail draws one <line> per edge and two
     # <rect> per node, and SKIPS any edge whose endpoints are missing from the
     # same preview -- so a version captured from the stale React Flow store (one
     # node, no edges) renders a background rect and nothing else. That is what
     # made the boxes read as blank and isolated.
-    marks = versions.last.evaluate(
+    marks = newest.evaluate(
         "el => { const svg = el.querySelector('svg');"
         " return svg ? { lines: svg.querySelectorAll('line').length,"
         " rects: svg.querySelectorAll('rect').length } : null; }"
     )
-    assert marks, "the newest provenance version rendered no thumbnail at all"
+    assert marks, "the newest version, opened, shows no thumbnail at all"
     assert marks["lines"] == edge_count, (
         f"the newest version's thumbnail draws {marks['lines']} of the "
         f"dataflow's {edge_count} connections - its snapshot is missing the "
@@ -75,50 +87,78 @@ def provenance_graph_of_a_loaded_dataflow(ctx: Ctx) -> None:
     ctx.say("Every version holds the whole graph",
             "The dataflow as it stood at that step, not one node from a stale "
             "snapshot.")
-    ctx.focus(versions.last, hold=1600)
+    newest.get_by_text("On the canvas now").scroll_into_view_if_needed()
+    ctx.focus(newest, hold=1600)
+
+
+#: Whether the whole of a version shows in the drawer's scrolling body. With
+#: nothing to scroll, everything shows.
+_IN_VIEW_JS = """(el) => {
+    let box = el.parentElement;
+    while (box && !(box.scrollHeight > box.clientHeight
+            && /auto|scroll/.test(getComputedStyle(box).overflowY))) box = box.parentElement;
+    if (!box) return true;
+    const a = el.getBoundingClientRect();
+    const b = box.getBoundingClientRect();
+    return a.top >= b.top - 1 && a.bottom <= b.bottom + 1;
+}"""
 
 
 @walkthrough(
     slug="provenance-graph-navigation",
     example=PROVENANCE_EXAMPLE,
     refs=[187],
-    title="The provenance graph pans and zooms",
-    premise="Drag the version graph to reach a node below the fold.",
-    note="ModalShell puts React Flow's own `nopan`/`nowheel` classes on the dialog, "
-        "and React Flow matches them by ancestor. The inner graph now names "
-        "opt-out classes nothing inside it carries.",
-    tests=["src/tests/components/trillProvenanceWindowPan.test.tsx",
+    title="Moving around the provenance history",
+    premise="Open a version, scroll back to the first one, and flip to the Graph.",
+    note="The drawer opens on the version in use and scrolls; the Graph keeps a "
+         "line into every version as boxes open and the view flips.",
+    tests=["src/tests/components/provenanceDrawer.test.tsx",
+           "src/tests/utils/provenanceTree.test.ts",
+           "test_frontend/test_provenance_lines_e2e.py",
            "test_frontend/test_walkthrough_baselines.py"],
-    clip_selector='[data-curio-modal-shell="true"]',
+    clip_selector=PROVENANCE_PANEL,
     fit_reactflow=False,
+    catalog_calendar=True,
 )
 def provenance_graph_navigation(ctx: Ctx) -> None:
     page = ctx.page
-    dialog = open_provenance(ctx)
+    panel = open_provenance(ctx)
+    versions = panel.locator("[data-provenance-item]")
+    count = versions.count()
+    newest, first = versions.last, versions.first
 
-    graph = dialog.locator(".react-flow__pane").first
-    box = graph.bounding_box()
-    assert box, "the provenance graph has no layout box"
-    before = _viewport_transform(page)
-
-    ctx.say("Drag the graph", "Reach the versions below the fold.")
-    page.mouse.move(box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
-    page.mouse.down()
-    for step in range(1, 13):
-        page.mouse.move(
-            box["x"] + box["width"] / 2 - step * 9,
-            box["y"] + box["height"] / 2 - step * 11,
-        )
-        ctx.beat(40)
-    page.mouse.up()
-    ctx.beat(700)
-
-    assert _viewport_transform(page) != before, (
-        "the drag did not move the graph at all - the modal's own `nopan` class "
-        "is an ancestor of the canvas, and React Flow matches it by ancestor, so "
-        "every pan and wheel-zoom inside the dialog is refused"
+    assert newest.evaluate(_IN_VIEW_JS), "the drawer did not open on the version in use"
+    ctx.say("The drawer opens on the version in use", "The newest, at the bottom.")
+    open_version(page, newest, click=ctx.click)
+    newest.get_by_text("On the canvas now").scroll_into_view_if_needed()
+    ctx.beat(500)
+    assert not first.evaluate(_IN_VIEW_JS), (
+        "with the newest version open, the first one still shows: the history "
+        "fits the drawer, so this scene cannot show it scrolling"
     )
-    ctx.say("The graph pans", "Versions past the fold are reachable.")
+
+    ctx.say("Scroll back", "Reach the first version.")
+    first.scroll_into_view_if_needed()
+    ctx.beat(500)
+    assert first.evaluate(_IN_VIEW_JS), "scrolling did not bring the first version into view"
+    assert not newest.evaluate(_IN_VIEW_JS), (
+        "the newest version still shows whole beside the first one: the drawer "
+        "did not scroll"
+    )
+
+    ctx.say("Flip to the Graph", "One box per version, a line into each one after the first.")
+    ctx.click(panel.get_by_role("button", name="Graph", exact=True))
+    counts = await_provenance_history(page)
+    assert counts["items"] == count and counts["links"] == count - 1 == counts["drawn"], (
+        f"the Graph shows {counts}; {count} versions need {count - 1} drawn lines"
+    )
+    assert newest.locator("button").first.get_attribute("aria-expanded") == "true", (
+        "the version opened in the List came back closed in the Graph"
+    )
+    first.scroll_into_view_if_needed()
+    ctx.beat(600)
+    ctx.say("The same history, as the Graph", "Opened versions stay open.")
+    assert provenance_counts(page)["drawn"] == count - 1
 
 
 @walkthrough(
@@ -126,7 +166,7 @@ def provenance_graph_navigation(ctx: Ctx) -> None:
     example=PROVENANCE_EXAMPLE,
     refs=[195],
     title="Reverting a dataflow to an earlier version",
-    premise="Step back through the version graph, saving each version, and "
+    premise="Step back through the version history, saving each version, and "
             "watch the canvas follow.",
     note="onConnect resolved its target with `nodes.find(...) as Node` and never "
          "checked it, so reverting to a version whose edges named nodes it does "
@@ -143,10 +183,10 @@ def provenance_reverting_to_a_previous_version(ctx: Ctx) -> None:
     ctx.say("The dataflow as saved",
             f"{saved['nodes']} nodes, {saved['edges']} connections.")
 
-    dialog = open_provenance(ctx)
-    versions = dialog.locator(".react-flow__node")
+    panel = open_provenance(ctx)
+    versions = panel.locator("[data-provenance-item]")
     count = versions.count()
-    assert count > 1, f"the provenance graph offers {count} versions to revert to"
+    assert count > 1, f"the provenance history offers {count} versions to revert to"
 
     # Newest-first, skipping the one already on the canvas, so the dataflow
     # visibly unwinds. Four is the floor: a single hop would not show that the
@@ -157,20 +197,18 @@ def provenance_reverting_to_a_previous_version(ctx: Ctx) -> None:
         f"back through at least four"
     )
 
-    ctx.say("Revert by clicking a version",
-            "The canvas becomes exactly what that version holds.")
+    ctx.say("Revert from a version's own button",
+            "Opening a version shows it; its button puts it on the canvas.")
 
     def capture_canvas(label: str, *, nodes: int, reopen: bool = True) -> None:
-        # The modal covers the canvas each frame is about, so close it for the
-        # shot and open it again for the next click. The chosen version stays
-        # selected when it reopens. The first version is empty, and an empty
-        # canvas has nothing to fit.
-        ctx.click(page.get_by_role("button", name="Close").last)
-        dialog.wait_for(state="hidden", timeout=20000)
+        # The drawer covers the right of the canvas each frame is about, so close
+        # it for the shot and open it again for the next version. The first
+        # version is empty, and an empty canvas has nothing to fit.
+        close_provenance(ctx)
         # A revert is an edit, so the header reads "Unsaved" until the 30 s
         # autosave, which lands on whichever frame the runner's speed puts it
         # near. Save the version on the canvas so every frame shows its own
-        # saved header and categories. A save adds no version to the graph.
+        # saved header and categories. A save adds no version to the history.
         save_dataflow_and_settle_header(page)
         assert_header_shows_save(page)
         ctx.capture(label, fit_reactflow=nodes > 0)
@@ -178,10 +216,10 @@ def provenance_reverting_to_a_previous_version(ctx: Ctx) -> None:
             open_provenance(ctx)
 
     for index in targets:
-        show_every_version(ctx, dialog)
         version = versions.nth(index)
+        open_version(page, version, click=ctx.click)
         expected = version_graph(version)
-        ctx.click(version, hold=520)
+        put_version_on_canvas(ctx, version)
         await_canvas_nodes(page, expected["nodes"])
         actual = canvas_graph(page)
 
@@ -195,14 +233,22 @@ def provenance_reverting_to_a_previous_version(ctx: Ctx) -> None:
             f"nodes and {actual['edges']} connections on the canvas, but that "
             f"version holds {expected['nodes']} and {expected['edges']}"
         )
+        assert version.get_attribute("data-provenance-current") == "true", (
+            f"version {index + 1} is on the canvas, but the drawer still marks "
+            f"another one as in use"
+        )
+        assert versions.count() == count, (
+            f"reverting changed the history: {versions.count()} versions, not {count}"
+        )
         capture_canvas(f"reverted-to-v{index + 1:02d}", nodes=expected["nodes"])
 
     ctx.say(f"Stepped back through {len(targets)} versions",
             "Each one put its own graph on the canvas.")
 
     # Forward to the newest, so the canvas ends where it started.
-    show_every_version(ctx, dialog)
-    ctx.click(versions.nth(count - 1), hold=520)
+    newest = versions.nth(count - 1)
+    open_version(page, newest, click=ctx.click)
+    put_version_on_canvas(ctx, newest)
     await_canvas_nodes(page, saved["nodes"])
     restored = canvas_graph(page)
     assert restored == saved, (
@@ -219,11 +265,3 @@ def provenance_reverting_to_a_previous_version(ctx: Ctx) -> None:
     ctx.beat(800)
     ctx.say("And forward again",
             "Back to the saved dataflow, with no runtime error anywhere in the walk.")
-
-
-def _viewport_transform(page) -> str:
-    return page.evaluate(
-        "() => { const el = document.querySelector("
-        "'[data-curio-modal-shell=\"true\"] .react-flow__viewport');"
-        " return el ? getComputedStyle(el).transform : ''; }"
-    )

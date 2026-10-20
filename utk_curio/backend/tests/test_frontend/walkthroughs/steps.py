@@ -1,14 +1,15 @@
 """Steps the scenes share: opening an example, finding a node in it, menus,
-the Provenance window, and counting what the canvas holds.
+the provenance drawer, and counting what the canvas holds.
 """
 from __future__ import annotations
 
 import json
 import os
+import re
 
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 
-from ..utils import REPO_ROOT, frame_node
+from ..utils import REPO_ROOT, frame_node, wait_for_drawer_closed
 from .framework import Ctx
 
 
@@ -76,81 +77,132 @@ def frame_until_on_top(page, node_id: str, target, *, attempts: int = 6) -> None
     )
 
 
-def open_provenance(ctx: Ctx):
-    """Open the Provenance modal from the View menu and return its dialog."""
+#: The provenance drawer, over the dataflow canvas on the right.
+PROVENANCE_DRAWER = '[data-curio-provenance-drawer="true"]'
+#: Its panel, which a capture of the drawer clips to.
+PROVENANCE_PANEL = f'{PROVENANCE_DRAWER} [role="dialog"]'
+#: A version in the drawer: a row of the List, a box of the Graph.
+PROVENANCE_ITEM = f"{PROVENANCE_DRAWER} [data-provenance-item]"
+#: A line of the Graph, from a version to the next one or to a branch.
+PROVENANCE_LINK = f"{PROVENANCE_DRAWER} [data-provenance-link]"
+
+
+def open_provenance(ctx: Ctx, *, view: str = "list"):
+    """Open the provenance drawer from the View menu and return its panel.
+
+    Returns once the drawer rests against the right edge, on *view* ("list" or
+    "graph"; the drawer opens on the one picked last), with its history drawn.
+    """
     page = ctx.page
     ctx.click(page.get_by_role("button", name="View menu", exact=True))
-    # Found by its test id: the node editor also has a tab named "Provenance".
+    # Found by its test id: a node's header also has a Provenance button.
     ctx.click(page.get_by_test_id("provenance-menu-item"))
-    dialog = page.get_by_role("dialog").filter(has_text="Provenance for")
-    dialog.wait_for(state="visible", timeout=20000)
-    # The graph lays out through dagre on mount and draws its edges once the
-    # cards are measured; capture after both or the baseline records a graph
-    # half drawn.
-    await_provenance_graph(page)
+    panel = page.locator(PROVENANCE_PANEL)
+    panel.wait_for(state="visible", timeout=20000)
+    await_drawer_at_rest(page)
+    switch = panel.get_by_role("button", name="Graph" if view == "graph" else "List", exact=True)
+    if switch.get_attribute("aria-pressed") != "true":
+        ctx.click(switch)
+    await_provenance_history(page)
     ctx.beat(900)
-    return dialog
+    return panel
 
 
-#: The Provenance window. It opens over the dataflow canvas, whose own React
-#: Flow nodes and edges a bare selector would count too.
-PROVENANCE_MODAL = '[data-curio-modal-shell="true"]'
-PROVENANCE_CARD = f"{PROVENANCE_MODAL} .react-flow__node"
-PROVENANCE_EDGE_PATH = f"{PROVENANCE_MODAL} .react-flow__edges path.react-flow__edge-path"
-
-_PROVENANCE_COUNTS_JS = """([card, edge]) => ({
-    cards: document.querySelectorAll(card).length,
-    edges: document.querySelectorAll(edge).length,
-})"""
-
-_PROVENANCE_DRAWN_JS = """([card, edge]) => {
-    const cards = document.querySelectorAll(card).length;
-    return cards > 0 && document.querySelectorAll(edge).length === cards - 1;
+_DRAWER_AT_REST_JS = """(sel) => {
+    const root = document.querySelector(sel);
+    const panel = root && root.querySelector('[role="dialog"]');
+    if (!panel || root.getAttribute('aria-hidden') !== 'false') return false;
+    const box = panel.getBoundingClientRect();
+    return box.width > 0 && Math.abs(box.right - window.innerWidth) < 1;
 }"""
 
 
-def provenance_graph_counts(page) -> dict:
-    """``{cards, edges}`` the Provenance window's version graph shows now."""
-    return page.evaluate(_PROVENANCE_COUNTS_JS, [PROVENANCE_CARD, PROVENANCE_EDGE_PATH])
+def await_drawer_at_rest(page, *, timeout: float = 20000) -> None:
+    """Wait until the provenance drawer has slid all the way in from the right,
+    so a capture never records it part way."""
+    page.wait_for_function(_DRAWER_AT_REST_JS, arg=PROVENANCE_DRAWER, timeout=timeout)
 
 
-def await_provenance_graph(page, *, timeout: float = 20000) -> dict:
-    """Wait until the Provenance window has drawn its whole version graph.
+_PROVENANCE_COUNTS_JS = """([item, link]) => {
+    const links = Array.from(document.querySelectorAll(link));
+    return {
+        items: document.querySelectorAll(item).length,
+        links: links.length,
+        drawn: links.filter((g) => {
+            const path = g.querySelector('path');
+            return path && path.getTotalLength() > 0;
+        }).length,
+    };
+}"""
 
-    React Flow draws an edge only once both of its cards are measured, and
-    every version but the first has one parent edge, so the graph is drawn when
-    it shows one edge per card after the first. Returns ``{cards, edges}``.
+_PROVENANCE_DRAWN_JS = """([item, link]) => {
+    const items = document.querySelectorAll(item).length;
+    if (items === 0) return false;
+    const view = document.querySelector('[data-provenance-view]');
+    if (!view || view.getAttribute('data-provenance-view') !== 'graph') return true;
+    const links = Array.from(document.querySelectorAll(link));
+    return links.length === items - 1 && links.every((g) => {
+        const path = g.querySelector('path');
+        return path && path.getTotalLength() > 0;
+    });
+}"""
+
+
+def provenance_counts(page) -> dict:
+    """``{items, links, drawn}`` the provenance drawer shows now: its versions,
+    the Graph's lines, and how many of those have a length."""
+    return page.evaluate(_PROVENANCE_COUNTS_JS, [PROVENANCE_ITEM, PROVENANCE_LINK])
+
+
+def await_provenance_history(page, *, timeout: float = 20000) -> dict:
+    """Wait until the provenance drawer shows its history.
+
+    The List is drawn with the drawer. The Graph draws its lines once its boxes
+    have landed, and every version but the first is made from one other, so a
+    one-chain Graph is drawn when it shows a line with a length into every
+    version after the first. Returns ``{items, links, drawn}``.
     """
     try:
-        page.wait_for_function(
-            _PROVENANCE_DRAWN_JS, arg=[PROVENANCE_CARD, PROVENANCE_EDGE_PATH],
-            timeout=timeout,
-        )
+        page.wait_for_function(_PROVENANCE_DRAWN_JS, arg=[PROVENANCE_ITEM, PROVENANCE_LINK], timeout=timeout)
     except PlaywrightTimeoutError:
-        counts = provenance_graph_counts(page)
+        counts = provenance_counts(page)
         raise AssertionError(
-            f"the Provenance window did not draw its version graph within "
-            f"{timeout / 1000:.0f} s: {counts['cards']} versions and "
-            f"{counts['edges']} edges, where a drawn graph has one edge per "
-            f"version after the first"
+            f"the provenance drawer did not show its history within "
+            f"{timeout / 1000:.0f} s: {counts['items']} versions and "
+            f"{counts['links']} lines, {counts['drawn']} of them drawn, where "
+            f"the Graph draws a line into every version after the first"
         ) from None
-    return provenance_graph_counts(page)
+    return provenance_counts(page)
 
 
-def show_every_version(ctx: Ctx, dialog) -> None:
-    """Frame the whole version chain, the way a user reaches an old version.
-
-    The window opens on the selected version at a readable zoom (#507), so the
-    rest of the chain is off screen until it is panned to or fitted.
-    """
-    ctx.click(dialog.get_by_role("button", name="fit view"))
-    ctx.beat(600)
+_OPENED = re.compile(r"^(Put this version on the canvas|On the canvas now)$")
 
 
-# The provenance modal renders its own React Flow inside a portal on
-# document.body, so a bare `.react-flow__node` count would mix the version graph
-# in with the dataflow behind it. Everything below counts only what is OUTSIDE
-# the modal - i.e. the canvas the user is reverting.
+def open_version(page, version, *, click=None) -> None:
+    """Open *version* in the drawer, as a click on it does, and wait for its
+    details. *click* is the scene's own click (``ctx.click``), if any."""
+    head = version.locator("button").first
+    if head.get_attribute("aria-expanded") != "true":
+        (click or (lambda target: target.click()))(head)
+    version.get_by_text(_OPENED).wait_for(state="visible", timeout=10000)
+
+
+def put_version_on_canvas(ctx: Ctx, version) -> None:
+    """Press an opened version's own button, the only thing that restores it."""
+    ctx.click(version.get_by_role("button", name="Put this version on the canvas", exact=True), hold=520)
+
+
+def close_provenance(ctx: Ctx) -> None:
+    """Close the provenance drawer with its close button and wait until it is gone."""
+    page = ctx.page
+    ctx.click(page.get_by_role("button", name="Close Dataflow provenance", exact=True))
+    wait_for_drawer_closed(page, PROVENANCE_DRAWER)
+
+
+# A dialog over the canvas (a ModalShell) can render a React Flow of its own
+# in a portal on document.body, so a bare `.react-flow__node` count would mix
+# it in with the dataflow behind it. Everything below counts only what is
+# OUTSIDE one - i.e. the canvas. The provenance drawer draws no React Flow.
 _CANVAS_COUNT_JS = """
 (sel) => Array.from(document.querySelectorAll(sel))
     .filter((el) => !el.closest('[data-curio-modal-shell="true"]')).length

@@ -525,7 +525,7 @@
  "tests.test_frontend.test_project_save_load::test_rename_by_clicking_away_then_the_logo_shows_the_new_name[chromium]": 5.1,
  "tests.test_frontend.test_project_save_load::test_rename_then_save_updates_the_projects_card[chromium]": 3.4,
  "tests.test_frontend.test_project_save_load::test_renaming_from_the_projects_list_reaches_the_canvas_title[chromium]": 2.7,
- "tests.test_frontend.test_provenance_zoom_edges_e2e::test_provenance_edges_survive_zooming_in[chromium]": 10.9,
+ "tests.test_frontend.test_provenance_lines_e2e::test_provenance_graph_keeps_a_line_into_every_version[chromium]": 10.9,
  "tests.test_frontend.test_restored_input_draws_e2e::test_a_reopened_autark_map_draws_from_its_saved_input[chromium]": 13.3,
  "tests.test_frontend.test_restored_input_draws_e2e::test_a_reopened_chart_draws_from_its_saved_input[chromium]": 7.8,
  "tests.test_frontend.test_restored_outputs_fetched_once_e2e::test_a_reopen_and_its_dashboard_fetch_each_saved_output_once[chromium]": 15.4,
