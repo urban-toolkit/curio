@@ -118,6 +118,68 @@ describe("the Monitor drawer", () => {
   });
 });
 
+describe("a header drawer with the catalog drawers' pin", () => {
+  const pinnable = (onRequestClose: () => void, extra: Partial<React.ComponentProps<typeof HeaderDrawer>> = {}) => (
+    <HeaderDrawer
+      presented
+      onRequestClose={onRequestClose}
+      onExitComplete={() => undefined}
+      title="Dataflow provenance"
+      titleId="t"
+      name="provenance"
+      pinnable
+      {...extra}
+    >
+      Versions
+    </HeaderDrawer>
+  );
+
+  it("unpinned, closes on Escape and on its scrim like any header drawer", () => {
+    const close = jest.fn();
+    render(pinnable(close));
+    fireEvent.keyDown(window, { key: "Escape" });
+    fireEvent.click(screen.getByRole("button", { name: "Dismiss Dataflow provenance" }));
+    expect(close).toHaveBeenCalledTimes(2);
+  });
+
+  it("pinned, Escape and the scrim leave it open, and its close button still closes it", () => {
+    const close = jest.fn();
+    render(pinnable(close));
+    fireEvent.click(screen.getByRole("button", { name: "Pin drawer open" }));
+    expect(screen.getByRole("button", { name: "Unpin drawer" })).toHaveAttribute("aria-pressed", "true");
+
+    fireEvent.keyDown(window, { key: "Escape" });
+    fireEvent.click(screen.getByRole("button", { name: "Dismiss Dataflow provenance" }));
+    expect(close).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "Close Dataflow provenance" }));
+    expect(close).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(screen.getByRole("button", { name: "Unpin drawer" }));
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(close).toHaveBeenCalledTimes(2);
+  });
+
+  it("is the catalog drawers' width unless wide, and shows its subtitle and actions", () => {
+    render(pinnable(jest.fn(), { wide: false, subtitle: "Versions of Heat study", actions: <button type="button">Graph</button> }));
+    const dialog = screen.getByRole("dialog", { name: "Dataflow provenance" });
+    expect(dialog.className).toContain("drawer");
+    expect(dialog.className).not.toContain("drawerWide");
+    expect(screen.getByText("Versions of Heat study")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Graph" })).toBeInTheDocument();
+  });
+
+  it("API Settings and Monitor keep no pin and their width", () => {
+    render(
+      <HeaderDrawer presented onRequestClose={jest.fn()} onExitComplete={() => undefined} title="Monitor" titleId="m" name="monitor">
+        Tiles
+      </HeaderDrawer>,
+    );
+    expect(screen.queryByRole("button", { name: "Pin drawer open" })).toBeNull();
+    expect(screen.getByRole("dialog", { name: "Monitor" }).className).toContain("drawerWide");
+  });
+});
+
 describe("Escape with a header drawer over another surface", () => {
   // The catalog drawers' and the chat panel's guard, as escapeDefersToModal
   // pins it in each of their sources.
