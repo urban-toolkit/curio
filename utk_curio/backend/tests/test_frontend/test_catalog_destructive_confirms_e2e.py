@@ -37,7 +37,7 @@ from playwright.sync_api import expect
 from .utils import (
     accept_confirm_dialog,
     api_json,
-    drag_to_canvas,
+    drag_builtin_to_canvas,
     require_owner_view,
     require_project_page,
     require_user_auth,
@@ -338,7 +338,7 @@ def test_publishing_is_not_a_canvas_drawer_action(
     expect(page.locator(DATA_DRAWER)).to_have_count(0, timeout=10000)
 
     # 2. Produce a dataset of the user's own: run a node that outputs a frame.
-    loading = drag_to_canvas(page, page.locator(LOADING_TILE), at=(220, 200))
+    loading = drag_builtin_to_canvas(page, LOADING_TILE, at=(220, 200))
     set_node_code(page, loading, OWN_DATASET_CODE)
     # Saving the output is opt-in per node and off by default, so a plain run
     # leaves a parquet and no catalog row. See ``enable_save_output``.
@@ -382,7 +382,7 @@ def test_publish_is_offered_only_for_the_users_own_data_and_asks_first(
     _enter(page, app_frontend.base_url, current_server, "confirm_publish")
 
     # Something of the user's own, so there is a Publish to find.
-    loading = drag_to_canvas(page, page.locator(LOADING_TILE), at=(220, 200))
+    loading = drag_builtin_to_canvas(page, LOADING_TILE, at=(220, 200))
     set_node_code(page, loading, OWN_DATASET_CODE)
     # Saving the output is opt-in per node and off by default, so a plain run
     # leaves a parquet and no catalog row. See ``enable_save_output``.
@@ -540,7 +540,7 @@ def test_the_catalog_pages_use_one_button_vocabulary(
     _enter(page, app_frontend.base_url, current_server, "catalog_button_vocab")
 
     # Produce something of the user's own, so a Publish action exists to look at.
-    loading = drag_to_canvas(page, page.locator(LOADING_TILE), at=(220, 200))
+    loading = drag_builtin_to_canvas(page, LOADING_TILE, at=(220, 200))
     set_node_code(page, loading, OWN_DATASET_CODE)
     # Saving the output is opt-in per node and off by default, so a plain run
     # leaves a parquet and no catalog row. See ``enable_save_output``.

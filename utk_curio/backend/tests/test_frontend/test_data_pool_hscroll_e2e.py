@@ -36,7 +36,7 @@ from typing import TYPE_CHECKING
 from .utils import (
     connect_nodes,
     dismiss_toasts,
-    drag_to_canvas,
+    drag_builtin_to_canvas,
     node_locator,
     require_project_page,
     require_user_auth,
@@ -92,8 +92,8 @@ def test_the_data_pool_scrolls_to_its_last_column(
     )
     require_owner_view(page)
 
-    loading = drag_to_canvas(page, page.locator(LOADING_TILE), at=POS_UP)
-    pool = drag_to_canvas(page, page.locator(POOL_TILE), at=POS_DOWN)
+    loading = drag_builtin_to_canvas(page, LOADING_TILE, at=POS_UP)
+    pool = drag_builtin_to_canvas(page, POOL_TILE, at=POS_DOWN)
     connect_nodes(page, loading, pool)
 
     set_node_code(

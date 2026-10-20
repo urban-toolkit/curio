@@ -30,7 +30,7 @@ from typing import TYPE_CHECKING
 from .utils import (
     connect_nodes,
     dismiss_toasts,
-    drag_to_canvas,
+    drag_builtin_to_canvas,
     require_project_page,
     require_user_auth,
     run_node_and_wait,
@@ -73,8 +73,8 @@ def test_a_library_imported_upstream_is_usable_downstream(
     )
     require_owner_view(page)
 
-    upstream = drag_to_canvas(page, page.locator(ANALYSIS_TILE), at=POS_UP)
-    downstream = drag_to_canvas(page, page.locator(ANALYSIS_TILE), at=POS_DOWN)
+    upstream = drag_builtin_to_canvas(page, ANALYSIS_TILE, at=POS_UP)
+    downstream = drag_builtin_to_canvas(page, ANALYSIS_TILE, at=POS_DOWN)
     connect_nodes(page, upstream, downstream)
 
     # Upstream imports under an alias the seed does not provide, so a pass can
@@ -134,7 +134,7 @@ def test_numpy_and_shapely_work_with_no_import_line_at_all(
     )
     require_owner_view(page)
 
-    node_id = drag_to_canvas(page, page.locator(ANALYSIS_TILE), at=POS_UP)
+    node_id = drag_builtin_to_canvas(page, ANALYSIS_TILE, at=POS_UP)
     set_node_code(
         page, node_id,
         # Deliberately no imports. pd was always available; np and wkt are the

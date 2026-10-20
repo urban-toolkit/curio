@@ -63,6 +63,7 @@ from .utils import (
     canvas_node_type,
     connect_nodes,
     drag_to_canvas,
+    drag_builtin_to_canvas,
     open_tools_palette,
     require_project_page,
     require_user_auth,
@@ -269,7 +270,7 @@ def test_wiring_a_consumer_grows_dataset_lineage(
     )
 
     # 2. A NODE TO CONSUME IT, not yet connected to anything.
-    transform_id = drag_to_canvas(page, page.locator(TRANSFORM_TILE), at=POS_TRANSFORM)
+    transform_id = drag_builtin_to_canvas(page, TRANSFORM_TILE, at=POS_TRANSFORM)
     assert _unversioned(canvas_node_type(page, transform_id)) == TRANSFORM_TYPE
 
     # 3. BEFORE. Two nodes and the dataset are on the canvas, but no edge, so the

@@ -33,7 +33,7 @@ from .utils import (
     api_json,
     connect_nodes,
     dismiss_toasts,
-    drag_to_canvas,
+    drag_builtin_to_canvas,
     node_execution_timeout_ms,
     node_locator,
     read_node_code,
@@ -271,9 +271,9 @@ def test_a_node_reads_several_inputs_through_chips(
     require_owner_view(page)
     project_id = session["project"]["id"]
 
-    a = drag_to_canvas(page, page.locator(TILE), at=POS_A)
-    b = drag_to_canvas(page, page.locator(TILE), at=POS_B)
-    t = drag_to_canvas(page, page.locator(TILE), at=POS_T)
+    a = drag_builtin_to_canvas(page, TILE, at=POS_A)
+    b = drag_builtin_to_canvas(page, TILE, at=POS_B)
+    t = drag_builtin_to_canvas(page, TILE, at=POS_T)
     set_node_code(page, a, A_CODE)
     set_node_code(page, b, B_CODE)
     set_node_code(page, t, T_TEMPLATE)

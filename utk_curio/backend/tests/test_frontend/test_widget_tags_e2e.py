@@ -39,7 +39,7 @@ from typing import TYPE_CHECKING
 from .utils import (
     api_json,
     connect_nodes,
-    drag_to_canvas,
+    drag_builtin_to_canvas,
     node_execution_timeout_ms,
     node_locator,
     play_node,
@@ -228,8 +228,8 @@ def test_a_widget_tag_drives_the_code_and_survives_a_reopen(
     require_owner_view(page)
     project_id = session["project"]["id"]
 
-    source = drag_to_canvas(page, page.locator(TILE), at=(150, 150))
-    reader = drag_to_canvas(page, page.locator(TILE), at=(760, 150))
+    source = drag_builtin_to_canvas(page, TILE, at=(150, 150))
+    reader = drag_builtin_to_canvas(page, TILE, at=(760, 150))
     connect_nodes(page, source, reader)
     set_node_code(page, source, SOURCE_CODE)
     set_node_code(page, reader, READER_CODE)
@@ -361,8 +361,8 @@ def test_scout_controls_reach_python_and_survive_a_reopen(
     require_owner_view(page)
     project_id = session["project"]["id"]
 
-    source = drag_to_canvas(page, page.locator(TILE), at=(150, 150))
-    reader = drag_to_canvas(page, page.locator(TILE), at=(760, 150))
+    source = drag_builtin_to_canvas(page, TILE, at=(150, 150))
+    reader = drag_builtin_to_canvas(page, TILE, at=(760, 150))
     connect_nodes(page, source, reader)
     set_node_code(page, reader, READER_CODE)
 
@@ -519,7 +519,7 @@ def test_a_reference_is_one_chip_that_edits_as_one(
     )
     require_owner_view(page)
 
-    node = drag_to_canvas(page, page.locator(TILE), at=(300, 150))
+    node = drag_builtin_to_canvas(page, TILE, at=(300, 150))
     _add_number_widget(page, node, name="factor", label="Factor", default=2)
     set_node_code(page, node, CHIP_CODE)
     node_locator(page, node).locator(".monaco-editor .curio-widget-ref").first.wait_for(

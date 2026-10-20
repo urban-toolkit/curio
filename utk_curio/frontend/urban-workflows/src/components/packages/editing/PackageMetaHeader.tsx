@@ -32,7 +32,7 @@ export interface PackageMetaHeaderProps {
  * The rule is about what the button DOES, not what built-ins are: its whole
  * effect is ``setActivePackageKey`` + ``setPaletteDockRevealCoord``, and the
  * Packages palette lists only third-party packages (``ToolsMenu`` filters the
- * builtin into the separate Built-in rail). So on a built-in node the pill is
+ * builtin into the separate Built-in palette). So on a built-in node the pill is
  * an affordance for an action that cannot happen.
  */
 export function PackageMetaHeader({ pkg, category, suggestionActive }: PackageMetaHeaderProps) {
