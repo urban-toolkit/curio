@@ -40,13 +40,18 @@ dev/134 corrects two things this module could not do, both proven by the owner's
   which the schema cannot know and a reader of the columns can. A view that
   names the dataset ``inputs`` reads its inputs stacked, with the columns the
   stack adds beside theirs (``INPUTS_FIELDS``) and without a GeoDataFrame's
-  geometry, so a view of it that draws one is refused.
+  geometry, so a view of it that draws one is refused. A field is read as
+  Vega-Lite reads it, a path into the row (:func:`split_access_path`): the
+  column it reads is the path's first name, so ``rain\\.mm`` reads the column
+  ``rain.mm``, and ``rain.mm`` reads ``mm`` inside the column ``rain``.
 """
 
 from __future__ import annotations
 
 import json
 import logging
+
+from utk_curio.backend.app.execution.code_references import vega_field_name
 
 log = logging.getLogger(__name__)
 
@@ -136,6 +141,85 @@ _OPAQUE_TRANSFORMS = ("pivot", "fold", "flatten", "sample", "lookup", "density",
 _SPEC_CONTAINERS = ("layer", "hconcat", "vconcat", "concat", "spec", "facet", "repeat")
 
 
+def split_access_path(path: str) -> list[str]:
+    """*path*, a field, split as Vega reads it (vega-util's
+    ``splitAccessPath``): ``a.b`` is ``b`` inside ``a``, ``a[0]`` and
+    ``a["b"]`` index into ``a``, and a backslash keeps the next character as it
+    is, so ``rain\\.mm`` is the one name ``rain.mm``. Raises ``ValueError`` for
+    a bracket or a quote left open, as Vega does."""
+    parts: list[str] = []
+    quote = None
+    bracket = 0
+    pending = ""
+    start = 0
+    j = 0
+    n = len(path)
+    while j < n:
+        c = path[j]
+        if c == "\\":
+            pending += path[start:j]
+            j += 1
+            start = j
+        elif c == quote:
+            parts.append(pending + path[start:j])
+            pending, start = "", j + 1
+            quote = None
+            bracket = -1
+        elif quote:
+            pass
+        elif start == bracket and c in ("'", '"'):
+            start = j + 1
+            quote = c
+        elif c == "." and not bracket:
+            if j > start:
+                parts.append(pending + path[start:j])
+                pending = ""
+            start = j + 1
+        elif c == "[":
+            if j > start:
+                parts.append(pending + path[start:j])
+                pending = ""
+            bracket = start = j + 1
+        elif c == "]":
+            if not bracket:
+                raise ValueError(f"Access path missing open bracket: {path}")
+            if bracket > 0:
+                parts.append(pending + path[start:j])
+                pending = ""
+            bracket = 0
+            start = j + 1
+        j += 1
+    if bracket:
+        raise ValueError(f"Access path missing closing bracket: {path}")
+    if quote:
+        raise ValueError(f"Access path missing closing quote: {path}")
+    if j > start:
+        parts.append(pending + path[start:])
+    return parts
+
+
+def vega_field_column(field: str) -> str:
+    """The column a Vega-Lite *field* reads: the first name of its path, so
+    ``rain\\.mm`` reads ``rain.mm`` and ``properties.name`` reads
+    ``properties``. A field Vega cannot split is read as it is written."""
+    try:
+        parts = split_access_path(field)
+    except ValueError:
+        return field
+    return parts[0] if parts else field
+
+
+def _output_name(field: str) -> str:
+    """The name Vega gives what it reads at *field* when nothing renames it
+    (vega-util's ``field``): the one name of a path of one, else the field as
+    written."""
+    try:
+        parts = split_access_path(field)
+    except ValueError:
+        return field
+    return parts[0] if len(parts) == 1 else field
+
+
 def _transform_outputs(spec: dict) -> tuple[set, bool]:
     """``(names a transform creates, whether any transform is opaque)``."""
     produced: set = set()
@@ -161,7 +245,7 @@ def _transform_outputs(spec: dict) -> tuple[set, bool]:
         # own names, unless an ``as`` renames them (counted above).
         source = entry.get("from")
         if "lookup" in entry and "as" not in entry and isinstance(source, dict):
-            produced.update(name for name in source.get("fields") or [] if isinstance(name, str))
+            produced.update(_output_name(name) for name in source.get("fields") or [] if isinstance(name, str))
     for key in _SPEC_CONTAINERS:
         child = spec.get(key)
         for sub in (child if isinstance(child, list) else [child]):
@@ -231,6 +315,11 @@ def check_vega_fields(
     (``INPUTS_FIELDS``), and none of *geometry_columns*: the stack leaves a
     GeoDataFrame's geometry out of its rows, as the preamble says. A view of
     one input's own dataset has only the inputs' columns.
+
+    A field reads the column its path starts with (:func:`vega_field_column`),
+    so ``rain\\.mm`` reads the column ``rain.mm``. A field such as ``rain.mm``
+    that names a column only as written reads ``rain``, and is refused with the
+    spelling that reads the column.
     """
     if not columns:
         return None
@@ -242,11 +331,12 @@ def check_vega_fields(
     # so this runs before an opaque transform leaves the other fields alone.
     left_out = {str(c) for c in geometry_columns or ()} - produced
     for where, field, on_inputs in refs:
-        if on_inputs and field in left_out:
+        column = vega_field_column(field)
+        if on_inputs and column in left_out:
             return {
                 "status": STATUS_INVALID,
                 "detail": _detail(
-                    f"{where} reads {field!r}, a geometry column, but the dataset "
+                    f"{where} reads {column!r}, a geometry column, but the dataset "
                     f"{INPUTS_DATASET!r} stacks its inputs' rows without their geometry; "
                     f"a view that draws it reads one input's own dataset, input_0 for "
                     f"the first circle, input_1 for the second"
@@ -256,15 +346,22 @@ def check_vega_fields(
         return None  # a transform creates names this module cannot enumerate
     known |= produced
     for where, field, on_inputs in refs:
+        column = vega_field_column(field)
         added = RUNTIME_FIELDS + (INPUTS_FIELDS if on_inputs else ())
-        if field in known or field in added:
+        if column in known or column in added:
             continue
         available = ", ".join(sorted(str(c) for c in columns)[:20])
+        path = ""
+        if field != column and (field in known or field in added):
+            path = (
+                f"; Vega-Lite reads a '.' or a '[' in a field as a path into the row, "
+                f"so the column {field!r} is written {json.dumps(vega_field_name(field))} in the JSON"
+            )
         return {
             "status": STATUS_INVALID,
             "detail": _detail(
-                f"{where} reads {field!r}, which is not a column of this node's "
-                f"input — available columns: {available}"
+                f"{where} reads {column!r}, which is not a column of this node's "
+                f"input{path}; available columns: {available}"
                 + (f" (plus {', '.join(added)}, added by Curio)")
             ),
         }
