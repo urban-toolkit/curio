@@ -7,7 +7,7 @@ not rebuilt.
 
 The signal is the map's canvas: a run replaces it, a highlight keeps it.
 
-Each run of the map is listed in its Provenance tab, as a chart's is (#860).
+Each run of the map is listed in the provenance drawer, as a chart's is (#860).
 
 Every test runs an Autark map, which needs WebGPU: they skip without an adapter
 unless ``CURIO_REQUIRE_HARDWARE_WEBGPU=1`` (CI's GPU job).
@@ -33,6 +33,7 @@ from .utils import (
     run_all_and_wait,
     run_node_and_wait,
     stub_login_and_enter_workflow,
+    wait_for_drawer_closed,
     wait_for_node_run_to_end,
     watch_node_run,
 )
@@ -119,38 +120,41 @@ _CANVAS_REPLACED_JS = """(id) => {
 }"""
 _CANVAS_KEPT_JS = """() => { const kept = window.__curioKeptMapCanvas; return !!kept && kept.isConnected; }"""
 
-# A node's Provenance tab (NodeProvenance.tsx) draws each run as a card of a
-# graph of its own, or says it has none.
-_PROVENANCE_TAB = '.nav-link[data-rr-ui-event-key="provenance"]'
-_RUN_CARD = ".react-flow__node-execNode"
-_NO_RUNS = "No executions yet"
-_RUN_CARDS_JS = """([id, least]) => {
-    const node = document.querySelector(`.react-flow__node[data-id="${id}"]`);
-    const listed = node ? node.querySelectorAll('.react-flow__node-execNode').length : 0;
+# A node's Provenance button opens its runs in the provenance drawer, which
+# lists each run, or says it has none.
+_PROVENANCE_BUTTON = '.nav-link[data-rr-ui-event-key="provenance"]'
+_DRAWER = '[data-curio-provenance-drawer="true"]'
+_RUN = f"{_DRAWER} [data-provenance-item]"
+_NO_RUNS = "No runs yet"
+_RUNS_JS = """([sel, least]) => {
+    const listed = document.querySelectorAll(sel).length;
     return listed >= least ? listed : false;
 }"""
 
 
 def _runs_listed(page, node_id: str, *, at_least: int) -> int:
-    """Open the node's Provenance tab, wait for it to list *at_least* runs, and return how many it lists.
+    """Open the node's runs in the provenance drawer, wait for it to list *at_least* of them, close it, and return how many it listed.
 
-    Opened once the run has ended, since a run that ends turns the node's editor
-    to its Output tab. The cards are counted on the page, not as visible: the
-    tab's graph places them only once it has a frame to measure them in. The
-    count is the one the check that passed saw.
+    Opened once the run has ended. The drawer covers the canvas while open, so
+    it is closed again before the test goes on. The count is the one the check
+    that passed saw.
     """
     node = node_locator(page, node_id)
-    node.locator(_PROVENANCE_TAB).first.click()
+    node.locator(_PROVENANCE_BUTTON).first.click()
+    page.get_by_role("dialog", name="Node provenance").wait_for(state="visible", timeout=20000)
     try:
-        handle = page.wait_for_function(_RUN_CARDS_JS, arg=[node_id, at_least], timeout=30000, polling=100)
+        handle = page.wait_for_function(_RUNS_JS, arg=[_RUN, at_least], timeout=30000, polling=100)
     except PlaywrightTimeoutError:
-        listed = node.locator(_RUN_CARD).count()
-        says_none = node.get_by_text(_NO_RUNS).count() > 0
+        listed = page.locator(_RUN).count()
+        says_none = page.locator(_DRAWER).get_by_text(_NO_RUNS).count() > 0
         raise AssertionError(
-            f"the Provenance tab of {node_id} lists {listed} run(s), not at least {at_least}"
+            f"the provenance drawer lists {listed} run(s) of {node_id}, not at least {at_least}"
             + (f' and reads "{_NO_RUNS}"' if says_none else "")
         ) from None
-    return int(handle.json_value())
+    listed = int(handle.json_value())
+    page.keyboard.press("Escape")
+    wait_for_drawer_closed(page, _DRAWER)
+    return listed
 
 
 def test_an_autark_map_redraws_when_the_node_feeding_it_runs_again(
@@ -171,11 +175,11 @@ def test_an_autark_map_redraws_when_the_node_feeding_it_runs_again(
     page.wait_for_function(_CANVAS_REPLACED_JS, arg=MAP_ID, timeout=60000)
 
 
-def test_an_autark_maps_provenance_tab_lists_each_of_its_runs(
+def test_the_provenance_drawer_lists_each_run_of_an_autark_map(
     app_frontend: "FrontendPage", current_server: str, page,
 ):
     # #860: the map draws in the browser, in a run on the server too, and its
-    # Provenance tab read "No executions yet" after every run.
+    # runs used to read "No executions yet" after every run.
     spec = _spec(
         [_node(LOADER_ID, "curio.builtin/data-loading", 0, 0, LOADER_CODE),
          _node(MAP_ID, "curio.builtin/autk-grammar", 645, 0, MAP_ON_INPUT)],
@@ -187,8 +191,8 @@ def test_an_autark_maps_provenance_tab_lists_each_of_its_runs(
     assert page.evaluate(_KEEP_CANVAS_JS, MAP_ID), "the map never drew"
     listed = _runs_listed(page, MAP_ID, at_least=1)
 
-    # Run the loader alone: the map draws again from the new data, and its tab
-    # lists that run too.
+    # Run the loader alone: the map draws again from the new data, and the
+    # drawer lists that run too.
     watch_node_run(page, MAP_ID)
     run_node_and_wait(page, LOADER_ID, node_type="DATA_LOADING", timeout_ms=120000)
     status = wait_for_node_run_to_end(page, MAP_ID, node_type="AUTK_GRAMMAR", timeout_ms=120000)

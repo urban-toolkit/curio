@@ -61,6 +61,7 @@ from .utils import (
     save_workflow_test_screenshot,
     stub_db_user,
     stub_login_and_enter_workflow,
+    wait_for_drawer_closed,
     wait_for_node_done,
 )
 
@@ -466,29 +467,63 @@ def test_delete_node_is_the_last_tool_with_minimize_before_it(
         assert tools["deletes"] == 1, f"{node_id} should have one Delete node button: {tools}"
 
 
-def test_the_code_pill_in_the_header_still_switches_tabs(
+def test_the_pills_in_the_header_still_switch_tabs(
     app_frontend: "FrontendPage", current_server, page,
 ):
     require_project_page()
     require_user_auth()
     _enter(page, app_frontend, current_server, prefix="card_tabs")
-    _wait_for_header(page, PRODUCER)
+    _wait_for_header(page, CHART)
 
-    header = _header(page, PRODUCER)
-    code_pill = header.locator('.nav-link[data-rr-ui-event-key="code"]')
-    provenance_pill = header.locator('.nav-link[data-rr-ui-event-key="provenance"]')
-    expect(code_pill).to_have_count(1)
-    expect(provenance_pill).to_have_count(1)
-    node = node_locator(page, PRODUCER)
+    header = _header(page, CHART)
+    grammar_pill = header.locator('.nav-link[data-rr-ui-event-key="grammar"]')
+    output_pill = header.locator('.nav-link[data-rr-ui-event-key="output"]')
+    expect(grammar_pill).to_have_count(1)
+    expect(output_pill).to_have_count(1)
+    node = node_locator(page, CHART)
     editor = node.locator(".monaco-editor").first
     expect(editor).to_be_visible(timeout=30000)
 
-    provenance_pill.click()
-    expect(provenance_pill).to_have_class(ACTIVE)
-    expect(code_pill).not_to_have_class(ACTIVE)
+    output_pill.click()
+    expect(output_pill).to_have_class(ACTIVE)
+    expect(grammar_pill).not_to_have_class(ACTIVE)
     expect(editor).to_be_hidden()
 
+    grammar_pill.click()
+    expect(grammar_pill).to_have_class(ACTIVE)
+    expect(editor).to_be_visible()
+
+
+def test_the_provenance_button_opens_the_nodes_runs_in_the_drawer(
+    app_frontend: "FrontendPage", current_server, page,
+):
+    require_project_page()
+    require_user_auth()
+    _enter(page, app_frontend, current_server, prefix="card_runs")
+    _wait_for_header(page, PRODUCER)
+    play_node(page, PRODUCER)
+    wait_for_node_done(page, PRODUCER, node_type="data-loading", timeout_ms=180000)
+
+    header = _header(page, PRODUCER)
+    code_pill = header.locator('.nav-link[data-rr-ui-event-key="code"]')
+    provenance = header.locator('.nav-link[data-rr-ui-event-key="provenance"]')
+    expect(provenance).to_have_count(1)
     code_pill.click()
+    editor = node_locator(page, PRODUCER).locator(".monaco-editor").first
+    expect(editor).to_be_visible(timeout=30000)
+
+    provenance.click()
+    drawer = page.get_by_role("dialog", name="Node provenance")
+    expect(drawer).to_be_visible(timeout=20000)
+    expect(drawer.get_by_text(f"Runs of {TITLES[PRODUCER]}", exact=True)).to_be_visible()
+    expect(drawer.locator("[data-provenance-item]")).to_have_count(1, timeout=20000)
+    # Not a tab: the node keeps showing its code beside the drawer.
+    expect(provenance).not_to_have_class(ACTIVE)
+    expect(code_pill).to_have_class(ACTIVE)
+    expect(editor).to_be_visible()
+
+    page.keyboard.press("Escape")
+    wait_for_drawer_closed(page, '[data-curio-provenance-drawer="true"]')
     expect(code_pill).to_have_class(ACTIVE)
     expect(editor).to_be_visible()
 

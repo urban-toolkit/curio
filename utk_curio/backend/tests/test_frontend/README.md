@@ -671,7 +671,7 @@ Other things that surprise people here:
   `#pkg-meta-runtime` (`compatibility.curioRuntime`) is not carried on
   `PackagePayload`, so `PackageMetadataModal` opens it blank every time and a
   reopened modal can never show what was saved. The Node settings modal's
-  `Provenance tab` checkbox is canvas-local:
+  `Provenance button` checkbox is canvas-local:
   `applyCanvasTemplateConfigToTemplateDraft` does not copy `hasProvenance` into
   the template draft and `toApiPayload` emits no such manifest field. Asserting
   it through an archive fails for reasons that have nothing to do with the
@@ -945,7 +945,7 @@ file and the next run dies at conftest import with `PermissionError: [WinError
 | `nodes` | the Node Catalog drawer's four tabs; **a real install of every catalog package** (`curio.weather`, `ai.utk.uhvi`, `model.curio.ddrnet23-slim` each shell out to pip); every template those packages ship dropped onto the canvas; **authoring a new node type** through Node settings -> Save as package node -> a new package, then dragging it back out of the palette; package metadata; export, re-import (400 by design), the library manager (a real `titlecase` install, then a JS install that 501s) |
 | `data` | the Data Catalog drawer's four tabs; **every hub dataset added to the dataflow**; the detail panel's four tabs; **a real import of every format** - CSV, Parquet, GeoJSON, GeoTIFF, an OSM PBF (split per layer) and a shapefile the chapter synthesises, since the repo ships none; dataset drag to canvas; a computed dataset and its lineage; the catalog pages and a deliberately bad dataset id |
 | `agents` | API Settings from both of its entry points, a new LLM configuration with all four provider tabs and Fetch models, the HF token; **every agent in the catalog installed**; all three attach targets (node, connection, canvas); the chat panel's controls; **one live turn per attached agent** against the configured provider; applying a proposal |
-| `views` | all eleven bundled examples loaded and run, Autark/WebGPU among them; linked brushing; the Data Pool scroll; a node with several inputs; JS Computation; widgets; the dashboard page and its layout editing; the provenance drawer and a node's provenance tab |
+| `views` | all eleven bundled examples loaded and run, Autark/WebGPU among them; linked brushing; the Data Pool scroll; a node with several inputs; JS Computation; widgets; the dashboard page and its layout editing; the provenance drawer, for the dataflow and for a node |
 
 ### What it produces
 
