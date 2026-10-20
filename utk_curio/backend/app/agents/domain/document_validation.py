@@ -119,11 +119,13 @@ RUNTIME_FIELDS = ("interacted", "__row_index__")
 #: The dataset a Vega-Lite spec names to read every input's rows stacked
 #: (``INPUTS_DATASET`` in ``utils/vegaDatasets.ts``).
 INPUTS_DATASET = "inputs"
-#: The columns each of its rows carries beside its input's own: its circle,
-#: its scenario box's id and name, and, from an input that is a value, that
-#: value. ``stack_inputs`` in ``utk_curio/sandbox/util/scenario_stack.py``
-#: writes them, under these names.
-INPUTS_FIELDS = ("__input__", "scenario", "scenario_name", "value")
+#: The columns each of its rows carries beside its input's own: its circle and
+#: its scenario box's id and name. ``stack_inputs`` in
+#: ``utk_curio/sandbox/util/scenario_stack.py`` writes them, under these names.
+#: It also writes ``value`` for an input that is a value, but it refuses a
+#: value beside a table, and the check knows only tables' columns: there,
+#: ``value`` is a column only when a table has one.
+INPUTS_FIELDS = ("__input__", "scenario", "scenario_name")
 
 #: Transforms whose output column names cannot be known from the document
 #: alone. A spec that uses one is schema-checked and its FIELDS are left alone —
