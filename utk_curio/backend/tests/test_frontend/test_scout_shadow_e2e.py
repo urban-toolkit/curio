@@ -186,7 +186,7 @@ def test_two_building_sets_are_shadowed_charted_and_mapped(
     nodes = {node["id"]: node for node in dataflow["nodes"]}
     shadows = [n for n, node in nodes.items() if node["type"] == SHADOW_TYPE]
     statistics = [n for n, node in nodes.items() if node["type"] == CALCULATOR_TYPE
-                  and "\nreturn curio_raster_statistics(" in node["content"]]
+                  and "\nreturn raster_statistics(" in node["content"]]
     assert len(shadows) == len(statistics) == 2, (shadows, statistics)
     (chart,) = [n for n, node in nodes.items() if node["type"] == COMPARE_TYPE
                 and node["metadata"]["compareScenarios"]["mode"] == "chart"]
@@ -368,7 +368,7 @@ def test_an_edit_in_the_towers_lever_reaches_the_shadow_with_update_results(
     (label,) = [edit["label"] for edit in shipped["edits"]]
     (loader,) = [n for n, node in nodes.items() if node["type"] == LOADER_TYPE]
     statistics = {scenario_of[n]: n for n, node in nodes.items() if node["type"] == CALCULATOR_TYPE
-                  and "\nreturn curio_raster_statistics(" in node["content"]}
+                  and "\nreturn raster_statistics(" in node["content"]}
     assert sorted(statistics) == ["existing", "towers-removed"], statistics
     (chart,) = [n for n, node in nodes.items() if node["type"] == COMPARE_TYPE
                 and node["metadata"]["compareScenarios"]["mode"] == "chart"]

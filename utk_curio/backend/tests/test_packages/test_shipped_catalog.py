@@ -13,11 +13,14 @@ from __future__ import annotations
 import ast
 import json
 import re
+import shutil
 from pathlib import Path, PurePosixPath
 
 import pytest
 
 from utk_curio.backend.app.execution.code_references import references_as_names
+from utk_curio.backend.app.packages.application.python_modules import dependency_module_names
+from utk_curio.backend.app.packages.application.store_install import install_package_from_directory
 from utk_curio.backend.app.packages.domain.dependency_scanner import scan_python_imports
 from utk_curio.backend.app.packages.repositories.manifests import load_package_manifest
 from utk_curio.backend.app.packages.repositories.python_modules import module_names
@@ -101,6 +104,11 @@ def _raw_python_deps(package_root: Path) -> dict[str, str]:
     return (raw.get("dependencies") or {}).get("python") or {}
 
 
+def _raw_package_deps(package_root: Path) -> dict[str, str]:
+    raw = json.loads((package_root / "manifest.json").read_text(encoding="utf-8"))
+    return (raw.get("dependencies") or {}).get("packages") or {}
+
+
 @pytest.mark.parametrize(
     "package_root",
     [p for p in PACKAGE_DIRS if p.name != BUILTIN_DIR],
@@ -150,6 +158,32 @@ def test_the_whole_shipped_catalog_resolves_together():
 # every library its sources import, those ``curio.builtin@1`` also declares
 # included: ``curio.weather@1`` left ``geopandas`` and ``pandas`` to the
 # built-in package, and a Save into it added both unpinned.
+#
+# Both scans leave out the package's own modules and the modules of the
+# packages its ``dependencies.packages`` names, which the account's store
+# resolves (``python_modules.dependency_module_names``): Deep Umbra imports
+# Scout's ``scout_rasters`` and names ``curio.scout@1``. The check below leaves
+# out the same modules through the same function, in a store holding every
+# shipped package.
+
+GUEST = "guest"
+DEEP_UMBRA_DIR = "model.scout.deep-umbra@1"
+SCOUT_DIR = "curio.scout@1"
+SCOUT_MODULE = "scout_rasters"
+
+
+@pytest.fixture(scope="module")
+def shipped_store(tmp_path_factory):
+    """A guest store of the module's own holding every shipped package, each
+    installed from the catalog as a user installs one
+    (``install_package_from_directory``): the store a Save resolves a
+    manifest's ``dependencies.packages`` in."""
+    root = tmp_path_factory.mktemp("shipped-store")
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setenv("CURIO_LAUNCH_CWD", str(root))
+        for package_root in PACKAGE_DIRS:
+            install_package_from_directory(GUEST, package_root)
+        yield GUEST
 
 
 def _libraries_imported_by(source: str, own_modules: frozenset[str]) -> list[str]:
@@ -166,25 +200,65 @@ def _libraries_imported_by(source: str, own_modules: frozenset[str]) -> list[str
     return sorted(found)
 
 
-@pytest.mark.parametrize("package_root", PACKAGE_DIRS, ids=IDS)
-def test_the_manifest_declares_every_library_the_sources_import(package_root: Path):
-    """Every library a ``.py`` file under ``sources/`` imports, at module level
-    or in a function, is in ``dependencies.python`` under the name the scanner
-    gives it, the name a Save merges by. The scanner leaves out the standard
-    library, Curio's own modules and the package's own modules. A source that
-    does not parse fails here, since the scanner would read nothing in it."""
+def _undeclared_libraries(package_root: Path, user_key: str) -> dict[str, list[str]]:
+    """Each library a ``.py`` file under ``sources/`` imports that is not in
+    ``dependencies.python``, with the files that import it. The package's own
+    modules are no library, nor are those of the packages its
+    ``dependencies.packages`` names, resolved in *user_key*'s store as a Save
+    resolves them (``dependency_module_names``)."""
     own_modules = module_names(package_root, load_package_manifest(package_root))
+    provided = own_modules | dependency_module_names(user_key, _raw_package_deps(package_root))
     declared = set(_raw_python_deps(package_root))
     undeclared: dict[str, list[str]] = {}
     for source in sorted((package_root / "sources").rglob("*.py")):
         where = source.relative_to(package_root).as_posix()
-        for library in _libraries_imported_by(source.read_text(encoding="utf-8"), own_modules):
+        for library in _libraries_imported_by(source.read_text(encoding="utf-8"), provided):
             if library not in declared:
                 undeclared.setdefault(library, []).append(where)
+    return undeclared
+
+
+@pytest.mark.parametrize("package_root", PACKAGE_DIRS, ids=IDS)
+def test_the_manifest_declares_every_library_the_sources_import(package_root: Path, shipped_store: str):
+    """Every library a ``.py`` file under ``sources/`` imports, at module level
+    or in a function, is in ``dependencies.python`` under the name the scanner
+    gives it, the name a Save merges by. The scanner leaves out the standard
+    library, Curio's own modules, the package's own modules and the modules of
+    the packages it names in ``dependencies.packages``. A source that does not
+    parse fails here, since the scanner would read nothing in it."""
+    undeclared = _undeclared_libraries(package_root, shipped_store)
     assert not undeclared, (
         f"{package_root.name} imports libraries its manifest does not declare: "
         + "; ".join(f"{library} ({', '.join(files)})" for library, files in sorted(undeclared.items()))
     )
+
+
+def test_a_module_of_a_package_the_manifest_does_not_name_is_an_undeclared_library(tmp_path, shipped_store):
+    """Another package's module is left out only when the manifest names that
+    package in ``dependencies.packages``. Deep Umbra's node imports Scout's
+    ``scout_rasters`` and names ``curio.scout@1``. A copy of Deep Umbra that
+    does not name Scout imports ``scout_rasters`` undeclared, though the store
+    holds Scout. With Scout named, a library its sources import that
+    ``dependencies.python`` leaves out is still undeclared."""
+    assert SCOUT_MODULE in dependency_module_names(shipped_store, {SCOUT_DIR: "*"})
+    copy = tmp_path / DEEP_UMBRA_DIR
+    shutil.copytree(CATALOG / DEEP_UMBRA_DIR, copy, ignore=shutil.ignore_patterns("models"))
+    manifest_path = copy / "manifest.json"
+    raw = json.loads(manifest_path.read_text(encoding="utf-8"))
+    assert raw["dependencies"]["packages"] == {SCOUT_DIR: "*"}, raw["dependencies"]
+    undeclared = _undeclared_libraries(copy, shipped_store)
+    assert undeclared == {}, undeclared
+
+    raw["dependencies"]["packages"] = {}
+    manifest_path.write_text(json.dumps(raw), encoding="utf-8")
+    undeclared = _undeclared_libraries(copy, shipped_store)
+    assert undeclared == {SCOUT_MODULE: ["sources/deep_umbra/node_outputs.py"]}, undeclared
+
+    raw["dependencies"]["packages"] = {SCOUT_DIR: "*"}
+    del raw["dependencies"]["python"]["pyproj"]
+    manifest_path.write_text(json.dumps(raw), encoding="utf-8")
+    undeclared = _undeclared_libraries(copy, shipped_store)
+    assert undeclared == {"pyproj": ["sources/deep_umbra/node_outputs.py"]}, undeclared
 
 
 @pytest.mark.parametrize("package_root", PACKAGE_DIRS, ids=IDS)

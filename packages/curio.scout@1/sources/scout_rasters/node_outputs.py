@@ -30,11 +30,10 @@ import pandas as pd
 import rasterio
 from PIL import Image
 
-# Curio's raster helpers: web map tiles side by side in one GeoTIFF, on the
-# tiles' own grid, where ``compute_tile`` draws each tile.
-from utk_curio.sandbox.util.rasters import mosaic_web_tiles
-
 from .convert_to_raster import convert_raster
+# Web map tiles side by side in one GeoTIFF, on the tiles' own grid, where
+# ``compute_tile`` draws each tile.
+from .web_tiles import mosaic_web_tiles
 
 TILE_SIZE = 256
 MOSAIC_CRS = "EPSG:3395"

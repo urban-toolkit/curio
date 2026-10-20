@@ -9,8 +9,8 @@ or, with ``absolute=True``, the size of that difference.
   differences and ``changed`` or ``unchanged``; rows on one side only are
   ``removed`` or ``added``.
 - Two rasters come back from the node's code as a request, which the sandbox
-  completes: autk-db loads both in its own Node process, Curio's raster
-  algebra (``util/raster_algebra.py``) subtracts the band arrays ``getRaster``
+  completes: autk-db loads both in its own Node process,
+  ``util/envelope_difference.py`` subtracts the band arrays ``getRaster``
   exports, and the result is a raster envelope. Grids that differ are refused,
   naming both. The raster tests run that Node process for real.
 
