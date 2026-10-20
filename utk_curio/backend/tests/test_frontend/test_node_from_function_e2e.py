@@ -36,6 +36,7 @@ from .utils import (
     close_tools_palette,
     connect_nodes,
     drag_to_canvas,
+    drag_builtin_to_canvas,
     node_execution_timeout_ms,
     node_locator,
     open_tools_palette,
@@ -169,7 +170,7 @@ def test_a_function_in_a_shipped_package_becomes_a_node_that_runs(
     store = [p.get("dirName") for p in api_json(f"{current_server}/api/packages", token)["packages"]]
     assert SHADOW_DIR in store, f"{SHADOW_DIR} is not in the account's store {store}: start the stack --with-examples"
 
-    reader = drag_to_canvas(page, page.locator(TILE), at=(760, 150))
+    reader = drag_builtin_to_canvas(page, TILE, at=(760, 150))
     set_node_code(page, reader, READER_CODE)
 
     created = None

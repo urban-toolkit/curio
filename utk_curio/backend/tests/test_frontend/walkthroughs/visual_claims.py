@@ -40,11 +40,11 @@ def _add_builtin_node(ctx: Ctx, tile_id: str, at):
     would be one of those. ``drag_to_canvas`` hands back the id of the node it
     created, which is the only way to address the one this scene is about.
     """
-    from ..utils import drag_to_canvas, node_locator
+    from ..utils import drag_builtin_to_canvas, node_locator
 
-    # The built-in tiles live in the left rail and are present without opening
-    # a palette -- the Packages dropdown lists third-party packages only.
-    node_id = drag_to_canvas(ctx.page, ctx.page.locator(tile_id), at=at)
+    # The built-in tiles are in the rail's Built-in palette. The helper opens
+    # it for the drag and closes it again, so the scene's frames show no panel.
+    node_id = drag_builtin_to_canvas(ctx.page, tile_id, at=at)
     return node_locator(ctx.page, node_id)
 
 

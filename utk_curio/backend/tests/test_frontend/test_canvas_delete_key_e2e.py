@@ -27,7 +27,7 @@ from .utils import (
     canvas_nodes,
     connect_nodes,
     dismiss_toasts,
-    drag_to_canvas,
+    drag_builtin_to_canvas,
     node_locator,
     read_node_code,
     require_project_page,
@@ -91,8 +91,8 @@ def test_delete_and_backspace_both_remove_the_selected_node(
     )
     require_owner_view(page)
 
-    first = drag_to_canvas(page, page.locator(ANALYSIS_TILE), at=POS_FIRST)
-    second = drag_to_canvas(page, page.locator(ANALYSIS_TILE), at=POS_SECOND)
+    first = drag_builtin_to_canvas(page, ANALYSIS_TILE, at=POS_FIRST)
+    second = drag_builtin_to_canvas(page, ANALYSIS_TILE, at=POS_SECOND)
     assert {first, second} <= _node_ids(page)
 
     # 1. Delete — the key that did nothing before the fix.
@@ -136,7 +136,7 @@ def test_delete_inside_a_code_editor_edits_text_and_keeps_the_node(
     )
     require_owner_view(page)
 
-    node_id = drag_to_canvas(page, page.locator(ANALYSIS_TILE), at=POS_FIRST)
+    node_id = drag_builtin_to_canvas(page, ANALYSIS_TILE, at=POS_FIRST)
     set_node_code(page, node_id, "AB\n")
 
     # Give the editor focus through Monaco's own API. A plain click is
@@ -232,8 +232,8 @@ def test_deleting_a_wired_node_removes_its_edge_and_clears_the_downstream_input(
     )
     require_owner_view(page)
 
-    first = drag_to_canvas(page, page.locator(ANALYSIS_TILE), at=POS_FIRST)
-    second = drag_to_canvas(page, page.locator(ANALYSIS_TILE), at=POS_SECOND)
+    first = drag_builtin_to_canvas(page, ANALYSIS_TILE, at=POS_FIRST)
+    second = drag_builtin_to_canvas(page, ANALYSIS_TILE, at=POS_SECOND)
     connect_nodes(page, first, second)
     set_node_code(page, first, "return 1\n")
     run_node_and_wait(page, first, node_type=ANALYSIS_TYPE)
@@ -284,9 +284,9 @@ def test_a_selection_of_wired_nodes_is_deleted_with_its_edges(
     )
     require_owner_view(page)
 
-    a = drag_to_canvas(page, page.locator(ANALYSIS_TILE), at=POS_FIRST)
-    b = drag_to_canvas(page, page.locator(ANALYSIS_TILE), at=POS_SECOND)
-    c = drag_to_canvas(page, page.locator(ANALYSIS_TILE), at=POS_THIRD)
+    a = drag_builtin_to_canvas(page, ANALYSIS_TILE, at=POS_FIRST)
+    b = drag_builtin_to_canvas(page, ANALYSIS_TILE, at=POS_SECOND)
+    c = drag_builtin_to_canvas(page, ANALYSIS_TILE, at=POS_THIRD)
     # Three nodes do not fit a 1280x720 viewport at zoom 1, so fit them all
     # before wiring, or a handle sits outside the viewport.
     _wait_for_reactflow_ready(page, padding=0.1)
@@ -344,8 +344,8 @@ def test_the_header_delete_removes_a_wired_node(
     )
     require_owner_view(page)
 
-    first = drag_to_canvas(page, page.locator(ANALYSIS_TILE), at=POS_FIRST)
-    second = drag_to_canvas(page, page.locator(ANALYSIS_TILE), at=POS_SECOND)
+    first = drag_builtin_to_canvas(page, ANALYSIS_TILE, at=POS_FIRST)
+    second = drag_builtin_to_canvas(page, ANALYSIS_TILE, at=POS_SECOND)
     connect_nodes(page, first, second)
     dismiss_toasts(page)
 

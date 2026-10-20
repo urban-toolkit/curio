@@ -156,6 +156,7 @@ from .palettes import (  # noqa: F401
     open_tools_palette,
     click_package_summary_action,
     close_tools_palette,
+    tools_palette_is_open,
 )
 from .upload import upload_workflow  # noqa: F401
 from .canvas_authoring import (  # noqa: F401
@@ -172,6 +173,7 @@ from .canvas_authoring import (  # noqa: F401
     assert_header_shows_save,
     frame_node,
     drag_to_canvas,
+    drag_builtin_to_canvas,
     drag_with_the_mouse_onto_canvas,
     drag_to_canvas_with_the_mouse,
     set_node_code,

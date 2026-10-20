@@ -9,6 +9,7 @@
   - [Your configurations](#your-configurations)
   - [Keys for node code](#keys-for-node-code)
   - [Guest users](#guest-users)
+- [The Tools panel](#the-tools-panel)
 - [Inside a node](#inside-a-node)
 - [Notes](#notes)
 - [Running a dataflow](#running-a-dataflow)
@@ -376,6 +377,20 @@ Anthropic Claude (`GUEST_LLM_API_KEY=sk-ant-...`):
 python curio.py start --deploy --guest-llm-provider anthropic --guest-llm-model claude-haiku-4-5
 ```
 
+## The Tools panel
+
+The Tools panel on the left edge of the canvas holds five buttons: **Built-in**,
+**Node Catalog**, **Data Catalog**, **Agent Catalog** and **Model Catalog**,
+with **Run All** at its foot. Each button opens its palette beside the panel and
+closes the one that was open; click it again to close it. The canvas opens with
+every palette closed.
+
+**Built-in** holds Curio's own nodes, from **Data Loading** to **Note**, in three
+groups: data, computation, and views. Hover over a tile to see its name, and
+drag it onto the canvas to add the node. Each catalog's palette is described
+with its catalog: [Node Catalog](#node-catalog), [Data Catalog](#data-catalog),
+[Agent Catalog](#agent-catalog) and [Model Catalog](#model-catalog).
+
 ## Inside a node
 
 A node's header shows **Play** at its left, the node's name and kind, and its run
@@ -393,9 +408,9 @@ would drag it, such as its header, to zoom the view onto it.
 ## Notes
 
 A **Note** node holds a title and a short text on a color, to explain a part of
-the dataflow. Drag **Note** from the palette onto the canvas, write its title
-and text, pick its color and click **Save**. **Edit** on the note opens them
-again.
+the dataflow. Drag **Note** from the **Built-in** palette onto the canvas, write
+its title and text, pick its color and click **Save**. **Edit** on the note
+opens them again.
 
 - The text is simple markdown: `#` headings, `-` lists, `**bold**`,
   `*italics*`, `` `code` `` and links. Only an `https` link is a link, and it
@@ -534,8 +549,8 @@ variable per input circle, or through input chips (see
 A **Parameter** node holds one widget that any node can use, such as a season
 that several nodes read.
 
-1. Drag **Parameter** from the palette onto the canvas. Give it a name, a type,
-   a label and a default, as for a widget, and click **Add parameter**.
+1. Drag **Parameter** from the **Built-in** palette onto the canvas. Give it a
+   name, a type, a label and a default, as for a widget, and click **Add parameter**.
 2. Its tag, **@name**, shows under **Shared** in the strip above every node's
    code and in every node's **Widgets** tab. Drag it into the code, or click it
    to insert it at the cursor. In the code it is written `[!! @name !!]` and
@@ -753,7 +768,7 @@ by a condition: two towers taken out of a city's buildings, or every building ov
 100 m lowered, say. It is a node of its own, apart from the interaction edges that
 link charts (see [Linking charts](#linking-charts)).
 
-1. Drag **Interaction** from the palette onto the canvas and connect a layer to it:
+1. Drag **Interaction** from the **Built-in** palette onto the canvas and connect a layer to it:
    a Python node's GeoDataFrame, or the layers an Autark node or a Data Pool hands on.
 2. Pick the layer to edit in **Layer**, when the input carries several, and the column
    that identifies a feature in **Id**: `osm_id` or `building_id` when the layer has
@@ -820,7 +835,7 @@ one marked off.
 
 The **Compare Scenarios** node compares scenarios' outcomes on the canvas:
 
-1. Drag **Compare Scenarios** from the palette onto the canvas.
+1. Drag **Compare Scenarios** from the **Built-in** palette onto the canvas.
 2. Connect each scenario's outcome to one of its input circles. Each edge takes the
    next circle, as on any node with several inputs, and each input is labelled by
    the scenario its node belongs to.

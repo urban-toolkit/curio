@@ -26,7 +26,7 @@ from typing import TYPE_CHECKING
 from .utils import (
     api_json,
     connect_nodes,
-    drag_to_canvas,
+    drag_builtin_to_canvas,
     frame_node,
     node_execution_timeout_ms,
     node_locator,
@@ -202,10 +202,10 @@ def test_one_parameter_node_drives_two_nodes(
     require_owner_view(page)
     project_id = session["project"]["id"]
 
-    a = drag_to_canvas(page, page.locator(CODE_TILE), at=POS_A)
-    reader = drag_to_canvas(page, page.locator(CODE_TILE), at=POS_READER)
-    b = drag_to_canvas(page, page.locator(CODE_TILE), at=POS_B)
-    parameter = drag_to_canvas(page, page.locator(PARAMETER_TILE), at=POS_PARAMETER)
+    a = drag_builtin_to_canvas(page, CODE_TILE, at=POS_A)
+    reader = drag_builtin_to_canvas(page, CODE_TILE, at=POS_READER)
+    b = drag_builtin_to_canvas(page, CODE_TILE, at=POS_B)
+    parameter = drag_builtin_to_canvas(page, PARAMETER_TILE, at=POS_PARAMETER)
     connect_nodes(page, a, reader)
     set_node_code(page, a, A_TEMPLATE)
     set_node_code(page, reader, READER_CODE)

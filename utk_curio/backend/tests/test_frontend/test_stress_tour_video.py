@@ -96,6 +96,7 @@ from .utils import (
     connect_nodes,
     dismiss_toasts,
     drag_to_canvas,
+    drag_builtin_to_canvas,
     node_locator,
     open_tools_palette,
     close_tools_palette,
@@ -780,11 +781,15 @@ def chapter_canvas(run: StressRun) -> None:
 
     with run.step("Drag all eleven built-in node types onto the canvas"):
         reset_zoom(page)
+        # The tiles are drawn only while the Built-in palette is open; closed
+        # again after the drops, so its panel covers none of the canvas.
+        open_tools_palette(page, "builtin")
         sources = [
             (template, builtin_tile(page, template))
             for template in stress.BUILTIN_TILES
         ]
         placed = _drop_grid(run, sources)
+        close_tools_palette(page, "builtin")
         run.state["placed"] = dict(placed)
         assert len(placed) == 11, f"only {len(placed)} of 11 tiles produced a node"
         fit_view(page)
@@ -844,8 +849,8 @@ def chapter_canvas(run: StressRun) -> None:
         reset_zoom(page)
 
     with run.step("Data Loading -> Data Transformation, wired by hand"):
-        loader = drag_to_canvas(page, builtin_tile(page, "data-loading"), at=(150, 150))
-        transform = drag_to_canvas(
+        loader = drag_builtin_to_canvas(page, builtin_tile(page, "data-loading"), at=(150, 150))
+        transform = drag_builtin_to_canvas(
             page, builtin_tile(page, "data-transformation"), at=(760, 150)
         )
         run.state.update(loader=loader, transform=transform)
@@ -868,7 +873,7 @@ def chapter_canvas(run: StressRun) -> None:
         # handles. Pan one node-width left instead: the transform slides into
         # the left slot and the right slot is empty canvas again.
         _pan(page, -610)
-        vega = drag_to_canvas(page, builtin_tile(page, "vis-vega"), at=(760, 150))
+        vega = drag_builtin_to_canvas(page, builtin_tile(page, "vis-vega"), at=(760, 150))
         run.state["vega"] = vega
         set_node_code(page, vega, VEGA_SPEC)
         connect_nodes(page, transform, vega)
@@ -975,10 +980,10 @@ def chapter_canvas(run: StressRun) -> None:
     with run.step("Two more transformation nodes, for the connection guards"):
         _pan(page, -1350)
         reset_zoom(page)
-        left = drag_to_canvas(
+        left = drag_builtin_to_canvas(
             page, builtin_tile(page, "data-transformation"), at=(150, 150)
         )
-        right = drag_to_canvas(
+        right = drag_builtin_to_canvas(
             page, builtin_tile(page, "data-transformation"), at=(760, 150)
         )
         run.state.update(guard_left=left, guard_right=right)
@@ -1061,7 +1066,7 @@ def chapter_canvas(run: StressRun) -> None:
                   allow=("stress: this node is supposed to fail", "HTTP 4\\d\\d",
                          "toast")):
         _pan(page, -1350)
-        bad = drag_to_canvas(page, builtin_tile(page, "computation-analysis"),
+        bad = drag_builtin_to_canvas(page, builtin_tile(page, "computation-analysis"),
                              at=(150, 150))
         set_node_code(page, bad, RAISING_CODE)
         play_node(page, bad)
@@ -1350,7 +1355,7 @@ def chapter_nodes(run: StressRun) -> None:
 
     with run.step("Build a node worth packaging"):
         reset_zoom(page)
-        node_id = drag_to_canvas(
+        node_id = drag_builtin_to_canvas(
             page, builtin_tile(page, "data-transformation"), at=(300, 150)
         )
         run.state["authored"] = node_id
@@ -1522,7 +1527,7 @@ def chapter_nodes(run: StressRun) -> None:
 
     with run.step("A node can import the library that was just installed"):
         reset_zoom(page)
-        node_id = drag_to_canvas(
+        node_id = drag_builtin_to_canvas(
             page, builtin_tile(page, "data-loading"), at=(150, 430)
         )
         set_node_code(
@@ -1886,7 +1891,7 @@ def chapter_data(run: StressRun) -> None:
                 )
 
     with run.step("Save a node's output back into the Data Catalog"):
-        transform = drag_to_canvas(
+        transform = drag_builtin_to_canvas(
             page, builtin_tile(page, "data-transformation"), at=(760, 150)
         )
         # The upstream loader is the uploaded bike-trips CSV, so the transform
@@ -2036,8 +2041,8 @@ def chapter_agents(run: StressRun) -> None:
     with run.step("Open a dataflow with something for an agent to look at"):
         _enter_project(run, name="Stress: agents")
         reset_zoom(page)
-        loader = drag_to_canvas(page, builtin_tile(page, "data-loading"), at=(150, 150))
-        transform = drag_to_canvas(
+        loader = drag_builtin_to_canvas(page, builtin_tile(page, "data-loading"), at=(150, 150))
+        transform = drag_builtin_to_canvas(
             page, builtin_tile(page, "data-transformation"), at=(760, 150)
         )
         set_node_code(page, loader, _loader_code())

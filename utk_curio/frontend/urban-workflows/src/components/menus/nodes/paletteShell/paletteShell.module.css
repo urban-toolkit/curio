@@ -1,12 +1,12 @@
 /* Shared chrome for the tools-panel palette dropdowns: the trigger card, the
    dropdown panel and the orange catalog footer.
 
-   Intended as the single source of truth for all three palettes, but composed
-   today by the AGENTS palette alone - Datasets and Packages still carry their
-   own near-identical copies, so this file is "shared" by one. That is how the
-   three drifted apart (the trigger kept the geometry of a narrow icon-only rail
-   the other two had already left, and this header centred its title while both
-   peers left-aligned theirs).
+   Intended as the single source of truth for every palette, but composed
+   today by the BUILT-IN, AGENTS and MODELS palettes only - Datasets and
+   Packages still carry their own near-identical copies. That is how the
+   palettes drifted apart (the trigger kept the geometry of a narrow icon-only
+   rail the other two had already left, and this header centred its title while
+   both peers left-aligned theirs).
 
    Until the other two are migrated onto it, DatasetsPaletteDropdown.module.css
    is the reference: when a value here disagrees with it, this file is the one
