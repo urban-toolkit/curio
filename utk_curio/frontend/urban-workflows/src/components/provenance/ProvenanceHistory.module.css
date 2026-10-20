@@ -232,9 +232,19 @@
     box-shadow: var(--curio-shadow-browse-card);
 }
 
-/* A box names the item; its time is in the tooltip and its details. */
+/* A box names the item, on up to two lines in its fixed width; its time is in
+   the tooltip and its details. */
 .graph .head {
     grid-template-columns: 10px auto minmax(0, 1fr);
+}
+
+.graph .title {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-height: 1.3;
+    white-space: normal;
+    overflow-wrap: anywhere;
 }
 
 /* ── The view switch, on the drawer's dark header ──────────────────────── */
@@ -284,16 +294,18 @@
     font-weight: 500;
 }
 
-/* The one action an item has: put it back. */
+/* The one action an item has: put it back. It grows with its words in a
+   narrow box. */
 .restore {
     justify-self: start;
-    height: 28px;
-    padding: 0 10px;
+    min-height: 28px;
+    padding: 5px 10px;
     border: 1px solid var(--curio-top-bar-bg);
     border-radius: var(--curio-radius-md);
     background: var(--curio-top-bar-bg);
     color: var(--curio-text-on-dark);
-    font: 500 12px/1 var(--curio-font-family);
+    font: 500 12px/1.3 var(--curio-font-family);
+    text-align: left;
     cursor: pointer;
 }
 

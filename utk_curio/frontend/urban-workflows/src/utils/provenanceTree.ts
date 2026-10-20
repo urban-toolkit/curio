@@ -26,7 +26,8 @@ export interface HistoryItem extends HistoryEntry {
   title: string;
   /** When it was made, as the List's row says it. */
   when: string;
-  /** Said on hover: the Graph's box has no room for the time. */
+  /** Said on hover under the title: the date and time it was made, which the
+   *  Graph's box has no room for. */
   tooltip?: string;
 }
 
