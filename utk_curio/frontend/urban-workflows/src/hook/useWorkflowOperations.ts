@@ -1178,6 +1178,11 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
     const ensureProjectInFlightRef = useRef<Promise<string | null> | null>(null);
     const ensureProjectId = useCallback(async (): Promise<string | null> => {
         if (projectIdRef.current) return projectIdRef.current;
+        // A hosted guest's saves are refused. This one is Curio's own, made
+        // before an install, so it is skipped without a word, as the install
+        // save after a run and the pin's save are: only a save the guest asks
+        // for (File > Save, Save a copy) says why it cannot.
+        if (blockGuestSaves) return null;
         if (ensureProjectInFlightRef.current) return ensureProjectInFlightRef.current;
         const inFlight = (async () => {
             try {
@@ -1195,7 +1200,7 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
         })();
         ensureProjectInFlightRef.current = inFlight;
         return inFlight;
-    }, [requestProjectSave, showToast]);
+    }, [requestProjectSave, showToast, blockGuestSaves]);
 
     // Persist the dataflow after a producing node ran but the backend did NOT
     // auto-install during execution (it only does so for deliberately-saved
