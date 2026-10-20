@@ -91,7 +91,7 @@ ALLOWED = {
     "utk_curio/tools/agent_eval.py": ({"agent.dataflow-builder"}, _EVALUATION),
     "utk_curio/frontend/urban-workflows/src/utils/nodeDisplayLabel.cases.json": ({"ai.utk.uhvi"}, _CASES),
     "utk_curio/frontend/urban-workflows/src/utils/scenarios/scenarioParts.cases.json": (
-        {"scout.comparison/donuts"},
+        {"curio.scout/donuts"},
         _CASES,
     ),
 }
@@ -126,8 +126,8 @@ def shipped_ids(root: Path) -> dict[str, str]:
 
 
 def _id_pattern(ids) -> re.Pattern:
-    """Any of *ids* as a whole id: ``scout.rasters``, ``scout.rasters@1`` or
-    ``packages/scout.rasters@1/``, never part of a longer id. A node type
+    """Any of *ids* as a whole id: ``curio.scout``, ``curio.scout@1`` or
+    ``packages/curio.scout@1/``, never part of a longer id. A node type
     matches before its package."""
     names = "|".join(re.escape(name) for name in sorted(ids, key=len, reverse=True))
     return re.compile(rf"(?<![\w.-])(?:{names})(?![\w-]|\.\w)")

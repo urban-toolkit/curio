@@ -4,7 +4,7 @@
     "curioRuntime": ">=0.5.0",
     "major": 1
   },
-  "createdAt": "2026-10-18T00:00:00Z",
+  "createdAt": "2026-10-05T00:00:00Z",
   "dataflowCategories": {
     "tags": [
       "SCOUT"
@@ -13,16 +13,131 @@
   "dependencies": {
     "js": {},
     "packages": {},
-    "python": {}
+    "python": {
+      "dask": ">=2026.8.0",
+      "datashader": ">=0.19.1",
+      "geopandas": ">=1.1.3",
+      "numpy": "",
+      "pandas": ">=3.0.2",
+      "pillow": ">=12.2.0",
+      "pyarrow": ">=24.0.0",
+      "pyproj": ">=3.7.2",
+      "rasterio": ">=1.4",
+      "shapely": ">=2.0",
+      "spatialpandas": ">=0.5.0"
+    }
   },
-  "description": "Seven Vega-Lite charts to connect after a Compare Scenarios node, for forms its Chart tab does not draw: lines with a band, curves by group, bars with error bars, ensemble strips, stacked bars with totals, donuts and a weighted matrix. Each reads the node's stacked table and draws each scenario in its box's color, in the order of the node's inputs; the columns it plots are text widgets in its Widgets tab.",
-  "id": "scout.comparison",
+  "description": "SCOUT's nodes in Curio. The Raster Calculator runs one operation over rasters on one grid: add, subtract, multiply, divide or choose, cell by cell, or a raster's statistics as a table of one row. Rasterize Buildings, SCOUT's building rasterizer ported from SCOUT (urban-toolkit/scout), turns a buildings layer into the zoom-16 height tiles SCOUT's Deep Umbra shadow model reads, side by side in one raster in metres that an Autark map draws. Seven Vega-Lite charts connect after a Compare Scenarios node, for forms its Chart tab does not draw: lines with a band, curves by group, bars with error bars, ensemble strips, stacked bars with totals, donuts and a weighted matrix. Each reads the node's stacked table and draws each scenario in its box's color, in the order of the node's inputs; the columns it plots are text widgets in its Widgets tab.",
+  "id": "curio.scout",
   "license": "MIT",
-  "name": "SCOUT Comparison",
+  "name": "Scout",
   "permissions": [],
   "publisher": "Curio",
   "readOnly": true,
   "templates": [
+    {
+      "category": "computation",
+      "description": "One operation over rasters on one grid. Connect the rasters to its input circles, in order; its code names the operation. Cell by cell: add, subtract, multiply or divide input_0 and input_1, or choose, which takes input_1 where input_0's class is one of the codes it names and input_2 elsewhere; a cell that is nodata in an input the operation reads there is nodata in the result, and rasters on different grids are refused. Statistics: the mean, median, minimum, maximum and count of a raster's cells, nodata left out; its code can keep only the cells that meet a condition, such as a value under 1.08, on the raster itself or on a second raster on input_1, on the same grid, used as a mask: a test of the mask's values or a set of them. The output is the result: a raster an Autark map draws, or the statistics as a table of one row, which Compare Scenarios charts.",
+      "editor": "code",
+      "engine": "python",
+      "hasCode": true,
+      "hasGrammar": false,
+      "hasWidgets": true,
+      "iconRef": "fa-solid:calculator",
+      "id": "raster-calculator",
+      "inputPorts": [
+        {
+          "cardinality": "[1,3]",
+          "types": [
+            "RASTER"
+          ]
+        }
+      ],
+      "label": "Raster Calculator",
+      "behavior": "code",
+      "outputPorts": [
+        {
+          "cardinality": "1",
+          "types": [
+            "RASTER",
+            "DATAFRAME"
+          ]
+        }
+      ],
+      "paletteOrder": 0,
+      "source": "sources/raster-calculator.py",
+      "dataflowCategories": {
+        "dataTypes": [
+          "Rasters"
+        ]
+      }
+    },
+    {
+      "category": "computation",
+      "description": "SCOUT's OSM vector to raster: draws each building's height into 256 by 256 map tiles at a zoom level, 8-bit gray where 255 is the maximum height, in EPSG:3395. Input: a buildings GeoDataFrame with a column of heights in metres. Output: one RASTER of the tiles side by side, heights in metres, band band_1, for an Autark map and for Accumulated Shadow (model.scout.deep-umbra), which runs SCOUT's Deep Umbra shadow model on it. A tile SCOUT writes no file for, because no building is near it, is no data.",
+      "editor": "code",
+      "engine": "python",
+      "hasCode": true,
+      "hasGrammar": false,
+      "hasWidgets": true,
+      "iconRef": "fa-solid:city",
+      "id": "rasterize-buildings",
+      "inputPorts": [
+        {
+          "cardinality": "1",
+          "types": [
+            "GEODATAFRAME"
+          ]
+        }
+      ],
+      "label": "Rasterize Buildings",
+      "behavior": "code",
+      "outputPorts": [
+        {
+          "cardinality": "1",
+          "types": [
+            "RASTER"
+          ]
+        }
+      ],
+      "paletteOrder": 1,
+      "source": "sources/rasterize-buildings.py",
+      "widgets": [
+        {
+          "name": "attribute",
+          "type": "text",
+          "label": "Height column",
+          "default": "height"
+        },
+        {
+          "name": "zoom",
+          "type": "number",
+          "label": "Zoom level",
+          "default": 16,
+          "options": {
+            "min": 1,
+            "max": 20,
+            "step": 1
+          }
+        },
+        {
+          "name": "max_height",
+          "type": "number",
+          "label": "Maximum height",
+          "default": 550,
+          "options": {
+            "min": 1,
+            "step": 1,
+            "units": "m"
+          }
+        }
+      ],
+      "dataflowCategories": {
+        "dataTypes": [
+          "Rasters"
+        ]
+      }
+    },
     {
       "badge": "VEGA",
       "category": "vis_grammar",
@@ -55,7 +170,7 @@
           ]
         }
       ],
-      "paletteOrder": 0,
+      "paletteOrder": 2,
       "source": "sources/lines-with-band.vl.json",
       "starterIsContent": true,
       "widgets": [
@@ -141,7 +256,7 @@
           ]
         }
       ],
-      "paletteOrder": 1,
+      "paletteOrder": 3,
       "source": "sources/curves-by-group.vl.json",
       "starterIsContent": true,
       "widgets": [
@@ -221,7 +336,7 @@
           ]
         }
       ],
-      "paletteOrder": 2,
+      "paletteOrder": 4,
       "source": "sources/bars-with-error-bars.vl.json",
       "starterIsContent": true,
       "widgets": [
@@ -295,7 +410,7 @@
           ]
         }
       ],
-      "paletteOrder": 3,
+      "paletteOrder": 5,
       "source": "sources/ensemble-strips.vl.json",
       "starterIsContent": true,
       "widgets": [
@@ -351,7 +466,7 @@
           ]
         }
       ],
-      "paletteOrder": 4,
+      "paletteOrder": 6,
       "source": "sources/stacked-bars-with-totals.vl.json",
       "starterIsContent": true,
       "widgets": [
@@ -419,7 +534,7 @@
           ]
         }
       ],
-      "paletteOrder": 5,
+      "paletteOrder": 7,
       "source": "sources/donuts.vl.json",
       "starterIsContent": true,
       "widgets": [
@@ -475,7 +590,7 @@
           ]
         }
       ],
-      "paletteOrder": 6,
+      "paletteOrder": 8,
       "source": "sources/weighted-matrix.vl.json",
       "starterIsContent": true,
       "widgets": [

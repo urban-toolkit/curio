@@ -29,7 +29,7 @@
       },
       {
         "id": "333949c8-983a-5cdb-845b-04abe06c2dc7",
-        "type": "scout.rasters/rasterize-buildings",
+        "type": "curio.scout/rasterize-buildings",
         "x": 645,
         "y": 430,
         "out": "DEFAULT",
@@ -114,7 +114,7 @@
       },
       {
         "id": "8a914e39-4cb1-535d-9a8b-19b45f6be288",
-        "type": "scout.rasters/raster-calculator",
+        "type": "curio.scout/raster-calculator",
         "x": 1935,
         "y": 430,
         "out": "DEFAULT",
@@ -204,8 +204,8 @@
       ]
     },
     "packages": [
-      "model.scout.deep-umbra@1",
-      "scout.rasters@1"
+      "curio.scout@1",
+      "model.scout.deep-umbra@1"
     ],
     "datasets": [
       {

@@ -64,7 +64,7 @@ def test_the_scan_sees_what_it_looks_for():
     assert _ids("datasets")
     assert _named('id = "09-heterogeneous-data-linked-views"') == ["09-heterogeneous-data-linked-views"]
     assert _named("see dataflows/regression") == ["dataflows/regression"]
-    assert _named("(``scout.rasters@1``)") == ["scout.rasters"]
+    assert _named("(``curio.scout@1``)") == ["curio.scout"]
     assert _named("curio.builtin/vis-vega") == []
 
 

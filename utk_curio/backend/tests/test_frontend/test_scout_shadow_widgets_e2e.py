@@ -63,16 +63,16 @@ EXAMPLE = Path(REPO_ROOT) / "docs" / "examples" / "24-scout-shadow-model-chicago
 PACKAGE = Path(REPO_ROOT) / "packages" / "model.scout.deep-umbra@1"
 SHADOW_TYPE = "model.scout.deep-umbra/accumulated-shadow"
 #: The node that takes the shadow's statistics: example 24's one Raster
-#: Calculator, SCOUT Rasters' node.
-STATISTICS_TYPE = "scout.rasters/raster-calculator"
+#: Calculator, Scout's node.
+STATISTICS_TYPE = "curio.scout/raster-calculator"
 #: The nodes of the example's chain, from the buildings to their statistics.
 CHAIN_TYPES = {
     "curio.builtin/data-loading",
-    "scout.rasters/rasterize-buildings",
+    "curio.scout/rasterize-buildings",
     SHADOW_TYPE,
     STATISTICS_TYPE,
 }
-PACKAGES = ("model.scout.deep-umbra@1", "scout.rasters@1")
+PACKAGES = ("curio.scout@1", "model.scout.deep-umbra@1")
 #: The first run rasterizes the buildings and runs Deep Umbra on four tiles.
 FIRST_RUN_MS = 300000
 RERUN_MS = 180000

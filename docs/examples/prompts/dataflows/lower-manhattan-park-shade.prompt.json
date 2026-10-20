@@ -4,7 +4,7 @@
   "version": 1,
   "source": {
     "path": "docs/examples/dataflows/lower-manhattan-park-shade.json",
-    "sha256": "54fb52fe36245428ba1a17d4d4a808d0347a748f21f4e4f237367a76c31ee179",
+    "sha256": "05f3da1815eecfcd2a928f68a3061f63b57e025a64b1dda61994a631e0a7dc88",
     "walkthrough": null
   },
   "prompt": "Run SCOUT's shadow model on Lower Manhattan and compare the shade in its parks across three scenarios. From the OpenStreetMap extract of Lower Manhattan in this checkout, docs/examples/data/lower_mnt.osm.pbf, load with Autark the parks of the Financial District to City Hall, the box from longitude -74.018 to -74.004 and latitude 40.7 to 40.713, and the buildings of a box about 300 metres larger on every side, up to the edge of the extract over the water to the west and south: longitude -74.0194416 to -74.0005 and latitude 40.698762 to 40.7157, so the towers that shade the parks at its edge are there too. Give every building part a height in metres: the height mapped for it, else its number of levels times a floor height, else a default height, both set on the node. Keep the named parks of at least a minimum area, set on the node, that are not mostly under the building footprints, a park mapped in pieces under one name as one park and a park mapped twice once. Mark the building parts the what-ifs change by one rule for every park: at least a tall building height, 60 metres, and within a distance of any park, 75 metres, both settings the whole dataflow shares. The scenarios: the buildings as they are; the marked parts taken out; and the marked parts cut down to the tall building height. Each what-if is a list of edits on the marked parts, picked by the mark, that a user can extend with more. In each scenario, turn the buildings' heights into a zoom 16 height raster with SCOUT's building rasterizer, run SCOUT's Deep Umbra shadow model on it, with one season setting the three scenarios share, set to summer, and measure each park's minutes of shadow: the mean, median and 90th percentile, the mean as a share of the season's daylight, and the shares of the park in sun, partial shade and deep shade. Draw each scenario's buildings in 3D colored by height and its shadow on Autark maps, each kind of map on one color range the scenarios share. Then compare the scenarios: chart each park's mean minutes of shadow in the three, and for each what-if take the change in shadow from the buildings as they are, cell by cell, and each park's change in shade, each drawn on a map on one color range centered on no change. The rasterizer and the shadow model are not part of the standard node set, so whatever provides them needs installing first.",
@@ -12,8 +12,8 @@
   "required": {
     "datasets": [],
     "packages": [
-      "model.scout.deep-umbra@1",
-      "scout.rasters@1"
+      "curio.scout@1",
+      "model.scout.deep-umbra@1"
     ],
     "paths": [
       "docs/examples/data/lower_mnt.osm.pbf"
@@ -211,6 +211,27 @@
         "hasContent": false
       },
       {
+        "ref": "analysis10",
+        "type": "curio.scout/rasterize-buildings",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis11",
+        "type": "curio.scout/rasterize-buildings",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis12",
+        "type": "curio.scout/rasterize-buildings",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
         "ref": "analysis7",
         "type": "model.scout.deep-umbra/accumulated-shadow",
         "role": "analysis",
@@ -227,27 +248,6 @@
       {
         "ref": "analysis9",
         "type": "model.scout.deep-umbra/accumulated-shadow",
-        "role": "analysis",
-        "executable": true,
-        "hasContent": true
-      },
-      {
-        "ref": "analysis10",
-        "type": "scout.rasters/rasterize-buildings",
-        "role": "analysis",
-        "executable": true,
-        "hasContent": true
-      },
-      {
-        "ref": "analysis11",
-        "type": "scout.rasters/rasterize-buildings",
-        "role": "analysis",
-        "executable": true,
-        "hasContent": true
-      },
-      {
-        "ref": "analysis12",
-        "type": "scout.rasters/rasterize-buildings",
         "role": "analysis",
         "executable": true,
         "hasContent": true
@@ -399,6 +399,21 @@
         "kind": "data"
       },
       {
+        "from": "analysis10",
+        "to": "analysis7",
+        "kind": "data"
+      },
+      {
+        "from": "analysis11",
+        "to": "analysis8",
+        "kind": "data"
+      },
+      {
+        "from": "analysis12",
+        "to": "analysis9",
+        "kind": "data"
+      },
+      {
         "from": "analysis7",
         "to": "visualization9",
         "kind": "data"
@@ -448,21 +463,6 @@
       {
         "from": "analysis9",
         "to": "analysis5",
-        "kind": "data"
-      },
-      {
-        "from": "analysis10",
-        "to": "analysis7",
-        "kind": "data"
-      },
-      {
-        "from": "analysis11",
-        "to": "analysis8",
-        "kind": "data"
-      },
-      {
-        "from": "analysis12",
-        "to": "analysis9",
         "kind": "data"
       }
     ],
@@ -603,7 +603,7 @@
   "split": "train",
   "review": {
     "status": "pending-owner-review",
-    "draftedBy": "the park shade example step (the plan for #914, step 18), from the example JSON, 2026-10-17; its rasterizers the SCOUT Rasters package's node, 2026-10-18",
+    "draftedBy": "the park shade example step (the plan for #914, step 18), from the example JSON, 2026-10-17; its rasterizers the SCOUT Rasters package's node, 2026-10-18; that node the Scout package's (curio.scout@1), 2026-10-20",
     "reviewedBy": null,
     "reviewedAt": null
   },

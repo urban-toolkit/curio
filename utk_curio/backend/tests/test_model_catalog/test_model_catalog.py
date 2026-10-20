@@ -21,7 +21,7 @@ DDRNET = "model.curio.ddrnet23-slim"
 DEEP_UMBRA = "model.scout.deep-umbra"
 WEATHER_GNN = "model.scout.weather-gnn"
 #: A node package that ships a module of its own.
-SCOUT_RASTERS = "scout.rasters"
+SCOUT_RASTERS = "curio.scout"
 
 
 @pytest.fixture()
