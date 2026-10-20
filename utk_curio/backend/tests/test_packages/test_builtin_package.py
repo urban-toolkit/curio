@@ -123,6 +123,43 @@ def test_no_raster_node_is_built_in(builtin_package_dir: Path):
     assert not [t.label for t in manifest.templates if "Raster" in t.label]
 
 
+def test_no_shipped_package_names_compare_scenarios():
+    """Compare Scenarios is gone (step 6.4 of the plan answering komar41's
+    review of the #914 merges): no shipped package holds a template of that
+    id or that behavior, and no manifest names the node, so no palette, Node
+    Catalog or agent preamble offers it."""
+    import json
+
+    manifests = sorted(REAL_CATALOG.glob("*/manifest.json"))
+    assert manifests, "expected at least one package in the catalog"
+    named = {}
+    for path in manifests:
+        text = path.read_text(encoding="utf-8")
+        templates = json.loads(text).get("templates", [])
+        found = [
+            t.get("id") for t in templates
+            if "compare-scenarios" in (t.get("id"), t.get("behavior"))
+        ]
+        found += [word for word in ("compare-scenarios", "Compare Scenarios") if word in text]
+        if found:
+            named[path.parent.name] = found
+    assert named == {}, f"packages that still name Compare Scenarios: {named}"
+
+
+def test_the_interaction_node_names_no_what_differs(builtin_package_dir: Path):
+    """What differs went with Compare Scenarios: the Interaction node's
+    description, which its tile, the Node Catalog and the agents' preamble
+    show, names neither."""
+    manifest = load_package_manifest(builtin_package_dir)
+    (template,) = [t for t in manifest.templates if t.template_id == "edit-features"]
+    for word in ("What differs", "Compare Scenarios"):
+        assert word not in template.description, template.description
+    preamble = REAL_CATALOG.parent / "utk_curio" / "llm-prompts" / "default_preamble.md"
+    (line,) = [line for line in preamble.read_text(encoding="utf-8").splitlines() if line.startswith("- Interaction:")]
+    for word in ("What differs", "Compare Scenarios"):
+        assert word not in line, line
+
+
 def test_builtin_package_ships_no_sources(builtin_package_dir: Path):
     """Built-in templates are structural shells — no starter code files."""
     manifest = load_package_manifest(builtin_package_dir)
