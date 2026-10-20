@@ -399,7 +399,7 @@ describe("TrillGenerator provenance ids are unique", () => {
   });
 
   it("keeps every version reachable by the id the graph reports", () => {
-    // TrillProvenanceWindow feeds the React Flow node id straight back into
+    // The provenance drawer feeds a version's graph id straight back into
     // switchProvenanceTrill, so every graph id must be a versions key.
     jest.spyOn(Date, "now").mockReturnValue(1700000000000);
 

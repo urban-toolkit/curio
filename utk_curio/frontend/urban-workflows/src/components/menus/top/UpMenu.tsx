@@ -1,12 +1,10 @@
 import React, { useCallback, useRef, useState } from "react";
-import {
-    LibraryManagerWindow,
-    TrillProvenanceWindow,
-} from "components/menus";
+import { LibraryManagerWindow } from "components/menus";
 import {
     useFlowContext,
     useNodeActionsContext,
 } from "../../../providers/FlowProvider";
+import { useProvenanceDrawerOptional } from "../../../providers/provenanceDrawerContext";
 import { useCollab } from "../../../providers/CollaborationProvider";
 import { TrillGenerator } from "../../../TrillGenerator";
 import { trillToNotebook, serializeNotebook } from "../../../NotebookConvertor";
@@ -57,7 +55,6 @@ import { useScenarioActions } from "../../scenarios/useScenarioActions";
 
 export default function UpMenu() {
     const [isEditing, setIsEditing] = useState(false);
-    const [trillProvenanceOpen, setTrillProvenanceOpen] = useState(false);
     const [librariesOpen, setLibrariesOpen] = useState(false);
     const [activeMenu, setActiveMenu] = useState<string | null>(null);
     const [saving, setSaving] = useState(false);
@@ -148,13 +145,10 @@ export default function UpMenu() {
         projectsApi.list().then(setCategorySuggestions).catch(() => {});
     };
 
-    const closeTrillProvenanceModal = () => {
-        setTrillProvenanceOpen(false);
-    };
-
-    const openTrillProvenanceModal = () => {
-        setTrillProvenanceOpen(true);
+    const provenanceDrawer = useProvenanceDrawerOptional();
+    const openProvenanceDrawer = () => {
         setActiveMenu(null);
+        provenanceDrawer?.openDataflowProvenance();
     };
 
     const handleNameChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -478,7 +472,7 @@ export default function UpMenu() {
                         Catalog beside it. Reading, so for a shared viewer too. */}
                     <HeaderMenuItem
                         icon={faClockRotateLeft}
-                        onClick={openTrillProvenanceModal}
+                        onClick={openProvenanceDrawer}
                         testId="provenance-menu-item"
                     >
                         Provenance
@@ -679,11 +673,6 @@ export default function UpMenu() {
                 </div>
             )}
 
-            <TrillProvenanceWindow
-                open={trillProvenanceOpen}
-                closeModal={closeTrillProvenanceModal}
-                workflowName={workflowNameRef.current}
-            />
             <LibraryManagerWindow
                 open={librariesOpen}
                 closeModal={() => setLibrariesOpen(false)}

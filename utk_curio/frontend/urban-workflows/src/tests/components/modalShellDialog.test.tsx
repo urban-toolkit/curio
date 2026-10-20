@@ -13,10 +13,9 @@ import ModalShell, { modalStackDepth } from "../../components/ModalShell";
  * and tests had nothing to target but raw headings.
  *
  * Naming comes in two shapes because the consumers do: most render an `<h2>`
- * and pass its id as `titleId`; three have no usable heading (GenericDialog's
- * children are arbitrary, TrillProvenanceWindow titles with a `<p>`, and
- * DatasetDetailModal's title belongs to a panel shared with a page route) and
- * pass a literal `label` instead.
+ * and pass its id as `titleId`; two have no usable heading (GenericDialog's
+ * children are arbitrary, and DatasetDetailModal's title belongs to a panel
+ * shared with a page route) and pass a literal `label` instead.
  */
 describe("ModalShell is announced as a dialog", () => {
   it("exposes the dialog role and marks itself modal", () => {

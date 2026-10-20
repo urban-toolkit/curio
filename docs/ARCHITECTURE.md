@@ -128,17 +128,18 @@ which `MainCanvasRoute` and `DashboardRoute` in `src/index.tsx` both render:
 4. `CanvasDatasetDetailsProvider`: a dataset's details, opened from any drawer or palette
 5. `ApiSettingsDrawerProvider`: API Settings as a drawer (see [API Settings and the Monitor](#api-settings-and-the-monitor))
 6. `MonitorDrawerProvider`: the monitor as a drawer
-7. `NodeCatalogDrawerProvider`
-8. `DatasetCatalogDrawerProvider`
-9. `AgentCatalogDrawerProvider`
-10. `ModelCatalogDrawerProvider`
-11. `DiscoveryCatalogDrawerProvider`
-12. `StarterProvider`: per-template starter source snippets
-13. `ProjectLoader`
-14. `PackagePaletteProvider`
-15. `DatasetPaletteProvider`
-16. `MainCanvas`, or `DashboardPage` on the dashboard
-17. `AgentAttachmentsProvider` (`src/providers/agents/`), on the canvas only: the attached agents, mounted in `MainCanvas.tsx`
+7. `ProvenanceDrawerProvider`: the provenance drawer (see [The provenance drawer](#the-provenance-drawer))
+8. `NodeCatalogDrawerProvider`
+9. `DatasetCatalogDrawerProvider`
+10. `AgentCatalogDrawerProvider`
+11. `ModelCatalogDrawerProvider`
+12. `DiscoveryCatalogDrawerProvider`
+13. `StarterProvider`: per-template starter source snippets
+14. `ProjectLoader`
+15. `PackagePaletteProvider`
+16. `DatasetPaletteProvider`
+17. `MainCanvas`, or `DashboardPage` on the dashboard
+18. `AgentAttachmentsProvider` (`src/providers/agents/`), on the canvas only: the attached agents, mounted in `MainCanvas.tsx`
     rather than `index.tsx` because it needs React Flow's instance and only
     applies where there is a dataflow to attach agents to
 
@@ -190,6 +191,25 @@ form, an LLM configuration's editor, or an agent's row. The one
 `ApiSettingsRequestHost` on the page, mounted by the top bar, opens the drawer
 on it where there is one, and otherwise navigates to the settings page with the
 focus in the URL (`settingsPath`, read back by `focusFromSearch`).
+
+### The provenance drawer
+
+**View > Provenance** calls `openDataflowProvenance()` from
+`ProvenanceDrawerProvider` (`src/providers/`), which mounts `ProvenanceDrawer`
+(`src/components/provenance/`): a `HeaderDrawer` on the right with the catalog
+drawers' pin (`pinnable`) and width (`wide={false}`).
+
+- `ProvenanceHistory` lists a history as Curio's Nest lists work, from items
+  that each name the item they were made from. `utils/provenanceTree.ts` lays
+  it out: the line through the newest item is the main one, and each branch is
+  folded under the item it left from, nested to any depth. Every item has one
+  parent, so a history is a tree, and the list shows all of it.
+- `DataflowProvenance` reads the versions `TrillGenerator.provenanceJSON`
+  holds (`utils/dataflowVersions.ts` numbers and names them) when the drawer
+  opens. A click opens a version; its **Put this version on the canvas** calls
+  `TrillGenerator.switchProvenanceTrill`, which loads it through
+  `useCode().loadTrill(trill, undefined, true)`, keeps the history and marks
+  the dataflow unsaved.
 
 ### FlowProvider: Central Workflow State
 
@@ -544,10 +564,10 @@ Curio knows what a node is by what its template declares, never by the name of i
 
 ### A dataflow's thumbnail
 
-The Projects page, the Scenario Catalog and the provenance window draw a dataflow as plain boxes ([`components/DataflowThumbnail.tsx`](../utk_curio/frontend/urban-workflows/src/components/DataflowThumbnail.tsx)), each with a bar in the color of its node's category (`colorForCategory` in `constants/nodeCategoryPalette.ts`), or grey for a node with none. The palette maps categories to colors and names no node type.
+The Projects page, the Scenario Catalog and the provenance drawer draw a dataflow as plain boxes ([`components/DataflowThumbnail.tsx`](../utk_curio/frontend/urban-workflows/src/components/DataflowThumbnail.tsx)), each with a bar in the color of its node's category (`colorForCategory` in `constants/nodeCategoryPalette.ts`), or grey for a node with none. The palette maps categories to colors and names no node type.
 
 - A project summary's `graph_preview` (`_extract_graph_preview` in `projects/services.py`) gives each node its id, type, position, size and the `category` its template declares, read through the request's `ManifestLookup` (`template_categories` in `projects/categories.py`), so a package in the account's store counts as one in the catalog does. A node type no manifest holds gets none. The Scenario Catalog's listing and a scenario's details draw the same preview.
-- A preview built in the browser gives each node its registered descriptor's category (`utils/graphPreviewCategories.ts`): the Scenario Catalog drawer's In project tab (`liveGraphPreview`) and each version of a dataflow (`TrillGenerator`). The provenance window draws a version with the category each node type's descriptor has then, else the one recorded with the version.
+- A preview built in the browser gives each node its registered descriptor's category (`utils/graphPreviewCategories.ts`): the Scenario Catalog drawer's In project tab (`liveGraphPreview`) and each version of a dataflow (`TrillGenerator`). The provenance drawer draws a version with the category each node type's descriptor has then, else the one recorded with the version.
 
 ### NodeDescriptor: Static Metadata
 
@@ -1306,6 +1326,8 @@ A node's code reads a view's current selection as `[!! selection name !!]`: the 
 ## Provenance Tracking
 
 Curio records a per-node execution history (start/end time, source code, input/output types, parent execution) so users can replay a node's evolution from the canvas. Tracking lives entirely in the browser: [`src/providers/ProvenanceProvider.tsx`](../utk_curio/frontend/urban-workflows/src/providers/ProvenanceProvider.tsx) keeps the graph in React state and persists it as part of the saved workflow JSON. Nothing is stored server-side.
+
+The dataflow's own version history is `TrillGenerator`'s (`provenanceJSON`, one version per node or connection added or removed), saved as `dataflowProvenance`. The provenance drawer shows it (see [The provenance drawer](#the-provenance-drawer)).
 
 ---
 
@@ -2278,8 +2300,9 @@ created empty for Solve to write.
 | `src/components/agents/catalog/AgentCatalogDrawer.tsx` | The canvas drawer that adds agents to the open dataflow |
 | `src/pages/agents/AgentCatalogBrowse.tsx` | The `/catalog/agents` browse page, the account-scope peer of the other two catalogs |
 | `src/components/layout/GlobalPageHeader.tsx` | The top bar of every signed-in page; its Monitor and API Settings open a page, or a drawer on the canvas and the dashboard (see [API Settings and the Monitor](#api-settings-and-the-monitor)) |
-| `src/components/layout/HeaderDrawer.tsx` | The drawer shell API Settings and the Monitor open in on the canvas and the dashboard |
-| `src/providers/ApiSettingsDrawerProvider.tsx`, `src/providers/MonitorDrawerProvider.tsx` | Mount those two drawers, inside `DataflowProviders` |
+| `src/components/layout/HeaderDrawer.tsx` | The drawer shell API Settings, the Monitor and provenance open in on the canvas and the dashboard; with `pinnable`, the catalog drawers' pin |
+| `src/providers/ApiSettingsDrawerProvider.tsx`, `src/providers/MonitorDrawerProvider.tsx`, `src/providers/ProvenanceDrawerProvider.tsx` | Mount those drawers, inside `DataflowProviders` |
+| `src/components/provenance/` | The provenance drawer: `ProvenanceDrawer`, `ProvenanceHistory` (the list), `DataflowProvenance`; layout in `src/utils/provenanceTree.ts`, versions in `src/utils/dataflowVersions.ts` |
 | `src/components/apiSettings/` | API Settings: `ApiSettingsPanel` (the two tabs), `ApiKeysTab`, `AgentConfigTab`, `SourceKeyForm`, `NodeKeyForm`, `ApiSettingsDrawer`, `ApiSettingsRequestHost` and `apiSettingsRequest.ts` (the `curio:api-settings` request event) |
 | `src/pages/settings/SettingsPage.tsx` | The settings page, `/settings/keys` and `/settings/agents` |
 | `src/pages/monitor/MonitorContent.tsx`, `MonitorDrawer.tsx` | The monitor's content, rendered by the `/monitor` page and by its drawer |

@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { DrawerHeader } from "../packages/publishing/DrawerHeader";
 import shell from "../packages/publishing/CatalogDrawerShell.module.css";
 import { useDrawerDragThrough } from "../packages/publishing/useDrawerDragThrough";
@@ -14,17 +14,26 @@ export interface HeaderDrawerProps {
   titleId: string;
   /** Marks the root as `data-curio-<name>-drawer="true"`. */
   name: string;
+  /** One line under the heading; none when left out. */
+  subtitle?: string | null;
+  /** The catalog drawers' pin: pinned, a scrim click or Escape leaves the
+   *  drawer open, and only its close button closes it. */
+  pinnable?: boolean;
+  /** The 720 px of API Settings and Monitor; false gives the catalog
+   *  drawers' 520 px. */
+  wide?: boolean;
   children: React.ReactNode;
 }
 
 /**
- * What the top bar's API Settings and Monitor open on the canvas and the
- * dashboard, in place of their pages, so the dataflow stays where it is.
+ * A drawer opened over the canvas and the dashboard, so the dataflow stays
+ * where it is: the top bar's API Settings and Monitor, in place of their
+ * pages, and the dataflow's and its nodes' provenance.
  *
- * The catalog drawers' shell and header, wider and without the pin, one tier
- * above them: a catalog card can open API Settings over its own drawer. While
- * mounted it holds a layer of the modal stack, so every Escape listener below
- * it stands down and one Escape closes only this drawer.
+ * The catalog drawers' shell and header, one tier above them: a catalog card
+ * can open API Settings over its own drawer. While mounted it holds a layer of
+ * the modal stack, so every Escape listener below it stands down and one
+ * Escape closes only this drawer.
  */
 export const HeaderDrawer: React.FC<HeaderDrawerProps> = ({
   presented,
@@ -33,10 +42,14 @@ export const HeaderDrawer: React.FC<HeaderDrawerProps> = ({
   title,
   titleId,
   name,
+  subtitle = null,
+  pinnable = false,
+  wide = true,
   children,
 }) => {
   const drawerRef = useRef<HTMLElement>(null);
   const dragThrough = useDrawerDragThrough();
+  const [pinned, setPinned] = useState(false);
 
   useEffect(() => holdModalStack(), []);
 
@@ -45,11 +58,11 @@ export const HeaderDrawer: React.FC<HeaderDrawerProps> = ({
     const onKey = (ev: KeyboardEvent) => {
       // This drawer is one layer of the stack itself: more is a modal on top.
       if (modalStackDepth() > 1) return;
-      if (ev.key === "Escape") onRequestClose();
+      if (ev.key === "Escape" && !pinned) onRequestClose();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [presented, onRequestClose]);
+  }, [presented, pinned, onRequestClose]);
 
   const handleTransitionEnd = useCallback(
     (e: React.TransitionEvent<HTMLElement>) => {
@@ -66,10 +79,17 @@ export const HeaderDrawer: React.FC<HeaderDrawerProps> = ({
       aria-hidden={!presented}
       {...dragThrough}
     >
-      <button type="button" className={shell.scrim} aria-label={`Dismiss ${title}`} onClick={onRequestClose} />
+      <button
+        type="button"
+        className={shell.scrim}
+        aria-label={`Dismiss ${title}`}
+        onClick={() => {
+          if (!pinned) onRequestClose();
+        }}
+      />
       <aside
         ref={drawerRef}
-        className={`${shell.drawer} ${shell.drawerWide}`}
+        className={wide ? `${shell.drawer} ${shell.drawerWide}` : shell.drawer}
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
@@ -80,9 +100,11 @@ export const HeaderDrawer: React.FC<HeaderDrawerProps> = ({
           kind={null}
           title={title}
           titleId={titleId}
-          subtitle={null}
+          subtitle={subtitle}
           closeAriaLabel={`Close ${title}`}
           onClose={onRequestClose}
+          pinned={pinned}
+          onPinToggle={pinnable ? () => setPinned((v) => !v) : undefined}
         />
         <div className={shell.scrollBody}>{children}</div>
       </aside>

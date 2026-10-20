@@ -44,7 +44,6 @@ jest.mock("../../components/layout/GlobalPageHeader", () => ({
 }));
 jest.mock("../../components/menus", () => ({
   LibraryManagerWindow: () => null,
-  TrillProvenanceWindow: () => null,
 }));
 jest.mock("../../components/menus/top/CatalogButtons", () => ({ CatalogButtons: () => null }));
 jest.mock("../../components/menus/top/CanvasViewSwitch", () => ({ CanvasViewSwitch: () => null }));

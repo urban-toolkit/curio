@@ -3,22 +3,16 @@ import path from "path";
 import { VIEWPORT_MOVING_CLASS } from "../../hook/useViewportMotionHint";
 
 /**
- * The provenance graph's viewport stays off its own compositor layer (#504).
+ * The dataflow canvas takes a compositor layer only while it is moved (#533).
  *
- * With that viewport on a layer of its own, Chrome stopped painting the graph's
- * 2px edges at some zoom levels: the version cards stayed and the lines between
- * them went. The DOM keeps correct boxes either way, so only a screenshot shows
- * it; the provenance-graph baselines do. `MainCanvas.css` is imported once for
- * the whole app, and its `will-change` rule is scoped to a moving canvas (#533);
- * the window's own rule keeps its viewport off a layer whatever that rule says.
+ * With a viewport on a layer of its own, Chrome stopped painting thin edges at
+ * some zoom levels (#504): the boxes stayed and the lines between them went.
+ * `MainCanvas.css` is imported once for the whole app, so its `will-change`
+ * rule is scoped to a canvas the user is panning or zooming.
  *
  * Source-read, as in bundlePreviewScroll.test.ts: jest maps CSS modules to
  * `identity-obj-proxy`, so a rendered assertion cannot see which rules apply.
  */
-const WINDOW = fs.readFileSync(
-  path.resolve(__dirname, "../../components/menus/provenance/TrillProvenanceWindow.module.css"),
-  "utf8",
-);
 const CANVAS = fs.readFileSync(
   path.resolve(__dirname, "../../components/MainCanvas.css"),
   "utf8",
@@ -33,13 +27,7 @@ function ruleBody(css: string, selector: string): string | null {
   return css.slice(open + 1, css.indexOf("}", open));
 }
 
-describe("provenance graph viewport layer", () => {
-  test("the Provenance window's viewport opts out of will-change", () => {
-    const body = ruleBody(WINDOW, ".graphDiv :global(.react-flow__viewport)");
-    expect(body).not.toBeNull();
-    expect(body).toMatch(/will-change:\s*auto;/);
-  });
-
+describe("canvas viewport layer", () => {
   test("the dataflow canvas takes its own layer only while it is moved", () => {
     // No bare rule: the hint is scoped to the class useViewportMotionHint sets
     // on a flow's wrapper during a pan or zoom (#533).

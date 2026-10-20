@@ -48,9 +48,9 @@ describe("load paths that DO diverge from disk still mark dirty", () => {
 
   it("reverting to a previous version marks the dataflow dirty", () => {
     // Marked in `useCode.loadTrill`'s `fromProvenance` branch rather than in
-    // TrillProvenanceWindow: that branch is the last point where a revert is
+    // the provenance drawer: that branch is the last point where a revert is
     // still distinguishable from opening a project (below it both reach
-    // loadParsedTrill identically), and the window's own suite mocks `useCode`
+    // loadParsedTrill identically), and the drawer's own suite mocks `useCode`
     // precisely to keep FlowProvider's module graph - vega included - out of a
     // presentational test. Importing the context there breaks it.
     const branch = USE_CODE.slice(

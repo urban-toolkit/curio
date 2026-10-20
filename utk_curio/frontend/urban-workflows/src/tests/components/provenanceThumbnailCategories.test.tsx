@@ -1,37 +1,21 @@
 /**
- * The provenance window draws each version's preview with the categories the
- * nodes' registered descriptors give now, as the Projects page draws a saved
- * project with the categories its manifests declare now. So a version saved
- * without categories is drawn in colour, and a node no registered package
- * provides keeps the category recorded with its version. Drawing changes
- * nothing that is saved.
+ * The provenance drawer draws an opened version's thumbnail with the
+ * categories the nodes' registered descriptors give now, as the Projects page
+ * draws a saved project with the categories its manifests declare now. So a
+ * version saved without categories is drawn in colour, and a node no
+ * registered package provides keeps the category recorded with its version.
+ * Drawing changes nothing that is saved.
  */
 import React from "react";
-import { render } from "@testing-library/react";
-
-const rfProps: Record<string, any> = {};
-
-jest.mock("reactflow", () => ({
-  __esModule: true,
-  default: (props: any) => {
-    Object.assign(rfProps, props);
-    return <div data-testid="inner-reactflow" />;
-  },
-  ReactFlowProvider: ({ children }: any) => <>{children}</>,
-  Controls: () => <div />,
-  Handle: () => <div />,
-  BaseEdge: () => <div />,
-  Position: { Top: "top", Bottom: "bottom" },
-  useStore: () => undefined,
-  getSmoothStepPath: () => ["M0,0"],
-}));
+import { fireEvent, render } from "@testing-library/react";
 
 jest.mock("../../hook/useCode", () => ({
   useCode: () => ({ loadTrill: jest.fn() }),
 }));
 
-import TrillProvenanceWindow from "../../components/menus/provenance/TrillProvenanceWindow";
+import { DataflowProvenance } from "../../components/provenance/DataflowProvenance";
 import { TrillGenerator } from "../../TrillGenerator";
+import { colorForCategory } from "../../constants/nodeCategoryPalette";
 import { clearCategoryDescriptors, registerCategoryDescriptor } from "../_support/categoryDescriptors";
 
 beforeAll(() => {
@@ -42,7 +26,6 @@ beforeAll(() => {
 afterAll(() => clearCategoryDescriptors());
 
 beforeEach(() => {
-  for (const k of Object.keys(rfProps)) delete rfProps[k];
   TrillGenerator.reset();
   TrillGenerator.provenanceJSON = {
     id: "wf",
@@ -75,41 +58,44 @@ beforeEach(() => {
         },
       },
     ],
-    edges: [{ id: "v1_to_v2", source: "v1", target: "v2" }],
+    edges: [{ id: "v1_to_v2", source: "v1", target: "v2", label: "Node added" }],
   };
 });
 
-const renderWindow = () => render(<TrillProvenanceWindow open closeModal={jest.fn()} workflowName="wf" />);
+/** Opens every version, as a click on its row does. */
+const renderOpened = () => {
+  const utils = render(<DataflowProvenance />);
+  for (const id of ["v1", "v2"]) {
+    fireEvent.click(utils.container.querySelector(`[data-provenance-item="${id}"] button`)!);
+  }
+  return utils;
+};
 
-/** What each version card is handed to draw. */
-const drawn = () =>
-  Object.fromEntries(
-    rfProps.nodes.map((n: any) => [n.id, n.data.preview.nodes.map((p: any) => [p.id, p.category])]),
+/** The colour of each node's bar in a version's thumbnail. */
+const fills = (container: HTMLElement, id: string) =>
+  Array.from(container.querySelectorAll(`[data-provenance-item="${id}"] svg g`)).map((g) =>
+    g.querySelectorAll("rect")[1].getAttribute("fill"),
   );
 
-describe("the provenance window colours each version's nodes by category", () => {
+describe("the provenance drawer colours each version's nodes by category", () => {
   test("from the registered descriptors, else what the version recorded", () => {
-    renderWindow();
+    const { container } = renderOpened();
 
-    expect(drawn()).toEqual({
-      v1: [["a", "data"], ["b", "vis_grammar"]],
-      v2: [["a", "data"], ["c", "vis_simple"], ["d", null]],
-    });
+    expect(fills(container, "v1")).toEqual([colorForCategory("data"), colorForCategory("vis_grammar")]);
+    expect(fills(container, "v2")).toEqual([
+      colorForCategory("data"),
+      colorForCategory("vis_simple"),
+      colorForCategory(null),
+    ]);
   });
 
-  test("a version card paints the bars in those colours", () => {
-    renderWindow();
-    const Card = rfProps.nodeTypes.trillNode;
-    const v1 = rfProps.nodes.find((n: any) => n.id === "v1");
-
-    const { container } = render(<Card {...({ id: "v1", data: v1.data } as any)} />);
-
-    const fills = Array.from(container.querySelectorAll("g")).map((g) => g.querySelectorAll("rect")[1].getAttribute("fill"));
-    expect(fills).toEqual(["var(--curio-category-data-fg)", "var(--curio-category-vis-fg)"]);
+  test("the registered category wins over the recorded one, in a colour of its own", () => {
+    expect(colorForCategory("data")).not.toBe(colorForCategory("computation"));
+    expect(fills(renderOpened().container, "v2")[0]).toBe("var(--curio-category-data-fg)");
   });
 
   test("drawing leaves the saved versions as they were", () => {
-    renderWindow();
+    renderOpened();
 
     const saved = TrillGenerator.getSerializableDataflowProvenance().graph.nodes;
     expect(saved[0].preview.nodes[0]).toEqual({ id: "a", type: "acme.hydro/gauge@1", x: 0, y: 0 });

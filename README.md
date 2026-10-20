@@ -112,7 +112,7 @@ Curio is a framework for collaborative urban visual analytics that uses a datafl
 - 🤖 **LLM configurations per user and per agent.** Connect Curio to OpenAI, Anthropic, Gemini, or a custom endpoint as several named configurations, and choose which one each agent runs on.
 - 🗺️ **Autark integration.** A single `Autark` node whose UrbanSpec combines OSM/PBF data loading, GPU compute (WGSL), and map / plot rendering, with JS Computation I/O routed through Python DuckDB.
 - ⚡ **JavaScript Computation node.** Run Node.js code in a sandbox subprocess alongside Python nodes.
-- 🧬 **Provenance in the dataflow.** Provenance is tracked in the dataflow JSON itself and drawn with React Flow.
+- 🧬 **Provenance in the dataflow.** Provenance is tracked in the dataflow JSON itself, and a drawer lists every version, with each branch under the version it left from.
 - 📓 **Jupyter ↔ dataflow conversion.** Turn a notebook into a dataflow and a dataflow into a notebook.
 - 💾 **Auto-save.** With unsaved-changes guard and a save status (Saved / Unsaved) in the top bar.
 - ▶️ **Play All & auto-play ancestors.** Execute nodes in topological order, or automatically run upstream nodes when a downstream play button is clicked.

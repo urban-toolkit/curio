@@ -448,6 +448,21 @@ bolt while it is on.
 - It is offered where a run goes on the server: not to guests, viewers of a
   shared dataflow, a Curio started with `--no-project`, or a dashboard.
 
+## Provenance
+
+**View > Provenance** opens the dataflow's version history in a drawer on the
+right. Each node or connection added or removed makes a version.
+
+- The versions are listed in the order they were made, on a line that leads to
+  the newest. Versions made from an earlier one you went back to fold under the
+  version they left from; click the fold to show them.
+- The pin keeps the drawer open when you click outside it or press Escape.
+
+Click a version to open it: its thumbnail, when it was recorded, and its nodes
+and connections. **Put this version on the canvas** goes back to it. The history
+stays, the dataflow reads **Unsaved**, and the next change branches from that
+version.
+
 ## Widgets
 
 A widget is a value a node's code reads that you set in a form, without editing
