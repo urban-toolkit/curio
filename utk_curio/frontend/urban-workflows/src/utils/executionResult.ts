@@ -10,11 +10,19 @@ import { formatDate, mapTypes } from "./formatters";
 const STDOUT_CAP = 4000;
 
 /**
+ * Whether a run's reply carries an output. A run without one failed. Text on
+ * stderr does not say so: a run that succeeds can write warnings there.
+ */
+function replyHasOutput(reply: any): boolean {
+    return reply.output?.path !== "";
+}
+
+/**
  * The node's outcome from a run's reply, and the artifact it passes downstream
  * (``null`` when the run produced none, which is a failure).
  */
 export function executionResultOutput(result: any): { shown: NodeOutput; artifact: any | null } {
-    const hasOutput = result.output?.path !== "";
+    const hasOutput = replyHasOutput(result);
 
     // result.stdout is list[str] from the sandbox; join with newlines so
     // multi-line autkdb output is readable instead of comma-coerced. Cap at the
@@ -52,7 +60,10 @@ export function executionResultOutput(result: any): { shown: NodeOutput; artifac
     };
 }
 
-/** Record a node run in the provenance: its times, its input and output types, and its code. */
+/**
+ * Record a node run in the provenance: its times, the kinds of data it read and
+ * returned, and its code. A run that failed returned an error.
+ */
 export function recordExecProvenance(
     nodeExecProv: (...args: any[]) => void,
     run: {
@@ -68,12 +79,10 @@ export function recordExecProvenance(
     },
 ): void {
     const { reply } = run;
-    let typesInput: string[] = [];
-    if (run.input != "") typesInput = reply.input?.dataType ?? [];
-    let typesOutput: string[] = [];
-    if (reply.output != "") {
-        typesOutput = reply.stderr != "" ? ["error"] : reply.output?.dataType ?? [];
-    }
+    // The reply names what the run read, and what it returned, by one
+    // `dataType` each (backend/app/execution/node_exec.py).
+    const typesInput = run.input != "" ? reply.input?.dataType : undefined;
+    const typesOutput = replyHasOutput(reply) ? reply.output?.dataType : "error";
     nodeExecProv(
         formatDate(run.startedAt),
         formatDate(run.finishedAt),

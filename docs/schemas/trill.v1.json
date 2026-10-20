@@ -751,8 +751,8 @@
         "id": { "type": "integer", "description": "Monotonic counter within the session, re-derived from the maximum on load." },
         "parentId": { "type": ["integer", "null"], "description": "The execution this one descends from, or null for the first." },
         "code": { "type": "string", "description": "The node's content as executed." },
-        "inputs": { "type": "array", "items": { "type": "string" }, "description": "Input artifact descriptors. Coerced to an empty array if the stored value is not an array." },
-        "outputs": { "type": "array", "items": { "type": "string" }, "description": "Output artifact descriptors. Coerced like 'inputs'." },
+        "inputs": { "type": "array", "items": { "type": "string" }, "description": "The kinds of data the run read, each once: DATAFRAME, GEODATAFRAME, VALUE, LIST, JSON, RASTER (mapTypes in utils/formatters.ts). The node's Provenance tab shows them on the run's card. Coerced to an empty array if the stored value is not an array." },
+        "outputs": { "type": "array", "items": { "type": "string" }, "description": "The kinds of data the run returned, named like 'inputs', or ERROR for a run that failed. Coerced like 'inputs'." },
         "startTime": {
           "type": "string",
           "description": "Run start as a free-form local time string, e.g. 'Aug 24 2026 17:15:6'. Deliberately NOT constrained with format: date-time - the producer does not emit ISO-8601. Tighten once it does."
