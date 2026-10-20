@@ -394,10 +394,11 @@ describe("prepareVegaInputs stacks every input for a spec that reads inputs", ()
     expect(spec.datasets.inputs).toHaveLength(1);
   });
 
-  test("an input with no label is named by its circle, with no scenario", async () => {
-    const prepared = await prepareVegaInputs(both(frame([5]), frame([3])), BARS, [BASE]);
+  test("with no labels, no graph to say which input is which: each output is an input, named by its circle", async () => {
+    // One label is one wired input, which carries both outputs (below).
+    const prepared = await prepareVegaInputs(both(frame([5]), frame([3])), BARS);
     expect(named(prepared, "inputs")!.map((row: any) => [row.scenario, row.scenario_name])).toEqual([
-      ["s-base", "Baseline"],
+      [null, "input_0"],
       [null, "input_1"],
     ]);
   });
