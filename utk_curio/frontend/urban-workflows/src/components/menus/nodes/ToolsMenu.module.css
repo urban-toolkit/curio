@@ -25,13 +25,19 @@
    constrain it, so on a short screen the Run-all button at its foot was simply
    drawn off screen with no way to scroll to it - unreachable on a 1366x768
    laptop, which is ~660px of viewport after browser chrome.
-   166px = the 150px `top` above plus 16px of breathing room. */
+   166px = the 150px `top` above plus 16px of breathing room.
+
+   min-width keeps the cards at the 112px they had while the built-in tiles sat
+   in the rail (two 45px tile columns, padding, border and the tiles' scrollbar).
+   Fit View frames the canvas beside the rail's right edge, so the same width
+   keeps every dataflow framed as before. */
 .builtinStack {
     flex-shrink: 0;
     display: flex;
     flex-direction: column;
     align-items: stretch;
     gap: 6px;
+    min-width: 112px;
     max-height: calc(100vh - 166px);
     pointer-events: none;
 }
