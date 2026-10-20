@@ -950,6 +950,16 @@ def read_node_output_text(page, node_id: str, *, timeout: float = 10000) -> str:
     return box.text_content() or ""
 
 
+#: The artifact a node's run saved its output to, from its outcome's "Saved to
+#: file:" line, or null before a run saved one.
+_OUTPUT_ARTIFACT_JS = """(id) => {
+    const node = window.__curio_reactFlow.getNodes().find((n) => n.id === id);
+    const content = node && node.data && node.data.output && node.data.output.content;
+    const match = typeof content === "string" ? content.match(/Saved to file: (\\S+)/) : null;
+    return match ? match[1] : null;
+}"""
+
+
 def activate_header_icon(locator) -> None:
     """Press one of a node header's icon buttons (the pencil, the settings cog).
 

@@ -195,6 +195,16 @@ def load_raster_cells(artifact_id: str):
     return grid, bands
 
 
+def _band(envelope: dict) -> list[float]:
+    """A raster envelope's one band, rows from south to north
+    (``utils/raster/rasterWire.ts``)."""
+    import base64
+    import struct
+
+    properties = envelope["data"]["features"][0]["properties"]
+    raw = base64.b64decode(properties["band_1"]["float32le"])
+    return list(struct.unpack(f"<{len(raw) // 4}f", raw))
+
 
 def _catalog_dataset_paths(code: str) -> dict[str, str]:
     """Map every ``curio_data_path("<id>")`` in *code* to its data file.
@@ -321,7 +331,7 @@ def execute_workflow_programmatically(
 
         # A Python node reading such a node has no input here, so it has no
         # ground truth either; the browser run is checked without one (#662:
-        # example 06's Compare Scenarios nodes read its Autark maps). Any other
+        # example 06's Sunlight change reads its Autark maps). Any other
         # missing upstream is still the KeyError below.
         unrun = [uid for uid in spec.upstream_nodes(node.id) if uid not in outputs]
         if unrun and all(uid in browser_only for uid in unrun):
