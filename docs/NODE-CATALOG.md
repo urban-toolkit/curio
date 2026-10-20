@@ -91,7 +91,7 @@ There are two places you manage node packages:
 
 ## 3. Using a node in a dataflow
 
-Once a package is in the open project, its nodes are in the palette: the built-in nodes sit in the left Tools panel, and nodes from other packages in its **Node Catalog** dropdown. Drag one onto the canvas.
+Once a package is in the open project, its nodes are in the palette: the built-in nodes under the left Tools panel's **Built-in** button, and nodes from other packages in its **Node Catalog** dropdown. Drag one onto the canvas.
 
 A package can also be dragged onto the canvas by its card in the drawer. For a package with one node, its node appears where you drop it. For a package with several nodes, a menu of its nodes opens where you drop it: pick one and it appears there, or press Escape or click outside the menu to make none. If the project does not have the package yet, picking a node, or dropping a package with one node, first opens the same review as **Add to project**, and the node appears once the package and its Python libraries are installed. On a hosted deployment, a guest's drop of a package the project does not have is refused.
 
