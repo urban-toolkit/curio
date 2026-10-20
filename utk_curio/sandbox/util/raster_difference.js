@@ -9,7 +9,7 @@
 // Autark map loads a raster with (utils/raster/rasterLoad.ts: its own size,
 // nearest, its EPSG CRS), exported with getRaster, and handed back as the
 // envelopes a raster travels in between nodes (utils/raster/rasterWire.ts).
-// Curio's raster algebra (util/raster_algebra.py) subtracts them. A raster
+// util/envelope_difference.py subtracts them. A raster
 // an Autark map would refuse is refused here, in that sentence, by throwing.
 import { AutkDb } from '@urban-toolkit/autk-db';
 import { planForMeta } from '__CURIO_RASTER_MODULES__/rasterLoad.ts';

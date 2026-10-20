@@ -1,9 +1,12 @@
 """Raster algebra: operations over rasters on one grid, cell by cell, and a
-raster's statistics.
+raster's statistics, for Scout's Raster Calculator. Its code imports them:
 
-The one implementation behind the Raster Calculator's operations
-(``curio_raster_calculate``, ``curio_raster_statistics``) and Compare
-Scenarios' Difference of two rasters (``scenario_difference.py``).
+    from scout_rasters.raster_algebra import raster_calculate, raster_statistics
+
+``raster_calculate(operation, rasters, codes=None, output_file=...)`` writes
+the raster it returns where *output_file(name)* says, which a node's code
+gives as ``curio_output_file``. A node of another package imports them when
+its package names Scout in ``dependencies.packages``.
 
 Rasters are combined only on one grid: the same size, origin, cell size and
 CRS. Anything else is refused with a sentence that names both, since putting
@@ -13,42 +16,31 @@ A cell is nodata where its raster holds its nodata value or a number that is
 not finite. An operation gives nodata where an input it reads there is nodata,
 and a result marks nodata as NaN.
 
-It works on two kinds of raster:
-
-- a rasterio dataset, what a Python node and the Data Catalog hand on: an
-  operation computes at the inputs' own number type (at least float32), so a
-  float64 raster keeps every digit, and writes its result as a GeoTIFF the node
-  returns;
-- an Autark raster envelope (``utils/raster/rasterWire.ts``): the float32
-  bands autk-db's ``getRaster`` exports. Compare Scenarios subtracts two of
-  them, because its output is the envelope the Autark map after it, a reopen
-  and a dashboard tile read.
+A raster is a rasterio dataset, what a Python node and the Data Catalog hand
+on: an operation computes at the inputs' own number type (at least float32),
+so a float64 raster keeps every digit, and writes its result as a GeoTIFF the
+node returns.
 
 The numbers in a refusal are written as JavaScript writes them, so a sentence
 reads the same whichever side made it.
 """
 from __future__ import annotations
 
-import base64
 import hashlib
 import math
 import warnings
 from decimal import Decimal
 
-#: What ``curio_raster_calculate`` does, and how many rasters each operation reads.
+#: What ``raster_calculate`` does, and how many rasters each operation reads.
 ARITHMETIC = ("add", "subtract", "multiply", "divide")
 CHOOSE = "choose"
 OPERATIONS = ARITHMETIC + (CHOOSE,)
 
-#: The columns of ``curio_raster_statistics``' one row.
+#: The columns of ``raster_statistics``' one row.
 STATISTICS = ("mean", "median", "min", "max", "count")
 
 #: How close two grid coordinates must be to count as the same.
 RELATIVE_TOLERANCE = 1e-9
-
-#: The key a band's values are written under in an envelope
-#: (``WIRE_BAND_KEY`` in ``utils/raster/rasterWire.ts``).
-WIRE_BAND_KEY = "float32le"
 
 
 class RasterAlgebraError(ValueError):
@@ -306,7 +298,7 @@ def write_raster(values, like, path, *, descriptions=None):
     return path
 
 
-def calculate(operation, rasters, *, codes=None, output_file):
+def raster_calculate(operation, rasters, codes=None, *, output_file=None):
     """*operation* over *rasters* cell by cell: a rasterio dataset.
 
     ``add``, ``subtract``, ``multiply`` and ``divide`` take input_0 and input_1
@@ -316,6 +308,11 @@ def calculate(operation, rasters, *, codes=None, output_file):
     raster of one band applies to every band. *output_file(name)* gives where
     the result is written.
     """
+    if output_file is None:
+        raise RasterAlgebraError(
+            "raster_calculate writes the raster it returns where output_file says: "
+            "give it the node's own, output_file=curio_output_file."
+        )
     np = _np()
     operation = str(operation)
     wanted = _reads(operation)
@@ -359,7 +356,7 @@ def calculate(operation, rasters, *, codes=None, output_file):
     return rasterio.open(path)
 
 
-def statistics(raster, *, band=1, mask=None, mask_values=None, where=None):
+def raster_statistics(raster, band=1, mask=None, mask_values=None, where=None):
     """The mean, median, minimum, maximum and count of *raster*'s cells in
     *band*, nodata left out: a one-row table.
 
@@ -435,60 +432,3 @@ def statistics(raster, *, band=1, mask=None, mask_values=None, where=None):
             "count": count,
         }
     return pd.DataFrame([row], columns=list(STATISTICS))
-
-
-# ---------------------------------------------------------------------------
-# Autark raster envelopes
-# ---------------------------------------------------------------------------
-
-def _band_ids(envelope: dict) -> list[str]:
-    bands = envelope["data"]["features"][0]["properties"].get("bands")
-    return [str(band["id"]) for band in bands] if isinstance(bands, list) else []
-
-
-def _wire_values(envelope: dict, band: str):
-    np = _np()
-    wire = envelope["data"]["features"][0]["properties"][band]
-    return np.frombuffer(base64.b64decode(wire[WIRE_BAND_KEY]), dtype="<f4")
-
-
-def subtract_envelopes(reference: tuple, comparison: tuple, absolute: bool = False) -> dict:
-    """``comparison`` minus ``reference``, cell by cell and band by band, each a
-    ``(name, envelope)``: the envelope of the difference, positive where the
-    comparison is higher, or, with *absolute*, of its size, 0 where they agree.
-    A cell that is nodata (NaN) in either is nodata in the result. The result
-    keeps the reference's properties and takes the comparison's extent and
-    grid. Refused, naming both, when their grids or their bands differ."""
-    np = _np()
-    reference_name, a = reference
-    comparison_name, b = comparison
-    what = f"{comparison_name} minus {reference_name}"
-    differs = grid_differences(a["data"]["grid"], b["data"]["grid"])
-    if differs:
-        raise RasterAlgebraError(
-            f"{what} cannot be computed: their grids differ in {', '.join(differs)}. "
-            f"{reference_name} is {describe_grid(a['data']['grid'])}; "
-            f"{comparison_name} is {describe_grid(b['data']['grid'])}. Put both on one grid first."
-        )
-    ids, other_ids = _band_ids(a), _band_ids(b)
-    if not ids or ",".join(ids) != ",".join(other_ids):
-        raise RasterAlgebraError(
-            f"{what} cannot be computed: their bands differ. "
-            f"{reference_name} has {', '.join(ids) or 'none'}; {comparison_name} has {', '.join(other_ids) or 'none'}."
-        )
-    properties = dict(a["data"]["features"][0]["properties"])
-    for band in ids:
-        base = _wire_values(a, band).astype("float64")
-        other = _wire_values(b, band).astype("float64")
-        difference = other - base
-        result = (np.abs(difference) if absolute else difference).astype("<f4")
-        properties[band] = {WIRE_BAND_KEY: base64.b64encode(result.tobytes()).decode("ascii")}
-    return {
-        "dataType": "raster",
-        "data": {
-            "type": "FeatureCollection",
-            "bbox": list(b["data"]["bbox"]),
-            "grid": dict(b["data"]["grid"]),
-            "features": [{"type": "Feature", "geometry": None, "properties": properties}],
-        },
-    }

@@ -206,18 +206,20 @@ def test_the_package_holds_the_raster_calculator_and_rasterize_buildings():
 
 def test_the_raster_calculator_gives_a_raster_or_a_table_of_statistics():
     """One Raster Calculator: its operations work cell by cell and give a
-    raster, or take a raster's statistics and give a table of one row. It is
-    the node the built-in one was: Python code that a drop opens with its
-    operations listed, the starter the package ships, as Rasterize Buildings
-    opens with its own. The starter is a starting point, not the node's whole
-    content, so an agent's plan creates the node empty for Solve to write."""
+    raster, or take a raster's statistics and give a table of one row. Its
+    input circles take rasters, or layers its code reads as zones or a mask.
+    It is the node the built-in one was: Python code that a drop opens with
+    its operations listed, the starter the package ships, as Rasterize
+    Buildings opens with its own. The starter is a starting point, not the
+    node's whole content, so an agent's plan creates the node empty for Solve
+    to write."""
     from utk_curio.backend.app.packages.repositories.manifests import load_package_manifest
 
     manifest = load_package_manifest(PACKAGE)
     (calculator,) = [t for t in manifest.templates if t.template_id == "raster-calculator"]
     assert calculator.label == "Raster Calculator"
     assert [sorted(port.types) for port in calculator.output_ports] == [["DATAFRAME", "RASTER"]]
-    assert [(port.types, port.cardinality) for port in calculator.input_ports] == [(["RASTER"], "[1,3]")]
+    assert [(port.types, port.cardinality) for port in calculator.input_ports] == [(["RASTER", "GEODATAFRAME"], "[1,3]")]
     for words in ("add, subtract, multiply or divide", "choose", "Statistics: the mean, median, minimum, maximum and count",
                   "a table of one row"):
         assert words in calculator.description, calculator.description

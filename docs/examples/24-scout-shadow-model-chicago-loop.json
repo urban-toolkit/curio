@@ -123,7 +123,7 @@
         "metadata": {
           "keywords": []
         },
-        "content": "# Statistics: the mean, median, minimum, maximum and count of a\n# raster's cells, nodata left out, as a table of one row.\n# input_0 is the accumulated shadow in minutes, input_1 the heights it was\n# predicted from, as the mask: SCOUT's metrics count the ground, the cells\n# Deep Umbra reads as gray level 0, a height under 1.08 m.\nreturn curio_raster_statistics(input_0, mask=input_1, where=lambda height: height < 1.08)\n"
+        "content": "# Statistics: the mean, median, minimum, maximum and count of a\n# raster's cells, nodata left out, as a table of one row.\n# input_0 is the accumulated shadow in minutes, input_1 the heights it was\n# predicted from, as the mask: SCOUT's metrics count the ground, the cells\n# Deep Umbra reads as gray level 0, a height under 1.08 m.\nfrom scout_rasters.raster_algebra import raster_statistics\n\nreturn raster_statistics(input_0, mask=input_1, where=lambda height: height < 1.08)\n"
       },
       {
         "id": "6cef8611-e3ec-52d4-9caf-aa5d6cff3d6a",

@@ -1,17 +1,19 @@
 {
   "sha256": {
-    "README.md": "38e2aa29e89bd7fe97ba6d521e99f5736cb82c96168c598edae851f35ebc33b5",
-    "manifest.json": "89a775440694b384704297fdadd92957480d16f92ac0a29196dd8118384027a0",
+    "README.md": "08058a2e7708a9c1dd4214adbccfbd134c0d74cf4dbf05c4e2e08a410a9f6672",
+    "manifest.json": "1a90b08711be50250022dd37f7722830ccb6372027fe6c83f26d8321dc6fe22b",
     "sources/bars-with-error-bars.vl.json": "bdb49689c81249e7568435bce349cc81f9ba34ec58efecd248a8fd412093dce4",
     "sources/curves-by-group.vl.json": "485dcf405bfdd7e7dba23dfc0e11fc27ebae42a94e2a2e2161cc9aaec6d88eef",
     "sources/donuts.vl.json": "efee7abb62efcc8e5a8534a3dd4e2b90f9bcfe27197ea8c5dff688de289808f4",
     "sources/ensemble-strips.vl.json": "a621302f5fb2203d0324eaeb4ef01a6fcc9d15f0c70373daa732c3950da7623c",
     "sources/lines-with-band.vl.json": "18fedd2f9795103d5a1bf346d54249c6d2dba8377616f656ebfe18c9f91589f7",
-    "sources/raster-calculator.py": "bad3def3828d9d04bdf14523494dbf52ae1e86123fbe3a0ec06b55db3a2226dc",
+    "sources/raster-calculator.py": "6a485244082e80cff88cdc7dd1327f8f730151064f5b0c23f46c40612454a002",
     "sources/rasterize-buildings.py": "b0739294eb6951269f77f4adc06abbd6f012c96c365932cfe7a857cac86fecf6",
     "sources/scout_rasters/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
     "sources/scout_rasters/convert_to_raster.py": "62eda82b3d6d12258e9c2d6d173da84b5a8c445e2b31d1fe62eab6587e36d676",
-    "sources/scout_rasters/node_outputs.py": "fa576782d64296dcaa2d98b13eb111525faa6dc091d7634f2c956dd059332330",
+    "sources/scout_rasters/node_outputs.py": "6d5a741822043189ab80f3fd92d7c3d09a6b3e4b3d09d848d73331ff0b76e517",
+    "sources/scout_rasters/raster_algebra.py": "8a33275226c99313493a3a853ed88ffa16152fa637bf9852cd0282f08584fa1f",
+    "sources/scout_rasters/web_tiles.py": "566901136277d2a104d335e1436ff37750ed6a5cbd108402e1353164d449d474",
     "sources/stacked-bars-with-totals.vl.json": "b09dbea7aab640653f3cd71b4cad9d48990a1ae3fc909a41d12dcd4abbeea3bf",
     "sources/weighted-matrix.vl.json": "ae46b3997ca43c47ebedbd0b258f6ccce9eedf55e8b8c6de9eccca08e54c5dee"
   }

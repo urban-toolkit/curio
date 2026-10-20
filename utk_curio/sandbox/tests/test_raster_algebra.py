@@ -1,5 +1,8 @@
-"""Curio's raster algebra (``util/raster_algebra.py``) and its raster helpers
-(``util/rasters.py``): one implementation of operations over rasters.
+"""Raster algebra and its raster helpers: the Scout package's raster algebra
+(``scout_rasters/raster_algebra.py``) and web map tiles
+(``scout_rasters/web_tiles.py``), Compare Scenarios' envelope subtraction in
+core (``util/envelope_difference.py``), and Curio's raster helpers
+(``util/rasters.py``).
 
 - Compare Scenarios' Difference subtracts two Autark envelopes: the comparison
   minus the reference, cell by cell, on one grid, two grids that differ refused
@@ -11,14 +14,18 @@
   the bounds, on the raster's own grid.
 - Map tiles are laid side by side on their own grid.
 
-Every test imports the module itself, so a checkout without it fails test by
-test rather than at collection.
+Every test imports the modules itself, Scout's through a run's staged copy of
+the package's modules (the ``scout_rasters`` fixture), so a checkout without
+them fails test by test rather than at collection, and no bytecode lands in
+``packages/``.
 """
 from __future__ import annotations
 
 import base64
+import importlib
 import math
 import os
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -26,10 +33,46 @@ import pytest
 GRID = {
     "crs": "EPSG:32616", "width": 3, "height": 2, "originX": 447000, "originY": 4637000, "resX": 30, "resY": -30,
 }
+#: Scout's sources folder, whose ``scout_rasters`` package holds the raster algebra.
+SCOUT_SOURCES = Path(__file__).resolve().parents[3] / "packages" / "curio.scout@1" / "sources"
+#: Scout's modules while a test that uses the ``scout_rasters`` fixture runs.
+_SCOUT: dict = {}
+
+
+@pytest.fixture
+def scout_rasters(tmp_path):
+    """Scout's ``scout_rasters`` modules, importable as a run of its node
+    imports them (staged into a folder of the run's own) while the test runs."""
+    from utk_curio.sandbox.util.package_modules import importable
+    from utk_curio.sandbox.util.staging import stage_package_modules
+
+    run = tmp_path / "scout-run"
+    run.mkdir()
+    staged = stage_package_modules({"root": str(SCOUT_SOURCES), "names": ["scout_rasters"]}, str(run))
+    assert staged == {"root": "package_modules", "names": ["scout_rasters"]}, staged
+    with importable(str(run / staged["root"]), staged["names"]):
+        _SCOUT.update(
+            raster_algebra=importlib.import_module("scout_rasters.raster_algebra"),
+            web_tiles=importlib.import_module("scout_rasters.web_tiles"),
+        )
+        try:
+            yield _SCOUT
+        finally:
+            _SCOUT.clear()
 
 
 def algebra():
-    from utk_curio.sandbox.util import raster_algebra as module
+    """Scout's raster algebra, for a test that uses the ``scout_rasters`` fixture."""
+    return _SCOUT["raster_algebra"]
+
+
+def web_tiles():
+    """Scout's web map tiles, for a test that uses the ``scout_rasters`` fixture."""
+    return _SCOUT["web_tiles"]
+
+
+def envelopes():
+    from utk_curio.sandbox.util import envelope_difference as module
 
     return module
 
@@ -71,7 +114,7 @@ def _cells(envelope: dict, band: str = "band_1") -> list:
 
 class TestSubtractEnvelopes:
     def test_the_result_is_the_comparison_minus_the_reference_positive_where_it_is_higher(self):
-        result = algebra().subtract_envelopes(
+        result = envelopes().subtract_envelopes(
             ("No NbS", _envelope({"band_1": [1, 2, 3, 4, 5, 6]})),
             ("NbS", _envelope({"band_1": [1, 5, 1, 4.5, 15, 0]})),
         )
@@ -80,26 +123,26 @@ class TestSubtractEnvelopes:
     def test_swapping_the_two_flips_every_sign(self):
         a = ("A", _envelope({"band_1": [1, 2, 3, 4, 5, 6]}))
         b = ("B", _envelope({"band_1": [6, 5, 4, 3, 2, 1]}))
-        assert _cells(algebra().subtract_envelopes(a, b)) == [5, 3, 1, -1, -3, -5]
-        assert _cells(algebra().subtract_envelopes(b, a)) == [-5, -3, -1, 1, 3, 5]
+        assert _cells(envelopes().subtract_envelopes(a, b)) == [5, 3, 1, -1, -3, -5]
+        assert _cells(envelopes().subtract_envelopes(b, a)) == [-5, -3, -1, 1, 3, 5]
 
     def test_absolute_gives_each_cells_size_of_change_whichever_is_higher(self):
         a = ("A", _envelope({"band_1": [1, 2, 3, 4, 5, None], "band_2": [0, 0, 0, 0, 0, 0]}))
         b = ("B", _envelope({"band_1": [6, 5, 4, 4, 2, 1], "band_2": [-1, 1, -2.5, 2.5, 0, 0]}))
         for reference, comparison in ((a, b), (b, a)):
-            result = algebra().subtract_envelopes(reference, comparison, absolute=True)
+            result = envelopes().subtract_envelopes(reference, comparison, absolute=True)
             assert _cells(result) == [5, 3, 1, 0, 3, None]
             assert _cells(result, "band_2") == [1, 1, 2.5, 2.5, 0, 0]
 
     def test_a_nodata_cell_on_either_side_is_nodata_in_the_result(self):
-        result = algebra().subtract_envelopes(
+        result = envelopes().subtract_envelopes(
             ("A", _envelope({"band_1": [None, 2, 3, 4, 5, 6]})),
             ("B", _envelope({"band_1": [1, 2, None, 4, 5, 6]})),
         )
         assert _cells(result) == [None, 0, None, 0, 0, 0]
 
     def test_every_band_is_subtracted_and_the_result_is_a_raster_collection_autk_map_draws(self):
-        result = algebra().subtract_envelopes(
+        result = envelopes().subtract_envelopes(
             ("A", _envelope({"band_1": [1] * 6, "band_2": [2] * 6})),
             ("B", _envelope({"band_1": [3] * 6, "band_2": [0] * 6})),
         )
@@ -122,7 +165,7 @@ class TestSubtractEnvelopes:
         values, as a Float32Array holds a number."""
         a = np.float32(0.1)
         b = np.float32(16777217.0)
-        result = algebra().subtract_envelopes(("A", _envelope({"band_1": [float(a)] * 6})),
+        result = envelopes().subtract_envelopes(("A", _envelope({"band_1": [float(a)] * 6})),
                                               ("B", _envelope({"band_1": [float(b)] * 6})))
         assert _cells(result)[0] == float(np.float32(float(b) - float(a)))
 
@@ -131,7 +174,7 @@ class TestSubtractEnvelopes:
         reference["data"]["features"][0]["properties"]["note"] = "from the reference"
         comparison = _envelope({"band_1": [2] * 6}, {**GRID, "originX": GRID["originX"] + 1e-7})
         comparison["data"]["bbox"] = [1, 2, 3, 4]
-        result = algebra().subtract_envelopes(("A", reference), ("B", comparison))
+        result = envelopes().subtract_envelopes(("A", reference), ("B", comparison))
         assert result["data"]["features"][0]["properties"]["note"] == "from the reference"
         assert result["data"]["bbox"] == [1, 2, 3, 4]
         assert result["data"]["grid"] == comparison["data"]["grid"]
@@ -144,12 +187,12 @@ class TestSubtractEnvelopes:
     ])
     def test_grids_that_differ_are_refused_naming_both(self, what, change):
         other = {**GRID, **change}
-        with pytest.raises(algebra().RasterAlgebraError) as refused:
-            algebra().subtract_envelopes(
+        with pytest.raises(envelopes().RasterAlgebraError) as refused:
+            envelopes().subtract_envelopes(
                 ("Reference depth", _envelope({"band_1": [1, 2, 3, 4, 5, 6]})),
                 ("Comparison depth", _envelope({"band_1": [1, 2, 3, 4, 5, 6]}, other)),
             )
-        describe = algebra().describe_grid
+        describe = envelopes().describe_grid
         assert str(refused.value) == (
             f"Comparison depth minus Reference depth cannot be computed: their grids differ in {what}. "
             f"Reference depth is {describe(GRID)}; Comparison depth is {describe(other)}. "
@@ -157,24 +200,33 @@ class TestSubtractEnvelopes:
         )
 
     def test_bands_that_differ_are_refused_naming_both(self):
-        with pytest.raises(algebra().RasterAlgebraError) as refused:
-            algebra().subtract_envelopes(
+        with pytest.raises(envelopes().RasterAlgebraError) as refused:
+            envelopes().subtract_envelopes(
                 ("A", _envelope({"band_1": [1, 2, 3, 4, 5, 6]})),
                 ("B", _envelope({"band_1": [1, 2, 3, 4, 5, 6], "band_2": [1, 2, 3, 4, 5, 6]})),
             )
         assert str(refused.value) == "B minus A cannot be computed: their bands differ. A has band_1; B has band_1, band_2."
 
 
+@pytest.fixture(params=["scout_rasters.raster_algebra", "envelope_difference"])
+def grids(request):
+    """A module's grid checks: Scout's raster algebra's, and the copy Compare
+    Scenarios' envelope subtraction keeps in core."""
+    if request.param == "envelope_difference":
+        return envelopes()
+    return request.getfixturevalue("scout_rasters")["raster_algebra"]
+
+
 class TestGrids:
-    def test_the_same_grid_up_to_rounding_in_its_coordinates_differs_in_nothing(self):
-        assert algebra().grid_differences(GRID, {**GRID, "originX": GRID["originX"] + 1e-7, "crs": "epsg:32616"}) == []
+    def test_the_same_grid_up_to_rounding_in_its_coordinates_differs_in_nothing(self, grids):
+        assert grids.grid_differences(GRID, {**GRID, "originX": GRID["originX"] + 1e-7, "crs": "epsg:32616"}) == []
 
-    def test_it_names_every_way_two_grids_differ(self):
+    def test_it_names_every_way_two_grids_differ(self, grids):
         other = {**GRID, "width": 4, "originY": 0, "resY": -10, "crs": "EPSG:4326"}
-        assert algebra().grid_differences(GRID, other) == ["size", "origin", "resolution", "CRS"]
+        assert grids.grid_differences(GRID, other) == ["size", "origin", "resolution", "CRS"]
 
-    def test_a_grid_in_words(self):
-        assert algebra().describe_grid(GRID) == "3 by 2 cells of 30 by 30 in EPSG:32616 from (447000, 4637000)"
+    def test_a_grid_in_words(self, grids):
+        assert grids.describe_grid(GRID) == "3 by 2 cells of 30 by 30 in EPSG:32616 from (447000, 4637000)"
 
     @pytest.mark.parametrize("value,text", [
         (30.0, "30"), (-0.0, "0"), (100, "100"), (1.5, "1.5"), (-2.5, "-2.5"),
@@ -182,8 +234,8 @@ class TestGrids:
         (-2.5e-8, "-2.5e-8"), (1e21, "1e+21"), (123456789012345680000.0, "123456789012345680000"),
         (0.00010133941049058334, "0.00010133941049058334"), (-90.4836, "-90.4836"),
     ])
-    def test_numbers_are_written_as_javascript_writes_them(self, value, text):
-        assert algebra().js_number(value) == text
+    def test_numbers_are_written_as_javascript_writes_them(self, grids, value, text):
+        assert grids.js_number(value) == text
 
 
 # ---------------------------------------------------------------------------
@@ -221,6 +273,7 @@ def _values(dataset, band=1):
     return [[None if math.isnan(v) else float(v) for v in row] for row in dataset.read(band)]
 
 
+@pytest.mark.usefixtures("scout_rasters")
 class TestCalculate:
     @pytest.mark.parametrize("operation,expected", [
         ("add", [[7.0, 9.0], [11.0, 13.0]]),
@@ -231,28 +284,28 @@ class TestCalculate:
     def test_input_0_with_input_1(self, tmp_path, out, operation, expected):
         a = _raster(tmp_path / "a.tif", [[6.0, 7.0], [8.0, 9.0]])
         b = _raster(tmp_path / "b.tif", [[1.0, 2.0], [3.0, 4.0]])
-        result = algebra().calculate(operation, [a, b], output_file=out)
+        result = algebra().raster_calculate(operation, [a, b], output_file=out)
         assert _values(result) == [[float(np.float32(v)) for v in row] for row in expected]
 
     def test_a_cell_divided_by_0_has_no_value(self, tmp_path, out):
         a = _raster(tmp_path / "a.tif", [[1.0, 2.0]])
         b = _raster(tmp_path / "b.tif", [[0.0, 4.0]])
-        assert _values(algebra().calculate("divide", (a, b), output_file=out)) == [[None, 0.5]]
+        assert _values(algebra().raster_calculate("divide", (a, b), output_file=out)) == [[None, 0.5]]
 
     def test_a_cell_with_no_value_in_an_input_has_none_in_the_result(self, tmp_path, out):
         a = _raster(tmp_path / "a.tif", [[-9999.0, 2.0, np.nan, 4.0]])
         b = _raster(tmp_path / "b.tif", [[1.0, -9999.0, 3.0, 1.0]])
-        assert _values(algebra().calculate("add", [a, b], output_file=out)) == [[None, None, None, 5.0]]
+        assert _values(algebra().raster_calculate("add", [a, b], output_file=out)) == [[None, None, None, 5.0]]
 
     def test_choose_takes_input_1_where_the_class_is_one_of_the_codes_and_input_2_elsewhere(self, tmp_path, out):
         classes = _raster(tmp_path / "classes.tif", [[21, 31, 43, 0, 21]], dtype="uint8", nodata=0)
         nbs = _raster(tmp_path / "nbs.tif", [[1.0, 2.0, 3.0, 4.0, -9999.0]])
         no_nbs = _raster(tmp_path / "no_nbs.tif", [[10.0, 20.0, 30.0, 40.0, 50.0]])
-        result = algebra().calculate("choose", [classes, nbs, no_nbs], codes=[21, 31], output_file=out)
+        result = algebra().raster_calculate("choose", [classes, nbs, no_nbs], codes=[21, 31], output_file=out)
         # 43 is not chosen; a nodata class is no class; a chosen cell with no
         # value has none in the result.
         assert _values(result) == [[1.0, 2.0, 30.0, 40.0, None]]
-        assert _values(algebra().calculate("choose", [classes, nbs, no_nbs], codes=[], output_file=out)) == [
+        assert _values(algebra().raster_calculate("choose", [classes, nbs, no_nbs], codes=[], output_file=out)) == [
             [10.0, 20.0, 30.0, 40.0, 50.0]
         ]
 
@@ -260,14 +313,14 @@ class TestCalculate:
         precise = [[5.788970947265625, 3.7056172688802085], [0.1 + 0.2, 7.083333333333334]]
         a = _raster(tmp_path / "a.tif", precise, dtype="float64")
         zero = _raster(tmp_path / "zero.tif", [[0.0, 0.0], [0.0, 0.0]], dtype="float64")
-        result = algebra().calculate("add", [a, zero], output_file=out)
+        result = algebra().raster_calculate("add", [a, zero], output_file=out)
         assert result.dtypes[0] == "float64"
         assert _values(result) == precise
 
     def test_integer_rasters_are_computed_in_float32(self, tmp_path, out):
         a = _raster(tmp_path / "a.tif", [[200, 250]], dtype="uint8", nodata=None)
         b = _raster(tmp_path / "b.tif", [[100, 250]], dtype="uint8", nodata=None)
-        result = algebra().calculate("add", [a, b], output_file=out)
+        result = algebra().raster_calculate("add", [a, b], output_file=out)
         assert result.dtypes[0] == "float32"
         assert _values(result) == [[300.0, 500.0]]
 
@@ -277,22 +330,22 @@ class TestCalculate:
         transform = Affine(0.5, 0.0, -90.0, 0.0, -0.5, 41.0)
         a = _raster(tmp_path / "a.tif", [[1.0, 2.0]], transform=transform, crs="EPSG:4326", descriptions=["depth"])
         b = _raster(tmp_path / "b.tif", [[1.0, 1.0]], transform=transform, crs="EPSG:4326")
-        result = algebra().calculate("subtract", [a, b], output_file=out)
+        result = algebra().raster_calculate("subtract", [a, b], output_file=out)
         assert tuple(result.transform)[:6] == tuple(transform)[:6]
         assert result.crs.to_epsg() == 4326
         assert math.isnan(result.nodata)
         assert result.descriptions == ("depth",)
         assert os.path.dirname(result.name) == os.path.dirname(out("x"))
-        again = algebra().calculate("subtract", [a, b], output_file=out)
+        again = algebra().raster_calculate("subtract", [a, b], output_file=out)
         assert again.name == result.name
-        other = algebra().calculate("add", [a, b], output_file=out)
+        other = algebra().raster_calculate("add", [a, b], output_file=out)
         assert other.name != result.name
 
     def test_every_band_is_computed_and_a_class_raster_of_one_band_applies_to_each(self, tmp_path, out):
         classes = _raster(tmp_path / "classes.tif", [[1, 2]], dtype="uint8", nodata=0)
         a = _raster(tmp_path / "a.tif", [[[1.0, 1.0]], [[2.0, 2.0]]])
         b = _raster(tmp_path / "b.tif", [[[5.0, 5.0]], [[6.0, 6.0]]])
-        result = algebra().calculate("choose", [classes, a, b], codes=[1], output_file=out)
+        result = algebra().raster_calculate("choose", [classes, a, b], codes=[1], output_file=out)
         assert result.count == 2
         assert _values(result, 1) == [[1.0, 5.0]]
         assert _values(result, 2) == [[2.0, 6.0]]
@@ -303,7 +356,7 @@ class TestCalculate:
         a = _raster(tmp_path / "a.tif", [[1.0, 2.0]])
         b = _raster(tmp_path / "b.tif", [[1.0, 2.0]], transform=Affine(30.0, 0.0, 447030.0, 0.0, -30.0, 4637000.0))
         with pytest.raises(algebra().RasterAlgebraError) as refused:
-            algebra().calculate("subtract", [a, b], output_file=out)
+            algebra().raster_calculate("subtract", [a, b], output_file=out)
         assert str(refused.value) == (
             "subtract of input_0, input_1 cannot be computed: their grids differ in origin. "
             "input_0 is 2 by 1 cells of 30 by 30 in EPSG:32616 from (447000, 4637000); "
@@ -321,7 +374,7 @@ class TestCalculate:
     def test_what_it_cannot_compute_it_says_in_a_sentence(self, tmp_path, out, operation, count, codes, sentence):
         given = [_raster(tmp_path / f"r{i}.tif", [[1.0, 2.0]]) for i in range(count)]
         with pytest.raises(algebra().RasterAlgebraError) as refused:
-            algebra().calculate(operation, given, codes=codes, output_file=out)
+            algebra().raster_calculate(operation, given, codes=codes, output_file=out)
         assert sentence in str(refused.value)
 
     def test_an_input_that_is_not_a_raster_is_named(self, tmp_path, out):
@@ -329,19 +382,20 @@ class TestCalculate:
 
         a = _raster(tmp_path / "a.tif", [[1.0, 2.0]])
         with pytest.raises(algebra().RasterAlgebraError, match="input_1 is not a raster"):
-            algebra().calculate("add", [a, pd.DataFrame({"x": [1]})], output_file=out)
+            algebra().raster_calculate("add", [a, pd.DataFrame({"x": [1]})], output_file=out)
 
     def test_bands_that_differ_are_refused(self, tmp_path, out):
         a = _raster(tmp_path / "a.tif", [[[1.0]], [[2.0]]])
         b = _raster(tmp_path / "b.tif", [[1.0]])
         with pytest.raises(algebra().RasterAlgebraError, match="their bands differ. input_0 has 2; input_1 has 1"):
-            algebra().calculate("add", [a, b], output_file=out)
+            algebra().raster_calculate("add", [a, b], output_file=out)
 
 
+@pytest.mark.usefixtures("scout_rasters")
 class TestStatistics:
     def test_mean_median_min_max_and_count_leave_nodata_out(self, tmp_path):
         a = _raster(tmp_path / "a.tif", [[1.0, 2.0, -9999.0], [np.nan, 4.0, 10.0]])
-        table = algebra().statistics(a)
+        table = algebra().raster_statistics(a)
         assert list(table.columns) == ["mean", "median", "min", "max", "count"]
         assert len(table) == 1
         row = table.iloc[0]
@@ -354,7 +408,7 @@ class TestStatistics:
         cells = rng.random((97, 113)) * 10.0
         cells[rng.random(cells.shape) < 0.3] = np.nan
         a = _raster(tmp_path / "a.tif", cells, dtype="float64", nodata=None)
-        row = algebra().statistics(a).iloc[0]
+        row = algebra().raster_statistics(a).iloc[0]
         assert row["median"] == np.nanmedian(cells)
         assert row["mean"] == np.nanmean(cells)
         assert row["count"] == int(np.count_nonzero(~np.isnan(cells)))
@@ -362,17 +416,17 @@ class TestStatistics:
     def test_a_mask_keeps_the_cells_whose_value_is_one_of_mask_values(self, tmp_path):
         a = _raster(tmp_path / "a.tif", [[1.0, 2.0, 3.0, 4.0]])
         mask = _raster(tmp_path / "mask.tif", [[0, 0, 5, 255]], dtype="uint8", nodata=255)
-        row = algebra().statistics(a, mask=mask, mask_values=[0]).iloc[0]
+        row = algebra().raster_statistics(a, mask=mask, mask_values=[0]).iloc[0]
         assert (row["mean"], row["count"]) == (1.5, 2)
         # The mask may come second in a list of rasters, as input_1.
-        row = algebra().statistics([a, mask], mask_values=[0, 5]).iloc[0]
+        row = algebra().raster_statistics([a, mask], mask_values=[0, 5]).iloc[0]
         assert (row["mean"], row["count"]) == (2.0, 3)
 
     def test_where_keeps_the_cells_that_meet_a_condition_on_the_raster_itself(self, tmp_path):
         a = _raster(tmp_path / "a.tif", [[0.5, 1.0, 1.08, 3.0, -9999.0]])
-        row = algebra().statistics(a, where=lambda height: height < 1.08).iloc[0]
+        row = algebra().raster_statistics(a, where=lambda height: height < 1.08).iloc[0]
         assert (row["count"], row["max"]) == (2, 1.0)
-        row = algebra().statistics(a, where=lambda v: (v >= 1.0) & (v < 5.0)).iloc[0]
+        row = algebra().raster_statistics(a, where=lambda v: (v >= 1.0) & (v < 5.0)).iloc[0]
         assert (row["count"], row["min"], row["max"]) == (3, 1.0, 3.0)
 
     def test_where_on_a_mask_tests_the_masks_values(self, tmp_path):
@@ -386,19 +440,19 @@ class TestStatistics:
             seen.append(values)
             return values < 1.08
 
-        row = algebra().statistics([shadow, heights], where=under).iloc[0]
+        row = algebra().raster_statistics([shadow, heights], where=under).iloc[0]
         assert (row["mean"], row["count"]) == (15.0, 2)
         assert seen[0].dtype == np.float64 and math.isnan(seen[0][0, 3])
 
     def test_a_raster_with_no_cell_left_counts_none(self, tmp_path):
         a = _raster(tmp_path / "a.tif", [[-9999.0, -9999.0]])
-        row = algebra().statistics(a).iloc[0]
+        row = algebra().raster_statistics(a).iloc[0]
         assert row["count"] == 0
         assert all(math.isnan(row[name]) for name in ("mean", "median", "min", "max"))
 
     def test_another_band(self, tmp_path):
         a = _raster(tmp_path / "a.tif", [[[1.0, 1.0]], [[5.0, 7.0]]])
-        assert algebra().statistics(a, band=2).iloc[0]["mean"] == 6.0
+        assert algebra().raster_statistics(a, band=2).iloc[0]["mean"] == 6.0
 
     def test_what_it_cannot_compute_it_says_in_a_sentence(self, tmp_path):
         from affine import Affine
@@ -419,7 +473,7 @@ class TestStatistics:
         ]
         for kwargs, sentence in cases:
             with pytest.raises(algebra().RasterAlgebraError) as refused:
-                algebra().statistics(**kwargs)
+                algebra().raster_statistics(**kwargs)
             assert sentence in str(refused.value), kwargs
 
 
@@ -542,12 +596,18 @@ class TestCurioLoadData:
         with pytest.raises(ValueError, match="data.x is a collection"):
             namespace["curio_load_data"]("data.x", bounds=(0, 0, 1, 1))
 
-    def test_the_raster_nodes_steps_are_there_too(self, tmp_path):
+    def test_the_raster_nodes_steps_are_scouts_and_write_where_the_node_writes_its_files(self, tmp_path, scout_rasters):
+        """The namespace holds no raster operation: each old helper refuses,
+        naming the Raster Calculator. Scout's write their raster where the
+        node's ``curio_output_file`` writes."""
         src = _grid_raster(tmp_path / "grid.tif")
         namespace = self._namespace(tmp_path, src.name, "geotiff")
-        row = namespace["curio_raster_statistics"](src).iloc[0]
+        for name in ("curio_raster_statistics", "curio_raster_calculate"):
+            with pytest.raises(RuntimeError, match=f"{name} was renamed: use a Raster Calculator node"):
+                namespace[name](src)
+        row = algebra().raster_statistics(src).iloc[0]
         assert row["count"] == 80
-        doubled = namespace["curio_raster_calculate"]("add", [src, src])
+        doubled = algebra().raster_calculate("add", [src, src], output_file=namespace["curio_output_file"])
         assert doubled.read(1)[0, 1] == 2.0
         assert os.path.dirname(doubled.name) == str(tmp_path / "media" / "outputs")
 
@@ -556,11 +616,12 @@ class TestCurioLoadData:
 # Map tiles side by side
 # ---------------------------------------------------------------------------
 
+@pytest.mark.usefixtures("scout_rasters")
 class TestTileMosaic:
     def test_a_tiles_bounds_are_its_corners_in_the_crs(self):
         from pyproj import Transformer
 
-        west, south, east, north = rasters().tile_bounds(16814, 24355, 16)
+        west, south, east, north = web_tiles().tile_bounds(16814, 24355, 16)
         n = 2.0 ** 16
         lon_w, lon_e = 16814 / n * 360.0 - 180.0, 16815 / n * 360.0 - 180.0
         lat_n = math.degrees(math.atan(math.sinh(math.pi * (1 - 2 * 24355 / n))))
@@ -568,13 +629,13 @@ class TestTileMosaic:
         to_3395 = Transformer.from_crs(4326, 3395, always_xy=True)
         assert (west, north) == to_3395.transform(lon_w, lat_n)
         assert (east, south) == to_3395.transform(lon_e, lat_s)
-        assert rasters().tile_bounds(16814, 24355, 16, "EPSG:4326") == pytest.approx((lon_w, lat_s, lon_e, lat_n))
+        assert web_tiles().tile_bounds(16814, 24355, 16, "EPSG:4326") == pytest.approx((lon_w, lat_s, lon_e, lat_n))
 
     def test_web_tiles_lie_side_by_side_on_their_own_grid(self, tmp_path):
         import rasterio
 
         tiles = {(10, 20): np.full((4, 4), 1.0, dtype="float32"), (11, 21): np.full((4, 4), 2.0, dtype="float32")}
-        path = rasters().mosaic_web_tiles(tiles, 5, str(tmp_path / "m.tif"), crs="EPSG:3395", tile_size=4,
+        path = web_tiles().mosaic_web_tiles(tiles, 5, str(tmp_path / "m.tif"), crs="EPSG:3395", tile_size=4,
                                           band_descriptions=["height (m)"], tags={"zoom": 5})
         with rasterio.open(path) as mosaic:
             cells = mosaic.read(1)
@@ -583,7 +644,7 @@ class TestTileMosaic:
             assert cells[4:, 4:].tolist() == [[2.0] * 4] * 4
             # A tile missing inside the span is 0.
             assert cells[:4, 4:].tolist() == [[0.0] * 4] * 4
-            west, _, east, north = rasters().tile_bounds(10, 20, 5)
+            west, _, east, north = web_tiles().tile_bounds(10, 20, 5)
             assert mosaic.transform.c == west and mosaic.transform.f == north
             assert mosaic.transform.a == (east - west) / 4
             assert mosaic.descriptions == ("height (m)",)
@@ -595,7 +656,7 @@ class TestTileMosaic:
         import rasterio
 
         tiles = {(10, 20): np.full((4, 4), 1.0, dtype="float32"), (11, 21): np.zeros((4, 4), dtype="float32")}
-        path = rasters().mosaic_web_tiles(tiles, 5, str(tmp_path / "m.tif"), crs="EPSG:3395", tile_size=4,
+        path = web_tiles().mosaic_web_tiles(tiles, 5, str(tmp_path / "m.tif"), crs="EPSG:3395", tile_size=4,
                                           fill=float("nan"), nodata=float("nan"))
         with rasterio.open(path) as mosaic:
             assert mosaic.nodata is not None and math.isnan(mosaic.nodata), mosaic.nodata

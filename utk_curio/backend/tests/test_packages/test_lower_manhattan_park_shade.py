@@ -461,7 +461,7 @@ def test_every_map_is_valid_and_the_maps_side_by_side_share_one_range(tmp_path):
 
     run = tmp_path / "run"
     run.mkdir()
-    staged = stage_package_modules({"root": str(MODEL_PACKAGE / "sources"), "names": ["deep_umbra"]}, str(run))
+    staged = stage_package_modules(_PACKAGE_MODULES[SHADOW], str(run))
     import importlib
 
     with importable(str(run / staged["root"]), staged["names"]):
@@ -491,10 +491,14 @@ _FETCH_FROM_DISK = """{
 }
 """
 
-#: Each package node's modules, as a run stages them.
+#: Each package node's modules, as a run stages them: Accumulated Shadow's
+#: own, then Scout's, which its package names in ``dependencies.packages``.
 _PACKAGE_MODULES = {
     RASTERIZE: {"root": str(RASTER_PACKAGE / "sources"), "names": [RASTER_MODULE]},
-    SHADOW: {"root": str(MODEL_PACKAGE / "sources"), "names": ["deep_umbra"]},
+    SHADOW: [
+        {"root": str(MODEL_PACKAGE / "sources"), "names": ["deep_umbra"]},
+        {"root": str(RASTER_PACKAGE / "sources"), "names": [RASTER_MODULE]},
+    ],
 }
 
 
