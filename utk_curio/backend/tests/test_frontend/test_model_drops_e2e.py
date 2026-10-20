@@ -8,9 +8,10 @@ Catalog drawer drags as the Node Catalog drawer's cards do:
   the package goes through the drawer's Add review first. Each card does it:
   DDRNet23-Slim, Deep Umbra, the SCOUT weather GNN and a model added from
   Hugging Face, and DDRNet's node runs;
-* a row of the Tools panel's Models dropdown drops as the card does. With the
-  drawer closed, the drop of a model the dataflow lacks opens the drawer on
-  the model's Add review: Cancel makes no node, and the confirm makes it;
+* the Tools panel's Models dropdown lists the dataflow's models only, as the
+  Data Catalog dropdown lists its datasets: none in a dataflow that has added
+  none, then the one added in the drawer. Its row drops as the card does, and
+  makes the node at once, since the dataflow has the model;
 * a node on the canvas that loads a model, saved with **Save as package
   node**, becomes a model package of its own: it shows in the Model Catalog,
   holds a copy of the model's weights, and its node names the new id, so it
@@ -45,6 +46,7 @@ from .test_model_catalog_e2e import (
     LOCAL_RELIEF,
     LOCAL_RELIEF_FOLDER,
     LOCAL_RELIEF_ID,
+    _add_to_project,
     _card,
     _close_drawer,
     _import_into_project,
@@ -64,6 +66,7 @@ from .utils import (
     drag_with_the_mouse_onto_canvas,
     frame_nodes,
     node_locator,
+    open_tools_palette,
     read_node_code,
     require_owner_view,
     require_project_page,
@@ -336,55 +339,59 @@ def _record_installs(page) -> list[str]:
     return installs
 
 
-def test_a_models_dropdown_row_dropped_with_the_drawer_closed_opens_the_drawer_on_its_add_review(
+def _models_trigger(page):
+    """The rail's Models card: its count, then its label."""
+    return page.locator('#models-palette button[aria-haspopup="true"]')
+
+
+def test_the_models_dropdown_lists_only_the_dataflows_models_and_a_row_drops_as_its_node(
     app_frontend: "FrontendPage", current_server: str, page,
 ):
-    """The Model Catalog drawer is closed and the dataflow lacks the model: the
-    drop opens the drawer and its Add review. Cancel makes no node; dropped
-    again and confirmed, the model's node appears, as a drawer card's does."""
+    """The Models dropdown lists this dataflow's models, as the Data Catalog
+    dropdown lists its datasets. A dataflow that has added none shows the
+    empty state and the way into the drawer; once Deep Umbra is added in the
+    drawer, the dropdown lists exactly Deep Umbra. Its row dropped on the
+    canvas makes its node at once, with no Add review and no install."""
     dir_name, template = SHIPPED_CARDS["deep-umbra"]
     name = _manifest(dir_name)["name"]
     model_id = dir_name.split("@")[0]
     _enter(page, app_frontend, current_server, spec=_empty())
-    page.get_by_title("Open model palette").click()
-    grip = page.locator(f'#models-palette [data-model-id="{model_id}"] [draggable="true"]')
-    expect(grip).to_have_count(1, timeout=30000)
-    expect(page.locator(MODEL_DRAWER)).to_have_count(0)
+
+    panel = open_tools_palette(page, "models")
+    # Shown once the listing is in. Every model ships in the catalog, and
+    # this dataflow has added none of them.
+    expect(panel.get_by_text("Add or import a model to use it here.", exact=True)).to_be_visible(timeout=30000)
+    expect(panel.locator("[data-model-id]")).to_have_count(0)
+    expect(panel.locator("summary")).to_have_text(re.compile(r"^\s*Models in project\s*0\s*$"))
+    expect(panel.get_by_text("No models added yet.", exact=True)).to_be_visible()
+    expect(_models_trigger(page)).to_have_text(re.compile(r"^\s*0\s*Model Catalog\s*$"))
+    expect(panel.get_by_role("button", name="Browse Model Catalog +", exact=True)).to_be_visible()
+
+    # Added in the drawer: the dropdown lists it, and nothing else.
+    drawer = _open_drawer(page, "Model Catalog", MODEL_DRAWER)
+    _add_to_project(page, _card(drawer, dir_name), name)
+    _close_drawer(page, MODEL_DRAWER)
+    panel = open_tools_palette(page, "models")
+    expect(panel.locator(f'[data-model-id="{model_id}"]')).to_have_count(1, timeout=30000)
+    expect(panel.locator("[data-model-id]")).to_have_count(1)
+    expect(panel.locator("summary")).to_have_text(re.compile(r"^\s*Models in project\s*1\s*$"))
+    expect(panel.get_by_text("Add or import a model to use it here.", exact=True)).to_have_count(0)
+    expect(_models_trigger(page)).to_have_text(re.compile(r"^\s*1\s*Model Catalog\s*$"))
+
+    # Its row dropped on the canvas: the node, with no Add asked for.
     installs = _record_installs(page)
     before = _node_ids(page)
-
+    grip = panel.locator(f'[data-model-id="{model_id}"] [draggable="true"]')
     drop = drag_with_the_mouse_onto_canvas(page, grip, at=_right_of_the_palette(page))
     assert drop["onCanvas"], f"the row's drop landed on {drop['droppedOn']}, not on the canvas"
-    review = _add_review(page, name)
-    expect(review).to_be_visible(timeout=30000)
-    expect(page.get_by_role("dialog").filter(
-        has=page.get_by_role("heading", name="Model Catalog", exact=True),
-    )).to_be_visible(timeout=10000)
-    review.get_by_role("button", name="Cancel", exact=True).click()
-    expect(review).to_have_count(0, timeout=10000)
-    assert (_node_ids(page), installs) == (before, []), "a cancelled Add made a node or installed"
-
-    # The drawer closed again, the row's drop opens it again, and the confirm
-    # makes the node.
-    _close_drawer(page, MODEL_DRAWER)
-    if page.get_by_title("Open model palette").count():
-        page.get_by_title("Open model palette").click()
-    drop = drag_with_the_mouse_onto_canvas(page, grip, at=_right_of_the_palette(page))
-    assert drop["onCanvas"], f"the row's drop landed on {drop['droppedOn']}, not on the canvas"
-    review = _add_review(page, name)
-    expect(review).to_be_visible(timeout=30000)
-    assert _node_ids(page) == before, "the drop made a node before the Add review was confirmed"
-    with page.expect_response(
-        lambda r: "/api/packages/projects/" in r.url and r.url.endswith("/install") and r.request.method == "POST",
-        timeout=180000,
-    ) as added:
-        review.get_by_role("button", name="Add to project", exact=True).click()
-    assert added.value.status == 201, f"{added.value.status}: {added.value.text()[:600]}"
     node = _new_node(page, before)
     assert (canvas_node_type(page, node) or "").startswith(f"{model_id}/{template}"), canvas_node_type(page, node)
     _wait_for_code_naming(page, node, model_id)
     expect(page.locator(NOTIFICATIONS).get_by_text(re.compile(rf"node for {re.escape(name)}\."))).to_be_visible(
         timeout=15000
+    )
+    assert (_add_review(page, name).count(), page.locator(MODEL_DRAWER).count(), installs) == (0, 0, []), (
+        "the row's drop asked for an Add"
     )
 
 
