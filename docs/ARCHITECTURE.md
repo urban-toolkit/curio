@@ -356,31 +356,48 @@ from the box its input comes from:
   `src/utils/vegaDatasets.ts`, which makes `usesNamedDatasets` true for it) gets every
   input's rows stacked in circle order, each with `__input__`, `scenario` and
   `scenario_name`. `prepareVegaInputs` (`utils/vegaInput.ts`) builds the dataset with
-  `stackInputs` (`utils/scenarios/stackedInputs.ts`), from each frame's rows or, for
-  such a spec only, an input that is a value (`readGrammarInput`'s `values`). A
-  refusal is an `emptyReason` the node shows. `useVega` takes the labels as
-  `inputLabels`, stacks again on every compile and every new input, and judges an empty
-  render over the stacked rows. Its twins in Python are `stack_inputs` and
-  `input_rows` (`inputRows`, one input's own rows) in
-  `utk_curio/sandbox/util/scenario_stack.py`, which share `stack_scenarios`' rules and
-  which an exported notebook's chart cell imports (`NotebookConvertor.ts`, with the
-  boxes at `dataflow.scenarios`). `stackedInputs.cases.json` pins both, for Jest and
-  for `test_scenario_inputs.py`.
+  `stackInputs` (`utils/scenarios/stackedInputs.ts`), from each frame as the sandbox
+  writes it (`{dataType, data}`, so a frame with no rows is a table still and a
+  GeoDataFrame's rows leave its geometry out) or, for such a spec only, an input that
+  is a value (`readGrammarInput`'s `values`; a `float` written as null is NaN). Which
+  input a frame came in on is the graph's to say, not the bundle's: the labels are one
+  per wired circle, and with one circle wired every frame and value that arrived is
+  its own, one entry that a tuple or several layers make a refusal. The `input_<k>`
+  datasets are read as before, geometry included where a view draws it. A refusal is
+  an `emptyReason` the node shows. `useVega` takes the labels as `inputLabels`, stacks
+  again on every compile and every new input, and judges an empty render over the
+  stacked rows. A selection that covers the first input's rows (a Data Pool's echo, a
+  direct link) flags them in `inputs` too (`__input__` 0), and `setInteracted` skips a
+  dataset the view lacks: vega-lite builds only the datasets a spec reads, and vega
+  throws for any other. Its twins in Python are `stack_inputs` and `input_rows`
+  (`inputRows`, one input's own rows) in `utk_curio/sandbox/util/scenario_stack.py`,
+  which share `stack_scenarios`' rules but read a GeoDataFrame without its geometry
+  (`geometry=False`, so Compare Scenarios keeps refusing a GeoDataFrame beside a table
+  and two coordinate systems), and which an exported notebook's chart cell imports
+  (`NotebookConvertor.ts`, with the boxes at `dataflow.scenarios`; the cell writes the
+  spec as a Python literal). `stackedInputs.cases.json` pins both, for Jest and for
+  `test_scenario_inputs.py`.
 - `adapters/node/vegaBehavior.ts` fills a spec that reads `inputs` with its own
   inputs' labels (`withScenarioScales`, `utils/scenarios/scenarioScales.ts`), each box
   once in the order `dataflow.scenarios` lists the boxes, then the inputs from no box in
-  circle order (`scaleLabelsOf`), and any other spec with an upstream Compare Scenarios
-  node's labels (`upstreamCompareLabels`). For the first, a change to any label's id,
-  name or color, or to the boxes' order, draws the chart again and stacks its rows
-  again; for the second, only what the scales draw. Both redraw the way the Compare
-  node's Chart tab draws (below). The exported notebook fills its chart cell the same way.
+  circle order (`scaleLabelsOf`), but only when an input comes from a box (`boxFill`):
+  with none, the spec's own colors and order stand. Any other spec takes an upstream
+  Compare Scenarios node's labels (`upstreamCompareLabels`). For the first, a change to
+  any label's id, name or color, or to the boxes' order, draws the chart again and
+  stacks its rows again, a box drawn around a feeder among them; for the second, only
+  what the scales draw. Both redraw the way the Compare node's Chart tab draws (below).
+  The exported notebook fills its chart cell the same way.
 - A map: on an Autark node outside every box, `layerScenarios`
   ([`autkScenarioColors.ts`](../utk_curio/frontend/urban-workflows/src/adapters/node/autkScenarioColors.ts))
   finds the box of each layer's table through the circle `autkSourcesFrom` says it came
-  in on (`PreparedAutkInput.circles`), and `withScenarioColors` gives the layer the
-  grammar's `color`, the box's, before the run. A map inside a box draws as written, and
-  so does the Interaction node's map (`colorsByScenario: false`).
-  `shippedScenarioLayers.test.ts` lists every shipped layer the rule recolors.
+  in on (`PreparedAutkInput.circles`), reading every table as the one wired input's
+  when one is wired, and `withScenarioColors` gives the layer the grammar's `color`, the
+  box's, before the run. It leaves a layer colored by its values as it is (a `getFnv`
+  with no `color` of its own, or `isColorMap`), and a raster's (`rasterTables`,
+  `autkRasters.ts`), whose color map the grammar would drop for one color. A map inside
+  a box draws as written, and so does the Interaction node's map
+  (`colorsByScenario: false`). `shippedScenarioLayers.test.ts` lists every shipped
+  layer the rule recolors.
 
 ### Comparing scenarios
 
@@ -890,7 +907,7 @@ The names `input_<k>` are defined once, as `INPUT_TABLE_PREFIX` and `input_table
 
 **Drawing.** Maps draw on demand. autk-grammar starts each map it makes with autk-map's `draw()`, which draws one frame, then only when the map's picture changes. autk-map asks for that frame itself after every change it can observe: its camera (navigation, a resize, a window resize), its layers (loads, updates, highlights), its style and a pick. Curio asks a map for a frame with its `requestRender()` after it changes the map itself: `frameMaps` after it moves the camera, and `bleedRasterEdges` after it writes a raster's cells in place, which autk-map cannot observe. A map that nothing changes draws nothing, whether it shows, sits out of view or is hidden in a collapsed scenario. The node keeps the maps its grammar made (`trackMaps` in [`autkMapDrawing.ts`](../utk_curio/frontend/urban-workflows/src/adapters/node/autkMapDrawing.ts)), and a map nobody will see again is destroyed with autk-map's `destroy()`, which frees its GPU textures, its window listeners and its controls: the node destroys its maps when its next run replaces their canvas and when it leaves the page (a deleted node, a closed dataflow), including maps a run made after it left. The e2e captures and the map framing check read a map's pixels in the animation frame that renders the map: they call `renderMapsForReading` (`window.__curio_renderMapsForReading`), which asks every map the nodes keep for a frame and resolves inside that frame.
 
-**Layer names and colors.** A layerRef's `title` is its layer's id in autk-map, which titles the legend with it. The grammar finds the layer of a table with `mapLayer(dataRef)`, and its highlights take the table's name, so Curio names layers by their `dataRef` everywhere. Before the run, `withScenarioColors` ([`autkScenarioColors.ts`](../utk_curio/frontend/urban-workflows/src/adapters/node/autkScenarioColors.ts)) gives a layerRef whose input comes from a scenario's box, on a map outside every box, the grammar's `color`, the box's (see [Scenarios in charts and maps](#scenarios-in-charts-and-maps)).
+**Layer names and colors.** A layerRef's `title` is its layer's id in autk-map, which titles the legend with it. The grammar finds the layer of a table with `mapLayer(dataRef)`, and its highlights take the table's name, so Curio names layers by their `dataRef` everywhere. Before the run, `withScenarioColors` ([`autkScenarioColors.ts`](../utk_curio/frontend/urban-workflows/src/adapters/node/autkScenarioColors.ts)) gives a layerRef whose input comes from a scenario's box, on a map outside every box, the grammar's `color`, the box's, unless the layer's values or a raster's cells color it (see [Scenarios in charts and maps](#scenarios-in-charts-and-maps)).
 
 **Rasters.** A raster on the input is a table under the same names, read through the same path; the Vega-Lite node still refuses it. Its frame says where the raster is and is not fetched as rows: a Python node's `rasterio` dataset by its artifact (`part` for its place in a tuple), or the envelope another node handed on. [`autkRasters.ts`](../utk_curio/frontend/urban-workflows/src/adapters/node/autkRasters.ts) turns each into GeoTIFF bytes and loads it with autk-db's `loadGeoTiff` into the grammar's own database:
 

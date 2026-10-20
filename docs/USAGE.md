@@ -996,7 +996,9 @@ A Python tuple arrives the same way, one dataset per frame. An input the chart
 cannot read, such as a raster, stops it with a message naming its position.
 
 Each input's geometry is handled in the views that draw it. A selection, a Data
-Pool link and a direct link between charts cover the rows of `input_0`.
+Pool link and a direct link between charts cover the rows of `input_0`, and, in
+a spec that reads `inputs`, that input's rows there, also when the spec reads
+nothing else.
 
 ### Every input in one dataset
 
@@ -1033,16 +1035,26 @@ as tall, the rows read:
 A color, fill or stroke on `scenario_name` draws each scenario in the color of
 its box, and an axis, offset or facet on it puts the scenarios in the order the
 dataflow lists its boxes, over what the spec writes for that column. An input
-from no box comes after them, in gray. Renaming or recoloring a box draws the
-chart again, with no run.
+from no box comes after them, in gray. When no input comes from a box, the
+spec's own colors and order stand, until a box is drawn around a node that
+feeds the chart. Renaming or recoloring a box, or drawing one, draws the chart
+again, with no run. Inputs of one name are drawn as one: two boxes named alike,
+or untitled nodes of one kind in no box, give their rows the same
+`scenario_name`.
 
 The inputs stack as Compare Scenarios stacks them: a table keeps its rows, and
-a column one input lacks is empty in its rows; a value (a number, a text, true
-or false, or a list of them) is one row each under `value`, which only a spec
-that reads `inputs` takes. A table beside a value, an input with no value, and
-an input that already has a `scenario` or `scenario_name` column stop the
-chart, with a message naming the input. A spec that does not name `inputs`
-stacks nothing.
+a column one input lacks is empty in its rows; a table with no rows is still a
+table; a value (a number, a text, true or false, or a list of them) is one row
+each under `value`, which only a spec that reads `inputs` takes, and a number
+that is none (NaN) is a row with no value. The rows never carry geometry: a
+GeoDataFrame's rows are its other columns, so it stacks beside a plain table
+and in any coordinate system. Draw a map from the input's own dataset,
+`input_<k>`. A table beside a value, an input with no value, an input that
+already has a `scenario` or `scenario_name` column, and one input that carries
+several tables (a tuple, or a list of DataFrames) or an Autark node's several
+layers stop the chart, with a message naming the input: with one input wired,
+everything that input carries is its own. A spec that does not name `inputs`
+stacks nothing, and reads a tuple as before, one dataset per frame.
 
 A notebook exported from the dataflow writes the same rows with
 `stack_inputs` and `input_rows` from `utk_curio.sandbox.util.scenario_stack`,
@@ -1289,8 +1301,11 @@ that set the same range color a value alike.
 
 On a map outside every scenario box, a layer whose input comes from a node in a
 box is drawn in that box's color, over a `color` it writes, with no legend; a
-box recolored gives it its new color on the map's next run. A map inside a box
-draws its layers as written.
+box recolored gives it its new color on the map's next run. Every layer one
+input carries takes that input's box's color. A layer colored by its values, one
+with a `getFnv` and no `color` of its own (or with `"isColorMap": true`), keeps
+its values' colors, and so does a raster's. A map inside a box draws its layers
+as written.
 
 ### The starter document
 
