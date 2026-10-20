@@ -579,9 +579,22 @@ def _brief(record: dict) -> str:
     return f"{record['hover']}: plot {plot[0]}x{plot[1]}, group {group[0]}x{group[1]}, view {record['viewSize']}"
 
 
+def _measured(chart: Chart, before: dict, hovers: list[dict]) -> str:
+    """What the test measured, one line per chart for the CI log."""
+    series = [{k: h.get(k) for k in ("hover", "mark", "target", "plot", "group", "viewSize", "canvas", "missed")}
+              for h in hovers]
+    return (
+        f"[vega-fixed-size] {chart.slug}: fixed {chart.fixed[0]}x{chart.fixed[1]}, autosize {before['autosize']}, "
+        f"before the hovers plot {before['plot']} group {before['group']} view {before['viewSize']} "
+        f"canvas {before['canvas']} origin {before['origin']}; after hover {HOVERS} plot {hovers[-1]['plot']} "
+        f"group {hovers[-1]['group']} view {hovers[-1]['viewSize']} canvas {hovers[-1]['canvas']}; "
+        f"each hover: {json.dumps(series)}"
+    )
+
+
 @pytest.mark.parametrize("chart", CHARTS, ids=[chart.slug for chart in CHARTS])
 def test_a_chart_of_fixed_size_keeps_its_plot_through_twenty_hovers(
-    app_frontend: "FrontendPage", current_server: str, page, record_property, chart: Chart,
+    app_frontend: "FrontendPage", current_server: str, page, capsys, chart: Chart,
 ):
     require_project_page()
     require_user_auth()
@@ -611,7 +624,9 @@ def test_a_chart_of_fixed_size_keeps_its_plot_through_twenty_hovers(
 
     # His chart as he drew it: its legend, and a mark for every row.
     before = _settled_plot(page, chart.node_id)
-    record_property("plot before the hovers", json.dumps(before))
+    assert all(isinstance(v, (int, float)) and v > 0 for v in before["plot"] + before["group"]), (
+        f"{chart.title}'s view gives no plot size to hold: {before}"
+    )
     legends = page.evaluate(_LEGENDS_JS, chart.node_id)
     assert legends and legends >= 1, f"{chart.title} draws no legend: {legends}"
     for marktype, count in chart.marks.items():
@@ -627,7 +642,9 @@ def test_a_chart_of_fixed_size_keeps_its_plot_through_twenty_hovers(
         )
 
     hovers = [_hover_once(page, chart, k) for k in range(HOVERS)]
-    record_property("plot after each hover", json.dumps(hovers))
+    # Past pytest's capture, so a passing run's log holds the sizes too.
+    with capsys.disabled():
+        print("\n" + _measured(chart, before, hovers), flush=True)
 
     width, height = chart.fixed
     changed = [h for h in hovers if _size(h) != _size(before)]
