@@ -3,62 +3,6 @@
   "data": {
     "name": "inputs"
   },
-  "transform": [
-    {
-      "window": [
-        {
-          "op": "row_number",
-          "as": "curio_row"
-        }
-      ]
-    },
-    {
-      "calculate": "'[!! combine !!]' === 'None' ? datum.curio_row : 0",
-      "as": "curio_group"
-    },
-    {
-      "aggregate": [
-        {
-          "op": "mean",
-          "field": "[!! y !!]",
-          "as": "curio_mean"
-        },
-        {
-          "op": "sum",
-          "field": "[!! y !!]",
-          "as": "curio_sum"
-        },
-        {
-          "op": "median",
-          "field": "[!! y !!]",
-          "as": "curio_median"
-        },
-        {
-          "op": "min",
-          "field": "[!! y !!]",
-          "as": "curio_min"
-        },
-        {
-          "op": "max",
-          "field": "[!! y !!]",
-          "as": "curio_max"
-        },
-        {
-          "op": "count",
-          "as": "curio_count"
-        }
-      ],
-      "groupby": [
-        "scenario_name",
-        "[!! x !!]",
-        "curio_group"
-      ]
-    },
-    {
-      "calculate": "({'Mean': datum.curio_mean, 'Sum': datum.curio_sum, 'Median': datum.curio_median, 'Minimum': datum.curio_min, 'Maximum': datum.curio_max, 'Count of rows': datum.curio_count, 'None': datum.curio_max})['[!! combine !!]']",
-      "as": "curio_value"
-    }
-  ],
   "mark": {
     "type": "line",
     "point": true,
@@ -71,8 +15,9 @@
       "title": "[!! x_title !!]"
     },
     "y": {
-      "field": "curio_value",
+      "field": "[!! y !!]",
       "type": "quantitative",
+      "aggregate": "[!! combine !!]",
       "title": "[!! y_title !!]"
     },
     "color": {

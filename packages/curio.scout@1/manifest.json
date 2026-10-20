@@ -27,7 +27,7 @@
       "spatialpandas": ">=0.5.0"
     }
   },
-  "description": "SCOUT's nodes in Curio. The Raster Calculator runs one operation over rasters on one grid: add, subtract, multiply, divide or choose, cell by cell, or a raster's statistics as a table of one row. Rasterize Buildings, SCOUT's building rasterizer ported from SCOUT (urban-toolkit/scout), turns a buildings layer into the zoom-16 height tiles SCOUT's Deep Umbra shadow model reads, side by side in one raster in metres that an Autark map draws. Fifteen Vega-Lite charts compare scenarios, one input per scenario: lines with a band, curves by group, bars with error bars, ensemble strips, stacked bars with totals, donuts, a weighted matrix, dots with a range, bars, grouped bars, lines, points, a pie, lollipops and a table. Each reads its inputs' rows stacked, each row named by the scenario box its input comes from, and draws each scenario in its box's color, in the order of the node's inputs; the columns it plots, and how it combines them, are widgets in its Widgets tab.",
+  "description": "SCOUT's nodes in Curio. The Raster Calculator runs one operation over rasters on one grid: add, subtract, multiply, divide or choose, cell by cell, or a raster's statistics as a table of one row. Rasterize Buildings, SCOUT's building rasterizer ported from SCOUT (urban-toolkit/scout), turns a buildings layer into the zoom-16 height tiles SCOUT's Deep Umbra shadow model reads, side by side in one raster in metres that an Autark map draws. Fifteen Vega-Lite charts compare scenarios, one input per scenario: lines with a band, curves by group, bars with error bars, ensemble strips, stacked bars with totals, donuts, a weighted matrix, dots with a range, bars, grouped bars, lines, points, a pie, lollipops and a table. Each reads its inputs' rows stacked, each row named by the scenario box its input comes from, and draws each scenario in its box's color, in the order the dataflow lists the boxes; the columns it plots, and how it combines them, are widgets in its Widgets tab.",
   "id": "curio.scout",
   "license": "MIT",
   "name": "Scout",
@@ -141,7 +141,7 @@
     {
       "badge": "VEGA",
       "category": "vis_grammar",
-      "description": "One input per scenario: a line per scenario over x, a band from low to high; widgets x, y, low, high, facet. One panel per value of the facet column, or one panel when it is empty. The axis titles and the Y label format, a d3 format such as .0%, are widgets too. Each scenario is drawn in its box's color, in the order of the node's inputs.",
+      "description": "One input per scenario: a line per scenario over x, a band from low to high; widgets x, y, low, high, facet. One panel per value of the facet column, or one panel when it is empty. The axis titles and the Y label format, a d3 format such as .0%, are widgets too. Each scenario is drawn in its box's color, in the order the dataflow lists the boxes.",
       "editor": "grammar",
       "engine": "python",
       "grammarId": "vega-lite",
@@ -227,7 +227,7 @@
     {
       "badge": "VEGA",
       "category": "vis_grammar",
-      "description": "One input per scenario: a curve per scenario and group over x, each group with its own dash; widgets x, y, group. The groups keep the table's order. The axis titles, the Y label format, a d3 format such as .0%, and the group legend's title are widgets too. Each scenario is drawn in its box's color, in the order of the node's inputs.",
+      "description": "One input per scenario: a curve per scenario and group over x, each group with its own dash; widgets x, y, group. The groups keep the table's order. The axis titles, the Y label format, a d3 format such as .0%, and the group legend's title are widgets too. Each scenario is drawn in its box's color, in the order the dataflow lists the boxes.",
       "editor": "grammar",
       "engine": "python",
       "grammarId": "vega-lite",
@@ -307,7 +307,7 @@
     {
       "badge": "VEGA",
       "category": "vis_grammar",
-      "description": "One input per scenario: bars per category, scenarios side by side, y plus or minus the error column; widgets x, y, error. The categories keep the table's order. The axis titles and the Y label format, a d3 format such as .0%, are widgets too. Each scenario is drawn in its box's color, in the order of the node's inputs.",
+      "description": "One input per scenario: bars per category, scenarios side by side, y plus or minus the error column; widgets x, y, error. The categories keep the table's order. The axis titles and the Y label format, a d3 format such as .0%, are widgets too. Each scenario is drawn in its box's color, in the order the dataflow lists the boxes.",
       "editor": "grammar",
       "engine": "python",
       "grammarId": "vega-lite",
@@ -381,7 +381,7 @@
     {
       "badge": "VEGA",
       "category": "vis_grammar",
-      "description": "One input per scenario: a tick per row for each scenario, with a black tick at its median; widget y. One strip per scenario, such as the runs of an ensemble. The Y axis title and the Y label format, a d3 format such as .0%, are widgets too. Each scenario is drawn in its box's color, in the order of the node's inputs.",
+      "description": "One input per scenario: a tick per row for each scenario, with a black tick at its median; widget y. One strip per scenario, such as the runs of an ensemble. The Y axis title and the Y label format, a d3 format such as .0%, are widgets too. Each scenario is drawn in its box's color, in the order the dataflow lists the boxes.",
       "editor": "grammar",
       "engine": "python",
       "grammarId": "vega-lite",
@@ -437,7 +437,7 @@
     {
       "badge": "VEGA",
       "category": "vis_grammar",
-      "description": "One input per scenario: a bar per scenario, stacked by part in the table's row order, its total on top; widgets y, part. Each scenario's name under its bar is in its color. The axis title, the Y label format, a d3 format such as .0% that the totals take too, and the part legend's title are widgets too. Each scenario is drawn in its box's color, in the order of the node's inputs.",
+      "description": "One input per scenario: a bar per scenario, stacked by part in the table's row order, its total on top; widgets y, part. Each scenario's name under its bar is in its color. The axis title, the Y label format, a d3 format such as .0% that the totals take too, and the part legend's title are widgets too. Each scenario is drawn in its box's color, in the order the dataflow lists the boxes.",
       "editor": "grammar",
       "engine": "python",
       "grammarId": "vega-lite",
@@ -505,7 +505,7 @@
     {
       "badge": "VEGA",
       "category": "vis_grammar",
-      "description": "One input per scenario: a donut per scenario, the highlighted part in its color, the rest grey; widgets part, value, highlight. Each slice shows its share of the scenario's total in percent, and the title names the highlighted part. Each scenario is drawn in its box's color, in the order of the node's inputs.",
+      "description": "One input per scenario: a donut per scenario, the highlighted part in its color, the rest grey; widgets part, value, highlight. Each slice shows its share of the scenario's total in percent, and the title names the highlighted part. Each scenario is drawn in its box's color, in the order the dataflow lists the boxes.",
       "editor": "grammar",
       "engine": "python",
       "grammarId": "vega-lite",
@@ -561,7 +561,7 @@
     {
       "badge": "VEGA",
       "category": "vis_grammar",
-      "description": "One input per scenario: a ring per factor and scenario, sized by the weight, green for and red against; widgets factor, weight. Weights run from -1 to 1, a weight of 0 draws no ring, and the factors keep the table's order. Each scenario's name is in its color. Each scenario is drawn in its box's color, in the order of the node's inputs.",
+      "description": "One input per scenario: a ring per factor and scenario, sized by the weight, green for and red against; widgets factor, weight. Weights run from -1 to 1, a weight of 0 draws no ring, and the factors keep the table's order. Each scenario's name is in its color. Each scenario is drawn in its box's color, in the order the dataflow lists the boxes.",
       "editor": "grammar",
       "engine": "python",
       "grammarId": "vega-lite",
@@ -611,7 +611,7 @@
     {
       "badge": "VEGA",
       "category": "vis_grammar",
-      "description": "One input per scenario: a dot per scenario for each category, on a grey rule from its lowest value to its highest; widgets category, value. The categories the scenarios differ most on come first. The axis titles are widgets too. Each scenario is drawn in its box's color, in the order of the node's inputs.",
+      "description": "One input per scenario: a dot per scenario for each category, on a grey rule from its lowest value to its highest; widgets category, value. The categories the scenarios differ most on come first. The axis titles are widgets too. Each scenario is drawn in its box's color, in the order the dataflow lists the boxes.",
       "editor": "grammar",
       "engine": "python",
       "grammarId": "vega-lite",
@@ -673,7 +673,7 @@
     {
       "badge": "VEGA",
       "category": "vis_grammar",
-      "description": "One input per scenario: a bar per scenario, its rows' y values combined as the Combine widget says; widget y. Combine is the mean, the sum, the median, the minimum, the maximum, a count of rows, or none, which plots each row's value as it is. A scenario's rows then stack in its bar. The Y axis title is a widget too. Each scenario is drawn in its box's color, in the order of the node's inputs.",
+      "description": "One input per scenario: a bar per scenario, its rows' y values combined as the Combine widget says; widget y. Combine is the Vega-Lite aggregate: mean, sum, median, min, max or count, the number of rows. The Y axis title is a widget too. Each scenario is drawn in its box's color, in the order the dataflow lists the boxes.",
       "editor": "grammar",
       "engine": "python",
       "grammarId": "vega-lite",
@@ -716,16 +716,15 @@
           "name": "combine",
           "type": "choice",
           "label": "Combine",
-          "default": "Mean",
+          "default": "mean",
           "options": {
             "choices": [
-              "Mean",
-              "Sum",
-              "Median",
-              "Minimum",
-              "Maximum",
-              "Count of rows",
-              "None"
+              "mean",
+              "sum",
+              "median",
+              "min",
+              "max",
+              "count"
             ]
           }
         },
@@ -740,7 +739,7 @@
     {
       "badge": "VEGA",
       "category": "vis_grammar",
-      "description": "One input per scenario: bars per category of x, scenarios side by side, y combined as the Combine widget says; widgets x, y. Combine is the mean, the sum, the median, the minimum, the maximum, a count of rows, or none, which plots each row's value as it is. The axis titles are widgets too. Each scenario is drawn in its box's color, in the order of the node's inputs.",
+      "description": "One input per scenario: bars per category of x, scenarios side by side, y combined as the Combine widget says; widgets x, y. Combine is the Vega-Lite aggregate: mean, sum, median, min, max or count, the number of rows. The axis titles are widgets too. Each scenario is drawn in its box's color, in the order the dataflow lists the boxes.",
       "editor": "grammar",
       "engine": "python",
       "grammarId": "vega-lite",
@@ -789,16 +788,15 @@
           "name": "combine",
           "type": "choice",
           "label": "Combine",
-          "default": "Mean",
+          "default": "mean",
           "options": {
             "choices": [
-              "Mean",
-              "Sum",
-              "Median",
-              "Minimum",
-              "Maximum",
-              "Count of rows",
-              "None"
+              "mean",
+              "sum",
+              "median",
+              "min",
+              "max",
+              "count"
             ]
           }
         },
@@ -819,7 +817,7 @@
     {
       "badge": "VEGA",
       "category": "vis_grammar",
-      "description": "One input per scenario: a line per scenario over x, a point at each value, y combined as the Combine widget says; widgets x, y. The X type is quantitative, temporal, ordinal or nominal. Combine is the mean, the sum, the median, the minimum, the maximum, a count of rows, or none, which plots each row's value as it is. The axis titles are widgets too. Each scenario is drawn in its box's color, in the order of the node's inputs.",
+      "description": "One input per scenario: a line per scenario over x, a point at each value, y combined as the Combine widget says; widgets x, y. The X type is quantitative, temporal, ordinal or nominal. Combine is the Vega-Lite aggregate: mean, sum, median, min, max or count, the number of rows. The axis titles are widgets too. Each scenario is drawn in its box's color, in the order the dataflow lists the boxes.",
       "editor": "grammar",
       "engine": "python",
       "grammarId": "vega-lite",
@@ -882,16 +880,15 @@
           "name": "combine",
           "type": "choice",
           "label": "Combine",
-          "default": "Mean",
+          "default": "mean",
           "options": {
             "choices": [
-              "Mean",
-              "Sum",
-              "Median",
-              "Minimum",
-              "Maximum",
-              "Count of rows",
-              "None"
+              "mean",
+              "sum",
+              "median",
+              "min",
+              "max",
+              "count"
             ]
           }
         },
@@ -912,7 +909,7 @@
     {
       "badge": "VEGA",
       "category": "vis_grammar",
-      "description": "One input per scenario: a point per row, x against y; widgets x, y. The axis titles are widgets too. Each scenario is drawn in its box's color, in the order of the node's inputs.",
+      "description": "One input per scenario: a point per row, x against y; widgets x, y. The axis titles are widgets too. Each scenario is drawn in its box's color, in the order the dataflow lists the boxes.",
       "editor": "grammar",
       "engine": "python",
       "grammarId": "vega-lite",
@@ -974,7 +971,7 @@
     {
       "badge": "VEGA",
       "category": "vis_grammar",
-      "description": "One input per scenario: a slice per scenario, its value written on it, combined as the Combine widget says; widget value. Combine is the mean, the sum, the median, the minimum, the maximum, a count of rows, or none, which plots each row's value as it is. The value's title is a widget too. Each scenario is drawn in its box's color, in the order of the node's inputs.",
+      "description": "One input per scenario: a slice per scenario, its value written on it, combined as the Combine widget says; widget value. Combine is the Vega-Lite aggregate: mean, sum, median, min, max or count, the number of rows. The value's title is a widget too. Each scenario is drawn in its box's color, in the order the dataflow lists the boxes.",
       "editor": "grammar",
       "engine": "python",
       "grammarId": "vega-lite",
@@ -1017,16 +1014,15 @@
           "name": "combine",
           "type": "choice",
           "label": "Combine",
-          "default": "Sum",
+          "default": "sum",
           "options": {
             "choices": [
-              "Mean",
-              "Sum",
-              "Median",
-              "Minimum",
-              "Maximum",
-              "Count of rows",
-              "None"
+              "mean",
+              "sum",
+              "median",
+              "min",
+              "max",
+              "count"
             ]
           }
         },
@@ -1041,7 +1037,7 @@
     {
       "badge": "VEGA",
       "category": "vis_grammar",
-      "description": "One input per scenario: a stem from 0 and a dot per scenario, the value combined as the Combine widget says; widget value. Combine is the mean, the sum, the median, the minimum, the maximum, a count of rows, or none, which plots each row's value as it is. The X axis title is a widget too. Each scenario is drawn in its box's color, in the order of the node's inputs.",
+      "description": "One input per scenario: a stem from 0 and a dot per scenario, the value combined as the Combine widget says; widget value. Combine is the Vega-Lite aggregate: mean, sum, median, min, max or count, the number of rows. The X axis title is a widget too. Each scenario is drawn in its box's color, in the order the dataflow lists the boxes.",
       "editor": "grammar",
       "engine": "python",
       "grammarId": "vega-lite",
@@ -1084,16 +1080,15 @@
           "name": "combine",
           "type": "choice",
           "label": "Combine",
-          "default": "Mean",
+          "default": "mean",
           "options": {
             "choices": [
-              "Mean",
-              "Sum",
-              "Median",
-              "Minimum",
-              "Maximum",
-              "Count of rows",
-              "None"
+              "mean",
+              "sum",
+              "median",
+              "min",
+              "max",
+              "count"
             ]
           }
         },
@@ -1108,7 +1103,7 @@
     {
       "badge": "VEGA",
       "category": "vis_grammar",
-      "description": "One input per scenario: a table of the columns widget's columns, in its order, up to 40 rows; widget columns. Each row is written in its box's color, a darker shade of it where the color is too light to read on white, in the order of the node's inputs. A new node lists scenario_name, the name of each row's scenario.",
+      "description": "One input per scenario: a table of the columns widget's columns, in its order, up to 40 rows; widget columns. Its rows come in the order of the node's inputs, each written in its box's color, a darker shade of it where the color is too light to read on white. A new node lists scenario_name, the name of each row's scenario.",
       "editor": "grammar",
       "engine": "python",
       "grammarId": "vega-lite",

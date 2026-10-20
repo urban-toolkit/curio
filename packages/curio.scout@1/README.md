@@ -98,14 +98,14 @@ nothing, and a building taller than the maximum height is drawn at the maximum.
 ## Charts
 
 Each chart is a Vega-Lite node with a spec of its own. Connect each scenario's
-outcome to one of its input circles: each edge takes the next circle, and the
-chart draws the scenarios in the order of its circles. Its spec reads all its
-inputs as the dataset `inputs` (`"data": {"name": "inputs"}`): every input's
-rows, stacked, each with `__input__` (its circle), `scenario` (the id of the
-scenario box its input comes from) and `scenario_name` (that box's name) beside
-its own columns. A column one input lacks is empty in its rows, and an input
-that is a single value is one row with a `value` column. The columns a chart
-plots are widgets in its **Widgets** tab.
+outcome to one of its input circles: each edge takes the next circle. Its spec
+reads all its inputs as the dataset `inputs` (`"data": {"name": "inputs"}`):
+every input's rows, stacked in the order of its circles, each with `__input__`
+(its circle), `scenario` (the id of the scenario box its input comes from) and
+`scenario_name` (that box's name) beside its own columns. A column one input
+lacks is empty in its rows, and an input that is a single value is one row with
+a `value` column. An input from a node in no box has an empty `scenario` and
+its node's name. The columns a chart plots are widgets in its **Widgets** tab.
 
 A new chart opens with its template's spec in its grammar editor. The spec is
 yours to edit: its widgets' chips are filled in each time it draws, and the
@@ -121,11 +121,10 @@ dataflow keeps the spec as you leave it.
 - `columns`, the Table's, is a list of texts that names the columns it shows,
   in order, such as `["scenario_name", "cost_per_m2"]`. A new Table lists
   `scenario_name`.
-- `combine` picks how the values of a scenario's rows are combined: **Mean**,
-  **Sum**, **Median**, **Minimum**, **Maximum**, **Count of rows**, or **None**,
-  which plots each row's value as it is, so a scenario with several rows stacks
-  them in its bar. It starts at **Sum** in Pie and at **Mean** elsewhere. Grouped
-  bars combine per category, and Lines per value of `x`.
+- `combine` is the Vega-Lite aggregate that combines the values of a
+  scenario's rows: `mean`, `sum`, `median`, `min`, `max` or `count`, the number
+  of rows. It starts at `sum` in Pie and at `mean` elsewhere. Grouped bars
+  combine per category, and Lines per value of `x`.
 - `x_type`, the Lines', is the kind of the X column: `quantitative`, `temporal`,
   `ordinal` or `nominal`.
 - `highlight` is the value of the `part` column that Donuts colors.
@@ -141,9 +140,11 @@ A column name with a `'` in it cannot be read: rename the column first.
 ### Colors and order
 
 A color, fill or stroke by `scenario_name` takes the colors of the scenarios'
-boxes, and an axis, an offset or a facet by it takes the order of the chart's
-circles ([Comparing scenarios](../../docs/USAGE.md#comparing-scenarios)). A
-chart is drawn again when a scenario is renamed or recolored. Stacked bars with
+boxes, and an axis, an offset or a facet by it puts the scenarios in the order
+the dataflow lists the boxes, then each input from no box in the order of the
+circles, in grey
+([Every input in one dataset](../../docs/USAGE.md#every-input-in-one-dataset)).
+A chart is drawn again when a scenario is renamed or recolored. Stacked bars with
 totals and Weighted matrix write each scenario's name in its color under its
 bar or beside its row; their bars and rings keep colors of their own. The Table
 writes each row in its scenario's color, in a darker shade of it where the
