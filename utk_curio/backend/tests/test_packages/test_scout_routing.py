@@ -779,9 +779,10 @@ def test_the_shipped_dataflows_roads_and_map_are_autarks():
     SCOUT's example routes in. The Weather Routing node takes the loader's
     layers straight on its one input, and its layer chip reads the roads layer
     out of them: no node in between. The map draws each scenario's route over
-    the roads in the color of the scenario's box (Curio's ``scenario`` key on
-    the layer), with a ``width``, and no color or color map of its own, so it
-    shows no legend."""
+    the roads in the color of the scenario's box: the map is in no box, and
+    each route's input comes from its scenario's box, so the layer takes that
+    box's color. Each route has a ``width``, and no color, color map or Curio
+    key of its own, so the spec is plain Autark and the map shows no legend."""
     spec = _dataflow()
     nodes = {n["id"]: n for n in spec["nodes"]}
     autark = {n["id"]: json.loads(n["content"]) for n in spec["nodes"] if n["type"] == AUTARK_TYPE}
@@ -800,14 +801,15 @@ def test_the_shipped_dataflows_roads_and_map_are_autarks():
     assert f"    [!! input_0:{ROADS_LAYER} !!],\n" in nodes[routing]["content"]
     layers = autark[map_id]["map"]["layerRefs"]
     assert [layer["dataRef"] for layer in layers] == ["[!! input_0 !!]", "[!! input_1 !!]", "[!! input_2 !!]"]
-    assert [layer.get("scenario") for layer in layers] == [None, *EXAMPLE_SCENARIOS]
     assert [layer.get("width") for layer in layers] == [None, *ROUTE_WIDTHS.values()]
     assert [layer.get("title") for layer in layers] == [
         "Roads", *(name for name, _color, _route in EXAMPLE_SCENARIOS.values())]
-    assert not [key for layer in layers for key in ("color", "getFnv", "colorMapInterpolator") if key in layer]
+    assert not [key for layer in layers for key in ("color", "getFnv", "colorMapInterpolator", "scenario") if key in layer]
     scenario_of = {i: s["id"] for s in spec["scenarios"] for i in s["nodes"]}
+    # The map is in no box; the roads come from none, each route from its own.
+    assert map_id not in scenario_of
     sources = {e["targetHandle"]: e["source"] for e in spec["edges"] if e["target"] == map_id}
-    assert sources["in"] == loader_id
+    assert sources["in"] == loader_id and loader_id not in scenario_of
     assert [scenario_of.get(sources[h]) for h in ("in_1", "in_2")] == list(EXAMPLE_SCENARIOS)
     assert all("input_0[0]" in nodes[sources[h]]["content"] for h in ("in_1", "in_2"))
 
