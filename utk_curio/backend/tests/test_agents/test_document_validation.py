@@ -700,3 +700,65 @@ class TestVegaFieldReferences:
         })
         assert dv.validate("curio.builtin/vis-vega", spec, columns=self.COLUMNS)[
             "status"] == dv.STATUS_VALID
+
+
+class TestTheColumnsOfTheInputsDataset:
+    """A spec that names the dataset ``inputs`` reads every input's rows,
+    stacked (``stack_inputs`` in ``utk_curio/sandbox/util/scenario_stack.py``):
+    beside the inputs' own columns, each row carries ``__input__``,
+    ``scenario`` and ``scenario_name``, and a value input's rows hold its value
+    under ``value``. A chart an agent writes over them, as Scout's charts are
+    written, reads those columns and is not refused for it."""
+
+    #: The street plans' columns, as their outputs' schemas list them.
+    COLUMNS = ["mode", "daily_trips"]
+
+    def _spec(self, **top) -> dict:
+        return {
+            "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
+            "mark": "bar",
+            "encoding": {
+                "x": {"field": "scenario_name", "type": "nominal"},
+                "y": {"field": "daily_trips", "type": "quantitative", "aggregate": "mean"},
+                "color": {"field": "scenario_name", "type": "nominal"},
+                "detail": {"field": "__input__", "type": "nominal"},
+                "tooltip": [{"field": "scenario", "type": "nominal"}],
+            },
+            **top,
+        }
+
+    def _verdict(self, spec: dict, node_type: str = "curio.scout/bars") -> dict:
+        return dv.validate(node_type, json.dumps(spec), grammar_id="vega-lite", columns=self.COLUMNS)
+
+    def test_a_spec_that_reads_inputs_may_use_the_columns_the_stack_adds(self):
+        assert self._verdict(self._spec(data={"name": "inputs"})) == {"status": dv.STATUS_VALID}
+
+    def test_so_may_a_spec_whose_layer_reads_inputs(self):
+        spec = {
+            "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
+            "layer": [{"data": {"name": "inputs"}, **{k: v for k, v in self._spec().items() if k != "$schema"}}],
+        }
+        assert self._verdict(spec) == {"status": dv.STATUS_VALID}
+
+    def test_and_one_that_reads_a_value_inputs_value(self):
+        spec = self._spec(data={"name": "inputs"})
+        spec["encoding"]["y"] = {"field": "value", "type": "quantitative"}
+        assert self._verdict(spec) == {"status": dv.STATUS_VALID}
+
+    def test_a_column_no_input_has_is_still_refused(self):
+        spec = self._spec(data={"name": "inputs"})
+        spec["encoding"]["y"]["field"] = "trips"
+        verdict = self._verdict(spec)
+        assert verdict["status"] == dv.STATUS_INVALID
+        assert "encoding.y.field reads 'trips'" in verdict["detail"]
+
+    def test_a_spec_that_does_not_read_inputs_is_held_to_its_inputs_columns(self):
+        verdict = self._verdict(self._spec(), node_type=VEGA)
+        assert verdict["status"] == dv.STATUS_INVALID
+        assert "reads 'scenario_name'" in verdict["detail"]
+
+    def test_the_columns_are_the_ones_the_stack_writes(self):
+        from utk_curio.sandbox.util import scenario_stack as stack
+
+        assert dv.INPUTS_DATASET == "inputs"
+        assert dv.INPUTS_FIELDS == (stack.INPUT_COLUMN, stack.SCENARIO_COLUMN, stack.NAME_COLUMN, stack.VALUE_COLUMN)
