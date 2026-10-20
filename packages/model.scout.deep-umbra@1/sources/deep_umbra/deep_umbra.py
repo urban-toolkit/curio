@@ -7,8 +7,8 @@ makes of its output. Deep Umbra is a generator network that SCOUT restores with
 TensorFlow from its ``tf_model/ckpt-44`` checkpoint. Curio runs the same
 generator as an ONNX file, this package's weights ``models/deep_umbra.onnx``,
 which ``scripts/scout/export_deep_umbra.py`` exported, through onnxruntime. So
-every function here takes the loaded model (``curio_load_model``, whose
-``run`` feeds the graph by input name) where SCOUT's took the generator.
+every function here takes the loaded model (``curio_load_model``) where SCOUT's
+took the generator, and the model's ``run`` feeds the graph by input name.
 
 Every function keeps SCOUT's name and arithmetic. The changes:
 
@@ -17,43 +17,54 @@ Every function keeps SCOUT's name and arithmetic. The changes:
   height raster on the same tile grid (``node_outputs.py``), and does the rest
   as SCOUT does. The latitude is computed in float32, as SCOUT's TensorFlow
   operations compute it, so the three inputs are SCOUT's to the bit.
-- ``predict_shadow`` runs the model on one tile at a time. The generator
-  normalizes each layer by the statistics of the tile it is given, as SCOUT's
-  ``training=True`` call does, so tiles cannot share a batch.
+- The arrays are numpy's, as onnxruntime takes and returns them: ``np.full``
+  where SCOUT multiplies ``tf.ones`` by a number, and no ``np.array`` or
+  ``.numpy()`` conversion of a tensor.
+- ``predict_shadow`` takes that neighbourhood and always feeds the model all
+  three inputs, as SCOUT's one call does (``lat=True, dat=True``). It runs the
+  model on one tile at a time. The generator normalizes each layer by the
+  statistics of the tile it is given, as SCOUT's ``training=True`` call does,
+  so tiles cannot share a batch.
 - ``shadow_fraction`` and ``season_factor`` are ``run_shadow_model``'s scaling
   of the output: from 0 to 1, and the minutes of shadow 1 stands for.
 - SCOUT's file reading and writing (``load_input``, and ``run_shadow_model``'s
-  tile PNGs and metrics CSV), its training code (losses, the discriminator, the
-  checkpoint restore), its print lines and its unused imports are left out.
+  tile PNGs and metrics CSV), its generator code (the layers, ``DeepShadow``
+  and ``get_deep_shadow``, which the ONNX file replaces), its training code
+  (losses, the discriminator, the checkpoint restore), its print lines, its
+  unused imports and its commented-out usage example are left out.
+
+Each line Curio changed ends with a ``# Curio:`` comment that quotes its entry
+above. Lines that differ from SCOUT's only in quotes, spacing, line breaks or
+order have none.
 """
 
 import numpy as np
 
 #: The ONNX model's inputs, in SCOUT's order, and its output; each is
 #: (1, 512, 512, 1) float32.
-INPUTS = ("height", "latitude", "date")
+INPUTS = ("height", "latitude", "date")  # Curio: the model's run feeds the graph by input name
 OUTPUT = "shadow"
 
 #: A tile's side, in pixels.
-TILE = 256
+TILE = 256  # Curio: load_input_grid is given that 768 by 768 neighbourhood
 
 
 def rad2deg(rad):
     pi_on_180 = 0.017453292519943295
-    return rad / np.float32(pi_on_180)
+    return rad / np.float32(pi_on_180)  # Curio: The latitude is computed in float32, as SCOUT's TensorFlow operations compute it
 
 
 def num2deg(xtile, ytile, zoom):
     """The north-west corner of tile (xtile, ytile): ``(latitude, longitude)``.
     The latitude is float32, as SCOUT's TensorFlow operations compute it."""
-    n = float(2 ** zoom)
+    n = float(2 ** zoom)  # Curio: The latitude is computed in float32, as SCOUT's TensorFlow operations compute it
     lon_deg = float(xtile) / n * 360.0 - 180.0
     lat_rad = np.arctan(np.sinh(np.float32(3.14159265359 * (1.0 - 2.0 * float(ytile) / n))))
     lat_deg = rad2deg(lat_rad)
     return (lat_deg, lon_deg)
 
 
-def load_input_grid(neighbourhood, date, zoom, i, j):
+def load_input_grid(neighbourhood, date, zoom, i, j):  # Curio: load_input_grid is given that 768 by 768 neighbourhood
     """The generator's three inputs for tile (i, j), each (512, 512, 1).
 
     *neighbourhood* is the 8-bit heights (255 is 550 m) of the tile and its
@@ -62,12 +73,12 @@ def load_input_grid(neighbourhood, date, zoom, i, j):
     it. It is cut to its middle 512 by 512; the latitude of the tile's
     north-west corner and the season's number fill the other two.
     """
-    all_input = np.asarray(neighbourhood, dtype=np.float32).reshape(TILE * 3, TILE * 3, 1)
+    all_input = np.asarray(neighbourhood, dtype=np.float32).reshape(TILE * 3, TILE * 3, 1)  # Curio: load_input_grid is given that 768 by 768 neighbourhood
 
     (latitude, longitude) = num2deg(i, j, zoom)
 
     all_input = all_input[128:-128, 128:-128]
-    all_lat = np.full((512, 512, 1), latitude, dtype=np.float32)
+    all_lat = np.full((512, 512, 1), latitude, dtype=np.float32)  # Curio: np.full where SCOUT multiplies tf.ones by a number
 
     if date == "winter":
         value = 0
@@ -76,7 +87,7 @@ def load_input_grid(neighbourhood, date, zoom, i, j):
     else:
         value = 2
 
-    all_date = np.full((512, 512, 1), value, dtype=np.float32)
+    all_date = np.full((512, 512, 1), value, dtype=np.float32)  # Curio: np.full where SCOUT multiplies tf.ones by a number
 
     return all_input, all_lat, all_date
 
@@ -89,19 +100,19 @@ def normalize_input(input_image, lat_image, date_image):
     return input_image, lat_image, date_image
 
 
-def predict_shadow(generator, neighbourhood, date, zoom, i, j):
+def predict_shadow(generator, neighbourhood, date, zoom, i, j):  # Curio: predict_shadow takes that neighbourhood and always feeds the model all three inputs
     """Deep Umbra on tile (i, j): ``(input_height, prediction)``, each 256 by
     256: the tile's heights as gray levels, and the generator's output, from
     -1 (no shadow) to 1, for the middle of its 512 by 512 window."""
-    input_height, input_lat, input_date = load_input_grid(neighbourhood, date, zoom, i, j)
+    input_height, input_lat, input_date = load_input_grid(neighbourhood, date, zoom, i, j)  # Curio: load_input_grid is given that 768 by 768 neighbourhood
     input_height, input_lat, input_date = normalize_input(input_height, input_lat, input_date)
 
-    input_height = input_height.reshape(1, 512, 512, 1)
+    input_height = input_height.reshape(1, 512, 512, 1)  # Curio: no np.array or .numpy() conversion of a tensor
     input_lat = input_lat.reshape(1, 512, 512, 1)
     input_date = input_date.reshape(1, 512, 512, 1)
 
-    (prediction,) = generator.run(dict(zip(INPUTS, (input_height, input_lat, input_date))))
-    prediction = prediction[:, 128:-128, 128:-128, :]
+    (prediction,) = generator.run(dict(zip(INPUTS, (input_height, input_lat, input_date))))  # Curio: the model's run feeds the graph by input name
+    prediction = prediction[:, 128:-128, 128:-128, :]  # Curio: no np.array or .numpy() conversion of a tensor
     prediction = prediction.reshape(256, 256)
 
     input_height = input_height[:, 128:-128, 128:-128, :]
@@ -111,14 +122,14 @@ def predict_shadow(generator, neighbourhood, date, zoom, i, j):
     return input_height, prediction
 
 
-def season_factor(season):
+def season_factor(season):  # Curio: shadow_fraction and season_factor are run_shadow_model's scaling of the output
     """Minutes of shadow a pixel at 1 stands for, in *season* (SCOUT's
     ``run_shadow_model``). SCOUT gives fall 720, though its date input reads
     fall as it reads spring."""
     return 360 if season == "winter" else 540 if season == "spring" else 720
 
 
-def shadow_fraction(prediction):
+def shadow_fraction(prediction):  # Curio: shadow_fraction and season_factor are run_shadow_model's scaling of the output
     """``run_shadow_model``'s scaling of one tile's prediction: from 0 (no
     shadow) to 1 (shadow all day), or 0 everywhere for a flat prediction."""
     arr = prediction

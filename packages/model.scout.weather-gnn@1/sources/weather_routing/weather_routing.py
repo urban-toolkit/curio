@@ -2,11 +2,11 @@
 
 Ported from SCOUT (https://github.com/urban-toolkit/scout),
 backend/models/routing/scripts/weather_routing.py. SCOUT's
-``calculate_weather_route`` is split in two: ``plan_weather_route`` holds its
-steps, from the road graph's bounds to the routes, and
-``calculate_weather_route`` builds the road graph from a roads layer, reads the
-start time, and returns the routes as two tables instead of writing GeoJSON and
-CSV files.
+``calculate_weather_route`` is split in two. ``plan_weather_route`` holds its
+steps, from the road graph's bounds to the routes, and returns what each step
+made. ``calculate_weather_route`` builds the road graph from a roads layer,
+reads the start time, makes K an integer, and returns the routes as two tables
+instead of writing GeoJSON and CSV files.
 
 What Curio does instead of SCOUT:
 
@@ -17,6 +17,19 @@ What Curio does instead of SCOUT:
   training SCOUT runs when its model file is missing.
 - The routes are a GeoDataFrame an Autark map draws, and their metrics a table
   Compare Scenarios charts.
+- ``GNN_weight_calculations`` runs the weather GNN, a model Curio loads, and
+  returns the GNN's input and output: SCOUT's loaded its torch weights itself
+  and returned nothing.
+- One helper, ``_route``, makes each route's entry, which SCOUT wrote out six
+  times with the same values.
+- "Custom weights" keeps the routes Yen's algorithm finds, up to K: SCOUT took
+  K of them by index and, when there were fewer, printed the IndexError. A
+  factor whose route cannot be found raises its error, where SCOUT printed it
+  and went on to the next factor.
+- SCOUT's print lines, its comments on code that is left out or rewritten
+  here, its commented-out notes and code (test origins and destinations, an
+  earlier return of the routes' coordinates) and the imports nothing here
+  uses are left out.
 
 SCOUT's bugs fixed here:
 
@@ -31,35 +44,46 @@ SCOUT's bugs fixed here:
   step it falls in (``weather_time_index``): SCOUT counted 15-minute steps from
   2025-07-06T00:00 plus 1, so its 00:00 read the 01:00 UTC step.
 - The origin's latitude is checked against the graph's northern edge: SCOUT
-  compared its longitude there, which never failed.
+  compared its longitude there, which never failed. The error names the point
+  that is outside and the roads' bounds, where SCOUT's always named the origin.
+- A mode SCOUT does not have is refused at once, naming the modes: SCOUT went
+  on, made no route and failed on its empty list of routes.
+- The weight errors name the modes "Custom weights" and "Single-factor
+  weights", and the first says at most 1.0, which is what SCOUT checks: SCOUT's
+  called them "Maps" and "Variable", as its comments do, and said the sum must
+  be 1.0.
+
+Each line Curio changed ends with a ``# Curio:`` comment that quotes its entry
+above. Lines that differ from SCOUT's only in quotes, spacing, line breaks or
+order have none.
 """
 
-from contextlib import ExitStack
-from datetime import datetime, timedelta, timezone as _utc_zone
-from zoneinfo import ZoneInfo
+from contextlib import ExitStack  # Curio: Every call reads the weather at its own start time
+from datetime import datetime, timedelta, timezone as _utc_zone  # Curio: A start time is local time in the weather's time zone
+from zoneinfo import ZoneInfo  # Curio: A start time is local time in the weather's time zone
 
 import geopandas as gpd
-import netCDF4 as nc
+import netCDF4 as nc  # Curio: the weather is the Data Catalog's SCOUT WRF group, a NetCDF file per variable
 import networkx as nx
 import osmnx as ox
 import pandas as pd
-from shapely.geometry import LineString
+from shapely.geometry import LineString  # Curio: the imports nothing here uses are left out
 
 from .calculate_isochrones import calculate_isochrones
-from .road_graph import road_graph
+from .road_graph import road_graph  # Curio: The roads are a Curio roads layer (road_graph.py)
 from .weight_calculation import GNN_weight_calculations
 
 #: SCOUT's route modes.
-MODES = ("Default weights", "Custom weights", "Single-factor weights")
+MODES = ("Default weights", "Custom weights", "Single-factor weights")  # Curio: A mode SCOUT does not have is refused at once
 #: The weather variables: SCOUT's file names, which are the variables' own.
-WEATHER_VARIABLES = ("RAIN", "T2", "WSPD10", "WDIR10", "RH2")
+WEATHER_VARIABLES = ("RAIN", "T2", "WSPD10", "WDIR10", "RH2")  # Curio: the weather is the Data Catalog's SCOUT WRF group, a NetCDF file per variable
 #: The minutes between two steps of the weather (SCOUT's WRF files are hourly).
-STEP_MINUTES = 60
+STEP_MINUTES = 60  # Curio: A start time is local time in the weather's time zone and reads the hourly step it falls in
 #: The metrics SCOUT gives each route, in its order.
-METRICS = ("distance", "duration", "rain_exposure", "heat_exposure", "wind_exposure", "humidity_exposure")
+METRICS = ("distance", "duration", "rain_exposure", "heat_exposure", "wind_exposure", "humidity_exposure")  # Curio: returns the routes as two tables instead of writing GeoJSON and CSV files
 
 
-def weather_time_index(time_string, start_date, time_zone, steps):
+def weather_time_index(time_string, start_date, time_zone, steps):  # Curio: A start time is local time in the weather's time zone and reads the hourly step it falls in
     """``(step, minutes into it)`` of a start time.
 
     *time_string* is local time, ``YYYY-MM-DDTHH:mm:ss``, in *time_zone*; the
@@ -80,7 +104,7 @@ def weather_time_index(time_string, start_date, time_zone, steps):
     return step, into
 
 
-def cut_graph(graph, bounds):
+def cut_graph(graph, bounds):  # Curio: cut_graph is its graph cut
     """The part of *graph* SCOUT routes on: the subgraph of the nodes whose x
     and y lie inside *bounds*, ``(xmin, ymin, xmax, ymax)``, cut as SCOUT's
     ``DataLoader.load_graph`` cuts it, so its nodes keep SCOUT's order."""
@@ -90,7 +114,7 @@ def cut_graph(graph, bounds):
     return graph.subgraph(nodes.loc[mask].index)
 
 
-def _route(G, route, weight_type, route_index, weather_conditions):
+def _route(G, route, weight_type, route_index, weather_conditions):  # Curio: One helper, _route, makes each route's entry
     return {
         'route': route,
         'weight_type': weight_type,
@@ -104,7 +128,7 @@ def _route(G, route, weight_type, route_index, weather_conditions):
     }
 
 
-def plan_weather_route(graph, bounds, weather, model, origin_, destination_, mode="Default weights", K=1,
+def plan_weather_route(graph, bounds, weather, model, origin_, destination_, mode="Default weights", K=1,  # Curio: plan_weather_route holds its steps, from the road graph's bounds to the routes
                        time_index=1, minutes_into_step=0, rain=None, heat=None, wind=None, humidity=None):
     """SCOUT's routing, from the graph's bounds to its routes.
 
@@ -118,9 +142,9 @@ def plan_weather_route(graph, bounds, weather, model, origin_, destination_, mod
     origin and destination nodes, the trip's zones, the conditions and weights,
     the GNN's input and output, and SCOUT's list of routes.
     """
-    if mode not in MODES:
+    if mode not in MODES:  # Curio: A mode SCOUT does not have is refused at once
         raise ValueError(f"There is no route mode {mode!r}: the modes are {', '.join(MODES)}.")
-    xmin, ymin, xmax, ymax = (float(b) for b in bounds)
+    xmin, ymin, xmax, ymax = (float(b) for b in bounds)  # Curio: The roads are a Curio roads layer (road_graph.py)
 
     weather_conditions = []
     weather_weights = []
@@ -140,21 +164,21 @@ def plan_weather_route(graph, bounds, weather, model, origin_, destination_, mod
     origin = (float(origin_['lat']), float(origin_['lon']))
     destination = (float(destination_['lat']), float(destination_['lon']))
 
-    for what, (lat, lon) in (("origin", origin), ("destination", destination)):
+    for what, (lat, lon) in (("origin", origin), ("destination", destination)):  # Curio: The origin's latitude is checked against the graph's northern edge
         if not (ymin <= lat <= ymax and xmin <= lon <= xmax):
             raise ValueError(
                 f"The {what} ({lat}, {lon}) is outside the roads, which cover latitude {ymin} to {ymax} "
                 f"and longitude {xmin} to {xmax}."
             )
 
-    time = int(time_index)
+    time = int(time_index)  # Curio: A start time is local time in the weather's time zone and reads the hourly step it falls in
 
     # The graph SCOUT routes on
-    G = cut_graph(graph, (xmin, ymin, xmax, ymax))
+    G = cut_graph(graph, (xmin, ymin, xmax, ymax))  # Curio: cut_graph is its graph cut
 
-    with ExitStack() as files:
+    with ExitStack() as files:  # Curio: Every call reads the weather at its own start time
         # The weather, a NetCDF file per variable
-        datasets = {name: files.enter_context(nc.Dataset(weather[name])) for name in WEATHER_VARIABLES}
+        datasets = {name: files.enter_context(nc.Dataset(weather[name])) for name in WEATHER_VARIABLES}  # Curio: the weather is the Data Catalog's SCOUT WRF group, a NetCDF file per variable
 
         # Obtain valid origin and destination points
         orig_node = ox.distance.nearest_nodes(G, X=origin[1], Y=origin[0])
@@ -177,7 +201,7 @@ def plan_weather_route(graph, bounds, weather, model, origin_, destination_, mod
             wind_weight = weather_weights[weather_conditions.index('wind')] if 'wind' in weather_conditions else 0
             humidity_weight = weather_weights[weather_conditions.index('humidity')] if 'humidity' in weather_conditions else 0
             if sum(weather_weights) > 1.0:
-                raise ValueError("In 'Custom weights' mode, the weather weights must add up to at most 1.0.")
+                raise ValueError("In 'Custom weights' mode, the weather weights must add up to at most 1.0.")  # Curio: The weight errors name the modes
         # In variable mode we just assign the weights as per user input as long as they are between 0 and 1
         else:
             rain_weight = weather_weights[weather_conditions.index('rain')] if 'rain' in weather_conditions else 0
@@ -189,9 +213,9 @@ def plan_weather_route(graph, bounds, weather, model, origin_, destination_, mod
                 heat_weight < 0 or heat_weight > 1 or
                 wind_weight < 0 or wind_weight > 1 or
                 humidity_weight < 0 or humidity_weight > 1):
-                raise ValueError("In 'Single-factor weights' mode, each weather weight must be between 0 and 1.")
+                raise ValueError("In 'Single-factor weights' mode, each weather weight must be between 0 and 1.")  # Curio: The weight errors name the modes
 
-        gnn = GNN_weight_calculations(G,
+        gnn = GNN_weight_calculations(G,  # Curio: SCOUT's load_static.DataLoader is not ported; returns the GNN's input and output
                                       rain_ds=datasets["RAIN"],
                                       heat_ds=datasets["T2"],
                                       wind_speed_ds=datasets["WSPD10"],
@@ -203,8 +227,8 @@ def plan_weather_route(graph, bounds, weather, model, origin_, destination_, mod
                                       heat_weight=heat_weight,
                                       wind_weight=wind_weight,
                                       humidity_weight=humidity_weight,
-                                      model=model,
-                                      minutes_into_step=minutes_into_step)
+                                      model=model,  # Curio: GNN_weight_calculations runs the weather GNN, a model Curio loads
+                                      minutes_into_step=minutes_into_step)  # Curio: A start time is local time in the weather's time zone and reads the hourly step it falls in
 
     routes_data = []
 
@@ -212,34 +236,34 @@ def plan_weather_route(graph, bounds, weather, model, origin_, destination_, mod
     if mode == "Default weights":
         route_fastest = nx.shortest_path(G, orig_node, dest_node, weight="travel_time")
         route_total = nx.shortest_path(G, orig_node, dest_node, weight="total_weight")
-        routes_data.append(_route(G, route_fastest, "fastest-route", 0, weather_conditions))
-        routes_data.append(_route(G, route_total, "weighted-route", 1, weather_conditions))
+        routes_data.append(_route(G, route_fastest, "fastest-route", 0, weather_conditions))  # Curio: One helper, _route, makes each route's entry
+        routes_data.append(_route(G, route_total, "weighted-route", 1, weather_conditions))  # Curio: One helper, _route, makes each route's entry
 
     elif mode == "Custom weights":
 
         # For future reference, the k_shortest_paths and shortest_paths are the ones that acually return a list of osm ID's
         for weight in weather_conditions:
             # Use Yen's algorithm for k-shortest paths
-            k_paths = list(ox.routing.k_shortest_paths(G, orig_node, dest_node, k=(K), weight=f"{weight}_weight"))
-            for i, route in enumerate(k_paths[:K]):
-                routes_data.append(_route(G, route, "%s-aware-route" % weight, i, weather_conditions))
+            k_paths = list(ox.routing.k_shortest_paths(G, orig_node, dest_node, k=(K), weight=f"{weight}_weight"))  # Curio: A factor whose route cannot be found raises its error
+            for i, route in enumerate(k_paths[:K]):  # Curio: "Custom weights" keeps the routes Yen's algorithm finds, up to K
+                routes_data.append(_route(G, route, "%s-aware-route" % weight, i, weather_conditions))  # Curio: One helper, _route, makes each route's entry
 
         route_fastest = nx.shortest_path(G, orig_node, dest_node, weight="travel_time")
-        routes_data.append(_route(G, route_fastest, "fastest-route", 0, weather_conditions))
+        routes_data.append(_route(G, route_fastest, "fastest-route", 0, weather_conditions))  # Curio: One helper, _route, makes each route's entry
 
     # With this you are able to compare a only rain aware path, a only heat aware path and a heat + rain aware path
     elif mode == "Single-factor weights":
 
         i = 1
         for weight in weather_conditions:
-            route = nx.shortest_path(G, orig_node, dest_node, weight=f"{weight}_weight")
-            routes_data.append(_route(G, route, "%s-aware-route" % weight, i, weather_conditions))
+            route = nx.shortest_path(G, orig_node, dest_node, weight=f"{weight}_weight")  # Curio: A factor whose route cannot be found raises its error
+            routes_data.append(_route(G, route, "%s-aware-route" % weight, i, weather_conditions))  # Curio: One helper, _route, makes each route's entry
             i += 1
 
         route_fastest = nx.shortest_path(G, orig_node, dest_node, weight="travel_time")
-        routes_data.append(_route(G, route_fastest, "fastest-route", 0, weather_conditions))
+        routes_data.append(_route(G, route_fastest, "fastest-route", 0, weather_conditions))  # Curio: One helper, _route, makes each route's entry
 
-    return {
+    return {  # Curio: returns what each step made
         "graph": G, "orig_node": orig_node, "dest_node": dest_node,
         "trip_time_seconds": trip_times_seconds, "time_index": time,
         "weather_conditions": weather_conditions,
@@ -249,7 +273,7 @@ def plan_weather_route(graph, bounds, weather, model, origin_, destination_, mod
     }
 
 
-def route_tables(plan):
+def route_tables(plan):  # Curio: returns the routes as two tables instead of writing GeoJSON and CSV files
     """``(routes, metrics)`` of a plan: one row per route in SCOUT's order.
 
     - routes: a GeoDataFrame in EPSG:4326, each route a line through its nodes,
@@ -263,20 +287,20 @@ def route_tables(plan):
         rows.append({
             "weight_type": route["weight_type"],
             "route_index": route["route_index"],
-            "distance_m": nx.path_weight(G, route["route"], weight="length"),
+            "distance_m": nx.path_weight(G, route["route"], weight="length"),  # Curio: A route's distance_m is its length in metres
             "duration_minutes": float(route["duration"]),
             "rain_exposure": float(route["rain_exposure"]),
             "heat_exposure": float(route["heat_exposure"]),
             "wind_exposure": float(route["wind_exposure"]),
             "humidity_exposure": float(route["humidity_exposure"]),
         })
-        metrics.append({"route": route["weight_type"], "route_index": route["route_index"],
+        metrics.append({"route": route["weight_type"], "route_index": route["route_index"],  # Curio: Every route is a row of the result
                         **{m: float(route[m]) for m in METRICS}})
     routes = gpd.GeoDataFrame(rows, geometry=lines, crs="EPSG:4326")
     return routes, pd.DataFrame(metrics, columns=["route", "route_index", *METRICS])
 
 
-def calculate_weather_route(roads, weather, model, origin_, destination_, mode="Default weights", K=1,
+def calculate_weather_route(roads, weather, model, origin_, destination_, mode="Default weights", K=1,  # Curio: calculate_weather_route builds the road graph from a roads layer
                             time_="2025-07-06T00:00:00", rain=None, heat=None, wind=None, humidity=None):
     """SCOUT's weather-aware routes over a roads layer: ``(routes, metrics)``.
 
@@ -286,13 +310,13 @@ def calculate_weather_route(roads, weather, model, origin_, destination_, mode="
     the start time, local time in the weather's time zone (its ``timezone``
     attribute, else UTC).
     """
-    with nc.Dataset(weather["RAIN"]) as ds:
+    with nc.Dataset(weather["RAIN"]) as ds:  # Curio: A start time is local time in the weather's time zone
         start_date = ds.getncattr("START_DATE")
         time_zone = ds.getncattr("timezone") if "timezone" in ds.ncattrs() else "UTC"
         steps = len(ds.dimensions["Time"])
-    time_index, minutes_into_step = weather_time_index(time_, start_date, time_zone, steps)
-    G, bounds = road_graph(roads)
-    plan = plan_weather_route(G, bounds, weather, model, origin_, destination_, mode=mode,
-                              K=int(K), time_index=time_index, minutes_into_step=minutes_into_step,
+    time_index, minutes_into_step = weather_time_index(time_, start_date, time_zone, steps)  # Curio: A start time is local time in the weather's time zone and reads the hourly step it falls in
+    G, bounds = road_graph(roads)  # Curio: The roads are a Curio roads layer (road_graph.py)
+    plan = plan_weather_route(G, bounds, weather, model, origin_, destination_, mode=mode,  # Curio: SCOUT's calculate_weather_route is split in two
+                              K=int(K), time_index=time_index, minutes_into_step=minutes_into_step,  # Curio: makes K an integer
                               rain=rain, heat=heat, wind=wind, humidity=humidity)
-    return route_tables(plan)
+    return route_tables(plan)  # Curio: returns the routes as two tables instead of writing GeoJSON and CSV files
