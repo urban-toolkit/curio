@@ -1348,6 +1348,24 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
             );
             expect(handed()).toEqual(['table_osm_chicago_surface', 'table_osm_chicago_parks']);
           });
+
+          test("a Discovery download's layers, keyed by layer, bring its surface first too", async () => {
+            // An OpenStreetMap download's group loader returns its layers in a
+            // dict keyed by layer, each frame typed by its own metadata.
+            const layer = (kind: string, i: number) => ({
+              dataType: 'geodataframe',
+              data: {
+                type: 'FeatureCollection',
+                metadata: { layerType: kind },
+                features: [{ type: 'Feature', geometry: square(i, i), properties: {} }],
+              },
+            });
+            await run(
+              { dataType: 'dict', data: { surface: layer('surface', 0), parks: layer('parks', 1), roads: layer('roads', 2) } },
+              { map: { layerRefs: [{ dataRef: 'parks' }, { dataRef: 'roads' }] } },
+            );
+            expect(handed()).toEqual(['surface', 'parks', 'roads']);
+          });
         });
 
         test('a layer that names no table of the input blames the document, listing every table it brings', async () => {
