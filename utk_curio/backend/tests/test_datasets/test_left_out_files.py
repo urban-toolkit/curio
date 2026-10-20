@@ -64,7 +64,7 @@ FLOOD = [
     "datasets/data.scout.flood-nbs-classes@1/data/flood-nbs-classes.tif",
     *(
         f"datasets/data.scout.flood-depth-{period}-{kind}@1/data/flood-depth-{period}-{kind}.tif"
-        for period in ("2020-2040", "2050-2080", "2080-2100")
+        for period in ("2020-2050", "2050-2080", "2080-2100")
         for kind in ("nbs", "no-nbs")
     ),
 ]

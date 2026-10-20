@@ -566,13 +566,16 @@ export function MainCanvas() {
                 agentCoord,
                 saveProject: requestProjectSave,
                 attach: (pid, coord, t) => agentsApi.attach(pid, coord, t),
+                // A hosted guest's drop that would save says to sign in.
+                hostedGuest,
             })
                 .then(() => {
                     notifyAgentDockRefresh();
                     markDirty();
                     showToast(`Agent attached to ${where}.`, "success");
                 })
-                .catch((e: any) => showToast(e?.message || "Attach failed.", "error"));
+                // A refusal says how to show itself (the sign-in note is a warning).
+                .catch((e: any) => showToast(e?.message || "Attach failed.", e?.toastVariant ?? "error"));
             return;
         }
         event.preventDefault();
@@ -581,7 +584,7 @@ export function MainCanvas() {
         const position = dropPosition(event);
         revealCreated(createCodeNode(type, { position }));
         markDirty();
-    }, [screenToFlowPosition, dropPosition, revealCreated, createCodeNode, markDirty, handleCanvasDrop, handleModelCanvasDrop, handlePackageCardCanvasDrop, handleScenarioCanvasDrop, projectId, showToast, requestProjectSave, reactFlow]);
+    }, [screenToFlowPosition, dropPosition, revealCreated, createCodeNode, markDirty, handleCanvasDrop, handleModelCanvasDrop, handlePackageCardCanvasDrop, handleScenarioCanvasDrop, projectId, showToast, requestProjectSave, reactFlow, hostedGuest]);
 
     // The Delete key reaches these through React Flow, which sends the
     // selected edges plus every edge attached to a deleted node first, then

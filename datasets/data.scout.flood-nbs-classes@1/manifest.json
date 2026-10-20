@@ -3,7 +3,7 @@
   "name": "SCOUT Flood NbS Classes",
   "version": "1.0.0",
   "format": "geotiff",
-  "description": "Where nature-based solutions (NbS) would go in SCOUT's Quad Cities flood projections, as class codes: 21 bioswales or infiltration trenches, 31 permeable pavements, 43 retention ponds, 52 infiltration trench, 71 and 81 bioswales, 90 and 95 constructed wetlands, and 0 none. SCOUT's NBS_others_5m_4326_cropped_cleaned_resampled.tif whole: 2592 by 2064 cells on its grid (EPSG:4326, cells of 0.000101 degrees), longitude -90.6879 to -90.4253 and latitude 41.4150 to 41.6242, every cell as SCOUT ships it, compressed losslessly. The quad-cities-flood-vulnerability test dataflow reads it. From SCOUT, https://github.com/urban-toolkit/scout, backend/compute/quad_city_flooding_simulation/data_substitutes, used with the permission of SCOUT's authors.",
+  "description": "Where nature-based solutions (NbS) would go in SCOUT's Quad Cities flood projections, as class codes: 21, 52, 71 and 81 bioswales or infiltration trenches, 31 permeable pavements, 43 retention ponds, 90 and 95 constructed wetlands, and 0 none. SCOUT's NBS_others_5m_4326_cropped_cleaned_resampled.tif whole: 2592 by 2064 cells on its grid (EPSG:4326, cells of 0.000101 degrees), longitude -90.6879 to -90.4253 and latitude 41.4150 to 41.6242, every cell as SCOUT ships it, compressed losslessly. The quad-cities-flood-vulnerability test dataflow reads it. From SCOUT, https://github.com/urban-toolkit/scout, backend/compute/quad_city_flooding_simulation/data_substitutes, used with the permission of SCOUT's authors.",
   "publisher": "SCOUT (urban-toolkit/scout)",
   "license": "",
   "tags": [

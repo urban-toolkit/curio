@@ -1,0 +1,46 @@
+{
+  "id": "data.scout.flood-depth-2020-2050-no-nbs",
+  "name": "SCOUT Flood Depth 2020-2050 without NbS",
+  "version": "1.0.0",
+  "format": "geotiff",
+  "description": "Projected flood depth in metres for 2020 to 2050 without nature-based solutions (NbS), from SCOUT's Quad Cities flood projections. A cell with no depth holds no value. SCOUT's 2020_2040_noNbS_4326_cropped.tif whole: 2592 by 2064 cells on its grid (EPSG:4326, cells of 0.000101 degrees), longitude -90.6879 to -90.4253 and latitude 41.4150 to 41.6242, every cell as SCOUT ships it, compressed losslessly. The quad-cities-flood-vulnerability test dataflow reads it. From SCOUT, https://github.com/urban-toolkit/scout, backend/compute/quad_city_flooding_simulation/data_substitutes, used with the permission of SCOUT's authors.",
+  "publisher": "SCOUT (urban-toolkit/scout)",
+  "license": "",
+  "tags": [
+    "raster",
+    "flood",
+    "depth",
+    "scout",
+    "quad-cities",
+    "geotiff"
+  ],
+  "dataflowCategories": {
+    "tags": [
+      "SCOUT"
+    ]
+  },
+  "dataFile": "data/flood-depth-2020-2050-no-nbs.tif",
+  "downloadOnFirstUse": [
+    "data/flood-depth-2020-2050-no-nbs.tif"
+  ],
+  "compatibility": {
+    "major": 1
+  },
+  "sourceLabel": "SCOUT",
+  "rowCount": null,
+  "featureCount": null,
+  "schema": null,
+  "createdAt": "2026-10-05T00:00:00Z",
+  "updatedAt": "2026-10-05T00:00:00Z",
+  "sourceUpdatedAt": null,
+  "sourceEncoding": null,
+  "groupId": null,
+  "layerName": null,
+  "producerNodeId": null,
+  "producerNodeType": null,
+  "producerDataflowId": null,
+  "producerDataflowName": null,
+  "upstreamInputs": null,
+  "discoverySource": null,
+  "collection": null
+}
