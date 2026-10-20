@@ -24,6 +24,8 @@ export interface HeaderDrawerProps {
   /** The 720 px of API Settings and Monitor; false gives the catalog
    *  drawers' 520 px. */
   wide?: boolean;
+  /** Added to the scrolling body, for content that paints all of it. */
+  bodyClassName?: string;
   children: React.ReactNode;
 }
 
@@ -48,6 +50,7 @@ export const HeaderDrawer: React.FC<HeaderDrawerProps> = ({
   actions,
   pinnable = false,
   wide = true,
+  bodyClassName,
   children,
 }) => {
   const drawerRef = useRef<HTMLElement>(null);
@@ -110,7 +113,7 @@ export const HeaderDrawer: React.FC<HeaderDrawerProps> = ({
           pinned={pinned}
           onPinToggle={pinnable ? () => setPinned((v) => !v) : undefined}
         />
-        <div className={shell.scrollBody}>{children}</div>
+        <div className={bodyClassName ? `${shell.scrollBody} ${bodyClassName}` : shell.scrollBody}>{children}</div>
       </aside>
     </div>
   );

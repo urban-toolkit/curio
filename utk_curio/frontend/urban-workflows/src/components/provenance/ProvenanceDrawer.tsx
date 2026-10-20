@@ -46,6 +46,7 @@ export function ProvenanceDrawer({
       actions={<ViewSwitch view={view} onChange={onViewChange} />}
       pinnable
       wide={false}
+      bodyClassName={view === "graph" ? styles.graphBody : undefined}
     >
       {node ? (
         <NodeRunsProvenance
