@@ -17,7 +17,7 @@ import {
   useSimpleVisBehavior,
   useDataPoolBehavior,
   useDataSummaryBehavior,
-  useAutkGrammarBehavior,
+  useAutkViewBehavior,
   useSpatialJoinBehavior,
   useParameterBehavior,
   useCompareScenariosBehavior,
@@ -32,7 +32,8 @@ registerBehavior('data-pool', useDataPoolBehavior);
 registerBehavior('data-summary', useDataSummaryBehavior);
 registerBehavior('vega', useVegaBehavior);
 registerBehavior('simple-vis', useSimpleVisBehavior);
-registerBehavior('autk-grammar', useAutkGrammarBehavior);
+// The Autark node, whose selection tags are emptied each time it draws (#884).
+registerBehavior('autk-grammar', useAutkViewBehavior);
 // curio.builtin@1 spatial-join node (stays in core because the builtin
 // package's behaviors must be registered before ANY package registry runs).
 registerBehavior('spatial-join', useSpatialJoinBehavior);
