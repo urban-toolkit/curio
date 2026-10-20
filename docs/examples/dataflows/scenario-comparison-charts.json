@@ -1329,9 +1329,9 @@
               ],
               "value": [
                 "scenario_name",
+                "cost_per_m2",
                 "rain_held_pct",
-                "roof_cooling_c",
-                "cost_per_m2"
+                "roof_cooling_c"
               ]
             }
           ]
