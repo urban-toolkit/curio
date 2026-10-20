@@ -202,13 +202,8 @@
     background-attachment: local;
 }
 
-/* Branches past the drawer's width scroll sideways. */
-.canvas {
-    overflow-x: auto;
-}
-
 /* Boxes of one width, as the Nest's graph draws its jobs: two columns fit the
-   drawer, and a third scrolls sideways. */
+   drawer, and a third scrolls the drawer's body sideways. */
 .graph {
     --provenance-box-width: 200px;
     position: relative;

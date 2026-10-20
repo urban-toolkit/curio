@@ -2,9 +2,12 @@
 around it, and reverting."""
 from __future__ import annotations
 
+from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
+
 from ..utils import assert_header_shows_save, save_dataflow_and_settle_header
 from .framework import Ctx, walkthrough
 from .steps import (
+    PROVENANCE_ITEM,
     PROVENANCE_PANEL,
     await_canvas_nodes,
     await_provenance_history,
@@ -91,17 +94,22 @@ def provenance_graph_of_a_loaded_dataflow(ctx: Ctx) -> None:
     ctx.focus(newest, hold=1600)
 
 
-#: Whether the whole of a version shows in the drawer's scrolling body. With
-#: nothing to scroll, everything shows.
+#: Whether the whole of a version shows in the drawer's body, the part of the
+#: panel that scrolls. Measured against that body itself, not the nearest box
+#: that scrolls, so a box in it that scrolls on its own cannot pass for it.
 _IN_VIEW_JS = """(el) => {
-    let box = el.parentElement;
-    while (box && !(box.scrollHeight > box.clientHeight
-            && /auto|scroll/.test(getComputedStyle(box).overflowY))) box = box.parentElement;
-    if (!box) return true;
+    const panel = el.closest('[role="dialog"]');
+    const body = Array.from(panel.children).find((child) => child.contains(el));
     const a = el.getBoundingClientRect();
-    const b = box.getBoundingClientRect();
+    const b = body.getBoundingClientRect();
     return a.top >= b.top - 1 && a.bottom <= b.bottom + 1;
 }"""
+
+#: Whether the newest version shows whole in the drawer's body.
+_NEWEST_IN_VIEW_JS = f"""(sel) => {{
+    const items = document.querySelectorAll(sel);
+    return items.length > 0 && ({_IN_VIEW_JS})(items[items.length - 1]);
+}}"""
 
 
 @walkthrough(
@@ -155,6 +163,13 @@ def provenance_graph_navigation(ctx: Ctx) -> None:
     assert newest.locator("button").first.get_attribute("aria-expanded") == "true", (
         "the version opened in the List came back closed in the Graph"
     )
+    try:
+        page.wait_for_function(_NEWEST_IN_VIEW_JS, arg=PROVENANCE_ITEM, timeout=5000)
+    except PlaywrightTimeoutError:
+        raise AssertionError(
+            "flipped to the Graph, the drawer did not scroll its body to the "
+            "version in use"
+        ) from None
     first.scroll_into_view_if_needed()
     ctx.beat(600)
     ctx.say("The same history, as the Graph", "Opened versions stay open.")

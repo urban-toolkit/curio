@@ -247,32 +247,33 @@ function GraphView({ lines, ...itemProps }: ItemSharedProps & { lines: HistoryLi
     return () => observer.disconnect();
   }, [draw]);
 
+  // No scroll box of its own: the drawer's body scrolls the Graph both ways.
+  // A box in it that scrolled would show a second scrollbar, and would take
+  // the scroll that brings the item in use into view.
   return (
-    <div className={styles.canvas}>
-      <div
-        ref={gridRef}
-        className={styles.graph}
-        style={{ gridTemplateColumns: `repeat(${graph.cols}, var(--provenance-box-width))` }}
-      >
-        <svg ref={svgRef} className={styles.edges} aria-hidden="true">
-          {graph.links.map((link) => (
-            <g key={`${link.from}->${link.to}`} data-provenance-link={link.kind} data-from={link.from} data-to={link.to}>
-              <path d="M0 0" fill="none" stroke="#A2A6AE" strokeWidth={1.6} />
-              <circle cx={0} cy={0} r={3} fill="#fff" stroke="#A2A6AE" strokeWidth={1.4} />
-              <circle cx={0} cy={0} r={3} fill="#fff" stroke="#A2A6AE" strokeWidth={1.4} />
-            </g>
-          ))}
-        </svg>
-        {graph.boxes.map((box) => (
-          <Item
-            key={box.id}
-            id={box.id}
-            showWhen={false}
-            style={{ gridColumn: box.col + 1, gridRow: box.row + 1 }}
-            {...itemProps}
-          />
+    <div
+      ref={gridRef}
+      className={styles.graph}
+      style={{ gridTemplateColumns: `repeat(${graph.cols}, var(--provenance-box-width))` }}
+    >
+      <svg ref={svgRef} className={styles.edges} aria-hidden="true">
+        {graph.links.map((link) => (
+          <g key={`${link.from}->${link.to}`} data-provenance-link={link.kind} data-from={link.from} data-to={link.to}>
+            <path d="M0 0" fill="none" stroke="#A2A6AE" strokeWidth={1.6} />
+            <circle cx={0} cy={0} r={3} fill="#fff" stroke="#A2A6AE" strokeWidth={1.4} />
+            <circle cx={0} cy={0} r={3} fill="#fff" stroke="#A2A6AE" strokeWidth={1.4} />
+          </g>
         ))}
-      </div>
+      </svg>
+      {graph.boxes.map((box) => (
+        <Item
+          key={box.id}
+          id={box.id}
+          showWhen={false}
+          style={{ gridColumn: box.col + 1, gridRow: box.row + 1 }}
+          {...itemProps}
+        />
+      ))}
     </div>
   );
 }
