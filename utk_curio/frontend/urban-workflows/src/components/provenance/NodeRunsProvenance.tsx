@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { type NodeExecRecord, useProvenanceContext } from "../../providers/ProvenanceProvider";
 import { useFlowContext } from "../../providers/FlowProvider";
 import { runDuration, runItems, runKinds, runTime } from "../../utils/nodeRuns";
-import { type HistoryView, ProvenanceHistory } from "./ProvenanceHistory";
+import { ProvenanceHistory } from "./ProvenanceHistory";
 import styles from "./ProvenanceHistory.module.css";
 
 const RUN_NOUN = ["run", "runs"] as const;
@@ -17,7 +17,6 @@ export interface NodeRunsProvenanceProps {
   nodeId: string;
   /** Puts a run's code back in the node's editor. */
   restore: (code: string) => void;
-  view: HistoryView;
   /** The node left the canvas: the drawer closes. */
   onNodeGone: () => void;
 }
@@ -28,7 +27,7 @@ export interface NodeRunsProvenanceProps {
  * code back in the node without running it, and the node's next run branches
  * from it.
  */
-export function NodeRunsProvenance({ nodeId, restore, view, onNodeGone }: NodeRunsProvenanceProps) {
+export function NodeRunsProvenance({ nodeId, restore, onNodeGone }: NodeRunsProvenanceProps) {
   const { provenanceGraphNodes, selectedParentExecRef, setSelectedExec } = useProvenanceContext();
   const records = provenanceGraphNodes[nodeId] ?? NO_RUNS;
   const items = useMemo(() => runItems(records), [records]);
@@ -81,7 +80,6 @@ export function NodeRunsProvenance({ nodeId, restore, view, onNodeGone }: NodeRu
     <ProvenanceHistory
       items={items}
       currentId={currentId}
-      view={view}
       noun={RUN_NOUN}
       details={details}
       emptyText="No runs yet"

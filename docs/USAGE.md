@@ -454,11 +454,9 @@ bolt while it is on.
 **View > Provenance** opens the dataflow's version history in a drawer on the
 right. Each node or connection added or removed makes a version.
 
-- **List** shows the versions in the order they were made, on a line that
-  leads to the newest. Versions made from an earlier one you went back to fold
-  under the version they left from.
-- **Graph** shows the same versions as boxes joined by lines, each branch in a
-  column of its own.
+- The versions are listed in the order they were made, on a line that leads to
+  the newest. Versions made from an earlier one you went back to fold under the
+  version they left from; click the fold to show them.
 - The pin keeps the drawer open when you click outside it or press Escape.
 
 Click a version to open it: its thumbnail, when it was recorded, and its nodes

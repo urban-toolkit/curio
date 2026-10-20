@@ -32,7 +32,7 @@ function runAfterARun(reply: object): HTMLElement {
   const { container } = render(
     <ProvenanceProvider>
       <Probe />
-      <NodeRunsProvenance nodeId={mockNodeId} restore={jest.fn()} view="list" onNodeGone={jest.fn()} />
+      <NodeRunsProvenance nodeId={mockNodeId} restore={jest.fn()} onNodeGone={jest.fn()} />
     </ProvenanceProvider>,
   );
   act(() => {

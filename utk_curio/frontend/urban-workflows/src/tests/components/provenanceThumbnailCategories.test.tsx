@@ -63,8 +63,8 @@ beforeEach(() => {
 });
 
 /** Opens every version, as a click on its row does. */
-const renderOpened = (view: "list" | "graph" = "list") => {
-  const utils = render(<DataflowProvenance view={view} />);
+const renderOpened = () => {
+  const utils = render(<DataflowProvenance />);
   for (const id of ["v1", "v2"]) {
     fireEvent.click(utils.container.querySelector(`[data-provenance-item="${id}"] button`)!);
   }
@@ -78,19 +78,16 @@ const fills = (container: HTMLElement, id: string) =>
   );
 
 describe("the provenance drawer colours each version's nodes by category", () => {
-  test.each(["list", "graph"] as const)(
-    "from the registered descriptors, else what the version recorded (%s)",
-    (view) => {
-      const { container } = renderOpened(view);
+  test("from the registered descriptors, else what the version recorded", () => {
+    const { container } = renderOpened();
 
-      expect(fills(container, "v1")).toEqual([colorForCategory("data"), colorForCategory("vis_grammar")]);
-      expect(fills(container, "v2")).toEqual([
-        colorForCategory("data"),
-        colorForCategory("vis_simple"),
-        colorForCategory(null),
-      ]);
-    },
-  );
+    expect(fills(container, "v1")).toEqual([colorForCategory("data"), colorForCategory("vis_grammar")]);
+    expect(fills(container, "v2")).toEqual([
+      colorForCategory("data"),
+      colorForCategory("vis_simple"),
+      colorForCategory(null),
+    ]);
+  });
 
   test("the registered category wins over the recorded one, in a colour of its own", () => {
     expect(colorForCategory("data")).not.toBe(colorForCategory("computation"));

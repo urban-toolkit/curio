@@ -1,17 +1,8 @@
 /**
- * The provenance history's layout, after Curio's Nest: the List's lines and
- * folded branches, the Graph's columns and rows, and the links between boxes.
+ * The provenance history's layout, after Curio's Nest's list: its lines and
+ * the branches folded under the item they left from.
  */
-import {
-  type HistoryEntry,
-  type HistoryLine,
-  historyGraph,
-  historyLines,
-  lineHolds,
-  lineSize,
-  linkEnds,
-  linkPath,
-} from "../../utils/provenanceTree";
+import { type HistoryEntry, type HistoryLine, historyLines, lineHolds, lineSize } from "../../utils/provenanceTree";
 
 /** Entries from "id<-parent" pairs, in the order they were made. */
 const history = (...pairs: string[]): HistoryEntry[] =>
@@ -85,66 +76,5 @@ describe("the List's lines", () => {
     expect(lineHolds(branch, "f")).toBe(false);
     expect(lineHolds(line, "d")).toBe(true);
     expect(lineHolds(line, null)).toBe(false);
-  });
-});
-
-describe("the Graph's boxes", () => {
-  const place = (...pairs: string[]) => {
-    const graph = historyGraph(historyLines(history(...pairs)));
-    return {
-      graph,
-      at: Object.fromEntries(graph.boxes.map((box) => [box.id, [box.col, box.row]])),
-    };
-  };
-
-  test("a chain runs down one column, one link between each two items", () => {
-    const { graph, at } = place("a", "b<-a", "c<-b");
-    expect(at).toEqual({ a: [0, 0], b: [0, 1], c: [0, 2] });
-    expect(graph.links).toEqual([
-      { from: "a", to: "b", kind: "next" },
-      { from: "b", to: "c", kind: "next" },
-    ]);
-    expect(graph.cols).toBe(1);
-  });
-
-  test("a branch starts beside its item in the next column, and the line moves down past it", () => {
-    const { graph, at } = place("a", "b<-a", "c<-b", "d<-c", "e<-b", "f<-e");
-    expect(at).toEqual({ a: [0, 0], b: [0, 1], c: [1, 1], d: [1, 2], e: [0, 3], f: [0, 4] });
-    expect(graph.links).toContainEqual({ from: "b", to: "c", kind: "branch" });
-    expect(graph.links).toContainEqual({ from: "b", to: "e", kind: "next" });
-    expect(graph.cols).toBe(2);
-    expect(graph.rows).toBe(5);
-  });
-
-  test("a second branch from one item starts below the first", () => {
-    const { at } = place("a", "b<-a", "c<-a", "d<-a");
-    expect(at).toEqual({ a: [0, 0], b: [1, 0], c: [1, 1], d: [0, 2] });
-  });
-
-  test("no two boxes share a cell, and every item but a line's first has one link in", () => {
-    const { graph } = place("a", "b<-a", "c<-b", "x<-b", "y<-a", "z<-y", "w<-gone");
-    const cells = graph.boxes.map((box) => `${box.col},${box.row}`);
-    expect(new Set(cells).size).toBe(cells.length);
-    const into = graph.links.map((link) => link.to).sort();
-    expect(into).toEqual(["b", "c", "x", "y", "z"]);
-  });
-});
-
-describe("the links' paths", () => {
-  const box = (x: number, y: number, h = 34) => ({ x, y, w: 200, h });
-
-  test("an item and the next one under it: straight down between their middles", () => {
-    expect(linkPath("next", box(0, 0, 60), box(0, 100), 34)).toBe("M100 60V100");
-    expect(linkEnds("next", box(0, 0, 60), box(0, 100), 34)).toEqual([100, 60, 100, 100]);
-  });
-
-  test("a branch beside its item: straight across their title lines", () => {
-    expect(linkPath("branch", box(0, 0, 120), box(236, 0), 34)).toBe("M200 17H236");
-  });
-
-  test("a branch below its item: the Nest's rounded elbow", () => {
-    const d = linkPath("branch", box(0, 0), box(236, 100), 34);
-    expect(d).toBe("M200 17H210Q218 17 218 25V109Q218 117 226 117H236");
-    expect(linkEnds("branch", box(0, 0), box(236, 100), 34)).toEqual([200, 17, 236, 117]);
   });
 });

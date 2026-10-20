@@ -2,21 +2,16 @@
 around it, and reverting."""
 from __future__ import annotations
 
-from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
-
 from ..utils import assert_header_shows_save, save_dataflow_and_settle_header
 from .framework import Ctx, walkthrough
 from .steps import (
-    PROVENANCE_ITEM,
     PROVENANCE_PANEL,
     await_canvas_nodes,
-    await_provenance_history,
     canvas_graph,
     close_provenance,
     load_example_spec,
     open_provenance,
     open_version,
-    provenance_counts,
     put_version_on_canvas,
     version_graph,
 )
@@ -105,24 +100,18 @@ _IN_VIEW_JS = """(el) => {
     return a.top >= b.top - 1 && a.bottom <= b.bottom + 1;
 }"""
 
-#: Whether the newest version shows whole in the drawer's body.
-_NEWEST_IN_VIEW_JS = f"""(sel) => {{
-    const items = document.querySelectorAll(sel);
-    return items.length > 0 && ({_IN_VIEW_JS})(items[items.length - 1]);
-}}"""
-
 
 @walkthrough(
     slug="provenance-graph-navigation",
     example=PROVENANCE_EXAMPLE,
     refs=[187],
     title="Moving around the provenance history",
-    premise="Open a version, scroll back to the first one, and flip to the Graph.",
-    note="The drawer opens on the version in use and scrolls; the Graph keeps a "
-         "line into every version as boxes open and the view flips.",
+    premise="Open the version in use, then scroll back to the first one.",
+    note="The drawer opens on the version in use, at the bottom of the list, "
+         "and scrolls back through the history.",
     tests=["src/tests/components/provenanceDrawer.test.tsx",
            "src/tests/utils/provenanceTree.test.ts",
-           "test_frontend/test_provenance_lines_e2e.py",
+           "test_frontend/test_provenance_branches_e2e.py",
            "test_frontend/test_walkthrough_baselines.py"],
     clip_selector=PROVENANCE_PANEL,
     fit_reactflow=False,
@@ -132,7 +121,6 @@ def provenance_graph_navigation(ctx: Ctx) -> None:
     page = ctx.page
     panel = open_provenance(ctx)
     versions = panel.locator("[data-provenance-item]")
-    count = versions.count()
     newest, first = versions.last, versions.first
 
     assert newest.evaluate(_IN_VIEW_JS), "the drawer did not open on the version in use"
@@ -154,26 +142,10 @@ def provenance_graph_navigation(ctx: Ctx) -> None:
         "did not scroll"
     )
 
-    ctx.say("Flip to the Graph", "One box per version, a line into each one after the first.")
-    ctx.click(panel.get_by_role("button", name="Graph", exact=True))
-    counts = await_provenance_history(page)
-    assert counts["items"] == count and counts["links"] == count - 1 == counts["drawn"], (
-        f"the Graph shows {counts}; {count} versions need {count - 1} drawn lines"
-    )
     assert newest.locator("button").first.get_attribute("aria-expanded") == "true", (
-        "the version opened in the List came back closed in the Graph"
+        "scrolling away closed the version opened at the bottom"
     )
-    try:
-        page.wait_for_function(_NEWEST_IN_VIEW_JS, arg=PROVENANCE_ITEM, timeout=5000)
-    except PlaywrightTimeoutError:
-        raise AssertionError(
-            "flipped to the Graph, the drawer did not scroll its body to the "
-            "version in use"
-        ) from None
-    first.scroll_into_view_if_needed()
     ctx.beat(600)
-    ctx.say("The same history, as the Graph", "Opened versions stay open.")
-    assert provenance_counts(page)["drawn"] == count - 1
 
 
 @walkthrough(

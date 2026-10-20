@@ -81,17 +81,15 @@ def frame_until_on_top(page, node_id: str, target, *, attempts: int = 6) -> None
 PROVENANCE_DRAWER = '[data-curio-provenance-drawer="true"]'
 #: Its panel, which a capture of the drawer clips to.
 PROVENANCE_PANEL = f'{PROVENANCE_DRAWER} [role="dialog"]'
-#: A version in the drawer: a row of the List, a box of the Graph.
+#: A version in the drawer: one row of its list.
 PROVENANCE_ITEM = f"{PROVENANCE_DRAWER} [data-provenance-item]"
-#: A line of the Graph, from a version to the next one or to a branch.
-PROVENANCE_LINK = f"{PROVENANCE_DRAWER} [data-provenance-link]"
 
 
-def open_provenance(ctx: Ctx, *, view: str = "list"):
+def open_provenance(ctx: Ctx):
     """Open the provenance drawer from the View menu and return its panel.
 
-    Returns once the drawer rests against the right edge, on *view* ("list" or
-    "graph"; the drawer opens on the one picked last), with its history drawn.
+    Returns once the drawer rests against the right edge with its history
+    listed.
     """
     page = ctx.page
     ctx.click(page.get_by_role("button", name="View menu", exact=True))
@@ -100,9 +98,6 @@ def open_provenance(ctx: Ctx, *, view: str = "list"):
     panel = page.locator(PROVENANCE_PANEL)
     panel.wait_for(state="visible", timeout=20000)
     await_drawer_at_rest(page)
-    switch = panel.get_by_role("button", name="Graph" if view == "graph" else "List", exact=True)
-    if switch.get_attribute("aria-pressed") != "true":
-        ctx.click(switch)
     await_provenance_history(page)
     ctx.beat(900)
     return panel
@@ -123,54 +118,20 @@ def await_drawer_at_rest(page, *, timeout: float = 20000) -> None:
     page.wait_for_function(_DRAWER_AT_REST_JS, arg=PROVENANCE_DRAWER, timeout=timeout)
 
 
-_PROVENANCE_COUNTS_JS = """([item, link]) => {
-    const links = Array.from(document.querySelectorAll(link));
-    return {
-        items: document.querySelectorAll(item).length,
-        links: links.length,
-        drawn: links.filter((g) => {
-            const path = g.querySelector('path');
-            return path && path.getTotalLength() > 0;
-        }).length,
-    };
-}"""
-
-_PROVENANCE_DRAWN_JS = """([item, link]) => {
-    const items = document.querySelectorAll(item).length;
-    if (items === 0) return false;
-    const view = document.querySelector('[data-provenance-view]');
-    if (!view || view.getAttribute('data-provenance-view') !== 'graph') return true;
-    const links = Array.from(document.querySelectorAll(link));
-    return links.length === items - 1 && links.every((g) => {
-        const path = g.querySelector('path');
-        return path && path.getTotalLength() > 0;
-    });
-}"""
-
-
 def provenance_counts(page) -> dict:
-    """``{items, links, drawn}`` the provenance drawer shows now: its versions,
-    the Graph's lines, and how many of those have a length."""
-    return page.evaluate(_PROVENANCE_COUNTS_JS, [PROVENANCE_ITEM, PROVENANCE_LINK])
+    """``{items}``: how many versions the provenance drawer lists now, those on
+    folded branches left out."""
+    return {"items": page.locator(PROVENANCE_ITEM).count()}
 
 
 def await_provenance_history(page, *, timeout: float = 20000) -> dict:
-    """Wait until the provenance drawer shows its history.
-
-    The List is drawn with the drawer. The Graph draws its lines once its boxes
-    have landed, and every version but the first is made from one other, so a
-    one-chain Graph is drawn when it shows a line with a length into every
-    version after the first. Returns ``{items, links, drawn}``.
-    """
+    """Wait until the provenance drawer lists its history, and return
+    :func:`provenance_counts`."""
     try:
-        page.wait_for_function(_PROVENANCE_DRAWN_JS, arg=[PROVENANCE_ITEM, PROVENANCE_LINK], timeout=timeout)
+        page.locator(PROVENANCE_ITEM).first.wait_for(state="visible", timeout=timeout)
     except PlaywrightTimeoutError:
-        counts = provenance_counts(page)
         raise AssertionError(
-            f"the provenance drawer did not show its history within "
-            f"{timeout / 1000:.0f} s: {counts['items']} versions and "
-            f"{counts['links']} lines, {counts['drawn']} of them drawn, where "
-            f"the Graph draws a line into every version after the first"
+            f"the provenance drawer listed no version within {timeout / 1000:.0f} s"
         ) from None
     return provenance_counts(page)
 
