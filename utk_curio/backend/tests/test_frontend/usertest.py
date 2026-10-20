@@ -420,8 +420,10 @@ class UserSession:
 # Palette tiles
 # ---------------------------------------------------------------------------
 #
-# ToolsMenu.tsx renders each built-in tile as ``<div id="tile-<template>">``
-# (``paletteTileId``), so every tile is reached by its own id.
+# The rail's Built-in palette (``builtinPalette/BuiltinPaletteDropdown.tsx``)
+# renders each built-in tile as ``<div id="tile-<template>">`` (``paletteTileId``),
+# so every tile is reached by its own id once the palette is open
+# (``open_tools_palette(page, "builtin")``).
 
 #: The tooltip each tile should show, from the manifest's ``label``. Used to
 #: prove a lookup landed on the tile the caller meant.

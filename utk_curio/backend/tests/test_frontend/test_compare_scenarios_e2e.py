@@ -40,10 +40,12 @@ from .test_multi_input_e2e import _wait_for_circles
 from .utils import (
     api_json,
     assert_vega_canvas_rendered,
+    close_tools_palette,
     connect_nodes,
     frame_nodes,
     load_artifact_as_dict,
     node_locator,
+    open_tools_palette,
     read_node_code,
     read_node_error_text,
     require_owner_view,
@@ -227,8 +229,11 @@ def test_two_scenarios_are_stacked_charted_and_compared(
     for node in spec["dataflow"]["nodes"]:
         node_locator(page, node["id"]).wait_for(state="visible", timeout=45000)
 
-    # 1. The palette offers it.
+    # 1. The palette offers it: the rail's Built-in palette, closed again so
+    #    its panel covers none of the canvas the next steps wire.
+    open_tools_palette(page, "builtin")
     page.locator("#tile-compare-scenarios").wait_for(state="visible", timeout=15000)
+    close_tools_palette(page, "builtin")
 
     # 2. Both outcomes into its circles: the node labels them and writes its code.
     _wait_for_circles(page, COMPARE, ["in"])

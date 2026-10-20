@@ -40,6 +40,7 @@ from .utils import (
     close_tools_palette,
     connect_nodes,
     drag_to_canvas,
+    drag_builtin_to_canvas,
     open_tools_palette,
     read_node_code,
     require_project_page,
@@ -214,8 +215,8 @@ def test_build_and_run_dataflow_from_scratch(
         f"generated loader code does not load the CSV:\n{loader_code}"
     )
 
-    # 3. SECOND NODE, from the built-in tool rail.
-    transform_id = drag_to_canvas(page, page.locator(TRANSFORM_TILE), at=POS_TRANSFORM)
+    # 3. SECOND NODE, from the rail's Built-in palette.
+    transform_id = drag_builtin_to_canvas(page, TRANSFORM_TILE, at=POS_TRANSFORM)
     assert _unversioned(canvas_node_type(page, transform_id)) == TRANSFORM_TYPE
 
     # 4. CONNECT THEM. The edge id is derived, not random, so it doubles as an

@@ -1,7 +1,7 @@
 """Scenes on a dataflow's name and save state."""
 from __future__ import annotations
 
-from ..utils import api_json, canvas_nodes, drag_to_canvas, wait_for_projects_page
+from ..utils import api_json, canvas_nodes, drag_builtin_to_canvas, wait_for_projects_page
 from .framework import Ctx, walkthrough
 from .provenance import PROVENANCE_EXAMPLE
 
@@ -169,7 +169,7 @@ def a_loaded_dataflow_is_not_dirty(ctx: Ctx) -> None:
     # of an existing node: the drag is what would be flaky here, and adding a node
     # is just as much a real edit for the purpose of the claim.
     before = len(canvas_nodes(page))
-    drag_to_canvas(page, page.locator("#tile-computation-analysis"), at=(150, 150))
+    drag_builtin_to_canvas(page, "#tile-computation-analysis", at=(150, 150))
     assert len(canvas_nodes(page)) == before + 1, "the drop created no node"
 
     page.wait_for_function(

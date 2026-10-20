@@ -44,7 +44,7 @@ from playwright.sync_api import expect
 
 from .utils import (
     api_json,
-    drag_to_canvas,
+    drag_builtin_to_canvas,
     play_node,
     read_node_output_text,
     require_project_page,
@@ -151,7 +151,7 @@ def test_install_library_from_ui_then_use_it(
     library_teardown(token, LIB)
 
     # 1. A node that needs a library nobody has installed.
-    node_id = drag_to_canvas(page, page.locator(ANALYSIS_TILE), at=POS_NODE)
+    node_id = drag_builtin_to_canvas(page, ANALYSIS_TILE, at=POS_NODE)
     set_node_code(page, node_id, NODE_CODE)
 
     play_node(page, node_id)
