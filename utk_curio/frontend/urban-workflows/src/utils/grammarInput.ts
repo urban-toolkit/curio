@@ -102,12 +102,16 @@ const isValueEnvelope = (item: unknown): item is { dataType: string; data: unkno
   isObject(item) && typeof item.dataType === "string" && VALUE_TYPES.has(item.dataType) && "data" in item;
 
 /** The plain value a value's envelope holds, as Python reads it back
- * (`parseInput`): a list's items each unwrapped too. */
+ * (`parseInput`): a list's items each unwrapped too, and a frame among them
+ * kept in its envelope. A float that is no number (NaN) is written as null
+ * under `float` (`parseOutput`), and is read as the number it is, not as a
+ * missing value. */
 function plainValue(envelope: { dataType: string; data: unknown }): unknown {
   const { dataType, data } = envelope;
   if (dataType === "list" && Array.isArray(data)) {
     return data.map((item) => (isValueEnvelope(item) ? plainValue(item) : item));
   }
+  if (dataType === "float" && data === null) return Number.NaN;
   return data;
 }
 

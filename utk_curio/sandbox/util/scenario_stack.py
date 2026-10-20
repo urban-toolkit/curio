@@ -13,7 +13,9 @@ Two callers share the rules below:
   ``stack_inputs`` writes those rows in an exported notebook, and
   ``input_rows`` each input's own; ``src/utils/scenarios/stackedInputs.ts``
   is their twin in the browser, and ``stackedInputs.cases.json`` beside it
-  pins both.
+  pins both. A chart's rows carry no geometry: it draws a map from the input's
+  own dataset, so a GeoDataFrame is read as the table of its other columns,
+  beside a plain table and whatever its coordinate system.
 
 What an input may be:
 
@@ -27,8 +29,9 @@ What an input may be:
 Inputs of one kind are stacked, and a column one input lacks is empty in its
 rows, which the run says. Anything else is refused with a message naming the
 input, so a wiring mistake is told rather than drawn as an odd chart: a table
-beside a value, a GeoDataFrame beside a plain table, two coordinate systems, an
-input with no value, one that carries several tables, and a raster.
+beside a value, a GeoDataFrame beside a plain table and two coordinate systems
+(for Compare Scenarios, which keeps the geometry), an input with no value, one
+that carries several tables, and a raster.
 """
 from __future__ import annotations
 
@@ -80,10 +83,9 @@ def _pick_layer(label: str, value, layer, who: str = _COMPARE):
         raise ValueError(f"{who}: {label} has no layer {layer}. Its layers are {names}.")
     if len(layers) == 1:
         return layers[0][1]
-    raise ValueError(
-        f"{who}: {label} carries {len(layers)} layers ({names}). "
-        "Pick the one to compare in the node's Layer menu."
-    )
+    # Compare Scenarios has a Layer menu to pick one with; a chart has none.
+    advice = "Pick the one to compare in the node's Layer menu." if who == _COMPARE else "Connect a node that hands on one layer."
+    raise ValueError(f"{who}: {label} carries {len(layers)} layers ({names}). {advice}")
 
 
 def _declared_crs(envelope):
@@ -245,12 +247,13 @@ def stack_inputs(entries):
     order, as ``stack_scenarios`` takes them: a ``scenario_id`` of ``None`` is
     an input whose node is in no scenario, named by its node. The rows are
     records ready for JSON: a cell an input lacks, or that holds no number, is
-    ``None``. No inputs make no rows.
+    ``None``. A GeoDataFrame's rows leave its geometry out, so it stacks beside
+    a plain table and whatever its coordinate system. No inputs make no rows.
     """
     entries = list(entries or [])
     if not entries:
         return []
-    stacked = _stacked(entries, None, _INPUTS, circles=True)
+    stacked = _stacked(entries, None, _INPUTS, circles=True, geometry=False)
     return [{column: _json_cell(cell) for column, cell in row.items()} for row in stacked.to_dict("records")]
 
 
@@ -258,13 +261,25 @@ def input_rows(value):
     """The rows one input adds under the rules ``stack_inputs`` stacks by,
     before a scenario names them: the input as a chart reading ``inputs`` reads
     it by itself, as ``input_<k>``. Records ready for JSON, a cell a row lacks
-    ``None``; none when the input cannot be read as rows, which
-    ``stack_inputs`` then says."""
+    ``None``, a GeoDataFrame's geometry left out; none when the input cannot be
+    read as rows, which ``stack_inputs`` then says."""
     try:
-        _kind, frame = _rows_of("input_0", value, None, _INPUTS)
+        kind, frame = _rows_of("input_0", value, None, _INPUTS)
     except (TypeError, ValueError):
         return []
+    if kind == _GEO:
+        frame = _without_geometry(frame)
     return [{column: _json_cell(cell) for column, cell in row.items()} for row in frame.to_dict("records")]
+
+
+def _without_geometry(frame):
+    """A GeoDataFrame's rows as a plain table's: every column but its active
+    geometry, whose name is read as ``codec.active_geometry_name`` reads it,
+    never raising for a frame that has none."""
+    import pandas as pd
+
+    geometry = getattr(frame, "_geometry_column_name", None)
+    return pd.DataFrame(frame.drop(columns=[geometry] if geometry in frame.columns else []))
 
 
 def _json_cell(value):
@@ -282,11 +297,12 @@ def _json_cell(value):
         return value
 
 
-def _stacked(entries, layer, who: str, circles: bool = False, malformed: str = ""):
+def _stacked(entries, layer, who: str, circles: bool = False, malformed: str = "", geometry: bool = True):
     """The table *entries* stack into, under the rules this module states.
     *who* names the caller in its messages, and *malformed* ends the message
     for an entry that is not ``(scenario, name, input)``. With *circles*, each
-    row also holds the circle it came in on, under ``__input__``."""
+    row also holds the circle it came in on, under ``__input__``. Without
+    *geometry*, a GeoDataFrame is read as the table of its other columns."""
     import pandas as pd
 
     parts = []
@@ -297,6 +313,8 @@ def _stacked(entries, layer, who: str, circles: bool = False, malformed: str = "
         name = "" if name is None else str(name)
         label = _label(position, name)
         kind, frame = _rows_of(label, value, layer, who)
+        if not geometry and kind == _GEO:
+            kind, frame = _TABLE, _without_geometry(frame)
         for column in (SCENARIO_COLUMN, NAME_COLUMN):
             if column in frame.columns:
                 raise ValueError(
