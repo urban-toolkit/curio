@@ -284,6 +284,13 @@ _SCHEMA_KEY_RE = re.compile(r'"\$schema"\s*:\s*$')
 #: catalog dataset (a bundle), not a path on disk; both scanners skip it.
 PART_CALL = "curio_load_data"
 _PART_KEYWORD_RE = re.compile(r"\bpart\s*=\s*[fFrRbBuU]{0,2}$")
+#: ``curio_output_file("heights.tif")`` names a file the node writes and
+#: returns (sandbox/util/collections.py), not a source it reads; both scanners
+#: skip the name passed to it, literal or f-string.
+OUTPUT_FILE_CALL = "curio_output_file"
+_OUTPUT_FILE_CALL_RE = re.compile(
+    r"""\bcurio_output_file\(\s*[fFrRbBuU]{0,2}(?P<q>["'])(?:\\.|(?!(?P=q))[^\\\n])*(?P=q)\s*\)"""
+)
 
 
 def _in_part_keyword(code: str, start: int, part_calls: list[int]) -> bool:
@@ -344,6 +351,12 @@ def _scan_python(code: str) -> list[SourceRef] | None:
                 for keyword in node.keywords:
                     if keyword.arg == "part" and isinstance(keyword.value, (ast.Constant, ast.JoinedStr)):
                         call_ids.add(id(keyword.value))
+        elif isinstance(node, ast.Call) and _call_name(node) == OUTPUT_FILE_CALL:
+            # ``curio_output_file("heights.tif")`` names a file the node
+            # writes, not one it reads.
+            name = node.args[0] if node.args else None
+            if isinstance(name, (ast.Constant, ast.JoinedStr)):
+                call_ids.add(id(name))
     for node in ast.walk(tree):
         line = max(1, getattr(node, "lineno", 1) - offset)
         if isinstance(node, ast.JoinedStr):
@@ -397,6 +410,7 @@ def _scan_regex(code: str) -> list[SourceRef]:
         refs.append(SourceRef(
             "catalog-id", match.group(3), code.count("\n", 0, match.start()) + 1, call=match.group(1),
         ))
+    call_spans.extend(match.span() for match in _OUTPUT_FILE_CALL_RE.finditer(code))
     for match in _STRING_LITERAL_RE.finditer(code):
         if any(a <= match.start() < b for a, b in call_spans):
             continue
