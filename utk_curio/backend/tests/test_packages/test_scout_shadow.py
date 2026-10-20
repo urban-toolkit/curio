@@ -78,6 +78,13 @@ MODULE = "deep_umbra"
 NODE_TYPE = "model.scout.deep-umbra/accumulated-shadow"
 CALCULATOR_TYPE = "curio.scout/raster-calculator"
 RASTERIZE_TYPE = "curio.scout/rasterize-buildings"
+#: Scout's Bars, which charts the two scenarios' mean shadow, and the
+#: Compare Scenarios type no node of the dataflow is any more.
+BARS_TYPE = "curio.scout/bars"
+COMPARE_TYPE = "curio.builtin/compare-scenarios"
+#: The Raster Calculator's call that takes the change in shadow: Towers
+#: removed's shadow, on input_1, minus Existing's, on input_0.
+CHANGE_CALL = 'return raster_calculate("subtract", [input_1, input_0], output_file=curio_output_file)'
 #: The line a Raster Calculator's code takes statistics with.
 STATISTICS_CALL = re.compile(r"^return raster_statistics\(", re.M)
 MODEL = PACKAGE / "models" / "deep_umbra.onnx"
@@ -97,8 +104,8 @@ SCOUT = "https://github.com/urban-toolkit/scout"
 MODEL_SHA256 = "67afb9d2d56bd0a12164e6e651214d56860ff689728c5b6f29486f21c3cb188e"
 BUILDINGS = REPO / "datasets" / "data.scout.loop-buildings@1" / "data" / "loop-buildings.geojson"
 DATAFLOW = REPO / "docs" / "examples" / "dataflows" / "chicago-loop-shadow-towers.json"
-#: The Autark map after the Compare Scenarios node in Difference: towers
-#: removed minus existing, on a diverging scale centered on no change.
+#: The Autark map after the Raster Calculator that takes the change in shadow:
+#: towers removed minus existing, on a diverging scale centered on no change.
 DIFFERENCE_MAP_DOCUMENT = {"map": {"layerRefs": [{
     "dataRef": "[!! input_0 !!]",
     "getFnv": "band_1",
@@ -988,9 +995,11 @@ def test_the_shipped_dataflow_runs_the_packages_as_the_palette_drops_them():
     season from the one Parameter node both scenarios share; each scenario's
     Raster Calculator of statistics reads its shadow on input_0 and its
     heights, the mask, on input_1, straight from Rasterize Buildings, which feeds the
-    shadow node too; each scenario maps its own shadow, with example 24's map;
-    the chart reads the statistics, the difference the shadows, and an Autark
-    map after the difference, in no scenario, draws the change in shadow.
+    shadow node too; each scenario maps its own shadow, with example 24's map.
+    Scout's Bars charts the statistics, and a third Raster Calculator takes
+    the change in shadow from the shadows, which an Autark map after it, in no
+    scenario, draws. No Compare Scenarios node is left (the plan answering
+    komar41's review, step 6.3).
     The model is no dataset of the dataflow: the shadow nodes' code names it by
     id, and the lockfile names its package, so opening the dataflow adds it."""
     from utk_curio.backend.app.datasets.domain.code_refs import dataset_ids_in_code, model_ids_in_code
@@ -1028,8 +1037,8 @@ def test_the_shipped_dataflow_runs_the_packages_as_the_palette_drops_them():
     assert dataset_ids_in_code(loader["content"]) == ["data.scout.loop-buildings"]
 
     into = {(edge["target"], edge["targetHandle"]): edge["source"] for edge in spec["edges"]}
-    statistics = by_type[CALCULATOR_TYPE]
-    assert len(statistics) == 2 and all(_takes_statistics(node) for node in statistics)
+    statistics = [node for node in by_type[CALCULATOR_TYPE] if _takes_statistics(node)]
+    assert len(statistics) == 2 and len(by_type[CALCULATOR_TYPE]) == 3
     for node in statistics:
         shadow, heights = nodes[into[(node["id"], "in")]], nodes[into[(node["id"], "in_1")]]
         assert shadow["type"] == NODE_TYPE
@@ -1053,15 +1062,34 @@ def test_the_shipped_dataflow_runs_the_packages_as_the_palette_drops_them():
         assert len(maps) == 1, (scenario["name"], maps)
         assert into[(maps[0], "in")] == shadow_id, scenario["name"]
         assert nodes[maps[0]]["content"] == _with_range(shadow_map["content"], SHADOW_RANGE), scenario["name"]
-    chart, difference = sorted(by_type["curio.builtin/compare-scenarios"],
-                               key=lambda n: n["metadata"]["compareScenarios"]["mode"])
-    assert chart["metadata"]["compareScenarios"]["mode"] == "chart"
-    assert chart["metadata"]["compareScenarios"]["chart"]["y"] == "mean"
-    assert {nodes[into[(chart["id"], h)]]["type"] for h in ("in", "in_1")} == {CALCULATOR_TYPE}
+    # The chart: Scout's Bars, its spec its template's own, its widgets set as
+    # the Compare node's bar drew it: each scenario's mean, combined by the
+    # mean, Compare's default for a bar, the Y axis titled as Compare titled
+    # it. Its circles take the two scenarios' statistics in the order of their
+    # boxes, and it stores no label of its own.
+    assert COMPARE_TYPE not in by_type, "a Compare Scenarios node is left"
+    scenario_of = {node_id: scenario["id"] for scenario in spec["scenarios"] for node_id in scenario["nodes"]}
+    (chart,) = by_type[BARS_TYPE]
+    (bars,) = [t for t in json.loads((RASTER_PACKAGE / "manifest.json").read_text(encoding="utf-8"))["templates"]
+               if t["id"] == "bars"]
+    assert chart["content"] == (RASTER_PACKAGE / bars["source"]).read_text(encoding="utf-8")
+    assert set(chart["metadata"]) == {"keywords", "widgets"}, chart["metadata"]
+    assert [{k: v for k, v in w.items() if k != "value"} for w in chart["metadata"]["widgets"]] == bars["widgets"]
+    assert {w["name"]: w.get("value", w["default"]) for w in chart["metadata"]["widgets"]} == {
+        "y": "mean", "combine": "mean", "y_title": "mean of mean",
+    }
     assert all(_takes_statistics(nodes[into[(chart["id"], h)]]) for h in ("in", "in_1"))
-    assert {nodes[into[(difference["id"], h)]]["type"] for h in ("in", "in_1")} == {NODE_TYPE}
+    assert [scenario_of[into[(chart["id"], h)]] for h in ("in", "in_1")] == [s["id"] for s in spec["scenarios"]]
+    # The change: a Raster Calculator in no scenario, Towers removed's shadow
+    # on input_1 minus Existing's on input_0, as Compare's Difference took it.
+    (difference,) = [node for node in by_type[CALCULATOR_TYPE] if not _takes_statistics(node)]
+    assert difference["id"] not in scenario_of
+    assert difference["content"].rstrip("\n").endswith(CHANGE_CALL), difference["content"]
+    assert "\nfrom scout_rasters.raster_algebra import raster_calculate\n" in difference["content"]
+    assert [nodes[into[(difference["id"], h)]]["type"] for h in ("in", "in_1")] == [NODE_TYPE, NODE_TYPE]
+    assert [scenario_of[into[(difference["id"], h)]] for h in ("in", "in_1")] == ["existing", "towers-removed"]
 
-    # The difference draws no map of its own: an Autark map after it, in no
+    # The change draws no map of its own: an Autark map after it, in no
     # scenario, draws the change in shadow on a scale centered on no change,
     # valid for the grammar.
     from utk_curio.backend.app.agents.domain import document_validation
@@ -1100,6 +1128,89 @@ def test_both_scenarios_shadow_maps_share_one_color_range_up_to_the_longest_shad
     with shadow_modules(tmp_path) as (deep_umbra, node_outputs):
         longest = max(deep_umbra.season_factor(season) for season in node_outputs.SEASONS)
     assert SHADOW_RANGE == [0, longest]
+
+
+def _minutes_raster(path, minutes):
+    """A float32 raster of *minutes* in World Mercator, NaN its nodata, as an
+    Accumulated Shadow node writes one."""
+    import numpy as np
+    import rasterio
+    from affine import Affine
+
+    values = np.asarray(minutes, dtype="float32")
+    with rasterio.open(
+        path, "w", driver="GTiff", width=values.shape[1], height=values.shape[0], count=1, dtype="float32",
+        crs="EPSG:3395", transform=Affine(2.4, 0.0, -9755120.0, 0.0, -2.4, 5112090.0), nodata=float("nan"),
+    ) as target:
+        target.write(values, 1)
+    return rasterio.open(path)
+
+
+def _as_autark_exports_it(dataset) -> dict:
+    """*dataset* as the envelope autk-db's ``getRaster`` exports for an Autark
+    map and Compare Scenarios' Difference (``utils/raster/rasterWire.ts``):
+    its first band as float32, rows from south to north, NaN for nodata."""
+    import base64
+
+    import numpy as np
+
+    t = dataset.transform
+    cells = dataset.read(1, masked=True).astype("float32").filled(np.nan)[::-1]
+    grid = {"crs": "EPSG:3395", "width": dataset.width, "height": dataset.height,
+            "originX": t.c, "originY": t.f, "resX": t.a, "resY": t.e}
+    west, south, east, north = dataset.bounds
+    return {"dataType": "raster", "data": {
+        "type": "FeatureCollection", "bbox": [west, south, east, north], "grid": grid,
+        "features": [{"type": "Feature", "geometry": None, "properties": {
+            "bands": [{"id": "band_1"}],
+            "band_1": {"float32le": base64.b64encode(cells.astype("<f4").tobytes()).decode("ascii")},
+        }}],
+    }}
+
+
+def test_the_change_in_shadow_is_towers_removed_minus_existing_as_compare_took_it(workspace, tmp_path):
+    """The dataflow's change in shadow is a Raster Calculator, run as the
+    sandbox runs one, with Scout's modules: Towers removed's shadow, on input_1,
+    minus Existing's, on input_0, cell by cell, its sign kept. It is what
+    Compare Scenarios' Difference took from the same two shadows, as autk-db
+    exports them (``envelope_difference.subtract_envelopes``), cell for cell:
+    below zero where removing the towers takes shadow away, above where it
+    adds some, 0 where nothing changed, and no value where either shadow has
+    none, on the shadows' grid."""
+    import base64
+
+    import numpy as np
+
+    from utk_curio.sandbox.util.envelope_difference import subtract_envelopes
+    from utk_curio.sandbox.util.parsers import load_from_duckdb
+
+    (node,) = [n for n in _dataflow()["nodes"] if n["type"] == CALCULATOR_TYPE and not _takes_statistics(n)]
+    existing = _minutes_raster(tmp_path / "existing.tif", [
+        [720.0, 600.0, 0.0, 30.0], [10.0, 180.0, 360.0, float("nan")], [540.0, 0.0, 15.5, 720.0],
+    ])
+    removed = _minutes_raster(tmp_path / "removed.tif", [
+        [720.0, 120.0, 30.0, 0.0], [10.0, float("nan"), 0.0, 45.0], [0.0, 0.0, 60.25, 360.0],
+    ])
+    result = _execute(node["content"], (existing, removed), CALCULATOR_TYPE, workspace, data_type="outputs",
+                      package_modules=RASTER_MODULES)
+    assert result["stderr"] == "", result["stderr"]
+    assert result["output"]["dataType"] == "raster", result["output"]
+    change = load_from_duckdb(result["output"]["path"])
+    try:
+        cells = change.read(1, masked=True).astype("float32").filled(np.nan)
+        assert (change.crs.to_epsg(), change.width, change.height) == (3395, 4, 3)
+        assert change.transform == removed.transform
+    finally:
+        change.close()
+    expected = np.array([
+        [0.0, -480.0, 30.0, -30.0], [0.0, np.nan, -360.0, np.nan], [-540.0, 0.0, 44.75, -360.0],
+    ], dtype="float32")
+    assert np.array_equal(cells, expected, equal_nan=True), cells
+    compared = subtract_envelopes(("Existing", _as_autark_exports_it(existing)),
+                                  ("Towers removed", _as_autark_exports_it(removed)))
+    wire = compared["data"]["features"][0]["properties"]["band_1"]["float32le"]
+    took = np.frombuffer(base64.b64decode(wire), dtype="<f4").reshape(3, 4)[::-1]
+    assert np.array_equal(cells, took, equal_nan=True), (cells, took)
 
 
 def test_example_24_holds_the_node_as_the_palette_drops_it_and_its_code_runs(workspace, tmp_path):
