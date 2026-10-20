@@ -7,7 +7,8 @@ Catalog drawer drags as the Node Catalog drawer's cards do:
   the model with ``curio_load_model("<id>")``. A dataflow that has not added
   the package goes through the drawer's Add review first. Each card does it:
   DDRNet23-Slim, Deep Umbra, the SCOUT weather GNN and a model added from
-  Hugging Face, and DDRNet's node runs;
+  Hugging Face, and DDRNet's node runs. Cancel on that review makes no node
+  and installs nothing;
 * the Tools panel's Models dropdown lists the dataflow's models only, as the
   Data Catalog dropdown lists its datasets: none in a dataflow that has added
   none, then the one added in the drawer. Its row drops as the card does, and
@@ -62,6 +63,7 @@ from .utils import (
     api_json,
     canvas_node_type,
     canvas_nodes,
+    close_tools_palette,
     connect_nodes,
     drag_with_the_mouse_onto_canvas,
     frame_nodes,
@@ -349,9 +351,11 @@ def test_the_models_dropdown_lists_only_the_dataflows_models_and_a_row_drops_as_
 ):
     """The Models dropdown lists this dataflow's models, as the Data Catalog
     dropdown lists its datasets. A dataflow that has added none shows the
-    empty state and the way into the drawer; once Deep Umbra is added in the
-    drawer, the dropdown lists exactly Deep Umbra. Its row dropped on the
-    canvas makes its node at once, with no Add review and no install."""
+    empty state and the way into the drawer. The drawer's own card, dropped
+    on the canvas while the dataflow lacks the model, opens its Add review,
+    and Cancel makes no node and installs nothing. Once Deep Umbra is added in
+    the drawer, the dropdown lists exactly Deep Umbra, and its row dropped on
+    the canvas makes its node at once, with no Add review and no install."""
     dir_name, template = SHIPPED_CARDS["deep-umbra"]
     name = _manifest(dir_name)["name"]
     model_id = dir_name.split("@")[0]
@@ -367,9 +371,28 @@ def test_the_models_dropdown_lists_only_the_dataflows_models_and_a_row_drops_as_
     expect(_models_trigger(page)).to_have_text(re.compile(r"^\s*0\s*Model Catalog\s*$"))
     expect(panel.get_by_role("button", name="Browse Model Catalog +", exact=True)).to_be_visible()
 
-    # Added in the drawer: the dropdown lists it, and nothing else.
+    # The drawer's own card dropped on the canvas: its Add review, and Cancel
+    # makes no node and installs nothing. The open dropdown floats over the
+    # left of the canvas, where the drop goes, so it is closed first.
+    close_tools_palette(page, "models")
     drawer = _open_drawer(page, "Model Catalog", MODEL_DRAWER)
-    _add_to_project(page, _card(drawer, dir_name), name)
+    card = _card(drawer, dir_name)
+    expect(card).to_have_count(1, timeout=30000)
+    expect(card).to_have_attribute("draggable", "true")
+    installs = _record_installs(page)
+    before = _node_ids(page)
+    drop = drag_with_the_mouse_onto_canvas(page, card.locator("h3"), at=_free_point(page))
+    assert drop["onCanvas"], f"the card's drop landed on {drop['droppedOn']}, not on the canvas"
+    review = _add_review(page, name)
+    expect(review).to_be_visible(timeout=30000)
+    review.get_by_role("button", name="Cancel", exact=True).click()
+    expect(review).to_have_count(0, timeout=10000)
+    assert (_node_ids(page), installs) == (before, []), "a cancelled Add made a node or installed"
+
+    # Added in the drawer, with no node for the cancelled drop: the dropdown
+    # lists it, and nothing else.
+    _add_to_project(page, card, name)
+    assert _node_ids(page) == before, "the Add made a node for the cancelled drop"
     _close_drawer(page, MODEL_DRAWER)
     panel = open_tools_palette(page, "models")
     expect(panel.locator(f'[data-model-id="{model_id}"]')).to_have_count(1, timeout=30000)
