@@ -8,8 +8,10 @@ as the Graph, the branch in a column of its own. A click opens a run: what it
 read and returned, when it ran and its code. A notebook cell's button opens the
 same drawer.
 
-It runs on the fixed catalog date, so the times the drawer shows read the same
-in every frame.
+A run's times come from the server's clock, not the browser's, so no fixed date
+reaches them. A frame shows them only in the List, on one line the screenshot
+masks; the Graph frame shows the runs closed, since an opened box wraps its
+times over lines that change with the date and the hour.
 
 Run::
 
@@ -21,7 +23,6 @@ import re
 import uuid
 from typing import TYPE_CHECKING
 
-import pytest
 from playwright.sync_api import expect
 
 from .utils import (
@@ -113,7 +114,6 @@ def _open_run(panel, run_id: str) -> None:
     expect(item.get_by_role("button", name="Put this code back in the node", exact=True)).to_be_visible()
 
 
-@pytest.mark.catalog_calendar
 def test_a_nodes_runs_open_in_the_provenance_drawer(
     app_frontend: "FrontendPage", current_server: str, page,
 ):
@@ -186,11 +186,13 @@ def test_a_nodes_runs_open_in_the_provenance_drawer(
     assert counts["items"] == 3 and counts["links"] == 2 == counts["drawn"], counts
     columns = {run_id: _run_item(panel, run_id).evaluate("el => el.style.gridColumn") for run_id in runs + [second_run]}
     assert columns == {first_run: "1", second_run: "2", third_run: "1"}, columns
-
-    _open_run(panel, third_run)
     save_workflow_test_screenshot(
         page, "node-provenance-graph", test_name=TEST_NAME, fit_reactflow=False, clip_selector=PROVENANCE_PANEL,
     )
+
+    # A run opened in the Graph is still open in the List, where its times
+    # fit one line.
+    _open_run(panel, third_run)
     panel.get_by_role("button", name="List", exact=True).click()
     expect(_run_item(panel, third_run).locator("button").first).to_have_attribute("aria-expanded", "true")
     save_workflow_test_screenshot(
