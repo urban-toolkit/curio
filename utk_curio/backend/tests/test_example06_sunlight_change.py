@@ -265,7 +265,7 @@ def _compares_difference(baseline: dict, twice: dict):
     from utk_curio.sandbox.util.parsers import load_from_duckdb, save_to_duckdb
 
     before, after = (curio_layer(load_from_duckdb(art_id), ROADS) for art_id in _stored((baseline, twice)))
-    return load_from_duckdb(save_to_duckdb(_roads_change(before, after), node_id="compare-scenarios"))
+    return load_from_duckdb(save_to_duckdb(_roads_change(before, after), node_id="expected-change"))
 
 
 def _roads_change(before, after):

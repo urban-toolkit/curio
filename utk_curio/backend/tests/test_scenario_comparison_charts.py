@@ -256,7 +256,7 @@ def test_21_scenarios_each_keep_their_rows_with_a_case_widget():
             if circle == 0:
                 assert "value" not in widget and "copiedFrom" not in keep["metadata"]
             else:
-                # Its lineage pairs it with the first scenario's in What differs.
+                # Its lineage makes it the same lever as the first scenario's.
                 assert keep["metadata"]["copiedFrom"] == [first["id"]]
     for scenario in scenarios:
         charts = {_targets(flow, node_id)[0] for node_id in scenario["nodes"]}
