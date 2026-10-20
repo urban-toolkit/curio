@@ -15,21 +15,14 @@ routes' duration, distance, rain exposure and wind exposure, one bar per
 scenario, in the same colors, each reading both scenarios' metrics stacked as
 ``inputs``.
 
-The test adds a Compare Scenarios node beside the duration chart, over the
-same two inputs, on which steps 3 and 4 read what they read on the dataflow's
-Compare nodes until those went (step 6.4 of the plan answering komar41's
-review removes it with the node). Run All drives the whole path:
+Run All drives the whole path:
 
 1. Weather Routing routes over the roads the Autark node loads.
 2. The map draws each route in its box's color.
 3. Each chart fills each scenario's bar with its box's color, and the rows it
    reads hold the metrics the package's own test pins for the same roads
-   (``EXAMPLE`` in ``test_packages/test_scout_routing.py``). The Compare node
-   draws its bars, and its stacked table holds them too.
-4. What differs, on the Compare node, lists two levers, each scenario's two
-   nodes, each with the one code line that names the route it keeps; nothing
-   is warned.
-5. The Fastest route's box takes another color in the scenario's details, from
+   (``EXAMPLE`` in ``test_packages/test_scout_routing.py``).
+4. The Fastest route's box takes another color in the scenario's details, from
    the Scenario Catalog drawer's In project tab, and Run All runs the flow
    again: the map draws that route in the new color and none in the old one,
    and every chart fills its bar with the new color; the other scenario keeps
@@ -50,7 +43,6 @@ Run::
 from __future__ import annotations
 
 import base64
-import copy
 import json
 import time
 from io import BytesIO
@@ -61,16 +53,15 @@ import pytest
 
 from utk_curio.backend.tests.test_packages.test_scout_routing import EXAMPLE, EXAMPLE_CHARTS, EXAMPLE_SCENARIOS
 
-from .test_compare_scenarios_e2e import _CHART_STATE_JS, _COLOR_PIXELS_JS, _OUTPUT_ARTIFACT_JS
 from .utils import (
     REPO_ROOT,
+    _COLOR_PIXELS_JS,
     api_json,
     assert_autark_map_drawn,
     assert_vega_canvas_rendered,
     close_scenario_details,
     close_scenario_drawer,
     frame_nodes,
-    load_artifact_as_dict,
     node_locator,
     open_in_project_tab,
     open_scenario_details,
@@ -98,13 +89,11 @@ ROUTING_TYPE = "model.scout.weather-gnn/weather-routing"
 AUTARK_TYPE = "curio.builtin/autk-grammar"
 BARS_TYPE = "curio.scout/bars"
 COMPARE_TYPE = "curio.builtin/compare-scenarios"
-#: The Compare Scenarios node the test adds beside the duration chart.
-COMPARE_ID = "routing-compare-duration"
 TEST_NAME = "test_two_routing_scenarios_are_mapped_and_charted"
 #: The metric columns of the rows a chart reads, and where each sits in an
 #: ``EXAMPLE`` row.
 COLUMNS = {"distance": 3, "duration": 4, "rain_exposure": 5, "wind_exposure": 6}
-#: The scenario whose box takes another color in step 5, and that color: far
+#: The scenario whose box takes another color in step 4, and that color: far
 #: from both scenarios' own blues and from the roads' grays.
 RECOLORED = "fastest"
 NEW_COLOR = "#d81b60"
@@ -182,43 +171,6 @@ _BOX_COLOR_JS = """(id) => {
     return frame ? getComputedStyle(frame).borderTopColor : null;
 }"""
 
-#: The code the Compare node writes for its two inputs, the fastest route's
-#: metrics and the weather-aware one's (``utils/compare/compareCode.ts``): the
-#: dataflow's duration chart held it before it was Scout's Bars.
-COMPARE_CODE = (
-    "# Compare Scenarios writes this code from its inputs: each input, under the\n"
-    "# id and the name of its scenario. It is written again when they change.\n"
-    "return curio_stack_scenarios([\n"
-    '    ("fastest", "Fastest route", [!! input_0 !!]),\n'
-    '    ("weather-aware", "Weather-aware route", [!! input_1 !!]),\n'
-    "])\n"
-)
-
-
-def _with_a_compare_node(spec: dict, chart_id: str) -> dict:
-    """*spec* with a Compare Scenarios node beside the chart *chart_id*, over
-    the chart's two inputs on the same circles, charting bars of duration as
-    the dataflow's Compare node did. It holds the labels and the code it
-    writes for its inputs, so a load writes nothing again."""
-    spec = copy.deepcopy(spec)
-    flow = spec["dataflow"]
-    chart = next(node for node in flow["nodes"] if node["id"] == chart_id)
-    labels = [{"scenario": s["id"], "name": s["name"], "color": s["color"]} for s in flow["scenarios"]]
-    flow["nodes"].append({
-        "id": COMPARE_ID, "type": COMPARE_TYPE,
-        "x": chart["x"] + chart.get("width", 525) + 200, "y": chart["y"],
-        "content": COMPARE_CODE,
-        "out": "DEFAULT", "in": "DEFAULT", "goal": "Compare the two routes' duration, in minutes.",
-        "metadata": {"keywords": [], "packageTemplateLabel": "Compare: duration", "compareScenarios": {
-            "inputs": labels, "mode": "chart", "chart": {"preset": "bar", "y": "duration"},
-        }},
-    })
-    flow["edges"] += [
-        {**edge, "id": f"{edge['id']}-{COMPARE_ID}", "target": COMPARE_ID}
-        for edge in flow["edges"] if edge["target"] == chart_id
-    ]
-    return spec
-
 
 def _rgb(color: str) -> tuple[int, int, int]:
     """``#rrggbb`` or ``rgb(r, g, b)`` as a tuple."""
@@ -244,8 +196,7 @@ def _box_colors(page) -> dict[str, str]:
 def _release_nodes(page, node_id: str) -> None:
     """Click the empty pane where the pointer parks, so no node keeps the
     pointer, focus or the selection, and wait for *node_id*'s header tools to
-    hide: a close-up taken after a click inside a node (the What differs tabs)
-    would show them."""
+    hide: a close-up taken after a click inside a node would show them."""
     park_pointer(page)
     page.mouse.down()
     page.mouse.up()
@@ -311,22 +262,6 @@ def _assert_chart_drew(page, node_id: str, colors: list[str]) -> None:
     _assert_colors_drawn(page, node_id, colors)
 
 
-def _assert_compare_chart_drew(page, node_id: str, colors: list[str]) -> None:
-    """The Compare node's bars compiled with no problem, and its canvas holds
-    both scenarios' colors."""
-    deadline = time.time() + 60
-    state = None
-    while time.time() < deadline:
-        state = page.evaluate(_CHART_STATE_JS, [node_id, "bar"])
-        if state in ("drawn", "problem"):
-            break
-        page.wait_for_timeout(250)
-    problem = node_locator(page, node_id).locator("[data-compare-chart-problem]").all_inner_texts()
-    assert state == "drawn", f"the chart's compile ended {state!r}: {problem}"
-    assert_vega_canvas_rendered(page, node_id, timeout=30000)
-    _assert_colors_drawn(page, node_id, colors)
-
-
 def _assert_bars_filled(page, node_id: str, colors: dict[str, str]) -> None:
     """The chart has one bar per scenario, filled with that scenario's box
     color (*colors*, scenario to color)."""
@@ -376,16 +311,6 @@ def _assert_chart_rows(page, node_id: str) -> None:
     _assert_metrics(columns, f"the chart {node_id}'s rows")
 
 
-def _assert_stacked_table(page, node_id: str) -> None:
-    """The Compare node's saved table: each scenario's route, with the metrics
-    the package's test pins for these roads."""
-    artifact = page.evaluate(_OUTPUT_ARTIFACT_JS, node_id)
-    assert artifact, "Compare Scenarios shows no saved table"
-    stacked = load_artifact_as_dict(artifact)
-    assert stacked["dataType"] == "dataframe", stacked["dataType"]
-    _assert_metrics(stacked["data"], "the Compare node's stacked table")
-
-
 def test_two_routing_scenarios_are_mapped_and_charted(
     app_frontend: "FrontendPage", current_server: str, page,
 ):
@@ -409,7 +334,7 @@ def test_two_routing_scenarios_are_mapped_and_charted(
         for n in nodes if n["type"] == BARS_TYPE
     }
     assert list(charts) == EXAMPLE_CHARTS
-    spec = _with_a_compare_node(shipped, charts["duration"])
+    spec = shipped
     session = stub_login_and_enter_workflow(
         page,
         frontend_url=app_frontend.base_url,
@@ -436,8 +361,6 @@ def test_two_routing_scenarios_are_mapped_and_charted(
     for node_id in charts.values():
         status = wait_for_node_settled(page, node_id, node_type=BARS_TYPE, timeout_ms=120000)
         assert status == "done", f"the chart {node_id} did not draw: {read_node_error_text(node_locator(page, node_id))}"
-    status = wait_for_node_settled(page, COMPARE_ID, node_type=COMPARE_TYPE, timeout_ms=120000)
-    assert status == "done", f"Compare Scenarios did not compare: {read_node_error_text(node_locator(page, COMPARE_ID))}"
 
     # 2. The routes map: each route in its box's color.
     colors = _box_colors(page)
@@ -447,29 +370,12 @@ def test_two_routing_scenarios_are_mapped_and_charted(
     _assert_routes_drawn(page, map_id, colors, gone=[NEW_COLOR])
 
     # 3. The four charts: each bar in its box's color, from the metrics the
-    # package's test pins; and the Compare node's bars and stacked table.
+    # package's test pins.
     for column in EXAMPLE_CHARTS:
         frame_nodes(page, [charts[column]])
         _assert_chart_drew(page, charts[column], list(colors.values()))
         _assert_bars_filled(page, charts[column], colors)
         _assert_chart_rows(page, charts[column])
-    frame_nodes(page, [COMPARE_ID])
-    _assert_compare_chart_drew(page, COMPARE_ID, list(colors.values()))
-    _assert_bars_filled(page, COMPARE_ID, colors)
-    _assert_stacked_table(page, COMPARE_ID)
-
-    # 4. What differs: the route each scenario keeps, and nothing else.
-    compare = node_locator(page, COMPARE_ID)
-    compare.get_by_role("tab", name="What differs", exact=True).click()
-    compare.locator("[data-compare-lever]").first.wait_for(state="visible", timeout=10000)
-    assert compare.locator("[data-compare-lever]").count() == 2
-    assert compare.locator("[data-compare-widget]").count() == 0
-    assert sorted(compare.locator("[data-compare-code-added]").all_inner_texts()) == [
-        '+ return metrics[metrics["route"] == "weighted-route"]',
-        '+ return routes[routes["weight_type"] == "weighted-route"]']
-    assert compare.locator("[data-compare-code-removed]").count() == 2
-    assert compare.locator("[data-compare-warning]").count() == 0
-    compare.get_by_role("tab", name="Chart", exact=True).click()
 
     frame_nodes(page, [map_id])
     assert_autark_map_drawn(page, map_id, timeout=30000)
@@ -484,7 +390,7 @@ def test_two_routing_scenarios_are_mapped_and_charted(
             test_name=TEST_NAME, sweep_toasts=True,
         )
 
-    # 5. The Fastest route's box takes another color, and the flow runs again:
+    # 4. The Fastest route's box takes another color, and the flow runs again:
     # its route and its bars follow, and the other scenario keeps its color.
     name = EXAMPLE_SCENARIOS[RECOLORED][0]
     open_in_project_tab(page)
