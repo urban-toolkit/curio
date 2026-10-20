@@ -45,6 +45,7 @@
 
 import { WIDGET_NAME_RE, effectiveValue, type WidgetDef, type WidgetValue } from "../widgets/widgetModel";
 import { inputTableName } from "../../generated/autkGrammar";
+import { vegaFieldName } from "../vegaFieldNames";
 import { isOverCap, overCapText, selectionSize, type SelectionTag } from "./selectionTags";
 
 export type CodeLanguage = "python" | "javascript" | "json";
@@ -100,13 +101,6 @@ const ONE_FRAME_TYPES = new Set(["dataframe", "geodataframe"]);
  * (`grammarId`): a JSON document of it writes a name where Vega-Lite reads a
  * field escaped. Kept in sync with `VEGA_LITE` in `code_references.py`. */
 export const VEGA_LITE = "vega-lite";
-
-/** *name* as a Vega-Lite field that names that column: each `\`, `.`, `[`
- * and `]` escaped, which Vega-Lite would otherwise read as a path into the
- * row. Kept in sync with `vega_field_name` in `code_references.py`. */
-export function vegaFieldName(name: string): string {
-  return name.replace(/[\\.[\]]/g, (ch) => "\\" + ch);
-}
 
 export interface CodeReference {
   /** Offsets of the whole `[!! ... !!]` in the code. */
@@ -442,29 +436,60 @@ function fieldHolderAt(holder: Record<string, unknown>, kind: FieldHolder, key: 
   return null;
 }
 
-/** A reference while its spec is read for its places: its number between two
- * characters of Unicode's private use area, which no spec holds and JSON takes
- * inside a string as they are. Kept in sync with `_PLACE_MARK_RE` in
+/** The keys whose values hold rows or the author's own notes, never a field:
+ * a `field` there is a value. Kept in sync with `_NOT_SPEC_KEYS` in
  * `code_references.py`. */
-const MARK_OPEN = String.fromCharCode(0xe000);
-const MARK_CLOSE = String.fromCharCode(0xe001);
-const placeMark = (index: number) => MARK_OPEN + index + MARK_CLOSE;
-const PLACE_MARK_RE = new RegExp(MARK_OPEN + "([0-9]+)" + MARK_CLOSE, "g");
+const NOT_SPEC_KEYS = new Set(["data", "datasets", "usermeta"]);
+
+/** How deep a Vega-Lite spec's objects and lists may nest for its places to
+ * be read; a deeper spec writes its names as they are. Kept in sync with
+ * `_MAX_SPEC_DEPTH` in `code_references.py`. */
+const MAX_SPEC_DEPTH = 100;
+
+/** Thrown, and caught, when a spec nests deeper than `MAX_SPEC_DEPTH`. */
+const TOO_DEEP = new Error("the spec nests too deep for its places to be read");
+
+/** The first and last code points of Unicode's private use area. */
+const PRIVATE_USE_FIRST = 0xe000;
+const PRIVATE_USE_LAST = 0xf8ff;
+
+/**
+ * Two characters of Unicode's private use area that *code* holds neither as
+ * they are nor as a JSON escape, to stand around a reference's number while
+ * the spec is read for its places; null when it holds every pair. Kept in sync
+ * with `_place_marks` in `code_references.py`.
+ */
+function placeMarks(code: string): [string, string] | null {
+  const lower = code.toLowerCase();
+  const escape = String.fromCharCode(92) + "u";
+  const free = (point: number) =>
+    !code.includes(String.fromCharCode(point)) && !lower.includes(escape + point.toString(16));
+  for (let point = PRIVATE_USE_FIRST; point < PRIVATE_USE_LAST; point += 2) {
+    if (free(point) && free(point + 1)) return [String.fromCharCode(point), String.fromCharCode(point + 1)];
+  }
+  return null;
+}
 
 /**
  * Where each of *refs* (in *contexts*) stands in the Vega-Lite spec *code*.
- * The spec is read as JSON with each reference replaced by a mark, a text of
- * its own where the reference is a value and a run of a string where it is
- * inside one, and each mark is found where the spec holds it. A spec that does
- * not read as JSON holds no field. Kept in sync with `_vega_field_places` in
- * `code_references.py`.
+ * The spec is read as JSON with each reference replaced by a mark, its number
+ * between two characters the spec's text does not hold (`placeMarks`): a text
+ * of its own where the reference is a value, a run of a string where it is
+ * inside one. Each mark is found where the spec holds it, outside the rows and
+ * notes of `NOT_SPEC_KEYS`. A spec that does not read as JSON, or nests deeper
+ * than `MAX_SPEC_DEPTH`, holds no field. Kept in sync with
+ * `_vega_field_places` in `code_references.py`.
  */
 function vegaFieldPlaces(code: string, refs: CodeReference[], contexts: ReferenceContext[]): FieldPlace[] {
-  const places: FieldPlace[] = refs.map(() => ({ text: false, items: false }));
+  const unplaced = () => refs.map(() => ({ text: false, items: false }));
+  const marks = placeMarks(code);
+  if (marks === null) return unplaced();
+  const [open, close] = marks;
+  const markRe = new RegExp(open + "([0-9]+)" + close, "g");
   let marked = "";
   let last = 0;
   refs.forEach((ref, index) => {
-    const mark = placeMark(index);
+    const mark = open + index + close;
     marked += code.slice(last, ref.start) + (contexts[index].kind === "code" ? `"${mark}"` : mark);
     last = ref.end;
   });
@@ -473,10 +498,11 @@ function vegaFieldPlaces(code: string, refs: CodeReference[], contexts: Referenc
   try {
     spec = JSON.parse(marked);
   } catch {
-    return places;
+    return unplaced();
   }
+  const places = unplaced();
   const place = (text: string, field: boolean, items: boolean) => {
-    for (const match of text.matchAll(PLACE_MARK_RE)) {
+    for (const match of text.matchAll(markRe)) {
       const found = places[Number(match[1])];
       if (found === undefined) continue;
       found.text = field;
@@ -484,28 +510,36 @@ function vegaFieldPlaces(code: string, refs: CodeReference[], contexts: Referenc
       found.items = match[0] === text && items;
     }
   };
-  const visit = (node: unknown, kind: FieldHolder) => {
+  const visit = (node: unknown, kind: FieldHolder, depth: number) => {
+    if (depth > MAX_SPEC_DEPTH) throw TOO_DEEP;
     if (Array.isArray(node)) {
-      for (const item of node) visit(item, null);
+      for (const item of node) visit(item, null, depth + 1);
       return;
     }
     if (node === null || typeof node !== "object") return;
     const holder = node as Record<string, unknown>;
     for (const [key, value] of Object.entries(holder)) {
+      if (NOT_SPEC_KEYS.has(key)) continue;
       if (typeof value === "string") {
         place(value, isVegaField(holder, kind, key, false), isVegaField(holder, kind, key, true));
       } else if (Array.isArray(value)) {
         for (const item of value) {
           if (typeof item === "string") place(item, isVegaField(holder, kind, key, true), false);
-          else if (!Array.isArray(item)) visit(item, fieldHolderAt(holder, kind, key, true));
-          else visit(item, null);
+          else if (!Array.isArray(item)) visit(item, fieldHolderAt(holder, kind, key, true), depth + 1);
+          else visit(item, null, depth + 1);
         }
       } else {
-        visit(value, fieldHolderAt(holder, kind, key, false));
+        visit(value, fieldHolderAt(holder, kind, key, false), depth + 1);
       }
     }
   };
-  visit(spec, null);
+  try {
+    visit(spec, null, 0);
+  } catch {
+    // Too deep, or deeper than the stack the walk has: its names are written
+    // as they are.
+    return unplaced();
+  }
   return places;
 }
 

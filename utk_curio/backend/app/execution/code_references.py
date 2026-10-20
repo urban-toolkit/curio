@@ -95,15 +95,20 @@ ONE_FRAME_TYPES = ("dataframe", "geodataframe")
 #: field escaped. Kept in sync with ``VEGA_LITE`` in ``codeReferences.ts``.
 VEGA_LITE = "vega-lite"
 
-_VEGA_FIELD_SPECIALS_RE = re.compile(r"[\\.\[\]]")
+_VEGA_FIELD_SPECIALS_RE = re.compile(r"[.\[\]]")
 
 
 def vega_field_name(name: str) -> str:
-    """*name* as a Vega-Lite field that names that column: each ``\\``,
-    ``.``, ``[`` and ``]`` escaped, which Vega-Lite would otherwise read as a
-    path into the row. Kept in sync with ``vegaFieldName`` in
-    ``codeReferences.ts``."""
+    """*name* as a Vega-Lite field that names that column: each ``.``, ``[``
+    and ``]`` behind a backslash, which Vega-Lite would otherwise read as a
+    path into the row. A name that already holds a backslash is taken as
+    escaped by hand and kept as it is: Vega-Lite reads no column whose name
+    holds one anyway. Kept in sync with ``vegaFieldName`` in
+    ``utils/vegaFieldNames.ts``."""
+    if "\\" in name:
+        return name
     return _VEGA_FIELD_SPECIALS_RE.sub(lambda m: "\\" + m.group(0), name)
+
 
 #: A widget name. Kept in sync with ``WIDGET_NAME_PATTERN`` in ``widgetModel.ts``
 #: and with the widget name's ``pattern`` in ``docs/schemas/node-package.v4.json``
@@ -445,12 +450,39 @@ def _field_holder_at(holder: dict, kind, key: str, item: bool):
     return None
 
 
-#: A reference while its spec is read for its places: its number between two
-#: characters of Unicode's private use area, which no spec holds and JSON takes
-#: inside a string as they are. Kept in sync with ``PLACE_MARK_RE`` in
+#: The keys whose values hold rows or the author's own notes, never a field:
+#: a ``field`` there is a value. Kept in sync with ``NOT_SPEC_KEYS`` in
 #: ``codeReferences.ts``.
-_MARK_OPEN, _MARK_CLOSE = chr(0xE000), chr(0xE001)
-_PLACE_MARK_RE = re.compile(_MARK_OPEN + "([0-9]+)" + _MARK_CLOSE)
+_NOT_SPEC_KEYS = frozenset({"data", "datasets", "usermeta"})
+
+#: How deep a Vega-Lite spec's objects and lists may nest for its places to be
+#: read; a deeper spec writes its names as they are. Kept in sync with
+#: ``MAX_SPEC_DEPTH`` in ``codeReferences.ts``.
+_MAX_SPEC_DEPTH = 100
+
+#: The first and last code points of Unicode's private use area.
+_PRIVATE_USE_FIRST, _PRIVATE_USE_LAST = 0xE000, 0xF8FF
+
+
+class _TooDeep(Exception):
+    """A spec nests deeper than :data:`_MAX_SPEC_DEPTH`."""
+
+
+def _place_marks(code: str) -> tuple[str, str] | None:
+    """Two characters of Unicode's private use area that *code* holds neither
+    as they are nor as a JSON escape, to stand around a reference's number
+    while the spec is read for its places; None when it holds every pair. Kept
+    in sync with ``placeMarks`` in ``codeReferences.ts``."""
+    lower = code.lower()
+    escape = chr(92) + "u"
+
+    def free(point: int) -> bool:
+        return chr(point) not in code and f"{escape}{point:04x}" not in lower
+
+    for point in range(_PRIVATE_USE_FIRST, _PRIVATE_USE_LAST, 2):
+        if free(point) and free(point + 1):
+            return chr(point), chr(point + 1)
+    return None
 
 
 def _not_json(name: str):
@@ -464,15 +496,25 @@ def _vega_field_places(code: str, refs: list, contexts: list) -> list:
     *code*: ``{"text": <whether Vega-Lite reads a text there as a field
     name>, "items": <whether, for a reference that is a whole value, it reads
     each text of a list there as one>}``. The spec is read as JSON, as
-    ``JSON.parse`` reads it, with each reference replaced by a mark, and each
-    mark is found where the spec holds it. A spec that does not read as JSON
-    holds no field. Kept in sync with ``vegaFieldPlaces`` in
-    ``codeReferences.ts``."""
-    places = [{"text": False, "items": False} for _ in refs]
+    ``JSON.parse`` reads it, with each reference replaced by a mark, its number
+    between two characters the spec's text does not hold
+    (:func:`_place_marks`), and each mark is found where the spec holds it,
+    outside the rows and notes of :data:`_NOT_SPEC_KEYS`. A spec that does not
+    read as JSON, or nests deeper than :data:`_MAX_SPEC_DEPTH`, holds no
+    field. Kept in sync with ``vegaFieldPlaces`` in ``codeReferences.ts``."""
+
+    def unplaced() -> list:
+        return [{"text": False, "items": False} for _ in refs]
+
+    marks = _place_marks(code)
+    if marks is None:
+        return unplaced()
+    open_mark, close_mark = marks
+    mark_re = re.compile(re.escape(open_mark) + "([0-9]+)" + re.escape(close_mark))
     marked: list = []
     last = 0
     for index, (ref, context) in enumerate(zip(refs, contexts)):
-        mark = f"{_MARK_OPEN}{index}{_MARK_CLOSE}"
+        mark = f"{open_mark}{index}{close_mark}"
         marked.append(code[last:ref.start()])
         marked.append(f'"{mark}"' if context[0] == "code" else mark)
         last = ref.end()
@@ -480,10 +522,11 @@ def _vega_field_places(code: str, refs: list, contexts: list) -> list:
     try:
         spec = json.loads("".join(marked), parse_constant=_not_json)
     except (ValueError, RecursionError):
-        return places
+        return unplaced()
+    places = unplaced()
 
     def place(text: str, field: bool, items: bool) -> None:
-        for match in _PLACE_MARK_RE.finditer(text):
+        for match in mark_re.finditer(text):
             index = int(match.group(1))
             if index >= len(places):
                 continue
@@ -491,14 +534,18 @@ def _vega_field_places(code: str, refs: list, contexts: list) -> list:
             # Only a reference that is the whole value can hold a list.
             places[index]["items"] = match.group(0) == text and items
 
-    def visit(node, kind) -> None:
+    def visit(node, kind, depth: int) -> None:
+        if depth > _MAX_SPEC_DEPTH:
+            raise _TooDeep
         if isinstance(node, list):
             for item in node:
-                visit(item, None)
+                visit(item, None, depth + 1)
             return
         if not isinstance(node, dict):
             return
         for key, value in node.items():
+            if key in _NOT_SPEC_KEYS:
+                continue
             if isinstance(value, str):
                 place(value, _is_vega_field(node, kind, key, False), _is_vega_field(node, kind, key, True))
             elif isinstance(value, list):
@@ -506,16 +553,16 @@ def _vega_field_places(code: str, refs: list, contexts: list) -> list:
                     if isinstance(item, str):
                         place(item, _is_vega_field(node, kind, key, True), False)
                     elif not isinstance(item, list):
-                        visit(item, _field_holder_at(node, kind, key, True))
+                        visit(item, _field_holder_at(node, kind, key, True), depth + 1)
                     else:
-                        visit(item, None)
+                        visit(item, None, depth + 1)
             else:
-                visit(value, _field_holder_at(node, kind, key, False))
+                visit(value, _field_holder_at(node, kind, key, False), depth + 1)
 
     try:
-        visit(spec, None)
-    except RecursionError:
-        return [{"text": False, "items": False} for _ in refs]
+        visit(spec, None, 0)
+    except (_TooDeep, RecursionError):
+        return unplaced()
     return places
 
 
