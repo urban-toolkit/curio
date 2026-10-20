@@ -6,8 +6,10 @@ projections in ``backend/compute/quad_city_flooding_simulation/data_substitutes/
 a class raster of where each nature-based solution (NbS) would go, and, for each
 of three periods, the flood depth with and without NbS. Each is a 2592 by 2064
 cell GeoTIFF in EPSG:4326 on one grid, uncompressed (the depth rasters 42.8 MB
-each). This script writes each of them whole into ``datasets/<id>@1/`` with its
-manifest:
+each). SCOUT labels its first period 2020 - 2040 and names its files so
+(``2020_2040_NbS_4326_cropped.tif``), though its next period starts in 2050:
+Curio labels it 2020 - 2050, as komar41, one of SCOUT's authors, says. This
+script writes each of them whole into ``datasets/<id>@1/`` with its manifest:
 
 - every cell, the CRS, the transform, the dtype, the nodata and the tags as
   SCOUT's file holds them;
@@ -70,7 +72,9 @@ EXAMPLE_REGION = (41.4669317349186, -90.48363204845099, 41.44098884583301, -90.4
 INNER_REGION = (41.46216878262555, -90.4790717749789, 41.44595447694705, -90.46336416635286)
 
 CLASS_FILE = "NBS_others_5m_4326_cropped_cleaned_resampled.tif"
-PERIODS = ("2020 - 2040", "2050 - 2080", "2080 - 2100")
+#: Each period as Curio labels it, which names its datasets, and as SCOUT
+#: labels it, which names SCOUT's files.
+PERIODS = {"2020 - 2050": "2020 - 2040", "2050 - 2080": "2050 - 2080", "2080 - 2100": "2080 - 2100"}
 
 CLASS_CODES = (
     "21 bioswales or infiltration trenches, 31 permeable pavements, 43 retention ponds, "
@@ -91,13 +95,14 @@ def _datasets() -> list[dict]:
         ),
         "tags": ["raster", "flood", "nbs", "scout", "quad-cities", "geotiff"],
     }]
-    for period in PERIODS:
+    for period, scout_period in PERIODS.items():
         start, end = period.split(" - ")
+        stem = scout_period.replace(" - ", "_")
         for nbs in (True, False):
             entries.append({
                 "id": f"data.scout.flood-depth-{start}-{end}-{'nbs' if nbs else 'no-nbs'}",
                 "name": f"SCOUT Flood Depth {start}-{end} {'with' if nbs else 'without'} NbS",
-                "scout_file": f"{start}_{end}_{'NbS' if nbs else 'noNbS'}_4326_cropped.tif",
+                "scout_file": f"{stem}_{'NbS' if nbs else 'noNbS'}_4326_cropped.tif",
                 "data_file": f"data/flood-depth-{start}-{end}-{'nbs' if nbs else 'no-nbs'}.tif",
                 "what": (
                     f"Projected flood depth in metres for {start} to {end} "
@@ -204,8 +209,9 @@ def check(scout: Path) -> None:
         print(f"{entry['id']}: every cell, the grid, nodata and tags as SCOUT's file")
 
 
-#: The proof's cases, as ``test_scout_flood.py`` lists them: a region
-#: (top, left, bottom, right), a period and the chosen NbS.
+#: The proof's cases, as ``test_scout_flood.py`` lists them (``CASES``):
+#: SCOUT's function's calls, a region (top, left, bottom, right), SCOUT's
+#: label of the period and SCOUT's names of the chosen NbS.
 ALL_NBS = [
     "Bioswales/Infiltration trenches", "Permeable pavements", "Retention ponds",
     "Infiltration trench", "Bioswales", "Constructed wetlands",
