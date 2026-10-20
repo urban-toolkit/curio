@@ -203,12 +203,15 @@
     background-size: 16px 16px;
 }
 
+/* Boxes of one width, as the Nest's graph draws its jobs: two columns fit the
+   drawer, and a third scrolls sideways. */
 .graph {
+    --provenance-box-width: 200px;
     position: relative;
     display: grid;
     align-items: start;
     column-gap: 36px;
-    row-gap: 14px;
+    row-gap: 22px;
 }
 
 .edges {

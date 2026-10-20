@@ -5,6 +5,7 @@ import shell from "../packages/publishing/CatalogDrawerShell.module.css";
 import styles from "./ProvenanceHistory.module.css";
 import {
   type BoxRect,
+  type GraphLink,
   type HistoryItem,
   type HistoryLine,
   historyGraph,
@@ -194,60 +195,73 @@ function ListLine({
 function GraphView({ lines, ...itemProps }: ItemSharedProps & { lines: HistoryLine[] }) {
   const graph = useMemo(() => historyGraph(lines), [lines]);
   const gridRef = useRef<HTMLDivElement>(null);
-  const [rects, setRects] = useState<Record<string, BoxRect>>({});
-  const [size, setSize] = useState({ w: 0, h: 0 });
+  const svgRef = useRef<SVGSVGElement>(null);
 
-  // Where each box landed in the grid, read from layout (not from the screen,
-  // which the drawer's slide moves), so the links meet the boxes.
-  const measure = useCallback(() => {
+  // The links are drawn where the boxes landed, read from layout (not from the
+  // screen, which the drawer's slide moves), and written straight to the SVG:
+  // geometry is no React state, so drawing it can never render again. The SVG
+  // is as big as the boxes reach, never sized from the grid it sits in.
+  const draw = useCallback(() => {
     const grid = gridRef.current;
-    if (!grid) return;
-    const next: Record<string, BoxRect> = {};
+    const svg = svgRef.current;
+    if (!grid || !svg) return;
+    const rects = new Map<string, BoxRect>();
+    let right = 0;
+    let bottom = 0;
     for (const el of Array.from(grid.children)) {
       const id = (el as HTMLElement).dataset?.provenanceItem;
       if (!id) continue;
       const box = el as HTMLElement;
-      next[id] = { x: box.offsetLeft, y: box.offsetTop, w: box.offsetWidth, h: box.offsetHeight };
+      const rect = { x: box.offsetLeft, y: box.offsetTop, w: box.offsetWidth, h: box.offsetHeight };
+      rects.set(id, rect);
+      right = Math.max(right, rect.x + rect.w);
+      bottom = Math.max(bottom, rect.y + rect.h);
     }
-    setRects((prev) => (sameRects(prev, next) ? prev : next));
-    setSize((prev) =>
-      prev.w === grid.scrollWidth && prev.h === grid.scrollHeight ? prev : { w: grid.scrollWidth, h: grid.scrollHeight },
-    );
+    svg.setAttribute("width", String(right));
+    svg.setAttribute("height", String(bottom));
+    for (const g of Array.from(svg.querySelectorAll("[data-provenance-link]"))) {
+      const kind = g.getAttribute("data-provenance-link") as GraphLink["kind"];
+      const a = rects.get(g.getAttribute("data-from") ?? "") ?? NO_RECT;
+      const b = rects.get(g.getAttribute("data-to") ?? "") ?? NO_RECT;
+      g.querySelector("path")?.setAttribute("d", linkPath(kind, a, b, HEAD_HEIGHT));
+      const [x1, y1, x2, y2] = linkEnds(kind, a, b, HEAD_HEIGHT);
+      const [start, end] = Array.from(g.querySelectorAll("circle"));
+      start?.setAttribute("cx", String(x1));
+      start?.setAttribute("cy", String(y1));
+      end?.setAttribute("cx", String(x2));
+      end?.setAttribute("cy", String(y2));
+    }
   }, []);
 
-  // After every render: an opened box moves every row under it.
+  // After every render, since an opened box moves every row under it, and
+  // whenever the grid changes size.
   useLayoutEffect(() => {
-    measure();
+    draw();
   });
 
   useEffect(() => {
     const grid = gridRef.current;
     if (!grid || typeof ResizeObserver === "undefined") return;
-    const observer = new ResizeObserver(() => measure());
+    const observer = new ResizeObserver(() => draw());
     observer.observe(grid);
     return () => observer.disconnect();
-  }, [measure]);
+  }, [draw]);
 
   return (
     <div className={styles.canvas}>
       <div
         ref={gridRef}
         className={styles.graph}
-        style={{ gridTemplateColumns: `repeat(${graph.cols}, minmax(180px, 1fr))` }}
+        style={{ gridTemplateColumns: `repeat(${graph.cols}, var(--provenance-box-width))` }}
       >
-        <svg className={styles.edges} width={size.w} height={size.h} aria-hidden="true">
-          {graph.links.map((link) => {
-            const a = rects[link.from] ?? NO_RECT;
-            const b = rects[link.to] ?? NO_RECT;
-            const [x1, y1, x2, y2] = linkEnds(link.kind, a, b, HEAD_HEIGHT);
-            return (
-              <g key={`${link.from}->${link.to}`} data-provenance-link={link.kind} data-from={link.from} data-to={link.to}>
-                <path d={linkPath(link.kind, a, b, HEAD_HEIGHT)} fill="none" stroke="#A2A6AE" strokeWidth={1.6} />
-                <circle cx={x1} cy={y1} r={3} fill="#fff" stroke="#A2A6AE" strokeWidth={1.4} />
-                <circle cx={x2} cy={y2} r={3} fill="#fff" stroke="#A2A6AE" strokeWidth={1.4} />
-              </g>
-            );
-          })}
+        <svg ref={svgRef} className={styles.edges} aria-hidden="true">
+          {graph.links.map((link) => (
+            <g key={`${link.from}->${link.to}`} data-provenance-link={link.kind} data-from={link.from} data-to={link.to}>
+              <path d="M0 0" fill="none" stroke="#A2A6AE" strokeWidth={1.6} />
+              <circle cx={0} cy={0} r={3} fill="#fff" stroke="#A2A6AE" strokeWidth={1.4} />
+              <circle cx={0} cy={0} r={3} fill="#fff" stroke="#A2A6AE" strokeWidth={1.4} />
+            </g>
+          ))}
         </svg>
         {graph.boxes.map((box) => (
           <Item
@@ -282,16 +296,6 @@ function branchesHolding(lines: readonly HistoryLine[], id: string | null): Read
   };
   lines.forEach(walk);
   return found;
-}
-
-function sameRects(a: Record<string, BoxRect>, b: Record<string, BoxRect>): boolean {
-  const keys = Object.keys(b);
-  if (keys.length !== Object.keys(a).length) return false;
-  return keys.every((k) => {
-    const p = a[k];
-    const q = b[k];
-    return !!p && p.x === q.x && p.y === q.y && p.w === q.w && p.h === q.h;
-  });
 }
 
 /**
