@@ -157,6 +157,11 @@ def _transform_outputs(spec: dict) -> tuple[set, bool]:
                     produced.add(item["as"])
         if isinstance(entry.get("calculate"), str) and isinstance(entry.get("as"), str):
             produced.add(entry["as"])
+        # A lookup brings the fields it names from another dataset under their
+        # own names, unless an ``as`` renames them (counted above).
+        source = entry.get("from")
+        if "lookup" in entry and "as" not in entry and isinstance(source, dict):
+            produced.update(name for name in source.get("fields") or [] if isinstance(name, str))
     for key in _SPEC_CONTAINERS:
         child = spec.get(key)
         for sub in (child if isinstance(child, list) else [child]):
@@ -169,8 +174,9 @@ def _transform_outputs(spec: dict) -> tuple[set, bool]:
 
 def _field_refs(spec: dict, path: str = "") -> list[tuple[str, str, bool]]:
     """Every ``(json path, field name, whether its view reads inputs)`` an
-    encoding or a transform reads. A view reads the dataset its own ``data``
-    names, else the one of the view it sits in.
+    encoding or a transform reads, a fold's listed columns among them. A view
+    reads the dataset its own ``data`` names, else the one of the view it sits
+    in.
 
     Only string fields: ``{"repeat": "column"}`` and a bare ``count`` aggregate
     name no column, and inventing one would produce a false refusal.
@@ -184,10 +190,10 @@ def _field_refs(spec: dict, path: str = "") -> list[tuple[str, str, bool]]:
             for key, value in node.items():
                 if key == "field" and isinstance(value, str):
                     refs.append((f"{where}.field", value, on_inputs))
-                elif key == "groupby" and isinstance(value, list):
+                elif key in ("groupby", "fold") and isinstance(value, list):
                     for i, name in enumerate(value):
                         if isinstance(name, str):
-                            refs.append((f"{where}.groupby[{i}]", name, on_inputs))
+                            refs.append((f"{where}.{key}[{i}]", name, on_inputs))
                 else:
                     _walk(value, f"{where}.{key}" if where else key, on_inputs)
         elif isinstance(node, list):
@@ -227,11 +233,12 @@ def check_vega_fields(
         return None
     known = {str(c) for c in columns} | set(RUNTIME_FIELDS)
     produced, opaque = _transform_outputs(payload)
-    if opaque:
-        return None  # a transform creates names this module cannot enumerate
-    known |= produced
+    refs = _field_refs(payload)
+    # The geometry the stack leaves out is missing whatever else a view's
+    # transforms do, unless one of them makes that column (a lookup's fields),
+    # so this runs before an opaque transform leaves the other fields alone.
     left_out = {str(c) for c in geometry_columns or ()} - produced
-    for where, field, on_inputs in _field_refs(payload):
+    for where, field, on_inputs in refs:
         if on_inputs and field in left_out:
             return {
                 "status": STATUS_INVALID,
@@ -242,6 +249,10 @@ def check_vega_fields(
                     f"the first circle, input_1 for the second"
                 ),
             }
+    if opaque:
+        return None  # a transform creates names this module cannot enumerate
+    known |= produced
+    for where, field, on_inputs in refs:
         added = RUNTIME_FIELDS + (INPUTS_FIELDS if on_inputs else ())
         if field in known or field in added:
             continue
