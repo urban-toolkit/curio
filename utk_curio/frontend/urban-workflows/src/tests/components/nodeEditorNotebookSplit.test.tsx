@@ -36,7 +36,6 @@ jest.mock("../../providers/CollaborationProvider", () => ({
 }));
 
 jest.mock("../../components/editing/WidgetsEditor", () => ({ __esModule: true, default: () => null }));
-jest.mock("../../components/editing/NodeProvenance", () => ({ __esModule: true, default: () => null }));
 jest.mock("../../components/editing/CodeEditor", () => ({ __esModule: true, default: () => <div data-testid="code-editor" /> }));
 
 import NodeEditor from "../../components/editing/NodeEditor";

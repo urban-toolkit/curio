@@ -34,7 +34,6 @@ jest.mock("../../providers/CollaborationProvider", () => ({
   }),
 }));
 jest.mock("../../components/editing/WidgetsEditor", () => ({ __esModule: true, default: () => null }));
-jest.mock("../../components/editing/NodeProvenance", () => ({ __esModule: true, default: () => null }));
 
 import NodeEditor from "../../components/editing/NodeEditor";
 
