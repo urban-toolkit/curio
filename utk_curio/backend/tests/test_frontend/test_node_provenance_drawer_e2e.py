@@ -36,7 +36,12 @@ from .utils import (
     stub_login_and_enter_workflow,
     wait_for_drawer_closed,
 )
-from .walkthroughs.steps import PROVENANCE_DRAWER, PROVENANCE_PANEL, await_drawer_at_rest
+from .walkthroughs.steps import (
+    PROVENANCE_DRAWER,
+    PROVENANCE_PANEL,
+    await_drawer_at_rest,
+    park_pointer_off_drawer,
+)
 
 if TYPE_CHECKING:
     from .utils import FrontendPage
@@ -179,6 +184,7 @@ def test_a_nodes_runs_open_in_the_provenance_drawer(
     assert lines == {first_run: "0", second_run: "1", third_run: "0"}, lines
 
     _open_run(panel, third_run)
+    park_pointer_off_drawer(page)
     save_workflow_test_screenshot(
         page, "node-provenance-list", test_name=TEST_NAME, fit_reactflow=False, clip_selector=PROVENANCE_PANEL,
     )
