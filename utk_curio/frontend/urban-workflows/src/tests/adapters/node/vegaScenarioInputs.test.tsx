@@ -255,7 +255,7 @@ describe("a chart reading inputs with no box among its inputs", () => {
     expect(lastSpec().encoding.color.scale).toEqual({ domain: ["Baseline"], range: ["#2a9d8f"] });
   });
 
-  test("guard: untitled nodes of one type, in no box, give their rows one name", async () => {
+  test("untitled nodes of one type, in no box, give their rows one name, in the spec's own colors", async () => {
     setFlow([], {
       nodes: [
         node("base", "curio.builtin/computation-analysis@1"),

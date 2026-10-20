@@ -11,7 +11,7 @@ import { normalizeWidgets, type WidgetDef } from "./utils/widgets/widgetModel";
 import { INPUTS_DATASET, namesDataset, readsInputs, usesNamedDatasets } from "./utils/vegaDatasets";
 import { inputTableName } from "./generated/autkGrammar";
 import { normalizeScenarios, type Scenario } from "./utils/scenarios/scenarioModel";
-import { inputLabelOf, scaleLabelsOf, scenarioOfNode, type InputScenario } from "./utils/scenarios/inputScenarios";
+import { boxFill, inputLabelOf, scaleLabelsOf, scenarioOfNode, type InputScenario } from "./utils/scenarios/inputScenarios";
 import { NO_SCENARIO_COLOR, type ScenarioLabel } from "./utils/scenarios/scenarioColors";
 import { withScenarioScales } from "./utils/scenarios/scenarioScales";
 
@@ -543,9 +543,11 @@ function generateCells(
     // A spec that reads `inputs` stacks every input's rows, each under the
     // scenario box its node is in, as the canvas does: by the same Python the
     // browser's twin is pinned to (utk_curio.sandbox.util.scenario_stack). Its
-    // channels on scenario_name draw the boxes' colors and order, as there.
+    // channels on scenario_name draw the boxes' colors and order, as there,
+    // and its own when no input comes from a box.
     const stacked = readsInputs(spec);
-    if (stacked) spec = withScenarioScales(spec, scaleLabels);
+    const fill = stacked ? boxFill(scaleLabels) : null;
+    if (fill) spec = withScenarioScales(spec, fill);
     // json.loads of a JSON *string* would yield a Python str rather than a
     // dict, which is not a usable mimebundle - so the spec is embedded as a
     // literal object instead.
