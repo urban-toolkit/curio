@@ -192,15 +192,19 @@
 
 /* ── Graph ─────────────────────────────────────────────────────────────── */
 
-/* The Nest's dotted canvas, over the whole drawer body. */
-.canvas {
-    min-height: calc(100% + 32px);
-    margin: -16px;
-    padding: 16px;
-    overflow-x: auto;
+/* The Nest's dotted canvas: the whole drawer body while the Graph shows, so it
+   reaches the bottom however few the boxes. The doubled class outranks the
+   shell's body color; the dots scroll with the boxes. */
+.graphBody.graphBody {
     background-color: #f8f9fb;
     background-image: radial-gradient(#d9dce2 1px, transparent 1px);
     background-size: 16px 16px;
+    background-attachment: local;
+}
+
+/* Branches past the drawer's width scroll sideways. */
+.canvas {
+    overflow-x: auto;
 }
 
 /* Boxes of one width, as the Nest's graph draws its jobs: two columns fit the
