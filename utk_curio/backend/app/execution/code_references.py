@@ -1244,6 +1244,32 @@ def _resolved_text(
     return _escape_for(named(_text_of(value, language)), context, language)
 
 
+def with_chip_placeholders(code: str) -> str:
+    """*code*, a JSON document, with each chip that stands outside a string
+    held by a string of its own text, so a reader that wants only the
+    document's shape (what an Autark document declares,
+    ``execution/autk_spec_kind.py``, ``projects/dashboard_payload.py``) can
+    parse it before its chips are resolved: ``"color": [!! scenario input_1 !!]``
+    or ``"scale": [!! scenario colors !!]`` is no JSON until then. A chip inside
+    a string is JSON already and is left as written. Kept in sync with
+    ``withChipPlaceholders`` in ``codeReferences.ts``."""
+    if not isinstance(code, str):
+        return code
+    refs = list(REFERENCE_RE.finditer(code))
+    if not refs:
+        return code
+    out: list = []
+    last = 0
+    for ref, context in zip(refs, _contexts(code, refs, "json")):
+        if context[0] == "string":
+            continue
+        out.append(code[last:ref.start()])
+        out.append(json.dumps(ref.group(0), ensure_ascii=False))
+        last = ref.end()
+    out.append(code[last:])
+    return "".join(out)
+
+
 def with_stand_in_chips(code: str) -> str:
     """*code*, a JSON document, with each scenario chip and each field of
     ``inputs`` written as a value of its shape, for a check that has no

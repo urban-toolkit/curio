@@ -461,6 +461,29 @@ export function referenceContexts(code: string, refs: CodeReference[], language:
   return contexts;
 }
 
+/**
+ * *spec*, a JSON document, with each chip that stands outside a string held by
+ * a string of its own text, so a reader that wants only the document's shape
+ * (what an Autark document declares, `utils/autkSpecKind`) can parse it before
+ * its chips are resolved: `"color": [!! scenario input_1 !!]` or
+ * `"scale": [!! scenario colors !!]` is no JSON until then. A chip inside a
+ * string is JSON already and is left as written. Kept in sync with
+ * `with_chip_placeholders` in `code_references.py`.
+ */
+export function withChipPlaceholders(spec: string): string {
+  const refs = findReferences(spec);
+  if (refs.length === 0) return spec;
+  const contexts = referenceContexts(spec, refs, "json");
+  let out = "";
+  let last = 0;
+  refs.forEach((ref, i) => {
+    if (contexts[i].kind === "string") return;
+    out += spec.slice(last, ref.start) + JSON.stringify(spec.slice(ref.start, ref.end));
+    last = ref.end;
+  });
+  return out + spec.slice(last);
+}
+
 /** *value* as a literal of *language*. */
 export function widgetLiteral(value: WidgetValue | undefined, language: CodeLanguage): string {
   if (value === null || value === undefined) return language === "python" ? "None" : "null";

@@ -198,6 +198,33 @@ export function markersOutsideReferences<M extends LineRange>(markers: M[], refs
   return markers.filter((m) => !refs.some((r) => touchesRange(m, r)));
 }
 
+/** Whether *offset* in the JSON *text* falls inside a string. */
+export function insideJsonString(text: string, offset: number): boolean {
+  let inside = false;
+  for (let i = 0; i < offset && i < text.length; i += 1) {
+    if (inside && text[i] === "\\") {
+      i += 1;
+      continue;
+    }
+    if (text[i] === '"') inside = !inside;
+  }
+  return inside;
+}
+
+/**
+ * Whether the chip *inner* writes one text a spec reads as a string: an
+ * input's scenario color (`scenario input_1`) or a field of inputs
+ * (`inputs.sunlight`). Inserted where JSON wants a value, outside any string,
+ * it goes in quoted, so the spec stays JSON before its chips are resolved:
+ * what a saved spec holds, and what a reader of its shape parses
+ * (utils/autkSpecKind). A scale, a list of names or a widget's value is no
+ * text, and goes in as it is.
+ */
+function writesOneText(inner: string): boolean {
+  const parsed = parseReference(inner);
+  return (parsed.kind === "scenario" && parsed.chip === "input") || parsed.kind === "stacked";
+}
+
 /** Insert a reference to *inner* at *position*, or at the cursor. */
 export function insertReference(
   editor: any,
@@ -206,6 +233,10 @@ export function insertReference(
 ): boolean {
   const pos = position ?? editor?.getPosition?.();
   if (!editor || !pos) return false;
+  const model = editor.getModel?.();
+  const text = model?.getValue?.();
+  const offset = typeof text === "string" ? model?.getOffsetAt?.(pos) : undefined;
+  const quoted = writesOneText(inner) && typeof offset === "number" && !insideJsonString(text, offset);
   editor.executeEdits("curio-widget-tag", [
     {
       range: {
@@ -214,7 +245,7 @@ export function insertReference(
         endLineNumber: pos.lineNumber,
         endColumn: pos.column,
       },
-      text: referenceText(inner),
+      text: quoted ? `"${referenceText(inner)}"` : referenceText(inner),
       forceMoveMarkers: true,
     },
   ]);
