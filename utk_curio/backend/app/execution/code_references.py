@@ -1244,6 +1244,34 @@ def _resolved_text(
     return _escape_for(named(_text_of(value, language)), context, language)
 
 
+def with_stand_in_chips(code: str) -> str:
+    """*code*, a JSON document, with each scenario chip and each field of
+    ``inputs`` written as a value of its shape, for a check that has no
+    dataflow to say what they write: every input a chip names comes from no
+    box, named ``input_<k>``, in grey, and a field is its name. Every other
+    reference is kept as written. The agents' document check reads a document
+    through it (``agents/domain/document_validation.py``), so the rest of the
+    document is checked."""
+    refs = list(REFERENCE_RE.finditer(code if isinstance(code, str) else ""))
+    parsed = [parse_reference(ref.group(1)) for ref in refs]
+    if not any(p["kind"] in ("scenario", "stacked") for p in parsed):
+        return code
+    slots = sorted({p["slot"] for p in parsed if p["kind"] in ("scenario", "input") and isinstance(p.get("slot"), int)})
+    inputs = [{"slot": slot, "scenario": {"name": f"input_{slot}", "color": NO_SCENARIO_COLOR}} for slot in slots]
+    out: list = []
+    last = 0
+    for ref, kind, context in zip(refs, parsed, _contexts(code, refs, "json")):
+        out.append(code[last:ref.start()])
+        written = ref.group(0)
+        stands_in = kind["kind"] in ("scenario", "stacked") and reference_problem(
+            written, ref.group(1), [], inputs, context, "json"
+        ) is None
+        out.append(_resolved_text(ref.group(1), {}, inputs, context, "json", {}, {}) if stands_in else written)
+        last = ref.end()
+    out.append(code[last:])
+    return "".join(out)
+
+
 def resolve_references(
     code: str,
     widgets: Iterable = (),

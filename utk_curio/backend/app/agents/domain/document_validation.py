@@ -46,6 +46,13 @@ dev/134 corrects two things this module could not do, both proven by the owner's
   ``rain.mm``, since Vega-Lite escapes a field itself in some places (an
   aggregate, a bin transform, a condition's test). A path through a column,
   ``zone.id`` beside a column ``zone``, names none.
+
+#662: a chart or a map writes its scenarios through chips, which are not JSON
+until they are resolved: ``"scale": [!! scenario colors !!]``. The loop
+resolves them over the dataflow before it checks (``_resolved_document`` in
+``solve/verified_loop.py``). One no dataflow resolved, for a node the saved spec
+does not hold, is read as a value of its shape (``with_stand_in_chips``), and
+a field of ``inputs`` as its name, so the rest of the document is still checked.
 """
 
 from __future__ import annotations
@@ -577,7 +584,12 @@ def validate(
     "not controllable" into an ``autk-grammar`` node as its grammar; the loop
     must ask again with the shape named, and write nothing until it gets one.
     """
-    text = content if isinstance(content, str) else ""
+    from utk_curio.backend.app.execution.code_references import with_stand_in_chips
+
+    # #662: a scenario chip, or a field of `inputs`, that no dataflow resolved
+    # (the node is not in the saved spec) is read as a value of its shape, so
+    # the rest of the document is checked rather than refused as no JSON.
+    text = with_stand_in_chips(content) if isinstance(content, str) else ""
     suffix = canonical_suffix(node_type)
     grammar = grammar_of(node_type, grammar_id)
     passive = _authors_nothing(node_type, content_kind)

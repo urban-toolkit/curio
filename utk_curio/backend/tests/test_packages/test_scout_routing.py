@@ -800,9 +800,11 @@ def test_the_shipped_dataflows_roads_and_map_are_autarks():
     layers straight on its one input, and its layer chip reads the roads layer
     out of them: no node in between. The map draws each scenario's route over
     the roads in the color of the scenario's box: the map is in no box, and
-    each route's input comes from its scenario's box, so the layer takes that
-    box's color. Each route has a ``width``, and no color, color map or Curio
-    key of its own, so the spec is plain Autark and the map shows no legend."""
+    each route writes its input's scenario chip as its color,
+    ``[!! scenario input_1 !!]``, which a run resolves to the color of the box
+    that input comes from. Each route has a ``width``, and no color map or
+    Curio key of its own, so the spec is plain Autark and the map shows no
+    legend."""
     spec = _dataflow()
     nodes = {n["id"]: n for n in spec["nodes"]}
     autark = {n["id"]: json.loads(n["content"]) for n in spec["nodes"] if n["type"] == AUTARK_TYPE}
@@ -824,7 +826,8 @@ def test_the_shipped_dataflows_roads_and_map_are_autarks():
     assert [layer.get("width") for layer in layers] == [None, *ROUTE_WIDTHS.values()]
     assert [layer.get("title") for layer in layers] == [
         "Roads", *(name for name, _color, _route in EXAMPLE_SCENARIOS.values())]
-    assert not [key for layer in layers for key in ("color", "getFnv", "colorMapInterpolator", "scenario") if key in layer]
+    assert [layer.get("color") for layer in layers] == [None, "[!! scenario input_1 !!]", "[!! scenario input_2 !!]"]
+    assert not [key for layer in layers for key in ("getFnv", "colorMapInterpolator", "scenario") if key in layer]
     scenario_of = {i: s["id"] for s in spec["scenarios"] for i in s["nodes"]}
     # The map is in no box; the roads come from none, each route from its own.
     assert map_id not in scenario_of
@@ -832,6 +835,13 @@ def test_the_shipped_dataflows_roads_and_map_are_autarks():
     assert sources["in"] == loader_id and loader_id not in scenario_of
     assert [scenario_of.get(sources[h]) for h in ("in_1", "in_2")] == list(EXAMPLE_SCENARIOS)
     assert all("input_0[0]" in nodes[sources[h]]["content"] for h in ("in_1", "in_2"))
+    # Resolved as a run resolves it, each route is in its box's color.
+    from utk_curio.backend.app.execution.workflow_spec import parse_workflow_dict
+
+    parsed = parse_workflow_dict({"dataflow": spec})
+    (map_node,) = [n for n in parsed.nodes if n.id == map_id]
+    drawn = json.loads(parsed.node_code(map_node, "json"))["map"]["layerRefs"]
+    assert [layer.get("color") for layer in drawn] == [None, *(color for _name, color, _route in EXAMPLE_SCENARIOS.values())]
 
 
 def test_the_templates_layer_chip_reads_autarks_layer_array():

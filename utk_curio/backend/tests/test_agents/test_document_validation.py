@@ -18,6 +18,9 @@ from utk_curio.backend.app.agents.domain import document_validation as dv
 VEGA = "curio.builtin/vis-vega"
 AUTK = "curio.builtin/autk-grammar"
 REPO_ROOT = Path(__file__).resolve().parents[4]
+#: The label of the box a Scout chart's one input comes from, as a run hands
+#: it, which the chart's scenario chips write.
+TODAY = {"scenario": "s-today", "name": "Today", "color": "#2a9d8f", "rank": 0}
 
 OWNERS_VEGA = json.dumps({
     "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
@@ -883,7 +886,7 @@ class TestTheColumnsOfTheInputsDataset:
         widgets = [dict(w, value=values[w["name"]]) if w["name"] in values else w for w in template["widgets"]]
         spec, problems = resolve_references(
             (package / template["source"]).read_text(encoding="utf-8"),
-            widgets=widgets, language="json", inputs=[{"slot": 0}],
+            widgets=widgets, language="json", inputs=[{"slot": 0, "scenario": TODAY}],
         )
         assert not problems, problems
         measure = "value" if template_id in ("pie", "lollipops") else "y"
@@ -1010,7 +1013,8 @@ class TestTheInputsDatasetHoldsNoGeometry:
         (template,) = [t for t in manifest["templates"] if t["id"] == "table"]
         spec, problems = resolve_references(
             (package / template["source"]).read_text(encoding="utf-8"),
-            widgets=[dict(w, value=columns) for w in template["widgets"]], language="json", inputs=[{"slot": 0}],
+            widgets=[dict(w, value=columns) for w in template["widgets"]], language="json",
+            inputs=[{"slot": 0, "scenario": TODAY}],
         )
         assert not problems, problems
         return spec.strip()
