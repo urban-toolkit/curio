@@ -1035,16 +1035,21 @@ names into it, from the boxes its inputs come from:
 | `[!! scenario colors !!]` | `{"domain": [names], "range": [colors]}` | the `scale` of a color, fill or stroke on `scenario_name` |
 | `[!! scenario text_colors !!]` | the same scale, each color in its shade that reads on white | the `scale` of a text mark's color |
 | `[!! scenario order !!]` | `[names]` | the `sort` of an axis, an offset or a facet on `scenario_name` |
-| `[!! scenario input_1 !!]` | the color of the box input_1 comes from | a map layer's `color`, or a mark's, inside quotes or standing on its own |
+| `[!! scenario input_1 !!]` | the color of input_1 in that scale | a map layer's `color`, or a mark's, inside quotes or standing on its own |
 
-The boxes come in the order the dataflow lists them, each once, and an input
-from no box comes after them, named by its node, in gray. Two boxes named alike,
-or untitled nodes of one kind in no box, are one name. On the **inputs** tag,
-the `scenario_name` field shows a swatch per box: drag the swatches, or click
-them, to insert `[!! scenario colors !!]`, and the small **order** and **text
-colors** tags beside them for the other two. An input whose node is in a box
-shows that box's swatch on its own tag, in a Vega-Lite or an Autark spec, which
-inserts `[!! scenario input_1 !!]`.
+The boxes come in the order the dataflow lists them, each once, and each input
+from no box comes after them, named by its node, in a gray of its own, so two
+of them stay apart. Two boxes named alike, or untitled nodes of one kind in no
+box, are one name. When no input comes from a box, `[!! scenario colors !!]`
+and `[!! scenario text_colors !!]` write the names alone, `{"domain": [names]}`,
+and the chart's own palette colors them. On the **inputs** tag, the
+`scenario_name` field shows a swatch per box: drag the swatches, or click them,
+to insert `[!! scenario colors !!]`, and the small **order** and **text colors**
+tags beside them for the other two. An input whose node is in a box shows that
+box's swatch on its own tag, in a Vega-Lite or an Autark spec, which inserts
+`[!! scenario input_1 !!]`. Dropped where a value goes, the swatch writes its
+chip in quotes, `"[!! scenario input_1 !!]"`, as a field of **inputs** does,
+so the spec stays JSON.
 
 Renaming or recoloring a box, or drawing one around a node that feeds the chart,
 draws the chart again with what its chips write then, with no run. A map takes
@@ -1300,8 +1305,8 @@ swatch ([Scenario colors and order](#scenario-colors-and-order)):
 {"dataRef": "[!! input_1 !!]", "width": 80, "title": "Fastest route", "color": "[!! scenario input_1 !!]"}
 ```
 
-The chip writes the box's color, and gray for an input from no box. A box
-recolored gives the layer its new color on the map's next run.
+The chip writes the box's color, and for an input from no box a gray of its
+own. A box recolored gives the layer its new color on the map's next run.
 
 ### The starter document
 

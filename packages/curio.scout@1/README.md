@@ -183,7 +183,8 @@ Each chart writes its scenarios through scenario chips: a color, fill or stroke
 by `scenario_name` takes `"scale": [!! scenario colors !!]`, the colors of the
 scenarios' boxes, and an axis, an offset or a facet by it
 `"sort": [!! scenario order !!]`, the order the dataflow lists the boxes. Each
-input from no box comes after them in the order of the circles, in grey
+input from no box comes after them in the order of the circles, in a grey of its
+own; with no input from a box, the chart's own palette colors the scenarios
 ([Scenario colors and order](../../docs/USAGE.md#scenario-colors-and-order)).
 A chart is drawn again when a scenario is renamed or recolored. An edit that
 writes its own scale in the chip's place draws its own colors. Stacked bars with

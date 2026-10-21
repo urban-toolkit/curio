@@ -347,14 +347,18 @@ box its input comes from, and draws exactly its spec: the boxes' colors and orde
 are what its scenario chips write.
 
 - `src/utils/scenarios/inputScenarios.ts` is the one lookup: for each wired circle of a
-  node, the node feeding it, the box that node is in (`scenarioOfNode`) and the label
-  the input's rows carry (`inputLabelOf`: the box's id, name, color and `rank`, its
-  place in `dataflow.scenarios`, else the feeding node's name and
-  `NO_SCENARIO_COLOR`). `scenarioColors.ts` holds the label type, the `scenario` and
-  `scenario_name` columns, `scaleLabels` (each box once by rank, then each input from
-  no box in circle order), `scenarioScale` and `tableTextColor`. Its Python twin is
-  `WorkflowSpec.input_scenarios` (`execution/workflow_spec.py`), with
-  `node_label` for a node in no box.
+  node, the node feeding it, the box that node is in and the label the input's rows
+  carry (`inputLabelOf`: the box's id, name, color and `rank`, its place in
+  `dataflow.scenarios`, else the feeding node's name and `NO_SCENARIO_COLOR`).
+  `scenarioColors.ts` holds the label type, the `scenario` and `scenario_name`
+  columns, `scaleLabels` (each box once by rank, then each input from no box in
+  circle order), `scenarioScale` (each name once, a box in its color and each input
+  from no box in a grey of its own from `NO_SCENARIO_GREYS`, past one a box there
+  uses), `anyFromABox` and `tableTextColor`. Its Python twin is
+  `WorkflowSpec.input_scenarios` (`execution/workflow_spec.py`), with `node_label`
+  for a node in no box: its title, else its header, the template's label looked up
+  by the canonical template id as `node_names.saved_node_label` looks it up, from
+  the project's template labels (`labels`), which a run and the agents' check pass.
 - A Vega-Lite spec that names the dataset `inputs` anywhere (`readsInputs` in
   `src/utils/vegaDatasets.ts`, which makes `usesNamedDatasets` true for it) gets every
   input's rows stacked in circle order, each with `__input__`, `scenario` and
@@ -380,9 +384,11 @@ are what its scenario chips write.
   for Jest and for `test_scenario_inputs.py`.
 - The scenario chips are references (`utils/references/codeReferences.ts`, twin
   `execution/code_references.py`): `[!! scenario colors !!]` writes
-  `{"domain": [names], "range": [colors]}` over `scaleLabels`, `[!! scenario
-  text_colors !!]` the same range in `tableTextColor` shades, `[!! scenario order !!]`
-  the names, and `[!! scenario input_1 !!]` the color of input_1's label. They read the
+  `{"domain": [names], "range": [colors]}`, `scenarioScale` over `scaleLabels`, `[!!
+  scenario text_colors !!]` the same range in `tableTextColor` shades, `[!! scenario
+  order !!]` the names, and `[!! scenario input_1 !!]` input_1's color in that scale.
+  With no input from a box (`anyFromABox`), the two scales are `{"domain": [names]}`,
+  so the grammar's own palette colors the names. They read the
   label each `InputScope` carries (`scenario`), which `hook/useInputScope.ts` adds from
   the live graph, the notebook export from the saved one and `WorkflowSpec.node_code`
   from the spec, so the canvas, `NotebookConvertor.ts`, a server run and the agents'
@@ -392,12 +398,24 @@ are what its scenario chips write.
   input_1. `[!! inputs.<field> !!]` names a field of `inputs`, written as a column
   chip is. A chip in Python or JavaScript, a list chip inside quotes, an input with no
   edge or with no label are refused, and `renumberInputReferences` moves an input's
-  chip with its circle. `codeReferences.cases.json` pins both resolvers.
+  chip with its circle. `codeReferences.cases.json` pins both resolvers. With no
+  dataflow to resolve them over, the agents' check reads each as a value of its shape
+  and reports a refused one in its own words (`with_stand_in_chips`).
+- A reader of a spec's shape parses it before its chips are resolved with each chip
+  standing on its own held by a string of itself (`withChipPlaceholders`, twin
+  `with_chip_placeholders`): `classifyAutkSpecString` (`utils/autkSpecKind.ts`), which
+  decides whether an Autark node draws from its input on the canvas and is a
+  dashboard's pass-through (`dashboardLayout.ts`), and its twins
+  `execution/autk_spec_kind.py` (a run's plan) and `projects/dashboard_payload.py`.
+  `autkSpecKind.cases.json` pins both. A chip that writes one text, an input's
+  scenario color or a field of `inputs`, is inserted quoted where JSON wants a value
+  (`insertReference` in `monacoCodeReferences.ts`), so the spec stays JSON.
 - `components/editing/widgets/WidgetTag.tsx` shows them: on a Vega-Lite node of
   several inputs an `inputs` tag beside the input tags opens to `stackedFields` (the
   three the stacking adds, then the inputs' columns, a layer's geometry left out), its
-  `scenario_name` field showing a swatch per label of `scaleLabels`, which drag
-  `scenario colors`, and the **order** and **text colors** tags; in a spec, an input
+  `scenario_name` field showing a swatch per name of `scenarioScale` (the names alone
+  when no input comes from a box), which drag `scenario colors`, and the **order** and
+  **text colors** tags; in a spec, an input
   from a box shows its box's swatch, which drags its input's chip
   (`SCENARIO_REF_MIME`). `monacoCodeReferences.ts` draws the chips lilac and says
   what each writes on hover.
