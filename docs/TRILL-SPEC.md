@@ -29,7 +29,7 @@ spec
 │   ├── scenarios[]             named selections of the nodes
 │   ├── agents[]                agent lockfile             (backend-owned, stripped on share)
 │   └── agentAttachments[]      live agent bindings        (backend-owned, stripped on share)
-├── nodeProvenance              per-node execution history (browser-side only)
+├── nodeProvenance              per-node history of runs and edits (browser-side only)
 └── dataflowProvenance          version history of the whole dataflow
 ```
 
@@ -103,29 +103,26 @@ ids of the nodes it descends from, oldest first, ending with the node it was
 copied from. Two nodes are the same lever in two scenarios when their ids and
 these lists meet.
 
-`metadata.editFeatures` holds the edit log of an Interaction node (type
-`curio.builtin/edit-features`), written only when it has one of its fields.
+A Map Edits node (type `curio.builtin/edit-features`) holds its edits in its
+`content` and nowhere else: comment lines, then one call of `curio_map_edits`
+that the node writes from its map and reads back.
+
+```python
+return curio_map_edits(
+    input_0,
+    key="building_id",
+    remove=[8, 10],
+    change={34: {"height": 60}},
+)
+```
+
 `key` is the column that identifies a feature (`osm_id`, `building_id`, or
 another column whose values differ in every feature), and `layer` the layer the
-edits apply to when the input names its layers. `edits` lists the edits in the
-order they were made. Each has an `op` and names its features by `ids`, the
-`key` values of the features, or by `where`, a condition over a feature's
-columns such as `height > 100`, never both:
-
-- `remove` drops the features, and `restore` puts them back as the node's input
-  has them.
-- `set` writes `value` into `column`.
-- `scale` multiplies the number in `column` by `value`, and `offset` adds
-  `value` to it; both take a number.
-- `expr` writes into `column` what the expression `value` makes of each
-  feature, such as `levels * 3.2`.
-
-`label` names an edit for people, and `enabled: false` keeps it in the log and
-skips it in a run. The node's `content` is written from the log, one call of
-`curio_edit_features` with the edits, `key=` and `layer=`. The expressions are
-the language `utk_curio/sandbox/util/edit_expr.py` describes: columns,
-numbers, texts, `true`, `false`, `null`, `+ - * / %`, comparisons, `and`,
-`or`, `not`, and `abs`, `round`, `min` and `max`.
+edits apply to when the input names its layers. `remove` lists the `key` values
+of the features taken out, and `change` maps a `key` value to the values written
+into its features' properties, `None` clearing one. The keywords come in any
+order, each a Python literal. A `content` of another shape is run as it is, and
+the node offers no edits on it.
 
 ### An edge
 
@@ -181,6 +178,19 @@ a client sends and a stale browser tab cannot clobber them: `packages`,
 `datasets`, and the agent sections. Two are additionally **stripped on share**: `agents` and
 `agentAttachments` are removed from the copy served behind a share link, so a
 shared dataflow never carries them and they can never be required.
+
+### Node provenance
+
+`nodeProvenance` maps a node's id to its history, a list of entries
+`{id, parentId, code, inputs, outputs, startTime, endTime, kind?, label?}`. An
+entry is a run, or, with `kind` `edit`, a change made in the node's body that
+ran nothing, such as a Map Edits node's Apply, Remove or put back: its `inputs`
+and `outputs` are empty, its two times are the same, and `label` names what it
+changed (`height 60 on building_id 34`, `remove building_id 12`). `code` is the
+node's `content` as the run used it or as the edit left it, and `parentId` the
+entry it descends from, so a node's history is a tree. After a dataflow loads,
+a node's next entry descends from its newest entry whose `code` is the node's
+`content`, else from its newest entry.
 
 ## What lives in the manifest, not here
 

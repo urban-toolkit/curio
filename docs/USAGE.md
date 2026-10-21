@@ -790,16 +790,17 @@ say. It is a node of its own, apart from the interaction edges that link charts 
 2. Pick the layer to edit in **Layer**, when the input carries several, and the column
    that identifies a feature in **Id**: `osm_id` or `building_id` when the layer has
    them, or another column whose values differ in every feature. A layer with no such
-   column is refused: a feature's place in a layer is not an id.
+   column is refused: a feature's place in a layer is not an id. While the node holds
+   edits, the two menus stay as they are.
 3. Double-click a feature on the map, on the left. The panel on the right shows its
    properties as Autark gives them, without its geometry, as JSON. Escape clears the
    selection.
 4. Edit the JSON and press **Apply**. Every value that differs is written for the
-   features whose Id is the selected one's, and the line under the field says how
-   many they are: one feature under `osm_id`, every part of a building under
-   `building_id`. A value typed back to the input's leaves the edits, and a deleted
-   key is written as null. JSON that does not read shows its error under the field,
-   and the Id's own value cannot change.
+   features whose Id is the selected one's: one feature under `osm_id`, every part of
+   a building under `building_id`, and a line under the field says how many when
+   they are several. A value typed back to the input's leaves the edits, and a
+   deleted key is written as null. JSON that does not read shows its error under the
+   field, and the Id's own value cannot change.
 5. Or press **Remove**, or the Delete key outside the field, to take those features
    out.
 
@@ -834,10 +835,12 @@ shape, such as code typed by hand, is never rewritten: the node says why it cann
 read it, offers no edits and draws its input, and a run still runs the code.
 
 An edit marks the dataflow **Unsaved**, and the node and the nodes below it that
-ran wait for a run: **Run All** or the node's **Play** runs them, and so does
-**View > Run stale nodes automatically**. Each Apply, Remove or put back is also an
-entry in the node's **Provenance** (see [Provenance](#provenance)). In a scenario, a
-Map Edits node is a lever.
+ran wait for a run: **Run All** runs them, as does the **Play** of a node below,
+which runs the waiting nodes above it first, and **View > Run stale nodes
+automatically** runs them on its own. Each Apply, Remove or put back is also an
+entry in the node's **Provenance** (see [Provenance](#provenance)). On a dashboard
+and in a shared view, the map and the panel only show: there is no Apply, Remove or
+put back. In a scenario, a Map Edits node is a lever.
 
 ### Comparing scenarios
 
