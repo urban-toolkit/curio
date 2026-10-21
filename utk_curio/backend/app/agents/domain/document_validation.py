@@ -52,7 +52,9 @@ until they are resolved: ``"scale": [!! scenario colors !!]``. The loop
 resolves them over the dataflow before it checks (``_resolved_document`` in
 ``solve/verified_loop.py``). One no dataflow resolved, for a node the saved spec
 does not hold, is read as a value of its shape (``with_stand_in_chips``), and
-a field of ``inputs`` as its name, so the rest of the document is still checked;
+the dataset ``[!! inputs !!]`` and a field of it as their names, so a view
+that reads that dataset is checked with the columns the stack adds, and the
+rest of the document is still checked;
 a chip that cannot stand where it is written (a scale inside quotes, a chip no
 scenario chip is called) is refused in its own words.
 """
@@ -131,7 +133,8 @@ def validate_vega_lite(
 RUNTIME_FIELDS = ("interacted", "__row_index__")
 
 #: The dataset a Vega-Lite spec names to read every input's rows stacked
-#: (``INPUTS_DATASET`` in ``utils/vegaDatasets.ts``).
+#: (``INPUTS_DATASET`` in ``utils/vegaDatasets.ts``, ``STACKED_DATASET`` in
+#: ``execution/code_references.py``), by its chip ``[!! inputs !!]``.
 INPUTS_DATASET = "inputs"
 #: The columns each of its rows carries beside its input's own: its circle and
 #: its scenario box's id and name. ``stack_inputs`` in
@@ -588,8 +591,9 @@ def validate(
     """
     from utk_curio.backend.app.execution.code_references import with_stand_in_chips
 
-    # #662: a scenario chip, or a field of `inputs`, that no dataflow resolved
-    # (the node is not in the saved spec) is read as a value of its shape, so
+    # #662: a scenario chip, the dataset `[!! inputs !!]` or a field of it,
+    # that no dataflow resolved (the node is not in the saved spec) is read as
+    # a value of its shape, so
     # the rest of the document is checked rather than refused as no JSON; one
     # that cannot stand where it is written is refused in its own words.
     text, refused_chips = with_stand_in_chips(content) if isinstance(content, str) else ("", [])

@@ -121,10 +121,11 @@ BARS = "curio.scout/bars"
 PYTHON = "curio.builtin/computation-analysis"
 VEGA = "curio.builtin/vis-vega"
 #: The chart the second test wires to the two dropped Roads nodes: mean
-#: sunlight per scenario, its rows its inputs stacked under their boxes.
+#: sunlight per scenario, its rows its inputs stacked under their boxes, in
+#: the dataset its chip names.
 DROPPED_CHART_SPEC = json.dumps({
     "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
-    "data": {"name": "inputs"},
+    "data": {"name": "[!! inputs !!]"},
     "mark": "bar",
     "encoding": {
         "x": {"field": "scenario_name", "type": "nominal"},

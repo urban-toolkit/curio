@@ -23,6 +23,7 @@ import {
 import { effectiveValue, type WidgetDef, type WidgetValue } from "../../../utils/widgets/widgetModel";
 import {
   findReferences,
+  inputName,
   parseReference,
   referenceContexts,
   referenceProblem,
@@ -78,7 +79,12 @@ export function offsetToPosition(code: string, offset: number): { lineNumber: nu
 export interface ReferenceMark extends ChipMark {
   /** What stands inside the reference. */
   name: string;
-  kind: "widget" | "input" | "shared" | "selection" | "scenario" | "stacked";
+  kind: "widget" | "input" | "shared" | "selection" | "scenario" | "dataset" | "stacked";
+}
+
+/** *names* as a list in words: `a`, `a and b`, `a, b and c`. */
+function inWords(names: string[]): string {
+  return names.length < 2 ? names.join("") : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
 }
 
 const toRange = (
@@ -108,6 +114,10 @@ function hoverFor(inner: string, scope: ReferenceScope, language: CodeLanguage):
     const shown = widgetLiteral(ids.slice(0, HOVER_IDS) as WidgetValue, language);
     const listed = ids.length > HOVER_IDS ? `${shown.slice(0, -1)}, ...]` : shown;
     return `${inner} = ${listed}, ${ids.length} ${tag?.column} values selected in its view`;
+  }
+  if (parsed.kind === "dataset") {
+    const circles = [...scope.inputs].sort((a, b) => a.slot - b.slot).map((input) => inputName(input.slot));
+    return `the dataset inputs: the rows of ${inWords(circles)}, stacked in circle order`;
   }
   if (parsed.kind === "stacked") {
     const dtype = stackedFields(scope.inputs).dtypes[parsed.column];
@@ -160,9 +170,9 @@ export function referenceMarks(code: string, scope: ReferenceScope, language: Co
       kind,
       problem,
       hover: problem ?? hoverFor(ref.inner, scope, language),
-      // An input or column chip is drawn like a widget's, in green, and so is
-      // a field of inputs; a shared one in amber; a selection in peach; a
-      // scenario chip in lilac.
+      // An input or column chip is drawn like a widget's, in green, and so are
+      // the dataset inputs and its fields; a shared one in amber; a selection
+      // in peach; a scenario chip in lilac.
       kindClass: kind === "widget" ? null : chipClass({ kind, problem }),
     };
   });
@@ -174,6 +184,7 @@ const KIND_CLASSES: Record<ReferenceMark["kind"], string> = {
   shared: "curio-shared-ref",
   selection: "curio-selection-ref",
   scenario: "curio-scenario-ref",
+  dataset: "curio-input-ref",
   stacked: "curio-input-ref",
 };
 
@@ -213,16 +224,16 @@ export function insideJsonString(text: string, offset: number): boolean {
 
 /**
  * Whether the chip *inner* writes one text a spec reads as a string: an
- * input's scenario color (`scenario input_1`) or a field of inputs
- * (`inputs.sunlight`). Inserted where JSON wants a value, outside any string,
- * it goes in quoted, so the spec stays JSON before its chips are resolved:
- * what a saved spec holds, and what a reader of its shape parses
- * (utils/autkSpecKind). A scale, a list of names or a widget's value is no
- * text, and goes in as it is.
+ * input's scenario color (`scenario input_1`), the dataset inputs (`inputs`)
+ * or a field of it (`inputs.sunlight`). Inserted where JSON wants a value,
+ * outside any string, it goes in quoted, so the spec stays JSON before its
+ * chips are resolved: what a saved spec holds, and what a reader of its shape
+ * parses (utils/autkSpecKind). A scale, a list of names or a widget's value is
+ * no text, and goes in as it is.
  */
 function writesOneText(inner: string): boolean {
   const parsed = parseReference(inner);
-  return (parsed.kind === "scenario" && parsed.chip === "input") || parsed.kind === "stacked";
+  return (parsed.kind === "scenario" && parsed.chip === "input") || parsed.kind === "dataset" || parsed.kind === "stacked";
 }
 
 /** Insert a reference to *inner* at *position*, or at the cursor. */

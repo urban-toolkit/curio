@@ -62,8 +62,12 @@ def _read_source(path: Path, module: str) -> str:
 def _function_entry(signature: FunctionSignature) -> dict:
     entry = signature.to_json()
     for row, param in zip(entry["parameters"], signature.parameters):
-        row["widget"] = suggest_widget(param)
-        row["use"] = suggested_use(param)
+        # A parameter's widget takes its name, and no widget takes the name of
+        # one of the node's inputs, input_<k> or inputs (the Widgets tab's
+        # check): such a parameter is offered no widget.
+        takes_widget = code_references.widget_name_problem(param.name) is None
+        row["widget"] = suggest_widget(param) if takes_widget else None
+        row["use"] = suggested_use(param, takes_widget)
     return entry
 
 

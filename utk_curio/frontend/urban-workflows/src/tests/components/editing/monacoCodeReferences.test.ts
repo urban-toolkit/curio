@@ -116,8 +116,8 @@ function editorOver(text: string, at: string) {
 const insertedText = (editor: { executeEdits: jest.Mock }) => editor.executeEdits.mock.calls[0][1][0].text;
 
 /**
- * A chip that writes one text, an input's scenario color or a field of inputs,
- * goes in quoted where JSON wants a value, so the spec stays JSON before its
+ * A chip that writes one text, an input's scenario color, the dataset inputs or
+ * a field of it, goes in quoted where JSON wants a value, so the spec stays JSON before its
  * chips are resolved: a saved spec holds it so, and the classifiers that read
  * an Autark document's shape parse it (utils/autkSpecKind).
  */
@@ -149,6 +149,27 @@ describe("a chip that writes one text, inserted where JSON wants a value", () =>
     const inside = editorOver(spec, '"Mean \\"sun\\" ');
     insertReference(inside, "inputs.sunlight");
     expect(insertedText(inside)).toBe("[!! inputs.sunlight !!]");
+  });
+
+  test("the dataset inputs outside a string goes in quoted; inside one, as itself", () => {
+    const spec = '{"data": {"name": }, "title": "Rows of "}';
+    const outside = editorOver(spec, '"name": ');
+    insertReference(outside, "inputs");
+    expect(insertedText(outside)).toBe('"[!! inputs !!]"');
+    const inside = editorOver(spec, '"Rows of ');
+    insertReference(inside, "inputs");
+    expect(insertedText(inside)).toBe("[!! inputs !!]");
+  });
+
+  test("dropped there from the inputs tag, the dataset goes in quoted too", () => {
+    const editor = editorOver('{"data": {"name": }}', '"name": ');
+    const event = {
+      clientX: 4,
+      clientY: 8,
+      dataTransfer: { types: [INPUT_REF_MIME], getData: (t: string) => (t === INPUT_REF_MIME ? "inputs" : "") },
+    } as unknown as DragEvent;
+    expect(dropReference(editor, event)).toBe(true);
+    expect(insertedText(editor)).toBe('"[!! inputs !!]"');
   });
 
   test("a scale, a list of names and a widget's value are no text, and go in as they are", () => {
@@ -195,6 +216,27 @@ describe("chips", () => {
     expect(missing.problem).toMatch(/input_4 has no edge/);
     expect(chipClass(missing)).toBe("curio-input-ref-problem");
     expect(column.problem).toMatch(/input_0 has no column width/);
+  });
+
+  test("the dataset chip says whose rows it stacks, and is drawn as an input chip", () => {
+    const [dataset] = referenceMarks('{"data": {"name": "[!! inputs !!]"}}', withInputs, "json");
+    expect(dataset.kind).toBe("dataset");
+    expect(dataset.problem).toBeNull();
+    expect(dataset.hover).toBe("the dataset inputs: the rows of input_0 and input_1, stacked in circle order");
+    expect(chipClass(dataset)).toBe("curio-input-ref");
+    const one = { ...withInputs, inputs: [withInputs.inputs[0]] };
+    expect(referenceMarks('{"data": {"name": [!! inputs !!]}}', one, "json")[0].hover).toBe(
+      "the dataset inputs: the rows of input_0, stacked in circle order",
+    );
+  });
+
+  test("the dataset chip on a node with no input, or in code, is a problem chip", () => {
+    const [unwired] = referenceMarks('{"data": {"name": "[!! inputs !!]"}}', scope, "json");
+    expect(unwired.problem).toBe("[!! inputs !!]: this node has no input to stack. Connect one to an input circle.");
+    expect(unwired.hover).toBe(unwired.problem);
+    expect(chipClass(unwired)).toBe("curio-input-ref-problem");
+    const [code] = referenceMarks("rows = [!! inputs !!]", withInputs, "python");
+    expect(code.problem).toBe("[!! inputs !!] is for a Vega-Lite spec, not for code.");
   });
 });
 

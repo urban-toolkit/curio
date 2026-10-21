@@ -1,11 +1,12 @@
 /**
  * The tags a chart's or a map's scenarios are written with (#662).
  *
- * - On a Vega-Lite node with more than one input, an `inputs` tag sits beside
- *   `input_0`, `input_1`, ... and opens to the fields of the dataset that
- *   stacks them: `scenario_name`, `scenario` and `__input__`, then the union of
- *   the inputs' columns, each with its dtype in its title. A field drags its
- *   chip, `[!! inputs.sunlight !!]`, which writes its name.
+ * - On a Vega-Lite node with an input, one or several, an `inputs` tag sits
+ *   beside `input_0`, `input_1`, ... and drags the chip of the dataset that
+ *   stacks them, `[!! inputs !!]`. It opens to the dataset's fields:
+ *   `scenario_name`, `scenario` and `__input__`, then the union of the inputs'
+ *   columns, each with its dtype in its title. A field drags its chip,
+ *   `[!! inputs.sunlight !!]`, which writes its name.
  * - Its `scenario_name` field shows a swatch per scenario box, in the order the
  *   dataflow lists the boxes, then each input from no box in a grey of its own;
  *   with no input from a box, the names alone. The swatches
@@ -59,7 +60,21 @@ const chartStrip = (onInsert = jest.fn(), more: Record<string, unknown> = {}) =>
 
 const openInputs = () => fireEvent.click(screen.getByLabelText("Show the fields of inputs"));
 
-describe("the inputs tag of a Vega-Lite node with several inputs", () => {
+describe("the inputs tag of a Vega-Lite node", () => {
+  test("drags the dataset's chip, and a click inserts it; its title names the chip", () => {
+    const onInsert = jest.fn();
+    const view = chartStrip(onInsert);
+    const tag = view.container.querySelector("[data-inputs-tag]")!;
+    expect(tag.getAttribute("draggable")).toBe("true");
+    expect(tag.getAttribute("title")).toContain("[!! inputs !!]");
+    const drag = dragData();
+    fireEvent.dragStart(tag, drag);
+    expect(drag.store.get(INPUT_REF_MIME)).toBe("inputs");
+    expect(drag.store.get("text/plain")).toBe("[!! inputs !!]");
+    fireEvent.click(tag);
+    expect(onInsert).toHaveBeenCalledWith("inputs");
+  });
+
   test("sits beside the input tags and opens to the stacked fields, Curio's three first, each with its dtype", () => {
     const onInsert = jest.fn();
     const view = chartStrip(onInsert);
@@ -193,12 +208,27 @@ describe("a swatch on an input's tag", () => {
   });
 });
 
-describe("where there is no inputs tag", () => {
-  test("a Vega-Lite node with one input, and code, which reads no scenario chip and shows no swatch", () => {
-    const one = render(<ReferenceStrip widgets={[]} inputs={[inputs[0]]} language="json" grammar="vega-lite" onInsert={jest.fn()} />);
-    expect(one.container.querySelector("[data-inputs-tag]")).toBeNull();
-    one.unmount();
+describe("the inputs tag with one input, and where there is none", () => {
+  test("a Vega-Lite node with one input has it, since a spec reading inputs stacks one input too", () => {
+    const onInsert = jest.fn();
+    const one = render(
+      <ReferenceStrip widgets={[]} inputs={[inputs[0]]} language="json" grammar="vega-lite" onInsert={onInsert} />,
+    );
+    const tag = one.container.querySelector("[data-inputs-tag]")!;
+    expect(tag).not.toBeNull();
+    const drag = dragData();
+    fireEvent.dragStart(tag, drag);
+    expect(drag.store.get("text/plain")).toBe("[!! inputs !!]");
+    fireEvent.click(tag);
+    expect(onInsert).toHaveBeenCalledWith("inputs");
+    openInputs();
+    const fields = Array.from(one.container.querySelectorAll("[data-inputs-fields] [data-inputs-field]"));
+    expect(fields.map((f) => f.getAttribute("data-inputs-field"))).toEqual([
+      "scenario_name", "scenario", "__input__", "segment", "sunlight",
+    ]);
+  });
 
+  test("code, which reads no scenario chip and shows no swatch, has none", () => {
     const code = render(<ReferenceStrip widgets={[]} inputs={inputs} language="python" onInsert={jest.fn()} />);
     expect(code.container.querySelector("[data-inputs-tag]")).toBeNull();
     expect(code.container.querySelector("[data-input-swatch]")).toBeNull();

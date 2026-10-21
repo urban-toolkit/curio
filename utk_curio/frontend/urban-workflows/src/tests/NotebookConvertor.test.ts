@@ -353,11 +353,14 @@ describe("trillToNotebook with a chart that reads its inputs stacked", () => {
     codeCells(nb).find((c) => c.source.includes("_spec = {"))!.source;
 
   it("its scale chip writes the boxes' colors and order, then an input from no box, as the canvas does", () => {
-    const chart = '{"data": {"name": "inputs"}, "mark": "bar", "encoding": {"color": {"field": "scenario_name", "type": "nominal", '
+    // Its dataset named by its chip, as Scout's charts are written.
+    const chart = '{"data": {"name": "[!! inputs !!]"}, "mark": "bar", "encoding": {"color": {"field": "scenario_name", "type": "nominal", '
       + '"scale": [!! scenario colors !!]}}}';
     const source = chartCell(trillToNotebook(stackedChart(chart)));
     const embedded = embeddedSpec(source) as any;
+    expect(embedded.data).toEqual({ name: "inputs" });
     expect(embedded.encoding.color.scale).toEqual({ domain: ["Baseline", "Free node"], range: ["#2a9d8f", "#8a8f98"] });
+    expect(source).toContain('_spec["datasets"]["inputs"] = stack_inputs([');
   });
 
   it("a chart that writes no chip keeps the spec's own colors, as the canvas does, boxes or not", () => {
@@ -373,7 +376,9 @@ describe("trillToNotebook with a chart that reads its inputs stacked", () => {
   });
 
   it("stacks its inputs with utk_curio's stack_inputs, each under its box, as the canvas does", () => {
-    const source = chartCell(trillToNotebook(stackedChart('{"data": {"name": "inputs"}, "mark": "bar"}')));
+    // The dataset named by its chip, inside quotes as the editor inserts it.
+    const source = chartCell(trillToNotebook(stackedChart('{"data": {"name": "[!! inputs !!]"}, "mark": "bar"}')));
+    expect(embeddedSpec(source)).toEqual({ data: { name: "inputs" }, mark: "bar" });
     expect(source).toContain("from utk_curio.sandbox.util.scenario_stack import input_rows, stack_inputs");
     expect(source).toContain(
       [

@@ -4,7 +4,7 @@
   "version": 1,
   "source": {
     "path": "docs/examples/06-back-bay-road-sunlight.json",
-    "sha256": "109246def85d82a961490a65916f0ca67fef228fb5a0bdaf55a4c73ae1570351",
+    "sha256": "1fd489b169ca3eb993556926e03a4e9ef33235735fae51ddf4073aa2158c2512",
     "walkthrough": "docs/examples/06-back-bay-road-sunlight.md"
   },
   "prompt": "I want a what-if shadow study for the Back Bay area of Boston, set up as three scenarios I can compare. The OSM extract is a file in this checkout at docs/examples/data/back_bay.osm.pbf. Load its layers in the browser with Autark once, and hand them to every scenario through a shared fan-out. In each scenario a GPU shader adds up every road segment's minutes of sunlight over the June solstice, with the building heights scaled by a height factor I set in a widget: 1 in a scenario called Baseline, 2 in a copy of it called Twice as tall, and 1 in a third copy called Two towers removed, where the buildings first lose two towers, 200 Clarendon and Raffles (building_id 29623484 and 29628154), every part of each. Show each scenario's roads on its own 3D map coloured by sunlight. Then compare the scenarios' roads: a bar chart of the three scenarios' mean road sunlight, and a map of how much sunlight each road loses in Twice as tall, on a red, yellow and blue scale from -360 to 360 minutes with no change in its middle.",

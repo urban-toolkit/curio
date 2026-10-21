@@ -359,7 +359,8 @@ are what its scenario chips write.
   for a node in no box: its title, else its header, the template's label looked up
   by the canonical template id as `node_names.saved_node_label` looks it up, from
   the project's template labels (`labels`), which a run and the agents' check pass.
-- A Vega-Lite spec that names the dataset `inputs` anywhere (`readsInputs` in
+- A Vega-Lite spec that names the dataset `inputs` anywhere, its chips resolved
+  (`readsInputs` in
   `src/utils/vegaDatasets.ts`, which makes `usesNamedDatasets` true for it) gets every
   input's rows stacked in circle order, each with `__input__`, `scenario` and
   `scenario_name`. `prepareVegaInputs` (`utils/vegaInput.ts`) builds the dataset with
@@ -396,11 +397,22 @@ are what its scenario chips write.
   `test_scenario_chips.py`). The form is a kind word and a space, as `selection picked`
   is: a widget's name has no space, and `input_1.scenario_color` would be a column of
   input_1. `[!! inputs.<field> !!]` names a field of `inputs`, written as a column
-  chip is. A chip in Python or JavaScript, a list chip inside quotes, an input with no
-  edge or with no label are refused, and `renumberInputReferences` moves an input's
-  chip with its circle. `codeReferences.cases.json` pins both resolvers. With no
-  dataflow to resolve them over, the agents' check reads each as a value of its shape
-  and reports a refused one in its own words (`with_stand_in_chips`).
+  chip is, and `[!! inputs !!]` the dataset itself (kind `dataset`), written as its
+  name, `INPUTS_DATASET` (`STACKED_DATASET` in the twin), in any JSON document, an
+  Autark spec's too. A chip in
+  Python or JavaScript, a list chip inside quotes, an input with no edge or with no
+  label, and the dataset chip on a node with no input are refused, and
+  `renumberInputReferences` moves an input's chip with its circle.
+  `codeReferences.cases.json` pins both resolvers. With no dataflow to resolve them
+  over, the agents' check reads each as a value of its shape, the dataset chip as its
+  name over at least one stand-in input, and reports a refused one in its own words
+  (`with_stand_in_chips`). No widget takes the name `inputs`, as none takes
+  `input_<k>`: `INPUT_NAME_ONLY_PATTERN` (`widgetModel.ts`), its twin
+  `INPUT_NAME_ONLY_RE` with `widget_name_problem`, and the widget name's `not` in
+  `docs/schemas/node-package.v4.json`, which every full widget check reads (the
+  Widgets tab, a package manifest, the agents' widgets). `normalizeWidgets` keeps a
+  saved widget of that name, so it can be deleted, while `[!! inputs !!]` names the
+  dataset.
 - A reader of a spec's shape parses it before its chips are resolved with each chip
   standing on its own held by a string of itself (`withChipPlaceholders`, twin
   `with_chip_placeholders`): `classifyAutkSpecString` (`utils/autkSpecKind.ts`), which
@@ -410,10 +422,11 @@ are what its scenario chips write.
   `autkGrammarBehavior.tsx`), and its twins
   `execution/autk_spec_kind.py` (a run's plan) and `projects/dashboard_payload.py`.
   `autkSpecKind.cases.json` pins both. A chip that writes one text, an input's
-  scenario color or a field of `inputs`, is inserted quoted where JSON wants a value
-  (`insertReference` in `monacoCodeReferences.ts`), so the spec stays JSON.
-- `components/editing/widgets/WidgetTag.tsx` shows them: on a Vega-Lite node of
-  several inputs an `inputs` tag beside the input tags opens to `stackedFields` (the
+  scenario color, the dataset `inputs` or a field of it, is inserted quoted where JSON
+  wants a value (`insertReference` in `monacoCodeReferences.ts`), so the spec stays
+  JSON.
+- `components/editing/widgets/WidgetTag.tsx` shows them: on a Vega-Lite node with an
+  input an `inputs` tag beside the input tags drags `[!! inputs !!]` and opens to `stackedFields` (the
   three the stacking adds, then the inputs' columns, a layer's geometry left out), its
   `scenario_name` field showing a swatch per name of `scenarioScale` (the names alone
   when no input comes from a box), which drag `scenario colors`, and the **order** and
@@ -445,13 +458,13 @@ are what its scenario chips write.
 A dataflow compares its scenarios with ordinary nodes outside the boxes, each
 scenario's outcome on a circle of its own:
 
-- A chart is a Vega-Lite node whose spec reads `inputs`
+- A chart is a Vega-Lite node whose spec reads `[!! inputs !!]`
   ([Scenarios in charts and maps](#scenarios-in-charts-and-maps)).
 - The Scout package (`packages/curio.scout@1`) holds fifteen Vega-Lite templates
   that compare scenarios. Each names `behavior: vega` and `grammarId: vega-lite`,
   takes `[1,n]` on its input port, a circle per scenario, and its `.vl.json` starter
   is the node's whole content (`starterIsContent`). The starter reads
-  `"data": {"name": "inputs"}`, so the node gets its inputs stacked
+  `"data": {"name": "[!! inputs !!]"}`, so the node gets its inputs stacked
   ([Scenarios in charts and maps](#scenarios-in-charts-and-maps)), writes the scale
   and the order of `scenario_name` through its scenario chips (Table and Stacked bars
   with totals, whose text marks color by scenario, in `scenario text_colors`), and

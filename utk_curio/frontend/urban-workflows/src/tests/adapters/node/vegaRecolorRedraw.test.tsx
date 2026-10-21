@@ -151,8 +151,8 @@ const INPUTS = {
 };
 
 /** Bars per scenario in their colors, through the scale's chip, read from
- * `inputs`, any bar picked by a point select over no fields. */
-const PICKED_BARS = '{"data": {"name": "inputs"}, "params": [{"name": "pick", "select": "point"}], "mark": "bar", '
+ * `inputs`, named by its chip, any bar picked by a point select over no fields. */
+const PICKED_BARS = '{"data": {"name": "[!! inputs !!]"}, "params": [{"name": "pick", "select": "point"}], "mark": "bar", '
   + '"encoding": {"x": {"field": "scenario_name", "type": "nominal"}, "y": {"field": "sunlight", "type": "quantitative"}, '
   + '"color": {"field": "scenario_name", "type": "nominal", "scale": [!! scenario colors !!]}}}';
 

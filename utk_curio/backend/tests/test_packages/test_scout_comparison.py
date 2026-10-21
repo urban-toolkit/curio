@@ -124,6 +124,8 @@ ORDER_CHANNELS = {"x", "y", "xOffset", "yOffset", "row", "column", "facet"}
 #: The scenario chips a starter may write: the scale of the boxes' colors, the
 #: same in text shades, and their names in order.
 SCENARIO_CHIPS = {"scenario colors", "scenario text_colors", "scenario order"}
+#: The chip of the dataset every starter reads its inputs stacked in.
+DATASET_CHIP = "inputs"
 #: The label of the one box a starter's input comes from, as a run hands it.
 BOX = {"scenario": "s-base", "name": "Baseline", "color": "#2a9d8f", "rank": 0}
 
@@ -339,19 +341,22 @@ def test_each_widget_is_a_column_a_title_or_a_choice_with_its_default(template_i
 
 @pytest.mark.parametrize("template_id", TEMPLATES)
 def test_every_chip_names_a_widget_and_every_widget_is_read(template_id):
-    """The starter reads its widgets and its scenarios and nothing else: no
-    input chip, nor an input's scenario chip, since a chart reads its inputs as
-    one dataset."""
+    """The starter reads its widgets, its scenarios and the dataset its inputs
+    are stacked in, and nothing else: no input chip, nor an input's scenario
+    chip, since a chart reads its inputs as one dataset."""
     chips = set(CHIP.findall(_source(template_id)))
-    assert chips - SCENARIO_CHIPS == set(WIDGETS[template_id])
+    assert chips - SCENARIO_CHIPS - {DATASET_CHIP} == set(WIDGETS[template_id])
     assert chips & SCENARIO_CHIPS, f"{template_id} writes no scenario chip"
+    assert DATASET_CHIP in chips, f"{template_id} does not name its dataset by its chip"
 
 
 @pytest.mark.parametrize("template_id", TEMPLATES)
 def test_each_starter_reads_its_inputs_stacked(template_id):
-    """Its one data block names the dataset ``inputs``, whose rows are every
-    input's, each named by its input's scenario box; no view names data of
-    its own."""
+    """Its one data block names the dataset ``inputs`` by its chip, written
+    inside quotes as the editor inserts it, and resolves to that name, whose
+    rows are every input's, each named by its input's scenario box; no view
+    names data of its own."""
+    assert _written(template_id)["data"] == {"name": f"[!! {DATASET_CHIP} !!]"}
     code, problems = _resolved(template_id)
     assert not problems, problems
     spec = json.loads(code)

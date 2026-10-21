@@ -4,8 +4,8 @@ A loader of road segments feeds two scenario boxes, "Baseline" and "Twice as
 tall", each one node that divides the sunlight by its factor widget; the
 dataflow lists "Twice as tall" first. Two Vega-Lite charts outside both boxes
 read them on two circles, Baseline's first, and their specs name the dataset
-``inputs``: every input's rows in one table, each row named by the box its
-input comes from.
+``inputs``, the first by its chip ``[!! inputs !!]`` and the second bare: every
+input's rows in one table, each row named by the box its input comes from.
 
 - The first, pinned to the dashboard, writes its scenarios through chips: its
   color scale is ``[!! scenario colors !!]`` and its axis's order
@@ -83,10 +83,11 @@ LOAD_CODE = (
 SHADE_CODE = 'df = input_0.copy()\ndf["sunlight"] = df["sunlight"] / [!! factor !!]\nreturn df\n'
 
 #: Mean sunlight per scenario, a bar each, colored by scenario with a legend,
-#: through the scenario chips, which are not JSON until the editor resolves them.
+#: through the scenario chips, which are not JSON until the editor resolves
+#: them, its dataset named by its chip, as Scout's charts are written.
 CHART_SPEC = """{
   "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
-  "data": {"name": "inputs"},
+  "data": {"name": "[!! inputs !!]"},
   "mark": "bar",
   "encoding": {
     "x": {"field": "scenario_name", "type": "nominal", "title": "Scenario", "sort": [!! scenario order !!]},
@@ -300,10 +301,11 @@ PICK_SPEC = json.dumps({
     },
 }, indent=2)
 
-#: Every stacked row as a point, red once the selection reaches its row.
+#: Every stacked row as a point, red once the selection reaches its row, its
+#: dataset named by its chip.
 LIT_SPEC = json.dumps({
     "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
-    "data": {"name": "inputs"},
+    "data": {"name": "[!! inputs !!]"},
     "mark": {"type": "point", "filled": True, "size": 400, "opacity": 1},
     "encoding": {
         "x": {"field": "segment", "type": "nominal"},

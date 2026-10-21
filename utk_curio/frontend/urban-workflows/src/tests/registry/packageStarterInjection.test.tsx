@@ -49,6 +49,8 @@ import { getBehavior } from '../../registry/behaviorRegistry';
 import { packageStarterCode, usePackageNodeBehavior } from '../../adapters/node/packageNodeBehavior';
 import { useStarterContext } from '../../providers/StarterProvider';
 import { behaviorDataView } from '../../utils/behaviorDataView';
+import { VEGA_LITE, resolveReferences } from '../../utils/references/codeReferences';
+import { normalizeWidgets } from '../../utils/widgets/widgetModel';
 import type { NodeBehaviorData, UseNodeStateReturn } from '../../registry/types';
 
 const REPO_ROOT = path.resolve(__dirname, '../../../../../..');
@@ -363,12 +365,19 @@ function dropChart(data: Record<string, unknown>) {
 describe('Scout\'s charts, as the repository ships them (the plan answering komar41\'s review, step 6.2)', () => {
   beforeEach(() => clearPackageNodes());
 
-  test('a fresh drop opens with its template\'s spec, which reads its inputs, and its widgets', () => {
+  test('a fresh drop opens with its template\'s spec, which reads its inputs by the dataset\'s chip, and its widgets', () => {
     const { offered, node } = dropChart({});
     const starter = readChartStarter();
     expect(offered).toContain(starter);
     // Read with each chip that stands on its own (its scenarios' scale) as null.
-    expect(JSON.parse(starter.replace(/(?<=[:[,]\s*)\[!!.*?!!\]/g, 'null')).data).toEqual({ name: 'inputs' });
+    expect(JSON.parse(starter.replace(/(?<=[:[,]\s*)\[!!.*?!!\]/g, 'null')).data).toEqual({ name: '[!! inputs !!]' });
+    // Wired, it reads that dataset: the chip as its editor resolves it before a run.
+    const box = { scenario: 's-base', name: 'Baseline', color: '#2a9d8f', rank: 0 };
+    const wired = resolveReferences(
+      starter, { widgets: normalizeWidgets(node.widgets), inputs: [{ slot: 0, scenario: box }], shared: [] }, 'json', VEGA_LITE,
+    );
+    expect(wired.problems).toEqual([]);
+    expect(JSON.parse(wired.code).data).toEqual({ name: 'inputs' });
     expect(node.widgets).toEqual(chartPack().templates[0].widgets);
   });
 

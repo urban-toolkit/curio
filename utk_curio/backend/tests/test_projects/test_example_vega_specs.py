@@ -10,6 +10,10 @@ finds them:
   class its route asks for. Example 10's route 1 asks for ``terrain``, but its
   two charts listed ``car`` instead, so terrain took a recycled colour (#628).
 
+And a spec names the dataset its inputs are stacked in by its chip,
+``"data": {"name": "[!! inputs !!]"}``, as every other input is a chip: the
+bare name draws the same, so only reading the specs as written finds it.
+
 The specs are read from the example dataflows, their walkthroughs, the default
 preamble, and the worked examples the builder agents are shown
 (``llm-prompts/examples.md``), which include example 09's scatter. A
@@ -161,6 +165,72 @@ class TestHollowPoints:
             "default preamble",
             "worked example 09-heterogeneous-data-linked-views",
         } <= brushed_points
+
+
+def _written_specs():
+    """(where, text) for every Vega-Lite spec Curio ships, as it is written,
+    its chips unresolved: each template of a shipped package that draws with
+    the Vega-Lite grammar, and each chart of an example dataflow."""
+    for path in sorted((REPO_ROOT / "packages").glob("*/manifest.json")):
+        manifest = json.loads(path.read_text(encoding="utf-8"))
+        for template in manifest.get("templates") or []:
+            if template.get("grammarId") == "vega-lite" and template.get("source"):
+                source = path.parent / template["source"]
+                yield f"{path.parent.name}/{template['source']}", source.read_text(encoding="utf-8")
+    for path in example_paths():
+        for node in _flow(path).get("nodes", []):
+            if node["type"].split("@", 1)[0] in VEGA_LITE_TYPES and isinstance(node.get("content"), str):
+                yield f"{path.name} node {node['id'][:8]}", node["content"]
+
+
+def _dataset_names(spec) -> list:
+    """The name of each dataset *spec*'s views read: a view's own ``data``,
+    or a lookup's ``from.data``, in the views ``readsInputs`` walks
+    (``utils/vegaDatasets.ts``)."""
+    names: list = []
+
+    def visit(node) -> None:
+        if isinstance(node, list):
+            for item in node:
+                visit(item)
+            return
+        if not isinstance(node, dict):
+            return
+        sources = [node.get("data")] + [
+            step["from"].get("data") for step in node.get("transform") or []
+            if isinstance(step, dict) and isinstance(step.get("from"), dict)
+        ]
+        names.extend(s["name"] for s in sources if isinstance(s, dict) and isinstance(s.get("name"), str))
+        for key in ("layer", "concat", "hconcat", "vconcat", "spec"):
+            visit(node.get(key))
+
+    visit(spec)
+    return names
+
+
+class TestTheStackedDatasetIsNamedByItsChip:
+    def test_no_shipped_spec_names_the_dataset_inputs_bare(self):
+        """Read as written, each chip standing on its own held by a string of
+        its text (``with_chip_placeholders``): Scout's fifteen charts and their
+        copies in the shipped dataflows name the dataset by its chip, and no
+        spec names it bare. Every spec reads so, or the scan would pass over
+        it."""
+        from utk_curio.backend.app.execution.code_references import with_chip_placeholders
+
+        bare, chipped, unread = [], [], []
+        for where, text in _written_specs():
+            try:
+                spec = json.loads(with_chip_placeholders(text))
+            except ValueError:
+                unread.append(where)
+                continue
+            names = _dataset_names(spec)
+            bare.extend(where for name in names if name == "inputs")
+            chipped.extend(where for name in names if name == "[!! inputs !!]")
+        assert unread == [], f"these specs do not read as JSON, so their datasets went unchecked: {unread}"
+        assert bare == [], f"these specs name the dataset inputs bare, not as [!! inputs !!]: {bare}"
+        assert len([where for where in chipped if where.startswith("curio.scout@1/")]) == 15, chipped
+        assert len(chipped) >= 34, chipped
 
 
 def _segmentation_routes():
