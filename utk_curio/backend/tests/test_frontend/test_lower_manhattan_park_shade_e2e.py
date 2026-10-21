@@ -32,8 +32,10 @@ Run All in the browser runs the whole dataflow:
    with the towers removed and the most as they are. The chart draws in the
    three scenarios' colors.
 3. Each what-if's change in shadow is a raster on the shadows' grid, 1024 by
-   1280 cells in EPSG:3395, that takes shadow away on the whole, and each
-   park's change in shade takes shadow away in every park. The Autark map
+   1280 cells in EPSG:3395, cell for cell the what-if's shadow minus
+   Existing's, that takes shadow away on the whole, and each park's change in
+   shade, column for column the what-if's Shade per park minus Existing's,
+   matched by the park's name, takes shadow away in every park. The Autark map
    after each change draws it.
 4. Each scenario's buildings and shadow draw.
 
@@ -300,6 +302,20 @@ def test_three_scenarios_of_lower_manhattans_park_shade_are_charted_and_mapped(
 
     # 3. Each what-if's change, in shadow and in each park, mapped after it:
     # the Raster Calculator's raster and the Python node's parks.
+    import pandas as pd
+
+    from utk_curio.backend.tests._support.scenario_changes import assert_rows_match, keyed_change, records_of
+
+    scenario_of = {node_id: box["id"] for box in dataflow["scenarios"] for node_id in box["nodes"]}
+
+    def feeds_of(node_id: str) -> dict:
+        """The nodes on *node_id*'s circles, Existing's on input_0 and the
+        what-if's on input_1, as its code reads them."""
+        feeds = {edge["targetHandle"]: edge["source"] for edge in dataflow["edges"] if edge["target"] == node_id}
+        assert sorted(feeds) == ["in", "in_1"], (node_id, feeds)
+        assert scenario_of.get(feeds["in"]) == "existing", (node_id, feeds)
+        return feeds
+
     for scenario, name, key in SCENARIOS[1:]:
         change, change_map = f"park-shade-{key}-change", f"park-shade-{key}-change-map"
         grid, bands = load_raster_cells(_saved_artifact(page, change))
@@ -311,6 +327,26 @@ def test_three_scenarios_of_lower_manhattans_park_shade_are_charted_and_mapped(
         }))
         assert finite.min() < -100 and finite.mean() < 0, (name, finite.min(), finite.mean())
         assert -720 <= finite.min() and finite.max() <= 720, (name, finite.min(), finite.max())
+        # Cell for cell, the what-if's shadow minus Existing's, the two rasters
+        # Deep Umbra saved, on the change's grid. The Raster Calculator
+        # subtracts in float32, so the two may part by a unit in the last place.
+        feeds = feeds_of(change)
+        assert scenario_of.get(feeds["in_1"]) == scenario, (change, feeds)
+        shadows = []
+        for handle in ("in", "in_1"):
+            shadow_grid, (shadow,) = load_raster_cells(_saved_artifact(page, feeds[handle]))
+            assert (shadow_grid["crs"], shadow_grid["width"], shadow_grid["height"]) == (
+                grid["crs"], grid["width"], grid["height"]), (name, shadow_grid, grid)
+            assert [shadow_grid[k] for k in ("originX", "originY", "resX", "resY")] == pytest.approx(
+                [grid[k] for k in ("originX", "originY", "resX", "resY")], rel=1e-12), (name, shadow_grid, grid)
+            shadows.append(shadow)
+        existing_shadow, what_if_shadow = shadows
+        took = (what_if_shadow.astype("float64") - existing_shadow.astype("float64")).astype("float32")
+        assert np.array_equal(np.isnan(raster), np.isnan(took)), name
+        assert np.allclose(raster, took, rtol=0, atol=1e-3, equal_nan=True), (
+            f"{name}: the Raster Calculator's change differs from the what-if's shadow minus Existing's by up to "
+            f"{float(np.nanmax(np.abs(raster - took)))}"
+        )
         frame_nodes(page, [change, change_map])
         assert_autark_map_drawn(page, change_map, timeout=60000, attach_as=f"the change in shadow under {name}")
         _assert_legend_shows_its_range(page, dataflow, change_map)
@@ -321,6 +357,15 @@ def test_three_scenarios_of_lower_manhattans_park_shade_are_charted_and_mapped(
         assert len(rows) == PARKS and all(row["change"] == "changed" and row["mean_min"] < 0 for row in rows), (
             name, [(row["park"], row["change"], row["mean_min"]) for row in rows]
         )
+        # Each park's change, column for column, is what the rule writes from
+        # the two Shade per park nodes' rows step 2 read: the what-if's minus
+        # Existing's, matched by the park's name (keyed_change, which the
+        # fixture of Compare's own output holds to it).
+        feeds = feeds_of(park_change)
+        assert scenario_of.get(feeds["in_1"]) == scenario, (park_change, feeds)
+        before, after = (pd.DataFrame(_rows(page, feeds[handle])) for handle in ("in", "in_1"))
+        assert_rows_match(rows, records_of(keyed_change(before, after, "park")), rel=1e-12,
+                          what=f"{name}'s park change")
         frame_nodes(page, [park_change, park_map])
         assert_autark_map_drawn(page, park_map, timeout=60000, attach_as=f"each park's change in shade under {name}")
         _assert_legend_shows_its_range(page, dataflow, park_map)
