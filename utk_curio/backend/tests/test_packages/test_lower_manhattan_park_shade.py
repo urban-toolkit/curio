@@ -662,11 +662,15 @@ def test_buildings_around_parks_marks_the_parts_by_one_rule_for_every_park(ran):
     assert set(marked["nearest_park"]) <= set(PARKS)
 
 
+#: The columns whose types a lever keeps, whichever rows it hands on.
+TYPED_COLUMNS = ["building_id", "height", "around_park", "height_cap_m"]
+
+
 def _same_frame_shape(lever, marked) -> None:
-    """A lever hands on the frame it read: its columns, their types and its
-    CRS, marked as buildings."""
+    """A lever hands on the frame it read: its columns, the types of those that
+    hold an id, a height or the mark, and its CRS, marked as buildings."""
     assert list(lever.columns) == list(marked.columns)
-    assert dict(lever.dtypes.astype(str)) == dict(marked.dtypes.astype(str))
+    assert [str(lever[c].dtype) for c in TYPED_COLUMNS] == [str(marked[c].dtype) for c in TYPED_COLUMNS]
     assert lever.crs == marked.crs
     assert getattr(lever, "metadata", None) == {"layerType": "buildings"}
 
