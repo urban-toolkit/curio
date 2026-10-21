@@ -5,7 +5,7 @@
  * with a double-click, the ways to add to the edit log (the node's setting,
  * `utils/editFeatures/editFeatures`), and the log itself:
  *
- * - on what is picked: Remove (or Delete), Restore, Clear pick (or Escape), a
+ * - on what is picked: Remove (or Delete), Clear pick (or Escape), a
  *   raise or a lower of a number column by a step (or the up and down
  *   arrows), a scale by a factor, Set value, and a table of the picked
  *   features whose cells take a new value;
@@ -13,7 +13,8 @@
  *   including a column computed by an expression (`levels * 3.2`);
  * - each entry of the log can be switched off or deleted; Undo and Redo (or
  *   Ctrl/Cmd+Z and Shift+Ctrl/Cmd+Z) take back the last one and make it again;
- * - Update results runs the node and every node below it.
+ * - Commit edits runs the node and every node below it, so their results
+ *   have the edits; the log's foot says whether they do.
  *
  * The table and the condition's count read the layer as the log leaves it
  * (`applyEdits`); the map draws the node's input.
@@ -21,6 +22,19 @@
  * A layer with no column that identifies its features (no `osm_id` or
  * `building_id`, and no column whose values differ in every feature) is
  * refused: a feature's place in a layer is not an id.
+ *
+ * Its Edit view (`LayerWorkbench`) lists every layer the input carries, by
+ * the geometry of its features, with the node's own new layers, and draws the
+ * picked one on a flat edit map where features are added, reshaped, moved,
+ * given new values and removed. An edit on a layer other than the node's
+ * names that layer, and the settings name its id column (`keys`). The Map
+ * view keeps the Autark map and the tools above, on the node's layer.
+ *
+ * Plugged into an Autark map (an edge from this node into one of the map's
+ * circles), the node is the map's panel: its layers are the map's other
+ * inputs, the picking and drawing happen on the map (`MapEditOverlay`), and
+ * the map draws, and hands on, its layers with the edits
+ * (`utils/editFeatures/mapLayerEdits`).
  */
 import React, { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import NodeEmptyState from "../nodes/NodeEmptyState";
@@ -48,6 +62,10 @@ import {
   type EditOp,
   type FeatureEdit,
 } from "../../utils/editFeatures/editFeatures";
+import { normalizeEdit, type NewLayerDef, type PropertyDef } from "../../utils/editFeatures/editFeatures";
+import LayerWorkbench, { crsName, type WorkbenchLayer } from "./LayerWorkbench";
+import { getUnversionedFlowNodeType } from "../../utils/flowNodeCanonicalType";
+import { circleOf as mapCircleOf, circleTitles, mapFedBy, nodeName, withoutCircle } from "../../utils/editFeatures/mapLayerEdits";
 import styles from "./EditFeatures.module.css";
 
 /** Why the Layer and Id menus are held while the log has edits: the edits
@@ -58,7 +76,20 @@ const HELD = "The edits name features of this layer by this column: delete them 
 const EditFeaturesMap = React.lazy(() => import("./EditFeaturesMap"));
 
 /** What a condition can do to the features it picks, in the order offered. */
-const WHERE_OPS: EditOp[] = ["remove", "scale", "offset", "set", "expr", "restore"];
+const WHERE_OPS: EditOp[] = ["remove", "scale", "offset", "set", "expr"];
+
+/** The tag an edit wears in the log. */
+const OP_TAG: Record<EditOp, string> = {
+  add: "add",
+  remove: "remove",
+  restore: "restore",
+  set: "edit",
+  scale: "edit",
+  offset: "edit",
+  expr: "edit",
+  geometry: "shape",
+  add_column: "property",
+};
 
 /** How many picked features the table lists, and how many of their columns. */
 const TABLE_ROWS = 12;
@@ -104,6 +135,38 @@ function useInputLayers(input: unknown): InputLayer[] | null {
     };
   }, [input]);
   return layers;
+}
+
+/** The circle an edge goes into: `in` is 0, `in_<k>` is k. */
+function circleOf(handle: unknown): number {
+  const m = /^in_(\d+)$/.exec(String(handle ?? ""));
+  return m ? Number(m[1]) : 0;
+}
+
+/**
+ * What to call the input's unnamed layers, by the table name the map gives
+ * them (`input_0`, `input_0_1`, ...): the title of the node each came from.
+ * An Autark map hands on its inputs as they came, so the n-th layer is the
+ * map's n-th input.
+ */
+export function upstreamLabels(nodeId: string, nodes: any[], edges: any[]): Record<string, string> {
+  const into = (id: string) => edges.filter((e) => e.target === id).sort((a, b) => circleOf(a.targetHandle) - circleOf(b.targetHandle));
+  const titleOf = (id: string) => nodeName(nodes.find((n) => n.id === id));
+  const feed = into(nodeId)[0];
+  if (!feed) return {};
+  const source = nodes.find((n) => n.id === feed.source);
+  const isMap = !!source && getUnversionedFlowNodeType(source) === "curio.builtin/autk-grammar";
+  const sources = isMap ? into(feed.source).map((e) => e.source) : [feed.source];
+  const out: Record<string, string> = {};
+  sources.forEach((id, n) => {
+    const title = titleOf(id);
+    // One table per circle, input_<n>; or the n-th more of one input, input_0_<n>.
+    if (title) {
+      out[`input_${n}`] = title;
+      if (n > 0) out[`input_0_${n}`] = title;
+    }
+  });
+  return out;
 }
 
 /** The layer to edit: the one the settings name, else the first that has an id column. */
@@ -231,7 +294,13 @@ export function EditFeaturesBody({
 }) {
   const flow = useFlowContext() as any;
   const live = (flow?.nodes ?? []).find((n: any) => n.id === nodeId)?.data;
-  const input = live?.input;
+  // Plugged into a map, the layers are the map's other inputs.
+  const mapId = mapFedBy(nodeId, flow?.nodes ?? [], flow?.edges ?? []);
+  const mapNode = mapId ? (flow?.nodes ?? []).find((n: any) => n.id === mapId) : undefined;
+  const mapEdge = mapId ? (flow?.edges ?? []).find((e: any) => e.source === nodeId && e.target === mapId) : undefined;
+  const circle = mapEdge ? mapCircleOf(mapEdge.targetHandle) : 0;
+  const mapInput = mapNode?.data?.input;
+  const input = useMemo(() => (mapId ? withoutCircle(mapInput, circle) : live?.input), [mapId, mapInput, circle, live?.input]);
   const settings = normalizeEditFeatures(live?.editFeatures);
   const writable = !flow?.dashboardOn && flow?.viewerMode !== "shared";
   const layers = useInputLayers(input);
@@ -263,11 +332,83 @@ export function EditFeaturesBody({
 
   // The layer as the log leaves it: what the table and a condition's count read.
   const logKey = JSON.stringify(settings?.edits ?? []);
-  const edited = useMemo(
-    () => editedRows(layer?.fc, settings, key),
+  // The tools of the Map view read the node's layer: only the edits on it.
+  const nodeEdits = useMemo(
+    () => (settings?.edits ?? []).filter((e) => !e.layer || e.layer === (settings?.layer ?? layer?.name ?? undefined)),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [layer, logKey, key],
+    [logKey, settings?.layer, layer?.name],
   );
+  const edited = useMemo(
+    () => editedRows(layer?.fc, settings ? { ...settings, edits: nodeEdits } : settings, key),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [layer, nodeEdits, key],
+  );
+  const [view, setView] = useState<"edit" | "map">("edit");
+
+  // Every layer the Edit view offers: the input's, each with its id column,
+  // then the node's own.
+  const labels = useMemo(() => {
+    if (!mapId) return upstreamLabels(nodeId, flow?.nodes ?? [], flow?.edges ?? []);
+    const titles = circleTitles(mapId, flow?.nodes ?? [], flow?.edges ?? []);
+    return Object.fromEntries(Object.entries(titles).map(([k, title]) => [`input_${k}`, title]));
+  }, [nodeId, mapId, flow?.nodes, flow?.edges]);
+  const workbenchLayers = useMemo<WorkbenchLayer[]>(() => {
+    const input = (layers ?? []).map((l) => {
+      const name = l.name ?? l.table;
+      const label = l.name ? l.name : labels[l.table] ?? l.table;
+      const ids = keyColumns(l.fc);
+      const saved = settings?.keys?.[name] ?? (name === settings?.layer ? settings?.key : undefined);
+      const layerKey = saved && ids.includes(saved) ? saved : defaultKey(ids) ?? ids[0];
+      return { name, label, table: l.table, fc: l.fc as WorkbenchLayer["fc"], key: layerKey };
+    });
+    const first = input[0]?.fc;
+    const made = (settings?.newLayers ?? []).map((def) => ({
+      name: def.name,
+      label: def.name,
+      fc: { type: "FeatureCollection", features: [], ...(first?.crs ? { crs: first.crs } : {}) } as WorkbenchLayer["fc"],
+      key: "id",
+      newLayer: def,
+    }));
+    return [...input, ...made];
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [layers, labels, settings?.keys, settings?.layer, settings?.key, JSON.stringify(settings?.newLayers ?? [])]);
+
+  /** *more* written into the log as edits of *target*: the node's layer's
+   * plainly, another layer's naming it, with its id column in `keys`. */
+  const writeOn = (more: FeatureEdit[], target: WorkbenchLayer) => {
+    let next: EditFeaturesSettings = { ...(settings ?? {}) };
+    const tagged: FeatureEdit[] = [];
+    for (const raw of more) {
+      let edit = raw;
+      if (target.newLayer) edit = { ...raw, layer: target.name };
+      else {
+        if (!next.layer) {
+          next.layer = target.name;
+          if (target.key) next.key = target.key;
+        }
+        if (target.name !== next.layer) {
+          edit = { ...raw, layer: target.name };
+          if (target.key) next.keys = { ...(next.keys ?? {}), [target.name]: target.key };
+        }
+      }
+      if (normalizeEdit(edit)) tagged.push(edit);
+    }
+    if (tagged.length === 0) return;
+    if (tagged.some((e) => e.geometry) && !next.crs) next.crs = crsName(target.newLayer ? workbenchLayers.find((l) => !l.newLayer)?.fc : target.fc);
+    for (const edit of tagged) next = withEdit(next, edit);
+    setRedo([]);
+    onChange(normalizeEditFeatures(next));
+  };
+  const addNewLayer = (def: NewLayerDef) => {
+    setRedo([]);
+    onChange(normalizeEditFeatures({ ...(settings ?? {}), newLayers: [...(settings?.newLayers ?? []), def] }));
+  };
+  const addLayerProperty = (layerName: string, def: PropertyDef) => {
+    const newLayers = (settings?.newLayers ?? []).map((l) =>
+      l.name === layerName ? { ...l, properties: [...(l.properties ?? []).filter((p) => p.name !== def.name), def] } : l,
+    );
+    onChange(normalizeEditFeatures({ ...(settings ?? {}), newLayers }));
+  };
 
   // The node and every node below it, as an automatic run takes them.
   const targets = useMemo(
@@ -280,10 +421,16 @@ export function EditFeaturesBody({
   const running = !!flow?.isRunActive || !!flow?.serverRunActive;
 
   const write = (next: EditFeaturesSettings | undefined, keepRedo = false) => {
+    if (!keepRedo) setRedo([]);
+    // On a map, every edit names its layer and id column already (writeOn):
+    // the log's layer is never the Map view's.
+    if (mapId) {
+      onChange(normalizeEditFeatures(next));
+      return;
+    }
     const base: EditFeaturesSettings = { ...(next ?? {}), ...(key ? { key } : {}) };
     if (layer?.name) base.layer = layer.name;
     else delete base.layer;
-    if (!keepRedo) setRedo([]);
     onChange(base);
   };
 
@@ -414,6 +561,164 @@ export function EditFeaturesBody({
     write(withEdit(settings, { op: "set", ids: [id], column: cellColumn, value }));
   };
 
+  // The log, by the layer each edit is on, as the mockup's last step lists it.
+  const layerOf = (edit: FeatureEdit) => edit.layer ?? settings?.layer ?? "";
+  const logGroups: { layer: string; entries: { edit: FeatureEdit; index: number }[] }[] = [];
+  edits.forEach((edit, index) => {
+    const layerName = layerOf(edit);
+    let group = logGroups.find((g) => g.layer === layerName);
+    if (!group) logGroups.push((group = { layer: layerName, entries: [] }));
+    group.entries.push({ edit, index });
+  });
+  // The foot of the log: whether the nodes below have the edits, and Commit
+  // edits to run them with them.
+  const commitFoot =
+    writable && below > 0 && (outOfDate > 0 || running || edits.length > 0) ? (
+      <div className={`${styles.commit} ${outOfDate > 0 && !running ? styles.commitStale : ""}`} data-testid="interaction-commit" data-commit-state={running ? "running" : outOfDate > 0 ? "stale" : "done"}>
+        {outOfDate > 0 || running ? (
+          <>
+            {running ? null : <span className={styles.commitText}>The downstream nodes don&apos;t have these edits yet.</span>}
+            <button
+              type="button"
+              className={`nodrag nopan ${styles.commitButton}`}
+              data-testid="interaction-update"
+              disabled={running}
+              title={`Runs this node and the ${below} node${below === 1 ? "" : "s"} below it with the edits`}
+              onClick={() => flow?.runDownstream?.([nodeId])}
+            >
+              {running ? "Running…" : "Commit edits"}
+            </button>
+          </>
+        ) : (
+          <span className={styles.commitDone}>✓ Edits committed</span>
+        )}
+      </div>
+    ) : null;
+  const editLog = (
+    <section className={`nodrag nopan ${styles.log}`} data-testid="interaction-log">
+      <div className={styles.logHead}>
+        <b>Edits</b>
+        <span className={styles.logCount}>{edits.length}</span>
+        {!mapId && edits.length > 0 ? (
+          <span className={styles.logSummary} data-testid="interaction-counts">
+            {`${edited.counts.remove} removed, ${edited.counts.set} changed`}
+            {edited.counts.restore > 0 ? `, ${edited.counts.restore} restored` : ""}
+          </span>
+        ) : null}
+        <span style={{ flex: 1 }} />
+        {writable ? (
+          <span className={styles.history}>
+            <button type="button" className="nodrag nopan" data-testid="interaction-undo" disabled={edits.length === 0} title="Undo (Ctrl or Cmd+Z)" onClick={undo}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M9 14L4 9l5-5" />
+                <path d="M4 9h10.5a5.5 5.5 0 010 11H11" />
+              </svg>
+              Undo
+            </button>
+            <button type="button" className="nodrag nopan" data-testid="interaction-redo" disabled={redo.length === 0} title="Redo (Shift+Ctrl or Cmd+Z)" onClick={redoLast}>
+              Redo
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M15 14l5-5-5-5" />
+                <path d="M20 9H9.5a5.5 5.5 0 000 11H13" />
+              </svg>
+            </button>
+          </span>
+        ) : null}
+      </div>
+      <div className={`nowheel ${styles.logBody}`} data-edit-list={edits.length}>
+        {edits.length === 0 ? (
+          <p className={styles.logEmpty}>{mapId ? "No edits yet: the map draws its layers as they came." : "No edits yet: the input is handed on as it came."}</p>
+        ) : null}
+        {logGroups.map((group) => {
+          const target = workbenchLayers.find((l) => l.name === group.layer);
+          return (
+            <div key={group.layer || "-"} className={styles.logGroup}>
+              {group.layer ? (
+                <span className={styles.logLayer}>
+                  {target?.label ?? group.layer} <span>· {target?.newLayer ? "new layer" : "edited"}</span>
+                </span>
+              ) : null}
+              <ol>
+                {group.entries.map(({ edit, index }) => (
+                  <li key={`${index}:${edit.op}`} className={`${styles.logRow} ${edit.enabled === false ? styles.logOff : ""}`} data-edit-op={edit.op} data-edit-enabled={edit.enabled === false ? "false" : "true"}>
+                    <span className={`${styles.opTag} ${styles[`op_${OP_TAG[edit.op]}`] ?? ""}`}>{OP_TAG[edit.op]}</span>
+                    <span className={`${styles.logText} ${edit.enabled === false ? styles.off : ""}`}>
+                      {describeEdit(
+                        edit,
+                        edit.layer ? settings?.keys?.[edit.layer] ?? (settings?.newLayers?.some((l) => l.name === edit.layer) ? "id" : settings?.key) : settings?.key,
+                        undefined,
+                      )}
+                    </span>
+                    {writable ? (
+                      <>
+                        <input
+                          type="checkbox"
+                          className={`nodrag nopan ${styles.logSwitch}`}
+                          aria-label={`Use edit ${index + 1}`}
+                          title={edit.enabled === false ? "Switched off: the run skips it" : "Switch off, keeping it in the log"}
+                          checked={edit.enabled !== false}
+                          onChange={(event) => write(withEditEnabled(settings, index, event.target.checked), true)}
+                        />
+                        <button type="button" className={`nodrag nopan ${styles.logDelete}`} aria-label={`Delete edit ${index + 1}`} title="Delete this edit" onClick={() => write(withoutEdit(settings, index))}>
+                          ×
+                        </button>
+                      </>
+                    ) : null}
+                  </li>
+                ))}
+              </ol>
+            </div>
+          );
+        })}
+      </div>
+      {commitFoot}
+    </section>
+  );
+
+  if (mapId) {
+    const mapTitle = nodeName(mapNode) || "the Autark map";
+    return (
+      <div className={`nokey ${styles.body}`} data-edit-body={nodeId} data-edit-map={mapId} ref={bodyRef} tabIndex={0} onKeyDown={onKeyDown}>
+        <div className={styles.bar}>
+          <span className={styles.connected} data-testid="interaction-connected">
+            Connected to {mapTitle}
+          </span>
+        </div>
+        {layers === null ? (
+          <NodeEmptyState reason="not-run" hint="Reading the map's layers." />
+        ) : layers.length === 0 ? (
+          <NodeEmptyState reason="not-run" hint={`Run ${mapTitle} and the layers it draws to edit them here.`} />
+        ) : (
+          <LayerWorkbench
+            layers={workbenchLayers}
+            edits={edits}
+            nodeLayer={settings?.layer ?? null}
+            writable={writable}
+            picked={picked}
+            setPicked={setPicked}
+            onEdit={(edit, target) => writeOn([edit], target)}
+            onEdits={(more, target) => writeOn(more, target)}
+            onNewLayer={addNewLayer}
+            onAddLayerProperty={addLayerProperty}
+            mapId={mapId}
+            nodeId={nodeId}
+          />
+        )}
+        {edited.problem ? (
+          <p className={styles.problem} data-edit-log-problem="true">
+            {edited.problem}
+          </p>
+        ) : null}
+        {runError ? (
+          <p className={`nodrag nopan ${styles.problem}`} data-edit-run-error="true">
+            {runError}
+          </p>
+        ) : null}
+        {editLog}
+      </div>
+    );
+  }
+
   let stage: React.ReactNode;
   if (input == null || input === "") {
     stage = <NodeEmptyState reason="disconnected" hint="Connect a layer, or the layers an Autark node hands on, to edit its features." />;
@@ -439,7 +744,7 @@ export function EditFeaturesBody({
     <div className={`nokey ${styles.body}`} data-edit-body={nodeId} ref={bodyRef} tabIndex={0} onKeyDown={onKeyDown}>
       {layers && layer ? (
         <div className={styles.bar}>
-          {layers.length > 1 ? (
+          {layers.length > 1 && view === "map" ? (
             <Select
               label="Layer"
               testId="edit-features-layer"
@@ -455,7 +760,7 @@ export function EditFeaturesBody({
               }}
             />
           ) : null}
-          {keys.length > 0 ? (
+          {keys.length > 0 && view === "map" ? (
             <Select
               label="Id"
               testId="edit-features-key"
@@ -466,31 +771,45 @@ export function EditFeaturesBody({
               onChange={(nextKey) => write({ ...(settings ?? {}), key: nextKey })}
             />
           ) : null}
-          {writable && below > 0 ? (
-            <Button
-              testId="interaction-update"
-              className={outOfDate > 0 ? styles.update : undefined}
-              disabled={running}
-              title={`Run this node and the ${below} node${below === 1 ? "" : "s"} below it with the edits`}
-              onClick={() => flow?.runDownstream?.([nodeId])}
-            >
-              {outOfDate > 0 ? `Update results (${outOfDate})` : "Update results"}
-            </Button>
-          ) : null}
         </div>
       ) : null}
-      {key === "building_id" && keys.length > 0 ? (
+      {key === "building_id" && keys.length > 0 && view === "map" ? (
         <p className={styles.note} data-edit-building-note="true">
           A building&apos;s parts share its building_id, so an edit applies to the whole building, every part.
         </p>
       ) : null}
-      <div className={styles.stage}>{stage}</div>
+      {layers && layers.length > 0 ? (
+        <span className={styles.segmented} role="tablist" aria-label="View">
+          <button type="button" role="tab" aria-selected={view === "edit"} data-testid="interaction-view-edit" className={`nodrag nopan ${view === "edit" ? styles.on : ""}`} onClick={() => setView("edit")}>
+            Edit
+          </button>
+          <button type="button" role="tab" aria-selected={view === "map"} data-testid="interaction-view-map" className={`nodrag nopan ${view === "map" ? styles.on : ""}`} onClick={() => setView("map")}>
+            Map and tools
+          </button>
+        </span>
+      ) : null}
+      {view === "edit" && layers && layers.length > 0 ? (
+        <LayerWorkbench
+          layers={workbenchLayers}
+          edits={edits}
+          nodeLayer={settings?.layer ?? null}
+          writable={writable}
+          picked={picked}
+          setPicked={setPicked}
+          onEdit={(edit, target) => writeOn([edit], target)}
+          onEdits={(more, target) => writeOn(more, target)}
+          onNewLayer={addNewLayer}
+          onAddLayerProperty={addLayerProperty}
+        />
+      ) : (
+        <div className={styles.stage}>{stage}</div>
+      )}
       {edited.problem ? (
         <p className={styles.problem} data-edit-log-problem="true">
           {edited.problem}
         </p>
       ) : null}
-      {editable ? (
+      {editable && view === "map" ? (
         <div className={styles.actions}>
           <span className={styles.picked} data-edit-picked={picked.join(" ")}>
             {picked.length === 0
@@ -499,9 +818,6 @@ export function EditFeaturesBody({
           </span>
           <Button testId="edit-features-remove" disabled={picked.length === 0} title="Delete" onClick={() => onPicked("remove")}>
             Remove
-          </Button>
-          <Button testId="edit-features-restore" disabled={picked.length === 0} onClick={() => onPicked("restore")}>
-            Restore
           </Button>
           <Button testId="edit-features-clear" disabled={picked.length === 0} title="Escape" onClick={() => setPicked([])}>
             Clear pick
@@ -639,47 +955,7 @@ export function EditFeaturesBody({
           {runError}
         </p>
       ) : null}
-      {writable && (edits.length > 0 || redo.length > 0) ? (
-        <div className={styles.bar}>
-          <Button testId="interaction-undo" disabled={edits.length === 0} title="Ctrl or Cmd+Z" onClick={undo}>
-            Undo
-          </Button>
-          <Button testId="interaction-redo" disabled={redo.length === 0} title="Shift+Ctrl or Cmd+Z" onClick={redoLast}>
-            Redo
-          </Button>
-          <span className={styles.matching} data-testid="interaction-counts">
-            {`${edited.counts.remove} removed, ${edited.counts.set} changed`}
-            {edited.counts.restore > 0 ? `, ${edited.counts.restore} restored` : ""}
-          </span>
-        </div>
-      ) : null}
-      <ol className={`nodrag nopan nowheel ${styles.edits}`} data-edit-list={edits.length}>
-        {edits.length === 0 ? <li className={styles.empty}>No edits yet: the input is handed on as it came.</li> : null}
-        {edits.map((edit, index) => (
-          <li key={`${index}:${edit.op}`} className={styles.edit} data-edit-op={edit.op} data-edit-enabled={edit.enabled === false ? "false" : "true"}>
-            {writable ? (
-              <input
-                type="checkbox"
-                className="nodrag nopan"
-                aria-label={`Use edit ${index + 1}`}
-                checked={edit.enabled !== false}
-                onChange={(event) => write(withEditEnabled(settings, index, event.target.checked), true)}
-              />
-            ) : null}
-            <span className={edit.enabled === false ? styles.off : undefined}>{describeEdit(edit, settings?.key)}</span>
-            {writable ? (
-              <button
-                type="button"
-                className={`nodrag nopan ${styles.delete}`}
-                aria-label={`Delete edit ${index + 1}`}
-                onClick={() => write(withoutEdit(settings, index))}
-              >
-                ×
-              </button>
-            ) : null}
-          </li>
-        ))}
-      </ol>
+      {editLog}
     </div>
   );
 }

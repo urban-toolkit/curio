@@ -31,10 +31,44 @@ export const EDIT_FEATURES_NODE_TYPE = "curio.builtin/edit-features";
 export const EDIT_HELPER = "curio_edit_features";
 
 /** In the order of the op enum in `docs/schemas/trill.v1.json` and `OPS` in `feature_edits.py`. */
-export const EDIT_OPS = ["remove", "set", "restore", "scale", "offset", "expr"] as const;
+export const EDIT_OPS = ["remove", "set", "restore", "scale", "offset", "expr", "add", "geometry", "add_column"] as const;
 export type EditOp = (typeof EDIT_OPS)[number];
 /** The ops that write a column. */
 export const WRITE_OPS: readonly EditOp[] = ["set", "scale", "offset", "expr"];
+/** The ops that name no features: they add one, or a column to every one. */
+export const UNNAMED_OPS: readonly EditOp[] = ["add", "add_column"];
+/** The geometry a new layer's features take. */
+export const NEW_LAYER_GEOMETRIES = ["Point", "LineString", "Polygon"] as const;
+export type NewLayerGeometry = (typeof NEW_LAYER_GEOMETRIES)[number];
+/** The column that identifies a new layer's features (`NEW_LAYER_KEY` in `feature_edits.py`). */
+export const NEW_LAYER_KEY = "id";
+/** The kinds of value a property takes. */
+export const PROPERTY_TYPES = ["text", "number", "boolean", "choice", "date"] as const;
+export type PropertyType = (typeof PROPERTY_TYPES)[number];
+const GEOMETRY_TYPES = ["Point", "MultiPoint", "LineString", "MultiLineString", "Polygon", "MultiPolygon"];
+
+/** A GeoJSON geometry: what the node's map draws and an add or a redraw writes. */
+export interface Geometry {
+  type: string;
+  coordinates: any[];
+}
+
+/** One property a new layer's features carry. */
+export interface PropertyDef {
+  name: string;
+  type: PropertyType;
+  required?: boolean;
+  /** For a choice: the values offered. */
+  choices?: string[];
+  default?: EditValue;
+}
+
+/** A layer the node makes: empty until features are drawn into it. */
+export interface NewLayerDef {
+  name: string;
+  geometry: NewLayerGeometry;
+  properties?: PropertyDef[];
+}
 
 /** A value an edit writes: a text, a number, true or false, or nothing. */
 export type EditValue = string | number | boolean | null;
@@ -60,11 +94,25 @@ export interface FeatureEdit {
   label?: string;
   /** False: kept in the log and skipped by the run. Written only when false. */
   enabled?: boolean;
+  /** The layer it applies to, when it is not the node's `layer`. */
+  layer?: string;
+  /** For an add: the new feature's id, written into the layer's id column. */
+  id?: SelectionId;
+  /** For an add or a redraw: the shape drawn on the node's map. */
+  geometry?: Geometry;
+  /** For an add: the new feature's values. */
+  values?: Record<string, EditValue>;
 }
 
 export interface EditFeaturesSettings {
   key?: string;
   layer?: string;
+  /** The id column of each other layer the edits name. */
+  keys?: Record<string, string>;
+  /** The layers the node makes. */
+  newLayers?: NewLayerDef[];
+  /** The CRS the node's map drew the layers in: the one a drawn shape is in. */
+  crs?: string;
   edits?: FeatureEdit[];
 }
 
@@ -99,15 +147,49 @@ function uniqueIds(raw: unknown[]): SelectionId[] {
  * condition, never both; a writing op's column and value, a number for a
  * scale or an offset and a text for an expression.
  */
+export function isGeometry(value: unknown): value is Geometry {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const g = value as Record<string, unknown>;
+  return typeof g.type === "string" && GEOMETRY_TYPES.includes(g.type) && Array.isArray(g.coordinates);
+}
+
+function cleanValues(raw: unknown): Record<string, EditValue> {
+  const out: Record<string, EditValue> = {};
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return out;
+  for (const [column, value] of Object.entries(raw as Record<string, unknown>)) {
+    if (column !== "" && isValue(value)) out[column] = value;
+  }
+  return out;
+}
+
 export function normalizeEdit(raw: unknown): FeatureEdit | null {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
   const e = raw as Record<string, unknown>;
   if (!EDIT_OPS.includes(e.op as EditOp)) return null;
   const op = e.op as EditOp;
+  const layer = typeof e.layer === "string" && e.layer !== "" ? { layer: e.layer } : {};
+  const tail = (out: FeatureEdit): FeatureEdit => {
+    if (typeof e.label === "string" && e.label.trim() !== "") out.label = e.label.trim();
+    if (e.enabled === false) out.enabled = false;
+    return out;
+  };
+  if (op === "add") {
+    if (!isId(e.id) || !isGeometry(e.geometry)) return null;
+    const values = cleanValues(e.values);
+    return tail({ op, ...layer, id: e.id, geometry: e.geometry, ...(Object.keys(values).length > 0 ? { values } : {}) });
+  }
+  if (op === "add_column") {
+    if (typeof e.column !== "string" || e.column === "" || !isValue(e.value ?? null)) return null;
+    return tail({ op, ...layer, column: e.column, value: (e.value ?? null) as EditValue });
+  }
   const ids = Array.isArray(e.ids) ? uniqueIds(e.ids) : [];
   const where = typeof e.where === "string" && e.where.trim() !== "" ? e.where.trim() : undefined;
   if ((ids.length > 0) === (where !== undefined)) return null;
-  const out: FeatureEdit = where !== undefined ? { op, where } : { op, ids };
+  const out: FeatureEdit = where !== undefined ? { op, ...layer, where } : { op, ...layer, ids };
+  if (op === "geometry") {
+    if (!isGeometry(e.geometry)) return null;
+    out.geometry = e.geometry;
+  }
   if (WRITE_OPS.includes(op)) {
     if (typeof e.column !== "string" || e.column === "" || !isValue(e.value)) return null;
     if ((op === "scale" || op === "offset") && typeof e.value !== "number") return null;
@@ -131,18 +213,70 @@ export function normalizeEditFeatures(raw: unknown): EditFeaturesSettings | unde
   const out: EditFeaturesSettings = {};
   if (typeof r.key === "string" && r.key !== "") out.key = r.key;
   if (typeof r.layer === "string" && r.layer !== "") out.layer = r.layer;
+  if (r.keys && typeof r.keys === "object" && !Array.isArray(r.keys)) {
+    const keys = Object.fromEntries(
+      Object.entries(r.keys as Record<string, unknown>).filter(([name, k]) => name !== "" && typeof k === "string" && k !== ""),
+    ) as Record<string, string>;
+    if (Object.keys(keys).length > 0) out.keys = keys;
+  }
+  const newLayers = Array.isArray(r.newLayers) ? r.newLayers.map(normalizeNewLayer).filter((l): l is NewLayerDef => l !== null) : [];
+  if (newLayers.length > 0) out.newLayers = newLayers;
+  if (typeof r.crs === "string" && r.crs !== "") out.crs = r.crs;
   const edits = Array.isArray(r.edits) ? r.edits.map(normalizeEdit).filter((e): e is FeatureEdit => e !== null) : [];
   if (edits.length > 0) out.edits = edits;
   return Object.keys(out).length > 0 ? out : undefined;
 }
 
-/** One edit as a Python dict: op, ids or where, column, value, label, enabled. */
+/** A new layer's well-formed definition, or null. */
+export function normalizeNewLayer(raw: unknown): NewLayerDef | null {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+  const r = raw as Record<string, unknown>;
+  if (typeof r.name !== "string" || r.name.trim() === "") return null;
+  if (!NEW_LAYER_GEOMETRIES.includes(r.geometry as NewLayerGeometry)) return null;
+  const properties: PropertyDef[] = [];
+  for (const item of Array.isArray(r.properties) ? r.properties : []) {
+    if (!item || typeof item !== "object") continue;
+    const p = item as Record<string, unknown>;
+    if (typeof p.name !== "string" || p.name.trim() === "" || !PROPERTY_TYPES.includes(p.type as PropertyType)) continue;
+    if (properties.some((other) => other.name === p.name)) continue;
+    const def: PropertyDef = { name: p.name.trim(), type: p.type as PropertyType };
+    if (p.required === true) def.required = true;
+    if (Array.isArray(p.choices)) {
+      const choices = p.choices.filter((c): c is string => typeof c === "string" && c.trim() !== "").map((c) => c.trim());
+      if (choices.length > 0) def.choices = choices;
+    }
+    if (p.default !== undefined && isValue(p.default)) def.default = p.default;
+    properties.push(def);
+  }
+  return { name: r.name.trim(), geometry: r.geometry as NewLayerGeometry, ...(properties.length > 0 ? { properties } : {}) };
+}
+
+/** *value* as a Python literal: a dict, a list, a text, a number, True, False or None. */
+export function pythonLiteral(value: unknown): string {
+  if (value === null || value === undefined) return "None";
+  if (Array.isArray(value)) return `[${value.map(pythonLiteral).join(", ")}]`;
+  if (typeof value === "object") {
+    return `{${Object.entries(value as Record<string, unknown>).map(([k, v]) => `${widgetLiteral(k, "python")}: ${pythonLiteral(v)}`).join(", ")}}`;
+  }
+  return widgetLiteral(value as any, "python");
+}
+
+/** One edit as a Python dict: op, layer, ids or where, column, value, id, geometry, values, label, enabled. */
 function editLine(edit: FeatureEdit): string {
   const parts = [`"op": ${widgetLiteral(edit.op, "python")}`];
-  if (edit.where !== undefined) parts.push(`"where": ${widgetLiteral(edit.where, "python")}`);
-  else parts.push(`"ids": [${(edit.ids ?? []).map((id) => widgetLiteral(id, "python")).join(", ")}]`);
-  if (WRITE_OPS.includes(edit.op)) {
+  if (edit.layer) parts.push(`"layer": ${widgetLiteral(edit.layer, "python")}`);
+  if (edit.op === "add") {
+    parts.push(`"id": ${widgetLiteral(edit.id as SelectionId, "python")}`, `"geometry": ${pythonLiteral(edit.geometry)}`);
+    if (edit.values && Object.keys(edit.values).length > 0) parts.push(`"values": ${pythonLiteral(edit.values)}`);
+  } else if (edit.op === "add_column") {
     parts.push(`"column": ${widgetLiteral(edit.column ?? "", "python")}`, `"value": ${widgetLiteral(edit.value ?? null, "python")}`);
+  } else {
+    if (edit.where !== undefined) parts.push(`"where": ${widgetLiteral(edit.where, "python")}`);
+    else parts.push(`"ids": [${(edit.ids ?? []).map((id) => widgetLiteral(id, "python")).join(", ")}]`);
+    if (WRITE_OPS.includes(edit.op)) {
+      parts.push(`"column": ${widgetLiteral(edit.column ?? "", "python")}`, `"value": ${widgetLiteral(edit.value ?? null, "python")}`);
+    }
+    if (edit.op === "geometry") parts.push(`"geometry": ${pythonLiteral(edit.geometry)}`);
   }
   if (edit.label) parts.push(`"label": ${widgetLiteral(edit.label, "python")}`);
   if (edit.enabled === false) parts.push(`"enabled": False`);
@@ -155,10 +289,26 @@ export function editFeaturesCode(settings: EditFeaturesSettings | undefined): st
   const args = [
     settings?.key ? `key=${widgetLiteral(settings.key, "python")}` : "",
     settings?.layer ? `layer=${widgetLiteral(settings.layer, "python")}` : "",
+    settings?.keys && Object.keys(settings.keys).length > 0 ? `keys=${pythonLiteral(settings.keys)}` : "",
+    settings?.newLayers && settings.newLayers.length > 0 ? `new_layers=${pythonLiteral(settings.newLayers)}` : "",
+    settings?.crs ? `crs=${widgetLiteral(settings.crs, "python")}` : "",
   ].filter(Boolean);
   const tail = args.length > 0 ? `, ${args.join(", ")}` : "";
   if (edits.length === 0) return [...EDIT_CODE_NOTE, `return ${EDIT_HELPER}(input_0, []${tail})`, ""].join("\n");
   return [...EDIT_CODE_NOTE, `return ${EDIT_HELPER}(input_0, [`, ...edits.map(editLine), `]${tail})`, ""].join("\n");
+}
+
+/**
+ * The node's code when it is plugged into an Autark map: its log, which the
+ * map applies to the layers it draws and hands on (`mapLayerEdits`).
+ */
+export function editLogCode(settings: EditFeaturesSettings | undefined): string {
+  return [
+    "# The Autark map this node is plugged into draws its layers, and hands",
+    "# them on, with these edits. Written again when the edits change.",
+    `return {"editFeatures": ${pythonLiteral(settings ?? {})}}`,
+    "",
+  ].join("\n");
 }
 
 /** Whether *node* is an Interaction node (type `curio.builtin/edit-features`). */
@@ -233,20 +383,32 @@ function idList(ids: readonly SelectionId[]): string {
  * One line for *edit*, naming the features by *key* ("on building_id 3") or
  * by its condition ("where height > 100"), after its label when it has one.
  */
-export function describeEdit(edit: FeatureEdit, key: string | undefined): string {
+export function describeEdit(edit: FeatureEdit, key: string | undefined, layerLabel?: string): string {
+  const where = edit.layer ? ` in ${layerLabel ?? edit.layer}` : "";
+  if (edit.op === "add") {
+    const shape = (edit.geometry?.type ?? "feature").replace(/^Multi/, "").replace("LineString", "line").replace("Polygon", "area").toLowerCase();
+    const values = Object.entries(edit.values ?? {}).filter(([, v]) => v !== null && v !== "").map(([c, v]) => `${c} ${String(v)}`);
+    const line = `Add a ${shape}${where} (${String(edit.id)})${values.length > 0 ? `: ${values.join(", ")}` : ""}`;
+    return edit.label ? `${edit.label}: ${line}` : line;
+  }
+  if (edit.op === "add_column") {
+    const line = `Add a property ${edit.column}${where}, ${JSON.stringify(edit.value ?? null)} for every feature`;
+    return edit.label ? `${edit.label}: ${line}` : line;
+  }
   const by = key ? `${key} ` : "";
   const named = edit.where !== undefined ? `where ${edit.where}` : `${by}${idList(edit.ids ?? [])}`;
   const on = edit.where !== undefined ? named : `on ${named}`;
   const value = typeof edit.value === "string" ? edit.value : JSON.stringify(edit.value);
   let line: string;
-  if (edit.op === "remove") line = `Remove ${named}`;
-  else if (edit.op === "restore") line = `Restore ${named}`;
-  else if (edit.op === "scale") line = `Scale ${edit.column} by ${value} ${on}`;
+  if (edit.op === "remove") line = `Remove ${named}${where}`;
+  else if (edit.op === "restore") line = `Restore ${named}${where}`;
+  else if (edit.op === "scale") line = `Scale ${edit.column} by ${value} ${on}${where}`;
   else if (edit.op === "offset") {
     const amount = typeof edit.value === "number" ? edit.value : 0;
-    line = `${amount < 0 ? "Lower" : "Raise"} ${edit.column} by ${Math.abs(amount)} ${on}`;
-  } else if (edit.op === "expr") line = `Compute ${edit.column} as ${value} ${on}`;
-  else line = `Set ${edit.column} to ${value} ${on}`;
+    line = `${amount < 0 ? "Lower" : "Raise"} ${edit.column} by ${Math.abs(amount)} ${on}${where}`;
+  } else if (edit.op === "expr") line = `Compute ${edit.column} as ${value} ${on}${where}`;
+  else if (edit.op === "geometry") line = `Redraw ${named}${where}`;
+  else line = `Set ${edit.column} to ${value} ${on}${where}`;
   return edit.label ? `${edit.label}: ${line}` : line;
 }
 

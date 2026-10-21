@@ -425,7 +425,7 @@ const FlowProvider = ({
         reactFlow,
         start: (targets) => { void serverRun.startRun(targets); },
     });
-    // The Interaction node's Update results: the nodes it names and every node
+    // The Interaction node's Commit edits: the nodes it names and every node
     // below them, as an automatic run takes them, run now through the same
     // start; in the browser where runs stay there.
     const runDownstream = (nodeIds: readonly string[]) => {

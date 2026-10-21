@@ -19,6 +19,10 @@ export interface EditCounts {
   remove: number;
   set: number;
   restore: number;
+  /** Features added, drawn on the node's map. */
+  add?: number;
+  /** Features whose shape was redrawn. */
+  geometry?: number;
 }
 
 /** An id as the sandbox compares it: a number by its value, a text as it is. */
@@ -47,19 +51,42 @@ function written(edit: FeatureEdit, formula: Expr | null, row: Row): ExprValue |
  * refuses it.
  */
 export function applyEdits(rows: readonly Row[], edits: readonly FeatureEdit[], key: string): { state: (Row | null)[]; counts: EditCounts } {
+  // The input's rows, then a null per added one: restoring an added feature
+  // puts back what the input has, which is nothing.
+  const base: (Row | null)[] = [...rows];
   const ids = rows.map((row) => idKey(row?.[key]));
+  const known = new Set(ids.filter((id): id is string => id !== null));
   const state: (Row | null)[] = [...rows];
   const removed = new Set<number>();
   const changed = new Set<number>();
   const restored = new Set<number>();
+  const added = new Set<number>();
+  const redrawn = new Set<number>();
   for (const edit of edits) {
     if (edit.enabled === false) continue;
+    if (edit.op === "add") {
+      const id = idKey(edit.id);
+      if (id === null || known.has(id)) continue;
+      base.push(null);
+      state.push({ ...(edit.values ?? {}), [key]: edit.id });
+      ids.push(id);
+      known.add(id);
+      added.add(state.length - 1);
+      continue;
+    }
+    if (edit.op === "add_column") {
+      const column = edit.column as string;
+      state.forEach((row, i) => {
+        if (row !== null && (row[column] === null || row[column] === undefined)) state[i] = { ...row, [column]: edit.value ?? null };
+      });
+      continue;
+    }
     let targets: number[];
     if (edit.where !== undefined) {
       // A condition reads the features as the edits before left them; a
       // restore reads them as the input has them, removed ones included.
       const condition = parseExpr(edit.where);
-      const source = edit.op === "restore" ? rows : state;
+      const source = edit.op === "restore" ? base : state;
       targets = source.flatMap((row, i) => (row !== null && truthy(evaluate(condition, row)) ? [i] : []));
     } else {
       const wanted = new Set((edit.ids ?? []).map((id: SelectionId) => idKey(id)));
@@ -73,12 +100,16 @@ export function applyEdits(rows: readonly Row[], edits: readonly FeatureEdit[], 
           removed.add(i);
         }
       } else if (edit.op === "restore") {
-        if (state[i] !== rows[i]) {
-          state[i] = rows[i];
-          restored.add(i);
+        if (state[i] !== base[i]) {
+          state[i] = base[i];
+          if (!added.has(i)) restored.add(i);
           removed.delete(i);
           changed.delete(i);
+          redrawn.delete(i);
+          added.delete(i);
         }
+      } else if (edit.op === "geometry") {
+        if (state[i] !== null) redrawn.add(i);
       } else {
         const current = state[i];
         if (current === null) continue;
@@ -89,5 +120,9 @@ export function applyEdits(rows: readonly Row[], edits: readonly FeatureEdit[], 
       }
     }
   }
-  return { state, counts: { remove: removed.size, set: changed.size, restore: restored.size } };
+  // Adds and redraws are counted only when there are any.
+  const counts: EditCounts = { remove: removed.size, set: changed.size, restore: restored.size };
+  if (added.size > 0) counts.add = added.size;
+  if (redrawn.size > 0) counts.geometry = redrawn.size;
+  return { state, counts };
 }

@@ -5,7 +5,7 @@
  * turning them into an edit that is written with the code it makes, and a
  * layer with no column that identifies its features refused. Then its log:
  * the keys, conditions, the picked features' table, entries switched off,
- * deleted or undone, and Update results.
+ * deleted or undone, and Commit edits.
  */
 import React from "react";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
@@ -66,6 +66,17 @@ const ROADS = {
   geojsonObject: { type: "FeatureCollection", features: [feature({ highway: "primary" }), feature({ highway: "primary" })] },
 };
 
+/**
+ * These tests are of the Map view (the Autark map and its tools): open it as
+ * soon as the node shows its views. The Edit view opens first.
+ */
+function openMapView() {
+  void screen
+    .findByTestId("interaction-view-map")
+    .then((tab) => act(() => { fireEvent.click(tab); }))
+    .catch(() => undefined);
+}
+
 function nodeState(output = { code: "", content: "" }): UseNodeStateReturn {
   return { output, setOutput: jest.fn(), code: "", setCode: jest.fn() } as unknown as UseNodeStateReturn;
 }
@@ -84,6 +95,7 @@ function mount(editFeatures: unknown, state = nodeState()) {
       <Host />
     </mockFlowContext.Provider>,
   );
+  openMapView();
   return { ...view, updateDataNode, markNodeStale, state };
 }
 
@@ -228,6 +240,7 @@ describe("the Interaction node", () => {
         <Host />
       </Canvas>,
     );
+    openMapView();
     const log = () => (updateDataNode.mock.calls[updateDataNode.mock.calls.length - 1]?.[1]?.editFeatures?.edits ?? []) as any[];
     return { updateDataNode, markNodeStale, log };
   }
@@ -245,26 +258,42 @@ describe("the Interaction node", () => {
     expect(markNodeStale.mock.calls.map((call) => call[0]).sort()).toEqual([NODE, "model", "rasterize"]);
   });
 
-  test("Update results runs the node and every node after it, and says how many are out of date", async () => {
+  test("Commit edits runs the node and every node after it, at the log's foot, which says the nodes below lack the edits", async () => {
     const runDownstream = jest.fn();
     const status = { [NODE]: "stale", rasterize: "stale", model: "executed" };
     mountLive(KEYED, { ...BELOW, nodeExecStatus: status, runDownstream });
     await screen.findByTestId("autark-map");
+    const foot = screen.getByTestId("interaction-commit");
+    expect(foot).toHaveAttribute("data-commit-state", "stale");
+    expect(foot).toHaveTextContent("The downstream nodes don't have these edits yet.");
     const update = screen.getByTestId("interaction-update");
-    expect(update).toHaveTextContent("Update results (2)");
+    expect(update).toHaveTextContent(/^Commit edits$/);
     expect(update).toBeEnabled();
     fireEvent.click(update);
     expect(runDownstream).toHaveBeenCalledWith([NODE]);
   });
 
-  test("Update results is offered only with nodes after the node, and waits while a run goes", async () => {
+  test("with edits and nothing below out of date, the log's foot says the edits are committed", async () => {
+    const status = { [NODE]: "executed", rasterize: "executed", model: "executed" };
+    mountLive(KEYED, { ...BELOW, nodeExecStatus: status, runDownstream: jest.fn() });
+    await screen.findByTestId("autark-map");
+    expect(screen.queryByTestId("interaction-commit")).toBeNull();
+    pick([2]);
+    fireEvent.click(screen.getByTestId("edit-features-remove"));
+    const foot = await screen.findByTestId("interaction-commit");
+    expect(foot).toHaveAttribute("data-commit-state", "done");
+    expect(foot).toHaveTextContent("✓ Edits committed");
+    expect(screen.queryByTestId("interaction-update")).toBeNull();
+  });
+
+  test("Commit edits is offered only with nodes after the node, and waits while a run goes", async () => {
     mountLive(KEYED, { runDownstream: jest.fn() });
     await screen.findByTestId("autark-map");
-    expect(screen.queryByTestId("interaction-update")).toBeNull();
+    expect(screen.queryByTestId("interaction-commit")).toBeNull();
     cleanup();
     mountLive(KEYED, { ...BELOW, isRunActive: true });
     await screen.findByTestId("autark-map");
-    expect(screen.getByTestId("interaction-update")).toHaveTextContent(/^Update results$/);
+    expect(screen.getByTestId("interaction-update")).toHaveTextContent(/^Running…$/);
     expect(screen.getByTestId("interaction-update")).toBeDisabled();
     cleanup();
     mountLive(KEYED, { ...BELOW, serverRunActive: true });

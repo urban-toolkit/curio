@@ -12,18 +12,23 @@
  * takes); a run then applies the new log, in the browser or on the server,
  * as any Python node's code runs, and Update results in the body starts one.
  */
-import React, { useMemo, useRef } from "react";
+import React, { useEffect, useMemo, useRef } from "react";
 import type { NodeBehaviorHook } from "../../registry/types";
 import { useFlowContext } from "../../providers/FlowProvider";
 import { autoRunTargets } from "../../providers/flow/useAutoRun";
 import { EditFeaturesBody } from "../../components/editFeatures/EditFeaturesBody";
-import { editFeaturesCode, normalizeEditFeatures, type EditFeaturesSettings } from "../../utils/editFeatures/editFeatures";
+import { editFeaturesCode, editLogCode, normalizeEditFeatures, type EditFeaturesSettings } from "../../utils/editFeatures/editFeatures";
+import { mapFedBy } from "../../utils/editFeatures/mapLayerEdits";
 import { failureLine } from "./compareScenariosBehavior";
 
 export const useEditFeaturesBehavior: NodeBehaviorHook = (data, nodeState) => {
   const flow = useFlowContext() as any;
   // Nothing is written where nobody can save it: the dashboard, a shared view.
   const writable = !flow?.dashboardOn && flow?.viewerMode !== "shared";
+  // Plugged into an Autark map, the node is the map's panel: its code hands
+  // on its log, which the map applies (utils/editFeatures/mapLayerEdits).
+  const mapId = mapFedBy(data.nodeId, flow?.nodes ?? [], flow?.edges ?? []);
+  const codeFor = (settings: EditFeaturesSettings | undefined) => (mapId ? editLogCode(settings) : editFeaturesCode(settings));
 
   // The latest writer, so the body (made once per outcome) always writes
   // through the current flow and node state.
@@ -33,7 +38,7 @@ export const useEditFeaturesBehavior: NodeBehaviorHook = (data, nodeState) => {
     const live = (flow?.nodes ?? []).find((n: any) => n.id === data.nodeId)?.data;
     if (!live) return;
     const settings = normalizeEditFeatures(next);
-    const code = editFeaturesCode(settings);
+    const code = codeFor(settings);
     // The play reads the node's code from here, before its editor floats it.
     nodeState.setCode(code);
     flow.updateDataNode?.(data.nodeId, { ...live, editFeatures: settings, defaultCode: code, code });
@@ -46,6 +51,21 @@ export const useEditFeaturesBehavior: NodeBehaviorHook = (data, nodeState) => {
     }
   };
 
+  // Plugged into a map or taken off one, the code says so.
+  useEffect(() => {
+    if (!writable) return;
+    const live = (flow?.nodes ?? []).find((n: any) => n.id === data.nodeId)?.data;
+    if (!live) return;
+    // Only a code of the other kind is written again: the log's own changes
+    // write theirs.
+    const current = String(live.code || live.defaultCode || "");
+    if (current === "" || current.includes("curio_edit_features(") === !mapId) return;
+    const code = codeFor(normalizeEditFeatures(live.editFeatures));
+    nodeState.setCode(code);
+    flow.updateDataNode?.(data.nodeId, { ...live, defaultCode: code, code });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mapId]);
+
   // NodeEditor opens the Output tab whenever the body's identity changes, so
   // it changes with the node's outcome and nothing else.
   const output = nodeState.output;
@@ -56,12 +76,12 @@ export const useEditFeaturesBehavior: NodeBehaviorHook = (data, nodeState) => {
   const contentComponent = useMemo(
     () => <EditFeaturesBody nodeId={data.nodeId} runError={runError} onChange={(next) => write.current(next)} />,
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [data.nodeId, outcome],
+    [data.nodeId, outcome, mapId],
   );
   // A node just dropped has no code yet; it gets the code of an empty list.
   const fresh = typeof data.defaultCode !== "string" || data.defaultCode === "";
   return {
     contentComponent,
-    ...(fresh ? { defaultValueOverride: editFeaturesCode(undefined) } : {}),
+    ...(fresh ? { defaultValueOverride: codeFor(undefined) } : {}),
   };
 };

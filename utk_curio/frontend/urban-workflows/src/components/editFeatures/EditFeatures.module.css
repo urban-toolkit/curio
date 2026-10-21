@@ -194,6 +194,881 @@
 }
 
 /* Update results while results below the node are out of date. */
-.update {
+/* The foot of the edit log: whether the nodes below have the edits, and
+   Commit edits to run them with them. */
+.commit {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 2px;
+  padding: 10px 12px;
+  border: 1px solid #e3e6eb;
+  border-radius: 8px;
+  background: #f6f8fa;
+}
+
+.commitStale {
+  border-color: #e6b800;
+  background: #fff8e5;
+}
+
+.commitText {
+  font-size: 13px;
+  line-height: 18px;
+  color: #5c4400;
+}
+
+.commitButton {
+  width: 100%;
+  min-height: 36px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 8px;
+  background: #1f6feb;
+  color: #ffffff;
+  font-family: inherit;
+  font-size: 14px;
   font-weight: 600;
+  cursor: pointer;
+}
+
+.commitButton:hover:not(:disabled) {
+  background: #1a5fd0;
+}
+
+.commitButton:focus-visible {
+  outline: 2px solid #1f6feb;
+  outline-offset: 2px;
+}
+
+.commitButton:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.commitDone {
+  font-size: 13px;
+  font-weight: 600;
+  color: #1d7a3a;
+}
+
+/* The layer workbench, as the Interaction Node Flow mockups draw it: the
+   layers as cards by geometry, a 2x2 choice of what to do, and the forms an
+   action asks to fill in, with the map doing the drawing. */
+.workbench {
+  --wb-ink: #15171c;
+  --wb-ink-2: #3d4654;
+  --wb-ink-3: #5b616e;
+  --wb-line: #c9cdd6;
+  --wb-line-2: #e3e6eb;
+  --wb-blue: #1f6feb;
+  --wb-blue-bg: #eef4fe;
+  --wb-red: #b42318;
+  --wb-mono: var(--curio-font-mono, "IBM Plex Mono", ui-monospace, monospace);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 6px 4px;
+  color: var(--wb-ink);
+  font-size: 13px;
+}
+
+.connected {
+  font-size: 12px;
+  color: #1d7a3a;
+}
+
+.lead {
+  font-size: 14px;
+  line-height: 20px;
+  color: var(--wb-ink);
+}
+
+.hint {
+  font-size: 12px;
+  line-height: 17px;
+  color: var(--wb-ink-2);
+}
+
+.back {
+  align-self: flex-start;
+  padding: 0;
+  border: 0;
+  background: none;
+  font-family: inherit;
+  font-size: 13px;
+  color: var(--wb-blue);
+  cursor: pointer;
+}
+
+.title {
+  font-size: 17px;
+  font-weight: 600;
+}
+
+.titleRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.titleRow.spread {
+  justify-content: space-between;
+  align-items: baseline;
+}
+
+.mono {
+  font-family: var(--wb-mono);
+  font-size: 11px;
+  color: var(--wb-ink-2);
+}
+
+.group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.groupLabel {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--wb-ink-3);
+}
+
+.layerCard {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px 14px;
+  text-align: left;
+  font-family: inherit;
+  color: var(--wb-ink);
+  border: 1px solid var(--wb-line-2);
+  border-radius: 10px;
+  background: #ffffff;
+  cursor: pointer;
+}
+
+.layerCard:hover,
+.layerCard.on {
+  border: 1.5px solid var(--wb-blue);
+  background: var(--wb-blue-bg);
+}
+
+.layerCard .top {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+}
+
+.layerCard b {
+  font-size: 14px;
+}
+
+.props {
+  font-size: 12px;
+  color: var(--wb-ink-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.footer {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding-top: 8px;
+  border-top: 1px solid #eceef2;
+}
+
+.dashedButton {
+  min-height: 40px;
+  padding: 0 14px;
+  border: 1px dashed var(--wb-ink-2);
+  border-radius: 10px;
+  background: #ffffff;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--wb-ink);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.actionGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.actionCard {
+  min-height: 96px;
+  box-sizing: border-box;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  text-align: left;
+  font-family: inherit;
+  color: var(--wb-ink);
+  border: 1px solid var(--wb-line);
+  border-radius: 12px;
+  background: #ffffff;
+  cursor: pointer;
+}
+
+.actionCard:hover {
+  border: 1.5px solid var(--wb-blue);
+  background: var(--wb-blue-bg);
+}
+
+.actionCard b {
+  font-size: 15px;
+}
+
+.actionCard span {
+  font-size: 12px;
+  line-height: 17px;
+  color: var(--wb-ink-2);
+}
+
+.actionCard:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--wb-line-2);
+  border-radius: 10px;
+}
+
+.sectionHead {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.sectionHead b {
+  font-size: 14px;
+}
+
+.changed {
+  font-size: 11px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: #fff4e5;
+  color: #8a4b00;
+}
+
+.formField {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  font-size: 13px;
+  color: var(--wb-ink);
+}
+
+.fieldHint {
+  font-family: var(--wb-mono);
+  font-size: 11px;
+  color: var(--wb-ink-3);
+}
+
+.required {
+  color: #a61b1b;
+}
+
+.formField .input,
+.formField select,
+.ruleRow select,
+.ruleRow .input,
+.grid .input,
+.grid select {
+  max-width: none;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 8px 10px;
+  font-family: inherit;
+  font-size: 14px;
+  border: 1px solid var(--wb-line);
+  border-radius: 8px;
+  background: #ffffff;
+  color: var(--wb-ink);
+}
+
+.formField .input:focus,
+.formField select:focus {
+  outline: none;
+  border: 1.5px solid var(--wb-blue);
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: 96px minmax(0, 1fr);
+  gap: 8px 10px;
+  align-items: center;
+  font-size: 13px;
+}
+
+.grid label {
+  color: var(--wb-ink-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.grid .input,
+.grid select {
+  padding: 6px 8px;
+  font-size: 13px;
+  border-radius: 6px;
+}
+
+.grid .dirty {
+  border: 1.5px solid #e69a1f;
+  background: #fff9ef;
+}
+
+.was {
+  font-size: 12px;
+  color: var(--wb-ink-3);
+}
+
+.choiceRow {
+  display: flex;
+  gap: 6px;
+}
+
+.segmented {
+  display: flex;
+  border: 1px solid var(--wb-line, #c9cdd6);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.segmented button {
+  flex: 1;
+  min-height: 36px;
+  padding: 0 10px;
+  border: 0;
+  font-family: inherit;
+  font-size: 13px;
+  background: #ffffff;
+  color: var(--wb-ink, #15171c);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+.segmented button.on {
+  background: var(--wb-ink, #15171c);
+  color: #ffffff;
+}
+
+/* On/off switches for the ways of changing a picked feature's shape. */
+.switches {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.switch {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 40px;
+  padding: 0 12px;
+  border: 1px solid var(--wb-line, #c9cdd6);
+  border-radius: 10px;
+  background: #ffffff;
+  color: var(--wb-ink, #15171c);
+  font-family: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 160ms ease, background-color 160ms ease;
+}
+
+.switch:hover {
+  border-color: #1f6feb;
+}
+
+.switch:focus-visible {
+  outline: 2px solid #1f6feb;
+  outline-offset: 2px;
+}
+
+.switchOn {
+  border-color: #1f6feb;
+  background: #eef4ff;
+}
+
+.switchIcon {
+  flex: none;
+  color: #57606a;
+}
+
+.switchOn .switchIcon {
+  color: #1f6feb;
+}
+
+.switchLabel {
+  flex: 1;
+}
+
+.switchTrack {
+  position: relative;
+  flex: none;
+  width: 34px;
+  height: 20px;
+  border-radius: 999px;
+  background: #c9cdd6;
+  transition: background-color 160ms ease;
+}
+
+.switchKnob {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #ffffff;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+  transition: transform 160ms ease;
+}
+
+.switchOn .switchTrack {
+  background: #1f6feb;
+}
+
+.switchOn .switchKnob {
+  transform: translateX(14px);
+}
+
+.switchState {
+  flex: none;
+  width: 22px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #57606a;
+}
+
+.switchOn .switchState {
+  color: #1f6feb;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .switch,
+  .switchTrack,
+  .switchKnob {
+    transition: none;
+  }
+}
+
+.formButtons {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  padding-top: 4px;
+}
+
+.big {
+  flex: 1;
+  min-height: 44px;
+  padding: 0 16px;
+  border-radius: 10px;
+  border: 1px solid var(--wb-line);
+  background: #ffffff;
+  font-family: inherit;
+  font-size: 14px;
+  color: var(--wb-ink);
+  cursor: pointer;
+}
+
+.big.secondary {
+  flex: 0 0 auto;
+}
+
+.big.primary {
+  border: 0;
+  background: var(--wb-blue);
+  color: #ffffff;
+  font-weight: 600;
+}
+
+.big.danger {
+  border: 0;
+  background: var(--wb-red);
+  color: #ffffff;
+  font-weight: 600;
+}
+
+.big:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+.small {
+  min-height: 30px;
+  padding: 0 10px;
+  border-radius: 6px;
+  border: 1px solid var(--wb-line);
+  background: #ffffff;
+  font-family: inherit;
+  font-size: 12px;
+  color: var(--wb-ink);
+  cursor: pointer;
+}
+
+.small.dashed {
+  align-self: flex-start;
+  border-style: dashed;
+  border-color: var(--wb-ink-2);
+}
+
+.ruleRow {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1.2fr) minmax(0, 1fr) minmax(0, 1.2fr) 22px;
+  gap: 6px;
+  align-items: center;
+}
+
+.ruleRow select,
+.ruleRow .input {
+  padding: 6px;
+  font-size: 12px;
+  border-radius: 6px;
+}
+
+.ruleRow .first {
+  font-family: var(--wb-mono);
+}
+
+.matchCount {
+  font-size: 13px;
+}
+
+.badge {
+  font-size: 11px;
+  padding: 0 5px;
+  border-radius: 4px;
+  background: #f2eef7;
+  color: #5a3e80;
+}
+
+.kind {
+  font-size: 12px;
+  color: var(--wb-ink-3, #5b616e);
+}
+
+.primary {
+  background: #1f6feb;
+  border-color: #1f6feb;
+  color: #ffffff;
+}
+
+.danger {
+  background: #b42318;
+  border-color: #b42318;
+  color: #ffffff;
+}
+
+.dashed {
+  align-self: flex-start;
+  border-style: dashed;
+}
+
+.propGrid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr) minmax(0, 1.2fr) 56px 22px;
+  gap: 6px;
+  align-items: center;
+  font-size: 12px;
+}
+
+.propGrid .head {
+  color: var(--wb-ink-3);
+}
+
+.propGrid .input,
+.propGrid select {
+  width: 100%;
+  max-width: none;
+  box-sizing: border-box;
+  padding: 6px;
+  font-family: inherit;
+  font-size: 12px;
+  border: 1px solid var(--wb-line);
+  border-radius: 6px;
+  background: #ffffff;
+}
+
+.viewTabs {
+  display: inline-flex;
+  align-self: flex-start;
+}
+
+/* The edit log, as the mockup's last step lists it: by layer, each edit with
+   a tag for what it does, Undo and Redo in its head. */
+.log {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 4px;
+  padding: 12px 14px;
+  border: 1px solid #e3e6eb;
+  border-radius: 10px;
+  background: #ffffff;
+  color: #15171c;
+  font-size: 13px;
+}
+
+.logHead {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.logHead b {
+  font-size: 14px;
+}
+
+.logCount {
+  min-width: 18px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: #eceef2;
+  color: #3d4654;
+  font-size: 11px;
+  line-height: 18px;
+  text-align: center;
+}
+
+.logSummary {
+  font-size: 12px;
+  color: #5b616e;
+}
+
+.history {
+  display: inline-flex;
+  border: 1px solid #c9cdd6;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.history button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 30px;
+  padding: 0 10px;
+  border: 0;
+  background: #ffffff;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  color: #15171c;
+  cursor: pointer;
+}
+
+.history button + button {
+  border-left: 1px solid #c9cdd6;
+}
+
+.history button:hover:not(:disabled) {
+  background: #eef4fe;
+  color: #1f6feb;
+}
+
+.history button:disabled {
+  color: #a3a9b3;
+  cursor: default;
+}
+
+.logBody {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: 240px;
+  overflow-y: auto;
+  user-select: text;
+}
+
+.logEmpty {
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px dashed #c9cdd6;
+  border-radius: 8px;
+  color: #5b616e;
+  font-size: 12px;
+}
+
+.logGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.logGroup ol {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.logLayer {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.logLayer span {
+  font-weight: 400;
+  color: #5b616e;
+}
+
+.logRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 8px 7px 10px;
+  border-radius: 8px;
+  background: #f4f5f7;
+}
+
+.logOff {
+  opacity: 0.6;
+}
+
+.logText {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  line-height: 17px;
+  overflow-wrap: anywhere;
+}
+
+.opTag {
+  flex: 0 0 auto;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-family: var(--curio-font-mono, "IBM Plex Mono", ui-monospace, monospace);
+  font-size: 11px;
+  background: #e3e9f6;
+  color: #1a4fa0;
+}
+
+.op_add { background: #e2f2e6; color: #1c6e37; }
+.op_remove { background: #fbe4e4; color: #a61b1b; }
+.op_restore { background: #eceef2; color: #3d4654; }
+.op_shape { background: #fff4e5; color: #8a4b00; }
+.op_property { background: #f2eef7; color: #5a3e80; }
+
+.logSwitch {
+  flex: 0 0 auto;
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: #1f6feb;
+  cursor: pointer;
+}
+
+.logDelete {
+  flex: 0 0 auto;
+  width: 24px;
+  height: 24px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #5b616e;
+  font-size: 16px;
+  line-height: 24px;
+  cursor: pointer;
+}
+
+.logDelete:hover {
+  background: #fbe4e4;
+  color: #a61b1b;
+}
+
+/* Show only this layer: a small switch beside the layer's name. */
+.backRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.soloSwitch {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: #3d4654;
+  cursor: pointer;
+  white-space: nowrap;
+  user-select: none;
+}
+
+.soloSwitch input {
+  position: absolute;
+  opacity: 0;
+  width: 1px;
+  height: 1px;
+}
+
+.track {
+  position: relative;
+  width: 30px;
+  height: 18px;
+  border-radius: 999px;
+  background: #c9cdd6;
+  transition: background 120ms ease;
+}
+
+.track::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #ffffff;
+  box-shadow: 0 1px 2px rgba(21, 23, 28, 0.25);
+  transition: transform 120ms ease;
+}
+
+.soloSwitch input:checked + .track {
+  background: #1f6feb;
+}
+
+.soloSwitch input:checked + .track::after {
+  transform: translateX(12px);
+}
+
+.soloSwitch input:focus-visible + .track {
+  outline: 2px solid #1f6feb;
+  outline-offset: 2px;
 }

@@ -1,0 +1,325 @@
+{
+  "dataflow": {
+    "categories": {
+      "complexity": [
+        "Beginner"
+      ],
+      "city": [
+        "Chicago"
+      ]
+    },
+    "nodes": [
+      {
+        "id": "325ead6a-2db7-5b94-a469-1579b2dfbc0f",
+        "type": "curio.builtin/data-loading",
+        "x": 0,
+        "y": 0,
+        "content": "# The census tracts that meet the area, with CDC/ATSDR's Social Vulnerability\n# Index 2020: RPL_THEMES is the overall percentile, 0 least and 1 most\n# vulnerable; CDC writes -999 where it has no value.\nframe = curio_load_data(\"data.curio.chicago-loop-layers\", part=\"tracts.geojson\")\nfor column in [c for c in frame.columns if c.startswith((\"RPL_\", \"E_\"))]:\n    frame[column] = frame[column].where(frame[column] != -999)\n# Tell the Autark map what kind of layer this is, so it draws it as one.\nframe.metadata = {\"layerType\": \"polygons\"}\nreturn frame\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Load the census tracts that meet downtown Chicago, with CDC/ATSDR's Social Vulnerability Index 2020.",
+        "metadata": {
+          "keywords": [],
+          "packageTemplateLabel": "Census tracts (SVI)"
+        },
+        "title": "Census tracts (SVI)"
+      },
+      {
+        "id": "52c3c643-bcb4-53dd-ad39-d894e303c1b6",
+        "type": "curio.builtin/data-loading",
+        "x": 0,
+        "y": 150,
+        "content": "# Overture Maps' buildings. Autark extrudes a buildings layer by its height\n# column, in metres: Overture's height, else 3.5 m a floor, else 10 m.\nframe = curio_load_data(\"data.curio.chicago-loop-layers\", part=\"buildings.parquet\")\nframe = frame[~frame[\"is_underground\"].fillna(False).astype(bool)]\nheight = frame[\"height\"].fillna(frame[\"num_floors\"] * 3.5).fillna(10.0)\nframe = frame.assign(height=height)[[\"id\", \"height\", \"num_floors\", \"class\", \"geometry\"]]\nframe = frame.reset_index(drop=True)\n# Tell the Autark map what kind of layer this is, so it draws it as one.\nframe.metadata = {\"layerType\": \"buildings\"}\nreturn frame\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Load Overture Maps' buildings of downtown Chicago, with a height for every one.",
+        "metadata": {
+          "keywords": [],
+          "packageTemplateLabel": "Buildings"
+        },
+        "title": "Buildings"
+      },
+      {
+        "id": "3d26ff50-eabe-58d7-969b-de4d0c78cee8",
+        "type": "curio.builtin/data-loading",
+        "x": 0,
+        "y": 300,
+        "content": "# OpenStreetMap's parks, playgrounds and other green space.\nframe = curio_load_data(\"data.curio.chicago-loop-layers\", part=\"parks.geojson\")\n# Tell the Autark map what kind of layer this is, so it draws it as one.\nframe.metadata = {\"layerType\": \"parks\"}\nreturn frame\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Load OpenStreetMap's parks of downtown Chicago.",
+        "metadata": {
+          "keywords": [],
+          "packageTemplateLabel": "Parks"
+        },
+        "title": "Parks"
+      },
+      {
+        "id": "76611008-66d1-53b4-9973-1979609326be",
+        "type": "curio.builtin/data-loading",
+        "x": 0,
+        "y": 450,
+        "content": "# OpenStreetMap's water: the Chicago River and the lake's edge.\nframe = curio_load_data(\"data.curio.chicago-loop-layers\", part=\"water.geojson\")\n# Tell the Autark map what kind of layer this is, so it draws it as one.\nframe.metadata = {\"layerType\": \"water\"}\nreturn frame\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Load OpenStreetMap's water of downtown Chicago.",
+        "metadata": {
+          "keywords": [],
+          "packageTemplateLabel": "Water"
+        },
+        "title": "Water"
+      },
+      {
+        "id": "08694c5b-898a-528e-ac4e-da0223467d98",
+        "type": "curio.builtin/data-loading",
+        "x": 0,
+        "y": 600,
+        "content": "# OpenStreetMap's roads, with their highway class, oneway, maxspeed and name.\nframe = curio_load_data(\"data.curio.chicago-loop-layers\", part=\"roads.parquet\")\n# Tell the Autark map what kind of layer this is, so it draws it as one.\nframe.metadata = {\"layerType\": \"roads\"}\nreturn frame\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Load OpenStreetMap's roads of downtown Chicago.",
+        "metadata": {
+          "keywords": [],
+          "packageTemplateLabel": "Roads"
+        },
+        "title": "Roads"
+      },
+      {
+        "id": "b415b0dd-c3c8-545d-a083-7dc19100523e",
+        "type": "curio.builtin/data-loading",
+        "x": 0,
+        "y": 750,
+        "content": "# The CTA 'L' rail lines, from the City of Chicago data portal; legend is\n# the line's code (RD Red, BL Blue, ML the Loop's shared track, ...).\nframe = curio_load_data(\"data.curio.chicago-loop-layers\", part=\"cta_lines.geojson\")\n# Tell the Autark map what kind of layer this is, so it draws it as one.\nframe.metadata = {\"layerType\": \"polylines\"}\nreturn frame\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Load the CTA 'L' rail lines of downtown Chicago.",
+        "metadata": {
+          "keywords": [],
+          "packageTemplateLabel": "CTA 'L' lines"
+        },
+        "title": "CTA 'L' lines"
+      },
+      {
+        "id": "c33ed857-13e0-5f82-80d7-9506adea2caa",
+        "type": "curio.builtin/data-loading",
+        "x": 0,
+        "y": 900,
+        "content": "# OpenStreetMap's mapped trees (natural=tree), as points.\nframe = curio_load_data(\"data.curio.chicago-loop-layers\", part=\"trees.geojson\")\n# Tell the Autark map what kind of layer this is, so it draws it as one.\nframe.metadata = {\"layerType\": \"points\"}\nreturn frame\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Load OpenStreetMap's mapped trees of downtown Chicago.",
+        "metadata": {
+          "keywords": [],
+          "packageTemplateLabel": "Trees"
+        },
+        "title": "Trees"
+      },
+      {
+        "id": "366f5b19-04d2-5ef5-981a-73ac2368b4a4",
+        "type": "curio.builtin/data-loading",
+        "x": 0,
+        "y": 1050,
+        "content": "# The CTA 'L' stations; ada is whether the station is accessible.\nframe = curio_load_data(\"data.curio.chicago-loop-layers\", part=\"cta_stations.geojson\")\nframe[\"ada\"] = frame[\"ada\"].map({True: \"accessible\", False: \"not accessible\"}).fillna(\"unknown\")\n# Tell the Autark map what kind of layer this is, so it draws it as one.\nframe.metadata = {\"layerType\": \"points\"}\nreturn frame\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Load the CTA 'L' stations of downtown Chicago, accessible or not.",
+        "metadata": {
+          "keywords": [],
+          "packageTemplateLabel": "CTA 'L' stations"
+        },
+        "title": "CTA 'L' stations"
+      },
+      {
+        "id": "ed285c2b-d0ca-5e9b-beb9-76cd672277f5",
+        "type": "curio.builtin/data-loading",
+        "x": 0,
+        "y": 1200,
+        "content": "# The Chicago Park District's beach sensors in the area, each with its reading\n# at noon on 2025-07-06: the Oak Street weather station (air_temperature in\n# degrees C, humidity, wind) and the Ohio Street Beach water sensor.\nframe = curio_load_data(\"data.curio.chicago-loop-layers\", part=\"beach_sensors.geojson\")\n# Tell the Autark map what kind of layer this is, so it draws it as one.\nframe.metadata = {\"layerType\": \"points\"}\nreturn frame\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Load the Chicago Park District's beach sensors in downtown Chicago with their noon reading on 2025-07-06.",
+        "metadata": {
+          "keywords": [],
+          "packageTemplateLabel": "Beach weather sensors"
+        },
+        "title": "Beach weather sensors"
+      },
+      {
+        "id": "d19155be-15b0-58c8-881a-b64570af5ca2",
+        "type": "curio.builtin/computation-analysis",
+        "x": 0,
+        "y": 1400,
+        "content": "# The air temperature at 2 m of SCOUT's WRF forecast at noon in Chicago on\n# 2025-07-06 (17:00 UTC; the file's hours are UTC from 00:00), in degrees C, on a\n# regular longitude-latitude grid over the map's area: WRF's own grid is curved,\n# so each cell takes the nearest WRF point.\nimport numpy as np\nimport rasterio\nfrom rasterio.transform import from_bounds\nfrom scipy.spatial import cKDTree\n\nHOUR_UTC = 17\nWEST, SOUTH, EAST, NORTH = -87.662, 41.859, -87.605, 41.906\nCELL = 0.002\n\nwrf = curio_load_data(\"data.scout.chicago-weather-2025-07-06\", part=\"T2.nc\")\nlat = wrf[\"XLAT\"].isel(Time=HOUR_UTC).values.ravel()\nlon = wrf[\"XLONG\"].isel(Time=HOUR_UTC).values.ravel()\ncelsius = wrf[\"T2\"].isel(Time=HOUR_UTC).values.ravel() - 273.15\n\nwidth, height = int(round((EAST - WEST) / CELL)), int(round((NORTH - SOUTH) / CELL))\nxs = WEST + (np.arange(width) + 0.5) * CELL\nys = NORTH - (np.arange(height) + 0.5) * CELL\ngrid_lon, grid_lat = np.meshgrid(xs, ys)\n_, nearest = cKDTree(np.column_stack([lon, lat])).query(np.column_stack([grid_lon.ravel(), grid_lat.ravel()]))\ncells = celsius[nearest].reshape(height, width).astype(\"float32\")\n\npath = curio_output_file(\"wrf_t2_noon_2025-07-06.tif\")\nprofile = {\"driver\": \"GTiff\", \"width\": width, \"height\": height, \"count\": 1, \"dtype\": \"float32\",\n           \"crs\": \"EPSG:4326\", \"transform\": from_bounds(WEST, SOUTH, EAST, NORTH, width, height)}\nwith rasterio.open(path, \"w\", **profile) as out:\n    out.write(cells, 1)\nreturn rasterio.open(path)\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Map SCOUT's WRF forecast of the air temperature at noon on 2025-07-06 over downtown Chicago, as a raster.",
+        "metadata": {
+          "keywords": [],
+          "packageTemplateLabel": "Air temperature at noon (WRF)"
+        },
+        "title": "Air temperature at noon (WRF)"
+      },
+      {
+        "id": "fd8577d7-c3c2-5ac7-a443-2e74cda5bd32",
+        "type": "curio.builtin/autk-grammar",
+        "x": 560,
+        "y": 200,
+        "content": "{\n  \"map\": {\n    \"layerRefs\": [\n      {\n        \"dataRef\": \"[!! input_0 !!]\",\n        \"isColorMap\": true,\n        \"getFnv\": \"RPL_THEMES\",\n        \"getFnvType\": \"quantitative\",\n        \"colorMapInterpolator\": \"interpolateOrRd\",\n        \"colorMapRange\": [\n          0,\n          1\n        ],\n        \"legendTitle\": \"Social vulnerability (SVI percentile)\",\n        \"opacity\": 0.55,\n        \"isPick\": true\n      },\n      {\n        \"dataRef\": \"[!! input_3 !!]\"\n      },\n      {\n        \"dataRef\": \"[!! input_2 !!]\"\n      },\n      {\n        \"dataRef\": \"[!! input_4 !!]\"\n      },\n      {\n        \"dataRef\": \"[!! input_5 !!]\",\n        \"isColorMap\": true,\n        \"getFnv\": \"legend\",\n        \"getFnvType\": \"categorical\",\n        \"colorMapInterpolator\": \"schemeTableau10\",\n        \"legendTitle\": \"CTA 'L' line\"\n      },\n      {\n        \"dataRef\": \"[!! input_1 !!]\",\n        \"isColorMap\": true,\n        \"getFnv\": \"height\",\n        \"getFnvType\": \"quantitative\",\n        \"colorMapInterpolator\": \"interpolateViridis\",\n        \"colorMapRange\": [\n          0,\n          250\n        ],\n        \"legendTitle\": \"Building height (m)\",\n        \"isPick\": true\n      },\n      {\n        \"dataRef\": \"[!! input_6 !!]\"\n      },\n      {\n        \"dataRef\": \"[!! input_7 !!]\",\n        \"isColorMap\": true,\n        \"getFnv\": \"ada\",\n        \"getFnvType\": \"categorical\",\n        \"colorMapInterpolator\": \"schemeSet1\",\n        \"legendTitle\": \"CTA station\",\n        \"isPick\": true\n      },\n      {\n        \"dataRef\": \"[!! input_8 !!]\",\n        \"isColorMap\": true,\n        \"getFnv\": \"sensor_type\",\n        \"getFnvType\": \"categorical\",\n        \"colorMapInterpolator\": \"schemeDark2\",\n        \"legendTitle\": \"Beach sensor\",\n        \"isPick\": true\n      }\n    ]\n  }\n}",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Draw every layer on one map: tracts by social vulnerability, buildings by height, parks, water, roads, the 'L', trees, stations and the beach sensors.",
+        "metadata": {
+          "keywords": [],
+          "packageTemplateLabel": "Downtown Chicago layers"
+        },
+        "title": "Downtown Chicago layers",
+        "width": 960,
+        "height": 720
+      },
+      {
+        "id": "17a4cf8a-d932-569b-93c9-fdc908fb886f",
+        "type": "curio.builtin/autk-grammar",
+        "x": 560,
+        "y": 1250,
+        "content": "{\n  \"map\": {\n    \"layerRefs\": [\n      {\n        \"dataRef\": \"[!! input_0 !!]\",\n        \"isColorMap\": true,\n        \"getFnv\": \"band_1\",\n        \"getFnvType\": \"quantitative\",\n        \"colorMapInterpolator\": \"interpolateTurbo\",\n        \"colorMapRange\": [\n          17,\n          29\n        ],\n        \"legendTitle\": \"Air temperature at noon, WRF (\\u00b0C)\"\n      },\n      {\n        \"dataRef\": \"[!! input_1 !!]\",\n        \"isColorMap\": true,\n        \"getFnv\": \"air_temperature\",\n        \"getFnvType\": \"quantitative\",\n        \"colorMapInterpolator\": \"interpolateTurbo\",\n        \"colorMapRange\": [\n          17,\n          29\n        ],\n        \"legendTitle\": \"Measured at noon (\\u00b0C)\",\n        \"isPick\": true\n      }\n    ]\n  }\n}",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Draw the WRF air temperature at noon with the beach sensors over it, in the same colors, to compare the station's reading with the model.",
+        "metadata": {
+          "keywords": [],
+          "packageTemplateLabel": "Air temperature at noon"
+        },
+        "title": "Air temperature at noon",
+        "width": 960,
+        "height": 720
+      },
+      {
+        "id": "c0d365b7-3069-5052-91ef-fb1574a3377f",
+        "type": "curio.builtin/edit-features",
+        "x": 1600,
+        "y": 200,
+        "content": "# The Autark map this node is plugged into draws its layers, and hands\n# them on, with these edits. Written again when the edits change.\nreturn {\"editFeatures\": {}}\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Read the map's layers, by the geometry of their features, and add, reshape, move, change or remove their features on the map, add properties, or make a new layer.",
+        "metadata": {
+          "keywords": [],
+          "packageTemplateLabel": "Edit the map's layers"
+        },
+        "title": "Edit the map's layers",
+        "width": 560,
+        "height": 900
+      }
+    ],
+    "edges": [
+      {
+        "id": "reactflow__edge-325ead6a-2db7-5b94-a469-1579b2dfbc0fout-fd8577d7-c3c2-5ac7-a443-2e74cda5bd32in",
+        "source": "325ead6a-2db7-5b94-a469-1579b2dfbc0f",
+        "target": "fd8577d7-c3c2-5ac7-a443-2e74cda5bd32",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-52c3c643-bcb4-53dd-ad39-d894e303c1b6out-fd8577d7-c3c2-5ac7-a443-2e74cda5bd32in_1",
+        "source": "52c3c643-bcb4-53dd-ad39-d894e303c1b6",
+        "target": "fd8577d7-c3c2-5ac7-a443-2e74cda5bd32",
+        "sourceHandle": "out",
+        "targetHandle": "in_1"
+      },
+      {
+        "id": "reactflow__edge-3d26ff50-eabe-58d7-969b-de4d0c78cee8out-fd8577d7-c3c2-5ac7-a443-2e74cda5bd32in_2",
+        "source": "3d26ff50-eabe-58d7-969b-de4d0c78cee8",
+        "target": "fd8577d7-c3c2-5ac7-a443-2e74cda5bd32",
+        "sourceHandle": "out",
+        "targetHandle": "in_2"
+      },
+      {
+        "id": "reactflow__edge-76611008-66d1-53b4-9973-1979609326beout-fd8577d7-c3c2-5ac7-a443-2e74cda5bd32in_3",
+        "source": "76611008-66d1-53b4-9973-1979609326be",
+        "target": "fd8577d7-c3c2-5ac7-a443-2e74cda5bd32",
+        "sourceHandle": "out",
+        "targetHandle": "in_3"
+      },
+      {
+        "id": "reactflow__edge-08694c5b-898a-528e-ac4e-da0223467d98out-fd8577d7-c3c2-5ac7-a443-2e74cda5bd32in_4",
+        "source": "08694c5b-898a-528e-ac4e-da0223467d98",
+        "target": "fd8577d7-c3c2-5ac7-a443-2e74cda5bd32",
+        "sourceHandle": "out",
+        "targetHandle": "in_4"
+      },
+      {
+        "id": "reactflow__edge-b415b0dd-c3c8-545d-a083-7dc19100523eout-fd8577d7-c3c2-5ac7-a443-2e74cda5bd32in_5",
+        "source": "b415b0dd-c3c8-545d-a083-7dc19100523e",
+        "target": "fd8577d7-c3c2-5ac7-a443-2e74cda5bd32",
+        "sourceHandle": "out",
+        "targetHandle": "in_5"
+      },
+      {
+        "id": "reactflow__edge-c33ed857-13e0-5f82-80d7-9506adea2caaout-fd8577d7-c3c2-5ac7-a443-2e74cda5bd32in_6",
+        "source": "c33ed857-13e0-5f82-80d7-9506adea2caa",
+        "target": "fd8577d7-c3c2-5ac7-a443-2e74cda5bd32",
+        "sourceHandle": "out",
+        "targetHandle": "in_6"
+      },
+      {
+        "id": "reactflow__edge-366f5b19-04d2-5ef5-981a-73ac2368b4a4out-fd8577d7-c3c2-5ac7-a443-2e74cda5bd32in_7",
+        "source": "366f5b19-04d2-5ef5-981a-73ac2368b4a4",
+        "target": "fd8577d7-c3c2-5ac7-a443-2e74cda5bd32",
+        "sourceHandle": "out",
+        "targetHandle": "in_7"
+      },
+      {
+        "id": "reactflow__edge-ed285c2b-d0ca-5e9b-beb9-76cd672277f5out-fd8577d7-c3c2-5ac7-a443-2e74cda5bd32in_8",
+        "source": "ed285c2b-d0ca-5e9b-beb9-76cd672277f5",
+        "target": "fd8577d7-c3c2-5ac7-a443-2e74cda5bd32",
+        "sourceHandle": "out",
+        "targetHandle": "in_8"
+      },
+      {
+        "id": "reactflow__edge-d19155be-15b0-58c8-881a-b64570af5ca2out-17a4cf8a-d932-569b-93c9-fdc908fb886fin",
+        "source": "d19155be-15b0-58c8-881a-b64570af5ca2",
+        "target": "17a4cf8a-d932-569b-93c9-fdc908fb886f",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-ed285c2b-d0ca-5e9b-beb9-76cd672277f5out-17a4cf8a-d932-569b-93c9-fdc908fb886fin_1",
+        "source": "ed285c2b-d0ca-5e9b-beb9-76cd672277f5",
+        "target": "17a4cf8a-d932-569b-93c9-fdc908fb886f",
+        "sourceHandle": "out",
+        "targetHandle": "in_1"
+      },
+      {
+        "id": "reactflow__edge-c0d365b7-3069-5052-91ef-fb1574a3377fout-fd8577d7-c3c2-5ac7-a443-2e74cda5bd32in_9",
+        "source": "c0d365b7-3069-5052-91ef-fb1574a3377f",
+        "target": "fd8577d7-c3c2-5ac7-a443-2e74cda5bd32",
+        "sourceHandle": "out",
+        "targetHandle": "in_9"
+      }
+    ],
+    "scenarios": [],
+    "packages": [],
+    "datasets": [
+      {
+        "datasetId": "data.curio.chicago-loop-layers",
+        "dirName": "data.curio.chicago-loop-layers@1",
+        "origin": "imported",
+        "producerNodeId": null,
+        "consumerNodeIds": [],
+        "installedAt": "2026-10-20T00:00:00Z"
+      },
+      {
+        "datasetId": "data.scout.chicago-weather-2025-07-06",
+        "dirName": "data.scout.chicago-weather-2025-07-06@1",
+        "origin": "imported",
+        "producerNodeId": null,
+        "consumerNodeIds": [],
+        "installedAt": "2026-10-20T00:00:00Z"
+      }
+    ],
+    "name": "ChicagoLoopLayers",
+    "task": "",
+    "timestamp": 1792540800000,
+    "provenance_id": "ChicagoLoopLayers"
+  }
+}

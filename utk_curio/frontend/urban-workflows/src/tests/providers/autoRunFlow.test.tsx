@@ -270,7 +270,7 @@ describe("a signed-in owner's dataflow", () => {
   });
 });
 
-describe("the Interaction node's Update results (runDownstream)", () => {
+describe("the Interaction node's Commit edits (runDownstream)", () => {
   it("runs the nodes and every node below them now, through the start Run All uses, with no wait to settle", async () => {
     await renderFlow(userContext(SIGNED_IN, true));
 

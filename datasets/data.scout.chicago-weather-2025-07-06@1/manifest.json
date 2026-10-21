@@ -1,0 +1,38 @@
+{
+  "id": "data.scout.chicago-weather-2025-07-06",
+  "name": "SCOUT Chicago weather, 6 July 2025",
+  "version": "1.0.0",
+  "format": "bundle",
+  "description": "SCOUT's WRF-Chem 4.5.1 forecast of 2025-07-06 00:00 UTC over Chicago, the weather the scout.routing package reads: five NetCDF files, 49 hourly steps from 2025-07-06 00:00 to 2025-07-08 00:00 UTC on its 1 km Lambert conformal grid, cut to the 51 by 44 cells around SCOUT's Chicago road graph (latitude 41.59 to 42.07, longitude -88.02 to -87.46): RAIN.nc, hourly rain (RAIN); T2.nc, the temperature at 2 m (T2, in kelvin); RH2.nc, the relative humidity at 2 m (RH2, in percent); WSPD10.nc, the wind speed at 10 m (WSPD10, in metres per second); WDIR10.nc, the wind direction at 10 m (WDIR10, in degrees). Each file's global attribute timezone (America/Chicago) is the time zone the package reads a start time in. Read one with curio_load_data(\"data.scout.chicago-weather-2025-07-06\", part=\"RAIN.nc\"), or its path with curio_data_path(\"data.scout.chicago-weather-2025-07-06\", part=\"RAIN.nc\"). From SCOUT, https://github.com/urban-toolkit/scout, backend/models/routing/weather_data/, used with the permission of SCOUT's authors.",
+  "publisher": "SCOUT (urban-toolkit/scout)",
+  "license": "",
+  "tags": [
+    "netcdf",
+    "weather",
+    "wrf",
+    "scout",
+    "chicago",
+    "2025-07-06"
+  ],
+  "dataFile": "data/bundle.json",
+  "compatibility": {
+    "major": 1
+  },
+  "sourceLabel": "SCOUT",
+  "rowCount": null,
+  "featureCount": null,
+  "schema": null,
+  "createdAt": "2026-10-05T00:00:00Z",
+  "updatedAt": "2026-10-05T00:00:00Z",
+  "sourceUpdatedAt": null,
+  "sourceEncoding": null,
+  "groupId": null,
+  "layerName": null,
+  "producerNodeId": null,
+  "producerNodeType": null,
+  "producerDataflowId": null,
+  "producerDataflowName": null,
+  "upstreamInputs": null,
+  "discoverySource": null,
+  "collection": null
+}
