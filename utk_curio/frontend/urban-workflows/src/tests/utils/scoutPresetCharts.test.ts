@@ -5,7 +5,8 @@
  *
  * Each template, with its widgets set as a case of
  * `scoutPresetCharts.cases.json` says, resolves to the case's spec, up to its
- * `data` block, which names the dataset `inputs`, its scenario chips written
+ * `data` block, which names the dataset `inputs` by its chip, `[!! inputs !!]`,
+ * its scenario chips written
  * over the cases' two boxes: each channel on `scenario_name` takes their colors
  * or their order, as Curio's hidden fill gave them before the chips. The cases
  * are the specs the Compare Scenarios node's chart presets wrote for the same
@@ -26,7 +27,12 @@ import * as fs from "fs";
 import * as path from "path";
 import cases from "./scoutPresetCharts.cases.json";
 import type { ScenarioLabel } from "../../utils/scenarios/scenarioColors";
-import { resolveReferences, type InputScope, type ReferenceScope } from "../../utils/references/codeReferences";
+import {
+  resolveReferences,
+  withChipPlaceholders,
+  type InputScope,
+  type ReferenceScope,
+} from "../../utils/references/codeReferences";
 import { normalizeWidgets, type WidgetDef, type WidgetValue } from "../../utils/widgets/widgetModel";
 
 const REPO_ROOT = path.resolve(__dirname, "../../../../../..");
@@ -132,6 +138,8 @@ describe("each preset chart draws its case's spec", () => {
   });
 
   test.each(CASES.map((c) => [c.name, c] as const))("%s", (_name, c) => {
+    // Written with the dataset's chip, which the chart draws as that dataset.
+    expect(JSON.parse(withChipPlaceholders(source(c.template))).data).toEqual({ name: "[!! inputs !!]" });
     const spec = drawn(c.template, c.widgets);
     expect(spec.data).toEqual({ name: "inputs" });
     delete spec.data;
