@@ -358,8 +358,10 @@ def _map_pixels(page, node_id: str):
 
 
 def _changed(before, after) -> float:
-    """The share of the map's pixels that differ by more than 40 in some channel."""
-    return _compare_images(after, before, 40).ratio
+    """The share of the map's pixels that differ by more than 10 in some channel.
+    A feature's gray fill, (220, 220, 218), is at most 24 off the map's
+    background, (232, 239, 242): a coarser threshold sees only its outline."""
+    return _compare_images(after, before, 10).ratio
 
 
 def _drawn_share(image) -> float:
