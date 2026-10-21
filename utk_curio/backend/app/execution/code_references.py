@@ -9,13 +9,16 @@ the ids of the rows a view's selection picks, which the node holds at
 
 In a Vega-Lite or Autark spec, the scenario chips write the scenarios of the
 node's inputs, from the label each input's rows carry (an input's
-``scenario``: the box its feeding node is in, else that node's name in grey):
+``scenario``: the box its feeding node is in, else that node's name):
 ``[!! scenario colors !!]`` the scale ``{"domain": [names], "range":
-[colors]}``, each box once in the order the dataflow lists the boxes, then each
-input from no box; ``[!! scenario text_colors !!]`` the same scale in the
-shades a text mark reads in (:func:`table_text_color`);
+[colors]}``, each box once in the order the dataflow lists the boxes, in its
+color, then each input from no box, in a grey of its own
+(:data:`NO_SCENARIO_GREYS`); ``[!! scenario text_colors !!]`` the same scale in
+the shades a text mark reads in (:func:`table_text_color`);
 ``[!! scenario order !!]`` the names alone; ``[!! scenario input_1 !!]`` the
-color of input_1's box. ``[!! inputs.sunlight !!]`` names a field of the
+color of input_1 in that scale. With no input from a box, the two scales are
+the names alone, ``{"domain": [names]}``, which the grammar's own palette
+colors. ``[!! inputs.sunlight !!]`` names a field of the
 dataset ``inputs``, which stacks a Vega-Lite chart's inputs. A widget's name
 has no space and no dot, and an input's chip starts ``input_``, so neither
 form can name a widget, an input or a column.
@@ -117,6 +120,13 @@ TABLE_TYPES = ("dataframe", "geodataframe")
 #: The color of an input whose node is in no scenario box. Kept in sync with
 #: ``NO_SCENARIO_COLOR`` in ``utils/scenarios/scenarioColors.ts``.
 NO_SCENARIO_COLOR = "#8a8f98"
+
+#: The greys the scenario chips draw the inputs from no box in, one per name
+#: in circle order, the first :data:`NO_SCENARIO_COLOR`: apart from each other,
+#: and from the boxes, since a grey a box among the same inputs uses is passed
+#: over. Kept in sync with ``NO_SCENARIO_GREYS`` in
+#: ``utils/scenarios/scenarioColors.ts``.
+NO_SCENARIO_GREYS = ("#8a8f98", "#5b6068", "#b6bac1", "#40444a", "#d2d5da", "#74797f")
 
 #: The most ids one selection tag holds. Kept in sync with ``SELECTION_ID_CAP``
 #: in ``selectionTags.ts`` and ``maxItems`` in ``docs/schemas/trill.v1.json``.
@@ -760,21 +770,44 @@ def scale_labels(labels: list) -> list:
     return sorted(boxes.values(), key=rank) + [label for label in labels if label.get("scenario") is None]
 
 
-def _scenario_value(parsed: dict, inputs: list):
-    """What the scenario chip *parsed* (one that resolves) writes over
-    *inputs*: a box's color, the names in order, or a scale. Kept in sync with
-    ``scenarioValue`` in ``codeReferences.ts``."""
-    if parsed["chip"] == "input":
-        return next(i for i in inputs if i.get("slot") == parsed["slot"])["scenario"]["color"]
+def scenario_scale(labels: list) -> tuple[list, list]:
+    """The scenarios' names and colors, each name once, in the order of
+    *labels* (:func:`scale_labels`): a box's name in its box's color, and each
+    input from no box in a grey of its own, in that order
+    (:data:`NO_SCENARIO_GREYS`, past any a box here uses). Kept in sync with
+    ``scenarioScale`` in ``utils/scenarios/scenarioColors.ts``."""
+    box_colors = {str(label.get("color", "")).lower() for label in labels if label.get("scenario") is not None}
+    greys = [grey for grey in NO_SCENARIO_GREYS if grey not in box_colors] or [NO_SCENARIO_COLOR]
     domain: list = []
     colors: list = []
-    for label in scale_labels([i["scenario"] for i in inputs]):
+    given = 0
+    for label in labels:
         if label["name"] in domain:
             continue
         domain.append(label["name"])
-        colors.append(label["color"])
+        if label.get("scenario") is not None:
+            colors.append(label["color"])
+        else:
+            colors.append(greys[given % len(greys)])
+            given += 1
+    return domain, colors
+
+
+def _scenario_value(parsed: dict, inputs: list):
+    """What the scenario chip *parsed* (one that resolves) writes over
+    *inputs*: an input's color (its box's, else its grey in the scale), the
+    names in order, or a scale. With no input from a box the scale is the names
+    alone, so the grammar's own palette colors them. Kept in sync with
+    ``scenarioValue`` in ``codeReferences.ts``."""
+    labels = [i["scenario"] for i in inputs]
+    domain, colors = scenario_scale(scale_labels(labels))
+    if parsed["chip"] == "input":
+        label = next(i for i in inputs if i.get("slot") == parsed["slot"])["scenario"]
+        return label["color"] if label.get("scenario") is not None else colors[domain.index(label["name"])]
     if parsed["chip"] == "order":
         return domain
+    if not any(label.get("scenario") is not None for label in labels):
+        return {"domain": domain}
     return {"domain": domain, "range": [table_text_color(c) for c in colors] if parsed["chip"] == "text_colors" else colors}
 
 

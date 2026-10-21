@@ -25,6 +25,7 @@ import {
 import {
   SCENARIO_FIELD,
   SCENARIO_NAME_FIELD,
+  anyFromABox,
   scaleLabels,
   scenarioScale,
 } from "../../../utils/scenarios/scenarioColors";
@@ -248,10 +249,12 @@ const STACKED_FIELD_TITLES: Record<string, string> = {
 /**
  * The scenarios of a node's inputs, on the `scenario_name` field of inputs
  * (#662): a swatch per box with its name, in the order the dataflow lists the
- * boxes, then each input from no box in grey. The swatches are one chip,
- * `[!! scenario colors !!]`, the scale of their colors. Two small tags beside
- * them drag their names alone, `[!! scenario order !!]`, for an axis's or an
- * offset's order, and their colors in the shades a text mark reads in,
+ * boxes, then each input from no box in a grey of its own. The swatches are
+ * one chip, `[!! scenario colors !!]`, the scale of their colors. With no input
+ * from a box the chip writes the names alone, which the grammar's own palette
+ * colors, and the names show with no swatch. Two small tags beside them drag
+ * their names alone, `[!! scenario order !!]`, for an axis's or an offset's
+ * order, and their colors in the shades a text mark reads in,
  * `[!! scenario text_colors !!]`.
  */
 function ScenarioSwatches({
@@ -263,9 +266,14 @@ function ScenarioSwatches({
   onInsert: (inner: string) => void;
   disabled: boolean;
 }) {
-  const { domain, range } = scenarioScale(scaleLabels(inputs.flatMap((input) => (input.scenario ? [input.scenario] : []))));
+  const labels = inputs.flatMap((input) => (input.scenario ? [input.scenario] : []));
+  const { domain, range } = scenarioScale(scaleLabels(labels));
   if (domain.length === 0) return null;
-  const listed = domain.map((name, i) => `${name} ${range[i]}`).join(", ");
+  const colored = anyFromABox(labels);
+  const title = colored
+    ? `The scenarios' colors, a color scale: ${domain.map((name, i) => `${name} ${range[i]}`).join(", ")}`
+    : `The scenarios' names, ${domain.join(", ")}: no input comes from a box, so the chip writes the names alone `
+      + "and the grammar's own palette colors them";
   return (
     <>
       <ReferenceTag
@@ -273,12 +281,12 @@ function ScenarioSwatches({
         mime={SCENARIO_REF_MIME}
         inner={scenarioReferenceInner("colors")}
         text={domain.map((name, i) => (
-          <span key={name} className={styles.swatch} data-scenario-swatch={name} data-color={range[i]}>
-            <SwatchColor color={range[i]} />
+          <span key={name} className={styles.swatch} data-scenario-swatch={name} data-color={colored ? range[i] : undefined}>
+            {colored ? <SwatchColor color={range[i]} /> : null}
             {name}
           </span>
         ))}
-        title={`The scenarios' colors, a color scale: ${listed}`}
+        title={title}
         dataAttributes={{ "data-scenario-swatches": "true" }}
         onInsert={onInsert}
         disabled={disabled}

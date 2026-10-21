@@ -13,12 +13,15 @@
  *   of the rows a view's selection picks (`selectionTags.ts`);
  * - in a Vega-Lite or Autark spec, the scenario chips write the scenarios of the
  *   node's inputs, from the label each input's rows carry (`InputScope.scenario`:
- *   the box its feeding node is in, else that node's name in grey):
+ *   the box its feeding node is in, else that node's name):
  *   `[!! scenario colors !!]` the scale `{"domain": [names], "range": [colors]}`,
- *   each box once in the order the dataflow lists the boxes, then each input
- *   from no box; `[!! scenario text_colors !!]` the same scale in the shades a
- *   text mark reads in (`tableTextColor`); `[!! scenario order !!]` the names
- *   alone; and `[!! scenario input_1 !!]` the color of input_1's box;
+ *   each box once in the order the dataflow lists the boxes, in its color, then
+ *   each input from no box, in a grey of its own; `[!! scenario text_colors !!]`
+ *   the same scale in the shades a text mark reads in (`tableTextColor`);
+ *   `[!! scenario order !!]` the names alone; and `[!! scenario input_1 !!]` the
+ *   color of input_1 in that scale. With no input from a box, the two scales
+ *   are the names alone, `{"domain": [names]}`, which the grammar's own palette
+ *   colors;
  * - `[!! inputs.sunlight !!]` names a field of the dataset `inputs`, which
  *   stacks a Vega-Lite chart's inputs (`utils/scenarios/stackedInputs`).
  *
@@ -65,6 +68,7 @@ import { isOverCap, overCapText, selectionSize, type SelectionTag } from "./sele
 import {
   SCENARIO_FIELD,
   SCENARIO_NAME_FIELD,
+  anyFromABox,
   scaleLabels,
   scenarioScale,
   tableTextColor,
@@ -355,17 +359,22 @@ function knownStackedFields(inputs: readonly InputScope[]): string[] | null {
 const unlabelled = (inputs: readonly InputScope[]) => inputs.find((input) => input.scenario == null);
 
 /**
- * What the scenario chip *parsed* (one that resolves) writes over *inputs*: a
- * box's color, the names in order, or a scale. Kept in sync with
- * `_scenario_value` in `code_references.py`.
+ * What the scenario chip *parsed* (one that resolves) writes over *inputs*: an
+ * input's color (its box's, else its grey in the scale), the names in order,
+ * or a scale. With no input from a box the scale is the names alone, so the
+ * grammar's own palette colors them. Kept in sync with `_scenario_value` in
+ * `code_references.py`.
  */
 function scenarioValue(parsed: Extract<ParsedReference, { kind: "scenario" }>, inputs: readonly InputScope[]): WidgetValue {
+  const labels = inputs.map((input) => input.scenario as ScenarioLabel);
+  const { domain, range } = scenarioScale(scaleLabels(labels));
   if (parsed.chip === "input") {
     const slot = parsed.slot;
-    return (inputs.find((input) => input.slot === slot)?.scenario as ScenarioLabel).color;
+    const label = inputs.find((input) => input.slot === slot)?.scenario as ScenarioLabel;
+    return label.scenario != null ? label.color : range[domain.indexOf(label.name)];
   }
-  const { domain, range } = scenarioScale(scaleLabels(inputs.map((input) => input.scenario as ScenarioLabel)));
   if (parsed.chip === "order") return domain;
+  if (!anyFromABox(labels)) return { domain } as unknown as WidgetValue;
   const scale = { domain, range: parsed.chip === "text_colors" ? range.map(tableTextColor) : range };
   return scale as unknown as WidgetValue;
 }

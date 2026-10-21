@@ -4,7 +4,8 @@
  * node in no box, the node's name and a neutral color), the columns stacked
  * rows carry them in, and the scale the scenario chips write
  * (utils/references/codeReferences): the labels in the boxes' order, their
- * names and their colors, and the shades a text mark reads in.
+ * names and their colors (a grey of its own for each input from no box), and
+ * the shades a text mark reads in.
  *
  * Pure, with no `vega` / `vega-lite` import, so it is testable under jest.
  */
@@ -47,14 +48,42 @@ export function scaleLabels(labels: readonly ScenarioLabel[]): ScenarioLabel[] {
   ];
 }
 
-/** The scenarios' names and colors, each name once, in the order of *labels*. */
+/**
+ * The greys the scenario chips draw the inputs from no box in, one per name in
+ * circle order, the first `NO_SCENARIO_COLOR`: apart from each other, and from
+ * the boxes, since a grey a box among the same inputs uses is passed over.
+ * Kept in sync with `NO_SCENARIO_GREYS` in `code_references.py`.
+ */
+export const NO_SCENARIO_GREYS: readonly string[] = ["#8a8f98", "#5b6068", "#b6bac1", "#40444a", "#d2d5da", "#74797f"];
+
+/** Whether any of *labels* names a scenario box. With none, the scenario
+ * chips write the names alone, and the grammar's own palette colors them. */
+export function anyFromABox(labels: readonly ScenarioLabel[]): boolean {
+  return labels.some((label) => label.scenario != null);
+}
+
+/**
+ * The scenarios' names and colors, each name once, in the order of *labels*
+ * (`scaleLabels`): a box's name in its box's color, and each input from no box
+ * in a grey of its own, in that order (`NO_SCENARIO_GREYS`, past any a box here
+ * uses). Kept in sync with `scenario_scale` in `code_references.py`.
+ */
 export function scenarioScale(labels: readonly ScenarioLabel[]): { domain: string[]; range: string[] } {
+  const boxColors = new Set(labels.filter((label) => label.scenario != null).map((label) => label.color.toLowerCase()));
+  const free = NO_SCENARIO_GREYS.filter((grey) => !boxColors.has(grey));
+  const greys = free.length > 0 ? free : [NO_SCENARIO_COLOR];
   const domain: string[] = [];
   const range: string[] = [];
+  let given = 0;
   for (const label of labels) {
     if (domain.includes(label.name)) continue;
     domain.push(label.name);
-    range.push(label.color);
+    if (label.scenario != null) {
+      range.push(label.color);
+    } else {
+      range.push(greys[given % greys.length]);
+      given += 1;
+    }
   }
   return { domain, range };
 }
