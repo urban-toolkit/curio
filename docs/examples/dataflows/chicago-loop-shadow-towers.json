@@ -216,7 +216,7 @@
       {
         "id": "d0e547ba-e7d6-52e1-9c0e-f047443b715c",
         "type": "curio.scout/bars",
-        "x": 3225,
+        "x": 3565,
         "y": 0,
         "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v6.json\",\n  \"data\": {\n    \"name\": \"inputs\"\n  },\n  \"mark\": {\n    \"type\": \"bar\",\n    \"tooltip\": true\n  },\n  \"encoding\": {\n    \"x\": {\n      \"field\": \"scenario_name\",\n      \"type\": \"nominal\",\n      \"title\": \"Scenario\",\n      \"axis\": {\n        \"labelAngle\": 0\n      },\n      \"sort\": [!! scenario order !!]\n    },\n    \"y\": {\n      \"field\": \"[!! y !!]\",\n      \"type\": \"quantitative\",\n      \"aggregate\": \"[!! combine !!]\",\n      \"title\": \"[!! y_title !!]\"\n    },\n    \"color\": {\n      \"field\": \"scenario_name\",\n      \"type\": \"nominal\",\n      \"title\": \"Scenario\",\n      \"scale\": [!! scenario colors !!]\n    }\n  }\n}\n",
         "out": "DEFAULT",
@@ -263,7 +263,7 @@
       {
         "id": "608c35fc-5b51-546f-8305-7612a680f16a",
         "type": "curio.scout/raster-calculator",
-        "x": 3225,
+        "x": 3565,
         "y": 450,
         "content": "# Towers removed's accumulated shadow, on input_1, minus Existing's, on\n# input_0, cell by cell, in minutes: below zero where removing the towers\n# takes shadow away, 0 where nothing changes.\nfrom scout_rasters.raster_algebra import raster_calculate\n\nreturn raster_calculate(\"subtract\", [input_1, input_0], output_file=curio_output_file)\n",
         "out": "DEFAULT",
@@ -305,7 +305,7 @@
       {
         "id": "f09ef56c-42c4-56b6-ab30-cf7d3c752e6b",
         "type": "curio.builtin/autk-grammar",
-        "x": 3870,
+        "x": 4210,
         "y": 450,
         "content": "{\n  \"map\": {\n    \"layerRefs\": [\n      {\n        \"dataRef\": \"[!! input_0 !!]\",\n        \"getFnv\": \"band_1\",\n        \"colorMapInterpolator\": \"interpolateRdBu\",\n        \"colorMapCenter\": 0,\n        \"title\": \"Shadow change (minutes)\"\n      }\n    ]\n  }\n}",
         "out": "DEFAULT",
