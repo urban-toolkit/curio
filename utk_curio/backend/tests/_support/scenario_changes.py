@@ -240,6 +240,14 @@ def assert_frame_matches(frame, held: dict, *, rel: float = 0.0, what: str = "")
     assert not wrong, (what, f"{len(wrong)} rows differ, the first: {wrong[0]}")
 
 
+def records_of(frame) -> list:
+    """*frame*'s rows as records, its outlines left out, each value as the
+    fixtures and a page's JSON hold it."""
+    geometry = getattr(frame, "_geometry_column_name", None)
+    table = frame.drop(columns=[geometry] if geometry in frame.columns else [])
+    return [{key: _json_value(value) for key, value in row.items()} for row in table.to_dict("records")]
+
+
 def assert_rows_match(rows: list, held: list, *, rel: float = 0.0, what: str = "") -> None:
     """*rows*, records, are the fixture's *held* records: the same keys in the
     same order and every value, a number exactly or within *rel*."""
