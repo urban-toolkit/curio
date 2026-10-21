@@ -239,6 +239,17 @@ PERIOD_DEPTHS = {
 }
 #: The mean Earth's radius, in km: a cell's area on SCOUT's grid in degrees.
 EARTH_RADIUS_KM = 6371.0088
+#: What Compare Scenarios' own functions wrote on these tests' inputs, from
+#: main before step 6.4 of the plan answering komar41's review removed them
+#: (``make_compare_fixtures.py`` beside it, on 72f5d3df5).
+COMPARE_FIXTURE = Path(__file__).resolve().parent / "fixtures" / "compare_scenarios" / "flood_tracts.json"
+#: The fixture's numbers at the dataflow's settings come from sums over
+#: SCOUT's rasters, which another machine may add in another order.
+FIXTURE_REL = 1e-12
+
+
+def _compare_fixture() -> dict:
+    return json.loads(COMPARE_FIXTURE.read_text(encoding="utf-8"))
 
 
 @dataclass(frozen=True)
@@ -1496,11 +1507,18 @@ def test_the_changes_and_the_charts_give_the_columns_their_maps_and_charts_read(
     scenarios with the SVI percentile and the mean depth it reads, and the
     grouped bars' one row per period and scenario, so each bar is its row:
     what Compare's stacked tables held (``stacked_rows``), the outlines left
-    out."""
+    out. Each is what Compare's own functions wrote on these inputs
+    (``flood_tracts.json``), and so are ``keyed_change`` and
+    ``stacked_rows``."""
     import numpy as np
     from geopandas.testing import assert_geodataframe_equal
 
-    from utk_curio.backend.tests._support.scenario_changes import keyed_change, stacked_rows
+    from utk_curio.backend.tests._support.scenario_changes import (
+        assert_frame_matches,
+        assert_rows_match,
+        keyed_change,
+        stacked_rows,
+    )
     from utk_curio.sandbox.util.parsers import load_from_duckdb, save_to_duckdb
     from utk_curio.sandbox.util.scenario_stack import stack_inputs
 
@@ -1530,20 +1548,28 @@ def test_the_changes_and_the_charts_give_the_columns_their_maps_and_charts_read(
     assert list(change.columns) == list(compared.columns)
     assert change.dtypes.astype(str).tolist() == compared.dtypes.astype(str).tolist()
     assert_geodataframe_equal(change, compared)
+    held = _compare_fixture()
+    assert_frame_matches(change, held["change"], rel=FIXTURE_REL, what="the Depth change per tract")
+    assert_frame_matches(compared, held["change"], rel=FIXTURE_REL, what="keyed_change")
     reversed_tracts = save_to_duckdb(nbs.iloc[::-1].reset_index(drop=True), node_id="nbs-tracts-reversed")
     again = run_on(found[("tract depth", "difference")], "tract depth", reversed_tracts)
     assert_geodataframe_equal(again, keyed_change(none, load_from_duckdb(reversed_tracts), "FIPS", absolute=True))
     assert_geodataframe_equal(again, change)
+    assert_frame_matches(again, held["change"], rel=FIXTURE_REL, what="NbS's tracts reversed")
 
-    def rows_of(part):
-        """The chart's rows, and the scenarios' rows as Compare stacked them, each without outlines."""
+    def rows_of(part, compares: dict):
+        """The chart's rows, and the scenarios' rows as Compare stacked them,
+        each without outlines: what Compare's stacked table held (*compares*)."""
         entries = [("no-nbs", "No NbS", ran[("no-nbs", part)]), ("nbs", "NbS", ran[("nbs", part)])]
         rows = stack_inputs(entries)
         stacked = stacked_rows(entries)
         assert [{k: v for k, v in row.items() if k != "__input__"} for row in rows] == stacked, part
+        assert_rows_match([{k: v for k, v in row.items() if k != "__input__"} for row in rows], compares["rows"],
+                          rel=FIXTURE_REL, what=f"the chart's rows of {part}")
+        assert_rows_match(stacked, compares["rows"], rel=FIXTURE_REL, what=f"stacked_rows of {part}")
         return rows, stacked
 
-    rows, points = rows_of("tract depth")
+    rows, points = rows_of("tract depth", held["scatter"])
     assert len(points) == len(rows) == 2 * RIVERSIDE_TRACTS
     assert [row["scenario_name"] for row in points] == ["No NbS"] * RIVERSIDE_TRACTS + ["NbS"] * RIVERSIDE_TRACTS
     assert [row["__input__"] for row in rows] == [0] * RIVERSIDE_TRACTS + [1] * RIVERSIDE_TRACTS
@@ -1553,7 +1579,7 @@ def test_the_changes_and_the_charts_give_the_columns_their_maps_and_charts_read(
             assert str(tracts[column].dtype) == "float64" and tracts[column].notna().all(), (scenario, column)
         assert all(isinstance(row[column], float) for row in rows), column
 
-    rows, bars = rows_of("by period")
+    rows, bars = rows_of("by period", held["byPeriod"])
     assert [list(row) for row in bars] == [["scenario", "scenario_name", "period", "mean_depth_m", "land_km2"]] * len(bars)
     assert [(row["scenario_name"], row["period"], row["mean_depth_m"]) for row in bars] == [
         (name, period, PERIOD_DEPTHS[name][period]) for name in ("No NbS", "NbS") for period in PERIODS
@@ -1578,11 +1604,13 @@ def test_a_tract_one_side_lacks_is_removed_or_added_as_compare_wrote_it(workspac
     NbS's; a tract only NbS has is ``added``, after every tract of No NbS's,
     its numbers empty and its outline NbS's. Every other tract holds the size
     of its change. The inputs are the riverside tracts as Tract depth hands
-    them on, CDC's columns and outlines, each with a mean depth and its land."""
+    them on, CDC's columns and outlines, each with a mean depth and its land.
+    Each is what Compare's own function wrote on these inputs
+    (``flood_tracts.json``), and so is ``keyed_change``."""
     import numpy as np
     from geopandas.testing import assert_geodataframe_equal
 
-    from utk_curio.backend.tests._support.scenario_changes import keyed_change
+    from utk_curio.backend.tests._support.scenario_changes import assert_frame_matches, keyed_change
     from utk_curio.sandbox.util.parsers import load_from_duckdb, save_to_duckdb
 
     monkeypatch.chdir(workspace)
@@ -1612,6 +1640,9 @@ def test_a_tract_one_side_lacks_is_removed_or_added_as_compare_wrote_it(workspac
         assert list(ours.columns) == list(compared.columns), change
         assert ours.dtypes.astype(str).tolist() == compared.dtypes.astype(str).tolist(), change
         assert_geodataframe_equal(ours, compared)
+        held = _compare_fixture()["oneSide"][change]
+        assert_frame_matches(ours, held, what=f"the Depth change per tract, {change}")
+        assert_frame_matches(compared, held, what=f"keyed_change, {change}")
         expected_order = fips if change == "removed" else [f for f in fips if f != tract] + [tract]
         assert list(ours["FIPS"]) == expected_order, change
         (row,) = ours.index[ours["FIPS"] == tract]
@@ -1633,8 +1664,9 @@ def test_the_median_chart_reads_each_scenarios_statistics_as_compare_stacked_the
     SCOUT's median and mean flood depth for its whole grid, 7.164 m and
     4.900 m the medians, what Compare Scenarios' stacked table held
     (``stacked_rows``); the mean the chart combines each bar's one row by is
-    the row's median."""
-    from utk_curio.backend.tests._support.scenario_changes import stacked_rows
+    the row's median. They are what Compare's own function wrote
+    (``flood_tracts.json``), and so is ``stacked_rows``."""
+    from utk_curio.backend.tests._support.scenario_changes import assert_rows_match, stacked_rows
     from utk_curio.sandbox.util.parsers import load_from_duckdb
     from utk_curio.sandbox.util.scenario_stack import stack_inputs
 
@@ -1657,6 +1689,10 @@ def test_the_median_chart_reads_each_scenarios_statistics_as_compare_stacked_the
                ("nbs", "NbS", load_from_duckdb(statistics["nbs"]))]
     rows = stack_inputs(entries)
     assert [{k: v for k, v in row.items() if k != "__input__"} for row in rows] == stacked_rows(entries)
+    held = _compare_fixture()["median"]["rows"]
+    assert_rows_match([{k: v for k, v in row.items() if k != "__input__"} for row in rows], held, rel=FIXTURE_REL,
+                      what="the median chart's rows")
+    assert_rows_match(stacked_rows(entries), held, rel=FIXTURE_REL, what="stacked_rows")
     assert [(row["__input__"], row["scenario"], row["scenario_name"]) for row in rows] == [
         (0, "no-nbs", "No NbS"), (1, "nbs", "NbS"),
     ]
