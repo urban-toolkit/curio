@@ -214,7 +214,12 @@ def test_the_chart_header_lists_its_chips_and_each_scenario_tag_drags_its_chip(
     node_locator(page, CHART).locator('[data-widget-strip] [data-strip-category="inputs"]').wait_for(
         state="visible", timeout=30000,
     )
+    # The editor holds "{}" until the spec is written in.
+    deadline = time.time() + 30
     shipped = read_node_code(page, CHART)
+    while '"[!! inputs !!]"' not in shipped and time.time() < deadline:
+        page.wait_for_timeout(250)
+        shipped = read_node_code(page, CHART)
     for chip in ('"[!! inputs !!]"', "[!! scenario colors !!]", "[!! scenario order !!]"):
         assert chip in shipped, f"the chart's editor holds no {chip}: {shipped!r}"
 
