@@ -213,18 +213,21 @@ class TestTheStackedDatasetIsNamedByItsChip:
         """Read as written, each chip standing on its own held by a string of
         its text (``with_chip_placeholders``): Scout's fifteen charts and their
         copies in the shipped dataflows name the dataset by its chip, and no
-        spec names it bare."""
+        spec names it bare. Every spec reads so, or the scan would pass over
+        it."""
         from utk_curio.backend.app.execution.code_references import with_chip_placeholders
 
-        bare, chipped = [], []
+        bare, chipped, unread = [], [], []
         for where, text in _written_specs():
             try:
                 spec = json.loads(with_chip_placeholders(text))
             except ValueError:
+                unread.append(where)
                 continue
             names = _dataset_names(spec)
             bare.extend(where for name in names if name == "inputs")
             chipped.extend(where for name in names if name == "[!! inputs !!]")
+        assert unread == [], f"these specs do not read as JSON, so their datasets went unchecked: {unread}"
         assert bare == [], f"these specs name the dataset inputs bare, not as [!! inputs !!]: {bare}"
         assert len([where for where in chipped if where.startswith("curio.scout@1/")]) == 15, chipped
         assert len(chipped) >= 34, chipped

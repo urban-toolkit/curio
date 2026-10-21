@@ -339,9 +339,11 @@ def test_each_chart_is_its_templates_spec_with_the_columns_in_its_widgets(datase
         else:
             assert "value" in widget, f"{chart['title']}: {name} is left at its default"
             assert values[name] in columns, f"{chart['title']}: {name} = {values[name]!r}, not in {columns}"
-    # Its other chips write the scenarios, from the boxes its inputs come from.
+    # Its other chips write the dataset its inputs are stacked in, and the
+    # scenarios, from the boxes its inputs come from.
     chips = set(CHIP.findall(chart["content"]))
-    assert {c for c in chips if not c.startswith("scenario ")} == {w["name"] for w in widgets}
+    assert "inputs" in chips
+    assert {c for c in chips if not c.startswith("scenario ") and c != "inputs"} == {w["name"] for w in widgets}
     assert {c for c in chips if c.startswith("scenario ")} <= {"scenario colors", "scenario text_colors", "scenario order"}
 
 

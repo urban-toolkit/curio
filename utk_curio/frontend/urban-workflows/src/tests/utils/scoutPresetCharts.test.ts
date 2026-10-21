@@ -204,10 +204,14 @@ describe("a chart whose spec its user edited", () => {
     const { code } = resolveReferences(text, scope, "json");
     const written = shape.exec(code);
     expect(written).not.toBeNull();
-    // A widget's chip writes its value; the scenarios' chip, their scale.
+    // A widget's chip writes its value; the dataset's chip, its name; the
+    // scenarios' chip, their scale.
     const scale = resolveReferences("[!! scenario colors !!]", scope, "json").code;
     const chips = [...text.matchAll(/\[!!\s*(.*?)\s*!!\]/g)].map((m) => m[1]);
-    expect(written!.slice(1)).toEqual(chips.map((name) => (name in PARKS ? PARKS[name as keyof typeof PARKS] : scale)));
+    expect(chips).toContain("inputs");
+    const writes = (name: string) =>
+      name in PARKS ? PARKS[name as keyof typeof PARKS] : name === "inputs" ? "inputs" : scale;
+    expect(written!.slice(1)).toEqual(chips.map(writes));
   });
 
   test("it keeps the edit and still draws its scenarios in their boxes' colors and order, through its chip", () => {

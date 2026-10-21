@@ -1249,3 +1249,48 @@ class TestAColumnWhoseNameHoldsADot:
         assert "document-invalid" not in [a.get("kind") for a in outcome["attempts"]]
         assert (outcome["evidence"] or {}).get("documentValidated") == "bars"
         assert outcome["candidate"] == document
+
+    def test_solve_refuses_a_scout_chart_with_no_input_in_its_dataset_chips_words(
+        self, app, tmp_curio, monkeypatch,
+    ):
+        """Scout's Bars with no edge in the saved dataflow: its dataset chip,
+        ``[!! inputs !!]``, has nothing to stack, so each round is refused in
+        the chip's own words before the document is checked. Each reply is the
+        template with a description of its own, so no round repeats another
+        and each is resolved on its own."""
+        from utk_curio.backend.app.packages import service as packages_service
+        from utk_curio.backend.tests.test_agents.test_verified_rounds import _Exec, _rounds
+
+        package = REPO_ROOT / "packages" / "curio.scout@1"
+        manifest = json.loads((package / "manifest.json").read_text(encoding="utf-8"))
+        (template,) = [t for t in manifest["templates"] if t["id"] == "bars"]
+        document = (package / template["source"]).read_text(encoding="utf-8").strip()
+        monkeypatch.setattr(packages_service, "available_templates", lambda *args, **kwargs: [{
+            "id": "curio.scout/bars", "executable": False, "engine": "python",
+            "contentKind": "grammar", "grammar": "vega-lite",
+        }])
+        checked: list = []
+        validate = dv.validate
+
+        def recording(node_type, content, **kwargs):
+            checked.append(content)
+            return validate(node_type, content, **kwargs)
+
+        monkeypatch.setattr(dv, "validate", recording)
+        node = {"id": "n1", "type": "curio.scout/bars", "goal": "Rain by scenario", "content": "",
+                "metadata": {"widgets": template["widgets"]}}
+        spec = {"dataflow": {"nodes": [node], "edges": [], "name": "wf", "task": "t"}}
+        replies = [
+            document.replace('"$schema": ', f'"description": "Rain by scenario, take {take}",\n  "$schema": ', 1)
+            for take in range(1, 5)
+        ]
+        assert len(set(replies)) == 4
+        events, outcome, inputs = _rounds(app, node, replies=replies, exec_fn=_Exec(), spec=spec,
+                                          extra_inputs={"upstreamOutputs": [_rain_table(0), _rain_table(1)]})
+        refusal = "[!! inputs !!]: this node has no input to stack. Connect one to an input circle."
+        kinds = [a.get("kind") for a in outcome["attempts"]]
+        assert kinds and set(kinds) == {"document-invalid"}, outcome["attempts"]
+        assert all(refusal in a["detail"] for a in outcome["attempts"]), outcome["attempts"]
+        assert refusal in inputs[1]["validationError"]
+        assert checked == [], "the document was checked although its chip does not resolve"
+        assert (outcome["evidence"] or {}).get("documentValidated") is None
