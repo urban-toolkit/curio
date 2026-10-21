@@ -25,7 +25,7 @@ import { useSelectionTags } from "./flow/useSelectionTags";
 import { useCollaborationSync } from "./flow/useCollaborationSync";
 import { useInstallSave } from "./flow/useInstallSave";
 import { useServerRun } from "./flow/useServerRun";
-import { autoRunTargets, useAutoRun } from "./flow/useAutoRun";
+import { useAutoRun } from "./flow/useAutoRun";
 import { CanvasViewAddress, useNotebookView } from "./flow/useNotebookView";
 import { NotebookViewContext } from "./flow/notebookViewContext";
 import type { IOutput, IInteraction } from "./flow/flowTypes";
@@ -163,7 +163,6 @@ export const FlowContext = createContext<FlowContextProps>({
     attachLatestRun: async () => {},
     autoRunAvailable: false,
     requestAutoRun: () => {},
-    runDownstream: () => {},
     defaultSaveOutputDataset: false,
     setDefaultSaveOutputDataset: () => {},
 
@@ -433,15 +432,6 @@ const FlowProvider = ({
         reactFlow,
         start: (targets) => { void serverRun.startRun(targets); },
     });
-    // The Interaction node's Update results: the nodes it names and every node
-    // below them, as an automatic run takes them, run now through the same
-    // start; in the browser where runs stay there.
-    const runDownstream = (nodeIds: readonly string[]) => {
-        const targets = autoRunTargets(nodeIds, reactFlow.getNodes(), reactFlow.getEdges());
-        if (targets.length === 0) return;
-        if (runsOnServer) void serverRun.startRun(targets);
-        else playNodesUpTo(targets);
-    };
     // Stop ends whichever run is going, on the server or in the browser, and
     // the automatic run waiting for it.
     const stopRuns = () => { autoRunner.dropWaiting(); cancelRun(); serverRun.stopRun(); };
@@ -526,7 +516,6 @@ const FlowProvider = ({
                 attachLatestRun: runsOnServer ? serverRun.attachLatestRun : async () => {},
                 autoRunAvailable: runsOnServer,
                 requestAutoRun: autoRunner.requestAutoRun,
-                runDownstream,
 
                 // NEW CODE
                 dashboardPins,

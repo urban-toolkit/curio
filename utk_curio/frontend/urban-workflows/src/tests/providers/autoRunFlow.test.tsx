@@ -270,34 +270,6 @@ describe("a signed-in owner's dataflow", () => {
   });
 });
 
-describe("the Interaction node's Update results (runDownstream)", () => {
-  it("runs the nodes and every node below them now, through the start Run All uses, with no wait to settle", async () => {
-    await renderFlow(userContext(SIGNED_IN, true));
-
-    await act(async () => {
-      // A node no longer on the canvas is left out, as an automatic run leaves it.
-      api.runDownstream?.(['gone', 'counter']);
-    });
-
-    expect(mockStartRun).toHaveBeenCalledTimes(1);
-    expect(mockStartRun).toHaveBeenCalledWith(['counter']);
-  });
-
-  it('runs them in the browser where runs stay there (a hosted guest)', async () => {
-    await renderFlow(userContext(GUEST, true));
-
-    await act(async () => {
-      api.runDownstream?.(['counter']);
-    });
-
-    expect(mockStartRun).not.toHaveBeenCalled();
-    await waitFor(() => {
-      const counter: any = api.nodes.find((n: any) => n.id === 'counter');
-      expect(counter?.data?.triggerExec ?? 0).toBe(1);
-    });
-  });
-});
-
 describe.each([
   ['a hosted guest', userContext(GUEST, true), false],
   ['a dashboard', userContext(SIGNED_IN, true), true],
