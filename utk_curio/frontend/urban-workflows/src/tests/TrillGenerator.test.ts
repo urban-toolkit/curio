@@ -463,70 +463,30 @@ describe("TrillGenerator Spatial Join settings (#576)", () => {
   });
 });
 
-describe("TrillGenerator Edit Features edit list (#662)", () => {
+describe("TrillGenerator Map Edits node", () => {
   beforeEach(() => {
     TrillGenerator.reset();
   });
 
-  test("persists the edit list at metadata.editFeatures, and only when set", () => {
-    const edit = (nodeId: string, editFeatures?: unknown) => ({
-      type: "CURIO_UNIVERSAL_NODE",
-      position: { x: 0, y: 0 },
-      data: { nodeId, nodeType: "curio.builtin/edit-features@1", ...(editFeatures ? { editFeatures } : {}) },
-    });
-    const spec = TrillGenerator.generateTrill(
-      [
-        edit("edited", {
-          key: "building_id",
-          layer: "table_osm_buildings",
-          edits: [
-            { op: "remove", ids: [119, 136, 119] },
-            { op: "set", ids: ["w7"], column: "height", value: 30 },
-          ],
-        }),
-        edit("fresh"),
-        // Nothing well formed left: nothing written.
-        edit("junk", { key: "", edits: [{ op: "delete", ids: [1] }, { op: "remove", ids: [] }] }),
-      ],
-      [],
-      "Imported Workflow"
-    );
-
-    const byId = Object.fromEntries(spec.dataflow.nodes.map((n: any) => [n.id, n]));
-    expect(byId["edited"].metadata.editFeatures).toEqual({
-      key: "building_id",
-      layer: "table_osm_buildings",
-      edits: [
-        { op: "remove", ids: [119, 136] },
-        { op: "set", ids: ["w7"], column: "height", value: 30 },
-      ],
-    });
-    expect(byId["fresh"].metadata).toBeUndefined();
-    expect(byId["junk"].metadata).toBeUndefined();
-  });
-
-  test("persists an Interaction log: conditions, numbers, expressions, labels and entries switched off", () => {
-    const edits = [
-      { op: "scale", where: "height > 100", column: "height", value: 0.5, label: "Halve the towers" },
-      { op: "offset", ids: [136], column: "height", value: -6 },
-      { op: "expr", ids: ["w7"], column: "height", value: "levels * 3.2", enabled: false },
-      { op: "remove", where: "kind == 'shed'" },
-    ];
+  test("saves the node's edits in its code alone: no edit list at metadata.editFeatures", () => {
+    const code = 'return curio_map_edits(\n    input_0,\n    key="building_id",\n    remove=[119],\n    change={},\n)\n';
     const spec = TrillGenerator.generateTrill(
       [{
         type: "CURIO_UNIVERSAL_NODE",
         position: { x: 0, y: 0 },
         data: {
-          nodeId: "interaction",
+          nodeId: "edited",
           nodeType: "curio.builtin/edit-features@1",
-          editFeatures: { key: "building_id", edits: [...edits, { op: "remove", ids: [1], where: "kind == 'shed'" }] },
+          code,
+          // What an Interaction node held before Map Edits: never written again.
+          editFeatures: { key: "building_id", edits: [{ op: "remove", ids: [119] }] },
         },
       }],
       [],
       "Imported Workflow"
     );
-    // An entry naming its features by ids and by a condition at once is not kept.
-    expect(spec.dataflow.nodes[0].metadata.editFeatures).toEqual({ key: "building_id", edits });
+    expect(spec.dataflow.nodes[0].content).toBe(code);
+    expect(spec.dataflow.nodes[0].metadata?.editFeatures).toBeUndefined();
   });
 });
 
