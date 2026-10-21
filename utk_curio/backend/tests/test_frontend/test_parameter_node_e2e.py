@@ -5,8 +5,9 @@ Shared above every node's code, and ``[!! @factor !!]`` reads its value. The
 Parameter node has no edge. This drives the whole path in a browser:
 
 1. Drop a Parameter node and declare its widget, a number named ``factor``.
-2. Drag its tag from the strip above one node's code, and type the reference
-   into a second node. The Parameter node lists both as using it.
+2. Open Shared in the header above one node's code and drag its tag in, and
+   type the reference into a second node. The Parameter node lists both as
+   using it.
 3. Run both: each gets the value.
 4. Change the value. Running the node below the first runs the first again,
    though its code did not change; running the second gives the new value.
@@ -30,6 +31,7 @@ from .utils import (
     frame_node,
     node_execution_timeout_ms,
     node_locator,
+    open_strip_category,
     play_node,
     read_node_code,
     read_node_output_text,
@@ -122,6 +124,7 @@ _USERS_JS = r"""(nodeId) => Array.from(document.querySelectorAll(
 
 
 def _drag_shared_tag_to_line_end(page, node_id: str, name: str, *, timeout: float = 15000) -> None:
+    open_strip_category(page, node_id, "shared")
     deadline = time.time() + timeout / 1000
     point = page.evaluate(_LINE_END_POINT_JS, node_id)
     while not point["over"] and time.time() < deadline:
