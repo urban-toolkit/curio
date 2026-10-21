@@ -1255,7 +1255,9 @@ class TestAColumnWhoseNameHoldsADot:
     ):
         """Scout's Bars with no edge in the saved dataflow: its dataset chip,
         ``[!! inputs !!]``, has nothing to stack, so each round is refused in
-        the chip's own words before the document is checked."""
+        the chip's own words before the document is checked. Each reply is the
+        template with a description of its own, so no round repeats another
+        and each is resolved on its own."""
         from utk_curio.backend.app.packages import service as packages_service
         from utk_curio.backend.tests.test_agents.test_verified_rounds import _Exec, _rounds
 
@@ -1278,7 +1280,12 @@ class TestAColumnWhoseNameHoldsADot:
         node = {"id": "n1", "type": "curio.scout/bars", "goal": "Rain by scenario", "content": "",
                 "metadata": {"widgets": template["widgets"]}}
         spec = {"dataflow": {"nodes": [node], "edges": [], "name": "wf", "task": "t"}}
-        events, outcome, inputs = _rounds(app, node, replies=[document] * 4, exec_fn=_Exec(), spec=spec,
+        replies = [
+            document.replace('"$schema": ', f'"description": "Rain by scenario, take {take}",\n  "$schema": ', 1)
+            for take in range(1, 5)
+        ]
+        assert len(set(replies)) == 4
+        events, outcome, inputs = _rounds(app, node, replies=replies, exec_fn=_Exec(), spec=spec,
                                           extra_inputs={"upstreamOutputs": [_rain_table(0), _rain_table(1)]})
         refusal = "[!! inputs !!]: this node has no input to stack. Connect one to an input circle."
         kinds = [a.get("kind") for a in outcome["attempts"]]
