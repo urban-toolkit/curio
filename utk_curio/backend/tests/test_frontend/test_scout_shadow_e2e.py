@@ -19,12 +19,13 @@ Run All in the browser runs the whole dataflow:
 
 1. The rows the chart reads hold one row per scenario with SCOUT's mean
    accumulated shadow for each (128.64 and 106.73 minutes in SCOUT's metrics
-   files, in summer) within 0.1 minutes, and the chart draws in both
-   scenarios' colors.
+   files, in summer) within 0.1 minutes, each row its scenario's statistics
+   value for value, and the chart draws in both scenarios' colors.
 2. The change is a raster on the shadow mosaics' grid, 512 by 512 cells in
-   EPSG:3395, in minutes: towers removed minus existing, which takes shadow
-   away on the whole. The Autark map after the Raster Calculator draws it,
-   under the title "Shadow change (minutes)".
+   EPSG:3395, in minutes: towers removed minus existing, cell for cell, from
+   the two shadows Deep Umbra saved, which takes shadow away on the whole.
+   The Autark map after the Raster Calculator draws it, under the title
+   "Shadow change (minutes)".
 3. Each scenario's map draws its shadow, under the title "Accumulated shadow
    (minutes)", its legend labelled 0 to 720, the color range both maps share.
    The close-ups of the three maps are the frames.
@@ -50,6 +51,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 import numpy as np
+import pytest
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 from playwright.sync_api import expect
 
@@ -296,6 +298,17 @@ def test_two_building_sets_are_shadowed_charted_and_mapped(
     assert all(abs(means[key] - SCOUT_MEANS[key]) <= 0.1 for key in SCOUT_MEANS), (
         f"mean accumulated shadow in {where}, ours {means}, SCOUT's {SCOUT_MEANS}"
     )
+    # Each row is its scenario's statistics, the table of one row its Raster
+    # Calculator saved, value for value.
+    scenario_of = {node_id: scenario["id"] for scenario in dataflow["scenarios"] for node_id in scenario["nodes"]}
+    for row in rows:
+        (node_id,) = [n for n in statistics if scenario_of.get(n) == row["scenario"]]
+        table = _saved_output(page, node_id)["data"]
+        assert sorted(table) == ["count", "max", "mean", "median", "min"], (node_id, sorted(table))
+        for name in ("mean", "median", "min", "max"):
+            (value,) = table[name]
+            assert row[name] == pytest.approx(value, rel=1e-12), (row["scenario"], name, row[name], value)
+        assert [row["count"]] == table["count"], (row["scenario"], row["count"], table["count"])
     frame_nodes(page, [chart])
     _assert_chart_drew(page, chart, colors)
 
@@ -311,6 +324,29 @@ def test_two_building_sets_are_shadowed_charted_and_mapped(
     }))
     assert cells.min() < -100 and mean_change < 0, (cells.min(), cells.max(), mean_change)
     assert -720 <= cells.min() and cells.max() <= 720, (cells.min(), cells.max())
+    # Cell for cell, Towers removed's shadow minus Existing's, the two rasters
+    # Deep Umbra saved, on the change's grid: input_1 minus input_0. The Raster
+    # Calculator subtracts in float32, so the two may part by a unit in the
+    # last place.
+    feeds = {edge["targetHandle"]: edge["source"] for edge in dataflow["edges"] if edge["target"] == change}
+    assert sorted(feeds) == ["in", "in_1"] and {nodes[n]["type"] for n in feeds.values()} == {SHADOW_TYPE}, feeds
+    shadow_grids, shadow_cells = [], []
+    for handle in ("in", "in_1"):
+        shadow_grid, (shadow,) = load_raster_cells(_saved_artifact(page, feeds[handle]))
+        shadow_grids.append(shadow_grid)
+        shadow_cells.append(shadow)
+    for shadow_grid in shadow_grids:
+        assert (shadow_grid["crs"], shadow_grid["width"], shadow_grid["height"]) == (
+            grid["crs"], grid["width"], grid["height"]), (shadow_grid, grid)
+        assert [shadow_grid[k] for k in ("originX", "originY", "resX", "resY")] == pytest.approx(
+            [grid[k] for k in ("originX", "originY", "resX", "resY")], rel=1e-12), (shadow_grid, grid)
+    existing, removed = shadow_cells
+    took = (removed.astype("float64") - existing.astype("float64")).astype("float32")
+    assert np.array_equal(np.isnan(cells), np.isnan(took))
+    assert np.allclose(cells, took, rtol=0, atol=1e-3, equal_nan=True), (
+        "the Raster Calculator's change differs from Towers removed's shadow minus Existing's by up to "
+        f"{float(np.nanmax(np.abs(cells - took)))}"
+    )
     frame_nodes(page, [change, difference_map])
     assert_autark_map_drawn(page, difference_map, timeout=60000,
                             attach_as="the change in accumulated shadow when the towers are removed")
@@ -389,7 +425,8 @@ def test_an_edit_in_the_towers_lever_reaches_the_shadow_with_update_results(
     SCOUT's 15 removed buildings, one removal by building_id under a label. An
     edit made there, then Update results, runs the scenario again with it:
 
-    1. Run All gives SCOUT's two means, as the test above checks.
+    1. Run All gives SCOUT's two means, as the test above checks, each the
+       mean its scenario's statistics took.
     2. The lever draws the buildings on its map, matched on building_id, and
        lists SCOUT's removal under its label.
     3. A condition picks the buildings still taller than 200 m, and Remove
@@ -455,6 +492,10 @@ def test_an_edit_in_the_towers_lever_reaches_the_shadow_with_update_results(
     assert all(abs(before[key] - SCOUT_MEANS[key]) <= 0.1 for key in SCOUT_MEANS), (
         f"mean accumulated shadow, ours {before}, SCOUT's {SCOUT_MEANS}"
     )
+    # Each mean the chart reads is its scenario's statistics' mean.
+    for scenario, node_id in statistics.items():
+        (mean,) = _saved_output(page, node_id)["data"]["mean"]
+        assert before[scenario] == pytest.approx(mean, rel=1e-12), (scenario, before[scenario], mean)
 
     # 2. The lever: the buildings on its map, by building_id, and SCOUT's entry.
     edit = node_locator(page, lever)
