@@ -504,7 +504,8 @@ describe("each change", () => {
   test("keeps the comment lines above the code's call", async () => {
     const node = mountNode({ code: `# SCOUT's 15 removed buildings.\n${codeOf({ remove: [119] })}` });
     await screen.findByTestId("autark-map");
-    pickRows([2]);
+    // The map draws what the code leaves: building 136 alone, at row 0.
+    pickRows([0]);
     remove();
     expect(node.live().code.startsWith("# SCOUT's 15 removed buildings.\n")).toBe(true);
     expect(node.edits().remove).toEqual([119, 136]);
@@ -569,7 +570,7 @@ describe("the Layer and Id menus", () => {
     for (const name of ["Layer", "Id"]) {
       const menu = screen.getByRole("combobox", { name });
       expect(menu).toBeDisabled();
-      expect(menu.getAttribute("title")).toMatch(/cannot change while the node holds any/);
+      expect(menu.getAttribute("title")).toMatch(/neither can change while the node holds any/);
     }
   });
 
