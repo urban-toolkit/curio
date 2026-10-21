@@ -1,5 +1,6 @@
 /**
- * A Vega-Lite chart whose spec reads `inputs` (#662) names its rows by the
+ * A Vega-Lite chart whose spec reads `inputs` (#662), named by its chip
+ * `[!! inputs !!]` or bare, names its rows by the
  * scenario boxes its inputs come from, stacked in circle order. It draws
  * exactly its spec: the boxes' colors and order are where its scenario chips
  * write them, `[!! scenario colors !!]` and `[!! scenario order !!]`, which its
@@ -122,8 +123,9 @@ const BARS = JSON.stringify({
   },
 });
 
-/** Mean sunlight per scenario, in the boxes' colors and order, through chips. */
-const CHIP_BARS = '{"data": {"name": "inputs"}, "mark": "bar", "encoding": {'
+/** Mean sunlight per scenario, in the boxes' colors and order, through chips,
+ * its dataset named by its chip, as Scout's charts are written. */
+const CHIP_BARS = '{"data": {"name": "[!! inputs !!]"}, "mark": "bar", "encoding": {'
   + '"x": {"field": "scenario_name", "type": "nominal", "sort": [!! scenario order !!]}, '
   + '"y": {"field": "sunlight", "type": "quantitative", "aggregate": "mean"}, '
   + '"color": {"field": "scenario_name", "type": "nominal", "scale": [!! scenario colors !!]}}}';
@@ -252,13 +254,15 @@ describe("a chart reading inputs names its rows by its inputs' boxes", () => {
   });
 
   test("a spec whose text holds a bare chip reads inputs once its chips are resolved, as the editor hands it on", async () => {
-    // The y field is a column chip, written bare: the text is no JSON until it resolves.
-    const raw = '{"data": {"name": "inputs"}, "mark": "bar", "encoding": {'
+    // The dataset's chip and the y field's column chip, written bare: the text
+    // is no JSON until they resolve.
+    const raw = '{"data": {"name": [!! inputs !!]}, "mark": "bar", "encoding": {'
       + '"x": {"field": "scenario_name", "type": "nominal"}, "y": {"field": [!! input_0.sunlight !!], "type": "quantitative"}}}';
     expect(() => JSON.parse(raw)).toThrow();
     const scope = { widgets: [], shared: [], inputs: [0, 1].map((slot) => ({ slot, columns: ["segment", "sunlight"] })) };
-    const { code, problems } = resolveReferences(raw, scope, "json");
+    const { code, problems } = resolveReferences(raw, scope, "json", "vega-lite");
     expect(problems).toEqual([]);
+    expect(JSON.parse(code).data).toEqual({ name: "inputs" });
     await playedChart(code);
     expect(lastSpec().encoding.y.field).toBe("sunlight");
     expect(stackedRows()).toEqual([
