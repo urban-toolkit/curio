@@ -22,13 +22,19 @@
  *   color of input_1 in that scale. With no input from a box, the two scales
  *   are the names alone, `{"domain": [names]}`, which the grammar's own palette
  *   colors;
- * - `[!! inputs.sunlight !!]` names a field of the dataset `inputs`, which
- *   stacks a Vega-Lite chart's inputs (`utils/scenarios/stackedInputs`).
+ * - `[!! inputs !!]` names the dataset `inputs`, which stacks a Vega-Lite
+ *   chart's inputs (`utils/scenarios/stackedInputs`): a spec writes its name,
+ *   `"data": {"name": "[!! inputs !!]"}` reading `"data": {"name": "inputs"}`.
+ *   It is refused in code, and on a node with no input, which has nothing to
+ *   stack. An Autark spec, which stacks nothing, writes the name too;
+ * - `[!! inputs.sunlight !!]` names a field of that dataset.
  *
  * A widget's name has no space and no dot, and an input's chip starts
  * `input_`, so neither `scenario colors` nor `inputs.sunlight` can name a
  * widget, an input or a column: `scenario_colors` would be a widget's name,
- * and `input_1.scenario_color` a column of input_1.
+ * and `input_1.scenario_color` a column of input_1. No widget takes the name
+ * `inputs` (`INPUT_NAME_ONLY_PATTERN` in `widgetModel.ts`), and beside one
+ * saved under it `[!! inputs !!]` names the dataset.
  *
  * The browser (NodeEditor, before a run) and the headless runner
  * (`utk_curio/backend/app/execution/code_references.py`) must write the same
@@ -75,6 +81,7 @@ import {
   type ScenarioLabel,
 } from "../scenarios/scenarioColors";
 import { INPUT_FIELD } from "../scenarios/stackedInputs";
+import { INPUTS_DATASET } from "../vegaDatasets";
 
 export type CodeLanguage = "python" | "javascript" | "json";
 
@@ -226,6 +233,8 @@ export type ParsedReference =
   | { kind: "scenario"; chip: ScenarioList | null }
   /** `slot` is null for `scenario input_?`, the input whose edge was deleted. */
   | { kind: "scenario"; chip: "input"; slot: number | null }
+  /** The dataset `inputs` itself, `[!! inputs !!]`. */
+  | { kind: "dataset" }
   | { kind: "stacked"; column: string };
 
 export type ReferenceContext = { kind: "code" } | { kind: "comment" } | { kind: "string"; quote: string };
@@ -247,6 +256,7 @@ export function parseReference(inner: string): ParsedReference {
     if (scenario) return parseScenarioChip(scenario[1]);
     const stacked = STACKED_REFERENCE_RE.exec(inner);
     if (stacked) return { kind: "stacked", column: stacked[1] };
+    if (inner === INPUTS_DATASET) return { kind: "dataset" };
     if (inner.startsWith(SHARED_PREFIX)) return { kind: "shared", name: inner.slice(SHARED_PREFIX.length) };
     return { kind: "widget", name: inner };
   }
@@ -811,6 +821,16 @@ function scenarioProblem(
   return null;
 }
 
+/** Why the chip of the dataset `inputs`, *reference*, cannot be written over
+ * *inputs*, or null: it is for a spec, never for code, and a node with no
+ * input has nothing to stack. Kept in sync with `_dataset_problem` in
+ * `code_references.py`. */
+function datasetProblem(reference: string, inputs: readonly InputScope[], language: CodeLanguage): string | null {
+  if (language !== "json") return `${reference} is for a Vega-Lite spec, not for code.`;
+  if (inputs.length === 0) return `${reference}: this node has no input to stack. Connect one to an input circle.`;
+  return null;
+}
+
 /** Why *reference* cannot be resolved in *scope*, standing in *context*, or null. */
 export function referenceProblem(
   reference: string,
@@ -890,6 +910,7 @@ export function referenceProblem(
     return null;
   }
   if (parsed.kind === "scenario") return scenarioProblem(reference, parsed, scope.inputs, context, language);
+  if (parsed.kind === "dataset") return datasetProblem(reference, scope.inputs, language);
   if (parsed.kind === "stacked") {
     if (language !== "json") return `${reference} is for a Vega-Lite spec, not for code.`;
     const fields = knownStackedFields(scope.inputs);
@@ -936,8 +957,10 @@ function resolvedText(
     }
     return value;
   }
-  // A field of inputs is written as a column is: its name.
+  // A field of inputs is written as a column is: its name. The dataset itself
+  // is its name too, which no place reads as a field.
   if (parsed.kind === "stacked") return writeText(named(parsed.column), context, language);
+  if (parsed.kind === "dataset") return writeText(INPUTS_DATASET, context, language);
   const value =
     parsed.kind === "scenario"
       ? scenarioValue(parsed, scope.inputs)
