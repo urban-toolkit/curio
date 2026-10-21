@@ -497,7 +497,8 @@ def test_a_dropped_scenario_brings_the_packages_its_levers_need(
     _toast(page, "Added curio.weather@1 to this project.")
     copy = _copies(page)["weather"]
     node_locator(page, copy).wait_for(state="attached", timeout=15000)
-    assert node_locator(page, copy).get_by_test_id("unresolved-node").count() == 0, (
+    unknown = '[data-testid="unresolved-node"], [data-testid="removed-node-type"]'
+    assert node_locator(page, copy).locator(unknown).count() == 0, (
         "the dropped weather node came up as an unknown kind: its package did not arrive first"
     )
     assert "curio.weather@1" in lockfile()

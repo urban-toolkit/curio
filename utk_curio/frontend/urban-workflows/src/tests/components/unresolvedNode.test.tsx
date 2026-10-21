@@ -10,10 +10,15 @@
  * In the notebook view the placeholder is a cell like any other: the page's
  * cell width, and its dots on its right edge where every cell has them, so its
  * connections run in the bar.
+ *
+ * A type its installed package no longer has, such as a saved Compare
+ * Scenarios or Merge Flow node of Builtin, is a third case (#1048): there is
+ * nothing to install, so the card says the package no longer has it.
  */
 import React from "react";
-import { render, screen } from "@testing-library/react";
+import { act, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { faCircle } from "@fortawesome/free-solid-svg-icons";
 
 const mockOpenDrawer = jest.fn();
 jest.mock("../../providers/packages/NodeCatalogDrawerProvider", () => ({
@@ -55,16 +60,54 @@ import {
   packageIdFromNodeType,
 } from "../../components/UnresolvedNode";
 import { NotebookViewContext } from "../../providers/flow/notebookViewContext";
+import { clearPackageNodes, registerNode } from "../../registry/nodeRegistry";
+import type { NodeDescriptor } from "../../registry/types";
 import { notebookCellMinHeight, notebookHandlePlaces } from "../../utils/notebookLayout";
 
 // Example 10's Image Segmentation: DDRNet23-Slim's model package's node.
 const SEGMENTATION = "model.curio.ddrnet23-slim/image-segmentation";
+// A Merge Flow node, as a dataflow saved before Merge Flow left Builtin names it.
+const MERGE_FLOW = "curio.builtin/merge-flow";
+
+/** A node of *packageId* at *major*, as the registry holds each installed package's. */
+function packageNode(id: string, packageId: string, major: number): NodeDescriptor {
+  return {
+    id,
+    category: "data",
+    label: id,
+    icon: faCircle,
+    inputPorts: [],
+    outputPorts: [],
+    editor: "code",
+    inPalette: true,
+    description: "",
+    hasCode: true,
+    hasWidgets: false,
+    hasGrammar: false,
+    adapter: {
+      handles: [],
+      editor: { code: true, grammar: false, widgets: false },
+      container: {},
+      useNodeBehavior: () => ({}),
+    },
+    source: "package",
+    package: { packageId, major, version: `${major}.0.0` },
+  };
+}
+
+// Builtin is installed everywhere, so the registry always holds its nodes.
+beforeAll(() => {
+  registerNode(packageNode("curio.builtin/data-loading@1", "curio.builtin", 1));
+});
 
 beforeEach(() => {
   mockEdges = [];
   mockNodes = [];
   mockOpenDrawer.mockClear();
 });
+
+// Builtin's nodes stay, as they do in the app; every other package's go.
+afterEach(() => clearPackageNodes());
 
 const handleIds = (container: HTMLElement, type: "source" | "target") =>
   Array.from(container.querySelectorAll(`[data-handletype="${type}"]`)).map((el) =>
@@ -245,6 +288,79 @@ describe("UnresolvedNode", () => {
   });
 });
 
+describe("UnresolvedNode for a type its installed package no longer has (#1048)", () => {
+  it("says the package no longer has it, and offers no install", () => {
+    // The report: a saved Compare Scenarios node opened as "Missing node
+    // package ... Install Builtin…", though Builtin is installed. The button
+    // searched the Node Catalog for a package with nothing to install.
+    render(<UnresolvedNode nodeId="n1" nodeType={MERGE_FLOW} registryReady />);
+    const card = screen.getByTestId("removed-node-type");
+    expect(card).toHaveTextContent("Removed node type");
+    expect(card).toHaveTextContent(
+      `This dataflow asks for ${MERGE_FLOW}, which Builtin no longer has. ` +
+        "It may come from an older version of Builtin.",
+    );
+    expect(card).toHaveAttribute("title", `No installed package provides ${MERGE_FLOW}`);
+    expect(screen.queryByRole("button")).toBeNull();
+    expect(screen.queryByText("Missing node package")).toBeNull();
+    expect(screen.queryByTestId("unresolved-node")).toBeNull();
+  });
+
+  it("says so for a versioned type whose major the account has", () => {
+    registerNode(packageNode("zz.test.dropped/kept@1", "zz.test.dropped", 1));
+    render(<UnresolvedNode nodeId="n1" nodeType="zz.test.dropped/gone@1" registryReady />);
+    expect(screen.getByTestId("removed-node-type")).toHaveTextContent(
+      "This dataflow asks for zz.test.dropped/gone@1, which Dropped no longer has.",
+    );
+    expect(screen.queryByRole("button")).toBeNull();
+  });
+
+  it("keeps the install for a major the account does not have", () => {
+    // An exact versioned type gets no fallback to another major, so with only
+    // @1 installed the @2 package really is missing.
+    registerNode(packageNode("zz.test.dropped/kept@1", "zz.test.dropped", 1));
+    render(<UnresolvedNode nodeId="n1" nodeType="zz.test.dropped/kept@2" registryReady />);
+    expect(screen.getByTestId("unresolved-node")).toHaveTextContent("Missing node package");
+    expect(screen.getByRole("button")).toHaveTextContent("Install Dropped…");
+    expect(screen.queryByTestId("removed-node-type")).toBeNull();
+  });
+
+  it("keeps the install for a package the account does not have", () => {
+    render(<UnresolvedNode nodeId="n1" nodeType="curio.nowhere/thing" registryReady />);
+    expect(screen.getByTestId("unresolved-node")).toHaveTextContent("Missing node package");
+    expect(screen.getByRole("button")).toHaveTextContent("Install Nowhere…");
+    expect(screen.queryByTestId("removed-node-type")).toBeNull();
+  });
+
+  it("keeps saying 'Loading' while the registry might still deliver", () => {
+    render(<UnresolvedNode nodeId="n1" nodeType={MERGE_FLOW} registryReady={false} />);
+    expect(screen.getByText("Loading node…")).toBeInTheDocument();
+    expect(screen.queryByTestId("removed-node-type")).toBeNull();
+  });
+
+  it("follows the registry: the package's nodes arriving turn the card", () => {
+    // A package installed while the dataflow is open: its nodes register
+    // after the card first drew, and the card must not keep offering it.
+    render(<UnresolvedNode nodeId="n1" nodeType="zz.test.late/gone@1" registryReady />);
+    expect(screen.getByTestId("unresolved-node")).toBeInTheDocument();
+    act(() => registerNode(packageNode("zz.test.late/kept@1", "zz.test.late", 1)));
+    expect(screen.getByTestId("removed-node-type")).toBeInTheDocument();
+    expect(screen.queryByRole("button")).toBeNull();
+  });
+
+  it("renders handles too, so its edges still draw", () => {
+    mockEdges = [
+      { id: "e1", source: "up", target: "n1", targetHandle: "in" },
+      { id: "e2", source: "n1", target: "join", sourceHandle: "out_points" },
+    ];
+    const { container } = render(
+      <UnresolvedNode nodeId="n1" nodeType={MERGE_FLOW} registryReady />,
+    );
+    expect(handleIds(container, "target")).toEqual(["in"]);
+    expect(handleIds(container, "source").sort()).toEqual(["out", "out_points"]);
+  });
+});
+
 /** The page's cell width the view hands its cells. */
 const CELL_WIDTH = 1065;
 
@@ -276,6 +392,7 @@ describe("UnresolvedNode in the notebook view", () => {
   it.each([
     ["missing its package", SEGMENTATION, true],
     ["of an unrecognized type", "DATA_LOADING", true],
+    ["of a type its package no longer has", MERGE_FLOW, true],
     ["still loading", SEGMENTATION, false],
   ])("is a cell like any other when %s: the page's width, its dots on its right edge where every cell's are", (
     _label, nodeType, registryReady,
