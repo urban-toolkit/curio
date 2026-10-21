@@ -151,12 +151,14 @@ _NO_FRAME_YET_JS = """(() => {
 })();"""
 
 # Every node on the canvas with its package's body, not the placeholder drawn
-# until the package's descriptor arrives (#683), whose size a fit would frame.
+# until the package's descriptor arrives (#683), whose size a fit would frame,
+# nor the card of a type its package no longer has (#1048).
 _NODES_DRAWN_JS = """(count) => {
     const nodes = [...document.querySelectorAll('.react-flow__node')];
     return nodes.length === count && nodes.every((node) =>
         node.querySelector('[data-curio-node-status]') !== null
-        && node.querySelector('[data-testid="unresolved-node"]') === null);
+        && node.querySelector(
+            '[data-testid="unresolved-node"], [data-testid="removed-node-type"]') === null);
 }"""
 
 # The nodes React Flow has measured, or null before the canvas is up.

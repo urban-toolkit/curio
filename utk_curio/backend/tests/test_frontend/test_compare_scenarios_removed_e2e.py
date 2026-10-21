@@ -3,10 +3,13 @@ komar41's review of the #914 merges).
 
 * The Built-in palette has no Compare Scenarios tile.
 * A dataflow saved with a Compare Scenarios node opens with that node as a
-  type no installed package provides, as a node of any such type opens: the
-  "Missing node package" card, titled with the type. Nothing aliases or
-  migrates it. Its connections are drawn, since the card has a handle for
-  each port its edges name, and every other node opens as it was saved.
+  type no installed package provides. Builtin is installed and only dropped
+  the type, so the node gets the "Removed node type" card, titled with the
+  type, which names Builtin and offers no Install button (#1048). A type of a
+  package nothing provides gets the "Missing node package" card and its
+  Install button. Nothing aliases or migrates it. Its connections are drawn,
+  since the card has a handle for each port its edges name, and every other
+  node opens as it was saved.
 * Run All on it ends, as on any dataflow, rather than waiting on a node no
   package provides: the nodes it does not hold up run to done, the chart it
   fed ends in an error, as a node whose input never came, and the two
@@ -97,12 +100,13 @@ EDGES = {
 #: The pair's connection.
 PAIR_EDGE = (f"reactflow__edge-{PAIR_LOADER}out-{PAIR_PYTHON}in", PAIR_LOADER, PAIR_PYTHON)
 
-#: What a node opened as: its package's body, one of the two cards a node
+#: What a node opened as: its package's body, one of the three cards a node
 #: whose type nothing provides gets, or null while it is still loading.
 _OPENED_AS_JS = """(id) => {
     const node = document.querySelector(`.react-flow__node[data-id="${id}"]`);
     if (!node) return null;
     if (node.querySelector('[data-testid="unresolved-node"]')) return 'missing package';
+    if (node.querySelector('[data-testid="removed-node-type"]')) return 'removed type';
     if (node.querySelector('[data-testid="unrecognized-node"]')) return 'unrecognized type';
     if (node.querySelector('[data-curio-node-status]')) return 'its own body';
     return null;
@@ -193,15 +197,26 @@ def test_a_dataflow_saved_with_a_compare_scenarios_node_opens_with_it_as_a_missi
         LOADER: "its own body",
         CHART: "its own body",
         NOWHERE: "missing package",
-        COMPARE: "missing package",
+        COMPARE: "removed type",
         PAIR_LOADER: "its own body",
         PAIR_PYTHON: "its own body",
-    }, f"the saved Compare Scenarios node should open as a type no package provides, as {NOWHERE_TYPE} does: {opened}"
+    }, (
+        "the saved Compare Scenarios node should open as a type its installed package no "
+        f"longer has, and {NOWHERE_TYPE} as a package nothing provides: {opened}"
+    )
 
-    card = node_locator(page, COMPARE).get_by_test_id("unresolved-node")
+    card = node_locator(page, COMPARE).get_by_test_id("removed-node-type")
     expect(card).to_have_attribute("title", f"No installed package provides {COMPARE_TYPE}")
-    expect(card).to_contain_text("Missing node package")
+    expect(card).to_contain_text("Removed node type")
+    expect(card).to_contain_text(f"This dataflow asks for {COMPARE_TYPE}, which Builtin no longer has.")
+    expect(card.get_by_role("button")).to_have_count(0)
     expect(node_locator(page, COMPARE).get_by_role("tab", name="What differs")).to_have_count(0)
+
+    # A type of a package nothing provides keeps the card that offers the install.
+    missing = node_locator(page, NOWHERE).get_by_test_id("unresolved-node")
+    expect(missing).to_have_attribute("title", f"No installed package provides {NOWHERE_TYPE}")
+    expect(missing).to_contain_text("Missing node package")
+    expect(missing.get_by_role("button", name="Install Nowhere…")).to_have_count(1)
 
     # Its connections are drawn, from the loader and to the chart.
     for edge_id in EDGES:
@@ -229,5 +244,5 @@ def test_run_all_on_a_dataflow_saved_with_a_compare_scenarios_node_runs_the_rest
         assert status == "done", f"{node_id} ended {status!r}: {read_node_error_text(node_locator(page, node_id))}"
     status = wait_for_node_settled(page, CHART, node_type=VEGA_TYPE, timeout_ms=60000)
     assert status == "error", f"the chart the Compare Scenarios node fed ended {status!r}, not as a node with no input"
-    for node_id in (COMPARE, NOWHERE):
-        assert _opened_as(page, node_id) == "missing package", node_id
+    cards = {node_id: _opened_as(page, node_id) for node_id in (COMPARE, NOWHERE)}
+    assert cards == {COMPARE: "removed type", NOWHERE: "missing package"}, cards
