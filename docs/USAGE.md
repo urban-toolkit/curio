@@ -775,16 +775,16 @@ dataflow. Deleting a node removes it from its scenario.
 The **Interaction** node removes features from a layer, or changes them, by hand or
 by a condition: two towers taken out of a city's buildings, or every building over
 100 m lowered, say. It also draws new features, reshapes them, and adds properties
-and layers. The data goes through it on data edges, and an interaction edge links it
-to the Autark map it feeds, both ways, as two Autark views are linked (see
+and layers. The same data nodes feed it and an Autark map, and an interaction edge
+links it to the map, both ways, as two Autark views are linked (see
 [Linking charts](#linking-charts)).
 
-1. Drag **Interaction** from the **Built-in** palette onto the canvas and connect the
-   nodes that load your layers to it, one to each input circle. It hands on every
-   layer under its name: a layer whose node gives it none is named after its circle,
-   `input_0`, `input_1`, and so on, the names an Autark map gives its inputs.
-2. Connect its output to an Autark map, whose document draws those layers
-   (`[!! input_0 !!]`, ...).
+1. Connect the nodes that load your layers to an Autark map, one to each input
+   circle, whose document draws them (`[!! input_0 !!]`, ...).
+2. Drag **Interaction** from the **Built-in** palette onto the canvas and connect the
+   same nodes to it, in the same order. A layer whose node gives it no name is named
+   after its circle, `input_0`, `input_1`, and so on, on both, so the node and the
+   map call it alike.
 3. Link the two with an interaction edge: drag from the dot on top of the Interaction
    node to the dot on top of the map. The node's body now says **Linked to** the map.
 4. Pick a layer in the node's body, then what to do with it: **Add** features drawn
@@ -792,13 +792,15 @@ to the Autark map it feeds, both ways, as two Autark views are linked (see
    values), **Remove** features picked on the map by a click or a lasso, or by a rule
    such as `height > 100`, or **Add a property** to every feature. **Show only this
    layer** hides the map's other layers while you work.
-5. The map shows the picks and the edits at once, before anything runs. Press
-   **Commit edits** to run the node and every node below it, the map among them, with
-   the edits.
+5. The map shows the picks and the edits at once, and hands on its layers with them.
+   Press **Commit edits** to run the node, the map and every node below them with the
+   edits.
 
-An Interaction node linked to no map edits on a flat edit map of its own, in its
-body. A map linked to an Interaction node that does not feed it applies the node's
-edits to its own layers, and hands those on.
+The node hands on its inputs with its edits too, so a node it feeds gets the edited
+layers. An Interaction node linked to no map edits on a flat edit map of its own, in
+its body. When the Interaction node is all that feeds the map it is linked to, the
+map draws the node's input with the edits as they are made, and hands on what the
+node handed it at the last Commit edits.
 
 Each edit is added to the node's log, under its body. The switch before an edit
 turns it off: it stays in the log, and the run skips it. The × beside an edit deletes

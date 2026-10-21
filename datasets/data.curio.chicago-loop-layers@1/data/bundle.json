@@ -56,13 +56,6 @@
       "kind": "geodataframe",
       "format": "geojson",
       "file": "data/cta_stations.geojson"
-    },
-    {
-      "index": 8,
-      "label": "Beach weather and water sensors (Chicago Park District)",
-      "kind": "geodataframe",
-      "format": "geojson",
-      "file": "data/beach_sensors.geojson"
     }
   ]
 }

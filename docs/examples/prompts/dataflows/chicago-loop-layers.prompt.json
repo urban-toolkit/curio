@@ -4,15 +4,14 @@
   "version": 1,
   "source": {
     "path": "docs/examples/dataflows/chicago-loop-layers.json",
-    "sha256": "6ad2fadf5aade5dfa769f4a93ed78365ca97821e9fe3d04303c47ab7909f4390",
+    "sha256": "ddfa617a226871ed4389dd9652a6d600454102d1b4cad403aac6b891e83c8051",
     "walkthrough": null
   },
-  "prompt": "Make one Autark map of downtown Chicago that has a layer of every kind an Autark map draws, from the Data Catalog's Chicago Loop layers: the census tracts colored by CDC/ATSDR's Social Vulnerability Index, Overture's buildings extruded by height, OpenStreetMap's parks, water, roads and trees, the CTA 'L' lines and stations, and the Chicago Park District's beach sensors with their noon reading on 6 July 2025. Load each layer on its own, tracts first. On a second map, draw SCOUT's WRF forecast of the air temperature at 2 m for that noon as a raster, with the beach sensors over it in the same colors, so a station's reading can be compared with the model's. Feed the first map's layers through an Interaction node, and link the Interaction node to that map with an interaction edge, so I can add, reshape, move, change or remove the features of any layer on the map.",
+  "prompt": "Make one Autark map of downtown Chicago that has a layer of every kind an Autark map draws, from the Data Catalog's Chicago Loop layers: the census tracts colored by CDC/ATSDR's Social Vulnerability Index, Overture's buildings extruded by height, OpenStreetMap's parks, water, roads and trees, and the CTA 'L' lines and stations. Load each layer on its own, tracts first. Connect the same layers to an Interaction node too, in the same order, and link the Interaction node to the map with an interaction edge, so I can add, reshape, move, change or remove the features of any layer on the map.",
   "context": null,
   "required": {
     "datasets": [
-      "data.curio.chicago-loop-layers",
-      "data.scout.chicago-weather-2025-07-06"
+      "data.curio.chicago-loop-layers"
     ],
     "packages": []
   },
@@ -23,20 +22,6 @@
         "type": "curio.builtin/autk-grammar",
         "role": "visualization",
         "executable": false,
-        "hasContent": true
-      },
-      {
-        "ref": "visualization2",
-        "type": "curio.builtin/autk-grammar",
-        "role": "visualization",
-        "executable": false,
-        "hasContent": true
-      },
-      {
-        "ref": "analysis1",
-        "type": "curio.builtin/computation-analysis",
-        "role": "analysis",
-        "executable": true,
         "hasContent": true
       },
       {
@@ -96,13 +81,6 @@
         "hasContent": true
       },
       {
-        "ref": "loader9",
-        "type": "curio.builtin/data-loading",
-        "role": "loader",
-        "executable": true,
-        "hasContent": true
-      },
-      {
         "ref": "transform1",
         "type": "curio.builtin/edit-features",
         "role": "transform",
@@ -112,98 +90,114 @@
     ],
     "edges": [
       {
-        "from": "analysis1",
+        "from": "loader1",
         "to": "visualization1",
         "kind": "data"
       },
       {
         "from": "loader1",
+        "to": "transform1",
+        "kind": "data"
+      },
+      {
+        "from": "loader2",
         "to": "visualization1",
         "kind": "data",
         "slot": 1
       },
       {
-        "from": "loader1",
-        "to": "transform1",
-        "kind": "data",
-        "slot": 8
-      },
-      {
         "from": "loader2",
         "to": "transform1",
-        "kind": "data"
+        "kind": "data",
+        "slot": 1
+      },
+      {
+        "from": "loader3",
+        "to": "visualization1",
+        "kind": "data",
+        "slot": 2
       },
       {
         "from": "loader3",
         "to": "transform1",
         "kind": "data",
-        "slot": 1
+        "slot": 2
+      },
+      {
+        "from": "loader4",
+        "to": "visualization1",
+        "kind": "data",
+        "slot": 3
       },
       {
         "from": "loader4",
         "to": "transform1",
         "kind": "data",
-        "slot": 2
+        "slot": 3
+      },
+      {
+        "from": "loader5",
+        "to": "visualization1",
+        "kind": "data",
+        "slot": 4
       },
       {
         "from": "loader5",
         "to": "transform1",
         "kind": "data",
-        "slot": 3
+        "slot": 4
+      },
+      {
+        "from": "loader6",
+        "to": "visualization1",
+        "kind": "data",
+        "slot": 5
       },
       {
         "from": "loader6",
         "to": "transform1",
         "kind": "data",
-        "slot": 4
+        "slot": 5
+      },
+      {
+        "from": "loader7",
+        "to": "visualization1",
+        "kind": "data",
+        "slot": 6
       },
       {
         "from": "loader7",
         "to": "transform1",
         "kind": "data",
-        "slot": 5
-      },
-      {
-        "from": "loader8",
-        "to": "transform1",
-        "kind": "data",
         "slot": 6
       },
       {
-        "from": "loader9",
+        "from": "loader8",
+        "to": "visualization1",
+        "kind": "data",
+        "slot": 7
+      },
+      {
+        "from": "loader8",
         "to": "transform1",
         "kind": "data",
         "slot": 7
       },
       {
         "from": "transform1",
-        "to": "visualization2",
-        "kind": "data"
-      },
-      {
-        "from": "transform1",
-        "to": "visualization2",
+        "to": "visualization1",
         "kind": "interaction"
       }
     ],
     "sources": {
       "datasetIds": [
-        "data.curio.chicago-loop-layers",
-        "data.scout.chicago-weather-2025-07-06"
+        "data.curio.chicago-loop-layers"
       ],
       "paths": [],
       "urls": []
     }
   },
-  "intents": [
-    {
-      "ref": "analysis1",
-      "mustMention": [
-        "temperature"
-      ],
-      "outputKind": "raster"
-    }
-  ],
+  "intents": [],
   "execution": {
     "mode": "sandbox",
     "browserOnlyKinds": [
@@ -237,10 +231,6 @@
       {
         "datasetId": "data.curio.chicago-loop-layers",
         "licence": "ODbL-1.0 (OpenStreetMap, Overture); City of Chicago Terms of Use; CDC/ATSDR public domain"
-      },
-      {
-        "datasetId": "data.scout.chicago-weather-2025-07-06",
-        "licence": ""
       }
     ],
     "notes": "The prompt, the expected graph and the plan target are authored in this repository; the datasets appear only as ids."

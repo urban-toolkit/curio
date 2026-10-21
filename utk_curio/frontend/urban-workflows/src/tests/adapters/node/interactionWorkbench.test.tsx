@@ -113,8 +113,8 @@ test("the Edit view lists the input's layers by the geometry of their features",
 });
 
 test("linked to an Autark map, fed by two data nodes, the node edits on the map and hands on both circles", async () => {
-  // Data → Interaction → map on data edges, the node and the map linked by
-  // an interaction edge, as two Autark views are.
+  // The same data nodes feed the node and the map, and an interaction edge
+  // links the two, as two Autark views are linked.
   mockSources = [{ ...ROADS, outputTableName: "input_0", named: false }, { ...BUILDINGS, outputTableName: "input_1", named: false }];
   const { state } = mountLive(undefined, {
     nodes: [
@@ -125,7 +125,8 @@ test("linked to an Autark map, fed by two data nodes, the node edits on the map 
     edges: [
       { source: "roads", target: NODE, sourceHandle: "out", targetHandle: "in_0" },
       { source: "buildings", target: NODE, sourceHandle: "out", targetHandle: "in_1" },
-      { source: NODE, target: "map", sourceHandle: "out", targetHandle: "in_0" },
+      { source: "roads", target: "map", sourceHandle: "out", targetHandle: "in_0" },
+      { source: "buildings", target: "map", sourceHandle: "out", targetHandle: "in_1" },
       { source: NODE, target: "map", sourceHandle: "in/out", targetHandle: "in/out", type: "BIDIRECTIONAL_EDGE" },
     ],
   });

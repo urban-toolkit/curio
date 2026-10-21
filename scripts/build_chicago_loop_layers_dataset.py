@@ -2,7 +2,7 @@
 """Build the Data Catalog dataset ``data.curio.chicago-loop-layers``.
 
 Downtown Chicago, the Loop with the West Loop, the South Loop, Streeterville
-and the Near North lakefront up to Oak Street Beach, as nine layers of every
+and the Near North lakefront up to Oak Street Beach, as eight layers of every
 geometry an Autark map draws, for the chicago-loop-layers example (one Autark
 map, many kinds of layer) and the Interaction node that edits them:
 
@@ -18,10 +18,6 @@ roads.parquet      lines      OpenStreetMap roads, no footways or cycleways
 cta_lines.geojson  lines      City of Chicago portal, CTA 'L' (Rail) Lines
 trees.geojson      points     OpenStreetMap, ``natural=tree``
 cta_stations       points     City of Chicago portal, CTA 'L' (Rail) Stations
-beach_sensors      points     City of Chicago portal, the Chicago Park
-                              District's beach sensors in BOX, each with its
-                              reading at noon on 2025-07-06 (the day SCOUT's
-                              WRF forecast covers)
 =================  =========  ==================================================
 
 The Overture buildings come through Curio's own Discovery Catalog provider,
@@ -59,8 +55,7 @@ from utk_curio.backend.app.discovery.providers import overture  # noqa: E402
 DATASET_ID = "data.curio.chicago-loop-layers"
 OUT = REPO / "datasets" / f"{DATASET_ID}@1"
 #: West, south, east, north: the shipped downtown roads' box, taken north to
-#: Oak Street Beach and east to the lakefront, so the Oak Street weather station
-#: and the Ohio Street Beach sensor are in it.
+#: Oak Street Beach and east to the lakefront.
 BOX = [-87.662, 41.859, -87.605, 41.906]
 PLACE = "Downtown Chicago, the Loop to Oak Street Beach"
 OVERTURE = "source.overture.maps@1"
@@ -69,8 +64,6 @@ SVI_LAYER = ("https://services3.arcgis.com/ZvidGQkLaDJxRSJ2/arcgis/rest/services
              "CDC_ATSDR_Social_Vulnerability_Index_2020_USA/FeatureServer/2")
 SVI_FIELDS = ("FIPS", "LOCATION", "AREA_SQMI", "E_TOTPOP", "E_HU", "E_POV150", "E_AGE65", "E_NOVEH",
               "RPL_THEME1", "RPL_THEME2", "RPL_THEME3", "RPL_THEME4", "RPL_THEMES")
-#: The beach sensors' readings: the hour the WRF forecast's noon is, local time.
-READING_AT = "2025-07-06T12:00:00"
 
 
 def _get_json(url: str, timeout: int = 120):
@@ -250,36 +243,6 @@ def portal_geojson(work: Path, dataset: str, name: str, keep=None) -> Path:
     return path
 
 
-def beach_sensors(work: Path) -> Path:
-    """The Park District's sensors in BOX, each with its reading at READING_AT."""
-    locations = _get_json(f"{PORTAL}/g3ip-u8rb.json")
-    weather = {row["station_name"]: row for row in _get_json(
-        f"{PORTAL}/k7hf-8y75.json?" + urllib.parse.urlencode({"$where": f"measurement_timestamp='{READING_AT}'"}))}
-    water = {row["beach_name"]: row for row in _get_json(
-        f"{PORTAL}/qmqz-2xku.json?" + urllib.parse.urlencode({"$where": f"measurement_timestamp='{READING_AT}'"}))}
-    numeric = ("air_temperature", "wet_bulb_temperature", "humidity", "wind_speed", "wind_direction",
-               "barometric_pressure", "solar_radiation", "interval_rain", "water_temperature", "turbidity",
-               "wave_height", "wave_period")
-    features = []
-    for row in locations:
-        lon, lat = float(row["longitude"]), float(row["latitude"])
-        if not _inside(lon, lat):
-            continue
-        name, kind = row["sensor_name"], row["sensor_type"]
-        reading = weather.get(name) if kind == "Weather" else water.get(name)
-        # A sensor that sent nothing at that hour keeps its place, marked as such.
-        properties = {"name": name, "sensor_type": kind, "reading_at": READING_AT, "has_reading": bool(reading)}
-        for key in numeric:
-            if reading and reading.get(key) not in (None, ""):
-                properties[key] = float(reading[key])
-        features.append({"type": "Feature", "geometry": {"type": "Point", "coordinates": [lon, lat]},
-                         "properties": properties})
-    path = work / "beach_sensors.geojson"
-    _write_geojson(path, features)
-    print(f"{len(features)} beach sensors: " + ", ".join(f["properties"]["name"] for f in features))
-    return path
-
-
 PARTS = [
     ("tracts.geojson", "Census tracts with CDC/ATSDR's SVI 2020", "geodataframe", "geojson"),
     ("buildings.parquet", "Buildings (Overture Maps)", "geodataframe", "parquet"),
@@ -289,7 +252,6 @@ PARTS = [
     ("cta_lines.geojson", "CTA 'L' rail lines (City of Chicago)", "geodataframe", "geojson"),
     ("trees.geojson", "Trees (OpenStreetMap, natural=tree)", "geodataframe", "geojson"),
     ("cta_stations.geojson", "CTA 'L' rail stations (City of Chicago)", "geodataframe", "geojson"),
-    ("beach_sensors.geojson", "Beach weather and water sensors (Chicago Park District)", "geodataframe", "geojson"),
 ]
 
 
@@ -310,7 +272,6 @@ def main() -> None:
         "cta_stations.geojson": portal_geojson(work, "3tzw-cg4m", "cta_stations",
                                                keep={"station_id", "longname", "lines", "address", "ada",
                                                      "legend"}),
-        "beach_sensors.geojson": beach_sensors(work),
     }
     roads = osm["roads"]
     buildings, release = overture_buildings(work)
@@ -343,19 +304,17 @@ def main() -> None:
         "format": "bundle",
         "description": (
             f"Downtown Chicago, longitude {west} to {east}, latitude {south} to {north}: the Loop with the West "
-            "Loop, the South Loop, Streeterville and the lakefront up to Oak Street Beach, as nine layers of "
+            "Loop, the South Loop, Streeterville and the lakefront up to Oak Street Beach, as eight layers of "
             "every geometry an Autark map draws: " + listing + ". Tracts: CDC/ATSDR's Social Vulnerability "
             "Index 2020 for the Cook County tracts that meet the box, cut at it (CDC's column names, -999 missing; AREA_SQMI is the whole tract's). "
             f"Buildings: Overture Maps release {release}, height in metres where Overture has it. Parks, water, "
             "roads and trees (natural=tree): OpenStreetMap, from BBBike's Chicago extract. CTA 'L' "
-            "lines and stations: City of Chicago data portal. Beach sensors: the Chicago Park District's "
-            f"weather and water sensors in the box, each with its reading at {READING_AT} local time, the day "
-            "of SCOUT's WRF forecast (data.scout.chicago-weather-2025-07-06). All EPSG:4326. Built by "
+            "lines and stations: City of Chicago data portal. All EPSG:4326. Built by "
             "scripts/build_chicago_loop_layers_dataset.py."
         ),
         "publisher": "CDC/ATSDR; Overture Maps Foundation; OpenStreetMap contributors; City of Chicago",
         "license": "ODbL-1.0 (OpenStreetMap, Overture); City of Chicago Terms of Use; CDC/ATSDR public domain",
-        "tags": ["chicago", "loop", "svi", "buildings", "parks", "roads", "trees", "cta", "weather", "bundle"],
+        "tags": ["chicago", "loop", "svi", "buildings", "parks", "roads", "trees", "cta", "bundle"],
         "dataFile": "data/bundle.json",
         "compatibility": {"major": 1},
         "sourceLabel": "CDC/ATSDR, Overture Maps, OpenStreetMap, City of Chicago",

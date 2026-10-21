@@ -511,12 +511,13 @@ whose code is written from its edit log (`metadata.editFeatures`: `key`, `layer`
   side, `mapFedBy` on the node's). The node's template declares `bidirectional`, and
   `plan_topology.interaction_edge_errors` lets it link to an Autark node alone. The
   body then edits on the map (`LayerWorkbench` publishes its session through
-  `mapEditBus`, `MapEditOverlay` picks and draws over the map). When the node is all
-  that feeds the map, the map draws the node's own input with the live log
-  (`interactionOn`'s `drawFrom`, `editSources`), so an edit shows before Commit
-  edits, and hands on what it was fed; a map linked to a node that does not feed it
-  applies the log to its own layers and hands those on, and a run on the server does
-  the same through `run_engine.map_edit_code`.
+  `mapEditBus`, `MapEditOverlay` picks and draws over the map). The usual wiring
+  feeds the same data nodes to both: the map applies the log to its own layers
+  (`editSources`) and hands those on, a run on the server does the same through
+  `run_engine.map_edit_code`, and Commit edits runs the node, the map and the nodes
+  below both (`autoRunTargets` of the two). When the node is all that feeds the
+  map, the map draws the node's own input with the live log (`interactionOn`'s
+  `drawFrom`), so an edit is never applied twice, and hands on what it was fed.
 - Conditions (`where`) and `expr` edits are one small expression language written
   twice, `utk_curio/sandbox/util/edit_expr.py` for runs and
   `src/utils/editFeatures/editExpr.ts` for the body, neither through `eval`.

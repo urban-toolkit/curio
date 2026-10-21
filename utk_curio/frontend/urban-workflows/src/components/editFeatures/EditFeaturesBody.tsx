@@ -411,8 +411,10 @@ export function EditFeaturesBody({
 
   // The node and every node below it, as an automatic run takes them.
   const targets = useMemo(
-    () => autoRunTargets([nodeId], flow?.nodes ?? [], flow?.edges ?? []),
-    [nodeId, flow?.nodes, flow?.edges],
+    // The linked map applies the edits to its own layers: Commit edits runs it,
+    // and the nodes below it, with the node.
+    () => autoRunTargets(mapId ? [nodeId, mapId] : [nodeId], flow?.nodes ?? [], flow?.edges ?? []),
+    [nodeId, mapId, flow?.nodes, flow?.edges],
   );
   const below = targets.length - 1;
   const status: Record<string, string> = flow?.nodeExecStatus ?? {};
@@ -583,7 +585,7 @@ export function EditFeaturesBody({
               data-testid="interaction-update"
               disabled={running}
               title={`Runs this node and the ${below} node${below === 1 ? "" : "s"} below it with the edits`}
-              onClick={() => flow?.runDownstream?.([nodeId])}
+              onClick={() => flow?.runDownstream?.(mapId ? [nodeId, mapId] : [nodeId])}
             >
               {running ? "Running…" : "Commit edits"}
             </button>

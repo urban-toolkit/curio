@@ -52,7 +52,9 @@ export const useEditFeaturesBehavior: NodeBehaviorHook = (data, nodeState) => {
     // What the node hands on changes, so every result below it that ran is
     // out of date until Update results, or another run, makes it again.
     const status: Record<string, string> = flow?.nodeExecStatus ?? {};
-    for (const id of autoRunTargets([data.nodeId], flow?.nodes ?? [], flow?.edges ?? [])) {
+    // The linked map draws the edits too, and hands them on: it and the
+    // nodes below it are out of date as well.
+    for (const id of autoRunTargets(mapId ? [data.nodeId, mapId] : [data.nodeId], flow?.nodes ?? [], flow?.edges ?? [])) {
       if (id !== data.nodeId && status[id] === "executed") flow.markNodeStale?.(id);
     }
   };

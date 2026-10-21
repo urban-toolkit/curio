@@ -3,7 +3,7 @@
  "name": "Chicago Loop Map Layers",
  "version": "1.0.0",
  "format": "bundle",
- "description": "Downtown Chicago, longitude -87.662 to -87.605, latitude 41.859 to 41.906: the Loop with the West Loop, the South Loop, Streeterville and the lakefront up to Oak Street Beach, as nine layers of every geometry an Autark map draws: tracts.geojson (48); buildings.parquet (10,075); parks.geojson (965); water.geojson (78); roads.parquet (8,448); cta_lines.geojson (38); trees.geojson (13,742); cta_stations.geojson (30); beach_sensors.geojson (2). Tracts: CDC/ATSDR's Social Vulnerability Index 2020 for the Cook County tracts that meet the box, cut at it (CDC's column names, -999 missing; AREA_SQMI is the whole tract's). Buildings: Overture Maps release 2026-09-23.1, height in metres where Overture has it. Parks, water, roads and trees (natural=tree): OpenStreetMap, from BBBike's Chicago extract. CTA 'L' lines and stations: City of Chicago data portal. Beach sensors: the Chicago Park District's weather and water sensors in the box, each with its reading at 2025-07-06T12:00:00 local time, the day of SCOUT's WRF forecast (data.scout.chicago-weather-2025-07-06). All EPSG:4326. Built by scripts/build_chicago_loop_layers_dataset.py.",
+ "description": "Downtown Chicago, longitude -87.662 to -87.605, latitude 41.859 to 41.906: the Loop with the West Loop, the South Loop, Streeterville and the lakefront up to Oak Street Beach, as eight layers of every geometry an Autark map draws: tracts.geojson (48); buildings.parquet (10,075); parks.geojson (965); water.geojson (78); roads.parquet (8,448); cta_lines.geojson (38); trees.geojson (13,742); cta_stations.geojson (30). Tracts: CDC/ATSDR's Social Vulnerability Index 2020 for the Cook County tracts that meet the box, cut at it (CDC's column names, -999 missing; AREA_SQMI is the whole tract's). Buildings: Overture Maps release 2026-09-23.1, height in metres where Overture has it. Parks, water, roads and trees (natural=tree): OpenStreetMap, from BBBike's Chicago extract. CTA 'L' lines and stations: City of Chicago data portal. All EPSG:4326. Built by scripts/build_chicago_loop_layers_dataset.py.",
  "publisher": "CDC/ATSDR; Overture Maps Foundation; OpenStreetMap contributors; City of Chicago",
  "license": "ODbL-1.0 (OpenStreetMap, Overture); City of Chicago Terms of Use; CDC/ATSDR public domain",
  "tags": [
@@ -15,7 +15,6 @@
   "roads",
   "trees",
   "cta",
-  "weather",
   "bundle"
  ],
  "dataFile": "data/bundle.json",
