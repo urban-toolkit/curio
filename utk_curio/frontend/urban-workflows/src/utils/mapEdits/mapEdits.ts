@@ -198,6 +198,8 @@ function readCall(text: string, start: number): Map<string, Literal> {
   const fail = (what: string): never => {
     throw new Unreadable(`Line ${text.slice(0, pos).split(/\r\n|\r|\n/).length}: ${what}.`);
   };
+  /** Fails with *what*, or with the call not closed when the code ends first. */
+  const missing = (what: string): never => fail(pos >= text.length ? "the call is not closed" : what);
   const skip = () => {
     while (pos < text.length) {
       const c = text[pos];
@@ -289,7 +291,7 @@ function readCall(text: string, start: number): Map<string, Literal> {
         items.push(value());
         skip();
         if (text[pos] === ",") pos++;
-        else if (text[pos] !== "]") fail("an item of a list has no , or ] after it");
+        else if (text[pos] !== "]") missing("an item of a list has no , or ] after it");
       }
       pos++;
       return { kind: "list", items };
@@ -302,12 +304,12 @@ function readCall(text: string, start: number): Map<string, Literal> {
         if (text[pos] === "}") break;
         const key = value();
         skip();
-        if (text[pos] !== ":") fail("a key of a dict has no : after it");
+        if (text[pos] !== ":") missing("a key of a dict has no : after it");
         pos++;
         entries.push([key, value()]);
         skip();
         if (text[pos] === ",") pos++;
-        else if (text[pos] !== "}") fail("a value of a dict has no , or } after it");
+        else if (text[pos] !== "}") missing("a value of a dict has no , or } after it");
       }
       pos++;
       return { kind: "dict", entries };
@@ -325,9 +327,8 @@ function readCall(text: string, start: number): Map<string, Literal> {
   skip();
   const input = word();
   skip();
-  if (input !== "input_0" || (text[pos] !== "," && text[pos] !== ")")) {
-    throw new Unreadable("The call's first argument is not input_0.");
-  }
+  if (input !== "input_0") throw new Unreadable("The call's first argument is not input_0.");
+  if (text[pos] !== "," && text[pos] !== ")") missing("input_0 has no , or ) after it");
   while (text[pos] !== ")") {
     pos++;
     skip();
@@ -335,6 +336,7 @@ function readCall(text: string, start: number): Map<string, Literal> {
     const name = word();
     skip();
     if (name === null || text[pos] !== "=" || text[pos + 1] === "=") {
+      if (pos >= text.length) fail("the call is not closed");
       throw new Unreadable("After input_0, the call takes key, layer, remove and change, by name.");
     }
     if (!KEYWORDS.includes(name)) throw new Unreadable(`curio_map_edits takes key, layer, remove and change, not ${name}.`);
@@ -342,7 +344,7 @@ function readCall(text: string, start: number): Map<string, Literal> {
     pos++;
     args.set(name, value());
     skip();
-    if (text[pos] !== "," && text[pos] !== ")") fail("an argument has no , or ) after it");
+    if (text[pos] !== "," && text[pos] !== ")") missing("an argument has no , or ) after it");
   }
   pos++;
   if (!/^[ \t\f\r\n]*$/.test(text.slice(pos))) throw new Unreadable("The code goes on after the curio_map_edits call.");
