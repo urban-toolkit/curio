@@ -37,15 +37,6 @@ export interface InputScenario {
   label: ScenarioLabel;
 }
 
-/** The box *nodeId* sits in, or null: the first box that holds it. */
-export function scenarioOfNode(
-  nodeId: string,
-  nodes: readonly FlowNodeLike[],
-  scenarios: readonly Scenario[],
-): Scenario | null {
-  return liveScenarios(scenarios, nodes).find((scenario) => scenario.nodes.includes(nodeId)) ?? null;
-}
-
 /**
  * The label of an input fed by the node *sourceId* (*source*), which sits in
  * *scenario*, the box *rank*-th in the dataflow's list: the box's id, name,

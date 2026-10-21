@@ -5,7 +5,7 @@
  * rows of a chart reading `inputs`, and the chips of a chart or a map, label an
  * input this way.
  */
-import { inputLabelOf, inputScenarios, scenarioOfNode } from "../../utils/scenarios/inputScenarios";
+import { inputLabelOf, inputScenarios } from "../../utils/scenarios/inputScenarios";
 import { NO_SCENARIO_COLOR, scaleLabels } from "../../utils/scenarios/scenarioColors";
 import type { Scenario } from "../../utils/scenarios/scenarioModel";
 
@@ -121,15 +121,7 @@ describe("scaleLabels: the order the scenario chips list a node's inputs' boxes 
   });
 });
 
-describe("scenarioOfNode and inputLabelOf", () => {
-  test("the box a node sits in, or none", () => {
-    const { nodes, scenarios } = twoBoxes();
-    expect(scenarioOfNode("tall", nodes, scenarios)?.id).toBe("s-tall");
-    expect(scenarioOfNode(CHART, nodes, scenarios)).toBeNull();
-    // A box's member that left the canvas is not in it.
-    expect(scenarioOfNode("tall", nodes.filter((n) => n.id !== "tall"), scenarios)).toBeNull();
-  });
-
+describe("inputLabelOf", () => {
   test("a box names an input by its id, name, color and rank; no box, by the node", () => {
     const [baseline] = twoBoxes().scenarios;
     expect(inputLabelOf(baseline, node("base"), "base")).toEqual({ scenario: "s-base", name: "Baseline", color: "#2a9d8f" });
