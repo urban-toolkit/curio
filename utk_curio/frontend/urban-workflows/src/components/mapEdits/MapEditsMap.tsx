@@ -17,8 +17,8 @@ import { useAutkGrammarBehavior } from "../../adapters/node/autkGrammarBehavior"
 import type { NodeBehaviorData, UseNodeStateReturn } from "../../registry/types";
 import styles from "./MapEdits.module.css";
 
-/** What the map's last run came to, and the document it was asked to draw. */
-type Outcome = { code: string; content: string; doc: string };
+/** What the map's last run came to, and the document and input that run drew. */
+type Outcome = { code: string; content: string; doc: string; input: unknown };
 
 export default function MapEditsMap({
   nodeId,
@@ -35,7 +35,6 @@ export default function MapEditsMap({
   onPick: (details: Record<string, any>) => void;
 }) {
   const [outcome, setOutcome] = useState<Outcome | null>(null);
-  const requested = useRef(docText);
   const pickRef = useRef(onPick);
   pickRef.current = onPick;
   // Only what the Autark node's map reads: whose canvas it is, the input it
@@ -50,13 +49,16 @@ export default function MapEditsMap({
     }) as unknown as NodeBehaviorData,
     [nodeId, input, docText],
   );
+  // A run reports through the state of the render that started it, so its
+  // outcome names the document and the input it drew: one that ends after an
+  // edit is not taken for a draw of the edit.
   const state = useMemo(
     () => ({
       output: outcome ?? { code: "", content: "" },
-      setOutput: (o: { code: string; content: string }) => setOutcome({ ...o, doc: requested.current }),
+      setOutput: (o: { code: string; content: string }) => setOutcome({ ...o, doc: docText, input }),
       code: docText,
     }) as unknown as UseNodeStateReturn,
-    [outcome, docText],
+    [outcome, docText, input],
   );
   // A draw of the map is not a run of the node: the provenance drawer lists the
   // node's own runs and edits. A draw after an edit keeps the view.
@@ -67,7 +69,6 @@ export default function MapEditsMap({
   });
 
   useEffect(() => {
-    requested.current = docText;
     setOutcome(null);
     void applyGrammar?.(docText);
     // A new input or a new document draws again; the hook's own functions
@@ -75,7 +76,7 @@ export default function MapEditsMap({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [input, docText]);
 
-  const current = outcome?.doc === docText ? outcome : null;
+  const current = outcome?.doc === docText && outcome.input === input ? outcome : null;
   const drawn = current?.code === "success";
   const problem = current?.code === "error" ? String(current.content ?? "") : null;
   return (
