@@ -328,181 +328,295 @@ function ScenarioChips({
   );
 }
 
-/**
- * The `inputs` tag of a Vega-Lite node with an input, one or several (#662),
- * after the inputs' own: it drags the chip of the dataset that stacks every
- * input's rows, in circle order, `[!! inputs !!]`, which a spec reads as
- * `"data": {"name": "[!! inputs !!]"}`. Opened, it lists the fields its rows
- * carry, each a chip that writes its name, the three the stacking adds first,
- * then the inputs' columns (a layer's geometry left out, as the rows leave it
- * out).
- */
-function StackedTags({
-  inputs,
-  onInsert,
-  onLoadColumns,
-  disabled,
-}: {
-  inputs: InputScope[];
-  onInsert: (inner: string) => void;
-  onLoadColumns?: (slot: number) => void;
-  disabled: boolean;
-}) {
-  const [open, setOpen] = useState(false);
-  useEffect(() => {
-    if (!open) return;
-    for (const input of inputs) if (input.columns === undefined) onLoadColumns?.(input.slot);
-  }, [open, inputs]);
-  const { fields, dtypes } = stackedFields(inputs);
-  const titleOf = (field: string) =>
-    `Field of inputs, ${STACKED_FIELD_TITLES[field] ?? dtypes[field] ?? "a column of its inputs"}`;
-  const chip = referenceText(INPUTS_DATASET);
+/** A chevron, pointing down on a closed list or category and up on an open one. */
+function Chevron({ open }: { open: boolean }) {
   return (
-    <>
-      <ReferenceTag
-        className={styles.inputTag}
-        mime={INPUT_REF_MIME}
-        inner={INPUTS_DATASET}
-        text={INPUTS_DATASET}
-        title={`The dataset ${chip}: every input's rows, stacked in circle order, as a spec reads them in "data": {"name": "${chip}"}`}
-        dataAttributes={{ "data-inputs-tag": "true" }}
-        onInsert={onInsert}
-        disabled={disabled}
+    <svg
+      className={styles.chevron}
+      data-chevron={open ? "up" : "down"}
+      viewBox="0 0 10 10"
+      width="10"
+      height="10"
+      aria-hidden="true"
+      focusable="false"
+    >
+      <path
+        d={open ? "M2 6.5 L5 3.5 L8 6.5" : "M2 3.5 L5 6.5 L8 3.5"}
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
       />
-      <button
-        type="button"
-        className={styles.expand}
-        aria-expanded={open}
-        aria-label={`${open ? "Hide" : "Show"} the fields of inputs`}
-        onClick={() => setOpen(!open)}
-      >
-        {open ? "▾" : "▸"}
-      </button>
-      {open ? (
-        <span className={styles.columns} data-inputs-fields="true">
-          {fields.map((field) => (
-            <ReferenceTag
-              key={field}
-              className={styles.columnTag}
-              mime={INPUT_REF_MIME}
-              inner={stackedReferenceInner(field)}
-              text={field}
-              title={titleOf(field)}
-              dataAttributes={{ "data-inputs-field": field }}
-              onInsert={onInsert}
-              disabled={disabled}
-            />
-          ))}
-        </span>
-      ) : null}
-    </>
+    </svg>
   );
 }
 
 /**
- * One input's tag, and its columns when expanded (#662). An input carrying
- * several layers (an Autark node's tables) opens to a tag per layer instead,
- * each followed by that layer's columns, in code as in a Vega-Lite or Autark
- * spec.
+ * A tag that opens a list, as one pill (#662): the tag, then on its right a
+ * chevron button, named for what it shows or hides (*what*: "the columns of
+ * input_0"). The pill shows as pressed while its list is open.
  */
-function InputTags({
+function TagPill({
+  tag,
+  what,
+  open,
+  onToggle,
+}: {
+  tag: React.ReactNode;
+  what: string;
+  open: boolean;
+  onToggle: () => void;
+}) {
+  const name = `${open ? "Hide" : "Show"} ${what}`;
+  return (
+    <span className={styles.tagPill} data-tag-pill="true" data-open={open ? "true" : "false"}>
+      {tag}
+      <button
+        type="button"
+        className={styles.expand}
+        aria-expanded={open}
+        aria-label={name}
+        title={name}
+        onClick={onToggle}
+      >
+        <Chevron open={open} />
+      </button>
+    </span>
+  );
+}
+
+/**
+ * An open list under Inputs, below its row of tags (#662): a panel headed by
+ * its tag's name (*name*: "input_0 columns"), holding its chips. *attributes*
+ * name it for tests.
+ */
+function ListPanel({
+  name,
+  attributes,
+  children,
+}: {
+  name: string;
+  attributes: Record<string, string>;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className={styles.list} role="group" aria-label={name} {...attributes}>
+      <span className={styles.listName} data-list-name="true">
+        {name}
+      </span>
+      <div className={styles.listChips}>{children}</div>
+    </div>
+  );
+}
+
+/**
+ * The fields of the dataset `inputs`, open below the Inputs row (#662): each a
+ * chip that writes its name, the three the stacking adds first, then the
+ * inputs' columns (a layer's geometry left out, as the rows leave it out).
+ */
+function StackedFields({
+  inputs,
+  onInsert,
+  disabled,
+}: {
+  inputs: InputScope[];
+  onInsert: (inner: string) => void;
+  disabled: boolean;
+}) {
+  const { fields, dtypes } = stackedFields(inputs);
+  const titleOf = (field: string) =>
+    `Field of inputs, ${STACKED_FIELD_TITLES[field] ?? dtypes[field] ?? "a column of its inputs"}`;
+  return (
+    <ListPanel name={`${INPUTS_DATASET} fields`} attributes={{ "data-inputs-fields": "true" }}>
+      {fields.map((field) => (
+        <ReferenceTag
+          key={field}
+          className={styles.columnTag}
+          mime={INPUT_REF_MIME}
+          inner={stackedReferenceInner(field)}
+          text={field}
+          title={titleOf(field)}
+          dataAttributes={{ "data-inputs-field": field }}
+          onInsert={onInsert}
+          disabled={disabled}
+        />
+      ))}
+    </ListPanel>
+  );
+}
+
+/**
+ * An input's columns, open below the Inputs row (#662). An input carrying
+ * several layers (an Autark node's tables) lists a tag per layer instead, each
+ * followed by that layer's columns, in code as in a Vega-Lite or Autark spec.
+ * More than `COLUMN_FILTER_FROM` of them get a filter box.
+ */
+function InputColumns({
   input,
   onInsert,
-  onLoadColumns,
   disabled,
 }: {
   input: InputScope;
   onInsert: (inner: string) => void;
-  onLoadColumns?: (slot: number) => void;
   disabled: boolean;
 }) {
-  const [open, setOpen] = useState(false);
   const [filter, setFilter] = useState("");
   const columns = input.columns;
-  useEffect(() => {
-    if (open && columns === undefined) onLoadColumns?.(input.slot);
-  }, [open, columns, input.slot]);
+  const name = inputName(input.slot);
   const layers = Array.isArray(input.layers) && input.layers.length > 0 ? input.layers : null;
   const count = layers
     ? layers.reduce((n, l) => n + 1 + (l.columns?.length ?? 0), 0)
     : (columns ?? []).length;
   return (
-    <>
-      <ReferenceTag
-        className={styles.inputTag}
-        mime={INPUT_REF_MIME}
-        inner={inputReferenceInner(input.slot)}
-        text={`input_${input.slot}`}
-        title={input.label ? `From ${input.label}` : undefined}
-        dataAttributes={{ "data-input-tag": String(input.slot) }}
-        onInsert={onInsert}
-        disabled={disabled}
-      />
-      <button
-        type="button"
-        className={styles.expand}
-        aria-expanded={open}
-        aria-label={`${open ? "Hide" : "Show"} the columns of input_${input.slot}`}
-        onClick={() => setOpen(!open)}
-      >
-        {open ? "▾" : "▸"}
-      </button>
-      {open ? (
-        <span className={styles.columns} data-input-columns={String(input.slot)}>
-          {columns === undefined ? <span className={styles.stripHint}>Reading the columns...</span> : null}
-          {columns === null ? (
-            <span className={styles.stripHint}>Run the node that feeds this input to see its columns.</span>
-          ) : null}
-          {!layers && Array.isArray(columns) && columns.length === 0 ? (
-            <span className={styles.stripHint}>This input has no columns.</span>
-          ) : null}
-          {count > COLUMN_FILTER_FROM ? (
-            <input
-              type="search"
-              className={styles.columnFilter}
-              placeholder="Filter columns"
-              aria-label={`Filter the columns of input_${input.slot}`}
-              value={filter}
-              onChange={(event) => setFilter(event.target.value)}
-            />
-          ) : null}
-          {layers
-            ? layers.map((layer) => (
-                <React.Fragment key={layer.name}>
-                  <ReferenceTag
-                    className={styles.inputTag}
-                    mime={INPUT_REF_MIME}
-                    inner={inputReferenceInner(input.slot, undefined, layer.name)}
-                    text={layer.name}
-                    title={`Layer of input_${input.slot}`}
-                    dataAttributes={{ "data-layer-tag": layer.name }}
-                    onInsert={onInsert}
-                    disabled={disabled}
-                  />
-                  <ColumnTags
-                    slot={input.slot}
-                    columns={layer.columns ?? []}
-                    dtypes={layer.dtypes}
-                    layer={layer.name}
-                    filter={filter}
-                    onInsert={onInsert}
-                    disabled={disabled}
-                  />
-                </React.Fragment>
-              ))
-            : null}
-          {!layers ? (
-            <ColumnTags
-              slot={input.slot}
-              columns={columns ?? []}
-              dtypes={input.dtypes}
-              filter={filter}
-              onInsert={onInsert}
-              disabled={disabled}
-            />
-          ) : null}
-        </span>
+    <ListPanel name={`${name} ${layers ? "layers" : "columns"}`} attributes={{ "data-input-columns": String(input.slot) }}>
+      {columns === undefined ? <span className={styles.stripHint}>Reading the columns...</span> : null}
+      {columns === null ? (
+        <span className={styles.stripHint}>Run the node that feeds this input to see its columns.</span>
       ) : null}
+      {!layers && Array.isArray(columns) && columns.length === 0 ? (
+        <span className={styles.stripHint}>This input has no columns.</span>
+      ) : null}
+      {count > COLUMN_FILTER_FROM ? (
+        <input
+          type="search"
+          className={styles.columnFilter}
+          placeholder="Filter columns"
+          aria-label={`Filter the columns of ${name}`}
+          value={filter}
+          onChange={(event) => setFilter(event.target.value)}
+        />
+      ) : null}
+      {layers
+        ? layers.map((layer) => (
+            <React.Fragment key={layer.name}>
+              <ReferenceTag
+                className={styles.inputTag}
+                mime={INPUT_REF_MIME}
+                inner={inputReferenceInner(input.slot, undefined, layer.name)}
+                text={layer.name}
+                title={`Layer of ${name}`}
+                dataAttributes={{ "data-layer-tag": layer.name }}
+                onInsert={onInsert}
+                disabled={disabled}
+              />
+              <ColumnTags
+                slot={input.slot}
+                columns={layer.columns ?? []}
+                dtypes={layer.dtypes}
+                layer={layer.name}
+                filter={filter}
+                onInsert={onInsert}
+                disabled={disabled}
+              />
+            </React.Fragment>
+          ))
+        : null}
+      {!layers ? (
+        <ColumnTags
+          slot={input.slot}
+          columns={columns ?? []}
+          dtypes={input.dtypes}
+          filter={filter}
+          onInsert={onInsert}
+          disabled={disabled}
+        />
+      ) : null}
+    </ListPanel>
+  );
+}
+
+/** What a list under Inputs is opened by: an input's circle, or the dataset `inputs`. */
+type InputList = number | typeof INPUTS_DATASET;
+
+/**
+ * The Inputs category (#662): its tags on one row, in circle order, each input
+ * a pill that opens to its columns, then, in a Vega-Lite spec with an input
+ * (*stacked*), the `inputs` tag, which drags the chip of the dataset that stacks
+ * every input's rows, `[!! inputs !!]`, and opens to its fields. An open list
+ * is a panel below the row, so the tags never move; several stack in the tags'
+ * order, whatever order they were opened in. Opening one reads the columns not
+ * read yet of the inputs it lists.
+ */
+function InputsChips({
+  inputs,
+  stacked,
+  onInsert,
+  onLoadColumns,
+  disabled,
+}: {
+  inputs: InputScope[];
+  stacked: boolean;
+  onInsert: (inner: string) => void;
+  onLoadColumns?: (slot: number) => void;
+  disabled: boolean;
+}) {
+  const [open, setOpen] = useState<ReadonlySet<InputList>>(() => new Set());
+  const toggle = (list: InputList) =>
+    setOpen((previous) => {
+      const next = new Set(previous);
+      if (next.has(list)) next.delete(list);
+      else next.add(list);
+      return next;
+    });
+  useEffect(() => {
+    for (const input of inputs) {
+      if (input.columns === undefined && (open.has(input.slot) || open.has(INPUTS_DATASET))) {
+        onLoadColumns?.(input.slot);
+      }
+    }
+  }, [open, inputs]);
+  const chip = referenceText(INPUTS_DATASET);
+  const fieldsOpen = stacked && open.has(INPUTS_DATASET);
+  return (
+    <>
+      <div className={styles.tagRow} data-strip-tags="inputs">
+        {inputs.map((input) => (
+          <TagPill
+            key={input.slot}
+            what={`the columns of ${inputName(input.slot)}`}
+            open={open.has(input.slot)}
+            onToggle={() => toggle(input.slot)}
+            tag={
+              <ReferenceTag
+                className={styles.inputTag}
+                mime={INPUT_REF_MIME}
+                inner={inputReferenceInner(input.slot)}
+                text={inputName(input.slot)}
+                title={input.label ? `From ${input.label}` : undefined}
+                dataAttributes={{ "data-input-tag": String(input.slot) }}
+                onInsert={onInsert}
+                disabled={disabled}
+              />
+            }
+          />
+        ))}
+        {stacked ? (
+          <TagPill
+            what={`the fields of ${INPUTS_DATASET}`}
+            open={fieldsOpen}
+            onToggle={() => toggle(INPUTS_DATASET)}
+            tag={
+              <ReferenceTag
+                className={styles.inputTag}
+                mime={INPUT_REF_MIME}
+                inner={INPUTS_DATASET}
+                text={INPUTS_DATASET}
+                title={`The dataset ${chip}: every input's rows, stacked in circle order, as a spec reads them in "data": {"name": "${chip}"}`}
+                dataAttributes={{ "data-inputs-tag": "true" }}
+                onInsert={onInsert}
+                disabled={disabled}
+              />
+            }
+          />
+        ) : null}
+      </div>
+      {inputs
+        .filter((input) => open.has(input.slot))
+        .map((input) => (
+          <InputColumns key={input.slot} input={input} onInsert={onInsert} disabled={disabled} />
+        ))}
+      {fieldsOpen ? <StackedFields inputs={inputs} onInsert={onInsert} disabled={disabled} /> : null}
     </>
   );
 }
@@ -596,20 +710,13 @@ export function ReferenceStrip({
     switch (category) {
       case "inputs":
         return (
-          <>
-            {inputs.map((input) => (
-              <InputTags
-                key={input.slot}
-                input={input}
-                onInsert={onInsert}
-                onLoadColumns={onLoadColumns}
-                disabled={disabled}
-              />
-            ))}
-            {stacked ? (
-              <StackedTags inputs={inputs} onInsert={onInsert} onLoadColumns={onLoadColumns} disabled={disabled} />
-            ) : null}
-          </>
+          <InputsChips
+            inputs={inputs}
+            stacked={stacked}
+            onInsert={onInsert}
+            onLoadColumns={onLoadColumns}
+            disabled={disabled}
+          />
         );
       case "scenarios":
         return <ScenarioChips inputs={inputs} lists={vegaLite} onInsert={onInsert} disabled={disabled} />;
@@ -647,9 +754,7 @@ export function ReferenceStrip({
               <span className={styles.categoryCount} data-strip-count="true">
                 {counts[category]}
               </span>
-              <span className={styles.categoryArrow} aria-hidden="true">
-                {isOpen ? "▾" : "▸"}
-              </span>
+              <Chevron open={isOpen} />
             </button>
           );
         })}
@@ -657,12 +762,15 @@ export function ReferenceStrip({
       {shown
         .filter((category) => open.has(category))
         .map((category) => (
+          // A category's tags are one row; Inputs stacks its open lists below
+          // its row.
           <div
             key={category}
-            className={styles.categoryChips}
+            className={category === "inputs" ? styles.categoryStack : styles.categoryChips}
             role="group"
             aria-label={`${CATEGORY_NAMES[category]} chips`}
             data-strip-chips={category}
+            {...(category === "inputs" ? {} : { "data-strip-tags": category })}
           >
             {chipsOf(category)}
           </div>
