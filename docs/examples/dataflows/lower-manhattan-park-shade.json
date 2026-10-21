@@ -290,25 +290,15 @@
       },
       {
         "id": "park-shade-removed-lever",
-        "type": "curio.builtin/edit-features",
+        "type": "curio.builtin/computation-analysis",
         "x": 2580,
         "y": 892,
-        "content": "# Edit Features writes this code from its edit list: each edit, in the\n# order it was made, on the features whose key is one of its ids. It is\n# written again when the list changes.\nreturn curio_edit_features(input_0, [\n    {\"op\": \"remove\", \"where\": \"around_park\", \"label\": \"Tall parts around a park\"},\n], key=\"building_id\")\n",
+        "content": "# Towers removed: the parts Buildings around parks marks (around_park) are taken out.\nkept = input_0[~input_0[\"around_park\"]].copy()\nkept.metadata = {\"layerType\": \"buildings\"}\nreturn kept\n",
         "out": "DEFAULT",
         "in": "DEFAULT",
-        "goal": "Remove the building parts Buildings around parks marks, by the condition around_park. More parts, picked on the map or by another condition, can be removed, raised or lowered here before Update results.",
+        "goal": "Take out the building parts Buildings around parks marks (around_park), and hand the rest on as buildings.",
         "metadata": {
-          "keywords": [],
-          "editFeatures": {
-            "key": "building_id",
-            "edits": [
-              {
-                "op": "remove",
-                "where": "around_park",
-                "label": "Tall parts around a park"
-              }
-            ]
-          }
+          "keywords": []
         },
         "title": "Towers removed"
       },
@@ -412,27 +402,15 @@
       },
       {
         "id": "park-shade-capped-lever",
-        "type": "curio.builtin/edit-features",
+        "type": "curio.builtin/computation-analysis",
         "x": 2580,
         "y": 1862,
-        "content": "# Edit Features writes this code from its edit list: each edit, in the\n# order it was made, on the features whose key is one of its ids. It is\n# written again when the list changes.\nreturn curio_edit_features(input_0, [\n    {\"op\": \"expr\", \"where\": \"around_park\", \"column\": \"height\", \"value\": \"min(height, height_cap_m)\", \"label\": \"Tall parts around a park cut to the cap\"},\n], key=\"building_id\")\n",
+        "content": "# Height cap: the parts Buildings around parks marks are cut to the Tall building height.\ncapped = input_0.copy()\nmarked = capped[\"around_park\"]\ncapped.loc[marked, \"height\"] = capped.loc[marked, [\"height\", \"height_cap_m\"]].min(axis=1)\ncapped.metadata = {\"layerType\": \"buildings\"}\nreturn capped\n",
         "out": "DEFAULT",
         "in": "DEFAULT",
-        "goal": "Cut the building parts Buildings around parks marks down to the Tall building height, its height_cap_m, by the condition around_park. More parts can be removed, raised or lowered here before Update results.",
+        "goal": "Cut the building parts Buildings around parks marks (around_park) down to the Tall building height, their height_cap_m, and hand every part on as buildings.",
         "metadata": {
-          "keywords": [],
-          "editFeatures": {
-            "key": "building_id",
-            "edits": [
-              {
-                "op": "expr",
-                "where": "around_park",
-                "column": "height",
-                "value": "min(height, height_cap_m)",
-                "label": "Tall parts around a park cut to the cap"
-              }
-            ]
-          }
+          "keywords": []
         },
         "title": "Height cap"
       },
