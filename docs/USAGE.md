@@ -633,6 +633,12 @@ In code and in a Vega-Lite or Autark spec, each input is a chip:
    lists a tag for each layer, `[!! input_1:table_osm_roads !!]`, followed by
    that layer's columns, `[!! input_1:table_osm_roads.lanes !!]`. A layer is
    named as the Autark node names its table.
+5. In a Vega-Lite or Autark spec, an input whose node is in a scenario box shows
+   that box's swatch beside its tag. Drag it where a color goes; it is written
+   `[!! scenario input_1 !!]`, a lilac chip. A Vega-Lite node with several
+   inputs also has the **inputs** tag, the dataset that stacks them (see
+   [Every input in one dataset](#every-input-in-one-dataset) and
+   [Scenario colors and order](#scenario-colors-and-order)).
 
 When the node runs:
 
@@ -841,8 +847,10 @@ node with several inputs.
 
 - **A chart.** A Vega-Lite node whose spec reads its inputs as the dataset `inputs`
   ([Every input in one dataset](#every-input-in-one-dataset)) draws every input's
-  rows, each named by the scenario box its input comes from and drawn in that box's
-  color. The Scout package's charts, below, are such nodes.
+  rows, each named by the scenario box its input comes from, and its scenario chips
+  draw them in the boxes' colors and order
+  ([Scenario colors and order](#scenario-colors-and-order)). The Scout package's
+  charts, below, are such nodes.
 - **The difference of two rasters.** A [Raster Calculator](#rasters) subtracts them
   cell by cell: `raster_calculate("subtract", [input_1, input_0],
   output_file=curio_output_file)` gives input_1 minus input_0, and with
@@ -888,8 +896,8 @@ range**, **Bars**, **Grouped bars**, **Lines**, **Points**, **Pie**, **Lollipops
 **Table**. Each is a Vega-Lite node that takes one input per scenario: connect each
 scenario's outcome to one of its circles. Its spec reads its inputs as the dataset
 `inputs` ([Every input in one dataset](#every-input-in-one-dataset)), every row named by
-the scenario box its input comes from, and draws each scenario in its box's color, in
-the order the dataflow lists the boxes. Set the columns it plots in its **Widgets** tab,
+the scenario box its input comes from, and its scenario chips draw each scenario in its
+box's color, in the order the dataflow lists the boxes. Set the columns it plots in its **Widgets** tab,
 and the Vega-Lite aggregate Bars, Grouped bars, Lines, Pie and Lollipops combine a
 scenario's rows with (**Combine**: `mean`, `sum`, `median`, `min`, `max` or `count`). A
 new node's widgets hold their own names (`y`, `part`), so the chart says which column
@@ -976,9 +984,9 @@ in circle order. Each row has three more columns:
   "data": {"name": "inputs"},
   "mark": "bar",
   "encoding": {
-    "x": {"field": "scenario_name", "type": "nominal"},
+    "x": {"field": "scenario_name", "type": "nominal", "sort": [!! scenario order !!]},
     "y": {"field": "sunlight", "type": "quantitative", "aggregate": "mean"},
-    "color": {"field": "scenario_name", "type": "nominal"}
+    "color": {"field": "scenario_name", "type": "nominal", "scale": [!! scenario colors !!]}
   }
 }
 ```
@@ -992,15 +1000,11 @@ as tall, the rows read:
 | 0 | s-base | Baseline | r2 | 5 |
 | 1 | s-tall | Twice as tall | r1 | 3 |
 
-A color, fill or stroke on `scenario_name` draws each scenario in the color of
-its box, and an axis, offset or facet on it puts the scenarios in the order the
-dataflow lists its boxes, over what the spec writes for that column. An input
-from no box comes after them, in gray. When no input comes from a box, the
-spec's own colors and order stand, until a box is drawn around a node that
-feeds the chart. Renaming or recoloring a box, or drawing one, draws the chart
-again, with no run. Inputs of one name are drawn as one: two boxes named alike,
-or untitled nodes of one kind in no box, give their rows the same
-`scenario_name`.
+On a Vega-Lite node with more than one input, the **inputs** tag beside
+`input_0`, `input_1` above the spec opens to the fields of these rows:
+`scenario_name`, `scenario` and `__input__`, then every column of the inputs,
+each with its type in its tooltip. A field's chip, `[!! inputs.sunlight !!]`,
+writes its name.
 
 The inputs stack this way: a table keeps its rows, and a column one input
 lacks is empty in its rows; a table with no rows is still a
@@ -1018,7 +1022,35 @@ stacks nothing, and reads a tuple as before, one dataset per frame.
 
 A notebook exported from the dataflow writes the same rows with
 `stack_inputs` and `input_rows` from `utk_curio.sandbox.util.scenario_stack`,
-so it runs where Curio is installed.
+so it runs where Curio is installed, and the spec with its scenario chips
+written as the canvas writes them.
+
+### Scenario colors and order
+
+A chart draws exactly its spec. The scenario chips write the boxes' colors and
+names into it, from the boxes its inputs come from:
+
+| Chip | Writes | For |
+|---|---|---|
+| `[!! scenario colors !!]` | `{"domain": [names], "range": [colors]}` | the `scale` of a color, fill or stroke on `scenario_name` |
+| `[!! scenario text_colors !!]` | the same scale, each color in its shade that reads on white | the `scale` of a text mark's color |
+| `[!! scenario order !!]` | `[names]` | the `sort` of an axis, an offset or a facet on `scenario_name` |
+| `[!! scenario input_1 !!]` | the color of the box input_1 comes from | a map layer's `color`, or a mark's, inside quotes or standing on its own |
+
+The boxes come in the order the dataflow lists them, each once, and an input
+from no box comes after them, named by its node, in gray. Two boxes named alike,
+or untitled nodes of one kind in no box, are one name. On the **inputs** tag,
+the `scenario_name` field shows a swatch per box: drag the swatches, or click
+them, to insert `[!! scenario colors !!]`, and the small **order** and **text
+colors** tags beside them for the other two. An input whose node is in a box
+shows that box's swatch on its own tag, in a Vega-Lite or an Autark spec, which
+inserts `[!! scenario input_1 !!]`.
+
+Renaming or recoloring a box, or drawing one around a node that feeds the chart,
+draws the chart again with what its chips write then, with no run. A map takes
+the new colors at its next run. A spec without the chips draws in Vega-Lite's or
+Autark's own colors, and the chips are for a spec: Python and JavaScript code
+does not take them.
 
 ### Drawing a GeoDataFrame
 
@@ -1259,13 +1291,17 @@ layer colored by a number takes `colorMapRange`, `[low, high]`, to color from
 `low` to `high` instead of from its own lowest value to its highest, so maps
 that set the same range color a value alike.
 
-On a map outside every scenario box, a layer whose input comes from a node in a
-box is drawn in that box's color, over a `color` it writes, with no legend; a
-box recolored gives it its new color on the map's next run. Every layer one
-input carries takes that input's box's color. A layer colored by its values, one
-with a `getFnv` and no `color` of its own (or with `"isColorMap": true`), keeps
-its values' colors, and so does a raster's. A map inside a box draws its layers
-as written.
+A map draws its layers as its document writes them. To draw a layer in the
+color of the scenario box its input comes from, write that input's scenario
+chip as its color, which the tag of an input from a box drags in from its
+swatch ([Scenario colors and order](#scenario-colors-and-order)):
+
+```json
+{"dataRef": "[!! input_1 !!]", "width": 80, "title": "Fastest route", "color": "[!! scenario input_1 !!]"}
+```
+
+The chip writes the box's color, and gray for an input from no box. A box
+recolored gives the layer its new color on the map's next run.
 
 ### The starter document
 
