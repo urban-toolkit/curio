@@ -850,6 +850,70 @@ def test_a_park_one_side_lacks_is_removed_or_added_as_compare_wrote_it(ran, tmp_
             ), (scenario, change)
 
 
+#: What Compare Scenarios' own functions wrote on fixed Shade per park tables
+#: (``park_shade_inputs``), from main before step 6.4 of the plan answering
+#: komar41's review removed them (``make_compare_fixtures.py`` beside it, on
+#: 72f5d3df5). Deep Umbra's shadow moves with onnxruntime's thread count, so a
+#: fixture of a run's shadow would hold one machine's numbers.
+COMPARE_FIXTURE = Path(__file__).resolve().parent / "fixtures" / "compare_scenarios" / "park_shade.json"
+
+
+def test_each_parks_change_on_fixed_tables_is_what_compare_wrote(ran, tmp_path):
+    """On Shade per park tables of fixed numbers, each what-if's park change,
+    run as written, is what Compare Scenarios' Difference keyed on the park
+    wrote (``park_shade.json``): every column, type, value and outline, also
+    with the what-if's parks reversed, and with a park left out of one side.
+    ``keyed_change`` writes the same."""
+    from utk_curio.backend.tests._support.scenario_changes import (
+        assert_frame_matches,
+        keyed_change,
+        park_shade_inputs,
+    )
+
+    held = json.loads(COMPARE_FIXTURE.read_text(encoding="utf-8"))
+    nodes = _nodes(_dataflow())
+    tables = park_shade_inputs(PARKS)
+    existing = tables["existing"]
+    for scenario, _name, _color, key in SCENARIOS[1:]:
+        node = nodes[f"park-shade-{key}-park-change"]
+        assert node["type"] == PYTHON, scenario
+        what_if = tables[scenario]
+        cases = {
+            "change": ([existing, what_if], held["change"][scenario]),
+            "reversed": ([existing, what_if.iloc[::-1].reset_index(drop=True)], held["change"][scenario]),
+            "removed": ([existing, what_if[what_if["park"] != LEFT_OUT].reset_index(drop=True)],
+                        held["oneSide"][scenario]["removed"]),
+            "added": ([existing[existing["park"] != ONLY_IN_THE_WHAT_IF].reset_index(drop=True), what_if],
+                      held["oneSide"][scenario]["added"]),
+        }
+        for case, (inputs, fixture) in cases.items():
+            ours, _printed = _run_code(node, inputs, [], tmp_path / "media")
+            assert_frame_matches(ours, fixture, what=f"the park change, {scenario}, {case}")
+            rule = _through_the_store(keyed_change(*(_through_the_store(value) for value in inputs), "park"))
+            assert_frame_matches(rule, fixture, what=f"keyed_change, {scenario}, {case}")
+
+
+def test_the_chart_stacks_fixed_tables_as_compare_stacked_them(ran):
+    """On the same fixed tables, the rows the chart reads (``stack_inputs``)
+    are what Compare Scenarios' stacked table held (``park_shade.json``), the
+    outlines left out, and so are ``stacked_rows``."""
+    from utk_curio.backend.tests._support.scenario_changes import (
+        assert_rows_match,
+        park_shade_inputs,
+        stacked_rows,
+    )
+    from utk_curio.sandbox.util.scenario_stack import stack_inputs
+
+    held = json.loads(COMPARE_FIXTURE.read_text(encoding="utf-8"))["stack"]["rows"]
+    tables = park_shade_inputs(PARKS)
+    entries = [(scenario, name, _through_the_store(tables[scenario])) for scenario, name, _color, _key in SCENARIOS]
+    rows = stack_inputs(entries)
+    assert [row["__input__"] for row in rows] == [circle for circle in range(3) for _park in PARKS]
+    assert_rows_match([{k: v for k, v in row.items() if k != "__input__"} for row in rows], held,
+                      what="the chart's rows")
+    assert_rows_match(stacked_rows(entries), held, what="stacked_rows")
+
+
 def test_each_what_ifs_change_in_shadow_is_a_raster_on_the_shadows_grid(ran):
     """Each what-if's Raster Calculator subtracts the shadows cell by cell on
     their own grid, the what-if's minus Existing's: each takes shadow away on
