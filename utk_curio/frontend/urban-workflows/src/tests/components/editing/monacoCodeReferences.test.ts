@@ -268,7 +268,7 @@ describe("a scenario chip's hover", () => {
       `scenario order = ${writes("scenario order", fromNoBox)}: ${why}, so it writes the names of the nodes its inputs come from`,
     );
     expect(hoverOf("scenario input_1", fromNoBox)).toBe(
-      `scenario input_1 = ${writes("scenario input_1", fromNoBox)}: ${why}, so it writes the grey the scale gives input_1`,
+      `scenario input_1 = ${writes("scenario input_1", fromNoBox)}: ${why}, so it writes the gray the scale gives input_1`,
     );
   });
 
