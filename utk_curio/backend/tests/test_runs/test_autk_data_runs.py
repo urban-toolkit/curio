@@ -159,7 +159,7 @@ def test_example_06s_loader_runs_on_the_server_as_the_browser_runs_it(client, us
     assert (saved.filename, saved.data_type) == (LAYERS, "list")
 
     # The pool hands the layers on: the only node the run can execute next is
-    # below it (the Edit Features node), and it reads them.
+    # below it (the Map Edits node), and it reads them.
     assert steps["whatif-pool"]["status"] == "forwarded"
     for body in sandbox.bodies("/exec"):
         assert (body["file_path"], body["dataType"]) == (LAYERS, "list"), body

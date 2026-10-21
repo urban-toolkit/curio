@@ -15,8 +15,8 @@ context:
   within the Distance from a park (a Parameter, 75 m) of any park;
 - the Season Parameter, which every Accumulated Shadow reads.
 
-Three scenarios: Existing; Towers removed, whose Interaction node removes the
-marked parts; and Height cap, whose Interaction node cuts them down to the
+Three scenarios: Existing; Towers removed, whose Python node removes the
+marked parts; and Height cap, whose Python node cuts them down to the
 Tall building height. Each rasterizes its buildings
 (``curio.scout@1``), runs Deep Umbra on them
 (``model.scout.deep-umbra@1``), measures the shade in each park, and draws its
@@ -64,7 +64,7 @@ MODEL_ID = "model.scout.deep-umbra"
 AUTARK = "curio.builtin/autk-grammar"
 PYTHON = "curio.builtin/computation-analysis"
 PARAMETER = "curio.builtin/parameter"
-INTERACTION = "curio.builtin/edit-features"
+MAP_EDITS = "curio.builtin/edit-features"
 COMPARE = "curio.builtin/compare-scenarios"
 RASTERIZE = "curio.scout/rasterize-buildings"
 SHADOW = "model.scout.deep-umbra/accumulated-shadow"
@@ -171,30 +171,22 @@ MEANS = {
     },
 }
 
-#: The code each Interaction node writes from its edit log (editFeaturesCode).
-EDIT_NOTE = (
-    "# Edit Features writes this code from its edit list: each edit, in the\n"
-    "# order it was made, on the features whose key is one of its ids. It is\n"
-    "# written again when the list changes.\n"
-)
+#: Each what-if's lever, a Python node: the marked parts taken out, or cut to
+#: the Tall building height, handed on with the frame's metadata, as buildings.
 LEVERS = {
     "towers-removed": (
-        {"key": "building_id", "edits": [
-            {"op": "remove", "where": "around_park", "label": "Tall parts around a park"},
-        ]},
-        EDIT_NOTE + "return curio_edit_features(input_0, [\n"
-        '    {"op": "remove", "where": "around_park", "label": "Tall parts around a park"},\n'
-        '], key="building_id")\n',
+        "# Towers removed: the parts Buildings around parks marks (around_park) are taken out.\n"
+        'kept = input_0[~input_0["around_park"]].copy()\n'
+        'kept.metadata = {"layerType": "buildings"}\n'
+        "return kept\n"
     ),
     "height-cap": (
-        {"key": "building_id", "edits": [
-            {"op": "expr", "where": "around_park", "column": "height", "value": "min(height, height_cap_m)",
-             "label": "Tall parts around a park cut to the cap"},
-        ]},
-        EDIT_NOTE + "return curio_edit_features(input_0, [\n"
-        '    {"op": "expr", "where": "around_park", "column": "height", "value": "min(height, height_cap_m)", '
-        '"label": "Tall parts around a park cut to the cap"},\n'
-        '], key="building_id")\n',
+        "# Height cap: the parts Buildings around parks marks are cut to the Tall building height.\n"
+        "capped = input_0.copy()\n"
+        'marked = capped["around_park"]\n'
+        'capped.loc[marked, "height"] = capped.loc[marked, ["height", "height_cap_m"]].min(axis=1)\n'
+        'capped.metadata = {"layerType": "buildings"}\n'
+        "return capped\n"
     ),
 }
 
@@ -261,11 +253,11 @@ def _node_id(key: str, what: str) -> str:
 
 def test_it_is_three_scenarios_over_one_context_from_the_extract():
     """One Autark data node, three Parameter nodes and three code nodes are the
-    context; each scenario holds its lever (none in Existing), its package
-    nodes, its shade per park and its two maps; the chart, the changes and
-    the maps after the changes are in no scenario, and no Compare Scenarios
-    node is left. No dataset: the data comes from the extract. The lockfile
-    names both packages."""
+    context; each scenario holds its lever (none in Existing), a Python node,
+    its package nodes, its shade per park and its two maps; the chart, the
+    changes and the maps after the changes are in no scenario, and no Compare
+    Scenarios or Map Edits node is left. No dataset: the data comes from the
+    extract. The lockfile names both packages."""
     spec = _dataflow()
     assert spec["name"] == NAME
     assert spec["packages"] == ["curio.scout@1", "model.scout.deep-umbra@1"]
@@ -289,11 +281,12 @@ def test_it_is_three_scenarios_over_one_context_from_the_extract():
     assert context == sorted([AUTARK, PARAMETER, PARAMETER, PARAMETER, PYTHON, PYTHON, PYTHON]), context
     for scenario, _name, _color, key in SCENARIOS:
         types = sorted(nodes[n]["type"] for n in scenarios[scenario]["nodes"])
-        lever = [] if scenario == "existing" else [INTERACTION]
+        lever = [] if scenario == "existing" else [PYTHON]
         assert types == sorted([*lever, RASTERIZE, SHADOW, PYTHON, AUTARK, AUTARK]), (scenario, types)
     assert sorted(nodes[n]["type"] for n in below) == sorted(
         [DOTS] + [CALCULATOR] * 2 + [PYTHON] * 2 + [AUTARK] * 4), below
     assert COMPARE not in {node["type"] for node in spec["nodes"]}
+    assert MAP_EDITS not in {node["type"] for node in spec["nodes"]}
     # The chart feeds nothing; each change feeds one Autark map.
     changes = {n for n in below if nodes[n]["type"] in (CALCULATOR, PYTHON)}
     assert not [e for e in spec["edges"] if e["source"] == CHART]
@@ -393,18 +386,17 @@ def test_the_wiring_reads_each_input_where_its_code_does():
         )
 
 
-def test_the_levers_are_interaction_nodes_whose_code_is_their_log():
-    """Towers removed and Height cap are Interaction nodes keyed on
-    building_id, each with one labelled edit picked by the condition
-    around_park, so a user can add more and press Update results; each node's
-    code is the code it writes from its log."""
+def test_the_levers_are_python_nodes_of_one_rule():
+    """Towers removed and Height cap are Python nodes, each titled by its
+    scenario, that pick the parts by the column around_park: Towers removed
+    takes them out, Height cap cuts their height to height_cap_m, and each
+    marks the frame it hands on as buildings."""
     nodes = _nodes(_dataflow())
     for scenario, name, _color, key in SCENARIOS[1:]:
         lever = nodes[_node_id(key, "lever")]
-        settings, code = LEVERS[scenario]
-        assert (lever["type"], lever["title"]) == (INTERACTION, name)
-        assert lever["metadata"]["editFeatures"] == settings
-        assert lever["content"] == code
+        assert (lever["type"], lever["title"]) == (PYTHON, name)
+        assert lever["metadata"] == {"keywords": []}, lever["metadata"]
+        assert lever["content"] == LEVERS[scenario]
 
 
 def test_the_chart_and_the_changes_hold_what_they_compare():
@@ -670,6 +662,15 @@ def test_buildings_around_parks_marks_the_parts_by_one_rule_for_every_park(ran):
     assert set(marked["nearest_park"]) <= set(PARKS)
 
 
+def _same_frame_shape(lever, marked) -> None:
+    """A lever hands on the frame it read: its columns, their types and its
+    CRS, marked as buildings."""
+    assert list(lever.columns) == list(marked.columns)
+    assert dict(lever.dtypes.astype(str)) == dict(marked.dtypes.astype(str))
+    assert lever.crs == marked.crs
+    assert getattr(lever, "metadata", None) == {"layerType": "buildings"}
+
+
 def test_towers_removed_hands_on_every_part_but_the_marked_ones(ran):
     marked = _value(ran, "park-shade-around")
     removed, printed = ran["park-shade-removed-lever"]
@@ -677,7 +678,9 @@ def test_towers_removed_hands_on_every_part_but_the_marked_ones(ran):
     assert not removed["around_park"].any()
     kept = marked[~marked["around_park"]]
     assert removed["height"].tolist() == kept["height"].tolist()
-    assert printed == [f"Interaction: the input, features matched on building_id: {MARKED_ROWS} removed."]
+    assert removed["building_id"].tolist() == kept["building_id"].tolist()
+    _same_frame_shape(removed, marked)
+    assert printed == []
 
 
 def test_height_cap_cuts_the_marked_parts_to_the_tall_building_height(ran):
@@ -687,7 +690,9 @@ def test_height_cap_cuts_the_marked_parts_to_the_tall_building_height(ran):
     assert (capped.loc[marked["around_park"].to_numpy(), "height"] == TALL_HEIGHT_M).all()
     assert (capped.loc[~marked["around_park"].to_numpy(), "height"].to_numpy()
             == marked.loc[~marked["around_park"], "height"].to_numpy()).all()
-    assert printed == [f"Interaction: the input, features matched on building_id: {MARKED_ROWS} changed."]
+    assert capped["building_id"].tolist() == marked["building_id"].tolist()
+    _same_frame_shape(capped, marked)
+    assert printed == []
 
 
 def test_the_three_scenarios_rasters_share_one_grid(ran):

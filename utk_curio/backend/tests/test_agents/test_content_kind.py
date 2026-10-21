@@ -44,7 +44,7 @@ class TestTemplateContentKind:
         assert kinds["js-computation"] == "code"
         assert kinds["data-summary"] == "code"
         assert kinds["data-transformation"] == "code"
-        # Its code is written for it from its edit list, and runs (#662).
+        # Map Edits: its code is written for it from its map, and runs.
         assert kinds["edit-features"] == "code"
         # A document: authored, validated, never executed.
         assert kinds["vis-vega"] == "grammar"

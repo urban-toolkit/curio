@@ -280,6 +280,19 @@ WHATIF_CHART = "whatif-compare-chart"
 WHATIF_CHANGE = "whatif-compare-difference"
 WHATIF_ROADS = ["whatif-baseline-roads", "whatif-modified-roads", "whatif-towers-roads"]
 SCOUT_PACKAGE = os.path.join(REPO_ROOT, "packages", "curio.scout@1")
+#: Two towers removed's Map Edits node: the code its map writes for removing
+#: 200 Clarendon and Raffles, every part of each, from the buildings layer.
+WHATIF_TOWERS_CODE = (
+    "# Map Edits writes this code from its map: the features it removes and the\n"
+    "# values it changes, matched by building_id. Comment lines above the return stay.\n"
+    "return curio_map_edits(\n"
+    "    input_0,\n"
+    '    key="building_id",\n'
+    '    layer="table_osm_buildings",\n'
+    "    remove=[29623484, 29628154],\n"
+    "    change={},\n"
+    ")\n"
+)
 
 
 def test_example_06_is_three_scenarios_over_one_context():
@@ -288,7 +301,7 @@ def test_example_06_is_three_scenarios_over_one_context():
     Twice as tall is a copy that names its Baseline twin and holds the same
     code, and the one value that differs is the shadow step's ``height_factor``
     widget, 1 against 2, which its spec reads as a uniform. Two towers removed
-    is an Edit Features node that removes two towers, 200 Clarendon and
+    is a Map Edits node, whose code removes two towers, 200 Clarendon and
     Raffles, by their ``building_id``, before copies of Baseline's three nodes
     with factor 1. Each scenario ends in a Roads node that takes the roads
     layer out of the five its shadow step hands on.
@@ -317,7 +330,7 @@ def test_example_06_is_three_scenarios_over_one_context():
         assert nodes[copy]["content"] == nodes[original]["content"], (
             f"{copy} holds other code than its twin {original}"
         )
-    # Two towers removed: its Edit Features node, then copies of Baseline's three.
+    # Two towers removed: its Map Edits node, then copies of Baseline's three.
     edit, *copies = towers["nodes"]
     assert copies == ["whatif-towers-compute", "whatif-towers-map", "whatif-towers-roads"]
     for original, copy in zip(baseline["nodes"], copies):
@@ -325,17 +338,15 @@ def test_example_06_is_three_scenarios_over_one_context():
         assert nodes[copy]["content"] == nodes[original]["content"], (
             f"{copy} holds other code than its twin {original}"
         )
+    # A Map Edits node keeps the type id of the node it replaced, and its edits
+    # are its code only, as its map writes it (mapEditsCode in
+    # utils/mapEdits/mapEdits.ts).
     assert nodes[edit]["type"] == "curio.builtin/edit-features"
-    assert nodes[edit]["metadata"]["editFeatures"] == {
-        "key": "building_id",
-        "layer": "table_osm_buildings",
-        "edits": [{"op": "remove", "ids": [29623484, 29628154]}],
-    }
-    assert '{"op": "remove", "ids": [29623484, 29628154]},' in nodes[edit]["content"]
-    assert '], key="building_id", layer="table_osm_buildings")' in nodes[edit]["content"]
+    assert "editFeatures" not in nodes[edit]["metadata"], nodes[edit]["metadata"]
+    assert nodes[edit]["content"] == WHATIF_TOWERS_CODE, nodes[edit]["content"]
     feeds = sorted((edge["source"], edge["target"]) for edge in flow["edges"] if edit in (edge["source"], edge["target"]))
     assert feeds == [("whatif-pool", edit), (edit, "whatif-towers-compute")], (
-        "Two towers removed reads the pool, the context the others read, through its Edit Features node"
+        "Two towers removed reads the pool, the context the others read, through its Map Edits node"
     )
 
     def factor(node_id):

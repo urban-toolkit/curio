@@ -145,24 +145,39 @@ MAX_MEDIAN_MINUTES = 0.05
 
 #: The buildings SCOUT's second scenario removes (the dataset's manifest names them).
 REMOVED_IDS = [8, 10, 12, 13, 14, 18, 19, 31, 34, 51, 66, 77, 82, 106, 122]
-#: The Interaction node (#662, #958; its type is still the Edit Features node's).
-INTERACTION_TYPE = "curio.builtin/edit-features"
-#: Towers removed's Interaction node, its edit log: one removal of those
-#: buildings, matched on building_id, under a label.
-TOWERS_LOG = {
-    "key": "building_id",
-    "edits": [{"op": "remove", "ids": REMOVED_IDS, "label": "SCOUT's 15 removed buildings"}],
-}
-#: The code the node writes from that log (``editFeaturesCode`` in
-#: ``utils/editFeatures/editFeatures.ts``): one call of ``curio_edit_features``.
+#: The Map Edits node (its type id is still the Edit Features node's).
+MAP_EDITS_TYPE = "curio.builtin/edit-features"
+#: Towers removed's Map Edits node, its code as its map writes it
+#: (``mapEditsCode`` in ``utils/mapEdits/mapEdits.ts``): one call of
+#: ``curio_map_edits`` that removes those buildings, matched on building_id,
+#: under a comment line that names them.
 TOWERS_CODE = (
-    "# Edit Features writes this code from its edit list: each edit, in the\n"
-    "# order it was made, on the features whose key is one of its ids. It is\n"
-    "# written again when the list changes.\n"
-    "return curio_edit_features(input_0, [\n"
-    '    {"op": "remove", "ids": [' + ", ".join(str(i) for i in REMOVED_IDS) + '], "label": "SCOUT\'s 15 removed buildings"},\n'
-    '], key="building_id")\n'
+    "# Map Edits writes this code from its map: the features it removes and the\n"
+    "# values it changes, matched by building_id. Comment lines above the return stay.\n"
+    "# SCOUT's 15 removed buildings.\n"
+    "return curio_map_edits(\n"
+    "    input_0,\n"
+    '    key="building_id",\n'
+    "    remove=[" + ", ".join(str(i) for i in REMOVED_IDS) + "],\n"
+    "    change={},\n"
+    ")\n"
 )
+
+
+def _map_edits_call(code: str) -> dict:
+    """The keyword arguments of the one ``curio_map_edits`` call a Map Edits
+    node's code holds, read as Python reads them: the code is a function's
+    body, its comment lines are no statement, and each argument after
+    ``input_0`` is a literal."""
+    import ast
+
+    (function,) = ast.parse("def userCode(input_0):\n" + textwrap.indent(code, "    ")).body
+    (statement,) = function.body
+    assert isinstance(statement, ast.Return) and isinstance(statement.value, ast.Call), ast.dump(statement)
+    call = statement.value
+    assert isinstance(call.func, ast.Name) and call.func.id == "curio_map_edits", ast.dump(call.func)
+    assert [ast.unparse(argument) for argument in call.args] == ["input_0"]
+    return {keyword.arg: ast.literal_eval(keyword.value) for keyword in call.keywords}
 
 
 def _manifest() -> dict:
@@ -1228,12 +1243,13 @@ def test_example_24_feeds_the_rasterizers_one_raster_to_the_node_and_the_mask():
 
 def test_the_two_scenarios_are_scouts_two_building_sets(tmp_path):
     """"Existing" rasterizes the shipped buildings, SCOUT's A. "Towers removed"
-    reads them through its Interaction node, its lever: the node's edit log
-    holds one removal, labelled, of the 15 buildings SCOUT's B leaves out,
-    matched on building_id, and its code is the code the node writes from that
-    log. Run as the node runs, that code leaves SCOUT's B. Each layer, read as
-    Rasterize Buildings reads it, gives the height tiles SCOUT committed for
-    it, so the dataflow's two shadow runs are the proof's two."""
+    reads them through its Map Edits node, its lever: the node's code, the
+    code its map writes, removes the 15 buildings SCOUT's B leaves out,
+    matched on building_id, under a comment line that names them, and the
+    node keeps no other copy of its edits. Run as the node runs, that code
+    leaves SCOUT's B. Each layer, read as Rasterize Buildings reads it, gives
+    the height tiles SCOUT committed for it, so the dataflow's two shadow runs
+    are the proof's two."""
     import geopandas as gpd
 
     spec = _dataflow()
@@ -1241,10 +1257,12 @@ def test_the_two_scenarios_are_scouts_two_building_sets(tmp_path):
     scenarios = {scenario["name"]: scenario for scenario in spec["scenarios"]}
     assert sorted(scenarios) == ["Existing", "Towers removed"]
     types = {name: sorted(nodes[n]["type"] for n in scenario["nodes"]) for name, scenario in scenarios.items()}
-    assert types["Towers removed"] == sorted([*types["Existing"], INTERACTION_TYPE]), types
-    (lever,) = [nodes[n] for n in scenarios["Towers removed"]["nodes"] if nodes[n]["type"] == INTERACTION_TYPE]
-    assert lever["metadata"]["editFeatures"] == TOWERS_LOG, lever["metadata"].get("editFeatures")
+    assert types["Towers removed"] == sorted([*types["Existing"], MAP_EDITS_TYPE]), types
+    (lever,) = [nodes[n] for n in scenarios["Towers removed"]["nodes"] if nodes[n]["type"] == MAP_EDITS_TYPE]
+    # The ids the lever removes are read from its code, the node's only state.
+    assert _map_edits_call(lever["content"]) == {"key": "building_id", "remove": REMOVED_IDS, "change": {}}
     assert lever["content"] == TOWERS_CODE, lever["content"]
+    assert "editFeatures" not in lever["metadata"], lever["metadata"]
 
     # The lever reads the buildings, the context both scenarios share, and
     # Towers removed's rasterizer reads the lever.
@@ -1255,13 +1273,13 @@ def test_the_two_scenarios_are_scouts_two_building_sets(tmp_path):
                      if nodes[n]["type"] == RASTERIZE_TYPE]
     assert into[(rasterizer, "in")] == lever["id"]
 
-    from utk_curio.sandbox.util.feature_edits import edit_features
     from utk_curio.sandbox.util.input_names import call_as_node
+    from utk_curio.sandbox.util.map_edits import map_edits
 
     buildings = gpd.read_file(BUILDINGS)
     assert list(buildings["building_id"]) == list(range(123))
     removed = call_as_node(
-        textwrap.indent(lever["content"], "    "), {"curio_edit_features": edit_features}, buildings, [0],
+        textwrap.indent(lever["content"], "    "), {"curio_map_edits": map_edits}, buildings, [0],
     )
     layers = {"A": buildings, "B": removed}
     assert len(layers["B"]) == 108
