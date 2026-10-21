@@ -21,6 +21,7 @@ import {
   type ChipSpan,
 } from "./referenceChips";
 import { effectiveValue, type WidgetDef, type WidgetValue } from "../../../utils/widgets/widgetModel";
+import { anyFromABox } from "../../../utils/scenarios/scenarioColors";
 import {
   findReferences,
   inputName,
@@ -126,6 +127,17 @@ function hoverFor(inner: string, scope: ReferenceScope, language: CodeLanguage):
   if (parsed.kind === "scenario") {
     // What the chip writes, as a run writes it.
     const value = resolveReferences(referenceText(inner), scope, "json").code;
+    // A node fed from no box has no Scenarios in its header; its chips still
+    // write the inputs' nodes' names, which the grammar's palette colors.
+    if (!anyFromABox(scope.inputs.flatMap((input) => (input.scenario ? [input.scenario] : [])))) {
+      const writes =
+        parsed.chip === "input"
+          ? `the grey the scale gives input_${parsed.slot}`
+          : parsed.chip === "order"
+            ? "the names of the nodes its inputs come from"
+            : "the names alone, in the grammar's own colors";
+      return `${inner} = ${value}: no input of this node comes from a scenario box, so it writes ${writes}`;
+    }
     if (parsed.chip !== "input") return `${inner} = ${value}, from the boxes this node's inputs come from`;
     const label = scope.inputs.find((i) => i.slot === parsed.slot)?.scenario;
     return label?.scenario != null
