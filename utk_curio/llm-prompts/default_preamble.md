@@ -211,7 +211,7 @@ A node's "type" is the id of the template it was made from. A run that can place
 - Autark: Grammar-driven urban analytics. Write an UrbanSpec (JSON) covering data loading (OSM, CSV, GeoJSON), GPU compute, map rendering of layers and rasters, and/or plot rendering in one declarative spec.
 - Spatial Join: Pairs the rows of two inputs whose shapes meet, such as points and the polygons they fall in. Connect them to the blue circle at the top and the green circle at the bottom, then pick how the shapes meet: intersects, within, contains, touches, overlaps, crosses or nearest. The output is one row per pair, with the bottom input's columns added, or the bottom input's rows with their count of pairs.
 - Parameter: One value any node can use. Give it a name, a type and a default. Its tag then shows under Shared in every node's Widgets tab and above every code editor; drag it into a node's code to use the value there. Changing the value makes the nodes that use it run again, and renaming it updates their code. It has no edges, and it lists the nodes that use it.
-- Interaction: Removes features, or changes them, by hand or by a condition. Connect a layer, or the layers an Autark node hands on, and pick the layer to edit and the column that identifies a feature: osm_id or building_id, or another column whose values differ in every feature. A layer with no such column is refused. Double-click features on its map to pick them, then Remove them (Delete), raise or lower a number such as height (the up and down arrows), scale it, Set a column to a value, type a new value into the picked features' table, or Restore them as the input has them. Or pick features by a condition such as height > 100, and do any of these to all of them, including writing a column computed by an expression such as levels * 3.2. Its edits are a log, applied in order by that column, never by a feature's place; each can be switched off, undone or deleted. Its output is the edited layer, with the other layers as they came, and Update results runs the nodes below it again. A building's parts share its building_id, so an edit by building_id applies to the whole building.
+- Map Edits: Edits the features of a layer on a map. Double-click a feature to see its properties, change them in the field and Apply, or Remove it; a click on a removed id puts it back. Pick the layer and the column that identifies a feature, such as osm_id, or building_id, which every part of a building shares. The node's code is its edits, one call it writes and reads back: return curio_map_edits(input_0, key="building_id", remove=[8, 10], change={34: {"height": 60}}). Each change is also an entry in the node's Provenance.
 - Note: A note on the canvas: a title and a short text in simple markdown (headings, lists, bold and https links) on a color of its own. It connects to nothing and runs nothing. The Researcher writes its findings in notes.
 
 A node that accepts more than one connection takes each one on its own input circle, numbered from 0 in the order they were connected. An edge names the circle it connects to in "targetHandle": "in", "in_1", "in_2", ..., circle 0 first.
@@ -236,7 +236,7 @@ Nodes are uncontrollable, controllable through code (python or JavaScript) or co
 - Autark: controllable through grammar.
 - Spatial Join: uncontrollable.
 - Parameter: uncontrollable.
-- Interaction: controllable through python code.
+- Map Edits: controllable through python code.
 - Note: uncontrollable.
 
 An output connection of a node can be connected to the input connection of different nodes.
@@ -343,7 +343,7 @@ Input supported:
 - Autark: LIST, JSON, GEODATAFRAME, DATAFRAME, RASTER
 - Spatial Join: GEODATAFRAME
 - Parameter: no input supported
-- Interaction: GEODATAFRAME, DATAFRAME, LIST, JSON
+- Map Edits: GEODATAFRAME, DATAFRAME, LIST, JSON
 - Note: no input supported
 
 Output supported:
@@ -360,7 +360,7 @@ Output supported:
 - Autark: LIST, JSON, GEODATAFRAME, DATAFRAME, RASTER
 - Spatial Join: GEODATAFRAME
 - Parameter: no output supported
-- Interaction: GEODATAFRAME, DATAFRAME, JSON
+- Map Edits: GEODATAFRAME, DATAFRAME, JSON
 - Note: no output supported
 
 Make sure to pay attention to the compatibility between output and input of the nodes.
@@ -377,7 +377,7 @@ Number of connections each node accepts into its inputs. A node that accepts mor
 - Simple View: 1
 - Autark: any number
 - Spatial Join: 2
-- Interaction: 1
+- Map Edits: 1
 
 Number of outputs possible for each node (if you want to output more than one data unit you need to use a tuple):
 
@@ -391,7 +391,7 @@ Number of outputs possible for each node (if you want to output more than one da
 - Simple View: 1
 - Autark: [0,1]
 - Spatial Join: 1
-- Interaction: 1
+- Map Edits: 1
 
 Note that there is no problem connecting the output of a node into the input of multiple nodes.
 

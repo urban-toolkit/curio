@@ -1,0 +1,150 @@
+/* The Map Edits node's body: the layer and id menus above two panes, the map
+   on the left and the selected feature's properties on the right. */
+
+.body {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  box-sizing: border-box;
+  padding: 6px 8px;
+  font-family: var(--curio-font-family);
+  font-size: var(--curio-font-size-sm);
+  color: var(--curio-text-primary);
+  background: var(--curio-card-bg);
+}
+
+/* The body takes the keys while it has the focus, with no ring around it. */
+.body:focus {
+  outline: none;
+}
+
+.bar,
+.head,
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.menu {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: var(--curio-font-size-xs);
+  color: var(--curio-text-secondary);
+}
+
+.menu select {
+  font-family: inherit;
+  font-size: var(--curio-font-size-xs);
+  max-width: 160px;
+  padding: 1px 4px;
+  border: 1px solid var(--curio-border);
+  border-radius: var(--curio-radius-sm);
+  background: var(--curio-card-bg);
+  color: var(--curio-text-primary);
+}
+
+.panes {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  gap: 8px;
+}
+
+.stage {
+  position: relative;
+  flex: 1 1 58%;
+  min-width: 0;
+  min-height: 120px;
+}
+
+.map {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.mapCanvas {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+}
+
+.panel {
+  flex: 1 1 42%;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  overflow-y: auto;
+}
+
+.title {
+  flex: 1;
+  font-weight: 600;
+  user-select: text;
+}
+
+/* The selected feature's properties, as JSON. */
+.field {
+  flex: 1 1 auto;
+  min-height: 140px;
+}
+
+.button {
+  font-family: inherit;
+  font-size: var(--curio-font-size-xs);
+  line-height: 20px;
+  padding: 0 8px;
+  border: 1px solid var(--curio-border-strong);
+  border-radius: var(--curio-radius-pill);
+  background: var(--curio-card-bg);
+  color: var(--curio-text-primary);
+  cursor: pointer;
+}
+
+.button:disabled {
+  cursor: default;
+  color: var(--curio-text-secondary);
+}
+
+.hint,
+.note {
+  margin: 0;
+  color: var(--curio-text-secondary);
+  font-size: var(--curio-font-size-xs);
+}
+
+/* The ids the node removes or changes, each a button. */
+.ids {
+  margin: 0;
+  font-size: var(--curio-font-size-xs);
+  line-height: 1.9;
+  user-select: text;
+}
+
+.id {
+  font-family: inherit;
+  font-size: var(--curio-font-size-xs);
+  line-height: 16px;
+  padding: 0 5px;
+  border: 1px solid var(--curio-border);
+  border-radius: var(--curio-radius-sm);
+  background: var(--curio-card-bg);
+  color: var(--curio-text-primary);
+  cursor: pointer;
+}
+
+.id:hover {
+  border-color: var(--curio-border-strong);
+}
+
+.problem {
+  margin: 0;
+  color: var(--curio-danger-text);
+  font-size: var(--curio-font-size-xs);
+}
