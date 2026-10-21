@@ -642,9 +642,11 @@ In code and in a Vega-Lite or Autark spec, each input is a chip:
    **input_0**, **input_1**, and so on. Hover one to see which node feeds it.
 2. Drag a tag into the code, or click it to insert it at the cursor. It appears
    as a green chip, written `[!! input_1 !!]`.
-3. Click the arrow beside an input's tag to list its columns, once the node that
-   feeds it has run. Drag a column's tag where a column name goes; it is written
-   `[!! input_1.population !!]`.
+3. Click the chevron on an input's tag to list its columns, once the node that
+   feeds it has run. The list opens below the tags, headed **input_1 columns**,
+   and the tags stay where they are. Drag a column's tag where a column name
+   goes; it is written `[!! input_1.population !!]`. Click the chevron again to
+   close the list.
 4. An input that carries several layers (an upstream Autark node's tables)
    lists a tag for each layer, `[!! input_1:table_osm_roads !!]`, followed by
    that layer's columns, `[!! input_1:table_osm_roads.lanes !!]`. A layer is
@@ -1020,9 +1022,10 @@ as tall, the rows read:
 
 On a Vega-Lite node with an input, **Inputs** above the spec lists the
 **inputs** tag after `input_0`, `input_1`. It drags the dataset's chip,
-`[!! inputs !!]`, and its arrow lists the fields of these rows: `scenario_name`,
-`scenario` and `__input__`, then every column of the inputs, each with its type
-in its tooltip. A field's chip, `[!! inputs.sunlight !!]`, writes its name.
+`[!! inputs !!]`, and its chevron lists the fields of these rows below the tags,
+headed **inputs fields**: `scenario_name`, `scenario` and `__input__`, then
+every column of the inputs, each with its type in its tooltip. A field's chip,
+`[!! inputs.sunlight !!]`, writes its name.
 
 The inputs stack this way: a table keeps its rows, and a column one input
 lacks is empty in its rows; a table with no rows is still a
