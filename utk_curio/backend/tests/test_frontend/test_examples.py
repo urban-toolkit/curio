@@ -338,9 +338,8 @@ def test_example_06_is_three_scenarios_over_one_context():
         assert nodes[copy]["content"] == nodes[original]["content"], (
             f"{copy} holds other code than its twin {original}"
         )
-    # A Map Edits node keeps the type id of the node it replaced, and its edits
-    # are its code only, as its map writes it (mapEditsCode in
-    # utils/mapEdits/mapEdits.ts).
+    # A Map Edits node, type curio.builtin/edit-features: its edits are its code
+    # only, as its map writes it (mapEditsCode in utils/mapEdits/mapEdits.ts).
     assert nodes[edit]["type"] == "curio.builtin/edit-features"
     assert "editFeatures" not in nodes[edit]["metadata"], nodes[edit]["metadata"]
     assert nodes[edit]["content"] == WHATIF_TOWERS_CODE, nodes[edit]["content"]
