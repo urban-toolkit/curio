@@ -30,6 +30,7 @@ import {
   scenarioScale,
 } from "../../../utils/scenarios/scenarioColors";
 import { INPUT_FIELD } from "../../../utils/scenarios/stackedInputs";
+import { INPUTS_DATASET } from "../../../utils/vegaDatasets";
 
 /** One widget's tag (#662): dragged into a code editor, or clicked to insert
  * the reference at the cursor. */
@@ -316,12 +317,13 @@ function ScenarioSwatches({
 }
 
 /**
- * The `inputs` tag of a Vega-Lite node with several inputs (#662), beside the
- * inputs' own: the dataset that stacks every input's rows, in circle order.
- * Opened, it lists the fields its rows carry, each a chip that writes its
- * name, the three the stacking adds first, then the inputs' columns (a layer's
- * geometry left out, as the rows leave it out). Its `scenario_name` field shows
- * the scenarios' swatches.
+ * The `inputs` tag of a Vega-Lite node with an input, one or several (#662),
+ * beside the inputs' own: it drags the chip of the dataset that stacks every
+ * input's rows, in circle order, `[!! inputs !!]`, which a spec reads as
+ * `"data": {"name": "[!! inputs !!]"}`. Opened, it lists the fields its rows
+ * carry, each a chip that writes its name, the three the stacking adds first,
+ * then the inputs' columns (a layer's geometry left out, as the rows leave it
+ * out). Its `scenario_name` field shows the scenarios' swatches.
  */
 function StackedTags({
   inputs,
@@ -342,15 +344,19 @@ function StackedTags({
   const { fields, dtypes } = stackedFields(inputs);
   const titleOf = (field: string) =>
     `Field of inputs, ${STACKED_FIELD_TITLES[field] ?? dtypes[field] ?? "a column of its inputs"}`;
+  const chip = referenceText(INPUTS_DATASET);
   return (
     <>
-      <span
+      <ReferenceTag
         className={styles.inputTag}
-        data-inputs-tag="true"
-        title={'Every input\'s rows, stacked in circle order: the dataset a spec reads as {"data": {"name": "inputs"}}'}
-      >
-        inputs
-      </span>
+        mime={INPUT_REF_MIME}
+        inner={INPUTS_DATASET}
+        text={INPUTS_DATASET}
+        title={`The dataset ${chip}: every input's rows, stacked in circle order, as a spec reads them in "data": {"name": "${chip}"}`}
+        dataAttributes={{ "data-inputs-tag": "true" }}
+        onInsert={onInsert}
+        disabled={disabled}
+      />
       <button
         type="button"
         className={styles.expand}
@@ -503,7 +509,7 @@ function InputTags({
  * the dataflow's shared tags. Nothing when there are none.
  *
  * In a spec (*language* `json`), an input from a scenario box shows its box's
- * swatch; a Vega-Lite spec (*grammar* `VEGA_LITE`) of several inputs has the
+ * swatch; a Vega-Lite spec (*grammar* `VEGA_LITE`) with an input has the
  * `inputs` tag too, the dataset that stacks them. Code shows neither.
  */
 export function ReferenceStrip({
@@ -534,7 +540,8 @@ export function ReferenceStrip({
     return null;
   }
   const spec = language === "json";
-  const stacked = grammar === VEGA_LITE && inputs.length > 1;
+  // A spec that reads inputs stacks one input as it stacks several.
+  const stacked = grammar === VEGA_LITE && inputs.length > 0;
   return (
     <div className={styles.strip} aria-label="Reference tags" data-widget-strip="true">
       {inputs.length > 0 ? (
