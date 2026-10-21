@@ -129,7 +129,7 @@ nothing, and a building taller than the maximum height is drawn at the maximum.
 
 Each chart is a Vega-Lite node with a spec of its own. Connect each scenario's
 outcome to one of its input circles: each edge takes the next circle. Its spec
-reads all its inputs as the dataset `inputs` (`"data": {"name": "inputs"}`):
+reads all its inputs as the dataset its chip names (`"data": {"name": "[!! inputs !!]"}`):
 every input's rows, stacked in the order of its circles, each with `__input__`
 (its circle), `scenario` (the id of the scenario box its input comes from) and
 `scenario_name` (that box's name) beside its own columns. A column one input
