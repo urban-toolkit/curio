@@ -741,6 +741,38 @@ def read_node_code(page, node_id: str, *, timeout: float = 15000) -> str:
     return code
 
 
+#: The categories of chips a node's header lists, in its row's order
+#: (``ReferenceStrip`` in WidgetTag.tsx).
+STRIP_CATEGORIES = ("inputs", "scenarios", "widgets", "selections", "shared")
+
+
+def open_strip_category(page, node_id: str, category: str, *, timeout: float = 15000):
+    """Open *category* in the header above *node_id*'s code or spec, unless it
+    is open, and return the locator of its chips.
+
+    The header lists the chips a node can use in one row of categories, all
+    closed until one is clicked, so a test that drags a tag opens its category
+    first. The click is dispatched, as the editor's tabs are, so the node's
+    place on the canvas does not matter. Fails when the header has no such
+    category.
+    """
+    assert category in STRIP_CATEGORIES, f"{category!r} is not one of {STRIP_CATEGORIES}"
+    strip = node_locator(page, node_id).locator("[data-widget-strip]:visible").first
+    button = strip.locator(f'[data-strip-category="{category}"]')
+    try:
+        button.wait_for(state="visible", timeout=timeout)
+    except PlaywrightTimeoutError:
+        row = node_locator(page, node_id).locator("[data-widget-strip] [data-strip-category]").all_inner_texts()
+        raise AssertionError(
+            f"the header above {node_id}'s editor has no {category} category; its row reads {row}"
+        ) from None
+    if button.get_attribute("aria-expanded") != "true":
+        button.dispatch_event("click")
+    chips = strip.locator(f'[data-strip-chips="{category}"]')
+    chips.wait_for(state="visible", timeout=timeout)
+    return chips
+
+
 def _handle_locator(page, node_id: str, handle_id: str):
     return page.locator(
         f'.react-flow__node[data-id="{node_id}"] '
