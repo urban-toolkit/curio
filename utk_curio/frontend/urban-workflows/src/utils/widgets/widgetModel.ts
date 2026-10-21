@@ -5,6 +5,8 @@
  * The value a run uses is `value` when the user set one, else `default`.
  */
 
+import { INPUTS_DATASET } from "../vegaDatasets";
+
 /** The widget kinds. Kept in sync with `WIDGET_KINDS` in
  * `utk_curio/backend/app/execution/code_references.py`, which a package
  * manifest's template widgets are checked with too, and with the widget's
@@ -84,11 +86,12 @@ export const NUMERIC_KINDS: readonly WidgetKind[] = ["number", "slider"];
 export const WIDGET_NAME_PATTERN = String.raw`^[A-Za-z_][A-Za-z0-9_]{0,63}$`;
 export const WIDGET_NAME_RE = new RegExp(WIDGET_NAME_PATTERN);
 
-/** An input's name, `input_<k>`, which no widget takes: it names one of the
- * node's inputs, in its code as in its chips. Kept in sync with
+/** The names of a node's inputs, which no widget takes: an input's,
+ * `input_<k>`, in its code as in its chips, and `inputs`, the dataset a
+ * Vega-Lite spec reads them stacked in (`INPUTS_DATASET`). Kept in sync with
  * `INPUT_NAME_ONLY_RE` in `utk_curio/backend/app/execution/code_references.py`,
  * which a package manifest's template widgets are checked with too. */
-export const INPUT_NAME_ONLY_PATTERN = String.raw`^input_\d+$`;
+export const INPUT_NAME_ONLY_PATTERN = String.raw`^(?:input_\d+|inputs)$`;
 const INPUT_NAME_ONLY_RE = new RegExp(INPUT_NAME_ONLY_PATTERN);
 
 /** A text file widget keeps the file's text in the dataflow, so it is capped. */
@@ -251,6 +254,7 @@ export function checkWidgetDef(def: WidgetDef, others: WidgetDef[], parameter = 
   if (!WIDGET_NAME_RE.test(def.name)) {
     return "A name is letters, digits and underscores, and does not start with a digit.";
   }
+  if (def.name === INPUTS_DATASET) return `${def.name} names the node's stacked inputs. Pick another name.`;
   if (INPUT_NAME_ONLY_RE.test(def.name)) return `${def.name} names one of the node's inputs. Pick another name.`;
   if (others.some((w) => w.name === def.name)) {
     return parameter
