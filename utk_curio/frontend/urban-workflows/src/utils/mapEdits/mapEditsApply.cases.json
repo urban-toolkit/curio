@@ -1,0 +1,140 @@
+{
+  "description": "A Map Edits node's edits applied to a layer's features (utils/mapEdits/mapEdits.ts). Jest checks applyMapEdits, which the node's map draws from, leaves each case's `expected` features from its `features`, under `key`; utk_curio/sandbox/tests/test_map_edits.py checks the sandbox's curio_map_edits leaves the same features of the same FeatureCollection, so the map shows what a run hands on. Building 1 has two parts; the text \"3\" is another id than the number 3.",
+  "cases": [
+    {
+      "name": "a building's parts are removed together, by building_id",
+      "key": "building_id",
+      "edits": { "remove": [1], "change": [] },
+      "features": [
+        { "type": "Feature", "geometry": { "type": "Point", "coordinates": [0, 0] }, "properties": { "building_id": 1, "osm_id": 101, "height": 10.0 } },
+        { "type": "Feature", "geometry": { "type": "Point", "coordinates": [1, 0] }, "properties": { "building_id": 1, "osm_id": 102, "height": 12.0 } },
+        { "type": "Feature", "geometry": { "type": "Point", "coordinates": [2, 0] }, "properties": { "building_id": 2, "osm_id": 103, "height": 30.0, "name": "Tower" } },
+        { "type": "Feature", "geometry": { "type": "Point", "coordinates": [3, 0] }, "properties": { "building_id": 3, "osm_id": 104, "building:levels": 2 } },
+        { "type": "Feature", "geometry": { "type": "Point", "coordinates": [4, 0] }, "properties": { "building_id": "3", "osm_id": 105 } }
+      ],
+      "expected": [
+        { "type": "Feature", "geometry": { "type": "Point", "coordinates": [2, 0] }, "properties": { "building_id": 2, "osm_id": 103, "height": 30.0, "name": "Tower" } },
+        { "type": "Feature", "geometry": { "type": "Point", "coordinates": [3, 0] }, "properties": { "building_id": 3, "osm_id": 104, "building:levels": 2 } },
+        { "type": "Feature", "geometry": { "type": "Point", "coordinates": [4, 0] }, "properties": { "building_id": "3", "osm_id": 105 } }
+      ]
+    },
+    {
+      "name": "a change is written into every part of its building, and the other features stay as they are",
+      "key": "building_id",
+      "edits": { "remove": [], "change": [{ "id": 1, "values": { "height": 50 } }] },
+      "features": [
+        { "type": "Feature", "geometry": { "type": "Point", "coordinates": [0, 0] }, "properties": { "building_id": 1, "osm_id": 101, "height": 10.0 } },
+        { "type": "Feature", "geometry": { "type": "Point", "coordinates": [1, 0] }, "properties": { "building_id": 1, "osm_id": 102, "height": 12.0 } },
+        { "type": "Feature", "geometry": { "type": "Point", "coordinates": [2, 0] }, "properties": { "building_id": 2, "osm_id": 103, "height": 30.0, "name": "Tower" } }
+      ],
+      "expected": [
+        { "type": "Feature", "geometry": { "type": "Point", "coordinates": [0, 0] }, "properties": { "building_id": 1, "osm_id": 101, "height": 50 } },
+        { "type": "Feature", "geometry": { "type": "Point", "coordinates": [1, 0] }, "properties": { "building_id": 1, "osm_id": 102, "height": 50 } },
+        { "type": "Feature", "geometry": { "type": "Point", "coordinates": [2, 0] }, "properties": { "building_id": 2, "osm_id": 103, "height": 30.0, "name": "Tower" } }
+      ]
+    },
+    {
+      "name": "under osm_id, a part is removed or changed on its own",
+      "key": "osm_id",
+      "edits": { "remove": [102], "change": [{ "id": 101, "values": { "height": 11 } }] },
+      "features": [
+        { "type": "Feature", "geometry": { "type": "Point", "coordinates": [0, 0] }, "properties": { "building_id": 1, "osm_id": 101, "height": 10.0 } },
+        { "type": "Feature", "geometry": { "type": "Point", "coordinates": [1, 0] }, "properties": { "building_id": 1, "osm_id": 102, "height": 12.0 } },
+        { "type": "Feature", "geometry": { "type": "Point", "coordinates": [2, 0] }, "properties": { "building_id": 2, "osm_id": 103, "height": 30.0, "name": "Tower" } }
+      ],
+      "expected": [
+        { "type": "Feature", "geometry": { "type": "Point", "coordinates": [0, 0] }, "properties": { "building_id": 1, "osm_id": 101, "height": 11 } },
+        { "type": "Feature", "geometry": { "type": "Point", "coordinates": [2, 0] }, "properties": { "building_id": 2, "osm_id": 103, "height": 30.0, "name": "Tower" } }
+      ]
+    },
+    {
+      "name": "a value cleared is written as null, and a property the features lack is made",
+      "key": "building_id",
+      "edits": { "remove": [], "change": [{ "id": 2, "values": { "name": null, "note": "kept" } }] },
+      "features": [
+        { "type": "Feature", "geometry": { "type": "Point", "coordinates": [0, 0] }, "properties": { "building_id": 1, "osm_id": 101, "height": 10.0 } },
+        { "type": "Feature", "geometry": { "type": "Point", "coordinates": [2, 0] }, "properties": { "building_id": 2, "osm_id": 103, "height": 30.0, "name": "Tower" } }
+      ],
+      "expected": [
+        { "type": "Feature", "geometry": { "type": "Point", "coordinates": [0, 0] }, "properties": { "building_id": 1, "osm_id": 101, "height": 10.0 } },
+        { "type": "Feature", "geometry": { "type": "Point", "coordinates": [2, 0] }, "properties": { "building_id": 2, "osm_id": 103, "height": 30.0, "name": null, "note": "kept" } }
+      ]
+    },
+    {
+      "name": "3.0 is the id 3, and the text \"3\" is another id",
+      "key": "building_id",
+      "edits": { "remove": [3.0], "change": [{ "id": "3", "values": { "height": 9 } }] },
+      "features": [
+        { "type": "Feature", "geometry": { "type": "Point", "coordinates": [2, 0] }, "properties": { "building_id": 2, "osm_id": 103, "height": 30.0, "name": "Tower" } },
+        { "type": "Feature", "geometry": { "type": "Point", "coordinates": [3, 0] }, "properties": { "building_id": 3, "osm_id": 104, "building:levels": 2 } },
+        { "type": "Feature", "geometry": { "type": "Point", "coordinates": [4, 0] }, "properties": { "building_id": "3", "osm_id": 105 } }
+      ],
+      "expected": [
+        { "type": "Feature", "geometry": { "type": "Point", "coordinates": [2, 0] }, "properties": { "building_id": 2, "osm_id": 103, "height": 30.0, "name": "Tower" } },
+        { "type": "Feature", "geometry": { "type": "Point", "coordinates": [4, 0] }, "properties": { "building_id": "3", "osm_id": 105, "height": 9 } }
+      ]
+    },
+    {
+      "name": "an id no feature holds changes nothing",
+      "key": "building_id",
+      "edits": { "remove": [999], "change": [{ "id": 998, "values": { "height": 1 } }] },
+      "features": [
+        { "type": "Feature", "geometry": { "type": "Point", "coordinates": [0, 0] }, "properties": { "building_id": 1, "osm_id": 101, "height": 10.0 } },
+        { "type": "Feature", "geometry": { "type": "Point", "coordinates": [2, 0] }, "properties": { "building_id": 2, "osm_id": 103, "height": 30.0, "name": "Tower" } }
+      ],
+      "expected": [
+        { "type": "Feature", "geometry": { "type": "Point", "coordinates": [0, 0] }, "properties": { "building_id": 1, "osm_id": 101, "height": 10.0 } },
+        { "type": "Feature", "geometry": { "type": "Point", "coordinates": [2, 0] }, "properties": { "building_id": 2, "osm_id": 103, "height": 30.0, "name": "Tower" } }
+      ]
+    },
+    {
+      "name": "no edits leave the features as they are",
+      "key": "building_id",
+      "edits": { "remove": [], "change": [] },
+      "features": [
+        { "type": "Feature", "geometry": { "type": "Point", "coordinates": [0, 0] }, "properties": { "building_id": 1, "osm_id": 101, "height": 10.0 } },
+        { "type": "Feature", "geometry": { "type": "Point", "coordinates": [2, 0] }, "properties": { "building_id": 2, "osm_id": 103, "height": 30.0, "name": "Tower" } }
+      ],
+      "expected": [
+        { "type": "Feature", "geometry": { "type": "Point", "coordinates": [0, 0] }, "properties": { "building_id": 1, "osm_id": 101, "height": 10.0 } },
+        { "type": "Feature", "geometry": { "type": "Point", "coordinates": [2, 0] }, "properties": { "building_id": 2, "osm_id": 103, "height": 30.0, "name": "Tower" } }
+      ]
+    },
+    {
+      "name": "a removed building takes no change",
+      "key": "building_id",
+      "edits": { "remove": [2], "change": [{ "id": 2, "values": { "height": 1 } }] },
+      "features": [
+        { "type": "Feature", "geometry": { "type": "Point", "coordinates": [0, 0] }, "properties": { "building_id": 1, "osm_id": 101, "height": 10.0 } },
+        { "type": "Feature", "geometry": { "type": "Point", "coordinates": [2, 0] }, "properties": { "building_id": 2, "osm_id": 103, "height": 30.0, "name": "Tower" } }
+      ],
+      "expected": [
+        { "type": "Feature", "geometry": { "type": "Point", "coordinates": [0, 0] }, "properties": { "building_id": 1, "osm_id": 101, "height": 10.0 } }
+      ]
+    },
+    {
+      "name": "nested values are written as they are",
+      "key": "building_id",
+      "edits": { "remove": [], "change": [{ "id": 3, "values": { "tags": { "roof:shape": "flat" }, "levels": [1, 2] } }] },
+      "features": [
+        { "type": "Feature", "geometry": { "type": "Point", "coordinates": [3, 0] }, "properties": { "building_id": 3, "osm_id": 104, "building:levels": 2 } }
+      ],
+      "expected": [
+        { "type": "Feature", "geometry": { "type": "Point", "coordinates": [3, 0] }, "properties": { "building_id": 3, "osm_id": 104, "building:levels": 2, "tags": { "roof:shape": "flat" }, "levels": [1, 2] } }
+      ]
+    },
+    {
+      "name": "a feature without the key is handed on as it is",
+      "key": "building_id",
+      "edits": { "remove": [1], "change": [] },
+      "features": [
+        { "type": "Feature", "geometry": { "type": "Point", "coordinates": [0, 0] }, "properties": { "building_id": 1, "osm_id": 101, "height": 10.0 } },
+        { "type": "Feature", "geometry": { "type": "Point", "coordinates": [1, 0] }, "properties": { "building_id": 1, "osm_id": 102, "height": 12.0 } },
+        { "type": "Feature", "geometry": { "type": "LineString", "coordinates": [[0, 2], [4, 2]] }, "properties": { "highway": "primary" } }
+      ],
+      "expected": [
+        { "type": "Feature", "geometry": { "type": "LineString", "coordinates": [[0, 2], [4, 2]] }, "properties": { "highway": "primary" } }
+      ]
+    }
+  ]
+}
