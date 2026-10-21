@@ -311,10 +311,10 @@ describe("closing up circles, with names inside f-strings", () => {
   });
 });
 
-describe("scenario chips and the fields of inputs", () => {
-  test("the table has each scenario chip and a field of inputs resolving in a spec", () => {
+describe("scenario chips, the dataset inputs and its fields", () => {
+  test("the table has each scenario chip, the dataset inputs and a field of it resolving in a spec", () => {
     const resolving = (cases.cases as Case[]).filter((c) => c.language === "json" && !c.problems).map((c) => c.code).join(" ");
-    for (const chip of ["scenario colors", "scenario text_colors", "scenario order", "scenario input_1", "inputs.scenario_name"]) {
+    for (const chip of ["scenario colors", "scenario text_colors", "scenario order", "scenario input_1", "inputs", "inputs.scenario_name"]) {
       expect([chip, resolving.includes(`[!! ${chip} !!]`)]).toEqual([chip, true]);
     }
   });
@@ -328,10 +328,11 @@ describe("scenario chips and the fields of inputs", () => {
     expect(parseReference("scenario colours")).toEqual({ kind: "scenario", chip: null });
     expect(parseReference("inputs.scenario_name")).toEqual({ kind: "stacked", column: "scenario_name" });
     expect(parseReference("inputs.rain.mm")).toEqual({ kind: "stacked", column: "rain.mm" });
+    // The dataset itself, a name no widget takes.
+    expect(parseReference("inputs")).toEqual({ kind: "dataset" });
     // What the owner first named them would be widgets, or a column of input_1.
     expect(parseReference("scenario_colors")).toEqual({ kind: "widget", name: "scenario_colors" });
     expect(parseReference("scenario")).toEqual({ kind: "widget", name: "scenario" });
-    expect(parseReference("inputs")).toEqual({ kind: "widget", name: "inputs" });
     expect(parseReference("input_1.scenario_color")).toEqual({ kind: "input", slot: 1, column: "scenario_color" });
   });
 

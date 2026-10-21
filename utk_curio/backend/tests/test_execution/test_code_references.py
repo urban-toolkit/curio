@@ -100,6 +100,8 @@ class TestTheSharedCases:
             "has no selection tag named",
             "does not name a selection tag",
             "a selection tag takes",
+            "is for a Vega-Lite spec, not for code",
+            "has no input to stack",
         ):
             assert kind in messages, kind
 
@@ -285,7 +287,7 @@ class TestThePatternsAreShared:
         """``scenario colors`` has a space and ``inputs.scenario_name`` a dot,
         which no widget name holds, and neither starts as an input does. What
         the owner first called them would read as a widget, or as a column of
-        input_1."""
+        input_1. ``inputs`` names the dataset itself, a name no widget takes."""
         from utk_curio.backend.app.execution.code_references import parse_reference
 
         assert parse_reference("scenario colors") == {"kind": "scenario", "chip": "colors"}
@@ -295,9 +297,9 @@ class TestThePatternsAreShared:
         assert parse_reference("scenario input_?") == {"kind": "scenario", "chip": "input", "slot": None}
         assert parse_reference("scenario colours") == {"kind": "scenario", "chip": None}
         assert parse_reference("inputs.rain.mm") == {"kind": "stacked", "column": "rain.mm"}
+        assert parse_reference("inputs") == {"kind": "dataset"}
         assert parse_reference("scenario_colors") == {"kind": "widget", "name": "scenario_colors"}
         assert parse_reference("scenario") == {"kind": "widget", "name": "scenario"}
-        assert parse_reference("inputs") == {"kind": "widget", "name": "inputs"}
         assert parse_reference("input_1.scenario_color") == {"kind": "input", "slot": 1, "column": "scenario_color"}
 
     def test_the_selection_cap_is_one_number(self):
