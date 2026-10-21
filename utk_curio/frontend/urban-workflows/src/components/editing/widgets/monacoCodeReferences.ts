@@ -132,7 +132,7 @@ function hoverFor(inner: string, scope: ReferenceScope, language: CodeLanguage):
     if (!anyFromABox(scope.inputs.flatMap((input) => (input.scenario ? [input.scenario] : [])))) {
       const writes =
         parsed.chip === "input"
-          ? `the grey the scale gives input_${parsed.slot}`
+          ? `the gray the scale gives input_${parsed.slot}`
           : parsed.chip === "order"
             ? "the names of the nodes its inputs come from"
             : "the names alone, in the grammar's own colors";
