@@ -161,6 +161,130 @@ def keyed_change(before, after, key: str, *, absolute: bool = False):
     return out
 
 
+def _json_value(value):
+    """*value* as the fixtures hold it: a number, a text, a bool, a dict of
+    them, or None for a cell with no value."""
+    import numpy as np
+
+    if isinstance(value, dict):
+        return {key: _json_value(inner) for key, inner in value.items()}
+    if _no_value(value):
+        return None
+    if isinstance(value, (bool, np.bool_)):
+        return bool(value)
+    if isinstance(value, (int, np.integer)):
+        return int(value)
+    if isinstance(value, (float, np.floating)):
+        return float(value)
+    if isinstance(value, str):
+        return str(value)
+    return value
+
+
+def frame_fixture(frame, values: list | None = None) -> dict:
+    """A table or layer as the fixtures hold it: its columns in order, their
+    types, each row's values in column order (the outlines left out), and for
+    a layer its coordinate system and a digest of its outlines, row by row.
+    With *values*, only those columns' values are held, and a digest of the
+    other columns' values, row by row (a roads layer's hundred OpenStreetMap
+    tags, which a change takes as they are)."""
+    import hashlib
+    import json
+
+    import geopandas as gpd
+
+    geometry = frame.geometry.name if isinstance(frame, gpd.GeoDataFrame) else None
+    held_columns = list(values) if values is not None else [c for c in frame.columns if c != geometry]
+    held = {
+        "columns": list(frame.columns),
+        "dtypes": frame.dtypes.astype(str).tolist(),
+        "rows": [[_json_value(row[c]) for c in held_columns] for row in frame[held_columns].to_dict("records")],
+    }
+    if values is not None:
+        held["values"] = held_columns
+        rest = [c for c in frame.columns if c != geometry and c not in held_columns]
+        rows = [[_json_value(row[c]) for c in rest] for row in frame[rest].to_dict("records")]
+        held["rest_sha256"] = hashlib.sha256(json.dumps(rows).encode("utf-8")).hexdigest()
+    if geometry is not None:
+        held["crs"] = frame.crs.to_string() if frame.crs is not None else None
+        held["geometry_sha256"] = hashlib.sha256(b"".join(frame.geometry.to_wkb())).hexdigest()
+    return held
+
+
+def _same(got, held, rel: float) -> bool:
+    import math
+
+    if isinstance(held, dict) and isinstance(got, dict):
+        return list(got) == list(held) and all(_same(got[k], held[k], rel) for k in held)
+    if isinstance(held, list) and isinstance(got, list):
+        return len(got) == len(held) and all(_same(a, b, rel) for a, b in zip(got, held))
+    if isinstance(held, float) and isinstance(got, (int, float)) and not isinstance(got, bool):
+        return math.isclose(got, held, rel_tol=rel, abs_tol=0.0) if rel else float(got) == held
+    return got == held and type(got) is type(held)
+
+
+def assert_frame_matches(frame, held: dict, *, rel: float = 0.0, what: str = "") -> None:
+    """*frame* is the table or layer the fixture *held* holds: the same
+    columns in the same order and of the same types, the same coordinate
+    system and outlines, and every value, a number exactly, or within *rel*
+    of it where the fixture's numbers come from sums another machine may add
+    in another order."""
+    got = frame_fixture(frame, held.get("values"))
+    assert got["columns"] == held["columns"], (what, got["columns"], held["columns"])
+    assert got["dtypes"] == held["dtypes"], (what, got["dtypes"], held["dtypes"])
+    assert got.get("crs") == held.get("crs"), (what, got.get("crs"), held.get("crs"))
+    assert got.get("geometry_sha256") == held.get("geometry_sha256"), (what, "the outlines differ")
+    assert got.get("rest_sha256") == held.get("rest_sha256"), (what, "the columns the fixture digests differ")
+    assert len(got["rows"]) == len(held["rows"]), (what, len(got["rows"]), len(held["rows"]))
+    wrong = [(k, row, want) for k, (row, want) in enumerate(zip(got["rows"], held["rows"])) if not _same(row, want, rel)]
+    assert not wrong, (what, f"{len(wrong)} rows differ, the first: {wrong[0]}")
+
+
+def assert_rows_match(rows: list, held: list, *, rel: float = 0.0, what: str = "") -> None:
+    """*rows*, records, are the fixture's *held* records: the same keys in the
+    same order and every value, a number exactly or within *rel*."""
+    got = [{key: _json_value(value) for key, value in row.items()} for row in rows]
+    assert len(got) == len(held), (what, len(got), len(held))
+    wrong = [(k, row, want) for k, (row, want) in enumerate(zip(got, held)) if not _same(row, want, rel)]
+    assert not wrong, (what, f"{len(wrong)} rows differ, the first: {wrong[0]}")
+
+
+def park_shade_inputs(parks: list) -> dict:
+    """Each scenario's Shade per park table on fixed numbers, shaped like the
+    node's output in the park shade dataflow: the parks (``park``,
+    ``area_m2`` and an outline in EPSG:4326), then ``cells`` and the minutes
+    and shares it measures, Existing's the most shadow, Height cap's less and
+    Towers removed's the least. Deep Umbra's own shadow moves with
+    onnxruntime's thread count, so a fixture of Compare's output on a real
+    run would hold one machine's numbers; these hold every machine's."""
+    import geopandas as gpd
+    from shapely.geometry import box
+
+    taken = {"existing": 0.0, "height-cap": 30.0, "towers-removed": 60.0}
+    tables = {}
+    for scenario, less in taken.items():
+        rows = []
+        for k, park in enumerate(parks):
+            mean = 250.0 + 7.25 * k - less - (1.25 if scenario == "height-cap" else 2.5) * k * (less > 0)
+            sun = 0.1 + 0.01 * (k % 5) + less / 1000.0
+            deep = 0.4 - 0.01 * (k % 3) - less / 2000.0
+            rows.append({
+                "park": park,
+                "area_m2": 600.0 + 37.5 * k,
+                "geometry": box(-74.015 + 0.001 * k, 40.700, -74.0145 + 0.001 * k, 40.7005),
+                "cells": 40 + 3 * k,
+                "mean_min": mean,
+                "median_min": mean - 4.5,
+                "p90_min": mean + 20.0,
+                "pct_daylight": mean / 720.0,
+                "share_sun": sun,
+                "share_partial": 1.0 - sun - deep,
+                "share_deep": deep,
+            })
+        tables[scenario] = gpd.GeoDataFrame(rows, geometry="geometry", crs="EPSG:4326")
+    return tables
+
+
 def stacked_rows(entries) -> list:
     """Each of *entries*' rows, ``(scenario id, scenario name, frame)`` in
     circle order, under ``scenario`` and ``scenario_name``, its geometry left
