@@ -359,17 +359,19 @@ class WorkflowSpec:
 
     def node_label(self, node_id: str) -> str:
         """What the canvas names the node *node_id* as an input's label: its
-        title, else its header as ``node_names.display_label`` writes it, else
-        the first characters of its id; ``nodeLabel`` in
-        ``components/scenarios/scenarioLabels.ts``."""
+        title, else its header as ``node_names.display_label`` writes it, its
+        template's label looked up by the canonical template id as
+        ``node_names.saved_node_label`` looks it up, else the first characters
+        of its id; ``nodeLabel`` in ``components/scenarios/scenarioLabels.ts``."""
         from utk_curio.backend.app.execution.node_names import display_label
+        from utk_curio.backend.app.packages.service import canonical_template_id
 
         node = next((n for n in self.nodes if n.id == node_id), None)
         if node is None:
             return node_id[:8]
         if isinstance(node.title, str) and node.title.strip():
             return node.title.strip()
-        template = (self.labels or {}).get(str(node.raw_type or "").split("@", 1)[0])
+        template = (self.labels or {}).get(canonical_template_id(node.raw_type)) if node.raw_type else None
         return display_label(node.raw_type, node.template_label, template) or node_id[:8]
 
     def input_scenarios(self, node_id: str) -> dict:

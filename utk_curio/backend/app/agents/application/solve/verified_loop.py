@@ -627,7 +627,13 @@ class VerifiedRounds:
         candidate = str(self.candidate or "")
         if "[!!" not in candidate:
             return candidate, None
-        spec = workflow_spec.parse_workflow_dict(self.spec or {})
+        # Each template's label, so an untitled input from no box is named in
+        # the scenario chips as its canvas header names it.
+        labels = {
+            template_id: row.get("label") or ""
+            for template_id, row in (self.available or {}).items() if isinstance(row, dict)
+        }
+        spec = workflow_spec.parse_workflow_dict(self.spec or {}, labels=labels)
         node = next((n for n in spec.nodes if n.id == self.node_id), None)
         if node is None:
             return candidate, None
