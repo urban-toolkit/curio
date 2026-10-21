@@ -30,11 +30,11 @@
  * names that layer, and the settings name its id column (`keys`). The Map
  * view keeps the Autark map and the tools above, on the node's layer.
  *
- * Plugged into an Autark map (an edge from this node into one of the map's
- * circles), the node is the map's panel: its layers are the map's other
- * inputs, the picking and drawing happen on the map (`MapEditOverlay`), and
- * the map draws, and hands on, its layers with the edits
- * (`utils/editFeatures/mapLayerEdits`).
+ * Linked to an Autark map by an interaction edge (the in/out dots, as two
+ * Autark views are linked), the node is the map's panel: its layers are its
+ * own inputs, which it also feeds the map, the picking and drawing happen on
+ * the map (`MapEditOverlay`), and the map draws the layers with the edits
+ * before Commit edits (`utils/editFeatures/mapLayerEdits`).
  */
 import React, { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import NodeEmptyState from "../nodes/NodeEmptyState";
@@ -65,7 +65,7 @@ import {
 import { normalizeEdit, type NewLayerDef, type PropertyDef } from "../../utils/editFeatures/editFeatures";
 import LayerWorkbench, { crsName, type WorkbenchLayer } from "./LayerWorkbench";
 import { getUnversionedFlowNodeType } from "../../utils/flowNodeCanonicalType";
-import { circleOf as mapCircleOf, circleTitles, mapFedBy, nodeName, withoutCircle } from "../../utils/editFeatures/mapLayerEdits";
+import { circlesInto, circleTitles, mapFedBy, nodeName } from "../../utils/editFeatures/mapLayerEdits";
 import styles from "./EditFeatures.module.css";
 
 /** Why the Layer and Id menus are held while the log has edits: the edits
@@ -294,13 +294,11 @@ export function EditFeaturesBody({
 }) {
   const flow = useFlowContext() as any;
   const live = (flow?.nodes ?? []).find((n: any) => n.id === nodeId)?.data;
-  // Plugged into a map, the layers are the map's other inputs.
+  // Linked to an Autark map by an interaction edge, the node edits on that
+  // map; its layers are its own inputs either way.
   const mapId = mapFedBy(nodeId, flow?.nodes ?? [], flow?.edges ?? []);
   const mapNode = mapId ? (flow?.nodes ?? []).find((n: any) => n.id === mapId) : undefined;
-  const mapEdge = mapId ? (flow?.edges ?? []).find((e: any) => e.source === nodeId && e.target === mapId) : undefined;
-  const circle = mapEdge ? mapCircleOf(mapEdge.targetHandle) : 0;
-  const mapInput = mapNode?.data?.input;
-  const input = useMemo(() => (mapId ? withoutCircle(mapInput, circle) : live?.input), [mapId, mapInput, circle, live?.input]);
+  const input = live?.input;
   const settings = normalizeEditFeatures(live?.editFeatures);
   const writable = !flow?.dashboardOn && flow?.viewerMode !== "shared";
   const layers = useInputLayers(input);
@@ -348,10 +346,11 @@ export function EditFeaturesBody({
   // Every layer the Edit view offers: the input's, each with its id column,
   // then the node's own.
   const labels = useMemo(() => {
-    if (!mapId) return upstreamLabels(nodeId, flow?.nodes ?? [], flow?.edges ?? []);
-    const titles = circleTitles(mapId, flow?.nodes ?? [], flow?.edges ?? []);
+    // Fed by several nodes, each circle's layer is named after its circle.
+    if (circlesInto(nodeId, flow?.edges ?? []) <= 1) return upstreamLabels(nodeId, flow?.nodes ?? [], flow?.edges ?? []);
+    const titles = circleTitles(nodeId, flow?.nodes ?? [], flow?.edges ?? []);
     return Object.fromEntries(Object.entries(titles).map(([k, title]) => [`input_${k}`, title]));
-  }, [nodeId, mapId, flow?.nodes, flow?.edges]);
+  }, [nodeId, flow?.nodes, flow?.edges]);
   const workbenchLayers = useMemo<WorkbenchLayer[]>(() => {
     const input = (layers ?? []).map((l) => {
       const name = l.name ?? l.table;
@@ -681,13 +680,13 @@ export function EditFeaturesBody({
       <div className={`nokey ${styles.body}`} data-edit-body={nodeId} data-edit-map={mapId} ref={bodyRef} tabIndex={0} onKeyDown={onKeyDown}>
         <div className={styles.bar}>
           <span className={styles.connected} data-testid="interaction-connected">
-            Connected to {mapTitle}
+            Linked to {mapTitle}
           </span>
         </div>
         {layers === null ? (
-          <NodeEmptyState reason="not-run" hint="Reading the map's layers." />
+          <NodeEmptyState reason="not-run" hint="Reading the layers." />
         ) : layers.length === 0 ? (
-          <NodeEmptyState reason="not-run" hint={`Run ${mapTitle} and the layers it draws to edit them here.`} />
+          <NodeEmptyState reason="not-run" hint="Run the nodes that feed this node to edit their layers here." />
         ) : (
           <LayerWorkbench
             layers={workbenchLayers}

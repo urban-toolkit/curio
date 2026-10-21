@@ -1,14 +1,18 @@
 /**
- * An Interaction node plugged into an Autark map (#662): the map's other
- * inputs are the layers the node edits, and its edit log is how the map
- * draws them, and hands them on.
+ * An Interaction node linked to an Autark map (#662): the data goes Data →
+ * Interaction → map on data edges, and an interaction edge (the in/out dots,
+ * as two Autark views are linked) joins the node and the map both ways. A
+ * pick on the map reaches the node, and the node's picks and edits show on
+ * the map before Commit edits.
  *
- * The node sits on one of the map's input circles. It hands on nothing the
- * map draws: the map reads its setting (`editFeatures`) off the node, leaves
- * its circle out of what it reads, applies the log to each layer an edit
- * names (`editedFeatures`, the same ops as `curio_edit_features`) and adds
- * the node's new layers that have features.
+ * The node's run hands on its inputs with its log applied, every layer under
+ * its name (`curio_edit_features`, `by_input`). The map it feeds draws the
+ * node's own inputs with the node's live log instead (`interactionOn`'s
+ * `drawFrom`), so an edit shows at once, and hands on what it was fed: the
+ * edits the last Commit ran. A map linked to a node that does not feed it
+ * applies the log to its own layers, and hands those on.
  */
+import { EdgeType } from "../../constants";
 import { getUnversionedFlowNodeType } from "../flowNodeCanonicalType";
 import {
   NEW_LAYER_KEY,
@@ -30,44 +34,63 @@ export function circleOf(handle: unknown): number {
 const isAutkMap = (node: any) => !!node && getUnversionedFlowNodeType(node) === "curio.builtin/autk-grammar";
 const isInteraction = (node: any) => !!node && getUnversionedFlowNodeType(node) === EDIT_FEATURES_NODE_TYPE;
 
-/** The Interaction node plugged into the map *mapId*, its circle and its log. */
-export function interactionOn(
-  mapId: string,
-  nodes: readonly any[],
-  edges: readonly any[],
-): { nodeId: string; circle: number; settings: EditFeaturesSettings | undefined } | null {
+/** Whether *edge* is an interaction edge: the in/out link, not a data edge. */
+export function isInteractionEdge(edge: any): boolean {
+  return edge?.type === EdgeType.BIDIRECTIONAL_EDGE || (edge?.sourceHandle === "in/out" && edge?.targetHandle === "in/out");
+}
+
+/** The node an interaction edge joins to *nodeId*, either way round. */
+function linkedTo(nodeId: string, edges: readonly any[], wanted: (node: any) => boolean, nodes: readonly any[]): any | null {
   for (const edge of edges) {
-    if (edge.target !== mapId) continue;
-    const source = nodes.find((n) => n.id === edge.source);
-    if (!isInteraction(source)) continue;
-    return { nodeId: source.id, circle: circleOf(edge.targetHandle), settings: normalizeEditFeatures(source.data?.editFeatures) };
+    if (!isInteractionEdge(edge)) continue;
+    const other = edge.source === nodeId ? edge.target : edge.target === nodeId ? edge.source : null;
+    if (other == null) continue;
+    const node = nodes.find((n) => n.id === other);
+    if (wanted(node)) return node;
   }
   return null;
 }
 
-/** The Autark map the Interaction node *nodeId* is plugged into, if any. */
+export interface LinkedInteraction {
+  nodeId: string;
+  settings: EditFeaturesSettings | undefined;
+  /** Whether the node feeds the map on a data edge. */
+  feeds: boolean;
+  /**
+   * The input the map draws, the node's own, when the node is all that feeds
+   * the map: drawn with the live log, so it is never edited twice.
+   */
+  drawFrom?: unknown;
+}
+
+/** The Interaction node linked to the map *mapId* by an interaction edge, and its log. */
+export function interactionOn(mapId: string, nodes: readonly any[], edges: readonly any[]): LinkedInteraction | null {
+  const node = linkedTo(mapId, edges, isInteraction, nodes);
+  if (!node) return null;
+  const into = edges.filter((e) => e.target === mapId && !isInteractionEdge(e));
+  const feeds = into.some((e) => e.source === node.id);
+  const only = feeds && into.every((e) => e.source === node.id);
+  return {
+    nodeId: node.id,
+    settings: normalizeEditFeatures(node.data?.editFeatures),
+    feeds,
+    ...(only ? { drawFrom: node.data?.input } : {}),
+  };
+}
+
+/** How many circles feed *nodeId*: one past the highest a data edge goes into. */
+export function circlesInto(nodeId: string, edges: readonly any[]): number {
+  let circles = 0;
+  for (const edge of edges) {
+    if (edge.target !== nodeId || isInteractionEdge(edge)) continue;
+    circles = Math.max(circles, circleOf(edge.targetHandle) + 1);
+  }
+  return Math.max(circles, 1);
+}
+
+/** The Autark map the Interaction node *nodeId* is linked to by an interaction edge, if any. */
 export function mapFedBy(nodeId: string, nodes: readonly any[], edges: readonly any[]): string | null {
-  for (const edge of edges) {
-    if (edge.source !== nodeId) continue;
-    if (isAutkMap(nodes.find((n) => n.id === edge.target))) return edge.target;
-  }
-  return null;
-}
-
-/**
- * The map's input without the Interaction node's circle: a run of the node
- * hands on its log, which is no layer. The other circles keep their places,
- * so each layer keeps the table name (`input_<k>`) the map's document reads.
- */
-export function withoutCircle(input: any, circle: number): any {
-  if (input && typeof input === "object" && input.dataType === "outputs" && Array.isArray(input.data)) {
-    if (circle >= input.data.length) return input;
-    const data = [...input.data];
-    data[circle] = null;
-    return { ...input, data };
-  }
-  // A map whose only input is the node has no layers.
-  return circle === 0 ? null : input;
+  return linkedTo(nodeId, edges, isAutkMap, nodes)?.id ?? null;
 }
 
 /**
@@ -82,11 +105,11 @@ export function nodeName(node: any): string {
   return "";
 }
 
-/** What each circle brought: the name of the node it came from. */
-export function circleTitles(mapId: string, nodes: readonly any[], edges: readonly any[]): Record<number, string> {
+/** What each circle of *nodeId* brought: the name of the node it came from. */
+export function circleTitles(nodeId: string, nodes: readonly any[], edges: readonly any[]): Record<number, string> {
   const out: Record<number, string> = {};
   for (const edge of edges) {
-    if (edge.target !== mapId) continue;
+    if (edge.target !== nodeId || isInteractionEdge(edge)) continue;
     const name = nodeName(nodes.find((n) => n.id === edge.source));
     if (name) out[circleOf(edge.targetHandle)] = name;
   }

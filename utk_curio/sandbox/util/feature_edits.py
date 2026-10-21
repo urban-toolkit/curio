@@ -59,7 +59,13 @@ What the input may be, and what the step hands on:
   for an Autark node (``adapters/node/autkLayerMaterialize.ts``);
 - a table (a DataFrame or a GeoDataFrame): the edited table;
 - several tables, each named by its ``metadata`` as Curio names a layer: the
-  same envelope, one layer per table.
+  same envelope, one layer per table;
+- with ``by_input``, the node's inputs, one per circle (``[input_0, input_1,
+  ...]``), each any of the above: a layer with no name of its own is named
+  after its circle, ``input_<k>``, then ``input_<k>_<n>`` for the n-th more on
+  that circle, as an Autark map names the layers it reads. The result is
+  always the envelope, every layer under its name, edited or not, so the map
+  the node feeds reads each layer by the name its document and the log use.
 """
 from __future__ import annotations
 
@@ -175,6 +181,25 @@ def _layers_of(value):
         f"{_NAME} edits a layer or a table, and its input is a {type(value).__name__}. "
         "Connect a node that hands on layers or a table."
     )
+
+
+def _layers_by_input(values):
+    """The layers of the node's inputs, one value per circle, each layer with
+    no name of its own named after its circle (see the module's docstring)."""
+    if not isinstance(values, (list, tuple)) or all(value is None for value in values):
+        raise ValueError(
+            f"{_NAME} has no input. Run the nodes that feed it, and check that their code returns their result."
+        )
+    layers = []
+    for circle, value in enumerate(values):
+        if value is None:
+            continue
+        found, _ = _layers_of(value)
+        for n, item in enumerate(found):
+            if not item.name:
+                item.name = f"input_{circle}" if n == 0 else f"input_{circle}_{n}"
+        layers.extend(found)
+    return layers
 
 
 def _editable(layer: _Layer) -> bool:
@@ -660,6 +685,14 @@ def _envelope(layer: _Layer, edited: bool):
     """A layer as the envelope an Autark node hands it on in: the one it came
     in when it was not edited."""
     if not edited and layer.envelope is not None:
+        # A layer named after its circle (``by_input``) carries that name on.
+        if (
+            layer.name
+            and isinstance(layer.envelope, dict)
+            and layer.envelope.get("dataType") in ("geodataframe", "dataframe")
+            and not layer.envelope.get("layerName")
+        ):
+            return {**layer.envelope, "layerName": layer.name}
         return layer.envelope
     if layer.fc is not None:
         if layer.envelope is not None:
@@ -683,20 +716,26 @@ def _envelope(layer: _Layer, edited: bool):
     return layer.envelope
 
 
-def edit_features(value, edits, key=None, layer=None, keys=None, new_layers=None, crs=None):
+def edit_features(value, edits, key=None, layer=None, keys=None, new_layers=None, crs=None, by_input=False):
     """The input with *edits* applied to the features of the layer each edit
     names (else *layer*), by that layer's id column (*keys*, else *key*; ``id``
     for a new layer) or by a condition, and the *new_layers* the node makes.
     *crs* is the CRS the node's map drew the layers in, the one a drawn
-    geometry is in. See the module's docstring."""
-    if value is None:
+    geometry is in. With *by_input*, *value* is the node's inputs, one per
+    circle. See the module's docstring."""
+    if by_input:
+        layers, single_table = _layers_by_input(value), False
+    elif value is None:
         raise ValueError(
             f"{_NAME} has no input. Run the node that feeds it, and check that its code returns its result."
         )
     if not edits and not new_layers:
         print(f"{_NAME}: no edits yet; the input is handed on as it came.")
+        if by_input:
+            return {"dataType": "outputs", "data": [_envelope(item, False) for item in layers]}
         return value
-    layers, single_table = _layers_of(value)
+    if not by_input:
+        layers, single_table = _layers_of(value)
     first_fc = next((item.fc for item in layers if item.fc is not None), None)
     made = _new_layers(new_layers, (first_fc or {}).get("crs"))
     made_names = {item.name for item in made}
@@ -731,6 +770,8 @@ def edit_features(value, edits, key=None, layer=None, keys=None, new_layers=None
             print(f"{_NAME}: new layer {item.name} has no features yet.")
     if not edited and not made:
         print(f"{_NAME}: every edit is switched off; the input is handed on as it came.")
+        if by_input:
+            return {"dataType": "outputs", "data": [_envelope(item, False) for item in layers]}
         return value
     if single_table and not made:
         return layers[0].frame

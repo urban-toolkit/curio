@@ -81,7 +81,8 @@ class Step:
     #: as the JavaScript its document compiles to, on no input.
     autk_data: bool = False
     #: *content* is the code to send as it is, not the node's own: a map an
-    #: Interaction node is plugged into, run as its edits (``map_edit_code``).
+    #: Interaction node is linked to and does not feed, run as its edits
+    #: (``map_edit_code``).
     prepared: bool = False
 
 
@@ -218,46 +219,47 @@ _EDIT_FEATURES_TYPE = "edit-features"
 
 def map_edit_code(plan: Plan, node_id: str) -> Optional[str]:
     """The Python an Autark map forwards its layers through when an Interaction
-    node is plugged into it, or None.
+    node is linked to it by an interaction edge and does not feed it, or None.
 
-    In the browser the map applies the node's edit log to the layers it draws
-    and hands those on (``mapLayerEdits.ts``). A run on the server cannot draw
-    the map, so it forwarded the map's inputs as they came, the node's log
-    among them, and the nodes below never saw the edits. This names each layer
-    after its circle (``input_k``, as the map's document does), leaves the
-    Interaction node's circle out, and applies the log with the sandbox's own
-    ``curio_edit_features``."""
+    The usual wiring is Data → Interaction → map on data edges, with the
+    node and the map linked both ways: the node's own run hands on its layers
+    with its edits (``curio_edit_features``), and the map forwards them. A map
+    linked to an Interaction node that does not feed it applies the node's
+    log to its own layers in the browser (``mapLayerEdits.ts``); a run on the
+    server cannot draw the map, so it runs that log here instead, each layer
+    named after its circle (``input_k``, as the map's document names it)."""
     node = plan.saved.get(node_id) or {}
     if not str(node.get("type") or "").endswith("autk-grammar"):
         return None
+    from utk_curio.backend.app.execution.run_plan import is_interaction_edge
     from utk_curio.backend.app.execution.workflow_spec import input_slot
 
-    edges = plan.spec._data_edges_to(node_id)
-    circle, settings = None, None
-    for edge in edges:
-        source = plan.saved.get(edge.get("source")) or {}
+    editor, settings = None, None
+    for edge in plan.spec.edges:
+        if not isinstance(edge, dict) or not is_interaction_edge(edge):
+            continue
+        other = edge.get("target") if edge.get("source") == node_id else edge.get("source") if edge.get("target") == node_id else None
+        source = plan.saved.get(other) or {}
         if str(source.get("type") or "").split("@")[0].endswith(_EDIT_FEATURES_TYPE):
-            circle = input_slot(edge)
-            settings = (source.get("metadata") or {}).get("editFeatures") or {}
+            editor, settings = other, (source.get("metadata") or {}).get("editFeatures") or {}
             break
-    if circle is None:
+    if editor is None:
         return None
-    slots = [input_slot(e) for e in edges if input_slot(e) != circle]
-    layers = ", ".join(f"({k}, input_{k})" for k in slots)
+    edges = plan.spec._data_edges_to(node_id)
+    if any(edge.get("source") == editor for edge in edges):
+        # Its own run already hands the map the edited layers.
+        return None
+    slots = sorted({input_slot(e) for e in edges})
+    if not slots:
+        return None
+    circles = ", ".join(f"input_{k}" if k in slots else "None" for k in range(slots[-1] + 1))
     return "\n".join([
-        "# The map's layers, with the edits of the Interaction node plugged into it.",
+        "# The map's layers, with the edits of the Interaction node linked to it.",
         "import json as _json",
         f"_settings = _json.loads({json.dumps(json.dumps(settings))})",
-        "_layers = []",
-        f"for _k, _v in [{layers}]:",
-        "    if hasattr(_v, 'columns'):",
-        "        _meta = dict(getattr(_v, 'metadata', None) or {})",
-        "        _v = _v.copy()",
-        "        _v.metadata = {**_meta, 'name': f'input_{_k}'}",
-        "    _layers.append(_v)",
         "return curio_edit_features(",
-        "    _layers, _settings.get('edits') or [], key=_settings.get('key'), layer=_settings.get('layer'),",
-        "    keys=_settings.get('keys'), new_layers=_settings.get('newLayers'), crs=_settings.get('crs'),",
+        f"    [{circles}], _settings.get('edits') or [], key=_settings.get('key'), layer=_settings.get('layer'),",
+        "    keys=_settings.get('keys'), new_layers=_settings.get('newLayers'), crs=_settings.get('crs'), by_input=True,",
         ")",
     ])
 
@@ -404,8 +406,8 @@ def run_events(
             input_ref = None if step.autk_data else node_input(plan.spec, node_id, outputs)
             edit_code = map_edit_code(plan, node_id) if step.role == "forward" and input_ref is not None else None
             if edit_code:
-                # A map with an Interaction node plugged in hands on its layers
-                # with the node's edits, as it does in the browser.
+                # A map linked to an Interaction node that does not feed it
+                # hands on its layers with the node's edits, as in the browser.
                 ready.append((replace(step, engine="python", content=edit_code, prepared=True), input_ref))
             elif step.role == "forward":
                 if input_ref is not None:

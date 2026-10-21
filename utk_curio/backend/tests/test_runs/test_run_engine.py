@@ -211,29 +211,59 @@ class TestNodesTheServerDoesNotRun:
     MAP_SPEC = json.dumps({"map": {"layerRefs": [{"dataRef": "[!! input_0 !!]"}, {"dataRef": "[!! input_1 !!]"}]}})
     EDITS = {"key": "id", "layer": "input_1", "edits": [{"op": "remove", "where": "height < 10"}]}
 
-    def test_a_map_with_an_interaction_node_hands_on_its_layers_with_the_edits(self):
-        # The browser's map applies the plugged-in node's log to what it hands
-        # on; the server cannot draw the map, so it runs the log instead of
-        # forwarding the inputs, and the nodes below get the edited layers.
+    TEMPLATES = {
+        # As the store's roster has it: the Interaction node runs its code.
+        "curio.builtin/edit-features": {"executable": True, "engine": "python"},
+        "curio.builtin/computation-analysis": {"executable": True, "engine": "python"},
+    }
+
+    @staticmethod
+    def link(a, b):
+        return edge(a, b, "in/out", sourceHandle="in/out", type="Interaction")
+
+    def test_data_interaction_map_runs_the_node_and_the_map_forwards_its_edited_layers(self):
+        # Data → Interaction → map, the node and the map linked both ways: the
+        # node's own run hands on the edited layers, and the map passes them on.
+        recorder, _, finished = run(spec(
+            [node("tracts"), node("buildings"),
+             node("ix", "curio.builtin/edit-features", "return curio_edit_features([input_0, input_1], [], by_input=True)",
+                  metadata={"editFeatures": self.EDITS}),
+             node("map", AUTARK, self.MAP_SPEC), node("count")],
+            [edge("tracts", "ix"), edge("buildings", "ix", "in_1"), edge("ix", "map"),
+             self.link("ix", "map"), edge("map", "count")],
+        ), templates=self.TEMPLATES)
+        assert "by_input=True" in recorder.calls["ix"]["code"]
+        assert "map" not in recorder.calls
+        assert finished["map"]["status"] == "forwarded"
+        assert recorder.calls["count"]["input"]["path"] == "art-ix"
+
+    def test_a_map_linked_to_a_node_that_does_not_feed_it_runs_the_nodes_edits(self):
+        # The map is fed by the data, the node only linked to it: the browser's
+        # map applies the node's log to what it hands on, and so does the run.
         recorder, _, finished = run(spec(
             [node("tracts"), node("buildings"),
              node("ix", "curio.builtin/edit-features", "return {}", metadata={"editFeatures": self.EDITS}),
              node("map", AUTARK, self.MAP_SPEC), node("count")],
-            [edge("tracts", "map"), edge("buildings", "map", "in_1"), edge("ix", "map", "in_2"),
-             edge("map", "count")],
-        ), templates={
-            # As the store's roster has it: the Interaction node runs its code.
-            "curio.builtin/edit-features": {"executable": True, "engine": "python"},
-            "curio.builtin/computation-analysis": {"executable": True, "engine": "python"},
-        })
+            [edge("tracts", "map"), edge("buildings", "map", "in_1"), edge("tracts", "ix"),
+             self.link("map", "ix"), edge("map", "count")],
+        ), templates=self.TEMPLATES)
         code = recorder.calls["map"]["code"]
         assert "curio_edit_features(" in code
-        assert "[(0, input_0), (1, input_1)]" in code
-        assert "input_2" not in code
+        assert "[input_0, input_1]" in code and "by_input=True" in code
         assert '\\"height < 10\\"' in code or "height < 10" in code
         # Still forwarded, so the canvas draws the map, as it always has.
         assert finished["map"]["status"] == "forwarded"
         assert recorder.calls["count"]["input"]["path"] == "art-map"
+
+    def test_an_interaction_node_feeding_a_map_unlinked_is_just_data(self):
+        recorder, _, finished = run(spec(
+            [node("buildings"),
+             node("ix", "curio.builtin/edit-features", "return input_0", metadata={"editFeatures": self.EDITS}),
+             node("map", AUTARK, self.MAP_SPEC)],
+            [edge("buildings", "ix"), edge("ix", "map")],
+        ), templates=self.TEMPLATES)
+        assert "map" not in recorder.calls
+        assert finished["map"]["status"] == "forwarded"
 
     def test_a_map_with_no_interaction_node_still_forwards_its_input(self):
         recorder, _, finished = run(spec(

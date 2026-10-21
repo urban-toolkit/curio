@@ -4,10 +4,10 @@
   "version": 1,
   "source": {
     "path": "docs/examples/dataflows/chicago-loop-layers.json",
-    "sha256": "7f4c7c19a16acee824b131555e5f57674cb8845b747fab4cd3545936a15f871b",
+    "sha256": "6ad2fadf5aade5dfa769f4a93ed78365ca97821e9fe3d04303c47ab7909f4390",
     "walkthrough": null
   },
-  "prompt": "Make one Autark map of downtown Chicago that has a layer of every kind an Autark map draws, from the Data Catalog's Chicago Loop layers: the census tracts colored by CDC/ATSDR's Social Vulnerability Index, Overture's buildings extruded by height, OpenStreetMap's parks, water, roads and trees, the CTA 'L' lines and stations, and the Chicago Park District's beach sensors with their noon reading on 6 July 2025. Load each layer on its own, tracts first. On a second map, draw SCOUT's WRF forecast of the air temperature at 2 m for that noon as a raster, with the beach sensors over it in the same colors, so a station's reading can be compared with the model's. Plug an Interaction node into the first map, so I can add, reshape, move, change or remove the features of any layer on the map.",
+  "prompt": "Make one Autark map of downtown Chicago that has a layer of every kind an Autark map draws, from the Data Catalog's Chicago Loop layers: the census tracts colored by CDC/ATSDR's Social Vulnerability Index, Overture's buildings extruded by height, OpenStreetMap's parks, water, roads and trees, the CTA 'L' lines and stations, and the Chicago Park District's beach sensors with their noon reading on 6 July 2025. Load each layer on its own, tracts first. On a second map, draw SCOUT's WRF forecast of the air temperature at 2 m for that noon as a raster, with the beach sensors over it in the same colors, so a station's reading can be compared with the model's. Feed the first map's layers through an Interaction node, and link the Interaction node to that map with an interaction edge, so I can add, reshape, move, change or remove the features of any layer on the map.",
   "context": null,
   "required": {
     "datasets": [
@@ -103,9 +103,9 @@
         "hasContent": true
       },
       {
-        "ref": "loader10",
+        "ref": "transform1",
         "type": "curio.builtin/edit-features",
-        "role": "loader",
+        "role": "transform",
         "executable": true,
         "hasContent": true
       }
@@ -118,68 +118,72 @@
       },
       {
         "from": "loader1",
-        "to": "visualization2",
-        "kind": "data"
-      },
-      {
-        "from": "loader2",
-        "to": "visualization2",
-        "kind": "data",
-        "slot": 1
-      },
-      {
-        "from": "loader3",
         "to": "visualization1",
         "kind": "data",
         "slot": 1
       },
       {
-        "from": "loader3",
-        "to": "visualization2",
+        "from": "loader1",
+        "to": "transform1",
         "kind": "data",
         "slot": 8
       },
       {
+        "from": "loader2",
+        "to": "transform1",
+        "kind": "data"
+      },
+      {
+        "from": "loader3",
+        "to": "transform1",
+        "kind": "data",
+        "slot": 1
+      },
+      {
         "from": "loader4",
-        "to": "visualization2",
+        "to": "transform1",
         "kind": "data",
         "slot": 2
       },
       {
         "from": "loader5",
-        "to": "visualization2",
+        "to": "transform1",
         "kind": "data",
         "slot": 3
       },
       {
         "from": "loader6",
-        "to": "visualization2",
+        "to": "transform1",
         "kind": "data",
         "slot": 4
       },
       {
         "from": "loader7",
-        "to": "visualization2",
+        "to": "transform1",
         "kind": "data",
         "slot": 5
       },
       {
         "from": "loader8",
-        "to": "visualization2",
+        "to": "transform1",
         "kind": "data",
         "slot": 6
       },
       {
         "from": "loader9",
-        "to": "visualization2",
+        "to": "transform1",
         "kind": "data",
         "slot": 7
       },
       {
-        "from": "loader10",
+        "from": "transform1",
         "to": "visualization2",
-        "kind": "data",
-        "slot": 9
+        "kind": "data"
+      },
+      {
+        "from": "transform1",
+        "to": "visualization2",
+        "kind": "interaction"
       }
     ],
     "sources": {

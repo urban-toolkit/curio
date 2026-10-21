@@ -447,7 +447,7 @@
         "nodeHeight": 460,
         "nodeWidth": 560
       },
-      "description": "Removes features, or changes them, by hand or by a condition. Connect a layer, or the layers an Autark node hands on, and pick the layer to edit and the column that identifies a feature: osm_id or building_id, or another column whose values differ in every feature. A layer with no such column is refused. Double-click features on its map to pick them, then Remove them (Delete), raise or lower a number such as height (the up and down arrows), scale it, Set a column to a value, or type a new value into the picked features' table. Or pick features by a condition such as height > 100, and do any of these to all of them, including writing a column computed by an expression such as levels * 3.2. Its edits are a log, applied in order by that column, never by a feature's place; each can be switched off, undone or deleted. Its output is the edited layer, with the other layers as they came, and Commit edits runs the nodes below it again. A building's parts share its building_id, so an edit by building_id applies to the whole building.",
+      "description": "Removes features, or changes them, by hand or by a condition, and adds features, properties and layers. Connect the data nodes that load the layers, one to each input circle, and the node hands on every layer by name, each layer from a node with no name of its own named after its circle (input_0, input_1, ...), with its edits applied. Feed an Autark map from it, and link the two with an interaction edge, from the dot on top of the node to the dot on top of the map: the node then edits on the map. Pick a layer, then pick features on the map by a click, a lasso or a condition such as height > 100, and Remove them, Set a column to a value or to an expression such as levels * 3.2, scale or raise a number, draw new features, or add a property. The map shows the picks and the edits at once. Its edits are a log, applied in order by the column that identifies a feature (osm_id, building_id, or another column whose values differ in every feature), never by a feature's place; each can be switched off, undone or deleted. Commit edits runs the node and every node below it again, so they get the edited layers. A building's parts share its building_id, so an edit by building_id applies to the whole building.",
       "editor": "code",
       "engine": "python",
       "hasCode": true,
@@ -455,9 +455,10 @@
       "hasWidgets": false,
       "iconRef": "fa-solid:hand-pointer",
       "id": "edit-features",
+      "bidirectional": true,
       "inputPorts": [
         {
-          "cardinality": "1",
+          "cardinality": "[1,n]",
           "types": ["GEODATAFRAME", "DATAFRAME", "LIST", "JSON"]
         }
       ],

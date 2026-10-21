@@ -498,9 +498,25 @@ whose code is written from its edit log (`metadata.editFeatures`: `key`, `layer`
   with none. `EditFeaturesMap.tsx` draws the input with `useAutkGrammarBehavior`, the
   layer to edit with `isPick`, and turns a pick's rows into ids with `selectedIds`.
   The body takes its keys with the `nokey` class, so React Flow neither deletes nor
-  moves the node on them. Its Update results calls the flow's `runDownstream`, which
+  moves the node on them. Its Commit edits calls the flow's `runDownstream`, which
   starts the run an automatic run starts (#845) for `autoRunTargets` of the node,
   on the server or, where runs stay in the browser, there.
+- Fed by several nodes, the code hands the step every circle
+  (`curio_edit_features([input_0, ...], ..., by_input=True)`, the circle count from
+  `circlesInto`), and the step names each unnamed layer after its circle, `input_<k>`,
+  as an Autark map names its inputs, and hands every layer on under that name, so the
+  map it feeds reads them by the names its document and the log use.
+- An interaction edge (in/out, `BIDIRECTIONAL_EDGE`) between the node and an Autark
+  map links them (`utils/editFeatures/mapLayerEdits.ts`: `interactionOn` on the map's
+  side, `mapFedBy` on the node's). The node's template declares `bidirectional`, and
+  `plan_topology.interaction_edge_errors` lets it link to an Autark node alone. The
+  body then edits on the map (`LayerWorkbench` publishes its session through
+  `mapEditBus`, `MapEditOverlay` picks and draws over the map). When the node is all
+  that feeds the map, the map draws the node's own input with the live log
+  (`interactionOn`'s `drawFrom`, `editSources`), so an edit shows before Commit
+  edits, and hands on what it was fed; a map linked to a node that does not feed it
+  applies the log to its own layers and hands those on, and a run on the server does
+  the same through `run_engine.map_edit_code`.
 - Conditions (`where`) and `expr` edits are one small expression language written
   twice, `utk_curio/sandbox/util/edit_expr.py` for runs and
   `src/utils/editFeatures/editExpr.ts` for the body, neither through `eval`.

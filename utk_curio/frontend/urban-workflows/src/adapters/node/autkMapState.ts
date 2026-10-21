@@ -1,7 +1,7 @@
 /**
  * What a person set on an Autark map, kept across a redraw (#662).
  *
- * An edit made in an Interaction node plugged into the map draws the map
+ * An edit made in the Interaction node linked to the map draws the map
  * again (a new grammar, a new map). The camera is kept already; this keeps
  * what was set on each layer through the map's own menu: hidden or shown,
  * its opacity, colors and color map, borders, point and line sizes. A layer

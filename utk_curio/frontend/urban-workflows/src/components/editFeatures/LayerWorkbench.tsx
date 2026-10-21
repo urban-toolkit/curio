@@ -1,6 +1,6 @@
 /**
  * The Interaction node's layer workbench (#662), as the Interaction Node Flow
- * mockups draw it: what the node found on the map it is plugged into, and
+ * mockups draw it: the layers the node is fed, and
  * what can be done with each layer, one step at a time.
  *
  * 1. The layers, as cards grouped by the geometry their features have
@@ -14,7 +14,7 @@
  *    property (a new column with a value for every feature).
  * 3. The action: its form here, its drawing on the map.
  *
- * Plugged into an Autark map (*mapId*), the drawing happens on that map
+ * Linked to an Autark map (*mapId*), the drawing happens on that map
  * (`MapEditOverlay`, through `mapEditBus`); otherwise on the node's own edit
  * map (`EditCanvas`). Every action becomes an entry of the node's edit log,
  * through *onEdit*.
@@ -432,7 +432,7 @@ export default function LayerWorkbench({
   onEdits: (edits: FeatureEdit[], layer: WorkbenchLayer) => void;
   onNewLayer: (def: NewLayerDef) => void;
   onAddLayerProperty: (layerName: string, def: PropertyDef) => void;
-  /** The Autark map the node is plugged into: the drawing happens there. */
+  /** The Autark map the node is linked to: the drawing happens there. */
   mapId?: string | null;
   nodeId?: string;
 }) {
@@ -592,7 +592,7 @@ export default function LayerWorkbench({
     [features, drawn],
   );
 
-  // Plugged into a map: the action is drawn there.
+  // Linked to a map: the action is drawn there.
   const handlers = useRef({ onSelect, onSelectMany, onDrawn, onReshape });
   handlers.current = { onSelect, onSelectMany, onDrawn, onReshape };
   useEffect(() => {
@@ -662,7 +662,7 @@ export default function LayerWorkbench({
     if (next === "add") setTexts(formDefaults(defs));
   };
 
-  // The node's own edit map, when it is plugged into no map.
+  // The node's own edit map, when it is linked to no map.
   const ownMap =
     !mapId && active && kind && mode ? (
       <Suspense fallback={<span className={styles.hint}>Loading the edit map…</span>}>

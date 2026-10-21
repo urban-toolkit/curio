@@ -299,6 +299,54 @@ class TestNamedTables:
             _edit([a, a.copy()], REMOVE_1, key="building_id", layer="table_osm_buildings")
 
 
+class TestByInput:
+    """The node fed by several data nodes, one per circle (``by_input``): it
+    names each unnamed layer after its circle, as the Autark map it feeds
+    does, and hands every layer on under that name."""
+
+    def _tables(self):
+        roads = gpd.GeoDataFrame({"osm_id": [7, 8]}, geometry=[Point(0, 2), Point(1, 2)], crs=3395)
+        buildings = gpd.GeoDataFrame({"building_id": [1, 2]}, geometry=[box(0, 0, 1, 1), box(1, 0, 2, 1)], crs=3395)
+        return roads, buildings
+
+    def test_each_circles_table_is_named_input_k_and_edited_by_that_name(self):
+        roads, buildings = self._tables()
+        out = _edit([roads, buildings], [{"op": "remove", "layer": "input_1", "ids": [1]}],
+                    keys={"input_1": "building_id"}, by_input=True)
+        assert [item["layerName"] for item in out["data"]] == ["input_0", "input_1"]
+        assert [f["properties"]["osm_id"] for f in out["data"][0]["data"]["features"]] == [7, 8]
+        assert [f["properties"]["building_id"] for f in out["data"][1]["data"]["features"]] == [2]
+
+    def test_with_no_edits_every_layer_is_still_handed_on_by_its_name(self, capsys):
+        roads, buildings = self._tables()
+        out = _edit([roads, buildings], [], by_input=True)
+        assert out["dataType"] == "outputs"
+        assert [item["layerName"] for item in out["data"]] == ["input_0", "input_1"]
+        assert "no edits yet" in capsys.readouterr().out
+        # Every edit switched off hands them on the same way.
+        out = _edit([roads, buildings], [{"op": "remove", "layer": "input_1", "ids": [1], "enabled": False}],
+                    keys={"input_1": "building_id"}, by_input=True)
+        assert [item["layerName"] for item in out["data"]] == ["input_0", "input_1"]
+
+    def test_a_layer_with_a_name_keeps_it_and_more_layers_on_one_circle_are_counted(self):
+        roads, _ = self._tables()
+        unnamed = {"dataType": "outputs", "data": [
+            {"dataType": "geodataframe", "data": _buildings()},
+            {"dataType": "geodataframe", "data": _roads()},
+        ]}
+        out = _edit([roads, _wrapper(), unnamed], [], by_input=True)
+        assert [item["layerName"] for item in out["data"]] == [
+            "input_0", "table_osm_roads", "table_osm_buildings", "input_2", "input_2_1",
+        ]
+
+    def test_a_circle_with_nothing_yet_is_left_out_and_none_at_all_says_so(self):
+        roads, _ = self._tables()
+        out = _edit([None, roads], [], by_input=True)
+        assert [item["layerName"] for item in out["data"]] == ["input_1"]
+        with pytest.raises(ValueError, match="Interaction has no input"):
+            _edit([None, None], [], by_input=True)
+
+
 SQUARE = {"type": "Polygon", "coordinates": [[[9, 0], [10, 0], [10, 1], [9, 1], [9, 0]]]}
 
 

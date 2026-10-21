@@ -94,6 +94,7 @@ ROSTER = {
     "curio.builtin/vis-vega": {"category": "vis_grammar", "bidirectional": True},
     "curio.builtin/vis-simple": {"category": "vis_simple", "bidirectional": True},
     "curio.builtin/autk-grammar": {"category": "vis_grammar", "bidirectional": True},
+    "curio.builtin/edit-features": {"category": "data", "bidirectional": True},
 }
 
 
@@ -137,6 +138,24 @@ class TestInteractionEdgeErrors:
         types = dict(TYPES, pool2="curio.builtin/data-pool")
         plan = {"edges": [{"from": "pool", "to": "pool2", "kind": "interaction"}]}
         assert len(pt.interaction_edge_errors(plan, types.get, ROSTER)) == 1
+
+    def test_the_interaction_node_links_to_the_autark_map_alone(self):
+        # Data → Interaction → map on data edges, and the node and the map
+        # linked both ways: a pick on the map reaches the node.
+        types = {
+            "edit": "curio.builtin/edit-features@1", "map": "curio.builtin/autk-grammar@1",
+            "bars": "curio.builtin/vis-vega@1", "pool": "curio.builtin/data-pool@1",
+        }
+        for src, dst in (("edit", "map"), ("map", "edit")):
+            plan = {"edges": [{"from": src, "to": dst, "kind": "interaction"}]}
+            assert pt.interaction_edge_errors(plan, types.get, ROSTER) == [], (src, dst)
+        for other in ("bars", "pool"):
+            plan = {"edges": [{"from": "edit", "to": other, "kind": "interaction"}]}
+            (err,) = pt.interaction_edge_errors(plan, types.get, ROSTER)
+            assert "joins the edit-features node to the autk-grammar map it feeds, and to no other node" in err
+        # It is no pool: the other rules name the Data Pool alone.
+        pools, _ = pt.interaction_roles(ROSTER)
+        assert pools == {"curio.builtin/data-pool"}
 
     def test_unknown_template_fails_open(self):
         plan = {"edges": [{"from": "vis", "to": "mystery", "kind": "interaction"}]}

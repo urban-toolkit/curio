@@ -57,14 +57,14 @@ function nodeState(): UseNodeStateReturn {
 }
 
 /** The node on a canvas that keeps what it writes. */
-function mountLive(editFeatures: unknown) {
+function mountLive(editFeatures: unknown, canvas: { nodes?: any[]; edges?: any[] } = {}) {
   const updateDataNode = jest.fn();
   const first = { nodeId: NODE, input: INPUT, editFeatures, defaultCode: editFeaturesCode(undefined), code: editFeaturesCode(undefined) };
   function Canvas({ children }: { children: React.ReactNode }) {
     const [live, setLive] = React.useState<any>(first);
     const flow = {
-      nodes: [{ id: NODE, data: live }],
-      edges: [],
+      nodes: [{ id: NODE, type: "curio.builtin/edit-features", data: live }, ...(canvas.nodes ?? [])],
+      edges: canvas.edges ?? [],
       markNodeStale: jest.fn(),
       updateDataNode: (id: string, data: any) => {
         updateDataNode(id, data);
@@ -110,6 +110,35 @@ test("the Edit view lists the input's layers by the geometry of their features",
   // Plugged into no map, the drawing is on the node's own edit map.
   fireEvent.click(screen.getByTestId("interaction-action-add"));
   expect(await screen.findByTestId("interaction-edit-map")).toHaveAttribute("data-edit-mode", "draw");
+});
+
+test("linked to an Autark map, fed by two data nodes, the node edits on the map and hands on both circles", async () => {
+  // Data → Interaction → map on data edges, the node and the map linked by
+  // an interaction edge, as two Autark views are.
+  mockSources = [{ ...ROADS, outputTableName: "input_0", named: false }, { ...BUILDINGS, outputTableName: "input_1", named: false }];
+  const { state } = mountLive(undefined, {
+    nodes: [
+      { id: "roads", type: "curio.builtin/data-loading", data: { title: "Roads" } },
+      { id: "buildings", type: "curio.builtin/data-loading", data: { title: "Buildings" } },
+      { id: "map", type: "curio.builtin/autk-grammar", data: { title: "Downtown Chicago layers" } },
+    ],
+    edges: [
+      { source: "roads", target: NODE, sourceHandle: "out", targetHandle: "in_0" },
+      { source: "buildings", target: NODE, sourceHandle: "out", targetHandle: "in_1" },
+      { source: NODE, target: "map", sourceHandle: "out", targetHandle: "in_0" },
+      { source: NODE, target: "map", sourceHandle: "in/out", targetHandle: "in/out", type: "BIDIRECTIONAL_EDGE" },
+    ],
+  });
+  expect(await screen.findByTestId("interaction-connected")).toHaveTextContent("Linked to Downtown Chicago layers");
+  // Each circle's layer goes by the node that feeds it.
+  expect(await screen.findByTestId("interaction-layer-input_0")).toHaveTextContent("Roads");
+  expect(screen.getByTestId("interaction-layer-input_1")).toHaveTextContent("Buildings");
+  // The code hands the step both circles, and names their layers input_0, input_1.
+  await waitFor(() => expect((state.setCode as jest.Mock).mock.calls.at(-1)?.[0]).toContain("curio_edit_features([input_0, input_1], [], by_input=True)"));
+  // The drawing happens on the linked map, not on an edit map of the node's own.
+  fireEvent.click(screen.getByTestId("interaction-layer-input_0"));
+  fireEvent.click(screen.getByTestId("interaction-action-add"));
+  expect(screen.queryByTestId("interaction-edit-map")).toBeNull();
 });
 
 test("a new layer is made with its geometry and properties, and the node's code makes it", async () => {

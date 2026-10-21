@@ -390,7 +390,7 @@ class TestTheShippedCorpus:
 
     def test_the_examples_that_need_interaction_edges_are_exactly_these(self):
         """The T2 set. dev/112's ``edges[].kind`` is not on this branch, so
-        these ten cannot be reconstructed by any plan here -- a capability
+        these eleven cannot be reconstructed by any plan here -- a capability
         gap the harness reports rather than a bar it lowers."""
         with_interaction = set()
         for path in example_paths():
@@ -403,6 +403,7 @@ class TestTheShippedCorpus:
             "09-heterogeneous-data-linked-views",
             "11-autark-pbf-loading",
             "17-autark-geodataframe-maps",
+            "chicago-loop-layers",
             "interaction-autark",
             "interaction-vega",
             "interaction-vega-autark",

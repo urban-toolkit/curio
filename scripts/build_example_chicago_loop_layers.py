@@ -23,10 +23,16 @@ it loads, and the tracts cover the whole area.
 
     python scripts/build_example_chicago_loop_layers.py
 
-An Interaction node is plugged into the main map's last input: it lists the
-map's other inputs as layers, the editing happens on the map, and the map
-draws, and hands on, its layers with the edits. Every layer has a column that
-identifies its features (FIPS, id, osm_id, line_id, station_id, name).
+The layers go Data → Interaction → map: the nine loaders feed an Interaction
+node, one per circle, and it feeds the main map, handing on every layer under
+the name of its circle (input_0 ... input_8), which the map's document reads
+with layer chips (``[!! input_0:input_3 !!]``: the layer input_3 of the map's
+one input).
+An interaction edge links the Interaction node and the map both ways, as two
+Autark views are linked: the editing happens on the map, which shows the edits
+at once, and Commit edits hands the edited layers to the map. Every layer has
+a column that identifies its features (FIPS, id, osm_id, line_id, station_id,
+name).
 
 AUTHORING-ONLY tooling. The output is deterministic, so a rerun rewrites the
 same file.
@@ -134,24 +140,24 @@ return rasterio.open(path)
 LOOP_MAP = {
     "map": {
         "layerRefs": [
-            {"dataRef": "[!! input_0 !!]", "isColorMap": True, "getFnv": "RPL_THEMES",
+            {"dataRef": "[!! input_0:input_0 !!]", "isColorMap": True, "getFnv": "RPL_THEMES",
              "getFnvType": "quantitative", "colorMapInterpolator": "interpolateOrRd",
              "colorMapRange": [0, 1], "title": "Social vulnerability (SVI percentile)",
              "opacity": 0.55, "isPick": True},
-            {"dataRef": "[!! input_3 !!]"},
-            {"dataRef": "[!! input_2 !!]"},
-            {"dataRef": "[!! input_4 !!]"},
-            {"dataRef": "[!! input_5 !!]", "isColorMap": True, "getFnv": "legend",
+            {"dataRef": "[!! input_0:input_3 !!]"},
+            {"dataRef": "[!! input_0:input_2 !!]"},
+            {"dataRef": "[!! input_0:input_4 !!]"},
+            {"dataRef": "[!! input_0:input_5 !!]", "isColorMap": True, "getFnv": "legend",
              "getFnvType": "categorical", "colorMapInterpolator": "schemeTableau10",
              "title": "CTA 'L' line"},
-            {"dataRef": "[!! input_1 !!]", "isColorMap": True, "getFnv": "height",
+            {"dataRef": "[!! input_0:input_1 !!]", "isColorMap": True, "getFnv": "height",
              "getFnvType": "quantitative", "colorMapInterpolator": "interpolateViridis",
              "colorMapRange": [0, 250], "title": "Building height (m)", "isPick": True},
-            {"dataRef": "[!! input_6 !!]"},
-            {"dataRef": "[!! input_7 !!]", "isColorMap": True, "getFnv": "ada",
+            {"dataRef": "[!! input_0:input_6 !!]"},
+            {"dataRef": "[!! input_0:input_7 !!]", "isColorMap": True, "getFnv": "ada",
              "getFnvType": "categorical", "colorMapInterpolator": "schemeSet1",
              "title": "CTA station", "isPick": True},
-            {"dataRef": "[!! input_8 !!]", "isColorMap": True, "getFnv": "sensor_type",
+            {"dataRef": "[!! input_0:input_8 !!]", "isColorMap": True, "getFnv": "sensor_type",
              "getFnvType": "categorical", "colorMapInterpolator": "schemeDark2",
              "title": "Beach sensor", "isPick": True},
         ]
@@ -170,11 +176,13 @@ TEMPERATURE_MAP = {
     }
 }
 
-#: A map's Interaction node's code with no edits yet (``editLogCode(undefined)``).
+#: The Interaction node's code with no edits yet, fed by the nine loaders
+#: (``editFeaturesCode(undefined, 9)``).
 NO_EDITS = (
-    "# The Autark map this node is plugged into draws its layers, and hands\n"
-    "# them on, with these edits. Written again when the edits change.\n"
-    'return {"editFeatures": {}}\n'
+    "# Edit Features writes this code from its edit list: each edit, in the\n"
+    "# order it was made, on the features whose key is one of its ids. It is\n"
+    "# written again when the list changes.\n"
+    "return curio_edit_features([" + ", ".join(f"input_{k}" for k in range(9)) + "], [], by_input=True)\n"
 )
 
 #: key, type, title, goal, content, x, y
@@ -201,22 +209,24 @@ NODES = [
      TEMPERATURE, 0, 1400),
     ("loop_map", "curio.builtin/autk-grammar", "Downtown Chicago layers",
      "Draw every layer on one map: tracts by social vulnerability, buildings by height, parks, water, roads, "
-     "the 'L', trees, stations and the beach sensors.", json.dumps(LOOP_MAP, indent=2), 560, 200),
+     "the 'L', trees, stations and the beach sensors.", json.dumps(LOOP_MAP, indent=2), 1240, 200),
     ("temperature_map", "curio.builtin/autk-grammar", "Air temperature at noon",
      "Draw the WRF air temperature at noon with the beach sensors over it, in the same colors, to compare the "
      "station's reading with the model.", json.dumps(TEMPERATURE_MAP, indent=2), 560, 1250),
     ("interaction", "curio.builtin/edit-features", "Edit the map's layers",
      "Read the map's layers, by the geometry of their features, and add, reshape, move, change or remove their "
-     "features on the map, add properties, or make a new layer.", NO_EDITS, 1600, 200),
+     "features on the map, add properties, or make a new layer.", NO_EDITS, 560, 200),
 ]
 #: source key -> (target key, input index)
 EDGES = [
-    ("tracts", "loop_map", 0), ("buildings", "loop_map", 1), ("parks", "loop_map", 2), ("water", "loop_map", 3),
-    ("roads", "loop_map", 4), ("cta_lines", "loop_map", 5), ("trees", "loop_map", 6),
-    ("cta_stations", "loop_map", 7), ("sensors", "loop_map", 8),
+    ("tracts", "interaction", 0), ("buildings", "interaction", 1), ("parks", "interaction", 2),
+    ("water", "interaction", 3), ("roads", "interaction", 4), ("cta_lines", "interaction", 5),
+    ("trees", "interaction", 6), ("cta_stations", "interaction", 7), ("sensors", "interaction", 8),
+    ("interaction", "loop_map", 0),
     ("temperature", "temperature_map", 0), ("sensors", "temperature_map", 1),
-    ("interaction", "loop_map", 9),
 ]
+#: The interaction edges, both ways: the Interaction node and the map it edits on.
+LINKS = [("interaction", "loop_map")]
 
 
 def build() -> dict:
@@ -237,6 +247,10 @@ def build() -> dict:
         s, t = nid(source), nid(target)
         edges.append({"id": f"reactflow__edge-{s}out-{t}{handle}", "source": s, "target": t,
                       "sourceHandle": "out", "targetHandle": handle})
+    for source, target in LINKS:
+        s, t = nid(source), nid(target)
+        edges.append({"id": f"reactflow__edge-{s}in/out-{t}in/out", "source": s, "target": t,
+                      "sourceHandle": "in/out", "targetHandle": "in/out", "type": "Interaction"})
     datasets = [{"datasetId": d, "dirName": f"{d}@1", "origin": "imported", "producerNodeId": None,
                  "consumerNodeIds": [], "installedAt": STAMP} for d in (LAYERS, WEATHER)]
     return {"dataflow": {

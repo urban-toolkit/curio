@@ -280,32 +280,32 @@ function editLine(edit: FeatureEdit): string {
   return `    {${parts.join(", ")}},`;
 }
 
-/** The node's code for *settings*. */
-export function editFeaturesCode(settings: EditFeaturesSettings | undefined): string {
+/** What the node's code hands the step: its input, or every circle's, one per circle. */
+export function editInputs(circles = 1): string {
+  return circles > 1 ? `[${Array.from({ length: circles }, (_, k) => `input_${k}`).join(", ")}]` : "input_0";
+}
+
+/**
+ * The node's code for *settings*, fed by *circles* inputs: with several, it
+ * hands the step every input, one per circle, and the step names each
+ * unnamed layer after its circle (`input_<k>`), as the Autark map it feeds
+ * names them.
+ */
+export function editFeaturesCode(settings: EditFeaturesSettings | undefined, circles = 1): string {
   const edits = settings?.edits ?? [];
+  const byInput = circles > 1;
   const args = [
     settings?.key ? `key=${widgetLiteral(settings.key, "python")}` : "",
     settings?.layer ? `layer=${widgetLiteral(settings.layer, "python")}` : "",
     settings?.keys && Object.keys(settings.keys).length > 0 ? `keys=${pythonLiteral(settings.keys)}` : "",
     settings?.newLayers && settings.newLayers.length > 0 ? `new_layers=${pythonLiteral(settings.newLayers)}` : "",
     settings?.crs ? `crs=${widgetLiteral(settings.crs, "python")}` : "",
+    byInput ? "by_input=True" : "",
   ].filter(Boolean);
   const tail = args.length > 0 ? `, ${args.join(", ")}` : "";
-  if (edits.length === 0) return [...EDIT_CODE_NOTE, `return ${EDIT_HELPER}(input_0, []${tail})`, ""].join("\n");
-  return [...EDIT_CODE_NOTE, `return ${EDIT_HELPER}(input_0, [`, ...edits.map(editLine), `]${tail})`, ""].join("\n");
-}
-
-/**
- * The node's code when it is plugged into an Autark map: its log, which the
- * map applies to the layers it draws and hands on (`mapLayerEdits`).
- */
-export function editLogCode(settings: EditFeaturesSettings | undefined): string {
-  return [
-    "# The Autark map this node is plugged into draws its layers, and hands",
-    "# them on, with these edits. Written again when the edits change.",
-    `return {"editFeatures": ${pythonLiteral(settings ?? {})}}`,
-    "",
-  ].join("\n");
+  const value = editInputs(circles);
+  if (edits.length === 0) return [...EDIT_CODE_NOTE, `return ${EDIT_HELPER}(${value}, []${tail})`, ""].join("\n");
+  return [...EDIT_CODE_NOTE, `return ${EDIT_HELPER}(${value}, [`, ...edits.map(editLine), `]${tail})`, ""].join("\n");
 }
 
 /** The columns the features of *fc* carry, in the order the first ones name them. */

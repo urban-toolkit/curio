@@ -11,24 +11,30 @@
  * node below it that ran (`autoRunTargets`, the nodes an automatic run
  * takes); a run then applies the new log, in the browser or on the server,
  * as any Python node's code runs, and Commit edits in the body starts one.
+ *
+ * Fed by several data nodes, its code hands the step all of them, one per
+ * circle, and hands on every layer by name (`editFeaturesCode`'s *circles*).
+ * Linked to an Autark map by an interaction edge (`mapFedBy`), its body edits
+ * on that map (`utils/editFeatures/mapLayerEdits`).
  */
 import React, { useEffect, useMemo, useRef } from "react";
 import type { NodeBehaviorHook } from "../../registry/types";
 import { useFlowContext } from "../../providers/FlowProvider";
 import { autoRunTargets } from "../../providers/flow/useAutoRun";
 import { EditFeaturesBody } from "../../components/editFeatures/EditFeaturesBody";
-import { editFeaturesCode, editLogCode, normalizeEditFeatures, type EditFeaturesSettings } from "../../utils/editFeatures/editFeatures";
-import { mapFedBy } from "../../utils/editFeatures/mapLayerEdits";
+import { EDIT_HELPER, editFeaturesCode, editInputs, normalizeEditFeatures, type EditFeaturesSettings } from "../../utils/editFeatures/editFeatures";
+import { circlesInto, mapFedBy } from "../../utils/editFeatures/mapLayerEdits";
 import { failureLine } from "../../utils/runFailure";
 
 export const useEditFeaturesBehavior: NodeBehaviorHook = (data, nodeState) => {
   const flow = useFlowContext() as any;
   // Nothing is written where nobody can save it: the dashboard, a shared view.
   const writable = !flow?.dashboardOn && flow?.viewerMode !== "shared";
-  // Plugged into an Autark map, the node is the map's panel: its code hands
-  // on its log, which the map applies (utils/editFeatures/mapLayerEdits).
+  // The Autark map linked to the node, whose body edits on it.
   const mapId = mapFedBy(data.nodeId, flow?.nodes ?? [], flow?.edges ?? []);
-  const codeFor = (settings: EditFeaturesSettings | undefined) => (mapId ? editLogCode(settings) : editFeaturesCode(settings));
+  // The code hands the step every circle that feeds the node.
+  const circles = circlesInto(data.nodeId, flow?.edges ?? []);
+  const codeFor = (settings: EditFeaturesSettings | undefined) => editFeaturesCode(settings, circles);
 
   // The latest writer, so the body (made once per outcome) always writes
   // through the current flow and node state.
@@ -51,20 +57,20 @@ export const useEditFeaturesBehavior: NodeBehaviorHook = (data, nodeState) => {
     }
   };
 
-  // Plugged into a map or taken off one, the code says so.
+  // An input connected or taken off: the code hands the step its circles.
   useEffect(() => {
     if (!writable) return;
     const live = (flow?.nodes ?? []).find((n: any) => n.id === data.nodeId)?.data;
     if (!live) return;
-    // Only a code of the other kind is written again: the log's own changes
-    // write theirs.
+    // Only a code for another number of circles is written again: the log's
+    // own changes write theirs.
     const current = String(live.code || live.defaultCode || "");
-    if (current === "" || current.includes("curio_edit_features(") === !mapId) return;
     const code = codeFor(normalizeEditFeatures(live.editFeatures));
+    if (current === "" || current.includes(`${EDIT_HELPER}(${editInputs(circles)},`)) return;
     nodeState.setCode(code);
     flow.updateDataNode?.(data.nodeId, { ...live, defaultCode: code, code });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mapId]);
+  }, [circles]);
 
   // NodeEditor opens the Output tab whenever the body's identity changes, so
   // it changes with the node's outcome and nothing else.

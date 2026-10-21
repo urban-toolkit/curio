@@ -774,40 +774,39 @@ dataflow. Deleting a node removes it from its scenario.
 
 The **Interaction** node removes features from a layer, or changes them, by hand or
 by a condition: two towers taken out of a city's buildings, or every building over
-100 m lowered, say. It is a node of its own, apart from the interaction edges that
-link charts (see [Linking charts](#linking-charts)).
+100 m lowered, say. It also draws new features, reshapes them, and adds properties
+and layers. The data goes through it on data edges, and an interaction edge links it
+to the Autark map it feeds, both ways, as two Autark views are linked (see
+[Linking charts](#linking-charts)).
 
-1. Drag **Interaction** from the **Built-in** palette onto the canvas and connect a layer to it:
-   a Python node's GeoDataFrame, or the layers an Autark node or a Data Pool hands on.
-2. Pick the layer to edit in **Layer**, when the input carries several, and the column
-   that identifies a feature in **Id**: `osm_id` or `building_id` when the layer has
-   them, or another column whose values differ in every feature. A layer with no such
-   column is refused: a feature's place in a layer is not an id. While the node has
-   edits, the two menus stay as they are: delete the edits to pick another.
-3. Double-click features on the node's map to pick them. **Picked** lists their ids,
-   and a table lists the picked features with their values.
-4. Make an edit of the picked features:
-   - **Remove**, or the Delete key, drops them, and **Restore** puts them back as the
-     input has them. **Clear pick**, or Escape, forgets the pick.
-   - **▲** and **▼**, or the up and down arrow keys, raise or lower the number column
-     picked in **Nudge** by the step beside it: 3 for a height, else 1. Pressing again
-     changes the same edit.
-   - **Scale** multiplies that column by the factor beside it.
-   - **Set value** writes a value into the column picked in **Set**, and typing a new
-     value into a cell of the table, then Enter, does the same for that feature.
-5. Or make an edit of every feature a condition picks: type the condition in
-   **Where**, such as `height > 100` or `kind == 'tower' and levels >= 30`, and the
-   node says how many features it picks. Choose what to do to them, remove, scale,
-   offset (add a number), set, expr or restore, with the column and the value it
-   needs, and press **Apply**. An expr edit writes into the column what an
-   expression makes of each feature, such as `levels * 3.2`.
-6. Press **Update results** to run the node and every node below it with the edits.
+1. Drag **Interaction** from the **Built-in** palette onto the canvas and connect the
+   nodes that load your layers to it, one to each input circle. It hands on every
+   layer under its name: a layer whose node gives it none is named after its circle,
+   `input_0`, `input_1`, and so on, the names an Autark map gives its inputs.
+2. Connect its output to an Autark map, whose document draws those layers
+   (`[!! input_0 !!]`, ...).
+3. Link the two with an interaction edge: drag from the dot on top of the Interaction
+   node to the dot on top of the map. The node's body now says **Linked to** the map.
+4. Pick a layer in the node's body, then what to do with it: **Add** features drawn
+   on the map, **Edit** a feature picked on the map (reshape it, move it, change its
+   values), **Remove** features picked on the map by a click or a lasso, or by a rule
+   such as `height > 100`, or **Add a property** to every feature. **Show only this
+   layer** hides the map's other layers while you work.
+5. The map shows the picks and the edits at once, before anything runs. Press
+   **Commit edits** to run the node and every node below it, the map among them, with
+   the edits.
 
-Each edit is added to the node's log, under the map. The box before an edit switches
-it off: it stays in the log, and the run skips it. The × beside an edit deletes it,
-and **Undo** and **Redo**, or Ctrl+Z and Shift+Ctrl+Z (Cmd on a Mac), take back the
-last edit and make it again. The keys act while the node has the focus, after a pick
-on its map or a click in it.
+An Interaction node linked to no map edits on a flat edit map of its own, in its
+body. A map linked to an Interaction node that does not feed it applies the node's
+edits to its own layers, and hands those on.
+
+Each edit is added to the node's log, under its body. The switch before an edit
+turns it off: it stays in the log, and the run skips it. The × beside an edit deletes
+it, and **Undo** and **Redo**, or Ctrl+Z and Shift+Ctrl+Z (Cmd on a Mac), take back
+the last edit and make it again. Each edit names its layer and the column that
+identifies the layer's features: `osm_id` or `building_id` when the layer has them,
+or another column whose values differ in every feature. A feature's place in a layer
+is never its id.
 
 The edits apply in order. An edit by ids applies to every feature whose id is one of
 them; an edit by a condition applies to the features the condition picks after the
@@ -825,18 +824,19 @@ comparisons `== != < <= > >=`, `and`, `or`, `not`, parentheses, and `abs`, `roun
 `min` and `max`. A column a feature lacks is null, arithmetic with null or a text is
 null, and a comparison with null is false.
 
-The log is saved with the dataflow, and the node's code is written from it:
+The log is saved with the dataflow, and the node's code is written from it. Fed by
+several nodes, it hands the step every circle (`by_input=True`):
 
 ```python
-return curio_edit_features(input_0, [
-    {"op": "remove", "ids": [29623484, 29628154]},
-    {"op": "scale", "where": "height > 100", "column": "height", "value": 0.5},
-    {"op": "set", "ids": [42], "column": "height", "value": 30, "enabled": False},
-], key="building_id", layer="table_osm_buildings")
+return curio_edit_features([input_0, input_1], [
+    {"op": "remove", "ids": [29623484, 29628154], "layer": "input_1"},
+    {"op": "scale", "where": "height > 100", "column": "height", "value": 0.5, "layer": "input_1"},
+    {"op": "set", "ids": [42], "column": "height", "value": 30, "enabled": False, "layer": "input_1"},
+], keys={"input_1": "building_id"}, by_input=True)
 ```
 
 A change of the log writes the code again, and the node and the nodes below it that
-ran then wait for a run; **Update results** says how many. In a scenario, an
+ran then wait for a run; **Commit edits** says how many. In a scenario, an
 Interaction node is a lever.
 
 ### Comparing scenarios

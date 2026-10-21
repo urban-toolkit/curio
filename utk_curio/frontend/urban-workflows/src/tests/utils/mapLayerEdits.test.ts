@@ -1,21 +1,27 @@
 /**
- * An Interaction node plugged into an Autark map (#662,
- * `utils/editFeatures/mapLayerEdits`): which node feeds the map and on which
- * circle, the map's input without that circle, and the layers as the log
- * leaves them, the node's new layers with them.
+ * An Interaction node linked to an Autark map (#662,
+ * `utils/editFeatures/mapLayerEdits`): Data → Interaction → map on data
+ * edges, and an interaction edge between the node and the map; which node a
+ * map is linked to, what the map draws, how many circles feed the node, and
+ * the layers as the log leaves them, the node's new layers with them.
  */
-import { circleTitles, editSources, interactionOn, mapFedBy, withoutCircle, editsVersion } from "../../utils/editFeatures/mapLayerEdits";
-import { editLogCode } from "../../utils/editFeatures/editFeatures";
+import { circlesInto, circleTitles, editSources, interactionOn, isInteractionEdge, mapFedBy, editsVersion } from "../../utils/editFeatures/mapLayerEdits";
+import { editFeaturesCode } from "../../utils/editFeatures/editFeatures";
 import { fromMercator, toMercator } from "../../utils/editFeatures/mapEditBus";
 
+const RAW = { dataType: "outputs", data: [{ path: "roads" }, { path: "parks" }] };
 const nodes = [
   { id: "roads", type: "curio.builtin/data-loading", data: { title: "Roads" } },
+  { id: "parks", type: "curio.builtin/data-loading", data: { title: "Parks" } },
   { id: "map", type: "curio.builtin/autk-grammar", data: {} },
-  { id: "edit", type: "curio.builtin/edit-features", data: { editFeatures: { edits: [{ op: "remove", ids: [7], layer: "input_0" }], keys: { input_0: "osm_id" } } } },
+  { id: "edit", type: "curio.builtin/edit-features", data: { input: RAW, editFeatures: { edits: [{ op: "remove", ids: [7], layer: "input_0" }], keys: { input_0: "osm_id" } } } },
 ];
+const link = { source: "edit", target: "map", sourceHandle: "in/out", targetHandle: "in/out", type: "BIDIRECTIONAL_EDGE" };
 const edges = [
-  { source: "roads", target: "map", targetHandle: "in_0" },
-  { source: "edit", target: "map", targetHandle: "in_1" },
+  { source: "roads", target: "edit", sourceHandle: "out", targetHandle: "in_0" },
+  { source: "parks", target: "edit", sourceHandle: "out", targetHandle: "in_1" },
+  { source: "edit", target: "map", sourceHandle: "out", targetHandle: "in_0" },
+  link,
 ];
 const line = (x: number) => ({ type: "LineString", coordinates: [[x, 0], [x, 1]] });
 const roads = {
@@ -29,15 +35,40 @@ const roads = {
   },
 };
 
-test("the map finds the Interaction node plugged into it, and the node its map", () => {
-  expect(interactionOn("map", nodes, edges)).toMatchObject({ nodeId: "edit", circle: 1 });
+test("the map finds the node linked to it by an interaction edge, either way round, and the node its map", () => {
+  expect(isInteractionEdge(link)).toBe(true);
+  expect(isInteractionEdge(edges[2])).toBe(false);
+  expect(interactionOn("map", nodes, edges)).toMatchObject({ nodeId: "edit", feeds: true, drawFrom: RAW });
   expect(mapFedBy("edit", nodes, edges)).toBe("map");
+  const backwards = [...edges.slice(0, 3), { ...link, source: "map", target: "edit" }];
+  expect(interactionOn("map", nodes, backwards)?.nodeId).toBe("edit");
+  expect(mapFedBy("edit", nodes, backwards)).toBe("map");
 });
 
-test("the node's circle is left out of the map's input, the others keep their places", () => {
-  const input = { dataType: "outputs", data: [{ path: "a" }, { path: "b" }, { path: "c" }] };
-  expect(withoutCircle(input, 1)).toEqual({ dataType: "outputs", data: [{ path: "a" }, null, { path: "c" }] });
-  expect(withoutCircle({ path: "only" }, 0)).toBeNull();
+test("a data edge alone links nothing: the map just draws what the node hands on", () => {
+  expect(interactionOn("map", nodes, edges.slice(0, 3))).toBeNull();
+  expect(mapFedBy("edit", nodes, edges.slice(0, 3))).toBeNull();
+});
+
+test("the map draws the node's own input only when the node is all that feeds it", () => {
+  // Fed by the node and by roads too: the map draws what it was fed.
+  const mixed = [...edges, { source: "roads", target: "map", sourceHandle: "out", targetHandle: "in_1" }];
+  const fedTwice = interactionOn("map", nodes, mixed);
+  expect(fedTwice).toMatchObject({ feeds: true });
+  expect(fedTwice).not.toHaveProperty("drawFrom");
+  // Linked but fed by roads alone: the map applies the log to its own layers.
+  const notFed = [{ source: "roads", target: "map", sourceHandle: "out", targetHandle: "in_0" }, link];
+  expect(interactionOn("map", nodes, notFed)).toMatchObject({ nodeId: "edit", feeds: false });
+  expect(interactionOn("map", nodes, notFed)).not.toHaveProperty("drawFrom");
+});
+
+test("the node's code hands the step every circle that feeds it", () => {
+  expect(circlesInto("edit", edges)).toBe(2);
+  expect(circlesInto("roads", edges)).toBe(1);
+  const code = editFeaturesCode({ edits: [{ op: "remove", ids: [7], layer: "input_0" }], keys: { input_0: "osm_id" } }, 2);
+  expect(code).toContain("return curio_edit_features([input_0, input_1], [");
+  expect(code).toContain("by_input=True)");
+  expect(editFeaturesCode(undefined, 1)).toContain("return curio_edit_features(input_0, [])");
 });
 
 test("the layers are drawn as the log leaves them, with the node's new layers that have features", () => {
@@ -63,10 +94,6 @@ test("the layers are drawn as the log leaves them, with the node's new layers th
   expect(editsVersion(settings)).not.toBe(editsVersion({ ...settings, edits: [] }));
 });
 
-test("plugged into a map, the node's code hands on its log", () => {
-  expect(editLogCode({ edits: [{ op: "remove", ids: [7] }] })).toContain('return {"editFeatures": {"edits": [{"op": "remove", "ids": [7]}]}}');
-});
-
 test("World Mercator there and back", () => {
   const [x, y] = toMercator([-87.63, 41.88]);
   expect(x).toBeCloseTo(-9754926.98, 1);
@@ -76,7 +103,7 @@ test("World Mercator there and back", () => {
 });
 
 test("a layer is called by its node's header as renamed, else by the node's title", () => {
-  expect(circleTitles("map", nodes, edges)).toEqual({ 0: "Roads" });
+  expect(circleTitles("edit", nodes, edges)).toEqual({ 0: "Roads", 1: "Parks" });
   const renamed = nodes.map((n) => (n.id === "roads" ? { ...n, data: { ...n.data, packageTemplateLabel: "Streets" } } : n));
-  expect(circleTitles("map", renamed, edges)).toEqual({ 0: "Streets" });
+  expect(circleTitles("edit", renamed, edges)).toEqual({ 0: "Streets", 1: "Parks" });
 });

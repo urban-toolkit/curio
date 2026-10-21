@@ -211,7 +211,7 @@ A node's "type" is the id of the template it was made from. A run that can place
 - Autark: Grammar-driven urban analytics. Write an UrbanSpec (JSON) covering data loading (OSM, CSV, GeoJSON), GPU compute, map rendering of layers and rasters, and/or plot rendering in one declarative spec.
 - Spatial Join: Pairs the rows of two inputs whose shapes meet, such as points and the polygons they fall in. Connect them to the blue circle at the top and the green circle at the bottom, then pick how the shapes meet: intersects, within, contains, touches, overlaps, crosses or nearest. The output is one row per pair, with the bottom input's columns added, or the bottom input's rows with their count of pairs.
 - Parameter: One value any node can use. Give it a name, a type and a default. Its tag then shows under Shared in every node's Widgets tab and above every code editor; drag it into a node's code to use the value there. Changing the value makes the nodes that use it run again, and renaming it updates their code. It has no edges, and it lists the nodes that use it.
-- Interaction: Removes features, or changes them, by hand or by a condition. Connect a layer, or the layers an Autark node hands on, and pick the layer to edit and the column that identifies a feature: osm_id or building_id, or another column whose values differ in every feature. A layer with no such column is refused. Double-click features on its map to pick them, then Remove them (Delete), raise or lower a number such as height (the up and down arrows), scale it, Set a column to a value, or type a new value into the picked features' table. Or pick features by a condition such as height > 100, and do any of these to all of them, including writing a column computed by an expression such as levels * 3.2. Its edits are a log, applied in order by that column, never by a feature's place; each can be switched off, undone or deleted. Its output is the edited layer, with the other layers as they came, and Commit edits runs the nodes below it again. A building's parts share its building_id, so an edit by building_id applies to the whole building.
+- Interaction: Removes features, or changes them, by hand or by a condition, and adds features, properties and layers. Connect the data nodes that load the layers, one to each input circle, and the node hands on every layer by name, each layer from a node with no name of its own named after its circle (input_0, input_1, ...), with its edits applied. Feed an Autark map from it, and link the two with an interaction edge, from the dot on top of the node to the dot on top of the map: the node then edits on the map. Pick a layer, then pick features on the map by a click, a lasso or a condition such as height > 100, and Remove them, Set a column to a value or to an expression such as levels * 3.2, scale or raise a number, draw new features, or add a property. The map shows the picks and the edits at once. Its edits are a log, applied in order by the column that identifies a feature (osm_id, building_id, or another column whose values differ in every feature), never by a feature's place; each can be switched off, undone or deleted. Commit edits runs the node and every node below it again, so they get the edited layers. A building's parts share its building_id, so an edit by building_id applies to the whole building.
 - Note: A note on the canvas: a title and a short text in simple markdown (headings, lists, bold and https links) on a color of its own. It connects to nothing and runs nothing. The Researcher writes its findings in notes.
 
 A node that accepts more than one connection takes each one on its own input circle, numbered from 0 in the order they were connected. An edge names the circle it connects to in "targetHandle": "in", "in_1", "in_2", ..., circle 0 first.
@@ -377,7 +377,7 @@ Number of connections each node accepts into its inputs. A node that accepts mor
 - Simple View: 1
 - Autark: any number
 - Spatial Join: 2
-- Interaction: 1
+- Interaction: any number
 
 Number of outputs possible for each node (if you want to output more than one data unit you need to use a tuple):
 
@@ -510,12 +510,15 @@ Visualizations can be connected to a Data Pool with an edge of type: "Interactio
 
 Two visualizations can also be connected to each other directly with an Interaction edge, without a Data Pool, when at least one of them is a Vega-Lite or an Autark node: each of those highlights the rows the other one selects, and a Vega-Lite node marks them in the column "interacted" the same way. A point selection over key columns matches rows by their values, so the two visualizations may read different rows that share those columns: a Vega-Lite point select with "fields": ["unit_id"], or an Autark map layer (the one with "isPick": true) or plot with "selectFields": ["unit_id"], whose table must come from the node's input. A point selection without them matches rows by position, so both visualizations must read the same rows in the same order; an interval selection matches by column name.
 
+An Interaction node is linked by an Interaction edge to one Autark node only, the map it feeds, and to no other node: features picked on that map reach the Interaction node to edit, and its picks and edits show on the map. The data still flows on data edges: the data nodes into the Interaction node, and the Interaction node into the map.
+
 Nodes that can have interaction connection edge:
 
 - Data Pool
 - Vega-Lite
 - Simple View
 - Autark
+- Interaction
 
 ## Scenarios
 

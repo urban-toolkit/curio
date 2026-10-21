@@ -30,6 +30,10 @@ on eight example fixtures rather than as a wrong score.
 from __future__ import annotations
 
 INTERACTION_EDGE_TYPE = "Interaction"
+#: The Interaction node, linked by an interaction edge to the Autark map it
+#: feeds and to no other node (``interaction_edge_errors``).
+EDITOR_TEMPLATE = "curio.builtin/edit-features"
+MAP_TEMPLATE = "curio.builtin/autk-grammar"
 
 
 
@@ -37,8 +41,12 @@ def interaction_roles(templates: dict) -> tuple[frozenset[str], frozenset[str]]:
     """``(pools, visualizations)``: the template ids an interaction edge may
     join, read from the roster. A template that declares ``bidirectional`` has
     the interaction handle; it is a visualization when its category is one
-    (``vis_*``) and a pool otherwise."""
-    capable = {tid for tid, row in templates.items() if isinstance(row, dict) and row.get("bidirectional")}
+    (``vis_*``) and a pool otherwise. The Interaction node has the handle too,
+    and is neither: it links to its map alone."""
+    capable = {
+        tid for tid, row in templates.items()
+        if isinstance(row, dict) and row.get("bidirectional") and tid != EDITOR_TEMPLATE
+    }
     visualizations = frozenset(
         tid for tid in capable if str(templates[tid].get("category") or "").startswith("vis")
     )
@@ -222,6 +230,14 @@ def interaction_edge_errors(plan: dict, type_of_endpoint, templates: dict) -> li
             continue
         src, dst = (strip_type_version(type_of_endpoint(edge[end])) for end in ("from", "to"))
         if src not in templates or dst not in templates:
+            continue
+        if EDITOR_TEMPLATE in (src, dst):
+            if {src, dst} == {EDITOR_TEMPLATE, MAP_TEMPLATE}:
+                continue
+            errors.append(
+                f"edges[{i}]: an interaction edge joins the {template_suffix(EDITOR_TEMPLATE)} node to the "
+                f"{template_suffix(MAP_TEMPLATE)} map it feeds, and to no other node; use a data edge"
+            )
             continue
         if (src in pools and dst in visualizations) or (dst in pools and src in visualizations):
             continue
