@@ -400,6 +400,22 @@ node's runs, see [Provenance](#provenance)), the **Save output dataset** toggle,
 settings, about, pin, **Minimize** and delete.
 Code and specs sit in a gray box, and a code node's output is below its code.
 
+Above the code or spec, one row lists every chip the node can use, by category:
+**Inputs**, **Scenarios**, **Widgets**, **Selections** and **Shared**, each with
+its count, and each only when it has chips. The categories start closed. Click
+one to list its chips under the row, and click it again to close it. Several
+can be open, and a category stays open while the dataflow is open. Drag a
+chip's tag into the code or spec, or click it to insert the chip at the cursor.
+
+- **Inputs**: a tag for each input (see [Several inputs](#several-inputs)), and
+  in a Vega-Lite spec the **inputs** tag
+  ([Every input in one dataset](#every-input-in-one-dataset)).
+- **Scenarios**: in a Vega-Lite or Autark spec whose node has an input from a
+  scenario box, the chips of the boxes' colors and names
+  ([Scenario colors and order](#scenario-colors-and-order)).
+- **Widgets**, **Selections** and **Shared**: the node's widgets, its selection
+  tags and the Parameter nodes' values ([Widgets](#widgets)).
+
 Drag a node's bottom-right corner to resize it. For viewers of a shared dataflow,
 nodes keep their size and have no delete. A minimized node is a small chip, and a
 save keeps it one; click it to open the node again. Double-click a node where you
@@ -498,9 +514,9 @@ nodes have them.
    choices, separated by commas, and a **Choice** shows as a dropdown or as
    radio buttons. A **Number** can take a minimum, a maximum, a step and units;
    a **Slider** needs the minimum and the maximum.
-3. Drag the widget's tag from the strip above the code into the code, or click
-   the tag to insert it at the cursor. It appears as a chip; hover it to see the
-   value it stands for.
+3. Open **Widgets** above the code and drag the widget's tag into the code, or
+   click the tag to insert it at the cursor. It appears as a chip; hover it to
+   see the value it stands for.
 4. Set the value in the **Widgets** tab and run the node.
 
 | Type | Control | Value in Python |
@@ -551,10 +567,10 @@ that several nodes read.
 
 1. Drag **Parameter** from the **Built-in** palette onto the canvas. Give it a
    name, a type, a label and a default, as for a widget, and click **Add parameter**.
-2. Its tag, **@name**, shows under **Shared** in the strip above every node's
-   code and in every node's **Widgets** tab. Drag it into the code, or click it
-   to insert it at the cursor. In the code it is written `[!! @name !!]` and
-   drawn as an amber chip; it runs as a widget's value does.
+2. Its tag, **@name**, shows under **Shared** above every node's code and in
+   every node's **Widgets** tab. Drag it into the code, or click it to insert it
+   at the cursor. In the code it is written `[!! @name !!]` and drawn as an
+   amber chip; it runs as a widget's value does.
 3. Set the value in the Parameter node.
 
 A Parameter node has no edges, and it lists the nodes whose code uses it.
@@ -577,9 +593,9 @@ code gets the ids of the selected rows. A selection of key values (see
    `building_id` when the rows have them, or any column whose values differ
    from row to row. A view whose rows have no such column is refused. Give the
    tag a name and click **Add selection tag**.
-3. Drag the tag, **selection name**, from the strip above the code into the
-   code, or click it to insert it at the cursor. In the code it is written
-   `[!! selection name !!]` and drawn as a peach chip.
+3. Open **Selections** above the code and drag the tag, **selection name**,
+   into the code, or click it to insert it at the cursor. In the code it is
+   written `[!! selection name !!]` and drawn as a peach chip.
 4. Select in the view and run the node.
 
 The reference becomes the list of the selected rows' ids, each once:
@@ -622,8 +638,8 @@ dict's tab is named after its key.
 
 In code and in a Vega-Lite or Autark spec, each input is a chip:
 
-1. The strip above the code shows a tag for each input: **input_0**,
-   **input_1**, and so on. Hover one to see which node feeds it.
+1. Open **Inputs** above the code or spec: it shows a tag for each input,
+   **input_0**, **input_1**, and so on. Hover one to see which node feeds it.
 2. Drag a tag into the code, or click it to insert it at the cursor. It appears
    as a green chip, written `[!! input_1 !!]`.
 3. Click the arrow beside an input's tag to list its columns, once the node that
@@ -633,13 +649,11 @@ In code and in a Vega-Lite or Autark spec, each input is a chip:
    lists a tag for each layer, `[!! input_1:table_osm_roads !!]`, followed by
    that layer's columns, `[!! input_1:table_osm_roads.lanes !!]`. A layer is
    named as the Autark node names its table.
-5. In a Vega-Lite or Autark spec, an input whose node is in a scenario box shows
-   that box's swatch beside its tag. Drag it where a color goes; it is written
-   `[!! scenario input_1 !!]`, a lilac chip. A Vega-Lite node with an input
-   also has the **inputs** tag, `[!! inputs !!]`, the dataset that stacks its
-   inputs (see
-   [Every input in one dataset](#every-input-in-one-dataset) and
-   [Scenario colors and order](#scenario-colors-and-order)).
+5. A Vega-Lite spec with an input also lists the **inputs** tag,
+   `[!! inputs !!]`, the dataset that stacks its inputs
+   ([Every input in one dataset](#every-input-in-one-dataset)). The color of the
+   scenario box an input comes from is under **Scenarios**
+   ([Scenario colors and order](#scenario-colors-and-order)).
 
 When the node runs:
 
@@ -1004,11 +1018,11 @@ as tall, the rows read:
 | 0 | s-base | Baseline | r2 | 5 |
 | 1 | s-tall | Twice as tall | r1 | 3 |
 
-On a Vega-Lite node with an input, the **inputs** tag beside `input_0`,
-`input_1` above the spec drags the dataset's chip, `[!! inputs !!]`, and opens
-to the fields of these rows: `scenario_name`, `scenario` and `__input__`, then
-every column of the inputs, each with its type in its tooltip. A field's chip,
-`[!! inputs.sunlight !!]`, writes its name.
+On a Vega-Lite node with an input, **Inputs** above the spec lists the
+**inputs** tag after `input_0`, `input_1`. It drags the dataset's chip,
+`[!! inputs !!]`, and its arrow lists the fields of these rows: `scenario_name`,
+`scenario` and `__input__`, then every column of the inputs, each with its type
+in its tooltip. A field's chip, `[!! inputs.sunlight !!]`, writes its name.
 
 The inputs stack this way: a table keeps its rows, and a column one input
 lacks is empty in its rows; a table with no rows is still a
@@ -1046,14 +1060,24 @@ from no box comes after them, named by its node, in a gray of its own, so two
 of them stay apart. Two boxes named alike, or untitled nodes of one kind in no
 box, are one name. When no input comes from a box, `[!! scenario colors !!]`
 and `[!! scenario text_colors !!]` write the names alone, `{"domain": [names]}`,
-and the chart's own palette colors them. On the **inputs** tag, the
-`scenario_name` field shows a swatch per box: drag the swatches, or click them,
-to insert `[!! scenario colors !!]`, and the small **order** and **text colors**
-tags beside them for the other two. An input whose node is in a box shows that
-box's swatch on its own tag, in a Vega-Lite or an Autark spec, which inserts
-`[!! scenario input_1 !!]`. Dropped where a value goes, the swatch writes its
-chip in quotes, `"[!! scenario input_1 !!]"`, as the **inputs** tag and a field
-of it do, so the spec stays JSON.
+and the chart's own palette colors them.
+
+The chips' tags are under **Scenarios** above the spec, on a node with an input
+from a scenario box:
+
+- In a Vega-Lite spec, first the boxes' swatches with their names, one tag that
+  inserts `[!! scenario colors !!]`, then **text colors** and **order** for the
+  other two.
+- In a Vega-Lite or an Autark spec, a tag for each input, such as
+  **input_1 ■ Twice as tall**, which inserts `[!! scenario input_1 !!]`. Its
+  swatch is the color the chip writes: its box's, or the gray of an input from
+  no box.
+- An Autark spec lists the inputs' tags alone, each a layer's color.
+
+Dropped where a value goes, an input's tag writes its chip in quotes,
+`"[!! scenario input_1 !!]"`, as the **inputs** tag and a field of it do, so
+the spec stays JSON. A node with no input from a box has no **Scenarios**, and
+the hover of a scenario chip in its spec says what the chip writes there.
 
 Renaming or recoloring a box, or drawing one around a node that feeds the chart,
 draws the chart again with what its chips write then, with no run. A map takes
@@ -1302,8 +1326,8 @@ that set the same range color a value alike.
 
 A map draws its layers as its document writes them. To draw a layer in the
 color of the scenario box its input comes from, write that input's scenario
-chip as its color, which the tag of an input from a box drags in from its
-swatch ([Scenario colors and order](#scenario-colors-and-order)):
+chip as its color, which its tag under **Scenarios** above the spec drags in
+([Scenario colors and order](#scenario-colors-and-order)):
 
 ```json
 {"dataRef": "[!! input_1 !!]", "width": 80, "title": "Fastest route", "color": "[!! scenario input_1 !!]"}
