@@ -98,10 +98,13 @@ function frameMap(map: any): boolean {
     camera.resize(map.renderer.pixelWidth, map.renderer.pixelHeight);
     // A map that draws on demand draws the camera it was given.
     map.requestRender?.();
+    map[VIEWED] = true;
     return true;
 }
 
 const FRAMED = Symbol.for('curio.autk.framedMap');
+/** Set on a map whose camera Curio framed or put back: a view worth keeping. */
+const VIEWED = Symbol.for('curio.autk.viewedMap');
 
 /** Whether *map* is a flat map, whose camera Curio sets; terrain mode fits its own. */
 const isFlat = (map: any): boolean => !!map && !map._terrainRenderPath && typeof map.resetCamera === 'function';
@@ -158,11 +161,16 @@ function originOf(map: any): number[] | null {
     }
 }
 
-/** The view of each map *grammar* drew, in its order: null for one with no view to keep. */
+/**
+ * The view of each map *grammar* drew, in its order: null for one with no view
+ * to keep. A map drawn while hidden and never shown since has autk-map's own
+ * camera, which no one framed or moved: the next draw frames its map instead.
+ */
 export function mapViews(grammar: any): Array<MapView | null> {
     return grammarMaps(grammar).map((map) => {
         const camera = map?.camera;
         if (!isFlat(map) || typeof camera?.getEye !== 'function') return null;
+        if (!map[VIEWED] && !shownCanvas(map)) return null;
         try {
             return {
                 eye: [...camera.getEye()],
@@ -195,6 +203,7 @@ function putBackView(map: any, view: MapView): boolean {
     if (pixelWidth > 0 && pixelHeight > 0) camera.resize(pixelWidth, pixelHeight);
     // A map that draws on demand draws the camera it was given.
     map.requestRender?.();
+    map[VIEWED] = true;
     return true;
 }
 
