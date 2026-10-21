@@ -456,6 +456,9 @@ def test_the_rows_stack_under_their_boxes_and_the_chart_reads_columns_they_have(
     assert all(list(r) == columns for r in stacked)
     rank = {box["id"]: place for place, box in enumerate(flow["scenarios"])}
     labels = [{"scenario": box["id"], "name": box["name"], "color": box["color"], "rank": rank[box["id"]]} for box in boxes]
+    # The chart names the dataset its inputs are stacked in by its chip, which
+    # its run writes as that dataset's name.
+    assert '"name": "[!! inputs !!]"' in row["chart"]["content"]
     spec, problems = resolve_references(
         row["chart"]["content"], widgets=row["chart"]["metadata"]["widgets"], language="json",
         inputs=[{"slot": circle, "scenario": label} for circle, label in enumerate(labels)],
