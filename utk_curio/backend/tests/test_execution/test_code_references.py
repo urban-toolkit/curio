@@ -136,6 +136,27 @@ class TestTheSharedCases:
             ]
             assert resolved, f"no selection reference resolves in a {language} case"
 
+    def test_the_table_has_the_scenario_chips_and_their_problems(self):
+        """Each scenario chip and a field of ``inputs`` resolve in a spec, and
+        each is refused where it must be: in code, misspelled, with no edge or a
+        deleted one, inside quotes, with its boxes unknown, or naming no field."""
+        cases = _cases()
+        resolving = " ".join(c["code"] for c in cases if c["language"] == "json" and not c.get("problems"))
+        for chip in ("scenario colors", "scenario text_colors", "scenario order", "scenario input_1", "inputs.scenario_name"):
+            assert f"[!! {chip} !!]" in resolving, chip
+        messages = " ".join(m for c in cases for m in c.get("problems", []))
+        for kind in (
+            "is for a Vega-Lite or Autark spec, not for code",
+            "is for a Vega-Lite spec, not for code",
+            "names no scenario chip",
+            "drag the swatch of one of this node's input tags here",
+            "is a scale, not text",
+            "is a list of names, not text",
+            "comes from is not known here",
+            "the dataset inputs has no field",
+        ):
+            assert kind in messages, kind
+
 
 class TestNumbersMatchJavaScript:
     """Numbers are written the way JavaScript's ``String()`` writes them."""
@@ -226,6 +247,17 @@ class TestThePatternsAreShared:
             assert not INPUT_REFERENCE_RE.match(inner), inner
             assert not WIDGET_NAME_RE.match(inner), inner
 
+    def test_the_greys_of_the_inputs_from_no_box(self):
+        from utk_curio.backend.app.execution.code_references import NO_SCENARIO_COLOR, NO_SCENARIO_GREYS
+
+        written = re.search(
+            r"NO_SCENARIO_GREYS: readonly string\[\] = \[(.*?)\];",
+            self._ts("scenarioColors.ts", REFERENCES_DIR.parent / "scenarios"),
+        )
+        assert written and re.findall(r'"(#[0-9a-f]{6})"', written.group(1)) == list(NO_SCENARIO_GREYS)
+        assert NO_SCENARIO_GREYS[0] == NO_SCENARIO_COLOR
+        assert len(set(NO_SCENARIO_GREYS)) == len(NO_SCENARIO_GREYS)
+
     def test_the_selection_reference_pattern(self):
         from utk_curio.backend.app.execution.code_references import SELECTION_REFERENCE_RE
 
@@ -240,6 +272,33 @@ class TestThePatternsAreShared:
         assert parse_reference("selection picked") == {"kind": "selection", "name": "picked"}
         for inner, kind in (("selection", "widget"), ("selection_2", "widget"), ("@selection", "shared")):
             assert parse_reference(inner)["kind"] == kind, inner
+
+    def test_the_scenario_and_stacked_reference_patterns(self):
+        from utk_curio.backend.app.execution.code_references import SCENARIO_REFERENCE_RE, STACKED_REFERENCE_RE
+
+        source = self._ts("codeReferences.ts", REFERENCES_DIR)
+        for name, compiled in (("SCENARIO_REFERENCE_PATTERN", SCENARIO_REFERENCE_RE), ("STACKED_REFERENCE_PATTERN", STACKED_REFERENCE_RE)):
+            written = re.search(name + r" = String\.raw`(.*?)`", source)
+            assert written and written.group(1) == compiled.pattern, name
+
+    def test_a_scenario_chip_is_never_a_widget_or_an_input(self):
+        """``scenario colors`` has a space and ``inputs.scenario_name`` a dot,
+        which no widget name holds, and neither starts as an input does. What
+        the owner first called them would read as a widget, or as a column of
+        input_1."""
+        from utk_curio.backend.app.execution.code_references import parse_reference
+
+        assert parse_reference("scenario colors") == {"kind": "scenario", "chip": "colors"}
+        assert parse_reference("scenario text_colors") == {"kind": "scenario", "chip": "text_colors"}
+        assert parse_reference("scenario order") == {"kind": "scenario", "chip": "order"}
+        assert parse_reference("scenario input_2") == {"kind": "scenario", "chip": "input", "slot": 2}
+        assert parse_reference("scenario input_?") == {"kind": "scenario", "chip": "input", "slot": None}
+        assert parse_reference("scenario colours") == {"kind": "scenario", "chip": None}
+        assert parse_reference("inputs.rain.mm") == {"kind": "stacked", "column": "rain.mm"}
+        assert parse_reference("scenario_colors") == {"kind": "widget", "name": "scenario_colors"}
+        assert parse_reference("scenario") == {"kind": "widget", "name": "scenario"}
+        assert parse_reference("inputs") == {"kind": "widget", "name": "inputs"}
+        assert parse_reference("input_1.scenario_color") == {"kind": "input", "slot": 1, "column": "scenario_color"}
 
     def test_the_selection_cap_is_one_number(self):
         from utk_curio.backend.app.execution.code_references import SELECTION_ID_CAP
@@ -718,3 +777,33 @@ class TestSelectionTags:
         report = runner.run_through_node(KEY, PID, spec, "a", exec_fn=rec)
         assert rec.calls == []
         assert "this node has no selection tag named other" in report["nodes"]["a"]["stderrTail"]
+
+
+class TestChipPlaceholders:
+    """A spec read for its shape before its chips are resolved (what an Autark
+    document declares): each chip standing on its own is held by a string of
+    itself, so any bare chip, a list or a scale included, leaves it JSON, as
+    ``withChipPlaceholders`` in ``codeReferences.ts`` does."""
+
+    def test_each_chip_standing_on_its_own_is_held_by_a_string_of_itself(self):
+        from utk_curio.backend.app.execution.code_references import with_chip_placeholders
+
+        spec = (
+            '{"encoding": {"x": {"field": "scenario_name", "sort": [!! scenario order !!]}, '
+            '"color": {"field": "scenario_name", "scale": [!! scenario colors !!]}, "y": {"field": "[!! inputs.sunlight !!]"}}, '
+            '"width": [!! size !!], "title": "Sun in \\"[!! season !!]\\""}'
+        )
+        with pytest.raises(ValueError):
+            json.loads(spec)
+        held = json.loads(with_chip_placeholders(spec))
+        assert held["encoding"]["x"]["sort"] == "[!! scenario order !!]"
+        assert held["encoding"]["color"]["scale"] == "[!! scenario colors !!]"
+        assert held["encoding"]["y"]["field"] == "[!! inputs.sunlight !!]"
+        assert held["width"] == "[!! size !!]"
+        assert held["title"] == 'Sun in "[!! season !!]"'
+
+    def test_a_spec_with_no_chip_standing_on_its_own_is_itself(self):
+        from utk_curio.backend.app.execution.code_references import with_chip_placeholders
+
+        assert with_chip_placeholders('{"mark": "bar"}') == '{"mark": "bar"}'
+        assert with_chip_placeholders('{"title": "[!! season !!]"}') == '{"title": "[!! season !!]"}'

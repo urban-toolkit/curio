@@ -7,8 +7,9 @@ the plan answering komar41's review, step 6.2).
 tables from the Data Catalog. In each row a Data Transformation node per
 scenario keeps that scenario's rows, and a chart of the Scout package
 (``curio.scout@1``) takes each of those nodes on an input of its own: a
-Vega-Lite chart whose spec names no scenario and no color. The account's
-store holds that package, which the dataflow declares.
+Vega-Lite chart whose spec names no scenario and no color, and writes them
+through its scenario chips (``[!! scenario colors !!]``). The account's store
+holds that package, which the dataflow declares.
 
 The test adds Scout's Dots with a range over the four street plans of the
 daily trips. Every request that would leave the stack is refused, and Run All
@@ -24,11 +25,11 @@ drives the whole dataflow:
    by stage, the matrix of weights), and the table its text in the shades of
    them that read on white. Dots with a range draws a grey rule per mode and
    each plan's dots in its color.
-4. A chart draws its scenarios in their boxes' colors: one scenario of each
-   chart but the table recolored, each chart draws the new color and not the
-   old one, with no run, its axis labels included where they are what its
-   scenarios color. Dots with a range follows the plan recolored for the
-   grouped bars.
+4. A chart draws its scenarios in their boxes' colors, through its chips: one
+   scenario of each chart but the table recolored, each chart draws the new
+   color and not the old one, with no run, its axis labels included where they
+   are what its scenarios color. Dots with a range follows the plan recolored
+   for the grouped bars.
 5. No request left the stack.
 
 Each of the nine charts' close-up is a frame, taken before the recolor.
@@ -179,6 +180,16 @@ def _inputs_rows(page, node_id: str, count: int) -> list:
             return rows
         page.wait_for_timeout(250)
     raise AssertionError(f"the chart {node_id} reads {len(rows or [])} rows, not {count}")
+
+
+def _written_spec(flow: dict, chart: dict) -> dict:
+    """The chart's spec as a run writes it: its chips resolved over its widgets
+    and the boxes its inputs come from (``WorkflowSpec.node_code``)."""
+    from utk_curio.backend.app.execution.workflow_spec import parse_workflow_dict
+
+    parsed = parse_workflow_dict({"dataflow": flow})
+    (node,) = [n for n in parsed.nodes if n.id == chart["id"]]
+    return json.loads(parsed.node_code(node, "json", grammar="vega-lite"))
 
 
 def _mark_colors(dataset_id: str, spec: dict, labels: list) -> list:
@@ -372,7 +383,7 @@ def test_the_nine_charts_draw_their_scenarios_with_no_network(
             shades = [_readable_shade(label["color"]) for label in labels]
             _assert_text_drawn(page, chart["id"], shades, chart["title"])
         else:
-            colors = _mark_colors(dataset_id, json.loads(chart["content"]), labels)
+            colors = _mark_colors(dataset_id, _written_spec(flow, chart), labels)
             _assert_colors_drawn(page, chart["id"], colors, chart["title"])
         save_node_closeup(page, f"scenario-charts-{_slug(dataset_id)}", chart["id"], test_name=TEST_NAME, sweep_toasts=True)
     # Dots with a range: a grey rule per mode, and each plan's dots in its color.
@@ -380,10 +391,10 @@ def test_the_nine_charts_draw_their_scenarios_with_no_network(
     assert_vega_canvas_rendered(page, DOTS, timeout=30000)
     _assert_colors_drawn(page, DOTS, [RULE_GREY, *[label["color"] for label in plan_labels]], "Dots with a range")
 
-    # 4. One scenario of each chart recolored: each chart draws the new color,
-    # whatever its spec writes, and draws it with no run. The stacked bars and
-    # the matrix draw it in their axis labels, which read the scale their
-    # scenarios fill.
+    # 4. One scenario of each chart recolored: each chart draws the new color
+    # through its chips, and draws it with no run. The stacked bars and the
+    # matrix draw it in their axis labels, which read the scale their
+    # scenarios' chip writes.
     recolored = [(dataset_id, chart) for dataset_id, chart in rows if dataset_id != ROOFS]
     assert sorted(dataset_id for dataset_id, _chart in recolored) == sorted(RECOLORS)
     boxes = {}

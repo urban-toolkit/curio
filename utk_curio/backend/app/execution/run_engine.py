@@ -131,7 +131,7 @@ def plan_run(
     *packages* (a ``TemplateGrammars``, the account's when the run has one)
     reads what each node's template declares (``run_plan.node_role``).
     """
-    spec = parse_workflow_dict(spec_dict, templates=templates)
+    spec = parse_workflow_dict(spec_dict, templates=templates, labels=labels)
     saved = {
         n["id"]: n for n in ((spec_dict or {}).get("dataflow") or {}).get("nodes") or []
         if isinstance(n, dict) and n.get("id")

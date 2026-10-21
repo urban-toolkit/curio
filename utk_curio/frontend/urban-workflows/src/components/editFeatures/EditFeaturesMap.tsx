@@ -60,7 +60,6 @@ export default function EditFeaturesMap({
   const { applyGrammar, contentComponent } = useAutkGrammarBehavior(data, state, {
     marksNodeErrored: false,
     recordsProvenance: false,
-    colorsByScenario: false,
   });
 
   useEffect(() => {

@@ -6,9 +6,9 @@
   (``src/utils/scenarios/stackedInputs.ts``) is pinned to in Jest, and
   ``input_rows`` each input's own rows.
 - Their rows are JSON, as a notebook hands them to Vega-Lite.
-- A chart whose channels on ``scenario_name`` are filled in from its
-  scenarios' labels is valid Vega-Lite (``scenarioScales.cases.json``, which
-  Jest pins ``scenarioScales.ts`` to).
+- A chart whose scenario chips write its channels on ``scenario_name`` is valid
+  Vega-Lite (``codeReferences.cases.json``, which Jest and pytest pin both
+  resolvers to).
 
 Every file and module is read inside its test, so a checkout without them fails
 test by test rather than at collection.
@@ -183,17 +183,24 @@ def test_the_rows_of_inputs_never_carry_geometry_from_one_input_or_several():
     assert list(roads.columns) == ["pop", "geometry"]
 
 
-def test_a_chart_with_its_scenarios_filled_in_is_valid_vega_lite():
-    """Each chart a Vega-Lite node compiles, its channels on ``scenario_name``
-    given the scenarios' names and colors, and each spec the fill leaves as
-    written, goes through the validator agents' documents go through."""
+def test_a_chart_its_scenario_chips_write_is_valid_vega_lite():
+    """The shared table's chart of every scenario chip that lists the
+    scenarios, its color scale, its text shades and its order, resolved as both
+    resolvers resolve it, goes through the validator agents' documents go
+    through: the scales the chips write are Vega-Lite's own."""
     from utk_curio.backend.app.agents.domain.document_validation import STATUS_VALID, validate_vega_lite
 
-    doc = _read_json("scenarioScales.cases.json")
-    columns = ["scenario", "scenario_name"] + [column["name"] for column in doc["columns"]]
-    specs = {case["name"]: case["filled"] for case in doc["cases"]}
-    specs.update({case["name"]: case["spec"] for case in doc["untouched"]})
-    assert len(specs) == len(doc["cases"]) + len(doc["untouched"]), "two cases share a name"
-    results = {name: validate_vega_lite(json.dumps(spec), columns=columns) for name, spec in specs.items()}
+    path = os.path.join(REPO_ROOT, "utk_curio", "frontend", "urban-workflows", "src", "utils", "references",
+                        "codeReferences.cases.json")
+    with open(path, encoding="utf-8") as fh:
+        cases = json.load(fh)["cases"]
+    charts = [
+        case for case in cases
+        if case.get("grammar") == "vega-lite" and not case.get("problems")
+        and all(f"[!! scenario {chip} !!]" in case["code"] for chip in ("colors", "text_colors", "order"))
+    ]
+    assert charts, "the table has no chart that writes every scenario chip"
+    columns = ["scenario", "scenario_name", "segment", "sunlight", "rain.mm", "roof"]
+    results = {case["name"]: validate_vega_lite(case["expected"], columns=columns) for case in charts}
     # "unchecked" (the schema could not be read) is not a pass.
     assert {name: r for name, r in results.items() if r.get("status") != STATUS_VALID} == {}

@@ -129,6 +129,10 @@
      dragging every warning with it. */
   --curio-accent-amber-bg:  #FFF0DC;
   --curio-accent-amber-fg:  #996300;
+  /* Lilac, for the scenario chips in a spec and the tags that insert them
+     (#662), which none of the other accents means. */
+  --curio-accent-lilac-bg:  #EFE9FB;
+  --curio-accent-lilac-fg:  #5B3FA3;
 
   /* ── Dataset format palette ────────────────────────────────────────────
      One colour per dataset format, used by every surface that keys a colour

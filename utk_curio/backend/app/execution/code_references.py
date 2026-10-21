@@ -7,6 +7,22 @@ widget, ``[!! input_1 !!]`` an input (by circle, counted from 0),
 the ids of the rows a view's selection picks, which the node holds at
 ``metadata.selections``.
 
+In a Vega-Lite or Autark spec, the scenario chips write the scenarios of the
+node's inputs, from the label each input's rows carry (an input's
+``scenario``: the box its feeding node is in, else that node's name):
+``[!! scenario colors !!]`` the scale ``{"domain": [names], "range":
+[colors]}``, each box once in the order the dataflow lists the boxes, in its
+color, then each input from no box, in a grey of its own
+(:data:`NO_SCENARIO_GREYS`); ``[!! scenario text_colors !!]`` the same scale in
+the shades a text mark reads in (:func:`table_text_color`);
+``[!! scenario order !!]`` the names alone; ``[!! scenario input_1 !!]`` the
+color of input_1 in that scale. With no input from a box, the two scales are
+the names alone, ``{"domain": [names]}``, which the grammar's own palette
+colors. ``[!! inputs.sunlight !!]`` names a field of the
+dataset ``inputs``, which stacks a Vega-Lite chart's inputs. A widget's name
+has no space and no dot, and an input's chip starts ``input_``, so neither
+form can name a widget, an input or a column.
+
 The headless twin of ``src/utils/references/codeReferences.ts``, which the
 browser runs before posting a node's code. Both write the same code: one table
 of cases, ``codeReferences.cases.json`` beside the TypeScript module, is read by
@@ -41,6 +57,7 @@ naming its new spelling.
 from __future__ import annotations
 
 import json
+import math
 import re
 from typing import Iterable
 
@@ -72,6 +89,44 @@ SHARED_PREFIX = "@"
 #: What stands inside a selection reference, ``selection picked``. Kept in sync
 #: with ``SELECTION_REFERENCE_PATTERN`` in ``codeReferences.ts``.
 SELECTION_REFERENCE_RE = re.compile(r"^selection\s+(.+)$")
+
+#: What stands inside a scenario chip: ``scenario colors``, ``scenario
+#: text_colors``, ``scenario order``, or ``scenario input_1`` (``scenario
+#: input_?`` once its edge was deleted). Kept in sync with
+#: ``SCENARIO_REFERENCE_PATTERN`` in ``codeReferences.ts``.
+SCENARIO_REFERENCE_RE = re.compile(r"^scenario\s+(.+)$")
+
+#: The scenario chips that list every input's scenario: the scale of their
+#: colors, the same scale in text shades, and their names in order. Kept in
+#: sync with ``SCENARIO_LISTS`` in ``codeReferences.ts``.
+SCENARIO_LISTS = ("colors", "text_colors", "order")
+
+_SCENARIO_INPUT_RE = re.compile(r"^input_(\d+|\?)$")
+
+#: What stands inside a chip of a field of the dataset ``inputs``:
+#: ``inputs.sunlight``. Kept in sync with ``STACKED_REFERENCE_PATTERN`` in
+#: ``codeReferences.ts``.
+STACKED_REFERENCE_RE = re.compile(r"^inputs\.(.+)$")
+
+#: The fields the stacking adds to every row of ``inputs``, before the inputs'
+#: own columns (``scenario_stack.py``). Kept in sync with ``STACKED_FIELDS`` in
+#: ``codeReferences.ts``.
+STACKED_FIELDS = ("scenario_name", "scenario", "__input__")
+
+#: The data types of a frame the stacking reads as a table. Kept in sync with
+#: ``TABLE_TYPES`` in ``codeReferences.ts``.
+TABLE_TYPES = ("dataframe", "geodataframe")
+
+#: The color of an input whose node is in no scenario box. Kept in sync with
+#: ``NO_SCENARIO_COLOR`` in ``utils/scenarios/scenarioColors.ts``.
+NO_SCENARIO_COLOR = "#8a8f98"
+
+#: The greys the scenario chips draw the inputs from no box in, one per name
+#: in circle order, the first :data:`NO_SCENARIO_COLOR`: apart from each other,
+#: and from the boxes, since a grey a box among the same inputs uses is passed
+#: over. Kept in sync with ``NO_SCENARIO_GREYS`` in
+#: ``utils/scenarios/scenarioColors.ts``.
+NO_SCENARIO_GREYS = ("#8a8f98", "#5b6068", "#b6bac1", "#40444a", "#d2d5da", "#74797f")
 
 #: The most ids one selection tag holds. Kept in sync with ``SELECTION_ID_CAP``
 #: in ``selectionTags.ts`` and ``maxItems`` in ``docs/schemas/trill.v1.json``.
@@ -203,16 +258,35 @@ def widget_literal(value, language: str) -> str:
     return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
 
 
+def _parse_scenario_chip(rest: str) -> dict:
+    """What follows ``scenario `` in a scenario chip, as the chip it names;
+    ``parseScenarioChip`` in ``codeReferences.ts``."""
+    if rest in SCENARIO_LISTS:
+        return {"kind": "scenario", "chip": rest}
+    found = _SCENARIO_INPUT_RE.match(rest)
+    if found:
+        return {"kind": "scenario", "chip": "input", "slot": None if found.group(1) == "?" else int(found.group(1))}
+    return {"kind": "scenario", "chip": None}
+
+
 def parse_reference(inner: str) -> dict:
     """``{"kind": "widget", "name"}``, ``{"kind": "shared", "name"}``,
-    ``{"kind": "selection", "name"}`` or ``{"kind": "input", "slot",
-    "layer"?, "column"?}``; ``slot`` is None for ``input_?``, the input whose
-    edge was deleted."""
+    ``{"kind": "selection", "name"}``, ``{"kind": "input", "slot",
+    "layer"?, "column"?}``, ``{"kind": "scenario", "chip", "slot"?}`` or
+    ``{"kind": "stacked", "column"}``; ``slot`` is None for ``input_?`` (or
+    ``scenario input_?``), the input whose edge was deleted, and a scenario
+    ``chip`` None for a word no scenario chip is."""
     m = INPUT_REFERENCE_RE.match(inner)
     if not m:
         selection = SELECTION_REFERENCE_RE.match(inner)
         if selection:
             return {"kind": "selection", "name": selection.group(1)}
+        scenario = SCENARIO_REFERENCE_RE.match(inner)
+        if scenario:
+            return _parse_scenario_chip(scenario.group(1))
+        stacked = STACKED_REFERENCE_RE.match(inner)
+        if stacked:
+            return {"kind": "stacked", "column": stacked.group(1)}
         if inner.startswith(SHARED_PREFIX):
             return {"kind": "shared", "name": inner[len(SHARED_PREFIX):]}
         return {"kind": "widget", "name": inner}
@@ -625,6 +699,152 @@ def _selection_size(tag: dict) -> int:
     return len(ids) if isinstance(ids, list) else int(tag.get("count") or 0)
 
 
+def _stacked_columns_of(found: dict) -> list:
+    """The input *found*'s columns as the rows of ``inputs`` carry them: a
+    GeoDataFrame's geometry left out, as the stacking leaves it out."""
+    dtypes = found.get("dtypes") if isinstance(found.get("dtypes"), dict) else {}
+    return [c for c in found.get("columns") or [] if dtypes.get(c) != "geometry"]
+
+
+def _known_stacked_fields(inputs: list):
+    """Every field of the dataset ``inputs``, when every input is a table whose
+    columns are known: the three the stacking adds, then each input's columns,
+    once each, in circle order. None otherwise, and a field chip is not
+    checked. Kept in sync with ``knownStackedFields`` in ``codeReferences.ts``."""
+    known = all(
+        i.get("dataType") in TABLE_TYPES and isinstance(i.get("columns"), list) and not isinstance(i.get("layers"), list)
+        for i in inputs
+    )
+    if not known:
+        return None
+    fields = list(STACKED_FIELDS)
+    for found in inputs:
+        for column in _stacked_columns_of(found):
+            if column not in fields:
+                fields.append(column)
+    return fields
+
+
+def _contrast_on_white(channels: list) -> float:
+    def linear(channel: int) -> float:
+        value = channel / 255
+        return value / 12.92 if value <= 0.04045 else ((value + 0.055) / 1.055) ** 2.4
+
+    r, g, b = (linear(c) for c in channels)
+    return 1.05 / (0.2126 * r + 0.7152 * g + 0.0722 * b + 0.05)
+
+
+def table_text_color(color: str) -> str:
+    """*color* as a table's text draws it: itself when it reads on white, at
+    WCAG's 3:1 for large text, else its lightest shade that does, taking one
+    percent toward black at a time. The ``[!! scenario text_colors !!]`` chip
+    writes these. Kept in sync with ``tableTextColor`` in
+    ``utils/scenarios/scenarioColors.ts``, whose ``Math.round`` rounds a half
+    up."""
+    from utk_curio.backend.app.projects.scenarios import COLOR_RE
+
+    if not isinstance(color, str) or not COLOR_RE.match(color):
+        return color
+    channels = [int(color[at:at + 2], 16) for at in (1, 3, 5)]
+    for left in range(100, 0, -1):
+        shade = [math.floor(c * left / 100 + 0.5) for c in channels]
+        if _contrast_on_white(shade) < 3:
+            continue
+        return color if left == 100 else "#" + "".join(f"{c:02x}" for c in shade)
+    return "#000000"
+
+
+def scale_labels(labels: list) -> list:
+    """The labels the scenario chips list, from *labels*, each wired input's in
+    circle order: each box once, in the order the dataflow lists the boxes (its
+    ``rank``), then each input from no box, in circle order. Kept in sync with
+    ``scaleLabels`` in ``utils/scenarios/scenarioColors.ts``."""
+    def rank(label: dict) -> float:
+        value = label.get("rank")
+        return value if isinstance(value, (int, float)) and not isinstance(value, bool) else float("inf")
+
+    boxes: dict = {}
+    for label in labels:
+        if label.get("scenario") is not None and label["scenario"] not in boxes:
+            boxes[label["scenario"]] = label
+    return sorted(boxes.values(), key=rank) + [label for label in labels if label.get("scenario") is None]
+
+
+def scenario_scale(labels: list) -> tuple[list, list]:
+    """The scenarios' names and colors, each name once, in the order of
+    *labels* (:func:`scale_labels`): a box's name in its box's color, and each
+    input from no box in a grey of its own, in that order
+    (:data:`NO_SCENARIO_GREYS`, past any a box here uses). Kept in sync with
+    ``scenarioScale`` in ``utils/scenarios/scenarioColors.ts``."""
+    box_colors = {str(label.get("color", "")).lower() for label in labels if label.get("scenario") is not None}
+    greys = [grey for grey in NO_SCENARIO_GREYS if grey not in box_colors] or [NO_SCENARIO_COLOR]
+    domain: list = []
+    colors: list = []
+    given = 0
+    for label in labels:
+        if label["name"] in domain:
+            continue
+        domain.append(label["name"])
+        if label.get("scenario") is not None:
+            colors.append(label["color"])
+        else:
+            colors.append(greys[given % len(greys)])
+            given += 1
+    return domain, colors
+
+
+def _scenario_value(parsed: dict, inputs: list):
+    """What the scenario chip *parsed* (one that resolves) writes over
+    *inputs*: an input's color (its box's, else its grey in the scale), the
+    names in order, or a scale. With no input from a box the scale is the names
+    alone, so the grammar's own palette colors them. Kept in sync with
+    ``scenarioValue`` in ``codeReferences.ts``."""
+    labels = [i["scenario"] for i in inputs]
+    domain, colors = scenario_scale(scale_labels(labels))
+    if parsed["chip"] == "input":
+        label = next(i for i in inputs if i.get("slot") == parsed["slot"])["scenario"]
+        return label["color"] if label.get("scenario") is not None else colors[domain.index(label["name"])]
+    if parsed["chip"] == "order":
+        return domain
+    if not any(label.get("scenario") is not None for label in labels):
+        return {"domain": domain}
+    return {"domain": domain, "range": [table_text_color(c) for c in colors] if parsed["chip"] == "text_colors" else colors}
+
+
+def _scenario_problem(reference: str, parsed: dict, inputs: list, context: tuple, language: str) -> str | None:
+    """Why the scenario chip *reference* (*parsed*) cannot be written over
+    *inputs*, standing in *context*, or None. Kept in sync with
+    ``scenarioProblem`` in ``codeReferences.ts``."""
+    if language != "json":
+        return f"{reference} is for a Vega-Lite or Autark spec, not for code."
+    chip = parsed["chip"]
+    if chip is None:
+        return (
+            f"{reference} names no scenario chip. The scenario chips are scenario colors, scenario text_colors, "
+            "scenario order and scenario input_<k>."
+        )
+    if chip == "input":
+        slot = parsed["slot"]
+        if slot is None:
+            return f"{reference}: the edge for this input was deleted. Drag the swatch of one of this node's input tags here."
+        found = next((i for i in inputs if i.get("slot") == slot), None)
+        if found is None:
+            return (
+                f"{reference}: input_{slot} has no edge. Connect one to that circle, "
+                "or drag the swatch of one of this node's input tags here."
+            )
+        if not isinstance(found.get("scenario"), dict):
+            return f"{reference}: the scenario box input_{slot} comes from is not known here."
+        return None
+    if context[0] != "code":
+        what = "a list of names" if chip == "order" else "a scale"
+        return f"{reference} is {what}, not text. Use it outside quotes."
+    unknown = next((i for i in inputs if not isinstance(i.get("scenario"), dict)), None)
+    if unknown is not None:
+        return f"{reference}: the scenario box input_{unknown.get('slot')} comes from is not known here."
+    return None
+
+
 def reference_problem(
     reference: str,
     inner: str,
@@ -669,6 +889,15 @@ def reference_problem(
             return f"{reference}: no Parameter node is named {name}. Add one, or drag a tag from Shared."
         if named > 1:
             return f"{reference}: {named} Parameter nodes are named {name}. Rename all but one."
+        return None
+    if parsed["kind"] == "scenario":
+        return _scenario_problem(reference, parsed, inputs, context, language)
+    if parsed["kind"] == "stacked":
+        if language != "json":
+            return f"{reference} is for a Vega-Lite spec, not for code."
+        fields = _known_stacked_fields(inputs)
+        if fields is not None and parsed["column"] not in fields:
+            return f"{reference}: the dataset inputs has no field {parsed['column']}."
         return None
     if parsed["kind"] == "input":
         slot = parsed["slot"]
@@ -1014,11 +1243,16 @@ def _resolved_text(
         return vega_field_name(name) if place and place["text"] else name
 
     parsed = parse_reference(inner)
-    if parsed["kind"] in ("shared", "selection"):
+    if parsed["kind"] == "stacked":
+        # A field of inputs is written as a column is: its name.
+        return _write_text(named(parsed["column"]), context, language)
+    if parsed["kind"] in ("shared", "selection", "scenario"):
         if parsed["kind"] == "shared":
             value = effective_value(shared_by_name[parsed["name"]])
-        else:
+        elif parsed["kind"] == "selection":
             value = selections_by_name[parsed["name"]]["ids"]
+        else:
+            value = _scenario_value(parsed, inputs)
         if context[0] == "code":
             return widget_literal(_field_value(value, place) if place else value, language)
         return _escape_for(named(_text_of(value, language)), context, language)
@@ -1043,6 +1277,68 @@ def _resolved_text(
     return _escape_for(named(_text_of(value, language)), context, language)
 
 
+def with_chip_placeholders(code: str) -> str:
+    """*code*, a JSON document, with each chip that stands outside a string
+    held by a string of its own text, so a reader that wants only the
+    document's shape (what an Autark document declares,
+    ``execution/autk_spec_kind.py``, ``projects/dashboard_payload.py``) can
+    parse it before its chips are resolved: ``"color": [!! scenario input_1 !!]``
+    or ``"scale": [!! scenario colors !!]`` is no JSON until then. A chip inside
+    a string is JSON already and is left as written. Kept in sync with
+    ``withChipPlaceholders`` in ``codeReferences.ts``."""
+    if not isinstance(code, str):
+        return code
+    refs = list(REFERENCE_RE.finditer(code))
+    if not refs:
+        return code
+    out: list = []
+    last = 0
+    for ref, context in zip(refs, _contexts(code, refs, "json")):
+        if context[0] == "string":
+            continue
+        out.append(code[last:ref.start()])
+        out.append(json.dumps(ref.group(0), ensure_ascii=False))
+        last = ref.end()
+    out.append(code[last:])
+    return "".join(out)
+
+
+def with_stand_in_chips(code: str) -> tuple[str, list]:
+    """*code*, a JSON document, with each scenario chip and each field of
+    ``inputs`` written as a value of its shape, for a check that has no
+    dataflow to say what they write: every input a chip names comes from no
+    box, named ``input_<k>``, and a field is its name; and the refusal of each
+    such chip that cannot stand there, in its own words (a scale inside quotes,
+    a chip no scenario chip is called). Every other reference is kept as
+    written. The agents' document check reads a document through it
+    (``agents/domain/document_validation.py``): it reports a refusal as it is,
+    rather than the schema's reading of the chip left as text, and checks the
+    rest of the document."""
+    refs = list(REFERENCE_RE.finditer(code if isinstance(code, str) else ""))
+    parsed = [parse_reference(ref.group(1)) for ref in refs]
+    if not any(p["kind"] in ("scenario", "stacked") for p in parsed):
+        return code, []
+    slots = sorted({p["slot"] for p in parsed if p["kind"] in ("scenario", "input") and isinstance(p.get("slot"), int)})
+    inputs = [{"slot": slot, "scenario": {"name": f"input_{slot}", "color": NO_SCENARIO_COLOR}} for slot in slots]
+    out: list = []
+    refusals: list = []
+    last = 0
+    for ref, kind, context in zip(refs, parsed, _contexts(code, refs, "json")):
+        out.append(code[last:ref.start()])
+        written = ref.group(0)
+        problem = (
+            reference_problem(written, ref.group(1), [], inputs, context, "json")
+            if kind["kind"] in ("scenario", "stacked") else None
+        )
+        if problem is not None:
+            refusals.append(problem)
+        stands_in = kind["kind"] in ("scenario", "stacked") and problem is None
+        out.append(_resolved_text(ref.group(1), {}, inputs, context, "json", {}, {}) if stands_in else written)
+        last = ref.end()
+    out.append(code[last:])
+    return "".join(out), refusals
+
+
 def resolve_references(
     code: str,
     widgets: Iterable = (),
@@ -1055,8 +1351,10 @@ def resolve_references(
     """*code* with every reference replaced, and the problems found.
 
     *inputs* are the node's wired inputs, ``{"slot": <circle>, "dataType"?,
-    "layerName"?, "columns"?: [...], "layers"?: [{"name", "columns"?}, ...]}``
-    each. *shared* are the widgets of the dataflow's Parameter nodes, one per
+    "layerName"?, "columns"?: [...], "dtypes"?: {...}, "layers"?: [{"name",
+    "columns"?}, ...], "scenario"?: {"scenario"?, "name", "color", "rank"?}}``
+    each, ``scenario`` the label its rows carry, which the scenario chips write
+    (``WorkflowSpec.input_scenarios``). *shared* are the widgets of the dataflow's Parameter nodes, one per
     node. *selections* are the node's selection tags (``metadata.selections``).
     *grammar* is the grammar of a JSON document: in a Vega-Lite spec
     (:data:`VEGA_LITE`), a reference where Vega-Lite reads a field name writes

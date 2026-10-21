@@ -10,6 +10,9 @@
  */
 import { trillToNotebook, serializeNotebook, type TrillSpec } from "../NotebookConvertor";
 import { NodeType } from "../constants";
+import { registerNode } from "../registry/nodeRegistry";
+import type { NodeDescriptor } from "../registry/types";
+import scenarioChips from "../utils/scenarios/scenarioChips.cases.json";
 
 type NodeSpec = { id: string; type: string; content?: string };
 
@@ -349,20 +352,22 @@ describe("trillToNotebook with a chart that reads its inputs stacked", () => {
   const chartCell = (nb: ReturnType<typeof trillToNotebook>) =>
     codeCells(nb).find((c) => c.source.includes("_spec = {"))!.source;
 
-  it("draws scenario_name in the boxes' colors and order, then an input from no box, as the canvas does", () => {
-    const chart = '{"data": {"name": "inputs"}, "mark": "bar", "encoding": {"color": {"field": "scenario_name", "type": "nominal"}}}';
+  it("its scale chip writes the boxes' colors and order, then an input from no box, as the canvas does", () => {
+    const chart = '{"data": {"name": "inputs"}, "mark": "bar", "encoding": {"color": {"field": "scenario_name", "type": "nominal", '
+      + '"scale": [!! scenario colors !!]}}}';
     const source = chartCell(trillToNotebook(stackedChart(chart)));
     const embedded = embeddedSpec(source) as any;
     expect(embedded.encoding.color.scale).toEqual({ domain: ["Baseline", "Free node"], range: ["#2a9d8f", "#8a8f98"] });
   });
 
-  it("with no input from a box, keeps the spec's own colors, as the canvas does", () => {
+  it("a chart that writes no chip keeps the spec's own colors, as the canvas does, boxes or not", () => {
     const chart = {
       data: { name: "inputs" },
       mark: "bar",
       encoding: { color: { field: "scenario_name", type: "nominal", scale: { range: ["#000000", "#999999"] } } },
     };
     const flow = stackedChart(JSON.stringify(chart));
+    expect(embeddedSpec(chartCell(trillToNotebook(flow)))).toEqual(chart);
     flow.dataflow.scenarios = [];
     expect(embeddedSpec(chartCell(trillToNotebook(flow)))).toEqual(chart);
   });
@@ -394,5 +399,43 @@ describe("trillToNotebook with a chart that reads its inputs stacked", () => {
     expect(source).toContain('_spec["data"] = {"name": "input_0"}');
     // The same dataflow's chart that reads inputs does.
     expect(chartCell(trillToNotebook(stackedChart('{"data": {"name": "inputs"}, "mark": "bar"}')))).toContain("stack_inputs(");
+  });
+});
+
+describe("trillToNotebook writes each spec with its scenario chips resolved, as the server does", () => {
+  // scenarioChips.cases.json: test_scenario_chips.py resolves the same nodes
+  // through WorkflowSpec.node_code, which a server run and the agents' check use.
+  type ChipCase = {
+    name: string;
+    node: string;
+    grammar?: string;
+    labels?: Record<string, string>;
+    dataflow: TrillSpec["dataflow"];
+    expected: string;
+  };
+  const chipCases = (scenarioChips.cases as unknown as ChipCase[]).map((c) => [c.name, c] as const);
+
+  // The template labels a case names an untitled node by, where the canvas
+  // reads them: the node registry, each template under its first major.
+  beforeAll(() => {
+    for (const c of scenarioChips.cases as unknown as ChipCase[]) {
+      for (const [id, label] of Object.entries(c.labels ?? {})) {
+        registerNode({ id: `${id}@1`, label } as unknown as NodeDescriptor);
+      }
+    }
+  });
+
+  it.each(chipCases)("%s", (_name, c) => {
+    const nb = trillToNotebook({ dataflow: { ...c.dataflow, name: "Chips", task: "", timestamp: 0, provenance_id: "p" } });
+    // The node's heading names it; a chart's cell follows it, an Autark map's is it.
+    const at = nb.cells.findIndex((cell) => cell.cell_type === "markdown" && cell.source.includes(`\`${c.node}\``));
+    expect(at).toBeGreaterThanOrEqual(0);
+    if (c.grammar === "vega-lite") {
+      const cell = nb.cells[at + 1];
+      expect(cell.cell_type).toBe("code");
+      expect(embeddedSpec(cell.source)).toEqual(JSON.parse(c.expected));
+    } else {
+      expect(nb.cells[at].source).toContain("```\n" + c.expected + "\n```");
+    }
   });
 });

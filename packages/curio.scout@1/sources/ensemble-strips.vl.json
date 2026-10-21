@@ -10,7 +10,8 @@
       "title": null,
       "axis": {
         "labelAngle": 0
-      }
+      },
+      "sort": [!! scenario order !!]
     },
     "y": {
       "field": "[!! y !!]",
@@ -34,7 +35,8 @@
           "field": "scenario_name",
           "type": "nominal",
           "title": "Scenario",
-          "legend": null
+          "legend": null,
+          "scale": [!! scenario colors !!]
         }
       }
     },

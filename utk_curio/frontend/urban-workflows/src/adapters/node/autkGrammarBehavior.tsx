@@ -31,6 +31,7 @@ import {
 import { type GrammarInput } from '../../utils/grammarInput';
 import { featureRows, matchSelections, type IncomingSelection } from '../../utils/selectionMatch';
 import { provideViewRows } from '../../utils/references/viewSelections';
+import { withChipPlaceholders } from '../../utils/references/codeReferences';
 import { selectionEchoSource } from '../../utils/selectionEcho';
 import {
     SANDBOX_BACKEND_URL_TOKEN,
@@ -45,12 +46,10 @@ import {
 } from './autkRunDescriptions';
 import { loadSpecLayers, materializeBackendLayers, runDataInBackend, toPoolOutput } from './autkLayerMaterialize';
 import {
-    bleedRasterEdges, isCurioRasterSource, newAutkDb, rasterTables, resolveRasterInputs, withOpaqueRasters,
+    bleedRasterEdges, isCurioRasterSource, newAutkDb, resolveRasterInputs, withOpaqueRasters,
     withRasterSources, type CurioRasterSource,
 } from './autkRasters';
 import { applyComputeBlocks } from './autkComputeBlocks';
-import { layerScenarios, withScenarioColors } from './autkScenarioColors';
-import type { Scenario } from '../../utils/scenarios/scenarioModel';
 import { frameMaps } from './autkMapView';
 import { trackMaps } from './autkMapDrawing';
 
@@ -86,19 +85,12 @@ export type AutkBehaviorOptions = {
      * recolored scenario box is not (useVega's `recordsProvenance`).
      */
     recordsProvenance?: boolean;
-    /**
-     * Whether a layer whose input comes from a scenario's box is drawn in the
-     * box's color (adapters/node/autkScenarioColors), as an Autark node's map
-     * draws it. The Interaction node's map shows the features it edits as
-     * written.
-     */
-    colorsByScenario?: boolean;
 };
 
 export const useAutkGrammarBehavior = (
     data: NodeBehaviorData,
     nodeState: UseNodeStateReturn,
-    { marksNodeErrored = true, recordsProvenance = true, colorsByScenario = true }: AutkBehaviorOptions = {},
+    { marksNodeErrored = true, recordsProvenance = true }: AutkBehaviorOptions = {},
 ): NodeBehaviorResult => {
     const toasts = useToastContext();
     const wrapperRef = useRef<HTMLDivElement>(null);
@@ -211,21 +203,12 @@ export const useAutkGrammarBehavior = (
     // node asks (hook/useGrammarInputState).
     const { connected, upstreamErrored } = useGrammarInputState(data.nodeId);
     // A failed node says so to the nodes it feeds, as a failed code node does.
-    const { markNodeErrored, scenarios, nodes, edges, workflowNameRef } = useFlowContext() as {
+    const { markNodeErrored, workflowNameRef } = useFlowContext() as {
         markNodeErrored?: (nodeId: string) => void;
-        scenarios?: Scenario[];
-        nodes?: any[];
-        edges?: any[];
         workflowNameRef?: React.MutableRefObject<string>;
     };
     // Where each run is listed, under the node's id, as every node's are (#860).
     const { nodeExecProv } = useProvenanceContext();
-    // Read when a run draws, so a layer whose input comes from a scenario's box
-    // wears the box's color.
-    const scenarioGraphRef = useRef<{ scenarios: Scenario[]; nodes: any[]; edges: any[] }>({
-        scenarios: [], nodes: [], edges: [],
-    });
-    scenarioGraphRef.current = { scenarios: scenarios ?? [], nodes: nodes ?? [], edges: edges ?? [] };
     // Whether a run has been tried, whether one is under way, and what the last
     // one could not read from its input: the pre-run notice reads these.
     const hasRunRef = useRef(false);
@@ -287,7 +270,9 @@ export const useAutkGrammarBehavior = (
             host.replaceChildren();
             clearEmptyState(host);
         }
-        setRunSummary(describeAutkRun('Loaded', 'table', requestedLayerTables(JSON.parse(code as string).data)));
+        // The document as the node holds it: a chip standing on its own holds
+        // its place, as it does where the document's kind is read.
+        setRunSummary(describeAutkRun('Loaded', 'table', requestedLayerTables(JSON.parse(withChipPlaceholders(code as string)).data)));
     };
 
     const runGrammar = async (
@@ -770,16 +755,10 @@ export const useAutkGrammarBehavior = (
                     };
                 }
 
-                // A layer whose input comes from a scenario's box, on a map
-                // outside every box, is drawn in the box's color, unless its
-                // values color it, as a raster's always do; and every raster
-                // with each cell that has a value opaque.
-                if (colorsByScenario) {
-                    const graph = scenarioGraphRef.current;
-                    spec = withScenarioColors(spec, layerScenarios(
-                        data.nodeId, graph.nodes, graph.edges, graph.scenarios, preparedInput?.circles ?? {},
-                    ), rasterTables(spec));
-                }
+                // The map draws its layers as the document writes them: a layer
+                // in its scenario's color writes that box's color through its
+                // chip, resolved before the run (utils/references/codeReferences).
+                // Every raster draws each cell that has a value opaque.
                 spec = withOpaqueRasters(spec);
 
                 const { AutkGrammar } = await import('@urban-toolkit/autk-grammar');
@@ -1266,7 +1245,8 @@ export const useAutkGrammarBehavior = (
     const needsInput = (() => {
         if (!hasSpec) return true;
         try {
-            return autkNeedsInput(JSON.parse(liveCode));
+            // A chip standing on its own holds its place (utils/autkSpecKind).
+            return autkNeedsInput(JSON.parse(withChipPlaceholders(liveCode)));
         } catch {
             return true;
         }

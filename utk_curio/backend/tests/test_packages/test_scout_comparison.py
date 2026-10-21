@@ -16,10 +16,13 @@ such as ``"field": "[!! y !!]"``; a column widget defaults to its role's name,
 and the titles and the Y label format to nothing. Combine, and the Lines' X
 type, are choice widgets, and the Table's columns a list.
 
-No starter names a scenario, a scenario color or an order for the scenario
-column: a chart takes those from its inputs' boxes
-(``utils/scenarios/scenarioScales.ts``), so a scenario renamed or recolored is
-drawn as its box is.
+No starter names a scenario or a scenario's color. Each channel on the scenario
+column writes its scenarios through a scenario chip: a color, fill or stroke
+its scale as ``[!! scenario colors !!]`` (a text mark's as
+``[!! scenario text_colors !!]``), and an axis, offset or facet its order as
+``[!! scenario order !!]``. A run resolves them from the boxes its inputs come
+from (``utils/references/codeReferences.ts``), so a scenario renamed or
+recolored is drawn as its box is.
 
 Every file is read inside its test, so a checkout without the package fails
 test by test rather than at collection.
@@ -114,8 +117,15 @@ SCENARIO_COLUMN = "scenario_name"
 #: The columns every row of ``inputs`` carries: its input's circle, and its
 #: input's scenario box's id and name.
 INPUT_COLUMNS = ["__input__", "scenario", SCENARIO_COLUMN]
-#: The channels the boxes' labels fill on the scenario column.
-FILLED_CHANNELS = {"color", "fill", "stroke", "x", "y", "xOffset", "yOffset", "row", "column", "facet"}
+#: The channels on the scenario column that draw its colors, and those that put
+#: it in order.
+COLOR_CHANNELS = {"color", "fill", "stroke"}
+ORDER_CHANNELS = {"x", "y", "xOffset", "yOffset", "row", "column", "facet"}
+#: The scenario chips a starter may write: the scale of the boxes' colors, the
+#: same in text shades, and their names in order.
+SCENARIO_CHIPS = {"scenario colors", "scenario text_colors", "scenario order"}
+#: The label of the one box a starter's input comes from, as a run hands it.
+BOX = {"scenario": "s-base", "name": "Baseline", "color": "#2a9d8f", "rank": 0}
 
 
 def _manifest() -> dict:
@@ -149,30 +159,54 @@ def _columns(widgets: list) -> list:
 
 def _resolved(template_id: str, widgets: list | None = None) -> tuple[str, list]:
     """The starter as a run resolves its chips: with each widget's default, or
-    with *widgets*."""
+    with *widgets*, over one input from a box."""
     from utk_curio.backend.app.execution.code_references import resolve_references
 
     return resolve_references(
         _source(template_id), widgets=widgets or _template(template_id)["widgets"],
-        language="json", inputs=[{"slot": 0}],
+        language="json", inputs=[{"slot": 0, "scenario": BOX}],
     )
 
 
+def _written(template_id: str):
+    """The starter as written, each chip that stands on its own (outside a
+    string) read as the text ``chip:<what stands inside it>``. A chip inside a
+    string, as a title's or a field's, stays part of that string."""
+    source = _source(template_id)
+    marked, at, in_string = [], 0, False
+    while at < len(source):
+        char = source[at]
+        chip = None if in_string else CHIP.match(source, at)
+        if chip:
+            marked.append(json.dumps(f"chip:{chip.group(1)}"))
+            at = chip.end()
+            continue
+        if in_string and char == "\\":
+            marked.append(source[at:at + 2])
+            at += 2
+            continue
+        if char == '"':
+            in_string = not in_string
+        marked.append(char)
+        at += 1
+    return json.loads("".join(marked))
+
+
 def _channels(spec) -> list:
-    """``(channel, definition)`` for every channel of every view in *spec*, as
-    ``withScenarioScales`` walks it: each encoding's channels, a condition's
-    field included, and a facet's field as ``facet`` or its row and column."""
+    """``(channel, definition, on a text mark)`` for every channel of every
+    view in *spec*: each encoding's channels, a condition's field included,
+    and a facet's field as ``facet`` or its row and column."""
     found = []
 
-    def channel(name, definition):
+    def channel(name, definition, on_text):
         if not isinstance(definition, dict):
             return
         if "field" in definition:
-            found.append((name, definition))
+            found.append((name, definition, on_text))
         condition = definition.get("condition")
         for each in condition if isinstance(condition, list) else [condition]:
             if isinstance(each, dict) and "field" in each:
-                found.append((name, each))
+                found.append((name, each, on_text))
 
     def view(node):
         if isinstance(node, list):
@@ -181,15 +215,17 @@ def _channels(spec) -> list:
             return
         if not isinstance(node, dict):
             return
+        mark = node.get("mark")
+        on_text = (mark.get("type") if isinstance(mark, dict) else mark) == "text"
         for name, definition in (node.get("encoding") or {}).items():
-            channel(name, definition)
+            channel(name, definition, on_text)
         facet = node.get("facet")
         if isinstance(facet, dict):
             if "field" in facet:
-                channel("facet", facet)
+                channel("facet", facet, False)
             else:
                 for name, definition in facet.items():
-                    channel(name, definition)
+                    channel(name, definition, False)
         for key in ("layer", "concat", "hconcat", "vconcat", "spec"):
             if key in node:
                 view(node[key])
@@ -303,10 +339,12 @@ def test_each_widget_is_a_column_a_title_or_a_choice_with_its_default(template_i
 
 @pytest.mark.parametrize("template_id", TEMPLATES)
 def test_every_chip_names_a_widget_and_every_widget_is_read(template_id):
-    """The starter reads its widgets and nothing else: no input chip, since a
-    chart reads its inputs as one dataset."""
+    """The starter reads its widgets and its scenarios and nothing else: no
+    input chip, nor an input's scenario chip, since a chart reads its inputs as
+    one dataset."""
     chips = set(CHIP.findall(_source(template_id)))
-    assert chips == set(WIDGETS[template_id])
+    assert chips - SCENARIO_CHIPS == set(WIDGETS[template_id])
+    assert chips & SCENARIO_CHIPS, f"{template_id} writes no scenario chip"
 
 
 @pytest.mark.parametrize("template_id", TEMPLATES)
@@ -322,16 +360,23 @@ def test_each_starter_reads_its_inputs_stacked(template_id):
 
 
 @pytest.mark.parametrize("template_id", TEMPLATES)
-def test_no_starter_names_a_scenario_or_draws_the_scenario_column_its_own_way(template_id):
-    """Every channel on ``scenario_name`` is left for the boxes' labels: no
-    scale, no sort, no domain, and no condition naming a scenario."""
-    code, _problems = _resolved(template_id)
-    spec = json.loads(code)
-    on_scenarios = [(channel, d) for channel, d in _channels(spec) if d.get("field") == SCENARIO_COLUMN]
+def test_every_channel_on_the_scenario_column_writes_its_scenarios_through_a_chip(template_id):
+    """A color, fill or stroke on ``scenario_name`` takes the scale of the
+    boxes' colors from its chip, a text mark's in their text shades, and an
+    axis, offset or facet on it their order from its chip: as Curio's hidden
+    fill drew them before the chips, so no chart draws differently. No
+    condition names a scenario."""
+    spec = _written(template_id)
+    on_scenarios = [(c, d, text) for c, d, text in _channels(spec) if d.get("field") == SCENARIO_COLUMN]
     assert on_scenarios, f"{template_id} draws no channel on {SCENARIO_COLUMN}"
-    for channel, definition in on_scenarios:
-        assert channel in FILLED_CHANNELS, (channel, definition)
-        assert "scale" not in definition and "sort" not in definition, (channel, definition)
+    for channel, definition, on_text in on_scenarios:
+        if channel in COLOR_CHANNELS:
+            chip = "scenario text_colors" if on_text else "scenario colors"
+            assert definition.get("scale") == f"chip:{chip}", (channel, definition)
+            assert "sort" not in definition, (channel, definition)
+        else:
+            assert channel in ORDER_CHANNELS, (channel, definition)
+            assert definition.get("sort") == "chip:scenario order" and "scale" not in definition, (channel, definition)
     assert "datum.value ===" not in json.dumps(spec), "a condition names a scenario"
     assert "$schema" in spec and spec["$schema"].startswith("https://vega.github.io/schema/vega-lite/")
 

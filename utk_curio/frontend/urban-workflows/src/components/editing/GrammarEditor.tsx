@@ -35,6 +35,9 @@ type GrammarEditorProps = {
     /** Read an input's columns for its tags. */
     onLoadColumns?: (slot: number) => void;
     widgetLanguage?: CodeLanguage;
+    /** The spec's grammar where its chips write a field escaped (`VEGA_LITE`),
+     * which also gives a node of several inputs the `inputs` tag. */
+    referenceGrammar?: string;
     /** A run's spec put back from the provenance drawer; each new one is
      *  written in, even when it is the spec the editor loaded with. */
     restoredCode?: { code: string; nonce: number } | null;
@@ -55,6 +58,7 @@ export default function GrammarEditor({
     stripInputs = NO_INPUTS,
     onLoadColumns,
     widgetLanguage = "json",
+    referenceGrammar,
     restoredCode = null,
 }: GrammarEditorProps) {
     const [grammar, _setGrammar] = useState("{}");
@@ -279,6 +283,8 @@ export default function GrammarEditor({
                 inputs={stripInputs}
                 shared={references.shared}
                 selections={references.selections}
+                language={widgetLanguage}
+                grammar={referenceGrammar}
                 disabled={readOnly}
                 onInsert={(inner) => insertReference(widgetEditor?.editor, inner)}
                 onLoadColumns={onLoadColumns}

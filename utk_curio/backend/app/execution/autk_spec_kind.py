@@ -44,11 +44,16 @@ def _not_json(constant: str):
 
 def classify_autk_spec_string(spec_text) -> str:
     """:func:`classify_autk_spec` for a document as text, read as
-    ``JSON.parse`` reads it."""
+    ``JSON.parse`` reads it, before its chips are resolved: a chip standing on
+    its own, ``"color": [!! scenario input_1 !!]``, holds its place
+    (``code_references.with_chip_placeholders``), so the document is read for
+    what it declares rather than taken for no document."""
+    from utk_curio.backend.app.execution.code_references import with_chip_placeholders
+
     if not isinstance(spec_text, str) or not spec_text.strip():
         return "unknown"
     try:
-        return classify_autk_spec(json.loads(spec_text, parse_constant=_not_json))
+        return classify_autk_spec(json.loads(with_chip_placeholders(spec_text), parse_constant=_not_json))
     except ValueError:
         return "unknown"
 

@@ -144,12 +144,15 @@ def _classify_autk_spec(spec_text: object) -> str:
     """``render`` when the grammar draws something, else ``data``/``compute``.
 
     Matches ``classifyAutkSpec`` on the frontend: a spec counts as render
-    whenever it declares a map or a plot, whatever else it also declares.
+    whenever it declares a map or a plot, whatever else it also declares. A
+    chip standing on its own holds its place (``with_chip_placeholders``).
     """
+    from utk_curio.backend.app.execution.code_references import with_chip_placeholders
+
     if not isinstance(spec_text, str) or not spec_text.strip():
         return "unknown"
     try:
-        parsed = json.loads(spec_text)
+        parsed = json.loads(with_chip_placeholders(spec_text))
     except (ValueError, TypeError):
         return "unknown"
     if not isinstance(parsed, dict):
@@ -233,13 +236,17 @@ def _autark_spec_has_data_sources(node: dict) -> bool:
     A spec counts as render whenever it declares a map or a plot, whatever else
     it declares, so a render tile can still carry `data` sources. Those are
     compiled and executed when it draws, which on a published page means a call
-    to a server that is not supposed to be needed.
+    to a server that is not supposed to be needed. A chip standing on its own
+    holds its place (``with_chip_placeholders``), as it does where the spec is
+    classified.
     """
+    from utk_curio.backend.app.execution.code_references import with_chip_placeholders
+
     text = node.get("content")
     if not isinstance(text, str) or not text.strip():
         return False
     try:
-        parsed = json.loads(text)
+        parsed = json.loads(with_chip_placeholders(text))
     except (ValueError, TypeError):
         return False
     if not isinstance(parsed, dict):

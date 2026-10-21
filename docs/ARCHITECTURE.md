@@ -342,15 +342,23 @@ outcomes produce.
 
 ### Scenarios in charts and maps
 
-A chart or a map outside the scenario boxes names and colors what each box feeds it
-from the box its input comes from:
+A chart or a map outside the scenario boxes names what each box feeds it from the
+box its input comes from, and draws exactly its spec: the boxes' colors and order
+are what its scenario chips write.
 
 - `src/utils/scenarios/inputScenarios.ts` is the one lookup: for each wired circle of a
-  node, the node feeding it, the box that node is in (`scenarioOfNode`) and the label
-  the input's rows carry (`inputLabelOf`: the box's id, name and color, else the
-  feeding node's name and `NO_SCENARIO_COLOR`). `scenarioColors.ts` holds the label
-  type, the `scenario` and `scenario_name` columns, `scenarioScale` and
-  `tableTextColor`.
+  node, the node feeding it, the box that node is in and the label the input's rows
+  carry (`inputLabelOf`: the box's id, name, color and `rank`, its place in
+  `dataflow.scenarios`, else the feeding node's name and `NO_SCENARIO_COLOR`).
+  `scenarioColors.ts` holds the label type, the `scenario` and `scenario_name`
+  columns, `scaleLabels` (each box once by rank, then each input from no box in
+  circle order), `scenarioScale` (each name once, a box in its color and each input
+  from no box in a grey of its own from `NO_SCENARIO_GREYS`, past one a box there
+  uses), `anyFromABox` and `tableTextColor`. Its Python twin is
+  `WorkflowSpec.input_scenarios` (`execution/workflow_spec.py`), with `node_label`
+  for a node in no box: its title, else its header, the template's label looked up
+  by the canonical template id as `node_names.saved_node_label` looks it up, from
+  the project's template labels (`labels`), which a run and the agents' check pass.
 - A Vega-Lite spec that names the dataset `inputs` anywhere (`readsInputs` in
   `src/utils/vegaDatasets.ts`, which makes `usesNamedDatasets` true for it) gets every
   input's rows stacked in circle order, each with `__input__`, `scenario` and
@@ -374,38 +382,63 @@ from the box its input comes from:
   chart cell imports (`NotebookConvertor.ts`, with the boxes at `dataflow.scenarios`;
   the cell writes the spec as a Python literal). `stackedInputs.cases.json` pins both,
   for Jest and for `test_scenario_inputs.py`.
-- `adapters/node/vegaBehavior.ts` fills a spec that reads `inputs` with its own
-  inputs' labels (`withScenarioScales`, `utils/scenarios/scenarioScales.ts`), each box
-  once in the order `dataflow.scenarios` lists the boxes, then the inputs from no box in
-  circle order (`scaleLabelsOf`), but only when an input comes from a box (`boxFill`):
-  with none, the spec's own colors and order stand. Every color, fill or stroke on
-  `scenario_name` takes `scenarioScale` (on a text mark, the `tableTextColor` shades,
-  both in `scenarioColors.ts`), and every position, offset or facet on it takes the
-  names as its order, over what the spec writes, as `withScenarioColors` does for a map
-  layer. Any other spec draws as written. `scenarioScales.cases.json` pins the fill for
-  Jest and for the Vega-Lite check in `test_scenario_inputs.py`, and the exported
-  notebook fills its chart cell the same way.
-- A change to any label's id, name or color, or to the boxes' order, draws the chart
-  again and stacks its rows again, a box drawn around a feeder among them:
-  `handleCompileGrammar` with `recordsProvenance` and `forwardsInput` off for that
-  draw, so no version and no hand-off. It also sets `keepsSelection`, and `useVega`
-  puts a selection made in the chart back in the new view (`carriedSelections` and
-  `withMovedIds` in `vegaSelects.ts`), leaving what the flow holds as it is. One
-  redraw runs at a time, then the last labels if they moved meanwhile: a color
-  dragged through the picker is written at every step, and each redraw takes the
-  selection from the view the one before it built. It does not redraw during a run,
-  which draws the chart itself.
-- A map: on an Autark node outside every box, `layerScenarios`
-  ([`autkScenarioColors.ts`](../utk_curio/frontend/urban-workflows/src/adapters/node/autkScenarioColors.ts))
-  finds the box of each layer's table through the circle `autkSourcesFrom` says it came
-  in on (`PreparedAutkInput.circles`), reading every table as the one wired input's
-  when one is wired, and `withScenarioColors` gives the layer the grammar's `color`, the
-  box's, before the run. It leaves a layer colored by its values as it is (a `getFnv`
-  with no `color` of its own, or `isColorMap`), and a raster's (`rasterTables`,
-  `autkRasters.ts`), whose color map the grammar would drop for one color. A map inside
-  a box draws as written, and so does the Interaction node's map
-  (`colorsByScenario: false`). `shippedScenarioLayers.test.ts` lists every shipped
-  layer the rule recolors.
+- The scenario chips are references (`utils/references/codeReferences.ts`, twin
+  `execution/code_references.py`): `[!! scenario colors !!]` writes
+  `{"domain": [names], "range": [colors]}`, `scenarioScale` over `scaleLabels`, `[!!
+  scenario text_colors !!]` the same range in `tableTextColor` shades, `[!! scenario
+  order !!]` the names, and `[!! scenario input_1 !!]` input_1's color in that scale.
+  With no input from a box (`anyFromABox`), the two scales are `{"domain": [names]}`,
+  so the grammar's own palette colors the names. They read the
+  label each `InputScope` carries (`scenario`), which `hook/useInputScope.ts` adds from
+  the live graph, the notebook export from the saved one and `WorkflowSpec.node_code`
+  from the spec, so the canvas, `NotebookConvertor.ts`, a server run and the agents'
+  `_resolved_document` write one spec (`scenarioChips.cases.json`, read by Jest and
+  `test_scenario_chips.py`). The form is a kind word and a space, as `selection picked`
+  is: a widget's name has no space, and `input_1.scenario_color` would be a column of
+  input_1. `[!! inputs.<field> !!]` names a field of `inputs`, written as a column
+  chip is. A chip in Python or JavaScript, a list chip inside quotes, an input with no
+  edge or with no label are refused, and `renumberInputReferences` moves an input's
+  chip with its circle. `codeReferences.cases.json` pins both resolvers. With no
+  dataflow to resolve them over, the agents' check reads each as a value of its shape
+  and reports a refused one in its own words (`with_stand_in_chips`).
+- A reader of a spec's shape parses it before its chips are resolved with each chip
+  standing on its own held by a string of itself (`withChipPlaceholders`, twin
+  `with_chip_placeholders`): `classifyAutkSpecString` (`utils/autkSpecKind.ts`), which
+  decides whether an Autark node draws from its input on the canvas and is a
+  dashboard's pass-through (`dashboardLayout.ts`), the Autark node's body (whether
+  its document needs an input, what a data run on the server loaded,
+  `autkGrammarBehavior.tsx`), and its twins
+  `execution/autk_spec_kind.py` (a run's plan) and `projects/dashboard_payload.py`.
+  `autkSpecKind.cases.json` pins both. A chip that writes one text, an input's
+  scenario color or a field of `inputs`, is inserted quoted where JSON wants a value
+  (`insertReference` in `monacoCodeReferences.ts`), so the spec stays JSON.
+- `components/editing/widgets/WidgetTag.tsx` shows them: on a Vega-Lite node of
+  several inputs an `inputs` tag beside the input tags opens to `stackedFields` (the
+  three the stacking adds, then the inputs' columns, a layer's geometry left out), its
+  `scenario_name` field showing a swatch per name of `scenarioScale` (the names alone
+  when no input comes from a box), which drag `scenario colors`, and the **order** and
+  **text colors** tags; in a spec, an input
+  from a box shows its box's swatch, which drags its input's chip
+  (`SCENARIO_REF_MIME`). `monacoCodeReferences.ts` draws the chips lilac and says
+  what each writes on hover.
+- A change to any label's id, name, color or rank draws a chart again when what it
+  draws moves: `NodeEditor.tsx` hands `applyGrammar` the spec it resolved with a
+  `GrammarRedraw` (`registry/types.ts`), which writes the same code again in the same
+  scope with the new labels, and `vegaBehavior.ts` keys its redraw on that spec and,
+  for one that reads `inputs`, on the ids and names its rows carry, a box drawn around
+  a feeder among them: `handleCompileGrammar` with `recordsProvenance` and
+  `forwardsInput` off for that draw, so no version and no hand-off. It also sets
+  `keepsSelection`, and `useVega` puts a selection made in the chart back in the new
+  view (`carriedSelections` and `withMovedIds` in `vegaSelects.ts`), leaving what the
+  flow holds as it is. One redraw runs at a time, then the last labels if they moved
+  meanwhile: a color dragged through the picker is written at every step, and each
+  redraw takes the selection from the view the one before it built. It does not
+  redraw during a run, which draws the chart itself.
+- A map draws its layers as its document writes them, its chips resolved before the
+  run like any other: a layer writes `"color": "[!! scenario input_1 !!]"` to take its
+  input's box's color, which it takes anew at its next run. The routing example's two
+  routes do, the only shipped layers that drew in a box's color when Curio recolored
+  them unasked (`shippedScenarioLayers.test.ts`).
 
 ### Comparing scenarios
 
@@ -419,13 +452,14 @@ scenario's outcome on a circle of its own:
   takes `[1,n]` on its input port, a circle per scenario, and its `.vl.json` starter
   is the node's whole content (`starterIsContent`). The starter reads
   `"data": {"name": "inputs"}`, so the node gets its inputs stacked
-  ([Scenarios in charts and maps](#scenarios-in-charts-and-maps)), writes no scale
-  and no order for `scenario_name`, which the fill supplies, and reads the columns
-  it plots from widgets through chips (`"field": "[!! y !!]"`). Bars, Grouped bars,
-  Lines, Pie and Lollipops write Combine as the measure's Vega-Lite aggregate
-  (`"aggregate": "[!! combine !!]"`), and the Table writes its list of columns where
-  a list stands (`"fold": [!! columns !!]`), so that starter is JSON once its chips
-  are written.
+  ([Scenarios in charts and maps](#scenarios-in-charts-and-maps)), writes the scale
+  and the order of `scenario_name` through its scenario chips (Table and Stacked bars
+  with totals, whose text marks color by scenario, in `scenario text_colors`), and
+  reads the columns it plots from widgets through chips (`"field": "[!! y !!]"`).
+  Bars, Grouped bars, Lines, Pie and Lollipops write Combine as the measure's
+  Vega-Lite aggregate (`"aggregate": "[!! combine !!]"`), and the Table writes its
+  list of columns where a list stands (`"fold": [!! columns !!]`), so a starter is
+  JSON once its chips are written.
 - A template that names `grammarId: vega-lite` is a Vega-Lite node for every rule
   keyed on the node's kind. On the canvas, `isVegaLiteNodeType`
   (`registry/vegaLiteNodes.ts`) decides drawing from a restored input
@@ -910,7 +944,7 @@ The names `input_<k>` are defined once, as `INPUT_TABLE_PREFIX` and `input_table
 
 **Drawing.** Maps draw on demand. autk-grammar starts each map it makes with autk-map's `draw()`, which draws one frame, then only when the map's picture changes. autk-map asks for that frame itself after every change it can observe: its camera (navigation, a resize, a window resize), its layers (loads, updates, highlights), its style and a pick. Curio asks a map for a frame with its `requestRender()` after it changes the map itself: `frameMaps` after it moves the camera, and `bleedRasterEdges` after it writes a raster's cells in place, which autk-map cannot observe. A map that nothing changes draws nothing, whether it shows, sits out of view or is hidden in a collapsed scenario. The node keeps the maps its grammar made (`trackMaps` in [`autkMapDrawing.ts`](../utk_curio/frontend/urban-workflows/src/adapters/node/autkMapDrawing.ts)), and a map nobody will see again is destroyed with autk-map's `destroy()`, which frees its GPU textures, its window listeners and its controls: the node destroys its maps when its next run replaces their canvas and when it leaves the page (a deleted node, a closed dataflow), including maps a run made after it left. The e2e captures and the map framing check read a map's pixels in the animation frame that renders the map: they call `renderMapsForReading` (`window.__curio_renderMapsForReading`), which asks every map the nodes keep for a frame and resolves inside that frame.
 
-**Layer names and colors.** A layerRef's `title` is its layer's id in autk-map, which titles the legend with it. The grammar finds the layer of a table with `mapLayer(dataRef)`, and its highlights take the table's name, so Curio names layers by their `dataRef` everywhere. Before the run, `withScenarioColors` ([`autkScenarioColors.ts`](../utk_curio/frontend/urban-workflows/src/adapters/node/autkScenarioColors.ts)) gives a layerRef whose input comes from a scenario's box, on a map outside every box, the grammar's `color`, the box's, unless the layer's values or a raster's cells color it (see [Scenarios in charts and maps](#scenarios-in-charts-and-maps)).
+**Layer names and colors.** A layerRef's `title` is its layer's id in autk-map, which titles the legend with it. The grammar finds the layer of a table with `mapLayer(dataRef)`, and its highlights take the table's name, so Curio names layers by their `dataRef` everywhere. A layer's colors are the ones its document writes; one in its scenario's color writes its input's scenario chip as its `color`, resolved before the run (see [Scenarios in charts and maps](#scenarios-in-charts-and-maps)).
 
 **Rasters.** A raster on the input is a table under the same names, read through the same path; the Vega-Lite node still refuses it. Its frame says where the raster is and is not fetched as rows: a Python node's `rasterio` dataset by its artifact (`part` for its place in a tuple), or the envelope another node handed on. [`autkRasters.ts`](../utk_curio/frontend/urban-workflows/src/adapters/node/autkRasters.ts) turns each into GeoTIFF bytes and loads it with autk-db's `loadGeoTiff` into the grammar's own database:
 

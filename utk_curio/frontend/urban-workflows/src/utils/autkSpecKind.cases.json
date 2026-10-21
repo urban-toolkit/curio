@@ -92,8 +92,33 @@
       "kind": "unknown"
     },
     {
-      "name": "a reference outside quotes is not JSON until it is resolved",
+      "name": "a reference outside quotes holds its place until it is resolved, so the document still loads",
       "spec": "{\"data\": [{\"type\": \"csv\", \"csvFileUrl\": \"a.csv\", \"outputTableName\": [!! name !!]}]}",
+      "kind": "data"
+    },
+    {
+      "name": "a map whose layer takes its box's color from a chip standing on its own still draws",
+      "spec": "{\"map\": {\"layerRefs\": [{\"dataRef\": \"[!! input_1 !!]\", \"width\": 80, \"color\": [!! scenario input_1 !!]}]}}",
+      "kind": "render"
+    },
+    {
+      "name": "a plot whose sort and scale are chips standing on their own still draws",
+      "spec": "{\"plot\": {\"dataRef\": \"[!! input_0 !!]\", \"sort\": [!! scenario order !!], \"scale\": [!! scenario colors !!]}}",
+      "kind": "render"
+    },
+    {
+      "name": "a compute step whose shader is a widget standing on its own still computes",
+      "spec": "{\"compute\": [{\"dataRef\": \"[!! input_0 !!]\", \"shader\": [!! shader !!]}]}",
+      "kind": "compute"
+    },
+    {
+      "name": "a map that is itself a chip is still named",
+      "spec": "{\"data\": [{\"type\": \"osm\"}], \"map\": [!! layout !!]}",
+      "kind": "render"
+    },
+    {
+      "name": "a chip cut short is no reference, and the document is no JSON",
+      "spec": "{\"map\": {\"layerRefs\": [{\"color\": [!! scenario input_1 }]}}",
       "kind": "unknown"
     },
     {

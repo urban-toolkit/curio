@@ -1,19 +1,28 @@
 """Playwright E2E: a Vega-Lite chart that reads its inputs stacked (#662).
 
 A loader of road segments feeds two scenario boxes, "Baseline" and "Twice as
-tall", each one node that divides the sunlight by its factor widget. A Vega-Lite
-chart outside both boxes, pinned to the dashboard, reads them on its two
-circles, and its spec names the dataset ``inputs``: every input's rows in one
-table, each row named by the box its input comes from. The spec writes colors
-of its own for ``scenario_name``, which the boxes' colors replace.
+tall", each one node that divides the sunlight by its factor widget; the
+dataflow lists "Twice as tall" first. Two Vega-Lite charts outside both boxes
+read them on two circles, Baseline's first, and their specs name the dataset
+``inputs``: every input's rows in one table, each row named by the box its
+input comes from.
 
-1. Run All draws the chart: its legend names the two boxes, in the order of its
-   circles, and each bar is filled in its box's color.
-2. "Twice as tall" is renamed in its details: the chart draws again with no
-   run, its legend naming the new name, its bars in the same colors.
-3. After a save, the dashboard draws the chart the same way.
+- The first, pinned to the dashboard, writes its scenarios through chips: its
+  color scale is ``[!! scenario colors !!]`` and its axis's order
+  ``[!! scenario order !!]``, which the editor resolves to the boxes' colors and
+  names in the order the dataflow lists them.
+- The second writes no chip, and draws in Vega-Lite's own colors and order.
 
-The chart is read as SVG, from the view the page keeps (``view.toSVG()``).
+1. Run All draws both charts: the first's legend names the two boxes in the
+   dataflow's order, each bar in its box's color; the second's in Vega-Lite's
+   order and colors.
+2. "Twice as tall" is renamed in its details: both charts draw again with no
+   run, the first through its chips, its legend naming the new name.
+3. "Baseline" is recolored: the first chart draws again, its bar in the new
+   color; the second keeps Vega-Lite's colors.
+4. After a save, the dashboard draws the first chart the same way.
+
+The charts are read as SVG, from the views the page keeps (``view.toSVG()``).
 
 A second dataflow joins a bar chart of Baseline's rows to a chart that reads
 ``inputs`` alone by a direct interaction edge. vega-lite builds only the
@@ -58,10 +67,14 @@ LOAD = "si-load"
 BASE = "si-base"
 TALL = "si-tall"
 CHART = "si-chart"
+OWN = "si-own"
 CHART_TYPE = "curio.builtin/vis-vega"
 BASELINE = {"id": "s-base", "name": "Baseline", "color": "#2a9d8f"}
 TWICE = {"id": "s-tall", "name": "Twice as tall", "color": "#e76f51"}
 RENAMED = "Towers capped"
+RECOLORED = "#7b3294"
+#: Vega-Lite's own colors for two names, its default scheme's first two.
+VEGA_LITE_COLORS = ["#4c78a8", "#f58518"]
 
 LOAD_CODE = (
     "import pandas as pd\n"
@@ -69,16 +82,28 @@ LOAD_CODE = (
 )
 SHADE_CODE = 'df = input_0.copy()\ndf["sunlight"] = df["sunlight"] / [!! factor !!]\nreturn df\n'
 
-#: Mean sunlight per scenario, a bar each, colored by scenario with a legend.
-#: The colors it writes are not the boxes'.
-CHART_SPEC = json.dumps({
+#: Mean sunlight per scenario, a bar each, colored by scenario with a legend,
+#: through the scenario chips, which are not JSON until the editor resolves them.
+CHART_SPEC = """{
+  "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
+  "data": {"name": "inputs"},
+  "mark": "bar",
+  "encoding": {
+    "x": {"field": "scenario_name", "type": "nominal", "title": "Scenario", "sort": [!! scenario order !!]},
+    "y": {"field": "sunlight", "type": "quantitative", "aggregate": "mean"},
+    "color": {"field": "scenario_name", "type": "nominal", "scale": [!! scenario colors !!]}
+  }
+}"""
+
+#: The same chart with no chip: Vega-Lite's own colors and order.
+OWN_SPEC = json.dumps({
     "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
     "data": {"name": "inputs"},
     "mark": "bar",
     "encoding": {
         "x": {"field": "scenario_name", "type": "nominal", "title": "Scenario"},
         "y": {"field": "sunlight", "type": "quantitative", "aggregate": "mean"},
-        "color": {"field": "scenario_name", "type": "nominal", "scale": {"range": ["#000000", "#999999"]}},
+        "color": {"field": "scenario_name", "type": "nominal"},
     },
 }, indent=2)
 
@@ -141,16 +166,20 @@ def _spec() -> dict:
                 node(TALL, "curio.builtin/computation-analysis", 700, 500, SHADE_CODE, "Shade",
                      {**_factor(2), "copiedFrom": [BASE]}),
                 node(CHART, CHART_TYPE, 1400, 0, CHART_SPEC, "Sunlight", dashboardPinned=True),
+                node(OWN, CHART_TYPE, 1400, 600, OWN_SPEC, "Own colors"),
             ],
             "edges": [
                 {"id": "e-load-base", "source": LOAD, "target": BASE, "sourceHandle": "out", "targetHandle": "in"},
                 {"id": "e-load-tall", "source": LOAD, "target": TALL, "sourceHandle": "out", "targetHandle": "in"},
                 {"id": "e-base-chart", "source": BASE, "target": CHART, "sourceHandle": "out", "targetHandle": "in"},
                 {"id": "e-tall-chart", "source": TALL, "target": CHART, "sourceHandle": "out", "targetHandle": "in_1"},
+                {"id": "e-base-own", "source": BASE, "target": OWN, "sourceHandle": "out", "targetHandle": "in"},
+                {"id": "e-tall-own", "source": TALL, "target": OWN, "sourceHandle": "out", "targetHandle": "in_1"},
             ],
+            # Listed Twice as tall first, wired Baseline first.
             "scenarios": [
-                {**BASELINE, "nodes": [BASE]},
                 {**TWICE, "nodes": [TALL]},
+                {**BASELINE, "nodes": [BASE]},
             ],
         }
     }
@@ -170,20 +199,21 @@ def _drawn(svg: str) -> tuple[list[str], list[str]]:
     return labels, sorted(fills)
 
 
-def _assert_drawn(page, labels: list[str], where: str, timeout_s: float = 60.0) -> None:
-    """The chart's legend names *labels*, in order, and its bars are filled in
-    the two boxes' colors."""
-    fills = sorted([BASELINE["color"], TWICE["color"]])
+def _assert_drawn(page, labels: list[str], colors: list[str], where: str, node_id: str = CHART,
+                  timeout_s: float = 60.0) -> None:
+    """The chart *node_id*'s legend names *labels*, in order, and its bars are
+    filled in *colors*."""
+    fills = sorted(color.lower() for color in colors)
     drawn = None
     deadline = time.time() + timeout_s
     while time.time() < deadline:
-        svg = page.evaluate(_CHART_SVG_JS, CHART)
+        svg = page.evaluate(_CHART_SVG_JS, node_id)
         if svg:
             drawn = _drawn(svg)
             if drawn == (labels, fills):
                 return
         page.wait_for_timeout(250)
-    raise AssertionError(f"{where}: the chart drew (legend, bar fills) {drawn}, not {(labels, fills)}")
+    raise AssertionError(f"{where}: {node_id} drew (legend, bar fills) {drawn}, not {(labels, fills)}")
 
 
 def test_a_chart_reading_inputs_names_and_colors_its_rows_by_their_boxes(
@@ -208,15 +238,19 @@ def test_a_chart_reading_inputs_names_and_colors_its_rows_by_their_boxes(
     for node in spec["dataflow"]["nodes"]:
         node_locator(page, node["id"]).wait_for(state="visible", timeout=45000)
 
-    # 1. Run All: the legend names both boxes in circle order, each bar in its box's color.
+    # 1. Run All: the chart with the chips names both boxes in the dataflow's
+    # order, each bar in its box's color; the one without, in Vega-Lite's own.
     run_all_and_wait(page, timeout_ms=240000)
-    for node_id in (BASE, TALL, CHART):
+    for node_id in (BASE, TALL, CHART, OWN):
         status = wait_for_node_settled(page, node_id, timeout_ms=120000)
         assert status == "done", f"{node_id} ended {status}: {read_node_error_text(node_locator(page, node_id))}"
+    boxes = [TWICE["color"], BASELINE["color"]]
     frame_nodes(page, [CHART])
-    _assert_drawn(page, [BASELINE["name"], TWICE["name"]], "after Run All")
+    _assert_drawn(page, [TWICE["name"], BASELINE["name"]], boxes, "after Run All")
+    frame_nodes(page, [OWN])
+    _assert_drawn(page, [BASELINE["name"], TWICE["name"]], VEGA_LITE_COLORS, "after Run All", node_id=OWN)
 
-    # 2. A box renamed: the chart draws again, with no run, under the new name.
+    # 2. A box renamed: both charts draw again, with no run, under the new name.
     open_in_project_tab(page)
     name = open_scenario_details(page, TWICE["id"]).get_by_label("Scenario name")
     name.fill(RENAMED)
@@ -224,17 +258,31 @@ def test_a_chart_reading_inputs_names_and_colors_its_rows_by_their_boxes(
     close_scenario_details(page)
     close_scenario_drawer(page)
     frame_nodes(page, [CHART])
-    _assert_drawn(page, [BASELINE["name"], RENAMED], "after the rename")
+    _assert_drawn(page, [RENAMED, BASELINE["name"]], boxes, "after the rename")
+    frame_nodes(page, [OWN])
+    _assert_drawn(page, [BASELINE["name"], RENAMED], VEGA_LITE_COLORS, "after the rename", node_id=OWN)
 
-    # 3. Saved, the dashboard draws it the same way.
+    # 3. A box recolored: the chart with the chips draws its bar in the new
+    # color, with no run; the one without keeps Vega-Lite's colors.
+    open_in_project_tab(page)
+    open_scenario_details(page, BASELINE["id"]).get_by_label(f"Color of {BASELINE['name']}").fill(RECOLORED)
+    close_scenario_details(page)
+    close_scenario_drawer(page)
+    recolored = [TWICE["color"], RECOLORED]
+    frame_nodes(page, [CHART])
+    _assert_drawn(page, [RENAMED, BASELINE["name"]], recolored, "after the recolor")
+    frame_nodes(page, [OWN])
+    _assert_drawn(page, [BASELINE["name"], RENAMED], VEGA_LITE_COLORS, "after the recolor", node_id=OWN)
+
+    # 4. Saved, the dashboard draws it the same way.
     save_dataflow(page)
     project = api_json(f"{current_server}/api/projects/{project_id}", session["token"])
-    names = [scenario["name"] for scenario in project["spec"]["dataflow"]["scenarios"]]
-    assert names == [BASELINE["name"], RENAMED], names
+    listed = [(scenario["name"], scenario["color"]) for scenario in project["spec"]["dataflow"]["scenarios"]]
+    assert listed == [(RENAMED, TWICE["color"]), (BASELINE["name"], RECOLORED)], listed
     page.goto(f"{app_frontend.base_url}/dashboard/{project_id}")
     page.get_by_test_id("open-dataflow-link").wait_for(state="visible", timeout=45000)
     node_locator(page, CHART).wait_for(state="visible", timeout=45000)
-    _assert_drawn(page, [BASELINE["name"], RENAMED], "on the dashboard", timeout_s=90.0)
+    _assert_drawn(page, [RENAMED, BASELINE["name"]], recolored, "on the dashboard", timeout_s=90.0)
 
 
 PICK = "si-pick"
@@ -271,11 +319,11 @@ def _linked_spec() -> dict:
     spec = _spec()
     flow = spec["dataflow"]
     flow["name"] = flow["provenance_id"] = "Scenario inputs linked"
-    flow["nodes"] = [node for node in flow["nodes"] if node["id"] != CHART] + [
+    flow["nodes"] = [node for node in flow["nodes"] if node["id"] not in (CHART, OWN)] + [
         _node(PICK, CHART_TYPE, 1400, -400, PICK_SPEC, "Pick"),
         _node(LIT, CHART_TYPE, 1400, 300, LIT_SPEC, "Lit"),
     ]
-    flow["edges"] = [edge for edge in flow["edges"] if edge["target"] != CHART] + [
+    flow["edges"] = [edge for edge in flow["edges"] if edge["target"] not in (CHART, OWN)] + [
         {"id": "e-base-pick", "source": BASE, "target": PICK, "sourceHandle": "out", "targetHandle": "in"},
         {"id": "e-base-lit", "source": BASE, "target": LIT, "sourceHandle": "out", "targetHandle": "in"},
         {"id": "e-tall-lit", "source": TALL, "target": LIT, "sourceHandle": "out", "targetHandle": "in_1"},

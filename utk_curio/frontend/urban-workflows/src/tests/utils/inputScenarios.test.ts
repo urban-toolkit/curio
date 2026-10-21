@@ -1,11 +1,12 @@
 /**
  * The scenario box each of a node's inputs comes from (#662): the node feeding
- * each circle, the box it is in, and the label the input's rows are named and
- * drawn by. A chart reading `inputs` and an Autark map both find an input's box
- * this way.
+ * each circle, the box it is in, and the label the input's rows are named by
+ * and its scenario chips write, with the box's rank in the dataflow's list. The
+ * rows of a chart reading `inputs`, and the chips of a chart or a map, label an
+ * input this way.
  */
-import { inputLabelOf, inputScenarios, scaleLabelsOf, scenarioOfNode } from "../../utils/scenarios/inputScenarios";
-import { NO_SCENARIO_COLOR } from "../../utils/scenarios/scenarioColors";
+import { inputLabelOf, inputScenarios } from "../../utils/scenarios/inputScenarios";
+import { NO_SCENARIO_COLOR, scaleLabels } from "../../utils/scenarios/scenarioColors";
 import type { Scenario } from "../../utils/scenarios/scenarioModel";
 
 jest.mock("../../utils/palettePackageFactoryDraft", () => ({
@@ -47,15 +48,15 @@ describe("inputScenarios", () => {
     // Listed out of order: the circle decides.
     const inputs = inputScenarios(CHART, nodes, [...edges].reverse(), scenarios);
     expect(inputs.map((input) => [input.slot, input.source, input.scenario?.id, input.label])).toEqual([
-      [0, "base", "s-base", { scenario: "s-base", name: "Baseline", color: "#2a9d8f" }],
-      [1, "tall", "s-tall", { scenario: "s-tall", name: "Twice as tall", color: "#e76f51" }],
+      [0, "base", "s-base", { scenario: "s-base", name: "Baseline", color: "#2a9d8f", rank: 0 }],
+      [1, "tall", "s-tall", { scenario: "s-tall", name: "Twice as tall", color: "#e76f51", rank: 1 }],
     ]);
   });
 
-  test("each input is labelled in circle order, whatever order the dataflow lists the boxes in", () => {
+  test("each input is labelled in circle order, its box ranked by the order the dataflow lists the boxes in", () => {
     const { nodes, edges, scenarios } = twoBoxes();
     const inputs = inputScenarios(CHART, nodes, edges, [...scenarios].reverse());
-    expect(inputs.map((input) => input.label.name)).toEqual(["Baseline", "Twice as tall"]);
+    expect(inputs.map((input) => [input.label.name, input.label.rank])).toEqual([["Baseline", 1], ["Twice as tall", 0]]);
   });
 
   test("an input whose node is in no box carries the node's name and a neutral color", () => {
@@ -92,11 +93,13 @@ describe("inputScenarios", () => {
   });
 });
 
-describe("scaleLabelsOf: the order a chart's scales draw its inputs' boxes in", () => {
+describe("scaleLabels: the order the scenario chips list a node's inputs' boxes in", () => {
+  const labelsOf = (inputs: ReturnType<typeof inputScenarios>) => scaleLabels(inputs.map((input) => input.label));
+
   test("the order the dataflow lists its boxes in, not the circles'", () => {
     const { nodes, edges, scenarios } = twoBoxes();
     const listed = [...scenarios].reverse();
-    const labels = scaleLabelsOf(inputScenarios(CHART, nodes, edges, listed), listed);
+    const labels = labelsOf(inputScenarios(CHART, nodes, edges, listed));
     expect(labels.map((label) => label.name)).toEqual(["Twice as tall", "Baseline"]);
   });
 
@@ -108,28 +111,21 @@ describe("scaleLabelsOf: the order a chart's scales draw its inputs' boxes in", 
       edge("base", CHART, "in_3"),
       edge("plain", CHART, "in_4"),
     ];
-    const labels = scaleLabelsOf(inputScenarios(CHART, [...nodes, node("plain", { title: "Plain" })], more, scenarios), scenarios);
+    const labels = labelsOf(inputScenarios(CHART, [...nodes, node("plain", { title: "Plain" })], more, scenarios));
     expect(labels).toEqual([
-      { scenario: "s-base", name: "Baseline", color: "#2a9d8f" },
-      { scenario: "s-tall", name: "Twice as tall", color: "#e76f51" },
+      { scenario: "s-base", name: "Baseline", color: "#2a9d8f", rank: 0 },
+      { scenario: "s-tall", name: "Twice as tall", color: "#e76f51", rank: 1 },
       { name: "Loader", color: NO_SCENARIO_COLOR },
       { name: "Plain", color: NO_SCENARIO_COLOR },
     ]);
   });
 });
 
-describe("scenarioOfNode and inputLabelOf", () => {
-  test("the box a node sits in, or none", () => {
-    const { nodes, scenarios } = twoBoxes();
-    expect(scenarioOfNode("tall", nodes, scenarios)?.id).toBe("s-tall");
-    expect(scenarioOfNode(CHART, nodes, scenarios)).toBeNull();
-    // A box's member that left the canvas is not in it.
-    expect(scenarioOfNode("tall", nodes.filter((n) => n.id !== "tall"), scenarios)).toBeNull();
-  });
-
-  test("a box names an input by its id, name and color; no box, by the node", () => {
+describe("inputLabelOf", () => {
+  test("a box names an input by its id, name, color and rank; no box, by the node", () => {
     const [baseline] = twoBoxes().scenarios;
     expect(inputLabelOf(baseline, node("base"), "base")).toEqual({ scenario: "s-base", name: "Baseline", color: "#2a9d8f" });
-    expect(inputLabelOf(null, node("load", { title: "Loader" }), "load")).toEqual({ name: "Loader", color: NO_SCENARIO_COLOR });
+    expect(inputLabelOf(baseline, node("base"), "base", 0)).toEqual({ scenario: "s-base", name: "Baseline", color: "#2a9d8f", rank: 0 });
+    expect(inputLabelOf(null, node("load", { title: "Loader" }), "load", 3)).toEqual({ name: "Loader", color: NO_SCENARIO_COLOR });
   });
 });

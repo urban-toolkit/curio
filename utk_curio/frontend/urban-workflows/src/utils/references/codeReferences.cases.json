@@ -1,5 +1,5 @@
 {
-  "about": "Code reference cases: widget, input, column, shared and selection references. Read by src/tests/utils/codeReferences.test.ts and by utk_curio/backend/tests/test_execution/test_code_references.py: the browser and the headless runner must write the same code. A case's inputs are the node's wired circles, with their data type, the layer name their value gives, columns and layers when known; its selections are the node's selection tags, with the ids each holds. A JSON case may name its document's grammar: in a Vega-Lite spec (vega-lite), a reference where Vega-Lite reads a field name writes each name escaped for Vega-Lite.",
+  "about": "Code reference cases: widget, input, column, shared, selection and scenario references, and the fields of the dataset inputs. Read by src/tests/utils/codeReferences.test.ts and by utk_curio/backend/tests/test_execution/test_code_references.py: the browser and the headless runner must write the same code. A case's inputs are the node's wired circles, with their data type, the layer name their value gives, columns and layers when known, and the scenario label their rows carry: the id, name and color of the box the feeding node is in, with that box's rank in the dataflow's list of boxes, or the node's name in grey for a node in no box. Its selections are the node's selection tags, with the ids each holds. A JSON case may name its document's grammar: in a Vega-Lite spec (vega-lite), a reference where Vega-Lite reads a field name writes each name escaped for Vega-Lite.",
   "cases": [
     {
       "name": "a number on its own",
@@ -1036,6 +1036,227 @@
       "code": "{\"encoding\": {\"y\": {\"field\": \"[!! y !!]\"}}, \"data\": {\"values\": [[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]}}",
       "widgets": [{"name": "y", "type": "text", "default": "rain.mm"}],
       "expected": "{\"encoding\": {\"y\": {\"field\": \"rain.mm\"}}, \"data\": {\"values\": [[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]}}"
+    },
+    {
+      "name": "the scenario chips write the boxes' colors, their text shades and their names, each box once in the dataflow's order, an input from no box last in grey",
+      "language": "json",
+      "grammar": "vega-lite",
+      "code": "{\"data\": {\"name\": \"inputs\"}, \"layer\": [{\"mark\": \"bar\", \"encoding\": {\"x\": {\"field\": \"scenario_name\", \"type\": \"nominal\", \"sort\": [!! scenario order !!]}, \"y\": {\"field\": \"sunlight\", \"type\": \"quantitative\", \"aggregate\": \"mean\"}, \"color\": {\"field\": \"scenario_name\", \"type\": \"nominal\", \"scale\": [!! scenario colors !!]}}}, {\"mark\": \"text\", \"encoding\": {\"x\": {\"field\": \"scenario_name\", \"type\": \"nominal\", \"sort\": [!! scenario order !!]}, \"text\": {\"field\": \"sunlight\", \"type\": \"quantitative\", \"aggregate\": \"mean\"}, \"color\": {\"field\": \"scenario_name\", \"type\": \"nominal\", \"scale\": [!! scenario text_colors !!]}}}]}",
+      "widgets": [],
+      "inputs": [
+        {"slot": 0, "dataType": "dataframe", "columns": ["segment", "sunlight", "rain.mm"], "scenario": {"scenario": "s-tall", "name": "Twice as tall", "color": "#e76f51", "rank": 1}},
+        {"slot": 1, "dataType": "dataframe", "columns": ["segment", "sunlight", "rain.mm"], "scenario": {"scenario": "s-base", "name": "Baseline", "color": "#2a9d8f", "rank": 0}},
+        {"slot": 2, "dataType": "dataframe", "columns": ["segment", "sunlight", "rain.mm", "roof"], "scenario": {"name": "Roof survey", "color": "#8a8f98"}},
+        {"slot": 3, "dataType": "dataframe", "columns": ["segment", "sunlight", "rain.mm"], "scenario": {"scenario": "s-roof", "name": "Green roofs", "color": "#a1d99b", "rank": 2}}
+      ],
+      "expected": "{\"data\": {\"name\": \"inputs\"}, \"layer\": [{\"mark\": \"bar\", \"encoding\": {\"x\": {\"field\": \"scenario_name\", \"type\": \"nominal\", \"sort\": [\"Baseline\", \"Twice as tall\", \"Green roofs\", \"Roof survey\"]}, \"y\": {\"field\": \"sunlight\", \"type\": \"quantitative\", \"aggregate\": \"mean\"}, \"color\": {\"field\": \"scenario_name\", \"type\": \"nominal\", \"scale\": {\"domain\": [\"Baseline\", \"Twice as tall\", \"Green roofs\", \"Roof survey\"], \"range\": [\"#2a9d8f\", \"#e76f51\", \"#a1d99b\", \"#8a8f98\"]}}}}, {\"mark\": \"text\", \"encoding\": {\"x\": {\"field\": \"scenario_name\", \"type\": \"nominal\", \"sort\": [\"Baseline\", \"Twice as tall\", \"Green roofs\", \"Roof survey\"]}, \"text\": {\"field\": \"sunlight\", \"type\": \"quantitative\", \"aggregate\": \"mean\"}, \"color\": {\"field\": \"scenario_name\", \"type\": \"nominal\", \"scale\": {\"domain\": [\"Baseline\", \"Twice as tall\", \"Green roofs\", \"Roof survey\"], \"range\": [\"#2a9d8f\", \"#e76f51\", \"#769e71\", \"#8a8f98\"]}}}}]}"
+    },
+    {
+      "name": "an input's scenario chip writes its box's color, inside a string or standing on its own, and grey for an input from no box",
+      "language": "json",
+      "code": "{\"map\": {\"layerRefs\": [{\"dataRef\": \"[!! input_0 !!]\", \"title\": \"Roads\", \"color\": \"[!! scenario input_0 !!]\"}, {\"dataRef\": \"[!! input_1 !!]\", \"width\": 80, \"color\": \"[!! scenario input_1 !!]\"}, {\"dataRef\": \"[!! input_2 !!]\", \"width\": 40, \"color\": [!! scenario input_2 !!]}]}}",
+      "widgets": [],
+      "inputs": [
+        {"slot": 0, "dataType": "geodataframe", "scenario": {"name": "Roads", "color": "#8a8f98"}},
+        {"slot": 1, "dataType": "geodataframe", "scenario": {"scenario": "fastest", "name": "Fastest route", "color": "#42A5F5", "rank": 0}},
+        {"slot": 2, "dataType": "geodataframe", "scenario": {"scenario": "weather-aware", "name": "Weather-aware route", "color": "#00838F", "rank": 1}}
+      ],
+      "expected": "{\"map\": {\"layerRefs\": [{\"dataRef\": \"input_0\", \"title\": \"Roads\", \"color\": \"#8a8f98\"}, {\"dataRef\": \"input_1\", \"width\": 80, \"color\": \"#42A5F5\"}, {\"dataRef\": \"input_2\", \"width\": 40, \"color\": \"#00838F\"}]}}"
+    },
+    {
+      "name": "a field of inputs writes its name, escaped where Vega-Lite reads a field, as it is in a title",
+      "language": "json",
+      "grammar": "vega-lite",
+      "code": "{\"data\": {\"name\": \"inputs\"}, \"mark\": \"bar\", \"encoding\": {\"x\": {\"field\": [!! inputs.scenario_name !!], \"type\": \"nominal\"}, \"y\": {\"field\": \"[!! inputs.rain.mm !!]\", \"type\": \"quantitative\", \"aggregate\": \"mean\", \"title\": \"Mean [!! inputs.rain.mm !!]\"}, \"detail\": {\"field\": [!! inputs.__input__ !!]}, \"tooltip\": [{\"field\": [!! inputs.scenario !!]}]}}",
+      "widgets": [],
+      "inputs": [
+        {"slot": 0, "dataType": "dataframe", "columns": ["segment", "rain.mm"], "scenario": {"scenario": "s-base", "name": "Baseline", "color": "#2a9d8f", "rank": 0}},
+        {"slot": 1, "dataType": "dataframe", "columns": ["segment", "rain.mm"], "scenario": {"scenario": "s-tall", "name": "Twice as tall", "color": "#e76f51", "rank": 1}}
+      ],
+      "expected": "{\"data\": {\"name\": \"inputs\"}, \"mark\": \"bar\", \"encoding\": {\"x\": {\"field\": \"scenario_name\", \"type\": \"nominal\"}, \"y\": {\"field\": \"rain\\\\.mm\", \"type\": \"quantitative\", \"aggregate\": \"mean\", \"title\": \"Mean rain.mm\"}, \"detail\": {\"field\": \"__input__\"}, \"tooltip\": [{\"field\": \"scenario\"}]}}"
+    },
+    {
+      "name": "a field of inputs is not checked while an input's columns are not known",
+      "language": "json",
+      "grammar": "vega-lite",
+      "code": "{\"encoding\": {\"y\": {\"field\": [!! inputs.shade !!]}}}",
+      "widgets": [],
+      "inputs": [
+        {"slot": 0, "dataType": "dataframe", "columns": ["segment"], "scenario": {"scenario": "s-base", "name": "Baseline", "color": "#2a9d8f", "rank": 0}},
+        {"slot": 1, "scenario": {"scenario": "s-tall", "name": "Twice as tall", "color": "#e76f51", "rank": 1}}
+      ],
+      "expected": "{\"encoding\": {\"y\": {\"field\": \"shade\"}}}"
+    },
+    {
+      "name": "a box that feeds two circles is listed once, and two boxes of one name are one name, in the color of the box listed first",
+      "language": "json",
+      "grammar": "vega-lite",
+      "code": "{\"encoding\": {\"color\": {\"field\": \"scenario_name\", \"scale\": [!! scenario colors !!]}, \"x\": {\"field\": \"scenario_name\", \"sort\": [!! scenario order !!]}}}",
+      "widgets": [],
+      "inputs": [
+        {"slot": 0, "scenario": {"scenario": "s-later", "name": "Baseline", "color": "#e76f51", "rank": 1}},
+        {"slot": 1, "scenario": {"scenario": "s-tall", "name": "Twice as tall", "color": "#7b3294", "rank": 2}},
+        {"slot": 2, "scenario": {"scenario": "s-later", "name": "Baseline", "color": "#e76f51", "rank": 1}},
+        {"slot": 3, "scenario": {"scenario": "s-first", "name": "Baseline", "color": "#2a9d8f", "rank": 0}}
+      ],
+      "expected": "{\"encoding\": {\"color\": {\"field\": \"scenario_name\", \"scale\": {\"domain\": [\"Baseline\", \"Twice as tall\"], \"range\": [\"#2a9d8f\", \"#7b3294\"]}}, \"x\": {\"field\": \"scenario_name\", \"sort\": [\"Baseline\", \"Twice as tall\"]}}}"
+    },
+    {
+      "name": "a node with no inputs: the scenario chips list no scenario",
+      "language": "json",
+      "code": "{\"scale\": [!! scenario colors !!], \"sort\": [!! scenario order !!]}",
+      "widgets": [],
+      "inputs": [],
+      "expected": "{\"scale\": {\"domain\": []}, \"sort\": []}"
+    },
+    {
+      "name": "a widget named scenario or inputs is a widget still",
+      "language": "json",
+      "code": "{\"title\": \"[!! scenario !!]\", \"n\": [!! inputs !!]}",
+      "widgets": [
+        {"name": "scenario", "type": "text", "default": "Baseline"},
+        {"name": "inputs", "type": "number", "default": 3}
+      ],
+      "inputs": [
+        {"slot": 0, "scenario": {"scenario": "s-base", "name": "Baseline", "color": "#2a9d8f", "rank": 0}}
+      ],
+      "expected": "{\"title\": \"Baseline\", \"n\": 3}"
+    },
+    {
+      "name": "a scenario chip or a field of inputs in Python code is refused",
+      "language": "python",
+      "code": "colors = [!! scenario colors !!]\nhex = [!! scenario input_0 !!]\nname = [!! inputs.scenario_name !!]",
+      "widgets": [],
+      "inputs": [
+        {"slot": 0, "dataType": "dataframe", "columns": ["segment"], "scenario": {"scenario": "s-base", "name": "Baseline", "color": "#2a9d8f", "rank": 0}}
+      ],
+      "expected": "colors = [!! scenario colors !!]\nhex = [!! scenario input_0 !!]\nname = [!! inputs.scenario_name !!]",
+      "problems": [
+        "[!! scenario colors !!] is for a Vega-Lite or Autark spec, not for code.",
+        "[!! scenario input_0 !!] is for a Vega-Lite or Autark spec, not for code.",
+        "[!! inputs.scenario_name !!] is for a Vega-Lite spec, not for code."
+      ]
+    },
+    {
+      "name": "a scenario chip in JavaScript code is refused",
+      "language": "javascript",
+      "code": "const order = [!! scenario order !!];",
+      "widgets": [],
+      "inputs": [
+        {"slot": 0, "scenario": {"scenario": "s-base", "name": "Baseline", "color": "#2a9d8f", "rank": 0}}
+      ],
+      "expected": "const order = [!! scenario order !!];",
+      "problems": [
+        "[!! scenario order !!] is for a Vega-Lite or Autark spec, not for code."
+      ]
+    },
+    {
+      "name": "a scenario chip it does not know, an input's chip with no edge and one whose edge was deleted are refused",
+      "language": "json",
+      "code": "{\"a\": [!! scenario colours !!], \"b\": \"[!! scenario input_3 !!]\", \"c\": \"[!! scenario input_? !!]\"}",
+      "widgets": [],
+      "inputs": [
+        {"slot": 0, "scenario": {"scenario": "s-base", "name": "Baseline", "color": "#2a9d8f", "rank": 0}}
+      ],
+      "expected": "{\"a\": [!! scenario colours !!], \"b\": \"[!! scenario input_3 !!]\", \"c\": \"[!! scenario input_? !!]\"}",
+      "problems": [
+        "[!! scenario colours !!] names no scenario chip. The scenario chips are scenario colors, scenario text_colors, scenario order and scenario input_<k>.",
+        "[!! scenario input_3 !!]: input_3 has no edge. Connect one to that circle, or drag the swatch of one of this node's input tags here.",
+        "[!! scenario input_? !!]: the edge for this input was deleted. Drag the swatch of one of this node's input tags here."
+      ]
+    },
+    {
+      "name": "a scale or a list of names inside quotes is refused",
+      "language": "json",
+      "code": "{\"title\": \"[!! scenario colors !!]\", \"subtitle\": \"Order: [!! scenario order !!]\", \"description\": \"[!! scenario text_colors !!]\"}",
+      "widgets": [],
+      "inputs": [
+        {"slot": 0, "scenario": {"scenario": "s-base", "name": "Baseline", "color": "#2a9d8f", "rank": 0}}
+      ],
+      "expected": "{\"title\": \"[!! scenario colors !!]\", \"subtitle\": \"Order: [!! scenario order !!]\", \"description\": \"[!! scenario text_colors !!]\"}",
+      "problems": [
+        "[!! scenario colors !!] is a scale, not text. Use it outside quotes.",
+        "[!! scenario order !!] is a list of names, not text. Use it outside quotes.",
+        "[!! scenario text_colors !!] is a scale, not text. Use it outside quotes."
+      ]
+    },
+    {
+      "name": "the scenario chips of a node whose inputs' boxes are not known are refused",
+      "language": "json",
+      "code": "{\"scale\": [!! scenario colors !!], \"color\": \"[!! scenario input_1 !!]\"}",
+      "widgets": [],
+      "inputs": [
+        {"slot": 0, "scenario": {"scenario": "s-base", "name": "Baseline", "color": "#2a9d8f", "rank": 0}},
+        {"slot": 1}
+      ],
+      "expected": "{\"scale\": [!! scenario colors !!], \"color\": \"[!! scenario input_1 !!]\"}",
+      "problems": [
+        "[!! scenario colors !!]: the scenario box input_1 comes from is not known here.",
+        "[!! scenario input_1 !!]: the scenario box input_1 comes from is not known here."
+      ]
+    },
+    {
+      "name": "a field the dataset inputs does not have is refused once every input's columns are known",
+      "language": "json",
+      "grammar": "vega-lite",
+      "code": "{\"encoding\": {\"x\": {\"field\": [!! inputs.shade !!]}, \"y\": {\"field\": [!! inputs.rain !!]}, \"color\": {\"field\": [!! inputs.scenario_name !!]}}}",
+      "widgets": [],
+      "inputs": [
+        {"slot": 0, "dataType": "dataframe", "columns": ["segment", "sunlight"], "scenario": {"scenario": "s-base", "name": "Baseline", "color": "#2a9d8f", "rank": 0}},
+        {"slot": 1, "dataType": "geodataframe", "columns": ["segment", "shade", "geometry"], "dtypes": {"geometry": "geometry"}, "scenario": {"scenario": "s-tall", "name": "Twice as tall", "color": "#e76f51", "rank": 1}}
+      ],
+      "expected": "{\"encoding\": {\"x\": {\"field\": \"shade\"}, \"y\": {\"field\": [!! inputs.rain !!]}, \"color\": {\"field\": \"scenario_name\"}}}",
+      "problems": [
+        "[!! inputs.rain !!]: the dataset inputs has no field rain."
+      ]
+    },
+    {
+      "name": "a layer's geometry is no field of inputs, whose rows leave it out",
+      "language": "json",
+      "grammar": "vega-lite",
+      "code": "{\"encoding\": {\"shape\": {\"field\": [!! inputs.geometry !!]}}}",
+      "widgets": [],
+      "inputs": [
+        {"slot": 0, "dataType": "geodataframe", "columns": ["segment", "geometry"], "dtypes": {"segment": "object", "geometry": "geometry"}, "scenario": {"scenario": "s-base", "name": "Baseline", "color": "#2a9d8f", "rank": 0}}
+      ],
+      "expected": "{\"encoding\": {\"shape\": {\"field\": [!! inputs.geometry !!]}}}",
+      "problems": [
+        "[!! inputs.geometry !!]: the dataset inputs has no field geometry."
+      ]
+    },
+    {
+      "name": "with no input from a box, the colors and text colors chips write the names alone, which the grammar's own palette colors, and each input's chip a grey of its own",
+      "language": "json",
+      "code": "{\"encoding\": {\"x\": {\"field\": \"scenario_name\", \"sort\": [!! scenario order !!]}, \"color\": {\"field\": \"scenario_name\", \"scale\": [!! scenario colors !!]}}, \"layer\": [{\"mark\": \"text\", \"encoding\": {\"color\": {\"field\": \"scenario_name\", \"scale\": [!! scenario text_colors !!]}}}], \"weekend\": \"[!! scenario input_1 !!]\", \"weekday\": [!! scenario input_0 !!]}",
+      "widgets": [],
+      "inputs": [
+        {"slot": 0, "dataType": "dataframe", "columns": ["mode", "trips"], "scenario": {"name": "Weekday", "color": "#8a8f98"}},
+        {"slot": 1, "dataType": "dataframe", "columns": ["mode", "trips"], "scenario": {"name": "Weekend", "color": "#8a8f98"}}
+      ],
+      "expected": "{\"encoding\": {\"x\": {\"field\": \"scenario_name\", \"sort\": [\"Weekday\", \"Weekend\"]}, \"color\": {\"field\": \"scenario_name\", \"scale\": {\"domain\": [\"Weekday\", \"Weekend\"]}}}, \"layer\": [{\"mark\": \"text\", \"encoding\": {\"color\": {\"field\": \"scenario_name\", \"scale\": {\"domain\": [\"Weekday\", \"Weekend\"]}}}}], \"weekend\": \"#5b6068\", \"weekday\": \"#8a8f98\"}"
+    },
+    {
+      "name": "inputs from no box beside a box take a grey each, in circle order, after the boxes",
+      "language": "json",
+      "code": "{\"scale\": [!! scenario colors !!], \"text\": [!! scenario text_colors !!], \"first\": \"[!! scenario input_0 !!]\", \"last\": [!! scenario input_2 !!]}",
+      "widgets": [],
+      "inputs": [
+        {"slot": 0, "dataType": "dataframe", "columns": ["mode", "trips"], "scenario": {"name": "Weekday", "color": "#8a8f98"}},
+        {"slot": 1, "dataType": "dataframe", "columns": ["mode", "trips"], "scenario": {"scenario": "s-base", "name": "Baseline", "color": "#2a9d8f", "rank": 0}},
+        {"slot": 2, "dataType": "dataframe", "columns": ["mode", "trips"], "scenario": {"name": "Weekend", "color": "#8a8f98"}}
+      ],
+      "expected": "{\"scale\": {\"domain\": [\"Baseline\", \"Weekday\", \"Weekend\"], \"range\": [\"#2a9d8f\", \"#8a8f98\", \"#5b6068\"]}, \"text\": {\"domain\": [\"Baseline\", \"Weekday\", \"Weekend\"], \"range\": [\"#2a9d8f\", \"#8a8f98\", \"#5b6068\"]}, \"first\": \"#8a8f98\", \"last\": \"#5b6068\"}"
+    },
+    {
+      "name": "a grey a box among the inputs already uses is passed over",
+      "language": "json",
+      "code": "{\"scale\": [!! scenario colors !!], \"survey\": [!! scenario input_1 !!]}",
+      "widgets": [],
+      "inputs": [
+        {"slot": 0, "dataType": "dataframe", "columns": ["mode", "trips"], "scenario": {"scenario": "s-today", "name": "Today", "color": "#8A8F98", "rank": 0}},
+        {"slot": 1, "dataType": "dataframe", "columns": ["mode", "trips"], "scenario": {"name": "Survey", "color": "#8a8f98"}}
+      ],
+      "expected": "{\"scale\": {\"domain\": [\"Today\", \"Survey\"], \"range\": [\"#8A8F98\", \"#5b6068\"]}, \"survey\": \"#5b6068\"}"
     }
   ]
 }

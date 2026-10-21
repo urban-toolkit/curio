@@ -49,9 +49,13 @@ const BACK_BAY = {
 /** A server step's result as useServerRun shows it (utils/executionResult). */
 const SERVER_RESULT: NodeOutput = { code: 'success', content: 'Saved to file: art-layers' };
 
-/** Mount an Autark node holding *spec*; `show` sets its status from outside its own run. */
-function mountNode(spec: object) {
-  const code = JSON.stringify(spec, null, 2);
+/** Back Bay's data node with its areas written as a widget's chip standing on
+ *  its own, as a run resolves it: no JSON until the chip is resolved. */
+const BACK_BAY_WITH_A_CHIP = JSON.stringify(BACK_BAY).replace('["Back Bay"]', '[!! areas !!]');
+
+/** Mount an Autark node holding *spec* (or its text); `show` sets its status from outside its own run. */
+function mountNode(spec: object | string) {
+  const code = typeof spec === 'string' ? spec : JSON.stringify(spec, null, 2);
   const setOutput = jest.fn();
   let fromOutside: ((output: NodeOutput) => void) | undefined;
   const Probe: React.FC = () => {
@@ -91,6 +95,20 @@ test('a data node the server ran says what it loaded, as its own run says it', (
     'Loaded 5 tables: table_osm_surface, table_osm_parks, table_osm_water, table_osm_roads, table_osm_buildings',
   );
   expect(node.container.querySelector('[data-curio-node-empty]')).toBeNull();
+});
+
+test('a data node whose document holds a chip standing on its own reads as one: it asks for no input, and says what it loaded', () => {
+  expect(BACK_BAY_WITH_A_CHIP).toContain('"areas":[!! areas !!]');
+  const node = mountNode(BACK_BAY_WITH_A_CHIP);
+  // Before: a data node's notice, not a call for an input it does not read.
+  expect(node.container.querySelector('[data-curio-node-empty="not-run"]')).not.toBeNull();
+
+  node.show(SERVER_RESULT);
+
+  expect(node.setOutput).toHaveBeenLastCalledWith(SERVER_RESULT);
+  expect(node.summary()).toBe(
+    'Loaded 5 tables: table_osm_surface, table_osm_parks, table_osm_water, table_osm_roads, table_osm_buildings',
+  );
 });
 
 test('a new run, and a failed one, take the line away', () => {

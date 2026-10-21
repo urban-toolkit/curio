@@ -584,6 +584,52 @@ class TestNotExecutableKinds:
         assert [k for k, _ in events if k == "round_verdict"] == ["round_verdict"]
 
 
+class TestScenarioChipsInTheCheck:
+    """#662: the loop checks a chart with its scenario chips resolved over the
+    saved dataflow, as the canvas resolves them before it draws: an untitled
+    input from no box is named by its template's label, as the node's header
+    names it, not by its type in words."""
+
+    def test_an_untitled_input_from_no_box_is_named_as_its_header_names_it(self, app, tmp_curio, monkeypatch):
+        import shutil
+
+        from utk_curio import shipped
+        from utk_curio.backend.app.agents.domain import document_validation
+        from utk_curio.backend.app.packages import service as packages_service
+        from utk_curio.backend.app.packages.repositories.store import user_packages_dir
+
+        # The account's store holds the built-in package, as every account's
+        # does: its templates' labels are what an untitled node's header shows.
+        builtin = shipped.path("packages/curio.builtin@1")
+        shutil.copytree(builtin, user_packages_dir(KEY) / builtin.name, dirs_exist_ok=True)
+        with app.test_request_context():
+            roster = {row["id"]: row.get("label") for row in packages_service.available_templates(KEY, PID)}
+        assert roster.get(CA) == "Python Computation", roster
+
+        checked: list = []
+        real = document_validation.validate
+
+        def spy(node_type, content, **kwargs):
+            checked.append(content)
+            return real(node_type, content, **kwargs)
+
+        monkeypatch.setattr(document_validation, "validate", spy)
+        chart = {"id": "chart", "type": VEGA, "goal": "compare the sources", "content": ""}
+        spec = {"dataflow": {
+            "nodes": [{"id": "py", "type": f"{CA}@1", "content": "return input_0"}, chart],
+            "edges": [{"id": "e-py", "source": "py", "target": "chart", "sourceHandle": "out", "targetHandle": "in"}],
+            "name": "wf", "task": "compare",
+        }}
+        reply = (
+            '{"data": {"name": "inputs"}, "mark": "bar", "encoding": '
+            '{"x": {"field": "scenario_name", "type": "nominal", "sort": [!! scenario order !!]}}}'
+        )
+        _rounds(app, chart, replies=[reply], exec_fn=_Exec(), spec=spec)
+        assert checked, "the loop checked no document"
+        # The built-in Python node's label (packages/curio.builtin@1), not "Computation Analysis".
+        assert json.loads(checked[0])["encoding"]["x"]["sort"] == ["Python Computation"]
+
+
 class TestSameBatchReuse:
     """dev/118 (DEC-075) commit 4: the loop hands the runner the outputs of
     ancestors that passed earlier in the batch; a vanished artifact costs one
