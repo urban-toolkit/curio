@@ -350,20 +350,22 @@ describe("trillToNotebook with a chart that reads its inputs stacked", () => {
   const chartCell = (nb: ReturnType<typeof trillToNotebook>) =>
     codeCells(nb).find((c) => c.source.includes("_spec = {"))!.source;
 
-  it("draws scenario_name in the boxes' colors and order, then an input from no box, as the canvas does", () => {
-    const chart = '{"data": {"name": "inputs"}, "mark": "bar", "encoding": {"color": {"field": "scenario_name", "type": "nominal"}}}';
+  it("its scale chip writes the boxes' colors and order, then an input from no box, as the canvas does", () => {
+    const chart = '{"data": {"name": "inputs"}, "mark": "bar", "encoding": {"color": {"field": "scenario_name", "type": "nominal", '
+      + '"scale": [!! scenario colors !!]}}}';
     const source = chartCell(trillToNotebook(stackedChart(chart)));
     const embedded = embeddedSpec(source) as any;
     expect(embedded.encoding.color.scale).toEqual({ domain: ["Baseline", "Free node"], range: ["#2a9d8f", "#8a8f98"] });
   });
 
-  it("with no input from a box, keeps the spec's own colors, as the canvas does", () => {
+  it("a chart that writes no chip keeps the spec's own colors, as the canvas does, boxes or not", () => {
     const chart = {
       data: { name: "inputs" },
       mark: "bar",
       encoding: { color: { field: "scenario_name", type: "nominal", scale: { range: ["#000000", "#999999"] } } },
     };
     const flow = stackedChart(JSON.stringify(chart));
+    expect(embeddedSpec(chartCell(trillToNotebook(flow)))).toEqual(chart);
     flow.dataflow.scenarios = [];
     expect(embeddedSpec(chartCell(trillToNotebook(flow)))).toEqual(chart);
   });

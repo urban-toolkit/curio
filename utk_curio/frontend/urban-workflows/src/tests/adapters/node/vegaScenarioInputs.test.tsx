@@ -1,15 +1,20 @@
 /**
  * A Vega-Lite chart whose spec reads `inputs` (#662) names its rows by the
- * scenario boxes its inputs come from, stacked in circle order, and draws them
- * in the boxes' colors, in the order the dataflow lists its boxes, whatever the
- * spec writes for `scenario_name`. A box renamed or recolored draws it again,
- * its rows stacked again under the new name, with no version in its provenance
- * and nothing handed downstream; not during a run, which draws it itself, and
- * not before the chart is first drawn. A spec that does not read `inputs`
- * stacks nothing and is drawn as written.
+ * scenario boxes its inputs come from, stacked in circle order. It draws
+ * exactly its spec: the boxes' colors and order are where its scenario chips
+ * write them, `[!! scenario colors !!]` and `[!! scenario order !!]`, which its
+ * editor resolves before a run (utils/references/codeReferences), and a spec
+ * without them draws in Vega-Lite's own colors and order, or the ones it
+ * writes. A box renamed or recolored draws it again when what it draws moves,
+ * through its chips or the names its rows carry, with no version in its
+ * provenance and nothing handed downstream; not during a run, which draws it
+ * itself, and not before the chart is first drawn. A spec that does not read
+ * `inputs` stacks nothing.
  *
  * The behavior and useVega are real here; vega and vega-lite are the mocks
- * below, which keep the spec each view is built from.
+ * below, which keep the spec each view is built from. A chart's chips are
+ * resolved as its editor resolves them (NodeEditor), which hands the behavior
+ * the written spec with how to write it again for other labels (`redrawOf`).
  */
 import { act, renderHook, waitFor } from "@testing-library/react";
 
@@ -117,7 +122,13 @@ const BARS = JSON.stringify({
   },
 });
 
-/** The chart node over the two boxes' rows, drawn once by a Play. */
+/** Mean sunlight per scenario, in the boxes' colors and order, through chips. */
+const CHIP_BARS = '{"data": {"name": "inputs"}, "mark": "bar", "encoding": {'
+  + '"x": {"field": "scenario_name", "type": "nominal", "sort": [!! scenario order !!]}, '
+  + '"y": {"field": "sunlight", "type": "quantitative", "aggregate": "mean"}, '
+  + '"color": {"field": "scenario_name", "type": "nominal", "scale": [!! scenario colors !!]}}}';
+
+/** The chart node over the two boxes' rows, drawn once by a Play of *spec*, handed in as written. */
 async function playedChart(spec = BARS) {
   const data: any = {
     nodeId: "chart",
@@ -136,6 +147,51 @@ async function playedChart(spec = BARS) {
   });
   expect(views()).toHaveLength(before + 1);
   return { hook, data, nodeState };
+}
+
+/** Each circle's label, as the editor's scope holds it (hook/useInputScope): its box's, ranked by the dataflow's list, else its node's. */
+const labelsOf = (scenarios: any[]) => new Map(
+  inputScenarios("chart", (mockFlow.nodes as any[]) ?? NODES, (mockFlow.edges as any[]) ?? EDGES, scenarios).map((input) => [
+    input.slot,
+    input.scenario ? { ...input.label, rank: scenarios.findIndex((s) => s.id === input.scenario!.id) } : input.label,
+  ]),
+);
+const scopeOf = (labels: Map<number, any>) => ({
+  widgets: [],
+  shared: [],
+  inputs: [0, 1].map((slot): InputScope => ({ slot, dataType: "dataframe", columns: ["segment", "sunlight"], scenario: labels.get(slot) })),
+});
+/** What the editor writes for *raw* with *labels*, or null when a chip does not resolve. */
+const writeWith = (raw: string, labels: Map<number, any>) => {
+  const { code, problems } = resolveReferences(raw, scopeOf(labels), "json", "vega-lite");
+  return problems.length > 0 ? null : code;
+};
+const redrawOf = (raw: string) => (labels: ReadonlyMap<number, any>) => writeWith(raw, new Map(labels));
+
+/** The chart played over the flow's boxes, its chips resolved as the editor resolves them. */
+async function playedWithChips(raw: string) {
+  const written = writeWith(raw, labelsOf(mockFlow.scenarios as any[]));
+  expect(written).not.toBeNull();
+  const data: any = { nodeId: "chart", input: INPUT, outputCallback: jest.fn(), interactionsCallback: jest.fn() };
+  const nodeState: any = { code: raw, setOutput: jest.fn(), templateData: { code: raw } };
+  let hook: any;
+  await act(async () => {
+    hook = renderHook(() => useVegaBehavior(data, nodeState));
+  });
+  await act(async () => {
+    await (hook.result.current.applyGrammar as any)(written, redrawOf(raw));
+  });
+  expect(views()).toHaveLength(1);
+  return { hook, data, nodeState, written: written as string };
+}
+
+/** The flow changed: the chart renders again, and is drawn *count* times in all. */
+async function changed(played: { hook: any }, scenarios: unknown[], count: number, extra: Record<string, unknown> = {}) {
+  setFlow(scenarios, extra);
+  await act(async () => {
+    played.hook.rerender();
+  });
+  await waitFor(() => expect(views()).toHaveLength(count));
 }
 
 /** The rows the last view stacked, as [id, name, sunlight]. */
@@ -165,24 +221,20 @@ beforeEach(() => {
 });
 
 describe("a chart reading inputs names its rows by its inputs' boxes", () => {
-  test("each row under its box's id and name, drawn in the boxes' colors in circle order", async () => {
+  test("each row under its box's id and name, in circle order", async () => {
     const { nodeState } = await playedChart();
     expect(stackedRows()).toEqual([
       ["s-base", "Baseline", 5],
       ["s-base", "Baseline", 6],
       ["s-tall", "Twice as tall", 3],
     ]);
-    expect(lastSpec().encoding.color.scale).toEqual({ domain: ["Baseline", "Twice as tall"], range: ["#2a9d8f", "#e76f51"] });
-    expect(lastSpec().encoding.x.sort).toEqual(["Baseline", "Twice as tall"]);
     expect(nodeState.setOutput).toHaveBeenLastCalledWith({ code: "success", content: "", outputType: "" });
   });
 
-  test("the scales take the order the dataflow lists its boxes in; the rows stay in circle order", async () => {
+  test("the rows stay in circle order, whatever order the dataflow lists its boxes in", async () => {
     // Listed Twice as tall first, wired Baseline first.
     setFlow([TALL, BASE]);
     await playedChart();
-    expect(lastSpec().encoding.color.scale).toEqual({ domain: ["Twice as tall", "Baseline"], range: ["#e76f51", "#2a9d8f"] });
-    expect(lastSpec().encoding.x.sort).toEqual(["Twice as tall", "Baseline"]);
     expect(stackedRows().map((row: any[]) => row[1])).toEqual(["Baseline", "Baseline", "Twice as tall"]);
   });
 
@@ -203,9 +255,9 @@ describe("a chart reading inputs names its rows by its inputs' boxes", () => {
     ]);
   });
 
-  test("an input whose node is in no box is named by its node, in a neutral color", async () => {
+  test("an input whose node is in no box is named by its node, in a neutral color through the chips", async () => {
     setFlow([BASE]);
-    await playedChart();
+    await playedWithChips(CHIP_BARS);
     expect(stackedRows()[2]).toEqual([null, "Shade", 3]);
     expect(lastSpec().encoding.color.scale).toEqual({ domain: ["Baseline", "Shade"], range: ["#2a9d8f", "#8a8f98"] });
   });
@@ -222,10 +274,10 @@ describe("a chart reading inputs names its rows by its inputs' boxes", () => {
 });
 
 describe("a chart reading inputs with no box among its inputs", () => {
-  /** The spec's own color scale, which no box replaces. */
+  /** The spec's own color scale. */
   const OWN_SCALE = { domain: ["Twice as tall", "Baseline"], range: ["#000000", "#999999"] };
 
-  test("keeps the spec's own colors and order: no input comes from a box", async () => {
+  test("draws its own colors and order", async () => {
     setFlow([]);
     await playedChart();
     expect(lastSpec().encoding.color.scale).toEqual(OWN_SCALE);
@@ -238,12 +290,13 @@ describe("a chart reading inputs with no box among its inputs", () => {
     ]);
   });
 
-  test("a box drawn around a feeder afterwards: the chart draws again, in the boxes' colors", async () => {
+  test("a box drawn around a feeder afterwards: the chart draws again, in the boxes' colors through its chips", async () => {
     setFlow([]);
-    const played = await playedChart();
-    expect(lastSpec().encoding.color.scale).toEqual(OWN_SCALE);
+    const played = await playedWithChips(CHIP_BARS);
+    // Both from no box, both named Shade: one name, in grey.
+    expect(lastSpec().encoding.color.scale).toEqual({ domain: ["Shade"], range: ["#8a8f98"] });
 
-    await redrawn(played, [BASE]);
+    await changed(played, [BASE], 2);
     expect(lastSpec().encoding.color.scale).toEqual({ domain: ["Baseline", "Shade"], range: ["#2a9d8f", "#8a8f98"] });
     expect(lastSpec().encoding.x.sort).toEqual(["Baseline", "Shade"]);
     expect(stackedRows().map((row: any[]) => row[1])).toEqual(["Baseline", "Baseline", "Shade"]);
@@ -251,7 +304,7 @@ describe("a chart reading inputs with no box among its inputs", () => {
 
   test("guard: two boxes of one name draw as one name, in the first box's color", async () => {
     setFlow([BASE, { ...TALL, name: "Baseline" }]);
-    await playedChart();
+    await playedWithChips(CHIP_BARS);
     expect(stackedRows().map((row: any[]) => row[1])).toEqual(["Baseline", "Baseline", "Baseline"]);
     expect(lastSpec().encoding.color.scale).toEqual({ domain: ["Baseline"], range: ["#2a9d8f"] });
   });
@@ -308,16 +361,19 @@ describe("a box renamed or recolored draws the chart again", () => {
       ["s-base", "Today", 6],
       ["s-tall", "Twice as tall", 3],
     ]);
-    expect(lastSpec().encoding.color.scale.domain).toEqual(["Today", "Twice as tall"]);
+    // Its own scale, as written.
+    expect(lastSpec().encoding.color.scale.domain).toEqual(["Twice as tall", "Baseline"]);
     expect(mockProvenance).toHaveBeenCalledTimes(1);
     expect(played.data.outputCallback).toHaveBeenCalledTimes(1);
   });
 
-  test("recolored: drawn in the new color", async () => {
+  test("recolored: a chart that writes no chip draws nothing new, its rows carry no color", async () => {
     const played = await playedChart();
-    await redrawn(played, [BASE, { ...TALL, color: "#7b3294" }]);
-    expect(lastSpec().encoding.color.scale).toEqual({ domain: ["Baseline", "Twice as tall"], range: ["#2a9d8f", "#7b3294"] });
-    expect(stackedRows()[2]).toEqual(["s-tall", "Twice as tall", 3]);
+    setFlow([BASE, { ...TALL, color: "#7b3294" }]);
+    await act(async () => {
+      played.hook.rerender();
+    });
+    expect(views()).toHaveLength(1);
   });
 
   test("a box whose id alone changed: its rows carry the new id; a change the chart does not draw draws nothing", async () => {
@@ -333,7 +389,7 @@ describe("a box renamed or recolored draws the chart again", () => {
   });
 
   test("renamed during a run: the run draws it, then the chart is drawn again once the run ends if the run did not", async () => {
-    const played = await playedChart();
+    const played = await playedWithChips(CHIP_BARS);
     const renamed = [{ ...BASE, name: "Today" }, TALL];
 
     setFlow(renamed, { isRunActive: true });
@@ -342,11 +398,7 @@ describe("a box renamed or recolored draws the chart again", () => {
     });
     expect(views()).toHaveLength(1);
 
-    setFlow(renamed, { isRunActive: false });
-    await act(async () => {
-      played.hook.rerender();
-    });
-    await waitFor(() => expect(views()).toHaveLength(2));
+    await changed(played, renamed, 2, { isRunActive: false });
     expect(stackedRows().map((row: any[]) => row[1])).toEqual(["Today", "Today", "Twice as tall"]);
     expect(lastSpec().encoding.x.sort).toEqual(["Today", "Twice as tall"]);
     expect(mockProvenance).toHaveBeenCalledTimes(1);
@@ -373,62 +425,11 @@ describe("a box renamed or recolored draws the chart again", () => {
  * the dataflow lists them, `[!! scenario input_1 !!]` the color of input_1's
  * box. The node's editor resolves them before a run, as it resolves every chip
  * (components/editing/NodeEditor), and hands the behavior the spec it wrote
- * with a way to write it again for other labels: `redrawOf` below does what
+ * with a way to write it again for other labels: `redrawOf` above does what
  * the editor's does. A chart draws exactly its spec, its chips resolved: a spec
  * without them gets Vega-Lite's own colors and order.
  */
 describe("a chart writes its scenarios through chips", () => {
-  /** Mean sunlight per scenario, in the boxes' colors and order, through chips. */
-  const CHIP_BARS = '{"data": {"name": "inputs"}, "mark": "bar", "encoding": {'
-    + '"x": {"field": "scenario_name", "type": "nominal", "sort": [!! scenario order !!]}, '
-    + '"y": {"field": "sunlight", "type": "quantitative", "aggregate": "mean"}, '
-    + '"color": {"field": "scenario_name", "type": "nominal", "scale": [!! scenario colors !!]}}}';
-
-  /** Each circle's label, as the editor's scope holds it: its box's, ranked by the dataflow's list, else its node's. */
-  const labelsOf = (scenarios: any[]) => new Map(
-    inputScenarios("chart", NODES, EDGES, scenarios).map((input) => [
-      input.slot,
-      input.scenario ? { ...input.label, rank: scenarios.findIndex((s) => s.id === input.scenario!.id) } : input.label,
-    ]),
-  );
-  const scopeOf = (labels: Map<number, any>) => ({
-    widgets: [],
-    shared: [],
-    inputs: [0, 1].map((slot): InputScope => ({ slot, dataType: "dataframe", columns: ["segment", "sunlight"], scenario: labels.get(slot) })),
-  });
-  /** What the editor writes for *raw* with *labels*, or null when a chip does not resolve. */
-  const writeWith = (raw: string, labels: Map<number, any>) => {
-    const { code, problems } = resolveReferences(raw, scopeOf(labels), "json", "vega-lite");
-    return problems.length > 0 ? null : code;
-  };
-  const redrawOf = (raw: string) => (labels: ReadonlyMap<number, any>) => writeWith(raw, new Map(labels));
-
-  /** The chart played over the flow's boxes, its chips resolved as the editor resolves them. */
-  async function playedWithChips(raw: string) {
-    const written = writeWith(raw, labelsOf(mockFlow.scenarios as any[]));
-    expect(written).not.toBeNull();
-    const data: any = { nodeId: "chart", input: INPUT, outputCallback: jest.fn(), interactionsCallback: jest.fn() };
-    const nodeState: any = { code: raw, setOutput: jest.fn(), templateData: { code: raw } };
-    let hook: any;
-    await act(async () => {
-      hook = renderHook(() => useVegaBehavior(data, nodeState));
-    });
-    await act(async () => {
-      await (hook.result.current.applyGrammar as any)(written, redrawOf(raw));
-    });
-    expect(views()).toHaveLength(1);
-    return { hook, data, nodeState, written: written as string };
-  }
-
-  /** The flow changed: the chart renders again, and is drawn *count* times in all. */
-  async function changed(played: { hook: any }, scenarios: unknown[], count: number) {
-    setFlow(scenarios);
-    await act(async () => {
-      played.hook.rerender();
-    });
-    await waitFor(() => expect(views()).toHaveLength(count));
-  }
-
   test("a chart with the chips draws exactly its spec, in the boxes' colors and in the order the dataflow lists them", async () => {
     // Listed Twice as tall first, wired Baseline first.
     setFlow([TALL, BASE]);

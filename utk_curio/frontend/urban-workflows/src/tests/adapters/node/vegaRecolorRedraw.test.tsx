@@ -1,12 +1,15 @@
 /**
  * A scenario box recolored draws a Vega-Lite chart that reads its inputs
- * stacked as `inputs` again: through useVega, with no version recorded in the
- * chart's provenance and nothing handed downstream. A selection made in the
- * chart is kept: the new view gets it back on the same rows, and the flow goes
- * on holding it, however fast the recolors come.
+ * stacked as `inputs` again, through its scale's chip, `[!! scenario colors !!]`:
+ * through useVega, with no version recorded in the chart's provenance and
+ * nothing handed downstream. A selection made in the chart is kept: the new
+ * view gets it back on the same rows, and the flow goes on holding it, however
+ * fast the recolors come.
  *
  * The behavior and useVega are real here. vega and vega-lite are the mocks
  * below, which keep what each view is handed and the state vega keeps for it.
+ * The chart's chips are resolved as its editor resolves them (NodeEditor),
+ * which hands the behavior the written spec with how to write it again.
  */
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { VisInteractionType } from "../../../constants";
@@ -99,6 +102,9 @@ jest.mock("../../../providers/ToastProvider", () => ({ useToastContext: () => ({
 jest.mock("../../../services/api", () => ({ fetchData: jest.fn(), fetchPreviewData: jest.fn() }));
 
 import { useVegaBehavior } from "../../../adapters/node/vegaBehavior";
+import { resolveReferences } from "../../../utils/references/codeReferences";
+import type { ScenarioLabel } from "../../../utils/scenarios/scenarioColors";
+import { inputScenarios } from "../../../utils/scenarios/inputScenarios";
 
 const vegaMock = () => jest.requireMock("vega") as any;
 const views = (): any[] => vegaMock().__views;
@@ -144,17 +150,18 @@ const INPUTS = {
   ],
 };
 
-/** Bars per scenario in their colors, read from `inputs`, any bar picked by a point select over no fields. */
-const PICKED_BARS = JSON.stringify({
-  data: { name: "inputs" },
-  params: [{ name: "pick", select: "point" }],
-  mark: "bar",
-  encoding: {
-    x: { field: "scenario_name", type: "nominal" },
-    y: { field: "sunlight", type: "quantitative" },
-    color: { field: "scenario_name", type: "nominal" },
-  },
-});
+/** Bars per scenario in their colors, through the scale's chip, read from
+ * `inputs`, any bar picked by a point select over no fields. */
+const PICKED_BARS = '{"data": {"name": "inputs"}, "params": [{"name": "pick", "select": "point"}], "mark": "bar", '
+  + '"encoding": {"x": {"field": "scenario_name", "type": "nominal"}, "y": {"field": "sunlight", "type": "quantitative"}, '
+  + '"color": {"field": "scenario_name", "type": "nominal", "scale": [!! scenario colors !!]}}}';
+
+/** The spec as the editor writes it with *labels*, each circle's. */
+const written = (labels: ReadonlyMap<number, ScenarioLabel>): string | null => {
+  const inputs = [0, 1].map((slot) => ({ slot, scenario: labels.get(slot) }));
+  const { code, problems } = resolveReferences(PICKED_BARS, { widgets: [], inputs, shared: [] }, "json", "vega-lite");
+  return problems.length > 0 ? null : code;
+};
 
 /** The chart node over the two boxes' rows, drawn once by a Play. */
 async function playedChart() {
@@ -170,8 +177,11 @@ async function playedChart() {
   await act(async () => {
     hook = renderHook(() => useVegaBehavior(data, nodeState));
   });
+  const labels = new Map(inputScenarios("chart", NODES, EDGES, [TALL, BASELINE]).map((input) => [input.slot, input.label]));
+  const spec = written(labels);
+  expect(spec).not.toBeNull();
   await act(async () => {
-    await hook.result.current.applyGrammar(PICKED_BARS);
+    await hook.result.current.applyGrammar(spec!, written);
   });
   expect(views()).toHaveLength(1);
   expect(mockProvenance).toHaveBeenCalledTimes(1);

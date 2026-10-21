@@ -586,6 +586,7 @@ function CodeEditor({
                 inputs={stripInputs}
                 shared={references.shared}
                 selections={references.selections}
+                language={widgetLanguage}
                 disabled={readOnly}
                 onInsert={(inner) => insertReference(widgetEditor?.editor, inner)}
                 onLoadColumns={onLoadColumns}

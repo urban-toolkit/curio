@@ -79,6 +79,40 @@
   color: var(--curio-accent-mint-fg);
 }
 
+/* A scenario chip's tag (#662): lilac, like its chip in the spec. The
+   swatches on the scenario_name field of inputs are one such tag, the scale
+   of the scenarios' colors; an input from a box shows its box's swatch. */
+.scenarioTag {
+  composes: tag;
+  border-color: #cdbff0;
+  background: var(--curio-accent-lilac-bg);
+  color: var(--curio-accent-lilac-fg);
+}
+
+.swatches {
+  composes: scenarioTag;
+  gap: 6px;
+}
+
+.swatch {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.swatchColor {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.2);
+}
+
+.inputSwatch {
+  composes: scenarioTag;
+  padding: 0 5px;
+}
+
 .expand {
   border: 0;
   background: none;

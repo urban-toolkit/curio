@@ -6,7 +6,7 @@ import CodeEditor from "./CodeEditor";
 import GrammarEditor from "./GrammarEditor";
 import WidgetsEditor from "./WidgetsEditor";
 import { NodeType } from "../../constants";
-import { NodeTemplateId } from "../../registry/types";
+import type { GrammarRedraw, NodeTemplateId } from "../../registry/types";
 import Col from "react-bootstrap/Col";
 import Nav from "react-bootstrap/Nav";
 import Row from "react-bootstrap/Row";
@@ -48,6 +48,26 @@ import { normalizeSelections, type SelectionTag } from "../../utils/references/s
 
 const NO_WIDGETS: WidgetDef[] = [];
 const NO_SELECTIONS: SelectionTag[] = [];
+
+/** What one resolution of the node's code came from: the code as written,
+ * its chips unresolved, and the scope they were resolved in. */
+type Resolution = { code: string; written: string; scope: ReferenceScope };
+
+/**
+ * How the spec of *resolution* is written again for new scenario labels: its
+ * chips resolved in the same scope, each input's label replaced by *labels*',
+ * so its widgets, inputs and tags stay as the run read them. Null when a chip
+ * no longer resolves.
+ */
+function redrawOf(resolution: Resolution, language: CodeLanguage, grammar: string | undefined): GrammarRedraw {
+    return (labels) => {
+        const inputs = resolution.scope.inputs.map((input) =>
+            labels.has(input.slot) ? { ...input, scenario: labels.get(input.slot) } : input,
+        );
+        const { code, problems } = resolveReferences(resolution.written, { ...resolution.scope, inputs }, language, grammar);
+        return problems.length > 0 ? null : code;
+    };
+}
 
 type NodeEditorProps = {
     outputId?: string;
@@ -168,6 +188,24 @@ function NodeEditor({
     // reads the scope from here.
     const runScopeRef = useRef({ scope, emptyInputs, referenceGrammar });
     runScopeRef.current = { scope, emptyInputs, referenceGrammar };
+    // The code last handed to the widgets, its chips unresolved, and what the
+    // last resolution came from, so a grammar node's spec can be written again
+    // for new scenario labels.
+    const userCodeRef = useRef("");
+    const resolutionRef = useRef<Resolution | null>(null);
+    // A grammar node's spec reaches its behavior with how to write it again
+    // when a scenario box is renamed or recolored (registry/types,
+    // GrammarRedraw): a chart is then drawn again outside a run, its chips
+    // resolved anew. Only for the spec this editor resolved.
+    const applyGrammarWithRedraw = applyGrammar
+        ? (spec: string) => {
+            const resolution = resolutionRef.current;
+            const redraw = resolution && resolution.code === spec
+                ? redrawOf(resolution, widgetLanguage, referenceGrammar)
+                : undefined;
+            return applyGrammar(spec, redraw);
+        }
+        : undefined;
     // A dashboard tile shows its output, not its editor. Only when it HAS an
     // output pane: a code node's result is the text box under its editor, so
     // forcing the pane unconditionally rendered a pinned code node as an empty
@@ -200,6 +238,7 @@ function NodeEditor({
     const primingWidgetsRef = useRef(false);
 
     const sendReplacedCode = (code: string) => {
+        resolutionRef.current = { code, written: userCodeRef.current, scope: runScopeRef.current.scope };
         const priming = primingWidgetsRef.current;
         primingWidgetsRef.current = false;
         if (!priming && (fullscreen == "" || fullscreen == undefined) && (outputId != undefined || contentComponent != undefined)) setActiveTab("output");
@@ -219,6 +258,7 @@ function NodeEditor({
     };
 
     const sendCodeToWidgets = (code: string) => {
+        userCodeRef.current = String(code ?? "");
         setUserCode(code);
         if (!widgetsTab) {
             // Why: WidgetsEditor is the bridge that resolves references and
@@ -585,12 +625,13 @@ function NodeEditor({
                                             replacedCode={replacedCode}
                                             sendCodeToWidgets={primeWidgets}
                                             nodeId={data.nodeId}
-                                            applyGrammar={applyGrammar}
+                                            applyGrammar={applyGrammarWithRedraw}
                                             setOutputCallback={setOutputCallback}
                                             references={scope}
                                             stripInputs={inputs}
                                             onLoadColumns={loadColumns}
                                             widgetLanguage={widgetLanguage}
+                                            referenceGrammar={referenceGrammar}
                                             restoredCode={restoredCode}
                                         />
                                     </Tab.Pane>
