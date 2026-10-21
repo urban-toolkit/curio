@@ -208,7 +208,7 @@ async function drawsNothingNew(hook: { rerender: () => void }, count: number) {
   await act(async () => {
     hook.rerender();
   });
-  await expect(waitFor(() => expect(views()).toHaveLength(count + 1), { timeout: 500 })).rejects.toThrow();
+  await expect(waitFor(() => expect(views()).toHaveLength(count + 1), { timeout: 1000 })).rejects.toThrow();
   expect(views()).toHaveLength(count);
 }
 
