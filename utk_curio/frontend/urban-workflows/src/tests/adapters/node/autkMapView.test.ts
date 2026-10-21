@@ -257,6 +257,29 @@ describe("mapViews and keepMapViews", () => {
     expect(after.map.camera.resetCamera).toHaveBeenCalledWith([0, 1, 0], [110, -35, 0], [110, -35, 300]);
   });
 
+  test("a map drawn while hidden and drawn again before it was shown is framed, not put at autk-map's own camera", () => {
+    let shown = { width: 0, height: 0 };
+    const hidden = viewedMap({ eye: [0, 0, 10000], lookAt: [0, 0, 0], up: [0, 1, 0] }, [0, 0]);
+    Object.defineProperty(hidden.canvas, "offsetWidth", { get: () => shown.width });
+    Object.defineProperty(hidden.canvas, "offsetHeight", { get: () => shown.height });
+    frameMaps(grammarThatRan(ONE_MAP, hidden.map));
+    expect(hidden.map.camera.resetCamera).not.toHaveBeenCalled();
+
+    const views = mapViews(grammarThatRan(ONE_MAP, hidden.map));
+    expect(views).toEqual([null]);
+    const next = viewedMap(ZOOMED, [0, 0]);
+    keepMapViews(grammarThatRan(ONE_MAP, next.map), views);
+    expect(next.map.camera.resetCamera).toHaveBeenCalledTimes(1);
+    expect(next.map.camera.resetCamera.mock.calls[0][1]).toEqual([0, 0, 0]);
+
+    // Framed once shown, its view is kept, though it is hidden again.
+    shown = { width: 300, height: 600 };
+    window.dispatchEvent(new Event("resize"));
+    expect(hidden.map.camera.resetCamera).toHaveBeenCalledTimes(1);
+    shown = { width: 0, height: 0 };
+    expect(mapViews(grammarThatRan(ONE_MAP, hidden.map))[0]).not.toBeNull();
+  });
+
   test("a map with no view to keep is framed on its layers, and the R key frames a kept map", () => {
     const first = viewedMap(ZOOMED, [0, 0]);
     const second = viewedMap(ZOOMED, [0, 0]);
