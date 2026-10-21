@@ -14,7 +14,8 @@
       "title": "Scenario",
       "axis": {
         "labelAngle": 0
-      }
+      },
+      "sort": [!! scenario order !!]
     },
     "y": {
       "field": "[!! y !!]",
@@ -25,7 +26,8 @@
     "color": {
       "field": "scenario_name",
       "type": "nominal",
-      "title": "Scenario"
+      "title": "Scenario",
+      "scale": [!! scenario colors !!]
     }
   }
 }

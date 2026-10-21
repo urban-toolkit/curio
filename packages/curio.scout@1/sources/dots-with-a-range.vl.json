@@ -96,7 +96,8 @@
           "title": "Scenario",
           "legend": {
             "orient": "bottom"
-          }
+          },
+          "scale": [!! scenario colors !!]
         }
       }
     }

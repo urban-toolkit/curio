@@ -54,7 +54,8 @@
       "field": "scenario_name",
       "type": "nominal",
       "title": "Scenario",
-      "legend": null
+      "legend": null,
+      "scale": [!! scenario text_colors !!]
     }
   }
 }

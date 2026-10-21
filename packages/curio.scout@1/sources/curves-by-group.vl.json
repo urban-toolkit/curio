@@ -25,7 +25,8 @@
     "color": {
       "field": "scenario_name",
       "type": "nominal",
-      "title": "Scenario"
+      "title": "Scenario",
+      "scale": [!! scenario colors !!]
     },
     "strokeDash": {
       "field": "[!! group !!]",

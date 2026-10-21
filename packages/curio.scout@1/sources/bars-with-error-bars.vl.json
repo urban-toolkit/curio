@@ -15,7 +15,8 @@
     },
     "xOffset": {
       "field": "scenario_name",
-      "type": "nominal"
+      "type": "nominal",
+      "sort": [!! scenario order !!]
     },
     "y": {
       "field": "[!! y !!]",
@@ -36,7 +37,8 @@
         "color": {
           "field": "scenario_name",
           "type": "nominal",
-          "title": "Scenario"
+          "title": "Scenario",
+          "scale": [!! scenario colors !!]
         }
       }
     },
