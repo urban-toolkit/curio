@@ -1,5 +1,5 @@
 {
-  "about": "Dataflows, a node of each, and the spec its scenario chips resolve to from the dataflow's boxes, nodes and edges: each wired input's label is the box its feeding node is in, ranked by the dataflow's list of boxes, or its node's title, renamed header or type for a node in no box, in grey. Read by src/tests/NotebookConvertor.test.ts, as the notebook export writes each spec, and by utk_curio/backend/tests/test_execution/test_scenario_chips.py, as the server resolves a node's references for a run and for the agents' check (WorkflowSpec.node_code). A case may carry \"labels\", each template's label by its unversioned id, which name an untitled node as its header does: the browser reads them from the node registry, the server from the project's templates.",
+  "about": "Dataflows, a node of each, and the spec its scenario chips, and the chip of the dataset its inputs are stacked in, [!! inputs !!], resolve to from the dataflow's boxes, nodes and edges: each wired input's label is the box its feeding node is in, ranked by the dataflow's list of boxes, or its node's title, renamed header or type for a node in no box, in grey. Read by src/tests/NotebookConvertor.test.ts, as the notebook export writes each spec, and by utk_curio/backend/tests/test_execution/test_scenario_chips.py, as the server resolves a node's references for a run and for the agents' check (WorkflowSpec.node_code). A case may carry \"labels\", each template's label by its unversioned id, which name an untitled node as its header does: the browser reads them from the node registry, the server from the project's templates.",
   "cases": [
     {
       "name": "a chart's chips list the boxes in the order the dataflow lists them, then an input from no box by its node's title, in grey",
@@ -36,7 +36,7 @@
             "type": "curio.builtin/vis-vega",
             "x": 700,
             "y": 0,
-            "content": "{\"data\": {\"name\": \"inputs\"}, \"mark\": \"bar\", \"encoding\": {\"x\": {\"field\": [!! inputs.scenario_name !!], \"type\": \"nominal\", \"sort\": [!! scenario order !!]}, \"y\": {\"field\": \"sunlight\", \"type\": \"quantitative\", \"aggregate\": \"mean\"}, \"color\": {\"field\": \"scenario_name\", \"type\": \"nominal\", \"scale\": [!! scenario colors !!]}}}"
+            "content": "{\"data\": {\"name\": \"[!! inputs !!]\"}, \"mark\": \"bar\", \"encoding\": {\"x\": {\"field\": [!! inputs.scenario_name !!], \"type\": \"nominal\", \"sort\": [!! scenario order !!]}, \"y\": {\"field\": \"sunlight\", \"type\": \"quantitative\", \"aggregate\": \"mean\"}, \"color\": {\"field\": \"scenario_name\", \"type\": \"nominal\", \"scale\": [!! scenario colors !!]}}}"
           }
         ],
         "edges": [
@@ -281,7 +281,7 @@
             "type": "curio.builtin/vis-vega",
             "x": 700,
             "y": 0,
-            "content": "{\"data\": {\"name\": \"inputs\"}, \"mark\": \"bar\", \"encoding\": {\"x\": {\"field\": \"scenario_name\", \"type\": \"nominal\", \"sort\": [!! scenario order !!]}, \"color\": {\"field\": \"scenario_name\", \"type\": \"nominal\", \"scale\": [!! scenario colors !!]}}}"
+            "content": "{\"data\": {\"name\": \"[!! inputs !!]\"}, \"mark\": \"bar\", \"encoding\": {\"x\": {\"field\": \"scenario_name\", \"type\": \"nominal\", \"sort\": [!! scenario order !!]}, \"color\": {\"field\": \"scenario_name\", \"type\": \"nominal\", \"scale\": [!! scenario colors !!]}}}"
           }
         ],
         "edges": [
@@ -339,7 +339,7 @@
             "type": "curio.builtin/vis-vega",
             "x": 700,
             "y": 0,
-            "content": "{\"data\": {\"name\": \"inputs\"}, \"mark\": \"point\", \"encoding\": {\"color\": {\"field\": \"scenario_name\", \"type\": \"nominal\", \"scale\": [!! scenario colors !!]}}}"
+            "content": "{\"data\": {\"name\": \"[!! inputs !!]\"}, \"mark\": \"point\", \"encoding\": {\"color\": {\"field\": \"scenario_name\", \"type\": \"nominal\", \"scale\": [!! scenario colors !!]}}}"
           }
         ],
         "edges": [
@@ -407,7 +407,7 @@
             "type": "curio.builtin/vis-vega",
             "x": 700,
             "y": 0,
-            "content": "{\"data\": {\"name\": \"inputs\"}, \"mark\": \"bar\", \"encoding\": {\"x\": {\"field\": \"scenario_name\", \"type\": \"nominal\", \"sort\": [!! scenario order !!]}, \"color\": {\"field\": \"scenario_name\", \"type\": \"nominal\", \"scale\": [!! scenario colors !!]}}}"
+            "content": "{\"data\": {\"name\": \"[!! inputs !!]\"}, \"mark\": \"bar\", \"encoding\": {\"x\": {\"field\": \"scenario_name\", \"type\": \"nominal\", \"sort\": [!! scenario order !!]}, \"color\": {\"field\": \"scenario_name\", \"type\": \"nominal\", \"scale\": [!! scenario colors !!]}}}"
           }
         ],
         "edges": [
