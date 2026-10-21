@@ -32,14 +32,73 @@
   outline-offset: 1px;
 }
 
+/* The header above a node's code or spec: one row of categories, then the
+   chips of each open one, a line each, in the row's order. */
 .strip {
   display: flex;
-  flex-wrap: wrap;
-  align-items: center;
+  flex-direction: column;
   gap: 4px;
   padding: 4px 8px;
   border-bottom: 1px solid var(--curio-border);
   background: var(--curio-card-bg);
+}
+
+.categories {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+}
+
+/* A category: its name, its count and an arrow, darker while open. */
+.category {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  box-sizing: border-box;
+  height: 22px;
+  padding: 0 6px;
+  border: 1px solid var(--curio-border);
+  border-radius: var(--curio-radius-sm);
+  background: var(--curio-card-bg);
+  color: var(--curio-text-secondary);
+  font-family: var(--curio-font-family);
+  font-size: 10px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.category:hover {
+  border-color: var(--curio-border-strong);
+  color: var(--curio-text-primary);
+}
+
+.category[aria-expanded="true"] {
+  border-color: var(--curio-border-strong);
+  background: var(--curio-surface-muted);
+  color: var(--curio-text-primary);
+}
+
+.category:focus-visible {
+  outline: 2px solid var(--curio-role-update-fg);
+  outline-offset: 1px;
+}
+
+.categoryCount {
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+}
+
+.categoryArrow {
+  font-size: 9px;
+}
+
+.categoryChips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
 }
 
 .stripHint {
@@ -79,11 +138,12 @@
   color: var(--curio-accent-mint-fg);
 }
 
-/* A scenario chip's tag (#662): lilac, like its chip in the spec. The
-   swatches on the scenario_name field of inputs are one such tag, the scale
-   of the scenarios' colors; an input from a box shows its box's swatch. */
+/* A scenario chip's tag (#662), under Scenarios: lilac, like its chip in the
+   spec. The boxes' swatches are one such tag, the scale of the scenarios'
+   colors, and an input's tag shows the swatch of its color. */
 .scenarioTag {
   composes: tag;
+  gap: 5px;
   border-color: #cdbff0;
   background: var(--curio-accent-lilac-bg);
   color: var(--curio-accent-lilac-fg);
@@ -106,11 +166,6 @@
   height: 10px;
   border-radius: 2px;
   box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.2);
-}
-
-.inputSwatch {
-  composes: scenarioTag;
-  padding: 0 5px;
 }
 
 .expand {
