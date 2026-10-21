@@ -3,7 +3,7 @@
 
 Downtown Chicago, the Loop with the West Loop, the South Loop, Streeterville
 and the Near North lakefront up to Oak Street Beach, as nine layers of every
-geometry an Autark map draws, for the ChicagoLoopLayers example (one Autark
+geometry an Autark map draws, for the chicago-loop-layers example (one Autark
 map, many kinds of layer) and the Interaction node that edits them:
 
 =================  =========  ==================================================

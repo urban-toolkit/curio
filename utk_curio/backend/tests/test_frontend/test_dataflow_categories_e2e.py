@@ -63,11 +63,11 @@ def test_the_rail_lists_the_tests(app_frontend: "FrontendPage", frontend_server:
 
     # 28 test dataflows: #662 added scenarios, quad-cities-flood-vulnerability, chicago-loop-shadow-towers,
     # chicago-rain-wind-routing and netcdf-hourly-rain, the plan for #914 lower-manhattan-park-shade,
-    # and komar41's #914 the scenario comparison charts.
-    _rail_entry(page, "Tests", 28).click()
+    # and komar41's #914 the scenario comparison charts; 29 with chicago-loop-layers.
+    _rail_entry(page, "Tests", 29).click()
 
     expect(project_card(page, FIXTURE)).to_have_count(1, timeout=10000)
-    expect(page.locator("[data-curio-projects-scroll] [data-project-id]")).to_have_count(28)
+    expect(page.locator("[data-curio-projects-scroll] [data-project-id]")).to_have_count(29)
 
     # One entry per section: picking the use case replaces the tests.
     _rail_entry(page, "Use cases", 1).click()

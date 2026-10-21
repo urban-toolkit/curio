@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Write the ChicagoLoopLayers example: one Autark map of downtown Chicago with
+"""Write the chicago-loop-layers example: one Autark map of downtown Chicago with
 a layer of every kind an Autark map draws, for an Interaction node to edit.
 
 The data is one bundle, ``data.curio.chicago-loop-layers`` (built by
@@ -38,8 +38,8 @@ import uuid
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
-OUT = REPO / "docs" / "examples" / "dataflows" / "ChicagoLoopLayers.json"
-NAME = "ChicagoLoopLayers"
+OUT = REPO / "docs" / "examples" / "dataflows" / "chicago-loop-layers.json"
+NAME = "Chicago Loop layers"
 NAMESPACE = uuid.uuid5(uuid.NAMESPACE_URL, f"https://curio.dev/examples/{NAME}")
 LAYERS = "data.curio.chicago-loop-layers"
 WEATHER = "data.scout.chicago-weather-2025-07-06"
@@ -136,24 +136,24 @@ LOOP_MAP = {
         "layerRefs": [
             {"dataRef": "[!! input_0 !!]", "isColorMap": True, "getFnv": "RPL_THEMES",
              "getFnvType": "quantitative", "colorMapInterpolator": "interpolateOrRd",
-             "colorMapRange": [0, 1], "legendTitle": "Social vulnerability (SVI percentile)",
+             "colorMapRange": [0, 1], "title": "Social vulnerability (SVI percentile)",
              "opacity": 0.55, "isPick": True},
             {"dataRef": "[!! input_3 !!]"},
             {"dataRef": "[!! input_2 !!]"},
             {"dataRef": "[!! input_4 !!]"},
             {"dataRef": "[!! input_5 !!]", "isColorMap": True, "getFnv": "legend",
              "getFnvType": "categorical", "colorMapInterpolator": "schemeTableau10",
-             "legendTitle": "CTA 'L' line"},
+             "title": "CTA 'L' line"},
             {"dataRef": "[!! input_1 !!]", "isColorMap": True, "getFnv": "height",
              "getFnvType": "quantitative", "colorMapInterpolator": "interpolateViridis",
-             "colorMapRange": [0, 250], "legendTitle": "Building height (m)", "isPick": True},
+             "colorMapRange": [0, 250], "title": "Building height (m)", "isPick": True},
             {"dataRef": "[!! input_6 !!]"},
             {"dataRef": "[!! input_7 !!]", "isColorMap": True, "getFnv": "ada",
              "getFnvType": "categorical", "colorMapInterpolator": "schemeSet1",
-             "legendTitle": "CTA station", "isPick": True},
+             "title": "CTA station", "isPick": True},
             {"dataRef": "[!! input_8 !!]", "isColorMap": True, "getFnv": "sensor_type",
              "getFnvType": "categorical", "colorMapInterpolator": "schemeDark2",
-             "legendTitle": "Beach sensor", "isPick": True},
+             "title": "Beach sensor", "isPick": True},
         ]
     }
 }
@@ -162,10 +162,10 @@ TEMPERATURE_MAP = {
         "layerRefs": [
             {"dataRef": "[!! input_0 !!]", "isColorMap": True, "getFnv": "band_1",
              "getFnvType": "quantitative", "colorMapInterpolator": "interpolateTurbo",
-             "colorMapRange": [17, 29], "legendTitle": "Air temperature at noon, WRF (°C)"},
+             "colorMapRange": [17, 29], "title": "Air temperature at noon, WRF (°C)"},
             {"dataRef": "[!! input_1 !!]", "isColorMap": True, "getFnv": "air_temperature",
              "getFnvType": "quantitative", "colorMapInterpolator": "interpolateTurbo",
-             "colorMapRange": [17, 29], "legendTitle": "Measured at noon (°C)", "isPick": True},
+             "colorMapRange": [17, 29], "title": "Measured at noon (°C)", "isPick": True},
         ]
     }
 }

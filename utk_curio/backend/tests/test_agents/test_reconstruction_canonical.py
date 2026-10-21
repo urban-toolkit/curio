@@ -362,7 +362,7 @@ class TestTheShippedCorpus:
         curated = [p for p in paths if p.parent.name == "examples"]
         legacy = [p for p in paths if p.parent.name == "dataflows"]
         assert len(curated) == 26, [p.name for p in curated]
-        assert len(legacy) == 28, [p.name for p in legacy]
+        assert len(legacy) == 29, [p.name for p in legacy]
 
     @pytest.mark.parametrize("path", example_paths(), ids=lambda p: p.stem)
     def test_every_example_canonicalizes_with_known_templates(self, path):
