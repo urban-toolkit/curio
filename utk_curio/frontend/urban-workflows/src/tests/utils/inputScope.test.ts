@@ -8,7 +8,7 @@ jest.mock("../../services/api", () => ({
   fetchPreviewData: (...args: any[]) => mockFetchPreviewData(...args),
 }));
 
-import { inputScopeFor, inputValueKey, readInputColumns } from "../../utils/references/inputScope";
+import { inputScopeFor, inputValueKey, readInputColumns, type InputColumns } from "../../utils/references/inputScope";
 
 const edges = [
   { source: "roads", target: "t", sourceHandle: "out", targetHandle: "in" },
@@ -61,6 +61,12 @@ describe("inputScopeFor", () => {
     const scope = inputScopeFor("t", edges, nodes, () => ({ path: "a" }), labelOf, () => read);
     expect(scope[0].layers).toEqual([{ name: "roads", columns: ["highway"], dtypes: {} }]);
   });
+
+  test("a tuple's count of values rides along", () => {
+    const read = { columns: [], dtypes: {}, layers: [], tuple: 2 } as InputColumns;
+    const scope = inputScopeFor("t", edges, nodes, () => ({ path: "a", dataType: "outputs" }), labelOf, () => read);
+    expect(scope[0]).toMatchObject({ slot: 0, label: "Roads", dataType: "outputs", tuple: 2 });
+  });
 });
 
 describe("readInputColumns (#662)", () => {
@@ -96,6 +102,18 @@ describe("readInputColumns (#662)", () => {
         { name: "table_osm_buildings", columns: ["height"], dtypes: {} },
       ],
     });
+  });
+
+  test("a tuple of tables, as a node's `return means, peaks` gives, says how many values it holds", async () => {
+    mockFetchPreviewData.mockResolvedValue({
+      dataType: "outputs",
+      data: [
+        { dataType: "dataframe", data: { sensor: ["a"], pm25_mean: [9.5] }, schema: { sensor: "str", pm25_mean: "float64" } },
+        { dataType: "dataframe", data: { sensor: ["a"], pm25_peak: [14] }, schema: { sensor: "str", pm25_peak: "int64" } },
+      ],
+    });
+    // Its tables have no names, so they are no layers: the input holds 2 values.
+    expect(await readInputColumns({ path: "art", dataType: "outputs" })).toMatchObject({ columns: [], tuple: 2 });
   });
 });
 

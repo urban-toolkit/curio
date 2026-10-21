@@ -1,7 +1,8 @@
 /**
  * The header above a node's code (#662): under Inputs, a tag per input, which
- * opens to its columns; under Widgets, the widget tags. Each tag drags or
- * inserts its reference once its category is open.
+ * opens to every one of its columns, with no filter box; under Widgets, the
+ * widget tags. Each tag drags or inserts its reference once its category is
+ * open.
  */
 import React from "react";
 import { fireEvent, render, screen } from "@testing-library/react";
@@ -77,14 +78,24 @@ describe("input tags", () => {
     expect(onLoadColumns).not.toHaveBeenCalledWith(2);
   });
 
-  test("many columns get a filter", () => {
+  test("every column is listed, with no filter box, however many an input or its layers hold", () => {
     const columns = Array.from({ length: 20 }, (_, i) => `col_${i}`);
-    const view = render(<ReferenceStrip widgets={[]} inputs={[{ slot: 0, columns }]} onInsert={jest.fn()} />);
+    const layered: InputScope = {
+      slot: 1,
+      label: "OSM",
+      columns: [],
+      layers: ["roads", "parks", "water"].map((name) => ({ name: `table_osm_${name}`, columns: columns.slice(0, 6) })),
+    };
+    const view = render(<ReferenceStrip widgets={[]} inputs={[{ slot: 0, columns }, layered]} onInsert={jest.fn()} />);
     openCategory(view.container, "inputs");
     fireEvent.click(screen.getByLabelText("Show the columns of input_0"));
-    fireEvent.change(screen.getByLabelText("Filter the columns of input_0"), { target: { value: "col_1" } });
-    const shown = Array.from(view.container.querySelectorAll("[data-column-tag]")).map((c) => c.textContent);
-    expect(shown).toEqual(["col_1", "col_10", "col_11", "col_12", "col_13", "col_14", "col_15", "col_16", "col_17", "col_18", "col_19"]);
+    fireEvent.click(screen.getByLabelText("Show the columns of input_1"));
+    expect(screen.queryAllByLabelText(/^Filter the columns of/)).toHaveLength(0);
+    expect(screen.queryAllByPlaceholderText("Filter columns")).toHaveLength(0);
+    expect(view.container.querySelector('input[type="search"]')).toBeNull();
+    const shown = Array.from(view.container.querySelectorAll('[data-input-columns="0"] [data-column-tag]')).map((c) => c.textContent);
+    expect(shown).toEqual(columns);
+    expect(view.container.querySelectorAll('[data-input-columns="1"] [data-column-tag]')).toHaveLength(18);
   });
 });
 
