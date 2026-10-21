@@ -223,6 +223,26 @@ class TestNodesTheServerDoesNotRun:
         assert "count" not in recorder.calls
         assert outcome(events)["status"] == "needs_canvas"
 
+    def test_a_node_no_installed_package_provides_fails_naming_its_type_and_skips_what_it_feeds(self):
+        # A saved Compare Scenarios node: no package holds its template any
+        # more, so the canvas shows a card for it and cannot run it either.
+        gone = "curio.builtin/compare-scenarios"
+        recorder, events, finished = run(spec(
+            [node("a"),
+             node("gone", gone, "return curio_stack_scenarios([])",
+                  metadata={"packageTemplateLabel": "Compare Scenarios"}),
+             node("chart", "curio.builtin/vis-vega", "{}"),
+             node("other")],
+            [edge("a", "gone"), edge("gone", "chart"), edge("a", "other")],
+        ))
+        assert "gone" not in recorder.calls
+        assert finished["gone"]["status"] == "error"
+        assert finished["gone"]["stderrTail"] == f"No installed package provides {gone}"
+        assert finished["chart"]["status"] == "skipped"
+        assert '"Compare Scenarios", failed' in finished["chart"]["skipReason"]
+        assert finished["other"]["status"] == "ok"
+        assert outcome(events) == {"status": "failed", "ok": 2, "failed": 1, "skipped": 1, "waiting": 0}
+
     def test_a_chart_at_the_end_does_not_hold_the_run(self):
         _, events, finished = run(spec(
             [node("a"), node("chart", "curio.builtin/vis-vega", "{}")], [edge("a", "chart")],

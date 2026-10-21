@@ -98,6 +98,26 @@ def test_the_roster_decides_what_a_package_node_runs():
     assert node_role({"id": "n", "type": "pkg.example/handler"}, templates) == "browser"
 
 
+@pytest.mark.parametrize("node_type", [
+    # A saved Compare Scenarios node: its package no longer holds the template.
+    "curio.builtin/compare-scenarios",
+    "curio.builtin/compare-scenarios@1",
+    # A package nothing holds.
+    "curio.nowhere/missing-node",
+    "curio.nowhere/missing-node@1",
+])
+def test_a_type_no_installed_package_provides_is_failed_by_the_run_not_left_to_the_browser(node_type):
+    """The canvas cannot run such a node either: it shows a card in place of
+    its body. A run on the server fails it rather than leaving it to a tab,
+    whatever it holds, with or without a roster that lacks it."""
+    from utk_curio.backend.app.execution.run_plan import node_role
+
+    assert node_role({"id": "n", "type": node_type, "content": ""}) == "missing"
+    assert node_role({"id": "n", "type": node_type, "content": "return input_0"}) == "missing"
+    roster = {"pkg.example/handler": {"executable": False, "engine": "python"}}
+    assert node_role({"id": "n", "type": node_type, "content": ""}, roster) == "missing"
+
+
 @pytest.mark.parametrize("node_type", ["curio.scout/donuts@1", "curio.scout/lines-with-band"])
 def test_a_package_chart_that_draws_with_vega_lite_is_forwarded_as_the_vega_lite_node_is(node_type):
     """Scout's charts draw with the Vega-Lite node's behavior: a run
