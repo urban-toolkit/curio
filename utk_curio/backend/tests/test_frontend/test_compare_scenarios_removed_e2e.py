@@ -7,6 +7,10 @@ komar41's review of the #914 merges).
   "Missing node package" card, titled with the type. Nothing aliases or
   migrates it. Its connections are drawn, since the card has a handle for
   each port its edges name, and every other node opens as it was saved.
+* Run All on it ends, as on any dataflow, rather than waiting on a node no
+  package provides: the nodes it does not hold up run to done, the chart it
+  fed ends in an error, as a node whose input never came, and the two
+  missing types stay their cards.
 
 Run::
 
@@ -24,10 +28,13 @@ from .utils import (
     dismiss_toasts,
     node_locator,
     open_tools_palette,
+    read_node_error_text,
     require_owner_view,
     require_project_page,
     require_user_auth,
+    run_all_and_wait,
     stub_login_and_enter_workflow,
+    wait_for_node_settled,
 )
 
 if TYPE_CHECKING:
@@ -42,6 +49,15 @@ LOADER = "cmp-gone-loader"
 COMPARE = "cmp-gone-compare"
 CHART = "cmp-gone-chart"
 NOWHERE = "cmp-gone-nowhere"
+#: A loader and a Python node after it, which no missing node holds up.
+PAIR_LOADER = "cmp-gone-pair-loader"
+PAIR_PYTHON = "cmp-gone-pair-python"
+LOADING_TYPE = "curio.builtin/data-loading"
+PYTHON_TYPE = "curio.builtin/computation-analysis"
+VEGA_TYPE = "curio.builtin/vis-vega"
+#: How long Run All may take on this small dataflow: well under the ten
+#: minutes a level waits for a node that never reports before it moves on.
+RUN_ALL_MS = 180000
 
 LOADER_CODE = (
     "import pandas as pd\n"
@@ -70,12 +86,16 @@ CHART_SPEC = json.dumps({
     },
 }, indent=2)
 
+PAIR_CODE = "return input_0.assign(total=int(input_0['count'].sum()))\n"
+
 #: The saved connections, by id: the loader into the Compare node, and the
 #: Compare node into the chart.
 EDGES = {
     f"reactflow__edge-{LOADER}out-{COMPARE}in": (LOADER, COMPARE),
     f"reactflow__edge-{COMPARE}out-{CHART}in": (COMPARE, CHART),
 }
+#: The pair's connection.
+PAIR_EDGE = (f"reactflow__edge-{PAIR_LOADER}out-{PAIR_PYTHON}in", PAIR_LOADER, PAIR_PYTHON)
 
 #: What a node opened as: its package's body, one of the two cards a node
 #: whose type nothing provides gets, or null while it is still loading.
@@ -112,14 +132,16 @@ def _spec() -> dict:
             "packages": [],
             "datasets": [],
             "nodes": [
-                _node(LOADER, "curio.builtin/data-loading", LOADER_CODE, 0),
+                _node(LOADER, LOADING_TYPE, LOADER_CODE, 0),
                 _node(COMPARE, COMPARE_TYPE, COMPARE_CODE, 700, metadata={"compareScenarios": COMPARE_SETTINGS}),
-                _node(CHART, "curio.builtin/vis-vega", CHART_SPEC, 1400),
+                _node(CHART, VEGA_TYPE, CHART_SPEC, 1400),
                 _node(NOWHERE, NOWHERE_TYPE, "", 700, 600),
+                _node(PAIR_LOADER, LOADING_TYPE, LOADER_CODE, 0, 1200),
+                _node(PAIR_PYTHON, PYTHON_TYPE, PAIR_CODE, 700, 1200),
             ],
             "edges": [
                 {"id": edge_id, "source": source, "target": target}
-                for edge_id, (source, target) in EDGES.items()
+                for edge_id, (source, target) in [*EDGES.items(), (PAIR_EDGE[0], PAIR_EDGE[1:])]
             ],
         },
     }
@@ -166,12 +188,14 @@ def test_a_dataflow_saved_with_a_compare_scenarios_node_opens_with_it_as_a_missi
     _enter(page, app_frontend, current_server, prefix="cmp_gone_saved", spec=_spec())
     page.wait_for_selector(".react-flow__node", timeout=45000)
 
-    opened = {node_id: _opened_as(page, node_id) for node_id in (LOADER, CHART, NOWHERE, COMPARE)}
+    opened = {node_id: _opened_as(page, node_id) for node_id in (LOADER, CHART, NOWHERE, COMPARE, PAIR_LOADER, PAIR_PYTHON)}
     assert opened == {
         LOADER: "its own body",
         CHART: "its own body",
         NOWHERE: "missing package",
         COMPARE: "missing package",
+        PAIR_LOADER: "its own body",
+        PAIR_PYTHON: "its own body",
     }, f"the saved Compare Scenarios node should open as a type no package provides, as {NOWHERE_TYPE} does: {opened}"
 
     card = node_locator(page, COMPARE).get_by_test_id("unresolved-node")
@@ -184,3 +208,26 @@ def test_a_dataflow_saved_with_a_compare_scenarios_node_opens_with_it_as_a_missi
         path = page.locator(f'.react-flow__edge[data-testid="rf__edge-{edge_id}"] path.react-flow__edge-path')
         expect(path).to_have_count(1, timeout=15000)
         assert (path.get_attribute("d") or "").strip(), f"the connection {edge_id} has no path"
+
+
+def test_run_all_on_a_dataflow_saved_with_a_compare_scenarios_node_runs_the_rest(
+    app_frontend: "FrontendPage", current_server: str, page,
+):
+    """Run All on the same dataflow ends, as on any dataflow, rather than
+    waiting on a node no package provides: the loaders and the Python node no
+    missing node holds up end done, the chart the Compare Scenarios node fed
+    ends in an error, its input never having come, and the two missing types
+    stay their cards."""
+    _enter(page, app_frontend, current_server, prefix="cmp_gone_run", spec=_spec())
+    page.wait_for_selector(".react-flow__node", timeout=45000)
+    for node_id in (LOADER, CHART, NOWHERE, COMPARE, PAIR_LOADER, PAIR_PYTHON):
+        _opened_as(page, node_id)
+
+    run_all_and_wait(page, timeout_ms=RUN_ALL_MS)
+    for node_id, node_type in ((LOADER, LOADING_TYPE), (PAIR_LOADER, LOADING_TYPE), (PAIR_PYTHON, PYTHON_TYPE)):
+        status = wait_for_node_settled(page, node_id, node_type=node_type, timeout_ms=60000)
+        assert status == "done", f"{node_id} ended {status!r}: {read_node_error_text(node_locator(page, node_id))}"
+    status = wait_for_node_settled(page, CHART, node_type=VEGA_TYPE, timeout_ms=60000)
+    assert status == "error", f"the chart the Compare Scenarios node fed ended {status!r}, not as a node with no input"
+    for node_id in (COMPARE, NOWHERE):
+        assert _opened_as(page, node_id) == "missing package", node_id
