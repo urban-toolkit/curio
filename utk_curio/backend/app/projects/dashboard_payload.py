@@ -70,16 +70,6 @@ _PASS_THROUGH_TYPES = frozenset({
 _AUTK_GRAMMAR_BEHAVIORS = frozenset({"autk-grammar"})
 _AUTK_GRAMMAR_TYPES = frozenset({"curio.builtin/autk-grammar"})
 
-# The nodes whose tile draws the node's own output rather than what reaches
-# it: a Compare Scenarios node (#662) charts the table its own run stacked, or
-# shows its difference. A pinned one is its own source, so its tile draws
-# without a run, and its inputs are not walked. Its tile draws no map, so it
-# asks ``/raster`` for nothing: an Autark map pinned after it reads the
-# difference's raster. The canvas's twin is ``isSelfDrawnNode`` in
-# ``dashboardLayout.ts``.
-_SELF_DRAWN_BEHAVIORS = frozenset({"compare-scenarios"})
-_SELF_DRAWN_TYPES = frozenset({"curio.builtin/compare-scenarios"})
-
 #: How much embedded data a single dashboard may carry, measured as the UTF-8
 #: length of the serialised envelopes. Chosen to stay well inside what a browser
 #: will parse from one document without the page feeling broken; a raster layer
@@ -281,51 +271,24 @@ def passes_through(node: dict, packages: Optional["TemplateGrammars"] = None) ->
     return False
 
 
-def draws_its_own_output(node: dict, packages: Optional["TemplateGrammars"] = None) -> bool:
-    """Whether a saved *node*'s tile draws its own output, as a Compare
-    Scenarios node's does (``isSelfDrawnNode``). *packages* reads the
-    manifests (``TemplateGrammars.for_account()`` when None)."""
-    from utk_curio.backend.app.projects.template_grammars import declares_behavior
-
-    return declares_behavior(node.get("type"), _SELF_DRAWN_BEHAVIORS, _SELF_DRAWN_TYPES, packages)
-
-
 def dashboard_source_node_ids(spec: dict, packages: Optional["TemplateGrammars"] = None) -> Set[str]:
     """Node ids whose saved output a pinned tile needs in order to draw.
 
     Walks upward from every pinned node through the nodes that pass what
     reaches them through (:func:`passes_through`) and stops at the first node
     on each path that actually produces rows. Breadth-first with a visited
-    set, so a cycle or a diamond terminates. A pinned node that draws its own
-    output (:func:`draws_its_own_output`) is its own source instead.
-    *packages* reads the manifests (``TemplateGrammars.for_account()`` when
-    None).
+    set, so a cycle or a diamond terminates. *packages* reads the manifests
+    (``TemplateGrammars.for_account()`` when None).
     """
     from utk_curio.backend.app.projects.template_grammars import TemplateGrammars
 
     packages = packages or TemplateGrammars.for_account()
-    return _self_drawn_node_ids(spec, packages) | _walked_source_node_ids(spec, packages)
-
-
-def _self_drawn_node_ids(spec: dict, packages: "TemplateGrammars") -> Set[str]:
-    """The pinned nodes whose tile draws their own output (:func:`draws_its_own_output`)."""
-    dataflow = (spec or {}).get("dataflow") or {}
-    return {
-        node["id"] for node in dataflow.get("nodes") or []
-        if node.get("id") and _is_pinned(node) and draws_its_own_output(node, packages)
-    }
-
-
-def _walked_source_node_ids(spec: dict, packages: "TemplateGrammars") -> Set[str]:
-    """The nodes whose output a pinned tile reads as its input: walking up from
-    every other pinned node, the first node on each path that produces rows."""
     dataflow = (spec or {}).get("dataflow") or {}
     nodes = dataflow.get("nodes") or []
     edges = dataflow.get("edges") or []
 
     by_id = {node.get("id"): node for node in nodes if node.get("id")}
-    drawn = _self_drawn_node_ids(spec, packages)
-    pinned = [node["id"] for node in nodes if node.get("id") and _is_pinned(node) and node["id"] not in drawn]
+    pinned = [node["id"] for node in nodes if node.get("id") and _is_pinned(node)]
     sources: Set[str] = set()
     if not pinned:
         return sources
@@ -530,10 +493,9 @@ def build_dashboard_payload(
     packages = packages or TemplateGrammars.for_account()
     _refuse_tiles_that_fetch_their_own_data(spec, packages, name=name)
 
+    # The outputs the tiles read as their inputs, which a map on the page may
+    # ask /raster for.
     needed = dashboard_source_node_ids(spec, packages)
-    # The outputs a tile reads as its input, which a map on the page may ask
-    # /raster for; a tile that draws its own output draws no map.
-    read_as_input = _walked_source_node_ids(spec, packages)
     unreadable: List[str] = []
 
     def cannot_read(node_id: str, filename: str, reason: str) -> None:
@@ -574,7 +536,7 @@ def build_dashboard_payload(
             continue
         outputs[filename] = envelope
         size = _json_bytes(envelope)
-        for part in raster_places(envelope, data_type) if fetch_raster and node_id in read_as_input else []:
+        for part in raster_places(envelope, data_type) if fetch_raster else []:
             try:
                 answer = fetch_raster(filename, part)
             except Exception as exc:

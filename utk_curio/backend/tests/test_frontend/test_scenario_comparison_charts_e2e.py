@@ -11,28 +11,25 @@ Vega-Lite chart whose spec names no scenario and no color. The account's
 store holds that package, which the dataflow declares.
 
 The test adds Scout's Dots with a range over the four street plans of the
-daily trips, and beside each chart a Compare Scenarios node over the same
-inputs, on which steps 2 and 4 read what they read on the dataflow's Compare
-nodes until those went (step 6.4 removes them with the node). Every request
-that would leave the stack is refused, and Run All drives the whole dataflow:
+daily trips. Every request that would leave the stack is refused, and Run All
+drives the whole dataflow:
 
 1. Every node runs to Done.
-2. Each Compare node's output is its scenarios' rows, under their ids and
-   names, in the order of its circles.
-3. Each chart draws. A chart draws its marks in its scenarios' colors, or in
+2. Each scenario's node hands its chart every row of its case, and no case
+   column: a chart's scenarios are its table's cases.
+3. Each chart reads its scenarios' rows, stacked in its circles' order under
+   their boxes' ids and names, each case's every row and no case column. Each
+   chart draws. A chart draws its marks in its scenarios' colors, or in
    its own where its scenarios color only its axis labels (the stacked bars
    by stage, the matrix of weights), and the table its text in the shades of
    them that read on white. Dots with a range draws a grey rule per mode and
-   each plan's dots in its color. Each Compare node's own preset compiles
-   with no problem and, but for a table, draws its scenarios' colors.
-4. What differs on the four street plans lists one lever, its Case widget,
-   set to each plan, and no code line; nothing is warned.
-5. A chart draws its scenarios in their boxes' colors: one scenario of each
+   each plan's dots in its color.
+4. A chart draws its scenarios in their boxes' colors: one scenario of each
    chart but the table recolored, each chart draws the new color and not the
    old one, with no run, its axis labels included where they are what its
    scenarios color. Dots with a range follows the plan recolored for the
    grouped bars.
-6. No request left the stack.
+5. No request left the stack.
 
 Each of the nine charts' close-up is a frame, taken before the recolor.
 
@@ -52,9 +49,11 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 from urllib.parse import urlsplit
 
-from .test_compare_scenarios_e2e import _CHART_STATE_JS, _COLOR_PIXELS_JS, _OUTPUT_ARTIFACT_JS
+from .test_scout_shadow_e2e import _INPUTS_ROWS_JS, _KEEP_VEGA_VIEWS_INIT
 from .utils import (
     REPO_ROOT,
+    _COLOR_PIXELS_JS,
+    _OUTPUT_ARTIFACT_JS,
     api_json,
     assert_vega_canvas_rendered,
     close_scenario_details,
@@ -83,25 +82,19 @@ SCOUT = Path(REPO_ROOT) / "packages" / "curio.scout@1"
 TEST_NAME = "test_the_nine_charts_draw_their_scenarios_with_no_network"
 LOAD = "curio.builtin/data-loading"
 KEEP = "curio.builtin/data-transformation"
-COMPARE = "curio.builtin/compare-scenarios"
 #: The two charts whose scenarios color only their axis labels.
 STAGES = "data.curio.example-building-carbon"
 WEIGHTS = "data.curio.example-bike-route-factors"
 #: The table, which writes its scenarios' rows in their colors' readable shades.
 ROOFS = "data.curio.example-green-roofs"
-#: The street plans, which Dots with a range reads and What differs is read on.
+#: The street plans, which Dots with a range reads.
 PLANS = "data.curio.example-trips-by-mode"
 #: The Dots with a range node the test adds over the street plans.
 DOTS = "plans-dots"
-#: What the Compare node the test adds beside each chart charts itself: what
-#: the dataflow's Compare node of that table charted.
-COMPARE_CHARTS = {
-    "data.curio.example-trips-by-mode": {"preset": "grouped-bar", "x": "mode", "y": "daily_trips", "aggregate": "none"},
-}
 #: Dots with a range's rules.
 RULE_GREY = "#9ca3af"
 #: For each chart but the table, by its table: the scenario recolored in step
-#: 5 and its new color. Each new color is far from every color its chart
+#: 4 and its new color. Each new color is far from every color its chart
 #: draws, and reads at 3:1 on white, so a text mark draws it as it is. The two
 #: storm charts share their scenarios: the 100-year storm is recolored once,
 #: and both follow.
@@ -163,11 +156,6 @@ def _rows(flow: dict) -> list:
     return sorted(found, key=lambda row: row[1]["y"])
 
 
-def _compare_id(dataset_id: str) -> str:
-    """The id of the Compare node the test adds beside *dataset_id*'s chart."""
-    return f"compare-{_slug(dataset_id)}"
-
-
 def _table(dataset_id: str) -> list:
     """The example table's rows."""
     folder = Path(REPO_ROOT) / "datasets" / f"{dataset_id}@1"
@@ -179,6 +167,18 @@ def _table(dataset_id: str) -> list:
 def _cases(dataset_id: str) -> Counter:
     """How many rows of each case the example table holds."""
     return Counter(row["case"] for row in _table(dataset_id))
+
+
+def _inputs_rows(page, node_id: str, count: int) -> list:
+    """The *count* rows the chart's view reads as its ``inputs``, once it holds them."""
+    rows = None
+    deadline = time.time() + 30
+    while time.time() < deadline:
+        rows = page.evaluate(_INPUTS_ROWS_JS, node_id)
+        if rows and len(rows) == count:
+            return rows
+        page.wait_for_timeout(250)
+    raise AssertionError(f"the chart {node_id} reads {len(rows or [])} rows, not {count}")
 
 
 def _mark_colors(dataset_id: str, spec: dict, labels: list) -> list:
@@ -198,7 +198,7 @@ def _mark_colors(dataset_id: str, spec: dict, labels: list) -> list:
 def _readable_shade(color: str) -> str:
     """The color a table writes a scenario's text in: *color* when it reads at
     3:1 on white, else its lightest shade toward black that does
-    (``tableTextColor`` in ``utils/compare/comparePresets.ts``)."""
+    (``tableTextColor`` in ``utils/scenarios/scenarioColors.ts``)."""
 
     def contrast(channels):
         linear = [c / 255 / 12.92 if c / 255 <= 0.04045 else ((c / 255 + 0.055) / 1.055) ** 2.4 for c in channels]
@@ -252,19 +252,6 @@ def _assert_colors_drawn(page, node_id: str, colors: list, what: str) -> None:
     raise AssertionError(f"{what} does not draw its colors {colors}: pixels {counts}")
 
 
-def _assert_preset_drew(page, node_id: str, preset: str, what: str) -> None:
-    deadline = time.time() + 60
-    state = None
-    while time.time() < deadline:
-        state = page.evaluate(_CHART_STATE_JS, [node_id, preset])
-        if state in ("drawn", "problem"):
-            break
-        page.wait_for_timeout(250)
-    problem = node_locator(page, node_id).locator("[data-compare-chart-problem]").all_inner_texts()
-    assert state == "drawn", f"{what}'s {preset} chart ended {state!r}: {problem}"
-    assert_vega_canvas_rendered(page, node_id, timeout=30000)
-
-
 def _assert_text_drawn(page, node_id: str, colors: list, what: str) -> None:
     counts = None
     deadline = time.time() + 15
@@ -280,47 +267,12 @@ def _slug(dataset_id: str) -> str:
     return dataset_id.rsplit(".", 1)[-1].removeprefix("example-")
 
 
-def _stack_code(labels: list) -> str:
-    """The code a Compare Scenarios node writes for its inputs, labelled by
-    *labels* in circle order (``utils/compare/compareCode.ts``)."""
-    entries = "".join(
-        f"    ({json.dumps(label['scenario'])}, {json.dumps(label['name'])}, [!! input_{circle} !!]),\n"
-        for circle, label in enumerate(labels)
-    )
-    return (
-        "# Compare Scenarios writes this code from its inputs: each input, under the\n"
-        "# id and the name of its scenario. It is written again when they change.\n"
-        f"return curio_stack_scenarios([\n{entries}])\n"
-    )
-
-
-def _with_compare_nodes_and_dots(spec: dict) -> dict:
-    """*spec* with a Compare Scenarios node beside each chart, over the chart's
-    inputs on the same circles, and Dots with a range over the four street
-    plans, below the last row. Each Compare node holds the labels and the code
-    it writes for its inputs, so a load writes nothing again."""
+def _with_dots(spec: dict) -> dict:
+    """*spec* with Dots with a range over the four street plans, below the
+    last row."""
     spec = copy.deepcopy(spec)
     flow = spec["dataflow"]
     rows = _rows(flow)
-    added_edges = []
-    for dataset_id, chart in rows:
-        labels = _labels(flow, chart["id"])
-        flow["nodes"].append({
-            "id": _compare_id(dataset_id), "type": COMPARE,
-            "x": chart["x"] + chart.get("width", 525) + 200, "y": chart["y"],
-            "title": f"Compare: {chart['title']}",
-            "content": _stack_code(labels),
-            "out": "DEFAULT", "in": "DEFAULT", "goal": "",
-            "metadata": {"keywords": [], "compareScenarios": {
-                "inputs": labels,
-                "chart": COMPARE_CHARTS.get(dataset_id, {"preset": "table"}),
-                "mode": "chart",
-            }},
-        })
-        added_edges += [
-            {**edge, "id": f"{edge['id']}-{_compare_id(dataset_id)}", "target": _compare_id(dataset_id)}
-            for edge in flow["edges"] if edge["target"] == chart["id"]
-        ]
     [(_dataset, plans)] = [row for row in rows if row[0] == PLANS]
     manifest = json.loads((SCOUT / "manifest.json").read_text(encoding="utf-8"))
     [dots] = [t for t in manifest["templates"] if t["id"] == "dots-with-a-range"]
@@ -334,11 +286,10 @@ def _with_compare_nodes_and_dots(spec: dict) -> dict:
         "metadata": {"keywords": [], "widgets": [dict(w, value=values[w["name"]]) for w in dots["widgets"]]},
         "width": 680, "height": 440,
     })
-    added_edges += [
+    flow["edges"] += [
         {**edge, "id": f"{edge['id']}-{DOTS}", "target": DOTS}
         for edge in flow["edges"] if edge["target"] == plans["id"]
     ]
-    flow["edges"] += added_edges
     return spec
 
 
@@ -348,14 +299,13 @@ def test_the_nine_charts_draw_their_scenarios_with_no_network(
     require_project_page()
     require_user_auth()
     page.emulate_media(reduced_motion="reduce")
-    spec = _with_compare_nodes_and_dots(json.loads(DATAFLOW.read_text(encoding="utf-8")))
+    page.add_init_script(_KEEP_VEGA_VIEWS_INIT)
+    spec = _with_dots(json.loads(DATAFLOW.read_text(encoding="utf-8")))
     flow = spec["dataflow"]
     rows = _rows(flow)
     assert len(rows) == 9, [row[0] for row in rows]
     plan_labels = _labels(flow, DOTS)
     assert [label["name"] for label in plan_labels] == ["Today", "Bus lanes", "Bike network", "Car-free center"]
-    for dataset_id, chart in rows:
-        assert _labels(flow, _compare_id(dataset_id)) == _labels(flow, chart["id"]), dataset_id
     refused = _refuse_the_network(page, app_frontend.base_url, current_server, sandbox_base_url())
     session = stub_login_and_enter_workflow(
         page,
@@ -384,26 +334,40 @@ def test_the_nine_charts_draw_their_scenarios_with_no_network(
             f"{node.get('title')} ({node['type']}) ended {status}: {read_node_error_text(node_locator(page, node['id']))}"
         )
 
-    # 2. Each Compare node stacks its scenarios' rows in its circles' order.
-    for dataset_id, _chart in rows:
-        compare_id = _compare_id(dataset_id)
-        labels = _labels(flow, compare_id)
-        artifact = page.evaluate(_OUTPUT_ARTIFACT_JS, compare_id)
-        assert artifact, f"{compare_id} shows no saved table"
-        stored = load_artifact_as_dict(artifact)
-        assert stored["dataType"] == "dataframe", stored["dataType"]
-        table = stored["data"]
-        assert "case" not in table, sorted(table)
-        assert list(dict.fromkeys(zip(table["scenario"], table["scenario_name"]))) == [
-            (label["scenario"], label["name"]) for label in labels
-        ], compare_id
-        assert Counter(table["scenario_name"]) == _cases(dataset_id), compare_id
+    # 2. Each scenario's node hands its chart every row of its case, and no
+    # case column, on the circle its box labels.
+    for dataset_id, chart in rows:
+        cases = _cases(dataset_id)
+        labels = _labels(flow, chart["id"])
+        assert sorted(label["name"] for label in labels) == sorted(cases), (dataset_id, labels, cases)
+        wired = sorted(
+            (0 if e.get("targetHandle") in (None, "in") else int(e["targetHandle"].split("_")[1]), e["source"])
+            for e in flow["edges"] if e["target"] == chart["id"]
+        )
+        for (_circle, keep), label in zip(wired, labels):
+            artifact = page.evaluate(_OUTPUT_ARTIFACT_JS, keep)
+            assert artifact, f"{keep} shows no saved table"
+            stored = load_artifact_as_dict(artifact)
+            assert stored["dataType"] == "dataframe", (keep, stored["dataType"])
+            table = stored["data"]
+            assert "case" not in table, (keep, sorted(table))
+            lengths = {len(column) for column in table.values()}
+            assert lengths == {cases[label["name"]]}, (keep, label["name"], lengths, cases[label["name"]])
 
-    # 3. Each chart draws, and its close-up is the frame.
+    # 3. Each chart draws, and its close-up is the frame. The rows it reads
+    # are its scenarios' rows, stacked in its circles' order under their
+    # boxes, each case's every row and no case column.
     for dataset_id, chart in rows:
         labels = _labels(flow, chart["id"])
         frame_nodes(page, [chart["id"]])
         assert_vega_canvas_rendered(page, chart["id"], timeout=30000)
+        cases = _cases(dataset_id)
+        read = _inputs_rows(page, chart["id"], sum(cases.values()))
+        assert list(dict.fromkeys((row["scenario"], row["scenario_name"]) for row in read)) == [
+            (label["scenario"], label["name"]) for label in labels
+        ], chart["title"]
+        assert not [row for row in read if "case" in row], chart["title"]
+        assert Counter(row["scenario_name"] for row in read) == cases, chart["title"]
         if dataset_id == ROOFS:
             shades = [_readable_shade(label["color"]) for label in labels]
             _assert_text_drawn(page, chart["id"], shades, chart["title"])
@@ -415,32 +379,8 @@ def test_the_nine_charts_draw_their_scenarios_with_no_network(
     frame_nodes(page, [DOTS])
     assert_vega_canvas_rendered(page, DOTS, timeout=30000)
     _assert_colors_drawn(page, DOTS, [RULE_GREY, *[label["color"] for label in plan_labels]], "Dots with a range")
-    # Each Compare node draws its own preset, in its scenarios' colors but for
-    # a table.
-    for dataset_id, _chart in rows:
-        compare_id = _compare_id(dataset_id)
-        compare = next(node for node in flow["nodes"] if node["id"] == compare_id)
-        preset = compare["metadata"]["compareScenarios"]["chart"]["preset"]
-        frame_nodes(page, [compare_id])
-        _assert_preset_drew(page, compare_id, preset, compare["title"])
-        if preset != "table":
-            _assert_colors_drawn(page, compare_id, [label["color"] for label in _labels(flow, compare_id)], compare["title"])
 
-    # 4. What differs on the street plans: the Case widget, set to each plan.
-    frame_nodes(page, [_compare_id(PLANS)])
-    compare = node_locator(page, _compare_id(PLANS))
-    compare.get_by_role("tab", name="What differs", exact=True).click()
-    compare.locator('[data-compare-widget="case"]').wait_for(state="visible", timeout=10000)
-    assert compare.locator("[data-compare-lever]").count() == 1
-    for label in plan_labels:
-        shown = compare.locator(f'[data-compare-value="{label["scenario"]}"]').inner_text()
-        assert shown.endswith(f"{label['name']}: {label['name']}"), shown
-    assert compare.locator("[data-compare-code-added]").count() == 0
-    assert compare.locator("[data-compare-code-removed]").count() == 0
-    assert compare.locator("[data-compare-warning]").count() == 0
-    compare.get_by_role("tab", name="Chart", exact=True).click()
-
-    # 5. One scenario of each chart recolored: each chart draws the new color,
+    # 4. One scenario of each chart recolored: each chart draws the new color,
     # whatever its spec writes, and draws it with no run. The stacked bars and
     # the matrix draw it in their axis labels, which read the scale their
     # scenarios fill.
@@ -473,5 +413,5 @@ def test_the_nine_charts_draw_their_scenarios_with_no_network(
         stale = page.evaluate(_COLOR_PIXELS_JS, [chart["id"], [old]])
         assert stale == [0], f"{what} still draws {name} in its old color {old}: pixels {stale}"
 
-    # 6. Nothing left the stack.
+    # 5. Nothing left the stack.
     assert refused == [], f"the dataflow reached the network: {refused}"

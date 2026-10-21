@@ -44,7 +44,7 @@ def catalog(tmp_path, monkeypatch) -> Path:
 def test_the_backend_decides_each_case_as_the_canvas_does(catalog, case):
     assert case is not None, f"{CASES_FILE} is missing"
     from utk_curio.backend.app.datasets.application.export import loads_data
-    from utk_curio.backend.app.projects.dashboard_payload import draws_its_own_output, passes_through
+    from utk_curio.backend.app.projects.dashboard_payload import passes_through
     from utk_curio.backend.app.projects.services import _is_sink_node_type
     from utk_curio.backend.app.projects.template_grammars import TemplateGrammars
 
@@ -52,12 +52,10 @@ def test_the_backend_decides_each_case_as_the_canvas_does(catalog, case):
     node = {"id": "n", "type": case["type"], "content": case.get("content", "")}
     assert {
         "passThrough": passes_through(node, packages),
-        "selfDrawn": draws_its_own_output(node, packages),
         "nonProducing": _is_sink_node_type(case["type"], packages),
         "loadsData": loads_data(case["type"], packages),
     } == {
         "passThrough": case["passThrough"],
-        "selfDrawn": case["selfDrawn"],
         "nonProducing": case["nonProducing"],
         "loadsData": case["loadsData"],
     }

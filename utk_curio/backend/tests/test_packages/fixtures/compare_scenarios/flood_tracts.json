@@ -1,0 +1,1501 @@
+{
+ "madeBy": "utk_curio/backend/tests/test_packages/fixtures/compare_scenarios/make_compare_fixtures.py",
+ "main": "72f5d3df5",
+ "inputs": "test_scout_flood.py's riverside part at the dataflow's own settings (No NbS on circle 0, NbS on circle 1), and its riverside tracts by hand for the one-side cases",
+ "call": "curio_difference_scenarios([...], absolute=True, key=\"FIPS\") and curio_stack_scenarios([...]), as the Compare Scenarios nodes the dataflow held wrote them (_compare_references), read back",
+ "change": {
+  "columns": [
+   "FIPS",
+   "change",
+   "LOCATION",
+   "E_TOTPOP",
+   "RPL_THEMES",
+   "geometry",
+   "mean_depth_m",
+   "land_km2"
+  ],
+  "dtypes": [
+   "str",
+   "str",
+   "str",
+   "float64",
+   "float64",
+   "geometry",
+   "float64",
+   "float64"
+  ],
+  "rows": [
+   [
+    "17073030201",
+    "changed",
+    "Census Tract 302.01, Henry County, Illinois",
+    0.0,
+    0.0,
+    0.146,
+    0.0
+   ],
+   [
+    "17161020200",
+    "changed",
+    "Census Tract 202, Rock Island County, Illinois",
+    0.0,
+    0.0,
+    1.5410000000000001,
+    0.0
+   ],
+   [
+    "17161020400",
+    "unchanged",
+    "Census Tract 204, Rock Island County, Illinois",
+    0.0,
+    0.0,
+    0.0,
+    0.0
+   ],
+   [
+    "17161020600",
+    "changed",
+    "Census Tract 206, Rock Island County, Illinois",
+    0.0,
+    0.0,
+    0.394,
+    0.0
+   ],
+   [
+    "17161021100",
+    "changed",
+    "Census Tract 211, Rock Island County, Illinois",
+    0.0,
+    0.0,
+    1.117,
+    0.0
+   ],
+   [
+    "17161021400",
+    "unchanged",
+    "Census Tract 214, Rock Island County, Illinois",
+    0.0,
+    0.0,
+    0.0,
+    0.0
+   ],
+   [
+    "17161021900",
+    "changed",
+    "Census Tract 219, Rock Island County, Illinois",
+    0.0,
+    0.0,
+    0.9209999999999999,
+    0.0
+   ],
+   [
+    "17161022300",
+    "changed",
+    "Census Tract 223, Rock Island County, Illinois",
+    0.0,
+    0.0,
+    0.17999999999999994,
+    0.0
+   ],
+   [
+    "17161022600",
+    "changed",
+    "Census Tract 226, Rock Island County, Illinois",
+    0.0,
+    0.0,
+    0.013000000000000123,
+    0.0
+   ],
+   [
+    "17161023000",
+    "changed",
+    "Census Tract 230, Rock Island County, Illinois",
+    0.0,
+    0.0,
+    0.12100000000000002,
+    0.0
+   ],
+   [
+    "17161023100",
+    "changed",
+    "Census Tract 231, Rock Island County, Illinois",
+    0.0,
+    0.0,
+    0.05299999999999999,
+    0.0
+   ],
+   [
+    "17161023700",
+    "changed",
+    "Census Tract 237, Rock Island County, Illinois",
+    0.0,
+    0.0,
+    0.776,
+    0.0
+   ],
+   [
+    "17161024000",
+    "changed",
+    "Census Tract 240, Rock Island County, Illinois",
+    0.0,
+    0.0,
+    0.198,
+    0.0
+   ],
+   [
+    "17161024102",
+    "changed",
+    "Census Tract 241.02, Rock Island County, Illinois",
+    0.0,
+    0.0,
+    1.146,
+    0.0
+   ],
+   [
+    "17161024300",
+    "changed",
+    "Census Tract 243, Rock Island County, Illinois",
+    0.0,
+    0.0,
+    0.984,
+    0.0
+   ],
+   [
+    "17161024400",
+    "changed",
+    "Census Tract 244, Rock Island County, Illinois",
+    0.0,
+    0.0,
+    1.6029999999999998,
+    0.0
+   ],
+   [
+    "17161024500",
+    "changed",
+    "Census Tract 245, Rock Island County, Illinois",
+    0.0,
+    0.0,
+    0.386,
+    0.0
+   ],
+   [
+    "19163010402",
+    "changed",
+    "Census Tract 104.02, Scott County, Iowa",
+    0.0,
+    0.0,
+    0.0020000000000000018,
+    0.0
+   ],
+   [
+    "19163010600",
+    "unchanged",
+    "Census Tract 106, Scott County, Iowa",
+    0.0,
+    0.0,
+    0.0,
+    0.0
+   ],
+   [
+    "19163010900",
+    "changed",
+    "Census Tract 109, Scott County, Iowa",
+    0.0,
+    0.0,
+    0.132,
+    0.0
+   ],
+   [
+    "19163011000",
+    "changed",
+    "Census Tract 110, Scott County, Iowa",
+    0.0,
+    0.0,
+    1.4880000000000004,
+    0.0
+   ],
+   [
+    "19163011500",
+    "changed",
+    "Census Tract 115, Scott County, Iowa",
+    0.0,
+    0.0,
+    0.0050000000000000044,
+    0.0
+   ],
+   [
+    "19163012400",
+    "changed",
+    "Census Tract 124, Scott County, Iowa",
+    0.0,
+    0.0,
+    0.9190000000000003,
+    0.0
+   ],
+   [
+    "19163013100",
+    "unchanged",
+    "Census Tract 131, Scott County, Iowa",
+    0.0,
+    0.0,
+    0.0,
+    0.0
+   ],
+   [
+    "19163013200",
+    "changed",
+    "Census Tract 132, Scott County, Iowa",
+    0.0,
+    0.0,
+    0.0010000000000000009,
+    0.0
+   ],
+   [
+    "19163013300",
+    "changed",
+    "Census Tract 133, Scott County, Iowa",
+    0.0,
+    0.0,
+    0.0020000000000000018,
+    0.0
+   ],
+   [
+    "19163013400",
+    "unchanged",
+    "Census Tract 134, Scott County, Iowa",
+    0.0,
+    0.0,
+    0.0,
+    0.0
+   ],
+   [
+    "19163013702",
+    "changed",
+    "Census Tract 137.02, Scott County, Iowa",
+    0.0,
+    0.0,
+    0.30099999999999993,
+    0.0
+   ]
+  ],
+  "crs": "EPSG:4326",
+  "geometry_sha256": "953b600122430c4fd334c92539ee582ea04ee452e918c298dc46a740696e2799"
+ },
+ "oneSide": {
+  "removed": {
+   "columns": [
+    "FIPS",
+    "change",
+    "LOCATION",
+    "E_TOTPOP",
+    "RPL_THEMES",
+    "geometry",
+    "mean_depth_m",
+    "land_km2"
+   ],
+   "dtypes": [
+    "str",
+    "str",
+    "str",
+    "float64",
+    "float64",
+    "geometry",
+    "float64",
+    "float64"
+   ],
+   "rows": [
+    [
+     "17073030201",
+     "removed",
+     "Census Tract 302.01, Henry County, Illinois",
+     null,
+     null,
+     null,
+     null
+    ],
+    [
+     "17161020200",
+     "changed",
+     "Census Tract 202, Rock Island County, Illinois",
+     0.0,
+     0.0,
+     1.0619999999999998,
+     0.0
+    ],
+    [
+     "17161020400",
+     "changed",
+     "Census Tract 204, Rock Island County, Illinois",
+     0.0,
+     0.0,
+     0.919,
+     0.0
+    ],
+    [
+     "17161020600",
+     "changed",
+     "Census Tract 206, Rock Island County, Illinois",
+     0.0,
+     0.0,
+     0.03900000000000001,
+     0.0
+    ],
+    [
+     "17161021100",
+     "changed",
+     "Census Tract 211, Rock Island County, Illinois",
+     0.0,
+     0.0,
+     0.060000000000000026,
+     0.0
+    ],
+    [
+     "17161021400",
+     "unchanged",
+     "Census Tract 214, Rock Island County, Illinois",
+     0.0,
+     0.0,
+     0.0,
+     0.0
+    ],
+    [
+     "17161021900",
+     "changed",
+     "Census Tract 219, Rock Island County, Illinois",
+     0.0,
+     0.0,
+     1.0510000000000002,
+     0.0
+    ],
+    [
+     "17161022300",
+     "changed",
+     "Census Tract 223, Rock Island County, Illinois",
+     0.0,
+     0.0,
+     1.141,
+     0.0
+    ],
+    [
+     "17161022600",
+     "changed",
+     "Census Tract 226, Rock Island County, Illinois",
+     0.0,
+     0.0,
+     0.6389999999999998,
+     0.0
+    ],
+    [
+     "17161023000",
+     "changed",
+     "Census Tract 230, Rock Island County, Illinois",
+     0.0,
+     0.0,
+     0.9420000000000002,
+     0.0
+    ],
+    [
+     "17161023100",
+     "unchanged",
+     "Census Tract 231, Rock Island County, Illinois",
+     0.0,
+     0.0,
+     0.0,
+     0.0
+    ],
+    [
+     "17161023700",
+     "changed",
+     "Census Tract 237, Rock Island County, Illinois",
+     0.0,
+     0.0,
+     0.9819999999999998,
+     0.0
+    ],
+    [
+     "17161024000",
+     "changed",
+     "Census Tract 240, Rock Island County, Illinois",
+     0.0,
+     0.0,
+     0.98,
+     0.0
+    ],
+    [
+     "17161024102",
+     "changed",
+     "Census Tract 241.02, Rock Island County, Illinois",
+     0.0,
+     0.0,
+     0.087,
+     0.0
+    ],
+    [
+     "17161024300",
+     "changed",
+     "Census Tract 243, Rock Island County, Illinois",
+     0.0,
+     0.0,
+     1.1550000000000002,
+     0.0
+    ],
+    [
+     "17161024400",
+     "unchanged",
+     "Census Tract 244, Rock Island County, Illinois",
+     0.0,
+     0.0,
+     0.0,
+     0.0
+    ],
+    [
+     "17161024500",
+     "changed",
+     "Census Tract 245, Rock Island County, Illinois",
+     0.0,
+     0.0,
+     0.21299999999999997,
+     0.0
+    ],
+    [
+     "19163010402",
+     "changed",
+     "Census Tract 104.02, Scott County, Iowa",
+     0.0,
+     0.0,
+     0.6240000000000001,
+     0.0
+    ],
+    [
+     "19163010600",
+     "changed",
+     "Census Tract 106, Scott County, Iowa",
+     0.0,
+     0.0,
+     0.7469999999999999,
+     0.0
+    ],
+    [
+     "19163010900",
+     "changed",
+     "Census Tract 109, Scott County, Iowa",
+     0.0,
+     0.0,
+     0.020000000000000004,
+     0.0
+    ],
+    [
+     "19163011000",
+     "unchanged",
+     "Census Tract 110, Scott County, Iowa",
+     0.0,
+     0.0,
+     0.0,
+     0.0
+    ],
+    [
+     "19163011500",
+     "changed",
+     "Census Tract 115, Scott County, Iowa",
+     0.0,
+     0.0,
+     0.4129999999999999,
+     0.0
+    ],
+    [
+     "19163012400",
+     "changed",
+     "Census Tract 124, Scott County, Iowa",
+     0.0,
+     0.0,
+     0.266,
+     0.0
+    ],
+    [
+     "19163013100",
+     "changed",
+     "Census Tract 131, Scott County, Iowa",
+     0.0,
+     0.0,
+     0.724,
+     0.0
+    ],
+    [
+     "19163013200",
+     "changed",
+     "Census Tract 132, Scott County, Iowa",
+     0.0,
+     0.0,
+     0.10300000000000004,
+     0.0
+    ],
+    [
+     "19163013300",
+     "unchanged",
+     "Census Tract 133, Scott County, Iowa",
+     0.0,
+     0.0,
+     0.0,
+     0.0
+    ],
+    [
+     "19163013400",
+     "changed",
+     "Census Tract 134, Scott County, Iowa",
+     0.0,
+     0.0,
+     0.5739999999999998,
+     0.0
+    ],
+    [
+     "19163013702",
+     "changed",
+     "Census Tract 137.02, Scott County, Iowa",
+     0.0,
+     0.0,
+     0.3530000000000001,
+     0.0
+    ]
+   ],
+   "crs": "EPSG:4326",
+   "geometry_sha256": "953b600122430c4fd334c92539ee582ea04ee452e918c298dc46a740696e2799"
+  },
+  "added": {
+   "columns": [
+    "FIPS",
+    "change",
+    "LOCATION",
+    "E_TOTPOP",
+    "RPL_THEMES",
+    "geometry",
+    "mean_depth_m",
+    "land_km2"
+   ],
+   "dtypes": [
+    "str",
+    "str",
+    "str",
+    "float64",
+    "float64",
+    "geometry",
+    "float64",
+    "float64"
+   ],
+   "rows": [
+    [
+     "17073030201",
+     "unchanged",
+     "Census Tract 302.01, Henry County, Illinois",
+     0.0,
+     0.0,
+     0.0,
+     0.0
+    ],
+    [
+     "17161020200",
+     "changed",
+     "Census Tract 202, Rock Island County, Illinois",
+     0.0,
+     0.0,
+     1.0619999999999998,
+     0.0
+    ],
+    [
+     "17161020400",
+     "changed",
+     "Census Tract 204, Rock Island County, Illinois",
+     0.0,
+     0.0,
+     0.919,
+     0.0
+    ],
+    [
+     "17161020600",
+     "changed",
+     "Census Tract 206, Rock Island County, Illinois",
+     0.0,
+     0.0,
+     0.03900000000000001,
+     0.0
+    ],
+    [
+     "17161021100",
+     "changed",
+     "Census Tract 211, Rock Island County, Illinois",
+     0.0,
+     0.0,
+     0.060000000000000026,
+     0.0
+    ],
+    [
+     "17161021400",
+     "unchanged",
+     "Census Tract 214, Rock Island County, Illinois",
+     0.0,
+     0.0,
+     0.0,
+     0.0
+    ],
+    [
+     "17161021900",
+     "changed",
+     "Census Tract 219, Rock Island County, Illinois",
+     0.0,
+     0.0,
+     1.0510000000000002,
+     0.0
+    ],
+    [
+     "17161022300",
+     "changed",
+     "Census Tract 223, Rock Island County, Illinois",
+     0.0,
+     0.0,
+     1.141,
+     0.0
+    ],
+    [
+     "17161022600",
+     "changed",
+     "Census Tract 226, Rock Island County, Illinois",
+     0.0,
+     0.0,
+     0.6389999999999998,
+     0.0
+    ],
+    [
+     "17161023000",
+     "changed",
+     "Census Tract 230, Rock Island County, Illinois",
+     0.0,
+     0.0,
+     0.9420000000000002,
+     0.0
+    ],
+    [
+     "17161023100",
+     "unchanged",
+     "Census Tract 231, Rock Island County, Illinois",
+     0.0,
+     0.0,
+     0.0,
+     0.0
+    ],
+    [
+     "17161023700",
+     "changed",
+     "Census Tract 237, Rock Island County, Illinois",
+     0.0,
+     0.0,
+     0.9819999999999998,
+     0.0
+    ],
+    [
+     "17161024000",
+     "changed",
+     "Census Tract 240, Rock Island County, Illinois",
+     0.0,
+     0.0,
+     0.98,
+     0.0
+    ],
+    [
+     "17161024102",
+     "changed",
+     "Census Tract 241.02, Rock Island County, Illinois",
+     0.0,
+     0.0,
+     0.087,
+     0.0
+    ],
+    [
+     "17161024300",
+     "changed",
+     "Census Tract 243, Rock Island County, Illinois",
+     0.0,
+     0.0,
+     1.1550000000000002,
+     0.0
+    ],
+    [
+     "17161024400",
+     "unchanged",
+     "Census Tract 244, Rock Island County, Illinois",
+     0.0,
+     0.0,
+     0.0,
+     0.0
+    ],
+    [
+     "17161024500",
+     "changed",
+     "Census Tract 245, Rock Island County, Illinois",
+     0.0,
+     0.0,
+     0.21299999999999997,
+     0.0
+    ],
+    [
+     "19163010402",
+     "changed",
+     "Census Tract 104.02, Scott County, Iowa",
+     0.0,
+     0.0,
+     0.6240000000000001,
+     0.0
+    ],
+    [
+     "19163010600",
+     "changed",
+     "Census Tract 106, Scott County, Iowa",
+     0.0,
+     0.0,
+     0.7469999999999999,
+     0.0
+    ],
+    [
+     "19163010900",
+     "changed",
+     "Census Tract 109, Scott County, Iowa",
+     0.0,
+     0.0,
+     0.020000000000000004,
+     0.0
+    ],
+    [
+     "19163011000",
+     "unchanged",
+     "Census Tract 110, Scott County, Iowa",
+     0.0,
+     0.0,
+     0.0,
+     0.0
+    ],
+    [
+     "19163011500",
+     "changed",
+     "Census Tract 115, Scott County, Iowa",
+     0.0,
+     0.0,
+     0.4129999999999999,
+     0.0
+    ],
+    [
+     "19163012400",
+     "changed",
+     "Census Tract 124, Scott County, Iowa",
+     0.0,
+     0.0,
+     0.266,
+     0.0
+    ],
+    [
+     "19163013100",
+     "changed",
+     "Census Tract 131, Scott County, Iowa",
+     0.0,
+     0.0,
+     0.724,
+     0.0
+    ],
+    [
+     "19163013200",
+     "changed",
+     "Census Tract 132, Scott County, Iowa",
+     0.0,
+     0.0,
+     0.10300000000000004,
+     0.0
+    ],
+    [
+     "19163013300",
+     "unchanged",
+     "Census Tract 133, Scott County, Iowa",
+     0.0,
+     0.0,
+     0.0,
+     0.0
+    ],
+    [
+     "19163013400",
+     "changed",
+     "Census Tract 134, Scott County, Iowa",
+     0.0,
+     0.0,
+     0.5739999999999998,
+     0.0
+    ],
+    [
+     "19163013702",
+     "added",
+     "Census Tract 137.02, Scott County, Iowa",
+     null,
+     null,
+     null,
+     null
+    ]
+   ],
+   "crs": "EPSG:4326",
+   "geometry_sha256": "953b600122430c4fd334c92539ee582ea04ee452e918c298dc46a740696e2799"
+  }
+ },
+ "scatter": {
+  "columns": [
+   "scenario",
+   "scenario_name",
+   "FIPS",
+   "LOCATION",
+   "E_TOTPOP",
+   "RPL_THEMES",
+   "geometry",
+   "mean_depth_m",
+   "land_km2"
+  ],
+  "rows": [
+   {
+    "scenario": "no-nbs",
+    "scenario_name": "No NbS",
+    "FIPS": "17073030201",
+    "LOCATION": "Census Tract 302.01, Henry County, Illinois",
+    "E_TOTPOP": 4418,
+    "RPL_THEMES": 0.0574,
+    "mean_depth_m": 0.302,
+    "land_km2": 2.62
+   },
+   {
+    "scenario": "no-nbs",
+    "scenario_name": "No NbS",
+    "FIPS": "17161020200",
+    "LOCATION": "Census Tract 202, Rock Island County, Illinois",
+    "E_TOTPOP": 3442,
+    "RPL_THEMES": 0.7705,
+    "mean_depth_m": 3.369,
+    "land_km2": 1.979
+   },
+   {
+    "scenario": "no-nbs",
+    "scenario_name": "No NbS",
+    "FIPS": "17161020400",
+    "LOCATION": "Census Tract 204, Rock Island County, Illinois",
+    "E_TOTPOP": 6471,
+    "RPL_THEMES": 0.5335,
+    "mean_depth_m": 0.114,
+    "land_km2": 0.027
+   },
+   {
+    "scenario": "no-nbs",
+    "scenario_name": "No NbS",
+    "FIPS": "17161020600",
+    "LOCATION": "Census Tract 206, Rock Island County, Illinois",
+    "E_TOTPOP": 2199,
+    "RPL_THEMES": 0.7703,
+    "mean_depth_m": 0.931,
+    "land_km2": 4.66
+   },
+   {
+    "scenario": "no-nbs",
+    "scenario_name": "No NbS",
+    "FIPS": "17161021100",
+    "LOCATION": "Census Tract 211, Rock Island County, Illinois",
+    "E_TOTPOP": 3789,
+    "RPL_THEMES": 0.6267,
+    "mean_depth_m": 2.846,
+    "land_km2": 9.564
+   },
+   {
+    "scenario": "no-nbs",
+    "scenario_name": "No NbS",
+    "FIPS": "17161021400",
+    "LOCATION": "Census Tract 214, Rock Island County, Illinois",
+    "E_TOTPOP": 1250,
+    "RPL_THEMES": 0.4542,
+    "mean_depth_m": 0.424,
+    "land_km2": 1.18
+   },
+   {
+    "scenario": "no-nbs",
+    "scenario_name": "No NbS",
+    "FIPS": "17161021900",
+    "LOCATION": "Census Tract 219, Rock Island County, Illinois",
+    "E_TOTPOP": 1393,
+    "RPL_THEMES": 0.7415,
+    "mean_depth_m": 1.803,
+    "land_km2": 5.26
+   },
+   {
+    "scenario": "no-nbs",
+    "scenario_name": "No NbS",
+    "FIPS": "17161022300",
+    "LOCATION": "Census Tract 223, Rock Island County, Illinois",
+    "E_TOTPOP": 2039,
+    "RPL_THEMES": 0.9551,
+    "mean_depth_m": 0.57,
+    "land_km2": 2.612
+   },
+   {
+    "scenario": "no-nbs",
+    "scenario_name": "No NbS",
+    "FIPS": "17161022600",
+    "LOCATION": "Census Tract 226, Rock Island County, Illinois",
+    "E_TOTPOP": 2332,
+    "RPL_THEMES": 0.9585,
+    "mean_depth_m": 1.713,
+    "land_km2": 2.392
+   },
+   {
+    "scenario": "no-nbs",
+    "scenario_name": "No NbS",
+    "FIPS": "17161023000",
+    "LOCATION": "Census Tract 230, Rock Island County, Illinois",
+    "E_TOTPOP": 3513,
+    "RPL_THEMES": 0.1759,
+    "mean_depth_m": 0.331,
+    "land_km2": 4.685
+   },
+   {
+    "scenario": "no-nbs",
+    "scenario_name": "No NbS",
+    "FIPS": "17161023100",
+    "LOCATION": "Census Tract 231, Rock Island County, Illinois",
+    "E_TOTPOP": 2645,
+    "RPL_THEMES": 0.3437,
+    "mean_depth_m": 0.32,
+    "land_km2": 3.519
+   },
+   {
+    "scenario": "no-nbs",
+    "scenario_name": "No NbS",
+    "FIPS": "17161023700",
+    "LOCATION": "Census Tract 237, Rock Island County, Illinois",
+    "E_TOTPOP": 2262,
+    "RPL_THEMES": 0.9181,
+    "mean_depth_m": 2.133,
+    "land_km2": 2.782
+   },
+   {
+    "scenario": "no-nbs",
+    "scenario_name": "No NbS",
+    "FIPS": "17161024000",
+    "LOCATION": "Census Tract 240, Rock Island County, Illinois",
+    "E_TOTPOP": 4215,
+    "RPL_THEMES": 0.112,
+    "mean_depth_m": 0.54,
+    "land_km2": 22.548
+   },
+   {
+    "scenario": "no-nbs",
+    "scenario_name": "No NbS",
+    "FIPS": "17161024102",
+    "LOCATION": "Census Tract 241.02, Rock Island County, Illinois",
+    "E_TOTPOP": 4770,
+    "RPL_THEMES": 0.4101,
+    "mean_depth_m": 3.872,
+    "land_km2": 37.154
+   },
+   {
+    "scenario": "no-nbs",
+    "scenario_name": "No NbS",
+    "FIPS": "17161024300",
+    "LOCATION": "Census Tract 243, Rock Island County, Illinois",
+    "E_TOTPOP": 2221,
+    "RPL_THEMES": 0.6169,
+    "mean_depth_m": 3.469,
+    "land_km2": 24.64
+   },
+   {
+    "scenario": "no-nbs",
+    "scenario_name": "No NbS",
+    "FIPS": "17161024400",
+    "LOCATION": "Census Tract 244, Rock Island County, Illinois",
+    "E_TOTPOP": 1786,
+    "RPL_THEMES": 0.8801,
+    "mean_depth_m": 3.759,
+    "land_km2": 2.881
+   },
+   {
+    "scenario": "no-nbs",
+    "scenario_name": "No NbS",
+    "FIPS": "17161024500",
+    "LOCATION": "Census Tract 245, Rock Island County, Illinois",
+    "E_TOTPOP": 2215,
+    "RPL_THEMES": 0.9594,
+    "mean_depth_m": 1.27,
+    "land_km2": 6.044
+   },
+   {
+    "scenario": "no-nbs",
+    "scenario_name": "No NbS",
+    "FIPS": "19163010402",
+    "LOCATION": "Census Tract 104.02, Scott County, Iowa",
+    "E_TOTPOP": 3582,
+    "RPL_THEMES": 0.0892,
+    "mean_depth_m": 0.151,
+    "land_km2": 14.055
+   },
+   {
+    "scenario": "no-nbs",
+    "scenario_name": "No NbS",
+    "FIPS": "19163010600",
+    "LOCATION": "Census Tract 106, Scott County, Iowa",
+    "E_TOTPOP": 2947,
+    "RPL_THEMES": 0.8836,
+    "mean_depth_m": 0.153,
+    "land_km2": 1.53
+   },
+   {
+    "scenario": "no-nbs",
+    "scenario_name": "No NbS",
+    "FIPS": "19163010900",
+    "LOCATION": "Census Tract 109, Scott County, Iowa",
+    "E_TOTPOP": 1965,
+    "RPL_THEMES": 0.9044,
+    "mean_depth_m": 0.933,
+    "land_km2": 2.164
+   },
+   {
+    "scenario": "no-nbs",
+    "scenario_name": "No NbS",
+    "FIPS": "19163011000",
+    "LOCATION": "Census Tract 110, Scott County, Iowa",
+    "E_TOTPOP": 3040,
+    "RPL_THEMES": 0.7857,
+    "mean_depth_m": 4.363,
+    "land_km2": 4.155
+   },
+   {
+    "scenario": "no-nbs",
+    "scenario_name": "No NbS",
+    "FIPS": "19163011500",
+    "LOCATION": "Census Tract 115, Scott County, Iowa",
+    "E_TOTPOP": 2090,
+    "RPL_THEMES": 0.6502,
+    "mean_depth_m": 0.148,
+    "land_km2": 1.521
+   },
+   {
+    "scenario": "no-nbs",
+    "scenario_name": "No NbS",
+    "FIPS": "19163012400",
+    "LOCATION": "Census Tract 124, Scott County, Iowa",
+    "E_TOTPOP": 1363,
+    "RPL_THEMES": 0.4116,
+    "mean_depth_m": 2.119,
+    "land_km2": 19.686
+   },
+   {
+    "scenario": "no-nbs",
+    "scenario_name": "No NbS",
+    "FIPS": "19163013100",
+    "LOCATION": "Census Tract 131, Scott County, Iowa",
+    "E_TOTPOP": 2041,
+    "RPL_THEMES": 0.0114,
+    "mean_depth_m": 0.094,
+    "land_km2": 1.261
+   },
+   {
+    "scenario": "no-nbs",
+    "scenario_name": "No NbS",
+    "FIPS": "19163013200",
+    "LOCATION": "Census Tract 132, Scott County, Iowa",
+    "E_TOTPOP": 1580,
+    "RPL_THEMES": 0.2344,
+    "mean_depth_m": 0.237,
+    "land_km2": 1.668
+   },
+   {
+    "scenario": "no-nbs",
+    "scenario_name": "No NbS",
+    "FIPS": "19163013300",
+    "LOCATION": "Census Tract 133, Scott County, Iowa",
+    "E_TOTPOP": 3212,
+    "RPL_THEMES": 0.218,
+    "mean_depth_m": 0.256,
+    "land_km2": 3.379
+   },
+   {
+    "scenario": "no-nbs",
+    "scenario_name": "No NbS",
+    "FIPS": "19163013400",
+    "LOCATION": "Census Tract 134, Scott County, Iowa",
+    "E_TOTPOP": 2927,
+    "RPL_THEMES": 0.7065,
+    "mean_depth_m": 0.187,
+    "land_km2": 2.857
+   },
+   {
+    "scenario": "no-nbs",
+    "scenario_name": "No NbS",
+    "FIPS": "19163013702",
+    "LOCATION": "Census Tract 137.02, Scott County, Iowa",
+    "E_TOTPOP": 5314,
+    "RPL_THEMES": 0.1281,
+    "mean_depth_m": 0.833,
+    "land_km2": 15.741
+   },
+   {
+    "scenario": "nbs",
+    "scenario_name": "NbS",
+    "FIPS": "17073030201",
+    "LOCATION": "Census Tract 302.01, Henry County, Illinois",
+    "E_TOTPOP": 4418,
+    "RPL_THEMES": 0.0574,
+    "mean_depth_m": 0.156,
+    "land_km2": 2.62
+   },
+   {
+    "scenario": "nbs",
+    "scenario_name": "NbS",
+    "FIPS": "17161020200",
+    "LOCATION": "Census Tract 202, Rock Island County, Illinois",
+    "E_TOTPOP": 3442,
+    "RPL_THEMES": 0.7705,
+    "mean_depth_m": 1.828,
+    "land_km2": 1.979
+   },
+   {
+    "scenario": "nbs",
+    "scenario_name": "NbS",
+    "FIPS": "17161020400",
+    "LOCATION": "Census Tract 204, Rock Island County, Illinois",
+    "E_TOTPOP": 6471,
+    "RPL_THEMES": 0.5335,
+    "mean_depth_m": 0.114,
+    "land_km2": 0.027
+   },
+   {
+    "scenario": "nbs",
+    "scenario_name": "NbS",
+    "FIPS": "17161020600",
+    "LOCATION": "Census Tract 206, Rock Island County, Illinois",
+    "E_TOTPOP": 2199,
+    "RPL_THEMES": 0.7703,
+    "mean_depth_m": 0.537,
+    "land_km2": 4.66
+   },
+   {
+    "scenario": "nbs",
+    "scenario_name": "NbS",
+    "FIPS": "17161021100",
+    "LOCATION": "Census Tract 211, Rock Island County, Illinois",
+    "E_TOTPOP": 3789,
+    "RPL_THEMES": 0.6267,
+    "mean_depth_m": 1.729,
+    "land_km2": 9.564
+   },
+   {
+    "scenario": "nbs",
+    "scenario_name": "NbS",
+    "FIPS": "17161021400",
+    "LOCATION": "Census Tract 214, Rock Island County, Illinois",
+    "E_TOTPOP": 1250,
+    "RPL_THEMES": 0.4542,
+    "mean_depth_m": 0.424,
+    "land_km2": 1.18
+   },
+   {
+    "scenario": "nbs",
+    "scenario_name": "NbS",
+    "FIPS": "17161021900",
+    "LOCATION": "Census Tract 219, Rock Island County, Illinois",
+    "E_TOTPOP": 1393,
+    "RPL_THEMES": 0.7415,
+    "mean_depth_m": 0.882,
+    "land_km2": 5.26
+   },
+   {
+    "scenario": "nbs",
+    "scenario_name": "NbS",
+    "FIPS": "17161022300",
+    "LOCATION": "Census Tract 223, Rock Island County, Illinois",
+    "E_TOTPOP": 2039,
+    "RPL_THEMES": 0.9551,
+    "mean_depth_m": 0.39,
+    "land_km2": 2.612
+   },
+   {
+    "scenario": "nbs",
+    "scenario_name": "NbS",
+    "FIPS": "17161022600",
+    "LOCATION": "Census Tract 226, Rock Island County, Illinois",
+    "E_TOTPOP": 2332,
+    "RPL_THEMES": 0.9585,
+    "mean_depth_m": 1.7,
+    "land_km2": 2.392
+   },
+   {
+    "scenario": "nbs",
+    "scenario_name": "NbS",
+    "FIPS": "17161023000",
+    "LOCATION": "Census Tract 230, Rock Island County, Illinois",
+    "E_TOTPOP": 3513,
+    "RPL_THEMES": 0.1759,
+    "mean_depth_m": 0.21,
+    "land_km2": 4.685
+   },
+   {
+    "scenario": "nbs",
+    "scenario_name": "NbS",
+    "FIPS": "17161023100",
+    "LOCATION": "Census Tract 231, Rock Island County, Illinois",
+    "E_TOTPOP": 2645,
+    "RPL_THEMES": 0.3437,
+    "mean_depth_m": 0.267,
+    "land_km2": 3.519
+   },
+   {
+    "scenario": "nbs",
+    "scenario_name": "NbS",
+    "FIPS": "17161023700",
+    "LOCATION": "Census Tract 237, Rock Island County, Illinois",
+    "E_TOTPOP": 2262,
+    "RPL_THEMES": 0.9181,
+    "mean_depth_m": 1.357,
+    "land_km2": 2.782
+   },
+   {
+    "scenario": "nbs",
+    "scenario_name": "NbS",
+    "FIPS": "17161024000",
+    "LOCATION": "Census Tract 240, Rock Island County, Illinois",
+    "E_TOTPOP": 4215,
+    "RPL_THEMES": 0.112,
+    "mean_depth_m": 0.342,
+    "land_km2": 22.548
+   },
+   {
+    "scenario": "nbs",
+    "scenario_name": "NbS",
+    "FIPS": "17161024102",
+    "LOCATION": "Census Tract 241.02, Rock Island County, Illinois",
+    "E_TOTPOP": 4770,
+    "RPL_THEMES": 0.4101,
+    "mean_depth_m": 2.726,
+    "land_km2": 37.154
+   },
+   {
+    "scenario": "nbs",
+    "scenario_name": "NbS",
+    "FIPS": "17161024300",
+    "LOCATION": "Census Tract 243, Rock Island County, Illinois",
+    "E_TOTPOP": 2221,
+    "RPL_THEMES": 0.6169,
+    "mean_depth_m": 2.485,
+    "land_km2": 24.64
+   },
+   {
+    "scenario": "nbs",
+    "scenario_name": "NbS",
+    "FIPS": "17161024400",
+    "LOCATION": "Census Tract 244, Rock Island County, Illinois",
+    "E_TOTPOP": 1786,
+    "RPL_THEMES": 0.8801,
+    "mean_depth_m": 2.156,
+    "land_km2": 2.881
+   },
+   {
+    "scenario": "nbs",
+    "scenario_name": "NbS",
+    "FIPS": "17161024500",
+    "LOCATION": "Census Tract 245, Rock Island County, Illinois",
+    "E_TOTPOP": 2215,
+    "RPL_THEMES": 0.9594,
+    "mean_depth_m": 0.884,
+    "land_km2": 6.044
+   },
+   {
+    "scenario": "nbs",
+    "scenario_name": "NbS",
+    "FIPS": "19163010402",
+    "LOCATION": "Census Tract 104.02, Scott County, Iowa",
+    "E_TOTPOP": 3582,
+    "RPL_THEMES": 0.0892,
+    "mean_depth_m": 0.149,
+    "land_km2": 14.055
+   },
+   {
+    "scenario": "nbs",
+    "scenario_name": "NbS",
+    "FIPS": "19163010600",
+    "LOCATION": "Census Tract 106, Scott County, Iowa",
+    "E_TOTPOP": 2947,
+    "RPL_THEMES": 0.8836,
+    "mean_depth_m": 0.153,
+    "land_km2": 1.53
+   },
+   {
+    "scenario": "nbs",
+    "scenario_name": "NbS",
+    "FIPS": "19163010900",
+    "LOCATION": "Census Tract 109, Scott County, Iowa",
+    "E_TOTPOP": 1965,
+    "RPL_THEMES": 0.9044,
+    "mean_depth_m": 0.801,
+    "land_km2": 2.164
+   },
+   {
+    "scenario": "nbs",
+    "scenario_name": "NbS",
+    "FIPS": "19163011000",
+    "LOCATION": "Census Tract 110, Scott County, Iowa",
+    "E_TOTPOP": 3040,
+    "RPL_THEMES": 0.7857,
+    "mean_depth_m": 2.875,
+    "land_km2": 4.155
+   },
+   {
+    "scenario": "nbs",
+    "scenario_name": "NbS",
+    "FIPS": "19163011500",
+    "LOCATION": "Census Tract 115, Scott County, Iowa",
+    "E_TOTPOP": 2090,
+    "RPL_THEMES": 0.6502,
+    "mean_depth_m": 0.143,
+    "land_km2": 1.521
+   },
+   {
+    "scenario": "nbs",
+    "scenario_name": "NbS",
+    "FIPS": "19163012400",
+    "LOCATION": "Census Tract 124, Scott County, Iowa",
+    "E_TOTPOP": 1363,
+    "RPL_THEMES": 0.4116,
+    "mean_depth_m": 1.2,
+    "land_km2": 19.686
+   },
+   {
+    "scenario": "nbs",
+    "scenario_name": "NbS",
+    "FIPS": "19163013100",
+    "LOCATION": "Census Tract 131, Scott County, Iowa",
+    "E_TOTPOP": 2041,
+    "RPL_THEMES": 0.0114,
+    "mean_depth_m": 0.094,
+    "land_km2": 1.261
+   },
+   {
+    "scenario": "nbs",
+    "scenario_name": "NbS",
+    "FIPS": "19163013200",
+    "LOCATION": "Census Tract 132, Scott County, Iowa",
+    "E_TOTPOP": 1580,
+    "RPL_THEMES": 0.2344,
+    "mean_depth_m": 0.238,
+    "land_km2": 1.668
+   },
+   {
+    "scenario": "nbs",
+    "scenario_name": "NbS",
+    "FIPS": "19163013300",
+    "LOCATION": "Census Tract 133, Scott County, Iowa",
+    "E_TOTPOP": 3212,
+    "RPL_THEMES": 0.218,
+    "mean_depth_m": 0.254,
+    "land_km2": 3.379
+   },
+   {
+    "scenario": "nbs",
+    "scenario_name": "NbS",
+    "FIPS": "19163013400",
+    "LOCATION": "Census Tract 134, Scott County, Iowa",
+    "E_TOTPOP": 2927,
+    "RPL_THEMES": 0.7065,
+    "mean_depth_m": 0.187,
+    "land_km2": 2.857
+   },
+   {
+    "scenario": "nbs",
+    "scenario_name": "NbS",
+    "FIPS": "19163013702",
+    "LOCATION": "Census Tract 137.02, Scott County, Iowa",
+    "E_TOTPOP": 5314,
+    "RPL_THEMES": 0.1281,
+    "mean_depth_m": 0.532,
+    "land_km2": 15.741
+   }
+  ]
+ },
+ "byPeriod": {
+  "columns": [
+   "scenario",
+   "scenario_name",
+   "period",
+   "mean_depth_m",
+   "land_km2"
+  ],
+  "rows": [
+   {
+    "scenario": "no-nbs",
+    "scenario_name": "No NbS",
+    "period": "2020 - 2050",
+    "mean_depth_m": 1.988,
+    "land_km2": 202.568
+   },
+   {
+    "scenario": "no-nbs",
+    "scenario_name": "No NbS",
+    "period": "2050 - 2080",
+    "mean_depth_m": 1.923,
+    "land_km2": 202.568
+   },
+   {
+    "scenario": "no-nbs",
+    "scenario_name": "No NbS",
+    "period": "2080 - 2100",
+    "mean_depth_m": 2.237,
+    "land_km2": 202.568
+   },
+   {
+    "scenario": "nbs",
+    "scenario_name": "NbS",
+    "period": "2020 - 2050",
+    "mean_depth_m": 1.337,
+    "land_km2": 202.568
+   },
+   {
+    "scenario": "nbs",
+    "scenario_name": "NbS",
+    "period": "2050 - 2080",
+    "mean_depth_m": 1.691,
+    "land_km2": 202.568
+   },
+   {
+    "scenario": "nbs",
+    "scenario_name": "NbS",
+    "period": "2080 - 2100",
+    "mean_depth_m": 1.872,
+    "land_km2": 202.568
+   }
+  ]
+ },
+ "median": {
+  "columns": [
+   "scenario",
+   "scenario_name",
+   "mean",
+   "median",
+   "min",
+   "max",
+   "count"
+  ],
+  "rows": [
+   {
+    "scenario": "no-nbs",
+    "scenario_name": "No NbS",
+    "mean": 6.346452299531106,
+    "median": 7.163970947265625,
+    "min": 0.00067138671875,
+    "max": 10.666666666666666,
+    "count": 1160305
+   },
+   {
+    "scenario": "nbs",
+    "scenario_name": "NbS",
+    "mean": 5.312285760833436,
+    "median": 4.900075276692708,
+    "min": 0.00067138671875,
+    "max": 10.666666666666666,
+    "count": 1115187
+   }
+  ]
+ }
+}

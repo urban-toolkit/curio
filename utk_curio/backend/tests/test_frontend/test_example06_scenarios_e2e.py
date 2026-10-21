@@ -14,10 +14,7 @@ change, takes each road's sunlight change in Twice as tall from Baseline's map
 and Twice as tall's, the roads matched by their shapes, which an Autark map
 after it draws.
 
-The first test drives the example as it ships, with the two Compare Scenarios
-nodes it held until they went, which the test adds over the three maps, on
-which steps 3 and 4 read what they read on the example's own until then (step
-6.4 of the plan answering komar41's review removes them with the node):
+The first test drives the example as it ships:
 
 1. Its three scenarios are listed in the Scenario Catalog drawer's In project
    tab, each with the shared pool as the fixed context its details list. Each
@@ -30,24 +27,24 @@ which steps 3 and 4 read what they read on the example's own until then (step
    is handed: autk-grammar says it left none out (#757). A double-click expands
    one scenario in place, and its map is drawn.
 3. The chart: Twice as tall has the lowest mean sunlight and Two towers removed
-   the highest, in the rows the Bars chart reads and in the Compare chart's
-   stacked table alike. What differs, on the Compare chart, lists
-   ``height_factor``, 1, 2 and 1, and the Edit Features node, only in Two
-   towers removed, with its edit; nothing is warned about.
-4. The difference: each road's sunlight change, below zero where the taller
-   shadows reach it and zero elsewhere, in its ``sunlight`` and in its nested
-   ``compute`` values, within -360 to 360 minutes. The Autark map after the
-   Sunlight change node draws it, under the title "Sunlight change (minutes)",
-   its legend labelled -360, 0 and 360: a scale centered on no change. The
-   Compare node in Difference draws no map of its own, and the Sunlight change
-   node writes exactly what it writes.
+   the highest, in the rows the Bars chart reads, and the chart draws every
+   scenario's colour.
+4. The difference: each road's sunlight change, one row per road Baseline's
+   Roads node hands on, below zero where the taller shadows reach it and zero
+   elsewhere, in its ``sunlight`` and in its nested ``compute`` values, within
+   -360 to 360 minutes, in a layer with no layer name or type: exactly what
+   the rule writes from the two Roads nodes' layers, Twice as tall's minus
+   Baseline's, the same roads in the same order with the same columns, types,
+   values, shapes and coordinate system. The Autark map after the Sunlight
+   change node draws it, under the title "Sunlight change (minutes)", its
+   legend labelled -360, 0 and 360: a scale centered on no change.
 5. A save and a reopen: the scenarios, their colours, the collapsed ones, the
    widgets and their values, the edit list, and the saved outputs come back.
 
 The second test drags both scenarios from the Scenario Catalog into an empty
-project, once the seeded example has run, and compares them there: they arrive
-with their results, read one context, and What differs lists only
-``height_factor``.
+project, once the seeded example has run: they arrive with their results, read
+one context, and each expands in place; a Vega-Lite chart reading ``inputs``,
+wired to the two dropped Roads nodes, names each one's rows by its dropped box.
 
 They run Autark nodes, which need WebGPU: without an adapter they skip, unless
 ``CURIO_REQUIRE_HARDWARE_WEBGPU=1`` (CI's GPU job), where they fail.
@@ -59,7 +56,6 @@ Run::
 
 from __future__ import annotations
 
-import copy
 import json
 import time
 from pathlib import Path
@@ -67,8 +63,6 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from .test_compare_difference_e2e import _assert_compare_draws_no_map, _assert_legend_reads, _assert_legend_title
-from .test_compare_scenarios_e2e import _CHART_STATE_JS, _COLOR_PIXELS_JS, _OUTPUT_ARTIFACT_JS
 from .test_multi_input_e2e import _wait_for_circles
 from .test_scenario_drop_e2e import (
     _copies,
@@ -82,6 +76,10 @@ from .test_scenarios_canvas_e2e import _box, _frame_box
 from .test_widget_tags_e2e import _open_tab, _panel
 from .utils import (
     REPO_ROOT,
+    _COLOR_PIXELS_JS,
+    _OUTPUT_ARTIFACT_JS,
+    _assert_legend_reads,
+    _assert_legend_title,
     api_json,
     assert_autark_map_drawn,
     assert_vega_canvas_rendered,
@@ -96,7 +94,7 @@ from .utils import (
     node_locator,
     open_in_project_tab,
     open_scenario_details,
-    read_node_code,
+    play_node,
     read_node_error_text,
     require_owner_view,
     require_project_page,
@@ -106,6 +104,7 @@ from .utils import (
     save_dataflow,
     scenario_card_button,
     scenario_part,
+    set_node_code,
     stub_login_and_enter_workflow,
     wait_for_drawer_closed,
     wait_for_node_settled,
@@ -120,6 +119,18 @@ AUTARK = "curio.builtin/autk-grammar"
 COMPARE = "curio.builtin/compare-scenarios"
 BARS = "curio.scout/bars"
 PYTHON = "curio.builtin/computation-analysis"
+VEGA = "curio.builtin/vis-vega"
+#: The chart the second test wires to the two dropped Roads nodes: mean
+#: sunlight per scenario, its rows its inputs stacked under their boxes.
+DROPPED_CHART_SPEC = json.dumps({
+    "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
+    "data": {"name": "inputs"},
+    "mark": "bar",
+    "encoding": {
+        "x": {"field": "scenario_name", "type": "nominal"},
+        "y": {"field": "sunlight", "type": "quantitative", "aggregate": "mean"},
+    },
+}, indent=2)
 
 DATA = "whatif-data"
 B_COMPUTE, B_MAP, B_ROADS = "whatif-baseline-compute", "whatif-baseline-map", "whatif-baseline-roads"
@@ -136,6 +147,9 @@ DIFFERENCE_MAP = "whatif-difference-map"
 #: diverging scheme's middle: its legend reads the ends and the middle, and
 #: every road's change lies within it.
 CHANGE_RANGE = (-360, 360)
+#: The coordinate system Autark draws in, as a layer names it in its GeoJSON
+#: (``sandbox/util/input_layers._crs_named_by``).
+AUTARK_CRS = {"type": "name", "properties": {"name": "urn:ogc:def:crs:EPSG::3395"}}
 BASELINE, TWICE, TOWERS = "s-baseline", "s-twice", "s-towers"
 NAMES = {BASELINE: "Baseline", TWICE: "Twice as tall", TOWERS: "Two towers removed"}
 COLORS = {BASELINE: "#3567c7", TWICE: "#e86a3c", TOWERS: "#2f8f4a"}
@@ -145,28 +159,6 @@ MEMBERS = {
     TOWERS: [E_EDIT, E_COMPUTE, E_MAP, E_ROADS],
 }
 ROADS = "table_osm_roads"
-#: The Compare Scenarios nodes the test adds over the three maps: the chart of
-#: mean sunlight and the Difference example 06 held until Compare went, with
-#: the code and the settings they held.
-COMPARE_CHART, COMPARE_DIFFERENCE = "test-compare-chart", "test-compare-difference"
-COMPARE_CHART_CODE = (
-    "# Compare Scenarios writes this code from its inputs: each input, under the\n"
-    "# id and the name of its scenario. It is written again when they change.\n"
-    "return curio_stack_scenarios([\n"
-    '    ("s-baseline", "Baseline", [!! input_0 !!]),\n'
-    '    ("s-twice", "Twice as tall", [!! input_1 !!]),\n'
-    '    ("s-towers", "Two towers removed", [!! input_2 !!]),\n'
-    '], layer="table_osm_roads")\n'
-)
-COMPARE_DIFFERENCE_CODE = (
-    "# Compare Scenarios writes this code from its inputs: input_1 minus input_0,\n"
-    "# each under the id and the name of its scenario. It is written again when\n"
-    "# they change.\n"
-    "return curio_difference_scenarios([\n"
-    '    ("s-baseline", "Baseline", [!! input_0 !!]),\n'
-    '    ("s-twice", "Twice as tall", [!! input_1 !!]),\n'
-    '], layer="table_osm_roads")\n'
-)
 BUILDINGS = "table_osm_buildings"
 EDIT_TYPE = "curio.builtin/edit-features"
 #: The two towers Two towers removed takes out, by building_id, and how many
@@ -180,42 +172,6 @@ SETTLE_MS = 180000
 
 def _example() -> dict:
     return json.loads(EXAMPLE.read_text(encoding="utf-8"))
-
-
-def _with_compare_nodes(spec: dict) -> dict:
-    """*spec* with the two Compare Scenarios nodes example 06 held until
-    Compare went, below the rest: the chart over the three maps and the
-    Difference over Baseline's and Twice as tall's, on the circles they took,
-    each reading the roads layer picked in its Layer menu. Each holds its
-    labels and the code it writes for its inputs, so a load writes nothing
-    again."""
-    spec = copy.deepcopy(spec)
-    flow = spec["dataflow"]
-    by_id = {scenario["id"]: scenario for scenario in flow["scenarios"]}
-
-    def label(scenario_id: str) -> dict:
-        return {"scenario": scenario_id, "name": by_id[scenario_id]["name"], "color": by_id[scenario_id]["color"]}
-
-    bottom = max(node["y"] + node.get("height", 350) for node in flow["nodes"])
-    added = (
-        (COMPARE_CHART, "Mean sunlight: Compare", COMPARE_CHART_CODE, [B_MAP, T_MAP, E_MAP],
-         {"inputs": [label(BASELINE), label(TWICE), label(TOWERS)],
-          "chart": {"preset": "bar", "y": "sunlight", "aggregate": "mean"}, "mode": "chart", "layer": ROADS}),
-        (COMPARE_DIFFERENCE, "Sunlight change: Compare", COMPARE_DIFFERENCE_CODE, [B_MAP, T_MAP],
-         {"inputs": [label(BASELINE), label(TWICE)], "mode": "difference", "layer": ROADS}),
-    )
-    for k, (node_id, title, code, sources, settings) in enumerate(added):
-        flow["nodes"].append({
-            "id": node_id, "type": COMPARE, "x": 1970 + 880 * k, "y": bottom + 200, "title": title,
-            "content": code, "out": "DEFAULT", "in": "DEFAULT", "goal": "",
-            "metadata": {"keywords": [], "compareScenarios": settings},
-        })
-        flow["edges"] += [
-            {"id": f"e-{source}-{node_id}-{circle}", "source": source, "target": node_id,
-             "sourceHandle": "out", "targetHandle": "in" if circle == 0 else f"in_{circle}"}
-            for circle, source in enumerate(sources)
-        ]
-    return spec
 
 
 def _rgb(hex_color: str) -> str:
@@ -309,6 +265,25 @@ def _rows(page, node_id: str) -> list[dict]:
     return [feature["properties"] for feature in _stored(page, node_id)["data"]["features"]]
 
 
+def _layer_of(stored: dict):
+    """A stored layer, as the sandbox hands it to the page, rebuilt as the
+    frame it was: its columns in the order and of the types its schema names,
+    its outlines, and its coordinate system."""
+    import geopandas as gpd
+
+    data = stored["data"]
+    geometry = data.get("geometry_name") or "geometry"
+    name = ((data.get("crs") or {}).get("properties") or {}).get("name", "")
+    frame = gpd.GeoDataFrame.from_features(data["features"], crs=f"EPSG:{name.rsplit(':', 1)[-1]}" if name else None)
+    if geometry != "geometry":
+        frame = frame.rename_geometry(geometry)
+    frame = frame[list(stored["schema"])]
+    for column, dtype in stored["schema"].items():
+        if column != geometry and str(frame[column].dtype) != dtype:
+            frame[column] = frame[column].astype(dtype)
+    return frame
+
+
 # Before the page's own scripts: keep every Vega view by the element it draws
 # in, whenever the charts' Vega module is set on the window (useVega.ts).
 _KEEP_VEGA_VIEWS_INIT = """(() => {
@@ -351,6 +326,39 @@ _INPUTS_SUMS_JS = """([id, field]) => {
     }
     return sums;
 }"""
+
+
+# The runs of the rows a chart's last view reads as ``inputs``, in their
+# order: ``[scenario, scenario_name, how many rows]`` for each run of one box.
+_INPUTS_LABELS_JS = """(id) => {
+    const view = (window.__curioVegaViews || {})["vega" + id];
+    if (!view) return null;
+    let rows;
+    try {
+        rows = view.data("inputs");
+    } catch (error) {
+        return null;
+    }
+    const runs = [];
+    for (const row of rows) {
+        const last = runs[runs.length - 1];
+        if (last && last[0] === row.scenario && last[1] === row.scenario_name) last[2] += 1;
+        else runs.push([row.scenario, row.scenario_name, 1]);
+    }
+    return runs;
+}"""
+
+
+def _inputs_labels(page, node_id: str, count: int) -> list:
+    """The *count* runs of one box in the rows the chart reads, once its view holds them."""
+    runs = None
+    deadline = time.time() + 30
+    while time.time() < deadline:
+        runs = page.evaluate(_INPUTS_LABELS_JS, node_id)
+        if runs and len(runs) == count:
+            return runs
+        page.wait_for_timeout(250)
+    raise AssertionError(f"the chart {node_id} reads the runs {runs}, not {count}")
 
 
 def _chart_means(page, node_id: str, field: str) -> dict:
@@ -405,21 +413,6 @@ def _assert_tag_and_chip(page, node_id: str, value: str) -> None:
     assert "height_factor" in chips, f"{node_id}'s spec draws no height_factor chip (chips: {chips!r})"
 
 
-def _assert_compare_chart_drew(page, node_id: str) -> None:
-    """The Compare node's bar chart compiled with no problem, and its canvas
-    holds every scenario's colour."""
-    deadline = time.time() + 60
-    state = None
-    while time.time() < deadline:
-        state = page.evaluate(_CHART_STATE_JS, [node_id, "bar"])
-        if state in ("drawn", "problem"):
-            break
-        page.wait_for_timeout(250)
-    problem = node_locator(page, node_id).locator("[data-compare-chart-problem]").all_inner_texts()
-    assert state == "drawn", f"the chart's compile ended {state!r}: {problem}"
-    _assert_chart_drew(page, node_id)
-
-
 def _assert_chart_drew(page, node_id: str) -> None:
     """The chart drew, and its canvas holds every scenario's colour."""
     assert_vega_canvas_rendered(page, node_id, timeout=30000)
@@ -432,66 +425,6 @@ def _assert_chart_drew(page, node_id: str) -> None:
             return
         page.wait_for_timeout(250)
     raise AssertionError(f"the chart does not draw every scenario's colour {colors}: pixels {counts}")
-
-
-def _assert_only_height_factor_differs(page, node_id: str, lever: str) -> None:
-    """What differs lists one lever, *lever*, whose ``height_factor`` is 1 in
-    Baseline and 2 in Twice as tall, no code line, and every other lever alike:
-    the map and the Roads node, the same in both; and the node warns about
-    nothing."""
-    compare = node_locator(page, node_id)
-    _open_tab(page, node_id, "output")
-    compare.get_by_role("tab", name="What differs", exact=True).click()
-    widget = compare.locator('[data-compare-widget="height_factor"]')
-    widget.wait_for(state="visible", timeout=15000)
-    shown = widget.inner_text()
-    assert "Baseline: 1" in shown and "Twice as tall: 2" in shown, shown
-    levers = compare.locator("[data-compare-lever]").evaluate_all(
-        "els => els.map((el) => el.getAttribute('data-compare-lever'))"
-    )
-    assert levers == [lever], f"What differs lists {levers}, not only the shadow step"
-    assert compare.locator("[data-compare-widget]").count() == 1
-    assert compare.locator("[data-compare-code]").count() == 0, "What differs lists a code change"
-    assert compare.locator("[data-compare-only-in]").count() == 0
-    # Two since each scenario ends in a Roads node, a copy of Baseline's.
-    same = compare.locator("[data-compare-same]").get_attribute("data-compare-same")
-    assert same == "2", f"the maps and the Roads nodes should read as alike, not {same!r}"
-    assert compare.locator("[data-compare-warning]").count() == 0, compare.locator(
-        "[data-compare-warning]"
-    ).all_inner_texts()
-    # Back to the view the node is in, Chart or Difference.
-    compare.get_by_role("tablist", name="Compare Scenarios views").get_by_role("tab").first.click()
-
-
-def _assert_factor_and_edit_differ(page, node_id: str) -> None:
-    """What differs, over the three scenarios, lists two levers: the shadow
-    step, whose ``height_factor`` is 1, 2 and 1, with no code line, and the Edit
-    Features node, only in Two towers removed, with its edit. The maps and the
-    Roads nodes are alike, and the node warns about nothing."""
-    compare = node_locator(page, node_id)
-    _open_tab(page, node_id, "output")
-    compare.get_by_role("tab", name="What differs", exact=True).click()
-    widget = compare.locator('[data-compare-widget="height_factor"]')
-    widget.wait_for(state="visible", timeout=15000)
-    shown = widget.inner_text()
-    assert "Baseline: 1" in shown and "Twice as tall: 2" in shown and "Two towers removed: 1" in shown, shown
-    levers = compare.locator("[data-compare-lever]").evaluate_all(
-        "els => els.map((el) => el.getAttribute('data-compare-lever'))"
-    )
-    assert levers == [B_COMPUTE, E_EDIT], f"What differs lists {levers}, not the shadow step and the Edit Features node"
-    assert compare.locator("[data-compare-widget]").count() == 1
-    assert compare.locator("[data-compare-code]").count() == 0, "What differs lists a code change"
-    edit = compare.locator(f'[data-compare-lever="{E_EDIT}"]')
-    assert edit.locator("[data-compare-only-in]").get_attribute("data-compare-only-in") == TOWERS
-    edits = edit.locator(f'[data-compare-edits="{TOWERS}"]').inner_text()
-    assert "Remove building_id 29623484, 29628154" in edits, edits
-    # Two since each scenario ends in a Roads node, a copy of Baseline's.
-    same = compare.locator("[data-compare-same]").get_attribute("data-compare-same")
-    assert same == "2", f"the maps and the Roads nodes should read as alike, not {same!r}"
-    assert compare.locator("[data-compare-warning]").count() == 0, compare.locator(
-        "[data-compare-warning]"
-    ).all_inner_texts()
-    compare.get_by_role("tablist", name="Compare Scenarios views").get_by_role("tab").first.click()
 
 
 _INPUT_ARTIFACT_JS = """(id) => {
@@ -622,9 +555,8 @@ def test_example_06_compares_its_three_scenarios_in_the_canvas(
     require_user_auth()
     page.emulate_media(reduced_motion="reduce")
     page.add_init_script(_KEEP_VEGA_VIEWS_INIT)
-    shipped_flow = _example()["dataflow"]
-    assert not [n["id"] for n in shipped_flow["nodes"] if n["type"] == COMPARE], "example 06 still holds a Compare node"
-    spec = _with_compare_nodes(_example())
+    spec = _example()
+    assert not [n["id"] for n in spec["dataflow"]["nodes"] if n["type"] == COMPARE], "example 06 still holds a Compare node"
     session = stub_login_and_enter_workflow(
         page,
         frontend_url=app_frontend.base_url,
@@ -662,7 +594,7 @@ def test_example_06_compares_its_three_scenarios_in_the_canvas(
     for node_id, node_type in (
         (B_MAP, AUTARK), (T_MAP, AUTARK), (E_EDIT, EDIT_TYPE), (E_MAP, AUTARK),
         (B_ROADS, PYTHON), (T_ROADS, PYTHON), (E_ROADS, PYTHON), (CHART, BARS), (DIFFERENCE, PYTHON),
-        (DIFFERENCE_MAP, AUTARK), (COMPARE_CHART, COMPARE), (COMPARE_DIFFERENCE, COMPARE),
+        (DIFFERENCE_MAP, AUTARK),
     ):
         _settled_done(page, node_id, node_type)
     stop()
@@ -675,7 +607,7 @@ def test_example_06_compares_its_three_scenarios_in_the_canvas(
         f"and {len(loads)} in the page, not once on the server"
     )
     ran = sorted(python + [node_id for node_id in on_server if node_id != DATA])
-    assert ran == sorted([E_EDIT, B_ROADS, T_ROADS, E_ROADS, DIFFERENCE, COMPARE_CHART, COMPARE_DIFFERENCE]), (
+    assert ran == sorted([E_EDIT, B_ROADS, T_ROADS, E_ROADS, DIFFERENCE]), (
         f"Run All ran {python} in the page and {on_server} on the server: each Python node once, "
         "in and below the hidden scenarios"
     )
@@ -708,51 +640,49 @@ def test_example_06_compares_its_three_scenarios_in_the_canvas(
     assert_autark_map_drawn(page, B_MAP, timeout=60000, attach_as="Baseline's map, expanded after a collapsed run")
 
     # 3. The chart: Twice as tall has the least sunlight and Two towers removed
-    # the most, in the rows the Bars chart reads and in the Compare chart's
-    # stacked table alike; height_factor and the edit differ.
+    # the most, in the rows the Bars chart reads.
     frame_nodes(page, [CHART])
     _assert_chart_drew(page, CHART)
     means = _chart_means(page, CHART, "sunlight")
     assert means["Twice as tall"] < means["Baseline"] < means["Two towers removed"], (
         f"mean road sunlight per scenario: {means}"
     )
-    frame_nodes(page, [COMPARE_CHART])
-    for node_id in (COMPARE_CHART, COMPARE_DIFFERENCE):
-        layer = node_locator(page, node_id).get_by_label("Layer", exact=True)
-        assert layer.input_value() == ROADS, f"{node_id}'s Layer menu reads {layer.input_value()!r}"
-    _assert_compare_chart_drew(page, COMPARE_CHART)
-    stacked = _rows(page, COMPARE_CHART)
-    stacked_means = {}
-    for name in NAMES.values():
-        values = [row["sunlight"] for row in stacked if row["scenario_name"] == name]
-        assert values, f"the stacked table has no {name} rows"
-        stacked_means[name] = sum(values) / len(values)
-    assert stacked_means == pytest.approx(means), (
-        f"the Compare chart's stacked roads {stacked_means} are not the roads the Bars chart reads {means}"
-    )
-    _assert_factor_and_edit_differ(page, COMPARE_CHART)
 
     # 4. The difference: each road's change, below zero where shadows grew, on
-    # a scale centered on no change.
-    baseline_roads = [row for row in stacked if row["scenario_name"] == "Baseline"]
+    # a scale centered on no change, one row per road Baseline's Roads node
+    # hands on.
+    baseline_roads = _rows(page, B_ROADS)
     frame_nodes(page, [DIFFERENCE, DIFFERENCE_MAP])
     assert_autark_map_drawn(page, DIFFERENCE_MAP, timeout=60000, attach_as="the sunlight change per road")
     _assert_legend_title(page, DIFFERENCE_MAP, "Sunlight change (minutes)")
     low, high = CHANGE_RANGE
     _assert_legend_reads(page, DIFFERENCE_MAP, (low, (low + high) / 2, high))
-    # The Compare node in Difference leaves its map to an Autark node, and the
-    # Sunlight change node writes exactly what it writes: the same roads, in
-    # the same order, with the same columns, values and coordinate system, and
-    # no layer name or type.
-    frame_nodes(page, [COMPARE_DIFFERENCE])
-    _assert_compare_draws_no_map(page, COMPARE_DIFFERENCE)
-    written = {k: v for k, v in _stored(page, DIFFERENCE).items() if k in ("dataType", "data", "schema")}
-    compared = {k: v for k, v in _stored(page, COMPARE_DIFFERENCE).items() if k in ("dataType", "data", "schema")}
+    # The Sunlight change node writes a layer with no layer name or type.
+    written = _stored(page, DIFFERENCE)
     assert "metadata" not in written["data"], written["data"].get("metadata")
-    assert [list(f["properties"]) for f in written["data"]["features"][:1]] == [
-        list(f["properties"]) for f in compared["data"]["features"][:1]
-    ]
-    assert written == compared, "the Sunlight change node does not write what Compare's Difference writes"
+    # It writes exactly what the rule writes from the two Roads nodes' layers,
+    # Twice as tall's minutes minus Baseline's, road by road: the same roads,
+    # in the same order, with the same columns, types, values and shapes
+    # (roads_change, which the fixture of Compare's own output holds to it,
+    # the order of its columns too: the sandbox's /get writes its JSON with the
+    # keys sorted, so a page cannot see that order). The node reads its roads
+    # from the two maps, which name the coordinate system Autark draws in; the
+    # Roads nodes read the same roads from the shadow steps, whose layers name
+    # none. So the node's coordinate system is held to Autark's, as the unit
+    # test holds it, and the rest of its layer to the rule's.
+    from utk_curio.backend.tests._support.scenario_changes import first_difference, roads_change
+    from utk_curio.sandbox.util.parsers import parseOutput
+
+    expected = parseOutput(roads_change(_layer_of(_stored(page, B_ROADS)), _layer_of(_stored(page, T_ROADS))))
+    assert written["data"].get("crs") == AUTARK_CRS, written["data"].get("crs")
+    assert expected["data"].get("crs") in (None, AUTARK_CRS), expected["data"].get("crs")
+
+    def _without_crs(envelope: dict) -> dict:
+        data = {k: v for k, v in envelope["data"].items() if k != "crs"}
+        return {"dataType": envelope["dataType"], "schema": envelope["schema"], "data": data}
+
+    difference = first_difference(_without_crs(written), _without_crs(expected))
+    assert difference is None, f"the Sunlight change node does not write Twice as tall's roads minus Baseline's: {difference}"
     rows = _rows(page, DIFFERENCE)
     assert len(rows) == len(baseline_roads), f"{len(rows)} rows for {len(baseline_roads)} roads"
     assert {row["change"] for row in rows} <= {"changed", "unchanged"}, (
@@ -772,12 +702,10 @@ def test_example_06_compares_its_three_scenarios_in_the_canvas(
     saved = _saved_spec(current_server, token, project_id)["dataflow"]
     by_id = {node["id"]: node for node in saved["nodes"]}
     shipped = {node["id"]: node for node in spec["dataflow"]["nodes"]}
-    for node_id in (CHART, DIFFERENCE, B_ROADS, T_ROADS, E_ROADS, COMPARE_CHART, COMPARE_DIFFERENCE):
+    for node_id in (CHART, DIFFERENCE, B_ROADS, T_ROADS, E_ROADS):
         assert by_id[node_id]["content"] == shipped[node_id]["content"], f"{node_id} rewrote its code"
     saved_values = {w["name"]: w.get("value", w["default"]) for w in by_id[CHART]["metadata"]["widgets"]}
     assert saved_values == {"y": "sunlight", "combine": "mean", "y_title": "mean of sunlight"}, saved_values
-    for node_id in (COMPARE_CHART, COMPARE_DIFFERENCE):
-        assert by_id[node_id]["metadata"]["compareScenarios"] == shipped[node_id]["metadata"]["compareScenarios"]
     assert by_id[E_EDIT]["content"] == shipped[E_EDIT]["content"], f"{E_EDIT} rewrote its code"
     assert by_id[E_EDIT]["metadata"]["editFeatures"] == shipped[E_EDIT]["metadata"]["editFeatures"]
     scenarios = {scenario["id"]: scenario for scenario in saved["scenarios"]}
@@ -821,10 +749,14 @@ def test_both_scenarios_dragged_into_an_empty_project_read_one_context(
     app_frontend: "FrontendPage", current_server: str, page,
 ):
     """The seeded example runs and is saved; then, in an empty project, both of
-    its scenarios are dragged in from the Scenario Catalog and compared."""
+    its scenarios are dragged in from the Scenario Catalog: they show their
+    saved results with no run, read one context, and expand in place. A
+    Vega-Lite chart reading ``inputs``, wired to the two dropped Roads nodes,
+    names each input's rows by the dropped box its node is in."""
     require_project_page()
     require_user_auth()
     page.emulate_media(reduced_motion="reduce")
+    page.add_init_script(_KEEP_VEGA_VIEWS_INIT)
     empty = {"dataflow": {
         "name": "Shadow comparison", "task": "", "timestamp": 1789193389280,
         "provenance_id": "Shadow comparison", "nodes": [], "edges": [],
@@ -900,31 +832,33 @@ def test_both_scenarios_dragged_into_an_empty_project_read_one_context(
         f"the shared context feeds {readers}, not both shadow steps"
     )
 
-    # A Compare Scenarios node over both dropped maps.
-    compare = drag_builtin_to_canvas(page, "#tile-compare-scenarios", at=(900.0, 260.0))
+    # Each dropped scenario expands in place on a double-click.
     for name in ("Baseline", "Twice as tall"):
         scenario = dropped[name]
         box = _frame_box(page, scenario["id"], scenario["nodes"])
         box.dblclick()
         node_locator(page, scenario["nodes"][-1]).wait_for(state="visible", timeout=10000)
-    _wait_for_circles(page, compare, ["in"])
-    # The drops' toasts sit bottom right, where a dropped node's handle can be.
-    frame_nodes(page, [copies[B_MAP], compare])
-    dismiss_toasts(page)
-    connect_nodes(page, copies[B_MAP], compare)
-    _wait_for_circles(page, compare, ["in", "in_1"])
-    frame_nodes(page, [copies[T_MAP], compare])
-    dismiss_toasts(page)
-    connect_nodes(page, copies[T_MAP], compare, target_handle="in_1")
-    deadline = time.time() + 15
-    code = ""
-    while time.time() < deadline:
-        code = read_node_code(page, compare)
-        if '"Baseline", [!! input_0 !!]' in code and '"Twice as tall", [!! input_1 !!]' in code:
-            break
-        page.wait_for_timeout(250)
-    assert '"Twice as tall", [!! input_1 !!]' in code, f"the node did not label its inputs by scenario:\n{code}"
 
-    # The two read one context, and only height_factor differs.
-    frame_nodes(page, [compare])
-    _assert_only_height_factor_differs(page, compare, copies[B_COMPUTE])
+    # A Vega-Lite chart reading inputs, over the two dropped Roads nodes:
+    # each input's rows carry the dropped box their node is in, its id and its
+    # name, in circle order.
+    from utk_curio.backend.tests.test_example06_sunlight_change import ROAD_COUNT
+
+    chart = drag_builtin_to_canvas(page, "#tile-vis-vega", at=(900.0, 260.0))
+    set_node_code(page, chart, DROPPED_CHART_SPEC)
+    _wait_for_circles(page, chart, ["in"])
+    # The drops' toasts sit bottom right, where a dropped node's handle can be.
+    frame_nodes(page, [copies[B_ROADS], chart])
+    dismiss_toasts(page)
+    connect_nodes(page, copies[B_ROADS], chart)
+    _wait_for_circles(page, chart, ["in", "in_1"])
+    frame_nodes(page, [copies[T_ROADS], chart])
+    dismiss_toasts(page)
+    connect_nodes(page, copies[T_ROADS], chart, target_handle="in_1")
+    play_node(page, chart)
+    _settled_done(page, chart, VEGA)
+    labels = _inputs_labels(page, chart, 2)
+    assert labels == [
+        [dropped["Baseline"]["id"], "Baseline", ROAD_COUNT],
+        [dropped["Twice as tall"]["id"], "Twice as tall", ROAD_COUNT],
+    ], f"the chart names its inputs' rows {labels}, not by the dropped boxes"

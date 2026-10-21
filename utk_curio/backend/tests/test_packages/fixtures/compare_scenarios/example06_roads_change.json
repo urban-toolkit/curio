@@ -1,0 +1,5414 @@
+{
+ "madeBy": "utk_curio/backend/tests/test_packages/fixtures/compare_scenarios/make_compare_fixtures.py",
+ "main": "72f5d3df5",
+ "inputs": "Back Bay's roads as test_example06_sunlight_change.py hands them on, Baseline then Twice as tall",
+ "call": "difference_scenarios([(\"s-baseline\", \"Baseline\", ...), (\"s-twice\", \"Twice as tall\", ...)], layer=\"table_osm_roads\"), read back from the store; the same with Twice as tall's roads reordered",
+ "change": {
+  "columns": [
+   "geometry",
+   "change",
+   "attribution",
+   "condition",
+   "highway",
+   "lanes",
+   "massgis:way_id",
+   "maxspeed",
+   "name",
+   "sidewalk:both",
+   "source",
+   "surface",
+   "width",
+   "compute",
+   "sunlight",
+   "cycleway:right",
+   "lit",
+   "oneway",
+   "parking:left",
+   "parking:right",
+   "parking:right:orientation",
+   "sidewalk:left",
+   "sidewalk:right",
+   "turn:lanes",
+   "parking:both",
+   "parking:both:orientation",
+   "cycleway:both",
+   "bicycle",
+   "covered",
+   "destination:ref:to",
+   "maxheight",
+   "ref",
+   "sidewalk",
+   "foot",
+   "horse",
+   "incline",
+   "service",
+   "alt_name",
+   "bus",
+   "destination",
+   "hgv",
+   "massgis:ref",
+   "hazmat",
+   "hgv:national_network",
+   "name:etymology:wikidata",
+   "source:hgv:national_network",
+   "toll",
+   "destination:lanes",
+   "junction:ref",
+   "layer",
+   "orig_name",
+   "start_date",
+   "tunnel",
+   "cycleway:left",
+   "cycleway:left:buffer",
+   "cycleway:left:oneway",
+   "cycleway:left:separation",
+   "cycleway:right:oneway",
+   "turn:lanes:forward",
+   "cycleway",
+   "cycleway:buffer",
+   "cycleway:separation",
+   "access",
+   "motor_vehicle",
+   "smoothness",
+   "NHS",
+   "operator",
+   "destination:ref",
+   "cycleway:right:buffer",
+   "mapillary",
+   "survey:date",
+   "cycleway:right:separation",
+   "maxweight:signed",
+   "turn:lanes:backward",
+   "wikidata",
+   "wikipedia",
+   "level",
+   "coach",
+   "goods",
+   "hgv_articulated",
+   "lhv",
+   "psv",
+   "cycleway:both:lane",
+   "lanes:backward",
+   "lanes:forward",
+   "maxspeed:advisory",
+   "note",
+   "cutting",
+   "bridge",
+   "bridge:name",
+   "maxweight",
+   "lane_markings",
+   "maxspeed:type",
+   "lanes:bus:backward",
+   "lanes:bus:forward",
+   "shoulder",
+   "oneway:bicycle",
+   "indoor",
+   "wheelchair",
+   "description",
+   "parking:left:orientation",
+   "cycleway:both:buffer",
+   "cycleway:right:lane",
+   "access:conditional",
+   "stroller",
+   "wikimedia_commons",
+   "location",
+   "dog",
+   "maxlength",
+   "old_name",
+   "fee",
+   "tracktype",
+   "conveying",
+   "stairs",
+   "handrail",
+   "designated_direction",
+   "tactile_paving",
+   "step_count",
+   "brand:website",
+   "emergency"
+  ],
+  "dtypes": [
+   "geometry",
+   "str",
+   "str",
+   "str",
+   "str",
+   "str",
+   "str",
+   "str",
+   "str",
+   "str",
+   "str",
+   "str",
+   "str",
+   "object",
+   "float64",
+   "str",
+   "str",
+   "str",
+   "str",
+   "str",
+   "str",
+   "str",
+   "str",
+   "str",
+   "str",
+   "str",
+   "str",
+   "str",
+   "str",
+   "str",
+   "str",
+   "str",
+   "str",
+   "str",
+   "str",
+   "str",
+   "str",
+   "str",
+   "str",
+   "str",
+   "str",
+   "str",
+   "str",
+   "str",
+   "str",
+   "str",
+   "str",
+   "str",
+   "str",
+   "str",
+   "str",
+   "str",
+   "str",
+   "str",
+   "str",
+   "str",
+   "str",
+   "str",
+   "str",
+   "str",
+   "str",
+   "str",
+   "str",
+   "str",
+   "str",
+   "str",
+   "str",
+   "str",
+   "str",
+   "str",
+   "str",
+   "str",
+   "str",
+   "str",
+   "str",
+   "str",
+   "str",
+   "str",
+   "str",
+   "str",
+   "str",
+   "str",
+   "str",
+   "str",
+   "str",
+   "str",
+   "str",
+   "str",
+   "str",
+   "str",
+   "str",
+   "str",
+   "str",
+   "str",
+   "str",
+   "str",
+   "str",
+   "str",
+   "str",
+   "str",
+   "str",
+   "str",
+   "str",
+   "str",
+   "str",
+   "str",
+   "str",
+   "str",
+   "str",
+   "str",
+   "str",
+   "str",
+   "str",
+   "str",
+   "str",
+   "str",
+   "str",
+   "str",
+   "str",
+   "str"
+  ],
+  "rows": [
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -120.0
+    },
+    -120.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -180.0
+    },
+    -180.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -120.0
+    },
+    -120.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -180.0
+    },
+    -180.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -120.0
+    },
+    -120.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -180.0
+    },
+    -180.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -120.0
+    },
+    -120.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -180.0
+    },
+    -180.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -120.0
+    },
+    -120.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -180.0
+    },
+    -180.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -120.0
+    },
+    -120.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -180.0
+    },
+    -180.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -120.0
+    },
+    -120.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -180.0
+    },
+    -180.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -120.0
+    },
+    -120.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -180.0
+    },
+    -180.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -120.0
+    },
+    -120.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -180.0
+    },
+    -180.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -120.0
+    },
+    -120.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -180.0
+    },
+    -180.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -120.0
+    },
+    -120.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -180.0
+    },
+    -180.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -120.0
+    },
+    -120.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -180.0
+    },
+    -180.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -120.0
+    },
+    -120.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -180.0
+    },
+    -180.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -120.0
+    },
+    -120.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -180.0
+    },
+    -180.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -120.0
+    },
+    -120.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -180.0
+    },
+    -180.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -120.0
+    },
+    -120.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -180.0
+    },
+    -180.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -120.0
+    },
+    -120.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -180.0
+    },
+    -180.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -120.0
+    },
+    -120.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -180.0
+    },
+    -180.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -120.0
+    },
+    -120.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -180.0
+    },
+    -180.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -120.0
+    },
+    -120.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -180.0
+    },
+    -180.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -120.0
+    },
+    -120.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -180.0
+    },
+    -180.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -120.0
+    },
+    -120.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -180.0
+    },
+    -180.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -120.0
+    },
+    -120.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -180.0
+    },
+    -180.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -120.0
+    },
+    -120.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -180.0
+    },
+    -180.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -120.0
+    },
+    -120.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -180.0
+    },
+    -180.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -120.0
+    },
+    -120.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -180.0
+    },
+    -180.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -120.0
+    },
+    -120.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -180.0
+    },
+    -180.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -120.0
+    },
+    -120.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -180.0
+    },
+    -180.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -120.0
+    },
+    -120.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -180.0
+    },
+    -180.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -120.0
+    },
+    -120.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -180.0
+    },
+    -180.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -120.0
+    },
+    -120.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -180.0
+    },
+    -180.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -120.0
+    },
+    -120.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -180.0
+    },
+    -180.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -120.0
+    },
+    -120.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -180.0
+    },
+    -180.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -120.0
+    },
+    -120.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -180.0
+    },
+    -180.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -120.0
+    },
+    -120.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -180.0
+    },
+    -180.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -120.0
+    },
+    -120.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -180.0
+    },
+    -180.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -120.0
+    },
+    -120.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -180.0
+    },
+    -180.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -120.0
+    },
+    -120.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -180.0
+    },
+    -180.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -120.0
+    },
+    -120.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -180.0
+    },
+    -180.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -120.0
+    },
+    -120.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -180.0
+    },
+    -180.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -120.0
+    },
+    -120.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -180.0
+    },
+    -180.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -120.0
+    },
+    -120.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -180.0
+    },
+    -180.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -120.0
+    },
+    -120.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -180.0
+    },
+    -180.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -120.0
+    },
+    -120.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -180.0
+    },
+    -180.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -120.0
+    },
+    -120.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -180.0
+    },
+    -180.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -120.0
+    },
+    -120.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -180.0
+    },
+    -180.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -120.0
+    },
+    -120.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -180.0
+    },
+    -180.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -120.0
+    },
+    -120.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -180.0
+    },
+    -180.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -120.0
+    },
+    -120.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -180.0
+    },
+    -180.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -120.0
+    },
+    -120.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -180.0
+    },
+    -180.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -120.0
+    },
+    -120.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -180.0
+    },
+    -180.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -120.0
+    },
+    -120.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -180.0
+    },
+    -180.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -120.0
+    },
+    -120.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -180.0
+    },
+    -180.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -120.0
+    },
+    -120.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -180.0
+    },
+    -180.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -120.0
+    },
+    -120.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -180.0
+    },
+    -180.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -120.0
+    },
+    -120.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -180.0
+    },
+    -180.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -120.0
+    },
+    -120.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -180.0
+    },
+    -180.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -120.0
+    },
+    -120.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -180.0
+    },
+    -180.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -120.0
+    },
+    -120.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -180.0
+    },
+    -180.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -120.0
+    },
+    -120.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -180.0
+    },
+    -180.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -120.0
+    },
+    -120.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -180.0
+    },
+    -180.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -120.0
+    },
+    -120.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -180.0
+    },
+    -180.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -120.0
+    },
+    -120.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -180.0
+    },
+    -180.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -120.0
+    },
+    -120.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -180.0
+    },
+    -180.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -120.0
+    },
+    -120.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -180.0
+    },
+    -180.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -120.0
+    },
+    -120.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -180.0
+    },
+    -180.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -120.0
+    },
+    -120.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -180.0
+    },
+    -180.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -120.0
+    },
+    -120.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -180.0
+    },
+    -180.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -120.0
+    },
+    -120.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -180.0
+    },
+    -180.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -120.0
+    },
+    -120.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -180.0
+    },
+    -180.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -120.0
+    },
+    -120.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -180.0
+    },
+    -180.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -120.0
+    },
+    -120.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -180.0
+    },
+    -180.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -120.0
+    },
+    -120.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -180.0
+    },
+    -180.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -120.0
+    },
+    -120.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -180.0
+    },
+    -180.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -120.0
+    },
+    -120.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -180.0
+    },
+    -180.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -120.0
+    },
+    -120.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -180.0
+    },
+    -180.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -120.0
+    },
+    -120.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -180.0
+    },
+    -180.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -120.0
+    },
+    -120.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -180.0
+    },
+    -180.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -120.0
+    },
+    -120.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -180.0
+    },
+    -180.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -120.0
+    },
+    -120.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -180.0
+    },
+    -180.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -120.0
+    },
+    -120.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -180.0
+    },
+    -180.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -120.0
+    },
+    -120.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -180.0
+    },
+    -180.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -120.0
+    },
+    -120.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -180.0
+    },
+    -180.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -120.0
+    },
+    -120.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -180.0
+    },
+    -180.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -120.0
+    },
+    -120.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -180.0
+    },
+    -180.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -120.0
+    },
+    -120.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -180.0
+    },
+    -180.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -120.0
+    },
+    -120.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -180.0
+    },
+    -180.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -120.0
+    },
+    -120.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -180.0
+    },
+    -180.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -120.0
+    },
+    -120.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -180.0
+    },
+    -180.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -120.0
+    },
+    -120.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -180.0
+    },
+    -180.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -120.0
+    },
+    -120.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -180.0
+    },
+    -180.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -120.0
+    },
+    -120.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -180.0
+    },
+    -180.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -120.0
+    },
+    -120.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -180.0
+    },
+    -180.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -120.0
+    },
+    -120.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -180.0
+    },
+    -180.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -120.0
+    },
+    -120.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -180.0
+    },
+    -180.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -120.0
+    },
+    -120.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -180.0
+    },
+    -180.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -120.0
+    },
+    -120.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -180.0
+    },
+    -180.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -120.0
+    },
+    -120.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -180.0
+    },
+    -180.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -120.0
+    },
+    -120.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -180.0
+    },
+    -180.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -120.0
+    },
+    -120.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -180.0
+    },
+    -180.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -120.0
+    },
+    -120.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -180.0
+    },
+    -180.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -120.0
+    },
+    -120.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -180.0
+    },
+    -180.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -120.0
+    },
+    -120.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -180.0
+    },
+    -180.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -120.0
+    },
+    -120.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -180.0
+    },
+    -180.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -120.0
+    },
+    -120.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -180.0
+    },
+    -180.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -120.0
+    },
+    -120.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -180.0
+    },
+    -180.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -120.0
+    },
+    -120.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -180.0
+    },
+    -180.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -120.0
+    },
+    -120.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -180.0
+    },
+    -180.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -120.0
+    },
+    -120.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -180.0
+    },
+    -180.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -120.0
+    },
+    -120.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -180.0
+    },
+    -180.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -120.0
+    },
+    -120.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -180.0
+    },
+    -180.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -120.0
+    },
+    -120.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -180.0
+    },
+    -180.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -120.0
+    },
+    -120.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -180.0
+    },
+    -180.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -120.0
+    },
+    -120.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -180.0
+    },
+    -180.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -120.0
+    },
+    -120.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -180.0
+    },
+    -180.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -120.0
+    },
+    -120.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -180.0
+    },
+    -180.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -120.0
+    },
+    -120.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -180.0
+    },
+    -180.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -120.0
+    },
+    -120.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -180.0
+    },
+    -180.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -120.0
+    },
+    -120.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -180.0
+    },
+    -180.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -120.0
+    },
+    -120.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -180.0
+    },
+    -180.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -120.0
+    },
+    -120.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -180.0
+    },
+    -180.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -120.0
+    },
+    -120.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -180.0
+    },
+    -180.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -120.0
+    },
+    -120.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -180.0
+    },
+    -180.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -120.0
+    },
+    -120.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -180.0
+    },
+    -180.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -120.0
+    },
+    -120.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -180.0
+    },
+    -180.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -120.0
+    },
+    -120.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -180.0
+    },
+    -180.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -120.0
+    },
+    -120.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -180.0
+    },
+    -180.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -120.0
+    },
+    -120.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -180.0
+    },
+    -180.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -120.0
+    },
+    -120.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -180.0
+    },
+    -180.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -120.0
+    },
+    -120.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -180.0
+    },
+    -180.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -120.0
+    },
+    -120.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -180.0
+    },
+    -180.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -120.0
+    },
+    -120.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -180.0
+    },
+    -180.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -120.0
+    },
+    -120.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -180.0
+    },
+    -180.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -120.0
+    },
+    -120.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -180.0
+    },
+    -180.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -120.0
+    },
+    -120.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -180.0
+    },
+    -180.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -120.0
+    },
+    -120.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -180.0
+    },
+    -180.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -120.0
+    },
+    -120.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -180.0
+    },
+    -180.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -120.0
+    },
+    -120.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -180.0
+    },
+    -180.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -120.0
+    },
+    -120.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -180.0
+    },
+    -180.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -120.0
+    },
+    -120.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -180.0
+    },
+    -180.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -120.0
+    },
+    -120.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -180.0
+    },
+    -180.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -120.0
+    },
+    -120.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -180.0
+    },
+    -180.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -120.0
+    },
+    -120.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -180.0
+    },
+    -180.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -120.0
+    },
+    -120.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -180.0
+    },
+    -180.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -120.0
+    },
+    -120.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -180.0
+    },
+    -180.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -120.0
+    },
+    -120.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -180.0
+    },
+    -180.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -120.0
+    },
+    -120.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -180.0
+    },
+    -180.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -120.0
+    },
+    -120.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -180.0
+    },
+    -180.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -120.0
+    },
+    -120.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -180.0
+    },
+    -180.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -120.0
+    },
+    -120.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -180.0
+    },
+    -180.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -120.0
+    },
+    -120.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -180.0
+    },
+    -180.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -120.0
+    },
+    -120.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -180.0
+    },
+    -180.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -120.0
+    },
+    -120.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -180.0
+    },
+    -180.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -120.0
+    },
+    -120.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -180.0
+    },
+    -180.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -120.0
+    },
+    -120.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -180.0
+    },
+    -180.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -120.0
+    },
+    -120.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -180.0
+    },
+    -180.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -120.0
+    },
+    -120.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -180.0
+    },
+    -180.0
+   ],
+   [
+    "unchanged",
+    {
+     "sunlight": 0.0
+    },
+    0.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -60.0
+    },
+    -60.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -120.0
+    },
+    -120.0
+   ],
+   [
+    "changed",
+    {
+     "sunlight": -180.0
+    },
+    -180.0
+   ]
+  ],
+  "values": [
+   "change",
+   "compute",
+   "sunlight"
+  ],
+  "rest_sha256": "069e3cb6cada99f0c7d4e6f02c5f5d574b44d6dc0bc9c12f43cdd3ff92cd4fd4",
+  "crs": "EPSG:3395",
+  "geometry_sha256": "889a10b5fe286a21731157812a5d3f30bd9e7f74eb1dc2074b8d32dd1276be2c"
+ }
+}

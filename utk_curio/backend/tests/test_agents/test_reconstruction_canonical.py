@@ -551,7 +551,7 @@ class TestExpectedBlockRoundTrip:
 def _feeding_circles(groups: int, feeders: int, *, charted: int | None = None, swapped: bool = False) -> dict:
     """*groups* copies of one shape: a loader whose rows *feeders* steps take,
     each step handing its rows to its own circle of one node, as each
-    scenario's node feeds a Compare Scenarios node. With *charted*, the first
+    scenario's node feeds a chart that compares them. With *charted*, the first
     group's step on that circle also feeds a chart; with *swapped*, the first
     group's first two steps trade circles."""
     nodes, edges = [], []

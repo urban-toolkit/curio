@@ -14,8 +14,7 @@
   written with Curio's mosaic helper (``mosaic_rasters``), with NaN as its
   nodata, as Curio's raster tools write theirs: a GeoTIFF that names no nodata
   is read by autk-db with 0 as its nodata, which would leave every cell in the
-  sun out of an Autark map and a Compare Scenarios Difference. A tile not
-  predicted is NaN. Its statistics over the ground are a Raster Calculator's,
+  sun out of an Autark map. A tile not predicted is NaN. Its statistics over the ground are a Raster Calculator's,
   with the heights as the mask, so they count the ground of the tiles
   predicted only.
 

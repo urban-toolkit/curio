@@ -2033,7 +2033,9 @@ WHATIF_DATA = "whatif-data"
 WHATIF_POOL = "whatif-pool"
 WHATIF_EDIT = "whatif-towers-edit"
 WHATIF_MAPS = ["whatif-baseline-map", "whatif-modified-map", "whatif-towers-map"]
-WHATIF_COMPARES = ["whatif-compare-chart", "whatif-compare-difference"]
+#: The nodes that compare its scenarios, each with its type: Scout's Bars of the
+#: mean sunlight, and the Python node that takes each road's sunlight change.
+WHATIF_COMPARES = [("whatif-compare-chart", "bars"), ("whatif-compare-difference", "computation-analysis")]
 WHATIF_BASELINE = "s-baseline"
 WHATIF_BASELINE_NODES = ["whatif-baseline-compute", "whatif-baseline-map"]
 WHATIF_TWICE = "s-twice"
@@ -2056,7 +2058,12 @@ FLOOD_PERIOD = "8f0c1e2a-5b3d-4c7e-9a61-2d4f6b8e0c13"
 FLOOD_TOPLEFT = "c1d2e3f4-0a1b-4c2d-8e3f-4a5b6c7d8e91"
 FLOOD_CLASSES = "e3f4a5b6-2c3d-4e4f-8a5b-6c7d8e9fa0b3"
 FLOOD_DEPTH = "f4a5b6c7-3d4e-4f5a-9b6c-7d8e9fa0b1c4"
-FLOOD_COMPARES = ["7a3d9f1c-5b68-4e0a-9d4e-0f1b5a7c3d62", "9c5f1b3e-7d80-4a2c-8f6a-2b3d7c9e5f84"]
+#: Two of the nodes that compare its scenarios, each with its type: the Raster
+#: Calculator that takes the change in depth, and Scout's Bars of the median depth.
+FLOOD_COMPARES = [
+    ("7a3d9f1c-5b68-4e0a-9d4e-0f1b5a7c3d62", "raster-calculator"),
+    ("9c5f1b3e-7d80-4a2c-8f6a-2b3d7c9e5f84", "bars"),
+]
 
 # Example 17: downtown Chicago's ZIP codes from one loader, on an Autark map
 # whose ZIP codes a double-click picks. The selectiontag scene adds a Python
@@ -2226,7 +2233,7 @@ def scene_scenarios(ctx: Ctx) -> None:
         ctx, timeout_ms=600000,
         settle=[(m, "autk-grammar") for m in WHATIF_MAPS]
         + [(WHATIF_EDIT, "edit-features")]
-        + [(c, "compare-scenarios") for c in WHATIF_COMPARES],
+        + WHATIF_COMPARES,
     )
     save_dataflow(page)
     page.set_viewport_size(STILL_SIZE)
@@ -2392,7 +2399,7 @@ def scene_parameter(ctx: Ctx) -> None:
     page, tour = ctx.page, ctx.tour
     _open_project(ctx, _account_project(ctx, FLOOD_NAME), [FLOOD_PERIOD, FLOOD_DEPTH])
     tour.hush()
-    _play_all(ctx, timeout_ms=600000, settle=[(c, "compare-scenarios") for c in FLOOD_COMPARES])
+    _play_all(ctx, timeout_ms=600000, settle=FLOOD_COMPARES)
     page.set_viewport_size(STILL_SIZE)
     page.wait_for_timeout(1500)
     block = [FLOOD_PERIOD, FLOOD_TOPLEFT, FLOOD_CLASSES, FLOOD_DEPTH]

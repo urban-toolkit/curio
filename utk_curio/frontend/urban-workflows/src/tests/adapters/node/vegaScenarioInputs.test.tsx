@@ -3,10 +3,10 @@
  * scenario boxes its inputs come from, stacked in circle order, and draws them
  * in the boxes' colors, in the order the dataflow lists its boxes, whatever the
  * spec writes for `scenario_name`. A box renamed or recolored draws it again,
- * its rows stacked again under the new name, as a recolor draws a chart after
- * a Compare Scenarios node: no version in its provenance, nothing handed
- * downstream. A spec that does not read `inputs` stacks nothing and is drawn as
- * written.
+ * its rows stacked again under the new name, with no version in its provenance
+ * and nothing handed downstream; not during a run, which draws it itself, and
+ * not before the chart is first drawn. A spec that does not read `inputs`
+ * stacks nothing and is drawn as written.
  *
  * The behavior and useVega are real here; vega and vega-lite are the mocks
  * below, which keep the spec each view is built from.
@@ -329,5 +329,39 @@ describe("a box renamed or recolored draws the chart again", () => {
       played.hook.rerender();
     });
     expect(views()).toHaveLength(2);
+  });
+
+  test("renamed during a run: the run draws it, then the chart is drawn again once the run ends if the run did not", async () => {
+    const played = await playedChart();
+    const renamed = [{ ...BASE, name: "Today" }, TALL];
+
+    setFlow(renamed, { isRunActive: true });
+    await act(async () => {
+      played.hook.rerender();
+    });
+    expect(views()).toHaveLength(1);
+
+    setFlow(renamed, { isRunActive: false });
+    await act(async () => {
+      played.hook.rerender();
+    });
+    await waitFor(() => expect(views()).toHaveLength(2));
+    expect(stackedRows().map((row: any[]) => row[1])).toEqual(["Today", "Today", "Twice as tall"]);
+    expect(lastSpec().encoding.x.sort).toEqual(["Today", "Twice as tall"]);
+    expect(mockProvenance).toHaveBeenCalledTimes(1);
+  });
+
+  test("nothing is drawn before the chart has been drawn once", async () => {
+    const data: any = { nodeId: "chart", input: INPUT, outputCallback: jest.fn(), interactionsCallback: jest.fn() };
+    const nodeState: any = { code: BARS, setOutput: jest.fn(), templateData: { code: "" } };
+    let hook: any;
+    await act(async () => {
+      hook = renderHook(() => useVegaBehavior(data, nodeState));
+    });
+    setFlow([BASE, { ...TALL, color: "#7b3294" }]);
+    await act(async () => {
+      hook.rerender();
+    });
+    expect(views()).toEqual([]);
   });
 });

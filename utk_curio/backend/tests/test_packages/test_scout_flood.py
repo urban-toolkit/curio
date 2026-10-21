@@ -42,8 +42,8 @@ median depth, its Points vulnerability against depth and its Grouped bars the
 mean depth by period. The nodes, run in the sandbox, give what this file
 computes from the datasets on its own. Until the plan answering komar41's
 review (step 6.3), Compare Scenarios nodes took the changes and drew the
-charts; they run here as the reference the new nodes are held to, until step
-6.4 of that plan removes them with the node.
+charts; the new nodes are held to the rules those wrote by
+(``_support/scenario_changes.py``).
 
 Sandbox modules are imported inside each test, so a checkout without them
 fails each test on its own.
@@ -67,7 +67,6 @@ DATAFLOW = REPO / "docs" / "examples" / "dataflows" / "quad-cities-flood-vulnera
 SCOUT_FUNCTION = Path(__file__).resolve().parent / "fixtures" / "scout_flood" / "flood_simulation.py"
 #: The starter a Raster Calculator opens with, which its package ships.
 CALCULATOR_STARTER = REPO / "packages" / "curio.scout@1" / "sources" / "raster-calculator.py"
-COMPARE_CODE_TS = REPO / "utk_curio" / "frontend" / "urban-workflows" / "src" / "utils" / "compare" / "compareCode.ts"
 LOADING = "curio.builtin/data-loading"
 CALCULATOR = "curio.scout/raster-calculator"
 #: The Raster Calculator's package, which the dataflow's lockfile names.
@@ -240,6 +239,17 @@ PERIOD_DEPTHS = {
 }
 #: The mean Earth's radius, in km: a cell's area on SCOUT's grid in degrees.
 EARTH_RADIUS_KM = 6371.0088
+#: What Compare Scenarios' own functions wrote on these tests' inputs, from
+#: main before step 6.4 of the plan answering komar41's review removed them
+#: (``make_compare_fixtures.py`` beside it, on 72f5d3df5).
+COMPARE_FIXTURE = Path(__file__).resolve().parent / "fixtures" / "compare_scenarios" / "flood_tracts.json"
+#: The fixture's numbers at the dataflow's settings come from sums over
+#: SCOUT's rasters, which another machine may add in another order.
+FIXTURE_REL = 1e-12
+
+
+def _compare_fixture() -> dict:
+    return json.loads(COMPARE_FIXTURE.read_text(encoding="utf-8"))
 
 
 @dataclass(frozen=True)
@@ -521,14 +531,6 @@ def _calculators(call: str) -> list:
     return [n for n in _nodes(CALCULATOR) if _returns(n) == call and n["id"] in members]
 
 
-def _code_note(name: str) -> list[str]:
-    """The comment lines ``compareCode.ts`` starts a Compare Scenarios node's code with."""
-    source = COMPARE_CODE_TS.read_text(encoding="utf-8")
-    match = re.search(rf"export const {name} = \[(.*?)\];", source, re.S)
-    assert match, f"{name} is not in {COMPARE_CODE_TS}"
-    return [ast.literal_eval(line.strip().rstrip(",")) for line in match.group(1).strip().splitlines()]
-
-
 def _literal_dict(source: str, name: str) -> dict:
     """The dict literal *source* assigns to *name*, wherever it is."""
     for node in ast.walk(ast.parse(source)):
@@ -641,41 +643,16 @@ def _comparisons(spec: dict) -> dict:
     return found
 
 
-def _compare_references() -> dict:
-    """The Compare Scenarios nodes the dataflow held until step 6.3, by the
-    key :func:`_comparisons` gives the node each became: ``(settings, code)``,
-    the code each wrote for its two inputs, No NbS in circle 0 and NbS in
-    circle 1 (``utils/compare/compareCode.ts``). In Difference, the size of
-    NbS minus No NbS of the depths, and of the tracts' mean depths joined on
-    their FIPS code; as charts, the median depth in bars, each tract's SVI
-    percentile against its mean depth in points, and the mean depth of each
-    period in grouped bars, one bar per period and scenario, as it is."""
-    entries = ['    ("no-nbs", "No NbS", [!! input_0 !!]),', '    ("nbs", "NbS", [!! input_1 !!]),']
-    stack = "\n".join([*_code_note("STACK_CODE_NOTE"), "return curio_stack_scenarios([", *entries, "])", ""])
-    return {
-        ("choose", "difference"): (
-            {"difference": {"absolute": True}},
-            "\n".join([*_code_note("ABSOLUTE_CODE_NOTE"), "return curio_difference_scenarios([", *entries,
-                       "], absolute=True)", ""]),
-        ),
-        ("statistics", "chart"): ({"chart": {"preset": "bar", "y": "median"}}, stack),
-        ("tract depth", "difference"): (
-            {"difference": {"absolute": True, "key": "FIPS"}},
-            "\n".join([*_code_note("ABSOLUTE_CODE_NOTE"), "return curio_difference_scenarios([", *entries,
-                       '], absolute=True, key="FIPS")', ""]),
-        ),
-        ("tract depth", "chart"): ({"chart": {"preset": "scatter", "x": "RPL_THEMES", "y": "mean_depth_m"}}, stack),
-        ("by period", "chart"): (
-            {"chart": {"preset": "grouped-bar", "x": "period", "y": "mean_depth_m", "aggregate": "none"}}, stack,
-        ),
-    }
-
-
-def _reference(key: tuple) -> dict:
-    """The Compare Scenarios node the comparison *key* replaced, as a node a
-    run takes: its type and the code it wrote."""
-    _settings, code = _compare_references()[key]
-    return {"id": f"compare-{'-'.join(key).replace(' ', '-')}", "type": COMPARE, "content": code}
+#: The comparisons, by the key :func:`_comparisons` gives each: the five
+#: Compare Scenarios nodes the dataflow held until step 6.3 became them. In
+#: Difference, the size of NbS minus No NbS of the depths, and of the tracts'
+#: mean depths joined on their FIPS code; as charts, the median depth in bars,
+#: each tract's SVI percentile against its mean depth in points, and the mean
+#: depth of each period in grouped bars, one bar per period and scenario.
+COMPARISONS = {
+    ("choose", "difference"), ("statistics", "chart"), ("tract depth", "difference"),
+    ("tract depth", "chart"), ("by period", "chart"),
+}
 
 
 def _map_after(spec: dict, node_id: str) -> dict:
@@ -1051,7 +1028,7 @@ def test_the_changes_and_the_charts_hold_what_they_compare():
     Compare drew it."""
     spec = _dataflow()
     found = _comparisons(spec)
-    assert set(found) == set(_compare_references())
+    assert set(found) == COMPARISONS
     assert COMPARE not in {n["type"] for n in spec["nodes"]}
     parts = _scenario_parts(spec)
     for (part, mode), node in found.items():
@@ -1523,16 +1500,25 @@ def test_the_changes_and_the_charts_give_the_columns_their_maps_and_charts_read(
     per tract joins the two scenarios' tracts on their FIPS code and gives
     each tract the size of its change in mean depth, which its map reads (in
     2020 - 2050, 23 tracts change, by up to 1.603 m, and 5 do not), what
-    Compare Scenarios' Difference wrote for them, column for column, also
-    with NbS's tracts in the opposite order; the scatter's rows, its
-    ``inputs`` as a chart stacks them (``stack_inputs``, the twin of the
-    browser's), hold every tract in both scenarios with the SVI percentile and
-    the mean depth it reads, and the grouped bars' one row per period and
-    scenario, so each bar is its row: what Compare's stacked tables held, the
-    outlines left out."""
+    Compare Scenarios' Difference in Absolute keyed on FIPS wrote for them
+    (``keyed_change``), column for column, also with NbS's tracts in the
+    opposite order; the scatter's rows, its ``inputs`` as a chart stacks them
+    (``stack_inputs``, the twin of the browser's), hold every tract in both
+    scenarios with the SVI percentile and the mean depth it reads, and the
+    grouped bars' one row per period and scenario, so each bar is its row:
+    what Compare's stacked tables held (``stacked_rows``), the outlines left
+    out. Each is what Compare's own functions wrote on these inputs
+    (``flood_tracts.json``), and so are ``keyed_change`` and
+    ``stacked_rows``."""
     import numpy as np
     from geopandas.testing import assert_geodataframe_equal
 
+    from utk_curio.backend.tests._support.scenario_changes import (
+        assert_frame_matches,
+        assert_rows_match,
+        keyed_change,
+        stacked_rows,
+    )
     from utk_curio.sandbox.util.parsers import load_from_duckdb, save_to_duckdb
     from utk_curio.sandbox.util.scenario_stack import stack_inputs
 
@@ -1557,36 +1543,45 @@ def test_the_changes_and_the_charts_give_the_columns_their_maps_and_charts_read(
     assert (int((sizes > 0).sum()), int((sizes == 0).sum()), float(sizes.max())) == (23, 5, pytest.approx(1.603))
     for column in ("RPL_THEMES", "E_TOTPOP", "land_km2"):
         assert (change[column] == 0).all(), column
-    compared = run_on(_reference(("tract depth", "difference")), "tract depth")
+    compared = keyed_change(none, nbs, "FIPS", absolute=True)
     assert list(change.columns)[:2] == ["FIPS", "change"], list(change.columns)
     assert list(change.columns) == list(compared.columns)
     assert change.dtypes.astype(str).tolist() == compared.dtypes.astype(str).tolist()
     assert_geodataframe_equal(change, compared)
+    held = _compare_fixture()
+    assert_frame_matches(change, held["change"], rel=FIXTURE_REL, what="the Depth change per tract")
+    assert_frame_matches(compared, held["change"], rel=FIXTURE_REL, what="keyed_change")
     reversed_tracts = save_to_duckdb(nbs.iloc[::-1].reset_index(drop=True), node_id="nbs-tracts-reversed")
     again = run_on(found[("tract depth", "difference")], "tract depth", reversed_tracts)
-    assert_geodataframe_equal(again, run_on(_reference(("tract depth", "difference")), "tract depth", reversed_tracts))
+    assert_geodataframe_equal(again, keyed_change(none, load_from_duckdb(reversed_tracts), "FIPS", absolute=True))
     assert_geodataframe_equal(again, change)
+    assert_frame_matches(again, held["change"], rel=FIXTURE_REL, what="NbS's tracts reversed")
 
-    def rows_of(key, part):
-        """The chart's rows, and Compare's stacked table, each without outlines."""
-        rows = stack_inputs([("no-nbs", "No NbS", ran[("no-nbs", part)]), ("nbs", "NbS", ran[("nbs", part)])])
-        stacked = run_on(_reference(key), part)
-        geometry = getattr(stacked, "_geometry_column_name", None)
-        table = stacked.drop(columns=[geometry] if geometry in stacked.columns else [])
-        assert [{k: v for k, v in row.items() if k != "__input__"} for row in rows] == table.to_dict("records"), key
+    def rows_of(part, compares: dict):
+        """The chart's rows, and the scenarios' rows as Compare stacked them,
+        each without outlines: what Compare's stacked table held (*compares*)."""
+        entries = [("no-nbs", "No NbS", ran[("no-nbs", part)]), ("nbs", "NbS", ran[("nbs", part)])]
+        rows = stack_inputs(entries)
+        stacked = stacked_rows(entries)
+        assert [{k: v for k, v in row.items() if k != "__input__"} for row in rows] == stacked, part
+        assert_rows_match([{k: v for k, v in row.items() if k != "__input__"} for row in rows], compares["rows"],
+                          rel=FIXTURE_REL, what=f"the chart's rows of {part}")
+        assert_rows_match(stacked, compares["rows"], rel=FIXTURE_REL, what=f"stacked_rows of {part}")
         return rows, stacked
 
-    rows, points = rows_of(("tract depth", "chart"), "tract depth")
+    rows, points = rows_of("tract depth", held["scatter"])
     assert len(points) == len(rows) == 2 * RIVERSIDE_TRACTS
-    assert list(points["scenario_name"]) == ["No NbS"] * RIVERSIDE_TRACTS + ["NbS"] * RIVERSIDE_TRACTS
+    assert [row["scenario_name"] for row in points] == ["No NbS"] * RIVERSIDE_TRACTS + ["NbS"] * RIVERSIDE_TRACTS
     assert [row["__input__"] for row in rows] == [0] * RIVERSIDE_TRACTS + [1] * RIVERSIDE_TRACTS
     for column in ("RPL_THEMES", "mean_depth_m"):
-        assert str(points[column].dtype) == "float64" and points[column].notna().all(), column
+        for scenario in ("no-nbs", "nbs"):
+            tracts = ran[(scenario, "tract depth")]
+            assert str(tracts[column].dtype) == "float64" and tracts[column].notna().all(), (scenario, column)
         assert all(isinstance(row[column], float) for row in rows), column
 
-    rows, bars = rows_of(("by period", "chart"), "by period")
-    assert list(bars.columns) == ["scenario", "scenario_name", "period", "mean_depth_m", "land_km2"]
-    assert [(row["scenario_name"], row["period"], row["mean_depth_m"]) for row in bars.to_dict("records")] == [
+    rows, bars = rows_of("by period", held["byPeriod"])
+    assert [list(row) for row in bars] == [["scenario", "scenario_name", "period", "mean_depth_m", "land_km2"]] * len(bars)
+    assert [(row["scenario_name"], row["period"], row["mean_depth_m"]) for row in bars] == [
         (name, period, PERIOD_DEPTHS[name][period]) for name in ("No NbS", "NbS") for period in PERIODS
     ]
     assert [(row["scenario_name"], row["period"], row["mean_depth_m"]) for row in rows] == [
@@ -1604,15 +1599,18 @@ LEFT_OUT, ONLY_WITH_NBS = 0, -1
 def test_a_tract_one_side_lacks_is_removed_or_added_as_compare_wrote_it(workspace, monkeypatch):
     """A user's edit can leave a tract out of one scenario. The Depth change
     per tract then writes what Compare Scenarios' Difference in Absolute
-    keyed on FIPS wrote: a tract only No NbS has is ``removed``, in No NbS's
-    order, its numbers empty and its outline No NbS's; a tract only NbS has
-    is ``added``, after every tract of No NbS's, its numbers empty and its
-    outline NbS's. Every other tract holds the size of its change. The
-    inputs are the riverside tracts as Tract depth hands them on, CDC's
-    columns and outlines, each with a mean depth and its land."""
+    keyed on FIPS wrote (``keyed_change``): a tract only No NbS has is
+    ``removed``, in No NbS's order, its numbers empty and its outline No
+    NbS's; a tract only NbS has is ``added``, after every tract of No NbS's,
+    its numbers empty and its outline NbS's. Every other tract holds the size
+    of its change. The inputs are the riverside tracts as Tract depth hands
+    them on, CDC's columns and outlines, each with a mean depth and its land.
+    Each is what Compare's own function wrote on these inputs
+    (``flood_tracts.json``), and so is ``keyed_change``."""
     import numpy as np
     from geopandas.testing import assert_geodataframe_equal
 
+    from utk_curio.backend.tests._support.scenario_changes import assert_frame_matches, keyed_change
     from utk_curio.sandbox.util.parsers import load_from_duckdb, save_to_duckdb
 
     monkeypatch.chdir(workspace)
@@ -1634,14 +1632,17 @@ def test_a_tract_one_side_lacks_is_removed_or_added_as_compare_wrote_it(workspac
     node = _comparisons(_dataflow())[("tract depth", "difference")]
     numbers = ["E_TOTPOP", "RPL_THEMES", "mean_depth_m", "land_km2"]
     for change, (before, after, tract) in cases.items():
-        inputs = repr([save_to_duckdb(before, node_id=f"no-nbs-{change}"), save_to_duckdb(after, node_id=f"nbs-{change}")])
-        output, _ = run(node, inputs, "outputs", circles=2)
+        stored = [save_to_duckdb(before, node_id=f"no-nbs-{change}"), save_to_duckdb(after, node_id=f"nbs-{change}")]
+        output, _ = run(node, repr(stored), "outputs", circles=2)
         ours = load_from_duckdb(output["path"])
-        output, _ = run(_reference(("tract depth", "difference")), inputs, "outputs", circles=2)
-        compared = load_from_duckdb(output["path"])
+        # The two inputs as the node reads them, back from the store.
+        compared = keyed_change(*(load_from_duckdb(path) for path in stored), "FIPS", absolute=True)
         assert list(ours.columns) == list(compared.columns), change
         assert ours.dtypes.astype(str).tolist() == compared.dtypes.astype(str).tolist(), change
         assert_geodataframe_equal(ours, compared)
+        held = _compare_fixture()["oneSide"][change]
+        assert_frame_matches(ours, held, what=f"the Depth change per tract, {change}")
+        assert_frame_matches(compared, held, what=f"keyed_change, {change}")
         expected_order = fips if change == "removed" else [f for f in fips if f != tract] + [tract]
         assert list(ours["FIPS"]) == expected_order, change
         (row,) = ours.index[ours["FIPS"] == tract]
@@ -1661,8 +1662,11 @@ def test_the_median_chart_reads_each_scenarios_statistics_as_compare_stacked_the
     """At the dataflow's own settings, the Bars chart's rows, its ``inputs``
     as a chart stacks them, are each scenario's statistics, one row each:
     SCOUT's median and mean flood depth for its whole grid, 7.164 m and
-    4.900 m the medians, what Compare Scenarios' stacked table held; the
-    mean the chart combines each bar's one row by is the row's median."""
+    4.900 m the medians, what Compare Scenarios' stacked table held
+    (``stacked_rows``); the mean the chart combines each bar's one row by is
+    the row's median. They are what Compare's own function wrote
+    (``flood_tracts.json``), and so is ``stacked_rows``."""
+    from utk_curio.backend.tests._support.scenario_changes import assert_rows_match, stacked_rows
     from utk_curio.sandbox.util.parsers import load_from_duckdb
     from utk_curio.sandbox.util.scenario_stack import stack_inputs
 
@@ -1681,12 +1685,14 @@ def test_the_median_chart_reads_each_scenarios_statistics_as_compare_stacked_the
         _depth, table, error = _run_scenario(run, loaded, parts["choose"], parts["statistics"])
         assert error is None, error
         statistics[scenario] = table["path"]
-    rows = stack_inputs([("no-nbs", "No NbS", load_from_duckdb(statistics["no-nbs"])),
-                         ("nbs", "NbS", load_from_duckdb(statistics["nbs"]))])
-    output, _ = run(_reference(("statistics", "chart")), repr([statistics["no-nbs"], statistics["nbs"]]), "outputs",
-                    circles=2)
-    stacked = load_from_duckdb(output["path"])
-    assert [{k: v for k, v in row.items() if k != "__input__"} for row in rows] == stacked.to_dict("records")
+    entries = [("no-nbs", "No NbS", load_from_duckdb(statistics["no-nbs"])),
+               ("nbs", "NbS", load_from_duckdb(statistics["nbs"]))]
+    rows = stack_inputs(entries)
+    assert [{k: v for k, v in row.items() if k != "__input__"} for row in rows] == stacked_rows(entries)
+    held = _compare_fixture()["median"]["rows"]
+    assert_rows_match([{k: v for k, v in row.items() if k != "__input__"} for row in rows], held, rel=FIXTURE_REL,
+                      what="the median chart's rows")
+    assert_rows_match(stacked_rows(entries), held, rel=FIXTURE_REL, what="stacked_rows")
     assert [(row["__input__"], row["scenario"], row["scenario_name"]) for row in rows] == [
         (0, "no-nbs", "No NbS"), (1, "nbs", "NbS"),
     ]
@@ -1712,41 +1718,15 @@ def _depth_raster(path, depths):
     return rasterio.open(path)
 
 
-def _as_autark_exports_it(dataset) -> dict:
-    """*dataset* as the envelope autk-db's ``getRaster`` exports for an Autark
-    map and Compare Scenarios' Difference (``utils/raster/rasterWire.ts``):
-    its first band as float32, rows from south to north, NaN for nodata."""
-    import base64
-
-    import numpy as np
-
-    t = dataset.transform
-    cells = dataset.read(1, masked=True).astype("float32").filled(np.nan)[::-1]
-    grid = {"crs": "EPSG:4326", "width": dataset.width, "height": dataset.height,
-            "originX": t.c, "originY": t.f, "resX": t.a, "resY": t.e}
-    west, south, east, north = dataset.bounds
-    return {"dataType": "raster", "data": {
-        "type": "FeatureCollection", "bbox": [west, south, east, north], "grid": grid,
-        "features": [{"type": "Feature", "geometry": None, "properties": {
-            "bands": [{"id": "band_1"}],
-            "band_1": {"float32le": base64.b64encode(cells.astype("<f4").tobytes()).decode("ascii")},
-        }}],
-    }}
-
-
 def test_the_depth_change_is_the_size_of_nbs_minus_no_nbs_as_compare_took_it(workspace, tmp_path):
     """The Depth change is a Raster Calculator, run as the sandbox runs one,
     with Scout's modules: the size of NbS's depth, on input_1, minus No
     NbS's, on input_0, cell by cell, on the depths' grid: 0 where the
-    solutions change nothing, no value where either depth has none. It is
-    what Compare Scenarios' Difference in Absolute took from the same depths,
-    as autk-db exports them (``envelope_difference.subtract_envelopes``),
-    cell for cell."""
-    import base64
-
+    solutions change nothing, no value where either depth has none. These are
+    the cells Compare Scenarios' Difference in Absolute took from the same
+    depths, pinned when Compare Scenarios went."""
     import numpy as np
 
-    from utk_curio.sandbox.util.envelope_difference import subtract_envelopes
     from utk_curio.sandbox.util.parsers import load_from_duckdb, save_to_duckdb
 
     nan = float("nan")
@@ -1768,11 +1748,6 @@ def test_the_depth_change_is_the_size_of_nbs_minus_no_nbs_as_compare_took_it(wor
         change.close()
     expected = np.array([[0.0, 1.5, 0.0, nan], [2.5, 0.5, nan, 1.75]])
     assert np.array_equal(cells, expected, equal_nan=True), cells
-    took = subtract_envelopes(("No NbS", _as_autark_exports_it(none)), ("NbS", _as_autark_exports_it(nbs)),
-                              absolute=True)
-    wire = took["data"]["features"][0]["properties"]["band_1"]["float32le"]
-    compared = np.frombuffer(base64.b64decode(wire), dtype="<f4").reshape(2, 4)[::-1]
-    assert np.array_equal(cells, compared.astype("float64"), equal_nan=True), (cells, compared)
 
 
 def _resolve(content: str, circles: int):

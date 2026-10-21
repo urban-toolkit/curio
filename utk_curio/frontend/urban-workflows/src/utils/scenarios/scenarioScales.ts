@@ -1,8 +1,6 @@
 /**
- * A Vega-Lite chart draws its scenarios from their labels (`scenarioColors.ts`):
- * those of its own inputs' boxes when its spec reads the stacked dataset
- * `inputs`, else those of the Compare Scenarios node it reads on its first
- * input, as that node's Chart tab draws them.
+ * A Vega-Lite chart whose spec reads the stacked dataset `inputs` draws its
+ * scenarios from the labels of its own inputs' boxes (`scenarioColors.ts`).
  *
  * - color, fill and stroke on the stacked rows' `scenario_name` get the
  *   scenarios' names as the scale's domain and the colors of their boxes as

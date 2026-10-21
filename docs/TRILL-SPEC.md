@@ -103,26 +103,6 @@ ids of the nodes it descends from, oldest first, ending with the node it was
 copied from. Two nodes are the same lever in two scenarios when their ids and
 these lists meet.
 
-`metadata.compareScenarios` holds a `curio.builtin/compare-scenarios` node's
-settings, written only when it has inputs or one of the settings below. `inputs`
-labels each input circle, in circle order, `{scenario?, name, color}`: the id, name
-and color of the scenario the input's node belongs to, or, for a node in no
-scenario, the node's name, a neutral color and no `scenario`. The node's `content`
-is written from them, one `(scenario, name, [!! input_k !!])` entry per input handed
-to `curio_stack_scenarios`, which stacks the inputs into one table under `scenario`
-and `scenario_name`, or, in Difference, to `curio_difference_scenarios`, which
-subtracts input_0 from input_1. `chart` is `{preset?, x?, y?, aggregate?}`:
-`preset` is one of `bar`, `grouped-bar`, `line`, `scatter`, `pie`, `lollipop` and
-`table`, `x` and `y` name columns of that table, and `aggregate` is one of `mean`,
-`sum`, `median`, `min`, `max` and `count`. `mode` is `chart` or `difference`, written
-only when the user chose one; without it the node shows Difference for two rasters
-or two layers and Chart otherwise. `difference` is `{key?, absolute?}`: `key` is the
-column Difference matches the rows of two layers or tables on (without it, `osm_id`
-or `building_id`), passed to `curio_difference_scenarios` as `key=`, and `absolute`,
-when `true`, gives each difference's size instead of input_1 minus input_0, passed as
-`absolute=True`. An Autark node after the node draws a raster's or a layer's
-difference on a map.
-
 `metadata.editFeatures` holds the edit log of an Interaction node (type
 `curio.builtin/edit-features`), written only when it has one of its fields.
 `key` is the column that identifies a feature (`osm_id`, `building_id`, or

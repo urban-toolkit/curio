@@ -1,13 +1,12 @@
 """Example 06's Sunlight change node writes what Compare Scenarios wrote (the
 plan answering komar41's review, step 6.3).
 
-Until Compare Scenarios went, example 06 took each road's sunlight change with
-a Compare node in Difference over Baseline's map and Twice as tall's:
-``curio_difference_scenarios`` on their roads layer, the roads matched by their
-shapes, since they carry no id (``utk_curio/sandbox/util/scenario_difference.py``).
-A Python node over the same two maps takes it now, and what it writes must be
-what Compare wrote, column for column and value for value, so the Autark map
-after it draws the same roads in the same colors and the numbers
+Until the plan's step 6.3, example 06 took each road's sunlight change with a
+Compare Scenarios node in Difference over Baseline's map and Twice as tall's,
+on their roads layer, the roads matched by their shapes, since they carry no
+id. A Python node over the same two maps takes it now, and what it writes must
+be what Compare wrote, column for column and value for value, so the Autark
+map after it draws the same roads in the same colors and the numbers
 ``test_example06_scenarios_e2e.py`` pins stay.
 
 Each test runs the node's shipped code as the sandbox runs a node with two
@@ -19,9 +18,11 @@ them on, each road with its minutes of sunlight in a column and in the
 ``compute`` values the step writes its outputs under. The shader runs only on
 a browser's GPU, so the minutes are made here: whole hours from none to
 thirteen in Baseline, and up to three hours fewer on three roads of every four
-in Twice as tall. The reference is Compare's own function on the same inputs.
-Step 6.4 of that plan removes it with the node, and pins these cases to the
-values they hold then.
+in Twice as tall. The reference is what Compare's own function wrote on these
+inputs, from main before step 6.4 of that plan removed the node
+(``example06_roads_change.json``, made by ``make_compare_fixtures.py`` beside
+it on 72f5d3df5), and the rule it wrote by (:func:`_compares_difference`),
+which is held to that fixture too.
 
 Imports are inside each test or helper, so a checkout without the sandbox's
 pieces fails test by test.
@@ -51,10 +52,17 @@ ROAD_COUNT = 736
 SCENARIOS = [("s-baseline", "Baseline"), ("s-twice", "Twice as tall")]
 #: The scale the map after the node draws the change on, in minutes.
 CHANGE_RANGE = (-360, 360)
+#: What Compare Scenarios' Difference wrote on these tests' inputs.
+COMPARE_FIXTURE = (REPO / "utk_curio" / "backend" / "tests" / "test_packages" / "fixtures" / "compare_scenarios"
+                   / "example06_roads_change.json")
 
 
 def _dataflow() -> dict:
     return json.loads(EXAMPLE.read_text(encoding="utf-8"))["dataflow"]
+
+
+def _compare_fixture() -> dict:
+    return json.loads(COMPARE_FIXTURE.read_text(encoding="utf-8"))["change"]
 
 
 @pytest.fixture(scope="module")
@@ -189,16 +197,22 @@ def _the_nodes_change(workspace, baseline: dict, twice: dict):
 
 
 def _compares_difference(baseline: dict, twice: dict):
-    """What Compare Scenarios' Difference wrote for the same two inputs, read
-    back from the store as the node's are, as the store gives it back."""
+    """What Compare Scenarios' Difference wrote for Baseline's roads and Twice
+    as tall's, each road matched by its shape, as the store gives it back: the
+    roads in Baseline's order, geometry first and ``change`` second, then the
+    roads layer's other columns in their order. Each number column, and each
+    number in a column of dicts (the ``compute`` values a shadow step writes),
+    is Twice as tall's value minus Baseline's; ``change`` says ``changed``
+    where any value differs; every other value, and the shape, is Twice as
+    tall's (``roads_change``, which the fixture of Compare's own output holds
+    to it). The two maps here hand on their roads in one order and with the
+    same shapes, so each road's match is the road in its place."""
+    from utk_curio.backend.tests._support.scenario_changes import roads_change
+    from utk_curio.sandbox.util.input_layers import curio_layer
     from utk_curio.sandbox.util.parsers import load_from_duckdb, save_to_duckdb
-    from utk_curio.sandbox.util.scenario_difference import difference_scenarios
 
-    values = [load_from_duckdb(art_id) for art_id in _stored((baseline, twice))]
-    written = difference_scenarios(
-        [(scenario, name, value) for (scenario, name), value in zip(SCENARIOS, values)], layer=ROADS,
-    )
-    return load_from_duckdb(save_to_duckdb(written, node_id="compare-scenarios"))
+    before, after = (curio_layer(load_from_duckdb(art_id), ROADS) for art_id in _stored((baseline, twice)))
+    return load_from_duckdb(save_to_duckdb(roads_change(before, after), node_id="expected-change"))
 
 
 def test_the_change_is_what_compares_difference_wrote_on_back_bays_roads(workspace, back_bay_layers):
@@ -212,9 +226,14 @@ def test_the_change_is_what_compares_difference_wrote_on_back_bays_roads(workspa
     within the map's scale."""
     from geopandas.testing import assert_geodataframe_equal
 
+    from utk_curio.backend.tests._support.scenario_changes import assert_frame_matches
+
     baseline, twice = (_handed_on(back_bay_layers, scenario) for scenario, _name in SCENARIOS)
     ours = _the_nodes_change(workspace, baseline, twice)
     compares = _compares_difference(baseline, twice)
+    held = _compare_fixture()
+    assert_frame_matches(ours, held, what="the Sunlight change")
+    assert_frame_matches(compares, held, what="roads_change")
     assert list(ours.columns) == list(compares.columns)
     assert list(ours.columns)[:2] == ["geometry", "change"]
     assert ours.dtypes.astype(str).tolist() == compares.dtypes.astype(str).tolist()
@@ -237,9 +256,12 @@ def test_a_road_is_matched_by_its_shape_not_by_its_place(workspace, back_bay_lay
     """Twice as tall's roads in another order, its shapes reversed and a shape
     that repeats keeping its roads' order, as two layers read from one source
     repeat it: each road is still matched to itself by its shape, as Compare
-    matched it, so the change is what Compare wrote and what the roads in
-    their own order give, road for road in Baseline's order."""
+    matched it, so the change is what Compare wrote, which the order of the
+    roads never moved, and what the roads in their own order give, road for
+    road in Baseline's order."""
     from geopandas.testing import assert_geodataframe_equal
+
+    from utk_curio.backend.tests._support.scenario_changes import assert_frame_matches
 
     baseline = _handed_on(back_bay_layers, "s-baseline")
     (roads,) = [layer for layer in back_bay_layers if layer["name"] == ROADS]
@@ -251,6 +273,8 @@ def test_a_road_is_matched_by_its_shape_not_by_its_place(workspace, back_bay_lay
     assert order != list(range(len(shapes)))
     reordered = _handed_on(back_bay_layers, "s-twice", order=order)
     ours = _the_nodes_change(workspace, baseline, reordered)
-    assert_geodataframe_equal(ours, _compares_difference(baseline, reordered))
-    in_place = _the_nodes_change(workspace, baseline, _handed_on(back_bay_layers, "s-twice"))
+    twice = _handed_on(back_bay_layers, "s-twice")
+    assert_frame_matches(ours, _compare_fixture(), what="the Sunlight change on Twice as tall's roads reordered")
+    assert_geodataframe_equal(ours, _compares_difference(baseline, twice))
+    in_place = _the_nodes_change(workspace, baseline, twice)
     assert_geodataframe_equal(ours, in_place)

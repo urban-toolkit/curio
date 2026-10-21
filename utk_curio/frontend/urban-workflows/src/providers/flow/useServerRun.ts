@@ -320,7 +320,7 @@ export function useServerRun({
                 if (!reportsToRun(steps.get(nodeId))) return;
                 const shown = reactFlow.getNode(nodeId)?.data?.output?.content;
                 report(runId, nodeId, outcome.failed
-                    ? { status: "error", message: outcome.skipReason ?? String(shown ?? "") }
+                    ? { status: "error", message: outcome.skipReason ?? outcome.message ?? String(shown ?? "") }
                     : { status: "ok" });
             },
         });

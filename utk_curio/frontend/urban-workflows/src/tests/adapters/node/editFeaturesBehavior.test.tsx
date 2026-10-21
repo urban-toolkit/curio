@@ -17,11 +17,6 @@ jest.mock("../../../providers/FlowProvider", () => ({
   useFlowContext: () => require("react").useContext(mockFlowContext),
 }));
 
-// Only what a failed run says, from the Compare Scenarios node.
-jest.mock("../../../adapters/node/compareScenariosBehavior", () => ({
-  failureLine: (content: unknown) => String(content ?? ""),
-}));
-
 // The input, as the Autark map reads it: its layers by table name.
 let mockSources: any[] = [];
 jest.mock("../../../utils/autkInput", () => ({
@@ -415,4 +410,17 @@ test("a layer with no column that identifies its features is refused, and nothin
   expect(refusal.textContent).toMatch(/has no column that identifies its features/);
   expect(screen.queryByTestId("autark-map")).toBeNull();
   expect(screen.queryByTestId("edit-features-remove")).toBeNull();
+});
+
+// Compare Scenarios is gone (step 6.4 of the plan answering komar41's review
+// of the #914 merges), and What differs, which listed this node's edits, with
+// it: the node's behavior takes nothing from it.
+test("the node's behavior imports nothing of Compare Scenarios", () => {
+  const fs = require("fs");
+  const path = require("path");
+  const source: string = fs.readFileSync(
+    path.resolve(__dirname, "../../../adapters/node/editFeaturesBehavior.tsx"),
+    "utf-8",
+  );
+  expect(source.match(/from\s+["'][^"']*compare[^"']*["']/gi) ?? []).toEqual([]);
 });

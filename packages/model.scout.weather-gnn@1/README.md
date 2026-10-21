@@ -52,8 +52,8 @@ The modes:
   `duration_minutes` and its `rain_exposure`, `heat_exposure`, `wind_exposure`
   and `humidity_exposure`. An Autark map draws it.
 - **metrics**: the same routes as a table: `route`, `route_index`, `distance` in
-  kilometres, `duration` in minutes and the four exposures. Compare Scenarios
-  charts it.
+  kilometres, `duration` in minutes and the four exposures. Scout's charts
+  draw it, one input per scenario.
 
 A route's exposure to a factor is the sum, over its roads, of the factor's
 predicted value weighted by the factor's weight plus the road's travel time
@@ -77,7 +77,7 @@ are SCOUT's `rain_model.pth`, exported to ONNX by
 
 ```
 [ Autark: roads ] ──► [ Weather Routing ] ──► [ Routes ] ──► [ Autark: map of the routes ]
-                                         └─► [ Route metrics ] ──► [ Compare Scenarios ]
+                                         └─► [ Route metrics ] ──► [ Scout: Bars ]
 ```
 
 An Autark node that only loads data hands on its layers, each under its table

@@ -10,8 +10,11 @@ import { postSseStream } from "../../utils/sseStream";
 export type RunStatus =
   | "queued" | "running" | "succeeded" | "failed" | "needs_canvas" | "cancelled" | "interrupted";
 
-/** What a run does with a node: execute it, pass its input on, or leave it to a tab. */
-export type StepRole = "run" | "forward" | "browser";
+/**
+ * What a run does with a node: execute it, pass its input on, leave it to a
+ * tab, or fail it because no installed package provides its type.
+ */
+export type StepRole = "run" | "forward" | "browser" | "missing";
 
 export type StepStatus =
   | "pending" | "running" | "ok" | "error" | "skipped" | "cancelled" | "interrupted"

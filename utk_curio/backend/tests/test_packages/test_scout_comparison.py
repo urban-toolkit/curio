@@ -3,8 +3,8 @@ beside its two raster nodes.
 
 Seven are re-made from komar41's ScenarioCharts (#914; the plan for #914, step
 28.2), one is the first view of his "Minutes of shadow per park" chart (Dots
-with a range), and seven are the Compare Scenarios node's chart presets (the
-plan answering komar41's review, step 6.2).
+with a range), and seven were the chart presets of the Compare Scenarios node,
+since removed (the plan answering komar41's review, steps 6.2 and 6.4).
 
 Each is a template that draws with the Vega-Lite node's own behavior, with a
 ``.vl.json`` starter that is a node's whole content. A chart takes one input
@@ -97,7 +97,7 @@ CHOICES = {
     "combine": ["mean", "sum", "median", "min", "max", "count"],
     "x_type": ["quantitative", "temporal", "ordinal", "nominal"],
 }
-#: Each Compare preset's Combine by default (``PRESET_FIELDS``).
+#: The Combine each chart made from a Compare Scenarios preset starts with.
 COMBINE_DEFAULTS = {"bars": "mean", "grouped-bars": "mean", "lines": "mean", "pie": "sum", "lollipops": "mean"}
 #: Widgets that name a column but start empty: no facet draws one panel.
 EMPTY_COLUMNS = {"facet"}

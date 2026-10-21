@@ -151,11 +151,11 @@ def test_a_float_that_is_no_number_is_a_value_row_with_no_value_as_in_the_browse
 
 
 def test_geodataframes_stack_beside_a_table_and_in_two_coordinate_systems_their_geometry_left_out():
-    """The relaxation is the chart's alone: Compare Scenarios still refuses both."""
+    """A layer stacks beside a table, and beside a layer in another coordinate
+    system, as rows of their columns: no geometry, so nothing to reproject."""
     import pandas as pd
-    import pytest
 
-    from utk_curio.sandbox.util.scenario_stack import stack_inputs, stack_scenarios
+    from utk_curio.sandbox.util.scenario_stack import stack_inputs
 
     roads = _gdf([{"zip": "a", "pop": 1}], "EPSG:4326")
     table = pd.DataFrame({"zip": ["b"], "pop": [2]})
@@ -168,18 +168,11 @@ def test_geodataframes_stack_beside_a_table_and_in_two_coordinate_systems_their_
     assert [(row["scenario_name"], row["pop"]) for row in rows] == [("Baseline", 1), ("Twice as tall", 3)]
     assert all("geometry" not in row for row in rows)
 
-    with pytest.raises(ValueError, match="stacks inputs of one kind"):
-        stack_scenarios([("s-base", "Baseline", roads), ("s-tall", "Twice as tall", table)])
-    with pytest.raises(ValueError, match="different coordinate systems"):
-        stack_scenarios([("s-base", "Baseline", roads), ("s-tall", "Twice as tall", projected)])
-
 
 def test_the_rows_of_inputs_never_carry_geometry_from_one_input_or_several():
     """As the browser's: a chart draws a map from ``input_<k>``, never from
-    ``inputs``. Compare Scenarios keeps its stacked GeoDataFrame's geometry."""
-    import geopandas as gpd
-
-    from utk_curio.sandbox.util.scenario_stack import input_rows, stack_inputs, stack_scenarios
+    ``inputs``."""
+    from utk_curio.sandbox.util.scenario_stack import input_rows, stack_inputs
 
     roads = _gdf([{"pop": 1}, {"pop": 2}], "EPSG:4326")
     assert stack_inputs([("s-base", "Baseline", roads)]) == [
@@ -188,10 +181,6 @@ def test_the_rows_of_inputs_never_carry_geometry_from_one_input_or_several():
     ]
     assert input_rows(roads) == [{"pop": 1}, {"pop": 2}]
     assert list(roads.columns) == ["pop", "geometry"]
-
-    compared = stack_scenarios([("s-base", "Baseline", roads)])
-    assert isinstance(compared, gpd.GeoDataFrame)
-    assert compared.geometry.name == "geometry"
 
 
 def test_a_chart_with_its_scenarios_filled_in_is_valid_vega_lite():

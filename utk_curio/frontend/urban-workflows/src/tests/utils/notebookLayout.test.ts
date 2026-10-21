@@ -179,10 +179,9 @@ describe("the dots on a cell's right edge", () => {
 });
 
 describe("the height of a cell's output", () => {
-  test("a chart draws in a definite 320px, an Autark map or plot and a scenario comparison in 400px", () => {
+  test("a chart draws in a definite 320px, an Autark map or plot in 400px", () => {
     expect(notebookOutputBox("curio.builtin/vis-vega@1")).toEqual({ height: 320, overflow: "auto" });
     expect(notebookOutputBox("curio.builtin/autk-grammar")).toEqual({ height: 400 });
-    expect(notebookOutputBox("curio.builtin/compare-scenarios@1")).toEqual({ height: 400 });
   });
 
   test("a table, a summary, a control or a note takes its own height up to 360px", () => {

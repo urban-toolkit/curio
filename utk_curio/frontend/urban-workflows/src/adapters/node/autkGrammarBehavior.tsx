@@ -82,8 +82,8 @@ export type AutkBehaviorOptions = {
     /**
      * Whether each run is listed among the node's runs in the provenance drawer, as every node
      * lists its own (#860). The Interaction node's map draws under that node's
-     * id, and a draw of it is not a run of that node, as a chart drawn the way
-     * the Compare node's Chart tab draws is not (useVega's `recordsProvenance`).
+     * id, and a draw of it is not a run of that node, as a chart's redraw for a
+     * recolored scenario box is not (useVega's `recordsProvenance`).
      */
     recordsProvenance?: boolean;
     /**

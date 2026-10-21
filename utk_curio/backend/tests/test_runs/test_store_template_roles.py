@@ -4,8 +4,9 @@ template declares, then the catalog, then the packages Curio ships.
 A package of the account's own can declare a Data Export's behavior for one
 of its templates. A run of a dataflow holding such a node forwards what
 reaches it, as it forwards a Data Export, for the account whose store holds
-the package; for any other account the node is one only the browser can
-make. The sandbox is a fake behind
+the package; for any other account no installed package provides the node's
+type, so the run fails it, naming the type, and skips what it feeds, as the
+canvas does with the card it shows for it. The sandbox is a fake behind
 ``node_exec.sandbox_request``. ``runs`` is imported inside each test, so a
 checkout without it fails each test on its own.
 """
@@ -161,7 +162,9 @@ def test_a_run_forwards_a_download_saved_in_the_accounts_store(client, db, user_
     assert sandbox.bodies["after"]["file_path"] == "art-src"
 
 
-def test_for_another_account_the_same_node_is_left_to_the_browser(client, db, user_and_token, sandbox):
+def test_for_another_account_the_same_node_is_a_type_no_installed_package_provides(
+    client, db, user_and_token, sandbox,
+):
     alice, _alice_token = user_and_token
     bob, bob_token = _second_account(db)
     project_id = _create(client, bob_token)
@@ -169,6 +172,10 @@ def test_for_another_account_the_same_node_is_left_to_the_browser(client, db, us
 
     roles, run = _run(client, bob_token, project_id)
 
-    assert roles == {"src": "run", "dl": "browser", "after": "run"}
-    assert run["status"] == "needs_canvas"
+    assert roles == {"src": "run", "dl": "missing", "after": "run"}
+    assert run["status"] == "failed"
     assert "after" not in sandbox.bodies
+    steps = {step["nodeId"]: step for step in run["steps"]}
+    assert steps["dl"]["status"] == "error"
+    assert steps["dl"]["stderrTail"] == "No installed package provides acme.mine/download@1"
+    assert steps["after"]["status"] == "skipped"

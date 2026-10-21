@@ -137,7 +137,7 @@ describe('isNonProducingNodeType', () => {
 describe('a package chart that draws with Vega-Lite saves nothing of its own', () => {
   // Scout's charts draw with the Vega-Lite node's behavior, which
   // hands the node's input on as its output: saving it would install a copy of
-  // the Compare node's table under the chart's id.
+  // the table it reads under the chart's id.
   const { isNonProducingNodeType, showsSaveOutputToggle } = require('../../utils/saveOutputDataset');
   const { VEGA_LITE_TEMPLATE, registerVegaLiteTemplate, clearVegaLiteTemplate } = require('../_support/vegaLiteTemplate');
 

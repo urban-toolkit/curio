@@ -1,5 +1,5 @@
 {
-  "description": "One Vega-Lite spec per Compare Scenarios chart preset (#662), over a stacked table of two scenarios. comparePresets.test.ts checks that comparePresets.ts writes exactly these; test_compare_presets.py checks each against the Vega-Lite schema and the columns it reads.",
+  "description": "Scout's charts of the seven chart presets: each case a template, the values of its widgets, and the spec it draws over two boxes' rows, its data block left out (it names the dataset inputs) and its channels on scenario_name filled in from labels. scoutPresetCharts.test.ts checks that each template draws exactly its case's spec.",
   "labels": [
     {
       "scenario": "s-base",
@@ -12,28 +12,14 @@
       "color": "#e76f51"
     }
   ],
-  "columns": [
-    {
-      "name": "segment",
-      "role": "nominal"
-    },
-    {
-      "name": "hour",
-      "role": "quantitative"
-    },
-    {
-      "name": "sunlight",
-      "role": "quantitative"
-    }
-  ],
   "cases": [
     {
       "name": "bar",
-      "chart": {},
-      "resolved": {
-        "preset": "bar",
-        "aggregate": "mean",
-        "y": "hour"
+      "template": "bars",
+      "widgets": {
+        "y": "hour",
+        "combine": "mean",
+        "y_title": "mean of hour"
       },
       "spec": {
         "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
@@ -80,13 +66,11 @@
     },
     {
       "name": "bar with no combining: each row as it is, titled by its column",
-      "chart": {
-        "aggregate": "none"
-      },
-      "resolved": {
-        "preset": "bar",
-        "aggregate": "none",
-        "y": "hour"
+      "template": "bars",
+      "widgets": {
+        "y": "hour",
+        "combine": "mean",
+        "y_title": "hour"
       },
       "spec": {
         "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
@@ -110,7 +94,8 @@
           "y": {
             "field": "hour",
             "type": "quantitative",
-            "title": "hour"
+            "title": "hour",
+            "aggregate": "mean"
           },
           "color": {
             "field": "scenario_name",
@@ -132,14 +117,11 @@
     },
     {
       "name": "bar, counting rows",
-      "chart": {
-        "preset": "bar",
-        "aggregate": "count"
-      },
-      "resolved": {
-        "preset": "bar",
-        "aggregate": "count",
-        "y": "hour"
+      "template": "bars",
+      "widgets": {
+        "y": "hour",
+        "combine": "count",
+        "y_title": "Rows"
       },
       "spec": {
         "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
@@ -163,7 +145,8 @@
           "y": {
             "aggregate": "count",
             "type": "quantitative",
-            "title": "Rows"
+            "title": "Rows",
+            "field": "hour"
           },
           "color": {
             "field": "scenario_name",
@@ -185,14 +168,13 @@
     },
     {
       "name": "grouped bars",
-      "chart": {
-        "preset": "grouped-bar"
-      },
-      "resolved": {
-        "preset": "grouped-bar",
-        "aggregate": "mean",
+      "template": "grouped-bars",
+      "widgets": {
+        "x": "segment",
         "y": "hour",
-        "x": "segment"
+        "combine": "mean",
+        "x_title": "segment",
+        "y_title": "mean of hour"
       },
       "spec": {
         "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
@@ -240,14 +222,14 @@
     },
     {
       "name": "lines",
-      "chart": {
-        "preset": "line"
-      },
-      "resolved": {
-        "preset": "line",
-        "aggregate": "mean",
+      "template": "lines",
+      "widgets": {
+        "x": "sunlight",
+        "x_type": "quantitative",
         "y": "hour",
-        "x": "sunlight"
+        "combine": "mean",
+        "x_title": "sunlight",
+        "y_title": "mean of hour"
       },
       "spec": {
         "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
@@ -288,14 +270,12 @@
     },
     {
       "name": "points",
-      "chart": {
-        "preset": "scatter"
-      },
-      "resolved": {
-        "preset": "scatter",
-        "aggregate": null,
+      "template": "points",
+      "widgets": {
+        "x": "sunlight",
         "y": "hour",
-        "x": "sunlight"
+        "x_title": "sunlight",
+        "y_title": "hour"
       },
       "spec": {
         "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
@@ -335,13 +315,11 @@
     },
     {
       "name": "pie",
-      "chart": {
-        "preset": "pie"
-      },
-      "resolved": {
-        "preset": "pie",
-        "aggregate": "sum",
-        "y": "hour"
+      "template": "pie",
+      "widgets": {
+        "value": "hour",
+        "combine": "sum",
+        "value_title": "sum of hour"
       },
       "spec": {
         "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
@@ -400,13 +378,11 @@
     },
     {
       "name": "lollipops",
-      "chart": {
-        "preset": "lollipop"
-      },
-      "resolved": {
-        "preset": "lollipop",
-        "aggregate": "mean",
-        "y": "hour"
+      "template": "lollipops",
+      "widgets": {
+        "value": "hour",
+        "combine": "mean",
+        "x_title": "mean of hour"
       },
       "spec": {
         "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
@@ -496,14 +472,11 @@
     },
     {
       "name": "lollipops, counting rows",
-      "chart": {
-        "preset": "lollipop",
-        "aggregate": "count"
-      },
-      "resolved": {
-        "preset": "lollipop",
-        "aggregate": "count",
-        "y": "hour"
+      "template": "lollipops",
+      "widgets": {
+        "value": "hour",
+        "combine": "count",
+        "x_title": "Rows"
       },
       "spec": {
         "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
@@ -525,7 +498,8 @@
               "x": {
                 "aggregate": "count",
                 "type": "quantitative",
-                "title": "Rows"
+                "title": "Rows",
+                "field": "hour"
               },
               "x2": {
                 "datum": 0
@@ -567,7 +541,8 @@
               "x": {
                 "aggregate": "count",
                 "type": "quantitative",
-                "title": "Rows"
+                "title": "Rows",
+                "field": "hour"
               },
               "color": {
                 "field": "scenario_name",
@@ -591,12 +566,14 @@
     },
     {
       "name": "table",
-      "chart": {
-        "preset": "table"
-      },
-      "resolved": {
-        "preset": "table",
-        "aggregate": null
+      "template": "table",
+      "widgets": {
+        "columns": [
+          "scenario_name",
+          "segment",
+          "hour",
+          "sunlight"
+        ]
       },
       "spec": {
         "$schema": "https://vega.github.io/schema/vega-lite/v6.json",

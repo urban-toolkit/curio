@@ -20,7 +20,6 @@ import {
   useAutkViewBehavior,
   useSpatialJoinBehavior,
   useParameterBehavior,
-  useCompareScenariosBehavior,
   useEditFeaturesBehavior,
   useNoteBehavior,
 } from '../adapters/node';
@@ -40,9 +39,6 @@ registerBehavior('spatial-join', useSpatialJoinBehavior);
 // curio.builtin@1 parameter node: one widget any node's code names as
 // [!! @name !!] (#662).
 registerBehavior('parameter', useParameterBehavior);
-// curio.builtin@1 compare-scenarios node: stacks scenarios' outcomes, charts
-// them in the scenarios' colors and lists what differs (#662).
-registerBehavior('compare-scenarios', useCompareScenariosBehavior);
 // curio.builtin@1 edit-features node: features picked on its map, removed,
 // given a value or restored, as a list its code applies by id (#662).
 registerBehavior('edit-features', useEditFeaturesBehavior);

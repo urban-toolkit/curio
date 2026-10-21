@@ -118,6 +118,26 @@ def test_seeded_globals_cover_every_legacy_name():
     )
 
 
+def test_neither_path_seeds_the_compare_scenarios_steps():
+    """Compare Scenarios is gone (step 6.4 of the plan answering komar41's
+    review of the #914 merges), and with it the two steps its code called:
+    neither the in-process path nor the isolated child seeds them, code that
+    calls one fails as any unknown name does, and the modules that stacked and
+    subtracted for it are gone."""
+    import importlib.util
+
+    from utk_curio.sandbox.isolation.zygote import build_namespace_template
+
+    gone = {"curio_stack_scenarios", "curio_difference_scenarios"}
+    assert gone & set(worker._globals_cache) == set()
+    assert gone & set(build_namespace_template()) == set()
+    for name in sorted(gone):
+        result = run(f"return {name}([])")
+        assert "NameError" in result["stderr"] and name in result["stderr"], result["stderr"]
+    for module in ("scenario_difference", "envelope_difference"):
+        assert importlib.util.find_spec(f"utk_curio.sandbox.util.{module}") is None, module
+
+
 def test_checkIOType_stays_seeded_as_the_documented_no_op():
     """dev/120: the name-keyed I/O validators are retired, but the NAME keeps
     resolving in node code (owner decision — the #158 contract stays whole) and

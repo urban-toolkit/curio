@@ -364,8 +364,6 @@ def _worker_init():
     )
     from utk_curio.sandbox.util.feature_edits import edit_features
     from utk_curio.sandbox.util.input_layers import curio_layer
-    from utk_curio.sandbox.util.scenario_difference import difference_scenarios
-    from utk_curio.sandbox.util.scenario_stack import stack_scenarios
 
     _globals_cache = {
         '__builtins__': __builtins__,
@@ -394,10 +392,6 @@ def _worker_init():
         'detect_kind': detect_kind,
         'checkIOType': checkIOType,
         'save_dataset_parquet': save_dataset_parquet,
-        # The Compare Scenarios node's code stacks its inputs with it (#662),
-        # or, in Difference, subtracts one from the other.
-        'curio_stack_scenarios': stack_scenarios,
-        'curio_difference_scenarios': difference_scenarios,
         # The Edit Features node's code applies its edit list with it (#662).
         'curio_edit_features': edit_features,
         # A layer chip, [!! input_0:roads !!], reads one layer of an input with it.
@@ -837,7 +831,7 @@ def is_node_internal_stream_crash(exit_code, stdout_lines, stderr_lines) -> bool
 _SANDBOX_BACKEND_URL_TOKEN = '__CURIO_BACKEND_URL__'
 
 
-def run_js_script(code, inputs, *, cwd, node_type, t0=None, node_flags=(), node_modules=None):
+def run_js_script(code, inputs, *, cwd, node_type, t0=None, node_modules=None):
     """Run JavaScript in one Node.js subprocess, the way a JS node runs.
 
     The code is wrapped by ``util/js_wrapper.mjs`` with each of *inputs*,
@@ -845,12 +839,10 @@ def run_js_script(code, inputs, *, cwd, node_type, t0=None, node_flags=(), node_
     code reads and *inputs* lacks is a parameter too, undefined), its bare
     package imports are resolved against *node_modules* (default: the
     sandbox's, ``node_runtime.node_modules_dir``), and it runs under the JS
-    slot, once more if Node died in its own HTTP parser. *node_flags* go to
-    ``node`` before the script.
+    slot, once more if Node died in its own HTTP parser.
 
-    :func:`execute_js_code` and the Compare Scenarios node's raster difference
-    (``util/scenario_difference.py``) both run Node through this, so they run
-    it one way. Returns ``(result_json, user_log_lines, stderr_lines)``: the
+    :func:`execute_js_code` runs Node through this. Returns
+    ``(result_json, user_log_lines, stderr_lines)``: the
     text of the result line, or None when Node printed none. A timeout or a
     missing Node raises, as ``subprocess`` does.
     """
@@ -973,7 +965,7 @@ def run_js_script(code, inputs, *, cwd, node_type, t0=None, node_flags=(), node_
         t_start = time.perf_counter()
 
         proc = subprocess.Popen(
-            ['node', '--input-type=commonjs', *node_flags],
+            ['node', '--input-type=commonjs'],
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE, stderr=subprocess.PIPE,
             text=True, encoding='utf-8', errors='replace', cwd=cwd,

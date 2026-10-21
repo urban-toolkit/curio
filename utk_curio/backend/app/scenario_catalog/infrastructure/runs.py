@@ -16,11 +16,17 @@ def refusal(user) -> str | None:
     return run_refusal(user)
 
 
+#: The run roles of the nodes a run on the server cannot make an output for:
+#: one only the browser runs, and one no installed package provides.
+_NOT_MADE_ON_THE_SERVER = ("browser", "missing")
+
+
 def browser_node(user, project_id: str, nodes: list[dict], edges: list[dict], node_id: str) -> dict | None:
-    """The node a run on the server of *node_id* leaves to the browser:
+    """The node a run on the server of *node_id* cannot make an output for:
     *node_id* itself, else the first node it reads from whose run role is
-    ``browser`` (an Autark compute node, a Spatial Join). ``None`` when the
-    server runs them all."""
+    ``browser`` (an Autark compute node, a Spatial Join) or ``missing`` (no
+    installed package provides its type). ``None`` when the server runs them
+    all."""
     from utk_curio.backend.app.execution.run_plan import ancestors, node_role
     from utk_curio.backend.app.packages.service import roster_templates
     from utk_curio.backend.app.projects.services import _user_dir_key
@@ -29,10 +35,10 @@ def browser_node(user, project_id: str, nodes: list[dict], edges: list[dict], no
     templates = roster_templates(_user_dir_key(user), project_id)
     packages = TemplateGrammars.for_account(_user_dir_key(user))
     by_id = {node["id"]: node for node in nodes}
-    if node_id in by_id and node_role(by_id[node_id], templates, packages) == "browser":
+    if node_id in by_id and node_role(by_id[node_id], templates, packages) in _NOT_MADE_ON_THE_SERVER:
         return by_id[node_id]
     upstream = ancestors(node_id, edges)
     for node in nodes:
-        if node["id"] in upstream and node_role(node, templates, packages) == "browser":
+        if node["id"] in upstream and node_role(node, templates, packages) in _NOT_MADE_ON_THE_SERVER:
             return node
     return None

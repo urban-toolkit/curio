@@ -205,12 +205,19 @@ class TestRenderPrompt:
         """Its Scenarios section names Scout's fifteen charts, the package's
         templates that draw with Vega-Lite, by the labels their manifest gives
         them, and the package that holds them, and says that each takes one
-        input per scenario and reads them as the dataset "inputs"."""
+        input per scenario and reads them as the dataset "inputs". It says how
+        scenarios are compared: a Vega-Lite spec reading "inputs", a Raster
+        Calculator for two rasters' difference, absolute=True for its size,
+        and a Python node for two tables' or layers'. Compare Scenarios is
+        gone, and the section names it nowhere."""
         template = (REPO_ROOT / contracts.PROMPTS_DIR / "default_preamble.template.md").read_text(encoding="utf-8")
         section = template.split("## Scenarios", 1)[1]
         manifest = json.loads((REPO_ROOT / "packages" / "curio.scout@1" / "manifest.json").read_text(
             encoding="utf-8"))
-        assert "{{template.label:curio.builtin/compare-scenarios}}" in section
+        assert "compare-scenarios" not in section and "Compare Scenarios" not in section
+        for named in ("curio.builtin/vis-vega", "curio.scout/raster-calculator", "curio.builtin/computation-analysis"):
+            assert "{{template.label:" + named + "}}" in section, named
+        assert "absolute=True" in section
         charts = [t for t in manifest["templates"] if t.get("grammarId") == "vega-lite"]
         assert [chart["id"] for chart in charts] == [
             "lines-with-band", "curves-by-group", "bars-with-error-bars", "ensemble-strips",

@@ -7,9 +7,8 @@
  *
  * A Vega-Lite chart that reads its inputs stacked as `inputs` names their
  * rows by these labels and draws them in the boxes' colors and order
- * (`scaleLabelsOf`), an Autark map draws a layer in the color of its input's
- * box (adapters/node/autkScenarioColors), and a Compare Scenarios node labels
- * its inputs with them (utils/compare/compareInputs).
+ * (`scaleLabelsOf`), and an Autark map draws a layer in the color of its
+ * input's box (adapters/node/autkScenarioColors).
  *
  * Duck-typed nodes and edges, so this module needs no `reactflow` import.
  */
