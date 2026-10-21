@@ -331,6 +331,17 @@ class TestThePatternsAreShared:
             assert schema["properties"]["name"]["pattern"] == WIDGET_NAME_RE.pattern
         assert function_nodes.WIDGET_NAME_RE.pattern == WIDGET_NAME_RE.pattern
 
+    def test_the_stacked_dataset_is_one_name(self):
+        """The dataset a Vega-Lite spec reads its inputs stacked in, which its
+        chip ``[!! inputs !!]`` writes, is one name in the browser, the runner
+        and the agents' check, and no widget takes it."""
+        from utk_curio.backend.app.agents.domain.document_validation import INPUTS_DATASET
+        from utk_curio.backend.app.execution.code_references import INPUT_NAME_ONLY_RE, STACKED_DATASET
+
+        written = re.search(r'INPUTS_DATASET = "(.*?)";', self._ts("vegaDatasets.ts", SRC_DIR / "utils"))
+        assert written and written.group(1) == STACKED_DATASET == INPUTS_DATASET == "inputs"
+        assert INPUT_NAME_ONLY_RE.fullmatch(STACKED_DATASET)
+
     def test_the_input_name_no_widget_takes(self):
         """The Widgets tab, a Parameter node and a package manifest refuse one
         name pattern; the schema refuses it in an editor too."""
