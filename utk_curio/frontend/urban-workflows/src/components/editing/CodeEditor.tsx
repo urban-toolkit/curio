@@ -582,6 +582,7 @@ function CodeEditor({
                 </div>
             )}
             <ReferenceStrip
+                nodeId={data?.nodeId}
                 widgets={references.widgets}
                 inputs={stripInputs}
                 shared={references.shared}
