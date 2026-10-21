@@ -137,7 +137,7 @@
       {
         "id": "abd7fc96-4bfc-5eff-85a3-5e4991ba89b9",
         "type": "curio.scout/rasterize-buildings",
-        "x": 1290,
+        "x": 1630,
         "y": 900,
         "content": "\"\"\"Rasterize Buildings: SCOUT's building rasterizer, \"OSM vector to raster\".\n\nInput: a buildings layer, a GeoDataFrame of polygons with a CRS and a column\nof heights in metres.\nOutput: one raster in EPSG:3395, each cell a height in metres: the 256 by 256\nmap tiles SCOUT draws, 8-bit gray where 255 is the maximum height, side by\nside. A tile SCOUT writes no file for, because no building is near it, is no\ndata. An Autark map draws it as input_0, band band_1, and SCOUT's Deep Umbra\nshadow model (Accumulated Shadow) reads it.\nThe Widgets tab sets the height column, the zoom level and the maximum height.\nPorted from SCOUT, https://github.com/urban-toolkit/scout.\n\"\"\"\nfrom scout_rasters.node_outputs import rasterize_buildings\n\nreturn rasterize_buildings(\n    input_0,\n    attribute=[!! attribute !!],\n    zoom=int([!! zoom !!]),\n    max_height=float([!! max_height !!]),\n    output_file=curio_output_file,\n)\n",
         "out": "DEFAULT",
@@ -183,7 +183,7 @@
       {
         "id": "a2c5b8ed-658d-52ea-8e5b-18041d9385de",
         "type": "model.scout.deep-umbra/accumulated-shadow",
-        "x": 1935,
+        "x": 2275,
         "y": 900,
         "content": "from deep_umbra import accumulated_shadow\nmodel = curio_load_model(\"model.scout.deep-umbra\")\nreturn accumulated_shadow(input_0, season=[!! @season !!], model=model, output_file=curio_output_file)\n",
         "out": "DEFAULT",
@@ -199,7 +199,7 @@
       {
         "id": "ac470b24-69c3-5242-8d07-cc969e868e54",
         "type": "curio.scout/raster-calculator",
-        "x": 2580,
+        "x": 2920,
         "y": 900,
         "content": "# Statistics: the mean, median, minimum, maximum and count of a\n# raster's cells, nodata left out, as a table of one row.\n# input_0 is the accumulated shadow in minutes, input_1 the heights it was\n# predicted from, as the mask: SCOUT's metrics count the ground, the cells\n# Deep Umbra reads as gray level 0, a height under 1.08 m.\nfrom scout_rasters.raster_algebra import raster_statistics\n\nreturn raster_statistics(input_0, mask=input_1, where=lambda height: height < 1.08)\n",
         "out": "DEFAULT",
@@ -291,7 +291,7 @@
       {
         "id": "4d8f9df6-6320-538d-9d58-ec45cb2af5f4",
         "type": "curio.builtin/autk-grammar",
-        "x": 2580,
+        "x": 2920,
         "y": 1350,
         "content": "{\n  \"map\": {\n    \"layerRefs\": [\n      {\n        \"dataRef\": \"[!! input_0 !!]\",\n        \"getFnv\": \"band_1\",\n        \"colorMapInterpolator\": \"interpolateReds\",\n        \"colorMapRange\": [\n          0,\n          720\n        ],\n        \"title\": \"Accumulated shadow (minutes)\"\n      }\n    ]\n  }\n}",
         "out": "DEFAULT",

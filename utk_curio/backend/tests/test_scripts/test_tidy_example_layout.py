@@ -142,12 +142,14 @@ def test_every_committed_example_clears_the_gutter():
     """Independent of the script's own arithmetic: re-measure the files.
 
     Sizes here are written out by hand, so this check cannot pass by sharing a
-    bug with ``resolve_size``. Only the Spatial Join template's size is used;
-    every other node counts at the 525x350 default, which is never smaller
-    than a template's own size and so can only make the check stricter.
+    bug with ``resolve_size``. The Spatial Join's and the Map Edits node's
+    template sizes are used; every other node counts at the 525x350 default,
+    which no other template of a numbered example exceeds, so it can only make
+    the check stricter.
     """
     overrides = {
         "curio.builtin/spatial-join": (460, 300),
+        "curio.builtin/edit-features": (900, 460),
     }
     import glob
 
