@@ -112,7 +112,7 @@ def build_namespace_template():
     from utk_curio.sandbox.util.codec import detect_kind
     from utk_curio.sandbox.util.input_layers import curio_layer
     from utk_curio.sandbox.util.parsers import checkIOType
-    from utk_curio.sandbox.util.feature_edits import edit_features
+    from utk_curio.sandbox.util.map_edits import map_edits
 
     return {
         "__builtins__": __builtins__,
@@ -137,8 +137,8 @@ def build_namespace_template():
         "duckdb": duckdb,
         "detect_kind": detect_kind,
         "checkIOType": checkIOType,
-        # The Edit Features node's code applies its edit list with it (#662).
-        "curio_edit_features": edit_features,
+        # The Map Edits node's code applies its removals and changes with it.
+        "curio_map_edits": map_edits,
         # A layer chip, [!! input_0:roads !!], reads one layer of an input with it.
         "curio_layer": curio_layer,
         # The three store helpers the in-process path also seeds are replaced

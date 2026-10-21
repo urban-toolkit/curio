@@ -119,8 +119,8 @@ def _injected_helpers() -> set[str]:
     """The ``curio_*`` names node code can call: the catalog helpers the sandbox
     installs (the renamed ones only raise), ``curio_secret``, which both
     execution paths inject beside them, and the ``curio_*`` names both paths
-    seed into node code's namespace, such as the Interaction node's
-    ``curio_edit_features`` (#662): the isolated child's template, which
+    seed into node code's namespace, such as the Map Edits node's
+    ``curio_map_edits``: the isolated child's template, which
     ``worker._worker_init`` mirrors."""
     from utk_curio.sandbox.isolation.zygote import build_namespace_template
     from utk_curio.sandbox.util.catalog_helpers import install_catalog_helpers

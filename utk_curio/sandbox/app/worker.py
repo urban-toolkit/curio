@@ -362,7 +362,7 @@ def _worker_init():
         checkIOType,
         save_dataset_parquet,
     )
-    from utk_curio.sandbox.util.feature_edits import edit_features
+    from utk_curio.sandbox.util.map_edits import map_edits
     from utk_curio.sandbox.util.input_layers import curio_layer
 
     _globals_cache = {
@@ -392,8 +392,8 @@ def _worker_init():
         'detect_kind': detect_kind,
         'checkIOType': checkIOType,
         'save_dataset_parquet': save_dataset_parquet,
-        # The Edit Features node's code applies its edit list with it (#662).
-        'curio_edit_features': edit_features,
+        # The Map Edits node's code applies its removals and changes with it.
+        'curio_map_edits': map_edits,
         # A layer chip, [!! input_0:roads !!], reads one layer of an input with it.
         'curio_layer': curio_layer,
     }
