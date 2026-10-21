@@ -10,7 +10,22 @@
  * - `[!! @season !!]` names a shared tag: the widget of the dataflow's
  *   Parameter node named `season`;
  * - `[!! selection picked !!]` names one of the node's selection tags: the ids
- *   of the rows a view's selection picks (`selectionTags.ts`).
+ *   of the rows a view's selection picks (`selectionTags.ts`);
+ * - in a Vega-Lite or Autark spec, the scenario chips write the scenarios of the
+ *   node's inputs, from the label each input's rows carry (`InputScope.scenario`:
+ *   the box its feeding node is in, else that node's name in grey):
+ *   `[!! scenario colors !!]` the scale `{"domain": [names], "range": [colors]}`,
+ *   each box once in the order the dataflow lists the boxes, then each input
+ *   from no box; `[!! scenario text_colors !!]` the same scale in the shades a
+ *   text mark reads in (`tableTextColor`); `[!! scenario order !!]` the names
+ *   alone; and `[!! scenario input_1 !!]` the color of input_1's box;
+ * - `[!! inputs.sunlight !!]` names a field of the dataset `inputs`, which
+ *   stacks a Vega-Lite chart's inputs (`utils/scenarios/stackedInputs`).
+ *
+ * A widget's name has no space and no dot, and an input's chip starts
+ * `input_`, so neither `scenario colors` nor `inputs.sunlight` can name a
+ * widget, an input or a column: `scenario_colors` would be a widget's name,
+ * and `input_1.scenario_color` a column of input_1.
  *
  * The browser (NodeEditor, before a run) and the headless runner
  * (`utk_curio/backend/app/execution/code_references.py`) must write the same
@@ -47,6 +62,15 @@ import { WIDGET_NAME_RE, effectiveValue, type WidgetDef, type WidgetValue } from
 import { inputTableName } from "../../generated/autkGrammar";
 import { vegaFieldName } from "../vegaFieldNames";
 import { isOverCap, overCapText, selectionSize, type SelectionTag } from "./selectionTags";
+import {
+  SCENARIO_FIELD,
+  SCENARIO_NAME_FIELD,
+  scaleLabels,
+  scenarioScale,
+  tableTextColor,
+  type ScenarioLabel,
+} from "../scenarios/scenarioColors";
+import { INPUT_FIELD } from "../scenarios/stackedInputs";
 
 export type CodeLanguage = "python" | "javascript" | "json";
 
@@ -87,6 +111,32 @@ export const SHARED_PREFIX = "@";
  * with `SELECTION_REFERENCE_RE` in `code_references.py`. */
 export const SELECTION_REFERENCE_PATTERN = String.raw`^selection\s+(.+)$`;
 const SELECTION_REFERENCE_RE = new RegExp(SELECTION_REFERENCE_PATTERN);
+
+/** What stands inside a scenario chip: `scenario colors`, `scenario
+ * text_colors`, `scenario order`, or `scenario input_1` (`scenario input_?`
+ * once its edge was deleted). Kept in sync with `SCENARIO_REFERENCE_RE` in
+ * `code_references.py`. */
+export const SCENARIO_REFERENCE_PATTERN = String.raw`^scenario\s+(.+)$`;
+const SCENARIO_REFERENCE_RE = new RegExp(SCENARIO_REFERENCE_PATTERN);
+
+/** The scenario chips that list every input's scenario: the scale of their
+ * colors, the same scale in text shades, and their names in order. */
+export const SCENARIO_LISTS = ["colors", "text_colors", "order"] as const;
+export type ScenarioList = (typeof SCENARIO_LISTS)[number];
+
+/** What follows `scenario` in an input's scenario chip. */
+const SCENARIO_INPUT_RE = /^input_(\d+|\?)$/;
+
+/** What stands inside a chip of a field of the dataset `inputs`:
+ * `inputs.sunlight`. Kept in sync with `STACKED_REFERENCE_RE` in
+ * `code_references.py`. */
+export const STACKED_REFERENCE_PATTERN = String.raw`^inputs\.(.+)$`;
+const STACKED_REFERENCE_RE = new RegExp(STACKED_REFERENCE_PATTERN);
+
+/** The fields the stacking adds to every row of `inputs`, before the inputs'
+ * own columns: the label's name and id, and the circle. Kept in sync with
+ * `STACKED_FIELDS` in `code_references.py`. */
+export const STACKED_FIELDS = [SCENARIO_NAME_FIELD, SCENARIO_FIELD, INPUT_FIELD] as const;
 
 /** What a layer reference in Python or JavaScript calls. Kept in sync with
  * `LAYER_HELPER` in `code_references.py` and the sandbox's
@@ -135,6 +185,11 @@ export interface InputScope {
    * table it is read as (`layerName`, on a reference or an envelope): known
    * before the input is read. */
   layerName?: string;
+  /** The label its rows carry, which the scenario chips write: the id, name,
+   * color and rank of the box its feeding node is in, else that node's name in
+   * `NO_SCENARIO_COLOR` (utils/scenarios/inputScenarios). Absent when it is
+   * not known here, and a scenario chip that needs it says so. */
+  scenario?: ScenarioLabel;
 }
 
 /** One layer an input carries. */
@@ -162,15 +217,32 @@ export type ParsedReference =
   /** `slot` is null for `input_?`, the input whose edge was deleted. */
   | { kind: "input"; slot: number | null; layer?: string; column?: string }
   | { kind: "shared"; name: string }
-  | { kind: "selection"; name: string };
+  | { kind: "selection"; name: string }
+  /** `chip` is null for a word no scenario chip is. */
+  | { kind: "scenario"; chip: ScenarioList | null }
+  /** `slot` is null for `scenario input_?`, the input whose edge was deleted. */
+  | { kind: "scenario"; chip: "input"; slot: number | null }
+  | { kind: "stacked"; column: string };
 
 export type ReferenceContext = { kind: "code" } | { kind: "comment" } | { kind: "string"; quote: string };
+
+/** What follows `scenario ` in a scenario chip, as the chip it names. */
+function parseScenarioChip(rest: string): ParsedReference {
+  if ((SCENARIO_LISTS as readonly string[]).includes(rest)) return { kind: "scenario", chip: rest as ScenarioList };
+  const input = SCENARIO_INPUT_RE.exec(rest);
+  if (input) return { kind: "scenario", chip: "input", slot: input[1] === "?" ? null : Number(input[1]) };
+  return { kind: "scenario", chip: null };
+}
 
 export function parseReference(inner: string): ParsedReference {
   const m = INPUT_REFERENCE_RE.exec(inner);
   if (!m) {
     const selection = SELECTION_REFERENCE_RE.exec(inner);
     if (selection) return { kind: "selection", name: selection[1] };
+    const scenario = SCENARIO_REFERENCE_RE.exec(inner);
+    if (scenario) return parseScenarioChip(scenario[1]);
+    const stacked = STACKED_REFERENCE_RE.exec(inner);
+    if (stacked) return { kind: "stacked", column: stacked[1] };
     if (inner.startsWith(SHARED_PREFIX)) return { kind: "shared", name: inner.slice(SHARED_PREFIX.length) };
     return { kind: "widget", name: inner };
   }
@@ -216,6 +288,86 @@ export function sharedReferenceInner(name: string): string {
 /** What stands inside a reference to the selection tag *name*. */
 export function selectionReferenceInner(name: string): string {
   return `selection ${name}`;
+}
+
+/** What stands inside the scenario chip *chip*: `scenario colors`. */
+export function scenarioReferenceInner(chip: ScenarioList): string {
+  return `scenario ${chip}`;
+}
+
+/** What stands inside the scenario chip of input *slot*: `scenario input_1`,
+ * or `scenario input_?` for one whose edge was deleted. */
+export function scenarioInputReferenceInner(slot: number | null): string {
+  return `scenario ${inputName(slot)}`;
+}
+
+/** What stands inside a chip of the field *column* of the dataset `inputs`. */
+export function stackedReferenceInner(column: string): string {
+  return `inputs.${column}`;
+}
+
+/** The data types of a frame the stacking reads as a table, its rows' columns
+ * known from its own. Kept in sync with `TABLE_TYPES` in `code_references.py`. */
+const TABLE_TYPES = new Set(["dataframe", "geodataframe"]);
+
+/** *input*'s columns as the rows of `inputs` carry them: a GeoDataFrame's
+ * geometry is left out, as the stacking leaves it out. */
+function stackedColumnsOf(input: InputScope): string[] {
+  return (input.columns ?? []).filter((column) => input.dtypes?.[column] !== "geometry");
+}
+
+/**
+ * The fields of the dataset `inputs` that *inputs* are known to give: the three
+ * the stacking adds, then each column of an input whose columns are known, once
+ * each, in circle order. Its fields' dtypes are its inputs', each column's
+ * distinct ones listed. The `inputs` tag lists these.
+ */
+export function stackedFields(inputs: readonly InputScope[]): { fields: string[]; dtypes: Record<string, string> } {
+  const fields: string[] = [...STACKED_FIELDS];
+  const seen: Record<string, string[]> = {};
+  for (const input of inputs) {
+    if (Array.isArray(input.layers) && input.layers.length > 0) continue;
+    for (const column of stackedColumnsOf(input)) {
+      if (!fields.includes(column)) fields.push(column);
+      const dtype = input.dtypes?.[column];
+      if (dtype && !(seen[column] ??= []).includes(dtype)) seen[column].push(dtype);
+    }
+  }
+  const dtypes: Record<string, string> = {};
+  for (const [column, kinds] of Object.entries(seen)) dtypes[column] = kinds.join(" or ");
+  return { fields, dtypes };
+}
+
+/**
+ * Every field of the dataset `inputs`, when every input is a table whose
+ * columns are known: then a field chip must name one of them. Null otherwise,
+ * and a field chip is not checked. Kept in sync with `_known_stacked_fields` in
+ * `code_references.py`.
+ */
+function knownStackedFields(inputs: readonly InputScope[]): string[] | null {
+  const known = inputs.every(
+    (input) => TABLE_TYPES.has(input.dataType ?? "") && Array.isArray(input.columns) && !Array.isArray(input.layers),
+  );
+  return known ? stackedFields(inputs).fields : null;
+}
+
+/** The first of *inputs* whose scenario label is not known, or undefined. */
+const unlabelled = (inputs: readonly InputScope[]) => inputs.find((input) => input.scenario == null);
+
+/**
+ * What the scenario chip *parsed* (one that resolves) writes over *inputs*: a
+ * box's color, the names in order, or a scale. Kept in sync with
+ * `_scenario_value` in `code_references.py`.
+ */
+function scenarioValue(parsed: Extract<ParsedReference, { kind: "scenario" }>, inputs: readonly InputScope[]): WidgetValue {
+  if (parsed.chip === "input") {
+    const slot = parsed.slot;
+    return (inputs.find((input) => input.slot === slot)?.scenario as ScenarioLabel).color;
+  }
+  const { domain, range } = scenarioScale(scaleLabels(inputs.map((input) => input.scenario as ScenarioLabel)));
+  if (parsed.chip === "order") return domain;
+  const scale = { domain, range: parsed.chip === "text_colors" ? range.map(tableTextColor) : range };
+  return scale as unknown as WidgetValue;
 }
 
 /** Whether *name* can ride a layer reference and read back as itself. */
@@ -590,6 +742,43 @@ function knownLayers(input: InputScope): LayerScope[] | null {
   return null;
 }
 
+/** Why the scenario chip *reference* (*parsed*) cannot be written over
+ * *inputs*, standing in *context*, or null. Kept in sync with
+ * `_scenario_problem` in `code_references.py`. */
+function scenarioProblem(
+  reference: string,
+  parsed: Extract<ParsedReference, { kind: "scenario" }>,
+  inputs: readonly InputScope[],
+  context: ReferenceContext,
+  language: CodeLanguage,
+): string | null {
+  if (language !== "json") return `${reference} is for a Vega-Lite or Autark spec, not for code.`;
+  if (parsed.chip === null) {
+    return `${reference} names no scenario chip. The scenario chips are scenario colors, scenario text_colors, `
+      + "scenario order and scenario input_<k>.";
+  }
+  if (parsed.chip === "input") {
+    const slot = parsed.slot;
+    if (slot === null) {
+      return `${reference}: the edge for this input was deleted. Drag the swatch of one of this node's input tags here.`;
+    }
+    const input = inputs.find((i) => i.slot === slot);
+    if (input === undefined) {
+      return `${reference}: input_${slot} has no edge. Connect one to that circle, `
+        + "or drag the swatch of one of this node's input tags here.";
+    }
+    if (input.scenario == null) return `${reference}: the scenario box input_${slot} comes from is not known here.`;
+    return null;
+  }
+  if (context.kind !== "code") {
+    const what = parsed.chip === "order" ? "a list of names" : "a scale";
+    return `${reference} is ${what}, not text. Use it outside quotes.`;
+  }
+  const unknown = unlabelled(inputs);
+  if (unknown) return `${reference}: the scenario box input_${unknown.slot} comes from is not known here.`;
+  return null;
+}
+
 /** Why *reference* cannot be resolved in *scope*, standing in *context*, or null. */
 export function referenceProblem(
   reference: string,
@@ -668,6 +857,15 @@ export function referenceProblem(
     if (isOverCap(tag)) return `${reference}: ${overCapText(selectionSize(tag))}`;
     return null;
   }
+  if (parsed.kind === "scenario") return scenarioProblem(reference, parsed, scope.inputs, context, language);
+  if (parsed.kind === "stacked") {
+    if (language !== "json") return `${reference} is for a Vega-Lite spec, not for code.`;
+    const fields = knownStackedFields(scope.inputs);
+    if (fields !== null && !fields.includes(parsed.column)) {
+      return `${reference}: the dataset inputs has no field ${parsed.column}.`;
+    }
+    return null;
+  }
   if (inner.includes("$")) {
     return `${reference} is an old widget marker. Add the widget in the node's Widgets tab and drag its tag into the code.`;
   }
@@ -706,12 +904,16 @@ function resolvedText(
     }
     return value;
   }
+  // A field of inputs is written as a column is: its name.
+  if (parsed.kind === "stacked") return writeText(named(parsed.column), context, language);
   const value =
-    parsed.kind === "selection"
-      ? ((scope.selections ?? []).find((t) => t.name === parsed.name) as SelectionTag).ids as WidgetValue
-      : effectiveValue(
-          (parsed.kind === "shared" ? scope.shared : scope.widgets).find((w) => w.name === parsed.name) as WidgetDef,
-        );
+    parsed.kind === "scenario"
+      ? scenarioValue(parsed, scope.inputs)
+      : parsed.kind === "selection"
+        ? ((scope.selections ?? []).find((t) => t.name === parsed.name) as SelectionTag).ids as WidgetValue
+        : effectiveValue(
+            (parsed.kind === "shared" ? scope.shared : scope.widgets).find((w) => w.name === parsed.name) as WidgetDef,
+          );
   if (context.kind === "code") return widgetLiteral(place ? fieldValue(value, place) : value, language);
   return escapeFor(named(textOf(value, language)), context, language);
 }
@@ -895,17 +1097,24 @@ function readsNamesAt(code: string, offsets: number[], language: CodeLanguage): 
 
 /**
  * *code* after circle *removedSlot* lost its edge and the circles below it
- * moved up one: references and typed input names (in *language*) to later
- * inputs count one less, and those to the removed input become
- * `[!! input_? !!]`, which reports itself. Other references, and the text
- * around them, are kept as written.
+ * moved up one: references, an input's scenario chip among them, and typed
+ * input names (in *language*) to later inputs count one less, and those to the
+ * removed input become `[!! input_? !!]` (`[!! scenario input_? !!]`), which
+ * reports itself. Other references, and the text around them, are kept as
+ * written.
  */
 export function renumberInputReferences(code: string, removedSlot: number, language: CodeLanguage = "python"): string {
   const edits: { start: number; end: number; text: string }[] = [];
+  const moved = (slot: number) => (slot === removedSlot ? null : slot - 1);
   for (const ref of findReferences(code)) {
     const parsed = parseReference(ref.inner);
+    if (parsed.kind === "scenario" && parsed.chip === "input") {
+      if (parsed.slot === null || parsed.slot < removedSlot) continue;
+      edits.push({ start: ref.start, end: ref.end, text: referenceText(scenarioInputReferenceInner(moved(parsed.slot))) });
+      continue;
+    }
     if (parsed.kind !== "input" || parsed.slot === null || parsed.slot < removedSlot) continue;
-    const slot = parsed.slot === removedSlot ? null : parsed.slot - 1;
+    const slot = moved(parsed.slot);
     edits.push({ start: ref.start, end: ref.end, text: referenceText(inputReferenceInner(slot, parsed.column, parsed.layer)) });
   }
   for (const name of inputNamesIn(code, language)) {
