@@ -620,14 +620,43 @@ class TestScenarioChipsInTheCheck:
             "edges": [{"id": "e-py", "source": "py", "target": "chart", "sourceHandle": "out", "targetHandle": "in"}],
             "name": "wf", "task": "compare",
         }}
+        # As Scout's charts write it: the dataset its inputs are stacked in, by its chip.
         reply = (
-            '{"data": {"name": "inputs"}, "mark": "bar", "encoding": '
+            '{"data": {"name": "[!! inputs !!]"}, "mark": "bar", "encoding": '
             '{"x": {"field": "scenario_name", "type": "nominal", "sort": [!! scenario order !!]}}}'
         )
         _rounds(app, chart, replies=[reply], exec_fn=_Exec(), spec=spec)
         assert checked, "the loop checked no document"
         # The built-in Python node's label (packages/curio.builtin@1), not "Computation Analysis".
         assert json.loads(checked[0])["encoding"]["x"]["sort"] == ["Python Computation"]
+        assert json.loads(checked[0])["data"] == {"name": "inputs"}
+
+
+class TestTheStackedDatasetChipInCode:
+    """``[!! inputs !!]`` names the dataset a Vega-Lite spec reads its inputs
+    stacked in: a Python node that reads it is refused in the chip's own words,
+    as a field of ``inputs`` is, without the chip reaching the sandbox, and the
+    next round is told why."""
+
+    def test_python_reading_the_dataset_chip_is_a_round_naming_it(self, app, tmp_curio):
+        node = {"id": "n1", "type": CA, "goal": "stack the scenarios", "content": ""}
+        spec = {"dataflow": {
+            "nodes": [{"id": "py", "type": f"{CA}@1", "content": "return input_0"}, node],
+            "edges": [{"id": "e-py", "source": "py", "target": "n1", "sourceHandle": "out", "targetHandle": "in"}],
+            "name": "wf", "task": "stack",
+        }}
+        exec_fn = _Exec()
+        events, outcome, inputs = _rounds(
+            app, node, replies=["rows = [!! inputs !!]\nreturn rows", "df = input_0\nreturn df"],
+            exec_fn=exec_fn, spec=spec,
+        )
+        refusal = "[!! inputs !!] is for a Vega-Lite spec, not for code."
+        first = outcome["attempts"][0]
+        assert first["verdict"] == "fail"
+        assert refusal in str(first.get("stderrTail") or first.get("detail") or ""), first
+        assert refusal in inputs[1]["validationError"]
+        assert all("[!! inputs !!]" not in call["code"] for call in exec_fn.calls), "the chip reached the sandbox"
+        assert outcome["verdict"] == "pass" and outcome["candidate"] == "df = input_0\nreturn df"
 
 
 class TestSameBatchReuse:
