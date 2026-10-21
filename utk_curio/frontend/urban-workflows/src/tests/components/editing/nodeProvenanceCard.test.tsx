@@ -77,3 +77,47 @@ test("opened, a run shows its kinds again with the code that ran", () => {
   expect(run.querySelector('pre')?.textContent).toBe('return input_0.set_geometry("geom")');
   expect(run.textContent?.match(/In:\s+DATAFRAME\s+\|\s+Out:\s+GEODATAFRAME/g)).toHaveLength(2);
 });
+
+// A Map Edits node's Apply, Remove or put back is an entry of its own.
+describe("an edit in the drawer", () => {
+  const EDIT_CODE = 'return curio_map_edits(\n    input_0,\n    key="building_id",\n    remove=[12],\n    change={},\n)\n';
+
+  function editInTheDrawer(restore = jest.fn()) {
+    const seen: { provenance?: ReturnType<typeof useProvenanceContext> } = {};
+    const Probe = () => {
+      seen.provenance = useProvenanceContext();
+      return null;
+    };
+    const { container } = render(
+      <ProvenanceProvider>
+        <Probe />
+        <NodeRunsProvenance nodeId={mockNodeId} restore={restore} onNodeGone={jest.fn()} />
+      </ProvenanceProvider>,
+    );
+    act(() => { seen.provenance!.nodeEditProv(mockNodeId, EDIT_CODE, 'remove building_id 12'); });
+    const edit = container.querySelector<HTMLElement>('[data-provenance-item]');
+    expect(edit).not.toBeNull();
+    return { edit: edit as HTMLElement, restore, seen };
+  }
+
+  test("reads what it changed, not the kinds of data a run reads", () => {
+    const { edit } = editInTheDrawer();
+    expect(edit.textContent).toContain('remove building_id 12');
+    expect(edit.textContent).not.toMatch(/In:/);
+  });
+
+  test("opened, it shows when it was made and the code it left, and puts that code back", () => {
+    const { edit, restore, seen } = editInTheDrawer();
+    fireEvent.click(edit.querySelector('button')!);
+
+    expect(edit.textContent).toMatch(/Made \S/);
+    expect(edit.textContent).not.toMatch(/Started|ran for/);
+    expect(edit.querySelector('pre')?.textContent).toBe(EDIT_CODE);
+    expect(edit.textContent).toContain('The next run or edit branches from this one');
+    const putBack = Array.from(edit.querySelectorAll('button')).find((b) => b.textContent === 'Put this code back in the node')!;
+    fireEvent.click(putBack);
+    expect(restore).toHaveBeenCalledWith(EDIT_CODE);
+    const [record] = seen.provenance!.provenanceGraphNodes[mockNodeId];
+    expect(seen.provenance!.selectedParentExecRef.current[mockNodeId]).toBe(record.id);
+  });
+});
