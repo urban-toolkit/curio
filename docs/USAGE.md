@@ -789,7 +789,7 @@ links it to the map, both ways, as two Autark views are linked (see
    node to the dot on top of the map. The node's body now says **Linked to** the map.
 4. Pick a layer in the node's body, then what to do with it: **Add** features drawn
    on the map, **Edit** a feature picked on the map (reshape it, move it, change its
-   values), **Remove** features picked on the map by a click or a lasso, or by a rule
+   values), **Remove** features picked on the map by a click (shift-click adds more), or by a rule
    such as `height > 100`, or **Add a property** to every feature. **Show only this
    layer** hides the map's other layers while you work.
 5. The map shows the picks and the edits at once, and hands on its layers with them.

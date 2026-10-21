@@ -100,14 +100,12 @@ export function crsName(fc: { features?: any[]; crs?: any } | undefined): string
   return isGeographic(fc) ? "EPSG:4326" : "EPSG:3395";
 }
 
-/** An on/off switch: a way of changing the picked feature's shape, or the lasso. */
-function ShapeSwitch({ on, icon, label, testId, onToggle }: { on: boolean; icon: "points" | "whole" | "lasso"; label: string; testId: string; onToggle: () => void }) {
+/** An on/off switch: a way of changing the picked feature's shape. */
+function ShapeSwitch({ on, icon, label, testId, onToggle }: { on: boolean; icon: "points" | "whole"; label: string; testId: string; onToggle: () => void }) {
   return (
     <button type="button" role="switch" aria-checked={on} data-testid={testId} className={`nodrag nopan ${styles.switch} ${on ? styles.switchOn : ""}`} onClick={onToggle}>
       <svg className={styles.switchIcon} width={18} height={18} viewBox="0 0 18 18" aria-hidden="true">
-        {icon === "lasso" ? (
-          <path d="M9 2.5c4 0 6.5 1.8 6.5 4.2S12.8 11 9 11 2.5 9.1 2.5 6.7 5 2.5 9 2.5zM6.2 10.6c-.9 1.1-.7 2.6.5 3.3 1 .6 1.2 1.6.6 2.6" fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" strokeDasharray="2.6 1.8" />
-        ) : icon === "points" ? (
+        {icon === "points" ? (
           <>
             <polyline points="3,14 8,4 15,9" fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinejoin="round" />
             <rect x={1.5} y={12.5} width={3} height={3} fill="#FFFFFF" stroke="currentColor" strokeWidth={1.4} />
@@ -440,10 +438,7 @@ export default function LayerWorkbench({
   const [texts, setTexts] = useState<Record<string, string>>({});
   // How the picked feature's shape is changed, or null: neither, and a drag pans the map.
   const [shapeMode, setShapeMode] = useState<"reshape" | "move" | null>(null);
-  const toggleShape = (next: "reshape" | "move") => {
-    setShapeMode((current) => (current === next ? null : next));
-    setLasso(false);
-  };
+  const toggleShape = (next: "reshape" | "move") => setShapeMode((current) => (current === next ? null : next));
   const [editTexts, setEditTexts] = useState<Record<string, string>>({});
   const [newProp, setNewProp] = useState<{ name: string; type: PropertyType; value: string }>({ name: "", type: "text", value: "" });
   const [removeBy, setRemoveBy] = useState<"click" | "rule">("click");
@@ -460,8 +455,6 @@ export default function LayerWorkbench({
   const [recent, setRecent] = useState<SelectionId[]>([]);
   // Drawing one more part: of the feature being added ("draft") or of the picked one.
   const [partFor, setPartFor] = useState<"draft" | "picked" | null>(null);
-  // A drag on the map draws a lasso around the features to pick, in place of a pan.
-  const [lasso, setLasso] = useState(false);
 
   const active = layers.find((l) => l.name === activeName) ?? null;
   useEffect(() => {
@@ -469,7 +462,6 @@ export default function LayerWorkbench({
     setPicked([]);
     setRecent([]);
     setPartFor(null);
-    setLasso(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeName, action]);
 
@@ -535,16 +527,6 @@ export default function LayerWorkbench({
     }
     setPicked(additive ? (picked.some((p) => String(p) === String(id)) ? picked.filter((p) => String(p) !== String(id)) : [...picked, id]) : [id]);
   };
-  // A lasso's pick: picks only, never while drawing or picking by a rule.
-  const onSelectMany = (ids: SelectionId[], additive: boolean) => {
-    if (drawn || partFor || (action === "edit" && editBy === "rule") || (action === "remove" && removeBy === "rule")) return;
-    if (!additive) {
-      setPicked(ids);
-      return;
-    }
-    const have = new Set(picked.map(String));
-    setPicked([...picked, ...ids.filter((id) => !have.has(String(id)))]);
-  };
   // A part drawn is added to the feature being added, or to the picked one.
   const onDrawn = (geometry: Geometry) => {
     if (partFor === "draft" && drawn) {
@@ -582,16 +564,14 @@ export default function LayerWorkbench({
           : action === "edit" && pickedOne && shapeMode
             ? shapeMode
             : "select";
-  // The lasso works where a click picks: Remove or Edit, by click, nothing being drawn or reshaped.
-  const lassoOn = lasso && mode === "select" && ((action === "remove" && removeBy === "click") || (action === "edit" && editBy === "click")) && !drawn;
   const shown = useMemo<EditedFeature[]>(
     () => (drawn ? [...features, { id: DRAFT, geometry: drawn, properties: {}, status: "added" }] : features),
     [features, drawn],
   );
 
   // Linked to a map: the action is drawn there.
-  const handlers = useRef({ onSelect, onSelectMany, onDrawn, onReshape });
-  handlers.current = { onSelect, onSelectMany, onDrawn, onReshape };
+  const handlers = useRef({ onSelect, onDrawn, onReshape });
+  handlers.current = { onSelect, onDrawn, onReshape };
   useEffect(() => {
     const soloTable = solo && active ? active.table ?? active.name : null;
     if (!active || !kind || (!mode && !soloTable)) {
@@ -613,16 +593,14 @@ export default function LayerWorkbench({
         recent,
         geographic,
         key: active.key ?? (active.newLayer ? "id" : undefined),
-        lasso: lassoOn,
       },
       onSelect: (id, additive) => handlers.current.onSelect(id, additive),
-      onSelectMany: (ids, additive) => handlers.current.onSelectMany(ids, additive),
       onDrawn: (geometry) => handlers.current.onDrawn(geometry),
       onReshape: (id, geometry) => handlers.current.onReshape(id, geometry),
       onShapeDone: () => setShapeMode(null),
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mapId, active, kind, mode, shown, drawn, picked, matches, recent, geographic, nouns.one, solo, lassoOn]);
+  }, [mapId, active, kind, mode, shown, drawn, picked, matches, recent, geographic, nouns.one, solo]);
   // Back on the list of layers, the map shows them all again.
   useEffect(() => {
     if (activeName === null) setSolo(false);
@@ -956,20 +934,6 @@ export default function LayerWorkbench({
     return { make, section };
   };
 
-  // The lasso, where features are picked by click.
-  const lassoSwitch = (
-    <ShapeSwitch
-      on={lasso}
-      icon="lasso"
-      label="Lasso"
-      testId="interaction-lasso"
-      onToggle={() => {
-        if (!lasso) setShapeMode(null);
-        setLasso(!lasso);
-      }}
-    />
-  );
-
   let body: React.ReactNode = null;
   if (action === "add") {
     const problems = formProblems(defs, texts);
@@ -1073,9 +1037,6 @@ export default function LayerWorkbench({
         {back}
         <span className={styles.title}>Edit {nouns.many}</span>
         <span className={styles.lead}>{plural(picked.length, nouns.one, nouns.many)} picked.</span>
-        <span className={styles.switches} role="group" aria-label="Pick">
-          {lassoSwitch}
-        </span>
         {change.section}
         <span className={styles.formButtons}>
           <button
@@ -1095,7 +1056,7 @@ export default function LayerWorkbench({
             Clear the pick
           </button>
         </span>
-        <span className={styles.hint}>{lasso ? "Shift-drag adds more." : "Shift-click adds or drops one."}</span>
+        <span className={styles.hint}>Shift-click adds or drops one.</span>
       </div>
     );
   } else if (action === "edit") {
@@ -1113,12 +1074,7 @@ export default function LayerWorkbench({
           <div className={styles.sectionHead}>
             <b>Selection</b>
           </div>
-          <span className={styles.switches} role="group" aria-label="Selection">
-            {lassoSwitch}
-          </span>
-          <span className={styles.hint}>
-            {lasso ? `Draw around ${nouns.many} ${onTheMap} to pick them; shift adds to the pick.` : `Shift-click ${nouns.many} to pick more, or turn on Lasso to draw around them.`}
-          </span>
+          <span className={styles.hint}>Shift-click {nouns.many} {onTheMap} to pick more.</span>
         </div>
         <div className={styles.section}>
           <div className={styles.sectionHead}>
@@ -1230,12 +1186,7 @@ export default function LayerWorkbench({
           setShapeMode(null);
           setPartFor(null);
         }, "interaction-edit-by-rule")}
-        <span className={styles.lead}>
-          {lasso ? `Drag around ${nouns.many} ${onTheMap} to pick them.` : `Click a ${nouns.one} ${onTheMap} to select it; shift-click adds one.`}
-        </span>
-        <span className={styles.switches} role="group" aria-label="Pick">
-          {lassoSwitch}
-        </span>
+        <span className={styles.lead}>Click a {nouns.one} {onTheMap} to select it; shift-click adds one.</span>
         <span className={styles.hint}>One picked: drag its points to reshape it, or change its values here. Several: change one value of them all.</span>
       </div>
     );
@@ -1249,19 +1200,12 @@ export default function LayerWorkbench({
         {removeBy === "click" ? (
           <span className={styles.lead}>
             {picked.length === 0
-              ? lasso
-                ? `Drag around ${nouns.many} ${onTheMap} to pick them; shift-drag adds more.`
-                : `Click ${nouns.many} ${onTheMap} to pick them; shift-click adds one.`
+              ? `Click ${nouns.many} ${onTheMap} to pick them; shift-click adds one.`
               : `${plural(picked.length, nouns.one, nouns.many)} picked.`}
           </span>
         ) : (
           ruleBuilder(`Remove ${nouns.many} where`)
         )}
-        {removeBy === "click" ? (
-          <span className={styles.switches} role="group" aria-label="Pick">
-            {lassoSwitch}
-          </span>
-        ) : null}
         <span className={styles.formButtons}>
           <button
             type="button"

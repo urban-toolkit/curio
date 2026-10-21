@@ -41,8 +41,6 @@ export interface MapEditActive {
   geographic: boolean;
   /** The column a feature's id is read from, for the map's own highlight. */
   key?: string;
-  /** In select mode, a drag draws a lasso that picks what it encloses, in place of a pan. */
-  lasso?: boolean;
 }
 
 export interface MapEditSession {
@@ -51,8 +49,6 @@ export interface MapEditSession {
   solo?: string | null;
   active: MapEditActive | null;
   onSelect: (id: SelectionId | null, additive: boolean) => void;
-  /** A lasso's pick: these features, added to the pick when *additive*. */
-  onSelectMany?: (ids: SelectionId[], additive: boolean) => void;
   onDrawn: (geometry: Geometry) => void;
   onReshape: (id: SelectionId, geometry: Geometry) => void;
   /** Turns the shape mode (reshape, move) off again: the map's Done. */

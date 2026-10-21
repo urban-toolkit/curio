@@ -7,8 +7,7 @@
  * The map keeps its own gestures: a drag pans it and the wheel zooms it, in
  * every mode. A click is the node's:
  *
- * - pick: a click picks the feature under it (shift-click adds it); with the
- *   lasso on, a drag outlines the features to pick (shift-drag adds them);
+ * - pick: a click picks the feature under it (shift-click adds it);
  * - draw: a click places a point, or a corner of a line or an area, and a
  *   double-click, Enter or Finish ends it; Backspace takes back a corner and
  *   Escape gives up;
@@ -26,7 +25,6 @@ import type { Geometry } from "../../utils/editFeatures/editFeatures";
 import { kindOf, type EditedFeature } from "../../utils/editFeatures/layerModel";
 import { editMap, editMapLayerId, fromMercator, toMercator, useMapEdit } from "../../utils/editFeatures/mapEditBus";
 import { partsOf, withoutPart } from "../../utils/editFeatures/geometryParts";
-import { LASSO_MIN_PIXELS, lassoPicks, outlineLength } from "../../utils/editFeatures/lasso";
 import { toRings } from "../../utils/editFeatures/geometryRings";
 
 type XY = [number, number];
@@ -294,8 +292,7 @@ function shifted(geometry: Geometry, dx: number, dy: number): Geometry {
 type Gesture =
   | { kind: "click"; start: XY; moved: boolean; shift: boolean }
   | { kind: "corner" | "mid"; ring: number; index: number; shape?: Geometry }
-  | { kind: "move"; origin: Geometry; at: XY }
-  | { kind: "lasso"; points: XY[]; shift: boolean };
+  | { kind: "move"; origin: Geometry; at: XY };
 
 export default function MapEditOverlay({ mapId }: { mapId: string }) {
   const { session, map } = useMapEdit(mapId);
@@ -305,8 +302,6 @@ export default function MapEditOverlay({ mapId }: { mapId: string }) {
   const [draft, setDraft] = useState<XY[]>([]);
   const [hover, setHover] = useState<XY | null>(null);
   const [dragShape, setDragShape] = useState<{ id: SelectionId; geometry: Geometry } | null>(null);
-  // The lasso being drawn, in screen pixels.
-  const [lassoLine, setLassoLine] = useState<XY[] | null>(null);
   const gesture = useRef<Gesture | null>(null);
   // The map's tilt before an action looked from above, put back after it.
   const tilt = useRef<CameraView | null>(null);
@@ -458,12 +453,6 @@ export default function MapEditOverlay({ mapId }: { mapId: string }) {
         host.style.cursor = "grabbing";
         return;
       }
-      // With the lasso on, a drag outlines what to pick, in place of a pan.
-      if (m === "select" && live.current.active?.lasso) {
-        stop(event);
-        gesture.current = { kind: "lasso", points: [s], shift: event.shiftKey };
-        return;
-      }
       // A press the map may turn into a pan: a click only if it stays put.
       gesture.current = { kind: "click", start: s, moved: false, shift: event.shiftKey };
     };
@@ -477,12 +466,6 @@ export default function MapEditOverlay({ mapId }: { mapId: string }) {
         // Moving it whole, the picked feature shows it can be grabbed with shift held.
         const grab = m === "move" && event.shiftKey && !!one?.geometry && hitAt([one], s, p, live.current.size) !== null;
         host.style.cursor = grab ? "grab" : "";
-        return;
-      }
-      if (g.kind === "lasso") {
-        stop(event);
-        g.points.push(s);
-        setLassoLine([...g.points]);
         return;
       }
       // Shift-drag would tilt and turn Autark's camera, which the view from
@@ -519,13 +502,6 @@ export default function MapEditOverlay({ mapId }: { mapId: string }) {
       if (g?.kind === "move") host.style.cursor = "grab";
       const { projection: p, session: s, mode: m, kind: k, shown: all, dragShape: dragged, size: z } = live.current;
       if (!g || !p || !s) return;
-      if (g.kind === "lasso") {
-        setLassoLine(null);
-        // Too short to outline anything: a click, which picks what is under it.
-        if (outlineLength(g.points) < LASSO_MIN_PIXELS) s.onSelect(hitAt(all, g.points[0], p, z)?.id ?? null, g.shift);
-        else s.onSelectMany?.(lassoPicks(all, g.points, p.toScreen), g.shift);
-        return;
-      }
       // A click on a midpoint adds its corner there; no drag is needed.
       if (g.kind === "mid") {
         const one = live.current.selectedOne;
@@ -673,15 +649,13 @@ export default function MapEditOverlay({ mapId }: { mapId: string }) {
           : `Moving points · drag a corner · click or drag a midpoint to add one · alt-click a corner to delete it${selectedOne?.geometry && partsOf(selectedOne.geometry).length > 1 ? " · alt-click inside a part to remove it" : ""}`
         : mode === "move"
           ? `Moving the whole ${noun} · shift-drag it · drag to pan`
-          : active.lasso
-            ? `Lasso · drag around ${noun}s to pick them · shift-drag adds`
-            : `Drag to pan · click a ${noun} to pick it · shift-click adds`;
+          : `Drag to pan · click a ${noun} to pick it · shift-click adds`;
   // Changing a shape, the tip says so in blue, with Done to go back to panning.
   const shaping = mode === "reshape" || mode === "move";
   const last = draftScreen[draftScreen.length - 1];
 
   return (
-    <div ref={box} data-testid="map-edit-overlay" data-edit-mode={mode} data-edit-layer={active.table} style={{ position: "absolute", inset: 0, pointerEvents: "none", cursor: mode === "draw" || (mode === "select" && active.lasso) ? "crosshair" : undefined }}>
+    <div ref={box} data-testid="map-edit-overlay" data-edit-mode={mode} data-edit-layer={active.table} style={{ position: "absolute", inset: 0, pointerEvents: "none", cursor: mode === "draw" ? "crosshair" : undefined }}>
       <svg width={p.width} height={p.height} style={{ position: "absolute", left: 0, top: 0, overflow: "visible" }} aria-hidden="true">
         {matched.map((f) => outline(f, RED, true))}
         {picked.map((f) => outline(f, BLUE, false))}
@@ -705,13 +679,6 @@ export default function MapEditOverlay({ mapId }: { mapId: string }) {
               </g>
             ))
           : null}
-        {lassoLine && lassoLine.length > 1 ? (
-          <>
-            {/* A white casing under the line, so the loop shows on a dense map. */}
-            <polygon points={lassoLine.map((pt) => pt.join(",")).join(" ")} fill="none" stroke="#FFFFFF" strokeWidth={4.5} strokeLinejoin="round" />
-            <polygon data-testid="map-edit-lasso" points={lassoLine.map((pt) => pt.join(",")).join(" ")} fill={`${BLUE}38`} stroke={BLUE} strokeWidth={2.5} strokeDasharray="8 4" strokeLinejoin="round" />
-          </>
-        ) : null}
         {draftScreen.length > 0 ? (
           <>
             <polyline
