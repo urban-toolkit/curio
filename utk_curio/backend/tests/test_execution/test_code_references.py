@@ -139,12 +139,16 @@ class TestTheSharedCases:
             assert resolved, f"no selection reference resolves in a {language} case"
 
     def test_the_table_has_the_scenario_chips_and_their_problems(self):
-        """Each scenario chip and a field of ``inputs`` resolve in a spec, and
-        each is refused where it must be: in code, misspelled, with no edge or a
-        deleted one, inside quotes, with its boxes unknown, or naming no field."""
+        """Each scenario chip, the dataset ``inputs`` and a field of it resolve
+        in a spec, and each is refused where it must be: in code, misspelled,
+        with no edge or a deleted one, inside quotes, with its boxes unknown,
+        naming no field, or on a node with no input to stack."""
         cases = _cases()
         resolving = " ".join(c["code"] for c in cases if c["language"] == "json" and not c.get("problems"))
-        for chip in ("scenario colors", "scenario text_colors", "scenario order", "scenario input_1", "inputs.scenario_name"):
+        for chip in (
+            "scenario colors", "scenario text_colors", "scenario order", "scenario input_1", "inputs",
+            "inputs.scenario_name",
+        ):
             assert f"[!! {chip} !!]" in resolving, chip
         messages = " ".join(m for c in cases for m in c.get("problems", []))
         for kind in (
@@ -156,6 +160,7 @@ class TestTheSharedCases:
             "is a list of names, not text",
             "comes from is not known here",
             "the dataset inputs has no field",
+            "has no input to stack",
         ):
             assert kind in messages, kind
 
