@@ -1,13 +1,14 @@
 /**
- * The strip above a node's code (#662): a tag per input, which opens to its
- * columns, then the widget tags as before. Each tag drags or inserts its
- * reference.
+ * The header above a node's code (#662): under Inputs, a tag per input, which
+ * opens to its columns; under Widgets, the widget tags. Each tag drags or
+ * inserts its reference once its category is open.
  */
 import React from "react";
 import { fireEvent, render, screen } from "@testing-library/react";
 import { ReferenceStrip } from "../../components/editing/widgets/WidgetTag";
 import { INPUT_REF_MIME, WIDGET_REF_MIME } from "../../components/editing/widgets/monacoCodeReferences";
 import type { InputScope } from "../../utils/references/codeReferences";
+import { openCategory } from "../_support/stripCategories";
 
 function dragData() {
   const store = new Map<string, string>();
@@ -29,6 +30,7 @@ const inputs: InputScope[] = [
 describe("input tags", () => {
   test("one tag per input, dragging its reference", () => {
     const view = render(<ReferenceStrip widgets={[]} inputs={inputs} onInsert={jest.fn()} />);
+    openCategory(view.container, "inputs");
     const tags = view.container.querySelectorAll("[data-input-tag]");
     expect(Array.from(tags).map((t) => t.textContent)).toEqual(["input_0", "input_1", "input_2"]);
     expect(tags[0].getAttribute("title")).toMatch(/^From Roads\./);
@@ -43,6 +45,7 @@ describe("input tags", () => {
   test("a click inserts the reference at the cursor", () => {
     const onInsert = jest.fn();
     const view = render(<ReferenceStrip widgets={[]} inputs={inputs} onInsert={onInsert} />);
+    openCategory(view.container, "inputs");
     fireEvent.click(view.container.querySelector('[data-input-tag="0"]')!);
     expect(onInsert).toHaveBeenCalledWith("input_0");
   });
@@ -50,6 +53,7 @@ describe("input tags", () => {
   test("opening an input lists its columns, which drag column references", () => {
     const onInsert = jest.fn();
     const view = render(<ReferenceStrip widgets={[]} inputs={inputs} onInsert={onInsert} />);
+    openCategory(view.container, "inputs");
     fireEvent.click(screen.getByLabelText("Show the columns of input_0"));
     const columns = view.container.querySelectorAll('[data-input-columns="0"] [data-column-tag]');
     expect(Array.from(columns).map((c) => c.textContent)).toEqual(["length", "lanes"]);
@@ -64,7 +68,8 @@ describe("input tags", () => {
 
   test("columns not read yet are asked for; an input with nothing yet says to run its node", () => {
     const onLoadColumns = jest.fn();
-    render(<ReferenceStrip widgets={[]} inputs={inputs} onInsert={jest.fn()} onLoadColumns={onLoadColumns} />);
+    const view = render(<ReferenceStrip widgets={[]} inputs={inputs} onInsert={jest.fn()} onLoadColumns={onLoadColumns} />);
+    openCategory(view.container, "inputs");
     fireEvent.click(screen.getByLabelText("Show the columns of input_1"));
     expect(onLoadColumns).toHaveBeenCalledWith(1);
     fireEvent.click(screen.getByLabelText("Show the columns of input_2"));
@@ -75,6 +80,7 @@ describe("input tags", () => {
   test("many columns get a filter", () => {
     const columns = Array.from({ length: 20 }, (_, i) => `col_${i}`);
     const view = render(<ReferenceStrip widgets={[]} inputs={[{ slot: 0, columns }]} onInsert={jest.fn()} />);
+    openCategory(view.container, "inputs");
     fireEvent.click(screen.getByLabelText("Show the columns of input_0"));
     fireEvent.change(screen.getByLabelText("Filter the columns of input_0"), { target: { value: "col_1" } });
     const shown = Array.from(view.container.querySelectorAll("[data-column-tag]")).map((c) => c.textContent);
@@ -96,6 +102,7 @@ describe("an input carrying several layers", () => {
   test("it opens to a tag per layer, each with its columns, in code as in a spec", () => {
     const onInsert = jest.fn();
     const view = render(<ReferenceStrip widgets={[]} inputs={layered} onInsert={onInsert} />);
+    openCategory(view.container, "inputs");
     fireEvent.click(screen.getByLabelText("Show the columns of input_0"));
     const layers = view.container.querySelectorAll("[data-layer-tag]");
     expect(Array.from(layers).map((t) => t.textContent)).toEqual(["table_osm_roads", "table_osm_buildings"]);
@@ -115,6 +122,7 @@ describe("an input carrying several layers", () => {
   test("a click on a layer tag inserts the layer chip; the input's tag stays the whole input", () => {
     const onInsert = jest.fn();
     const view = render(<ReferenceStrip widgets={[]} inputs={layered} onInsert={onInsert} />);
+    openCategory(view.container, "inputs");
     fireEvent.click(screen.getByLabelText("Show the columns of input_0"));
     fireEvent.click(view.container.querySelector('[data-layer-tag="table_osm_buildings"]')!);
     expect(onInsert).toHaveBeenLastCalledWith("input_0:table_osm_buildings");
@@ -133,6 +141,7 @@ describe("widget tags beside the inputs", () => {
         onInsert={jest.fn()}
       />,
     );
+    openCategory(view.container, "widgets");
     const tag = view.container.querySelector('[data-widget-strip] [data-widget-tag="factor"]')!;
     const drag = dragData();
     fireEvent.dragStart(tag, drag);
