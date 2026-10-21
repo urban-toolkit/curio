@@ -368,6 +368,33 @@ function knownStackedFields(inputs: readonly InputScope[]): string[] | null {
 /** The first of *inputs* whose scenario label is not known, or undefined. */
 const unlabelled = (inputs: readonly InputScope[]) => inputs.find((input) => input.scenario == null);
 
+/** The labels of *inputs*, in circle order: each input's must be known. */
+const labelsOf = (inputs: readonly InputScope[]): ScenarioLabel[] =>
+  [...inputs].sort((a, b) => a.slot - b.slot).map((input) => input.scenario as ScenarioLabel);
+
+/**
+ * The scenarios of *inputs*, each input's label known, as the scenario chips
+ * write them: each name once, the boxes in the dataflow's order, then each input
+ * from no box, with their colors (`scenarioScale`). `[!! scenario colors !!]`
+ * writes this scale when an input comes from a box. The header's swatches show
+ * it.
+ */
+export function scenarioColorScale(inputs: readonly InputScope[]): { domain: string[]; range: string[] } {
+  return scenarioScale(scaleLabels(labelsOf(inputs)));
+}
+
+/**
+ * The color `[!! scenario input_<slot> !!]` writes over *inputs*, each input's
+ * label known: its box's, else its grey in `scenarioColorScale`. The header's
+ * tag of that chip shows it.
+ */
+export function scenarioInputColor(slot: number, inputs: readonly InputScope[]): string {
+  const label = inputs.find((input) => input.slot === slot)?.scenario as ScenarioLabel;
+  if (label.scenario != null) return label.color;
+  const { domain, range } = scenarioColorScale(inputs);
+  return range[domain.indexOf(label.name)];
+}
+
 /**
  * What the scenario chip *parsed* (one that resolves) writes over *inputs*: an
  * input's color (its box's, else its grey in the scale), the names in order,
@@ -376,15 +403,10 @@ const unlabelled = (inputs: readonly InputScope[]) => inputs.find((input) => inp
  * `code_references.py`.
  */
 function scenarioValue(parsed: Extract<ParsedReference, { kind: "scenario" }>, inputs: readonly InputScope[]): WidgetValue {
-  const labels = inputs.map((input) => input.scenario as ScenarioLabel);
-  const { domain, range } = scenarioScale(scaleLabels(labels));
-  if (parsed.chip === "input") {
-    const slot = parsed.slot;
-    const label = inputs.find((input) => input.slot === slot)?.scenario as ScenarioLabel;
-    return label.scenario != null ? label.color : range[domain.indexOf(label.name)];
-  }
+  if (parsed.chip === "input") return scenarioInputColor(parsed.slot as number, inputs);
+  const { domain, range } = scenarioColorScale(inputs);
   if (parsed.chip === "order") return domain;
-  if (!anyFromABox(labels)) return { domain } as unknown as WidgetValue;
+  if (!anyFromABox(labelsOf(inputs))) return { domain } as unknown as WidgetValue;
   const scale = { domain, range: parsed.chip === "text_colors" ? range.map(tableTextColor) : range };
   return scale as unknown as WidgetValue;
 }
