@@ -105,10 +105,20 @@ function sameJson(a: unknown, b: unknown): boolean {
     && names.every((name) => has(b, name) && sameJson(a[name], b[name]));
 }
 
+/**
+ * U+0085, U+2028 and U+2029: line breaks to Python's `splitlines`, which JSON
+ * leaves in a text. The headless runner indents a node's code with
+ * `textwrap.indent`, which splits lines there.
+ */
+const UNICODE_BREAKS = String.fromCharCode(0x85, 0x2028, 0x2029);
+const LINE_BREAKS = new RegExp(`[${UNICODE_BREAKS}]`, "g");
+/** Every line break `splitlines` knows. */
+const ANY_BREAK = new RegExp(`[\\n\\r\\v\\f\\x1c-\\x1e${UNICODE_BREAKS}]`, "g");
+
 /** The node's own comment lines above its call, naming its key. */
 export function mapEditsComment(key?: string): string[] {
   // A line break in a column's name would end the comment.
-  const by = key ? key.replace(/[\n\r\v\f\x1c-\x1e\x85  ]/g, " ") : "the Id column";
+  const by = key ? key.replace(ANY_BREAK, " ") : "the Id column";
   return [
     "# Map Edits writes this code from its map: the features it removes and the",
     `# values it changes, matched by ${by}. Comment lines above the return stay.`,
@@ -121,14 +131,10 @@ const OWN_SECOND_LINE = /^# values it changes, matched by .*\. Comment lines abo
 const opensWithOwnLines = (comments: readonly string[]): boolean =>
   comments[0] === mapEditsComment()[0] && OWN_SECOND_LINE.test(comments[1] ?? "");
 
-/** The line breaks JSON leaves in a text and Python's `splitlines` breaks on. */
-const LINE_BREAKS = /[\x85  ]/g;
-
 /**
  * *value* as a Python literal, its texts as `widgetLiteral` writes them, with
- * two escapes more: the line breaks Python's `splitlines` knows (the headless
- * runner indents a node's code with `textwrap.indent`), and `[!!` as `[\x21!`,
- * so no text reads as a reference.
+ * two escapes more: the line breaks JSON leaves in a text (`UNICODE_BREAKS`),
+ * and `[!!` as `[\x21!`, so no text reads as a reference.
  */
 function pyLiteral(value: JsonValue): string {
   if (Array.isArray(value)) return `[${value.map(pyLiteral).join(", ")}]`;
@@ -283,7 +289,7 @@ function readCall(text: string, start: number): Map<string, Literal> {
         items.push(value());
         skip();
         if (text[pos] === ",") pos++;
-        else if (text[pos] !== "]") fail("a list's items are not followed by a , or a ]");
+        else if (text[pos] !== "]") fail("an item of a list has no , or ] after it");
       }
       pos++;
       return { kind: "list", items };
@@ -296,12 +302,12 @@ function readCall(text: string, start: number): Map<string, Literal> {
         if (text[pos] === "}") break;
         const key = value();
         skip();
-        if (text[pos] !== ":") fail("a dict's key is not followed by a :");
+        if (text[pos] !== ":") fail("a key of a dict has no : after it");
         pos++;
         entries.push([key, value()]);
         skip();
         if (text[pos] === ",") pos++;
-        else if (text[pos] !== "}") fail("a dict's values are not followed by a , or a }");
+        else if (text[pos] !== "}") fail("a value of a dict has no , or } after it");
       }
       pos++;
       return { kind: "dict", entries };
@@ -336,7 +342,7 @@ function readCall(text: string, start: number): Map<string, Literal> {
     pos++;
     args.set(name, value());
     skip();
-    if (text[pos] !== "," && text[pos] !== ")") fail("an argument is not followed by a , or a )");
+    if (text[pos] !== "," && text[pos] !== ")") fail("an argument has no , or ) after it");
   }
   pos++;
   if (!/^[ \t\f\r\n]*$/.test(text.slice(pos))) throw new Unreadable("The code goes on after the curio_map_edits call.");
@@ -397,9 +403,8 @@ function editsOf(args: Map<string, Literal>): MapEdits {
     if (change.kind !== "dict") throw new Unreadable("change is not a dict of ids and the values they write.");
     for (const [name, values] of change.entries) {
       const id = idOf(name);
-      if (changeFor(edits, id) !== undefined || edits.change.some((c) => sameId(c.id, id))) {
-        throw new Unreadable(`change gives ${id} twice.`);
-      }
+      // Python makes one key of 1 and 1.0, and keeps the last value.
+      if (edits.change.some((c) => sameId(c.id, id))) throw new Unreadable(`change gives ${id} twice.`);
       if (values.kind !== "dict") throw new Unreadable(`change gives ${id} ${shown(values)}, not a dict of values.`);
       const written = namedEntries(values.entries);
       if (key && written.some(([column]) => column === key)) {

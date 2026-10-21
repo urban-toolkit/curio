@@ -1,0 +1,188 @@
+{
+  "description": "The code a Map Edits node writes and reads back (utils/mapEdits/mapEdits.ts). Jest checks mapEditsCode writes each case's `code` from its `edits` and `comments`, that readMapEdits reads it back to the same code, reads each `read` code as its `edits`, and refuses each `refused` code with a reason holding `reason`. utk_curio/sandbox/tests/test_map_edits.py checks Python reads each `cases` and `read` code's arguments as the same edits, and runs each `cases` code with curio_map_edits.",
+  "cases": [
+    {
+      "name": "a new node: no key and no edits yet, under the node's own comment lines",
+      "edits": { "remove": [], "change": [] },
+      "code": "# Map Edits writes this code from its map: the features it removes and the\n# values it changes, matched by the Id column. Comment lines above the return stay.\nreturn curio_map_edits(\n    input_0,\n    remove=[],\n    change={},\n)\n"
+    },
+    {
+      "name": "the key picked, nothing edited yet",
+      "edits": { "key": "building_id", "remove": [], "change": [] },
+      "code": "# Map Edits writes this code from its map: the features it removes and the\n# values it changes, matched by building_id. Comment lines above the return stay.\nreturn curio_map_edits(\n    input_0,\n    key=\"building_id\",\n    remove=[],\n    change={},\n)\n"
+    },
+    {
+      "name": "two buildings removed and one changed, in one layer of several",
+      "edits": {
+        "key": "building_id",
+        "layer": "table_osm_buildings",
+        "remove": [8, 10],
+        "change": [{ "id": 34, "values": { "height": 60 } }]
+      },
+      "code": "# Map Edits writes this code from its map: the features it removes and the\n# values it changes, matched by building_id. Comment lines above the return stay.\nreturn curio_map_edits(\n    input_0,\n    key=\"building_id\",\n    layer=\"table_osm_buildings\",\n    remove=[8, 10],\n    change={34: {\"height\": 60}},\n)\n"
+    },
+    {
+      "name": "several changes, one per line in the order they were made, with a value cleared",
+      "edits": {
+        "key": "building_id",
+        "remove": [3],
+        "change": [
+          { "id": 34, "values": { "height": 60, "name": null } },
+          { "id": 2, "values": { "building:levels": 3 } }
+        ]
+      },
+      "code": "# Map Edits writes this code from its map: the features it removes and the\n# values it changes, matched by building_id. Comment lines above the return stay.\nreturn curio_map_edits(\n    input_0,\n    key=\"building_id\",\n    remove=[3],\n    change={\n        34: {\"height\": 60, \"name\": None},\n        2: {\"building:levels\": 3},\n    },\n)\n"
+    },
+    {
+      "name": "ids that are texts and numbers, floats among them: the text 12 is not the number 12",
+      "edits": {
+        "key": "osm_id",
+        "remove": ["w12", 12, "12", 12.5],
+        "change": [
+          { "id": "n7", "values": { "amenity": "school" } },
+          { "id": -3.25, "values": { "levels": 2 } }
+        ]
+      },
+      "code": "# Map Edits writes this code from its map: the features it removes and the\n# values it changes, matched by osm_id. Comment lines above the return stay.\nreturn curio_map_edits(\n    input_0,\n    key=\"osm_id\",\n    remove=[\"w12\", 12, \"12\", 12.5],\n    change={\n        \"n7\": {\"amenity\": \"school\"},\n        -3.25: {\"levels\": 2},\n    },\n)\n"
+    },
+    {
+      "name": "nested JSON values, written as Python literals",
+      "edits": {
+        "key": "building_id",
+        "remove": [],
+        "change": [
+          {
+            "id": 34,
+            "values": {
+              "tags": { "roof:shape": "flat", "levels": [1, 2.5] },
+              "flags": [true, false, null],
+              "ratio": -0.5,
+              "big": 1e21,
+              "tiny": 5e-7,
+              "empty": {},
+              "none": []
+            }
+          }
+        ]
+      },
+      "code": "# Map Edits writes this code from its map: the features it removes and the\n# values it changes, matched by building_id. Comment lines above the return stay.\nreturn curio_map_edits(\n    input_0,\n    key=\"building_id\",\n    remove=[],\n    change={34: {\"tags\": {\"roof:shape\": \"flat\", \"levels\": [1, 2.5]}, \"flags\": [True, False, None], \"ratio\": -0.5, \"big\": 1e+21, \"tiny\": 5e-7, \"empty\": {}, \"none\": []}},\n)\n"
+    },
+    {
+      "name": "quotes, backslashes, line breaks, other scripts and a reference's brackets in texts",
+      "edits": {
+        "key": "building_id",
+        "remove": [],
+        "change": [
+          {
+            "id": 34,
+            "values": {
+              "name": "Tower \"B\" \\ 'C'",
+              "note": "line\nbreak\ttab",
+              "city": "São Paulo 東京",
+              "sep": "a\u2028b",
+              "chip": "[!! selection towers !!]"
+            }
+          }
+        ]
+      },
+      "code": "# Map Edits writes this code from its map: the features it removes and the\n# values it changes, matched by building_id. Comment lines above the return stay.\nreturn curio_map_edits(\n    input_0,\n    key=\"building_id\",\n    remove=[],\n    change={34: {\"name\": \"Tower \\\"B\\\" \\\\ 'C'\", \"note\": \"line\\nbreak\\ttab\", \"city\": \"São Paulo 東京\", \"sep\": \"a\\u2028b\", \"chip\": \"[\\x21! selection towers !!]\"}},\n)\n"
+    },
+    {
+      "name": "a comment line the user added stays, and the node's own lines name the key it has now",
+      "edits": { "key": "building_id", "remove": [8, 10, 12], "change": [] },
+      "comments": [
+        "# Map Edits writes this code from its map: the features it removes and the",
+        "# values it changes, matched by the Id column. Comment lines above the return stay.",
+        "# SCOUT's 15 removed buildings."
+      ],
+      "code": "# Map Edits writes this code from its map: the features it removes and the\n# values it changes, matched by building_id. Comment lines above the return stay.\n# SCOUT's 15 removed buildings.\nreturn curio_map_edits(\n    input_0,\n    key=\"building_id\",\n    remove=[8, 10, 12],\n    change={},\n)\n"
+    },
+    {
+      "name": "only the user's own comment lines, a blank one among them, kept as they are",
+      "edits": { "key": "building_id", "remove": [8], "change": [] },
+      "comments": ["# SCOUT's 15 removed buildings.", ""],
+      "code": "# SCOUT's 15 removed buildings.\n\nreturn curio_map_edits(\n    input_0,\n    key=\"building_id\",\n    remove=[8],\n    change={},\n)\n"
+    },
+    {
+      "name": "no comment lines at all",
+      "edits": { "key": "osm_id", "remove": [], "change": [{ "id": 1001, "values": { "height": 120.5 } }] },
+      "comments": [],
+      "code": "return curio_map_edits(\n    input_0,\n    key=\"osm_id\",\n    remove=[],\n    change={1001: {\"height\": 120.5}},\n)\n"
+    }
+  ],
+  "read": [
+    {
+      "name": "single quotes, keywords in another order, spaces, line breaks and trailing commas",
+      "code": "# Towers\nreturn curio_map_edits(\n    input_0 ,\n    change = {\n        'w7' : { 'name' : 'O\\'Hare', 'levels': -2, },\n    },\n    remove = [ 8 ,\n      10, ],\n    key = 'osm_id',\n)\n",
+      "edits": {
+        "key": "osm_id",
+        "remove": [8, 10],
+        "change": [{ "id": "w7", "values": { "name": "O'Hare", "levels": -2 } }]
+      },
+      "comments": ["# Towers"]
+    },
+    {
+      "name": "numbers as Python may write them: exponents, signs and floats that are whole",
+      "code": "return curio_map_edits(input_0, key=\"building_id\", remove=[1e2, +3, 4.0, -0.5, - 7], change={2.5e1: {\"height\": 1.5E-3, \"levels\": 0}})\n",
+      "edits": {
+        "key": "building_id",
+        "remove": [100, 3, 4, -0.5, -7],
+        "change": [{ "id": 25, "values": { "height": 0.0015, "levels": 0 } }]
+      },
+      "comments": []
+    },
+    {
+      "name": "the escapes Python reads in a text",
+      "code": "return curio_map_edits(input_0, key=\"osm_id\", change={1: {\"s\": 'tab\\there \\101\\x41\\u00e9\\U0001F600 \\\\ \\' \\\" \\a\\b\\f\\v\\0'}})\n",
+      "edits": {
+        "key": "osm_id",
+        "remove": [],
+        "change": [{ "id": 1, "values": { "s": "tab\there AAé😀 \\ ' \" \u0007\b\f\u000b\u0000" } }]
+      },
+      "comments": []
+    },
+    {
+      "name": "None leaves the key, the layer, the removals and the changes unset",
+      "code": "return curio_map_edits(input_0, key=None, layer=None, remove=None, change=None)\n",
+      "edits": { "remove": [], "change": [] },
+      "comments": []
+    },
+    {
+      "name": "the input alone, a space before the parenthesis and CRLF line ends",
+      "code": "# kept\r\nreturn curio_map_edits (input_0,)\r\n",
+      "edits": { "remove": [], "change": [] },
+      "comments": ["# kept"]
+    }
+  ],
+  "refused": [
+    { "name": "another statement before the call", "code": "x = 1\nreturn curio_map_edits(input_0)\n", "reason": "holds something else" },
+    { "name": "a statement after the call", "code": "return curio_map_edits(input_0)\nprint(1)\n", "reason": "goes on after" },
+    { "name": "a comment inside the call", "code": "return curio_map_edits(\n    input_0,  # the buildings\n    remove=[1],\n)\n", "reason": "holds a comment" },
+    { "name": "a comment after the call", "code": "return curio_map_edits(input_0)  # done\n", "reason": "goes on after" },
+    { "name": "a keyword the step does not take", "code": "return curio_map_edits(input_0, ids=[1])\n", "reason": "not ids" },
+    { "name": "a keyword given twice", "code": "return curio_map_edits(input_0, remove=[1], remove=[2])\n", "reason": "gives remove twice" },
+    { "name": "a reference, whose value only a run knows", "code": "return curio_map_edits(input_0, remove=[!! selection towers !!])\n", "reason": "reference" },
+    { "name": "a value that is not written out", "code": "return curio_map_edits(input_0, remove=list(range(3)))\n", "reason": "list is not a value written out" },
+    { "name": "another input", "code": "return curio_map_edits(input_1, remove=[1])\n", "reason": "first argument is not input_0" },
+    { "name": "a value without its keyword", "code": "return curio_map_edits(input_0, [1])\n", "reason": "by name" },
+    { "name": "True as an id", "code": "return curio_map_edits(input_0, key=\"osm_id\", remove=[True])\n", "reason": "True is not an id" },
+    { "name": "one id changed twice, as 1 and as 1.0", "code": "return curio_map_edits(input_0, key=\"osm_id\", change={1: {\"a\": 1}, 1.0: {\"a\": 2}})\n", "reason": "change gives 1 twice" },
+    { "name": "the key's own column changed", "code": "return curio_map_edits(input_0, key=\"osm_id\", change={1: {\"osm_id\": 2}})\n", "reason": "identifies the features" },
+    { "name": "the geometry changed", "code": "return curio_map_edits(input_0, key=\"osm_id\", change={1: {\"geometry\": None}})\n", "reason": "shape" },
+    { "name": "a text in triple quotes", "code": "return curio_map_edits(input_0, key=\"\"\"osm_id\"\"\")\n", "reason": "triple quotes" },
+    { "name": "a raw text", "code": "return curio_map_edits(input_0, key=r\"osm_id\")\n", "reason": "r is not a value written out" },
+    { "name": "an escape Python does not know", "code": "return curio_map_edits(input_0, key=\"osm\\_id\")\n", "reason": "not an escape" },
+    { "name": "a whole number too large to read exactly", "code": "return curio_map_edits(input_0, key=\"osm_id\", remove=[12345678901234567890])\n", "reason": "too large" },
+    { "name": "a number Python reads as infinity", "code": "return curio_map_edits(input_0, key=\"osm_id\", remove=[1e999])\n", "reason": "too large" },
+    { "name": "a return that does not start its line", "code": "  return curio_map_edits(input_0)\n", "reason": "starts with spaces" },
+    { "name": "comment lines alone", "code": "# nothing yet\n", "reason": "holds something else" },
+    { "name": "a return of something else", "code": "return input_0\n", "reason": "holds something else" },
+    { "name": "a call that is not closed", "code": "return curio_map_edits(input_0, remove=[1,\n", "reason": "not closed" },
+    { "name": "two texts side by side", "code": "return curio_map_edits(input_0, key=\"osm\" \"_id\")\n", "reason": "an argument has no , or ) after it" },
+    { "name": "a set in place of a list", "code": "return curio_map_edits(input_0, key=\"osm_id\", remove={1, 2})\n", "reason": "a key of a dict has no : after it" },
+    { "name": "a property name that is not a text", "code": "return curio_map_edits(input_0, key=\"osm_id\", change={1: {2: 3}})\n", "reason": "not a text" },
+    { "name": "a tuple in place of a list", "code": "return curio_map_edits(input_0, key=\"osm_id\", remove=(1, 2))\n", "reason": "( does not start a value" },
+    { "name": "a whole number with a leading zero", "code": "return curio_map_edits(input_0, key=\"osm_id\", remove=[012])\n", "reason": "starts with a zero" },
+    { "name": "a text cut by a line break", "code": "return curio_map_edits(input_0, key=\"osm\n_id\")\n", "reason": "not closed on its line" }
+  ]
+}
