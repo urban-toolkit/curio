@@ -211,13 +211,14 @@ def frame_fixture(frame, values: list | None = None) -> dict:
     return held
 
 
-def _same(got, held, rel: float) -> bool:
+def _same(got, held, rel: float, key_order: bool = True) -> bool:
     import math
 
     if isinstance(held, dict) and isinstance(got, dict):
-        return list(got) == list(held) and all(_same(got[k], held[k], rel) for k in held)
+        keys = list(got) == list(held) if key_order else sorted(got) == sorted(held)
+        return keys and all(_same(got[k], held[k], rel, key_order) for k in held)
     if isinstance(held, list) and isinstance(got, list):
-        return len(got) == len(held) and all(_same(a, b, rel) for a, b in zip(got, held))
+        return len(got) == len(held) and all(_same(a, b, rel, key_order) for a, b in zip(got, held))
     if isinstance(held, float) and isinstance(got, (int, float)) and not isinstance(got, bool):
         return math.isclose(got, held, rel_tol=rel, abs_tol=0.0) if rel else float(got) == held
     return got == held and type(got) is type(held)
@@ -248,12 +249,19 @@ def records_of(frame) -> list:
     return [{key: _json_value(value) for key, value in row.items()} for row in table.to_dict("records")]
 
 
-def assert_rows_match(rows: list, held: list, *, rel: float = 0.0, what: str = "") -> None:
+def assert_rows_match(
+    rows: list, held: list, *, rel: float = 0.0, what: str = "", key_order: bool = True,
+) -> None:
     """*rows*, records, are the fixture's *held* records: the same keys in the
-    same order and every value, a number exactly or within *rel*."""
+    same order and every value, a number exactly or within *rel*. With
+    *key_order* False the keys may come in any order, as in the rows a page
+    reads: the sandbox's ``/get`` writes its JSON with the keys sorted (Flask's
+    default), so the order of a row's keys there says nothing of its columns."""
     got = [{key: _json_value(value) for key, value in row.items()} for row in rows]
     assert len(got) == len(held), (what, len(got), len(held))
-    wrong = [(k, row, want) for k, (row, want) in enumerate(zip(got, held)) if not _same(row, want, rel)]
+    wrong = [
+        (k, row, want) for k, (row, want) in enumerate(zip(got, held)) if not _same(row, want, rel, key_order)
+    ]
     assert not wrong, (what, f"{len(wrong)} rows differ, the first: {wrong[0]}")
 
 

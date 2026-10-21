@@ -529,10 +529,11 @@ def test_two_flood_scenarios_are_mapped_and_charted(
     assert [row["change"] for row in rows].count("changed") == 23, where
     # Column for column, the size of NbS's mean depth minus No NbS's, joined on
     # FIPS, from the two Tract depth nodes' rows (keyed_change, which the
-    # fixture of Compare's own output holds to it).
+    # fixture of Compare's own output holds to it). A page reads rows whose keys
+    # the sandbox sorts, so their order is not compared.
     tracts = _tract_depths(page, spec, tract_change)
     assert_rows_match(rows, records_of(keyed_change(tracts[0][2], tracts[1][2], "FIPS", absolute=True)), rel=1e-12,
-                      what="the Depth change per tract")
+                      what="the Depth change per tract", key_order=False)
     frame_nodes(page, [tract_change, tract_change_map])
     assert_autark_map_drawn(page, tract_change_map, timeout=60000,
                             attach_as="the size of each tract's change in mean depth")
@@ -550,7 +551,7 @@ def test_two_flood_scenarios_are_mapped_and_charted(
     # Row for row, the two Tract depth nodes' rows stacked under their boxes.
     stacked = records_of(pd.DataFrame(stacked_rows(_tract_depths(page, spec, scatter))))
     assert_rows_match([{k: v for k, v in row.items() if not k.startswith("_")} for row in rows], stacked, rel=1e-12,
-                      what=where)
+                      what=where, key_order=False)
     frame_nodes(page, [scatter])
     _assert_chart_drew(page, scatter, opacity=POINT_OPACITY)
     save_node_closeup(page, "scout-flood-vulnerability-against-depth", scatter, test_name=TEST_NAME, sweep_toasts=True)

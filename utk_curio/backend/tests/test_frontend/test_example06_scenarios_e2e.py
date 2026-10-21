@@ -661,14 +661,12 @@ def test_example_06_compares_its_three_scenarios_in_the_canvas(
     # Twice as tall's minutes minus Baseline's, road by road: the same roads,
     # in the same order, with the same columns, types, values, shapes and
     # coordinate system (roads_change, which the fixture of Compare's own
-    # output holds to it).
+    # output holds to it, the order of its columns too: the sandbox's /get
+    # writes its JSON with the keys sorted, so a page cannot see that order).
     from utk_curio.backend.tests._support.scenario_changes import roads_change
     from utk_curio.sandbox.util.parsers import parseOutput
 
     expected = parseOutput(roads_change(_layer_of(_stored(page, B_ROADS)), _layer_of(_stored(page, T_ROADS))))
-    assert [list(f["properties"]) for f in written["data"]["features"][:1]] == [
-        list(f["properties"]) for f in expected["data"]["features"][:1]
-    ]
     assert {k: written[k] for k in ("dataType", "data", "schema")} == {
         k: expected[k] for k in ("dataType", "data", "schema")
     }, "the Sunlight change node does not write Twice as tall's roads minus Baseline's"

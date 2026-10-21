@@ -363,9 +363,10 @@ def test_three_scenarios_of_lower_manhattans_park_shade_are_charted_and_mapped(
         # fixture of Compare's own output holds to it).
         feeds = feeds_of(park_change)
         assert scenario_of.get(feeds["in_1"]) == scenario, (park_change, feeds)
+        # A page reads rows whose keys the sandbox sorts, so their order is not compared.
         before, after = (pd.DataFrame(_rows(page, feeds[handle])) for handle in ("in", "in_1"))
         assert_rows_match(rows, records_of(keyed_change(before, after, "park")), rel=1e-12,
-                          what=f"{name}'s park change")
+                          what=f"{name}'s park change", key_order=False)
         frame_nodes(page, [park_change, park_map])
         assert_autark_map_drawn(page, park_map, timeout=60000, attach_as=f"each park's change in shade under {name}")
         _assert_legend_shows_its_range(page, dataflow, park_map)
