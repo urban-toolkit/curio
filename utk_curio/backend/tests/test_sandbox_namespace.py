@@ -138,6 +138,24 @@ def test_neither_path_seeds_the_compare_scenarios_steps():
         assert importlib.util.find_spec(f"utk_curio.sandbox.util.{module}") is None, module
 
 
+def test_both_paths_seed_map_edits_and_not_the_edit_log_step_it_replaced():
+    """The Map Edits node's code calls ``curio_map_edits``, seeded by the
+    in-process path and the isolated child alike. ``curio_edit_features``, the
+    edit log step it replaced, is gone with no alias, and so are its modules."""
+    import importlib.util
+
+    from utk_curio.sandbox.isolation.zygote import build_namespace_template
+    from utk_curio.sandbox.util.map_edits import map_edits
+
+    template = build_namespace_template()
+    assert worker._globals_cache["curio_map_edits"] is map_edits
+    assert template["curio_map_edits"] is map_edits
+    assert "curio_edit_features" not in worker._globals_cache
+    assert "curio_edit_features" not in template
+    for module in ("feature_edits", "edit_expr"):
+        assert importlib.util.find_spec(f"utk_curio.sandbox.util.{module}") is None, module
+
+
 def test_checkIOType_stays_seeded_as_the_documented_no_op():
     """dev/120: the name-keyed I/O validators are retired, but the NAME keeps
     resolving in node code (owner decision — the #158 contract stays whole) and
