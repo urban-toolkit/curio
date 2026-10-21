@@ -7,7 +7,8 @@
  *   the inputs' columns, each with its dtype in its title. A field drags its
  *   chip, `[!! inputs.sunlight !!]`, which writes its name.
  * - Its `scenario_name` field shows a swatch per scenario box, in the order the
- *   dataflow lists the boxes, then each input from no box in grey. The swatches
+ *   dataflow lists the boxes, then each input from no box in a grey of its own;
+ *   with no input from a box, the names alone. The swatches
  *   are one chip, the scale of the scenarios' colors, `[!! scenario colors !!]`;
  *   two small tags beside them drag the names in that order,
  *   `[!! scenario order !!]`, and the colors in the shades a text mark reads
@@ -137,6 +138,35 @@ describe("the inputs tag of a Vega-Lite node with several inputs", () => {
     openInputs();
     expect(onLoadColumns).toHaveBeenCalledWith(1);
     expect(onLoadColumns).not.toHaveBeenCalledWith(0);
+  });
+});
+
+describe("the swatches of inputs from no box", () => {
+  const free = (slot: number, name: string): InputScope => ({
+    slot, label: name, dataType: "dataframe", columns: ["mode", "trips"], scenario: { name, color: "#8a8f98" },
+  });
+  const swatchesOf = (container: HTMLElement) =>
+    Array.from(container.querySelectorAll("[data-scenario-swatches] [data-scenario-swatch]"))
+      .map((s) => [s.getAttribute("data-scenario-swatch"), s.getAttribute("data-color")]);
+
+  test("two inputs from no box beside a box each show a grey of their own, in circle order", () => {
+    const wired = [free(0, "Survey A"), { ...free(1, "Shade"), scenario: BASE }, free(2, "Survey B")];
+    const view = render(<ReferenceStrip widgets={[]} inputs={wired} language="json" grammar="vega-lite" onInsert={jest.fn()} />);
+    openInputs();
+    expect(swatchesOf(view.container)).toEqual([
+      ["Baseline", "#2a9d8f"],
+      ["Survey A", "#8a8f98"],
+      ["Survey B", "#5b6068"],
+    ]);
+  });
+
+  test("with no input from a box, the names show alone, since the chip writes them alone for the chart's own palette", () => {
+    const view = render(
+      <ReferenceStrip widgets={[]} inputs={[free(0, "Weekday"), free(1, "Weekend")]} language="json" grammar="vega-lite" onInsert={jest.fn()} />,
+    );
+    openInputs();
+    expect(swatchesOf(view.container)).toEqual([["Weekday", null], ["Weekend", null]]);
+    expect(view.container.querySelector("[data-scenario-swatches]")!.getAttribute("title")).toMatch(/palette/);
   });
 });
 

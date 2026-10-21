@@ -10,6 +10,8 @@
  */
 import { trillToNotebook, serializeNotebook, type TrillSpec } from "../NotebookConvertor";
 import { NodeType } from "../constants";
+import { registerNode } from "../registry/nodeRegistry";
+import type { NodeDescriptor } from "../registry/types";
 import scenarioChips from "../utils/scenarios/scenarioChips.cases.json";
 
 type NodeSpec = { id: string; type: string; content?: string };
@@ -403,8 +405,25 @@ describe("trillToNotebook with a chart that reads its inputs stacked", () => {
 describe("trillToNotebook writes each spec with its scenario chips resolved, as the server does", () => {
   // scenarioChips.cases.json: test_scenario_chips.py resolves the same nodes
   // through WorkflowSpec.node_code, which a server run and the agents' check use.
-  type ChipCase = { name: string; node: string; grammar?: string; dataflow: TrillSpec["dataflow"]; expected: string };
+  type ChipCase = {
+    name: string;
+    node: string;
+    grammar?: string;
+    labels?: Record<string, string>;
+    dataflow: TrillSpec["dataflow"];
+    expected: string;
+  };
   const chipCases = (scenarioChips.cases as unknown as ChipCase[]).map((c) => [c.name, c] as const);
+
+  // The template labels a case names an untitled node by, where the canvas
+  // reads them: the node registry, each template under its first major.
+  beforeAll(() => {
+    for (const c of scenarioChips.cases as unknown as ChipCase[]) {
+      for (const [id, label] of Object.entries(c.labels ?? {})) {
+        registerNode({ id: `${id}@1`, label } as unknown as NodeDescriptor);
+      }
+    }
+  });
 
   it.each(chipCases)("%s", (_name, c) => {
     const nb = trillToNotebook({ dataflow: { ...c.dataflow, name: "Chips", task: "", timestamp: 0, provenance_id: "p" } });

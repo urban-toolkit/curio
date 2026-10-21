@@ -247,6 +247,17 @@ class TestThePatternsAreShared:
             assert not INPUT_REFERENCE_RE.match(inner), inner
             assert not WIDGET_NAME_RE.match(inner), inner
 
+    def test_the_greys_of_the_inputs_from_no_box(self):
+        from utk_curio.backend.app.execution.code_references import NO_SCENARIO_COLOR, NO_SCENARIO_GREYS
+
+        written = re.search(
+            r"NO_SCENARIO_GREYS: readonly string\[\] = \[(.*?)\];",
+            self._ts("scenarioColors.ts", REFERENCES_DIR.parent / "scenarios"),
+        )
+        assert written and re.findall(r'"(#[0-9a-f]{6})"', written.group(1)) == list(NO_SCENARIO_GREYS)
+        assert NO_SCENARIO_GREYS[0] == NO_SCENARIO_COLOR
+        assert len(set(NO_SCENARIO_GREYS)) == len(NO_SCENARIO_GREYS)
+
     def test_the_selection_reference_pattern(self):
         from utk_curio.backend.app.execution.code_references import SELECTION_REFERENCE_RE
 
@@ -766,3 +777,33 @@ class TestSelectionTags:
         report = runner.run_through_node(KEY, PID, spec, "a", exec_fn=rec)
         assert rec.calls == []
         assert "this node has no selection tag named other" in report["nodes"]["a"]["stderrTail"]
+
+
+class TestChipPlaceholders:
+    """A spec read for its shape before its chips are resolved (what an Autark
+    document declares): each chip standing on its own is held by a string of
+    itself, so any bare chip, a list or a scale included, leaves it JSON, as
+    ``withChipPlaceholders`` in ``codeReferences.ts`` does."""
+
+    def test_each_chip_standing_on_its_own_is_held_by_a_string_of_itself(self):
+        from utk_curio.backend.app.execution.code_references import with_chip_placeholders
+
+        spec = (
+            '{"encoding": {"x": {"field": "scenario_name", "sort": [!! scenario order !!]}, '
+            '"color": {"field": "scenario_name", "scale": [!! scenario colors !!]}, "y": {"field": "[!! inputs.sunlight !!]"}}, '
+            '"width": [!! size !!], "title": "Sun in \\"[!! season !!]\\""}'
+        )
+        with pytest.raises(ValueError):
+            json.loads(spec)
+        held = json.loads(with_chip_placeholders(spec))
+        assert held["encoding"]["x"]["sort"] == "[!! scenario order !!]"
+        assert held["encoding"]["color"]["scale"] == "[!! scenario colors !!]"
+        assert held["encoding"]["y"]["field"] == "[!! inputs.sunlight !!]"
+        assert held["width"] == "[!! size !!]"
+        assert held["title"] == 'Sun in "[!! season !!]"'
+
+    def test_a_spec_with_no_chip_standing_on_its_own_is_itself(self):
+        from utk_curio.backend.app.execution.code_references import with_chip_placeholders
+
+        assert with_chip_placeholders('{"mark": "bar"}') == '{"mark": "bar"}'
+        assert with_chip_placeholders('{"title": "[!! season !!]"}') == '{"title": "[!! season !!]"}'

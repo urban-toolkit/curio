@@ -579,6 +579,21 @@ class TestTheScenarioChipsAreCheckedResolved:
         document = '{"map": {"layerRefs": [{"dataRef": "input_1", "color": "[!! scenario input_1 !!]"}]}}'
         assert dv.validate(AUTK, document) == {"status": dv.STATUS_VALID}
 
+    def test_a_scale_chip_inside_quotes_is_refused_in_its_own_words(self):
+        """Not the schema's reading of the chip left as text."""
+        chart = self.CHART.replace('"scale": [!! scenario colors !!]', '"scale": "[!! scenario colors !!]"')
+        verdict = dv.validate("curio.scout/bars", chart, grammar_id="vega-lite", columns=self.COLUMNS)
+        assert verdict["status"] == dv.STATUS_INVALID
+        assert "[!! scenario colors !!] is a scale, not text. Use it outside quotes." in verdict["detail"]
+
+    def test_a_chip_no_scenario_chip_is_called_is_refused_in_its_own_words(self):
+        """Not as a document that is no JSON."""
+        chart = self.CHART.replace("[!! scenario order !!]", "[!! scenario ordre !!]")
+        verdict = dv.validate("curio.scout/bars", chart, grammar_id="vega-lite", columns=self.COLUMNS)
+        assert verdict["status"] == dv.STATUS_INVALID
+        assert "[!! scenario ordre !!] names no scenario chip." in verdict["detail"]
+        assert "not valid JSON" not in verdict["detail"]
+
 
 class TestProseIsARefusalNotAnUnchecked:
     """dev/134, from `e72c7080`: the child replied the sentence "not

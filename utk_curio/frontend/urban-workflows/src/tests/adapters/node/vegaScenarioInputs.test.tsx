@@ -199,6 +199,19 @@ const stackedRows = () =>
   views()[views().length - 1].spec.datasets.inputs.map((row: any) => [row.scenario, row.scenario_name, row.sunlight]);
 const lastSpec = () => views()[views().length - 1].spec;
 
+/**
+ * The chart renders again over the flow as it is now, and is not drawn again:
+ * given the time a redraw takes to start and land (as `changed` waits for
+ * one), no view comes past *count*.
+ */
+async function drawsNothingNew(hook: { rerender: () => void }, count: number) {
+  await act(async () => {
+    hook.rerender();
+  });
+  await expect(waitFor(() => expect(views()).toHaveLength(count + 1), { timeout: 500 })).rejects.toThrow();
+  expect(views()).toHaveLength(count);
+}
+
 /** The flow changed: the chart renders again, and is drawn again once. */
 async function redrawn(played: Awaited<ReturnType<typeof playedChart>>, scenarios: unknown[]) {
   setFlow(scenarios);
@@ -293,8 +306,9 @@ describe("a chart reading inputs with no box among its inputs", () => {
   test("a box drawn around a feeder afterwards: the chart draws again, in the boxes' colors through its chips", async () => {
     setFlow([]);
     const played = await playedWithChips(CHIP_BARS);
-    // Both from no box, both named Shade: one name, in grey.
-    expect(lastSpec().encoding.color.scale).toEqual({ domain: ["Shade"], range: ["#8a8f98"] });
+    // Both from no box, both named Shade: one name, written alone, which
+    // Vega-Lite's own palette colors.
+    expect(lastSpec().encoding.color.scale).toEqual({ domain: ["Shade"] });
 
     await changed(played, [BASE], 2);
     expect(lastSpec().encoding.color.scale).toEqual({ domain: ["Baseline", "Shade"], range: ["#2a9d8f", "#8a8f98"] });
@@ -370,10 +384,7 @@ describe("a box renamed or recolored draws the chart again", () => {
   test("recolored: a chart that writes no chip draws nothing new, its rows carry no color", async () => {
     const played = await playedChart();
     setFlow([BASE, { ...TALL, color: "#7b3294" }]);
-    await act(async () => {
-      played.hook.rerender();
-    });
-    expect(views()).toHaveLength(1);
+    await drawsNothingNew(played.hook, 1);
   });
 
   test("a box whose id alone changed: its rows carry the new id; a change the chart does not draw draws nothing", async () => {
@@ -382,10 +393,7 @@ describe("a box renamed or recolored draws the chart again", () => {
     expect(stackedRows()[0]).toEqual(["s-today", "Baseline", 5]);
 
     setFlow([{ ...BASE, id: "s-today", description: "the city as built" }, TALL]);
-    await act(async () => {
-      played.hook.rerender();
-    });
-    expect(views()).toHaveLength(2);
+    await drawsNothingNew(played.hook, 2);
   });
 
   test("renamed during a run: the run draws it, then the chart is drawn again once the run ends if the run did not", async () => {
@@ -393,10 +401,7 @@ describe("a box renamed or recolored draws the chart again", () => {
     const renamed = [{ ...BASE, name: "Today" }, TALL];
 
     setFlow(renamed, { isRunActive: true });
-    await act(async () => {
-      played.hook.rerender();
-    });
-    expect(views()).toHaveLength(1);
+    await drawsNothingNew(played.hook, 1);
 
     await changed(played, renamed, 2, { isRunActive: false });
     expect(stackedRows().map((row: any[]) => row[1])).toEqual(["Today", "Today", "Twice as tall"]);
@@ -412,10 +417,7 @@ describe("a box renamed or recolored draws the chart again", () => {
       hook = renderHook(() => useVegaBehavior(data, nodeState));
     });
     setFlow([BASE, { ...TALL, color: "#7b3294" }]);
-    await act(async () => {
-      hook.rerender();
-    });
-    expect(views()).toEqual([]);
+    await drawsNothingNew(hook, 0);
   });
 });
 
@@ -490,9 +492,6 @@ describe("a chart writes its scenarios through chips", () => {
 
     // Baseline's recolor writes nothing this chart draws: no new view.
     setFlow([{ ...BASE, color: "#111111" }, { ...TALL, color: "#7b3294" }]);
-    await act(async () => {
-      played.hook.rerender();
-    });
-    expect(views()).toHaveLength(2);
+    await drawsNothingNew(played.hook, 2);
   });
 });

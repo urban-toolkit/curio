@@ -16,6 +16,7 @@ import {
   renumberInputReferences,
   resolveReferences,
   widgetLiteral,
+  withChipPlaceholders,
   type CodeLanguage,
   type InputScope,
 } from "../../utils/references/codeReferences";
@@ -352,6 +353,32 @@ describe("scenario chips and the fields of inputs", () => {
       code: '{"color": "#00838F"}',
       problems: [],
     });
+  });
+});
+
+/**
+ * A spec read for its shape before its chips are resolved (what an Autark
+ * document declares): each chip standing on its own is held by a string of
+ * itself, so any bare chip, a list or a scale included, leaves it JSON.
+ * `with_chip_placeholders` in `code_references.py` does the same.
+ */
+describe("withChipPlaceholders", () => {
+  test("each chip standing on its own is held by a string of its own text; one inside a string is left", () => {
+    const spec = '{"encoding": {"x": {"field": "scenario_name", "sort": [!! scenario order !!]}, '
+      + '"color": {"field": "scenario_name", "scale": [!! scenario colors !!]}, "y": {"field": "[!! inputs.sunlight !!]"}}, '
+      + '"width": [!! size !!], "title": "Sun in \\"[!! season !!]\\""}';
+    expect(() => JSON.parse(spec)).toThrow();
+    const held = JSON.parse(withChipPlaceholders(spec));
+    expect(held.encoding.x.sort).toBe("[!! scenario order !!]");
+    expect(held.encoding.color.scale).toBe("[!! scenario colors !!]");
+    expect(held.encoding.y.field).toBe("[!! inputs.sunlight !!]");
+    expect(held.width).toBe("[!! size !!]");
+    expect(held.title).toBe('Sun in "[!! season !!]"');
+  });
+
+  test("a spec with no chip standing on its own is itself", () => {
+    expect(withChipPlaceholders('{"mark": "bar"}')).toBe('{"mark": "bar"}');
+    expect(withChipPlaceholders('{"title": "[!! season !!]"}')).toBe('{"title": "[!! season !!]"}');
   });
 });
 

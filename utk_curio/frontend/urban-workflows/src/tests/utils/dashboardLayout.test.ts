@@ -314,6 +314,21 @@ describe("dashboardSourceNodeIds", () => {
     expect([...sources]).toEqual(["load"]);
   });
 
+  test("an Autark node that draws is walked through with a chip standing on its own in its document", () => {
+    // A layer in its box's color through a chip written bare: no JSON until the
+    // chip is resolved, and still a map, which passes its input through.
+    const chipRender = '{"map": {"layerRefs": [{"dataRef": "[!! input_0 !!]", "color": [!! scenario input_0 !!]}]}}';
+    const nodes = [
+      node("load", NodeType.AUTK_GRAMMAR, { code: DATA_SPEC }),
+      node("map1", NodeType.AUTK_GRAMMAR, { code: chipRender }),
+      node("map2", NodeType.AUTK_GRAMMAR, { code: chipRender, dashboardPinned: true }),
+    ];
+
+    const sources = dashboardSourceNodeIds(nodes, [edge("load", "map1"), edge("map1", "map2")]);
+
+    expect([...sources]).toEqual(["load"]);
+  });
+
   test("a versioned node type is recognised", () => {
     // Palette-dragged nodes carry `@1`; comparing the raw string silently
     // matches nothing (#169).

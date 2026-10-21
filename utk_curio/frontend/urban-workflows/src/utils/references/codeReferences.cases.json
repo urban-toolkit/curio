@@ -1107,7 +1107,7 @@
       "code": "{\"scale\": [!! scenario colors !!], \"sort\": [!! scenario order !!]}",
       "widgets": [],
       "inputs": [],
-      "expected": "{\"scale\": {\"domain\": [], \"range\": []}, \"sort\": []}"
+      "expected": "{\"scale\": {\"domain\": []}, \"sort\": []}"
     },
     {
       "name": "a widget named scenario or inputs is a widget still",
@@ -1223,6 +1223,40 @@
       "problems": [
         "[!! inputs.geometry !!]: the dataset inputs has no field geometry."
       ]
+    },
+    {
+      "name": "with no input from a box, the colors and text colors chips write the names alone, which the grammar's own palette colors, and each input's chip a grey of its own",
+      "language": "json",
+      "code": "{\"encoding\": {\"x\": {\"field\": \"scenario_name\", \"sort\": [!! scenario order !!]}, \"color\": {\"field\": \"scenario_name\", \"scale\": [!! scenario colors !!]}}, \"layer\": [{\"mark\": \"text\", \"encoding\": {\"color\": {\"field\": \"scenario_name\", \"scale\": [!! scenario text_colors !!]}}}], \"weekend\": \"[!! scenario input_1 !!]\", \"weekday\": [!! scenario input_0 !!]}",
+      "widgets": [],
+      "inputs": [
+        {"slot": 0, "dataType": "dataframe", "columns": ["mode", "trips"], "scenario": {"name": "Weekday", "color": "#8a8f98"}},
+        {"slot": 1, "dataType": "dataframe", "columns": ["mode", "trips"], "scenario": {"name": "Weekend", "color": "#8a8f98"}}
+      ],
+      "expected": "{\"encoding\": {\"x\": {\"field\": \"scenario_name\", \"sort\": [\"Weekday\", \"Weekend\"]}, \"color\": {\"field\": \"scenario_name\", \"scale\": {\"domain\": [\"Weekday\", \"Weekend\"]}}}, \"layer\": [{\"mark\": \"text\", \"encoding\": {\"color\": {\"field\": \"scenario_name\", \"scale\": {\"domain\": [\"Weekday\", \"Weekend\"]}}}}], \"weekend\": \"#5b6068\", \"weekday\": \"#8a8f98\"}"
+    },
+    {
+      "name": "inputs from no box beside a box take a grey each, in circle order, after the boxes",
+      "language": "json",
+      "code": "{\"scale\": [!! scenario colors !!], \"text\": [!! scenario text_colors !!], \"first\": \"[!! scenario input_0 !!]\", \"last\": [!! scenario input_2 !!]}",
+      "widgets": [],
+      "inputs": [
+        {"slot": 0, "dataType": "dataframe", "columns": ["mode", "trips"], "scenario": {"name": "Weekday", "color": "#8a8f98"}},
+        {"slot": 1, "dataType": "dataframe", "columns": ["mode", "trips"], "scenario": {"scenario": "s-base", "name": "Baseline", "color": "#2a9d8f", "rank": 0}},
+        {"slot": 2, "dataType": "dataframe", "columns": ["mode", "trips"], "scenario": {"name": "Weekend", "color": "#8a8f98"}}
+      ],
+      "expected": "{\"scale\": {\"domain\": [\"Baseline\", \"Weekday\", \"Weekend\"], \"range\": [\"#2a9d8f\", \"#8a8f98\", \"#5b6068\"]}, \"text\": {\"domain\": [\"Baseline\", \"Weekday\", \"Weekend\"], \"range\": [\"#2a9d8f\", \"#8a8f98\", \"#5b6068\"]}, \"first\": \"#8a8f98\", \"last\": \"#5b6068\"}"
+    },
+    {
+      "name": "a grey a box among the inputs already uses is passed over",
+      "language": "json",
+      "code": "{\"scale\": [!! scenario colors !!], \"survey\": [!! scenario input_1 !!]}",
+      "widgets": [],
+      "inputs": [
+        {"slot": 0, "dataType": "dataframe", "columns": ["mode", "trips"], "scenario": {"scenario": "s-today", "name": "Today", "color": "#8A8F98", "rank": 0}},
+        {"slot": 1, "dataType": "dataframe", "columns": ["mode", "trips"], "scenario": {"name": "Survey", "color": "#8a8f98"}}
+      ],
+      "expected": "{\"scale\": {\"domain\": [\"Today\", \"Survey\"], \"range\": [\"#8A8F98\", \"#5b6068\"]}, \"survey\": \"#5b6068\"}"
     }
   ]
 }

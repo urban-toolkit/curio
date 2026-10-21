@@ -5,8 +5,10 @@
  */
 import {
   NO_SCENARIO_COLOR,
+  NO_SCENARIO_GREYS,
   SCENARIO_FIELD,
   SCENARIO_NAME_FIELD,
+  anyFromABox,
   scenarioScale,
   tableTextColor,
 } from "../../utils/scenarios/scenarioColors";
@@ -34,6 +36,24 @@ test("each scenario name once, with the color of its first input, in input order
       { scenario: "b", name: "Twice as tall", color: "#000000" },
     ]),
   ).toEqual({ domain: ["Twice as tall", "Baseline"], range: ["#e76f51", "#2a9d8f"] });
+});
+
+test("each input from no box takes a grey of its own, in order, past a grey a box among them uses", () => {
+  expect(NO_SCENARIO_GREYS[0]).toBe(NO_SCENARIO_COLOR);
+  expect(new Set(NO_SCENARIO_GREYS).size).toBe(NO_SCENARIO_GREYS.length);
+  expect(
+    scenarioScale([
+      { scenario: "a", name: "Today", color: "#8A8F98" },
+      { name: "Survey A", color: NO_SCENARIO_COLOR },
+      { name: "Survey B", color: NO_SCENARIO_COLOR },
+      { name: "Survey A", color: NO_SCENARIO_COLOR },
+    ]),
+  ).toEqual({ domain: ["Today", "Survey A", "Survey B"], range: ["#8A8F98", NO_SCENARIO_GREYS[1], NO_SCENARIO_GREYS[2]] });
+});
+
+test("whether any input comes from a box, which decides whether the chips write colors at all", () => {
+  expect(anyFromABox([{ name: "Weekday", color: NO_SCENARIO_COLOR }])).toBe(false);
+  expect(anyFromABox([{ name: "Weekday", color: NO_SCENARIO_COLOR }, { scenario: "a", name: "Today", color: "#2a9d8f" }])).toBe(true);
 });
 
 test("a color under 3:1 on white is written in its lightest shade that reaches 3:1, the others as they are", () => {
