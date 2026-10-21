@@ -186,8 +186,30 @@ def build() -> dict:
     }}
 
 
+#: What a save on the canvas sets on a node: kept from the shipped file.
+CANVAS_KEYS = ("x", "y", "width", "height", "minimized")
+
+
+def keep_canvas(flow: dict) -> dict:
+    """Keep the layout arranged on the canvas and saved into the shipped file
+    (each node's place, size and whether it is collapsed). A node the file
+    does not have keeps its own place."""
+    if not OUT.exists():
+        return flow
+    old = {n["id"]: n for n in json.loads(OUT.read_text())["dataflow"].get("nodes") or []}
+    for n in flow["dataflow"]["nodes"]:
+        if n["id"] not in old:
+            continue
+        for key in CANVAS_KEYS:
+            if key in old[n["id"]]:
+                n[key] = old[n["id"]][key]
+            else:
+                n.pop(key, None)
+    return flow
+
+
 def main() -> None:
-    OUT.write_text(json.dumps(build(), indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    OUT.write_text(json.dumps(keep_canvas(build()), indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     print(f"wrote {OUT.relative_to(REPO)}")
 
 

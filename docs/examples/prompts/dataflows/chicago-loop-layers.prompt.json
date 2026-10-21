@@ -4,7 +4,7 @@
   "version": 1,
   "source": {
     "path": "docs/examples/dataflows/chicago-loop-layers.json",
-    "sha256": "ddfa617a226871ed4389dd9652a6d600454102d1b4cad403aac6b891e83c8051",
+    "sha256": "2920b1a0adc69a3778623541059dca088decda7379666eef6250b55305f67779",
     "walkthrough": null
   },
   "prompt": "Make one Autark map of downtown Chicago that has a layer of every kind an Autark map draws, from the Data Catalog's Chicago Loop layers: the census tracts colored by CDC/ATSDR's Social Vulnerability Index, Overture's buildings extruded by height, OpenStreetMap's parks, water, roads and trees, and the CTA 'L' lines and stations. Load each layer on its own, tracts first. Connect the same layers to an Interaction node too, in the same order, and link the Interaction node to the map with an interaction edge, so I can add, reshape, move, change or remove the features of any layer on the map.",
