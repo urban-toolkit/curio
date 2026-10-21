@@ -23,7 +23,8 @@ RUN_STATUSES = (
     "queued", "running", "succeeded", "failed", "needs_canvas", "cancelled", "interrupted",
 )
 ACTIVE_RUN_STATUSES = ("queued", "running")
-STEP_ROLES = ("run", "forward", "browser")
+#: What a run does with a node (``execution/run_plan.node_role``).
+STEP_ROLES = ("run", "forward", "browser", "missing")
 STEP_STATUSES = (
     "pending", "running", "ok", "error", "skipped", "forwarded", "browser",
     "waiting", "cancelled", "interrupted",

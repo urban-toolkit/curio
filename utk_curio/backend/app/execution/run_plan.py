@@ -15,9 +15,14 @@
   Parameter node, whose value reaches the nodes that name it through their
   code, or a Note; ``browser`` makes data only the browser can (an Autark
   compute node, an Autark node with no data of its own to load, a Spatial
-  Join), so nothing below it can run until a tab does. A node is what its
-  template's declared ``behavior`` says (``projects/template_grammars``), never
-  what its type is named.
+  Join), so nothing below it can run until a tab does; ``missing`` is a node
+  whose type names a package's template that no installed package provides
+  (a saved Compare Scenarios node, a node of a package only another
+  account's store holds): the canvas cannot run it either, so a run fails it,
+  naming the type as the canvas's card for it does
+  (:func:`missing_type_message`), and skips what it feeds. A node is what its
+  template's declared ``behavior`` says (``projects/template_grammars``),
+  never what its type is named.
 """
 from __future__ import annotations
 
@@ -111,20 +116,43 @@ def ancestors(target_id: str, edges: Iterable[dict]) -> set[str]:
     return wanted
 
 
+def missing_type_message(node_type: object) -> str:
+    """What a run says of a node no installed package provides: the title of
+    the card the canvas shows for it (``unresolvedNodeMessage`` in
+    ``components/UnresolvedNode.tsx``)."""
+    return f"No installed package provides {node_type}"
+
+
+def _provided(node_type: str, templates: dict | None, packages: "TemplateGrammars") -> bool:
+    """Whether an installed package provides *node_type*: the project's roster
+    (*templates*) holds its template, or a manifest in the account's store,
+    the catalog or the packages Curio ships does."""
+    from utk_curio.backend.app.packages.service import unversioned_node_type
+
+    if templates and unversioned_node_type(node_type) in templates:
+        return True
+    return packages.provides(node_type)
+
+
 def node_role(
     node: dict,
     templates: dict | None = None,
     packages: Optional["TemplateGrammars"] = None,
 ) -> str:
-    """``run``, ``forward`` or ``browser`` for a node as a saved dataflow holds it.
+    """``run``, ``forward``, ``browser`` or ``missing`` for a node as a saved
+    dataflow holds it.
 
     What a node forwards as is what its template declares, read through
     *packages*: the account's store, the catalog, then the packages Curio
     ships (``TemplateGrammars.for_account()`` when None). A chart a package's
     template draws with the Vega-Lite grammar is forwarded as a Vega-Lite chart
-    is, and so is one the project's roster (*templates*) says draws with it."""
+    is, and so is one the project's roster (*templates*) says draws with it.
+    A node of a package's template that neither the roster nor a manifest
+    holds is ``missing``; a type that names no package (a legacy plain string,
+    or one of any other shape) reads nothing and stays the browser's."""
     from utk_curio.backend.app.execution.autk_spec_kind import is_autk_data_node
     from utk_curio.backend.app.execution.workflow_spec import grammar_id_of, is_executable_kind
+    from utk_curio.backend.app.packages.service import is_package_node_type
     from utk_curio.backend.app.projects.dashboard_payload import passes_through
     from utk_curio.backend.app.projects.template_grammars import (
         VEGA_LITE,
@@ -141,4 +169,7 @@ def node_role(
         return "forward"
     if is_autk_data_node(node):
         return "run"
+    node_type = node.get("type")
+    if is_package_node_type(node_type) and not _provided(node_type, templates, packages):
+        return "missing"
     return "browser"

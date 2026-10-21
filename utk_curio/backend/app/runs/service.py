@@ -455,6 +455,9 @@ def _record_step(run_id, step, payload, runtime_journal) -> None:
             stderr_tail=payload.get("stderrTail"),
             missing_module=json.dumps(reply["missingModule"]) if reply.get("missingModule") else None,
         )
+    elif step.role == "missing":
+        # What the run says of it: no installed package provides its type.
+        fields["stderr_tail"] = payload.get("stderrTail")
     runs_repo.update_step(run_id, step.node_id, **fields)
 
 
