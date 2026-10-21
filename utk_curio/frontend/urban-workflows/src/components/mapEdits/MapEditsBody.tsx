@@ -86,7 +86,7 @@ function useInputLayers(input: unknown): InputLayer[] | null {
           table: source.outputTableName,
           name: named.has(source.outputTableName) ? source.outputTableName : null,
           layerType: source.layerType,
-          fc: source.geojsonObject as InputLayer["fc"],
+          fc: source.geojsonObject as { features?: any[] },
         }));
       })
       .catch(() => [] as InputLayer[])

@@ -20,7 +20,7 @@ export interface InputLayer {
   /** The layer's own name, when the input names it. */
   name: string | null;
   layerType?: string;
-  fc: { features?: any[]; [member: string]: unknown };
+  fc: { features?: any[] };
 }
 
 /** The columns the features of *fc* carry, in the order the first ones name them. */
