@@ -17,6 +17,9 @@ export interface FlowContextProps {
     setInteractions: (updateFn: (interactions: IInteraction[]) => IInteraction[]) => void;
     /** Record a node's selection; the one callback every node's data carries. */
     interactionsCallback: (interactions: any, nodeId: string) => void;
+    /** Empty the selection tags that read the view *viewId*, drawn again
+     * without the selection they hold (#884): their nodes go stale. */
+    clearSelectionTagsOf?: (viewId: string) => void;
     applyNewPropagation: (propagation: IPropagation) => void;
     addNode: (node: Node, customWorkflowName?: string, provenance?: boolean) => void;
     onNodesChange: (changes: NodeChange[]) => void;

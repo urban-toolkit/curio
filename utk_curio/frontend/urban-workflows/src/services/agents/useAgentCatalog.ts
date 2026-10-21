@@ -26,6 +26,8 @@ import type { AgentCard, AgentCatalogFacets } from "./types";
 
 export type AgentCatalogScope = "browse" | "installed";
 export type AgentCatalogVerb = "add" | "remove" | "publish" | "unpublish" | "install" | "uninstall";
+/** Which project action needs the dataflow: adding an agent to it, or removing one. */
+export type AgentProjectAction = "add" | "remove";
 /** What an action needs of a card: the coordinate, and the name for messages. */
 export type AgentCardRef = Pick<AgentCard, "dirName"> & Partial<Pick<AgentCard, "name">>;
 
@@ -41,8 +43,9 @@ export interface UseAgentCatalogOptions {
    *  error banner, so that prefetch fails silently). */
   scopes?: AgentCatalogScope[];
   /** Creates and saves the dataflow when it has never been persisted, and
-   *  answers with its id (`FlowProvider.ensureProjectId`). */
-  onEnsureProject?: () => Promise<string | null>;
+   *  answers with its id (`FlowProvider.ensureProjectId`). *action* says which
+   *  project action asked, so a surface that cannot save can say why. */
+  onEnsureProject?: (action?: AgentProjectAction) => Promise<string | null>;
   /** Told the success message of a project action, once the refresh landed. */
   onSuccess?: (message: string) => void;
   /** How a failed action reads; the default is the error's own message. */
@@ -205,10 +208,10 @@ export function useAgentCatalog(options: UseAgentCatalogOptions = {}): AgentCata
 
   /** The dataflow to act on, creating it if this one has never been saved.
    *  Throws rather than returning null so `run`'s catch surfaces it. */
-  const resolveProjectId = useCallback(async (): Promise<string> => {
+  const resolveProjectId = useCallback(async (action: AgentProjectAction): Promise<string> => {
     const known = activeProjectId();
     if (known) return known;
-    const created = onEnsureProject ? await onEnsureProject() : null;
+    const created = onEnsureProject ? await onEnsureProject(action) : null;
     if (!created) throw new Error("Couldn't save this dataflow, so nothing was added to it.");
     createdProjectIdRef.current = created;
     return created;
@@ -221,7 +224,7 @@ export function useAgentCatalog(options: UseAgentCatalogOptions = {}): AgentCata
   const install = useCallback(
     (card: AgentCardRef) =>
       run("install", card, async () => {
-        const id = await resolveProjectId();
+        const id = await resolveProjectId("add");
         await agentsApi.installToProject(id, card.dirName);
         return id;
       }, `Added ${card.name ?? card.dirName} to this project.`),
@@ -230,7 +233,7 @@ export function useAgentCatalog(options: UseAgentCatalogOptions = {}): AgentCata
   const uninstall = useCallback(
     (card: AgentCardRef) =>
       run("uninstall", card, async () => {
-        const id = await resolveProjectId();
+        const id = await resolveProjectId("remove");
         await agentsApi.uninstallFromProject(id, card.dirName);
         return id;
       }, `Removed ${card.name ?? card.dirName} from this project.`),

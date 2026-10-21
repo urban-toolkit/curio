@@ -43,7 +43,7 @@ _TOOLS = {
     ],
     "agent.dataflow-builder": [
         "Read the dataflow", "Read a node's last run", "Read worked examples",
-        "Propose a plan", "Propose a node",
+        "Propose a plan", "Propose a node", "Propose a package draft",
     ],
     "agent.dataset-finder": [
         "Search the Data Catalog", "List the data portals", "Search the data portals",
@@ -168,6 +168,7 @@ class TestTools:
         tools = _cards(client, token)["agent.dataflow-builder"]["tools"]
         assert [t["id"] for t in tools] == [
             "dataflow.read", "node.runtime.read", "examples.read", "dataflow.plan.write", "node.create",
+            "package.draft.apply",
         ]
 
     def test_every_tool_contract_has_one_label_and_a_proposal_says_so(self):

@@ -97,7 +97,6 @@ type Case = {
   type: string;
   content?: string;
   passThrough: boolean;
-  selfDrawn: boolean;
   nonProducing: boolean;
   loadsData: boolean;
 };
@@ -172,35 +171,21 @@ describe('the canvas rules that read what a template declares', () => {
     expect(consumers('acme.tools/fetch-roads@1')).toEqual(['loader']);
     expect(consumers('curio.builtin/data-loading@1')).toEqual(['after']);
   });
-
-  test("a pinned node is its own dashboard source when its template declares Compare Scenarios' behavior", () => {
-    const { dashboardSourceNodeIds } = require('../../utils/dashboardLayout');
-    const nodes = [
-      { id: 'py', type: 'curio.builtin/computation-analysis@1', data: { nodeType: 'curio.builtin/computation-analysis@1' } },
-      { id: 'mine', type: 'acme.tools/compare@1', data: { nodeType: 'acme.tools/compare@1', dashboardPinned: true } },
-      { id: 'named', type: 'acme.tools/compare-scenarios@1', data: { nodeType: 'acme.tools/compare-scenarios@1', dashboardPinned: true } },
-    ];
-    const edges = [{ source: 'py', target: 'mine' }, { source: 'py', target: 'named' }];
-    // `mine` draws its own output; `named` is only named so, and reads `py`.
-    expect([...dashboardSourceNodeIds(nodes, edges)].sort()).toEqual(['mine', 'py']);
-  });
 });
 
 describe.each(CASES)('$name', (c) => {
   test('the canvas decides it as the backend does', () => {
-    const { isPassThroughNode, isSelfDrawnNode } = require('../../utils/dashboardLayout');
+    const { isPassThroughNode } = require('../../utils/dashboardLayout');
     const { isNonProducingNodeType } = require('../../utils/saveOutputDataset');
     const { loadsData } = require('../../registry/declaredNodes');
 
     const node = { id: 'n', type: c.type, data: { nodeId: 'n', nodeType: c.type, code: c.content ?? '' } };
     expect({
       passThrough: isPassThroughNode(node),
-      selfDrawn: isSelfDrawnNode(node),
       nonProducing: isNonProducingNodeType(c.type),
       loadsData: loadsData(c.type),
     }).toEqual({
       passThrough: c.passThrough,
-      selfDrawn: c.selfDrawn,
       nonProducing: c.nonProducing,
       loadsData: c.loadsData,
     });

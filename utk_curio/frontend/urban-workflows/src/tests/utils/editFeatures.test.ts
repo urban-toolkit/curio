@@ -13,7 +13,6 @@ import {
   defaultKey,
   describeEdit,
   editFeaturesCode,
-  isEditFeaturesNode,
   keyColumns,
   keyRefusal,
   normalizeEdit,
@@ -26,7 +25,7 @@ import {
   withoutEdit,
   type EditFeaturesSettings,
 } from "../../utils/editFeatures/editFeatures";
-import { CURIO_UNIVERSAL_NODE_TYPE, VisInteractionType } from "../../constants";
+import { VisInteractionType } from "../../constants";
 
 type CodeCase = { name: string; settings: EditFeaturesSettings | null; code: string };
 
@@ -94,13 +93,6 @@ describe("the edit list", () => {
     expect(describeEdit({ op: "remove", ids: [119, 136] }, "building_id")).toBe("Remove building_id 119, 136");
     expect(describeEdit({ op: "restore", ids: [136] }, "building_id")).toBe("Restore building_id 136");
     expect(describeEdit({ op: "set", ids: ["w7"], column: "height", value: 30 }, "osm_id")).toBe("Set height to 30 on osm_id w7");
-  });
-
-  test("is an Edit Features node's, by its type", () => {
-    const node = (nodeType: string) => ({ type: CURIO_UNIVERSAL_NODE_TYPE, data: { nodeType } });
-    expect(isEditFeaturesNode(node("curio.builtin/edit-features@1"))).toBe(true);
-    expect(isEditFeaturesNode(node("curio.builtin/edit-features"))).toBe(true);
-    expect(isEditFeaturesNode(node("curio.builtin/compare-scenarios@1"))).toBe(false);
   });
 });
 

@@ -12,6 +12,7 @@ import { ScenarioCatalogDrawerProvider } from "../providers/scenarioCatalog";
 import { DiscoveryCatalogDrawerProvider } from "../providers/discoveryCatalog";
 import { ApiSettingsDrawerProvider } from "../providers/ApiSettingsDrawerProvider";
 import { MonitorDrawerProvider } from "../providers/MonitorDrawerProvider";
+import { ProvenanceDrawerProvider } from "../providers/ProvenanceDrawerProvider";
 import { PackagePaletteProvider } from "../providers/packages";
 import { DatasetPaletteProvider } from "../providers/DatasetPaletteContext";
 import { ProjectLoader } from "./ProjectLoader";
@@ -50,6 +51,9 @@ export const DataflowProviders: React.FC<{
           place of their pages, so the dataflow stays open. */}
       <ApiSettingsDrawerProvider>
       <MonitorDrawerProvider>
+      {/* View > Provenance opens the dataflow's history here. Inside
+          FlowProvider: putting a version back loads it onto the canvas. */}
+      <ProvenanceDrawerProvider>
       {/* NodeCatalogDrawerProvider must sit INSIDE FlowProvider: the drawer
           calls useFlowContext to auto-save unsaved dataflows on Install, and
           a portal preserves React tree context, not DOM position. Outside
@@ -84,6 +88,7 @@ export const DataflowProviders: React.FC<{
           </AgentCatalogDrawerProvider>
         </DatasetCatalogDrawerProvider>
       </NodeCatalogDrawerProvider>
+      </ProvenanceDrawerProvider>
       </MonitorDrawerProvider>
       </ApiSettingsDrawerProvider>
       </CanvasDatasetDetailsProvider>

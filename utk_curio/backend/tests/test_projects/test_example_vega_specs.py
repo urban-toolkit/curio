@@ -14,7 +14,7 @@ The specs are read from the example dataflows, their walkthroughs, the default
 preamble, and the worked examples the builder agents are shown
 (``llm-prompts/examples.md``), which include example 09's scatter. A
 dataflow's chart is a Vega-Lite node, or a node of a shipped template that
-draws with the Vega-Lite grammar, as SCOUT Comparison's charts do.
+draws with the Vega-Lite grammar, as Scout's charts do.
 """
 from __future__ import annotations
 
@@ -50,7 +50,7 @@ def _flow(path: Path) -> dict:
 
 def _vega_lite_types() -> set:
     """The node types that draw a Vega-Lite spec: every shipped template whose
-    grammar is ``vega-lite``, the Vega-Lite node's and SCOUT Comparison's
+    grammar is ``vega-lite``, the Vega-Lite node's and Scout's
     charts, read off the manifests."""
     types = {VEGA}
     for path in sorted((REPO_ROOT / "packages").glob("*/manifest.json")):
@@ -65,9 +65,16 @@ VEGA_LITE_TYPES = _vega_lite_types()
 
 
 def _node_specs(flow: dict, where: str):
+    """Each chart's spec, read as a run reads it: its references resolved, so
+    a widget placed as a value, such as a Table's list of columns
+    (``"fold": [!! columns !!]``), is JSON once its value is written."""
+    from utk_curio.backend.app.execution.workflow_spec import parse_workflow_dict
+
+    spec = parse_workflow_dict({"dataflow": flow})
+    by_id = {node.id: node for node in spec.nodes}
     for node in flow.get("nodes", []):
         if node["type"].split("@", 1)[0] in VEGA_LITE_TYPES:
-            yield f"{where} node {node['id'][:8]}", json.loads(node["content"])
+            yield f"{where} node {node['id'][:8]}", json.loads(spec.node_code(by_id[node["id"]], "json"))
 
 
 def _block_specs(text: str, where: str):

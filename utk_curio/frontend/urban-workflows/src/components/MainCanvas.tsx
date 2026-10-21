@@ -20,6 +20,7 @@ import {
     CANVAS_TITLE_ATTR,
     fitViewWithMenuOffset,
     fitViewWithMenuOffsetNow,
+    setViewportNow,
     topOverlayBottom,
 } from "../utils/fitViewWithMenuOffset";
 import { computeTranslateExtent } from "../utils/canvasExtent";
@@ -67,8 +68,6 @@ import {
     readPackageCardDragPayload,
     type PackageCardNode,
 } from "../services/packages/packageCardDrag";
-import type { PackageAddRequest } from "../services/packages/packageAddRequests";
-import { useModelCatalogDrawer } from "../providers/modelCatalog";
 import { usePackageCardDrop } from "./packages/usePackageCardDrop";
 import { useHostedGuest } from "./apiSettings/useHostedGuest";
 import { endScenarioDrag, hasScenarioDrag, readScenarioDragPayload } from "../services/scenarioCatalog/scenarioDrag";
@@ -106,6 +105,8 @@ const NOTEBOOK_SCROLLER_STYLE: React.CSSProperties = {
     overflowY: "auto",
     backgroundColor: "#ffffff",
 };
+// React Flow's own view in the notebook view, where the page scrolls instead.
+const NOTEBOOK_VIEWPORT = { x: 0, y: 0, zoom: 1 };
 
 export function MainCanvas() {
     const { showToast } = useToastContext();
@@ -217,16 +218,32 @@ export function MainCanvas() {
     // d3 transition, so the check runs on every change of the view. It also
     // runs again when `setViewport` changes, which it does once React Flow's
     // zoom is ready: before that, it does nothing.
+    //
+    // The view is put back at once (`setViewportNow`), not through
+    // `setViewport`: on a page that drew no frame for a while, a fit's view
+    // stayed until one came (#996). A change is put back once the call that
+    // made it has returned, in a microtask: setting d3's zoom from inside its
+    // own zoom event would end a transition in its last tick without ending
+    // its gesture. Only while the hold is on, so nothing it asked for lands
+    // after the view is left; useNotebookView then sets the canvas view back
+    // at once.
     const flowStore = useStoreApi();
     useEffect(() => {
         if (!notebookOn) return;
-        const hold = ([x, y, zoom]: readonly number[]) => {
-            if (x !== 0 || y !== 0 || zoom !== 1) setViewport({ x: 0, y: 0, zoom: 1 });
+        let holding = true;
+        const hold = () => {
+            const [x, y, zoom] = flowStore.getState().transform;
+            if (!holding || (x === 0 && y === 0 && zoom === 1)) return;
+            if (!setViewportNow(flowStore, NOTEBOOK_VIEWPORT)) setViewport(NOTEBOOK_VIEWPORT);
         };
-        hold(flowStore.getState().transform);
-        return flowStore.subscribe((state, prev) => {
-            if (state.transform !== prev.transform) hold(state.transform);
+        hold();
+        const unsubscribe = flowStore.subscribe((state, prev) => {
+            if (state.transform !== prev.transform) queueMicrotask(hold);
         });
+        return () => {
+            holding = false;
+            unsubscribe();
+        };
     }, [notebookOn, flowStore, setViewport]);
 
     // The element the notebook scrolls in. Its size and the overlays fixed over
@@ -433,14 +450,9 @@ export function MainCanvas() {
     // one node runs the model, opening with its template's code, which names
     // the model. A package the dataflow has not added goes through the
     // drawer's own Add first (the review, then the install of its libraries),
-    // and the node is made once it is added; a model dropped from the Models
-    // palette with the Model Catalog drawer closed opens that drawer on its
-    // Add. A hosted guest's drop is refused, since guests never install.
-    const { openModelCatalogDrawer } = useModelCatalogDrawer();
-    const openModelCatalogOnAdd = useCallback(
-        (addRequest: PackageAddRequest) => openModelCatalogDrawer({ addRequest }),
-        [openModelCatalogDrawer],
-    );
+    // and the node is made once it is added; the Models palette lists only
+    // the dataflow's models, so its rows make their nodes at once. A hosted
+    // guest's drop is refused, since guests never install.
     const createPackageNode = useCallback((node: PackageCardNode, position: XYPosition) => {
         const starter = node.model
             ? packageStarterCode(tryGetNodeDescriptor(node.nodeType as NodeType), getStarters)
@@ -460,7 +472,6 @@ export function MainCanvas() {
         hostedGuest,
         createNode: createPackageNode,
         showToast,
-        openModelCatalog: openModelCatalogOnAdd,
     });
     const handlePackageCardCanvasDrop = useCallback((event: React.DragEvent) => {
         event.preventDefault();
@@ -547,13 +558,16 @@ export function MainCanvas() {
                 agentCoord,
                 saveProject: requestProjectSave,
                 attach: (pid, coord, t) => agentsApi.attach(pid, coord, t),
+                // A hosted guest's drop that would save says to sign in.
+                hostedGuest,
             })
                 .then(() => {
                     notifyAgentDockRefresh();
                     markDirty();
                     showToast(`Agent attached to ${where}.`, "success");
                 })
-                .catch((e: any) => showToast(e?.message || "Attach failed.", "error"));
+                // A refusal says how to show itself (the sign-in note is a warning).
+                .catch((e: any) => showToast(e?.message || "Attach failed.", e?.toastVariant ?? "error"));
             return;
         }
         event.preventDefault();
@@ -562,7 +576,7 @@ export function MainCanvas() {
         const position = dropPosition(event);
         revealCreated(createCodeNode(type, { position }));
         markDirty();
-    }, [screenToFlowPosition, dropPosition, revealCreated, createCodeNode, markDirty, handleCanvasDrop, handleModelCanvasDrop, handlePackageCardCanvasDrop, handleScenarioCanvasDrop, projectId, showToast, requestProjectSave, reactFlow]);
+    }, [screenToFlowPosition, dropPosition, revealCreated, createCodeNode, markDirty, handleCanvasDrop, handleModelCanvasDrop, handlePackageCardCanvasDrop, handleScenarioCanvasDrop, projectId, showToast, requestProjectSave, reactFlow, hostedGuest]);
 
     // The Delete key reaches these through React Flow, which sends the
     // selected edges plus every edge attached to a deleted node first, then

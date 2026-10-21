@@ -1,4 +1,5 @@
 import { AUTK_FAMILIES, AutkFamily } from "../generated/autkGrammar";
+import { withChipPlaceholders } from "./references/codeReferences";
 
 /** What kind of step an Autark (UrbanSpec) document describes. */
 export type AutkSpecKind = "render" | "compute" | "data" | "unknown";
@@ -45,10 +46,16 @@ export function classifyAutkSpec(spec: any): AutkSpecKind {
   return kind ?? "unknown";
 }
 
+/**
+ * ``classifyAutkSpec`` of a document as its node holds it, before its chips
+ * are resolved: a chip standing on its own, `"color": [!! scenario input_1 !!]`,
+ * holds its place (``withChipPlaceholders``), so the document is read for what
+ * it declares rather than taken for no document.
+ */
 export function classifyAutkSpecString(specString: unknown): AutkSpecKind {
   if (typeof specString !== "string" || specString.trim() === "") return "unknown";
   try {
-    return classifyAutkSpec(JSON.parse(specString));
+    return classifyAutkSpec(JSON.parse(withChipPlaceholders(specString)));
   } catch {
     return "unknown";
   }

@@ -4,7 +4,7 @@
   "version": 1,
   "source": {
     "path": "docs/examples/dataflows/chicago-loop-shadow-towers.json",
-    "sha256": "3723f3b1601522f4b389eb18100d303a386fea4d17eaf4d1e9dca10c1b6e4572",
+    "sha256": "3b1f317aca295884ed492ac1d2addfefb8827993e5018df72e59a7bfed74de70",
     "walkthrough": null
   },
   "prompt": "Compare two scenarios of SCOUT's high-rise shadow case on the Chicago Loop. Load SCOUT's Loop buildings from the Data Catalog; in one scenario keep them as they are, in the other first take out the 15 buildings SCOUT's second scenario removes, by their building ids, as edits I can change later on a map of the buildings, removing, raising or lowering others. In both, turn the buildings' heights into a zoom 16 height raster with SCOUT's building rasterizer, run SCOUT's Deep Umbra shadow model on it, with one season setting both scenarios share, set to summer, draw the accumulated shadow on an Autark map of its own, both scenarios' maps on one color scale from 0 to 720 minutes, and take its mean and median over the ground, where the height raster is under 1.08 m. Then chart the two scenarios' mean accumulated shadow side by side, and map how the shadow changes when the buildings are removed. The rasterizer, the raster statistics and the shadow model are not part of the standard node set, so whatever provides them needs installing first.",
@@ -14,19 +14,12 @@
       "data.scout.loop-buildings"
     ],
     "packages": [
-      "model.scout.deep-umbra@1",
-      "scout.rasters@1"
+      "curio.scout@1",
+      "model.scout.deep-umbra@1"
     ]
   },
   "expected": {
     "nodes": [
-      {
-        "ref": "visualization5",
-        "type": "curio.builtin/autk-grammar",
-        "role": "visualization",
-        "executable": false,
-        "hasContent": true
-      },
       {
         "ref": "visualization1",
         "type": "curio.builtin/autk-grammar",
@@ -42,17 +35,10 @@
         "hasContent": true
       },
       {
-        "ref": "visualization4",
-        "type": "curio.builtin/compare-scenarios",
-        "role": "visualization",
-        "executable": true,
-        "hasContent": true
-      },
-      {
         "ref": "visualization3",
-        "type": "curio.builtin/compare-scenarios",
+        "type": "curio.builtin/autk-grammar",
         "role": "visualization",
-        "executable": true,
+        "executable": false,
         "hasContent": true
       },
       {
@@ -77,43 +63,57 @@
         "hasContent": false
       },
       {
-        "ref": "analysis3",
-        "type": "model.scout.deep-umbra/accumulated-shadow",
-        "role": "analysis",
-        "executable": true,
-        "hasContent": true
-      },
-      {
-        "ref": "analysis4",
-        "type": "model.scout.deep-umbra/accumulated-shadow",
-        "role": "analysis",
-        "executable": true,
+        "ref": "visualization4",
+        "type": "curio.scout/bars",
+        "role": "visualization",
+        "executable": false,
         "hasContent": true
       },
       {
         "ref": "analysis1",
-        "type": "scout.rasters/raster-calculator",
+        "type": "curio.scout/raster-calculator",
         "role": "analysis",
         "executable": true,
         "hasContent": true
       },
       {
         "ref": "analysis2",
-        "type": "scout.rasters/raster-calculator",
+        "type": "curio.scout/raster-calculator",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis3",
+        "type": "curio.scout/raster-calculator",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis4",
+        "type": "curio.scout/rasterize-buildings",
         "role": "analysis",
         "executable": true,
         "hasContent": true
       },
       {
         "ref": "analysis5",
-        "type": "scout.rasters/rasterize-buildings",
+        "type": "curio.scout/rasterize-buildings",
         "role": "analysis",
         "executable": true,
         "hasContent": true
       },
       {
         "ref": "analysis6",
-        "type": "scout.rasters/rasterize-buildings",
+        "type": "model.scout.deep-umbra/accumulated-shadow",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis7",
+        "type": "model.scout.deep-umbra/accumulated-shadow",
         "role": "analysis",
         "executable": true,
         "hasContent": true
@@ -121,24 +121,30 @@
     ],
     "edges": [
       {
-        "from": "visualization4",
-        "to": "visualization5",
-        "kind": "data"
-      },
-      {
         "from": "loader1",
         "to": "transform1",
         "kind": "data"
       },
       {
         "from": "loader1",
-        "to": "analysis5",
+        "to": "analysis4",
         "kind": "data"
       },
       {
         "from": "transform1",
-        "to": "analysis6",
+        "to": "analysis5",
         "kind": "data"
+      },
+      {
+        "from": "analysis1",
+        "to": "visualization4",
+        "kind": "data"
+      },
+      {
+        "from": "analysis2",
+        "to": "visualization4",
+        "kind": "data",
+        "slot": 1
       },
       {
         "from": "analysis3",
@@ -146,61 +152,55 @@
         "kind": "data"
       },
       {
-        "from": "analysis3",
-        "to": "visualization4",
-        "kind": "data"
-      },
-      {
-        "from": "analysis3",
+        "from": "analysis4",
         "to": "analysis1",
-        "kind": "data"
+        "kind": "data",
+        "slot": 1
       },
       {
         "from": "analysis4",
+        "to": "analysis6",
+        "kind": "data"
+      },
+      {
+        "from": "analysis5",
+        "to": "analysis2",
+        "kind": "data",
+        "slot": 1
+      },
+      {
+        "from": "analysis5",
+        "to": "analysis7",
+        "kind": "data"
+      },
+      {
+        "from": "analysis6",
         "to": "visualization2",
         "kind": "data"
       },
       {
-        "from": "analysis4",
-        "to": "visualization4",
-        "kind": "data",
-        "slot": 1
-      },
-      {
-        "from": "analysis4",
-        "to": "analysis2",
+        "from": "analysis6",
+        "to": "analysis1",
         "kind": "data"
       },
       {
-        "from": "analysis1",
-        "to": "visualization3",
-        "kind": "data"
-      },
-      {
-        "from": "analysis2",
-        "to": "visualization3",
-        "kind": "data",
-        "slot": 1
-      },
-      {
-        "from": "analysis5",
+        "from": "analysis6",
         "to": "analysis3",
         "kind": "data"
       },
       {
-        "from": "analysis5",
-        "to": "analysis1",
-        "kind": "data",
-        "slot": 1
-      },
-      {
-        "from": "analysis6",
-        "to": "analysis4",
+        "from": "analysis7",
+        "to": "visualization3",
         "kind": "data"
       },
       {
-        "from": "analysis6",
+        "from": "analysis7",
         "to": "analysis2",
+        "kind": "data"
+      },
+      {
+        "from": "analysis7",
+        "to": "analysis3",
         "kind": "data",
         "slot": 1
       }
@@ -252,7 +252,7 @@
     {
       "ref": "analysis4",
       "mustMention": [
-        "shadow"
+        "height"
       ],
       "outputKind": "raster"
     },
@@ -266,14 +266,23 @@
     {
       "ref": "analysis6",
       "mustMention": [
-        "height"
+        "shadow"
+      ],
+      "outputKind": "raster"
+    },
+    {
+      "ref": "analysis7",
+      "mustMention": [
+        "shadow"
       ],
       "outputKind": "raster"
     }
   ],
   "execution": {
     "mode": "sandbox",
-    "browserOnlyKinds": [],
+    "browserOnlyKinds": [
+      "curio.scout/bars"
+    ],
     "notes": null
   },
   "capability": {
@@ -292,7 +301,7 @@
   "split": "train",
   "review": {
     "status": "pending-owner-review",
-    "draftedBy": "the SCOUT shadow step (#662), from the example JSON, 2026-10-05; its difference map on an Autark node after the Compare Scenarios node, 2026-10-17; one color range on both shadow maps, 2026-10-17; its Towers removed node an Interaction node, 2026-10-17; its rasterizers and Raster Calculators the nodes of the SCOUT Rasters package, 2026-10-18",
+    "draftedBy": "the SCOUT shadow step (#662), from the example JSON, 2026-10-05; its difference map on an Autark node after the Compare Scenarios node, 2026-10-17; one color range on both shadow maps, 2026-10-17; its Towers removed node an Interaction node, 2026-10-17; its rasterizers and Raster Calculators the nodes of the SCOUT Rasters package, 2026-10-18; those nodes the Scout package's (curio.scout@1), 2026-10-20; its comparisons without Compare Scenarios, Scout's Bars charting both scenarios' statistics and a Raster Calculator taking the change in shadow, in the plan answering komar41's review (step 6.3), 2026-10-20",
     "reviewedBy": null,
     "reviewedAt": null
   },
@@ -307,5 +316,5 @@
     ],
     "notes": "The prompt, the expected graph and the plan target are authored in this repository; the export carries the dataset's identifier only. The dataset, and the Deep Umbra model the shadow nodes name, are SCOUT's (urban-toolkit/scout), used with the permission of its authors; the dataset carries no licence string."
   },
-  "notes": "Two scenarios over a shared context, SCOUT's buildings and a season Parameter node: in each, SCOUT's rasterizer, Deep Umbra, an Autark map of the shadow, the two maps on one color range, and a Raster Calculator taking the statistics of the shadow over the ground, the heights as its mask, Towers removed first reading the buildings through an Interaction node whose edit log removes SCOUT's 15 by building_id; and two Compare Scenarios nodes, a chart and a difference, with an Autark map of the difference after it."
+  "notes": "Two scenarios over a shared context, SCOUT's buildings and a season Parameter node: in each, SCOUT's rasterizer, Deep Umbra, an Autark map of the shadow, the two maps on one color range, and a Raster Calculator taking the statistics of the shadow over the ground, the heights as its mask, Towers removed first reading the buildings through an Interaction node whose edit log removes SCOUT's 15 by building_id; then Scout's Bars charting both scenarios' mean shadow from the statistics, and a Raster Calculator taking Towers removed's shadow minus Existing's, with an Autark map of that change after it."
 }

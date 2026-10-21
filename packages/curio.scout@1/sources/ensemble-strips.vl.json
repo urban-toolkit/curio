@@ -1,0 +1,60 @@
+{
+  "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
+  "data": {
+    "name": "inputs"
+  },
+  "encoding": {
+    "x": {
+      "field": "scenario_name",
+      "type": "nominal",
+      "title": null,
+      "axis": {
+        "labelAngle": 0
+      },
+      "sort": [!! scenario order !!]
+    },
+    "y": {
+      "field": "[!! y !!]",
+      "type": "quantitative",
+      "title": "[!! y_title !!]",
+      "axis": {
+        "labelExpr": "'[!! y_format !!]' === '' ? datum.label : format(datum.value, '[!! y_format !!]')"
+      }
+    }
+  },
+  "layer": [
+    {
+      "mark": {
+        "type": "tick",
+        "thickness": 2,
+        "size": 40,
+        "tooltip": true
+      },
+      "encoding": {
+        "color": {
+          "field": "scenario_name",
+          "type": "nominal",
+          "title": "Scenario",
+          "legend": null,
+          "scale": [!! scenario colors !!]
+        }
+      }
+    },
+    {
+      "mark": {
+        "type": "tick",
+        "color": "#111111",
+        "thickness": 4,
+        "size": 64
+      },
+      "encoding": {
+        "y": {
+          "field": "[!! y !!]",
+          "type": "quantitative",
+          "aggregate": "median",
+          "title": "[!! y_title !!]"
+        }
+      }
+    }
+  ]
+}

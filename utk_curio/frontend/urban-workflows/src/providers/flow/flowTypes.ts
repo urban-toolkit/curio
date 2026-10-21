@@ -27,4 +27,9 @@ export interface IPropagation {
 export interface NodeExecOutcome {
     /** The run failed: the runner runs nothing that depends on this node. */
     failed?: boolean;
+    /**
+     * Why, for a node that shows no output of its own to say it: one whose
+     * type no installed package provides names the type, as its card does.
+     */
+    message?: string;
 }

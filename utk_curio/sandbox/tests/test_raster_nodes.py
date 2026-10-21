@@ -1,4 +1,4 @@
-"""The Raster Calculator node (``scout.rasters@1``, SCOUT Rasters) runs the
+"""The Raster Calculator node (``curio.scout@1``, Scout) runs the
 code it starts with, the starter its package ships (the template's ``source``,
 ``sources/raster-calculator.py``, which the starters feed sends as it is), in
 process and in an isolated child: its cell operations give a raster on the
@@ -19,13 +19,16 @@ import numpy as np
 import pytest
 
 REPO = Path(__file__).resolve().parents[3]
-CALCULATOR = "scout.rasters/raster-calculator"
+CALCULATOR = "curio.scout/raster-calculator"
 #: The package that ships the node.
-PACKAGE_MANIFEST = REPO / "packages" / "scout.rasters@1" / "manifest.json"
+PACKAGE_MANIFEST = REPO / "packages" / "curio.scout@1" / "manifest.json"
+#: The modules a run of the package's node is handed: its ``scout_rasters``,
+#: which the node's code imports its operations from.
+PACKAGE_MODULES = {"root": str(PACKAGE_MANIFEST.parent / "sources"), "names": ["scout_rasters"]}
 #: The call a dropped Raster Calculator's code returns.
-SUBTRACT = 'return curio_raster_calculate("subtract", [input_0, input_1])'
+SUBTRACT = 'return raster_calculate("subtract", [input_0, input_1], output_file=curio_output_file)'
 #: The statistics call its code shows, commented, beside its cell operations.
-STATISTICS = "return curio_raster_statistics(input_0, mask=input_1)"
+STATISTICS = "return raster_statistics(input_0, mask=input_1)"
 
 
 def _template() -> dict:
@@ -58,7 +61,7 @@ def starters_statistics() -> str:
     """The starter returning the statistics it shows in place of its
     subtraction: its commented statistics call, uncommented."""
     code = starter()
-    shown = re.findall(r"^#\s+(return curio_raster_statistics\(.*\))$", code, re.M)
+    shown = re.findall(r"^#\s+(return raster_statistics\(.*\))$", code, re.M)
     assert shown == [STATISTICS], f"the starter shows {shown}, not one statistics call to return"
     assert code.count(SUBTRACT) == 1, code
     swapped = returning(code, STATISTICS)
@@ -93,9 +96,9 @@ def workspace(tmp_path, monkeypatch):
 
 
 def run_in_process(code, inputs, node_type, workspace):
-    """Run *code* on *inputs* as a Python node's play does: one raster, or a
-    tuple of them, one per input circle, each the code's input_k for its
-    circle k. ``(output, the value it holds)``."""
+    """Run *code* on *inputs* as a Python node's play does, handed its
+    package's modules: one raster, or a tuple of them, one per input circle,
+    each the code's input_k for its circle k. ``(output, the value it holds)``."""
     from utk_curio.sandbox.app.worker import _worker_init, execute_code
     from utk_curio.sandbox.util.parsers import load_from_duckdb, save_to_duckdb
 
@@ -108,13 +111,14 @@ def run_in_process(code, inputs, node_type, workspace):
     result = execute_code(
         textwrap.indent(code, "    "), file_path, node_type, data_type,
         save_dataset=False, media_dir=str(workspace / "media"), input_slots=slots,
+        package_modules=PACKAGE_MODULES,
     )
     assert result["stderr"] == "", result["stderr"]
     return result["output"], load_from_duckdb(result["output"]["path"])
 
 
 def test_the_node_is_scout_rasters_and_its_package_ships_the_starter():
-    """The type these tests run is a template of SCOUT Rasters, a Python code
+    """The type these tests run is a template of Scout, a Python code
     node whose starter is its package's ``sources/raster-calculator.py``, as
     Rasterize Buildings' is its own source. The starter is a starting point,
     not the node's whole content (no ``starterIsContent``)."""
@@ -133,7 +137,7 @@ def test_the_starter_returns_a_subtraction_and_lists_the_other_operations_statis
     assert code.endswith(f"\n{SUBTRACT}\n"), code
     for operation in ('"add"', '"subtract"', '"multiply"', '"divide"', '"choose"'):
         assert operation in code, operation
-    assert 'curio_raster_calculate("choose", [input_0, input_1, input_2], codes=[21, 31])' in code
+    assert 'raster_calculate("choose", [input_0, input_1, input_2], codes=[21, 31], output_file=curio_output_file)' in code
     assert f"\n#   {STATISTICS}\n" in code, code
     for words in ("as a table of one row", "where=lambda value: value < 1.08", "mask_values=[0]"):
         assert words in code, words
@@ -159,8 +163,8 @@ def test_a_raster_calculator_chooses_by_class(workspace):
     nbs = _raster(workspace / "nbs.tif", [[1.0, 2.0, 3.0]])
     no_nbs = _raster(workspace / "no_nbs.tif", [[10.0, 20.0, 30.0]])
     code = starter().replace(
-        'curio_raster_calculate("subtract", [input_0, input_1])',
-        'curio_raster_calculate("choose", [input_0, input_1, input_2], codes=[21, 31])',
+        'raster_calculate("subtract", [input_0, input_1], output_file=curio_output_file)',
+        'raster_calculate("choose", [input_0, input_1, input_2], codes=[21, 31], output_file=curio_output_file)',
     )
     _output, result = run_in_process(code, (classes, nbs, no_nbs), CALCULATOR, workspace)
     try:
@@ -181,7 +185,7 @@ def test_a_raster_calculators_statistics_keep_the_cells_its_mask_picks(workspace
     and mask_values=[0] keep the cells whose mask value is 0."""
     a = _raster(workspace / "a.tif", [[1.0, 2.0, -9999.0], [3.0, 4.0, 5.0]])
     mask = _raster(workspace / "mask.tif", [[1, 0, 0], [0, 0, 1]], dtype="uint8", nodata=None)
-    code = returning(starters_statistics(), "return curio_raster_statistics(input_0, mask=input_1, mask_values=[0])")
+    code = returning(starters_statistics(), "return raster_statistics(input_0, mask=input_1, mask_values=[0])")
     output, table = run_in_process(code, (a, mask), CALCULATOR, workspace)
     assert output["dataType"] == "dataframe"
     # The cells under a mask value of 0 that hold a value: 2, 3 and 4.
@@ -189,9 +193,11 @@ def test_a_raster_calculators_statistics_keep_the_cells_its_mask_picks(workspace
 
 
 def test_the_steps_run_in_an_isolated_child(tmp_path):
-    """The child installs the same helpers: a raster it returns is written in
-    its scratch directory, which the parent keeps."""
+    """The child imports the same modules, staged by the parent into its
+    scratch directory: a raster it returns is written there, which the parent
+    keeps."""
     from utk_curio.sandbox.isolation import child, zygote
+    from utk_curio.sandbox.util.staging import stage_package_modules
 
     scratch = tmp_path / "scratch"
     scratch.mkdir()
@@ -199,11 +205,13 @@ def test_the_steps_run_in_an_isolated_child(tmp_path):
     _raster(scratch / "b.tif", [[1.0, 2.0]]).close()
     inputs = {"kind": "sequence", "container": "list",
               "items": [{"kind": "raster", "file": "a.tif"}, {"kind": "raster", "file": "b.tif"}]}
+    staged = stage_package_modules(PACKAGE_MODULES, str(scratch))
 
     def run(code, node_type):
         manifest = child.run_node({
             "code": textwrap.indent(code, "    "), "node_type": node_type, "data_type": "outputs",
             "scratch_dir": str(scratch), "input": inputs, "input_slots": [0, 1], "session_imports": [], "limits": {},
+            "package_modules": staged,
         }, zygote.build_namespace_template)
         assert manifest["ok"], manifest["stderr"]
         return manifest
@@ -219,7 +227,7 @@ def test_the_steps_run_in_an_isolated_child(tmp_path):
     with rasterio.open(scratch / descriptor["file"]) as written:
         assert written.read(1).tolist() == [[4.0, 5.0]]
 
-    stats_code = returning(starters_statistics(), "return curio_raster_statistics(input_0, where=lambda value: value > 6)")
+    stats_code = returning(starters_statistics(), "return raster_statistics(input_0, where=lambda value: value > 6)")
     counted = run(stats_code, CALCULATOR)
     child.write_result(counted, str(scratch))
     assert supervisor.read_child_manifest(str(scratch))["output"]["kind"] == "dataframe"

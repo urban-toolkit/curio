@@ -4,8 +4,15 @@
  * stays the spec's own top-level `data`, as it always has; several inputs, or a
  * part of the spec that names one, read them as named datasets.
  *
+ * A spec that names the dataset `inputs` anywhere also reads every input's
+ * rows stacked in circle order, each named by its scenario's box
+ * (utils/scenarios/stackedInputs); a spec that does not name it stacks nothing.
+ *
  * Pure, so the canvas (utils/vegaInput) and the notebook export share it.
  */
+
+/** The dataset of every input's rows, stacked. */
+export const INPUTS_DATASET = "inputs";
 
 const isObject = (value: unknown): value is Record<string, any> =>
   value != null && typeof value === "object" && !Array.isArray(value);
@@ -45,7 +52,23 @@ function readsNamedDataBelowTop(spec: any): boolean {
   );
 }
 
+/**
+ * Whether any part of the spec names the dataset `inputs`: its top-level
+ * `data`, a layer's or a concatenated view's, a facet's inner spec, or a
+ * lookup's `from.data`.
+ */
+export function readsInputs(spec: any): boolean {
+  const isInputs = (data: unknown) => namesDataset(data) && (data as { name: string }).name === INPUTS_DATASET;
+  return viewsOf(spec).some(
+    (view) =>
+      isInputs(view.data) ||
+      (Array.isArray(view.transform) ? view.transform : []).some(
+        (step: any) => isObject(step?.from) && isInputs(step.from.data),
+      ),
+  );
+}
+
 /** Whether a spec reads a node's *inputCount* inputs as named datasets. */
 export function usesNamedDatasets(spec: any, inputCount: number): boolean {
-  return inputCount > 1 || readsNamedDataBelowTop(spec);
+  return inputCount > 1 || readsNamedDataBelowTop(spec) || readsInputs(spec);
 }

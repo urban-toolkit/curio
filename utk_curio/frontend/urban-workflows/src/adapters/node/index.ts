@@ -6,9 +6,9 @@ export { useSimpleVisBehavior } from './simpleVisBehavior';
 export { useDataPoolBehavior } from './dataPoolBehavior';
 export { useDataSummaryBehavior } from './dataSummaryBehavior';
 export { useAutkGrammarBehavior } from './autkGrammarBehavior';
+export { useAutkViewBehavior } from './autkViewBehavior';
 export { useSpatialJoinBehavior } from './spatialJoinBehavior';
 export { useParameterBehavior } from './parameterBehavior';
-export { useCompareScenariosBehavior } from './compareScenariosBehavior';
 export { useEditFeaturesBehavior } from './editFeaturesBehavior';
 export { useNoteBehavior } from './noteBehavior';
 // Note: a package's own behavior hooks live IN its package directory and

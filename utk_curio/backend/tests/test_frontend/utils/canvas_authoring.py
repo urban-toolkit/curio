@@ -8,6 +8,7 @@ from playwright.sync_api import (
     expect,
 )
 
+from .palettes import close_tools_palette, open_tools_palette, tools_palette_is_open
 from .run_all import wait_for_run_guard_released
 from .screenshots import park_pointer
 
@@ -400,8 +401,10 @@ def drag_to_canvas(page, source, *, at: tuple[float, float] | None = None,
     *source* is a locator for anything draggable that the canvas accepts: a
     built-in palette tile (``#tile-data-transformation``), a package palette row
     (``[data-pkg-template-id="..."]``), or a dataset row/card
-    (``[data-dataset-id="..."]``). *at* is an offset from the pane's top-left
-    corner; the pane centre is used when omitted.
+    (``[data-dataset-id="..."]``), in a palette that is open.
+    ``drag_builtin_to_canvas`` opens the Built-in palette around a tile's drag.
+    *at* is an offset from the pane's top-left corner; the pane centre is used
+    when omitted.
 
     Mind the geometry when dropping more than one node: a node renders 525x350
     at zoom 1, so offsets less than ~600px apart horizontally overlap, and the
@@ -463,6 +466,29 @@ def drag_to_canvas(page, source, *, at: tuple[float, float] | None = None,
     )
     node_id = created[0]["id"]
     node_locator(page, node_id).wait_for(state="visible", timeout=timeout)
+    return node_id
+
+
+def drag_builtin_to_canvas(page, tile, *, at: tuple[float, float] | None = None,
+                           timeout: float = 15000) -> str:
+    """Drag a built-in node's tile onto the canvas and return the new node's id.
+
+    The tiles are in the rail's Built-in palette, which starts closed, so this
+    opens it, drags the tile with ``drag_to_canvas``, and closes it again
+    unless it was open already. Left open, its panel covers the strip of canvas
+    beside the rail, where a later ``connect_nodes`` or click would land on the
+    panel and a frame would show it.
+
+    *tile* is the tile's selector, ``#tile-<template>`` (``#tile-data-loading``
+    for ``curio.builtin/data-loading@1``), or a locator for the tile. *at* and
+    *timeout* are ``drag_to_canvas``'s.
+    """
+    was_open = tools_palette_is_open(page, "builtin")
+    open_tools_palette(page, "builtin")
+    source = page.locator(tile) if isinstance(tile, str) else tile
+    node_id = drag_to_canvas(page, source, at=at, timeout=timeout)
+    if not was_open:
+        close_tools_palette(page, "builtin")
     return node_id
 
 
@@ -922,6 +948,16 @@ def read_node_output_text(page, node_id: str, *, timeout: float = 10000) -> str:
     box = node_locator(page, node_id).locator("[data-curio-node-output]").first
     box.wait_for(state="visible", timeout=timeout)
     return box.text_content() or ""
+
+
+#: The artifact a node's run saved its output to, from its outcome's "Saved to
+#: file:" line, or null before a run saved one.
+_OUTPUT_ARTIFACT_JS = """(id) => {
+    const node = window.__curio_reactFlow.getNodes().find((n) => n.id === id);
+    const content = node && node.data && node.data.output && node.data.output.content;
+    const match = typeof content === "string" ? content.match(/Saved to file: (\\S+)/) : null;
+    return match ? match[1] : null;
+}"""
 
 
 def activate_header_icon(locator) -> None:

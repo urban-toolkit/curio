@@ -185,7 +185,7 @@ export function NodeTemplateConfigModal({
           </label>
         </div>
 
-        <p className={styles.sectionTitle}>Editor tabs</p>
+        <p className={styles.sectionTitle}>Header</p>
         <div className={styles.checkGrid}>
           <label className={styles.checkRow}>
             <input
@@ -193,7 +193,7 @@ export function NodeTemplateConfigModal({
               checked={config.hasProvenance}
               onChange={(e) => patch({ hasProvenance: e.target.checked })}
             />
-            Provenance tab
+            Provenance button
           </label>
         </div>
 

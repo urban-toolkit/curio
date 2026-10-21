@@ -1,0 +1,80 @@
+{
+  "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
+  "data": {
+    "name": "inputs"
+  },
+  "transform": [
+    {
+      "calculate": "'[!! facet !!]' === '' ? '' : datum['[!! facet !!]']",
+      "as": "curio_panel"
+    }
+  ],
+  "facet": {
+    "field": "curio_panel",
+    "type": "nominal",
+    "title": null,
+    "sort": null,
+    "header": {
+      "labelFontWeight": "bold"
+    }
+  },
+  "columns": 2,
+  "spec": {
+    "width": 230,
+    "height": 110,
+    "encoding": {
+      "x": {
+        "field": "[!! x !!]",
+        "type": "quantitative",
+        "title": "[!! x_title !!]",
+        "scale": {
+          "nice": false
+        }
+      },
+      "color": {
+        "field": "scenario_name",
+        "type": "nominal",
+        "title": "Scenario",
+        "scale": [!! scenario colors !!]
+      }
+    },
+    "layer": [
+      {
+        "mark": {
+          "type": "area",
+          "opacity": 0.2
+        },
+        "encoding": {
+          "y": {
+            "field": "[!! low !!]",
+            "type": "quantitative",
+            "title": "[!! y_title !!]",
+            "axis": {
+              "labelExpr": "'[!! y_format !!]' === '' ? datum.label : format(datum.value, '[!! y_format !!]')"
+            }
+          },
+          "y2": {
+            "field": "[!! high !!]"
+          }
+        }
+      },
+      {
+        "mark": {
+          "type": "line",
+          "strokeWidth": 2,
+          "tooltip": true
+        },
+        "encoding": {
+          "y": {
+            "field": "[!! y !!]",
+            "type": "quantitative",
+            "title": "[!! y_title !!]",
+            "axis": {
+              "labelExpr": "'[!! y_format !!]' === '' ? datum.label : format(datum.value, '[!! y_format !!]')"
+            }
+          }
+        }
+      }
+    ]
+  }
+}

@@ -31,7 +31,8 @@ jest.mock('../../providers/StarterProvider', () => ({
       if (type === 'model.example.tiny/image-segmentation@1') {
         return [{ id: 's2', type, name: 'image-segmentation', description: '', accessLevel: 'ANY', code: DEFAULT_CELL, custom: false }];
       }
-      if (type === 'scout.rasters/raster-calculator@1') return mockCalculatorStarters(type);
+      if (type === 'curio.scout/raster-calculator@1') return mockCalculatorStarters(type);
+      if (type === 'curio.scout/dots-with-a-range@1') return mockChartStarters(type);
       return [];
     },
   }),
@@ -45,18 +46,18 @@ import { loadIconRefs } from '../../registry/iconRegistry';
 import { BUILTIN_PACKAGE_ID, registerPackageTemplates } from '../../registry/packagesClient';
 import { clearPackageNodes } from '../../registry/nodeRegistry';
 import { getBehavior } from '../../registry/behaviorRegistry';
-import { packageStarterCode } from '../../adapters/node/packageNodeBehavior';
+import { packageStarterCode, usePackageNodeBehavior } from '../../adapters/node/packageNodeBehavior';
 import { useStarterContext } from '../../providers/StarterProvider';
 import { behaviorDataView } from '../../utils/behaviorDataView';
 import type { NodeBehaviorData, UseNodeStateReturn } from '../../registry/types';
 
 const REPO_ROOT = path.resolve(__dirname, '../../../../../..');
-/** SCOUT Rasters, as the repository ships it. */
-const SCOUT_RASTERS = path.join(REPO_ROOT, 'packages', 'scout.rasters@1');
+/** Scout, as the repository ships it. */
+const SCOUT = path.join(REPO_ROOT, 'packages', 'curio.scout@1');
 
-/** The starter SCOUT Rasters ships for its Raster Calculator. */
+/** The starter Scout ships for its Raster Calculator. */
 function readCalculatorStarter(): string {
-  return fs.readFileSync(path.join(SCOUT_RASTERS, 'sources', 'raster-calculator.py'), 'utf-8');
+  return fs.readFileSync(path.join(SCOUT, 'sources', 'raster-calculator.py'), 'utf-8');
 }
 
 /** What the starters feed (`application/starters.py`) lists for the Raster
@@ -66,6 +67,20 @@ function mockCalculatorStarters(type: string) {
   return [{
     id: 's3', type, name: 'raster-calculator', description: '', accessLevel: 'ANY',
     code: readCalculatorStarter(), custom: false,
+  }];
+}
+
+/** The spec Scout ships for its Dots with a range. */
+function readChartStarter(): string {
+  return fs.readFileSync(path.join(SCOUT, 'sources', 'dots-with-a-range.vl.json'), 'utf-8');
+}
+
+/** What the starters feed lists for Dots with a range: its package's
+ *  `sources/dots-with-a-range.vl.json`, under that file's name. */
+function mockChartStarters(type: string) {
+  return [{
+    id: 's4', type, name: 'dots-with-a-range.vl', description: '', accessLevel: 'ANY',
+    code: readChartStarter(), custom: false,
   }];
 }
 
@@ -193,9 +208,9 @@ describe('a model package\'s template without a source', () => {
   });
 });
 
-/** SCOUT Rasters with its Raster Calculator's template, read from its manifest. */
+/** Scout with its Raster Calculator's template, read from its manifest. */
 function calculatorPack(): StarterPack {
-  const manifest = JSON.parse(fs.readFileSync(path.join(SCOUT_RASTERS, 'manifest.json'), 'utf-8'));
+  const manifest = JSON.parse(fs.readFileSync(path.join(SCOUT, 'manifest.json'), 'utf-8'));
   const template = manifest.templates.find((t: { id: string }) => t.id === 'raster-calculator');
   return {
     packageId: manifest.id,
@@ -234,7 +249,7 @@ function calculatorPack(): StarterPack {
   };
 }
 
-describe('SCOUT Rasters\' Raster Calculator, as the repository ships it', () => {
+describe('Scout\'s Raster Calculator, as the repository ships it', () => {
   beforeEach(() => clearPackageNodes());
   const { getStarters } = useStarterContext();
 
@@ -247,8 +262,8 @@ describe('SCOUT Rasters\' Raster Calculator, as the repository ships it', () => 
 
   test('the starter returns a subtraction and lists the other operations, statistics among them', () => {
     const starter = readCalculatorStarter();
-    expect(starter.endsWith('\nreturn curio_raster_calculate("subtract", [input_0, input_1])\n')).toBe(true);
-    expect(starter).toContain('\n#   return curio_raster_statistics(input_0, mask=input_1)\n');
+    expect(starter.endsWith('\nreturn raster_calculate("subtract", [input_0, input_1], output_file=curio_output_file)\n')).toBe(true);
+    expect(starter).toContain('\n#   return raster_statistics(input_0, mask=input_1)\n');
     expect(starter).toContain('as a table of one row');
     expect(starter).toContain('where=lambda value: value < 1.08');
     expect(starter).toContain('mask_values=[0]');
@@ -256,14 +271,14 @@ describe('SCOUT Rasters\' Raster Calculator, as the repository ships it', () => 
 
   test('a restored node keeps the code a dataflow carries, and one saved with no code opens empty', () => {
     const starter = readCalculatorStarter();
-    expect(runBehavior(calculatorPack(), 'return curio_raster_calculate("add", [input_0, input_1])')).not.toContain(starter);
+    expect(runBehavior(calculatorPack(), 'return raster_calculate("add", [input_0, input_1], output_file=curio_output_file)')).not.toContain(starter);
     expect(runBehavior(calculatorPack(), '').filter((code) => code !== undefined)).toEqual([]);
   });
 
   test('is a package node with its icon and the PACKAGE pill, and core holds no node or behavior of its own', async () => {
     const read = (dir: string) =>
       JSON.parse(fs.readFileSync(path.join(REPO_ROOT, 'packages', dir, 'manifest.json'), 'utf-8'));
-    const templates = read('scout.rasters@1').templates;
+    const templates = read('curio.scout@1').templates;
     const template = templates.find((t: { id: string }) => t.id === 'raster-calculator');
     expect([template.behavior, template.source]).toEqual(['code', 'sources/raster-calculator.py']);
     expect(read(`${BUILTIN_PACKAGE_ID}@1`).templates.map((t: { id: string }) => t.id)).not.toContain('raster-calculator');
@@ -275,12 +290,96 @@ describe('SCOUT Rasters\' Raster Calculator, as the repository ships it', () => 
     // Its icon is loaded on demand, as the app loads it before building descriptors.
     await loadIconRefs([template.iconRef]);
     const [descriptor] = registerPackageTemplates([calculatorPack()]);
-    expect(descriptor.package?.packageId).toBe('scout.rasters');
-    expect(descriptor.package?.name).toBe('SCOUT Rasters');
+    expect(descriptor.package?.packageId).toBe('curio.scout');
+    expect(descriptor.package?.name).toBe('Scout');
     expect(descriptor.package?.source).toBe('sources/raster-calculator.py');
     expect(descriptor.icon).toBe(faCalculator);
     expect(descriptor.badge).toBe('PACKAGE');
     expect(descriptor.category).toBe('computation');
+  });
+});
+
+type ShippedPack = Parameters<typeof registerPackageTemplates>[0][number];
+
+/** Scout with its Dots with a range's template, read from its manifest. */
+function chartPack(): ShippedPack {
+  const manifest = JSON.parse(fs.readFileSync(path.join(SCOUT, 'manifest.json'), 'utf-8'));
+  const template = manifest.templates.find((t: { id: string }) => t.id === 'dots-with-a-range');
+  return {
+    packageId: manifest.id,
+    major: 1,
+    version: manifest.version,
+    name: manifest.name,
+    publisher: manifest.publisher,
+    description: manifest.description,
+    license: manifest.license,
+    permissions: [],
+    lineage: null,
+    templates: [{
+      id: `${manifest.id}/dots-with-a-range@1`,
+      templateId: template.id,
+      label: template.label,
+      category: template.category,
+      engine: template.engine,
+      description: template.description,
+      icon: null,
+      iconRef: template.iconRef,
+      behavior: template.behavior,
+      paletteOrder: template.paletteOrder,
+      editor: template.editor,
+      hasCode: template.hasCode,
+      hasWidgets: template.hasWidgets,
+      hasGrammar: template.hasGrammar,
+      grammarId: template.grammarId,
+      badge: template.badge,
+      inputPorts: template.inputPorts,
+      outputPorts: template.outputPorts,
+      source: template.source,
+      widgets: template.widgets,
+      bidirectional: false,
+      containerStyle: null,
+      hasProvenance: null,
+    }],
+  };
+}
+
+/** The starter injection on a node of Dots with a range with *data*: every
+ *  spec it offers the editor, and the node's data after. Run alone, as the
+ *  chart's own behavior (`vegaBehavior`) draws on a canvas this suite does not
+ *  hold. */
+function dropChart(data: Record<string, unknown>) {
+  const [desc] = registerPackageTemplates([chartPack()]);
+  const node: Record<string, unknown> = { nodeType: desc.id, ...data };
+  const nodeState = { code: typeof data.code === 'string' ? data.code : '' } as unknown as UseNodeStateReturn;
+  const offered: Array<string | undefined> = [];
+  renderHook(() => {
+    const result = usePackageNodeBehavior(node as unknown as NodeBehaviorData, nodeState);
+    offered.push(result.defaultValueOverride);
+    return result;
+  });
+  return { offered, node };
+}
+
+describe('Scout\'s charts, as the repository ships them (the plan answering komar41\'s review, step 6.2)', () => {
+  beforeEach(() => clearPackageNodes());
+
+  test('a fresh drop opens with its template\'s spec, which reads its inputs, and its widgets', () => {
+    const { offered, node } = dropChart({});
+    const starter = readChartStarter();
+    expect(offered).toContain(starter);
+    // Read with each chip that stands on its own (its scenarios' scale) as null.
+    expect(JSON.parse(starter.replace(/(?<=[:[,]\s*)\[!!.*?!!\]/g, 'null')).data).toEqual({ name: 'inputs' });
+    expect(node.widgets).toEqual(chartPack().templates[0].widgets);
+  });
+
+  test('a node saved with its spec edited reloads with the edit, and with its widgets as saved', () => {
+    const edited = readChartStarter().replace('"size": 60', '"size": 140');
+    expect(edited).not.toBe(readChartStarter());
+    const widgets = [{ name: 'category', type: 'text', label: 'Category column', default: 'category', value: 'park' }];
+    const { offered, node } = dropChart({ code: edited, widgets });
+    expect(offered.filter((code) => code !== undefined)).toEqual([]);
+    expect(node.code).toBe(edited);
+    expect(node.widgets).toBe(widgets);
   });
 });
 

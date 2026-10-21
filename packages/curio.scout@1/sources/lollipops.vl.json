@@ -1,0 +1,64 @@
+{
+  "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
+  "data": {
+    "name": "inputs"
+  },
+  "layer": [
+    {
+      "mark": {
+        "type": "rule"
+      },
+      "encoding": {
+        "y": {
+          "field": "scenario_name",
+          "type": "nominal",
+          "title": "Scenario",
+          "sort": [!! scenario order !!]
+        },
+        "x": {
+          "field": "[!! value !!]",
+          "type": "quantitative",
+          "aggregate": "[!! combine !!]",
+          "title": "[!! x_title !!]"
+        },
+        "x2": {
+          "datum": 0
+        },
+        "color": {
+          "field": "scenario_name",
+          "type": "nominal",
+          "title": "Scenario",
+          "scale": [!! scenario colors !!]
+        }
+      }
+    },
+    {
+      "mark": {
+        "type": "point",
+        "filled": true,
+        "size": 120,
+        "tooltip": true
+      },
+      "encoding": {
+        "y": {
+          "field": "scenario_name",
+          "type": "nominal",
+          "title": "Scenario",
+          "sort": [!! scenario order !!]
+        },
+        "x": {
+          "field": "[!! value !!]",
+          "type": "quantitative",
+          "aggregate": "[!! combine !!]",
+          "title": "[!! x_title !!]"
+        },
+        "color": {
+          "field": "scenario_name",
+          "type": "nominal",
+          "title": "Scenario",
+          "scale": [!! scenario colors !!]
+        }
+      }
+    }
+  ]
+}

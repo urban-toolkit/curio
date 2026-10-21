@@ -795,8 +795,8 @@ def _agent_name(_src: _Sources, agent_id: str) -> str:
 
 def _template_label(src: _Sources, coord: str) -> str:
     """A template's label, by ``<package id>/<template id>``: a built-in
-    one's, or one's of a package Curio ships, such as SCOUT Comparison's
-    charts (``packages/scout.comparison@1``)."""
+    one's, or one's of a package Curio ships, such as Scout's charts
+    (``packages/curio.scout@1``)."""
     package_id = coord.rpartition("/")[0]
     where = BUILTIN_MANIFEST if package_id == BUILTIN_PACKAGE else f"packages/{package_id}"
     try:
@@ -826,6 +826,20 @@ def _input_chip(_src: _Sources, text: str) -> str:
     if not slot.strip().isdigit():
         raise PromptTemplateError(f"an input chip names a circle number, not {text!r}")
     return reference_text(input_reference_inner(int(slot), column or None))
+
+
+def _scenario_chip(_src: _Sources, what: str) -> str:
+    """A chip a Vega-Lite or Autark spec writes its scenarios with: ``colors``,
+    ``text_colors`` or ``order`` for the scale or the names of every input's
+    box, ``input.1`` for the color of input_1's box (``reference_text``)."""
+    from utk_curio.backend.app.execution.code_references import SCENARIO_LISTS, reference_text
+
+    if what in SCENARIO_LISTS:
+        return reference_text(f"scenario {what}")
+    prefix, _, slot = what.partition(".")
+    if prefix != "input" or not slot.isdigit():
+        raise PromptTemplateError(f"a scenario chip is {', '.join(SCENARIO_LISTS)} or input.<k>, not {what!r}")
+    return reference_text(f"scenario input_{int(slot)}")
 
 
 def _widget_kinds(_src: _Sources) -> str:
@@ -1063,6 +1077,7 @@ PROMPT_FIELDS: dict[str, PromptField] = {
     )},
     "inputs.handles": PromptField(_input_handles),
     "inputs.chip": PromptField(_input_chip, takes_arg=True),
+    "scenarios.chip": PromptField(_scenario_chip, takes_arg=True),
     "widgets.kinds": PromptField(_widget_kinds),
     "widgets.reference": PromptField(_widget_reference, takes_arg=True),
     "widgets.shared": PromptField(_shared_reference, takes_arg=True),

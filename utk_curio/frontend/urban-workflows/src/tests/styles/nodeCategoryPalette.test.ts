@@ -148,7 +148,8 @@ describe("node category palette", () => {
     "constants/nodeCategoryPalette.ts",
     "utils/graphPreviewCategories.ts",
     "components/scenarios/catalog/inProjectRows.ts",
-    "components/menus/provenance/TrillProvenanceWindow.tsx",
+    "components/provenance/DataflowProvenance.tsx",
+    "utils/dataflowVersions.ts",
   ])("%s names no package, node type or template id", (file) => {
     // A node's colour comes from the category its template declares, so no
     // thumbnail or palette file keeps a list of node types of its own.

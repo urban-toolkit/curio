@@ -36,7 +36,6 @@ jest.mock("../../providers/CollaborationProvider", () => ({
 }));
 
 jest.mock("../../components/editing/WidgetsEditor", () => ({ __esModule: true, default: () => null }));
-jest.mock("../../components/editing/NodeProvenance", () => ({ __esModule: true, default: () => null }));
 jest.mock("../../components/editing/CodeEditor", () => ({ __esModule: true, default: () => <div data-testid="code-editor" /> }));
 
 import NodeEditor from "../../components/editing/NodeEditor";
@@ -173,11 +172,6 @@ describe("other nodes shown as notebook cells", () => {
     expect(el.style.maxHeight).toBe("360px");
     expect(el.style.overflow).toBe("auto");
     expect(el.style.height).not.toBe("100%");
-  });
-
-  test("a Compare Scenarios chart gets a definite 400px, as an Autark map does", () => {
-    const { container } = mount(true, contentProps("curio.builtin/compare-scenarios"));
-    expect(contentMount(container).style.height).toBe("400px");
   });
 
   test("a package's body, sized for a node, gets a definite height rather than collapsing", () => {

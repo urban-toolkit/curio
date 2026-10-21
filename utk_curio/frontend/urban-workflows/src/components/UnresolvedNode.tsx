@@ -1,8 +1,10 @@
-import React, { useMemo } from "react";
+import React, { useMemo, useSyncExternalStore } from "react";
 import { Position, useEdges, useNodes, type Edge } from "reactflow";
 
 import { useNotebookViewContext } from "../providers/flow/notebookViewContext";
 import { useNodeCatalogDrawer } from "../providers/packages/NodeCatalogDrawerProvider";
+import { isPackageRegistered, subscribeToRegistry } from "../registry/nodeRegistry";
+import { splitCanonicalNodeType } from "../registry/packageKeys";
 import type { HandleDef } from "../registry/types";
 import { notebookCellBox } from "../utils/notebookLayout";
 import { NodeHandles } from "./nodes/NodeHandles";
@@ -18,7 +20,10 @@ import { NodeHandles } from "./nodes/NodeHandles";
  * stuck on a spinner-less placeholder, indefinitely, for a package that was
  * never going to arrive (#233).
  *
- * The second case now says so and offers the install.
+ * The second case now says so and offers the install. Unless the package is
+ * installed and only this type is gone from it, as a saved Compare Scenarios or
+ * Merge Flow node is from Builtin (#1048): then there is nothing to install,
+ * and the card says the package no longer has it.
  *
  * Both cases render HANDLES, which is the other half of that report. React
  * Flow reads a node's ports out of the DOM; a placeholder with no
@@ -38,6 +43,18 @@ export function packageIdFromNodeType(nodeType: unknown): string | null {
   if (slash <= 0) return null;
   const packageId = nodeType.slice(0, slash);
   return packageId.includes(".") ? packageId : null;
+}
+
+/**
+ * What a node whose type nothing provides says of itself, once the registry has
+ * settled: its card's title, which names the type. It is also what the node
+ * reports when a run asks it to run (`UniversalNode`), and a run on the server
+ * fails such a node with the same words (`execution/run_plan.missing_type_message`).
+ */
+export function unresolvedNodeMessage(nodeType: string): string {
+  return packageIdFromNodeType(nodeType)
+    ? `No installed package provides ${nodeType}`
+    : `Unrecognized node type: ${nodeType || "(empty)"}`;
 }
 
 /** A readable name for a package id: `curio.weather` -> `Weather`. */
@@ -103,6 +120,14 @@ export function UnresolvedNode({
   const notebook = useNotebookViewContext();
   const { openNodeCatalogDrawer } = useNodeCatalogDrawer();
   const packageId = packageIdFromNodeType(nodeType);
+  // Whether the account has this type's package (at the type's major, when it
+  // names one), followed as the registry refreshes.
+  const packageRegistered = useSyncExternalStore(
+    subscribeToRegistry,
+    () => packageId !== null
+      && isPackageRegistered(packageId, splitCanonicalNodeType(nodeType)?.major),
+    () => false,
+  );
 
   const handles = (
     <NodeHandles
@@ -162,7 +187,7 @@ export function UnresolvedNode({
           background: "#f8fafc",
           color: "#475569",
         }}
-        title={`Unrecognized node type: ${nodeType || "(empty)"}`}
+        title={unresolvedNodeMessage(nodeType)}
         data-testid="unrecognized-node"
       >
         {handles}
@@ -181,6 +206,34 @@ export function UnresolvedNode({
   }
 
   const name = packageDisplayName(packageId);
+  if (packageRegistered) {
+    // Terminal as well (#1048). The account has this package, since the
+    // registry holds nodes of it, but not this type: the package dropped it.
+    // Slate and no Install button, as above, since installing changes nothing.
+    return (
+      <div
+        style={{
+          ...shell,
+          border: "1px dashed #94a3b8",
+          background: "#f8fafc",
+          color: "#475569",
+        }}
+        title={unresolvedNodeMessage(nodeType)}
+        data-testid="removed-node-type"
+      >
+        {handles}
+        <strong style={{ color: "#334155", fontSize: 12 }}>
+          Removed node type
+        </strong>
+        <div style={{ marginTop: 4 }}>
+          This dataflow asks for <strong>{nodeType}</strong>, which{" "}
+          <strong>{name}</strong> no longer has. It may come from an older
+          version of {name}.
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div
       style={{
@@ -191,7 +244,7 @@ export function UnresolvedNode({
       }}
       // The full coordinate, for anyone reading a bug report rather than the
       // screen.
-      title={`No installed package provides ${nodeType}`}
+      title={unresolvedNodeMessage(nodeType)}
       data-testid="unresolved-node"
     >
       {handles}

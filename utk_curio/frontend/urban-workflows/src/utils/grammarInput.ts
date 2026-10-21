@@ -62,6 +62,9 @@ export type GrammarFrame = {
 
 export type GrammarInput = {
   frames: GrammarFrame[];
+  /** With `values`: the inputs that are values, by the position of their
+   * circle, each as the plain value it holds. */
+  values?: Array<{ circle: number; value: unknown }>;
   /** Set when the node has nothing to draw from this input and should say why. */
   emptyReason?: NodeEmptyReason;
   /** The sentence the node shows for it. */
@@ -81,12 +84,36 @@ export type ReadOptions = {
   circles?: boolean;
   /** Accept rasters, as frames that say where the raster is (Autark). */
   rasters?: boolean;
+  /** Accept inputs that are values (a number, a text, true or false, a list
+   * or a dict), kept as the plain values they hold in `values`: a Vega-Lite
+   * spec that stacks its inputs as `inputs` reads them as rows. */
+  values?: boolean;
   /** Read the 100-row preview instead of the whole artifact (starter specs). */
   preview?: boolean;
 };
 
 const FRAME_TYPES = new Set<string>(["dataframe", "geodataframe"]);
 const BUNDLE_TYPES = new Set<string>(["outputs", "list", "dict"]);
+/** The envelopes the sandbox writes a value in (`parseOutput`). */
+const VALUE_TYPES = new Set<string>(["int", "float", "bool", "str", "list", "dict"]);
+
+/** Whether *item* is a value's envelope. */
+const isValueEnvelope = (item: unknown): item is { dataType: string; data: unknown } =>
+  isObject(item) && typeof item.dataType === "string" && VALUE_TYPES.has(item.dataType) && "data" in item;
+
+/** The plain value a value's envelope holds, as Python reads it back
+ * (`parseInput`): a list's items each unwrapped too, and a frame among them
+ * kept in its envelope. A float that is no number (NaN) is written as null
+ * under `float` (`parseOutput`), and is read as the number it is, not as a
+ * missing value. */
+function plainValue(envelope: { dataType: string; data: unknown }): unknown {
+  const { dataType, data } = envelope;
+  if (dataType === "list" && Array.isArray(data)) {
+    return data.map((item) => (isValueEnvelope(item) ? plainValue(item) : item));
+  }
+  if (dataType === "float" && data === null) return Number.NaN;
+  return data;
+}
 
 /**
  * The layer type a geodataframe's own metadata names (`gdf.metadata =
@@ -133,7 +160,7 @@ function frameOf(
   };
 }
 
-type RasterOptions = { rasters?: boolean; source?: string };
+type RasterOptions = { rasters?: boolean; source?: string; values?: boolean };
 
 function rasterFrameOf(
   payload: RasterPayload,
@@ -202,11 +229,14 @@ function asFeatureCollection(value: any): any | null {
  *
  * With `rasters`, a raster becomes a frame too; `source` is the artifact the
  * payload was read from, which is where a Python raster in it is loaded from.
+ * With `values`, a bundle item that is a value comes back in `values`, as the
+ * plain value it holds.
  */
 export function framesFromPayload(value: any, opts: RasterOptions = {}): {
   frames: GrammarFrame[];
   refs: Array<{ index: number; ref: any }>;
   skipped: string[];
+  values?: Array<{ circle: number; value: unknown }>;
 } {
   const frames: GrammarFrame[] = [];
   const refs: Array<{ index: number; ref: any }> = [];
@@ -244,6 +274,7 @@ export function framesFromPayload(value: any, opts: RasterOptions = {}): {
   }
 
   if (isObject(payload) && payload.dataType === "outputs" && Array.isArray(payload.data)) {
+    const values: Array<{ circle: number; value: unknown }> = [];
     payload.data.forEach((item: any, index: number) => {
       // A circle left out (an Interaction node's, on an Autark map) brings nothing.
       if (item === null) return;
@@ -254,11 +285,13 @@ export function framesFromPayload(value: any, opts: RasterOptions = {}): {
         frames.push(frameOf(item.dataType, item.data, item, null, { fromBundle: true, index, circle: index }));
       } else if (raster) {
         frames.push(raster);
+      } else if (opts.values && isValueEnvelope(item)) {
+        values.push({ circle: index, value: plainValue(item) });
       } else {
         skipped.push(`${isObject(item) ? item.dataType ?? "an item" : "an item"} at position ${index}`);
       }
     });
-    return { frames, refs, skipped };
+    return opts.values ? { frames, refs, skipped, values } : { frames, refs, skipped };
   }
 
   // A layer array from an upstream Autark node: `{name, type, geojson}` records.
@@ -297,6 +330,7 @@ export async function readGrammarInput(input: any, opts: ReadOptions): Promise<G
       || (!!opts.bundles && BUNDLE_TYPES.has(type))
       || (!!opts.circles && type === "outputs")
       || (!!opts.rasters && type === "raster")
+      || (!!opts.values && VALUE_TYPES.has(type))
     );
 
   // A reference that names its type is gated before anything is fetched.
@@ -331,10 +365,17 @@ export async function readGrammarInput(input: any, opts: ReadOptions): Promise<G
     return { frames: [frameOf(dataType, payload, envelope, input, { fromBundle: false, index: 0, name: named })] };
   }
 
+  // A value, read as itself by a spec that stacks its inputs.
+  const asValue = opts.values && isObject(envelope) ? { ...envelope, dataType } : null;
+  if (asValue && isValueEnvelope(asValue)) {
+    return { frames: [], values: [{ circle: 0, value: plainValue(asValue) }] };
+  }
+
   const rasterOpts: RasterOptions = { rasters: opts.rasters };
-  const found = framesFromPayload(envelope, { ...rasterOpts, source });
+  const found = framesFromPayload(envelope, { ...rasterOpts, source, values: opts.values });
   const frames = [...found.frames];
   const skipped = [...found.skipped];
+  const values = [...(found.values ?? [])];
   for (const { index, ref } of found.refs) {
     if (opts.rasters && ref.dataType === "raster") {
       frames.push(rasterFrameOf({ artifact: ref.path }, null, { fromBundle: true, index, circle: index }));
@@ -344,6 +385,11 @@ export async function readGrammarInput(input: any, opts: ReadOptions): Promise<G
     const type = ref.dataType ?? fetched?.dataType;
     if (FRAME_TYPES.has(type) && fetched?.data != null) {
       frames.push(frameOf(type, fetched.data, fetched, ref, { fromBundle: true, index, circle: index }));
+      continue;
+    }
+    const fetchedValue = opts.values && isObject(fetched) ? { ...fetched, dataType: type } : null;
+    if (fetchedValue && isValueEnvelope(fetchedValue)) {
+      values.push({ circle: index, value: plainValue(fetchedValue) });
       continue;
     }
     // An input that is itself a bundle of layers (an Autark node's tables, a
@@ -365,8 +411,9 @@ export async function readGrammarInput(input: any, opts: ReadOptions): Promise<G
   if (named && frames.length === 1) frames[0] = { ...frames[0], name: named };
   // Stable, so the layers one input brought keep their order.
   frames.sort((a, b) => a.circle - b.circle || a.index - b.index);
+  values.sort((a, b) => a.circle - b.circle);
 
-  if (frames.length === 0) {
+  if (frames.length === 0 && values.length === 0) {
     return {
       frames: [],
       emptyReason: "input-type-rejected",
@@ -374,5 +421,5 @@ export async function readGrammarInput(input: any, opts: ReadOptions): Promise<G
       ...(skipped.length ? { skipped } : {}),
     };
   }
-  return { frames, ...(skipped.length ? { skipped } : {}) };
+  return { frames, ...(values.length ? { values } : {}), ...(skipped.length ? { skipped } : {}) };
 }

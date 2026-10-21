@@ -37,10 +37,9 @@ def took_place():
     """Say that the run on this thread has its place in the sandbox.
 
     Called where each queue lets a run through. Only a run's first call
-    counts: a run that queues again later (a Compare Scenarios node's Node
-    slot after its Python run, the retry after a Node crash) is already
-    running. Outside a reply, as in a direct call to the executors, it does
-    nothing.
+    counts: a run that queues again later (the retry after a Node crash) is
+    already running. Outside a reply, as in a direct call to the executors, it
+    does nothing.
     """
     placed = getattr(_this_run, "placed", None)
     if placed is not None and not placed.is_set():

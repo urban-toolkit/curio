@@ -6,8 +6,7 @@ import CodeEditor from "./CodeEditor";
 import GrammarEditor from "./GrammarEditor";
 import WidgetsEditor from "./WidgetsEditor";
 import { NodeType } from "../../constants";
-import { NodeTemplateId } from "../../registry/types";
-import NodeProvenance from "./NodeProvenance";
+import type { GrammarRedraw, NodeTemplateId } from "../../registry/types";
 import Col from "react-bootstrap/Col";
 import Nav from "react-bootstrap/Nav";
 import Row from "react-bootstrap/Row";
@@ -26,12 +25,16 @@ import { OverlayTrigger, Tooltip } from "react-bootstrap";
 import { ICodeData } from "../../types";
 import { useFlowContext } from "../../providers/FlowProvider";
 import { useNotebookViewContext } from "../../providers/flow/notebookViewContext";
+import { useProvenanceDrawerOptional } from "../../providers/provenanceDrawerContext";
 import { resolveInitialEditorTab } from "../../utils/canvasTemplateConfig";
+import { resolveNodeDisplayLabel } from "../../utils/palettePackageFactoryDraft";
 import { unversionedNodeType } from "../../utils/flowNodeCanonicalType";
 import { notebookOutputBox } from "../../utils/notebookLayout";
 import { useNodeHeaderSlot } from "./nodeHeaderSlot";
 import { normalizeWidgets, type WidgetDef } from "../../utils/widgets/widgetModel";
+import { isVegaLiteNodeType } from "../../registry/vegaLiteNodes";
 import {
+    VEGA_LITE,
     describeEmptyInputs,
     describeReferenceProblems,
     resolveReferences,
@@ -45,6 +48,26 @@ import { normalizeSelections, type SelectionTag } from "../../utils/references/s
 
 const NO_WIDGETS: WidgetDef[] = [];
 const NO_SELECTIONS: SelectionTag[] = [];
+
+/** What one resolution of the node's code came from: the code as written,
+ * its chips unresolved, and the scope they were resolved in. */
+type Resolution = { code: string; written: string; scope: ReferenceScope };
+
+/**
+ * How the spec of *resolution* is written again for new scenario labels: its
+ * chips resolved in the same scope, each input's label replaced by *labels*',
+ * so its widgets, inputs and tags stay as the run read them. Null when a chip
+ * no longer resolves.
+ */
+function redrawOf(resolution: Resolution, language: CodeLanguage, grammar: string | undefined): GrammarRedraw {
+    return (labels) => {
+        const inputs = resolution.scope.inputs.map((input) =>
+            labels.has(input.slot) ? { ...input, scenario: labels.get(input.slot) } : input,
+        );
+        const { code, problems } = resolveReferences(resolution.written, { ...resolution.scope, inputs }, language, grammar);
+        return problems.length > 0 ? null : code;
+    };
+}
 
 type NodeEditorProps = {
     outputId?: string;
@@ -142,6 +165,10 @@ function NodeEditor({
         : unversionedNodeType(nodeType) === NodeType.JS_COMPUTATION
             ? "javascript"
             : "python";
+    // A Vega-Lite chart's spec, the built-in node's or a package template's
+    // (registry/vegaLiteNodes): its references write a column's name escaped
+    // where Vega-Lite reads a field.
+    const referenceGrammar = grammar && isVegaLiteNodeType(nodeType) ? VEGA_LITE : undefined;
 
     // #662: what the node's references name: its widgets, its wired inputs,
     // the Parameter nodes' shared tags and its selection tags. Input, layer,
@@ -159,8 +186,26 @@ function NodeEditor({
     );
     // The play callback is registered once, so a run without a Widgets tab
     // reads the scope from here.
-    const runScopeRef = useRef({ scope, emptyInputs });
-    runScopeRef.current = { scope, emptyInputs };
+    const runScopeRef = useRef({ scope, emptyInputs, referenceGrammar });
+    runScopeRef.current = { scope, emptyInputs, referenceGrammar };
+    // The code last handed to the widgets, its chips unresolved, and what the
+    // last resolution came from, so a grammar node's spec can be written again
+    // for new scenario labels.
+    const userCodeRef = useRef("");
+    const resolutionRef = useRef<Resolution | null>(null);
+    // A grammar node's spec reaches its behavior with how to write it again
+    // when a scenario box is renamed or recolored (registry/types,
+    // GrammarRedraw): a chart is then drawn again outside a run, its chips
+    // resolved anew. Only for the spec this editor resolved.
+    const applyGrammarWithRedraw = applyGrammar
+        ? (spec: string) => {
+            const resolution = resolutionRef.current;
+            const redraw = resolution && resolution.code === spec
+                ? redrawOf(resolution, widgetLanguage, referenceGrammar)
+                : undefined;
+            return applyGrammar(spec, redraw);
+        }
+        : undefined;
     // A dashboard tile shows its output, not its editor. Only when it HAS an
     // output pane: a code node's result is the text box under its editor, so
     // forcing the pane unconditionally rendered a pinned code node as an empty
@@ -193,6 +238,7 @@ function NodeEditor({
     const primingWidgetsRef = useRef(false);
 
     const sendReplacedCode = (code: string) => {
+        resolutionRef.current = { code, written: userCodeRef.current, scope: runScopeRef.current.scope };
         const priming = primingWidgetsRef.current;
         primingWidgetsRef.current = false;
         if (!priming && (fullscreen == "" || fullscreen == undefined) && (outputId != undefined || contentComponent != undefined)) setActiveTab("output");
@@ -212,6 +258,7 @@ function NodeEditor({
     };
 
     const sendCodeToWidgets = (code: string) => {
+        userCodeRef.current = String(code ?? "");
         setUserCode(code);
         if (!widgetsTab) {
             // Why: WidgetsEditor is the bridge that resolves references and
@@ -221,8 +268,8 @@ function NodeEditor({
             // has no listener and CodeEditor's interpretCode is never reached
             // — the play spinner spins forever. Resolve here instead, with the
             // same table, so input chips work in those nodes too.
-            const { scope: runScope, emptyInputs: waiting } = runScopeRef.current;
-            const resolved = resolveReferences(String(code ?? ""), runScope, widgetLanguage);
+            const { scope: runScope, emptyInputs: waiting, referenceGrammar: runGrammar } = runScopeRef.current;
+            const resolved = resolveReferences(String(code ?? ""), runScope, widgetLanguage, runGrammar);
             if (waiting.length > 0) resolveError(describeEmptyInputs(waiting, runScope.inputs));
             else if (resolved.problems.length > 0) resolveError(describeReferenceProblems(resolved.problems));
             else sendReplacedCode(resolved.code);
@@ -271,12 +318,32 @@ function NodeEditor({
         setDefaultCode(defaultValue);
     }, [defaultValue]);
 
-    const navigateProv = (code: string) => {
-        setDefaultCode(code);
-        sendCodeToWidgets(code);
+    // A run put back from the provenance drawer. The editors write its code in
+    // as content that arrived whole and prime the widgets, as a load does, so
+    // nothing runs, no input error is raised and the node does not jump to its
+    // output; then the editor is shown with that code. Each put-back is a new
+    // one, so the first run's code goes back in even when it is the code the
+    // node loaded with. Read through a ref: the drawer keeps the callback while
+    // the node re-renders.
+    const [restoredCode, setRestoredCode] = useState<{ code: string; nonce: number } | null>(null);
+    const restoreRunRef = useRef<(runCode: string) => void>(() => undefined);
+    restoreRunRef.current = (runCode: string) => {
+        setRestoredCode((prev) => ({ code: runCode, nonce: (prev?.nonce ?? 0) + 1 }));
+        if (code || grammar) setActiveTab(resolveInitialEditorTab({ code, grammar, widgets: false }));
     };
 
+    // The Provenance pill is not a tab: it opens the node's runs in the
+    // provenance drawer, and the node keeps the pane it shows.
+    const provenanceDrawer = useProvenanceDrawerOptional();
     const handleTabSelect = (eventKey: any) => {
+        if (eventKey === "provenance") {
+            provenanceDrawer?.openNodeProvenance({
+                nodeId: data.nodeId,
+                title: resolveNodeDisplayLabel({ nodeType, packageTemplateLabel: data.packageTemplateLabel }),
+                restore: (runCode: string) => restoreRunRef.current(runCode),
+            });
+            return;
+        }
         setActiveTab(eventKey);
     };
 
@@ -292,9 +359,7 @@ function NodeEditor({
             }
             : { height: "100%", backgroundColor: "#ffffff" };
     // A pane fills the node on the canvas; in a cell it takes its own height.
-    // The provenance graph has none of its own, so it gets one.
     const paneStyle: CSS.Properties | undefined = inCell ? undefined : { height: "100%" };
-    const provenancePaneStyle: CSS.Properties = inCell ? { height: "320px" } : { height: "100%" };
     const widgetsPaneStyle: CSS.Properties = inCell ? { maxHeight: "360px", overflowY: "auto" } : { height: "100%" };
     const outputBox = notebookOutputBox(String(nodeType ?? ""));
     const px = (n: number | undefined) => (n === undefined ? undefined : `${n}px`);
@@ -507,6 +572,7 @@ function NodeEditor({
                                             stripInputs={inputs}
                                             onLoadColumns={loadColumns}
                                             widgetLanguage={widgetLanguage}
+                                            restoredCode={restoredCode}
                                         />
                                     </Tab.Pane>
                                 ) : null}
@@ -530,6 +596,7 @@ function NodeEditor({
                                             onWidgetsChange={updateWidgets}
                                             onValueChange={() => requestAutoRun?.([data.nodeId])}
                                             language={widgetLanguage}
+                                            grammar={referenceGrammar}
                                             onResolveError={resolveError}
                                             inputs={inputs}
                                             emptyInputs={emptyInputs}
@@ -558,29 +625,18 @@ function NodeEditor({
                                             replacedCode={replacedCode}
                                             sendCodeToWidgets={primeWidgets}
                                             nodeId={data.nodeId}
-                                            applyGrammar={applyGrammar}
+                                            applyGrammar={applyGrammarWithRedraw}
                                             setOutputCallback={setOutputCallback}
                                             references={scope}
                                             stripInputs={inputs}
                                             onLoadColumns={loadColumns}
                                             widgetLanguage={widgetLanguage}
+                                            referenceGrammar={referenceGrammar}
+                                            restoredCode={restoredCode}
                                         />
                                     </Tab.Pane>
                                 ) : null}
 
-
-                                {provenance == undefined || provenance ? (
-                                    <Tab.Pane
-                                        eventKey="provenance"
-                                        style={provenancePaneStyle}
-                                    >
-                                        <NodeProvenance
-                                            data={data}
-                                            setCode={navigateProv}
-                                            active={activeTab === "provenance"}
-                                        />
-                                    </Tab.Pane>
-                                ) : null}
 
                                 {(outputId != undefined || contentComponent != undefined) ? (
                                     <Tab.Pane

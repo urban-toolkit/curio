@@ -27,6 +27,8 @@ import {
   referenceContexts,
   referenceProblem,
   referenceText,
+  resolveReferences,
+  stackedFields,
   widgetLiteral,
   type CodeLanguage,
   type ReferenceScope,
@@ -44,8 +46,11 @@ export const SHARED_REF_MIME = "application/x-curio-shared";
 /** What a dragged selection tag carries: what stands inside its reference,
  * such as `selection picked`. */
 export const SELECTION_REF_MIME = "application/x-curio-selection";
+/** What a dragged scenario tag carries (the swatches, their order tag, an
+ * input's swatch): what stands inside its chip, such as `scenario colors`. */
+export const SCENARIO_REF_MIME = "application/x-curio-scenario";
 
-const REFERENCE_MIMES = [WIDGET_REF_MIME, INPUT_REF_MIME, SHARED_REF_MIME, SELECTION_REF_MIME];
+const REFERENCE_MIMES = [WIDGET_REF_MIME, INPUT_REF_MIME, SHARED_REF_MIME, SELECTION_REF_MIME, SCENARIO_REF_MIME];
 
 /** The most ids a selection chip's hover lists. */
 const HOVER_IDS = 5;
@@ -73,7 +78,7 @@ export function offsetToPosition(code: string, offset: number): { lineNumber: nu
 export interface ReferenceMark extends ChipMark {
   /** What stands inside the reference. */
   name: string;
-  kind: "widget" | "input" | "shared" | "selection";
+  kind: "widget" | "input" | "shared" | "selection" | "scenario" | "stacked";
 }
 
 const toRange = (
@@ -103,6 +108,19 @@ function hoverFor(inner: string, scope: ReferenceScope, language: CodeLanguage):
     const shown = widgetLiteral(ids.slice(0, HOVER_IDS) as WidgetValue, language);
     const listed = ids.length > HOVER_IDS ? `${shown.slice(0, -1)}, ...]` : shown;
     return `${inner} = ${listed}, ${ids.length} ${tag?.column} values selected in its view`;
+  }
+  if (parsed.kind === "stacked") {
+    const dtype = stackedFields(scope.inputs).dtypes[parsed.column];
+    return `field ${parsed.column} of inputs, every input's rows stacked` + (dtype ? ` (${dtype})` : "");
+  }
+  if (parsed.kind === "scenario") {
+    // What the chip writes, as a run writes it.
+    const value = resolveReferences(referenceText(inner), scope, "json").code;
+    if (parsed.chip !== "input") return `${inner} = ${value}, from the boxes this node's inputs come from`;
+    const label = scope.inputs.find((i) => i.slot === parsed.slot)?.scenario;
+    return label?.scenario != null
+      ? `${inner} = ${value}, the color of ${label.name}, the box input_${parsed.slot} comes from`
+      : `${inner} = ${value}: input_${parsed.slot} comes from no scenario box`;
   }
   const input = scope.inputs.find((i) => i.slot === parsed.slot);
   const from = input?.label ? `, from ${input.label}` : "";
@@ -142,8 +160,9 @@ export function referenceMarks(code: string, scope: ReferenceScope, language: Co
       kind,
       problem,
       hover: problem ?? hoverFor(ref.inner, scope, language),
-      // An input or column chip is drawn like a widget's, in green; a shared
-      // one in amber; a selection in peach.
+      // An input or column chip is drawn like a widget's, in green, and so is
+      // a field of inputs; a shared one in amber; a selection in peach; a
+      // scenario chip in lilac.
       kindClass: kind === "widget" ? null : chipClass({ kind, problem }),
     };
   });
@@ -154,6 +173,8 @@ const KIND_CLASSES: Record<ReferenceMark["kind"], string> = {
   input: "curio-input-ref",
   shared: "curio-shared-ref",
   selection: "curio-selection-ref",
+  scenario: "curio-scenario-ref",
+  stacked: "curio-input-ref",
 };
 
 /** The class that names *mark*'s kind: widget chips keep the classes #670 gave
@@ -177,6 +198,33 @@ export function markersOutsideReferences<M extends LineRange>(markers: M[], refs
   return markers.filter((m) => !refs.some((r) => touchesRange(m, r)));
 }
 
+/** Whether *offset* in the JSON *text* falls inside a string. */
+export function insideJsonString(text: string, offset: number): boolean {
+  let inside = false;
+  for (let i = 0; i < offset && i < text.length; i += 1) {
+    if (inside && text[i] === "\\") {
+      i += 1;
+      continue;
+    }
+    if (text[i] === '"') inside = !inside;
+  }
+  return inside;
+}
+
+/**
+ * Whether the chip *inner* writes one text a spec reads as a string: an
+ * input's scenario color (`scenario input_1`) or a field of inputs
+ * (`inputs.sunlight`). Inserted where JSON wants a value, outside any string,
+ * it goes in quoted, so the spec stays JSON before its chips are resolved:
+ * what a saved spec holds, and what a reader of its shape parses
+ * (utils/autkSpecKind). A scale, a list of names or a widget's value is no
+ * text, and goes in as it is.
+ */
+function writesOneText(inner: string): boolean {
+  const parsed = parseReference(inner);
+  return (parsed.kind === "scenario" && parsed.chip === "input") || parsed.kind === "stacked";
+}
+
 /** Insert a reference to *inner* at *position*, or at the cursor. */
 export function insertReference(
   editor: any,
@@ -185,6 +233,10 @@ export function insertReference(
 ): boolean {
   const pos = position ?? editor?.getPosition?.();
   if (!editor || !pos) return false;
+  const model = editor.getModel?.();
+  const text = model?.getValue?.();
+  const offset = typeof text === "string" ? model?.getOffsetAt?.(pos) : undefined;
+  const quoted = writesOneText(inner) && typeof offset === "number" && !insideJsonString(text, offset);
   editor.executeEdits("curio-widget-tag", [
     {
       range: {
@@ -193,7 +245,7 @@ export function insertReference(
         endLineNumber: pos.lineNumber,
         endColumn: pos.column,
       },
-      text: referenceText(inner),
+      text: quoted ? `"${referenceText(inner)}"` : referenceText(inner),
       forceMoveMarkers: true,
     },
   ]);

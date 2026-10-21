@@ -1,0 +1,121 @@
+{
+  "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
+  "data": {
+    "name": "inputs"
+  },
+  "transform": [
+    {
+      "window": [
+        {
+          "op": "row_number",
+          "as": "curio_row"
+        }
+      ],
+      "groupby": [
+        "scenario_name"
+      ]
+    },
+    {
+      "filter": "datum['[!! weight !!]'] != 0"
+    },
+    {
+      "calculate": "abs(datum['[!! weight !!]'])",
+      "as": "curio_size"
+    },
+    {
+      "calculate": "datum['[!! weight !!]'] > 0 ? 'For' : 'Against'",
+      "as": "curio_counts"
+    }
+  ],
+  "encoding": {
+    "x": {
+      "field": "[!! factor !!]",
+      "type": "nominal",
+      "title": null,
+      "sort": {
+        "field": "curio_row",
+        "op": "min"
+      },
+      "axis": {
+        "orient": "top",
+        "labelAngle": 0,
+        "labelLimit": 0
+      }
+    },
+    "y": {
+      "field": "scenario_name",
+      "type": "nominal",
+      "title": null,
+      "axis": {
+        "labelFontWeight": "bold",
+        "labelColor": {
+          "expr": "scale('fill', datum.value)"
+        }
+      },
+      "sort": [!! scenario order !!]
+    },
+    "size": {
+      "field": "curio_size",
+      "type": "quantitative",
+      "title": "Weight",
+      "scale": {
+        "domain": [
+          0,
+          1
+        ],
+        "range": [
+          0,
+          1400
+        ]
+      },
+      "legend": {
+        "symbolFillColor": "transparent",
+        "symbolStrokeColor": "#888888"
+      }
+    },
+    "stroke": {
+      "field": "curio_counts",
+      "type": "nominal",
+      "title": null,
+      "scale": {
+        "domain": [
+          "For",
+          "Against"
+        ],
+        "range": [
+          "#2a7f62",
+          "#c0392b"
+        ]
+      },
+      "legend": {
+        "symbolFillColor": "transparent"
+      }
+    }
+  },
+  "layer": [
+    {
+      "mark": {
+        "type": "point",
+        "filled": true,
+        "opacity": 0
+      },
+      "encoding": {
+        "fill": {
+          "field": "scenario_name",
+          "type": "nominal",
+          "legend": null,
+          "scale": [!! scenario colors !!]
+        }
+      }
+    },
+    {
+      "mark": {
+        "type": "point",
+        "filled": false,
+        "strokeWidth": 3,
+        "opacity": 1,
+        "tooltip": true
+      }
+    }
+  ]
+}

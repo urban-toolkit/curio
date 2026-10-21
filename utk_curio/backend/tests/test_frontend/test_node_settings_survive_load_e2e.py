@@ -116,9 +116,9 @@ def _python_node(node_id: str, x: int, metadata: dict) -> dict:
 
 
 def _config_spec() -> dict:
-    # Two Python nodes, whose template shows a Provenance tab. One turned it off
-    # in the node settings modal; the other never opened the modal, so it shows
-    # that the tab locator finds a tab that is there.
+    # Two Python nodes, whose template shows a Provenance button. One turned it
+    # off in the node settings modal; the other never opened the modal, so it
+    # shows that the locator finds a button that is there.
     return {
         "dataflow": {
             "name": "Node config survives a load",
@@ -138,17 +138,17 @@ def _config_spec() -> dict:
     }
 
 
-def _tab(page, node_id: str, key: str):
+def _pill(page, node_id: str, key: str):
     return node_locator(page, node_id).locator(f'.nav-link[data-rr-ui-event-key="{key}"]')
 
 
-def _assert_provenance_tab_follows_the_config(page, when: str) -> None:
-    # The Code tab first: no tab at all would also mean no Provenance tab.
+def _assert_provenance_button_follows_the_config(page, when: str) -> None:
+    # The Code pill first: no pill at all would also mean no Provenance button.
     for node_id in (CONFIGURED_ID, PLAIN_ID):
-        _tab(page, node_id, "code").first.wait_for(state="visible", timeout=45000)
-    _tab(page, PLAIN_ID, "provenance").first.wait_for(state="visible", timeout=15000)
-    assert _tab(page, CONFIGURED_ID, "provenance").count() == 0, (
-        f"{when}, the node shows a Provenance tab although its saved node "
+        _pill(page, node_id, "code").first.wait_for(state="visible", timeout=45000)
+    _pill(page, PLAIN_ID, "provenance").first.wait_for(state="visible", timeout=15000)
+    assert _pill(page, CONFIGURED_ID, "provenance").count() == 0, (
+        f"{when}, the node shows a Provenance button although its saved node "
         "settings turned it off: metadata.packageTemplateConfig did not reach "
         "node.data.packageTemplateConfig"
     )
@@ -175,7 +175,7 @@ def test_the_node_settings_config_is_live_after_the_load_and_survives_a_save(
     require_owner_view(page)
     project_id = session["project"]["id"]
 
-    _assert_provenance_tab_follows_the_config(page, "Right after the load")
+    _assert_provenance_button_follows_the_config(page, "Right after the load")
 
     # The canvas writes it back on a save, as the spec stores it...
     save_dataflow(page)
@@ -186,9 +186,9 @@ def test_the_node_settings_config_is_live_after_the_load_and_survives_a_save(
     }, by_id[CONFIGURED_ID]["metadata"]
     assert "packageTemplateConfig" not in by_id[PLAIN_ID].get("metadata", {})
 
-    # ...and the reopened dataflow still has the tab off. Left and reopened
+    # ...and the reopened dataflow still has the button off. Left and reopened
     # rather than reloaded in place, so nothing survives in component state.
     page.goto(f"{app_frontend.base_url}/projects")
     page.wait_for_load_state("domcontentloaded")
     page.goto(f"{app_frontend.base_url}/dataflow/{project_id}")
-    _assert_provenance_tab_follows_the_config(page, "After a save and reopen")
+    _assert_provenance_button_follows_the_config(page, "After a save and reopen")

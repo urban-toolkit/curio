@@ -13,8 +13,9 @@ jest.mock("reactflow", () => ({
 jest.mock("../../providers/ProvenanceProvider", () => ({
   useProvenanceContext: () => ({ getAllNodeProvenance: () => ({}) }),
 }));
+const mockShowToast = jest.fn();
 jest.mock("../../providers/ToastProvider", () => ({
-  useToastContext: () => ({ showToast: jest.fn() }),
+  useToastContext: () => ({ showToast: mockShowToast }),
 }));
 let mockUserContext: { user: UserData | null; enableUserAuth: boolean } = { user: null, enableUserAuth: false };
 jest.mock("../../providers/UserProvider", () => ({
@@ -120,6 +121,29 @@ describe("a hosted guest", () => {
     await expect(result.current.saveAsNewProject("A copy")).rejects.toThrow("Guest users cannot save projects");
     expect(projectsApi.create).not.toHaveBeenCalled();
   });
+
+  it("is still told why when it saves by itself, through the save queue File > Save takes", async () => {
+    // UpMenu's Save shows this message as its toast (upMenuSaveQueue.test.tsx).
+    const { result } = renderHook(() => useWorkflowOperations(makeDeps()));
+
+    await expect(result.current.requestProjectSave()).rejects.toThrow("Guest users cannot save projects");
+    expect(projectsApi.create).not.toHaveBeenCalled();
+    expect(projectsApi.update).not.toHaveBeenCalled();
+  });
+
+  it("gets no dataflow created before an install, and is told nothing", async () => {
+    // A catalog's Add on a dataflow never saved saves it first, on its own.
+    const { result } = renderHook(() => useWorkflowOperations(makeDeps()));
+
+    let id: string | null | undefined;
+    await act(async () => {
+      id = await result.current.ensureProjectId();
+    });
+
+    expect(id).toBeNull();
+    expect(projectsApi.create).not.toHaveBeenCalled();
+    expect(mockShowToast).not.toHaveBeenCalled();
+  });
 });
 
 describe.each([
@@ -148,5 +172,18 @@ describe.each([
     });
     expect(projectsApi.create).toHaveBeenCalledWith(expect.objectContaining({ name: "A copy" }));
     expect(result.current.projectId).toBe("proj-new");
+  });
+
+  it("gets the dataflow created before an install", async () => {
+    const { result } = renderHook(() => useWorkflowOperations(makeDeps()));
+
+    let id: string | null | undefined;
+    await act(async () => {
+      id = await result.current.ensureProjectId();
+    });
+
+    expect(id).toBe("proj-new");
+    expect(projectsApi.create).toHaveBeenCalledTimes(1);
+    expect(mockShowToast).not.toHaveBeenCalled();
   });
 });

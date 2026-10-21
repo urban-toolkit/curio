@@ -5,9 +5,8 @@ import path from "path";
  * No canvas draws React Flow's attribution (#509).
  *
  * The main canvas left it on, in the bottom-right corner the version badge is
- * fixed to, so the two strings overlapped on every canvas screen. The other
- * three canvases already hid it. Read from the source, so a new canvas has to
- * say the same.
+ * fixed to, so the two strings overlapped on every canvas screen. Read from
+ * the source, so a new canvas has to say the same, and is named below.
  */
 const SRC = path.resolve(__dirname, "../..");
 
@@ -41,11 +40,12 @@ const canvases = sources(SRC)
   .map((file) => ({ file: path.relative(SRC, file), tags: reactFlowTags(fs.readFileSync(file, "utf8")) }))
   .filter(({ tags }) => tags.length > 0);
 
-test("finds the canvases, the main one among them", () => {
-  expect(canvases.map(({ file }) => file)).toEqual(
-    expect.arrayContaining([path.join("components", "MainCanvas.tsx")]),
+test("finds every canvas: the main one and the dashboard's", () => {
+  // The provenance drawer draws a dataflow's versions and a node's runs
+  // without React Flow.
+  expect(canvases.map(({ file }) => file).sort()).toEqual(
+    [path.join("components", "MainCanvas.tsx"), path.join("pages", "dashboard", "DashboardPage.tsx")].sort(),
   );
-  expect(canvases.length).toBeGreaterThanOrEqual(4);
 });
 
 test.each(canvases.map(({ file, tags }) => [file, tags] as const))(

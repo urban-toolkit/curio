@@ -10,7 +10,7 @@
  * writes the log and the code together and makes the node stale, with every
  * node below it that ran (`autoRunTargets`, the nodes an automatic run
  * takes); a run then applies the new log, in the browser or on the server,
- * as any Python node's code runs, and Update results in the body starts one.
+ * as any Python node's code runs, and Commit edits in the body starts one.
  */
 import React, { useEffect, useMemo, useRef } from "react";
 import type { NodeBehaviorHook } from "../../registry/types";
@@ -19,7 +19,7 @@ import { autoRunTargets } from "../../providers/flow/useAutoRun";
 import { EditFeaturesBody } from "../../components/editFeatures/EditFeaturesBody";
 import { editFeaturesCode, editLogCode, normalizeEditFeatures, type EditFeaturesSettings } from "../../utils/editFeatures/editFeatures";
 import { mapFedBy } from "../../utils/editFeatures/mapLayerEdits";
-import { failureLine } from "./compareScenariosBehavior";
+import { failureLine } from "../../utils/runFailure";
 
 export const useEditFeaturesBehavior: NodeBehaviorHook = (data, nodeState) => {
   const flow = useFlowContext() as any;

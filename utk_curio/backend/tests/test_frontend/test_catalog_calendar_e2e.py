@@ -33,7 +33,7 @@ from playwright.sync_api import expect
 
 from .utils import (
     REPO_ROOT,
-    drag_to_canvas,
+    drag_builtin_to_canvas,
     enable_save_output,
     require_owner_view,
     require_project_page,
@@ -60,7 +60,7 @@ OWN_DATASET_CODE = (
 #: 00:00 UTC, 15 days and 6 hours before the calendar date: "15d ago" there,
 #: "16d ago" by noon of that day on the real clock, and more every day after.
 SHIPPED_DATASET = "data.scout.loop-buildings"
-SHIPPED_PACKAGE = "scout.rasters@1"
+SHIPPED_PACKAGE = "curio.scout@1"
 SHIPPED_AGE = "15d ago"
 
 #: The text the catalogs give an age (``catalogTimeFormat.ts``).
@@ -109,7 +109,7 @@ def test_catalog_cards_read_their_age_on_the_calendar(
     page.locator("#tools-menu").wait_for(state="visible", timeout=45000)
 
     # A dataset of the user's own, which the backend stamps as it is saved.
-    loading = drag_to_canvas(page, page.locator(LOADING_TILE), at=(220, 200))
+    loading = drag_builtin_to_canvas(page, LOADING_TILE, at=(220, 200))
     set_node_code(page, loading, OWN_DATASET_CODE)
     enable_save_output(page, loading)
     run_node_and_wait(page, loading, node_type=LOADING_TYPE)

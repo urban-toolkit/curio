@@ -190,6 +190,62 @@ class TestCatalogIdForm:
             assert ("path", "/data/x.csv") in refs, code
 
 
+class TestOutputFiles:
+    """``curio_output_file("<name>")`` names a file the node writes and
+    returns (``sandbox/util/collections.py``), not a source it reads: the name
+    passed to it, literal or f-string, is skipped in both scanners, and every
+    other literal that names a data file is still a path."""
+
+    # The Make Heights node of BRINGING-MODELS.md, step 3.
+    MAKE_HEIGHTS = (
+        "import numpy as np\n"
+        "import rasterio\n"
+        "from rasterio.transform import from_origin\n"
+        'heights = np.zeros((64, 64), dtype="float32")\n'
+        "heights[8:20, 8:20] = 30\n"
+        'path = curio_output_file("heights.tif")\n'
+        "with rasterio.open(\n"
+        '    path, "w", driver="GTiff", width=64, height=64, count=1, dtype="float32",\n'
+        '    crs="EPSG:3857", transform=from_origin(-9757000, 5143000, 10, 10), nodata=float("nan"),\n'
+        ") as out:\n"
+        "    out.write(heights, 1)\n"
+        "return rasterio.open(path)"
+    )
+
+    def test_a_name_passed_to_curio_output_file_is_not_a_source(self):
+        codes = (
+            self.MAKE_HEIGHTS,
+            "path = curio_output_file('heights.tif')\nreturn rasterio.open(path)",
+            'path = curio_output_file(f"heights-{year}.tif")\nreturn rasterio.open(path)',
+            self.MAKE_HEIGHTS + "\nreturn (path",  # syntax error, regex
+            "path = curio_output_file('heights.tif')\nreturn (path",  # syntax error, regex
+            'path = curio_output_file(f"heights-{year}.tif")\nreturn (path',  # syntax error, regex
+        )
+        for code in codes:
+            verdict = sg.check_grounding(code, "python", _ctx())
+            assert verdict.ok, (code, verdict.violations)
+            assert verdict.source is None, code
+            assert sg.scan_sources(code, "python") == [], code
+        # Nor does the name ground a data-loading node: it is not a source.
+        loading = sg.check_grounding(self.MAKE_HEIGHTS, "python", _ctx(is_data_loading=True))
+        assert not loading.ok and "no grounded source" in loading.violations[0], loading.violations
+
+    def test_a_data_file_literal_outside_the_call_is_still_a_path(self):
+        for code in (
+            'path = "heights.tif"\nreturn rasterio.open(path)',
+            'path = "heights.tif"\nreturn (path',  # syntax error, regex
+            # The written name, read back by its bare name, is a read.
+            'path = curio_output_file("heights.tif")\nsrc = rasterio.open("heights.tif")\nreturn src',
+            'path = curio_output_file("heights.tif")\nsrc = rasterio.open("heights.tif")\nreturn (src',
+            # Only the name is skipped, not a file read to make it.
+            'path = curio_output_file(open("names.csv").read())\nreturn path',
+            'path = curio_output_file(open("names.csv").read())\nreturn (path',
+        ):
+            verdict = sg.check_grounding(code, "python", _ctx())
+            assert not verdict.ok, code
+            assert "Curio cannot see" in verdict.violations[0], (code, verdict.violations)
+
+
 class TestRequestedDatasets:
     """#411: a Data Catalog dataset the user named by its id, or confirmed for
     the node, is the one the node loads. Code that loads only other catalog

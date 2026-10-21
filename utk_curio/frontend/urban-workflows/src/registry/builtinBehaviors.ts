@@ -17,10 +17,9 @@ import {
   useSimpleVisBehavior,
   useDataPoolBehavior,
   useDataSummaryBehavior,
-  useAutkGrammarBehavior,
+  useAutkViewBehavior,
   useSpatialJoinBehavior,
   useParameterBehavior,
-  useCompareScenariosBehavior,
   useEditFeaturesBehavior,
   useNoteBehavior,
 } from '../adapters/node';
@@ -32,16 +31,14 @@ registerBehavior('data-pool', useDataPoolBehavior);
 registerBehavior('data-summary', useDataSummaryBehavior);
 registerBehavior('vega', useVegaBehavior);
 registerBehavior('simple-vis', useSimpleVisBehavior);
-registerBehavior('autk-grammar', useAutkGrammarBehavior);
+// The Autark node, whose selection tags are emptied each time it draws (#884).
+registerBehavior('autk-grammar', useAutkViewBehavior);
 // curio.builtin@1 spatial-join node (stays in core because the builtin
 // package's behaviors must be registered before ANY package registry runs).
 registerBehavior('spatial-join', useSpatialJoinBehavior);
 // curio.builtin@1 parameter node: one widget any node's code names as
 // [!! @name !!] (#662).
 registerBehavior('parameter', useParameterBehavior);
-// curio.builtin@1 compare-scenarios node: stacks scenarios' outcomes, charts
-// them in the scenarios' colors and lists what differs (#662).
-registerBehavior('compare-scenarios', useCompareScenariosBehavior);
 // curio.builtin@1 edit-features node: features picked on its map, removed,
 // given a value or restored, as a list its code applies by id (#662).
 registerBehavior('edit-features', useEditFeaturesBehavior);

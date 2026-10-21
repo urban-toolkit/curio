@@ -249,7 +249,7 @@ function mapsOf(spec: any): any[] {
 }
 
 /** The tables of *spec*'s data that are rasters: Curio's own and the grammar's heatmaps. */
-function rasterTables(spec: any): Set<string> {
+export function rasterTables(spec: any): Set<string> {
     const sources: any[] = Array.isArray(spec?.data) ? spec.data : [];
     return new Set(sources
         .filter((source) => isCurioRasterSource(source) || source?.type === 'heatmap')

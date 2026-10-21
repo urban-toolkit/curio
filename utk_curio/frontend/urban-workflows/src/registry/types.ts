@@ -6,6 +6,7 @@ import { INodeData, ICodeData } from '../types';
 import { IPropagation } from '../providers/FlowProvider';
 import type { SelectionEchoOptions } from '../utils/selectionEcho';
 import type { WidgetDef } from '../utils/widgets/widgetModel';
+import type { ScenarioLabel } from '../utils/scenarios/scenarioColors';
 
 /**
  * Identifier used as the dispatch key for a node kind.
@@ -145,9 +146,19 @@ export interface NodeBehaviorData extends INodeData {
  * for any field the behavior does not override. A no-op behavior may
  * return `{}`.
  */
+/**
+ * A grammar spec written again for new scenario labels: its chips resolved as
+ * the run that drew it resolved them, but with *labels*, each wired circle's
+ * (utils/scenarios/inputScenarios). Null when they no longer resolve. The
+ * node's editor hands it over with the spec it resolved (NodeEditor), so a
+ * chart is drawn again, outside a run, when a box is renamed or recolored.
+ */
+export type GrammarRedraw = (labels: ReadonlyMap<number, ScenarioLabel>) => string | null;
+
 export interface NodeBehaviorResult {
-  /** Compile a grammar spec and render the result (grammar-viz boxes). */
-  applyGrammar?: (spec: string) => Promise<void>;
+  /** Compile a grammar spec and render the result (grammar-viz boxes), and
+   * how to write it again for new scenario labels, when the editor knows. */
+  applyGrammar?: (spec: string, redraw?: GrammarRedraw) => Promise<void>;
   /** Populate the widgets panel with custom DOM controls. */
   customWidgetsCallback?: (div: HTMLElement) => void;
   /** Override the initial code/grammar editor value. */

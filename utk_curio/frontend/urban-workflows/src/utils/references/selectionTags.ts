@@ -150,6 +150,33 @@ export function selectedIds(
   return ids.length > SELECTION_ID_CAP ? { count: ids.length } : { ids };
 }
 
+/** The tags among *nodes* (each node's `data.selections`) that read the view *viewId*. */
+export function tagsOnView(nodes: readonly { data?: any }[], viewId: string): SelectionTag[] {
+  return nodes.flatMap((node) => normalizeSelections(node.data?.selections).filter((tag) => tag.node === viewId));
+}
+
+/**
+ * Positions of the rows that hold, in a tag's column, one of the ids the tag
+ * holds, for any of *tags*: in row order, each once. These are the rows a view
+ * selects again when it is drawn again (#884). An id matches a value of its own
+ * type, as `selectedIds` reads it.
+ */
+export function rowsHeldBy(tags: readonly SelectionTag[], rows: SelectionRows): number[] {
+  const wanted = tags
+    .filter((tag) => Array.isArray(tag.ids) && tag.ids.length > 0)
+    .map((tag) => ({ column: tag.column, keys: new Set(tag.ids!.map((id) => `${typeof id}:${id}`)) }));
+  if (wanted.length === 0) return [];
+  const picked: number[] = [];
+  for (let i = 0; i < rows.count; i++) {
+    const holds = wanted.some(({ column, keys }) => {
+      const value = rows.value(i, column);
+      return isId(value) && keys.has(`${typeof value}:${value}`);
+    });
+    if (holds) picked.push(i);
+  }
+  return picked;
+}
+
 /** *tag* holding *state* in place of what it held. */
 export function withState(tag: SelectionTag, state: SelectionState): SelectionTag {
   const { ids: _ids, count: _count, ...rest } = tag;
@@ -165,7 +192,7 @@ export function sameState(a: SelectionTag, b: SelectionTag): boolean {
 
 /** Whether *details* hold a selection the user just made: a select at
  * priority 1. A view that only declared its selects, as a Vega chart does when
- * it compiles, holds none, so a reload keeps the ids a dataflow was saved with. */
+ * it compiles, holds none, and changes no tag. */
 export function isNewSelection(details: unknown): boolean {
   if (!details || typeof details !== "object") return false;
   return Object.values(details as Record<string, any>).some((select) => select?.priority === 1);
@@ -181,8 +208,9 @@ export function holdsSelection(details: unknown): boolean {
  * Whether *details*, reported after *previous*, change what the view's tags
  * hold: a new selection, or one that clears a selection *previous* held. A
  * chart reports its empty selects at priority 1 as it first draws (its signal
- * listeners hear the first pulse), and that clears nothing, so a reload or a
- * redraw keeps the ids a dataflow was saved with.
+ * listeners hear the first pulse), and that clears nothing by itself: a view
+ * drawn again puts back the selection its tags hold, or empties them (#884,
+ * `hook/useVega` and `useSelectionTags`'s `clearViewTags`).
  */
 export function changesSelection(previous: unknown, details: unknown): boolean {
   return isNewSelection(details) && (holdsSelection(details) || holdsSelection(previous));

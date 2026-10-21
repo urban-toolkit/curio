@@ -93,7 +93,7 @@ Autark workflows use the single `AUTK_GRAMMAR` node type, which renders its map/
 
 There is **no WebGPU tolerance**: an `AUTK_GRAMMAR` node that errors (including because WebGPU is unavailable) is a hard test failure. To run the autk examples you need a browser that provides WebGPU - which the system-Chrome `executable_path` above ensures. `_webgpu_diagnostics` still probes adapter/device state once per session and attaches it to the failure dump for debugging.
 
-A test that needs an adapter asks with `require_webgpu(page)` (fails on CI's GPU job, skips elsewhere) or asserts `webgpu_adapter(page)`, both in `utils/webgpu.py`. Never with its own `requestAdapter()`: these ask through the app's probe itself (`window.__curio_probeWebGpu`, from `src/utils/webgpuSupport.ts`), which waits until the page has drawn a frame and asks again after a null before calling the adapter missing. A request made before the page draws can be dropped by Chrome's switch to software compositing.
+A test that needs an adapter asks with `require_webgpu(page)` (fails on CI's GPU job, skips elsewhere) or asserts `webgpu_adapter(page)`, both in `utils/webgpu.py`. Never with its own `requestAdapter()`: these ask through the app's probe itself (`window.__curio_probeWebGpu`, from `src/utils/webgpuSupport.ts`), which waits until the page has drawn a frame and asks again after a null before calling the adapter missing. A request made before the page draws can be dropped by Chrome's switch to software compositing. The probe waits at most 10 s for that frame, and a freshly launched Chrome on a busy GPU runner can take longer, so while the page has drawn no frame and no adapter came, the helper runs the probe again, for up to a minute (#1017).
 
 `AUTK_GRAMMAR` is a `"grammar"` node (grammar/JSON editor + output tab) and exercises the full matrix: `test_node_type_and_content` checks the grammar editor; `test_node_execution` verifies each node reaches **Done**. Its grammar content (and any JavaScript/WGSL compute blocks) is excluded from the Python random-seed injection used by Python `CODE_TYPES` nodes.
 
@@ -208,7 +208,7 @@ The DB stub is strictly additive - Strategy A still works against the same test 
 |---|---|
 | `api_json(url, token, *, method="GET", payload=None, timeout=10.0, raw=False)` | Authenticated JSON request, stdlib only. The escape hatch for asserting backend state from a browser test: a seeding or persistence problem then fails in about a second with the offending payload, instead of as a 15-second locator timeout that says nothing about which side broke. `raw=True` returns bytes, for binary endpoints such as a `.curio.zip`. |
 | `require_owner_view(page, *, timeout=4000)` | **Fails** when the dataflow opened read-only as the shared guest. A guest cannot see another user's installed packages, datasets or agents, so every catalog fetch comes back empty and the test asserts nothing. That is a setup bug: boot the stack with `--deploy`. |
-| `open_tools_palette(page, kind)` | Opens the left-rail `"packages"` or `"datasets"` palette and returns its panel locator. Re-callable: it matches either the `Open …` or the `Close …` title and clicks only when the panel is not already showing, so a test that needs both palettes can come back to the first one. They are still mutually exclusive (`ToolsMenu` keeps a single `activePalette`), so opening one closes the other. |
+| `open_tools_palette(page, kind)` | Opens one left-rail palette, `"builtin"`, `"packages"`, `"datasets"`, `"agents"` or `"models"`, and returns its panel locator. Re-callable: it matches either the `Open …` or the `Close …` title and clicks only when the panel is not already showing, so a test that needs two palettes can come back to the first one. They are mutually exclusive (`ToolsMenu` keeps a single `activePalette`), so opening one closes the other. `close_tools_palette(page, kind)` closes one, and `tools_palette_is_open(page, kind)` says whether it shows. |
 
 ### Canvas authoring helpers
 
@@ -219,6 +219,7 @@ palette drag and the edge drag.
 | Helper | What it does |
 |---|---|
 | `drag_to_canvas(page, source, *, at=None)` | One synthetic HTML5 drag from any draggable palette source onto `.curio-canvas-drop-target`; returns the new node's id, diffed from the canvas because ids are `uuid4`. |
+| `drag_builtin_to_canvas(page, tile, *, at=None)` | That drag for a built-in node's tile (`#tile-<template>`): opens the rail's Built-in palette, drags the tile, and closes the palette again unless it was open, so its panel covers none of the canvas afterwards. |
 | `drag_to_canvas_with_the_mouse(page, grip, *, at)` | The same drag with `page.mouse`: press on *grip* (a card's title, a palette row's grip), move in steps, release over the canvas. The browser routes every event, so it is the only one that meets what lies over the canvas, such as an open drawer's scrim. Fails with the element that took the drop, or none. |
 | `drag_with_the_mouse_onto_canvas(page, grip, *, at)` | That mouse drag without waiting for a node, for a drop that opens a dialog first or is refused. Answers what the drop did: the element that took it, whether it is the canvas, and the drop effect. |
 | `offline_catalog_package(backend_url, dir_name, libraries)` | A context manager: a test package from `packages/` in the backend's catalog, and its libraries as wheels in a wheelhouse the backend's pip reads instead of an index (`PIP_NO_INDEX` with `PIP_FIND_LINKS`). Undone afterwards. `library_installed(backend_url, library)` says whether pip installed one. `offline_package(dir_name)` reads a test package's manifest: its name, its one library and its nodes. Each test of an install path has a package and a library of its own. |
@@ -509,7 +510,7 @@ test_frontend/
     servers.py                # ports, e2e_existing_servers
     auth.py                   # signup helpers, require_owner_view
     db_stubs.py               # stub_* helpers, api_json
-    palettes.py               # open_tools_palette, close_tools_palette
+    palettes.py               # open_tools_palette, close_tools_palette, tools_palette_is_open
     upload.py                 # upload_workflow
     canvas_authoring.py       # drag_to_canvas, connect_nodes, set_node_code, play_node
     run_all.py                # Run All state, holding a run open
@@ -671,7 +672,7 @@ Other things that surprise people here:
   `#pkg-meta-runtime` (`compatibility.curioRuntime`) is not carried on
   `PackagePayload`, so `PackageMetadataModal` opens it blank every time and a
   reopened modal can never show what was saved. The Node settings modal's
-  `Provenance tab` checkbox is canvas-local:
+  `Provenance button` checkbox is canvas-local:
   `applyCanvasTemplateConfigToTemplateDraft` does not copy `hasProvenance` into
   the template draft and `toApiPayload` emits no such manifest field. Asserting
   it through an archive fails for reasons that have nothing to do with the
@@ -945,7 +946,7 @@ file and the next run dies at conftest import with `PermissionError: [WinError
 | `nodes` | the Node Catalog drawer's four tabs; **a real install of every catalog package** (`curio.weather`, `ai.utk.uhvi`, `model.curio.ddrnet23-slim` each shell out to pip); every template those packages ship dropped onto the canvas; **authoring a new node type** through Node settings -> Save as package node -> a new package, then dragging it back out of the palette; package metadata; export, re-import (400 by design), the library manager (a real `titlecase` install, then a JS install that 501s) |
 | `data` | the Data Catalog drawer's four tabs; **every hub dataset added to the dataflow**; the detail panel's four tabs; **a real import of every format** - CSV, Parquet, GeoJSON, GeoTIFF, an OSM PBF (split per layer) and a shapefile the chapter synthesises, since the repo ships none; dataset drag to canvas; a computed dataset and its lineage; the catalog pages and a deliberately bad dataset id |
 | `agents` | API Settings from both of its entry points, a new LLM configuration with all four provider tabs and Fetch models, the HF token; **every agent in the catalog installed**; all three attach targets (node, connection, canvas); the chat panel's controls; **one live turn per attached agent** against the configured provider; applying a proposal |
-| `views` | all eleven bundled examples loaded and run, Autark/WebGPU among them; linked brushing; the Data Pool scroll; a node with several inputs; JS Computation; widgets; the dashboard page and its layout editing; the provenance window and a node's provenance tab |
+| `views` | all eleven bundled examples loaded and run, Autark/WebGPU among them; linked brushing; the Data Pool scroll; a node with several inputs; JS Computation; widgets; the dashboard page and its layout editing; the provenance drawer, for the dataflow and for a node |
 
 ### What it produces
 

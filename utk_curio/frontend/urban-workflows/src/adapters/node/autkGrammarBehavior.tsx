@@ -9,6 +9,8 @@ import { useStarterSpec } from '../../hook/useStarterSpec';
 import { opensWithPackageStarter } from '../../registry/packageStarter';
 import { autkStarterText } from '../../utils/autkDefaultSpec';
 import { useFlowContext } from '../../providers/FlowProvider';
+import { useProvenanceContext } from '../../providers/ProvenanceProvider';
+import { formatDate, mapTypes } from '../../utils/formatters';
 import { resolveGrammarEmptyReason, type NodeEmptyReason } from '../../utils/nodeEmptyState';
 import { clearEmptyState, writeEmptyState } from '../../utils/writeEmptyState';
 import { isEmptySpecBuffer } from '../../utils/starterSpec';
@@ -23,11 +25,13 @@ import { AutkSpecKind, classifyAutkSpec, classifyAutkSpecString } from '../../ut
 import { autkOneViewProblem } from '../../generated/autkGrammar';
 import {
     autkNeedsInput, autkSourcesFrom, documentTableRefs, inputRow, keyValues, loadableSource, ownTableNames,
-    readAutkInput, selectFieldsOf, selectFieldsProblem, tablePositions, type LoadOrder, type PreparedAutkInput,
+    readAutkInput, selectFieldsOf, selectFieldsProblem, tablePositions, tablesToLoad, type LoadOrder,
+    type PreparedAutkInput,
 } from '../../utils/autkInput';
 import { type GrammarInput } from '../../utils/grammarInput';
 import { featureRows, matchSelections, type IncomingSelection } from '../../utils/selectionMatch';
 import { provideViewRows } from '../../utils/references/viewSelections';
+import { withChipPlaceholders } from '../../utils/references/codeReferences';
 import { selectionEchoSource } from '../../utils/selectionEcho';
 import {
     SANDBOX_BACKEND_URL_TOKEN,
@@ -42,12 +46,10 @@ import {
 } from './autkRunDescriptions';
 import { loadSpecLayers, materializeBackendLayers, runDataInBackend, toPoolOutput } from './autkLayerMaterialize';
 import {
-    bleedRasterEdges, isCurioRasterSource, newAutkDb, resolveRasterInputs, withOpaqueRasters, withRasterSources,
-    type CurioRasterSource,
+    bleedRasterEdges, isCurioRasterSource, newAutkDb, resolveRasterInputs, withOpaqueRasters,
+    withRasterSources, type CurioRasterSource,
 } from './autkRasters';
 import { applyComputeBlocks } from './autkComputeBlocks';
-import { withScenarioColors } from './autkScenarioColors';
-import type { Scenario } from '../../utils/scenarios/scenarioModel';
 import { frameMaps } from './autkMapView';
 import { grammarMaps, trackMaps } from './autkMapDrawing';
 import { mapSession, onMapSession, registerEditMap } from '../../utils/editFeatures/mapEditBus';
@@ -80,12 +82,19 @@ export type AutkBehaviorOptions = {
      * node's run stands as it ran.
      */
     marksNodeErrored?: boolean;
+    /**
+     * Whether each run is listed among the node's runs in the provenance drawer, as every node
+     * lists its own (#860). The Interaction node's map draws under that node's
+     * id, and a draw of it is not a run of that node, as a chart's redraw for a
+     * recolored scenario box is not (useVega's `recordsProvenance`).
+     */
+    recordsProvenance?: boolean;
 };
 
 export const useAutkGrammarBehavior = (
     data: NodeBehaviorData,
     nodeState: UseNodeStateReturn,
-    { marksNodeErrored = true }: AutkBehaviorOptions = {},
+    { marksNodeErrored = true, recordsProvenance = true }: AutkBehaviorOptions = {},
 ): NodeBehaviorResult => {
     const toasts = useToastContext();
     const wrapperRef = useRef<HTMLDivElement>(null);
@@ -159,6 +168,11 @@ export const useAutkGrammarBehavior = (
     // stale data object (grammar subscriptions outlive individual renders).
     const dataRef = useRef(data);
     useEffect(() => { dataRef.current = data; });
+    // The document as written, its chips unresolved: what a run's record
+    // holds, since the provenance drawer puts a run's code back in the editor.
+    // Read as a run starts, so a run queued behind another reads its own.
+    const writtenRef = useRef('');
+    writtenRef.current = String((isEmptySpecBuffer(nodeState.code) ? data.defaultCode : nodeState.code) ?? '');
 
     // Memoizes the backend data load (a DuckDB artifact reference) keyed on the
     // authored data sources + upstream identity, so re-running the grammar after
@@ -196,9 +210,9 @@ export const useAutkGrammarBehavior = (
     // node asks (hook/useGrammarInputState).
     const { connected, upstreamErrored } = useGrammarInputState(data.nodeId);
     // A failed node says so to the nodes it feeds, as a failed code node does.
-    const { markNodeErrored, scenarios, nodes: flowNodes, edges: flowEdges } = useFlowContext() as {
+    const { markNodeErrored, workflowNameRef, nodes: flowNodes, edges: flowEdges } = useFlowContext() as {
         markNodeErrored?: (nodeId: string) => void;
-        scenarios?: Scenario[];
+        workflowNameRef?: React.MutableRefObject<string>;
         nodes?: any[];
         edges?: any[];
     };
@@ -218,9 +232,8 @@ export const useAutkGrammarBehavior = (
         const maps = specRef.current?.map ? (Array.isArray(specRef.current.map) ? specRef.current.map : [specRef.current.map]) : [];
         return maps.some((m: any) => (m?.layerRefs ?? []).some((lr: any) => lr?.dataRef === table && !!lr?.getFnv));
     };
-    // Read when a run draws, so a layer that names a scenario wears its color.
-    const scenariosRef = useRef<Scenario[]>([]);
-    scenariosRef.current = scenarios ?? [];
+    // Where each run is listed, under the node's id, as every node's are (#860).
+    const { nodeExecProv } = useProvenanceContext();
     // Whether a run has been tried, whether one is under way, and what the last
     // one could not read from its input: the pre-run notice reads these.
     const hasRunRef = useRef(false);
@@ -282,7 +295,9 @@ export const useAutkGrammarBehavior = (
             host.replaceChildren();
             clearEmptyState(host);
         }
-        setRunSummary(describeAutkRun('Loaded', 'table', requestedLayerTables(JSON.parse(code as string).data)));
+        // The document as the node holds it: a chip standing on its own holds
+        // its place, as it does where the document's kind is read.
+        setRunSummary(describeAutkRun('Loaded', 'table', requestedLayerTables(JSON.parse(withChipPlaceholders(code as string)).data)));
     };
 
     const runGrammar = async (
@@ -634,9 +649,16 @@ export const useAutkGrammarBehavior = (
                         (s: any) => !emptySources.includes(s),
                     );
                 }
+                // What autk-db loads (utils/autkInput tablesToLoad): of the
+                // input's tables, those the document names, and every table
+                // its own data section loaded; first, the surface of each OSM
+                // load a table it names is a layer of (#886). The counts above
+                // cover every table at hand, so the verdict below tells a
+                // misnamed table apart from data the input does not bring.
+                const handed = tablesToLoad(dataSectionSources, spec, ownSources);
                 // On a 1 cm grid, so autk-db's second clip of these already
                 // clipped layers holds (see utils/geoPrecision).
-                spec = { ...spec, data: dataSectionSources.map(snapSourceToGrid) };
+                spec = { ...spec, data: handed.map(snapSourceToGrid) };
                 if (dataSectionSources.length === 0 && (hasMaps || hasPlot)) {
                     console.warn(
                         '[autk-grammar] render node has no data sources left — the '
@@ -783,9 +805,11 @@ export const useAutkGrammarBehavior = (
                     };
                 }
 
-                // A layer that names a scenario is drawn in its box's color, and
-                // every raster with each cell that has a value opaque.
-                spec = withOpaqueRasters(withScenarioColors(spec, scenariosRef.current));
+                // The map draws its layers as the document writes them: a layer
+                // in its scenario's color writes that box's color through its
+                // chip, resolved before the run (utils/references/codeReferences).
+                // Every raster draws each cell that has a value opaque.
+                spec = withOpaqueRasters(spec);
 
                 const { AutkGrammar } = await import('@urban-toolkit/autk-grammar');
                 // A node that left the page while its data loaded has no
@@ -1052,6 +1076,27 @@ export const useAutkGrammarBehavior = (
     };
 
     /**
+     * List a run among the node's runs in the provenance drawer, under its id, as every node
+     * lists its runs (#448, #860) and as the Vega-Lite node files its draws
+     * (hook/useVega): its times and its document as written. A failed run is
+     * listed too, as a code node's is, with "error" as what it made.
+     */
+    const recordRun = (run: { startedAt: Date; code: string }, outcome: string) => {
+        if (!recordsProvenance) return;
+        const type = (data.input as any)?.dataType;
+        const typesIn: string[] = type == null ? [] : Array.isArray(type) ? type : [type];
+        nodeExecProv(
+            formatDate(run.startedAt),
+            formatDate(new Date()),
+            workflowNameRef?.current ?? '',
+            data.nodeId,
+            mapTypes(typesIn),
+            mapTypes(outcome === 'error' ? ['error'] : typesIn),
+            run.code,
+        );
+    };
+
+    /**
      * Run the spec, and always leave the "exec" state (#271).
      *
      * The runner (FlowProvider's Run All) has no promise to await: it waits
@@ -1078,12 +1123,19 @@ export const useAutkGrammarBehavior = (
         runningRef.current = true;
         inputProblemRef.current = null;
         let settled = false;
+        // The run as the provenance drawer lists it, once, as it ends (#860). A
+        // dropped run is not listed.
+        const run = { startedAt: new Date(), code: writtenRef.current, listed: false };
         const emit = (o: { code: string; content: string }) => {
             // A dropped run says nothing (see mountedRef).
             if (leftPage()) return;
             if (o.code === 'success' || o.code === 'error') settled = true;
             if (o.code === 'error' && marksNodeErrored) markNodeErrored?.(data.nodeId);
             nodeState.setOutput(o);
+            if (settled && !run.listed) {
+                run.listed = true;
+                recordRun(run, o.code);
+            }
         };
         // The net itself lives in autkRunSettlement so it can be tested; see the
         // note there for why it is unreachable through this hook.
@@ -1305,7 +1357,8 @@ export const useAutkGrammarBehavior = (
     const needsInput = (() => {
         if (!hasSpec) return true;
         try {
-            return autkNeedsInput(JSON.parse(liveCode));
+            // A chip standing on its own holds its place (utils/autkSpecKind).
+            return autkNeedsInput(JSON.parse(withChipPlaceholders(liveCode)));
         } catch {
             return true;
         }

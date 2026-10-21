@@ -1,0 +1,28 @@
+{
+  "sha256": {
+    "README.md": "ccbe3aa610d8518565654d288c2024138a28c2fb36053800d1021233bcbb7b30",
+    "manifest.json": "74ead7091e1c8cc57f426a8f179b614a92ec654b6d47d5988b3b388c610948aa",
+    "sources/bars-with-error-bars.vl.json": "620ed73819c23ad5774c8dda706be2b25563cd2e29577c7677b629509ec4c435",
+    "sources/bars.vl.json": "29849f9ac9ab594a9679f1497df2d2eb6cc457ddda881b75d574a7b8c9ce2d75",
+    "sources/curves-by-group.vl.json": "08b54067fe2ccfbb22c0aeb5df46b461c03fa0e2ca24c61cc5fbe45aeac34c57",
+    "sources/donuts.vl.json": "be5ac1e3062e74769a0ee48a03f5f01fc553aeef57c4901198204b062a1dddb1",
+    "sources/dots-with-a-range.vl.json": "d94b5d2c311ac69d100b55baa0869a54b499394a3800a16083d1a2d7b08ead89",
+    "sources/ensemble-strips.vl.json": "f1bb90c731b3fc0bbaf28a44c7838ef92398862c9b3cbec9159c7edc70a3a595",
+    "sources/grouped-bars.vl.json": "867d23204b8667b47edec7f22851595b857378db1e02e51e96b6d849fe51179a",
+    "sources/lines-with-band.vl.json": "d729d551b26772907855ff08c0d974c41410a8df6ace60b3cd8f12fc97e72094",
+    "sources/lines.vl.json": "ed3c716ab6c0a5e474aa23d1932be72bb1b62857d77c83112628eefd4e8ed85e",
+    "sources/lollipops.vl.json": "1f08ac1f199483dfcab5b77dd283001d085544df6af789edf937c4fe0a075542",
+    "sources/pie.vl.json": "419b2aa67c56c71f826515d10345b758bf0b53eb5b53aee58f0605f08c8c5ef8",
+    "sources/points.vl.json": "694ebc0d518fdadf51d3abf9c0583bace5ab215dedec91f4d122347faac48961",
+    "sources/raster-calculator.py": "463a522521da2453290c6a06525edf97f305eb4082dc304b85c8fbe9e28761dc",
+    "sources/rasterize-buildings.py": "b0739294eb6951269f77f4adc06abbd6f012c96c365932cfe7a857cac86fecf6",
+    "sources/scout_rasters/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "sources/scout_rasters/convert_to_raster.py": "62eda82b3d6d12258e9c2d6d173da84b5a8c445e2b31d1fe62eab6587e36d676",
+    "sources/scout_rasters/node_outputs.py": "6d5a741822043189ab80f3fd92d7c3d09a6b3e4b3d09d848d73331ff0b76e517",
+    "sources/scout_rasters/raster_algebra.py": "d16e68416677817ef52ae241f881c3f21b16ebaa836c4294b858d34a9300439c",
+    "sources/scout_rasters/web_tiles.py": "566901136277d2a104d335e1436ff37750ed6a5cbd108402e1353164d449d474",
+    "sources/stacked-bars-with-totals.vl.json": "771b8f84620230959f0897732fa0a039c058fcb01824b44bad43aa0d0531d19e",
+    "sources/table.vl.json": "ea47c5282f0940878ba53a61f8b208d7ef2607061cf9fa9f8f33d58fcaf2623d",
+    "sources/weighted-matrix.vl.json": "abf036349530b4612746ecf01f54d5c235a532802886ed459f6e0013e3fdd8ce"
+  }
+}

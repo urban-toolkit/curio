@@ -1,6 +1,12 @@
 import { useCallback, useMemo, useState } from "react";
-import { useAgentCatalog, type AgentCard, type AgentCatalogScope } from "../../../services/agents";
+import {
+  useAgentCatalog,
+  type AgentCard,
+  type AgentCatalogScope,
+  type AgentProjectAction,
+} from "../../../services/agents";
 import { useToastContext } from "../../../providers/ToastProvider";
+import { hostedGuestSignInNote, useHostedGuest } from "../../apiSettings/useHostedGuest";
 
 /**
  * The Agent Catalog drawer's view of THE catalog hook (memo dev/142, F3): it
@@ -57,12 +63,26 @@ export function useAgentCatalogDrawer(
   const { showToast } = useToastContext();
   const [scope, setScope] = useState<AgentScope>("browse");
   const onSuccess = useCallback((message: string) => showToast(message, "success"), [showToast]);
+  const hostedGuest = useHostedGuest();
+  // A hosted guest gets no id for a dataflow it never saved, since it cannot
+  // save one. Its add or remove then says to sign in, as the drawer's error,
+  // instead of "Couldn't save this dataflow", a save it cannot make.
+  const ensureProject = useCallback(
+    async (action?: AgentProjectAction): Promise<string | null> => {
+      const id = onEnsureProject ? await onEnsureProject() : null;
+      if (!id && hostedGuest) {
+        throw new Error(hostedGuestSignInNote(action === "remove" ? "remove agents" : "add agents"));
+      }
+      return id;
+    },
+    [onEnsureProject, hostedGuest],
+  );
   const catalog = useAgentCatalog({
     enabled: presented,
     projectId,
     activeScope: scope,
     scopes: ALL_SCOPES,
-    onEnsureProject,
+    onEnsureProject: ensureProject,
     onSuccess,
   });
 

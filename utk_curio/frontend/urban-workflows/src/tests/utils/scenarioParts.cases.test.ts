@@ -6,7 +6,7 @@
  * so the catalog lists a scenario the way its canvas shows it.
  *
  * The cases are written as a saved spec holds nodes; here each becomes the
- * canvas node a load makes of it. A case's SCOUT Comparison chart is known to
+ * canvas node a load makes of it. A case's Scout chart is known to
  * the canvas as its installed package registers it; the catalog reads its
  * shipped manifest.
  */

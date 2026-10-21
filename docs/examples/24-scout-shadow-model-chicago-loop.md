@@ -4,12 +4,12 @@ SCOUT's Deep Umbra shadow model does not read buildings: it reads map tiles in
 which each pixel's gray level is the height of the building under it. This
 example takes the buildings of SCOUT's own shadow example in the Chicago Loop,
 draws them in 3D, and turns them into those tiles with the **Rasterize
-Buildings** node of the `scout.rasters@1` package, SCOUT's own
+Buildings** node of the `curio.scout@1` package, SCOUT's own
 rasterizer ported to Curio. It draws the tiles joined into one map. Then the
 **Accumulated Shadow** node of Deep Umbra's model package,
 `model.scout.deep-umbra@1`, runs Deep Umbra on those heights: a map shows how
 many minutes of a summer day each spot is in shadow, and a **Raster
-Calculator**, the other node of `scout.rasters@1`, takes their statistics, the
+Calculator**, another node of `curio.scout@1`, takes their statistics, the
 mean and median over the ground among them, SCOUT's own two numbers.
 
 ## Pipeline overview
@@ -185,8 +185,13 @@ No data, in either raster, is not counted.
 # input_0 is the accumulated shadow in minutes, input_1 the heights it was
 # predicted from, as the mask: SCOUT's metrics count the ground, the cells
 # Deep Umbra reads as gray level 0, a height under 1.08 m.
-return curio_raster_statistics(input_0, mask=input_1, where=lambda height: height < 1.08)
+from scout_rasters.raster_algebra import raster_statistics
+
+return raster_statistics(input_0, mask=input_1, where=lambda height: height < 1.08)
 ```
+
+`raster_statistics` is Scout's, from the package's own module, which the
+Raster Calculator's code imports.
 
 In summer the ground of these blocks is in shadow 128.6 minutes on average,
 with a median of 3.3 minutes: SCOUT's own numbers for its example, within a

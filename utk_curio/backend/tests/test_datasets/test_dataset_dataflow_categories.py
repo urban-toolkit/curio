@@ -36,7 +36,7 @@ FLOOD = (
     ["data.scout.flood-nbs-classes"]
     + [
         f"data.scout.flood-depth-{period}-{kind}"
-        for period in ("2020-2040", "2050-2080", "2080-2100")
+        for period in ("2020-2050", "2050-2080", "2080-2100")
         for kind in ("nbs", "no-nbs")
     ]
 )

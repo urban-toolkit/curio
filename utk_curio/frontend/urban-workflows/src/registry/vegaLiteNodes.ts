@@ -1,7 +1,7 @@
 /**
  * Which nodes are Vega-Lite charts: the built-in Vega-Lite node, and a package
  * template that draws with its grammar (`grammarId: "vega-lite"`), such as the
- * SCOUT Comparison package's charts (`packages/scout.comparison@1`). Such a
+ * Scout package's charts (`packages/curio.scout@1`). Such a
  * template draws with the Vega-Lite node's own behavior, so every rule keyed
  * on the node's kind asks this instead of comparing the type with the
  * built-in's: the chart draws from a restored input (`UniversalNode`), a

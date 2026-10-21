@@ -16,6 +16,14 @@ an empty dataflow) saw its first request wait that long and come back null
 after the 3 s of retries. The page draws its first frame only after the
 switch, so a request made once a frame is drawn is past it.
 
+The start can outlast the probe's 10 s (#1017). A freshly launched Chrome on a
+busy GPU runner drew nothing for 13 to 15 s, so the probe asked while the GPU
+process was still starting, and the switch dropped that request after the 3 s
+of retries, or past the 8 s. The app keeps its 10 s, since a hidden tab draws
+no frame and would wait all of it. A test's page is not hidden, so when the
+probe says the page drew no frame and found no adapter, the helper runs the
+probe again, for up to a minute, until a probe asks after a drawn frame.
+
 A browser that answers null for the whole 3 s has no adapter for the app
 either.
 """
@@ -23,8 +31,9 @@ either.
 from __future__ import annotations
 
 import os
+import time
 import warnings
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 import pytest
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
@@ -47,9 +56,18 @@ _HOOK_READY_JS = "() => typeof window.__curio_probeWebGpu === 'function'"
 #: The bundle defines the hook as it loads, long before a test asks.
 _HOOK_TIMEOUT_MS = 30_000
 
+#: How long the helper runs the probe again while its page has drawn no frame
+#: (#1017). A page that has drawn nothing in a minute is stuck, not slow.
+ASK_AGAIN_FOR_S = 60
+
+#: How the probe's record starts when its wait for a frame ran out: "drew no
+#: frame in 10000 ms" (``WebGpuSupport.frame`` in webgpuSupport.ts).
+_NO_FRAME = "drew no frame"
+
 
 class WebGpuAdapterRetried(UserWarning):
-    """The browser answered null before it gave an adapter: the retry was needed."""
+    """The adapter came after a null, or after a probe whose page drew no
+    frame: asking again was needed."""
 
 
 @dataclass(frozen=True)
@@ -63,16 +81,25 @@ class WebGpuAnswer:
     frame: str | None = None
     #: Why not, in the app's words, when no request gave an adapter.
     reason: str | None = None
+    #: The probes run before this one, which found no adapter while the page
+    #: drew no frame, so the helper ran the probe again.
+    earlier: tuple["WebGpuAnswer", ...] = ()
 
     def __bool__(self) -> bool:
         return self.adapter
+
+    @property
+    def drew_no_frame(self) -> bool:
+        """Whether the probe's wait for a drawn frame ran out before it asked."""
+        return bool(self.frame and self.frame.startswith(_NO_FRAME))
 
     def __str__(self) -> str:
         if self.answers:
             said = "the browser answered " + ", ".join(self.answers)
         else:
             said = self.reason or "the probe asked nothing"
-        return f"the page {self.frame}; {said}" if self.frame else said
+        this = f"the page {self.frame}; {said}" if self.frame else said
+        return "; asked again: ".join([*(str(probe) for probe in self.earlier), this])
 
 
 def wait_for_probe(page) -> None:
@@ -88,18 +115,32 @@ def wait_for_probe(page) -> None:
         )
 
 
+def _probe(page) -> WebGpuAnswer:
+    """One run of the app's probe, and its record."""
+    found = page.evaluate(PROBE_JS)
+    return WebGpuAnswer(
+        bool(found["adapter"]), tuple(found["answers"]), found.get("frame"), found.get("reason"),
+    )
+
+
 def webgpu_adapter(page) -> WebGpuAnswer:
     """Ask for a WebGPU adapter as the app does; the answer is true when one came.
 
-    When it came after a null, a ``WebGpuAdapterRetried`` warning says so in
-    the run's warnings summary.
+    While the page has drawn no frame and no adapter came, the probe runs
+    again, for up to ``ASK_AGAIN_FOR_S``: Chrome's switch to software
+    compositing, which comes before the page's first frame, may have dropped
+    its request. When the adapter came after a null or after such a probe, a
+    ``WebGpuAdapterRetried`` warning says so in the run's warnings summary.
     """
     wait_for_probe(page)
-    found = page.evaluate(PROBE_JS)
-    answer = WebGpuAnswer(
-        bool(found["adapter"]), tuple(found["answers"]), found.get("frame"), found.get("reason"),
-    )
-    if answer and len(answer.answers) > 1:
+    deadline = time.monotonic() + ASK_AGAIN_FOR_S
+    earlier: tuple[WebGpuAnswer, ...] = ()
+    answer = _probe(page)
+    while not answer and answer.drew_no_frame and time.monotonic() < deadline:
+        earlier += (answer,)
+        answer = _probe(page)
+    answer = replace(answer, earlier=earlier)
+    if answer and (earlier or len(answer.answers) > 1):
         warnings.warn(str(answer), WebGpuAdapterRetried, stacklevel=2)
     return answer
 

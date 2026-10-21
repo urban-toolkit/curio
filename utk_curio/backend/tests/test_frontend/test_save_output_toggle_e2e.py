@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING
 from playwright.sync_api import expect
 
 from .utils import (
-    drag_to_canvas,
+    drag_builtin_to_canvas,
     node_locator,
     require_owner_view,
     require_project_page,
@@ -54,9 +54,9 @@ def test_view_nodes_have_no_save_toggle_and_computing_nodes_keep_it(
     )
     require_owner_view(page)
 
-    analysis = drag_to_canvas(page, page.locator(ANALYSIS_TILE), at=(150, 150))
-    vega = drag_to_canvas(page, page.locator(VEGA_TILE), at=(760, 150))
-    simple = drag_to_canvas(page, page.locator(SIMPLE_TILE), at=(150, 600))
+    analysis = drag_builtin_to_canvas(page, ANALYSIS_TILE, at=(150, 150))
+    vega = drag_builtin_to_canvas(page, VEGA_TILE, at=(760, 150))
+    simple = drag_builtin_to_canvas(page, SIMPLE_TILE, at=(150, 600))
 
     # The computing node's toggle is the control for this check.
     expect(_toggle(page, analysis)).to_be_attached(timeout=15000)

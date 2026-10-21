@@ -350,7 +350,7 @@ def _canonical_order(attr_keys: list, in_adj: list, out_adj: list) -> tuple:
     ambiguous class in turn and keep the branch whose edge tuple is smallest.
 
     Nodes that differ only in which circle of one node they feed (each
-    scenario's node into a Compare Scenarios node) refine alike, so a graph
+    scenario's node into a chart that compares them) refine alike, so a graph
     of many such groups runs the search out of its budget. Such a graph is
     searched again with outgoing circles refined too, and that order is used
     when it is exact. A graph the first search labels exactly keeps the order

@@ -2,10 +2,11 @@
 delegation whose bounded child reply parses as a build request becomes a
 runtime-minted, reviewed ``package.draft.apply`` proposal at the parent's
 attachment (the dev/73 one-mint-policy extended). Covers the payload
-extractor, the happy path from the Researcher to the Node Builder's
-package-writing mode, the Node Builder asking its own mode, recoverable
-failures (unparseable reply, invalid draft), the grant gate, and injection
-resistance (draft-shaped text outside the delegation-result path never mints).
+extractor, the happy paths from the Researcher and the Dataflow Builder to the
+Node Builder's package-writing mode, the Node Builder asking its own mode,
+recoverable failures (unparseable reply, invalid draft), the grant gate (an
+agent of the user's own without the draft tool), and injection resistance
+(draft-shaped text outside the delegation-result path never mints).
 """
 
 from __future__ import annotations
@@ -163,6 +164,35 @@ def _run(client, token, project_id, att_id, message="post-it my findings"):
     )
 
 
+#: An agent of the user's own that asks the Node Builder to write a package
+#: and does not hold package.draft.apply. Every agent Curio ships that asks
+#: for a package holds that tool, so the grant gate is tested on this one.
+WITHOUT_THE_DRAFT_TOOL = "agent.my-planner@1.0.0"
+
+
+def _write_agent_without_the_draft_tool(user_key: str) -> str:
+    """Put ``WITHOUT_THE_DRAFT_TOOL`` in *user_key*'s agent store: a canvas
+    agent that reads the dataflow, proposes nodes, and delegates package
+    writing to the Node Builder's writing mode."""
+    from utk_curio.backend.app.agents.repositories import storage
+
+    agent_id, version = WITHOUT_THE_DRAFT_TOOL.split("@", 1)
+    storage.write_definition(user_key, WITHOUT_THE_DRAFT_TOOL, {
+        "id": agent_id, "name": "My Planner", "category": "canvas",
+        "version": version,
+        "capabilities": [{"id": "conversation.respond", "contractVersion": "1"}],
+        "compatibleTargets": [{"kind": "canvas", "requires": []}],
+        "tools": [{"id": "dataflow.read"}, {"id": "node.create"}],
+        "delegatesTo": [{
+            "id": "agent.node-builder",
+            "capabilities": ["package.build", "package.extend", "node.kind.author"],
+        }],
+        "provenance": {"publisher": "me", "trust": "imported"},
+        "prompts": {"instruction": {"path": "prompts/instruction.md", "variables": []}},
+    }, {"prompts/instruction.md": "Answer briefly."})
+    return WITHOUT_THE_DRAFT_TOOL
+
+
 @pytest.fixture(autouse=True)
 def _fresh_jobs():
     build_jobs.reset_registry()
@@ -261,23 +291,92 @@ class TestDelegateDraftMint:
         assert all(p["type"] != "proposal" for p in run.get_json()["content"])
         assert "invalid build request" in calls[2][-1]["content"]
 
-    def test_parent_without_the_grant_keeps_text_only(
+    def test_the_dataflow_builders_delegated_draft_mints_the_reviewed_draft(
             self, client, user_and_token, tmp_curio, monkeypatch):
-        # The Dataflow Builder delegates package writing (dev/89) but does NOT
-        # declare package.draft.apply: the child's draft stays text, never a
-        # mint.
+        """Issue #917: the Dataflow Builder hands a package-scale step to the
+        Node Builder's package-writing mode. It holds the draft tool, so the
+        draft comes back in its own chat as a reviewed proposal, as one the
+        Researcher asks for does, never as text only."""
         _, token = user_and_token
         pid = _project(client, token)
-        att_id, calls = _setup(client, token, pid, monkeypatch, parent=DATAFLOW_BUILDER,
+        child_reply = "```json\n" + json.dumps({"packageDraft": _draft()}) + "\n```"
+        att_id, calls = _setup(client, token, pid, monkeypatch, parent=DATAFLOW_BUILDER, replies=[
+            _delegate_tail(),                        # it asks for node.kind.author
+            child_reply,                             # the writing mode replies with a draft
+            "Proposed, review the package above.",   # its next round
+        ])
+        run = _run(client, token, pid, att_id)
+        assert run.status_code == 200, run.get_data(as_text=True)
+        parts = run.get_json()["content"]
+
+        entry = next((p for p in parts if p["type"] == "delegation"), None)
+        assert entry is not None, f"the Dataflow Builder's turn holds no delegation: {parts}"
+        assert (entry["coord"], entry["capability"]) == (WRITER, "node.kind.author")
+        proposals = [p for p in parts if p["type"] == "proposal"]
+        assert len(proposals) == 1, (
+            "the package draft did not reach review in the Dataflow Builder's chat; "
+            f"the delegation reads {entry['status']}: {entry['summary']}"
+        )
+        proposal = proposals[0]
+        assert entry["status"] == "ok", entry
+        assert proposal["tool"] == "package.draft.apply"
+        assert proposal["status"] == "pending"
+        assert proposal["pins"]["target"] == "ai.agent.notes@1"
+        # Its next round is told a proposal awaits review.
+        assert "proposal" in calls[2][-1]["content"]
+
+        # The Dataflow Builder's card holds it for review.
+        cards = client.get(
+            f"/api/agents/projects/{pid}/attachments", headers=_auth(token),
+        ).get_json()["attachments"]
+        active = next(c for c in cards if c["attachmentId"] == att_id)["activeProposal"]
+        assert (active["proposalId"], active["tool"], active["status"]) == (
+            proposal["proposalId"], "package.draft.apply", "pending")
+
+        # Applying it in the Dataflow Builder's chat installs the package.
+        resp = client.post(
+            f"/api/agents/projects/{pid}/attachments/{att_id}"
+            f"/proposals/{proposal['proposalId']}/apply",
+            headers=_auth(token),
+        )
+        assert resp.status_code == 200, resp.get_data(as_text=True)
+        body = resp.get_json()
+        assert body["requiresRegistryRefresh"] is True
+        assert body["installedPackage"]["dirName"] == "ai.agent.notes@1"
+
+    def test_parent_without_the_grant_keeps_text_only(
+            self, client, user_and_token, tmp_curio, monkeypatch):
+        # An agent that delegates package writing but does NOT declare
+        # package.draft.apply: the child's draft stays text, never a mint.
+        # Every agent Curio ships that delegates package writing holds the
+        # tool, so the parent is an agent of the user's own.
+        from utk_curio.backend.app.agents.application import catalog
+        from utk_curio.backend.app.projects.services import _user_dir_key
+
+        user, token = user_and_token
+        pid = _project(client, token)
+        with client.application.app_context():
+            user_key = _user_dir_key(user)
+        parent = _write_agent_without_the_draft_tool(user_key)
+        manifest = catalog._resolve_definition(user_key, parent)
+        assert manifest is not None and manifest.delegates(WRITER.split("@", 1)[0], "node.kind.author")
+        assert "package.draft.apply" not in [t.id for t in manifest.tools]
+        att_id, calls = _setup(client, token, pid, monkeypatch, parent=parent,
                                replies=[
                                    _delegate_tail(),
                                    json.dumps(_draft()),
                                    "Summarizing the draft for you.",
                                ])
         run = _run(client, token, pid, att_id)
-        assert all(p["type"] != "proposal" for p in run.get_json()["content"])
+        parts = run.get_json()["content"]
+        assert all(p["type"] != "proposal" for p in parts)
         assert "not\ngranted" in calls[2][-1]["content"] or (
             "not granted" in calls[2][-1]["content"].replace("\n", " "))
+        # The writing mode ran and its draft came back, and the delegation
+        # card reports that nothing was proposed.
+        entry = next(p for p in parts if p["type"] == "delegation")
+        assert (entry["coord"], entry["capability"], entry["status"]) == (
+            WRITER, "node.kind.author", "failed")
 
     def test_the_node_builders_own_writing_mode_mints_the_reviewed_draft(
             self, client, user_and_token, tmp_curio, monkeypatch):

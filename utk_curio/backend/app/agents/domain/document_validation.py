@@ -37,7 +37,24 @@ dev/134 corrects two things this module could not do, both proven by the owner's
 - a Vega document's **field references** are checked against the columns its
   input actually has (dev/129 **F3**): the same spec encoded
   ``y.field: "neighborhood"`` over a frame whose name column is ``community``,
-  which the schema cannot know and a reader of the columns can.
+  which the schema cannot know and a reader of the columns can. A view that
+  names the dataset ``inputs`` reads its inputs stacked, with the columns the
+  stack adds beside theirs (``INPUTS_FIELDS``) and without a GeoDataFrame's
+  geometry, so a view of it that draws one is refused. A field names a column
+  when its text, or its text unescaped (:func:`unescaped_field`), is the
+  column's name: ``rain\\.mm`` and ``rain.mm`` both name the column
+  ``rain.mm``, since Vega-Lite escapes a field itself in some places (an
+  aggregate, a bin transform, a condition's test). A path through a column,
+  ``zone.id`` beside a column ``zone``, names none.
+
+#662: a chart or a map writes its scenarios through chips, which are not JSON
+until they are resolved: ``"scale": [!! scenario colors !!]``. The loop
+resolves them over the dataflow before it checks (``_resolved_document`` in
+``solve/verified_loop.py``). One no dataflow resolved, for a node the saved spec
+does not hold, is read as a value of its shape (``with_stand_in_chips``), and
+a field of ``inputs`` as its name, so the rest of the document is still checked;
+a chip that cannot stand where it is written (a scale inside quotes, a chip no
+scenario chip is called) is refused in its own words.
 """
 
 from __future__ import annotations
@@ -73,9 +90,12 @@ def _parse_json(content: str) -> tuple[object | None, str | None]:
         return None, f"the document is not valid JSON: {exc}"
 
 
-def validate_vega_lite(content: str, *, columns: list | None = None) -> dict:
+def validate_vega_lite(
+    content: str, *, columns: list | None = None, geometry_columns: list | None = None,
+) -> dict:
     """A Vega-Lite document, against the schema ``altair`` bundles offline —
-    and (dev/134) against the columns its input actually has."""
+    and (dev/134) against the columns its input actually has, of which
+    *geometry_columns* are not in the dataset ``inputs``."""
     payload, error = _parse_json(content)
     if error:
         return {"status": STATUS_INVALID, "detail": _detail(error)}
@@ -97,7 +117,7 @@ def validate_vega_lite(content: str, *, columns: list | None = None) -> dict:
         alt.Chart.from_dict(spec, validate=True)
     except Exception as exc:  # noqa: BLE001  (altair raises SchemaValidationError)
         return {"status": STATUS_INVALID, "detail": _vega_message(exc)}
-    fields = check_vega_fields(payload, columns)
+    fields = check_vega_fields(payload, columns, geometry_columns)
     if fields is not None:
         return fields
     return {"status": STATUS_VALID}
@@ -110,6 +130,17 @@ def validate_vega_lite(content: str, *, columns: list | None = None) -> dict:
 #: (``useTableData``) or after a direct selection (``useVega``'s ``setInteracted``).
 RUNTIME_FIELDS = ("interacted", "__row_index__")
 
+#: The dataset a Vega-Lite spec names to read every input's rows stacked
+#: (``INPUTS_DATASET`` in ``utils/vegaDatasets.ts``).
+INPUTS_DATASET = "inputs"
+#: The columns each of its rows carries beside its input's own: its circle and
+#: its scenario box's id and name. ``stack_inputs`` in
+#: ``utk_curio/sandbox/util/scenario_stack.py`` writes them, under these names.
+#: It also writes ``value`` for an input that is a value, but it refuses a
+#: value beside a table, and the check knows only tables' columns: there,
+#: ``value`` is a column only when a table has one.
+INPUTS_FIELDS = ("__input__", "scenario", "scenario_name")
+
 #: Transforms whose output column names cannot be known from the document
 #: alone. A spec that uses one is schema-checked and its FIELDS are left alone —
 #: refusing a field this module cannot enumerate would be a guess.
@@ -117,6 +148,32 @@ _OPAQUE_TRANSFORMS = ("pivot", "fold", "flatten", "sample", "lookup", "density",
 
 #: Keys under which a Vega-Lite spec nests another spec.
 _SPEC_CONTAINERS = ("layer", "hconcat", "vconcat", "concat", "spec", "facet", "repeat")
+
+
+def unescaped_field(field: str) -> str:
+    """The text *field* spells, each backslash keeping the character after it
+    as it is, as Vega reads a field: ``rain\\.mm`` is ``rain.mm``. Kept in sync
+    with ``unescapedVegaField`` in ``utils/vegaFieldNames.ts``."""
+    out: list[str] = []
+    i = 0
+    while i < len(field):
+        if field[i] == "\\":
+            i += 1
+            if i < len(field):
+                out.append(field[i])
+        else:
+            out.append(field[i])
+        i += 1
+    return "".join(out)
+
+
+def _named_column(field: str, names) -> str | None:
+    """The one of *names* that *field* names: its text, or its text unescaped;
+    None when it names neither."""
+    if field in names:
+        return field
+    plain = unescaped_field(field)
+    return plain if plain in names else None
 
 
 def _transform_outputs(spec: dict) -> tuple[set, bool]:
@@ -140,6 +197,11 @@ def _transform_outputs(spec: dict) -> tuple[set, bool]:
                     produced.add(item["as"])
         if isinstance(entry.get("calculate"), str) and isinstance(entry.get("as"), str):
             produced.add(entry["as"])
+        # A lookup brings the fields it names from another dataset under their
+        # own names, unless an ``as`` renames them (counted above).
+        source = entry.get("from")
+        if "lookup" in entry and "as" not in entry and isinstance(source, dict):
+            produced.update(unescaped_field(name) for name in source.get("fields") or [] if isinstance(name, str))
     for key in _SPEC_CONTAINERS:
         child = spec.get(key)
         for sub in (child if isinstance(child, list) else [child]):
@@ -150,34 +212,51 @@ def _transform_outputs(spec: dict) -> tuple[set, bool]:
     return produced, opaque
 
 
-def _field_refs(spec: dict, path: str = "") -> list[tuple[str, str]]:
-    """Every ``(json path, field name)`` an encoding or a transform reads.
+def _field_refs(spec: dict, path: str = "") -> list[tuple[str, str, bool]]:
+    """Every ``(json path, field name, whether its view reads inputs)`` an
+    encoding or a transform reads, a fold's listed columns among them. A view
+    reads the dataset its own ``data`` names, else the one of the view it sits
+    in.
 
     Only string fields: ``{"repeat": "column"}`` and a bare ``count`` aggregate
-    name no column, and inventing one would produce a false refusal.
+    name no column, and inventing one would produce a false refusal. Nor does
+    an encoding whose aggregate is ``count`` read its field: Vega-Lite's count
+    draws ``__count`` whatever the field names.
     """
-    refs: list[tuple[str, str]] = []
+    refs: list[tuple[str, str, bool]] = []
 
-    def _walk(node: object, where: str) -> None:
+    def _walk(node: object, where: str, on_inputs: bool) -> None:
         if isinstance(node, dict):
+            if isinstance(node.get("data"), dict):
+                on_inputs = _names_inputs(node["data"])
             for key, value in node.items():
                 if key == "field" and isinstance(value, str):
-                    refs.append((f"{where}.field", value))
-                elif key == "groupby" and isinstance(value, list):
+                    if node.get("aggregate") != "count":
+                        refs.append((f"{where}.field", value, on_inputs))
+                elif key in ("groupby", "fold") and isinstance(value, list):
                     for i, name in enumerate(value):
                         if isinstance(name, str):
-                            refs.append((f"{where}.groupby[{i}]", name))
+                            refs.append((f"{where}.{key}[{i}]", name, on_inputs))
                 else:
-                    _walk(value, f"{where}.{key}" if where else key)
+                    _walk(value, f"{where}.{key}" if where else key, on_inputs)
         elif isinstance(node, list):
             for index, item in enumerate(node):
-                _walk(item, f"{where}[{index}]")
+                _walk(item, f"{where}[{index}]", on_inputs)
 
-    _walk(spec, path)
+    _walk(spec, path, False)
     return refs
 
 
-def check_vega_fields(payload: dict, columns: list | None) -> dict | None:
+def _names_inputs(data: object) -> bool:
+    return (
+        isinstance(data, dict) and data.get("name") == INPUTS_DATASET
+        and "url" not in data and "values" not in data
+    )
+
+
+def check_vega_fields(
+    payload: dict, columns: list | None, geometry_columns: list | None = None,
+) -> dict | None:
     """dev/134 (closes dev/129 **F3**): does this document read columns that
     exist?
 
@@ -187,24 +266,52 @@ def check_vega_fields(payload: dict, columns: list | None) -> dict | None:
     the SAME bounded artifact preview the generation request was handed
     (``DEC-063``: never refuse a model for ignoring something it was not told),
     so when they are unknown this check does not run at all.
+
+    A view that reads ``inputs`` may read the columns the stack adds
+    (``INPUTS_FIELDS``), and none of *geometry_columns*: the stack leaves a
+    GeoDataFrame's geometry out of its rows, as the preamble says. A view of
+    one input's own dataset has only the inputs' columns.
+
+    A field names a column when its text, or its text unescaped, is the
+    column's name (:func:`_named_column`): ``rain\\.mm`` and ``rain.mm`` both
+    name the column ``rain.mm``, and ``zone.id`` beside a column ``zone``
+    names none.
     """
     if not columns:
         return None
     known = {str(c) for c in columns} | set(RUNTIME_FIELDS)
     produced, opaque = _transform_outputs(payload)
+    refs = _field_refs(payload)
+    # The geometry the stack leaves out is missing whatever else a view's
+    # transforms do, unless one of them makes that column (a lookup's fields),
+    # so this runs before an opaque transform leaves the other fields alone.
+    left_out = {str(c) for c in geometry_columns or ()} - produced
+    for where, field, on_inputs in refs:
+        column = _named_column(field, left_out)
+        if on_inputs and column is not None:
+            return {
+                "status": STATUS_INVALID,
+                "detail": _detail(
+                    f"{where} reads {column!r}, a geometry column, but the dataset "
+                    f"{INPUTS_DATASET!r} stacks its inputs' rows without their geometry; "
+                    f"a view that draws it reads one input's own dataset, input_0 for "
+                    f"the first circle, input_1 for the second"
+                ),
+            }
     if opaque:
         return None  # a transform creates names this module cannot enumerate
     known |= produced
-    for where, field in _field_refs(payload):
-        if field in known:
+    for where, field, on_inputs in refs:
+        added = RUNTIME_FIELDS + (INPUTS_FIELDS if on_inputs else ())
+        if _named_column(field, known | set(added)) is not None:
             continue
         available = ", ".join(sorted(str(c) for c in columns)[:20])
         return {
             "status": STATUS_INVALID,
             "detail": _detail(
-                f"{where} reads {field!r}, which is not a column of this node's "
-                f"input — available columns: {available}"
-                + (f" (plus {', '.join(RUNTIME_FIELDS)}, added by Curio)")
+                f"{where} reads {unescaped_field(field)!r}, which is not a column of this node's "
+                f"input; available columns: {available}"
+                + (f" (plus {', '.join(added)}, added by Curio)")
             ),
         }
     return None
@@ -241,8 +348,11 @@ def _vega_message(exc: Exception) -> str:
 _MAX_SCHEMA_ERRORS = 5
 
 
-def validate_autk_grammar(content: str, *, columns: list | None = None) -> dict:
-    """An Autark document, against the grammar's own JSON Schema.
+def validate_autk_grammar(
+    content: str, *, columns: list | None = None, geometry_columns: list | None = None,
+) -> dict:
+    """An Autark document, against the grammar's own JSON Schema. A map reads
+    each table with its geometry, so *geometry_columns* change nothing here.
 
     The schema is the vendored copy of what autk-grammar publishes
     (``contracts.AUTK_SCHEMA_PATH``). Two rules sit on top, because no schema
@@ -456,8 +566,13 @@ def validate(
     grammar_id: object = None,
     content_kind: object = None,
     columns: list | None = None,
+    geometry_columns: list | None = None,
 ) -> dict:
     """Validate a non-executable node's content. See the module docstring.
+
+    *columns* are the ones the node's inputs have (``upstream_schema.columns_of``),
+    and *geometry_columns* those of them only a GeoDataFrame's geometry fills
+    (``upstream_schema.geometry_columns_of``).
 
     ``content_kind`` is the roster's for this template; a kind of ``none``
     authors nothing (it renders or forwards its input), so a marker in its
@@ -471,7 +586,13 @@ def validate(
     "not controllable" into an ``autk-grammar`` node as its grammar; the loop
     must ask again with the shape named, and write nothing until it gets one.
     """
-    text = content if isinstance(content, str) else ""
+    from utk_curio.backend.app.execution.code_references import with_stand_in_chips
+
+    # #662: a scenario chip, or a field of `inputs`, that no dataflow resolved
+    # (the node is not in the saved spec) is read as a value of its shape, so
+    # the rest of the document is checked rather than refused as no JSON; one
+    # that cannot stand where it is written is refused in its own words.
+    text, refused_chips = with_stand_in_chips(content) if isinstance(content, str) else ("", [])
     suffix = canonical_suffix(node_type)
     grammar = grammar_of(node_type, grammar_id)
     passive = _authors_nothing(node_type, content_kind)
@@ -505,8 +626,11 @@ def validate(
                 f"node's content must be {grammar_shape(grammar)}"
             ),
         }
+    if refused_chips:
+        # The chip's own refusal, not the schema's reading of it as text.
+        return {"status": STATUS_INVALID, "detail": _detail(" ".join(refused_chips))}
     try:
-        return validator(text, columns=columns)
+        return validator(text, columns=columns, geometry_columns=geometry_columns)
     except Exception as exc:  # noqa: BLE001
         log.warning("Document validation failed for %s", grammar or suffix, exc_info=True)
         return {"status": STATUS_UNCHECKED,

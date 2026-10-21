@@ -1,5 +1,5 @@
-"""Assertions on what a node drew: a Vega canvas, an Autark map or plot, an
-empty state.
+"""Assertions on what a node drew: a Vega canvas and the colors it holds, an
+Autark map or plot and its legend, an empty state.
 """
 
 import json
@@ -433,3 +433,81 @@ def assert_vega_node_empty_state(page, node_id: str, reason: str, *, timeout: fl
         f"Vega node {node_id}: reported {reason!r} but rendered no message for "
         f"the user to read"
     )
+
+
+# How many opaque pixels of a Vega-Lite chart's canvas are each of *colors*,
+# give or take.
+_COLOR_PIXELS_JS = """([id, colors]) => {
+    const canvas = document.querySelector(`#vega${id} canvas`);
+    if (!canvas || !canvas.width || !canvas.height) return null;
+    const { data } = canvas.getContext("2d").getImageData(0, 0, canvas.width, canvas.height);
+    const targets = colors.map((hex) => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16)));
+    const counts = targets.map(() => 0);
+    for (let p = 0; p < data.length; p += 4) {
+        if (data[p + 3] < 200) continue;
+        targets.forEach((t, k) => {
+            if (Math.abs(data[p] - t[0]) <= 12 && Math.abs(data[p + 1] - t[1]) <= 12
+                && Math.abs(data[p + 2] - t[2]) <= 12) counts[k] += 1;
+        });
+    }
+    return counts;
+}"""
+
+
+# The title of a node's map legend, which autk-map writes as the legend's
+# first child (`#autkMapLegend`, one per map, so read inside the node).
+_LEGEND_TITLE_JS = """(id) => {
+    const node = document.querySelector(`.react-flow__node[data-id="${id}"]`);
+    const heading = node && node.querySelector("#autkMapLegend")?.firstElementChild;
+    return heading ? heading.textContent : null;
+}"""
+
+
+def _assert_legend_title(page, node_id: str, title: str) -> None:
+    """The node's map legend is titled *title*, the layerRef's title,
+    not the table the layer is read as."""
+    deadline = time.time() + 15
+    shown = None
+    while time.time() < deadline:
+        shown = page.evaluate(_LEGEND_TITLE_JS, node_id)
+        if shown == title:
+            return
+        page.wait_for_timeout(250)
+    assert shown == title, f"the map's legend reads {shown!r}, not {title!r}"
+
+
+#: The minus sign d3's number format writes, U+2212.
+MINUS_SIGN = chr(0x2212)
+
+# The labels under a node's map legend, which autk-map writes as the texts of
+# the legend's color bar, in order: a sequential scale's ends, and a diverging
+# scale's ends and middle.
+_LEGEND_LABELS_JS = """(id) => {
+    const node = document.querySelector(`.react-flow__node[data-id="${id}"]`);
+    const legend = node && node.querySelector("#autkMapLegend");
+    return legend ? Array.from(legend.querySelectorAll("svg text"), (label) => label.textContent) : null;
+}"""
+
+
+def _legend_numbers(labels) -> list | None:
+    """*labels* as numbers. autk-core formats them with d3, which writes a
+    minus as U+2212 and groups thousands with commas."""
+    try:
+        return [float(label.replace(MINUS_SIGN, "-").replace(",", "")) for label in labels]
+    except (AttributeError, TypeError, ValueError):
+        return None
+
+
+def _assert_legend_reads(page, node_id: str, numbers) -> None:
+    """The node's map legend labels its color scale with *numbers*, in order:
+    the ends of the layer's ``colorMapRange``, and its middle on a diverging
+    scheme."""
+    expected = [float(number) for number in numbers]
+    deadline = time.time() + 15
+    shown = None
+    while time.time() < deadline:
+        shown = page.evaluate(_LEGEND_LABELS_JS, node_id)
+        if shown and _legend_numbers(shown) == expected:
+            return
+        page.wait_for_timeout(250)
+    raise AssertionError(f"the map's legend reads {shown!r}, not {list(numbers)!r}")

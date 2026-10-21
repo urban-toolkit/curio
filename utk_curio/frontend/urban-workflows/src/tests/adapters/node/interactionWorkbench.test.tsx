@@ -12,9 +12,6 @@ const mockFlowContext = React.createContext<Record<string, any>>({});
 jest.mock("../../../providers/FlowProvider", () => ({
   useFlowContext: () => require("react").useContext(mockFlowContext),
 }));
-jest.mock("../../../adapters/node/compareScenariosBehavior", () => ({
-  failureLine: (content: unknown) => String(content ?? ""),
-}));
 let mockSources: any[] = [];
 jest.mock("../../../utils/autkInput", () => ({
   readAutkInput: jest.fn(() => Promise.resolve({ frames: mockSources.map((s: any) => ({ name: s.named ? s.outputTableName : null })) })),

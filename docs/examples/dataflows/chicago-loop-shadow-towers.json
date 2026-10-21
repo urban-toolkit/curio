@@ -52,7 +52,7 @@
       },
       {
         "id": "0fde14ff-f2f8-5510-849e-0ddfa30531f8",
-        "type": "scout.rasters/rasterize-buildings",
+        "type": "curio.scout/rasterize-buildings",
         "x": 645,
         "y": 0,
         "content": "\"\"\"Rasterize Buildings: SCOUT's building rasterizer, \"OSM vector to raster\".\n\nInput: a buildings layer, a GeoDataFrame of polygons with a CRS and a column\nof heights in metres.\nOutput: one raster in EPSG:3395, each cell a height in metres: the 256 by 256\nmap tiles SCOUT draws, 8-bit gray where 255 is the maximum height, side by\nside. A tile SCOUT writes no file for, because no building is near it, is no\ndata. An Autark map draws it as input_0, band band_1, and SCOUT's Deep Umbra\nshadow model (Accumulated Shadow) reads it.\nThe Widgets tab sets the height column, the zoom level and the maximum height.\nPorted from SCOUT, https://github.com/urban-toolkit/scout.\n\"\"\"\nfrom scout_rasters.node_outputs import rasterize_buildings\n\nreturn rasterize_buildings(\n    input_0,\n    attribute=[!! attribute !!],\n    zoom=int([!! zoom !!]),\n    max_height=float([!! max_height !!]),\n    output_file=curio_output_file,\n)\n",
@@ -108,10 +108,10 @@
       },
       {
         "id": "74e0af5a-c06e-52ae-94ad-94acc2de1642",
-        "type": "scout.rasters/raster-calculator",
+        "type": "curio.scout/raster-calculator",
         "x": 1935,
         "y": 0,
-        "content": "# Statistics: the mean, median, minimum, maximum and count of a\n# raster's cells, nodata left out, as a table of one row.\n# input_0 is the accumulated shadow in minutes, input_1 the heights it was\n# predicted from, as the mask: SCOUT's metrics count the ground, the cells\n# Deep Umbra reads as gray level 0, a height under 1.08 m.\nreturn curio_raster_statistics(input_0, mask=input_1, where=lambda height: height < 1.08)\n",
+        "content": "# Statistics: the mean, median, minimum, maximum and count of a\n# raster's cells, nodata left out, as a table of one row.\n# input_0 is the accumulated shadow in minutes, input_1 the heights it was\n# predicted from, as the mask: SCOUT's metrics count the ground, the cells\n# Deep Umbra reads as gray level 0, a height under 1.08 m.\nfrom scout_rasters.raster_algebra import raster_statistics\n\nreturn raster_statistics(input_0, mask=input_1, where=lambda height: height < 1.08)\n",
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "Take the mean and median accumulated shadow over the existing buildings' ground.",
@@ -162,7 +162,7 @@
       },
       {
         "id": "abd7fc96-4bfc-5eff-85a3-5e4991ba89b9",
-        "type": "scout.rasters/rasterize-buildings",
+        "type": "curio.scout/rasterize-buildings",
         "x": 1290,
         "y": 900,
         "content": "\"\"\"Rasterize Buildings: SCOUT's building rasterizer, \"OSM vector to raster\".\n\nInput: a buildings layer, a GeoDataFrame of polygons with a CRS and a column\nof heights in metres.\nOutput: one raster in EPSG:3395, each cell a height in metres: the 256 by 256\nmap tiles SCOUT draws, 8-bit gray where 255 is the maximum height, side by\nside. A tile SCOUT writes no file for, because no building is near it, is no\ndata. An Autark map draws it as input_0, band band_1, and SCOUT's Deep Umbra\nshadow model (Accumulated Shadow) reads it.\nThe Widgets tab sets the height column, the zoom level and the maximum height.\nPorted from SCOUT, https://github.com/urban-toolkit/scout.\n\"\"\"\nfrom scout_rasters.node_outputs import rasterize_buildings\n\nreturn rasterize_buildings(\n    input_0,\n    attribute=[!! attribute !!],\n    zoom=int([!! zoom !!]),\n    max_height=float([!! max_height !!]),\n    output_file=curio_output_file,\n)\n",
@@ -224,10 +224,10 @@
       },
       {
         "id": "ac470b24-69c3-5242-8d07-cc969e868e54",
-        "type": "scout.rasters/raster-calculator",
+        "type": "curio.scout/raster-calculator",
         "x": 2580,
         "y": 900,
-        "content": "# Statistics: the mean, median, minimum, maximum and count of a\n# raster's cells, nodata left out, as a table of one row.\n# input_0 is the accumulated shadow in minutes, input_1 the heights it was\n# predicted from, as the mask: SCOUT's metrics count the ground, the cells\n# Deep Umbra reads as gray level 0, a height under 1.08 m.\nreturn curio_raster_statistics(input_0, mask=input_1, where=lambda height: height < 1.08)\n",
+        "content": "# Statistics: the mean, median, minimum, maximum and count of a\n# raster's cells, nodata left out, as a table of one row.\n# input_0 is the accumulated shadow in minutes, input_1 the heights it was\n# predicted from, as the mask: SCOUT's metrics count the ground, the cells\n# Deep Umbra reads as gray level 0, a height under 1.08 m.\nfrom scout_rasters.raster_algebra import raster_statistics\n\nreturn raster_statistics(input_0, mask=input_1, where=lambda height: height < 1.08)\n",
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "Take the mean and median accumulated shadow over the remaining buildings' ground.",
@@ -241,63 +241,62 @@
       },
       {
         "id": "d0e547ba-e7d6-52e1-9c0e-f047443b715c",
-        "type": "curio.builtin/compare-scenarios",
+        "type": "curio.scout/bars",
         "x": 3225,
         "y": 0,
-        "content": "# Compare Scenarios writes this code from its inputs: each input, under the\n# id and the name of its scenario. It is written again when they change.\nreturn curio_stack_scenarios([\n    (\"existing\", \"Existing\", [!! input_0 !!]),\n    (\"towers-removed\", \"Towers removed\", [!! input_1 !!]),\n])\n",
+        "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v6.json\",\n  \"data\": {\n    \"name\": \"inputs\"\n  },\n  \"mark\": {\n    \"type\": \"bar\",\n    \"tooltip\": true\n  },\n  \"encoding\": {\n    \"x\": {\n      \"field\": \"scenario_name\",\n      \"type\": \"nominal\",\n      \"title\": \"Scenario\",\n      \"axis\": {\n        \"labelAngle\": 0\n      },\n      \"sort\": [!! scenario order !!]\n    },\n    \"y\": {\n      \"field\": \"[!! y !!]\",\n      \"type\": \"quantitative\",\n      \"aggregate\": \"[!! combine !!]\",\n      \"title\": \"[!! y_title !!]\"\n    },\n    \"color\": {\n      \"field\": \"scenario_name\",\n      \"type\": \"nominal\",\n      \"title\": \"Scenario\",\n      \"scale\": [!! scenario colors !!]\n    }\n  }\n}\n",
         "out": "DEFAULT",
         "in": "DEFAULT",
-        "goal": "Chart the mean accumulated shadow of both scenarios.",
+        "goal": "Chart the mean accumulated shadow of both scenarios, a bar per scenario.",
         "metadata": {
           "keywords": [],
-          "compareScenarios": {
-            "inputs": [
-              {
-                "scenario": "existing",
-                "name": "Existing",
-                "color": "#2a9d8f"
-              },
-              {
-                "scenario": "towers-removed",
-                "name": "Towers removed",
-                "color": "#e76f51"
-              }
-            ],
-            "chart": {
-              "preset": "bar",
-              "y": "mean"
+          "widgets": [
+            {
+              "name": "y",
+              "type": "text",
+              "label": "Y column",
+              "default": "y",
+              "value": "mean"
             },
-            "mode": "chart"
-          }
+            {
+              "name": "combine",
+              "type": "choice",
+              "label": "Combine",
+              "default": "mean",
+              "options": {
+                "choices": [
+                  "mean",
+                  "sum",
+                  "median",
+                  "min",
+                  "max",
+                  "count"
+                ]
+              },
+              "value": "mean"
+            },
+            {
+              "name": "y_title",
+              "type": "text",
+              "label": "Y axis title",
+              "default": "",
+              "value": "mean of mean"
+            }
+          ]
         },
         "title": "Mean accumulated shadow"
       },
       {
         "id": "608c35fc-5b51-546f-8305-7612a680f16a",
-        "type": "curio.builtin/compare-scenarios",
+        "type": "curio.scout/raster-calculator",
         "x": 3225,
         "y": 450,
-        "content": "# Compare Scenarios writes this code from its inputs: input_1 minus input_0,\n# each under the id and the name of its scenario. It is written again when\n# they change.\nreturn curio_difference_scenarios([\n    (\"existing\", \"Existing\", [!! input_0 !!]),\n    (\"towers-removed\", \"Towers removed\", [!! input_1 !!]),\n])\n",
+        "content": "# Towers removed's accumulated shadow, on input_1, minus Existing's, on\n# input_0, cell by cell, in minutes: below zero where removing the towers\n# takes shadow away, 0 where nothing changes.\nfrom scout_rasters.raster_algebra import raster_calculate\n\nreturn raster_calculate(\"subtract\", [input_1, input_0], output_file=curio_output_file)\n",
         "out": "DEFAULT",
         "in": "DEFAULT",
-        "goal": "Map where the accumulated shadow changes when the towers are removed.",
+        "goal": "Take, cell by cell, the change in accumulated shadow when the towers are removed.",
         "metadata": {
-          "keywords": [],
-          "compareScenarios": {
-            "inputs": [
-              {
-                "scenario": "existing",
-                "name": "Existing",
-                "color": "#2a9d8f"
-              },
-              {
-                "scenario": "towers-removed",
-                "name": "Towers removed",
-                "color": "#e76f51"
-              }
-            ],
-            "mode": "difference"
-          }
+          "keywords": []
         },
         "title": "Change in shadow"
       },
@@ -484,8 +483,8 @@
       }
     ],
     "packages": [
-      "model.scout.deep-umbra@1",
-      "scout.rasters@1"
+      "curio.scout@1",
+      "model.scout.deep-umbra@1"
     ],
     "datasets": [
       {

@@ -26,6 +26,12 @@ exact ``json.dumps`` settings that reproduce it byte-for-byte before anything is
 mutated, and a file that cannot be reproduced that way is refused rather than
 reformatted as a side effect (exit 2).
 
+A dataflow with scenario boxes gets one more promise: the frame the app draws
+around each box's members covers no other box. Each box takes a band of its
+own, top to bottom in the order the dataflow lists the boxes, and the nodes in
+no box keep their places in the flow around them (``_place_in_bands``). A
+dataflow without boxes is laid out exactly as before.
+
 Layout is plain stdlib, deliberately not the frontend's ``dagre``: these
 coordinates are a committed artifact that gates dozens of PNG baselines, and a
 dagre version bump must not be able to move them with no source diff to point
@@ -91,6 +97,12 @@ INTERACTION_WEIGHT = 0.5
 # The invariant the post-layout self-check enforces. Slack under the 80px the
 # layout actually produces, so integer rounding cannot trip it.
 MIN_GUTTER = 60
+
+# The app's scenario frame (src/components/scenarios/ScenarioLayers.tsx): the
+# room it leaves around its members (FRAME_PAD), and the room above its top
+# member that the frame and its header take (FRAME_HEADER_ROOM).
+FRAME_PAD = 18
+FRAME_HEADER_ROOM = 46
 
 # NOTE: mirrors scripts/validate_trill.py::_NOT_TRILL.
 _NOT_TRILL = {
@@ -428,6 +440,99 @@ def _align_columns(slots, slot_of, ranking, size, x, y):
             shift(index, succs, lambda other, here: other > here)
 
 
+def _scenario_bands(dataflow: dict, known: set[str]) -> list[list[str]]:
+    """Each scenario box's members on the canvas, in the order the dataflow
+    lists its boxes. A node listed in two boxes stays in the first."""
+    bands: list[list[str]] = []
+    seen: set[str] = set()
+    for scenario in dataflow.get("scenarios") or []:
+        if not isinstance(scenario, dict):
+            continue
+        members = [
+            node for node in scenario.get("nodes") or []
+            if isinstance(node, str) and node in known and node not in seen
+        ]
+        if members:
+            seen.update(members)
+            bands.append(members)
+    return bands
+
+
+def _place_in_bands(bands, slots, ranking, size, x, y, v_gutter):
+    """Give each scenario box a band of its own, so the frames the app draws
+    around their members never cover one another.
+
+    The columns stay as the ranks made them; only ``y`` changes. Bands run top
+    to bottom in the order the dataflow lists its boxes. In each column a box's
+    members stack in the column's order from the top of the box's band; a band
+    is as tall as its tallest stack, and the next band starts below this one's
+    frame, a gutter, and the next frame's header.
+
+    A node in no box keeps its place in the flow: it sits level with the nodes
+    it is wired to (the mean of their centres, once one of them is placed),
+    then moves to the nearest place that clears every frame across its column
+    and every node beside it by a gutter. A node wired to nothing placed goes
+    to the top.
+    """
+    band_of = {node: index for index, members in enumerate(bands) for node in members}
+    frames = []
+    top = 0.0
+    for members in bands:
+        inside = set(members)
+        height = 0.0
+        for slot in slots:
+            offset = 0.0
+            for node in slot:
+                if node in inside:
+                    y[node] = top + offset
+                    offset += size[node][1] + v_gutter
+            height = max(height, offset - v_gutter)
+        left = min(x[node] for node in members) - FRAME_PAD
+        right = max(x[node] + size[node][0] for node in members) + FRAME_PAD
+        frames.append((left, top - FRAME_HEADER_ROOM, right, top + height + FRAME_PAD))
+        top += height + FRAME_PAD + v_gutter + FRAME_HEADER_ROOM
+
+    neighbours = defaultdict(list)
+    for source, target in ranking:
+        neighbours[source].append(target)
+        neighbours[target].append(source)
+    placed = set(band_of)
+
+    def clear(node, want):
+        width, height = size[node]
+        obstacles = [frame for frame in frames if frame[0] < x[node] + width and x[node] < frame[2]]
+        obstacles += [
+            (x[other], y[other], x[other] + size[other][0], y[other] + size[other][1])
+            for other in placed
+            if other not in band_of and x[other] < x[node] + width and x[node] < x[other] + size[other][0]
+        ]
+        candidates = [want]
+        for _left, above, _right, below in obstacles:
+            candidates += [above - v_gutter - height, below + v_gutter]
+        for candidate in sorted(candidates, key=lambda c: (abs(c - want), c)):
+            if all(candidate + height + v_gutter <= above or candidate >= below + v_gutter
+                   for _left, above, _right, below in obstacles):
+                return candidate
+        return want
+
+    pending = [node for slot in slots for node in slot if node not in band_of]
+    while pending:
+        progress = False
+        for node in list(pending):
+            anchors = [other for other in neighbours[node] if other in placed]
+            if not anchors:
+                continue
+            centre = sum(y[other] + size[other][1] / 2 for other in anchors) / len(anchors)
+            y[node] = clear(node, centre - size[node][1] / 2)
+            placed.add(node)
+            pending.remove(node)
+            progress = True
+        if not progress:
+            node = pending.pop(0)
+            y[node] = clear(node, 0.0)
+            placed.add(node)
+
+
 def tidy_layout(dataflow: dict, templates: dict[str, dict], *,
                 h_gutter: int = H_GUTTER, v_gutter: int = V_GUTTER,
                 max_rows: int = MAX_ROWS_PER_COLUMN):
@@ -477,7 +582,11 @@ def tidy_layout(dataflow: dict, templates: dict[str, dict], *,
             top += size[node][1] + v_gutter
         cursor += slot_width + h_gutter
 
-    _align_columns(slots, slot_of, acyclic, size, x, y)
+    bands = _scenario_bands(dataflow, known)
+    if bands:
+        _place_in_bands(bands, slots, acyclic, size, x, y, v_gutter)
+    else:
+        _align_columns(slots, slot_of, acyclic, size, x, y)
 
     min_x = min(x.values())
     min_y = min(y.values())

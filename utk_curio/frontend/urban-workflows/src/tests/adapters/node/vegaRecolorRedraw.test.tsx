@@ -1,13 +1,15 @@
 /**
- * A scenario recolored draws a Vega-Lite chart after a Compare Scenarios node
- * again as the Compare node's Chart tab draws its own chart
- * (components/compare/CompareChart): through useVega, with no version recorded
- * in the chart's provenance and nothing handed downstream. A selection made in
- * the chart is kept: the new view gets it back on the same rows, and the flow
- * goes on holding it, however fast the recolors come.
+ * A scenario box recolored draws a Vega-Lite chart that reads its inputs
+ * stacked as `inputs` again, through its scale's chip, `[!! scenario colors !!]`:
+ * through useVega, with no version recorded in the chart's provenance and
+ * nothing handed downstream. A selection made in the chart is kept: the new
+ * view gets it back on the same rows, and the flow goes on holding it, however
+ * fast the recolors come.
  *
  * The behavior and useVega are real here. vega and vega-lite are the mocks
  * below, which keep what each view is handed and the state vega keeps for it.
+ * The chart's chips are resolved as its editor resolves them (NodeEditor),
+ * which hands the behavior the written spec with how to write it again.
  */
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { VisInteractionType } from "../../../constants";
@@ -19,6 +21,7 @@ import { VisInteractionType } from "../../../constants";
 // (vega's `_vgsid_`), and a select's signal is read off its store on a
 // restore, as vega-lite's is.
 jest.mock("vega", () => {
+  const { datasetsRead, unrecognizedDataset } = require("../../_support/vegaViewDatasets");
   const views: any[] = [];
   const changeset = () => {
     const cs: any = { remove: () => cs, insert: () => cs, modify: () => cs };
@@ -78,7 +81,11 @@ jest.mock("vega", () => {
       if (!(name in this.signals)) throw new Error(`Unrecognized signal name: "${name}"`);
       this.listeners[name] = listener;
     }
-    change() { return this; }
+    // As vega's, a view holds only the datasets its spec reads.
+    change(name: string) {
+      if (!datasetsRead(this.spec).has(name)) throw unrecognizedDataset(name);
+      return this;
+    }
   }
   return { changeset, View, parse: (spec: any) => spec, Warn: 2, __views: views };
 }, { virtual: true });
@@ -95,12 +102,16 @@ jest.mock("../../../providers/ToastProvider", () => ({ useToastContext: () => ({
 jest.mock("../../../services/api", () => ({ fetchData: jest.fn(), fetchPreviewData: jest.fn() }));
 
 import { useVegaBehavior } from "../../../adapters/node/vegaBehavior";
+import { resolveReferences } from "../../../utils/references/codeReferences";
+import type { ScenarioLabel } from "../../../utils/scenarios/scenarioColors";
+import { inputScenarios } from "../../../utils/scenarios/inputScenarios";
 
 const vegaMock = () => jest.requireMock("vega") as any;
 const views = (): any[] => vegaMock().__views;
 
-const TALL = { scenario: "s-tall", name: "Twice as tall", color: "#e76f51" };
-const BASELINE = { scenario: "s-base", name: "Baseline", color: "#2a9d8f" };
+/** The two boxes, listed Twice as tall first, so the chart's scales draw it first. */
+const TALL = { id: "s-tall", name: "Twice as tall", color: "#e76f51", nodes: ["tall"] };
+const BASELINE = { id: "s-base", name: "Baseline", color: "#2a9d8f", nodes: ["base"] };
 const NEW_COLOR = "#7b3294";
 
 const node = (id: string, nodeType: string, extra: Record<string, unknown> = {}) => ({
@@ -108,16 +119,21 @@ const node = (id: string, nodeType: string, extra: Record<string, unknown> = {})
   type: "__curioUniversalNode",
   data: { nodeId: id, nodeType, ...extra },
 });
-const compare = (labels: typeof TALL[]) =>
-  node("cmp", "curio.builtin/compare-scenarios@1", { compareScenarios: { inputs: labels } });
-const chart = node("chart", "curio.builtin/vis-vega@1");
-const EDGES = [{ id: "cmp->chart", source: "cmp", target: "chart", sourceHandle: "out", targetHandle: "in" }];
+const NODES = [
+  node("tall", "curio.builtin/computation-analysis@1", { title: "Shade" }),
+  node("base", "curio.builtin/computation-analysis@1", { title: "Shade" }),
+  node("chart", "curio.builtin/vis-vega@1"),
+];
+const EDGES = [
+  { id: "tall->chart", source: "tall", target: "chart", sourceHandle: "out", targetHandle: "in" },
+  { id: "base->chart", source: "base", target: "chart", sourceHandle: "out", targetHandle: "in_1" },
+];
 
-const setFlow = (labels: typeof TALL[]) => {
+const setFlow = (scenarios: typeof TALL[]) => {
   mockFlow = {
-    nodes: [compare(labels), chart],
+    nodes: NODES,
     edges: EDGES,
-    scenarios: [],
+    scenarios,
     nodeExecStatus: {},
     isRunActive: false,
     workflowNameRef: { current: "wf" },
@@ -125,29 +141,34 @@ const setFlow = (labels: typeof TALL[]) => {
   };
 };
 
-/** The Compare node's stacked table, as the chart reads it. */
-const STACKED = {
-  dataType: "dataframe",
-  data: { scenario_name: ["Twice as tall", "Baseline", "Baseline"], sunlight: [5, 3, 4] },
+/** What the chart's two circles hold: Twice as tall's row, then Baseline's two. */
+const INPUTS = {
+  dataType: "outputs",
+  data: [
+    { dataType: "dataframe", data: { sunlight: [5] } },
+    { dataType: "dataframe", data: { sunlight: [3, 4] } },
+  ],
 };
 
-/** Bars per scenario in their colors, any bar picked by a point select over no fields. */
-const PICKED_BARS = JSON.stringify({
-  params: [{ name: "pick", select: "point" }],
-  mark: "bar",
-  encoding: {
-    x: { field: "scenario_name", type: "nominal" },
-    y: { field: "sunlight", type: "quantitative" },
-    color: { field: "scenario_name", type: "nominal" },
-  },
-});
+/** Bars per scenario in their colors, through the scale's chip, read from
+ * `inputs`, any bar picked by a point select over no fields. */
+const PICKED_BARS = '{"data": {"name": "inputs"}, "params": [{"name": "pick", "select": "point"}], "mark": "bar", '
+  + '"encoding": {"x": {"field": "scenario_name", "type": "nominal"}, "y": {"field": "sunlight", "type": "quantitative"}, '
+  + '"color": {"field": "scenario_name", "type": "nominal", "scale": [!! scenario colors !!]}}}';
 
-/** The chart node over the Compare node's table, drawn once by a Play. */
+/** The spec as the editor writes it with *labels*, each circle's. */
+const written = (labels: ReadonlyMap<number, ScenarioLabel>): string | null => {
+  const inputs = [0, 1].map((slot) => ({ slot, scenario: labels.get(slot) }));
+  const { code, problems } = resolveReferences(PICKED_BARS, { widgets: [], inputs, shared: [] }, "json", "vega-lite");
+  return problems.length > 0 ? null : code;
+};
+
+/** The chart node over the two boxes' rows, drawn once by a Play. */
 async function playedChart() {
   setFlow([TALL, BASELINE]);
   const data: any = {
     nodeId: "chart",
-    input: STACKED,
+    input: INPUTS,
     outputCallback: jest.fn(),
     interactionsCallback: jest.fn(),
   };
@@ -156,8 +177,11 @@ async function playedChart() {
   await act(async () => {
     hook = renderHook(() => useVegaBehavior(data, nodeState));
   });
+  const labels = new Map(inputScenarios("chart", NODES, EDGES, [TALL, BASELINE]).map((input) => [input.slot, input.label]));
+  const spec = written(labels);
+  expect(spec).not.toBeNull();
   await act(async () => {
-    await hook.result.current.applyGrammar(PICKED_BARS);
+    await hook.result.current.applyGrammar(spec!, written);
   });
   expect(views()).toHaveLength(1);
   expect(mockProvenance).toHaveBeenCalledTimes(1);
@@ -176,6 +200,10 @@ async function recolored(played: Awaited<ReturnType<typeof playedChart>>) {
   expect(views()).toHaveLength(2);
   const view = views()[1];
   expect(view.spec.encoding.color.scale).toEqual({ domain: [TALL.name, BASELINE.name], range: [NEW_COLOR, BASELINE.color] });
+  // Its rows are stacked again, each under its box's name.
+  expect(view.spec.datasets.inputs.map((row: any) => [row.scenario_name, row.sunlight])).toEqual([
+    [TALL.name, 5], [BASELINE.name, 3], [BASELINE.name, 4],
+  ]);
   expect(played.nodeState.setOutput).toHaveBeenLastCalledWith({ code: "success", content: "", outputType: "" });
   return view;
 }
@@ -194,7 +222,7 @@ beforeEach(() => {
   mockProvenance.mockClear();
 });
 
-describe("a recolor draws the chart after a Compare node again, as its Chart tab draws", () => {
+describe("a recolored box draws a chart reading inputs again", () => {
   test("in the new color, with no version recorded in the chart's provenance", async () => {
     const played = await playedChart();
     await recolored(played);

@@ -65,6 +65,9 @@ type CodeEditorProps = {
     /** Read an input's columns for its tags. */
     onLoadColumns?: (slot: number) => void;
     widgetLanguage?: CodeLanguage;
+    /** A run's code put back from the provenance drawer; each new one is
+     *  written in, even when it is the code the editor loaded with. */
+    restoredCode?: { code: string; nonce: number } | null;
 };
 
 /** dev/117: how long after the last keystroke the code is scanned for a credential literal. */
@@ -128,6 +131,7 @@ function CodeEditor({
     stripInputs = NO_INPUTS,
     onLoadColumns,
     widgetLanguage = "python",
+    restoredCode = null,
 }: CodeEditorProps) {
     const [code, setCode] = useState<string>(""); // code with all original markers
     const [execCount, setExecCount] = useState<number>(0);
@@ -231,6 +235,18 @@ function CodeEditor({
             scanNow(value); // dev/117: content that arrived whole is scanned at once
         },
     });
+
+    // A run's code put back from the provenance drawer, through the same
+    // channel as a collaborator's applied change, then handled as content that
+    // arrived whole. A default that equals the loaded code never applies, and
+    // putting back the first run must.
+    useEffect(() => {
+        if (!restoredCode) return;
+        applyValue(restoredCode.code);
+        setCode(restoredCode.code);
+        sendCodeToWidgets(restoredCode.code);
+        scanNow(restoredCode.code);
+    }, [restoredCode]);
     const codeRef = useRef<string>("");
     const collabRef = useRef(collab);
     collabRef.current = collab;
@@ -570,6 +586,7 @@ function CodeEditor({
                 inputs={stripInputs}
                 shared={references.shared}
                 selections={references.selections}
+                language={widgetLanguage}
                 disabled={readOnly}
                 onInsert={(inner) => insertReference(widgetEditor?.editor, inner)}
                 onLoadColumns={onLoadColumns}

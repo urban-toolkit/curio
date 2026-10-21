@@ -1,5 +1,6 @@
-import React, { useEffect, useRef } from "react";
+import React, { useCallback, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
+import FocusTrap from "@mui/material/Unstable_TrapFocus";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faXmark } from "@fortawesome/free-solid-svg-icons";
 import styles from "./ModalShell.module.css";
@@ -21,6 +22,14 @@ const modalStack = new Set<symbol>();
 /** How many ModalShell dialogs, and drawers holding the stack, are open. */
 export function modalStackDepth(): number {
   return modalStack.size;
+}
+
+/** Whether `self` is the dialog on top. Portals all land in document.body, so
+ *  the last open shell in document order is the one painted above the rest. */
+function isTopModal(self: HTMLElement | null): boolean {
+  if (!self) return false;
+  const open = document.querySelectorAll<HTMLElement>('[data-curio-modal-shell="true"]');
+  return open[open.length - 1] === self;
 }
 
 /** Count a drawer that opens over the catalog drawers (API Settings, Monitor)
@@ -46,8 +55,7 @@ interface ModalShellProps {
    *  as DrawerHeader's titleId. Prefer this when the modal renders a heading. */
   titleId?: string;
   /** Accessible name for consumers with no usable heading (GenericDialog's
-   *  children are arbitrary; TrillProvenanceWindow titles with a <p>). Ignored
-   *  when titleId is given. */
+   *  children are arbitrary). Ignored when titleId is given. */
   label?: string;
 }
 
@@ -70,21 +78,18 @@ export default function ModalShell({
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
   const dialogRef = useRef<HTMLDivElement | null>(null);
+  // Which dialog holds the keyboard: the one on top, the same rule as Escape.
+  // Two dialogs that both held it would pull the focus back and forth.
+  const isTop = useCallback(() => isTopModal(dialogRef.current), []);
 
   useEffect(() => {
     const token = Symbol("curio-modal");
     modalStack.add(token);
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;
-      const self = dialogRef.current;
-      if (!self) return;
       // Only the dialog on top responds, so a modal opened over another does
-      // not close both. Portals all land in document.body, so the last matching
-      // node in document order is the one painted on top.
-      const open = document.querySelectorAll<HTMLElement>(
-        '[data-curio-modal-shell="true"]',
-      );
-      if (open.length > 1 && open[open.length - 1] !== self) return;
+      // not close both.
+      if (!isTopModal(dialogRef.current)) return;
       event.stopPropagation();
       onCloseRef.current();
     };
@@ -107,31 +112,44 @@ export default function ModalShell({
         onClick={onClose}
         {...packagePaletteActionAttr}
       />
-      {/* role="dialog" on the shell, so every modal is announced as one and is
-          reachable by the same role queries the catalog drawers already answer.
-          The drawers had this from the start; the modals never did, which left
-          a screen reader with an unlabeled group and tests with nothing to
-          target but headings. */}
-      <div
-        ref={dialogRef}
-        data-curio-modal-shell="true"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby={titleId}
-        aria-label={titleId ? undefined : label}
-        className={`${styles.modal} nowheel nodrag nopan${
-          size === "wide" ? ` ${styles.wide}` : ""
-        }${size === "large" ? ` ${styles.large}` : ""
-        }${size === "xlarge" ? ` ${styles.xlarge}` : ""}${
-          layer === "overlay" ? ` ${styles.modalOverlay}` : ""
-        }${size === "xlarge" && layer === "overlay" ? ` ${styles.xlargeOverlay}` : ""}`}
-        {...packagePaletteActionAttr}
-      >
-        <button className={styles.closeX} onClick={onClose} aria-label="Close">
-          <FontAwesomeIcon icon={faXmark} />
-        </button>
-        {children}
-      </div>
+      {/* The keyboard stays in the dialog (#921): Tab used to walk out of a
+          dialog into the page behind it, so from a dialog over the canvas's
+          Discovery Catalog drawer it reached the drawer, whose buttons opened
+          a second dialog over the first. MUI's FocusTrap, as MUI's own Modal
+          uses it: the dialog takes the focus when it opens, unless a control
+          in it already has it (ConfirmDialog's autoFocus); Tab and Shift+Tab
+          go round at either end; and a focus that leaves for the page comes
+          back. Escape and the backdrop are untouched, and closing leaves the
+          focus where it went before. */}
+      <FocusTrap open isEnabled={isTop} disableRestoreFocus>
+        {/* role="dialog" on the shell, so every modal is announced as one and
+            is reachable by the same role queries the catalog drawers already
+            answer. The drawers had this from the start; the modals never did,
+            which left a screen reader with an unlabeled group and tests with
+            nothing to target but headings. tabIndex -1 lets the trap focus
+            the dialog itself when nothing in it can take the focus. */}
+        <div
+          ref={dialogRef}
+          tabIndex={-1}
+          data-curio-modal-shell="true"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby={titleId}
+          aria-label={titleId ? undefined : label}
+          className={`${styles.modal} nowheel nodrag nopan${
+            size === "wide" ? ` ${styles.wide}` : ""
+          }${size === "large" ? ` ${styles.large}` : ""
+          }${size === "xlarge" ? ` ${styles.xlarge}` : ""}${
+            layer === "overlay" ? ` ${styles.modalOverlay}` : ""
+          }${size === "xlarge" && layer === "overlay" ? ` ${styles.xlargeOverlay}` : ""}`}
+          {...packagePaletteActionAttr}
+        >
+          <button className={styles.closeX} onClick={onClose} aria-label="Close">
+            <FontAwesomeIcon icon={faXmark} />
+          </button>
+          {children}
+        </div>
+      </FocusTrap>
     </>
   );
 

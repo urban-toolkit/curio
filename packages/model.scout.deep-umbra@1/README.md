@@ -4,7 +4,7 @@ SCOUT's accumulated shadow simulation, ported from
 [SCOUT](https://github.com/urban-toolkit/scout)
 (`backend/compute/accumulated_shadow_simulation`). Deep Umbra, SCOUT's shadow
 model, predicts how much of a season's day the ground spends in shadow, from the
-height raster of Rasterize Buildings, a node of [SCOUT Rasters](../scout.rasters@1/README.md).
+height raster of Rasterize Buildings, a node of [Scout](../curio.scout@1/README.md).
 
 This is a model package: its weights, its node and the module the node imports.
 The [Model Catalog](../../docs/MODEL-CATALOG.md) lists it.
@@ -54,12 +54,14 @@ no file for, gets no shadow, as in SCOUT. An Autark map draws it as `input_0`:
 ```
 
 SCOUT's metrics, the mean and median accumulated shadow over the ground, come
-from the statistics of a **Raster Calculator** node (`scout.rasters@1`): the
+from the statistics of a **Raster Calculator** node (`curio.scout@1`): the
 shadow on its input_0, the heights on its input_1 as the mask, and the ground
 where Deep Umbra reads gray level 0, a height under 1.08 m:
 
 ```python
-return curio_raster_statistics(input_0, mask=input_1, where=lambda height: height < 1.08)
+from scout_rasters.raster_algebra import raster_statistics
+
+return raster_statistics(input_0, mask=input_1, where=lambda height: height < 1.08)
 ```
 
 The ground counted is the ground of the tiles with heights only, as in SCOUT's
@@ -96,3 +98,8 @@ shadow: the buildings as they are, and with 15 of them removed.
 Curio installs the package's Python libraries with it: `onnxruntime`,
 `rasterio`, `numpy` and `pyproj`. It is installed for you when Curio starts
 with `--with-examples`.
+
+The package depends on [Scout](../curio.scout@1/README.md) (`curio.scout@1`
+in its `dependencies.packages`): the node places each tile it predicts with
+Scout's `tile_bounds` (`scout_rasters.web_tiles`), so Scout must be installed
+too, and a run of the node is handed both packages' modules.

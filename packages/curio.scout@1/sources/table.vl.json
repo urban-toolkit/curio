@@ -1,0 +1,61 @@
+{
+  "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
+  "data": {
+    "name": "inputs"
+  },
+  "transform": [
+    {
+      "window": [
+        {
+          "op": "row_number",
+          "as": "curio_row"
+        }
+      ]
+    },
+    {
+      "filter": "datum.curio_row <= 40"
+    },
+    {
+      "fold": [!! columns !!],
+      "as": [
+        "curio_column",
+        "curio_cell"
+      ]
+    }
+  ],
+  "mark": {
+    "type": "text",
+    "align": "left",
+    "tooltip": true
+  },
+  "encoding": {
+    "y": {
+      "field": "curio_row",
+      "type": "ordinal",
+      "axis": null
+    },
+    "x": {
+      "field": "curio_column",
+      "type": "nominal",
+      "sort": [!! columns !!],
+      "title": null,
+      "axis": {
+        "orient": "top",
+        "labelAngle": 0,
+        "domain": false,
+        "ticks": false
+      }
+    },
+    "text": {
+      "field": "curio_cell",
+      "type": "nominal"
+    },
+    "color": {
+      "field": "scenario_name",
+      "type": "nominal",
+      "title": "Scenario",
+      "legend": null,
+      "scale": [!! scenario text_colors !!]
+    }
+  }
+}

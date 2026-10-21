@@ -9,6 +9,7 @@
   - [Your configurations](#your-configurations)
   - [Keys for node code](#keys-for-node-code)
   - [Guest users](#guest-users)
+- [The Tools panel](#the-tools-panel)
 - [Inside a node](#inside-a-node)
 - [Notes](#notes)
 - [Running a dataflow](#running-a-dataflow)
@@ -376,12 +377,27 @@ Anthropic Claude (`GUEST_LLM_API_KEY=sk-ant-...`):
 python curio.py start --deploy --guest-llm-provider anthropic --guest-llm-model claude-haiku-4-5
 ```
 
+## The Tools panel
+
+The Tools panel on the left edge of the canvas holds five buttons: **Built-in**,
+**Node Catalog**, **Data Catalog**, **Agent Catalog** and **Model Catalog**,
+with **Run All** at its foot. Each button opens its palette beside the panel and
+closes the one that was open; click it again to close it. The canvas opens with
+every palette closed.
+
+**Built-in** holds Curio's own nodes, from **Data Loading** to **Note**, in three
+groups: data, computation, and views. Hover over a tile to see its name, and
+drag it onto the canvas to add the node. Each catalog's palette is described
+with its catalog: [Node Catalog](#node-catalog), [Data Catalog](#data-catalog),
+[Agent Catalog](#agent-catalog) and [Model Catalog](#model-catalog).
+
 ## Inside a node
 
 A node's header shows **Play** at its left, the node's name and kind, and its run
 status. Its other buttons show while the pointer is over the node or the node is
-selected: the editor's tabs (code, widgets, spec, provenance, output), the **Save
-output dataset** toggle, settings, about, pin, **Minimize** and delete.
+selected: the editor's tabs (code, widgets, spec, output), **Provenance** (the
+node's runs, see [Provenance](#provenance)), the **Save output dataset** toggle,
+settings, about, pin, **Minimize** and delete.
 Code and specs sit in a gray box, and a code node's output is below its code.
 
 Drag a node's bottom-right corner to resize it. For viewers of a shared dataflow,
@@ -392,9 +408,9 @@ would drag it, such as its header, to zoom the view onto it.
 ## Notes
 
 A **Note** node holds a title and a short text on a color, to explain a part of
-the dataflow. Drag **Note** from the palette onto the canvas, write its title
-and text, pick its color and click **Save**. **Edit** on the note opens them
-again.
+the dataflow. Drag **Note** from the **Built-in** palette onto the canvas, write
+its title and text, pick its color and click **Save**. **Edit** on the note
+opens them again.
 
 - The text is simple markdown: `#` headings, `-` lists, `**bold**`,
   `*italics*`, `` `code` `` and links. Only an `https` link is a link, and it
@@ -447,6 +463,28 @@ bolt while it is on.
   run: the nodes they change wait for **Run** or **Run All**.
 - It is offered where a run goes on the server: not to guests, viewers of a
   shared dataflow, a Curio started with `--no-project`, or a dashboard.
+
+## Provenance
+
+**View > Provenance** opens the dataflow's version history in a drawer on the
+right. Each node or connection added or removed makes a version.
+
+- The versions are listed in the order they were made, on a line that leads to
+  the newest. Versions made from an earlier one you went back to fold under the
+  version they left from; click the fold to show them.
+- The pin keeps the drawer open when you click outside it or press Escape.
+
+Click a version to open it: its thumbnail, when it was recorded, and its nodes
+and connections. **Put this version on the canvas** goes back to it. The history
+stays, the dataflow reads **Unsaved**, and the next change branches from that
+version.
+
+A node's **Provenance** button, in its header, lists the node's runs in the same
+drawer, with the same folds. Each run reads what it took in and gave back
+("In: DATAFRAME | Out: GEODATAFRAME", or ERROR for a run that failed). Click a
+run to open it: when it ran, for how long, and its code. **Put this code back in
+the node** puts that code in the node's editor without running it, and the
+node's next run branches from that run.
 
 ## Widgets
 
@@ -511,8 +549,8 @@ variable per input circle, or through input chips (see
 A **Parameter** node holds one widget that any node can use, such as a season
 that several nodes read.
 
-1. Drag **Parameter** from the palette onto the canvas. Give it a name, a type,
-   a label and a default, as for a widget, and click **Add parameter**.
+1. Drag **Parameter** from the **Built-in** palette onto the canvas. Give it a
+   name, a type, a label and a default, as for a widget, and click **Add parameter**.
 2. Its tag, **@name**, shows under **Shared** in the strip above every node's
    code and in every node's **Widgets** tab. Drag it into the code, or click it
    to insert it at the cursor. In the code it is written `[!! @name !!]` and
@@ -557,6 +595,21 @@ holds. A new selection in the view marks the node as needing a new run, and the
 ids are saved with the dataflow. A tag holds at most 10,000 ids: a larger
 selection stops the run with a message saying so.
 
+A view is drawn again when it runs again and when the dataflow is opened. The
+selection its tags hold then shows in it again, or the tags are emptied, so the
+view and its tags agree:
+
+- A Vega-Lite chart selects the rows that hold the tags' ids again with its
+  point selection, as clicks on them would.
+- A brush cannot be drawn again from ids. A chart whose selection is a brush,
+  or that has a brush beside a point selection, empties its tags, and so does
+  a chart none of whose rows holds the ids.
+- An Autark node empties its tags each time it draws.
+
+A node that reads an emptied tag needs a new run, which reads `[]`. A run that
+started before the view was drawn again reads the ids the tag held when it
+started.
+
 ## Several inputs
 
 Python Computation, Data Transformation, JS Computation, Data Pool, Vega-Lite and
@@ -580,6 +633,12 @@ In code and in a Vega-Lite or Autark spec, each input is a chip:
    lists a tag for each layer, `[!! input_1:table_osm_roads !!]`, followed by
    that layer's columns, `[!! input_1:table_osm_roads.lanes !!]`. A layer is
    named as the Autark node names its table.
+5. In a Vega-Lite or Autark spec, an input whose node is in a scenario box shows
+   that box's swatch beside its tag. Drag it where a color goes; it is written
+   `[!! scenario input_1 !!]`, a lilac chip. A Vega-Lite node with several
+   inputs also has the **inputs** tag, the dataset that stacks them (see
+   [Every input in one dataset](#every-input-in-one-dataset) and
+   [Scenario colors and order](#scenario-colors-and-order)).
 
 When the node runs:
 
@@ -603,7 +662,10 @@ When the node runs:
   whatever the chip names.
 - A column chip becomes the column's name: `df[[!! input_0.population !!]]` runs
   as `df["population"]`, `"field": [!! input_0.population !!]` as
-  `"field": "population"`, and inside a quoted text it is the plain name.
+  `"field": "population"`, and inside a quoted text it is the plain name. In a
+  Vega-Lite spec, a name with a `.` or a `[` in it is escaped where Vega-Lite
+  reads a field: `"field": [!! input_0.rain.mm !!]` runs as
+  `"field": "rain\\.mm"` (see [Vega-Lite node](#vega-lite-node)).
 - In Python and JavaScript you can also type an input's name instead of
   dragging its chip: `input_0`, `input_1`, and so on, the names a Vega-Lite or
   Autark spec reads its inputs by too. `roads = input_1.to_crs(3857)` reads
@@ -715,7 +777,7 @@ by a condition: two towers taken out of a city's buildings, or every building ov
 100 m lowered, say. It is a node of its own, apart from the interaction edges that
 link charts (see [Linking charts](#linking-charts)).
 
-1. Drag **Interaction** from the palette onto the canvas and connect a layer to it:
+1. Drag **Interaction** from the **Built-in** palette onto the canvas and connect a layer to it:
    a Python node's GeoDataFrame, or the layers an Autark node or a Data Pool hands on.
 2. Pick the layer to edit in **Layer**, when the input carries several, and the column
    that identifies a feature in **Id**: `osm_id` or `building_id` when the layer has
@@ -775,68 +837,35 @@ return curio_edit_features(input_0, [
 
 A change of the log writes the code again, and the node and the nodes below it that
 ran then wait for a run; **Update results** says how many. In a scenario, an
-Interaction node is a lever, and **What differs** lists its edits, each switched off
-one marked off.
+Interaction node is a lever.
 
 ### Comparing scenarios
 
-The **Compare Scenarios** node compares scenarios' outcomes on the canvas:
+To compare scenarios, connect each scenario's outcome to an input circle of its own
+on a node outside the scenario boxes. Each edge takes the next circle, as on any
+node with several inputs.
 
-1. Drag **Compare Scenarios** from the palette onto the canvas.
-2. Connect each scenario's outcome to one of its input circles. Each edge takes the
-   next circle, as on any node with several inputs, and each input is labelled by
-   the scenario its node belongs to.
-3. Run it. In **Chart** it stacks its inputs into one table, with the scenario's id
-   in a `scenario` column and its name in a `scenario_name` column on every row. In
-   **Difference** it subtracts one input from the other. What it makes is its
-   output: other nodes can read it, and the node can be pinned to the dashboard.
+- **A chart.** A Vega-Lite node whose spec reads its inputs as the dataset `inputs`
+  ([Every input in one dataset](#every-input-in-one-dataset)) draws every input's
+  rows, each named by the scenario box its input comes from, and its scenario chips
+  draw them in the boxes' colors and order
+  ([Scenario colors and order](#scenario-colors-and-order)). The Scout package's
+  charts, below, are such nodes.
+- **The difference of two rasters.** A [Raster Calculator](#rasters) subtracts them
+  cell by cell: `raster_calculate("subtract", [input_1, input_0],
+  output_file=curio_output_file)` gives input_1 minus input_0, and with
+  `absolute=True` the size of that difference, 0 where nothing changed. A cell that
+  has no value in either raster has none in the difference, and the two rasters must
+  lie on one grid.
+- **The difference of two tables or layers.** A Python node joins the two inputs'
+  rows on a column both have, such as `osm_id` or `building_id`, and subtracts their
+  numbers:
 
-The node shows **Difference** when it has two inputs that are rasters, or two that
-are layers, once the nodes feeding them have run, and **Chart** otherwise. **Compare
-as** switches it.
-
-Its code is written for it, one line per input, reading the input through its chip
-under its scenario's id and name. It is written again when an input changes, a
-scenario is renamed or recolored, or the node switches between Chart and
-Difference, and the node then waits for a run.
-
-It stacks inputs of one kind:
-
-- tables (a DataFrame, a GeoDataFrame, a list of records, a dict of columns, or a
-  dict of values, which is one row), keeping their rows. A column one input lacks is
-  empty in its rows.
-- values (a number, a text, true or false, or a list of them), one row each under a
-  `value` column.
-
-An Autark node hands on every layer of its workspace. From such an input the node
-reads the layer picked in **Layer**, in Chart and in Difference alike; the menu lists
-the layers every such input has.
-
-A table beside a value, a GeoDataFrame beside a plain table, two coordinate systems,
-an input with no value, an input that holds several tables, or a raster stops the run
-with a message naming the input.
-
-In Difference it takes two inputs: input_0 is the reference and input_1 the
-comparison, and every number it gives is the comparison's minus the reference's.
-With **Change** set to **Absolute**, every number it gives is the size of that
-difference, whichever input is higher: 0 where nothing changed. Its code then
-passes `absolute=True` to `curio_difference_scenarios`.
-
-- Two rasters are subtracted cell by cell, band by band. A cell that is nodata in
-  either is nodata in the difference. Both must lie on one grid, with the same size,
-  origin, cell size and CRS; otherwise the run stops with a message naming both. Each
-  is read as an Autark map reads a raster, at its own size, up to 4096 by 4096 cells.
-- Two layers, or two tables, are matched row by row on a stable id: `osm_id`, else
-  `building_id`, or the column picked in **Key**. Two layers with neither id are
-  matched by their shapes: rows with the same geometry are one row, and a shape that
-  repeats is matched in order. A row on both sides holds, in each
-  number column both have, the difference, and a `change` column says `changed` or
-  `unchanged`. A column of nested values, such as the `compute` values an Autark
-  compute step writes, holds the difference of each number in it. A row only in the
-  reference is `removed` and one only in the comparison `added`; their numbers are
-  empty. The other columns and the geometry are the comparison's, or the reference's
-  for a removed row. A key that is empty or repeated on one side stops the run, as
-  does a layer beside a table.
+  ```python
+  before, after = input_0.set_index("osm_id"), input_1.set_index("osm_id")
+  change = after[["sunlight"]] - before[["sunlight"]]
+  return after.drop(columns=["sunlight"]).join(change).reset_index()
+  ```
 
 A raster's difference is a raster, which a Python node reads as a `rasterio`
 dataset, and a layer's difference is a layer. To draw either on a map, connect the
@@ -860,53 +889,22 @@ diverging scheme centered on 0, and an absolute one on a sequential scheme:
 }
 ```
 
-The node has two tabs:
-
-- **Chart** draws the stacked table in the scenarios' colors, as **Bars**, **Grouped
-  bars**, **Lines**, **Points**, a **Pie**, **Lollipops** or a **Table**. Pick the
-  columns it reads (**X**, **Y**) and how the Y values of a group are combined
-  (**Combine**: mean, sum, median, minimum, maximum, a count of rows, or none).
-  **None** plots each row's value as it is, with the Y column as the axis title; a
-  scenario with several rows stacks them in one bar. A pie writes each slice's
-  value on it. A table writes a scenario whose color is too light to read on
-  white in a darker shade of that color.
-- **Difference**, in its place in Difference, holds the difference's settings:
-  **Key**, for two layers or tables, and **Change**, which picks **Signed**, input_1
-  minus input_0, or **Absolute**, its size. A table's difference is shown as a table,
-  each row in the color of its change. For a raster's or a layer's, the tab says to
-  draw it with an Autark node after this one.
-- **What differs** lists the levers that differ between the scenarios: for each, the
-  widget values and the code lines that changed, read against the first scenario's,
-  or, for an Interaction node, each scenario's edits, an edit switched off marked
-  off. A node and the copies made from it with **Duplicate selection** or
-  **Duplicate as scenario** are one lever. A node with no copy in another scenario
-  is listed as only in the scenarios that have it, with its edits when it is an
-  Interaction node.
-
-Above both tabs it warns when the scenarios read different fixed context, naming the
-inputs and the context only one of them reads, when an input comes from a node in no
-scenario (its rows carry that node's name, and What differs leaves it out), and when
-two inputs come from one scenario.
-
-A Vega-Lite node after a Compare Scenarios node, reading its output on input_0
-directly or through nodes of one input each, draws the `scenario_name` column as the
-**Chart** tab does. A color, fill or stroke by that column is in the scenarios'
-colors (on a text mark, in the darker shade a table uses for a light color), and an
-axis, an offset or a facet by it follows the order of the Compare node's inputs.
-These replace any colors or order the spec writes for that column. When a scenario is
-renamed or recolored, the chart is drawn again with no run, and a selection made in
-it stays.
-
-For a comparison the **Chart** tab does not draw, the SCOUT Comparison package
-(`scout.comparison@1`) has seven charts to connect after a Compare Scenarios node:
+The Scout package (`curio.scout@1`) has fifteen charts that compare scenarios:
 **Lines with a band**, **Curves by group**, **Bars with error bars**, **Ensemble
-strips**, **Stacked bars with totals**, **Donuts** and **Weighted matrix**. Each is a
-Vega-Lite node with a spec of its own, and draws its scenarios by the rule above. Set
-the columns it plots in its **Widgets** tab: a new node's widgets hold their own names
-(`y`, `part`), so the chart says which column the table lacks until you set them. The
-[package's README](../packages/scout.comparison@1/README.md) lists each chart's
-widgets. Add the package to a dataflow from the Node Catalog drawer; the charts are
-then under **SCOUT Comparison** in the Tools panel's **Node Catalog** dropdown.
+strips**, **Stacked bars with totals**, **Donuts**, **Weighted matrix**, **Dots with a
+range**, **Bars**, **Grouped bars**, **Lines**, **Points**, **Pie**, **Lollipops** and
+**Table**. Each is a Vega-Lite node that takes one input per scenario: connect each
+scenario's outcome to one of its circles. Its spec reads its inputs as the dataset
+`inputs` ([Every input in one dataset](#every-input-in-one-dataset)), every row named by
+the scenario box its input comes from, and its scenario chips draw each scenario in its
+box's color, in the order the dataflow lists the boxes. Set the columns it plots in its **Widgets** tab,
+and the Vega-Lite aggregate Bars, Grouped bars, Lines, Pie and Lollipops combine a
+scenario's rows with (**Combine**: `mean`, `sum`, `median`, `min`, `max` or `count`). A
+new node's widgets hold their own names (`y`, `part`), so the chart says which column
+its inputs lack until you set them. A new chart opens with its template's spec,
+which you can edit. The [package's README](../packages/curio.scout@1/README.md) lists
+each chart's widgets. Add the package to a dataflow from the Node Catalog drawer; the
+charts are then under **Scout** in the Tools panel's **Node Catalog** dropdown.
 
 The **Scenario Catalog** lists the scenarios of all your projects, each with its
 fixed context, levers and outcomes and the results its project saved. Open it from
@@ -935,7 +933,15 @@ For the full guide, covering the storage layers, the action matrix, **Save as pa
 
 The `Vega-Lite` node takes the rows of an upstream `DataFrame` or `GeoDataFrame`
 and renders a spec against them. Columns are addressed by their bare pandas
-names: a column `pop` is `{"field": "pop"}`.
+names: a column `pop` is `{"field": "pop"}`. Vega-Lite reads a `.` or a `[` in a
+field as a path into the row, so a column such as `rain.mm` is
+`{"field": "rain\\.mm"}`, a backslash before each `.`, `[` and `]`. A widget or
+column chip writes a name so where Vega-Lite reads a field: a `field`, a
+`fold`, `groupby` or `flatten` list, the field a transform reads, a lookup's
+`key` and `fields`, a selection's `fields` and a `repeat`'s lists. In a title,
+a sort, an expression such as `datum['rain.mm']`, a name a transform writes
+(`as`), or a row of `data` or `datasets`, it writes the name as it is. A
+widget that holds the escaped name, `rain\.mm`, is written as it is.
 
 ### Several inputs
 
@@ -958,7 +964,98 @@ A Python tuple arrives the same way, one dataset per frame. An input the chart
 cannot read, such as a raster, stops it with a message naming its position.
 
 Each input's geometry is handled in the views that draw it. A selection, a Data
-Pool link and a direct link between charts cover the rows of `input_0`.
+Pool link and a direct link between charts cover the rows of `input_0`, and, in
+a spec that reads `inputs`, that input's rows there, also when the spec reads
+nothing else.
+
+### Every input in one dataset
+
+A spec that names the dataset `inputs`, in its own `data`, a layer's, a
+concatenated view's or a lookup's, also reads every input's rows in one table,
+in circle order. Each row has three more columns:
+
+- `__input__`, the circle its input came in on;
+- `scenario`, the id of the scenario box the node feeding that input is in,
+  empty for a node in no box;
+- `scenario_name`, that box's name, or the node's name for a node in no box.
+
+```json
+{
+  "data": {"name": "inputs"},
+  "mark": "bar",
+  "encoding": {
+    "x": {"field": "scenario_name", "type": "nominal", "sort": [!! scenario order !!]},
+    "y": {"field": "sunlight", "type": "quantitative", "aggregate": "mean"},
+    "color": {"field": "scenario_name", "type": "nominal", "scale": [!! scenario colors !!]}
+  }
+}
+```
+
+Over two inputs, one from a box named Baseline and one from a box named Twice
+as tall, the rows read:
+
+| `__input__` | `scenario` | `scenario_name` | `segment` | `sunlight` |
+|---|---|---|---|---|
+| 0 | s-base | Baseline | r1 | 6 |
+| 0 | s-base | Baseline | r2 | 5 |
+| 1 | s-tall | Twice as tall | r1 | 3 |
+
+On a Vega-Lite node with more than one input, the **inputs** tag beside
+`input_0`, `input_1` above the spec opens to the fields of these rows:
+`scenario_name`, `scenario` and `__input__`, then every column of the inputs,
+each with its type in its tooltip. A field's chip, `[!! inputs.sunlight !!]`,
+writes its name.
+
+The inputs stack this way: a table keeps its rows, and a column one input
+lacks is empty in its rows; a table with no rows is still a
+table; a value (a number, a text, true or false, or a list of them) is one row
+each under `value`, which only a spec that reads `inputs` takes, and a number
+that is none (NaN) is a row with no value. The rows never carry geometry: a
+GeoDataFrame's rows are its other columns, so it stacks beside a plain table
+and in any coordinate system. Draw a map from the input's own dataset,
+`input_<k>`. A table beside a value, an input with no value, an input that
+already has a `scenario` or `scenario_name` column, and one input that carries
+several tables (a tuple, or a list of DataFrames) or an Autark node's several
+layers stop the chart, with a message naming the input: with one input wired,
+everything that input carries is its own. A spec that does not name `inputs`
+stacks nothing, and reads a tuple as before, one dataset per frame.
+
+A notebook exported from the dataflow writes the same rows with
+`stack_inputs` and `input_rows` from `utk_curio.sandbox.util.scenario_stack`,
+so it runs where Curio is installed, and the spec with its scenario chips
+written as the canvas writes them.
+
+### Scenario colors and order
+
+A chart draws exactly its spec. The scenario chips write the boxes' colors and
+names into it, from the boxes its inputs come from:
+
+| Chip | Writes | For |
+|---|---|---|
+| `[!! scenario colors !!]` | `{"domain": [names], "range": [colors]}` | the `scale` of a color, fill or stroke on `scenario_name` |
+| `[!! scenario text_colors !!]` | the same scale, each color in its shade that reads on white | the `scale` of a text mark's color |
+| `[!! scenario order !!]` | `[names]` | the `sort` of an axis, an offset or a facet on `scenario_name` |
+| `[!! scenario input_1 !!]` | the color of input_1 in that scale | a map layer's `color`, or a mark's, inside quotes or standing on its own |
+
+The boxes come in the order the dataflow lists them, each once, and each input
+from no box comes after them, named by its node, in a gray of its own, so two
+of them stay apart. Two boxes named alike, or untitled nodes of one kind in no
+box, are one name. When no input comes from a box, `[!! scenario colors !!]`
+and `[!! scenario text_colors !!]` write the names alone, `{"domain": [names]}`,
+and the chart's own palette colors them. On the **inputs** tag, the
+`scenario_name` field shows a swatch per box: drag the swatches, or click them,
+to insert `[!! scenario colors !!]`, and the small **order** and **text colors**
+tags beside them for the other two. An input whose node is in a box shows that
+box's swatch on its own tag, in a Vega-Lite or an Autark spec, which inserts
+`[!! scenario input_1 !!]`. Dropped where a value goes, the swatch writes its
+chip in quotes, `"[!! scenario input_1 !!]"`, as a field of **inputs** does,
+so the spec stays JSON.
+
+Renaming or recoloring a box, or drawing one around a node that feeds the chart,
+draws the chart again with what its chips write then, with no run. A map takes
+the new colors at its next run. A spec without the chips draws in Vega-Lite's or
+Autark's own colors, and the chips are for a spec: Python and JavaScript code
+does not take them.
 
 ### Drawing a GeoDataFrame
 
@@ -1103,6 +1200,17 @@ edges (see [Linking charts](#linking-charts)).
   of one name, the name means the first input's layer. The second input's layer
   is still its `input_<k>` when it is the only layer that input brings, and is
   left out otherwise; the node's message says which.
+- Of its input, the node loads only the tables its document names: its map's
+  layers, its plot's table and the map the plot links to, and the tables its
+  compute blocks read. A layer of an OpenStreetMap load (`table_osm_roads`)
+  brings that load's surface (`table_osm_surface`) when the input has it,
+  loaded first, whether or not the document draws it. The layers of an
+  OpenStreetMap download from the Discovery Catalog, named `parks`, `roads` and
+  so on, bring its `surface` the same way.
+- Autark clips every table after the first to the box around the first, and to
+  the first's outline when it holds polygons. So a map of OpenStreetMap layers
+  is cut to its load's area, and the tables one document draws lie in one
+  area. Draw another area in its own node.
 - A map draws only tables with geometry. A `DataFrame` is read through the one
   column that holds geometries; with none, or with several, the node draws
   nothing and says which. Return a `GeoDataFrame` with its active geometry set.
@@ -1188,9 +1296,17 @@ layer colored by a number takes `colorMapRange`, `[low, high]`, to color from
 `low` to `high` instead of from its own lowest value to its highest, so maps
 that set the same range color a value alike.
 
-A layer that names a scenario of the dataflow by its id, `"scenario":
-"weather-aware"`, is drawn in that scenario's color, the color of its box.
-`scenario` is Curio's own key, not the Autark grammar's.
+A map draws its layers as its document writes them. To draw a layer in the
+color of the scenario box its input comes from, write that input's scenario
+chip as its color, which the tag of an input from a box drags in from its
+swatch ([Scenario colors and order](#scenario-colors-and-order)):
+
+```json
+{"dataRef": "[!! input_1 !!]", "width": 80, "title": "Fastest route", "color": "[!! scenario input_1 !!]"}
+```
+
+The chip writes the box's color, and for an input from no box a gray of its
+own. A box recolored gives the layer its new color on the map's next run.
 
 ### The starter document
 
@@ -1250,24 +1366,40 @@ dashboard the node shows the output saved with the dataflow and never joins.
 
 The **Raster Calculator** works on rasters: a `rasterio` dataset from a Python
 node or the Data Catalog, or a raster an Autark node hands on. It is a node of
-SCOUT Rasters (`scout.rasters@1`), a package that ships with Curio: once the
+Scout (`curio.scout@1`), a package that ships with Curio: once the
 package is in the dataflow (**Add to project** in the Node Catalog drawer), the
-node is under **SCOUT Rasters** in the Tools panel's **Node Catalog** dropdown.
+node is under **Scout** in the Tools panel's **Node Catalog** dropdown.
 It is a Python node whose code is written for it when it
 is dropped: input_0 minus input_1, with its other operations listed above it,
 statistics among them. Return another call to change what it does. Connect the
-rasters to its input circles, in order.
+rasters to its input circles, in order. The code imports the operations from
+the package:
 
-**Cell by cell**, an operation over rasters on one grid gives a raster:
+```python
+from scout_rasters.raster_algebra import raster_calculate, raster_statistics
+
+return raster_calculate("subtract", [input_0, input_1], output_file=curio_output_file)
+```
+
+A Python node of no package has no raster operations, so a raster step is a
+Raster Calculator node. A node of another package uses them when its package
+names Scout in `dependencies.packages` (see the
+[package's README](../packages/curio.scout@1/README.md#raster-math-in-another-package)).
+
+**Cell by cell**, an operation over rasters on one grid gives a raster, which
+`output_file=curio_output_file` writes where the node writes its files:
 
 | operation | result |
 |---|---|
-| `curio_raster_calculate("add", [input_0, input_1])` | input_0 plus input_1 |
-| `curio_raster_calculate("subtract", [input_0, input_1])` | input_0 minus input_1 |
-| `curio_raster_calculate("multiply", [input_0, input_1])` | input_0 times input_1 |
-| `curio_raster_calculate("divide", [input_0, input_1])` | input_0 over input_1; a cell divided by 0 has no value |
-| `curio_raster_calculate("choose", [input_0, input_1, input_2], codes=[21, 31])` | input_1 where input_0's class is one of the codes, input_2 elsewhere |
+| `raster_calculate("add", [input_0, input_1], output_file=curio_output_file)` | input_0 plus input_1 |
+| `raster_calculate("subtract", [input_0, input_1], output_file=curio_output_file)` | input_0 minus input_1 |
+| `raster_calculate("multiply", [input_0, input_1], output_file=curio_output_file)` | input_0 times input_1 |
+| `raster_calculate("divide", [input_0, input_1], output_file=curio_output_file)` | input_0 over input_1; a cell divided by 0 has no value |
+| `raster_calculate("choose", [input_0, input_1, input_2], codes=[21, 31], output_file=curio_output_file)` | input_1 where input_0's class is one of the codes, input_2 elsewhere |
+| `raster_calculate("subtract", [input_1, input_0], absolute=True, output_file=curio_output_file)` | the size of input_1 minus input_0: how much each cell changed, 0 where it did not |
 
+- `absolute=True` gives the size of any operation's result; a cell with no
+  value keeps none.
 - A cell with no value (the raster's nodata, or a number that is not finite) in
   an input the operation reads there has no value in the result. In `choose`, a
   class with no value is no class, so its cell takes input_2.
@@ -1278,19 +1410,24 @@ rasters to its input circles, in order.
   raster keeps every digit. Its cells with no value are NaN.
 
 **Statistics** give a raster's `mean`, `median`, `min`, `max` and `count` over
-its cells with a value, as a table of one row, for example for **Compare
-Scenarios** to chart. `curio_raster_statistics(input_0, band=2)` reads another
+its cells with a value, as a table of one row, for example for a chart that
+compares scenarios. `raster_statistics(input_0, band=2)` reads another
 band. A condition keeps only some cells:
 
 | call | counts |
 |---|---|
-| `curio_raster_statistics(input_0, where=lambda value: value < 1.08)` | the cells whose value is under 1.08 |
-| `curio_raster_statistics(input_0, where=lambda value: (value >= 2) & (value < 5))` | the cells from 2 up to 5 |
-| `curio_raster_statistics(input_0, mask=input_1, mask_values=[0])` | with a second raster on input_1, on the same grid: the cells where its value is 0 |
-| `curio_raster_statistics(input_0, mask=input_1, where=lambda height: height < 1.08)` | with a second raster on input_1: the cells where its value is under 1.08 |
+| `raster_statistics(input_0, where=lambda value: value < 1.08)` | the cells whose value is under 1.08 |
+| `raster_statistics(input_0, where=lambda value: (value >= 2) & (value < 5))` | the cells from 2 up to 5 |
+| `raster_statistics(input_0, mask=input_1, mask_values=[0])` | with a second raster on input_1, on the same grid: the cells where its value is 0 |
+| `raster_statistics(input_0, mask=input_1, where=lambda height: height < 1.08)` | with a second raster on input_1: the cells where its value is under 1.08 |
 
 `where` receives the values as an array, with NaN for a cell with no value, and
 a cell with no value is never counted.
+
+**A layer** (a GeoDataFrame) on an input circle is no raster: the node's code
+reads it as zones or a mask, for example with `rasterio.features.rasterize` on a
+raster's grid. The Quad Cities flood test dataflow's Average depth by period
+reads the riverside tracts and the waterways that way.
 
 ## Notebook view
 
@@ -1416,7 +1553,7 @@ For the full guide, covering searching, downloading, storage sources, collection
 
 ## Model Catalog
 
-The **Model Catalog** holds the trained models your nodes can run. A model is a package: its weights and the node that runs it. DDRNet23-Slim, which labels street photos with the 19 Cityscapes classes, ships with Curio, with an **Image Segmentation** node; models you add from the Discovery Catalog's **Hugging Face models** land here too, each with an Image Segmentation node of its own. A node runs the model its code names with `curio_load_model("<id>")`. Drag a model's card from the Model Catalog drawer, or from **Model Catalog** in the left Tools panel, onto the canvas to add its node, or onto a node to change the node's model for another of the same type. **Save as package node…** on a node that loads a model makes a model package of your own, a copy of the model.
+The **Model Catalog** holds the trained models your nodes can run. A model is a package: its weights and the node that runs it. DDRNet23-Slim, which labels street photos with the 19 Cityscapes classes, ships with Curio, with an **Image Segmentation** node; models you add from the Discovery Catalog's **Hugging Face models** land here too, each with an Image Segmentation node of its own. A node runs the model its code names with `curio_load_model("<id>")`. Drag a model's card from the Model Catalog drawer onto the canvas to add its node, or onto a node to change the node's model for another of the same type. **Model Catalog** in the left Tools panel lists the models added to this dataflow, to drag the same way. **Save as package node…** on a node that loads a model makes a model package of your own, a copy of the model.
 
 A node runs a model once the model's package is in your account: added from the Model Catalog (**Add to project** in its canvas drawer, **Add to all projects** on its page), or brought by a dataflow that names it, such as example 10. Shipped models are packages under `<repo_root>/packages/`, relocated with **`--packages-root`**; models you add from the Discovery Catalog are yours, in your package store.
 

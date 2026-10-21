@@ -1,12 +1,14 @@
-"""``scout.rasters@1``: SCOUT's raster nodes in Curio, the Raster Calculator and
-SCOUT's building rasterizer (#662, step 17; the plan for #914, step 28.1).
+"""SCOUT's raster nodes in Curio, the Raster Calculator and SCOUT's building
+rasterizer (#662, step 17; the plan for #914, step 28.1), nodes of Scout
+(``curio.scout@1``) beside its seven charts (the plan answering komar41's
+review of his #914, step 10).
 
-The package: two nodes, the Raster Calculator, which left the built-in nodes,
-and Rasterize Buildings, which came from ``scout.raster-conversion@1``, now
-gone. Each is a Python node that opens with the starter the package ships in
+The raster nodes: the Raster Calculator, which left the built-in nodes, and
+Rasterize Buildings, which came from ``scout.raster-conversion@1``, now gone.
+Each is a Python node that opens with the starter the package ships in
 ``sources/`` (the calculator's is run by the sandbox's
-``test_raster_nodes.py``), and every shipped dataflow with either node names
-the package in its lockfile.
+``test_raster_nodes.py``), and every shipped dataflow with a node of the
+package names the package in its lockfile.
 
 The proof: the package's port of SCOUT's ``convert_raster``, called as SCOUT's
 high-rise shadow example calls it, turns the buildings SCOUT committed for that
@@ -36,7 +38,7 @@ from pathlib import Path
 import pytest
 
 REPO = Path(__file__).resolve().parents[4]
-PACKAGE_ID = "scout.rasters"
+PACKAGE_ID = "curio.scout"
 PACKAGE = REPO / "packages" / f"{PACKAGE_ID}@1"
 SOURCES = PACKAGE / "sources"
 MODULE = "scout_rasters"
@@ -174,19 +176,36 @@ def run_node(buildings, workspace, *, fails=False, **values):
 # ---------------------------------------------------------------------------
 
 def test_the_package_holds_the_raster_calculator_and_rasterize_buildings():
-    """SCOUT Rasters: one read-only package of the two raster nodes, each a
+    """Scout: one read-only package of the two raster nodes, each a
     computation node with its own icon and place in the package's palette
-    group, and the module Rasterize Buildings' code imports."""
+    group, then the fifteen charts (``test_scout_comparison.py``), and the
+    module Rasterize Buildings' code imports."""
     from utk_curio.backend.app.packages.repositories.manifests import load_package_manifest
 
     manifest = load_package_manifest(PACKAGE)
     assert (manifest.package_id, manifest.major, manifest.name, manifest.publisher, manifest.license) == (
-        PACKAGE_ID, 1, "SCOUT Rasters", "Curio", "MIT",
+        PACKAGE_ID, 1, "Scout", "Curio", "MIT",
     )
     assert manifest.read_only is True and manifest.kind == "node"
+    chart = ("vis_grammar", "fa-solid:chart-line")
     assert [(t.template_id, t.label, t.category, t.icon_ref) for t in manifest.templates] == [
         ("raster-calculator", "Raster Calculator", "computation", "fa-solid:calculator"),
         ("rasterize-buildings", "Rasterize Buildings", "computation", "fa-solid:city"),
+        ("lines-with-band", "Lines with a band", *chart),
+        ("curves-by-group", "Curves by group", *chart),
+        ("bars-with-error-bars", "Bars with error bars", *chart),
+        ("ensemble-strips", "Ensemble strips", *chart),
+        ("stacked-bars-with-totals", "Stacked bars with totals", *chart),
+        ("donuts", "Donuts", *chart),
+        ("weighted-matrix", "Weighted matrix", *chart),
+        ("dots-with-a-range", "Dots with a range", *chart),
+        ("bars", "Bars", *chart),
+        ("grouped-bars", "Grouped bars", *chart),
+        ("lines", "Lines", *chart),
+        ("points", "Points", *chart),
+        ("pie", "Pie", *chart),
+        ("lollipops", "Lollipops", *chart),
+        ("table", "Table", *chart),
     ]
     orders = [t.palette_order for t in manifest.templates]
     assert all(isinstance(order, int) for order in orders) and orders == sorted(set(orders)), orders
@@ -195,18 +214,20 @@ def test_the_package_holds_the_raster_calculator_and_rasterize_buildings():
 
 def test_the_raster_calculator_gives_a_raster_or_a_table_of_statistics():
     """One Raster Calculator: its operations work cell by cell and give a
-    raster, or take a raster's statistics and give a table of one row. It is
-    the node the built-in one was: Python code that a drop opens with its
-    operations listed, the starter the package ships, as Rasterize Buildings
-    opens with its own. The starter is a starting point, not the node's whole
-    content, so an agent's plan creates the node empty for Solve to write."""
+    raster, or take a raster's statistics and give a table of one row. Its
+    input circles take rasters, or layers its code reads as zones or a mask.
+    It is the node the built-in one was: Python code that a drop opens with
+    its operations listed, the starter the package ships, as Rasterize
+    Buildings opens with its own. The starter is a starting point, not the
+    node's whole content, so an agent's plan creates the node empty for Solve
+    to write."""
     from utk_curio.backend.app.packages.repositories.manifests import load_package_manifest
 
     manifest = load_package_manifest(PACKAGE)
     (calculator,) = [t for t in manifest.templates if t.template_id == "raster-calculator"]
     assert calculator.label == "Raster Calculator"
     assert [sorted(port.types) for port in calculator.output_ports] == [["DATAFRAME", "RASTER"]]
-    assert [(port.types, port.cardinality) for port in calculator.input_ports] == [(["RASTER"], "[1,3]")]
+    assert [(port.types, port.cardinality) for port in calculator.input_ports] == [(["RASTER", "GEODATAFRAME"], "[1,3]")]
     for words in ("add, subtract, multiply or divide", "choose", "Statistics: the mean, median, minimum, maximum and count",
                   "a table of one row"):
         assert words in calculator.description, calculator.description
@@ -262,23 +283,31 @@ def test_raster_conversion_is_retired_and_no_shipped_dataflow_names_the_old_type
 def test_every_shipped_dataflow_with_a_raster_node_declares_the_package():
     """A dataflow's lockfile is how opening it, a scenario dropped from it and
     ``--with-examples`` add the package: each shipped dataflow with one of the
-    two nodes names ``scout.rasters@1``, and only those do."""
-    using, declaring = set(), set()
+    two raster nodes names ``curio.scout@1``, and of the others only those
+    with the package's charts do."""
+    with_a_raster_node, with_a_node, declaring = set(), set(), set()
     for pattern in SHIPPED_JSON[:2]:
         for path in sorted(REPO.glob(pattern)):
             dataflow = json.loads(path.read_text(encoding="utf-8")).get("dataflow") or {}
             key = path.relative_to(REPO).as_posix()
-            if any(str(n.get("type", "")).split("@")[0] in (NODE_TYPE, CALCULATOR_TYPE)
-                   for n in dataflow.get("nodes") or []):
-                using.add(key)
+            types = {str(n.get("type", "")).split("@")[0] for n in dataflow.get("nodes") or []}
+            if types & {NODE_TYPE, CALCULATOR_TYPE}:
+                with_a_raster_node.add(key)
+            if any(node_type.startswith(f"{PACKAGE_ID}/") for node_type in types):
+                with_a_node.add(key)
             if f"{PACKAGE_ID}@1" in (dataflow.get("packages") or []):
                 declaring.add(key)
-    assert using == declaring == {
+    assert with_a_raster_node == {
         "docs/examples/24-scout-shadow-model-chicago-loop.json",
         "docs/examples/dataflows/chicago-loop-shadow-towers.json",
         "docs/examples/dataflows/lower-manhattan-park-shade.json",
         "docs/examples/dataflows/quad-cities-flood-vulnerability.json",
-    }, (using, declaring)
+    }, with_a_raster_node
+    assert with_a_node == declaring == with_a_raster_node | {
+        "docs/examples/06-back-bay-road-sunlight.json",
+        "docs/examples/dataflows/chicago-rain-wind-routing.json",
+        "docs/examples/dataflows/scenario-comparison-charts.json",
+    }, (with_a_node, declaring)
 
 
 # ---------------------------------------------------------------------------
@@ -335,7 +364,7 @@ def test_the_shipped_dataflow_runs_the_template_as_the_palette_drops_it():
     the package ships. Its lockfile names the package beside the model package
     of Deep Umbra, which reads the node's raster."""
     spec = json.loads(EXAMPLE.read_text(encoding="utf-8"))["dataflow"]
-    assert spec["packages"] == ["model.scout.deep-umbra@1", f"{PACKAGE_ID}@1"]
+    assert spec["packages"] == [f"{PACKAGE_ID}@1", "model.scout.deep-umbra@1"]
     (node,) = [n for n in spec["nodes"] if n["type"] == NODE_TYPE]
     template = _template()
     assert node["content"] == (PACKAGE / template["source"]).read_text(encoding="utf-8")

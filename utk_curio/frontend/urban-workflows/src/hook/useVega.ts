@@ -9,12 +9,25 @@ import { applyContainerSizing, createFlipGuard, refitToContainer } from "../util
 import type { RenderCounts } from "../utils/renderOutcome";
 import { injectInputs, prepareVegaInputs, usesNamedDatasets, type VegaDataset } from "../utils/vegaInput";
 import { DEFAULT_INPUT_DATASET } from "../utils/vegaGeoSpec";
+import { INPUTS_DATASET } from "../utils/vegaDatasets";
 import { inputTableName } from "../generated/autkGrammar";
 import { usableCounts } from "../utils/vegaUsableRows";
 import { matchSelections, objectRows, type PointValue } from "../utils/selectionMatch";
 import { columnsOfRows, provideViewRows } from "../utils/references/viewSelections";
-import { carriedSelections, isPointSelection, pointValues, viewSelects, withMovedIds } from "../utils/vegaSelects";
+import { rowsHeldBy, selectionSize, tagsOnView } from "../utils/references/selectionTags";
+import {
+  carriedSelections,
+  isPointSelection,
+  pointStoreOf,
+  pointStoreTuples,
+  pointValues,
+  viewSelects,
+  withMovedIds,
+  type PointStore,
+  type SelectType,
+} from "../utils/vegaSelects";
 import { echoedCircle } from "../utils/selectionEcho";
+import type { ScenarioLabel } from "../utils/scenarios/scenarioColors";
 import type { NodeEmptyReason } from "../utils/nodeEmptyState";
 import { resolveGrammarEmptyReason } from "../utils/nodeEmptyState";
 import { clearEmptyState, writeEmptyState } from "../utils/writeEmptyState";
@@ -22,6 +35,9 @@ import { clearEmptyState, writeEmptyState } from "../utils/writeEmptyState";
 // const schema = require('./vega-schema.json');
 const vega = require("vega");
 const lite = require("vega-lite");
+
+/** How vega's error begins for a dataset a view does not hold. */
+const UNRECOGNIZED_DATASET = "Unrecognized data set";
 
 if (typeof window !== 'undefined') {
   (window as any).__curio_vega = vega;
@@ -72,8 +88,7 @@ export const useVega = ({
   upstreamErrored = false,
   hasSpec = true,
   onRedraw,
-  recordsProvenance = true,
-  forwardsInput = true,
+  inputLabels,
 }: {
   data: any;
   code: string;
@@ -91,21 +106,16 @@ export const useVega = ({
    */
   onRedraw?: (counts: RenderCounts) => void;
   /**
-   * Whether a compile is recorded in the node's provenance, its code being the
-   * spec. A Compare Scenarios node (#662) draws its own output: its provenance
-   * is the code that made that output, and a spec there would be offered as a
-   * version of its Python.
+   * Each input's label, in circle order: the scenario box its node is in
+   * (utils/scenarios/inputScenarios). A spec that reads `inputs` names their
+   * rows by these, read as each compile and each new input stacks them.
    */
-  recordsProvenance?: boolean;
-  /**
-   * Whether a compile hands the node's input on as its output, as a chart
-   * does. A Compare Scenarios node's chart reads the node's own output, which
-   * its run has already handed on.
-   */
-  forwardsInput?: boolean;
+  inputLabels?: readonly ScenarioLabel[];
 }) => {
   const onRedrawRef = React.useRef(onRedraw);
   onRedrawRef.current = onRedraw;
+  const inputLabelsRef = React.useRef<readonly ScenarioLabel[]>(inputLabels ?? []);
+  inputLabelsRef.current = inputLabels ?? [];
   const { showToast } = useToastContext();
   const [interactions, _setInteractions] = useState<any>({}); // {signal: {type: point/interval, data: }} // if type point data contains list of object ids. If type is interval data is an object where each key is an attribute with intervals or lists
 
@@ -149,14 +159,21 @@ export const useVega = ({
   incomingSelectionRef.current = data.interactions;
 
   /**
-   * Sets the `interacted` flag on the rows the view already holds. The rows
-   * keep their `_vgsid_`, so a selection made in this chart still finds its
-   * marks afterwards.
+   * Sets the `interacted` flag on the rows the view already holds of
+   * *dataset*. The rows keep their `_vgsid_`, so a selection made in this
+   * chart still finds its marks afterwards. vega-lite builds only the datasets
+   * a spec reads, so a view drawing `inputs` alone holds no `input_0`: a
+   * dataset the view lacks is skipped, where vega would throw.
    */
-  const setInteracted = (view: any, flagOf: (t: any) => string, dataset: string = DEFAULT_INPUT_DATASET) =>
-    view
-      .change(dataset, vega.changeset().modify(() => true, "interacted", flagOf))
-      .runAsync();
+  const setInteracted = (view: any, flagOf: (t: any) => string, dataset: string = DEFAULT_INPUT_DATASET) => {
+    try {
+      view.change(dataset, vega.changeset().modify(() => true, "interacted", flagOf));
+    } catch (error: any) {
+      if (String(error?.message ?? "").startsWith(UNRECOGNIZED_DATASET)) return Promise.resolve(view);
+      throw error;
+    }
+    return view.runAsync();
+  };
 
   /**
    * A selection from a chart joined to this one by a direct interaction edge,
@@ -164,13 +181,19 @@ export const useVega = ({
    * `interacted` in the view as it is, so the spec's `datum.interacted`
    * condition highlights them exactly as it does behind a pool. The chart is
    * never rebuilt for it. Also re-applied after new rows arrive, so a selection
-   * that is still active survives an upstream run.
+   * that is still active survives an upstream run. It picks out rows of the
+   * first input, which a spec reading `inputs` draws there too, under
+   * `__input__` 0; the other inputs' rows there keep their flags.
    */
   const applyDirectSelection = (view: any) => {
     const incoming = incomingSelectionRef.current;
     if (!view || !Array.isArray(incoming) || incoming.length === 0) return;
     const picked = new Set(matchSelections(incoming, objectRows(lastValuesRef.current)));
-    setInteracted(view, (t: any) => (picked.has(t.__row_index__) ? "1" : "0"));
+    const flagOf = (t: any) => (picked.has(t.__row_index__) ? "1" : "0");
+    setInteracted(view, flagOf);
+    if (heldDatasetsRef.current.some((d) => d.name === INPUTS_DATASET)) {
+      setInteracted(view, (t: any) => ((t.__input__ ?? 0) === 0 ? flagOf(t) : t.interacted), INPUTS_DATASET);
+    }
   };
 
   // Why the node body is blank, when it is. Persistent, unlike a toast.
@@ -256,7 +279,7 @@ export const useVega = ({
     // any other way here would insert bare, un-rewound geometry into an
     // already-compiled view and break the map on the *second* upstream run
     // only -- which is a miserable thing to debug.
-    const prepared = await prepareVegaInputs(data.input, lastSpecRef.current);
+    const prepared = await prepareVegaInputs(data.input, lastSpecRef.current, inputLabelsRef.current);
     const prevView = currentViewRef.current;
     const previousInput = heldInputRef.current;
     heldInputRef.current = data.input;
@@ -272,7 +295,13 @@ export const useVega = ({
     const heldRows = heldDatasetsRef.current.find((d) => d.name === dataset)?.values;
     if (prevView && dataset && Array.isArray(echoRows) && Array.isArray(heldRows) && echoRows.length === heldRows.length) {
       setEmptyState(prepared);
-      setInteracted(prevView, (t: any) => echoRows[t.__row_index__]?.interacted ?? t.interacted, dataset)
+      const flagOf = (t: any) => echoRows[t.__row_index__]?.interacted ?? t.interacted;
+      // A spec reading `inputs` draws that input's rows there too.
+      const stacked = heldDatasetsRef.current.some((d) => d.name === INPUTS_DATASET);
+      setInteracted(prevView, flagOf, dataset)
+        .then(() => stacked
+          ? setInteracted(prevView, (t: any) => (t.__input__ === echoed ? flagOf(t) : t.interacted), INPUTS_DATASET)
+          : undefined)
         .then(() => applyDirectSelection(prevView));
       return;
     }
@@ -390,16 +419,101 @@ export const useVega = ({
     data.interactionsCallback(interactions, data.nodeId);
   }, [interactions]);
 
-  const { workflowNameRef, dashboardOn } = useFlowContext();
+  const { workflowNameRef, dashboardOn, nodes: flowNodes, clearSelectionTagsOf } = useFlowContext();
   const { nodeExecProv } = useProvenanceContext();
+  // #884: the tags that read this chart, and the flow's way to empty them, as
+  // they are when the chart draws. A draw that ends after the node left the
+  // page changes no tag: a node of the same id may be on the canvas by then.
+  const flowNodesRef = React.useRef(flowNodes);
+  flowNodesRef.current = flowNodes;
+  const clearTagsRef = React.useRef(clearSelectionTagsOf);
+  clearTagsRef.current = clearSelectionTagsOf;
+  const mountedRef = React.useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+  const clearTags = () => {
+    if (mountedRef.current) clearTagsRef.current?.(data.nodeId);
+  };
+
   /**
-   * Compiles *spec* and draws it. Whether the compile is recorded in the
-   * node's provenance and hands the node's input on is the hook's to say,
-   * unless *how* says it for this draw. With `keepsSelection`, a selection made
-   * in the chart is put back in the new view and the flow goes on holding it.
-   * A chart after a Compare Scenarios node is drawn again that way when a
-   * scenario is recolored (adapters/node/vegaBehavior): as the Compare node's
-   * Chart tab draws its own, with no version and no hand-off.
+   * #884: what a draw does with the selection the tags on the chart hold, when
+   * one holds any. A chart puts it back with its point select, on the rows of
+   * its first input that hold the tags' ids, as clicks on them would. It
+   * cannot when it declares no point select, or an interval one too (a tag
+   * does not say which select made its ids, and a brush cannot be drawn again
+   * from ids), when the select's tuples are not in a form put back here
+   * (`pointStoreOf`), or when none of its rows holds an id: then "clear".
+   */
+  const tagSelectionOf = (
+    specObj: any,
+    vegaspec: unknown,
+    values: any[],
+  ): { select: string; store: PointStore; rows: number[]; values: any[] } | "clear" | null => {
+    const tags = tagsOnView(flowNodesRef.current ?? [], data.nodeId).filter((tag) => selectionSize(tag) > 0);
+    if (tags.length === 0) return null;
+    const declared = [...viewSelects(specObj, []).entries()];
+    if (declared.some(([, type]) => type === "interval")) return "clear";
+    const rows = rowsHeldBy(tags, objectRows(values));
+    if (rows.length === 0) return "clear";
+    for (const [select, type] of declared) {
+      if (type !== "point") continue;
+      const store = pointStoreOf(vegaspec, select);
+      if (store) return { select, store, rows, values };
+    }
+    return "clear";
+  };
+
+  // The rows of the first input *view* draws a mark for. None when its marks
+  // carry no row, as aggregates do.
+  const drawnRows = (view: any): Set<number> => {
+    const rows = new Set<number>();
+    const traverse = (node: any) => {
+      if (!node?.items) return;
+      for (const item of node.items) {
+        if (item.datum?.__row_index__ !== undefined && (item.datum.__input__ ?? 0) === 0) rows.add(item.datum.__row_index__);
+        traverse(item);
+      }
+    };
+    try { traverse(view.scenegraph().root); } catch (_) {}
+    return rows;
+  };
+
+  /**
+   * Sets the store of *restore*'s select, in *view* after its first run, to the
+   * rows it names that the view draws, under the ids that view gives them;
+   * says whether it picked any. A row the view draws no mark for, one its
+   * transforms leave out, would be selected nowhere on the chart. A chart whose
+   * marks are aggregates names no row, and takes every row.
+   */
+  const setStoreFromTags = async (
+    view: any,
+    restore: { select: string; store: PointStore; rows: number[]; values: any[] },
+  ): Promise<boolean> => {
+    const ids = buildVgsidMap(view);
+    // The select reports the new view's ids, the moment it is told.
+    if (ids.size > 0) vgsidToIndexRef.current = ids;
+    const idOfRow = new Map<number, number>();
+    for (const [id, row] of ids) idOfRow.set(row, id);
+    const drawn = drawnRows(view);
+    const rows = drawn.size > 0 ? restore.rows.filter((row) => drawn.has(row)) : restore.rows;
+    const tuples = pointStoreTuples(restore.store, rows, restore.values, idOfRow);
+    if (tuples.length === 0) return false;
+    await view.setState({ data: { [`${restore.select}_store`]: tuples } }).runAsync();
+    return true;
+  };
+  /**
+   * Compiles *spec* and draws it. The compile is recorded in the node's
+   * provenance, its code being the spec, and hands the node's input on as its
+   * output, unless *how* says otherwise for this draw. With `keepsSelection`, a
+   * selection made in the chart is put back in the new view and the flow goes
+   * on holding it. A chart reading `inputs` is drawn again that way when a
+   * scenario box is renamed or recolored (adapters/node/vegaBehavior), with no
+   * version and no hand-off. Without it, the selection the chart's selection
+   * tags hold is put back, or the tags are emptied (#884, `tagSelectionOf`).
    */
   const handleCompileGrammar = async (
     spec: string,
@@ -408,19 +522,17 @@ export const useVega = ({
     let startTime = formatDate(new Date());
 
     const counts = await compileGrammar(JSON.parse(spec), {
-      forwardsInput: how.forwardsInput ?? forwardsInput,
+      forwardsInput: how.forwardsInput ?? true,
       keepsSelection: how.keepsSelection ?? false,
     });
 
     // END COMPILE GRAMMAR
     let endTime = formatDate(new Date());
 
-    if (how.recordsProvenance ?? recordsProvenance) {
-      let typesInput: string[] = [];
-
-      if (data.input != "") typesInput = data.input.dataType;
-
-      let typesOuput: string[] = [...typesInput];
+    if (how.recordsProvenance ?? true) {
+      // A chart hands on the table it read, so it returned the kind it read.
+      // The input names that kind by one `dataType`.
+      const typesInput = data.input?.dataType;
 
       nodeExecProv(
         startTime,
@@ -428,7 +540,7 @@ export const useVega = ({
         workflowNameRef.current,
         data.nodeId,
         mapTypes(typesInput),
-        mapTypes(typesOuput),
+        mapTypes(typesInput),
         code
       );
     }
@@ -440,22 +552,25 @@ export const useVega = ({
 
   const compileGrammar = async (
     specObj: any,
-    how: { forwardsInput: boolean; keepsSelection: boolean } = { forwardsInput, keepsSelection: false },
+    how: { forwardsInput: boolean; keepsSelection: boolean } = { forwardsInput: true, keepsSelection: false },
   ) => {
     // Prepare before the spec is handed to vega-lite: resolving geometry can
     // inject `encoding.shape` and `projection` into `specObj`, and coerces the
     // row values those encodings will read.
     lastSpecRef.current = specObj;
     authoredSpecRef.current = JSON.stringify(specObj);
-    const prepared = await prepareVegaInputs(data.input, specObj);
+    const prepared = await prepareVegaInputs(data.input, specObj, inputLabelsRef.current);
     setEmptyState(prepared);
     const values = prepared.datasets[0]?.values ?? [];
     lastValuesRef.current = values;
     heldDatasetsRef.current = prepared.datasets;
     heldInputRef.current = data.input;
-    const rowsIn = Array.isArray(values) ? values.length : undefined;
+    // A spec that reads `inputs` draws every input's rows, named by their
+    // scenarios: they are what arrived, not the first input's alone.
+    const judged = prepared.stacked ?? values;
+    const rowsIn = Array.isArray(judged) ? judged.length : undefined;
     // dev/137: judged over the fields the input carries; see vegaUsableRows.
-    const { usableRows, usableFields } = usableCounts(values, specObj);
+    const { usableRows, usableFields } = usableCounts(judged, specObj);
 
     if (prepared.emptyReason != null) {
       // Nothing was injected and there is nothing sensible to draw. Compiling
@@ -495,12 +610,20 @@ export const useVega = ({
     // that view's ids name.
     const carried = how.keepsSelection ? carriedSelections(currentViewRef.current, specObj) : null;
     const idsBefore = vgsidToIndexRef.current;
+    // Any other draw builds a view that shows no selection, so the selection
+    // the tags on the chart hold goes back in it, or the tags are emptied
+    // (#884).
+    const fromTags = how.keepsSelection ? null : tagSelectionOf(specObj, vegaspec, values);
+    const restore = fromTags === "clear" ? null : fromTags;
 
     let view = new vega.View(vega.parse(vegaspec), dashboardOn ? offlineViewOptionsOnce() : undefined)
       .logLevel(vega.Warn) // set view logging level
       .renderer("canvas")
       .initialize("#vega" + data.nodeId)
       .hover();
+    // Emptied once there is a view that shows none of it: a spec vega cannot
+    // parse leaves them as they were.
+    if (fromTags === "clear") clearTags();
 
     // React Flow's zoom scales the canvas with a CSS transform; vega maps a
     // pointer through that scale itself, so its events stay as the browser
@@ -518,9 +641,11 @@ export const useVega = ({
     // The selections go back once the new view has numbered its rows, on its
     // first run, which also builds the scopes of its views. Until they are
     // back, what the view says of its selects is the empty selection it starts
-    // on, then the one put back, which the flow already holds: neither is
-    // passed on.
-    let restoring = carried !== null;
+    // on, then the one put back: neither is passed on. A carried selection is
+    // the one the flow already holds; one put back from the tags is told to
+    // the flow once it is back (below).
+    let restoring = carried !== null || restore !== null;
+    let restored = false;
     const firstRun: Promise<unknown> = carried
       ? view
           .runAsync()
@@ -528,7 +653,17 @@ export const useVega = ({
           .finally(() => {
             restoring = false;
           })
-      : view.runAsync();
+      : restore
+        ? view
+            .runAsync()
+            .then(() => setStoreFromTags(view, restore))
+            .then((done: boolean) => {
+              restored = done;
+            })
+            .finally(() => {
+              restoring = false;
+            })
+        : view.runAsync();
 
     // dev/136: the same chain, with its result kept — the marks can only be
     // counted once the first render has finished, and the caller needs that
@@ -556,115 +691,124 @@ export const useVega = ({
 
     setCurrentView(view);
 
+    // What the select *select* holds now, *value* (its top-level signal's
+    // value), told to the flow: as a click, a hover or a brush in the chart
+    // tells it, and as a selection put back from the tags is told (#884).
+    const report = (select: string, declared: SelectType | undefined, value: any) => {
+      // detecting the type of interaction (point/hover or interval (brush))
+      let signalAttributes = Object.keys(value);
+
+      // what a point/hover selection names: the rows' positions, or (a
+      // select over fields) the values it picked
+      let interactedElementsPoint: Array<number | PointValue> = [];
+
+      if (signalAttributes.length == 0) {
+        // no interaction
+        let previousValue = interactionsRef.current[select];
+
+        let type = VisInteractionType.UNDETERMINED;
+        let data: any = [];
+
+        if (previousValue != undefined) {
+          type = previousValue.type;
+          if (type == VisInteractionType.INTERVAL) {
+            data = {};
+          }
+        }
+
+        let interactionsKeys = Object.keys(interactionsRef.current);
+
+        let newObj: any = {};
+        for (const interactionKey of interactionsKeys) {
+          newObj[interactionKey] = {
+            type: interactionsRef.current[interactionKey].type,
+            data: interactionsRef.current[interactionKey].data,
+            priority: 0,
+            source: NodeType.VIS_VEGA,
+          };
+        }
+
+        newObj[select] = {
+          type: type,
+          data: data,
+          priority: 1,
+          source: NodeType.VIS_VEGA,
+        };
+
+        setInteractions(newObj);
+      } else if (isPointSelection(declared, value)) {
+        // point/hover: the rows vega's tuple ids name, or the values a
+        // select over fields picked, which every reader matches its own
+        // rows against (#847)
+        if (signalAttributes.includes("_vgsid_")) {
+          for (const elem of value._vgsid_) {
+            const idx = vgsidToIndexRef.current.get(elem);
+            if (idx !== undefined) interactedElementsPoint.push(idx);
+          }
+        } else {
+          interactedElementsPoint = pointValues(value);
+        }
+
+        let interactionsKeys = Object.keys(interactionsRef.current);
+
+        let newObj: any = {};
+        for (const interactionKey of interactionsKeys) {
+          newObj[interactionKey] = {
+            type: interactionsRef.current[interactionKey].type,
+            data: interactionsRef.current[interactionKey].data,
+            priority: 0,
+          };
+        }
+
+        newObj[select] = {
+          type: VisInteractionType.POINT,
+          data: interactedElementsPoint,
+          priority: 1,
+          source: NodeType.VIS_VEGA,
+        };
+
+        setInteractions(newObj);
+      } else {
+        // interval
+
+        let interactionsKeys = Object.keys(interactionsRef.current);
+
+        let newObj: any = {};
+        for (const interactionKey of interactionsKeys) {
+          newObj[interactionKey] = {
+            type: interactionsRef.current[interactionKey].type,
+            data: interactionsRef.current[interactionKey].data,
+            priority: 0,
+          };
+        }
+
+        newObj[select] = {
+          type: VisInteractionType.INTERVAL,
+          data: { ...value },
+          priority: 1,
+          source: NodeType.VIS_VEGA,
+        };
+
+        setInteractions(newObj);
+      }
+    };
+
     // A listener on each select's top-level signal, `<name>`, which holds its
     // selection, whatever the name and wherever the spec declares it (#846).
     const selects = viewSelects(specObj, Object.keys(view.getState().signals ?? {}));
+    const heard: Array<[string, SelectType | undefined]> = [];
     for (const [select, declared] of selects) {
       try {
-        view.addSignalListener(select, (name: any, value: any) => {
+        view.addSignalListener(select, (_name: any, value: any) => {
           if (restoring) return;
-          // detecting the type of interaction (point/hover or interval (brush))
-          let signalAttributes = Object.keys(value);
-
-          // what a point/hover selection names: the rows' positions, or (a
-          // select over fields) the values it picked
-          let interactedElementsPoint: Array<number | PointValue> = [];
-
-          if (signalAttributes.length == 0) {
-            // no interaction
-            let previousValue = interactionsRef.current[select];
-
-            let type = VisInteractionType.UNDETERMINED;
-            let data: any = [];
-
-            if (previousValue != undefined) {
-              type = previousValue.type;
-              if (type == VisInteractionType.INTERVAL) {
-                data = {};
-              }
-            }
-
-            let interactionsKeys = Object.keys(interactionsRef.current);
-
-            let newObj: any = {};
-            for (const interactionKey of interactionsKeys) {
-              newObj[interactionKey] = {
-                type: interactionsRef.current[interactionKey].type,
-                data: interactionsRef.current[interactionKey].data,
-                priority: 0,
-                source: NodeType.VIS_VEGA,
-              };
-            }
-
-            newObj[select] = {
-              type: type,
-              data: data,
-              priority: 1,
-              source: NodeType.VIS_VEGA,
-            };
-
-            setInteractions(newObj);
-          } else if (isPointSelection(declared, value)) {
-            // point/hover: the rows vega's tuple ids name, or the values a
-            // select over fields picked, which every reader matches its own
-            // rows against (#847)
-            if (signalAttributes.includes("_vgsid_")) {
-              for (const elem of value._vgsid_) {
-                const idx = vgsidToIndexRef.current.get(elem);
-                if (idx !== undefined) interactedElementsPoint.push(idx);
-              }
-            } else {
-              interactedElementsPoint = pointValues(value);
-            }
-
-            let interactionsKeys = Object.keys(interactionsRef.current);
-
-            let newObj: any = {};
-            for (const interactionKey of interactionsKeys) {
-              newObj[interactionKey] = {
-                type: interactionsRef.current[interactionKey].type,
-                data: interactionsRef.current[interactionKey].data,
-                priority: 0,
-              };
-            }
-
-            newObj[select] = {
-              type: VisInteractionType.POINT,
-              data: interactedElementsPoint,
-              priority: 1,
-              source: NodeType.VIS_VEGA,
-            };
-
-            setInteractions(newObj);
-          } else {
-            // interval
-
-            let interactionsKeys = Object.keys(interactionsRef.current);
-
-            let newObj: any = {};
-            for (const interactionKey of interactionsKeys) {
-              newObj[interactionKey] = {
-                type: interactionsRef.current[interactionKey].type,
-                data: interactionsRef.current[interactionKey].data,
-                priority: 0,
-              };
-            }
-
-            newObj[select] = {
-              type: VisInteractionType.INTERVAL,
-              data: { ...value },
-              priority: 1,
-              source: NodeType.VIS_VEGA,
-            };
-
-            setInteractions(newObj);
-          }
+          report(select, declared, value);
         });
       } catch {
         // vega throws for a name that is not one of the view's top-level
         // signals, as a `<name>_modify` signal no select made can give.
         continue;
       }
+      heard.push([select, declared]);
       // Put back in the view, a selection stays as the flow holds it.
       if (carried) continue;
       setInteractions({
@@ -675,6 +819,28 @@ export const useVega = ({
           source: NodeType.VIS_VEGA,
         },
       });
+    }
+
+    // #884: the selection put back from the tags, once it is back, told to the
+    // flow as clicks on its rows would tell it. The tags are written again from
+    // what the chart shows, which marks no node stale while they hold the same
+    // ids, and a Data Pool linked to the chart sees it too. When the view draws
+    // none of those rows, its selects are told empty, as its first run would
+    // have told them, and the tags are emptied.
+    if (restore) {
+      void firstRun
+        .then(() => {
+          if (!mountedRef.current) return;
+          if (restored) {
+            if (heard.some(([select]) => select === restore.select)) {
+              report(restore.select, "point", view.signal(restore.select));
+            }
+            return;
+          }
+          for (const [select, declared] of heard) report(select, declared, {});
+          clearTags();
+        })
+        .catch(() => undefined);
     }
 
     // replicating input to the output

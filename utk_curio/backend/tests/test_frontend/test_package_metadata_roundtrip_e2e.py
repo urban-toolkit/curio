@@ -38,7 +38,7 @@ not carry them rather than because they were forgotten:
 * ``#pkg-meta-runtime`` (``compatibility.curioRuntime``) is write-only in the UI.
   ``PackageMetadataModal`` initialises it blank on every open and never reads it
   back out of the payload, so a reopened modal cannot show it.
-* The ``Provenance tab`` / ``Explanation tab`` checkboxes never reach the wire.
+* The ``Provenance button`` / ``Explanation tab`` checkboxes never reach the wire.
   ``applyCanvasTemplateConfigToTemplateDraft`` does not copy ``hasProvenance`` /
   ``hasExplanation`` into the template draft, and ``toApiPayload`` emits no such
   manifest field. They are canvas-local, and

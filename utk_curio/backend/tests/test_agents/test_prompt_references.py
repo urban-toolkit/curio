@@ -119,9 +119,9 @@ def _injected_helpers() -> set[str]:
     """The ``curio_*`` names node code can call: the catalog helpers the sandbox
     installs (the renamed ones only raise), ``curio_secret``, which both
     execution paths inject beside them, and the ``curio_*`` names both paths
-    seed into node code's namespace, such as the Compare Scenarios steps
-    (#662): the isolated child's template, which ``worker._worker_init``
-    mirrors."""
+    seed into node code's namespace, such as the Interaction node's
+    ``curio_edit_features`` (#662): the isolated child's template, which
+    ``worker._worker_init`` mirrors."""
     from utk_curio.sandbox.isolation.zygote import build_namespace_template
     from utk_curio.sandbox.util.catalog_helpers import install_catalog_helpers
 
@@ -185,6 +185,24 @@ def _vega_specs(value):
 
 def _dataflow(entry: examples.IndexEntry) -> dict:
     return json.loads(entry.path.read_text(encoding="utf-8"))["dataflow"]
+
+
+def _as_a_run_reads_it(entry: examples.IndexEntry) -> dict:
+    """A dataflow with each chart's spec read as a run reads it, its references
+    resolved: a chart of a package's that places its widgets as values, as
+    Scout's Bars places its Combine (``"aggregate": "[!! combine !!]"``), is a
+    Vega-Lite document once its widgets are written. Every other node is as
+    the dataflow holds it."""
+    from utk_curio.backend.app.execution.workflow_spec import parse_workflow_dict
+    from utk_curio.backend.tests.test_projects.test_example_vega_specs import VEGA_LITE_TYPES
+
+    flow = _dataflow(entry)
+    spec = parse_workflow_dict({"dataflow": flow})
+    by_id = {node.id: node for node in spec.nodes}
+    for node in flow["nodes"]:
+        if str(node.get("type") or "").split("@", 1)[0] in VEGA_LITE_TYPES:
+            node["content"] = spec.node_code(by_id[node["id"]], "json")
+    return flow
 
 
 def _node_text(entry: examples.IndexEntry) -> str:
@@ -352,7 +370,9 @@ def test_every_dataset_and_model_a_used_dataflow_loads_ships(entry):
 
 @pytest.mark.parametrize("entry", USED, ids=lambda entry: entry.path.stem)
 def test_every_vega_lite_spec_in_a_used_dataflow_validates(entry):
-    for spec in _vega_specs(_dataflow(entry)):
+    # As a run reads each one: example 06 charts with Scout's Bars, whose
+    # widgets reach its spec as values once they are written.
+    for spec in _vega_specs(_as_a_run_reads_it(entry)):
         result = validate_vega_lite(json.dumps(spec))
         assert result["status"] == STATUS_VALID, (
             f"{entry.target} shows a Vega-Lite document Curio refuses: "

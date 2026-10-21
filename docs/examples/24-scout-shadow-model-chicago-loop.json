@@ -29,7 +29,7 @@
       },
       {
         "id": "333949c8-983a-5cdb-845b-04abe06c2dc7",
-        "type": "scout.rasters/rasterize-buildings",
+        "type": "curio.scout/rasterize-buildings",
         "x": 645,
         "y": 430,
         "out": "DEFAULT",
@@ -114,7 +114,7 @@
       },
       {
         "id": "8a914e39-4cb1-535d-9a8b-19b45f6be288",
-        "type": "scout.rasters/raster-calculator",
+        "type": "curio.scout/raster-calculator",
         "x": 1935,
         "y": 430,
         "out": "DEFAULT",
@@ -123,7 +123,7 @@
         "metadata": {
           "keywords": []
         },
-        "content": "# Statistics: the mean, median, minimum, maximum and count of a\n# raster's cells, nodata left out, as a table of one row.\n# input_0 is the accumulated shadow in minutes, input_1 the heights it was\n# predicted from, as the mask: SCOUT's metrics count the ground, the cells\n# Deep Umbra reads as gray level 0, a height under 1.08 m.\nreturn curio_raster_statistics(input_0, mask=input_1, where=lambda height: height < 1.08)\n"
+        "content": "# Statistics: the mean, median, minimum, maximum and count of a\n# raster's cells, nodata left out, as a table of one row.\n# input_0 is the accumulated shadow in minutes, input_1 the heights it was\n# predicted from, as the mask: SCOUT's metrics count the ground, the cells\n# Deep Umbra reads as gray level 0, a height under 1.08 m.\nfrom scout_rasters.raster_algebra import raster_statistics\n\nreturn raster_statistics(input_0, mask=input_1, where=lambda height: height < 1.08)\n"
       },
       {
         "id": "6cef8611-e3ec-52d4-9caf-aa5d6cff3d6a",
@@ -204,8 +204,8 @@
       ]
     },
     "packages": [
-      "model.scout.deep-umbra@1",
-      "scout.rasters@1"
+      "curio.scout@1",
+      "model.scout.deep-umbra@1"
     ],
     "datasets": [
       {

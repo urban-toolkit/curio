@@ -117,6 +117,7 @@ from utk_curio.backend.app.packages.domain.dataflow_categories import declared_d
 from utk_curio.backend.app.packages.domain.spec_packages import (
     dir_name_from_model_ref,
     dir_name_from_node_type,
+    is_package_node_type,
     preserve_project_packages,
     project_packages,
     set_project_packages,
@@ -149,6 +150,7 @@ __all__ = [
     "declared_dataflow_categories",
     "dir_name_from_model_ref",
     "dir_name_from_node_type",
+    "is_package_node_type",
     "preserve_project_packages",
     "project_packages",
     "set_project_packages",

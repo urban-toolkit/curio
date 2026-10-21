@@ -1,7 +1,7 @@
 """The left rail must fit a short screen, with Run all reachable.
 
-The rail stacks the built-in tile block, then the Node, Data and Agent Catalog
-triggers, then "Run all nodes". Nothing constrained its height, so on a short
+The rail stacks the Built-in, Node, Data, Agent and Model Catalog triggers,
+then "Run all nodes". Nothing constrained its height, so on a short
 viewport the Run-all button was simply drawn past the fold - and because no
 ancestor scrolled, there was no way to reach it. A 1366x768 laptop leaves about
 660px of viewport after browser chrome, which is where this test runs.
@@ -41,16 +41,17 @@ SHORT_VIEWPORT = {"width": 1280, "height": 660}
 
 RUN_ALL = '#tools-menu button[title="Run all nodes"]'
 
-#: The built-in tile block, found through a tile rather than by class name:
-#: CSS-Modules hashes `.menuStyle` into something opaque, so a `[class*=…]`
-#: selector matches nothing in a real build.
+#: The built-in tile block: the part of the open Built-in palette's panel that
+#: holds the tiles, found through a tile rather than by class name: CSS-Modules
+#: hashes `.scroll` into something opaque, so a `[class*=…]` selector matches
+#: nothing in a real build.
 TILE_BLOCK_JS = """() => {
     const tile = document.querySelector('#tile-data-loading');
-    const rail = document.querySelector('#tools-menu');
-    if (!tile || !rail) return null;
+    const panel = tile && tile.closest('#builtin-palette [role="region"]');
+    if (!panel) return null;
     let el = tile;
-    while (el.parentElement && el.parentElement !== rail) el = el.parentElement;
-    return el.parentElement === rail ? el : null;
+    while (el.parentElement && el.parentElement !== panel) el = el.parentElement;
+    return el.parentElement === panel ? el : null;
 }"""
 
 
@@ -129,7 +130,11 @@ def test_run_all_is_reachable_on_a_short_screen(
 def test_the_tile_block_absorbs_the_overflow(
     browser, frontend_server: str, current_server: str
 ):
-    """The rail is capped, and the growing part is the part that scrolls."""
+    """The rail is capped, and the growing part is the part that scrolls.
+
+    The part that grows with every built-in node is the tile block, in the
+    Built-in palette's panel: open, the panel fits the viewport and its tile
+    block scrolls."""
     require_project_page()
     require_user_auth()
     context, page = _canvas_at_short_viewport(
@@ -143,6 +148,15 @@ def test_the_tile_block_absorbs_the_overflow(
             "the whole rail should fit the viewport once it is capped"
         )
 
+        panel = open_tools_palette(page, "builtin")
+        page.locator("#tile-data-loading").wait_for(state="visible", timeout=30000)
+        panel_box = panel.bounding_box()
+        assert panel_box, "the Built-in palette's panel has no layout box"
+        assert panel_box["y"] + panel_box["height"] <= SHORT_VIEWPORT["height"], (
+            f"the open Built-in palette ends at y={panel_box['y'] + panel_box['height']:.0f}, "
+            f"past the {SHORT_VIEWPORT['height']}px fold"
+        )
+
         # The tile block is the one element allowed to overflow, and it must do
         # so by scrolling rather than by pushing its siblings off screen.
         overflow = page.evaluate(
@@ -151,7 +165,7 @@ def test_the_tile_block_absorbs_the_overflow(
             " overflowY: getComputedStyle(el).overflowY } : null; }",
             TILE_BLOCK_JS,
         )
-        assert overflow, "could not find the built-in tile block in the rail"
+        assert overflow, "could not find the built-in tile block in the Built-in palette"
         assert overflow["overflowY"] == "auto", (
             f"the tile block should scroll, got overflow-y: {overflow['overflowY']}"
         )
@@ -204,9 +218,10 @@ def test_opening_the_agent_palette_does_not_widen_the_rail(
         context.close()
 
 
-#: The four palettes' roots. They are siblings of equal standing in the rail and
+#: The five palettes' roots. They are siblings of equal standing in the rail and
 #: should be indistinguishable apart from their icon, label and count.
 PALETTES = (
+    ("Built-in", "#builtin-palette"),
     ("Node Catalog", "#packages-palette"),
     ("Data Catalog", "#datasets-palette"),
     ("Agent Catalog", "#agents-palette"),
@@ -288,6 +303,7 @@ def test_the_palette_panels_open_in_the_same_place(
     try:
         boxes = {}
         for kind, sel in (
+            ("builtin", "#builtin-palette"),
             ("packages", "#packages-palette"),
             ("datasets", "#datasets-palette"),
             ("agents", "#agents-palette"),
@@ -342,6 +358,7 @@ def test_the_panel_headers_place_their_title_alike(
     try:
         insets = {}
         for kind, sel in (
+            ("builtin", "#builtin-palette"),
             ("packages", "#packages-palette"),
             ("datasets", "#datasets-palette"),
             ("agents", "#agents-palette"),
@@ -395,6 +412,7 @@ def test_escape_does_not_close_any_palette(
     )
     try:
         for kind, sel in (
+            ("builtin", "#builtin-palette"),
             ("packages", "#packages-palette"),
             ("datasets", "#datasets-palette"),
             ("agents", "#agents-palette"),

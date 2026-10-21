@@ -23,9 +23,6 @@ import type { SelectDetail } from "../selectionMatch";
 import { featureRows } from "../selectionMatch";
 import { idColumns, selectedIds, STABLE_ID_COLUMNS, type SelectionId } from "../references/selectionTags";
 import { widgetLiteral } from "../references/codeReferences";
-import { getUnversionedFlowNodeType } from "../flowNodeCanonicalType";
-
-export const EDIT_FEATURES_NODE_TYPE = "curio.builtin/edit-features";
 
 /** What the node's code calls (`utk_curio/sandbox/util/feature_edits.py`). */
 export const EDIT_HELPER = "curio_edit_features";
@@ -309,11 +306,6 @@ export function editLogCode(settings: EditFeaturesSettings | undefined): string 
     `return {"editFeatures": ${pythonLiteral(settings ?? {})}}`,
     "",
   ].join("\n");
-}
-
-/** Whether *node* is an Interaction node (type `curio.builtin/edit-features`). */
-export function isEditFeaturesNode(node: { type?: string | null; data?: any } | undefined): boolean {
-  return node !== undefined && getUnversionedFlowNodeType(node as any) === EDIT_FEATURES_NODE_TYPE;
 }
 
 /** The columns the features of *fc* carry, in the order the first ones name them. */

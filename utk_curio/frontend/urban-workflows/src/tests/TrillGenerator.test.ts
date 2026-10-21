@@ -399,7 +399,7 @@ describe("TrillGenerator provenance ids are unique", () => {
   });
 
   it("keeps every version reachable by the id the graph reports", () => {
-    // TrillProvenanceWindow feeds the React Flow node id straight back into
+    // The provenance drawer feeds a version's graph id straight back into
     // switchProvenanceTrill, so every graph id must be a versions key.
     jest.spyOn(Date, "now").mockReturnValue(1700000000000);
 
@@ -460,47 +460,6 @@ describe("TrillGenerator Spatial Join settings (#576)", () => {
     expect(byId["sj-2"].metadata.spatialJoin).toEqual({ predicate: "nearest" });
     expect(byId["sj-3"].metadata).toBeUndefined();
     expect(byId["sj-4"].metadata).toBeUndefined();
-  });
-});
-
-describe("TrillGenerator Compare Scenarios settings (#662)", () => {
-  beforeEach(() => {
-    TrillGenerator.reset();
-  });
-
-  test("persists the input labels and the chart at metadata.compareScenarios, and only when set", () => {
-    const compare = (nodeId: string, compareScenarios?: unknown) => ({
-      type: "CURIO_UNIVERSAL_NODE",
-      position: { x: 0, y: 0 },
-      data: { nodeId, nodeType: "curio.builtin/compare-scenarios@1", ...(compareScenarios ? { compareScenarios } : {}) },
-    });
-    const spec = TrillGenerator.generateTrill(
-      [
-        compare("labelled", {
-          inputs: [
-            { scenario: "s-base", name: "Baseline", color: "#2a9d8f" },
-            { name: "Loader", color: "#8a8f98" },
-          ],
-          chart: { preset: "lollipop", y: "sunlight", aggregate: "median" },
-        }),
-        compare("fresh"),
-        // Nothing well formed left: nothing written.
-        compare("junk", { inputs: [{ name: "Baseline", color: "green" }], chart: { preset: "radar" } }),
-      ],
-      [],
-      "Imported Workflow"
-    );
-
-    const byId = Object.fromEntries(spec.dataflow.nodes.map((n: any) => [n.id, n]));
-    expect(byId["labelled"].metadata.compareScenarios).toEqual({
-      inputs: [
-        { scenario: "s-base", name: "Baseline", color: "#2a9d8f" },
-        { name: "Loader", color: "#8a8f98" },
-      ],
-      chart: { preset: "lollipop", y: "sunlight", aggregate: "median" },
-    });
-    expect(byId["fresh"].metadata).toBeUndefined();
-    expect(byId["junk"].metadata).toBeUndefined();
   });
 });
 

@@ -11,13 +11,15 @@
  */
 import { getUnversionedFlowNodeType } from "../flowNodeCanonicalType";
 import {
-  EDIT_FEATURES_NODE_TYPE,
   NEW_LAYER_KEY,
   normalizeEditFeatures,
   type EditFeaturesSettings,
   type NewLayerGeometry,
 } from "./editFeatures";
 import { editedFeatures } from "./layerModel";
+
+/** The Interaction node's type id, still the Edit Features one. */
+const EDIT_FEATURES_NODE_TYPE = "curio.builtin/edit-features";
 
 /** The circle an edge goes into: `in` is 0, `in_<k>` is k. */
 export function circleOf(handle: unknown): number {

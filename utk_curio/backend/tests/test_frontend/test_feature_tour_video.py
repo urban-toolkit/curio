@@ -95,6 +95,7 @@ from .utils import (
     connect_nodes,
     dismiss_toasts,
     drag_to_canvas,
+    drag_builtin_to_canvas,
     frame_node,
     in_project_card,
     lit_marks,
@@ -980,10 +981,12 @@ def scene_canvas(ctx: Ctx) -> None:
     )
     tour.focus(page.locator("#tools-menu"), hold=1600)
     tour.say(
-        "The built-in node rail",
+        "The built-in nodes, under Built-in on the rail",
         "Loading, transformation, computation, pooling, maps, charts.",
         hold=2600,
     )
+    # The tiles are drawn only while the Built-in palette is open.
+    open_tools_palette(page, "builtin")
     for tile, label in (
         ("#tile-data-loading", "Data Loading"),
         ("#tile-computation-analysis", "Python Computation"),
@@ -996,11 +999,11 @@ def scene_canvas(ctx: Ctx) -> None:
         if not locator.count():
             continue
         tour.say(label, hold=200)
-        # The rail's tile block scrolls when the window is short, as the
-        # 1280x800 take is: the map and chart tiles start below its fold.
+        # Into view first, in case the palette's tile area scrolls.
         locator.scroll_into_view_if_needed()
         tour.focus(locator, hold=800)
     tour.hush()
+    close_tools_palette(page, "builtin")
     tour.say(
         "The top bar for the rest",
         "File, View and Share, then the six catalogs.",
@@ -1115,7 +1118,7 @@ def scene_build(ctx: Ctx) -> None:
         hold=2200,
     )
     _reset_zoom(page)
-    transform_id = drag_to_canvas(page, page.locator(TRANSFORM_TILE), at=POS_TRANSFORM)
+    transform_id = drag_builtin_to_canvas(page, TRANSFORM_TILE, at=POS_TRANSFORM)
     tour.beat(900)
     _fit_view(page)
 
@@ -2030,7 +2033,9 @@ WHATIF_DATA = "whatif-data"
 WHATIF_POOL = "whatif-pool"
 WHATIF_EDIT = "whatif-towers-edit"
 WHATIF_MAPS = ["whatif-baseline-map", "whatif-modified-map", "whatif-towers-map"]
-WHATIF_COMPARES = ["whatif-compare-chart", "whatif-compare-difference"]
+#: The nodes that compare its scenarios, each with its type: Scout's Bars of the
+#: mean sunlight, and the Python node that takes each road's sunlight change.
+WHATIF_COMPARES = [("whatif-compare-chart", "bars"), ("whatif-compare-difference", "computation-analysis")]
 WHATIF_BASELINE = "s-baseline"
 WHATIF_BASELINE_NODES = ["whatif-baseline-compute", "whatif-baseline-map"]
 WHATIF_TWICE = "s-twice"
@@ -2053,7 +2058,12 @@ FLOOD_PERIOD = "8f0c1e2a-5b3d-4c7e-9a61-2d4f6b8e0c13"
 FLOOD_TOPLEFT = "c1d2e3f4-0a1b-4c2d-8e3f-4a5b6c7d8e91"
 FLOOD_CLASSES = "e3f4a5b6-2c3d-4e4f-8a5b-6c7d8e9fa0b3"
 FLOOD_DEPTH = "f4a5b6c7-3d4e-4f5a-9b6c-7d8e9fa0b1c4"
-FLOOD_COMPARES = ["7a3d9f1c-5b68-4e0a-9d4e-0f1b5a7c3d62", "9c5f1b3e-7d80-4a2c-8f6a-2b3d7c9e5f84"]
+#: Two of the nodes that compare its scenarios, each with its type: the Raster
+#: Calculator that takes the change in depth, and Scout's Bars of the median depth.
+FLOOD_COMPARES = [
+    ("7a3d9f1c-5b68-4e0a-9d4e-0f1b5a7c3d62", "raster-calculator"),
+    ("9c5f1b3e-7d80-4a2c-8f6a-2b3d7c9e5f84", "bars"),
+]
 
 # Example 17: downtown Chicago's ZIP codes from one loader, on an Autark map
 # whose ZIP codes a double-click picks. The selectiontag scene adds a Python
@@ -2223,7 +2233,7 @@ def scene_scenarios(ctx: Ctx) -> None:
         ctx, timeout_ms=600000,
         settle=[(m, "autk-grammar") for m in WHATIF_MAPS]
         + [(WHATIF_EDIT, "edit-features")]
-        + [(c, "compare-scenarios") for c in WHATIF_COMPARES],
+        + WHATIF_COMPARES,
     )
     save_dataflow(page)
     page.set_viewport_size(STILL_SIZE)
@@ -2389,7 +2399,7 @@ def scene_parameter(ctx: Ctx) -> None:
     page, tour = ctx.page, ctx.tour
     _open_project(ctx, _account_project(ctx, FLOOD_NAME), [FLOOD_PERIOD, FLOOD_DEPTH])
     tour.hush()
-    _play_all(ctx, timeout_ms=600000, settle=[(c, "compare-scenarios") for c in FLOOD_COMPARES])
+    _play_all(ctx, timeout_ms=600000, settle=FLOOD_COMPARES)
     page.set_viewport_size(STILL_SIZE)
     page.wait_for_timeout(1500)
     block = [FLOOD_PERIOD, FLOOD_TOPLEFT, FLOOD_CLASSES, FLOOD_DEPTH]
@@ -2419,7 +2429,7 @@ def scene_selection_tag(ctx: Ctx) -> None:
         [at[0], at[1]],
     )
     page.wait_for_timeout(800)
-    reader = drag_to_canvas(page, page.locator("#tile-computation-analysis"), at=(300 + 645, 650 - 415))
+    reader = drag_builtin_to_canvas(page, "#tile-computation-analysis", at=(300 + 645, 650 - 415))
     _fit_nodes(page, [ZIPS_LOADER, reader])
     dismiss_toasts(page)
     # The edge is drawn from the loader, below and left of the map, to the
@@ -2644,15 +2654,18 @@ def scene_quickstart(ctx: Ctx) -> None:
     tour.still("quickstart-blank-canvas")
     tour.say(
         "Start from a blank canvas",
-        "The built-in node types are on the left rail: drag one out.",
+        "Click Built-in on the left rail and drag a node out.",
         hold=2400,
     )
     _reset_zoom(page)
+    open_tools_palette(page, "builtin")
     loader_tile = page.locator(LOADING_TILE)
-    # Into the rail's view first: its tile block scrolls in a short window.
+    # Into view first, in case the palette's tile area scrolls.
     loader_tile.scroll_into_view_if_needed()
     tour.focus(loader_tile, hold=600)
     loader_id = drag_to_canvas(page, loader_tile, at=POS_LOADER)
+    # Closed again, so its panel covers none of the canvas the scene works on.
+    close_tools_palette(page, "builtin")
     tour.beat(900)
     tour.say("Write a few lines of pandas", "Whatever the code returns flows to the next node.", hold=2200)
     set_node_code(page, loader_id, QUICKSTART_CODE)
@@ -2669,10 +2682,12 @@ def scene_quickstart(ctx: Ctx) -> None:
         hold=2400,
     )
     _reset_zoom(page)
+    open_tools_palette(page, "builtin")
     vega_tile = page.locator(VEGA_TILE)
     vega_tile.scroll_into_view_if_needed()
     tour.focus(vega_tile, hold=600)
     vega_id = drag_to_canvas(page, vega_tile, at=POS_TRANSFORM)
+    close_tools_palette(page, "builtin")
     tour.beat(900)
     _fit_view(page)
     connect_nodes(page, loader_id, vega_id)
@@ -2710,7 +2725,7 @@ def scene_collaboration(ctx: Ctx) -> None:
     tour.beat(900)
     _rename_dataflow(ctx, "Shared dataflow")
     _reset_zoom(page)
-    loader_id = drag_to_canvas(page, page.locator(LOADING_TILE), at=POS_LOADER)
+    loader_id = drag_builtin_to_canvas(page, LOADING_TILE, at=POS_LOADER)
     set_node_code(page, loader_id, QUICKSTART_CODE)
     tour.beat(700)
     with page.expect_response(
@@ -2750,7 +2765,7 @@ def scene_collaboration(ctx: Ctx) -> None:
 
         # Ben adds a node, and it appears on this canvas.
         _reset_zoom(page2)
-        drag_to_canvas(page2, page2.locator(VEGA_TILE), at=POS_TRANSFORM)
+        drag_builtin_to_canvas(page2, VEGA_TILE, at=POS_TRANSFORM)
         page.wait_for_function(
             "() => document.querySelectorAll('.react-flow__node').length >= 2", timeout=30000,
         )

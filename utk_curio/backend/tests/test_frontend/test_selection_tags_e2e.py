@@ -13,15 +13,21 @@ signed-in canvas makes:
 3. Brush again, over every point. Running the node below runs the counting
    node again, although its code did not change: a new selection makes it
    stale. It counts five.
-4. Save: the tag and its ids are in the dataflow. Reopen and run everything:
-   the ids are back, the chart declaring its selection again keeps them, and
-   the server run reads them.
+4. Save: the tag and its ids are in the dataflow.
+5. Reopen and run everything. The chart is drawn anew, and a brush cannot be
+   drawn again from ids, so the tag is emptied rather than kept on a brush the
+   chart no longer shows (#884). Run again, the counting node reads no ids.
 
-A second test clicks bars of example 02's zip chart, whose point selection is
+Another test clicks a point of a chart whose tag reads its point selection.
+The chart runs again, and later the dataflow is reopened: each time the chart
+is drawn anew, it shows the clicked point selected again, and the tag goes on
+holding its id (#884).
+
+A third test clicks bars of example 02's zip chart, whose point selection is
 named ``zip_select`` and picks rows by their ``zip`` (#768): a tag on that chart
 holds one zip after a click, and two after a Shift-click on another bar.
 
-A third opens the owner's dataflow for #847 (``dataflows/``): a point selection
+A fourth opens the owner's dataflow for #847 (``dataflows/``): a point selection
 over ``unit_id`` names unit ids, so a Data Pool of readings held in another
 order marks exactly the clicked units' readings, and the tag holds their ids.
 
@@ -42,8 +48,10 @@ from .utils import (
     assert_in_view,
     at_fraction,
     brush_area,
+    drawing_kept,
     drawing_selector,
     frame_node,
+    keep_drawing,
     mark_point,
     node_execution_timeout_ms,
     node_locator,
@@ -57,6 +65,8 @@ from .utils import (
     save_dataflow,
     set_node_code,
     stub_login_and_enter_workflow,
+    wait_for_node_run_to_end,
+    watch_node_run,
 )
 from .walkthroughs import load_example_spec
 
@@ -417,7 +427,7 @@ def test_a_brush_reaches_a_python_node_through_a_selection_tag(
         page, COUNTER_ID, "<<N 5 [1001, 1002, 1003, 1004, 1005]>>", "After a new selection, in the counting node"
     )
 
-    # 4. The tag and its ids are saved with the dataflow...
+    # 4. The tag and its ids are saved with the dataflow.
     save_dataflow(page)
     saved = api_json(f"{current_server}/api/projects/{project_id}", session["token"])["spec"]
     by_id = {n["id"]: n for n in saved["dataflow"]["nodes"]}
@@ -427,10 +437,10 @@ def test_a_brush_reaches_a_python_node_through_a_selection_tag(
     assert "[!! selection picked !!]" in by_id[COUNTER_ID]["content"]
     assert "selections" not in (by_id[READER_ID].get("metadata") or {})
 
-    # ...and back after a reopen. Left and reopened rather than reloaded in
-    # place, so nothing survives in component state. Running everything draws
-    # the chart again, which declares its selection as it compiles: that is
-    # not a selection, so the ids stay, and the run saves them again.
+    # 5. A brush is not drawn again from ids (#884). Left and reopened rather
+    # than reloaded in place, so nothing survives in component state. Running
+    # everything draws the chart anew, with no brush, so the tag is emptied
+    # rather than kept on a selection the chart does not show.
     page.goto(f"{app_frontend.base_url}/projects")
     page.wait_for_load_state("domcontentloaded")
     page.goto(f"{app_frontend.base_url}/dataflow/{project_id}")
@@ -438,15 +448,201 @@ def test_a_brush_reaches_a_python_node_through_a_selection_tag(
     _wait_for_code_containing(page, COUNTER_ID, "[!! selection picked !!]", timeout=45000)
     run_all_and_wait(page, timeout_ms=180000)
     page.locator(f"#vega{SCATTER_ID} canvas").first.wait_for(state="attached", timeout=60000)
-    _wait_for_output(page, READER_ID, "<<R 5>>", "After the reopen, in a run of everything")
-    # Room for a late selection event to land before the tag is read.
-    page.wait_for_timeout(1500)
-    _wait_for_tag_state(page, COUNTER_ID, "picked", "5 selected", "After the reopen and the chart's redraw")
+    _wait_for_tag_state(page, COUNTER_ID, "picked", "Nothing selected", "After the reopen and the chart's redraw")
+    # That run may have started from the ids saved before the chart was drawn:
+    # the emptied tag made the counting node stale, so running the node below
+    # runs it again, now with no ids.
+    play_node(page, READER_ID)
+    _wait_for_output(page, READER_ID, "<<R 0>>", "After the reopen, below the counting node")
+    _wait_for_output(page, COUNTER_ID, "<<N 0 []>>", "After the reopen, in the counting node")
+    save_dataflow(page)
     reopened = api_json(f"{current_server}/api/projects/{project_id}", session["token"])["spec"]
     counter = next(n for n in reopened["dataflow"]["nodes"] if n["id"] == COUNTER_ID)
-    assert counter["metadata"].get("selections") == by_id[COUNTER_ID]["metadata"]["selections"], counter["metadata"]
+    assert counter["metadata"].get("selections") == [
+        {"name": "picked", "node": SCATTER_ID, "column": "osm_id", "ids": []}
+    ], counter["metadata"]
+    assert "[!! selection picked !!]" in counter["content"]
     frame_node(page, COUNTER_ID)
     assert node_locator(page, COUNTER_ID).locator(".monaco-editor .curio-widget-ref-problem").count() == 0
+
+
+#: The scatterplot with a point selection in place of the brush: a click picks
+#: a point, drawn red, and every other point stays blue (``empty: false`` keeps
+#: them all blue while nothing is picked), so what it shows selected is read
+#: off its pixels.
+PICK_SPEC = """{
+  "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
+  "params": [{"name": "pick", "select": "point"}],
+  "mark": {"type": "point", "filled": true, "size": 400, "opacity": 1},
+  "encoding": {
+    "x": {"field": "value", "type": "quantitative", "scale": {"domain": [0, 60]}},
+    "y": {"field": "score", "type": "quantitative", "scale": {"domain": [0, 10]}},
+    "color": {"condition": {"param": "pick", "value": "red", "empty": false}, "value": "blue"}
+  },
+  "config": {"axis": {"grid": false}}
+}"""
+VEGA_TYPE = "curio.builtin/vis-vega"
+#: The points' colors, left to right (Bob, Dave, Alice, Eve, Charlie), with
+#: Charlie picked.
+CHARLIE_PICKED = ["blue", "blue", "blue", "blue", "red"]
+
+
+def _pick_spec() -> dict:
+    """The dataflow above, its chart picking points, and the counting node
+    reading a tag on it from the start."""
+    spec = _spec()
+    flow = spec["dataflow"]
+    flow["name"] = flow["provenance_id"] = "Selection tags after a redraw"
+    by_id = {n["id"]: n for n in flow["nodes"]}
+    by_id[SCATTER_ID]["content"] = PICK_SPEC
+    by_id[COUNTER_ID]["content"] = COUNTER_WITH_TAG
+    by_id[COUNTER_ID]["metadata"]["selections"] = [
+        {"name": "picked", "node": SCATTER_ID, "column": "osm_id", "ids": []}
+    ]
+    return spec
+
+
+# The points a chart's canvas draws, left to right: each blob of red or blue
+# pixels, with its center in the page, its color and its size in pixels. Read
+# off the canvas's own pixels.
+_POINTS_JS = r"""(selector) => {
+    const el = document.querySelector(selector);
+    if (!el || !el.width || !el.height) return null;
+    const w = el.width, h = el.height;
+    const px = el.getContext('2d').getImageData(0, 0, w, h).data;
+    const kind = new Uint8Array(w * h);
+    for (let i = 0; i < w * h; i++) {
+        const r = px[4 * i], g = px[4 * i + 1], b = px[4 * i + 2];
+        if (px[4 * i + 3] < 200) continue;
+        if (r > 180 && g < 90 && b < 90) kind[i] = 1;
+        else if (b > 180 && r < 90 && g < 90) kind[i] = 2;
+    }
+    const seen = new Uint8Array(w * h);
+    const box = el.getBoundingClientRect();
+    const points = [];
+    for (let start = 0; start < w * h; start++) {
+        if (!kind[start] || seen[start]) continue;
+        seen[start] = 1;
+        const stack = [start];
+        let n = 0, sumX = 0, sumY = 0, red = 0;
+        while (stack.length) {
+            const i = stack.pop();
+            const x = i % w, y = (i - x) / w;
+            n += 1; sumX += x; sumY += y;
+            if (kind[i] === 1) red += 1;
+            const near = [x > 0 ? i - 1 : -1, x < w - 1 ? i + 1 : -1, y > 0 ? i - w : -1, y < h - 1 ? i + w : -1];
+            for (const j of near) {
+                if (j >= 0 && kind[j] && !seen[j]) { seen[j] = 1; stack.push(j); }
+            }
+        }
+        if (n < 30) continue;
+        points.push({ x: box.left + (sumX / n + 0.5) * box.width / w,
+                      y: box.top + (sumY / n + 0.5) * box.height / h,
+                      color: red * 2 > n ? 'red' : 'blue', size: n });
+    }
+    return points.sort((a, b) => a.x - b.x);
+}"""
+
+
+def _scatter_points(page) -> list[dict]:
+    """The scatterplot's five points, left to right, framed in the window."""
+    _scatter_boxes(page)
+    points = page.evaluate(_POINTS_JS, f"#vega{SCATTER_ID} canvas") or []
+    assert len(points) == 5, f"the scatterplot shows {len(points)} points, not five: {points}"
+    return points
+
+
+def _wait_for_point_colors(page, expected: list[str], what: str) -> None:
+    """The scatterplot's points read *expected*, left to right."""
+    deadline = time.time() + 15
+    points: list[dict] = []
+    while True:
+        points = page.evaluate(_POINTS_JS, f"#vega{SCATTER_ID} canvas") or []
+        if [p["color"] for p in points] == expected or time.time() >= deadline:
+            break
+        page.wait_for_timeout(250)
+    assert [p["color"] for p in points] == expected, (
+        f"{what}: the scatterplot's points read {[(p['color'], p['size']) for p in points]!r} left to right, "
+        f"not {expected!r}; the tag reads {_tag_state(page, COUNTER_ID, 'picked')!r} and holds "
+        f"{page.evaluate(_TAG_IDS_JS, [COUNTER_ID, 'picked'])!r}"
+    )
+
+
+def test_a_clicked_point_shows_again_when_its_chart_is_drawn_again(
+    app_frontend: "FrontendPage",
+    current_server: str,
+    page,
+):
+    """A tag on a chart's point selection holds the id of the point clicked.
+    When the chart runs again, and when the dataflow is reopened, the chart is
+    drawn anew and shows that point selected again, so the chart and the tag
+    agree (#884)."""
+    require_project_page()
+    require_user_auth()
+
+    page.emulate_media(reduced_motion="reduce")
+    session = stub_login_and_enter_workflow(
+        page,
+        frontend_url=app_frontend.base_url,
+        backend_url=current_server,
+        name="Selection Tag Redraw",
+        username="selection_tag_redraw_e2e",
+        project_name="Selection tags after a redraw",
+        project_spec=_pick_spec(),
+    )
+    require_owner_view(page)
+    project_id = session["project"]["id"]
+    for node_id in (LOADER_ID, SCATTER_ID, COUNTER_ID, READER_ID):
+        node_locator(page, node_id).wait_for(state="visible", timeout=45000)
+
+    run_all_and_wait(page, timeout_ms=180000)
+    _wait_for_output(page, COUNTER_ID, "<<N 0 []>>", "Before any click")
+    _open_tab(page, COUNTER_ID, "widgets")
+    _wait_for_tag_state(page, COUNTER_ID, "picked", "Nothing selected", "Before any click")
+    _wait_for_point_colors(page, ["blue"] * 5, "Before any click")
+
+    # 1. A click on Charlie (50, 1), the rightmost point: he alone turns red,
+    # and the tag holds his id.
+    charlie = _scatter_points(page)[-1]
+    page.mouse.click(*assert_in_view(page, charlie["x"], charlie["y"], "Charlie's point"))
+    _wait_for_tag_state(page, COUNTER_ID, "picked", "1 selected", "After a click on Charlie")
+    assert page.evaluate(_TAG_IDS_JS, [COUNTER_ID, "picked"]) == ["1003"]
+    _wait_for_point_colors(page, CHARLIE_PICKED, "After a click on Charlie")
+
+    # 2. The chart runs again, which draws it anew: a new canvas, on which
+    # Charlie is selected again, and the tag still holds his id.
+    selector = f"#vega{SCATTER_ID} canvas"
+    keep_drawing(page, selector)
+    watch_node_run(page, SCATTER_ID)
+    play_node(page, SCATTER_ID)
+    assert wait_for_node_run_to_end(page, SCATTER_ID, node_type=VEGA_TYPE) == "done"
+    page.locator(selector).first.wait_for(state="attached", timeout=60000)
+    assert not drawing_kept(page, selector), "the chart's run did not draw it anew"
+    _wait_for_point_colors(page, CHARLIE_PICKED, "After the chart ran again")
+    _wait_for_tag_state(page, COUNTER_ID, "picked", "1 selected", "After the chart ran again")
+    assert page.evaluate(_TAG_IDS_JS, [COUNTER_ID, "picked"]) == ["1003"]
+
+    # 3. Saved, left and reopened: drawn anew once more, the chart shows
+    # Charlie selected, and a run of everything reads his id.
+    save_dataflow(page)
+    saved = api_json(f"{current_server}/api/projects/{project_id}", session["token"])["spec"]
+    counter = next(n for n in saved["dataflow"]["nodes"] if n["id"] == COUNTER_ID)
+    assert counter["metadata"].get("selections") == [
+        {"name": "picked", "node": SCATTER_ID, "column": "osm_id", "ids": [1003]}
+    ], counter["metadata"]
+    page.goto(f"{app_frontend.base_url}/projects")
+    page.wait_for_load_state("domcontentloaded")
+    page.goto(f"{app_frontend.base_url}/dataflow/{project_id}")
+    node_locator(page, COUNTER_ID).wait_for(state="visible", timeout=45000)
+    _wait_for_code_containing(page, COUNTER_ID, "[!! selection picked !!]", timeout=45000)
+    run_all_and_wait(page, timeout_ms=180000)
+    page.locator(selector).first.wait_for(state="attached", timeout=60000)
+    _scatter_boxes(page)
+    _wait_for_point_colors(page, CHARLIE_PICKED, "After the reopen")
+    _wait_for_tag_state(page, COUNTER_ID, "picked", "1 selected", "After the reopen")
+    assert page.evaluate(_TAG_IDS_JS, [COUNTER_ID, "picked"]) == ["1003"]
+    _wait_for_output(page, COUNTER_ID, "<<N 1 [1003]>>", "After the reopen, in a run of everything")
+    _wait_for_output(page, READER_ID, "<<R 1>>", "After the reopen, below the counting node")
 
 
 ZIPS_EXAMPLE = "02-vega-lite-spatial-density.json"

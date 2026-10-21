@@ -9,12 +9,18 @@ example 26 (#819), the lower-manhattan-park-shade test dataflow (the plan for
 komar41's #914), with the computed ``SCOUT`` tag on the six SCOUT dataflows
 (2026-10-17), and ``Pandas`` and ``Tables`` on quad-cities-flood-vulnerability once it builds a
 table of the riverside tracts' depth by period (2026-10-18), and ``SCOUT`` on
-the charts dataflow once its charts are SCOUT Comparison's nodes
-(``scout.comparison@1``, 2026-10-18), which tag it ``Vega-Lite`` too: a
-template whose ``grammarId`` is ``vega-lite`` draws as the Vega-Lite node does.
-``Rasters`` is on example 24 and chicago-loop-shadow-towers since SCOUT's
-raster package declares it for the dataflows its nodes are in
-(``scout.rasters@1``'s ``dataflowCategories``, 2026-10-18).
+the charts dataflow once its charts are SCOUT's package's nodes (2026-10-18),
+which tag it ``Vega-Lite`` too: a template whose ``grammarId`` is
+``vega-lite`` draws as the Vega-Lite node does. ``Rasters`` is on example 24
+and chicago-loop-shadow-towers since SCOUT's raster nodes declare it for the
+dataflows they are in (2026-10-18). Both are Scout's nodes since 2026-10-20
+(``curio.scout@1``): the package declares ``SCOUT`` and its two raster
+templates ``Rasters``, so the placement did not move. The routing dataflow
+gained ``Vega-Lite`` when its four charts became Scout's Bars nodes,
+example 06 ``Vega-Lite`` and ``SCOUT`` when its chart did, and
+chicago-loop-shadow-towers, lower-manhattan-park-shade and
+quad-cities-flood-vulnerability ``Vega-Lite`` when their charts did
+(2026-10-20).
 The automatic sections must reproduce it from the files alone, and the
 hand-set ones live in the files themselves.
 """
@@ -141,8 +147,8 @@ def _tags(nodes: list[dict], datasets: list[dict] | None = None) -> list[str]:
 
 
 @pytest.mark.parametrize("node_type", [
-    "scout.rasters/rasterize-buildings@1",
-    "scout.rasters/raster-calculator@1",
+    "curio.scout/rasterize-buildings@1",
+    "curio.scout/raster-calculator@1",
 ])
 def test_a_node_from_a_scout_package_tags_the_dataflow_scout(node_type):
     node = {"id": "a", "type": node_type, "content": ""}
@@ -185,36 +191,43 @@ def test_the_park_shade_dataflow_is_tagged_scout_by_its_package_nodes_alone():
     assert "tags" not in hand_categories(spec)
     nodes = spec["dataflow"]["nodes"]
     without = {"dataflow": {**spec["dataflow"], "nodes": [
-        n for n in nodes if not n["type"].startswith(("scout.", "model.scout."))
+        n for n in nodes if not n["type"].startswith(("curio.scout/", "model.scout."))
     ]}}
     assert "SCOUT" not in derive(without, DatasetKinds(None))["tags"]
 
 
 def test_the_flood_dataflow_is_tagged_scout_by_its_raster_calculators_alone():
     """``quad-cities-flood-vulnerability`` reads SCOUT's datasets, and its
-    Raster Calculators are SCOUT's ``scout.rasters`` nodes: with no dataset
-    and no code, its nodes alone still tag it, as computed tags are."""
+    Raster Calculators are Scout's (``curio.scout``) nodes: with no dataset
+    and no code, its nodes alone still tag it, as computed tags are. Since
+    its charts became Scout's Bars, Points and Grouped bars (the plan
+    answering komar41's review, step 6.3), they tag it ``Vega-Lite`` too;
+    without them, its Raster Calculators alone still tag it ``SCOUT``."""
     spec = _spec("dataflows/quad-cities-flood-vulnerability")
     assert "tags" not in hand_categories(spec)
     nodes = spec["dataflow"]["nodes"]
-    calculators = [n for n in nodes if n["type"] == "scout.rasters/raster-calculator"]
-    assert len(calculators) == 4
+    calculators = [n for n in nodes if n["type"] == "curio.scout/raster-calculator"]
+    assert len(calculators) == 7
+    charts = {n["id"]: n["type"] for n in nodes if n["type"].startswith("curio.scout/") and n not in calculators}
+    assert sorted(charts.values()) == ["curio.scout/bars", "curio.scout/grouped-bars", "curio.scout/points"]
     bare = {"dataflow": {
         **{k: v for k, v in spec["dataflow"].items() if k != "datasets"},
         "nodes": [{**n, "content": ""} for n in nodes],
     }}
-    assert derive(bare, DatasetKinds(None))["tags"] == ["Autark", "SCOUT"]
+    assert derive(bare, DatasetKinds(None))["tags"] == ["Autark", "Vega-Lite", "SCOUT"]
+    no_charts = {"dataflow": {**bare["dataflow"], "nodes": [n for n in bare["dataflow"]["nodes"] if n["id"] not in charts]}}
+    assert derive(no_charts, DatasetKinds(None))["tags"] == ["Autark", "SCOUT"]
 
 
 def test_the_charts_dataflow_is_tagged_scout_and_vega_lite_by_its_package_nodes_alone():
     """``scenario-comparison-charts`` reads no SCOUT dataset and has no
-    ``curio.builtin/vis-vega`` node: SCOUT Comparison's seven charts give it
-    both tags, by their package's ``dataflowCategories`` and by their
-    template's grammar."""
+    ``curio.builtin/vis-vega`` node: its nine charts, all Scout's, give it both
+    tags, by their package's ``dataflowCategories`` and by their template's
+    grammar."""
     spec = _spec("dataflows/scenario-comparison-charts")
     nodes = spec["dataflow"]["nodes"]
-    charts = [n for n in nodes if n["type"].startswith("scout.comparison/")]
-    assert len(charts) == 7
+    charts = [n for n in nodes if n["type"].startswith("curio.scout/")]
+    assert len(charts) == 9
     assert not any(n["type"].startswith("curio.builtin/vis-vega") for n in nodes)
     assert derive(spec, DatasetKinds(None))["tags"] == ["Vega-Lite", "SCOUT"]
     without = {"dataflow": {**spec["dataflow"], "nodes": [n for n in nodes if n not in charts]}}
@@ -227,12 +240,13 @@ def test_the_charts_dataflow_is_tagged_scout_and_vega_lite_by_its_package_nodes_
 
 @pytest.mark.parametrize("template_id", [
     "lines-with-band", "curves-by-group", "bars-with-error-bars", "ensemble-strips",
-    "stacked-bars-with-totals", "donuts", "weighted-matrix",
+    "stacked-bars-with-totals", "donuts", "weighted-matrix", "dots-with-a-range",
+    "bars", "grouped-bars", "lines", "points", "pie", "lollipops", "table",
 ])
 def test_a_scout_comparison_chart_is_a_vega_lite_node(template_id):
     """Its template names the ``vega-lite`` grammar in the shipped manifest,
     as the Vega-Lite node's does, versioned or not."""
-    for node_type in (f"scout.comparison/{template_id}", f"scout.comparison/{template_id}@1"):
+    for node_type in (f"curio.scout/{template_id}", f"curio.scout/{template_id}@1"):
         node = {"id": "a", "type": node_type, "content": "{}"}
         assert _tags([node]) == ["Vega-Lite", "SCOUT"], node_type
 
@@ -280,7 +294,7 @@ def test_the_grammar_of_a_template_in_the_accounts_store_is_read(tmp_path, monke
     assert grammars("acme.charts/missing") is None
     # Curio's own packages answer after the account's.
     assert grammars("curio.builtin/vis-vega@1") == "vega-lite"
-    assert grammars("scout.comparison/donuts") == "vega-lite"
+    assert grammars("curio.scout/donuts") == "vega-lite"
     assert TemplateGrammars(None)("acme.charts/bars") is None
 
 
@@ -297,7 +311,7 @@ def test_a_dataflow_that_only_mentions_scout_is_not_tagged_scout():
         {"id": "a", "type": "curio.builtin/data-loading@1", "content": code},
         {"id": "b", "type": "scouting.tools/count@1", "content": ""},
         {"id": "c", "type": "model.scouting.shade/estimate@1", "content": ""},
-        {"id": "d", "type": "curio.scout/route@1", "content": ""},
+        {"id": "d", "type": "acme.scout/route@1", "content": ""},
     ]
     datasets = [{"dirName": "data.scouting.counts@1"}, {"datasetId": "data.utk.scout-towers"}]
     assert _tags(nodes, datasets) == []

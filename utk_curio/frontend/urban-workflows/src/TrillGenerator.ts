@@ -18,7 +18,6 @@ import { dataPoolToSpec } from "./utils/dataPoolSpec";
 import { normalizeWidgets } from "./utils/widgets/widgetModel";
 import { normalizeSelections } from "./utils/references/selectionTags";
 import { normalizeScenarios, type Scenario } from "./utils/scenarios/scenarioModel";
-import { normalizeCompareSettings } from "./utils/compare/compareSettings";
 import { normalizeEditFeatures } from "./utils/editFeatures/editFeatures";
 import { registeredCategory } from "./utils/graphPreviewCategories";
 
@@ -404,16 +403,6 @@ export class TrillGenerator {
                     trill_node.metadata = {};
 
                 trill_node.metadata.selections = selections;
-            }
-
-            // #662: a Compare Scenarios node's input labels and chart persist
-            // at metadata.compareScenarios, only when it has either.
-            const compareScenarios = normalizeCompareSettings(node.data.compareScenarios);
-            if(compareScenarios != undefined){
-                if(trill_node.metadata == undefined)
-                    trill_node.metadata = {};
-
-                trill_node.metadata.compareScenarios = compareScenarios;
             }
 
             // #662: an Edit Features node's edit list, with the column that

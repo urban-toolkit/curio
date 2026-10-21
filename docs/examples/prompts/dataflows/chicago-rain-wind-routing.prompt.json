@@ -4,7 +4,7 @@
   "version": 1,
   "source": {
     "path": "docs/examples/dataflows/chicago-rain-wind-routing.json",
-    "sha256": "d1b0efe56d40bbea28464ef489aecde8e47e69cda3abbd0d38603466e49d1c33",
+    "sha256": "1809ca4677c0acc3626fb7897a10294fd12340d18719cb0cc8b9325cf1d5b092",
     "walkthrough": null
   },
   "prompt": "Reproduce SCOUT's weather routing example in downtown Chicago, using SCOUT's routing model and its forecast. Load the roads of SCOUT's routing box from the OpenStreetMap extract the examples ship, and route between SCOUT's two points with its default weights, starting at the hour of the forecast SCOUT's own run read. Make two scenarios: one keeps the fastest route, the other the route the weather weights favor, and each takes its route and its metrics apart. Draw both routes over the roads on one map, each in its scenario's color, and chart the two routes' duration, distance, rain exposure and wind exposure in the same colors. The routing model is not part of the standard node set, so whatever provides it needs installing first.",
@@ -18,6 +18,7 @@
       "data.scout.wrf-wspd10"
     ],
     "packages": [
+      "curio.scout@1",
       "model.scout.weather-gnn@1"
     ],
     "paths": [
@@ -38,34 +39,6 @@
         "type": "curio.builtin/autk-grammar",
         "role": "visualization",
         "executable": false,
-        "hasContent": true
-      },
-      {
-        "ref": "visualization3",
-        "type": "curio.builtin/compare-scenarios",
-        "role": "visualization",
-        "executable": true,
-        "hasContent": true
-      },
-      {
-        "ref": "visualization4",
-        "type": "curio.builtin/compare-scenarios",
-        "role": "visualization",
-        "executable": true,
-        "hasContent": true
-      },
-      {
-        "ref": "visualization5",
-        "type": "curio.builtin/compare-scenarios",
-        "role": "visualization",
-        "executable": true,
-        "hasContent": true
-      },
-      {
-        "ref": "visualization6",
-        "type": "curio.builtin/compare-scenarios",
-        "role": "visualization",
-        "executable": true,
         "hasContent": true
       },
       {
@@ -94,6 +67,34 @@
         "type": "curio.builtin/computation-analysis",
         "role": "analysis",
         "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "visualization3",
+        "type": "curio.scout/bars",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": true
+      },
+      {
+        "ref": "visualization4",
+        "type": "curio.scout/bars",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": true
+      },
+      {
+        "ref": "visualization5",
+        "type": "curio.scout/bars",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": true
+      },
+      {
+        "ref": "visualization6",
+        "type": "curio.scout/bars",
+        "role": "visualization",
+        "executable": false,
         "hasContent": true
       },
       {
@@ -217,7 +218,8 @@
   "execution": {
     "mode": "browser",
     "browserOnlyKinds": [
-      "curio.builtin/autk-grammar"
+      "curio.builtin/autk-grammar",
+      "curio.scout/bars"
     ],
     "notes": null
   },
@@ -238,7 +240,7 @@
   "split": "train",
   "review": {
     "status": "pending-owner-review",
-    "draftedBy": "the SCOUT routing example step (#819's port, step 8), from the example JSON, 2026-10-15",
+    "draftedBy": "the SCOUT routing example step (#819's port, step 8), from the example JSON, 2026-10-15; its four charts as Scout's Bars nodes on the two scenarios' metrics, in the plan answering komar41's review (step 6.3), 2026-10-20",
     "reviewedBy": null,
     "reviewedAt": null
   },

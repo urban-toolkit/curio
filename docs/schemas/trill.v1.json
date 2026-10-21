@@ -416,47 +416,6 @@
           "items": { "$ref": "#/$defs/selectionTag" },
           "description": "The node's selection tags (#662), added in its Widgets tab. Its code places each one as a `[!! selection name !!]` reference, which a run replaces with the tag's `ids`. A new selection in the view writes new ids. Emitted only when the node has selection tags."
         },
-        "compareScenarios": {
-          "type": "object",
-          "description": "Settings of a Compare Scenarios node (#662). `inputs` labels each input circle, in circle order, by the scenario its node belongs to: the scenario's `scenario` id, `name` and `color`. An input whose node is in no scenario carries the node's name, a neutral color and no `scenario`. The node's code is written from these labels, and its stacked table carries them. `chart` is what its Chart tab draws from that table: the `preset`, the columns it reads as `x` and `y`, and the `aggregate` that combines the y values of a group (`none` plots each row's value as it is). `mode` is the view the user chose, `chart` or `difference`; without it the node shows Difference for two rasters or two layers and Chart otherwise. `difference` is what Difference joins the rows of two layers or tables on (`key`; without it `osm_id` or `building_id`, else, for two layers, their shapes) and whether it gives each difference's size (`absolute`); an Autark node after the node draws a raster's or a layer's difference on a map. `layer` names the layer it reads from an input that is an Autark node's several layers. Emitted only when the node has inputs or one of these settings.",
-          "additionalProperties": false,
-          "properties": {
-            "inputs": {
-              "type": "array",
-              "minItems": 1,
-              "items": {
-                "type": "object",
-                "required": ["name", "color"],
-                "additionalProperties": false,
-                "properties": {
-                  "scenario": { "type": "string", "minLength": 1 },
-                  "name": { "type": "string", "minLength": 1 },
-                  "color": { "type": "string", "pattern": "^#[0-9a-fA-F]{6}$" }
-                }
-              }
-            },
-            "chart": {
-              "type": "object",
-              "additionalProperties": false,
-              "properties": {
-                "preset": { "type": "string", "enum": ["bar", "grouped-bar", "line", "scatter", "pie", "lollipop", "table"] },
-                "x": { "type": "string", "minLength": 1 },
-                "y": { "type": "string", "minLength": 1 },
-                "aggregate": { "type": "string", "enum": ["mean", "sum", "median", "min", "max", "count", "none"] }
-              }
-            },
-            "mode": { "type": "string", "enum": ["chart", "difference"] },
-            "difference": {
-              "type": "object",
-              "additionalProperties": false,
-              "properties": {
-                "key": { "type": "string", "minLength": 1 },
-                "absolute": { "type": "boolean" }
-              }
-            },
-            "layer": { "type": "string", "minLength": 1 }
-          }
-        },
         "editFeatures": {
           "type": "object",
           "description": "The edit log of an Interaction node (#662; type `curio.builtin/edit-features`). `key` is the column that identifies a feature (`osm_id`, `building_id`, or another column whose values differ in every feature), and `layer` the layer the edits apply to when the input names its layers. `edits` holds the edits in the order they were made, each on the features whose `key` is one of `ids` or, in place of `ids`, those its `where` condition holds for (an expression over the feature's columns, such as `height > 100 and levels >= 30`). `remove` drops them, `restore` puts them back as the input has them, `set` writes `value` into their `column`, `scale` multiplies the number there by `value`, `offset` adds `value` to it, and `expr` writes what the expression `value` makes of the feature (such as `levels * 3.2`). An edit with `enabled` false stays in the log and is skipped; `label` names it. Three more ops come from the node's map: `add` adds a feature drawn there, its `geometry` (GeoJSON, in `crs`, the CRS the map drew the layers in), its `values` and its `id`, written into the layer's id column; `geometry` gives the features it names a redrawn `geometry`; `add_column` adds `column` to every feature with `value`, leaving one that holds a value as it is. Neither `add` nor `add_column` names features. An edit may name the `layer` it applies to, else it applies to `layer`; `keys` names the id column of each other layer edited. `newLayers` are layers the node makes, empty until `add` edits name them: each a `name`, a `geometry` (Point, LineString or Polygon) and the `properties` its features carry (`name`, `type`: text, number, boolean, choice or date, `required`, `choices` for a choice, `default`); a new layer's id column is `id`. The node's code is written from this log and applies it by `key`. Emitted only when the node holds any of these.",
@@ -808,8 +767,8 @@
         "id": { "type": "integer", "description": "Monotonic counter within the session, re-derived from the maximum on load." },
         "parentId": { "type": ["integer", "null"], "description": "The execution this one descends from, or null for the first." },
         "code": { "type": "string", "description": "The node's content as executed." },
-        "inputs": { "type": "array", "items": { "type": "string" }, "description": "Input artifact descriptors. Coerced to an empty array if the stored value is not an array." },
-        "outputs": { "type": "array", "items": { "type": "string" }, "description": "Output artifact descriptors. Coerced like 'inputs'." },
+        "inputs": { "type": "array", "items": { "type": "string" }, "description": "The kinds of data the run read, each once: DATAFRAME, GEODATAFRAME, VALUE, LIST, JSON, RASTER (mapTypes in utils/formatters.ts). The provenance drawer shows them on each of the node's runs. Coerced to an empty array if the stored value is not an array." },
+        "outputs": { "type": "array", "items": { "type": "string" }, "description": "The kinds of data the run returned, named like 'inputs', or ERROR for a run that failed. Coerced like 'inputs'." },
         "startTime": {
           "type": "string",
           "description": "Run start as a free-form local time string, e.g. 'Aug 24 2026 17:15:6'. Deliberately NOT constrained with format: date-time - the producer does not emit ISO-8601. Tighten once it does."
@@ -861,8 +820,8 @@
       "additionalProperties": true,
       "properties": {
         "id": { "type": "string", "description": "'<name>_<timestamp>', or '<name>_<timestamp>_<n>' when that base was already taken, matching a key in dataflowProvenance.versions. Unique within one graph: ids collided before the suffix existed, so files written by older builds may repeat one." },
-        "label": { "type": "string", "description": "'<name> (<timestamp>)', for display in the provenance window." },
-        "timestamp": { "type": "integer", "minimum": 0, "description": "Epoch milliseconds, rendered as a date in the provenance window." },
+        "label": { "type": "string", "description": "'<name> (<timestamp>)'." },
+        "timestamp": { "type": "integer", "minimum": 0, "description": "Epoch milliseconds, shown as the version's date and time in the provenance drawer." },
         "preview": { "$ref": "#/$defs/graphPreview" }
       }
     },
@@ -894,8 +853,8 @@
       "additionalProperties": true,
       "properties": {
         "id": { "type": "string" },
-        "type": { "type": "string", "description": "The node type. The provenance window draws the node's box in the category of the type's registered descriptor. Not validated against the node.type grammar: a thumbnail should still draw for a spec this schema would reject." },
-        "category": { "type": ["string", "null"], "description": "The category of the node's registered descriptor when the version was recorded ('data', 'computation', 'vis_grammar', 'vis_simple' or 'flow'), or null when none was registered. The provenance window draws the box in it when no registered package provides the node's type." },
+        "type": { "type": "string", "description": "The node type. The provenance drawer draws the node's box in the category of the type's registered descriptor, and names the kind of node a version added or removed by it. Not validated against the node.type grammar: a thumbnail should still draw for a spec this schema would reject." },
+        "category": { "type": ["string", "null"], "description": "The category of the node's registered descriptor when the version was recorded ('data', 'computation', 'vis_grammar', 'vis_simple' or 'flow'), or null when none was registered. The provenance drawer draws the box in it when no registered package provides the node's type." },
         "x": { "type": "number" },
         "y": { "type": "number" },
         "w": { "type": ["number", "null"], "description": "Width, or null when the node has no explicit size." },

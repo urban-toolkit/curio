@@ -3,7 +3,7 @@
 
 - **input**: a raster of building heights in metres, in EPSG:3395 on the
   zoom-16 tile grid SCOUT's tiles use (256 cells a tile): the raster of
-  Rasterize Buildings (``scout.rasters@1``). Every tile of the raster
+  Rasterize Buildings (``curio.scout@1``). Every tile of the raster
   that holds a height is predicted, from the tile and its eight neighbours. A
   tile with no data, which Rasterize Buildings gives a tile SCOUT wrote no file
   for, is not predicted, as SCOUT predicts only the tiles it wrote; around the
@@ -14,8 +14,7 @@
   written with Curio's mosaic helper (``mosaic_rasters``), with NaN as its
   nodata, as Curio's raster tools write theirs: a GeoTIFF that names no nodata
   is read by autk-db with 0 as its nodata, which would leave every cell in the
-  sun out of an Autark map and a Compare Scenarios Difference. A tile not
-  predicted is NaN. Its statistics over the ground are a Raster Calculator's,
+  sun out of an Autark map. A tile not predicted is NaN. Its statistics over the ground are a Raster Calculator's,
   with the heights as the mask, so they count the ground of the tiles
   predicted only.
 
@@ -33,9 +32,10 @@ import numpy as np
 import rasterio
 from pyproj import Transformer
 
-# Curio's raster helpers: a web map tile's bounds, and tiles side by side in
-# one GeoTIFF.
-from utk_curio.sandbox.util.rasters import mosaic_rasters, tile_bounds
+# A web map tile's bounds, Scout's (curio.scout@1, which the package names in
+# dependencies.packages), and Curio's tiles side by side in one GeoTIFF.
+from scout_rasters.web_tiles import tile_bounds
+from utk_curio.sandbox.util.rasters import mosaic_rasters
 
 from .deep_umbra import TILE, predict_shadow, season_factor, shadow_fraction
 
@@ -55,7 +55,7 @@ GRID_SLACK = 0.01
 
 NOT_A_HEIGHT_RASTER = (
     "Accumulated Shadow reads a raster of building heights: connect the output of "
-    "Rasterize Buildings (scout.rasters), or a raster of heights in metres "
+    "Rasterize Buildings (curio.scout), or a raster of heights in metres "
     "in EPSG:3395 on the zoom-16 tile grid."
 )
 

@@ -6,6 +6,7 @@
  */
 import {
   INPUT_REF_MIME,
+  SCENARIO_REF_MIME,
   WIDGET_REF_MIME,
   chipClass,
   dropReference,
@@ -93,6 +94,70 @@ describe("inserting a reference", () => {
 
   test("the reference text", () => {
     expect(referenceText("n")).toBe("[!! n !!]");
+  });
+});
+
+/** The offset of a 1-based line and column in *text*. */
+function offsetOf(text: string, position: { lineNumber: number; column: number }): number {
+  const lines = text.split("\n");
+  return lines.slice(0, position.lineNumber - 1).reduce((n, line) => n + line.length + 1, 0) + position.column - 1;
+}
+
+/** An editor over *text* whose cursor, and whose drop target, is right after *at*. */
+function editorOver(text: string, at: string) {
+  const position = offsetToPosition(text, text.indexOf(at) + at.length);
+  return {
+    ...fakeEditor(position),
+    getTargetAtClientPoint: jest.fn(() => ({ position })),
+    getModel: () => ({ getValue: () => text, getOffsetAt: (p: { lineNumber: number; column: number }) => offsetOf(text, p) }),
+  };
+}
+
+const insertedText = (editor: { executeEdits: jest.Mock }) => editor.executeEdits.mock.calls[0][1][0].text;
+
+/**
+ * A chip that writes one text, an input's scenario color or a field of inputs,
+ * goes in quoted where JSON wants a value, so the spec stays JSON before its
+ * chips are resolved: a saved spec holds it so, and the classifiers that read
+ * an Autark document's shape parse it (utils/autkSpecKind).
+ */
+describe("a chip that writes one text, inserted where JSON wants a value", () => {
+  const MAP = '{"map": {"layers": [{"dataRef": "[!! input_1 !!]", "color": }]}}';
+
+  test("an input's scenario color chip outside a string goes in quoted, so the spec stays JSON", () => {
+    const editor = editorOver(MAP, '"color": ');
+    expect(insertReference(editor, "scenario input_1")).toBe(true);
+    expect(insertedText(editor)).toBe('"[!! scenario input_1 !!]"');
+  });
+
+  test("dropped there from an input's swatch, it goes in quoted too", () => {
+    const editor = editorOver(MAP, '"color": ');
+    const event = {
+      clientX: 4,
+      clientY: 8,
+      dataTransfer: { types: [SCENARIO_REF_MIME], getData: (t: string) => (t === SCENARIO_REF_MIME ? "scenario input_1" : "") },
+    } as unknown as DragEvent;
+    expect(dropReference(editor, event)).toBe(true);
+    expect(insertedText(editor)).toBe('"[!! scenario input_1 !!]"');
+  });
+
+  test("a field of inputs outside a string goes in quoted; inside one, as itself", () => {
+    const spec = '{"encoding": {"y": {"field": , "title": "Mean \\"sun\\" "}}}';
+    const outside = editorOver(spec, '"field": ');
+    insertReference(outside, "inputs.sunlight");
+    expect(insertedText(outside)).toBe('"[!! inputs.sunlight !!]"');
+    const inside = editorOver(spec, '"Mean \\"sun\\" ');
+    insertReference(inside, "inputs.sunlight");
+    expect(insertedText(inside)).toBe("[!! inputs.sunlight !!]");
+  });
+
+  test("a scale, a list of names and a widget's value are no text, and go in as they are", () => {
+    const spec = '{"encoding": {"color": {"scale": , "sort": }}, "width": }';
+    for (const [at, inner] of [['"scale": ', "scenario colors"], ['"sort": ', "scenario order"], ['"width": ', "size"]]) {
+      const editor = editorOver(spec, at);
+      insertReference(editor, inner);
+      expect(insertedText(editor)).toBe(`[!! ${inner} !!]`);
+    }
   });
 });
 

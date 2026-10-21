@@ -229,6 +229,12 @@ class TemplateGrammars:
             self._nodes[node_type] = self._read_node(node_type)
         return self._nodes[node_type]
 
+    def provides(self, node_type: object) -> bool:
+        """Whether a manifest the places hold has *node_type*'s template: a
+        package that no longer holds it (a saved Compare Scenarios node's)
+        does not provide it."""
+        return self.node(node_type).flags is not None
+
     def model(self, model_id: object) -> Declared:
         """What a ``curio_load_model`` call naming *model_id* gets from its
         model package: what the package declares, and its model's type."""

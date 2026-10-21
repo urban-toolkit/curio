@@ -175,6 +175,15 @@ describe("Escape dismisses every catalog drawer, and every one honours its pin",
     // ModalShell registers every dialog; a confirmation on top owns Escape.
     expect(read(file)).toContain("modalStackDepth() > 0");
   });
+
+  test("the header drawer's Escape respects its pin, which the provenance drawer has", () => {
+    // It holds a layer of the modal stack itself, so it stands down above 1
+    // (escapeDefersToModal.test.ts).
+    const header = read("components/layout/HeaderDrawer.tsx");
+    expect(header).toMatch(/key === "Escape" && !pinned/);
+    expect(header).toMatch(/if \(!pinned\) onRequestClose\(\);/);
+    expect(read("components/provenance/ProvenanceDrawer.tsx")).toMatch(/<HeaderDrawer[\s\S]*\bpinnable\b/);
+  });
 });
 
 describe("the publish pill says what kind of thing it is publishing", () => {

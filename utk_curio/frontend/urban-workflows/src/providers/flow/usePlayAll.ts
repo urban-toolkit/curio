@@ -20,8 +20,11 @@ export interface PlayAllState {
     failed: Set<string>;
     /** Nodes this run did not run, because a node feeding them failed or was not run. */
     skipped: Set<string>;
-    /** Told how each node ended: run, failed, or not run because of the node above it. */
-    onNodeDone?: (nodeId: string, outcome: { failed: boolean; skipReason?: string }) => void;
+    /**
+     * Told how each node ended: run, failed (with the node's own *message*
+     * when it gave one), or not run because of the node above it.
+     */
+    onNodeDone?: (nodeId: string, outcome: { failed: boolean; skipReason?: string; message?: string }) => void;
     /** Told when the run ends on its own; a cancelled run ends without it. */
     onFinish?: () => void;
 }
@@ -191,8 +194,9 @@ export function usePlayAll({
         // The signal that completes a node says whether it failed; a later one
         // for the same node is ignored above. Carried here rather than read from
         // the node's exec status, which may not have committed yet (#603).
-        if (outcome?.failed) state.failed.add(nodeId);
-        state.onNodeDone?.(nodeId, { failed: !!outcome?.failed });
+        const failed = !!outcome?.failed;
+        if (failed) state.failed.add(nodeId);
+        state.onNodeDone?.(nodeId, outcome?.message ? { failed, message: outcome.message } : { failed });
         if (state.pending.size === 0) {
             advancePlayAll(state);
         } else {

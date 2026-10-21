@@ -10,7 +10,7 @@
   },
   "dependencies": {
     "js": {},
-    "packages": {},
+    "packages": {"curio.scout@1": "*"},
     "python": {
       "numpy": "",
       "onnxruntime": ">=1.17",
@@ -18,7 +18,7 @@
       "rasterio": ">=1.4"
     }
   },
-  "description": "SCOUT's Deep Umbra shadow model, ported from SCOUT (urban-toolkit/scout): a generator network that predicts how much of a season's day the ground spends in shadow, from zoom-16 building height tiles, the tile's latitude and the season. Its Accumulated Shadow node runs it on the height raster of SCOUT Rasters' Rasterize Buildings and returns the shadow in minutes, a raster that an Autark map draws and a Raster Calculator's statistics sum up. The weights are SCOUT's TensorFlow checkpoint ckpt-44, exported to ONNX by scripts/scout/export_deep_umbra.py; they ship in the Curio repository but not in the pip package.",
+  "description": "SCOUT's Deep Umbra shadow model, ported from SCOUT (urban-toolkit/scout): a generator network that predicts how much of a season's day the ground spends in shadow, from zoom-16 building height tiles, the tile's latitude and the season. Its Accumulated Shadow node runs it on the height raster of Scout's Rasterize Buildings and returns the shadow in minutes, a raster that an Autark map draws and a Raster Calculator's statistics sum up. The weights are SCOUT's TensorFlow checkpoint ckpt-44, exported to ONNX by scripts/scout/export_deep_umbra.py; they ship in the Curio repository but not in the pip package.",
   "downloadOnFirstUse": ["models/deep_umbra.onnx"],
   "id": "model.scout.deep-umbra",
   "kind": "model",

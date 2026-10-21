@@ -3,7 +3,7 @@ import type { NodeExecRecord } from "../providers/ProvenanceProvider";
 /**
  * Per-node runs are keyed by node id. Dataflows saved before #448 carry them
  * under everything after the first dash of `nodeType + "-" + nodeId`
- * (`loading@1-<uuid>` for a data-loading node), where the Provenance tab never
+ * (`loading@1-<uuid>` for a data-loading node), where the provenance drawer never
  * finds them. Move each such entry under the longest node id it ends with,
  * merging with runs already filed there in run order. Keys that already are a
  * node id, or that match no node, are kept as they are.

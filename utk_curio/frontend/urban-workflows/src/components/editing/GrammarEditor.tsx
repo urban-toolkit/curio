@@ -35,6 +35,12 @@ type GrammarEditorProps = {
     /** Read an input's columns for its tags. */
     onLoadColumns?: (slot: number) => void;
     widgetLanguage?: CodeLanguage;
+    /** The spec's grammar where its chips write a field escaped (`VEGA_LITE`),
+     * which also gives a node of several inputs the `inputs` tag. */
+    referenceGrammar?: string;
+    /** A run's spec put back from the provenance drawer; each new one is
+     *  written in, even when it is the spec the editor loaded with. */
+    restoredCode?: { code: string; nonce: number } | null;
 };
 
 export default function GrammarEditor({
@@ -52,6 +58,8 @@ export default function GrammarEditor({
     stripInputs = NO_INPUTS,
     onLoadColumns,
     widgetLanguage = "json",
+    referenceGrammar,
+    restoredCode = null,
 }: GrammarEditorProps) {
     const [grammar, _setGrammar] = useState("{}");
     // #662: the mounted editor, for the reference tags and chips. A
@@ -95,6 +103,15 @@ export default function GrammarEditor({
             sendCodeToWidgets(value);
         },
     });
+
+    // A run's spec put back from the provenance drawer, as CodeEditor puts
+    // back a run's code: written in even when it equals the loaded spec.
+    useEffect(() => {
+        if (!restoredCode) return;
+        applyValue(restoredCode.code);
+        setGrammar(restoredCode.code);
+        sendCodeToWidgets(restoredCode.code);
+    }, [restoredCode]);
 
     // Collaboration: propose grammar change on blur, receive applied changes.
     const proposeOnBlur = () => {
@@ -266,6 +283,8 @@ export default function GrammarEditor({
                 inputs={stripInputs}
                 shared={references.shared}
                 selections={references.selections}
+                language={widgetLanguage}
+                grammar={referenceGrammar}
                 disabled={readOnly}
                 onInsert={(inner) => insertReference(widgetEditor?.editor, inner)}
                 onLoadColumns={onLoadColumns}

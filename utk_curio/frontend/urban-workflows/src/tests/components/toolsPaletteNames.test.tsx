@@ -1,5 +1,5 @@
 import React from "react";
-import { render, screen } from "@testing-library/react";
+import { render, screen, fireEvent } from "@testing-library/react";
 
 /**
  * Every built-in palette tile must have an accessible name.
@@ -74,9 +74,16 @@ jest.mock("../../providers/UserProvider", () => ({
 
 import ToolsMenu from "../../components/menus/nodes/ToolsMenu";
 
+/** The tiles are drawn in the rail's Built-in palette, so each test opens it first. */
+function renderWithBuiltinOpen() {
+    const view = render(<ToolsMenu />);
+    fireEvent.click(screen.getByRole("button", { name: /built-in/i }));
+    return view;
+}
+
 describe("built-in palette tiles are named", () => {
     test("every tile is findable by its manifest label", () => {
-        render(<ToolsMenu />);
+        renderWithBuiltinOpen();
         for (const template of mockBuiltin) {
             expect(
                 screen.getByLabelText(template.label),
@@ -86,7 +93,7 @@ describe("built-in palette tiles are named", () => {
     });
 
     test("no tile is left with an empty accessible name", () => {
-        const { container } = render(<ToolsMenu />);
+        const { container } = renderWithBuiltinOpen();
         const tiles = Array.from(
             container.querySelectorAll<HTMLElement>("div[draggable='true']"),
         );
@@ -103,7 +110,7 @@ describe("built-in palette tiles are named", () => {
     test("every tile carries the id named after its template", () => {
         // The e2e suites find tiles by these ids: curio.builtin/data-loading@1
         // is #tile-data-loading.
-        const { container } = render(<ToolsMenu />);
+        const { container } = renderWithBuiltinOpen();
         for (const template of mockBuiltin) {
             const name = template.id.replace("curio.builtin/", "").replace("@1", "");
             const tile = container.querySelector(`#tile-${name}`);

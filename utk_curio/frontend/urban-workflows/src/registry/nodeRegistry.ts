@@ -196,6 +196,22 @@ export function modelTypeOfPackage(modelId: string): string | undefined {
 }
 
 /**
+ * Does the registry hold a node of package *packageId*, at *major* when one is
+ * given? The registry holds every package the account has installed, Builtin
+ * always, so this is whether the account has the package (#1048). A package
+ * left with no node types registers none, so it reads as absent.
+ */
+export function isPackageRegistered(packageId: string, major?: number): boolean {
+  for (const d of registry.values()) {
+    const pkg = d.package;
+    if (pkg?.packageId !== packageId) continue;
+    if (major !== undefined && pkg.major !== major) continue;
+    return true;
+  }
+  return false;
+}
+
+/**
  * Is *d* offered by a dataflow whose lockfile is *scope*?
  *
  * ``null`` scope means no dataflow is open (the project list, the catalog

@@ -132,7 +132,7 @@ def _model_node_types(model_type: str) -> list[str]:
 # ---------------------------------------------------------------------------
 
 @pytest.mark.parametrize("text", [
-    "scout.rasters/raster-calculator",
+    "curio.scout/raster-calculator",
     "scout.",
     "model.scout.",
     "model.curio.ddrnet23-slim",
@@ -155,7 +155,7 @@ def test_the_scan_passes_a_name_that_is_not_an_id(text):
 
 def test_the_table_names_no_package_model_dataset_or_source():
     ids = _shipped_ids()
-    assert {"curio.builtin", "scout.rasters", "model.scout.deep-umbra", "data.scout.wrf-rain"} <= ids
+    assert {"curio.builtin", "curio.scout", "model.scout.deep-umbra", "data.scout.wrf-rain"} <= ids
     named = {text: _artifact_names(text, ids) for text in _strings(_rules())}
     assert {text: found for text, found in named.items() if found} == {}
 

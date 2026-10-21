@@ -47,7 +47,7 @@ from .utils import (
     api_json,
     canvas_node_type,
     dismiss_toasts,
-    drag_to_canvas,
+    drag_builtin_to_canvas,
     node_locator,
     require_owner_view,
     require_project_page,
@@ -163,7 +163,7 @@ def test_a_saved_scalar_output_stays_in_the_data_catalog(
     token = session["token"]
     project_id = session["project"]["id"]
 
-    node_id = drag_to_canvas(page, page.locator(ANALYSIS_TILE), at=(200, 180))
+    node_id = drag_builtin_to_canvas(page, ANALYSIS_TILE, at=(200, 180))
     # Palette-dragged nodes carry the package major (``...@1``), so compare the
     # unversioned form -- the assertion is "we dragged the right tile", not
     # "the registry pins this major".
@@ -248,7 +248,7 @@ def test_the_row_survives_a_run_watched_from_an_open_drawer(
     token = session["token"]
     project_id = session["project"]["id"]
 
-    node_id = drag_to_canvas(page, page.locator(ANALYSIS_TILE), at=(200, 180))
+    node_id = drag_builtin_to_canvas(page, ANALYSIS_TILE, at=(200, 180))
     set_node_code(page, node_id, SCALAR_CODE)
     _enable_save_toggle(page, node_id)
 
@@ -330,7 +330,7 @@ def test_the_output_stays_in_the_tools_data_catalog_and_its_pill_reveals_it(
     project_id = session["project"]["id"]
 
     # Right of the open panel, which floats over the left of the canvas.
-    node_id = drag_to_canvas(page, page.locator(ANALYSIS_TILE), at=(860, 220))
+    node_id = drag_builtin_to_canvas(page, ANALYSIS_TILE, at=(860, 220))
     set_node_code(page, node_id, SCALAR_CODE)
     _enable_save_toggle(page, node_id)
 

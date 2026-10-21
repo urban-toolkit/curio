@@ -1,7 +1,7 @@
 /**
  * The views a selection tag can read (`selectionViewsOf`): Vega-Lite charts
  * and Autark nodes. A package chart that draws with the Vega-Lite grammar (a
- * SCOUT Comparison node) draws with the Vega-Lite node's behavior, whose view
+ * Scout node) draws with the Vega-Lite node's behavior, whose view
  * hands its selection on, so it is one of them too.
  */
 jest.mock("../../providers/FlowProvider", () => ({ useFlowContext: () => ({}) }));
@@ -22,7 +22,7 @@ test("a package chart that draws with Vega-Lite is a view, as the Vega-Lite node
     node("tags", NodeType.COMPUTATION_ANALYSIS),
     node("chart", NodeType.VIS_VEGA),
     node("donuts", VEGA_LITE_TEMPLATE),
-    node("plain", "scout.comparison/donuts"),
+    node("plain", "curio.scout/donuts"),
     node("map", NodeType.AUTK_GRAMMAR),
     node("heatmap", "acme.tools/heatmap@1"),
   ];

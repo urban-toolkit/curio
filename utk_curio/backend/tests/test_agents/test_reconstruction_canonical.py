@@ -413,17 +413,26 @@ class TestTheShippedCorpus:
     def test_these_are_the_examples_whose_templates_need_a_package(self):
         """Example 09 declares ``curio.weather@1`` for its python LIBRARIES
         while using only builtin templates -- a different resolution route
-        from examples 10, 18, 21, 22 and 24 and the chicago-loop-shadow-towers,
+        from examples 06, 10, 18, 21, 22 and 24 and the chicago-loop-shadow-towers,
         chicago-rain-wind-routing, lower-manhattan-park-shade,
         quad-cities-flood-vulnerability and scenario-comparison-charts test
         dataflows, whose templates themselves live in a package
-        (``curio.media@1``, ``scout.rasters@1``, ``scout.comparison@1``, and
+        (``curio.media@1``, ``curio.scout@1``, and
         the model packages ``model.curio.ddrnet23-slim@1``,
         ``model.scout.deep-umbra@1`` and ``model.scout.weather-gnn@1``).
         quad-cities-flood-vulnerability's only package nodes are its Raster
-        Calculators, which left the built-in nodes for ``scout.rasters@1`` (the
+        Calculators, which left the built-in nodes for SCOUT's package (the
         owner's call, 2026-10-18), and scenario-comparison-charts' are its
-        seven SCOUT Comparison charts (the plan for #914, step 28.2)."""
+        nine charts, all Scout's (the plan for #914, step 28.2, and the plan
+        answering komar41's review, step 6.2), ``curio.scout@1`` (that plan,
+        step 10). chicago-rain-wind-routing charts its routes with Scout's
+        Bars, example 06 its scenarios' mean sunlight, and
+        chicago-loop-shadow-towers its scenarios' mean shadow;
+        lower-manhattan-park-shade charts its parks with Scout's Dots with a
+        range and takes its changes in shadow with Raster Calculators, and
+        quad-cities-flood-vulnerability charts with Scout's Bars, Points and
+        Grouped bars and takes its change in depth with a Raster Calculator
+        (that plan, step 6.3)."""
         needs_package_templates = {}
         for path in example_paths():
             spec = json.loads(path.read_text(encoding="utf-8"))
@@ -434,6 +443,7 @@ class TestTheShippedCorpus:
             if foreign:
                 needs_package_templates[path.stem] = foreign
         assert list(needs_package_templates) == [
+            "06-back-bay-road-sunlight",
             "10-street-vision-cv-analysis",
             "18-storage-orthorectified-imagery",
             "21-storage-photos-and-videos",
@@ -445,34 +455,54 @@ class TestTheShippedCorpus:
             "quad-cities-flood-vulnerability",
             "scenario-comparison-charts",
         ]
-        # The charts no Compare preset draws are SCOUT Comparison's.
+        # Its nine charts are Scout's, the grouped bars and the table among them.
         assert needs_package_templates["scenario-comparison-charts"] == [
-            "scout.comparison/bars-with-error-bars",
-            "scout.comparison/curves-by-group",
-            "scout.comparison/donuts",
-            "scout.comparison/ensemble-strips",
-            "scout.comparison/lines-with-band",
-            "scout.comparison/stacked-bars-with-totals",
-            "scout.comparison/weighted-matrix",
+            "curio.scout/bars-with-error-bars",
+            "curio.scout/curves-by-group",
+            "curio.scout/donuts",
+            "curio.scout/ensemble-strips",
+            "curio.scout/grouped-bars",
+            "curio.scout/lines-with-band",
+            "curio.scout/stacked-bars-with-totals",
+            "curio.scout/table",
+            "curio.scout/weighted-matrix",
         ]
         # SCOUT's two models are packages with nodes of their own.
         for stem in ("24-scout-shadow-model-chicago-loop", "chicago-loop-shadow-towers", "lower-manhattan-park-shade"):
             assert "model.scout.deep-umbra/accumulated-shadow" in needs_package_templates[stem], stem
-        assert needs_package_templates["chicago-rain-wind-routing"] == ["model.scout.weather-gnn/weather-routing"]
-        # SCOUT's raster nodes are scout.rasters@1's: the shadow dataflows
+        assert needs_package_templates["chicago-rain-wind-routing"] == [
+            "curio.scout/bars",
+            "model.scout.weather-gnn/weather-routing",
+        ]
+        assert needs_package_templates["06-back-bay-road-sunlight"] == ["curio.scout/bars"]
+        # SCOUT's raster nodes are curio.scout@1's: the shadow dataflows
         # rasterize their buildings with it, and the two that take the
         # shadow's statistics and the flood dataflow use its Raster Calculator.
-        assert needs_package_templates["24-scout-shadow-model-chicago-loop"] == needs_package_templates[
-            "chicago-loop-shadow-towers"] == [
+        assert needs_package_templates["24-scout-shadow-model-chicago-loop"] == [
+            "curio.scout/raster-calculator",
+            "curio.scout/rasterize-buildings",
             "model.scout.deep-umbra/accumulated-shadow",
-            "scout.rasters/raster-calculator",
-            "scout.rasters/rasterize-buildings",
+        ]
+        # chicago-loop-shadow-towers also charts its scenarios with Scout's
+        # Bars, and takes its change in shadow with a Raster Calculator.
+        assert needs_package_templates["chicago-loop-shadow-towers"] == [
+            "curio.scout/bars",
+            "curio.scout/raster-calculator",
+            "curio.scout/rasterize-buildings",
+            "model.scout.deep-umbra/accumulated-shadow",
         ]
         assert needs_package_templates["lower-manhattan-park-shade"] == [
+            "curio.scout/dots-with-a-range",
+            "curio.scout/raster-calculator",
+            "curio.scout/rasterize-buildings",
             "model.scout.deep-umbra/accumulated-shadow",
-            "scout.rasters/rasterize-buildings",
         ]
-        assert needs_package_templates["quad-cities-flood-vulnerability"] == ["scout.rasters/raster-calculator"]
+        assert needs_package_templates["quad-cities-flood-vulnerability"] == [
+            "curio.scout/bars",
+            "curio.scout/grouped-bars",
+            "curio.scout/points",
+            "curio.scout/raster-calculator",
+        ]
         assert declared_dependencies(
             json.loads(
                 (REPO_ROOT / "docs/examples/09-heterogeneous-data-linked-views.json").read_text()
@@ -521,7 +551,7 @@ class TestExpectedBlockRoundTrip:
 def _feeding_circles(groups: int, feeders: int, *, charted: int | None = None, swapped: bool = False) -> dict:
     """*groups* copies of one shape: a loader whose rows *feeders* steps take,
     each step handing its rows to its own circle of one node, as each
-    scenario's node feeds a Compare Scenarios node. With *charted*, the first
+    scenario's node feeds a chart that compares them. With *charted*, the first
     group's step on that circle also feeds a chart; with *swapped*, the first
     group's first two steps trade circles."""
     nodes, edges = [], []

@@ -189,28 +189,46 @@ class TestRenderPrompt:
 
     def test_a_shipped_packages_template_label_follows_its_manifest(self):
         """A prompt names a template of a package Curio ships as its manifest
-        labels it, as it names a built-in one: SCOUT Comparison's charts."""
-        manifest = json.loads((REPO_ROOT / "packages" / "scout.comparison@1" / "manifest.json").read_text(
+        labels it, as it names a built-in one: Scout's nodes."""
+        manifest = json.loads((REPO_ROOT / "packages" / "curio.scout@1" / "manifest.json").read_text(
             encoding="utf-8"))
+        assert len(manifest["templates"]) == 17
         for template in manifest["templates"]:
-            marker = "{{template.label:" + f"scout.comparison/{template['id']}" + "}}"
+            marker = "{{template.label:" + f"curio.scout/{template['id']}" + "}}"
             assert contracts.render_template(marker) == template["label"]
         with pytest.raises(contracts.PromptTemplateError, match="no-such-chart"):
-            contracts.render_template("{{template.label:scout.comparison/no-such-chart}}")
+            contracts.render_template("{{template.label:curio.scout/no-such-chart}}")
         with pytest.raises(contracts.PromptTemplateError, match="no.such.package"):
             contracts.render_template("{{template.label:no.such.package/chart}}")
 
-    def test_the_preamble_names_the_charts_that_follow_a_compare_node(self):
-        """Its Scenarios section names SCOUT Comparison's seven charts, by the
-        labels their manifest gives them, and the package that holds them."""
+    def test_the_preamble_names_scouts_charts_and_how_they_read_their_scenarios(self):
+        """Its Scenarios section names Scout's fifteen charts, the package's
+        templates that draw with Vega-Lite, by the labels their manifest gives
+        them, and the package that holds them, and says that each takes one
+        input per scenario and reads them as the dataset "inputs". It says how
+        scenarios are compared: a Vega-Lite spec reading "inputs", a Raster
+        Calculator for two rasters' difference, absolute=True for its size,
+        and a Python node for two tables' or layers'. Compare Scenarios is
+        gone, and the section names it nowhere."""
         template = (REPO_ROOT / contracts.PROMPTS_DIR / "default_preamble.template.md").read_text(encoding="utf-8")
         section = template.split("## Scenarios", 1)[1]
-        manifest = json.loads((REPO_ROOT / "packages" / "scout.comparison@1" / "manifest.json").read_text(
+        manifest = json.loads((REPO_ROOT / "packages" / "curio.scout@1" / "manifest.json").read_text(
             encoding="utf-8"))
-        assert "{{template.label:curio.builtin/compare-scenarios}}" in section
-        for chart in manifest["templates"]:
-            assert "{{template.label:" + f"scout.comparison/{chart['id']}" + "}}" in section, chart["id"]
-        assert "scout.comparison@1" in section
+        assert "compare-scenarios" not in section and "Compare Scenarios" not in section
+        for named in ("curio.builtin/vis-vega", "curio.scout/raster-calculator", "curio.builtin/computation-analysis"):
+            assert "{{template.label:" + named + "}}" in section, named
+        assert "absolute=True" in section
+        charts = [t for t in manifest["templates"] if t.get("grammarId") == "vega-lite"]
+        assert [chart["id"] for chart in charts] == [
+            "lines-with-band", "curves-by-group", "bars-with-error-bars", "ensemble-strips",
+            "stacked-bars-with-totals", "donuts", "weighted-matrix", "dots-with-a-range",
+            "bars", "grouped-bars", "lines", "points", "pie", "lollipops", "table",
+        ]
+        for chart in charts:
+            assert "{{template.label:" + f"curio.scout/{chart['id']}" + "}}" in section, chart["id"]
+        assert "curio.scout@1" in section
+        assert "one input per scenario" in section
+        assert '"inputs"' in section
 
 
 class TestThePromptFacts:

@@ -4,7 +4,7 @@ node: the node starts with the template's spec and the plan's widgets, and Solve
 leaves it as it is.
 
 Every other template keeps its path, in which a planned node is created empty
-and Solve writes its content: SCOUT Rasters' Raster Calculator, whose operation
+and Solve writes its content: Scout's Raster Calculator, whose operation
 the agent writes for each use, and Rasterize Buildings, whose starter is a
 starting point."""
 
@@ -50,7 +50,11 @@ CHART = {"ref": "chart", "nodeType": "test.charts/lines", "title": "Counts by ho
 
 #: What every Solve child writes in these tests.
 WRITTEN = "return input_0"
-OPERATION = 'return curio_raster_calculate("subtract", [input_0, input_1])'
+OPERATION = (
+    "from scout_rasters.raster_algebra import raster_calculate\n"
+    "\n"
+    'return raster_calculate("subtract", [input_0, input_1], output_file=curio_output_file)'
+)
 
 
 def _charts_manifest() -> dict:
@@ -88,9 +92,9 @@ def _install_scout_rasters(user_key: str) -> str:
     """The package Curio ships, as the repository holds it."""
     from utk_curio.backend.app.packages.repositories.store import user_packages_dir
 
-    shutil.copytree(REPO / "packages" / "scout.rasters@1",
-                    user_packages_dir(user_key) / "scout.rasters@1", dirs_exist_ok=True)
-    return "scout.rasters@1"
+    shutil.copytree(REPO / "packages" / "curio.scout@1",
+                    user_packages_dir(user_key) / "curio.scout@1", dirs_exist_ok=True)
+    return "curio.scout@1"
 
 
 def _enlist(user_key: str, project_id: str, dirs: list[str]) -> None:
@@ -212,9 +216,9 @@ class TestEveryOtherTemplateKeepsItsPath:
         self, client, user_and_token, tmp_curio, alice_project, monkeypatch
     ):
         user, token = user_and_token
-        heights = {"ref": "heights", "nodeType": "scout.rasters/rasterize-buildings",
+        heights = {"ref": "heights", "nodeType": "curio.scout/rasterize-buildings",
                    "title": "Heights", "intent": "rasterize the buildings"}
-        calc = {"ref": "calc", "nodeType": "scout.rasters/raster-calculator",
+        calc = {"ref": "calc", "nodeType": "curio.scout/raster-calculator",
                 "title": "Change", "intent": "subtract the two rasters"}
         att_id, proposal = _minted(
             client, user, token, alice_project, monkeypatch,
@@ -223,7 +227,7 @@ class TestEveryOtherTemplateKeepsItsPath:
         body = _apply(client, token, alice_project, att_id, proposal["proposalId"])
         created = _by_type(body["appliedGraph"]["nodes"])
         session = body["builderSession"]
-        assert set(created) == {"scout.rasters/rasterize-buildings", "scout.rasters/raster-calculator"}
+        assert set(created) == {"curio.scout/rasterize-buildings", "curio.scout/raster-calculator"}
         for node in created.values():
             assert node["content"] == ""
         assert session["nodeRuns"] == {n["id"]: "pending" for n in created.values()}

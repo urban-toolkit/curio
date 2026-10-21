@@ -33,7 +33,7 @@ const CANVAS_DRAWERS = [
   "components/agents/catalog/AgentCatalogDrawer.tsx",
   "components/scenarios/catalog/ScenarioCatalogDrawer.tsx",
   "components/discovery/catalog/DiscoveryCatalogDrawer.tsx",
-  // API Settings and Monitor, opened from the top bar.
+  // API Settings and Monitor, opened from the top bar, and provenance.
   "components/layout/HeaderDrawer.tsx",
 ];
 
@@ -65,6 +65,7 @@ const PROVIDERS = [
   "providers/discoveryCatalog/DiscoveryCatalogDrawerProvider.tsx",
   "providers/ApiSettingsDrawerProvider.tsx",
   "providers/MonitorDrawerProvider.tsx",
+  "providers/ProvenanceDrawerProvider.tsx",
 ];
 
 describe("canvas catalog drawer parity", () => {
