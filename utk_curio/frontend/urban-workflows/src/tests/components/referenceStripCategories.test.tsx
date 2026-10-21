@@ -1,0 +1,179 @@
+/**
+ * The header above a node's code or spec (#662): one row of the categories of
+ * chips the node can use, Inputs, Scenarios, Widgets, Selections and Shared,
+ * each with its count and only when it has chips, all closed. A click opens a
+ * category's chips under the row, and several can be open at once. A category
+ * stays open for its node while the dataflow is open, so the node's editor
+ * mounting again keeps it; another node's header starts closed.
+ *
+ * The header reads the editor's language and grammar and the node's inputs,
+ * never its code: code shows no Scenarios and no `inputs` tag.
+ */
+import React from "react";
+import { fireEvent, render } from "@testing-library/react";
+import { ReferenceStrip } from "../../components/editing/widgets/WidgetTag";
+import type { InputScope } from "../../utils/references/codeReferences";
+import type { SelectionTag } from "../../utils/references/selectionTags";
+import type { WidgetDef } from "../../utils/widgets/widgetModel";
+import { categoryButton, chipsOf, draggedText, headerRow, openCategory } from "../_support/stripCategories";
+
+const BASE = { scenario: "s-base", name: "Baseline", color: "#2a9d8f", rank: 0 };
+const TALL = { scenario: "s-tall", name: "Twice as tall", color: "#e76f51", rank: 1 };
+
+const inputs: InputScope[] = [
+  { slot: 0, label: "Shade", dataType: "dataframe", columns: ["segment", "sunlight"], scenario: BASE },
+  { slot: 1, label: "Shade", dataType: "dataframe", columns: ["segment", "sunlight"], scenario: TALL },
+];
+const widgets: WidgetDef[] = [
+  { name: "y", type: "text", default: "sunlight" },
+  { name: "combine", type: "choice", default: "mean", options: { choices: ["mean", "sum"] } },
+  { name: "y_title", type: "text", default: "" },
+];
+const shared: WidgetDef[] = [{ name: "season", type: "text", default: "summer" }];
+const selections: SelectionTag[] = [{ name: "picked", node: "scatter", column: "osm_id", ids: [101] }];
+
+// Each test its own node, so no category it opens is open in another.
+let made = 0;
+const newNode = () => `strip-node-${(made += 1)}`;
+
+function chart(nodeId: string, more: Record<string, unknown> = {}) {
+  return (
+    <ReferenceStrip
+      nodeId={nodeId}
+      widgets={widgets}
+      inputs={inputs}
+      shared={shared}
+      selections={selections}
+      language="json"
+      grammar="vega-lite"
+      onInsert={jest.fn()}
+      {...more}
+    />
+  );
+}
+
+describe("the header's row", () => {
+  test("lists each category with its count, all closed, and no chip until one opens", () => {
+    const view = render(chart(newNode()));
+    expect(headerRow(view.container)).toEqual([
+      { category: "inputs", label: "Inputs 3", open: false },
+      { category: "scenarios", label: "Scenarios 5", open: false },
+      { category: "widgets", label: "Widgets 3", open: false },
+      { category: "selections", label: "Selections 1", open: false },
+      { category: "shared", label: "Shared 1", open: false },
+    ]);
+    for (const tag of [
+      "[data-input-tag]", "[data-inputs-tag]", "[data-widget-tag]", "[data-selection-tag]", "[data-shared-tag]",
+      "[data-scenario-swatches]", "[data-scenario-input]", "[data-strip-chips]",
+    ]) {
+      expect(view.container.querySelector(tag)).toBeNull();
+    }
+  });
+
+  test("a click opens a category's chips under the row, and a second click closes it", () => {
+    const onInsert = jest.fn();
+    const view = render(chart(newNode(), { onInsert }));
+    const widgetsChips = openCategory(view.container, "widgets");
+    expect(categoryButton(view.container, "widgets")!.getAttribute("aria-expanded")).toBe("true");
+    const tags = Array.from(widgetsChips.querySelectorAll("[data-widget-tag]"));
+    expect(tags.map((tag) => tag.textContent)).toEqual(["y", "combine", "y_title"]);
+    expect(draggedText(tags[1])).toBe("[!! combine !!]");
+    fireEvent.click(tags[0]);
+    expect(onInsert).toHaveBeenCalledWith("y");
+    // Under the row, not in it.
+    const strip = view.container.querySelector("[data-widget-strip]")!;
+    const row = categoryButton(view.container, "widgets")!.parentElement!;
+    expect(row.contains(widgetsChips)).toBe(false);
+    expect(strip.contains(widgetsChips)).toBe(true);
+    // The others stay closed.
+    expect(chipsOf(view.container, "inputs")).toBeNull();
+    expect(view.container.querySelector("[data-input-tag]")).toBeNull();
+
+    fireEvent.click(categoryButton(view.container, "widgets")!);
+    expect(chipsOf(view.container, "widgets")).toBeNull();
+    expect(view.container.querySelector("[data-widget-tag]")).toBeNull();
+  });
+
+  test("several categories open at once, their chips in the row's order", () => {
+    const view = render(chart(newNode()));
+    openCategory(view.container, "shared");
+    openCategory(view.container, "inputs");
+    openCategory(view.container, "selections");
+    const open = Array.from(view.container.querySelectorAll("[data-strip-chips]")).map((group) =>
+      group.getAttribute("data-strip-chips"),
+    );
+    expect(open).toEqual(["inputs", "selections", "shared"]);
+    expect(headerRow(view.container).map((entry) => entry.open)).toEqual([true, false, false, true, true]);
+    expect(chipsOf(view.container, "shared")!.querySelector('[data-shared-tag="season"]')!.textContent).toBe("@season");
+    expect(chipsOf(view.container, "selections")!.querySelector('[data-selection-tag="picked"]')!.textContent).toBe(
+      "selection picked",
+    );
+  });
+
+  test("a category shows only when it has chips", () => {
+    const view = render(
+      <ReferenceStrip nodeId={newNode()} widgets={[]} inputs={[{ slot: 0, label: "Roads" }]} language="python" onInsert={jest.fn()} />,
+    );
+    expect(headerRow(view.container)).toEqual([{ category: "inputs", label: "Inputs 1", open: false }]);
+  });
+
+  test("a read-only node's categories open too, and its tags do not drag", () => {
+    const view = render(chart(newNode(), { disabled: true }));
+    const chips = openCategory(view.container, "widgets");
+    expect(chips.querySelector('[data-widget-tag="y"]')!.getAttribute("draggable")).toBe("false");
+  });
+});
+
+describe("a category stays open for its node", () => {
+  test("when the node's editor mounts again, as after a tab switch or the notebook view", () => {
+    const node = newNode();
+    const first = render(chart(node));
+    openCategory(first.container, "scenarios");
+    openCategory(first.container, "widgets");
+    first.unmount();
+
+    const again = render(chart(node));
+    expect(headerRow(again.container).filter((entry) => entry.open).map((entry) => entry.category)).toEqual([
+      "scenarios", "widgets",
+    ]);
+    expect(chipsOf(again.container, "scenarios")!.querySelector("[data-scenario-swatches]")).not.toBeNull();
+  });
+
+  test("and another node's header starts closed", () => {
+    const node = newNode();
+    const first = render(chart(node));
+    openCategory(first.container, "inputs");
+    const other = render(chart(newNode()));
+    expect(headerRow(other.container).every((entry) => !entry.open)).toBe(true);
+    expect(headerRow(first.container)[0]).toEqual({ category: "inputs", label: "Inputs 3", open: true });
+  });
+});
+
+describe("what the header reads", () => {
+  test("code, Python or JavaScript, shows no Scenarios and no inputs tag, though its inputs come from boxes", () => {
+    for (const language of ["python", "javascript"] as const) {
+      const view = render(
+        <ReferenceStrip nodeId={newNode()} widgets={widgets} inputs={inputs} shared={shared} language={language} onInsert={jest.fn()} />,
+      );
+      expect(headerRow(view.container).map((entry) => entry.label)).toEqual(["Inputs 2", "Widgets 3", "Shared 1"]);
+      const chips = openCategory(view.container, "inputs");
+      expect(Array.from(chips.querySelectorAll("[data-input-tag]")).map((tag) => tag.textContent)).toEqual([
+        "input_0", "input_1",
+      ]);
+      expect(view.container.querySelector("[data-inputs-tag]")).toBeNull();
+      view.unmount();
+    }
+  });
+
+  test("an Autark spec has no inputs tag, and its Scenarios a chip per input", () => {
+    const view = render(chart(newNode(), { grammar: undefined }));
+    expect(headerRow(view.container).map((entry) => entry.label)).toEqual([
+      "Inputs 2", "Scenarios 2", "Widgets 3", "Selections 1", "Shared 1",
+    ]);
+  });
+
+  test("nothing at all when the node can use no chip", () => {
+    const view = render(<ReferenceStrip nodeId={newNode()} widgets={[]} inputs={[]} language="json" grammar="vega-lite" onInsert={jest.fn()} />);
+    expect(view.container.innerHTML).toBe("");
+  });
+});
