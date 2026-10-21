@@ -591,7 +591,20 @@ class TestScenarioChipsInTheCheck:
     names it, not by its type in words."""
 
     def test_an_untitled_input_from_no_box_is_named_as_its_header_names_it(self, app, tmp_curio, monkeypatch):
+        import shutil
+
+        from utk_curio import shipped
         from utk_curio.backend.app.agents.domain import document_validation
+        from utk_curio.backend.app.packages import service as packages_service
+        from utk_curio.backend.app.packages.repositories.store import user_packages_dir
+
+        # The account's store holds the built-in package, as every account's
+        # does: its templates' labels are what an untitled node's header shows.
+        builtin = shipped.path("packages/curio.builtin@1")
+        shutil.copytree(builtin, user_packages_dir(KEY) / builtin.name, dirs_exist_ok=True)
+        with app.test_request_context():
+            roster = {row["id"]: row.get("label") for row in packages_service.available_templates(KEY, PID)}
+        assert roster.get(CA) == "Python Computation", roster
 
         checked: list = []
         real = document_validation.validate
