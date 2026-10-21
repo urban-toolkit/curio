@@ -22,9 +22,10 @@ Run All drives the whole path:
 3. The change is a 2592 by 2064 cell raster in EPSG:4326 on SCOUT's grid,
    whose cells are the size of SCOUT's depths with NbS minus SCOUT's depths
    without: 267,494 cells changed, 842,515 the same and 4,239,879 with no
-   depth on one side or both, the counts SCOUT's rasters give. The Autark map
-   after the Raster Calculator draws it, its legend titled "Absolute flood
-   depth change (m)".
+   depth on one side or both, the counts SCOUT's rasters give, cell for cell
+   the size of the two depth rasters' difference. The Autark map after the
+   Raster Calculator draws it, its legend titled "Absolute flood depth change
+   (m)".
 4. The Bars chart draws both scenarios in their colors from its rows, each
    scenario's statistics: the medians and means are SCOUT's for its whole
    grid, a median flood depth of 7.164 m without NbS and 4.900 m with every
@@ -37,11 +38,13 @@ Run All drives the whole path:
    and an Autark map in the scenario draws it, its legend titled "Mean flood
    depth (m)" and labelled 0 to 11, the depth maps' range (issue 9 of that
    plan). The Python node that subtracts them, joined on FIPS, writes the
-   size of each tract's change, which the Autark map after it draws, its
-   legend titled "Absolute change in mean flood depth (m)": 23 of the 28
-   tracts change, by up to 1.603 m.
+   size of each tract's change, column for column from the two Tract depth
+   outputs, which the Autark map after it draws, its legend titled "Absolute
+   change in mean flood depth (m)": 23 of the 28 tracts change, by up to
+   1.603 m.
 7. Scout's Points charts each tract's SVI percentile against its mean depth
-   in both scenarios' colors, from its rows: the 28 tracts in each scenario.
+   in both scenarios' colors, from its rows: the 28 tracts in each scenario,
+   the two Tract depth outputs stacked under their boxes, row for row.
 8. Scout's Grouped bars chart each scenario's Average depth by period over
    the riverside land, a row a bar: 1.988, 1.923 and 2.237 m without NbS in
    SCOUT's three periods, and 1.337, 1.691 and 1.872 m with every NbS.
@@ -341,6 +344,33 @@ def _features(stored: dict) -> list[dict]:
     return [feature["properties"] for feature in stored["data"]["features"]]
 
 
+def _feeds_of(spec: dict, node_id: str) -> dict:
+    """The nodes on *node_id*'s two circles, No NbS's on input_0 and NbS's on
+    input_1, as its code reads them."""
+    box_of = {member: box["id"] for box in spec["dataflow"]["scenarios"] for member in box["nodes"]}
+    feeds = {edge["targetHandle"]: edge["source"] for edge in spec["dataflow"]["edges"] if edge["target"] == node_id}
+    assert sorted(feeds) == ["in", "in_1"], (node_id, feeds)
+    assert (box_of.get(feeds["in"]), box_of.get(feeds["in_1"])) == ("no-nbs", "nbs"), (node_id, feeds)
+    return feeds
+
+
+def _tract_depths(page, spec: dict, node_id: str) -> list:
+    """``(scenario id, its name, its rows)`` of the two Tract depth nodes on
+    *node_id*'s circles, in circle order, the rows a table of the layer's
+    properties as the page reads them."""
+    import pandas as pd
+
+    nodes = {node["id"]: node for node in spec["dataflow"]["nodes"]}
+    names = {box["id"]: box["name"] for box in spec["dataflow"]["scenarios"]}
+    feeds = _feeds_of(spec, node_id)
+    found = []
+    for handle, scenario in (("in", "no-nbs"), ("in_1", "nbs")):
+        assert _part(nodes[feeds[handle]]) == "tract depth", (node_id, feeds[handle])
+        rows = _features(load_artifact_as_dict(_saved_artifact(page, feeds[handle], "tract depth")))
+        found.append((scenario, names[scenario], pd.DataFrame(rows)))
+    return found
+
+
 def _change_counts(cells: np.ndarray) -> tuple:
     finite = cells[~np.isnan(cells)]
     return (int((finite < 0).sum()), int((finite > 0).sum()), int((finite == 0).sum()),
@@ -350,6 +380,15 @@ def _change_counts(cells: np.ndarray) -> tuple:
 def test_two_flood_scenarios_are_mapped_and_charted(
     app_frontend: "FrontendPage", current_server: str, page,
 ):
+    import pandas as pd
+
+    from utk_curio.backend.tests._support.scenario_changes import (
+        assert_rows_match,
+        keyed_change,
+        records_of,
+        stacked_rows,
+    )
+
     require_project_page()
     require_user_auth()
     page.emulate_media(reduced_motion="reduce")
@@ -418,6 +457,23 @@ def test_two_flood_scenarios_are_mapped_and_charted(
     counts, largest = _change_counts(cells)
     assert counts == CHANGE_COUNTS, counts
     assert largest == pytest.approx(CHANGE_MAX, abs=1e-5)
+    # Cell for cell, the size of NbS's depth minus No NbS's, the two rasters
+    # the Raster Calculators that choose saved, on the change's grid.
+    feeds = _feeds_of(spec, difference)
+    depths = []
+    for handle in ("in", "in_1"):
+        depth_grid, (depth,) = load_raster_cells(_saved_artifact(page, feeds[handle], "flood depth"))
+        assert (depth_grid["crs"], depth_grid["width"], depth_grid["height"]) == (
+            grid["crs"], grid["width"], grid["height"]), (depth_grid, grid)
+        assert [depth_grid[k] for k in ("originX", "originY", "resX", "resY")] == pytest.approx(
+            [grid[k] for k in ("originX", "originY", "resX", "resY")], rel=1e-12), (depth_grid, grid)
+        depths.append(depth)
+    took = np.abs(depths[1].astype("float64") - depths[0].astype("float64")).astype("float32")
+    assert np.array_equal(np.isnan(cells), np.isnan(took))
+    assert np.allclose(cells, took, rtol=0, atol=1e-5, equal_nan=True), (
+        f"the Raster Calculator's change differs from the size of NbS minus No NbS by up to "
+        f"{float(np.nanmax(np.abs(cells - took)))}"
+    )
     frame_nodes(page, [difference, difference_map])
     assert_autark_map_drawn(page, difference_map, timeout=60000, attach_as="the size of NbS minus No NbS flood depth")
     _assert_legend_title(page, difference_map, DIFFERENCE_TITLE)
@@ -471,6 +527,12 @@ def test_two_flood_scenarios_are_mapped_and_charted(
     sizes = [row["mean_depth_m"] for row in rows]
     assert min(sizes) == 0 and max(sizes) == pytest.approx(1.603), (where, sizes)
     assert [row["change"] for row in rows].count("changed") == 23, where
+    # Column for column, the size of NbS's mean depth minus No NbS's, joined on
+    # FIPS, from the two Tract depth nodes' rows (keyed_change, which the
+    # fixture of Compare's own output holds to it).
+    tracts = _tract_depths(page, spec, tract_change)
+    assert_rows_match(rows, records_of(keyed_change(tracts[0][2], tracts[1][2], "FIPS", absolute=True)), rel=1e-12,
+                      what="the Depth change per tract")
     frame_nodes(page, [tract_change, tract_change_map])
     assert_autark_map_drawn(page, tract_change_map, timeout=60000,
                             attach_as="the size of each tract's change in mean depth")
@@ -485,6 +547,10 @@ def test_two_flood_scenarios_are_mapped_and_charted(
     where = "the rows Scout's Points reads"
     assert [row["scenario_name"] for row in rows] == ["No NbS"] * RIVERSIDE_TRACTS + ["NbS"] * RIVERSIDE_TRACTS, where
     assert all(0 <= row["RPL_THEMES"] <= 1 and row["mean_depth_m"] >= 0 for row in rows), (where, rows)
+    # Row for row, the two Tract depth nodes' rows stacked under their boxes.
+    stacked = records_of(pd.DataFrame(stacked_rows(_tract_depths(page, spec, scatter))))
+    assert_rows_match([{k: v for k, v in row.items() if not k.startswith("_")} for row in rows], stacked, rel=1e-12,
+                      what=where)
     frame_nodes(page, [scatter])
     _assert_chart_drew(page, scatter, opacity=POINT_OPACITY)
     save_node_closeup(page, "scout-flood-vulnerability-against-depth", scatter, test_name=TEST_NAME, sweep_toasts=True)
