@@ -315,10 +315,11 @@ def suggest_widget(param: Parameter) -> dict | None:
     return widget
 
 
-def suggested_use(param: Parameter) -> str:
+def suggested_use(param: Parameter, takes_widget: bool = True) -> str:
     """What the dialog starts a parameter at: its widget, else its default,
-    else an input."""
-    if suggest_widget(param) is not None:
+    else an input. *takes_widget* is False for a parameter named as no widget
+    may be, such as one of the node's inputs, which gets no widget."""
+    if takes_widget and suggest_widget(param) is not None:
         return WIDGET
     return DEFAULT if param.has_default else INPUT
 
