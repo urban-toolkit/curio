@@ -1,28 +1,30 @@
 /**
- * The tags a chart's or a map's scenarios are written with (#662).
+ * The tags a chart's or a map's scenarios are written with (#662), in the
+ * header above a spec whose node receives an edge from a scenario box.
  *
- * - On a Vega-Lite node with an input, one or several, an `inputs` tag sits
- *   beside `input_0`, `input_1`, ... and drags the chip of the dataset that
- *   stacks them, `[!! inputs !!]`. It opens to the dataset's fields:
- *   `scenario_name`, `scenario` and `__input__`, then the union of the inputs'
- *   columns, each with its dtype in its title. A field drags its chip,
- *   `[!! inputs.sunlight !!]`, which writes its name.
- * - Its `scenario_name` field shows a swatch per scenario box, in the order the
- *   dataflow lists the boxes, then each input from no box in a grey of its own;
- *   with no input from a box, the names alone. The swatches
- *   are one chip, the scale of the scenarios' colors, `[!! scenario colors !!]`;
- *   two small tags beside them drag the names in that order,
- *   `[!! scenario order !!]`, and the colors in the shades a text mark reads
- *   in, `[!! scenario text_colors !!]`.
- * - An input whose feeding node is in a box shows that box's swatch on its tag,
- *   in a Vega-Lite or an Autark spec, which drags `[!! scenario input_1 !!]`,
- *   that box's color.
+ * - Scenarios, in a Vega-Lite spec: the boxes' swatches with their names, in
+ *   the order the dataflow lists the boxes, then each input from no box in a
+ *   grey of its own. The swatches are one chip, the scale of the scenarios'
+ *   colors, `[!! scenario colors !!]`; then **text colors**,
+ *   `[!! scenario text_colors !!]`, and **order**, `[!! scenario order !!]`.
+ *   Then, in a Vega-Lite or an Autark spec, a chip per input,
+ *   `input_0 ■ Baseline`, which drags `[!! scenario input_0 !!]`. Every color
+ *   shown is the color its chip writes.
+ * - An Autark spec's Scenarios holds the chips per input alone.
+ * - A node fed from no box has no Scenarios category.
+ * - Inputs, in a Vega-Lite spec with an input, one or several: an `inputs` tag
+ *   after `input_0`, `input_1`, ... drags the chip of the dataset that stacks
+ *   them, `[!! inputs !!]`. It opens to the dataset's fields: `scenario_name`,
+ *   `scenario` and `__input__`, then the union of the inputs' columns, each with
+ *   its dtype in its title. A field drags its chip, `[!! inputs.sunlight !!]`.
+ *   No input tag and no field shows a swatch.
  */
 import React from "react";
 import { fireEvent, render, screen } from "@testing-library/react";
 import { ReferenceStrip } from "../../components/editing/widgets/WidgetTag";
-import { INPUT_REF_MIME } from "../../components/editing/widgets/monacoCodeReferences";
-import type { InputScope } from "../../utils/references/codeReferences";
+import { INPUT_REF_MIME, SCENARIO_REF_MIME } from "../../components/editing/widgets/monacoCodeReferences";
+import { resolveReferences, type InputScope } from "../../utils/references/codeReferences";
+import { draggedText, headerRow, openCategory } from "../_support/stripCategories";
 
 function dragData() {
   const store = new Map<string, string>();
@@ -55,16 +57,149 @@ const inputs: InputScope[] = [
   },
 ];
 
-const chartStrip = (onInsert = jest.fn(), more: Record<string, unknown> = {}) =>
-  render(<ReferenceStrip widgets={[]} inputs={inputs} language="json" grammar="vega-lite" onInsert={onInsert} {...more} />);
+const free = (slot: number, name: string): InputScope => ({
+  slot, label: name, dataType: "dataframe", columns: ["mode", "trips"], scenario: { name, color: "#8a8f98" },
+});
+
+const strip = (wired: InputScope[], more: Record<string, unknown> = {}) =>
+  render(<ReferenceStrip widgets={[]} inputs={wired} language="json" grammar="vega-lite" onInsert={jest.fn()} {...more} />);
+
+/** What the chip *inner* writes over *wired*, as a run writes it, read back as JSON. */
+const written = (inner: string, wired: InputScope[]) =>
+  JSON.parse(resolveReferences(`[!! ${inner} !!]`, { widgets: [], inputs: wired, shared: [] }, "json").code);
+
+/** Each chip of an input in Scenarios: its circle, the name beside its swatch, and its swatch's color. */
+const inputChipsOf = (chips: HTMLElement) =>
+  Array.from(chips.querySelectorAll("[data-scenario-input]")).map((tag) => [
+    tag.getAttribute("data-scenario-input"),
+    tag.querySelector("[data-scenario-swatch]")?.getAttribute("data-scenario-swatch"),
+    tag.getAttribute("data-color"),
+  ]);
 
 const openInputs = () => fireEvent.click(screen.getByLabelText("Show the fields of inputs"));
 
-describe("the inputs tag of a Vega-Lite node", () => {
+describe("Scenarios, in a Vega-Lite spec fed from boxes", () => {
+  test("holds the swatches, text colors and order, then a chip per input, in that order", () => {
+    const view = strip(inputs);
+    expect(headerRow(view.container).map((entry) => entry.label)).toEqual(["Inputs 4", "Scenarios 6"]);
+    const chips = openCategory(view.container, "scenarios");
+    const order = Array.from(chips.children).map(
+      (tag) => tag.getAttribute("data-scenario-chip") ?? (tag.hasAttribute("data-scenario-swatches") ? "swatches" : `input_${tag.getAttribute("data-scenario-input")}`),
+    );
+    expect(order).toEqual(["swatches", "text_colors", "order", "input_0", "input_1", "input_2"]);
+    expect(chips.querySelector('[data-scenario-chip="text_colors"]')!.textContent).toBe("text colors");
+    expect(chips.querySelector('[data-scenario-chip="order"]')!.textContent).toBe("order");
+  });
+
+  test("the swatches are the boxes in the dataflow's order, then an input from no box in grey: the scale their chip writes", () => {
+    const view = strip(inputs);
+    const chips = openCategory(view.container, "scenarios");
+    const swatches = Array.from(chips.querySelectorAll("[data-scenario-swatches] [data-scenario-swatch]"));
+    expect(swatches.map((s) => [s.getAttribute("data-scenario-swatch"), s.getAttribute("data-color")])).toEqual([
+      ["Baseline", "#2a9d8f"],
+      ["Twice as tall", "#e76f51"],
+      ["Roof survey", "#8a8f98"],
+    ]);
+    expect(swatches.map((s) => s.textContent)).toEqual(["Baseline", "Twice as tall", "Roof survey"]);
+    const scale = written("scenario colors", inputs);
+    expect(swatches.map((s) => s.getAttribute("data-scenario-swatch"))).toEqual(scale.domain);
+    expect(swatches.map((s) => s.getAttribute("data-color"))).toEqual(scale.range);
+  });
+
+  test("the swatches drag one chip, the scale of the scenarios' colors, and a click inserts it", () => {
+    const onInsert = jest.fn();
+    const view = strip(inputs, { onInsert });
+    const swatches = openCategory(view.container, "scenarios").querySelector("[data-scenario-swatches]")!;
+    expect(swatches.getAttribute("draggable")).toBe("true");
+    const drag = dragData();
+    fireEvent.dragStart(swatches, drag);
+    expect(drag.store.get(SCENARIO_REF_MIME)).toBe("scenario colors");
+    expect(drag.store.get("text/plain")).toBe("[!! scenario colors !!]");
+    fireEvent.click(swatches);
+    expect(onInsert).toHaveBeenCalledWith("scenario colors");
+  });
+
+  test("text colors and order drag their chips", () => {
+    const onInsert = jest.fn();
+    const view = strip(inputs, { onInsert });
+    const chips = openCategory(view.container, "scenarios");
+    expect(draggedText(chips.querySelector('[data-scenario-chip="order"]')!)).toBe("[!! scenario order !!]");
+    fireEvent.click(chips.querySelector('[data-scenario-chip="text_colors"]')!);
+    expect(onInsert).toHaveBeenCalledWith("scenario text_colors");
+  });
+
+  test("an input's chip names its circle and its scenario, and drags its color's chip", () => {
+    const onInsert = jest.fn();
+    const view = strip(inputs, { onInsert });
+    const chips = openCategory(view.container, "scenarios");
+    expect(inputChipsOf(chips)).toEqual([
+      ["0", "Twice as tall", "#e76f51"],
+      ["1", "Baseline", "#2a9d8f"],
+      ["2", "Roof survey", "#8a8f98"],
+    ]);
+    const first = chips.querySelector('[data-scenario-input="0"]')!;
+    expect(first.textContent).toBe("input_0Twice as tall");
+    expect(first.getAttribute("title")).toMatch(/^The color of Twice as tall, the scenario box input_0 comes from\. /);
+    const drag = dragData();
+    fireEvent.dragStart(first, drag);
+    expect(drag.store.get(SCENARIO_REF_MIME)).toBe("scenario input_0");
+    expect(drag.store.get("text/plain")).toBe("[!! scenario input_0 !!]");
+    fireEvent.click(chips.querySelector('[data-scenario-input="2"]')!);
+    expect(onInsert).toHaveBeenCalledWith("scenario input_2");
+  });
+
+  test("two inputs from no box beside a boxed one show two greys, each the color its chip writes", () => {
+    const wired = [free(0, "Survey A"), { ...free(1, "Shade"), scenario: BASE }, free(2, "Survey B")];
+    const view = strip(wired);
+    const chips = openCategory(view.container, "scenarios");
+    const shown = inputChipsOf(chips);
+    expect(shown.map(([slot]) => slot)).toEqual(["0", "1", "2"]);
+    for (const [slot, , color] of shown) expect(color).toBe(written(`scenario input_${slot}`, wired));
+    expect(shown[1][2]).toBe("#2a9d8f");
+    expect(shown[0][2]).not.toBe(shown[2][2]);
+    // And the swatches of the scale agree.
+    const swatches = Array.from(chips.querySelectorAll("[data-scenario-swatches] [data-scenario-swatch]"))
+      .map((s) => [s.getAttribute("data-scenario-swatch"), s.getAttribute("data-color")]);
+    expect(swatches).toEqual([
+      ["Baseline", "#2a9d8f"],
+      ["Survey A", shown[0][2]],
+      ["Survey B", shown[2][2]],
+    ]);
+  });
+});
+
+describe("Scenarios, in an Autark spec fed from boxes", () => {
+  test("holds a chip per input alone, each the color its chip writes", () => {
+    const view = render(<ReferenceStrip widgets={[]} inputs={inputs} language="json" onInsert={jest.fn()} />);
+    expect(headerRow(view.container).map((entry) => entry.label)).toEqual(["Inputs 3", "Scenarios 3"]);
+    const chips = openCategory(view.container, "scenarios");
+    expect(chips.querySelector("[data-scenario-swatches]")).toBeNull();
+    expect(chips.querySelector("[data-scenario-chip]")).toBeNull();
+    const shown = inputChipsOf(chips);
+    expect(shown.map(([slot, name]) => [slot, name])).toEqual([
+      ["0", "Twice as tall"], ["1", "Baseline"], ["2", "Roof survey"],
+    ]);
+    for (const [slot, , color] of shown) expect(color).toBe(written(`scenario input_${slot}`, inputs));
+    expect(draggedText(chips.querySelector('[data-scenario-input="1"]')!)).toBe("[!! scenario input_1 !!]");
+  });
+});
+
+describe("a node fed from no box", () => {
+  test("has no Scenarios category, in a Vega-Lite or an Autark spec", () => {
+    const wired = [free(0, "Weekday"), free(1, "Weekend")];
+    const chart = strip(wired);
+    expect(headerRow(chart.container).map((entry) => entry.label)).toEqual(["Inputs 3"]);
+    const map = render(<ReferenceStrip widgets={[]} inputs={wired} language="json" onInsert={jest.fn()} />);
+    expect(headerRow(map.container).map((entry) => entry.label)).toEqual(["Inputs 2"]);
+    expect(document.querySelector("[data-scenario-swatches], [data-scenario-input], [data-scenario-chip]")).toBeNull();
+  });
+});
+
+describe("the inputs tag, in Inputs", () => {
   test("drags the dataset's chip, and a click inserts it; its title names the chip", () => {
     const onInsert = jest.fn();
-    const view = chartStrip(onInsert);
-    const tag = view.container.querySelector("[data-inputs-tag]")!;
+    const view = strip(inputs, { onInsert });
+    const tag = openCategory(view.container, "inputs").querySelector("[data-inputs-tag]")!;
     expect(tag.getAttribute("draggable")).toBe("true");
     expect(tag.getAttribute("title")).toContain("[!! inputs !!]");
     const drag = dragData();
@@ -75,10 +210,11 @@ describe("the inputs tag of a Vega-Lite node", () => {
     expect(onInsert).toHaveBeenCalledWith("inputs");
   });
 
-  test("sits beside the input tags and opens to the stacked fields, Curio's three first, each with its dtype", () => {
+  test("sits after the input tags and opens to the stacked fields, Curio's three first, each with its dtype", () => {
     const onInsert = jest.fn();
-    const view = chartStrip(onInsert);
-    const tags = Array.from(view.container.querySelectorAll("[data-input-tag], [data-inputs-tag]")).map((t) => t.textContent);
+    const view = strip(inputs, { onInsert });
+    const chips = openCategory(view.container, "inputs");
+    const tags = Array.from(chips.querySelectorAll("[data-input-tag], [data-inputs-tag]")).map((t) => t.textContent);
     expect(tags).toEqual(["input_0", "input_1", "input_2", "inputs"]);
 
     openInputs();
@@ -101,121 +237,32 @@ describe("the inputs tag of a Vega-Lite node", () => {
     expect(onInsert).toHaveBeenCalledWith("inputs.scenario_name");
   });
 
-  test("scenario_name shows a swatch per box in the dataflow's order, an input from no box last in grey", () => {
-    const view = chartStrip();
+  test("its fields and the input tags show no swatch: the scenario chips are under Scenarios", () => {
+    const view = strip(inputs);
+    const chips = openCategory(view.container, "inputs");
     openInputs();
-    const swatches = Array.from(view.container.querySelectorAll("[data-scenario-swatches] [data-scenario-swatch]"));
-    expect(swatches.map((s) => [s.getAttribute("data-scenario-swatch"), s.getAttribute("data-color")])).toEqual([
-      ["Baseline", "#2a9d8f"],
-      ["Twice as tall", "#e76f51"],
-      ["Roof survey", "#8a8f98"],
-    ]);
-    expect(swatches.map((s) => s.textContent)).toEqual(["Baseline", "Twice as tall", "Roof survey"]);
-    // On the scenario_name field, before the next field.
-    const order = Array.from(view.container.querySelectorAll("[data-inputs-field], [data-scenario-swatches]"))
-      .map((e) => e.getAttribute("data-inputs-field") ?? "swatches");
-    expect(order.slice(0, 3)).toEqual(["scenario_name", "swatches", "scenario"]);
-  });
-
-  test("the swatches drag one chip, the scale of the scenarios' colors, and a click inserts it", () => {
-    const onInsert = jest.fn();
-    const view = chartStrip(onInsert);
-    openInputs();
-    const swatches = view.container.querySelector("[data-scenario-swatches]")!;
-    expect(swatches.getAttribute("draggable")).toBe("true");
-    const drag = dragData();
-    fireEvent.dragStart(swatches, drag);
-    expect(drag.store.get("text/plain")).toBe("[!! scenario colors !!]");
-    fireEvent.click(swatches);
-    expect(onInsert).toHaveBeenCalledWith("scenario colors");
-  });
-
-  test("two small tags beside them drag the names in order and the colors' text shades", () => {
-    const onInsert = jest.fn();
-    const view = chartStrip(onInsert);
-    openInputs();
-    const orderTag = view.container.querySelector('[data-scenario-chip="order"]')!;
-    const shadesTag = view.container.querySelector('[data-scenario-chip="text_colors"]')!;
-    const drag = dragData();
-    fireEvent.dragStart(orderTag, drag);
-    expect(drag.store.get("text/plain")).toBe("[!! scenario order !!]");
-    fireEvent.click(shadesTag);
-    expect(onInsert).toHaveBeenCalledWith("scenario text_colors");
+    expect(chips.querySelector("[data-scenario-swatches], [data-scenario-chip], [data-scenario-input]")).toBeNull();
+    expect(view.container.querySelector("[data-input-swatch]")).toBeNull();
   });
 
   test("opening it asks for the columns of each input not read yet", () => {
     const onLoadColumns = jest.fn();
     const unread: InputScope[] = [inputs[0], { slot: 1, label: "Shade", scenario: BASE }];
-    render(
+    const view = render(
       <ReferenceStrip widgets={[]} inputs={unread} language="json" grammar="vega-lite"
         onInsert={jest.fn()} onLoadColumns={onLoadColumns} />,
     );
+    openCategory(view.container, "inputs");
     openInputs();
     expect(onLoadColumns).toHaveBeenCalledWith(1);
     expect(onLoadColumns).not.toHaveBeenCalledWith(0);
   });
-});
 
-describe("the swatches of inputs from no box", () => {
-  const free = (slot: number, name: string): InputScope => ({
-    slot, label: name, dataType: "dataframe", columns: ["mode", "trips"], scenario: { name, color: "#8a8f98" },
-  });
-  const swatchesOf = (container: HTMLElement) =>
-    Array.from(container.querySelectorAll("[data-scenario-swatches] [data-scenario-swatch]"))
-      .map((s) => [s.getAttribute("data-scenario-swatch"), s.getAttribute("data-color")]);
-
-  test("two inputs from no box beside a box each show a grey of their own, in circle order", () => {
-    const wired = [free(0, "Survey A"), { ...free(1, "Shade"), scenario: BASE }, free(2, "Survey B")];
-    const view = render(<ReferenceStrip widgets={[]} inputs={wired} language="json" grammar="vega-lite" onInsert={jest.fn()} />);
-    openInputs();
-    expect(swatchesOf(view.container)).toEqual([
-      ["Baseline", "#2a9d8f"],
-      ["Survey A", "#8a8f98"],
-      ["Survey B", "#5b6068"],
-    ]);
-  });
-
-  test("with no input from a box, the names show alone, since the chip writes them alone for the chart's own palette", () => {
-    const view = render(
-      <ReferenceStrip widgets={[]} inputs={[free(0, "Weekday"), free(1, "Weekend")]} language="json" grammar="vega-lite" onInsert={jest.fn()} />,
-    );
-    openInputs();
-    expect(swatchesOf(view.container)).toEqual([["Weekday", null], ["Weekend", null]]);
-    expect(view.container.querySelector("[data-scenario-swatches]")!.getAttribute("title")).toMatch(/palette/);
-  });
-});
-
-describe("a swatch on an input's tag", () => {
-  test("an input from a box shows its box's swatch, which drags the chip of its color; one from no box shows none", () => {
-    const onInsert = jest.fn();
-    const view = chartStrip(onInsert);
-    const swatch = (slot: number) => view.container.querySelector(`[data-input-swatch="${slot}"]`);
-    expect([swatch(0)?.getAttribute("data-color"), swatch(1)?.getAttribute("data-color"), swatch(2)]).toEqual([
-      "#e76f51", "#2a9d8f", null,
-    ]);
-    expect(swatch(0)!.getAttribute("title")).toMatch(/^The color of Twice as tall, the scenario box input_0 comes from\. /);
-    const drag = dragData();
-    fireEvent.dragStart(swatch(0)!, drag);
-    expect(drag.store.get("text/plain")).toBe("[!! scenario input_0 !!]");
-    fireEvent.click(swatch(1)!);
-    expect(onInsert).toHaveBeenCalledWith("scenario input_1");
-  });
-
-  test("an Autark map's inputs show their boxes' swatches too, and no inputs tag", () => {
-    const view = render(<ReferenceStrip widgets={[]} inputs={inputs} language="json" onInsert={jest.fn()} />);
-    expect(view.container.querySelector('[data-input-swatch="0"]')).not.toBeNull();
-    expect(view.container.querySelector("[data-inputs-tag]")).toBeNull();
-  });
-});
-
-describe("the inputs tag with one input, and where there is none", () => {
   test("a Vega-Lite node with one input has it, since a spec reading inputs stacks one input too", () => {
     const onInsert = jest.fn();
-    const one = render(
-      <ReferenceStrip widgets={[]} inputs={[inputs[0]]} language="json" grammar="vega-lite" onInsert={onInsert} />,
-    );
-    const tag = one.container.querySelector("[data-inputs-tag]")!;
-    expect(tag).not.toBeNull();
+    const one = strip([inputs[0]], { onInsert });
+    expect(headerRow(one.container).map((entry) => entry.label)).toEqual(["Inputs 2", "Scenarios 4"]);
+    const tag = openCategory(one.container, "inputs").querySelector("[data-inputs-tag]")!;
     const drag = dragData();
     fireEvent.dragStart(tag, drag);
     expect(drag.store.get("text/plain")).toBe("[!! inputs !!]");
@@ -228,9 +275,14 @@ describe("the inputs tag with one input, and where there is none", () => {
     ]);
   });
 
-  test("code, which reads no scenario chip and shows no swatch, has none", () => {
+  test("an Autark spec and code have none", () => {
+    const map = render(<ReferenceStrip widgets={[]} inputs={inputs} language="json" onInsert={jest.fn()} />);
+    openCategory(map.container, "inputs");
+    expect(map.container.querySelector("[data-inputs-tag]")).toBeNull();
+    map.unmount();
     const code = render(<ReferenceStrip widgets={[]} inputs={inputs} language="python" onInsert={jest.fn()} />);
+    openCategory(code.container, "inputs");
     expect(code.container.querySelector("[data-inputs-tag]")).toBeNull();
-    expect(code.container.querySelector("[data-input-swatch]")).toBeNull();
+    expect(headerRow(code.container).map((entry) => entry.label)).toEqual(["Inputs 3"]);
   });
 });
