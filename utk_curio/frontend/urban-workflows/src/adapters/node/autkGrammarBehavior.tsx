@@ -31,6 +31,7 @@ import {
 import { type GrammarInput } from '../../utils/grammarInput';
 import { featureRows, matchSelections, type IncomingSelection } from '../../utils/selectionMatch';
 import { provideViewRows } from '../../utils/references/viewSelections';
+import { withChipPlaceholders } from '../../utils/references/codeReferences';
 import { selectionEchoSource } from '../../utils/selectionEcho';
 import {
     SANDBOX_BACKEND_URL_TOKEN,
@@ -269,7 +270,9 @@ export const useAutkGrammarBehavior = (
             host.replaceChildren();
             clearEmptyState(host);
         }
-        setRunSummary(describeAutkRun('Loaded', 'table', requestedLayerTables(JSON.parse(code as string).data)));
+        // The document as the node holds it: a chip standing on its own holds
+        // its place, as it does where the document's kind is read.
+        setRunSummary(describeAutkRun('Loaded', 'table', requestedLayerTables(JSON.parse(withChipPlaceholders(code as string)).data)));
     };
 
     const runGrammar = async (
@@ -1242,7 +1245,8 @@ export const useAutkGrammarBehavior = (
     const needsInput = (() => {
         if (!hasSpec) return true;
         try {
-            return autkNeedsInput(JSON.parse(liveCode));
+            // A chip standing on its own holds its place (utils/autkSpecKind).
+            return autkNeedsInput(JSON.parse(withChipPlaceholders(liveCode)));
         } catch {
             return true;
         }

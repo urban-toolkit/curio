@@ -405,7 +405,9 @@ are what its scenario chips write.
   standing on its own held by a string of itself (`withChipPlaceholders`, twin
   `with_chip_placeholders`): `classifyAutkSpecString` (`utils/autkSpecKind.ts`), which
   decides whether an Autark node draws from its input on the canvas and is a
-  dashboard's pass-through (`dashboardLayout.ts`), and its twins
+  dashboard's pass-through (`dashboardLayout.ts`), the Autark node's body (whether
+  its document needs an input, what a data run on the server loaded,
+  `autkGrammarBehavior.tsx`), and its twins
   `execution/autk_spec_kind.py` (a run's plan) and `projects/dashboard_payload.py`.
   `autkSpecKind.cases.json` pins both. A chip that writes one text, an input's
   scenario color or a field of `inputs`, is inserted quoted where JSON wants a value
