@@ -40,6 +40,18 @@ export function packageIdFromNodeType(nodeType: unknown): string | null {
   return packageId.includes(".") ? packageId : null;
 }
 
+/**
+ * What a node whose type nothing provides says of itself, once the registry has
+ * settled: its card's title, which names the type. It is also what the node
+ * reports when a run asks it to run (`UniversalNode`), and a run on the server
+ * fails such a node with the same words (`execution/run_plan.missing_type_message`).
+ */
+export function unresolvedNodeMessage(nodeType: string): string {
+  return packageIdFromNodeType(nodeType)
+    ? `No installed package provides ${nodeType}`
+    : `Unrecognized node type: ${nodeType || "(empty)"}`;
+}
+
 /** A readable name for a package id: `curio.weather` -> `Weather`. */
 export function packageDisplayName(packageId: string): string {
   const tail = packageId.split(".").pop() || packageId;
@@ -162,7 +174,7 @@ export function UnresolvedNode({
           background: "#f8fafc",
           color: "#475569",
         }}
-        title={`Unrecognized node type: ${nodeType || "(empty)"}`}
+        title={unresolvedNodeMessage(nodeType)}
         data-testid="unrecognized-node"
       >
         {handles}
@@ -191,7 +203,7 @@ export function UnresolvedNode({
       }}
       // The full coordinate, for anyone reading a bug report rather than the
       // screen.
-      title={`No installed package provides ${nodeType}`}
+      title={unresolvedNodeMessage(nodeType)}
       data-testid="unresolved-node"
     >
       {handles}
