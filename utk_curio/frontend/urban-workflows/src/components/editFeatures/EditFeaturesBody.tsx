@@ -509,11 +509,8 @@ export function EditFeaturesBody({
     <div className={`nokey ${styles.body}`} data-edit-body={nodeId} data-testid="interaction-unlinked">
       <NodeEmptyState
         reason="disconnected"
-        title="Link an Autark map to edit"
-        hint={
-          "Connect the same data nodes to an Autark map, then drag from the dot on top of this node to the dot on top of " +
-          "the map. Its layers are edited on that map."
-        }
+        title="Not linked to a map"
+        hint="Link an Autark map that draws the same data layers."
       />
       {edits.length > 0 ? (
         <p className={styles.logEmpty} data-testid="interaction-kept-edits">

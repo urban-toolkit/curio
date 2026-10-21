@@ -133,8 +133,8 @@ beforeEach(() => {
 
 test("linked to no Autark map, the node edits nothing and says how to link one", () => {
   mountLive(undefined, { more: LINKED.more.slice(0, 2), edges: LINKED.edges.slice(0, 2) });
-  expect(screen.getByTestId("interaction-unlinked")).toHaveTextContent("Link an Autark map to edit");
-  expect(screen.getByTestId("interaction-unlinked")).toHaveTextContent("drag from the dot on top of this node to the dot on top of the map");
+  expect(screen.getByTestId("interaction-unlinked")).toHaveTextContent("Not linked to a map");
+  expect(screen.getByTestId("interaction-unlinked")).toHaveTextContent("Link an Autark map that draws the same data layers.");
   // No layers, no map, no tools, no log.
   for (const id of ["interaction-layers", "interaction-workbench", "interaction-edit-map", "interaction-log", "edit-features-remove"]) {
     expect(screen.queryByTestId(id)).toBeNull();
