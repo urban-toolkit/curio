@@ -169,12 +169,27 @@ def _resolved(template_id: str, widgets: list | None = None) -> tuple[str, list]
 
 
 def _written(template_id: str):
-    """The starter as written, each chip that stands on its own read as the
-    text ``chip:<what stands inside it>``."""
+    """The starter as written, each chip that stands on its own (outside a
+    string) read as the text ``chip:<what stands inside it>``. A chip inside a
+    string, as a title's or a field's, stays part of that string."""
     source = _source(template_id)
-    # A chip standing on its own follows a key or a list's opening.
-    marked = re.sub(r'(?<=[:\[,]) \[!!\s*(.*?)\s*!!\]', lambda m: f' "chip:{m.group(1)}"', source)
-    return json.loads(marked)
+    marked, at, in_string = [], 0, False
+    while at < len(source):
+        char = source[at]
+        chip = None if in_string else CHIP.match(source, at)
+        if chip:
+            marked.append(json.dumps(f"chip:{chip.group(1)}"))
+            at = chip.end()
+            continue
+        if in_string and char == "\\":
+            marked.append(source[at:at + 2])
+            at += 2
+            continue
+        if char == '"':
+            in_string = not in_string
+        marked.append(char)
+        at += 1
+    return json.loads("".join(marked))
 
 
 def _channels(spec) -> list:
