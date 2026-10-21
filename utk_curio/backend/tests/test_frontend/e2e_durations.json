@@ -437,7 +437,7 @@
  "tests.test_frontend.test_keyed_selection_between_charts_e2e::test_a_vega_lite_point_select_lights_the_readings_of_a_vega_lite_chart[chromium]": 12.1,
  "tests.test_frontend.test_keyed_selection_between_charts_e2e::test_a_vega_lite_point_select_lights_the_readings_of_an_autark_plot[chromium]": 12.7,
  "tests.test_frontend.test_large_rasters_e2e::test_a_raster_of_scouts_whole_flood_grid_draws_on_a_map_and_in_an_absolute_difference[chromium]": 61.9,
- "tests.test_frontend.test_large_rasters_e2e::test_a_raster_over_4096_by_4096_cells_is_refused_in_a_map_and_in_the_difference[chromium]": 11.8,
+ "tests.test_frontend.test_large_rasters_e2e::test_a_raster_over_4096_by_4096_cells_and_its_difference_are_refused_by_their_maps[chromium]": 11.8,
  "tests.test_frontend.test_library_install_integration::test_installed_library_becomes_importable_by_the_sandbox": 2.2,
  "tests.test_frontend.test_library_install_integration::test_js_library_install_is_rejected_by_the_stack": 0.3,
  "tests.test_frontend.test_library_manager_e2e::test_install_library_from_ui_then_use_it[chromium]": 14.3,

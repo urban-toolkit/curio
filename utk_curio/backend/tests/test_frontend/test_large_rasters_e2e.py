@@ -324,7 +324,7 @@ def test_a_raster_of_scouts_whole_flood_grid_draws_on_a_map_and_in_an_absolute_d
     assert saved[CALCULATOR]["content"] == ABSOLUTE_CODE, saved[CALCULATOR]["content"]
 
 
-def test_a_raster_over_4096_by_4096_cells_is_refused_in_a_map_and_in_the_difference(
+def test_a_raster_over_4096_by_4096_cells_and_its_difference_are_refused_by_their_maps(
     app_frontend: "FrontendPage", current_server: str, page,
 ):
     spec = _spec(OVERSIZE_CODE, "Oversize Rasters")
@@ -346,6 +346,6 @@ def test_a_raster_over_4096_by_4096_cells_is_refused_in_a_map_and_in_the_differe
 
     save_node_closeup(
         page, "large-raster-refused", MAP,
-        test_name="test_a_raster_over_4096_by_4096_cells_is_refused_in_a_map_and_in_the_difference",
+        test_name="test_a_raster_over_4096_by_4096_cells_and_its_difference_are_refused_by_their_maps",
         sweep_toasts=True,
     )
