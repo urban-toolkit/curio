@@ -12,14 +12,12 @@
  *   the JavaScript interpreter, a part of the run and not a run of its own.
  * - In a run on the server, the server runs a data node and useServerRun files
  *   that run. The node only shows its outcome, which files nothing more.
- * - The Interaction node's map draws through the same code, under that node's
- *   id. Its draws are not that node's runs.
  *
  * Each test runs the real node behavior, interpreter or server-run hook into the
  * real provider.
  */
 import React from 'react';
-import { act, render, waitFor } from '@testing-library/react';
+import { act, render } from '@testing-library/react';
 
 // The node reads its input edge from the flow context (hook/useGrammarInputState);
 // the real provider would load the whole node registry, vega included.
@@ -60,7 +58,6 @@ import { JavaScriptInterpreter } from '../../JavaScriptInterpreter';
 import { useServerRun } from '../../providers/flow/useServerRun';
 import { runsApi } from '../../services/runs/runsApi';
 import type { Run, RunEvent, RunStep } from '../../services/runs/runsApi';
-import EditFeaturesMap from '../../components/editFeatures/EditFeaturesMap';
 import { grammarRuns, resetAutkNodeMocks } from '../_support/autkNodeMocks';
 import { stubWebGpu, unstubWebGpu } from '../_support/autkNode';
 
@@ -68,7 +65,6 @@ const api = runsApi as jest.Mocked<typeof runsApi>;
 
 const MAP_ID = '3f2a9c1e-7b4d-4e8a-9c1f-2d6b8e0a4c57';
 const DATA_ID = '8c1d2e3f-4a5b-4c6d-8e7f-9a0b1c2d3e4f';
-const EDIT_ID = '5e6f7a8b-9c0d-4e1f-8a2b-3c4d5e6f7a8b';
 const INPUT = { path: 'art-1', dataType: 'geodataframe' };
 
 /** A map of the node's input, as written: its table named by a chip (#662). */
@@ -89,8 +85,6 @@ const DATA_WRITTEN = JSON.stringify({
     autoLoadLayers: { layers: ['surface', 'roads'] },
   }],
 }, null, 2);
-/** What the Interaction node's map draws: its input, pickable (EditFeaturesBody's editMapDocument). */
-const EDIT_MAP = JSON.stringify({ map: { layerRefs: [{ dataRef: 'input_0', isPick: true }] } }, null, 2);
 
 type MountedNode = {
   /** Run *spec* as the editor hands it over, and wait for the run to end. */
@@ -289,28 +283,4 @@ test('a data node in a run on the server is filed once: the server ran it, and t
   expect(Object.keys(seen.provenance.provenanceGraphNodes)).toEqual([DATA_ID]);
   expect(seen.provenance.provenanceGraphNodes[DATA_ID]).toHaveLength(1);
   expect(seen.provenance.provenanceGraphNodes[DATA_ID][0].code).toBe(DATA_WRITTEN);
-});
-
-// The Interaction node's map (#662).
-
-test("the Interaction node's map files none of its draws: they are not that node's runs", async () => {
-  const seen: { provenance?: ReturnType<typeof useProvenanceContext> } = {};
-  const Probe: React.FC = () => {
-    seen.provenance = useProvenanceContext();
-    return null;
-  };
-  const { container } = render(
-    <ProvenanceProvider>
-      <Probe />
-      <EditFeaturesMap nodeId={EDIT_ID} input={INPUT} docText={EDIT_MAP} onPick={jest.fn()} />
-    </ProvenanceProvider>,
-  );
-
-  await waitFor(
-    () => expect(container.querySelector('[data-edit-map-state="drawn"]')).not.toBeNull(),
-    { timeout: 5000 },
-  );
-
-  expect(grammarRuns).toHaveLength(1);
-  expect(seen.provenance!.provenanceGraphNodes).toEqual({});
 });

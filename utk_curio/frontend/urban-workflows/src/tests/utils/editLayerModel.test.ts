@@ -15,7 +15,7 @@ import {
 } from "../../utils/editFeatures/layerModel";
 import { applyEdits } from "../../utils/editFeatures/applyEdits";
 import { normalizeEdit, normalizeEditFeatures, type FeatureEdit } from "../../utils/editFeatures/editFeatures";
-import { toRings } from "../../components/editFeatures/EditCanvas";
+import { toRings } from "../../utils/editFeatures/geometryRings";
 
 const line = (coords: number[][]) => ({ type: "LineString", coordinates: coords });
 const roads = {

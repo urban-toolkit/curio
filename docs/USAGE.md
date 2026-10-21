@@ -797,8 +797,8 @@ links it to the map, both ways, as two Autark views are linked (see
    edits.
 
 The node hands on its inputs with its edits too, so a node it feeds gets the edited
-layers. An Interaction node linked to no map edits on a flat edit map of its own, in
-its body. When the Interaction node is all that feeds the map it is linked to, the
+layers. An Interaction node linked to no map edits nothing: its body only says how to
+link one, and that a log it already holds is kept. When the Interaction node is all that feeds the map it is linked to, the
 map draws the node's input with the edits as they are made, and hands on what the
 node handed it at the last Commit edits.
 

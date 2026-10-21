@@ -1,6 +1,6 @@
 /**
- * The Interaction node's Edit view (#662, `LayerWorkbench`): the layers it
- * finds on its input, by geometry; a new layer and its properties; a
+ * The Interaction node's Edit view (#662, `LayerWorkbench`), linked to an
+ * Autark map: the layers it finds on its input, by geometry; a new layer and its properties; a
  * property added to a layer; and an edit on a layer other than the node's,
  * which names that layer and its id column.
  */
@@ -57,7 +57,20 @@ function nodeState(): UseNodeStateReturn {
 }
 
 /** The node on a canvas that keeps what it writes. */
-function mountLive(editFeatures: unknown, canvas: { nodes?: any[]; edges?: any[] } = {}) {
+/**
+ * The node only edits when linked to an Autark map (the same data nodes
+ * feeding both, an interaction edge between them): every test mounts it so.
+ */
+const LINKED = {
+  nodes: [
+    { id: "map", type: "curio.builtin/autk-grammar", data: { title: "Downtown Chicago layers" } },
+  ],
+  edges: [
+    { source: "map", target: NODE, sourceHandle: "in/out", targetHandle: "in/out", type: "BIDIRECTIONAL_EDGE" },
+  ],
+};
+
+function mountLive(editFeatures: unknown, canvas: { nodes?: any[]; edges?: any[] } = LINKED) {
   const updateDataNode = jest.fn();
   const first = { nodeId: NODE, input: INPUT, editFeatures, defaultCode: editFeaturesCode(undefined), code: editFeaturesCode(undefined) };
   function Canvas({ children }: { children: React.ReactNode }) {
@@ -107,9 +120,9 @@ test("the Edit view lists the input's layers by the geometry of their features",
   expect(active).toHaveTextContent("What do you want to do?");
   expect(screen.getByTestId("interaction-action-add")).toHaveTextContent("+ Add lines");
   expect(screen.getByTestId("interaction-action-remove")).toHaveTextContent("Remove lines");
-  // Plugged into no map, the drawing is on the node's own edit map.
+  // The drawing is on the linked map: the node has no map of its own.
   fireEvent.click(screen.getByTestId("interaction-action-add"));
-  expect(await screen.findByTestId("interaction-edit-map")).toHaveAttribute("data-edit-mode", "draw");
+  expect(screen.queryByTestId("interaction-edit-map")).toBeNull();
 });
 
 test("linked to an Autark map, fed by two data nodes, the node edits on the map and hands on both circles", async () => {
@@ -180,21 +193,3 @@ test("a property added to a layer is an add_column edit, and a second layer's ed
   expect(settings().edits[1]).toEqual({ op: "add_column", layer: "table_osm_roads", column: "surface", value: null });
 });
 
-test("a lasso picks every road it encloses, and Edit sets one value on all of them", async () => {
-  (Element.prototype as any).setPointerCapture ??= () => undefined;
-  const { settings } = mountLive(undefined);
-  fireEvent.click(await screen.findByTestId("interaction-layer-table_osm_roads"));
-  fireEvent.click(screen.getByTestId("interaction-action-edit"));
-  fireEvent.click(screen.getByTestId("interaction-lasso"));
-  const map = await screen.findByTestId("interaction-edit-map");
-  // An outline far around the map's whole view.
-  const corners = [[-5000, -5000], [5000, -5000], [5000, 5000], [-5000, 5000]];
-  fireEvent.pointerDown(map, { button: 0, clientX: corners[0][0], clientY: corners[0][1], pointerId: 1 });
-  for (const [x, y] of corners.slice(1)) fireEvent.pointerMove(map, { clientX: x, clientY: y, pointerId: 1 });
-  fireEvent.pointerUp(map, { clientX: corners[3][0], clientY: corners[3][1], pointerId: 1 });
-  const many = await screen.findByTestId("interaction-edit-many");
-  expect(many).toHaveTextContent("2 lines picked.");
-  fireEvent.change(screen.getByTestId("interaction-rule-set-value"), { target: { value: "primary" } });
-  fireEvent.click(screen.getByTestId("interaction-many-apply"));
-  expect(settings().edits).toEqual([{ op: "set", ids: [7, 8], column: "highway", value: "primary" }]);
-});

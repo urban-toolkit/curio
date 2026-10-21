@@ -27,7 +27,7 @@ import { kindOf, type EditedFeature } from "../../utils/editFeatures/layerModel"
 import { editMap, editMapLayerId, fromMercator, toMercator, useMapEdit } from "../../utils/editFeatures/mapEditBus";
 import { partsOf, withoutPart } from "../../utils/editFeatures/geometryParts";
 import { LASSO_MIN_PIXELS, lassoPicks, outlineLength } from "../../utils/editFeatures/lasso";
-import { toRings } from "./EditCanvas";
+import { toRings } from "../../utils/editFeatures/geometryRings";
 
 type XY = [number, number];
 

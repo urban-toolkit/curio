@@ -14,12 +14,11 @@
  *    property (a new column with a value for every feature).
  * 3. The action: its form here, its drawing on the map.
  *
- * Linked to an Autark map (*mapId*), the drawing happens on that map
- * (`MapEditOverlay`, through `mapEditBus`); otherwise on the node's own edit
- * map (`EditCanvas`). Every action becomes an entry of the node's edit log,
- * through *onEdit*.
+ * The node is linked to an Autark map (*mapId*), and the drawing happens on
+ * that map (`MapEditOverlay`, through `mapEditBus`). Every action becomes an
+ * entry of the node's edit log, through *onEdit*.
  */
-import React, { Suspense, useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import type { SelectionId } from "../../utils/references/selectionTags";
 import {
   NEW_LAYER_GEOMETRIES,
@@ -52,10 +51,8 @@ import {
 import { evaluate, exprProblem, parseExpr, truthy } from "../../utils/editFeatures/editExpr";
 import { publishMapSession, type MapEditMode } from "../../utils/editFeatures/mapEditBus";
 import { partsOf, withPart } from "../../utils/editFeatures/geometryParts";
-import type { EditMode } from "./EditCanvas";
 import styles from "./EditFeatures.module.css";
 
-const EditCanvas = React.lazy(() => import("./EditCanvas"));
 
 /** A layer the workbench offers: one of the input's, or one the node makes. */
 export interface WorkbenchLayer {
@@ -415,7 +412,7 @@ export default function LayerWorkbench({
   onEdits,
   onNewLayer,
   onAddLayerProperty,
-  mapId = null,
+  mapId,
   nodeId = "",
 }: {
   layers: WorkbenchLayer[];
@@ -433,7 +430,7 @@ export default function LayerWorkbench({
   onNewLayer: (def: NewLayerDef) => void;
   onAddLayerProperty: (layerName: string, def: PropertyDef) => void;
   /** The Autark map the node is linked to: the drawing happens there. */
-  mapId?: string | null;
+  mapId: string;
   nodeId?: string;
 }) {
   const [activeName, setActiveName] = useState<string | null>(null);
@@ -596,7 +593,6 @@ export default function LayerWorkbench({
   const handlers = useRef({ onSelect, onSelectMany, onDrawn, onReshape });
   handlers.current = { onSelect, onSelectMany, onDrawn, onReshape };
   useEffect(() => {
-    if (!mapId) return;
     const soloTable = solo && active ? active.table ?? active.name : null;
     if (!active || !kind || (!mode && !soloTable)) {
       publishMapSession(mapId, null);
@@ -633,7 +629,7 @@ export default function LayerWorkbench({
   }, [activeName]);
   useEffect(
     () => () => {
-      if (mapId) publishMapSession(mapId, null);
+      publishMapSession(mapId, null);
     },
     [mapId],
   );
@@ -661,27 +657,6 @@ export default function LayerWorkbench({
     setAction(next);
     if (next === "add") setTexts(formDefaults(defs));
   };
-
-  // The node's own edit map, when it is linked to no map.
-  const ownMap =
-    !mapId && active && kind && mode ? (
-      <Suspense fallback={<span className={styles.hint}>Loading the edit map…</span>}>
-        <EditCanvas
-          background={layers.filter((l) => l !== active && !l.newLayer).map((l) => ({ name: l.name, geometries: (l.fc.features ?? []).map((f: any) => f?.geometry ?? null) }))}
-          features={shown}
-          geographic={geographic}
-          selected={drawn ? [DRAFT] : picked}
-          mode={mode as EditMode}
-          drawKind={kind}
-          onSelect={onSelect}
-          onDrawn={onDrawn}
-          onReshape={onReshape}
-          lasso={lassoOn}
-          onSelectMany={onSelectMany}
-          height={320}
-        />
-      </Suspense>
-    ) : null;
 
   if (creating) {
     return (
@@ -775,14 +750,13 @@ export default function LayerWorkbench({
 
   const canEdit = !!(active.key || active.newLayer);
 
-  // Only on a map: the node's own edit map draws its other layers faint already.
-  const soloSwitch = mapId ? (
+  const soloSwitch = (
     <label className={`nodrag nopan ${styles.soloSwitch}`} title="Hide the map's other layers while you work on this one">
       <input type="checkbox" role="switch" data-testid="interaction-solo" checked={solo} onChange={(e) => setSolo(e.target.checked)} />
       <span className={styles.track} aria-hidden="true" />
       Show only this layer
     </label>
-  ) : null;
+  );
 
   if (!action) {
     const cards: { action: Action; title: string; text: string }[] = [
@@ -838,7 +812,7 @@ export default function LayerWorkbench({
       {soloSwitch}
     </div>
   );
-  const onTheMap = mapId ? "on the map" : "on the edit map below";
+  const onTheMap = "on the map";
   const capital = nouns.one[0].toUpperCase() + nouns.one.slice(1);
 
   /** The conditions a rule is made of, with how many features match them now. */
@@ -1358,7 +1332,6 @@ export default function LayerWorkbench({
     <div className={styles.workbench} data-testid="interaction-workbench">
       <div data-testid="interaction-active-layer" data-layer={active.name} data-kind={kind} className={styles.form}>
         {body}
-        {ownMap}
       </div>
     </div>
   );

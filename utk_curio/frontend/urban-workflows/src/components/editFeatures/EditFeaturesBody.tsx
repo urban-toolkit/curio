@@ -36,27 +36,20 @@
  * the map (`MapEditOverlay`), and the map draws the layers with the edits
  * before Commit edits (`utils/editFeatures/mapLayerEdits`).
  */
-import React, { Suspense, useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import NodeEmptyState from "../nodes/NodeEmptyState";
 import { useFlowContext } from "../../providers/FlowProvider";
 import { autoRunTargets } from "../../providers/flow/useAutoRun";
 import { readAutkInput, autkSourcesFrom } from "../../utils/autkInput";
 import type { SelectionId } from "../../utils/references/selectionTags";
 import { applyEdits, type EditCounts } from "../../utils/editFeatures/applyEdits";
-import { evaluate, exprProblem, parseExpr, truthy } from "../../utils/editFeatures/editExpr";
 import {
-  addPicked,
   defaultKey,
   describeEdit,
-  featureColumns,
   keyColumns,
-  keyRefusal,
   normalizeEditFeatures,
-  pickedIds,
-  typedValue,
   withEdit,
   withEditEnabled,
-  withNudge,
   withoutEdit,
   type EditFeaturesSettings,
   type EditOp,
@@ -67,16 +60,6 @@ import LayerWorkbench, { crsName, type WorkbenchLayer } from "./LayerWorkbench";
 import { getUnversionedFlowNodeType } from "../../utils/flowNodeCanonicalType";
 import { circlesInto, circleTitles, mapFedBy, nodeName } from "../../utils/editFeatures/mapLayerEdits";
 import styles from "./EditFeatures.module.css";
-
-/** Why the Layer and Id menus are held while the log has edits: the edits
- * name features of that layer by that column. */
-const HELD = "The edits name features of this layer by this column: delete them to pick another.";
-
-/** The map's code loads with the first layer to draw. */
-const EditFeaturesMap = React.lazy(() => import("./EditFeaturesMap"));
-
-/** What a condition can do to the features it picks, in the order offered. */
-const WHERE_OPS: EditOp[] = ["remove", "scale", "offset", "set", "expr"];
 
 /** The tag an edit wears in the log. */
 const OP_TAG: Record<EditOp, string> = {
@@ -90,10 +73,6 @@ const OP_TAG: Record<EditOp, string> = {
   geometry: "shape",
   add_column: "property",
 };
-
-/** How many picked features the table lists, and how many of their columns. */
-const TABLE_ROWS = 12;
-const TABLE_COLUMNS = 5;
 
 /** One layer of the input, by the table name its map reads it as. */
 export interface InputLayer {
@@ -204,83 +183,6 @@ function editedRows(
   }
 }
 
-/** The columns of *columns* that hold numbers in the first features of *fc*. */
-function numberColumns(fc: { features?: any[] } | undefined, columns: readonly string[]): string[] {
-  const features = (fc?.features ?? []).slice(0, 50);
-  return columns.filter((column) => features.some((feature) => typeof feature?.properties?.[column] === "number"));
-}
-
-/** The step an arrow press moves *column* by: a floor, 3 m, for a height, else 1. */
-const defaultStep = (column: string | undefined) => (column && /height/i.test(column) ? 3 : 1);
-
-function Select({
-  label,
-  value,
-  options,
-  disabled,
-  onChange,
-  testId,
-  title,
-}: {
-  label: string;
-  value: string | undefined;
-  options: string[];
-  disabled?: boolean;
-  onChange: (value: string) => void;
-  testId: string;
-  title?: string;
-}) {
-  return (
-    <label className={styles.field}>
-      {label}
-      <select
-        className="nodrag nopan"
-        aria-label={label}
-        data-testid={testId}
-        title={title}
-        value={value ?? ""}
-        disabled={disabled}
-        onChange={(event) => onChange(event.target.value)}
-      >
-        {options.map((option) => (
-          <option key={option} value={option}>
-            {option}
-          </option>
-        ))}
-      </select>
-    </label>
-  );
-}
-
-function Button({
-  children,
-  onClick,
-  testId,
-  disabled,
-  title,
-  className,
-}: {
-  children: React.ReactNode;
-  onClick: () => void;
-  testId?: string;
-  disabled?: boolean;
-  title?: string;
-  className?: string;
-}) {
-  return (
-    <button
-      type="button"
-      className={`nodrag nopan ${styles.button}${className ? ` ${className}` : ""}`}
-      data-testid={testId}
-      disabled={disabled}
-      title={title}
-      onClick={onClick}
-    >
-      {children}
-    </button>
-  );
-}
-
 export function EditFeaturesBody({
   nodeId,
   runError = null,
@@ -305,28 +207,13 @@ export function EditFeaturesBody({
   const layer = layers ? chosenLayer(layers, settings) : undefined;
   const keys = useMemo(() => (layer ? keyColumns(layer.fc) : []), [layer]);
   const key = settings?.key && keys.includes(settings.key) ? settings.key : defaultKey(keys) ?? keys[0];
-  const columns = useMemo(() => (layer ? featureColumns(layer.fc).filter((c) => c !== "interacted") : []), [layer]);
-  const numbers = useMemo(() => numberColumns(layer?.fc, columns).filter((c) => c !== key), [layer, columns, key]);
   const [picked, setPicked] = useState<SelectionId[]>([]);
-  const [column, setColumn] = useState<string | undefined>(undefined);
-  const [valueText, setValueText] = useState("");
-  const [valueProblem, setValueProblem] = useState<string | null>(null);
-  const [nudged, setNudged] = useState<string | undefined>(undefined);
-  const [step, setStep] = useState("");
-  const [factor, setFactor] = useState("0.5");
-  const [where, setWhere] = useState("");
-  const [whereOp, setWhereOp] = useState<EditOp>("remove");
-  const [whereColumn, setWhereColumn] = useState<string | undefined>(undefined);
-  const [whereValue, setWhereValue] = useState("");
   // The entries Undo took back, the last one first to be made again.
   const [redo, setRedo] = useState<FeatureEdit[]>([]);
   const bodyRef = useRef<HTMLDivElement>(null);
 
   // A pick names features of one layer by one key: a new choice starts anew.
   useEffect(() => setPicked([]), [layer?.table, key]);
-
-  const nudgeColumn = nudged && numbers.includes(nudged) ? nudged : numbers.find((c) => /height/i.test(c)) ?? numbers[0];
-  const stepValue = Number(step) > 0 ? Number(step) : defaultStep(nudgeColumn);
 
   // The layer as the log leaves it: what the table and a condition's count read.
   const logKey = JSON.stringify(settings?.edits ?? []);
@@ -341,7 +228,6 @@ export function EditFeaturesBody({
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [layer, nodeEdits, key],
   );
-  const [view, setView] = useState<"edit" | "map">("edit");
 
   // Every layer the Edit view offers: the input's, each with its id column,
   // then the node's own.
@@ -421,46 +307,10 @@ export function EditFeaturesBody({
   const outOfDate = targets.filter((id) => status[id] === "stale").length;
   const running = !!flow?.isRunActive || !!flow?.serverRunActive;
 
+  // Every edit names its layer and id column already (writeOn).
   const write = (next: EditFeaturesSettings | undefined, keepRedo = false) => {
     if (!keepRedo) setRedo([]);
-    // On a map, every edit names its layer and id column already (writeOn):
-    // the log's layer is never the Map view's.
-    if (mapId) {
-      onChange(normalizeEditFeatures(next));
-      return;
-    }
-    const base: EditFeaturesSettings = { ...(next ?? {}), ...(key ? { key } : {}) };
-    if (layer?.name) base.layer = layer.name;
-    else delete base.layer;
-    onChange(base);
-  };
-
-  const onPicked = (op: EditOp, extra: Pick<FeatureEdit, "column" | "value"> = {}) => {
-    if (picked.length === 0) return;
-    write(withEdit(settings, { op, ids: picked, ...extra }));
-    if (op === "remove" || op === "restore") setPicked([]);
-  };
-
-  const setValue = () => {
-    if (picked.length === 0 || !column) return;
-    const value = typedValue(valueText, layer?.fc, column);
-    if (value === undefined) {
-      setValueProblem(`${column} holds numbers; type a number.`);
-      return;
-    }
-    setValueProblem(null);
-    onPicked("set", { column, value });
-  };
-
-  const nudge = (sign: 1 | -1) => {
-    if (picked.length === 0 || !nudgeColumn) return;
-    write(withNudge(settings, { op: "offset", ids: picked, column: nudgeColumn, value: sign * stepValue }));
-  };
-
-  const scale = () => {
-    const by = Number(factor);
-    if (picked.length === 0 || !nudgeColumn || factor.trim() === "" || !Number.isFinite(by)) return;
-    onPicked("scale", { column: nudgeColumn, value: by });
+    onChange(normalizeEditFeatures(next));
   };
 
   const edits = settings?.edits ?? [];
@@ -476,55 +326,15 @@ export function EditFeaturesBody({
     write(withEdit(settings, last), true);
   };
 
-  // A condition: whether it reads, and how many features it picks now.
-  const whereProblem = where.trim() ? exprProblem(where) : null;
-  const matching = useMemo(() => {
-    if (!where.trim() || whereProblem) return null;
-    const condition = parseExpr(where);
-    return edited.rows.filter((row) => row !== null && truthy(evaluate(condition, row))).length;
-  }, [where, whereProblem, edited]);
-  const writesColumn = whereOp !== "remove" && whereOp !== "restore";
-  const whereEdit = (): FeatureEdit | null => {
-    if (!where.trim() || whereProblem) return null;
-    const edit: FeatureEdit = { op: whereOp, where: where.trim() };
-    if (!writesColumn) return edit;
-    if (!whereColumn) return null;
-    if (whereOp === "scale" || whereOp === "offset") {
-      const by = Number(whereValue);
-      return whereValue.trim() === "" || !Number.isFinite(by) ? null : { ...edit, column: whereColumn, value: by };
-    }
-    if (whereOp === "expr") {
-      return whereValue.trim() === "" || exprProblem(whereValue) ? null : { ...edit, column: whereColumn, value: whereValue.trim() };
-    }
-    const value = typedValue(whereValue, layer?.fc, whereColumn);
-    return value === undefined ? null : { ...edit, column: whereColumn, value };
-  };
-  const applyWhere = () => {
-    const edit = whereEdit();
-    if (edit) write(withEdit(settings, edit));
-  };
-
-  const onPick = (details: Record<string, any>) => {
-    if (!layer || !key) return;
-    const ids = pickedIds(details, layer.fc, key);
-    if (ids.length > 0) setPicked((current) => addPicked(current, ids));
-    // The keys act on the pick from here.
-    bodyRef.current?.focus({ preventScroll: true });
-  };
-
-  const editable = writable && !!layer && keys.length > 0;
 
   const onKeyDown = (event: React.KeyboardEvent) => {
-    if (!editable) return;
+    if (!writable) return;
     const target = event.target as HTMLElement;
     // A key typed in one of the node's fields is the field's.
     if (target !== bodyRef.current && /^(INPUT|SELECT|TEXTAREA)$/.test(target.tagName)) return;
     const mod = event.metaKey || event.ctrlKey;
     let handled = true;
-    if ((event.key === "Delete" || event.key === "Backspace") && picked.length > 0) onPicked("remove");
-    else if (event.key === "Escape" && picked.length > 0) setPicked([]);
-    else if (event.key === "ArrowUp" && picked.length > 0 && nudgeColumn) nudge(1);
-    else if (event.key === "ArrowDown" && picked.length > 0 && nudgeColumn) nudge(-1);
+    if (event.key === "Escape" && picked.length > 0) setPicked([]);
     else if (mod && event.key.toLowerCase() === "z" && event.shiftKey) redoLast();
     else if (mod && event.key.toLowerCase() === "z") undo();
     else handled = false;
@@ -533,33 +343,6 @@ export function EditFeaturesBody({
       event.preventDefault();
       event.stopPropagation();
     }
-  };
-
-  // The picked features as the log leaves them, one row per id.
-  const pickedRows = useMemo(() => {
-    if (!key || !layer) return [];
-    const wanted = new Set(picked.map(String));
-    const seen = new Set<string>();
-    const rows: Row[] = [];
-    edited.rows.forEach((row) => {
-      if (row === null || rows.length >= TABLE_ROWS) return;
-      const id = String(row[key]);
-      if (!wanted.has(id) || seen.has(id)) return;
-      seen.add(id);
-      rows.push(row);
-    });
-    return rows;
-  }, [picked, edited, key, layer]);
-  const tableColumns = [
-    ...(nudgeColumn ? [nudgeColumn] : []),
-    ...numbers.filter((c) => c !== nudgeColumn),
-    ...columns.filter((c) => c !== key && !numbers.includes(c)),
-  ].slice(0, TABLE_COLUMNS);
-  const cellEdit = (id: unknown, cellColumn: string, text: string, before: unknown) => {
-    if (typeof id !== "string" && typeof id !== "number") return;
-    const value = typedValue(text, layer?.fc, cellColumn);
-    if (value === undefined || value === before) return;
-    write(withEdit(settings, { op: "set", ids: [id], column: cellColumn, value }));
   };
 
   // The log, by the layer each edit is on, as the mockup's last step lists it.
@@ -720,243 +503,28 @@ export function EditFeaturesBody({
     );
   }
 
-  let stage: React.ReactNode;
-  if (input == null || input === "") {
-    stage = <NodeEmptyState reason="disconnected" hint="Connect a layer, or the layers an Autark node hands on, to edit its features." />;
-  } else if (layers === null) {
-    stage = <NodeEmptyState reason="not-run" hint="Reading the input." />;
-  } else if (!layer) {
-    stage = <NodeEmptyState reason="not-tabular" hint="The input carries no layer with features to edit." />;
-  } else if (keys.length === 0) {
-    stage = (
-      <p className={styles.problem} data-edit-refusal="true">
-        {keyRefusal(keys, layer.name ?? "This layer")}
-      </p>
-    );
-  } else {
-    stage = (
-      <Suspense fallback={<NodeEmptyState reason="not-run" hint="Loading the map." />}>
-        <EditFeaturesMap nodeId={nodeId} input={input} docText={editMapDocument(layers, layer.table)} onPick={onPick} />
-      </Suspense>
-    );
-  }
-
+  // Linked to no Autark map, the node edits nothing: its layers are edited on
+  // the map it is linked to, so it only says how to link one.
   return (
-    <div className={`nokey ${styles.body}`} data-edit-body={nodeId} ref={bodyRef} tabIndex={0} onKeyDown={onKeyDown}>
-      {layers && layer ? (
-        <div className={styles.bar}>
-          {layers.length > 1 && view === "map" ? (
-            <Select
-              label="Layer"
-              testId="edit-features-layer"
-              value={layer.table}
-              options={layers.map((l) => l.table)}
-              disabled={!writable || edits.length > 0}
-              title={edits.length > 0 ? HELD : undefined}
-              onChange={(table) => {
-                const next = layers.find((l) => l.table === table);
-                const nextKeys = next ? keyColumns(next.fc) : [];
-                const nextKey = defaultKey(nextKeys) ?? nextKeys[0];
-                onChange(normalizeEditFeatures({ ...(settings ?? {}), layer: next?.name ?? undefined, key: nextKey }));
-              }}
-            />
-          ) : null}
-          {keys.length > 0 && view === "map" ? (
-            <Select
-              label="Id"
-              testId="edit-features-key"
-              value={key}
-              options={keys}
-              disabled={!writable || edits.length > 0}
-              title={edits.length > 0 ? HELD : undefined}
-              onChange={(nextKey) => write({ ...(settings ?? {}), key: nextKey })}
-            />
-          ) : null}
-        </div>
-      ) : null}
-      {key === "building_id" && keys.length > 0 && view === "map" ? (
-        <p className={styles.note} data-edit-building-note="true">
-          A building&apos;s parts share its building_id, so an edit applies to the whole building, every part.
+    <div className={`nokey ${styles.body}`} data-edit-body={nodeId} data-testid="interaction-unlinked">
+      <NodeEmptyState
+        reason="disconnected"
+        title="Link an Autark map to edit"
+        hint={
+          "Connect the same data nodes to an Autark map, then drag from the dot on top of this node to the dot on top of " +
+          "the map. Its layers are edited on that map."
+        }
+      />
+      {edits.length > 0 ? (
+        <p className={styles.logEmpty} data-testid="interaction-kept-edits">
+          {edits.length === 1 ? "1 edit is kept" : `${edits.length} edits are kept`}; link the map to see and change them.
         </p>
-      ) : null}
-      {layers && layers.length > 0 ? (
-        <span className={styles.segmented} role="tablist" aria-label="View">
-          <button type="button" role="tab" aria-selected={view === "edit"} data-testid="interaction-view-edit" className={`nodrag nopan ${view === "edit" ? styles.on : ""}`} onClick={() => setView("edit")}>
-            Edit
-          </button>
-          <button type="button" role="tab" aria-selected={view === "map"} data-testid="interaction-view-map" className={`nodrag nopan ${view === "map" ? styles.on : ""}`} onClick={() => setView("map")}>
-            Map and tools
-          </button>
-        </span>
-      ) : null}
-      {view === "edit" && layers && layers.length > 0 ? (
-        <LayerWorkbench
-          layers={workbenchLayers}
-          edits={edits}
-          nodeLayer={settings?.layer ?? null}
-          writable={writable}
-          picked={picked}
-          setPicked={setPicked}
-          onEdit={(edit, target) => writeOn([edit], target)}
-          onEdits={(more, target) => writeOn(more, target)}
-          onNewLayer={addNewLayer}
-          onAddLayerProperty={addLayerProperty}
-        />
-      ) : (
-        <div className={styles.stage}>{stage}</div>
-      )}
-      {edited.problem ? (
-        <p className={styles.problem} data-edit-log-problem="true">
-          {edited.problem}
-        </p>
-      ) : null}
-      {editable && view === "map" ? (
-        <div className={styles.actions}>
-          <span className={styles.picked} data-edit-picked={picked.join(" ")}>
-            {picked.length === 0
-              ? "Double-click features on the map to pick them."
-              : `Picked: ${key} ${picked.map(String).join(", ")}`}
-          </span>
-          <Button testId="edit-features-remove" disabled={picked.length === 0} title="Delete" onClick={() => onPicked("remove")}>
-            Remove
-          </Button>
-          <Button testId="edit-features-clear" disabled={picked.length === 0} title="Escape" onClick={() => setPicked([])}>
-            Clear pick
-          </Button>
-          {nudgeColumn ? (
-            <span className={styles.setValue}>
-              <Select label="Nudge" testId="interaction-nudge-column" value={nudgeColumn} options={numbers} onChange={(c) => setNudged(c)} />
-              <input
-                className={`nodrag nopan ${styles.input} ${styles.short}`}
-                aria-label="Step"
-                data-testid="interaction-step"
-                value={step}
-                placeholder={String(defaultStep(nudgeColumn))}
-                onChange={(event) => setStep(event.target.value)}
-              />
-              <Button testId="interaction-raise" disabled={picked.length === 0} title={`Raise ${nudgeColumn} (up arrow)`} onClick={() => nudge(1)}>
-                ▲
-              </Button>
-              <Button testId="interaction-lower" disabled={picked.length === 0} title={`Lower ${nudgeColumn} (down arrow)`} onClick={() => nudge(-1)}>
-                ▼
-              </Button>
-              <input
-                className={`nodrag nopan ${styles.input} ${styles.short}`}
-                aria-label="Factor"
-                data-testid="interaction-factor"
-                value={factor}
-                onChange={(event) => setFactor(event.target.value)}
-              />
-              <Button testId="interaction-scale" disabled={picked.length === 0} title={`Multiply ${nudgeColumn} by the factor`} onClick={scale}>
-                Scale
-              </Button>
-            </span>
-          ) : null}
-          <span className={styles.setValue}>
-            <Select label="Set" testId="edit-features-column" value={column} options={["", ...columns]} onChange={(c) => setColumn(c || undefined)} />
-            <input
-              className={`nodrag nopan ${styles.input}`}
-              aria-label="Value"
-              data-testid="edit-features-value"
-              value={valueText}
-              placeholder="value"
-              onChange={(event) => setValueText(event.target.value)}
-            />
-            <Button testId="edit-features-set" disabled={picked.length === 0 || !column} onClick={setValue}>
-              Set value
-            </Button>
-          </span>
-          {valueProblem ? <span className={styles.problem}>{valueProblem}</span> : null}
-          {pickedRows.length > 0 && tableColumns.length > 0 ? (
-            <table className={`nodrag nopan nowheel ${styles.table}`} data-testid="interaction-table">
-              <thead>
-                <tr>
-                  <th>{key}</th>
-                  {tableColumns.map((c) => (
-                    <th key={c}>{c}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {pickedRows.map((row) => {
-                  const id = row[key as string];
-                  return (
-                    <tr key={String(id)}>
-                      <td>{String(id)}</td>
-                      {tableColumns.map((c) => (
-                        <td key={c}>
-                          <input
-                            className={`nodrag nopan ${styles.cell}`}
-                            aria-label={`${c} of ${String(id)}`}
-                            defaultValue={row[c] === null || row[c] === undefined ? "" : String(row[c])}
-                            // A new value from the log shows a fresh field.
-                            key={`${c}:${String(row[c])}`}
-                            onKeyDown={(event) => {
-                              if (event.key === "Enter") (event.target as HTMLInputElement).blur();
-                            }}
-                            onBlur={(event) => cellEdit(id, c, event.target.value, row[c])}
-                          />
-                        </td>
-                      ))}
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          ) : null}
-          <span className={styles.setValue} data-testid="interaction-where-row">
-            <label className={styles.field}>
-              Where
-              <input
-                className={`nodrag nopan ${styles.input} ${styles.where}`}
-                aria-label="Where"
-                data-testid="interaction-where"
-                value={where}
-                placeholder="height > 100"
-                onChange={(event) => setWhere(event.target.value)}
-              />
-            </label>
-            <Select label="" testId="interaction-where-op" value={whereOp} options={WHERE_OPS} onChange={(op) => setWhereOp(op as EditOp)} />
-            {writesColumn ? (
-              <>
-                <Select
-                  label=""
-                  testId="interaction-where-column"
-                  value={whereColumn}
-                  options={["", ...(whereOp === "scale" || whereOp === "offset" ? numbers : columns)]}
-                  onChange={(c) => setWhereColumn(c || undefined)}
-                />
-                <input
-                  className={`nodrag nopan ${styles.input}`}
-                  aria-label="By"
-                  data-testid="interaction-where-value"
-                  value={whereValue}
-                  placeholder={whereOp === "scale" ? "0.5" : whereOp === "offset" ? "-6" : whereOp === "expr" ? "levels * 3.2" : "value"}
-                  onChange={(event) => setWhereValue(event.target.value)}
-                />
-              </>
-            ) : null}
-            <Button testId="interaction-where-apply" disabled={whereEdit() === null} onClick={applyWhere}>
-              Apply
-            </Button>
-            {whereProblem ? (
-              <span className={styles.problem} data-testid="interaction-where-problem">
-                {whereProblem}
-              </span>
-            ) : matching !== null ? (
-              <span className={styles.matching} data-testid="interaction-matching">
-                {matching === 1 ? "1 feature" : `${matching} features`}
-              </span>
-            ) : null}
-          </span>
-        </div>
       ) : null}
       {runError ? (
         <p className={`nodrag nopan ${styles.problem}`} data-edit-run-error="true">
           {runError}
         </p>
       ) : null}
-      {editLog}
     </div>
   );
 }

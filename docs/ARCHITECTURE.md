@@ -493,14 +493,15 @@ whose code is written from its edit log (`metadata.editFeatures`: `key`, `layer`
   when the body changes the log, and marks the node stale with every node below it
   that ran, the nodes `autoRunTargets` (`providers/flow/useAutoRun.ts`) gives.
 - `components/editFeatures/EditFeaturesBody.tsx` reads the input as the Autark map
-  reads it (`readAutkInput`, `autkSourcesFrom`), offers the id columns a selection
-  tag offers (`idColumns` in `utils/references/selectionTags.ts`) and refuses a layer
-  with none. `EditFeaturesMap.tsx` draws the input with `useAutkGrammarBehavior`, the
-  layer to edit with `isPick`, and turns a pick's rows into ids with `selectedIds`.
-  The body takes its keys with the `nokey` class, so React Flow neither deletes nor
-  moves the node on them. Its Commit edits calls the flow's `runDownstream`, which
-  starts the run an automatic run starts (#845) for `autoRunTargets` of the node,
-  on the server or, where runs stay in the browser, there.
+  reads it (`readAutkInput`, `autkSourcesFrom`) and offers the id columns a selection
+  tag offers (`idColumns` in `utils/references/selectionTags.ts`). Linked to no
+  Autark map it edits nothing: it shows how to link one (`interaction-unlinked`).
+  Linked, `LayerWorkbench` lists the layers and its forms, and the picking and
+  drawing happen on the map. The body takes its keys with the `nokey` class, so
+  React Flow neither deletes nor moves the node on them. Its Commit edits calls the
+  flow's `runDownstream` for the node and its linked map, which starts the run an
+  automatic run starts (#845) for their `autoRunTargets`, on the server or, where
+  runs stay in the browser, there.
 - Fed by several nodes, the code hands the step every circle
   (`curio_edit_features([input_0, ...], ..., by_input=True)`, the circle count from
   `circlesInto`), and the step names each unnamed layer after its circle, `input_<k>`,
