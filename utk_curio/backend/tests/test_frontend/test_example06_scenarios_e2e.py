@@ -147,6 +147,9 @@ DIFFERENCE_MAP = "whatif-difference-map"
 #: diverging scheme's middle: its legend reads the ends and the middle, and
 #: every road's change lies within it.
 CHANGE_RANGE = (-360, 360)
+#: The coordinate system Autark draws in, as a layer names it in its GeoJSON
+#: (``sandbox/util/input_layers._crs_named_by``).
+AUTARK_CRS = {"type": "name", "properties": {"name": "urn:ogc:def:crs:EPSG::3395"}}
 BASELINE, TWICE, TOWERS = "s-baseline", "s-twice", "s-towers"
 NAMES = {BASELINE: "Baseline", TWICE: "Twice as tall", TOWERS: "Two towers removed"}
 COLORS = {BASELINE: "#3567c7", TWICE: "#e86a3c", TOWERS: "#2f8f4a"}
@@ -659,17 +662,27 @@ def test_example_06_compares_its_three_scenarios_in_the_canvas(
     assert "metadata" not in written["data"], written["data"].get("metadata")
     # It writes exactly what the rule writes from the two Roads nodes' layers,
     # Twice as tall's minutes minus Baseline's, road by road: the same roads,
-    # in the same order, with the same columns, types, values, shapes and
-    # coordinate system (roads_change, which the fixture of Compare's own
-    # output holds to it, the order of its columns too: the sandbox's /get
-    # writes its JSON with the keys sorted, so a page cannot see that order).
-    from utk_curio.backend.tests._support.scenario_changes import roads_change
+    # in the same order, with the same columns, types, values and shapes
+    # (roads_change, which the fixture of Compare's own output holds to it,
+    # the order of its columns too: the sandbox's /get writes its JSON with the
+    # keys sorted, so a page cannot see that order). The node reads its roads
+    # from the two maps, which name the coordinate system Autark draws in; the
+    # Roads nodes read the same roads from the shadow steps, whose layers name
+    # none. So the node's coordinate system is held to Autark's, as the unit
+    # test holds it, and the rest of its layer to the rule's.
+    from utk_curio.backend.tests._support.scenario_changes import first_difference, roads_change
     from utk_curio.sandbox.util.parsers import parseOutput
 
     expected = parseOutput(roads_change(_layer_of(_stored(page, B_ROADS)), _layer_of(_stored(page, T_ROADS))))
-    assert {k: written[k] for k in ("dataType", "data", "schema")} == {
-        k: expected[k] for k in ("dataType", "data", "schema")
-    }, "the Sunlight change node does not write Twice as tall's roads minus Baseline's"
+    assert written["data"].get("crs") == AUTARK_CRS, written["data"].get("crs")
+    assert expected["data"].get("crs") in (None, AUTARK_CRS), expected["data"].get("crs")
+
+    def _without_crs(envelope: dict) -> dict:
+        data = {k: v for k, v in envelope["data"].items() if k != "crs"}
+        return {"dataType": envelope["dataType"], "schema": envelope["schema"], "data": data}
+
+    difference = first_difference(_without_crs(written), _without_crs(expected))
+    assert difference is None, f"the Sunlight change node does not write Twice as tall's roads minus Baseline's: {difference}"
     rows = _rows(page, DIFFERENCE)
     assert len(rows) == len(baseline_roads), f"{len(rows)} rows for {len(baseline_roads)} roads"
     assert {row["change"] for row in rows} <= {"changed", "unchanged"}, (

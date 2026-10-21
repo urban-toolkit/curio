@@ -265,6 +265,34 @@ def assert_rows_match(
     assert not wrong, (what, f"{len(wrong)} rows differ, the first: {wrong[0]}")
 
 
+def _short(value, limit: int = 200) -> str:
+    text = repr(value)
+    return text if len(text) <= limit else f"{text[:limit]}..."
+
+
+def first_difference(got, want, path: str = "") -> str | None:
+    """None when *got* == *want*, else where they first differ, a dict's keys
+    in any order: the path, and both values shortened. A failure names the
+    place, rather than pytest printing two whole layers."""
+    if got == want:
+        return None
+    if isinstance(got, dict) and isinstance(want, dict):
+        for key in sorted(set(got) | set(want), key=str):
+            if key not in got or key not in want:
+                return f"{path}.{key}: only the {'wanted' if key in want else 'written'} side holds it"
+            found = first_difference(got[key], want[key], f"{path}.{key}")
+            if found:
+                return found
+    elif isinstance(got, list) and isinstance(want, list):
+        if len(got) != len(want):
+            return f"{path or '$'}: {len(got)} items written, {len(want)} wanted"
+        for index, (written, wanted) in enumerate(zip(got, want)):
+            found = first_difference(written, wanted, f"{path}[{index}]")
+            if found:
+                return found
+    return f"{path or '$'}: {_short(got)} written, {_short(want)} wanted"
+
+
 def park_shade_inputs(parks: list) -> dict:
     """Each scenario's Shade per park table on fixed numbers, shaped like the
     node's output in the park shade dataflow: the parks (``park``,
