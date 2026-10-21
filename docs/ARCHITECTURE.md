@@ -438,7 +438,9 @@ are what its scenario chips write.
   opens (`closeEveryCategory`). Inputs holds each input's tag, and in a Vega-Lite spec
   with an input the `inputs` tag, which drags `[!! inputs !!]` and opens to
   `stackedFields` (the three the stacking adds, then the inputs' columns, a layer's
-  geometry left out). Scenarios shows in a spec whose inputs' labels are all known and
+  geometry left out). `InputsChips` keeps those tags on one row, each a pill with its
+  chevron button, and opens each list as a panel below the row, in the tags' order.
+  Scenarios shows in a spec whose inputs' labels are all known and
   one comes from a box: in Vega-Lite, the swatches of `scenarioColorScale`, which drag
   `scenario colors`, then **text colors** and **order**; in Vega-Lite and Autark, a tag
   per input, which drags its `scenario input_<k>` chip in `scenarioInputColor`. Both
