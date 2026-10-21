@@ -17,7 +17,9 @@ drives the whole dataflow:
 1. Every node runs to Done.
 2. Each scenario's node hands its chart every row of its case, and no case
    column: a chart's scenarios are its table's cases.
-3. Each chart draws. A chart draws its marks in its scenarios' colors, or in
+3. Each chart reads its scenarios' rows, stacked in its circles' order under
+   their boxes' ids and names, each case's every row and no case column. Each
+   chart draws. A chart draws its marks in its scenarios' colors, or in
    its own where its scenarios color only its axis labels (the stacked bars
    by stage, the matrix of weights), and the table its text in the shades of
    them that read on white. Dots with a range draws a grey rule per mode and
@@ -47,6 +49,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 from urllib.parse import urlsplit
 
+from .test_scout_shadow_e2e import _INPUTS_ROWS_JS, _KEEP_VEGA_VIEWS_INIT
 from .utils import (
     REPO_ROOT,
     _COLOR_PIXELS_JS,
@@ -164,6 +167,18 @@ def _table(dataset_id: str) -> list:
 def _cases(dataset_id: str) -> Counter:
     """How many rows of each case the example table holds."""
     return Counter(row["case"] for row in _table(dataset_id))
+
+
+def _inputs_rows(page, node_id: str, count: int) -> list:
+    """The *count* rows the chart's view reads as its ``inputs``, once it holds them."""
+    rows = None
+    deadline = time.time() + 30
+    while time.time() < deadline:
+        rows = page.evaluate(_INPUTS_ROWS_JS, node_id)
+        if rows and len(rows) == count:
+            return rows
+        page.wait_for_timeout(250)
+    raise AssertionError(f"the chart {node_id} reads {len(rows or [])} rows, not {count}")
 
 
 def _mark_colors(dataset_id: str, spec: dict, labels: list) -> list:
@@ -284,6 +299,7 @@ def test_the_nine_charts_draw_their_scenarios_with_no_network(
     require_project_page()
     require_user_auth()
     page.emulate_media(reduced_motion="reduce")
+    page.add_init_script(_KEEP_VEGA_VIEWS_INIT)
     spec = _with_dots(json.loads(DATAFLOW.read_text(encoding="utf-8")))
     flow = spec["dataflow"]
     rows = _rows(flow)
@@ -338,11 +354,20 @@ def test_the_nine_charts_draw_their_scenarios_with_no_network(
             lengths = {len(column) for column in table.values()}
             assert lengths == {cases[label["name"]]}, (keep, label["name"], lengths, cases[label["name"]])
 
-    # 3. Each chart draws, and its close-up is the frame.
+    # 3. Each chart draws, and its close-up is the frame. The rows it reads
+    # are its scenarios' rows, stacked in its circles' order under their
+    # boxes, each case's every row and no case column.
     for dataset_id, chart in rows:
         labels = _labels(flow, chart["id"])
         frame_nodes(page, [chart["id"]])
         assert_vega_canvas_rendered(page, chart["id"], timeout=30000)
+        cases = _cases(dataset_id)
+        read = _inputs_rows(page, chart["id"], sum(cases.values()))
+        assert list(dict.fromkeys((row["scenario"], row["scenario_name"]) for row in read)) == [
+            (label["scenario"], label["name"]) for label in labels
+        ], chart["title"]
+        assert not [row for row in read if "case" in row], chart["title"]
+        assert Counter(row["scenario_name"] for row in read) == cases, chart["title"]
         if dataset_id == ROOFS:
             shades = [_readable_shade(label["color"]) for label in labels]
             _assert_text_drawn(page, chart["id"], shades, chart["title"])
