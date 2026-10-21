@@ -635,8 +635,9 @@ In code and in a Vega-Lite or Autark spec, each input is a chip:
    named as the Autark node names its table.
 5. In a Vega-Lite or Autark spec, an input whose node is in a scenario box shows
    that box's swatch beside its tag. Drag it where a color goes; it is written
-   `[!! scenario input_1 !!]`, a lilac chip. A Vega-Lite node with several
-   inputs also has the **inputs** tag, the dataset that stacks them (see
+   `[!! scenario input_1 !!]`, a lilac chip. A Vega-Lite node with an input
+   also has the **inputs** tag, `[!! inputs !!]`, the dataset that stacks its
+   inputs (see
    [Every input in one dataset](#every-input-in-one-dataset) and
    [Scenario colors and order](#scenario-colors-and-order)).
 
@@ -1051,8 +1052,8 @@ to insert `[!! scenario colors !!]`, and the small **order** and **text colors**
 tags beside them for the other two. An input whose node is in a box shows that
 box's swatch on its own tag, in a Vega-Lite or an Autark spec, which inserts
 `[!! scenario input_1 !!]`. Dropped where a value goes, the swatch writes its
-chip in quotes, `"[!! scenario input_1 !!]"`, as a field of **inputs** does,
-so the spec stays JSON.
+chip in quotes, `"[!! scenario input_1 !!]"`, as the **inputs** tag and a field
+of it do, so the spec stays JSON.
 
 Renaming or recoloring a box, or drawing one around a node that feeds the chart,
 draws the chart again with what its chips write then, with no run. A map takes
