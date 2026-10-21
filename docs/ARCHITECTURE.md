@@ -399,9 +399,7 @@ are what its scenario chips write.
   input_1. `[!! inputs.<field> !!]` names a field of `inputs`, written as a column
   chip is, and `[!! inputs !!]` the dataset itself (kind `dataset`), written as its
   name, `INPUTS_DATASET` (`STACKED_DATASET` in the twin), in any JSON document, an
-  Autark spec's too: the editor's chip marks (`referenceMarks`) and the agents'
-  stand-in check read a spec with no grammar, so a refusal by grammar would refuse a
-  Vega-Lite spec's chip there. A chip in
+  Autark spec's too. A chip in
   Python or JavaScript, a list chip inside quotes, an input with no edge or with no
   label, and the dataset chip on a node with no input are refused, and
   `renumberInputReferences` moves an input's chip with its circle.
