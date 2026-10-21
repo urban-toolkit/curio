@@ -144,7 +144,8 @@ function dataflowCases(): HeaderCase[] {
       const inputs = inputScopeFor(node.id, edges, canvasNodes, () => undefined, (data) => data?.title ?? null, () => undefined)
         .map((input) => (labels.has(input.slot) ? { ...input, scenario: labels.get(input.slot) } : input));
       cases.push({
-        name: `${relative(file)}, ${node.title ?? type} (${String(node.id).slice(0, 8)})`,
+        // The whole id: some dataflows' ids share their first characters.
+        name: `${relative(file)}, ${node.title ?? type} (${node.id})`,
         code,
         props: {
           nodeId: `${relative(file)}:${node.id}`,
