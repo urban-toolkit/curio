@@ -316,7 +316,7 @@ function ScenarioChips({
             title={
               label.scenario != null
                 ? `The color of ${label.name}, the scenario box ${name} comes from`
-                : `${name}, from ${label.name}, comes from no scenario box: its grey in the scenarios' scale`
+                : `${name}, from ${label.name}, comes from no scenario box: its gray in the scenarios' scale`
             }
             dataAttributes={{ "data-scenario-input": String(input.slot), "data-color": color }}
             onInsert={onInsert}
