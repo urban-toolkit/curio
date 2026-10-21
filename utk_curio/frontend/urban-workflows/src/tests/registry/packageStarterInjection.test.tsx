@@ -367,7 +367,8 @@ describe('Scout\'s charts, as the repository ships them (the plan answering koma
     const { offered, node } = dropChart({});
     const starter = readChartStarter();
     expect(offered).toContain(starter);
-    expect(JSON.parse(starter).data).toEqual({ name: 'inputs' });
+    // Read with each chip that stands on its own (its scenarios' scale) as null.
+    expect(JSON.parse(starter.replace(/(?<=[:[,]\s*)\[!!.*?!!\]/g, 'null')).data).toEqual({ name: 'inputs' });
     expect(node.widgets).toEqual(chartPack().templates[0].widgets);
   });
 

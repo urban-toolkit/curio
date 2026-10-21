@@ -17,7 +17,7 @@
  */
 import * as fs from "fs";
 import * as path from "path";
-import { resolveReferences } from "../../utils/references/codeReferences";
+import { resolveReferences, type InputScope } from "../../utils/references/codeReferences";
 import { normalizeWidgets, type WidgetDef, type WidgetValue } from "../../utils/widgets/widgetModel";
 
 // vega-lite's build asks for vega, whose package entry is an ES module, which
@@ -50,14 +50,22 @@ function template(id: string): Template {
   return found;
 }
 
-/** *id*'s spec, its widgets set to *values*, as a Vega-Lite node writes it. */
+/** The two scenarios' boxes, which the rows' `scenario_name` names, as the
+ * chart's inputs carry them. */
+const BOXES: InputScope[] = [
+  { slot: 0, scenario: { scenario: "a", name: "A", color: "#2a9d8f", rank: 0 } },
+  { slot: 1, scenario: { scenario: "b", name: "B", color: "#e76f51", rank: 1 } },
+];
+
+/** *id*'s spec, its widgets set to *values*, as a Vega-Lite node writes it:
+ * its scenario chips over the two boxes. */
 function written(id: string, values: Record<string, WidgetValue>): Json {
   const { widgets, source } = template(id);
   const set = widgets.map((w) => (w.name in values ? { ...w, value: values[w.name] } : w));
   const text = fs.readFileSync(path.join(SCOUT, source), "utf-8");
   const { code, problems } = resolveReferences(
     text,
-    { widgets: normalizeWidgets(set), inputs: [], shared: [] },
+    { widgets: normalizeWidgets(set), inputs: BOXES, shared: [] },
     "json",
     "vega-lite",
   );
