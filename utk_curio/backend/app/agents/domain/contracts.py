@@ -828,6 +828,14 @@ def _input_chip(_src: _Sources, text: str) -> str:
     return reference_text(input_reference_inner(int(slot), column or None))
 
 
+def _stacked_dataset_chip(_src: _Sources) -> str:
+    """The chip a Vega-Lite spec names every input's rows stacked by,
+    ``[!! inputs !!]`` (``STACKED_DATASET``, ``reference_text``)."""
+    from utk_curio.backend.app.execution.code_references import STACKED_DATASET, reference_text
+
+    return reference_text(STACKED_DATASET)
+
+
 def _scenario_chip(_src: _Sources, what: str) -> str:
     """A chip a Vega-Lite or Autark spec writes its scenarios with: ``colors``,
     ``text_colors`` or ``order`` for the scale or the names of every input's
@@ -1077,6 +1085,7 @@ PROMPT_FIELDS: dict[str, PromptField] = {
     )},
     "inputs.handles": PromptField(_input_handles),
     "inputs.chip": PromptField(_input_chip, takes_arg=True),
+    "inputs.stacked": PromptField(_stacked_dataset_chip),
     "scenarios.chip": PromptField(_scenario_chip, takes_arg=True),
     "widgets.kinds": PromptField(_widget_kinds),
     "widgets.reference": PromptField(_widget_reference, takes_arg=True),
