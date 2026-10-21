@@ -61,6 +61,7 @@ export interface MapEditSession {
 
 const sessions = new Map<string, MapEditSession>();
 const maps = new Map<string, any>();
+const layerIds = new Map<string, (table: string) => string>();
 const listeners = new Map<string, Set<() => void>>();
 
 function notify(mapId: string) {
@@ -83,14 +84,21 @@ export function mapSession(mapId: string): MapEditSession | undefined {
 }
 
 /** The autk map *mapId* drew last, for the overlay on it. */
-export function registerEditMap(mapId: string, map: any): void {
+export function registerEditMap(mapId: string, map: any, layerIdOf?: (table: string) => string): void {
   if (map) maps.set(mapId, map);
   else maps.delete(mapId);
+  if (map && layerIdOf) layerIds.set(mapId, layerIdOf);
+  else layerIds.delete(mapId);
   notify(mapId);
 }
 
 export function editMap(mapId: string): any {
   return maps.get(mapId);
+}
+
+/** The id *mapId*'s map gives the layer that draws *table* (a titled layer goes by its title). */
+export function editMapLayerId(mapId: string, table: string): string {
+  return layerIds.get(mapId)?.(table) ?? table;
 }
 
 

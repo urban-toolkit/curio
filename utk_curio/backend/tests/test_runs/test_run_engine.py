@@ -208,6 +208,42 @@ class TestNodesTheServerDoesNotRun:
         assert finished["pool"]["status"] == "forwarded"
         assert recorder.calls["b"]["input"] == {"path": "art-a", "dataType": "dataframe"}
 
+    MAP_SPEC = json.dumps({"map": {"layerRefs": [{"dataRef": "[!! input_0 !!]"}, {"dataRef": "[!! input_1 !!]"}]}})
+    EDITS = {"key": "id", "layer": "input_1", "edits": [{"op": "remove", "where": "height < 10"}]}
+
+    def test_a_map_with_an_interaction_node_hands_on_its_layers_with_the_edits(self):
+        # The browser's map applies the plugged-in node's log to what it hands
+        # on; the server cannot draw the map, so it runs the log instead of
+        # forwarding the inputs, and the nodes below get the edited layers.
+        recorder, _, finished = run(spec(
+            [node("tracts"), node("buildings"),
+             node("ix", "curio.builtin/edit-features", "return {}", metadata={"editFeatures": self.EDITS}),
+             node("map", AUTARK, self.MAP_SPEC), node("count")],
+            [edge("tracts", "map"), edge("buildings", "map", "in_1"), edge("ix", "map", "in_2"),
+             edge("map", "count")],
+        ), templates={
+            # As the store's roster has it: the Interaction node runs its code.
+            "curio.builtin/edit-features": {"executable": True, "engine": "python"},
+            "curio.builtin/computation-analysis": {"executable": True, "engine": "python"},
+        })
+        code = recorder.calls["map"]["code"]
+        assert "curio_edit_features(" in code
+        assert "[(0, input_0), (1, input_1)]" in code
+        assert "input_2" not in code
+        assert '\\"height < 10\\"' in code or "height < 10" in code
+        # Still forwarded, so the canvas draws the map, as it always has.
+        assert finished["map"]["status"] == "forwarded"
+        assert recorder.calls["count"]["input"]["path"] == "art-map"
+
+    def test_a_map_with_no_interaction_node_still_forwards_its_input(self):
+        recorder, _, finished = run(spec(
+            [node("buildings"), node("map", AUTARK, self.MAP_SPEC), node("count")],
+            [edge("buildings", "map"), edge("map", "count")],
+        ))
+        assert finished["map"]["status"] == "forwarded"
+        assert "map" not in recorder.calls
+        assert recorder.calls["count"]["input"] == {"path": "art-buildings", "dataType": "dataframe"}
+
     def test_data_only_the_browser_makes_leaves_the_run_needing_the_canvas(self):
         recorder, events, finished = run(spec(
             [node("shade", AUTARK, COMPUTE_SPEC,

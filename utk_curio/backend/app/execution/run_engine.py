@@ -35,9 +35,10 @@ upstreams, input circles, references and roles from the same places.
 from __future__ import annotations
 
 import threading
+import json
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Callable, Iterator, Optional
 
 from utk_curio.backend.app.execution.autk_spec_kind import is_autk_data_node
@@ -79,6 +80,9 @@ class Step:
     #: An Autark node whose document only loads data (``autk_spec_kind``): run
     #: as the JavaScript its document compiles to, on no input.
     autk_data: bool = False
+    #: *content* is the code to send as it is, not the node's own: a map an
+    #: Interaction node is plugged into, run as its edits (``map_edit_code``).
+    prepared: bool = False
 
 
 @dataclass
@@ -90,6 +94,9 @@ class Plan:
     reuse: dict
     target_node_id: Optional[str] = None
     target_node_ids: list = field(default_factory=list)
+    #: The saved node dicts, by id: what an Interaction node's edit log
+    #: (``metadata.editFeatures``) is read from.
+    saved: dict = field(default_factory=dict, repr=False)
 
 
 def node_label(node: dict, labels: Optional[dict] = None) -> str:
@@ -187,6 +194,7 @@ def plan_run(
         spec=spec, steps=steps, levels=levels, unplanned=unplanned,
         reuse=kept_reuse, target_node_id=target_node_id or None,
         target_node_ids=[] if target_node_id else targets,
+        saved=saved,
     )
 
 
@@ -203,6 +211,55 @@ def node_input(spec: WorkflowSpec, node_id: str, outputs: dict):
     if len(values) == 1:
         return values[0]
     return {"dataType": "outputs", "data": values}
+
+
+_EDIT_FEATURES_TYPE = "edit-features"
+
+
+def map_edit_code(plan: Plan, node_id: str) -> Optional[str]:
+    """The Python an Autark map forwards its layers through when an Interaction
+    node is plugged into it, or None.
+
+    In the browser the map applies the node's edit log to the layers it draws
+    and hands those on (``mapLayerEdits.ts``). A run on the server cannot draw
+    the map, so it forwarded the map's inputs as they came, the node's log
+    among them, and the nodes below never saw the edits. This names each layer
+    after its circle (``input_k``, as the map's document does), leaves the
+    Interaction node's circle out, and applies the log with the sandbox's own
+    ``curio_edit_features``."""
+    node = plan.saved.get(node_id) or {}
+    if not str(node.get("type") or "").endswith("autk-grammar"):
+        return None
+    from utk_curio.backend.app.execution.workflow_spec import input_slot
+
+    edges = plan.spec._data_edges_to(node_id)
+    circle, settings = None, None
+    for edge in edges:
+        source = plan.saved.get(edge.get("source")) or {}
+        if str(source.get("type") or "").split("@")[0].endswith(_EDIT_FEATURES_TYPE):
+            circle = input_slot(edge)
+            settings = (source.get("metadata") or {}).get("editFeatures") or {}
+            break
+    if circle is None:
+        return None
+    slots = [input_slot(e) for e in edges if input_slot(e) != circle]
+    layers = ", ".join(f"({k}, input_{k})" for k in slots)
+    return "\n".join([
+        "# The map's layers, with the edits of the Interaction node plugged into it.",
+        "import json as _json",
+        f"_settings = _json.loads({json.dumps(json.dumps(settings))})",
+        "_layers = []",
+        f"for _k, _v in [{layers}]:",
+        "    if hasattr(_v, 'columns'):",
+        "        _meta = dict(getattr(_v, 'metadata', None) or {})",
+        "        _v = _v.copy()",
+        "        _v.metadata = {**_meta, 'name': f'input_{_k}'}",
+        "    _layers.append(_v)",
+        "return curio_edit_features(",
+        "    _layers, _settings.get('edits') or [], key=_settings.get('key'), layer=_settings.get('layer'),",
+        "    keys=_settings.get('keys'), new_layers=_settings.get('newLayers'), crs=_settings.get('crs'),",
+        ")",
+    ])
 
 
 def _tail(text) -> str:
@@ -230,7 +287,7 @@ def _execute_step(plan: Plan, step: Step, input_ref, execute) -> _Outcome:
         # Its widgets, its wired circles and the dataflow's shared tags, as the
         # canvas and the headless runner resolve them.
         node = next(n for n in plan.spec.nodes if n.id == step.node_id)
-        code = plan.spec.node_code(node, language, step.content)
+        code = step.content if step.prepared else plan.spec.node_code(node, language, step.content)
     except CodeReferenceError as exc:
         # The node's own failure, reported without asking the sandbox.
         return _Outcome("error", {}, stderr=str(exc), started_at=started, finished_at=time.time())
@@ -345,7 +402,12 @@ def run_events(
                 continue
             # A document that only loads data reads no input.
             input_ref = None if step.autk_data else node_input(plan.spec, node_id, outputs)
-            if step.role == "forward":
+            edit_code = map_edit_code(plan, node_id) if step.role == "forward" and input_ref is not None else None
+            if edit_code:
+                # A map with an Interaction node plugged in hands on its layers
+                # with the node's edits, as it does in the browser.
+                ready.append((replace(step, engine="python", content=edit_code, prepared=True), input_ref))
+            elif step.role == "forward":
                 if input_ref is not None:
                     outputs[node_id] = input_ref
                 yield settle(step, "forwarded")
@@ -383,6 +445,11 @@ def run_events(
                     outputs[step.node_id] = {
                         k: v for k, v in outcome.output.items() if k in _INPUT_KEYS
                     }
+                    if step.prepared:
+                        # The nodes below read the edited layers; the map itself
+                        # is still the browser's to draw, as a forwarded map is.
+                        yield settle(step, "forwarded", **timing)
+                        continue
                 # The reply Play would have had, its stdout and stderr cut to
                 # the same tails: the event log is kept in memory.
                 reply = (

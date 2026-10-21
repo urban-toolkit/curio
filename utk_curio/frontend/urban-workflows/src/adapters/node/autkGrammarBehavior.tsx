@@ -53,7 +53,7 @@ import { applyComputeBlocks } from './autkComputeBlocks';
 import { frameMaps } from './autkMapView';
 import { grammarMaps, trackMaps } from './autkMapDrawing';
 import { mapSession, onMapSession, registerEditMap } from '../../utils/editFeatures/mapEditBus';
-import { restoreMapLayers, snapshotBeforeSolo, snapshotMapLayers, soloMapLayer, type MapLayerState } from './autkMapState';
+import { layerIdFor, restoreMapLayers, snapshotBeforeSolo, snapshotMapLayers, soloMapLayer, type MapLayerState } from './autkMapState';
 import { editSources, editsAnything, editsVersion, interactionOn, withoutCircle } from '../../utils/editFeatures/mapLayerEdits';
 import MapEditOverlay from '../../components/editFeatures/MapEditOverlay';
 
@@ -848,8 +848,8 @@ export const useAutkGrammarBehavior = (
                 }
                 restoreMapLayers(shownMap, savedLayersRef.current);
                 savedLayersRef.current = null;
-                if (soloRef.current) soloMapLayer(shownMap, soloRef.current.table, null, colorMapped(soloRef.current.table));
-                registerEditMap(nodeId, shownMap ?? null);
+                if (soloRef.current) soloMapLayer(shownMap, layerIdFor(spec, soloRef.current.table), null, colorMapped(soloRef.current.table));
+                registerEditMap(nodeId, shownMap ?? null, (table: string) => layerIdFor(spec, table));
                 // autk-plot's SVG is inline, so it sits on a line of text whose
                 // descender space overflows a pane the plot exactly fills, and
                 // brings the scrollbars back. As a block it fits.
@@ -1191,7 +1191,7 @@ export const useAutkGrammarBehavior = (
             const map = grammarMaps(grammarRef.current)[0];
             if (table) {
                 soloRef.current = { table, before: current?.before ?? snapshotBeforeSolo(grammarRef.current) };
-                soloMapLayer(map, table, null, colorMapped(table));
+                soloMapLayer(map, layerIdFor(specRef.current, table), null, colorMapped(table));
             } else {
                 soloRef.current = null;
                 soloMapLayer(map, null, current?.before ?? null);

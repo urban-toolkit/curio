@@ -336,6 +336,27 @@ function NewLayerForm({ taken, onCreate, onCancel }: { taken: string[]; onCreate
   );
 }
 
+/**
+ * *defs* with the columns the log's "Add a property" edits give the layer
+ * *layerName*: a property added is one its features are asked for, and one
+ * they are edited by, like the columns the layer came with.
+ */
+export function withAddedColumns(
+  defs: PropertyDef[],
+  edits: readonly FeatureEdit[],
+  layerName: string,
+  nodeLayer: string | null,
+): PropertyDef[] {
+  const out = [...defs];
+  for (const edit of edits) {
+    if (edit.op !== "add_column" || edit.enabled === false || !edit.column) continue;
+    if ((edit.layer ?? nodeLayer ?? null) !== layerName || out.some((d) => d.name === edit.column)) continue;
+    const type: PropertyType = typeof edit.value === "number" ? "number" : typeof edit.value === "boolean" ? "boolean" : "text";
+    out.push({ name: edit.column, type });
+  }
+  return out;
+}
+
 /** A rule's test: what the column is compared by. */
 const TESTS = ["is", "is not", ">", "<", "is empty", "is not empty"] as const;
 type Test = (typeof TESTS)[number];
@@ -459,14 +480,20 @@ export default function LayerWorkbench({
   // A feature is called by its geometry ("point", "line", "area"), never by a
   // guess from the layer's name.
   const nouns = kind ? { one: KIND_NOUN[kind], many: `${KIND_NOUN[kind]}s` } : { one: "feature", many: "features" };
-  const defs = useMemo(() => (active ? propertiesFor(active.fc, active.key, active.newLayer) : []), [active]);
+  const defs = useMemo(
+    () => (active ? withAddedColumns(propertiesFor(active.fc, active.key, active.newLayer), edits, active.name, nodeLayer) : []),
+    [active, edits, nodeLayer],
+  );
   const features = useMemo(
     () => (active ? editedFeatures(active.fc, edits, active.key ?? (active.newLayer ? "id" : undefined), active.name, nodeLayer) : []),
     [active, edits, nodeLayer],
   );
+  // A fresh rule for each layer. Keyed on the layer, not on defs: defs is
+  // rebuilt after every edit, which cleared a rule just applied.
   useEffect(() => {
     setConditions([{ column: defs[0]?.name ?? "", test: "is", value: "" }]);
-  }, [defs]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [active?.name]);
   const geographic = active ? isGeographic(active.fc) || (active.newLayer ? isGeographic(layers.find((l) => !l.newLayer)?.fc) : false) : false;
   const pickedOne = picked.length === 1 ? features.find((f) => f.id !== null && String(f.id) === String(picked[0])) : undefined;
   const textsOf = (f: EditedFeature) =>
@@ -701,7 +728,9 @@ export default function LayerWorkbench({
               </span>
               {group.layers.map((layer) => {
                 const n = countOf(layer);
-                const columns = layer.newLayer ? (layer.newLayer.properties ?? []).map((p) => p.name) : propertiesFor(layer.fc, layer.key).map((p) => p.name);
+                const columns = layer.newLayer
+                  ? (layer.newLayer.properties ?? []).map((p) => p.name)
+                  : withAddedColumns(propertiesFor(layer.fc, layer.key), edits, layer.name, nodeLayer).map((p) => p.name);
                 return (
                   <button
                     key={layer.name}

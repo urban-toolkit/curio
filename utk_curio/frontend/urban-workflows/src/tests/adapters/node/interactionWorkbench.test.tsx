@@ -140,6 +140,8 @@ test("a property added to a layer is an add_column edit, and a second layer's ed
     edits: [{ op: "add_column", column: "kind", value: "office" }],
   });
   fireEvent.click(screen.getByText("← All layers"));
+  // The property added is one of the layer's properties now.
+  expect(screen.getByTestId("interaction-layer-table_osm_buildings")).toHaveTextContent("kind");
   fireEvent.click(screen.getByTestId("interaction-layer-table_osm_roads"));
   fireEvent.click(screen.getByTestId("interaction-action-property"));
   fireEvent.change(screen.getByTestId("interaction-property-name"), { target: { value: "surface" } });

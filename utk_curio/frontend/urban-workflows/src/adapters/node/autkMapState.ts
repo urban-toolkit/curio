@@ -26,6 +26,25 @@ const idOf = (layer: any): string | undefined => {
 };
 
 /**
+ * The id the map gives the layer that draws *table*: autk-grammar 4.2 names a
+ * layer by its `title` when it has one, else by its `dataRef`. A lookup by
+ * table name alone misses every titled layer, and showing one layer alone then
+ * hid them all. *spec* is the document drawn; its `dataRef` may still be the
+ * code's `[!! input_k !!]` form.
+ */
+export function layerIdFor(spec: any, table: string): string {
+    const maps = spec?.map ? (Array.isArray(spec.map) ? spec.map : [spec.map]) : [];
+    const bare = (ref: unknown) => String(ref ?? '').replace(/^\[!!\s*(.*?)\s*!!\]$/, '$1');
+    for (const map of maps) {
+        for (const ref of map?.layerRefs ?? []) {
+            if (bare(ref?.dataRef) !== table) continue;
+            return typeof ref?.title === 'string' && ref.title.trim() !== '' ? ref.title : table;
+        }
+    }
+    return table;
+}
+
+/**
  * The settings of each layer the first map of *grammar* draws, before a layer
  * is shown alone: with which one a click selects (`isPick`), which a redraw
  * does not keep, since an edit's own pick sets it.

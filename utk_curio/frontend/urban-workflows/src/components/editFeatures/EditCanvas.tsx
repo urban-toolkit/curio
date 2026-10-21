@@ -533,7 +533,10 @@ export default function EditCanvas({
             ))
           : null}
         {lassoLine && lassoLine.length > 1 ? (
-          <polygon data-testid="interaction-edit-lasso" points={lassoLine.map((p) => p.join(",")).join(" ")} fill="#1F6FEB1A" stroke="#1F6FEB" strokeWidth={1.5} strokeDasharray="5 4" strokeLinejoin="round" />
+          <>
+            <polygon points={lassoLine.map((p) => p.join(",")).join(" ")} fill="none" stroke="#FFFFFF" strokeWidth={4.5} strokeLinejoin="round" />
+            <polygon data-testid="interaction-edit-lasso" points={lassoLine.map((p) => p.join(",")).join(" ")} fill="#1F6FEB38" stroke="#1F6FEB" strokeWidth={2.5} strokeDasharray="8 4" strokeLinejoin="round" />
+          </>
         ) : null}
         {draftScreen.length > 0 ? (
           <>

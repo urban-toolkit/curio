@@ -24,7 +24,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import type { SelectionId } from "../../utils/references/selectionTags";
 import type { Geometry } from "../../utils/editFeatures/editFeatures";
 import { kindOf, type EditedFeature } from "../../utils/editFeatures/layerModel";
-import { editMap, fromMercator, toMercator, useMapEdit } from "../../utils/editFeatures/mapEditBus";
+import { editMap, editMapLayerId, fromMercator, toMercator, useMapEdit } from "../../utils/editFeatures/mapEditBus";
 import { partsOf, withoutPart } from "../../utils/editFeatures/geometryParts";
 import { LASSO_MIN_PIXELS, lassoPicks, outlineLength } from "../../utils/editFeatures/lasso";
 import { toRings } from "./EditCanvas";
@@ -393,7 +393,7 @@ export default function MapEditOverlay({ mapId }: { mapId: string }) {
 
   // The latest of everything the listeners read, so they are added once.
   // How big the map draws the layer's points and lines, for what a click reaches.
-  const size = drawnSize(map, active?.table);
+  const size = drawnSize(map, active?.table ? editMapLayerId(mapId, active.table) : undefined);
   const live = useRef({ session, active, projection, shown, selectedOne, handles, mode, kind, draft, finishDraft, dragShape, size });
   live.current = { session, active, projection, shown, selectedOne, handles, mode, kind, draft, finishDraft, dragShape, size };
 
@@ -706,7 +706,11 @@ export default function MapEditOverlay({ mapId }: { mapId: string }) {
             ))
           : null}
         {lassoLine && lassoLine.length > 1 ? (
-          <polygon data-testid="map-edit-lasso" points={lassoLine.map((pt) => pt.join(",")).join(" ")} fill={`${BLUE}1A`} stroke={BLUE} strokeWidth={1.5} strokeDasharray="5 4" strokeLinejoin="round" />
+          <>
+            {/* A white casing under the line, so the loop shows on a dense map. */}
+            <polygon points={lassoLine.map((pt) => pt.join(",")).join(" ")} fill="none" stroke="#FFFFFF" strokeWidth={4.5} strokeLinejoin="round" />
+            <polygon data-testid="map-edit-lasso" points={lassoLine.map((pt) => pt.join(",")).join(" ")} fill={`${BLUE}38`} stroke={BLUE} strokeWidth={2.5} strokeDasharray="8 4" strokeLinejoin="round" />
+          </>
         ) : null}
         {draftScreen.length > 0 ? (
           <>
