@@ -32,16 +32,19 @@ The first test drives the example as it ships:
 4. The difference: each road's sunlight change, one row per road Baseline's
    Roads node hands on, below zero where the taller shadows reach it and zero
    elsewhere, in its ``sunlight`` and in its nested ``compute`` values, within
-   -360 to 360 minutes, in a layer with no layer name or type. The Autark map
-   after the Sunlight change node draws it, under the title "Sunlight change
-   (minutes)", its legend labelled -360, 0 and 360: a scale centered on no
-   change.
+   -360 to 360 minutes, in a layer with no layer name or type: exactly what
+   the rule writes from the two Roads nodes' layers, Twice as tall's minus
+   Baseline's, the same roads in the same order with the same columns, types,
+   values, shapes and coordinate system. The Autark map after the Sunlight
+   change node draws it, under the title "Sunlight change (minutes)", its
+   legend labelled -360, 0 and 360: a scale centered on no change.
 5. A save and a reopen: the scenarios, their colours, the collapsed ones, the
    widgets and their values, the edit list, and the saved outputs come back.
 
 The second test drags both scenarios from the Scenario Catalog into an empty
 project, once the seeded example has run: they arrive with their results, read
-one context, and each expands in place.
+one context, and each expands in place; a Vega-Lite chart reading ``inputs``,
+wired to the two dropped Roads nodes, names each one's rows by its dropped box.
 
 They run Autark nodes, which need WebGPU: without an adapter they skip, unless
 ``CURIO_REQUIRE_HARDWARE_WEBGPU=1`` (CI's GPU job), where they fail.
@@ -60,6 +63,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 
+from .test_multi_input_e2e import _wait_for_circles
 from .test_scenario_drop_e2e import (
     _copies,
     _drag_scenario_onto_canvas,
@@ -81,12 +85,16 @@ from .utils import (
     assert_vega_canvas_rendered,
     close_scenario_details,
     close_scenario_drawer,
+    connect_nodes,
+    dismiss_toasts,
+    drag_builtin_to_canvas,
     frame_nodes,
     in_project_card,
     load_artifact_as_dict,
     node_locator,
     open_in_project_tab,
     open_scenario_details,
+    play_node,
     read_node_error_text,
     require_owner_view,
     require_project_page,
@@ -96,6 +104,7 @@ from .utils import (
     save_dataflow,
     scenario_card_button,
     scenario_part,
+    set_node_code,
     stub_login_and_enter_workflow,
     wait_for_drawer_closed,
     wait_for_node_settled,
@@ -110,6 +119,18 @@ AUTARK = "curio.builtin/autk-grammar"
 COMPARE = "curio.builtin/compare-scenarios"
 BARS = "curio.scout/bars"
 PYTHON = "curio.builtin/computation-analysis"
+VEGA = "curio.builtin/vis-vega"
+#: The chart the second test wires to the two dropped Roads nodes: mean
+#: sunlight per scenario, its rows its inputs stacked under their boxes.
+DROPPED_CHART_SPEC = json.dumps({
+    "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
+    "data": {"name": "inputs"},
+    "mark": "bar",
+    "encoding": {
+        "x": {"field": "scenario_name", "type": "nominal"},
+        "y": {"field": "sunlight", "type": "quantitative", "aggregate": "mean"},
+    },
+}, indent=2)
 
 DATA = "whatif-data"
 B_COMPUTE, B_MAP, B_ROADS = "whatif-baseline-compute", "whatif-baseline-map", "whatif-baseline-roads"
@@ -241,6 +262,25 @@ def _rows(page, node_id: str) -> list[dict]:
     return [feature["properties"] for feature in _stored(page, node_id)["data"]["features"]]
 
 
+def _layer_of(stored: dict):
+    """A stored layer, as the sandbox hands it to the page, rebuilt as the
+    frame it was: its columns in the order and of the types its schema names,
+    its outlines, and its coordinate system."""
+    import geopandas as gpd
+
+    data = stored["data"]
+    geometry = data.get("geometry_name") or "geometry"
+    name = ((data.get("crs") or {}).get("properties") or {}).get("name", "")
+    frame = gpd.GeoDataFrame.from_features(data["features"], crs=f"EPSG:{name.rsplit(':', 1)[-1]}" if name else None)
+    if geometry != "geometry":
+        frame = frame.rename_geometry(geometry)
+    frame = frame[list(stored["schema"])]
+    for column, dtype in stored["schema"].items():
+        if column != geometry and str(frame[column].dtype) != dtype:
+            frame[column] = frame[column].astype(dtype)
+    return frame
+
+
 # Before the page's own scripts: keep every Vega view by the element it draws
 # in, whenever the charts' Vega module is set on the window (useVega.ts).
 _KEEP_VEGA_VIEWS_INIT = """(() => {
@@ -283,6 +323,39 @@ _INPUTS_SUMS_JS = """([id, field]) => {
     }
     return sums;
 }"""
+
+
+# The runs of the rows a chart's last view reads as ``inputs``, in their
+# order: ``[scenario, scenario_name, how many rows]`` for each run of one box.
+_INPUTS_LABELS_JS = """(id) => {
+    const view = (window.__curioVegaViews || {})["vega" + id];
+    if (!view) return null;
+    let rows;
+    try {
+        rows = view.data("inputs");
+    } catch (error) {
+        return null;
+    }
+    const runs = [];
+    for (const row of rows) {
+        const last = runs[runs.length - 1];
+        if (last && last[0] === row.scenario && last[1] === row.scenario_name) last[2] += 1;
+        else runs.push([row.scenario, row.scenario_name, 1]);
+    }
+    return runs;
+}"""
+
+
+def _inputs_labels(page, node_id: str, count: int) -> list:
+    """The *count* runs of one box in the rows the chart reads, once its view holds them."""
+    runs = None
+    deadline = time.time() + 30
+    while time.time() < deadline:
+        runs = page.evaluate(_INPUTS_LABELS_JS, node_id)
+        if runs and len(runs) == count:
+            return runs
+        page.wait_for_timeout(250)
+    raise AssertionError(f"the chart {node_id} reads the runs {runs}, not {count}")
 
 
 def _chart_means(page, node_id: str, field: str) -> dict:
@@ -584,6 +657,21 @@ def test_example_06_compares_its_three_scenarios_in_the_canvas(
     # The Sunlight change node writes a layer with no layer name or type.
     written = _stored(page, DIFFERENCE)
     assert "metadata" not in written["data"], written["data"].get("metadata")
+    # It writes exactly what the rule writes from the two Roads nodes' layers,
+    # Twice as tall's minutes minus Baseline's, road by road: the same roads,
+    # in the same order, with the same columns, types, values, shapes and
+    # coordinate system (roads_change, which the fixture of Compare's own
+    # output holds to it).
+    from utk_curio.backend.tests._support.scenario_changes import roads_change
+    from utk_curio.sandbox.util.parsers import parseOutput
+
+    expected = parseOutput(roads_change(_layer_of(_stored(page, B_ROADS)), _layer_of(_stored(page, T_ROADS))))
+    assert [list(f["properties"]) for f in written["data"]["features"][:1]] == [
+        list(f["properties"]) for f in expected["data"]["features"][:1]
+    ]
+    assert {k: written[k] for k in ("dataType", "data", "schema")} == {
+        k: expected[k] for k in ("dataType", "data", "schema")
+    }, "the Sunlight change node does not write Twice as tall's roads minus Baseline's"
     rows = _rows(page, DIFFERENCE)
     assert len(rows) == len(baseline_roads), f"{len(rows)} rows for {len(baseline_roads)} roads"
     assert {row["change"] for row in rows} <= {"changed", "unchanged"}, (
@@ -651,10 +739,13 @@ def test_both_scenarios_dragged_into_an_empty_project_read_one_context(
 ):
     """The seeded example runs and is saved; then, in an empty project, both of
     its scenarios are dragged in from the Scenario Catalog: they show their
-    saved results with no run, read one context, and expand in place."""
+    saved results with no run, read one context, and expand in place. A
+    Vega-Lite chart reading ``inputs``, wired to the two dropped Roads nodes,
+    names each input's rows by the dropped box its node is in."""
     require_project_page()
     require_user_auth()
     page.emulate_media(reduced_motion="reduce")
+    page.add_init_script(_KEEP_VEGA_VIEWS_INIT)
     empty = {"dataflow": {
         "name": "Shadow comparison", "task": "", "timestamp": 1789193389280,
         "provenance_id": "Shadow comparison", "nodes": [], "edges": [],
@@ -736,3 +827,27 @@ def test_both_scenarios_dragged_into_an_empty_project_read_one_context(
         box = _frame_box(page, scenario["id"], scenario["nodes"])
         box.dblclick()
         node_locator(page, scenario["nodes"][-1]).wait_for(state="visible", timeout=10000)
+
+    # A Vega-Lite chart reading inputs, over the two dropped Roads nodes:
+    # each input's rows carry the dropped box their node is in, its id and its
+    # name, in circle order.
+    from utk_curio.backend.tests.test_example06_sunlight_change import ROAD_COUNT
+
+    chart = drag_builtin_to_canvas(page, "#tile-vis-vega", at=(900.0, 260.0))
+    set_node_code(page, chart, DROPPED_CHART_SPEC)
+    _wait_for_circles(page, chart, ["in"])
+    # The drops' toasts sit bottom right, where a dropped node's handle can be.
+    frame_nodes(page, [copies[B_ROADS], chart])
+    dismiss_toasts(page)
+    connect_nodes(page, copies[B_ROADS], chart)
+    _wait_for_circles(page, chart, ["in", "in_1"])
+    frame_nodes(page, [copies[T_ROADS], chart])
+    dismiss_toasts(page)
+    connect_nodes(page, copies[T_ROADS], chart, target_handle="in_1")
+    play_node(page, chart)
+    _settled_done(page, chart, VEGA)
+    labels = _inputs_labels(page, chart, 2)
+    assert labels == [
+        [dropped["Baseline"]["id"], "Baseline", ROAD_COUNT],
+        [dropped["Twice as tall"]["id"], "Twice as tall", ROAD_COUNT],
+    ], f"the chart names its inputs' rows {labels}, not by the dropped boxes"
