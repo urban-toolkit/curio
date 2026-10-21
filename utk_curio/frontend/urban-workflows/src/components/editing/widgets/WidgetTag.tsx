@@ -7,12 +7,17 @@ import {
   SHARED_REF_MIME,
   WIDGET_REF_MIME,
 } from "./monacoCodeReferences";
+import { STRIP_CATEGORIES, useOpenCategories, type StripCategory } from "./stripCategories";
 import type { WidgetDef } from "../../../utils/widgets/widgetModel";
 import type { SelectionTag as SelectionTagDef } from "../../../utils/references/selectionTags";
 import {
+  SCENARIO_LISTS,
   VEGA_LITE,
+  inputName,
   inputReferenceInner,
   referenceText,
+  scenarioColorScale,
+  scenarioInputColor,
   scenarioInputReferenceInner,
   scenarioReferenceInner,
   selectionReferenceInner,
@@ -26,8 +31,7 @@ import {
   SCENARIO_FIELD,
   SCENARIO_NAME_FIELD,
   anyFromABox,
-  scaleLabels,
-  scenarioScale,
+  type ScenarioLabel,
 } from "../../../utils/scenarios/scenarioColors";
 import { INPUT_FIELD } from "../../../utils/scenarios/stackedInputs";
 import { INPUTS_DATASET } from "../../../utils/vegaDatasets";
@@ -210,36 +214,6 @@ function SwatchColor({ color }: { color: string }) {
   return <span className={styles.swatchColor} style={{ background: color }} />;
 }
 
-/**
- * The swatch of the box an input comes from, on its tag in a spec (#662): it
- * drags the input's scenario chip, `[!! scenario input_1 !!]`, which writes
- * that box's color, as a map's layer or a chart's mark takes it.
- */
-function InputSwatch({
-  input,
-  onInsert,
-  disabled,
-}: {
-  input: InputScope;
-  onInsert: (inner: string) => void;
-  disabled: boolean;
-}) {
-  const label = input.scenario;
-  if (label?.scenario == null) return null;
-  return (
-    <ReferenceTag
-      className={styles.inputSwatch}
-      mime={SCENARIO_REF_MIME}
-      inner={scenarioInputReferenceInner(input.slot)}
-      text={<SwatchColor color={label.color} />}
-      title={`The color of ${label.name}, the scenario box input_${input.slot} comes from`}
-      dataAttributes={{ "data-input-swatch": String(input.slot), "data-color": label.color }}
-      onInsert={onInsert}
-      disabled={disabled}
-    />
-  );
-}
-
 /** What each field the stacking adds holds, for its title. */
 const STACKED_FIELD_TITLES: Record<string, string> = {
   [SCENARIO_NAME_FIELD]: "text: the name of the scenario box each row's input comes from, or of its node",
@@ -247,83 +221,121 @@ const STACKED_FIELD_TITLES: Record<string, string> = {
   [INPUT_FIELD]: "number: the circle each row came in on",
 };
 
+/** Whether *inputs*, each one's label known, has one from a scenario box: then
+ * the header has its Scenarios category. */
+function fedFromABox(inputs: readonly InputScope[]): boolean {
+  if (inputs.length === 0 || inputs.some((input) => input.scenario == null)) return false;
+  return anyFromABox(inputs.map((input) => input.scenario as ScenarioLabel));
+}
+
 /**
- * The scenarios of a node's inputs, on the `scenario_name` field of inputs
- * (#662): a swatch per box with its name, in the order the dataflow lists the
- * boxes, then each input from no box in a grey of its own. The swatches are
- * one chip, `[!! scenario colors !!]`, the scale of their colors. With no input
- * from a box the chip writes the names alone, which the grammar's own palette
- * colors, and the names show with no swatch. Two small tags beside them drag
- * their names alone, `[!! scenario order !!]`, for an axis's or an offset's
- * order, and their colors in the shades a text mark reads in,
- * `[!! scenario text_colors !!]`.
+ * The Scenarios category of a spec whose node receives an edge from a scenario
+ * box (#662). In a Vega-Lite spec (*lists*): a swatch per box with its name, in
+ * the order the dataflow lists the boxes, then each input from no box in a
+ * grey of its own, all one chip, `[!! scenario colors !!]`, the scale of their
+ * colors; then the same colors in the shades a text mark reads in,
+ * `[!! scenario text_colors !!]`, and their names alone, `[!! scenario order !!]`,
+ * for an axis's, an offset's or a facet's order. Then, in a Vega-Lite or an
+ * Autark spec, a tag per input, `input_1 ■ Baseline`, which drags
+ * `[!! scenario input_1 !!]`, the color of the box that input comes from, or its
+ * grey. Each color shown is the one its chip writes (`scenarioColorScale`,
+ * `scenarioInputColor`).
  */
-function ScenarioSwatches({
+function ScenarioChips({
   inputs,
+  lists,
   onInsert,
   disabled,
 }: {
   inputs: InputScope[];
+  lists: boolean;
   onInsert: (inner: string) => void;
   disabled: boolean;
 }) {
-  const labels = inputs.flatMap((input) => (input.scenario ? [input.scenario] : []));
-  const { domain, range } = scenarioScale(scaleLabels(labels));
-  if (domain.length === 0) return null;
-  const colored = anyFromABox(labels);
-  const title = colored
-    ? `The scenarios' colors, a color scale: ${domain.map((name, i) => `${name} ${range[i]}`).join(", ")}`
-    : `The scenarios' names, ${domain.join(", ")}: no input comes from a box, so the chip writes the names alone `
-      + "and the grammar's own palette colors them";
+  const { domain, range } = scenarioColorScale(inputs);
   return (
     <>
-      <ReferenceTag
-        className={styles.swatches}
-        mime={SCENARIO_REF_MIME}
-        inner={scenarioReferenceInner("colors")}
-        text={domain.map((name, i) => (
-          <span key={name} className={styles.swatch} data-scenario-swatch={name} data-color={colored ? range[i] : undefined}>
-            {colored ? <SwatchColor color={range[i]} /> : null}
-            {name}
-          </span>
-        ))}
-        title={title}
-        dataAttributes={{ "data-scenario-swatches": "true" }}
-        onInsert={onInsert}
-        disabled={disabled}
-      />
-      <ReferenceTag
-        className={styles.scenarioTag}
-        mime={SCENARIO_REF_MIME}
-        inner={scenarioReferenceInner("order")}
-        text="order"
-        title="The scenarios' names in the order of their boxes, for an axis's, an offset's or a facet's sort"
-        dataAttributes={{ "data-scenario-chip": "order" }}
-        onInsert={onInsert}
-        disabled={disabled}
-      />
-      <ReferenceTag
-        className={styles.scenarioTag}
-        mime={SCENARIO_REF_MIME}
-        inner={scenarioReferenceInner("text_colors")}
-        text="text colors"
-        title="The scenarios' colors in shades that read on white, a color scale for a text mark"
-        dataAttributes={{ "data-scenario-chip": "text_colors" }}
-        onInsert={onInsert}
-        disabled={disabled}
-      />
+      {lists ? (
+        <>
+          <ReferenceTag
+            className={styles.swatches}
+            mime={SCENARIO_REF_MIME}
+            inner={scenarioReferenceInner("colors")}
+            text={domain.map((name, i) => (
+              <span key={name} className={styles.swatch} data-scenario-swatch={name} data-color={range[i]}>
+                <SwatchColor color={range[i]} />
+                {name}
+              </span>
+            ))}
+            title={`The scenarios' colors, a color scale: ${domain.map((name, i) => `${name} ${range[i]}`).join(", ")}`}
+            dataAttributes={{ "data-scenario-swatches": "true" }}
+            onInsert={onInsert}
+            disabled={disabled}
+          />
+          <ReferenceTag
+            className={styles.scenarioTag}
+            mime={SCENARIO_REF_MIME}
+            inner={scenarioReferenceInner("text_colors")}
+            text="text colors"
+            title="The scenarios' colors in shades that read on white, a color scale for a text mark"
+            dataAttributes={{ "data-scenario-chip": "text_colors" }}
+            onInsert={onInsert}
+            disabled={disabled}
+          />
+          <ReferenceTag
+            className={styles.scenarioTag}
+            mime={SCENARIO_REF_MIME}
+            inner={scenarioReferenceInner("order")}
+            text="order"
+            title="The scenarios' names in the order of their boxes, for an axis's, an offset's or a facet's sort"
+            dataAttributes={{ "data-scenario-chip": "order" }}
+            onInsert={onInsert}
+            disabled={disabled}
+          />
+        </>
+      ) : null}
+      {inputs.map((input) => {
+        const label = input.scenario as ScenarioLabel;
+        const color = scenarioInputColor(input.slot, inputs);
+        const name = inputName(input.slot);
+        return (
+          <ReferenceTag
+            key={input.slot}
+            className={styles.scenarioTag}
+            mime={SCENARIO_REF_MIME}
+            inner={scenarioInputReferenceInner(input.slot)}
+            text={
+              <>
+                {name}
+                <span className={styles.swatch} data-scenario-swatch={label.name} data-color={color}>
+                  <SwatchColor color={color} />
+                  {label.name}
+                </span>
+              </>
+            }
+            title={
+              label.scenario != null
+                ? `The color of ${label.name}, the scenario box ${name} comes from`
+                : `${name}, from ${label.name}, comes from no scenario box: its grey in the scenarios' scale`
+            }
+            dataAttributes={{ "data-scenario-input": String(input.slot), "data-color": color }}
+            onInsert={onInsert}
+            disabled={disabled}
+          />
+        );
+      })}
     </>
   );
 }
 
 /**
  * The `inputs` tag of a Vega-Lite node with an input, one or several (#662),
- * beside the inputs' own: it drags the chip of the dataset that stacks every
+ * after the inputs' own: it drags the chip of the dataset that stacks every
  * input's rows, in circle order, `[!! inputs !!]`, which a spec reads as
  * `"data": {"name": "[!! inputs !!]"}`. Opened, it lists the fields its rows
  * carry, each a chip that writes its name, the three the stacking adds first,
  * then the inputs' columns (a layer's geometry left out, as the rows leave it
- * out). Its `scenario_name` field shows the scenarios' swatches.
+ * out).
  */
 function StackedTags({
   inputs,
@@ -369,21 +381,17 @@ function StackedTags({
       {open ? (
         <span className={styles.columns} data-inputs-fields="true">
           {fields.map((field) => (
-            <React.Fragment key={field}>
-              <ReferenceTag
-                className={styles.columnTag}
-                mime={INPUT_REF_MIME}
-                inner={stackedReferenceInner(field)}
-                text={field}
-                title={titleOf(field)}
-                dataAttributes={{ "data-inputs-field": field }}
-                onInsert={onInsert}
-                disabled={disabled}
-              />
-              {field === SCENARIO_NAME_FIELD ? (
-                <ScenarioSwatches inputs={inputs} onInsert={onInsert} disabled={disabled} />
-              ) : null}
-            </React.Fragment>
+            <ReferenceTag
+              key={field}
+              className={styles.columnTag}
+              mime={INPUT_REF_MIME}
+              inner={stackedReferenceInner(field)}
+              text={field}
+              title={titleOf(field)}
+              dataAttributes={{ "data-inputs-field": field }}
+              onInsert={onInsert}
+              disabled={disabled}
+            />
           ))}
         </span>
       ) : null}
@@ -395,21 +403,18 @@ function StackedTags({
  * One input's tag, and its columns when expanded (#662). An input carrying
  * several layers (an Autark node's tables) opens to a tag per layer instead,
  * each followed by that layer's columns, in code as in a Vega-Lite or Autark
- * spec. In a spec, an input whose feeding node is in a scenario box shows that
- * box's swatch.
+ * spec.
  */
 function InputTags({
   input,
   onInsert,
   onLoadColumns,
   disabled,
-  swatch,
 }: {
   input: InputScope;
   onInsert: (inner: string) => void;
   onLoadColumns?: (slot: number) => void;
   disabled: boolean;
-  swatch: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [filter, setFilter] = useState("");
@@ -433,7 +438,6 @@ function InputTags({
         onInsert={onInsert}
         disabled={disabled}
       />
-      {swatch ? <InputSwatch input={input} onInsert={onInsert} disabled={disabled} /> : null}
       <button
         type="button"
         className={styles.expand}
@@ -503,16 +507,49 @@ function InputTags({
   );
 }
 
+/** Each category's name in the header's row. */
+const CATEGORY_NAMES: Record<StripCategory, string> = {
+  inputs: "Inputs",
+  scenarios: "Scenarios",
+  widgets: "Widgets",
+  selections: "Selections",
+  shared: "Shared",
+};
+
+/** The attribute a category's name carries, which tests find it by. */
+const CATEGORY_NAME_ATTRIBUTES: Partial<Record<StripCategory, string>> = {
+  inputs: "data-input-strip",
+  selections: "data-selection-strip",
+  shared: "data-shared-strip",
+};
+
 /**
- * The tags above a code or grammar editor: the node's inputs, each opening to
- * its columns (or its layers), then its widgets, then its selection tags, then
- * the dataflow's shared tags. Nothing when there are none.
+ * The header above a code or grammar editor (#662): every chip the node can
+ * use, whatever its code or spec uses, in one row of categories, each with its
+ * count and shown only when it has chips: Inputs, Scenarios, Widgets,
+ * Selections and Shared. Every category starts closed; a click opens its chips
+ * under the row, and another closes them. Several can be open, and one stays
+ * open for its node (*nodeId*) while the dataflow is open (`stripCategories`).
+ * Nothing when the node can use no chip.
  *
- * In a spec (*language* `json`), an input from a scenario box shows its box's
- * swatch; a Vega-Lite spec (*grammar* `VEGA_LITE`) with an input has the
- * `inputs` tag too, the dataset that stacks them. Code shows neither.
+ * It reads the editor's *language* and *grammar* and the node's inputs, never
+ * its code, so a built-in node and a package node of one grammar list the same
+ * chips:
+ *
+ * - Inputs: a tag per input, each opening to its columns (or its layers); in a
+ *   Vega-Lite spec (*grammar* `VEGA_LITE`) with an input, then the `inputs`
+ *   tag, the dataset that stacks them, opening to its fields.
+ * - Scenarios, in a spec (*language* `json`) whose node receives an edge from a
+ *   scenario box: in a Vega-Lite spec the boxes' swatches, text colors and
+ *   order, then, in a Vega-Lite or an Autark spec, a tag per input in its color
+ *   (`ScenarioChips`).
+ * - Widgets, Selections and Shared: the node's widgets, its selection tags and
+ *   the dataflow's shared tags.
+ *
+ * Code shows no Scenarios and no `inputs` tag.
  */
 export function ReferenceStrip({
+  nodeId,
   widgets,
   inputs = [],
   shared = [],
@@ -523,6 +560,8 @@ export function ReferenceStrip({
   onLoadColumns,
   disabled = false,
 }: {
+  /** The node whose header this is, which keeps its open categories. */
+  nodeId?: string | null;
   widgets: WidgetDef[];
   inputs?: InputScope[];
   shared?: WidgetDef[];
@@ -535,57 +574,99 @@ export function ReferenceStrip({
   onLoadColumns?: (slot: number) => void;
   disabled?: boolean;
 }) {
+  const [open, toggle] = useOpenCategories(nodeId);
   const sharedNames = uniqueSharedNames(shared);
-  if (widgets.length === 0 && inputs.length === 0 && sharedNames.length === 0 && selections.length === 0) {
-    return null;
-  }
   const spec = language === "json";
+  const vegaLite = spec && grammar === VEGA_LITE;
   // A spec that reads inputs stacks one input as it stacks several.
-  const stacked = grammar === VEGA_LITE && inputs.length > 0;
+  const stacked = vegaLite && inputs.length > 0;
+  const scenarios = spec && fedFromABox(inputs);
+  const counts: Record<StripCategory, number> = {
+    inputs: inputs.length + (stacked ? 1 : 0),
+    // The swatches are one chip, then text colors and order, in Vega-Lite.
+    scenarios: scenarios ? (vegaLite ? SCENARIO_LISTS.length : 0) + inputs.length : 0,
+    widgets: widgets.length,
+    selections: selections.length,
+    shared: sharedNames.length,
+  };
+  const shown = STRIP_CATEGORIES.filter((category) => counts[category] > 0);
+  if (shown.length === 0) return null;
+
+  const chipsOf = (category: StripCategory): React.ReactNode => {
+    switch (category) {
+      case "inputs":
+        return (
+          <>
+            {inputs.map((input) => (
+              <InputTags
+                key={input.slot}
+                input={input}
+                onInsert={onInsert}
+                onLoadColumns={onLoadColumns}
+                disabled={disabled}
+              />
+            ))}
+            {stacked ? (
+              <StackedTags inputs={inputs} onInsert={onInsert} onLoadColumns={onLoadColumns} disabled={disabled} />
+            ) : null}
+          </>
+        );
+      case "scenarios":
+        return <ScenarioChips inputs={inputs} lists={vegaLite} onInsert={onInsert} disabled={disabled} />;
+      case "widgets":
+        return widgets.map((w) => <WidgetTag key={w.name} name={w.name} onInsert={onInsert} disabled={disabled} />);
+      case "selections":
+        return selections.map((tag) => (
+          <SelectionTag key={tag.name} name={tag.name} onInsert={onInsert} disabled={disabled} />
+        ));
+      case "shared":
+        return sharedNames.map((name) => <SharedTag key={name} name={name} onInsert={onInsert} disabled={disabled} />);
+    }
+  };
+
   return (
     <div className={styles.strip} aria-label="Reference tags" data-widget-strip="true">
-      {inputs.length > 0 ? (
-        <>
-          <span className={styles.stripHint} data-input-strip="true">Inputs</span>
-          {inputs.map((input) => (
-            <InputTags
-              key={input.slot}
-              input={input}
-              onInsert={onInsert}
-              onLoadColumns={onLoadColumns}
-              disabled={disabled}
-              swatch={spec}
-            />
-          ))}
-          {stacked ? (
-            <StackedTags inputs={inputs} onInsert={onInsert} onLoadColumns={onLoadColumns} disabled={disabled} />
-          ) : null}
-        </>
-      ) : null}
-      {widgets.length > 0 ? (
-        <>
-          <span className={styles.stripHint}>Widgets</span>
-          {widgets.map((w) => (
-            <WidgetTag key={w.name} name={w.name} onInsert={onInsert} disabled={disabled} />
-          ))}
-        </>
-      ) : null}
-      {selections.length > 0 ? (
-        <>
-          <span className={styles.stripHint} data-selection-strip="true">Selections</span>
-          {selections.map((tag) => (
-            <SelectionTag key={tag.name} name={tag.name} onInsert={onInsert} disabled={disabled} />
-          ))}
-        </>
-      ) : null}
-      {sharedNames.length > 0 ? (
-        <>
-          <span className={styles.stripHint} data-shared-strip="true">Shared</span>
-          {sharedNames.map((name) => (
-            <SharedTag key={name} name={name} onInsert={onInsert} disabled={disabled} />
-          ))}
-        </>
-      ) : null}
+      <div className={styles.categories}>
+        {shown.map((category) => {
+          const isOpen = open.has(category);
+          const nameAttribute = CATEGORY_NAME_ATTRIBUTES[category];
+          return (
+            <button
+              key={category}
+              type="button"
+              className={styles.category}
+              aria-expanded={isOpen}
+              aria-label={`${CATEGORY_NAMES[category]} ${counts[category]}`}
+              title={`${isOpen ? "Hide" : "Show"} the ${CATEGORY_NAMES[category]} chips`}
+              data-strip-category={category}
+              onClick={() => toggle(category)}
+            >
+              <span data-strip-name="true" {...(nameAttribute ? { [nameAttribute]: "true" } : {})}>
+                {CATEGORY_NAMES[category]}
+              </span>
+              <span className={styles.categoryCount} data-strip-count="true">
+                {counts[category]}
+              </span>
+              <span className={styles.categoryArrow} aria-hidden="true">
+                {isOpen ? "▾" : "▸"}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+      {shown
+        .filter((category) => open.has(category))
+        .map((category) => (
+          <div
+            key={category}
+            className={styles.categoryChips}
+            role="group"
+            aria-label={`${CATEGORY_NAMES[category]} chips`}
+            data-strip-chips={category}
+          >
+            {chipsOf(category)}
+          </div>
+        ))}
     </div>
   );
 }
