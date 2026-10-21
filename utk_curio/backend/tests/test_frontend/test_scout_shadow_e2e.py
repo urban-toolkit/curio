@@ -393,7 +393,7 @@ def _assert_lever_map_drawn(page, lever: str) -> None:
         state="attached", timeout=90000,
     )
     state = edit.locator("[data-map-edits-map-state]").get_attribute("data-map-edits-map-state")
-    problem = edit.locator("[data-map-edits-map-state]").all_inner_texts()
+    problem = edit.locator("[data-map-edits-map-problem]").all_inner_texts()
     assert state == "drawn", f"the towers lever's map ended {state!r}: {problem}"
 
 

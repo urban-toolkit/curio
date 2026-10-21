@@ -298,7 +298,7 @@ def test_a_shipped_scenario_drops_from_a_project_never_run_and_runs(
             state="attached", timeout=90000,
         )
         state = box.locator("[data-map-edits-map-state]").get_attribute("data-map-edits-map-state")
-        problem = box.locator("[data-map-edits-map-state]").all_inner_texts()
+        problem = box.locator("[data-map-edits-map-problem]").all_inner_texts()
         assert state == "drawn", f"{name}: the Map Edits node {copies[lever]}'s map ended {state!r}: {problem}"
     # Saved first, so the header shows the save whatever the autosave reached (#584).
     save_dataflow_and_settle_header(page)
