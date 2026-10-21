@@ -175,6 +175,20 @@ describe("changeFromField", () => {
     });
   });
 
+  test("refuses half of a character, which the node could not read back, and takes a whole one", () => {
+    const half = `a${String.fromCharCode(0xd800)}`;
+    expect(changeFromField({ shown: original, original, edited: { ...original, name: half }, key: "building_id" })).toEqual({
+      problem: expect.stringContaining("half of a character"),
+    });
+    const whole = String.fromCodePoint(0x1f600);
+    const change = changeFromField({ shown: original, original, edited: { ...original, name: whole }, key: "building_id" });
+    expect(change).toEqual({ values: { name: whole }, written: { name: whole } });
+    if (!("values" in change)) throw new Error("no change");
+    expect(readMapEdits(mapEditsCode(withChange({ key: "building_id", remove: [], change: [] }, 34, change.values)))).toMatchObject({
+      edits: { change: [{ id: 34, values: { name: whole } }] },
+    });
+  });
+
   test("refuses a field that is not one JSON object, and a node with no key", () => {
     for (const edited of [null, [original], "height", 60]) {
       expect(changeFromField({ shown: original, original, edited, key: "building_id" })).toEqual({ problem: expect.stringContaining("one JSON object") });

@@ -514,6 +514,17 @@ export type FieldChange =
   | { problem: string };
 
 /**
+ * Whether *value* holds a lone surrogate. The writer writes one as an escape
+ * the reader refuses, since a pair of them is one character to JSON and two
+ * to Python.
+ */
+function holdsHalfCharacter(value: unknown): boolean {
+  if (typeof value === "string") return /\p{Cs}/u.test(value);
+  if (Array.isArray(value)) return value.some(holdsHalfCharacter);
+  return isObject(value) && Object.entries(value).some(([name, item]) => holdsHalfCharacter(name) || holdsHalfCharacter(item));
+}
+
+/**
  * The change an Apply makes of *field*: the current change, with each value
  * that differs from the feature as shown written, and a key the field no
  * longer holds written as null; then a value equal to the input's is dropped,
@@ -537,6 +548,9 @@ export function changeFromField({ shown, original, edited, key, current = {} }: 
   if (written.length === 0) return { noChange: true };
   if (written.some(([name]) => name === key)) return { problem: `${key} identifies the feature, so its value cannot change.` };
   if (written.some(([name]) => name === GEOMETRY)) return { problem: "geometry is the feature's shape, which Map Edits cannot set." };
+  if (written.some(([name, value]) => holdsHalfCharacter(name) || holdsHalfCharacter(value))) {
+    return { problem: "A text holds half of a character (a lone \\u escape between d800 and dfff), which Python reads apart." };
+  }
   const merged = new Map<string, JsonValue>(Object.entries(current));
   for (const [name, value] of written) merged.set(name, value);
   const asInput = (name: string, value: JsonValue) => (has(input, name) ? sameJson(input[name], value) : value === null);
