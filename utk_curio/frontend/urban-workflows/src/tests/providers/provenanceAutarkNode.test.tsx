@@ -12,7 +12,7 @@
  *   the JavaScript interpreter, a part of the run and not a run of its own.
  * - In a run on the server, the server runs a data node and useServerRun files
  *   that run. The node only shows its outcome, which files nothing more.
- * - The Interaction node's map draws through the same code, under that node's
+ * - The Map Edits node's map draws through the same code, under that node's
  *   id. Its draws are not that node's runs.
  *
  * Each test runs the real node behavior, interpreter or server-run hook into the
@@ -60,8 +60,8 @@ import { JavaScriptInterpreter } from '../../JavaScriptInterpreter';
 import { useServerRun } from '../../providers/flow/useServerRun';
 import { runsApi } from '../../services/runs/runsApi';
 import type { Run, RunEvent, RunStep } from '../../services/runs/runsApi';
-import EditFeaturesMap from '../../components/editFeatures/EditFeaturesMap';
-import { grammarRuns, resetAutkNodeMocks } from '../_support/autkNodeMocks';
+import MapEditsMap from '../../components/mapEdits/MapEditsMap';
+import { grammarRuns, ONE_ROW, resetAutkNodeMocks } from '../_support/autkNodeMocks';
 import { stubWebGpu, unstubWebGpu } from '../_support/autkNode';
 
 const api = runsApi as jest.Mocked<typeof runsApi>;
@@ -89,8 +89,10 @@ const DATA_WRITTEN = JSON.stringify({
     autoLoadLayers: { layers: ['surface', 'roads'] },
   }],
 }, null, 2);
-/** What the Interaction node's map draws: its input, pickable (EditFeaturesBody's editMapDocument). */
+/** What the Map Edits node's map draws: its layer, pickable (mapEditsLayers' mapDocument). */
 const EDIT_MAP = JSON.stringify({ map: { layerRefs: [{ dataRef: 'input_0', isPick: true }] } }, null, 2);
+/** The layer it draws, inline, as the edits leave it (mapEditsLayers' mapInput). */
+const EDITED_LAYERS = { dataType: 'list', data: [{ name: 'input_0', geojson: ONE_ROW }] };
 
 type MountedNode = {
   /** Run *spec* as the editor hands it over, and wait for the run to end. */
@@ -291,9 +293,9 @@ test('a data node in a run on the server is filed once: the server ran it, and t
   expect(seen.provenance.provenanceGraphNodes[DATA_ID][0].code).toBe(DATA_WRITTEN);
 });
 
-// The Interaction node's map (#662).
+// The Map Edits node's map.
 
-test("the Interaction node's map files none of its draws: they are not that node's runs", async () => {
+test("the Map Edits node's map files none of its draws: they are not that node's runs", async () => {
   const seen: { provenance?: ReturnType<typeof useProvenanceContext> } = {};
   const Probe: React.FC = () => {
     seen.provenance = useProvenanceContext();
@@ -302,15 +304,17 @@ test("the Interaction node's map files none of its draws: they are not that node
   const { container } = render(
     <ProvenanceProvider>
       <Probe />
-      <EditFeaturesMap nodeId={EDIT_ID} input={INPUT} docText={EDIT_MAP} onPick={jest.fn()} />
+      <MapEditsMap nodeId={EDIT_ID} input={EDITED_LAYERS} docText={EDIT_MAP} onPick={jest.fn()} />
     </ProvenanceProvider>,
   );
 
   await waitFor(
-    () => expect(container.querySelector('[data-edit-map-state="drawn"]')).not.toBeNull(),
+    () => expect(container.querySelector('[data-map-edits-map-state="drawn"]')).not.toBeNull(),
     { timeout: 5000 },
   );
 
   expect(grammarRuns).toHaveLength(1);
+  // The layer it was handed inline is the one it drew.
+  expect(grammarRuns[0].spec.data.map((source: any) => source.outputTableName)).toContain('input_0');
   expect(seen.provenance!.provenanceGraphNodes).toEqual({});
 });

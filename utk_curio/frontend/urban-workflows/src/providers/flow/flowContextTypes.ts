@@ -154,9 +154,6 @@ export interface FlowContextProps {
     /** A widget or Parameter value changed what *nodeIds* compute: with auto-run on, they and
      * the nodes below them run once the changes settle (#845). */
     requestAutoRun: (nodeIds: readonly string[]) => void;
-    /** Run *nodeIds* and every node below them now, the nodes an automatic run takes
-     * (`autoRunTargets`), whether auto-run is on or not: the Interaction node's Update results. */
-    runDownstream?: (nodeIds: readonly string[]) => void;
     defaultSaveOutputDataset: boolean;
     setDefaultSaveOutputDataset: (value: boolean) => void;
 

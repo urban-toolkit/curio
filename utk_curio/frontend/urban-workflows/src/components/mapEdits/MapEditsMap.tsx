@@ -1,30 +1,33 @@
 /**
- * The Interaction node's map (#662): the node's input drawn by the Autark
- * node's own map code (`useAutkGrammarBehavior`) into the node's
+ * The Map Edits node's map: the node's layers as its edits leave them, drawn
+ * by the Autark node's own map code (`useAutkGrammarBehavior`) into the node's
  * `autk-grammar-map-<nodeId>` canvas, from a document whose layer to edit is
- * pickable, as an Autark node draws its input. A pick reaches the body as the
- * input rows it names, the way an Autark node reports a pick to the flow.
+ * pickable, as an Autark node draws its input. The input it draws is inline
+ * (utils/mapEdits/mapEditsLayers `mapInput`), so an edit draws again at once,
+ * with no run. Only the first draw frames the layers; a later one keeps the
+ * view the person zoomed and panned to. A pick reaches the body as the rows
+ * it names, the way an Autark node reports a pick to the flow.
  *
- * The map hands nothing on: the node's output is what its code makes of the
- * edit list. A map that cannot draw says so here, leaving the node's own
- * outcome as its run left it.
+ * The map hands nothing on: the node's output is what its code makes of its
+ * input. A map that cannot draw says so here, leaving the node's own outcome
+ * as its run left it.
  */
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useAutkGrammarBehavior } from "../../adapters/node/autkGrammarBehavior";
 import type { NodeBehaviorData, UseNodeStateReturn } from "../../registry/types";
-import styles from "./EditFeatures.module.css";
+import styles from "./MapEdits.module.css";
 
 /** What the map's last run came to, and the document it was asked to draw. */
 type Outcome = { code: string; content: string; doc: string };
 
-export default function EditFeaturesMap({
+export default function MapEditsMap({
   nodeId,
   input,
   docText,
   onPick,
 }: {
   nodeId: string;
-  /** The node's input, as the flow handed it on. */
+  /** The layers to draw, inline, the one to edit as the edits leave it. */
   input: unknown;
   /** The Autark document that draws it. */
   docText: string;
@@ -56,10 +59,11 @@ export default function EditFeaturesMap({
     [outcome, docText],
   );
   // A draw of the map is not a run of the node: the provenance drawer lists the
-  // node's own. The features it edits are drawn as its document writes them.
+  // node's own runs and edits. A draw after an edit keeps the view.
   const { applyGrammar, contentComponent } = useAutkGrammarBehavior(data, state, {
     marksNodeErrored: false,
     recordsProvenance: false,
+    keepsView: true,
   });
 
   useEffect(() => {
@@ -75,10 +79,10 @@ export default function EditFeaturesMap({
   const drawn = current?.code === "success";
   const problem = current?.code === "error" ? String(current.content ?? "") : null;
   return (
-    <div className={styles.map} data-edit-map-state={drawn ? "drawn" : problem ? "problem" : "drawing"}>
+    <div className={styles.map} data-map-edits-map-state={drawn ? "drawn" : problem ? "problem" : "drawing"}>
       <div className={styles.mapCanvas}>{contentComponent}</div>
       {problem ? (
-        <p className={styles.problem} data-edit-map-problem="true">
+        <p className={styles.problem} data-map-edits-map-problem="true">
           {problem}
         </p>
       ) : null}

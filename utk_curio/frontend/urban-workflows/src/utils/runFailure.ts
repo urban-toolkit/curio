@@ -1,6 +1,6 @@
 /**
  * What a failed run says, for a node body that shows it in a line of its own
- * (the Interaction node's): a Python traceback's last line without its
+ * (the Map Edits node's): a Python traceback's last line without its
  * exception's name, where a node's own refusals end, else the message as it is.
  */
 export function failureLine(content: unknown): string {
