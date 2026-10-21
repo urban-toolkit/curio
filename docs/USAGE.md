@@ -453,8 +453,9 @@ run dataflows in the browser, and a run stops when its tab closes.
 
 **View > Run stale nodes automatically** turns on running after a change. A
 change to a widget's value or a Parameter node's value then runs the nodes that
-use it and the nodes below them, half a second after the last change, as a run
-on the server. Moving a slider runs them once, after it stops. A change made
+use it and the nodes below them, and an edit in a Map Edits node runs that node
+and the nodes below it, half a second after the last change, as a run on the
+server. Moving a slider runs them once, after it stops. A change made
 during a run waits for it to end, then runs once. **Run All** shows a small
 bolt while it is on.
 
@@ -485,6 +486,12 @@ drawer, with the same folds. Each run reads what it took in and gave back
 run to open it: when it ran, for how long, and its code. **Put this code back in
 the node** puts that code in the node's editor without running it, and the
 node's next run branches from that run.
+
+A Map Edits node also lists each change as an entry of its own, made at once and
+without a run, and named by what changed: "remove building_id 12", "put back
+building_id 8", "height 60 on building_id 34". Its **Put this code back in the
+node** returns the node's edits to that point, on its map and in its panel, and the
+next change branches from it.
 
 ## Widgets
 
@@ -718,7 +725,7 @@ boundary splits the dataflow into three parts:
   common context.
 - **Levers:** the nodes in the scenario, which is what an alternative changes: its
   data loaders, widget values, code and specs, and the features it removes or
-  changes by hand (see [The Interaction node](#the-interaction-node)).
+  changes on a map (see [The Map Edits node](#the-map-edits-node)).
 - **Outcomes:** the outputs of the scenario's last nodes, which is what gets
   compared.
 
@@ -770,74 +777,67 @@ chart or a Data Pool saves nothing itself: the node feeding it does. Scenarios,
 their colors, descriptions, collapsed state and box positions are saved with the
 dataflow. Deleting a node removes it from its scenario.
 
-### The Interaction node
+### The Map Edits node
 
-The **Interaction** node removes features from a layer, or changes them, by hand or
-by a condition: two towers taken out of a city's buildings, or every building over
-100 m lowered, say. It is a node of its own, apart from the interaction edges that
-link charts (see [Linking charts](#linking-charts)).
+The **Map Edits** node removes features from a layer, or changes their values, on a
+map: two towers taken out of a city's buildings, or one building given a new height,
+say. It is a node of its own, apart from the interaction edges that link charts (see
+[Linking charts](#linking-charts)).
 
-1. Drag **Interaction** from the **Built-in** palette onto the canvas and connect a layer to it:
-   a Python node's GeoDataFrame, or the layers an Autark node or a Data Pool hands on.
+1. Drag **Map Edits** from the **Built-in** palette onto the canvas and connect a layer
+   to it: a Python node's GeoDataFrame, or the layers an Autark node or a Data Pool
+   hands on.
 2. Pick the layer to edit in **Layer**, when the input carries several, and the column
    that identifies a feature in **Id**: `osm_id` or `building_id` when the layer has
    them, or another column whose values differ in every feature. A layer with no such
-   column is refused: a feature's place in a layer is not an id. While the node has
-   edits, the two menus stay as they are: delete the edits to pick another.
-3. Double-click features on the node's map to pick them. **Picked** lists their ids,
-   and a table lists the picked features with their values.
-4. Make an edit of the picked features:
-   - **Remove**, or the Delete key, drops them, and **Restore** puts them back as the
-     input has them. **Clear pick**, or Escape, forgets the pick.
-   - **▲** and **▼**, or the up and down arrow keys, raise or lower the number column
-     picked in **Nudge** by the step beside it: 3 for a height, else 1. Pressing again
-     changes the same edit.
-   - **Scale** multiplies that column by the factor beside it.
-   - **Set value** writes a value into the column picked in **Set**, and typing a new
-     value into a cell of the table, then Enter, does the same for that feature.
-5. Or make an edit of every feature a condition picks: type the condition in
-   **Where**, such as `height > 100` or `kind == 'tower' and levels >= 30`, and the
-   node says how many features it picks. Choose what to do to them, remove, scale,
-   offset (add a number), set, expr or restore, with the column and the value it
-   needs, and press **Apply**. An expr edit writes into the column what an
-   expression makes of each feature, such as `levels * 3.2`.
-6. Press **Update results** to run the node and every node below it with the edits.
+   column is refused: a feature's place in a layer is not an id.
+3. Double-click a feature on the map, on the left. The panel on the right shows its
+   properties as Autark gives them, without its geometry, as JSON. Escape clears the
+   selection.
+4. Edit the JSON and press **Apply**. Every value that differs is written for the
+   features whose Id is the selected one's, and the line under the field says how
+   many they are: one feature under `osm_id`, every part of a building under
+   `building_id`. A value typed back to the input's leaves the edits, and a deleted
+   key is written as null. JSON that does not read shows its error under the field,
+   and the Id's own value cannot change.
+5. Or press **Remove**, or the Delete key outside the field, to take those features
+   out.
 
-Each edit is added to the node's log, under the map. The box before an edit switches
-it off: it stays in the log, and the run skips it. The × beside an edit deletes it,
-and **Undo** and **Redo**, or Ctrl+Z and Shift+Ctrl+Z (Cmd on a Mac), take back the
-last edit and make it again. The keys act while the node has the focus, after a pick
-on its map or a click in it.
+With nothing selected, the panel lists what the node holds: **Removed**, where a
+click on an id puts those features back, and **Changed**, where a click on an id
+shows its properties.
 
-The edits apply in order. An edit by ids applies to every feature whose id is one of
-them; an edit by a condition applies to the features the condition picks after the
-edits before it, and a restore by a condition reads the input. A building's parts
-share its `building_id`, so an edit by `building_id` applies to the whole building,
-every part. A raise, a lower or a scale leaves a feature with no number in its column
-as it is. The output is the edited layer, with the input's other layers as they came;
-the input itself is never changed. An id no feature has is reported in the node's
-output, and the run goes on.
+The map draws the features as the edits leave them: removed ones gone, changed
+values drawn. Its first draw frames the layers, and a redraw after an edit keeps the
+view you zoomed to.
 
-A condition or an expression reads a feature's columns by name (`height`,
-`building:levels`), or in backticks when the name has spaces (`` `Mean Acc shadow` ``).
-It takes numbers, texts in quotes, `true`, `false` and `null`, `+ - * / %`, the
-comparisons `== != < <= > >=`, `and`, `or`, `not`, parentheses, and `abs`, `round`,
-`min` and `max`. A column a feature lacks is null, arithmetic with null or a text is
-null, and a comparison with null is false.
-
-The log is saved with the dataflow, and the node's code is written from it:
+The node's code is its only state. The node writes it from the edits and reads them
+back from it:
 
 ```python
-return curio_edit_features(input_0, [
-    {"op": "remove", "ids": [29623484, 29628154]},
-    {"op": "scale", "where": "height > 100", "column": "height", "value": 0.5},
-    {"op": "set", "ids": [42], "column": "height", "value": 30, "enabled": False},
-], key="building_id", layer="table_osm_buildings")
+# Map Edits writes this code from its map: the features it removes and the
+# values it changes, matched by building_id. Comment lines above the return stay.
+return curio_map_edits(
+    input_0,
+    key="building_id",
+    remove=[8, 10],
+    change={34: {"height": 60}},
+)
 ```
 
-A change of the log writes the code again, and the node and the nodes below it that
-ran then wait for a run; **Update results** says how many. In a scenario, an
-Interaction node is a lever.
+`change` holds, for each id, the values written into its features. A building's
+parts share its `building_id`, so an edit by `building_id` applies to every part.
+The output is the edited layer, with the input's other layers as they came, or the
+edited table when the input is a table; the input itself is never changed. An id no
+feature has is reported in the node's output, and the run goes on. Code of another
+shape, such as code typed by hand, is never rewritten: the node says why it cannot
+read it, offers no edits and draws its input, and a run still runs the code.
+
+An edit marks the dataflow **Unsaved**, and the node and the nodes below it that
+ran wait for a run: **Run All** or the node's **Play** runs them, and so does
+**View > Run stale nodes automatically**. Each Apply, Remove or put back is also an
+entry in the node's **Provenance** (see [Provenance](#provenance)). In a scenario, a
+Map Edits node is a lever.
 
 ### Comparing scenarios
 
