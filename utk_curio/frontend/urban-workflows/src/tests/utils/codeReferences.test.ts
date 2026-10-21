@@ -310,6 +310,51 @@ describe("closing up circles, with names inside f-strings", () => {
   });
 });
 
+describe("scenario chips and the fields of inputs", () => {
+  test("the table has each scenario chip and a field of inputs resolving in a spec", () => {
+    const resolving = (cases.cases as Case[]).filter((c) => c.language === "json" && !c.problems).map((c) => c.code).join(" ");
+    for (const chip of ["scenario colors", "scenario text_colors", "scenario order", "scenario input_1", "inputs.scenario_name"]) {
+      expect([chip, resolving.includes(`[!! ${chip} !!]`)]).toEqual([chip, true]);
+    }
+  });
+
+  test("are told apart from a widget, whose name has no space and no dot", () => {
+    expect(parseReference("scenario colors")).toEqual({ kind: "scenario", chip: "colors" });
+    expect(parseReference("scenario text_colors")).toEqual({ kind: "scenario", chip: "text_colors" });
+    expect(parseReference("scenario order")).toEqual({ kind: "scenario", chip: "order" });
+    expect(parseReference("scenario input_2")).toEqual({ kind: "scenario", chip: "input", slot: 2 });
+    expect(parseReference("scenario input_?")).toEqual({ kind: "scenario", chip: "input", slot: null });
+    expect(parseReference("scenario colours")).toEqual({ kind: "scenario", chip: null });
+    expect(parseReference("inputs.scenario_name")).toEqual({ kind: "stacked", column: "scenario_name" });
+    expect(parseReference("inputs.rain.mm")).toEqual({ kind: "stacked", column: "rain.mm" });
+    // What the owner first named them would be widgets, or a column of input_1.
+    expect(parseReference("scenario_colors")).toEqual({ kind: "widget", name: "scenario_colors" });
+    expect(parseReference("scenario")).toEqual({ kind: "widget", name: "scenario" });
+    expect(parseReference("inputs")).toEqual({ kind: "widget", name: "inputs" });
+    expect(parseReference("input_1.scenario_color")).toEqual({ kind: "input", slot: 1, column: "scenario_color" });
+  });
+
+  test("closing up circles: an input's scenario chip follows its circle, and the deleted one reports itself", () => {
+    const code = '{"a": "[!! scenario input_0 !!]", "b": "[!! scenario input_1 !!]", "c": [!! scenario input_2 !!], "d": [!! scenario colors !!]}';
+    expect(renumberInputReferences(code, 1, "json")).toBe(
+      '{"a": "[!! scenario input_0 !!]", "b": "[!! scenario input_? !!]", "c": [!! scenario input_1 !!], "d": [!! scenario colors !!]}',
+    );
+  });
+
+  test("after closing up, an input's scenario chip writes the color of the box its input comes from", () => {
+    // Routes 0, 1 and 2 feed the map; route 1 is deleted, so route 2 is now input_1.
+    const code = renumberInputReferences('{"color": "[!! scenario input_2 !!]"}', 1, "json");
+    const inputs: InputScope[] = [
+      { slot: 0, scenario: { scenario: "fastest", name: "Fastest route", color: "#42A5F5", rank: 0 } },
+      { slot: 1, scenario: { scenario: "weather-aware", name: "Weather-aware route", color: "#00838F", rank: 1 } },
+    ];
+    expect(resolveReferences(code, { widgets: [], inputs, shared: [] }, "json")).toEqual({
+      code: '{"color": "#00838F"}',
+      problems: [],
+    });
+  });
+});
+
 describe("a Vega-Lite spec nested 5,000 deep", () => {
   // The browser reads a spec's places walking it, and a walk that deep
   // overflowed the stack, in the Widgets tab's render too.

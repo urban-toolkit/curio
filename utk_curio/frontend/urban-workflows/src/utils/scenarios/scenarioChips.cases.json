@@ -1,0 +1,258 @@
+{
+  "about": "Dataflows, a node of each, and the spec its scenario chips resolve to from the dataflow's boxes, nodes and edges: each wired input's label is the box its feeding node is in, ranked by the dataflow's list of boxes, or its node's title, renamed header or type for a node in no box, in grey. Read by src/tests/NotebookConvertor.test.ts, as the notebook export writes each spec, and by utk_curio/backend/tests/test_execution/test_scenario_chips.py, as the server resolves a node's references for a run and for the agents' check (WorkflowSpec.node_code).",
+  "cases": [
+    {
+      "name": "a chart's chips list the boxes in the order the dataflow lists them, then an input from no box by its node's title, in grey",
+      "grammar": "vega-lite",
+      "node": "chart",
+      "dataflow": {
+        "nodes": [
+          {
+            "id": "base",
+            "type": "curio.builtin/computation-analysis",
+            "x": 0,
+            "y": 0,
+            "content": "return input_0\n",
+            "title": "Shade"
+          },
+          {
+            "id": "tall",
+            "type": "curio.builtin/computation-analysis",
+            "x": 0,
+            "y": 0,
+            "content": "return input_0\n",
+            "title": "Shade"
+          },
+          {
+            "id": "survey",
+            "type": "curio.builtin/computation-analysis",
+            "x": 0,
+            "y": 0,
+            "content": "return input_0\n",
+            "title": "Roof survey"
+          },
+          {
+            "id": "chart",
+            "type": "curio.builtin/vis-vega",
+            "x": 700,
+            "y": 0,
+            "content": "{\"data\": {\"name\": \"inputs\"}, \"mark\": \"bar\", \"encoding\": {\"x\": {\"field\": [!! inputs.scenario_name !!], \"type\": \"nominal\", \"sort\": [!! scenario order !!]}, \"y\": {\"field\": \"sunlight\", \"type\": \"quantitative\", \"aggregate\": \"mean\"}, \"color\": {\"field\": \"scenario_name\", \"type\": \"nominal\", \"scale\": [!! scenario colors !!]}}}"
+          }
+        ],
+        "edges": [
+          {
+            "id": "e-base-chart",
+            "source": "base",
+            "target": "chart",
+            "sourceHandle": "out",
+            "targetHandle": "in"
+          },
+          {
+            "id": "e-tall-chart",
+            "source": "tall",
+            "target": "chart",
+            "sourceHandle": "out",
+            "targetHandle": "in_1"
+          },
+          {
+            "id": "e-survey-chart",
+            "source": "survey",
+            "target": "chart",
+            "sourceHandle": "out",
+            "targetHandle": "in_2"
+          }
+        ],
+        "scenarios": [
+          {
+            "id": "s-tall",
+            "name": "Twice as tall",
+            "color": "#e76f51",
+            "nodes": [
+              "tall"
+            ]
+          },
+          {
+            "id": "s-base",
+            "name": "Baseline",
+            "color": "#2a9d8f",
+            "nodes": [
+              "base"
+            ]
+          }
+        ]
+      },
+      "expected": "{\"data\": {\"name\": \"inputs\"}, \"mark\": \"bar\", \"encoding\": {\"x\": {\"field\": \"scenario_name\", \"type\": \"nominal\", \"sort\": [\"Twice as tall\", \"Baseline\", \"Roof survey\"]}, \"y\": {\"field\": \"sunlight\", \"type\": \"quantitative\", \"aggregate\": \"mean\"}, \"color\": {\"field\": \"scenario_name\", \"type\": \"nominal\", \"scale\": {\"domain\": [\"Twice as tall\", \"Baseline\", \"Roof survey\"], \"range\": [\"#e76f51\", \"#2a9d8f\", \"#8a8f98\"]}}}}"
+    },
+    {
+      "name": "a map's routes in the colors of the boxes their inputs come from, the roads from no box in grey",
+      "node": "map",
+      "dataflow": {
+        "nodes": [
+          {
+            "id": "roads",
+            "type": "curio.builtin/computation-analysis",
+            "x": 0,
+            "y": 0,
+            "content": "return input_0\n",
+            "title": "Roads"
+          },
+          {
+            "id": "fast",
+            "type": "curio.builtin/computation-analysis",
+            "x": 0,
+            "y": 0,
+            "content": "return input_0\n",
+            "title": "Fastest"
+          },
+          {
+            "id": "weather",
+            "type": "curio.builtin/computation-analysis",
+            "x": 0,
+            "y": 0,
+            "content": "return input_0\n",
+            "title": "Weather-aware"
+          },
+          {
+            "id": "map",
+            "type": "curio.builtin/autk-grammar",
+            "x": 700,
+            "y": 0,
+            "content": "{\"map\": {\"layerRefs\": [{\"dataRef\": \"[!! input_0 !!]\", \"title\": \"Roads\", \"color\": \"[!! scenario input_0 !!]\"}, {\"dataRef\": \"[!! input_1 !!]\", \"width\": 80, \"title\": \"Fastest route\", \"color\": \"[!! scenario input_1 !!]\"}, {\"dataRef\": \"[!! input_2 !!]\", \"width\": 40, \"title\": \"Weather-aware route\", \"color\": \"[!! scenario input_2 !!]\"}]}}"
+          }
+        ],
+        "edges": [
+          {
+            "id": "e-roads-map",
+            "source": "roads",
+            "target": "map",
+            "sourceHandle": "out",
+            "targetHandle": "in"
+          },
+          {
+            "id": "e-fast-map",
+            "source": "fast",
+            "target": "map",
+            "sourceHandle": "out",
+            "targetHandle": "in_1"
+          },
+          {
+            "id": "e-weather-map",
+            "source": "weather",
+            "target": "map",
+            "sourceHandle": "out",
+            "targetHandle": "in_2"
+          }
+        ],
+        "scenarios": [
+          {
+            "id": "fastest",
+            "name": "Fastest route",
+            "color": "#42A5F5",
+            "nodes": [
+              "fast"
+            ]
+          },
+          {
+            "id": "weather-aware",
+            "name": "Weather-aware route",
+            "color": "#00838F",
+            "nodes": [
+              "weather"
+            ]
+          }
+        ]
+      },
+      "expected": "{\"map\": {\"layerRefs\": [{\"dataRef\": \"input_0\", \"title\": \"Roads\", \"color\": \"#8a8f98\"}, {\"dataRef\": \"input_1\", \"width\": 80, \"title\": \"Fastest route\", \"color\": \"#42A5F5\"}, {\"dataRef\": \"input_2\", \"width\": 40, \"title\": \"Weather-aware route\", \"color\": \"#00838F\"}]}}"
+    },
+    {
+      "name": "an input from no box whose node has no title is named by its renamed header, and a box with no nodes still counts in the order",
+      "grammar": "vega-lite",
+      "node": "chart",
+      "dataflow": {
+        "nodes": [
+          {
+            "id": "survey",
+            "type": "curio.builtin/computation-analysis",
+            "x": 0,
+            "y": 0,
+            "content": "return input_0\n",
+            "metadata": {
+              "packageTemplateLabel": "Survey of roofs"
+            }
+          },
+          {
+            "id": "base",
+            "type": "curio.builtin/computation-analysis",
+            "x": 0,
+            "y": 0,
+            "content": "return input_0\n",
+            "title": "Shade"
+          },
+          {
+            "id": "roof",
+            "type": "curio.builtin/computation-analysis",
+            "x": 0,
+            "y": 0,
+            "content": "return input_0\n",
+            "title": "Shade"
+          },
+          {
+            "id": "chart",
+            "type": "curio.builtin/vis-vega",
+            "x": 700,
+            "y": 0,
+            "content": "{\"data\": {\"name\": \"inputs\"}, \"mark\": \"point\", \"encoding\": {\"color\": {\"field\": \"scenario_name\", \"type\": \"nominal\", \"scale\": [!! scenario colors !!]}}}"
+          }
+        ],
+        "edges": [
+          {
+            "id": "e-survey-chart",
+            "source": "survey",
+            "target": "chart",
+            "sourceHandle": "out",
+            "targetHandle": "in"
+          },
+          {
+            "id": "e-roof-chart",
+            "source": "roof",
+            "target": "chart",
+            "sourceHandle": "out",
+            "targetHandle": "in_1"
+          },
+          {
+            "id": "e-base-chart",
+            "source": "base",
+            "target": "chart",
+            "sourceHandle": "out",
+            "targetHandle": "in_2"
+          }
+        ],
+        "scenarios": [
+          {
+            "id": "s-empty",
+            "name": "Not yet drawn",
+            "color": "#7b3294",
+            "nodes": []
+          },
+          {
+            "id": "s-base",
+            "name": "Baseline",
+            "color": "#2a9d8f",
+            "nodes": [
+              "base"
+            ]
+          },
+          {
+            "id": "s-roof",
+            "name": "Green roofs",
+            "color": "#a1d99b",
+            "nodes": [
+              "roof"
+            ]
+          }
+        ]
+      },
+      "expected": "{\"data\": {\"name\": \"inputs\"}, \"mark\": \"point\", \"encoding\": {\"color\": {\"field\": \"scenario_name\", \"type\": \"nominal\", \"scale\": {\"domain\": [\"Baseline\", \"Green roofs\", \"Survey of roofs\"], \"range\": [\"#2a9d8f\", \"#a1d99b\", \"#8a8f98\"]}}}}"
+    }
+  ]
+}

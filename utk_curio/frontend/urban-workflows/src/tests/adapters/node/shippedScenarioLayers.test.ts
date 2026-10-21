@@ -157,6 +157,30 @@ test("the rule recolors exactly the routing example's two routes, each in the bo
   expect(kept).toEqual([]);
 });
 
+test("the shipped maps that write a scenario chip are the routing map alone, each route writing its own input's", () => {
+  const autark = autarkTypes();
+  const chip = /\[!!\s*scenario\s+[^\]]*?\s*!!\]/g;
+  const written: string[] = [];
+  for (const { file, flow } of dataflows()) {
+    for (const node of flow.nodes) {
+      if (!autark.has(unversioned(node.type)) || typeof node.content !== "string") continue;
+      for (const match of node.content.matchAll(chip)) written.push(`${relative(file)} ${node.id} ${match[0]}`);
+    }
+  }
+  expect(written).toEqual([
+    `${ROUTING} ${ROUTES_MAP} [!! scenario input_1 !!]`,
+    `${ROUTING} ${ROUTES_MAP} [!! scenario input_2 !!]`,
+  ]);
+  // Each on its route's layer, inside the color's quotes.
+  const routes = layersOf(parsed(dataflows().find(({ file }) => relative(file) === ROUTING)!.flow.nodes
+    .find((node: any) => node.id === ROUTES_MAP).content));
+  expect(routes.map((layer: any) => [layer.dataRef, layer.color])).toEqual([
+    ["[!! input_0 !!]", undefined],
+    ["[!! input_1 !!]", "[!! scenario input_1 !!]"],
+    ["[!! input_2 !!]", "[!! scenario input_2 !!]"],
+  ]);
+});
+
 test("no shipped layer writes Curio's old scenario key", () => {
   const keyed: string[] = [];
   for (const { file, flow } of dataflows()) {

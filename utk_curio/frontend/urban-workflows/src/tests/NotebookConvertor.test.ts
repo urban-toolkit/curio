@@ -10,6 +10,7 @@
  */
 import { trillToNotebook, serializeNotebook, type TrillSpec } from "../NotebookConvertor";
 import { NodeType } from "../constants";
+import scenarioChips from "../utils/scenarios/scenarioChips.cases.json";
 
 type NodeSpec = { id: string; type: string; content?: string };
 
@@ -394,5 +395,26 @@ describe("trillToNotebook with a chart that reads its inputs stacked", () => {
     expect(source).toContain('_spec["data"] = {"name": "input_0"}');
     // The same dataflow's chart that reads inputs does.
     expect(chartCell(trillToNotebook(stackedChart('{"data": {"name": "inputs"}, "mark": "bar"}')))).toContain("stack_inputs(");
+  });
+});
+
+describe("trillToNotebook writes each spec with its scenario chips resolved, as the server does", () => {
+  // scenarioChips.cases.json: test_scenario_chips.py resolves the same nodes
+  // through WorkflowSpec.node_code, which a server run and the agents' check use.
+  type ChipCase = { name: string; node: string; grammar?: string; dataflow: TrillSpec["dataflow"]; expected: string };
+  const chipCases = (scenarioChips.cases as unknown as ChipCase[]).map((c) => [c.name, c] as const);
+
+  it.each(chipCases)("%s", (_name, c) => {
+    const nb = trillToNotebook({ dataflow: { ...c.dataflow, name: "Chips", task: "", timestamp: 0, provenance_id: "p" } });
+    // The node's heading names it; a chart's cell follows it, an Autark map's is it.
+    const at = nb.cells.findIndex((cell) => cell.cell_type === "markdown" && cell.source.includes(`\`${c.node}\``));
+    expect(at).toBeGreaterThanOrEqual(0);
+    if (c.grammar === "vega-lite") {
+      const cell = nb.cells[at + 1];
+      expect(cell.cell_type).toBe("code");
+      expect(embeddedSpec(cell.source)).toEqual(JSON.parse(c.expected));
+    } else {
+      expect(nb.cells[at].source).toContain("```\n" + c.expected + "\n```");
+    }
   });
 });
