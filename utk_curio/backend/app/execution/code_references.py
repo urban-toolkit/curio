@@ -1303,32 +1303,40 @@ def with_chip_placeholders(code: str) -> str:
     return "".join(out)
 
 
-def with_stand_in_chips(code: str) -> str:
+def with_stand_in_chips(code: str) -> tuple[str, list]:
     """*code*, a JSON document, with each scenario chip and each field of
     ``inputs`` written as a value of its shape, for a check that has no
     dataflow to say what they write: every input a chip names comes from no
-    box, named ``input_<k>``, in grey, and a field is its name. Every other
-    reference is kept as written. The agents' document check reads a document
-    through it (``agents/domain/document_validation.py``), so the rest of the
-    document is checked."""
+    box, named ``input_<k>``, and a field is its name; and the refusal of each
+    such chip that cannot stand there, in its own words (a scale inside quotes,
+    a chip no scenario chip is called). Every other reference is kept as
+    written. The agents' document check reads a document through it
+    (``agents/domain/document_validation.py``): it reports a refusal as it is,
+    rather than the schema's reading of the chip left as text, and checks the
+    rest of the document."""
     refs = list(REFERENCE_RE.finditer(code if isinstance(code, str) else ""))
     parsed = [parse_reference(ref.group(1)) for ref in refs]
     if not any(p["kind"] in ("scenario", "stacked") for p in parsed):
-        return code
+        return code, []
     slots = sorted({p["slot"] for p in parsed if p["kind"] in ("scenario", "input") and isinstance(p.get("slot"), int)})
     inputs = [{"slot": slot, "scenario": {"name": f"input_{slot}", "color": NO_SCENARIO_COLOR}} for slot in slots]
     out: list = []
+    refusals: list = []
     last = 0
     for ref, kind, context in zip(refs, parsed, _contexts(code, refs, "json")):
         out.append(code[last:ref.start()])
         written = ref.group(0)
-        stands_in = kind["kind"] in ("scenario", "stacked") and reference_problem(
-            written, ref.group(1), [], inputs, context, "json"
-        ) is None
+        problem = (
+            reference_problem(written, ref.group(1), [], inputs, context, "json")
+            if kind["kind"] in ("scenario", "stacked") else None
+        )
+        if problem is not None:
+            refusals.append(problem)
+        stands_in = kind["kind"] in ("scenario", "stacked") and problem is None
         out.append(_resolved_text(ref.group(1), {}, inputs, context, "json", {}, {}) if stands_in else written)
         last = ref.end()
     out.append(code[last:])
-    return "".join(out)
+    return "".join(out), refusals
 
 
 def resolve_references(

@@ -52,7 +52,9 @@ until they are resolved: ``"scale": [!! scenario colors !!]``. The loop
 resolves them over the dataflow before it checks (``_resolved_document`` in
 ``solve/verified_loop.py``). One no dataflow resolved, for a node the saved spec
 does not hold, is read as a value of its shape (``with_stand_in_chips``), and
-a field of ``inputs`` as its name, so the rest of the document is still checked.
+a field of ``inputs`` as its name, so the rest of the document is still checked;
+a chip that cannot stand where it is written (a scale inside quotes, a chip no
+scenario chip is called) is refused in its own words.
 """
 
 from __future__ import annotations
@@ -588,8 +590,9 @@ def validate(
 
     # #662: a scenario chip, or a field of `inputs`, that no dataflow resolved
     # (the node is not in the saved spec) is read as a value of its shape, so
-    # the rest of the document is checked rather than refused as no JSON.
-    text = with_stand_in_chips(content) if isinstance(content, str) else ""
+    # the rest of the document is checked rather than refused as no JSON; one
+    # that cannot stand where it is written is refused in its own words.
+    text, refused_chips = with_stand_in_chips(content) if isinstance(content, str) else ("", [])
     suffix = canonical_suffix(node_type)
     grammar = grammar_of(node_type, grammar_id)
     passive = _authors_nothing(node_type, content_kind)
@@ -623,6 +626,9 @@ def validate(
                 f"node's content must be {grammar_shape(grammar)}"
             ),
         }
+    if refused_chips:
+        # The chip's own refusal, not the schema's reading of it as text.
+        return {"status": STATUS_INVALID, "detail": _detail(" ".join(refused_chips))}
     try:
         return validator(text, columns=columns, geometry_columns=geometry_columns)
     except Exception as exc:  # noqa: BLE001
