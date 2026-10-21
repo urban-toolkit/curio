@@ -15,7 +15,7 @@ fixed context has no saved output. Then, in an empty dataflow:
    output that run saved.
 2. Run scenario ends with every outcome done.
 3. Expanded, every outcome shows its output: a map drawn, a chart drawn, or
-   the result of a code node. Each map gets a close-up. An Interaction node
+   the result of a code node. Each map gets a close-up. A Map Edits node
    among the levers has drawn its own map, and a frame of the whole dataflow
    is taken.
 
@@ -90,8 +90,15 @@ SHIPPED = (
 DRAWER = '[data-curio-scenario-catalog-drawer="true"]'
 AUTARK = "curio.builtin/autk-grammar"
 VEGA = "curio.builtin/vis-vega"
-#: The Interaction node, a lever that draws its input on a map of its own.
-INTERACTION = "curio.builtin/edit-features"
+#: The Map Edits node, a lever that draws its input on a map of its own (its
+#: type id is still the Edit Features node's).
+MAP_EDITS = "curio.builtin/edit-features"
+#: The shipped scenarios whose levers hold a Map Edits node, by the dataflow's
+#: file name and the scenario's id: the map check below runs for these.
+MAP_EDITS_SCENARIOS = {
+    ("06-back-bay-road-sunlight", "s-towers"),
+    ("chicago-loop-shadow-towers", "towers-removed"),
+}
 TEST_NAME = "test_a_shipped_scenario_drops_from_a_project_never_run_and_runs"
 
 #: How long the drop may take, its run of the context on the server included.
@@ -277,18 +284,22 @@ def test_a_shipped_scenario_drops_from_a_project_never_run_and_runs(
             assert output and output["code"] == "success" and "Saved to file:" in output["content"], (
                 f"{outcome['label']} ({node_id}) shows no output: {output}"
             )
-    # A lever that draws a map of its own, an Interaction node, has drawn it
+    # A lever that draws a map of its own, a Map Edits node, has drawn it
     # before the whole dataflow is framed.
-    for lever in plan["levers"]:
-        if types[lever].startswith(INTERACTION):
-            box = node_locator(page, copies[lever])
-            _open_tab(page, copies[lever], "output")
-            box.locator('[data-edit-map-state]:not([data-edit-map-state="drawing"])').wait_for(
-                state="attached", timeout=90000,
-            )
-            state = box.locator("[data-edit-map-state]").get_attribute("data-edit-map-state")
-            problem = box.locator("[data-edit-map-problem]").all_inner_texts()
-            assert state == "drawn", f"{name}: the Interaction node {copies[lever]}'s map ended {state!r}: {problem}"
+    map_edits = [lever for lever in plan["levers"] if types[lever].startswith(MAP_EDITS)]
+    assert bool(map_edits) == ((Path(dataflow).stem, scenario) in MAP_EDITS_SCENARIOS), (
+        f"{name}: its levers hold the Map Edits nodes {map_edits}; the scenarios with one are "
+        f"{sorted(MAP_EDITS_SCENARIOS)}"
+    )
+    for lever in map_edits:
+        box = node_locator(page, copies[lever])
+        _open_tab(page, copies[lever], "output")
+        box.locator('[data-map-edits-map-state]:not([data-map-edits-map-state="drawing"])').wait_for(
+            state="attached", timeout=90000,
+        )
+        state = box.locator("[data-map-edits-map-state]").get_attribute("data-map-edits-map-state")
+        problem = box.locator("[data-map-edits-map-state]").all_inner_texts()
+        assert state == "drawn", f"{name}: the Map Edits node {copies[lever]}'s map ended {state!r}: {problem}"
     # Saved first, so the header shows the save whatever the autosave reached (#584).
     save_dataflow_and_settle_header(page)
     save_workflow_test_screenshot(

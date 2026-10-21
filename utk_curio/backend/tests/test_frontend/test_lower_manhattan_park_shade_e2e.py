@@ -9,7 +9,7 @@ extract's edge, from ``lower_mnt.osm.pbf``, which the backend serves, so the
 run needs no network. Building heights, Open-air parks and Buildings around
 parks are the context, with the Season, Distance from a park and Tall
 building height Parameters. In
-Existing, Towers removed and Height cap (whose Interaction nodes remove or cut
+Existing, Towers removed and Height cap (whose Python nodes remove or cut
 down the building parts Buildings around parks marks), Rasterize Buildings
 (``curio.scout@1``) and Accumulated Shadow
 (``model.scout.deep-umbra@1``) give the shadow, Shade per park measures it in
@@ -221,6 +221,7 @@ def test_three_scenarios_of_lower_manhattans_park_shade_are_charted_and_mapped(
     assert [scenario["id"] for scenario in dataflow["scenarios"]] == [s[0] for s in SCENARIOS]
     assert nodes[CHART]["type"] == DOTS_TYPE
     for _scenario, _name, key in SCENARIOS[1:]:
+        assert nodes[f"park-shade-{key}-lever"]["type"] == PYTHON_TYPE, key
         assert nodes[f"park-shade-{key}-change"]["type"] == CALCULATOR_TYPE, key
         assert nodes[f"park-shade-{key}-park-change"]["type"] == PYTHON_TYPE, key
     maps = [n for n, node in nodes.items()

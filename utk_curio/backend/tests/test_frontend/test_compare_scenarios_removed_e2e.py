@@ -179,7 +179,7 @@ def test_the_built_in_palette_has_no_compare_scenarios_tile(
 ):
     _enter(page, app_frontend, current_server, prefix="cmp_gone_palette")
     panel = open_tools_palette(page, "builtin")
-    # The registry has answered once the Interaction node's tile is there.
+    # The registry has answered once the Map Edits node's tile is there.
     expect(panel.locator("#tile-edit-features")).to_be_visible(timeout=30000)
     tiles = panel.locator('[id^="tile-"]').evaluate_all("(tiles) => tiles.map((tile) => tile.id)")
     assert "tile-compare-scenarios" not in tiles, f"the Built-in palette holds Compare Scenarios: {tiles}"

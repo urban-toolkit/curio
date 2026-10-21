@@ -3,7 +3,7 @@
 Example 06 runs example 07's per-road sunlight shader in three scenarios over
 one fixed context, the Back Bay loader and its data pool: "Baseline", every
 building at its own height, "Twice as tall", a copy of it with every building
-doubled, and "Two towers removed", where an Edit Features node removes two
+doubled, and "Two towers removed", where a Map Edits node removes two
 towers, 200 Clarendon and Raffles, by their ``building_id`` before copies of
 Baseline's nodes. The
 factor is a ``height_factor`` widget on each shadow step, read as an Autark
@@ -21,7 +21,7 @@ The first test drives the example as it ships:
    shadow step's ``height_factor`` tag sits in its Widgets tab, with its value,
    and as a chip in its spec.
 2. All collapsed, Run All: the loader loads once for all, on the server, the
-   scenarios run hidden, and each box shows its outcome done. The Edit Features node reads the
+   scenarios run hidden, and each box shows its outcome done. The Map Edits node reads the
    loader's layers through the pool and hands them on without every part of
    both towers. Each shadow step's batched shader reads every building part it
    is handed: autk-grammar says it left none out (#757). A double-click expands
@@ -39,7 +39,8 @@ The first test drives the example as it ships:
    change node draws it, under the title "Sunlight change (minutes)", its
    legend labelled -360, 0 and 360: a scale centered on no change.
 5. A save and a reopen: the scenarios, their colours, the collapsed ones, the
-   widgets and their values, the edit list, and the saved outputs come back.
+   widgets and their values, the Map Edits node's code, which holds its edits,
+   and the saved outputs come back.
 
 The second test drags both scenarios from the Scenario Catalog into an empty
 project, once the seeded example has run: they arrive with their results, read
@@ -465,7 +466,7 @@ def _assert_parts_pack_a_box(fc: dict) -> None:
 
 
 def _handed_building_ids(wrapper: dict) -> list:
-    """The same, in the layers Edit Features hands on, as an Autark node does."""
+    """The same, in the layers Map Edits hands on, as an Autark node does."""
     for item in wrapper["data"]:
         if item.get("layerName") == BUILDINGS:
             return _ids_of(item["data"])
@@ -473,11 +474,11 @@ def _handed_building_ids(wrapper: dict) -> list:
 
 
 def _assert_towers_removed(page) -> None:
-    """The Edit Features node read the loader's layers, through the pool, and
+    """The Map Edits node read the loader's layers, through the pool, and
     handed them on without every part of both towers: every id it names is a
     building of the input, so none is unknown."""
     source = page.evaluate(_INPUT_ARTIFACT_JS, E_EDIT)
-    assert source, "the pool did not name the artifact it read, for the Edit Features node to read"
+    assert source, "the pool did not name the artifact it read, for the Map Edits node to read"
     loaded = _loaded_buildings(load_artifact_as_dict(source))
     _assert_parts_pack_a_box(loaded)
     before = _ids_of(loaded)
@@ -706,8 +707,11 @@ def test_example_06_compares_its_three_scenarios_in_the_canvas(
         assert by_id[node_id]["content"] == shipped[node_id]["content"], f"{node_id} rewrote its code"
     saved_values = {w["name"]: w.get("value", w["default"]) for w in by_id[CHART]["metadata"]["widgets"]}
     assert saved_values == {"y": "sunlight", "combine": "mean", "y_title": "mean of sunlight"}, saved_values
+    # The Map Edits node's edits are its code, saved as it shipped, and no
+    # copy of them besides.
     assert by_id[E_EDIT]["content"] == shipped[E_EDIT]["content"], f"{E_EDIT} rewrote its code"
-    assert by_id[E_EDIT]["metadata"]["editFeatures"] == shipped[E_EDIT]["metadata"]["editFeatures"]
+    assert "remove=[29623484, 29628154]," in by_id[E_EDIT]["content"], by_id[E_EDIT]["content"]
+    assert "editFeatures" not in by_id[E_EDIT]["metadata"], by_id[E_EDIT]["metadata"]
     scenarios = {scenario["id"]: scenario for scenario in saved["scenarios"]}
     assert [(s["name"], s["color"]) for s in saved["scenarios"]] == [
         (NAMES[s], COLORS[s]) for s in (BASELINE, TWICE, TOWERS)

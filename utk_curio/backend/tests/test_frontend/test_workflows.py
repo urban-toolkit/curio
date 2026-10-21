@@ -187,10 +187,10 @@ EXAMPLE_08_MAP = "niteroi-map"
 EXAMPLE_11_HISTOGRAM = "pbf-plot"
 EXAMPLE_11_MAP = "pbf-map"
 
-#: Edit Features (#662) runs the code its edit list writes behind its own play
-#: button, but ``NodeSpec.has_play_button`` is False for it, so the canvas
-#: tests play it by its type: example 06's is played and must end Done like
-#: any other.
+#: A Map Edits node (its type id is still the Edit Features node's) runs its
+#: code behind its own play button, but ``NodeSpec.has_play_button`` is False
+#: for it, so the canvas tests play it by its type: example 06's is played and
+#: must end Done like any other.
 EDIT_FEATURES = "curio.builtin/edit-features"
 
 
@@ -199,16 +199,16 @@ def _plays(node: NodeSpec) -> bool:
     return node.has_play_button or node.type == EDIT_FEATURES
 
 
-#: Where an Edit Features node's map stands: "drawing", "drawn" or "problem".
+#: Where a Map Edits node's map stands: "drawing", "drawn" or "problem".
 _EDIT_MAP_STATE_JS = """(id) => {
     const node = document.querySelector(`.react-flow__node[data-id="${id}"]`);
-    const map = node && node.querySelector("[data-edit-map-state]");
-    return map ? map.getAttribute("data-edit-map-state") : null;
+    const map = node && node.querySelector("[data-map-edits-map-state]");
+    return map ? map.getAttribute("data-map-edits-map-state") : null;
 }"""
 
 
 def _assert_edit_map_drew(page, node_id: str) -> None:
-    """An Edit Features node that ran shows its input drawn on its map, by the
+    """A Map Edits node that ran shows its input drawn on its map, by the
     Autark node's map code, before any frame is taken of it."""
     try:
         page.wait_for_function(
@@ -220,8 +220,8 @@ def _assert_edit_map_drew(page, node_id: str) -> None:
     except PlaywrightTimeoutError:
         pass
     state = page.evaluate(_EDIT_MAP_STATE_JS, node_id)
-    problem = page.locator(f'.react-flow__node[data-id="{node_id}"] [data-edit-map-problem]').all_inner_texts()
-    assert state == "drawn", f"Edit Features node {node_id}: its map ended {state!r} {problem}"
+    problem = page.locator(f'.react-flow__node[data-id="{node_id}"] [data-map-edits-map-state]').all_inner_texts()
+    assert state == "drawn", f"Map Edits node {node_id}: its map ended {state!r} {problem}"
     assert_autark_map_drawn(page, node_id, timeout=60000, attach_as=f"{node_id}'s map")
 
 #: Interactions compared before and after, keyed by workflow, in the order
@@ -1237,7 +1237,7 @@ class TestWorkflowCanvas:
                 )
             # text mode: no output tab → nothing further to assert.
 
-        # An Edit Features node shows its input drawn on its own map.
+        # A Map Edits node shows its input drawn on its own map.
         for node in self.spec.nodes:
             if node.type == EDIT_FEATURES:
                 _assert_edit_map_drew(self.page, node.id)
@@ -1270,9 +1270,9 @@ class TestWorkflowCanvas:
 
         # Each map opens framed on the layers it draws (#773): not a speck in
         # the middle of the map, nor a crop past its edges. That is every
-        # Autark map, and the map Edit Features draws with the Autark node's
-        # map code. Checked once every close-up is taken, and for every map
-        # before failing on one.
+        # Autark map, and the map a Map Edits node draws with the Autark
+        # node's map code. Checked once every close-up is taken, and for every
+        # map before failing on one.
         maps = [
             node.id for node in self._drawing_autark_nodes()
             if "map" in json.loads(self.spec.node_code(node, "json"))

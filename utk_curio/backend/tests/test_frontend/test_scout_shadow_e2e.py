@@ -8,9 +8,9 @@ Accumulated Shadow, the node of the model package ``model.scout.deep-umbra@1``,
 runs SCOUT's Deep Umbra model on it, in the season both scenarios share, an
 Autark map draws the shadow, and a Raster Calculator (``curio.scout@1`` too)
 takes the shadow's statistics over the ground, the heights as its mask.
-"Towers removed" first reads the buildings through an Interaction node, its
-lever, whose edit log removes the 15 buildings SCOUT's second scenario
-removes, matched on building_id. Outside the scenarios, Scout's Bars charts
+"Towers removed" first reads the buildings through a Map Edits node, its
+lever, whose code removes the 15 buildings SCOUT's second scenario removes,
+matched on building_id. Outside the scenarios, Scout's Bars charts
 each scenario's mean accumulated shadow, and a third Raster Calculator takes
 its change, Towers removed's shadow minus Existing's, which an Autark map after
 it draws on a scale centered on no change.
@@ -30,8 +30,8 @@ Run All in the browser runs the whole dataflow:
    (minutes)", its legend labelled 0 to 720, the color range both maps share.
    The close-ups of the three maps are the frames.
 
-A second test edits the lever, as a user does, and presses Update results:
-the scenario runs again with the edit, and its numbers move (see its
+A second test edits the lever, as a user does, putting one of the towers
+back, and runs the scenario again with the edit: its numbers move (see its
 docstring).
 
 The packages are in every account's store and their libraries are installed
@@ -45,7 +45,6 @@ Run::
 from __future__ import annotations
 
 import json
-import re
 import time
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -55,7 +54,7 @@ import pytest
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 from playwright.sync_api import expect
 
-from .test_edit_features_e2e import _apply_where
+from .test_map_edits_e2e import _listed, _panel, _wait_for_code, _wait_for_unsaved, _watch_save_state
 from .test_scenario_drop_e2e import _saved_spec
 from .test_widget_tags_e2e import _open_tab
 from .utils import (
@@ -71,7 +70,7 @@ from .utils import (
     load_artifact_as_dict,
     load_raster_cells,
     node_locator,
-    read_node_code,
+    play_node,
     read_node_error_text,
     require_owner_view,
     require_project_page,
@@ -79,6 +78,7 @@ from .utils import (
     require_webgpu,
     run_all_and_wait,
     save_dataflow,
+    save_dataflow_and_settle_header,
     save_node_closeup,
     stub_login_and_enter_workflow,
     wait_for_node_settled,
@@ -106,19 +106,35 @@ ROW_COLUMNS = ["count", "max", "mean", "median", "min", "scenario", "scenario_na
 #: (``colorMapRange``): both legends read its ends.
 SHADOW_RANGE = (0, 720)
 
-LEVER_TEST_NAME = "test_an_edit_in_the_towers_lever_reaches_the_shadow_with_update_results"
-#: The Interaction node (#958; its type is still the Edit Features node's).
-INTERACTION_TYPE = "curio.builtin/edit-features"
+LEVER_TEST_NAME = "test_a_tower_put_back_in_the_towers_lever_reaches_the_shadow"
+#: The Map Edits node (its type id is still the Edit Features node's).
+MAP_EDITS_TYPE = "curio.builtin/edit-features"
 LOADER_TYPE = "curio.builtin/data-loading"
 #: The buildings Towers removed's lever removes as shipped, by building_id:
 #: the 15 SCOUT's second scenario leaves out.
 SCOUT_TOWERS = [8, 10, 12, 13, 14, 18, 19, 31, 34, 51, 66, 77, 82, 106, 122]
-#: The edit the test makes in the lever: the buildings still taller than 200 m,
-#: picked by a condition and removed too.
-TALLER = "height > 200"
-#: How long Update results may take: the scenario's rasterizer and Deep Umbra
-#: run again.
+#: The edit the test makes in the lever: one of SCOUT's towers put back.
+PUT_BACK = 8
+#: How long the run after the edit may take: the scenario's rasterizer and
+#: Deep Umbra run again.
 UPDATE_MS = 300000
+
+
+def _lever_code(removed: list[int]) -> str:
+    """The lever's code as its map writes it (``mapEditsCode`` in
+    ``utils/mapEdits/mapEdits.ts``) when it removes *removed*: the node's own
+    comment lines, then the line that names SCOUT's buildings, which stays."""
+    return (
+        "# Map Edits writes this code from its map: the features it removes and the\n"
+        "# values it changes, matched by building_id. Comment lines above the return stay.\n"
+        "# SCOUT's 15 removed buildings.\n"
+        "return curio_map_edits(\n"
+        "    input_0,\n"
+        '    key="building_id",\n'
+        f"    remove=[{', '.join(str(i) for i in removed)}],\n"
+        "    change={},\n"
+        ")\n"
+    )
 
 
 def _maps_by_scenario(dataflow: dict) -> dict:
@@ -367,17 +383,17 @@ def _assert_lever_map_drawn(page, lever: str) -> None:
     """The lever's own map, the Autark map code drawing its input, drawn.
 
     The map draws the buildings flat in one colour, fewer colours than
-    ``assert_autark_map_drawn`` asks of a city map, as the Interaction test's
-    boxes do (``test_edit_features_e2e``): its state says it drew, and its
+    ``assert_autark_map_drawn`` asks of a city map, as the Map Edits test's
+    boxes do (``test_map_edits_e2e``): its state says it drew, and its
     close-up compares the drawing with its baseline."""
     edit = node_locator(page, lever)
     frame_nodes(page, [lever])
     _open_tab(page, lever, "output")
-    edit.locator('[data-edit-map-state]:not([data-edit-map-state="drawing"])').wait_for(
+    edit.locator('[data-map-edits-map-state]:not([data-map-edits-map-state="drawing"])').wait_for(
         state="attached", timeout=90000,
     )
-    state = edit.locator("[data-edit-map-state]").get_attribute("data-edit-map-state")
-    problem = edit.locator("[data-edit-map-problem]").all_inner_texts()
+    state = edit.locator("[data-map-edits-map-state]").get_attribute("data-map-edits-map-state")
+    problem = edit.locator("[data-map-edits-map-state]").all_inner_texts()
     assert state == "drawn", f"the towers lever's map ended {state!r}: {problem}"
 
 
@@ -415,29 +431,32 @@ def _wait_for_new_outcome(page, node_id: str, before: str, *, node_type: str, ti
     return handle.json_value()
 
 
-def test_an_edit_in_the_towers_lever_reaches_the_shadow_with_update_results(
+def test_a_tower_put_back_in_the_towers_lever_reaches_the_shadow(
     app_frontend: "FrontendPage",
     current_server: str,
     page,
     record_property,
 ):
-    """Towers removed's Interaction node is the scenario's lever: its log holds
-    SCOUT's 15 removed buildings, one removal by building_id under a label. An
-    edit made there, then Update results, runs the scenario again with it:
+    """Towers removed's Map Edits node is the scenario's lever: its code
+    removes SCOUT's 15 buildings by building_id, under a comment line that
+    names them. One of them put back there, then a run, runs the scenario
+    again with it:
 
     1. Run All gives SCOUT's two means, as the test above checks, each the
        mean its scenario's statistics took.
     2. The lever draws the buildings on its map, matched on building_id, and
-       lists SCOUT's removal under its label.
-    3. A condition picks the buildings still taller than 200 m, and Remove
-       makes it a second entry: the lever's code holds it, and the lever and
-       the nodes below it are out of date.
-    4. Update results runs them. The lever hands on the buildings without
-       SCOUT's 15 and without those; Towers removed's mean moves away from the
-       one SCOUT's case gave, and the Bars chart shows the mean its statistics
-       took; Existing, which did not run, keeps its mean. The lever's close-up
-       is the frame.
-    5. The log is saved with the dataflow, SCOUT's entry under its label.
+       its panel lists SCOUT's 15 under Removed.
+    3. A click on building 8 there puts it back: the lever's code removes the
+       other 14, its comment lines kept, the panel lists those, and the
+       dataflow reads Unsaved.
+    4. Playing Towers removed's statistics runs the lever, which is stale
+       after the edit, and the nodes between them again. The lever hands on
+       the buildings without the 14; Towers removed's mean rises, the tower's
+       shadow on the ground again, and the Bars chart shows the mean its
+       statistics took; Existing, which did not run, keeps its mean. The
+       lever's close-up is the frame.
+    5. The lever's code is saved with the dataflow, and nothing else holds
+       its edits.
     """
     require_project_page()
     require_user_auth()
@@ -447,16 +466,14 @@ def test_an_edit_in_the_towers_lever_reaches_the_shadow_with_update_results(
     dataflow = spec["dataflow"]
     nodes = {node["id"]: node for node in dataflow["nodes"]}
     scenario_of = {node_id: scenario["id"] for scenario in dataflow["scenarios"] for node_id in scenario["nodes"]}
-    levers = [n for n, node in nodes.items() if node["type"] == INTERACTION_TYPE]
+    levers = [n for n, node in nodes.items() if node["type"] == MAP_EDITS_TYPE]
     assert [scenario_of.get(n) for n in levers] == ["towers-removed"], (
-        f"Towers removed reads the buildings through no Interaction node: the Interaction nodes are {levers}, "
+        f"Towers removed reads the buildings through no Map Edits node: the Map Edits nodes are {levers}, "
         f"in the scenarios {[scenario_of.get(n) for n in levers]}"
     )
     (lever,) = levers
-    shipped = nodes[lever]["metadata"]["editFeatures"]
-    assert shipped["key"] == "building_id", shipped
-    assert [(edit["op"], edit["ids"]) for edit in shipped["edits"]] == [("remove", SCOUT_TOWERS)], shipped
-    (label,) = [edit["label"] for edit in shipped["edits"]]
+    assert nodes[lever]["content"] == _lever_code(SCOUT_TOWERS), nodes[lever]["content"]
+    assert "editFeatures" not in nodes[lever]["metadata"], nodes[lever]["metadata"]
     (loader,) = [n for n, node in nodes.items() if node["type"] == LOADER_TYPE]
     statistics = {scenario_of[n]: n for n, node in nodes.items() if node["type"] == CALCULATOR_TYPE
                   and "\nreturn raster_statistics(" in node["content"]}
@@ -497,47 +514,34 @@ def test_an_edit_in_the_towers_lever_reaches_the_shadow_with_update_results(
         (mean,) = _saved_output(page, node_id)["data"]["mean"]
         assert before[scenario] == pytest.approx(mean, rel=1e-12), (scenario, before[scenario], mean)
 
-    # 2. The lever: the buildings on its map, by building_id, and SCOUT's entry.
+    # 2. The lever: the buildings on its map, by building_id, and SCOUT's 15
+    # under Removed.
     edit = node_locator(page, lever)
     _assert_lever_map_drawn(page, lever)
-    assert edit.get_by_label("Id", exact=True).input_value() == "building_id"
-    assert edit.locator("[data-edit-refusal]").count() == 0
-    scouts = f"{label}: Remove building_id {', '.join(str(i) for i in SCOUT_TOWERS)}"
-    expect(edit.locator('[data-edit-list="1"] [data-edit-op="remove"]')).to_contain_text(scouts, timeout=10000)
-
-    # 3. The buildings still taller than 200 m, picked by a condition, removed.
+    assert edit.get_by_test_id("edit-features-key").input_value() == "building_id"
+    assert edit.locator("[data-map-edits-refusal]").count() == 0
+    assert _listed(page, lever, "put-back") == [str(i) for i in SCOUT_TOWERS]
     heights = _heights(page, loader)
     assert sorted(heights) == list(range(123)), f"the buildings' ids are not 0 to 122: {sorted(heights)[:10]}"
-    taller = sorted(i for i, height in heights.items() if i not in SCOUT_TOWERS and height > 200)
-    assert taller, "no building is taller than 200 m once SCOUT's 15 are gone"
-    edit.get_by_test_id("interaction-where").fill(TALLER)
-    matching = "1 feature" if len(taller) == 1 else f"{len(taller)} features"
-    expect(edit.get_by_test_id("interaction-matching")).to_have_text(matching, timeout=10000)
-    _apply_where(edit, TALLER, "remove")
-    edit.locator('[data-edit-list="2"]').wait_for(state="attached", timeout=10000)
-    expect(edit.locator('[data-edit-op="remove"]').nth(1)).to_contain_text(f"Remove where {TALLER}", timeout=10000)
-    expect(edit.get_by_test_id("interaction-counts")).to_have_text(
-        f"{len(SCOUT_TOWERS) + len(taller)} removed, 0 changed", timeout=10000,
-    )
-    entry = f'{{"op": "remove", "where": "{TALLER}"}},'
-    deadline = time.time() + 15
-    code = ""
-    while time.time() < deadline:
-        code = read_node_code(page, lever)
-        if entry in code:
-            break
-        page.wait_for_timeout(250)
-    assert entry in code, f"the lever did not write its new entry into its code:\n{code}"
-    update = edit.get_by_test_id("interaction-update")
-    expect(update).to_have_text(re.compile(r"^Update results \(\d+\)$"), timeout=10000)
 
-    # 4. Update results runs the lever and every node below it: each one's
-    # output is saved to a new file. The Bars chart saves none: it draws what
-    # it reads, which the rows below check.
+    # 3. Building 8 put back, with a click on its id.
+    save_dataflow_and_settle_header(page)
+    _watch_save_state(page)
+    _panel(page, lever).locator(f'[data-map-edits-put-back="{PUT_BACK}"]').click()
+    removed = [i for i in SCOUT_TOWERS if i != PUT_BACK]
+    code = _lever_code(removed)
+    _wait_for_code(page, lever, code, f"building {PUT_BACK} was put back")
+    expect(_panel(page, lever).locator(f'[data-map-edits-put-back="{PUT_BACK}"]')).to_have_count(0)
+    assert _listed(page, lever, "put-back") == [str(i) for i in removed]
+    _wait_for_unsaved(page, f"building {PUT_BACK} was put back")
+
+    # 4. Playing Towers removed's statistics runs the lever and every node
+    # between them: each one's output is saved to a new file. The Bars chart
+    # saves none: it draws what it reads, which the rows below check.
     ran = [lever, statistics["towers-removed"]]
     saved_to = {node_id: page.evaluate(_OUTPUT_ARTIFACT_JS, node_id) for node_id in ran}
-    assert all(saved_to.values()), f"a node shows no saved output before Update results: {saved_to}"
-    update.click()
+    assert all(saved_to.values()), f"a node shows no saved output before the run: {saved_to}"
+    play_node(page, statistics["towers-removed"])
     for node_id in ran:
         node_type = nodes[node_id]["type"]
         outcome = _wait_for_new_outcome(page, node_id, saved_to[node_id], node_type=node_type, timeout_ms=UPDATE_MS)
@@ -547,10 +551,9 @@ def test_an_edit_in_the_towers_lever_reaches_the_shadow_with_update_results(
             f"{read_node_error_text(node_locator(page, node_id))}"
         )
     wait_for_run_guard_released(page, timeout_ms=UPDATE_MS)
-    expect(update).to_have_text("Update results", timeout=30000)
     handed = _heights(page, lever)
-    assert sorted(handed) == sorted(set(heights) - set(SCOUT_TOWERS) - set(taller)), (
-        f"the lever handed on {sorted(handed)}, not the buildings without SCOUT's 15 and {taller}"
+    assert sorted(handed) == sorted(set(heights) - set(removed)), (
+        f"the lever handed on {sorted(handed)}, not the buildings without {removed}"
     )
     (mean,) = _saved_output(page, statistics["towers-removed"])["data"]["mean"]
     after = None
@@ -564,9 +567,10 @@ def test_an_edit_in_the_towers_lever_reaches_the_shadow_with_update_results(
     assert abs(after["towers-removed"] - mean) < 1e-6 and abs(after["existing"] - before["existing"]) < 1e-6, (
         f"the Bars chart reads the means {after}; Towers removed's statistics took {mean}"
     )
-    assert abs(after["towers-removed"] - before["towers-removed"]) > 0.1, (
-        f"removing {taller} too left Towers removed's mean at {after['towers-removed']}, "
-        f"where it was {before['towers-removed']}"
+    assert after["towers-removed"] > before["towers-removed"] + 0.1, (
+        f"putting building {PUT_BACK} back left Towers removed's mean accumulated shadow at "
+        f"{after['towers-removed']:.4f} minutes, where it was {before['towers-removed']:.4f}: "
+        "the tower's shadow falls on the ground again"
     )
     assert abs(after["existing"] - before["existing"]) < 1e-6, (
         f"Existing's mean moved from {before['existing']} to {after['existing']}, though none of its nodes ran"
@@ -574,10 +578,9 @@ def test_an_edit_in_the_towers_lever_reaches_the_shadow_with_update_results(
     _assert_lever_map_drawn(page, lever)
     save_node_closeup(page, "scout-shadow-towers-lever", lever, test_name=LEVER_TEST_NAME, sweep_toasts=True)
 
-    # 5. The log is saved with the dataflow.
+    # 5. The lever's code is saved with the dataflow, and nothing else holds
+    # its edits.
     save_dataflow(page)
     saved = {node["id"]: node for node in _saved_spec(current_server, token, project_id)["dataflow"]["nodes"]}
-    log = saved[lever]["metadata"]["editFeatures"]
-    assert log["key"] == "building_id", json.dumps(log)
-    assert log["edits"] == [*shipped["edits"], {"op": "remove", "where": TALLER}], json.dumps(log)
-    assert saved[lever]["content"] == code
+    assert saved[lever]["content"] == code, saved[lever]["content"]
+    assert "editFeatures" not in saved[lever]["metadata"], saved[lever]["metadata"]
