@@ -331,6 +331,9 @@ Then write, in the node's code:
 api_key = curio_secret("census")
 ```
 
+`curio_secret` is one of the functions Curio gives node code, listed with their
+arguments in [Functions node code calls](../agents/agent.curio.builtin@1/knowledge/node-functions.md).
+
 Curio resolves the name when the node runs, on Play and when an agent's Solve
 runs it, and hands the value to the sandbox for that run only. The key never
 appears in your saved dataflow, in proposals, in the chat or in the run log, and
@@ -677,7 +680,9 @@ When the node runs:
   [Input names](#input-names)).
 - In Python and JavaScript, a layer chip becomes that layer of the input:
   `roads = [!! input_0:table_osm_roads !!]` runs as
-  `roads = curio_layer(input_0, "table_osm_roads", 0)`, which gives a GeoDataFrame
+  `roads = curio_layer(input_0, "table_osm_roads", 0)`
+  ([Functions node code calls](../agents/agent.curio.builtin@1/knowledge/node-functions.md)),
+  which gives a GeoDataFrame
   in Python and a GeoJSON FeatureCollection in JavaScript. An input that is one
   frame with no layer name, such as a GeoDataFrame a Python node returns, is
   that layer. An input with several frames needs one of that name; if it has

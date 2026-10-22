@@ -795,16 +795,44 @@ def _input_handles(_src: _Sources) -> str:
 
 def _input_chip(_src: _Sources, text: str) -> str:
     """The chip node code reads an input by: ``0`` is input_0, ``0.height``
-    a column of it (``reference_text``)."""
+    a column of it, ``0:roads`` the layer of it named roads and
+    ``0:roads.height`` a column of that layer (``reference_text``)."""
     from utk_curio.backend.app.execution.code_references import (
         input_reference_inner,
         reference_text,
     )
 
-    slot, _, column = text.partition(".")
-    if not slot.strip().isdigit():
-        raise PromptTemplateError(f"an input chip names a circle number, not {text!r}")
-    return reference_text(input_reference_inner(int(slot), column or None))
+    head, _, column = text.partition(".")
+    slot, colon, layer = head.partition(":")
+    if not slot.strip().isdigit() or (colon and not layer):
+        raise PromptTemplateError(
+            f"an input chip names a circle number, then a layer after a colon and a column after a dot "
+            f"if it reads one, not {text!r}"
+        )
+    return reference_text(input_reference_inner(int(slot), column or None, layer or None))
+
+
+def _stacked_column_chip(_src: _Sources, column: str) -> str:
+    """The chip a Vega-Lite spec names a column of every input's rows stacked
+    by, ``[!! inputs.<column> !!]`` (``stacked_reference_inner``)."""
+    from utk_curio.backend.app.execution.code_references import reference_text, stacked_reference_inner
+
+    return reference_text(stacked_reference_inner(column))
+
+
+def _selection_chip(_src: _Sources, name: str) -> str:
+    """The reference a node's code places its selection tag *name* by
+    (``selection_reference_inner``)."""
+    from utk_curio.backend.app.execution.code_references import reference_text, selection_reference_inner
+
+    return reference_text(selection_reference_inner(_widget_name(name)))
+
+
+def _selection_id_cap(_src: _Sources) -> str:
+    """The most ids one selection tag holds (``SELECTION_ID_CAP``), as ``10,000``."""
+    from utk_curio.backend.app.execution.code_references import SELECTION_ID_CAP
+
+    return f"{SELECTION_ID_CAP:,}"
 
 
 def _stacked_dataset_chip(_src: _Sources) -> str:
@@ -1126,6 +1154,9 @@ PROMPT_FIELDS: dict[str, PromptField] = {
     "inputs.handles": PromptField(_input_handles),
     "inputs.chip": PromptField(_input_chip, takes_arg=True),
     "inputs.stacked": PromptField(_stacked_dataset_chip),
+    "inputs.stacked_column": PromptField(_stacked_column_chip, takes_arg=True),
+    "selections.reference": PromptField(_selection_chip, takes_arg=True),
+    "selections.id_cap": PromptField(_selection_id_cap),
     "scenarios.chip": PromptField(_scenario_chip, takes_arg=True),
     "widgets.kinds": PromptField(_widget_kinds),
     "widgets.reference": PromptField(_widget_reference, takes_arg=True),
