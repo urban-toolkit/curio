@@ -60,6 +60,8 @@ The weather GNN, SCOUT's weather graph network, is about 52 KB. Its package, `mo
 
 A node runs a model whose package is in your store: one you added, one a dataflow that names it brought, or one installed for the examples. A model whose package your store does not hold stops the node, with a message saying to add it.
 
+An agent writes only models your store holds into a node, and asks you to add any other.
+
 ---
 
 ## 2. Surfaces and workflows

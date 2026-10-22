@@ -45,6 +45,8 @@ An agent id is **`agent.`**, its publisher and its name (`agent.curio.researcher
 
 Agents build with Curio's own nodes, [functions](../agents/agent.curio.builtin@1/knowledge/node-functions.md), catalogs and chips, as you do, and read what you made with them.
 
+An agent uses only what you have: the code it writes reads your Data Catalog's datasets, runs the models you added and uses the keys you saved, calling only the functions and importing only the modules its node gets.
+
 **Seven agents ship with Curio.** Four of them are the catalog: **Researcher**, **Node Builder**, **Dataflow Builder** and **Dataset Finder**. This guide uses three words for what an agent does:
 
 - **In chat:** what you can ask an agent where you dropped it.
