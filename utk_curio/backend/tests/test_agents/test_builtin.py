@@ -1082,7 +1082,9 @@ class TestResearcher:
         # fallback is retired (plan a-few-things-snuggly-goblet, step 6).
         # 2026-10-22: two views link directly, and a Data Pool goes between
         # them only in its four cases (owner, 10-21; PR #1058).
-        "94f195692c47d9f3e881d11a3c8dfa08730e60b46a3f55c72ba3c5149607d619"
+        # 2026-10-22: a planned Spatial Join says how it joins in
+        # "spatialJoin" (plan step 11).
+        "4ffff69f139c5728b497ecd244085a6712c7866356c3fbaf4fd0f3cfe49850a8"
     )
 
     def test_manifest_surface(self):
