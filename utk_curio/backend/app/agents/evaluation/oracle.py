@@ -24,6 +24,7 @@ import json
 from dataclasses import dataclass
 from typing import Iterable, Mapping
 from utk_curio.backend.app.agents.application import source_grounding
+from utk_curio.backend.app.agents.domain import map_edits
 from utk_curio.backend.app.execution.workflow_spec import slot_handle_id
 
 #: The fence the plan grammar recognises (``content.py``); fence-agnostic
@@ -126,6 +127,7 @@ def plan_for(
     source_hints: Mapping | None = None,
     synthetic_refs: Iterable = (),
     widgets: Mapping | None = None,
+    edit_goals: Mapping | None = None,
 ) -> OraclePlan:
     """The plan reply for a fixture's ``expected`` block.
 
@@ -142,26 +144,34 @@ def plan_for(
     their planned nodes (#662): the code Solve writes places them as
     ``[!! name !!]`` references, which resolve against the node's widgets.
 
+    ``edit_goals`` (``{ref: goal}``, :func:`edit_goals_for`) are the edits a
+    planned Map Edits node is to hold, said as its example's goal says them:
+    Solve makes edits in an empty Map Edits node only when its goal names
+    them, so a plan names them in the node's intent, as the knowledge page on
+    Map Edits asks of a planner.
+
     Raises :class:`Unrepresentable` for an edge kind the grammar cannot carry.
     """
     by_ref = {str(i.get("ref")): dict(i) for i in intents}
     hints = {str(k): list(v) for k, v in (source_hints or {}).items()}
     synthetic_refs = {str(r) for r in synthetic_refs}
     declared = {str(k): [dict(w) for w in v] for k, v in (widgets or {}).items() if v}
+    edits = {str(k): str(v) for k, v in (edit_goals or {}).items() if v}
     nodes = []
     roles = {}
     for node in expected.get("nodes") or []:
         ref = str(node.get("ref"))
         role = str(node.get("role") or "analysis")
         roles[ref] = role
+        intent = _intent_for(ref, role, by_ref, hints.get(ref, ()), ref in synthetic_refs)
+        if ref in edits:
+            intent = f"{intent}. {edits[ref]}"
         nodes.append(
             {
                 "ref": ref,
                 "nodeType": str(node.get("type")),
                 "title": f"{_ROLE_TITLES.get(role, 'Step')} {ref}",
-                "intent": _intent_for(
-                    ref, role, by_ref, hints.get(ref, ()), ref in synthetic_refs
-                ),
+                "intent": intent,
                 **({"widgets": declared[ref]} if ref in declared else {}),
             }
         )
@@ -226,6 +236,32 @@ def content_replies(
         if isinstance(content, str) and content.strip():
             replies[str(node.get("ref"))] = content
     return replies
+
+
+def edit_goals_for(expected: Mapping, *, example: Mapping, origins: Iterable) -> dict:
+    """``{ref: goal}``: the goal of each example Map Edits node whose code
+    holds edits, for the planned node that rebuilds it (:func:`plan_for`).
+
+    Solve makes edits in an empty Map Edits node only when its goal names
+    them (``map_edits.goal_names_edits``), and a planned node's goal is its
+    intent; ``test_example_reconstruction.py`` checks that each goal carried
+    names them. A node is a Map Edits node by its template's behavior, as
+    Solve tells one."""
+    inner = example.get("dataflow")
+    dataflow = inner if isinstance(inner, Mapping) else example
+    raw_nodes = list(dataflow.get("nodes") or [])
+    order = list(origins)
+    found: dict = {}
+    for index, node in enumerate(expected.get("nodes") or []):
+        if index >= len(order) or order[index] >= len(raw_nodes):
+            continue
+        original = raw_nodes[order[index]]
+        if not map_edits.is_map_edits(None, None, original.get("type")):
+            continue
+        goal = str(original.get("goal") or "").strip()
+        if goal and not map_edits.holds_no_edits(original.get("content")):
+            found[str(node.get("ref"))] = goal
+    return found
 
 
 def widgets_for(expected: Mapping, *, example: Mapping, origins: Iterable) -> dict:

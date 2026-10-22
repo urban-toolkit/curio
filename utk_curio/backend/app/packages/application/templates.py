@@ -350,23 +350,25 @@ def roster_templates(user_key: str, project_id: str) -> dict | None:
         return None
 
 
-#: ``catalog_template_flags``'s last reading, keyed by the catalog folder and
-#: its modification time, so a package published into it is read again.
-_CATALOG_FLAGS: dict[tuple[str, int], dict[str, frozenset[str]]] = {}
+#: ``_catalog_facts``'s last reading, keyed by the catalog folder and its
+#: modification time, so a package published into it is read again.
+_CATALOG_FACTS: dict[tuple[str, int], dict[str, dict]] = {}
 
 
-def catalog_template_flags() -> dict[str, frozenset[str]]:
-    """``{canonical template id: the flags it declares}`` for the templates of
-    the package catalog's own copies (``catalog_root``)."""
+def _catalog_facts() -> dict[str, dict]:
+    """What the templates of the package catalog's own copies
+    (``catalog_root``) declare, by canonical template id: ``flags``, the flags
+    each declares, and ``behaviors``, the behavior each names."""
     root = catalog_root()
     try:
         key = (str(root), root.stat().st_mtime_ns)
     except OSError:
-        return {}
-    cached = _CATALOG_FLAGS.get(key)
+        return {"flags": {}, "behaviors": {}}
+    cached = _CATALOG_FACTS.get(key)
     if cached is not None:
         return cached
     flags: dict[str, frozenset[str]] = {}
+    behaviors: dict[str, str] = {}
     for package_dir in sorted(root.iterdir()):
         if not package_dir.is_dir():
             continue
@@ -375,13 +377,28 @@ def catalog_template_flags() -> dict[str, frozenset[str]]:
         except Exception:  # noqa: BLE001 - an unreadable catalog package declares nothing
             continue
         for template in manifest.templates:
+            canonical = f"{manifest.package_id}/{template.template_id}"
             declared = declared_flags(template)
             if declared:
-                canonical = f"{manifest.package_id}/{template.template_id}"
                 flags[canonical] = flags.get(canonical, frozenset()) | declared
-    _CATALOG_FLAGS.clear()
-    _CATALOG_FLAGS[key] = flags
-    return flags
+            if isinstance(template.behavior, str) and template.behavior:
+                behaviors.setdefault(canonical, template.behavior)
+    facts = {"flags": flags, "behaviors": behaviors}
+    _CATALOG_FACTS.clear()
+    _CATALOG_FACTS[key] = facts
+    return facts
+
+
+def catalog_template_flags() -> dict[str, frozenset[str]]:
+    """``{canonical template id: the flags it declares}`` for the templates of
+    the package catalog's own copies (``catalog_root``)."""
+    return _catalog_facts()["flags"]
+
+
+def catalog_template_behaviors() -> dict[str, str]:
+    """``{canonical template id: the behavior it names}`` for the templates of
+    the package catalog's own copies (``catalog_root``) that name one."""
+    return _catalog_facts()["behaviors"]
 
 
 def template_flags(node_type: object, templates: dict | None = None) -> frozenset[str]:

@@ -565,6 +565,38 @@ whose code is its only state: one call of `curio_edit_features`
   node's layers reach it as GeoDataFrames that keep `layerName` and `layerType`
   in their `metadata` (`worker._keep_layer_identity`); the isolated child gets
   the envelope itself.
+- `utk_curio/sandbox/util/feature_edits_code.py` is the node's reader ported to
+  Python line for line (`read_edit_features_code`, `edit_problem`,
+  `new_layer_problem`, `read_call_args` for the literals), never through `ast`
+  or `eval`. A reason shows a value as JavaScript writes it (`js_values.py`), and
+  `edit_expr.py` refuses an expression in `editExpr.ts`'s words, so both readers
+  refuse in one sentence: pytest and Jest compare every refused case of
+  `editFeaturesCode.cases.json` whole.
+- Agents are held to that reader (`agents/domain/map_edits.py`), keyed by the
+  template's `behavior`, `edit-features`, read from the account's copy of the
+  template as a run finds the node's package (`packages/application/node_templates.py`),
+  else from the catalog's. The `node.create` and `node.content.write` mints refuse
+  code it refuses. Solve's verified loop fails a round on it before the sandbox
+  (`_map_edits_gate`), and on the lines of a run that name ids no feature has
+  (`_made_up_ids_check`, `feature_edits.UNKNOWN_IDS_LINE`), read from the
+  target's whole output (`run_through_node(keep_stdout=True)`, kept out of the
+  streamed `nodes`). The unverified Solve refuses it too. Code the node holds
+  already is the user's and is never refused. Solve makes edits in an empty
+  Map Edits node only when its goal names them (`goal_names_edits`); otherwise
+  a blank one gets the code the node writes for itself when dropped
+  (`new_node_code`), persisted with the wave and never handed to the canvas as
+  a change. A node's context carries each Map Edits neighbour's call, capped
+  (`mapEditsCall`).
+- An agent's applied change to a node whose code is its state goes through the
+  node's own writer (`utils/nodeCodeWriters.ts`): `applyNodeContent` hands a Map
+  Edits node the code and the name of the agent that wrote it, which the
+  apply's `appliedContent.agent` and Solve's `node_result.agent` carry, and the
+  entry the writer files in the node's history is named after that agent.
+- Agents learn the call from `knowledge/map-edits.md` in the base entry, which
+  the preamble includes: its edits and their fields, its keywords, and the words
+  a goal names edits by. `test_map_edits_page.py` compares the page with the
+  reader's tables (`EDIT_OPS`, `EDIT_FIELDS`, `KEYWORDS`) and with
+  `map_edits.EDIT_WORDS`, and reads its example call with the node's reader.
 
 ### Notes
 

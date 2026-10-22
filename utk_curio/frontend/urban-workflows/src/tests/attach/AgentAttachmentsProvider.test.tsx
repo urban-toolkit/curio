@@ -619,6 +619,26 @@ describe("AgentAttachmentsProvider apply→canvas bridge (memo dev/48 §3.3)", (
     ]);
   });
 
+  it("an appliedContent apply response names the agent that wrote it, and the canvas gets that name", async () => {
+    const appliedContent = { nodeId: "n1", content: "print(2)", agent: "Node Builder" };
+    api.applyProposal.mockResolvedValue({
+      attachmentId: "a1",
+      proposalId: "p1",
+      status: "applied",
+      mutationApplied: true,
+      appliedContent,
+    });
+    renderProvider();
+    fireEvent.click(screen.getByText("open"));
+    await waitFor(() => expect(screen.getByTestId("turns")).toHaveTextContent("old-q"));
+    await act(async () => {
+      fireEvent.click(screen.getByText("apply"));
+    });
+    expect(events).toEqual([
+      { kind: "node-content-applied", nodeId: "n1", content: "print(2)", agent: "Node Builder" },
+    ]);
+  });
+
   it("a project.install apply repaints the AGENTS palette (dev/106)", async () => {
     api.applyProposal.mockResolvedValue({
       attachmentId: "a1",
@@ -1091,6 +1111,26 @@ describe("AgentAttachmentsProvider streamed solve (dev/63)", () => {
     // Terminal: the overlay clears — the refetched session is the truth.
     expect(screen.getByTestId("solve-progress")).toHaveTextContent("∅");
     expect(events).toHaveLength(1); // no double-apply from the done payload
+  });
+
+  it("solved content reaches the canvas with the name of the agent that wrote it", async () => {
+    let emit: (name: string, payload: Record<string, unknown>) => void = () => undefined;
+    api.solveAttachmentStream.mockImplementation(
+      (_p: string, _a: string, onEvent: (n: string, pl: Record<string, unknown>) => void) => {
+        emit = onEvent;
+        return new Promise(() => undefined) as ReturnType<typeof api.solveAttachmentStream>;
+      },
+    );
+    renderProvider();
+    fireEvent.click(screen.getByText("solve"));
+    await waitFor(() => expect(api.solveAttachmentStream).toHaveBeenCalled());
+    act(() => {
+      emit("node_started", { nodeId: "n1" });
+      emit("node_result", { nodeId: "n1", status: "solved", content: "print(9)", agent: "Node Builder" });
+    });
+    expect(events).toEqual([
+      { kind: "node-content-applied", nodeId: "n1", content: "print(9)", agent: "Node Builder" },
+    ]);
   });
 
 

@@ -92,6 +92,40 @@ class TestReachability:
         assert score.categories == ("pass",), result.scored.as_dict()
         assert result.scored.comparison.exact
 
+    def test_a_planned_map_edits_node_names_the_edits_its_example_holds(self):
+        """Solve makes edits in an empty Map Edits node only when its goal
+        names them, and a planned node's goal is its intent, so the oracle's
+        plan names the edits each example Map Edits node holds, as the
+        knowledge page on Map Edits asks a planner to. Without that, the
+        reachability above would rebuild such a node as its call with no
+        edits and still find content there."""
+        from utk_curio.backend.app.agents.domain import map_edits
+        from utk_curio.backend.app.agents.domain.content import _PLAN_INTENT_MAX_CHARS
+
+        named = []
+        for fixture in FIXTURES:
+            example = _example(fixture)
+            origins = list(canonical_graph_from_spec(example, templates=TEMPLATES).origins)
+            inner = example.get("dataflow") if isinstance(example.get("dataflow"), dict) else example
+            raw = inner.get("nodes") or []
+            holding = [
+                str(node.get("ref"))
+                for index, node in enumerate(fixture.expected.get("nodes") or [])
+                if index < len(origins) and origins[index] < len(raw)
+                and map_edits.is_map_edits(None, None, raw[origins[index]].get("type"))
+                and not map_edits.holds_no_edits(raw[origins[index]].get("content"))
+            ]
+            if not holding:
+                continue
+            goals = oracle.edit_goals_for(fixture.expected, example=example, origins=origins)
+            plan = oracle.plan_for(fixture.expected, intents=fixture.intents, edit_goals=goals)
+            intents = {node["ref"]: node["intent"] for node in plan.nodes}
+            for ref in holding:
+                named.append((fixture.fixture_id, ref))
+                assert map_edits.goal_names_edits(intents[ref]), (fixture.fixture_id, ref, intents[ref])
+                assert len(intents[ref]) <= _PLAN_INTENT_MAX_CHARS, (fixture.fixture_id, ref, len(intents[ref]))
+        assert len(named) >= 4, named
+
     def test_the_interaction_edge_gap_is_closed_and_nothing_is_refused_now(self):
         """dev/125 (dev/121 F2) — the gap that named this branch is gone.
 
