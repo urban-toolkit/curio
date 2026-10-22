@@ -18,10 +18,14 @@ the shades a text mark reads in (:func:`table_text_color`);
 ``[!! scenario order !!]`` the names alone; ``[!! scenario input_1 !!]`` the
 color of input_1 in that scale. With no input from a box, the two scales are
 the names alone, ``{"domain": [names]}``, which the grammar's own palette
-colors. ``[!! inputs.sunlight !!]`` names a field of the
-dataset ``inputs``, which stacks a Vega-Lite chart's inputs. A widget's name
-has no space and no dot, and an input's chip starts ``input_``, so neither
-form can name a widget, an input or a column.
+colors. ``[!! inputs !!]`` names the dataset ``inputs``, which stacks a
+Vega-Lite chart's inputs: a spec writes its name, as an Autark spec does too;
+it is refused in code, and on a node with no input, which has nothing to
+stack. ``[!! inputs.sunlight !!]`` names a field of that dataset. A widget's
+name has no space and no dot, and an input's chip starts ``input_``, so
+neither form can name a widget, an input or a column; and no widget takes the
+name ``inputs`` (:data:`INPUT_NAME_ONLY_RE`), so beside one saved under it
+``[!! inputs !!]`` names the dataset.
 
 The headless twin of ``src/utils/references/codeReferences.ts``, which the
 browser runs before posting a node's code. Both write the same code: one table
@@ -76,11 +80,17 @@ INPUT_REFERENCE_RE = re.compile(r"^input_(\d+|\?)(?::([^.]+))?(?:\.(.+))?$")
 #: sandbox's ``util/input_names.py``.
 LEGACY_INPUT_REFERENCE_RE = re.compile(r"^input\s+(\d+|\?)((?:[:.].*)?)$")
 
-#: An input's name and nothing else, which no widget takes
-#: (:func:`widget_name_problem`). Kept in sync with ``INPUT_NAME_ONLY_PATTERN``
-#: in ``widgetModel.ts`` and with the widget name's ``not`` in
-#: ``docs/schemas/node-package.v4.json``.
-INPUT_NAME_ONLY_RE = re.compile(r"^input_\d+$")
+#: The dataset a Vega-Lite spec reads every input's rows stacked in, which
+#: ``[!! inputs !!]`` names. Kept in sync with ``INPUTS_DATASET`` in
+#: ``utils/vegaDatasets.ts`` and in ``agents/domain/document_validation.py``.
+STACKED_DATASET = "inputs"
+
+#: The names of a node's inputs and nothing else, which no widget takes
+#: (:func:`widget_name_problem`): an input's, ``input_<k>``, and the stacked
+#: inputs', :data:`STACKED_DATASET`. Kept in sync with
+#: ``INPUT_NAME_ONLY_PATTERN`` in ``widgetModel.ts`` and with the widget
+#: name's ``not`` in ``docs/schemas/node-package.v4.json``.
+INPUT_NAME_ONLY_RE = re.compile(r"^(?:input_\d+|inputs)$")
 
 #: What a shared reference starts with. Kept in sync with ``SHARED_PREFIX`` in
 #: ``codeReferences.ts``.
@@ -272,10 +282,11 @@ def _parse_scenario_chip(rest: str) -> dict:
 def parse_reference(inner: str) -> dict:
     """``{"kind": "widget", "name"}``, ``{"kind": "shared", "name"}``,
     ``{"kind": "selection", "name"}``, ``{"kind": "input", "slot",
-    "layer"?, "column"?}``, ``{"kind": "scenario", "chip", "slot"?}`` or
-    ``{"kind": "stacked", "column"}``; ``slot`` is None for ``input_?`` (or
-    ``scenario input_?``), the input whose edge was deleted, and a scenario
-    ``chip`` None for a word no scenario chip is."""
+    "layer"?, "column"?}``, ``{"kind": "scenario", "chip", "slot"?}``,
+    ``{"kind": "dataset"}`` (``[!! inputs !!]``) or ``{"kind": "stacked",
+    "column"}``; ``slot`` is None for ``input_?`` (or ``scenario input_?``),
+    the input whose edge was deleted, and a scenario ``chip`` None for a word
+    no scenario chip is."""
     m = INPUT_REFERENCE_RE.match(inner)
     if not m:
         selection = SELECTION_REFERENCE_RE.match(inner)
@@ -287,6 +298,8 @@ def parse_reference(inner: str) -> dict:
         stacked = STACKED_REFERENCE_RE.match(inner)
         if stacked:
             return {"kind": "stacked", "column": stacked.group(1)}
+        if inner == STACKED_DATASET:
+            return {"kind": "dataset"}
         if inner.startswith(SHARED_PREFIX):
             return {"kind": "shared", "name": inner[len(SHARED_PREFIX):]}
         return {"kind": "widget", "name": inner}
@@ -845,6 +858,18 @@ def _scenario_problem(reference: str, parsed: dict, inputs: list, context: tuple
     return None
 
 
+def _dataset_problem(reference: str, inputs: list, language: str) -> str | None:
+    """Why the chip of the dataset ``inputs``, *reference*, cannot be written
+    over *inputs*, or None: it is for a spec, never for code, and a node with
+    no input has nothing to stack. Kept in sync with ``datasetProblem`` in
+    ``codeReferences.ts``."""
+    if language != "json":
+        return f"{reference} is for a Vega-Lite spec, not for code."
+    if not inputs:
+        return f"{reference}: this node has no input to stack. Connect one to an input circle."
+    return None
+
+
 def reference_problem(
     reference: str,
     inner: str,
@@ -892,6 +917,8 @@ def reference_problem(
         return None
     if parsed["kind"] == "scenario":
         return _scenario_problem(reference, parsed, inputs, context, language)
+    if parsed["kind"] == "dataset":
+        return _dataset_problem(reference, inputs, language)
     if parsed["kind"] == "stacked":
         if language != "json":
             return f"{reference} is for a Vega-Lite spec, not for code."
@@ -1096,12 +1123,15 @@ def widget_name_problem(name: object) -> str | None:
     :data:`WIDGET_NAME_RE`, matched whole: the browser and the schemas read the
     pattern as ECMA-262 does, where ``$`` ends the text, while Python's
     ``re.match`` lets a final line break through. And ``input_<k>`` names one
-    of the node's inputs, in its code as in its chips. The Widgets tab and a
-    Parameter node refuse such a name (:func:`check_widget_def`), and so does a
-    package manifest for a template's widgets
+    of the node's inputs, in its code as in its chips, and ``inputs`` the
+    dataset they are stacked in (:data:`STACKED_DATASET`). The Widgets tab and
+    a Parameter node refuse such a name (:func:`check_widget_def`), and so does
+    a package manifest for a template's widgets
     (``packages/repositories/manifests.py``)."""
     if not isinstance(name, str) or not WIDGET_NAME_RE.fullmatch(name):
         return "A name is letters, digits and underscores, and does not start with a digit."
+    if name == STACKED_DATASET:
+        return f"{name} names the node's stacked inputs. Pick another name."
     if INPUT_NAME_ONLY_RE.match(name):
         return f"{name} names one of the node's inputs. Pick another name."
     return None
@@ -1111,8 +1141,9 @@ def widget_name_or_type_problem(definition: dict, others=(), parameter: bool = F
     """What the Widgets tab refuses in a widget before it reads its options
     and its default, or None: a name :func:`widget_name_problem` refuses, a
     name one of *others* has, or a type outside :data:`WIDGET_KINDS`. The
-    canvas drops such a widget (``normalizeWidgets``), unless it only has an
-    input's name. :func:`check_widget_def` checks these first."""
+    canvas drops such a widget (``normalizeWidgets``), unless it only has a
+    name of the node's inputs, ``input_<k>`` or ``inputs``, which it keeps so
+    it can be deleted. :func:`check_widget_def` checks these first."""
     name = definition.get("name")
     if problem := widget_name_problem(name):
         return problem
@@ -1246,6 +1277,9 @@ def _resolved_text(
     if parsed["kind"] == "stacked":
         # A field of inputs is written as a column is: its name.
         return _write_text(named(parsed["column"]), context, language)
+    if parsed["kind"] == "dataset":
+        # The dataset itself is its name too, which no place reads as a field.
+        return _write_text(STACKED_DATASET, context, language)
     if parsed["kind"] in ("shared", "selection", "scenario"):
         if parsed["kind"] == "shared":
             value = effective_value(shared_by_name[parsed["name"]])
@@ -1303,22 +1337,29 @@ def with_chip_placeholders(code: str) -> str:
     return "".join(out)
 
 
+#: The chips :func:`with_stand_in_chips` writes as a value of their shape.
+_STAND_IN_KINDS = ("scenario", "dataset", "stacked")
+
+
 def with_stand_in_chips(code: str) -> tuple[str, list]:
-    """*code*, a JSON document, with each scenario chip and each field of
-    ``inputs`` written as a value of its shape, for a check that has no
-    dataflow to say what they write: every input a chip names comes from no
-    box, named ``input_<k>``, and a field is its name; and the refusal of each
-    such chip that cannot stand there, in its own words (a scale inside quotes,
-    a chip no scenario chip is called). Every other reference is kept as
-    written. The agents' document check reads a document through it
-    (``agents/domain/document_validation.py``): it reports a refusal as it is,
-    rather than the schema's reading of the chip left as text, and checks the
-    rest of the document."""
+    """*code*, a JSON document, with each scenario chip, the dataset
+    ``inputs`` and each field of it written as a value of its shape, for a
+    check that has no dataflow to say what they write: every input a chip
+    names comes from no box, named ``input_<k>``, the dataset stacks at least
+    one input (``input_0`` when no chip names one), and the dataset and a
+    field are their names; and the refusal of each such chip that cannot stand
+    there, in its own words (a scale inside quotes, a chip no scenario chip is
+    called). Every other reference is kept as written. The agents' document
+    check reads a document through it (``agents/domain/document_validation.py``):
+    it reports a refusal as it is, rather than the schema's reading of the chip
+    left as text, and checks the rest of the document."""
     refs = list(REFERENCE_RE.finditer(code if isinstance(code, str) else ""))
     parsed = [parse_reference(ref.group(1)) for ref in refs]
-    if not any(p["kind"] in ("scenario", "stacked") for p in parsed):
+    if not any(p["kind"] in _STAND_IN_KINDS for p in parsed):
         return code, []
     slots = sorted({p["slot"] for p in parsed if p["kind"] in ("scenario", "input") and isinstance(p.get("slot"), int)})
+    if not slots and any(p["kind"] == "dataset" for p in parsed):
+        slots = [0]
     inputs = [{"slot": slot, "scenario": {"name": f"input_{slot}", "color": NO_SCENARIO_COLOR}} for slot in slots]
     out: list = []
     refusals: list = []
@@ -1328,11 +1369,11 @@ def with_stand_in_chips(code: str) -> tuple[str, list]:
         written = ref.group(0)
         problem = (
             reference_problem(written, ref.group(1), [], inputs, context, "json")
-            if kind["kind"] in ("scenario", "stacked") else None
+            if kind["kind"] in _STAND_IN_KINDS else None
         )
         if problem is not None:
             refusals.append(problem)
-        stands_in = kind["kind"] in ("scenario", "stacked") and problem is None
+        stands_in = kind["kind"] in _STAND_IN_KINDS and problem is None
         out.append(_resolved_text(ref.group(1), {}, inputs, context, "json", {}, {}) if stands_in else written)
         last = ref.end()
     out.append(code[last:])

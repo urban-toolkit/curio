@@ -339,9 +339,11 @@ def test_each_chart_is_its_templates_spec_with_the_columns_in_its_widgets(datase
         else:
             assert "value" in widget, f"{chart['title']}: {name} is left at its default"
             assert values[name] in columns, f"{chart['title']}: {name} = {values[name]!r}, not in {columns}"
-    # Its other chips write the scenarios, from the boxes its inputs come from.
+    # Its other chips write the dataset its inputs are stacked in, and the
+    # scenarios, from the boxes its inputs come from.
     chips = set(CHIP.findall(chart["content"]))
-    assert {c for c in chips if not c.startswith("scenario ")} == {w["name"] for w in widgets}
+    assert "inputs" in chips
+    assert {c for c in chips if not c.startswith("scenario ") and c != "inputs"} == {w["name"] for w in widgets}
     assert {c for c in chips if c.startswith("scenario ")} <= {"scenario colors", "scenario text_colors", "scenario order"}
 
 
@@ -456,6 +458,9 @@ def test_the_rows_stack_under_their_boxes_and_the_chart_reads_columns_they_have(
     assert all(list(r) == columns for r in stacked)
     rank = {box["id"]: place for place, box in enumerate(flow["scenarios"])}
     labels = [{"scenario": box["id"], "name": box["name"], "color": box["color"], "rank": rank[box["id"]]} for box in boxes]
+    # The chart names the dataset its inputs are stacked in by its chip, which
+    # its run writes as that dataset's name.
+    assert '"name": "[!! inputs !!]"' in row["chart"]["content"]
     spec, problems = resolve_references(
         row["chart"]["content"], widgets=row["chart"]["metadata"]["widgets"], language="json",
         inputs=[{"slot": circle, "scenario": label} for circle, label in enumerate(labels)],

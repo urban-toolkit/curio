@@ -199,7 +199,7 @@ return [!! input_0:table_osm_roads !!]
 
 **Mean sunlight** is a **Bars** node of the Scout package (`curio.scout@1`). A chart reads one
 table on each of its inputs, and its three take the three Roads nodes, in the order the dataflow
-lists the scenarios. It reads their roads stacked as one table, `inputs`, each road under the
+lists the scenarios. It reads their roads stacked as one table, `[!! inputs !!]`, each road under the
 `scenario` and `scenario_name` of the box its input comes from, and draws a bar for each scenario's
 mean `sunlight`, in the scenario's colour: rename or recolour a scenario, and the chart follows. Its
 widgets set what it draws: **Y column** `sunlight`, **Combine** `mean`, and **Y axis title** `mean

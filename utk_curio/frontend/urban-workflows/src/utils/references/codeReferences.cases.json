@@ -1,5 +1,5 @@
 {
-  "about": "Code reference cases: widget, input, column, shared, selection and scenario references, and the fields of the dataset inputs. Read by src/tests/utils/codeReferences.test.ts and by utk_curio/backend/tests/test_execution/test_code_references.py: the browser and the headless runner must write the same code. A case's inputs are the node's wired circles, with their data type, the layer name their value gives, columns and layers when known, and the scenario label their rows carry: the id, name and color of the box the feeding node is in, with that box's rank in the dataflow's list of boxes, or the node's name in grey for a node in no box. Its selections are the node's selection tags, with the ids each holds. A JSON case may name its document's grammar: in a Vega-Lite spec (vega-lite), a reference where Vega-Lite reads a field name writes each name escaped for Vega-Lite.",
+  "about": "Code reference cases: widget, input, column, shared, selection and scenario references, and the dataset inputs and its fields. Read by src/tests/utils/codeReferences.test.ts and by utk_curio/backend/tests/test_execution/test_code_references.py: the browser and the headless runner must write the same code. A case's inputs are the node's wired circles, with their data type, the layer name their value gives, columns and layers when known, and the scenario label their rows carry: the id, name and color of the box the feeding node is in, with that box's rank in the dataflow's list of boxes, or the node's name in grey for a node in no box. Its selections are the node's selection tags, with the ids each holds. A JSON case may name its document's grammar: in a Vega-Lite spec (vega-lite), a reference where Vega-Lite reads a field name writes each name escaped for Vega-Lite.",
   "cases": [
     {
       "name": "a number on its own",
@@ -1088,6 +1088,62 @@
       "expected": "{\"encoding\": {\"y\": {\"field\": \"shade\"}}}"
     },
     {
+      "name": "the dataset inputs writes its name, inside a string as its text and standing on its own quoted",
+      "language": "json",
+      "grammar": "vega-lite",
+      "code": "{\"data\": {\"name\": \"[!! inputs !!]\"}, \"layer\": [{\"mark\": \"bar\", \"encoding\": {\"x\": {\"field\": \"scenario_name\", \"type\": \"nominal\"}}}, {\"data\": {\"name\": [!! inputs !!]}, \"mark\": \"text\"}], \"title\": \"Every row of [!! inputs !!]\"}",
+      "widgets": [],
+      "inputs": [
+        {"slot": 0, "dataType": "dataframe", "columns": ["segment", "sunlight"], "scenario": {"scenario": "s-base", "name": "Baseline", "color": "#2a9d8f", "rank": 0}},
+        {"slot": 1, "dataType": "dataframe", "columns": ["segment", "sunlight"], "scenario": {"scenario": "s-tall", "name": "Twice as tall", "color": "#e76f51", "rank": 1}}
+      ],
+      "expected": "{\"data\": {\"name\": \"inputs\"}, \"layer\": [{\"mark\": \"bar\", \"encoding\": {\"x\": {\"field\": \"scenario_name\", \"type\": \"nominal\"}}}, {\"data\": {\"name\": \"inputs\"}, \"mark\": \"text\"}], \"title\": \"Every row of inputs\"}"
+    },
+    {
+      "name": "the dataset inputs in an Autark spec, a JSON document of no grammar, writes its name too",
+      "language": "json",
+      "code": "{\"map\": {\"layerRefs\": [{\"dataRef\": \"[!! input_0 !!]\", \"title\": \"Read with [!! inputs !!]\"}]}, \"note\": [!! inputs !!]}",
+      "widgets": [],
+      "inputs": [{"slot": 0, "dataType": "geodataframe"}],
+      "expected": "{\"map\": {\"layerRefs\": [{\"dataRef\": \"input_0\", \"title\": \"Read with inputs\"}]}, \"note\": \"inputs\"}"
+    },
+    {
+      "name": "the dataset inputs on a node with no input is refused, while the scenario chips list no scenario",
+      "language": "json",
+      "grammar": "vega-lite",
+      "code": "{\"data\": {\"name\": \"[!! inputs !!]\"}, \"mark\": \"bar\", \"encoding\": {\"color\": {\"field\": \"scenario_name\", \"scale\": [!! scenario colors !!]}}}",
+      "widgets": [],
+      "inputs": [],
+      "expected": "{\"data\": {\"name\": \"[!! inputs !!]\"}, \"mark\": \"bar\", \"encoding\": {\"color\": {\"field\": \"scenario_name\", \"scale\": {\"domain\": []}}}}",
+      "problems": [
+        "[!! inputs !!]: this node has no input to stack. Connect one to an input circle."
+      ]
+    },
+    {
+      "name": "the dataset inputs in Python code is refused, in a string and in a comment too, as a field of inputs is",
+      "language": "python",
+      "code": "rows = [!! inputs !!]\nprint(\"[!! inputs !!]\")  # [!! inputs !!]",
+      "widgets": [],
+      "inputs": [{"slot": 0, "dataType": "dataframe", "columns": ["segment"]}],
+      "expected": "rows = [!! inputs !!]\nprint(\"[!! inputs !!]\")  # [!! inputs !!]",
+      "problems": [
+        "[!! inputs !!] is for a Vega-Lite spec, not for code.",
+        "[!! inputs !!] is for a Vega-Lite spec, not for code.",
+        "[!! inputs !!] is for a Vega-Lite spec, not for code."
+      ]
+    },
+    {
+      "name": "the dataset inputs in JavaScript code is refused",
+      "language": "javascript",
+      "code": "const rows = [!! inputs !!];",
+      "widgets": [],
+      "inputs": [{"slot": 0}],
+      "expected": "const rows = [!! inputs !!];",
+      "problems": [
+        "[!! inputs !!] is for a Vega-Lite spec, not for code."
+      ]
+    },
+    {
       "name": "a box that feeds two circles is listed once, and two boxes of one name are one name, in the color of the box listed first",
       "language": "json",
       "grammar": "vega-lite",
@@ -1110,7 +1166,7 @@
       "expected": "{\"scale\": {\"domain\": []}, \"sort\": []}"
     },
     {
-      "name": "a widget named scenario or inputs is a widget still",
+      "name": "a widget named scenario is a widget still, and beside a widget saved as inputs the chip names the dataset",
       "language": "json",
       "code": "{\"title\": \"[!! scenario !!]\", \"n\": [!! inputs !!]}",
       "widgets": [
@@ -1120,7 +1176,7 @@
       "inputs": [
         {"slot": 0, "scenario": {"scenario": "s-base", "name": "Baseline", "color": "#2a9d8f", "rank": 0}}
       ],
-      "expected": "{\"title\": \"Baseline\", \"n\": 3}"
+      "expected": "{\"title\": \"Baseline\", \"n\": \"inputs\"}"
     },
     {
       "name": "a scenario chip or a field of inputs in Python code is refused",

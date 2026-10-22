@@ -205,11 +205,12 @@ class TestRenderPrompt:
         """Its Scenarios section names Scout's fifteen charts, the package's
         templates that draw with Vega-Lite, by the labels their manifest gives
         them, and the package that holds them, and says that each takes one
-        input per scenario and reads them as the dataset "inputs". It says how
-        scenarios are compared: a Vega-Lite spec reading "inputs", a Raster
-        Calculator for two rasters' difference, absolute=True for its size,
-        and a Python node for two tables' or layers'. Compare Scenarios is
-        gone, and the section names it nowhere."""
+        input per scenario and reads them as the dataset its chip names,
+        ``[!! inputs !!]``, never by the bare name. It says how scenarios are
+        compared: a Vega-Lite spec reading that dataset, a Raster Calculator
+        for two rasters' difference, absolute=True for its size, and a Python
+        node for two tables' or layers'. Compare Scenarios is gone, and the
+        section names it nowhere."""
         template = (REPO_ROOT / contracts.PROMPTS_DIR / "default_preamble.template.md").read_text(encoding="utf-8")
         section = template.split("## Scenarios", 1)[1]
         manifest = json.loads((REPO_ROOT / "packages" / "curio.scout@1" / "manifest.json").read_text(
@@ -228,7 +229,10 @@ class TestRenderPrompt:
             assert "{{template.label:" + f"curio.scout/{chart['id']}" + "}}" in section, chart["id"]
         assert "curio.scout@1" in section
         assert "one input per scenario" in section
-        assert '"inputs"' in section
+        assert "{{inputs.stacked}}" in section
+        assert '"inputs"' not in section, "the section names the dataset bare"
+        scenarios = contracts.render_prompt("default_preamble").split("## Scenarios", 1)[1]
+        assert '"data": {"name": "[!! inputs !!]"}' in scenarios
 
 
 class TestThePromptFacts:
@@ -283,6 +287,16 @@ class TestThePromptFacts:
         assert f"`{chip0}`, `[!! input_1 !!]`, ..." in orchestration
         lists = contracts.builtin_lists(_manifest())
         assert "builtin.merge_slots" not in lists
+
+    def test_the_stacked_dataset_chip_comes_from_the_runtime(self):
+        """The chip a Vega-Lite spec names its inputs stacked by is the
+        runtime's own (``STACKED_DATASET``, ``reference_text``), and the
+        preamble says exactly that."""
+        from utk_curio.backend.app.execution.code_references import STACKED_DATASET, reference_text
+
+        chip = contracts.render_template("{{inputs.stacked}}")
+        assert chip == reference_text(STACKED_DATASET) == "[!! inputs !!]"
+        assert f'"data": {{"name": "{chip}"}}' in contracts.render_prompt("default_preamble")
 
     def test_the_widget_facts_come_from_the_runtime(self):
         """#662: the kinds a widget takes and the references code places one

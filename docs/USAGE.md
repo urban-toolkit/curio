@@ -635,8 +635,9 @@ In code and in a Vega-Lite or Autark spec, each input is a chip:
    named as the Autark node names its table.
 5. In a Vega-Lite or Autark spec, an input whose node is in a scenario box shows
    that box's swatch beside its tag. Drag it where a color goes; it is written
-   `[!! scenario input_1 !!]`, a lilac chip. A Vega-Lite node with several
-   inputs also has the **inputs** tag, the dataset that stacks them (see
+   `[!! scenario input_1 !!]`, a lilac chip. A Vega-Lite node with an input
+   also has the **inputs** tag, `[!! inputs !!]`, the dataset that stacks its
+   inputs (see
    [Every input in one dataset](#every-input-in-one-dataset) and
    [Scenario colors and order](#scenario-colors-and-order)).
 
@@ -670,7 +671,8 @@ When the node runs:
   dragging its chip: `input_0`, `input_1`, and so on, the names a Vega-Lite or
   Autark spec reads its inputs by too. `roads = input_1.to_crs(3857)` reads
   the input on circle 1. Because `input_0` names an input, no widget can take
-  that name.
+  that name, nor `inputs`, which names every input's rows stacked
+  ([Every input in one dataset](#every-input-in-one-dataset)).
 
 A node with several inputs runs once every one of them has a value. Deleting an
 edge closes the gap: the circles below it move up one, and their chips in the
@@ -847,8 +849,8 @@ To compare scenarios, connect each scenario's outcome to an input circle of its 
 on a node outside the scenario boxes. Each edge takes the next circle, as on any
 node with several inputs.
 
-- **A chart.** A Vega-Lite node whose spec reads its inputs as the dataset `inputs`
-  ([Every input in one dataset](#every-input-in-one-dataset)) draws every input's
+- **A chart.** A Vega-Lite node whose spec reads its inputs as the dataset its chip
+  `[!! inputs !!]` names ([Every input in one dataset](#every-input-in-one-dataset)) draws every input's
   rows, each named by the scenario box its input comes from, and its scenario chips
   draw them in the boxes' colors and order
   ([Scenario colors and order](#scenario-colors-and-order)). The Scout package's
@@ -897,7 +899,7 @@ strips**, **Stacked bars with totals**, **Donuts**, **Weighted matrix**, **Dots 
 range**, **Bars**, **Grouped bars**, **Lines**, **Points**, **Pie**, **Lollipops** and
 **Table**. Each is a Vega-Lite node that takes one input per scenario: connect each
 scenario's outcome to one of its circles. Its spec reads its inputs as the dataset
-`inputs` ([Every input in one dataset](#every-input-in-one-dataset)), every row named by
+`[!! inputs !!]` ([Every input in one dataset](#every-input-in-one-dataset)), every row named by
 the scenario box its input comes from, and its scenario chips draw each scenario in its
 box's color, in the order the dataflow lists the boxes. Set the columns it plots in its **Widgets** tab,
 and the Vega-Lite aggregate Bars, Grouped bars, Lines, Pie and Lollipops combine a
@@ -972,9 +974,11 @@ nothing else.
 
 ### Every input in one dataset
 
-A spec that names the dataset `inputs`, in its own `data`, a layer's, a
-concatenated view's or a lookup's, also reads every input's rows in one table,
-in circle order. Each row has three more columns:
+A spec that names the dataset `inputs` by its chip, `[!! inputs !!]`, in its own
+`data`, a layer's, a concatenated view's or a lookup's, also reads every input's
+rows in one table, in circle order. The chip writes the name `inputs`. It is for
+a spec, not for Python or JavaScript code, and on a node with no input it is red
+until you connect one. Each row has three more columns:
 
 - `__input__`, the circle its input came in on;
 - `scenario`, the id of the scenario box the node feeding that input is in,
@@ -983,7 +987,7 @@ in circle order. Each row has three more columns:
 
 ```json
 {
-  "data": {"name": "inputs"},
+  "data": {"name": "[!! inputs !!]"},
   "mark": "bar",
   "encoding": {
     "x": {"field": "scenario_name", "type": "nominal", "sort": [!! scenario order !!]},
@@ -1002,11 +1006,11 @@ as tall, the rows read:
 | 0 | s-base | Baseline | r2 | 5 |
 | 1 | s-tall | Twice as tall | r1 | 3 |
 
-On a Vega-Lite node with more than one input, the **inputs** tag beside
-`input_0`, `input_1` above the spec opens to the fields of these rows:
-`scenario_name`, `scenario` and `__input__`, then every column of the inputs,
-each with its type in its tooltip. A field's chip, `[!! inputs.sunlight !!]`,
-writes its name.
+On a Vega-Lite node with an input, the **inputs** tag beside `input_0`,
+`input_1` above the spec drags the dataset's chip, `[!! inputs !!]`, and opens
+to the fields of these rows: `scenario_name`, `scenario` and `__input__`, then
+every column of the inputs, each with its type in its tooltip. A field's chip,
+`[!! inputs.sunlight !!]`, writes its name.
 
 The inputs stack this way: a table keeps its rows, and a column one input
 lacks is empty in its rows; a table with no rows is still a
@@ -1050,8 +1054,8 @@ to insert `[!! scenario colors !!]`, and the small **order** and **text colors**
 tags beside them for the other two. An input whose node is in a box shows that
 box's swatch on its own tag, in a Vega-Lite or an Autark spec, which inserts
 `[!! scenario input_1 !!]`. Dropped where a value goes, the swatch writes its
-chip in quotes, `"[!! scenario input_1 !!]"`, as a field of **inputs** does,
-so the spec stays JSON.
+chip in quotes, `"[!! scenario input_1 !!]"`, as the **inputs** tag and a field
+of it do, so the spec stays JSON.
 
 Renaming or recoloring a box, or drawing one around a node that feeds the chart,
 draws the chart again with what its chips write then, with no run. A map takes
