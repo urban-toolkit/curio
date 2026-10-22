@@ -296,7 +296,7 @@
         "content": "# Edit Features writes this code from its edit list: each edit, in the\n# order it was made, on the features whose key is one of its ids. It is\n# written again when the list changes.\nreturn curio_edit_features(input_0, [\n    {\"op\": \"remove\", \"where\": \"around_park\", \"label\": \"Tall parts around a park\"},\n], key=\"building_id\")\n",
         "out": "DEFAULT",
         "in": "DEFAULT",
-        "goal": "Remove the building parts Buildings around parks marks, by the condition around_park. More parts, picked on the map or by another condition, can be removed, raised or lowered here before Update results.",
+        "goal": "Remove the building parts Buildings around parks marks, by the condition around_park. More parts, picked on the map or by another condition, can be removed, raised or lowered here before Commit edits.",
         "metadata": {
           "keywords": []
         },
@@ -377,10 +377,10 @@
         "type": "curio.builtin/autk-grammar",
         "x": 3260,
         "y": 1272,
-        "content": "{\n  \"map\": {\n    \"layerRefs\": [\n      {\n        \"dataRef\": \"[!! input_0 !!]\",\n        \"getFnv\": \"height\",\n        \"getFnvType\": \"quantitative\",\n        \"colorMapInterpolator\": \"interpolateViridis\",\n        \"colorMapRange\": [\n          0,\n          550\n        ],\n        \"title\": \"Building height (m)\"\n      }\n    ]\n  }\n}",
+        "content": "{\n  \"map\": {\n    \"layerRefs\": [\n      {\n        \"dataRef\": \"[!! input_0 !!]\",\n        \"isPick\": true,\n        \"selectFields\": [\n          \"building_id\"\n        ],\n        \"getFnv\": \"height\",\n        \"getFnvType\": \"quantitative\",\n        \"colorMapInterpolator\": \"interpolateViridis\",\n        \"colorMapRange\": [\n          0,\n          550\n        ],\n        \"title\": \"Building height (m)\"\n      }\n    ]\n  }\n}",
         "out": "DEFAULT",
         "in": "DEFAULT",
-        "goal": "Draw the towers removed buildings in 3D, colored by height.",
+        "goal": "Draw the towers removed buildings in 3D, colored by height. It is linked to Towers removed's Interaction node, so a building picked on this map is picked there.",
         "metadata": {
           "keywords": []
         },
@@ -408,7 +408,7 @@
         "content": "# Edit Features writes this code from its edit list: each edit, in the\n# order it was made, on the features whose key is one of its ids. It is\n# written again when the list changes.\nreturn curio_edit_features(input_0, [\n    {\"op\": \"expr\", \"where\": \"around_park\", \"column\": \"height\", \"value\": \"min(height, height_cap_m)\", \"label\": \"Tall parts around a park cut to the cap\"},\n], key=\"building_id\")\n",
         "out": "DEFAULT",
         "in": "DEFAULT",
-        "goal": "Cut the building parts Buildings around parks marks down to the Tall building height, its height_cap_m, by the condition around_park. More parts can be removed, raised or lowered here before Update results.",
+        "goal": "Cut the building parts Buildings around parks marks down to the Tall building height, its height_cap_m, by the condition around_park. More parts can be removed, raised or lowered here before Commit edits.",
         "metadata": {
           "keywords": []
         },
@@ -489,10 +489,10 @@
         "type": "curio.builtin/autk-grammar",
         "x": 3260,
         "y": 2132,
-        "content": "{\n  \"map\": {\n    \"layerRefs\": [\n      {\n        \"dataRef\": \"[!! input_0 !!]\",\n        \"getFnv\": \"height\",\n        \"getFnvType\": \"quantitative\",\n        \"colorMapInterpolator\": \"interpolateViridis\",\n        \"colorMapRange\": [\n          0,\n          550\n        ],\n        \"title\": \"Building height (m)\"\n      }\n    ]\n  }\n}",
+        "content": "{\n  \"map\": {\n    \"layerRefs\": [\n      {\n        \"dataRef\": \"[!! input_0 !!]\",\n        \"isPick\": true,\n        \"selectFields\": [\n          \"building_id\"\n        ],\n        \"getFnv\": \"height\",\n        \"getFnvType\": \"quantitative\",\n        \"colorMapInterpolator\": \"interpolateViridis\",\n        \"colorMapRange\": [\n          0,\n          550\n        ],\n        \"title\": \"Building height (m)\"\n      }\n    ]\n  }\n}",
         "out": "DEFAULT",
         "in": "DEFAULT",
-        "goal": "Draw the height cap buildings in 3D, colored by height.",
+        "goal": "Draw the height cap buildings in 3D, colored by height. It is linked to Height cap's Interaction node, so a building picked on this map is picked there.",
         "metadata": {
           "keywords": []
         },
@@ -771,6 +771,14 @@
         "targetHandle": "in"
       },
       {
+        "id": "reactflow__edge-park-shade-removed-leverin/out-park-shade-removed-buildings-mapin/out",
+        "source": "park-shade-removed-lever",
+        "target": "park-shade-removed-buildings-map",
+        "sourceHandle": "in/out",
+        "targetHandle": "in/out",
+        "type": "Interaction"
+      },
+      {
         "id": "reactflow__edge-park-shade-removed-rasterizeout-park-shade-removed-shadowin",
         "source": "park-shade-removed-rasterize",
         "target": "park-shade-removed-shadow",
@@ -818,6 +826,14 @@
         "target": "park-shade-capped-buildings-map",
         "sourceHandle": "out",
         "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-park-shade-capped-leverin/out-park-shade-capped-buildings-mapin/out",
+        "source": "park-shade-capped-lever",
+        "target": "park-shade-capped-buildings-map",
+        "sourceHandle": "in/out",
+        "targetHandle": "in/out",
+        "type": "Interaction"
       },
       {
         "id": "reactflow__edge-park-shade-capped-rasterizeout-park-shade-capped-shadowin",

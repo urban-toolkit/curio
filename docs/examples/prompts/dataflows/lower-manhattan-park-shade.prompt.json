@@ -4,10 +4,10 @@
   "version": 1,
   "source": {
     "path": "docs/examples/dataflows/lower-manhattan-park-shade.json",
-    "sha256": "3c265bb5efe1413d96b54a45bf308f86a1f53c8ef6f774cf1cca8239e4115648",
+    "sha256": "3775588272bbb663d470c94952073768233c2f3183387b61d5bc071022b4c2e6",
     "walkthrough": null
   },
-  "prompt": "Run SCOUT's shadow model on Lower Manhattan and compare the shade in its parks across three scenarios. From the OpenStreetMap extract of Lower Manhattan in this checkout, docs/examples/data/lower_mnt.osm.pbf, load with Autark the parks of the Financial District to City Hall, the box from longitude -74.018 to -74.004 and latitude 40.7 to 40.713, and the buildings of a box about 300 metres larger on every side, up to the edge of the extract over the water to the west and south: longitude -74.0194416 to -74.0005 and latitude 40.698762 to 40.7157, so the towers that shade the parks at its edge are there too. Give every building part a height in metres: the height mapped for it, else its number of levels times a floor height, else a default height, both set on the node. Keep the named parks of at least a minimum area, set on the node, that are not mostly under the building footprints, a park mapped in pieces under one name as one park and a park mapped twice once. Mark the building parts the what-ifs change by one rule for every park: at least a tall building height, 60 metres, and within a distance of any park, 75 metres, both settings the whole dataflow shares. The scenarios: the buildings as they are; the marked parts taken out; and the marked parts cut down to the tall building height. Each what-if is a list of edits on the marked parts, picked by the mark, that a user can extend with more. In each scenario, turn the buildings' heights into a zoom 16 height raster with SCOUT's building rasterizer, run SCOUT's Deep Umbra shadow model on it, with one season setting the three scenarios share, set to summer, and measure each park's minutes of shadow: the mean, median and 90th percentile, the mean as a share of the season's daylight, and the shares of the park in sun, partial shade and deep shade. Draw each scenario's buildings in 3D colored by height and its shadow on Autark maps, each kind of map on one color range the scenarios share. Then compare the scenarios: chart each park's mean minutes of shadow in the three, and for each what-if take the change in shadow from the buildings as they are, cell by cell, and each park's change in shade, each drawn on a map on one color range centered on no change. The rasterizer and the shadow model are not part of the standard node set, so whatever provides them needs installing first.",
+  "prompt": "Run SCOUT's shadow model on Lower Manhattan and compare the shade in its parks across three scenarios. From the OpenStreetMap extract of Lower Manhattan in this checkout, docs/examples/data/lower_mnt.osm.pbf, load with Autark the parks of the Financial District to City Hall, the box from longitude -74.018 to -74.004 and latitude 40.7 to 40.713, and the buildings of a box about 300 metres larger on every side, up to the edge of the extract over the water to the west and south: longitude -74.0194416 to -74.0005 and latitude 40.698762 to 40.7157, so the towers that shade the parks at its edge are there too. Give every building part a height in metres: the height mapped for it, else its number of levels times a floor height, else a default height, both set on the node. Keep the named parks of at least a minimum area, set on the node, that are not mostly under the building footprints, a park mapped in pieces under one name as one park and a park mapped twice once. Mark the building parts the what-ifs change by one rule for every park: at least a tall building height, 60 metres, and within a distance of any park, 75 metres, both settings the whole dataflow shares. The scenarios: the buildings as they are; the marked parts taken out; and the marked parts cut down to the tall building height. Each what-if is a list of edits on the marked parts, picked by the mark, that a user can extend with more, picking buildings on that scenario's map of its buildings, which is linked both ways to the edits. In each scenario, turn the buildings' heights into a zoom 16 height raster with SCOUT's building rasterizer, run SCOUT's Deep Umbra shadow model on it, with one season setting the three scenarios share, set to summer, and measure each park's minutes of shadow: the mean, median and 90th percentile, the mean as a share of the season's daylight, and the shares of the park in sun, partial shade and deep shade. Draw each scenario's buildings in 3D colored by height and its shadow on Autark maps, each kind of map on one color range the scenarios share. Then compare the scenarios: chart each park's mean minutes of shadow in the three, and for each what-if take the change in shadow from the buildings as they are, cell by cell, and each park's change in shade, each drawn on a map on one color range centered on no change. The rasterizer and the shadow model are not part of the standard node set, so whatever provides them needs installing first.",
   "context": null,
   "required": {
     "datasets": [],
@@ -375,6 +375,11 @@
       },
       {
         "from": "transform1",
+        "to": "visualization5",
+        "kind": "interaction"
+      },
+      {
+        "from": "transform1",
         "to": "analysis12",
         "kind": "data"
       },
@@ -382,6 +387,11 @@
         "from": "transform2",
         "to": "visualization6",
         "kind": "data"
+      },
+      {
+        "from": "transform2",
+        "to": "visualization6",
+        "kind": "interaction"
       },
       {
         "from": "transform2",
@@ -632,7 +642,7 @@
   "split": "train",
   "review": {
     "status": "pending-owner-review",
-    "draftedBy": "the park shade example step (the plan for #914, step 18), from the example JSON, 2026-10-17; its rasterizers the SCOUT Rasters package's node, 2026-10-18; that node the Scout package's (curio.scout@1), 2026-10-20; its comparisons without Compare Scenarios, Scout's Dots with a range charting the parks, a Raster Calculator taking each what-if's change in shadow and a Python node its change per park, in the plan answering komar41's review (step 6.3), 2026-10-20",
+    "draftedBy": "the park shade example step (the plan for #914, step 18), from the example JSON, 2026-10-17; its rasterizers the SCOUT Rasters package's node, 2026-10-18; that node the Scout package's (curio.scout@1), 2026-10-20; its comparisons without Compare Scenarios, Scout's Dots with a range charting the parks, a Raster Calculator taking each what-if's change in shadow and a Python node its change per park, in the plan answering komar41's review (step 6.3), 2026-10-20; each Interaction node linked to the buildings map it feeds by an interaction edge, in the plan revising PR #1055 (step 7), 2026-10-22",
     "reviewedBy": null,
     "reviewedAt": null
   },
@@ -641,5 +651,5 @@
     "licence": "MIT (this repository)",
     "notes": "The prompt, the expected graph and the plan target are authored in this repository; the extract appears only as a path. The buildings and parks are OpenStreetMap's, ODbL 1.0; the Deep Umbra model the shadow nodes name is SCOUT's (urban-toolkit/scout), used with the permission of its authors."
   },
-  "notes": "A shared context (one Autark node loading the extract's parks and buildings, three code nodes for the heights, the open-air parks and the marked building parts, and three Parameter nodes) feeds three scenarios. Each runs SCOUT's rasterizer and Deep Umbra, measures the shade in each park (rasterio's geometry_mask) and draws its buildings and shadow on Autark maps; Towers removed and Height cap first edit the marked parts in an Interaction node each, by the condition around_park. Scout's Dots with a range charts the parks' shade in the three scenarios, and for each what-if a Raster Calculator takes its change in shadow and a Python node, joining on the park's name, its change per park, each drawn by an Autark map after it."
+  "notes": "A shared context (one Autark node loading the extract's parks and buildings, three code nodes for the heights, the open-air parks and the marked building parts, and three Parameter nodes) feeds three scenarios. Each runs SCOUT's rasterizer and Deep Umbra, measures the shade in each park (rasterio's geometry_mask) and draws its buildings and shadow on Autark maps; Towers removed and Height cap first edit the marked parts in an Interaction node each, by the condition around_park, each linked to its scenario's buildings map. Scout's Dots with a range charts the parks' shade in the three scenarios, and for each what-if a Raster Calculator takes its change in shadow and a Python node, joining on the park's name, its change per park, each drawn by an Autark map after it."
 }
