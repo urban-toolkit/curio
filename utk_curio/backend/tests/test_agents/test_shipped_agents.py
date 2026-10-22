@@ -473,7 +473,7 @@ class TestTheSources:
         # The shared preamble and the rules other prompts include are pages
         # of the base entry.
         assert set(_raw(BASE)["pages"]) == {
-            "default_preamble.md", "examples.md", "rules/package_contract.md",
+            "default_preamble.md", "examples.md", "knowledge/map-edits.md", "rules/package_contract.md",
             "rules/research_notes_rules.md", "rules/research_verify_rules.md",
         }
         # No template anywhere: a source is the file the backend renders.

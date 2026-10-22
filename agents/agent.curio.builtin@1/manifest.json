@@ -6,6 +6,7 @@
   "purpose": "The pages every agent Curio ships reads: the preamble, the rules its prompts include, and the index of the shipped dataflows a run learns from. An agent names a page as curio:<path>.",
   "pages": [
     "default_preamble.md",
+    "knowledge/map-edits.md",
     "examples.md",
     "rules/package_contract.md",
     "rules/research_notes_rules.md",

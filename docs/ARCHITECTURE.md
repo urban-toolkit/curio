@@ -589,6 +589,11 @@ whose code is its only state: one call of `curio_edit_features`
   Edits node the code and the name of the agent that wrote it, which the
   apply's `appliedContent.agent` and Solve's `node_result.agent` carry, and the
   entry the writer files in the node's history is named after that agent.
+- Agents learn the call from `knowledge/map-edits.md` in the base entry, which
+  the preamble includes: its edits and their fields, its keywords, and the words
+  a goal names edits by. `test_map_edits_page.py` compares the page with the
+  reader's tables (`EDIT_OPS`, `EDIT_FIELDS`, `KEYWORDS`) and with
+  `map_edits.EDIT_WORDS`, and reads its example call with the node's reader.
 
 ### Notes
 

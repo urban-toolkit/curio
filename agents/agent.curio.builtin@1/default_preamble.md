@@ -233,6 +233,8 @@ Nodes that can have interaction connection edge:
 
 {{builtin.interaction}}
 
+{{include:knowledge/map-edits.md}}
+
 ## Scenarios
 
 A scenario is a named selection of a dataflow's nodes, in "dataflow"."scenarios", used to compare alternatives: the same analysis with buildings twice as tall, say. Its boundary splits the dataflow into three parts. Its fixed context is the nodes outside it that it reads, through an edge into it or through a {{template.label:curio.builtin/parameter}} node's reference in its code. Its levers are its own nodes: what an alternative changes, such as a widget value, a line of code or a spec. Its outcomes are the outputs of its last nodes: what gets compared. A node belongs to one scenario at most, so a node two alternatives share sits outside both, as their common context. An alternative is usually a copy of another scenario's nodes that reads the same context, with a lever changed; each copy names the nodes it descends from in "metadata"."copiedFrom", which is how the levers of two scenarios pair.
