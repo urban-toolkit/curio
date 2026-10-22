@@ -67,6 +67,9 @@ SCOUT = "https://github.com/urban-toolkit/scout"
 PYTHON_TYPE = "curio.builtin/computation-analysis"
 AUTARK_TYPE = "curio.builtin/autk-grammar"
 COMPARE_TYPE = "curio.builtin/compare-scenarios"
+#: Scout's package, whose Bars node charts each metric.
+SCOUT_PACKAGE = REPO / "packages" / "curio.scout@1"
+BARS_TYPE = "curio.scout/bars"
 DATAFLOW = REPO / "docs" / "examples" / "dataflows" / "chicago-rain-wind-routing.json"
 FIXTURES = Path(__file__).resolve().parent / "fixtures" / "scout_routing"
 REFERENCE = FIXTURES / "routing_reference.json"
@@ -134,8 +137,9 @@ EXAMPLE_SCENARIOS = {
 #: Each route's line on the map, in metres: the fastest is drawn under the
 #: weather-aware one and wider, so a street both take shows both colors.
 ROUTE_WIDTHS = {"fastest": 80, "weather-aware": 40}
-#: Each Compare Scenarios chart's metric, in the dataflow's order.
+#: Each chart's metric, in the dataflow's order, and its node's header.
 EXAMPLE_CHARTS = ["duration", "distance", "rain_exposure", "wind_exposure"]
+CHART_LABELS = ["Duration", "Distance", "Rain exposure", "Wind exposure"]
 
 
 def _manifest() -> dict:
@@ -691,8 +695,9 @@ def test_the_shipped_dataflow_runs_scouts_example():
     from utk_curio.backend.app.execution.code_references import resolve_references
 
     spec = _dataflow()
-    # The lockfile names the model package, so opening the dataflow adds it.
-    assert spec["packages"] == [f"{GNN_ID}@1"]
+    # The lockfile names the model package and Scout's, whose Bars nodes chart
+    # the routes, so opening the dataflow adds both.
+    assert spec["packages"] == ["curio.scout@1", f"{GNN_ID}@1"]
     assert sorted(ref["datasetId"] for ref in spec["datasets"]) == sorted(WEATHER_IDS.values())
     # The start time is the node's own widget: no Parameter node shares it.
     assert [n["id"] for n in spec["nodes"] if n["type"] == "curio.builtin/parameter"] == []
@@ -745,32 +750,47 @@ def test_the_start_time_reads_scouts_weather_step(tmp_path):
     )
 
 
-def test_the_shipped_dataflows_compare_nodes_chart_the_four_metrics():
+def test_the_shipped_dataflows_bars_chart_the_four_metrics():
     """As in SCOUT's example, the two routes are compared on four bar charts,
-    one per metric: each a Compare Scenarios node holding the code it writes
-    for its two inputs (``utils/compare/compareCode.ts``), the fastest route in
-    circle 0 and the weather-aware one in circle 1, one bar per scenario, in
-    the colors of the scenarios' boxes."""
+    one per metric: each a Bars node of Scout's (``curio.scout@1``), which
+    replaced a Compare Scenarios node and keeps its id, its place and its
+    header. Its spec is its template's own, and its widgets set what the
+    Compare node's bar drew: the metric, each scenario's rows combined by
+    their mean, Compare's default for a bar, and the Y axis titled as
+    Compare titled it, ``mean of`` the metric. Its circles take the fastest
+    route's metrics and the weather-aware one's, in the order of their boxes.
+    It stores no label of its own: each bar takes its name and color from the
+    box its input comes from. No Compare Scenarios node is left."""
     spec = _dataflow()
-    entries = ('    ("fastest", "Fastest route", [!! input_0 !!]),\n'
-               '    ("weather-aware", "Weather-aware route", [!! input_1 !!]),\n])\n')
-    compares = [n for n in spec["nodes"] if n["type"] == COMPARE_TYPE]
+    assert [n["id"] for n in spec["nodes"] if n["type"].split("@")[0] == COMPARE_TYPE] == []
+    manifest = json.loads((SCOUT_PACKAGE / "manifest.json").read_text(encoding="utf-8"))
+    (template,) = [t for t in manifest["templates"] if t["id"] == "bars"]
+    starter = (SCOUT_PACKAGE / template["source"]).read_text(encoding="utf-8")
     labels = [{"scenario": s["id"], "name": s["name"], "color": s["color"]} for s in spec["scenarios"]]
     assert labels == [{"scenario": sid, "name": name, "color": color}
                       for sid, (name, color, _route) in EXAMPLE_SCENARIOS.items()]
     nodes = {n["id"]: n for n in spec["nodes"]}
     scenario_of = {i: s["id"] for s in spec["scenarios"] for i in s["nodes"]}
+    charts = [n for n in spec["nodes"] if n["type"] == BARS_TYPE]
     charted = []
-    for node in compares:
-        settings = node["metadata"]["compareScenarios"]
-        assert settings["inputs"] == labels and settings["mode"] == "chart"
-        assert node["content"].endswith(f"return curio_stack_scenarios([\n{entries}"), node["content"]
-        assert settings["chart"]["preset"] == "bar" and "x" not in settings["chart"], settings["chart"]
-        charted.append(settings["chart"]["y"])
+    for node in charts:
+        assert node["content"] == starter, node["id"]
+        assert set(node["metadata"]) == {"keywords", "packageTemplateLabel", "widgets"}, node["metadata"]
+        widgets = node["metadata"]["widgets"]
+        assert [{k: v for k, v in w.items() if k != "value"} for w in widgets] == template["widgets"]
+        values = {w["name"]: w.get("value", w["default"]) for w in widgets}
+        charted.append(values["y"])
+        assert values == {"y": values["y"], "combine": "mean", "y_title": f"mean of {values['y']}"}, values
         sources = {e["targetHandle"]: e["source"] for e in spec["edges"] if e["target"] == node["id"]}
-        assert {handle: scenario_of[s] for handle, s in sources.items()} == {"in": "fastest", "in_1": "weather-aware"}
+        assert [scenario_of[sources[h]] for h in ("in", "in_1")] == [s["id"] for s in spec["scenarios"]]
+        assert sorted(sources) == ["in", "in_1"], sources
         assert all("input_0[1]" in nodes[s]["content"] for s in sources.values())
+        # A chart feeds nothing.
+        assert [e["target"] for e in spec["edges"] if e["source"] == node["id"]] == []
     assert charted == EXAMPLE_CHARTS
+    assert [n["metadata"]["packageTemplateLabel"] for n in charts] == CHART_LABELS
+    # Each chart's id is the Compare node's it replaced.
+    assert [n["id"][:8] for n in charts] == ["1f8b6d2c", "4d9a7f3e", "a2e6c9f4", "b7f3a1d8"]
 
 
 def test_the_shipped_dataflows_roads_and_map_are_autarks():
@@ -780,9 +800,11 @@ def test_the_shipped_dataflows_roads_and_map_are_autarks():
     layers straight on its one input, and its layer chip reads the roads layer
     out of them: no node in between. The map draws each scenario's route over
     the roads in the color of the scenario's box: the map is in no box, and
-    each route's input comes from its scenario's box, so the layer takes that
-    box's color. Each route has a ``width``, and no color, color map or Curio
-    key of its own, so the spec is plain Autark and the map shows no legend."""
+    each route writes its input's scenario chip as its color,
+    ``[!! scenario input_1 !!]``, which a run resolves to the color of the box
+    that input comes from. Each route has a ``width``, and no color map or
+    Curio key of its own, so the spec is plain Autark and the map shows no
+    legend."""
     spec = _dataflow()
     nodes = {n["id"]: n for n in spec["nodes"]}
     autark = {n["id"]: json.loads(n["content"]) for n in spec["nodes"] if n["type"] == AUTARK_TYPE}
@@ -804,7 +826,8 @@ def test_the_shipped_dataflows_roads_and_map_are_autarks():
     assert [layer.get("width") for layer in layers] == [None, *ROUTE_WIDTHS.values()]
     assert [layer.get("title") for layer in layers] == [
         "Roads", *(name for name, _color, _route in EXAMPLE_SCENARIOS.values())]
-    assert not [key for layer in layers for key in ("color", "getFnv", "colorMapInterpolator", "scenario") if key in layer]
+    assert [layer.get("color") for layer in layers] == [None, "[!! scenario input_1 !!]", "[!! scenario input_2 !!]"]
+    assert not [key for layer in layers for key in ("getFnv", "colorMapInterpolator", "scenario") if key in layer]
     scenario_of = {i: s["id"] for s in spec["scenarios"] for i in s["nodes"]}
     # The map is in no box; the roads come from none, each route from its own.
     assert map_id not in scenario_of
@@ -812,6 +835,13 @@ def test_the_shipped_dataflows_roads_and_map_are_autarks():
     assert sources["in"] == loader_id and loader_id not in scenario_of
     assert [scenario_of.get(sources[h]) for h in ("in_1", "in_2")] == list(EXAMPLE_SCENARIOS)
     assert all("input_0[0]" in nodes[sources[h]]["content"] for h in ("in_1", "in_2"))
+    # Resolved as a run resolves it, each route is in its box's color.
+    from utk_curio.backend.app.execution.workflow_spec import parse_workflow_dict
+
+    parsed = parse_workflow_dict({"dataflow": spec})
+    (map_node,) = [n for n in parsed.nodes if n.id == map_id]
+    drawn = json.loads(parsed.node_code(map_node, "json"))["map"]["layerRefs"]
+    assert [layer.get("color") for layer in drawn] == [None, *(color for _name, color, _route in EXAMPLE_SCENARIOS.values())]
 
 
 def test_the_templates_layer_chip_reads_autarks_layer_array():

@@ -128,6 +128,44 @@ export function loadableFeatures(features: any[]): { features: any[]; order: num
     return { features: order || filled ? out : features, order: order };
 }
 
+// A layer's features as an Autark node hands them on: each OpenStreetMap
+// feature with its OSM id in an `osm_id` property, as the Discovery Catalog's
+// OpenStreetMap downloads name a row, so a Map Edits node or a selection can
+// name it. autk-db gives a road's, a park's or a water's OSM id as the feature's
+// GeoJSON `id`, which a table leaves out. A building's `id` is its
+// `building_id`, and each of its parts' OSM id is that part's `id` in
+// `properties.parts`, so each part gets its own, which it keeps once the
+// building is split into a row per part. A feature or a part that has an
+// `osm_id` keeps it. A layer from another source, the surface (the area's land,
+// no OpenStreetMap element) and a raster come back as they are; the input is
+// never changed. Both loaders hand their layers on through this one function:
+// the sandbox's (compileDataSpecToAutkDbJs embeds its source) and the browser's
+// (loadSpecLayers). So that embedded source runs as it is, the body avoids what
+// loadableFeatures avoids, and `typeof` against "object", which the build
+// compiles to a shared helper too.
+export function withOsmIds(table: { source?: string; type?: string } | null | undefined, features: any[]): any[] {
+    if (table == null || table.source !== 'osm' || table.type === 'surface' || table.type === 'raster'
+        || !Array.isArray(features)) return features;
+    const buildings = table.type === 'buildings';
+    const named = function (properties: any, id: any) {
+        if (id == null || (properties != null && properties.osm_id != null)) return properties;
+        return Object.assign({}, properties, { osm_id: id });
+    };
+    return features.map(function (feature: any) {
+        if (feature == null) return feature;
+        const properties = feature.properties;
+        if (!buildings) {
+            const withId = named(properties, feature.id);
+            return withId === properties ? feature : Object.assign({}, feature, { properties: withId });
+        }
+        if (properties == null || !Array.isArray(properties.parts)) return feature;
+        const parts = properties.parts.map(function (part: any) {
+            return part == null ? part : named(part, part.id);
+        });
+        return Object.assign({}, feature, { properties: Object.assign({}, properties, { parts: parts }) });
+    });
+}
+
 // Compile a grammar `data` section into autk-db JavaScript to run in the backend
 // Node.js sandbox. The single top-level `import` is rewritten to `await import()`
 // by execute_js_code; the rest is the body of the async function the sandbox
@@ -144,8 +182,9 @@ const __expectedTables = ${JSON.stringify(requestedLayerTables(dataSources))};
 const __loadErrors = [];
 // Mirrors joinFailureMessage() host-side; see the throw after the contract check.
 const __joinErrors = [];
-// loadableFeatures, as the host defines it (autkDataCompile.ts).
+// loadableFeatures and withOsmIds, as the host defines them (autkDataCompile.ts).
 const __loadableFeatures = ${loadableFeatures.toString()};
+const __withOsmIds = ${withOsmIds.toString()};
 // A GeoJSON source as autk-db loads it: its rows through __loadableFeatures,
 // fetched first when the source names a file, as the grammar's own adapter does.
 const __loadableGeojson = async (source) => {
@@ -255,6 +294,8 @@ const __out = [];
 for (const t of __tables) {
   const geojson = await db.getLayer(t.name);
   let type = t.type ?? 'polygons';
+  // Each OpenStreetMap feature's OSM id in osm_id, a building part's in that part.
+  if (geojson && Array.isArray(geojson.features)) geojson.features = __withOsmIds(t, geojson.features);
   if (type === 'buildings' && Array.isArray(geojson?.features)) {
     // autk-db keeps a building as one GeometryCollection, each part's tags in
     // properties.parts naming its geometry by geometryIndex. Explode each building
@@ -262,7 +303,8 @@ for (const t of __tables) {
     // explodeBuildingParts does in the browser (autkLayerMaterialize.ts). The
     // downstream loadGeojson('buildings') makes every row a building of its own, so
     // each part also carries, as a property, the building_id it came from. A part's
-    // id and geometryIndex are autk-db's bookkeeping and are left out.
+    // geometryIndex is autk-db's bookkeeping and is left out, and so is its id,
+    // which the part carries as its osm_id.
     const __exploded = [];
     for (const f of geojson.features) {
       const geom = f && f.geometry;

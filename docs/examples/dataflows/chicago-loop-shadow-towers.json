@@ -125,40 +125,28 @@
         "type": "curio.builtin/edit-features",
         "x": 645,
         "y": 900,
-        "content": "# Edit Features writes this code from its edit list: each edit, in the\n# order it was made, on the features whose key is one of its ids. It is\n# written again when the list changes.\nreturn curio_edit_features(input_0, [\n    {\"op\": \"remove\", \"ids\": [8, 10, 12, 13, 14, 18, 19, 31, 34, 51, 66, 77, 82, 106, 122], \"label\": \"SCOUT's 15 removed buildings\"},\n], key=\"building_id\")\n",
+        "content": "# Map Edits writes this code from its edit list: each edit, in the\n# order it was made, on the features whose key is one of its ids. It is\n# written again when the list changes.\nreturn curio_edit_features(input_0, [\n    {\"op\": \"remove\", \"ids\": [8, 10, 12, 13, 14, 18, 19, 31, 34, 51, 66, 77, 82, 106, 122], \"label\": \"SCOUT's 15 removed buildings\"},\n], key=\"building_id\")\n",
         "out": "DEFAULT",
         "in": "DEFAULT",
-        "goal": "Remove the 15 buildings SCOUT's high-rise case removes, by their building_id. Further buildings, picked on the map or by a condition, can be removed, raised or lowered here before Update results.",
+        "goal": "Remove the 15 buildings SCOUT's high-rise case removes, by their building_id. Further buildings, picked on the map or by a condition, can be removed, raised or lowered here before Commit edits.",
         "metadata": {
-          "keywords": [],
-          "editFeatures": {
-            "key": "building_id",
-            "edits": [
-              {
-                "op": "remove",
-                "ids": [
-                  8,
-                  10,
-                  12,
-                  13,
-                  14,
-                  18,
-                  19,
-                  31,
-                  34,
-                  51,
-                  66,
-                  77,
-                  82,
-                  106,
-                  122
-                ],
-                "label": "SCOUT's 15 removed buildings"
-              }
-            ]
-          }
+          "keywords": []
         },
         "title": "Remove towers"
+      },
+      {
+        "id": "549969fc-8e6a-574d-b9dc-aa38487f51c8",
+        "type": "curio.builtin/autk-grammar",
+        "x": 1290,
+        "y": 1350,
+        "content": "{\n  \"map\": {\n    \"layerRefs\": [\n      {\n        \"dataRef\": \"[!! input_0 !!]\",\n        \"isPick\": true,\n        \"selectFields\": [\n          \"building_id\"\n        ],\n        \"getFnv\": \"height\",\n        \"getFnvType\": \"quantitative\",\n        \"colorMapInterpolator\": \"interpolateViridis\",\n        \"colorMapRange\": [\n          0,\n          550\n        ],\n        \"title\": \"Building height (m)\"\n      }\n    ]\n  }\n}",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Draw the remaining buildings on a map, colored by height. It is linked to Towers removed's Map Edits node, so a building picked on this map is picked there.",
+        "metadata": {
+          "keywords": []
+        },
+        "title": "Buildings map"
       },
       {
         "id": "abd7fc96-4bfc-5eff-85a3-5e4991ba89b9",
@@ -241,63 +229,62 @@
       },
       {
         "id": "d0e547ba-e7d6-52e1-9c0e-f047443b715c",
-        "type": "curio.builtin/compare-scenarios",
+        "type": "curio.scout/bars",
         "x": 3225,
         "y": 0,
-        "content": "# Compare Scenarios writes this code from its inputs: each input, under the\n# id and the name of its scenario. It is written again when they change.\nreturn curio_stack_scenarios([\n    (\"existing\", \"Existing\", [!! input_0 !!]),\n    (\"towers-removed\", \"Towers removed\", [!! input_1 !!]),\n])\n",
+        "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v6.json\",\n  \"data\": {\n    \"name\": \"[!! inputs !!]\"\n  },\n  \"mark\": {\n    \"type\": \"bar\",\n    \"tooltip\": true\n  },\n  \"encoding\": {\n    \"x\": {\n      \"field\": \"scenario_name\",\n      \"type\": \"nominal\",\n      \"title\": \"Scenario\",\n      \"axis\": {\n        \"labelAngle\": 0\n      },\n      \"sort\": [!! scenario order !!]\n    },\n    \"y\": {\n      \"field\": \"[!! y !!]\",\n      \"type\": \"quantitative\",\n      \"aggregate\": \"[!! combine !!]\",\n      \"title\": \"[!! y_title !!]\"\n    },\n    \"color\": {\n      \"field\": \"scenario_name\",\n      \"type\": \"nominal\",\n      \"title\": \"Scenario\",\n      \"scale\": [!! scenario colors !!]\n    }\n  }\n}\n",
         "out": "DEFAULT",
         "in": "DEFAULT",
-        "goal": "Chart the mean accumulated shadow of both scenarios.",
+        "goal": "Chart the mean accumulated shadow of both scenarios, a bar per scenario.",
         "metadata": {
           "keywords": [],
-          "compareScenarios": {
-            "inputs": [
-              {
-                "scenario": "existing",
-                "name": "Existing",
-                "color": "#2a9d8f"
-              },
-              {
-                "scenario": "towers-removed",
-                "name": "Towers removed",
-                "color": "#e76f51"
-              }
-            ],
-            "chart": {
-              "preset": "bar",
-              "y": "mean"
+          "widgets": [
+            {
+              "name": "y",
+              "type": "text",
+              "label": "Y column",
+              "default": "y",
+              "value": "mean"
             },
-            "mode": "chart"
-          }
+            {
+              "name": "combine",
+              "type": "choice",
+              "label": "Combine",
+              "default": "mean",
+              "options": {
+                "choices": [
+                  "mean",
+                  "sum",
+                  "median",
+                  "min",
+                  "max",
+                  "count"
+                ]
+              },
+              "value": "mean"
+            },
+            {
+              "name": "y_title",
+              "type": "text",
+              "label": "Y axis title",
+              "default": "",
+              "value": "mean of mean"
+            }
+          ]
         },
         "title": "Mean accumulated shadow"
       },
       {
         "id": "608c35fc-5b51-546f-8305-7612a680f16a",
-        "type": "curio.builtin/compare-scenarios",
+        "type": "curio.scout/raster-calculator",
         "x": 3225,
         "y": 450,
-        "content": "# Compare Scenarios writes this code from its inputs: input_1 minus input_0,\n# each under the id and the name of its scenario. It is written again when\n# they change.\nreturn curio_difference_scenarios([\n    (\"existing\", \"Existing\", [!! input_0 !!]),\n    (\"towers-removed\", \"Towers removed\", [!! input_1 !!]),\n])\n",
+        "content": "# Towers removed's accumulated shadow, on input_1, minus Existing's, on\n# input_0, cell by cell, in minutes: below zero where removing the towers\n# takes shadow away, 0 where nothing changes.\nfrom scout_rasters.raster_algebra import raster_calculate\n\nreturn raster_calculate(\"subtract\", [input_1, input_0], output_file=curio_output_file)\n",
         "out": "DEFAULT",
         "in": "DEFAULT",
-        "goal": "Map where the accumulated shadow changes when the towers are removed.",
+        "goal": "Take, cell by cell, the change in accumulated shadow when the towers are removed.",
         "metadata": {
-          "keywords": [],
-          "compareScenarios": {
-            "inputs": [
-              {
-                "scenario": "existing",
-                "name": "Existing",
-                "color": "#2a9d8f"
-              },
-              {
-                "scenario": "towers-removed",
-                "name": "Towers removed",
-                "color": "#e76f51"
-              }
-            ],
-            "mode": "difference"
-          }
+          "keywords": []
         },
         "title": "Change in shadow"
       },
@@ -365,6 +352,21 @@
         "target": "abd7fc96-4bfc-5eff-85a3-5e4991ba89b9",
         "sourceHandle": "out",
         "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-acfa08e6-b472-5174-9ff0-8e469d04c901out-549969fc-8e6a-574d-b9dc-aa38487f51c8in",
+        "source": "acfa08e6-b472-5174-9ff0-8e469d04c901",
+        "target": "549969fc-8e6a-574d-b9dc-aa38487f51c8",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-acfa08e6-b472-5174-9ff0-8e469d04c901in/out-549969fc-8e6a-574d-b9dc-aa38487f51c8in/out",
+        "source": "acfa08e6-b472-5174-9ff0-8e469d04c901",
+        "target": "549969fc-8e6a-574d-b9dc-aa38487f51c8",
+        "sourceHandle": "in/out",
+        "targetHandle": "in/out",
+        "type": "Interaction"
       },
       {
         "id": "reactflow__edge-f7786d1f-9f64-5bbe-b007-dff18db386c6out-74e0af5a-c06e-52ae-94ad-94acc2de1642in",
@@ -476,6 +478,7 @@
         "color": "#e76f51",
         "nodes": [
           "acfa08e6-b472-5174-9ff0-8e469d04c901",
+          "549969fc-8e6a-574d-b9dc-aa38487f51c8",
           "abd7fc96-4bfc-5eff-85a3-5e4991ba89b9",
           "a2c5b8ed-658d-52ea-8e5b-18041d9385de",
           "ac470b24-69c3-5242-8d07-cc969e868e54",

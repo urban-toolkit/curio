@@ -36,7 +36,7 @@
         "content": "",
         "out": "DEFAULT",
         "in": "DEFAULT",
-        "goal": "Fan augmented roads (plus context layers) out to map and plot; route brush selections on roads back from plot to map.",
+        "goal": "Feed the augmented roads (plus context layers) to the map and the plot, marking the roads the plot's brush selects.",
         "metadata": {
           "keywords": []
         }
@@ -66,7 +66,7 @@
         "content": "{\n  \"plot\": {\n    \"dataRef\": \"table_osm_roads\",\n    \"mark\": \"bar\",\n    \"axis\": [\n      \"lanes_norm\",\n      \"@transform\"\n    ],\n    \"title\": \"Niterói road lane distribution\",\n    \"transform\": {\n      \"preset\": \"binning-1d\",\n      \"options\": {\n        \"bins\": 8\n      }\n    },\n    \"events\": [\n      \"brushX\"\n    ]\n  }\n}",
         "out": "DEFAULT",
         "in": "DEFAULT",
-        "goal": "Show a brushable lane distribution histogram; brushing routes through the pool to highlight roads on the 3D map.",
+        "goal": "Show a brushable lane distribution histogram; brushing highlights the matching roads on the 3D map through the pool.",
         "metadata": {
           "keywords": []
         }

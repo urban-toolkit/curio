@@ -208,6 +208,55 @@ class TestNodesTheServerDoesNotRun:
         assert finished["pool"]["status"] == "forwarded"
         assert recorder.calls["b"]["input"] == {"path": "art-a", "dataType": "dataframe"}
 
+    MAP_SPEC = json.dumps({"map": {"layerRefs": [{"dataRef": "[!! input_0 !!]"}, {"dataRef": "[!! input_1 !!]"}]}})
+
+    TEMPLATES = {
+        # As the store's roster has it: the Map Edits node runs its code.
+        "curio.builtin/edit-features": {"executable": True, "engine": "python"},
+        "curio.builtin/computation-analysis": {"executable": True, "engine": "python"},
+    }
+
+    @staticmethod
+    def link(a, b):
+        return edge(a, b, "in/out", sourceHandle="in/out", type="Interaction")
+
+    def test_data_interaction_map_runs_the_node_and_the_map_forwards_its_edited_layers(self):
+        # Data → Interaction → map, the node and the map linked both ways: the
+        # node's own run hands on the edited layers, which its code holds, and
+        # the map passes them on.
+        code = 'return curio_edit_features([input_0, input_1], [{"op": "remove", "where": "height < 10"}], by_input=True)'
+        recorder, _, finished = run(spec(
+            [node("tracts"), node("buildings"),
+             node("ix", "curio.builtin/edit-features", code),
+             node("map", AUTARK, self.MAP_SPEC), node("count")],
+            [edge("tracts", "ix"), edge("buildings", "ix", "in_1"), edge("ix", "map"),
+             self.link("ix", "map"), edge("map", "count")],
+        ), templates=self.TEMPLATES)
+        assert "by_input=True" in recorder.calls["ix"]["code"]
+        assert '"where": "height < 10"' in recorder.calls["ix"]["code"]
+        assert "map" not in recorder.calls
+        assert finished["map"]["status"] == "forwarded"
+        assert recorder.calls["count"]["input"]["path"] == "art-ix"
+
+    def test_an_interaction_node_feeding_a_map_unlinked_is_just_data(self):
+        recorder, _, finished = run(spec(
+            [node("buildings"),
+             node("ix", "curio.builtin/edit-features", "return input_0"),
+             node("map", AUTARK, self.MAP_SPEC)],
+            [edge("buildings", "ix"), edge("ix", "map")],
+        ), templates=self.TEMPLATES)
+        assert "map" not in recorder.calls
+        assert finished["map"]["status"] == "forwarded"
+
+    def test_a_map_with_no_interaction_node_still_forwards_its_input(self):
+        recorder, _, finished = run(spec(
+            [node("buildings"), node("map", AUTARK, self.MAP_SPEC), node("count")],
+            [edge("buildings", "map"), edge("map", "count")],
+        ))
+        assert finished["map"]["status"] == "forwarded"
+        assert "map" not in recorder.calls
+        assert recorder.calls["count"]["input"] == {"path": "art-buildings", "dataType": "dataframe"}
+
     def test_data_only_the_browser_makes_leaves_the_run_needing_the_canvas(self):
         recorder, events, finished = run(spec(
             [node("shade", AUTARK, COMPUTE_SPEC,
@@ -222,6 +271,26 @@ class TestNodesTheServerDoesNotRun:
         assert finished["chart"]["status"] == "waiting"
         assert "count" not in recorder.calls
         assert outcome(events)["status"] == "needs_canvas"
+
+    def test_a_node_no_installed_package_provides_fails_naming_its_type_and_skips_what_it_feeds(self):
+        # A saved Compare Scenarios node: no package holds its template any
+        # more, so the canvas shows a card for it and cannot run it either.
+        gone = "curio.builtin/compare-scenarios"
+        recorder, events, finished = run(spec(
+            [node("a"),
+             node("gone", gone, "return curio_stack_scenarios([])",
+                  metadata={"packageTemplateLabel": "Compare Scenarios"}),
+             node("chart", "curio.builtin/vis-vega", "{}"),
+             node("other")],
+            [edge("a", "gone"), edge("gone", "chart"), edge("a", "other")],
+        ))
+        assert "gone" not in recorder.calls
+        assert finished["gone"]["status"] == "error"
+        assert finished["gone"]["stderrTail"] == f"No installed package provides {gone}"
+        assert finished["chart"]["status"] == "skipped"
+        assert '"Compare Scenarios", failed' in finished["chart"]["skipReason"]
+        assert finished["other"]["status"] == "ok"
+        assert outcome(events) == {"status": "failed", "ok": 2, "failed": 1, "skipped": 1, "waiting": 0}
 
     def test_a_chart_at_the_end_does_not_hold_the_run(self):
         _, events, finished = run(spec(

@@ -314,6 +314,21 @@ describe("dashboardSourceNodeIds", () => {
     expect([...sources]).toEqual(["load"]);
   });
 
+  test("an Autark node that draws is walked through with a chip standing on its own in its document", () => {
+    // A layer in its box's color through a chip written bare: no JSON until the
+    // chip is resolved, and still a map, which passes its input through.
+    const chipRender = '{"map": {"layerRefs": [{"dataRef": "[!! input_0 !!]", "color": [!! scenario input_0 !!]}]}}';
+    const nodes = [
+      node("load", NodeType.AUTK_GRAMMAR, { code: DATA_SPEC }),
+      node("map1", NodeType.AUTK_GRAMMAR, { code: chipRender }),
+      node("map2", NodeType.AUTK_GRAMMAR, { code: chipRender, dashboardPinned: true }),
+    ];
+
+    const sources = dashboardSourceNodeIds(nodes, [edge("load", "map1"), edge("map1", "map2")]);
+
+    expect([...sources]).toEqual(["load"]);
+  });
+
   test("a versioned node type is recognised", () => {
     // Palette-dragged nodes carry `@1`; comparing the raw string silently
     // matches nothing (#169).
@@ -334,19 +349,6 @@ describe("dashboardSourceNodeIds", () => {
     const nodes = [node("py", NodeType.COMPUTATION_ANALYSIS, { dashboardPinned: true })];
 
     expect([...dashboardSourceNodeIds(nodes, [])]).toEqual([]);
-  });
-
-  test("a pinned Compare Scenarios node draws its own output, so it is its own source", () => {
-    // Its tile charts the table its own run stacked (#662); what feeds it is
-    // not what the tile reads, so it is not walked.
-    const nodes = [
-      node("a", NodeType.COMPUTATION_ANALYSIS),
-      node("b", NodeType.COMPUTATION_ANALYSIS),
-      node("compare", "curio.builtin/compare-scenarios@1", { dashboardPinned: true }),
-    ];
-
-    const sources = dashboardSourceNodeIds(nodes, [edge("a", "compare"), edge("b", "compare", "in_1")]);
-    expect([...sources]).toEqual(["compare"]);
   });
 
   test("nothing pinned means nothing to save", () => {
@@ -384,25 +386,25 @@ describe("dashboardSourceNodeIds", () => {
     test("is walked through as the Vega-Lite node is, versioned or not", () => {
       for (const type of [VEGA_LITE_TEMPLATE, "curio.scout/donuts"]) {
         const nodes = [
-          node("compare", "curio.builtin/compare-scenarios@1"),
+          node("py", NodeType.COMPUTATION_ANALYSIS),
           node("donuts", type),
           node("chart", NodeType.VIS_VEGA, { dashboardPinned: true }),
         ];
 
-        const sources = dashboardSourceNodeIds(nodes, [edge("compare", "donuts"), edge("donuts", "chart")]);
+        const sources = dashboardSourceNodeIds(nodes, [edge("py", "donuts"), edge("donuts", "chart")]);
 
-        expect([...sources]).toEqual(["compare"]);
+        expect([...sources]).toEqual(["py"]);
       }
     });
 
     test("a package node that draws with no grammar is a producer", () => {
       const nodes = [
-        node("compare", "curio.builtin/compare-scenarios@1"),
+        node("py", NodeType.COMPUTATION_ANALYSIS),
         node("heatmap", "acme.tools/heatmap@1"),
         node("chart", NodeType.VIS_VEGA, { dashboardPinned: true }),
       ];
 
-      const sources = dashboardSourceNodeIds(nodes, [edge("compare", "heatmap"), edge("heatmap", "chart")]);
+      const sources = dashboardSourceNodeIds(nodes, [edge("py", "heatmap"), edge("heatmap", "chart")]);
 
       expect([...sources]).toEqual(["heatmap"]);
     });

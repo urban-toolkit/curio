@@ -152,7 +152,7 @@ class TestRenderPrompt:
         from utk_curio.backend.app.agents.domain import builtin
 
         renamed = [
-            dataclasses.replace(m, name="Flow Architect") if m.agent_id == "agent.dataflow-builder" else m
+            dataclasses.replace(m, name="Flow Architect") if m.agent_id == "agent.curio.dataflow-builder" else m
             for m in builtin.list_builtin_manifests()
         ]
         monkeypatch.setattr(builtin, "list_builtin_manifests", lambda: renamed)
@@ -161,7 +161,7 @@ class TestRenderPrompt:
         )
         # Every other template that names it follows too, and none keeps the
         # old name.
-        marker = "{{agent.name:agent.dataflow-builder}}"
+        marker = "{{agent.name:agent.curio.dataflow-builder}}"
         naming = [
             stem for stem in contracts.PROMPT_TEMPLATES
             if marker in (REPO_ROOT / contracts.PROMPTS_DIR / f"{stem}.template.md").read_text(encoding="utf-8")
@@ -175,8 +175,8 @@ class TestRenderPrompt:
         )
 
     def test_an_unknown_agent_raises(self):
-        with pytest.raises(contracts.PromptTemplateError, match="agent.nobody"):
-            contracts.render_template("{{agent.name:agent.nobody}}")
+        with pytest.raises(contracts.PromptTemplateError, match="agent.test.nobody"):
+            contracts.render_template("{{agent.name:agent.test.nobody}}")
 
     def test_a_template_label_follows_the_manifest(self):
         manifest = _manifest()
@@ -205,12 +205,20 @@ class TestRenderPrompt:
         """Its Scenarios section names Scout's fifteen charts, the package's
         templates that draw with Vega-Lite, by the labels their manifest gives
         them, and the package that holds them, and says that each takes one
-        input per scenario and reads them as the dataset "inputs"."""
+        input per scenario and reads them as the dataset its chip names,
+        ``[!! inputs !!]``, never by the bare name. It says how scenarios are
+        compared: a Vega-Lite spec reading that dataset, a Raster Calculator
+        for two rasters' difference, absolute=True for its size, and a Python
+        node for two tables' or layers'. Compare Scenarios is gone, and the
+        section names it nowhere."""
         template = (REPO_ROOT / contracts.PROMPTS_DIR / "default_preamble.template.md").read_text(encoding="utf-8")
         section = template.split("## Scenarios", 1)[1]
         manifest = json.loads((REPO_ROOT / "packages" / "curio.scout@1" / "manifest.json").read_text(
             encoding="utf-8"))
-        assert "{{template.label:curio.builtin/compare-scenarios}}" in section
+        assert "compare-scenarios" not in section and "Compare Scenarios" not in section
+        for named in ("curio.builtin/vis-vega", "curio.scout/raster-calculator", "curio.builtin/computation-analysis"):
+            assert "{{template.label:" + named + "}}" in section, named
+        assert "absolute=True" in section
         charts = [t for t in manifest["templates"] if t.get("grammarId") == "vega-lite"]
         assert [chart["id"] for chart in charts] == [
             "lines-with-band", "curves-by-group", "bars-with-error-bars", "ensemble-strips",
@@ -221,7 +229,10 @@ class TestRenderPrompt:
             assert "{{template.label:" + f"curio.scout/{chart['id']}" + "}}" in section, chart["id"]
         assert "curio.scout@1" in section
         assert "one input per scenario" in section
-        assert '"inputs"' in section
+        assert "{{inputs.stacked}}" in section
+        assert '"inputs"' not in section, "the section names the dataset bare"
+        scenarios = contracts.render_prompt("default_preamble").split("## Scenarios", 1)[1]
+        assert '"data": {"name": "[!! inputs !!]"}' in scenarios
 
 
 class TestThePromptFacts:
@@ -276,6 +287,41 @@ class TestThePromptFacts:
         assert f"`{chip0}`, `[!! input_1 !!]`, ..." in orchestration
         lists = contracts.builtin_lists(_manifest())
         assert "builtin.merge_slots" not in lists
+
+    def test_the_stacked_dataset_chip_comes_from_the_runtime(self):
+        """The chip a Vega-Lite spec names its inputs stacked by is the
+        runtime's own (``STACKED_DATASET``, ``reference_text``), and the
+        preamble says exactly that."""
+        from utk_curio.backend.app.execution.code_references import STACKED_DATASET, reference_text
+
+        chip = contracts.render_template("{{inputs.stacked}}")
+        assert chip == reference_text(STACKED_DATASET) == "[!! inputs !!]"
+        assert f'"data": {{"name": "{chip}"}}' in contracts.render_prompt("default_preamble")
+
+    def test_the_orchestration_rule_links_two_views_directly_and_names_the_four_pool_cases(self):
+        """An interaction edge carries selections, never data. Two views link
+        directly, and a Data Pool goes between them only when a Simple View
+        shows the selection, when selections are merged, when a Vega-Lite
+        chart colors its own selection through ``interacted``, or when three
+        or more views share one selection (owner, 10-21). The node names are
+        the manifest's labels."""
+        def label(template_id: str) -> str:
+            return contracts.render_template("{{template.label:curio.builtin/" + template_id + "}}")
+
+        rule = contracts.render_prompt("orchestration_instruction")
+        assert "carries selections, never data" in rule
+        assert "Link two views with one interaction edge between them" in rule
+        assert f"Put a {label('data-pool')} between views only when" in rule
+        for case in (
+            f"a {label('vis-simple')} must show the selection",
+            "selections are merged (AND or OR)",
+            f"a {label('vis-vega')} chart colors its own selection",
+            "three or more views share one selection",
+        ):
+            assert case in rule, case
+        assert "never valid into a transformation or analysis node" in rule
+        assert "ONE legitimate feedback link" not in rule
+        assert "feed back into the pool" not in rule
 
     def test_the_widget_facts_come_from_the_runtime(self):
         """#662: the kinds a widget takes and the references code places one

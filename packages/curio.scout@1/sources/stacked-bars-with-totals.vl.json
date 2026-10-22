@@ -1,7 +1,7 @@
 {
   "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
   "data": {
-    "name": "inputs"
+    "name": "[!! inputs !!]"
   },
   "transform": [
     {
@@ -40,7 +40,8 @@
         "labelColor": {
           "expr": "scale('stroke', datum.value)"
         }
-      }
+      },
+      "sort": [!! scenario order !!]
     }
   },
   "layer": [
@@ -107,7 +108,8 @@
         "stroke": {
           "field": "scenario_name",
           "type": "nominal",
-          "legend": null
+          "legend": null,
+          "scale": [!! scenario text_colors !!]
         }
       }
     }

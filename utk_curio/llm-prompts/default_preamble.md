@@ -202,7 +202,7 @@ A node's "type" is the id of the template it was made from. A run that can place
 - Data Loading: The Data Loading box is responsible for getting data from the outside world into the dataflow.
 - Data Export: One Download button for the data connected to it. The file is named after the node or dataset that feeds it, and its format follows the data: a table downloads as CSV, a geodataframe as GeoJSON, anything else as JSON.
 - Data Transformation: The Data Transformation box is responsible for performing any kinds of transformations to the data.
-- Data Pool: The Data Pool is responsible for storing data that can be interacted by all connected visualizations. Interactions can also be propagated to other Data Pools.
+- Data Pool: Shows its input as a table and passes the rows on to every node it feeds, marking in an interacted column the rows selected in the views linked to it by interaction edges. Linked to another Data Pool, it passes that pool the marks of the rows its linked column names.
 - Python Computation: The Computation Analysis box is the generic box responsible for performing any kinds of computations.
 - Data Summary: The Data Summary node computes descriptive statistics and schema information (shape, dtypes, missing values, describe) for a DataFrame.
 - JS Computation: Run JavaScript via Node.js. Each input circle is its own variable, named after the circle: input_0, input_1, and so on. Use `return` to pass output downstream.
@@ -211,15 +211,14 @@ A node's "type" is the id of the template it was made from. A run that can place
 - Autark: Grammar-driven urban analytics. Write an UrbanSpec (JSON) covering data loading (OSM, CSV, GeoJSON), GPU compute, map rendering of layers and rasters, and/or plot rendering in one declarative spec.
 - Spatial Join: Pairs the rows of two inputs whose shapes meet, such as points and the polygons they fall in. Connect them to the blue circle at the top and the green circle at the bottom, then pick how the shapes meet: intersects, within, contains, touches, overlaps, crosses or nearest. The output is one row per pair, with the bottom input's columns added, or the bottom input's rows with their count of pairs.
 - Parameter: One value any node can use. Give it a name, a type and a default. Its tag then shows under Shared in every node's Widgets tab and above every code editor; drag it into a node's code to use the value there. Changing the value makes the nodes that use it run again, and renaming it updates their code. It has no edges, and it lists the nodes that use it.
-- Compare Scenarios: Compares scenarios. Connect each scenario's outcome to its own input circle: each input is labelled by the scenario its node belongs to, and the node stacks the inputs into one table, with the scenario's id and name on every row. That table is its output. Its Chart tab draws the table in the scenarios' colors, as bars, grouped bars, lines, points, a pie, lollipops or a table. In Difference it takes two inputs and subtracts input_0 from input_1: two rasters cell by cell, two layers or two tables row by row, matched on a stable id (osm_id or building_id, or a key you pick), with rows only one side has marked removed or added. The difference is its output: a table's is shown as a table, and an Autark node after it draws a raster's or a layer's on a map. It shows Difference for two rasters or two layers and a Chart otherwise, and you can switch. Its What differs tab lists what changed between the scenarios: widget values and code lines. It warns when the scenarios read different context.
-- Interaction: Removes features, or changes them, by hand or by a condition. Connect a layer, or the layers an Autark node hands on, and pick the layer to edit and the column that identifies a feature: osm_id or building_id, or another column whose values differ in every feature. A layer with no such column is refused. Double-click features on its map to pick them, then Remove them (Delete), raise or lower a number such as height (the up and down arrows), scale it, Set a column to a value, type a new value into the picked features' table, or Restore them as the input has them. Or pick features by a condition such as height > 100, and do any of these to all of them, including writing a column computed by an expression such as levels * 3.2. Its edits are a log, applied in order by that column, never by a feature's place; each can be switched off, undone or deleted. Its output is the edited layer, with the other layers as they came, and Update results runs the nodes below it again. A building's parts share its building_id, so an edit by building_id applies to the whole building. Compare Scenarios lists the edits in its What differs tab.
+- Map Edits: Edits an Autark map's layers on the map: removes features, changes their values, reshapes or moves them, draws new ones, and adds properties and layers. Connect the layers to it and it to an Autark map, then link the two with an interaction edge to pick features on the map. Each edit is an entry in the node's list and in its Provenance drawer.
 - Note: A note on the canvas: a title and a short text in simple markdown (headings, lists, bold and https links) on a color of its own. It connects to nothing and runs nothing. The Researcher writes its findings in notes.
 
 A node that accepts more than one connection takes each one on its own input circle, numbered from 0 in the order they were connected. An edge names the circle it connects to in "targetHandle": "in", "in_1", "in_2", ..., circle 0 first.
 
-A Data Pool node is represented to the user as a table. Changes made to a Data Pool are seen by all connected nodes, which is how interactions are linked between visualizations.
+A Data Pool node is represented to the user as a table.
 
-A Simple View node renders a table for DataFrames/GeoDataFrames, or a card per row when the frame carries images: one image plus that row's other values. A column holds images when at least 60% of its non-empty values are images; a value that is a list counts when any of its items is one. The columns named "image_content", "image_url", "image", "thumbnail" or "overlay_url" are checked first, in that order, and in them an image is a "data:image/" URI, an "/api/" path, any http(s) URL, or bare Base64 image bytes. When any of them holds images, those columns are the image columns and no other column is checked, except that "image_url" is left out when "thumbnail" holds images too, since the thumbnail is the small view of the same file. Otherwise every column is checked, and an image there is a "data:image/" URI, an "/api/" path, or an http(s) URL with an image extension (.png, .jpg, .jpeg, .gif, .webp, .svg, .bmp or .avif) at its end or just before a "?" or "#"; bare Base64 does not count there. Both frame shapes work, so a GeoDataFrame whose features carry an image property displays as images too. Users can click on a card to interact with its row; the interaction will be propagated to a Data Pool if connected with an interaction edge.
+A Simple View node renders a table for DataFrames/GeoDataFrames, or a card per row when the frame carries images: one image plus that row's other values. A column holds images when at least 60% of its non-empty values are images; a value that is a list counts when any of its items is one. The columns named "image_content", "image_url", "image", "thumbnail" or "overlay_url" are checked first, in that order, and in them an image is a "data:image/" URI, an "/api/" path, any http(s) URL, or bare Base64 image bytes. When any of them holds images, those columns are the image columns and no other column is checked, except that "image_url" is left out when "thumbnail" holds images too, since the thumbnail is the small view of the same file. Otherwise every column is checked, and an image there is a "data:image/" URI, an "/api/" path, or an http(s) URL with an image extension (.png, .jpg, .jpeg, .gif, .webp, .svg, .bmp or .avif) at its end or just before a "?" or "#"; bare Base64 does not count there. Both frame shapes work, so a GeoDataFrame whose features carry an image property displays as images too. Users can click on a card to select its row, and the selection reaches the nodes linked to it by an interaction edge.
 
 ## How nodes are controlled
 
@@ -237,8 +236,7 @@ Nodes are uncontrollable, controllable through code (python or JavaScript) or co
 - Autark: controllable through grammar.
 - Spatial Join: uncontrollable.
 - Parameter: uncontrollable.
-- Compare Scenarios: controllable through python code.
-- Interaction: controllable through python code.
+- Map Edits: controllable through python code.
 - Note: uncontrollable.
 
 An output connection of a node can be connected to the input connection of different nodes.
@@ -345,8 +343,7 @@ Input supported:
 - Autark: LIST, JSON, GEODATAFRAME, DATAFRAME, RASTER
 - Spatial Join: GEODATAFRAME
 - Parameter: no input supported
-- Compare Scenarios: DATAFRAME, GEODATAFRAME, RASTER, VALUE, LIST, JSON
-- Interaction: GEODATAFRAME, DATAFRAME, LIST, JSON
+- Map Edits: GEODATAFRAME, DATAFRAME, LIST, JSON
 - Note: no input supported
 
 Output supported:
@@ -363,8 +360,7 @@ Output supported:
 - Autark: LIST, JSON, GEODATAFRAME, DATAFRAME, RASTER
 - Spatial Join: GEODATAFRAME
 - Parameter: no output supported
-- Compare Scenarios: DATAFRAME, GEODATAFRAME, RASTER
-- Interaction: GEODATAFRAME, DATAFRAME, JSON
+- Map Edits: GEODATAFRAME, DATAFRAME, JSON
 - Note: no output supported
 
 Make sure to pay attention to the compatibility between output and input of the nodes.
@@ -381,8 +377,7 @@ Number of connections each node accepts into its inputs. A node that accepts mor
 - Simple View: 1
 - Autark: any number
 - Spatial Join: 2
-- Compare Scenarios: any number
-- Interaction: 1
+- Map Edits: any number
 
 Number of outputs possible for each node (if you want to output more than one data unit you need to use a tuple):
 
@@ -396,8 +391,7 @@ Number of outputs possible for each node (if you want to output more than one da
 - Simple View: 1
 - Autark: [0,1]
 - Spatial Join: 1
-- Compare Scenarios: [1,n]
-- Interaction: 1
+- Map Edits: 1
 
 Note that there is no problem connecting the output of a node into the input of multiple nodes.
 
@@ -491,7 +485,11 @@ special mark type.
 
 ## Interactions
 
-Visualizations can be connected to a Data Pool with an edge of type: "Interaction" (in the Trill specification). Interactions on the visualization will be propagated to the Data Pool changing a column called "interacted". This column will contained 1 if that row was interacted with or 0 if not. The type of interaction is determined by the visualization. The interactions in the visualization is automatically propagated to the Data Pool, however for the interaction to the effect in the visualization the field "interacted" needs to be used. For example, this Vega-Lite specification defines a scatterplot with a select interaction that uses the column "interacted" to control the color of the points.
+An edge of type: "Interaction" (in the Trill specification) carries selections between two visualizations, never data. Link two visualizations directly when at least one of them is a Vega-Lite or an Autark node: each of those highlights the rows the other one selects, and a Vega-Lite node marks them in a column called "interacted", "1" for a selected row and "0" otherwise.
+
+A Data Pool goes between visualizations only when a Simple View must show the selection, when selections are merged (AND or OR), when a Vega-Lite chart colors its own selection through "interacted", or when three or more visualizations share one selection. Each visualization is then linked to the Data Pool, which marks the selected rows in its column "interacted" and passes them to every node it feeds.
+
+A visualization shows a selection it receives through the column "interacted", and a chart shows its own through its selection's name. For example, this Vega-Lite specification defines a scatterplot with an interval selection that colors red the points it selects and the points another visualization selects.
 
 ```json
 { 
@@ -507,14 +505,19 @@ Visualizations can be connected to a Data Pool with an edge of type: "Interactio
         "value": 0.3 
     }, 
     "color": {
-      "condition": {"test": "datum.interacted === '1'", "value": "red"},
+      "condition": [
+        {"param": "clickSelect", "empty": false, "value": "red"},
+        {"test": "datum.interacted === '1'", "value": "red"}
+      ],
       "value": "blue" }
   },
   "config": { "scale": { "bandPaddingInner": 0.2 } } 
 } 
 ```
 
-Two visualizations can also be connected to each other directly with an Interaction edge, without a Data Pool, when at least one of them is a Vega-Lite or an Autark node: each of those highlights the rows the other one selects, and a Vega-Lite node marks them in the column "interacted" the same way. A point selection over key columns matches rows by their values, so the two visualizations may read different rows that share those columns: a Vega-Lite point select with "fields": ["unit_id"], or an Autark map layer (the one with "isPick": true) or plot with "selectFields": ["unit_id"], whose table must come from the node's input. A point selection without them matches rows by position, so both visualizations must read the same rows in the same order; an interval selection matches by column name.
+A point selection over key columns matches rows by their values, so the two visualizations may read different rows that share those columns: a Vega-Lite point select with "fields": ["unit_id"], or an Autark map layer (the one with "isPick": true) or plot with "selectFields": ["unit_id"], whose table must come from the node's input. A point selection without them matches rows by position, so both visualizations must read the same rows in the same order; an interval selection matches by column name.
+
+A Map Edits node feeds the Autark map it edits on, and an Interaction edge links the two, so features picked on the map reach it. Its code, one `curio_edit_features(...)` call, is written by the node from its edits.
 
 Nodes that can have interaction connection edge:
 
@@ -522,11 +525,12 @@ Nodes that can have interaction connection edge:
 - Vega-Lite
 - Simple View
 - Autark
+- Map Edits
 
 ## Scenarios
 
 A scenario is a named selection of a dataflow's nodes, in "dataflow"."scenarios", used to compare alternatives: the same analysis with buildings twice as tall, say. Its boundary splits the dataflow into three parts. Its fixed context is the nodes outside it that it reads, through an edge into it or through a Parameter node's reference in its code. Its levers are its own nodes: what an alternative changes, such as a widget value, a line of code or a spec. Its outcomes are the outputs of its last nodes: what gets compared. A node belongs to one scenario at most, so a node two alternatives share sits outside both, as their common context. An alternative is usually a copy of another scenario's nodes that reads the same context, with a lever changed; each copy names the nodes it descends from in "metadata"."copiedFrom", which is how the levers of two scenarios pair.
 
-A Compare Scenarios node stacks its inputs into one table with a "scenario_name" column, and a Vega-Lite node after it draws each scenario in the color of its box, in the order of the node's inputs.
+To compare scenarios, connect each scenario's outcome to an input circle of its own, on a node outside the boxes. A Vega-Lite node whose spec reads its inputs stacked charts them: "data": {"name": "[!! inputs !!]"} is every input's rows stacked, each row with "scenario" and "scenario_name" from the scenario box its input comes from. A chart or a map draws exactly its spec, and its scenario chips write the boxes' colors and order, from the boxes its inputs come from: "scale": [!! scenario colors !!] on a color, fill or stroke on "scenario_name" (on a text mark, "scale": [!! scenario text_colors !!], the same colors in shades that read on white), and "sort": [!! scenario order !!] on an axis, an offset or a facet on it, for example "color": {"field": "scenario_name", "type": "nominal", "scale": [!! scenario colors !!]} and "x": {"field": "scenario_name", "type": "nominal", "sort": [!! scenario order !!]}. Each input whose node is in no box comes last, in a grey of its own, and when no input comes from a box the colors chips write the names alone, so the grammar's own palette colors them. In a map's layer, or a chart's mark, "[!! scenario input_1 !!]" inside quotes is the color of the box input_1 comes from: "color": "[!! scenario input_1 !!]". A spec without the chips draws in Vega-Lite's or Autark's own colors, and the chips are for a spec, not for Python or JavaScript code. A Raster Calculator node takes the difference of two rasters cell by cell, raster_calculate("subtract", [input_1, input_0], output_file=curio_output_file), with absolute=True for its size. A Python Computation node takes the difference of two tables or layers, joining their rows on a column both have, such as osm_id or building_id.
 
-The Scout package (curio.scout@1) has fifteen charts that compare scenarios: Lines with a band, Curves by group, Bars with error bars, Ensemble strips, Stacked bars with totals, Donuts, Weighted matrix, Dots with a range, Bars, Grouped bars, Lines, Points, Pie, Lollipops and Table. Each takes one input per scenario: connect each scenario's outcome to a circle of its own. Its spec reads them all as the dataset "inputs", every input's rows stacked without their geometry, each row with "scenario" and "scenario_name" from the scenario box its input comes from, and it draws each scenario in its box's color, in the order the dataflow lists the boxes. Each is a Vega-Lite node whose spec is its template's: set the columns it plots in its widgets, and its Combine widget, where it has one, to the Vega-Lite aggregate it combines a scenario's rows with (mean, sum, median, min, max or count), and leave its spec as it is.
+The Scout package (curio.scout@1) has fifteen charts that compare scenarios: Lines with a band, Curves by group, Bars with error bars, Ensemble strips, Stacked bars with totals, Donuts, Weighted matrix, Dots with a range, Bars, Grouped bars, Lines, Points, Pie, Lollipops and Table. Each takes one input per scenario: connect each scenario's outcome to a circle of its own. Its spec reads them all stacked, as "data": {"name": "[!! inputs !!]"}, every input's rows without their geometry, each row with "scenario" and "scenario_name" from the scenario box its input comes from, and its scenario chips draw each scenario in its box's color, in the order the dataflow lists the boxes. Each is a Vega-Lite node whose spec is its template's: set the columns it plots in its widgets, and its Combine widget, where it has one, to the Vega-Lite aggregate it combines a scenario's rows with (mean, sum, median, min, max or count), and leave its spec as it is.

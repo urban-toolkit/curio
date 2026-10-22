@@ -225,6 +225,7 @@ palette drag and the edge drag.
 | `offline_catalog_package(backend_url, dir_name, libraries)` | A context manager: a test package from `packages/` in the backend's catalog, and its libraries as wheels in a wheelhouse the backend's pip reads instead of an index (`PIP_NO_INDEX` with `PIP_FIND_LINKS`). Undone afterwards. `library_installed(backend_url, library)` says whether pip installed one. `offline_package(dir_name)` reads a test package's manifest: its name, its one library and its nodes. Each test of an install path has a package and a library of its own. |
 | `connect_nodes(page, source_id, target_id, *, source_handle="out", target_handle="in")` | Draws an edge with real pointer moves between two `.react-flow__handle`s and returns the derived edge id. |
 | `set_node_code(page, node_id, code)` / `read_node_code(page, node_id)` | Writes / reads a code node's source through that node's own Monaco instance. |
+| `open_strip_category(page, node_id, category)` | Opens a category (`inputs`, `scenarios`, `widgets`, `selections` or `shared`) of the header above a node's code or spec, unless it is open, and returns the locator of its chips. Every category starts closed, so a test that drags a tag opens its category first. Fails when the header has no such category. |
 | `canvas_nodes(page)` / `canvas_node_type(page, node_id)` | `{id, nodeType}` for the canvas, read from `window.__curio_reactFlow`. Projected, because `node.data` holds a `PythonInterpreter` and callbacks that Playwright cannot serialize. |
 | `play_node`, `wait_for_node_done`, `wait_for_node_settled`, `run_node_and_wait` | Press a node's play button and wait for it to settle. `wait_for_node_done` raises with the node's own error text; `wait_for_node_settled` returns `"done"` / `"error"` for a test where the failure *is* the expected outcome. |
 | `watch_node_run(page, node_id)`, `wait_for_node_run_to_end(page, node_id, ...)` | For a node that already shows a result before the click: call `watch_node_run` before it, then the wait returns `"done"` / `"error"` only after the node has gone `running` and settled. `wait_for_node_settled` would return at once on the old result (#892). |
@@ -762,12 +763,12 @@ Things worth knowing before adding to these:
   string for every parameter. The per-agent claim is on the captured system
   prompt, which the run composes from that agent's own preamble + instruction
   bytes. Keep that assertion or the parametrization becomes decoration.
-- **Never script `web.search` / `web.fetch`.** `agent.researcher` declares
+- **Never script `web.search` / `web.fetch`.** `agent.curio.researcher` declares
   them and `app/agents/egress.py` really opens sockets. The suite scripts its
   `node.create` instead, and it also declares the local read tools
   `dataflow.read` and `node.read`.
 - **`discovery.search` is the exception, and only because of the corpus.**
-  `agent.dataset-finder` declares it, and it too really opens sockets - but the
+  `agent.curio.dataset-finder` declares it, and it too really opens sockets - but the
   harness exports `CURIO_DISCOVERY_FIXTURES`, so in this stack the discovery
   transport answers from recorded responses instead. That is what makes an
   agent-driven download testable at all. It holds only while that variable is

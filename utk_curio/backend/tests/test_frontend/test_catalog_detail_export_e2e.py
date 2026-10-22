@@ -32,7 +32,7 @@ PACKAGE_DIR = "ai.utk.uhvi@1"
 #: chat and each of its two modes have a prompt of their own, so the bundle
 #: carries four with the preamble.
 AGENT_NAME = "Researcher"
-AGENT_DIR = "agent.researcher@1.0.0"
+AGENT_DIR = "agent.curio.researcher@1"
 AGENT_PROMPTS = {
     "prompts/default_preamble.md",
     "prompts/researcher_instruction.md",
@@ -97,7 +97,7 @@ def test_a_builtin_agent_exports_from_view_details(app_frontend, current_server,
     assert download.suggested_filename == f"{AGENT_DIR}.curio-agent.json"
     with open(download.path(), "rb") as fh:
         bundle = json.load(io.TextIOWrapper(fh, encoding="utf-8"))
-    assert bundle["manifest"]["id"] == "agent.researcher", bundle["manifest"]
+    assert bundle["manifest"]["id"] == "agent.curio.researcher", bundle["manifest"]
     declared = {asset["path"] for asset in bundle["manifest"]["prompts"].values()}
     assert declared == AGENT_PROMPTS, declared
     assert declared and declared <= set(bundle["prompts"]), (declared, list(bundle["prompts"]))

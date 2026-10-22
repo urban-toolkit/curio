@@ -40,6 +40,9 @@ type WidgetsEditorProps = {
     onValueChange?: () => void;
     /** The language the node's code is written in, which decides how a value is written into it. */
     language: CodeLanguage;
+    /** The grammar of a JSON document: in a Vega-Lite spec (`VEGA_LITE`), a
+     * column's name is written escaped where Vega-Lite reads a field. */
+    grammar?: string;
     /** A reference that cannot be resolved: the run ends with this message. */
     onResolveError: (message: string) => void;
     /** The node's wired inputs, which its input and column references name. */
@@ -77,6 +80,7 @@ function WidgetsEditor({
     onWidgetsChange,
     onValueChange,
     language,
+    grammar,
     onResolveError,
     inputs = NO_INPUTS,
     emptyInputs = NO_SLOTS,
@@ -98,7 +102,7 @@ function WidgetsEditor({
 
     useEffect(() => {
         if (markersDirtyBypass.current) {
-            const { code, problems } = resolveReferences(String(userCode ?? ""), scope, language);
+            const { code, problems } = resolveReferences(String(userCode ?? ""), scope, language, grammar);
             if (emptyInputs.length > 0) onResolveError(describeEmptyInputs(emptyInputs, inputs));
             else if (problems.length > 0) onResolveError(describeReferenceProblems(problems));
             else sendReplacedCode(code);
@@ -113,8 +117,8 @@ function WidgetsEditor({
     }, []);
 
     const problems = useMemo(
-        () => resolveReferences(String(userCode ?? ""), scope, language).problems,
-        [userCode, scope, language],
+        () => resolveReferences(String(userCode ?? ""), scope, language, grammar).problems,
+        [userCode, scope, language, grammar],
     );
 
     const setValue = (name: string, value: any) => {

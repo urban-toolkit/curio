@@ -12,10 +12,7 @@
  * autk-db also reads a raster as EPSG:4326 unless told otherwise, so the CRS
  * goes with it, by its EPSG code.
  *
- * Pure, so it is testable under jest, and with no imports at run time, so the
- * sandbox's Node process loads a Compare Scenarios node's two rasters by the
- * same rules (`utk_curio/sandbox/util/raster_difference.js`) before Curio's
- * raster algebra subtracts them.
+ * Pure, so it is testable under jest.
  */
 import type { RasterGrid } from "./rasterWire";
 

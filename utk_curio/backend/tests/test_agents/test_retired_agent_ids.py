@@ -2,8 +2,8 @@
 
 #417 folded the Node Explainer and the Debug Agent into Chat, and their ids
 left the roster, the folders in ``agents/``. Test fixtures went on using
-both ids until #549 gave them plainly made-up ones (``agent.my-explainer``,
-``agent.my-debugger``). A fixture with a retired id reads as a test of an
+both ids until #549 gave them plainly made-up ones (``agent.test.my-explainer``,
+``agent.test.my-debugger``). A fixture with a retired id reads as a test of an
 agent Curio no longer has, so the scan covers the backend and frontend test
 trees.
 
@@ -15,6 +15,9 @@ Three more left later that day, when the catalog went down to four cards: the
 Researcher took over Chat, and the Node Builder took over the Connection
 Builder and the Package Builder. Every id that went to Chat or the Package
 Builder now names their successor.
+
+On 2026-10-22 every built-in's id took its publisher, as Discovery source ids
+name theirs: ``agent.<name>`` became ``agent.curio.<name>``, with no alias.
 """
 
 from __future__ import annotations
@@ -33,14 +36,22 @@ SKIP_DIRS = {"node_modules", "__pycache__", ".pytest_cache"}
 # Each retired id, built from parts so this file does not match itself, and
 # the built-in that took over its work.
 RETIRED = {
-    "agent." + "node-explainer": "agent.researcher",
-    "agent." + "debug-agent": "agent.researcher",
-    "agent." + "node-content-builder": "agent.node-builder",
-    "agent." + "node-researcher": "agent.researcher",
-    "agent." + "package-recommendation": "agent.node-builder",
-    "agent." + "chat-agent": "agent.researcher",
-    "agent." + "connection-builder": "agent.node-builder",
-    "agent." + "package-builder": "agent.node-builder",
+    "agent." + "node-explainer": "agent.curio.researcher",
+    "agent." + "debug-agent": "agent.curio.researcher",
+    "agent." + "node-content-builder": "agent.curio.node-builder",
+    "agent." + "node-researcher": "agent.curio.researcher",
+    "agent." + "package-recommendation": "agent.curio.node-builder",
+    "agent." + "chat-agent": "agent.curio.researcher",
+    "agent." + "connection-builder": "agent.curio.node-builder",
+    "agent." + "package-builder": "agent.curio.node-builder",
+    # The ids without a publisher.
+    "agent." + "dataflow-builder": "agent.curio.dataflow-builder",
+    "agent." + "dataflow-planner": "agent.curio.dataflow-planner",
+    "agent." + "dataflow-reader": "agent.curio.dataflow-reader",
+    "agent." + "dataset-finder": "agent.curio.dataset-finder",
+    "agent." + "generated-content-evaluator": "agent.curio.generated-content-evaluator",
+    "agent." + "node-builder": "agent.curio.node-builder",
+    "agent." + "researcher": "agent.curio.researcher",
 }
 
 
@@ -79,6 +90,6 @@ def test_no_test_names_a_retired_agent():
 
     assert not found, (
         f"tests name retired agents ({', '.join(RETIRED)}); the built-ins are "
-        f"{', '.join(sorted(_live_ids()))}. Use a made-up id such as agent.my-explainer:\n"
+        f"{', '.join(sorted(_live_ids()))}. Use a made-up id such as agent.test.my-explainer:\n"
         + "\n".join(found)
     )

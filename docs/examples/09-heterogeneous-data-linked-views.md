@@ -1,6 +1,6 @@
 # Example: Heterogeneous data + cross-grammar linked views
 
-This example combines three different data sources, a high-resolution thermal raster, a tabular meteorological feed, and a sociodemographic GeoDataFrame, into a single pipeline that derives the Universal Thermal Climate Index (UTCI) per Milan census tract, and then renders the result through coordinated `autk-grammar` map, Vega-Lite scatter, and Vega-Lite boxplot views with cross-grammar Interaction edges. The use case is heat exposure of older adults in Milan; the framework story is that nodes with several inputs join heterogeneous data and a `Data Pool` fans the result out to multiple linked views, regardless of the visualization grammar.
+This example combines three different data sources, a high-resolution thermal raster, a tabular meteorological feed, and a sociodemographic GeoDataFrame, into a single pipeline that derives the Universal Thermal Climate Index (UTCI) per Milan census tract, and then renders the result as an `autk-grammar` map and a Vega-Lite scatter linked by an interaction edge, beside a Vega-Lite boxplot. The use case is heat exposure of older adults in Milan; the framework story is that nodes with several inputs join heterogeneous data, and that two views link whichever grammar draws them.
 
 > [!NOTE]
 > **WebGPU required**
@@ -24,16 +24,13 @@ flowchart LR
   R -->|input_0| Z[`Python Computation`<br/>zonal stats]
   U -->|input_1| Z
   S -->|input_2| Z
-  Z --> T[`Data Transformation`<br/>reproject + filter] --> P[`Data Pool`]
+  Z --> T[`Data Transformation`<br/>reproject + filter]
 
-  P --> M[autk-grammar<br/>thematic map + picking]
-  P --> SC[`Vega-Lite`<br/>linked scatter]
-  P --> BX[`Data Transformation`<br/>gt_65 only] --> BV[`Vega-Lite`<br/>linked boxplot]
+  T --> M[autk-grammar<br/>thematic map + picking]
+  T --> SC[`Vega-Lite`<br/>linked scatter]
+  T --> BX[`Data Transformation`<br/>gt_65 only] --> BV[`Vega-Lite`<br/>boxplot]
 
-  %% Brushing is routed back through the Data Pool, which re-fans the selection
-  %% to every downstream view - the views are not wired to each other.
-  M  -. Interaction .-> P
-  SC -. Interaction .-> P
+  M <-. Interaction .-> SC
 ```
 
 ## Data
@@ -207,14 +204,10 @@ filtered_gdf.__dict__['metadata'] = {'name': 'census'}
 return filtered_gdf
 ```
 
-## Step 7: Fan out via `Data Pool` (`Data Pool`)
+## Step 7: Thematic map of UTCI (`autk-grammar`)
 
-The pool keeps the joined `census` table in shared memory so the next three views can read it without re-running the spatial join.
-
-## Step 8: Thematic map of UTCI (`autk-grammar`)
-
-The map is an `autk-grammar` node with just a `map` block. The census polygons routed in from the Data
-Pool are the node's first input, the table `input_0`, written with the input chip `[!! input_0 !!]`;
+The map is an `autk-grammar` node with just a `map` block. The census polygons are the node's first
+input, the table `input_0`, written with the input chip `[!! input_0 !!]`;
 the layer is coloured by the UTCI `mean` column and picking is enabled so the linked scatterplot can
 highlight selected tracts. No JavaScript and no explicit data block, so the grammar reads the upstream
 GeoDataFrame directly. This is the single-frame case of Autark's two upstream-referencing mechanisms; see
@@ -231,13 +224,12 @@ GeoDataFrame directly. This is the single-frame case of Autark's two upstream-re
 }
 ```
 
-`getFnv: "mean"` resolves to `properties.mean` (the per-tract UTCI). Picking (`isPick`) flips the
-`interacted` flag through the pool, which the Vega scatter and boxplot consume on the next propagation
-cycle.
+`getFnv: "mean"` resolves to `properties.mean` (the per-tract UTCI). A double-click picks a tract
+(`isPick`), and the scatter marks its point.
 
-## Step 9: Linked scatterplot of UTCI vs. older adults (`Vega-Lite`)
+## Step 8: Linked scatterplot of UTCI vs. older adults (`Vega-Lite`)
 
-A Vega-Lite scatter of `gt_65` vs `mean` UTCI. The interval selection on this view, combined with the Interaction edges added in Step 11, marks each polygon as `interacted` so the map can re-render with the selected tracts highlighted.
+A Vega-Lite scatter of `gt_65` vs `mean` UTCI. Its interval selection colors the points it selects red, and with the interaction edge of Step 10 the map highlights the matching tracts. A tract picked on the map marks its point in the column `interacted`, which turns it red too.
 
 ```json
 {
@@ -249,16 +241,19 @@ A Vega-Lite scatter of `gt_65` vs `mean` UTCI. The interval selection on this vi
     "y": {"field": "mean",  "type": "quantitative", "scale": {"domain": [37, 42]}},
     "opacity": {"condition": {"param": "clickSelect", "value": 0.7}, "value": 0.3},
     "color": {
-      "condition": {"test": "datum.interacted === '1'", "value": "red"},
+      "condition": [
+        {"param": "clickSelect", "empty": false, "value": "red"},
+        {"test": "datum.interacted === '1'", "value": "red"}
+      ],
       "value": "blue"
     }
   }
 }
 ```
 
-## Step 10: Linked boxplot of older-adult population (`Vega-Lite`)
+## Step 9: Boxplot of older-adult population (`Vega-Lite`)
 
-Add a `Data Transformation` node that drops everything but `gt_65`, then a Vega-Lite boxplot reading from it. This view summarises the distribution of older-adult counts independent of UTCI; with the Interaction edges from Step 11 wired up, brushing on the map or scatter narrows the boxplot to the selected polygons.
+Add a `Data Transformation` node that drops everything but `gt_65`, then a Vega-Lite boxplot reading from it. This view summarises the distribution of older-adult counts independent of UTCI.
 
 ```python
 gdf = input_0
@@ -277,15 +272,10 @@ return gdf.loc[:, ["gt_65"]]
 }
 ```
 
-## Step 11: Wire the linked interaction (Interaction edges)
+## Step 10: Link the map and the scatter (interaction edge)
 
-Connect the `autk-grammar` map, `Vega-Lite` (scatter), and `Vega-Lite` (boxplot) to the shared `Data Pool` with edges of `type: "Interaction"`. Brushing in any one view propagates an `interacted` flag through the census table the pool holds; the other views re-style by reading that column on the next propagation cycle. This is the cross-grammar piece: the same Interaction wiring works between Vega-Lite and Autark views without either side knowing about the other.
-
-This example wires two pool-anchored Interaction edges:
-
-- `Data Pool` ↔ `Autark`: double-clicking a polygon in the map flips its row's `interacted` flag in the pool, which the Vega scatter and boxplot consume.
-- `Vega-Lite` (scatter) ↔ `Data Pool`: brushing a region of the scatter writes the matching rows' `interacted` flag in the pool, which the grammar map consumes through its `map:picking` interaction.
+Connect the `autk-grammar` map and the `Vega-Lite` scatter with an edge of `type: "Interaction"`, between their top handles. A tract picked on the map marks the matching point of the scatter, and a brush on the scatter highlights the matching tracts on the map. The same edge links Vega-Lite and Autark views without either side knowing about the other.
 
 ## Final result
 
-The map answers "where is heat exposure worst?", the scatter answers "is heat correlated with where older adults live?", and the boxplot anchors the older-adult distribution for context. Brushing any one view updates the others through the Interaction edges, regardless of whether the view is rendered through Vega-Lite or Autark. The pattern generalizes: any heterogeneous join → fan-out via `Data Pool` → mixed Autark + Vega-Lite views with Interaction edges, and you get coordinated cross-grammar exploration for free.
+The map answers "where is heat exposure worst?", the scatter answers "is heat correlated with where older adults live?", and the boxplot anchors the older-adult distribution for context. A brush on the scatter or a pick on the map highlights the same tracts in the other view, whether Vega-Lite or Autark draws it.

@@ -149,8 +149,8 @@ against its mask, or pin the node to one column. The choice is saved with the
 dataflow, so a second `Simple View` wired to the same node can sit beside this
 one showing only the masks.
 
-A card is one row, so clicking a card selects that row. Wire a `Data Pool` in
-with an interaction edge and the selection travels to it.
+A card is one row, so clicking a card selects that row in the views linked to
+the node by an interaction edge.
 
 ### Images the backend serves
 

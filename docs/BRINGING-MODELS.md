@@ -369,8 +369,8 @@ definition (`$defs.widget`) of [the node package schema](schemas/node-package.v4
 Each widget has:
 
 - `name`: letters, digits and underscores, not starting with a digit, and
-  unique among the template's widgets. Not `input_0`, `input_1` and so on:
-  those names read the node's inputs.
+  unique among the template's widgets. Not `input_0`, `input_1` and so on, nor
+  `inputs`: those names read the node's inputs.
 - `type`: one of 13 kinds: `number`, `slider`, `text`, `choice`, `checkbox`,
   `checkbox-group`, `multi-select`, `datetime`, `location`, `number-list`,
   `text-list`, `range` and `file`. [USAGE.md, Widgets](USAGE.md#widgets) shows

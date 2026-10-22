@@ -173,6 +173,9 @@ STOPPED_BY_PHRASES: dict[str, str] = one_phrase_per_reason(SOLVE_STOP_REASONS)
 AUTK_SCHEMA_PATH = Path(__file__).resolve().parent.parent / "schemas" / "autk-grammar.v1.json"
 #: The template whose content is an Autark document.
 AUTK_TEMPLATE = "curio.builtin/autk-grammar"
+#: The Map Edits node's template (its id is still Edit Features'): it edits
+#: on an Autark map it feeds, linked to it by an interaction edge.
+EDIT_FEATURES_TEMPLATE = "curio.builtin/edit-features"
 #: What a Vega-Lite or Autark node calls its inputs: ``input_0``, ``input_1``,
 #: ... in circle order. An upstream Autark node's layers keep their table names.
 INPUT_TABLE_PREFIX = "input_"
@@ -828,6 +831,28 @@ def _input_chip(_src: _Sources, text: str) -> str:
     return reference_text(input_reference_inner(int(slot), column or None))
 
 
+def _stacked_dataset_chip(_src: _Sources) -> str:
+    """The chip a Vega-Lite spec names every input's rows stacked by,
+    ``[!! inputs !!]`` (``STACKED_DATASET``, ``reference_text``)."""
+    from utk_curio.backend.app.execution.code_references import STACKED_DATASET, reference_text
+
+    return reference_text(STACKED_DATASET)
+
+
+def _scenario_chip(_src: _Sources, what: str) -> str:
+    """A chip a Vega-Lite or Autark spec writes its scenarios with: ``colors``,
+    ``text_colors`` or ``order`` for the scale or the names of every input's
+    box, ``input.1`` for the color of input_1's box (``reference_text``)."""
+    from utk_curio.backend.app.execution.code_references import SCENARIO_LISTS, reference_text
+
+    if what in SCENARIO_LISTS:
+        return reference_text(f"scenario {what}")
+    prefix, _, slot = what.partition(".")
+    if prefix != "input" or not slot.isdigit():
+        raise PromptTemplateError(f"a scenario chip is {', '.join(SCENARIO_LISTS)} or input.<k>, not {what!r}")
+    return reference_text(f"scenario input_{int(slot)}")
+
+
 def _widget_kinds(_src: _Sources) -> str:
     """The kinds a widget can be (``WIDGET_KINDS``), as ``a, b ... or z``."""
     from utk_curio.backend.app.execution.code_references import WIDGET_KINDS
@@ -1063,6 +1088,8 @@ PROMPT_FIELDS: dict[str, PromptField] = {
     )},
     "inputs.handles": PromptField(_input_handles),
     "inputs.chip": PromptField(_input_chip, takes_arg=True),
+    "inputs.stacked": PromptField(_stacked_dataset_chip),
+    "scenarios.chip": PromptField(_scenario_chip, takes_arg=True),
     "widgets.kinds": PromptField(_widget_kinds),
     "widgets.reference": PromptField(_widget_reference, takes_arg=True),
     "widgets.shared": PromptField(_shared_reference, takes_arg=True),
@@ -1641,7 +1668,7 @@ _CODE_OUTPUTS: dict[str, Callable[[], str]] = {
 def prompt_outputs() -> dict[str, str]:
     """Where each template's rendered prompt is written, by stem: into the
     folder of the agent Curio ships whose manifest names ``prompts/<stem>.md``
-    (``agents/<id>@<version>/``), else beside its template in ``PROMPTS_DIR``:
+    (``agents/<id>@<major>/``), else beside its template in ``PROMPTS_DIR``:
     the shared preamble and the fragments other prompts include. A prompt two
     agents name is refused: each agent's prompt is a file of its own."""
     from utk_curio.backend.app.agents.domain import builtin

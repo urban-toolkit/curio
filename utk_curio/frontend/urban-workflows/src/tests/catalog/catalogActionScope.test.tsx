@@ -193,8 +193,8 @@ jest.mock("../../services/agents/agentsApi", () => ({
 
 describe("the agent import picker can assemble a real package", () => {
   test("a second selection adds to the first instead of replacing it", async () => {
-    // An agent package is `<id>@<version>/manifest.json` plus
-    // `<id>@<version>/prompts/*.md` - two directories - and one OS file dialog
+    // An agent package is `<id>@<major>/manifest.json` plus
+    // `<id>@<major>/prompts/*.md` - two directories - and one OS file dialog
     // cannot span two directories. `pick` used to `setFiles(read)`, so the
     // second dialog discarded the manifest picked in the first and the flow
     // could never be completed against the documented layout.

@@ -44,8 +44,6 @@ class TestTemplateContentKind:
         assert kinds["js-computation"] == "code"
         assert kinds["data-summary"] == "code"
         assert kinds["data-transformation"] == "code"
-        # Its code is written for it from its inputs, and runs (#662).
-        assert kinds["compare-scenarios"] == "code"
         # Its code is written for it from its edit list, and runs (#662).
         assert kinds["edit-features"] == "code"
         # A document: authored, validated, never executed.
@@ -71,7 +69,6 @@ class TestTemplateContentKind:
             "data-loading", "data-export", "data-transformation", "data-pool",
             "computation-analysis", "data-summary", "js-computation",
             "vis-vega", "vis-simple", "autk-grammar", "spatial-join", "parameter",
-            "compare-scenarios",
             "edit-features", "note",
         }
 

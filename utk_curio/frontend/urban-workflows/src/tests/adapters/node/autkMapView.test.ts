@@ -2,7 +2,7 @@
  * An Autark map opens framed on the layers it draws (#773), not 10,000 world
  * units above its origin whatever they hold.
  */
-import { drawnExtent, frameMaps, framingCamera } from "../../../adapters/node/autkMapView";
+import { drawnExtent, frameMaps, framingCamera, keepMapViews, mapViews } from "../../../adapters/node/autkMapView";
 import { grammarThatRan } from "../../_support/autkGrammarMaps";
 
 const FOVY = (45 * Math.PI) / 180;
@@ -188,5 +188,111 @@ describe("frameMaps", () => {
     expect(first.map.camera.resetCamera).toHaveBeenCalledTimes(1);
     expect(second.map.camera.resetCamera).toHaveBeenCalledTimes(1);
     expect(first.map.camera.resetCamera.mock.calls[0][1]).toEqual([40, -10, 0]);
+  });
+});
+
+// A map drawn again after an edit (the Map Edits node's) keeps its view.
+describe("mapViews and keepMapViews", () => {
+  /** A map whose camera stands at *view*, its layers drawn relative to *origin*. */
+  function viewedMap(view: { eye: number[]; lookAt: number[]; up: number[] }, origin: number[] | null) {
+    const made = fakeMap([flatLayer(0, 0, 1200, 700)]);
+    Object.assign(made.map.camera, {
+      getEye: () => [...view.eye],
+      getLookAt: () => [...view.lookAt],
+      getUp: () => [...view.up],
+    });
+    made.map.layerManager = {
+      layers: made.map.layerManager.layers,
+      hasOrigin: origin !== null,
+      get origin() {
+        if (origin === null) throw new Error("Layer origin has not been initialized");
+        return origin;
+      },
+    };
+    return made;
+  }
+  const ZOOMED = { eye: [120, -40, 300], lookAt: [120, -40, 0], up: [0, 1, 0] };
+
+  test("a map's view is its camera's eye, look-at and up, with the origin its layers are drawn from", () => {
+    const { map } = viewedMap(ZOOMED, [1000, 2000]);
+    const terrain = viewedMap(ZOOMED, [0, 0]);
+    terrain.map._terrainRenderPath = {};
+    const unready = viewedMap(ZOOMED, null);
+    expect(mapViews(grammarThatRan({
+      map: [
+        { layerRefs: [{ dataRef: "input_0" }] },
+        { layerRefs: [{ dataRef: "input_0" }] },
+        { layerRefs: [{ dataRef: "input_0" }] },
+      ],
+    }, map, terrain.map, unready.map))).toEqual([
+      { ...ZOOMED, origin: [1000, 2000] },
+      null,
+      { ...ZOOMED, origin: null },
+    ]);
+    expect(mapViews({})).toEqual([]);
+  });
+
+  test("a redraw puts the camera back where the last map's was, not framed on the layers", () => {
+    const before = viewedMap(ZOOMED, [1000, 2000]);
+    const views = mapViews(grammarThatRan(ONE_MAP, before.map));
+    const after = viewedMap({ eye: [0, 0, 10000], lookAt: [0, 0, 0], up: [0, 1, 0] }, [1000, 2000]);
+
+    keepMapViews(grammarThatRan(ONE_MAP, after.map), views);
+
+    expect(after.map.camera.resetCamera).toHaveBeenCalledTimes(1);
+    expect(after.map.camera.resetCamera).toHaveBeenCalledWith([0, 1, 0], [120, -40, 0], [120, -40, 300]);
+    expect(after.map.camera.resize).toHaveBeenCalledWith(960, 600);
+    expect(after.map.requestRender).toHaveBeenCalledTimes(1);
+  });
+
+  test("when a removal moves the map's origin, the camera moves with it and the same ground stays in view", () => {
+    const before = viewedMap(ZOOMED, [1000, 2000]);
+    const views = mapViews(grammarThatRan(ONE_MAP, before.map));
+    // A building at the first layer's edge is gone: its middle moved 10 east and 5 south.
+    const after = viewedMap(ZOOMED, [1010, 1995]);
+
+    keepMapViews(grammarThatRan(ONE_MAP, after.map), views);
+
+    // The ground at (1120, 1960) is at (110, -35) from the new origin.
+    expect(after.map.camera.resetCamera).toHaveBeenCalledWith([0, 1, 0], [110, -35, 0], [110, -35, 300]);
+  });
+
+  test("a map drawn while hidden and drawn again before it was shown is framed, not put at autk-map's own camera", () => {
+    let shown = { width: 0, height: 0 };
+    const hidden = viewedMap({ eye: [0, 0, 10000], lookAt: [0, 0, 0], up: [0, 1, 0] }, [0, 0]);
+    Object.defineProperty(hidden.canvas, "offsetWidth", { get: () => shown.width });
+    Object.defineProperty(hidden.canvas, "offsetHeight", { get: () => shown.height });
+    frameMaps(grammarThatRan(ONE_MAP, hidden.map));
+    expect(hidden.map.camera.resetCamera).not.toHaveBeenCalled();
+
+    const views = mapViews(grammarThatRan(ONE_MAP, hidden.map));
+    expect(views).toEqual([null]);
+    const next = viewedMap(ZOOMED, [0, 0]);
+    keepMapViews(grammarThatRan(ONE_MAP, next.map), views);
+    expect(next.map.camera.resetCamera).toHaveBeenCalledTimes(1);
+    expect(next.map.camera.resetCamera.mock.calls[0][1]).toEqual([0, 0, 0]);
+
+    // Framed once shown, its view is kept, though it is hidden again.
+    shown = { width: 300, height: 600 };
+    window.dispatchEvent(new Event("resize"));
+    expect(hidden.map.camera.resetCamera).toHaveBeenCalledTimes(1);
+    shown = { width: 0, height: 0 };
+    expect(mapViews(grammarThatRan(ONE_MAP, hidden.map))[0]).not.toBeNull();
+  });
+
+  test("a map with no view to keep is framed on its layers, and the R key frames a kept map", () => {
+    const first = viewedMap(ZOOMED, [0, 0]);
+    const second = viewedMap(ZOOMED, [0, 0]);
+    keepMapViews(grammarThatRan({
+      map: [{ layerRefs: [{ dataRef: "input_0" }] }, { layerRefs: [{ dataRef: "input_0" }] }],
+    }, first.map, second.map), [{ ...ZOOMED, origin: [0, 0] }]);
+    expect(first.map.camera.resetCamera.mock.calls[0][1]).toEqual([120, -40, 0]);
+    expect(second.map.camera.resetCamera.mock.calls[0][1]).toEqual([0, 0, 0]);
+
+    first.map.camera.resetCamera.mockClear();
+    first.map.resetCamera();
+    expect(first.map.camera.resetCamera).toHaveBeenCalledTimes(1);
+    expect(first.map.camera.resetCamera.mock.calls[0][1]).toEqual([0, 0, 0]);
+    expect(first.ownReset).not.toHaveBeenCalled();
   });
 });

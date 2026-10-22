@@ -42,7 +42,12 @@ from typing import Callable, Iterator, Optional
 
 from utk_curio.backend.app.execution.autk_spec_kind import is_autk_data_node
 from utk_curio.backend.app.execution.code_references import CodeReferenceError
-from utk_curio.backend.app.execution.run_plan import ancestors, node_role, topological_levels
+from utk_curio.backend.app.execution.run_plan import (
+    ancestors,
+    missing_type_message,
+    node_role,
+    topological_levels,
+)
 from utk_curio.backend.app.execution.workflow_spec import WorkflowSpec, parse_workflow_dict
 
 #: How much of a node's stdout and stderr an event carries: the end.
@@ -126,7 +131,7 @@ def plan_run(
     *packages* (a ``TemplateGrammars``, the account's when the run has one)
     reads what each node's template declares (``run_plan.node_role``).
     """
-    spec = parse_workflow_dict(spec_dict, templates=templates)
+    spec = parse_workflow_dict(spec_dict, templates=templates, labels=labels)
     saved = {
         n["id"]: n for n in ((spec_dict or {}).get("dataflow") or {}).get("nodes") or []
         if isinstance(n, dict) and n.get("id")
@@ -346,6 +351,10 @@ def run_events(
                 yield settle(step, "forwarded")
             elif step.role == "browser":
                 yield settle(step, "browser")
+            elif step.role == "missing":
+                # No installed package provides its type, so nothing can run
+                # it: it fails, naming the type, and what it feeds is skipped.
+                yield settle(step, "error", stderrTail=missing_type_message(step.node_type))
             else:
                 ready.append((step, input_ref))
         if not ready:

@@ -1,6 +1,6 @@
 """Smoke tests for the committed ``packages/curio.builtin@1`` catalog entry.
 
-The built-in package is auto-installed for every user and provides the 15
+The built-in package is auto-installed for every user and provides the 14
 default node templates. A regression in its manifest would silently strand
 users with an empty palette, so we exercise the load + payload-serialize
 paths against the on-disk artefact. The Raster Calculator is not one of them:
@@ -36,7 +36,6 @@ EXPECTED_TEMPLATE_IDS: frozenset[str] = frozenset({
     "autk-grammar",
     "spatial-join",
     "parameter",
-    "compare-scenarios",
     "edit-features",
     "note",
 })
@@ -44,7 +43,6 @@ EXPECTED_TEMPLATE_IDS: frozenset[str] = frozenset({
 EXPECTED_BEHAVIORS: frozenset[str] = frozenset({
     "code", "data-export", "data-pool", "data-summary", "vega",
     "simple-vis", "autk-grammar", "spatial-join", "parameter",
-    "compare-scenarios",
     "edit-features", "note",
 })
 
@@ -80,15 +78,16 @@ def test_builtin_package_every_template_has_behavior_and_icon(builtin_package_di
         )
 
 
-def test_the_edit_features_template_is_the_interaction_node(builtin_package_dir: Path):
-    """The node is called Interaction, with a hand icon; its template id and
-    behavior stay ``edit-features``, so saved dataflows load as they are."""
+def test_the_edit_features_template_is_the_map_edits_node(builtin_package_dir: Path):
+    """The node is called Map Edits, with a hand icon; its template id and
+    behavior stay ``edit-features``, so saved dataflows load as they are. No
+    template keeps its earlier names, Edit Features and Interaction."""
     manifest = load_package_manifest(builtin_package_dir)
     (template,) = [t for t in manifest.templates if t.template_id == "edit-features"]
-    assert template.label == "Interaction"
+    assert template.label == "Map Edits"
     assert template.icon_ref == "fa-solid:hand-pointer"
     assert template.behavior == "edit-features"
-    assert not any(t.label == "Edit Features" for t in manifest.templates)
+    assert not any(t.label in ("Edit Features", "Interaction") for t in manifest.templates)
 
 
 def test_the_note_holds_text_and_runs_nothing(builtin_package_dir: Path):
@@ -121,6 +120,47 @@ def test_no_raster_node_is_built_in(builtin_package_dir: Path):
         [t.template_id for t in manifest.templates]
     )
     assert not [t.label for t in manifest.templates if "Raster" in t.label]
+
+
+def test_no_shipped_package_names_compare_scenarios():
+    """Compare Scenarios is gone (step 6.4 of the plan answering komar41's
+    review of the #914 merges): no shipped package holds a template of that
+    id or that behavior, and no manifest names the node, so no palette, Node
+    Catalog or agent preamble offers it."""
+    import json
+
+    manifests = sorted(REAL_CATALOG.glob("*/manifest.json"))
+    assert manifests, "expected at least one package in the catalog"
+    named = {}
+    for path in manifests:
+        text = path.read_text(encoding="utf-8")
+        templates = json.loads(text).get("templates", [])
+        found = [
+            t.get("id") for t in templates
+            if "compare-scenarios" in (t.get("id"), t.get("behavior"))
+        ]
+        found += [word for word in ("compare-scenarios", "Compare Scenarios") if word in text]
+        if found:
+            named[path.parent.name] = found
+    assert named == {}, f"packages that still name Compare Scenarios: {named}"
+
+
+def test_map_edits_names_no_what_differs(builtin_package_dir: Path):
+    """What differs went with Compare Scenarios: the Map Edits node's
+    description, which its tile, the Node Catalog and the agents' preamble
+    show, names neither."""
+    manifest = load_package_manifest(builtin_package_dir)
+    (template,) = [t for t in manifest.templates if t.template_id == "edit-features"]
+    for word in ("What differs", "Compare Scenarios"):
+        assert word not in template.description, template.description
+    preamble = REAL_CATALOG.parent / "utk_curio" / "llm-prompts" / "default_preamble.md"
+    # The node's lines in each of the preamble's lists: its description, its
+    # controls, its input and output types and its circles.
+    lines = [line for line in preamble.read_text(encoding="utf-8").splitlines() if line.startswith("- Map Edits:")]
+    assert any("Edits an Autark map's layers on the map" in line for line in lines), lines
+    for line in lines:
+        for word in ("What differs", "Compare Scenarios"):
+            assert word not in line, line
 
 
 def test_builtin_package_ships_no_sources(builtin_package_dir: Path):

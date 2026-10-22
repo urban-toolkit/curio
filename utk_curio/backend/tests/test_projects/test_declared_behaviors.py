@@ -32,7 +32,7 @@ DATA_SPEC = json.dumps({"data": [{"type": "osm"}]})
 #: Templates of ``acme.tools@1`` named like built-in ones: each is a plain code node.
 NAMED_LIKE_A_BUILTIN = (
     "data-loading", "data-export", "vis-vega", "vis-simple", "data-pool",
-    "compare-scenarios", "autk-grammar", "note", "parameter",
+    "autk-grammar", "note", "parameter",
 )
 
 
@@ -163,20 +163,6 @@ def test_a_package_template_that_declares_a_views_behavior_is_walked_through(cat
 
     spec = _between_a_producer_and_a_chart(f"acme.tools/{template_id}@1", "{}")
     assert dashboard_source_node_ids(spec) == {"py"}
-
-
-def test_a_pinned_package_template_named_compare_scenarios_is_not_its_own_source(catalog):
-    from utk_curio.backend.app.projects.dashboard_payload import dashboard_source_node_ids
-
-    spec = spec_of(
-        [
-            node("py", "curio.builtin/computation-analysis@1"),
-            node("named", "acme.tools/compare-scenarios@1", dashboardPinned=True),
-            node("compare", "curio.builtin/compare-scenarios@1", dashboardPinned=True),
-        ],
-        [edge("py", "named"), edge("py", "compare")],
-    )
-    assert dashboard_source_node_ids(spec) == {"py", "compare"}
 
 
 def test_only_the_autark_node_is_refused_for_loading_its_own_data(catalog):

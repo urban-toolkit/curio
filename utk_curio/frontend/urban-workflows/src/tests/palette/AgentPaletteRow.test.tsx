@@ -4,9 +4,9 @@ import { AgentPaletteRow } from "../../components/menus/nodes/agentsPalette/Agen
 
 function card(over: Partial<any> = {}): any {
   return {
-    id: "agent.researcher",
+    id: "agent.curio.researcher",
     version: "1.0.0",
-    dirName: "agent.researcher@1.0.0",
+    dirName: "agent.curio.researcher@1",
     name: "Researcher",
     category: "node",
     purpose: "assistant for a node or the canvas",

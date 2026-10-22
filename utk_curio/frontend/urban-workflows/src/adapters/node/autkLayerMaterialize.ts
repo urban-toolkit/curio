@@ -12,7 +12,7 @@ import { withExtensionRetry } from './duckdbExtensionRetry';
 import { autkTableName } from '../../utils/autkInput';
 import { framesFromPayload } from '../../utils/grammarInput';
 import { deriveBuildingHeight } from '../../utils/buildingHeight';
-import { loadableFeatures, requestedLayerTables } from './autkDataCompile';
+import { loadableFeatures, requestedLayerTables, withOsmIds } from './autkDataCompile';
 
 // Message for a load that produced layers, but not the ones the spec asked for.
 // Shared by both loaders so the two paths report a short load identically.
@@ -136,8 +136,9 @@ function flattenToMultiPolygon(geom: any): any | null {
 // Features removes a building by `building_id`, and a batched compute packs each
 // part's `geometry.coordinates.0`, a Polygon's outer ring. The downstream
 // `loadGeojson('buildings')` makes every row a building of its own, so each part
-// also carries, as a property, the `building_id` it came from. A part's `id` and
-// `geometryIndex` are autk-db's bookkeeping, not tags, and are left out.
+// also carries, as a property, the `building_id` it came from. A part's
+// `geometryIndex` is autk-db's bookkeeping, not a tag, and is left out, and so is
+// its `id`, which the part carries as its `osm_id` (withOsmIds).
 function explodeBuildingParts(features: any[]): any[] {
     const out: any[] = [];
     for (const f of features ?? []) {
@@ -225,9 +226,9 @@ export async function loadSpecLayers(spec: any): Promise<Array<{ name: string; t
     // degree values as meters near the origin, a silently blank map. Strip any
     // pre-existing crs field first: detectCoordinateFormat trusts it over the
     // heuristic.
-    let tables: Array<{ name: string; type?: string }> = [];
+    let tables: Array<{ name: string; type?: string; source?: string }> = [];
     try {
-        tables = db.getLayersMetadata() as Array<{ name: string; type?: string }>;
+        tables = db.getLayersMetadata() as Array<{ name: string; type?: string; source?: string }>;
     } catch (e) {
         // A partially-loaded DB can throw here (rather than return []). Treat it
         // as "no usable tables" and let the empty-result guard below report it,
@@ -242,6 +243,9 @@ export async function loadSpecLayers(spec: any): Promise<Array<{ name: string; t
                 // 'buildings', …) so a downstream grammar node re-loads it with the
                 // right rendering.
                 const type = (t.type as string) ?? 'polygons';
+                // Each OpenStreetMap feature's OSM id in `osm_id`, a building
+                // part's in that part, as the sandbox's loader hands them on.
+                if (Array.isArray(geojson?.features)) geojson.features = withOsmIds(t, geojson.features);
                 // Buildings: explode the grouped GeometryCollection into one footprint
                 // feature per part (each with its own height) and KEEP type 'buildings',
                 // so autk-map extrudes each part by its real height. See

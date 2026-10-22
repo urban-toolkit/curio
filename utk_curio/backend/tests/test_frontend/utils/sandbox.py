@@ -162,6 +162,38 @@ def load_artifact_as_dict(artifact_id: str) -> dict:
     return result
 
 
+def load_raster_cells(artifact_id: str):
+    """A raster artifact as the sandbox serves it to an Autark map (``/raster``,
+    GeoTIFF bytes): ``(grid, bands)``. *grid* is its grid as an envelope names
+    it (``crs``, ``width``, ``height``, ``originX``, ``originY``, ``resX``,
+    ``resY``); *bands* is a float32 array of its bands, rows from north to
+    south, NaN where a cell has no value."""
+    import numpy as np
+    import requests as _req
+    from rasterio.io import MemoryFile
+
+    resp = _req.get(
+        f'{sandbox_base_url()}/raster',
+        params={'fileName': artifact_id},
+        headers=sandbox_auth_header(),
+        timeout=(SANDBOX_CONNECT_TIMEOUT_S, SANDBOX_GET_TIMEOUT_S),
+    )
+    _explain_sandbox_auth_failure(resp, f'/raster fileName={artifact_id}')
+    if not resp.ok:
+        raise AssertionError(
+            f"sandbox /raster fileName={artifact_id} -> {resp.status_code}\n"
+            f"{resp.text[:2000]}"
+        )
+    with MemoryFile(resp.content) as memory, memory.open() as dataset:
+        bands = dataset.read(masked=True).astype("float32").filled(np.nan)
+        t = dataset.transform
+        grid = {
+            "crs": dataset.crs.to_string() if dataset.crs is not None else None,
+            "width": dataset.width, "height": dataset.height,
+            "originX": t.c, "originY": t.f, "resX": t.a, "resY": t.e,
+        }
+    return grid, bands
+
 
 def _catalog_dataset_paths(code: str) -> dict[str, str]:
     """Map every ``curio_data_path("<id>")`` in *code* to its data file.
@@ -288,7 +320,7 @@ def execute_workflow_programmatically(
 
         # A Python node reading such a node has no input here, so it has no
         # ground truth either; the browser run is checked without one (#662:
-        # example 06's Compare Scenarios nodes read its Autark maps). Any other
+        # example 06's Sunlight change reads its Autark maps). Any other
         # missing upstream is still the KeyError below.
         unrun = [uid for uid in spec.upstream_nodes(node.id) if uid not in outputs]
         if unrun and all(uid in browser_only for uid in unrun):

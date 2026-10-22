@@ -159,7 +159,9 @@ def test_opening_the_example_installs_its_package(street_vision_canvas, current_
         node = node_locator(page, node_id)
         node.wait_for(state="visible", timeout=45000)
         node.locator("[data-curio-node-output]").wait_for(state="visible", timeout=120000)
-        assert node.locator('[data-testid="unresolved-node"]').count() == 0
+        assert node.locator(
+            '[data-testid="unresolved-node"], [data-testid="removed-node-type"]'
+        ).count() == 0
     assert page.get_by_text("Loading node…").count() == 0
 
 

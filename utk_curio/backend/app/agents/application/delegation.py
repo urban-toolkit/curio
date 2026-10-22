@@ -31,7 +31,7 @@ import uuid
 from dataclasses import dataclass
 
 from utk_curio.backend.app.projects import storage as projects_storage
-from utk_curio.backend.app.agents.domain.manifest import AgentManifest
+from utk_curio.backend.app.agents.domain.manifest import AgentManifest, coord_order, version_order
 from utk_curio.backend.app.agents.infrastructure.providers import (
     ChatTurn,
     ReplySchemaRefused,
@@ -67,9 +67,9 @@ class Resolution:
 
 
 def _candidate_coords(agent_id: str, installed: set[str]) -> list[str]:
-    """Installed lockfile coords for one delegate agent id, sorted for
-    determinism (a project normally installs one version)."""
-    return sorted(c for c in installed if c.split("@", 1)[0] == agent_id)
+    """Installed lockfile coords for one delegate agent id, sorted by major
+    for determinism (a project normally installs one major)."""
+    return sorted((c for c in installed if c.split("@", 1)[0] == agent_id), key=coord_order)
 
 
 def resolve(user_key: str, project_id: str, parent: AgentManifest, capability: str) -> Resolution:
@@ -118,7 +118,7 @@ def resolve_among(
                 missing = Resolution("not-installed", visible_coord, visible_m)
     # Capability-first fallback: any other installed template declaring it.
     preferred = {a for a in preferred_ids if parent.delegates(a, capability)}
-    for coord in sorted(installed):
+    for coord in sorted(installed, key=coord_order):
         if coord.split("@", 1)[0] in preferred:
             continue  # already walked above
         m = catalog._resolve_definition(user_key, coord)
@@ -170,16 +170,8 @@ def find_visible(user_key: str, agent_id: str) -> tuple[str | None, AgentManifes
     ]
     if not candidates:
         return None, None
-    best = max(candidates, key=lambda d: _version_order(d.version)).dir_name
+    best = max(candidates, key=lambda d: version_order(d.version)).dir_name
     return best, catalog._resolve_definition(user_key, best)
-
-
-def _version_order(version: str) -> tuple:
-    """A semver string as a sort key: ``10.0.0`` after ``2.0.0``, and a
-    release after its pre-releases."""
-    core, _, pre_release = str(version).partition("-")
-    numbers = tuple(int(part) if part.isdigit() else 0 for part in core.split("+", 1)[0].split("."))
-    return numbers, not pre_release
 
 
 def visible_capability_entries(user_key: str, parent: AgentManifest) -> list[tuple[str, str]]:
@@ -369,6 +361,8 @@ def _prepare_child(user_key: str, project_id: str, coord: str, capability: str, 
     admit["attachment_key"] = attachment_id
     pins = {
         "coord": coord,
+        # The coordinate names a major; the version says which one ran.
+        "version": manifest.version if manifest is not None else None,
         "promptSha256": prompts._prompt_digest(manifest, capability=capability),
         "intentEdited": False,
         "provider": config.api_type,

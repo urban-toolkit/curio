@@ -10,7 +10,31 @@
  * - `[!! @season !!]` names a shared tag: the widget of the dataflow's
  *   Parameter node named `season`;
  * - `[!! selection picked !!]` names one of the node's selection tags: the ids
- *   of the rows a view's selection picks (`selectionTags.ts`).
+ *   of the rows a view's selection picks (`selectionTags.ts`);
+ * - in a Vega-Lite or Autark spec, the scenario chips write the scenarios of the
+ *   node's inputs, from the label each input's rows carry (`InputScope.scenario`:
+ *   the box its feeding node is in, else that node's name):
+ *   `[!! scenario colors !!]` the scale `{"domain": [names], "range": [colors]}`,
+ *   each box once in the order the dataflow lists the boxes, in its color, then
+ *   each input from no box, in a grey of its own; `[!! scenario text_colors !!]`
+ *   the same scale in the shades a text mark reads in (`tableTextColor`);
+ *   `[!! scenario order !!]` the names alone; and `[!! scenario input_1 !!]` the
+ *   color of input_1 in that scale. With no input from a box, the two scales
+ *   are the names alone, `{"domain": [names]}`, which the grammar's own palette
+ *   colors;
+ * - `[!! inputs !!]` names the dataset `inputs`, which stacks a Vega-Lite
+ *   chart's inputs (`utils/scenarios/stackedInputs`): a spec writes its name,
+ *   `"data": {"name": "[!! inputs !!]"}` reading `"data": {"name": "inputs"}`.
+ *   It is refused in code, and on a node with no input, which has nothing to
+ *   stack. An Autark spec, which stacks nothing, writes the name too;
+ * - `[!! inputs.sunlight !!]` names a field of that dataset.
+ *
+ * A widget's name has no space and no dot, and an input's chip starts
+ * `input_`, so neither `scenario colors` nor `inputs.sunlight` can name a
+ * widget, an input or a column: `scenario_colors` would be a widget's name,
+ * and `input_1.scenario_color` a column of input_1. No widget takes the name
+ * `inputs` (`INPUT_NAME_ONLY_PATTERN` in `widgetModel.ts`), and beside one
+ * saved under it `[!! inputs !!]` names the dataset.
  *
  * The browser (NodeEditor, before a run) and the headless runner
  * (`utk_curio/backend/app/execution/code_references.py`) must write the same
@@ -23,7 +47,12 @@
  * it becomes the value's text, escaped for that string, so
  * `"Season: [!! season !!]"` reads `"Season: winter"`. Inside a comment it is
  * the plain text. A column reference is written the same way as a text value:
- * its name. In Python and JavaScript an input reference becomes the name the
+ * its name. In a Vega-Lite chart's spec, a reference where Vega-Lite reads a
+ * field name (`vegaFieldPlaces`) writes each name it holds escaped for
+ * Vega-Lite (`vegaFieldName`), since Vega-Lite reads a `.` or a `[` in a field
+ * as a path into the row: `"field": [!! input_0.rain.mm !!]` reads
+ * `"field": "rain\\.mm"`. Anywhere else in it, a title, a sort or an
+ * expression, the name is written as it is. In Python and JavaScript an input reference becomes the name the
  * code reads that circle's input by, `input_<circle>` (the sandbox binds one
  * variable per wired circle, `util/input_names.py`), and a layer reference the
  * call that picks the layer out of it, `curio_layer(input_1, "roads", 1)` (the
@@ -40,7 +69,19 @@
 
 import { WIDGET_NAME_RE, effectiveValue, type WidgetDef, type WidgetValue } from "../widgets/widgetModel";
 import { inputTableName } from "../../generated/autkGrammar";
+import { vegaFieldName } from "../vegaFieldNames";
 import { isOverCap, overCapText, selectionSize, type SelectionTag } from "./selectionTags";
+import {
+  SCENARIO_FIELD,
+  SCENARIO_NAME_FIELD,
+  anyFromABox,
+  scaleLabels,
+  scenarioScale,
+  tableTextColor,
+  type ScenarioLabel,
+} from "../scenarios/scenarioColors";
+import { INPUT_FIELD } from "../scenarios/stackedInputs";
+import { INPUTS_DATASET } from "../vegaDatasets";
 
 export type CodeLanguage = "python" | "javascript" | "json";
 
@@ -82,6 +123,32 @@ export const SHARED_PREFIX = "@";
 export const SELECTION_REFERENCE_PATTERN = String.raw`^selection\s+(.+)$`;
 const SELECTION_REFERENCE_RE = new RegExp(SELECTION_REFERENCE_PATTERN);
 
+/** What stands inside a scenario chip: `scenario colors`, `scenario
+ * text_colors`, `scenario order`, or `scenario input_1` (`scenario input_?`
+ * once its edge was deleted). Kept in sync with `SCENARIO_REFERENCE_RE` in
+ * `code_references.py`. */
+export const SCENARIO_REFERENCE_PATTERN = String.raw`^scenario\s+(.+)$`;
+const SCENARIO_REFERENCE_RE = new RegExp(SCENARIO_REFERENCE_PATTERN);
+
+/** The scenario chips that list every input's scenario: the scale of their
+ * colors, the same scale in text shades, and their names in order. */
+export const SCENARIO_LISTS = ["colors", "text_colors", "order"] as const;
+export type ScenarioList = (typeof SCENARIO_LISTS)[number];
+
+/** What follows `scenario` in an input's scenario chip. */
+const SCENARIO_INPUT_RE = /^input_(\d+|\?)$/;
+
+/** What stands inside a chip of a field of the dataset `inputs`:
+ * `inputs.sunlight`. Kept in sync with `STACKED_REFERENCE_RE` in
+ * `code_references.py`. */
+export const STACKED_REFERENCE_PATTERN = String.raw`^inputs\.(.+)$`;
+const STACKED_REFERENCE_RE = new RegExp(STACKED_REFERENCE_PATTERN);
+
+/** The fields the stacking adds to every row of `inputs`, before the inputs'
+ * own columns: the label's name and id, and the circle. Kept in sync with
+ * `STACKED_FIELDS` in `code_references.py`. */
+export const STACKED_FIELDS = [SCENARIO_NAME_FIELD, SCENARIO_FIELD, INPUT_FIELD] as const;
+
 /** What a layer reference in Python or JavaScript calls. Kept in sync with
  * `LAYER_HELPER` in `code_references.py` and the sandbox's
  * `util/input_layers.py`. */
@@ -90,6 +157,11 @@ export const LAYER_HELPER = "curio_layer";
 /** The data types of an input that is one frame: a table, as `curio_layer`
  * counts one. Kept in sync with `ONE_FRAME_TYPES` in `code_references.py`. */
 const ONE_FRAME_TYPES = new Set(["dataframe", "geodataframe"]);
+
+/** The grammar of a Vega-Lite chart's spec, as a template names it
+ * (`grammarId`): a JSON document of it writes a name where Vega-Lite reads a
+ * field escaped. Kept in sync with `VEGA_LITE` in `code_references.py`. */
+export const VEGA_LITE = "vega-lite";
 
 export interface CodeReference {
   /** Offsets of the whole `[!! ... !!]` in the code. */
@@ -108,6 +180,9 @@ export interface ReferenceProblem {
 export interface InputScope {
   /** Its circle, counted from 0. */
   slot: number;
+  /** The id of the edge that feeds it, which keeps its list in the node's
+   * header open with it when the circles renumber. */
+  edge?: string;
   /** The node that feeds it, shown on its tag and in its chips' hover. */
   label?: string;
   /** Its data type, once it has arrived. */
@@ -120,10 +195,18 @@ export interface InputScope {
   /** The layers it carries, once known, when it carries several (an Autark
    * node's tables). */
   layers?: LayerScope[] | null;
+  /** How many values it holds, once known, when it is a tuple: a bundle of
+   * several values with no names, as a Python node's `return a, b` gives. */
+  tuple?: number;
   /** The layer name of the one frame it carries, when its value names the
    * table it is read as (`layerName`, on a reference or an envelope): known
    * before the input is read. */
   layerName?: string;
+  /** The label its rows carry, which the scenario chips write: the id, name,
+   * color and rank of the box its feeding node is in, else that node's name in
+   * `NO_SCENARIO_COLOR` (utils/scenarios/inputScenarios). Absent when it is
+   * not known here, and a scenario chip that needs it says so. */
+  scenario?: ScenarioLabel;
 }
 
 /** One layer an input carries. */
@@ -151,15 +234,35 @@ export type ParsedReference =
   /** `slot` is null for `input_?`, the input whose edge was deleted. */
   | { kind: "input"; slot: number | null; layer?: string; column?: string }
   | { kind: "shared"; name: string }
-  | { kind: "selection"; name: string };
+  | { kind: "selection"; name: string }
+  /** `chip` is null for a word no scenario chip is. */
+  | { kind: "scenario"; chip: ScenarioList | null }
+  /** `slot` is null for `scenario input_?`, the input whose edge was deleted. */
+  | { kind: "scenario"; chip: "input"; slot: number | null }
+  /** The dataset `inputs` itself, `[!! inputs !!]`. */
+  | { kind: "dataset" }
+  | { kind: "stacked"; column: string };
 
 export type ReferenceContext = { kind: "code" } | { kind: "comment" } | { kind: "string"; quote: string };
+
+/** What follows `scenario ` in a scenario chip, as the chip it names. */
+function parseScenarioChip(rest: string): ParsedReference {
+  if ((SCENARIO_LISTS as readonly string[]).includes(rest)) return { kind: "scenario", chip: rest as ScenarioList };
+  const input = SCENARIO_INPUT_RE.exec(rest);
+  if (input) return { kind: "scenario", chip: "input", slot: input[1] === "?" ? null : Number(input[1]) };
+  return { kind: "scenario", chip: null };
+}
 
 export function parseReference(inner: string): ParsedReference {
   const m = INPUT_REFERENCE_RE.exec(inner);
   if (!m) {
     const selection = SELECTION_REFERENCE_RE.exec(inner);
     if (selection) return { kind: "selection", name: selection[1] };
+    const scenario = SCENARIO_REFERENCE_RE.exec(inner);
+    if (scenario) return parseScenarioChip(scenario[1]);
+    const stacked = STACKED_REFERENCE_RE.exec(inner);
+    if (stacked) return { kind: "stacked", column: stacked[1] };
+    if (inner === INPUTS_DATASET) return { kind: "dataset" };
     if (inner.startsWith(SHARED_PREFIX)) return { kind: "shared", name: inner.slice(SHARED_PREFIX.length) };
     return { kind: "widget", name: inner };
   }
@@ -205,6 +308,113 @@ export function sharedReferenceInner(name: string): string {
 /** What stands inside a reference to the selection tag *name*. */
 export function selectionReferenceInner(name: string): string {
   return `selection ${name}`;
+}
+
+/** What stands inside the scenario chip *chip*: `scenario colors`. */
+export function scenarioReferenceInner(chip: ScenarioList): string {
+  return `scenario ${chip}`;
+}
+
+/** What stands inside the scenario chip of input *slot*: `scenario input_1`,
+ * or `scenario input_?` for one whose edge was deleted. */
+export function scenarioInputReferenceInner(slot: number | null): string {
+  return `scenario ${inputName(slot)}`;
+}
+
+/** What stands inside a chip of the field *column* of the dataset `inputs`. */
+export function stackedReferenceInner(column: string): string {
+  return `inputs.${column}`;
+}
+
+/** The data types of a frame the stacking reads as a table, its rows' columns
+ * known from its own. Kept in sync with `TABLE_TYPES` in `code_references.py`. */
+const TABLE_TYPES = new Set(["dataframe", "geodataframe"]);
+
+/** *input*'s columns as the rows of `inputs` carry them: a GeoDataFrame's
+ * geometry is left out, as the stacking leaves it out. */
+function stackedColumnsOf(input: InputScope): string[] {
+  return (input.columns ?? []).filter((column) => input.dtypes?.[column] !== "geometry");
+}
+
+/**
+ * The fields of the dataset `inputs` that *inputs* are known to give: the three
+ * the stacking adds, then each column of an input whose columns are known, once
+ * each, in circle order. Its fields' dtypes are its inputs', each column's
+ * distinct ones listed. The `inputs` tag lists these.
+ */
+export function stackedFields(inputs: readonly InputScope[]): { fields: string[]; dtypes: Record<string, string> } {
+  const fields: string[] = [...STACKED_FIELDS];
+  const seen: Record<string, string[]> = {};
+  for (const input of inputs) {
+    if (Array.isArray(input.layers) && input.layers.length > 0) continue;
+    for (const column of stackedColumnsOf(input)) {
+      if (!fields.includes(column)) fields.push(column);
+      const dtype = input.dtypes?.[column];
+      if (dtype && !(seen[column] ??= []).includes(dtype)) seen[column].push(dtype);
+    }
+  }
+  const dtypes: Record<string, string> = {};
+  for (const [column, kinds] of Object.entries(seen)) dtypes[column] = kinds.join(" or ");
+  return { fields, dtypes };
+}
+
+/**
+ * Every field of the dataset `inputs`, when every input is a table whose
+ * columns are known: then a field chip must name one of them. Null otherwise,
+ * and a field chip is not checked. Kept in sync with `_known_stacked_fields` in
+ * `code_references.py`.
+ */
+function knownStackedFields(inputs: readonly InputScope[]): string[] | null {
+  const known = inputs.every(
+    (input) => TABLE_TYPES.has(input.dataType ?? "") && Array.isArray(input.columns) && !Array.isArray(input.layers),
+  );
+  return known ? stackedFields(inputs).fields : null;
+}
+
+/** The first of *inputs* whose scenario label is not known, or undefined. */
+const unlabelled = (inputs: readonly InputScope[]) => inputs.find((input) => input.scenario == null);
+
+/** The labels of *inputs*, in circle order: each input's must be known. */
+const labelsOf = (inputs: readonly InputScope[]): ScenarioLabel[] =>
+  [...inputs].sort((a, b) => a.slot - b.slot).map((input) => input.scenario as ScenarioLabel);
+
+/**
+ * The scenarios of *inputs*, each input's label known, as the scenario chips
+ * write them: each name once, the boxes in the dataflow's order, then each input
+ * from no box, with their colors (`scenarioScale`). `[!! scenario colors !!]`
+ * writes this scale when an input comes from a box. The header's swatches show
+ * it.
+ */
+export function scenarioColorScale(inputs: readonly InputScope[]): { domain: string[]; range: string[] } {
+  return scenarioScale(scaleLabels(labelsOf(inputs)));
+}
+
+/**
+ * The color `[!! scenario input_<slot> !!]` writes over *inputs*, each input's
+ * label known: its box's, else its grey in `scenarioColorScale`. The header's
+ * tag of that chip shows it.
+ */
+export function scenarioInputColor(slot: number, inputs: readonly InputScope[]): string {
+  const label = inputs.find((input) => input.slot === slot)?.scenario as ScenarioLabel;
+  if (label.scenario != null) return label.color;
+  const { domain, range } = scenarioColorScale(inputs);
+  return range[domain.indexOf(label.name)];
+}
+
+/**
+ * What the scenario chip *parsed* (one that resolves) writes over *inputs*: an
+ * input's color (its box's, else its grey in the scale), the names in order,
+ * or a scale. With no input from a box the scale is the names alone, so the
+ * grammar's own palette colors them. Kept in sync with `_scenario_value` in
+ * `code_references.py`.
+ */
+function scenarioValue(parsed: Extract<ParsedReference, { kind: "scenario" }>, inputs: readonly InputScope[]): WidgetValue {
+  if (parsed.chip === "input") return scenarioInputColor(parsed.slot as number, inputs);
+  const { domain, range } = scenarioColorScale(inputs);
+  if (parsed.chip === "order") return domain;
+  if (!anyFromABox(labelsOf(inputs))) return { domain } as unknown as WidgetValue;
+  const scale = { domain, range: parsed.chip === "text_colors" ? range.map(tableTextColor) : range };
+  return scale as unknown as WidgetValue;
 }
 
 /** Whether *name* can ride a layer reference and read back as itself. */
@@ -298,6 +508,29 @@ export function referenceContexts(code: string, refs: CodeReference[], language:
   return contexts;
 }
 
+/**
+ * *spec*, a JSON document, with each chip that stands outside a string held by
+ * a string of its own text, so a reader that wants only the document's shape
+ * (what an Autark document declares, `utils/autkSpecKind`) can parse it before
+ * its chips are resolved: `"color": [!! scenario input_1 !!]` or
+ * `"scale": [!! scenario colors !!]` is no JSON until then. A chip inside a
+ * string is JSON already and is left as written. Kept in sync with
+ * `with_chip_placeholders` in `code_references.py`.
+ */
+export function withChipPlaceholders(spec: string): string {
+  const refs = findReferences(spec);
+  if (refs.length === 0) return spec;
+  const contexts = referenceContexts(spec, refs, "json");
+  let out = "";
+  let last = 0;
+  refs.forEach((ref, i) => {
+    if (contexts[i].kind === "string") return;
+    out += spec.slice(last, ref.start) + JSON.stringify(spec.slice(ref.start, ref.end));
+    last = ref.end;
+  });
+  return out + spec.slice(last);
+}
+
 /** *value* as a literal of *language*. */
 export function widgetLiteral(value: WidgetValue | undefined, language: CodeLanguage): string {
   if (value === null || value === undefined) return language === "python" ? "None" : "null";
@@ -357,6 +590,203 @@ function writeText(text: string, context: ReferenceContext, language: CodeLangua
   return context.kind === "code" ? widgetLiteral(text, language) : escapeFor(text, context, language);
 }
 
+/** Where a reference stands in a Vega-Lite spec: whether Vega-Lite reads a
+ * text there as a field name (`text`), and, for a reference that is a whole
+ * value, whether it reads each text of a list there as one (`items`). */
+interface FieldPlace {
+  text: boolean;
+  items: boolean;
+}
+
+/** What an object of a Vega-Lite spec is, where that decides which of its
+ * keys hold fields: a transform (an item of `transform`), a lookup's `from`,
+ * a parameter (an item of `params`) or its `select`, an encoding's
+ * `aggregate`, or a `repeat` mapping. */
+type FieldHolder = "transform" | "lookup" | "param" | "select" | "aggregate" | "repeat" | null;
+
+/** The transforms whose own key holds the field they read. */
+const TRANSFORM_FIELD_KEYS = new Set(["pivot", "lookup", "impute", "stack", "density", "loess", "regression", "quantile"]);
+/** The lists of fields a transform reads. */
+const TRANSFORM_FIELD_LISTS = new Set(["groupby", "fold", "flatten"]);
+
+const hasKey = (holder: Record<string, unknown>, key: string) => Object.prototype.hasOwnProperty.call(holder, key);
+
+/**
+ * Whether Vega-Lite reads a text at *key* of *holder*, an object that is
+ * *kind*, as a field name; *item* for a text that is an item of a list there.
+ * The keys Vega-Lite's schema types as a field name, but an output's `as`,
+ * which names a new column as it is written; and a transform's `lookup` and a
+ * `repeat`'s lists, which Vega-Lite reads as fields too. A key that is a field
+ * only in one transform counts in that one: `extent` beside `param`, `value`
+ * beside `pivot`, `key` beside `impute`, and `on` beside `loess` or
+ * `regression`, where a parameter's `on` is an event. Kept in sync with
+ * `_is_vega_field` in `code_references.py`.
+ */
+function isVegaField(holder: Record<string, unknown>, kind: FieldHolder, key: string, item: boolean): boolean {
+  if (item) {
+    if (kind === "transform") return TRANSFORM_FIELD_LISTS.has(key);
+    if (kind === "lookup" || kind === "select") return key === "fields";
+    if (kind === "repeat") return key === "row" || key === "column" || key === "layer";
+    return key === "repeat";
+  }
+  if (key === "field") return true;
+  if (kind === "transform") {
+    if (TRANSFORM_FIELD_KEYS.has(key)) return true;
+    if (key === "extent") return hasKey(holder, "param");
+    if (key === "value") return hasKey(holder, "pivot");
+    if (key === "key") return hasKey(holder, "impute");
+    if (key === "on") return hasKey(holder, "loess") || hasKey(holder, "regression");
+    return false;
+  }
+  if (kind === "lookup") return key === "key";
+  if (kind === "aggregate") return key === "argmax" || key === "argmin";
+  return false;
+}
+
+/** What the object at *key* of *holder*, an object that is *kind*, is; *item*
+ * for an object that is an item of a list there. */
+function fieldHolderAt(holder: Record<string, unknown>, kind: FieldHolder, key: string, item: boolean): FieldHolder {
+  if (item) {
+    if (key === "transform") return "transform";
+    if (key === "params") return "param";
+    return null;
+  }
+  if (key === "from" && kind === "transform" && hasKey(holder, "lookup")) return "lookup";
+  if (key === "select" && kind === "param") return "select";
+  if (key === "aggregate") return "aggregate";
+  if (key === "repeat") return "repeat";
+  return null;
+}
+
+/** The keys whose values hold rows or the author's own notes, never a field:
+ * a `field` there is a value. Kept in sync with `_NOT_SPEC_KEYS` in
+ * `code_references.py`. */
+const NOT_SPEC_KEYS = new Set(["data", "datasets", "usermeta"]);
+
+/** How deep a Vega-Lite spec's objects and lists may nest, its rows and notes
+ * included, for its places to be read; a deeper spec writes its names as they
+ * are. Kept in sync with `_MAX_SPEC_DEPTH` in `code_references.py`. */
+const MAX_SPEC_DEPTH = 100;
+
+/** How many objects and lists *spec* nests, itself counted as one, measured
+ * without recursion and no further than past *limit*. Kept in sync with
+ * `_spec_depth` in `code_references.py`. */
+function specDepth(spec: unknown, limit: number): number {
+  let deepest = 0;
+  const stack: [unknown, number][] = [[spec, 1]];
+  while (stack.length > 0) {
+    const [node, depth] = stack.pop() as [unknown, number];
+    if (node === null || typeof node !== "object") continue;
+    if (depth > deepest) deepest = depth;
+    if (deepest > limit) break;
+    const children = Array.isArray(node) ? node : Object.values(node as Record<string, unknown>);
+    for (const child of children) {
+      if (child !== null && typeof child === "object") stack.push([child, depth + 1]);
+    }
+  }
+  return deepest;
+}
+
+/** The first and last code points of Unicode's private use area. */
+const PRIVATE_USE_FIRST = 0xe000;
+const PRIVATE_USE_LAST = 0xf8ff;
+
+/**
+ * Two characters of Unicode's private use area that *code* holds neither as
+ * they are nor as a JSON escape, to stand around a reference's number while
+ * the spec is read for its places; null when it holds every pair. Kept in sync
+ * with `_place_marks` in `code_references.py`.
+ */
+function placeMarks(code: string): [string, string] | null {
+  const lower = code.toLowerCase();
+  const escape = String.fromCharCode(92) + "u";
+  const free = (point: number) =>
+    !code.includes(String.fromCharCode(point)) && !lower.includes(escape + point.toString(16));
+  for (let point = PRIVATE_USE_FIRST; point < PRIVATE_USE_LAST; point += 2) {
+    if (free(point) && free(point + 1)) return [String.fromCharCode(point), String.fromCharCode(point + 1)];
+  }
+  return null;
+}
+
+/**
+ * Where each of *refs* (in *contexts*) stands in the Vega-Lite spec *code*.
+ * The spec is read as JSON with each reference replaced by a mark, its number
+ * between two characters the spec's text does not hold (`placeMarks`): a text
+ * of its own where the reference is a value, a run of a string where it is
+ * inside one. Each mark is found where the spec holds it, outside the rows and
+ * notes of `NOT_SPEC_KEYS`. A spec that does not read as JSON, or nests deeper
+ * than `MAX_SPEC_DEPTH`, holds no field. Kept in sync with
+ * `_vega_field_places` in `code_references.py`.
+ */
+function vegaFieldPlaces(code: string, refs: CodeReference[], contexts: ReferenceContext[]): FieldPlace[] {
+  const unplaced = () => refs.map(() => ({ text: false, items: false }));
+  const marks = placeMarks(code);
+  if (marks === null) return unplaced();
+  const [open, close] = marks;
+  const markRe = new RegExp(open + "([0-9]+)" + close, "g");
+  let marked = "";
+  let last = 0;
+  refs.forEach((ref, index) => {
+    const mark = open + index + close;
+    marked += code.slice(last, ref.start) + (contexts[index].kind === "code" ? `"${mark}"` : mark);
+    last = ref.end;
+  });
+  marked += code.slice(last);
+  let spec: unknown;
+  try {
+    spec = JSON.parse(marked);
+  } catch {
+    return unplaced();
+  }
+  if (specDepth(spec, MAX_SPEC_DEPTH) > MAX_SPEC_DEPTH) return unplaced();
+  const places = unplaced();
+  const place = (text: string, field: boolean, items: boolean) => {
+    for (const match of text.matchAll(markRe)) {
+      const found = places[Number(match[1])];
+      if (found === undefined) continue;
+      found.text = field;
+      // Only a reference that is the whole value can hold a list.
+      found.items = match[0] === text && items;
+    }
+  };
+  // The spec nests no deeper than MAX_SPEC_DEPTH, so neither does this walk.
+  const visit = (node: unknown, kind: FieldHolder) => {
+    if (Array.isArray(node)) {
+      for (const item of node) visit(item, null);
+      return;
+    }
+    if (node === null || typeof node !== "object") return;
+    const holder = node as Record<string, unknown>;
+    for (const [key, value] of Object.entries(holder)) {
+      if (NOT_SPEC_KEYS.has(key)) continue;
+      if (typeof value === "string") {
+        place(value, isVegaField(holder, kind, key, false), isVegaField(holder, kind, key, true));
+      } else if (Array.isArray(value)) {
+        for (const item of value) {
+          if (typeof item === "string") place(item, isVegaField(holder, kind, key, true), false);
+          else if (!Array.isArray(item)) visit(item, fieldHolderAt(holder, kind, key, true));
+          else visit(item, null);
+        }
+      } else {
+        visit(value, fieldHolderAt(holder, kind, key, false));
+      }
+    }
+  };
+  visit(spec, null);
+  return places;
+}
+
+/** *value*, a reference's value standing on its own at *place*, as it is
+ * written there: a text Vega-Lite reads as a field escaped, and each text of a
+ * list whose texts it reads as fields. */
+function fieldValue(value: WidgetValue | undefined, place: FieldPlace): WidgetValue | undefined {
+  if (typeof value === "string") return place.text ? vegaFieldName(value) : value;
+  if (Array.isArray(value) && place.items) {
+    return (value as WidgetValue[]).map((item) => (typeof item === "string" ? vegaFieldName(item) : item)) as WidgetValue;
+  }
+  return value;
+}
+
 /**
  * Whether *input* is one frame that lists no layers, which a layer reference
  * reads whatever it names (#761). In code `curio_layer` looks at the value when
@@ -379,6 +809,53 @@ function knownLayers(input: InputScope): LayerScope[] | null {
   if (input.layerName !== undefined) {
     return [{ name: input.layerName, columns: input.columns, dtypes: input.dtypes }];
   }
+  return null;
+}
+
+/** Why the scenario chip *reference* (*parsed*) cannot be written over
+ * *inputs*, standing in *context*, or null. Kept in sync with
+ * `_scenario_problem` in `code_references.py`. */
+function scenarioProblem(
+  reference: string,
+  parsed: Extract<ParsedReference, { kind: "scenario" }>,
+  inputs: readonly InputScope[],
+  context: ReferenceContext,
+  language: CodeLanguage,
+): string | null {
+  if (language !== "json") return `${reference} is for a Vega-Lite or Autark spec, not for code.`;
+  if (parsed.chip === null) {
+    return `${reference} names no scenario chip. The scenario chips are scenario colors, scenario text_colors, `
+      + "scenario order and scenario input_<k>.";
+  }
+  if (parsed.chip === "input") {
+    const slot = parsed.slot;
+    if (slot === null) {
+      return `${reference}: the edge for this input was deleted. Write scenario input_<k> for a circle that has one.`;
+    }
+    const input = inputs.find((i) => i.slot === slot);
+    if (input === undefined) {
+      return `${reference}: input_${slot} has no edge. Connect one to that circle, `
+        + "or write scenario input_<k> for a circle that has one.";
+    }
+    if (input.scenario == null) return `${reference}: the scenario box input_${slot} comes from is not known here.`;
+    return null;
+  }
+  if (context.kind !== "code") {
+    const what = parsed.chip === "order" ? "a list of names" : "a scale";
+    return `${reference} is ${what}, not text. Use it outside quotes.`;
+  }
+  const unknown = unlabelled(inputs);
+  if (unknown) return `${reference}: the scenario box input_${unknown.slot} comes from is not known here.`;
+  return null;
+}
+
+/** Why the chip of the dataset `inputs`, *reference*, cannot be written over
+ * *inputs*, or null: it is for a spec, never for code, and a node with no
+ * input has nothing to stack. Kept in sync with `_dataset_problem` in
+ * `code_references.py`. */
+function datasetProblem(reference: string, inputs: readonly InputScope[], language: CodeLanguage): string | null {
+  if (language !== "json") return `${reference} is for a Vega-Lite spec, not for code.`;
+  if (inputs.length === 0) return `${reference}: this node has no input to stack. Connect one to an input circle.`;
   return null;
 }
 
@@ -460,6 +937,16 @@ export function referenceProblem(
     if (isOverCap(tag)) return `${reference}: ${overCapText(selectionSize(tag))}`;
     return null;
   }
+  if (parsed.kind === "scenario") return scenarioProblem(reference, parsed, scope.inputs, context, language);
+  if (parsed.kind === "dataset") return datasetProblem(reference, scope.inputs, language);
+  if (parsed.kind === "stacked") {
+    if (language !== "json") return `${reference} is for a Vega-Lite spec, not for code.`;
+    const fields = knownStackedFields(scope.inputs);
+    if (fields !== null && !fields.includes(parsed.column)) {
+      return `${reference}: the dataset inputs has no field ${parsed.column}.`;
+    }
+    return null;
+  }
   if (inner.includes("$")) {
     return `${reference} is an old widget marker. Add the widget in the node's Widgets tab and drag its tag into the code.`;
   }
@@ -472,17 +959,25 @@ export function referenceProblem(
   return null;
 }
 
-/** What a reference without a problem writes, standing in *context*. */
-function resolvedText(inner: string, scope: ReferenceScope, context: ReferenceContext, language: CodeLanguage): string {
+/** What a reference without a problem writes, standing in *context*, and at
+ * *place* in a Vega-Lite spec. */
+function resolvedText(
+  inner: string,
+  scope: ReferenceScope,
+  context: ReferenceContext,
+  language: CodeLanguage,
+  place?: FieldPlace,
+): string {
+  const named = (name: string) => (place?.text ? vegaFieldName(name) : name);
   const parsed = parseReference(inner);
   if (parsed.kind === "input") {
-    if (parsed.column !== undefined) return writeText(parsed.column, context, language);
+    if (parsed.column !== undefined) return writeText(named(parsed.column), context, language);
     const position = scope.inputs.findIndex((i) => i.slot === parsed.slot);
     if (language === "json") {
       // A spec reads a layer by its name, and an input, or the one frame it
       // carries, by the name the input is read by.
       const layer = isOneFrameInput(scope.inputs[position]) ? undefined : parsed.layer;
-      return writeText(layer ?? inputTableName(position), context, language);
+      return writeText(named(layer ?? inputTableName(position)), context, language);
     }
     const value = inputName(parsed.slot);
     if (parsed.layer !== undefined) {
@@ -490,26 +985,37 @@ function resolvedText(inner: string, scope: ReferenceScope, context: ReferenceCo
     }
     return value;
   }
+  // A field of inputs is written as a column is: its name. The dataset itself
+  // is its name too, which no place reads as a field.
+  if (parsed.kind === "stacked") return writeText(named(parsed.column), context, language);
+  if (parsed.kind === "dataset") return writeText(INPUTS_DATASET, context, language);
   const value =
-    parsed.kind === "selection"
-      ? ((scope.selections ?? []).find((t) => t.name === parsed.name) as SelectionTag).ids as WidgetValue
-      : effectiveValue(
-          (parsed.kind === "shared" ? scope.shared : scope.widgets).find((w) => w.name === parsed.name) as WidgetDef,
-        );
-  return context.kind === "code" ? widgetLiteral(value, language) : escapeFor(textOf(value, language), context, language);
+    parsed.kind === "scenario"
+      ? scenarioValue(parsed, scope.inputs)
+      : parsed.kind === "selection"
+        ? ((scope.selections ?? []).find((t) => t.name === parsed.name) as SelectionTag).ids as WidgetValue
+        : effectiveValue(
+            (parsed.kind === "shared" ? scope.shared : scope.widgets).find((w) => w.name === parsed.name) as WidgetDef,
+          );
+  if (context.kind === "code") return widgetLiteral(place ? fieldValue(value, place) : value, language);
+  return escapeFor(named(textOf(value, language)), context, language);
 }
 
 /** *code* with every reference replaced, and what could not be replaced. A
- * reference with a problem is left as written. */
+ * reference with a problem is left as written. *grammar* is the grammar of a
+ * JSON document: in a Vega-Lite spec (`VEGA_LITE`), a reference where
+ * Vega-Lite reads a field name writes each name escaped (`vegaFieldName`). */
 export function resolveReferences(
   code: string,
   scope: ReferenceScope,
   language: CodeLanguage,
+  grammar?: string | null,
 ): { code: string; problems: ReferenceProblem[] } {
   const refs = findReferences(code);
   if (refs.length === 0) return { code, problems: [] };
   const ordered: ReferenceScope = { ...scope, inputs: [...scope.inputs].sort((a, b) => a.slot - b.slot) };
   const contexts = referenceContexts(code, refs, language);
+  const places = language === "json" && grammar === VEGA_LITE ? vegaFieldPlaces(code, refs, contexts) : null;
   const problems: ReferenceProblem[] = [];
   let out = "";
   let last = 0;
@@ -521,7 +1027,7 @@ export function resolveReferences(
       problems.push({ reference: written, message: problem });
       out += written;
     } else {
-      out += resolvedText(ref.inner, ordered, contexts[index], language);
+      out += resolvedText(ref.inner, ordered, contexts[index], language, places?.[index]);
     }
     last = ref.end;
   });
@@ -674,17 +1180,24 @@ function readsNamesAt(code: string, offsets: number[], language: CodeLanguage): 
 
 /**
  * *code* after circle *removedSlot* lost its edge and the circles below it
- * moved up one: references and typed input names (in *language*) to later
- * inputs count one less, and those to the removed input become
- * `[!! input_? !!]`, which reports itself. Other references, and the text
- * around them, are kept as written.
+ * moved up one: references, an input's scenario chip among them, and typed
+ * input names (in *language*) to later inputs count one less, and those to the
+ * removed input become `[!! input_? !!]` (`[!! scenario input_? !!]`), which
+ * reports itself. Other references, and the text around them, are kept as
+ * written.
  */
 export function renumberInputReferences(code: string, removedSlot: number, language: CodeLanguage = "python"): string {
   const edits: { start: number; end: number; text: string }[] = [];
+  const moved = (slot: number) => (slot === removedSlot ? null : slot - 1);
   for (const ref of findReferences(code)) {
     const parsed = parseReference(ref.inner);
+    if (parsed.kind === "scenario" && parsed.chip === "input") {
+      if (parsed.slot === null || parsed.slot < removedSlot) continue;
+      edits.push({ start: ref.start, end: ref.end, text: referenceText(scenarioInputReferenceInner(moved(parsed.slot))) });
+      continue;
+    }
     if (parsed.kind !== "input" || parsed.slot === null || parsed.slot < removedSlot) continue;
-    const slot = parsed.slot === removedSlot ? null : parsed.slot - 1;
+    const slot = moved(parsed.slot);
     edits.push({ start: ref.start, end: ref.end, text: referenceText(inputReferenceInner(slot, parsed.column, parsed.layer)) });
   }
   for (const name of inputNamesIn(code, language)) {

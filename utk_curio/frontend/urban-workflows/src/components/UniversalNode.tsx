@@ -13,7 +13,7 @@ import { InputIcon } from './edges/InputIcon';
 import { getNodeDescriptor, tryGetNodeDescriptor, subscribeToRegistry } from '../registry/nodeRegistry';
 import { isRegistryReady, subscribeToRegistryReady } from '../registry/registryReadiness';
 import { isVegaLiteNodeType } from '../registry/vegaLiteNodes';
-import { UnresolvedNode } from './UnresolvedNode';
+import { UnresolvedNode, unresolvedNodeMessage } from './UnresolvedNode';
 import { NodeHandles } from './nodes/NodeHandles';
 import { behaviorDataView } from "../utils/behaviorDataView";
 import { isSelectionEcho } from "../utils/selectionEcho";
@@ -58,6 +58,11 @@ import 'bootstrap/dist/css/bootstrap.min.css';
 // which is exactly what the street-vision example showed, permanently (#233).
 // `UnresolvedNode` tells the two apart, and renders handles either way so the
 // edges touching it can still be drawn.
+//
+// A run triggers such a node as it triggers any other, and waits for it to
+// report. It cannot run, so `UnresolvedRunAnswer` reports at once that its run
+// failed, naming its type as its card does: the run moves on and skips what it
+// feeds, rather than waiting for it until the stall watchdog gives up.
 const UniversalNode = React.memo(function UniversalNode({ data, isConnectable }: { data: any; isConnectable: boolean }) {
   // The snapshot must be stable when the descriptor exists so React doesn't
   // tear-and-rebuild on every keystroke; return the descriptor itself (or
@@ -73,15 +78,47 @@ const UniversalNode = React.memo(function UniversalNode({ data, isConnectable }:
   );
   if (!descriptor) {
     return (
-      <UnresolvedNode
-        nodeId={data.nodeId}
-        nodeType={data.nodeType}
-        registryReady={registryReady}
-      />
+      <>
+        <UnresolvedRunAnswer
+          nodeId={data.nodeId}
+          nodeType={data.nodeType}
+          triggerExec={data.triggerExec}
+          registryReady={registryReady}
+        />
+        <UnresolvedNode
+          nodeId={data.nodeId}
+          nodeType={data.nodeType}
+          registryReady={registryReady}
+        />
+      </>
     );
   }
   return <UniversalNodeBody key={data.nodeType} data={data} isConnectable={isConnectable} />;
 });
+
+/**
+ * What a node with no descriptor answers a run that triggers it: a failed run,
+ * with its card's title as the message. A trigger that comes while the registry
+ * may still deliver the descriptor is answered once the registry has settled
+ * without it; if the descriptor comes, the node's body mounts instead. As the
+ * body does, it answers no trigger from before it mounted.
+ */
+function UnresolvedRunAnswer({ nodeId, nodeType, triggerExec, registryReady }: {
+  nodeId: string;
+  nodeType: string;
+  triggerExec?: number;
+  registryReady: boolean;
+}) {
+  const { signalNodeExecDone } = useFlowContext();
+  const answeredRef = useRef<number>(triggerExec ?? 0);
+  useEffect(() => {
+    const current = triggerExec ?? 0;
+    if (!registryReady || current <= answeredRef.current) return;
+    answeredRef.current = current;
+    signalNodeExecDone(nodeId, { failed: true, message: unresolvedNodeMessage(nodeType) });
+  }, [triggerExec, registryReady]);
+  return null;
+}
 
 const UniversalNodeBody = React.memo(function UniversalNodeBody({ data, isConnectable }: { data: any; isConnectable: boolean }) {
   const descriptor = getNodeDescriptor(data.nodeType);

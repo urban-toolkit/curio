@@ -32,14 +32,185 @@
   outline-offset: 1px;
 }
 
+/* The header above a node's code or spec: one row of categories, then the
+   chips of each open one, a line each, in the row's order. On the canvas it
+   takes at most half of the node's editor, so the code or spec keeps its room;
+   in a notebook cell, whose editor is as tall as its content, it takes what
+   its chips need. */
 .strip {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 50%;
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--curio-border);
+  background: var(--curio-card-bg);
+}
+
+/* The open categories' chips, under the row: they scroll when the header is as
+   tall as it gets. */
+.stripOpen {
+  composes: thinScrollbar from "../../../styles/scrollbars.module.css";
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.categories {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 4px;
-  padding: 4px 8px;
-  border-bottom: 1px solid var(--curio-border);
+}
+
+/* A category: its name, its count and a chevron, darker while open. */
+.category {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  box-sizing: border-box;
+  height: 22px;
+  padding: 0 6px;
+  border: 1px solid var(--curio-border);
+  border-radius: var(--curio-radius-sm);
   background: var(--curio-card-bg);
+  color: var(--curio-text-secondary);
+  font-family: var(--curio-font-family);
+  font-size: 10px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.category:hover {
+  border-color: var(--curio-border-strong);
+  color: var(--curio-text-primary);
+}
+
+.category[aria-expanded="true"] {
+  border-color: var(--curio-border-strong);
+  background: var(--curio-surface-muted);
+  color: var(--curio-text-primary);
+}
+
+.category:focus-visible {
+  outline: 2px solid var(--curio-role-update-fg);
+  outline-offset: 1px;
+}
+
+.categoryCount {
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+}
+
+/* The chevron of every expander: a category's points down while closed and up
+   while open, an input line's right while closed and down while open. */
+.chevron {
+  display: block;
+  flex: none;
+}
+
+/* An open category's tags: one row, in order. */
+.categoryChips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+}
+
+/* Inputs: a line per input, each open list under its own line. */
+.categoryStack {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* A line under Inputs: its expander, its tag, then what its input holds. */
+.inputLine {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+/* A line's expander: a square button in the inputs' green, pressed while its
+   list is open. */
+.expand {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  box-sizing: border-box;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid #a8d5b1;
+  border-radius: var(--curio-radius-sm);
+  background: var(--curio-card-bg);
+  color: var(--curio-accent-mint-fg);
+  cursor: pointer;
+}
+
+.expand:hover {
+  border-color: var(--curio-accent-mint-fg);
+  background: var(--curio-accent-mint-bg);
+}
+
+.expand[aria-expanded="true"] {
+  background: #cfe9d5;
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.15);
+}
+
+.expand:focus-visible {
+  outline: 2px solid var(--curio-role-update-fg);
+  outline-offset: 1px;
+}
+
+/* What a line's input holds, muted, cut short with an ellipsis on a narrow
+   node. */
+.inputAbout {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--curio-text-secondary);
+  font-size: 10px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* An open list, under its own line and past its expander: the expander's width
+   and the line's gap. */
+.inputList {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-left: 28px;
+}
+
+/* A list's chips: an input's columns, a layer's, or the fields of inputs. */
+.listChips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+}
+
+/* A layered input's list: a line per layer, its tag and then its columns, one
+   grid, so the layers' tags line up in one column, which gives way on a narrow
+   node. */
+.layers {
+  display: grid;
+  grid-template-columns: minmax(0, max-content) minmax(0, 1fr);
+  gap: 4px 6px;
+}
+
+.layerLine {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: subgrid;
+  align-items: start;
 }
 
 .stripHint {
@@ -48,12 +219,30 @@
   margin-right: 2px;
 }
 
+/* A layer with no columns says so after its tag, on the tag's line. */
+.layerEmpty {
+  composes: stripHint;
+  line-height: 22px;
+}
+
 /* An input's tag and its columns (#662): green, like their chips in the code. */
 .inputTag {
   composes: tag;
   border-color: #a8d5b1;
   background: var(--curio-accent-mint-bg);
   color: var(--curio-accent-mint-fg);
+}
+
+/* A layer's tag, first on its line, as wide as its name, cut short with an
+   ellipsis on a narrow node. */
+.layerTag {
+  composes: inputTag;
+  display: block;
+  justify-self: start;
+  max-width: 100%;
+  overflow: hidden;
+  line-height: 20px;
+  text-overflow: ellipsis;
 }
 
 /* A shared tag, a Parameter node's widget: amber, like its chips. */
@@ -72,34 +261,49 @@
   color: #b8461d;
 }
 
+/* A column's tag, or a field's of inputs: green on white, cut short with an
+   ellipsis when it is wider than its list. */
 .columnTag {
   composes: tag;
+  display: block;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
   border-color: #a8d5b1;
   background: var(--curio-card-bg);
   color: var(--curio-accent-mint-fg);
+  line-height: 20px;
+  text-overflow: ellipsis;
 }
 
-.expand {
-  border: 0;
-  background: none;
-  padding: 0 2px;
-  font-size: 10px;
-  color: #444;
-  cursor: pointer;
+/* A scenario chip's tag (#662), under Scenarios: lilac, like its chip in the
+   spec. The boxes' swatches are one such tag, the scale of the scenarios'
+   colors, and an input's tag shows the swatch of its color. */
+.scenarioTag {
+  composes: tag;
+  gap: 5px;
+  border-color: #cdbff0;
+  background: var(--curio-accent-lilac-bg);
+  color: var(--curio-accent-lilac-fg);
 }
 
-.columns {
-  display: flex;
-  flex-wrap: wrap;
+.swatches {
+  composes: scenarioTag;
+  gap: 6px;
+}
+
+.swatch {
+  display: inline-flex;
   align-items: center;
-  gap: 4px;
-  width: 100%;
-  padding-left: 12px;
+  gap: 3px;
 }
 
-.columnFilter {
-  font-size: 10px;
-  width: 110px;
+.swatchColor {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.2);
 }
 
 /* A node's Widgets tab and a Parameter node's body. A panel that holds more

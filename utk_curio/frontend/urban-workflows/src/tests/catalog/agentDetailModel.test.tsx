@@ -31,7 +31,7 @@ import {
 } from "../../components/apiSettings/apiSettingsRequest";
 
 const AGENT = {
-  id: "agent.node-builder", version: "1.0.0", dirName: "agent.node-builder@1.0.0",
+  id: "agent.curio.node-builder", version: "1.0.0", dirName: "agent.curio.node-builder@1",
   name: "Node Builder", category: "node", purpose: "Writes node content.",
   capabilities: ["node.content.generate"], hooks: ["node"],
   provenance: { publisher: "curio", trust: "built-in" }, imported: false,
@@ -43,7 +43,7 @@ const listingWith = (editable: boolean) => ({
   editable,
   active: { source: "default", label: "Work", model: "gpt-4o-mini" },
   agents: [{
-    id: "agent.node-builder", name: "Node Builder", category: "node",
+    id: "agent.curio.node-builder", name: "Node Builder", category: "node",
     choice: "llm-00000000000b",
     answers: { source: "assigned", label: "Local", model: "llama3" },
   }],
@@ -58,7 +58,7 @@ it("names what the agent runs on and opens API Settings on its row", async () =>
   render(<AgentDetailModal agent={AGENT} onClose={onClose} />);
   expect(await screen.findByText("Local · llama3")).toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: "Change in API Settings" }));
-  await waitFor(() => expect(asked).toEqual([{ section: "agent-models", agentId: "agent.node-builder" }]));
+  await waitFor(() => expect(asked).toEqual([{ section: "agent-models", agentId: "agent.curio.node-builder" }]));
   expect(onClose).toHaveBeenCalled();
   window.removeEventListener(API_SETTINGS_EVENT, listener);
 });

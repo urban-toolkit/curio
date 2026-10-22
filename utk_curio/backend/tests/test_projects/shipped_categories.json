@@ -51,7 +51,9 @@
   "06-back-bay-road-sunlight": {
     "tags": [
       "Autark",
-      "GPU compute"
+      "Vega-Lite",
+      "GPU compute",
+      "SCOUT"
     ],
     "data_type": [
       "Geometries",
@@ -331,6 +333,7 @@
   "dataflows/quad-cities-flood-vulnerability": {
     "tags": [
       "Autark",
+      "Vega-Lite",
       "Pandas",
       "SCOUT"
     ],
@@ -457,6 +460,7 @@
   "dataflows/chicago-loop-shadow-towers": {
     "tags": [
       "Autark",
+      "Vega-Lite",
       "SCOUT"
     ],
     "data_type": [
@@ -484,6 +488,7 @@
   "dataflows/chicago-rain-wind-routing": {
     "tags": [
       "Autark",
+      "Vega-Lite",
       "SCOUT"
     ],
     "data_type": [
@@ -502,6 +507,7 @@
   "dataflows/lower-manhattan-park-shade": {
     "tags": [
       "Autark",
+      "Vega-Lite",
       "Pandas",
       "SCOUT"
     ],
@@ -519,6 +525,15 @@
     ],
     "data_type": [
       "Tables"
+    ]
+  },
+  "dataflows/chicago-loop-layers": {
+    "tags": [
+      "Autark"
+    ],
+    "data_type": [
+      "Geometries",
+      "OpenStreetMap"
     ]
   }
 }

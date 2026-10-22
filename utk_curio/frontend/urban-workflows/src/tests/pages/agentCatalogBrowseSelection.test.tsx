@@ -13,8 +13,8 @@ import { renderHook, act, waitFor } from "@testing-library/react";
 
 const CARDS = [
   {
-    dirName: "agent.researcher",
-    id: "agent.researcher",
+    dirName: "agent.curio.researcher",
+    id: "agent.curio.researcher",
     name: "Researcher",
     purpose: "Conversational assistant",
     category: "node",
@@ -26,8 +26,8 @@ const CARDS = [
     provenance: { publisher: "curio", trust: "built-in" },
   },
   {
-    dirName: "agent.my-debugger",
-    id: "agent.my-debugger",
+    dirName: "agent.test.my-debugger",
+    id: "agent.test.my-debugger",
     name: "My Debugger",
     purpose: "Diagnose errors",
     category: "node",
@@ -57,15 +57,15 @@ describe("/catalog/agents selection", () => {
   it("shows the first agent on arrival", async () => {
     const { result } = renderHook(() => useAgentCatalogBrowse());
     await waitFor(() => expect(result.current.loading).toBe(false));
-    expect(result.current.selectedAgent?.dirName).toBe("agent.researcher");
+    expect(result.current.selectedAgent?.dirName).toBe("agent.curio.researcher");
   });
 
   it("keeps the drawer closed after Close, and does not jump to another agent", async () => {
     const { result } = renderHook(() => useAgentCatalogBrowse());
     await waitFor(() => expect(result.current.loading).toBe(false));
 
-    act(() => result.current.setSelectedCoord("agent.my-debugger"));
-    expect(result.current.selectedAgent?.dirName).toBe("agent.my-debugger");
+    act(() => result.current.setSelectedCoord("agent.test.my-debugger"));
+    expect(result.current.selectedAgent?.dirName).toBe("agent.test.my-debugger");
 
     // What the drawer's Close button does.
     act(() => result.current.setSelectedCoord(null));
@@ -83,19 +83,19 @@ describe("/catalog/agents selection", () => {
     act(() => result.current.setSelectedCoord(null));
     expect(result.current.selectedAgent).toBeNull();
 
-    act(() => result.current.setSelectedCoord("agent.my-debugger"));
-    expect(result.current.selectedAgent?.dirName).toBe("agent.my-debugger");
+    act(() => result.current.setSelectedCoord("agent.test.my-debugger"));
+    expect(result.current.selectedAgent?.dirName).toBe("agent.test.my-debugger");
   });
 
   it("falls back to the default when the selected agent is filtered out", async () => {
     const { result } = renderHook(() => useAgentCatalogBrowse());
     await waitFor(() => expect(result.current.loading).toBe(false));
 
-    act(() => result.current.setSelectedCoord("agent.my-debugger"));
+    act(() => result.current.setSelectedCoord("agent.test.my-debugger"));
     act(() => result.current.setSearch("Researcher"));
 
     await waitFor(() =>
-      expect(result.current.selectedAgent?.dirName).toBe("agent.researcher"),
+      expect(result.current.selectedAgent?.dirName).toBe("agent.curio.researcher"),
     );
   });
 });
@@ -110,8 +110,8 @@ describe("/catalog/agents search matches the drawer", () => {
 
     act(() => result.current.setSearch("node"));
     expect(result.current.filtered.map((a) => a.dirName)).toEqual([
-      "agent.researcher",
-      "agent.my-debugger",
+      "agent.curio.researcher",
+      "agent.test.my-debugger",
     ]);
   });
 
@@ -120,6 +120,6 @@ describe("/catalog/agents search matches the drawer", () => {
     await waitFor(() => expect(result.current.loading).toBe(false));
 
     act(() => result.current.setSearch("  Debug  "));
-    expect(result.current.filtered.map((a) => a.dirName)).toEqual(["agent.my-debugger"]);
+    expect(result.current.filtered.map((a) => a.dirName)).toEqual(["agent.test.my-debugger"]);
   });
 });

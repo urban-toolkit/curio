@@ -187,94 +187,49 @@ EXAMPLE_08_MAP = "niteroi-map"
 EXAMPLE_11_HISTOGRAM = "pbf-plot"
 EXAMPLE_11_MAP = "pbf-map"
 
-#: Compare Scenarios (#662) runs its inputs through Python behind its own play
-#: button, but it has no legacy category, so ``NodeSpec.has_play_button`` is
-#: False for it. The canvas tests play it and check it by its type.
-COMPARE_SCENARIOS = "curio.builtin/compare-scenarios"
-
-#: Edit Features (#662) runs the code its edit list writes behind its own play
-#: button too: example 06's is played and must end Done like any other.
+#: Map Edits (#662) runs the code its edits are written in behind its own play
+#: button, but ``NodeSpec.has_play_button`` is False for it, so the canvas
+#: tests play it by its type: example 06's is played and must end Done like
+#: any other.
 EDIT_FEATURES = "curio.builtin/edit-features"
 
 
 def _plays(node: NodeSpec) -> bool:
     """Whether the canvas gives *node* a play button that the run clicks."""
-    return node.has_play_button or node.type == COMPARE_SCENARIOS or node.type == EDIT_FEATURES
+    return node.has_play_button or node.type == EDIT_FEATURES
 
 
-#: What a Compare Scenarios node shows (components/compare/): its view, the
-#: kind of difference it holds in Difference, where its chart or its table
-#: stands and why it could not draw, whether it says an Autark node after it
-#: draws the difference's map, and how many maps it holds itself.
-_COMPARE_VIEW_JS = """(id) => {
-    const node = document.querySelector(`.react-flow__node[data-id="${id}"]`);
-    const body = node && node.querySelector("[data-compare-mode]");
-    if (!body) return null;
-    const difference = node.querySelector("[data-compare-difference]");
-    const chart = node.querySelector("[data-compare-chart-state]");
-    const problem = node.querySelector("[data-compare-chart-problem]");
-    return {
-        mode: body.getAttribute("data-compare-mode"),
-        kind: difference ? difference.getAttribute("data-compare-difference") : null,
-        chart: chart ? chart.getAttribute("data-compare-chart-state") : null,
-        problem: problem ? problem.textContent : "",
-        note: !!node.querySelector('[data-compare-difference-map="autark"]'),
-        maps: node.querySelectorAll('canvas[id^="autk-grammar-map-"], [data-compare-map-state]').length,
-    };
-}"""
+def _linked_maps(spec, node_id: str) -> list[str]:
+    """The Autark maps the Map Edits node *node_id* feeds on a data edge and is
+    linked to by an Interaction edge: the ones it edits on."""
+    types = {n.id: n.type for n in spec.nodes}
+    fed = {e["target"] for e in spec.edges if e["source"] == node_id and e.get("type") != "Interaction"}
+    linked = {
+        e["target"] if e["source"] == node_id else e["source"]
+        for e in spec.edges if e.get("type") == "Interaction" and node_id in (e["source"], e["target"])
+    }
+    return sorted(m for m in fed & linked if types.get(m) == "AUTK_GRAMMAR")
 
 
-def _assert_compare_view_drew(page, node_id: str) -> None:
-    """A Compare Scenarios node that ran shows its view: its chart, or a
-    table's difference, compiled with no problem and painted; a raster's or a
-    layer's difference is left to an Autark node after it, which the node
-    says, and the node holds no map."""
+def _assert_lever_map_drew(page, spec, node_id: str) -> None:
+    """A Map Edits node that ran edits on the Autark map it feeds and is linked
+    to: its body names that map and lists the layers it is fed, with no notice
+    in their place, and the map drew, before any frame is taken of them."""
+    maps = _linked_maps(spec, node_id)
+    assert len(maps) == 1, f"Map Edits node {node_id} feeds and is linked to the maps {maps}, not one"
+    (map_id,) = maps
+    body = page.locator(f'.react-flow__node[data-id="{node_id}"] [data-edit-body="{node_id}"]')
     try:
-        page.wait_for_function(
-            "(id) => { const view = (" + _COMPARE_VIEW_JS + ")(id);"
-            " if (!view) return false;"
-            " if (view.mode === 'difference' && (view.kind === 'raster' || view.kind === 'layer')) return view.note;"
-            " return !!view.chart && view.chart !== 'drawing'; }",
-            arg=node_id,
-            timeout=90000,
-        )
+        body.locator('[data-testid="interaction-layers"]').wait_for(state="attached", timeout=90000)
     except PlaywrightTimeoutError:
         pass
-    view = page.evaluate(_COMPARE_VIEW_JS, node_id)
-    assert view, f"Compare Scenarios node {node_id} shows no view"
-    if view["mode"] == "difference" and view["kind"] in ("raster", "layer"):
-        assert view["note"], f"Compare Scenarios node {node_id}: its difference ended {view!r}"
-        assert view["maps"] == 0, f"Compare Scenarios node {node_id} draws a map of its own: {view!r}"
-        return
-    assert view["chart"] == "drawn", f"Compare Scenarios node {node_id}: its view ended {view!r}"
-    assert view["maps"] == 0, f"Compare Scenarios node {node_id} draws a map of its own: {view!r}"
-    assert_vega_canvas_rendered(page, node_id)
-
-
-#: Where an Edit Features node's map stands: "drawing", "drawn" or "problem".
-_EDIT_MAP_STATE_JS = """(id) => {
-    const node = document.querySelector(`.react-flow__node[data-id="${id}"]`);
-    const map = node && node.querySelector("[data-edit-map-state]");
-    return map ? map.getAttribute("data-edit-map-state") : null;
-}"""
-
-
-def _assert_edit_map_drew(page, node_id: str) -> None:
-    """An Edit Features node that ran shows its input drawn on its map, by the
-    Autark node's map code, before any frame is taken of it."""
-    try:
-        page.wait_for_function(
-            "(id) => { const state = (" + _EDIT_MAP_STATE_JS + ")(id);"
-            " return !!state && state !== 'drawing'; }",
-            arg=node_id,
-            timeout=90000,
-        )
-    except PlaywrightTimeoutError:
-        pass
-    state = page.evaluate(_EDIT_MAP_STATE_JS, node_id)
-    problem = page.locator(f'.react-flow__node[data-id="{node_id}"] [data-edit-map-problem]').all_inner_texts()
-    assert state == "drawn", f"Edit Features node {node_id}: its map ended {state!r} {problem}"
-    assert_autark_map_drawn(page, node_id, timeout=60000, attach_as=f"{node_id}'s map")
+    linked_to = body.get_attribute("data-edit-map") if body.count() else None
+    notices = body.locator("[data-curio-node-empty]").all_inner_texts()
+    assert linked_to == map_id, f"Map Edits node {node_id} edits on {linked_to!r}, not the map it is linked to, {map_id}"
+    assert body.locator('[data-testid="interaction-layers"]').count() == 1 and not notices, (
+        f"Map Edits node {node_id} lists no layers to edit: {notices}"
+    )
+    assert_autark_map_drawn(page, map_id, timeout=60000, attach_as=f"the map {node_id} edits on")
 
 #: Interactions compared before and after, keyed by workflow, in the order
 #: they run. Each frames its two nodes together, so a hover held on one still
@@ -290,7 +245,7 @@ INTERACTIONS = {
         Interaction("bar-hover", source=EXAMPLE_17_BARS, target=EXAMPLE_17_MAP, gesture="hover"),
         Interaction("map-pick", source=EXAMPLE_17_MAP, target=EXAMPLE_17_BARS, gesture="pick"),
     ),
-    # A Vega-Lite interval brush on a scatter, and an Autark map, through a pool.
+    # A Vega-Lite interval brush on a scatter, and an Autark map, joined directly.
     # A pick lights one point of 6,085, and most tracts' points are in the
     # scatter's dense band, drawn under thousands of others: in a sweep of 80
     # picks across the map, most changed fewer pixels than a gesture has to
@@ -314,7 +269,7 @@ INTERACTIONS = {
     "interaction-autark.json": (
         Interaction("plot-brush", source="ia-plot", target="ia-map", gesture="brush"),
     ),
-    # An Autark scatter's 2D brush and an Autark map, through a pool. The
+    # An Autark scatter's 2D brush and an Autark map, joined directly. The
     # roads crowd the right of the plot (intercept 27 to 35 of 0 to 35, most
     # of them above an angle of 0), so the brush spans that crowd across and
     # its upper two thirds down, and has to light at least half the roads. It
@@ -1289,14 +1244,11 @@ class TestWorkflowCanvas:
                 )
             # text mode: no output tab → nothing further to assert.
 
-        # A Compare Scenarios node shows the view it drew from its inputs.
-        for node in self.spec.nodes:
-            if node.type == COMPARE_SCENARIOS:
-                _assert_compare_view_drew(self.page, node.id)
-        # An Edit Features node shows its input drawn on its own map.
+        # A Map Edits node lists its layers, linked to the map it edits on,
+        # which drew.
         for node in self.spec.nodes:
             if node.type == EDIT_FEATURES:
-                _assert_edit_map_drew(self.page, node.id)
+                _assert_lever_map_drew(self.page, self.spec, node.id)
 
         # Every code and grammar node shows an editor and at least one marker.
         assert_editor_panes_clear_of_markers(
@@ -1326,17 +1278,18 @@ class TestWorkflowCanvas:
 
         # Each map opens framed on the layers it draws (#773): not a speck in
         # the middle of the map, nor a crop past its edges. That is every
-        # Autark map, and the map Edit Features draws with the Autark node's
-        # map code. Checked once every close-up is taken, and for every map
-        # before failing on one.
+        # Autark map, the one a Map Edits node edits on among them. Checked
+        # once every close-up is taken, and for every map before failing on
+        # one.
         maps = [
             node.id for node in self._drawing_autark_nodes()
             if "map" in json.loads(self.spec.node_code(node, "json"))
-        ] + [
-            node.id for node in self.spec.nodes
-            if node.type == EDIT_FEATURES
-            and self.page.locator(f"#autk-grammar-map-{node.id}").count()
         ]
+        for node in self.spec.nodes:
+            if node.type == EDIT_FEATURES:
+                assert set(_linked_maps(self.spec, node.id)) <= set(maps), (
+                    f"the map Map Edits node {node.id} edits on is not among the maps checked: {maps}"
+                )
         unframed = [
             problem for problem in (
                 autark_map_framing(self.page, m, min_span=FRAMED_DRAWING_SPAN.get(m, AUTK_MAP_MIN_FRAMED_SPAN))
@@ -1459,8 +1412,8 @@ class TestWorkflowCanvas:
             f"{where} redrew {step.target} instead of highlighting it"
         )
         if step.gesture == "brush" and not on_vega:
-            # The marks lit are the ones under the brush, once the selection has
-            # come back to the plot through the pool (#536).
+            # The marks lit are the ones under the brush, the selection having
+            # come back to the plot if a pool links them (#536).
             wrong = brush_mismatches(page, source_drawing)
             assert wrong is not None, f"{where} left no brush on {step.source}"
             assert not wrong, f"{where} lit the wrong marks: " + ", ".join(

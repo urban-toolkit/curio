@@ -88,8 +88,6 @@ export const useVega = ({
   upstreamErrored = false,
   hasSpec = true,
   onRedraw,
-  recordsProvenance = true,
-  forwardsInput = true,
   inputLabels,
 }: {
   data: any;
@@ -107,19 +105,6 @@ export const useVega = ({
    * arrived and it drew them.
    */
   onRedraw?: (counts: RenderCounts) => void;
-  /**
-   * Whether a compile is recorded in the node's provenance, its code being the
-   * spec. A Compare Scenarios node (#662) draws its own output: its provenance
-   * is the code that made that output, and a spec there would be offered as a
-   * version of its Python.
-   */
-  recordsProvenance?: boolean;
-  /**
-   * Whether a compile hands the node's input on as its output, as a chart
-   * does. A Compare Scenarios node's chart reads the node's own output, which
-   * its run has already handed on.
-   */
-  forwardsInput?: boolean;
   /**
    * Each input's label, in circle order: the scenario box its node is in
    * (utils/scenarios/inputScenarios). A spec that reads `inputs` names their
@@ -172,6 +157,14 @@ export const useVega = ({
   const datasetViewRef = React.useRef(false);
   const incomingSelectionRef = React.useRef<any>(data.interactions);
   incomingSelectionRef.current = data.interactions;
+  // Whether a direct selection lit rows in the view, and the first input's
+  // rows' own `interacted` flags, by row (a Data Pool's echo, or none): what
+  // those rows go back to when the selection is taken away.
+  const directAppliedRef = React.useRef(false);
+  const inputFlagsRef = React.useRef<unknown[]>([]);
+  const keepInputFlags = (rows: unknown) => {
+    inputFlagsRef.current = Array.isArray(rows) ? rows.map((row: any) => row?.interacted) : [];
+  };
 
   /**
    * Sets the `interacted` flag on the rows the view already holds of
@@ -198,13 +191,24 @@ export const useVega = ({
    * never rebuilt for it. Also re-applied after new rows arrive, so a selection
    * that is still active survives an upstream run. It picks out rows of the
    * first input, which a spec reading `inputs` draws there too, under
-   * `__input__` 0; the other inputs' rows there keep their flags.
+   * `__input__` 0; the other inputs' rows there keep their flags. When the
+   * edge goes, or the chart at its other end, the flow hands an empty list,
+   * and the rows go back to the flags the chart's input carries.
    */
   const applyDirectSelection = (view: any) => {
     const incoming = incomingSelectionRef.current;
-    if (!view || !Array.isArray(incoming) || incoming.length === 0) return;
-    const picked = new Set(matchSelections(incoming, objectRows(lastValuesRef.current)));
-    const flagOf = (t: any) => (picked.has(t.__row_index__) ? "1" : "0");
+    if (!view || !Array.isArray(incoming)) return;
+    let flagOf: (t: any) => string;
+    if (incoming.length > 0) {
+      const picked = new Set(matchSelections(incoming, objectRows(lastValuesRef.current)));
+      flagOf = (t: any) => (picked.has(t.__row_index__) ? "1" : "0");
+      directAppliedRef.current = true;
+    } else if (directAppliedRef.current) {
+      flagOf = (t: any) => String(inputFlagsRef.current[t.__row_index__] ?? "0");
+      directAppliedRef.current = false;
+    } else {
+      return;
+    }
     setInteracted(view, flagOf);
     if (heldDatasetsRef.current.some((d) => d.name === INPUTS_DATASET)) {
       setInteracted(view, (t: any) => ((t.__input__ ?? 0) === 0 ? flagOf(t) : t.interacted), INPUTS_DATASET);
@@ -310,6 +314,7 @@ export const useVega = ({
     const heldRows = heldDatasetsRef.current.find((d) => d.name === dataset)?.values;
     if (prevView && dataset && Array.isArray(echoRows) && Array.isArray(heldRows) && echoRows.length === heldRows.length) {
       setEmptyState(prepared);
+      if (echoed === 0) keepInputFlags(echoRows);
       const flagOf = (t: any) => echoRows[t.__row_index__]?.interacted ?? t.interacted;
       // A spec reading `inputs` draws that input's rows there too.
       const stacked = heldDatasetsRef.current.some((d) => d.name === INPUTS_DATASET);
@@ -333,6 +338,7 @@ export const useVega = ({
     setEmptyState(prepared);
     const values = prepared.datasets[0]?.values ?? [];
     lastValuesRef.current = values;
+    keepInputFlags(values);
     heldDatasetsRef.current = prepared.datasets;
 
     let changeset = vega
@@ -521,15 +527,14 @@ export const useVega = ({
     return true;
   };
   /**
-   * Compiles *spec* and draws it. Whether the compile is recorded in the
-   * node's provenance and hands the node's input on is the hook's to say,
-   * unless *how* says it for this draw. With `keepsSelection`, a selection made
-   * in the chart is put back in the new view and the flow goes on holding it.
-   * A chart after a Compare Scenarios node is drawn again that way when a
-   * scenario is recolored (adapters/node/vegaBehavior): as the Compare node's
-   * Chart tab draws its own, with no version and no hand-off. Without it, the
-   * selection the chart's selection tags hold is put back, or the tags are
-   * emptied (#884, `tagSelectionOf`).
+   * Compiles *spec* and draws it. The compile is recorded in the node's
+   * provenance, its code being the spec, and hands the node's input on as its
+   * output, unless *how* says otherwise for this draw. With `keepsSelection`, a
+   * selection made in the chart is put back in the new view and the flow goes
+   * on holding it. A chart reading `inputs` is drawn again that way when a
+   * scenario box is renamed or recolored (adapters/node/vegaBehavior), with no
+   * version and no hand-off. Without it, the selection the chart's selection
+   * tags hold is put back, or the tags are emptied (#884, `tagSelectionOf`).
    */
   const handleCompileGrammar = async (
     spec: string,
@@ -538,14 +543,14 @@ export const useVega = ({
     let startTime = formatDate(new Date());
 
     const counts = await compileGrammar(JSON.parse(spec), {
-      forwardsInput: how.forwardsInput ?? forwardsInput,
+      forwardsInput: how.forwardsInput ?? true,
       keepsSelection: how.keepsSelection ?? false,
     });
 
     // END COMPILE GRAMMAR
     let endTime = formatDate(new Date());
 
-    if (how.recordsProvenance ?? recordsProvenance) {
+    if (how.recordsProvenance ?? true) {
       // A chart hands on the table it read, so it returned the kind it read.
       // The input names that kind by one `dataType`.
       const typesInput = data.input?.dataType;
@@ -568,7 +573,7 @@ export const useVega = ({
 
   const compileGrammar = async (
     specObj: any,
-    how: { forwardsInput: boolean; keepsSelection: boolean } = { forwardsInput, keepsSelection: false },
+    how: { forwardsInput: boolean; keepsSelection: boolean } = { forwardsInput: true, keepsSelection: false },
   ) => {
     // Prepare before the spec is handed to vega-lite: resolving geometry can
     // inject `encoding.shape` and `projection` into `specObj`, and coerces the
@@ -579,6 +584,7 @@ export const useVega = ({
     setEmptyState(prepared);
     const values = prepared.datasets[0]?.values ?? [];
     lastValuesRef.current = values;
+    keepInputFlags(values);
     heldDatasetsRef.current = prepared.datasets;
     heldInputRef.current = data.input;
     // A spec that reads `inputs` draws every input's rows, named by their

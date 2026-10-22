@@ -19,8 +19,8 @@ from utk_curio.backend.tests.test_agents import test_routes_proposals as routes_
 from utk_curio.backend.tests.test_agents import test_routes_solve as routes_solve
 from utk_curio.backend.tests.test_agents import test_routes_turns as routes_turns
 
-NB = "agent.node-builder@1.0.0"
-DF = "agent.dataset-finder@1.0.0"
+NB = "agent.curio.node-builder@1"
+DF = "agent.curio.dataset-finder@1"
 DL = "curio.builtin/data-loading"
 CA = "curio.builtin/computation-analysis"
 
@@ -573,8 +573,8 @@ class TestSolveSourceGrounding:
         return "Plan.\n```curio.v1\n" + json.dumps({"dataflowPlan": plan}) + "\n```"
 
     def _applied_plan(self, client, user, token, project, monkeypatch, child_reply):
-        _install(client, token, project, "agent.dataflow-builder@1.0.0", NB)
-        att = _attach(client, token, project, "agent.dataflow-builder@1.0.0")
+        _install(client, token, project, "agent.curio.dataflow-builder@1", NB)
+        att = _attach(client, token, project, "agent.curio.dataflow-builder@1")
 
         def _reply(calls):
             frame = calls[-1][-1]["content"]
@@ -689,8 +689,8 @@ class TestSolveRequestedDatasets:
             f'dataset_path = curio_data_path("{asked if load_the_asked else other}")\n'
             "df = pd.read_csv(dataset_path)\nreturn df"
         )
-        _install(client, token, project, "agent.dataflow-builder@1.0.0", NB)
-        att = _attach(client, token, project, "agent.dataflow-builder@1.0.0")
+        _install(client, token, project, "agent.curio.dataflow-builder@1", NB)
+        att = _attach(client, token, project, "agent.curio.dataflow-builder@1")
         _script(monkeypatch, [
             lambda calls: loader if "[delegated task" in calls[-1][-1]["content"] else plan_tail,
         ])

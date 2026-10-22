@@ -15,7 +15,12 @@ which tag it ``Vega-Lite`` too: a template whose ``grammarId`` is
 and chicago-loop-shadow-towers since SCOUT's raster nodes declare it for the
 dataflows they are in (2026-10-18). Both are Scout's nodes since 2026-10-20
 (``curio.scout@1``): the package declares ``SCOUT`` and its two raster
-templates ``Rasters``, so the placement did not move.
+templates ``Rasters``, so the placement did not move. The routing dataflow
+gained ``Vega-Lite`` when its four charts became Scout's Bars nodes,
+example 06 ``Vega-Lite`` and ``SCOUT`` when its chart did, and
+chicago-loop-shadow-towers, lower-manhattan-park-shade and
+quad-cities-flood-vulnerability ``Vega-Lite`` when their charts did
+(2026-10-20).
 The automatic sections must reproduce it from the files alone, and the
 hand-set ones live in the files themselves.
 """
@@ -63,7 +68,7 @@ def _spec(key: str) -> dict:
 
 def test_the_golden_file_covers_every_shipped_dataflow():
     assert set(GOLDEN) == set(SHIPPED)
-    assert len(SHIPPED) == 54
+    assert len(SHIPPED) == 55
 
 
 @pytest.mark.parametrize("key", sorted(SHIPPED))
@@ -90,7 +95,7 @@ def test_sources():
         by_source.setdefault(entry.source, []).append(entry.key)
     assert sorted(by_source[SOURCE_USE_CASE]) == ["09-heterogeneous-data-linked-views"]
     assert len(by_source[SOURCE_EXAMPLE]) == 25
-    assert len(by_source[SOURCE_TEST]) == 28
+    assert len(by_source[SOURCE_TEST]) == 29
 
 
 def test_no_spec_stores_a_source():
@@ -194,17 +199,24 @@ def test_the_park_shade_dataflow_is_tagged_scout_by_its_package_nodes_alone():
 def test_the_flood_dataflow_is_tagged_scout_by_its_raster_calculators_alone():
     """``quad-cities-flood-vulnerability`` reads SCOUT's datasets, and its
     Raster Calculators are Scout's (``curio.scout``) nodes: with no dataset
-    and no code, its nodes alone still tag it, as computed tags are."""
+    and no code, its nodes alone still tag it, as computed tags are. Since
+    its charts became Scout's Bars, Points and Grouped bars (the plan
+    answering komar41's review, step 6.3), they tag it ``Vega-Lite`` too;
+    without them, its Raster Calculators alone still tag it ``SCOUT``."""
     spec = _spec("dataflows/quad-cities-flood-vulnerability")
     assert "tags" not in hand_categories(spec)
     nodes = spec["dataflow"]["nodes"]
     calculators = [n for n in nodes if n["type"] == "curio.scout/raster-calculator"]
-    assert len(calculators) == 6
+    assert len(calculators) == 7
+    charts = {n["id"]: n["type"] for n in nodes if n["type"].startswith("curio.scout/") and n not in calculators}
+    assert sorted(charts.values()) == ["curio.scout/bars", "curio.scout/grouped-bars", "curio.scout/points"]
     bare = {"dataflow": {
         **{k: v for k, v in spec["dataflow"].items() if k != "datasets"},
         "nodes": [{**n, "content": ""} for n in nodes],
     }}
-    assert derive(bare, DatasetKinds(None))["tags"] == ["Autark", "SCOUT"]
+    assert derive(bare, DatasetKinds(None))["tags"] == ["Autark", "Vega-Lite", "SCOUT"]
+    no_charts = {"dataflow": {**bare["dataflow"], "nodes": [n for n in bare["dataflow"]["nodes"] if n["id"] not in charts]}}
+    assert derive(no_charts, DatasetKinds(None))["tags"] == ["Autark", "SCOUT"]
 
 
 def test_the_charts_dataflow_is_tagged_scout_and_vega_lite_by_its_package_nodes_alone():

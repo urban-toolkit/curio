@@ -713,7 +713,7 @@ def exec():
             # launch_dir is passed to both paths in the same position: it is the
             # child's working directory, so node code addressing a file relatively
             # finds it where the in-process path would.
-            result = run_isolated(
+            return run_isolated(
                 code, str(file_path), str(node_type), str(data_type), launch_dir,
                 session_id=session_id, save_dataset=bool(save_dataset),
                 dataset_paths=dataset_paths, user_key=user_key, config=config,
@@ -721,21 +721,12 @@ def exec():
                 dataset_formats=dataset_formats, package_modules=package_modules,
                 input_slots=input_slots,
             )
-        else:
-            result = execute_code(
-                code, str(file_path), str(node_type), str(data_type), launch_dir,
-                session_id=session_id, save_dataset=bool(save_dataset),
-                dataset_paths=dataset_paths, secrets=secrets, collections=collections, media_dir=media_dir,
-                models=models, dataset_formats=dataset_formats, package_modules=package_modules,
-                input_slots=input_slots,
-            )
-
-        # A Compare Scenarios node's code hands two rasters back as a request: they
-        # are subtracted here, in this process's Node, whichever path ran the code.
-        from utk_curio.sandbox.util.scenario_difference import complete_raster_difference
-
-        return complete_raster_difference(
-            result, node_type=str(node_type), session_id=session_id, launch_dir=launch_dir,
+        return execute_code(
+            code, str(file_path), str(node_type), str(data_type), launch_dir,
+            session_id=session_id, save_dataset=bool(save_dataset),
+            dataset_paths=dataset_paths, secrets=secrets, collections=collections, media_dir=media_dir,
+            models=models, dataset_formats=dataset_formats, package_modules=package_modules,
+            input_slots=input_slots,
         )
 
     return _reply_when_run('/exec', node_type, run)

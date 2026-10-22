@@ -37,10 +37,6 @@ function generateCodeNodeSource(): string {
 const RESTORED_KEYS = [
     "spatialJoin", "simpleVis", "packageTemplateLabel", "packageTemplateConfig", "dataPool", "widgets", "copiedFrom",
     "selections",
-    // #662: a Compare Scenarios node's input labels and chart.
-    "compareScenarios",
-    // #662: an Edit Features node's edit list.
-    "editFeatures",
 ];
 
 describe("per-node settings survive a load", () => {
@@ -80,7 +76,9 @@ describe("per-node settings survive a load", () => {
         expect(typeBlock).toMatch(/widgets\?: WidgetDef\[\];/);
         expect(typeBlock).toMatch(/copiedFrom\?: string\[\];/);
         expect(typeBlock).toMatch(/selections\?: SelectionTag\[\];/);
-        expect(typeBlock).toMatch(/compareScenarios\?: CompareSettings;/);
-        expect(typeBlock).toMatch(/editFeatures\?: EditFeaturesSettings;/);
+    });
+
+    test("a Map Edits node's edits are in its code: an old save's metadata.editFeatures is left out", () => {
+        expect(USE_CODE).not.toMatch(/editFeatures/);
     });
 });

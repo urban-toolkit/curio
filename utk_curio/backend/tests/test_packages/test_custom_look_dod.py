@@ -261,8 +261,8 @@ class TestDodThroughTheResearcher:
     requirements → the Node Builder's writing mode returns the draft → the runtime
     mints the reviewed proposal → Apply installs and creates colored notes."""
 
-    RESEARCHER = "agent.researcher@1.0.0"
-    NODE_BUILDER = "agent.node-builder@1.0.0"
+    RESEARCHER = "agent.curio.researcher@1"
+    NODE_BUILDER = "agent.curio.node-builder@1"
 
     def _auth(self, token):
         return {"Authorization": f"Bearer {token}"}
@@ -348,8 +348,8 @@ class TestCoolRoofsScenario:
     requirements → runtime-minted draft → Apply → a colored note carrying
     the finding and its source link."""
 
-    RESEARCHER = "agent.researcher@1.0.0"
-    NODE_BUILDER = "agent.node-builder@1.0.0"
+    RESEARCHER = "agent.curio.researcher@1"
+    NODE_BUILDER = "agent.curio.node-builder@1"
 
     def _auth(self, token):
         return {"Authorization": f"Bearer {token}"}
@@ -505,7 +505,7 @@ class TestCurioNotesRetry:
     (self-contained markdown-lite), through mint → build → preview → Apply
     at the Node Builder's own attachment, which holds the draft tool."""
 
-    COORD = "agent.node-builder@1.0.0"
+    COORD = "agent.curio.node-builder@1"
 
     def _auth(self, token):
         return {"Authorization": f"Bearer {token}"}
@@ -590,8 +590,8 @@ class TestReuseFirstNoteCreation:
     authorable, and (2) the VERSIONED canonical id — which the spec and
     applied nodes themselves carry — was refused by the exact-match gate."""
 
-    RESEARCHER = "agent.researcher@1.0.0"
-    NODE_BUILDER = "agent.node-builder@1.0.0"
+    RESEARCHER = "agent.curio.researcher@1"
+    NODE_BUILDER = "agent.curio.node-builder@1"
 
     def _auth(self, token):
         return {"Authorization": f"Bearer {token}"}

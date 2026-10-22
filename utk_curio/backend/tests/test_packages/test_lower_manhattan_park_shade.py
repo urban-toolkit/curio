@@ -15,23 +15,28 @@ context:
   within the Distance from a park (a Parameter, 75 m) of any park;
 - the Season Parameter, which every Accumulated Shadow reads.
 
-Three scenarios: Existing; Towers removed, whose Interaction node removes the
-marked parts; and Height cap, whose Interaction node cuts them down to the
+Three scenarios: Existing; Towers removed, whose Map Edits node removes the
+marked parts; and Height cap, whose Map Edits node cuts them down to the
 Tall building height. Each rasterizes its buildings
 (``curio.scout@1``), runs Deep Umbra on them
 (``model.scout.deep-umbra@1``), measures the shade in each park, and draws its
-buildings in 3D and its shadow on Autark maps. Compare Scenarios nodes chart
-each park's mean minutes of shadow in the three scenarios and take, for each
-what-if, the change in shadow cell by cell and each park's change in shade,
-each drawn by an Autark map after it.
+buildings in 3D and its shadow on Autark maps; each what-if's Map Edits node
+is linked to its buildings map, which it edits on. Scout's Dots with a range
+charts each park's mean minutes of shadow in the three scenarios, and for
+each what-if a Raster Calculator (``curio.scout@1``) takes the change in
+shadow cell by cell and a Python node each park's change in shade, each drawn
+by an Autark map after it. Until the plan answering komar41's review (step
+6.3), Compare Scenarios nodes did all three.
 
 The first tests read the file. The others run it as written, once for the
 module, on the extract and with no socket: the data node compiled and run as
-a run on the server runs it (``test_autk_server_data_load.py``), every code
-node in the sandbox with its package's modules and the model's weights, and
-Compare Scenarios' raster differences completed in Node. What does not depend
-on the model is pinned exactly: the layers, the parks, the rule, the levers
-and the rasters' grid. Deep Umbra's minutes are pinned within 1 minute a park:
+a run on the server runs it (``test_autk_server_data_load.py``), and every
+code node in the sandbox with its package's modules and the model's weights.
+The chart's rows and the changes are held to what the Compare Scenarios nodes
+the dataflow held wrote from the same values (``_support/scenario_changes.py``
+and the shadows' own cells). What does not depend on the model is pinned
+exactly: the layers, the parks, the
+rule, the levers and the rasters' grid. Deep Umbra's minutes are pinned within 1 minute a park:
 onnxruntime's output moves with its thread count past 16
 (``test_scout_shadow.py``), and at 32 and 64 threads a park's mean moved by at
 most 0.39 minutes from a run on 8.
@@ -64,8 +69,19 @@ INTERACTION = "curio.builtin/edit-features"
 COMPARE = "curio.builtin/compare-scenarios"
 RASTERIZE = "curio.scout/rasterize-buildings"
 SHADOW = "model.scout.deep-umbra/accumulated-shadow"
+CALCULATOR = "curio.scout/raster-calculator"
+DOTS = "curio.scout/dots-with-a-range"
+#: The chart and the changes, which keep the ids of the Compare Scenarios nodes
+#: they replaced.
+CHART = "park-shade-chart"
+#: The chart's widgets: the park on its Y axis and each scenario's mean minutes
+#: on its X axis, each titled by its column, as Compare titled its grouped bars
+#: of the minutes as they are.
+CHART_WIDGETS = {"category": "park", "value": "mean_min", "x_title": "mean_min", "y_title": "park"}
+#: What each what-if's change says it does, in its comment.
+DOING = {"towers-removed": "removing the towers", "height-cap": "cutting the towers down"}
 
-#: The scenarios, in the order every Compare Scenarios node reads them, and the
+#: The scenarios, in the order the chart and every change read them, and the
 #: key of each scenario's nodes.
 SCENARIOS = [
     ("existing", "Existing", "#2a9d8f", "existing"),
@@ -156,9 +172,9 @@ MEANS = {
     },
 }
 
-#: The code each Interaction node writes from its edit log (editFeaturesCode).
+#: The code each Map Edits node writes from its edits (editFeaturesCode).
 EDIT_NOTE = (
-    "# Edit Features writes this code from its edit list: each edit, in the\n"
+    "# Map Edits writes this code from its edit list: each edit, in the\n"
     "# order it was made, on the features whose key is one of its ids. It is\n"
     "# written again when the list changes.\n"
 )
@@ -183,31 +199,15 @@ LEVERS = {
     ),
 }
 
-#: The code a Compare Scenarios node writes for its inputs (compareCode).
-STACK_NOTE = (
-    "# Compare Scenarios writes this code from its inputs: each input, under the\n"
-    "# id and the name of its scenario. It is written again when they change.\n"
-)
-DIFFERENCE_NOTE = (
-    "# Compare Scenarios writes this code from its inputs: input_1 minus input_0,\n"
-    "# each under the id and the name of its scenario. It is written again when\n"
-    "# they change.\n"
-)
-CHART_CODE = STACK_NOTE + (
-    "return curio_stack_scenarios([\n"
-    '    ("existing", "Existing", [!! input_0 !!]),\n'
-    '    ("towers-removed", "Towers removed", [!! input_1 !!]),\n'
-    '    ("height-cap", "Height cap", [!! input_2 !!]),\n'
-    "])\n"
-)
-
-
-def _difference_code(scenario: str, name: str, key: str = "") -> str:
-    return DIFFERENCE_NOTE + (
-        "return curio_difference_scenarios([\n"
-        '    ("existing", "Existing", [!! input_0 !!]),\n'
-        f'    ("{scenario}", "{name}", [!! input_1 !!]),\n'
-        f"]{f', key={json.dumps(key)}' if key else ''})\n"
+def _change_code(scenario: str, name: str) -> str:
+    """A what-if's change in shadow: its Raster Calculator's code."""
+    return (
+        f"# {name}'s accumulated shadow, on input_1, minus Existing's, on\n"
+        f"# input_0, cell by cell, in minutes: below zero where {DOING[scenario]}\n"
+        "# takes shadow away, 0 where nothing changes.\n"
+        "from scout_rasters.raster_algebra import raster_calculate\n"
+        "\n"
+        'return raster_calculate("subtract", [input_1, input_0], output_file=curio_output_file)\n'
     )
 
 
@@ -220,8 +220,12 @@ SHADOW_RANGE = [0, 720]
 CHANGE_RANGE = [-720, 720]
 
 
-def _map(get_fnv, interpolator, color_range, title, *, quantitative=False, center=None) -> dict:
-    layer = {"dataRef": "[!! input_0 !!]", "getFnv": get_fnv}
+def _map(get_fnv, interpolator, color_range, title, *, quantitative=False, center=None, pick_by=None) -> dict:
+    layer = {"dataRef": "[!! input_0 !!]"}
+    if pick_by is not None:
+        layer["isPick"] = True
+        layer["selectFields"] = [pick_by]
+    layer["getFnv"] = get_fnv
     if quantitative:
         layer["getFnvType"] = "quantitative"
     layer["colorMapInterpolator"] = interpolator
@@ -263,9 +267,10 @@ def _node_id(key: str, what: str) -> str:
 def test_it_is_three_scenarios_over_one_context_from_the_extract():
     """One Autark data node, three Parameter nodes and three code nodes are the
     context; each scenario holds its lever (none in Existing), its package
-    nodes, its shade per park and its two maps; the Compare Scenarios nodes
-    and the maps after them are in no scenario. No dataset: the data comes
-    from the extract. The lockfile names both packages."""
+    nodes, its shade per park and its two maps; the chart, the changes and
+    the maps after the changes are in no scenario, and no Compare Scenarios
+    node is left. No dataset: the data comes from the extract. The lockfile
+    names both packages."""
     spec = _dataflow()
     assert spec["name"] == NAME
     assert spec["packages"] == ["curio.scout@1", "model.scout.deep-umbra@1"]
@@ -291,8 +296,13 @@ def test_it_is_three_scenarios_over_one_context_from_the_extract():
         types = sorted(nodes[n]["type"] for n in scenarios[scenario]["nodes"])
         lever = [] if scenario == "existing" else [INTERACTION]
         assert types == sorted([*lever, RASTERIZE, SHADOW, PYTHON, AUTARK, AUTARK]), (scenario, types)
-    assert sorted(nodes[n]["type"] for n in below) == sorted([COMPARE] * 5 + [AUTARK] * 4), below
-    after = sorted(nodes[e["target"]]["type"] for e in spec["edges"] if nodes[e["source"]]["type"] == COMPARE)
+    assert sorted(nodes[n]["type"] for n in below) == sorted(
+        [DOTS] + [CALCULATOR] * 2 + [PYTHON] * 2 + [AUTARK] * 4), below
+    assert COMPARE not in {node["type"] for node in spec["nodes"]}
+    # The chart feeds nothing; each change feeds one Autark map.
+    changes = {n for n in below if nodes[n]["type"] in (CALCULATOR, PYTHON)}
+    assert not [e for e in spec["edges"] if e["source"] == CHART]
+    after = sorted(nodes[e["target"]]["type"] for e in spec["edges"] if e["source"] in changes)
     assert after == [AUTARK] * 4, after
 
 
@@ -360,7 +370,9 @@ def test_the_wiring_reads_each_input_where_its_code_does():
     """Building heights and Open-air parks read the loader's layers by name;
     each scenario's chain starts at Building heights (Existing) or at its
     lever, which reads Buildings around parks; each Shade per park reads its
-    shadow on input_0 and the parks on input_1."""
+    shadow on input_0 and the parks on input_1. Each lever is linked to the
+    buildings map it feeds by an interaction edge, from its in/out dot to the
+    map's, for selections both ways: the dataflow's only interaction edges."""
     spec = _dataflow()
     nodes = _nodes(spec)
     into = _into(spec)
@@ -386,59 +398,94 @@ def test_the_wiring_reads_each_input_where_its_code_does():
         assert (into[(_node_id(key, "shade"), "in")], into[(_node_id(key, "shade"), "in_1")]) == (
             _node_id(key, "shadow"), "park-shade-parks",
         )
+    links = sorted((e["source"], e["target"], e["sourceHandle"], e["targetHandle"])
+                   for e in spec["edges"] if e.get("type") == "Interaction")
+    assert links == sorted(
+        (_node_id(key, "lever"), _node_id(key, "buildings-map"), "in/out", "in/out") for _s, _n, _c, key in SCENARIOS[1:]
+    ), links
 
 
 def test_the_levers_are_interaction_nodes_whose_code_is_their_log():
-    """Towers removed and Height cap are Interaction nodes keyed on
+    """Towers removed and Height cap are Map Edits nodes keyed on
     building_id, each with one labelled edit picked by the condition
-    around_park, so a user can add more and press Update results; each node's
-    code is the code it writes from its log."""
+    around_park, so a user can add more and press Commit edits; each node's
+    code, its only state, is the code it writes from its log: one call that
+    carries the log, and no metadata key holds the log too."""
+    from utk_curio.sandbox.util.input_names import call_as_node
+
     nodes = _nodes(_dataflow())
     for scenario, name, _color, key in SCENARIOS[1:]:
         lever = nodes[_node_id(key, "lever")]
         settings, code = LEVERS[scenario]
         assert (lever["type"], lever["title"]) == (INTERACTION, name)
-        assert lever["metadata"]["editFeatures"] == settings
+        assert "editFeatures" not in lever["metadata"], lever["metadata"]
         assert lever["content"] == code
+        calls = []
+        call_as_node(
+            textwrap.indent(lever["content"], "    "),
+            {"curio_edit_features": lambda value, edits, **kwargs: calls.append((value, edits, kwargs))},
+            "the buildings", [0],
+        )
+        assert calls == [("the buildings", settings["edits"], {"key": settings["key"]})], (scenario, calls)
 
 
-def test_the_compare_nodes_hold_the_code_they_write():
-    """One chart of each park's mean minutes in the three scenarios, as
-    grouped bars; for each what-if, a Difference of the shadow rasters and a
-    Difference of the parks' shade matched by the park's name."""
-    nodes = _nodes(_dataflow())
-    labels = [{"scenario": s, "name": n, "color": c} for s, n, c, _key in SCENARIOS]
-    chart = nodes["park-shade-chart"]
-    assert chart["content"] == CHART_CODE
-    assert chart["metadata"]["compareScenarios"] == {
-        "inputs": labels, "mode": "chart",
-        "chart": {"preset": "grouped-bar", "x": "park", "y": "mean_min", "aggregate": "none"},
-    }
+def test_the_chart_and_the_changes_hold_what_they_compare():
+    """One chart of each park's mean minutes in the three scenarios: Scout's
+    Dots with a range, its spec its template's own, a park per row and a dot
+    per scenario, reading the three Shade per park nodes in the order of
+    their boxes. For each what-if, a Raster Calculator of the what-if's
+    shadow minus Existing's, and a Python node of the what-if's shade per park
+    minus Existing's, matched by the park's name, each reading Existing's on
+    input_0 and the what-if's on input_1, as Compare Scenarios' Difference
+    read them. The two what-ifs' codes differ only in the what-if's name."""
+    spec = _dataflow()
+    nodes = _nodes(spec)
+    into = _into(spec)
+    chart = nodes[CHART]
+    template, source = _template(RASTER_PACKAGE, DOTS)
+    assert (chart["type"], chart["content"]) == (DOTS, source)
+    assert set(chart["metadata"]) == {"keywords", "widgets"}, chart["metadata"]
+    assert [{k: v for k, v in w.items() if k != "value"} for w in chart["metadata"]["widgets"]] == template["widgets"]
+    assert {w["name"]: w["value"] for w in chart["metadata"]["widgets"]} == CHART_WIDGETS
+    assert [into[(CHART, circle)] for circle in ("in", "in_1", "in_2")] == [
+        _node_id(key, "shade") for _s, _n, _c, key in SCENARIOS
+    ]
+    codes = {}
     for scenario, name, _color, key in SCENARIOS[1:]:
-        pair = [labels[0], next(label for label in labels if label["scenario"] == scenario)]
         change, park_change = nodes[f"park-shade-{key}-change"], nodes[f"park-shade-{key}-park-change"]
-        assert change["content"] == _difference_code(scenario, name)
-        assert change["metadata"]["compareScenarios"] == {"inputs": pair, "mode": "difference"}
-        assert park_change["content"] == _difference_code(scenario, name, key="park")
-        assert park_change["metadata"]["compareScenarios"] == {
-            "inputs": pair, "mode": "difference", "difference": {"key": "park"},
-        }
+        assert (change["type"], change["content"]) == (CALCULATOR, _change_code(scenario, name)), scenario
+        assert (into[(change["id"], "in")], into[(change["id"], "in_1")]) == (
+            _node_id("existing", "shadow"), _node_id(key, "shadow"),
+        )
+        assert park_change["type"] == PYTHON, scenario
+        assert 'before, after = input_0.set_index("park"), input_1.set_index("park")\n' in park_change["content"]
+        assert "\nout[numbers] = now - was\n" in park_change["content"]
+        assert (into[(park_change["id"], "in")], into[(park_change["id"], "in_1")]) == (
+            _node_id("existing", "shade"), _node_id(key, "shade"),
+        )
+        for node in (change, park_change):
+            assert node["metadata"] == {"keywords": []}, node["id"]
+        codes[scenario] = park_change["content"]
+    assert codes["towers-removed"].replace("Towers removed", "Height cap") == codes["height-cap"]
 
 
 def test_every_map_is_valid_and_the_maps_side_by_side_share_one_range(tmp_path):
     """Each scenario's buildings in 3D over the rasterizers' height range and
-    its shadow over a summer day's minutes; each what-if's change in shadow on
-    a scale centered on no change, and each park's change on a scale whose
-    middle stays visible, both over the same minutes either way. Every
-    document is valid for the grammar."""
+    its shadow over a summer day's minutes; each what-if's buildings picked by
+    building_id, the column its lever's edits find them by, as the map the
+    lever edits on; each what-if's change in shadow on a scale centered on no
+    change, and each park's change on a scale whose middle stays visible, both
+    over the same minutes either way. Every document is valid for the
+    grammar."""
     from utk_curio.backend.app.agents.domain import document_validation
 
     spec = _dataflow()
     nodes = _nodes(spec)
     expected = {}
-    for _scenario, _name, _color, key in SCENARIOS:
+    for scenario, _name, _color, key in SCENARIOS:
         expected[_node_id(key, "buildings-map")] = _map(
-            "height", "interpolateViridis", HEIGHT_RANGE, "Building height (m)", quantitative=True)
+            "height", "interpolateViridis", HEIGHT_RANGE, "Building height (m)", quantitative=True,
+            pick_by=None if scenario == "existing" else LEVERS[scenario][0]["key"])
         expected[_node_id(key, "shadow-map")] = _map(
             "band_1", "interpolateReds", SHADOW_RANGE, "Accumulated shadow (minutes)")
     for _scenario, name, _color, key in SCENARIOS[1:]:
@@ -495,6 +542,7 @@ _FETCH_FROM_DISK = """{
 #: own, then Scout's, which its package names in ``dependencies.packages``.
 _PACKAGE_MODULES = {
     RASTERIZE: {"root": str(RASTER_PACKAGE / "sources"), "names": [RASTER_MODULE]},
+    CALCULATOR: {"root": str(RASTER_PACKAGE / "sources"), "names": [RASTER_MODULE]},
     SHADOW: [
         {"root": str(MODEL_PACKAGE / "sources"), "names": ["deep_umbra"]},
         {"root": str(RASTER_PACKAGE / "sources"), "names": [RASTER_MODULE]},
@@ -518,13 +566,10 @@ def _load_layers(content: str) -> list:
 def _run_code(node: dict, inputs: list, shared: list, media: Path):
     """*node*'s code, its references resolved as a run resolves them, run in
     the sandbox on *inputs* (one value per circle, each saved as its own
-    upstream output): ``(the value it hands on, what it printed)``. A Compare
-    Scenarios node's raster difference is completed as the sandbox completes
-    it."""
+    upstream output): ``(the value it hands on, what it printed)``."""
     from utk_curio.backend.app.execution.code_references import resolve_references
     from utk_curio.sandbox.app.worker import execute_code
     from utk_curio.sandbox.util.parsers import load_from_duckdb, save_to_duckdb
-    from utk_curio.sandbox.util.scenario_difference import complete_raster_difference
 
     widgets = (node.get("metadata") or {}).get("widgets") or []
     code, problems = resolve_references(
@@ -542,16 +587,15 @@ def _run_code(node: dict, inputs: list, shared: list, media: Path):
         save_dataset=False, media_dir=str(media), package_modules=_PACKAGE_MODULES.get(node["type"]),
         models={MODEL_ID: str(MODEL_PACKAGE)}, input_slots=list(range(len(inputs))),
     )
-    if node["type"] == COMPARE:
-        result = complete_raster_difference(result, node_type=node["type"], launch_dir=str(REPO))
     assert result["stderr"] == "", f"{node['id']}: {result['stderr']}"
     return load_from_duckdb(result["output"]["path"]), result["stdout"]
 
 
 @pytest.fixture(scope="module")
 def ran(tmp_path_factory):
-    """Every node of the dataflow run as written, once for the module:
-    ``{node id: (value, printed)}``, the data node's value its layers."""
+    """Every node of the dataflow run as written, once for the module, but the
+    chart, which draws in the browser: ``{node id: (value, printed)}``, the
+    data node's value its layers."""
     from utk_curio.cli import dependencies
     from utk_curio.sandbox.app.worker import _worker_init
     from utk_curio.sandbox.util.db import init_db, release_connection
@@ -584,7 +628,6 @@ def ran(tmp_path_factory):
                  "park-shade-removed-lever", "park-shade-capped-lever"]
         for _scenario, _name, _color, key in SCENARIOS:
             order += [_node_id(key, "rasterize"), _node_id(key, "shadow"), _node_id(key, "shade")]
-        order += ["park-shade-chart"]
         for _scenario, _name, _color, key in SCENARIOS[1:]:
             order += [f"park-shade-{key}-change", f"park-shade-{key}-park-change"]
         for node_id in order:
@@ -595,6 +638,14 @@ def ran(tmp_path_factory):
 
 def _value(ran, node_id):
     return ran[node_id][0]
+
+
+def _through_the_store(value):
+    """*value* as a node reads it on a circle: saved as an upstream output,
+    and read back."""
+    from utk_curio.sandbox.util.parsers import load_from_duckdb, save_to_duckdb
+
+    return load_from_duckdb(save_to_duckdb(value, node_id="park-shade-input"))
 
 
 def test_the_loader_hands_on_the_parks_and_every_building_part(ran):
@@ -651,7 +702,7 @@ def test_towers_removed_hands_on_every_part_but_the_marked_ones(ran):
     assert not removed["around_park"].any()
     kept = marked[~marked["around_park"]]
     assert removed["height"].tolist() == kept["height"].tolist()
-    assert printed == [f"Interaction: the input, features matched on building_id: {MARKED_ROWS} removed."]
+    assert printed == [f"Map Edits: the input, features matched on building_id: {MARKED_ROWS} removed."]
 
 
 def test_height_cap_cuts_the_marked_parts_to_the_tall_building_height(ran):
@@ -661,7 +712,7 @@ def test_height_cap_cuts_the_marked_parts_to_the_tall_building_height(ran):
     assert (capped.loc[marked["around_park"].to_numpy(), "height"] == TALL_HEIGHT_M).all()
     assert (capped.loc[~marked["around_park"].to_numpy(), "height"].to_numpy()
             == marked.loc[~marked["around_park"], "height"].to_numpy()).all()
-    assert printed == [f"Interaction: the input, features matched on building_id: {MARKED_ROWS} changed."]
+    assert printed == [f"Map Edits: the input, features matched on building_id: {MARKED_ROWS} changed."]
 
 
 def test_the_three_scenarios_rasters_share_one_grid(ran):
@@ -699,12 +750,28 @@ def test_each_park_has_its_minutes_of_shadow_and_the_levers_take_shadow_away(ran
 
 
 def test_the_chart_stacks_the_three_scenarios_parks(ran):
-    stacked = _value(ran, "park-shade-chart")
-    assert list(stacked.columns[:2]) == ["scenario", "scenario_name"]
-    assert len(stacked) == 3 * len(PARKS)
+    """The rows the chart reads, its ``inputs`` dataset as a chart stacks it
+    (``stack_inputs``, the twin of the browser's): each scenario's parks in
+    circle order, under its box's id and name, each row what Compare
+    Scenarios' stacked table held for it (``stacked_rows``), its outline left
+    out."""
+    from utk_curio.backend.tests._support.scenario_changes import stacked_rows
+    from utk_curio.sandbox.util.scenario_stack import stack_inputs
+
+    spec = _dataflow()
+    assert _nodes(spec)[CHART]["type"] == DOTS, _nodes(spec)[CHART]["type"]
+    into = _into(spec)
+    box = {node_id: (s["id"], s["name"]) for s in spec["scenarios"] for node_id in s["nodes"]}
+    entries = [(*box[into[(CHART, circle)]], _value(ran, into[(CHART, circle)])) for circle in ("in", "in_1", "in_2")]
+    rows = stack_inputs(entries)
+    stacked = stacked_rows(entries)
+    assert all(list(row)[:2] == ["scenario", "scenario_name"] for row in stacked)
+    assert len(stacked) == len(rows) == 3 * len(PARKS)
     for scenario, name, _color, _key in SCENARIOS:
-        rows = stacked[stacked["scenario"] == scenario]
-        assert set(rows["scenario_name"]) == {name} and list(rows["park"]) == PARKS
+        held = [row for row in stacked if row["scenario"] == scenario]
+        assert {row["scenario_name"] for row in held} == {name} and [row["park"] for row in held] == PARKS
+    assert [row["__input__"] for row in rows] == [circle for circle in range(3) for _park in PARKS]
+    assert [{k: v for k, v in row.items() if k != "__input__"} for row in rows] == stacked
 
 
 def test_each_parks_change_in_shade_is_the_what_if_minus_existing(ran):
@@ -719,22 +786,190 @@ def test_each_parks_change_in_shade_is_the_what_if_minus_existing(ran):
             assert row.mean_min < 0, (scenario, row.park)
 
 
-def test_each_what_ifs_change_in_shadow_is_a_raster_on_the_shadows_grid(ran):
-    """Compare Scenarios subtracts the shadows cell by cell on their own grid:
-    each what-if takes shadow away on the whole, by at most a day's minutes."""
-    import base64
-    import struct
+def test_each_parks_change_is_what_compares_difference_wrote(ran, tmp_path):
+    """Each what-if's park change, run as written, is what Compare Scenarios'
+    Difference keyed on the park wrote for the same two inputs
+    (``keyed_change``): the same columns in the same order, ``park`` first and
+    ``change`` second, each of their types, every value and outline, and the
+    coordinate system. With the what-if's parks in the opposite order each
+    park is still matched by its name, as Compare matched it, and the change
+    is the same."""
+    from geopandas.testing import assert_geodataframe_equal
 
-    shadow = _value(ran, _node_id("existing", "shadow"))
-    a, _b, c, _d, e, f = tuple(shadow.transform)[:6]
+    from utk_curio.backend.tests._support.scenario_changes import keyed_change
+
+    nodes = _nodes(_dataflow())
+    existing = _value(ran, _node_id("existing", "shade"))
     for scenario, _name, _color, key in SCENARIOS[1:]:
-        envelope = _value(ran, f"park-shade-{key}-change")
-        assert envelope["dataType"] == "raster", (scenario, envelope.get("dataType"))
-        grid = envelope["data"]["grid"]
-        assert (grid["crs"], grid["width"], grid["height"]) == ("EPSG:3395", *GRID)
-        assert (grid["originX"], grid["originY"], grid["resX"], grid["resY"]) == (c, f, a, e)
-        raw = base64.b64decode(envelope["data"]["features"][0]["properties"]["band_1"]["float32le"])
-        cells = [v for v in struct.unpack(f"<{len(raw) // 4}f", raw) if not math.isnan(v)]
-        mean = sum(cells) / len(cells)
-        assert min(cells) < -100 and mean < 0, (scenario, min(cells), mean)
-        assert -720 <= min(cells) and max(cells) <= 720, (scenario, min(cells), max(cells))
+        assert nodes[f"park-shade-{key}-park-change"]["type"] == PYTHON, scenario
+        what_if = _value(ran, _node_id(key, "shade"))
+        ours = _value(ran, f"park-shade-{key}-park-change")
+        compares = keyed_change(_through_the_store(existing), _through_the_store(what_if), "park")
+        assert list(ours.columns)[:2] == ["park", "change"], list(ours.columns)
+        assert list(ours.columns) == list(compares.columns)
+        assert ours.dtypes.astype(str).tolist() == compares.dtypes.astype(str).tolist()
+        assert_geodataframe_equal(ours, compares)
+        assert ours.crs.to_epsg() == 4326
+        reversed_parks = what_if.iloc[::-1].reset_index(drop=True)
+        assert list(reversed_parks["park"]) == PARKS[::-1]
+        again, _printed = _run_code(nodes[f"park-shade-{key}-park-change"], [existing, reversed_parks], [],
+                                    tmp_path / "media")
+        assert_geodataframe_equal(
+            again, keyed_change(_through_the_store(existing), _through_the_store(reversed_parks), "park"),
+        )
+        assert_geodataframe_equal(again, ours)
+
+
+#: The park the what-if leaves out, and the one Existing leaves out, in the
+#: next test.
+LEFT_OUT, ONLY_IN_THE_WHAT_IF = "Coenties Slip", "Bowling Green"
+
+
+def test_a_park_one_side_lacks_is_removed_or_added_as_compare_wrote_it(ran, tmp_path):
+    """A user's edit can leave a park out of one scenario. Each what-if's park
+    change then writes what Compare Scenarios' Difference keyed on the park
+    wrote (``keyed_change``): a park only Existing has is ``removed``, in
+    Existing's order, its numbers empty and its outline Existing's; a park
+    only the what-if has is ``added``, after every park of Existing's, its
+    numbers empty and its outline the what-if's. Every other park is the
+    what-if's minus Existing's, as before."""
+    import numpy as np
+    from geopandas.testing import assert_geodataframe_equal
+
+    from utk_curio.backend.tests._support.scenario_changes import keyed_change
+
+    nodes = _nodes(_dataflow())
+    existing = _value(ran, _node_id("existing", "shade"))
+    numbers = ["area_m2", "cells", "mean_min", "median_min", "p90_min", "pct_daylight",
+               "share_sun", "share_partial", "share_deep"]
+    for scenario, _name, _color, key in SCENARIOS[1:]:
+        node = nodes[f"park-shade-{key}-park-change"]
+        assert node["type"] == PYTHON, scenario
+        what_if = _value(ran, _node_id(key, "shade"))
+        cases = {
+            "removed": (existing, what_if[what_if["park"] != LEFT_OUT].reset_index(drop=True)),
+            "added": (existing[existing["park"] != ONLY_IN_THE_WHAT_IF].reset_index(drop=True), what_if),
+        }
+        for change, inputs in cases.items():
+            ours, _printed = _run_code(node, list(inputs), [], tmp_path / "media")
+            compared = keyed_change(*(_through_the_store(value) for value in inputs), "park")
+            assert list(ours.columns) == list(compared.columns), (scenario, change)
+            assert ours.dtypes.astype(str).tolist() == compared.dtypes.astype(str).tolist(), (scenario, change)
+            assert_geodataframe_equal(ours, compared)
+            park = LEFT_OUT if change == "removed" else ONLY_IN_THE_WHAT_IF
+            expected_order = PARKS if change == "removed" else [p for p in PARKS if p != park] + [park]
+            assert list(ours["park"]) == expected_order, (scenario, change)
+            (row,) = ours.index[ours["park"] == park]
+            assert ours.loc[row, "change"] == change, (scenario, change)
+            assert ours.loc[row, numbers].isna().all(), (scenario, change)
+            outline = inputs[0 if change == "removed" else 1]
+            assert ours.geometry[row].equals_exact(outline.geometry[outline["park"] == park].iloc[0], 1e-9), (
+                scenario, change)
+            others = ours[ours["park"] != park]
+            assert set(others["change"]) == {"changed"}, (scenario, change)
+            assert np.allclose(
+                others["mean_min"].to_numpy(),
+                what_if.set_index("park").loc[others["park"], "mean_min"].to_numpy()
+                - existing.set_index("park").loc[others["park"], "mean_min"].to_numpy(),
+                rtol=0, atol=1e-9,
+            ), (scenario, change)
+
+
+#: What Compare Scenarios' own functions wrote on fixed Shade per park tables
+#: (``park_shade_inputs``), from main before step 6.4 of the plan answering
+#: komar41's review removed them (``make_compare_fixtures.py`` beside it, on
+#: 72f5d3df5). Deep Umbra's shadow moves with onnxruntime's thread count, so a
+#: fixture of a run's shadow would hold one machine's numbers.
+COMPARE_FIXTURE = Path(__file__).resolve().parent / "fixtures" / "compare_scenarios" / "park_shade.json"
+
+
+def test_each_parks_change_on_fixed_tables_is_what_compare_wrote(ran, tmp_path):
+    """On Shade per park tables of fixed numbers, each what-if's park change,
+    run as written, is what Compare Scenarios' Difference keyed on the park
+    wrote (``park_shade.json``): every column, type, value and outline, also
+    with the what-if's parks reversed, and with a park left out of one side.
+    ``keyed_change`` writes the same."""
+    from utk_curio.backend.tests._support.scenario_changes import (
+        assert_frame_matches,
+        keyed_change,
+        park_shade_inputs,
+    )
+
+    held = json.loads(COMPARE_FIXTURE.read_text(encoding="utf-8"))
+    nodes = _nodes(_dataflow())
+    tables = park_shade_inputs(PARKS)
+    existing = tables["existing"]
+    for scenario, _name, _color, key in SCENARIOS[1:]:
+        node = nodes[f"park-shade-{key}-park-change"]
+        assert node["type"] == PYTHON, scenario
+        what_if = tables[scenario]
+        cases = {
+            "change": ([existing, what_if], held["change"][scenario]),
+            "reversed": ([existing, what_if.iloc[::-1].reset_index(drop=True)], held["change"][scenario]),
+            "removed": ([existing, what_if[what_if["park"] != LEFT_OUT].reset_index(drop=True)],
+                        held["oneSide"][scenario]["removed"]),
+            "added": ([existing[existing["park"] != ONLY_IN_THE_WHAT_IF].reset_index(drop=True), what_if],
+                      held["oneSide"][scenario]["added"]),
+        }
+        for case, (inputs, fixture) in cases.items():
+            ours, _printed = _run_code(node, inputs, [], tmp_path / "media")
+            assert_frame_matches(ours, fixture, what=f"the park change, {scenario}, {case}")
+            rule = _through_the_store(keyed_change(*(_through_the_store(value) for value in inputs), "park"))
+            assert_frame_matches(rule, fixture, what=f"keyed_change, {scenario}, {case}")
+
+
+def test_the_chart_stacks_fixed_tables_as_compare_stacked_them(ran):
+    """On the same fixed tables, the rows the chart reads (``stack_inputs``)
+    are what Compare Scenarios' stacked table held (``park_shade.json``), the
+    outlines left out, and so are ``stacked_rows``."""
+    from utk_curio.backend.tests._support.scenario_changes import (
+        assert_rows_match,
+        park_shade_inputs,
+        stacked_rows,
+    )
+    from utk_curio.sandbox.util.scenario_stack import stack_inputs
+
+    held = json.loads(COMPARE_FIXTURE.read_text(encoding="utf-8"))["stack"]["rows"]
+    tables = park_shade_inputs(PARKS)
+    entries = [(scenario, name, _through_the_store(tables[scenario])) for scenario, name, _color, _key in SCENARIOS]
+    rows = stack_inputs(entries)
+    assert [row["__input__"] for row in rows] == [circle for circle in range(3) for _park in PARKS]
+    assert_rows_match([{k: v for k, v in row.items() if k != "__input__"} for row in rows], held,
+                      what="the chart's rows")
+    assert_rows_match(stacked_rows(entries), held, what="stacked_rows")
+
+
+def test_each_what_ifs_change_in_shadow_is_a_raster_on_the_shadows_grid(ran):
+    """Each what-if's Raster Calculator subtracts the shadows cell by cell on
+    their own grid, the what-if's minus Existing's: each takes shadow away on
+    the whole, by at most a day's minutes. It is, cell for cell, what Compare
+    Scenarios' Difference took from the same shadows, to within float32's last
+    places: each shadow's float32 cells, the what-if's minus Existing's, the
+    difference written as float32, and no value where either shadow has
+    none."""
+    import numpy as np
+
+    nodes = _nodes(_dataflow())
+    shadow = _value(ran, _node_id("existing", "shadow"))
+    before = shadow.read(1, masked=True).astype("float32").filled(np.nan).astype("float64")
+    for scenario, _name, _color, key in SCENARIOS[1:]:
+        assert nodes[f"park-shade-{key}-change"]["type"] == CALCULATOR, scenario
+        change = _value(ran, f"park-shade-{key}-change")
+        assert (change.crs.to_epsg(), change.width, change.height) == (3395, *GRID), scenario
+        assert tuple(change.transform)[:6] == tuple(shadow.transform)[:6], scenario
+        cells = change.read(1, masked=True).astype("float32").filled(np.nan)
+        finite = cells[~np.isnan(cells)]
+        assert finite.min() < -100 and finite.mean() < 0, (scenario, finite.min(), finite.mean())
+        assert -720 <= finite.min() and finite.max() <= 720, (scenario, finite.min(), finite.max())
+
+        what_if = _value(ran, _node_id(key, "shadow"))
+        assert tuple(what_if.transform)[:6] == tuple(shadow.transform)[:6], scenario
+        after = what_if.read(1, masked=True).astype("float32").filled(np.nan).astype("float64")
+        took = (after - before).astype("float32")
+        compared = took[~np.isnan(took)]
+        assert compared.min() < -100 and compared.mean() < 0, (scenario, compared.min(), compared.mean())
+        assert -720 <= compared.min() and compared.max() <= 720, (scenario, compared.min(), compared.max())
+        assert np.array_equal(np.isnan(cells), np.isnan(took)), scenario
+        assert np.allclose(cells, took, rtol=0, atol=1e-3, equal_nan=True), (
+            scenario, float(np.nanmax(np.abs(cells - took))),
+        )

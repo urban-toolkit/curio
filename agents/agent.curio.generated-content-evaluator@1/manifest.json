@@ -1,0 +1,73 @@
+{
+  "id": "agent.curio.generated-content-evaluator",
+  "name": "Generated Content Evaluator",
+  "category": "evaluate",
+  "version": "1.0.0",
+  "purpose": "Judge whether generated node content does what its goal and assumptions say: findings with quoted evidence and an advisory verdict. Never approves, never mutates, never replaces execution-based validation.",
+  "catalog": {
+    "listed": false,
+    "order": 7
+  },
+  "roles": [
+    "validation"
+  ],
+  "capabilities": [
+    {
+      "id": "content.quality.evaluate",
+      "contractVersion": "1",
+      "label": "Check generated node content against its goal"
+    }
+  ],
+  "prompts": {
+    "system": {
+      "path": "curio:default_preamble.md",
+      "variables": []
+    },
+    "instruction": {
+      "path": "prompts/evaluate_generated_content_prompt.md",
+      "variables": []
+    }
+  },
+  "compatibleTargets": [
+    {
+      "kind": "node",
+      "requires": []
+    },
+    {
+      "kind": "canvas",
+      "requires": []
+    }
+  ],
+  "inputs": {
+    "reads": [
+      "nodeContext",
+      "targetContext"
+    ],
+    "requiredConfig": []
+  },
+  "tools": [
+    {
+      "id": "node.read"
+    },
+    {
+      "id": "node.runtime.read"
+    },
+    {
+      "id": "dataflow.read"
+    }
+  ],
+  "runtime": {
+    "execution": "foreground",
+    "reviewPolicy": "report-only"
+  },
+  "providerRequirements": {
+    "capabilities": [
+      "structured-output"
+    ]
+  },
+  "provenance": {
+    "publisher": "curio",
+    "license": "MIT",
+    "trust": "built-in"
+  }
+}

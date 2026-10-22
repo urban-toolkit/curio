@@ -467,6 +467,46 @@ def _netcdf_expectations(data_file: Path) -> dict[str, str]:
     }
 
 
+# A bundle loads as its parts in the container its bundle.json records (a
+# tuple when it records none), so the consumer counts the parts and the rows of
+# each, in order.
+_BUNDLE_TRANSFORM = '''parts = list(input_0.values()) if isinstance(input_0, dict) else list(input_0)
+print("CURIO_E2E_PARTS=%d;" % len(parts))
+print("CURIO_E2E_LENGTHS=%s;" % ",".join(str(len(part)) for part in parts))
+return parts[0]
+'''
+
+
+def _bundle_expectations(data_file: Path) -> dict[str, str]:
+    """The parts ``bundle.json`` lists, and each part's rows in index order,
+    counted off each part's own file."""
+    import pyarrow.parquet as pq
+
+    spec = json.loads(data_file.read_text(encoding="utf-8"))
+    parts = sorted(spec.get("parts", []), key=lambda part: part.get("index", 0))
+    assert parts, f"{data_file} lists no parts"
+    root = data_file.parent.parent
+    lengths = []
+    for part in parts:
+        part_file = root / part["file"]
+        fmt = part.get("format")
+        if fmt == "geojson":
+            lengths.append(len(json.loads(part_file.read_text(encoding="utf-8"))["features"]))
+        elif fmt == "parquet":
+            lengths.append(pq.ParquetFile(part_file).metadata.num_rows)
+        elif fmt == "csv":
+            with open(part_file, newline="", encoding="utf-8") as handle:
+                lengths.append(sum(1 for row in csv.reader(handle) if row) - 1)
+        else:
+            raise AssertionError(
+                f"{data_file}: part {part['file']} is {fmt!r}, which the bundle recipe cannot count"
+            )
+    return {
+        "CURIO_E2E_PARTS": str(len(parts)),
+        "CURIO_E2E_LENGTHS": ",".join(str(length) for length in lengths),
+    }
+
+
 FORMAT_PLANS: dict[str, FormatPlan] = {
     "csv": FormatPlan(
         loader_marker="df = curio_load_data(",
@@ -506,6 +546,12 @@ FORMAT_PLANS: dict[str, FormatPlan] = {
         vega_spec=None,
         expectations=_netcdf_expectations,
         loader_suffix=_NETCDF_LOADER_SUFFIX,
+    ),
+    "bundle": FormatPlan(
+        loader_marker="bundle = curio_load_data(",
+        transform_code=_BUNDLE_TRANSFORM,
+        vega_spec=None,
+        expectations=_bundle_expectations,
     ),
 }
 

@@ -64,12 +64,19 @@ export function isTypingTarget(target: EventTarget | null): boolean {
 }
 
 /**
+ * The modifier a given user is most likely to reach for, by name: Cmd on a
+ * Mac, Ctrl elsewhere. A chord taking either (``isRunNodeChord``, a node's
+ * Undo) is written with it.
+ */
+export const MOD_KEY_LABEL: string =
+  typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform ?? "")
+    ? "Cmd"
+    : "Ctrl";
+
+/**
  * How to write the run chord for a human, per platform.
  *
  * Both modifiers work everywhere (see ``isRunNodeChord``); this is only about
  * naming the one a given user is most likely to reach for.
  */
-export const RUN_NODE_SHORTCUT_LABEL: string =
-  typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform ?? "")
-    ? "Cmd+Enter"
-    : "Ctrl+Enter";
+export const RUN_NODE_SHORTCUT_LABEL: string = `${MOD_KEY_LABEL}+Enter`;

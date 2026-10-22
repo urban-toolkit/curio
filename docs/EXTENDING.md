@@ -632,7 +632,7 @@ one unless you are adding a behavior to Curio itself.
 ## 8. Agent-authored packages
 
 Everything above describes hand-authoring. Packages can also be **authored by
-agents**: the **Node Builder** (`agent.node-builder`) writes them in its package-writing mode
+agents**: the **Node Builder** (`agent.curio.node-builder`) writes them in its package-writing mode
 (`package.build`, `package.extend`, `node.kind.author`), which its own chat, the Researcher
 and the Dataflow Builder ask for. The mode turns a described need into one reviewed draft
 through the `package.draft.apply` contract, and an **isolated build service**

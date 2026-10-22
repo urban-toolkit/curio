@@ -1,7 +1,7 @@
 {
   "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
   "data": {
-    "name": "inputs"
+    "name": "[!! inputs !!]"
   },
   "encoding": {
     "theta": {
@@ -14,7 +14,8 @@
     "color": {
       "field": "scenario_name",
       "type": "nominal",
-      "title": "Scenario"
+      "title": "Scenario",
+      "scale": [!! scenario colors !!]
     }
   },
   "layer": [

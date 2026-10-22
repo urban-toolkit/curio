@@ -20,7 +20,7 @@ Tuples are reserved for multiple outputs
 
 - callback for interactions will receive interacted mapping per coordinate and coordinates per component.
 - If datapools need to be linked to propagate interactions. There needs to be a column "linked" that contains arrays that point to the elements (indices) of the other pool
-- Interaction edges are only used to send interactions. All interactions are received through input
+- Interaction edges are only used to send interactions.
 - for a geojson be interpreter as storing buildings data one of its columns has to be named "building_id"
 - Images display from a dataframe or a geodataframe. Name the column image_url (a URL or data: URI) or image_content (raw base64 bytes); image, thumbnail and overlay_url are recognized too, and an unnamed column is used when its values are data: URIs or URLs ending in an image extension. A same-origin /api/... value is fetched with the signed-in user's token, so images Curio itself serves per user resolve correctly
 - Support to two of most important types: raster (rasterio) and vector (geopandas)

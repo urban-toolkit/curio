@@ -1,7 +1,7 @@
 {
   "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
   "data": {
-    "name": "inputs"
+    "name": "[!! inputs !!]"
   },
   "title": {
     "text": "Colored: [!! highlight !!]. Grey: the rest.",
@@ -15,7 +15,8 @@
     "header": {
       "labelFontSize": 13,
       "labelFontWeight": "bold"
-    }
+    },
+    "sort": [!! scenario order !!]
   },
   "spec": {
     "width": 160,
@@ -67,7 +68,8 @@
               "test": "datum.curio_highlight === 1",
               "field": "scenario_name",
               "type": "nominal",
-              "legend": null
+              "legend": null,
+              "scale": [!! scenario colors !!]
             },
             "value": "#d9d9d9"
           }

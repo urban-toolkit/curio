@@ -1,6 +1,6 @@
 
 import { useEffect, useRef } from 'react';
-import { NodeBehaviorHook } from '../../registry/types';
+import type { GrammarRedraw, NodeBehaviorHook } from '../../registry/types';
 import { useVega } from '../../hook/useVega';
 import { useGrammarInputState } from '../../hook/useGrammarInputState';
 import { useStarterSpec } from '../../hook/useStarterSpec';
@@ -13,11 +13,8 @@ import { isEmptySpecBuffer } from '../../utils/starterSpec';
 import { toRows } from '../../utils/rowSource';
 import { resolveGeometryField } from '../../utils/geometryField';
 import { readGrammarInput, type GrammarInput } from '../../utils/grammarInput';
-// The chart after a Compare Scenarios node keeps its labels until Compare goes.
-import { upstreamCompareLabels } from '../../utils/compare/compareInputs';
-import { scenarioScale, type ScenarioLabel } from '../../utils/scenarios/scenarioColors';
-import { withScenarioScales } from '../../utils/scenarios/scenarioScales';
-import { boxFill, inputScenarios, scaleLabelsOf } from '../../utils/scenarios/inputScenarios';
+import type { ScenarioLabel } from '../../utils/scenarios/scenarioColors';
+import { inputScenarios } from '../../utils/scenarios/inputScenarios';
 import type { Scenario } from '../../utils/scenarios/scenarioModel';
 import { readsInputs } from '../../utils/vegaDatasets';
 
@@ -35,33 +32,28 @@ export const useVegaBehavior: NodeBehaviorHook = (data, nodeState) => {
   };
   const { markNodeErrored } = flow;
 
-  // A chart draws its scenarios in the colors of their boxes
-  // (utils/scenarios/scenarioScales), whatever the spec writes for them. A
-  // spec that reads `inputs` takes them from the boxes its own inputs come
-  // from, whose names its rows carry too, in the order the dataflow lists its
-  // boxes, and keeps its own colors and order when no input comes from a box;
-  // any other, from the Compare Scenarios node it reads on its first input, in
-  // that node's order, as its Chart tab draws them.
+  // A chart draws exactly its spec. Its scenario chips, which its editor
+  // resolves before a run (utils/references/codeReferences), write the colors
+  // and names of the boxes its inputs come from; the rows of a spec that reads
+  // `inputs` carry each box's id and name. A spec without the chips draws in
+  // Vega-Lite's own colors and order.
   const nodes = flow.nodes ?? [];
   const edges = flow.edges ?? [];
   const scenarios = flow.scenarios ?? [];
   const inputs = inputScenarios(data.nodeId, nodes, edges, scenarios);
-  // Each circle's label, which its rows carry, and the scales' labels.
+  // Each circle's label, which its rows carry and its chips write.
   const inputLabels = inputs.map((input) => input.label);
-  const scaleLabels = scaleLabelsOf(inputs, scenarios);
-  const compareLabels = upstreamCompareLabels(data.nodeId, nodes, edges, scenarios);
-  const labelsRef = useRef({ inputs: inputLabels, scale: scaleLabels, compare: compareLabels });
-  labelsRef.current = { inputs: inputLabels, scale: scaleLabels, compare: compareLabels };
-  /** What a chart reading `inputs` (*stacked*) or not draws its scenarios with. */
-  const labelsOf = (stacked: boolean): readonly ScenarioLabel[] | null =>
-    stacked ? boxFill(labelsRef.current.scale) : labelsRef.current.compare;
-  /** What a redraw follows: for a chart reading `inputs`, every label's id,
-   * name and color, which its rows carry, and the scales' order; else what
-   * its scales draw. */
-  const keyOf = (stacked: boolean): string =>
-    stacked
-      ? stackedKeyOf(labelsRef.current.inputs, labelsRef.current.scale)
-      : scalesKeyOf(labelsRef.current.compare);
+  const labelsRef = useRef({ rows: inputLabels, bySlot: new Map<number, ScenarioLabel>() });
+  labelsRef.current = { rows: inputLabels, bySlot: new Map(inputs.map((input) => [input.slot, input.label])) };
+  /** What a redraw follows: for a chart reading `inputs` (*stacked*), each
+   * circle's box id and name, which its rows carry; and the spec as its chips
+   * write it. */
+  const keyOf = (stacked: boolean, spec: string): string =>
+    JSON.stringify([stacked ? labelsRef.current.rows.map((label) => [label.scenario ?? null, label.name]) : null, spec]);
+  // Changes whenever a label does, so the chart asks its chips again.
+  const labelsKey = JSON.stringify(
+    inputs.map(({ slot, label }) => [slot, label.scenario ?? null, label.name, label.color, label.rank ?? null]),
+  );
 
   // A starter spec chosen from the arriving input's column types, the way
   // every grammar node fills an empty editor (hook/useStarterSpec).
@@ -110,30 +102,32 @@ export const useVegaBehavior: NodeBehaviorHook = (data, nodeState) => {
     inputLabels,
   });
 
-  // The spec last handed in, whether it reads `inputs`, and the labels it was
-  // drawn with.
-  const appliedRef = useRef<{ spec: string; stacked: boolean; key: string } | null>(null);
-  const draw = async (spec: string, stacked: boolean, how?: typeof AS_THE_CHART_TAB) => {
+  // The spec last handed in, whether it reads `inputs`, how its editor writes
+  // it again for new labels, and what it was drawn with.
+  const appliedRef = useRef<{ spec: string; stacked: boolean; redraw?: GrammarRedraw; key: string } | null>(null);
+  const draw = async (spec: string, how?: typeof AS_A_RELABEL) => {
     try {
-      reportDrawn(await handleCompileGrammar(withLabelScales(spec, labelsOf(stacked)), how));
+      reportDrawn(await handleCompileGrammar(spec, how));
     } catch (error: any) {
       nodeState.setOutput({ code: 'error', content: error.message, outputType: '' });
       showToast(error.message, 'error');
       markNodeErrored?.(data.nodeId);
     }
   };
-  const applyGrammar = async (spec: string) => {
+  const applyGrammar = async (spec: string, redraw?: GrammarRedraw) => {
     const stacked = specReadsInputs(spec);
-    appliedRef.current = { spec, stacked, key: keyOf(stacked) };
-    await draw(spec, stacked);
+    appliedRef.current = { spec, stacked, redraw, key: keyOf(stacked, spec) };
+    await draw(spec);
   };
-  const labelsKey = appliedRef.current ? keyOf(appliedRef.current.stacked) : '';
+  /** The spec the applied chart would draw now: its chips written again with
+   * the labels as they are, or as it was handed in when its editor cannot. */
+  const specNow = (applied: NonNullable<typeof appliedRef.current>): string =>
+    applied.redraw?.(labelsRef.current.bySlot) ?? applied.spec;
 
-  // A scenario renamed or recolored draws the chart again, as it draws the
-  // Compare node's Chart tab again, and the same way; a chart that reads
-  // `inputs` stacks its rows again under the new names. A run draws it itself,
-  // so not during one: once the run ends, the chart is drawn again only if the
-  // run did not.
+  // A scenario renamed or recolored draws a chart again when what it draws
+  // moves: what its chips write, or, for one that reads `inputs`, the names
+  // its rows carry. A run draws it itself, so not during one: once the run
+  // ends, the chart is drawn again only if the run did not.
   const runInFlight = !!flow.isRunActive || !!flow.serverRunActive;
   const executing = nodeState.output?.code === 'exec';
   const busyRef = useRef(false);
@@ -147,18 +141,18 @@ export const useVegaBehavior: NodeBehaviorHook = (data, nodeState) => {
     redrawingRef.current = true;
     try {
       for (let applied = appliedRef.current; applied && !busyRef.current; applied = appliedRef.current) {
-        const drawnKey = keyOf(applied.stacked);
+        const spec = specNow(applied);
+        const drawnKey = keyOf(applied.stacked, spec);
         if (applied.key === drawnKey) break;
         appliedRef.current = { ...applied, key: drawnKey };
-        await draw(applied.spec, applied.stacked, AS_THE_CHART_TAB);
+        await draw(spec, AS_A_RELABEL);
       }
     } finally {
       redrawingRef.current = false;
     }
   };
   useEffect(() => {
-    const applied = appliedRef.current;
-    if (!applied || applied.key === labelsKey || runInFlight || executing || redrawingRef.current) return;
+    if (!appliedRef.current || runInFlight || executing || redrawingRef.current) return;
     void redraw();
   }, [labelsKey, runInFlight, executing]);
 
@@ -175,34 +169,12 @@ export const useVegaBehavior: NodeBehaviorHook = (data, nodeState) => {
 };
 
 /**
- * How a chart is drawn again when a scenario is recolored or renamed: as the
- * Compare node's Chart tab draws its own (components/compare/CompareChart),
- * with no version recorded in its provenance and nothing handed downstream. A
- * selection made in the chart is kept, which the Chart tab's presets never
- * make.
+ * How a chart is drawn again when a scenario is recolored or renamed: with no
+ * version recorded in its provenance and nothing handed downstream, since its
+ * spec and its input did not change, and with a selection made in the chart
+ * kept.
  */
-const AS_THE_CHART_TAB = { recordsProvenance: false, forwardsInput: false, keepsSelection: true };
-
-/**
- * What a chart after a Compare node draws of *labels*: the scenarios' names
- * and colors in the order of its inputs (`scenarioScale`). A scenario id
- * alone, or the order a label's keys are written in, draws nothing different.
- */
-function scalesKeyOf(labels: readonly ScenarioLabel[] | null): string {
-  return labels ? JSON.stringify(scenarioScale(labels)) : '';
-}
-
-/**
- * What a chart reading `inputs` draws of its labels: each input's scenario id,
- * name and color, in circle order (*rows*), and the order its scales draw them
- * in (*scale*). Its rows carry the id and the name, so a change to any of them
- * draws it again; the order a label's keys are written in draws nothing
- * different.
- */
-function stackedKeyOf(rows: readonly ScenarioLabel[], scale: readonly ScenarioLabel[]): string {
-  const of = (labels: readonly ScenarioLabel[]) => labels.map((label) => [label.scenario ?? null, label.name, label.color]);
-  return JSON.stringify([of(rows), of(scale)]);
-}
+const AS_A_RELABEL = { recordsProvenance: false, forwardsInput: false, keepsSelection: true };
 
 /** Whether the spec *text* reads the stacked dataset `inputs`; not when it is not JSON. */
 function specReadsInputs(text: string): boolean {
@@ -211,24 +183,6 @@ function specReadsInputs(text: string): boolean {
   } catch {
     return false;
   }
-}
-
-/**
- * *spec* with its channels on `scenario_name` drawn as *labels* say
- * (utils/scenarios/scenarioScales); as written, character for character, with
- * no labels, with nothing to fill, or when it is not JSON, which the compile
- * then reports as it always does.
- */
-function withLabelScales(spec: string, labels: readonly ScenarioLabel[] | null): string {
-  if (!labels) return spec;
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(spec);
-  } catch {
-    return spec;
-  }
-  const filled = withScenarioScales(parsed, labels);
-  return filled === parsed ? spec : JSON.stringify(filled);
 }
 
 /** The input's 100-row preview: plenty for classifying columns, and cheaper than /get. */

@@ -1,7 +1,7 @@
 {
   "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
   "data": {
-    "name": "inputs"
+    "name": "[!! inputs !!]"
   },
   "transform": [
     {
@@ -54,7 +54,8 @@
       "field": "scenario_name",
       "type": "nominal",
       "title": "Scenario",
-      "legend": null
+      "legend": null,
+      "scale": [!! scenario text_colors !!]
     }
   }
 }

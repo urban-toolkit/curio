@@ -46,7 +46,7 @@ Curio is a framework for collaborative urban visual analytics that uses a datafl
     </td>
     <td align="center" width="33%">
       <strong>Linked interactions</strong><br/>
-      <sub>Data-driven cross-view filtering and brushing</sub>
+      <sub>Brush or pick in one view, highlight in the views linked to it</sub>
     </td>
     <td align="center" width="33%">
       <strong>Autark + Vega-Lite</strong><br/>

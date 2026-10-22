@@ -29,22 +29,9 @@
         }
       },
       {
-        "id": "sh-pool",
-        "type": "curio.builtin/data-pool",
-        "x": 1290,
-        "y": 458,
-        "content": "",
-        "out": "DEFAULT",
-        "in": "DEFAULT",
-        "goal": "Fan augmented roads (plus context layers) out to map and plot; route brush selections on roads back from plot to map.",
-        "metadata": {
-          "keywords": []
-        }
-      },
-      {
         "id": "sh-map",
         "type": "curio.builtin/autk-grammar",
-        "x": 1940,
+        "x": 1296,
         "y": 657,
         "width": 759,
         "height": 640,
@@ -59,14 +46,14 @@
       {
         "id": "sh-plot",
         "type": "curio.builtin/autk-grammar",
-        "x": 1935,
+        "x": 1290,
         "y": 0,
         "width": 770,
         "height": 577,
         "content": "{\n  \"plot\": {\n    \"dataRef\": \"table_osm_roads\",\n    \"mark\": \"bar\",\n    \"axis\": [\n      \"sunlight\",\n      \"@transform\"\n    ],\n    \"title\": \"Minutes of sunlight per Chicago Loop road segment\",\n    \"transform\": {\n      \"preset\": \"binning-1d\",\n      \"options\": {\n        \"bins\": 13\n      }\n    },\n    \"events\": [\n      \"brushX\"\n    ]\n  }\n}",
         "out": "DEFAULT",
         "in": "DEFAULT",
-        "goal": "Show a brushable sunlight-minutes histogram; brushing routes through the pool to highlight roads on the 3D map.",
+        "goal": "Show a brushable sunlight-minutes histogram; brushing highlights the matching roads on the 3D map.",
         "metadata": {
           "keywords": []
         }
@@ -79,30 +66,19 @@
         "target": "sh-compute"
       },
       {
-        "id": "reactflow__edge-sh-computeout-sh-poolin",
+        "id": "reactflow__edge-sh-computeout-sh-mapin",
         "source": "sh-compute",
-        "target": "sh-pool"
-      },
-      {
-        "id": "reactflow__edge-sh-poolout-sh-mapin",
-        "source": "sh-pool",
         "target": "sh-map"
       },
       {
-        "id": "reactflow__edge-sh-poolout-sh-plotin",
-        "source": "sh-pool",
+        "id": "reactflow__edge-sh-computeout-sh-plotin",
+        "source": "sh-compute",
         "target": "sh-plot"
       },
       {
         "type": "Interaction",
-        "id": "reactflow__edge-sh-poolin/out-sh-plotin/out",
-        "source": "sh-pool",
-        "target": "sh-plot"
-      },
-      {
-        "type": "Interaction",
-        "id": "reactflow__edge-sh-poolin/out-sh-mapin/out",
-        "source": "sh-pool",
+        "id": "reactflow__edge-sh-plotin/out-sh-mapin/out",
+        "source": "sh-plot",
         "target": "sh-map"
       }
     ],

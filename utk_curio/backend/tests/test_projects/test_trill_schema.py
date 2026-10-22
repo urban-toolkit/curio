@@ -229,10 +229,25 @@ def _node(doc: dict) -> dict:
 def _attachment(**over) -> dict:
     record = {
         "attachmentId": "a" * 32,
-        "coord": "agent.my-explainer@1.0.0",
+        "coord": "agent.test.my-explainer@1",
         "target": {"kind": "node", "targetId": "n1"},
         "sessionId": "b" * 32,
         "revision": 1,
+    }
+    record.update(over)
+    return record
+
+
+def _history_entry(**over) -> dict:
+    """One entry of a node's history (``nodeExecRecord``): a run, unless *over* says otherwise."""
+    record = {
+        "id": 1,
+        "parentId": None,
+        "code": "print(1)",
+        "inputs": [],
+        "outputs": [],
+        "startTime": "Oct 21 2026 10:1:2",
+        "endTime": "Oct 21 2026 10:1:2",
     }
     record.update(over)
     return record
@@ -288,9 +303,10 @@ REJECTED = {
     "dashboardWidth without height": lambda d: _node(d).update(dashboardWidth=5),
     # A node folded to its chip is written as minimized: true.
     "minimized as a string": lambda d: _node(d).update(minimized="true"),
-    "agent coord pinned to a major": lambda d: d["dataflow"].update(agents=["agent.foo@1"]),
+    "agent coord pinned to a whole version": lambda d: d["dataflow"].update(agents=["agent.test.foo@1.0.0"]),
+    "agent id without a publisher": lambda d: d["dataflow"].update(agents=["agent.foo@1"]),
     "package coord in the agent slot": lambda d: d["dataflow"].update(agents=["curio.builtin@1"]),
-    "agent id without the prefix": lambda d: d["dataflow"].update(agents=["foo@1.0.0"]),
+    "agent id without the prefix": lambda d: d["dataflow"].update(agents=["test.foo@1"]),
     "duplicate packages": lambda d: d["dataflow"].update(
         packages=["curio.builtin@1", "curio.builtin@1"]
     ),
@@ -405,64 +421,13 @@ REJECTED = {
     "selection tag named as a reference": lambda d: _node(d)["metadata"].update(
         selections=[{"name": "selection picked", "node": "n2", "column": "osm_id", "ids": []}]
     ),
-    # #662: a Compare Scenarios node labels each input by name and hex color.
-    "compare label without a color": lambda d: _node(d)["metadata"].update(
-        compareScenarios={"inputs": [{"scenario": "s1", "name": "Baseline"}]}
+    # A node's history holds runs and edits (a Map Edits node's actions,
+    # entries switched off and entries deleted), and nothing else.
+    "node history entry of a kind it does not have": lambda d: d.update(
+        nodeProvenance={"n1": [_history_entry(kind="undo", label="undo")]}
     ),
-    "compare label color as a name": lambda d: _node(d)["metadata"].update(
-        compareScenarios={"inputs": [{"scenario": "s1", "name": "Baseline", "color": "green"}]}
-    ),
-    "compare label with a field the format does not have": lambda d: _node(d)["metadata"].update(
-        compareScenarios={"inputs": [{"name": "Baseline", "color": "#2a9d8f", "slot": 0}]}
-    ),
-    "compare labels written empty": lambda d: _node(d)["metadata"].update(compareScenarios={"inputs": []}),
-    "compare chart the node does not draw": lambda d: _node(d)["metadata"].update(
-        compareScenarios={"chart": {"preset": "radar"}}
-    ),
-    # #662: an Edit Features node's edits each name what they do and to which
-    # features; a set names its column and its value.
-    "feature edit the node does not make": lambda d: _node(d)["metadata"].update(
-        editFeatures={"key": "osm_id", "edits": [{"op": "delete", "ids": [1]}]}
-    ),
-    "feature edit naming no features": lambda d: _node(d)["metadata"].update(
-        editFeatures={"key": "osm_id", "edits": [{"op": "remove", "ids": []}]}
-    ),
-    "feature set without its column": lambda d: _node(d)["metadata"].update(
-        editFeatures={"key": "osm_id", "edits": [{"op": "set", "ids": [1], "value": 0}]}
-    ),
-    "feature set without its value": lambda d: _node(d)["metadata"].update(
-        editFeatures={"key": "osm_id", "edits": [{"op": "set", "ids": [1], "column": "height"}]}
-    ),
-    "feature edit naming a feature by an object": lambda d: _node(d)["metadata"].update(
-        editFeatures={"key": "osm_id", "edits": [{"op": "remove", "ids": [{"row": 3}]}]}
-    ),
-    "feature edits written empty": lambda d: _node(d)["metadata"].update(editFeatures={"edits": []}),
-    "feature edits with a field the format does not have": lambda d: _node(d)["metadata"].update(
-        editFeatures={"key": "osm_id", "rows": [3]}
-    ),
-    # An Interaction node's entries name their features by ids or by a
-    # condition, never both; a number edit takes a number and an expression a
-    # text, and each names its column.
-    "feature edit naming its features by ids and by a condition": lambda d: _node(d)["metadata"].update(
-        editFeatures={"key": "osm_id", "edits": [{"op": "remove", "ids": [1], "where": "height > 100"}]}
-    ),
-    "feature edit naming its features by an empty condition": lambda d: _node(d)["metadata"].update(
-        editFeatures={"key": "osm_id", "edits": [{"op": "remove", "where": ""}]}
-    ),
-    "feature scale by a text": lambda d: _node(d)["metadata"].update(
-        editFeatures={"key": "osm_id", "edits": [{"op": "scale", "ids": [1], "column": "height", "value": "2"}]}
-    ),
-    "feature offset without its column": lambda d: _node(d)["metadata"].update(
-        editFeatures={"key": "osm_id", "edits": [{"op": "offset", "ids": [1], "value": 3}]}
-    ),
-    "feature expression that is a number": lambda d: _node(d)["metadata"].update(
-        editFeatures={"key": "osm_id", "edits": [{"op": "expr", "ids": [1], "column": "height", "value": 3}]}
-    ),
-    "feature edit with an empty label": lambda d: _node(d)["metadata"].update(
-        editFeatures={"key": "osm_id", "edits": [{"op": "remove", "ids": [1], "label": ""}]}
-    ),
-    "feature edit switched off by a text": lambda d: _node(d)["metadata"].update(
-        editFeatures={"key": "osm_id", "edits": [{"op": "remove", "ids": [1], "enabled": "no"}]}
+    "node history edit labelled by a number": lambda d: d.update(
+        nodeProvenance={"n1": [_history_entry(kind="edit", label=12)]}
     ),
 }
 
@@ -509,44 +474,17 @@ ACCEPTED = {
         {"name": "nothing_yet", "node": "n2", "column": "building_id", "ids": []},
         {"name": "many", "node": "n2", "column": "osm_id", "count": 25000},
     ]),
-    # A Compare Scenarios node (#662): an input in no scenario has no id.
-    "compare labels, one in no scenario, and a chart": lambda d: _node(d)["metadata"].update(
-        compareScenarios={
-            "inputs": [
-                {"scenario": "s1", "name": "Baseline", "color": "#2a9d8f"},
-                {"name": "Python Computation", "color": "#8a8f98"},
-            ],
-            "chart": {"preset": "lollipop", "y": "sunlight", "aggregate": "median"},
-        }
+    # A Map Edits node's edit log, saved before its code was its only
+    # state: node metadata takes extra keys, so the save loads, with the log
+    # ignored.
+    "an old save's edit log": lambda d: _node(d)["metadata"].update(
+        editFeatures={"key": "building_id", "edits": [{"op": "remove", "ids": [119, 443]}]}
     ),
-    # An Edit Features node (#662): a remove, a set to null and a restore, by
-    # ids that are numbers and texts, on one layer of several.
-    "feature edits of every kind": lambda d: _node(d)["metadata"].update(
-        editFeatures={
-            "key": "building_id",
-            "layer": "table_osm_buildings",
-            "edits": [
-                {"op": "remove", "ids": [119, 443]},
-                {"op": "set", "ids": ["w12"], "column": "height", "value": None},
-                {"op": "restore", "ids": [443]},
-            ],
-        }
-    ),
-    # An Interaction node's log (#662): conditions, numbers, an expression, a
-    # label and an entry switched off.
-    "an Interaction log of every kind": lambda d: _node(d)["metadata"].update(
-        editFeatures={
-            "key": "building_id",
-            "edits": [
-                {"op": "scale", "where": "height > 100", "column": "height", "value": 0.5, "label": "Halve the towers"},
-                {"op": "offset", "ids": [136], "column": "height", "value": -6},
-                {"op": "expr", "ids": ["w12"], "column": "height", "value": "levels * 3.2", "enabled": False},
-                {"op": "set", "where": "kind == 'house'", "column": "kind", "value": "home"},
-                {"op": "remove", "where": "kind == 'shed'"},
-                {"op": "restore", "where": "height > 100", "enabled": True},
-            ],
-        }
-    ),
+    # A Map Edits node's history: a run, then an edit made in its body.
+    "a node history with an edit": lambda d: d.update(nodeProvenance={"n1": [
+        _history_entry(),
+        _history_entry(id=2, parentId=1, kind="edit", label="Remove building_id 34"),
+    ]}),
 }
 
 
@@ -669,9 +607,9 @@ WRITER_SHAPES = {
     "agent-minimal edge": _flow(nodes=[AGENT_NODE], edges=[AGENT_EDGE]),
     "all three agent sections": _flow(
         nodes=[AGENT_NODE],
-        agents=["agent.my-explainer@1.0.0"],
+        agents=["agent.test.my-explainer@1"],
         agentAttachments=[FULL_ATTACHMENT],
-        agentDefaults={"agent.my-explainer@1.0.0": {"model": "x"}},
+        agentDefaults={"agent.test.my-explainer@1": {"model": "x"}},
     ),
     "canvas-scoped attachment": _flow(
         agentAttachments=[_attachment(target={"kind": "canvas"})]
@@ -695,8 +633,9 @@ WRITER_SHAPES = {
              "collapsed": True, "box": {"x": 1, "y": 302}},
         ],
     ),
-    # Written by TrillGenerator for a Compare Scenarios node fed by two
-    # scenarios (#662): its code, its labels and its chart.
+    # A dataflow saved with a Compare Scenarios node fed by two scenarios, its
+    # code, its labels and its chart: no package provides its type any more,
+    # and the file is still a dataflow, which opens with it as such a node.
     "canvas save with a Compare Scenarios node": _flow(
         nodes=[
             AGENT_NODE,

@@ -68,3 +68,11 @@
   border-color: #f2b9a3;
   color: #b8461d;
 }
+
+/* A scenario chip, the colors or names of the scenarios a spec draws: the same
+   box, lilac. A field of inputs is drawn as a column is, in green. */
+.monaco-editor .view-line .curio-widget-ref.curio-scenario-ref {
+  background: var(--curio-accent-lilac-bg);
+  border-color: #cdbff0;
+  color: var(--curio-accent-lilac-fg);
+}

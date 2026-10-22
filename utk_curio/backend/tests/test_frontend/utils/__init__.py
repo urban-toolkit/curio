@@ -32,6 +32,7 @@ from .sandbox import (  # noqa: F401
     sandbox_auth_header,
     sandbox_base_url,
     load_artifact_as_dict,
+    load_raster_cells,
     execute_workflow_programmatically,
 )
 from .vega_svg import (  # noqa: F401
@@ -178,11 +179,14 @@ from .canvas_authoring import (  # noqa: F401
     drag_to_canvas_with_the_mouse,
     set_node_code,
     read_node_code,
+    STRIP_CATEGORIES,
+    open_strip_category,
     connect_nodes,
     EXPORT_DOWNLOAD_TIMEOUT_MS,
     node_execution_timeout_ms,
     read_node_error_text,
     read_node_output_text,
+    _OUTPUT_ARTIFACT_JS,
     activate_header_icon,
     play_node,
     wait_for_node_settled,
@@ -220,6 +224,10 @@ from .node_drawings import (  # noqa: F401
     assert_autark_drawing_fits,
     assert_editor_panes_clear_of_markers,
     assert_vega_node_empty_state,
+    _COLOR_PIXELS_JS,
+    _assert_legend_title,
+    MINUS_SIGN,
+    _assert_legend_reads,
 )
 from .webgpu import (  # noqa: F401
     PROBE_JS,

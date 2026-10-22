@@ -4,16 +4,15 @@ import { isVegaLiteNodeType } from "./registry/vegaLiteNodes";
 import { dataflowOrder } from "./utils/dataflowOrder";
 import { unversionedNodeType } from "./utils/flowNodeCanonicalType";
 import { inputSlotOf, slotHandleId } from "./utils/inputSlots";
-import { inputNamesIn, resolveReferences, widgetLiteral } from "./utils/references/codeReferences";
+import { VEGA_LITE, inputNamesIn, resolveReferences, widgetLiteral } from "./utils/references/codeReferences";
 import { PARAMETER_NODE_TYPE, sharedWidgetsOfSpec } from "./utils/references/sharedParameters";
 import { normalizeSelections } from "./utils/references/selectionTags";
 import { normalizeWidgets, type WidgetDef, type WidgetValue } from "./utils/widgets/widgetModel";
 import { INPUTS_DATASET, namesDataset, readsInputs, usesNamedDatasets } from "./utils/vegaDatasets";
 import { inputTableName } from "./generated/autkGrammar";
-import { normalizeScenarios, type Scenario } from "./utils/scenarios/scenarioModel";
-import { boxFill, inputLabelOf, scaleLabelsOf, scenarioOfNode, type InputScenario } from "./utils/scenarios/inputScenarios";
+import { normalizeScenarios } from "./utils/scenarios/scenarioModel";
+import { inputScenarios } from "./utils/scenarios/inputScenarios";
 import { NO_SCENARIO_COLOR, type ScenarioLabel } from "./utils/scenarios/scenarioColors";
-import { withScenarioScales } from "./utils/scenarios/scenarioScales";
 
 // ── Trill types ──────────────────────────────────────────────────────────────
 
@@ -488,8 +487,7 @@ function generateCells(
   inputNodes: TrillNode[],
   inputSlots: number[] = [],
   shared: WidgetDef[] = [],
-  inputLabels: ScenarioLabel[] = [],
-  scaleLabels: ScenarioLabel[] = [],
+  inputLabels: ReadonlyMap<number, ScenarioLabel> = new Map(),
 ): NotebookCell[] {
   // Specs saved since the curio.builtin@1 pack carry versioned ids (dev/64),
   // and third-party package ids never match a NodeType at all - so this
@@ -498,8 +496,9 @@ function generateCells(
   // A package's chart that draws with the Vega-Lite grammar is a Vega-Lite
   // chart here too (registry/vegaLiteNodes).
   const vegaChart = isVegaLiteNodeType(nodeType);
-  // The code the canvas runs: its widget, input, column, shared and selection
-  // references resolved, as the browser does before posting it (#662).
+  // The code the canvas runs: its widget, input, column, shared, selection and
+  // scenario references resolved, as the browser does before posting it (#662),
+  // each input labelled by the box its node is in.
   const language = vegaChart || nodeType === NodeType.AUTK_GRAMMAR
     ? "json"
     : nodeType === NodeType.JS_COMPUTATION ? "javascript" : "python";
@@ -507,11 +506,15 @@ function generateCells(
     node.content ?? "",
     {
       widgets: normalizeWidgets(node.metadata?.widgets),
-      inputs: inputSlots.map((slot) => ({ slot })),
+      inputs: inputSlots.map((slot) => {
+        const scenario = inputLabels.get(slot);
+        return scenario ? { slot, scenario } : { slot };
+      }),
       shared,
       selections: normalizeSelections(node.metadata?.selections),
     },
     language,
+    vegaChart ? VEGA_LITE : undefined,
   ).code;
   const outVar = outputVarName(node);
   const heading = markdownCell(nodeHeading(node, inputNodes));
@@ -563,12 +566,9 @@ function generateCells(
     }
     // A spec that reads `inputs` stacks every input's rows, each under the
     // scenario box its node is in, as the canvas does: by the same Python the
-    // browser's twin is pinned to (utk_curio.sandbox.util.scenario_stack). Its
-    // channels on scenario_name draw the boxes' colors and order, as there,
-    // and its own when no input comes from a box.
+    // browser's twin is pinned to (utk_curio.sandbox.util.scenario_stack). It
+    // draws the boxes' colors and order where its chips write them, as there.
     const stacked = readsInputs(spec);
-    const fill = stacked ? boxFill(scaleLabels) : null;
-    if (fill) spec = withScenarioScales(spec, fill);
     // json.loads of a JSON *string* would yield a Python str rather than a
     // dict, which is not a usable mimebundle - so the spec is embedded as a
     // literal object instead, written as Python writes one: JSON's true,
@@ -601,7 +601,7 @@ function generateCells(
           "# Every input's rows stacked in circle order, each under the id and the name of its scenario's box.",
           `_spec["datasets"]["${INPUTS_DATASET}"] = stack_inputs([`,
           ...inputNodes.map((input, position) => {
-            const label = inputLabels[position] ?? { name: inputTableName(position), color: NO_SCENARIO_COLOR };
+            const label = inputLabels.get(inputSlots[position]) ?? { name: inputTableName(position), color: NO_SCENARIO_COLOR };
             const scenario = widgetLiteral(label.scenario ?? null, "python");
             return `    (${scenario}, ${widgetLiteral(label.name, "python")}, ${outputVarName(input)}),`;
           }),
@@ -648,20 +648,6 @@ function canvasNodeOf(node: TrillNode): { id: string; type: string; data: Record
   };
 }
 
-/** Each input in circle order with the box its node is in and the label its
- * rows carry: the box's, else its node's name (utils/scenarios/inputScenarios). */
-function inputScenariosOf(
-  inputNodes: TrillNode[],
-  canvasNodes: ReturnType<typeof canvasNodeOf>[],
-  scenarios: readonly Scenario[],
-): InputScenario[] {
-  return inputNodes.map((input, position) => {
-    const scenario = scenarioOfNode(input.id, canvasNodes, scenarios);
-    const source = canvasNodes.find((n) => n.id === input.id);
-    return { slot: position, source: input.id, scenario, label: inputLabelOf(scenario, source, input.id) };
-  });
-}
-
 export function trillToNotebook(spec: TrillSpec): Notebook {
   const nodes = spec.dataflow?.nodes ?? [];
   const edges = spec.dataflow?.edges ?? [];
@@ -678,9 +664,12 @@ export function trillToNotebook(spec: TrillSpec): Notebook {
   const nodeById = new Map(nodes.map((n) => [n.id, n]));
   const ordered = dataflowOrder(nodes, edges.filter((edge) => edge.type !== "Interaction"));
   const shared = sharedWidgetsOfSpec(nodes);
-  // Each node as the canvas holds it, and the boxes as the canvas reads them,
-  // so an input is labelled here as the chart labels it there.
+  // Each node and edge as the canvas holds it, and the boxes as the canvas
+  // reads them, so an input is labelled here as the canvas labels it.
   const canvasNodes = nodes.map(canvasNodeOf);
+  const canvasEdges = edges
+    .filter((edge) => edge.type !== "Interaction")
+    .map((edge) => ({ source: edge.source, target: edge.target, targetHandle: slotHandleId(edgeSlot(edge)) }));
   const scenarios = normalizeScenarios(spec.dataflow?.scenarios, nodes.map((n) => n.id));
 
   const cells: NotebookCell[] = [];
@@ -689,11 +678,10 @@ export function trillToNotebook(spec: TrillSpec): Notebook {
     const inputNodes = wired
       .map((input) => nodeById.get(input.source))
       .filter((n): n is TrillNode => n !== undefined);
-    const inputs = inputScenariosOf(inputNodes, canvasNodes, scenarios);
-    cells.push(...generateCells(
-      node, inputNodes, wired.map((input) => input.slot), shared,
-      inputs.map((input) => input.label), scaleLabelsOf(inputs, scenarios),
-    ));
+    const labels = new Map(
+      inputScenarios(node.id, canvasNodes, canvasEdges, scenarios).map((input) => [input.slot, input.label]),
+    );
+    cells.push(...generateCells(node, inputNodes, wired.map((input) => input.slot), shared, labels));
   }
 
   return {

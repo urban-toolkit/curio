@@ -315,8 +315,6 @@
  "test_projects.test_auto_run_setting": 0.2,
  "test_projects.test_cache_stub": 0.0,
  "test_projects.test_categories": 0.8,
- "test_projects.test_compare_difference_node": 0.0,
- "test_projects.test_compare_scenarios_node": 0.6,
  "test_projects.test_dashboard_payload": 0.0,
  "test_projects.test_dashboard_route": 2.4,
  "test_projects.test_drop_archived_at_migration": 0.1,

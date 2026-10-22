@@ -35,9 +35,9 @@ from utk_curio.backend.tests.test_agents import test_routes_proposals as routes_
 #: An agent that only chats and reads: the three read tools, no delegates.
 #: No card is one, so a made-up one stands in (``_support.agent_routes``).
 CHAT = READER
-NB = "agent.node-builder@1.0.0"
-DFB = "agent.dataflow-builder@1.0.0"
-DF = "agent.dataset-finder@1.0.0"
+NB = "agent.curio.node-builder@1"
+DFB = "agent.curio.dataflow-builder@1"
+DF = "agent.curio.dataset-finder@1"
 CA = "curio.builtin/computation-analysis"
 
 TEMPLATES = [

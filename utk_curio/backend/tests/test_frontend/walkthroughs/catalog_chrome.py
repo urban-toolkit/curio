@@ -3,6 +3,7 @@ and the scenario cards' kind color."""
 from __future__ import annotations
 
 import re
+from contextlib import contextmanager
 
 from playwright.sync_api import expect
 
@@ -117,28 +118,57 @@ SCENARIO_KIND_FG = "rgb(46, 104, 34)"
 
 #: Each card's name, its strip and border, and the swatches in its title, as
 #: drawn. The strip is the card's first child.
-_CARD_PAINT = """() => Array.from(
-  document.querySelectorAll('main article[data-scenario-key]')
-).map((card) => {
-  const heading = card.querySelector('h2');
-  const swatches = heading
-    ? Array.from(heading.querySelectorAll('[data-curio-scenario-swatch]'))
-    : [];
-  return {
-    name: heading ? heading.innerText.trim() : '',
-    strip: card.firstElementChild
-      ? getComputedStyle(card.firstElementChild).backgroundColor
-      : '',
-    border: getComputedStyle(card).borderTopColor,
-    swatches: swatches.map((s) => getComputedStyle(s).backgroundColor),
-  };
-})"""
+#:
+#: A selected card's border fades in from transparent over 0.15 s (``.card`` in
+#: CatalogBrowseLayout.module.css), and a fade moves only when a frame is
+#: drawn, which a busy runner can hold back (#1041). So every fade still
+#: running is ended first, in the same evaluate: the read is the style each
+#: card settles on, what the page shows 0.15 s later, without waiting for a
+#: frame. Only transitions are ended, since each one has an end.
+_CARD_PAINT = """() => {
+  const cards = Array.from(document.querySelectorAll('main article[data-scenario-key]'));
+  for (const card of cards) {
+    for (const fade of card.getAnimations({ subtree: true })) {
+      if (fade instanceof CSSTransition) fade.finish();
+    }
+  }
+  return cards.map((card) => {
+    const heading = card.querySelector('h2');
+    const swatches = heading
+      ? Array.from(heading.querySelectorAll('[data-curio-scenario-swatch]'))
+      : [];
+    return {
+      name: heading ? heading.innerText.trim() : '',
+      strip: card.firstElementChild
+        ? getComputedStyle(card.firstElementChild).backgroundColor
+        : '',
+      border: getComputedStyle(card).borderTopColor,
+      swatches: swatches.map((s) => getComputedStyle(s).backgroundColor),
+    };
+  });
+}"""
 
 
 def _rgb(hex_color: str) -> str:
     """``#3567c7`` as the browser computes it: ``rgb(53, 103, 199)``."""
     red, green, blue = (int(hex_color[i:i + 2], 16) for i in (1, 3, 5))
     return f"rgb({red}, {green}, {blue})"
+
+
+@contextmanager
+def _animations_held(page):
+    """The page's animations held still until the block ends, as on a runner
+    that draws no frame: a transition only moves when a frame is drawn, so one
+    that starts inside stays at its first value. Chromium's DevTools protocol,
+    the one browser the scenes run in."""
+    cdp = page.context.new_cdp_session(page)
+    try:
+        cdp.send("Animation.enable")
+        cdp.send("Animation.setPlaybackRate", {"playbackRate": 0})
+        yield
+    finally:
+        cdp.send("Animation.setPlaybackRate", {"playbackRate": 1})
+        cdp.detach()
 
 
 def _save_riverside_projects(page, backend: str) -> None:
@@ -197,30 +227,39 @@ def scenario_cards_wear_one_kind_color(ctx: Ctx) -> None:
         timeout=30000
     )
     ctx.narrator.type_into(page.get_by_role("searchbox", name="Search scenarios"), "Riverside")
-    page.get_by_role("combobox", name="Sort scenarios").select_option("name")
 
     cards = page.locator("main article[data-scenario-key]")
-    expect(cards).to_have_count(5, timeout=30000)
-    expect(cards.locator("h2")).to_have_text(
-        ["Cool roofs", "Levee raised", "Marsh restored", "Pumps added", "Street trees"],
-        timeout=30000,
-    )
-
     # The drawer follows the first card. Its graph marks the scenario, and its
     # info rows grow, once the scenario's details answer.
     drawer = page.locator('[data-curio-browse-drawer="true"]')
-    expect(drawer.get_by_role("heading", name="Cool roofs", level=2)).to_be_visible(
+    # "Recently edited" puts Riverside flood, saved last, first. Once its first
+    # scenario is in the drawer, the cards are drawn, so the sort below moves
+    # the selection onto Cool roofs on a drawn card, which fades its border in.
+    expect(drawer.get_by_role("heading", name="Levee raised", level=2)).to_be_visible(
         timeout=30000
     )
-    expect(drawer.get_by_text("Fixed context", exact=True)).to_be_visible(timeout=30000)
-    page.wait_for_load_state("networkidle")
+    # Held from the sort through the read: every run meets what a busy runner
+    # meets now and then, no frame between the selected card's style changing
+    # and the read (#1041).
+    with _animations_held(page):
+        page.get_by_role("combobox", name="Sort scenarios").select_option("name")
+        expect(cards).to_have_count(5, timeout=30000)
+        expect(cards.locator("h2")).to_have_text(
+            ["Cool roofs", "Levee raised", "Marsh restored", "Pumps added", "Street trees"],
+            timeout=30000,
+        )
+        expect(drawer.get_by_role("heading", name="Cool roofs", level=2)).to_be_visible(
+            timeout=30000
+        )
+        expect(drawer.get_by_text("Fixed context", exact=True)).to_be_visible(timeout=30000)
+        page.wait_for_load_state("networkidle")
+        painted = page.evaluate(_CARD_PAINT)
 
     own = {
         scenario: _rgb(color)
         for scenarios in RIVERSIDE_PROJECTS.values()
         for scenario, color in scenarios
     }
-    painted = page.evaluate(_CARD_PAINT)
     problems = [
         f"{card['name']}: the strip is {card['strip']}, not the scenario kind "
         f"color {SCENARIO_KIND_FG}"

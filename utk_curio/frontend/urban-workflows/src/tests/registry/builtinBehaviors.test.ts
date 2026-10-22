@@ -51,4 +51,20 @@ describe('the behaviors Curio registers', () => {
     expect(registeredKeys().filter((key) => !named.has(key))).toEqual([]);
     expect([...named].filter((key) => !registeredKeys().includes(key))).toEqual([]);
   });
+
+  // Compare Scenarios is gone (step 6.4 of the plan answering komar41's
+  // review of the #914 merges): a saved node of its type opens as a type no
+  // package provides.
+  test('hold none for Compare Scenarios, and no built-in template names it', () => {
+    expect(getBehavior('compare-scenarios')).toBeUndefined();
+    expect(registeredKeys()).not.toContain('compare-scenarios');
+    const manifest = JSON.parse(
+      fs.readFileSync(path.join(REPO_ROOT, 'packages', 'curio.builtin@1', 'manifest.json'), 'utf-8'),
+    );
+    const named = manifest.templates.filter(
+      (template: { id?: string; behavior?: string | null }) =>
+        template.id === 'compare-scenarios' || template.behavior === 'compare-scenarios',
+    );
+    expect(named).toEqual([]);
+  });
 });

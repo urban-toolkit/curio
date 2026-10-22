@@ -78,6 +78,13 @@ MODULE = "deep_umbra"
 NODE_TYPE = "model.scout.deep-umbra/accumulated-shadow"
 CALCULATOR_TYPE = "curio.scout/raster-calculator"
 RASTERIZE_TYPE = "curio.scout/rasterize-buildings"
+#: Scout's Bars, which charts the two scenarios' mean shadow, and the
+#: Compare Scenarios type no node of the dataflow is any more.
+BARS_TYPE = "curio.scout/bars"
+COMPARE_TYPE = "curio.builtin/compare-scenarios"
+#: The Raster Calculator's call that takes the change in shadow: Towers
+#: removed's shadow, on input_1, minus Existing's, on input_0.
+CHANGE_CALL = 'return raster_calculate("subtract", [input_1, input_0], output_file=curio_output_file)'
 #: The line a Raster Calculator's code takes statistics with.
 STATISTICS_CALL = re.compile(r"^return raster_statistics\(", re.M)
 MODEL = PACKAGE / "models" / "deep_umbra.onnx"
@@ -97,14 +104,27 @@ SCOUT = "https://github.com/urban-toolkit/scout"
 MODEL_SHA256 = "67afb9d2d56bd0a12164e6e651214d56860ff689728c5b6f29486f21c3cb188e"
 BUILDINGS = REPO / "datasets" / "data.scout.loop-buildings@1" / "data" / "loop-buildings.geojson"
 DATAFLOW = REPO / "docs" / "examples" / "dataflows" / "chicago-loop-shadow-towers.json"
-#: The Autark map after the Compare Scenarios node in Difference: towers
-#: removed minus existing, on a diverging scale centered on no change.
+#: The Autark map after the Raster Calculator that takes the change in shadow:
+#: towers removed minus existing, on a diverging scale centered on no change.
 DIFFERENCE_MAP_DOCUMENT = {"map": {"layerRefs": [{
     "dataRef": "[!! input_0 !!]",
     "getFnv": "band_1",
     "colorMapInterpolator": "interpolateRdBu",
     "colorMapCenter": 0,
     "title": "Shadow change (minutes)",
+}]}}
+#: Towers removed's map of the buildings its lever hands on, the map the lever
+#: edits on: picked by building_id, colored by height up to the rasterizers'
+#: Maximum height.
+BUILDINGS_MAP_DOCUMENT = {"map": {"layerRefs": [{
+    "dataRef": "[!! input_0 !!]",
+    "isPick": True,
+    "selectFields": ["building_id"],
+    "getFnv": "height",
+    "getFnvType": "quantitative",
+    "colorMapInterpolator": "interpolateViridis",
+    "colorMapRange": [0, 550],
+    "title": "Building height (m)",
 }]}}
 #: The color range both scenarios' shadow maps share, in minutes: from 0 to a
 #: whole summer day of shadow, the most Deep Umbra's output stands for in any
@@ -138,9 +158,9 @@ MAX_MEDIAN_MINUTES = 0.05
 
 #: The buildings SCOUT's second scenario removes (the dataset's manifest names them).
 REMOVED_IDS = [8, 10, 12, 13, 14, 18, 19, 31, 34, 51, 66, 77, 82, 106, 122]
-#: The Interaction node (#662, #958; its type is still the Edit Features node's).
+#: The Map Edits node (#662, #958; its type id is still the Edit Features node's).
 INTERACTION_TYPE = "curio.builtin/edit-features"
-#: Towers removed's Interaction node, its edit log: one removal of those
+#: Towers removed's Map Edits node, its edits: one removal of those
 #: buildings, matched on building_id, under a label.
 TOWERS_LOG = {
     "key": "building_id",
@@ -149,7 +169,7 @@ TOWERS_LOG = {
 #: The code the node writes from that log (``editFeaturesCode`` in
 #: ``utils/editFeatures/editFeatures.ts``): one call of ``curio_edit_features``.
 TOWERS_CODE = (
-    "# Edit Features writes this code from its edit list: each edit, in the\n"
+    "# Map Edits writes this code from its edit list: each edit, in the\n"
     "# order it was made, on the features whose key is one of its ids. It is\n"
     "# written again when the list changes.\n"
     "return curio_edit_features(input_0, [\n"
@@ -818,7 +838,7 @@ def test_the_node_returns_the_shadow_raster_on_its_inputs_grid(workspace, tmp_pa
         assert (shadow.count, shadow.dtypes[0]) == (1, "float32")
         # NaN names the nodata, as Curio's raster tools write it: a GeoTIFF that
         # names none is read by autk-db with 0 as its nodata, and every cell in
-        # the sun would drop out of an Autark map and a Compare Scenarios Difference.
+        # the sun would drop out of an Autark map.
         assert shadow.nodata is not None and np.isnan(shadow.nodata), shadow.nodata
         assert shadow.tags()["season"] == "summer" and shadow.tags()["minutes"] == "720"
         cells = shadow.read(1)
@@ -988,9 +1008,13 @@ def test_the_shipped_dataflow_runs_the_packages_as_the_palette_drops_them():
     season from the one Parameter node both scenarios share; each scenario's
     Raster Calculator of statistics reads its shadow on input_0 and its
     heights, the mask, on input_1, straight from Rasterize Buildings, which feeds the
-    shadow node too; each scenario maps its own shadow, with example 24's map;
-    the chart reads the statistics, the difference the shadows, and an Autark
-    map after the difference, in no scenario, draws the change in shadow.
+    shadow node too; each scenario maps its own shadow, with example 24's map,
+    and Towers removed also maps the buildings its lever hands on
+    (``test_the_lever_feeds_a_map_of_its_buildings_and_is_linked_to_it``).
+    Scout's Bars charts the statistics, and a third Raster Calculator takes
+    the change in shadow from the shadows, which an Autark map after it, in no
+    scenario, draws. No Compare Scenarios node is left (the plan answering
+    komar41's review, step 6.3).
     The model is no dataset of the dataflow: the shadow nodes' code names it by
     id, and the lockfile names its package, so opening the dataflow adds it."""
     from utk_curio.backend.app.datasets.domain.code_refs import dataset_ids_in_code, model_ids_in_code
@@ -1028,8 +1052,8 @@ def test_the_shipped_dataflow_runs_the_packages_as_the_palette_drops_them():
     assert dataset_ids_in_code(loader["content"]) == ["data.scout.loop-buildings"]
 
     into = {(edge["target"], edge["targetHandle"]): edge["source"] for edge in spec["edges"]}
-    statistics = by_type[CALCULATOR_TYPE]
-    assert len(statistics) == 2 and all(_takes_statistics(node) for node in statistics)
+    statistics = [node for node in by_type[CALCULATOR_TYPE] if _takes_statistics(node)]
+    assert len(statistics) == 2 and len(by_type[CALCULATOR_TYPE]) == 3
     for node in statistics:
         shadow, heights = nodes[into[(node["id"], "in")]], nodes[into[(node["id"], "in_1")]]
         assert shadow["type"] == NODE_TYPE
@@ -1045,23 +1069,48 @@ def test_the_shipped_dataflow_runs_the_packages_as_the_palette_drops_them():
     example_types = {node["id"]: node["type"] for node in example["nodes"]}
     (shadow_map,) = [node for node in example["nodes"] if node["type"] == "curio.builtin/autk-grammar"
                      and example_types[example_into[(node["id"], "in")]] == NODE_TYPE]
-    assert len(by_type["curio.builtin/autk-grammar"]) == 3
+    assert len(by_type["curio.builtin/autk-grammar"]) == 4
     for scenario in spec["scenarios"]:
         members = set(scenario["nodes"])
         (shadow_id,) = [n for n in members if nodes[n]["type"] == NODE_TYPE]
         maps = [n for n in members if nodes[n]["type"] == "curio.builtin/autk-grammar"]
-        assert len(maps) == 1, (scenario["name"], maps)
-        assert into[(maps[0], "in")] == shadow_id, scenario["name"]
-        assert nodes[maps[0]]["content"] == _with_range(shadow_map["content"], SHADOW_RANGE), scenario["name"]
-    chart, difference = sorted(by_type["curio.builtin/compare-scenarios"],
-                               key=lambda n: n["metadata"]["compareScenarios"]["mode"])
-    assert chart["metadata"]["compareScenarios"]["mode"] == "chart"
-    assert chart["metadata"]["compareScenarios"]["chart"]["y"] == "mean"
-    assert {nodes[into[(chart["id"], h)]]["type"] for h in ("in", "in_1")} == {CALCULATOR_TYPE}
+        shadow_maps = [n for n in maps if into[(n, "in")] == shadow_id]
+        assert len(shadow_maps) == 1, (scenario["name"], maps)
+        assert nodes[shadow_maps[0]]["content"] == _with_range(shadow_map["content"], SHADOW_RANGE), scenario["name"]
+        # The other map, Towers removed's of its buildings, is fed by its lever.
+        others = [n for n in maps if n not in shadow_maps]
+        levers = [into[(n, "in")] for n in others]
+        assert [nodes[n]["type"] for n in levers] == ([INTERACTION_TYPE] if scenario["id"] == "towers-removed" else []), (
+            scenario["name"], others,
+        )
+    # The chart: Scout's Bars, its spec its template's own, its widgets set as
+    # the Compare node's bar drew it: each scenario's mean, combined by the
+    # mean, Compare's default for a bar, the Y axis titled as Compare titled
+    # it. Its circles take the two scenarios' statistics in the order of their
+    # boxes, and it stores no label of its own.
+    assert COMPARE_TYPE not in by_type, "a Compare Scenarios node is left"
+    scenario_of = {node_id: scenario["id"] for scenario in spec["scenarios"] for node_id in scenario["nodes"]}
+    (chart,) = by_type[BARS_TYPE]
+    (bars,) = [t for t in json.loads((RASTER_PACKAGE / "manifest.json").read_text(encoding="utf-8"))["templates"]
+               if t["id"] == "bars"]
+    assert chart["content"] == (RASTER_PACKAGE / bars["source"]).read_text(encoding="utf-8")
+    assert set(chart["metadata"]) == {"keywords", "widgets"}, chart["metadata"]
+    assert [{k: v for k, v in w.items() if k != "value"} for w in chart["metadata"]["widgets"]] == bars["widgets"]
+    assert {w["name"]: w.get("value", w["default"]) for w in chart["metadata"]["widgets"]} == {
+        "y": "mean", "combine": "mean", "y_title": "mean of mean",
+    }
     assert all(_takes_statistics(nodes[into[(chart["id"], h)]]) for h in ("in", "in_1"))
-    assert {nodes[into[(difference["id"], h)]]["type"] for h in ("in", "in_1")} == {NODE_TYPE}
+    assert [scenario_of[into[(chart["id"], h)]] for h in ("in", "in_1")] == [s["id"] for s in spec["scenarios"]]
+    # The change: a Raster Calculator in no scenario, Towers removed's shadow
+    # on input_1 minus Existing's on input_0, as Compare's Difference took it.
+    (difference,) = [node for node in by_type[CALCULATOR_TYPE] if not _takes_statistics(node)]
+    assert difference["id"] not in scenario_of
+    assert difference["content"].rstrip("\n").endswith(CHANGE_CALL), difference["content"]
+    assert "\nfrom scout_rasters.raster_algebra import raster_calculate\n" in difference["content"]
+    assert [nodes[into[(difference["id"], h)]]["type"] for h in ("in", "in_1")] == [NODE_TYPE, NODE_TYPE]
+    assert [scenario_of[into[(difference["id"], h)]] for h in ("in", "in_1")] == ["existing", "towers-removed"]
 
-    # The difference draws no map of its own: an Autark map after it, in no
+    # The change draws no map of its own: an Autark map after it, in no
     # scenario, draws the change in shadow on a scale centered on no change,
     # valid for the grammar.
     from utk_curio.backend.app.agents.domain import document_validation
@@ -1086,9 +1135,12 @@ def test_both_scenarios_shadow_maps_share_one_color_range_up_to_the_longest_shad
 
     spec = _dataflow()
     nodes = {node["id"]: node for node in spec["nodes"]}
+    into = {(edge["target"], edge["targetHandle"]): edge["source"] for edge in spec["edges"]}
     ranges = {}
     for scenario in spec["scenarios"]:
-        (map_id,) = [n for n in scenario["nodes"] if nodes[n]["type"] == "curio.builtin/autk-grammar"]
+        (shadow_id,) = [n for n in scenario["nodes"] if nodes[n]["type"] == NODE_TYPE]
+        (map_id,) = [n for n in scenario["nodes"] if nodes[n]["type"] == "curio.builtin/autk-grammar"
+                     and into[(n, "in")] == shadow_id]
         content = nodes[map_id]["content"]
         (layer,) = json.loads(content)["map"]["layerRefs"]
         ranges[scenario["id"]] = layer.get("colorMapRange")
@@ -1100,6 +1152,58 @@ def test_both_scenarios_shadow_maps_share_one_color_range_up_to_the_longest_shad
     with shadow_modules(tmp_path) as (deep_umbra, node_outputs):
         longest = max(deep_umbra.season_factor(season) for season in node_outputs.SEASONS)
     assert SHADOW_RANGE == [0, longest]
+
+
+def _minutes_raster(path, minutes):
+    """A float32 raster of *minutes* in World Mercator, NaN its nodata, as an
+    Accumulated Shadow node writes one."""
+    import numpy as np
+    import rasterio
+    from affine import Affine
+
+    values = np.asarray(minutes, dtype="float32")
+    with rasterio.open(
+        path, "w", driver="GTiff", width=values.shape[1], height=values.shape[0], count=1, dtype="float32",
+        crs="EPSG:3395", transform=Affine(2.4, 0.0, -9755120.0, 0.0, -2.4, 5112090.0), nodata=float("nan"),
+    ) as target:
+        target.write(values, 1)
+    return rasterio.open(path)
+
+
+def test_the_change_in_shadow_is_towers_removed_minus_existing_as_compare_took_it(workspace, tmp_path):
+    """The dataflow's change in shadow is a Raster Calculator, run as the
+    sandbox runs one, with Scout's modules: Towers removed's shadow, on input_1,
+    minus Existing's, on input_0, cell by cell, its sign kept, on the shadows'
+    grid: below zero where removing the towers takes shadow away, above where
+    it adds some, 0 where nothing changed, and no value where either shadow
+    has none. These are the cells Compare Scenarios' Difference took from the
+    same two shadows, pinned when Compare Scenarios went."""
+    import numpy as np
+
+    from utk_curio.sandbox.util.parsers import load_from_duckdb
+
+    (node,) = [n for n in _dataflow()["nodes"] if n["type"] == CALCULATOR_TYPE and not _takes_statistics(n)]
+    existing = _minutes_raster(tmp_path / "existing.tif", [
+        [720.0, 600.0, 0.0, 30.0], [10.0, 180.0, 360.0, float("nan")], [540.0, 0.0, 15.5, 720.0],
+    ])
+    removed = _minutes_raster(tmp_path / "removed.tif", [
+        [720.0, 120.0, 30.0, 0.0], [10.0, float("nan"), 0.0, 45.0], [0.0, 0.0, 60.25, 360.0],
+    ])
+    result = _execute(node["content"], (existing, removed), CALCULATOR_TYPE, workspace, data_type="outputs",
+                      package_modules=RASTER_MODULES)
+    assert result["stderr"] == "", result["stderr"]
+    assert result["output"]["dataType"] == "raster", result["output"]
+    change = load_from_duckdb(result["output"]["path"])
+    try:
+        cells = change.read(1, masked=True).astype("float32").filled(np.nan)
+        assert (change.crs.to_epsg(), change.width, change.height) == (3395, 4, 3)
+        assert change.transform == removed.transform
+    finally:
+        change.close()
+    expected = np.array([
+        [0.0, -480.0, 30.0, -30.0], [0.0, np.nan, -360.0, np.nan], [-540.0, 0.0, 44.75, -360.0],
+    ], dtype="float32")
+    assert np.array_equal(cells, expected, equal_nan=True), cells
 
 
 def test_example_24_holds_the_node_as_the_palette_drops_it_and_its_code_runs(workspace, tmp_path):
@@ -1148,23 +1252,36 @@ def test_example_24_feeds_the_rasterizers_one_raster_to_the_node_and_the_mask():
 
 def test_the_two_scenarios_are_scouts_two_building_sets(tmp_path):
     """"Existing" rasterizes the shipped buildings, SCOUT's A. "Towers removed"
-    reads them through its Interaction node, its lever: the node's edit log
-    holds one removal, labelled, of the 15 buildings SCOUT's B leaves out,
-    matched on building_id, and its code is the code the node writes from that
-    log. Run as the node runs, that code leaves SCOUT's B. Each layer, read as
-    Rasterize Buildings reads it, gives the height tiles SCOUT committed for
-    it, so the dataflow's two shadow runs are the proof's two."""
+    reads them through its Map Edits node, its lever: the node's code, its
+    only state, is the code the node writes from an edit log of one removal,
+    labelled, of the 15 buildings SCOUT's B leaves out, matched on
+    building_id, and no metadata key holds that log too. Run as the node
+    runs, that code leaves SCOUT's B. Each layer, read as Rasterize Buildings
+    reads it, gives the height tiles SCOUT committed for it, so the dataflow's
+    two shadow runs are the proof's two."""
     import geopandas as gpd
+
+    from utk_curio.sandbox.util.feature_edits import edit_features
+    from utk_curio.sandbox.util.input_names import call_as_node
 
     spec = _dataflow()
     nodes = {node["id"]: node for node in spec["nodes"]}
     scenarios = {scenario["name"]: scenario for scenario in spec["scenarios"]}
     assert sorted(scenarios) == ["Existing", "Towers removed"]
     types = {name: sorted(nodes[n]["type"] for n in scenario["nodes"]) for name, scenario in scenarios.items()}
-    assert types["Towers removed"] == sorted([*types["Existing"], INTERACTION_TYPE]), types
+    # Existing's nodes, the lever, and the lever's map of the buildings.
+    assert types["Towers removed"] == sorted([*types["Existing"], INTERACTION_TYPE, "curio.builtin/autk-grammar"]), types
     (lever,) = [nodes[n] for n in scenarios["Towers removed"]["nodes"] if nodes[n]["type"] == INTERACTION_TYPE]
-    assert lever["metadata"]["editFeatures"] == TOWERS_LOG, lever["metadata"].get("editFeatures")
+    assert "editFeatures" not in lever["metadata"], lever["metadata"]
     assert lever["content"] == TOWERS_CODE, lever["content"]
+    # The code is one call of curio_edit_features, which carries the log.
+    calls = []
+    call_as_node(
+        textwrap.indent(lever["content"], "    "),
+        {"curio_edit_features": lambda value, edits, **settings: calls.append((value, edits, settings))},
+        "the buildings", [0],
+    )
+    assert calls == [("the buildings", TOWERS_LOG["edits"], {"key": TOWERS_LOG["key"]})], calls
 
     # The lever reads the buildings, the context both scenarios share, and
     # Towers removed's rasterizer reads the lever.
@@ -1174,9 +1291,6 @@ def test_the_two_scenarios_are_scouts_two_building_sets(tmp_path):
     (rasterizer,) = [n for n in scenarios["Towers removed"]["nodes"]
                      if nodes[n]["type"] == RASTERIZE_TYPE]
     assert into[(rasterizer, "in")] == lever["id"]
-
-    from utk_curio.sandbox.util.feature_edits import edit_features
-    from utk_curio.sandbox.util.input_names import call_as_node
 
     buildings = gpd.read_file(BUILDINGS)
     assert list(buildings["building_id"]) == list(range(123))
@@ -1200,3 +1314,40 @@ def test_the_two_scenarios_are_scouts_two_building_sets(tmp_path):
             worst = {name: _levels(_gray(out / name), _gray(FIXTURES / f"{scenario}_rasters" / name))[0]
                      for name in TILE_NAMES}
             assert all(levels <= 1 for levels in worst.values()), (scenario, worst)
+
+
+def test_the_lever_feeds_a_map_of_its_buildings_and_is_linked_to_it():
+    """Towers removed's lever edits on a map of the buildings it hands on: a
+    data edge feeds the map, and the dataflow's one interaction edge, from the
+    lever's in/out dot to the map's, links the two for selections both ways.
+    The map is in the lever's scenario box, so a drop of the scenario copies
+    both and their link. It picks on the buildings by building_id, the column
+    the lever's edits find them by, colors them by height up to the
+    rasterizers' Maximum height, and nothing reads it. Valid for the grammar."""
+    from utk_curio.backend.app.agents.domain import document_validation
+
+    spec = _dataflow()
+    nodes = {node["id"]: node for node in spec["nodes"]}
+    (towers,) = [scenario for scenario in spec["scenarios"] if scenario["name"] == "Towers removed"]
+    (lever,) = [n for n in towers["nodes"] if nodes[n]["type"] == INTERACTION_TYPE]
+    links = [(e["source"], e["target"], e["sourceHandle"], e["targetHandle"])
+             for e in spec["edges"] if e.get("type") == "Interaction"]
+    assert len(links) == 1, links
+    ((source, buildings_map, *handles),) = links
+    assert (source, handles) == (lever, ["in/out", "in/out"]), links
+    assert buildings_map in towers["nodes"]
+    assert nodes[buildings_map]["type"] == "curio.builtin/autk-grammar"
+    assert [(e["source"], e["sourceHandle"], e["targetHandle"]) for e in spec["edges"]
+            if e["target"] == buildings_map and e.get("type") != "Interaction"] == [(lever, "out", "in")]
+    assert not [e for e in spec["edges"] if e["source"] == buildings_map], "a node reads the buildings map"
+    assert json.loads(nodes[buildings_map]["content"]) == BUILDINGS_MAP_DOCUMENT, nodes[buildings_map]["content"]
+    (raster_template,) = [
+        t for t in json.loads((RASTER_PACKAGE / "manifest.json").read_text(encoding="utf-8"))["templates"]
+        if t["id"] == "rasterize-buildings"
+    ]
+    (max_height,) = [w["default"] for w in raster_template["widgets"] if w["name"] == "max_height"]
+    assert BUILDINGS_MAP_DOCUMENT["map"]["layerRefs"][0]["colorMapRange"] == [0, max_height]
+    named = nodes[buildings_map]["content"].replace("[!! input_0 !!]", "input_0")
+    assert document_validation.validate(
+        "curio.builtin/autk-grammar", named,
+    ) == {"status": document_validation.STATUS_VALID}

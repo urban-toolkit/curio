@@ -249,6 +249,24 @@ describe("the grammar states", () => {
   });
 });
 
+describe("the Map Edits states", () => {
+  // The node edits on a map it feeds and is linked to, and reads the code it
+  // writes: each state is a reason of the shared table, not a title of its own.
+  const MAP_EDITS_REASONS: NodeEmptyReason[] = ["unlinked", "code-unreadable"];
+
+  test("each has something to say", () => {
+    for (const reason of MAP_EDITS_REASONS) {
+      expect(NODE_EMPTY_COPY[reason].title.trim()).not.toBe("");
+      expect(NODE_EMPTY_COPY[reason].hint.trim()).not.toBe("");
+    }
+  });
+
+  test("unlinked says how to link the map", () => {
+    expect(NODE_EMPTY_COPY.unlinked.title).toBe("Not linked to a map");
+    expect(NODE_EMPTY_COPY.unlinked.hint).toContain("link the two with an interaction edge");
+  });
+});
+
 describe("resolveGrammarEmptyReason", () => {
   // A sibling of resolveNodeEmptyReason rather than an extension: a chart has
   // no notion of rows or of being "tabular", and a table has none of a spec.

@@ -12,7 +12,7 @@ import { BUILDER_TEMPLATES, type AgentAttachment } from "../../services/agents";
 const attachment = (session: AgentAttachment["builderSession"]): AgentAttachment =>
   ({
     attachmentId: "a1",
-    coord: "agent.dataflow-builder@1.0.0",
+    coord: "agent.curio.dataflow-builder@1",
     target: { kind: "canvas" },
     sessionId: "s1",
     revision: 1,
@@ -777,7 +777,7 @@ describe("AgentBuilderStrip — dev/131 the session, and nodes that depend on yo
 describe("AgentBuilderStrip names each node's own finder", () => {
   const myOrchestrator = (session: AgentAttachment["builderSession"]): AgentAttachment => ({
     ...attachment(session),
-    coord: "agent.my-orchestrator@1.0.0",
+    coord: "agent.test.my-orchestrator@1",
     name: "My Orchestrator",
     capabilities: ["dataflow.orchestrate"],
   });

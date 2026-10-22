@@ -39,6 +39,7 @@ from .utils import (
     drag_builtin_to_canvas,
     node_execution_timeout_ms,
     node_locator,
+    open_strip_category,
     open_tools_palette,
     play_node,
     read_node_code,
@@ -238,9 +239,10 @@ def test_a_function_in_a_shipped_package_becomes_a_node_that_runs(
         connect_nodes(page, node, reader)
         _wait_for_code_containing(page, node, "season_factor(")
         assert read_node_code(page, node) == WRITTEN_CODE, read_node_code(page, node)
-        # The template's widget came with the node: its tag above the code, and
-        # the reference drawn as a chip. Captured before the run, whose output
-        # pane names a fresh artifact id every time.
+        # The template's widget came with the node: its tag under Widgets above
+        # the code, and the reference drawn as a chip. Captured before the run,
+        # whose output pane names a fresh artifact id every time.
+        open_strip_category(page, node, "widgets")
         node_locator(page, node).locator('[data-widget-strip] [data-widget-tag="season"]').wait_for(
             state="visible", timeout=10000,
         )

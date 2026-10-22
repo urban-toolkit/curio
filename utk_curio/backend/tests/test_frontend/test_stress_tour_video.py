@@ -2138,10 +2138,7 @@ def chapter_agents(run: StressRun) -> None:
     installed: list[str] = []
     with run.step(f"Add all {len(agents)} agents to the dataflow"):
         for agent in agents:
-            coord = agent.get("coord") or (
-                f"{agent.get('id')}@{agent.get('version')}"
-                if agent.get("id") and agent.get("version") else ""
-            )
+            coord = agent.get("coord") or agent.get("dirName") or ""
             if not coord:
                 continue
             card = page.locator(f'article[data-agent-coord="{coord}"]')
@@ -2448,10 +2445,10 @@ EXAMPLE_RUNS: tuple[tuple[str, int, bool], ...] = (
     ("03-vega-lite-linked-temporal-charts.json", 4, False),
     ("04-vega-lite-multi-flow-dashboard.json", 21, False),
     ("05-vega-lite-multi-view-drilldown.json", 27, False),
-    ("09-heterogeneous-data-linked-views.json", 11, False),
-    ("06-back-bay-road-sunlight.json", 11, True),
-    ("07-autark-gpu-shader.json", 5, True),
-    ("08-autark-spatial-join-regression.json", 7, True),
+    ("09-heterogeneous-data-linked-views.json", 10, False),
+    ("06-back-bay-road-sunlight.json", 15, True),
+    ("07-autark-gpu-shader.json", 4, True),
+    ("08-autark-spatial-join-regression.json", 6, True),
     ("11-autark-pbf-loading.json", 3, True),
     # Needs model.curio.ddrnet23-slim, which the `nodes` chapter installs.
     ("10-street-vision-cv-analysis.json", 12, False),

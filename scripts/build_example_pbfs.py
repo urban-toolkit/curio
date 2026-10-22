@@ -77,9 +77,10 @@ AREAS = {
     # west so that it holds Battery Park City whole.
     "lower_mnt": Area(box=(40.698762, -74.0194416, 40.756338, -73.962192),
                       boundaries=("Battery Park City", "Financial District")),
-    # chicago-rain-wind-routing: SCOUT's weather routing box, which its loader loads as a box
-    # (queryArea.bbox), so no spec clips to the Chicago city boundary. The area
-    # keeps it so that the script builds the committed extract, which carries it whole.
+    # chicago-rain-wind-routing and chicago-loop-layers: SCOUT's weather routing box, which
+    # their loaders load as a box (queryArea.bbox), so no spec clips to the Chicago city
+    # boundary. The area keeps it so that the script builds the committed extract, which
+    # carries it whole.
     "chicago_downtown": Area(box=(41.859, -87.662, 41.898, -87.613), boundaries=("Chicago",)),
 }
 

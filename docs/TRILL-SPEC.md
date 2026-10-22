@@ -77,7 +77,10 @@ choice for a choice, `[]` for the list types, `[0, 1]` for a range,
 `content` places a widget as `[!! name !!]`; a run replaces it with `value` when
 set, else `default`. A reference on its own becomes a literal of the code's
 language (quoted text, a number, a list, a boolean, an object); one inside a string literal
-becomes the value's text, escaped for that string. An old
+becomes the value's text, escaped for that string. In a Vega-Lite node's spec,
+a reference where Vega-Lite reads a field name writes each name with a
+backslash before each `.`, `[` and `]` (`rain.mm` as `rain\.mm`), and a name
+that already holds a backslash as it is. An old
 `[!! name$TYPE$default !!]` marker, or a name the node has no widget for, fails
 the run with a message naming it.
 
@@ -100,49 +103,9 @@ ids of the nodes it descends from, oldest first, ending with the node it was
 copied from. Two nodes are the same lever in two scenarios when their ids and
 these lists meet.
 
-`metadata.compareScenarios` holds a `curio.builtin/compare-scenarios` node's
-settings, written only when it has inputs or one of the settings below. `inputs`
-labels each input circle, in circle order, `{scenario?, name, color}`: the id, name
-and color of the scenario the input's node belongs to, or, for a node in no
-scenario, the node's name, a neutral color and no `scenario`. The node's `content`
-is written from them, one `(scenario, name, [!! input_k !!])` entry per input handed
-to `curio_stack_scenarios`, which stacks the inputs into one table under `scenario`
-and `scenario_name`, or, in Difference, to `curio_difference_scenarios`, which
-subtracts input_0 from input_1. `chart` is `{preset?, x?, y?, aggregate?}`:
-`preset` is one of `bar`, `grouped-bar`, `line`, `scatter`, `pie`, `lollipop` and
-`table`, `x` and `y` name columns of that table, and `aggregate` is one of `mean`,
-`sum`, `median`, `min`, `max` and `count`. `mode` is `chart` or `difference`, written
-only when the user chose one; without it the node shows Difference for two rasters
-or two layers and Chart otherwise. `difference` is `{key?, absolute?}`: `key` is the
-column Difference matches the rows of two layers or tables on (without it, `osm_id`
-or `building_id`), passed to `curio_difference_scenarios` as `key=`, and `absolute`,
-when `true`, gives each difference's size instead of input_1 minus input_0, passed as
-`absolute=True`. An Autark node after the node draws a raster's or a layer's
-difference on a map.
-
-`metadata.editFeatures` holds the edit log of an Interaction node (type
-`curio.builtin/edit-features`), written only when it has one of its fields.
-`key` is the column that identifies a feature (`osm_id`, `building_id`, or
-another column whose values differ in every feature), and `layer` the layer the
-edits apply to when the input names its layers. `edits` lists the edits in the
-order they were made. Each has an `op` and names its features by `ids`, the
-`key` values of the features, or by `where`, a condition over a feature's
-columns such as `height > 100`, never both:
-
-- `remove` drops the features, and `restore` puts them back as the node's input
-  has them.
-- `set` writes `value` into `column`.
-- `scale` multiplies the number in `column` by `value`, and `offset` adds
-  `value` to it; both take a number.
-- `expr` writes into `column` what the expression `value` makes of each
-  feature, such as `levels * 3.2`.
-
-`label` names an edit for people, and `enabled: false` keeps it in the log and
-skips it in a run. The node's `content` is written from the log, one call of
-`curio_edit_features` with the edits, `key=` and `layer=`. The expressions are
-the language `utk_curio/sandbox/util/edit_expr.py` describes: columns,
-numbers, texts, `true`, `false`, `null`, `+ - * / %`, comparisons, `and`,
-`or`, `not`, and `abs`, `round`, `min` and `max`.
+A Map Edits node's history in `nodeProvenance` also holds an entry for each
+change made in its body, `kind` `edit`, with the code it left and a `label`
+saying what it changed.
 
 ### An edge
 

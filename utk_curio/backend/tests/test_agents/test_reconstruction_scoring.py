@@ -337,6 +337,37 @@ class TestCapabilityGaps:
         assert len(_graph(self.EXPECTED).interaction_edges()) == 1
 
 
+class TestInteractionEdgesHaveNoDirection:
+    """An interaction edge carries selections both ways between the two views it
+    joins, so a plan that names its ends the other way round built the same
+    edge. A data edge keeps its direction."""
+
+    MAP = "curio.builtin/autk-grammar"
+
+    def _linked(self, src, dst, interaction=True):
+        extra = {"type": "Interaction"} if interaction else {}
+        return _spec(
+            [_node("l", LOADER), _node("v", VEGA, content="{}"), _node("m", self.MAP, content="{}")],
+            [_edge("l", "v"), _edge("l", "m"), _edge(src, dst, **extra)],
+        )
+
+    def test_an_interaction_edge_named_the_other_way_round_is_the_same_edge(self):
+        comparison = compare_graphs(
+            _graph(self._linked("v", "m")), _graph(self._linked("m", "v")), universe=UNIVERSE,
+        )
+        assert comparison.exact, comparison
+        assert score_reconstruction(comparison).total == 1.0
+
+    def test_guard_a_data_edge_the_other_way_round_is_still_wrong(self):
+        comparison = compare_graphs(
+            _graph(self._linked("v", "m", interaction=False)),
+            _graph(self._linked("m", "v", interaction=False)),
+            universe=UNIVERSE,
+        )
+        assert not comparison.exact
+        assert "topology" in score_reconstruction(comparison).categories
+
+
 class TestIntents:
     def test_a_node_whose_words_match_satisfies_its_intent(self):
         outcomes = evaluate_intents(

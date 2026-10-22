@@ -16,6 +16,7 @@ import {
   renumberInputReferences,
   resolveReferences,
   widgetLiteral,
+  withChipPlaceholders,
   type CodeLanguage,
   type InputScope,
 } from "../../utils/references/codeReferences";
@@ -26,6 +27,8 @@ import type { SelectionTag } from "../../utils/references/selectionTags";
 type Case = {
   name: string;
   language: CodeLanguage;
+  /** A JSON document's grammar, such as vega-lite. */
+  grammar?: string;
   code: string;
   widgets: unknown[];
   inputs?: InputScope[];
@@ -47,6 +50,7 @@ describe("the shared reference cases", () => {
         selections: (c.selections ?? []) as SelectionTag[],
       },
       c.language,
+      c.grammar,
     );
     expect(result.code).toBe(c.expected);
     expect(result.problems.map((p) => p.message)).toEqual(c.problems ?? []);
@@ -304,6 +308,90 @@ describe("closing up circles, with names inside f-strings", () => {
     expect(renumberInputReferences(code, 1, "javascript")).toBe(
       "const s = `input_2 has ${input_1.length} rows, ${`${input_2}`}`;\nconst t = 'input_2';",
     );
+  });
+});
+
+describe("scenario chips, the dataset inputs and its fields", () => {
+  test("the table has each scenario chip, the dataset inputs and a field of it resolving in a spec", () => {
+    const resolving = (cases.cases as Case[]).filter((c) => c.language === "json" && !c.problems).map((c) => c.code).join(" ");
+    for (const chip of ["scenario colors", "scenario text_colors", "scenario order", "scenario input_1", "inputs", "inputs.scenario_name"]) {
+      expect([chip, resolving.includes(`[!! ${chip} !!]`)]).toEqual([chip, true]);
+    }
+  });
+
+  test("are told apart from a widget, whose name has no space and no dot", () => {
+    expect(parseReference("scenario colors")).toEqual({ kind: "scenario", chip: "colors" });
+    expect(parseReference("scenario text_colors")).toEqual({ kind: "scenario", chip: "text_colors" });
+    expect(parseReference("scenario order")).toEqual({ kind: "scenario", chip: "order" });
+    expect(parseReference("scenario input_2")).toEqual({ kind: "scenario", chip: "input", slot: 2 });
+    expect(parseReference("scenario input_?")).toEqual({ kind: "scenario", chip: "input", slot: null });
+    expect(parseReference("scenario colours")).toEqual({ kind: "scenario", chip: null });
+    expect(parseReference("inputs.scenario_name")).toEqual({ kind: "stacked", column: "scenario_name" });
+    expect(parseReference("inputs.rain.mm")).toEqual({ kind: "stacked", column: "rain.mm" });
+    // The dataset itself, a name no widget takes.
+    expect(parseReference("inputs")).toEqual({ kind: "dataset" });
+    // What the owner first named them would be widgets, or a column of input_1.
+    expect(parseReference("scenario_colors")).toEqual({ kind: "widget", name: "scenario_colors" });
+    expect(parseReference("scenario")).toEqual({ kind: "widget", name: "scenario" });
+    expect(parseReference("input_1.scenario_color")).toEqual({ kind: "input", slot: 1, column: "scenario_color" });
+  });
+
+  test("closing up circles: an input's scenario chip follows its circle, and the deleted one reports itself", () => {
+    const code = '{"a": "[!! scenario input_0 !!]", "b": "[!! scenario input_1 !!]", "c": [!! scenario input_2 !!], "d": [!! scenario colors !!]}';
+    expect(renumberInputReferences(code, 1, "json")).toBe(
+      '{"a": "[!! scenario input_0 !!]", "b": "[!! scenario input_? !!]", "c": [!! scenario input_1 !!], "d": [!! scenario colors !!]}',
+    );
+  });
+
+  test("after closing up, an input's scenario chip writes the color of the box its input comes from", () => {
+    // Routes 0, 1 and 2 feed the map; route 1 is deleted, so route 2 is now input_1.
+    const code = renumberInputReferences('{"color": "[!! scenario input_2 !!]"}', 1, "json");
+    const inputs: InputScope[] = [
+      { slot: 0, scenario: { scenario: "fastest", name: "Fastest route", color: "#42A5F5", rank: 0 } },
+      { slot: 1, scenario: { scenario: "weather-aware", name: "Weather-aware route", color: "#00838F", rank: 1 } },
+    ];
+    expect(resolveReferences(code, { widgets: [], inputs, shared: [] }, "json")).toEqual({
+      code: '{"color": "#00838F"}',
+      problems: [],
+    });
+  });
+});
+
+/**
+ * A spec read for its shape before its chips are resolved (what an Autark
+ * document declares): each chip standing on its own is held by a string of
+ * itself, so any bare chip, a list or a scale included, leaves it JSON.
+ * `with_chip_placeholders` in `code_references.py` does the same.
+ */
+describe("withChipPlaceholders", () => {
+  test("each chip standing on its own is held by a string of its own text; one inside a string is left", () => {
+    const spec = '{"encoding": {"x": {"field": "scenario_name", "sort": [!! scenario order !!]}, '
+      + '"color": {"field": "scenario_name", "scale": [!! scenario colors !!]}, "y": {"field": "[!! inputs.sunlight !!]"}}, '
+      + '"width": [!! size !!], "title": "Sun in \\"[!! season !!]\\""}';
+    expect(() => JSON.parse(spec)).toThrow();
+    const held = JSON.parse(withChipPlaceholders(spec));
+    expect(held.encoding.x.sort).toBe("[!! scenario order !!]");
+    expect(held.encoding.color.scale).toBe("[!! scenario colors !!]");
+    expect(held.encoding.y.field).toBe("[!! inputs.sunlight !!]");
+    expect(held.width).toBe("[!! size !!]");
+    expect(held.title).toBe('Sun in "[!! season !!]"');
+  });
+
+  test("a spec with no chip standing on its own is itself", () => {
+    expect(withChipPlaceholders('{"mark": "bar"}')).toBe('{"mark": "bar"}');
+    expect(withChipPlaceholders('{"title": "[!! season !!]"}')).toBe('{"title": "[!! season !!]"}');
+  });
+});
+
+describe("a Vega-Lite spec nested 5,000 deep", () => {
+  // The browser reads a spec's places walking it, and a walk that deep
+  // overflowed the stack, in the Widgets tab's render too.
+  test("writes its names as they are, and does not overflow the stack", () => {
+    const deep = '{"a": '.repeat(5000) + '{"field": "[!! y !!]"}' + "}".repeat(5000);
+    const scope = { widgets: normalizeWidgets([{ name: "y", type: "text", default: "rain.mm" }]), inputs: [], shared: [] };
+    const result = resolveReferences(deep, scope, "json", "vega-lite");
+    expect(result.problems).toEqual([]);
+    expect(result.code).toBe(deep.replace("[!! y !!]", "rain.mm"));
   });
 });
 

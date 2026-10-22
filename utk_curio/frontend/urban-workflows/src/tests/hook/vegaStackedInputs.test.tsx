@@ -1,5 +1,6 @@
 /**
- * A Vega-Lite spec that reads `inputs` (#662) is drawn from every input's rows
+ * A Vega-Lite spec that reads `inputs` (#662), which its editor writes from
+ * the chip `[!! inputs !!]` before the chart draws, is drawn from every input's rows
  * stacked, each named by its scenario's box, and judged on them: what arrived
  * is every input's rows, not the first input's alone. A new input stacks them
  * again under the names the chart has then.
@@ -67,6 +68,7 @@ jest.mock("../../providers/ToastProvider", () => ({
 jest.mock("../../services/api", () => ({ fetchData: jest.fn(), fetchPreviewData: jest.fn() }));
 
 import { useVega } from "../../hook/useVega";
+import { resolveReferences } from "../../utils/references/codeReferences";
 import { renderOutcome } from "../../utils/renderOutcome";
 import { markSelectionEcho } from "../../utils/selectionEcho";
 
@@ -85,6 +87,20 @@ const BARS = JSON.stringify({
     y: { field: "sunlight", type: "quantitative", aggregate: "mean" },
   },
 });
+
+/** BARS as Scout's charts write it: its dataset named by its chip. */
+const CHIP_BARS = BARS.replace('"name":"inputs"', '"name":"[!! inputs !!]"');
+
+/** *raw* as the node's editor writes it before a run (components/editing/NodeEditor):
+ * its chips resolved over the chart's two wired circles, in a Vega-Lite spec. */
+function asTheEditorWrites(raw: string): string {
+  expect(raw).toContain("[!! inputs !!]");
+  const { code, problems } = resolveReferences(
+    raw, { widgets: [], inputs: [{ slot: 0 }, { slot: 1 }], shared: [] }, "json", "vega-lite",
+  );
+  expect(problems).toEqual([]);
+  return code;
+}
 
 /** The first input's rows as bars, and every input's stacked rows as points over them. */
 const OVER_THE_FIRST = JSON.stringify({
@@ -199,7 +215,8 @@ describe("a selection coming back from a Data Pool", () => {
   const tall = frame({ segment: ["r1"], sunlight: [3] });
 
   test("on a chart that reads inputs alone: that input's rows in inputs change their flags, not the view (#535)", async () => {
-    const { hook, view } = await drawn(both(flagged(["0", "0"]), tall), [BASE, TALL]);
+    // Its dataset named by its chip, as the editor writes it.
+    const { hook, view } = await drawn(both(flagged(["0", "0"]), tall), [BASE, TALL], asTheEditorWrites(CHIP_BARS));
     const count = views().length;
     // The view holds inputs alone, as vega-lite builds it.
     expect(() => view.change("input_0", { ops: [] })).toThrow("Unrecognized data set: input_0");
@@ -243,7 +260,8 @@ describe("a selection from a chart joined by a direct interaction edge", () => {
   const two = () => both(frame({ segment: ["r1", "r2"], sunlight: [5, 6] }), frame({ segment: ["r1", "r2"], sunlight: [3, 2] }));
 
   test("lights the first input's rows in inputs on the first draw, and the draw still counts its marks", async () => {
-    const { counts, view } = await drawn(two(), [BASE, TALL], BARS, picked(1));
+    // Its dataset named by its chip, as the editor writes it.
+    const { counts, view } = await drawn(two(), [BASE, TALL], asTheEditorWrites(CHIP_BARS), picked(1));
     expect(counts.drawn).toBe(3);
     expect(view.changes.map((change: any) => change.name)).toEqual(["inputs"]);
     // The first input's second row is picked; another input's row keeps its flag.
@@ -278,6 +296,45 @@ describe("a selection from a chart joined by a direct interaction edge", () => {
     const { counts, view } = await drawn(two(), [BASE, TALL], second, picked(1));
     expect(counts.drawn).toBe(3);
     expect(view.changes).toEqual([]);
+  });
+
+  // The edge removed, or the chart at its other end deleted: the flow hands
+  // this chart an empty list, and the rows it lit go back to the flags its
+  // own input carries.
+  test("a selection taken away puts back the flags of the chart's input", async () => {
+    // The same input on every render: only the selection changes.
+    const input = two();
+    const { hook, view } = await drawn(input, [BASE, TALL], OVER_THE_FIRST, picked(1));
+    expect(view.changes.map((change: any) => change.name)).toEqual(["input_0", "inputs"]);
+
+    await act(async () => {
+      hook.rerender({ input, labels: [BASE, TALL], interactions: [] });
+    });
+
+    await waitFor(() => expect(view.changes).toHaveLength(4));
+    expect(view.changes.slice(2).map((change: any) => change.name)).toEqual(["input_0", "inputs"]);
+    expect(flagsOf(view.changes[2], [{ __row_index__: 0, interacted: "0" }, { __row_index__: 1, interacted: "1" }]))
+      .toEqual(["0", "0"]);
+    // Another input's row keeps its flag.
+    expect(flagsOf(view.changes[3], rows)).toEqual(["0", "0", "1"]);
+    expect(mockShowToast).not.toHaveBeenCalled();
+  });
+
+  test("a selection taken away puts back the flags a Data Pool's echo set on the chart's input", async () => {
+    const echoed = markSelectionEcho(frame({ segment: ["r1", "r2"], sunlight: [5, 6], interacted: ["0", "1"] }));
+    const input = both(echoed, frame({ segment: ["r1"], sunlight: [3] }));
+    const { hook, view } = await drawn(input, [BASE, TALL], OVER_THE_FIRST, picked(0));
+    // The direct selection lights the first row over the echo's second.
+    expect(flagsOf(view.changes[0], [{ __row_index__: 0, interacted: "0" }, { __row_index__: 1, interacted: "1" }]))
+      .toEqual(["1", "0"]);
+
+    await act(async () => {
+      hook.rerender({ input, labels: [BASE, TALL], interactions: [] });
+    });
+
+    await waitFor(() => expect(view.changes).toHaveLength(4));
+    expect(flagsOf(view.changes[2], [{ __row_index__: 0, interacted: "1" }, { __row_index__: 1, interacted: "0" }]))
+      .toEqual(["0", "1"]);
   });
 });
 

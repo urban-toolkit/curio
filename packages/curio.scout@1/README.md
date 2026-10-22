@@ -8,7 +8,7 @@ building rasterizer ("OSM vector to raster"), ported from
 it draws each building's height into map tiles and joins the tiles into one
 raster, which an Autark map draws and SCOUT's Deep Umbra shadow model reads.
 The fifteen Vega-Lite charts take one input per scenario and draw each scenario
-in its box's color. Seven are re-made from komar41's ScenarioCharts, and Dots
+in its box's color, through their scenario chips. Seven are re-made from komar41's ScenarioCharts, and Dots
 with a range is the first view of his "Minutes of shadow per park" chart.
 
 Once the package is in a dataflow (**Add to project** in the Node Catalog
@@ -129,7 +129,7 @@ nothing, and a building taller than the maximum height is drawn at the maximum.
 
 Each chart is a Vega-Lite node with a spec of its own. Connect each scenario's
 outcome to one of its input circles: each edge takes the next circle. Its spec
-reads all its inputs as the dataset `inputs` (`"data": {"name": "inputs"}`):
+reads all its inputs as the dataset its chip names (`"data": {"name": "[!! inputs !!]"}`):
 every input's rows, stacked in the order of its circles, each with `__input__`
 (its circle), `scenario` (the id of the scenario box its input comes from) and
 `scenario_name` (that box's name) beside its own columns. A column one input
@@ -138,8 +138,8 @@ a `value` column. An input from a node in no box has an empty `scenario` and
 its node's name. The columns a chart plots are widgets in its **Widgets** tab.
 
 A new chart opens with its template's spec in its grammar editor. The spec is
-yours to edit: its widgets' chips are filled in each time it draws, and the
-dataflow keeps the spec as you leave it.
+yours to edit: its chips, its widgets' and its scenarios', are written each time
+it draws, and the dataflow keeps the spec as you leave it.
 
 ### Widgets
 
@@ -170,24 +170,29 @@ dataflow keeps the spec as you leave it.
 
 A column name with a `'` in it cannot be read: rename the column first.
 
-Vega-Lite reads a `.` or a `[` in a field as a path into the row, and the chips
-write a column's name as it is, so a column such as `rain.mm` is read as `mm`
-inside `rain`. Rename it upstream, or edit the spec to escape it as `rain\.mm`
-(`"field": "rain\\.mm"` in the JSON).
+A column whose name holds a `.` or a `[`, such as `rain.mm`, is set in its
+widget as it is. Where Vega-Lite reads a field, the chip writes the name escaped,
+`"field": "rain\\.mm"`, since Vega-Lite reads a `.` or a `[` in a field as a
+path into the row; in a title, a sort or an expression it writes `rain.mm`. A
+widget that holds the escaped name, `rain\.mm`, is written as it is. Bars with
+error bars draws no error bars for such a Y column: rename it upstream.
 
 ### Colors and order
 
-A color, fill or stroke by `scenario_name` takes the colors of the scenarios'
-boxes, and an axis, an offset or a facet by it puts the scenarios in the order
-the dataflow lists the boxes. When at least one input comes from a box, each
-input from no box comes after them in the order of the circles, in grey. With
-no input from a box, the spec's own colors and order stand
-([Every input in one dataset](../../docs/USAGE.md#every-input-in-one-dataset)).
-A chart is drawn again when a scenario is renamed or recolored. Stacked bars with
+Each chart writes its scenarios through scenario chips: a color, fill or stroke
+by `scenario_name` takes `"scale": [!! scenario colors !!]`, the colors of the
+scenarios' boxes, and an axis, an offset or a facet by it
+`"sort": [!! scenario order !!]`, the order the dataflow lists the boxes. Each
+input from no box comes after them in the order of the circles, in a grey of its
+own; with no input from a box, the chart's own palette colors the scenarios
+([Scenario colors and order](../../docs/USAGE.md#scenario-colors-and-order)).
+A chart is drawn again when a scenario is renamed or recolored. An edit that
+writes its own scale in the chip's place draws its own colors. Stacked bars with
 totals and Weighted matrix write each scenario's name in its color under its
-bar or beside its row; their bars and rings keep colors of their own. The Table
-writes each row in its scenario's color, in a darker shade of it where the
-color is too light to read on white.
+bar or beside its row; their bars and rings keep colors of their own. The Table,
+and the totals of Stacked bars with totals, write in `[!! scenario text_colors !!]`:
+each scenario's color, in a darker shade of it where the color is too light to
+read on white.
 
 ## Dataflows
 

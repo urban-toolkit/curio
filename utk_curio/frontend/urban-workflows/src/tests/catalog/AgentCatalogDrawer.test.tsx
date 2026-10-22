@@ -49,8 +49,8 @@ function card(id: string, over: Record<string, unknown> = {}) {
   return {
     id,
     version: "1.0.0",
-    dirName: `${id}@1.0.0`,
-    name: id.replace("agent.", ""),
+    dirName: `${id}@1`,
+    name: id.slice(id.lastIndexOf(".") + 1),
     category: "node",
     purpose: "does a thing",
     capabilities: ["node.explain"],
@@ -68,8 +68,8 @@ function card(id: string, over: Record<string, unknown> = {}) {
 
 beforeEach(() => {
   jest.clearAllMocks();
-  api.catalog.mockResolvedValue({ agents: [card("agent.my-explainer")] } as any);
-  api.listImports.mockResolvedValue({ agents: [card("agent.researcher", { scope: "imports", imported: true })] } as any);
+  api.catalog.mockResolvedValue({ agents: [card("agent.test.my-explainer")] } as any);
+  api.listImports.mockResolvedValue({ agents: [card("agent.curio.researcher", { scope: "imports", imported: true })] } as any);
   api.listProjectAgents.mockResolvedValue({ agents: [] } as any);
   api.installToProject.mockResolvedValue({ agents: [] } as any);
   api.uninstallFromProject.mockResolvedValue({ agents: [] } as any);
@@ -144,7 +144,7 @@ describe("AgentCatalogDrawer", () => {
     // was still gated on `hasProject`. The card then offered a disabled control
     // and nothing else, which is the dead end #190 and #199 describe.
     api.catalog.mockResolvedValue({
-      agents: [card("agent.my-explainer", { imported: true })],
+      agents: [card("agent.test.my-explainer", { imported: true })],
     } as any);
     render(<AgentCatalogDrawer presented projectId={null} pinned={false} onPinToggle={jest.fn()} />);
     await waitFor(() => expect(screen.getByText("my-explainer")).toBeInTheDocument());
@@ -177,7 +177,7 @@ describe("AgentCatalogDrawer", () => {
 
     await waitFor(() => expect(onEnsureProject).toHaveBeenCalledTimes(1));
     await waitFor(() =>
-      expect(api.installToProject).toHaveBeenCalledWith("created-1", "agent.my-explainer@1.0.0"),
+      expect(api.installToProject).toHaveBeenCalledWith("created-1", "agent.test.my-explainer@1"),
     );
   });
 
@@ -209,7 +209,7 @@ describe("AgentCatalogDrawer", () => {
     // through from the action itself.
     api.catalog.mockImplementation((projectId?: string) =>
       Promise.resolve({
-        agents: [card("agent.my-explainer", { installedInProject: Boolean(projectId) })],
+        agents: [card("agent.test.my-explainer", { installedInProject: Boolean(projectId) })],
       }) as any,
     );
     render(
@@ -244,7 +244,7 @@ describe("AgentCatalogDrawer", () => {
       releaseUnscoped = resolve;
     });
     api.catalog.mockImplementation(((projectId?: string) => {
-      const agents = [card("agent.my-explainer", { installedInProject: Boolean(projectId) })];
+      const agents = [card("agent.test.my-explainer", { installedInProject: Boolean(projectId) })];
       // The unscoped call is held open until the scoped one has landed.
       return projectId ? Promise.resolve({ agents }) : unscoped.then(() => ({ agents }));
     }) as any);
@@ -303,7 +303,7 @@ describe("AgentCatalogDrawer", () => {
     await clickAndConfirm("Add to project", "Add to project");
 
     await waitFor(() =>
-      expect(api.installToProject).toHaveBeenCalledWith("p1", "agent.my-explainer@1.0.0"),
+      expect(api.installToProject).toHaveBeenCalledWith("p1", "agent.test.my-explainer@1"),
     );
     expect(onEnsureProject).not.toHaveBeenCalled();
   });
@@ -315,8 +315,8 @@ describe("AgentCatalogDrawer", () => {
     // the same `publishable` flag.
     api.catalog.mockResolvedValue({
       agents: [
-        card("agent.my-custom", { publishable: true }),
-        card("agent.my-explainer", { publishable: false }),
+        card("agent.test.my-custom", { publishable: true }),
+        card("agent.test.my-explainer", { publishable: false }),
       ],
     } as any);
     render(<AgentCatalogDrawer presented projectId="p1" pinned={false} onPinToggle={jest.fn()} />);
@@ -330,19 +330,19 @@ describe("AgentCatalogDrawer", () => {
     await waitFor(() => expect(screen.getByText("my-explainer")).toBeInTheDocument());
     await clickAndConfirm("Add to project", "Add to project");
     await waitFor(() =>
-      expect(api.installToProject).toHaveBeenCalledWith("p1", "agent.my-explainer@1.0.0"),
+      expect(api.installToProject).toHaveBeenCalledWith("p1", "agent.test.my-explainer@1"),
     );
   });
 
   it("discloses a missing required dependency on the card and the Add button", async () => {
     api.catalog.mockResolvedValue({
       agents: [
-        card("agent.dataflow-builder", {
+        card("agent.curio.dataflow-builder", {
           name: "Dataflow Builder",
           category: "canvas",
           requiresAgents: [{
-            id: "agent.node-builder", name: "Node Builder",
-            coord: "agent.node-builder@1.0.0", visible: true, installedInProject: false,
+            id: "agent.curio.node-builder", name: "Node Builder",
+            coord: "agent.curio.node-builder@1", visible: true, installedInProject: false,
           }],
         }),
       ],
@@ -355,18 +355,18 @@ describe("AgentCatalogDrawer", () => {
     expect(btn).toHaveAttribute("title", "Also adds Node Builder (required)");
     await clickAndConfirm("Add to project (+1 required)", "Add to project");
     await waitFor(() =>
-      expect(api.installToProject).toHaveBeenCalledWith("p1", "agent.dataflow-builder@1.0.0"),
+      expect(api.installToProject).toHaveBeenCalledWith("p1", "agent.curio.dataflow-builder@1"),
     );
   });
 
   it("a satisfied dependency renders a check and a plain Add to project", async () => {
     api.catalog.mockResolvedValue({
       agents: [
-        card("agent.dataflow-builder", {
+        card("agent.curio.dataflow-builder", {
           name: "Dataflow Builder",
           requiresAgents: [{
-            id: "agent.node-builder", name: "Node Builder",
-            coord: "agent.node-builder@1.0.0", visible: true, installedInProject: true,
+            id: "agent.curio.node-builder", name: "Node Builder",
+            coord: "agent.curio.node-builder@1", visible: true, installedInProject: true,
           }],
         }),
       ],
@@ -410,7 +410,7 @@ describe("AgentCatalogDrawer", () => {
     // editor. Curio no longer caps either, so the editor and its three scopes
     // are gone and a card's actions are add, remove, publish.
     api.listProjectAgents = jest.fn().mockResolvedValue({
-      agents: [card("agent.researcher", { scope: "installed", installedInProject: true })],
+      agents: [card("agent.curio.researcher", { scope: "installed", installedInProject: true })],
     } as any);
     render(<AgentCatalogDrawer presented projectId="p1" pinned={false} onPinToggle={jest.fn()} />);
     await waitFor(() => expect(screen.getByText("my-explainer")).toBeInTheDocument());
@@ -468,7 +468,7 @@ describe("AgentCatalogDrawer tab transitions + state sync (memo dev/47)", () => 
   it("an installed agent offers no action at all, not even Add", async () => {
     api.listProjectAgents.mockResolvedValue({
       agents: [
-        card("agent.node-builder", {
+        card("agent.curio.node-builder", {
           scope: "installed",
           installedInProject: true,
         }),
@@ -500,7 +500,7 @@ describe("AgentCatalogDrawer tab transitions + state sync (memo dev/47)", () => 
     api.listProjectAgents.mockClear();
     api.listProjectAgents.mockClear();
     await clickAndConfirm("Add to project", "Add to project");
-    await waitFor(() => expect(api.installToProject).toHaveBeenCalledWith("p1", "agent.my-explainer@1.0.0"));
+    await waitFor(() => expect(api.installToProject).toHaveBeenCalledWith("p1", "agent.test.my-explainer@1"));
     await waitFor(() => {
       expect(api.catalog).toHaveBeenCalled();
       expect(api.listProjectAgents).toHaveBeenCalled();
@@ -521,7 +521,7 @@ describe("AgentCatalogDrawer tab transitions + state sync (memo dev/47)", () => 
 
   it("search filters the visible rows and clearing restores them (dev/68)", async () => {
     api.catalog.mockResolvedValue({
-      agents: [card("agent.my-explainer"), card("agent.dataset-finder", { category: "data" })],
+      agents: [card("agent.test.my-explainer"), card("agent.curio.dataset-finder", { category: "data" })],
     } as any);
     render(<AgentCatalogDrawer presented projectId="p1" pinned={false} onPinToggle={jest.fn()} />);
     await waitFor(() => expect(screen.getByText("my-explainer")).toBeInTheDocument());
@@ -546,7 +546,7 @@ describe("AgentCatalogDrawer tab transitions + state sync (memo dev/47)", () => 
 
   it('"Sort: Name" reorders rows alphabetically; "Sort: New" keeps roster order (dev/68)', async () => {
     api.catalog.mockResolvedValue({
-      agents: [card("agent.zeta-agent"), card("agent.alpha-agent")],
+      agents: [card("agent.test.zeta-agent"), card("agent.test.alpha-agent")],
     } as any);
     render(<AgentCatalogDrawer presented projectId="p1" pinned={false} onPinToggle={jest.fn()} />);
     await waitFor(() => expect(screen.getByText("zeta-agent")).toBeInTheDocument());
@@ -572,7 +572,7 @@ describe("AgentCatalogDrawer tab transitions + state sync (memo dev/47)", () => 
 
   it("each row leads with a per-category avatar, tint and glyph (dev/68)", async () => {
     api.catalog.mockResolvedValue({
-      agents: [card("agent.my-explainer"), card("agent.dataset-finder", { category: "data" })],
+      agents: [card("agent.test.my-explainer"), card("agent.curio.dataset-finder", { category: "data" })],
     } as any);
     const { container } = render(
       <AgentCatalogDrawer presented projectId="p1" pinned={false} onPinToggle={jest.fn()} />,
@@ -608,7 +608,7 @@ describe("AgentCatalogDrawer tab transitions + state sync (memo dev/47)", () => 
     // First Global fetch hangs; the revisit's fetch resolves fresh data first.
     api.catalog
       .mockImplementationOnce(() => slow as any)
-      .mockResolvedValue({ agents: [card("agent.fresh-agent")] } as any);
+      .mockResolvedValue({ agents: [card("agent.test.fresh-agent")] } as any);
     render(<AgentCatalogDrawer presented projectId="p1" pinned={false} onPinToggle={jest.fn()} />);
     fireEvent.click(screen.getByText("In project"));
     await waitFor(() => expect(api.listProjectAgents).toHaveBeenCalled());
@@ -616,7 +616,7 @@ describe("AgentCatalogDrawer tab transitions + state sync (memo dev/47)", () => 
     await waitFor(() => expect(screen.getByText("fresh-agent")).toBeInTheDocument());
     // The slow FIRST response lands late: it must be dropped, not repainted.
     await act(async () => {
-      resolveSlow({ agents: [card("agent.stale-agent")] });
+      resolveSlow({ agents: [card("agent.test.stale-agent")] });
     });
     expect(screen.queryByText("stale-agent")).toBeNull();
     expect(screen.getByText("fresh-agent")).toBeInTheDocument();

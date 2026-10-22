@@ -54,6 +54,15 @@ def unversioned_node_type(node_type: object) -> object:
     return _VERSION_SUFFIX_RE.sub("", node_type)
 
 
+def is_package_node_type(node_type: object) -> bool:
+    """Whether *node_type* names a package's template, as
+    ``<packageId>/<templateId>`` with or without ``@<major>``. A legacy plain
+    string, or a type of any other shape, names none."""
+    return isinstance(node_type, str) and bool(
+        _NODE_TYPE_VERSIONED_RE.match(node_type) or _NODE_TYPE_UNVERSIONED_RE.match(node_type)
+    )
+
+
 def dir_name_from_node_type(
     node_type: str,
     installed_majors_by_pkg: Mapping[str, Iterable[int]] | None = None,

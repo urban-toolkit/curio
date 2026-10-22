@@ -684,9 +684,9 @@ def _parse_dataflow_plan_verbose(raw: object) -> tuple[dict | None, list[str]]:
         # (from,to) pair was a duplicate whatever its kind; the shipped corpus
         # disproves it, because `docs/examples/dataflows/interaction-vega.json` (and
         # the three other linked-view examples) carry BOTH a data edge and an
-        # Interaction edge between the same data-pool and visualization, which
-        # is what a linked view IS: the pool feeds the chart, the chart feeds
-        # selections back. Keying on the pair alone made those graphs
+        # Interaction edge between the same data-pool and visualization: the
+        # pool feeds the chart, and the interaction edge carries the chart's
+        # selections to the pool. Keying on the pair alone made those graphs
         # unproposable, so the eight interaction fixtures scored 0 with the
         # whole plan refused. #576: the key includes the circle an edge names,
         # too. One node may feed both inputs of another, as example 25's

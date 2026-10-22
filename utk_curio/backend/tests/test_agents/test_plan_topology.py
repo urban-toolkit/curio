@@ -94,6 +94,7 @@ ROSTER = {
     "curio.builtin/vis-vega": {"category": "vis_grammar", "bidirectional": True},
     "curio.builtin/vis-simple": {"category": "vis_simple", "bidirectional": True},
     "curio.builtin/autk-grammar": {"category": "vis_grammar", "bidirectional": True},
+    "curio.builtin/edit-features": {"category": "data", "bidirectional": True},
 }
 
 
@@ -109,11 +110,12 @@ class TestInteractionEdgeErrors:
         plan = {"edges": [{"from": "vis", "to": "combine", "kind": "interaction"}]}
         (err,) = pt.interaction_edge_errors(plan, self.type_of, ROSTER)
         assert err.startswith(
-            "edges[0]: an interaction edge connects a visualization "
-            "(autk-grammar, vis-simple, vis-vega) to a data-pool node"
+            "edges[0]: an interaction edge links two views when one of them highlights "
+            "what it receives (autk-grammar, vis-vega), or links a view "
+            "(autk-grammar, vis-simple, vis-vega) or a data-pool to a data-pool"
         )
         assert "'combine' is computation-analysis" in err
-        assert "target the data-pool" in err
+        assert "use a data edge, or end the interaction edge at a view that highlights or at a data-pool" in err
 
     def test_two_visualizations_linked_directly_when_one_highlights(self):
         # A selection crosses a direct edge both ways, and a Vega-Lite chart or
@@ -131,12 +133,47 @@ class TestInteractionEdgeErrors:
         types = {"t1": "curio.builtin/vis-simple@1", "t2": "curio.builtin/vis-simple@1"}
         plan = {"edges": [{"from": "t1", "to": "t2", "kind": "interaction"}]}
         (err,) = pt.interaction_edge_errors(plan, types.get, ROSTER)
-        assert "a visualization that highlights what it receives (autk-grammar, vis-vega)" in err
+        assert "two views when one of them highlights what it receives (autk-grammar, vis-vega)" in err
+        assert "'t1' is vis-simple" in err
 
-    def test_pool_to_pool_is_refused(self):
+    def test_pool_to_pool_is_legal_both_directions(self):
+        # Two Data Pools linked by an interaction edge, as the canvas links
+        # them: one flags the other's rows its `linked` column names.
         types = dict(TYPES, pool2="curio.builtin/data-pool")
-        plan = {"edges": [{"from": "pool", "to": "pool2", "kind": "interaction"}]}
-        assert len(pt.interaction_edge_errors(plan, types.get, ROSTER)) == 1
+        for src, dst in (("pool", "pool2"), ("pool2", "pool")):
+            plan = {"edges": [{"from": src, "to": dst, "kind": "interaction"}]}
+            assert pt.interaction_edge_errors(plan, types.get, ROSTER) == [], (src, dst)
+
+    def test_the_interaction_node_links_to_the_autark_map_alone(self):
+        # Data → Interaction → map on data edges, and the node and the map
+        # linked both ways: a pick on the map reaches the node.
+        types = {
+            "edit": "curio.builtin/edit-features@1", "map": "curio.builtin/autk-grammar@1",
+            "bars": "curio.builtin/vis-vega@1", "pool": "curio.builtin/data-pool@1",
+        }
+        feeds = {"from": "edit", "to": "map"}
+        for src, dst in (("edit", "map"), ("map", "edit")):
+            plan = {"edges": [feeds, {"from": src, "to": dst, "kind": "interaction"}]}
+            assert pt.interaction_edge_errors(plan, types.get, ROSTER) == [], (src, dst)
+        for other in ("bars", "pool"):
+            plan = {"edges": [{"from": "edit", "to": other}, {"from": "edit", "to": other, "kind": "interaction"}]}
+            (err,) = pt.interaction_edge_errors(plan, types.get, ROSTER)
+            assert "joins the edit-features node to an autk-grammar map it feeds, and to no other node" in err
+        # It is no pool: the other rules name the Data Pool alone.
+        pools, _ = pt.interaction_roles(ROSTER)
+        assert pools == {"curio.builtin/data-pool"}
+
+    def test_the_interaction_node_links_only_to_a_map_it_feeds_and_the_refusal_names_the_fix(self):
+        types = {"edit": "curio.builtin/edit-features@1", "map": "curio.builtin/autk-grammar@1", "tracts": "curio.builtin/data-loading@1"}
+        link = {"from": "edit", "to": "map", "kind": "interaction"}
+        # The map is fed by the data, not by the node.
+        plan = {"edges": [{"from": "tracts", "to": "map"}, link]}
+        (err,) = pt.interaction_edge_errors(plan, types.get, ROSTER)
+        assert "'edit' does not feed 'map': add a data edge from 'edit' to 'map'" in err
+        # A data edge the saved dataflow already holds feeds it.
+        assert pt.interaction_edge_errors({"edges": [link]}, types.get, ROSTER, [("edit", "map")]) == []
+        # Fed the other way round is not fed.
+        assert len(pt.interaction_edge_errors({"edges": [link]}, types.get, ROSTER, [("map", "edit")])) == 1
 
     def test_unknown_template_fails_open(self):
         plan = {"edges": [{"from": "vis", "to": "mystery", "kind": "interaction"}]}

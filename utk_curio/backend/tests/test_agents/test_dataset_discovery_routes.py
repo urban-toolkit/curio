@@ -20,7 +20,7 @@ from utk_curio.backend.tests._support.agent_routes import _auth
 from utk_curio.backend.tests.test_agents import test_routes_proposals as routes_proposals
 from utk_curio.backend.tests.test_agents.test_verified_rounds import TEMPLATES
 
-DFB = "agent.dataflow-builder@1.0.0"
+DFB = "agent.curio.dataflow-builder@1"
 DL = "curio.builtin/data-loading"
 CA = "curio.builtin/computation-analysis"
 

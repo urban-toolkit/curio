@@ -64,7 +64,7 @@ pytestmark = pytest.mark.examples
 
 SCREENSHOT_STEM = "example-reconstruction"
 USERNAME = "reconstruction_e2e_user"
-DFB_COORD = "agent.dataflow-builder@1.0.0"
+DFB_COORD = "agent.curio.dataflow-builder@1"
 DFB_NAME = "Dataflow Builder"
 
 #: One curated fixture, chosen because it is the smallest that still has

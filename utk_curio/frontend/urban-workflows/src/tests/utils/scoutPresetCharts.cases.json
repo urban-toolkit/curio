@@ -1,0 +1,657 @@
+{
+  "description": "Scout's charts of the seven chart presets: each case a template, the values of its widgets, and the spec it draws over two boxes' rows, its data block left out (it names the dataset inputs) and its channels on scenario_name filled in from labels. scoutPresetCharts.test.ts checks that each template draws exactly its case's spec.",
+  "labels": [
+    {
+      "scenario": "s-base",
+      "name": "Baseline",
+      "color": "#2a9d8f"
+    },
+    {
+      "scenario": "s-tall",
+      "name": "Twice as tall",
+      "color": "#e76f51"
+    }
+  ],
+  "cases": [
+    {
+      "name": "bar",
+      "template": "bars",
+      "widgets": {
+        "y": "hour",
+        "combine": "mean",
+        "y_title": "mean of hour"
+      },
+      "spec": {
+        "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
+        "mark": {
+          "type": "bar",
+          "tooltip": true
+        },
+        "encoding": {
+          "x": {
+            "field": "scenario_name",
+            "type": "nominal",
+            "title": "Scenario",
+            "sort": [
+              "Baseline",
+              "Twice as tall"
+            ],
+            "axis": {
+              "labelAngle": 0
+            }
+          },
+          "y": {
+            "field": "hour",
+            "type": "quantitative",
+            "aggregate": "mean",
+            "title": "mean of hour"
+          },
+          "color": {
+            "field": "scenario_name",
+            "type": "nominal",
+            "title": "Scenario",
+            "scale": {
+              "domain": [
+                "Baseline",
+                "Twice as tall"
+              ],
+              "range": [
+                "#2a9d8f",
+                "#e76f51"
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "bar with no combining: each row as it is, titled by its column",
+      "template": "bars",
+      "widgets": {
+        "y": "hour",
+        "combine": "mean",
+        "y_title": "hour"
+      },
+      "spec": {
+        "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
+        "mark": {
+          "type": "bar",
+          "tooltip": true
+        },
+        "encoding": {
+          "x": {
+            "field": "scenario_name",
+            "type": "nominal",
+            "title": "Scenario",
+            "sort": [
+              "Baseline",
+              "Twice as tall"
+            ],
+            "axis": {
+              "labelAngle": 0
+            }
+          },
+          "y": {
+            "field": "hour",
+            "type": "quantitative",
+            "title": "hour",
+            "aggregate": "mean"
+          },
+          "color": {
+            "field": "scenario_name",
+            "type": "nominal",
+            "title": "Scenario",
+            "scale": {
+              "domain": [
+                "Baseline",
+                "Twice as tall"
+              ],
+              "range": [
+                "#2a9d8f",
+                "#e76f51"
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "bar, counting rows",
+      "template": "bars",
+      "widgets": {
+        "y": "hour",
+        "combine": "count",
+        "y_title": "Rows"
+      },
+      "spec": {
+        "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
+        "mark": {
+          "type": "bar",
+          "tooltip": true
+        },
+        "encoding": {
+          "x": {
+            "field": "scenario_name",
+            "type": "nominal",
+            "title": "Scenario",
+            "sort": [
+              "Baseline",
+              "Twice as tall"
+            ],
+            "axis": {
+              "labelAngle": 0
+            }
+          },
+          "y": {
+            "aggregate": "count",
+            "type": "quantitative",
+            "title": "Rows",
+            "field": "hour"
+          },
+          "color": {
+            "field": "scenario_name",
+            "type": "nominal",
+            "title": "Scenario",
+            "scale": {
+              "domain": [
+                "Baseline",
+                "Twice as tall"
+              ],
+              "range": [
+                "#2a9d8f",
+                "#e76f51"
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "grouped bars",
+      "template": "grouped-bars",
+      "widgets": {
+        "x": "segment",
+        "y": "hour",
+        "combine": "mean",
+        "x_title": "segment",
+        "y_title": "mean of hour"
+      },
+      "spec": {
+        "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
+        "mark": {
+          "type": "bar",
+          "tooltip": true
+        },
+        "encoding": {
+          "x": {
+            "field": "segment",
+            "type": "nominal",
+            "title": "segment"
+          },
+          "xOffset": {
+            "field": "scenario_name",
+            "type": "nominal",
+            "sort": [
+              "Baseline",
+              "Twice as tall"
+            ]
+          },
+          "y": {
+            "field": "hour",
+            "type": "quantitative",
+            "aggregate": "mean",
+            "title": "mean of hour"
+          },
+          "color": {
+            "field": "scenario_name",
+            "type": "nominal",
+            "title": "Scenario",
+            "scale": {
+              "domain": [
+                "Baseline",
+                "Twice as tall"
+              ],
+              "range": [
+                "#2a9d8f",
+                "#e76f51"
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "lines",
+      "template": "lines",
+      "widgets": {
+        "x": "sunlight",
+        "x_type": "quantitative",
+        "y": "hour",
+        "combine": "mean",
+        "x_title": "sunlight",
+        "y_title": "mean of hour"
+      },
+      "spec": {
+        "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
+        "mark": {
+          "type": "line",
+          "point": true,
+          "tooltip": true
+        },
+        "encoding": {
+          "x": {
+            "field": "sunlight",
+            "type": "quantitative",
+            "title": "sunlight"
+          },
+          "y": {
+            "field": "hour",
+            "type": "quantitative",
+            "aggregate": "mean",
+            "title": "mean of hour"
+          },
+          "color": {
+            "field": "scenario_name",
+            "type": "nominal",
+            "title": "Scenario",
+            "scale": {
+              "domain": [
+                "Baseline",
+                "Twice as tall"
+              ],
+              "range": [
+                "#2a9d8f",
+                "#e76f51"
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "points",
+      "template": "points",
+      "widgets": {
+        "x": "sunlight",
+        "y": "hour",
+        "x_title": "sunlight",
+        "y_title": "hour"
+      },
+      "spec": {
+        "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
+        "mark": {
+          "type": "point",
+          "filled": true,
+          "tooltip": true
+        },
+        "encoding": {
+          "x": {
+            "field": "sunlight",
+            "type": "quantitative",
+            "title": "sunlight"
+          },
+          "y": {
+            "field": "hour",
+            "type": "quantitative",
+            "title": "hour"
+          },
+          "color": {
+            "field": "scenario_name",
+            "type": "nominal",
+            "title": "Scenario",
+            "scale": {
+              "domain": [
+                "Baseline",
+                "Twice as tall"
+              ],
+              "range": [
+                "#2a9d8f",
+                "#e76f51"
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "pie",
+      "template": "pie",
+      "widgets": {
+        "value": "hour",
+        "combine": "sum",
+        "value_title": "sum of hour"
+      },
+      "spec": {
+        "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
+        "encoding": {
+          "theta": {
+            "field": "hour",
+            "type": "quantitative",
+            "aggregate": "sum",
+            "title": "sum of hour",
+            "stack": true
+          },
+          "color": {
+            "field": "scenario_name",
+            "type": "nominal",
+            "title": "Scenario",
+            "scale": {
+              "domain": [
+                "Baseline",
+                "Twice as tall"
+              ],
+              "range": [
+                "#2a9d8f",
+                "#e76f51"
+              ]
+            }
+          }
+        },
+        "layer": [
+          {
+            "mark": {
+              "type": "arc",
+              "tooltip": true
+            }
+          },
+          {
+            "mark": {
+              "type": "text",
+              "radius": {
+                "expr": "min(width, height) / 3"
+              },
+              "fontWeight": "bold",
+              "fill": "white"
+            },
+            "encoding": {
+              "text": {
+                "field": "hour",
+                "type": "quantitative",
+                "aggregate": "sum",
+                "title": "sum of hour",
+                "format": ",.3~f"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "lollipops",
+      "template": "lollipops",
+      "widgets": {
+        "value": "hour",
+        "combine": "mean",
+        "x_title": "mean of hour"
+      },
+      "spec": {
+        "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
+        "layer": [
+          {
+            "mark": {
+              "type": "rule"
+            },
+            "encoding": {
+              "y": {
+                "field": "scenario_name",
+                "type": "nominal",
+                "title": "Scenario",
+                "sort": [
+                  "Baseline",
+                  "Twice as tall"
+                ]
+              },
+              "x": {
+                "field": "hour",
+                "type": "quantitative",
+                "aggregate": "mean",
+                "title": "mean of hour"
+              },
+              "x2": {
+                "datum": 0
+              },
+              "color": {
+                "field": "scenario_name",
+                "type": "nominal",
+                "title": "Scenario",
+                "scale": {
+                  "domain": [
+                    "Baseline",
+                    "Twice as tall"
+                  ],
+                  "range": [
+                    "#2a9d8f",
+                    "#e76f51"
+                  ]
+                }
+              }
+            }
+          },
+          {
+            "mark": {
+              "type": "point",
+              "filled": true,
+              "size": 120,
+              "tooltip": true
+            },
+            "encoding": {
+              "y": {
+                "field": "scenario_name",
+                "type": "nominal",
+                "title": "Scenario",
+                "sort": [
+                  "Baseline",
+                  "Twice as tall"
+                ]
+              },
+              "x": {
+                "field": "hour",
+                "type": "quantitative",
+                "aggregate": "mean",
+                "title": "mean of hour"
+              },
+              "color": {
+                "field": "scenario_name",
+                "type": "nominal",
+                "title": "Scenario",
+                "scale": {
+                  "domain": [
+                    "Baseline",
+                    "Twice as tall"
+                  ],
+                  "range": [
+                    "#2a9d8f",
+                    "#e76f51"
+                  ]
+                }
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "lollipops, counting rows",
+      "template": "lollipops",
+      "widgets": {
+        "value": "hour",
+        "combine": "count",
+        "x_title": "Rows"
+      },
+      "spec": {
+        "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
+        "layer": [
+          {
+            "mark": {
+              "type": "rule"
+            },
+            "encoding": {
+              "y": {
+                "field": "scenario_name",
+                "type": "nominal",
+                "title": "Scenario",
+                "sort": [
+                  "Baseline",
+                  "Twice as tall"
+                ]
+              },
+              "x": {
+                "aggregate": "count",
+                "type": "quantitative",
+                "title": "Rows",
+                "field": "hour"
+              },
+              "x2": {
+                "datum": 0
+              },
+              "color": {
+                "field": "scenario_name",
+                "type": "nominal",
+                "title": "Scenario",
+                "scale": {
+                  "domain": [
+                    "Baseline",
+                    "Twice as tall"
+                  ],
+                  "range": [
+                    "#2a9d8f",
+                    "#e76f51"
+                  ]
+                }
+              }
+            }
+          },
+          {
+            "mark": {
+              "type": "point",
+              "filled": true,
+              "size": 120,
+              "tooltip": true
+            },
+            "encoding": {
+              "y": {
+                "field": "scenario_name",
+                "type": "nominal",
+                "title": "Scenario",
+                "sort": [
+                  "Baseline",
+                  "Twice as tall"
+                ]
+              },
+              "x": {
+                "aggregate": "count",
+                "type": "quantitative",
+                "title": "Rows",
+                "field": "hour"
+              },
+              "color": {
+                "field": "scenario_name",
+                "type": "nominal",
+                "title": "Scenario",
+                "scale": {
+                  "domain": [
+                    "Baseline",
+                    "Twice as tall"
+                  ],
+                  "range": [
+                    "#2a9d8f",
+                    "#e76f51"
+                  ]
+                }
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "table",
+      "template": "table",
+      "widgets": {
+        "columns": [
+          "scenario_name",
+          "segment",
+          "hour",
+          "sunlight"
+        ]
+      },
+      "spec": {
+        "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
+        "transform": [
+          {
+            "window": [
+              {
+                "op": "row_number",
+                "as": "curio_row"
+              }
+            ]
+          },
+          {
+            "filter": "datum.curio_row <= 40"
+          },
+          {
+            "fold": [
+              "scenario_name",
+              "segment",
+              "hour",
+              "sunlight"
+            ],
+            "as": [
+              "curio_column",
+              "curio_cell"
+            ]
+          }
+        ],
+        "mark": {
+          "type": "text",
+          "align": "left",
+          "tooltip": true
+        },
+        "encoding": {
+          "y": {
+            "field": "curio_row",
+            "type": "ordinal",
+            "axis": null
+          },
+          "x": {
+            "field": "curio_column",
+            "type": "nominal",
+            "sort": [
+              "scenario_name",
+              "segment",
+              "hour",
+              "sunlight"
+            ],
+            "title": null,
+            "axis": {
+              "orient": "top",
+              "labelAngle": 0,
+              "domain": false,
+              "ticks": false
+            }
+          },
+          "text": {
+            "field": "curio_cell",
+            "type": "nominal"
+          },
+          "color": {
+            "field": "scenario_name",
+            "type": "nominal",
+            "title": "Scenario",
+            "scale": {
+              "domain": [
+                "Baseline",
+                "Twice as tall"
+              ],
+              "range": [
+                "#2a9d8f",
+                "#e76f51"
+              ]
+            },
+            "legend": null
+          }
+        }
+      }
+    }
+  ]
+}

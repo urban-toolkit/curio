@@ -9,9 +9,9 @@ import {
 
 function card(over: Partial<AgentCard> = {}): AgentCard {
   return {
-    id: "agent.my-explainer",
+    id: "agent.test.my-explainer",
     version: "1.0.0",
-    dirName: "agent.my-explainer@1.0.0",
+    dirName: "agent.test.my-explainer@1",
     name: "My Explainer",
     category: "node",
     purpose: "explains what a node / flow does",
@@ -36,7 +36,7 @@ describe("matchesAgentSearch", () => {
 
   it("matches each promised field, case-insensitively", () => {
     expect(matchesAgentSearch(card(), "EXPLAINER")).toBe(true); // name
-    expect(matchesAgentSearch(card(), "agent.my-")).toBe(true); // id
+    expect(matchesAgentSearch(card(), "agent.test.my-")).toBe(true); // id
     expect(matchesAgentSearch(card(), "flow does")).toBe(true); // purpose
     expect(matchesAgentSearch(card({ category: "evaluate" }), "Evaluate")).toBe(true); // category
     expect(matchesAgentSearch(card(), "node.explain")).toBe(true); // capability
@@ -54,9 +54,9 @@ describe("matchesAgentSearch", () => {
 });
 
 describe("sortAgentCards", () => {
-  const b = card({ name: "beta", dirName: "agent.beta@1.0.0" });
-  const a = card({ name: "Alpha", dirName: "agent.alpha@1.0.0" });
-  const c = card({ name: "charlie", dirName: "agent.charlie@1.0.0" });
+  const b = card({ name: "beta", dirName: "agent.test.beta@1" });
+  const a = card({ name: "Alpha", dirName: "agent.test.alpha@1" });
+  const c = card({ name: "charlie", dirName: "agent.test.charlie@1" });
 
   it('"name" sorts alphabetically, case-insensitively', () => {
     expect(sortAgentCards([b, c, a], "name").map((x) => x.name)).toEqual([
@@ -83,7 +83,7 @@ describe("sortAgentCards", () => {
 });
 
 describe("requiresAgents helpers (dev/106)", () => {
-  const nodeBuilder = { id: "agent.node-builder", name: "Node Builder", coord: "agent.node-builder@1.0.0", visible: true, installedInProject: false };
+  const nodeBuilder = { id: "agent.curio.node-builder", name: "Node Builder", coord: "agent.curio.node-builder@1", visible: true, installedInProject: false };
 
   it("a leaf card installs plainly", () => {
     expect(missingRequiredAgents(card())).toEqual([]);
@@ -109,8 +109,8 @@ describe("requiresAgents helpers (dev/106)", () => {
   });
 
   it("an unresolvable dependency is called out (the server will refuse)", () => {
-    const c = card({ requiresAgents: [{ ...nodeBuilder, id: "agent.ghost", name: "agent.ghost", coord: null, visible: false }] });
+    const c = card({ requiresAgents: [{ ...nodeBuilder, id: "agent.test.ghost", name: "agent.test.ghost", coord: null, visible: false }] });
     expect(installLabel(c)).toBe("Add to project (+1 required)");
-    expect(installTitle(c)).toContain("Cannot add: requires agent.ghost");
+    expect(installTitle(c)).toContain("Cannot add: requires agent.test.ghost");
   });
 });

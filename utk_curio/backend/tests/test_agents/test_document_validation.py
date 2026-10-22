@@ -18,6 +18,9 @@ from utk_curio.backend.app.agents.domain import document_validation as dv
 VEGA = "curio.builtin/vis-vega"
 AUTK = "curio.builtin/autk-grammar"
 REPO_ROOT = Path(__file__).resolve().parents[4]
+#: The label of the box a Scout chart's one input comes from, as a run hands
+#: it, which the chart's scenario chips write.
+TODAY = {"scenario": "s-today", "name": "Today", "color": "#2a9d8f", "rank": 0}
 
 OWNERS_VEGA = json.dumps({
     "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
@@ -505,6 +508,121 @@ class TestTheWriteGateInTheLoop:
         assert "this node has no widget named alpha" in inputs[1]["validationError"]
         assert outcome["candidate"] == self._WITH_WIDGET
 
+    #: Each scenario's mean trips, in its box's color and order, through the
+    #: scenario chips, which are not JSON until they are resolved.
+    _WITH_SCENARIO_CHIPS = (
+        '{"$schema": "https://vega.github.io/schema/vega-lite/v6.json", "data": {"name": "inputs"}, '
+        '"mark": "bar", "encoding": {'
+        '"x": {"field": "scenario_name", "type": "nominal", "sort": [!! scenario order !!]}, '
+        '"y": {"field": "daily_trips", "type": "quantitative", "aggregate": "mean"}, '
+        '"color": {"field": "scenario_name", "type": "nominal", "scale": [!! scenario colors !!]}}}'
+    )
+
+    def test_a_chart_written_with_the_scenario_chips_is_checked_with_its_boxes(self, app, tmp_curio):
+        """The node's inputs come from two boxes: the check resolves the chips
+        over them, as the canvas draws the chart, and writes the chips."""
+        from utk_curio.backend.tests.test_agents.test_verified_rounds import _Exec, _rounds
+
+        node = {"id": "n1", "type": VEGA, "goal": "Trips per scenario", "content": ""}
+        plans = [
+            {"id": "today", "type": "curio.builtin/computation-analysis", "content": "return input_0", "title": "Today"},
+            {"id": "bus", "type": "curio.builtin/computation-analysis", "content": "return input_0", "title": "Bus"},
+        ]
+        spec = {"dataflow": {
+            "nodes": [*plans, node], "name": "wf", "task": "t",
+            "edges": [
+                {"id": "e1", "source": "today", "target": "n1", "targetHandle": "in"},
+                {"id": "e2", "source": "bus", "target": "n1", "targetHandle": "in_1"},
+            ],
+            "scenarios": [
+                {"id": "s-today", "name": "Today", "color": "#2a9d8f", "nodes": ["today"]},
+                {"id": "s-bus", "name": "Bus lanes", "color": "#e76f51", "nodes": ["bus"]},
+            ],
+        }}
+        events, outcome, inputs = _rounds(app, node, replies=[self._WITH_SCENARIO_CHIPS], exec_fn=_Exec(), spec=spec)
+        assert "document-invalid" not in [a.get("kind") for a in outcome["attempts"]], outcome["attempts"]
+        assert (outcome["evidence"] or {}).get("documentValidated") == "vis-vega"
+        assert outcome["candidate"] == self._WITH_SCENARIO_CHIPS
+
+
+class TestTheScenarioChipsAreCheckedResolved:
+    """A Vega-Lite or Autark document the agents write may hold the scenario
+    chips (``[!! scenario colors !!]``, ``[!! scenario order !!]``,
+    ``[!! scenario text_colors !!]``, ``[!! scenario input_1 !!]``), the
+    dataset ``inputs`` (``[!! inputs !!]``) and its fields
+    (``[!! inputs.daily_trips !!]``), which are not JSON until they are
+    resolved. With no dataflow to resolve them over, the check reads each as a
+    value of its shape, so the rest of the document is checked: the dataset
+    chip as the name ``inputs``, whose rows carry the columns the stack adds."""
+
+    COLUMNS = ["mode", "daily_trips"]
+    CHART = (
+        '{"$schema": "https://vega.github.io/schema/vega-lite/v6.json", "data": {"name": "inputs"}, '
+        '"layer": [{"mark": {"type": "bar", "stroke": [!! scenario input_1 !!]}, "encoding": {'
+        '"x": {"field": "scenario_name", "type": "nominal", "sort": [!! scenario order !!]}, '
+        '"y": {"field": [!! inputs.daily_trips !!], "type": "quantitative", "aggregate": "mean"}, '
+        '"color": {"field": "scenario_name", "type": "nominal", "scale": [!! scenario colors !!]}}}, '
+        '{"mark": "text", "encoding": {"x": {"field": "scenario_name", "type": "nominal"}, '
+        '"text": {"field": "daily_trips", "type": "quantitative", "aggregate": "mean"}, '
+        '"color": {"field": "scenario_name", "type": "nominal", "scale": [!! scenario text_colors !!]}}}]}'
+    )
+
+    #: A chart as Scout's are written: its dataset by its chip, its scenarios
+    #: by the chips that list them all, and no chip that names a circle.
+    CHIP_CHART = (
+        '{"$schema": "https://vega.github.io/schema/vega-lite/v6.json", "data": {"name": "[!! inputs !!]"}, '
+        '"layer": [{"mark": "bar", "encoding": {'
+        '"x": {"field": "scenario_name", "type": "nominal", "sort": [!! scenario order !!]}, '
+        '"y": {"field": [!! inputs.daily_trips !!], "type": "quantitative", "aggregate": "mean"}, '
+        '"color": {"field": "scenario_name", "type": "nominal", "scale": [!! scenario colors !!]}}}, '
+        '{"mark": "text", "encoding": {"x": {"field": "scenario_name", "type": "nominal"}, '
+        '"text": {"field": "daily_trips", "type": "quantitative", "aggregate": "mean"}, '
+        '"color": {"field": "scenario_name", "type": "nominal", "scale": [!! scenario text_colors !!]}}}]}'
+    )
+
+    def test_a_chart_with_the_chips_is_valid(self):
+        verdict = dv.validate("curio.scout/bars", self.CHART, grammar_id="vega-lite", columns=self.COLUMNS)
+        assert verdict == {"status": dv.STATUS_VALID}
+
+    def test_a_chart_reading_the_dataset_by_its_chip_is_valid(self):
+        """``scenario_name`` is a column of ``inputs``'s rows, not of the
+        node's inputs: the chip stands in as that name, inside quotes or
+        standing on its own."""
+        for chart in (self.CHIP_CHART, self.CHIP_CHART.replace('"[!! inputs !!]"', "[!! inputs !!]")):
+            verdict = dv.validate("curio.scout/bars", chart, grammar_id="vega-lite", columns=self.COLUMNS)
+            assert verdict == {"status": dv.STATUS_VALID}, (chart, verdict)
+
+    def test_a_field_its_inputs_lack_is_still_refused_beside_the_dataset_chip(self):
+        chart = self.CHIP_CHART.replace("[!! inputs.daily_trips !!]", "[!! inputs.trips !!]")
+        verdict = dv.validate("curio.scout/bars", chart, grammar_id="vega-lite", columns=self.COLUMNS)
+        assert verdict["status"] == dv.STATUS_INVALID
+        assert "reads 'trips'" in verdict["detail"]
+
+    def test_a_field_of_inputs_its_inputs_lack_is_still_refused(self):
+        chart = self.CHART.replace("[!! inputs.daily_trips !!]", "[!! inputs.trips !!]")
+        verdict = dv.validate("curio.scout/bars", chart, grammar_id="vega-lite", columns=self.COLUMNS)
+        assert verdict["status"] == dv.STATUS_INVALID
+        assert "reads 'trips'" in verdict["detail"]
+
+    def test_a_map_whose_layer_writes_its_input_s_scenario_color_is_valid(self):
+        document = '{"map": {"layerRefs": [{"dataRef": "input_1", "color": "[!! scenario input_1 !!]"}]}}'
+        assert dv.validate(AUTK, document) == {"status": dv.STATUS_VALID}
+
+    def test_a_scale_chip_inside_quotes_is_refused_in_its_own_words(self):
+        """Not the schema's reading of the chip left as text."""
+        chart = self.CHART.replace('"scale": [!! scenario colors !!]', '"scale": "[!! scenario colors !!]"')
+        verdict = dv.validate("curio.scout/bars", chart, grammar_id="vega-lite", columns=self.COLUMNS)
+        assert verdict["status"] == dv.STATUS_INVALID
+        assert "[!! scenario colors !!] is a scale, not text. Use it outside quotes." in verdict["detail"]
+
+    def test_a_chip_no_scenario_chip_is_called_is_refused_in_its_own_words(self):
+        """Not as a document that is no JSON."""
+        chart = self.CHART.replace("[!! scenario order !!]", "[!! scenario ordre !!]")
+        verdict = dv.validate("curio.scout/bars", chart, grammar_id="vega-lite", columns=self.COLUMNS)
+        assert verdict["status"] == dv.STATUS_INVALID
+        assert "[!! scenario ordre !!] names no scenario chip." in verdict["detail"]
+        assert "not valid JSON" not in verdict["detail"]
+
 
 class TestProseIsARefusalNotAnUnchecked:
     """dev/134, from `e72c7080`: the child replied the sentence "not
@@ -812,7 +930,7 @@ class TestTheColumnsOfTheInputsDataset:
         widgets = [dict(w, value=values[w["name"]]) if w["name"] in values else w for w in template["widgets"]]
         spec, problems = resolve_references(
             (package / template["source"]).read_text(encoding="utf-8"),
-            widgets=widgets, language="json", inputs=[{"slot": 0}],
+            widgets=widgets, language="json", inputs=[{"slot": 0, "scenario": TODAY}],
         )
         assert not problems, problems
         measure = "value" if template_id in ("pie", "lollipops") else "y"
@@ -939,7 +1057,8 @@ class TestTheInputsDatasetHoldsNoGeometry:
         (template,) = [t for t in manifest["templates"] if t["id"] == "table"]
         spec, problems = resolve_references(
             (package / template["source"]).read_text(encoding="utf-8"),
-            widgets=[dict(w, value=columns) for w in template["widgets"]], language="json", inputs=[{"slot": 0}],
+            widgets=[dict(w, value=columns) for w in template["widgets"]], language="json",
+            inputs=[{"slot": 0, "scenario": TODAY}],
         )
         assert not problems, problems
         return spec.strip()
@@ -973,3 +1092,205 @@ class TestTheInputsDatasetHoldsNoGeometry:
         events, outcome, inputs = self._rounds(app, [document], self.UPSTREAM)
         assert "document-invalid" not in [a.get("kind") for a in outcome["attempts"]]
         assert outcome["candidate"] == document
+
+
+def _rain_table(circle: int) -> dict:
+    """A scenario's rain and cost, a table whose rain column's name holds a
+    dot, as Solve hands its preview on."""
+    return {
+        "goal": "Rain and cost", "circle": circle, "outputDataType": "dataframe",
+        "schema": {"kind": "table", "rowCount": 1,
+                   "columns": [{"name": "rain.mm", "dtype": "float"}, {"name": "cost", "dtype": "float"}],
+                   "sampleRows": [{"rain.mm": 45.0, "cost": 90.0}]},
+    }
+
+
+class TestAColumnWhoseNameHoldsADot:
+    """Vega-Lite reads a ``.`` or a ``[`` in a field as a path into the row
+    (issue 1042), and the column ``rain.mm`` is written ``rain\\.mm``. Where
+    Vega-Lite escapes a field itself (an aggregate, a bin transform, a
+    condition's test), ``rain.mm`` draws the column too. So a field names a
+    column when its text, or its text unescaped, is the column's name: both
+    spellings pass, and a path through a column, ``zone.id`` beside a column
+    ``zone``, names none. Solve checks a Scout chart's spec with its chips
+    written as the canvas writes them."""
+
+    SCHEMA = "https://vega.github.io/schema/vega-lite/v6.json"
+    COLUMNS = ["rain.mm", "cost", "zone"]
+
+    def _verdict(self, spec: dict, columns=None, geometry=None) -> dict:
+        return dv.validate(VEGA, json.dumps({"$schema": self.SCHEMA, **spec}),
+                           columns=columns or self.COLUMNS, geometry_columns=geometry)
+
+    def _bars(self, field: str) -> dict:
+        return {
+            "transform": [{"aggregate": [{"op": "mean", "field": field, "as": "mean_rain"}], "groupby": ["zone"]}],
+            "mark": "bar",
+            "encoding": {
+                "x": {"field": "zone", "type": "nominal"},
+                "y": {"field": "mean_rain", "type": "quantitative"},
+                "tooltip": [{"field": "zone"}],
+            },
+        }
+
+    def test_an_escaped_field_reads_the_column_it_names(self):
+        spec = {
+            "transform": [{"joinaggregate": [{"op": "max", "field": "rain\\.mm", "as": "top"}],
+                           "groupby": ["zone"]}],
+            "mark": "point",
+            "encoding": {"x": {"field": "rain\\.mm", "type": "quantitative"},
+                         "y": {"field": "top", "type": "quantitative"}},
+        }
+        assert self._verdict(spec) == {"status": dv.STATUS_VALID}
+        assert self._verdict(self._bars("rain\\.mm")) == {"status": dv.STATUS_VALID}
+
+    def test_a_dotted_column_written_as_it_is_passes_where_vega_lite_escapes_it_itself(self):
+        """Vega-Lite 6 draws these over the column ``rain.mm``: an aggregate
+        transform, an aggregated encoding, a bin transform and a condition's
+        test each escape the field before they read it."""
+        assert self._verdict(self._bars("rain.mm")) == {"status": dv.STATUS_VALID}
+        encoded = {
+            "mark": "bar",
+            "encoding": {
+                "x": {"field": "zone", "type": "nominal"},
+                "y": {"field": "rain.mm", "type": "quantitative", "aggregate": "mean"},
+            },
+        }
+        assert self._verdict(encoded) == {"status": dv.STATUS_VALID}
+        binned = {
+            "transform": [{"bin": True, "field": "rain.mm", "as": "rain_bin"}],
+            "mark": "bar",
+            "encoding": {"x": {"field": "rain_bin", "type": "quantitative"}},
+        }
+        assert self._verdict(binned) == {"status": dv.STATUS_VALID}
+        conditioned = {
+            "mark": "point",
+            "encoding": {
+                "x": {"field": "cost", "type": "quantitative"},
+                "color": {"condition": {"test": {"field": "rain.mm", "gt": 50}, "value": "red"}, "value": "grey"},
+            },
+        }
+        assert self._verdict(conditioned) == {"status": dv.STATUS_VALID}
+
+    def test_a_path_through_a_column_names_no_column_and_is_refused(self):
+        """``zone.id`` beside a column ``zone`` reads ``datum.zone.id``,
+        which no row holds."""
+        through_zone = {"mark": "point", "encoding": {"x": {"field": "zone.id", "type": "nominal"}}}
+        verdict = self._verdict(through_zone)
+        assert verdict["status"] == dv.STATUS_INVALID
+        assert "encoding.x.field reads 'zone.id', which is not a column" in verdict["detail"]
+        through_place = {"mark": "point", "encoding": {"x": {"field": "place.name", "type": "nominal"}}}
+        verdict = self._verdict(through_place, columns=["place", "cost"])
+        assert verdict["status"] == dv.STATUS_INVALID
+        assert "encoding.x.field reads 'place.name', which is not a column" in verdict["detail"]
+
+    def test_a_dotted_geometry_is_left_out_of_inputs_unless_a_lookup_brings_it_by_its_escaped_name(self):
+        draws = {
+            "data": {"name": "inputs"},
+            "mark": "geoshape",
+            "encoding": {"shape": {"field": "the\\.geom", "type": "geojson"}},
+        }
+        refused = self._verdict(draws, columns=["zone", "the.geom"], geometry=["the.geom"])
+        assert refused["status"] == dv.STATUS_INVALID
+        assert "encoding.shape.field reads 'the.geom', a geometry column" in refused["detail"]
+        # The column's name as it is, the other spelling that names it.
+        plain = {**draws, "encoding": {"shape": {"field": "the.geom", "type": "geojson"}}}
+        refused = self._verdict(plain, columns=["zone", "the.geom"], geometry=["the.geom"])
+        assert refused["status"] == dv.STATUS_INVALID
+        assert "encoding.shape.field reads 'the.geom', a geometry column" in refused["detail"]
+        looked_up = {
+            **draws,
+            "transform": [{"lookup": "zone", "from": {
+                "data": {"name": "input_0"}, "key": "zone", "fields": ["the\\.geom"],
+            }}],
+        }
+        assert self._verdict(looked_up, columns=["zone", "the.geom"], geometry=["the.geom"]) == {
+            "status": dv.STATUS_VALID}
+
+    def test_solve_checks_a_scout_chart_with_its_widget_naming_a_dotted_column_escaped(
+        self, app, tmp_curio, monkeypatch,
+    ):
+        """Scout's Bars, its Y widget set to ``rain.mm``: Solve resolves its
+        chips as the canvas does for a Vega-Lite chart, the template's grammar,
+        so the document it checks reads ``rain\\.mm``, and it is valid."""
+        from utk_curio.backend.app.packages import service as packages_service
+        from utk_curio.backend.tests.test_agents.test_verified_rounds import _Exec, _rounds
+
+        package = REPO_ROOT / "packages" / "curio.scout@1"
+        manifest = json.loads((package / "manifest.json").read_text(encoding="utf-8"))
+        (template,) = [t for t in manifest["templates"] if t["id"] == "bars"]
+        document = (package / template["source"]).read_text(encoding="utf-8").strip()
+        monkeypatch.setattr(packages_service, "available_templates", lambda *args, **kwargs: [{
+            "id": "curio.scout/bars", "executable": False, "engine": "python",
+            "contentKind": "grammar", "grammar": "vega-lite",
+        }])
+        checked: list = []
+        validate = dv.validate
+
+        def recording(node_type, content, **kwargs):
+            checked.append(content)
+            return validate(node_type, content, **kwargs)
+
+        monkeypatch.setattr(dv, "validate", recording)
+        widgets = [dict(w, value="rain.mm") if w["name"] == "y" else w for w in template["widgets"]]
+        node = {"id": "n1", "type": "curio.scout/bars", "goal": "Rain by scenario", "content": "",
+                "metadata": {"widgets": widgets}}
+        # Each scenario's table on a circle of its own, as the chart reads them
+        # stacked: the two tables Solve hands on as the node's upstream.
+        feeds = [{"id": f"rain-{circle}", "type": "curio.builtin/computation-analysis", "content": "return 1"}
+                 for circle in (0, 1)]
+        edges = [{"id": f"e-rain-{circle}", "source": f"rain-{circle}", "target": "n1", "sourceHandle": "out",
+                  "targetHandle": "in" if circle == 0 else f"in_{circle}"} for circle in (0, 1)]
+        spec = {"dataflow": {"nodes": [*feeds, node], "edges": edges, "name": "wf", "task": "t"}}
+        events, outcome, inputs = _rounds(app, node, replies=[document], exec_fn=_Exec(), spec=spec,
+                                          extra_inputs={"upstreamOutputs": [_rain_table(0), _rain_table(1)]})
+        assert checked, "Solve checked no document"
+        assert '"field": "rain\\\\.mm"' in checked[-1]
+        assert "document-invalid" not in [a.get("kind") for a in outcome["attempts"]]
+        assert (outcome["evidence"] or {}).get("documentValidated") == "bars"
+        assert outcome["candidate"] == document
+
+    def test_solve_refuses_a_scout_chart_with_no_input_in_its_dataset_chips_words(
+        self, app, tmp_curio, monkeypatch,
+    ):
+        """Scout's Bars with no edge in the saved dataflow: its dataset chip,
+        ``[!! inputs !!]``, has nothing to stack, so each round is refused in
+        the chip's own words before the document is checked. Each reply is the
+        template with a description of its own, so no round repeats another
+        and each is resolved on its own."""
+        from utk_curio.backend.app.packages import service as packages_service
+        from utk_curio.backend.tests.test_agents.test_verified_rounds import _Exec, _rounds
+
+        package = REPO_ROOT / "packages" / "curio.scout@1"
+        manifest = json.loads((package / "manifest.json").read_text(encoding="utf-8"))
+        (template,) = [t for t in manifest["templates"] if t["id"] == "bars"]
+        document = (package / template["source"]).read_text(encoding="utf-8").strip()
+        monkeypatch.setattr(packages_service, "available_templates", lambda *args, **kwargs: [{
+            "id": "curio.scout/bars", "executable": False, "engine": "python",
+            "contentKind": "grammar", "grammar": "vega-lite",
+        }])
+        checked: list = []
+        validate = dv.validate
+
+        def recording(node_type, content, **kwargs):
+            checked.append(content)
+            return validate(node_type, content, **kwargs)
+
+        monkeypatch.setattr(dv, "validate", recording)
+        node = {"id": "n1", "type": "curio.scout/bars", "goal": "Rain by scenario", "content": "",
+                "metadata": {"widgets": template["widgets"]}}
+        spec = {"dataflow": {"nodes": [node], "edges": [], "name": "wf", "task": "t"}}
+        replies = [
+            document.replace('"$schema": ', f'"description": "Rain by scenario, take {take}",\n  "$schema": ', 1)
+            for take in range(1, 5)
+        ]
+        assert len(set(replies)) == 4
+        events, outcome, inputs = _rounds(app, node, replies=replies, exec_fn=_Exec(), spec=spec,
+                                          extra_inputs={"upstreamOutputs": [_rain_table(0), _rain_table(1)]})
+        refusal = "[!! inputs !!]: this node has no input to stack. Connect one to an input circle."
+        kinds = [a.get("kind") for a in outcome["attempts"]]
+        assert kinds and set(kinds) == {"document-invalid"}, outcome["attempts"]
+        assert all(refusal in a["detail"] for a in outcome["attempts"]), outcome["attempts"]
+        assert refusal in inputs[1]["validationError"]
+        assert checked == [], "the document was checked although its chip does not resolve"
+        assert (outcome["evidence"] or {}).get("documentValidated") is None

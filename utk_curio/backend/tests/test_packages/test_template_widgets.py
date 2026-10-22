@@ -7,9 +7,10 @@ controls in the Widgets tab instead of an old ``[!! name$TYPE$default !!]``
 marker in its code.
 
 A widget's name is letters, digits and underscores, not starting with a digit,
-and not an input's name, ``input_0``, ``input_1`` and so on: a manifest that
-breaks either rule is refused as the Widgets tab and a Parameter node refuse
-the name, with the same words. Its type is one of the Widgets tab's kinds, and
+and not an input's name, ``input_0``, ``input_1`` and so on, nor ``inputs``,
+the name the node's stacked inputs are read by: a manifest that breaks either
+rule is refused as the Widgets tab and a Parameter node refuse the name, with
+the same words. Its type is one of the Widgets tab's kinds, and
 no two widgets of a template share a name: a manifest that breaks either is
 refused as the Widgets tab refuses the widget, with the same words.
 
@@ -98,7 +99,7 @@ def _load(tmp_path: Path, raw: dict):
     return load_package_manifest(root)
 
 
-@pytest.mark.parametrize("name", ["input_0", "input_12"])
+@pytest.mark.parametrize("name", ["input_0", "input_12", "inputs"])
 def test_a_widget_named_as_an_input_is_read_is_refused_as_the_widgets_tab_refuses_it(tmp_path, name):
     """``check_widget_def`` is the Widgets tab's own check (``checkWidgetDef``),
     held to it by ``widgetChecks.cases.json``; a Parameter node's widget goes
@@ -116,7 +117,7 @@ def test_a_package_declaring_one_is_not_installed(install_package):
     assert str(refused.value).endswith(f".templates[0].widgets[0]: {check_widget_def(_number('input_0'))}")
 
 
-@pytest.mark.parametrize("name", ["input", "inputs", "my_input_0"])
+@pytest.mark.parametrize("name", ["input", "inputs_2", "my_inputs", "my_input_0", "scenario", "selection"])
 def test_a_name_that_only_looks_like_an_input_is_kept(tmp_path, name):
     """The Widgets tab takes these names, so a template may declare them."""
     assert check_widget_def(_number(name)) is None
@@ -370,7 +371,9 @@ class TestTheSchema:
         ])
 
     def test_a_name_that_only_looks_like_an_input_validates(self):
-        assert not self._errors([_number("input"), _number("inputs"), _number("my_input_0")])
+        assert not self._errors([
+            _number(name) for name in ("input", "inputs_2", "my_inputs", "my_input_0", "scenario", "selection")
+        ])
 
     @pytest.mark.parametrize("name", list(BADLY_SHAPED.values()), ids=list(BADLY_SHAPED))
     def test_a_badly_shaped_name_is_refused(self, name):
@@ -386,6 +389,7 @@ class TestTheSchema:
             {"name": "has space", "type": "text", "default": ""},
             {"name": "input_0", "type": "number", "default": 1},
             {"name": "input_12", "type": "number", "default": 1},
+            {"name": "inputs", "type": "number", "default": 1},
             {"name": "src", "type": "INPUT_TEXT", "default": ""},
             {"name": "src", "type": "text", "default": "", "marker": "src$INPUT_TEXT$"},
             {"name": "src", "type": "choice", "default": "a", "options": {"choices": [1, 2]}},
@@ -398,6 +402,7 @@ class TestTheSchema:
             "name with a space",
             "the name input 0 is read by",
             "the name input 12 is read by",
+            "the name the stacked inputs are read by",
             "unknown type",
             "unknown key",
             "choices that are not text",

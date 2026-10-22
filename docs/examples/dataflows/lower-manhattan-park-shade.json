@@ -293,22 +293,12 @@
         "type": "curio.builtin/edit-features",
         "x": 2580,
         "y": 892,
-        "content": "# Edit Features writes this code from its edit list: each edit, in the\n# order it was made, on the features whose key is one of its ids. It is\n# written again when the list changes.\nreturn curio_edit_features(input_0, [\n    {\"op\": \"remove\", \"where\": \"around_park\", \"label\": \"Tall parts around a park\"},\n], key=\"building_id\")\n",
+        "content": "# Map Edits writes this code from its edit list: each edit, in the\n# order it was made, on the features whose key is one of its ids. It is\n# written again when the list changes.\nreturn curio_edit_features(input_0, [\n    {\"op\": \"remove\", \"where\": \"around_park\", \"label\": \"Tall parts around a park\"},\n], key=\"building_id\")\n",
         "out": "DEFAULT",
         "in": "DEFAULT",
-        "goal": "Remove the building parts Buildings around parks marks, by the condition around_park. More parts, picked on the map or by another condition, can be removed, raised or lowered here before Update results.",
+        "goal": "Remove the building parts Buildings around parks marks, by the condition around_park. More parts, picked on the map or by another condition, can be removed, raised or lowered here before Commit edits.",
         "metadata": {
-          "keywords": [],
-          "editFeatures": {
-            "key": "building_id",
-            "edits": [
-              {
-                "op": "remove",
-                "where": "around_park",
-                "label": "Tall parts around a park"
-              }
-            ]
-          }
+          "keywords": []
         },
         "title": "Towers removed"
       },
@@ -387,10 +377,10 @@
         "type": "curio.builtin/autk-grammar",
         "x": 3260,
         "y": 1272,
-        "content": "{\n  \"map\": {\n    \"layerRefs\": [\n      {\n        \"dataRef\": \"[!! input_0 !!]\",\n        \"getFnv\": \"height\",\n        \"getFnvType\": \"quantitative\",\n        \"colorMapInterpolator\": \"interpolateViridis\",\n        \"colorMapRange\": [\n          0,\n          550\n        ],\n        \"title\": \"Building height (m)\"\n      }\n    ]\n  }\n}",
+        "content": "{\n  \"map\": {\n    \"layerRefs\": [\n      {\n        \"dataRef\": \"[!! input_0 !!]\",\n        \"isPick\": true,\n        \"selectFields\": [\n          \"building_id\"\n        ],\n        \"getFnv\": \"height\",\n        \"getFnvType\": \"quantitative\",\n        \"colorMapInterpolator\": \"interpolateViridis\",\n        \"colorMapRange\": [\n          0,\n          550\n        ],\n        \"title\": \"Building height (m)\"\n      }\n    ]\n  }\n}",
         "out": "DEFAULT",
         "in": "DEFAULT",
-        "goal": "Draw the towers removed buildings in 3D, colored by height.",
+        "goal": "Draw the towers removed buildings in 3D, colored by height. It is linked to Towers removed's Map Edits node, so a building picked on this map is picked there.",
         "metadata": {
           "keywords": []
         },
@@ -415,24 +405,12 @@
         "type": "curio.builtin/edit-features",
         "x": 2580,
         "y": 1862,
-        "content": "# Edit Features writes this code from its edit list: each edit, in the\n# order it was made, on the features whose key is one of its ids. It is\n# written again when the list changes.\nreturn curio_edit_features(input_0, [\n    {\"op\": \"expr\", \"where\": \"around_park\", \"column\": \"height\", \"value\": \"min(height, height_cap_m)\", \"label\": \"Tall parts around a park cut to the cap\"},\n], key=\"building_id\")\n",
+        "content": "# Map Edits writes this code from its edit list: each edit, in the\n# order it was made, on the features whose key is one of its ids. It is\n# written again when the list changes.\nreturn curio_edit_features(input_0, [\n    {\"op\": \"expr\", \"where\": \"around_park\", \"column\": \"height\", \"value\": \"min(height, height_cap_m)\", \"label\": \"Tall parts around a park cut to the cap\"},\n], key=\"building_id\")\n",
         "out": "DEFAULT",
         "in": "DEFAULT",
-        "goal": "Cut the building parts Buildings around parks marks down to the Tall building height, its height_cap_m, by the condition around_park. More parts can be removed, raised or lowered here before Update results.",
+        "goal": "Cut the building parts Buildings around parks marks down to the Tall building height, its height_cap_m, by the condition around_park. More parts can be removed, raised or lowered here before Commit edits.",
         "metadata": {
-          "keywords": [],
-          "editFeatures": {
-            "key": "building_id",
-            "edits": [
-              {
-                "op": "expr",
-                "where": "around_park",
-                "column": "height",
-                "value": "min(height, height_cap_m)",
-                "label": "Tall parts around a park cut to the cap"
-              }
-            ]
-          }
+          "keywords": []
         },
         "title": "Height cap"
       },
@@ -511,10 +489,10 @@
         "type": "curio.builtin/autk-grammar",
         "x": 3260,
         "y": 2132,
-        "content": "{\n  \"map\": {\n    \"layerRefs\": [\n      {\n        \"dataRef\": \"[!! input_0 !!]\",\n        \"getFnv\": \"height\",\n        \"getFnvType\": \"quantitative\",\n        \"colorMapInterpolator\": \"interpolateViridis\",\n        \"colorMapRange\": [\n          0,\n          550\n        ],\n        \"title\": \"Building height (m)\"\n      }\n    ]\n  }\n}",
+        "content": "{\n  \"map\": {\n    \"layerRefs\": [\n      {\n        \"dataRef\": \"[!! input_0 !!]\",\n        \"isPick\": true,\n        \"selectFields\": [\n          \"building_id\"\n        ],\n        \"getFnv\": \"height\",\n        \"getFnvType\": \"quantitative\",\n        \"colorMapInterpolator\": \"interpolateViridis\",\n        \"colorMapRange\": [\n          0,\n          550\n        ],\n        \"title\": \"Building height (m)\"\n      }\n    ]\n  }\n}",
         "out": "DEFAULT",
         "in": "DEFAULT",
-        "goal": "Draw the height cap buildings in 3D, colored by height.",
+        "goal": "Draw the height cap buildings in 3D, colored by height. It is linked to Height cap's Map Edits node, so a building picked on this map is picked there.",
         "metadata": {
           "keywords": []
         },
@@ -536,72 +514,61 @@
       },
       {
         "id": "park-shade-chart",
-        "type": "curio.builtin/compare-scenarios",
+        "type": "curio.scout/dots-with-a-range",
         "x": 5230,
         "y": 1000,
         "width": 1000,
         "height": 600,
-        "content": "# Compare Scenarios writes this code from its inputs: each input, under the\n# id and the name of its scenario. It is written again when they change.\nreturn curio_stack_scenarios([\n    (\"existing\", \"Existing\", [!! input_0 !!]),\n    (\"towers-removed\", \"Towers removed\", [!! input_1 !!]),\n    (\"height-cap\", \"Height cap\", [!! input_2 !!]),\n])\n",
+        "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v6.json\",\n  \"data\": {\n    \"name\": \"[!! inputs !!]\"\n  },\n  \"transform\": [\n    {\n      \"joinaggregate\": [\n        {\n          \"op\": \"min\",\n          \"field\": \"[!! value !!]\",\n          \"as\": \"curio_lowest\"\n        },\n        {\n          \"op\": \"max\",\n          \"field\": \"[!! value !!]\",\n          \"as\": \"curio_highest\"\n        }\n      ],\n      \"groupby\": [\n        \"[!! category !!]\"\n      ]\n    },\n    {\n      \"calculate\": \"datum.curio_highest - datum.curio_lowest\",\n      \"as\": \"curio_range\"\n    },\n    {\n      \"window\": [\n        {\n          \"op\": \"row_number\",\n          \"as\": \"curio_rank\"\n        }\n      ],\n      \"groupby\": [\n        \"[!! category !!]\"\n      ]\n    }\n  ],\n  \"width\": 300,\n  \"height\": {\n    \"step\": 13\n  },\n  \"encoding\": {\n    \"y\": {\n      \"field\": \"[!! category !!]\",\n      \"type\": \"nominal\",\n      \"title\": \"[!! y_title !!]\",\n      \"sort\": {\n        \"field\": \"curio_range\",\n        \"op\": \"max\",\n        \"order\": \"descending\"\n      }\n    }\n  },\n  \"layer\": [\n    {\n      \"transform\": [\n        {\n          \"filter\": \"datum.curio_rank === 1\"\n        }\n      ],\n      \"mark\": {\n        \"type\": \"rule\",\n        \"color\": \"#9ca3af\",\n        \"strokeWidth\": 2\n      },\n      \"encoding\": {\n        \"x\": {\n          \"field\": \"curio_lowest\",\n          \"type\": \"quantitative\",\n          \"title\": \"[!! x_title !!]\"\n        },\n        \"x2\": {\n          \"field\": \"curio_highest\"\n        }\n      }\n    },\n    {\n      \"mark\": {\n        \"type\": \"point\",\n        \"filled\": true,\n        \"size\": 60,\n        \"opacity\": 1,\n        \"tooltip\": true\n      },\n      \"encoding\": {\n        \"x\": {\n          \"field\": \"[!! value !!]\",\n          \"type\": \"quantitative\",\n          \"title\": \"[!! x_title !!]\"\n        },\n        \"color\": {\n          \"field\": \"scenario_name\",\n          \"type\": \"nominal\",\n          \"title\": \"Scenario\",\n          \"legend\": {\n            \"orient\": \"bottom\"\n          },\n          \"scale\": [!! scenario colors !!]\n        }\n      }\n    }\n  ]\n}\n",
         "out": "DEFAULT",
         "in": "DEFAULT",
-        "goal": "Chart each park's mean minutes of shadow in the three scenarios, a bar per scenario.",
+        "goal": "Chart each park's mean minutes of shadow in the three scenarios, a dot per scenario on a rule from the park's lowest to its highest.",
         "metadata": {
           "keywords": [],
-          "compareScenarios": {
-            "inputs": [
-              {
-                "scenario": "existing",
-                "name": "Existing",
-                "color": "#2a9d8f"
-              },
-              {
-                "scenario": "towers-removed",
-                "name": "Towers removed",
-                "color": "#e76f51"
-              },
-              {
-                "scenario": "height-cap",
-                "name": "Height cap",
-                "color": "#6a4c93"
-              }
-            ],
-            "chart": {
-              "preset": "grouped-bar",
-              "x": "park",
-              "y": "mean_min",
-              "aggregate": "none"
+          "widgets": [
+            {
+              "name": "category",
+              "type": "text",
+              "label": "Category column",
+              "default": "category",
+              "value": "park"
             },
-            "mode": "chart"
-          }
+            {
+              "name": "value",
+              "type": "text",
+              "label": "Value column",
+              "default": "value",
+              "value": "mean_min"
+            },
+            {
+              "name": "x_title",
+              "type": "text",
+              "label": "X axis title",
+              "default": "",
+              "value": "mean_min"
+            },
+            {
+              "name": "y_title",
+              "type": "text",
+              "label": "Y axis title",
+              "default": "",
+              "value": "park"
+            }
+          ]
         },
         "title": "Minutes of shadow per park"
       },
       {
         "id": "park-shade-removed-change",
-        "type": "curio.builtin/compare-scenarios",
+        "type": "curio.scout/raster-calculator",
         "x": 4550,
         "y": 1452,
-        "content": "# Compare Scenarios writes this code from its inputs: input_1 minus input_0,\n# each under the id and the name of its scenario. It is written again when\n# they change.\nreturn curio_difference_scenarios([\n    (\"existing\", \"Existing\", [!! input_0 !!]),\n    (\"towers-removed\", \"Towers removed\", [!! input_1 !!]),\n])\n",
+        "content": "# Towers removed's accumulated shadow, on input_1, minus Existing's, on\n# input_0, cell by cell, in minutes: below zero where removing the towers\n# takes shadow away, 0 where nothing changes.\nfrom scout_rasters.raster_algebra import raster_calculate\n\nreturn raster_calculate(\"subtract\", [input_1, input_0], output_file=curio_output_file)\n",
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "Take the change in the accumulated shadow from Existing to Towers removed, cell by cell.",
         "metadata": {
-          "keywords": [],
-          "compareScenarios": {
-            "inputs": [
-              {
-                "scenario": "existing",
-                "name": "Existing",
-                "color": "#2a9d8f"
-              },
-              {
-                "scenario": "towers-removed",
-                "name": "Towers removed",
-                "color": "#e76f51"
-              }
-            ],
-            "mode": "difference"
-          }
+          "keywords": []
         },
         "title": "Shadow change, Towers removed"
       },
@@ -621,33 +588,15 @@
       },
       {
         "id": "park-shade-removed-park-change",
-        "type": "curio.builtin/compare-scenarios",
+        "type": "curio.builtin/computation-analysis",
         "x": 5450,
         "y": 0,
-        "content": "# Compare Scenarios writes this code from its inputs: input_1 minus input_0,\n# each under the id and the name of its scenario. It is written again when\n# they change.\nreturn curio_difference_scenarios([\n    (\"existing\", \"Existing\", [!! input_0 !!]),\n    (\"towers-removed\", \"Towers removed\", [!! input_1 !!]),\n], key=\"park\")\n",
+        "content": "# Towers removed's shade per park, on input_1, minus Existing's, on input_0,\n# matched by the park's name: in each number column, Towers removed's value\n# minus Existing's, and change says whether any of them differs. A park\n# only Existing has is removed, and one only Towers removed has is added,\n# their numbers empty. The outline and the other values are Towers removed's,\n# or Existing's for a removed park.\nimport numpy as np\nimport pandas as pd\n\nbefore, after = input_0.set_index(\"park\"), input_1.set_index(\"park\")\ngone = before.index.difference(after.index, sort=False)\nkeys = [*before.index, *after.index.difference(before.index, sort=False)]\nout = (pd.concat([after, before.loc[gone]]) if len(gone) else after).reindex(keys)\nnumbers = [\n    column for column in before.columns\n    if column != before.geometry.name and column in after.columns\n    and pd.api.types.is_numeric_dtype(before[column]) and not pd.api.types.is_bool_dtype(before[column])\n]\nwas = before[numbers].reindex(keys).astype(\"float64\")\nnow = after[numbers].reindex(keys).astype(\"float64\")\nout[numbers] = now - was\nchanged = ((was.isna() != now.isna()) | (was.notna() & now.notna() & (now != was))).any(axis=1)\nout.insert(0, \"change\", np.select(\n    [out.index.isin(gone), ~out.index.isin(before.index), changed.to_numpy()],\n    [\"removed\", \"added\", \"changed\"], \"unchanged\",\n))\nreturn out.reset_index()\n",
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "Take each park's change in shade from Existing to Towers removed, its mean minutes of shadow among them, matched by the park's name.",
         "metadata": {
-          "keywords": [],
-          "compareScenarios": {
-            "inputs": [
-              {
-                "scenario": "existing",
-                "name": "Existing",
-                "color": "#2a9d8f"
-              },
-              {
-                "scenario": "towers-removed",
-                "name": "Towers removed",
-                "color": "#e76f51"
-              }
-            ],
-            "mode": "difference",
-            "difference": {
-              "key": "park"
-            }
-          }
+          "keywords": []
         },
         "title": "Park shade change, Towers removed"
       },
@@ -667,30 +616,15 @@
       },
       {
         "id": "park-shade-capped-change",
-        "type": "curio.builtin/compare-scenarios",
+        "type": "curio.scout/raster-calculator",
         "x": 4550,
         "y": 2382,
-        "content": "# Compare Scenarios writes this code from its inputs: input_1 minus input_0,\n# each under the id and the name of its scenario. It is written again when\n# they change.\nreturn curio_difference_scenarios([\n    (\"existing\", \"Existing\", [!! input_0 !!]),\n    (\"height-cap\", \"Height cap\", [!! input_1 !!]),\n])\n",
+        "content": "# Height cap's accumulated shadow, on input_1, minus Existing's, on\n# input_0, cell by cell, in minutes: below zero where cutting the towers down\n# takes shadow away, 0 where nothing changes.\nfrom scout_rasters.raster_algebra import raster_calculate\n\nreturn raster_calculate(\"subtract\", [input_1, input_0], output_file=curio_output_file)\n",
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "Take the change in the accumulated shadow from Existing to Height cap, cell by cell.",
         "metadata": {
-          "keywords": [],
-          "compareScenarios": {
-            "inputs": [
-              {
-                "scenario": "existing",
-                "name": "Existing",
-                "color": "#2a9d8f"
-              },
-              {
-                "scenario": "height-cap",
-                "name": "Height cap",
-                "color": "#6a4c93"
-              }
-            ],
-            "mode": "difference"
-          }
+          "keywords": []
         },
         "title": "Shadow change, Height cap"
       },
@@ -710,33 +644,15 @@
       },
       {
         "id": "park-shade-capped-park-change",
-        "type": "curio.builtin/compare-scenarios",
+        "type": "curio.builtin/computation-analysis",
         "x": 5450,
         "y": 500,
-        "content": "# Compare Scenarios writes this code from its inputs: input_1 minus input_0,\n# each under the id and the name of its scenario. It is written again when\n# they change.\nreturn curio_difference_scenarios([\n    (\"existing\", \"Existing\", [!! input_0 !!]),\n    (\"height-cap\", \"Height cap\", [!! input_1 !!]),\n], key=\"park\")\n",
+        "content": "# Height cap's shade per park, on input_1, minus Existing's, on input_0,\n# matched by the park's name: in each number column, Height cap's value\n# minus Existing's, and change says whether any of them differs. A park\n# only Existing has is removed, and one only Height cap has is added,\n# their numbers empty. The outline and the other values are Height cap's,\n# or Existing's for a removed park.\nimport numpy as np\nimport pandas as pd\n\nbefore, after = input_0.set_index(\"park\"), input_1.set_index(\"park\")\ngone = before.index.difference(after.index, sort=False)\nkeys = [*before.index, *after.index.difference(before.index, sort=False)]\nout = (pd.concat([after, before.loc[gone]]) if len(gone) else after).reindex(keys)\nnumbers = [\n    column for column in before.columns\n    if column != before.geometry.name and column in after.columns\n    and pd.api.types.is_numeric_dtype(before[column]) and not pd.api.types.is_bool_dtype(before[column])\n]\nwas = before[numbers].reindex(keys).astype(\"float64\")\nnow = after[numbers].reindex(keys).astype(\"float64\")\nout[numbers] = now - was\nchanged = ((was.isna() != now.isna()) | (was.notna() & now.notna() & (now != was))).any(axis=1)\nout.insert(0, \"change\", np.select(\n    [out.index.isin(gone), ~out.index.isin(before.index), changed.to_numpy()],\n    [\"removed\", \"added\", \"changed\"], \"unchanged\",\n))\nreturn out.reset_index()\n",
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "Take each park's change in shade from Existing to Height cap, its mean minutes of shadow among them, matched by the park's name.",
         "metadata": {
-          "keywords": [],
-          "compareScenarios": {
-            "inputs": [
-              {
-                "scenario": "existing",
-                "name": "Existing",
-                "color": "#2a9d8f"
-              },
-              {
-                "scenario": "height-cap",
-                "name": "Height cap",
-                "color": "#6a4c93"
-              }
-            ],
-            "mode": "difference",
-            "difference": {
-              "key": "park"
-            }
-          }
+          "keywords": []
         },
         "title": "Park shade change, Height cap"
       },
@@ -855,6 +771,14 @@
         "targetHandle": "in"
       },
       {
+        "id": "reactflow__edge-park-shade-removed-leverin/out-park-shade-removed-buildings-mapin/out",
+        "source": "park-shade-removed-lever",
+        "target": "park-shade-removed-buildings-map",
+        "sourceHandle": "in/out",
+        "targetHandle": "in/out",
+        "type": "Interaction"
+      },
+      {
         "id": "reactflow__edge-park-shade-removed-rasterizeout-park-shade-removed-shadowin",
         "source": "park-shade-removed-rasterize",
         "target": "park-shade-removed-shadow",
@@ -902,6 +826,14 @@
         "target": "park-shade-capped-buildings-map",
         "sourceHandle": "out",
         "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-park-shade-capped-leverin/out-park-shade-capped-buildings-mapin/out",
+        "source": "park-shade-capped-lever",
+        "target": "park-shade-capped-buildings-map",
+        "sourceHandle": "in/out",
+        "targetHandle": "in/out",
+        "type": "Interaction"
       },
       {
         "id": "reactflow__edge-park-shade-capped-rasterizeout-park-shade-capped-shadowin",

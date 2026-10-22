@@ -175,10 +175,10 @@ class TestAnEvaluationNeverSeesItsExample:
     def test_attached_and_delegated_runs_in_an_evaluation_project_leave_it_out(self):
         line = _pool()[SIXTEEN].entry.line
         marked = self._marked(SIXTEEN)
-        dfb = "agent.dataflow-builder@1.0.0"
+        dfb = "agent.curio.dataflow-builder@1"
         assert line in examples.attached_block(dfb, self.PLAIN, {"kind": "canvas"}, IMAGES)
         assert line not in (examples.attached_block(dfb, marked, {"kind": "canvas"}, IMAGES) or "")
-        nb, capability = "agent.node-builder@1.0.0", "node.content.generate"
+        nb, capability = "agent.curio.node-builder@1", "node.content.generate"
         assert line in examples.delegated_block(nb, capability, self.PLAIN, {"subtask": IMAGES})
         assert line not in (examples.delegated_block(nb, capability, marked, {"subtask": IMAGES}) or "")
 
@@ -232,16 +232,16 @@ class TestWhoTakesThem:
                 if builtin.gets_worked_examples(coord, mode.id):
                     taking.add((m.agent_id, mode.id))
         assert taking == {
-            ("agent.dataflow-builder", None),
-            ("agent.node-builder", None),
-            ("agent.node-builder", "node.content.generate"),
-            ("agent.dataflow-reader", "workflow.suggest"),
+            ("agent.curio.dataflow-builder", None),
+            ("agent.curio.node-builder", None),
+            ("agent.curio.node-builder", "node.content.generate"),
+            ("agent.curio.dataflow-reader", "workflow.suggest"),
         }
         # The Autark variant replaces the instruction of the same content
         # mode, so a run under it takes them too.
-        nb = "agent.node-builder@1.0.0"
+        nb = "agent.curio.node-builder@1"
         assert builtin.gets_worked_examples(nb, "node.content.generate")
-        assert not builtin.gets_worked_examples("agent.someone-else@1.0.0")
+        assert not builtin.gets_worked_examples("agent.test.someone-else@1")
 
     def test_a_manifest_holds_only_the_worked_examples_flag(self):
         """Whether a run takes worked examples is a flag in the agent's
@@ -263,10 +263,10 @@ class TestWhoTakesThem:
             flagged |= {(raw["id"], capability) for capability, flag in flags.items() if flag}
             assert "worked" not in json.dumps(raw).lower(), folder.name
         assert flagged == {
-            ("agent.dataflow-builder", None),
-            ("agent.node-builder", None),
-            ("agent.node-builder", "node.content.generate"),
-            ("agent.dataflow-reader", "workflow.suggest"),
+            ("agent.curio.dataflow-builder", None),
+            ("agent.curio.node-builder", None),
+            ("agent.curio.node-builder", "node.content.generate"),
+            ("agent.curio.dataflow-reader", "workflow.suggest"),
         }
 
 
@@ -364,7 +364,7 @@ class TestTheBlockReachesRuns:
         user, token = user_and_token
         att_id, calls = helper._setup(
             client, user, token, alice_project, monkeypatch,
-            replies=["chatting"], coord="agent.researcher@1.0.0",
+            replies=["chatting"], coord="agent.curio.researcher@1",
         )
         helper._run(client, token, alice_project, att_id, message=IMAGES)
         assert examples.HEADING not in calls[0][0]["content"]
@@ -385,7 +385,7 @@ class TestTheBlockReachesRuns:
         status, _text, _record = delegation.run_delegate(
             _user_dir_key(user), pid, coord, capability, inputs,
             ProviderConfig(api_key="k", api_type="openai_compatible", base_url="http://x", model="m"),
-            parent_execution_id="parent", parent_coord="agent.dataflow-builder@1.0.0", attachment_id=None,
+            parent_execution_id="parent", parent_coord="agent.curio.dataflow-builder@1", attachment_id=None,
         )
         assert status == "ok"
         (messages,) = calls
@@ -395,7 +395,7 @@ class TestTheBlockReachesRuns:
         self, client, user_and_token, tmp_curio, monkeypatch
     ):
         user, token = user_and_token
-        system = self._delegate(client, token, user, monkeypatch, "agent.node-builder@1.0.0",
+        system = self._delegate(client, token, user, monkeypatch, "agent.curio.node-builder@1",
                                 "node.content.generate", {"subtask": IMAGES})
         kinds = [slot["kind"] for slot in system["slots"]]
         assert kinds[-1] == "runtime" and "tool-protocol" not in kinds
@@ -406,7 +406,7 @@ class TestTheBlockReachesRuns:
         self, client, user_and_token, tmp_curio, monkeypatch
     ):
         user, token = user_and_token
-        reader = "agent.dataflow-reader@1.0.0"
+        reader = "agent.curio.dataflow-reader@1"
         suggest = self._delegate(client, token, user, monkeypatch, reader, "workflow.suggest",
                                  {"workflowGoal": IMAGES})
         explain = self._delegate(client, token, user, monkeypatch, reader, "dataflow.explain",

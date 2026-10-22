@@ -7,7 +7,8 @@ values of a column that identifies them (``osm_id`` here), never Vega's
 signed-in canvas makes:
 
 1. Add a tag on the scatterplot, by ``osm_id``, in the counting node's Widgets
-   tab, and drag its tag into the node's code.
+   tab, open Selections in the header above the node's code, and drag its tag
+   into the code.
 2. Brush two points. The tag holds their ids; running the node below the
    counting node counts the two rows the Python code picked by those ids.
 3. Brush again, over every point. Running the node below runs the counting
@@ -55,6 +56,7 @@ from .utils import (
     mark_point,
     node_execution_timeout_ms,
     node_locator,
+    open_strip_category,
     play_node,
     read_node_code,
     read_node_output_text,
@@ -212,6 +214,7 @@ _DRAG_SELECTION_TAG_JS = r"""({ nodeId, name, x, y }) => {
 
 
 def _drag_selection_tag_to_line_end(page, node_id: str, name: str, *, timeout: float = 15000) -> None:
+    open_strip_category(page, node_id, "selections")
     deadline = time.time() + timeout / 1000
     point = page.evaluate(_LINE_END_POINT_JS, node_id)
     while not point["over"] and time.time() < deadline:

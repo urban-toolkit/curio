@@ -5,11 +5,11 @@
  * most one box. An input whose node is in no box is named by that node, in a
  * neutral color.
  *
- * A Vega-Lite chart that reads its inputs stacked as `inputs` names their
- * rows by these labels and draws them in the boxes' colors and order
- * (`scaleLabelsOf`), an Autark map draws a layer in the color of its input's
- * box (adapters/node/autkScenarioColors), and a Compare Scenarios node labels
- * its inputs with them (utils/compare/compareInputs).
+ * A Vega-Lite chart that reads its inputs stacked as `inputs` names their rows
+ * by these labels, and a chart's or a map's scenario chips write them
+ * (utils/references/codeReferences): the input scope carries each input's
+ * label (hook/useInputScope), with the rank of its box in the dataflow's list,
+ * which orders the chips.
  *
  * Duck-typed nodes and edges, so this module needs no `reactflow` import.
  */
@@ -37,56 +37,19 @@ export interface InputScenario {
   label: ScenarioLabel;
 }
 
-/** The box *nodeId* sits in, or null: the first box that holds it. */
-export function scenarioOfNode(
-  nodeId: string,
-  nodes: readonly FlowNodeLike[],
-  scenarios: readonly Scenario[],
-): Scenario | null {
-  return liveScenarios(scenarios, nodes).find((scenario) => scenario.nodes.includes(nodeId)) ?? null;
-}
-
 /**
  * The label of an input fed by the node *sourceId* (*source*), which sits in
- * *scenario*: the box's id, name and color, else the node's name in a neutral
- * color.
+ * *scenario*, the box *rank*-th in the dataflow's list: the box's id, name,
+ * color and rank, else the node's name in a neutral color.
  */
 export function inputLabelOf(
   scenario: Scenario | null,
   source: FlowNodeLike | undefined,
   sourceId: string,
+  rank?: number,
 ): ScenarioLabel {
-  return scenario
-    ? { scenario: scenario.id, name: scenario.name, color: scenario.color }
-    : { name: nodeLabel(source, sourceId), color: NO_SCENARIO_COLOR };
-}
-
-/**
- * The labels a chart's scales draw *inputs* with: each box once, in the order
- * the dataflow lists its boxes (*scenarios*), then each input from no box, in
- * circle order. The rows themselves stack in circle order.
- */
-export function scaleLabelsOf(inputs: readonly InputScenario[], scenarios: readonly Scenario[]): ScenarioLabel[] {
-  const listed = new Map(scenarios.map((scenario, index) => [scenario.id, index]));
-  const boxes = new Map<string, ScenarioLabel>();
-  for (const input of inputs) {
-    if (input.scenario && !boxes.has(input.scenario.id)) boxes.set(input.scenario.id, input.label);
-  }
-  const place = (id: string) => listed.get(id) ?? Number.MAX_SAFE_INTEGER;
-  return [
-    ...[...boxes.entries()].sort(([a], [b]) => place(a) - place(b)).map(([, label]) => label),
-    ...inputs.filter((input) => !input.scenario).map((input) => input.label),
-  ];
-}
-
-/**
- * The labels a chart reading `inputs` draws `scenario_name` with
- * (utils/scenarios/scenarioScales): *labels*, `scaleLabelsOf`'s, when an input
- * comes from a box; none when no input does, so the spec's own colors and
- * order stand.
- */
-export function boxFill(labels: readonly ScenarioLabel[]): readonly ScenarioLabel[] | null {
-  return labels.some((label) => label.scenario != null) ? labels : null;
+  if (!scenario) return { name: nodeLabel(source, sourceId), color: NO_SCENARIO_COLOR };
+  return { scenario: scenario.id, name: scenario.name, color: scenario.color, ...(rank !== undefined ? { rank } : {}) };
 }
 
 /** The wired inputs of node *nodeId*, in circle order, each with its box. */
@@ -97,10 +60,10 @@ export function inputScenarios(
   scenarios: readonly Scenario[],
 ): InputScenario[] {
   const byId = new Map(nodes.map((node) => [node.id, node]));
-  const scenarioOf = new Map<string, Scenario>();
-  for (const scenario of liveScenarios(scenarios, nodes)) {
-    for (const id of scenario.nodes) if (!scenarioOf.has(id)) scenarioOf.set(id, scenario);
-  }
+  const scenarioOf = new Map<string, { scenario: Scenario; rank: number }>();
+  liveScenarios(scenarios, nodes).forEach((scenario, rank) => {
+    for (const id of scenario.nodes) if (!scenarioOf.has(id)) scenarioOf.set(id, { scenario, rank });
+  });
   const sourceOf = new Map<number, string>();
   for (const edge of edges) {
     if (edge.target !== nodeId || !isDataEdge(edge)) continue;
@@ -110,7 +73,8 @@ export function inputScenarios(
   return [...sourceOf.entries()]
     .sort(([a], [b]) => a - b)
     .map(([slot, source]) => {
-      const scenario = scenarioOf.get(source) ?? null;
-      return { slot, source, scenario, label: inputLabelOf(scenario, byId.get(source), source) };
+      const box = scenarioOf.get(source) ?? null;
+      const scenario = box?.scenario ?? null;
+      return { slot, source, scenario, label: inputLabelOf(scenario, byId.get(source), source, box?.rank) };
     });
 }

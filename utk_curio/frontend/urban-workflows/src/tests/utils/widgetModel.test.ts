@@ -69,6 +69,16 @@ describe("normalizeWidgets", () => {
     expect(normalizeWidgets([{ name: "factor\n", type: "number", default: 1 }])).toEqual([]);
   });
 
+  test("keeps a widget saved under a name no widget takes, so it can be deleted, though its edit is refused", () => {
+    const saved = normalizeWidgets([
+      { name: "input_0", type: "number", default: 1 },
+      { name: "inputs", type: "number", default: 3 },
+    ]);
+    expect(saved.map((w) => w.name)).toEqual(["input_0", "inputs"]);
+    expect(checkWidgetDef(saved[0], [saved[1]])).toBe("input_0 names one of the node's inputs. Pick another name.");
+    expect(checkWidgetDef(saved[1], [saved[0]])).toBe("inputs names the node's stacked inputs. Pick another name.");
+  });
+
   test("keeps every option the controls read, and drops malformed ones", () => {
     const [slider, choice] = normalizeWidgets([
       { name: "s", type: "slider", default: 2, options: { min: 0, max: 10, step: 0.5, units: "m", extra: 1 } },

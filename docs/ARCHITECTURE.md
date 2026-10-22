@@ -304,8 +304,7 @@ moves nodes the way the dashboard page does:
   grammar node's output pane visible under its input (`curio-notebook-split` in
   `Node.css`) without moving either pane, so a chart or map never remounts.
   `notebookOutputBox` gives an output the height its kind gets: a definite one for a
-  chart (320px), an Autark map or plot and a Compare Scenarios view (400px), which have
-  none of their own; a table, summary or control its own up to 360px; anything else
+  chart (320px) and an Autark map or plot (400px), which have none of their own; a table, summary or control its own up to 360px; anything else
   360px. `useNotebookEditorHeight` (`components/editing/`) sets a code or spec editor's
   wrapper to Monaco's content height (`onDidContentSizeChange`), at least three lines,
   at most 400px for code and 240px for a spec. The outcome strip sits in the cell's flow
@@ -343,16 +342,25 @@ outcomes produce.
 
 ### Scenarios in charts and maps
 
-A chart or a map outside the scenario boxes names and colors what each box feeds it
-from the box its input comes from:
+A chart or a map outside the scenario boxes names what each box feeds it from the
+box its input comes from, and draws exactly its spec: the boxes' colors and order
+are what its scenario chips write.
 
 - `src/utils/scenarios/inputScenarios.ts` is the one lookup: for each wired circle of a
-  node, the node feeding it, the box that node is in (`scenarioOfNode`) and the label
-  the input's rows carry (`inputLabelOf`: the box's id, name and color, else the
-  feeding node's name and `NO_SCENARIO_COLOR`). `scenarioColors.ts` holds the label
-  type, the `scenario` and `scenario_name` columns, `scenarioScale` and
-  `tableTextColor`.
-- A Vega-Lite spec that names the dataset `inputs` anywhere (`readsInputs` in
+  node, the node feeding it, the box that node is in and the label the input's rows
+  carry (`inputLabelOf`: the box's id, name, color and `rank`, its place in
+  `dataflow.scenarios`, else the feeding node's name and `NO_SCENARIO_COLOR`).
+  `scenarioColors.ts` holds the label type, the `scenario` and `scenario_name`
+  columns, `scaleLabels` (each box once by rank, then each input from no box in
+  circle order), `scenarioScale` (each name once, a box in its color and each input
+  from no box in a grey of its own from `NO_SCENARIO_GREYS`, past one a box there
+  uses), `anyFromABox` and `tableTextColor`. Its Python twin is
+  `WorkflowSpec.input_scenarios` (`execution/workflow_spec.py`), with `node_label`
+  for a node in no box: its title, else its header, the template's label looked up
+  by the canonical template id as `node_names.saved_node_label` looks it up, from
+  the project's template labels (`labels`), which a run and the agents' check pass.
+- A Vega-Lite spec that names the dataset `inputs` anywhere, its chips resolved
+  (`readsInputs` in
   `src/utils/vegaDatasets.ts`, which makes `usesNamedDatasets` true for it) gets every
   input's rows stacked in circle order, each with `__input__`, `scenario` and
   `scenario_name`. `prepareVegaInputs` (`utils/vegaInput.ts`) builds the dataset with
@@ -371,89 +379,129 @@ from the box its input comes from:
   dataset the view lacks: vega-lite builds only the datasets a spec reads, and vega
   throws for any other. Its twins in Python are `stack_inputs` and `input_rows`
   (`inputRows`, one input's own rows) in `utk_curio/sandbox/util/scenario_stack.py`,
-  which share `stack_scenarios`' rules but read a GeoDataFrame without its geometry
-  (`geometry=False`, so Compare Scenarios keeps refusing a GeoDataFrame beside a table
-  and two coordinate systems), and which an exported notebook's chart cell imports
-  (`NotebookConvertor.ts`, with the boxes at `dataflow.scenarios`; the cell writes the
-  spec as a Python literal). `stackedInputs.cases.json` pins both, for Jest and for
-  `test_scenario_inputs.py`.
-- `adapters/node/vegaBehavior.ts` fills a spec that reads `inputs` with its own
-  inputs' labels (`withScenarioScales`, `utils/scenarios/scenarioScales.ts`), each box
-  once in the order `dataflow.scenarios` lists the boxes, then the inputs from no box in
-  circle order (`scaleLabelsOf`), but only when an input comes from a box (`boxFill`):
-  with none, the spec's own colors and order stand. Any other spec takes an upstream
-  Compare Scenarios node's labels (`upstreamCompareLabels`). For the first, a change to
-  any label's id, name or color, or to the boxes' order, draws the chart again and
-  stacks its rows again, a box drawn around a feeder among them; for the second, only
-  what the scales draw. Both redraw the way the Compare node's Chart tab draws (below).
-  The exported notebook fills its chart cell the same way.
-- A map: on an Autark node outside every box, `layerScenarios`
-  ([`autkScenarioColors.ts`](../utk_curio/frontend/urban-workflows/src/adapters/node/autkScenarioColors.ts))
-  finds the box of each layer's table through the circle `autkSourcesFrom` says it came
-  in on (`PreparedAutkInput.circles`), reading every table as the one wired input's
-  when one is wired, and `withScenarioColors` gives the layer the grammar's `color`, the
-  box's, before the run. It leaves a layer colored by its values as it is (a `getFnv`
-  with no `color` of its own, or `isColorMap`), and a raster's (`rasterTables`,
-  `autkRasters.ts`), whose color map the grammar would drop for one color. A map inside
-  a box draws as written, and so does the Interaction node's map
-  (`colorsByScenario: false`). `shippedScenarioLayers.test.ts` lists every shipped
-  layer the rule recolors.
+  which read a GeoDataFrame without its geometry and which an exported notebook's
+  chart cell imports (`NotebookConvertor.ts`, with the boxes at `dataflow.scenarios`;
+  the cell writes the spec as a Python literal). `stackedInputs.cases.json` pins both,
+  for Jest and for `test_scenario_inputs.py`.
+- The scenario chips are references (`utils/references/codeReferences.ts`, twin
+  `execution/code_references.py`): `[!! scenario colors !!]` writes
+  `{"domain": [names], "range": [colors]}`, `scenarioScale` over `scaleLabels`, `[!!
+  scenario text_colors !!]` the same range in `tableTextColor` shades, `[!! scenario
+  order !!]` the names, and `[!! scenario input_1 !!]` input_1's color in that scale.
+  With no input from a box (`anyFromABox`), the two scales are `{"domain": [names]}`,
+  so the grammar's own palette colors the names. They read the
+  label each `InputScope` carries (`scenario`), which `hook/useInputScope.ts` adds from
+  the live graph, the notebook export from the saved one and `WorkflowSpec.node_code`
+  from the spec, so the canvas, `NotebookConvertor.ts`, a server run and the agents'
+  `_resolved_document` write one spec (`scenarioChips.cases.json`, read by Jest and
+  `test_scenario_chips.py`). The form is a kind word and a space, as `selection picked`
+  is: a widget's name has no space, and `input_1.scenario_color` would be a column of
+  input_1. `[!! inputs.<field> !!]` names a field of `inputs`, written as a column
+  chip is, and `[!! inputs !!]` the dataset itself (kind `dataset`), written as its
+  name, `INPUTS_DATASET` (`STACKED_DATASET` in the twin), in any JSON document, an
+  Autark spec's too. A chip in
+  Python or JavaScript, a list chip inside quotes, an input with no edge or with no
+  label, and the dataset chip on a node with no input are refused, and
+  `renumberInputReferences` moves an input's chip with its circle.
+  `codeReferences.cases.json` pins both resolvers. With no dataflow to resolve them
+  over, the agents' check reads each as a value of its shape, the dataset chip as its
+  name over at least one stand-in input, and reports a refused one in its own words
+  (`with_stand_in_chips`). No widget takes the name `inputs`, as none takes
+  `input_<k>`: `INPUT_NAME_ONLY_PATTERN` (`widgetModel.ts`), its twin
+  `INPUT_NAME_ONLY_RE` with `widget_name_problem`, and the widget name's `not` in
+  `docs/schemas/node-package.v4.json`, which every full widget check reads (the
+  Widgets tab, a package manifest, the agents' widgets). `normalizeWidgets` keeps a
+  saved widget of that name, so it can be deleted, while `[!! inputs !!]` names the
+  dataset.
+- A reader of a spec's shape parses it before its chips are resolved with each chip
+  standing on its own held by a string of itself (`withChipPlaceholders`, twin
+  `with_chip_placeholders`): `classifyAutkSpecString` (`utils/autkSpecKind.ts`), which
+  decides whether an Autark node draws from its input on the canvas and is a
+  dashboard's pass-through (`dashboardLayout.ts`), the Autark node's body (whether
+  its document needs an input, what a data run on the server loaded,
+  `autkGrammarBehavior.tsx`), and its twins
+  `execution/autk_spec_kind.py` (a run's plan) and `projects/dashboard_payload.py`.
+  `autkSpecKind.cases.json` pins both. A chip that writes one text, an input's
+  scenario color, the dataset `inputs` or a field of it, is inserted quoted where JSON
+  wants a value (`insertReference` in `monacoCodeReferences.ts`), so the spec stays
+  JSON.
+- The header above a code or grammar editor, `ReferenceStrip` in
+  `components/editing/widgets/WidgetTag.tsx`, lists every chip the node can use,
+  whatever its code or spec uses: it reads the editor's language, the grammar
+  `NodeEditor` resolves the spec in (`VEGA_LITE` for the built-in node and any template
+  whose `grammarId` says so), the node's inputs with their labels (`useInputScope`), its
+  widgets and selection tags, and the dataflow's shared tags, never its code, so
+  built-in and package nodes of one grammar get the same header. It is one row of
+  categories, Inputs, Scenarios, Widgets, Selections and Shared, each with its count and
+  only when it has chips. They start closed, a click opens a category's chips under the
+  row, and `stripCategories.ts` keeps the open ones per node id outside React, so a tab
+  switch or a remount keeps them; `ProjectLoader` closes them all when another dataflow
+  opens (`closeEveryCategory`). On the canvas the header takes at most half of its
+  editor's height (`.strip` in `WidgetTags.module.css`), and the open chips scroll inside
+  it with the shared thin scrollbar; in a notebook cell it is as tall as its chips.
+  Inputs, `InputsChips`, is a line per input in circle order, and in a Vega-Lite spec
+  with an input the line of `inputs`, whose tag drags `[!! inputs !!]` and whose list is
+  `stackedFields` (the three the stacking adds, then the inputs' columns, leaving out a
+  GeoDataFrame's geometry and every input that carries layers). A line holds its
+  expander, its tag and what its input holds: `aboutInput` names where the input comes
+  from, the box its node is in, else its label (`resolveNodeDisplayLabel`, the kind its
+  node's header shows), then `heldBy` counts its columns, layers or tuple's values
+  (`InputScope.tuple`); the line of `inputs` names the inputs it stacks and counts its
+  fields (`aboutStacked`). An open list comes right under its line, never in it: a
+  layered input's is one grid of a line per layer. `stripCategories.ts` keeps the open
+  lists per node id beside the categories, each by the edge that feeds its input
+  (`InputScope.edge`), which keeps its id when the circles renumber, so a list never
+  opens on another input; and Inputs, open, asks for the columns not read yet of every
+  input (`onLoadColumns`). Scenarios shows in a spec whose inputs' labels are all known
+  and one comes from a box: in Vega-Lite, the swatches of `scenarioColorScale`, which
+  drag `scenario colors`, then **text colors** and **order**; in Vega-Lite and Autark, a
+  tag per input, which drags its `scenario input_<k>` chip in `scenarioInputColor`. Each
+  drags as `SCENARIO_REF_MIME`. Both helpers are what `scenarioValue` writes, so a swatch
+  shows the color its chip writes. Code shows neither the `inputs` tag nor Scenarios.
+  `monacoCodeReferences.ts` draws the chips lilac and says what each writes on hover.
+  On a node fed from no box, the hover says that no input of the node comes from a
+  box, and what the chip writes there: for a scale the names alone, in the grammar's
+  own colors; for **order** the names of the nodes its inputs come from; for an input's
+  chip its gray.
+- A change to any label's id, name, color or rank draws a chart again when what it
+  draws moves: `NodeEditor.tsx` hands `applyGrammar` the spec it resolved with a
+  `GrammarRedraw` (`registry/types.ts`), which writes the same code again in the same
+  scope with the new labels, and `vegaBehavior.ts` keys its redraw on that spec and,
+  for one that reads `inputs`, on the ids and names its rows carry, a box drawn around
+  a feeder among them: `handleCompileGrammar` with `recordsProvenance` and
+  `forwardsInput` off for that draw, so no version and no hand-off. It also sets
+  `keepsSelection`, and `useVega` puts a selection made in the chart back in the new
+  view (`carriedSelections` and `withMovedIds` in `vegaSelects.ts`), leaving what the
+  flow holds as it is. One redraw runs at a time, then the last labels if they moved
+  meanwhile: a color dragged through the picker is written at every step, and each
+  redraw takes the selection from the view the one before it built. It does not
+  redraw during a run, which draws the chart itself.
+- A map draws its layers as its document writes them, its chips resolved before the
+  run like any other: a layer writes `"color": "[!! scenario input_1 !!]"` to take its
+  input's box's color, which it takes anew at its next run. The routing example's two
+  routes do, the only shipped layers that drew in a box's color when Curio recolored
+  them unasked (`shippedScenarioLayers.test.ts`).
 
 ### Comparing scenarios
 
-The Compare Scenarios node (`curio.builtin/compare-scenarios`) is a Python code
-node whose code it writes itself:
+A dataflow compares its scenarios with ordinary nodes outside the boxes, each
+scenario's outcome on a circle of its own:
 
-- `src/utils/compare/compareInputs.ts` labels each input circle by the scenario its
-  source node is in (`metadata.compareScenarios.inputs`), and `compareCode.ts` writes
-  the code from the labels, one chip per input. `adapters/node/compareScenariosBehavior.tsx`
-  writes both again when the graph's labels differ from the stored ones, never on the
-  dashboard or a shared view, and not while a load has added the nodes but not yet
-  the edges.
-- The code calls `curio_stack_scenarios` (`utk_curio/sandbox/util/scenario_stack.py`),
-  seeded in the in-process namespace (`worker._globals_cache`) and the isolated one
-  (`zygote.build_namespace_template`). A run on the server runs the node as any
-  executable template; `compareCode.cases.json` pins the written code for Jest and
-  for `test_compare_scenarios_node.py`, which resolves it through
-  `WorkflowSpec.node_code` and runs it.
-- `components/compare/CompareChart.tsx` draws the node's own output with `useVega`,
-  with `recordsProvenance` and `forwardsInput` off: the node's provenance is its
-  code, and its run has already handed the table on. The presets are in
-  `comparePresets.ts`, and `comparePresets.cases.json` holds one spec per preset for
-  Jest and for the Vega-Lite check in `test_compare_scenarios_node.py`.
-- A Vega-Lite node after the node draws its scenarios as the node's chart does.
-  `upstreamCompareLabels` (`compareInputs.ts`) finds the Compare Scenarios node the
-  chart reads on input_0, directly or through nodes of one input each, and the
-  labels its chart draws with (`chartLabels`, which `CompareScenariosBody.tsx` uses
-  too). `adapters/node/vegaBehavior.ts` passes the spec through `withScenarioScales`
-  (`src/utils/scenarios/scenarioScales.ts`) before `useVega` compiles it: every color,
-  fill or stroke on `scenario_name` takes `scenarioScale` (on a text mark, the Table
-  preset's `tableTextColor` shades, both in `scenarioColors.ts`), and every position,
-  offset or facet on it takes the names as its order, over what the spec writes, as
-  `withScenarioColors` does for a map layer. When the scenarios' names or colors change (`scenarioScale`), the
-  behavior draws the chart again the way `CompareChart.tsx` draws:
-  `handleCompileGrammar` with `recordsProvenance` and `forwardsInput` off for that
-  draw, so no version and no hand-off. It also sets `keepsSelection`, and `useVega`
-  puts a selection made in the chart back in the new view (`carriedSelections` and
-  `withMovedIds` in `vegaSelects.ts`), leaving what the flow holds as it is. One
-  redraw runs at a time, then the last names and colors if they moved meanwhile: a
-  color dragged through the picker is written at every step, and each redraw takes
-  the selection from the view the one before it built. It does not redraw during a
-  run, which draws the chart itself. `scenarioScales.cases.json`
-  pins the fill for Jest and for the Vega-Lite check in
-  `test_scenario_inputs.py`.
+- A chart is a Vega-Lite node whose spec reads `[!! inputs !!]`
+  ([Scenarios in charts and maps](#scenarios-in-charts-and-maps)).
 - The Scout package (`packages/curio.scout@1`) holds fifteen Vega-Lite templates
   that compare scenarios. Each names `behavior: vega` and `grammarId: vega-lite`,
   takes `[1,n]` on its input port, a circle per scenario, and its `.vl.json` starter
   is the node's whole content (`starterIsContent`). The starter reads
-  `"data": {"name": "inputs"}`, so the node gets its inputs stacked
-  ([Scenarios in charts and maps](#scenarios-in-charts-and-maps)), writes no scale
-  and no order for `scenario_name`, which the fill supplies, and reads the columns
-  it plots from widgets through chips (`"field": "[!! y !!]"`). Bars, Grouped bars,
-  Lines, Pie and Lollipops write Combine as the measure's Vega-Lite aggregate
-  (`"aggregate": "[!! combine !!]"`), and the Table writes its list of columns where
-  a list stands (`"fold": [!! columns !!]`), so that starter is JSON once its chips
-  are written.
+  `"data": {"name": "[!! inputs !!]"}`, so the node gets its inputs stacked
+  ([Scenarios in charts and maps](#scenarios-in-charts-and-maps)), writes the scale
+  and the order of `scenario_name` through its scenario chips (Table and Stacked bars
+  with totals, whose text marks color by scenario, in `scenario text_colors`), and
+  reads the columns it plots from widgets through chips (`"field": "[!! y !!]"`).
+  Bars, Grouped bars, Lines, Pie and Lollipops write Combine as the measure's
+  Vega-Lite aggregate (`"aggregate": "[!! combine !!]"`), and the Table writes its
+  list of columns where a list stands (`"fold": [!! columns !!]`), so a starter is
+  JSON once its chips are written.
 - A template that names `grammarId: vega-lite` is a Vega-Lite node for every rule
   keyed on the node's kind. On the canvas, `isVegaLiteNodeType`
   (`registry/vegaLiteNodes.ts`) decides drawing from a restored input
@@ -467,79 +515,54 @@ node whose code it writes itself:
   ([Built-in nodes by their declared behavior](#built-in-nodes-by-their-declared-behavior)).
   The automatic Vega-Lite and Autark tags read a template's grammar from the
   account's store too ([A dataflow's tags and data types](#a-dataflows-tags-and-data-types)).
-- In Difference (`compareMode.ts`: `metadata.compareScenarios.mode`, else Difference
-  for two rasters or two layers by the `dataType` of what the circles hold) the code
-  calls `curio_difference_scenarios` (`utk_curio/sandbox/util/scenario_difference.py`)
-  instead; `compareDifference.cases.json` pins it for Jest and for
-  `test_compare_difference_node.py`. The behavior writes the code again when the
-  wanted view differs from the one the code calls, the key from its `key=`, or
-  `difference.absolute` from its `absolute=True`, and never while an input's kind
-  is unknown, as after a load.
-- Two layers or tables are joined in Python. Two rasters are loaded as an Autark map
-  loads them, and an isolated child may not start Node. So the code returns a JSON
-  request (each raster's GeoTIFF bytes and `raster_meta`), and the sandbox's `/exec`
-  completes it after either path ran the code (`complete_raster_difference`):
-  `util/raster_difference.js` runs through `worker.run_js_script`, the runner
-  `execute_js_code` uses, loads both rasters with `loadGeoTiff` by `rasterLoad.ts`'s
-  `planForMeta` and returns their envelopes (`rasterWire.ts`), whose float32 bands
-  `envelope_difference.subtract_envelopes` subtracts (see [Raster algebra](#raster-algebra)).
-  `rasterLoad.ts` and `rasterWire.ts` have no imports at run time, so Node loads them
-  from `src/` by type stripping. The envelope is stored as the node's output, a JSON
-  artifact.
-- `components/compare/CompareDifference.tsx` shows the difference: a table goes
-  through `CompareChart` with the spec `compareDifference.ts` writes. The node draws
-  no map: a raster's or a layer's difference is drawn by an Autark node after it,
-  which reads the node's output as any Autark node reads its input.
-- `whatDiffers.ts` reads each compared scenario's parts through `scenarioParts`,
-  pairs levers whose ids and `copiedFrom` lists meet, and compares their widget
-  values and code lines, or, for Interaction nodes, their edit logs, an edit
-  switched off marked off; `contextWarnings` compares their fixed context.
-- A pinned Compare Scenarios node draws its own output, so it is its own dashboard
-  source (its `compare-scenarios` behavior: `isSelfDrawnNode` in `dashboardLayout.ts`,
-  `draws_its_own_output` in `projects/dashboard_payload.py`), and its
-  inputs are not walked. Its tile draws no
-  map, so the page carries no `/raster` answer for it; an Autark map pinned after it
-  walks up to it like any producer, and the page carries the difference's raster for
-  that map.
+- The difference of two rasters is a Raster Calculator's,
+  `raster_calculate("subtract", [input_1, input_0], output_file=curio_output_file)`,
+  with `absolute=True` for its size ([Raster algebra](#raster-algebra)), and the
+  difference of two tables or layers a Python node's, which joins their rows on a
+  key column. An Autark node after either draws it on a map.
 
 ### Editing features
 
-The Interaction node (type `curio.builtin/edit-features`) is a Python code node
-whose code is written from its edit log (`metadata.editFeatures`: `key`, `layer`,
-`edits`):
+The Map Edits node (type `curio.builtin/edit-features`) is a Python code node
+whose code is its only state: one call of `curio_edit_features`
+(`utk_curio/sandbox/util/feature_edits.py`), seeded in the in-process namespace
+(`worker._globals_cache`) and the isolated one (`zygote.build_namespace_template`).
 
-- `src/utils/editFeatures/editFeatures.ts` normalizes the log and writes the code,
-  one call of `curio_edit_features` (`utk_curio/sandbox/util/feature_edits.py`),
-  seeded in both namespaces as the Compare Scenarios steps are.
-  `adapters/node/editFeaturesBehavior.tsx` writes the log and the code together
-  when the body changes the log, and marks the node stale with every node below it
-  that ran, the nodes `autoRunTargets` (`providers/flow/useAutoRun.ts`) gives.
-- `components/editFeatures/EditFeaturesBody.tsx` reads the input as the Autark map
-  reads it (`readAutkInput`, `autkSourcesFrom`), offers the id columns a selection
-  tag offers (`idColumns` in `utils/references/selectionTags.ts`) and refuses a layer
-  with none. `EditFeaturesMap.tsx` draws the input with `useAutkGrammarBehavior`, the
-  layer to edit with `isPick`, and turns a pick's rows into ids with `selectedIds`.
-  The body takes its keys with the `nokey` class, so React Flow neither deletes nor
-  moves the node on them. Its Update results calls the flow's `runDownstream`, which
-  starts the run an automatic run starts (#845) for `autoRunTargets` of the node,
-  on the server or, where runs stay in the browser, there.
-- Conditions (`where`) and `expr` edits are one small expression language written
-  twice, `utk_curio/sandbox/util/edit_expr.py` for runs and
-  `src/utils/editFeatures/editExpr.ts` for the body, neither through `eval`.
-  `applyEdits.ts` applies the log in the browser, so the picked features' table and
-  a condition's count show what a run hands on. Both twins read
-  `src/utils/editFeatures/editExpr.cases.json`, in Jest and in pytest.
-- `feature_edits.edit_features` matches features by `key`, never by position, and
-  edits GeoJSON as it is when the input is an Autark node's layers: the other
-  features, properties and layers pass through untouched, and the result is the
-  envelope `persistLayersToBackend` stores for an Autark node. A table gives a table,
-  its columns keeping their types. Unknown ids are printed, and the run goes on.
-- A Data Pool's layers read from one artifact, one or several, name it (`filename`),
-  and a code node is sent that artifact (`executionInputRef`), as a run on the
-  server passes the pool through. In-process, the layers of a stored
-  Autark envelope reach Python as GeoDataFrames that keep `layerName` and
-  `layerType` in their `metadata` (`worker._keep_layer_identity`); the isolated
-  child gets the envelope itself. `edit_features` reads both.
+- `src/utils/editFeatures/editFeatures.ts` writes the call from the node's edits
+  (`editFeaturesCode`) and reads it back (`readEditFeaturesCode`, through
+  `pyLiteral.ts`); Jest and pytest share `editFeaturesCode.cases.json`. Code of
+  another shape is never rewritten: the body says why it cannot read it and
+  offers no actions, and a run still runs it.
+- `components/editFeatures/EditFeaturesBody.tsx` reads the edits from the code on
+  every render, and each change writes a new code through
+  `adapters/node/editFeaturesBehavior.tsx`, which marks the dataflow dirty, marks
+  the node and the nodes below it that ran stale (`autoRunTargets`), and adds an
+  entry to the node's history (`nodeEditProv`). Undo and Redo put back an entry's
+  code and add none. Commit edits calls `runDownstream` for the node.
+- The data edge carries the edits. An Autark map a Map Edits node feeds draws that
+  node's input with the edits its code holds (`mapEditsPreview.ts`, applied by
+  `applyEdits.ts`, the twin of the run's `_edit_fc`), keeps its view, files no
+  run for that draw, and hands on what it was fed: the node's last run.
+- The interaction edge carries selections, as between two views. A pick on the
+  linked map is the map's selection (`MapEditOverlay`), which `useInteractions`
+  routes to the node, matched by the layer's id column (`mapEditSelection.ts`,
+  `matchSelections`); what the node picks, or a rule matches, goes back the same
+  way and lights up on the map. `mapEditBus.ts` lends the map only the drawing
+  tools: the layer worked on, the mode and the shape being drawn. The node edits
+  on the maps it feeds and is linked to (`linkedMaps` in `mapLayerEdits.ts`), and
+  `plan_topology` allows its interaction edge only to such a map.
+- Fed by several nodes, the code hands the step every circle (`by_input=True`),
+  and the step names each unnamed layer after its circle, `input_<k>`, as the
+  map does.
+- Rules (`where`) and `expr` edits are one expression language written twice,
+  `edit_expr.py` for runs and `editExpr.ts` for the body, neither through
+  `eval`; both read `editExpr.cases.json`.
+- `edit_features` matches features by their id column, never by position, edits
+  an Autark node's GeoJSON layers in place and a table as a table, and hands on
+  every other feature, property and layer as it came. In-process, an Autark
+  node's layers reach it as GeoDataFrames that keep `layerName` and `layerType`
+  in their `metadata` (`worker._keep_layer_identity`); the isolated child gets
+  the envelope itself.
 
 ### Notes
 
@@ -634,7 +657,6 @@ Curio knows what a node is by what its template declares, never by the name of i
 | Rule | Backend | Canvas | What the template declares |
 |---|---|---|---|
 | A dashboard or a scenario walks through the node | `passes_through` in `projects/dashboard_payload.py`, which `parts.is_pass_through` calls | `isPassThroughNode` in `utils/dashboardLayout.ts` | the `vega`, `simple-vis` or `data-pool` behavior, a `grammarId` of `vega-lite`, or the `autk-grammar` behavior with a spec that draws |
-| A pinned node is its own dashboard source | `draws_its_own_output` in `projects/dashboard_payload.py` | `isSelfDrawnNode` in `utils/dashboardLayout.ts` | the `compare-scenarios` behavior |
 | A save keeps no output of the node's own | `_is_sink_node_type` in `projects/services.py` | `isNonProducingNodeType` in `utils/saveOutputDataset.ts` | the `vega` or `simple-vis` behavior, or a `grammarId` of `vega-lite` |
 | A node loads the dataset it names: the nodes after it are the dataset's consumers, and a dataset dropped on it applies to it | `loads_data` in `datasets/application/export.py` | `loadsData`, read by `datasetLineageResolver.ts` and `canApplyDatasetToNode` | the `loadsDataset` flag, which the agents read too (`source_grounding.loads_dataset`); the legacy type `DATA_LOADING` too |
 | A run on the server forwards the node | `node_role` in `execution/run_plan.py` | | a pass-through, or the `data-export`, `parameter` or `note` behavior |
@@ -883,6 +905,60 @@ never has geometry attached, so it carries exactly the columns it always did.
 That matters because shipped dataflows chart multi-megabyte GeoJSON as bar
 charts, and the rows are re-shipped through `changeset()` on every brush.
 
+### Field Names in Vega-Lite Specs
+
+Vega-Lite reads a field as a path into the row: `rain.mm` is `mm` inside `rain`,
+and `a[0]` indexes `a`. So a column whose name holds a `.`, a `[` or a `]` is
+written with a backslash before each (`rain\.mm`, `vegaFieldName` in
+`utils/vegaFieldNames.ts`, `vega_field_name` in `code_references.py`). A name
+that already holds a backslash is taken as escaped by hand and written as it
+is. In a Vega-Lite chart's spec, a reference writes its names so where
+Vega-Lite reads a field, and as they are everywhere else: titles, sort values,
+expressions such as `datum['rain.mm']`, and the names a transform writes
+(`as`).
+
+- **Where.** The resolver reads the spec as JSON with each reference replaced by
+  a mark, finds where each mark stands, and writes only then
+  (`vegaFieldPlaces` in `codeReferences.ts`, `_vega_field_places` in
+  `code_references.py`). A mark is the reference's number between two
+  characters of Unicode's private use area that the spec's text holds neither
+  as they are nor as a JSON escape, so the spec's own text takes no
+  reference's place. The values of `data`, `datasets` and `usermeta` are rows
+  and notes, never fields. A spec that does not read as JSON, or nests more than
+  100 levels deep, its rows and notes counted, writes every name as it is: the
+  depth is measured without recursion, so the browser and the runner agree on
+  any spec. The field positions are the
+  ones Vega-Lite's schema types as a field name, but `as`: `field` anywhere;
+  in a transform, its `groupby`, `fold` and `flatten` lists, the field its own
+  key names (`pivot`, `lookup`, `impute`, `stack`, `density`, `loess`,
+  `regression`, `quantile`, and `extent` beside `param`), `value` beside
+  `pivot`, `key` beside `impute`, `on` beside `loess` or `regression`, and a
+  lookup's `from.key` and `from.fields`; a parameter's `select.fields`; an
+  encoding's `aggregate.argmax` and `argmin`; and a `repeat`'s lists.
+- **Who.** The canvas passes the grammar of a Vega-Lite node's spec, the
+  built-in node's or a package template's (`isVegaLiteNodeType`), to
+  `resolveReferences`, as the notebook export does; Solve resolves a document
+  in the grammar it checks it in (`_resolved_document`).
+- **Reading a field back.** Where Vega-Lite escapes a field itself (an
+  aggregate, a bin transform, a condition's test), `rain.mm` draws the column
+  too. So a field names a column when its text, or its text unescaped, is the
+  column's name: the agents' check reads it so (`_named_column` in
+  `agents/domain/document_validation.py`), and so do the canvas's geometry
+  coercion (`vegaGeoSpec.ts`) and its empty-render count (`vegaUsableRows.ts`),
+  through `vegaFieldColumn`. The shape the canvas injects for a geoshape names
+  its geometry column escaped. A path through a column, `zone.id` beside a
+  column `zone`, names none.
+- **Tests.** `codeReferences.cases.json` holds the positions, read by Jest and
+  pytest; `scoutDottedColumns.test.ts` draws each Scout chart over columns whose
+  names hold a dot or a bracket with the vega-lite the app bundles, and expects
+  the marks it draws over the same columns without one.
+- **Vega-Lite's own limits.** An encoding over a column whose name holds a
+  backslash draws nothing, since Vega-Lite drops the backslash when it writes
+  the field again (an aggregate's `mean_<field>`). Its error bar names its
+  bounds after its Y field as written, so it draws no error bar over a Y column
+  whose name holds a `.` or a `[`. A title Vega-Lite writes itself shows the
+  field as written, `rain\.mm`.
+
 ### Referencing Upstream Data in Autark Nodes
 
 The `autk-grammar` node consumes upstream data differently from Python nodes: its UrbanSpec refers to data **by name**, through `dataRef` strings in `map.layerRefs[]`, `plot.dataRef` (and `plot.mapRef`), `compute[].dataRef`, and `fromFeature.layer` inside compute uniforms. Before the grammar runs, the behavior hook ([`autkGrammarBehavior.tsx`](../utk_curio/frontend/urban-workflows/src/adapters/node/autkGrammarBehavior.tsx)) reads the input once, through the path shared with the Vega-Lite node (see [Reading a Grammar Node's Input](#reading-a-grammar-nodes-input)), and hands the grammar, as named sources, the tables `tablesToLoad` in [`autkInput.ts`](../utk_curio/frontend/urban-workflows/src/utils/autkInput.ts) picks: the input's tables the document names (`documentTableRefs`), every table the document's own `data` section loads, and the surface of each OSM load a table it names is a layer of. Those surfaces come first; then the input's rasters (see **Rasters** below), its other tables as `geojson` sources in the order they arrive, and the document's own. An OSM load named `X` makes the tables `X_surface`, `X_parks`, `X_water`, `X_roads` and `X_buildings`, and `X_<set>_<type>` for its tag sets, and autk-db types its surface `surface`. So a table of type `surface` named `X_surface` is the surface of load `X`, and a table is a layer of the load whose name, with `_` after it, is the longest one that starts its own. A Discovery Catalog OpenStreetMap download's group loader keys its layers by layer (`surface`, `parks`, `water`, `roads`, `buildings`), each typed as it is named by its frame's `metadata`: a table `surface` of type `surface` is that download's surface, and its layers are the tables named and typed alike. autk-db makes the first table it loads the workspace's extent, and the first polygon table its crop layer, and clips every later table to both. A table the document does not name is not loaded, so it cuts none of the tables it draws, and a map of OSM layers is cropped to its load's query area, so no layer of the load cuts another. The empty-render verdict counts every table the input brings, so a `dataRef` that names none of them blames the document. A document that only loads data of its own does not read its input. Upstream geojson is data the browser already holds, so it stays client-side; only the spec's own authored `data` sources (OSM / PBF / CSV and the like) run in the backend sandbox. There are two cases:
@@ -913,7 +989,7 @@ The names `input_<k>` are defined once, as `INPUT_TABLE_PREFIX` and `input_table
 
 **Drawing.** Maps draw on demand. autk-grammar starts each map it makes with autk-map's `draw()`, which draws one frame, then only when the map's picture changes. autk-map asks for that frame itself after every change it can observe: its camera (navigation, a resize, a window resize), its layers (loads, updates, highlights), its style and a pick. Curio asks a map for a frame with its `requestRender()` after it changes the map itself: `frameMaps` after it moves the camera, and `bleedRasterEdges` after it writes a raster's cells in place, which autk-map cannot observe. A map that nothing changes draws nothing, whether it shows, sits out of view or is hidden in a collapsed scenario. The node keeps the maps its grammar made (`trackMaps` in [`autkMapDrawing.ts`](../utk_curio/frontend/urban-workflows/src/adapters/node/autkMapDrawing.ts)), and a map nobody will see again is destroyed with autk-map's `destroy()`, which frees its GPU textures, its window listeners and its controls: the node destroys its maps when its next run replaces their canvas and when it leaves the page (a deleted node, a closed dataflow), including maps a run made after it left. The e2e captures and the map framing check read a map's pixels in the animation frame that renders the map: they call `renderMapsForReading` (`window.__curio_renderMapsForReading`), which asks every map the nodes keep for a frame and resolves inside that frame.
 
-**Layer names and colors.** A layerRef's `title` is its layer's id in autk-map, which titles the legend with it. The grammar finds the layer of a table with `mapLayer(dataRef)`, and its highlights take the table's name, so Curio names layers by their `dataRef` everywhere. Before the run, `withScenarioColors` ([`autkScenarioColors.ts`](../utk_curio/frontend/urban-workflows/src/adapters/node/autkScenarioColors.ts)) gives a layerRef whose input comes from a scenario's box, on a map outside every box, the grammar's `color`, the box's, unless the layer's values or a raster's cells color it (see [Scenarios in charts and maps](#scenarios-in-charts-and-maps)).
+**Layer names and colors.** A layerRef's `title` is its layer's id in autk-map, which titles the legend with it. The grammar finds the layer of a table with `mapLayer(dataRef)`, and its highlights take the table's name, so Curio names layers by their `dataRef` everywhere. A layer's colors are the ones its document writes; one in its scenario's color writes its input's scenario chip as its `color`, resolved before the run (see [Scenarios in charts and maps](#scenarios-in-charts-and-maps)).
 
 **Rasters.** A raster on the input is a table under the same names, read through the same path; the Vega-Lite node still refuses it. Its frame says where the raster is and is not fetched as rows: a Python node's `rasterio` dataset by its artifact (`part` for its place in a tuple), or the envelope another node handed on. [`autkRasters.ts`](../utk_curio/frontend/urban-workflows/src/adapters/node/autkRasters.ts) turns each into GeoTIFF bytes and loads it with autk-db's `loadGeoTiff` into the grammar's own database:
 
@@ -930,7 +1006,6 @@ Between nodes a raster travels as autk-db's `getRaster` collection in an envelop
 Operations over rasters are the Scout package's: [`scout_rasters/raster_algebra.py`](../packages/curio.scout@1/sources/scout_rasters/raster_algebra.py). The Raster Calculator's code imports `raster_calculate` and `raster_statistics` from it, and a node of another package imports them when its package names Scout in `dependencies.packages`, which hands the node Scout's modules too (the package modules paragraph of [Running a node](#step-by-step-running-a-node)). The namespace a Python node runs in holds no raster operations. They run in Python, where a node's rasters are: autk-db reads every band as float32 and loads at most 4096 by 4096 cells, which is what a map draws, not what a computation needs. Rasters are combined only on one grid (`grid_differences`: size, origin, resolution, rotation, CRS, to a relative 1e-9), and a refusal names both grids in words (`describe_grid`, numbers written as JavaScript writes them). A cell is nodata where its raster holds its nodata value or a number that is not finite.
 
 - On rasterio datasets (`raster_calculate`, `raster_statistics`) the module computes at the inputs' own number type, at least float32, takes the size of each cell's result with `absolute=True`, and writes a result as a GeoTIFF with NaN as nodata, named after its content, where the node's code says (`output_file=curio_output_file`). Statistics are numpy's `nanmean`, `nanmedian`, `nanmin` and `nanmax` on the band's own 2-D float64 array, nodata and masked-out cells as NaN.
-- Compare Scenarios' Difference of two rasters subtracts envelopes in core, in [`sandbox/util/envelope_difference.py`](../utk_curio/sandbox/util/envelope_difference.py) (`subtract_envelopes`): float32 bands as autk-db exported them, or, with `absolute`, the size of each cell's difference, stored as the envelope the Autark map after the node, a reopen and a dashboard tile read. That module keeps grid checks of its own, so core and the package import nothing from each other.
 
 `curio_load_data("<id>", bounds=(west, south, east, north))` reads a GeoTIFF's window (`rasters.read_window`): the whole cells whose centres lie inside the bounds, on the raster's own grid, every band at its own type and nodata, written as a GeoTIFF of its own. Bounds that reach past the raster, or hold no cell centre, are refused. The dataset scanners (`DATASET_PATH_CALL_RE` and `COLLECTION_CALL_RE` in `code_refs.py`, the agents' `_CATALOG_CALL_RE`, the frontend's `datasetIdsInCode`) take the id as the call's first argument, so options may follow it, and both loader generators name `bounds=None` on a GeoTIFF's line (`LOADER_OPTIONS`).
 
@@ -1365,6 +1440,10 @@ interface IInteraction {
 
 Interactions are stored in `FlowProvider.interactions[]` and passed down to nodes via `INodeData.interactions`.
 
+`applyNewInteractions` (`src/providers/flow/useInteractions.ts`) routes the selection that just changed along the interaction edges, one hop. A second effect there follows the edges themselves, however they change (drawn, deleted with a node, opened with a dataflow, or added by a collaborator or an agent): an edge that goes takes back from each end what the other end delivered, and a new edge hands each end the other end's latest selection, by the same rules: a pool takes a chart's selection, two views take each other's, and two pools exchange none. A Vega-Lite chart handed an empty list puts back the `interacted` flags its first input carries (`useVega.applyDirectSelection`), and an Autark view drawn again reports its own pick or brush empty, as a Vega-Lite chart's compile reports its selects, so the views linked to it let that selection go.
+
+`onConnect` (`src/providers/flow/useConnect.ts`) refuses an interaction edge neither end of which shows a selection it receives, such as one between two Simple Views (`registry/interactionRoles`, the rule `plan_topology` applies to agents' plans). A saved edge opens as it is. Its cycle check follows data edges only (`runLevels.directedEdgesOf`): a data edge from a Data Pool into a chart linked to it closes no cycle.
+
 ### Propagation Strategies
 
 A Data Pool resolves the selections that reach it with two modes, chosen in the two selects at the top of its body and saved with the node (`metadata.dataPool`):
@@ -1382,7 +1461,7 @@ A selection is active when it picks something: a point selection with rows or va
 
 A point selection names rows in one of two ways. Without fields it names row positions, which line up only when both ends read the same rows in the same order. Over fields it names values, `[{unit_id: 103}]`, and picks every row holding them wherever the row sits: a Vega-Lite point select over `fields` (`utils/vegaSelects.pointValues`), or an Autark pick or brush on a map layer or plot whose document names `selectFields`. The Autark node maps the positions autk-grammar reports to input rows (`utils/autkInput.inputRow`) and reads the key columns from the input's features (`keyValues`): a row with no value for a key is left out, and a selection left with none is not active. `selectIndices` looks values up in a tree per set of fields instead of comparing every point with every row, with strict equality and a Date compared by its time; a bin, `[start, end)`, is compared row by row, and a point holding `undefined` or NaN matches nothing. `selectFieldsProblem` fails a run whose keys cannot be read: a table the document loads itself, which autk-grammar's map draws without its features that have no geometry, so its pick ids do not index the input's rows, or a column no feature of the table has.
 
-`applyNewInteractions` (`src/providers/flow/useInteractions.ts`) hands a pool only the chart that just selected. The pool keeps each linked chart's latest selection itself, keyed by the chart's node id (`dataPoolBehavior`): the newest is priority 1, the others 0, and `utils/selectionMatch.matchSelections` resolves them. `OVERWRITE` resolves the priority-1 entry alone. A chart whose interaction edge to the pool is removed leaves that map. Choosing another mode resolves the selections the pool holds again.
+`applyNewInteractions` (`src/providers/flow/useInteractions.ts`) hands a pool only the chart that just selected. The pool keeps each linked chart's latest selection itself, keyed by the chart's node id (`dataPoolBehavior`): the newest is priority 1, the others 0, and `utils/selectionMatch.matchSelections` resolves them. `OVERWRITE` resolves the priority-1 entry alone. A chart whose interaction edge to the pool is removed, or that is deleted, leaves that map, and the pool resolves what it still holds at once: with no selection left, every layer's flags go. Choosing another mode resolves the selections the pool holds again.
 
 The pool writes its `interacted` flags into a copy of its output (`utils/poolFlagCopy`), never into its input or into an output it already sent, which the charts downstream still hold. Its echo names the chart that just selected (`selectionSource`, see `utils/selectionEcho`) under every mode. An Autark node skips an echo of its own selection, so a plot keeps its brush; a Vega chart applies it, which only recolours rows. Every other chart shows the resolved rows, and an Autark plot shows them as its selection in place of its own brush.
 
@@ -1395,7 +1474,7 @@ A node's code reads a view's current selection as `[!! selection name !!]`: the 
 - **Rows.** A view hands over the rows it matches selections against (`utils/references/viewSelections.provideViewRows`): a Vega-Lite node the rows it draws, whose positions or values its point selections name; an Autark node the features of each layer it reads, whose positions its picks name, or whose key values when the view names `selectFields`. Nothing is fetched again.
 - **Ids.** `utils/references/selectionTags.selectedIds` resolves the view's latest select with `matchSelections`, as a Data Pool in its default mode does, and reads the tag's column from those rows, each value once. `_vgsid_` and row positions are never stored: a node reads its own upstream artifact, where they mean nothing. `idColumns` offers `osm_id` and `building_id`, then any column whose values are all text or numbers and all different. More than `SELECTION_ID_CAP` (10,000) ids are stored as a `count`, which fails the run with a message.
 - **Updates.** `providers/flow/useSelectionTags` records each view's latest selection. On one the user made, or cleared (`changesSelection`: a select at priority 1 that holds a selection, or that empties one the view held), it rewrites the ids of every tag on that view and marks the nodes holding them stale. A chart declaring its selects as it compiles, or reporting them empty as its signal listeners hear the first pulse, changes nothing by itself: what a view drawn again does with its tags is below. `runKeyWithShared` takes the node's tags, so the run cache keys on the ids its code names.
-- **Redraws (#884).** A view drawn anew shows no selection, so the selection its tags hold goes back in it, or the tags are emptied: after a run or a reopen, the view and its tags agree. `useVega.compileGrammar` does this for every new view but the Compare recolor's (`keepsSelection`). It finds the rows of the chart's first input that hold the tags' ids (`selectionTags.rowsHeldBy`) and sets the store of its point select (`<name>_store`) to them, in the form vega-lite gives a click's own tuple: `vegaSelects.pointStoreOf` reads the unit and the fields off the compiled `<name>_tuple` signal, and `pointStoreTuples` gives the rows' `_vgsid_` for a select over no fields, else their values of its fields. The listeners stay silent until the store is set; then the chart reports the select as a click does, so the tags are written from what it shows (the same ids change no tag and mark no node stale) and a Data Pool sees the selection too. A chart that cannot do this empties its tags through the flow's `clearSelectionTagsOf` (`useSelectionTags.clearViewTags`), which marks their nodes stale and forgets the view's last selection: one that declares no point select, or an interval one too (a tag does not record which select made its ids), whose select's unit is named per facet cell, or that draws none of the rows. An Autark node empties its tags after each draw (`adapters/node/autkViewBehavior`, the behavior registered for `autk-grammar`), since autk-grammar lights a pick again only through a Data Pool's flags. A run that started before the redraw reads the ids saved before it.
+- **Redraws (#884).** A view drawn anew shows no selection, so the selection its tags hold goes back in it, or the tags are emptied: after a run or a reopen, the view and its tags agree. `useVega.compileGrammar` does this for every new view but the redraw of a chart reading `inputs` when its boxes are renamed or recolored (`keepsSelection`), which puts back the selection the view before it held. It finds the rows of the chart's first input that hold the tags' ids (`selectionTags.rowsHeldBy`) and sets the store of its point select (`<name>_store`) to them, in the form vega-lite gives a click's own tuple: `vegaSelects.pointStoreOf` reads the unit and the fields off the compiled `<name>_tuple` signal, and `pointStoreTuples` gives the rows' `_vgsid_` for a select over no fields, else their values of its fields. The listeners stay silent until the store is set; then the chart reports the select as a click does, so the tags are written from what it shows (the same ids change no tag and mark no node stale) and a Data Pool sees the selection too. A chart that cannot do this empties its tags through the flow's `clearSelectionTagsOf` (`useSelectionTags.clearViewTags`), which marks their nodes stale and forgets the view's last selection: one that declares no point select, or an interval one too (a tag does not record which select made its ids), whose select's unit is named per facet cell, or that draws none of the rows. An Autark node empties its tags after each draw (`adapters/node/autkViewBehavior`, the behavior registered for `autk-grammar`), since autk-grammar lights a pick again only through a Data Pool's flags. A run that started before the redraw reads the ids saved before it.
 - **Resolution.** The selection kind is one more kind in the reference module (`codeReferences.ts`, `execution/code_references.py`), pinned by the shared cases table. `WorkflowSpec.node_code` passes a node's tags, which `run_engine` and `runner` both call.
 
 ---
@@ -1608,7 +1687,7 @@ What an agent may change, what Solve checks before anything lands in a node, how
 
 A Dataflow Builder plan may add nodes, add connections, and remove, each part optional, so a plan that only rewires a connection is valid and needs no filler node. Two rules hold:
 
-- **A connection carries a kind.** `interaction` is the Trill's feedback link: between a visualization and a Data Pool node, or between two visualizations when one of them is a Vega-Lite or Autark node (`plan_topology.interaction_highlighters`), `in/out` at both ends, bidirectional on the canvas, carrying selections rather than data. It is refused anywhere else, by a message that names the node it was aimed at.
+- **A connection carries a kind.** `interaction` links two visualizations when one of them is a Vega-Lite or Autark node (`plan_topology.interaction_highlighters`), a visualization and a Data Pool node, or two Data Pools, `in/out` at both ends, bidirectional on the canvas, carrying selections, never data. It is refused anywhere else, by a message that names the node it was aimed at. The orchestration rule tells the agent to link two views directly and to add a Data Pool only for a Simple View that shows the selection, merged selections, a Vega-Lite chart that colors its own selection through `interacted`, or three or more views on one selection.
 - **Data connections stay a DAG.** A plan whose data edge would close a cycle is refused when it is proposed, with the loop written out and the fix named. The check runs again at Apply against the live canvas, so a cycle drawn in the meantime stops the apply. A cycle the plan did not create is reported, never blamed on the plan.
 
 Every removed connection is named on the card, and every applied result ends with a `Topology:` verdict, `acyclic` or the path of a cycle still present, which the agent is instructed to read before it claims a repair.
@@ -2023,7 +2102,7 @@ The user-facing model is in [SCENARIO-CATALOG.md](SCENARIO-CATALOG.md) and the r
 - **Saved results.** For each node of a scenario's parts, the details name the outputs its project saved: the Data Catalog's computed datasets `computed.<projectId>.<nodeId>` of each node `saved_sources` gives, listed with `DatasetCatalogService.list_dataflow_outputs` (the `computed.<projectId>.` prefix), without file paths.
 - **Frontend.** `services/scenarioCatalog/` (client, types, hooks, the drag payload), the page `pages/scenarios/`, the canvas drawer `components/scenarios/catalog/` opened by `providers/scenarioCatalog/` from the bar's **Scenario** button, and the shared plain-box graph `components/DataflowThumbnail.tsx` with a `highlight`.
 - **Dragging a scenario into a dataflow.** A drawer card puts `application/x-curio-scenario` on the drag; `MainCanvas` hands the drop to `components/scenarios/useScenarioDrop.ts`, in five steps:
-  1. `GET .../copy?target=` returns the plan: the levers and the context's Parameter nodes as spec nodes, the edges into the levers, each context node with the one node whose saved output stands for it (`saved_sources`), the outcomes' saved sources, the packages the target lacks, `toRun` and `problems`. A standing-for node with no saved output goes in `toRun` when a run on the server can make it (`scenario_catalog/infrastructure/runs.py`): the account's runs go to the server (`refusal`: not a hosted guest, not `--no-project`, as `runsOnServer` decides on the canvas), and neither it nor any node it reads from has the run role `browser` (`browser_node`, through `run_plan.node_role`). Otherwise it is a problem naming the node. Nothing changes, and a problem refuses the drop.
+  1. `GET .../copy?target=` returns the plan: the levers and the context's Parameter nodes as spec nodes, the edges into the levers, each context node with the one node whose saved output stands for it (`saved_sources`), the outcomes' saved sources, the packages the target lacks, `toRun` and `problems`. A standing-for node with no saved output goes in `toRun` when a run on the server can make it (`scenario_catalog/infrastructure/runs.py`): the account's runs go to the server (`refusal`: not a hosted guest, not `--no-project`, as `runsOnServer` decides on the canvas), and neither it nor any node it reads from has the run role `browser` or `missing` (`browser_node`, through `run_plan.node_role`). Otherwise it is a problem naming the node. Nothing changes, and a problem refuses the drop.
   2. When `toRun` is not empty, the canvas starts a run of the scenario's project on those nodes (`runsApi.start(projectId, {targets})`), toasts "Running Buildings in Chicago Loop shadow with towers removed or edited for Existing", follows the run (`runsApi.follow`) and asks for the plan again. A 409 that names a run already going in that project follows that run. The run saves the nodes' outputs in their project, since `save_policy.saved_source_node_ids` holds a scenario's context. A run that fails, the two-runs limit (429), or a plan that still lists nodes to run refuses the drop with its message, and `POST .../copy` refuses while `toRun` is not empty.
   3. `utils/scenarios/scenarioDrop.ts` `planScenarioDrop` picks the ids: `duplicateSelection` copies the levers (fresh ids, `copiedFrom`), one Data Loading node stands in for each context node, Parameter nodes are copied, and the scenario is collapsed at the drop point with `source: {project, scenario}`. A context node an earlier drop from the same project brought (outside every scenario, with that lineage) is reused, and a Parameter name the dataflow already uses refuses the drop.
   4. `POST .../copy` adds the packages through `install_to_project`, as the Node Catalog's Add does, then copies each saved output to its copy's id with `datasets/install/copy.py` (the dataset folder, manifest rewritten to the new producer node and dataflow, never re-read from sandbox artifacts), in two steps (`scenario_catalog/infrastructure/projects.py::copy_outputs`). Under the source's spec lock, each folder is copied whole to a staging folder in the account's store (`stage_computed_copy`). Then, under the target's, each copy takes its place (`place_staged_copy`) and the source's output refs are hydrated for the copies (`storage.hydrate_outputs`). The drop holds one lock at a time, so the source may be the target and two drops each way between two projects never wait for each other. A copy that fails is a 409 that says to try again.
@@ -2129,8 +2208,8 @@ The run tables `dataflow_run` and `dataflow_run_step` ([`runs/models.py`](../utk
 A run executes the saved dataflow on a thread of the backend, so it goes on whether or not a browser follows it.
 
 - **Plan.** [`execution/run_engine.py`](../utk_curio/backend/app/execution/run_engine.py)`::plan_run` takes every node, or one node and its ancestors less those whose outputs the canvas sends to reuse. [`execution/run_plan.py`](../utk_curio/backend/app/execution/run_plan.py) orders them: `topological_levels` is the twin of `computeTopologicalLevels` (`providers/flow/runLevels.cases.json` holds the cases both run), and an interaction link, by its type or its `in/out` handles, orders nothing.
-- **Roles.** `node_role` gives each node one of three. `run`: the template is executable, or the node is an Autark node whose document only loads data (a non-empty `data` section, and no map, plot or compute step). `forward`: the node passes its input on (a chart, a pool, a Simple View, an Autark render, a Data Export), or has nothing to run (a Parameter node, whose value reaches the nodes that name it through their code). `browser`: only the browser makes its data (an Autark compute node, an Autark node with no data of its own to load, a Spatial Join). [`execution/autk_spec_kind.py`](../utk_curio/backend/app/execution/autk_spec_kind.py) is the twin of `utils/autkSpecKind.ts`; `utils/autkSpecKind.cases.json` holds the cases both run.
-- **Walk.** `run_events` runs one level at a time, every node of a level at once. A node fed by a failed or skipped node is skipped, with the reason naming that node; a node fed by a `browser` node waits, and the run ends `needs_canvas`. Each executed node goes through `node_exec` with its references resolved, every line indented as `PythonInterpreter.ts` indents it, and one upstream's output as it is or several as an `outputs` bundle in circle order. A sandbox that cannot be asked fails that node only.
+- **Roles.** `node_role` gives each node one of four. `run`: the template is executable, or the node is an Autark node whose document only loads data (a non-empty `data` section, and no map, plot or compute step). `forward`: the node passes its input on (a chart, a pool, a Simple View, an Autark render, a Data Export), or has nothing to run (a Parameter node, whose value reaches the nodes that name it through their code). `browser`: only the browser makes its data (an Autark compute node, an Autark node with no data of its own to load, a Spatial Join). `missing`: the type names a package's template that neither the project's roster nor a manifest in the account's store, the catalog or the shipped packages holds (a saved Compare Scenarios node, a node of a package only another account's store holds), which the canvas shows as a card and cannot run either; a type that names no package stays `browser`. [`execution/autk_spec_kind.py`](../utk_curio/backend/app/execution/autk_spec_kind.py) is the twin of `utils/autkSpecKind.ts`; `utils/autkSpecKind.cases.json` holds the cases both run.
+- **Walk.** `run_events` runs one level at a time, every node of a level at once. A node fed by a failed or skipped node is skipped, with the reason naming that node; a node fed by a `browser` node waits, and the run ends `needs_canvas`. A `missing` node fails at once, its message naming its type as the canvas's card does (`run_plan.missing_type_message`), so what it feeds is skipped. Each executed node goes through `node_exec` with its references resolved, every line indented as `PythonInterpreter.ts` indents it, and one upstream's output as it is or several as an `outputs` bundle in circle order. A sandbox that cannot be asked fails that node only.
 - **Autark data.** An Autark node that only loads data runs as its run in the browser does (`autkLayerMaterialize.ts::runDataInBackend`): its document, references resolved, is compiled by the browser's own compiler, `adapters/node/autkDataCompile.ts`, which `webpack.autk-data.config.js` bundles into the built frontend as `dist/autk-data-compile.cjs` and [`common/autk_data_compiler.py`](../utk_curio/common/autk_data_compiler.py) runs in Node. The JavaScript goes to `/execJs` with no input and `save_dataset` off, and a failed attempt is tried once more. Its output, the layer list, is recorded as a save records it. A build without the compiler is rebuilt on the next start (`cli/frontend_build.py`).
 - **Thread.** [`runs/service.py`](../utk_curio/backend/app/runs/service.py) records each event in the run tables, records an output as `save_policy` says, and passes the event on. The sign-in token that started the run tags its artifacts and lives on the thread only.
 - **Jobs.** [`common/job_registry.py`](../utk_curio/backend/app/common/job_registry.py) holds live jobs in this process: one per dataflow, two per account (`runs/jobs.py`), keyed by attachment for agent jobs (`agents/infrastructure/agent_jobs.py`). A follower replays a job's events and then tails them; leaving only stops following.
@@ -2144,6 +2223,7 @@ A run executes the saved dataflow on a thread of the backend, so it goes on whet
 - It follows the stream ([`services/runs/runsApi.ts`](../utk_curio/frontend/urban-workflows/src/services/runs/runsApi.ts), over `utils/sseStream.ts`). A step's reply reaches its node through `utils/executionResult.ts`, the rule `CodeEditor` applies to a run in the browser, and `applyNewOutput`; the provenance takes the step's own times. A node shows it through `data.serverOutput`, which `UniversalNode` hands to the setter its own run uses. A skipped node takes the in-browser walk's `skipExec`. The pure half is `serverRunSteps.ts`.
 - `serverRunActive` is apart from `isRunActive`, so a chart draws as its data arrives; the Run All button, a Data Export and the agent strip read both.
 - When the server's part ends, the tab that started the run walks the `browser` and `waiting` nodes, with the `forward` nodes above them, through `usePlayAll.playNodes`, and reports each to `/steps/<nodeId>`. Stop cancels the run and gives the button back at once.
+- A node with no descriptor, triggered by a run in the browser, reports at once that its run failed, its card's title as the message (`UnresolvedRunAnswer` in `UniversalNode.tsx`, `unresolvedNodeMessage` in `UnresolvedNode.tsx`), so the walk skips what it feeds rather than waiting for it until the stall watchdog gives up. A trigger that comes while the registry may still deliver the descriptor is answered once the registry has settled.
 - A run's end, on the server or in the browser, sends the install save its outputs queued at once (`flushInstallSyncRef`), in the tick its last output lands. The save names that output too: `buildOutputRefs` reads `outputsRef`, which `setOutputs` writes before React renders.
 - A hosted guest's outputs queue no install save, and its pins neither save nor say they will (`hostedGuest` in `FlowProvider.tsx`, from `isHostedGuest`); `ensureProjectId` creates no dataflow for it. On a dataflow it never saved, an action that needs one tells it to sign in, naming the action (`hostedGuestSignInNote` in `useHostedGuest.ts`): the Data Catalog's Add, Remove and Publish, the Node and Model Catalog drawers' Add, Remove and Import, the Agent Catalog drawer's Add and Remove, Save as package node, New node from a Python function, and a scenario drop. An agent drop says so whenever it would save first (on a node or a connection) or the dataflow has no id. Only File > Save and Save a copy answer such a guest with "Guest users cannot save projects".
 - After a load, `ProjectLoader` asks for the dataflow's last run: a run still going is followed; a finished one gives its `ok` steps whose `codeCurrent` is true and whose output the manifest did not restore, restored as a load restores outputs; a run that ended `needs_canvas` offers **Finish run**.
@@ -2259,7 +2339,7 @@ Catalog and account scope:
 | `/api/agents/provider-models` | POST | The models API Settings can offer for the endpoint being configured. POST because the editor asks *before* the user saves, carrying the provider, base URL and key on screen. A stored key is borrowed only with `configId`, and only while the endpoint on screen is still that configuration's own, or with `endpoint: "deployment"`; with neither, no key is borrowed. Hybrid, both halves from the API: the live listing (OpenAI-compatible, Anthropic and Gemini, all via `agents/providers.py`), falling back to what that endpoint last reported, recorded per account by `agents/model_catalog.py`. Answers `{models, listable, source, remembered, rememberedAt, warning}`; a failed listing is a 200 with `source: "remembered"` unless nothing was ever recorded, which is a 400 |
 | `/api/agents/settings` | GET, PUT | The catalog settings: each one's schema, default, the account's value and the agents that read it, plus whether this account may change them. `PUT` takes key to value (`null` restores the default) and saves nothing unless every value is valid; **403** for a hosted guest |
 | `/api/agents/imports` | GET | List the account's imported definitions, as cards |
-| `/api/agents/imports` | POST | Record `<id>@<version>` in My imports. Never adds to a dataflow |
+| `/api/agents/imports` | POST | Record `<id>@<major>` in My imports. Never adds to a dataflow |
 | `/api/agents/imports/upload` | POST | Upload a user-authored definition (`manifest` + `prompts` as JSON, no archives). Trust forced to `imported`, digests stamped from the bytes, **409** on an existing coordinate |
 | `/api/agents/imports/<coord>` | DELETE | Drop it from My imports. The definition stays on disk |
 | `/api/agents/publications` | POST | Publish an owned, imported, store-backed definition to the shared catalog |
@@ -2426,7 +2506,7 @@ created empty for Solve to write.
 | `backend/app/agents/application/tool_rounds.py` | The bounded tool loop and the native tool-call machinery (`_RunConversation`) |
 | `backend/app/agents/application/llm_listing.py` | `GET /api/agents/llm`: the account's configurations, the deployment's offer, what answers each agent |
 | `backend/app/agents/domain/manifest.py` | Parse and validate `manifest.json` into a typed `AgentManifest`; `AGENT_CATEGORIES`; the prompts Curio shares (`curio:<file>`) and the `catalog` placement |
-| `backend/app/agents/domain/builtin.py` | The loader of the 7 built-in agents: the folders `agents/<agentId>@<version>/` beside `utk_curio/`, each a `manifest.json` and its `prompts/`, read as an imported agent is (`load_agent_manifest`), in the order their `catalog.order` gives. `catalog.listed` marks the four catalog cards; the rest are internal: never listed, installed or attached, and resolved from their shipped folder when delegated to. It reads their prompts, the shared preamble from `utk_curio/llm-prompts/`, and gives the shape an export or an install carries, without the fields only built-ins use (`catalog`, `workedExamples`, a capability's `label`, a prompt's `runs`). Two internal agents run their capabilities as modes, and the Node Builder and the Researcher run modes beside their chat (see [Agent Prompt Composition](#agent-prompt-composition)) |
+| `backend/app/agents/domain/builtin.py` | The loader of the 7 built-in agents: the folders `agents/<agentId>@<major>/` beside `utk_curio/`, each a `manifest.json` and its `prompts/`, read as an imported agent is (`load_agent_manifest`), in the order their `catalog.order` gives. `catalog.listed` marks the four catalog cards; the rest are internal: never listed, installed or attached, and resolved from their shipped folder when delegated to. It reads their prompts, the shared preamble from `utk_curio/llm-prompts/`, and gives the shape an export or an install carries, without the fields only built-ins use (`catalog`, `workedExamples`, a capability's `label`, a prompt's `runs`). Two internal agents run their capabilities as modes, and the Node Builder and the Researcher run modes beside their chat (see [Agent Prompt Composition](#agent-prompt-composition)) |
 | `backend/app/agents/repositories/storage.py` | Definition store under `.curio/users/<u>/agents/<coord>/` |
 | `backend/app/agents/repositories/imports.py` | My imports registry (`imported-agents.json`) |
 | `backend/app/agents/repositories/catalog_settings.py` | The account's catalog settings (`catalog-settings.json`) and the configuration slot a run receives |

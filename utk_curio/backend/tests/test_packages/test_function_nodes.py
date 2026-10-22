@@ -401,6 +401,25 @@ class TestTheListingAndTheWrittenTemplate:
             "name": "factor", "type": "number", "label": "Factor", "default": 2, "options": {"step": 1},
         }
 
+    def test_a_parameter_named_as_the_nodes_inputs_are_read_is_offered_no_widget(self, tmp_curio):
+        """No widget takes ``input_<k>`` or ``inputs`` (the Widgets tab's
+        check), and a parameter's widget must take its name: the dialog starts
+        such a parameter at its default, or as an input, and every widget the
+        listing offers is one the Widgets tab takes."""
+        from utk_curio.backend.app.execution.code_references import check_widget_def
+        from utk_curio.backend.app.packages.application.function_nodes import package_functions
+
+        source = "def summarize(input_1: float, inputs: int = 3, input_0: int = 1, k: int = 2):\n    return k\n"
+        install_package_from_archive("guest", _archive(modules={"fn_names.py": source}))
+        (package,) = [p for p in package_functions("guest") if p["packageId"] == SOURCE_ID]
+        (summarize,) = {m["module"]: m for m in package["modules"]}["fn_names"]["functions"]
+        assert [(p["name"], p["use"], p["widget"] is None) for p in summarize["parameters"]] == [
+            ("input_1", "input", True), ("inputs", "default", True), ("input_0", "default", True), ("k", "widget", False),
+        ]
+        for parameter in summarize["parameters"]:
+            if parameter["widget"] is not None:
+                assert check_widget_def(parameter["widget"]) is None, parameter
+
     def test_the_template_it_writes(self, tmp_curio):
         from utk_curio.backend.app.packages.application.function_nodes import write_function_template
 

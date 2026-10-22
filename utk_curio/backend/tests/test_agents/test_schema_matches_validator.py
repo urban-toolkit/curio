@@ -24,13 +24,28 @@ from pathlib import Path
 
 import pytest
 
-from utk_curio.backend.app.agents.domain.manifest import CAPABILITY_ID_RE, VERSION_RE
+from utk_curio.backend.app.agents.domain.manifest import AGENT_ID_RE, CAPABILITY_ID_RE, VERSION_RE
 
 SCHEMA = json.loads(
     (Path(__file__).resolve().parents[4] / "docs/schemas/agent-package.v1.json")
     .read_text(encoding="utf-8")
 )
 PROPS = SCHEMA["properties"]
+
+
+def _id_patterns(node) -> list[str]:
+    """Every pattern in the schema that is an agent id's: one starting ``^agent``."""
+    found = []
+    if isinstance(node, dict):
+        pattern = node.get("pattern")
+        if isinstance(pattern, str) and pattern.startswith("^agent"):
+            found.append(pattern)
+        for value in node.values():
+            found.extend(_id_patterns(value))
+    elif isinstance(node, list):
+        for value in node:
+            found.extend(_id_patterns(value))
+    return found
 
 
 class TestRequiredNameAndVersion:
@@ -42,6 +57,12 @@ class TestRequiredNameAndVersion:
 
     def test_the_version_grammar_matches(self):
         assert PROPS["version"]["pattern"] == VERSION_RE.pattern
+
+    def test_every_agent_id_grammar_matches(self):
+        # The id, delegatesTo's two forms and requiresAgents.
+        patterns = _id_patterns(SCHEMA)
+        assert len(patterns) == 4
+        assert set(patterns) == {AGENT_ID_RE.pattern}
 
 
 class TestRequiresAgents:

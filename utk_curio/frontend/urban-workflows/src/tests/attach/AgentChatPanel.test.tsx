@@ -22,7 +22,7 @@ import type { AgentAttachment, AgentSessionTurn } from "../../services/agents";
 
 const attachment: AgentAttachment = {
   attachmentId: "a1",
-  coord: "agent.my-explainer@1.0.0",
+  coord: "agent.test.my-explainer@1",
   target: { kind: "canvas" as const },
   sessionId: "s1234567890",
   revision: 1,
@@ -630,7 +630,7 @@ function savedReply(
     text,
     execution: {
       executionId: `e-${text.length}`,
-      pins: { coord: "agent.node-builder@1.0.0", promptSha256: "abc", tools: ["dataflow.read", "node.create"] },
+      pins: { coord: "agent.curio.node-builder@1", promptSha256: "abc", tools: ["dataflow.read", "node.create"] },
       usage: { inputTokens: 10, outputTokens: 20 },
       durationMs: 1200,
       status: "ok",
@@ -644,7 +644,7 @@ describe("AgentChatPanel says when a canvas agent changed nothing (#243)", () =>
   const NO_CHANGE = "No changes were made to the canvas";
   const nodeBuilder: AgentAttachment = {
     ...attachment,
-    coord: "agent.node-builder@1.0.0",
+    coord: "agent.curio.node-builder@1",
     name: "Node Builder",
     capabilities: NODE_BUILDER_CAPABILITIES,
   };
@@ -727,7 +727,7 @@ describe("AgentChatPanel says when a canvas agent changed nothing (#243)", () =>
         savedReply("Here is the node for your review.", {}, [proposal]),
         // A Solve verdict: written by the run, not a reply to a message.
         savedReply("Solved 'Load parks': the corrected code ran successfully.", {
-          pins: { coord: "agent.node-builder@1.0.0", tools: [], intentEdited: false },
+          pins: { coord: "agent.curio.node-builder@1", tools: [], intentEdited: false },
         }),
         // A task another agent delegated here: the delegate's own record.
         { role: "user", text: "[Delegated by Dataflow Builder] write the code" },
@@ -857,7 +857,7 @@ describe("AgentChatPanel delegation entries (memo dev/72)", () => {
   const delegation = {
     type: "delegation" as const,
     capability: "research.verify",
-    coord: "agent.researcher@1.0.0",
+    coord: "agent.curio.researcher@1",
     name: "Researcher",
     category: "node",
     attachmentId: "att-r",
@@ -1312,7 +1312,7 @@ describe("AgentChatPanel — dev/114 candidates in the Node Builder chat", () =>
     renderPanel({
       attachment: {
         ...attachment,
-        coord: "agent.node-builder@1.0.0",
+        coord: "agent.curio.node-builder@1",
         name: "Node Builder",
         capabilities: NODE_BUILDER_CAPABILITIES,
       },
@@ -1328,7 +1328,7 @@ describe("AgentChatPanel — dev/114 candidates in the Node Builder chat", () =>
     renderPanel({
       attachment: {
         ...attachment,
-        coord: "agent.dataset-finder@1.0.0",
+        coord: "agent.curio.dataset-finder@1",
         name: "Dataset Finder",
         capabilities: DATASET_FINDER_CAPABILITIES,
         nodeBuildDelegate: "Node Builder",
@@ -1345,7 +1345,7 @@ describe("AgentChatPanel — dev/114 candidates in the Node Builder chat", () =>
 describe("AgentChatPanel — dev/115 the per-node Solve row", () => {
   const nodeAttachment: AgentAttachment = {
     ...attachment,
-    coord: "agent.node-builder@1.0.0",
+    coord: "agent.curio.node-builder@1",
     name: "Node Builder",
     target: { kind: "node" as const, targetId: "n1" },
   };
@@ -1393,7 +1393,7 @@ describe("AgentChatPanel — dev/116 the per-node Solve row's remedy", () => {
       remedy: { kind: "connection-key", host: "api.census.gov", suggestedName: "census" },
     });
     renderPanel({
-      attachment: { ...attachment, coord: "agent.node-builder@1.0.0", name: "Node Builder", target: { kind: "node" as const, targetId: "n1" } },
+      attachment: { ...attachment, coord: "agent.curio.node-builder@1", name: "Node Builder", target: { kind: "node" as const, targetId: "n1" } },
       targetName: "Data Loading",
       onSolveNode,
     });
@@ -1412,7 +1412,7 @@ describe("AgentChatPanel — dev/116 the per-node Solve row's remedy", () => {
     };
     const onSolveNode = jest.fn().mockResolvedValue({ verdict: "fail", rounds: 2, stoppedBy: "budget" });
     renderPanel({
-      attachment: { ...attachment, coord: "agent.node-builder@1.0.0", name: "Node Builder", target: { kind: "node" as const, targetId: "n1" } },
+      attachment: { ...attachment, coord: "agent.curio.node-builder@1", name: "Node Builder", target: { kind: "node" as const, targetId: "n1" } },
       targetName: "Data Loading",
       onSolveNode,
     });
@@ -1436,7 +1436,7 @@ describe("AgentChatPanel — dev/116 the per-node Solve row's remedy", () => {
     renderPanel({
       attachment: {
         ...attachment,
-        coord: "agent.node-builder@1.0.0",
+        coord: "agent.curio.node-builder@1",
         name: "Node Builder",
         target: { kind: "node" as const, targetId: "n1" },
       },
@@ -1464,7 +1464,7 @@ describe("AgentChatPanel — dev/116 the per-node Solve row's remedy", () => {
       attachment: {
         ...attachment,
         attachmentId: "att-df",
-        coord: "agent.dataset-finder@1.0.0",
+        coord: "agent.curio.dataset-finder@1",
         name: "Dataset Finder",
         capabilities: DATASET_FINDER_CAPABILITIES,
         target: { kind: "node" as const, targetId: "n1" },
@@ -1558,7 +1558,7 @@ describe("AgentChatPanel — dev/116 the per-node Solve row's remedy", () => {
     renderPanel({
       attachment: {
         ...attachment,
-        coord: "agent.dataset-finder@1.0.0",
+        coord: "agent.curio.dataset-finder@1",
         name: "Dataset Finder",
         target: { kind: "canvas" as const },
       },
@@ -1609,7 +1609,7 @@ describe("AgentChatPanel offers each feature by what the agent declares", () => 
     renderPanel({
       attachment: {
         ...attachment,
-        coord: "agent.my-orchestrator@1.0.0",
+        coord: "agent.test.my-orchestrator@1",
         name: "My Orchestrator",
         category: "canvas",
         capabilities: DATAFLOW_BUILDER_CAPABILITIES,
@@ -1624,7 +1624,7 @@ describe("AgentChatPanel offers each feature by what the agent declares", () => 
     renderPanel({
       attachment: {
         ...attachment,
-        coord: "agent.my-builder@2.0.0",
+        coord: "agent.test.my-builder@2",
         name: "My Builder",
         capabilities: NODE_BUILDER_CAPABILITIES,
         builderSession: { phase: "idle" },
@@ -1638,7 +1638,7 @@ describe("AgentChatPanel offers each feature by what the agent declares", () => 
     renderPanel({
       attachment: {
         ...attachment,
-        coord: "agent.my-builder@2.0.0",
+        coord: "agent.test.my-builder@2",
         name: "My Builder",
         capabilities: NODE_BUILDER_CAPABILITIES,
       },
@@ -1656,7 +1656,7 @@ describe("AgentChatPanel offers each feature by what the agent declares", () => 
     renderPanel({
       attachment: {
         ...attachment,
-        coord: "agent.my-builder@2.0.0",
+        coord: "agent.test.my-builder@2",
         name: "My Builder",
         capabilities: NODE_BUILDER_CAPABILITIES,
       },
@@ -1676,7 +1676,7 @@ describe("AgentChatPanel offers each feature by what the agent declares", () => 
       attachment: {
         ...attachment,
         attachmentId: "att-mine",
-        coord: "agent.my-finder@1.0.0",
+        coord: "agent.test.my-finder@1",
         name: "My Finder",
         capabilities: DATASET_FINDER_CAPABILITIES,
         target: { kind: "node" as const, targetId: "n1" },
@@ -1697,7 +1697,7 @@ describe("AgentChatPanel offers each feature by what the agent declares", () => 
     renderPanel({
       attachment: {
         ...attachment,
-        coord: "agent.my-scout@1.0.0",
+        coord: "agent.test.my-scout@1",
         name: "My Scout",
         capabilities: ["dataset.discover"],
         target: { kind: "node" as const, targetId: "n1" },
@@ -1723,7 +1723,7 @@ describe("AgentChatPanel names the agent a label opens or hands work to", () => 
   const myBuilderOnTheNode: AgentAttachment = {
     ...attachment,
     attachmentId: "att-my-builder",
-    coord: "agent.my-builder@2.0.0",
+    coord: "agent.test.my-builder@2",
     name: "My Builder",
     capabilities: NODE_BUILDER_CAPABILITIES,
     target: { kind: "node" as const, targetId: "n1" },
@@ -1803,7 +1803,7 @@ describe("AgentChatPanel names the agent a label opens or hands work to", () => 
       attachment: {
         ...attachment,
         attachmentId: "att-my-finder",
-        coord: "agent.my-finder@1.0.0",
+        coord: "agent.test.my-finder@1",
         name: "My Finder",
         capabilities: DATASET_FINDER_CAPABILITIES,
         nodeBuildDelegate: "My Builder",

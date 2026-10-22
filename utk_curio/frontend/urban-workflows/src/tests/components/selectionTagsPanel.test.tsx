@@ -18,6 +18,7 @@ import {
   resetViewSelections,
 } from "../../utils/references/viewSelections";
 import type { WidgetDef } from "../../utils/widgets/widgetModel";
+import { openCategory } from "../_support/stripCategories";
 
 const ROWS = [
   { osm_id: 101, height: 10 },
@@ -167,12 +168,14 @@ describe("the strip above a node's code", () => {
   test("offers the node's selection tags under Selections", () => {
     const view = render(<ReferenceStrip widgets={[]} selections={[tag]} onInsert={jest.fn()} />);
     expect(view.container.querySelector("[data-selection-strip]")?.textContent).toBe("Selections");
-    expect(view.container.querySelector('[data-selection-tag="heights"]')?.textContent).toBe("selection heights");
+    const chips = openCategory(view.container, "selections");
+    expect(chips.querySelector('[data-selection-tag="heights"]')?.textContent).toBe("selection heights");
   });
 
   test("a selection tag drags its reference, as a selection and not a widget", () => {
     const store = new Map<string, string>();
     const view = render(<ReferenceStrip widgets={[]} selections={[tag]} onInsert={jest.fn()} />);
+    openCategory(view.container, "selections");
     fireEvent.dragStart(view.container.querySelector('[data-selection-tag="heights"]')!, {
       dataTransfer: { setData: (type: string, value: string) => void store.set(type, value), effectAllowed: "" },
     });

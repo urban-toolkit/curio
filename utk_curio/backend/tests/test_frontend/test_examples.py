@@ -34,15 +34,18 @@ EXAMPLE_INVARIANTS = [
      {"curio.builtin/computation-analysis": 3, "curio.builtin/vis-vega": 2}, False),
     ("05-vega-lite-multi-view-drilldown.json", 27, 22,
      {"curio.builtin/data-loading": 5, "curio.builtin/vis-vega": 2}, False),
-    ("06-back-bay-road-sunlight.json", 12, 14,
-     {"curio.builtin/autk-grammar": 8, "curio.builtin/data-pool": 1,
-      "curio.builtin/compare-scenarios": 2, "curio.builtin/edit-features": 1}, False),
-    ("07-autark-gpu-shader.json", 5, 6,
-     {"curio.builtin/autk-grammar": 4, "curio.builtin/data-pool": 1}, True),
-    ("08-autark-spatial-join-regression.json", 7, 8,
-     {"curio.builtin/autk-grammar": 4, "curio.builtin/js-computation": 1,
-      "curio.builtin/data-pool": 1}, True),
-    ("09-heterogeneous-data-linked-views.json", 11, 13,
+    # Its comparisons are Scout's Bars over a Roads node per scenario and a
+    # Python node that takes the sunlight change (no Compare Scenarios node).
+    # Its Map Edits node feeds a map of the buildings and is linked to it.
+    ("06-back-bay-road-sunlight.json", 16, 19,
+     {"curio.builtin/autk-grammar": 9, "curio.builtin/data-pool": 1,
+      "curio.builtin/computation-analysis": 4, "curio.builtin/edit-features": 1,
+      "curio.scout/bars": 1}, True),
+    ("07-autark-gpu-shader.json", 4, 4,
+     {"curio.builtin/autk-grammar": 4}, True),
+    ("08-autark-spatial-join-regression.json", 6, 6,
+     {"curio.builtin/autk-grammar": 4, "curio.builtin/js-computation": 1}, True),
+    ("09-heterogeneous-data-linked-views.json", 10, 11,
      {"curio.builtin/autk-grammar": 1, "curio.builtin/vis-vega": 2}, True),
     ("10-street-vision-cv-analysis.json", 12, 12,
      {
@@ -116,6 +119,7 @@ EXAMPLE_INVARIANTS = [
 #: a repeat changes which input the node's ``[!! input_N !!]`` chips read.
 FAN_IN_NODES = {
     "04-vega-lite-multi-flow-dashboard.json": 3,
+    # The Bars chart of the three Roads nodes, and the Sunlight change node.
     "06-back-bay-road-sunlight.json": 2,
     "08-autark-spatial-join-regression.json": 1,
     "09-heterogeneous-data-linked-views.json": 2,
@@ -233,6 +237,42 @@ def test_example_documented_invariants(
         )
 
 
+#: The examples whose two views link directly (owner, 2026-10-21): one
+#: interaction edge joins the two views, and no Data Pool sits between them.
+DIRECT_LINKS = {
+    "07-autark-gpu-shader.json": ("sh-plot", "sh-map"),
+    "08-autark-spatial-join-regression.json": ("niteroi-plot", "niteroi-map"),
+    "09-heterogeneous-data-linked-views.json": (
+        "3334485c-50ad-4adf-9574-45f8a9704860",
+        "6c4aa6a8-45eb-480e-bb3d-3fd54d13325b",
+    ),
+}
+
+
+@pytest.mark.parametrize("basename", sorted(DIRECT_LINKS), ids=sorted(DIRECT_LINKS))
+def test_two_views_link_directly_with_no_pool(basename):
+    """An interaction edge carries selections, never data, so these examples
+    link their two views with one edge between them, and feed both from the
+    node that computes their rows."""
+    with open(os.path.join(EXAMPLES_DIR, basename), "r", encoding="utf-8") as f:
+        dataflow = json.load(f)["dataflow"]
+    pools = [n["id"] for n in dataflow["nodes"] if n["type"].split("@")[0] == "curio.builtin/data-pool"]
+    assert pools == [], f"{basename}: a Data Pool sits between its views: {pools}"
+    links = [
+        {e["source"], e["target"]} for e in dataflow["edges"] if e.get("type") == "Interaction"
+    ]
+    assert links == [set(DIRECT_LINKS[basename])], (
+        f"{basename}: expected one interaction edge between {DIRECT_LINKS[basename]}, got {links}"
+    )
+    feeders = {
+        view: {e["source"] for e in dataflow["edges"] if e.get("type") != "Interaction" and e["target"] == view}
+        for view in DIRECT_LINKS[basename]
+    }
+    assert len(set.union(*feeders.values())) == 1 and all(len(f) == 1 for f in feeders.values()), (
+        f"{basename}: both views are fed by one node, got {feeders}"
+    )
+
+
 def _circle_index(handle) -> int:
     if handle == "in":
         return 0
@@ -267,6 +307,17 @@ def test_example_flows_meet_on_input_circles(basename, expected_fan_in):
         )
 
 
+#: Example 06's comparisons since Compare Scenarios went (the plan answering
+#: komar41's review, step 6.3): Scout's Bars chart of the scenarios' mean
+#: sunlight, which reads a Roads node in each scenario, and the Python node
+#: that takes each road's sunlight change. Both keep the ids of the Compare
+#: nodes they replaced.
+WHATIF_CHART = "whatif-compare-chart"
+WHATIF_CHANGE = "whatif-compare-difference"
+WHATIF_ROADS = ["whatif-baseline-roads", "whatif-modified-roads", "whatif-towers-roads"]
+SCOUT_PACKAGE = os.path.join(REPO_ROOT, "packages", "curio.scout@1")
+
+
 def test_example_06_is_three_scenarios_over_one_context():
     """Example 06 is a scenario study (#662). Baseline, Twice as tall and Two
     towers removed share the loader and the pool as fixed context. Each node of
@@ -274,9 +325,16 @@ def test_example_06_is_three_scenarios_over_one_context():
     code, and the one value that differs is the shadow step's ``height_factor``
     widget, 1 against 2, which its spec reads as a uniform. Two towers removed
     is an Edit Features node that removes two towers, 200 Clarendon and
-    Raffles, by their ``building_id``, before copies of Baseline's two nodes
-    with factor 1. Outside them, an Autark map after the Difference draws the
-    sunlight change."""
+    Raffles, by their ``building_id``, and the map of the buildings it feeds
+    and edits on, linked to it by an interaction edge, before copies of
+    Baseline's three nodes with factor 1. Each scenario ends in a Roads node
+    that takes the roads layer out of the five its shadow step hands on.
+
+    Outside them, no Compare Scenarios node is left. Scout's Bars charts the
+    three Roads nodes' mean sunlight, its circles in the order of the boxes; a
+    Python node takes Twice as tall's sunlight minus Baseline's from their
+    maps' roads layers, matching the roads by shape as Compare's Difference
+    did; and an Autark map after it draws the change."""
     path = os.path.join(EXAMPLES_DIR, "06-back-bay-road-sunlight.json")
     with open(path, "r", encoding="utf-8") as f:
         flow = json.load(f)["dataflow"]
@@ -288,34 +346,50 @@ def test_example_06_is_three_scenarios_over_one_context():
     )
     outside = set(nodes) - set(baseline["nodes"]) - set(twice["nodes"]) - set(towers["nodes"])
     assert outside == {
-        "whatif-data", "whatif-pool", "whatif-compare-chart", "whatif-compare-difference", "whatif-difference-map",
+        "whatif-data", "whatif-pool", WHATIF_CHART, WHATIF_CHANGE, "whatif-difference-map",
     }
-    assert len(baseline["nodes"]) == len(twice["nodes"]) == 2
+    assert len(baseline["nodes"]) == len(twice["nodes"]) == 3
     for original, copy in zip(baseline["nodes"], twice["nodes"]):
         assert nodes[copy]["metadata"].get("copiedFrom") == [original], copy
         assert nodes[copy]["content"] == nodes[original]["content"], (
             f"{copy} holds other code than its twin {original}"
         )
-    # Two towers removed: its Edit Features node, then copies of Baseline's two.
-    edit, *copies = towers["nodes"]
-    assert copies == ["whatif-towers-compute", "whatif-towers-map"]
+    # Two towers removed: its Edit Features node and the map of its buildings,
+    # then copies of Baseline's three.
+    edit, buildings, *copies = towers["nodes"]
+    assert copies == ["whatif-towers-compute", "whatif-towers-map", "whatif-towers-roads"]
     for original, copy in zip(baseline["nodes"], copies):
         assert nodes[copy]["metadata"].get("copiedFrom") == [original], copy
         assert nodes[copy]["content"] == nodes[original]["content"], (
             f"{copy} holds other code than its twin {original}"
         )
     assert nodes[edit]["type"] == "curio.builtin/edit-features"
-    assert nodes[edit]["metadata"]["editFeatures"] == {
-        "key": "building_id",
-        "layer": "table_osm_buildings",
-        "edits": [{"op": "remove", "ids": [29623484, 29628154]}],
-    }
+    # Its edits are in its code, the node's only state, and in no metadata key.
+    assert "editFeatures" not in nodes[edit]["metadata"], nodes[edit]["metadata"]
     assert '{"op": "remove", "ids": [29623484, 29628154]},' in nodes[edit]["content"]
     assert '], key="building_id", layer="table_osm_buildings")' in nodes[edit]["content"]
-    feeds = sorted((edge["source"], edge["target"]) for edge in flow["edges"] if edit in (edge["source"], edge["target"]))
-    assert feeds == [("whatif-pool", edit), (edit, "whatif-towers-compute")], (
-        "Two towers removed reads the pool, the context the others read, through its Edit Features node"
+    feeds = sorted(
+        (edge["source"], edge["target"]) for edge in flow["edges"]
+        if edit in (edge["source"], edge["target"]) and edge.get("type") != "Interaction"
     )
+    assert feeds == [("whatif-pool", edit), (edit, buildings), (edit, "whatif-towers-compute")], (
+        "Two towers removed reads the pool, the context the others read, through its Edit Features node, "
+        "which feeds the shadow step and the map of its buildings"
+    )
+    # The map it feeds is the one it edits on: the dataflow's one interaction
+    # edge joins the two, from dot to dot, for selections both ways. The map
+    # picks on the buildings by their building_id, and nothing reads it.
+    links = [(e["source"], e["target"], e.get("sourceHandle"), e.get("targetHandle"))
+             for e in flow["edges"] if e.get("type") == "Interaction"]
+    assert links == [(edit, buildings, "in/out", "in/out")], links
+    assert nodes[buildings]["type"] == "curio.builtin/autk-grammar"
+    # As large as the scenario's other map.
+    assert [nodes[n].get(k) for n in (buildings, "whatif-towers-map") for k in ("width", "height")] == [759, 640] * 2
+    (layer,) = json.loads(nodes[buildings]["content"])["map"]["layerRefs"]
+    assert (layer["dataRef"], layer.get("isPick"), layer.get("selectFields")) == (
+        "table_osm_buildings", True, ["building_id"],
+    ), layer
+    assert not [e for e in flow["edges"] if e["source"] == buildings], "a node reads the buildings map"
 
     def factor(node_id):
         [widget] = nodes[node_id]["metadata"]["widgets"]
@@ -325,33 +399,66 @@ def test_example_06_is_three_scenarios_over_one_context():
     assert (
         factor("whatif-baseline-compute"), factor("whatif-modified-compute"), factor("whatif-towers-compute"),
     ) == (1, 2, 1)
-    # Both comparisons read the roads layer of what each scenario's map draws,
-    # and Difference matches the roads by their shapes (they carry no id). The
-    # chart compares the three scenarios; Difference, Twice as tall's change.
-    expected_sources = {
-        "whatif-compare-chart": ["whatif-baseline-map", "whatif-modified-map", "whatif-towers-map"],
-        "whatif-compare-difference": ["whatif-baseline-map", "whatif-modified-map"],
-    }
-    for compare, expected in expected_sources.items():
-        settings = nodes[compare]["metadata"]["compareScenarios"]
-        assert settings["layer"] == "table_osm_roads", compare
-        assert 'layer="table_osm_roads")' in nodes[compare]["content"], compare
-        sources = sorted(edge["source"] for edge in flow["edges"] if edge["target"] == compare)
-        assert sources == expected, compare
-    chart = nodes["whatif-compare-chart"]
-    assert [(label["scenario"], label["name"], label["color"]) for label in chart["metadata"]["compareScenarios"]["inputs"]] == [
-        (s["id"], s["name"], s["color"]) for s in (baseline, twice, towers)
+    # No Compare Scenarios node is left; Scout's package, whose Bars the chart
+    # is, is the one the dataflow declares.
+    assert not [n["id"] for n in flow["nodes"] if n["type"].split("@")[0] == "curio.builtin/compare-scenarios"]
+    assert flow["packages"] == ["curio.scout@1"]
+    # Each scenario's Roads node, its last, reads its own shadow step and takes
+    # the roads layer, each road with its sunlight, out of the five it hands on
+    # by a layer chip: the chart reads one table per circle, not a node's
+    # layers. Its copies name it, as the scenarios' other copies do.
+    box_of = {node_id: box["id"] for box in (baseline, twice, towers) for node_id in box["nodes"]}
+    computes = ["whatif-baseline-compute", "whatif-modified-compute", "whatif-towers-compute"]
+    for box, roads, compute in zip((baseline, twice, towers), WHATIF_ROADS, computes):
+        assert box["nodes"][-1] == roads, box["id"]
+        node = nodes[roads]
+        assert (node["type"], node["title"]) == ("curio.builtin/computation-analysis", "Roads"), roads
+        assert node["content"].endswith("return [!! input_0:table_osm_roads !!]\n"), node["content"]
+        assert node["content"] == nodes[WHATIF_ROADS[0]]["content"], roads
+        assert [(e["source"], e.get("targetHandle") or "in") for e in flow["edges"] if e["target"] == roads] == [
+            (compute, "in"),
+        ], roads
+    assert [nodes[roads]["metadata"].get("copiedFrom") for roads in WHATIF_ROADS] == [
+        None, [WHATIF_ROADS[0]], [WHATIF_ROADS[0]],
     ]
-    assert '("s-towers", "Two towers removed", [!! input_2 !!]),' in chart["content"]
-    third = [e for e in flow["edges"] if e["target"] == "whatif-compare-chart" and e["source"] == "whatif-towers-map"]
-    assert [e.get("targetHandle") for e in third] == ["in_2"]
-    assert "key" not in nodes["whatif-compare-difference"]["metadata"]["compareScenarios"].get("difference", {})
-    # The Difference draws no map of its own: an Autark map after it colors
-    # each road by its sunlight change, on a diverging scale centered on no
-    # change, under the grammar's title.
+    # The chart: Scout's Bars, its spec its template's own, its widgets set as
+    # the Compare node's bar drew it: each scenario's mean sunlight, the Y axis
+    # titled as Compare titled it. Its circles take the three Roads nodes in
+    # the order of the boxes, and it stores no label of its own: each bar takes
+    # its name and color from its input's box.
+    with open(os.path.join(SCOUT_PACKAGE, "manifest.json"), "r", encoding="utf-8") as f:
+        (template,) = [t for t in json.load(f)["templates"] if t["id"] == "bars"]
+    with open(os.path.join(SCOUT_PACKAGE, template["source"]), "r", encoding="utf-8") as f:
+        starter = f.read()
+    chart = nodes[WHATIF_CHART]
+    assert (chart["type"], chart["title"]) == ("curio.scout/bars", "Mean sunlight")
+    assert chart["content"] == starter
+    assert set(chart["metadata"]) == {"keywords", "widgets"}, chart["metadata"]
+    widgets = chart["metadata"]["widgets"]
+    assert [{k: v for k, v in w.items() if k != "value"} for w in widgets] == template["widgets"]
+    assert {w["name"]: w.get("value", w["default"]) for w in widgets} == {
+        "y": "sunlight", "combine": "mean", "y_title": "mean of sunlight",
+    }
+    into_chart = sorted(
+        (_circle_index(e.get("targetHandle")), e["source"]) for e in flow["edges"] if e["target"] == WHATIF_CHART
+    )
+    assert into_chart == list(enumerate(WHATIF_ROADS)), into_chart
+    assert [box_of[source] for _circle, source in into_chart] == [box["id"] for box in flow["scenarios"]]
+    # The change: a Python node over Baseline's map and Twice as tall's, in
+    # that order, each read by a layer chip on its roads layer. It draws no map
+    # of its own: an Autark map after it colors each road by its sunlight
+    # change, on a diverging scale centered on no change, under the grammar's
+    # title.
+    change = nodes[WHATIF_CHANGE]
+    assert (change["type"], change["title"]) == ("curio.builtin/computation-analysis", "Sunlight change")
+    assert {e.get("targetHandle"): e["source"] for e in flow["edges"] if e["target"] == WHATIF_CHANGE} == {
+        "in": "whatif-baseline-map", "in_1": "whatif-modified-map",
+    }
+    assert "before = [!! input_0:table_osm_roads !!]\n" in change["content"]
+    assert "after = [!! input_1:table_osm_roads !!]\n" in change["content"]
     into_map = [(e["source"], e.get("sourceHandle"), e.get("targetHandle"))
                 for e in flow["edges"] if e["target"] == "whatif-difference-map"]
-    assert into_map == [("whatif-compare-difference", "out", "in")]
+    assert into_map == [(WHATIF_CHANGE, "out", "in")]
     difference_map = nodes["whatif-difference-map"]
     assert difference_map["type"] == "curio.builtin/autk-grammar"
     assert json.loads(difference_map["content"]) == {"map": {"layerRefs": [{
@@ -373,8 +480,8 @@ DIVERGING_WITH_A_COLORED_MIDDLE = {"interpolateRdYlBu", "interpolateRdYlGn", "in
 
 
 def test_example_06_maps_the_sunlight_change_on_a_diverging_scale_centered_on_no_change():
-    """Example 06's map after the Difference colors each road's sunlight change
-    on a diverging scheme whose middle color stays visible, over a range
+    """Example 06's map after its Sunlight change node colors each road's
+    sunlight change on a diverging scheme whose middle color stays visible, over a range
     symmetric about 0: a road that does not change takes the middle color, a
     loss one side and a gain the other, each the same color for the same
     minutes. The roads are a vector layer, which autk-grammar colors from the

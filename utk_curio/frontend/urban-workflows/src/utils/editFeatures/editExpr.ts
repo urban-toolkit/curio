@@ -1,5 +1,5 @@
 /**
- * The Interaction node's expressions: the conditions its edits pick features
+ * The Map Edits node's expressions: the conditions its edits pick features
  * by (`where`) and the formulas an `expr` edit computes, over one feature's
  * properties. Read by its own parser, never by `eval`.
  *

@@ -83,9 +83,9 @@ class TestReadAndWrite:
         assert setting["schema"] == contracts.KEYWORD_TYPES.schema
         # Internal agents are listed as readers: settings do not depend on cards.
         assert {(e["agentId"], e["capability"], e["internal"]) for e in setting["readBy"]} == {
-            ("agent.dataflow-planner", "workflow.keywords.extract", True),
-            ("agent.dataflow-planner", "workflow.keyword.bind", True),
-            ("agent.dataflow-planner", "workflow.plan.refresh", True),
+            ("agent.curio.dataflow-planner", "workflow.keywords.extract", True),
+            ("agent.curio.dataflow-planner", "workflow.keyword.bind", True),
+            ("agent.curio.dataflow-planner", "workflow.plan.refresh", True),
         }
 
     def test_a_value_is_saved_per_account(self, client, user_and_token, tmp_curio):
@@ -176,7 +176,7 @@ class TestAttachedRunOrder:
 
     def _upload(self, client, token):
         manifest = {
-            "id": "agent.hazard-mapper",
+            "id": "agent.test.hazard-mapper",
             "name": "Hazard Mapper",
             "category": "canvas",
             "version": "1.0.0",
@@ -188,7 +188,7 @@ class TestAttachedRunOrder:
             },
             "inputs": {"reads": ["mission"], "requiredConfig": ["keywordTypes", "notASetting"]},
             "tools": [{"id": "dataflow.read"}, {"id": "node.create"}],
-            "delegatesTo": ["agent.node-builder"],
+            "delegatesTo": ["agent.curio.node-builder"],
             "provenance": {"publisher": "alice", "trust": "imported"},
         }
         prompts = {
@@ -207,10 +207,10 @@ class TestAttachedRunOrder:
         pid = client.post("/api/projects", json={
             "name": "p", "spec": {"dataflow": {"nodes": [], "edges": [], "packages": []}}, "outputs": [],
         }, headers=_auth(token)).get_json()["id"]
-        coord = "agent.hazard-mapper@1.0.0"
+        coord = "agent.test.hazard-mapper@1"
         client.post(f"/api/agents/projects/{pid}/install", json={"coord": coord}, headers=_auth(token))
         client.post(f"/api/agents/projects/{pid}/install",
-                    json={"coord": "agent.node-builder@1.0.0"}, headers=_auth(token))
+                    json={"coord": "agent.curio.node-builder@1"}, headers=_auth(token))
         att = client.post(f"/api/agents/projects/{pid}/attachments",
                           json={"coord": coord, "target": {"kind": "canvas"}}, headers=_auth(token))
         att_id = att.get_json()["attachmentId"]

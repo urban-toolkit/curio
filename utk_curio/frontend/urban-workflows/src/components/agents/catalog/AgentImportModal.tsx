@@ -23,8 +23,8 @@ export const AgentImportModal: React.FC<{
    * Accumulate across dialogs, replacing same-named entries.
    *
    * This used to `setFiles(read)`, which made the documented package layout
-   * impossible to import. An agent package is `<id>@<version>/manifest.json`
-   * plus `<id>@<version>/prompts/*.md` (docs/AGENT-CATALOG.md) - two
+   * impossible to import. An agent package is `<id>@<major>/manifest.json`
+   * plus `<id>@<major>/prompts/*.md` (docs/AGENT-CATALOG.md) - two
    * directories - and one OS file dialog cannot span two directories. So the
    * manifest and its prompts had to be picked in two goes, and the second go
    * discarded the first. The only way through was to flatten the package into

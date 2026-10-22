@@ -362,7 +362,7 @@ class TestTheShippedCorpus:
         curated = [p for p in paths if p.parent.name == "examples"]
         legacy = [p for p in paths if p.parent.name == "dataflows"]
         assert len(curated) == 26, [p.name for p in curated]
-        assert len(legacy) == 28, [p.name for p in legacy]
+        assert len(legacy) == 29, [p.name for p in legacy]
 
     @pytest.mark.parametrize("path", example_paths(), ids=lambda p: p.stem)
     def test_every_example_canonicalizes_with_known_templates(self, path):
@@ -389,31 +389,36 @@ class TestTheShippedCorpus:
         )
 
     def test_the_examples_that_need_interaction_edges_are_exactly_these(self):
-        """The T2 set. dev/112's ``edges[].kind`` is not on this branch, so
-        these ten cannot be reconstructed by any plan here -- a capability
-        gap the harness reports rather than a bar it lowers."""
+        """The examples whose graphs carry an interaction edge: views linked
+        to each other or to a pool, and Map Edits nodes linked to the Autark
+        maps they feed and edit on (06's, chicago-loop-shadow-towers' and
+        lower-manhattan-park-shade's levers among them)."""
         with_interaction = set()
         for path in example_paths():
             spec = json.loads(path.read_text(encoding="utf-8"))
             if canonical_graph_from_spec(spec, templates=TEMPLATES).interaction_edges():
                 with_interaction.add(path.stem)
         assert with_interaction == {
+            "06-back-bay-road-sunlight",
             "07-autark-gpu-shader",
             "08-autark-spatial-join-regression",
             "09-heterogeneous-data-linked-views",
             "11-autark-pbf-loading",
             "17-autark-geodataframe-maps",
+            "chicago-loop-layers",
+            "chicago-loop-shadow-towers",
             "interaction-autark",
             "interaction-vega",
             "interaction-vega-autark",
             "interaction-vega-simple",
+            "lower-manhattan-park-shade",
             "regression",
         }
 
     def test_these_are_the_examples_whose_templates_need_a_package(self):
         """Example 09 declares ``curio.weather@1`` for its python LIBRARIES
         while using only builtin templates -- a different resolution route
-        from examples 10, 18, 21, 22 and 24 and the chicago-loop-shadow-towers,
+        from examples 06, 10, 18, 21, 22 and 24 and the chicago-loop-shadow-towers,
         chicago-rain-wind-routing, lower-manhattan-park-shade,
         quad-cities-flood-vulnerability and scenario-comparison-charts test
         dataflows, whose templates themselves live in a package
@@ -425,7 +430,14 @@ class TestTheShippedCorpus:
         owner's call, 2026-10-18), and scenario-comparison-charts' are its
         nine charts, all Scout's (the plan for #914, step 28.2, and the plan
         answering komar41's review, step 6.2), ``curio.scout@1`` (that plan,
-        step 10)."""
+        step 10). chicago-rain-wind-routing charts its routes with Scout's
+        Bars, example 06 its scenarios' mean sunlight, and
+        chicago-loop-shadow-towers its scenarios' mean shadow;
+        lower-manhattan-park-shade charts its parks with Scout's Dots with a
+        range and takes its changes in shadow with Raster Calculators, and
+        quad-cities-flood-vulnerability charts with Scout's Bars, Points and
+        Grouped bars and takes its change in depth with a Raster Calculator
+        (that plan, step 6.3)."""
         needs_package_templates = {}
         for path in example_paths():
             spec = json.loads(path.read_text(encoding="utf-8"))
@@ -436,6 +448,7 @@ class TestTheShippedCorpus:
             if foreign:
                 needs_package_templates[path.stem] = foreign
         assert list(needs_package_templates) == [
+            "06-back-bay-road-sunlight",
             "10-street-vision-cv-analysis",
             "18-storage-orthorectified-imagery",
             "21-storage-photos-and-videos",
@@ -462,21 +475,39 @@ class TestTheShippedCorpus:
         # SCOUT's two models are packages with nodes of their own.
         for stem in ("24-scout-shadow-model-chicago-loop", "chicago-loop-shadow-towers", "lower-manhattan-park-shade"):
             assert "model.scout.deep-umbra/accumulated-shadow" in needs_package_templates[stem], stem
-        assert needs_package_templates["chicago-rain-wind-routing"] == ["model.scout.weather-gnn/weather-routing"]
+        assert needs_package_templates["chicago-rain-wind-routing"] == [
+            "curio.scout/bars",
+            "model.scout.weather-gnn/weather-routing",
+        ]
+        assert needs_package_templates["06-back-bay-road-sunlight"] == ["curio.scout/bars"]
         # SCOUT's raster nodes are curio.scout@1's: the shadow dataflows
         # rasterize their buildings with it, and the two that take the
         # shadow's statistics and the flood dataflow use its Raster Calculator.
-        assert needs_package_templates["24-scout-shadow-model-chicago-loop"] == needs_package_templates[
-            "chicago-loop-shadow-towers"] == [
+        assert needs_package_templates["24-scout-shadow-model-chicago-loop"] == [
+            "curio.scout/raster-calculator",
+            "curio.scout/rasterize-buildings",
+            "model.scout.deep-umbra/accumulated-shadow",
+        ]
+        # chicago-loop-shadow-towers also charts its scenarios with Scout's
+        # Bars, and takes its change in shadow with a Raster Calculator.
+        assert needs_package_templates["chicago-loop-shadow-towers"] == [
+            "curio.scout/bars",
             "curio.scout/raster-calculator",
             "curio.scout/rasterize-buildings",
             "model.scout.deep-umbra/accumulated-shadow",
         ]
         assert needs_package_templates["lower-manhattan-park-shade"] == [
+            "curio.scout/dots-with-a-range",
+            "curio.scout/raster-calculator",
             "curio.scout/rasterize-buildings",
             "model.scout.deep-umbra/accumulated-shadow",
         ]
-        assert needs_package_templates["quad-cities-flood-vulnerability"] == ["curio.scout/raster-calculator"]
+        assert needs_package_templates["quad-cities-flood-vulnerability"] == [
+            "curio.scout/bars",
+            "curio.scout/grouped-bars",
+            "curio.scout/points",
+            "curio.scout/raster-calculator",
+        ]
         assert declared_dependencies(
             json.loads(
                 (REPO_ROOT / "docs/examples/09-heterogeneous-data-linked-views.json").read_text()
@@ -525,7 +556,7 @@ class TestExpectedBlockRoundTrip:
 def _feeding_circles(groups: int, feeders: int, *, charted: int | None = None, swapped: bool = False) -> dict:
     """*groups* copies of one shape: a loader whose rows *feeders* steps take,
     each step handing its rows to its own circle of one node, as each
-    scenario's node feeds a Compare Scenarios node. With *charted*, the first
+    scenario's node feeds a chart that compares them. With *charted*, the first
     group's step on that circle also feeds a chart; with *swapped*, the first
     group's first two steps trade circles."""
     nodes, edges = [], []

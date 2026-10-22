@@ -4,9 +4,11 @@
  * with a message naming what does not resolve.
  */
 import React from "react";
+import * as fs from "fs";
+import * as path from "path";
 import { fireEvent, render, screen } from "@testing-library/react";
 import WidgetsEditor from "../../components/editing/WidgetsEditor";
-import type { WidgetDef } from "../../utils/widgets/widgetModel";
+import { normalizeWidgets, type WidgetDef } from "../../utils/widgets/widgetModel";
 
 function renderEditor(overrides: Partial<React.ComponentProps<typeof WidgetsEditor>> = {}) {
   const props: React.ComponentProps<typeof WidgetsEditor> = {
@@ -117,5 +119,47 @@ describe("a run", () => {
   test("mounting resolves nothing; only a toggle does", () => {
     const { props } = renderEditor({ userCode: "return [!! factor !!]", widgets: [factor] });
     expect(props.sendReplacedCode).not.toHaveBeenCalled();
+  });
+});
+
+describe("a Scout chart dropped before an input is wired", () => {
+  /** Scout's Bars, as the repository ships it: its spec and its widgets. Read
+   *  when asked, so a checkout without it fails test by test. */
+  function bars(): { spec: string; widgets: unknown } {
+    const scout = path.join(path.resolve(__dirname, "../../../../../.."), "packages", "curio.scout@1");
+    const manifest = JSON.parse(fs.readFileSync(path.join(scout, "manifest.json"), "utf-8"));
+    const template = manifest.templates.find((t: { id: string }) => t.id === "bars");
+    return { spec: fs.readFileSync(path.join(scout, template.source), "utf-8"), widgets: template.widgets };
+  }
+
+  test("lists the dataset's chip among the references that do not resolve, until an input is wired", () => {
+    const { spec, widgets } = bars();
+    const { props, view } = renderEditor({
+      userCode: spec, widgets: normalizeWidgets(widgets), language: "json", grammar: "vega-lite",
+    });
+    const list = screen.getByLabelText("References that do not resolve");
+    expect(Array.from(list.querySelectorAll("li")).map((item) => item.textContent)).toEqual([
+      "[!! inputs !!]: this node has no input to stack. Connect one to an input circle.",
+    ]);
+
+    const box = { scenario: "s-base", name: "Baseline", color: "#2a9d8f", rank: 0 };
+    view.rerender(<WidgetsEditor {...props} inputs={[{ slot: 0, scenario: box }]} />);
+    expect(screen.queryByLabelText("References that do not resolve")).toBeNull();
+  });
+});
+
+describe("a widget saved under the name the stacked inputs are read by", () => {
+  const saved: WidgetDef = { name: "inputs", type: "number", label: "Inputs", default: 3 };
+
+  test("stays listed, its edit cannot be saved, and it can be deleted", () => {
+    const { props } = renderEditor({ widgets: [saved] });
+    expect(screen.getByText("Inputs")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Edit widget inputs" }));
+    expect(screen.getByText("inputs names the node's stacked inputs. Pick another name.")).toBeTruthy();
+    expect((screen.getByRole("button", { name: "Save widget" }) as HTMLButtonElement).disabled).toBe(true);
+
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    fireEvent.click(screen.getByRole("button", { name: "Delete widget inputs" }));
+    expect(props.onWidgetsChange).toHaveBeenCalledWith([]);
   });
 });

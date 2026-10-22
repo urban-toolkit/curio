@@ -16,13 +16,13 @@ describe("attachAgentOnDrop", () => {
     await attachAgentOnDrop({
       projectId: "proj-9",
       target: { kind: "node", targetId: "n1" },
-      agentCoord: "agent.x@1.0.0",
+      agentCoord: "agent.test.x@1",
       saveProject,
       attach,
     });
     // Save must run BEFORE attach so the node is on disk when validated.
     expect(calls).toEqual(["save", "attach"]);
-    expect(attach).toHaveBeenCalledWith("proj-9", "agent.x@1.0.0", { kind: "node", targetId: "n1" });
+    expect(attach).toHaveBeenCalledWith("proj-9", "agent.test.x@1", { kind: "node", targetId: "n1" });
   });
 
   it("attaches to a node of a never-saved project using the id from the save", async () => {
@@ -31,12 +31,12 @@ describe("attachAgentOnDrop", () => {
     await attachAgentOnDrop({
       projectId: undefined,
       target: { kind: "node", targetId: "n1" },
-      agentCoord: "agent.x@1.0.0",
+      agentCoord: "agent.test.x@1",
       saveProject,
       attach,
     });
     expect(saveProject).toHaveBeenCalledTimes(1);
-    expect(attach).toHaveBeenCalledWith("new-proj", "agent.x@1.0.0", { kind: "node", targetId: "n1" });
+    expect(attach).toHaveBeenCalledWith("new-proj", "agent.test.x@1", { kind: "node", targetId: "n1" });
   });
 
   it("falls back to the existing projectId when the save returns no id", async () => {
@@ -45,11 +45,11 @@ describe("attachAgentOnDrop", () => {
     await attachAgentOnDrop({
       projectId: "proj-1",
       target: { kind: "node", targetId: "n1" },
-      agentCoord: "agent.x@1.0.0",
+      agentCoord: "agent.test.x@1",
       saveProject,
       attach,
     });
-    expect(attach).toHaveBeenCalledWith("proj-1", "agent.x@1.0.0", { kind: "node", targetId: "n1" });
+    expect(attach).toHaveBeenCalledWith("proj-1", "agent.test.x@1", { kind: "node", targetId: "n1" });
   });
 
   it("does NOT pre-save for a canvas target", async () => {
@@ -58,12 +58,12 @@ describe("attachAgentOnDrop", () => {
     await attachAgentOnDrop({
       projectId: "proj-1",
       target: { kind: "canvas" },
-      agentCoord: "agent.x@1.0.0",
+      agentCoord: "agent.test.x@1",
       saveProject,
       attach,
     });
     expect(saveProject).not.toHaveBeenCalled();
-    expect(attach).toHaveBeenCalledWith("proj-1", "agent.x@1.0.0", { kind: "canvas" });
+    expect(attach).toHaveBeenCalledWith("proj-1", "agent.test.x@1", { kind: "canvas" });
   });
 
   it("throws (without attaching) when no project id is resolvable for a canvas drop", async () => {
@@ -72,7 +72,7 @@ describe("attachAgentOnDrop", () => {
       attachAgentOnDrop({
         projectId: undefined,
         target: { kind: "canvas" },
-        agentCoord: "agent.x@1.0.0",
+        agentCoord: "agent.test.x@1",
         saveProject: jest.fn(),
         attach,
       }),
@@ -86,7 +86,7 @@ describe("attachAgentOnDrop", () => {
       attachAgentOnDrop({
         projectId: "proj-1",
         target: { kind: "node", targetId: "n1" },
-        agentCoord: "agent.x@1.0.0",
+        agentCoord: "agent.test.x@1",
         saveProject: jest.fn(async () => {
           throw new Error("Guest users cannot save projects");
         }),
@@ -117,7 +117,7 @@ describe("attachAgentOnDrop for a hosted guest", () => {
     const deps = {
       projectId: "proj-1",
       target: target as never,
-      agentCoord: "agent.x@1.0.0",
+      agentCoord: "agent.test.x@1",
       saveProject,
       attach,
       hostedGuest: true,
@@ -134,7 +134,7 @@ describe("attachAgentOnDrop for a hosted guest", () => {
     const deps = {
       projectId: undefined,
       target: { kind: "canvas" } as never,
-      agentCoord: "agent.x@1.0.0",
+      agentCoord: "agent.test.x@1",
       saveProject,
       attach,
       hostedGuest: true,
@@ -151,7 +151,7 @@ describe("attachAgentOnDrop for a hosted guest", () => {
     const deps = {
       projectId: "proj-1",
       target: { kind: "canvas" } as never,
-      agentCoord: "agent.x@1.0.0",
+      agentCoord: "agent.test.x@1",
       saveProject,
       attach,
       hostedGuest: true,
@@ -160,7 +160,7 @@ describe("attachAgentOnDrop for a hosted guest", () => {
     await attachAgentOnDrop(deps);
 
     expect(saveProject).not.toHaveBeenCalled();
-    expect(attach).toHaveBeenCalledWith("proj-1", "agent.x@1.0.0", { kind: "canvas" });
+    expect(attach).toHaveBeenCalledWith("proj-1", "agent.test.x@1", { kind: "canvas" });
   });
 
   it("is what the canvas's agent drop is told about who drops", () => {
@@ -173,7 +173,7 @@ describe("attachAgentOnDrop for a hosted guest", () => {
     const deps = {
       projectId: "proj-1",
       target: { kind: "node", targetId: "n1" } as never,
-      agentCoord: "agent.x@1.0.0",
+      agentCoord: "agent.test.x@1",
       saveProject: jest.fn(async () => ({ id: "proj-1" })),
       attach: jest.fn(async () => undefined),
       hostedGuest: true,

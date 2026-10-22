@@ -29,8 +29,8 @@ class TestSolve:
 
     #: Who writes a Solve's node content: the Node Builder, in its
     #: node.content.generate mode.
-    WRITER = "agent.node-builder@1.0.0"
-    DFB = "agent.dataflow-builder@1.0.0"
+    WRITER = "agent.curio.node-builder@1"
+    DFB = "agent.curio.dataflow-builder@1"
 
     def _applied_plan(self, client, user, token, project_id, monkeypatch, replies=None, install_writer=True):
         helper = TestDataflowPlanMint()
@@ -182,7 +182,7 @@ class TestSolve:
         user, token = user_and_token
         att_id, _, _ = self._applied_plan(client, user, token, alice_project, monkeypatch)
         child_config = self._child_config(client, token)
-        client.put("/api/agents/llm/assignments", json={"agent.node-builder": child_config},
+        client.put("/api/agents/llm/assignments", json={"agent.curio.node-builder": child_config},
                    headers=_auth(token))
         seen = self._record_models(monkeypatch)
         resp = self._solve(client, token, alice_project, att_id)
@@ -208,7 +208,7 @@ class TestSolve:
         user, token = user_and_token
         att_id, _, _ = self._applied_plan(client, user, token, alice_project, monkeypatch)
         child_config = self._child_config(client, token)
-        client.put("/api/agents/llm/assignments", json={"agent.node-builder": child_config},
+        client.put("/api/agents/llm/assignments", json={"agent.curio.node-builder": child_config},
                    headers=_auth(token))
         store = llm_configs.default_store()
         doc = store.read(_user_dir_key(user))
@@ -217,7 +217,7 @@ class TestSolve:
         seen = self._record_models(monkeypatch)
         resp = self._solve(client, token, alice_project, att_id)
         assert resp.status_code == 400
-        assert resp.get_json()["remedy"] == {"kind": "llm-config", "agentId": "agent.node-builder"}
+        assert resp.get_json()["remedy"] == {"kind": "llm-config", "agentId": "agent.curio.node-builder"}
         assert seen == []
         cards = client.get(
             f"/api/agents/projects/{alice_project}/attachments", headers=_auth(token)
@@ -234,13 +234,13 @@ class TestSolve:
         user, token = user_and_token
         att_id, _, _ = self._applied_plan(client, user, token, alice_project, monkeypatch)
         child_config = self._child_config(client, token)
-        client.put("/api/agents/llm/assignments", json={"agent.node-builder": child_config},
+        client.put("/api/agents/llm/assignments", json={"agent.curio.node-builder": child_config},
                    headers=_auth(token))
 
         def _clear_after_first(n):
             if n == 1:  # the user clears the choice while the first node is generated
                 llm_configs.default_store().set_choice(
-                    _user_dir_key(user), "agent.node-builder", None
+                    _user_dir_key(user), "agent.curio.node-builder", None
                 )
 
         seen = self._record_models(monkeypatch, on_call=_clear_after_first)
@@ -334,7 +334,7 @@ class TestSolve:
         # dev/106 D1: the proposal RIDES THE SOLVE TURN — the assertion whose
         # absence let an invisible proposal ship. One reason line, not six.
         assert body["reason"].startswith("specialist not installed")
-        assert "Node Builder (agent.node-builder@1.0.0)" in body["reason"]
+        assert "Node Builder (agent.curio.node-builder@1)" in body["reason"]
         turns = client.get(
             f"/api/agents/projects/{alice_project}/attachments/{att_id}/session",
             headers=_auth(token),
@@ -702,7 +702,7 @@ class TestProposeModeSolve:
         )
         client.post(
             f"/api/agents/projects/{alice_project}/install",
-            json={"coord": "agent.node-builder@1.0.0"}, headers=_auth(token),
+            json={"coord": "agent.curio.node-builder@1"}, headers=_auth(token),
         )
         r = helper._run(client, token, alice_project, att_id)
         proposal = next(p for p in r.get_json()["content"] if p["type"] == "proposal")
@@ -755,7 +755,7 @@ class TestProposeModeSolve:
         # folded back into the orchestrator's chat. The event says where.
         mint_att_id = result["proposalAttachmentId"]
         minted_at = next(c for c in cards if c["attachmentId"] == mint_att_id)
-        assert minted_at["coord"].startswith("agent.node-builder@")
+        assert minted_at["coord"].startswith("agent.curio.node-builder@")
         assert minted_at["target"] == {"kind": "node", "targetId": created["id"]}
         active = minted_at["activeProposal"]
         assert active["tool"] == "node.content.write"
@@ -808,7 +808,7 @@ class TestProgressiveLifecycle:
         if install_nb:
             client.post(
                 f"/api/agents/projects/{project_id}/install",
-                json={"coord": "agent.node-builder@1.0.0"}, headers=_auth(token),
+                json={"coord": "agent.curio.node-builder@1"}, headers=_auth(token),
             )
         r = helper._run(client, token, project_id, att_id)
         proposal = next(p for p in r.get_json()["content"] if p["type"] == "proposal")
@@ -868,7 +868,7 @@ class TestProgressiveLifecycle:
             f"/api/agents/projects/{alice_project}/attachments", headers=_auth(token)
         ).get_json()["attachments"]
         attached = next(c for c in cards if c["attachmentId"] == body["attachedAgentId"])
-        assert attached["coord"].startswith("agent.node-builder@")
+        assert attached["coord"].startswith("agent.curio.node-builder@")
         assert attached["target"] == {"kind": "node", "targetId": body["createdNode"]["id"]}
         # Idempotent: a re-apply reports the SAME attachment, no duplicate.
         again = self._apply_node(client, token, alice_project, att_id, proposal["proposalId"], ref)
@@ -888,7 +888,7 @@ class TestProgressiveLifecycle:
             f"/api/agents/projects/{alice_project}/attachments", headers=_auth(token)
         ).get_json()["attachments"]
         attached = next(c for c in cards if c["attachmentId"] == body["attachedAgentId"])
-        assert attached["coord"].startswith("agent.node-builder@")
+        assert attached["coord"].startswith("agent.curio.node-builder@")
 
     def test_apply_without_node_builder_installed_skips_quietly(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
         # The remaining path to an agent-less node: the closure cannot be
@@ -899,7 +899,7 @@ class TestProgressiveLifecycle:
         # The run's own repair already installed the Node Builder, so the
         # agent-less state has to be re-created the way a legacy lockfile has
         # it — and then held there by a repair that cannot complete.
-        _drop_from_lockfile(user, alice_project, "agent.node-builder@1.0.0")
+        _drop_from_lockfile(user, alice_project, "agent.curio.node-builder@1")
         _block_closure_repair(monkeypatch)
         ref = proposal["plan"]["nodes"][0]["ref"]
         body = self._apply_node(client, token, alice_project, att_id, proposal["proposalId"], ref)
@@ -1026,7 +1026,7 @@ class TestSimulationDriver:
         )
         client.post(
             f"/api/agents/projects/{project_id}/install",
-            json={"coord": "agent.node-builder@1.0.0"}, headers=_auth(token),
+            json={"coord": "agent.curio.node-builder@1"}, headers=_auth(token),
         )
         r = helper._run(client, token, project_id, att_id)
         proposal = next(p for p in r.get_json()["content"] if p["type"] == "proposal")
@@ -1219,7 +1219,7 @@ class TestValidateNode:
         )
         client.post(
             f"/api/agents/projects/{project_id}/install",
-            json={"coord": "agent.node-builder@1.0.0"}, headers=_auth(token),
+            json={"coord": "agent.curio.node-builder@1"}, headers=_auth(token),
         )
         r = helper._run(client, token, project_id, att_id)
         proposal = next(p for p in r.get_json()["content"] if p["type"] == "proposal")
@@ -1410,7 +1410,7 @@ class TestSolveTraceHome:
         att_id, _ = helper._setup(
             client, user, token, project_id, monkeypatch, replies=replies,
         )
-        for coord in ("agent.node-builder@1.0.0",):
+        for coord in ("agent.curio.node-builder@1",):
             client.post(
                 f"/api/agents/projects/{project_id}/install",
                 json={"coord": coord}, headers=_auth(token),
@@ -1501,7 +1501,7 @@ class TestSolveTraceHome:
             client, user, token, alice_project, monkeypatch,
             replies=["Plan.\n" + helper._plan_tail(), "print('generated')"],
         )
-        for coord in ("agent.node-builder@1.0.0",):
+        for coord in ("agent.curio.node-builder@1",):
             client.post(
                 f"/api/agents/projects/{alice_project}/install",
                 json={"coord": coord}, headers=_auth(token),

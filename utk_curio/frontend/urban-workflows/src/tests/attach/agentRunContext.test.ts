@@ -18,7 +18,7 @@ import { composeAgentRunContext, type AgentAttachment } from "../../services/age
 
 const attachment = (over: Partial<AgentAttachment>): AgentAttachment => ({
   attachmentId: "a1",
-  coord: "agent.researcher@1.0.0",
+  coord: "agent.curio.researcher@1",
   target: { kind: "canvas" },
   sessionId: "s1",
   revision: 1,
@@ -60,7 +60,7 @@ describe("composeAgentRunContext (memo dev/44)", () => {
     // The reads of the Node Builder's content mode, on a Node Builder attached
     // to a node: no coord is special-cased, so they compose like any agent's.
     const att = attachment({
-      coord: "agent.node-builder@1.0.0",
+      coord: "agent.curio.node-builder@1",
       target: { kind: "node", targetId: "n1" },
       reads: ["dataflowContext", "nodeId", "subtask", "workflowGoal"],
     });
@@ -81,7 +81,7 @@ describe("composeAgentRunContext (memo dev/44)", () => {
 
   it("generic reads compose labeled fragments in declared order", () => {
     const att = attachment({
-      coord: "agent.dataflow-reader@1.0.0",
+      coord: "agent.curio.dataflow-reader@1",
       reads: ["dataflowContext", "workflowGoal"],
     });
     const context = composeAgentRunContext(att, canvas)!;
@@ -91,7 +91,7 @@ describe("composeAgentRunContext (memo dev/44)", () => {
 
   it("node-scoped reads resolve from the attached node", () => {
     const att = attachment({
-      coord: "agent.my-explainer@1.0.0",
+      coord: "agent.test.my-explainer@1",
       target: { kind: "node", targetId: "n1" },
       reads: ["nodeContext"],
     });
@@ -107,7 +107,7 @@ describe("composeAgentRunContext (memo dev/44)", () => {
 
   it("node-scoped reads are omitted for canvas attachments", () => {
     const att = attachment({
-      coord: "agent.dataflow-planner@1.0.0",
+      coord: "agent.curio.dataflow-planner@1",
       target: { kind: "canvas" },
       reads: ["nodeContent", "nodeType", "currentTask"],
     });
@@ -156,7 +156,7 @@ describe("composeAgentRunContext (memo dev/44)", () => {
 
   it("a canvas attachment that does not read targetContext still gets dataflowContext", () => {
     // Only the duplicate is dropped: an agent reading the dataflow alone keeps it.
-    const att = attachment({ coord: "agent.my-reader@1.0.0", reads: ["dataflowContext"] });
+    const att = attachment({ coord: "agent.test.my-reader@1", reads: ["dataflowContext"] });
     const trill = TrillGenerator.generateTrill(nodes, [], "wf", "analyze heat risk");
     expect(composeAgentRunContext(att, canvas)).toBe("Current Trill: " + JSON.stringify(trill));
   });
@@ -170,7 +170,7 @@ describe("composite producers (dev/67-2 — the composites stop running blind)",
 
   it("Dataflow Builder composes mission + full graph, and NO client template roster", () => {
     const att = attachment({
-      coord: "agent.dataflow-builder@1.0.0",
+      coord: "agent.curio.dataflow-builder@1",
       target: { kind: "canvas" },
       reads: ["mission", "graphContext", "installedTemplates"],
     });
@@ -195,7 +195,7 @@ describe("composite producers (dev/67-2 — the composites stop running blind)",
 
   it("Node Builder on a canvas target composes the whole graph as targetContext", () => {
     const att = attachment({
-      coord: "agent.node-builder@1.0.0",
+      coord: "agent.curio.node-builder@1",
       target: { kind: "canvas" },
       reads: ["nodeIntent", "targetContext", "externalSelection", "connectionSide"],
     });
@@ -210,7 +210,7 @@ describe("composite producers (dev/67-2 — the composites stop running blind)",
 
   it("Node Builder on a node target composes the node snapshot + intent", () => {
     const att = attachment({
-      coord: "agent.node-builder@1.0.0",
+      coord: "agent.curio.node-builder@1",
       target: { kind: "node", targetId: "n1" },
       reads: ["nodeIntent", "targetContext"],
     });
@@ -247,7 +247,7 @@ describe("composite producers (dev/67-2 — the composites stop running blind)",
       workflowGoal: "analyze heat risk",
     };
     const att = attachment({
-      coord: "agent.node-builder@1.0.0",
+      coord: "agent.curio.node-builder@1",
       target: { kind: "node", targetId: "n1" },
       reads: ["targetContext"],
     });
@@ -262,7 +262,7 @@ describe("composite producers (dev/67-2 — the composites stop running blind)",
 
   it("a never-executed node still says so through targetContext", () => {
     const att = attachment({
-      coord: "agent.node-builder@1.0.0",
+      coord: "agent.curio.node-builder@1",
       target: { kind: "node", targetId: "n1" },
       reads: ["targetContext"],
     });
@@ -272,7 +272,7 @@ describe("composite producers (dev/67-2 — the composites stop running blind)",
 
   it("Dataset Finder gets at least the mission on a canvas target", () => {
     const att = attachment({
-      coord: "agent.dataset-finder@1.0.0",
+      coord: "agent.curio.dataset-finder@1",
       target: { kind: "canvas" },
       reads: ["mission", "nodeContext", "catalog"],
     });
@@ -284,7 +284,7 @@ describe("composite producers (dev/67-2 — the composites stop running blind)",
 
   it("an empty canvas still yields null for mission-less reads (regression)", () => {
     const att = attachment({
-      coord: "agent.dataset-finder@1.0.0",
+      coord: "agent.curio.dataset-finder@1",
       reads: ["mission", "catalog"],
     });
     expect(

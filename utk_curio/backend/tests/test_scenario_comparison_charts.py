@@ -256,7 +256,7 @@ def test_21_scenarios_each_keep_their_rows_with_a_case_widget():
             if circle == 0:
                 assert "value" not in widget and "copiedFrom" not in keep["metadata"]
             else:
-                # Its lineage pairs it with the first scenario's in What differs.
+                # Its lineage makes it the same lever as the first scenario's.
                 assert keep["metadata"]["copiedFrom"] == [first["id"]]
     for scenario in scenarios:
         charts = {_targets(flow, node_id)[0] for node_id in scenario["nodes"]}
@@ -339,7 +339,12 @@ def test_each_chart_is_its_templates_spec_with_the_columns_in_its_widgets(datase
         else:
             assert "value" in widget, f"{chart['title']}: {name} is left at its default"
             assert values[name] in columns, f"{chart['title']}: {name} = {values[name]!r}, not in {columns}"
-    assert set(CHIP.findall(chart["content"])) == {w["name"] for w in widgets}
+    # Its other chips write the dataset its inputs are stacked in, and the
+    # scenarios, from the boxes its inputs come from.
+    chips = set(CHIP.findall(chart["content"]))
+    assert "inputs" in chips
+    assert {c for c in chips if not c.startswith("scenario ") and c != "inputs"} == {w["name"] for w in widgets}
+    assert {c for c in chips if c.startswith("scenario ")} <= {"scenario colors", "scenario text_colors", "scenario order"}
 
 
 def test_the_grouped_bars_and_the_table_draw_what_their_compare_presets_drew():
@@ -424,8 +429,8 @@ def test_the_rows_stack_under_their_boxes_and_the_chart_reads_columns_they_have(
     The chart reads them all as ``inputs``, stacked as ``stack_inputs`` stacks a
     chart's inputs, each under the box of the node it came from: the boxes' ids
     and names in the order of the circles, each scenario with its case's rows,
-    and the stack's columns. Its spec, its chips given its widgets' values,
-    reads only columns of that stack."""
+    and the stack's columns. Its spec, its chips given its widgets' values and
+    its inputs' boxes, reads only columns of that stack."""
     from utk_curio.backend.app.agents.domain.document_validation import STATUS_VALID, validate_vega_lite
     from utk_curio.backend.app.execution.code_references import resolve_references
     from utk_curio.sandbox.util.scenario_stack import stack_inputs
@@ -451,9 +456,14 @@ def test_the_rows_stack_under_their_boxes_and_the_chart_reads_columns_they_have(
     columns = list(stacked[0])
     assert columns == [*INPUT_COLUMNS, *_table_columns(dataset_id)]
     assert all(list(r) == columns for r in stacked)
+    rank = {box["id"]: place for place, box in enumerate(flow["scenarios"])}
+    labels = [{"scenario": box["id"], "name": box["name"], "color": box["color"], "rank": rank[box["id"]]} for box in boxes]
+    # The chart names the dataset its inputs are stacked in by its chip, which
+    # its run writes as that dataset's name.
+    assert '"name": "[!! inputs !!]"' in row["chart"]["content"]
     spec, problems = resolve_references(
         row["chart"]["content"], widgets=row["chart"]["metadata"]["widgets"], language="json",
-        inputs=[{"slot": circle} for circle in range(len(names))],
+        inputs=[{"slot": circle, "scenario": label} for circle, label in enumerate(labels)],
     )
     assert not problems and not CHIP.search(spec), problems
     assert json.loads(spec)["data"] == {"name": "inputs"}

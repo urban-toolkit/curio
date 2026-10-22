@@ -1,6 +1,7 @@
 // A node's wired inputs, for its input chips and tags (#662): which circles
-// have an edge, the node feeding each, what each holds, and the columns read
-// for it on request.
+// have an edge, the node feeding each, what each holds, the columns read for
+// it on request, and the scenario label its rows carry, which the scenario
+// chips write (utils/scenarios/inputScenarios).
 import { useCallback, useMemo, useRef, useState } from "react";
 import { useFlowContext } from "../providers/FlowProvider";
 import { emptyWiredSlots } from "../utils/inputSlots";
@@ -12,6 +13,8 @@ import {
     type InputColumns,
 } from "../utils/references/inputScope";
 import { resolveNodeDisplayLabel } from "../utils/palettePackageFactoryDraft";
+import { inputScenarios } from "../utils/scenarios/inputScenarios";
+import type { Scenario } from "../utils/scenarios/scenarioModel";
 
 function labelOf(data: any): string | null {
     try {
@@ -27,9 +30,10 @@ export function useInputScope(data: any): {
     emptyInputs: number[];
     loadColumns: (slot: number) => void;
 } {
-    const flow = useFlowContext() as { nodes?: any[]; edges?: any[] };
+    const flow = useFlowContext() as { nodes?: any[]; edges?: any[]; scenarios?: Scenario[] };
     const nodes = flow?.nodes ?? [];
     const edges = flow?.edges ?? [];
+    const scenarios = flow?.scenarios ?? [];
     const [readCount, setReadCount] = useState(0);
     const keyed = useRef(new Map<string, InputColumns>());
     const inline = useRef(new WeakMap<object, InputColumns>());
@@ -47,9 +51,12 @@ export function useInputScope(data: any): {
         return value && typeof value === "object" ? inline.current.get(value as object) : undefined;
     };
 
-    const computed = inputScopeFor(data.nodeId, edges, nodes, valueOf, labelOf, columnsOf);
+    const labels = new Map(inputScenarios(data.nodeId, nodes, edges, scenarios).map((input) => [input.slot, input.label]));
+    const computed = inputScopeFor(data.nodeId, edges, nodes, valueOf, labelOf, columnsOf).map((input) =>
+        labels.has(input.slot) ? { ...input, scenario: labels.get(input.slot) } : input,
+    );
     // The same list keeps its identity, so editors do not redraw their chips
-    // whenever an unrelated node moves.
+    // whenever an unrelated node moves; a box renamed or recolored is a new one.
     const signature = JSON.stringify(computed);
     const inputs = useMemo(() => computed, [signature, readCount]);
 

@@ -24,13 +24,13 @@ const answering = (label: string, model: string, source = "default") => ({
 const listingOf = (overrides: Record<string, unknown> = {}) => ({
   configs: [WORK, LOCAL],
   default: WORK.id,
-  assignments: { "agent.node-builder": LOCAL.id },
+  assignments: { "agent.curio.node-builder": LOCAL.id },
   agents: [
-    { id: "agent.researcher", name: "Researcher", category: "node", choice: null, answers: answering("Work", "gpt-4o-mini") },
-    { id: "agent.dataflow-builder", name: "Dataflow Builder", category: "dataflow", choice: null,
+    { id: "agent.curio.researcher", name: "Researcher", category: "node", choice: null, answers: answering("Work", "gpt-4o-mini") },
+    { id: "agent.curio.dataflow-builder", name: "Dataflow Builder", category: "dataflow", choice: null,
       capabilities: ["dataflow.orchestrate"], solveRuns: ["Node Builder", "Dataset Finder"],
       answers: answering("Work", "gpt-4o-mini") },
-    { id: "agent.node-builder", name: "Node Builder", category: "node", choice: LOCAL.id,
+    { id: "agent.curio.node-builder", name: "Node Builder", category: "node", choice: LOCAL.id,
       answers: answering("Local", "llama3", "assigned") },
   ],
   deployment: { label: "Deployment default", endpointOffered: true, apiType: "openai_compatible",
@@ -91,7 +91,7 @@ beforeEach(() => {
   jest.clearAllMocks();
   mockApi.listing.mockImplementation(() => Promise.resolve(mockListing));
   mockApi.setAssignments.mockImplementation(() => Promise.resolve(mockListing));
-  mockApi.remove.mockResolvedValue({ deleted: LOCAL.id, moved: ["agent.node-builder"], default: WORK.id });
+  mockApi.remove.mockResolvedValue({ deleted: LOCAL.id, moved: ["agent.curio.node-builder"], default: WORK.id });
 });
 
 const models = async () => within(await screen.findByTestId("agent-models-section"));
@@ -142,11 +142,11 @@ describe("Agent configuration", () => {
     render(<Panel />);
     await models();
     fireEvent.change(select("Researcher"), { target: { value: LOCAL.id } });
-    await waitFor(() => expect(mockApi.setAssignments).toHaveBeenCalledWith({ "agent.researcher": LOCAL.id }));
+    await waitFor(() => expect(mockApi.setAssignments).toHaveBeenCalledWith({ "agent.curio.researcher": LOCAL.id }));
     await waitFor(() => expect(select("Node Builder")).toBeEnabled());
     fireEvent.change(select("Node Builder"), { target: { value: "" } });
     await waitFor(() =>
-      expect(mockApi.setAssignments).toHaveBeenLastCalledWith({ "agent.node-builder": null }),
+      expect(mockApi.setAssignments).toHaveBeenLastCalledWith({ "agent.curio.node-builder": null }),
     );
   });
 
@@ -160,10 +160,10 @@ describe("Agent configuration", () => {
   it("says what Solve runs for any agent that declares dataflow.orchestrate, by the names it gets", async () => {
     mockListing = listingOf({
       agents: [
-        { id: "agent.my-orchestrator", name: "My Orchestrator", category: "canvas", choice: null,
+        { id: "agent.test.my-orchestrator", name: "My Orchestrator", category: "canvas", choice: null,
           capabilities: ["dataflow.orchestrate"], solveRuns: ["My Builder", "My Finder"],
           answers: answering("Work", "gpt-4o-mini") },
-        { id: "agent.my-builder", name: "My Builder", category: "node", choice: null,
+        { id: "agent.test.my-builder", name: "My Builder", category: "node", choice: null,
           capabilities: ["node.build", "node.content.generate"], answers: answering("Work", "gpt-4o-mini") },
       ],
     });
@@ -175,8 +175,8 @@ describe("Agent configuration", () => {
 
   it("shows why an agent has nothing to run on", async () => {
     mockListing = listingOf({
-      agents: [{ id: "agent.researcher", name: "Researcher", category: "node", choice: "llm-gone",
-        answers: { source: null, error: "The LLM configuration chosen for agent.researcher no longer exists." } }],
+      agents: [{ id: "agent.curio.researcher", name: "Researcher", category: "node", choice: "llm-gone",
+        answers: { source: null, error: "The LLM configuration chosen for agent.curio.researcher no longer exists." } }],
     });
     render(<Panel />);
     const section = await models();
@@ -184,7 +184,7 @@ describe("Agent configuration", () => {
   });
 
   it("opens on the agent a card asked about", async () => {
-    render(<Panel focus={{ section: "agent-models", agentId: "agent.dataflow-builder" }} />);
+    render(<Panel focus={{ section: "agent-models", agentId: "agent.curio.dataflow-builder" }} />);
     await models();
     await waitFor(() => expect(select("Dataflow Builder")).toHaveFocus());
   });

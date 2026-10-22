@@ -105,6 +105,10 @@ WORKFLOW_FILES = [
     # isolated stack runs it too (ISOLATED_WORKFLOWS in docker-compose.yml).
     "docs/examples/dataflows/netcdf-hourly-rain.json",
 
+    # Downtown Chicago's layers, one of every kind an Autark map draws, through
+    # a Map Edits node to the map it is linked to.
+    "docs/examples/dataflows/chicago-loop-layers.json",
+
     # Curated examples shown in docs/README.md. These are the showcase
     # workflows — including the modular autk-grammar GPU/compute chains — so
     # they belong in the browser matrix, not just the structural checks in

@@ -12,8 +12,8 @@ from utk_curio.backend.app.agents.application.proposals import plans
 from utk_curio.backend.app.agents.application.solve import rounds
 from utk_curio.backend.app.agents.application.turns import grounding
 
-DF = "agent.dataset-finder@1.0.0"
-NB = "agent.node-builder@1.0.0"
+DF = "agent.curio.dataset-finder@1"
+NB = "agent.curio.node-builder@1"
 
 
 def _spec(*coords, node_type="curio.builtin/data-loading"):
@@ -32,7 +32,7 @@ class TestAttachPlanNodeAgents:
         spec = _spec(NB, DF)
         out = plans._attach_plan_node_agents("1", spec, "n1", "curio.builtin/data-loading")
         assert sorted(r["agentId"] for r in out["attached"]) == [
-            "agent.dataset-finder", "agent.node-builder",
+            "agent.curio.dataset-finder", "agent.curio.node-builder",
         ]
         assert out["skipped"] == []
         coords = {a["coord"] for a in spec["dataflow"]["agentAttachments"]}
@@ -43,8 +43,8 @@ class TestAttachPlanNodeAgents:
     def test_non_data_loading_node_gets_only_the_builder(self):
         spec = _spec(NB, DF, node_type="curio.builtin/vis-vega")
         out = plans._attach_plan_node_agents("1", spec, "n1", "curio.builtin/vis-vega")
-        assert [r["agentId"] for r in out["attached"]] == ["agent.node-builder"]
-        assert [r["agentId"] for r in out["skipped"]] == ["agent.dataset-finder"]
+        assert [r["agentId"] for r in out["attached"]] == ["agent.curio.node-builder"]
+        assert [r["agentId"] for r in out["skipped"]] == ["agent.curio.dataset-finder"]
         assert "does not attach to vis-vega nodes" in out["skipped"][0]["reason"]
         assert [a["coord"] for a in spec["dataflow"]["agentAttachments"]] == [NB]
 
@@ -65,7 +65,7 @@ class TestAttachPlanNodeAgents:
     def test_uninstalled_agent_is_skipped_with_a_reason(self):
         spec = _spec(NB)  # no Dataset Finder in the lockfile
         out = plans._attach_plan_node_agents("1", spec, "n1", "curio.builtin/data-loading")
-        assert [r["agentId"] for r in out["attached"]] == ["agent.node-builder"]
+        assert [r["agentId"] for r in out["attached"]] == ["agent.curio.node-builder"]
         assert out["skipped"][0]["reason"] == "not installed in this dataflow"
 
     def test_missing_node_never_raises(self):

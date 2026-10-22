@@ -55,22 +55,9 @@
         }
       },
       {
-        "id": "niteroi-pool",
-        "type": "curio.builtin/data-pool",
-        "x": 1935,
-        "y": 458,
-        "content": "",
-        "out": "DEFAULT",
-        "in": "DEFAULT",
-        "goal": "Fan augmented roads (plus context layers) out to map and plot; route brush selections on roads back from plot to map.",
-        "metadata": {
-          "keywords": []
-        }
-      },
-      {
         "id": "niteroi-map",
         "type": "curio.builtin/autk-grammar",
-        "x": 2586,
+        "x": 1940,
         "y": 657,
         "width": 759,
         "height": 640,
@@ -85,14 +72,14 @@
       {
         "id": "niteroi-plot",
         "type": "curio.builtin/autk-grammar",
-        "x": 2580,
+        "x": 1935,
         "y": 0,
         "width": 770,
         "height": 577,
         "content": "{\n  \"plot\": {\n    \"dataRef\": \"table_osm_roads\",\n    \"mark\": \"scatter\",\n    \"axis\": [\n      \"intercept\",\n      \"angle\"\n    ],\n    \"title\": \"LST regression, warming angle vs baseline (Niterói roads)\",\n    \"events\": [\n      \"brush\"\n    ]\n  }\n}",
         "out": "DEFAULT",
         "in": "DEFAULT",
-        "goal": "Brushable scatter of warming angle vs LST baseline; brushing routes through the pool to highlight roads on the 3D map.",
+        "goal": "Brushable scatter of warming angle vs LST baseline; brushing highlights the matching roads on the 3D map.",
         "metadata": {
           "keywords": []
         }
@@ -117,31 +104,20 @@
         "target": "niteroi-compute"
       },
       {
-        "id": "reactflow__edge-niteroi-computeout-niteroi-poolin",
+        "id": "reactflow__edge-niteroi-computeout-niteroi-mapin",
         "source": "niteroi-compute",
-        "target": "niteroi-pool"
-      },
-      {
-        "id": "reactflow__edge-niteroi-poolout-niteroi-mapin",
-        "source": "niteroi-pool",
         "target": "niteroi-map"
       },
       {
-        "id": "reactflow__edge-niteroi-poolout-niteroi-plotin",
-        "source": "niteroi-pool",
+        "id": "reactflow__edge-niteroi-computeout-niteroi-plotin",
+        "source": "niteroi-compute",
         "target": "niteroi-plot"
       },
       {
         "type": "Interaction",
-        "id": "reactflow__edge-niteroi-poolin/out-niteroi-mapin/out",
-        "source": "niteroi-pool",
+        "id": "reactflow__edge-niteroi-plotin/out-niteroi-mapin/out",
+        "source": "niteroi-plot",
         "target": "niteroi-map"
-      },
-      {
-        "type": "Interaction",
-        "id": "reactflow__edge-niteroi-poolin/out-niteroi-plotin/out",
-        "source": "niteroi-pool",
-        "target": "niteroi-plot"
       }
     ],
     "name": "Autark spatial join + regression",

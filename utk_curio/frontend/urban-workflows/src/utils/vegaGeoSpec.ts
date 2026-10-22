@@ -43,6 +43,7 @@
  */
 import { detectCrs } from "./geoCrs";
 import { isGeoJsonGeometry, resolveGeometryField } from "./geometryField";
+import { vegaFieldColumn, vegaFieldName } from "./vegaFieldNames";
 
 /** Why a grammar node has nothing to draw. Mirrors `NodeEmptyReason`. */
 export type GeoEmptyReason = "geometry-unresolved" | "geometry-ambiguous";
@@ -280,7 +281,9 @@ export function normalizeGeoSpec(
 
     if (isGeoshape && field != null && unit.encoding?.shape == null && !hasOwnData(unit)) {
       unit.encoding = unit.encoding ?? {};
-      unit.encoding.shape = { field, type: "geojson" };
+      // The column's name as a Vega-Lite field: `the.geom` would read `geom`
+      // inside `the` (issue 1042).
+      unit.encoding.shape = { field: vegaFieldName(field), type: "geojson" };
     }
 
     const usesProjection =
@@ -295,11 +298,13 @@ export function normalizeGeoSpec(
   }
 
   // --- Pass 3: coerce the values the geojson fields will read -----------
+  // A field names its column as it is written, or escaped for Vega-Lite
+  // (`the\.geom` for the column `the.geom`, issue 1042).
   const geoFields = new Set<string>();
   for (const { unit } of units) {
     const shape = unit?.encoding?.shape;
     if (isObject(shape) && shape.type === "geojson" && typeof shape.field === "string") {
-      geoFields.add(shape.field);
+      geoFields.add(Array.isArray(values) ? vegaFieldColumn(values, shape.field) ?? shape.field : shape.field);
     }
   }
 

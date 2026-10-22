@@ -267,6 +267,10 @@ class NodeSpec:
     #: #662: the node's selection tags (``metadata.selections``), each holding
     #: the ids its ``[!! selection name !!]`` references resolve to.
     selections: list = field(default_factory=list)
+    #: Its title, and its renamed header (``metadata.packageTemplateLabel``):
+    #: what an input it feeds from no scenario box is named by.
+    title: str = ""
+    template_label: str = ""
 
     @property
     def has_play_button(self) -> bool:
@@ -281,6 +285,13 @@ class WorkflowSpec:
     name: str
     nodes: list          # list[NodeSpec]
     edges: list          # list[dict]  –  each: {id, source, target, type?}
+    #: #662: the dataflow's scenario boxes (``dataflow.scenarios``), as a spec
+    #: keeps them (``projects/scenarios.normalize_scenarios``).
+    scenarios: list = field(default_factory=list)
+    #: The template labels by unversioned id (``node_names.template_labels``),
+    #: when the caller has them: what an untitled node is named by, as its
+    #: canvas header names it.
+    labels: dict | None = None
 
     @property
     def nodes_count(self) -> int:
@@ -346,10 +357,63 @@ class WorkflowSpec:
             for widget in n.widgets
         ]
 
-    def node_code(self, node, language: str, content: str | None = None) -> str:
+    def node_label(self, node_id: str) -> str:
+        """What the canvas names the node *node_id* as an input's label: its
+        title, else its header as ``node_names.display_label`` writes it, its
+        template's label looked up by the canonical template id as
+        ``node_names.saved_node_label`` looks it up, else the first characters
+        of its id; ``nodeLabel`` in ``components/scenarios/scenarioLabels.ts``."""
+        from utk_curio.backend.app.execution.node_names import display_label
+        from utk_curio.backend.app.packages.service import canonical_template_id
+
+        node = next((n for n in self.nodes if n.id == node_id), None)
+        if node is None:
+            return node_id[:8]
+        if isinstance(node.title, str) and node.title.strip():
+            return node.title.strip()
+        template = (self.labels or {}).get(canonical_template_id(node.raw_type)) if node.raw_type else None
+        return display_label(node.raw_type, node.template_label, template) or node_id[:8]
+
+    def input_scenarios(self, node_id: str) -> dict:
+        """The label each wired circle of *node_id* carries, by circle: the id,
+        name, color and rank of the box its feeding node is in (the first box
+        that holds it, ranked by its place in the dataflow's list), else that
+        node's name in grey. What the scenario chips write, as the canvas's
+        ``inputScenarios`` labels an input (``utils/scenarios/inputScenarios.ts``):
+        an interaction edge is no input, and a circle is fed by the first edge
+        that lands on it."""
+        from utk_curio.backend.app.execution.code_references import NO_SCENARIO_COLOR
+
+        box_of: dict = {}
+        for rank, scenario in enumerate(self.scenarios):
+            for member in scenario.get("nodes") or []:
+                box_of.setdefault(member, (rank, scenario))
+        sources: dict = {}
+        for edge in self.edges:
+            if edge.get("target") != node_id or edge.get("type") == "Interaction":
+                continue
+            if edge.get("sourceHandle") == "in/out" and edge.get("targetHandle") == "in/out":
+                continue
+            slot = input_slot(edge)
+            if slot >= 0 and slot not in sources:
+                sources[slot] = edge.get("source")
+        labels: dict = {}
+        for slot in sorted(sources):
+            source = sources[slot]
+            if source in box_of:
+                rank, scenario = box_of[source]
+                labels[slot] = {"scenario": scenario["id"], "name": scenario["name"], "color": scenario["color"], "rank": rank}
+            else:
+                labels[slot] = {"name": self.node_label(source), "color": NO_SCENARIO_COLOR}
+        return labels
+
+    def node_code(self, node, language: str, content: str | None = None, grammar: str | None = None) -> str:
         """*node*'s code (or *content* in its place) with its references
         resolved as the canvas resolves them before a run: its widgets, its
-        wired circles, the shared tags and its selection tags. Raises
+        wired circles, each with the scenario label its rows carry, the shared
+        tags and its selection tags. *grammar* is the grammar its JSON document
+        is written in, which a Vega-Lite chart's spec names to write a column's
+        name escaped where Vega-Lite reads a field. Raises
         ``CodeReferenceError``."""
         return resolve_code_references(
             node.content if content is None else content,
@@ -358,6 +422,8 @@ class WorkflowSpec:
             self.input_slots(node.id),
             self.shared_widgets(),
             node.selections,
+            grammar,
+            input_scenarios=self.input_scenarios(node.id),
         )
 
     def topo_sorted_nodes(self) -> list:
@@ -435,6 +501,7 @@ def parse_workflow(filepath: str) -> WorkflowSpec:
             category=classify_node(normalize_type(n["type"])),
             widgets=normalize_widgets((n.get("metadata") or {}).get("widgets")),
             selections=normalize_selections((n.get("metadata") or {}).get("selections")),
+            **_names_of(n),
         )
         for n in dataflow["nodes"]
     ]
@@ -458,7 +525,22 @@ def parse_workflow(filepath: str) -> WorkflowSpec:
         name=data.get("name", os.path.basename(filepath)),
         nodes=nodes,
         edges=edges,
+        scenarios=_scenarios_of(dataflow, nodes),
     )
+
+
+def _names_of(node: dict) -> dict:
+    """A saved node's title and renamed header, for ``NodeSpec``."""
+    metadata = node.get("metadata") if isinstance(node.get("metadata"), dict) else {}
+    title, header = node.get("title"), metadata.get("packageTemplateLabel")
+    return {"title": title if isinstance(title, str) else "", "template_label": header if isinstance(header, str) else ""}
+
+
+def _scenarios_of(dataflow: dict, nodes: list) -> list:
+    """The dataflow's scenario boxes as a spec keeps them, against its nodes."""
+    from utk_curio.backend.app.projects.scenarios import normalize_scenarios
+
+    return normalize_scenarios((dataflow or {}).get("scenarios"), [n.id for n in nodes])
 
 
 
@@ -484,11 +566,15 @@ def _classify_with_roster(raw_type: str, templates: dict | None) -> tuple[str, s
     return (legacy_category if legacy_category != "code" else "passive"), engine
 
 
-def parse_workflow_dict(data: dict, *, name: str = "", templates: dict | None = None) -> WorkflowSpec:
+def parse_workflow_dict(
+    data: dict, *, name: str = "", templates: dict | None = None, labels: dict | None = None,
+) -> WorkflowSpec:
     """Build a :class:`WorkflowSpec` from an in-memory project spec dict —
     the app-side entry (`projects_storage.read_spec` output); byte-equivalent
     field mapping to :func:`parse_workflow`. ``templates`` (dev/119): the
-    roster snapshot that classifies executability; None → the legacy tables."""
+    roster snapshot that classifies executability; None → the legacy tables.
+    ``labels``: the project's template labels (``node_names.template_labels``),
+    which name an untitled input from no scenario box as its header does."""
     dataflow = (data or {}).get("dataflow") or {}
     nodes = []
     for n in dataflow.get("nodes") or []:
@@ -509,6 +595,7 @@ def parse_workflow_dict(data: dict, *, name: str = "", templates: dict | None = 
             engine=engine,
             widgets=normalize_widgets((n.get("metadata") or {}).get("widgets")),
             selections=normalize_selections((n.get("metadata") or {}).get("selections")),
+            **_names_of(n),
         ))
     edges = [
         {
@@ -525,7 +612,8 @@ def parse_workflow_dict(data: dict, *, name: str = "", templates: dict | None = 
         if isinstance(e, dict)
     ]
     return WorkflowSpec(
-        filepath="", name=name or (data or {}).get("name", ""), nodes=nodes, edges=edges
+        filepath="", name=name or (data or {}).get("name", ""), nodes=nodes, edges=edges,
+        scenarios=_scenarios_of(dataflow, nodes), labels=labels,
     )
 
 
@@ -598,23 +686,29 @@ def seed_node_code(code: str, seed: int = 42) -> str:
 
 
 def resolve_code_references(
-    code: str, widgets=(), language: str = "python", input_slots=(), shared=(), selections=()
+    code: str, widgets=(), language: str = "python", input_slots=(), shared=(), selections=(), grammar=None,
+    input_scenarios=None,
 ) -> str:
     """Replace a node's references with code, exactly as the frontend does
     before posting to the sandbox (#662): widget references with their values,
     input and column references by *input_slots*, the circles that have an
     edge, shared references with the values of the *shared* widgets
-    (``WorkflowSpec.shared_widgets``), and selection references with the ids
-    the node's *selections* hold (``metadata.selections``).
+    (``WorkflowSpec.shared_widgets``), selection references with the ids the
+    node's *selections* hold (``metadata.selections``), and scenario chips
+    with the label each circle carries in *input_scenarios*
+    (``WorkflowSpec.input_scenarios``). In a JSON document of the *grammar*
+    ``vega-lite``, a name where Vega-Lite reads a field is written escaped
+    (``code_references.resolve_references``).
 
     Raises ``CodeReferenceError`` naming every reference that cannot be
     resolved: an old ``[!! name$TYPE$default !!]`` marker, a name the node has
     no widget or selection tag for, an input with no edge, a Parameter node
-    that is missing or named twice, or a selection holding more ids than a tag
-    takes.
+    that is missing or named twice, a selection holding more ids than a tag
+    takes, or a scenario chip where no label is known.
     """
-    inputs = [{"slot": slot} for slot in input_slots]
-    resolved, problems = resolve_references(code, widgets, language, inputs, shared, selections)
+    labels = input_scenarios or {}
+    inputs = [{"slot": slot, **({"scenario": labels[slot]} if slot in labels else {})} for slot in input_slots]
+    resolved, problems = resolve_references(code, widgets, language, inputs, shared, selections, grammar)
     if problems:
         raise CodeReferenceError("\n".join(p["message"] for p in problems))
     return resolved

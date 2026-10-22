@@ -32,7 +32,7 @@ from utk_curio.backend.tests.test_agents.test_document_validation import (
 from utk_curio.backend.tests.test_agents.test_verified_rounds import _drive, _Exec
 
 #: Node content is the Node Builder's node.content.generate mode.
-NB = "agent.node-builder@1.0.0"
+NB = "agent.curio.node-builder@1"
 KEY = "4343"
 PID = "p-reply-schema"
 
@@ -257,7 +257,7 @@ class TestWhenARunSendsOne:
 def _delegate(inputs, config=None):
     return delegation.run_delegate(
         KEY, PID, NB, "node.content.generate", inputs, config or _config(),
-        parent_execution_id="parent", parent_coord="agent.dataflow-builder@1.0.0", attachment_id=None,
+        parent_execution_id="parent", parent_coord="agent.curio.dataflow-builder@1", attachment_id=None,
     )
 
 
@@ -335,7 +335,7 @@ class TestADelegatedDocument:
         with app.test_request_context():
             events, outcome = _drive(services._verified_content_rounds(
                 KEY, PID, spec=spec, node=node, resolution=resolution, config=_config(),
-                parent_execution_id="exec-1", parent_coord="agent.dataflow-builder@1.0.0",
+                parent_execution_id="exec-1", parent_coord="agent.curio.dataflow-builder@1",
                 attachment_id="att-1", exec_fn=_Exec(),
                 grounding_loop_ctx={"granted": [], "manifest": None},
             ))

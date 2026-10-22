@@ -4,9 +4,9 @@ A node's widgets are declared in its Widgets tab. Each shows as a tag, which is
 dragged into the code as a ``[!! name !!]`` reference; a run replaces the
 reference with the widget's value. This drives the whole path in a browser:
 
-1. Add a number widget in the panel, and drag its tag from the strip above the
-   code editor to the end of the first line. The reference lands where it is
-   dropped, not at the cursor, and is drawn as a chip.
+1. Add a number widget in the panel, open Widgets in the header above the code
+   editor, and drag its tag to the end of the first line. The reference lands
+   where it is dropped, not at the cursor, and is drawn as a chip.
 2. Run the node below it: the value reaches the sandbox.
 3. Change the value and run the node below again. The widget's node runs again
    too, although its code text did not change: a changed value makes it stale.
@@ -42,6 +42,7 @@ from .utils import (
     drag_builtin_to_canvas,
     node_execution_timeout_ms,
     node_locator,
+    open_strip_category,
     play_node,
     read_node_code,
     read_node_output_text,
@@ -128,6 +129,7 @@ _DRAG_TAG_TO_POINT_JS = r"""({ nodeId, name, x, y }) => {
 
 
 def _drag_tag_to_line_end(page, node_id: str, name: str, *, timeout: float = 15000) -> None:
+    open_strip_category(page, node_id, "widgets")
     deadline = time.time() + timeout / 1000
     point = page.evaluate(_LINE_END_POINT_JS, node_id)
     while not point["over"] and time.time() < deadline:
@@ -237,6 +239,7 @@ def test_a_widget_tag_drives_the_code_and_survives_a_reopen(
     # 1. The widget is added in the panel, and its tag dragged into the code.
     _add_number_widget(page, source, name="factor", label="Factor", default=2)
     _open_tab(page, source, "code")
+    open_strip_category(page, source, "widgets")
     strip_tag = node_locator(page, source).locator('[data-widget-strip] [data-widget-tag="factor"]')
     strip_tag.wait_for(state="visible", timeout=10000)
     _drag_tag_to_line_end(page, source, "factor")

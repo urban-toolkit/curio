@@ -40,7 +40,7 @@ def _spec(node):
 
 
 class _Resolution:
-    coord = "agent.node-builder@1.0.0"
+    coord = "agent.curio.node-builder@1"
     outcome = "ok"
 
 
@@ -83,7 +83,7 @@ def _rounds(app, node, *, replies, exec_fn, start_from_current=False, spec=None,
     with app.test_request_context():
         gen = rounds._verified_content_rounds(
             KEY, PID, spec=spec, node=node, resolution=_Resolution(), config=None,
-            parent_execution_id="exec-1", parent_coord="agent.dataflow-builder@1.0.0",
+            parent_execution_id="exec-1", parent_coord="agent.curio.dataflow-builder@1",
             attachment_id="att-1", exec_fn=exec_fn,
             grounding_loop_ctx={"granted": [], "manifest": None},
             start_from_current=start_from_current, delegate_runner=_delegate, **extra,
@@ -525,7 +525,7 @@ class TestConnectionKeys:
         with app.test_request_context():
             gen = rounds._verified_content_rounds(
                 KEY, PID, spec=_spec(node), node=node, resolution=_Resolution(), config=None,
-                parent_execution_id="e", parent_coord="agent.dataflow-builder@1.0.0",
+                parent_execution_id="e", parent_coord="agent.curio.dataflow-builder@1",
                 attachment_id="att-1", exec_fn=exec_fn, grounding_loop_ctx=shared_ctx,
                 delegate_runner=lambda inputs: ("ok", replies[min(len(probes) // 2, 2)], {"executionId": "c"}),
             )
@@ -582,6 +582,81 @@ class TestNotExecutableKinds:
         assert attempt["verdict"] == "not-executable" and attempt["kind"] == "not-executable"
         assert "no code the sandbox could run" in attempt["detail"]
         assert [k for k, _ in events if k == "round_verdict"] == ["round_verdict"]
+
+
+class TestScenarioChipsInTheCheck:
+    """#662: the loop checks a chart with its scenario chips resolved over the
+    saved dataflow, as the canvas resolves them before it draws: an untitled
+    input from no box is named by its template's label, as the node's header
+    names it, not by its type in words."""
+
+    def test_an_untitled_input_from_no_box_is_named_as_its_header_names_it(self, app, tmp_curio, monkeypatch):
+        import shutil
+
+        from utk_curio import shipped
+        from utk_curio.backend.app.agents.domain import document_validation
+        from utk_curio.backend.app.packages import service as packages_service
+        from utk_curio.backend.app.packages.repositories.store import user_packages_dir
+
+        # The account's store holds the built-in package, as every account's
+        # does: its templates' labels are what an untitled node's header shows.
+        builtin = shipped.path("packages/curio.builtin@1")
+        shutil.copytree(builtin, user_packages_dir(KEY) / builtin.name, dirs_exist_ok=True)
+        with app.test_request_context():
+            roster = {row["id"]: row.get("label") for row in packages_service.available_templates(KEY, PID)}
+        assert roster.get(CA) == "Python Computation", roster
+
+        checked: list = []
+        real = document_validation.validate
+
+        def spy(node_type, content, **kwargs):
+            checked.append(content)
+            return real(node_type, content, **kwargs)
+
+        monkeypatch.setattr(document_validation, "validate", spy)
+        chart = {"id": "chart", "type": VEGA, "goal": "compare the sources", "content": ""}
+        spec = {"dataflow": {
+            "nodes": [{"id": "py", "type": f"{CA}@1", "content": "return input_0"}, chart],
+            "edges": [{"id": "e-py", "source": "py", "target": "chart", "sourceHandle": "out", "targetHandle": "in"}],
+            "name": "wf", "task": "compare",
+        }}
+        # As Scout's charts write it: the dataset its inputs are stacked in, by its chip.
+        reply = (
+            '{"data": {"name": "[!! inputs !!]"}, "mark": "bar", "encoding": '
+            '{"x": {"field": "scenario_name", "type": "nominal", "sort": [!! scenario order !!]}}}'
+        )
+        _rounds(app, chart, replies=[reply], exec_fn=_Exec(), spec=spec)
+        assert checked, "the loop checked no document"
+        # The built-in Python node's label (packages/curio.builtin@1), not "Computation Analysis".
+        assert json.loads(checked[0])["encoding"]["x"]["sort"] == ["Python Computation"]
+        assert json.loads(checked[0])["data"] == {"name": "inputs"}
+
+
+class TestTheStackedDatasetChipInCode:
+    """``[!! inputs !!]`` names the dataset a Vega-Lite spec reads its inputs
+    stacked in: a Python node that reads it is refused in the chip's own words,
+    as a field of ``inputs`` is, without the chip reaching the sandbox, and the
+    next round is told why."""
+
+    def test_python_reading_the_dataset_chip_is_a_round_naming_it(self, app, tmp_curio):
+        node = {"id": "n1", "type": CA, "goal": "stack the scenarios", "content": ""}
+        spec = {"dataflow": {
+            "nodes": [{"id": "py", "type": f"{CA}@1", "content": "return input_0"}, node],
+            "edges": [{"id": "e-py", "source": "py", "target": "n1", "sourceHandle": "out", "targetHandle": "in"}],
+            "name": "wf", "task": "stack",
+        }}
+        exec_fn = _Exec()
+        events, outcome, inputs = _rounds(
+            app, node, replies=["rows = [!! inputs !!]\nreturn rows", "df = input_0\nreturn df"],
+            exec_fn=exec_fn, spec=spec,
+        )
+        refusal = "[!! inputs !!] is for a Vega-Lite spec, not for code."
+        first = outcome["attempts"][0]
+        assert first["verdict"] == "fail"
+        assert refusal in str(first.get("stderrTail") or first.get("detail") or ""), first
+        assert refusal in inputs[1]["validationError"]
+        assert all("[!! inputs !!]" not in call["code"] for call in exec_fn.calls), "the chip reached the sandbox"
+        assert outcome["verdict"] == "pass" and outcome["candidate"] == "df = input_0\nreturn df"
 
 
 class TestSameBatchReuse:
@@ -765,11 +840,11 @@ class TestValidateNodeCarriesDatasetPaths:
         dataset_id = routes_turns.TestDatasetFinderTools()._seed_dataset(user, filename="heat.csv")
         body = {"name": "p", "spec": {"dataflow": {"nodes": [], "edges": [], "packages": []}}, "outputs": []}
         pid = client.post("/api/projects", json=body, headers=_auth(token)).get_json()["id"]
-        for coord in ("agent.dataflow-builder@1.0.0", "agent.node-builder@1.0.0"):
+        for coord in ("agent.curio.dataflow-builder@1", "agent.curio.node-builder@1"):
             client.post(f"/api/agents/projects/{pid}/install", json={"coord": coord}, headers=_auth(token))
         att = client.post(
             f"/api/agents/projects/{pid}/attachments",
-            json={"coord": "agent.dataflow-builder@1.0.0", "target": {"kind": "canvas"}},
+            json={"coord": "agent.curio.dataflow-builder@1", "target": {"kind": "canvas"}},
             headers=_auth(token),
         ).get_json()["attachmentId"]
         plan = {"goal": "heat", "nodes": [
@@ -831,8 +906,8 @@ class TestVerifiedSolve:
     outage leaves the node pending; propose mode mints an EXECUTED review;
     ``verify: false`` keeps the legacy write."""
 
-    DFB = "agent.dataflow-builder@1.0.0"
-    NB = "agent.node-builder@1.0.0"
+    DFB = "agent.curio.dataflow-builder@1"
+    NB = "agent.curio.node-builder@1"
 
     def _plan_tail(self, with_stats=True):
         nodes = [{"ref": "load", "nodeType": DL, "title": "Load", "intent": "load the tract heat data"}]
@@ -1352,7 +1427,7 @@ class TestSolveNode:
     round 0 runs the current code; a node with content lands as an executed
     review; an empty node is written on PASS; exhaustion mints nothing."""
 
-    NB = "agent.node-builder@1.0.0"
+    NB = "agent.curio.node-builder@1"
     LOADER = 'import pandas as pd\ndataset_path = curio_data_path("{DATASET}")\ndf = pd.read_csv(dataset_path)\nreturn df'
 
     def _setup(self, client, user, token, monkeypatch, *, content, child_replies=(), exec_outcomes=None,
