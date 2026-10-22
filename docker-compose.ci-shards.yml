@@ -19,6 +19,16 @@
 # arithmetic true: shard k's host port == 5022+k, container port == 5002+k.
 services:
   curio:
+    # Overrides docker-compose.ci.yml's 4096, which bounds one backend and
+    # sandbox pair. This container holds one pair per worker, and every
+    # thread counts: the libraries in a sandbox size their thread pools by
+    # CPU count. test-gpu's six workers peaked at 3344 tasks on utk-gpu
+    # (64 CPUs) and 4571 on an arcade GPU runner (192 CPUs; 10-22, run
+    # 39730936887), where 4096 refused new threads and failed the job.
+    # 16384 leaves room for 8 workers on a larger host and still bounds the
+    # container. The isolation tests that 4096 is there for never run
+    # against this overlay.
+    pids_limit: 16384
     ports:
       - "127.0.0.1:${CURIO_E2E_SHARD1_BACKEND_PORT:-5023}:5003"
       - "127.0.0.1:${CURIO_E2E_SHARD1_SANDBOX_PORT:-2021}:2001"
