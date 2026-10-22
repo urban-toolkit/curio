@@ -193,6 +193,47 @@ class TestOnlyTheRuntimeSaysActionable:
     def test_an_invented_source_is_not_marked(self, app, shipped_root):
         assert self._row(sourceId="source.made.up@1", resourceId="x").get("acquirable") is None
 
+    def test_a_resource_its_source_does_not_describe_is_not_marked(
+        self, app, shipped_root, fixture_corpus
+    ):
+        """A real source with a resource id it does not have: the Discovery
+        Catalog is asked to describe the resource, as for a discovery.acquire
+        proposal, and the coordinate it does not confirm leaves the row. The
+        recorded resource of the same source stays downloadable."""
+        made_up = self._row(sourceId=self.CHICAGO["sourceId"], resourceId="zzzz-0000")
+        assert made_up.get("acquirable") is None
+        assert "sourceId" not in made_up and "resourceId" not in made_up
+        assert self._row(**self.CHICAGO)["acquirable"] is True
+
+    def test_a_spent_web_budget_confirms_no_resource(self, app, shipped_root, fixture_corpus):
+        """Asking the source spends the run's web budget, like a probe: with
+        none left, the source is not asked, and the row stays on the card
+        with its coordinate, unconfirmed and not offered for download."""
+        from utk_curio.backend.app.agents.infrastructure import egress
+
+        row = {"name": "Crimes", "sourceType": "discovery", **self.CHICAGO}
+        parts = [{"type": "datasetCandidates", "lanes": {"external": [row]}}]
+        _verify_candidate_parts(parts, {"_egress_budget": egress.CallBudget(0)})
+        assert row.get("acquirable") is None
+        assert (row["sourceId"], row["resourceId"]) == (self.CHICAGO["sourceId"], self.CHICAGO["resourceId"])
+
+    def test_a_parent_is_told_how_many_ids_went_unconfirmed(self, app, shipped_root, fixture_corpus):
+        """The parent model reads a delegated card through its summary, which
+        says how many ids the spent budget left unconfirmed, as a cut list
+        says what it left out."""
+        from utk_curio.backend.app.agents.application.turns import delegates
+        from utk_curio.backend.app.agents.infrastructure import egress
+
+        child = json.dumps({"datasetCandidates": {"lanes": {
+            "external": [{"name": "Crimes", "sourceType": "discovery", **self.CHICAGO}],
+            "catalog": [],
+        }}})
+        part, text, outcome = delegates._mint_candidates_from_delegate(
+            {"_egress_budget": egress.CallBudget(0)}, child, [],
+        )
+        assert outcome == "ok" and part["lanes"]["external"][0].get("acquirable") is None
+        assert "1 Discovery resource id(s) went unconfirmed" in text
+
     def test_a_row_with_no_coordinate_is_not_marked(self, app, shipped_root):
         assert self._row(url="https://a.example/x").get("acquirable") is None
 
