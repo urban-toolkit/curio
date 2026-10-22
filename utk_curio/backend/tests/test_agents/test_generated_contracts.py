@@ -298,6 +298,31 @@ class TestThePromptFacts:
         assert chip == reference_text(STACKED_DATASET) == "[!! inputs !!]"
         assert f'"data": {{"name": "{chip}"}}' in contracts.render_prompt("default_preamble")
 
+    def test_the_orchestration_rule_links_two_views_directly_and_names_the_four_pool_cases(self):
+        """An interaction edge carries selections, never data. Two views link
+        directly, and a Data Pool goes between them only when a Simple View
+        shows the selection, when selections are merged, when a Vega-Lite
+        chart colors its own selection through ``interacted``, or when three
+        or more views share one selection (owner, 10-21). The node names are
+        the manifest's labels."""
+        def label(template_id: str) -> str:
+            return contracts.render_template("{{template.label:curio.builtin/" + template_id + "}}")
+
+        rule = contracts.render_prompt("orchestration_instruction")
+        assert "carries selections, never data" in rule
+        assert "Link two views with one interaction edge between them" in rule
+        assert f"Put a {label('data-pool')} between views only when" in rule
+        for case in (
+            f"a {label('vis-simple')} must show the selection",
+            "selections are merged (AND or OR)",
+            f"a {label('vis-vega')} chart colors its own selection",
+            "three or more views share one selection",
+        ):
+            assert case in rule, case
+        assert "never valid into a transformation or analysis node" in rule
+        assert "ONE legitimate feedback link" not in rule
+        assert "feed back into the pool" not in rule
+
     def test_the_widget_facts_come_from_the_runtime(self):
         """#662: the kinds a widget takes and the references code places one
         by are the runtime's own (``WIDGET_KINDS``, ``reference_text``,

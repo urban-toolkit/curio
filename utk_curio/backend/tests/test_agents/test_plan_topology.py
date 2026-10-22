@@ -133,10 +133,13 @@ class TestInteractionEdgeErrors:
         (err,) = pt.interaction_edge_errors(plan, types.get, ROSTER)
         assert "a visualization that highlights what it receives (autk-grammar, vis-vega)" in err
 
-    def test_pool_to_pool_is_refused(self):
+    def test_pool_to_pool_is_legal_both_directions(self):
+        # Two Data Pools linked by an interaction edge, as the canvas links
+        # them: one flags the other's rows its `linked` column names.
         types = dict(TYPES, pool2="curio.builtin/data-pool")
-        plan = {"edges": [{"from": "pool", "to": "pool2", "kind": "interaction"}]}
-        assert len(pt.interaction_edge_errors(plan, types.get, ROSTER)) == 1
+        for src, dst in (("pool", "pool2"), ("pool2", "pool")):
+            plan = {"edges": [{"from": src, "to": dst, "kind": "interaction"}]}
+            assert pt.interaction_edge_errors(plan, types.get, ROSTER) == [], (src, dst)
 
     def test_unknown_template_fails_open(self):
         plan = {"edges": [{"from": "vis", "to": "mystery", "kind": "interaction"}]}

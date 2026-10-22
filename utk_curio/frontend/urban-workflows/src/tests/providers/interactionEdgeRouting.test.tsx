@@ -9,10 +9,12 @@
  * interaction edge, by design: a Data Pool echoes the rows a selection flags
  * to every node it feeds on data edges, and a selection tag reads any view.
  *
- * The tests in "a selection follows its edges as they change" fail on main:
- * removing an interaction edge, or the view at one end, leaves the selection
- * on the other view, and a new edge does not deliver the selection already
- * made.
+ * A selection follows its edges as they change: removing an interaction edge,
+ * or the node at one end, takes back what it delivered, a Data Pool's echo
+ * included, and a new edge delivers the selection already made. An edge that
+ * carries nothing, between two views that show no selection they receive, is
+ * refused, and a data edge from a pool back into a chart linked to it is no
+ * cycle, drawn or loaded: an interaction edge carries selections, never data.
  *
  * Harness as in growingInputPropagation.test.tsx. <ReactFlow> is wired as
  * MainCanvas wires it, so a delete takes the Delete key's path
@@ -319,6 +321,44 @@ const frame = () => ({
 /** The `interacted` flag of each row of a node's input, as a Data Pool sets them. */
 const flags = (nodeId: string) => Object.values(dataOf(nodeId)?.input?.data?.interacted ?? {});
 
+/** What onConnect says when it refuses an interaction edge between two nodes
+ * that show no selection they receive, such as two Simple Views. */
+const CARRIES_NOTHING =
+  'Neither node shows the selections it receives, so this interaction edge would carry nothing. ' +
+  'Link one to a Data Pool and feed the other from the pool.';
+
+/** An edge as a saved dataflow holds it. */
+const saved = (id: string, source: string, target: string, kind: 'data' | 'interaction') =>
+  kind === 'data'
+    ? { id, source, target, sourceHandle: 'out', targetHandle: 'in' }
+    : { id, source, target, sourceHandle: 'in/out', targetHandle: 'in/out', type: 'Interaction' };
+
+/** Open a dataflow's edges as loadParsedTrill does (hook/useWorkflowOperations.ts:524-545):
+ * each saved edge goes through onConnect, handed the edges replayed before it
+ * and skipValidation, and then the selections the flow held are reset. */
+async function load(edges: ReturnType<typeof saved>[]) {
+  await act(async () => {
+    const soFar: unknown[] = [];
+    for (const edge of edges) {
+      api.onConnect(edge as unknown as Connection, api.nodes, soFar, 'flow', false, true, true);
+      soFar.push(edge);
+    }
+    api.setInteractions(() => []);
+  });
+  await flush();
+}
+
+/** Rows arrive at *loader*, and the Data Pool *pool* hands them on unflagged
+ * before anyone selects: it takes a selection in only once it holds its rows
+ * (dataPoolBehavior.tsx:153). */
+async function rowsReachThePool(loader: string, pool: string, fedByPool: string) {
+  await act(async () => {
+    api.applyNewOutput({ nodeId: loader, output: frame() });
+  });
+  await waitFor(() => expect(poolBehaviors[pool]?.outputOverride?.content).toBeTruthy());
+  await waitFor(() => expect(flags(fedByPool)).toEqual(['0', '0', '0']));
+}
+
 afterEach(() => {
   resetViewSelections();
   for (const id of Object.keys(poolBehaviors)) delete poolBehaviors[id];
@@ -382,8 +422,6 @@ describe('by design, a selection also reaches views with no interaction edge', (
   test("a view fed by a Data Pool on a data edge, with no interaction edge of its own, gets the pool's rows with A's picks flagged", async () => {
     await renderFlow();
     await addNodes(makeNode('rows', LOADER), makeNode('pool', POOL), makeNode('A', VEGA), makeNode('C', VEGA));
-    // Data edges first: onConnect's cycle check follows interaction edges too
-    // (providers/flow/useConnect.ts:86-88), so `pool -> A` after `A <-> pool` is refused.
     await draw('rows', 'pool', 'data');
     await draw('pool', 'A', 'data');
     await draw('pool', 'C', 'data');
@@ -436,10 +474,11 @@ describe('by design, a selection also reaches views with no interaction edge', (
   });
 });
 
-// These fail on main. Deleting an edge or a node leaves the other node's
-// data.interactions as they were (providers/flow/useGraphEdits.ts:291-373),
-// and routing runs only when a selection changes, not when an edge is drawn
-// (providers/flow/useInteractions.ts:205-207).
+// Removing an edge or a node takes back what the edge delivered, and a new
+// edge delivers the selection its ends already hold. On main, a delete left
+// the other node's data.interactions as they were
+// (providers/flow/useGraphEdits.ts:291-373), and routing ran only when a
+// selection changed (providers/flow/useInteractions.ts:205-207).
 describe('a selection follows its edges as they change', () => {
   test("removing the interaction edge between A and B clears B's selection", async () => {
     await renderFlow();
@@ -490,27 +529,156 @@ describe('a selection follows its edges as they change', () => {
 
     expect(picksFrom('B', 'A')).toEqual([1]);
   });
+
+  test("drawing an interaction edge from A to B after B selected gives A B's selection", async () => {
+    await renderFlow();
+    await addNodes(makeNode('A', VEGA), makeNode('B', VEGA));
+    await select('B', pick([2]));
+    expect(picksFrom('A', 'B')).toEqual([]);
+
+    await draw('A', 'B', 'interaction');
+    expectDrawn([['A', 'B', 'interaction']]);
+
+    expect(picksFrom('A', 'B')).toEqual([2]);
+  });
+
+  test("an edge drawn from A after A, then C, selected gives B A's selection", async () => {
+    await renderFlow();
+    await addNodes(makeNode('A', VEGA), makeNode('B', VEGA), makeNode('C', VEGA));
+    await select('A', pick([1]));
+    // C selected last, so A's is no longer the newest selection the flow holds.
+    await select('C', pick([2]));
+
+    await draw('A', 'B', 'interaction');
+    expectDrawn([['A', 'B', 'interaction']]);
+
+    expect(picksFrom('B', 'A')).toEqual([1]);
+    expect(picksFrom('B', 'C')).toEqual([]);
+  });
+
+  test('guard: a dataflow opened after a selection was made gets nothing from it', async () => {
+    await renderFlow();
+    await addNodes(makeNode('A', VEGA), makeNode('B', VEGA));
+    await select('A', pick([1]));
+
+    await load([saved('link', 'A', 'B', 'interaction')]);
+    expectDrawn([['A', 'B', 'interaction']]);
+
+    expect(picksFrom('B', 'A')).toEqual([]);
+  });
+
+  test("removing the interaction edge between a chart and a Data Pool takes the chart's picks out of the rows the pool feeds", async () => {
+    await renderFlow();
+    await addNodes(makeNode('rows', LOADER), makeNode('pool', POOL), makeNode('A', VEGA), makeNode('C', VEGA));
+    await draw('rows', 'pool', 'data');
+    await draw('pool', 'A', 'data');
+    await draw('pool', 'C', 'data');
+    await draw('A', 'pool', 'interaction');
+    await rowsReachThePool('rows', 'pool', 'C');
+    await select('A', pick([1]));
+    await waitFor(() => expect(flags('C')).toEqual(['0', '1', '0']));
+
+    const link = api.edges.find((e) => e.sourceHandle === 'in/out')!.id;
+    await act(async () => {
+      canvas.deleteElements({ edges: [{ id: link }] });
+    });
+    await flush();
+    expect(drawn()).toEqual([['rows', 'pool', 'data'], ['pool', 'A', 'data'], ['pool', 'C', 'data']]);
+
+    await waitFor(() => expect(flags('C')).toEqual(['0', '0', '0']));
+  });
 });
 
 describe('Simple Views', () => {
   // A Simple View marks only the rows whose `interacted` flag a Data Pool set
   // (adapters/node/simpleVisBehavior.tsx:169-174); it never reads data.interactions.
-  test('a Simple View linked to another by an interaction edge gets its clicks, and none of its rows is flagged', async () => {
+  test("a Simple View linked to a chart sends its clicks to the chart, and none of the Simple View's rows is flagged", async () => {
     await renderFlow();
-    await addNodes(makeNode('rows', LOADER), makeNode('S1', SIMPLE), makeNode('S2', SIMPLE));
-    await draw('rows', 'S1', 'data');
-    await draw('rows', 'S2', 'data');
-    await draw('S1', 'S2', 'interaction');
-    expectDrawn([['rows', 'S1', 'data'], ['rows', 'S2', 'data'], ['S1', 'S2', 'interaction']]);
+    await addNodes(makeNode('rows', LOADER), makeNode('S', SIMPLE), makeNode('A', VEGA));
+    await draw('rows', 'S', 'data');
+    await draw('rows', 'A', 'data');
+    await draw('S', 'A', 'interaction');
+    expectDrawn([['rows', 'S', 'data'], ['rows', 'A', 'data'], ['S', 'A', 'interaction']]);
     await act(async () => {
       api.applyNewOutput({ nodeId: 'rows', output: frame() });
     });
     await flush();
-    expect(dataOf('S2').input).toEqual(frame());
+    expect(dataOf('S').input).toEqual(frame());
 
-    await select('S1', cardClick(1));
+    await select('S', cardClick(1));
+    expect(picksFrom('A', 'S')).toEqual([1]);
 
-    expect(picksFrom('S2', 'S1')).toEqual([1]);
-    expect(dataOf('S2').input).toEqual(frame());
+    await select('A', pick([2]));
+    expect(dataOf('S').input).toEqual(frame());
+  });
+
+  test('an interaction edge between two Simple Views is refused, saying why', async () => {
+    await renderFlow();
+    await addNodes(makeNode('S1', SIMPLE), makeNode('S2', SIMPLE));
+
+    await draw('S1', 'S2', 'interaction');
+
+    expect(drawn()).toEqual([]);
+    expect(mockShowToast).toHaveBeenCalledWith(CARRIES_NOTHING, 'warning');
+  });
+
+  test('guard: a saved interaction edge between two Simple Views still opens, with no message', async () => {
+    await renderFlow();
+    await addNodes(makeNode('S1', SIMPLE), makeNode('S2', SIMPLE));
+
+    await load([saved('link', 'S1', 'S2', 'interaction')]);
+
+    expectDrawn([['S1', 'S2', 'interaction']]);
+  });
+});
+
+// A data edge from a Data Pool into a chart linked to it is no cycle: an
+// interaction edge carries selections, never data. On main the cycle check
+// followed interaction edges too (providers/flow/useConnect.ts:86-88).
+describe('a data edge from a pool into a chart linked to it', () => {
+  test('a chart linked to a pool, then fed by it, keeps both edges', async () => {
+    await renderFlow();
+    await addNodes(makeNode('rows', LOADER), makeNode('pool', POOL), makeNode('A', VEGA));
+    await draw('rows', 'pool', 'data');
+    await draw('A', 'pool', 'interaction');
+
+    await draw('pool', 'A', 'data');
+
+    expectDrawn([['rows', 'pool', 'data'], ['A', 'pool', 'interaction'], ['pool', 'A', 'data']]);
+  });
+
+  test('guard: so does a chart whose interaction edge was drawn from the pool', async () => {
+    await renderFlow();
+    await addNodes(makeNode('rows', LOADER), makeNode('pool', POOL), makeNode('A', VEGA));
+    await draw('rows', 'pool', 'data');
+    await draw('pool', 'A', 'interaction');
+
+    await draw('pool', 'A', 'data');
+
+    expectDrawn([['rows', 'pool', 'data'], ['pool', 'A', 'interaction'], ['pool', 'A', 'data']]);
+  });
+
+  test('a saved dataflow that lists the interaction edge first keeps its data edge when it is opened', async () => {
+    await renderFlow();
+    await addNodes(makeNode('rows', LOADER), makeNode('pool', POOL), makeNode('A', VEGA));
+
+    await load([
+      saved('link', 'A', 'pool', 'interaction'),
+      saved('feed', 'rows', 'pool', 'data'),
+      saved('back', 'pool', 'A', 'data'),
+    ]);
+
+    expectDrawn([['A', 'pool', 'interaction'], ['rows', 'pool', 'data'], ['pool', 'A', 'data']]);
+  });
+
+  test('guard: a data edge that closes a loop of data edges is still refused', async () => {
+    await renderFlow();
+    await addNodes(makeNode('A', VEGA), makeNode('B', VEGA));
+    await draw('A', 'B', 'data');
+
+    await draw('B', 'A', 'data');
+
+    expect(drawn()).toEqual([['A', 'B', 'data']]);
+    expect(mockShowToast).toHaveBeenCalledWith('Cycles are not allowed in the dataflow', 'warning');
   });
 });
