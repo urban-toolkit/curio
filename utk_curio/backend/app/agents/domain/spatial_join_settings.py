@@ -16,6 +16,7 @@ behavior ``packages.template_behavior`` reads, which the caller passes in.
 from __future__ import annotations
 
 from utk_curio.backend.app.common import spatial
+from utk_curio.backend.app.agents.domain import agent_text
 
 #: The behavior a Spatial Join template names.
 BEHAVIOR = "spatial-join"
@@ -32,11 +33,12 @@ def parse(raw: object, where: str) -> tuple[dict | None, list[str]]:
     if raw is None:
         return None, []
     if not isinstance(raw, dict):
-        return None, [f'{where} must be an object, such as {{"predicate": "within", "output": "counts"}}']
+        return None, [agent_text.message("spatial-join.not-object", where=where)]
     unknown = sorted(str(key) for key in set(raw) - set(SETTING_KEYS))
     if unknown:
-        return None, [f"{where} has keys a Spatial Join does not: {', '.join(unknown)} "
-                      f"(it has {', '.join(SETTING_KEYS)})"]
+        return None, [agent_text.message(
+            "spatial-join.unknown-keys", where=where, unknown=', '.join(unknown), setting_keys=', '.join(SETTING_KEYS),
+        )]
     problem = spatial.settings_problem(
         raw.get("predicate", spatial.DEFAULT_PREDICATE), raw.get("output", spatial.DEFAULT_OUTPUT),
     )
@@ -50,7 +52,7 @@ def template_problem(behavior: object, label: object, where: str) -> str | None:
     """Why a node whose template names *behavior* keeps no setting, or None."""
     if behavior == BEHAVIOR:
         return None
-    return f"{where}: a {label or 'this'} node has no operation or output; only a Spatial Join node takes {KEY}"
+    return agent_text.message("spatial-join.not-a-join", where=where, label=label or 'this', key=KEY)
 
 
 def plan_problems(nodes: list, entries: list, behavior_of) -> list[str]:

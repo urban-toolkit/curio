@@ -56,7 +56,6 @@ from utk_curio.backend.app.agents.domain import document_validation
 
 # A child's reply is untrusted context fed back to the parent loop — bounded.
 DELEGATE_RESULT_MAX_CHARS = 24_000
-_TRUNCATION_MARKER = "\n…[truncated: delegate result exceeded the output bound]"
 
 
 @dataclass(frozen=True)
@@ -335,7 +334,7 @@ def run_delegate(
         # configuration; an internal agent always runs on its caller's.
         config = provider_config.resolve_llm(user_key, coord.split("@", 1)[0], caller=config)
     except provider_config.ProviderConfigError as exc:
-        return ("error", f"delegate {coord} could not start: {exc}", _record("error", {}, {"coord": coord}))
+        return ("error", agent_text.message("delegate.could-not-start", coord=coord, exc=exc), _record("error", {}, {"coord": coord}))
     pins: dict = {"coord": coord, "provider": config.api_type, "model": config.model,
                   "llm": provider_config.llm_pin(config)}
     try:
@@ -344,11 +343,11 @@ def run_delegate(
     except _NoInstruction:
         return (
             "error",
-            f"delegate {coord} has no instruction prompt available",
+            agent_text.message("delegate.no-instruction", coord=coord),
             _record("error", {}, pins),
         )
     except Exception as exc:  # resolution/policy failure - data, not an error
-        return ("error", f"delegate {coord} could not start: {exc}", _record("error", {}, pins))
+        return ("error", agent_text.message("delegate.could-not-start", coord=coord, exc=exc), _record("error", {}, pins))
     pins = child.pins
 
     usage_sink: dict = {}
@@ -360,13 +359,13 @@ def run_delegate(
         ledger.settle(user_key, child.reservation, usage=usage_sink or None, status="error")
         return (
             "error",
-            f"delegate {coord} failed: {provider_config.redact_error(exc, config)}",
+            agent_text.message("delegate.failed", coord=coord, error=provider_config.redact_error(exc, config)),
             _record("error", usage_sink, pins),
         )
     ledger.settle(user_key, child.reservation, usage=usage_sink or None, status="ok")
     text = child.reply.decode(turn.text) if child.reply is not None else turn.text
     if len(text) > DELEGATE_RESULT_MAX_CHARS:
-        text = text[:DELEGATE_RESULT_MAX_CHARS] + _TRUNCATION_MARKER
+        text = text[:DELEGATE_RESULT_MAX_CHARS] + ("\n" + agent_text.message("delegate.result-truncated"))
     # The child's reply is returned verbatim as data — NEVER parsed for
     # toolRequest/delegateRequest (depth-1 by construction).
     return ("ok", text, _record("ok", usage_sink, pins))
