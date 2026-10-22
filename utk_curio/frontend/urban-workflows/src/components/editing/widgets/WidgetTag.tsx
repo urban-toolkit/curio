@@ -571,16 +571,20 @@ function InputColumns({
                 onInsert={onInsert}
                 disabled={disabled}
               />
-              <div className={styles.listChips}>
-                <ColumnTags
-                  slot={input.slot}
-                  columns={layer.columns ?? []}
-                  dtypes={layer.dtypes}
-                  layer={layer.name}
-                  onInsert={onInsert}
-                  disabled={disabled}
-                />
-              </div>
+              {(layer.columns ?? []).length > 0 ? (
+                <div className={styles.listChips}>
+                  <ColumnTags
+                    slot={input.slot}
+                    columns={layer.columns ?? []}
+                    dtypes={layer.dtypes}
+                    layer={layer.name}
+                    onInsert={onInsert}
+                    disabled={disabled}
+                  />
+                </div>
+              ) : (
+                <span className={styles.layerEmpty}>no columns</span>
+              )}
             </div>
           ))}
         </div>

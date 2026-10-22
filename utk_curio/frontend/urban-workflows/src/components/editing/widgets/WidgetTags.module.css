@@ -219,6 +219,12 @@
   margin-right: 2px;
 }
 
+/* A layer with no columns says so after its tag, on the tag's line. */
+.layerEmpty {
+  composes: stripHint;
+  line-height: 22px;
+}
+
 /* An input's tag and its columns (#662): green, like their chips in the code. */
 .inputTag {
   composes: tag;
