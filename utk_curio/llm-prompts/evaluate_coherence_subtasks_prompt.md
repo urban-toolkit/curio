@@ -45,7 +45,14 @@ Your warnings should contribute to a more coherent dataflow. Keep your warnings 
 
 Do not generate warnings for nodes made from these templates:
 
-{{builtin.not_code}}
+- Data Export
+- Data Pool
+- Vega-Lite
+- Simple View
+- Autark
+- Spatial Join
+- Parameter
+- Note
 
 ## Output
 

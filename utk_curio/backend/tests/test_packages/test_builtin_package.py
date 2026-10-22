@@ -153,10 +153,12 @@ def test_map_edits_names_no_what_differs(builtin_package_dir: Path):
     (template,) = [t for t in manifest.templates if t.template_id == "edit-features"]
     for word in ("What differs", "Compare Scenarios"):
         assert word not in template.description, template.description
-    preamble = REAL_CATALOG.parent / "utk_curio" / "llm-prompts" / "default_preamble.md"
-    # The node's lines in each of the preamble's lists: its description, its
-    # controls, its input and output types and its circles.
-    lines = [line for line in preamble.read_text(encoding="utf-8").splitlines() if line.startswith("- Map Edits:")]
+    from utk_curio.backend.app.agents.domain import agent_text
+
+    preamble = agent_text.render(REAL_CATALOG.parent / "agents" / "agent.curio.builtin@1" / "default_preamble.md")
+    # The node's lines in each of the preamble's lists, as agents read it:
+    # its description, its controls, its input and output types and its circles.
+    lines = [line for line in preamble.splitlines() if line.startswith("- Map Edits:")]
     assert any("Edits an Autark map's layers on the map" in line for line in lines), lines
     for line in lines:
         for word in ("What differs", "Compare Scenarios"):

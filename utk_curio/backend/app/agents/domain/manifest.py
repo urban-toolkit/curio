@@ -17,11 +17,13 @@ Key invariants enforced here (the point of this module):
   (``node.explain``, ``dataflow.orchestrate``, ``package.recommend``) and must
   not contain a prompt filename, path separator, underscore, ``.txt`` or ``.md``.
 * Prompt assets are referenced by a package-relative path contained in the
-  package (no absolute path, no ``..`` escape) or, for a prompt Curio shares
-  with every agent, by ``curio:<file>`` (``SHARED_PROMPTS``), read from
-  Curio's own prompts and never from the agent's folder.
+  package (no absolute path, no ``..`` escape) or, for a page of Curio's
+  agent text, by ``curio:<path>``: a page of the base entry, read from Curio
+  and never from the agent's folder (``agent_text.page_file``).
 * ``catalog`` takes exactly ``listed`` and ``order``. It is parsed here for
   every manifest but counts only for the agents Curio ships (``builtin``).
+* A manifest of ``kind`` ``base`` is the base entry Curio ships, no agent:
+  it never loads as one.
 
 The agents Curio ships are folders of this format in ``agents/``, read by
 :func:`load_agent_manifest` as a user's agent is (``builtin``).
@@ -35,6 +37,8 @@ import json
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
+
+from utk_curio.backend.app.agents.domain import agent_text
 
 # ── identifier grammars ─────────────────────────────────────────────────────
 # One segment of an agent id, as of a Discovery source id (``source_id._SEG``).
@@ -69,17 +73,18 @@ _TRUST_TIERS = ("built-in", "global", "imported")
 # Tokens a capability id must never contain (prompt-filename / path leakage).
 _FORBIDDEN_CAPABILITY_SUBSTRINGS = ("_prompt", ".txt", ".md", "/", "\\", "_")
 
-#: How a manifest names a prompt Curio shares with every agent: ``curio:`` and
-#: the file's name in Curio's prompts (``builtin.PROMPT_SOURCE_DIR``).
-SHARED_PROMPT_PREFIX = "curio:"
-#: The prompts Curio shares: the preamble every agent it ships runs, which a
-#: user's agent may name too.
-SHARED_PROMPTS = ("default_preamble.md",)
-#: Where a bundle (an export, an install's copy) carries a shared prompt as a
-#: file of the agent's own: ``prompts/<file>``.
+#: How a manifest names a page of Curio's agent text: ``curio:`` and the
+#: page's path in the base entry (``agent_text.pages``), such as
+#: ``curio:default_preamble.md``, the preamble every agent Curio ships runs,
+#: which a user's agent may name too.
+SHARED_PROMPT_PREFIX = agent_text.PAGE_PREFIX
+#: Where a bundle (an export, an install's copy) carries such a page as a
+#: file of the agent's own: ``prompts/<path>``.
 SHARED_PROMPT_FOLDER = "prompts"
 #: The keys of ``catalog``, all required, no other allowed.
 _CATALOG_KEYS = ("listed", "order")
+#: What a manifest that loads as an agent says it is (``kind``), when it says.
+_KIND_AGENT = "agent"
 
 
 class AgentManifestError(ValueError):
@@ -135,11 +140,10 @@ def _require_bool(raw: object, *, where: str) -> bool:
 def _validate_asset_path(raw: object, *, where: str) -> str:
     path = _require_str(raw, where=where)
     if path.startswith(SHARED_PROMPT_PREFIX):
-        if path[len(SHARED_PROMPT_PREFIX):] not in SHARED_PROMPTS:
-            shared = ", ".join(SHARED_PROMPT_PREFIX + name for name in SHARED_PROMPTS)
-            raise AgentManifestError(
-                f"{where} {path!r} names no prompt Curio shares; a curio: path is one of: {shared}"
-            )
+        try:
+            agent_text.page_file(path[len(SHARED_PROMPT_PREFIX):])
+        except agent_text.AgentTextError as exc:
+            raise AgentManifestError(f"{where} {path!r}: {exc}") from None
         return path
     if path.startswith("/"):
         raise AgentManifestError(f"{where} must be a package-relative path, not absolute: {path!r}")
@@ -209,7 +213,7 @@ class CapabilityDeclaration:
 @dataclass(frozen=True)
 class PromptAsset:
     """A prompt file referenced by contained package-relative path and digest,
-    or a prompt Curio shares, by ``curio:<file>``.
+    or a page of Curio's agent text, by ``curio:<path>``.
 
     ``runs`` says when a prompt that is neither the preamble, the instruction
     nor a mode's runs, in the words the agent details window shows (the
@@ -224,15 +228,17 @@ class PromptAsset:
 
     @property
     def shared(self) -> str | None:
-        """The file name of the prompt Curio shares that *path* names, else None."""
+        """The path of the page of Curio's agent text that *path* names
+        (``curio:<path>``), else None."""
         if self.path.startswith(SHARED_PROMPT_PREFIX):
             return self.path[len(SHARED_PROMPT_PREFIX):]
         return None
 
     @property
     def file(self) -> str:
-        """Where a bundle holds the prompt: its path, or ``prompts/<file>`` for
-        a shared one, which an export and an install carry as a file."""
+        """Where a bundle holds the prompt: its path, or ``prompts/<path>``
+        for a page of Curio's agent text, which an export and an install carry
+        as a file."""
         shared = self.shared
         return self.path if shared is None else f"{SHARED_PROMPT_FOLDER}/{shared}"
 
@@ -456,6 +462,12 @@ def parse_agent_manifest(raw: object, *, where: str = "manifest") -> AgentManife
         raise AgentManifestError(
             f"{where}.id {agent_id!r} must be 'agent.', its publisher and its name, "
             f"such as 'agent.acme.heat-risk-summarizer', matching {AGENT_ID_RE.pattern}"
+        )
+    kind = raw.get("kind", _KIND_AGENT)
+    if kind != _KIND_AGENT:
+        raise AgentManifestError(
+            f"{where}.kind {kind!r}: an agent's manifest says kind {_KIND_AGENT!r} or no kind; "
+            f"kind {agent_text.KIND_BASE!r} is Curio's base entry, the pages its agents read, which is no agent"
         )
 
     version = _require_str(raw.get("version"), where=f"{where}.version")

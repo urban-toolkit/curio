@@ -54,17 +54,17 @@ RUN pip install --no-input --no-cache-dir -r /ci-requirements.txt
 FROM ci_deps_${CURIO_CI_SETUP} AS runtime_base
 
 COPY curio.py ./
-# pyproject.toml / MANIFEST.in are what carry utk_curio/llm-prompts (not an
-# importable package -- the hyphen makes packages.find blind to it) into an
-# sdist and a wheel, and setup.py copies the package.json and package-lock.json
-# above into the wheel. tests/test_agents/test_prompt_assets.py and
+# pyproject.toml / MANIFEST.in / setup.py are what carry agents/, every file
+# of every folder in it, into an sdist and a wheel, and setup.py copies the
+# package.json and package-lock.json above into the wheel.
+# tests/test_agents/test_prompt_assets.py and
 # tests/test_scripts/test_launcher_sandbox_nodejs.py assert against these
 # files, and CI runs the backend suite INSIDE this image, so without them here
 # the packaging assertions cannot run where they matter.
 COPY pyproject.toml MANIFEST.in setup.py ./
 COPY scripts/ scripts/
-# The agents Curio ships, one folder each: the Agent Catalog's roster and
-# every agent's own prompts.
+# The Agent Catalog Curio ships, one folder each: the agents, with their own
+# prompts, and the base entry, with the pages they share.
 COPY agents/ agents/
 COPY packages/ packages/
 COPY datasets/ datasets/

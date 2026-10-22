@@ -1,7 +1,7 @@
 """Worked examples: which shipped dataflows a run gets, and where they land.
 
-``turns/examples.py`` picks the "Used" dataflows of ``llm-prompts/examples.md``
-closest to what a run knows and renders them as one runtime block, bounded in
+``turns/examples.py`` picks the "Used" dataflows of the base entry's
+``examples.md`` closest to what a run knows and renders them as one runtime block, bounded in
 size. These tests pin the choice for fixed questions, the bound, the
 exclusion, the missing-folder case, the agents that opt in, and that the block
 reaches an attached run's system turn and a delegated run's.

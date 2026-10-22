@@ -306,6 +306,7 @@ def test_a_pip_install_reads_every_shipped_folder_from_inside_utk_curio(pip_inst
     fixtures = _read(pip_install, "prompt_fixtures")
     where = {
         "the Agent Catalog's agents (agents/)": _read(pip_install, "agents")["root"],
+        "the pages the agents share (the base entry in agents/)": _read(pip_install, "agent_text")["root"],
         "the Data Catalog (datasets/)": report["datasets"]["root"],
         "the Discovery Catalog (discovery/)": report["discovery"]["root"],
         "the Node and Model Catalogs (packages/)": report["packages"]["root"],
@@ -434,8 +435,8 @@ def test_a_pip_install_seeds_and_lists_every_dataflow_curio_ships(pip_install):
 
 def test_a_pip_installs_agents_are_shown_the_worked_examples_a_clone_shows(pip_install):
     """An agent's run in a pip install is shown the shipped dataflows that
-    ``llm-prompts/examples.md`` lists under "Used" (``turns/examples.py``), as
-    in a clone: the index's links lead to the dataflows the package ships."""
+    the base entry's ``examples.md`` lists under "Used" (``turns/examples.py``),
+    as in a clone: the index's links lead to the dataflows the package ships."""
     from utk_curio.backend.app.agents.application.turns import examples
 
     keys = [example.key for example in examples.used_examples()]
@@ -447,10 +448,12 @@ def test_a_pip_installs_agents_are_shown_the_worked_examples_a_clone_shows(pip_i
 def test_a_pip_installs_agents_run_the_prompts_a_clone_runs(pip_install):
     """Every agent Curio ships, in a pip install, reads every prompt its
     manifest names, byte for byte as in a clone: its own from its folder in
-    agents/, and the preamble they share from utk_curio/llm-prompts/."""
+    agents/, and the preamble they share from the base entry, each rendered.
+    Every page of the base entry, those in its folders included, renders in
+    a pip install as in a clone."""
     import hashlib
 
-    from utk_curio.backend.app.agents.domain import builtin
+    from utk_curio.backend.app.agents.domain import agent_text, builtin
 
     clone = {
         m.dir_name: {
@@ -464,17 +467,24 @@ def test_a_pip_installs_agents_run_the_prompts_a_clone_runs(pip_install):
     assert found == clone, (
         f"a pip install's agents read {found}, where a clone's read {clone}"
     )
+    pages = {
+        page: hashlib.sha256(builtin.read_page(page, wanted_by="the test").encode("utf-8")).hexdigest()
+        for page in agent_text.pages()
+    }
+    assert {"default_preamble.md", "examples.md", "rules/package_contract.md"} <= set(pages), pages
+    found = _read(pip_install, "agent_text")["pages"]
+    assert found == pages, f"a pip install renders the pages {found}, where a clone renders {pages}"
 
 
 def test_a_pip_installs_prompt_fields_read_the_trill_schema(pip_install):
     """The agents' prompt fields (``contracts.py``) of a pip install read the
-    Trill schema, and render from its template the shared preamble the
-    package ships."""
-    from utk_curio.backend.app.agents.domain import contracts
+    Trill schema, and render the shared preamble from its page in the base
+    entry the package ships, as a clone renders it."""
+    from utk_curio.backend.app.agents.domain import agent_text, builtin, contracts
 
     trill = json.loads((REPO / contracts.TRILL_SCHEMA).read_text(encoding="utf-8"))
     assert _read(pip_install, "trill_schema") == trill
-    preamble = (REPO / contracts.PROMPTS_DIR / "default_preamble.md").read_text(encoding="utf-8")
+    preamble = agent_text.render(agent_text.page_file(builtin.PREAMBLE_FILE))
     assert _read(pip_install, "default_preamble") == preamble
 
 

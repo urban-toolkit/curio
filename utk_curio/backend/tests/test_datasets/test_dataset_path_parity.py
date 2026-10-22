@@ -178,7 +178,7 @@ def test_the_scanner_finds_every_id_the_curated_examples_reference():
 
 
 def test_the_scanner_finds_every_id_the_worked_examples_reference():
-    """Agents are shown the "Used" dataflows of ``llm-prompts/examples.md`` as
+    """Agents are shown the "Used" dataflows of the base entry's ``examples.md`` as
     worked examples and copy them, so their ids follow the same rule as the
     curated examples'."""
     import json

@@ -1,0 +1,19 @@
+{
+  "id": "agent.curio.builtin",
+  "name": "Curio Built-in Agent Text",
+  "kind": "base",
+  "version": "1.0.0",
+  "purpose": "The pages every agent Curio ships reads: the preamble, the rules its prompts include, and the index of the worked examples. An agent names a page as curio:<path>.",
+  "pages": [
+    "default_preamble.md",
+    "examples.md",
+    "rules/package_contract.md",
+    "rules/research_notes_rules.md",
+    "rules/research_verify_rules.md"
+  ],
+  "provenance": {
+    "publisher": "curio",
+    "license": "MIT",
+    "trust": "built-in"
+  }
+}

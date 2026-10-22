@@ -4,7 +4,7 @@ took other agents over and run their prompts as modes."""
 
 from __future__ import annotations
 
-from utk_curio.backend.app.agents.domain import builtin
+from utk_curio.backend.app.agents.domain import agent_text, builtin
 from utk_curio.backend.app.agents.domain.manifest import AgentManifest
 from utk_curio.backend.tests._support.prompt_files import prompt_folders, prompt_path
 
@@ -283,7 +283,7 @@ class TestRoster:
         for m in builtin.list_builtin_manifests():
             for asset in m.prompts.values():
                 path = (
-                    builtin.PROMPT_SOURCE_DIR / asset.shared if asset.shared
+                    agent_text.page_file(asset.shared) if asset.shared
                     else builtin.agents_dir() / m.dir_name / asset.path
                 )
                 assert path.is_file(), _file(asset)
@@ -396,7 +396,7 @@ class TestPreambleAndInputs:
     def test_prompt_text_is_read_by_key(self):
         coord = "agent.curio.dataflow-planner@1"
         bind = builtin.read_prompt_text(coord, "workflow.keyword.bind")
-        assert bind == prompt_path("keywords_binding_prompt.md").read_text(encoding="utf-8")
+        assert bind == agent_text.render(prompt_path("keywords_binding_prompt.md"))
         # An undeclared key reads nothing, not the preamble.
         assert builtin.read_prompt_text(coord, "workflow.nope") is None
         assert builtin.read_prompt_text("agent.curio.researcher@1", "dataflow.explain") is None
@@ -406,7 +406,7 @@ class TestPreambleAndInputs:
         # loading exemplar every agent saw, and all three of its loaders read
         # bare filenames — the pattern #298's bras_ibge_data.csv reproduced.
         # The exemplars are now the worked examples (the "Used" dataflows of
-        # llm-prompts/examples.md), so the same rule holds for them.
+        # the base entry's examples.md), so the same rule holds for them.
         import json
         import re
 
@@ -567,14 +567,14 @@ class TestNodeBuilderComposite:
         # a composite declares no delegatesTo and a report-only runtime. Each
         # agent runs exactly its shipped file: the manifest the roster serves
         # is that file parsed, and every prompt a run reads is the file its
-        # folder holds, or the preamble Curio shares (``curio:``).
+        # folder holds, rendered, or the page Curio shares (``curio:``).
         import json
         from pathlib import Path
 
         from utk_curio.backend.app.agents.domain.manifest import parse_agent_manifest
 
         agents = Path(__file__).resolve().parents[4] / "agents"
-        shared = Path(__file__).resolve().parents[3] / "llm-prompts"
+        shared = agents / "agent.curio.builtin@1"
 
         def shipped(coord: str) -> dict:
             return json.loads((agents / coord / "manifest.json").read_text(encoding="utf-8"))
@@ -602,7 +602,7 @@ class TestNodeBuilderComposite:
                     shared / asset.path.removeprefix("curio:") if asset.path.startswith("curio:")
                     else agents / m.dir_name / asset.path
                 )
-                assert builtin.read_prompt_text(m.dir_name, key) == file.read_text(encoding="utf-8"), (
+                assert builtin.read_prompt_text(m.dir_name, key) == agent_text.render(file), (
                     m.agent_id, key,
                 )
             if m.agent_id in composites:
@@ -1148,11 +1148,11 @@ class TestResearcher:
         # dev/90 Follow-up D DELIVERED by dev/95: the delegatesTo growth this
         # pin used to forbid is now the deliberate change (the dev/48 D4
         # precedent: a byte-pin updates WITH its memo, never incidentally).
-        # The prompt sha updates only with the dev/95 prompt edit itself.
+        # The prompt sha updates only with the dev/95 prompt edit itself. It
+        # covers the text the agent reads: its source, rendered.
         import hashlib
 
-        prompt = (builtin.agents_dir() / "agent.curio.dataflow-builder@1" / "prompts"
-                  / "orchestration_instruction.md").read_bytes()
+        prompt = builtin.read_prompt_text("agent.curio.dataflow-builder@1", "instruction").encode("utf-8")
         assert hashlib.sha256(prompt).hexdigest() == self.DATAFLOW_BUILDER_PROMPT_SHA256
         dfb = builtin.get_builtin_manifest("agent.curio.dataflow-builder@1")
         assert "agent.curio.researcher" in dfb.delegates_to  # dev/95 Follow-up D

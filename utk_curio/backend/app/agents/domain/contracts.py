@@ -2,18 +2,20 @@
 
 A contract is something the code enforces: change it and the model, or the
 other half of the code, is wrong about what the system accepts. Each one is
-defined here exactly once. Python imports it from this module; every other
-consumer receives a GENERATED copy, rendered by the functions below and
-written by ``scripts/generate_contracts.py``.
+defined here exactly once. Python imports it from this module; the frontend
+receives a GENERATED copy, rendered by the functions below and written by
+``scripts/generate_contracts.py``.
 
-The built-in prompts are outputs too. A prompt that states something the code
-owns is a template, and each such fact in it is a field that ``PROMPT_FIELDS``
-renders from the code that owns it (see Prompt templates below).
+The agents read these facts too. A page or prompt in ``agents/`` that states
+something the code owns holds a marker for it, and each marker is a field
+that ``PROMPT_FIELDS`` renders from the code that owns it (see Prompt fields
+below). The backend renders every page and prompt when it starts
+(``agent_text``); nothing of them is generated or committed.
 
-``GENERATED_OUTPUTS`` is the one registry of committed outputs, built when it
-is read. The CLI writes each entry and ``test_generated_contracts`` re-renders
-each entry and fails on any difference, so a hand edit to an output, or a
-change here that was never regenerated, turns the suite red.
+``GENERATED_OUTPUTS`` is the one registry of committed outputs. The CLI writes
+each entry and ``test_generated_contracts`` re-renders each entry and fails on
+any difference, so a hand edit to an output, or a change here that was never
+regenerated, turns the suite red.
 
 Importable from an installed wheel, and with no I/O at import time: the module
 imports only the standard library. A renderer reads the files it projects when
@@ -27,7 +29,7 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import dataclass
-from functools import cached_property, partial
+from functools import cached_property
 from pathlib import Path
 from typing import Callable
 from urllib.parse import unquote
@@ -508,15 +510,13 @@ IMAGE_MATCH_THRESHOLD = 0.6
 # --- The preamble's node vocabulary ----------------------------------------
 #
 # The shared preamble describes Trill and the built-in templates. Both halves
-# are generated: the Trill block is a projection of ``docs/schemas/trill.v1.json``
+# are rendered: the Trill block is a projection of ``docs/schemas/trill.v1.json``
 # and every list of templates reads ``packages/curio.builtin@1/manifest.json``
 # (description, editor, ports, interaction support). Templates are named by
 # their labels. A node's ``type`` is a template id, and the per-run roster of
 # available templates is the authority on ids, so the preamble lists none.
 
-#: Where the prompt files live, relative to the repository root.
-PROMPTS_DIR = "utk_curio/llm-prompts"
-#: The built-in node manifest the generated lists read.
+#: The built-in node manifest the rendered lists read.
 BUILTIN_MANIFEST = "packages/curio.builtin@1/manifest.json"
 #: Its package id, which a built-in template's namespaced id starts with.
 BUILTIN_PACKAGE = BUILTIN_MANIFEST.split("/")[1].split("@", 1)[0]
@@ -538,11 +538,6 @@ TRILL_PROMPT_FIELDS: dict[str, tuple[str, ...]] = {
 }
 #: The JSON Schema keywords a projection keeps.
 _PROJECTED_KEYWORDS = ("type", "enum", "pattern", "items", "properties", "required")
-
-
-def _repo_root() -> Path:
-    # domain/contracts.py -> domain -> agents -> app -> backend -> utk_curio -> repo root
-    return Path(__file__).resolve().parents[5]
 
 
 def _builtin_template(manifest: dict, coord: str) -> dict:
@@ -675,62 +670,32 @@ def builtin_lists(manifest: dict) -> dict[str, str]:
     return {f"builtin.{key}": "\n".join(lines) for key, lines in rows.items()}
 
 
-# --- Prompt templates ---------------------------------------------------------
+# --- Prompt fields ------------------------------------------------------------
 #
-# A built-in prompt that states something the code owns is a template:
-# ``<stem>.template.md`` in ``PROMPTS_DIR``, rendered to ``<stem>.md`` in the
-# folder of the agent Curio ships whose manifest names it, else beside the
-# template (``prompt_outputs``).
-# The template holds the hand-written text, and each fact the code owns is a
-# marker, ``{{field}}`` or ``{{field:argument}}``, that ``render_prompt`` fills from
-# ``PROMPT_FIELDS``. Each field is one small function that reads its source
-# when the prompt is rendered, so a change there reaches the prompt through
-# the generator, never through a hand edit.
-
-#: Every prompt rendered from a template, by stem.
-PROMPT_TEMPLATES: tuple[str, ...] = (
-    "default_preamble",
-    "discovery_instruction",
-    "evaluate_coherence_subtasks_prompt",
-    "evaluate_generated_content_prompt",
-    "new_content_prompt",
-    "node_build_instruction",
-    "orchestration_instruction",
-    "package_build_instruction",
-    "package_contract",
-    "package_recommendation_instruction",
-    "research_instruction",
-    "research_notes_rules",
-    "research_verify_rules",
-    "researcher_instruction",
-    "researcher_notes_instruction",
-)
-#: The package backend contract: a fragment the Node Builder's
-#: package-writing prompt (``package_build_instruction``) includes whole, and
-#: a delegated call of that mode receives as an input (``turns/delegates.py``).
-PACKAGE_CONTRACT = "package_contract"
-#: The Researcher's rules for checking a fact: a fragment two of its prompts
-#: include whole, its chat (``researcher_instruction``) and its
-#: ``research.verify`` mode (``research_instruction``).
-RESEARCH_VERIFY_RULES = "research_verify_rules"
-#: The Researcher's notes format: a fragment two of its prompts include whole,
-#: its chat (``researcher_instruction``), which answers a web question with
-#: notes, and its ``research.notes.compose`` mode
-#: (``researcher_notes_instruction``), which composes notes from search
-#: results for another agent.
-RESEARCH_NOTES_RULES = "research_notes_rules"
+# A page or prompt in ``agents/`` that states something the code owns holds a
+# marker for it, ``{{field}}`` or ``{{field:argument}}``, which
+# ``render_template`` fills from ``PROMPT_FIELDS`` when the backend renders the
+# file (``agent_text``). Each field is one small function that reads its
+# source when the file is rendered, so a change there reaches the agents with
+# no edit to the text. ``{{include:<path>}}`` puts another page of the base
+# entry there whole.
 
 #: A marker: a field name, then the argument after a colon when it takes one.
 _MARKER_RE = re.compile(r"\{\{([a-z][a-z0-9_.]*)(?::([^{}]+))?\}\}")
 
 
 class PromptTemplateError(ValueError):
-    """A template names a field the registry does not define, gives a field
-    the wrong argument, or renders to text that still holds a marker."""
+    """A page or prompt names a field the registry does not define, gives a
+    field the wrong argument, includes a page that cannot be read or that
+    includes it, or renders to text that still holds a marker."""
 
 
 class _Sources:
-    """The files the fields read, each loaded at most once per render."""
+    """The files the fields read, each loaded at most once per render, and
+    the pages being rendered around the marker, outermost first."""
+
+    def __init__(self, including: tuple[str, ...] = ()) -> None:
+        self.including = including
 
     @cached_property
     def manifest(self) -> dict:
@@ -990,19 +955,12 @@ def _data_dir_env(_src: _Sources) -> str:
     return DATA_DIR_ENV
 
 
-def _package_contract(_src: _Sources) -> str:
-    """The package backend contract, rendered, to include whole."""
-    return render_prompt(PACKAGE_CONTRACT).rstrip("\n")
+def _include(src: _Sources, page: str) -> str:
+    """Another page of the base entry, by its path there, rendered, to include
+    whole without its final line breaks (``agent_text.include``)."""
+    from utk_curio.backend.app.agents.domain import agent_text
 
-
-def _research_verify_rules(_src: _Sources) -> str:
-    """The Researcher's rules for checking a fact, rendered, to include whole."""
-    return render_prompt(RESEARCH_VERIFY_RULES).rstrip("\n")
-
-
-def _research_notes_rules(_src: _Sources) -> str:
-    """The Researcher's notes format, rendered, to include whole."""
-    return render_prompt(RESEARCH_NOTES_RULES).rstrip("\n")
+    return agent_text.include(page, src.including)
 
 
 _NUMBER_WORDS = ("no", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine")
@@ -1079,7 +1037,7 @@ def _image_threshold(_src: _Sources) -> str:
     return f"{IMAGE_MATCH_THRESHOLD:.0%}"
 
 
-#: Every field a prompt template may name, by the name its marker uses.
+#: Every field a page or prompt may name, by the name its marker uses.
 PROMPT_FIELDS: dict[str, PromptField] = {
     "trill.schema": PromptField(lambda src: render_trill_block(src.trill)),
     **{key: _builtin_list(key) for key in (
@@ -1112,9 +1070,7 @@ PROMPT_FIELDS: dict[str, PromptField] = {
     "backend.server_code_permission": PromptField(_server_code_permission),
     "backend.server_network_permission": PromptField(_server_network_permission),
     "backend.data_dir_env": PromptField(_data_dir_env),
-    "package.contract": PromptField(_package_contract),
-    "research.verify_rules": PromptField(_research_verify_rules),
-    "research.notes_rules": PromptField(_research_notes_rules),
+    "include": PromptField(_include, takes_arg=True),
     "vega.schema_url": PromptField(lambda _src: VEGA_SCHEMA_URL),
     "vega.starter_ladder": PromptField(lambda _src: render_starter_ladder(VEGA_STARTER_LADDER)),
     "autk.starter_ladder": PromptField(lambda _src: render_starter_ladder(AUTK_STARTER_LADDER)),
@@ -1126,13 +1082,15 @@ PROMPT_FIELDS: dict[str, PromptField] = {
 }
 
 
-def render_template(text: str, name: str = "the template") -> str:
-    """*text* with every marker filled from ``PROMPT_FIELDS``.
+def render_template(text: str, name: str = "the template", *, including: tuple[str, ...] = ()) -> str:
+    """*text* with every marker filled from ``PROMPT_FIELDS``. *including*
+    holds the pages of the base entry being rendered around it, outermost
+    first, for ``{{include:<path>}}`` to refuse a page that includes itself.
 
     Raises ``PromptTemplateError`` on a field the registry does not define, on
     a marker whose argument does not fit its field, and on any ``{{`` left in
     the result."""
-    sources = _Sources()
+    sources = _Sources(including)
 
     def fill(match: re.Match) -> str:
         key, argument = match.group(1), match.group(2)
@@ -1149,17 +1107,6 @@ def render_template(text: str, name: str = "the template") -> str:
         at = text.index("{{")
         raise PromptTemplateError(f"{name} still holds {text[at:at + 40]!r} once rendered")
     return text
-
-
-def render_prompt(stem: str) -> str:
-    """``<stem>.md``: ``<stem>.template.md`` with every marker filled."""
-    path = _repo_root() / PROMPTS_DIR / f"{stem}.template.md"
-    return render_template(path.read_text(encoding="utf-8"), path.name)
-
-
-def render_default_preamble() -> str:
-    """``default_preamble.md``, the shared preamble, rendered from its template."""
-    return render_prompt("default_preamble")
 
 
 def render_autk_grammar_ts() -> str:
@@ -1654,8 +1601,9 @@ def render_note_colors_ts() -> str:
     )
 
 
-#: The committed TypeScript outputs: repo-relative path -> the function that renders it.
-_CODE_OUTPUTS: dict[str, Callable[[], str]] = {
+#: Every committed output, the frontend's TypeScript: repo-relative path -> the
+#: function that renders it.
+GENERATED_OUTPUTS: dict[str, Callable[[], str]] = {
     "utk_curio/frontend/urban-workflows/src/generated/renderCauses.ts": render_render_causes_ts,
     "utk_curio/frontend/urban-workflows/src/generated/autkGrammar.ts": render_autk_grammar_ts,
     "utk_curio/frontend/urban-workflows/src/generated/agentCategories.ts": render_agent_categories_ts,
@@ -1665,50 +1613,10 @@ _CODE_OUTPUTS: dict[str, Callable[[], str]] = {
 }
 
 
-def prompt_outputs() -> dict[str, str]:
-    """Where each template's rendered prompt is written, by stem: into the
-    folder of the agent Curio ships whose manifest names ``prompts/<stem>.md``
-    (``agents/<id>@<major>/``), else beside its template in ``PROMPTS_DIR``:
-    the shared preamble and the fragments other prompts include. A prompt two
-    agents name is refused: each agent's prompt is a file of its own."""
-    from utk_curio.backend.app.agents.domain import builtin
-
-    owners: dict[str, set[str]] = {}
-    for manifest in builtin.list_builtin_manifests():
-        for asset in manifest.prompts.values():
-            if asset.shared is None:
-                where = f"{builtin.AGENTS_DIR}/{manifest.dir_name}/{asset.path}"
-                owners.setdefault(asset.path.rsplit("/", 1)[-1], set()).add(where)
-    outputs = {}
-    for stem in PROMPT_TEMPLATES:
-        named = sorted(owners.get(f"{stem}.md", ()))
-        if len(named) > 1:
-            raise PromptTemplateError(f"{stem}.md is a prompt of several agents ({named}); each is its own file")
-        outputs[stem] = named[0] if named else f"{PROMPTS_DIR}/{stem}.md"
-    return outputs
-
-
-def _generated_outputs() -> dict[str, Callable[[], str]]:
-    """Every committed output: repo-relative path -> the function that renders it."""
-    return {
-        **_CODE_OUTPUTS,
-        **{path: partial(render_prompt, stem) for stem, path in prompt_outputs().items()},
-    }
-
-
-def __getattr__(name: str):
-    # ``GENERATED_OUTPUTS``, every committed output, is built when it is read:
-    # where a rendered prompt goes is in the shipped agents' manifests, and
-    # importing this module reads no file.
-    if name == "GENERATED_OUTPUTS":
-        return _generated_outputs()
-    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
-
-
 def stale_outputs(repo_root: Path) -> list[str]:
     """The registered outputs whose file on disk differs from a fresh render."""
     stale = []
-    for relative, render in _generated_outputs().items():
+    for relative, render in GENERATED_OUTPUTS.items():
         path = Path(repo_root) / relative
         current = path.read_text(encoding="utf-8") if path.is_file() else None
         if current != render():

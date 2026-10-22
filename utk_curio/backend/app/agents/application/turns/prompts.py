@@ -26,9 +26,9 @@ def _resolve_prompt_text(user_key: str, coord: str, name: str) -> str | None:
     updated built-in prompt must take effect for existing installs (the store
     copy is a materialization cache, not an authority). Owned/imported
     definitions, including deliberate shadows of a built-in coordinate, run
-    from their own on-disk bytes, store copy first, then the published
-    catalog; a prompt one names as Curio's (``curio:<file>``) is read from
-    Curio's own prompts.
+    from their own on-disk bytes as written, store copy first, then the
+    published catalog; a page one names as Curio's (``curio:<path>``) is that
+    page of the base entry, rendered.
     """
     m = storage.load_installed_agent_definition(user_key, coord)
     base = storage.agent_definition_dir(user_key, coord) if m is not None else None
@@ -42,7 +42,7 @@ def _resolve_prompt_text(user_key: str, coord: str, name: str) -> str | None:
     if m is not None and base is not None:
         asset = m.prompts.get(name)
         if asset is not None and asset.shared is not None:
-            return builtin.read_prompt_file(asset.shared, wanted_by=f"agent {coord}, prompt {name!r},")
+            return builtin.read_page(asset.shared, wanted_by=f"agent {coord}, prompt {name!r},")
         if asset is not None:
             path = base / asset.path
             if path.is_file():

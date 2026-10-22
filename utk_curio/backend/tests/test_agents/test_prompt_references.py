@@ -1,7 +1,8 @@
 """Every built-in prompt names only things that exist.
 
-The prompts in ``utk_curio/llm-prompts/`` and in each shipped agent's folder
-(``agents/<id>@<major>/prompts/``) name tools, capabilities, node
+The pages of the base entry (``agents/agent.curio.builtin@1/``) and the
+prompts in each shipped agent's folder (``agents/<id>@<major>/prompts/``),
+as an agent reads them, name tools, capabilities, node
 templates, package folders, sandbox helpers and Data Catalog datasets, and they
 carry Vega-Lite examples. Each of those is defined somewhere else: the tool
 registry, the built-in agents, the shipped manifests, the sandbox, the shipped
@@ -11,9 +12,9 @@ read every prompt a built-in agent receives and check each name against the
 code or the catalog that defines it. Two more check the text itself: no prompt
 holds an en or em dash, and every block fenced as json parses.
 
-The worked examples a run is given (``llm-prompts/examples.md``, the "Used"
-dataflows) are copied the same way, so they get the same checks, and the index
-must list every shipped dataflow exactly once.
+The worked examples a run is given (the base entry's ``examples.md``, the
+"Used" dataflows) are copied the same way, so they get the same checks, and
+the index must list every shipped dataflow exactly once.
 """
 
 from __future__ import annotations
@@ -38,7 +39,7 @@ from utk_curio.backend.app.datasets.domain.code_refs import (
     MODEL_CALL_RE,
 )
 from utk_curio.backend.app.projects.shipped import shipped_dataflows
-from utk_curio.backend.tests._support.prompt_files import prompt_files, prompt_path
+from utk_curio.backend.tests._support.prompt_files import prompt_files, prompt_path, prompt_text
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
 
@@ -46,13 +47,11 @@ REPO_ROOT = Path(__file__).resolve().parents[4]
 PROMPT_FILES = sorted({
     asset.file.rsplit("/", 1)[-1] for m in builtin.list_builtin_manifests() for asset in m.prompts.values()
 })
-#: Every file in ``llm-prompts/`` and in the shipped agents' ``prompts/``:
-#: each template, the prompt it renders, and each prompt with no template,
-#: the included ``package_contract`` too.
+#: Every page of the base entry and every prompt in the shipped agents'
+#: ``prompts/``, the included rules and ``examples.md`` too: each a source an
+#: agent reads rendered. A source's fence can hold a ``{{field}}`` marker, not
+#: JSON, so the checks of the text sent read the render.
 ALL_PROMPTS = sorted(path.name for path in prompt_files("*.md"))
-#: The prompts as they are sent: every rendered template and every prompt with
-#: no template. A template's fence can hold a ``{{field}}`` marker, not JSON.
-SENT_PROMPTS = [name for name in ALL_PROMPTS if not name.endswith(".template.md")]
 
 #: The worked-examples index, and the dataflows in its "Used" section.
 INDEX = examples.read_index()
@@ -86,7 +85,8 @@ _JSON_FENCE_RE = re.compile(r"^[ \t]*```json[ \t]*\n(.*?)^[ \t]*```[ \t]*$", re.
 
 
 def _text(name: str) -> str:
-    return prompt_path(name).read_text(encoding="utf-8")
+    """The page or prompt *name* as an agent reads it."""
+    return prompt_text(name)
 
 
 def _manifests(folder: str) -> list[tuple[str, dict]]:
@@ -220,14 +220,15 @@ def test_no_template_marker_is_left(name):
 
 @pytest.mark.parametrize("name", ALL_PROMPTS)
 def test_no_prompt_holds_an_em_or_en_dash(name):
-    # The rendered prompts are checked as well as the templates: their
-    # generated regions read docs/schemas/trill.v1.json and the vendored
-    # Autark schema, and neither puts a dash into a prompt.
-    found = _DASH_RE.findall(prompt_path(name).read_text(encoding="utf-8"))
-    assert not found, f"{name} holds an en or em dash; write plain punctuation instead: {found}"
+    # The render is checked as well as the source: its rendered regions read
+    # docs/schemas/trill.v1.json and the vendored Autark schema, and neither
+    # puts a dash into a prompt.
+    for how, text in (("as written", prompt_path(name).read_text(encoding="utf-8")), ("as read", _text(name))):
+        found = _DASH_RE.findall(text)
+        assert not found, f"{name}, {how}, holds an en or em dash; write plain punctuation instead: {found}"
 
 
-@pytest.mark.parametrize("name", SENT_PROMPTS)
+@pytest.mark.parametrize("name", ALL_PROMPTS)
 def test_every_fenced_json_block_parses(name):
     for block in _JSON_FENCE_RE.findall(_text(name)):
         try:
@@ -339,7 +340,7 @@ def test_every_link_in_the_index_resolves():
         f"{examples.INDEX_FILE} has lines that are not '- [title](link): what it shows'"
     )
     broken = [entry.target for entry in INDEX if entry.target.startswith("/") or not entry.path.is_file()]
-    assert not broken, f"{examples.INDEX_FILE} links files that do not resolve from llm-prompts/: {broken}"
+    assert not broken, f"{examples.INDEX_FILE} links files that do not resolve from the base entry: {broken}"
 
 
 @pytest.mark.parametrize("entry", USED, ids=lambda entry: entry.path.stem)

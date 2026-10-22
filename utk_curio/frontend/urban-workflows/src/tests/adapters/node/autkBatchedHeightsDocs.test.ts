@@ -25,7 +25,7 @@ import { REFERENCE_PATTERN } from "../../../utils/references/codeReferences";
 
 const REPO_ROOT = path.join(__dirname, "..", "..", "..", "..", "..", "..", "..");
 const EXAMPLES = path.join(REPO_ROOT, "docs", "examples");
-const WORKED_EXAMPLES_INDEX = path.join(REPO_ROOT, "utk_curio", "llm-prompts", "examples.md");
+const WORKED_EXAMPLES_INDEX = path.join(REPO_ROOT, "agents", "agent.curio.builtin@1", "examples.md");
 
 /** The examples with shadow steps, and how many each has. */
 const SHADOW_EXAMPLES: [string, string, number][] = [
