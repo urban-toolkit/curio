@@ -557,7 +557,7 @@ def _grounding_context(
     elif verified:
         hints.append("a URL already verified in this conversation")
     hints.append(
-        'declare "synthetic": true in the params ONLY when the user asked for made-up data'
+        "data made up in the code, ONLY when the user asked for made-up data in their own words"
     )
     if secrets:
         hints.append(

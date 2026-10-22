@@ -628,7 +628,7 @@ class TestNodeBuilderComposite:
         assert 'curio_data_path("<id>")' in text
         assert '"dataset.discover"' in text
         assert "do not propose in that same turn" in text
-        assert '"synthetic": true' in text
+        assert "synthetic data ONLY when the user explicitly asked for made-up data in their own words" in text
         assert "Never invent a filename" in text
         assert "ask the user for a path or URL instead of proposing" in text
 
@@ -1083,8 +1083,10 @@ class TestResearcher:
         # 2026-10-22: two views link directly, and a Data Pool goes between
         # them only in its four cases (owner, 10-21; PR #1058).
         # 2026-10-22: a planned Spatial Join says how it joins in
-        # "spatialJoin" (plan step 11).
-        "4ffff69f139c5728b497ecd244085a6712c7866356c3fbaf4fd0f3cfe49850a8"
+        # "spatialJoin"; and the text that promised what the code refuses
+        # goes: a plan carrying code, a Topology verdict ending every applied
+        # result, and workflow.plan.create decomposing a task (plan step 11).
+        "ef3dafa1ef3537c1324716a4a1fbecd2e44a411d22570da93ff928618a9afa43"
     )
 
     def test_manifest_surface(self):
