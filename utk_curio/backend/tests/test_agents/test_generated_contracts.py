@@ -116,17 +116,19 @@ class TestRenderPrompt:
         with pytest.raises(contracts.PromptTemplateError, match="no.such.package"):
             contracts.render_template("{{template.label:no.such.package/chart}}")
 
-    def test_the_preamble_names_scouts_charts_and_how_they_read_their_scenarios(self):
-        """Its Scenarios section names Scout's fifteen charts, the package's
-        templates that draw with Vega-Lite, by the labels their manifest gives
-        them, and the package that holds them, and says that each takes one
-        input per scenario and reads them as the dataset its chip names,
-        ``[!! inputs !!]``, never by the bare name. It says how scenarios are
-        compared: a Vega-Lite spec reading that dataset, a Raster Calculator
-        for two rasters' difference, absolute=True for its size, and a Python
-        node for two tables' or layers'. Compare Scenarios is gone, and the
-        section names it nowhere. The section is the knowledge page the
-        preamble includes, read here as written."""
+    def test_the_preamble_compares_scenarios_with_curios_nodes_and_scouts_templates_say_how_they_do(self):
+        """Its Scenarios section says how scenarios are compared with Curio's
+        own nodes: a Vega-Lite spec reading every input stacked, as the dataset
+        its chip names, ``[!! inputs !!]``, never by the bare name, and a
+        Python node for two tables' or layers' difference. It names no
+        package's template: Scout's fifteen charts, the package's templates
+        that draw with Vega-Lite, each say in their own description that they
+        take one input per scenario, and its Raster Calculator says in its own
+        how it takes two rasters' difference, with absolute=True for its size.
+        A run that writes one of them reads that description and its starter
+        in the dataflow block (``test_dataflow_block.py``). Compare Scenarios
+        is gone, and the section names it nowhere. The section is the
+        knowledge page the preamble includes, read here as written."""
         preamble = prompt_path("default_preamble.md").read_text(encoding="utf-8")
         assert preamble.count("{{include:knowledge/scenarios.md}}") == 1
         template = prompt_path("scenarios.md").read_text(encoding="utf-8")
@@ -134,9 +136,10 @@ class TestRenderPrompt:
         manifest = json.loads((REPO_ROOT / "packages" / "curio.scout@1" / "manifest.json").read_text(
             encoding="utf-8"))
         assert "compare-scenarios" not in section and "Compare Scenarios" not in section
-        for named in ("curio.builtin/vis-vega", "curio.scout/raster-calculator", "curio.builtin/computation-analysis"):
+        for named in ("curio.builtin/vis-vega", "curio.builtin/computation-analysis"):
             assert "{{template.label:" + named + "}}" in section, named
-        assert "absolute=True" in section
+        assert set(re.findall(r"\{\{template\.label:([^/{}]+)/", section)) == {"curio.builtin"}
+        assert "curio.scout" not in section
         charts = [t for t in manifest["templates"] if t.get("grammarId") == "vega-lite"]
         assert [chart["id"] for chart in charts] == [
             "lines-with-band", "curves-by-group", "bars-with-error-bars", "ensemble-strips",
@@ -144,9 +147,11 @@ class TestRenderPrompt:
             "bars", "grouped-bars", "lines", "points", "pie", "lollipops", "table",
         ]
         for chart in charts:
-            assert "{{template.label:" + f"curio.scout/{chart['id']}" + "}}" in section, chart["id"]
-        assert "curio.scout@1" in section
-        assert "one input per scenario" in section
+            assert chart["description"].startswith("One input per scenario"), chart["id"]
+        calculator = next(t for t in manifest["templates"] if t["id"] == "raster-calculator")
+        assert "subtract" in calculator["description"] and "absolute=True" in calculator["description"]
+        starter = (REPO_ROOT / "packages" / "curio.scout@1" / calculator["source"]).read_text(encoding="utf-8")
+        assert 'raster_calculate("subtract", [input_1, input_0], absolute=True' in starter
         assert "{{inputs.stacked}}" in section
         assert '"inputs"' not in section, "the section names the dataset bare"
         scenarios = prompt_text("default_preamble.md").split("## Scenarios", 1)[1]

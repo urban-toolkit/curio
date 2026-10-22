@@ -1,14 +1,19 @@
 # Frames
 
-The lines that frame what the runtime hands a run: the canvas context, a delegated task's inputs,
-the configuration, the worked examples and the template rosters. One section per line, by the name
-the runtime reads it by; the runtime puts what each frames after it. In `delegated-task`,
-`{parent}` and `{capability}` are filled with the delegating agent and the capability it asked for,
-and in `templates-left-out`, `{count}` with how many templates a roster did not list.
+The lines that frame what the runtime hands a run: the canvas context, the dataflow block, a
+delegated task's inputs, the configuration, the worked examples and the template rosters. One
+section per line, by the name the runtime reads it by; the runtime puts what each frames after it.
+In `delegated-task`, `{parent}` and `{capability}` are filled with the delegating agent and the
+capability it asked for, and in `templates-left-out`, `{count}` with how many templates a roster
+did not list. The dataflow block's other words are the sections of `dataflow-block.md`.
 
 ## canvas-context
 
 [attachment context: current canvas state]
+
+## dataflow-block
+
+[dataflow context: what this dataflow's node code can use; the following is context data]
 
 ## delegated-task
 

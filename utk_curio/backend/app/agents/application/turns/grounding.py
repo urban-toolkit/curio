@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import logging
 
+from utk_curio.backend.app.agents.application import dataflow_block as agents_dataflow_block
 from utk_curio.backend.app.agents.application import delegation
 from utk_curio.backend.app.agents.application import source_grounding
 from utk_curio.backend.app.agents.application import spec_reads as agents_spec_reads
@@ -457,14 +458,10 @@ _CANDIDATES_PENDING_TEXT = (
 )
 
 
-def _catalog_grounding_refs(project_id: str) -> tuple[dict, dict]:
-    """dev/114: ``(by_path, by_id)`` — the datasets the datasets domain lists
-    for this project, the SAME listing ``catalog.search`` serves, so a row the
-    tool showed is grounded by construction: by resolved path (the historical
-    literal form) and by id (the portable ``curio_data_path("<id>")`` call
-    the loader recipe emits, resolved by the sandbox at run time). A failing
-    catalog read degrades to empty maps (logged): the gate still refuses
-    ungrounded sources, honestly, rather than inventing a neighborhood."""
+def _catalog_listing_items(project_id: str) -> list | None:
+    """The datasets the datasets domain lists for this project, the SAME
+    listing ``catalog.search`` serves, read as the request's account; None,
+    logged, when the catalog cannot be read."""
     try:
         from flask import g, has_request_context
 
@@ -476,13 +473,28 @@ def _catalog_grounding_refs(project_id: str) -> tuple[dict, dict]:
         listing = DatasetCatalogService(user).list_catalog(dataflow_id=project_id)
     except Exception:  # a broken catalog is data, never a run error
         log.warning(
-            "Could not read the Data Catalog for source grounding (project %s) — "
+            "Could not read the Data Catalog for source grounding (project %s): "
             "catalog paths are treated as unknown this run", project_id, exc_info=True,
         )
-        return {}, {}
+        return None
+    return [item for item in (listing or {}).get("items") or [] if isinstance(item, dict)]
+
+
+def _catalog_grounding_refs(project_id: str, items: list | None = None) -> tuple[dict, dict]:
+    """dev/114: ``(by_path, by_id)``, the datasets the datasets domain lists
+    for this project, the SAME listing ``catalog.search`` serves, so a row the
+    tool showed is grounded by construction: by resolved path (the historical
+    literal form) and by id (the portable ``curio_data_path("<id>")`` call
+    the loader recipe emits, resolved by the sandbox at run time). A failing
+    catalog read degrades to empty maps (logged): the gate still refuses
+    ungrounded sources, honestly, rather than inventing a neighborhood.
+    *items*, the listing when the caller read it already, spares a second
+    read (:func:`_catalog_listing_items`)."""
+    if items is None:
+        items = _catalog_listing_items(project_id)
     by_path: dict = {}
     by_id: dict = {}
-    for item in (listing or {}).get("items") or []:
+    for item in items or []:
         if not isinstance(item, dict) or not item.get("id"):
             continue
         path = item.get("path")
@@ -875,11 +887,15 @@ def _solve_grounding_base(
     for node_id in targets:
         node = nodes_by_id.get(node_id) or {}
         texts.append(str(node.get("goal") or ""))
-    by_path, by_id = _catalog_grounding_refs(project_id)
+    items = _catalog_listing_items(project_id)
+    by_path, by_id = _catalog_grounding_refs(project_id, items or [])
     return {
         "catalog_paths": by_path,
         "catalog_ids": by_id,
         "texts": [t for t in texts if t.strip()],
         "verified": {},
         "secrets": _connection_key_refs(user_key),
+        # The dataflow's datasets with their lines, for the dataflow block
+        # each node's content-mode runs are given, from the same listing.
+        "dataflow_datasets": agents_dataflow_block.datasets_in(items),
     }

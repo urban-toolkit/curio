@@ -28,6 +28,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 
 from utk_curio.backend.app.agents.application import attachments
+from utk_curio.backend.app.agents.application import dataflow_block as agents_dataflow_block
 from utk_curio.backend.app.agents.application import dataset_resolution as agents_dataset_resolution
 from utk_curio.backend.app.agents.application import delegation
 from utk_curio.backend.app.agents.application import source_grounding
@@ -157,6 +158,9 @@ class SolveBatch:
                   if verify else {})
         )
         self.batch_templates = agents_roster._roster_templates(user_key, project_id)  # dev/119: ONE snapshot per batch
+        # The dataflow block each node's content-mode runs are given, composed
+        # once per node (``_dataflow_block``).
+        self.dataflow_blocks: dict[str, str | None] = {}
         # dev/131: session bookkeeping lives ABOVE the resolution branch, because
         # every exit — including "no specialist installed" — must still report how
         # the session ended.
@@ -1275,12 +1279,25 @@ class SolveBatch:
                 attachment_id=self.attachment_id,
                 node_id=node_id,
                 home_create=False,  # workers never write the spec
+                dataflow_block=self._dataflow_block(node_id),
             )
             queue.put(
                 (node_id, "solved" if status == "ok" else "failed", text, child)
             )
         except BaseException as exc:  # a lost item would deadlock the drain
             queue.put((node_id, "failed", f"solve worker error: {exc}", None))
+
+    def _dataflow_block(self, node_id: str) -> str | None:
+        """The dataflow block of *node_id*'s content-mode runs, composed once:
+        its template, and the dataflow's datasets as the batch read them when
+        it started (the grounding base), since a worker holds no request."""
+        if node_id not in self.dataflow_blocks:
+            node = self.nodes_by_id.get(node_id) or {}
+            self.dataflow_blocks[node_id] = agents_dataflow_block.compose(
+                self.user_key, self.project_id, node_type=node.get("type"),
+                datasets=self.solve_ground.get("dataflow_datasets"), user=self.acting_user,
+            )
+        return self.dataflow_blocks[node_id]
 
     def _worker_inputs(self, node_id: str, node: dict, wave_spec: dict, upstream_outputs) -> dict:
         inputs = {
@@ -1319,6 +1336,7 @@ class SolveBatch:
                 attachment_id=self.attachment_id,
                 node_id=_node_id,
                 home_create=False,  # workers never write the spec
+                dataflow_block=self._dataflow_block(_node_id),
             )
             return st, tx, ch
 

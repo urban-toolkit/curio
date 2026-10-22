@@ -15,6 +15,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from utk_curio.backend.app.execution import code_references
+from utk_curio.backend.app.packages.application import python_modules as packages_python_modules
 from utk_curio.backend.app.packages.application import template_packages as packages_template_packages
 from utk_curio.backend.app.packages.domain.errors import PackageServiceError
 from utk_curio.backend.app.packages.domain.function_nodes import (
@@ -101,6 +102,51 @@ def package_functions(user_key: str) -> list[dict]:
                 "readOnly": manifest.read_only,
                 "modules": [_module_entry(module, path) for module, path in files],
             })
+    return out
+
+
+def module_functions(package_root: Path, manifest: PackageManifest, names: frozenset[str] | None = None) -> list[dict]:
+    """Each module of the package at *package_root*, with the public functions
+    it defines, as an agent reads them: ``{"module", "problem", "functions":
+    [{"name", "call", "doc"}]}``, in module order, each function's ``call``
+    its signature and its ``doc`` its docstring's first paragraph. With
+    *names*, only the modules whose top-level name is one of them. A module
+    that does not parse carries its problem and no functions. Called under
+    the store lock, as :func:`package_functions` reads."""
+    out: list[dict] = []
+    for module, path in module_files(package_root, manifest)[:MAX_MODULE_FILES]:
+        if names is not None and module.split(".", 1)[0] not in names:
+            continue
+        try:
+            functions = read_functions(_read_source(path, module), module)
+        except (FunctionSourceError, OSError) as exc:
+            out.append({"module": module, "problem": str(exc), "functions": []})
+            continue
+        out.append({"module": module, "problem": None,
+                    "functions": [{"name": f.name, "call": f.call, "doc": f.doc} for f in functions]})
+    return out
+
+
+def node_functions(user_key: str, node_type: object, project_id: str | None = None) -> list[dict]:
+    """The functions the code of a node of *node_type* can import: those of
+    the modules the sandbox makes importable for it
+    (``python_modules.modules_for_node``), its own package's and those of the
+    packages it names in ``dependencies.packages``. One ``{"package",
+    "module", "problem", "functions"}`` per module, its own package's first.
+    Empty for a built-in node and for a package that ships no modules."""
+    sources = packages_python_modules.modules_for_node(user_key, node_type, project_id)
+    if isinstance(sources, dict):
+        sources = [sources]
+    out: list[dict] = []
+    with package_seed_lock(user_key):
+        for source in sources or []:
+            root = Path(source["root"]).parent
+            try:
+                manifest = load_package_manifest(root)
+            except ManifestError:
+                continue
+            for row in module_functions(root, manifest, frozenset(source.get("names") or ())):
+                out.append({"package": manifest.dir_name, **row})
     return out
 
 
