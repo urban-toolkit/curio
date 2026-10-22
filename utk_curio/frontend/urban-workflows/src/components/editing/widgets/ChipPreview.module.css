@@ -1,0 +1,234 @@
+/*
+ * A chip's preview (ChipPreview.tsx), in the light look the owner picked for
+ * the one Curio tooltip: dark text on its white card, secondary text grey, a
+ * table's column names over their dtypes, and a rule under them. The card
+ * itself (its border, shadow and padding) is the tooltip's.
+ */
+
+/* Its height is capped inline (ChipPreview.tsx), the card's less its padding:
+   the head and the foot keep theirs, and the body between them is cut. */
+.preview {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-height: 0;
+  font-family: var(--curio-font-family);
+  font-size: var(--curio-font-size-sm);
+  line-height: 16px;
+  color: var(--curio-text-primary);
+}
+
+.head {
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 6px;
+}
+
+.body {
+  display: flex;
+  flex: 0 1 auto;
+  flex-direction: column;
+  gap: 6px;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  box-sizing: border-box;
+  height: 20px;
+  padding: 0 6px;
+  border: 1px solid;
+  border-radius: var(--curio-radius-sm);
+  font-family: var(--curio-font-mono);
+  font-size: var(--curio-font-size-xs);
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+/* The chips' own colors, as the header's tags draw them (WidgetTags.module.css). */
+.chipInput {
+  border-color: #a8d5b1;
+  background: var(--curio-accent-mint-bg);
+  color: var(--curio-accent-mint-fg);
+}
+
+.chipColumn {
+  border-color: #a8d5b1;
+  background: var(--curio-card-bg);
+  color: var(--curio-accent-mint-fg);
+}
+
+.chipWidget {
+  border-color: #b6cbf2;
+  background: var(--curio-accent-sky-bg);
+  color: var(--curio-accent-sky-fg);
+}
+
+.chipShared {
+  border-color: #e8c99a;
+  background: var(--curio-accent-amber-bg);
+  color: var(--curio-accent-amber-fg);
+}
+
+.chipSelection {
+  border-color: #f2b9a3;
+  background: var(--curio-accent-peach-bg);
+  color: #b8461d;
+}
+
+.chipScenario {
+  border-color: #cdbff0;
+  background: var(--curio-accent-lilac-bg);
+  color: var(--curio-accent-lilac-fg);
+}
+
+.chipProblem {
+  border-color: var(--curio-danger-border);
+  background: var(--curio-danger-bg);
+  color: var(--curio-danger-text);
+}
+
+.segment {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+}
+
+.line {
+  overflow-wrap: anywhere;
+}
+
+.muted {
+  color: var(--curio-text-secondary);
+}
+
+.mono {
+  font-family: var(--curio-font-mono);
+  font-size: var(--curio-font-size-xs);
+}
+
+.problem {
+  color: var(--curio-danger-text);
+}
+
+.swatch {
+  display: inline-block;
+  flex: none;
+  width: 10px;
+  height: 10px;
+  margin-right: 4px;
+  border-radius: 2px;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.25);
+  vertical-align: -1px;
+}
+
+.part {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.table {
+  border-collapse: collapse;
+}
+
+.caption {
+  caption-side: top;
+  padding-bottom: 3px;
+  text-align: left;
+  font-size: var(--curio-font-size-xs);
+  font-weight: 600;
+  color: var(--curio-text-primary);
+}
+
+.table th,
+.table td {
+  padding: 2px 14px 2px 0;
+  white-space: nowrap;
+}
+
+.table th:last-child,
+.table td:last-child {
+  padding-right: 0;
+}
+
+.table th {
+  border-bottom: 1px solid var(--curio-border);
+  text-align: left;
+  vertical-align: bottom;
+}
+
+.table td {
+  font-family: var(--curio-font-mono);
+  font-size: var(--curio-font-size-xs);
+  line-height: 15px;
+}
+
+.table .number {
+  text-align: right;
+}
+
+/* A cell, its column's name and its dtype each end in an ellipsis at the
+   width its column may take (inline, `cellWidth`), so every column shown
+   fits the card. */
+.cell {
+  display: inline-block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: bottom;
+}
+
+.columnName {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--curio-font-size-xs);
+  font-weight: 600;
+  line-height: 15px;
+  color: var(--curio-text-primary);
+}
+
+.columnDtype {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--curio-font-mono);
+  font-size: 10px;
+  font-weight: 400;
+  line-height: 13px;
+  color: var(--curio-text-secondary);
+}
+
+.null {
+  color: var(--curio-text-secondary);
+}
+
+.foot {
+  flex: none;
+  font-size: var(--curio-font-size-xs);
+  line-height: 15px;
+  color: var(--curio-text-secondary);
+}
+
+/* An editor chip's tooltip: the markers' messages there, then its preview. */
+.tip {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.message {
+  font-family: var(--curio-font-family);
+  font-size: var(--curio-font-size-sm);
+  line-height: 16px;
+  color: var(--curio-text-primary);
+  white-space: pre-wrap;
+}

@@ -432,7 +432,11 @@ FLASK_APP=server.py flask db upgrade
 Everything the agents read is hand-written Markdown in `agents/`: each agent's
 prompts in its folder, and the pages they share in the base entry,
 [`agents/agent.curio.builtin@1/`](../agents/agent.curio.builtin@1/): the
-preamble, the worked examples' index and the rules prompts include. Where a
+preamble and the knowledge pages it includes, one per feature of Curio, the
+worked examples' index and the rules prompts include. A new feature, such as a
+built-in template, a function node code calls or a kind of chip, gets its
+lines on a knowledge page in the same change: `test_knowledge_pages.py` fails
+while one is on no page. Where a
 page or prompt states a fact the code owns (an agent's name, a template's
 label, the Trill block), it holds a marker, `{{field}}`, which the backend
 fills from `contracts.PROMPT_FIELDS` when it starts; `{{include:<path>}}` puts
