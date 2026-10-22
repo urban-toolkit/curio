@@ -15,6 +15,7 @@ without them and each test fails on its own.
 from __future__ import annotations
 
 import json
+import os
 import shutil
 from pathlib import Path
 
@@ -68,6 +69,22 @@ def _user_manifest(system: str, **over) -> dict:
     }
     manifest.update(over)
     return manifest
+
+
+def test_no_prompt_lives_under_utk_curio():
+    """``utk_curio/`` is the plumbing that reads agent text and holds none of
+    it: no prompt folder, and no Markdown file but its READMEs and the credits
+    of its test fixtures."""
+    assert not (REPO_ROOT / "utk_curio" / "llm-prompts").exists()
+    stray = []
+    for here, dirs, files in os.walk(REPO_ROOT / "utk_curio"):
+        dirs[:] = [name for name in dirs if name not in ("node_modules", "dist", "__pycache__") and not name.startswith(".")]
+        stray += [
+            (Path(here) / name).relative_to(REPO_ROOT).as_posix()
+            for name in files
+            if name.endswith(".md") and name not in ("README.md", "ATTRIBUTION.md")
+        ]
+    assert not stray, f"utk_curio/ holds text that belongs in agents/: {sorted(stray)}"
 
 
 def test_no_prompt_is_generated():
