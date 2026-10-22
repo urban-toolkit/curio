@@ -134,8 +134,8 @@ LOOP_MAP = {
              "getFnvType": "quantitative", "colorMapInterpolator": "interpolateOrRd",
              "colorMapRange": [0, 1], "title": "Social vulnerability (SVI percentile)",
              "opacity": 0.55, "isPick": True},
-            # Water and parks in colors of their own: Autark draws a layer
-            # with none in the same grey as the roads.
+            # Water, parks and trees in colors of their own: Autark draws a
+            # layer with none in grey, as the roads.
             {"dataRef": layer("water"), "title": "Water", "color": "#6baed6"},
             {"dataRef": layer("parks"), "title": "Parks", "color": "#74c476"},
             {"dataRef": layer("roads"), "title": "Roads"},
@@ -145,7 +145,7 @@ LOOP_MAP = {
             {"dataRef": layer("buildings"), "isColorMap": True, "getFnv": "height",
              "getFnvType": "quantitative", "colorMapInterpolator": "interpolateViridis",
              "colorMapRange": [0, 250], "title": "Building height (m)", "isPick": True},
-            {"dataRef": layer("trees"), "title": "Trees"},
+            {"dataRef": layer("trees"), "title": "Trees", "color": "#238b45"},
             {"dataRef": layer("cta_stations"), "isColorMap": True, "getFnv": "ada",
              "getFnvType": "categorical", "colorMapInterpolator": "schemeSet1",
              "title": "CTA station", "isPick": True},

@@ -4,7 +4,7 @@
   "version": 1,
   "source": {
     "path": "docs/examples/dataflows/chicago-loop-layers.json",
-    "sha256": "7e167f66e26e3793df9a114f6aab870602e9ad7222654510122ca4cbfe6232d2",
+    "sha256": "3fc6ea649cc57d4da025dc04beceaa75d57d62a4eac901d64decfc9a0bac1ebe",
     "walkthrough": null
   },
   "prompt": "Make one Autark map of downtown Chicago that has a layer of every kind an Autark map draws. From the Data Catalog's Chicago Loop layers, load the census tracts, colored by CDC/ATSDR's Social Vulnerability Index, the CTA 'L' lines and stations, and OpenStreetMap's trees, each layer on its own, tracts first. Load OpenStreetMap's parks, water, roads and buildings, the buildings colored by height, from the OpenStreetMap extract of downtown Chicago that the examples ship, in the box the extract is cut at. Send every layer through a Map Edits node on its way to the map, and link the Map Edits node to the map with an interaction edge, so I can add, reshape, move, change or remove the features of any layer on the map.",
