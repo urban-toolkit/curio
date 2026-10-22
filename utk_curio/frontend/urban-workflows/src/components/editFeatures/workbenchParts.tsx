@@ -1,11 +1,16 @@
 /**
  * The pieces every form of the Map Edits node's workbench shares (#662): what
- * a feature is called, the icon of a kind of geometry, the way back with Show
- * only this layer beside it, and the choice of picking by a click or by a
- * rule.
+ * a feature and a property's type are called, the icon of a kind of
+ * geometry, the way back with Show only this layer beside it, and a choice of
+ * one (picking by a click or by a rule, how a shape is changed), as the
+ * canvas bar's view switch is one (`CanvasViewSwitch`).
  */
 import React from "react";
+import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
+import { faDrawPolygon, faLocationDot, faRoute, type IconDefinition } from "@fortawesome/free-solid-svg-icons";
+import type { PropertyType } from "../../utils/editFeatures/editFeatures";
 import type { GeometryKind } from "../../utils/editFeatures/layerModel";
+import { CheckboxInput } from "./fields";
 import styles from "./EditFeatures.module.css";
 
 /** What one feature of the layer worked on is called, and several. */
@@ -22,54 +27,67 @@ export const plural = (n: number, one: string, many: string) => `${n.toLocaleStr
 /** Where the drawing happens. */
 export const onTheMap = "on the map";
 
-/** An on/off switch: a way of changing the picked feature's shape. */
-export function ShapeSwitch({ on, icon, label, testId, onToggle }: { on: boolean; icon: "points" | "whole"; label: string; testId: string; onToggle: () => void }) {
-  return (
-    <button type="button" role="switch" aria-checked={on} data-testid={testId} className={`nodrag nopan ${styles.switch} ${on ? styles.switchOn : ""}`} onClick={onToggle}>
-      <svg className={styles.switchIcon} width={18} height={18} viewBox="0 0 18 18" aria-hidden="true">
-        {icon === "points" ? (
-          <>
-            <polyline points="3,14 8,4 15,9" fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinejoin="round" />
-            <rect x={1.5} y={12.5} width={3} height={3} fill="#FFFFFF" stroke="currentColor" strokeWidth={1.4} />
-            <rect x={6.5} y={2.5} width={3} height={3} fill="#FFFFFF" stroke="currentColor" strokeWidth={1.4} />
-            <rect x={13.5} y={7.5} width={3} height={3} fill="#FFFFFF" stroke="currentColor" strokeWidth={1.4} />
-          </>
-        ) : (
-          <path d="M9 1.5v15M1.5 9h15M9 1.5l-2.2 2.2M9 1.5l2.2 2.2M9 16.5l-2.2-2.2M9 16.5l2.2-2.2M1.5 9l2.2-2.2M1.5 9l2.2 2.2M16.5 9l-2.2-2.2M16.5 9l-2.2 2.2" fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" />
-        )}
-      </svg>
-      <span className={styles.switchLabel}>{label}</span>
-      <span className={styles.switchTrack} aria-hidden="true">
-        <span className={styles.switchKnob} />
-      </span>
-      <span className={styles.switchState} aria-hidden="true">{on ? "On" : "Off"}</span>
-    </button>
-  );
+/** What a property's type is called, in one spelling everywhere. */
+export const TYPE_LABEL: Record<PropertyType, string> = { text: "Text", number: "Number", boolean: "Yes / no", choice: "Choice", date: "Date" };
+
+const KIND_ICON: Record<GeometryKind, IconDefinition> = { points: faLocationDot, lines: faRoute, areas: faDrawPolygon };
+
+export function KindIcon({ kind }: { kind: GeometryKind }) {
+  return <FontAwesomeIcon icon={KIND_ICON[kind]} className={styles.icon} aria-hidden />;
 }
 
-export function KindIcon({ kind, size = 16 }: { kind: GeometryKind; size?: number }) {
-  if (kind === "points") {
-    return (
-      <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-        <circle cx="12" cy="12" r="5" />
-      </svg>
-    );
-  }
+/** One option of a choice of one. */
+export interface ModeOption<T extends string> {
+  value: T;
+  label: string;
+  icon?: IconDefinition;
+  testId?: string;
+}
+
+/** A choice of one: a bordered group of options, the one picked filled. */
+export function ModeSwitch<T extends string>({
+  label,
+  value,
+  options,
+  onChange,
+}: {
+  /** The group's accessible name. */
+  label: string;
+  value: T;
+  options: ModeOption<T>[];
+  onChange: (value: T) => void;
+}) {
   return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d={kind === "lines" ? "M4 18L10 8l4 6 6-9" : "M5 7l8-3 6 7-4 9-10-3z"} />
-    </svg>
+    <div className={styles.modes} role="radiogroup" aria-label={label}>
+      {options.map((option) => (
+        <button
+          key={option.value}
+          type="button"
+          role="radio"
+          aria-checked={value === option.value}
+          data-testid={option.testId}
+          className={`nodrag nopan ${styles.mode} ${value === option.value ? styles.modeChecked : ""}`}
+          onClick={() => onChange(option.value)}
+        >
+          {option.icon ? <FontAwesomeIcon icon={option.icon} aria-hidden /> : null}
+          {option.label}
+        </button>
+      ))}
+    </div>
   );
 }
 
 /** Show only this layer: the map hides its other layers while one is worked on. */
 export function SoloSwitch({ solo, setSolo }: { solo: boolean; setSolo: (solo: boolean) => void }) {
   return (
-    <label className={`nodrag nopan ${styles.soloSwitch}`} title="Hide the map's other layers while you work on this one">
-      <input type="checkbox" role="switch" data-testid="interaction-solo" checked={solo} onChange={(e) => setSolo(e.target.checked)} />
-      <span className={styles.track} aria-hidden="true" />
-      Show only this layer
-    </label>
+    <CheckboxInput
+      checked={solo}
+      onChange={setSolo}
+      text="Show only this layer"
+      title="Hide the map's other layers while you work on this one"
+      testId="interaction-solo"
+      role="switch"
+    />
   );
 }
 
@@ -88,13 +106,14 @@ export function BackRow({ label, onBack, solo }: { label: string; onBack: () => 
 /** Picking by a click on the map, or by a rule. */
 export function PickBy({ current, choose, testId }: { current: PickMode; choose: (by: PickMode) => void; testId: string }) {
   return (
-    <span className={styles.segmented} role="group" aria-label="Pick by">
-      <button type="button" aria-pressed={current === "click"} className={`nodrag nopan ${current === "click" ? styles.on : ""}`} onClick={() => choose("click")}>
-        Click
-      </button>
-      <button type="button" aria-pressed={current === "rule"} data-testid={testId} className={`nodrag nopan ${current === "rule" ? styles.on : ""}`} onClick={() => choose("rule")}>
-        By a rule
-      </button>
-    </span>
+    <ModeSwitch
+      label="Pick by"
+      value={current}
+      onChange={choose}
+      options={[
+        { value: "click", label: "Click" },
+        { value: "rule", label: "By a rule", testId },
+      ]}
+    />
   );
 }

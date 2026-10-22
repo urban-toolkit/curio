@@ -217,7 +217,8 @@ test("Commit edits runs the node and every node below it, the map it feeds among
   await screen.findByTestId("interaction-connected");
   const foot = screen.getByTestId("interaction-commit");
   expect(foot).toHaveAttribute("data-commit-state", "stale");
-  expect(foot).toHaveTextContent("The downstream nodes don't have these edits yet.");
+  // The map, the count and the model below the node.
+  expect(foot).toHaveTextContent("The 3 nodes below do not have these edits yet.");
   const update = screen.getByTestId("interaction-update");
   expect(update).toHaveTextContent(/^Commit edits$/);
   expect(update).toHaveAttribute("title", "Runs this node and the 3 nodes below it with the edits");

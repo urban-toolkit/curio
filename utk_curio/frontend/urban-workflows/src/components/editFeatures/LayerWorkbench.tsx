@@ -147,7 +147,6 @@ export default function LayerWorkbench({
   const [texts, setTexts] = useState<Record<string, string>>({});
   // How the picked feature's shape is changed, or null: neither, and a drag pans the map.
   const [shapeMode, setShapeMode] = useState<ShapeMode>(null);
-  const toggleShape = (next: "reshape" | "move") => setShapeMode((current) => (current === next ? null : next));
   const [editTexts, setEditTexts] = useState<Record<string, string>>({});
   const [newProp, setNewProp] = useState<NewProperty>({ name: "", type: "text", value: "" });
   const [removeBy, setRemoveBy] = useState<PickMode>("click");
@@ -506,7 +505,7 @@ export default function LayerWorkbench({
               nouns={nouns}
               feature={pickedOne}
               shapeMode={shapeMode}
-              onToggleShape={toggleShape}
+              onShapeMode={setShapeMode}
               partFor={partFor}
               onAddPart={() => {
                 setShapeMode(null);

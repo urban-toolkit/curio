@@ -47,7 +47,7 @@ export default function EditRuleForm({
         <button
           type="button"
           data-testid="interaction-rule-apply"
-          className={`nodrag nopan ${styles.big} ${styles.primary}`}
+          className={`nodrag nopan ${styles.primary}`}
           disabled={!ready || n === 0}
           onClick={() => {
             if (!ready) return;
@@ -58,7 +58,7 @@ export default function EditRuleForm({
         </button>
       </span>
       <span className={styles.hint}>
-        Kept as a rule: {nouns.many} that match it later are changed too. The match is outlined in red {onTheMap}.
+        Kept as a rule: {nouns.many} that match it later are changed too. The {nouns.many} it matches are outlined, dashed, {onTheMap}.
       </span>
     </div>
   );

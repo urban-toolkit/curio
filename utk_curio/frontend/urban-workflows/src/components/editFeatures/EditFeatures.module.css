@@ -1,14 +1,19 @@
-/* The Map Edits node's body (#662): the layer and id menus, the map its
-   features are picked on, the actions on a pick and by condition, the picked
-   features' table, and the edit log. */
+/* The Map Edits node's body (#662): the layers it is fed and the forms that
+   edit them (LayerWorkbench), and its list of edits. Colours, type and radii
+   are the tokens in styles/curioTokens.css; buttons and 22px controls are the
+   Widgets tab's (WidgetTags.module.css); tags take the scenario rows' status
+   tones (ScenarioLayers.module.css) and the count the drawer tabs' badge
+   (DrawerTabs.module.css). */
 
 .body {
+  composes: thinScrollbar from "../../styles/scrollbars.module.css";
+  --widget-h: 22px;
   height: 100%;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 8px;
   box-sizing: border-box;
-  padding: 6px 8px;
+  padding: 8px 10px;
   overflow-y: auto;
   font-family: var(--curio-font-family);
   font-size: var(--curio-font-size-sm);
@@ -21,89 +26,15 @@
   outline: none;
 }
 
-.bar,
-.actions,
-.setValue {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px;
-}
-
-.field {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
+.connected {
   font-size: var(--curio-font-size-xs);
-  color: var(--curio-text-secondary);
+  color: var(--curio-success-text);
 }
 
-.field select,
-.input {
-  font-family: inherit;
+.problem {
+  margin: 0;
+  color: var(--curio-danger-text);
   font-size: var(--curio-font-size-xs);
-  max-width: 130px;
-  padding: 1px 4px;
-  border: 1px solid var(--curio-border);
-  border-radius: var(--curio-radius-sm);
-  background: var(--curio-card-bg);
-  color: var(--curio-text-primary);
-}
-
-.input {
-  width: 72px;
-}
-
-.short {
-  width: 44px;
-}
-
-.where {
-  width: 140px;
-  font-family: ui-monospace, monospace;
-}
-
-.button {
-  font-family: inherit;
-  font-size: var(--curio-font-size-xs);
-  line-height: 20px;
-  padding: 0 8px;
-  border: 1px solid var(--curio-border-strong);
-  border-radius: var(--curio-radius-pill);
-  background: var(--curio-card-bg);
-  color: var(--curio-text-primary);
-  cursor: pointer;
-}
-
-.button:disabled {
-  cursor: default;
-  color: var(--curio-text-secondary);
-}
-
-.stage {
-  position: relative;
-  flex: 1;
-  min-height: 120px;
-}
-
-.map {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  flex-direction: column;
-}
-
-.mapCanvas {
-  position: relative;
-  flex: 1;
-  min-height: 0;
-}
-
-.picked {
-  flex: 1 1 100%;
-  font-size: var(--curio-font-size-xs);
-  color: var(--curio-text-secondary);
-  user-select: text;
 }
 
 .note {
@@ -112,221 +43,110 @@
   font-size: var(--curio-font-size-xs);
 }
 
-.problem {
-  margin: 4px 0 0;
-  color: var(--curio-danger-text);
-  font-size: var(--curio-font-size-xs);
+/* The Widgets tab's buttons: a white one, a dark one for the main action and
+   a red-text one for a removal, each with room for an icon. */
+.button {
+  composes: button from "../editing/widgets/WidgetTags.module.css";
+  gap: 5px;
 }
 
-.edits {
-  margin: 0;
-  padding: 0 0 0 18px;
-  max-height: 84px;
-  overflow-y: auto;
-  font-size: var(--curio-font-size-xs);
-  user-select: text;
+.primary {
+  composes: primary from "../editing/widgets/WidgetTags.module.css";
+  gap: 5px;
 }
 
-.edit {
+.danger {
+  composes: danger from "../editing/widgets/WidgetTags.module.css";
+  gap: 5px;
+}
+
+/* A square button that shows only its icon. */
+.iconButton {
+  composes: danger from "../editing/widgets/WidgetTags.module.css";
+  flex: 0 0 auto;
+  width: var(--widget-h);
+  padding: 0;
+}
+
+.formButtons {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
+  justify-content: flex-end;
   gap: 6px;
 }
 
-.empty {
-  list-style: none;
-  margin-left: -18px;
-  color: var(--curio-text-secondary);
-}
-
-.delete {
-  font-family: inherit;
-  font-size: var(--curio-font-size-xs);
-  line-height: 16px;
-  padding: 0 4px;
-  border: none;
-  background: none;
-  color: var(--curio-text-secondary);
-  cursor: pointer;
-}
-
-/* The picked features, as the log leaves them; each cell takes a new value. */
-.table {
-  display: block;
-  max-height: 96px;
-  overflow: auto;
-  border-collapse: collapse;
-  font-size: var(--curio-font-size-xs);
-}
-
-.table th,
-.table td {
-  padding: 1px 4px;
-  border-bottom: 1px solid var(--curio-border);
-  text-align: left;
-  white-space: nowrap;
-}
-
-.cell {
-  width: 64px;
-  padding: 0 2px;
-  border: 1px solid transparent;
-  background: transparent;
-  font-family: inherit;
-  font-size: var(--curio-font-size-xs);
-  color: var(--curio-text-primary);
-}
-
-.cell:hover,
-.cell:focus {
-  border-color: var(--curio-border);
-}
-
-.matching {
-  font-size: var(--curio-font-size-xs);
-  color: var(--curio-text-secondary);
-}
-
-/* An entry switched off: kept in the log, skipped by the run. */
-.off {
-  color: var(--curio-text-secondary);
-  text-decoration: line-through;
-}
-
-/* Update results while results below the node are out of date. */
-/* The foot of the edit log: whether the nodes below have the edits, and
-   Commit edits to run them with them. */
-.commit {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  margin-top: 2px;
-  padding: 10px 12px;
-  border: 1px solid #e3e6eb;
-  border-radius: 8px;
-  background: #f6f8fa;
-}
-
-.commitStale {
-  border-color: #e6b800;
-  background: #fff8e5;
-}
-
-.commitText {
-  font-size: 13px;
-  line-height: 18px;
-  color: #5c4400;
-}
-
-.commitButton {
-  width: 100%;
-  min-height: 36px;
-  padding: 0 14px;
-  border: 0;
-  border-radius: 8px;
-  background: #1f6feb;
-  color: #ffffff;
-  font-family: inherit;
-  font-size: 14px;
-  font-weight: 600;
-  cursor: pointer;
-}
-
-.commitButton:hover:not(:disabled) {
-  background: #1a5fd0;
-}
-
-.commitButton:focus-visible {
-  outline: 2px solid #1f6feb;
-  outline-offset: 2px;
-}
-
-.commitButton:disabled {
-  opacity: 0.6;
-  cursor: default;
-}
-
-.commitDone {
-  font-size: 13px;
-  font-weight: 600;
-  color: #1d7a3a;
-}
-
-/* The layer workbench, as the Interaction Node Flow mockups draw it: the
-   layers as cards by geometry, a 2x2 choice of what to do, and the forms an
-   action asks to fill in, with the map doing the drawing. */
-.workbench {
-  --wb-ink: #15171c;
-  --wb-ink-2: #3d4654;
-  --wb-ink-3: #5b616e;
-  --wb-line: #c9cdd6;
-  --wb-line-2: #e3e6eb;
-  --wb-blue: #1f6feb;
-  --wb-blue-bg: #eef4fe;
-  --wb-red: #b42318;
-  --wb-mono: var(--curio-font-mono, "IBM Plex Mono", ui-monospace, monospace);
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  padding: 6px 4px;
-  color: var(--wb-ink);
-  font-size: 13px;
-}
-
-.connected {
-  font-size: 12px;
-  color: #1d7a3a;
-}
-
-.lead {
-  font-size: 14px;
-  line-height: 20px;
-  color: var(--wb-ink);
-}
-
-.hint {
-  font-size: 12px;
-  line-height: 17px;
-  color: var(--wb-ink-2);
-}
-
+/* The way back: a link-like button, and Show only this layer beside it. */
 .back {
   align-self: flex-start;
   padding: 0;
   border: 0;
   background: none;
-  font-family: inherit;
-  font-size: 13px;
-  color: var(--wb-blue);
+  font: inherit;
+  color: var(--curio-text-secondary);
   cursor: pointer;
 }
 
+.back:hover {
+  color: var(--curio-text-primary);
+}
+
+.back:focus-visible {
+  border-radius: var(--curio-radius-sm);
+  outline: 2px solid var(--curio-focus-ring);
+  outline-offset: 2px;
+}
+
+.backRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+/* The workbench: the layers, a layer's actions and the action's form. */
+.workbench,
+.form,
+.group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.group {
+  gap: 6px;
+}
+
 .title {
-  font-size: 17px;
+  font-size: var(--curio-font-size-md);
   font-weight: 600;
 }
 
 .titleRow {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 6px;
 }
 
-.titleRow.spread {
+.spread {
   justify-content: space-between;
   align-items: baseline;
 }
 
-.mono {
-  font-family: var(--wb-mono);
-  font-size: 11px;
-  color: var(--wb-ink-2);
+.lead {
+  line-height: 1.4;
 }
 
-.group {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
+.hint,
+.meta {
+  font-size: var(--curio-font-size-xs);
+  line-height: 1.4;
+  color: var(--curio-text-secondary);
+}
+
+.icon {
+  flex: none;
+  color: var(--curio-text-secondary);
 }
 
 .groupLabel {
@@ -334,219 +154,184 @@
   align-items: center;
   gap: 6px;
   margin-top: 4px;
-  font-size: 12px;
-  letter-spacing: 0.06em;
+  font-size: var(--curio-font-size-xs);
+  font-weight: 600;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: var(--wb-ink-3);
+  color: var(--curio-text-muted);
 }
 
-.layerCard {
+/* A layer, and an action on it: a card that fills on hover and takes the
+   focus ring, so nothing moves under the pointer. */
+.layerCard,
+.actionCard {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  padding: 12px 14px;
+  gap: 2px;
+  box-sizing: border-box;
+  padding: 6px 8px;
+  border: 1px solid var(--curio-border);
+  border-radius: var(--curio-radius-md);
+  background: var(--curio-card-bg);
+  color: var(--curio-text-primary);
+  font: inherit;
   text-align: left;
-  font-family: inherit;
-  color: var(--wb-ink);
-  border: 1px solid var(--wb-line-2);
-  border-radius: 10px;
-  background: #ffffff;
   cursor: pointer;
 }
 
 .layerCard:hover,
-.layerCard.on {
-  border: 1.5px solid var(--wb-blue);
-  background: var(--wb-blue-bg);
+.actionCard:hover:not(:disabled) {
+  background: var(--curio-surface-muted);
 }
 
-.layerCard .top {
+.layerCard:focus-visible,
+.actionCard:focus-visible {
+  outline: 2px solid var(--curio-focus-ring);
+  outline-offset: -1px;
+}
+
+.actionCard:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.cardTop {
   display: flex;
   justify-content: space-between;
+  align-items: baseline;
   gap: 8px;
   width: 100%;
 }
 
-.layerCard b {
-  font-size: 14px;
+.cardName,
+.actionTitle {
+  font-weight: 600;
 }
 
 .props {
-  font-size: 12px;
-  color: var(--wb-ink-2);
   overflow: hidden;
+  font-size: var(--curio-font-size-xs);
+  color: var(--curio-text-secondary);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.footer {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding-top: 8px;
-  border-top: 1px solid #eceef2;
+/* A new layer's mark, and a picked feature's changed geometry or values. */
+.badge {
+  composes: status from "../scenarios/ScenarioLayers.module.css";
+  font-weight: 400;
 }
 
-.dashedButton {
-  min-height: 40px;
-  padding: 0 14px;
-  border: 1px dashed var(--wb-ink-2);
-  border-radius: 10px;
-  background: #ffffff;
-  font-family: inherit;
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--wb-ink);
-  cursor: pointer;
-  white-space: nowrap;
+.changed {
+  composes: status from "../scenarios/ScenarioLayers.module.css";
+  font-weight: 400;
+}
+
+.footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--curio-border);
 }
 
 .actionGrid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
-}
-
-.actionCard {
-  min-height: 96px;
-  box-sizing: border-box;
-  padding: 14px;
-  display: flex;
-  flex-direction: column;
   gap: 6px;
-  text-align: left;
-  font-family: inherit;
-  color: var(--wb-ink);
-  border: 1px solid var(--wb-line);
-  border-radius: 12px;
-  background: #ffffff;
-  cursor: pointer;
 }
 
-.actionCard:hover {
-  border: 1.5px solid var(--wb-blue);
-  background: var(--wb-blue-bg);
-}
-
-.actionCard b {
-  font-size: 15px;
-}
-
-.actionCard span {
-  font-size: 12px;
-  line-height: 17px;
-  color: var(--wb-ink-2);
-}
-
-.actionCard:disabled {
-  cursor: default;
-  opacity: 0.55;
-}
-
-.form {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
+.actionText {
+  font-size: var(--curio-font-size-xs);
+  line-height: 1.4;
+  color: var(--curio-text-secondary);
 }
 
 .section {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding: 12px;
-  border: 1px solid var(--wb-line-2);
-  border-radius: 10px;
+  gap: 6px;
+  padding: 8px;
+  border: 1px solid var(--curio-border);
+  border-radius: var(--curio-radius-md);
 }
 
 .sectionHead {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  font-weight: 600;
 }
 
-.sectionHead b {
-  font-size: 14px;
+.toolRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
-.changed {
-  font-size: 11px;
-  padding: 2px 6px;
-  border-radius: 4px;
-  background: #fff4e5;
-  color: #8a4b00;
+/* A choice of one, as the canvas bar's Canvas and Notebook switch, on a light
+   surface: one bordered group, the option picked filled. */
+.modes {
+  display: inline-flex;
+  align-self: flex-start;
+  height: var(--widget-h);
+  border: 1px solid var(--curio-border-strong);
+  border-radius: var(--curio-radius-sm);
+  overflow: hidden;
 }
 
-.formField {
+.mode {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin: 0;
+  padding: 0 8px;
+  border: 0;
+  background: var(--curio-card-bg);
+  color: var(--curio-text-secondary);
+  font: inherit;
+  font-size: var(--curio-font-size-xs);
+  font-weight: 500;
+  line-height: 1;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.mode + .mode {
+  border-left: 1px solid var(--curio-border-strong);
+}
+
+.mode:hover {
+  background: var(--curio-surface-muted);
+  color: var(--curio-text-primary);
+}
+
+.modeChecked,
+.modeChecked:hover {
+  background: var(--curio-top-bar-bg);
+  color: var(--curio-text-on-dark);
+}
+
+.mode:focus-visible {
+  outline: 2px solid var(--curio-focus-ring);
+  outline-offset: -2px;
+}
+
+/* A field: its name, whether it is required and a hint, then its control. */
+.field {
   display: flex;
   flex-direction: column;
-  gap: 5px;
-  font-size: 13px;
-  color: var(--wb-ink);
+  gap: 4px;
 }
 
-.fieldHint {
-  font-family: var(--wb-mono);
-  font-size: 11px;
-  color: var(--wb-ink-3);
+.fieldName {
+  font-weight: 500;
 }
 
 .required {
-  color: #a61b1b;
-}
-
-.formField .input,
-.formField select,
-.ruleRow select,
-.ruleRow .input,
-.grid .input,
-.grid select {
-  max-width: none;
-  width: 100%;
-  box-sizing: border-box;
-  padding: 8px 10px;
-  font-family: inherit;
-  font-size: 14px;
-  border: 1px solid var(--wb-line);
-  border-radius: 8px;
-  background: #ffffff;
-  color: var(--wb-ink);
-}
-
-.formField .input:focus,
-.formField select:focus {
-  outline: none;
-  border: 1.5px solid var(--wb-blue);
-}
-
-.grid {
-  display: grid;
-  grid-template-columns: 96px minmax(0, 1fr);
-  gap: 8px 10px;
-  align-items: center;
-  font-size: 13px;
-}
-
-.grid label {
-  color: var(--wb-ink-2);
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.grid .input,
-.grid select {
-  padding: 6px 8px;
-  font-size: 13px;
-  border-radius: 6px;
-}
-
-.grid .dirty {
-  border: 1.5px solid #e69a1f;
-  background: #fff9ef;
-}
-
-.was {
-  font-size: 12px;
-  color: var(--wb-ink-3);
+  color: var(--curio-danger-text);
+  font-size: var(--curio-font-size-xs);
 }
 
 .choiceRow {
@@ -554,521 +339,170 @@
   gap: 6px;
 }
 
-.segmented {
-  display: flex;
-  border: 1px solid var(--wb-line, #c9cdd6);
-  border-radius: 8px;
+/* A picked feature's values: a name, its field and what it was. */
+.grid {
+  display: grid;
+  grid-template-columns: 96px minmax(0, 1fr);
+  gap: 6px 8px;
+  align-items: center;
+}
+
+.gridLabel {
   overflow: hidden;
+  color: var(--curio-text-secondary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.segmented button {
-  flex: 1;
-  min-height: 36px;
-  padding: 0 10px;
-  border: 0;
-  font-family: inherit;
-  font-size: 13px;
-  background: #ffffff;
-  color: var(--wb-ink, #15171c);
-  cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-}
-
-.segmented button.on {
-  background: var(--wb-ink, #15171c);
-  color: #ffffff;
-}
-
-/* On/off switches for the ways of changing a picked feature's shape. */
-.switches {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.switch {
+.gridValue {
   display: flex;
   align-items: center;
-  gap: 10px;
-  width: 100%;
-  min-height: 40px;
-  padding: 0 12px;
-  border: 1px solid var(--wb-line, #c9cdd6);
-  border-radius: 10px;
-  background: #ffffff;
-  color: var(--wb-ink, #15171c);
-  font-family: inherit;
-  font-size: 13px;
-  text-align: left;
-  cursor: pointer;
-  transition: border-color 160ms ease, background-color 160ms ease;
+  gap: 8px;
+  min-width: 0;
 }
 
-.switch:hover {
-  border-color: #1f6feb;
+/* A value changed and not applied yet. Two classes outweigh the widget
+   theme's one on Material UI's field. */
+.dirty :global(.MuiInputBase-root) {
+  background-color: var(--curio-warning-bg);
 }
 
-.switch:focus-visible {
-  outline: 2px solid #1f6feb;
-  outline-offset: 2px;
+.dirty :global(.MuiOutlinedInput-notchedOutline) {
+  border-color: var(--curio-warning-text);
 }
 
-.switchOn {
-  border-color: #1f6feb;
-  background: #eef4ff;
-}
-
-.switchIcon {
+.was {
   flex: none;
-  color: #57606a;
+  font-size: var(--curio-font-size-xs);
+  color: var(--curio-text-secondary);
+  white-space: nowrap;
 }
 
-.switchOn .switchIcon {
-  color: #1f6feb;
-}
-
-.switchLabel {
-  flex: 1;
-}
-
-.switchTrack {
-  position: relative;
-  flex: none;
-  width: 34px;
-  height: 20px;
-  border-radius: 999px;
-  background: #c9cdd6;
-  transition: background-color 160ms ease;
-}
-
-.switchKnob {
-  position: absolute;
-  top: 2px;
-  left: 2px;
-  width: 16px;
-  height: 16px;
-  border-radius: 50%;
-  background: #ffffff;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
-  transition: transform 160ms ease;
-}
-
-.switchOn .switchTrack {
-  background: #1f6feb;
-}
-
-.switchOn .switchKnob {
-  transform: translateX(14px);
-}
-
-.switchState {
-  flex: none;
-  width: 22px;
-  font-size: 11px;
-  font-weight: 600;
-  color: #57606a;
-}
-
-.switchOn .switchState {
-  color: #1f6feb;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .switch,
-  .switchTrack,
-  .switchKnob {
-    transition: none;
-  }
-}
-
-.formButtons {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 10px;
-  padding-top: 4px;
-}
-
-.big {
-  flex: 1;
-  min-height: 44px;
-  padding: 0 16px;
-  border-radius: 10px;
-  border: 1px solid var(--wb-line);
-  background: #ffffff;
-  font-family: inherit;
-  font-size: 14px;
-  color: var(--wb-ink);
-  cursor: pointer;
-}
-
-.big.secondary {
-  flex: 0 0 auto;
-}
-
-.big.primary {
-  border: 0;
-  background: var(--wb-blue);
-  color: #ffffff;
-  font-weight: 600;
-}
-
-.big.danger {
-  border: 0;
-  background: var(--wb-red);
-  color: #ffffff;
-  font-weight: 600;
-}
-
-.big:disabled {
-  cursor: default;
-  opacity: 0.5;
-}
-
-.small {
-  min-height: 30px;
-  padding: 0 10px;
-  border-radius: 6px;
-  border: 1px solid var(--wb-line);
-  background: #ffffff;
-  font-family: inherit;
-  font-size: 12px;
-  color: var(--wb-ink);
-  cursor: pointer;
-}
-
-.small.dashed {
-  align-self: flex-start;
-  border-style: dashed;
-  border-color: var(--wb-ink-2);
-}
-
+/* A rule's conditions, then what it changes. */
 .ruleRow {
   display: grid;
-  grid-template-columns: 34px minmax(0, 1.2fr) minmax(0, 1fr) minmax(0, 1.2fr) 22px;
+  grid-template-columns: 28px minmax(0, 1.2fr) minmax(0, 1fr) minmax(0, 1.2fr) var(--widget-h);
   gap: 6px;
   align-items: center;
-}
-
-.ruleRow select,
-.ruleRow .input {
-  padding: 6px;
-  font-size: 12px;
-  border-radius: 6px;
-}
-
-.ruleRow .first {
-  font-family: var(--wb-mono);
 }
 
 .matchCount {
-  font-size: 13px;
+  font-weight: 600;
 }
 
-.badge {
-  font-size: 11px;
-  padding: 0 5px;
-  border-radius: 4px;
-  background: #f2eef7;
-  color: #5a3e80;
-}
-
-.kind {
-  font-size: 12px;
-  color: var(--wb-ink-3, #5b616e);
-}
-
-.primary {
-  background: #1f6feb;
-  border-color: #1f6feb;
-  color: #ffffff;
-}
-
-.danger {
-  background: #b42318;
-  border-color: #b42318;
-  color: #ffffff;
-}
-
-.dashed {
-  align-self: flex-start;
-  border-style: dashed;
-}
-
+/* A new layer's properties, a row each. */
 .propGrid {
   display: grid;
-  grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr) minmax(0, 1.2fr) 56px 22px;
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr) minmax(0, 1.2fr) 56px var(--widget-h);
   gap: 6px;
   align-items: center;
-  font-size: 12px;
 }
 
-.propGrid .head {
-  color: var(--wb-ink-3);
-}
-
-.propGrid .input,
-.propGrid select {
-  width: 100%;
-  max-width: none;
-  box-sizing: border-box;
-  padding: 6px;
-  font-family: inherit;
-  font-size: 12px;
-  border: 1px solid var(--wb-line);
-  border-radius: 6px;
-  background: #ffffff;
-}
-
-.viewTabs {
-  display: inline-flex;
-  align-self: flex-start;
-}
-
-/* The edit log, as the mockup's last step lists it: by layer, each edit with
-   a tag for what it does, Undo and Redo in its head. */
+/* The list of edits, by layer, each with what it does and Undo and Redo in
+   its head. Its rows are hairlines, as the Widgets tab's. */
 .log {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  margin-top: 4px;
-  padding: 12px 14px;
-  border: 1px solid #e3e6eb;
-  border-radius: 10px;
-  background: #ffffff;
-  color: #15171c;
-  font-size: 13px;
+  gap: 6px;
+  padding-top: 8px;
+  border-top: 1px solid var(--curio-border);
 }
 
 .logHead {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
 }
 
-.logHead b {
-  font-size: 14px;
+/* The list's name, and each layer's above its edits. */
+.logTitle {
+  font-weight: 600;
 }
 
 .logCount {
-  min-width: 18px;
-  padding: 0 6px;
-  border-radius: 999px;
-  background: #eceef2;
-  color: #3d4654;
-  font-size: 11px;
-  line-height: 18px;
-  text-align: center;
-}
-
-.logSummary {
-  font-size: 12px;
-  color: #5b616e;
+  composes: tabBadge tabBadgeDark from "../packages/publishing/DrawerTabs.module.css";
 }
 
 .history {
   display: inline-flex;
-  border: 1px solid #c9cdd6;
-  border-radius: 8px;
-  overflow: hidden;
-}
-
-.history button {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  min-height: 30px;
-  padding: 0 10px;
-  border: 0;
-  background: #ffffff;
-  font-family: inherit;
-  font-size: 12px;
-  font-weight: 500;
-  color: #15171c;
-  cursor: pointer;
-}
-
-.history button + button {
-  border-left: 1px solid #c9cdd6;
-}
-
-.history button:hover:not(:disabled) {
-  background: #eef4fe;
-  color: #1f6feb;
-}
-
-.history button:disabled {
-  color: #a3a9b3;
-  cursor: default;
+  gap: 4px;
+  margin-left: auto;
 }
 
 .logBody {
+  composes: thinScrollbar from "../../styles/scrollbars.module.css";
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 6px;
   max-height: 240px;
   overflow-y: auto;
   user-select: text;
 }
 
-.logEmpty {
-  margin: 0;
-  padding: 10px 12px;
-  border: 1px dashed #c9cdd6;
-  border-radius: 8px;
-  color: #5b616e;
-  font-size: 12px;
-}
-
-.logGroup {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.logGroup ol {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
+.logList {
   margin: 0;
   padding: 0;
   list-style: none;
 }
 
-.logLayer {
-  font-size: 13px;
-  font-weight: 600;
-}
-
-.logLayer span {
-  font-weight: 400;
-  color: #5b616e;
-}
-
 .logRow {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 7px 8px 7px 10px;
-  border-radius: 8px;
-  background: #f4f5f7;
+  gap: 6px;
+  padding: 2px 0;
+  border-bottom: 1px solid var(--curio-border);
 }
 
-.logOff {
-  opacity: 0.6;
+.logRow:last-child {
+  border-bottom: 0;
 }
 
 .logText {
   flex: 1;
   min-width: 0;
-  font-size: 12px;
-  line-height: 17px;
+  font-size: var(--curio-font-size-xs);
+  line-height: 1.4;
   overflow-wrap: anywhere;
 }
 
+/* An entry switched off: kept in the list, skipped by the run. */
+.logOff .logText {
+  color: var(--curio-text-secondary);
+  text-decoration: line-through;
+}
+
 .opTag {
+  composes: status from "../scenarios/ScenarioLayers.module.css";
   flex: 0 0 auto;
-  padding: 1px 6px;
-  border-radius: 4px;
-  font-family: var(--curio-font-mono, "IBM Plex Mono", ui-monospace, monospace);
-  font-size: 11px;
-  background: #e3e9f6;
-  color: #1a4fa0;
 }
 
-.op_add { background: #e2f2e6; color: #1c6e37; }
-.op_remove { background: #fbe4e4; color: #a61b1b; }
-.op_restore { background: #eceef2; color: #3d4654; }
-.op_shape { background: #fff4e5; color: #8a4b00; }
-.op_property { background: #f2eef7; color: #5a3e80; }
-
-.logSwitch {
-  flex: 0 0 auto;
-  width: 16px;
-  height: 16px;
-  margin: 0;
-  accent-color: #1f6feb;
-  cursor: pointer;
-}
-
-.logDelete {
-  flex: 0 0 auto;
-  width: 24px;
-  height: 24px;
-  border: 0;
-  border-radius: 6px;
-  background: transparent;
-  color: #5b616e;
-  font-size: 16px;
-  line-height: 24px;
-  cursor: pointer;
-}
-
-.logDelete:hover {
-  background: #fbe4e4;
-  color: #a61b1b;
-}
-
-/* Show only this layer: a small switch beside the layer's name. */
-.backRow {
+/* The foot of the list: whether the nodes below have the edits, and Commit
+   edits to run them with them; amber while they do not, green once they do. */
+.commit {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  justify-content: space-between;
-  gap: 10px;
+  justify-content: flex-end;
+  gap: 6px 8px;
+  padding: 6px 8px;
+  border-radius: var(--curio-radius-md);
+  background: var(--curio-surface-muted);
+  color: var(--curio-text-secondary);
+  font-size: var(--curio-font-size-xs);
 }
 
-.soloSwitch {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 12px;
-  color: #3d4654;
-  cursor: pointer;
-  white-space: nowrap;
-  user-select: none;
+.commit[data-commit-state="stale"] {
+  background: var(--curio-warning-bg);
+  color: var(--curio-warning-text);
 }
 
-.soloSwitch input {
-  position: absolute;
-  opacity: 0;
-  width: 1px;
-  height: 1px;
+.commit[data-commit-state="done"] {
+  justify-content: flex-start;
+  background: var(--curio-success-bg);
+  color: var(--curio-success-text);
+  font-weight: 600;
 }
 
-.track {
-  position: relative;
-  width: 30px;
-  height: 18px;
-  border-radius: 999px;
-  background: #c9cdd6;
-  transition: background 120ms ease;
-}
-
-.track::after {
-  content: "";
-  position: absolute;
-  top: 2px;
-  left: 2px;
-  width: 14px;
-  height: 14px;
-  border-radius: 50%;
-  background: #ffffff;
-  box-shadow: 0 1px 2px rgba(21, 23, 28, 0.25);
-  transition: transform 120ms ease;
-}
-
-.soloSwitch input:checked + .track {
-  background: #1f6feb;
-}
-
-.soloSwitch input:checked + .track::after {
-  transform: translateX(12px);
-}
-
-.soloSwitch input:focus-visible + .track {
-  outline: 2px solid #1f6feb;
-  outline-offset: 2px;
+.commitText {
+  flex: 1 1 auto;
 }

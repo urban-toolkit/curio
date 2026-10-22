@@ -90,11 +90,11 @@ export default function LayerList({
                 className={`nodrag nopan ${styles.layerCard}`}
                 onClick={() => onOpen(layer.name)}
               >
-                <span className={styles.top}>
-                  <b>
+                <span className={styles.cardTop}>
+                  <span className={styles.cardName}>
                     {layer.label} {layer.newLayer ? <span className={styles.badge}>new</span> : null}
-                  </b>
-                  <span className={styles.mono}>
+                  </span>
+                  <span className={styles.meta}>
                     {layer.newLayer ? "new layer" : layer.table ?? layer.name} · {plural(n, KIND_NOUN[group.kind], `${KIND_NOUN[group.kind]}s`)}
                   </span>
                 </span>
@@ -109,10 +109,10 @@ export default function LayerList({
       ))}
       {writable ? (
         <div className={styles.footer}>
-          <button type="button" data-testid="interaction-new-layer-open" className={`nodrag nopan ${styles.dashedButton}`} onClick={onNewLayer}>
+          <button type="button" data-testid="interaction-new-layer-open" className={`nodrag nopan ${styles.button}`} onClick={onNewLayer}>
             + New data layer
           </button>
-          <span className={styles.hint}>or start a layer of your own, with its own properties</span>
+          <span className={styles.hint}>Starts a layer of your own, with its own properties.</span>
         </div>
       ) : null}
       {grouped.length > 1 ? <span className={styles.hint}>A layer with mixed geometry is listed under each kind, so each list only offers the tools that fit it.</span> : null}

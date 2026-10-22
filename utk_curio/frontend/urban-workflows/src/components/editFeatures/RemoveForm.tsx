@@ -40,7 +40,7 @@ export default function RemoveForm({
       {removeBy === "click" ? (
         <span className={styles.lead}>
           {picked.length === 0
-            ? `Click ${nouns.many} ${onTheMap} to pick them; shift-click adds one.`
+            ? `Click ${nouns.many} ${onTheMap} to pick them. Shift-click adds one.`
             : `${plural(picked.length, nouns.one, nouns.many)} picked.`}
         </span>
       ) : (
@@ -50,7 +50,7 @@ export default function RemoveForm({
         <button
           type="button"
           data-testid="interaction-remove-picked"
-          className={`nodrag nopan ${styles.big} ${styles.danger}`}
+          className={`nodrag nopan ${styles.danger}`}
           disabled={n === 0}
           onClick={() => onRemove(removeBy === "rule" && where ? { op: "remove", where } : { op: "remove", ids: picked })}
         >
@@ -59,8 +59,8 @@ export default function RemoveForm({
       </span>
       <span className={styles.hint}>
         {removeBy === "rule"
-          ? `Kept as a rule: ${nouns.many} that match it later are removed too. The match is outlined in red ${onTheMap}.`
-          : "Each removal is an entry in the edit log: switch it off or delete it to bring the features back."}
+          ? `Kept as a rule: ${nouns.many} that match it later are removed too. The ${nouns.many} it matches are outlined, dashed, ${onTheMap}.`
+          : "Each removal is an entry in the list of edits below. Switch it off or delete it to bring the features back."}
       </span>
     </div>
   );

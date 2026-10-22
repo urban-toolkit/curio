@@ -38,24 +38,25 @@ export default function LayerActions({
   onNewLayer: () => void;
 }) {
   const cards: { action: Action; title: string; text: string }[] = [
-    { action: "add", title: `+ Add ${nouns.many}`, text: kind === "points" ? "Click the map to place them, then fill in their properties" : `Draw new ${KIND_NOUN[kind]}s, then fill in their properties` },
-    { action: "edit", title: `Edit ${nouns.many}`, text: `Change a${kind === "areas" ? "n" : ""} ${KIND_NOUN[kind]}'s shape or its values` },
-    { action: "remove", title: `Remove ${nouns.many}`, text: "Click them on the map, or pick them by a rule" },
-    { action: "property", title: "Add a property", text: `A new column on every ${nouns.one}, with a default value` },
+    { action: "add", title: `+ Add ${nouns.many}`, text: kind === "points" ? "Click the map to place them, then fill in their properties." : `Draw new ${KIND_NOUN[kind]}s, then fill in their properties.` },
+    { action: "edit", title: `Edit ${nouns.many}`, text: `Change a${kind === "areas" ? "n" : ""} ${KIND_NOUN[kind]}'s shape or its values.` },
+    { action: "remove", title: `Remove ${nouns.many}`, text: "Click them on the map, or pick them by a rule." },
+    { action: "property", title: "Add a property", text: `A new column on every ${nouns.one}, with a default value.` },
   ];
   return (
     <>
-      <button type="button" className={`nodrag nopan ${styles.back}`} onClick={onAllLayers}>
-        ← All layers
-      </button>
+      <div className={styles.backRow}>
+        <button type="button" className={`nodrag nopan ${styles.back}`} onClick={onAllLayers}>
+          ← All layers
+        </button>
+        {solo}
+      </div>
       <div className={styles.titleRow}>
-        <KindIcon kind={kind} size={20} />
+        <KindIcon kind={kind} />
         <span className={styles.title}>{active.label}</span>
-        <span className={styles.mono}>
+        <span className={styles.meta}>
           {KIND_LABEL[kind].toLowerCase()} · {count.toLocaleString()}
         </span>
-        <span style={{ flex: 1 }} />
-        {solo}
       </div>
       {!canEdit ? (
         <span className={styles.problem}>This layer has no column that identifies its features, so they cannot be edited or removed: add an id column upstream. You can still draw into a new layer.</span>
@@ -64,14 +65,14 @@ export default function LayerActions({
       <div className={styles.actionGrid}>
         {cards.map((card) => (
           <button key={card.action} type="button" data-testid={`interaction-action-${card.action}`} className={`nodrag nopan ${styles.actionCard}`} disabled={!writable || !canEdit} onClick={() => onAction(card.action)}>
-            <b>{card.title}</b>
-            <span>{card.text}</span>
+            <span className={styles.actionTitle}>{card.title}</span>
+            <span className={styles.actionText}>{card.text}</span>
           </button>
         ))}
       </div>
       {writable ? (
         <div className={styles.footer}>
-          <button type="button" className={`nodrag nopan ${styles.dashedButton}`} onClick={onNewLayer}>
+          <button type="button" className={`nodrag nopan ${styles.button}`} onClick={onNewLayer}>
             + New data layer instead
           </button>
         </div>

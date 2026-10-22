@@ -29,7 +29,10 @@
  * stays.
  */
 import React, { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
+import { faRotateLeft, faRotateRight, faXmark } from "@fortawesome/free-solid-svg-icons";
 import NodeEmptyState from "../nodes/NodeEmptyState";
+import { MOD_KEY_LABEL, isTypingTarget } from "../canvasKeyBindings";
 import { useFlowContext } from "../../providers/FlowProvider";
 import { useProvenanceContext, type NodeExecRecord } from "../../providers/ProvenanceProvider";
 import { autoRunTargets } from "../../providers/flow/useAutoRun";
@@ -56,6 +59,7 @@ import {
 } from "../../utils/editFeatures/editFeatures";
 import { crsName } from "../../utils/editFeatures/layerModel";
 import LayerWorkbench, { type EditSurface, type WorkbenchLayer } from "./LayerWorkbench";
+import { CheckboxInput, FieldTheme } from "./fields";
 import { getUnversionedFlowNodeType } from "../../utils/flowNodeCanonicalType";
 import { NodeType, VisInteractionType } from "../../constants";
 import { inputSlotOf, isDataEdge, wiredInputSlots } from "../../utils/inputSlots";
@@ -84,6 +88,9 @@ const OP_TAG: Record<EditOp, string> = {
   geometry: "shape",
   add_column: "property",
 };
+
+/** The status tone a tag takes (ScenarioLayers' tones): an addition done, a removal danger, the rest none. */
+const OP_TONE: Partial<Record<EditOp, "done" | "error">> = { add: "done", remove: "error" };
 
 /** At most this many edits name an entry of the Provenance drawer, then how many more. */
 const LABEL_EDITS = 3;
@@ -389,9 +396,8 @@ export function EditFeaturesBody({
 
   const onKeyDown = (event: React.KeyboardEvent) => {
     if (!editable) return;
-    const target = event.target as HTMLElement;
     // A key typed in one of the node's fields is the field's.
-    if (target !== bodyRef.current && /^(INPUT|SELECT|TEXTAREA)$/.test(target.tagName)) return;
+    if (event.target !== bodyRef.current && isTypingTarget(event.target)) return;
     const mod = event.metaKey || event.ctrlKey;
     let handled = true;
     if (event.key === "Escape" && picked.length > 0) setPicked([]);
@@ -406,7 +412,7 @@ export function EditFeaturesBody({
     }
   };
 
-  // The log, by the layer each edit is on, as the mockup's last step lists it.
+  // The log, by the layer each edit is on.
   const layerOf = (edit: FeatureEdit) => edit.layer ?? settings?.layer ?? "";
   const logGroups: { layer: string; entries: { edit: FeatureEdit; index: number }[] }[] = [];
   edits.forEach((edit, index) => {
@@ -419,13 +425,17 @@ export function EditFeaturesBody({
   // edits to run them with them.
   const commitFoot =
     writable && below > 0 && (outOfDate > 0 || running || edits.length > 0) ? (
-      <div className={`${styles.commit} ${!committed && !running ? styles.commitStale : ""}`} data-testid="interaction-commit" data-commit-state={running ? "running" : committed ? "done" : "stale"}>
+      <div className={styles.commit} data-testid="interaction-commit" data-commit-state={running ? "running" : committed ? "done" : "stale"}>
         {!committed || running ? (
           <>
-            {running ? null : <span className={styles.commitText}>The downstream nodes don&apos;t have these edits yet.</span>}
+            {running ? null : (
+              <span className={styles.commitText}>
+                {below === 1 ? "The node below does not have these edits yet." : `The ${below} nodes below do not have these edits yet.`}
+              </span>
+            )}
             <button
               type="button"
-              className={`nodrag nopan ${styles.commitButton}`}
+              className={`nodrag nopan ${styles.primary}`}
               data-testid="interaction-update"
               disabled={running}
               title={`Runs this node and the ${below} node${below === 1 ? "" : "s"} below it with the edits`}
@@ -435,84 +445,74 @@ export function EditFeaturesBody({
             </button>
           </>
         ) : (
-          <span className={styles.commitDone}>✓ Edits committed</span>
+          <span>✓ Edits committed</span>
         )}
       </div>
     ) : null;
   const editLog = (
     <section className={`nodrag nopan ${styles.log}`} data-testid="interaction-log">
       <div className={styles.logHead}>
-        <b>Edits</b>
+        <span className={styles.logTitle}>Edits</span>
         <span className={styles.logCount}>{edits.length}</span>
         {edits.length > 0 ? (
-          <span className={styles.logSummary} data-testid="interaction-counts">
+          <span className={styles.hint} data-testid="interaction-counts">
             {`${edited.counts.remove} removed, ${edited.counts.set} changed`}
             {edited.counts.restore > 0 ? `, ${edited.counts.restore} restored` : ""}
           </span>
         ) : null}
-        <span style={{ flex: 1 }} />
         {editable ? (
           <span className={styles.history}>
-            <button type="button" className="nodrag nopan" data-testid="interaction-undo" disabled={!undoTo} title="Undo (Ctrl or Cmd+Z)" onClick={() => go(undoTo)}>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                <path d="M9 14L4 9l5-5" />
-                <path d="M4 9h10.5a5.5 5.5 0 010 11H11" />
-              </svg>
+            <button type="button" className={`nodrag nopan ${styles.button}`} data-testid="interaction-undo" disabled={!undoTo} title={`Undo (${MOD_KEY_LABEL}+Z)`} onClick={() => go(undoTo)}>
+              <FontAwesomeIcon icon={faRotateLeft} aria-hidden />
               Undo
             </button>
-            <button type="button" className="nodrag nopan" data-testid="interaction-redo" disabled={!redoTo} title="Redo (Shift+Ctrl or Cmd+Z)" onClick={() => go(redoTo)}>
+            <button type="button" className={`nodrag nopan ${styles.button}`} data-testid="interaction-redo" disabled={!redoTo} title={`Redo (Shift+${MOD_KEY_LABEL}+Z)`} onClick={() => go(redoTo)}>
+              <FontAwesomeIcon icon={faRotateRight} aria-hidden />
               Redo
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                <path d="M15 14l5-5-5-5" />
-                <path d="M20 9H9.5a5.5 5.5 0 000 11H13" />
-              </svg>
             </button>
           </span>
         ) : null}
       </div>
       <div className={`nowheel ${styles.logBody}`} data-edit-list={edits.length}>
         {edits.length === 0 ? (
-          <p className={styles.logEmpty}>{mapId ? "No edits yet: the map draws its layers as they came." : "No edits yet: the input is handed on as it came."}</p>
+          <p className={styles.note}>{mapId ? "No edits yet. The map draws its layers as they came." : "No edits yet. The input is handed on as it came."}</p>
         ) : null}
         {logGroups.map((group) => {
           const target = workbenchLayers.find((l) => l.name === group.layer);
           return (
-            <div key={group.layer || "-"} className={styles.logGroup}>
+            <div key={group.layer || "-"}>
               {group.layer ? (
-                <span className={styles.logLayer}>
-                  {target?.label ?? group.layer} <span>· {target?.newLayer ? "new layer" : "edited"}</span>
+                <span className={styles.logTitle}>
+                  {target?.label ?? group.layer} <span className={styles.hint}>· {target?.newLayer ? "new layer" : "edited"}</span>
                 </span>
               ) : null}
-              <ol>
+              <ol className={styles.logList}>
                 {group.entries.map(({ edit, index }) => (
                   <li key={`${index}:${edit.op}`} className={`${styles.logRow} ${edit.enabled === false ? styles.logOff : ""}`} data-edit-op={edit.op} data-edit-enabled={edit.enabled === false ? "false" : "true"}>
-                    <span className={`${styles.opTag} ${styles[`op_${OP_TAG[edit.op]}`] ?? ""}`}>{OP_TAG[edit.op]}</span>
-                    <span className={`${styles.logText} ${edit.enabled === false ? styles.off : ""}`}>{describeEdit(edit, keyOf(edit), undefined)}</span>
                     {editable ? (
-                      <>
-                        <input
-                          type="checkbox"
-                          className={`nodrag nopan ${styles.logSwitch}`}
-                          aria-label={`Use edit ${index + 1}`}
-                          title={edit.enabled === false ? "Switched off: the run skips it" : "Switch off, keeping it in the log"}
-                          checked={edit.enabled !== false}
-                          onChange={(event) =>
-                            writeSettings(
-                              withEditEnabled(settings, index, event.target.checked),
-                              `${event.target.checked ? "Switch on" : "Switch off"}: ${describeEdit(edit, keyOf(edit))}`,
-                            )
-                          }
-                        />
-                        <button
-                          type="button"
-                          className={`nodrag nopan ${styles.logDelete}`}
-                          aria-label={`Delete edit ${index + 1}`}
-                          title="Delete this edit"
-                          onClick={() => writeSettings(withoutEdit(settings, index), `Delete: ${describeEdit(edit, keyOf(edit))}`)}
-                        >
-                          ×
-                        </button>
-                      </>
+                      <CheckboxInput
+                        label={`Use edit ${index + 1}`}
+                        title={edit.enabled === false ? "Switched off: the run skips it" : "Switch off, keeping it in the list"}
+                        checked={edit.enabled !== false}
+                        onChange={(checked) =>
+                          writeSettings(withEditEnabled(settings, index, checked), `${checked ? "Switch on" : "Switch off"}: ${describeEdit(edit, keyOf(edit))}`)
+                        }
+                      />
+                    ) : null}
+                    <span className={styles.opTag} data-tone={OP_TONE[edit.op]}>
+                      {OP_TAG[edit.op]}
+                    </span>
+                    <span className={styles.logText}>{describeEdit(edit, keyOf(edit), undefined)}</span>
+                    {editable ? (
+                      <button
+                        type="button"
+                        className={`nodrag nopan ${styles.iconButton}`}
+                        aria-label={`Delete edit ${index + 1}`}
+                        title="Delete this edit"
+                        onClick={() => writeSettings(withoutEdit(settings, index), `Delete: ${describeEdit(edit, keyOf(edit))}`)}
+                      >
+                        <FontAwesomeIcon icon={faXmark} aria-hidden />
+                      </button>
                     ) : null}
                   </li>
                 ))}
@@ -529,9 +529,9 @@ export function EditFeaturesBody({
   // nothing. A run still runs the code, and the map draws what the run hands on.
   if (unreadable) {
     return (
-      <div className={`nokey ${styles.body}`} data-edit-body={nodeId} data-testid="interaction-unreadable">
-        <NodeEmptyState reason="not-run" title="This code is not one this node writes" hint={unreadable} />
-        <p className={styles.logEmpty}>A run still runs it. Put back a code from the node&apos;s Provenance to edit on the map again.</p>
+      <div className={`nokey nodrag nopan nowheel ${styles.body}`} data-edit-body={nodeId} data-testid="interaction-unreadable">
+        <NodeEmptyState reason="code-unreadable" hint={unreadable} />
+        <p className={styles.note}>A run still runs it. Put back a code from the node&apos;s Provenance to edit on the map again.</p>
         {runError ? (
           <p className={`nodrag nopan ${styles.problem}`} data-edit-run-error="true">
             {runError}
@@ -544,40 +544,56 @@ export function EditFeaturesBody({
   if (mapId) {
     const mapTitle = nodeName(mapNode) || "the Autark map";
     return (
-      <div className={`nokey ${styles.body}`} data-edit-body={nodeId} data-edit-map={mapId} ref={bodyRef} tabIndex={0} onKeyDown={onKeyDown}>
-        <div className={styles.bar}>
+      <FieldTheme>
+        <div className={`nokey nodrag nopan nowheel ${styles.body}`} data-edit-body={nodeId} data-edit-map={mapId} ref={bodyRef} tabIndex={0} onKeyDown={onKeyDown}>
           <span className={styles.connected} data-testid="interaction-connected">
             Linked to {mapTitle}
           </span>
+          {layers === null ? (
+            <NodeEmptyState reason="upstream-not-run" hint="Reading the layers." />
+          ) : layers.length === 0 ? (
+            <NodeEmptyState reason="upstream-not-run" hint="Run the nodes that feed this node to edit their layers here." />
+          ) : (
+            <LayerWorkbench
+              layers={workbenchLayers}
+              edits={edits}
+              nodeLayer={settings?.layer ?? null}
+              writable={editable}
+              picked={picked}
+              setPicked={setPicked}
+              onEdit={(edit, target, property) => writeOn([edit], target, property)}
+              onEdits={(more, target) => writeOn(more, target)}
+              onNewLayer={addNewLayer}
+              removePickedRef={removePickedRef}
+              surfaces={surfaces}
+              circles={circles}
+              incoming={live?.interactions}
+              onSelection={sendSelection}
+              nodeId={nodeId}
+            />
+          )}
+          {edited.problem ? (
+            <p className={styles.problem} data-edit-log-problem="true">
+              {edited.problem}
+            </p>
+          ) : null}
+          {runError ? (
+            <p className={`nodrag nopan ${styles.problem}`} data-edit-run-error="true">
+              {runError}
+            </p>
+          ) : null}
+          {editLog}
         </div>
-        {layers === null ? (
-          <NodeEmptyState reason="not-run" hint="Reading the layers." />
-        ) : layers.length === 0 ? (
-          <NodeEmptyState reason="not-run" hint="Run the nodes that feed this node to edit their layers here." />
-        ) : (
-          <LayerWorkbench
-            layers={workbenchLayers}
-            edits={edits}
-            nodeLayer={settings?.layer ?? null}
-            writable={editable}
-            picked={picked}
-            setPicked={setPicked}
-            onEdit={(edit, target, property) => writeOn([edit], target, property)}
-            onEdits={(more, target) => writeOn(more, target)}
-            onNewLayer={addNewLayer}
-            removePickedRef={removePickedRef}
-            surfaces={surfaces}
-            circles={circles}
-            incoming={live?.interactions}
-            onSelection={sendSelection}
-            nodeId={nodeId}
-          />
-        )}
-        {edited.problem ? (
-          <p className={styles.problem} data-edit-log-problem="true">
-            {edited.problem}
-          </p>
-        ) : null}
+      </FieldTheme>
+    );
+  }
+
+  // Linked to no Autark map it feeds, the node edits nothing on a map: it says
+  // how to link one, and its list stays, to switch off, delete or undo.
+  return (
+    <FieldTheme>
+      <div className={`nokey nodrag nopan nowheel ${styles.body}`} data-edit-body={nodeId} data-testid="interaction-unlinked" ref={bodyRef} tabIndex={0} onKeyDown={onKeyDown}>
+        <NodeEmptyState reason="unlinked" />
         {runError ? (
           <p className={`nodrag nopan ${styles.problem}`} data-edit-run-error="true">
             {runError}
@@ -585,24 +601,6 @@ export function EditFeaturesBody({
         ) : null}
         {editLog}
       </div>
-    );
-  }
-
-  // Linked to no Autark map it feeds, the node edits nothing on a map: it says
-  // how to link one, and its list stays, to switch off, delete or undo.
-  return (
-    <div className={`nokey ${styles.body}`} data-edit-body={nodeId} data-testid="interaction-unlinked" ref={bodyRef} tabIndex={0} onKeyDown={onKeyDown}>
-      <NodeEmptyState
-        reason="disconnected"
-        title="Not linked to a map"
-        hint="Connect this node to an Autark map, then link the two with an interaction edge, from the dot on top of this node to the dot on top of the map."
-      />
-      {runError ? (
-        <p className={`nodrag nopan ${styles.problem}`} data-edit-run-error="true">
-          {runError}
-        </p>
-      ) : null}
-      {editLog}
-    </div>
+    </FieldTheme>
   );
 }

@@ -4,8 +4,11 @@
  * Remove and Edit pick by one.
  */
 import React from "react";
+import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
+import { faXmark } from "@fortawesome/free-solid-svg-icons";
 import type { SelectionId } from "../../utils/references/selectionTags";
 import type { PropertyDef } from "../../utils/editFeatures/editFeatures";
+import { SelectInput, TextInput } from "./fields";
 import { plural, type Nouns } from "./workbenchParts";
 import styles from "./EditFeatures.module.css";
 
@@ -62,7 +65,7 @@ export interface RuleProps {
 export default function RuleBuilder({ lead, conditions, setConditions, defs, problem, matches, total, nouns }: RuleProps & { lead: string }) {
   return (
     <div className={styles.section}>
-      <span className={styles.kind}>{lead}</span>
+      <span className={styles.hint}>{lead}</span>
       {conditions.map((c, i) => {
         const def = defs.find((d) => d.name === c.column);
         const needsValue = c.test !== "is empty" && c.test !== "is not empty";
@@ -70,38 +73,38 @@ export default function RuleBuilder({ lead, conditions, setConditions, defs, pro
         const set = (patch: Partial<Condition>) => setConditions(conditions.map((x, j) => (j === i ? { ...x, ...patch } : x)));
         return (
           <div key={i} className={styles.ruleRow} data-testid={`interaction-rule-${i}`}>
-            <span className={styles.kind}>{i === 0 ? "" : "and"}</span>
-            <select className={`nodrag nopan ${styles.first}`} aria-label="Property" value={c.column} onChange={(e) => set({ column: e.target.value, value: "" })}>
+            <span className={styles.hint}>{i === 0 ? "" : "and"}</span>
+            <SelectInput label="Property" value={c.column} onChange={(column) => set({ column, value: "" })}>
               {defs.map((d) => (
                 <option key={d.name} value={d.name}>
                   {d.name}
                 </option>
               ))}
-            </select>
-            <select className="nodrag nopan" aria-label="Test" value={c.test} onChange={(e) => set({ test: e.target.value as Test })}>
+            </SelectInput>
+            <SelectInput label="Test" value={c.test} onChange={(test) => set({ test: test as Test })}>
               {TESTS.filter((t) => def?.type === "number" || (t !== ">" && t !== "<")).map((t) => (
                 <option key={t} value={t}>
                   {t}
                 </option>
               ))}
-            </select>
+            </SelectInput>
             {!needsValue ? (
               <span />
             ) : choices ? (
-              <select className="nodrag nopan" aria-label="Value" data-testid={`interaction-rule-value-${i}`} value={c.value} onChange={(e) => set({ value: e.target.value })}>
+              <SelectInput label="Value" testId={`interaction-rule-value-${i}`} value={c.value} onChange={(value) => set({ value })}>
                 <option value="">Choose…</option>
                 {choices.map((choice) => (
                   <option key={choice} value={choice}>
                     {choice}
                   </option>
                 ))}
-              </select>
+              </SelectInput>
             ) : (
-              <input className={`nodrag nopan ${styles.input}`} aria-label="Value" data-testid={`interaction-rule-value-${i}`} value={c.value} onChange={(e) => set({ value: e.target.value })} />
+              <TextInput label="Value" testId={`interaction-rule-value-${i}`} value={c.value} onChange={(value) => set({ value })} />
             )}
             {i > 0 ? (
-              <button type="button" className={`nodrag nopan ${styles.delete}`} aria-label={`Remove condition ${i + 1}`} onClick={() => setConditions(conditions.filter((_, j) => j !== i))}>
-                ×
+              <button type="button" className={`nodrag nopan ${styles.iconButton}`} aria-label={`Remove condition ${i + 1}`} title="Remove this condition" onClick={() => setConditions(conditions.filter((_, j) => j !== i))}>
+                <FontAwesomeIcon icon={faXmark} aria-hidden />
               </button>
             ) : (
               <span />
@@ -109,12 +112,14 @@ export default function RuleBuilder({ lead, conditions, setConditions, defs, pro
           </div>
         );
       })}
-      <button type="button" className={`nodrag nopan ${styles.small} ${styles.dashed}`} onClick={() => setConditions([...conditions, { column: defs[0]?.name ?? "", test: "is", value: "" }])}>
-        + condition
-      </button>
+      <span className={styles.toolRow}>
+        <button type="button" className={`nodrag nopan ${styles.button}`} onClick={() => setConditions([...conditions, { column: defs[0]?.name ?? "", test: "is", value: "" }])}>
+          + Add condition
+        </button>
+      </span>
       {problem ? <span className={styles.problem}>{problem}</span> : null}
-      <span className={styles.matchCount} data-testid="interaction-matching">
-        <b>Matches {plural(matches?.length ?? 0, nouns.one, nouns.many)}</b> <span className={styles.kind}>of {total.toLocaleString()}</span>
+      <span data-testid="interaction-matching">
+        <span className={styles.matchCount}>Matches {plural(matches?.length ?? 0, nouns.one, nouns.many)}</span> <span className={styles.hint}>of {total.toLocaleString()}</span>
       </span>
     </div>
   );

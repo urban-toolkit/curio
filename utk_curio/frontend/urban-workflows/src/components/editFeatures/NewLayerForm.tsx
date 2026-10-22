@@ -2,7 +2,9 @@
  * + New data layer in the Map Edits node's workbench (#662): the builder of a
  * new layer, its name, its geometry and the properties its features carry.
  */
-import React, { useState } from "react";
+import React, { useId, useState } from "react";
+import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
+import { faXmark } from "@fortawesome/free-solid-svg-icons";
 import {
   NEW_LAYER_GEOMETRIES,
   PROPERTY_TYPES,
@@ -12,11 +14,13 @@ import {
   type PropertyType,
 } from "../../utils/editFeatures/editFeatures";
 import { GEOMETRY_KIND, KIND_LABEL } from "../../utils/editFeatures/layerModel";
-import { KindIcon } from "./workbenchParts";
+import { CheckboxInput, RadioChoices, SelectInput, TextInput } from "./fields";
+import { KindIcon, TYPE_LABEL } from "./workbenchParts";
 import styles from "./EditFeatures.module.css";
 
 /** The builder of a new layer: its name, its geometry and its properties. */
 export default function NewLayerForm({ taken, onCreate, onCancel }: { taken: string[]; onCreate: (def: NewLayerDef) => void; onCancel: () => void }) {
+  const nameId = useId();
   const [name, setName] = useState("");
   const [geometry, setGeometry] = useState<NewLayerGeometry>("Point");
   const [props, setProps] = useState<{ name: string; type: PropertyType; required: boolean; choices: string; def: string }[]>([
@@ -44,63 +48,74 @@ export default function NewLayerForm({ taken, onCreate, onCancel }: { taken: str
         ← All layers
       </button>
       <span className={styles.title}>New data layer</span>
-      <label className={styles.formField}>
-        <b>Name</b>
-        <input className={`nodrag nopan ${styles.input}`} aria-label="Layer name" data-testid="interaction-new-layer-name" value={name} placeholder="Cooling centers" onChange={(e) => setName(e.target.value)} />
-      </label>
-      <div className={styles.formField}>
-        <b>Geometry</b>
-        <span className={styles.segmented} role="group" aria-label="Geometry">
-          {NEW_LAYER_GEOMETRIES.map((g) => (
-            <button key={g} type="button" aria-pressed={geometry === g} data-testid={`interaction-new-layer-${g}`} className={`nodrag nopan ${geometry === g ? styles.on : ""}`} onClick={() => setGeometry(g)}>
-              <KindIcon kind={GEOMETRY_KIND[g]} size={14} />
-              {KIND_LABEL[GEOMETRY_KIND[g]]}
-            </button>
-          ))}
-        </span>
+      <div className={styles.field}>
+        <label htmlFor={nameId} className={styles.fieldName}>
+          Name
+        </label>
+        <TextInput id={nameId} label="Layer name" testId="interaction-new-layer-name" value={name} placeholder="Cooling centers" onChange={setName} />
       </div>
-      <div className={styles.formField}>
-        <b>Properties</b>
+      <div className={styles.field}>
+        <span className={styles.fieldName}>Geometry</span>
+        <RadioChoices
+          label="Geometry"
+          value={geometry}
+          onChange={(next) => setGeometry(next as NewLayerGeometry)}
+          options={NEW_LAYER_GEOMETRIES.map((g) => ({
+            value: g,
+            testId: `interaction-new-layer-${g}`,
+            label: (
+              <span className={styles.titleRow}>
+                <KindIcon kind={GEOMETRY_KIND[g]} />
+                {KIND_LABEL[GEOMETRY_KIND[g]]}
+              </span>
+            ),
+          }))}
+        />
+      </div>
+      <div className={styles.field}>
+        <span className={styles.fieldName}>Properties</span>
         <div className={styles.propGrid}>
-          <span className={styles.head}>Name</span>
-          <span className={styles.head}>Type</span>
-          <span className={styles.head}>Choices or default</span>
-          <span className={styles.head}>Required</span>
+          <span className={styles.hint}>Name</span>
+          <span className={styles.hint}>Type</span>
+          <span className={styles.hint}>Choices or default</span>
+          <span className={styles.hint}>Required</span>
           <span />
           {props.map((p, i) => (
             <React.Fragment key={i}>
-              <input className={`nodrag nopan ${styles.input}`} aria-label={`Property ${i + 1} name`} value={p.name} onChange={(e) => update(i, { name: e.target.value })} />
-              <select className="nodrag nopan" aria-label={`Property ${i + 1} type`} value={p.type} onChange={(e) => update(i, { type: e.target.value as PropertyType })}>
+              <TextInput label={`Property ${i + 1} name`} value={p.name} onChange={(text) => update(i, { name: text })} />
+              <SelectInput label={`Property ${i + 1} type`} value={p.type} onChange={(type) => update(i, { type: type as PropertyType })}>
                 {PROPERTY_TYPES.map((t) => (
                   <option key={t} value={t}>
-                    {t === "boolean" ? "Yes / no" : t[0].toUpperCase() + t.slice(1)}
+                    {TYPE_LABEL[t]}
                   </option>
                 ))}
-              </select>
+              </SelectInput>
               {p.type === "choice" ? (
-                <input className={`nodrag nopan ${styles.input}`} aria-label={`Property ${i + 1} choices`} placeholder="library, school, …" value={p.choices} onChange={(e) => update(i, { choices: e.target.value })} />
+                <TextInput label={`Property ${i + 1} choices`} placeholder="library, school, …" value={p.choices} onChange={(text) => update(i, { choices: text })} />
               ) : (
-                <input className={`nodrag nopan ${styles.input}`} aria-label={`Property ${i + 1} default`} placeholder="default" value={p.def} onChange={(e) => update(i, { def: e.target.value })} />
+                <TextInput label={`Property ${i + 1} default`} placeholder="default" value={p.def} onChange={(text) => update(i, { def: text })} />
               )}
-              <input type="checkbox" className="nodrag nopan" aria-label={`Property ${i + 1} required`} checked={p.required} onChange={(e) => update(i, { required: e.target.checked })} />
-              <button type="button" className={`nodrag nopan ${styles.delete}`} aria-label={`Remove property ${i + 1}`} onClick={() => setProps(props.filter((_, j) => j !== i))}>
-                ×
+              <CheckboxInput label={`Property ${i + 1} required`} checked={p.required} onChange={(checked) => update(i, { required: checked })} />
+              <button type="button" className={`nodrag nopan ${styles.iconButton}`} aria-label={`Remove property ${i + 1}`} title="Remove this property" onClick={() => setProps(props.filter((_, j) => j !== i))}>
+                <FontAwesomeIcon icon={faXmark} aria-hidden />
               </button>
             </React.Fragment>
           ))}
         </div>
-        <button type="button" className={`nodrag nopan ${styles.small} ${styles.dashed}`} data-testid="interaction-new-layer-add-property" onClick={() => setProps([...props, { name: "", type: "text", required: false, choices: "", def: "" }])}>
-          + Add property
-        </button>
-        <span className={styles.hint}>Types: Text, Number, Yes / no, Choice, Date.</span>
+        <span className={styles.toolRow}>
+          <button type="button" className={`nodrag nopan ${styles.button}`} data-testid="interaction-new-layer-add-property" onClick={() => setProps([...props, { name: "", type: "text", required: false, choices: "", def: "" }])}>
+            + Add property
+          </button>
+          <span className={styles.hint}>Types: {PROPERTY_TYPES.map((t) => TYPE_LABEL[t]).join(", ")}.</span>
+        </span>
       </div>
       {problem && name !== "" ? <span className={styles.problem}>{problem}</span> : null}
       <span className={styles.formButtons}>
-        <button type="button" className={`nodrag nopan ${styles.big} ${styles.primary}`} data-testid="interaction-new-layer-create" disabled={problem !== null} onClick={create}>
-          Create layer and start drawing
-        </button>
-        <button type="button" className={`nodrag nopan ${styles.big} ${styles.secondary}`} onClick={onCancel}>
+        <button type="button" className={`nodrag nopan ${styles.button}`} onClick={onCancel}>
           Cancel
+        </button>
+        <button type="button" className={`nodrag nopan ${styles.primary}`} data-testid="interaction-new-layer-create" disabled={problem !== null} onClick={create}>
+          Create layer and start drawing
         </button>
       </span>
     </div>

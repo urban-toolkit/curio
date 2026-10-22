@@ -9,6 +9,7 @@ import type { SelectionId } from "../../utils/references/selectionTags";
 import type { EditValue, FeatureEdit, PropertyDef } from "../../utils/editFeatures/editFeatures";
 import { exprProblem } from "../../utils/editFeatures/editExpr";
 import { formValue } from "../../utils/editFeatures/layerModel";
+import { SelectInput, TextInput } from "./fields";
 import styles from "./EditFeatures.module.css";
 
 export type RuleOp = "set" | "expr";
@@ -58,42 +59,35 @@ export function valueChange(
   };
   const section = (
     <div className={styles.section}>
-      <span className={styles.kind}>Then</span>
+      <span className={styles.hint}>Then</span>
       {columns.length === 0 ? <span className={styles.hint}>This layer has no property to change.</span> : null}
       <div className={styles.ruleRow}>
-        <span className={styles.kind} />
-        <select className={`nodrag nopan ${styles.first}`} aria-label="Change" data-testid="interaction-rule-column" value={column?.name ?? ""} onChange={(e) => setRuleColumn(e.target.value)}>
+        <span />
+        <SelectInput label="Change" testId="interaction-rule-column" value={column?.name ?? ""} onChange={setRuleColumn}>
           {columns.map((d) => (
             <option key={d.name} value={d.name}>
               {d.name}
             </option>
           ))}
-        </select>
-        <select className="nodrag nopan" aria-label="How" data-testid="interaction-rule-op" value={op} disabled={ops.length === 1} onChange={(e) => setRuleOp(e.target.value as RuleOp)}>
+        </SelectInput>
+        <SelectInput label="How" testId="interaction-rule-op" value={op} disabled={ops.length === 1} onChange={(next) => setRuleOp(next as RuleOp)}>
           {ops.map((o) => (
             <option key={o.op} value={o.op}>
               {o.label}
             </option>
           ))}
-        </select>
+        </SelectInput>
         {choices ? (
-          <select className="nodrag nopan" aria-label="By" data-testid="interaction-rule-set-value" value={ruleValue} onChange={(e) => setRuleValue(e.target.value)}>
+          <SelectInput label="By" testId="interaction-rule-set-value" value={ruleValue} onChange={setRuleValue}>
             <option value="">Empty</option>
             {choices.map((choice) => (
               <option key={choice} value={choice}>
                 {choice}
               </option>
             ))}
-          </select>
+          </SelectInput>
         ) : (
-          <input
-            className={`nodrag nopan ${styles.input}`}
-            aria-label="By"
-            data-testid="interaction-rule-set-value"
-            value={ruleValue}
-            placeholder={op === "expr" ? `${column?.name ?? "height"} * 0.8` : "empty"}
-            onChange={(e) => setRuleValue(e.target.value)}
-          />
+          <TextInput label="By" testId="interaction-rule-set-value" value={ruleValue} placeholder={op === "expr" ? `${column?.name ?? "height"} * 0.8` : "empty"} onChange={setRuleValue} />
         )}
         <span />
       </div>

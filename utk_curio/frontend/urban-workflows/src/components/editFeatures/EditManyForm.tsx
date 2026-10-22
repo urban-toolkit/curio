@@ -37,10 +37,13 @@ export default function EditManyForm({
       <span className={styles.lead}>{plural(picked.length, nouns.one, nouns.many)} picked.</span>
       {change.section}
       <span className={styles.formButtons}>
+        <button type="button" className={`nodrag nopan ${styles.button}`} onClick={onClearPick}>
+          Clear the pick
+        </button>
         <button
           type="button"
           data-testid="interaction-many-apply"
-          className={`nodrag nopan ${styles.big} ${styles.primary}`}
+          className={`nodrag nopan ${styles.primary}`}
           disabled={!ready}
           onClick={() => {
             if (!ready) return;
@@ -48,9 +51,6 @@ export default function EditManyForm({
           }}
         >
           Apply to {plural(picked.length, nouns.one, nouns.many)}
-        </button>
-        <button type="button" className={`nodrag nopan ${styles.big} ${styles.secondary}`} onClick={onClearPick}>
-          Clear the pick
         </button>
       </span>
       <span className={styles.hint}>Shift-click adds or drops one.</span>
