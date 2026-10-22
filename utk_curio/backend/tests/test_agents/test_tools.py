@@ -519,7 +519,8 @@ class TestModelsSearch:
         # Deep Umbra and the weather GNN ship too, but this account added neither.
         assert set(by_id) == {self.DDRNET, self.DOWNLOAD}
         for row in by_id.values():
-            assert set(row) == self.ROW_KEYS
+            # The model whose 60 labels are cut also says how many were.
+            assert set(row) == self.ROW_KEYS | ({"labelsElided"} if row["id"] == self.DOWNLOAD else set())
             assert row["loader"] == f'model = curio_load_model("{row["id"]}")'
             # The line resolves through the runtime's own reading of node code.
             assert model_ids_in_code(row["loader"]) == [row["id"]]

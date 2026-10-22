@@ -112,7 +112,8 @@ def _dataset_discover_inputs(
     A ``catalog`` the parent wrote into its request is replaced, since the
     child's candidates are checked against the runtime's listing and a list
     the parent made up would only mislead it. The child is shown the
-    listing's first rows, as catalog.search shows them."""
+    listing's first rows, as catalog.search shows them, and how many it was
+    not shown."""
     enriched = dict(inputs)
     rows = (
         catalog_rows if catalog_rows is not None
@@ -125,7 +126,7 @@ def _dataset_discover_inputs(
             "The Data Catalog listing was empty or unavailable: the catalog lane "
             "must stay empty; say so."
         ),
-        "rows": rows[:tools._CATALOG_SEARCH_MAX_ROWS],
+        **tools._cut("rows", rows, tools._CATALOG_SEARCH_MAX_ROWS),
     }
     if "discoveryReplyContract" not in enriched:
         enriched["discoveryReplyContract"] = _discovery_reply_contract()
@@ -1218,6 +1219,8 @@ def _authoring_reuse_evidence(
             "caller must enlist it first). Extend one by name instead of creating "
             "a near-duplicate."
         ),
+        # The delegate cannot read the rest: it is told how many it was not shown.
+        **({"packagesElided": len(rows) - len(packages)} if len(rows) > len(packages) else {}),
         "packages": packages,
     }
 

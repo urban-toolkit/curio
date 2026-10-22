@@ -69,6 +69,23 @@ def _frame(name: str) -> str:
     return agent_text.section(builtin.FRAMES_FILE, name)
 
 
+def _left_out_line(listed: int, total: int) -> str:
+    """The line a roster half ends with when it lists fewer templates than it
+    has, ``frames.md``'s ``templates-left-out`` with its ``{count}`` the
+    number left out: a run shown part of a list is told it is part. Raises
+    ``agent_text.AgentTextError`` when the section names ``{count}`` other
+    than once."""
+    if total <= listed:
+        return ""
+    line = _frame("templates-left-out")
+    if line.count("{count}") != 1:
+        raise agent_text.AgentTextError(
+            f"{agent_text.PAGE_PREFIX}{builtin.FRAMES_FILE}, section templates-left-out, names "
+            f"{{count}} {line.count('{count}')} times, where it names it once"
+        )
+    return "\n" + line.replace("{count}", str(total - listed))
+
+
 def _available_templates_block(
     project_id: str, landscape: dict | None, *, notes_agent: bool = False
 ) -> str | None:
@@ -103,7 +120,10 @@ def _available_templates_block(
         # dataflow.read: refused, one round spent. Silence read as "no rule
         # here"; the explicit line names the rule and the way out.
         return _frame("no-templates")
-    block = _frame("templates") + "\n" + "\n".join(_template_line(t) for t in shown)
+    block = (
+        _frame("templates") + "\n" + "\n".join(_template_line(t) for t in shown)
+        + _left_out_line(len(shown), len(entries))
+    )
     # dev/105 S1: the live roster held twelve built-in CODE templates and no
     # note template; the model took the post-it compute node it saw on the
     # canvas: refused, one round spent. A note-composing run is told, in the
@@ -137,7 +157,10 @@ def _enlistable_templates_block(project_id: str, landscape: dict | None, budget:
     lines = [
         _template_line(r, suffix=f" (package {r['dirName']})") for r in shown
     ]
-    return _frame("templates-not-enlisted") + "\n" + "\n".join(lines)
+    return (
+        _frame("templates-not-enlisted") + "\n" + "\n".join(lines)
+        + _left_out_line(len(shown), len(rows))
+    )
 
 
 def _available_template(user_key: str, project_id: str, node_type: object) -> tuple[dict | None, str]:
