@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import re
 
+from utk_curio.backend.app.agents.domain import content
 from utk_curio.backend.app.packages import service as packages_services
 
 #: The behavior a Map Edits template names.
@@ -69,8 +70,11 @@ def refusal(node_type, code, *, current: str | None = None) -> str | None:
     """Why *code*, written by an agent for a node of *node_type*, is refused:
     Map Edits cannot read it, in the node's own words. None for a node of
     another kind, for code the node reads, and for the code the node holds
-    already (*current*), which is the user's own."""
-    if not is_map_edits(node_type) or (current is not None and code == current):
+    already (*current*), which is the user's own: compared as an agent's code
+    is written into a node (``extract_node_content``)."""
+    if not is_map_edits(node_type):
+        return None
+    if current is not None and content.extract_node_content(code) == content.extract_node_content(current):
         return None
     problem = read(code).get("problem")
     return f"Map Edits cannot read this code: {problem}" if problem else None

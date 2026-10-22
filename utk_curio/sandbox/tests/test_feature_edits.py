@@ -518,6 +518,46 @@ def test_the_code_the_node_writes_runs_its_edits(case):
     assert _ids(fc) == case["kept"]
 
 
+@pytest.mark.parametrize("case", _code_cases() + _code_cases("read"), ids=lambda c: c["name"])
+def test_python_calls_the_step_with_what_the_node_reads(case):
+    """Each code the node writes, and each other code its reader takes, run as
+    a Python node's code runs, calls the step once, as its signature has it,
+    with what the node reads from the code, which the sandbox's reader
+    (``feature_edits_code``) reads too: its inputs, one per circle in order,
+    its edits and each keyword."""
+    import inspect
+
+    from utk_curio.sandbox.util.feature_edits import edit_features
+    from utk_curio.sandbox.util.feature_edits_code import read_edit_features_code
+    from utk_curio.sandbox.util.input_names import call_as_node
+
+    assert case["code"] is not None, case["name"]
+    read = read_edit_features_code(case["code"])
+    assert "problem" not in read, read
+    calls = []
+
+    def step(value, edits, **keywords):
+        calls.append({"value": value, "edits": edits, "keywords": keywords})
+        return value
+
+    circles = read["circles"]
+    inputs = [f"input-{k}" for k in range(circles)]
+    value = inputs if circles > 1 else inputs[0]
+    call_as_node(textwrap.indent(case["code"], "    "), {"curio_edit_features": step}, value, list(range(circles)))
+    [call] = calls
+    keywords = call["keywords"]
+    assert set(keywords) <= set(inspect.signature(edit_features).parameters) - {"value", "edits"}, keywords
+    assert call["value"] == value
+    assert bool(keywords.get("by_input")) == (circles > 1)
+    settings = read["settings"] or {}
+    assert call["edits"] == settings.get("edits", [])
+    assert keywords.get("key") == settings.get("key")
+    assert keywords.get("layer") == settings.get("layer")
+    assert (keywords.get("keys") or None) == settings.get("keys")
+    assert (keywords.get("new_layers") or None) == settings.get("newLayers")
+    assert keywords.get("crs") == settings.get("crs")
+
+
 def _expr_cases(part):
     """One part of ``editExpr.cases.json``; read at collection, so a checkout
     without it fails these tests rather than the whole module."""

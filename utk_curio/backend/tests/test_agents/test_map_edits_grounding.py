@@ -48,8 +48,10 @@ PROBLEM = (
     'Edit 1 has the op "delete", which is none of remove, set, restore, scale, '
     "offset, expr, add, geometry, add_column."
 )
-#: Building 2 removed, as the node writes it.
+#: Building 2 removed, as the node writes it, and as an agent's code for it
+#: lands in the node: without the blank lines around it.
 REMOVE_TWO = NOTE + 'return curio_edit_features(input_0, [\n    {"op": "remove", "ids": [2]},\n], key="building_id")\n'
+REMOVE_TWO_LANDED = REMOVE_TWO.strip()
 LOADER = "return 1\n"
 
 
@@ -139,7 +141,7 @@ class TestTheMintsHoldAnAgentsCodeToTheNodesReader:
             f"/api/agents/projects/{project}/attachments/{att}/proposals/{proposal['proposalId']}/apply",
             headers=_auth(token),
         ).get_json()
-        assert applied["appliedContent"] == {"nodeId": "edit", "content": REMOVE_TWO, "agent": "Node Builder"}
+        assert applied["appliedContent"] == {"nodeId": "edit", "content": REMOVE_TWO_LANDED, "agent": "Node Builder"}
 
     def test_the_code_the_node_holds_is_the_users_own_and_is_never_refused(
         self, client, user_and_token, tmp_curio, monkeypatch,
@@ -224,7 +226,7 @@ class TestSolveHoldsAnAgentsCodeToTheNodesReader:
         sandbox = _Sandbox({REMOVE_TWO_MARK: _sandbox_says([{"op": "remove", "ids": [2]}])})
         _events, outcome, inputs = _solve_rounds(app, [UNREADABLE, REMOVE_TWO], sandbox)
         assert [attempt["kind"] for attempt in outcome["attempts"]] == ["map-edits", "executed"], outcome["attempts"]
-        assert outcome["verdict"] == "pass" and outcome["candidate"] == REMOVE_TWO
+        assert outcome["verdict"] == "pass" and outcome["candidate"] == REMOVE_TWO_LANDED
         # The code the node cannot read never ran.
         assert not any('"delete"' in call["code"] for call in sandbox.calls), sandbox.calls
         # The correction was told why, in the node's own words.
@@ -295,7 +297,7 @@ class TestSolveReadsMadeUpIdsFromTheWholeRun:
         assert [attempt["kind"] for attempt in outcome["attempts"]] == ["map-edits", "executed"], outcome["attempts"]
         assert line in outcome["attempts"][0]["detail"]
         assert line in inputs[1]["validationError"]
-        assert outcome["candidate"] == REMOVE_TWO
+        assert outcome["candidate"] == REMOVE_TWO_LANDED
 
     def test_a_report_line_past_the_tail_a_record_keeps_is_read_too(self, app, tmp_curio):
         """The report comes first, and 40 adds of features the layer already
@@ -465,7 +467,7 @@ class TestAnEmptyMapEditsNodeIsFilledOnlyWhenItsGoalNamesEdits:
             if name == "node_result"
         }
         edit = results[ids["edit"]]
-        assert edit["status"] == "solved" and edit["content"] == REMOVE_TWO, edit
+        assert edit["status"] == "solved" and edit["content"] == REMOVE_TWO_LANDED, edit
         assert edit.get("agent") == "Node Builder", edit
 
     def test_the_shipped_examples_goals_name_edits_where_their_code_holds_some(self):
