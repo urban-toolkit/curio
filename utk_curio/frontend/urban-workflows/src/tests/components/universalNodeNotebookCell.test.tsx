@@ -20,13 +20,13 @@ const mockStripProps: any[] = [];
 const mockEditorless = { on: false };
 
 jest.mock("reactflow", () => ({
-  Handle: ({ id, position, style, title, children }: any) => (
+  Handle: ({ id, position, style, "data-tooltip": tooltip, children }: any) => (
     <div
       data-testid={`handle-${id}`}
       data-position={position}
       data-top={style?.top === undefined ? "" : String(style.top)}
       data-bottom={style?.bottom === undefined ? "" : String(style.bottom)}
-      title={title}
+      data-tooltip={tooltip}
     >
       {children}
     </div>

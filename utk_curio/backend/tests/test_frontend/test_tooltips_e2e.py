@@ -113,8 +113,14 @@ TARGETS = {
 CHIPS = {"code": (JOIN, "code"), "spec": (CHART, "grammar")}
 
 #: Titles a library draws that Curio cannot take off: (a selector the element
-#: matches or sits in, why it stays). Empty until a run finds one.
-LIBRARY_TITLES: list[tuple[str, str]] = []
+#: matches or sits in, why it stays).
+LIBRARY_TITLES: list[tuple[str, str]] = [
+    (
+        ".monaco-editor .cldr",
+        "Monaco's own folding control, titled 'Click to collapse the range.' by Monaco: "
+        "an editor on a dashboard tile keeps Monaco's look by design (nodeEditorLook), folding included",
+    ),
+]
 
 # The first element *selector* finds that is laid out, as a box.
 _BOX_JS = r"""(selector) => {

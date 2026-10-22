@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef } from "react";
 import { OnMove, useStoreApi, Viewport } from "reactflow";
+import { hideTooltip } from "../components/tooltip/tooltipStore";
 
 /** The class on a flow's wrapper that gives its viewport ``will-change`` (MainCanvas.css). */
 export const VIEWPORT_MOVING_CLASS = "curio-viewport-moving";
@@ -32,6 +33,9 @@ export interface ViewportMotionHint {
  * Spread the result on a ``<ReactFlow>`` inside its provider. The class goes on
  * that flow's own wrapper, and the rule reaches only its own viewport, not a
  * flow drawn inside one of its nodes.
+ *
+ * Any move of the view, a gesture's or a fit's, also hides the Curio tooltip:
+ * the target it was placed beside is somewhere else now.
  */
 export function useViewportMotionHint(): ViewportMotionHint {
   const store = useStoreApi();
@@ -50,7 +54,11 @@ export function useViewportMotionHint(): ViewportMotionHint {
   }, [store, settle]);
 
   const onMove = useCallback(
-    (event: MouseEvent | TouchEvent | null) => (event ? moving() : settle()),
+    (event: MouseEvent | TouchEvent | null) => {
+      hideTooltip();
+      if (event) moving();
+      else settle();
+    },
     [moving, settle],
   );
 
