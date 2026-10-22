@@ -10,7 +10,10 @@ the brush had just reached went dark until the next move lit them again, and
 an echo of the empty selection a press starts with cleared the rectangle too.
 Since #541 the echo names the chart it came from, and that chart skips it.
 
-The dataflow here is the reporter's: example 07 plus their histogram. Each
+The dataflow here is the reporter's: example 07 as it was then, its views fed
+and linked through a Data Pool, plus their histogram. Example 07 has since
+linked its two views directly, with no pool, so the pool is put back here: the
+echo this guards comes only from a pool. Each
 histogram is brushed in one fast drag, outwards from its left edge, the way a
 hand moves, so that echoes land between moves. Every bar's fill is watched
 through the drag: from nothing lit, a bar may light once and must stay lit. The
@@ -60,8 +63,25 @@ if TYPE_CHECKING:
 
 EXAMPLE = "07-autark-gpu-shader.json"
 POOL = "sh-pool"
+COMPUTE = "sh-compute"
+MAP = "sh-map"
 ROADS_PLOT = "sh-plot"
 BUILDINGS_PLOT = "c9167a00-af32-4e32-9ab8-5d2be7a10279"
+
+#: The Data Pool example 07 fed and linked its views through when #532 was
+#: filed, and where it and the views sat.
+POOL_NODE = {
+    "id": POOL,
+    "type": "curio.builtin/data-pool",
+    "x": 1290,
+    "y": 458,
+    "content": "",
+    "out": "DEFAULT",
+    "in": "DEFAULT",
+    "goal": "",
+    "metadata": {"keywords": []},
+}
+VIEW_X = {MAP: 1940, ROADS_PLOT: 1935}
 
 #: Each histogram is brushed this many times, the other one in between.
 ROUNDS = 2
@@ -114,8 +134,31 @@ BUILDINGS_PLOT_EDGES = [
 ]
 
 
+def _through_the_pool(spec: dict) -> dict:
+    """Example 07's views fed and linked through the pool, as the reporter's
+    dataflow had them: the compute node feeds the pool, the pool feeds both
+    views, and each view is linked to the pool by an interaction edge."""
+    flow = spec["dataflow"]
+    flow["edges"] = [
+        e for e in flow["edges"] if e.get("type") != "Interaction" and e["target"] not in VIEW_X
+    ]
+    for node in flow["nodes"]:
+        if node["id"] in VIEW_X:
+            node["x"] = VIEW_X[node["id"]]
+    flow["nodes"].append(copy.deepcopy(POOL_NODE))
+    flow["edges"].append({"id": f"reactflow__edge-{COMPUTE}out-{POOL}in", "source": COMPUTE, "target": POOL})
+    for view in (MAP, ROADS_PLOT):
+        flow["edges"].append({"id": f"reactflow__edge-{POOL}out-{view}in", "source": POOL, "target": view})
+    for view in (ROADS_PLOT, MAP):
+        flow["edges"].append({
+            "type": "Interaction", "id": f"reactflow__edge-{POOL}in/out-{view}in/out",
+            "source": POOL, "target": view,
+        })
+    return spec
+
+
 def _reporter_spec() -> dict:
-    spec = copy.deepcopy(load_example_spec(EXAMPLE))
+    spec = _through_the_pool(copy.deepcopy(load_example_spec(EXAMPLE)))
     spec["dataflow"]["nodes"].append(copy.deepcopy(BUILDINGS_PLOT_NODE))
     spec["dataflow"]["edges"].extend(copy.deepcopy(BUILDINGS_PLOT_EDGES))
     return spec

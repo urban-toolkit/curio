@@ -1064,6 +1064,54 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
         expect(named).not.toContain('Sensors');
       });
 
+      // A map drawn again, as after an upstream run, shows none of the pick it
+      // made: it says so, as a Vega chart does when it compiles
+      // (hook/useVega.ts:813-821), so the views linked to it stop showing it.
+      describe('a pick of its own, and the map drawn again', () => {
+        const PICKABLE = JSON.stringify({ map: { layerRefs: [{ dataRef: 'input_0', isPick: true }] } });
+        const pickedWith = (listeners: Record<string, (event: { selection: number[] }) => void>) => () => ({
+          run: jest.fn().mockResolvedValue(undefined), data: {},
+          highlightOnMap: jest.fn(), clearHighlightOnMap: jest.fn(),
+          interactions: {
+            on: (event: string, listener: (event: { selection: number[] }) => void) => {
+              listeners[event] = listener;
+              return () => {};
+            },
+          },
+        });
+        const drawnTwice = async (pick: number[] | null) => {
+          const listeners: Record<string, (event: { selection: number[] }) => void> = {};
+          grammarMock().AutkGrammar
+            .mockImplementationOnce(pickedWith(listeners))
+            .mockImplementationOnce(pickedWith(listeners));
+          const interactionsCallback = jest.fn();
+          const base = makeMockData({ nodeId: 'map-1', outputCallback: jest.fn(), interactionsCallback, input: INPUT } as any);
+          const state = makeMockNodeState();
+          const { result } = renderHook(({ d }: { d: any }) => useAutkGrammarBehavior(d, state), { initialProps: { d: base } });
+          await act(async () => { await result.current.applyGrammar!(PICKABLE); });
+          if (pick) {
+            await act(async () => { listeners['map:picking']({ selection: pick }); });
+            expect(interactionsCallback).toHaveBeenLastCalledWith(
+              { autk_selection: expect.objectContaining({ type: 'POINT', data: pick }) }, 'map-1',
+            );
+          }
+          const before = interactionsCallback.mock.calls.length;
+          await act(async () => { await result.current.applyGrammar!(PICKABLE); });
+          return interactionsCallback.mock.calls.slice(before);
+        };
+
+        test('the map says its pick is gone', async () => {
+          const told = await drawnTwice([1]);
+          expect(told).toEqual([
+            [{ autk_selection: expect.objectContaining({ type: 'UNDETERMINED', data: [] }) }, 'map-1'],
+          ]);
+        });
+
+        test('guard: a map with no pick of its own says nothing', async () => {
+          expect(await drawnTwice(null)).toEqual([]);
+        });
+      });
+
       test("a plot's own selection back through a pool is left alone; another chart's is applied", async () => {
         const setPlotSelection = jest.fn();
         const clearHighlightOnPlot = jest.fn();

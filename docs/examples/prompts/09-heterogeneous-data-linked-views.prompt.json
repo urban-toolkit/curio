@@ -4,10 +4,10 @@
   "version": 1,
   "source": {
     "path": "docs/examples/09-heterogeneous-data-linked-views.json",
-    "sha256": "86aeecb765c57e2b57e8a312351ea993b675de48a364f3f8d2fbefefab03ef8d",
+    "sha256": "19f1ba1082f82dad59bfa6562a4abd73e194366aefe0952577d66e335d547e9e",
     "walkthrough": "docs/examples/09-heterogeneous-data-linked-views.md"
   },
-  "prompt": "I want to see where Milan's heat exposure overlaps with its older residents. Three datasets in the Data Catalog hold the inputs: the mean radiant temperature raster, the hourly ERA5 weather table, and the census polygons carrying the over-65 share. Load the raster and the weather table, bundle them together as one input, and compute the universal thermal climate index on the raster grid in a Python step. Then load the census polygons, bundle them with the index result, and compute zonal statistics so each polygon carries its mean index value. Reproject and filter the result, fan it out, and show it two ways that stay linked: a thematic 3D map with Autark and a Vega-Lite scatter of the index against the older-adult share. The thermal comfort and zonal statistics libraries are not part of the Curio framework, so whatever provides them has to be installed.",
+  "prompt": "I want to see where Milan's heat exposure overlaps with its older residents. Three datasets in the Data Catalog hold the inputs: the mean radiant temperature raster, the hourly ERA5 weather table, and the census polygons carrying the over-65 share. Load the raster and the weather table, bundle them together as one input, and compute the universal thermal climate index on the raster grid in a Python step. Then load the census polygons, bundle them with the index result, and compute zonal statistics so each polygon carries its mean index value. Reproject and filter the result, and show it two ways linked to each other: a thematic 3D map with Autark and a Vega-Lite scatter of the index against the older-adult share. The thermal comfort and zonal statistics libraries are not part of the Curio framework, so whatever provides them has to be installed.",
   "context": null,
   "required": {
     "datasets": [
@@ -17,8 +17,7 @@
     ],
     "packages": [
       "curio.weather@1"
-    ],
-    "paths": []
+    ]
   },
   "expected": {
     "nodes": [
@@ -65,13 +64,6 @@
         "hasContent": true
       },
       {
-        "ref": "pool1",
-        "type": "curio.builtin/data-pool",
-        "role": "pool",
-        "executable": false,
-        "hasContent": false
-      },
-      {
         "ref": "transform1",
         "type": "curio.builtin/data-transformation",
         "role": "transform",
@@ -101,11 +93,6 @@
       }
     ],
     "edges": [
-      {
-        "from": "visualization1",
-        "to": "pool1",
-        "kind": "interaction"
-      },
       {
         "from": "analysis1",
         "to": "transform1",
@@ -140,33 +127,28 @@
         "kind": "data"
       },
       {
-        "from": "pool1",
+        "from": "transform1",
         "to": "visualization1",
         "kind": "data"
       },
       {
-        "from": "pool1",
+        "from": "transform1",
         "to": "transform2",
         "kind": "data"
       },
       {
-        "from": "pool1",
-        "to": "visualization2",
-        "kind": "data"
-      },
-      {
         "from": "transform1",
-        "to": "pool1",
-        "kind": "data"
-      },
-      {
-        "from": "transform2",
         "to": "visualization3",
         "kind": "data"
       },
       {
-        "from": "visualization2",
-        "to": "pool1",
+        "from": "transform2",
+        "to": "visualization2",
+        "kind": "data"
+      },
+      {
+        "from": "visualization3",
+        "to": "visualization1",
         "kind": "interaction"
       }
     ],
@@ -224,7 +206,6 @@
     "mode": "sandbox",
     "browserOnlyKinds": [
       "curio.builtin/autk-grammar",
-      "curio.builtin/data-pool",
       "curio.builtin/vis-vega"
     ],
     "notes": null

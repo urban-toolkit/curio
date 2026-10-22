@@ -80,7 +80,7 @@ Wire Image Segmentation → `Simple View`. It is a built-in node with no configu
 
 `Simple View` picks the image columns itself. It looks for the familiar names first (`image_url`, `overlay_url`, `image_content`, `image`, `thumbnail`) and otherwise sniffs the values, so any frame with pictures in it displays without being told which column holds them. When a frame has more than one image column, an **Image column** selector appears; leave it on `all` to compare photo against overlay, or pin it to `overlay_url` to study the masks on their own.
 
-Clicking a card emits its row index as a selection, which a connected `Data Pool` picks up. `Simple View` passes its input straight through, so the Spatial Join downstream receives the same frame Image Segmentation emitted.
+Clicking a card selects its row in the views linked to the `Simple View` by an interaction edge. `Simple View` passes its input straight through, so the Spatial Join downstream receives the same frame Image Segmentation emitted.
 
 ## Step 4: Load and prepare neighborhood polygons (`Data Loading`, `Data Transformation`)
 

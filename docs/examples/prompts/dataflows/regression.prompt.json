@@ -4,7 +4,7 @@
   "version": 1,
   "source": {
     "path": "docs/examples/dataflows/regression.json",
-    "sha256": "5ea35bcc5050eb18a98dee9969185505c5c7d79073784b44700bd5241c2e3171",
+    "sha256": "a8d93a6da6f392b8bdb463dc70d234362e0e0410ebb48142d21ecfd7ae121a6a",
     "walkthrough": null
   },
   "prompt": "Load the Niteroi road network with its surface, park and water layers from the OSM extract at docs/examples/data/niteroi.osm.pbf with Autark and run a spatial join over it. Normalise the lane count on the GPU by clamping it to between one and eight, then fan the augmented roads and their context layers out to two views: a 3D map coloured by normalised lane count and a brushable lane distribution histogram, with brushing on the histogram highlighting roads on the map.",

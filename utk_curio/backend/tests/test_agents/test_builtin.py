@@ -1080,7 +1080,9 @@ class TestResearcher:
         # and street trees in Chicago, beside GTFS feeds (owner, 10-13).
         # 2026-10-15: the Node Builder writes new node types; its one-template
         # fallback is retired (plan a-few-things-snuggly-goblet, step 6).
-        "42299b9c32141994349d1671609f011eb938b47e9f3115d7b0e9e11f293b886e"
+        # 2026-10-22: two views link directly, and a Data Pool goes between
+        # them only in its four cases (owner, 10-21; PR #1058).
+        "94f195692c47d9f3e881d11a3c8dfa08730e60b46a3f55c72ba3c5149607d619"
     )
 
     def test_manifest_surface(self):

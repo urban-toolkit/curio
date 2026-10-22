@@ -107,7 +107,7 @@ return pd.DataFrame(joined[['LONGITUDE', 'LATITUDE', 'VEGETATED_SQFT', 'TOTAL_RO
 
 ## Step 5: Fan out the joined dataset (`Data Pool`)
 
-The pool keeps the joined table in shared memory so the next two views can read it without re-running the spatial join.
+The pool shows the joined table, and the views below read it.
 
 ## Step 6: Dot density map (`Vega-Lite`)
 
@@ -277,4 +277,4 @@ return top_10_largest
 
 ## Final result
 
-The histogram answers "how big is a typical green roof?", the dot density map answers "where are they?", and the bar chart answers "which zips lead?". Because the three views fan out from a `Data Pool`, the spatial join only runs once, and adding a fourth view (e.g. a chart of installations by year) is one more node off the pool, not a re-join.
+The histogram answers "how big is a typical green roof?", the dot density map answers "where are they?", and the bar chart answers "which zips lead?".

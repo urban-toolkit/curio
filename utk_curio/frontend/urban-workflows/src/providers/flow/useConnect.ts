@@ -7,11 +7,13 @@ import { NodeType, EdgeType } from "../../constants";
 import { getUnversionedFlowNodeType } from "../../utils/flowNodeCanonicalType";
 import { TrillGenerator } from "../../TrillGenerator";
 import { inputSlotOf, slotHandleId, wiredInputSlots } from "../../utils/inputSlots";
+import { INTERACTION_EDGE_CARRIES_NOTHING, interactionEdgeCarries } from "../../registry/interactionRoles";
 import type { useToastContext } from "../ToastProvider";
 import type { useCollab } from "../CollaborationProvider";
 import type { IOutput } from "./flowTypes";
 import type { useGraphEdits } from "./useGraphEdits";
 import { nodeGrowsInputs, nodeInputCapacity } from "./growingInputs";
+import { directedEdgesOf } from "./runLevels";
 
 /** *base*, or *base* with a suffix when an edge already has that id. */
 function uniqueEdgeId(base: string, edges: Edge[]): string {
@@ -78,12 +80,14 @@ export function useConnect({
                 );
                 return;
             }
+            // A cycle is one of data edges: an interaction edge carries
+            // selections, never data, so it closes none.
             const hasCycle = (node: Node, visited = new Set()) => {
                 if (visited.has(node.id)) return false;
 
                 visited.add(node.id);
 
-                let checkEdges = edges.filter((edge: any) => {
+                let checkEdges = directedEdgesOf<Edge>(edges).filter((edge: any) => {
                     return edge.sourceHandle;
                 });
 
@@ -154,6 +158,20 @@ export function useConnect({
 
                 if (!allowConnection) {
                     showToast("Input and output types of these boxes are not compatible", "warning");
+                }
+
+                // An interaction edge neither end of which shows a selection it
+                // receives, such as one between two Simple Views, carries
+                // nothing. A saved one still opens, as saved edges do.
+                if (
+                    allowConnection &&
+                    !skipValidation &&
+                    isInOutHandle(connection.sourceHandle) &&
+                    isInOutHandle(connection.targetHandle) &&
+                    !interactionEdgeCarries(outNodeType, inNodeType)
+                ) {
+                    showToast(INTERACTION_EDGE_CARRIES_NOTHING, "warning");
+                    allowConnection = false;
                 }
 
                 let resolvedConnection: Connection = connection;

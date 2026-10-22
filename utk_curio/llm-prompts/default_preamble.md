@@ -202,7 +202,7 @@ A node's "type" is the id of the template it was made from. A run that can place
 - Data Loading: The Data Loading box is responsible for getting data from the outside world into the dataflow.
 - Data Export: One Download button for the data connected to it. The file is named after the node or dataset that feeds it, and its format follows the data: a table downloads as CSV, a geodataframe as GeoJSON, anything else as JSON.
 - Data Transformation: The Data Transformation box is responsible for performing any kinds of transformations to the data.
-- Data Pool: The Data Pool is responsible for storing data that can be interacted by all connected visualizations. Interactions can also be propagated to other Data Pools.
+- Data Pool: Shows its input as a table and passes the rows on to every node it feeds, marking in an interacted column the rows selected in the views linked to it by interaction edges. Linked to another Data Pool, it passes that pool the marks of the rows its linked column names.
 - Python Computation: The Computation Analysis box is the generic box responsible for performing any kinds of computations.
 - Data Summary: The Data Summary node computes descriptive statistics and schema information (shape, dtypes, missing values, describe) for a DataFrame.
 - JS Computation: Run JavaScript via Node.js. Each input circle is its own variable, named after the circle: input_0, input_1, and so on. Use `return` to pass output downstream.
@@ -216,9 +216,9 @@ A node's "type" is the id of the template it was made from. A run that can place
 
 A node that accepts more than one connection takes each one on its own input circle, numbered from 0 in the order they were connected. An edge names the circle it connects to in "targetHandle": "in", "in_1", "in_2", ..., circle 0 first.
 
-A Data Pool node is represented to the user as a table. Changes made to a Data Pool are seen by all connected nodes, which is how interactions are linked between visualizations.
+A Data Pool node is represented to the user as a table.
 
-A Simple View node renders a table for DataFrames/GeoDataFrames, or a card per row when the frame carries images: one image plus that row's other values. A column holds images when at least 60% of its non-empty values are images; a value that is a list counts when any of its items is one. The columns named "image_content", "image_url", "image", "thumbnail" or "overlay_url" are checked first, in that order, and in them an image is a "data:image/" URI, an "/api/" path, any http(s) URL, or bare Base64 image bytes. When any of them holds images, those columns are the image columns and no other column is checked, except that "image_url" is left out when "thumbnail" holds images too, since the thumbnail is the small view of the same file. Otherwise every column is checked, and an image there is a "data:image/" URI, an "/api/" path, or an http(s) URL with an image extension (.png, .jpg, .jpeg, .gif, .webp, .svg, .bmp or .avif) at its end or just before a "?" or "#"; bare Base64 does not count there. Both frame shapes work, so a GeoDataFrame whose features carry an image property displays as images too. Users can click on a card to interact with its row; the interaction will be propagated to a Data Pool if connected with an interaction edge.
+A Simple View node renders a table for DataFrames/GeoDataFrames, or a card per row when the frame carries images: one image plus that row's other values. A column holds images when at least 60% of its non-empty values are images; a value that is a list counts when any of its items is one. The columns named "image_content", "image_url", "image", "thumbnail" or "overlay_url" are checked first, in that order, and in them an image is a "data:image/" URI, an "/api/" path, any http(s) URL, or bare Base64 image bytes. When any of them holds images, those columns are the image columns and no other column is checked, except that "image_url" is left out when "thumbnail" holds images too, since the thumbnail is the small view of the same file. Otherwise every column is checked, and an image there is a "data:image/" URI, an "/api/" path, or an http(s) URL with an image extension (.png, .jpg, .jpeg, .gif, .webp, .svg, .bmp or .avif) at its end or just before a "?" or "#"; bare Base64 does not count there. Both frame shapes work, so a GeoDataFrame whose features carry an image property displays as images too. Users can click on a card to select its row, and the selection reaches the nodes linked to it by an interaction edge.
 
 ## How nodes are controlled
 
@@ -485,7 +485,11 @@ special mark type.
 
 ## Interactions
 
-Visualizations can be connected to a Data Pool with an edge of type: "Interaction" (in the Trill specification). Interactions on the visualization will be propagated to the Data Pool changing a column called "interacted". This column will contained 1 if that row was interacted with or 0 if not. The type of interaction is determined by the visualization. The interactions in the visualization is automatically propagated to the Data Pool, however for the interaction to the effect in the visualization the field "interacted" needs to be used. For example, this Vega-Lite specification defines a scatterplot with a select interaction that uses the column "interacted" to control the color of the points.
+An edge of type: "Interaction" (in the Trill specification) carries selections between two visualizations, never data. Link two visualizations directly when at least one of them is a Vega-Lite or an Autark node: each of those highlights the rows the other one selects, and a Vega-Lite node marks them in a column called "interacted", "1" for a selected row and "0" otherwise.
+
+A Data Pool goes between visualizations only when a Simple View must show the selection, when selections are merged (AND or OR), when a Vega-Lite chart colors its own selection through "interacted", or when three or more visualizations share one selection. Each visualization is then linked to the Data Pool, which marks the selected rows in its column "interacted" and passes them to every node it feeds.
+
+A visualization shows a selection it receives through the column "interacted", and a chart shows its own through its selection's name. For example, this Vega-Lite specification defines a scatterplot with an interval selection that colors red the points it selects and the points another visualization selects.
 
 ```json
 { 
@@ -501,14 +505,17 @@ Visualizations can be connected to a Data Pool with an edge of type: "Interactio
         "value": 0.3 
     }, 
     "color": {
-      "condition": {"test": "datum.interacted === '1'", "value": "red"},
+      "condition": [
+        {"param": "clickSelect", "empty": false, "value": "red"},
+        {"test": "datum.interacted === '1'", "value": "red"}
+      ],
       "value": "blue" }
   },
   "config": { "scale": { "bandPaddingInner": 0.2 } } 
 } 
 ```
 
-Two visualizations can also be connected to each other directly with an Interaction edge, without a Data Pool, when at least one of them is a Vega-Lite or an Autark node: each of those highlights the rows the other one selects, and a Vega-Lite node marks them in the column "interacted" the same way. A point selection over key columns matches rows by their values, so the two visualizations may read different rows that share those columns: a Vega-Lite point select with "fields": ["unit_id"], or an Autark map layer (the one with "isPick": true) or plot with "selectFields": ["unit_id"], whose table must come from the node's input. A point selection without them matches rows by position, so both visualizations must read the same rows in the same order; an interval selection matches by column name.
+A point selection over key columns matches rows by their values, so the two visualizations may read different rows that share those columns: a Vega-Lite point select with "fields": ["unit_id"], or an Autark map layer (the one with "isPick": true) or plot with "selectFields": ["unit_id"], whose table must come from the node's input. A point selection without them matches rows by position, so both visualizations must read the same rows in the same order; an interval selection matches by column name.
 
 A Map Edits node feeds the Autark map it edits on, and an Interaction edge links the two, so features picked on the map reach it. Its code, one `curio_edit_features(...)` call, is written by the node from its edits.
 

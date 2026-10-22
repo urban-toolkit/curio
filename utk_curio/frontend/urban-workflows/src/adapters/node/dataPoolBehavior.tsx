@@ -80,15 +80,20 @@ export const useDataPoolBehavior: NodeBehaviorHook = (data) => {
   // The delivery already taken in, so a mode change resolves the same
   // selections again without counting the last one as new.
   const deliveredRef = useRef<unknown>(undefined);
-  // A chart whose interaction edge to the pool is removed takes its selection
-  // with it, so no merge goes on combining a chart that is no longer linked.
+  // A chart whose interaction edge to the pool is removed, or that is
+  // deleted, takes its selection with it: no merge goes on combining a chart
+  // that is no longer linked, and the pool resolves what it still holds at
+  // once, so the nodes it feeds stop showing that chart's picks.
   const peers = useMemo(() => interactionPeers(poolEdges, data.nodeId), [poolEdges, data.nodeId]);
   const peersRef = useRef<Set<string>>(new Set());
+  const [peerLeft, setPeerLeft] = useState(0);
   useEffect(() => {
+    let left = false;
     for (const id of peersRef.current) {
-      if (!peers.has(id)) selectionsRef.current.delete(id);
+      if (!peers.has(id) && selectionsRef.current.delete(id)) left = true;
     }
     peersRef.current = peers;
+    if (left) setPeerLeft((count) => count + 1);
   }, [peers]);
 
   useEffect(() => {
@@ -169,6 +174,8 @@ export const useDataPoolBehavior: NodeBehaviorHook = (data) => {
         }
       }
       const kept = Array.from(held.values());
+      // No linked chart holds a selection any more: every layer's flags go.
+      const nothingHeld = kept.length === 0;
       const latest = kept.length > 0 ? { ...kept[kept.length - 1], priority: 1 } : undefined;
       const interactions: any[] = betweenChartsMode === ResolutionType.OVERWRITE
         ? (latest ? [latest] : [])
@@ -251,7 +258,7 @@ export const useDataPoolBehavior: NodeBehaviorHook = (data) => {
           if (fallback) interactionsForLayer = [...interactionsForLayer, ...fallback];
         }
       }
-      if (interactionsForLayer.length === 0) continue;
+      if (interactionsForLayer.length === 0 && !nothingHeld) continue;
 
       let columns: string[] = [];
       let dfIndices: string[] = [];
@@ -352,8 +359,9 @@ export const useDataPoolBehavior: NodeBehaviorHook = (data) => {
         data.propagationCallback(propagationObj);
       }
     }
-    // A mode chosen in the body resolves the selections the pool holds again.
-  }, [data.interactions, insideChartMode, betweenChartsMode]);
+    // A mode chosen in the body, or a chart that left, resolves the
+    // selections the pool holds again.
+  }, [data.interactions, insideChartMode, betweenChartsMode, peerLeft]);
 
   const tableData = useMemo(() => {
     // output.content is always a data object (never a JSON string) so we can

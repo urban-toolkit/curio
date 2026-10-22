@@ -39,6 +39,10 @@ _SWAP_PASSES = 8
 #: corpus distinguishes; more cannot hurt but costs time on the live path.
 _REFINEMENT_ROUNDS = 3
 
+#: The kind of an interaction edge, which carries selections both ways between
+#: the two views it joins: it is the same edge whichever end a plan names first.
+_INTERACTION = "interaction"
+
 
 @dataclass(frozen=True)
 class Universe:
@@ -154,6 +158,10 @@ def _signatures(graph: CanonicalGraph) -> list:
     for edge in graph.edges:
         in_adj[edge.dst].append((edge.src, edge.kind, -1 if edge.slot is None else edge.slot))
         out_adj[edge.src].append((edge.dst, edge.kind))
+        if edge.kind == _INTERACTION:
+            # No direction: each end sees the edge both ways.
+            in_adj[edge.src].append((edge.dst, edge.kind, -1))
+            out_adj[edge.dst].append((edge.src, edge.kind))
     colours = [(node.type, node.role, node.executable) for node in graph.nodes]
     for _ in range(_REFINEMENT_ROUNDS):
         colours = [
@@ -178,7 +186,9 @@ def _agreed_edges(
         src, dst = mapping.get(edge.src), mapping.get(edge.dst)
         if src is None or dst is None:
             continue
-        if (src, dst, edge.kind) in actual_keys:
+        if (src, dst, edge.kind) in actual_keys or (
+            edge.kind == _INTERACTION and (dst, src, edge.kind) in actual_keys
+        ):
             count += 1
     return count
 
@@ -313,6 +323,10 @@ def _edge_diff(
             continue
         src, dst = mapping.get(edge.src), mapping.get(edge.dst)
         candidates = actual_by_ends.get((src, dst)) or [] if src is not None and dst is not None else []
+        if edge.kind == _INTERACTION and src is not None and dst is not None:
+            candidates = candidates + [
+                c for c in actual_by_ends.get((dst, src)) or [] if c.kind == _INTERACTION
+            ]
         same_kind = [c for c in candidates if c.kind == edge.kind and id(c) not in consumed]
         if same_kind:
             chosen = same_kind[0]

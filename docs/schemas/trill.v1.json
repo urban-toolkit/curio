@@ -560,7 +560,7 @@
         "type": {
           "type": "string",
           "enum": ["Interaction"],
-          "description": "Present only on an interaction (bidirectional) edge, along which a selection in a visualization propagates back upstream. Absence means a plain unidirectional data edge - there is no explicit 'Data' value. The in-canvas EdgeType enum (BIDIRECTIONAL_EDGE / UNIDIRECTIONAL_EDGE) is never persisted. Whether a given template may carry an interaction edge is a manifest question ('bidirectional'), not a schema one."
+          "description": "Present only on an interaction (bidirectional) edge, which carries selections between the two nodes it joins, never data. Absence means a plain unidirectional data edge - there is no explicit 'Data' value. The in-canvas EdgeType enum (BIDIRECTIONAL_EDGE / UNIDIRECTIONAL_EDGE) is never persisted. Whether a given template may carry an interaction edge is a manifest question ('bidirectional'), not a schema one."
         },
         "sourceHandle": {
           "type": "string",

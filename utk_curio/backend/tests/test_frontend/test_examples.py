@@ -36,17 +36,16 @@ EXAMPLE_INVARIANTS = [
      {"curio.builtin/data-loading": 5, "curio.builtin/vis-vega": 2}, False),
     # Its comparisons are Scout's Bars over a Roads node per scenario and a
     # Python node that takes the sunlight change (no Compare Scenarios node).
-    # Its Edit Features node feeds a map of the buildings and is linked to it.
+    # Its Map Edits node feeds a map of the buildings and is linked to it.
     ("06-back-bay-road-sunlight.json", 16, 19,
      {"curio.builtin/autk-grammar": 9, "curio.builtin/data-pool": 1,
       "curio.builtin/computation-analysis": 4, "curio.builtin/edit-features": 1,
       "curio.scout/bars": 1}, True),
-    ("07-autark-gpu-shader.json", 5, 6,
-     {"curio.builtin/autk-grammar": 4, "curio.builtin/data-pool": 1}, True),
-    ("08-autark-spatial-join-regression.json", 7, 8,
-     {"curio.builtin/autk-grammar": 4, "curio.builtin/js-computation": 1,
-      "curio.builtin/data-pool": 1}, True),
-    ("09-heterogeneous-data-linked-views.json", 11, 13,
+    ("07-autark-gpu-shader.json", 4, 4,
+     {"curio.builtin/autk-grammar": 4}, True),
+    ("08-autark-spatial-join-regression.json", 6, 6,
+     {"curio.builtin/autk-grammar": 4, "curio.builtin/js-computation": 1}, True),
+    ("09-heterogeneous-data-linked-views.json", 10, 11,
      {"curio.builtin/autk-grammar": 1, "curio.builtin/vis-vega": 2}, True),
     ("10-street-vision-cv-analysis.json", 12, 12,
      {
@@ -236,6 +235,42 @@ def test_example_documented_invariants(
             f"brushing, got 0. Edge types: "
             f"{sorted({e.get('type') or 'data' for e in edges})}"
         )
+
+
+#: The examples whose two views link directly (owner, 2026-10-21): one
+#: interaction edge joins the two views, and no Data Pool sits between them.
+DIRECT_LINKS = {
+    "07-autark-gpu-shader.json": ("sh-plot", "sh-map"),
+    "08-autark-spatial-join-regression.json": ("niteroi-plot", "niteroi-map"),
+    "09-heterogeneous-data-linked-views.json": (
+        "3334485c-50ad-4adf-9574-45f8a9704860",
+        "6c4aa6a8-45eb-480e-bb3d-3fd54d13325b",
+    ),
+}
+
+
+@pytest.mark.parametrize("basename", sorted(DIRECT_LINKS), ids=sorted(DIRECT_LINKS))
+def test_two_views_link_directly_with_no_pool(basename):
+    """An interaction edge carries selections, never data, so these examples
+    link their two views with one edge between them, and feed both from the
+    node that computes their rows."""
+    with open(os.path.join(EXAMPLES_DIR, basename), "r", encoding="utf-8") as f:
+        dataflow = json.load(f)["dataflow"]
+    pools = [n["id"] for n in dataflow["nodes"] if n["type"].split("@")[0] == "curio.builtin/data-pool"]
+    assert pools == [], f"{basename}: a Data Pool sits between its views: {pools}"
+    links = [
+        {e["source"], e["target"]} for e in dataflow["edges"] if e.get("type") == "Interaction"
+    ]
+    assert links == [set(DIRECT_LINKS[basename])], (
+        f"{basename}: expected one interaction edge between {DIRECT_LINKS[basename]}, got {links}"
+    )
+    feeders = {
+        view: {e["source"] for e in dataflow["edges"] if e.get("type") != "Interaction" and e["target"] == view}
+        for view in DIRECT_LINKS[basename]
+    }
+    assert len(set.union(*feeders.values())) == 1 and all(len(f) == 1 for f in feeders.values()), (
+        f"{basename}: both views are fed by one node, got {feeders}"
+    )
 
 
 def _circle_index(handle) -> int:
