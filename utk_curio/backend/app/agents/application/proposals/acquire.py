@@ -437,6 +437,20 @@ def _unconfirmed(rows: list) -> int:
     )
 
 
+def _source_describes(dir_name: str, resource_id: str) -> bool:
+    """Whether the Discovery Catalog describes *resource_id* of the source
+    *dir_name*, through the acting user's service: the call a
+    ``discovery.acquire`` proposal is grounded in. A describe that fails, for
+    a resource the source does not have or for any other reason, is a no."""
+    try:
+        _discovery_service().describe_resource(dir_name, resource_id)
+    except Exception as exc:  # noqa: BLE001 - an unconfirmed resource is not offered, never a run error
+        log.info("%s did not describe %s (%s): the row is not offered for download",
+                 dir_name, resource_id, exc)
+        return False
+    return True
+
+
 def _acquirable(row: dict, roster: "_LazyRoster", budget=None) -> bool | None:
     """Whether Curio can download *row*: True or False, or None for a
     connector row whose source was not asked, the budget being spent."""
@@ -450,7 +464,7 @@ def _acquirable(row: dict, roster: "_LazyRoster", budget=None) -> bool | None:
     if not capabilities.get("download"):
         return False
     if source.get("provider") != "direct":
-        return roster.describes(row["sourceId"], row["resourceId"], budget=budget)
+        return roster.describes(row["sourceId"], row["resourceId"], _source_describes, budget=budget)
     url = str(row.get("url") or "")
     if not url.startswith("https://") or row.get("resourceId") != url:
         return False
