@@ -1,21 +1,14 @@
-"""Every generated contract output matches a fresh render of its source, and
-every fact the agents' text states from code is read from that code.
-
-``contracts.py`` is the one definition of each contract; the files listed in
-``contracts.GENERATED_OUTPUTS`` are copies written by
-``scripts/generate_contracts.py``. A hand edit to a copy, or a change to the
-source that was never regenerated, is exactly the drift the module exists to
-prevent, so it fails here.
+"""Every fact the agents' text states from code is read from that code.
 
 The pages and prompts in ``agents/`` state facts the code owns through
 markers that ``contracts.PROMPT_FIELDS`` fills when the backend renders them
 (``agent_text``). These tests read each one as written and as an agent reads
-it (``prompt_text``).
+it (``prompt_text``). The tables the frontend shares, which several markers
+read, are held to their files in ``test_shared_constants.py``.
 """
 
 from __future__ import annotations
 
-import difflib
 import json
 import re
 from pathlib import Path
@@ -26,61 +19,6 @@ from utk_curio.backend.app.agents.domain import agent_text, contracts
 from utk_curio.backend.tests._support.prompt_files import prompt_files, prompt_path, prompt_text
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
-
-
-@pytest.mark.parametrize("relative", sorted(contracts.GENERATED_OUTPUTS))
-def test_the_committed_output_matches_its_source(relative):
-    path = REPO_ROOT / relative
-    expected = contracts.GENERATED_OUTPUTS[relative]()
-    assert path.is_file(), (
-        f"{relative} is missing: run python {contracts.GENERATOR}"
-    )
-    actual = path.read_text(encoding="utf-8")
-    if actual != expected:
-        diff = "".join(difflib.unified_diff(
-            expected.splitlines(keepends=True), actual.splitlines(keepends=True),
-            fromfile="rendered", tofile=relative,
-        ))
-        pytest.fail(
-            f"{relative} is out of date with {contracts.SOURCE_MODULE}: run "
-            f"python {contracts.GENERATOR}\n{diff}"
-        )
-
-
-def test_the_check_and_the_registry_agree():
-    assert contracts.stale_outputs(REPO_ROOT) == []
-
-
-def test_every_code_output_names_its_generator_and_source():
-    assert contracts.GENERATED_OUTPUTS
-    for relative, render in contracts.GENERATED_OUTPUTS.items():
-        head = render()[:400]
-        assert contracts.GENERATOR in head, relative
-        assert contracts.SOURCE_MODULE in head, relative
-        assert "Do not edit by hand" in head, relative
-
-
-def test_a_note_draws_the_colors_an_agents_note_is_saved_in():
-    """The Note node's palette, inks, links and contrast are the node-appearance
-    rule's, through which an agent's note is saved."""
-    from utk_curio.backend.app.packages.domain import node_appearance
-
-    relative = "utk_curio/frontend/urban-workflows/src/generated/noteColors.ts"
-    assert relative in contracts.GENERATED_OUTPUTS
-    text = contracts.GENERATED_OUTPUTS[relative]()
-    for name, color in node_appearance.NAMED_COLORS.items():
-        assert f'  {name}: "{color}",' in text
-    assert f'export const DEFAULT_NOTE_COLOR = "{node_appearance.DEFAULT_BACKGROUND}";' in text
-    assert f"export const NOTE_MIN_CONTRAST = {node_appearance.MIN_CONTRAST};" in text
-    light, dark = node_appearance.derived_colors("yellow"), node_appearance.derived_colors("#000000")
-    assert (
-        f'export const NOTE_INKS = {{ dark: "{light["foreground"]}", light: "{dark["foreground"]}" }} as const;'
-        in text
-    )
-    assert (
-        f'export const NOTE_LINKS = {{ onLight: "{light["link"]}", onDark: "{dark["link"]}" }} as const;'
-        in text
-    )
 
 
 class TestRenderPrompt:
@@ -346,9 +284,9 @@ class TestThePromptFacts:
                 contracts.render_template(marker)
 
     def test_the_note_palette_is_the_named_colors(self):
-        from utk_curio.backend.app.packages.domain.node_appearance import NAMED_COLORS
+        from utk_curio.backend.app.packages.application.note_palette import NOTE_PALETTE
 
-        palette = ", ".join(NAMED_COLORS)
+        palette = ", ".join(NOTE_PALETTE.colors)
         # The package-writing mode, and the post-it look the Researcher's chat
         # asks for when it has a notes package written.
         for name in ("package_build_instruction.md", "researcher_instruction.md"):
@@ -458,21 +396,6 @@ class TestThePromptFacts:
                 assert term.startswith("exactly ") == (count.most == count.least)
         assert text in prompt_text("default_preamble.md")
 
-    def test_the_starter_tables_are_well_formed(self):
-        families = contracts.autk_families(contracts.load_autk_schema())
-        for rules in (contracts.VEGA_STARTER_LADDER, contracts.AUTK_STARTER_LADDER):
-            ids = [rule.id for rule in rules]
-            assert len(set(ids)) == len(ids)
-            for rule in rules:
-                assert {role for role, _ in rule.columns} <= set(contracts.COLUMN_ROLES), rule.id
-                # The description is a TypeScript string and one line of a list.
-                assert rule.description and "\n" not in rule.description, rule.id
-        for rule in contracts.AUTK_STARTER_LADDER:
-            assert rule.layers is not None, rule.id
-            assert rule.produces in families, rule.id
-        assert all(rule.layers is None for rule in contracts.VEGA_STARTER_LADDER)
-        assert {entry.role for entry in contracts.DTYPE_ROLES} <= set(contracts.COLUMN_ROLES)
-
     def test_the_dtype_roles_are_the_table_in_order(self):
         import re
 
@@ -516,29 +439,6 @@ class TestThePromptFacts:
         # Every named column takes the same values: Base64 is not one column's.
         assert "or bare Base64 image bytes" in paragraph
         assert '"image_content" is raw Base64' not in text
-
-
-class TestTheRenderCauseTable:
-    def test_the_cause_names_and_their_order(self):
-        assert contracts.EMPTY_RENDER_CAUSES == (
-            "no-layers", "no-input-rows", "nothing-drawn", "empty-source",
-        )
-
-    def test_only_no_input_rows_spares_the_document(self):
-        at_fault = {c.name: c.document_at_fault for c in contracts.RENDER_CAUSES}
-        assert at_fault == {
-            "no-layers": True, "no-input-rows": False,
-            "nothing-drawn": True, "empty-source": True,
-        }
-
-    def test_an_unknown_cause_is_still_the_documents_fault(self):
-        assert contracts.is_document_at_fault("teleported") is True
-        assert contracts.is_document_at_fault("") is True
-        assert contracts.is_document_at_fault(None) is True
-
-    def test_every_cause_is_described_in_one_line(self):
-        for cause in contracts.RENDER_CAUSES:
-            assert cause.description and "\n" not in cause.description
 
 
 class TestTheAutarkRenderers:

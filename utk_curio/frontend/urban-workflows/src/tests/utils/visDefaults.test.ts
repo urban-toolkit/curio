@@ -1,24 +1,12 @@
 /**
- * The starter ladders and the image column rule follow the generated tables in
- * `src/generated/visDefaults.ts`, which the agents' shared preamble states
- * too: each generated rule has exactly one builder, the ladders try the rules
- * in the generated order, and the image rule uses the generated names and
- * constants. The conditions are read here straight from the generated data, so
- * a ladder that derives one differently disagrees with this file.
+ * The starter ladders and the image column rule follow the tables in
+ * `contracts/visDefaults.json`, which the backend reads and the agents' shared
+ * preamble states too: each rule of the file has exactly one builder, the
+ * ladders try the rules in the file's order, and the image rule uses the
+ * file's names and constants. The conditions are read here straight from the
+ * file, so a ladder that derives one differently disagrees with this file.
  */
-import {
-  AUTK_STARTER_LADDER,
-  COLUMN_ROLES,
-  DTYPE_ROLES,
-  IMAGE_COLUMNS,
-  IMAGE_EXTENSIONS,
-  IMAGE_MATCH_THRESHOLD,
-  VEGA_SCHEMA_URL,
-  VEGA_STARTER_LADDER,
-  type ColumnRole,
-  type CountRange,
-  type RoleCounts,
-} from "../../generated/visDefaults";
+import visDefaults from "../../contracts/visDefaults.json";
 import {
   AUTK_STARTER_BUILDERS,
   AUTK_STARTER_RULES,
@@ -26,12 +14,29 @@ import {
   type StarterLayer,
 } from "../../utils/autkDefaultSpec";
 import { RECOGNIZED_COLUMNS, resolveImageColumns } from "../../utils/imageColumns";
-import { classifyColumns, type ClassifiedColumn } from "../../utils/starterSpec";
+import {
+  classifyColumns,
+  type ClassifiedColumn,
+  type ColumnRole,
+  type CountRange,
+  type RoleCounts,
+} from "../../utils/starterSpec";
 import {
   DEFAULT_SPEC_RULES,
   VEGA_STARTER_BUILDERS,
   chooseDefaultSpec,
 } from "../../utils/vegaDefaultSpec";
+
+const {
+  autkStarterLadder: AUTK_STARTER_LADDER,
+  dtypeRoles: DTYPE_ROLES,
+  imageColumns: IMAGE_COLUMNS,
+  imageExtensions: IMAGE_EXTENSIONS,
+  imageMatchThreshold: IMAGE_MATCH_THRESHOLD,
+  vegaSchemaUrl: VEGA_SCHEMA_URL,
+  vegaStarterLadder: VEGA_STARTER_LADDER,
+} = visDefaults;
+const COLUMN_ROLES = visDefaults.columnRoles as readonly ColumnRole[];
 
 type Counts = Record<ColumnRole, number>;
 
@@ -80,16 +85,16 @@ const quotedPairs = (description: string) =>
 describe("the Vega-Lite ladder", () => {
   const ids = VEGA_STARTER_LADDER.map((rule) => rule.id);
 
-  test("every generated rule has exactly one builder", () => {
+  test("every rule of the file has exactly one builder", () => {
     expect(new Set(ids).size).toBe(ids.length);
     expect(Object.keys(VEGA_STARTER_BUILDERS).sort()).toEqual([...ids].sort());
   });
 
-  test("it tries the rules in the generated order", () => {
+  test("it tries the rules in the file's order", () => {
     expect(DEFAULT_SPEC_RULES.map((rule) => rule.id)).toEqual(ids);
   });
 
-  test("the first generated rule whose columns are present writes the spec", () => {
+  test("the first rule of the file whose columns are present writes the spec", () => {
     for (const counts of EVERY_COUNTS) {
       const expected = VEGA_STARTER_LADDER.find((rule) => meets(rule.columns, counts));
       const spec = chooseDefaultSpec(classified(counts));
@@ -121,16 +126,16 @@ describe("the Vega-Lite ladder", () => {
 describe("the Autark ladder", () => {
   const ids = AUTK_STARTER_LADDER.map((rule) => rule.id);
 
-  test("every generated rule has exactly one builder", () => {
+  test("every rule of the file has exactly one builder", () => {
     expect(new Set(ids).size).toBe(ids.length);
     expect(Object.keys(AUTK_STARTER_BUILDERS).sort()).toEqual([...ids].sort());
   });
 
-  test("it tries the rules in the generated order", () => {
+  test("it tries the rules in the file's order", () => {
     expect(AUTK_STARTER_RULES.map((rule) => rule.id)).toEqual(ids);
   });
 
-  test("the first generated rule whose layers and columns are present writes the document", () => {
+  test("the first rule of the file whose layers and columns are present writes the document", () => {
     for (const count of [0, 1, 2, 3]) {
       for (const counts of EVERY_COUNTS) {
         const layers = layersOf(count, counts);
@@ -168,8 +173,19 @@ describe("the Autark ladder", () => {
   });
 });
 
+describe("the ladders' columns", () => {
+  test("name only column roles, which meetsRoles reads", () => {
+    const rules = [...VEGA_STARTER_LADDER, ...AUTK_STARTER_LADDER];
+    expect(rules.length).toBeGreaterThan(0);
+    for (const rule of rules) {
+      for (const role of Object.keys(rule.columns)) expect(COLUMN_ROLES).toContain(role);
+    }
+  });
+});
+
 describe("the dtype table", () => {
   test("each dtype it names, or that starts with a prefix it names, gets its role", () => {
+    for (const { role } of DTYPE_ROLES) expect(COLUMN_ROLES).toContain(role);
     for (const { role, names: dtypes, prefixes } of DTYPE_ROLES) {
       for (const dtype of dtypes) {
         expect(classifyColumns({ c: dtype }, [])).toEqual([{ name: "c", role }]);
@@ -184,11 +200,11 @@ describe("the dtype table", () => {
 });
 
 describe("the image column rule", () => {
-  test("Simple View checks the generated names, in the generated order", () => {
+  test("Simple View checks the file's names, in the file's order", () => {
     expect(RECOGNIZED_COLUMNS).toEqual(IMAGE_COLUMNS);
   });
 
-  test("a column counts once the generated share of its values are images", () => {
+  test("a column counts once the file's share of its values are images", () => {
     const size = 10;
     const least = Array.from({ length: size + 1 }, (_, i) => i).find(
       (i) => i / size >= IMAGE_MATCH_THRESHOLD
@@ -202,7 +218,7 @@ describe("the image column rule", () => {
     expect(resolveImageColumns(rows((least as number) - 1))).toEqual([]);
   });
 
-  test("an unnamed column's URLs count only with a generated extension", () => {
+  test("an unnamed column's URLs count only with an extension of the file", () => {
     for (const extension of IMAGE_EXTENSIONS) {
       expect(resolveImageColumns([{ photo: `https://example.test/a.${extension}` }])).toEqual([
         "photo",

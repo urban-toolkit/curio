@@ -759,6 +759,7 @@ def _mint_node_create(
     title = title.strip()[:agents_delegates._NODE_TITLE_MAX_CHARS] if isinstance(title, str) and title.strip() else None
     # dev/89 (additive): optional appearance, normalized by the ONE shared
     # utility — an invalid or inaccessible color refuses at mint, loudly.
+    from utk_curio.backend.app.packages.application.note_palette import NOTE_PALETTE
     from utk_curio.backend.app.packages.domain import node_appearance
 
     raw_appearance = params.get("appearance")
@@ -771,7 +772,7 @@ def _mint_node_create(
         k = loop_ctx.get("_note_creates", 0)
         raw_appearance = {"backgroundColor": agents_delegates._NOTES_DEFAULT_COLORS[min(k, 1)]}
     try:
-        appearance = node_appearance.normalize_appearance(raw_appearance)
+        appearance = node_appearance.normalize_appearance(raw_appearance, NOTE_PALETTE)
     except node_appearance.AppearanceError as exc:
         return agents_tool_rounds._refuse_params(f"params.appearance: {exc}")
     spec = projects_storage.read_spec(user_key, project_id)

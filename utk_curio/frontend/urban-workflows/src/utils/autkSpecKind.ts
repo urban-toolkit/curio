@@ -1,20 +1,26 @@
-import { AUTK_FAMILIES, AutkFamily } from "../generated/autkGrammar";
+import autkGrammar from "../contracts/autkGrammar.json";
 import { withChipPlaceholders } from "./references/codeReferences";
 
 /** What kind of step an Autark (UrbanSpec) document describes. */
 export type AutkSpecKind = "render" | "compute" | "data" | "unknown";
 
 /**
- * The step each top-level family describes. Keyed by the families of the
- * vendored schema, so a family the grammar adds fails typecheck until it is
- * routed here.
+ * The step each top-level family describes. Keyed by the families
+ * contracts/autkGrammar.json lists from the vendored schema, which a test
+ * holds these keys to, so a family the grammar adds fails until it is routed
+ * here.
  */
-const FAMILY_KIND: Record<AutkFamily, Exclude<AutkSpecKind, "unknown">> = {
+export const FAMILY_KIND = {
   map: "render",
   plot: "render",
   compute: "compute",
   data: "data",
-};
+} as const satisfies Record<string, Exclude<AutkSpecKind, "unknown">>;
+
+type AutkFamily = keyof typeof FAMILY_KIND;
+
+/** The families, in the file's order. */
+const AUTK_FAMILIES = autkGrammar.families as readonly AutkFamily[];
 
 /** Drawing wins over computing, and computing over loading. */
 const KIND_ORDER = ["render", "compute", "data"] as const;

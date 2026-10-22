@@ -23,32 +23,28 @@
  * while step 1 does not - Street View's `image_url` is a query-string API call
  * with no extension, and it reaches us under a recognized name.
  *
- * The recognized names, the extensions and the threshold are generated from
- * the backend's `contracts.py` into `src/generated/visDefaults.ts`, which is
- * also what the agents' shared preamble states.
+ * The recognized names, the extensions and the threshold are
+ * `contracts/visDefaults.json`, which the backend reads too and the agents'
+ * shared preamble states.
  *
  * Pure and React-free so it can be tested directly.
  */
 
-import {
-  IMAGE_COLUMNS,
-  IMAGE_EXTENSIONS,
-  IMAGE_MATCH_THRESHOLD,
-} from '../generated/visDefaults';
+import visDefaults from '../contracts/visDefaults.json';
 
 export type FrameRow = Record<string, unknown>;
 
 /** Names checked first, in this order. */
-export const RECOGNIZED_COLUMNS: readonly string[] = IMAGE_COLUMNS;
+export const RECOGNIZED_COLUMNS: readonly string[] = visDefaults.imageColumns;
 
 /** Fraction of a column's non-null cells that must look like images. */
-const MATCH_THRESHOLD = IMAGE_MATCH_THRESHOLD;
+const MATCH_THRESHOLD = visDefaults.imageMatchThreshold;
 
 /** Long enough that ordinary words and short ids cannot qualify. */
 const MIN_BASE64_LENGTH = 64;
 
 const BASE64_RE = /^[A-Za-z0-9+/\s]+={0,2}$/;
-const IMAGE_EXTENSION_RE = new RegExp(`\\.(${IMAGE_EXTENSIONS.join('|')})(\\?|#|$)`, 'i');
+const IMAGE_EXTENSION_RE = new RegExp(`\\.(${visDefaults.imageExtensions.join('|')})(\\?|#|$)`, 'i');
 
 /**
  * How a single cell can become an `<img>` source.

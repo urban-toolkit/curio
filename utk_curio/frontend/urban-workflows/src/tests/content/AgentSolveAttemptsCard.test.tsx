@@ -15,11 +15,12 @@ import {
 import type { AgentSolveAttemptsPart } from "../../services/agents";
 
 /** The table the server's failure sentences read too. */
-const generatedStopReasons = () =>
-  require("../../generated/solveStopReasons") as {
-    STOP_REASONS: readonly string[];
-    STOPPED_BY_PHRASES: Readonly<Record<string, string>>;
+const sharedStopReasons = () => {
+  const { phrases } = require("../../contracts/solveStopReasons.json") as {
+    phrases: Readonly<Record<string, string>>;
   };
+  return { STOP_REASONS: Object.keys(phrases), STOPPED_BY_PHRASES: phrases };
+};
 
 const part = (over: Partial<AgentSolveAttemptsPart> = {}): AgentSolveAttemptsPart => ({
   type: "solveAttempts",
@@ -87,7 +88,7 @@ describe("AgentSolveAttemptsCard (dev/127)", () => {
   });
 
   it("says every stop in the words of the table the server reads", () => {
-    const { STOP_REASONS, STOPPED_BY_PHRASES } = generatedStopReasons();
+    const { STOP_REASONS, STOPPED_BY_PHRASES } = sharedStopReasons();
     expect(STOP_REASONS.length).toBeGreaterThan(0);
     expect(Object.keys(STOPPED_BY_PHRASES).sort()).toEqual([...STOP_REASONS].sort());
     for (const reason of STOP_REASONS) {
@@ -96,7 +97,7 @@ describe("AgentSolveAttemptsCard (dev/127)", () => {
   });
 
   it("names the session's time budget apart from the node's", () => {
-    const { STOPPED_BY_PHRASES } = generatedStopReasons();
+    const { STOPPED_BY_PHRASES } = sharedStopReasons();
     expect(STOPPED_BY_PHRASES.session).toBe("this session's time budget was spent");
     expect(STOPPED_BY_PHRASES.budget).toBe("this node's time budget was spent");
     render(<AgentSolveAttemptsCard part={part({ stoppedBy: "session" })} />);
@@ -110,7 +111,7 @@ describe("AgentSolveAttemptsCard (dev/127)", () => {
       path.resolve(__dirname, "../../components/agents/content/AgentSolveAttemptsCard.tsx"),
       "utf8",
     );
-    expect(source).toContain('from "../../../generated/solveStopReasons"');
+    expect(source).toContain('from "../../../contracts/solveStopReasons.json"');
     expect(source).not.toMatch(/time budget|attempt cap/);
   });
 

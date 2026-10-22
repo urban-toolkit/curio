@@ -309,6 +309,25 @@ def _default_preamble():
     return agent_text.render(agent_text.page_file(builtin.PREAMBLE_FILE))
 
 
+def _shared_constants():
+    """The folder the backend reads the constants it shares with the browser
+    from (``common/shared_constants.py``), the sha256 of each file there, and
+    a value of each module that reads one."""
+    from utk_curio.backend.app.agents.domain import contracts, manifest
+    from utk_curio.backend.app.packages.application.note_palette import NOTE_PALETTE
+    from utk_curio.common import shared_constants
+
+    folder = shared_constants.CONTRACTS_DIR
+    return {
+        "folder": str(folder),
+        "files": {path.name: hashlib.sha256(path.read_bytes()).hexdigest() for path in sorted(folder.glob("*.json"))},
+        "stopped_by": contracts.STOPPED_BY_PHRASES,
+        "one_view": contracts.AUTK_ONE_VIEW,
+        "categories": list(manifest.AGENT_CATEGORIES),
+        "palette": dict(NOTE_PALETTE.colors),
+    }
+
+
 def _agent_eval_out():
     """Where ``agent_eval run`` writes its reports when no ``--out`` is given."""
     from utk_curio.tools import agent_eval
@@ -366,6 +385,7 @@ def main():
     report["package_code_types"] = workflow_spec.package_code_types()
     report["builtin_manifest"] = contracts._Sources().manifest
 
+    report["shared_constants"] = _guarded(_shared_constants)
     report["dataflows"] = _guarded(_shipped_dataflows)
     report["worked_examples"] = _guarded(_worked_examples)
     report["trill_schema"] = _guarded(lambda: contracts._Sources().trill)
