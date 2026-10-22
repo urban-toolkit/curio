@@ -45,7 +45,6 @@ from .utils import (
     REPO_ROOT,
     _wait_for_no_node_running,
     assert_autark_map_drawn,
-    element_box,
     frame_nodes,
     hover_until_tooltip_says,
     node_locator,
@@ -255,8 +254,7 @@ def test_each_layer_of_the_map_input_is_a_line_of_its_own(
     selector = f'.react-flow__node[data-id="{MAP}"] [data-widget-strip] [data-input-tag="0"]'
     page.locator(f"{selector}:visible").first.wait_for(state="visible", timeout=15000)
     tip = hover_until_tooltip_says(
-        page, element_box(page, selector), "the map's input_0 tag", ["layers", "features", TAG_HOW], selector,
-        timeout=30000,
+        page, selector, "the map's input_0 tag", ["layers", "features", TAG_HOW], timeout=30000,
     )
     held = re.search(r"(\d+) layers", tip["text"])
     assert held, f"the map's input_0 preview does not say how many layers it holds: {tip['text']!r}"

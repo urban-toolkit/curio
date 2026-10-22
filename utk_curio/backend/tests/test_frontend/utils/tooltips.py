@@ -20,6 +20,13 @@ TOOLTIP_SHOW_MS = 5000
 #: The room around a tooltip and its target in their close-up, in px.
 TOOLTIP_FRAME_MARGIN_PX = 16
 
+#: How many times a hover reads its target's box and moves onto it, when the
+#: target moved from under the pointer.
+HOVER_TRIES = 3
+#: How long the pointer stays on its target before it is checked again, in ms:
+#: less than the 400 ms a tooltip waits.
+HOVER_SETTLE_MS = 300
+
 # The first element *selector* finds that is laid out, as a box.
 _BOX_JS = r"""(selector) => {
     const el = Array.from(document.querySelectorAll(selector)).find((e) => e.getClientRects().length > 0);
@@ -118,6 +125,38 @@ _CHIP_JS = r"""({ nodeId, inner }) => {
         return { left, top, right, bottom, width: right - left, height: bottom - top };
     }
     return null;
+}"""
+
+# Whether the page point (x, y) lies in the element *selector* finds, and what
+# lies there.
+_ON_ELEMENT_JS = r"""({ x, y, selector }) => {
+    const el = document.elementFromPoint(x, y);
+    if (!el) return { on: false, under: "nothing" };
+    const under = `${el.tagName.toLowerCase()}.${(el.getAttribute("class") || "").trim().split(/\s+/).join(".")} `
+        + JSON.stringify((el.textContent || "").replace(/\s+/g, " ").trim().slice(0, 40));
+    return { on: !!el.closest(selector), under };
+}"""
+
+# Whether the page point (x, y) lies on a chip's span whose chip reads *name*,
+# and what lies there. A chip's name is drawn as a run of spans, one per token
+# and decoration, each with the chip's class; its brackets are hidden spans.
+# A chip with a problem is drawn whole, its brackets in the run.
+_ON_CHIP_JS = r"""({ x, y, name }) => {
+    const el = document.elementFromPoint(x, y);
+    if (!el) return { on: false, under: "nothing" };
+    const under = `${el.tagName.toLowerCase()}.${(el.getAttribute("class") || "").trim().split(/\s+/).join(".")} `
+        + JSON.stringify((el.textContent || "").replace(/\s+/g, " ").trim().slice(0, 40));
+    const isChip = (node) => !!node && node.nodeType === 1
+        && (node.classList.contains("curio-widget-ref") || node.classList.contains("curio-widget-ref-problem"));
+    const span = el.closest(".curio-widget-ref, .curio-widget-ref-problem");
+    if (!span) return { on: false, under };
+    let first = span;
+    while (isChip(first.previousElementSibling)) first = first.previousElementSibling;
+    let text = "";
+    for (let node = first; isChip(node); node = node.nextElementSibling) text += node.textContent || "";
+    text = text.replace(/ /g, " ");
+    const on = text === name || text === `[!! ${name} !!]`;
+    return { on, under: `${under}, in a chip that reads ${JSON.stringify(text)}` };
 }"""
 
 # What lies under the page point (x, y): the element, its classes and text,
@@ -270,38 +309,88 @@ def tooltip_saying(
     return tip
 
 
-def hover_until_tooltip_says(
-    page,
-    box: dict,
-    what: str,
-    expected: list[str],
-    selector: str | None = None,
-    *,
-    absent: tuple[str, ...] = (),
-    timeout: float = 15000,
-    box_now=None,
-) -> dict:
-    """A fresh hover of *box*: the pointer rests where nothing shows a
-    tooltip until none shows, then on the middle of *box*, and the tooltip
-    there is waited for as ``tooltip_saying`` waits for it. Without the wait
-    for none, the tooltip of what the pointer left could still be on screen.
+def _hover(page, what: str, expected: list[str], selector: str | None, *, read_box, on_target, absent, timeout) -> dict:
+    """A fresh hover: the pointer rests where nothing shows a tooltip until
+    none shows, then on the middle of its target's box, read only now, and the
+    tooltip there is waited for as ``tooltip_saying`` waits for it.
 
-    When none comes, the failure says what lies under the pointer, and the
-    target's box read again (*box_now*, a function that reads it), so a
-    target that moved after its box was read shows as one."""
+    Then what lies under the pointer is checked to be the target (*on_target*),
+    and again a moment later, before the tooltip's wait ends: a target that
+    moved after its box was read (an editor drawing a scroll in a later frame)
+    has its box read again and the pointer moved again, up to HOVER_TRIES
+    times. The tooltip comes back with the box hovered, under ``hovered``."""
     move_pointer_away(page, selector)
     no_tooltip(page, f"{what}, before the pointer moves onto it", timeout=5000)
-    point = assert_in_view(page, *box_middle(box), what)
-    page.mouse.move(*point)
+    tries: list[str] = []
+    for _ in range(HOVER_TRIES):
+        box = read_box()
+        point = assert_in_view(page, *box_middle(box), what)
+        page.mouse.move(*point)
+        check = on_target(point)
+        if check["on"]:
+            page.wait_for_timeout(HOVER_SETTLE_MS)
+            check = on_target(point)
+        tries.append(f"box {box} at ({point[0]:.0f}, {point[1]:.0f}): {check['under']}")
+        if check["on"]:
+            break
+    else:
+        raise AssertionError(
+            f"{what}: the pointer did not rest on its target in {HOVER_TRIES} tries:\n  " + "\n  ".join(tries)
+        )
     try:
-        return tooltip_saying(page, what, expected, selector, absent=absent, timeout=timeout)
+        tip = tooltip_saying(page, what, expected, selector, absent=absent, timeout=timeout)
     except AssertionError as error:
         under = page.evaluate(_UNDER_POINT_JS, {"x": point[0], "y": point[1]})
         try:
-            now = box_now() if box_now is not None else None
+            now = read_box()
         except AssertionError as reread:
             now = f"not read again: {reread}"
         raise AssertionError(
             f"{error}\n  under the pointer at ({point[0]:.0f}, {point[1]:.0f}): {under}"
-            f"\n  the box hovered: {box}\n  the box now: {now}"
+            f"\n  tries:\n    " + "\n    ".join(tries) + f"\n  the box now: {now}"
         ) from None
+    return {**tip, "hovered": box}
+
+
+def hover_until_tooltip_says(
+    page,
+    selector: str,
+    what: str,
+    expected: list[str],
+    *,
+    absent: tuple[str, ...] = (),
+    timeout: float = 15000,
+) -> dict:
+    """A fresh hover of the element *selector* finds, its box read once no
+    tooltip shows, and the point checked to lie in it (``_hover``)."""
+
+    def on_element(point: tuple[float, float]) -> dict:
+        return page.evaluate(_ON_ELEMENT_JS, {"x": point[0], "y": point[1], "selector": selector})
+
+    return _hover(
+        page, what, expected, selector,
+        read_box=lambda: element_box(page, selector), on_target=on_element, absent=absent, timeout=timeout,
+    )
+
+
+def hover_chip_until_tooltip_says(
+    page,
+    node_id: str,
+    inner: str,
+    what: str,
+    expected: list[str],
+    *,
+    absent: tuple[str, ...] = (),
+    timeout: float = 15000,
+) -> dict:
+    """A fresh hover of the chip ``[!! inner !!]`` in *node_id*'s editor: its
+    box read once no tooltip shows (``editor_chip_box``), and the point checked
+    to lie on a span of that chip, whose text is *inner* (``_hover``)."""
+
+    def on_chip(point: tuple[float, float]) -> dict:
+        return page.evaluate(_ON_CHIP_JS, {"x": point[0], "y": point[1], "name": inner})
+
+    return _hover(
+        page, what, expected, None,
+        read_box=lambda: editor_chip_box(page, node_id, inner), on_target=on_chip, absent=absent, timeout=timeout,
+    )

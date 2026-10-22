@@ -64,6 +64,7 @@ from .utils import (
     element_box,
     ensure_node_only_agent,
     frame_node,
+    hover_chip_until_tooltip_says,
     mark_point,
     monaco_hovers,
     move_pointer_away,
@@ -391,8 +392,9 @@ def test_a_chip_in_an_editor_shows_the_same_tooltip_at_zoom_1_and_2(
     for zoom in (1.0, 2.0):
         what = f"the chip [!! input_1 !!] in {node_id}'s {editor} at zoom {zoom}"
         _center(page, box_middle(editor_chip_box(page, node_id, "input_1")), zoom)
-        rest_pointer_on(page, editor_chip_box(page, node_id, "input_1"), what)
-        tip = one_tooltip(page, what)
+        # The chip's box is read once no tooltip shows, and the pointer moved
+        # again until it rests on the chip.
+        tip = hover_chip_until_tooltip_says(page, node_id, "input_1", what, ["input_1"])
         assert "input_1" in tip["text"], f"{what}: {tip['text']!r}"
         assert monaco_hovers(page) == 0, f"{what}: Monaco's own hover is on screen too"
         sizes.append((zoom, tip["box"]))

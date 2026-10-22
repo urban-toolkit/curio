@@ -48,9 +48,8 @@ from .utils import (
     _wait_for_no_node_running,
     api_json,
     assert_vega_canvas_rendered,
-    editor_chip_box,
-    element_box,
     frame_nodes,
+    hover_chip_until_tooltip_says,
     hover_until_tooltip_says,
     node_locator,
     open_strip_category,
@@ -116,36 +115,29 @@ def _open(page, app_frontend, current_server: str, path: Path, *, username: str)
     return nodes, session
 
 
-def _visible_box(page, selector: str, *, timeout: float = 15000) -> dict:
-    """The box of the first element *selector* finds, once it is laid out."""
-    page.locator(f"{selector}:visible").first.wait_for(state="visible", timeout=timeout)
-    return element_box(page, selector)
-
-
 def _preview(
     page,
-    box: dict,
     what: str,
     expected: list[str],
-    selector: str | None = None,
     *,
+    selector: str | None = None,
     chip: tuple[str, str] | None = None,
 ) -> dict:
-    """A fresh hover of *box*: no tooltip on screen, then the pointer on its
-    middle, and its one tooltip saying each of *expected*, which a preview says
-    once it has read its input. A *chip* in the code, (node, what stands in
-    it), says no tag's last line, which tells its tooltip from its tag's.
-    Returns the tooltip; a failure says what lay under the pointer and where
-    the target is then."""
+    """A fresh hover of a header tag (*selector*) or of a chip in the code
+    (*chip*: its node, and what stands in it), whose box is read only once no
+    tooltip shows, and its one tooltip saying each of *expected*, which a
+    preview says once it has read its input. A chip's says no tag's last line,
+    which tells its tooltip from its tag's. Returns the tooltip, with the box
+    the pointer rested on under ``hovered``; a failure says what lay under the
+    pointer at each try."""
     if chip is not None:
         node_id, inner = chip
-        box_now = lambda: editor_chip_box(page, node_id, inner, timeout=2000)  # noqa: E731
-    else:
-        box_now = lambda: element_box(page, selector)  # noqa: E731
-    return hover_until_tooltip_says(
-        page, box, what, expected, selector,
-        absent=(TAG_HOW,) if chip is not None else (), timeout=PREVIEW_MS, box_now=box_now,
-    )
+        return hover_chip_until_tooltip_says(
+            page, node_id, inner, what, expected, absent=(TAG_HOW,), timeout=PREVIEW_MS,
+        )
+    assert selector is not None, f"{what}: a tag is hovered by its selector"
+    page.locator(f"{selector}:visible").first.wait_for(state="visible", timeout=15000)
+    return hover_until_tooltip_says(page, selector, what, expected, timeout=PREVIEW_MS)
 
 
 def _frame(page, name: str, tip: dict, target: dict | None, failed: list[str]) -> None:
@@ -197,16 +189,15 @@ def test_the_join_previews_its_tuple_input_in_its_header_and_its_code(
     expected = ["A tuple of 2 values", "input_1[0]", "input_1[1]", "pm25_mean", "pm25_peak", "sensor_A", "8.0417"]
     failed: list[str] = []
     selector = f'.react-flow__node[data-id="{JOIN}"] [data-widget-strip] [data-input-tag="1"]'
-    tag = _preview(page, _visible_box(page, selector), "the join's input_1 tag", expected + [TAG_HOW], selector)
+    tag = _preview(page, "the join's input_1 tag", expected + [TAG_HOW], selector=selector)
     assert "from Summarize" in tag["text"], tag["text"]
     _frame(page, "26-join-input-1-tag", tag, None, failed)
 
-    # The chip's box is read before the hover: reading it scrolls its line into
-    # view, and a scroll under a tooltip hides it. With Inputs open the editor
-    # is a few lines tall, so the read waits for that scroll to be drawn.
-    chip_box = editor_chip_box(page, JOIN, "input_1")
-    chip = _preview(page, chip_box, "the join's [!! input_1 !!] chip", expected, chip=(JOIN, "input_1"))
-    _frame(page, "26-join-input-1-chip", chip, chip_box, failed)
+    # With Inputs open the editor is a few lines tall, and finding the chip
+    # scrolls its line into view: the hover reads its box once no tooltip
+    # shows, and moves again until the pointer rests on it.
+    chip = _preview(page, "the join's [!! input_1 !!] chip", expected, chip=(JOIN, "input_1"))
+    _frame(page, "26-join-input-1-chip", chip, chip["hovered"], failed)
     _assert_same_preview(tag["text"], chip["text"])
     assert not failed, "\n".join(failed)
 
@@ -239,10 +230,9 @@ def test_the_chart_previews_its_input_and_a_column_after_run_all(
     selector = f'{strip} [data-input-tag="0"]'
     tag = _preview(
         page,
-        _visible_box(page, selector),
         "the chart's input_0 tag",
         ["from Data Pool", "79 rows", "3 columns", "GeoDataFrame", "EPSG:3395", "MultiPolygon", "Adams", TAG_HOW],
-        selector,
+        selector=selector,
     )
     _frame(page, "interaction-vega-input-0-tag", tag, None, failed)
 
@@ -251,10 +241,9 @@ def test_the_chart_previews_its_input_and_a_column_after_run_all(
     selector = f'{strip} [data-input-columns="0"] [data-column-tag="accessibility"]'
     column = _preview(
         page,
-        _visible_box(page, selector),
         "the accessibility column of input_0",
         ["float64", "0.3124", "range 0 to 1", "all 79 rows", TAG_HOW],
-        selector,
+        selector=selector,
     )
     _frame(page, "interaction-vega-accessibility-column", column, None, failed)
     assert not failed, "\n".join(failed)
@@ -286,24 +275,20 @@ def test_the_unrun_chart_previews_its_stacked_inputs_and_scenario_colors(
 
     # Nothing has run: the stacked rows are to come, and begin with the
     # fields the stacking adds.
-    chip_box = editor_chip_box(page, LOOP_CHART, "inputs")
     inputs = _preview(
         page,
-        chip_box,
         "the chart's [!! inputs !!] chip",
         ["Not run yet", "scenario_name", "scenario", "__input__"],
         chip=(LOOP_CHART, "inputs"),
     )
-    _frame(page, "chicago-loop-inputs-chip", inputs, chip_box, failed)
+    _frame(page, "chicago-loop-inputs-chip", inputs, inputs["hovered"], failed)
 
     # The boxes' colors, which need no run.
-    chip_box = editor_chip_box(page, LOOP_CHART, "scenario colors")
     colors = _preview(
         page,
-        chip_box,
         "the chart's [!! scenario colors !!] chip",
         ["Existing", "#2a9d8f", "Towers removed", "#e76f51"],
         chip=(LOOP_CHART, "scenario colors"),
     )
-    _frame(page, "chicago-loop-scenario-colors-chip", colors, chip_box, failed)
+    _frame(page, "chicago-loop-scenario-colors-chip", colors, colors["hovered"], failed)
     assert not failed, "\n".join(failed)
