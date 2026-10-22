@@ -254,6 +254,18 @@ test("a pick on the linked map selects that feature in the Map Edits node, and R
   expect(canvas.outputCallback).toHaveBeenCalledTimes(1);
 });
 
+test("a node's first edit, which gives its code the layer's id column, names that column in its Provenance entry", async () => {
+  // A node with no edits yet: its code names no layer and no id column.
+  const canvas = mountCanvas({ settings: {} });
+  await canvas.playMap();
+  await openAction("remove");
+  pickOnMap([2]);
+  await waitFor(() => expect(screen.getByTestId("interaction-remove-picked")).toHaveTextContent("Remove 1 area"));
+  fireEvent.click(screen.getByTestId("interaction-remove-picked"));
+  expect(canvas.settings()).toMatchObject({ layer: "input_0", key: "building_id", edits: [{ op: "remove", ids: [200] }] });
+  expect(canvas.runsOf(NODE)).toEqual([expect.objectContaining({ kind: "edit", label: "Remove building_id 200" })]);
+});
+
 test("the selection the map's overlay sends names features by the layer's id column, each pick replacing the one before", async () => {
   const canvas = mountCanvas();
   await canvas.playMap();
