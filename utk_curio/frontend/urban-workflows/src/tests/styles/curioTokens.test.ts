@@ -147,4 +147,13 @@ describe("curio design tokens", () => {
     );
     expect(unused).toEqual([]);
   });
+
+  it("declares the tooltip's layer, and the tooltip reads it", () => {
+    // The one Curio tooltip (components/tooltip) takes its z-index from the
+    // ordered scale, above toasts (zLayerScale.test.ts holds the order).
+    expect(global.has("--curio-z-tooltip")).toBe(true);
+    expect(referenced.get("--curio-z-tooltip") ?? []).toEqual(
+      expect.arrayContaining([expect.stringMatching(/^components\/tooltip\//)])
+    );
+  });
 });
