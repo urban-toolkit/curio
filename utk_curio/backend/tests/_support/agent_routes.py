@@ -32,7 +32,7 @@ def _block_closure_repair(monkeypatch):
         if not blocked[0]:
             return real(*a, **k)
         raise errors.AgentServiceError(
-            "requires agent.ghost, which is not available in the catalog or your "
+            "requires agent.test.ghost, which is not available in the catalog or your "
             "imports — nothing was installed", 409,
         )
 
@@ -60,10 +60,12 @@ def _drop_from_lockfile(user, project_id, coord):
     projects_storage.write_spec(key, project_id, spec)
 
 
-def _write_def(user, agent_id="agent.my-explainer", version="1.0.0"):
-    """Materialize a valid agent definition in the user's FS store."""
+def _write_def(user, agent_id="agent.test.my-explainer", version="1.0.0"):
+    """Materialize a valid agent definition in the user's FS store, in its
+    ``<id>@<major>`` folder; returns that coordinate."""
     user_key = _user_dir_key(user)
-    d = storage.user_agents_dir(user_key) / f"{agent_id}@{version}"
+    coord = f"{agent_id}@{version.split('.', 1)[0]}"
+    d = storage.user_agents_dir(user_key) / coord
     d.mkdir(parents=True, exist_ok=True)
     (d / "manifest.json").write_text(
         json.dumps(
@@ -80,14 +82,14 @@ def _write_def(user, agent_id="agent.my-explainer", version="1.0.0"):
         ),
         encoding="utf-8",
     )
-    return f"{agent_id}@{version}"
+    return coord
 
 
 #: A made-up agent with a plain chat profile: the three read tools and nothing
 #: else, node and canvas targets, no delegates and no modes. Tests whose
 #: subject is "an agent that only chats and reads" use it, so no built-in's
 #: roster change moves them.
-READER = "agent.my-reader@1.0.0"
+READER = "agent.test.my-reader@1"
 READER_TOOLS = ("dataflow.read", "node.read", "node.runtime.read")
 READER_PREAMBLE = "You are part of a visual analytics dataflow editor."
 READER_PROMPT = "You are My Reader. Answer questions about this dataflow."
@@ -96,7 +98,7 @@ READER_PROMPT = "You are My Reader. Answer questions about this dataflow."
 def _write_reader(user) -> str:
     """Materialize My Reader in the user's store and return its coordinate."""
     manifest = {
-        "id": "agent.my-reader",
+        "id": "agent.test.my-reader",
         "name": "My Reader",
         "category": "node",
         "version": "1.0.0",

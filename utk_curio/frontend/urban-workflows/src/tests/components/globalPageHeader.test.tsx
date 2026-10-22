@@ -115,10 +115,10 @@ describe('on the canvas and the dashboard', () => {
   test("a card's request opens the drawer on the place it asked for", () => {
     onTheCanvas();
     renderAt('/dataflow/new');
-    act(() => requestAgentModel('agent.dataflow-builder'));
+    act(() => requestAgentModel('agent.curio.dataflow-builder'));
     expect(mockSettingsDrawer!.openApiSettings).toHaveBeenCalledWith({
       section: 'agent-models',
-      agentId: 'agent.dataflow-builder',
+      agentId: 'agent.curio.dataflow-builder',
     });
     expect(screen.queryByTestId('settings-page')).toBeNull();
   });

@@ -5,7 +5,7 @@ import { AgentDock, GOAL_PLACEHOLDER } from "../../components/agents/attach/Agen
 function att(id: string, name: string) {
   return {
     attachmentId: id,
-    coord: `agent.${name}@1.0.0`,
+    coord: `agent.test.${name}@1`,
     target: { kind: "canvas" as const },
     sessionId: "s",
     revision: 1,

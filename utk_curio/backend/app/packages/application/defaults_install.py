@@ -47,6 +47,10 @@ def uninstall_from_defaults(user, dir_name: str) -> dict:
 def install_to_defaults(user, dir_name: str) -> dict:
     """Add *dir_name* to defaults + every user's project lockfile + user store.
 
+    The packages it needs (``dependencies.packages``, and theirs in turn) are
+    installed with it and go wherever it goes: the defaults and every lockfile,
+    as :func:`project_packages.install_to_project` records them.
+
     Best-effort per project: a single project failure (e.g. malformed spec)
     is reported and the rest continue. Returns
     ``{"packages": [...], "projects": [{"id", "ok", "error?"}],
@@ -57,16 +61,18 @@ def install_to_defaults(user, dir_name: str) -> dict:
 
     user_key = _user_key_from_user(user)
     outcome = packages_store_install._ensure_user_store_install(user_key, dir_name)
-    defaults_io.add_to_defaults(user_key, dir_name)
+    added = {dir_name, *outcome.packages}
+    for each in sorted(added):
+        defaults_io.add_to_defaults(user_key, each)
 
     results: list[dict] = []
     for project in projects_repo.list_for_user(user.id):
         try:
             current = packages_project_packages.get_project_lockfile(user_key, project.id)
-            if dir_name in current:
+            if added <= current:
                 results.append({"id": project.id, "ok": True, "alreadyPresent": True})
                 continue
-            current.add(dir_name)
+            current |= added
             packages_project_packages._write_lockfile(user_key, project.id, current)
             results.append({"id": project.id, "ok": True, "alreadyPresent": False})
         except Exception as exc:  # noqa: BLE001 — per-project failure is OK

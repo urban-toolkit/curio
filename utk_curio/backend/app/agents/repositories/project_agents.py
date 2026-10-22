@@ -1,7 +1,7 @@
 """Per-project installed-agent lockfile inside ``spec.trill.json``.
 
 A project's installed agent templates live at ``spec["dataflow"]["agents"]`` as a
-sorted list of ``<agentId>@<version>`` coordinates — the direct analogue of the
+sorted list of ``<agentId>@<major>`` coordinates — the direct analogue of the
 node-package lockfile ``spec["dataflow"]["packages"]`` (see
 ``app/packages/spec_packages.py``). Installing an agent into a project appends a
 coordinate here; uninstalling removes it. Nothing else about the project spec is
@@ -21,7 +21,7 @@ def project_agents(spec: dict | None) -> list[str]:
     """Return the project's installed-agent coordinates from the spec.
 
     Reads ``spec["dataflow"]["agents"]`` when present; returns an empty list
-    otherwise. Only well-formed ``<agentId>@<version>`` entries are returned.
+    otherwise. Only well-formed ``<agentId>@<major>`` entries are returned.
     """
     if not isinstance(spec, dict):
         return []

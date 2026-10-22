@@ -1,5 +1,5 @@
 {
-  "id": "agent.node-builder",
+  "id": "agent.curio.node-builder",
   "name": "Node Builder",
   "category": "node",
   "version": "1.0.0",
@@ -193,7 +193,7 @@
   },
   "delegatesTo": [
     {
-      "id": "agent.node-builder",
+      "id": "agent.curio.node-builder",
       "capabilities": [
         "node.content.generate",
         "package.build",
@@ -202,21 +202,21 @@
       ]
     },
     {
-      "id": "agent.dataflow-planner",
+      "id": "agent.curio.dataflow-planner",
       "capabilities": [
         "execution.followup.plan"
       ]
     },
     {
-      "id": "agent.researcher",
+      "id": "agent.curio.researcher",
       "capabilities": [
         "research.verify"
       ]
     },
-    "agent.generated-content-evaluator",
-    "agent.dataset-finder"
+    "agent.curio.generated-content-evaluator",
+    "agent.curio.dataset-finder"
   ],
   "requiresAgents": [
-    "agent.dataset-finder"
+    "agent.curio.dataset-finder"
   ]
 }

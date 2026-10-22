@@ -31,7 +31,7 @@ describe("ConfirmDialog", () => {
     render(
       <ConfirmDialog
         title="Remove my-explainer?"
-        body="Remove my-explainer (agent.my-explainer@1.0.0) from this dataflow?"
+        body="Remove my-explainer (agent.test.my-explainer@1) from this dataflow?"
         confirmLabel="Remove"
         onConfirm={jest.fn()}
         onCancel={jest.fn()}
@@ -41,7 +41,7 @@ describe("ConfirmDialog", () => {
     expect(screen.getByText("Remove my-explainer?")).toBeInTheDocument();
     expect(
       screen.getByText(
-        "Remove my-explainer (agent.my-explainer@1.0.0) from this dataflow?",
+        "Remove my-explainer (agent.test.my-explainer@1) from this dataflow?",
       ),
     ).toBeInTheDocument();
     expect(within(dialog()).getByRole("button", { name: "Remove" })).toBeInTheDocument();

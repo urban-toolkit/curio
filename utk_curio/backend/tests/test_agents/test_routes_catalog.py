@@ -35,14 +35,14 @@ class TestMyImports:
         listed = client.get("/api/agents/imports", headers=_auth(token)).get_json()["agents"]
         assert [a["dirName"] for a in listed] == [coord]
         card = listed[0]
-        assert card["id"] == "agent.my-explainer"
+        assert card["id"] == "agent.test.my-explainer"
         assert card["capabilities"] == ["node.explain"]
         assert card["hooks"] == ["node"]
         assert card["imported"] is True
 
     def test_import_unknown_definition_404(self, client, user_and_token, tmp_curio):
         _, token = user_and_token
-        r = client.post("/api/agents/imports", json={"coord": "agent.ghost@1.0.0"}, headers=_auth(token))
+        r = client.post("/api/agents/imports", json={"coord": "agent.test.ghost@1"}, headers=_auth(token))
         assert r.status_code == 404
 
     def test_import_missing_coord_400(self, client, user_and_token, tmp_curio):
@@ -74,26 +74,26 @@ class TestGlobalCatalog:
         assert all(a["inCatalog"] is True for a in agents)
         ids = {a["id"] for a in agents}
         assert ids == {m.agent_id for m in builtin.list_builtin_manifests() if m.catalog.listed}
-        assert "agent.dataflow-planner" not in ids
+        assert "agent.curio.dataflow-planner" not in ids
 
     def test_import_a_builtin(self, client, user_and_token, tmp_curio):
         # A built-in resolves without being written to the user store first.
         _, token = user_and_token
-        coord = "agent.researcher@1.0.0"
+        coord = "agent.curio.researcher@1"
         r = client.post("/api/agents/imports", json={"coord": coord}, headers=_auth(token))
         assert r.status_code == 201, r.get_data(as_text=True)
         imports_listed = client.get("/api/agents/imports", headers=_auth(token)).get_json()["agents"]
         assert [a["dirName"] for a in imports_listed] == [coord]
         # And the catalog now marks it imported.
         cat = client.get("/api/agents/catalog", headers=_auth(token)).get_json()["agents"]
-        researcher = next(a for a in cat if a["id"] == "agent.researcher")
+        researcher = next(a for a in cat if a["id"] == "agent.curio.researcher")
         assert researcher["imported"] is True
 
     def test_install_a_builtin_into_project(self, client, user_and_token, tmp_curio, alice_project):
         # The Researcher requires no other agent, so the install writes one
         # coordinate.
         _, token = user_and_token
-        coord = "agent.researcher@1.0.0"
+        coord = "agent.curio.researcher@1"
         r = client.post(
             f"/api/agents/projects/{alice_project}/install",
             json={"coord": coord},
@@ -104,14 +104,14 @@ class TestGlobalCatalog:
         cat = client.get(
             f"/api/agents/catalog?projectId={alice_project}", headers=_auth(token)
         ).get_json()["agents"]
-        researcher = next(a for a in cat if a["id"] == "agent.researcher")
+        researcher = next(a for a in cat if a["id"] == "agent.curio.researcher")
         assert researcher["installedInProject"] is True
 
     def test_an_internal_agent_is_never_imported_or_installed(
         self, client, user_and_token, tmp_curio, alice_project
     ):
         _, token = user_and_token
-        coord = "agent.dataflow-planner@1.0.0"
+        coord = "agent.curio.dataflow-planner@1"
         imported = client.post("/api/agents/imports", json={"coord": coord}, headers=_auth(token))
         assert imported.status_code == 400
         assert "runs only as a delegate" in imported.get_json()["error"]
@@ -131,49 +131,49 @@ class TestGlobalCatalog:
 class TestPublish:
     def test_publish_owned_import_appears_in_catalog(self, client, user_and_token, tmp_curio):
         user, token = user_and_token
-        coord = _write_def(user, "agent.my-custom", "1.0.0")  # owned, store-backed
+        coord = _write_def(user, "agent.test.my-custom", "1.0.0")  # owned, store-backed
         client.post("/api/agents/imports", json={"coord": coord}, headers=_auth(token))
         r = client.post("/api/agents/publications", json={"coord": coord}, headers=_auth(token))
         assert r.status_code == 201, r.get_data(as_text=True)
         cat = client.get("/api/agents/catalog", headers=_auth(token)).get_json()["agents"]
-        pub = next(a for a in cat if a["id"] == "agent.my-custom")
+        pub = next(a for a in cat if a["id"] == "agent.test.my-custom")
         assert pub["published"] is True
 
     def test_publish_builtin_rejected(self, client, user_and_token, tmp_curio):
         # A built-in is not an owned store-backed import → cannot be published.
         _, token = user_and_token
-        client.post("/api/agents/imports", json={"coord": "agent.researcher@1.0.0"}, headers=_auth(token))
+        client.post("/api/agents/imports", json={"coord": "agent.curio.researcher@1"}, headers=_auth(token))
         r = client.post(
             "/api/agents/publications",
-            json={"coord": "agent.researcher@1.0.0"},
+            json={"coord": "agent.curio.researcher@1"},
             headers=_auth(token),
         )
         assert r.status_code == 400
 
     def test_publish_not_imported_rejected(self, client, user_and_token, tmp_curio):
         user, token = user_and_token
-        coord = _write_def(user, "agent.my-custom", "1.0.0")  # in store but not imported
+        coord = _write_def(user, "agent.test.my-custom", "1.0.0")  # in store but not imported
         r = client.post("/api/agents/publications", json={"coord": coord}, headers=_auth(token))
         assert r.status_code == 400
 
     def test_publishable_flag_owned_vs_builtin(self, client, user_and_token, tmp_curio):
         user, token = user_and_token
-        client.post("/api/agents/imports", json={"coord": "agent.researcher@1.0.0"}, headers=_auth(token))
-        coord = _write_def(user, "agent.my-custom", "1.0.0")
+        client.post("/api/agents/imports", json={"coord": "agent.curio.researcher@1"}, headers=_auth(token))
+        coord = _write_def(user, "agent.test.my-custom", "1.0.0")
         client.post("/api/agents/imports", json={"coord": coord}, headers=_auth(token))
         by_id = {a["id"]: a for a in client.get("/api/agents/imports", headers=_auth(token)).get_json()["agents"]}
-        assert by_id["agent.researcher"]["publishable"] is False  # built-in
-        assert by_id["agent.my-custom"]["publishable"] is True  # owned store-backed
+        assert by_id["agent.curio.researcher"]["publishable"] is False  # built-in
+        assert by_id["agent.test.my-custom"]["publishable"] is True  # owned store-backed
 
     def test_unpublish(self, client, user_and_token, tmp_curio):
         user, token = user_and_token
-        coord = _write_def(user, "agent.my-custom", "1.0.0")
+        coord = _write_def(user, "agent.test.my-custom", "1.0.0")
         client.post("/api/agents/imports", json={"coord": coord}, headers=_auth(token))
         client.post("/api/agents/publications", json={"coord": coord}, headers=_auth(token))
         r = client.delete(f"/api/agents/publications/{coord}", headers=_auth(token))
         assert r.status_code == 200
         cat = client.get("/api/agents/catalog", headers=_auth(token)).get_json()["agents"]
-        assert not any(a["id"] == "agent.my-custom" for a in cat)
+        assert not any(a["id"] == "agent.test.my-custom" for a in cat)
 
 
 class TestPublishSwitch:
@@ -181,7 +181,7 @@ class TestPublishSwitch:
     API, with the same 403 and message as node packages and datasets."""
 
     def _published_agent(self, client, user, token):
-        coord = _write_def(user, "agent.my-custom", "1.0.0")
+        coord = _write_def(user, "agent.test.my-custom", "1.0.0")
         client.post("/api/agents/imports", json={"coord": coord}, headers=_auth(token))
         assert client.post("/api/agents/publications", json={"coord": coord}, headers=_auth(token)).status_code == 201
         return coord
@@ -193,13 +193,13 @@ class TestPublishSwitch:
         from utk_curio.backend.app.packages.routes import common as packages_routes_common
 
         user, token = user_and_token
-        coord = _write_def(user, "agent.my-custom", "1.0.0")
+        coord = _write_def(user, "agent.test.my-custom", "1.0.0")
         client.post("/api/agents/imports", json={"coord": coord}, headers=_auth(token))
         monkeypatch.setattr(packages_routes_common, "CURIO_ALLOW_FACTORY_CATALOG_PUBLISH", False)
         r = client.post("/api/agents/publications", json={"coord": coord}, headers=_auth(token))
         assert r.status_code == 403, r.get_data(as_text=True)
         assert r.get_json()["error"] == packages_routes_common.CATALOG_PUBLISH_DISABLED_MESSAGE
-        assert "agent.my-custom" not in self._catalog_ids(client, token)
+        assert "agent.test.my-custom" not in self._catalog_ids(client, token)
 
     def test_unpublish_is_refused_with_publishing_off(self, client, user_and_token, tmp_curio, monkeypatch):
         from utk_curio.backend.app.packages.routes import common as packages_routes_common
@@ -210,7 +210,7 @@ class TestPublishSwitch:
         r = client.delete(f"/api/agents/publications/{coord}", headers=_auth(token))
         assert r.status_code == 403, r.get_data(as_text=True)
         assert r.get_json()["error"] == packages_routes_common.CATALOG_PUBLISH_DISABLED_MESSAGE
-        assert "agent.my-custom" in self._catalog_ids(client, token)
+        assert "agent.test.my-custom" in self._catalog_ids(client, token)
 
 
 class TestUnpublishKeepsAddersCopies:
@@ -220,7 +220,7 @@ class TestUnpublishKeepsAddersCopies:
     added it. Ownership of the publication is the publisher record, since every
     adder now holds a copy."""
 
-    COORD = "agent.shared-helper@1.0.0"
+    COORD = "agent.test.shared-helper@1"
 
     @staticmethod
     def _make_user(db, username, token):
@@ -238,7 +238,7 @@ class TestUnpublishKeepsAddersCopies:
             "/api/agents/imports/upload",
             json={
                 "manifest": {
-                    "id": "agent.shared-helper", "name": "Shared helper", "category": "canvas",
+                    "id": "agent.test.shared-helper", "name": "Shared helper", "category": "canvas",
                     "version": "1.0.0",
                     "capabilities": [{"id": "chat.reply", "contractVersion": "1"}],
                     "compatibleTargets": [{"kind": "canvas", "requires": []}],
@@ -289,7 +289,7 @@ class TestUnpublishKeepsAddersCopies:
         assert r.status_code == 200, r.get_data(as_text=True)
         assert any("You help with shared things." in str(m) for m in sent[0])
         imports = client.get("/api/agents/imports", headers=_auth("bob-token")).get_json()["agents"]
-        assert all(a["id"] != "agent.shared-helper" or a["publishable"] is False for a in imports)
+        assert all(a["id"] != "agent.test.shared-helper" or a["publishable"] is False for a in imports)
 
     def test_an_adder_can_neither_unpublish_nor_republish_it(
         self, client, db, user_and_token, tmp_curio,
@@ -310,7 +310,7 @@ class TestMyImportsInstalledState:
     """My Imports reads installedInProject from the project lockfile — the one
     source of truth (memo dev/47 and the regression it records)."""
 
-    COORD = "agent.node-builder@1.0.0"
+    COORD = "agent.curio.node-builder@1"
 
     def test_imported_and_installed_shows_installed(self, client, user_and_token, tmp_curio, alice_project):
         _, token = user_and_token
@@ -913,14 +913,14 @@ class TestReadDefinition:
     the page could only say "Export failed".
     """
 
-    BUILTIN = "agent.researcher@1.0.0"
+    BUILTIN = "agent.curio.researcher@1"
 
     def test_a_builtin_is_readable_without_ever_importing_it(self, client, user_and_token, tmp_curio):
         _, token = user_and_token
         r = client.get(f"/api/agents/definitions/{self.BUILTIN}", headers=_auth(token))
         assert r.status_code == 200, r.get_json()
         body = r.get_json()
-        assert body["manifest"]["id"] == "agent.researcher"
+        assert body["manifest"]["id"] == "agent.curio.researcher"
         assert body["manifest"]["provenance"]["trust"] == "built-in"
         declared = {asset["path"] for asset in body["manifest"]["prompts"].values()}
         assert declared, "a built-in declares its prompt files"
@@ -933,24 +933,24 @@ class TestReadDefinition:
         coord = _write_def(user)
         r = client.get(f"/api/agents/definitions/{coord}", headers=_auth(token))
         assert r.status_code == 200
-        assert r.get_json()["manifest"]["id"] == "agent.my-explainer"
+        assert r.get_json()["manifest"]["id"] == "agent.test.my-explainer"
 
     def test_a_published_only_definition_is_readable(self, client, user_and_token, tmp_curio):
         user, token = user_and_token
-        coord = _write_def(user, agent_id="agent.shared-only")
+        coord = _write_def(user, agent_id="agent.test.shared-only")
         src = storage.agent_definition_dir(_user_dir_key(user), coord)
         publications.publish_from_dir(src, coord)
         shutil.rmtree(src)  # this account no longer holds a copy
 
         r = client.get(f"/api/agents/definitions/{coord}", headers=_auth(token))
         assert r.status_code == 200, r.get_json()
-        assert r.get_json()["manifest"]["id"] == "agent.shared-only"
+        assert r.get_json()["manifest"]["id"] == "agent.test.shared-only"
 
     def test_an_unknown_coordinate_is_still_404(self, client, user_and_token, tmp_curio):
         _, token = user_and_token
-        r = client.get("/api/agents/definitions/agent.nope@1.0.0", headers=_auth(token))
+        r = client.get("/api/agents/definitions/agent.test.nope@1", headers=_auth(token))
         assert r.status_code == 404
-        assert "agent.nope@1.0.0" in r.get_json()["error"]
+        assert "agent.test.nope@1" in r.get_json()["error"]
 
     def test_a_malformed_coordinate_is_404_not_500(self, client, user_and_token, tmp_curio):
         """A name no agent directory can have names no definition. The user-store
@@ -967,7 +967,7 @@ class TestReadDefinition:
         _, token = user_and_token
         bundle = client.get(f"/api/agents/definitions/{self.BUILTIN}", headers=_auth(token)).get_json()
         manifest = dict(bundle["manifest"])
-        manifest["id"] = "agent.researcher-copy"
+        manifest["id"] = "agent.test.researcher-copy"
         manifest["provenance"] = {"publisher": "alice", "trust": "imported"}
         r = client.post(
             "/api/agents/imports/upload",

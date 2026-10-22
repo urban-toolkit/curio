@@ -29,23 +29,23 @@ from utk_curio.backend.tests._support.agent_routes import _auth
 #: Each card's tools, as its details window lists them: what it reads, then
 #: what it proposes.
 _TOOLS = {
-    "agent.researcher": [
+    "agent.curio.researcher": [
         "Read the dataflow", "Read a node", "Read a node's last run", "Search the web",
         "Read a web page", "Propose a node", "Propose a package install",
         "Propose a package draft",
     ],
-    "agent.node-builder": [
+    "agent.curio.node-builder": [
         "Read the dataflow", "Read a node", "Read a node's last run",
         "Search the Data Catalog", "Search the Model Catalog", "Search the Node Catalog",
         "Check a package's dependencies and permissions", "Propose a node",
         "Propose a content change", "Propose a package install",
         "Propose a package draft",
     ],
-    "agent.dataflow-builder": [
+    "agent.curio.dataflow-builder": [
         "Read the dataflow", "Read a node's last run", "Read worked examples",
         "Propose a plan", "Propose a node", "Propose a package draft",
     ],
-    "agent.dataset-finder": [
+    "agent.curio.dataset-finder": [
         "Search the Data Catalog", "List the data portals", "Search the data portals",
         "Read the dataflow", "Propose a download", "Propose adding a dataset",
     ],
@@ -54,14 +54,14 @@ _TOOLS = {
 #: Each card's modes as the docs' four-agent table words them: the label, its
 #: capability ids, the prompt the mode runs, and who asks for it.
 _MODES = {
-    "agent.researcher": [
+    "agent.curio.researcher": [
         ("Notes from search results", ["research.notes.compose"],
          "prompts/researcher_notes_instruction.md", ["Dataflow Builder"]),
         ("Check a fact", ["research.verify"],
          "prompts/research_instruction.md",
          ["Node Builder", "Dataset Finder", "Dataflow Builder"]),
     ],
-    "agent.node-builder": [
+    "agent.curio.node-builder": [
         ("Write a node's content", ["node.content.generate"],
          "prompts/new_content_prompt.md", ["Node Builder", "Dataflow Builder", "Solve"]),
         ("Recommend packages", ["package.recommend"],
@@ -71,10 +71,10 @@ _MODES = {
          ["Node Builder", "Researcher", "Dataflow Builder"]),
     ],
     # Nothing asks the Dataflow Builder for anything: it only chats.
-    "agent.dataflow-builder": [],
+    "agent.curio.dataflow-builder": [],
     # Its own instruction, asked for by two agents and by Solve, for a
     # data-loading node whose source is not settled.
-    "agent.dataset-finder": [
+    "agent.curio.dataset-finder": [
         ("Find datasets", ["dataset.discover"],
          "prompts/discovery_instruction.md", ["Node Builder", "Dataflow Builder", "Solve"]),
     ],
@@ -84,13 +84,13 @@ _MODES = {
 #: instruction for a message you type, and each mode's prompt when it is asked
 #: for. The Dataset Finder's datasets mode runs its own instruction.
 _PROMPT_RUNS = {
-    "agent.researcher": [
+    "agent.curio.researcher": [
         ("prompts/default_preamble.md", ["every call"]),
         ("prompts/researcher_instruction.md", ["a message you type"]),
         ("prompts/researcher_notes_instruction.md", ["Notes from search results"]),
         ("prompts/research_instruction.md", ["Check a fact"]),
     ],
-    "agent.node-builder": [
+    "agent.curio.node-builder": [
         ("prompts/default_preamble.md", ["every call"]),
         ("prompts/node_build_instruction.md", ["a message you type"]),
         ("prompts/new_content_prompt.md", ["Write a node's content"]),
@@ -98,11 +98,11 @@ _PROMPT_RUNS = {
         ("prompts/package_build_instruction.md", ["Write a package"]),
         ("prompts/new_content_autk_prompt.md", ["Write a node's content, for an Autark node"]),
     ],
-    "agent.dataflow-builder": [
+    "agent.curio.dataflow-builder": [
         ("prompts/default_preamble.md", ["every call"]),
         ("prompts/orchestration_instruction.md", ["a message you type"]),
     ],
-    "agent.dataset-finder": [
+    "agent.curio.dataset-finder": [
         ("prompts/default_preamble.md", ["every call"]),
         ("prompts/discovery_instruction.md", ["a message you type", "Find datasets"]),
     ],
@@ -128,7 +128,7 @@ _PLANNER_MODES = [
 #: An agent Curio does not ship: one capability its chat answers, one mode it
 #: asks of itself, a tool Curio defines and one it does not.
 _IMPORTED = {
-    "id": "agent.my-explainer",
+    "id": "agent.test.my-explainer",
     "name": "My Explainer",
     "category": "node",
     "version": "1.0.0",
@@ -141,7 +141,7 @@ _IMPORTED = {
         "instruction": {"path": "prompts/explain_node.md"},
         "interpret": {"path": "prompts/interpret_output.md"},
     },
-    "delegatesTo": [{"id": "agent.my-explainer", "capabilities": ["node.output.interpret"]}],
+    "delegatesTo": [{"id": "agent.test.my-explainer", "capabilities": ["node.output.interpret"]}],
     "tools": [{"id": "node.create"}, {"id": "dataflow.read"}, {"id": "ghost.tool"}],
     "compatibleTargets": [{"kind": "node", "requires": []}],
     "provenance": {"publisher": "someone", "trust": "imported"},
@@ -165,7 +165,7 @@ class TestTools:
 
     def test_a_tool_is_listed_by_its_contract_id_too(self, client, user_and_token, tmp_curio):
         _, token = user_and_token
-        tools = _cards(client, token)["agent.dataflow-builder"]["tools"]
+        tools = _cards(client, token)["agent.curio.dataflow-builder"]["tools"]
         assert [t["id"] for t in tools] == [
             "dataflow.read", "node.runtime.read", "examples.read", "dataflow.plan.write", "node.create",
             "package.draft.apply",
@@ -191,11 +191,11 @@ class TestModes:
         assert {agent: _rows(cards[agent]["modes"]) for agent in _MODES} == _MODES
 
     def test_a_helper_lists_its_modes_and_who_asks(self):
-        planner = builtin.get_builtin_manifest("agent.dataflow-planner@1.0.0")
+        planner = builtin.get_builtin_manifest("agent.curio.dataflow-planner@1")
         assert _rows(agents_catalog.agent_modes(planner)) == _PLANNER_MODES
 
     def test_the_evaluator_is_asked_to_check_generated_content(self):
-        evaluator = builtin.get_builtin_manifest("agent.generated-content-evaluator@1.0.0")
+        evaluator = builtin.get_builtin_manifest("agent.curio.generated-content-evaluator@1")
         assert _rows(agents_catalog.agent_modes(evaluator)) == [
             ("Check generated node content against its goal", ["content.quality.evaluate"],
              "prompts/evaluate_generated_content_prompt.md", ["Node Builder", "Dataflow Builder"]),
@@ -243,7 +243,7 @@ class TestPromptRuns:
 
     def test_a_helper_runs_no_prompt_for_a_message_you_type(self):
         """A helper has no chat: nothing you type reaches it."""
-        planner = builtin.get_builtin_manifest("agent.dataflow-planner@1.0.0")
+        planner = builtin.get_builtin_manifest("agent.curio.dataflow-planner@1")
         runs = agents_catalog.prompt_runs(planner, agents_catalog.agent_modes(planner))
         assert [row for row in runs if "a message you type" in row["runs"]] == []
         assert ("prompts/new_subtasks_prompt.md", ["Plan a dataflow's tasks"]) in [
@@ -276,7 +276,7 @@ class TestDefinitionsCurioDoesNotShip:
         describe the built-in, not it."""
         manifest = parse_agent_manifest({
             **_IMPORTED,
-            "id": "agent.researcher",
+            "id": "agent.curio.researcher",
             "capabilities": [{"id": "research.verify", "contractVersion": "1"}],
             "delegatesTo": [],
         })

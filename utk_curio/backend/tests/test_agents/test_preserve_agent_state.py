@@ -4,8 +4,8 @@ them."""
 
 from utk_curio.backend.app.agents.repositories.project_agents import preserve_agent_state
 
-AGENTS = ["agent.my-explainer@1.0.0"]
-ATTACH = [{"attachmentId": "a1", "coord": "agent.my-explainer@1.0.0", "target": {"kind": "canvas"}}]
+AGENTS = ["agent.test.my-explainer@1"]
+ATTACH = [{"attachmentId": "a1", "coord": "agent.test.my-explainer@1", "target": {"kind": "canvas"}}]
 
 
 def _existing():
@@ -55,12 +55,12 @@ def test_carries_agent_defaults_forward():
     # The per-template defaults section (memo dev/23) is backend-owned too.
     existing = {
         "dataflow": {
-            "agents": ["agent.x@1.0.0"],
-            "agentDefaults": {"agent.x@1.0.0": {"revision": 3, "settings": {"k": "v"}}},
+            "agents": ["agent.test.x@1"],
+            "agentDefaults": {"agent.test.x@1": {"revision": 3, "settings": {"k": "v"}}},
         }
     }
     effective = {"dataflow": {"nodes": [{"id": "n1"}]}}
     out = preserve_agent_state(effective, existing)
     assert out["dataflow"]["agentDefaults"] == {
-        "agent.x@1.0.0": {"revision": 3, "settings": {"k": "v"}}
+        "agent.test.x@1": {"revision": 3, "settings": {"k": "v"}}
     }

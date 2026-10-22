@@ -10,8 +10,8 @@ is picked where the shipped one would be.
 The fixtures copy the Dataflow Builder's, the Node Builder's and the Dataset
 Finder's manifests under new ids and names, with every shipped id inside them
 rewritten, and install only the copies. The Node Builder's copy has another
-version than the shipped agents' 1.0.0. A site that still picks an agent by
-id finds nothing, or a shipped agent, and every assertion names a copy.
+major than the shipped agents' 1. A site that still picks an agent by id
+finds nothing, or a shipped agent, and every assertion names a copy.
 """
 
 from __future__ import annotations
@@ -33,13 +33,13 @@ from utk_curio.backend.tests.test_agents import test_fetch_delegation as fetch_r
 from utk_curio.backend.tests.test_agents import test_routes_proposals as routes_proposals
 from utk_curio.backend.tests.test_agents import test_routes_solve as routes_solve
 
-DFB = "agent.dataflow-builder@1.0.0"
-NB = "agent.node-builder@1.0.0"
-DF = "agent.dataset-finder@1.0.0"
-RESEARCHER = "agent.researcher@1.0.0"
-MY_ORCHESTRATOR = "agent.my-orchestrator@1.0.0"
-MY_BUILDER = "agent.my-builder@2.0.0"
-MY_FINDER = "agent.my-finder@1.0.0"
+DFB = "agent.curio.dataflow-builder@1"
+NB = "agent.curio.node-builder@1"
+DF = "agent.curio.dataset-finder@1"
+RESEARCHER = "agent.curio.researcher@1"
+MY_ORCHESTRATOR = "agent.test.my-orchestrator@1"
+MY_BUILDER = "agent.test.my-builder@2"
+MY_FINDER = "agent.test.my-finder@1"
 #: Each shipped card a copy stands in for: its coordinate, the copy's, and the copy's name.
 COPIES = (
     (DFB, MY_ORCHESTRATOR, "My Orchestrator"),
@@ -64,7 +64,8 @@ def _write_copy(ukey: str, shipped: str, coord: str, name: str) -> None:
 
     bundle = catalog.builtin_definition_bundle(shipped)
     manifest = json.loads(json.dumps(bundle["manifest"]))
-    own_id, version = coord.split("@", 1)
+    own_id, major = coord.split("@", 1)
+    version = f"{major}.0.0"
     renamed = {**_RENAMED, shipped.split("@")[0]: own_id}
 
     def rename(entry):
@@ -124,16 +125,16 @@ class TestAUsersAgentIsVisibleAtAnyVersion:
         from utk_curio.backend.app.agents.application import delegation
 
         _write_copies(UKEY)
-        # 10.0.0 sorts before 2.0.0 as text; the version order puts it last.
-        _write_copy(UKEY, NB, "agent.my-builder@10.0.0", "My Builder")
-        coord, manifest = delegation.find_visible(UKEY, "agent.my-builder")
-        assert coord == "agent.my-builder@10.0.0" and manifest.name == "My Builder"
-        assert delegation.find_visible(UKEY, "agent.my-finder")[0] == MY_FINDER
+        # @10 sorts before @2 as text; the version order puts it last.
+        _write_copy(UKEY, NB, "agent.test.my-builder@10", "My Builder")
+        coord, manifest = delegation.find_visible(UKEY, "agent.test.my-builder")
+        assert coord == "agent.test.my-builder@10" and manifest.name == "My Builder"
+        assert delegation.find_visible(UKEY, "agent.test.my-finder")[0] == MY_FINDER
         # A shipped id still finds the shipped agent, whatever version of that
         # id the user imported.
-        _write_copy(UKEY, NB, "agent.node-builder@3.0.0", "Their Node Builder")
-        assert delegation.find_visible(UKEY, "agent.node-builder")[0] == NB
-        assert delegation.find_visible(UKEY, "agent.nobody") == (None, None)
+        _write_copy(UKEY, NB, "agent.curio.node-builder@3", "Their Node Builder")
+        assert delegation.find_visible(UKEY, "agent.curio.node-builder")[0] == NB
+        assert delegation.find_visible(UKEY, "agent.test.nobody") == (None, None)
 
     def test_installing_the_copied_orchestrator_installs_its_copies(
         self, client, user_and_token, tmp_curio, alice_project
@@ -212,12 +213,12 @@ class TestSpecLookupsReadCapabilities:
         parent = catalog._resolve_definition(UKEY, MY_ORCHESTRATOR)
         spec = _spec()
         out = plans._attach_plan_node_agents(UKEY, spec, "n1", DL, parent=parent)
-        assert [r["agentId"] for r in out["attached"]] == ["agent.my-builder", "agent.my-finder"]
+        assert [r["agentId"] for r in out["attached"]] == ["agent.test.my-builder", "agent.test.my-finder"]
         assert out["skipped"] == []
         spec = _spec(node_type=CA)
         out = plans._attach_plan_node_agents(UKEY, spec, "n1", CA, parent=parent)
-        assert [r["agentId"] for r in out["attached"]] == ["agent.my-builder"]
-        assert [r["agentId"] for r in out["skipped"]] == ["agent.my-finder"]
+        assert [r["agentId"] for r in out["attached"]] == ["agent.test.my-builder"]
+        assert [r["agentId"] for r in out["skipped"]] == ["agent.test.my-finder"]
         assert "does not attach to computation-analysis nodes" in out["skipped"][0]["reason"]
         # The Researcher is installed and attaches to any node; it is never one of them.
         assert {r["coord"] for r in attachments.list_attachments(spec)} == {MY_BUILDER}
@@ -226,7 +227,7 @@ class TestSpecLookupsReadCapabilities:
         _write_copies(UKEY)
         spec = _spec()
         out = plans._attach_plan_node_agents(UKEY, spec, "n1", DL)
-        assert [r["agentId"] for r in out["attached"]] == ["agent.my-builder", "agent.my-finder"]
+        assert [r["agentId"] for r in out["attached"]] == ["agent.test.my-builder", "agent.test.my-finder"]
         assert _node_coords(spec, "n1") == {MY_BUILDER, MY_FINDER}
 
 
@@ -262,8 +263,8 @@ class TestPlannedNodesGetTheCopies:
         for row in body["attachedAgents"]:
             by_node.setdefault(row["nodeId"], set()).add(row["agentId"])
         assert by_node == {
-            ids["Load boundaries"]: {"agent.my-builder", "agent.my-finder"},
-            ids["Analyze"]: {"agent.my-builder"},
+            ids["Load boundaries"]: {"agent.test.my-builder", "agent.test.my-finder"},
+            ids["Analyze"]: {"agent.test.my-builder"},
         }
         spec = projects_storage.read_spec(_user_dir_key(user), alice_project)
         assert _node_coords(spec, ids["Load boundaries"]) == {MY_BUILDER, MY_FINDER}
@@ -289,7 +290,7 @@ class TestPlannedNodesGetTheCopies:
             json={"ref": "a"}, headers=_auth(token),
         ).get_json()
         assert {r["agentId"] for r in per_node["attachedAgents"]} == {
-            "agent.my-builder", "agent.my-finder",
+            "agent.test.my-builder", "agent.test.my-finder",
         }
         spec = projects_storage.read_spec(_user_dir_key(user), alice_project)
         node_id = per_node["createdNode"]["id"]
@@ -523,13 +524,13 @@ class TestNamesComeFromManifests:
         _write_copies(_user_dir_key(user))
         listing = client.get("/api/agents/llm", headers=_auth(token)).get_json()
         rows = {row["id"]: row for row in listing["agents"]}
-        builder = rows["agent.dataflow-builder"]
+        builder = rows["agent.curio.dataflow-builder"]
         assert "dataflow.orchestrate" in builder["capabilities"]
         # The agents its Solve runs, in the order Solve asks them.
         assert builder["solveRuns"] == ["Node Builder", "Dataset Finder"]
-        assert rows["agent.my-orchestrator"]["solveRuns"] == ["My Builder", "My Finder"]
-        assert "node.content.generate" in rows["agent.my-builder"]["capabilities"]
-        assert "solveRuns" not in rows["agent.my-builder"]
+        assert rows["agent.test.my-orchestrator"]["solveRuns"] == ["My Builder", "My Finder"]
+        assert "node.content.generate" in rows["agent.test.my-builder"]["capabilities"]
+        assert "solveRuns" not in rows["agent.test.my-builder"]
 
     def test_the_attachment_card_says_what_its_agent_declares(
         self, client, user_and_token, tmp_curio, alice_project

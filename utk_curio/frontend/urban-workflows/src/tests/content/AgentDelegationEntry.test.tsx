@@ -7,7 +7,7 @@ import type { AgentDelegationPart } from "../../services/agents";
 const part = (overrides: Partial<AgentDelegationPart> = {}): AgentDelegationPart => ({
   type: "delegation",
   capability: "research.verify",
-  coord: "agent.researcher@1.0.0",
+  coord: "agent.curio.researcher@1",
   name: "Researcher",
   category: "node",
   attachmentId: "att-r",

@@ -4,7 +4,7 @@ The Node Explainer's instruction opened with "YOU EXPLANATION SHOULD HAVE
 MAXIMUM 500 WORDS", and users read it as the first message of their chat.
 #417 deleted that prompt, which left nothing to keep the slip out of the
 others. The scan reads every file in ``utk_curio/llm-prompts/`` and in each
-shipped agent's ``prompts/`` (``agents/<id>@<version>/prompts/``): the
+shipped agent's ``prompts/`` (``agents/<id>@<major>/prompts/``): the
 templates and the prompts generated from them, and the prompts with no
 template. A phrase can wrap onto the next line, so its words match across any
 whitespace.

@@ -426,7 +426,7 @@ class TestAgentReviewCard:
         require_user_auth()
         spec = next(
             s for s in builtin.list_builtin_manifests()
-            if s.agent_id == "agent.node-builder"
+            if s.agent_id == "agent.curio.node-builder"
         )
         assert "node.content.write" in _tool_ids(spec), (
             "this test needs an agent that can propose a content replacement; "
@@ -627,7 +627,7 @@ class TestNativeToolCall:
 
         require_project_page()
         require_user_auth()
-        spec = next(s for s in builtin.list_builtin_manifests() if s.agent_id == "agent.node-builder")
+        spec = next(s for s in builtin.list_builtin_manifests() if s.agent_id == "agent.curio.node-builder")
         leg, tool, replies = _native_replies(spec)
         assert (leg, tool) == ("mint", "node.create"), (
             f"this test needs an agent whose characteristic call is node.create; "

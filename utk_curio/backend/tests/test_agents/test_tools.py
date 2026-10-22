@@ -20,7 +20,7 @@ def _req(tool_id: str, required: bool = False) -> ToolRequirement:
 class TestRegistry:
     def test_registry_holds_exactly_the_named_contracts(self):
         # Each contract has a named consumer in the built-in roster (dev/41
-        # §4.3; node.create → agent.node-builder, dev/48) — nothing
+        # §4.3; node.create → agent.curio.node-builder, dev/48) — nothing
         # speculative lives here.
         assert set(tools.REGISTRY) == {
             "dataflow.read", "node.read", "node.content.write", "node.create",
@@ -121,7 +121,7 @@ class TestExecuteReadTool:
             "dataflow": {
                 "nodes": nodes if nodes is not None else [{"id": "n1", "type": "CODE", "content": "print(1)"}],
                 "edges": [],
-                "agents": ["agent.researcher@1.0.0"] if with_agents else [],
+                "agents": ["agent.curio.researcher@1"] if with_agents else [],
                 "agentAttachments": [{"attachmentId": "a1", "sessionId": "s1"}] if with_agents else [],
             }
         }

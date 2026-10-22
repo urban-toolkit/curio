@@ -28,6 +28,10 @@ reads that and no index (``PIP_NO_INDEX`` with ``PIP_FIND_LINKS``, as
   guests never install (``test.wheelhouse-guest@1``).
 * Loading a dataflow whose lockfile names the package adds it, and Run All
   runs its node (``test.wheelhouse-lockfile@1``).
+* Loading a dataflow whose lockfile names a package and not the package it
+  names in ``dependencies.packages`` adds both, with both libraries, and Run
+  All runs its node, which imports the other package's module
+  (``test.wheelhouse-dependent@1``, which needs ``test.wheelhouse-dependency@1``).
 * Add on the Node Catalog page installs the library, and the node dropped from
   the palette runs (``test.wheelhouse-catalog@1``).
 * A model card dragged from the Model Catalog drawer onto the canvas opens the
@@ -65,8 +69,10 @@ from .utils import (
     offline_package,
     open_new_workflow,
     open_tools_palette,
+    plant_catalog_package,
     read_node_code,
     read_node_output_text,
+    remove_catalog_package,
     require_owner_view,
     require_project_page,
     require_user_auth,
@@ -91,6 +97,11 @@ PAIR = offline_package("test.wheelhouse-pair@1")
 #: Two nodes too, so a hosted guest's refusal comes before any menu.
 GUEST = offline_package("test.wheelhouse-guest@1")
 LOCKFILE = offline_package("test.wheelhouse-lockfile@1")
+#: A package that names another in ``dependencies.packages``, and the package
+#: it names, whose module its node imports.
+DEPENDENT = offline_package("test.wheelhouse-dependent@1")
+DEPENDENCY = offline_package("test.wheelhouse-dependency@1")
+DEPENDENCY_MODULE = "wheelhouse_dependency_module"
 CATALOG = offline_package("test.wheelhouse-catalog@1")
 #: A model package, a copy of Local Relief: its card's drop makes its one node.
 MODEL = offline_package("test.wheelhouse-model@1")
@@ -139,6 +150,17 @@ def guest_package(current_server: str):
 def lockfile_package(current_server: str):
     with _offline(current_server, LOCKFILE):
         yield
+
+
+@pytest.fixture()
+def dependent_packages(current_server: str):
+    """Both packages in the catalog, both libraries only in the wheelhouse."""
+    with offline_catalog_package(current_server, DEPENDENT.dir_name, [DEPENDENT.library, DEPENDENCY.library]):
+        plant_catalog_package(current_server, DEPENDENCY.dir_name)
+        try:
+            yield
+        finally:
+            remove_catalog_package(current_server, DEPENDENCY.dir_name)
 
 
 @pytest.fixture()
@@ -525,6 +547,65 @@ def test_loading_a_dataflow_whose_lockfile_names_the_package_adds_it_and_run_all
     node_locator(page, node_id).locator(".monaco-editor").first.wait_for(state="attached", timeout=60000)
     run_all_and_wait(page)
     _assert_the_node_ran_the_library(page, node_id, LOCKFILE)
+
+
+def test_loading_a_dataflow_whose_package_needs_another_adds_both_and_its_node_imports_the_other_packages_module(
+    app_frontend: "FrontendPage", current_server: str, page, tmp_path, dependent_packages,
+):
+    session = _enter_canvas(page, app_frontend, current_server, kind="dependent")
+    token = session["token"]
+    for package in (DEPENDENT, DEPENDENCY):
+        _assert_not_added_yet(current_server, token, package)
+    [probe] = DEPENDENT.nodes
+
+    node_id = "offline-dependent-node"
+    spec = {
+        "dataflow": {
+            "name": "Names a package that needs another",
+            "task": "",
+            "nodes": [{
+                "id": node_id,
+                "type": probe.type,
+                "x": 400,
+                "y": 300,
+                "content": probe.code,
+                "in": "DEFAULT",
+                "out": "DEFAULT",
+                "goal": "",
+                "metadata": {"keywords": []},
+            }],
+            "edges": [],
+            # The package alone: the one it needs comes with it.
+            "packages": [DEPENDENT.dir_name],
+        }
+    }
+    spec_file = tmp_path / "names-a-package-that-needs-another.json"
+    spec_file.write_text(json.dumps(spec), encoding="utf-8")
+
+    with page.expect_response(
+        lambda r: "/api/packages/workflow-deps/install" in r.url and r.request.method == "POST",
+        timeout=180000,
+    ) as installed:
+        _load_dataflow(page, str(spec_file))
+    response = installed.value
+    assert response.ok, f"{response.status}: {response.text()[:600]}"
+    assert response.json()["installedPackages"] == [DEPENDENT.dir_name], response.json()
+    store = _store_dirs(current_server, token)
+    assert {DEPENDENT.dir_name, DEPENDENCY.dir_name} <= set(store), (
+        f"{DEPENDENT.dir_name} was added without {DEPENDENCY.dir_name}, which it names: {store}"
+    )
+    for package in (DEPENDENT, DEPENDENCY):
+        assert library_installed(current_server, package.library), (
+            f"{package.dir_name} was added and pip never installed {package.library.dist}"
+        )
+
+    node_locator(page, node_id).locator(".monaco-editor").first.wait_for(state="attached", timeout=60000)
+    run_all_and_wait(page)
+    output = read_node_output_text(page, node_id)
+    assert DEPENDENT.library.message in output, f"the node's output does not show its own library: {output!r}"
+    assert f"{DEPENDENCY.library.message}, through {DEPENDENCY_MODULE}" in output, (
+        f"the node's output does not show {DEPENDENCY_MODULE} imported from {DEPENDENCY.dir_name}: {output!r}"
+    )
 
 
 def test_adding_the_package_on_the_catalog_page_installs_its_library_and_its_node_runs_from_the_palette(

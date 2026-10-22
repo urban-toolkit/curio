@@ -52,12 +52,12 @@ class TestAttachDetach:
     def test_attach_appends_record(self):
         spec = _spec()
         rec = attachments.attach(
-            spec, "agent.my-explainer@1.0.0", {"kind": "node", "targetId": "n1"},
+            spec, "agent.test.my-explainer@1", {"kind": "node", "targetId": "n1"},
             attachment_id="att1", session_id="sess1",
         )
         assert rec == {
             "attachmentId": "att1",
-            "coord": "agent.my-explainer@1.0.0",
+            "coord": "agent.test.my-explainer@1",
             "target": {"kind": "node", "targetId": "n1"},
             "sessionId": "sess1",
             "revision": 1,
@@ -72,7 +72,7 @@ class TestAttachDetach:
 
     def test_detach(self):
         spec = _spec()
-        attachments.attach(spec, "agent.x@1.0.0", {"kind": "canvas"}, attachment_id="a", session_id="s")
+        attachments.attach(spec, "agent.test.x@1", {"kind": "canvas"}, attachment_id="a", session_id="s")
         assert attachments.detach(spec, "a") is True
         assert attachments.list_attachments(spec) == []
         assert attachments.detach(spec, "a") is False
@@ -81,7 +81,7 @@ class TestAttachDetach:
 class TestSetIntent:
     def _attached(self):
         spec = _spec()
-        attachments.attach(spec, "agent.x@1.0.0", {"kind": "canvas"}, attachment_id="a", session_id="s")
+        attachments.attach(spec, "agent.test.x@1", {"kind": "canvas"}, attachment_id="a", session_id="s")
         return spec
 
     def test_set_and_bump_revision(self):
@@ -134,37 +134,37 @@ class TestDetachAllForCoord:
 
     def test_removes_every_attachment_of_that_agent(self):
         spec = self._spec_with(
-            self._rec("a1", "agent.x@1.0.0"),
-            self._rec("a2", "agent.x@1.0.0", {"kind": "canvas"}),
-            self._rec("a3", "agent.y@1.0.0"),
+            self._rec("a1", "agent.test.x@1"),
+            self._rec("a2", "agent.test.x@1", {"kind": "canvas"}),
+            self._rec("a3", "agent.test.y@1"),
         )
 
-        removed = attachments.detach_all_for_coord(spec, "agent.x@1.0.0")
+        removed = attachments.detach_all_for_coord(spec, "agent.test.x@1")
 
         assert sorted(r["attachmentId"] for r in removed) == ["a1", "a2"]
         assert [r["attachmentId"] for r in spec["dataflow"]["agentAttachments"]] == ["a3"]
 
     def test_leaves_other_agents_alone(self):
-        spec = self._spec_with(self._rec("a1", "agent.y@1.0.0"))
+        spec = self._spec_with(self._rec("a1", "agent.test.y@1"))
 
-        assert attachments.detach_all_for_coord(spec, "agent.x@1.0.0") == []
+        assert attachments.detach_all_for_coord(spec, "agent.test.x@1") == []
         assert len(spec["dataflow"]["agentAttachments"]) == 1
 
     def test_version_is_part_of_the_identity(self):
         # Coordinates carry a version; two versions of one agent are two agents.
-        spec = self._spec_with(self._rec("a1", "agent.x@2.0.0"))
+        spec = self._spec_with(self._rec("a1", "agent.test.x@2"))
 
-        assert attachments.detach_all_for_coord(spec, "agent.x@1.0.0") == []
+        assert attachments.detach_all_for_coord(spec, "agent.test.x@1") == []
         assert len(spec["dataflow"]["agentAttachments"]) == 1
 
     @pytest.mark.parametrize("spec", [None, {}, {"dataflow": {}}, {"dataflow": {"agentAttachments": "nope"}}])
     def test_tolerates_a_spec_with_nothing_to_remove(self, spec):
-        assert attachments.detach_all_for_coord(spec, "agent.x@1.0.0") == []
+        assert attachments.detach_all_for_coord(spec, "agent.test.x@1") == []
 
     def test_ignores_malformed_records(self):
-        spec = self._spec_with("not-a-dict", self._rec("a1", "agent.x@1.0.0"))
+        spec = self._spec_with("not-a-dict", self._rec("a1", "agent.test.x@1"))
 
-        removed = attachments.detach_all_for_coord(spec, "agent.x@1.0.0")
+        removed = attachments.detach_all_for_coord(spec, "agent.test.x@1")
 
         assert [r["attachmentId"] for r in removed] == ["a1"]
         assert spec["dataflow"]["agentAttachments"] == ["not-a-dict"]

@@ -40,7 +40,7 @@ function SettingsOpener() {
       </button>
       <button
         type="button"
-        onClick={() => drawer.openApiSettings({ section: "agent-models", agentId: "agent.researcher" })}
+        onClick={() => drawer.openApiSettings({ section: "agent-models", agentId: "agent.curio.researcher" })}
       >
         open on an agent
       </button>
@@ -80,7 +80,7 @@ describe("the API Settings drawer", () => {
     // Role queries see the drawer only once it is presented.
     await waitFor(() => expect(drawerRoot("settings")).toHaveAttribute("aria-hidden", "false"));
     expect(panel).toHaveAttribute("data-tab", "agents");
-    expect(JSON.parse(panel.getAttribute("data-focus")!)).toEqual({ section: "agent-models", agentId: "agent.researcher" });
+    expect(JSON.parse(panel.getAttribute("data-focus")!)).toEqual({ section: "agent-models", agentId: "agent.curio.researcher" });
     // The drawer keeps the tab in its own state.
     fireEvent.click(screen.getByRole("button", { name: "Show keys" }));
     expect(screen.getByTestId("panel")).toHaveAttribute("data-tab", "keys");

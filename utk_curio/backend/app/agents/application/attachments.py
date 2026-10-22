@@ -133,7 +133,7 @@ def describe_node_requirements(requires: list[str], templates: dict | None = Non
 def attach(spec: dict, coord: str, target: object, *, attachment_id: str, session_id: str) -> dict:
     """Append a new attachment record to the spec and return it.
 
-    ``coord`` is a ``<agentId>@<version>`` template coordinate; ``target`` is
+    ``coord`` is a ``<agentId>@<major>`` template coordinate; ``target`` is
     validated against the spec. Ids are supplied by the caller.
     """
     if not (isinstance(coord, str) and AGENT_DIR_RE.match(coord)):

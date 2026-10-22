@@ -27,19 +27,19 @@ def _modes(m: AgentManifest) -> list:
 #: order): the instruction its chat runs, which for an internal agent is its
 #: first mode's, and its capabilities in order.
 _ROSTER = {
-    "agent.researcher": ("researcher_instruction.md", ["research.notes.compose", "research.verify"]),
-    "agent.dataflow-planner": ("new_subtasks_prompt.md", [
+    "agent.curio.researcher": ("researcher_instruction.md", ["research.notes.compose", "research.verify"]),
+    "agent.curio.dataflow-planner": ("new_subtasks_prompt.md", [
         "workflow.plan.create", "execution.followup.plan", "workflow.plan.refresh",
         "workflow.coherence.validate", "workflow.keyword.bind", "workflow.keywords.extract",
     ]),
-    "agent.dataflow-reader": ("explanation_prompt.md", ["dataflow.explain", "workflow.suggest"]),
-    "agent.node-builder": ("node_build_instruction.md", [
+    "agent.curio.dataflow-reader": ("explanation_prompt.md", ["dataflow.explain", "workflow.suggest"]),
+    "agent.curio.node-builder": ("node_build_instruction.md", [
         "node.build", "dataset.fetch.author", "node.content.generate",
         "package.recommend", "package.build", "package.extend", "node.kind.author",
     ]),
-    "agent.dataset-finder": ("discovery_instruction.md", ["dataset.discover", "dataset.select"]),
-    "agent.dataflow-builder": ("orchestration_instruction.md", ["dataflow.orchestrate"]),
-    "agent.generated-content-evaluator": (
+    "agent.curio.dataset-finder": ("discovery_instruction.md", ["dataset.discover", "dataset.select"]),
+    "agent.curio.dataflow-builder": ("orchestration_instruction.md", ["dataflow.orchestrate"]),
+    "agent.curio.generated-content-evaluator": (
         "evaluate_generated_content_prompt.md", ["content.quality.evaluate"],
     ),
 }
@@ -48,7 +48,7 @@ _ROSTER = {
 #: The planning and keyword agents became the Dataflow Planner, and the two
 #: dataflow readers the Dataflow Reader.
 _MODES = {
-    "agent.dataflow-planner": {
+    "agent.curio.dataflow-planner": {
         "workflow.plan.create": "new_subtasks_prompt.md",
         "execution.followup.plan": "new_subtask_from_exec_prompt.md",
         "workflow.plan.refresh": "task_refresh_prompt.md",
@@ -56,7 +56,7 @@ _MODES = {
         "workflow.keyword.bind": "keywords_binding_prompt.md",
         "workflow.keywords.extract": "syntax_analysis_prompt.md",
     },
-    "agent.dataflow-reader": {
+    "agent.curio.dataflow-reader": {
         "dataflow.explain": "explanation_prompt.md",
         "workflow.suggest": "workflow_suggestions_prompt.md",
     },
@@ -68,14 +68,14 @@ _MODES = {
 #: three writing capabilities); the Researcher composes notes from search
 #: results and checks a fact.
 _CARD_MODES = {
-    "agent.node-builder": {
+    "agent.curio.node-builder": {
         "node.content.generate": "new_content_prompt.md",
         "package.recommend": "package_recommendation_instruction.md",
         "package.build": "package_build_instruction.md",
         "package.extend": "package_build_instruction.md",
         "node.kind.author": "package_build_instruction.md",
     },
-    "agent.researcher": {
+    "agent.curio.researcher": {
         "research.notes.compose": "researcher_notes_instruction.md",
         "research.verify": "research_instruction.md",
     },
@@ -87,16 +87,16 @@ _CARD_MODES = {
 #: Node Builder to write a package; only the Dataflow Builder asks for a
 #: recommendation and for notes.
 _DELEGABLE = {
-    "agent.node-builder": {
+    "agent.curio.node-builder": {
         "content.quality.evaluate", "dataset.discover", "dataset.select",
         "execution.followup.plan", "node.content.generate", "node.kind.author",
         "package.build", "package.extend", "research.verify",
     },
-    "agent.dataset-finder": {
+    "agent.curio.dataset-finder": {
         "dataset.fetch.author", "node.build", "research.verify",
         "workflow.keyword.bind", "workflow.suggest",
     },
-    "agent.dataflow-builder": {
+    "agent.curio.dataflow-builder": {
         "content.quality.evaluate", "dataflow.explain",
         "dataset.discover", "dataset.fetch.author", "dataset.select",
         "execution.followup.plan", "node.build", "node.content.generate",
@@ -105,7 +105,7 @@ _DELEGABLE = {
         "research.verify", "workflow.coherence.validate", "workflow.plan.create",
         "workflow.plan.refresh", "workflow.suggest",
     },
-    "agent.researcher": {"node.kind.author", "package.build", "package.extend"},
+    "agent.curio.researcher": {"node.kind.author", "package.build", "package.extend"},
 }
 
 
@@ -114,7 +114,7 @@ def _instructions():
     the agent's own and each mode's, one entry per file."""
     out = []
     for m in builtin.list_builtin_manifests():
-        coord = f"{m.agent_id}@1.0.0"
+        coord = f"{m.agent_id}@1"
         seen = set()
         for key, asset in m.prompts.items():
             filename = _file(asset)
@@ -130,8 +130,8 @@ def _instructions():
 #: capability whose input or reply the runtime treats as structure (P2), or is
 #: the only agent for a canvas target (P3).
 _CARDS = {
-    "agent.dataflow-builder", "agent.dataset-finder", "agent.node-builder",
-    "agent.researcher",
+    "agent.curio.dataflow-builder", "agent.curio.dataset-finder", "agent.curio.node-builder",
+    "agent.curio.researcher",
 }
 
 
@@ -183,18 +183,18 @@ class TestRoster:
             assert not structured & set(m.capability_ids), m.agent_id
 
     def test_internal_agents_are_known_by_coordinate(self):
-        assert builtin.is_internal("agent.dataflow-planner")
-        assert builtin.is_internal("agent.dataflow-planner@1.0.0")
+        assert builtin.is_internal("agent.curio.dataflow-planner")
+        assert builtin.is_internal("agent.curio.dataflow-planner@1")
         # The owner's own definition under the same id is not the built-in.
-        assert not builtin.is_internal("agent.dataflow-planner@2.0.0")
-        assert not builtin.is_internal("agent.researcher@1.0.0")
+        assert not builtin.is_internal("agent.curio.dataflow-planner@2")
+        assert not builtin.is_internal("agent.curio.researcher@1")
 
     def test_evaluator_authored_under_dec055(self):
         # OQ-007 resolved by dev/85 (DEC-055): the evaluator exists as a
         # net-new AUTHORED built-in — no longer excluded, never a fabricated
         # migration (its roster comment + docstring carry the decision).
         ids = set(_by_id())
-        assert "agent.generated-content-evaluator" in ids
+        assert "agent.curio.generated-content-evaluator" in ids
 
     def test_matches_the_roster(self):
         manifests = builtin.list_builtin_manifests()
@@ -214,8 +214,8 @@ class TestRoster:
         assert modes == {**_MODES, **_CARD_MODES}
         # The rest run one instruction for everything.
         single = {m.agent_id for m in manifests} - set(_MODES) - set(_CARD_MODES)
-        assert single == {"agent.dataset-finder", "agent.dataflow-builder",
-                          "agent.generated-content-evaluator"}
+        assert single == {"agent.curio.dataset-finder", "agent.curio.dataflow-builder",
+                          "agent.curio.generated-content-evaluator"}
 
     def test_a_card_with_a_mode_keeps_its_own_chat_instruction(self):
         """A card that took another agent over is a card still: its chat runs
@@ -223,12 +223,12 @@ class TestRoster:
         prompt is a mode beside it (not the ``_merged`` shape, whose default
         is its first mode)."""
         chats = {
-            "agent.node-builder": "node_build_instruction.md",
-            "agent.researcher": "researcher_instruction.md",
+            "agent.curio.node-builder": "node_build_instruction.md",
+            "agent.curio.researcher": "researcher_instruction.md",
         }
         assert set(chats) == set(_CARD_MODES)
         for agent_id, modes in _CARD_MODES.items():
-            m = builtin.get_builtin_manifest(f"{agent_id}@1.0.0")
+            m = builtin.get_builtin_manifest(f"{agent_id}@1")
             assert m.catalog.listed, agent_id
             assert _file(m.prompts["instruction"]) == chats[agent_id], agent_id
             assert _file(m.prompts["instruction"]) not in modes.values(), agent_id
@@ -238,7 +238,7 @@ class TestRoster:
             assert not mode_reads <= set(m.inputs_reads), agent_id
         # The package recommendation is listed before the writing
         # capabilities, so reuse stays ahead of writing.
-        caps = builtin.get_builtin_manifest("agent.node-builder@1.0.0").capability_ids
+        caps = builtin.get_builtin_manifest("agent.curio.node-builder@1").capability_ids
         for writing in ("package.build", "package.extend", "node.kind.author"):
             assert caps.index("package.recommend") < caps.index(writing), writing
 
@@ -253,11 +253,11 @@ class TestRoster:
             for m in builtin.list_builtin_manifests()
             if m.agent_id in m.delegates_to
         }
-        assert selves == {"agent.node-builder": (
+        assert selves == {"agent.curio.node-builder": (
             "node.content.generate", "package.build", "package.extend", "node.kind.author",
         )}
-        nb = builtin.get_builtin_manifest("agent.node-builder@1.0.0")
-        assert nb.delegates_to[0] == "agent.node-builder"
+        nb = builtin.get_builtin_manifest("agent.curio.node-builder@1")
+        assert nb.delegates_to[0] == "agent.curio.node-builder"
 
     def test_no_card_chat_carries_a_json_only_delegate_section(self):
         """A chat runs with its tools and answers the user. The JSON-only
@@ -266,15 +266,15 @@ class TestRoster:
         for m in builtin.list_builtin_manifests():
             if not m.catalog.listed:
                 continue
-            chat = builtin.read_prompt_text(f"{m.agent_id}@1.0.0", "instruction")
+            chat = builtin.read_prompt_text(f"{m.agent_id}@1", "instruction")
             low = chat.lower()
             assert "delegated task from" not in low, m.agent_id
             assert "exactly one json object" not in low, m.agent_id
             assert "as a delegate" not in low, m.agent_id
         # The modes that answer in JSON say so.
-        for agent_id, capability in (("agent.researcher", "research.notes.compose"),
-                                     ("agent.node-builder", "package.build")):
-            mode = builtin.read_prompt_text(f"{agent_id}@1.0.0", capability)
+        for agent_id, capability in (("agent.curio.researcher", "research.notes.compose"),
+                                     ("agent.curio.node-builder", "package.build")):
+            mode = builtin.read_prompt_text(f"{agent_id}@1", capability)
             assert mode, (agent_id, capability)
             assert "EXACTLY ONE JSON object" in mode, (agent_id, capability)
             assert "delegated task from" in mode.lower(), (agent_id, capability)
@@ -290,7 +290,7 @@ class TestRoster:
 
     def test_a_merged_agent_is_internal_and_its_default_is_its_first_mode(self):
         for agent_id, modes in _MODES.items():
-            m = builtin.get_builtin_manifest(f"{agent_id}@1.0.0")
+            m = builtin.get_builtin_manifest(f"{agent_id}@1")
             assert not m.catalog.listed, agent_id
             assert _file(m.prompts["instruction"]) == next(iter(modes.values()))
             assert tuple(m.capability_ids) == tuple(modes)
@@ -298,7 +298,7 @@ class TestRoster:
             assert set(m.inputs_reads) == {r for c in _modes(m) for r in c.reads}
 
     def test_the_keyword_modes_read_the_keyword_types(self):
-        planner = builtin.get_builtin_manifest("agent.dataflow-planner@1.0.0")
+        planner = builtin.get_builtin_manifest("agent.curio.dataflow-planner@1")
         reading = {c.id for c in planner.capabilities if "keywordTypes" in c.required_config}
         assert reading == {
             "workflow.keywords.extract", "workflow.keyword.bind", "workflow.plan.refresh",
@@ -309,7 +309,7 @@ class TestRoster:
         by_id = _by_id()
         got = {}
         for agent_id_of_parent in by_id:
-            m = builtin.get_builtin_manifest(f"{agent_id_of_parent}@1.0.0")
+            m = builtin.get_builtin_manifest(f"{agent_id_of_parent}@1")
             caps = {
                 cap
                 for agent_id in m.delegates_to
@@ -332,13 +332,13 @@ class TestManifests:
         assert set(by_id) == set(_ROSTER)
         for agent_id, (_, caps) in _ROSTER.items():
             m = by_id[agent_id]
-            assert m.dir_name == f"{agent_id}@1.0.0"
+            assert m.dir_name == f"{agent_id}@1"
             assert m.capability_ids == caps
             assert m.provenance.trust == "built-in"
 
     def test_a_mode_names_its_own_prompt(self):
-        m = builtin.get_builtin_manifest("agent.dataflow-planner@1.0.0")
-        for capability, filename in _MODES["agent.dataflow-planner"].items():
+        m = builtin.get_builtin_manifest("agent.curio.dataflow-planner@1")
+        for capability, filename in _MODES["agent.curio.dataflow-planner"].items():
             declared = m.capability(capability)
             assert declared.instruction == capability
             assert m.prompts[capability].path == f"prompts/{filename}"
@@ -347,7 +347,7 @@ class TestManifests:
         # instruction. Every capability of the Researcher is a mode other
         # agents ask for, so its chat is its instruction alone.
         for agent_id, modes in _CARD_MODES.items():
-            card = builtin.get_builtin_manifest(f"{agent_id}@1.0.0")
+            card = builtin.get_builtin_manifest(f"{agent_id}@1")
             for capability, filename in modes.items():
                 assert card.capability(capability).instruction == capability, agent_id
                 assert card.prompts[capability].path == f"prompts/{filename}", agent_id
@@ -355,19 +355,19 @@ class TestManifests:
             assert chat not in {card.prompts[c].path for c in modes}, agent_id
             others = [c for c in card.capabilities if c.id not in modes]
             assert all(c.instruction is None for c in others), agent_id
-        nb = builtin.get_builtin_manifest("agent.node-builder@1.0.0")
+        nb = builtin.get_builtin_manifest("agent.curio.node-builder@1")
         assert [c.id for c in nb.capabilities if c.instruction is None] == [
             "node.build", "dataset.fetch.author",
         ]
         # A single-instruction agent declares no modes.
-        for agent_id in ("agent.dataset-finder", "agent.dataflow-builder"):
-            single = builtin.get_builtin_manifest(f"{agent_id}@1.0.0")
+        for agent_id in ("agent.curio.dataset-finder", "agent.curio.dataflow-builder"):
+            single = builtin.get_builtin_manifest(f"{agent_id}@1")
             assert all(c.instruction is None for c in single.capabilities), agent_id
 
     def test_get_by_coord(self):
-        m = builtin.get_builtin_manifest("agent.researcher@1.0.0")
-        assert m is not None and m.agent_id == "agent.researcher"
-        assert builtin.get_builtin_manifest("agent.researcher@9.9.9") is None
+        m = builtin.get_builtin_manifest("agent.curio.researcher@1")
+        assert m is not None and m.agent_id == "agent.curio.researcher"
+        assert builtin.get_builtin_manifest("agent.curio.researcher@9") is None
         assert builtin.get_builtin_manifest("curio.builtin@1") is None
 
 
@@ -394,12 +394,12 @@ class TestPreambleAndInputs:
             assert not (folder / "syntax_analysis_preamble.md").exists(), folder
 
     def test_prompt_text_is_read_by_key(self):
-        coord = "agent.dataflow-planner@1.0.0"
+        coord = "agent.curio.dataflow-planner@1"
         bind = builtin.read_prompt_text(coord, "workflow.keyword.bind")
         assert bind == prompt_path("keywords_binding_prompt.md").read_text(encoding="utf-8")
         # An undeclared key reads nothing, not the preamble.
         assert builtin.read_prompt_text(coord, "workflow.nope") is None
-        assert builtin.read_prompt_text("agent.researcher@1.0.0", "dataflow.explain") is None
+        assert builtin.read_prompt_text("agent.curio.researcher@1", "dataflow.explain") is None
 
     def test_preamble_exemplars_never_read_a_bare_filename(self):
         # dev/114: the shared preamble's worked dataflow was the ONLY data-
@@ -431,7 +431,7 @@ class TestPreambleAndInputs:
         from utk_curio.backend.app.agents.domain import builtin
 
         for m in builtin.list_builtin_manifests():
-            coord = f"{m.agent_id}@1.0.0"
+            coord = f"{m.agent_id}@1"
             assert builtin.read_prompt_text(coord, "system"), coord
             assert builtin.read_prompt_text(coord, "instruction"), coord
 
@@ -487,7 +487,7 @@ class TestNodeBuilderComposite:
     deviations. It also writes node content, suggests nodes for a connection,
     and installs or writes node packages."""
 
-    COORD = "agent.node-builder@1.0.0"
+    COORD = "agent.curio.node-builder@1"
 
     def test_manifest_surface(self):
         m = builtin.get_builtin_manifest(self.COORD)
@@ -497,18 +497,18 @@ class TestNodeBuilderComposite:
             "package.recommend", "package.build", "package.extend", "node.kind.author",
         ]
         assert m.delegates_to == [
-            "agent.node-builder",  # its own content and package-writing modes
-            "agent.dataflow-planner",  # its follow-up planning only
-            "agent.researcher",  # dev/67-4: chainable verification, its mode only
-            "agent.generated-content-evaluator",  # dev/86: advisory semantic check
-            "agent.dataset-finder",  # dev/114 (DEC-072): source resolution for data-loading nodes
+            "agent.curio.node-builder",  # its own content and package-writing modes
+            "agent.curio.dataflow-planner",  # its follow-up planning only
+            "agent.curio.researcher",  # dev/67-4: chainable verification, its mode only
+            "agent.curio.generated-content-evaluator",  # dev/86: advisory semantic check
+            "agent.curio.dataset-finder",  # dev/114 (DEC-072): source resolution for data-loading nodes
         ]
         assert m.delegate_scopes == {
-            "agent.node-builder": (
+            "agent.curio.node-builder": (
                 "node.content.generate", "package.build", "package.extend", "node.kind.author",
             ),
-            "agent.dataflow-planner": ("execution.followup.plan",),
-            "agent.researcher": ("research.verify",),
+            "agent.curio.dataflow-planner": ("execution.followup.plan",),
+            "agent.curio.researcher": ("research.verify",),
         }
         # dev/67-6 lifts the dev/48 canvas-only limitation: modify-existing
         # attaches to the node it modifies. On a connection it suggests what
@@ -582,16 +582,16 @@ class TestNodeBuilderComposite:
         nb = shipped(self.COORD)
         assert nb["runtime"] == {"execution": "foreground", "reviewPolicy": "review-before-apply"}
         assert nb["delegatesTo"] == [
-            {"id": "agent.node-builder", "capabilities": [
+            {"id": "agent.curio.node-builder", "capabilities": [
                 "node.content.generate", "package.build", "package.extend", "node.kind.author",
             ]},
-            {"id": "agent.dataflow-planner", "capabilities": ["execution.followup.plan"]},
-            {"id": "agent.researcher", "capabilities": ["research.verify"]},
-            "agent.generated-content-evaluator",
-            "agent.dataset-finder",  # dev/114
+            {"id": "agent.curio.dataflow-planner", "capabilities": ["execution.followup.plan"]},
+            {"id": "agent.curio.researcher", "capabilities": ["research.verify"]},
+            "agent.curio.generated-content-evaluator",
+            "agent.curio.dataset-finder",  # dev/114
         ]
-        composites = {"agent.node-builder", "agent.dataset-finder", "agent.dataflow-builder",
-                      "agent.researcher"}  # dev/90: asserted in its class
+        composites = {"agent.curio.node-builder", "agent.curio.dataset-finder", "agent.curio.dataflow-builder",
+                      "agent.curio.researcher"}  # dev/90: asserted in its class
         manifests = builtin.list_builtin_manifests()
         assert len(manifests) == 7
         for m in manifests:
@@ -673,49 +673,49 @@ class TestCatalogReadGrants:
     def _granted(agent_id: str) -> list[str]:
         from utk_curio.backend.app.agents.application import tools
 
-        return tools.resolve_grants(builtin.get_builtin_manifest(f"{agent_id}@1.0.0").tools)
+        return tools.resolve_grants(builtin.get_builtin_manifest(f"{agent_id}@1").tools)
 
     def test_the_agents_that_write_node_code_search_the_model_catalog(self):
         # The Node Builder, in its chat and in its content mode.
-        writers = {"agent.node-builder"}
+        writers = {"agent.curio.node-builder"}
         assert self._holders("models.search") == writers
         for agent_id in writers:
             assert "models.search" in self._granted(agent_id), agent_id
 
     def test_the_dataflow_builder_reads_the_worked_examples(self):
-        assert self._holders("examples.read") == {"agent.dataflow-builder"}
-        assert "examples.read" in self._granted("agent.dataflow-builder")
+        assert self._holders("examples.read") == {"agent.curio.dataflow-builder"}
+        assert "examples.read" in self._granted("agent.curio.dataflow-builder")
 
     def test_only_the_node_builder_reads_the_node_catalog(self):
         # It recommends and installs packages in its chat.
         for tool in ("packages.catalog", "packages.resolve"):
-            assert self._holders(tool) == {"agent.node-builder"}, tool
-            assert tool in self._granted("agent.node-builder"), tool
+            assert self._holders(tool) == {"agent.curio.node-builder"}, tool
+            assert tool in self._granted("agent.curio.node-builder"), tool
 
 
 class TestDatasetFinderComposite:
     """The dev/50 roster entry — spec per dev/15 §3.4 + docs/06, minus
     recorded deviations."""
 
-    COORD = "agent.dataset-finder@1.0.0"
+    COORD = "agent.curio.dataset-finder@1"
 
     def test_manifest_surface(self):
         m = builtin.get_builtin_manifest(self.COORD)
         assert m is not None
         assert m.capability_ids == ["dataset.discover", "dataset.select"]
         assert m.delegates_to == [
-            "agent.node-builder",
-            "agent.dataflow-reader",
-            "agent.dataflow-planner",
-            "agent.researcher",
+            "agent.curio.node-builder",
+            "agent.curio.dataflow-reader",
+            "agent.curio.dataflow-planner",
+            "agent.curio.researcher",
         ]
         assert m.delegate_scopes == {
             # Building the node, never its content mode.
-            "agent.node-builder": ("node.build", "dataset.fetch.author"),
-            "agent.dataflow-reader": ("workflow.suggest",),
-            "agent.dataflow-planner": ("workflow.keyword.bind",),
+            "agent.curio.node-builder": ("node.build", "dataset.fetch.author"),
+            "agent.curio.dataflow-reader": ("workflow.suggest",),
+            "agent.curio.dataflow-planner": ("workflow.keyword.bind",),
             # Checking a fact, never composing notes.
-            "agent.researcher": ("research.verify",),
+            "agent.curio.researcher": ("research.verify",),
         }
         by_kind = {t.kind: t for t in m.compatible_targets}
         assert set(by_kind) == {"node", "canvas"}
@@ -756,14 +756,14 @@ class TestBackgroundExecutionRoster:
     def test_only_the_dataflow_builder_is_background(self):
         manifests = builtin.list_builtin_manifests()
         background = [m.agent_id for m in manifests if m.execution == "background"]
-        assert background == ["agent.dataflow-builder"]
-        dfb = builtin.manifest_dict("agent.dataflow-builder@1.0.0")
+        assert background == ["agent.curio.dataflow-builder"]
+        dfb = builtin.manifest_dict("agent.curio.dataflow-builder@1")
         assert dfb["runtime"] == {"execution": "background", "reviewPolicy": "review-before-apply"}
         for m in manifests:
-            if m.agent_id != "agent.dataflow-builder":
+            if m.agent_id != "agent.curio.dataflow-builder":
                 assert builtin.manifest_dict(m.dir_name)["runtime"]["execution"] == "foreground"
         # And the field parses through the manifest contract.
-        assert builtin.get_builtin_manifest("agent.dataflow-builder@1.0.0") is not None
+        assert builtin.get_builtin_manifest("agent.curio.dataflow-builder@1") is not None
 
 
 class TestRequiresAgentsRoster:
@@ -785,29 +785,29 @@ class TestRequiresAgentsRoster:
         requiring = sorted(
             m.agent_id for m in builtin.list_builtin_manifests() if m.requires_agents
         )
-        assert requiring == ["agent.dataflow-builder", "agent.node-builder"]
+        assert requiring == ["agent.curio.dataflow-builder", "agent.curio.node-builder"]
 
 
 class TestDataflowBuilderComposite:
     """The dev/52 roster entry — spec per dev/15 §3.4 minus recorded deviations."""
 
-    COORD = "agent.dataflow-builder@1.0.0"
+    COORD = "agent.curio.dataflow-builder@1"
 
     def test_manifest_surface(self):
         m = builtin.get_builtin_manifest(self.COORD)
         assert m is not None
         assert m.capability_ids == ["dataflow.orchestrate"]
         assert m.delegates_to == [
-            "agent.dataset-finder",
+            "agent.curio.dataset-finder",
             # dev/73: chat-path content updates; dev/84 Recommend packages,
             # dev/89 package-scale steps: its modes.
-            "agent.node-builder",
-            "agent.dataflow-planner", "agent.dataflow-reader",
-            "agent.generated-content-evaluator",  # dev/86: advisory semantic check
-            "agent.researcher",  # dev/95 (Follow-up D) reviewed notes, dev/67-4 verification
+            "agent.curio.node-builder",
+            "agent.curio.dataflow-planner", "agent.curio.dataflow-reader",
+            "agent.curio.generated-content-evaluator",  # dev/86: advisory semantic check
+            "agent.curio.researcher",  # dev/95 (Follow-up D) reviewed notes, dev/67-4 verification
         ]
         # The Researcher is asked for its two modes, never its chat.
-        assert m.delegate_scopes["agent.researcher"] == ("research.notes.compose", "research.verify")
+        assert m.delegate_scopes["agent.curio.researcher"] == ("research.notes.compose", "research.verify")
         assert [t.kind for t in m.compatible_targets] == ["canvas"]
         # dev/95: node.create is the reviewed lane the delegated Researcher's
         # note proposals mint on (grant-gated at the parent).
@@ -828,7 +828,7 @@ class TestDataflowBuilderComposite:
         # Apply: server paths, so both are required. The other delegates stay
         # optional (no install fan-out).
         m = builtin.get_builtin_manifest(self.COORD)
-        assert m.requires_agents == ["agent.dataset-finder", "agent.node-builder"]
+        assert m.requires_agents == ["agent.curio.dataset-finder", "agent.curio.node-builder"]
 
     def test_net_new_instruction_resolves(self):
         text = builtin.read_prompt_text(self.COORD, "instruction")
@@ -846,7 +846,7 @@ class TestNodeBuilderPackages:
     Researcher and the Dataflow Builder, and its recommendation mode answers
     the Dataflow Builder. Both modes are delegated calls with no tools."""
 
-    COORD = "agent.node-builder@1.0.0"
+    COORD = "agent.curio.node-builder@1"
 
     def test_the_recommendation_mode(self):
         m = builtin.get_builtin_manifest(self.COORD)
@@ -897,15 +897,15 @@ class TestNodeBuilderPackages:
         # the Node Builder recommends in its own chat. Reuse (the
         # recommendation) stays ahead of writing in its capability order.
         nb = builtin.get_builtin_manifest(self.COORD)
-        rs = builtin.get_builtin_manifest("agent.researcher@1.0.0")
-        dfb = builtin.get_builtin_manifest("agent.dataflow-builder@1.0.0")
+        rs = builtin.get_builtin_manifest("agent.curio.researcher@1")
+        dfb = builtin.get_builtin_manifest("agent.curio.dataflow-builder@1")
         for parent in (nb, rs, dfb):
-            assert "agent.node-builder" in parent.delegates_to, parent.agent_id
+            assert "agent.curio.node-builder" in parent.delegates_to, parent.agent_id
             for capability in ("package.build", "package.extend", "node.kind.author"):
-                assert parent.delegates("agent.node-builder", capability), (parent.agent_id, capability)
-        assert dfb.delegates("agent.node-builder", "package.recommend")
-        assert not nb.delegates("agent.node-builder", "package.recommend")
-        assert not rs.delegates("agent.node-builder", "package.recommend")
+                assert parent.delegates("agent.curio.node-builder", capability), (parent.agent_id, capability)
+        assert dfb.delegates("agent.curio.node-builder", "package.recommend")
+        assert not nb.delegates("agent.curio.node-builder", "package.recommend")
+        assert not rs.delegates("agent.curio.node-builder", "package.recommend")
         caps = nb.capability_ids
         for writing in ("package.build", "package.extend", "node.kind.author"):
             assert caps.index("package.recommend") < caps.index(writing)
@@ -1021,7 +1021,7 @@ class TestNodeBuilderPackages:
 class TestGeneratedContentEvaluator:
     """The DEC-055 authored built-in (dev/85 §4 contract; impl dev/86)."""
 
-    COORD = "agent.generated-content-evaluator@1.0.0"
+    COORD = "agent.curio.generated-content-evaluator@1"
 
     def test_manifest_surface(self):
         m = builtin.get_builtin_manifest(self.COORD)
@@ -1062,7 +1062,7 @@ class TestResearcher:
     the Node Builder) and checks facts. Composing notes from search results
     and checking a fact are its modes, for other agents."""
 
-    COORD = "agent.researcher@1.0.0"
+    COORD = "agent.curio.researcher@1"
 
     # The Dataflow Builder's prompt is byte-pinned while the Researcher lands
     # (dev/90 §8 AC-2): a drive-by edit fails HERE, not in a downstream run.
@@ -1091,9 +1091,9 @@ class TestResearcher:
         # Composing notes from search results and checking a fact: its modes.
         assert m.capability_ids == ["research.notes.compose", "research.verify"]
         # It delegates package writing only, to the Node Builder's mode.
-        assert m.delegates_to == ["agent.node-builder"]
+        assert m.delegates_to == ["agent.curio.node-builder"]
         assert m.delegate_scopes == {
-            "agent.node-builder": ("package.build", "package.extend", "node.kind.author"),
+            "agent.curio.node-builder": ("package.build", "package.extend", "node.kind.author"),
         }
         assert [t.kind for t in m.compatible_targets] == ["node", "canvas"]
         # It reads the dataflow as it is on screen, unsaved edits included,
@@ -1138,7 +1138,7 @@ class TestResearcher:
         assert m.prompts["research.notes.compose"].path == "prompts/researcher_notes_instruction.md"
         for capability in ("research.verify", "research.notes.compose"):
             holders = {o.agent_id for o in builtin.list_builtin_manifests() if capability in o.capability_ids}
-            assert holders == {"agent.researcher"}, capability
+            assert holders == {"agent.curio.researcher"}, capability
         # And the purpose line says what it does in chat.
         for words in ("a node or the whole dataflow", "diagnoses errors",
                       "define what to build", "as notes on the canvas", "checks facts"):
@@ -1151,13 +1151,13 @@ class TestResearcher:
         # The prompt sha updates only with the dev/95 prompt edit itself.
         import hashlib
 
-        prompt = (builtin.agents_dir() / "agent.dataflow-builder@1.0.0" / "prompts"
+        prompt = (builtin.agents_dir() / "agent.curio.dataflow-builder@1" / "prompts"
                   / "orchestration_instruction.md").read_bytes()
         assert hashlib.sha256(prompt).hexdigest() == self.DATAFLOW_BUILDER_PROMPT_SHA256
-        dfb = builtin.get_builtin_manifest("agent.dataflow-builder@1.0.0")
-        assert "agent.researcher" in dfb.delegates_to  # dev/95 Follow-up D
+        dfb = builtin.get_builtin_manifest("agent.curio.dataflow-builder@1")
+        assert "agent.curio.researcher" in dfb.delegates_to  # dev/95 Follow-up D
         # It asks for the notes mode and the checking mode, never the chat.
-        assert dfb.delegate_scopes["agent.researcher"] == ("research.notes.compose", "research.verify")
+        assert dfb.delegate_scopes["agent.curio.researcher"] == ("research.notes.compose", "research.verify")
 
     def test_its_chat_routes_what_the_user_wants(self):
         """The LLM picks what to do, in the call that answers: about the

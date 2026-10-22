@@ -171,9 +171,9 @@ _DEFAULT_MODEL = "gemma4"
 #                    which is the gesture this branch added;
 #   dataflow-builder declares requiresAgents, so its Add button counts the
 #                    agents it requires.
-AGENT_EXPLAINER = "agent.researcher@1.0.0"
-AGENT_CONNECTION = "agent.node-builder@1.0.0"
-AGENT_BUILDER = "agent.dataflow-builder@1.0.0"
+AGENT_EXPLAINER = "agent.curio.researcher@1"
+AGENT_CONNECTION = "agent.curio.node-builder@1"
+AGENT_BUILDER = "agent.curio.dataflow-builder@1"
 
 AGENT_SEARCH_PLACEHOLDER = "Search agents, publishers, tags…"
 
@@ -292,19 +292,19 @@ GEO_GOAL = "Map and chart the size of downtown Chicago's ZIP codes."
 # Every catalog agent is added, so the rail counts four; these are the
 # attachments, each where it works.
 GEO_AGENTS = [
-    "agent.researcher@1.0.0", "agent.node-builder@1.0.0",
-    "agent.dataset-finder@1.0.0", "agent.dataflow-builder@1.0.0",
+    "agent.curio.researcher@1", "agent.curio.node-builder@1",
+    "agent.curio.dataset-finder@1", "agent.curio.dataflow-builder@1",
 ]
 GEO_ATTACH = [
-    ("agent.dataset-finder@1.0.0", {"kind": "node", "targetId": GEO_LOADER}),
-    ("agent.node-builder@1.0.0", {"kind": "node", "targetId": GEO_TRANSFORM}),
-    ("agent.researcher@1.0.0", {"kind": "node", "targetId": GEO_MAP}),
+    ("agent.curio.dataset-finder@1", {"kind": "node", "targetId": GEO_LOADER}),
+    ("agent.curio.node-builder@1", {"kind": "node", "targetId": GEO_TRANSFORM}),
+    ("agent.curio.researcher@1", {"kind": "node", "targetId": GEO_MAP}),
     (
-        "agent.node-builder@1.0.0",
+        "agent.curio.node-builder@1",
         {"kind": "connection", "targetId": f"reactflow__edge-{GEO_TRANSFORM}out-{GEO_CHART}in"},
     ),
-    ("agent.dataflow-builder@1.0.0", {"kind": "canvas"}),
-    ("agent.researcher@1.0.0", {"kind": "canvas"}),
+    ("agent.curio.dataflow-builder@1", {"kind": "canvas"}),
+    ("agent.curio.researcher@1", {"kind": "canvas"}),
 ]
 
 

@@ -2138,10 +2138,7 @@ def chapter_agents(run: StressRun) -> None:
     installed: list[str] = []
     with run.step(f"Add all {len(agents)} agents to the dataflow"):
         for agent in agents:
-            coord = agent.get("coord") or (
-                f"{agent.get('id')}@{agent.get('version')}"
-                if agent.get("id") and agent.get("version") else ""
-            )
+            coord = agent.get("coord") or agent.get("dirName") or ""
             if not coord:
                 continue
             card = page.locator(f'article[data-agent-coord="{coord}"]')

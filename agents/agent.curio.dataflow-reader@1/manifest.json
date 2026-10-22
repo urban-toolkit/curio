@@ -1,5 +1,5 @@
 {
-  "id": "agent.dataflow-reader",
+  "id": "agent.curio.dataflow-reader",
   "name": "Dataflow Reader",
   "category": "canvas",
   "version": "1.0.0",

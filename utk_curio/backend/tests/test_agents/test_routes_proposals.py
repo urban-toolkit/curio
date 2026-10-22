@@ -23,7 +23,7 @@ class TestReviewProposals:
     """Review-before-apply (memo dev/41, DEC-006/REQ-REVIEW-001): the model
     proposes, only the authenticated endpoint applies, digest-checked."""
 
-    COORD = "agent.node-builder@1.0.0"
+    COORD = "agent.curio.node-builder@1"
 
     def _mutate_tail(self, node_id="n1", new_content="print(2)"):
         return (
@@ -305,7 +305,7 @@ class TestNodeCreate:
     creation, registry-validated at mint AND apply, id server-minted at
     apply, createdNode on the apply response."""
 
-    COORD = "agent.node-builder@1.0.0"
+    COORD = "agent.curio.node-builder@1"
 
     def _write_builtin_package(self, user_key, templates=None):
         import json as _json
@@ -693,7 +693,7 @@ class TestDataflowPlanMint:
     """dev/52 — a validated dataflowPlan tail on the final reply mints the
     reviewed plan proposal in one step (runtime-minted, never model-requested)."""
 
-    COORD = "agent.dataflow-builder@1.0.0"
+    COORD = "agent.curio.dataflow-builder@1"
 
     def _plan_tail(self, nodes=None, edges=None):
         import json as _json
@@ -803,7 +803,7 @@ class TestDataflowPlanMint:
                 "Here are the candidates.",
             ],
         )
-        _drop_from_lockfile(user, alice_project, "agent.dataset-finder@1.0.0")
+        _drop_from_lockfile(user, alice_project, "agent.curio.dataset-finder@1")
         body = self._run(client, token, alice_project, att_id).get_json()
         # No install proposal for a required agent, anywhere in the reply.
         assert all(
@@ -813,7 +813,7 @@ class TestDataflowPlanMint:
         installed = client.get(
             f"/api/agents/projects/{alice_project}", headers=_auth(token)
         ).get_json()["agents"]
-        assert "agent.dataset-finder@1.0.0" in {a["dirName"] for a in installed}
+        assert "agent.curio.dataset-finder@1" in {a["dirName"] for a in installed}
         turns = client.get(
             f"/api/agents/projects/{alice_project}/attachments/{att_id}/session",
             headers=_auth(token),
@@ -842,13 +842,13 @@ class TestDataflowPlanMint:
         body = self._run(client, token, alice_project, att_id).get_json()
         proposal = next(p for p in body["content"] if p["type"] == "proposal")
         assert proposal["tool"] == "project.install"
-        assert proposal["pins"]["coord"] == "agent.researcher@1.0.0"
+        assert proposal["pins"]["coord"] == "agent.curio.researcher@1"
         installed = {
             a["dirName"] for a in client.get(
                 f"/api/agents/projects/{alice_project}", headers=_auth(token)
             ).get_json()["agents"]
         }
-        assert "agent.researcher@1.0.0" not in installed
+        assert "agent.curio.researcher@1" not in installed
 
     def test_unavailable_template_yields_error_card_not_proposal(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
         user, token = user_and_token
@@ -870,7 +870,7 @@ class TestDataflowPlanMint:
         user, token = user_and_token
         att_id, _ = self._setup(
             client, user, token, alice_project, monkeypatch,
-            coord="agent.researcher@1.0.0",
+            coord="agent.curio.researcher@1",
             replies=["idea!\n" + self._plan_tail()],
         )
         body = self._run(client, token, alice_project, att_id).get_json()
@@ -1159,18 +1159,18 @@ class TestDataflowPlanApply:
         for row in body["attachedAgents"]:
             by_node.setdefault(row["nodeId"], set()).add(row["agentId"])
         assert by_node[ids["Load boundaries"]] == {
-            "agent.node-builder", "agent.dataset-finder",
+            "agent.curio.node-builder", "agent.curio.dataset-finder",
         }
-        assert by_node[ids["Analyze"]] == {"agent.node-builder"}
+        assert by_node[ids["Analyze"]] == {"agent.curio.node-builder"}
         assert body["skippedAgents"] == [] or all(
-            r["agentId"] == "agent.dataset-finder" for r in body["skippedAgents"]
+            r["agentId"] == "agent.curio.dataset-finder" for r in body["skippedAgents"]
         )
         # The spec carries them, targeted at those nodes.
         cards = client.get(
             f"/api/agents/projects/{alice_project}/attachments", headers=_auth(token)
         ).get_json()["attachments"]
         finder = [
-            c for c in cards if c["coord"].startswith("agent.dataset-finder@")
+            c for c in cards if c["coord"].startswith("agent.curio.dataset-finder@")
         ]
         assert [c["target"] for c in finder] == [
             {"kind": "node", "targetId": ids["Load boundaries"]}
@@ -1202,15 +1202,15 @@ class TestDataflowPlanApply:
             json={"ref": "a"}, headers=_auth(token),
         ).get_json()
         assert {r["agentId"] for r in per_node["attachedAgents"]} == {
-            "agent.node-builder", "agent.dataset-finder",
+            "agent.curio.node-builder", "agent.curio.dataset-finder",
         }
         assert per_node["attachedAgentId"] == next(
             r["attachmentId"] for r in per_node["attachedAgents"]
-            if r["agentId"] == "agent.node-builder"
+            if r["agentId"] == "agent.curio.node-builder"
         )
         # Finishing the same proposal as a whole covers the remaining ref only.
         rest = self._apply(client, token, alice_project, att_id, proposal["proposalId"]).get_json()
-        assert {r["agentId"] for r in rest["attachedAgents"]} == {"agent.node-builder"}
+        assert {r["agentId"] for r in rest["attachedAgents"]} == {"agent.curio.node-builder"}
         cards = client.get(
             f"/api/agents/projects/{alice_project}/attachments", headers=_auth(token)
         ).get_json()["attachments"]
@@ -1221,9 +1221,9 @@ class TestDataflowPlanApply:
         loader = per_node["createdNode"]["id"]
         other = rest["appliedGraph"]["nodes"][0]["id"]
         assert node_attachments == sorted([
-            ("agent.dataset-finder", loader),
-            ("agent.node-builder", loader),
-            ("agent.node-builder", other),
+            ("agent.curio.dataset-finder", loader),
+            ("agent.curio.node-builder", loader),
+            ("agent.curio.node-builder", other),
         ])
 
     def test_apply_inserts_graph_additively_with_server_ids(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
@@ -1327,7 +1327,7 @@ class TestDestructiveReplan:
     """dev/59 (DEC-049) — reviewed removals and rewires: per-victim digest
     pins, cascade, attachment pruning, nodeRuns hygiene, existing-id wiring."""
 
-    COORD = "agent.dataflow-builder@1.0.0"
+    COORD = "agent.curio.dataflow-builder@1"
 
     def _revision_tail(self, remove=("old-loader",), nodes=None, edges=None, remove_edges=None):
         import json as _json
@@ -1472,10 +1472,10 @@ class TestDestructiveReplan:
             replies=["Revising.\n" + self._revision_tail(nodes=[self._new_node()])],
         )
         # A node-target attachment on the victim (dies with it, dev/32) …
-        client.post(f"/api/agents/projects/{alice_project}/install", json={"coord": "agent.node-builder@1.0.0"}, headers=_auth(token))
+        client.post(f"/api/agents/projects/{alice_project}/install", json={"coord": "agent.curio.node-builder@1"}, headers=_auth(token))
         victim_att = client.post(
             f"/api/agents/projects/{alice_project}/attachments",
-            json={"coord": "agent.node-builder@1.0.0", "target": {"kind": "node", "targetId": "old-loader"}},
+            json={"coord": "agent.curio.node-builder@1", "target": {"kind": "node", "targetId": "old-loader"}},
             headers=_auth(token),
         ).get_json()["attachmentId"]
         # … and a stale nodeRuns entry for it in the builder session.
@@ -2135,7 +2135,7 @@ class TestPackageBuilderTools:
     (normalized appearance at metadata.appearance), and tells the frontend to
     refresh registries before painting (registry-before-canvas)."""
 
-    COORD = "agent.node-builder@1.0.0"
+    COORD = "agent.curio.node-builder@1"
     TARGET = "ai.agent.notes@1"
 
     def _draft_params(self, *, color="pink", template_id="note-kind"):
@@ -2611,7 +2611,7 @@ class TestTheOneTemplateToolIsRetired:
     mints nothing, and a proposal of it saved before no longer applies."""
 
     RETIRED = "node.template.create"
-    COORD = "agent.node-builder@1.0.0"
+    COORD = "agent.curio.node-builder@1"
 
     def test_no_agent_is_offered_it(self):
         from utk_curio.backend.app.agents.application import tools
@@ -2913,7 +2913,7 @@ class TestPlanTopologyMint:
     selection it receives; edge-only plans mint; removed connections are
     reviewed by name."""
 
-    COORD = "agent.dataflow-builder@1.0.0"
+    COORD = "agent.curio.dataflow-builder@1"
     TEMPLATES = [
         {"id": "computation-analysis", "label": "Computation Analysis", "category": "computation",
          "engine": "python", "editor": "code", "description": "d",

@@ -9,7 +9,7 @@ import { getByTooltip } from "../_support/tooltips";
 function attachment(over: Partial<any> = {}): any {
   return {
     attachmentId: "att-1",
-    coord: "agent.researcher@1.0.0",
+    coord: "agent.curio.researcher@1",
     target: { kind: "canvas" },
     sessionId: "s1",
     revision: 1,

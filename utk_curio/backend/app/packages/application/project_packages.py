@@ -64,6 +64,11 @@ def install_to_project(
 ) -> dict:
     """Add *dir_name* to *project_id*'s lockfile; install to user store if missing.
 
+    The packages it needs (``dependencies.packages``, and theirs in turn) are
+    installed with it and go in the lockfile beside it: the dataflow then uses
+    each (``prune.packages_in_use``), and a node of the package finds their
+    modules at the major the lockfile names (``python_modules``).
+
     Returns ``{"packages": [...], "addedToUserStore": bool, "importErrors":
     {lib: reason}}``, plus ``restartRecommended`` when pip actually changed a
     shared library under the running server.
@@ -86,8 +91,9 @@ def install_to_project(
     extra["importErrors"] = outcome.import_errors
 
     current = get_project_lockfile(user_key, project_id)
-    if dir_name not in current:
-        current.add(dir_name)
+    added = {dir_name, *outcome.packages}
+    if not added <= current:
+        current |= added
         _write_lockfile(user_key, project_id, current)
     return {
         "packages": sorted(current),

@@ -129,13 +129,13 @@ describe("attachAgentOnDrop with a connection target", () => {
     await attachAgentOnDrop({
       projectId: null,
       target,
-      agentCoord: "agent.node-builder@1.0.0",
+      agentCoord: "agent.curio.node-builder@1",
       saveProject,
       attach,
     });
 
     expect(saveProject).toHaveBeenCalled();
-    expect(attach).toHaveBeenCalledWith("p1", "agent.node-builder@1.0.0", target);
+    expect(attach).toHaveBeenCalledWith("p1", "agent.curio.node-builder@1", target);
   });
 
   it("still skips the flush for a canvas target", async () => {
@@ -145,7 +145,7 @@ describe("attachAgentOnDrop with a connection target", () => {
     await attachAgentOnDrop({
       projectId: "p1",
       target: { kind: "canvas" },
-      agentCoord: "agent.researcher@1.0.0",
+      agentCoord: "agent.curio.researcher@1",
       saveProject,
       attach,
     });
@@ -162,7 +162,7 @@ describe("the connectionSide fragment", () => {
     // producer at all and the declared read composed to nothing.
     const attachment: any = {
       attachmentId: "att-1",
-      coord: "agent.node-builder@1.0.0",
+      coord: "agent.curio.node-builder@1",
       target: { kind: "connection", targetId: "edge-7" },
       reads: ["connectionSide"],
     };
@@ -181,7 +181,7 @@ describe("the connectionSide fragment", () => {
   it("composes nothing when the edge is gone", () => {
     const attachment: any = {
       attachmentId: "att-1",
-      coord: "agent.node-builder@1.0.0",
+      coord: "agent.curio.node-builder@1",
       target: { kind: "connection", targetId: "edge-missing" },
       reads: ["connectionSide"],
     };

@@ -286,7 +286,8 @@ def _run_delegate_traced(
                     projects_storage.write_spec(user_key, project_id, spec)
     except Exception:
         home_attachment_id = home_session_id = None
-    parent_label = parent_name or parent_coord.split("@", 1)[0].replace("agent.", "")
+    # Without a name, the id's last segment: my-helper for agent.acme.my-helper.
+    parent_label = parent_name or parent_coord.split("@", 1)[0].rsplit(".", 1)[-1]
     if isinstance(home_session_id, str):
         try:
             sessions.append_turns(

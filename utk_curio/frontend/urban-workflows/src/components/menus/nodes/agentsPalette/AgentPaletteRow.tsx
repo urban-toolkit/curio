@@ -7,12 +7,6 @@ import rowStyles from "./AgentPaletteRow.module.css";
 import { DetailsButton } from "../../../DetailsButton";
 import { AgentDetailModal } from "../../../agents/catalog/AgentDetailModal";
 
-/** Shorten the install coordinate for display: ``agent.foo@1`` (major only). */
-function shortCoord(agent: AgentCard): string {
-  const major = (agent.version || "").split(".")[0] || agent.version;
-  return `${agent.id}@${major}`;
-}
-
 /** Human label for a compatible-target kind. */
 const HOOK_LABEL: Record<string, string> = {
   canvas: "Canvas",
@@ -76,7 +70,7 @@ export const AgentPaletteRow = memo(function AgentPaletteRow({
         data-tooltip-side="right"
       >
         <span className={packageStyles.packageKindRowLabel}>{agent.name}</span>
-        <span className={rowStyles.coord}>{shortCoord(agent)}</span>
+        <span className={rowStyles.coord}>{agent.dirName}</span>
         <span className={rowStyles.pills}>
           {hooks.map((h) => {
             const chipClass = rowStyles[`chip_${agentCategoryKey(h)}` as keyof typeof rowStyles];

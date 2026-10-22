@@ -12,7 +12,7 @@ Curio is a framework for urban visual analytics built on dataflows: a React canv
 - `utk_curio/common/`: code shared by backend, sandbox and the page server (`redaction.py`, `backend_address.py`).
 - `utk_curio/shipped.py`: where `agents/`, `packages/`, `datasets/`, `discovery/`, `scripts/`, `vendor/` and the parts of `docs/` Curio reads are: beside `utk_curio/` in a clone, `utk_curio/_shipped/` in a pip install. Every reader of them asks it.
 - `utk_curio/tools/`: operator tools outside the Flask app (`agent_eval.py`, `preview_runner.py`).
-- `agents/`: shipped Agent Catalog, one directory per agent (`<agentId>@<version>/`: `manifest.json`, `prompts/`), read by `agents/domain/builtin.py` as an imported agent is; its manifest's `catalog` says card or helper and the roster's order.
+- `agents/`: shipped Agent Catalog, one directory per agent (`<agentId>@<major>/`: `manifest.json`, `prompts/`), read by `agents/domain/builtin.py` as an imported agent is; its manifest's `catalog` says card or helper and the roster's order.
 - `packages/`: shipped Node and Model Catalogs, one directory per package (`manifest.json`, `sources/`, `integrity.json`); a model package (kind `model`) also holds its weights under `models/`.
 - `datasets/`: shipped Data Catalog, one directory per dataset (`manifest.json`, `data/`).
 - `discovery/`: Discovery Catalog sources, one `manifest.json` per source.

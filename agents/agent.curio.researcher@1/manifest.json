@@ -1,5 +1,5 @@
 {
-  "id": "agent.researcher",
+  "id": "agent.curio.researcher",
   "name": "Researcher",
   "category": "node",
   "version": "1.0.0",
@@ -115,7 +115,7 @@
   },
   "delegatesTo": [
     {
-      "id": "agent.node-builder",
+      "id": "agent.curio.node-builder",
       "capabilities": [
         "package.build",
         "package.extend",

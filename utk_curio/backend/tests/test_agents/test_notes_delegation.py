@@ -263,8 +263,8 @@ class TestMintDegradedPaths:
 
 
 # ── the DFB E2E lane (commit 2 wiring + A16 sequence) ────────────────────────
-DFB = "agent.dataflow-builder@1.0.0"
-RESEARCHER = "agent.researcher@1.0.0"
+DFB = "agent.curio.dataflow-builder@1"
+RESEARCHER = "agent.curio.researcher@1"
 
 
 def _notes_pkg_manifest() -> dict:
@@ -545,7 +545,7 @@ class TestPromptsCarryTheDelegationContract:
     def test_dfb_prompt_teaches_the_research_delegation(self):
         from utk_curio.backend.app.agents.domain import builtin
 
-        text = builtin.read_prompt_text("agent.dataflow-builder@1.0.0", "instruction")
+        text = builtin.read_prompt_text("agent.curio.dataflow-builder@1", "instruction")
         for marker in (
             '"research.notes.compose"',
             '{"question": "<their question>"}',
@@ -561,7 +561,7 @@ class TestPromptsCarryTheDelegationContract:
         # research.notes.compose runs; the Researcher's chat carries none of it.
         from utk_curio.backend.app.agents.domain import builtin
 
-        text = builtin.read_prompt_text("agent.researcher@1.0.0", "research.notes.compose")
+        text = builtin.read_prompt_text("agent.curio.researcher@1", "research.notes.compose")
         for marker in (
             "[delegated task from",
             "inputs.searchResults",

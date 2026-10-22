@@ -244,6 +244,25 @@ A model in the Model Catalog is a model package, so it declares its runtime's li
 - **Removing a package** (when its user-store copy is being pruned) walks every other still-installed package's manifest, finds the python deps the pruned package declared that **no other package needs**, and pip-uninstalls those. Shared deps stay.
 - A failed pip install rolls back the package's user-store copy so the user can retry cleanly. The Flask response carries the tail of pip's stderr so the user knows what failed (network error, version conflict, missing wheel, etc.).
 
+#### Packages a package needs
+
+A package whose code imports another package's modules names that package in `dependencies.packages`, as `"<packageId>@<major>": "<version range>"`, or a bare `"<packageId>"` for any major:
+
+```json
+"dependencies": {
+  "js": {},
+  "packages": { "ai.example.shared@1": "*" },
+  "python": {}
+}
+```
+
+Its nodes can import the modules the named package ships in `sources/`, and those of the packages that one names in turn ([`packages/application/python_modules.py`](../utk_curio/backend/app/packages/application/python_modules.py)). Adding the package adds them all, the same way on every path: **Add to project** and a card dropped on the canvas, **Add to all projects**, opening a dataflow whose lockfile names the package, and the examples' seeding at launch (`--with-examples`).
+
+- One function resolves what an add brings: `required_packages` in [`packages/domain/package_closure.py`](../utk_curio/backend/app/packages/domain/package_closure.py), the package and every package it needs, transitively, each once, a cycle included. An entry takes the account's copy when its range allows that copy's version, and an add never replaces a copy in the account. Otherwise it takes the shared catalog's copy at the highest major the range allows.
+- Everything is resolved before anything is copied. A package that neither the account nor the catalog holds at an allowed version refuses the add and names that package and the one that needs it. The packages it needs are copied first, each with its Python libraries, and a failure part way takes back every copy the add made.
+- The dataflow's lockfile records each package. A bare `<packageId>` entry with several majors in the account takes the major the lockfile names, as a node's own package does.
+- The review before an add lists them under **Dependencies**, and its conflict probe (`POST /api/packages/resolve`) resolves them from the catalog with the package, their libraries included.
+
 #### When to still lazy-import
 
 Even though deps are installed up front, lazy-import expensive libraries inside the code that needs them so a broken install fails per-request with a clean 503 instead of crashing the backend on startup. The Spatial Join's helper in [`common/spatial.py`](../utk_curio/backend/app/common/spatial.py) imports geopandas inside its functions, and the route turns the `ImportError` into a 503:
@@ -294,7 +313,7 @@ Each entry names a *behavior key* (a string), not a JS module path. The same key
 
 ```jsonc
 "kind": "model",
-"dependencies": { "js": {}, "packages": {},
+"dependencies": { "js": {}, "packages": { "curio.scout@1": "*" },
                   "python": { "numpy": "", "onnxruntime": ">=1.17", "pyproj": ">=3.7.2", "rasterio": ">=1.4" } },
 "model": { "type": "image-to-image", "runtime": "onnx", "entry": "models/deep_umbra.onnx", ... },
 "templates": [
@@ -316,6 +335,8 @@ from deep_umbra import accumulated_shadow
 model = curio_load_model("model.scout.deep-umbra")
 return accumulated_shadow(input_0, season=[!! season !!], model=model, output_file=curio_output_file)
 ```
+
+`deep_umbra` imports `tile_bounds` from `scout_rasters`, the module of the Scout package, which Deep Umbra names in `dependencies.packages`. Adding Deep Umbra adds Scout too (§3.8, "Packages a package needs").
 
 A model package's template may ship no `source`: DDRNet23-Slim's Image Segmentation ([`packages/model.curio.ddrnet23-slim@1`](../packages/model.curio.ddrnet23-slim@1/manifest.json)) opens with the cell the backend writes for its model's type (`model_default_cell` in [`packages/application/model_packages.py`](../utk_curio/backend/app/packages/application/model_packages.py), served with the starters):
 
@@ -611,7 +632,7 @@ one unless you are adding a behavior to Curio itself.
 ## 8. Agent-authored packages
 
 Everything above describes hand-authoring. Packages can also be **authored by
-agents**: the **Node Builder** (`agent.node-builder`) writes them in its package-writing mode
+agents**: the **Node Builder** (`agent.curio.node-builder`) writes them in its package-writing mode
 (`package.build`, `package.extend`, `node.kind.author`), which its own chat, the Researcher
 and the Dataflow Builder ask for. The mode turns a described need into one reviewed draft
 through the `package.draft.apply` contract, and an **isolated build service**

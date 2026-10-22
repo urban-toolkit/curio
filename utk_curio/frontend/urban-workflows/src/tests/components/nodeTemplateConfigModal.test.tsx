@@ -177,7 +177,7 @@ describe("NodeTemplateConfigModal - editor mode cascade", () => {
 
   test("none clears every body flag", () => {
     // No body flag depends on code or grammar being present: the Researcher
-    // (agent.researcher) explains a node, not an editor tab.
+    // (agent.curio.researcher) explains a node, not an editor tab.
     renderModal();
     fireEvent.change(screen.getByLabelText("Editor mode"), {
       target: { value: "none" },

@@ -77,7 +77,7 @@ class TestQueue:
 def _delegated(intent: str, siblings: str = "") -> list:
     """A delegated request as the runtime sends it: a header, then JSON."""
     body = json.dumps({"intent": intent, "planSiblings": siblings})
-    return [{"role": "user", "content": f"[delegated task from agent.x@1 - capability c]\n{body}"}]
+    return [{"role": "user", "content": f"[delegated task from agent.test.x@1 - capability c]\n{body}"}]
 
 
 class TestRoutingByIntent:

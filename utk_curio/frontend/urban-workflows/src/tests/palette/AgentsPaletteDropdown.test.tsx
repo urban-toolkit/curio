@@ -26,8 +26,8 @@ function card(id: string) {
   return {
     id,
     version: "1.0.0",
-    dirName: `${id}@1.0.0`,
-    name: id.replace("agent.", ""),
+    dirName: `${id}@1`,
+    name: id.slice(id.lastIndexOf(".") + 1),
     category: "node",
     purpose: "does a thing",
     capabilities: ["node.explain"],
@@ -54,7 +54,7 @@ function ControlledAgentsPalette() {
 
 beforeEach(() => {
   jest.clearAllMocks();
-  api.listProjectAgents.mockResolvedValue({ agents: [card("agent.my-explainer")] });
+  api.listProjectAgents.mockResolvedValue({ agents: [card("agent.test.my-explainer")] });
 });
 
 describe("AgentsPaletteDropdown", () => {
@@ -64,7 +64,7 @@ describe("AgentsPaletteDropdown", () => {
     fireEvent.click(screen.getByRole("button", { name: /Agent Catalog/i }));
     expect(await screen.findByText("my-explainer")).toBeInTheDocument();
     // Row shows the install coordinate (major only) and a compatible-target pill.
-    expect(screen.getByText("agent.my-explainer@1")).toBeInTheDocument();
+    expect(screen.getByText("agent.test.my-explainer@1")).toBeInTheDocument();
     expect(screen.getByText("Node")).toBeInTheDocument();
   });
 
@@ -106,7 +106,7 @@ describe("AgentsPaletteDropdown", () => {
     fireEvent.dragStart(dragHandle, {
       dataTransfer: { setData, effectAllowed: "" },
     });
-    expect(setData).toHaveBeenCalledWith(AGENT_DRAG_MIME, "agent.my-explainer@1.0.0");
+    expect(setData).toHaveBeenCalledWith(AGENT_DRAG_MIME, "agent.test.my-explainer@1");
   });
 
   // The palette dock is pointer-events: none; the root re-enables events via a
