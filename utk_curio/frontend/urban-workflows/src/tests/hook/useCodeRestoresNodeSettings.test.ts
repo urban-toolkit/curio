@@ -78,7 +78,7 @@ describe("per-node settings survive a load", () => {
         expect(typeBlock).toMatch(/selections\?: SelectionTag\[\];/);
     });
 
-    test("an Interaction node's edits are in its code: an old save's metadata.editFeatures is left out", () => {
+    test("a Map Edits node's edits are in its code: an old save's metadata.editFeatures is left out", () => {
         expect(USE_CODE).not.toMatch(/editFeatures/);
     });
 });

@@ -1,5 +1,5 @@
 {
-  "description": "The code an Interaction node writes from its edit list and reads back (#662, utils/editFeatures/editFeatures.ts). `ops`: the edits the node makes, in order, as editFeatures.ts (EDIT_OPS) and curio_edit_features (OPS) list them. Jest checks editFeaturesCode writes each case's `code` from its `settings`, `circles` (1 when absent) and `comments` (the node's own lines when absent), that readEditFeaturesCode reads it back as those and that the code it then writes is the same, reads each `read` code as its `settings`, `circles` and `comments`, and refuses each `refused` code with a reason holding `reason`. utk_curio/sandbox/tests/test_feature_edits.py checks Python reads each `cases` and `read` code's arguments as the same settings, against curio_edit_features's signature, and runs each `cases` code with curio_edit_features, checking the buildings left (`kept`).",
+  "description": "The code a Map Edits node writes from its edit list and reads back (#662, utils/editFeatures/editFeatures.ts). `ops`: the edits the node makes, in order, as editFeatures.ts (EDIT_OPS) and curio_edit_features (OPS) list them. Jest checks editFeaturesCode writes each case's `code` from its `settings`, `circles` (1 when absent) and `comments` (the node's own lines when absent), that readEditFeaturesCode reads it back as those and that the code it then writes is the same, reads each `read` code as its `settings`, `circles` and `comments`, and refuses each `refused` code with a reason holding `reason`. utk_curio/sandbox/tests/test_feature_edits.py checks Python reads each `cases` and `read` code's arguments as the same settings, against curio_edit_features's signature, and runs each `cases` code with curio_edit_features, checking the buildings left (`kept`).",
   "ops": [
     "remove",
     "set",
@@ -88,7 +88,7 @@
       ]
     },
     {
-      "name": "an Interaction log: a raise, a removal switched off and a removal by condition",
+      "name": "a Map Edits log: a raise, a removal switched off and a removal by condition",
       "settings": {
         "key": "building_id",
         "layer": "table_osm_buildings",

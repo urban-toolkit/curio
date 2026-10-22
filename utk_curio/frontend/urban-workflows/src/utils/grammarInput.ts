@@ -276,7 +276,7 @@ export function framesFromPayload(value: any, opts: RasterOptions = {}): {
   if (isObject(payload) && payload.dataType === "outputs" && Array.isArray(payload.data)) {
     const values: Array<{ circle: number; value: unknown }> = [];
     payload.data.forEach((item: any, index: number) => {
-      // A circle left out (an Interaction node's, on an Autark map) brings nothing.
+      // A circle left out (a Map Edits node's, on an Autark map) brings nothing.
       if (item === null) return;
       const raster = rasterFrame(item, opts, { fromBundle: true, index, circle: index, part: index });
       if (isObject(item) && typeof item.path === "string" && item.path) {

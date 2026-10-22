@@ -1,9 +1,9 @@
 /**
- * What an Interaction node does on an Autark map it feeds and is linked to
+ * What a Map Edits node does on an Autark map it feeds and is linked to
  * (#662): an overlay over the map's canvas, drawn through the map's own
  * camera, where the layer the node works on is picked, drawn into and
- * reshaped (`utils/editFeatures/mapEditBus`). It is mounted only on a map an
- * Interaction node feeds.
+ * reshaped (`utils/editFeatures/mapEditBus`). It is mounted only on a map a
+ * Map Edits node feeds.
  *
  * The map keeps its own gestures: a drag pans it and the wheel zooms it, in
  * every mode. A click is the node's:

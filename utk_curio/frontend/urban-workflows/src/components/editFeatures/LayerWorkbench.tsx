@@ -1,5 +1,5 @@
 /**
- * The Interaction node's layer workbench (#662), as the Interaction Node Flow
+ * The Map Edits node's layer workbench (#662), as the Interaction Node Flow
  * mockups draw it: the layers the node is fed, and
  * what can be done with each layer, one step at a time.
  *

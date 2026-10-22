@@ -1,7 +1,7 @@
 /**
  * A feature's parts (#662): the polygons of a MultiPolygon, the lines of a
  * MultiLineString, the points of a MultiPoint; a single geometry is one part.
- * An Interaction node draws a feature part by part, adds a part to one, and
+ * A Map Edits node draws a feature part by part, adds a part to one, and
  * takes one away.
  */
 import type { Geometry } from "./editFeatures";

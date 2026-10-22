@@ -1,6 +1,6 @@
 /**
- * An Interaction node and the Autark map it edits on (#662,
- * `utils/editFeatures/mapLayerEdits`): Data → Interaction → map on data
+ * A Map Edits node and the Autark map it edits on (#662,
+ * `utils/editFeatures/mapLayerEdits`): Data → Map Edits → map on data
  * edges, and an interaction edge between the node and the map; which map a
  * node picks and draws on (one it feeds and is linked to), and how many
  * circles feed the node.

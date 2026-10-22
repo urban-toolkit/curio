@@ -1,5 +1,5 @@
 /**
- * The drawing tools an Interaction node lends a map (#662,
+ * The drawing tools a Map Edits node lends a map (#662,
  * `utils/editFeatures/mapEditBus`), kept by the map and the node: a map two
  * nodes feed keeps each one's session, and a node takes back its own alone.
  * And the picks between them (`mapEditSelection`): a selection names
@@ -15,7 +15,7 @@ const session = (interactionId: string): MapEditSession => ({
   onReshape: jest.fn(),
 });
 
-test("a map two Interaction nodes feed keeps each one's session; a node takes back its own alone", () => {
+test("a map two Map Edits nodes feed keeps each one's session; a node takes back its own alone", () => {
   const heard = jest.fn();
   const off = onMapSession("map", heard);
   publishMapSession("map", "a", session("a"));

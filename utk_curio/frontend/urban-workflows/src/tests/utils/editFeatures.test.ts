@@ -1,5 +1,5 @@
 /**
- * The Interaction node's edit log (#662; its type is still
+ * The Map Edits node's edit log (#662; its type is still
  * `curio.builtin/edit-features`): what it keeps, the code it writes from it,
  * the ids a pick on its map names, and the layers it refuses.
  *
@@ -220,11 +220,11 @@ describe("which column identifies a feature", () => {
     const refusal = keyRefusal(keyColumns(placesOnly), "parcels");
     expect(refusal).toMatch(/^parcels has no column that identifies its features/);
     expect(refusal).toMatch(/never by their place in the layer/);
-    expect(refusal).toMatch(/The Interaction node matches features by such a column/);
+    expect(refusal).toMatch(/The Map Edits node matches features by such a column/);
   });
 });
 
-describe("the Interaction log", () => {
+describe("the Map Edits log", () => {
   test("an entry names its features by ids or by a condition, never both", () => {
     expect(normalizeEdit({ op: "remove", ids: [1], where: "a > 1" })).toBeNull();
     expect(normalizeEdit({ op: "remove" })).toBeNull();

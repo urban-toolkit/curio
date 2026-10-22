@@ -144,8 +144,8 @@ def test_no_shipped_package_names_compare_scenarios():
     assert named == {}, f"packages that still name Compare Scenarios: {named}"
 
 
-def test_the_interaction_node_names_no_what_differs(builtin_package_dir: Path):
-    """What differs went with Compare Scenarios: the Interaction node's
+def test_map_edits_names_no_what_differs(builtin_package_dir: Path):
+    """What differs went with Compare Scenarios: the Map Edits node's
     description, which its tile, the Node Catalog and the agents' preamble
     show, names neither."""
     manifest = load_package_manifest(builtin_package_dir)
@@ -155,7 +155,7 @@ def test_the_interaction_node_names_no_what_differs(builtin_package_dir: Path):
     preamble = REAL_CATALOG.parent / "utk_curio" / "llm-prompts" / "default_preamble.md"
     # The node's lines in each of the preamble's lists: its description, its
     # controls, its input and output types and its circles.
-    lines = [line for line in preamble.read_text(encoding="utf-8").splitlines() if line.startswith("- Interaction:")]
+    lines = [line for line in preamble.read_text(encoding="utf-8").splitlines() if line.startswith("- Map Edits:")]
     assert any("Removes features" in line for line in lines), lines
     for line in lines:
         for word in ("What differs", "Compare Scenarios"):

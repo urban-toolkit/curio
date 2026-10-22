@@ -1,5 +1,5 @@
 /**
- * The Interaction node's body (#662; its type id is still
+ * The Map Edits node's body (#662; its type id is still
  * `curio.builtin/edit-features`): the layers it is fed, what can be done with
  * each (`LayerWorkbench`), on the Autark map it feeds and is linked to, and
  * its edit log:

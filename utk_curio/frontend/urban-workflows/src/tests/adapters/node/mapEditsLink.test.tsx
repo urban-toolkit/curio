@@ -1,5 +1,5 @@
 /**
- * The Interaction node (`curio.builtin/edit-features`) and the Autark map it
+ * The Map Edits node (`curio.builtin/edit-features`) and the Autark map it
  * feeds, joined by an interaction edge, with the flow's own routing of
  * selections (providers/flow/useInteractions): a pick on the map is the map's
  * selection, which the edge carries to the node, as a selection crosses
@@ -10,7 +10,7 @@
  * its view when an edit draws it again, and after Commit edits.
  *
  * Each node is the behavior the canvas registers for its type, with the
- * node's own state (hook/useNodeState) for the Interaction node; the map draws
+ * node's own state (hook/useNodeState) for the Map Edits node; the map draws
  * with the stand-in grammar of _support/autkNodeMocks, whose pick is a pick
  * on the map, as autk-grammar reports one.
  */
@@ -233,7 +233,7 @@ afterEach(() => {
   unstubWebGpu();
 });
 
-test("a pick on the linked map selects that feature in the Interaction node, and Remove removes it", async () => {
+test("a pick on the linked map selects that feature in the Map Edits node, and Remove removes it", async () => {
   const canvas = mountCanvas();
   await canvas.playMap();
   await openAction("remove");
@@ -268,7 +268,7 @@ test("the selection the map's overlay sends names features by the layer's id col
   expect(canvas.settings()?.edits).toEqual([{ op: "remove", ids: [119, 136] }]);
 });
 
-test("what the Interaction node picks, or a rule matches, lights up on the map, by the selection it sends back", async () => {
+test("what the Map Edits node picks, or a rule matches, lights up on the map, by the selection it sends back", async () => {
   const canvas = mountCanvas();
   await canvas.playMap();
   await openAction("remove");

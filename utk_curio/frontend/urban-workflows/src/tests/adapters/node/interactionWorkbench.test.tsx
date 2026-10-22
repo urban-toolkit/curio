@@ -1,5 +1,5 @@
 /**
- * The Interaction node's Edit view (#662, `LayerWorkbench`), linked to an
+ * The Map Edits node's Edit view (#662, `LayerWorkbench`), linked to an
  * Autark map: the layers it finds on its input, by geometry; a new layer and its properties; a
  * property added to a layer; and an edit on a layer other than the node's,
  * which names that layer and its id column.

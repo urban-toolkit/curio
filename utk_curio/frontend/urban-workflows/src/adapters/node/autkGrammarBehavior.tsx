@@ -58,7 +58,7 @@ import { drawnInput, editFeedsOf, fedByInteraction, feedsVersion, newLayerTables
 import { codeEditRevision, subscribeToCodeEdits } from '../../utils/references/codeEdits';
 import MapEditOverlay from '../../components/editFeatures/MapEditOverlay';
 
-/** What a map no Interaction node feeds listens to for code edits: nothing. */
+/** What a map no Map Edits node feeds listens to for code edits: nothing. */
 const NO_CODE_EDITS = () => () => {};
 const NO_REVISION = () => 0;
 
@@ -97,8 +97,8 @@ export type AutkBehaviorOptions = {
     /**
      * Whether a draw keeps the view of the maps the last draw made. Only the
      * first draw frames the layers (`frameMaps`); each later one puts back
-     * the camera the person zoomed and panned to (`keepMapViews`). A map an
-     * Interaction node feeds always does, so an edit, and the Commit after
+     * the camera the person zoomed and panned to (`keepMapViews`). A map a
+     * Map Edits node feeds always does, so an edit, and the Commit after
      * it, leave the map where it was.
      */
     keepsView?: boolean;
@@ -211,7 +211,7 @@ export const useAutkGrammarBehavior = (
         }
         return inputReadRef.current!.read;
     };
-    // The inputs of the Interaction nodes that feed the map, each read once
+    // The inputs of the Map Edits nodes that feed the map, each read once
     // per input object, as the map's own is.
     const fedReadsRef = useRef(new Map<unknown, Promise<GrammarInput>>());
     const readFed = (input: unknown): Promise<GrammarInput> => {
@@ -243,7 +243,7 @@ export const useAutkGrammarBehavior = (
         nodes?: any[];
         edges?: any[];
     };
-    // The Interaction nodes that feed this map on data edges (#662), each with
+    // The Map Edits nodes that feed this map on data edges (#662), each with
     // the edits its code holds: the map draws each one's input with its edits,
     // before Commit edits as after (utils/editFeatures/mapEditsPreview), and
     // keeps its view when it draws again. Only a map one feeds listens for
@@ -354,7 +354,7 @@ export const useAutkGrammarBehavior = (
     const runGrammar = async (
         specString: string,
         emit: (o: { code: string; content: string }) => void,
-        // A draw of the map again, for an edit an Interaction node feeding it
+        // A draw of the map again, for an edit a Map Edits node feeding it
         // made: it draws, and hands nothing on.
         preview = false,
     ) => {
@@ -472,11 +472,11 @@ export const useAutkGrammarBehavior = (
         const readsInput = hasMaps || hasPlot || specDataSources.length === 0;
         if (data.input && readsInput) {
             try {
-                // A map draws each circle an Interaction node feeds from that
+                // A map draws each circle a Map Edits node feeds from that
                 // node's input with its edits (mapEditsPreview); a compute
                 // step, which draws nothing, reads what it was fed.
                 let prepared = autkSourcesFrom(await ((hasMaps || hasPlot) ? readDrawnInput(data.input) : readInput(data.input)), spec);
-                // The new layers an Interaction node feeding the map makes are
+                // The new layers a Map Edits node feeding the map makes are
                 // drawn on top, once they have features.
                 const made = newLayerTables(feedsRef.current).filter((table) =>
                     prepared.sources.some((source) => source.outputTableName === table && hasFeatures(source.geojsonObject)));
@@ -887,7 +887,7 @@ export const useAutkGrammarBehavior = (
                 else frameMaps(grammar);
                 if (editFedRef.current) {
                     // What was set on each layer through the map's menu, and the
-                    // layer an Interaction node shows alone, kept across the draw;
+                    // layer a Map Edits node shows alone, kept across the draw;
                     // the overlay on the map draws through its camera.
                     const shownMap = grammarMaps(grammar)[0];
                     restoreMapLayers(shownMap, savedLayersRef.current);
@@ -960,7 +960,7 @@ export const useAutkGrammarBehavior = (
                     interactionOffRef.current = [off1, off2];
                 }
 
-                // What the map was fed, as it came: the edits an Interaction
+                // What the map was fed, as it came: the edits a Map Edits
                 // node feeding it made, as its last run made them.
                 handOnRun(data.input ?? null);
                 // A selection still active from before this draw lights up
@@ -1148,7 +1148,7 @@ export const useAutkGrammarBehavior = (
      * ways its inner try/catch never sees. So the terminal output is
      * guaranteed here, in a finally, rather than hoped for in the body.
      *
-     * With *preview*, the map is drawn again for an edit an Interaction node
+     * With *preview*, the map is drawn again for an edit a Map Edits node
      * feeding it made: a draw and nothing else. No run is filed, the node's
      * state stays as its last run left it, and nothing is handed on.
      */
@@ -1213,7 +1213,7 @@ export const useAutkGrammarBehavior = (
     const drawGrammarRef = useRef(drawGrammar);
     drawGrammarRef.current = drawGrammar;
 
-    // An edit made in an Interaction node feeding this map, or an edit's code
+    // An edit made in a Map Edits node feeding this map, or an edit's code
     // put back: the map, once drawn, draws again once the edits stop coming,
     // keeping its view and what was set on its layers. A redraw only: no run.
     const editVersion = feedsVersion(feeds);
@@ -1233,7 +1233,7 @@ export const useAutkGrammarBehavior = (
         if (editFedRef.current) registerEditMap(data.nodeId, null);
     }, [data.nodeId]);
 
-    // Show only this layer, as the Interaction node feeding the map asks: the
+    // Show only this layer, as the Map Edits node feeding the map asks: the
     // map's other layers hidden, and back as they were when it stops asking.
     useEffect(() => {
         if (!editFed) return;
@@ -1290,7 +1290,7 @@ export const useAutkGrammarBehavior = (
         const current = dataRef.current;
         if (!grammar || !spec || !current.input) return;
 
-        // The layers as the map drew them, an Interaction node's edits made.
+        // The layers as the map drew them, a Map Edits node's edits made.
         const layers = autkSourcesFrom(await readDrawnInput(current.input), spec).sources;
         if (layers.length === 0) return;
 
@@ -1577,7 +1577,7 @@ export const useAutkGrammarBehavior = (
                     className="nodrag nopan nowheel"
                     style={{
                         display: 'flex', flexDirection: 'column', width: '100%', height: '100%',
-                        // The overlay of an Interaction node feeding the map lies over it.
+                        // The overlay of a Map Edits node feeding the map lies over it.
                         ...(editFed ? { position: 'relative' as const } : {}),
                     }}
                 >
@@ -1615,7 +1615,7 @@ export const useAutkGrammarBehavior = (
                             overflow: 'hidden',
                         }}
                     />
-                    {/* What an Interaction node feeding the map does on it (#662). */}
+                    {/* What a Map Edits node feeding the map does on it (#662). */}
                     {editFed ? <MapEditOverlay mapId={data.nodeId} /> : null}
                 </div>
             ),

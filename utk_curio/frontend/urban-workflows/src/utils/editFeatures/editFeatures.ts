@@ -1,5 +1,5 @@
 /**
- * The Interaction node (#662; its type id is still
+ * The Map Edits node (#662; its type id is still
  * `curio.builtin/edit-features`): features picked on its map, or by a
  * condition, removed, put back or given new values, as an edit log:
  *
@@ -546,7 +546,7 @@ export function keyRefusal(columns: readonly string[], layerLabel: string): stri
   if (columns.length > 0) return null;
   return (
     `${layerLabel} has no column that identifies its features: no osm_id or building_id, `
-    + "and no column whose values differ in every feature. The Interaction node matches features by such a column, "
+    + "and no column whose values differ in every feature. The Map Edits node matches features by such a column, "
     + "never by their place in the layer, which changes when rows change upstream. "
     + "Add an id column in the node that feeds it."
   );

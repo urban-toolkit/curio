@@ -1,6 +1,6 @@
 /**
- * What an Autark map draws when Interaction nodes feed it (#662), before and
- * after Commit edits: for each of its circles an Interaction node feeds on a
+ * What an Autark map draws when Map Edits nodes feed it (#662), before and
+ * after Commit edits: for each of its circles a Map Edits node feeds on a
  * data edge, that node's own input with the edits its code holds, as the
  * node's run hands it on (`curio_edit_features`): every layer under the name
  * the run gives it, edited by `applyFeatureEdits`, the node's new layers after
@@ -30,7 +30,7 @@ import { circlesInto, isInteraction, isInteractionEdge, nodeCode } from "./mapLa
 /** The Autark layer type a new layer's features are drawn as (`NEW_LAYER_TYPES` in `feature_edits.py`). */
 const NEW_LAYER_TYPES: Record<NewLayerGeometry, string> = { Point: "points", LineString: "polylines", Polygon: "polygons" };
 
-/** An Interaction node feeding one of a map's circles. */
+/** A Map Edits node feeding one of a map's circles. */
 export interface EditFeed {
   nodeId: string;
   /** The circle's place among the map's wired circles. */
@@ -45,13 +45,13 @@ export interface EditFeed {
   circles: number;
 }
 
-/** Whether an Interaction node feeds *mapId* on a data edge, whatever its code holds. */
+/** Whether a Map Edits node feeds *mapId* on a data edge, whatever its code holds. */
 export function fedByInteraction(mapId: string, nodes: readonly any[], edges: readonly any[]): boolean {
   return edges.some((edge) => edge.target === mapId && !isInteractionEdge(edge) && isInteraction(nodes.find((n) => n.id === edge.source)));
 }
 
 /**
- * The circles of *mapId* that Interaction nodes feed, each with what its node
+ * The circles of *mapId* that Map Edits nodes feed, each with what its node
  * holds. A node whose code it cannot read, or that has not been fed, is left
  * out: the map draws what it handed on.
  */

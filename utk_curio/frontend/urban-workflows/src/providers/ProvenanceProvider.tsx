@@ -2,8 +2,8 @@ import React, { createContext, useContext, ReactNode, useState, useRef } from "r
 import { formatDate } from "../utils/formatters";
 
 /**
- * One entry of a node's history: a run, or an edit made in the node's body (an
- * Interaction node's action, or an entry of its list switched off or
+ * One entry of a node's history: a run, or an edit made in the node's body (a
+ * Map Edits node's action, or an entry of its list switched off or
  * deleted), which ran nothing. Each holds the node's code as it left it, and
  * descends from the entry the node's next one branches from
  * (`selectedParentExecRef`), so the history is a tree.
