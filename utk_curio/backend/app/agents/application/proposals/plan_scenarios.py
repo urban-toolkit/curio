@@ -10,7 +10,8 @@ what needs the saved dataflow:
   takes its color, as a scenario made on the canvas does;
 * on the review card: each scenario with its nodes by name, and each node in
   one labelled with it, so a copy and its original read apart;
-* at apply: a created node carries its widgets and, for a copy, where it came
+* at apply: a created node carries its widgets, a Spatial Join its operation
+  and output (``metadata.spatialJoin``), and, for a copy, where it came
   from (``metadata.copiedFrom``); a scenario is saved once all its nodes exist,
   by the whole-plan apply and the per-node one alike, and checked against the
   dataflow's scenarios again then, since the plan's shape digest covers ids
@@ -20,6 +21,7 @@ from __future__ import annotations
 
 import uuid
 
+from utk_curio.backend.app.agents.domain import spatial_join_settings
 from utk_curio.backend.app.execution.code_references import check_widget_def, normalize_widgets
 from utk_curio.backend.app.execution.workflow_spec import PARAMETER_TYPE
 from utk_curio.backend.app.projects.scenarios import next_scenario_color, normalize_scenarios
@@ -102,14 +104,17 @@ def scenario_names(plan: dict) -> dict[str, str]:
 
 
 def node_display(node: dict, names: dict) -> dict:
-    """What the review card shows of a node beside its title: its widgets,
-    the scenario it is in, and the node it copies."""
+    """What the review card shows of a node beside its title: its widgets, a
+    Spatial Join's operation and output, the scenario it is in, and the node
+    it copies."""
     shown: dict = {}
     if node.get("widgets"):
         shown["widgets"] = [
             {key: w[key] for key in ("name", "type", "label", "default", "value") if key in w}
             for w in node["widgets"]
         ]
+    if node.get(spatial_join_settings.KEY):
+        shown[spatial_join_settings.KEY] = dict(node[spatial_join_settings.KEY])
     if node["ref"] in names:
         shown["scenario"] = names[node["ref"]]
     if node.get("copyOf"):
@@ -159,9 +164,10 @@ def copy_blocker(plan: dict, plan_node: dict, created_ids: dict) -> str | None:
 
 
 def created_node_metadata(plan_node: dict, created_ids: dict, nodes: list, starter: dict | None = None) -> dict:
-    """The ``metadata`` a planned node is created with: its widgets, and for a
-    copy the ids it descends from, the original's own lineage then the
-    original (as Duplicate selection writes it). Empty when it has neither.
+    """The ``metadata`` a planned node is created with: its widgets, a Spatial
+    Join's operation and output, and for a copy the ids it descends from, the
+    original's own lineage then the original (as Duplicate selection writes
+    it). Empty when it has none of them.
 
     A node that starts with its template's starter (*starter*, from the
     packages' ``content_starters``) holds the template's widgets, which the
@@ -172,6 +178,8 @@ def created_node_metadata(plan_node: dict, created_ids: dict, nodes: list, start
     widgets = _set_over(starter["widgets"], planned) if starter else planned
     if widgets:
         metadata["widgets"] = widgets
+    if plan_node.get(spatial_join_settings.KEY):
+        metadata[spatial_join_settings.KEY] = dict(plan_node[spatial_join_settings.KEY])
     origin_id = created_ids.get(plan_node.get("copyOf") or "")
     if origin_id:
         original = next((n for n in nodes if isinstance(n, dict) and n.get("id") == origin_id), {})

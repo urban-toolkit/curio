@@ -15,6 +15,7 @@ from utk_curio.backend.app.agents.application import source_grounding
 from utk_curio.backend.app.agents.application import verify
 from utk_curio.backend.app.agents.domain import content
 from utk_curio.backend.app.agents.domain import map_edits
+from utk_curio.backend.app.agents.domain import spatial_join_settings
 from utk_curio.backend.app.agents.domain import widget_grammar
 from utk_curio.backend.app.agents.application import tool_rounds as agents_tool_rounds
 from utk_curio.backend.app.agents.application.proposals import acquire as agents_acquire
@@ -24,6 +25,7 @@ from utk_curio.backend.app.agents.application.proposals import store as agents_s
 from utk_curio.backend.app.agents.application.turns import delegates as agents_delegates
 from utk_curio.backend.app.agents.application.turns import grounding as agents_grounding
 from utk_curio.backend.app.agents.application.turns import roster as agents_roster
+from utk_curio.backend.app.execution.workflow_spec import CONTENT_KIND_NONE
 from utk_curio.backend.app.projects import storage as projects_storage
 
 
@@ -691,6 +693,22 @@ def _node_create_widgets(entry: dict, raw: object) -> tuple[list, list[str]]:
     return widgets, []
 
 
+def _node_create_spatial_join(
+    user_key: str, project_id: str, entry: dict, raw: object,
+) -> tuple[dict | None, list[str]]:
+    """A created Spatial Join's operation and output, or why they are refused:
+    the join's own rule, on a node whose template keeps them."""
+    from utk_curio.backend.app.packages import service as packages_services
+
+    where = f"params.{spatial_join_settings.KEY}"
+    setting, problems = spatial_join_settings.parse(raw, where)
+    if problems or setting is None:
+        return None, problems
+    behavior = packages_services.template_behavior(user_key, project_id, entry["id"])
+    problem = spatial_join_settings.template_problem(behavior, entry.get("label") or entry["id"], where)
+    return (None, [problem]) if problem else (setting, [])
+
+
 def _mint_node_create(
     user_key: str, project_id: str, loop_ctx: dict, req: dict
 ) -> tuple[str, str, dict | None]:
@@ -704,10 +722,14 @@ def _mint_node_create(
     if entry is None:
         return agents_tool_rounds._refuse_params(err)
     proposed = content.extract_node_content(params.get("content"))
-    if not proposed:
+    # A node that holds no content, such as a Spatial Join, is proposed without it.
+    if not proposed and entry.get("contentKind") != CONTENT_KIND_NONE:
         return agents_tool_rounds._refuse_params("params.content must be a non-empty string")
     if len(proposed) > content.PROPOSAL_CONTENT_MAX_CHARS:
         return agents_tool_rounds._refuse_params("params.content exceeds the proposal size bound")
+    join, join_errors = _node_create_spatial_join(user_key, project_id, entry, params.get(spatial_join_settings.KEY))
+    if join_errors:
+        return agents_tool_rounds._refuse_params("; ".join(join_errors))
     # dev/114 (DEC-072): the source-grounding gate — BEFORE any store write.
     # A same-run node.create after the runtime minted dataset candidates is
     # refused too: the user reviews and confirms a source first (DEC-006).
@@ -757,6 +779,8 @@ def _mint_node_create(
     summary = f"Create a new {entry['label']} node" + (f" · {title}" if title else "")
     if widgets:
         summary += " · widgets " + ", ".join(w["name"] for w in widgets)
+    if join:
+        summary += " · " + spatial_join_settings.describe(join)
     part = content.make_proposal_part(
         proposal_id=proposal_id,
         tool="node.create",
@@ -788,6 +812,8 @@ def _mint_node_create(
         proposal["appearance"] = appearance
     if widgets:
         proposal["widgets"] = widgets
+    if join:
+        proposal[spatial_join_settings.KEY] = join
     agents_store._store_proposal(user_key, project_id, spec, loop_ctx, proposal, part)
     loop_ctx["_note_creates"] = loop_ctx.get("_note_creates", 0) + 1  # A13 index
     return (

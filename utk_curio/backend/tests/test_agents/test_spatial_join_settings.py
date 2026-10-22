@@ -39,6 +39,19 @@ def test_the_shape_is_the_trill_schemas_and_the_choices_are_the_joins():
     assert trill["properties"]["output"]["enum"] == list(spatial.OUTPUTS)
 
 
+def test_the_node_describes_every_operation_it_runs():
+    """The manifest's description, which the palette and every agent's preamble
+    show, names each operation the join runs."""
+    import re
+
+    from utk_curio.backend.app.common import spatial
+
+    manifest = json.loads((REPO_ROOT / "packages" / "curio.builtin@1" / "manifest.json").read_text(encoding="utf-8"))
+    join = next(t for t in manifest["templates"] if t.get("behavior") == "spatial-join")
+    for predicate in spatial.PREDICATES:
+        assert re.search(rf"\b{predicate}\b", join["description"]), predicate
+
+
 def test_a_setting_is_kept_as_a_node_stores_it():
     settings = _settings()
     assert settings.parse({"predicate": "within", "output": "counts"}, "nodes[2].spatialJoin") == (

@@ -48,6 +48,7 @@ from utk_curio.backend.app.agents.domain.tool_names import (
     wire_name,
 )
 from utk_curio.backend.app.agents.domain.manifest import ToolRequirement
+from utk_curio.backend.app.common import spatial
 from utk_curio.backend.app.execution.code_references import WIDGET_KINDS
 
 _EFFECTS = ("read", "mutate")
@@ -219,6 +220,18 @@ def _widgets(say: Say) -> dict:
             "description": say("widgets[]"),
         },
         "description": say("widgets"),
+    }
+
+
+def _spatial_join(say: Say) -> dict:
+    """A Spatial Join's operation and output (``$defs.nodeMetadata.spatialJoin``),
+    with the join's own choices; the server checks the rest."""
+    return {
+        **_object({
+            "predicate": {"type": "string", "enum": list(spatial.PREDICATES)},
+            "output": {"type": "string", "enum": list(spatial.OUTPUTS)},
+        }),
+        "description": say("spatialJoin"),
     }
 
 
@@ -449,6 +462,7 @@ REGISTRY: dict[str, ToolContract] = {
                             "intent": _text(say("nodes.intent")),
                             "expects": _text(say("nodes.expects")),
                             "widgets": _widgets(say),
+                            "spatialJoin": _spatial_join(say),
                         },
                         "ref", "nodeType", "title", "intent",
                     ),
@@ -527,6 +541,7 @@ REGISTRY: dict[str, ToolContract] = {
                 "goal": _text(say("goal")),
                 "appearance": _appearance(say),
                 "widgets": _widgets(say),
+                "spatialJoin": _spatial_join(say),
             },
             "nodeType", "content",
         ),
