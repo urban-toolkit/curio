@@ -510,16 +510,6 @@ _SUFFIX_GRAMMARS = {
     "autk-grammar": "autk-grammar",
 }
 
-#: The proof's copy of what a Vega-Lite document is; it leaves with the proof.
-_TODAY_GRAMMAR_SHAPES = {
-    "vega-lite": (
-        'a Vega-Lite JSON document — {"$schema": "https://vega.github.io/schema/'
-        'vega-lite/v6.json", "mark": …, "encoding": …}. Do NOT include a "data" '
-        "block: Curio injects this node's input as the data at render time"
-    ),
-}
-
-
 def grammar_shape(grammar: str | None) -> str:
     """What a document in *grammar* is, for the refusal a non-document reply
     gets. A Vega-Lite document's ``$schema`` is the one Curio writes

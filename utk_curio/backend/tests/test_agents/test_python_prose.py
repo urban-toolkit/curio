@@ -448,6 +448,87 @@ def test_a_frame_that_loses_a_run_value_is_refused(tmp_path, monkeypatch):
     assert delegation._frame_inputs("{capability}", "{parent}", {}) == swapped + "\n{}"
 
 
+def _moved_texts() -> list[tuple[str, str]]:
+    """Every text of this prose a run gets, with where it is: each tool's
+    texts, each section of the protocol and the frames, every string of the
+    delegate contracts, the title prompt, the plan rules and each keyword
+    type's description."""
+    from utk_curio.backend.app.agents.application import tools
+    from utk_curio.backend.app.agents.domain import agent_text, contracts
+
+    texts = []
+    for name, text in tools.tool_texts().items():
+        texts += [(f"tools.md, {name}", text.description), (f"tools.md, {name}, native", text.native_description or "")]
+        texts += [(f"tools.md, {name}, {path}", said) for path, said in text.parameters.items()]
+    for page in ("protocol.md", "frames.md"):
+        texts += [(f"{page}, {name}", text) for name, text in agent_text.sections(page).items()]
+
+    def strings(value):
+        if isinstance(value, str):
+            yield value
+        elif isinstance(value, dict):
+            for item in value.values():
+                yield from strings(item)
+        elif isinstance(value, list):
+            for item in value:
+                yield from strings(item)
+
+    for name, text in agent_text.sections("delegate-contracts.md").items():
+        found = list(strings(agent_text.json_block(text, name))) if "```json" in text else [text]
+        texts += [(f"delegate-contracts.md, {name}", said) for said in found]
+    for page in ("conversation-title.md", "rules/plan-rules.md"):
+        texts.append((page, agent_text.page_text(page)))
+    texts += [("keyword-types.md", entry["description"]) for entry in contracts.KEYWORD_TYPES.default]
+    return texts
+
+
+#: A moved text is looked for in Python by its sentences and clauses as long
+#: as this: a copy is caught by any one of them, whatever punctuation the page
+#: changed.
+_PIECE_CHARS = 30
+_CUT_RE = re.compile(r"(?<=[.;:!?])\s+|\s+-\s+|\n")
+
+
+def _python_strings() -> list[tuple[str, str]]:
+    """Every string literal in ``utk_curio/``'s Python, its tests left out,
+    with where it is: adjacent literals joined as Python joins them, and each
+    literal part of an f-string."""
+    import ast
+
+    found = []
+    for path in sorted((REPO_ROOT / "utk_curio").rglob("*.py")):
+        relative = path.relative_to(REPO_ROOT).as_posix()
+        if "/tests/" in relative or relative.startswith("utk_curio/frontend/"):
+            continue
+        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+            if isinstance(node, ast.Constant) and isinstance(node.value, str):
+                found.append((f"{relative}:{node.lineno}", node.value))
+    return found
+
+
+def test_no_moved_text_is_left_in_python(monkeypatch):
+    """No sentence or clause of the prose the base entry holds is still a
+    string in ``utk_curio/``: each text has one home, which an edit to the
+    page reaches."""
+    _fresh_loader(monkeypatch)
+    pieces = {}
+    for where, text in _moved_texts():
+        for piece in _CUT_RE.split(text):
+            piece = piece.strip()
+            if len(piece) >= _PIECE_CHARS:
+                pieces.setdefault(piece, where)
+    assert len(pieces) > 200, f"the scan cut only {len(pieces)} pieces of moved text; it would mean nothing"
+    python = _python_strings()
+    assert len(python) > 1000, "the scan found almost no Python strings"
+    left = sorted({
+        f"{location}: {piece!r} ({where})"
+        for piece, where in pieces.items()
+        for location, literal in python
+        if piece in literal
+    })
+    assert not left, "moved text still in Python:\n" + "\n".join(left[:40])
+
+
 def test_a_page_s_sections_are_read_strictly(tmp_path, monkeypatch):
     """A section the runtime asks for and the page lacks, a name given twice,
     and a tool section with a stray line are refused, naming the page; a

@@ -114,10 +114,6 @@ CONTEXT_MAX_CHARS = 120_000
 _CONTEXT_TRUNCATION_MARKER = "\n…[truncated: context exceeded the run-context bound]"
 
 
-#: The proof's copy of the canvas context's frame; it leaves with the proof.
-_TODAY_CONTEXT_FRAME = "[attachment context — current canvas state]\n"
-
-
 def context_frame() -> str:
     """The line that opens the canvas context a run is given, framing it as
     data: the section ``canvas-context`` of the base entry's ``frames.md``.

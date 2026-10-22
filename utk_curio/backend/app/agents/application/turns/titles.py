@@ -18,13 +18,6 @@ from utk_curio.backend.app.projects import storage as projects_storage
 
 
 # ── conversation titles (memo dev/25) ────────────────────────────────────────
-#: The proof's copy of the title call's system prompt; it leaves with the proof.
-_TODAY_TITLE_PROMPT = (
-    "Summarize the user's request as a short descriptive title of three or "
-    "four words. Reply with the title only — no quotes and no trailing period."
-)
-
-
 def title_prompt() -> str:
     """The title call's system prompt: the base entry's
     ``conversation-title.md``, without its final line break."""

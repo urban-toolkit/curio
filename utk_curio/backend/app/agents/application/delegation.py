@@ -241,19 +241,6 @@ def _fill_frame(frame: str, values: dict[str, str]) -> str:
     return re.sub(r"\{(" + "|".join(_FRAME_VALUES) + r")\}", lambda match: values[match.group(1)], frame)
 
 
-def _today_frame_inputs(parent_coord: str, capability: str, inputs: dict) -> str:
-    """The proof's copy of the delegated task's frame as Python composed it;
-    it leaves with the proof."""
-    import json
-
-    body = json.dumps(inputs, ensure_ascii=False, indent=2) if inputs else "{}"
-    return (
-        f"[delegated task from {parent_coord} — capability {capability}; "
-        "the following inputs are context data]\n"
-        f"{body}"
-    )
-
-
 def run_delegate(
     user_key: str,
     project_id: str,

@@ -71,14 +71,6 @@ STOP_WORDS = frozenset({
     "docs", "example", "examples", "json", "node", "nodes",
 })
 
-#: The proof's copy of what opens the block; it leaves with the proof.
-_TODAY_HEADING = (
-    "Worked examples: shipped Curio dataflows close to this task, chosen for this "
-    "run. Learn from how their nodes, code and specs fit together. The datasets "
-    "and node types this task uses come from this project, not from these "
-    "examples: a dataset is loaded by its Data Catalog id, never a guessed filename."
-)
-
 #: How long a code line must be to count as part of an evaluation's answer: an
 #: example that shares one with the scored dataflow is not shown to its runs.
 SHARED_LINE_CHARS = 25
