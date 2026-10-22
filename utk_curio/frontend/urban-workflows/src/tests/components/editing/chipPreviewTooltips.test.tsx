@@ -3,7 +3,8 @@
  * the hover of its chip in the editor show one ChipPreview, through the
  * TooltipLayer, from the node's preview source (chipPreviewSource). What the
  * chip shows is read only when its tooltip shows: a pointer that passes over
- * a tag reads nothing, and the open tooltip follows the read as it comes back.
+ * a tag reads nothing, and the open tooltip follows the read as it comes back,
+ * placed again as it grows, so it never covers the chip it describes.
  *
  * Example 26's join: its input_1 is Summarize's tuple. Monaco is not mounted
  * under Jest: the editor hook is driven through a fake editor that hands its
@@ -133,6 +134,49 @@ function overChip(dom: HTMLElement, left: number, top: number, column: number) {
 /** `monaco` with *markers* on the model. */
 function fakeMonaco(markers: Array<{ message: string; startLineNumber: number; startColumn: number; endLineNumber: number; endColumn: number }> = []) {
   return { editor: { MouseTargetType: { CONTENT_TEXT }, getModelMarkers: () => markers } };
+}
+
+type Observed = { targets: Set<Element>; callback: ResizeObserverCallback; observer: unknown };
+
+/**
+ * The browser's ResizeObserver, which jsdom lacks, until `uninstall`: each
+ * observer keeps what it observes, and `report(el)` tells those observing *el*
+ * that its size changed, as the browser does after a layout.
+ */
+function installResizeObserver() {
+  const observing = new Set<Observed>();
+  class FakeResizeObserver {
+    private readonly observed: Observed;
+    constructor(callback: ResizeObserverCallback) {
+      this.observed = { targets: new Set(), callback, observer: this };
+      observing.add(this.observed);
+    }
+    observe(target: Element) {
+      this.observed.targets.add(target);
+    }
+    unobserve(target: Element) {
+      this.observed.targets.delete(target);
+    }
+    disconnect() {
+      observing.delete(this.observed);
+    }
+  }
+  const scope = window as unknown as { ResizeObserver?: unknown };
+  const before = scope.ResizeObserver;
+  scope.ResizeObserver = FakeResizeObserver;
+  return {
+    report(target: Element) {
+      act(() => {
+        for (const { targets, callback, observer } of [...observing]) {
+          if (targets.has(target)) callback([{ target } as unknown as ResizeObserverEntry], observer as ResizeObserver);
+        }
+      });
+    },
+    uninstall() {
+      if (before === undefined) delete scope.ResizeObserver;
+      else scope.ResizeObserver = before;
+    },
+  };
 }
 
 /** What the test reads and changes: the node's data, as a run or a read coming back changes it. */
@@ -310,6 +354,50 @@ describe("a chip's preview in the one Curio tooltip", () => {
     expect(said()).toContain("A tuple of 2 values");
     expect(said()).toContain("8.0417");
     expect(reads).toBe(1);
+  });
+
+  test("an editor chip's open tooltip that grows as its read comes back is placed again above the chip, and stays open", async () => {
+    // jsdom lays nothing out. The card is 300 px wide: 60 px tall while it
+    // reads, 220 px once it holds the tuple's rows.
+    const original = Element.prototype.getBoundingClientRect;
+    const measure = jest.spyOn(Element.prototype, "getBoundingClientRect").mockImplementation(function (this: Element) {
+      if (this.getAttribute("role") !== "tooltip") return original.call(this);
+      const card = this as HTMLElement;
+      const left = parseFloat(card.style.left) || 0;
+      const top = parseFloat(card.style.top) || 0;
+      const height = (card.textContent ?? "").includes("A tuple of 2 values") ? 220 : 60;
+      return { left, top, width: 300, height, right: left + 300, bottom: top + height, x: left, y: top, toJSON: () => ({}) } as DOMRect;
+    });
+    const resize = installResizeObserver();
+    try {
+      const { dom, emit } = mount(fakeMonaco());
+      emit("onMouseMove", overChip(dom, 320, 400, 21));
+      await advance(400 + FRAME);
+      expect(said()).toContain("Reading input_1...");
+      // Centered over the chip, 320 to 376 px across, its foot 6 px above it.
+      const card = shown()[0];
+      expect([card.style.left, card.style.top]).toEqual(["198px", "334px"]);
+
+      // The read comes back under the pointer that rests on the chip, and the
+      // card grows by the tuple's rows; the browser reports its new size.
+      act(() => controls.setData({ inputs: { 1: { source: SUMMARY, preview: tuplePreview } } }));
+      await advance(FRAME);
+      expect(said()).toContain("A tuple of 2 values");
+      resize.report(card);
+      await advance(FRAME);
+      // Placed again, all of it above the chip. Grown down from where it was,
+      // it would cover the chip and the pointer, which would leave the editor
+      // for the card, and the editor would hide its tooltip.
+      expect([card.style.left, card.style.top]).toEqual(["198px", "174px"]);
+      expect(card.dataset.placement).toBe("top");
+
+      await advance(1000);
+      expect(shown()).toHaveLength(1);
+      expect(shown()[0]).toBe(card);
+    } finally {
+      resize.uninstall();
+      measure.mockRestore();
+    }
   });
 
   test("an editor chip's preview comes after the messages of the markers on it", async () => {
