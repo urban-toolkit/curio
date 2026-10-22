@@ -120,6 +120,21 @@ _CHIP_JS = r"""({ nodeId, inner }) => {
     return null;
 }"""
 
+# What lies under the page point (x, y): the element, its classes and text,
+# and whether it sits in an editor or in a target that asks for a tooltip.
+_UNDER_POINT_JS = r"""({ x, y }) => {
+    const el = document.elementFromPoint(x, y);
+    if (!el) return null;
+    const target = el.closest("[data-tooltip], [data-tooltip-content]");
+    return {
+        tag: el.tagName.toLowerCase(),
+        classes: el.getAttribute("class") || "",
+        text: (el.textContent || "").replace(/\s+/g, " ").trim().slice(0, 80),
+        inEditor: !!el.closest(".monaco-editor"),
+        tooltipTarget: target ? `${target.tagName.toLowerCase()} ${target.getAttribute("class") || ""}`.trim() : null,
+    };
+}"""
+
 
 def element_box(page, selector: str) -> dict:
     box = page.evaluate(_BOX_JS, selector)
@@ -201,13 +216,18 @@ def tooltip_close_up(page, tip: dict, target: dict | None = None) -> dict:
 
 def editor_chip_box(page, node_id: str, inner: str, *, timeout: float = 15000) -> dict:
     """The box of the chip ``[!! inner !!]`` in *node_id*'s editor, its line
-    scrolled into the editor's view."""
+    scrolled into the editor's view. Monaco draws a scroll in a later frame,
+    so a box read in the same call as the scroll is where the chip was: the
+    box counts once two reads in a row agree."""
     deadline = time.time() + timeout / 1000
     box = page.evaluate(_CHIP_JS, {"nodeId": node_id, "inner": inner})
-    while box is None and time.time() < deadline:
+    previous = None
+    while (box is None or box != previous) and time.time() < deadline:
+        previous = box
         page.wait_for_timeout(200)
         box = page.evaluate(_CHIP_JS, {"nodeId": node_id, "inner": inner})
     assert box, f"{node_id}'s editor shows no chip [!! {inner} !!]"
+    assert box == previous, f"the chip [!! {inner} !!] in {node_id}'s editor kept moving: {previous}, then {box}"
     return box
 
 
@@ -259,12 +279,29 @@ def hover_until_tooltip_says(
     *,
     absent: tuple[str, ...] = (),
     timeout: float = 15000,
+    box_now=None,
 ) -> dict:
     """A fresh hover of *box*: the pointer rests where nothing shows a
     tooltip until none shows, then on the middle of *box*, and the tooltip
     there is waited for as ``tooltip_saying`` waits for it. Without the wait
-    for none, the tooltip of what the pointer left could still be on screen."""
+    for none, the tooltip of what the pointer left could still be on screen.
+
+    When none comes, the failure says what lies under the pointer, and the
+    target's box read again (*box_now*, a function that reads it), so a
+    target that moved after its box was read shows as one."""
     move_pointer_away(page, selector)
     no_tooltip(page, f"{what}, before the pointer moves onto it", timeout=5000)
-    page.mouse.move(*assert_in_view(page, *box_middle(box), what))
-    return tooltip_saying(page, what, expected, selector, absent=absent, timeout=timeout)
+    point = assert_in_view(page, *box_middle(box), what)
+    page.mouse.move(*point)
+    try:
+        return tooltip_saying(page, what, expected, selector, absent=absent, timeout=timeout)
+    except AssertionError as error:
+        under = page.evaluate(_UNDER_POINT_JS, {"x": point[0], "y": point[1]})
+        try:
+            now = box_now() if box_now is not None else None
+        except AssertionError as reread:
+            now = f"not read again: {reread}"
+        raise AssertionError(
+            f"{error}\n  under the pointer at ({point[0]:.0f}, {point[1]:.0f}): {under}"
+            f"\n  the box hovered: {box}\n  the box now: {now}"
+        ) from None
