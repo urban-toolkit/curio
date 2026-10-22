@@ -415,7 +415,16 @@ class WorkflowSpec:
         is written in, which a Vega-Lite chart's spec names to write a column's
         name escaped where Vega-Lite reads a field. Raises
         ``CodeReferenceError``."""
-        return resolve_code_references(
+        return _resolved_or_raise(*self.node_code_and_problems(node, language, content, grammar))
+
+    def node_code_and_problems(
+        self, node, language: str, content: str | None = None, grammar: str | None = None,
+    ) -> tuple[str, list]:
+        """:meth:`node_code`, with each reference *node* cannot resolve yet
+        left as written and its problem listed rather than raised: what a check
+        of a document an agent proposes reads, since the node may be wired
+        after the proposal."""
+        return code_references_and_problems(
             node.content if content is None else content,
             node.widgets,
             language,
@@ -706,9 +715,25 @@ def resolve_code_references(
     that is missing or named twice, a selection holding more ids than a tag
     takes, or a scenario chip where no label is known.
     """
+    return _resolved_or_raise(*code_references_and_problems(
+        code, widgets, language, input_slots, shared, selections, grammar, input_scenarios=input_scenarios,
+    ))
+
+
+def code_references_and_problems(
+    code: str, widgets=(), language: str = "python", input_slots=(), shared=(), selections=(), grammar=None,
+    input_scenarios=None,
+) -> tuple[str, list]:
+    """:func:`resolve_code_references`, with each reference it cannot resolve
+    left as written and its problem (``{"reference", "message"}``) listed
+    rather than raised."""
     labels = input_scenarios or {}
     inputs = [{"slot": slot, **({"scenario": labels[slot]} if slot in labels else {})} for slot in input_slots]
-    resolved, problems = resolve_references(code, widgets, language, inputs, shared, selections, grammar)
+    return resolve_references(code, widgets, language, inputs, shared, selections, grammar)
+
+
+def _resolved_or_raise(resolved: str, problems: list) -> str:
+    """*resolved*, or ``CodeReferenceError`` naming every problem."""
     if problems:
         raise CodeReferenceError("\n".join(p["message"] for p in problems))
     return resolved

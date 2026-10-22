@@ -637,7 +637,7 @@ def _mint_node_content_write(
         user_key, project_id, loop_ctx,
         code=proposed, engine=(entry or {}).get("engine"),
         node_type=node.get("type"), params=params,
-        base=loop_ctx.get("_grounding_base"),
+        base=loop_ctx.get("_grounding_base"), node_id=node_id,
     )
     if refusal:
         return agents_tool_rounds._refuse_params(refusal)
@@ -730,6 +730,11 @@ def _mint_node_create(
     join, join_errors = _node_create_spatial_join(user_key, project_id, entry, params.get(spatial_join_settings.KEY))
     if join_errors:
         return agents_tool_rounds._refuse_params("; ".join(join_errors))
+    # Read before the gate: a chart's or a map's document is checked with the
+    # widgets the node declares.
+    widgets, widget_errors = _node_create_widgets(entry, params.get("widgets"))
+    if widget_errors:
+        return agents_tool_rounds._refuse_params("; ".join(widget_errors))
     # dev/114 (DEC-072): the source-grounding gate — BEFORE any store write.
     # A same-run node.create after the runtime minted dataset candidates is
     # refused too: the user reviews and confirms a source first (DEC-006).
@@ -737,7 +742,7 @@ def _mint_node_create(
         return agents_tool_rounds._refuse_params(agents_grounding._CANDIDATES_PENDING_TEXT)
     verdict, refusal = agents_grounding._gate_generated_content(
         user_key, project_id, loop_ctx,
-        code=proposed, engine=entry.get("engine"), node_type=entry["id"], params=params,
+        code=proposed, engine=entry.get("engine"), node_type=entry["id"], params=params, widgets=widgets,
     )
     if refusal:
         return agents_tool_rounds._refuse_params(refusal)
@@ -769,9 +774,6 @@ def _mint_node_create(
         appearance = node_appearance.normalize_appearance(raw_appearance)
     except node_appearance.AppearanceError as exc:
         return agents_tool_rounds._refuse_params(f"params.appearance: {exc}")
-    widgets, widget_errors = _node_create_widgets(entry, params.get("widgets"))
-    if widget_errors:
-        return agents_tool_rounds._refuse_params("; ".join(widget_errors))
     spec = projects_storage.read_spec(user_key, project_id)
     if spec is None:
         return "refused", "no saved project spec is available", None
