@@ -18,6 +18,7 @@ from utk_curio.backend.app.agents.application import tools
 from utk_curio.backend.app.agents.application import verify
 from utk_curio.backend.app.agents.infrastructure import egress
 from utk_curio.backend.app.agents.infrastructure.providers import ProviderConfig
+from utk_curio.backend.app.agents.repositories import project_agents
 from utk_curio.backend.app.agents.repositories import sessions
 from utk_curio.backend.app.agents.application import catalog as agents_catalog
 from utk_curio.backend.app.agents.application import dataset_resolution as agents_dataset_resolution
@@ -191,9 +192,13 @@ def _catalog_rows_for_discovery(user_key: str, project_id: str) -> list[dict]:
     to the discovery delegate, exactly as dev/115 already resolves the
     execution paths eagerly. Empty on failure: the delegate is then TOLD the
     catalog was unavailable rather than left to imagine it.
+
+    Every row of the listing: the delegate is shown the first of them
+    (``delegates._dataset_discover_inputs``), and its candidates, like a
+    selection, are checked against all of them (:func:`_grounded_catalog_rows`).
     """
     try:
-        return tools._catalog_search_rows(user_key, project_id, {})
+        return tools._catalog_listing_rows(user_key, project_id, {})
     except Exception:  # noqa: BLE001
         log.warning("Data Catalog listing unavailable for project %s", project_id,
                     exc_info=True)
@@ -378,7 +383,57 @@ def _verify_candidate_parts(parts: list, loop_ctx: dict | None = None) -> None:
                 if loop_ctx is not None and row["verification"].get("status") == "verified":
                     loop_ctx.setdefault("_verified_urls", {})[url] = row["verification"]
             agents_mint._mint_row_access(row)
-            agents_acquire._mint_row_acquirable(row, roster)
+            agents_acquire._mint_row_acquirable(row, roster, budget)
+
+
+def _grounded_catalog_rows(rows: list, listing: list) -> tuple[list, int]:
+    """The catalog-lane candidate *rows* whose ``datasetId`` the Data Catalog
+    *listing* holds, and how many it dropped. A kept row says installed or not
+    as the listing does, never as the reply did, and is named as the listing
+    names it when the reply named it nothing."""
+    listed = {str(r.get("id")): r for r in listing or [] if isinstance(r, dict) and r.get("id")}
+    kept = []
+    for row in rows:
+        found = listed.get(str(row.get("datasetId"))) if isinstance(row, dict) else None
+        if found is None:
+            continue
+        row["installed"] = bool(found.get("installed"))
+        row.setdefault("name", found.get("name"))
+        row.setdefault("sourceType", "catalog")
+        kept.append(row)
+    return kept, len(rows) - len(kept)
+
+
+#: What a reply's candidates card becomes when none of its rows is left: the
+#: user reads why, in place of a card with nothing to select.
+_NO_CANDIDATES_CARD = {
+    "type": "card",
+    "kind": "error",
+    "title": "No dataset candidates",
+    "lines": ["None of the datasets this reply proposed is in your Data Catalog."],
+}
+
+
+def _ground_catalog_lanes(parts: list, listing) -> None:
+    """A run's own candidates cards, checked as a delegated card is
+    (``delegates._mint_candidates_from_delegate``): a catalog row stays only
+    when the Data Catalog listing holds its dataset, and says installed or not
+    as the listing does (:func:`_grounded_catalog_rows`). A card left with no
+    row is replaced by :data:`_NO_CANDIDATES_CARD`. *listing* returns the
+    listing's rows; it is called once, and only when a card holds a catalog
+    row."""
+    rows = None
+    for index, part in enumerate(parts):
+        if not isinstance(part, dict) or part.get("type") != "datasetCandidates":
+            continue
+        lanes = part.get("lanes") or {}
+        if not lanes.get("catalog"):
+            continue
+        if rows is None:
+            rows = listing()
+        lanes["catalog"], _dropped = _grounded_catalog_rows(lanes["catalog"], rows)
+        if not any(lanes.get(lane) for lane in ("catalog", "external")):
+            parts[index] = {**_NO_CANDIDATES_CARD, "lines": list(_NO_CANDIDATES_CARD["lines"])}
 
 
 def _run_egress_budget(loop_ctx: dict) -> "egress.CallBudget":
@@ -561,7 +616,7 @@ def _grounding_context(
     hints: list[str] = []
     if "catalog.search" in (loop_ctx.get("granted") or []):
         hints.append("a `path` from a catalog.search row (granted — search first)")
-    if _delegates_discovery(user_key, loop_ctx.get("manifest")):
+    if _delegates_discovery(user_key, project_id, loop_ctx.get("manifest")):
         hints.append(
             "a URL the runtime verified — delegate the dataset.discover capability "
             "to find and verify candidates first, then build from the one the user confirms"
@@ -597,17 +652,18 @@ def _grounding_context(
     )
 
 
-def _delegates_discovery(user_key: str, manifest) -> bool:
-    """Whether *manifest*'s agent asks another for datasets: an agent its
-    ``delegatesTo`` names, resolved to a visible definition, declares
-    ``dataset.discover`` and is delegated it
-    (``delegation.visible_capability_entries``)."""
+def _delegates_discovery(user_key: str, project_id: str, manifest) -> bool:
+    """Whether *manifest*'s agent asks another for datasets: its delegation
+    paragraph offers ``dataset.discover`` (``delegation.offered_capability_entries``,
+    the list the run is given)."""
     if not getattr(manifest, "delegates_to", None):
         return False
     try:
+        spec = projects_storage.read_spec(user_key, project_id) or {}
+        installed = set(project_agents.project_agents(spec))
         return any(
             capability == "dataset.discover"
-            for capability, _name in delegation.visible_capability_entries(user_key, manifest)
+            for capability, _name in delegation.offered_capability_entries(user_key, installed, manifest)
         )
     except Exception:  # noqa: BLE001 - an unreadable definition delegates nothing
         return False

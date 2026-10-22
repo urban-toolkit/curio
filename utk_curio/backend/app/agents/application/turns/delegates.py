@@ -29,6 +29,7 @@ from utk_curio.backend.app.agents.repositories import sessions
 from utk_curio.backend.app.agents.application import lifecycle as agents_lifecycle
 from utk_curio.backend.app.agents.application import spec_reads as agents_spec_reads
 from utk_curio.backend.app.agents.application import tools as agents_tools
+from utk_curio.backend.app.agents.application.proposals import acquire as agents_acquire
 from utk_curio.backend.app.agents.application.proposals import mint as agents_mint
 from utk_curio.backend.app.agents.application.proposals import plans as agents_plans
 from utk_curio.backend.app.agents.application.turns import grounding as agents_grounding
@@ -77,18 +78,9 @@ def _mint_candidates_from_delegate(
             f"{who} returned no recognizable datasetCandidates block; "
             "report that honestly, and do not invent candidates or a source"
         ), "no-candidates"
-    known = {str(r.get("id")) for r in catalog_rows if isinstance(r, dict) and r.get("id")}
     lanes = block.get("lanes") or {}
     catalog_raw = lanes.get("catalog") if isinstance(lanes.get("catalog"), list) else []
-    kept = [r for r in catalog_raw if isinstance(r, dict) and str(r.get("datasetId")) in known]
-    dropped = len(catalog_raw) - len(kept)
-    for row in kept:
-        # Installed state is the LISTING's, never the child's claim.
-        listed = next((r for r in catalog_rows if str(r.get("id")) == str(row.get("datasetId"))), None)
-        if listed is not None:
-            row["installed"] = bool(listed.get("installed"))
-            row.setdefault("name", listed.get("name"))
-            row.setdefault("sourceType", "catalog")
+    kept, dropped = agents_grounding._grounded_catalog_rows(catalog_raw, catalog_rows)
     parsed = content._parse_dataset_candidates({"lanes": {
         "external": lanes.get("external") if isinstance(lanes.get("external"), list) else [],
         "catalog": kept,
@@ -103,6 +95,10 @@ def _mint_candidates_from_delegate(
     loop_ctx["_candidates_pending_review"] = True
     total = sum(len(v) for v in parsed["lanes"].values())
     note = f" {dropped} catalog row(s) were dropped (not in the Data Catalog)." if dropped else ""
+    unconfirmed = agents_acquire._unconfirmed(parsed["lanes"].get("external"))
+    if unconfirmed:
+        note += (f" {unconfirmed} Discovery resource id(s) went unconfirmed, so their rows "
+                 "are not marked downloadable.")
     return parsed, (
         f"{total} dataset candidate(s) are shown to the user for review; external rows "
         "carry the runtime's verification verdict." + note +
@@ -111,26 +107,33 @@ def _mint_candidates_from_delegate(
     ), "ok"
 
 
-def _dataset_discover_inputs(user_key: str, project_id: str, inputs: dict) -> dict:
+def _dataset_discover_inputs(
+    user_key: str, project_id: str, inputs: dict, *, catalog_rows: list | None = None
+) -> dict:
     """dev/114: the sixth DEC-063 application — a tool-less Dataset Finder
-    child gets the catalog listing and the reply schema as INPUTS."""
+    child gets the catalog listing and the reply schema as INPUTS.
+
+    The catalog is always the runtime's: *catalog_rows* when the caller
+    listed them (a Solve lists them while its request lasts), else read here.
+    A ``catalog`` the parent wrote into its request is replaced, since the
+    child's candidates are checked against the runtime's listing and a list
+    the parent made up would only mislead it. The child is shown the
+    listing's first rows, as catalog.search shows them, and how many it was
+    not shown."""
     enriched = dict(inputs)
-    if "catalog" not in enriched:
-        try:
-            rows = tools._catalog_search_rows(user_key, project_id, {})
-        except Exception:
-            log.warning("Could not list the Data Catalog for a dataset.discover "
-                        "delegate (project %s)", project_id, exc_info=True)
-            rows = []
-        enriched["catalog"] = {
-            "note": (
-                "The project's Data Catalog as catalog.search returned it"
-                if rows else
-                "The Data Catalog listing was empty or unavailable — the catalog lane "
-                "must stay empty; say so."
-            ),
-            "rows": rows,
-        }
+    rows = (
+        catalog_rows if catalog_rows is not None
+        else agents_grounding._catalog_rows_for_discovery(user_key, project_id)
+    )
+    enriched["catalog"] = {
+        "note": (
+            "The project's Data Catalog as catalog.search returned it"
+            if rows else
+            "The Data Catalog listing was empty or unavailable: the catalog lane "
+            "must stay empty; say so."
+        ),
+        **tools._cut("rows", rows, tools._CATALOG_SEARCH_MAX_ROWS),
+    }
     if "discoveryReplyContract" not in enriched:
         enriched["discoveryReplyContract"] = _discovery_reply_contract()
     return enriched
@@ -1228,18 +1231,24 @@ def _authoring_reuse_evidence(
             "caller must enlist it first). Extend one by name instead of creating "
             "a near-duplicate."
         ),
+        # The delegate cannot read the rest: it is told how many it was not shown.
+        **({"packagesElided": len(rows) - len(packages)} if len(rows) > len(packages) else {}),
         "packages": packages,
     }
 
 
 def _enriched_delegate_inputs(
-    user_key: str, project_id: str, loop_ctx: dict, capability: str, inputs: dict
+    user_key: str, project_id: str, loop_ctx: dict, capability: str, inputs: dict,
+    *, catalog_rows: list | None = None,
 ) -> dict:
     """dev/67-6: content-generation delegates get the composed node context
     appended server-side (never overwriting the model's own keys) — the child
     stops generating blind to the graph. The node resolves from the model's
     ``nodeId`` input or the parent attachment's node target; no node, no
-    enrichment (honest absence beats a fabricated neighborhood)."""
+    enrichment (honest absence beats a fabricated neighborhood).
+
+    *catalog_rows* is the Data Catalog listing a ``dataset.discover`` child is
+    shown, when the caller has already read it (:func:`_dataset_discover_inputs`)."""
     if capability == "research.verify" and "verification" not in inputs:
         # dev/67-4: DEC-046 children are structurally tool-less — the runtime
         # runs the deterministic validators and the child synthesizes over
@@ -1295,8 +1304,9 @@ def _enriched_delegate_inputs(
         # dev/114 — the SIXTH runtime-supplied-inputs application (DEC-063):
         # a tool-less Dataset Finder child cannot run catalog.search, so the
         # runtime lists the catalog for it and teaches the ONE reply schema
-        # (#269's). Model-supplied keys always win.
-        return _dataset_discover_inputs(user_key, project_id, inputs)
+        # (#269's). Model-supplied keys win, but for the catalog: that is
+        # always the runtime's listing.
+        return _dataset_discover_inputs(user_key, project_id, inputs, catalog_rows=catalog_rows)
     if capability != "node.content.generate" or "nodeContext" in inputs:
         return inputs
     node_id = inputs.get("nodeId")

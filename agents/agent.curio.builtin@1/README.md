@@ -27,7 +27,7 @@ The runtime composes a run's turns from the sections of `tools.md`, `protocol.md
 
 - A section is a `## <name>` line, then its text, up to the next such line. The runtime reads each by its name, so a section keeps its name; the text before the first one is for whoever edits the page.
 - In `tools.md`, a section is named by its tool's id. Its first paragraph is the tool's description, `### Native` holds what a run on native tools gets in its place, and `### Parameters` holds one `- <path>: <text>` line per parameter, by its path in the tool's parameters: `nodes.ref` is the `ref` of each entry of `nodes`, and `widgets[]` an entry of `widgets`. The section `parameters` holds the texts several tools share.
-- The runtime puts a run's own lists, such as its granted tools, its delegates or a roster's templates, on the lines after the sections that end in a colon. In `frames.md`'s `delegated-task`, `{parent}` and `{capability}` stand for the agent that delegates and the capability it asks for, once each.
+- The runtime puts a run's own lists, such as its granted tools, its delegates or a roster's templates, on the lines after the sections that end in a colon. In `frames.md`'s `delegated-task`, `{parent}` and `{capability}` stand for the agent that delegates and the capability it asks for, once each, and in its `templates-left-out`, `{count}` for how many templates a roster did not list, once.
 - A value an agent is given as JSON, a delegate contract or the keyword types, is one block fenced as `json`, and its markers render inside JSON strings.
 
 To edit one:

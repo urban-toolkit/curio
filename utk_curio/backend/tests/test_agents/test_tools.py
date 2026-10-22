@@ -519,7 +519,8 @@ class TestModelsSearch:
         # Deep Umbra and the weather GNN ship too, but this account added neither.
         assert set(by_id) == {self.DDRNET, self.DOWNLOAD}
         for row in by_id.values():
-            assert set(row) == self.ROW_KEYS
+            # The model whose 60 labels are cut also says how many were.
+            assert set(row) == self.ROW_KEYS | ({"labelsElided"} if row["id"] == self.DOWNLOAD else set())
             assert row["loader"] == f'model = curio_load_model("{row["id"]}")'
             # The line resolves through the runtime's own reading of node code.
             assert model_ids_in_code(row["loader"]) == [row["id"]]
@@ -567,6 +568,19 @@ class TestModelsSearch:
         )
         assert status == "ok"
         assert [row["id"] for row in json.loads(text)["models"]] == [self.DOWNLOAD]
+
+    def test_lists_that_stop_short_say_how_many_they_left_out(self, catalog):
+        """The rows a search returns, and the labels of each, stop at a
+        number; a model shown fewer is told how many it was not shown."""
+        status, text = tools.execute_read_tool(
+            "models.search", user_key=catalog, project_id="no-such-project", target=None, params={"limit": 1},
+        )
+        assert status == "ok"
+        payload = json.loads(text)
+        assert len(payload["models"]) == 1
+        assert payload.get("modelsElided") == 1
+        mine = next(row for row in tools._models_search_rows(catalog, {}) if row["id"] == self.DOWNLOAD)
+        assert mine.get("labelsElided") == 60 - tools._MODEL_LABELS_MAX
 
     def test_the_contract_states_its_params_and_rows(self):
         contract = tools.REGISTRY["models.search"]
@@ -792,6 +806,22 @@ class TestPackageTools:
         assert status == "ok"
         rows = json.loads(text)["packages"]
         assert [r["dirName"] for r in rows] == ["ai.utk.uhvi@1"]
+
+    def test_a_catalog_that_stops_short_says_how_many_packages_it_left_out(self, tmp_curio, monkeypatch):
+        from utk_curio.backend.app.packages import service as packages_services
+
+        self._write_spec([])
+        monkeypatch.setattr(tools, "_PACKAGES_CATALOG_MAX_ROWS", 1)
+        status, text = tools.execute_read_tool(
+            "packages.catalog", user_key=self.UKEY, project_id=self.PID,
+            target=None, params={},
+        )
+        assert status == "ok"
+        payload = json.loads(text)
+        everything = packages_services.agent_catalog_overview(self.UKEY, self.PID)
+        assert len(everything) > 1
+        assert len(payload["packages"]) == 1
+        assert payload.get("packagesElided") == len(everything) - 1
 
     def test_resolve_reports_real_permissions_and_deps(self, tmp_curio):
         status, text = tools.execute_read_tool(

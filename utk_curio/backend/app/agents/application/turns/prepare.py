@@ -19,6 +19,7 @@ from utk_curio.backend.app.agents.infrastructure import chat_capabilities
 from utk_curio.backend.app.agents.infrastructure import provider_config
 from utk_curio.backend.app.agents.infrastructure.providers import ProviderConfig
 from utk_curio.backend.app.agents.repositories import catalog_settings
+from utk_curio.backend.app.agents.repositories import project_agents
 from utk_curio.backend.app.agents.repositories import sessions
 from utk_curio.backend.app.agents.application import catalog as agents_catalog
 from utk_curio.backend.app.agents.application import dataflow_block as agents_dataflow_block
@@ -91,10 +92,13 @@ def _prepare_run(
     runtime_blocks.append(agents_examples.attached_block(coord, spec, record.get("target"), message))
     # Delegation (dev/48, DEC-046): offered only when the manifest names
     # delegates that resolve to visible definitions — server-resolved, never
-    # the manifest's raw list.
+    # the manifest's raw list. Each capability is offered under the name of
+    # the agent this dataflow would run for it.
     entries: list = []
     if manifest is not None and manifest.delegates_to:
-        entries = delegation.visible_capability_entries(user_key, manifest)
+        entries = delegation.offered_capability_entries(
+            user_key, set(project_agents.project_agents(spec)), manifest,
+        )
     native_tools = _native_tools_for(config, user_key, granted, entries)
 
     fenced_system = _system_content(preamble, instruction, configuration, granted, runtime_blocks, entries, native=False)

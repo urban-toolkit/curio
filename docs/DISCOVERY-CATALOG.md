@@ -317,7 +317,7 @@ Curio never shows a token's value, only whether one is set.
 
 ## 6. The Dataset Finder
 
-The **Dataset Finder** agent can look beyond your Data Catalog. Its candidate card has two lanes, **From your Data Catalog** and **External sources**, and an external row Curio can download is marked **Downloadable**: a row from one of these portals that offers downloads, or a plain https link to a file in a format Curio downloads, which goes through Direct URL.
+The **Dataset Finder** agent can look beyond your Data Catalog. Its candidate card has two lanes, **From your Data Catalog** and **External sources**, and an external row Curio can download is marked **Downloadable**: a resource of one of these portals that offers downloads, which the portal describes when the card is made, or a plain https link to a file in a format Curio downloads, which goes through Direct URL.
 
 Selecting rows writes a confirmation into the chat for you to send. A download the agent proposes appears as a review card, and nothing is downloaded until you apply it. The card shows the portal's own name, format and size for the resource, and an applied download lands in your Data Catalog like any other.
 
