@@ -25,8 +25,12 @@ edit shows on the next run.
 The texts the runtime composes a run's turns from (the tools, the reply
 protocol, the frames around what a run is given) are sections of pages: a
 ``## <name>`` line, then the text, which :func:`section` reads by name from
-the page's render. A JSON value an agent is given, such as a delegated run's
-reply contract, is a block fenced as ``json`` (:func:`json_block`).
+the page's render. A value only the run knows, such as a node's id, has its
+place in a section as ``{name}``, which :func:`fill` fills. What a check tells
+a model when it refuses or corrects what the model wrote is a section of
+``messages.md``, read by its id with its values filled (:func:`message`). A
+JSON value an agent is given, such as a delegated run's reply contract, is a
+block fenced as ``json`` (:func:`json_block`).
 
 A user's agent is never rendered: its own prompts are read as written, and
 only the pages it names as ``curio:<path>`` are Curio's renders.
@@ -69,6 +73,12 @@ _SECTION_RE = re.compile(r"^## (\S.*?)\s*$")
 _FENCE = "```"
 #: A block fenced as ``json``, its fences on lines of their own.
 _JSON_BLOCK_RE = re.compile(r"^```json[ \t]*\n(.*?)^```[ \t]*$", re.MULTILINE | re.DOTALL)
+#: The place of a value the code fills when it reads a section: the value's
+#: name in braces, ``{name}``.
+_VALUE_RE = re.compile(r"\{([a-z][a-z0-9_]*)\}")
+#: The page of the base entry that holds what a check tells a model when it
+#: refuses or corrects what the model wrote, one section per message.
+MESSAGES_PAGE = "messages.md"
 
 #: Every render a read returns, by file: the start-up render, and each file
 #: read since that the start-up render did not cover.
@@ -285,6 +295,35 @@ def section(page: str, name: str) -> str:
             f"{PAGE_PREFIX}{page} has no section {name!r}; its sections are: {', '.join(found) or 'none'}"
         )
     return found[name]
+
+
+def fill(text: str, values: Mapping[str, str], where: str) -> str:
+    """*text*, a section as an agent reads it, with each ``{name}`` it holds
+    replaced by ``values[name]``, in one pass, so a value is never read as the
+    place of another. Raises :class:`AgentTextError`, naming *where*, when the
+    text holds a place no value fills or a value has no place in it: a section
+    that lost a place would drop what the code knows."""
+    named = set(_VALUE_RE.findall(text))
+    missing = sorted(named - set(values))
+    unplaced = sorted(set(values) - named)
+    if missing or unplaced:
+        problems = []
+        if missing:
+            problems.append("names " + ", ".join("{" + name + "}" for name in missing) + ", which nothing fills")
+        if unplaced:
+            problems.append("has no place for " + ", ".join("{" + name + "}" for name in unplaced))
+        raise AgentTextError(f"{where} " + " and ".join(problems))
+    return _VALUE_RE.sub(lambda match: values[match.group(1)], text)
+
+
+def message(message_id: str, /, **values: object) -> str:
+    """What a check tells a model when it refuses or corrects what the model
+    wrote: the section *message_id* of the base entry's ``messages.md`` as an
+    agent reads it, each ``{name}`` filled with ``values[name]`` as an
+    f-string writes it. Raises :class:`AgentTextError`, naming the section,
+    when the page has no such message or its places and *values* differ."""
+    where = f"{PAGE_PREFIX}{MESSAGES_PAGE}, section {message_id}"
+    return fill(section(MESSAGES_PAGE, message_id), {name: format(value, "") for name, value in values.items()}, where)
 
 
 def json_block(text: str, where: str):

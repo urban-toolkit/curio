@@ -26,7 +26,6 @@ Invariants (dev/15 / DEC-046, structural rather than bookkept):
 
 from __future__ import annotations
 
-import re
 import time
 import uuid
 from dataclasses import dataclass
@@ -276,16 +275,17 @@ def _frame_inputs(parent_coord: str, capability: str, inputs: dict) -> str:
 
 def _fill_frame(frame: str, values: dict[str, str]) -> str:
     """*frame* with ``{parent}`` and ``{capability}`` each replaced by its run
-    value, in one pass, so a value is never read as a placeholder. Raises
-    ``agent_text.AgentTextError`` when the frame names either other than once:
-    a frame that lost one would drop who asked, or what for."""
+    value (``agent_text.fill``, one pass, so a value is never read as a
+    placeholder). Raises ``agent_text.AgentTextError`` when the frame names
+    either other than once: a frame that lost one would drop who asked, or
+    what for."""
+    where = f"{agent_text.PAGE_PREFIX}{builtin.FRAMES_FILE}, section delegated-task"
     for name in _FRAME_VALUES:
         if frame.count("{" + name + "}") != 1:
             raise agent_text.AgentTextError(
-                f"{agent_text.PAGE_PREFIX}{builtin.FRAMES_FILE}, section delegated-task, names "
-                f"{{{name}}} {frame.count('{' + name + '}')} times, where it names it once"
+                f"{where}, names {{{name}}} {frame.count('{' + name + '}')} times, where it names it once"
             )
-    return re.sub(r"\{(" + "|".join(_FRAME_VALUES) + r")\}", lambda match: values[match.group(1)], frame)
+    return agent_text.fill(frame, values, where)
 
 
 def run_delegate(
