@@ -782,16 +782,19 @@ class TestCapabilityFirstResolution:
     def test_capability_first_never_crosses_projects(self, client, user_and_token, tmp_curio):
         # Installed in ANOTHER project only → never "ok" from here; the
         # visible-roster fallback yields the reviewed install proposal for
-        # THIS project instead (execution never crosses projects).
+        # THIS project instead (execution never crosses projects). The
+        # Dataset Finder's delegatesTo names no Dataflow Builder, so
+        # capability-first reaches it.
         user, token = user_and_token
         key = _user_dir_key(user)
         pid_a = _project(client, token)
         pid_b = _project(client, token)
         df = builtin.get_builtin_manifest("agent.curio.dataset-finder@1")
-        client.post(f"/api/agents/projects/{pid_b}/install", json={"coord": RS}, headers=_auth(token))
-        r = delegation.resolve(key, pid_a, df, "research.notes.compose")
+        client.post(f"/api/agents/projects/{pid_b}/install", json={"coord": self.DFB}, headers=_auth(token))
+        assert delegation.resolve(key, pid_b, df, "dataflow.orchestrate").outcome == "ok"
+        r = delegation.resolve(key, pid_a, df, "dataflow.orchestrate")
         assert r.outcome == "not-installed"
-        assert r.coord == RS
+        assert r.coord == self.DFB
 
     def test_missing_delegates_to_entry_still_preferred_over_fallback_absence(self, client, user_and_token, tmp_curio):
         # Nothing installed declares dataset.discover, but dataset-finder (a

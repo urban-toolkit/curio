@@ -267,7 +267,7 @@ A reply of Node Builder or Dataflow Builder that carries no review card says **N
 
 An agent may require others: the agents a job of its own runs without asking the model, such as the Node Builder and the Dataset Finder that the Dataflow Builder's Solve runs. The drawer says so before you click: the button reads **Add to project (+2 required)**, and its tooltip names what else will be added. Adding brings in all of them at once. A required agent that ships with Curio is added at its shipped version; one of your own at the highest version in your imports or the catalog.
 
-The job itself goes to the agent in the dataflow that declares its capability: the one the requiring agent's `delegatesTo` names first, else any other that declares it. So an agent of your own that requires your own copies of the Node Builder and the Dataset Finder runs them.
+The job itself goes to the agent in the dataflow that declares its capability: the one the requiring agent's `delegatesTo` names first, else any other that declares it and that `delegatesTo` does not name. So an agent of your own that requires your own copies of the Node Builder and the Dataset Finder runs them.
 
 The reverse holds too. Removing an agent that another added agent requires is refused, with a message naming the agent that needs it, so a dataflow never holds a broken reference.
 
@@ -441,7 +441,7 @@ Curio finds the agent for each of its own jobs by the capability it declares:
 | `dataflow.orchestrate` | plan a dataflow; its chat has the **Solve** strip, and API Settings lists the agents its Solve runs |
 | `node.build` | build nodes on the canvas; its chat says when a reply changed nothing on it |
 
-When several agents in the dataflow declare a capability, the one the asking agent's `delegatesTo` names first is picked. An agent in the dataflow that the asking agent's `delegatesTo` does not name for a capability takes it too, and an agent is told, by name, every agent its work can go to.
+When several agents in the dataflow declare a capability, the one the asking agent's `delegatesTo` names first is picked. When none of those is in the dataflow, an agent in it that `delegatesTo` does not name at all takes the capability, so adding an agent of your own lets the others hand it that work. An agent `delegatesTo` names takes only the capabilities its entry names.
 
 ### Modes
 

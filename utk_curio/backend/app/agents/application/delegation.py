@@ -80,17 +80,20 @@ def resolve(user_key: str, project_id: str, parent: AgentManifest, capability: s
     dev/49-recorded widening landed in memo dev/52).
 
     Order: (1) the parent's ``delegatesTo`` entries, in declaration order
-    (dev/15: order = preference); (2) ANY other template installed in THIS
-    project that declares the capability, in sorted-coord order
-    (deterministic tie-break). Never consults other projects. When nothing
-    installed matches but a ``delegatesTo`` entry is visible in the catalog,
-    the outcome is ``not-installed`` (the missing-specialist proposal path);
-    a capability nobody declares is ``unresolvable``.
+    (dev/15: order = preference); (2) any other template installed in THIS
+    project that declares the capability and that ``delegatesTo`` does not
+    name, in sorted-coord order (deterministic tie-break). Never consults
+    other projects. When nothing installed matches but a ``delegatesTo``
+    entry is visible in the catalog, the outcome is ``not-installed`` (the
+    missing-specialist proposal path); a capability nobody declares is
+    ``unresolvable``.
 
-    An internal built-in is never installed: it resolves from the roster, so
-    it is ``ok`` wherever the walk reaches it, and never an install proposal.
-    The parent's own capabilities reach it only through an entry naming
-    itself (its modes): neither fallback hands one back to it.
+    An agent an entry names takes only the capabilities its entry delegates
+    (a scoped entry names them): neither fallback reaches it for another.
+    The parent's own capabilities reach it the same way, only through an
+    entry naming itself (its modes). An internal built-in is never
+    installed: it resolves from the roster, so it is ``ok`` wherever the walk
+    reaches it, and never an install proposal.
     """
     from utk_curio.backend.app.projects import storage as projects_storage
 
@@ -121,11 +124,12 @@ def resolve_among(
             if visible_m is not None and capability in visible_m.capability_ids:
                 missing = Resolution("not-installed", visible_coord, visible_m)
     # Capability-first fallback: any other installed template declaring it.
-    preferred = {a for a in preferred_ids if parent.delegates(a, capability)}
+    # An agent delegatesTo names was walked above for what its entry
+    # delegates, and takes nothing else; the parent takes only its modes.
+    named = {*preferred_ids, parent.agent_id}
     for coord in sorted(installed, key=coord_order):
-        agent_id = coord.split("@", 1)[0]
-        if agent_id in preferred or agent_id == parent.agent_id:
-            continue  # walked above, or the parent itself
+        if coord.split("@", 1)[0] in named:
+            continue
         m = catalog._resolve_definition(user_key, coord)
         if m is not None and capability in m.capability_ids:
             return Resolution("ok", coord, m)
@@ -136,10 +140,11 @@ def resolve_among(
 
         for m in builtin.list_builtin_manifests():
             # An internal agent is reached only through a parent that
-            # delegates it that capability, which the walk above covers.
+            # delegates it that capability, which the walk above covers, and
+            # so is an agent delegatesTo names.
             if (
                 capability in m.capability_ids and not builtin.is_internal(m.dir_name)
-                and m.agent_id != parent.agent_id
+                and m.agent_id not in named
             ):
                 missing = Resolution("not-installed", m.dir_name, m)
                 break
@@ -209,10 +214,10 @@ def offered_capability_entries(
 
     First the capabilities :func:`visible_capability_entries` offers, in its
     order; a delegate that is visible but not installed keeps its own name,
-    since asking for it proposes its install. Then the capabilities of the
-    other agents installed in the dataflow that those entries do not offer,
-    which the capability-first fallback reaches. The parent's own
-    capabilities are offered only through an entry naming itself."""
+    since asking for it proposes its install. Then those the capability-first
+    fallback reaches: the capabilities of the installed agents ``delegatesTo``
+    does not name. An agent an entry names is offered only what its entry
+    delegates, and the parent only its own modes."""
     entries: list[tuple[str, str]] = []
     offered: set[str] = set()
     for capability, name in visible_capability_entries(user_key, parent):
@@ -221,8 +226,9 @@ def offered_capability_entries(
             name = resolved.manifest.name
         offered.add(capability)
         entries.append((capability, name))
+    named = {*parent.delegates_to, parent.agent_id}
     for coord in sorted(installed, key=coord_order):
-        if coord.split("@", 1)[0] == parent.agent_id:
+        if coord.split("@", 1)[0] in named:
             continue
         m = catalog._resolve_definition(user_key, coord)
         for capability in (m.capability_ids if m is not None else ()):
