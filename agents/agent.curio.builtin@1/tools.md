@@ -107,7 +107,7 @@ List the Nodes Catalog's node packages with this project's install state. Params
 
 ## packages.resolve
 
-Resolve one or more catalog packages against this account's installed set. Params: {"dirNames": ["<dirName from packages.catalog>", ...]}. Returns each package's requested permissions and python/js dependencies, plus any version conflicts. Use it to enrich an identify/recommend answer before proposing an install.
+Resolve one or more catalog packages against this account's installed set. Params: {"dirNames": ["<dirName from packages.catalog>", ...]}. Returns each package's requested permissions, its python/js dependencies, the packages it names in dependencies.packages (packageDeps), which adding it adds, and the public functions its modules define (functions: by module, each with its call and its docstring's first paragraph), which a template of the package, or of a package that names it in dependencies.packages, imports; plus any version conflicts. Use it to enrich an identify/recommend answer before proposing an install, and to find the functions a node's code can import.
 
 ### Parameters
 

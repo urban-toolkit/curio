@@ -261,6 +261,8 @@ Not every agent accepts every target: an agent declares which kinds it works wit
 
 The Researcher reads the dataflow as it is on screen with every message, unsaved edits included, and when it is attached to a node, that node's content, what feeds it and its last run.
 
+An agent that writes code, in its chat or when Solve or another agent asks it, also reads what the dataflow can use: the datasets and models under **Datasets in project** and **Models in project**, each with the line that loads it, and the names of your Node code keys, never their values. When it writes a node's code, it reads that node's template too: its whole description, its starter, and the functions the node's code can import from the template's package and from the packages that package needs. When that is more than fits, it reads the first part and how much was left out.
+
 Each attachment has its own chat transcript and its own **intent**, the editable first instruction, which starts as the definition's own prompt. An agent must be added to the dataflow before you can attach it.
 
 When an agent proposes a change to your dataflow, it does not apply it. The proposal appears as a **review card**, and applying it is a separate click, which first checks that the target has not changed since the proposal. Dismissing it leaves nothing behind. A chart or a map an agent proposes is checked against its grammar's schema before its card appears.

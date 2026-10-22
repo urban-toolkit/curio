@@ -15,6 +15,7 @@ import time
 import uuid
 
 from utk_curio.backend.app.agents.application import attachments
+from utk_curio.backend.app.agents.application import dataflow_block as agents_dataflow_block
 from utk_curio.backend.app.agents.application import delegation
 from utk_curio.backend.app.agents.application import source_grounding
 from utk_curio.backend.app.agents.application import tools
@@ -263,6 +264,7 @@ def _run_delegate_traced(
     parent_name: str | None = None,
     node_id: str | None = None,
     home_create: bool = True,
+    dataflow_block: str | None = None,
 ) -> tuple[str, str, dict, str | None]:
     """One delegated task, TRACED (memo dev/72): the DEC-046 seam stays pure —
     this wrapper resolves the task's home attachment, writes the framed task
@@ -273,7 +275,8 @@ def _run_delegate_traced(
 
     An agent that hands work to one of its own modes and names no node opens
     no chat of its own: like an internal agent's, its record rides the
-    parent's turn."""
+    parent's turn. *dataflow_block* goes to the child as
+    ``delegation.run_delegate`` says."""
     home_attachment_id: str | None = None
     home_session_id: str | None = None
     try:
@@ -310,6 +313,7 @@ def _run_delegate_traced(
         parent_execution_id=parent_execution_id,
         parent_coord=parent_coord,
         attachment_id=attachment_id,
+        dataflow_block=dataflow_block,
     )
     if isinstance(home_session_id, str):
         try:
@@ -1084,19 +1088,22 @@ def _draft_corrector(
     def _redelegate(extra: dict) -> tuple[str, str]:
         inputs = dict(req.get("inputs") or {})
         inputs.update(extra)
+        enriched = _enriched_delegate_inputs(user_key, project_id, loop_ctx, req["capability"], inputs)
         status, text, child, _home = _run_delegate_traced(
             user_key,
             project_id,
             resolution.coord,
             req["capability"],
-            _enriched_delegate_inputs(
-                user_key, project_id, loop_ctx, req["capability"], inputs,
-            ),
+            enriched,
             config,
             parent_execution_id=execution_id,
             parent_coord=loop_ctx["coord"],
             attachment_id=loop_ctx.get("attachment_id"),
             parent_name=getattr(loop_ctx.get("manifest"), "name", None),
+            dataflow_block=agents_dataflow_block.for_delegated_run(
+                user_key, project_id, req["capability"], enriched,
+                datasets=loop_ctx.get("dataflow_datasets"),
+            ),
         )
         delegations.append(child)
         return status, text

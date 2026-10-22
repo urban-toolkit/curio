@@ -168,10 +168,83 @@ def test_the_dataset_finder_is_not_told_a_fetch_author_delegation_proposes_an_in
     assert "so an install proposal reaches the user" not in _prompt(DATASET_FINDER)
 
 
-def test_a_scout_charts_spec_is_kept_as_it_is_only_in_a_plan():
+#: A sentence that tells an agent to keep a spec as it is.
+_KEEPS_A_SPEC = re.compile(r"\bspecs?\b[^.;]*\bas it is\b", re.IGNORECASE)
+#: A sentence that tells an agent to set widgets: ``set``, then a widget in
+#: the same clause. A user who "sets" a value, and a widget that "is set",
+#: name no step of the agent's.
+_SETS_WIDGETS = re.compile(r"\bset\b[^.;]*\bwidgets?\b", re.IGNORECASE)
+#: The sentence #1070 narrowed, as the preamble said it of Scout's charts.
+_NARROWED = (
+    "Each is a Vega-Lite node whose spec is its template's: in a plan, set the columns it plots in its "
+    "widgets, and its Combine widget, where it has one, to the Vega-Lite aggregate it combines a "
+    "scenario's rows with (mean, sum, median, min, max or count), and leave its spec as it is."
+)
+
+
+def _claims(text: str) -> list[str]:
+    """The sentences of *text* that tell an agent to keep a spec as it is or
+    to set widgets, each sentence and each line on its own."""
+    return [
+        sentence.strip() for sentence in re.split(r"(?<=[.!?])\s+|\n", text)
+        if _KEEPS_A_SPEC.search(sentence) or _SETS_WIDGETS.search(sentence)
+    ]
+
+
+def _what_agents_read() -> list[tuple[str, str]]:
+    """Every text an agent can read, with where it is: each page of the base
+    entry and each prompt of each agent Curio ships, rendered as a run reads
+    them, and the description and the starter of each template of each
+    package Curio ships, which a run's dataflow block shows (a model
+    package's template without a source starts with its model's cell)."""
+    from pathlib import Path
+
+    from utk_curio.backend.app.agents.domain import agent_text
+    from utk_curio.backend.app.packages.application.model_packages import model_default_cell
+    from utk_curio.backend.app.packages.repositories.manifests import load_package_manifest
+
+    repo = Path(__file__).resolve().parents[4]
+    texts = [(file.relative_to(repo).as_posix(), agent_text.render(file)) for file in agent_text.shipped_files()]
+    for folder in sorted(path.parent for path in (repo / "packages").glob("*/manifest.json")):
+        manifest = load_package_manifest(folder)
+        for template in manifest.templates:
+            where = f"{manifest.package_id}/{template.template_id}"
+            texts.append((f"{where}, its description", template.description or ""))
+            if template.source:
+                texts.append((f"{where}, its starter", (folder / template.source).read_text(encoding="utf-8")))
+            elif manifest.kind == "model" and manifest.model is not None:
+                texts.append((f"{where}, its starter", model_default_cell(manifest, folder)))
+    return texts
+
+
+def test_a_spec_is_kept_as_it_is_and_a_templates_widgets_set_only_in_a_plan():
     """Only a plan starts a node from its template's starter and sets the
     template's widgets by name (``plans._content_starters``,
     ``plan_scenarios._set_over``); ``node.create`` takes the content and the
-    widgets it is given, and ``node.content.write`` carries no widgets."""
-    sentence = _sentence(_prompt(DATAFLOW_BUILDER, "system"), "leave its spec as it is")
-    assert "in a plan" in sentence
+    widgets it is given, and ``node.content.write`` carries no widgets. So a
+    sentence that tells an agent to keep a spec as it is, or to set a
+    template's widgets, says it is in a plan, wherever an agent reads it:
+    every page and prompt, and every template's description and starter, the
+    text of a package's nodes that a run's dataflow block shows. Scout's
+    charts' descriptions make no such claim without it."""
+    # The check finds the sentence #1070 narrowed, and holds it to the plan.
+    assert _claims(_NARROWED) == [_NARROWED]
+    assert _claims(_NARROWED.replace("in a plan, set", "set")) and "in a plan" not in _NARROWED.replace(
+        "in a plan, set", "set")
+    for innocent in ("A widget is a value a node's code reads that the user sets in the node's Widgets tab.",
+                     "A copy whose height factor widget is set to 2.", "Keep your answers specific."):
+        assert _claims(innocent) == [], innocent
+
+    texts = _what_agents_read()
+    places = [where for where, _text in texts]
+    assert any(place.endswith("default_preamble.md") for place in places), places
+    assert any(place.endswith("orchestration_instruction.md") for place in places), places
+    charts = [(where, text) for where, text in texts
+              if where.startswith("curio.scout/") and where.endswith(", its description")]
+    assert len(charts) >= 15, charts
+    unnarrowed = [(where, claim) for where, text in texts for claim in _claims(text) if "in a plan" not in claim]
+    assert not unnarrowed, (
+        "these tell an agent to keep a spec as it is or to set a template's widgets, which only a plan "
+        f"does, and do not say so: {unnarrowed}"
+    )
+    assert not [(where, claim) for where, text in charts for claim in _claims(text) if "in a plan" not in claim]

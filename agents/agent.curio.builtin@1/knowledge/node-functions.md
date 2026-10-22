@@ -47,7 +47,7 @@ Gives where to write a file derived from one file of a collection, such as a vid
 
 Engines: python.
 
-Gives the path to write a file the node returns, such as a raster or a mosaic's VRT; a function that writes such files takes it whole, as `raster_calculate(..., output_file=curio_output_file)` does.
+Gives the path to write a file the node returns, such as a raster or a mosaic's VRT; a function that writes such files takes it whole: `output_file=curio_output_file`.
 
 - `name`: one plain file name, such as `mosaic.vrt`.
 

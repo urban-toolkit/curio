@@ -4,11 +4,12 @@ This folder is the base entry of the Agent Catalog: the pages every agent Curio 
 
 - `default_preamble.md`: the preamble every agent Curio ships runs before its instruction. It includes the pages of `knowledge/`.
 - `knowledge/`: one page per feature of Curio, such as its nodes, widgets, selection tags, scenarios, catalogs and the Map Edits node's code (`map-edits.md`). `knowledge/node-functions.md` lists every function node code calls, in fixed line shapes that [`node_functions.py`](../../utk_curio/backend/app/agents/domain/node_functions.py) reads for the agents' checks; the user guides link to it.
+- `dataflow-block.md`: the words of the block a run that writes code is given of its dataflow, one section per line the runtime writes, which [`dataflow_block.py`](../../utk_curio/backend/app/agents/domain/dataflow_block.py) reads by name; the line that frames the block is the `dataflow-block` section of `frames.md`. `{count}` and `{tool}` stay where the runtime writes them.
 - `examples.md`: the index of the dataflows Curio ships, from which a run gets its worked examples. Its links lead to the dataflows from this folder.
 - `rules/`: text the agents' prompts and pages include whole: the package backend contract, the Researcher's rules for checking a fact and for writing notes, and the rules of a dataflow plan.
 - `tools.md`: what a run is told of each tool it is granted: its description, the description a run on native tools gets in its place, and the text of each parameter.
 - `protocol.md`: how a run replies: the follow-up prompts it may suggest, how it asks for a tool or a delegate, and the dataset candidates block.
-- `frames.md`: the lines that frame what the runtime hands a run: the canvas context, a delegated task's inputs, the configuration, the worked examples and the template rosters.
+- `frames.md`: the lines that frame what the runtime hands a run: the canvas context, the dataflow block, a delegated task's inputs, the configuration, the worked examples and the template rosters.
 - `delegate-contracts.md`: what a delegated run is told to reply with: the build request, the notes reply, and the rule a delegated Dataset Finder answers to.
 - `conversation-title.md`: the prompt of the call that titles a conversation.
 - `keyword-types.md`: the keyword types Curio ships, the default of the Agent Catalog's Keyword types setting.
