@@ -7,9 +7,10 @@
  * - a `title` on an element, which the browser shows as its own grey box,
  *   after about a second and never on keyboard focus or touch. That covers
  *   react-flow's Handle, which hands its props to a div; FontAwesomeIcon, which
- *   turns a `title` into an SVG <title>, shown the same way; an SVG <title>
- *   written out; and a title set with setAttribute. A component's own `title`
- *   prop (a dialog's heading, a tab's label) is its own business;
+ *   turns a `title` into an SVG <title>, shown the same way; every MUI
+ *   component, which hands a prop it does not know to its root element; an
+ *   SVG <title> written out; and a title set with setAttribute. A component's
+ *   own `title` prop (a dialog's heading, a tab's label) is its own business;
  * - react-bootstrap's OverlayTrigger and Tooltip, and MUI's Tooltip;
  * - a Monaco decoration's hoverMessage, and an editor whose own hover is on.
  *   Monaco draws its hovers inside the node, so the canvas's zoom scales them
@@ -40,6 +41,9 @@ const NATIVE_TITLE_COMPONENTS: Array<[string, string]> = [
   ["@reactflow/core", "Handle"],
   ["@fortawesome/react-fontawesome", "FontAwesomeIcon"],
 ];
+
+/** Libraries each of whose components hands a `title` to the page: imported from it or a module under it. */
+const NATIVE_TITLE_LIBRARIES = ["@mui/material"];
 
 /** Other tooltips, which may not be imported: [module, export], "default" for a default import. */
 const OTHER_TOOLTIPS: Array<[string, string]> = [
@@ -91,6 +95,22 @@ function localNames(source: ts.SourceFile, module: string, exported: string): st
   return names;
 }
 
+/** Every name *source* imports from *library*, or from a module under it (`@mui/material/Checkbox`). */
+function libraryNames(source: ts.SourceFile, library: string): string[] {
+  const names: string[] = [];
+  for (const statement of source.statements) {
+    if (!ts.isImportDeclaration(statement) || !ts.isStringLiteral(statement.moduleSpecifier)) continue;
+    const module = statement.moduleSpecifier.text;
+    if ((module !== library && !module.startsWith(`${library}/`)) || !statement.importClause) continue;
+    const clause = statement.importClause;
+    if (clause.name) names.push(clause.name.text);
+    if (clause.namedBindings && ts.isNamedImports(clause.namedBindings)) {
+      for (const element of clause.namedBindings.elements) names.push(element.name.text);
+    }
+  }
+  return names;
+}
+
 /** An element the page draws as it is written (`div`, `button`, `svg:title`), not a component. */
 const intrinsic = (tag: ts.JsxTagNameExpression) =>
   (ts.isIdentifier(tag) && /^[a-z]/.test(tag.text)) || ts.isJsxNamespacedName(tag);
@@ -113,7 +133,10 @@ function findings(file: string, text: string): Finding[] {
       out.push({ rule: "import", at: `${relative(file)}: ${name}, ${exported} of ${module}` });
     }
   }
-  const titleToPage = new Set(NATIVE_TITLE_COMPONENTS.flatMap(([module, exported]) => localNames(source, module, exported)));
+  const titleToPage = new Set([
+    ...NATIVE_TITLE_COMPONENTS.flatMap(([module, exported]) => localNames(source, module, exported)),
+    ...NATIVE_TITLE_LIBRARIES.flatMap((library) => libraryNames(source, library)),
+  ]);
 
   const visit = (node: ts.Node): void => {
     if (ts.isJsxAttribute(node) && node.name.getText(source) === "title") {
@@ -191,10 +214,15 @@ describe("no hover but the one Curio tooltip", () => {
       'import { Tooltip } from "@mui/material";',
       'import { Handle as Port } from "reactflow";',
       'import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";',
+      'import { Checkbox, FormControlLabel as Labelled } from "@mui/material";',
+      'import Switch from "@mui/material/Switch";',
       "// title=\"Delete node\" and hoverMessage, named in a comment, are no use of either",
       'const button = <button title="Delete node" />;',
       'const port = <Port title="input_0" />;',
       'const icon = <FontAwesomeIcon icon={faPlay} title="Run" />;',
+      'const box = <Checkbox title="Use edit 1" />;',
+      'const row = <Labelled title="Hide the other layers" control={box} label="Solo" />;',
+      'const toggle = <Switch title="On" />;',
       "const map = <svg><title>Map</title></svg>;",
       'const chip = { hoverMessage: { value: "season" } };',
       'el.setAttribute("title", "Delete node");',
@@ -207,7 +235,7 @@ describe("no hover but the one Curio tooltip", () => {
       import: rules.filter((rule) => rule === "import").length,
       title: rules.filter((rule) => rule === "title").length,
       hoverMessage: rules.filter((rule) => rule === "hoverMessage").length,
-    }).toEqual({ import: 4, title: 5, hoverMessage: 1 });
+    }).toEqual({ import: 4, title: 8, hoverMessage: 1 });
 
     const editors = [
       'import Editor from "@monaco-editor/react";',
