@@ -307,13 +307,16 @@ export function usePackageCatalog(options: UsePackageCatalogOptions): PackageCat
         setConflictReport(
           await probeInstallConflicts(mode === "update" ? dirs : [...dirs, pkg.dirName]),
         );
-      } catch {
-        // A probe that failed for any reason but a conflict report: no review to show.
+      } catch (err) {
+        // A probe that failed for any reason but a conflict report: no review
+        // to show, and the banner says why, as for a package the add needs
+        // that neither the account nor the catalog has.
         onAddedRef.current = null;
         setInstallCandidate(null);
+        reportActionError(`Couldn't ${mode === "update" ? "update" : "add"} ${pkg.name}`, err);
       }
     },
-    [scope.kind, allInstalled, ensureSavedProjectId],
+    [scope.kind, allInstalled, ensureSavedProjectId, reportActionError],
   );
   const probeInstall = useCallback(
     (pkg: PackagePayload, options?: { onAdded?: () => void }) => {

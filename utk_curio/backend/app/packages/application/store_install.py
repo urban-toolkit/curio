@@ -50,6 +50,7 @@ from utk_curio.backend.app.packages.infrastructure.locks import package_seed_loc
 from utk_curio.backend.app.packages.infrastructure.pip_runner import PipInstallError
 from utk_curio.backend.app.packages.application import (
     model_packages as packages_model_packages,
+    package_dependencies as packages_dependencies,
     provisioning as packages_provisioning,
     store_reads as packages_store_reads,
 )
@@ -457,8 +458,10 @@ def export_package_archive(
 
 
 def _ensure_user_store_install(user_key: str, dir_name: str) -> InstallOutcome:
-    """Copy *dir_name* from the shared catalog when it is missing, install the
-    python deps its manifest declares, and report whether they import.
+    """Copy *dir_name* from the shared catalog when it is missing, with each
+    package it needs (``dependencies.packages``, and theirs in turn) that the
+    store lacks, install the python deps each declares, and report whether
+    they import.
 
     The pip step runs synchronously inside the request — heavy installs like
     ``torch`` can take many minutes (see :mod:`.pip_runner`). The Install button
@@ -471,20 +474,76 @@ def _ensure_user_store_install(user_key: str, dir_name: str) -> InstallOutcome:
     package that costs one memo lookup after the first probe in the process; a
     backend-bearing one re-probes its overlay, which is deliberately unmemoised
     (see :func:`_declared_import_failures`).
+
+    Every package it needs is resolved before anything is copied
+    (``package_dependencies.packages_to_add``), so a package that neither the
+    store nor the catalog holds at a version its entry allows refuses the whole
+    add, naming both. A package the store holds is kept as it is, and one
+    already installed still brings the packages it needs that the store lacks.
+    The packages it needs land first; when one fails, every copy this call made
+    is taken back (:func:`_copy_from_catalog`). ``InstallOutcome.packages`` is
+    the package with every package it needs, for the caller's lockfile.
     """
-    if packages_store_reads._is_installed_in_user_store(user_key, dir_name):
-        return InstallOutcome(
-            copied=False,
-            import_errors=packages_provisioning._declared_import_failures(user_key, dir_name),
-        )
-    # Before the copy, not in provision_python_deps: a refusal there leaves
-    # the files in the store, and the next call takes the branch above (#451).
-    packages_provisioning.assert_may_install()
+    copy_it = not packages_store_reads._is_installed_in_user_store(user_key, dir_name)
+    if copy_it:
+        # Before the copy, not in provision_python_deps: a refusal there leaves
+        # the files in the store, and the next call takes the other branch (#451).
+        packages_provisioning.assert_may_install()
+        _catalog_copy(dir_name)
+    needed = packages_dependencies.packages_to_add(user_key, dir_name)
+    missing = [
+        other for other in needed
+        if other != dir_name and not packages_store_reads._is_installed_in_user_store(user_key, other)
+    ]
+    if missing and not copy_it:
+        packages_provisioning.assert_may_install()
+    added = _copy_from_catalog(user_key, missing + ([dir_name] if copy_it else []))
+    import_errors = dict(added.import_errors)
+    if not copy_it:
+        import_errors.update(packages_provisioning._declared_import_failures(user_key, dir_name))
+    return InstallOutcome(
+        copied=copy_it,
+        installed=added.installed,
+        import_errors=import_errors,
+        packages=tuple(needed),
+    )
+
+
+def _catalog_copy(dir_name: str) -> Path:
+    """The shared catalog's copy of *dir_name*; a 404 when it has none."""
     src = packages_catalog_dir.catalog_root() / dir_name
     if not src.is_dir():
         raise PackageServiceError(
             f"catalog has no package {dir_name}", 404,
         )
+    return src
+
+
+def _copy_from_catalog(user_key: str, dir_names: list[str]) -> InstallOutcome:
+    """Copy each of *dir_names* from the shared catalog, in order, and install
+    the python deps each declares. When one fails, every copy this call made
+    is taken back before the failure is raised: an add lands whole or not at
+    all. ``installed`` and ``import_errors`` are every copy's."""
+    copied: list[str] = []
+    installed: set[str] = set()
+    import_errors: dict[str, str] = {}
+    try:
+        for dir_name in dir_names:
+            outcome = _copy_one_from_catalog(user_key, dir_name)
+            copied.append(dir_name)
+            installed.update(outcome.installed)
+            import_errors.update(outcome.import_errors)
+    except Exception:
+        for dir_name in reversed(copied):
+            _take_back(user_key, dir_name)
+        raise
+    return InstallOutcome(copied=bool(copied), installed=sorted(installed), import_errors=import_errors)
+
+
+def _copy_one_from_catalog(user_key: str, dir_name: str) -> InstallOutcome:
+    """Copy *dir_name* from the shared catalog and install the python deps its
+    manifest declares; when pip fails, the copy is taken back."""
+    src = _catalog_copy(dir_name)
     try:
         result = install_package_from_directory(user_key, src, replace=False)
     except InstallerError as exc:
@@ -496,7 +555,7 @@ def _ensure_user_store_install(user_key: str, dir_name: str) -> InstallOutcome:
     packages_backend_runtime.record_entry_pin(user_key, dir_name)
 
     try:
-        outcome = packages_provisioning.provision_python_deps(user_key, dir_name, result.manifest)
+        return packages_provisioning.provision_python_deps(user_key, dir_name, result.manifest)
     except (PipInstallError, packages_backend_runtime.BackendRuntimeError) as exc:
         # Roll the just-installed files back so the user-store doesn't show a
         # package that's unusable. Best-effort: log + continue on cleanup
@@ -506,20 +565,22 @@ def _ensure_user_store_install(user_key: str, dir_name: str) -> InstallOutcome:
         # cannot be imported never reaches here — undoing the install over an
         # environment problem the user has to fix anyway would only take away
         # the package that named the problem.
-        try:
-            shutil.rmtree(package_dir(user_key, dir_name), ignore_errors=True)
-            packages_backend_runtime.remove_backend_residue(user_key, dir_name)
-            seed_state.clear(user_key, dir_name)
-        except Exception:  # noqa: BLE001
-            log.warning("Failed to roll back %s after dep failure", dir_name, exc_info=True)
+        _take_back(user_key, dir_name)
         raise PackageServiceError(
             f"package files installed but its dependencies failed: {exc}",
         ) from exc
-    return InstallOutcome(
-        copied=True,
-        installed=outcome.installed,
-        import_errors=outcome.import_errors,
-    )
+
+
+def _take_back(user_key: str, dir_name: str) -> None:
+    """Remove a copy an install made, with its backend residue and its seed
+    record. Best-effort: a cleanup failure is logged, and the failure that
+    asked for the cleanup is the one the caller raises."""
+    try:
+        shutil.rmtree(package_dir(user_key, dir_name), ignore_errors=True)
+        packages_backend_runtime.remove_backend_residue(user_key, dir_name)
+        seed_state.clear(user_key, dir_name)
+    except Exception:  # noqa: BLE001
+        log.warning("Failed to roll back %s after dep failure", dir_name, exc_info=True)
 
 
 def install_to_store(user_key: str, dir_name: str) -> InstallOutcome:
@@ -539,7 +600,9 @@ def install_to_store(user_key: str, dir_name: str) -> InstallOutcome:
     pip-uninstalled out from under an installed package. The repair routes by
     the same rule the original install did, so a backend-bearing package's
     overlay is rebuilt rather than its deps being quietly redirected at the
-    host interpreter its handlers never import from.
+    host interpreter its handlers never import from. The packages it needs
+    (``dependencies.packages``) that the store lacks are copied in too, as an
+    add copies them (:func:`_ensure_user_store_install`).
     """
     packages_provisioning.assert_may_install()
 
@@ -551,11 +614,21 @@ def install_to_store(user_key: str, dir_name: str) -> InstallOutcome:
     manifest = packages_store_reads._read_manifest(user_key, dir_name)
     if manifest is None:
         return InstallOutcome()
+    needed = packages_dependencies.packages_to_add(user_key, dir_name)
 
     try:
-        return packages_provisioning.provision_python_deps(user_key, dir_name, manifest)
+        repaired = packages_provisioning.provision_python_deps(user_key, dir_name, manifest)
     except (PipInstallError, packages_backend_runtime.BackendRuntimeError) as exc:
         raise PackageServiceError(f"pip install failed: {exc}", 502) from exc
+    brought = _copy_from_catalog(user_key, [
+        other for other in needed
+        if other != dir_name and not packages_store_reads._is_installed_in_user_store(user_key, other)
+    ])
+    return InstallOutcome(
+        installed=sorted({*repaired.installed, *brought.installed}),
+        import_errors={**brought.import_errors, **repaired.import_errors},
+        packages=tuple(needed),
+    )
 
 
 def install_from_catalog(user_key: str, dir_name: str, *, replace: bool) -> InstallResult:

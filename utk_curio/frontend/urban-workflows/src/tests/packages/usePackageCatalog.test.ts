@@ -122,6 +122,17 @@ describe("usePackageCatalog — the install review", () => {
     expect(h.result.current.installCandidate).toBeNull();
   });
 
+  it("a probe that refuses the add says why in the banner", async () => {
+    const h = projectHook();
+    await waitFor(() => expect(h.result.current.installed).toHaveLength(1));
+    const why = "ai.test.beta@1 needs the package ai.test.gamma@1, which is in neither your account nor the catalog";
+    api.resolve.mockRejectedValueOnce(Object.assign(new Error("HTTP 400"), { status: 400, body: { error: why } }));
+    await act(() => h.result.current.probeInstall(CATALOG[1]));
+    expect(h.result.current.installCandidate).toBeNull();
+    expect(h.result.current.actionError).toBe(`Couldn't add ai.test.beta: ${why}`);
+    expect(api.installToProject).not.toHaveBeenCalled();
+  });
+
   it("project scope saves an unsaved dataflow first and gives up quietly when the save is refused", async () => {
     const onEnsureProject = jest.fn(async () => null);
     const h = projectHook({ scope: { kind: "project", projectId: null }, onEnsureProject });

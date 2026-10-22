@@ -1,0 +1,4 @@
+import wheelhouse_dependency_module
+
+print(wheelhouse_dependency_module.MESSAGE)
+return [wheelhouse_dependency_module.MESSAGE]

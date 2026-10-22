@@ -1,0 +1,6 @@
+import curio_wheelhouse_dependent
+import wheelhouse_dependency_module
+
+print(curio_wheelhouse_dependent.MESSAGE)
+print(wheelhouse_dependency_module.MESSAGE)
+return [curio_wheelhouse_dependent.MESSAGE, wheelhouse_dependency_module.MESSAGE]
