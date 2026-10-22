@@ -113,13 +113,14 @@ _NODE_CODE_JS = """(nodeId) => {
 
 
 def _wait_for_code(page, node_id: str, code: str, *, timeout: float = 30.0) -> None:
-    """Wait until the node holds *code* on the canvas."""
+    """Wait until the node holds *code* on the canvas, as an apply writes an
+    agent's code: without the blank lines around it."""
     page.wait_for_function("() => !!window.__curio_reactFlow", timeout=30000)
     deadline = time.time() + timeout
     held = None
     while time.time() < deadline:
         held = page.evaluate(_NODE_CODE_JS, node_id)
-        if held == code:
+        if isinstance(held, str) and held.strip() == code.strip():
             return
         page.wait_for_timeout(250)
     raise AssertionError(f"{node_id} never held the agent's code; it holds:\n{held}")
@@ -181,7 +182,7 @@ def test_an_agents_change_to_map_edits_is_an_entry_named_after_it_that_a_reload_
     history = (saved.get("nodeProvenance") or {}).get(EDIT) or []
     named = [entry for entry in history if entry.get("label") == agent.name]
     assert named, f"the saved history of the Map Edits node has no entry named {agent.name!r}: {history}"
-    assert named[-1].get("code") == AGENT_CODE, named[-1]
+    assert str(named[-1].get("code") or "").strip() == AGENT_CODE.strip(), named[-1]
     assert named[-1].get("kind") == "edit", named[-1]
 
     # Opened again: the drawer lists it.
