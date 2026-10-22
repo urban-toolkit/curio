@@ -10,7 +10,7 @@
  * reports it (`useSelectionTags`), so a tag added later starts from it.
  */
 import type { SelectDetail, SelectionRows } from "../selectionMatch";
-import { selectedIds, selectionLayer, type SelectionState } from "./selectionTags";
+import { rowsHeldBy, selectedIds, selectionLayer, type SelectionState, type SelectionTag } from "./selectionTags";
 
 /** A view's rows: how to read them, and the columns they have. */
 export interface ViewRows {
@@ -76,6 +76,23 @@ export async function selectionStateOf(
   const held = await viewRowsOf(nodeId, selectionLayer(details));
   if (!held) return null;
   return selectedIds(details, held.rows, column);
+}
+
+/**
+ * The rows the ids *tag* holds pick in its view, the first *limit* of them in
+ * the view's row order, with the view's columns: what a selection chip's hover
+ * shows. Null while the view holds no rows, before its first draw.
+ */
+export async function readSelectionRows(
+  tag: SelectionTag,
+  limit = 3,
+): Promise<{ columns: string[]; rows: Record<string, unknown>[] } | null> {
+  const held = await viewRowsOf(tag.node, selectionLayer(latestViewSelection(tag.node)));
+  if (!held) return null;
+  const rows = rowsHeldBy([tag], held.rows)
+    .slice(0, limit)
+    .map((index) => Object.fromEntries(held.columns.map((column) => [column, held.rows.value(index, column)])));
+  return { columns: held.columns, rows };
 }
 
 /** The columns of a view's rows that are its own: everything but what the
