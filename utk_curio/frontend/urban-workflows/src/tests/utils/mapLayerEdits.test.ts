@@ -1,20 +1,21 @@
 /**
- * An Interaction node linked to an Autark map (#662,
+ * An Interaction node and the Autark map it edits on (#662,
  * `utils/editFeatures/mapLayerEdits`): Data → Interaction → map on data
- * edges, and an interaction edge between the node and the map; which node a
- * map is linked to, what the map draws, how many circles feed the node, and
- * the layers as the log leaves them, the node's new layers with them.
+ * edges, and an interaction edge between the node and the map; which map a
+ * node picks and draws on (one it feeds and is linked to), and how many
+ * circles feed the node.
  */
-import { circlesInto, circleTitles, editSources, interactionOn, isInteractionEdge, mapFedBy, editsVersion } from "../../utils/editFeatures/mapLayerEdits";
+import { circlesInto, circleTitles, feeds, isInteractionEdge, linkedMaps, mapFedBy } from "../../utils/editFeatures/mapLayerEdits";
 import { editFeaturesCode } from "../../utils/editFeatures/editFeatures";
 import { fromMercator, toMercator } from "../../utils/editFeatures/mapEditBus";
 
-const RAW = { dataType: "outputs", data: [{ path: "roads" }, { path: "parks" }] };
 const nodes = [
   { id: "roads", type: "curio.builtin/data-loading", data: { title: "Roads" } },
   { id: "parks", type: "curio.builtin/data-loading", data: { title: "Parks" } },
   { id: "map", type: "curio.builtin/autk-grammar", data: {} },
-  { id: "edit", type: "curio.builtin/edit-features", data: { input: RAW, editFeatures: { edits: [{ op: "remove", ids: [7], layer: "input_0" }], keys: { input_0: "osm_id" } } } },
+  { id: "second", type: "curio.builtin/autk-grammar", data: {} },
+  { id: "chart", type: "curio.builtin/vis-vega", data: {} },
+  { id: "edit", type: "curio.builtin/edit-features", data: {} },
 ];
 const link = { source: "edit", target: "map", sourceHandle: "in/out", targetHandle: "in/out", type: "BIDIRECTIONAL_EDGE" };
 const edges = [
@@ -23,43 +24,29 @@ const edges = [
   { source: "edit", target: "map", sourceHandle: "out", targetHandle: "in_0" },
   link,
 ];
-const line = (x: number) => ({ type: "LineString", coordinates: [[x, 0], [x, 1]] });
-const roads = {
-  outputTableName: "input_0",
-  geojsonObject: {
-    type: "FeatureCollection",
-    features: [
-      { type: "Feature", geometry: line(0), properties: { osm_id: 7, highway: "service" } },
-      { type: "Feature", geometry: line(1), properties: { osm_id: 8, highway: "primary" } },
-    ],
-  },
-};
 
-test("the map finds the node linked to it by an interaction edge, either way round, and the node its map", () => {
+test("the node picks and draws on the map it feeds and is linked to, either way round", () => {
   expect(isInteractionEdge(link)).toBe(true);
   expect(isInteractionEdge(edges[2])).toBe(false);
-  expect(interactionOn("map", nodes, edges)).toMatchObject({ nodeId: "edit", feeds: true, drawFrom: RAW });
+  expect(feeds("edit", "map", edges)).toBe(true);
   expect(mapFedBy("edit", nodes, edges)).toBe("map");
   const backwards = [...edges.slice(0, 3), { ...link, source: "map", target: "edit" }];
-  expect(interactionOn("map", nodes, backwards)?.nodeId).toBe("edit");
   expect(mapFedBy("edit", nodes, backwards)).toBe("map");
 });
 
-test("a data edge alone links nothing: the map just draws what the node hands on", () => {
-  expect(interactionOn("map", nodes, edges.slice(0, 3))).toBeNull();
+test("a data edge alone links nothing, and a map linked but not fed is not the node's", () => {
   expect(mapFedBy("edit", nodes, edges.slice(0, 3))).toBeNull();
+  // Linked to a second map it does not feed: still only the one it feeds.
+  const second = { ...link, target: "second" };
+  expect(linkedMaps("edit", nodes, [...edges, second])).toEqual(["map"]);
+  expect(mapFedBy("edit", nodes, [...edges.slice(0, 2), second])).toBeNull();
+  // Nor is a chart linked to it a map.
+  expect(linkedMaps("edit", nodes, [...edges, { ...link, target: "chart" }, { source: "edit", target: "chart", sourceHandle: "out", targetHandle: "in" }])).toEqual(["map"]);
 });
 
-test("the map draws the node's own input only when the node is all that feeds it", () => {
-  // Fed by the node and by roads too: the map draws what it was fed.
-  const mixed = [...edges, { source: "roads", target: "map", sourceHandle: "out", targetHandle: "in_1" }];
-  const fedTwice = interactionOn("map", nodes, mixed);
-  expect(fedTwice).toMatchObject({ feeds: true });
-  expect(fedTwice).not.toHaveProperty("drawFrom");
-  // Linked but fed by roads alone: the map applies the log to its own layers.
-  const notFed = [{ source: "roads", target: "map", sourceHandle: "out", targetHandle: "in_0" }, link];
-  expect(interactionOn("map", nodes, notFed)).toMatchObject({ nodeId: "edit", feeds: false });
-  expect(interactionOn("map", nodes, notFed)).not.toHaveProperty("drawFrom");
+test("every map the node feeds and is linked to is one it edits on, in the order of their links", () => {
+  const both = [...edges, { source: "edit", target: "second", sourceHandle: "out", targetHandle: "in" }, { ...link, target: "second" }];
+  expect(linkedMaps("edit", nodes, both)).toEqual(["map", "second"]);
 });
 
 test("the node's code hands the step every circle that feeds it", () => {
@@ -69,29 +56,6 @@ test("the node's code hands the step every circle that feeds it", () => {
   expect(code).toContain("return curio_edit_features([input_0, input_1], [");
   expect(code).toContain("by_input=True)");
   expect(editFeaturesCode(undefined, 1)).toContain("return curio_edit_features(input_0, [])");
-});
-
-test("the layers are drawn as the log leaves them, with the node's new layers that have features", () => {
-  const settings = {
-    keys: { input_0: "osm_id" },
-    newLayers: [{ name: "cooling_centers", geometry: "Point" as const }, { name: "empty", geometry: "Polygon" as const }],
-    edits: [
-      { op: "remove" as const, ids: [7], layer: "input_0" },
-      { op: "add" as const, layer: "cooling_centers", id: 1, geometry: { type: "Point", coordinates: [5, 5] }, values: { name: "Library" } },
-    ],
-  };
-  const { sources, added } = editSources([roads], settings);
-  expect(sources[0].geojsonObject.features.map((f: any) => f.properties.osm_id)).toEqual([8]);
-  expect(added).toEqual([
-    {
-      outputTableName: "cooling_centers",
-      layerType: "points",
-      geojsonObject: { type: "FeatureCollection", features: [{ type: "Feature", geometry: { type: "Point", coordinates: [5, 5] }, properties: { name: "Library", id: 1 } }] },
-    },
-  ]);
-  // No edits, the layers as they came.
-  expect(editSources([roads], { edits: [] }).sources[0]).toBe(roads);
-  expect(editsVersion(settings)).not.toBe(editsVersion({ ...settings, edits: [] }));
 });
 
 test("World Mercator there and back", () => {

@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
 import type { NodeBehaviorData, NodeBehaviorResult, UseNodeStateReturn } from '../../registry/types';
 import type { NodeOutput } from '../../hook/useNodeState';
 import { detectWebGpuSupport, reprobeWebGpuSupport } from '../../utils/webgpuSupport';
@@ -54,8 +54,13 @@ import { frameMaps, keepMapViews, mapViews, type MapView } from './autkMapView';
 import { grammarMaps, trackMaps } from './autkMapDrawing';
 import { mapSession, onMapSession, registerEditMap } from '../../utils/editFeatures/mapEditBus';
 import { layerIdFor, restoreMapLayers, snapshotBeforeSolo, snapshotMapLayers, soloMapLayer, type MapLayerState } from './autkMapState';
-import { editSources, editsAnything, editsVersion, interactionOn } from '../../utils/editFeatures/mapLayerEdits';
+import { drawnInput, editFeedsOf, fedByInteraction, feedsVersion, newLayerTables, type EditFeed } from '../../utils/editFeatures/mapEditsPreview';
+import { codeEditRevision, subscribeToCodeEdits } from '../../utils/references/codeEdits';
 import MapEditOverlay from '../../components/editFeatures/MapEditOverlay';
+
+/** What a map no Interaction node feeds listens to for code edits: nothing. */
+const NO_CODE_EDITS = () => () => {};
+const NO_REVISION = () => 0;
 
 /**
  * The layer a document's selections come from when they name none: its map's
@@ -92,8 +97,9 @@ export type AutkBehaviorOptions = {
     /**
      * Whether a draw keeps the view of the maps the last draw made. Only the
      * first draw frames the layers (`frameMaps`); each later one puts back
-     * the camera the person zoomed and panned to (`keepMapViews`), as the Map
-     * Edits node's map does when an edit draws it again.
+     * the camera the person zoomed and panned to (`keepMapViews`). A map an
+     * Interaction node feeds always does, so an edit, and the Commit after
+     * it, leave the map where it was.
      */
     keepsView?: boolean;
 };
@@ -194,13 +200,7 @@ export const useAutkGrammarBehavior = (
     // The input, read once per input object and shared by the render path,
     // the compute path and the highlight sync (utils/autkInput).
     const inputReadRef = useRef<{ input: unknown; read: Promise<GrammarInput> } | null>(null);
-    const readInput = (fed: unknown, asFed = false): Promise<GrammarInput> => {
-        // A linked Interaction node that is all the map is fed by: the map
-        // draws that node's own input with its live log, so an edit shows
-        // before Commit edits and is never applied twice
-        // (utils/editFeatures/mapLayerEdits). A compute step, which draws
-        // nothing, reads what it was fed (*asFed*).
-        const input = (asFed ? undefined : feedingRef.current?.drawFrom) ?? fed;
+    const readInput = (input: unknown): Promise<GrammarInput> => {
         if (inputReadRef.current?.input !== input) {
             const read = readAutkInput(input);
             inputReadRef.current = { input, read };
@@ -210,6 +210,20 @@ export const useAutkGrammarBehavior = (
             });
         }
         return inputReadRef.current!.read;
+    };
+    // The inputs of the Interaction nodes that feed the map, each read once
+    // per input object, as the map's own is.
+    const fedReadsRef = useRef(new Map<unknown, Promise<GrammarInput>>());
+    const readFed = (input: unknown): Promise<GrammarInput> => {
+        const reads = fedReadsRef.current;
+        if (!reads.has(input)) {
+            const read = readAutkInput(input);
+            reads.set(input, read);
+            read.catch(() => {
+                if (reads.get(input) === read) reads.delete(input);
+            });
+        }
+        return reads.get(input)!;
     };
     // How each loaded input table's positions map to the input's rows
     // (loadableSource), by name: a pick or a highlight goes through it, so a
@@ -229,13 +243,37 @@ export const useAutkGrammarBehavior = (
         nodes?: any[];
         edges?: any[];
     };
-    // The Interaction node linked to this map by an interaction edge (#662):
-    // the map draws its layers with the node's edits, and draws again after
-    // each one, where its camera was.
-    const feeding = interactionOn(data.nodeId, flowNodes ?? [], flowEdges ?? []);
-    const feedingRef = useRef(feeding);
-    feedingRef.current = feeding;
-    const savedCameraRef = useRef<{ up: number[]; lookAt: number[]; eye: number[] } | null>(null);
+    // The Interaction nodes that feed this map on data edges (#662), each with
+    // the edits its code holds: the map draws each one's input with its edits,
+    // before Commit edits as after (utils/editFeatures/mapEditsPreview), and
+    // keeps its view when it draws again. Only a map one feeds listens for
+    // code edits, which a code put back or typed makes with no change of the
+    // flow's state; every other map is as it was.
+    const editFed = fedByInteraction(data.nodeId, flowNodes ?? [], flowEdges ?? []);
+    useSyncExternalStore(editFed ? subscribeToCodeEdits : NO_CODE_EDITS, editFed ? codeEditRevision : NO_REVISION);
+    const feeds = editFed ? editFeedsOf(data.nodeId, flowNodes ?? [], flowEdges ?? []) : [];
+    const feedsRef = useRef<EditFeed[]>(feeds);
+    feedsRef.current = feeds;
+    const editFedRef = useRef(editFed);
+    editFedRef.current = editFed;
+    // The input a draw reads: the map's own, with each fed circle drawn from
+    // its node's input and edits; read once per input and edits.
+    const drawnReadRef = useRef<{ input: unknown; version: string; read: Promise<GrammarInput> } | null>(null);
+    const readDrawnInput = (input: unknown): Promise<GrammarInput> => {
+        const current = feedsRef.current;
+        if (current.length === 0) return readInput(input);
+        const version = feedsVersion(current);
+        if (drawnReadRef.current?.input !== input || drawnReadRef.current?.version !== version) {
+            const kept = new Set(current.map((feed) => feed.input));
+            for (const fed of [...fedReadsRef.current.keys()]) if (!kept.has(fed)) fedReadsRef.current.delete(fed);
+            const read = readInput(input).then((own) => drawnInput(own, current, readFed));
+            drawnReadRef.current = { input, version, read };
+            read.catch(() => {
+                if (drawnReadRef.current?.read === read) drawnReadRef.current = null;
+            });
+        }
+        return drawnReadRef.current!.read;
+    };
     // What was set on each layer through the map's menu, kept across that draw too.
     const savedLayersRef = useRef<MapLayerState | null>(null);
     // Show only this layer: the table shown alone, and each layer's own state before.
@@ -251,7 +289,7 @@ export const useAutkGrammarBehavior = (
     // one could not read from its input: the pre-run notice reads these.
     const hasRunRef = useRef(false);
     const runningRef = useRef(false);
-    const pendingSpecRef = useRef<string | null>(null);
+    const pendingSpecRef = useRef<{ spec: string; preview: boolean } | null>(null);
     const inputProblemRef = useRef<{ reason: NodeEmptyReason; detail?: string } | null>(null);
     // The notice the body should show now, kept so a container that mounts
     // later (the editor remounting its output pane) gets it too.
@@ -316,7 +354,13 @@ export const useAutkGrammarBehavior = (
     const runGrammar = async (
         specString: string,
         emit: (o: { code: string; content: string }) => void,
+        // A draw of the map again, for an edit an Interaction node feeding it
+        // made: it draws, and hands nothing on.
+        preview = false,
     ) => {
+        const handOnRun = (output: unknown) => {
+            if (!preview) handOn(output);
+        };
         let spec: any;
         try {
             spec = typeof specString === 'string' ? JSON.parse(specString) : { ...(specString as any) };
@@ -377,7 +421,8 @@ export const useAutkGrammarBehavior = (
         // Each run draws on a canvas of its own. The previous run's maps are
         // destroyed with theirs (AutkGrammar has no destroy() of its own),
         // their view taken first where the next draw keeps it.
-        if (keepsView && grammarRef.current) keptViewsRef.current = mapViews(grammarRef.current);
+        const keepView = keepsView || editFedRef.current;
+        if (keepView && grammarRef.current) keptViewsRef.current = mapViews(grammarRef.current);
         destroyLastMaps();
         const wrapper = wrapperRef.current;
         if (wrapper) {
@@ -424,39 +469,21 @@ export const useAutkGrammarBehavior = (
         // loadGeoTiff (adapters/node/autkRasters), for a document that draws.
         let rasterSources: CurioRasterSource[] = [];
         let preparedInput: PreparedAutkInput | null = null;
-        // The layers with a linked Interaction node's edits, which the map
-        // hands on when the node does not feed it (it hands on what it was
-        // fed otherwise: the edits the last Commit ran).
-        let editedOut: Array<{ name: string; type?: string; geojson: any }> | null = null;
         const readsInput = hasMaps || hasPlot || specDataSources.length === 0;
         if (data.input && readsInput) {
             try {
-                let prepared = autkSourcesFrom(await readInput(data.input), spec);
-                const feed = feedingRef.current;
-                // Fed by the node and more, the map draws what it was fed: the
-                // committed edits, with no live ones on top of them.
-                const live = !!feed && (!feed.feeds || feed.drawFrom !== undefined);
-                if (feed && live && editsAnything(feed.settings) && (hasMaps || hasPlot)) {
-                    const edited = editSources(prepared.sources, feed.settings);
-                    const added = edited.added.map((a) => ({
-                        type: 'geojson' as const,
-                        geojsonObject: a.geojsonObject,
-                        outputTableName: a.outputTableName,
-                        coordinateFormat: detectCoordinateFormat(a.geojsonObject as any),
-                        ...(a.layerType ? { layerType: a.layerType } : {}),
-                    }));
-                    prepared = { ...prepared, sources: [...edited.sources, ...added] };
-                    // The node's new layers are drawn on top.
-                    if (added.length > 0 && spec.map) {
-                        const refs: any[] = Array.isArray(spec.map.layerRefs) ? spec.map.layerRefs : [];
-                        const missing = added.filter((a) => !refs.some((r: any) => r?.dataRef === a.outputTableName));
-                        spec = { ...spec, map: { ...spec.map, layerRefs: [...refs, ...missing.map((a) => ({ dataRef: a.outputTableName }))] } };
-                    }
-                    if (!feed.feeds) editedOut = prepared.sources.map((source) => ({
-                        name: source.outputTableName,
-                        type: source.layerType,
-                        geojson: source.geojsonObject,
-                    }));
+                // A map draws each circle an Interaction node feeds from that
+                // node's input with its edits (mapEditsPreview); a compute
+                // step, which draws nothing, reads what it was fed.
+                let prepared = autkSourcesFrom(await ((hasMaps || hasPlot) ? readDrawnInput(data.input) : readInput(data.input)), spec);
+                // The new layers an Interaction node feeding the map makes are
+                // drawn on top, once they have features.
+                const made = newLayerTables(feedsRef.current).filter((table) =>
+                    prepared.sources.some((source) => source.outputTableName === table && hasFeatures(source.geojsonObject)));
+                if (made.length > 0 && spec.map) {
+                    const refs: any[] = Array.isArray(spec.map.layerRefs) ? spec.map.layerRefs : [];
+                    const missing = made.filter((table) => !refs.some((r: any) => r?.dataRef === table));
+                    spec = { ...spec, map: { ...spec.map, layerRefs: [...refs, ...missing.map((table) => ({ dataRef: table }))] } };
                 }
                 if ((hasMaps || hasPlot) && prepared.rasters.length > 0) {
                     const resolved = await resolveRasterInputs(prepared.rasters);
@@ -856,13 +883,18 @@ export const useAutkGrammarBehavior = (
                     return;
                 }
                 bleedRasterEdges(grammar, spec);
-                if (keepsView && keptViewsRef.current) keepMapViews(grammar, keptViewsRef.current);
+                if (keepView && keptViewsRef.current) keepMapViews(grammar, keptViewsRef.current);
                 else frameMaps(grammar);
-                const shownMap = grammarMaps(grammar)[0];
-                restoreMapLayers(shownMap, savedLayersRef.current);
+                if (editFedRef.current) {
+                    // What was set on each layer through the map's menu, and the
+                    // layer an Interaction node shows alone, kept across the draw;
+                    // the overlay on the map draws through its camera.
+                    const shownMap = grammarMaps(grammar)[0];
+                    restoreMapLayers(shownMap, savedLayersRef.current);
+                    if (soloRef.current) soloMapLayer(shownMap, layerIdFor(spec, soloRef.current.table), null, colorMapped(soloRef.current.table));
+                    registerEditMap(nodeId, shownMap ?? null, (table: string) => layerIdFor(spec, table));
+                }
                 savedLayersRef.current = null;
-                if (soloRef.current) soloMapLayer(shownMap, layerIdFor(spec, soloRef.current.table), null, colorMapped(soloRef.current.table));
-                registerEditMap(nodeId, shownMap ?? null, (table: string) => layerIdFor(spec, table));
                 // autk-plot's SVG is inline, so it sits on a line of text whose
                 // descender space overflows a pane the plot exactly fills, and
                 // brings the scrollbars back. As a block it fits.
@@ -928,9 +960,9 @@ export const useAutkGrammarBehavior = (
                     interactionOffRef.current = [off1, off2];
                 }
 
-                handOn(editedOut
-                    ? (await toPoolOutput(editedOut, data.jsInterpreter, data.nodeId)) ?? editedOut
-                    : data.input ?? null);
+                // What the map was fed, as it came: the edits an Interaction
+                // node feeding it made, as its last run made them.
+                handOnRun(data.input ?? null);
                 // A selection still active from before this draw lights up
                 // the new map too, as a Vega chart re-applies its own.
                 syncHighlightsNow();
@@ -955,7 +987,7 @@ export const useAutkGrammarBehavior = (
                         ?? (backendLayers
                             ? (await toPoolOutput(backendLayers, data.jsInterpreter, data.nodeId)) ?? backendLayers
                             : null);
-                    handOn(out);
+                    handOnRun(out);
                     // The backend path hands back an artifact ref, not the
                     // tables, so name what the spec asked autk-db to create -
                     // a short load has already failed above, so these exist.
@@ -978,7 +1010,7 @@ export const useAutkGrammarBehavior = (
                     // strip custom per-feature properties. Apply WGSL blocks directly so the
                     // outputs (feature.properties.compute.<col>) reach downstream untouched.
                     let computeInput = data.input
-                        ? autkSourcesFrom(await readInput(data.input, true), spec, { alias: false })
+                        ? autkSourcesFrom(await readInput(data.input), spec, { alias: false })
                         : null;
                     // Compute blocks run over layers' features; a raster has none.
                     if (computeInput && computeInput.rasters.length > 0) {
@@ -1051,7 +1083,7 @@ export const useAutkGrammarBehavior = (
                     // nothing under this node's error. The verdict below says why.
                     if (!renderOutcome(runCounts).empty) {
                         const out = await toPoolOutput(layers, data.jsInterpreter, data.nodeId);
-                        handOn(out ?? layers);
+                        handOnRun(out ?? layers);
                     }
                 }
             }
@@ -1115,30 +1147,37 @@ export const useAutkGrammarBehavior = (
      * and the library's own async init, any of which can throw or hang in
      * ways its inner try/catch never sees. So the terminal output is
      * guaranteed here, in a finally, rather than hoped for in the body.
+     *
+     * With *preview*, the map is drawn again for an edit an Interaction node
+     * feeding it made: a draw and nothing else. No run is filed, the node's
+     * state stays as its last run left it, and nothing is handed on.
      */
-    const applyGrammar = async (specString: string): Promise<void> => {
+    const drawGrammar = async (specString: string, preview = false): Promise<void> => {
         // A node that has left the page starts no run: a draw asked for as
         // it left, or a run queued behind the one under way (see mountedRef).
         if (leftPage()) return;
+        const text = typeof specString === 'string' ? specString : JSON.stringify(specString);
         if (runningRef.current) {
             // A run is under way (a redraw on new input, or a Play): run once
             // more when it ends, with the latest document, rather than two runs
-            // racing for the same canvas.
-            pendingSpecRef.current = typeof specString === 'string' ? specString : JSON.stringify(specString);
+            // racing for the same canvas. A run asked for wins over a redraw.
+            const queued = pendingSpecRef.current;
+            pendingSpecRef.current = { spec: text, preview: preview && (queued?.preview ?? true) };
             return;
         }
-        lastSpecRef.current = typeof specString === 'string' ? specString : JSON.stringify(specString);
+        lastSpecRef.current = text;
         hasRunRef.current = true;
         runningRef.current = true;
         inputProblemRef.current = null;
         let settled = false;
         // The run as the provenance drawer lists it, once, as it ends (#860). A
-        // dropped run is not listed.
+        // dropped run is not listed, and neither is a redraw.
         const run = { startedAt: new Date(), code: writtenRef.current, listed: false };
         const emit = (o: { code: string; content: string }) => {
             // A dropped run says nothing (see mountedRef).
             if (leftPage()) return;
             if (o.code === 'success' || o.code === 'error') settled = true;
+            if (preview) return;
             if (o.code === 'error' && marksNodeErrored) markNodeErrored?.(data.nodeId);
             nodeState.setOutput(o);
             if (settled && !run.listed) {
@@ -1149,7 +1188,7 @@ export const useAutkGrammarBehavior = (
         // The net itself lives in autkRunSettlement so it can be tested; see the
         // note there for why it is unreachable through this hook.
         try {
-            await runAndAlwaysSettle(() => runGrammar(specString, emit), {
+            await runAndAlwaysSettle(() => runGrammar(specString, emit, preview), {
                 settled: () => settled,
                 onError: (msg) => {
                     logFailure(msg);
@@ -1165,39 +1204,37 @@ export const useAutkGrammarBehavior = (
         }
         const next = pendingSpecRef.current;
         pendingSpecRef.current = null;
-        if (next != null) await applyGrammarRef.current(next);
+        if (next != null) await drawGrammarRef.current(next.spec, next.preview);
     };
+    const applyGrammar = (specString: string): Promise<void> => drawGrammar(specString);
     // The run queued behind the one under way goes through the latest render's
-    // applyGrammar, so it reads the node's input as it is when it starts, not
+    // drawGrammar, so it reads the node's input as it is when it starts, not
     // as it was when the run under way began.
-    const applyGrammarRef = useRef(applyGrammar);
-    applyGrammarRef.current = applyGrammar;
+    const drawGrammarRef = useRef(drawGrammar);
+    drawGrammarRef.current = drawGrammar;
 
-    // An edit made in the Interaction node linked to this map: draw again,
-    // once the edits stop coming, where the camera is now.
-    const editVersion = feeding ? editsVersion(feeding.settings) : '';
+    // An edit made in an Interaction node feeding this map, or an edit's code
+    // put back: the map, once drawn, draws again once the edits stop coming,
+    // keeping its view and what was set on its layers. A redraw only: no run.
+    const editVersion = feedsVersion(feeds);
     const editVersionRef = useRef(editVersion);
     useEffect(() => {
         if (editVersionRef.current === editVersion) return;
         editVersionRef.current = editVersion;
-        if (!hasRunRef.current || lastSpecRef.current == null) return;
+        if (!hasRunRef.current || lastSpecRef.current == null || grammarRef.current == null) return;
         const timer = setTimeout(() => {
-            const map = grammarMaps(grammarRef.current)[0];
-            const camera = map?.camera;
-            if (camera?.getEye) {
-                savedCameraRef.current = { up: [...camera.getUp()], lookAt: [...camera.getLookAt()], eye: [...camera.getEye()] };
-            }
             savedLayersRef.current = snapshotMapLayers(grammarRef.current);
-            if (lastSpecRef.current != null) void applyGrammar(lastSpecRef.current);
+            if (lastSpecRef.current != null) void drawGrammarRef.current(lastSpecRef.current, true);
         }, 120);
         return () => clearTimeout(timer);
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [editVersion]);
     useEffect(() => () => registerEditMap(data.nodeId, null), [data.nodeId]);
 
-    // Show only this layer, as the Interaction node asks: the map's other
-    // layers hidden, and back as they were when it stops asking.
+    // Show only this layer, as the Interaction node feeding the map asks: the
+    // map's other layers hidden, and back as they were when it stops asking.
     useEffect(() => {
+        if (!editFed) return;
         const apply = () => {
             const table = mapSession(data.nodeId)?.solo ?? null;
             const current = soloRef.current;
@@ -1214,7 +1251,7 @@ export const useAutkGrammarBehavior = (
         apply();
         return onMapSession(data.nodeId, apply);
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [data.nodeId]);
+    }, [data.nodeId, editFed]);
 
     /** Re-probe WebGPU and, if it is there now, run the last spec (#272). */
     const checkGpuAgain = async () => {
@@ -1251,7 +1288,8 @@ export const useAutkGrammarBehavior = (
         const current = dataRef.current;
         if (!grammar || !spec || !current.input) return;
 
-        const layers = autkSourcesFrom(await readInput(current.input), spec).sources;
+        // The layers as the map drew them, an Interaction node's edits made.
+        const layers = autkSourcesFrom(await readDrawnInput(current.input), spec).sources;
         if (layers.length === 0) return;
 
         const incoming: IncomingSelection[] = Array.isArray((current as any).interactions)
@@ -1324,7 +1362,7 @@ export const useAutkGrammarBehavior = (
                 const spec = specRef.current;
                 const input = dataRef.current.input;
                 if (!spec || !input) return null;
-                const sources = autkSourcesFrom(await readInput(input), spec).sources;
+                const sources = autkSourcesFrom(await readDrawnInput(input), spec).sources;
                 const named = layer ?? selectionLayerOf(spec);
                 const source = sources.find((s) => s.outputTableName === named) ?? sources[0];
                 if (!source) return null;
@@ -1535,7 +1573,11 @@ export const useAutkGrammarBehavior = (
                 // has nothing to draw there, so the summary is the body.
                 <div
                     className="nodrag nopan nowheel"
-                    style={{ display: 'flex', flexDirection: 'column', width: '100%', height: '100%' }}
+                    style={{
+                        display: 'flex', flexDirection: 'column', width: '100%', height: '100%',
+                        // The overlay of an Interaction node feeding the map lies over it.
+                        ...(editFed ? { position: 'relative' as const } : {}),
+                    }}
                 >
                     {specKind === 'data' || specKind === 'compute' ? (
                         runSummary ? (
@@ -1561,24 +1603,22 @@ export const useAutkGrammarBehavior = (
                             </div>
                         ) : null
                     ) : null}
-                    <div style={{ position: 'relative', width: '100%', flex: 1, minHeight: 0, display: 'flex' }}>
-                        <div
-                            ref={attachWrapper}
-                            style={{
-                                position: 'relative',
-                                width: '100%',
-                                flex: 1,
-                                minHeight: 0,
-                                overflow: 'hidden',
-                            }}
-                        />
-                        {/* What the Interaction node linked to the map does on it (#662). */}
-                        <MapEditOverlay mapId={data.nodeId} />
-                    </div>
+                    <div
+                        ref={attachWrapper}
+                        style={{
+                            position: 'relative',
+                            width: '100%',
+                            flex: 1,
+                            minHeight: 0,
+                            overflow: 'hidden',
+                        }}
+                    />
+                    {/* What an Interaction node feeding the map does on it (#662). */}
+                    {editFed ? <MapEditOverlay mapId={data.nodeId} /> : null}
                 </div>
             ),
         // eslint-disable-next-line react-hooks/exhaustive-deps
-        [nodeState.output, gpuBlocked, gpuChecking, runSummary, specKind],
+        [nodeState.output, gpuBlocked, gpuChecking, runSummary, specKind, editFed],
     );
 
     return {
