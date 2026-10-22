@@ -18,6 +18,8 @@ from __future__ import annotations
 import re
 
 from utk_curio.backend.app.agents.domain import content
+from utk_curio.backend.app.agents.domain import plan_topology
+from utk_curio.backend.app.execution import workflow_spec
 from utk_curio.backend.app.packages import service as packages_services
 
 #: The behavior a Map Edits template names.
@@ -121,7 +123,32 @@ def goal_names_edits(goal) -> bool:
 
 def no_edits_reason() -> str:
     """Why Solve leaves an empty Map Edits node without edits."""
-    return "Map Edits: its goal names no edits, so it is left without any; make them on its map"
+    return "Map Edits: its goal names no edits, so its call holds none; make them on its map"
+
+
+def circles_into(node_id, edges) -> int:
+    """How many circles feed the node *node_id*, as the node counts them
+    (``circlesInto`` in ``mapLayerEdits.ts``): one past the highest circle a
+    data edge goes into, the circle a run binds ``input_k`` by."""
+    highest = 0
+    for edge in edges or ():
+        if not isinstance(edge, dict) or edge.get("target") != node_id:
+            continue
+        if plan_topology.is_interaction_edge(edge) or (
+            edge.get("sourceHandle") == "in/out" and edge.get("targetHandle") == "in/out"
+        ):
+            continue
+        highest = max(highest, workflow_spec.input_slot(edge) + 1)
+    return max(highest, 1)
+
+
+def new_node_code(node_id, edges) -> str:
+    """The code of a Map Edits node *node_id* whose edits are left to the
+    user: the code the node writes for itself when it is dropped, its call
+    with no edits, over the circles that feed it."""
+    from utk_curio.sandbox.util.feature_edits_code import new_node_code as written
+
+    return written(circles_into(node_id, edges))
 
 
 def context_call(code) -> str:

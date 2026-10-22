@@ -17,7 +17,7 @@ _HEADER = "| op | fields |"
 _RULE = "|---|---|"
 _ROW = re.compile(r"\| (?P<op>[a-z_]+) \| (?P<fields>[a-z_]+(?:(?:, | or )[a-z_]+)*) \|")
 _WORDS_LINE = re.compile(
-    r"- Solve fills an empty .+ node only when its goal names edits, .+ "
+    r"- Solve makes edits in an empty .+ node only when its goal names edits; .+ "
     r"starts with one of these words: (?P<words>[a-z ,]+)\."
 )
 _CALL_BLOCK = re.compile(r"^```python\n(.*?)^```$", re.MULTILINE | re.DOTALL)

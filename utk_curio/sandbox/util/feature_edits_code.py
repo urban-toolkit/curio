@@ -18,6 +18,9 @@ shows it as the browser does (``js_values``), so both say the same words;
 on, word for word. Texts are read by characters, where the browser reads
 UTF-16 units: a character outside the Basic Multilingual Plane next to a
 refusal's position can make the two differ, and none of the cases has one.
+
+``new_node_code`` is the code the node writes for itself when it is dropped
+(``editFeaturesCode(undefined, circles)``): its call with no edits.
 """
 from __future__ import annotations
 
@@ -57,6 +60,13 @@ COMMON_FIELDS = ("op", "layer", "label", "enabled")
 #: What a new layer's dict holds, and each of its properties'.
 NEW_LAYER_FIELDS = ("name", "geometry", "properties")
 PROPERTY_FIELDS = ("name", "type", "required", "choices", "default")
+
+#: The comment lines the node writes above its call (``EDIT_CODE_NOTE``).
+EDIT_CODE_NOTE = (
+    "# Map Edits writes this code from its edit list: each edit, in the",
+    "# order it was made, on the features whose key is one of its ids. It is",
+    "# written again when the list changes.",
+)
 
 NOT_THE_CALL = (
     f"This node reads one call, return {EDIT_HELPER}(input_0, [...]), and this code holds something else."
@@ -667,6 +677,20 @@ def json_of(literal: Literal, where: str):
             raise Unreadable(f"A dict in {where} gives {key.value} twice.")
         out[key.value] = json_of(item, where)
     return js_values.ordered(out)
+
+
+def edit_inputs(circles: int = 1) -> str:
+    """What the call hands the step, fed by *circles* inputs (``editInputs``):
+    ``input_0``, or every circle's input in order."""
+    return "[" + ", ".join(f"input_{k}" for k in range(circles)) + "]" if circles > 1 else "input_0"
+
+
+def new_node_code(circles: int = 1) -> str:
+    """The code the node writes for itself when it is dropped, fed by
+    *circles* inputs (``editFeaturesCode(undefined, circles)``): its comment
+    lines, then its call with no edits, which hands its input on as it came."""
+    tail = ", by_input=True" if circles > 1 else ""
+    return "\n".join([*EDIT_CODE_NOTE, f"return {EDIT_HELPER}({edit_inputs(circles)}, []{tail})", ""])
 
 
 def _circles_of(literal) -> int:

@@ -379,19 +379,23 @@ class TestTheUsersOwnCodeIsNeverRefused:
         assert inputs == [] and outcome["candidate"] == node["content"]
 
 
-def _applied_what_if(client, user, token, monkeypatch, *, edit_intent, edit_code):
-    """A Dataflow Builder plan of a loader and a Map Edits node, applied; the
-    Node Builder writes each node's code when asked, *edit_code* for the Map
-    Edits node. Returns the project, the builder's attachment, the node ids
-    by plan ref and the calls the model got."""
+def _applied_what_if(client, user, token, monkeypatch, *, edit_intent, edit_code, loaders=1):
+    """A Dataflow Builder plan of *loaders* loaders, each on a circle of a Map
+    Edits node, applied; the Node Builder writes each node's code when asked,
+    *edit_code* for the Map Edits node. Returns the project, the builder's
+    attachment, the node ids by plan ref and the calls the model got."""
     project = _project(client, user, token, [])
+    loads = [f"load{k}" if k else "load" for k in range(loaders)]
     plan = {
         "goal": "a what-if without building 2",
         "nodes": [
-            {"ref": "load", "nodeType": DL, "title": "Buildings", "intent": "synthetic sample buildings, by building_id"},
+            *({"ref": ref, "nodeType": DL, "title": f"Buildings {ref}",
+               "intent": "synthetic sample buildings, by building_id"} for ref in loads),
             {"ref": "edit", "nodeType": EDIT, "title": "Map Edits", "intent": edit_intent},
         ],
-        "edges": [{"from": "load", "to": "edit"}],
+        "edges": [
+            {"from": ref, "to": "edit", **({"toHandle": f"in_{k}"} if k else {})} for k, ref in enumerate(loads)
+        ],
     }
     plan_tail = "Plan.\n```curio.v1\n" + json.dumps({"dataflowPlan": plan}) + "\n```"
 
@@ -418,19 +422,39 @@ def _applied_what_if(client, user, token, monkeypatch, *, edit_intent, edit_code
     return project, att, ids, calls
 
 
+#: The code a Map Edits node fed by two circles writes for itself when it is
+#: dropped (``editFeaturesCode(undefined, 2)``).
+NEW_NODE_OF_TWO = (
+    "# Map Edits writes this code from its edit list: each edit, in the\n"
+    "# order it was made, on the features whose key is one of its ids. It is\n"
+    "# written again when the list changes.\n"
+    "return curio_edit_features([input_0, input_1], [], by_input=True)\n"
+)
+
+
+def _edit_requests(calls) -> list:
+    """The requests an agent got for the Map Edits node's code."""
+    return [
+        call[-1]["content"] for call in calls
+        if "[delegated task" in call[-1]["content"] and f'"nodeType": "{EDIT}"' in call[-1]["content"]
+    ]
+
+
 class TestAnEmptyMapEditsNodeIsFilledOnlyWhenItsGoalNamesEdits:
-    def test_a_goal_that_names_no_edits_leaves_the_node_without_any(
+    def test_a_goal_that_names_no_edits_gives_the_node_its_call_with_none(
         self, client, user_and_token, tmp_curio, monkeypatch,
     ):
         """Solve asks no agent for the edits of a node whose goal names none:
-        the node is resolved with nothing written, and the user makes the
-        edits on the map."""
+        the node is resolved with no edits, holding the code the node writes
+        for itself when it is dropped, over the circles that feed it, and the
+        user makes the edits on the map."""
         from utk_curio.backend.app.projects import storage as projects_storage
         from utk_curio.backend.app.projects.services import _user_dir_key
+        from utk_curio.sandbox.util.feature_edits_code import new_node_code
 
         user, token = user_and_token
         project, att, ids, calls = _applied_what_if(
-            client, user, token, monkeypatch,
+            client, user, token, monkeypatch, loaders=2,
             edit_intent="Read the map's layers, and edit them on the map", edit_code=REMOVE_TWO,
         )
         body = client.post(
@@ -439,15 +463,40 @@ class TestAnEmptyMapEditsNodeIsFilledOnlyWhenItsGoalNamesEdits:
         ).get_json()
         result = body["results"][ids["edit"]]
         assert result["status"] == "solved", result
-        assert result["verification"]["status"] == "no-content"
-        assert "Map Edits" in result["verification"]["reason"]
-        asked = [
-            call[-1]["content"] for call in calls
-            if "[delegated task" in call[-1]["content"] and f'"nodeType": "{EDIT}"' in call[-1]["content"]
-        ]
-        assert not asked, "an agent was asked for the edits of a node whose goal names none"
+        assert result["verification"] == {
+            "status": "no-content",
+            "reason": "Map Edits: its goal names no edits, so its call holds none; make them on its map",
+        }
+        assert not _edit_requests(calls), "an agent was asked for the edits of a node whose goal names none"
         spec = projects_storage.read_spec(_user_dir_key(user), project)
-        assert next(n for n in spec["dataflow"]["nodes"] if n["id"] == ids["edit"])["content"] == ""
+        held = next(n for n in spec["dataflow"]["nodes"] if n["id"] == ids["edit"])["content"]
+        assert held == NEW_NODE_OF_TWO == new_node_code(2)
+
+    def test_a_call_with_no_edits_the_node_holds_stays_as_it_is(
+        self, client, user_and_token, tmp_curio, monkeypatch,
+    ):
+        """A node whose goal names no edits keeps the call it holds, with no
+        edits but its key: the user's own, never written over."""
+        from utk_curio.backend.app.projects import storage as projects_storage
+        from utk_curio.backend.app.projects.services import _user_dir_key
+
+        user, token = user_and_token
+        project, att, ids, calls = _applied_what_if(
+            client, user, token, monkeypatch,
+            edit_intent="Read the map's layers, and edit them on the map", edit_code=REMOVE_TWO,
+        )
+        keyed = 'return curio_edit_features(input_0, [], key="building_id")\n'
+        spec = projects_storage.read_spec(_user_dir_key(user), project)
+        next(n for n in spec["dataflow"]["nodes"] if n["id"] == ids["edit"])["content"] = keyed
+        projects_storage.write_spec(_user_dir_key(user), project, spec)
+        body = client.post(
+            f"/api/agents/projects/{project}/attachments/{att}/solve",
+            json={"verify": False}, headers=_auth(token),
+        ).get_json()
+        assert body["results"][ids["edit"]]["verification"]["status"] == "no-content", body["results"]
+        assert not _edit_requests(calls)
+        spec = projects_storage.read_spec(_user_dir_key(user), project)
+        assert next(n for n in spec["dataflow"]["nodes"] if n["id"] == ids["edit"])["content"] == keyed
 
     def test_a_goal_that_names_edits_is_filled_and_the_result_names_the_agent(
         self, client, user_and_token, tmp_curio, monkeypatch,

@@ -581,9 +581,12 @@ whose code is its only state: one call of `curio_edit_features`
   (`_made_up_ids_check`, `feature_edits.UNKNOWN_IDS_LINE`), read from the
   target's whole output (`run_through_node(keep_stdout=True)`, kept out of the
   streamed `nodes`). The unverified Solve refuses it too. Code the node holds
-  already is the user's and is never refused. Solve fills an empty Map Edits
-  node only when its goal names edits (`goal_names_edits`), and a node's
-  context carries each Map Edits neighbour's call, capped (`mapEditsCall`).
+  already is the user's and is never refused. Solve makes edits in an empty
+  Map Edits node only when its goal names them (`goal_names_edits`); otherwise
+  a blank one gets the code the node writes for itself when dropped
+  (`new_node_code`), persisted with the wave and never handed to the canvas as
+  a change. A node's context carries each Map Edits neighbour's call, capped
+  (`mapEditsCall`).
 - An agent's applied change to a node whose code is its state goes through the
   node's own writer (`utils/nodeCodeWriters.ts`): `applyNodeContent` hands a Map
   Edits node the code and the name of the agent that wrote it, which the

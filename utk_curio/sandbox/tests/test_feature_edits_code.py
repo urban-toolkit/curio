@@ -71,6 +71,20 @@ def test_code_the_node_refuses_is_refused_with_the_same_words(case):
     assert read_edit_features_code(case["code"]) == {"problem": case["problem"]}
 
 
+def test_a_new_nodes_code_is_the_code_the_node_writes_for_itself():
+    """``new_node_code`` writes what the node writes when it is dropped
+    (``editFeaturesCode(undefined, circles)``), which Solve gives a blank Map
+    Edits node whose goal names no edits: every written case with no
+    settings and no comment lines of its own, on one circle and on two."""
+    from utk_curio.sandbox.util.feature_edits_code import EDIT_CODE_NOTE, new_node_code
+
+    assert list(EDIT_CODE_NOTE) == NOTE
+    fresh = [case for case in _part("cases") if case.get("settings") is None and "comments" not in case]
+    assert sorted(case.get("circles", 1) for case in fresh) == [1, 2], [case["name"] for case in fresh]
+    for case in fresh:
+        assert new_node_code(case.get("circles", 1)) == case["code"], case["name"]
+
+
 def test_blank_code_is_a_new_node_with_no_edits():
     from utk_curio.sandbox.util.feature_edits_code import read_edit_features_code
 

@@ -351,7 +351,25 @@ class SolveBatch:
         result = {"status": "solved",
                   "verification": {"status": "no-content", "reason": reason[:300]}}
         self.results[node_id] = result
+        fresh = self._new_map_edits_code(node_id, node)
+        if fresh is not None:
+            # Persisted with the wave, and never handed to the canvas as a
+            # change: no agent wrote it, and the canvas gives a node it shows
+            # blank this same code.
+            self.applied_contents.append({"nodeId": node_id, "content": fresh})
         return {"nodeId": node_id, "status": "solved", **result}
+
+    def _new_map_edits_code(self, node_id: str, node: dict) -> str | None:
+        """The code a blank Map Edits node gets when its goal names no edits:
+        the code the node writes for itself when it is dropped, its call with
+        no edits over its circles. None for a node of another kind and for one
+        that holds code already, whose call stays as the user left it."""
+        if str(node.get("content") or "").strip():
+            return None
+        if not map_edits.is_map_edits(self.user_key, self.project_id, node.get("type")):
+            return None
+        spec = self.current.get("spec") or self.spec or {}
+        return map_edits.new_node_code(node_id, (spec.get("dataflow") or {}).get("edges"))
 
     def _record_deadline(self, node_id: str) -> dict:
         # dev/118: the budget ran out before this node was dispatched — it
@@ -1215,8 +1233,9 @@ class SolveBatch:
                 map_edits.is_map_edits(self.user_key, self.project_id, node.get("type"))
                 and not map_edits.goal_names_edits(node.get("goal"))
             ):
-                # An empty Map Edits node is filled only when its goal names
-                # the edits to make: an agent never makes them up.
+                # An empty Map Edits node gets edits only when its goal names
+                # the edits to make: an agent never makes them up. Blank, it
+                # gets its call with no edits (``_record_no_content``).
                 queue.put((node_id, "no-content", map_edits.no_edits_reason(), None))
                 return
             if self.content_kind(node) == workflow_spec.CONTENT_KIND_NONE:
