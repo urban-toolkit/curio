@@ -28,6 +28,13 @@ export const grammarRuns: GrammarRun[] = [];
 /** What makes the map a run draws, for a test that reads its camera; none unless a test sets it. */
 export const drawnMaps: { make: null | (() => any) } = { make: null };
 
+/**
+ * What a run waits for once it made its maps, for a test that holds a draw
+ * under way: the node has its maps only when the run ends. None unless a test
+ * sets it.
+ */
+export const heldDraws: { until: Promise<void> | null } = { until: null };
+
 export const AutkGrammar = jest.fn().mockImplementation((targets: Record<string, unknown>) => {
   const handlers: Record<string, (event: any) => void> = {};
   const highlights: Array<[string, number[]]> = [];
@@ -53,6 +60,7 @@ export const AutkGrammar = jest.fn().mockImplementation((targets: Record<string,
       highlights,
       maps,
     });
+    if (heldDraws.until) await heldDraws.until;
   });
   return grammar;
 });
@@ -99,6 +107,7 @@ export const autkGrammarModule = { AutkGrammar };
 export function resetAutkNodeMocks(): void {
   grammarRuns.length = 0;
   drawnMaps.make = null;
+  heldDraws.until = null;
   AutkGrammar.mockClear();
   markNodeErrored.mockClear();
   showToast.mockClear();

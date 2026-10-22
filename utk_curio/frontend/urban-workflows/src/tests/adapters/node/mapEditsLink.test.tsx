@@ -7,7 +7,9 @@
  * the same way and lights up on the map. A map the node feeds but is not
  * linked to draws the edits, and a click there selects nothing in the node.
  * A layer the node makes is drawn on top once it has features. The map keeps
- * its view when an edit draws it again, and after Commit edits.
+ * its view when an edit draws it again, and after Commit edits. A click on the
+ * map picks the feature under it, and a shift-click adds or drops one, while
+ * the map draws an edit again too.
  *
  * Each node is the behavior the canvas registers for its type, with the
  * node's own state (hook/useNodeState) for the Map Edits node; the map draws
@@ -45,7 +47,8 @@ import { useInteractions } from "../../../providers/flow/useInteractions";
 import ProvenanceProvider, { useProvenanceContext } from "../../../providers/ProvenanceProvider";
 import { editFeaturesCode, readEditFeaturesCode, type EditFeaturesSettings } from "../../../utils/editFeatures/editFeatures";
 import { editSelection } from "../../../utils/editFeatures/mapEditSelection";
-import { drawnMaps, grammarRuns, nodeInput, resetAutkNodeMocks } from "../../_support/autkNodeMocks";
+import { toMercator } from "../../../utils/editFeatures/mapEditBus";
+import { drawnMaps, grammarRuns, heldDraws, nodeInput, resetAutkNodeMocks } from "../../_support/autkNodeMocks";
 import { stubWebGpu, unstubWebGpu } from "../../_support/autkNode";
 
 const LOADER = "buildings";
@@ -433,4 +436,148 @@ test("the map keeps the view it was zoomed to when an edit draws it again, a Rem
   expect(third.camera.resetCamera).toHaveBeenLastCalledWith([0, 1, 0], [110, -40, 0], [110, -40, 300]);
   expect(third.camera.getLookAt()).toEqual([110, -40, 0]);
   expect(third.ownReset).not.toHaveBeenCalled();
+});
+
+/** How many pixels wide and tall each map canvas is while it is on the page. */
+const SIZE = 400;
+
+/**
+ * jsdom lays nothing out: each map canvas measures SIZE pixels square, at the
+ * page's top left corner, while it is on the page, and nothing once it left
+ * it, as a browser measures one. Returns what puts jsdom's measures back.
+ */
+function layOutCanvases(): () => void {
+  const canvases = HTMLCanvasElement.prototype as any;
+  const side = (canvas: HTMLCanvasElement) => (canvas.isConnected ? SIZE : 0);
+  Object.defineProperty(canvases, "offsetWidth", { configurable: true, get() { return side(this); } });
+  Object.defineProperty(canvases, "offsetHeight", { configurable: true, get() { return side(this); } });
+  canvases.getBoundingClientRect = function (this: HTMLCanvasElement) {
+    const s = side(this);
+    return { x: 0, y: 0, left: 0, top: 0, right: s, bottom: s, width: s, height: s, toJSON: () => ({}) };
+  };
+  return () => {
+    delete canvases.offsetWidth;
+    delete canvases.offsetHeight;
+    delete canvases.getBoundingClientRect;
+  };
+}
+
+/**
+ * A map as autk-map draws it, on the canvas its run made, looking straight
+ * down on World Mercator metres: its origin at the canvas's bottom left
+ * corner, a kilometre to a pixel. Destroyed, it keeps its camera, and its
+ * renderer the canvas's size as it was laid out, as autk-map's map does.
+ */
+function projectingMap() {
+  const span = SIZE * 1000;
+  const camera: any = {
+    eye: [span / 2, span / 2, 10000],
+    lookAt: [span / 2, span / 2, 0],
+    up: [0, 1, 0],
+    getEye: () => [...camera.eye],
+    getLookAt: () => [...camera.lookAt],
+    getUp: () => [...camera.up],
+    getFovyRadians: () => Math.PI / 4,
+    getFar: () => 1e7,
+    resize: jest.fn(),
+    // Clip space, column by column: the span across, from -1 to 1, both ways.
+    getViewProjectionMatrix: () => [2 / span, 0, 0, 0, 0, 2 / span, 0, 0, 0, 0, 1, 0, -1, -1, 0, 1],
+    // From the eye to the ground under a point of the canvas, at x and y from 0 to 1 from its bottom left.
+    getWorldRayDirection: (x: number, y: number) => [x * span - camera.eye[0], y * span - camera.eye[1], -camera.eye[2]],
+  };
+  camera.resetCamera = jest.fn((up: number[], lookAt: number[], eye: number[]) => {
+    camera.up = [...up];
+    camera.lookAt = [...lookAt];
+    camera.eye = [...eye];
+  });
+  return {
+    camera,
+    canvas: document.getElementById(`autk-grammar-map-${MAP}`),
+    renderer: { pixelWidth: SIZE, pixelHeight: SIZE, cssWidth: SIZE, cssHeight: SIZE },
+    layerManager: { layers: [{ position: new Float32Array([0, 0, 100, 50]), _dimension: 2 }], hasOrigin: true, origin: [0, 0] },
+    resetCamera: jest.fn(),
+    requestRender: jest.fn(),
+    updateRenderInfo: jest.fn(),
+    destroy: jest.fn(),
+  };
+}
+
+/** The middles of buildings 136 and 200, in degrees. */
+const MIDDLE_136: [number, number] = [1.5, 0.5];
+const MIDDLE_200: [number, number] = [2.5, 0.5];
+
+/**
+ * A click on the map where it draws *lonLat*, with *shift* a shift-click: a
+ * press and a release in place on the map's canvas, as a person makes one,
+ * which the overlay a linked Map Edits node lends the map hears.
+ */
+function clickMap(lonLat: [number, number], shift = false) {
+  const canvas = document.getElementById(`autk-grammar-map-${MAP}`) as HTMLCanvasElement;
+  const [x, y] = toMercator(lonLat);
+  const at = { bubbles: true, cancelable: true, button: 0, shiftKey: shift, clientX: Math.round(x / 1000), clientY: Math.round(SIZE - y / 1000) };
+  act(() => {
+    canvas.dispatchEvent(new MouseEvent("pointerdown", { ...at, buttons: 1 }));
+    canvas.dispatchEvent(new MouseEvent("pointerup", { ...at, buttons: 0 }));
+  });
+}
+
+test("a building picked in Edit, clicked again in Remove while the map draws the Apply, is picked again, and a shift-click adds one and drops it", async () => {
+  const putBack = layOutCanvases();
+  let release = () => {};
+  try {
+    drawnMaps.make = projectingMap;
+    const canvas = mountCanvas();
+    await canvas.playMap();
+    const remove = () => screen.getByTestId("interaction-remove-picked");
+
+    // Edit: a click on building 136 picks it, before any edit.
+    await openAction("edit");
+    const drawnFirst = document.getElementById(`autk-grammar-map-${MAP}`);
+    clickMap(MIDDLE_136);
+    const height = (await screen.findByTestId("interaction-field-height")) as HTMLInputElement;
+    expect(height.value).toBe("20");
+
+    // An Apply: the map draws the edit again, on a canvas of its own, and the
+    // first one leaves the page. The test holds that draw under way.
+    heldDraws.until = new Promise<void>((resolve) => {
+      release = () => resolve();
+    });
+    fireEvent.change(height, { target: { value: "99" } });
+    fireEvent.click(screen.getByTestId("interaction-form-submit"));
+    await waitFor(() => expect(grammarRuns).toHaveLength(2));
+    expect(drawnFirst?.isConnected).toBe(false);
+
+    // Back, then Remove: the new action starts with nothing picked, and a
+    // click on the same building, while the map still draws, picks it again,
+    // as the map's selection over the interaction edge.
+    fireEvent.click(screen.getByTestId("interaction-back"));
+    fireEvent.click(screen.getByTestId("interaction-action-remove"));
+    expect(remove()).toBeDisabled();
+    clickMap(MIDDLE_136);
+    await waitFor(() => expect(remove()).toHaveTextContent("Remove 1 area"));
+    const [selection] = canvas.interactionsOf(NODE);
+    expect(selection.nodeId).toBe(MAP);
+    expect(selection.details.autk_selection.data).toEqual([{ building_id: 136 }]);
+
+    // The draw ends: the pick stays, and the new map lights it up.
+    await act(async () => {
+      release();
+    });
+    await waitFor(() => expect(litUp()).toEqual([1]));
+    expect(remove()).toHaveTextContent("Remove 1 area");
+
+    // A shift-click on building 200 adds it, and another drops it.
+    clickMap(MIDDLE_200, true);
+    await waitFor(() => expect(remove()).toHaveTextContent("Remove 2 areas"));
+    clickMap(MIDDLE_200, true);
+    await waitFor(() => expect(remove()).toHaveTextContent("Remove 1 area"));
+    fireEvent.click(remove());
+    expect(canvas.settings()?.edits).toEqual([
+      { op: "set", ids: [136], column: "height", value: 99 },
+      { op: "remove", ids: [136] },
+    ]);
+  } finally {
+    release();
+    putBack();
+  }
 });
