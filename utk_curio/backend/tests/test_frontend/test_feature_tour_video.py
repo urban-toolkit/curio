@@ -2453,6 +2453,11 @@ def scene_selection_tag(ctx: Ctx) -> None:
     tour.click(panel.get_by_role("button", name="Add selection tag"))
     panel.locator('[data-selection-row="zips"]').wait_for(state="visible", timeout=10000)
     _open_tab(page, reader, "code")
+    # The tag is under Selections, which the header shows closed.
+    tour.click(
+        node_locator(page, reader).locator('[data-widget-strip] [data-strip-category="selections"]'),
+        dispatch=True,
+    )
     _drag_selection_tag_to_line_end(page, reader, "zips")
     page.wait_for_function(
         """(id) => {

@@ -425,15 +425,44 @@ are what its scenario chips write.
   scenario color, the dataset `inputs` or a field of it, is inserted quoted where JSON
   wants a value (`insertReference` in `monacoCodeReferences.ts`), so the spec stays
   JSON.
-- `components/editing/widgets/WidgetTag.tsx` shows them: on a Vega-Lite node with an
-  input an `inputs` tag beside the input tags drags `[!! inputs !!]` and opens to `stackedFields` (the
-  three the stacking adds, then the inputs' columns, a layer's geometry left out), its
-  `scenario_name` field showing a swatch per name of `scenarioScale` (the names alone
-  when no input comes from a box), which drag `scenario colors`, and the **order** and
-  **text colors** tags; in a spec, an input
-  from a box shows its box's swatch, which drags its input's chip
-  (`SCENARIO_REF_MIME`). `monacoCodeReferences.ts` draws the chips lilac and says
-  what each writes on hover.
+- The header above a code or grammar editor, `ReferenceStrip` in
+  `components/editing/widgets/WidgetTag.tsx`, lists every chip the node can use,
+  whatever its code or spec uses: it reads the editor's language, the grammar
+  `NodeEditor` resolves the spec in (`VEGA_LITE` for the built-in node and any template
+  whose `grammarId` says so), the node's inputs with their labels (`useInputScope`), its
+  widgets and selection tags, and the dataflow's shared tags, never its code, so
+  built-in and package nodes of one grammar get the same header. It is one row of
+  categories, Inputs, Scenarios, Widgets, Selections and Shared, each with its count and
+  only when it has chips. They start closed, a click opens a category's chips under the
+  row, and `stripCategories.ts` keeps the open ones per node id outside React, so a tab
+  switch or a remount keeps them; `ProjectLoader` closes them all when another dataflow
+  opens (`closeEveryCategory`). On the canvas the header takes at most half of its
+  editor's height (`.strip` in `WidgetTags.module.css`), and the open chips scroll inside
+  it with the shared thin scrollbar; in a notebook cell it is as tall as its chips.
+  Inputs, `InputsChips`, is a line per input in circle order, and in a Vega-Lite spec
+  with an input the line of `inputs`, whose tag drags `[!! inputs !!]` and whose list is
+  `stackedFields` (the three the stacking adds, then the inputs' columns, leaving out a
+  GeoDataFrame's geometry and every input that carries layers). A line holds its
+  expander, its tag and what its input holds: `aboutInput` names where the input comes
+  from, the box its node is in, else its label (`resolveNodeDisplayLabel`, the kind its
+  node's header shows), then `heldBy` counts its columns, layers or tuple's values
+  (`InputScope.tuple`); the line of `inputs` names the inputs it stacks and counts its
+  fields (`aboutStacked`). An open list comes right under its line, never in it: a
+  layered input's is one grid of a line per layer. `stripCategories.ts` keeps the open
+  lists per node id beside the categories, each by the edge that feeds its input
+  (`InputScope.edge`), which keeps its id when the circles renumber, so a list never
+  opens on another input; and Inputs, open, asks for the columns not read yet of every
+  input (`onLoadColumns`). Scenarios shows in a spec whose inputs' labels are all known
+  and one comes from a box: in Vega-Lite, the swatches of `scenarioColorScale`, which
+  drag `scenario colors`, then **text colors** and **order**; in Vega-Lite and Autark, a
+  tag per input, which drags its `scenario input_<k>` chip in `scenarioInputColor`. Each
+  drags as `SCENARIO_REF_MIME`. Both helpers are what `scenarioValue` writes, so a swatch
+  shows the color its chip writes. Code shows neither the `inputs` tag nor Scenarios.
+  `monacoCodeReferences.ts` draws the chips lilac and says what each writes on hover.
+  On a node fed from no box, the hover says that no input of the node comes from a
+  box, and what the chip writes there: for a scale the names alone, in the grammar's
+  own colors; for **order** the names of the nodes its inputs come from; for an input's
+  chip its gray.
 - A change to any label's id, name, color or rank draws a chart again when what it
   draws moves: `NodeEditor.tsx` hands `applyGrammar` the spec it resolved with a
   `GrammarRedraw` (`registry/types.ts`), which writes the same code again in the same

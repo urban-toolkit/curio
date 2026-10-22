@@ -16,7 +16,7 @@ import {
   offsetToPosition,
   referenceMarks,
 } from "../../../components/editing/widgets/monacoCodeReferences";
-import { referenceText, type ReferenceScope } from "../../../utils/references/codeReferences";
+import { referenceText, resolveReferences, type ReferenceScope } from "../../../utils/references/codeReferences";
 import type { WidgetDef } from "../../../utils/widgets/widgetModel";
 
 function fakeEditor(position: { lineNumber: number; column: number } | null = { lineNumber: 2, column: 5 }) {
@@ -237,6 +237,52 @@ describe("chips", () => {
     expect(chipClass(unwired)).toBe("curio-input-ref-problem");
     const [code] = referenceMarks("rows = [!! inputs !!]", withInputs, "python");
     expect(code.problem).toBe("[!! inputs !!] is for a Vega-Lite spec, not for code.");
+  });
+});
+
+describe("a scenario chip's hover", () => {
+  const BASE = { scenario: "s-base", name: "Baseline", color: "#2a9d8f", rank: 0 };
+  const fromNoBox: ReferenceScope = {
+    widgets: [],
+    inputs: [
+      { slot: 0, label: "Weekday", scenario: { name: "Weekday", color: "#8a8f98" } },
+      { slot: 1, label: "Weekend", scenario: { name: "Weekend", color: "#8a8f98" } },
+    ],
+    shared: [],
+  };
+  const writes = (inner: string, over: ReferenceScope) => resolveReferences(referenceText(inner), over, "json").code;
+  const hoverOf = (inner: string, over: ReferenceScope) => {
+    const [mark] = referenceMarks(`{"x": ${referenceText(inner)}}`, over, "json");
+    expect(mark.problem).toBeNull();
+    return mark.hover;
+  };
+
+  test("on a node fed from no box, it says no input comes from a box, so it writes the names alone", () => {
+    const why = "no input of this node comes from a scenario box";
+    for (const chip of ["scenario colors", "scenario text_colors"]) {
+      expect(hoverOf(chip, fromNoBox)).toBe(
+        `${chip} = ${writes(chip, fromNoBox)}: ${why}, so it writes the names alone, in the grammar's own colors`,
+      );
+    }
+    expect(hoverOf("scenario order", fromNoBox)).toBe(
+      `scenario order = ${writes("scenario order", fromNoBox)}: ${why}, so it writes the names of the nodes its inputs come from`,
+    );
+    expect(hoverOf("scenario input_1", fromNoBox)).toBe(
+      `scenario input_1 = ${writes("scenario input_1", fromNoBox)}: ${why}, so it writes the gray the scale gives input_1`,
+    );
+  });
+
+  test("on a node fed from a box, it writes the boxes' scale, and an input from no box its grey", () => {
+    const beside: ReferenceScope = { ...fromNoBox, inputs: [{ ...fromNoBox.inputs[0], scenario: BASE }, fromNoBox.inputs[1]] };
+    expect(hoverOf("scenario colors", beside)).toBe(
+      `scenario colors = ${writes("scenario colors", beside)}, from the boxes this node's inputs come from`,
+    );
+    expect(hoverOf("scenario input_0", beside)).toBe(
+      `scenario input_0 = ${writes("scenario input_0", beside)}, the color of Baseline, the box input_0 comes from`,
+    );
+    expect(hoverOf("scenario input_1", beside)).toBe(
+      `scenario input_1 = ${writes("scenario input_1", beside)}: input_1 comes from no scenario box`,
+    );
   });
 });
 
