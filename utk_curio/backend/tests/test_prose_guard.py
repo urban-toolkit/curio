@@ -88,18 +88,6 @@ USERS = {
 
 #: Strings over the limit that are code another program runs, or a pattern.
 CODE = {
-    ("utk_curio/backend/app/agents/domain/contracts.py", "render_autk_grammar_ts",
-     "\n/** The top-level keys an Autark docume"): "the TypeScript the generator writes into src/generated/",
-    ("utk_curio/backend/app/agents/domain/contracts.py", "render_render_causes_ts",
-     "\n/** The kind prefix of an empty render:"): "the TypeScript the generator writes into src/generated/",
-    ("utk_curio/backend/app/agents/domain/contracts.py", "render_agent_categories_ts",
-     "\n/** The categories an agent manifest ca"): "the TypeScript the generator writes into src/generated/",
-    ("utk_curio/backend/app/agents/domain/contracts.py", "render_solve_stop_reasons_ts",
-     "\n/** Every reason a node's repair loop c"): "the TypeScript the generator writes into src/generated/",
-    ("utk_curio/backend/app/agents/domain/contracts.py", "render_vis_defaults_ts",
-     "\n/** The `$schema` of a Vega-Lite spec C"): "the TypeScript the generator writes into src/generated/",
-    ("utk_curio/backend/app/agents/domain/contracts.py", "render_note_colors_ts",
-     "\n/** The colors a note's appearance can "): "the TypeScript the generator writes into src/generated/",
     ("utk_curio/backend/app/datasets/domain/catalog_item.py", "<module>",
      "bundle_path = {bundle_path_expr}\ndef _cu"): "the Python a node runs to load a bundle",
     ("utk_curio/backend/app/datasets/domain/catalog_item.py", "loader_snippet",

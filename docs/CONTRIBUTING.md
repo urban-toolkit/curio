@@ -448,7 +448,7 @@ defines. See [ARCHITECTURE.md, Agent text](ARCHITECTURE.md#agent-text).
 
 What a check tells a model when it refuses or corrects what the model wrote
 is a message of the base entry's `messages.md`, one section per message, which
-the check reads by its id: `agent_text.message("plan.cycle", path=path)`. A
+the check reads by its id: `agent_text.message("tool-round.not-granted", tool=name)`. A
 new refusal is a new section and the call that says it, and a value only the
 run knows, such as a node's id or the problems found, is a `{name}` place the
 call fills. Text that only people read is no message: an error on Play, the
