@@ -461,19 +461,19 @@ class TestDrawnOnTheMap:
             _edit(_records(), [edit], **BUILDINGS)
 
 
-def test_the_schema_names_the_edits_the_step_makes():
+def test_the_node_names_the_edits_the_step_makes():
+    """The node's edits (``EDIT_OPS`` in ``editFeatures.ts``, which Jest pins to
+    the cases file's ``ops``) are the step's, in its order."""
     from utk_curio.sandbox.util.feature_edits import OPS
 
-    schema = json.loads((REPO_ROOT / "docs/schemas/trill.v1.json").read_text(encoding="utf-8"))
-    edit = schema["$defs"]["nodeMetadata"]["properties"]["editFeatures"]["properties"]["edits"]["items"]
-    assert tuple(edit["properties"]["op"]["enum"]) == OPS
+    assert tuple(json.loads(CASES.read_text(encoding="utf-8"))["ops"]) == OPS
 
 
-def _code_cases():
-    """The cases file's cases; read at collection, so a checkout without it
+def _code_cases(part="cases"):
+    """One part of the cases file; read at collection, so a checkout without it
     fails this test rather than the whole module."""
     try:
-        return json.loads(CASES.read_text(encoding="utf-8"))["cases"]
+        return json.loads(CASES.read_text(encoding="utf-8"))[part]
     except FileNotFoundError:
         return [{"name": "editFeaturesCode.cases.json is missing", "code": None, "kept": None}]
 
@@ -481,16 +481,64 @@ def _code_cases():
 @pytest.mark.parametrize("case", _code_cases(), ids=lambda c: c["name"])
 def test_the_code_the_node_writes_runs_its_edits(case):
     """Each code ``editFeaturesCode.cases.json`` holds (Jest checks the node
-    writes it) runs as a Python node's code does, with the helper in scope."""
+    writes it) runs as a Python node's code does, with the helper in scope: on
+    the roads and the buildings as one input, or one circle each."""
     from utk_curio.sandbox.util.feature_edits import edit_features
     from utk_curio.sandbox.util.input_names import call_as_node
 
     assert case["code"] is not None, case["name"]
     namespace = {"curio_edit_features": edit_features}
-    out = call_as_node(textwrap.indent(case["code"], "    "), namespace, _records(), [0])
+    records = _records()
+    if case.get("circles", 1) > 1:
+        out = call_as_node(textwrap.indent(case["code"], "    "), namespace, [[layer] for layer in records], [0, 1])
+    else:
+        out = call_as_node(textwrap.indent(case["code"], "    "), namespace, records, [0])
     buildings = out if isinstance(out, list) else out["data"]
     fc = buildings[1]["geojson"] if isinstance(out, list) else buildings[1]["data"]
     assert _ids(fc) == case["kept"]
+
+
+def _call_of(code):
+    """The positional arguments and the keywords of the one
+    ``curio_edit_features(...)`` call *code* returns, as Python reads them."""
+    import ast
+
+    (statement,) = ast.parse(code).body
+    assert isinstance(statement, ast.Return), code
+    call = statement.value
+    assert isinstance(call, ast.Call) and isinstance(call.func, ast.Name) and call.func.id == "curio_edit_features", code
+    return call.args, {keyword.arg: ast.literal_eval(keyword.value) for keyword in call.keywords}
+
+
+@pytest.mark.parametrize("case", _code_cases() + _code_cases("read"), ids=lambda c: c["name"])
+def test_python_reads_the_code_as_the_settings_the_node_reads(case):
+    """Each code the node writes, and each other code its reader takes, is a
+    call of the step as its signature has it, whose arguments hold, as Python
+    reads them, the settings the node reads from it: its inputs, its edits and
+    each keyword."""
+    import ast
+    import inspect
+
+    from utk_curio.sandbox.util.feature_edits import edit_features
+
+    assert case["code"] is not None, case["name"]
+    args, keywords = _call_of(case["code"])
+    params = inspect.signature(edit_features).parameters
+    assert set(keywords) <= set(params) - {"value", "edits"}, keywords
+    first, edits = args
+    circles = case.get("circles", 1)
+    if circles > 1:
+        assert isinstance(first, ast.List) and [ast.unparse(item) for item in first.elts] == [f"input_{k}" for k in range(circles)]
+        assert keywords.get("by_input") is True
+    else:
+        assert ast.unparse(first) == "input_0" and not keywords.get("by_input")
+    settings = case["settings"] or {}
+    assert ast.literal_eval(edits) == settings.get("edits", [])
+    assert keywords.get("key") == settings.get("key")
+    assert keywords.get("layer") == settings.get("layer")
+    assert (keywords.get("keys") or None) == settings.get("keys")
+    assert (keywords.get("new_layers") or None) == settings.get("newLayers")
+    assert keywords.get("crs") == settings.get("crs")
 
 
 def _expr_cases(part):

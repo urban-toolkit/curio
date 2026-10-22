@@ -1,8 +1,7 @@
 /**
  * The Interaction node (#662; its type id is still
  * `curio.builtin/edit-features`): features picked on its map, or by a
- * condition, removed, put back or given new values, as an edit log that is
- * the node's setting (`metadata.editFeatures`):
+ * condition, removed, put back or given new values, as an edit log:
  *
  * - `key`, the column that identifies a feature: `osm_id` or `building_id`
  *   when the layer has them, or another column whose values differ in every
@@ -13,16 +12,19 @@
  *   `restore`, `scale`, `offset` or `expr`, each on the features whose `key`
  *   is one of `ids` or that its `where` condition picks (`editExpr`).
  *
- * The node's code is written from these (`editFeaturesCode`): one call of the
- * sandbox's `curio_edit_features` (`utk_curio/sandbox/util/feature_edits.py`),
- * so a run in the browser, a run on the server and the headless runner apply
- * the same edits. Written only when present. `applyEdits` applies the log in
- * the browser, for the node's table and its condition count.
+ * The node's code is its only state: one call of the sandbox's
+ * `curio_edit_features` (`utk_curio/sandbox/util/feature_edits.py`), which
+ * this module writes (`editFeaturesCode`) and reads back
+ * (`readEditFeaturesCode`), so a run in the browser, a run on the server and
+ * the headless runner apply the same edits. Code of another shape is never
+ * rewritten: the reader says why it cannot read it, and the run still runs
+ * it. `applyEdits` applies the log in the browser.
  */
 import type { SelectDetail } from "../selectionMatch";
 import { featureRows } from "../selectionMatch";
 import { idColumns, selectedIds, STABLE_ID_COLUMNS, type SelectionId } from "../references/selectionTags";
-import { widgetLiteral } from "../references/codeReferences";
+import { REFERENCE_PATTERN } from "../references/codeReferences";
+import { jsonOf, pyLiteral, readCallArgs, shown, Unreadable, type JsonValue, type Literal } from "./pyLiteral";
 
 /** What the node's code calls (`utk_curio/sandbox/util/feature_edits.py`). */
 export const EDIT_HELPER = "curio_edit_features";
@@ -199,11 +201,7 @@ export function normalizeEdit(raw: unknown): FeatureEdit | null {
   return out;
 }
 
-/**
- * The well-formed settings in *raw* (a spec's `metadata.editFeatures`), or
- * undefined when it holds none. Kept in sync with `$defs.nodeMetadata` in
- * `docs/schemas/trill.v1.json`.
- */
+/** The well-formed settings in *raw*, or undefined when it holds none. */
 export function normalizeEditFeatures(raw: unknown): EditFeaturesSettings | undefined {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return undefined;
   const r = raw as Record<string, unknown>;
@@ -248,34 +246,24 @@ export function normalizeNewLayer(raw: unknown): NewLayerDef | null {
   return { name: r.name.trim(), geometry: r.geometry as NewLayerGeometry, ...(properties.length > 0 ? { properties } : {}) };
 }
 
-/** *value* as a Python literal: a dict, a list, a text, a number, True, False or None. */
-export function pythonLiteral(value: unknown): string {
-  if (value === null || value === undefined) return "None";
-  if (Array.isArray(value)) return `[${value.map(pythonLiteral).join(", ")}]`;
-  if (typeof value === "object") {
-    return `{${Object.entries(value as Record<string, unknown>).map(([k, v]) => `${widgetLiteral(k, "python")}: ${pythonLiteral(v)}`).join(", ")}}`;
-  }
-  return widgetLiteral(value as any, "python");
-}
-
 /** One edit as a Python dict: op, layer, ids or where, column, value, id, geometry, values, label, enabled. */
 function editLine(edit: FeatureEdit): string {
-  const parts = [`"op": ${widgetLiteral(edit.op, "python")}`];
-  if (edit.layer) parts.push(`"layer": ${widgetLiteral(edit.layer, "python")}`);
+  const parts = [`"op": ${pyLiteral(edit.op)}`];
+  if (edit.layer) parts.push(`"layer": ${pyLiteral(edit.layer)}`);
   if (edit.op === "add") {
-    parts.push(`"id": ${widgetLiteral(edit.id as SelectionId, "python")}`, `"geometry": ${pythonLiteral(edit.geometry)}`);
-    if (edit.values && Object.keys(edit.values).length > 0) parts.push(`"values": ${pythonLiteral(edit.values)}`);
+    parts.push(`"id": ${pyLiteral(edit.id)}`, `"geometry": ${pyLiteral(edit.geometry)}`);
+    if (edit.values && Object.keys(edit.values).length > 0) parts.push(`"values": ${pyLiteral(edit.values)}`);
   } else if (edit.op === "add_column") {
-    parts.push(`"column": ${widgetLiteral(edit.column ?? "", "python")}`, `"value": ${widgetLiteral(edit.value ?? null, "python")}`);
+    parts.push(`"column": ${pyLiteral(edit.column ?? "")}`, `"value": ${pyLiteral(edit.value ?? null)}`);
   } else {
-    if (edit.where !== undefined) parts.push(`"where": ${widgetLiteral(edit.where, "python")}`);
-    else parts.push(`"ids": [${(edit.ids ?? []).map((id) => widgetLiteral(id, "python")).join(", ")}]`);
+    if (edit.where !== undefined) parts.push(`"where": ${pyLiteral(edit.where)}`);
+    else parts.push(`"ids": ${pyLiteral(edit.ids ?? [])}`);
     if (WRITE_OPS.includes(edit.op)) {
-      parts.push(`"column": ${widgetLiteral(edit.column ?? "", "python")}`, `"value": ${widgetLiteral(edit.value ?? null, "python")}`);
+      parts.push(`"column": ${pyLiteral(edit.column ?? "")}`, `"value": ${pyLiteral(edit.value ?? null)}`);
     }
-    if (edit.op === "geometry") parts.push(`"geometry": ${pythonLiteral(edit.geometry)}`);
+    if (edit.op === "geometry") parts.push(`"geometry": ${pyLiteral(edit.geometry)}`);
   }
-  if (edit.label) parts.push(`"label": ${widgetLiteral(edit.label, "python")}`);
+  if (edit.label) parts.push(`"label": ${pyLiteral(edit.label)}`);
   if (edit.enabled === false) parts.push(`"enabled": False`);
   return `    {${parts.join(", ")}},`;
 }
@@ -289,23 +277,240 @@ export function editInputs(circles = 1): string {
  * The node's code for *settings*, fed by *circles* inputs: with several, it
  * hands the step every input, one per circle, and the step names each
  * unnamed layer after its circle (`input_<k>`), as the Autark map it feeds
- * names them.
+ * names them. *comments* are the lines the reader found above the call, kept
+ * as they are; without them (a new node), the node's own.
  */
-export function editFeaturesCode(settings: EditFeaturesSettings | undefined, circles = 1): string {
+export function editFeaturesCode(settings: EditFeaturesSettings | undefined, circles = 1, comments?: readonly string[]): string {
   const edits = settings?.edits ?? [];
   const byInput = circles > 1;
   const args = [
-    settings?.key ? `key=${widgetLiteral(settings.key, "python")}` : "",
-    settings?.layer ? `layer=${widgetLiteral(settings.layer, "python")}` : "",
-    settings?.keys && Object.keys(settings.keys).length > 0 ? `keys=${pythonLiteral(settings.keys)}` : "",
-    settings?.newLayers && settings.newLayers.length > 0 ? `new_layers=${pythonLiteral(settings.newLayers)}` : "",
-    settings?.crs ? `crs=${widgetLiteral(settings.crs, "python")}` : "",
+    settings?.key ? `key=${pyLiteral(settings.key)}` : "",
+    settings?.layer ? `layer=${pyLiteral(settings.layer)}` : "",
+    settings?.keys && Object.keys(settings.keys).length > 0 ? `keys=${pyLiteral(settings.keys)}` : "",
+    settings?.newLayers && settings.newLayers.length > 0 ? `new_layers=${pyLiteral(settings.newLayers)}` : "",
+    settings?.crs ? `crs=${pyLiteral(settings.crs)}` : "",
     byInput ? "by_input=True" : "",
   ].filter(Boolean);
   const tail = args.length > 0 ? `, ${args.join(", ")}` : "";
   const value = editInputs(circles);
-  if (edits.length === 0) return [...EDIT_CODE_NOTE, `return ${EDIT_HELPER}(${value}, []${tail})`, ""].join("\n");
-  return [...EDIT_CODE_NOTE, `return ${EDIT_HELPER}(${value}, [`, ...edits.map(editLine), `]${tail})`, ""].join("\n");
+  const head = comments === undefined ? EDIT_CODE_NOTE : [...comments];
+  if (edits.length === 0) return [...head, `return ${EDIT_HELPER}(${value}, []${tail})`, ""].join("\n");
+  return [...head, `return ${EDIT_HELPER}(${value}, [`, ...edits.map(editLine), `]${tail})`, ""].join("\n");
+}
+
+/** What `readEditFeaturesCode` makes of a node's code. */
+export type EditFeaturesRead =
+  /**
+   * The edits, how many circles the call hands the step (none for a new
+   * node's blank code), and the comment lines above the call.
+   */
+  | { settings: EditFeaturesSettings | undefined; circles?: number; comments?: string[] }
+  /** Why the code is not one the node writes. */
+  | { problem: string };
+
+/** The keywords `curio_edit_features` takes after its input and its edits. */
+const KEYWORDS = ["key", "layer", "keys", "new_layers", "crs", "by_input"];
+const NOT_THE_CALL = `This node reads one call, return ${EDIT_HELPER}(input_0, [...]), and this code holds something else.`;
+/** What each op's dict holds, besides its op, its layer, its label and its switch. */
+const EDIT_FIELDS: Record<EditOp, readonly string[]> = {
+  remove: ["ids", "where"],
+  restore: ["ids", "where"],
+  set: ["ids", "where", "column", "value"],
+  scale: ["ids", "where", "column", "value"],
+  offset: ["ids", "where", "column", "value"],
+  expr: ["ids", "where", "column", "value"],
+  geometry: ["ids", "where", "geometry"],
+  add: ["id", "geometry", "values"],
+  add_column: ["column", "value"],
+};
+const NOT_A_VALUE = "is not a text, a number, True, False or None";
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  !!value && typeof value === "object" && !Array.isArray(value);
+
+/** A value as a reason shows it, as Python writes it. */
+const show = (value: unknown): string => {
+  if (value === undefined) return "nothing";
+  if (value === null) return "None";
+  if (typeof value === "boolean") return value ? "True" : "False";
+  return JSON.stringify(value);
+};
+
+/**
+ * Why the dict *raw* is not an edit the node writes, or null when it is one:
+ * the checks `normalizeEdit` makes, each with what is wrong, and no field the
+ * node would not write back.
+ */
+export function editProblem(raw: unknown): string | null {
+  if (!isRecord(raw)) return "is not a dict";
+  if (!EDIT_OPS.includes(raw.op as EditOp)) return `has the op ${show(raw.op)}, which is none of ${EDIT_OPS.join(", ")}`;
+  const op = raw.op as EditOp;
+  const extra = Object.keys(raw).find((name) => !["op", "layer", "label", "enabled", ...EDIT_FIELDS[op]].includes(name));
+  if (extra !== undefined) return `is a ${op}, which takes no ${extra}`;
+  if (raw.layer !== undefined && (typeof raw.layer !== "string" || raw.layer === "")) return "has a layer that is not a name";
+  if (raw.label !== undefined && typeof raw.label !== "string") return "has a label that is not a text";
+  if (raw.enabled !== undefined && typeof raw.enabled !== "boolean") return "has an enabled that is not True or False";
+  if (op === "add") {
+    if (!isId(raw.id)) return "adds a feature with no id";
+    if (!isGeometry(raw.geometry)) return "adds a feature with no geometry the node reads";
+    if (raw.values === undefined) return null;
+    if (!isRecord(raw.values)) return "adds a feature whose values are not a dict";
+    const bad = Object.entries(raw.values).find(([column, value]) => column === "" || !isValue(value));
+    return bad ? `adds a feature whose ${bad[0] || "unnamed value"} ${NOT_A_VALUE}` : null;
+  }
+  if (op === "add_column") {
+    if (typeof raw.column !== "string" || raw.column === "") return "adds a property but names none";
+    return raw.value === undefined || isValue(raw.value) ? null : `gives ${raw.column} a value that ${NOT_A_VALUE}`;
+  }
+  const byIds = raw.ids !== undefined;
+  const byWhere = raw.where !== undefined;
+  if (byIds && byWhere) return "names its features both by ids and by a condition";
+  if (!byIds && !byWhere) return "names no features: it takes ids or a where condition";
+  if (byWhere && (typeof raw.where !== "string" || raw.where.trim() === "")) return "has a where that is not a condition";
+  if (byIds && (!Array.isArray(raw.ids) || raw.ids.length === 0)) return "has ids that are not a list of ids";
+  const notId = byIds ? (raw.ids as unknown[]).find((id) => !isId(id)) : undefined;
+  if (byIds && (raw.ids as unknown[]).some((id) => !isId(id))) return `names ${show(notId)}, which is not an id`;
+  if (op === "geometry" && !isGeometry(raw.geometry)) return "redraws features with no geometry the node reads";
+  if (!WRITE_OPS.includes(op)) return null;
+  if (typeof raw.column !== "string" || raw.column === "") return "writes a value but names no column";
+  if (raw.value === undefined) return `writes no value into ${raw.column}`;
+  if (!isValue(raw.value)) return `writes a value into ${raw.column} that ${NOT_A_VALUE}`;
+  if ((op === "scale" || op === "offset") && typeof raw.value !== "number") {
+    return `${op === "scale" ? "scales" : "offsets"} ${raw.column} by ${show(raw.value)}, which is not a number`;
+  }
+  if (op === "expr" && typeof raw.value !== "string") return `computes ${raw.column} from ${show(raw.value)}, which is not an expression`;
+  return null;
+}
+
+/** Why the dict *raw* is not a layer the node makes, or null when it is one. */
+export function newLayerProblem(raw: unknown): string | null {
+  if (!isRecord(raw)) return "is not a dict";
+  const extra = Object.keys(raw).find((name) => !["name", "geometry", "properties"].includes(name));
+  if (extra !== undefined) return `takes no ${extra}`;
+  if (typeof raw.name !== "string" || raw.name.trim() === "" || raw.name !== raw.name.trim()) return "has no name";
+  if (!NEW_LAYER_GEOMETRIES.includes(raw.geometry as NewLayerGeometry)) {
+    return `has the geometry ${show(raw.geometry)}, which is none of ${NEW_LAYER_GEOMETRIES.join(", ")}`;
+  }
+  if (raw.properties === undefined) return null;
+  if (!Array.isArray(raw.properties)) return "has properties that are not a list";
+  const names = new Set<string>();
+  for (const property of raw.properties) {
+    if (!isRecord(property)) return "has a property that is not a dict";
+    const name = property.name;
+    if (typeof name !== "string" || name.trim() === "" || name !== name.trim()) return "has a property with no name";
+    const more = Object.keys(property).find((field) => !["name", "type", "required", "choices", "default"].includes(field));
+    if (more !== undefined) return `has a property ${name} that takes no ${more}`;
+    if (names.has(name)) return `gives the property ${name} twice`;
+    names.add(name);
+    if (!PROPERTY_TYPES.includes(property.type as PropertyType)) return `has a property ${name} of the type ${show(property.type)}, which is none of ${PROPERTY_TYPES.join(", ")}`;
+    if (property.required !== undefined && typeof property.required !== "boolean") return `has a property ${name} whose required is not True or False`;
+    if (property.choices !== undefined && (!Array.isArray(property.choices) || property.choices.some((c) => typeof c !== "string" || c.trim() === "" || c !== c.trim()))) {
+      return `has a property ${name} whose choices are not a list of texts`;
+    }
+    if (property.default !== undefined && !isValue(property.default)) return `has a property ${name} whose default ${NOT_A_VALUE}`;
+  }
+  return null;
+}
+
+/** The circles the call's first argument hands the step: `input_0`, or `[input_0, input_1, ...]`. */
+function circlesOf(literal: Literal | undefined): number {
+  if (literal?.kind === "name" && literal.name === "input_0") return 1;
+  if (literal?.kind === "list" && literal.items.length > 1 && literal.items.every((item, k) => item.kind === "name" && item.name === `input_${k}`)) {
+    return literal.items.length;
+  }
+  throw new Unreadable(`The call's first argument is neither input_0 nor a list of the inputs in order, [input_0, input_1, ...].`);
+}
+
+/** A keyword that holds a text, or None. */
+function textArg(literal: Literal | undefined, name: string): string | undefined {
+  if (literal === undefined || (literal.kind === "value" && literal.value === null)) return undefined;
+  if (literal.kind === "value" && typeof literal.value === "string") return literal.value === "" ? undefined : literal.value;
+  throw new Unreadable(`${name} is not a text.`);
+}
+
+/** The settings the call's arguments hold. */
+function settingsOf(args: { positional: Literal[]; keywords: Map<string, Literal> }): { settings: EditFeaturesSettings | undefined; circles: number } {
+  if (args.positional.length < 2) throw new Unreadable(`The call takes its input and its list of edits, then ${KEYWORDS.join(", ")} by name.`);
+  if (args.positional.length > 2) throw new Unreadable(`After its input and its edits, the call takes ${KEYWORDS.join(", ")} by name.`);
+  const other = [...args.keywords.keys()].find((name) => !KEYWORDS.includes(name));
+  if (other !== undefined) throw new Unreadable(`${EDIT_HELPER} takes ${KEYWORDS.join(", ")}, not ${other}.`);
+  const circles = circlesOf(args.positional[0]);
+  const byInput = args.keywords.get("by_input");
+  const several = byInput !== undefined && byInput.kind === "value" && byInput.value === true;
+  if (byInput !== undefined && !(byInput.kind === "value" && (typeof byInput.value === "boolean" || byInput.value === null))) {
+    throw new Unreadable("by_input is not True or False.");
+  }
+  if (several !== circles > 1) {
+    throw new Unreadable(circles > 1 ? "A list of inputs takes by_input=True." : "by_input=True takes a list of inputs, [input_0, input_1, ...].");
+  }
+  const raw: Record<string, unknown> = {};
+  const key = textArg(args.keywords.get("key"), "key");
+  const layer = textArg(args.keywords.get("layer"), "layer");
+  const crs = textArg(args.keywords.get("crs"), "crs");
+  if (key) raw.key = key;
+  if (layer) raw.layer = layer;
+  if (crs) raw.crs = crs;
+  const keys = args.keywords.get("keys");
+  if (keys !== undefined && !(keys.kind === "value" && keys.value === null)) {
+    const value = jsonOf(keys, "keys");
+    if (!isRecord(value) || Object.entries(value).some(([name, column]) => name === "" || typeof column !== "string" || column === "")) {
+      throw new Unreadable("keys is not a dict of layer names and the columns that identify their features.");
+    }
+    raw.keys = value;
+  }
+  const newLayers = args.keywords.get("new_layers");
+  if (newLayers !== undefined && !(newLayers.kind === "value" && newLayers.value === null)) {
+    const value = jsonOf(newLayers, "new_layers");
+    if (!Array.isArray(value)) throw new Unreadable("new_layers is not a list of layers.");
+    value.forEach((item, i) => {
+      const problem = newLayerProblem(item);
+      if (problem) throw new Unreadable(`New layer ${i + 1} ${problem}.`);
+    });
+    raw.newLayers = value;
+  }
+  const edits = args.positional[1];
+  if (edits.kind !== "list") throw new Unreadable(`The call's second argument is ${shown(edits)}, not a list of edits.`);
+  raw.edits = edits.items.map((item, i): JsonValue => {
+    const value = jsonOf(item, "the edits");
+    const problem = editProblem(value);
+    if (problem) throw new Unreadable(`Edit ${i + 1} ${problem}.`);
+    return value;
+  });
+  return { settings: normalizeEditFeatures(raw), circles };
+}
+
+/**
+ * The edits *code* holds, how many circles it hands the step and the comment
+ * lines above its call, or why the node cannot read it. Blank code is a new
+ * node: no edits. Otherwise the code is comment and blank lines, then
+ * `return curio_edit_features(input, [edits], ...)` from the start of its
+ * line: its input (`input_0`, or every circle's with `by_input=True`), its
+ * edits, each a dict the node writes (`editProblem`), and the keywords `key`,
+ * `layer`, `keys`, `new_layers`, `crs` and `by_input` in any order, each at
+ * most once and each a literal. Anything else is refused: another statement,
+ * a comment inside the call, a reference, a field the node would not write
+ * back.
+ */
+export function readEditFeaturesCode(code: string | null | undefined): EditFeaturesRead {
+  const text = code ?? "";
+  if (text.trim() === "") return { settings: undefined };
+  const head = (/^(?:[ \t\f]*(?:#[^\r\n]*)?(?:\r\n|\r|\n))*/.exec(text) as RegExpExecArray)[0];
+  const comments = head.split(/\r\n|\r|\n/).slice(0, -1);
+  const call = text.slice(head.length);
+  const opening = new RegExp(`^return[ \\t\\f]+${EDIT_HELPER}[ \\t\\f]*\\(`).exec(call);
+  if (!opening) {
+    return { problem: /^[ \t\f]+return\b/.test(call) ? "The return line starts with spaces; the node writes it from the line's start." : NOT_THE_CALL };
+  }
+  if (new RegExp(REFERENCE_PATTERN).test(call)) {
+    return { problem: "The call holds a [!! !!] reference, whose value the node cannot know before a run." };
+  }
+  try {
+    const args = readCallArgs(text, head.length + opening[0].length, EDIT_HELPER, (position) => position === 0);
+    return { ...settingsOf(args), comments };
+  } catch (error) {
+    if (error instanceof Unreadable) return { problem: error.message };
+    throw error;
+  }
 }
 
 /** The columns the features of *fc* carry, in the order the first ones name them. */
