@@ -1,0 +1,15 @@
+{
+  "phrases": {
+    "rounds": "the attempt cap was reached",
+    "budget": "this node's time budget was spent",
+    "session": "this session's time budget was spent",
+    "repeat": "the builder repeated itself",
+    "decline": "the builder declined: it needs something from you",
+    "generation": "the builder could not run",
+    "blocker": "something outside its code blocked it",
+    "infrastructure": "the sandbox was unreachable",
+    "not-executable": "the sandbox cannot run this kind of node",
+    "source": "a source you must confirm",
+    "passed": "it passed"
+  }
+}

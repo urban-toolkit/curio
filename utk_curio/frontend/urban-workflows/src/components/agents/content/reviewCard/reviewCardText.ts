@@ -192,7 +192,16 @@ function widgetText(widget: { name: string; type: string; default?: unknown; val
   return `${widget.name} (${widget.type}${value !== undefined ? `, ${JSON.stringify(value)}` : ""})`;
 }
 
-/** #662: a planned node's widgets, its scenario, and the node a copy copies. */
+/** A Spatial Join's operation and output, as its row reads them. */
+function spatialJoinText(setting: { predicate?: string; output?: string }): string {
+  const parts: string[] = [];
+  if (setting.predicate !== undefined) parts.push(`operation ${setting.predicate}`);
+  if (setting.output !== undefined) parts.push(`output ${setting.output}`);
+  return parts.join(", ");
+}
+
+/** #662: a planned node's widgets, its scenario, and the node a copy copies;
+ * a Spatial Join's operation and output. */
 export function planNodeExtras(part: AgentProposalPart, node: { ref: string }): string[] {
   const row = part.plan!.nodes.find((n) => n.ref === node.ref);
   if (!row) return [];
@@ -202,6 +211,7 @@ export function planNodeExtras(part: AgentProposalPart, node: { ref: string }): 
     lines.push(`in ${row.scenario}` + (original ? ` · a copy of ${original.title}` : ""));
   }
   if (row.widgets?.length) lines.push(`widgets: ${row.widgets.map(widgetText).join(", ")}`);
+  if (row.spatialJoin) lines.push(spatialJoinText(row.spatialJoin));
   return lines;
 }
 

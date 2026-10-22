@@ -333,6 +333,22 @@ describe("#662: a plan's widgets, copies and scenarios reach the live canvas", (
     expect("copiedFrom" in options).toBe(false);
   });
 
+  it("a created Spatial Join carries its operation and output into the factory, as a load reads them", () => {
+    const join = {
+      id: "join-id", type: "curio.builtin/spatial-join", content: "", goal: "Labels per neighborhood",
+      x: 500, y: 60, metadata: { spatialJoin: { predicate: "within", output: "counts" } },
+    };
+    render(<Host />);
+    act(() => notifyAgentCanvasMutation({ kind: "node-created", node: join as never }));
+    expect(mockCreateCodeNode).toHaveBeenCalledWith(
+      "curio.builtin/spatial-join",
+      expect.objectContaining({ nodeId: "join-id", spatialJoin: { predicate: "within", output: "counts" } }),
+    );
+    // A node that sets none gets none, so the node keeps its own defaults.
+    act(() => notifyAgentCanvasMutation({ kind: "node-created", node: NODE }));
+    expect("spatialJoin" in mockCreateCodeNode.mock.calls[1][1]).toBe(false);
+  });
+
   it("graph-created joins the plan's saved scenarios after the canvas's own", () => {
     const own = { id: "s-own", name: "Baseline", color: "#2f8f4a", nodes: ["n0"] };
     mockScenarios.current = [own];

@@ -17,16 +17,20 @@
  * 3. `no-input-rows`: nothing arrived; the UPSTREAM is what must change.
  * 4. `nothing-drawn`: rows arrived and the document drew none of them.
  *
- * The cause vocabulary, and which causes blame the document, are generated
- * from the backend's `contracts.py` into `src/generated/renderCauses.ts`.
+ * The cause vocabulary, and which causes blame the document, are
+ * `contracts/renderCauses.json`, which the backend reads too.
  *
  * Pure and total: no counts means no claim (an unverifiable emptiness is never
  * reported), and nothing here reads or forwards the data itself.
  */
 
-import { EMPTY_RENDER_KIND, type RenderCause } from "../generated/renderCauses";
+import renderCauses from "../contracts/renderCauses.json";
 
-export type { RenderCause } from "../generated/renderCauses";
+/** Every reason a render can draw nothing: a cause of renderCauses.json. */
+export type RenderCause = keyof typeof renderCauses.causes;
+
+/** The kind prefix of an empty render: `empty-render:<cause>`. */
+const EMPTY_RENDER_KIND = renderCauses.emptyRenderKind;
 
 export interface RenderCounts {
   /** Rows/features handed to the renderer. `undefined` = could not count. */

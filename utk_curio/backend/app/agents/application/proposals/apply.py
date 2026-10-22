@@ -615,6 +615,7 @@ def _insert_node(
     appearance: dict | None = None,
     title: str | None = None,
     widgets: list | None = None,
+    spatial_join: dict | None = None,
 ) -> dict:
     """Append one server-minted node to the spec's dataflow (dev/48): fresh
     uuid id (collision-impossible, never from any param; a test run may
@@ -625,7 +626,8 @@ def _insert_node(
     node-appearance utility and persists at the canonical
     ``metadata.appearance.backgroundColor`` shape; callers that omit it stay
     byte-for-byte identical. ``widgets`` (#662), checked at mint, persist at
-    ``metadata.widgets`` the same way.
+    ``metadata.widgets`` the same way, and a Spatial Join's operation and
+    output (``spatial_join``) at ``metadata.spatialJoin``.
     """
     dataflow = spec.setdefault("dataflow", {})
     nodes = dataflow.setdefault("nodes", [])
@@ -651,6 +653,8 @@ def _insert_node(
         created["metadata"] = {"appearance": dict(appearance)}
     if widgets:
         created.setdefault("metadata", {})["widgets"] = [dict(w) for w in widgets]
+    if spatial_join:
+        created.setdefault("metadata", {})["spatialJoin"] = dict(spatial_join)
     nodes.append(created)
     return created
 
@@ -682,6 +686,7 @@ def _apply_node_create(
         appearance=proposal.get("appearance"),  # dev/89: typed round-trip
         title=proposal.get("title"),  # dev/105 A2: the header the note renders
         widgets=proposal.get("widgets"),  # #662: what its code's references name
+        spatial_join=proposal.get("spatialJoin"),  # a Spatial Join's operation and output
     )
     proposal["status"] = "applied"
     projects_storage.write_spec(user_key, project_id, spec)

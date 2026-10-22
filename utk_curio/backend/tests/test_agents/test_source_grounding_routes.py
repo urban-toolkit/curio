@@ -503,6 +503,127 @@ class TestExternalDiscovery:
         assert "credential-gated" in proposal["source"]["label"]
 
 
+class TestTheRuntimesListingGroundsTheCard:
+    """A delegated Dataset Finder's catalog rows are checked against the Data
+    Catalog the runtime lists, never against rows the parent model wrote into
+    its request, and against the whole catalog: the child is shown its first
+    rows, told how many it was not shown, and a dataset past them is still one
+    the catalog holds. A selection reads the whole listing too."""
+
+    @staticmethod
+    def _seed(user, *names):
+        return [
+            routes_turns.TestDatasetFinderTools()._seed_dataset(user, filename=f"{name}.csv")
+            for name in names
+        ]
+
+    @staticmethod
+    def _listed(client, user, project):
+        from utk_curio.backend.app.datasets.application.catalog_service import DatasetCatalogService
+        from utk_curio.backend.tests._support.agent_routes import db_user
+
+        with client.application.app_context():
+            return DatasetCatalogService(db_user(client, user)).list_catalog(dataflow_id=project)["items"]
+
+    def test_the_parents_rows_neither_reach_the_child_nor_ground_its_card(
+        self, client, user_and_token, tmp_curio, project, monkeypatch
+    ):
+        user, token = user_and_token
+        (dataset_id,) = self._seed(user, "heat")
+        _install(client, token, project, NB, DF)
+        att = _attach(client, token, project, NB)
+        _fake_probe(monkeypatch, {})
+        ghost = "imported.ghost@1"
+        child = _candidates_reply(external=[], catalog=[
+            {"name": "Ghost heat", "sourceType": "catalog", "datasetId": ghost, "installed": True},
+            {"name": "Heat", "sourceType": "catalog", "datasetId": dataset_id},
+        ])
+        calls = _script(monkeypatch, [
+            _delegate_tail("dataset.discover", {
+                "intent": "tract-level heat data",
+                "catalog": {"note": "The Data Catalog", "rows": [
+                    {"id": ghost, "name": "Ghost heat", "installed": True},
+                ]},
+            }),
+            child,
+            "Please select the source you want and confirm.",
+        ])
+        body = _run(client, token, project, att, "build a node that loads tract-level heat data")
+        part = next(p for p in body["content"] if p["type"] == "datasetCandidates")
+        assert [(r["datasetId"], r["installed"]) for r in part["lanes"]["catalog"]] == [(dataset_id, False)]
+        child_frame = calls[1][-1]["content"]
+        assert dataset_id in child_frame and ghost not in child_frame
+
+    def test_a_dataset_past_the_rows_the_child_was_shown_stays_on_the_card(
+        self, client, user_and_token, tmp_curio, project, monkeypatch
+    ):
+        from utk_curio.backend.app.agents.application import tools
+
+        user, token = user_and_token
+        seeded = self._seed(user, "older", "newer")
+        monkeypatch.setattr(tools, "_CATALOG_SEARCH_MAX_ROWS", 1)
+        _install(client, token, project, NB, DF)
+        att = _attach(client, token, project, NB)
+        _fake_probe(monkeypatch, {NOAA: {"status": "verified", "httpStatus": 200, "checkedAt": "now"}})
+        hidden: list = []
+
+        def child(calls):
+            frame = calls[-1][-1]["content"]
+            hidden.append(next(i for i in seeded if i not in frame))
+            return _candidates_reply(
+                external=[{"name": "NOAA Climate Data API", "sourceType": "api", "url": NOAA}],
+                catalog=[{"name": "Heat", "sourceType": "catalog", "datasetId": hidden[0]}],
+            )
+
+        _script(monkeypatch, [
+            _delegate_tail("dataset.discover", {"intent": "tract-level heat data"}),
+            child,
+            "Please select the source you want and confirm.",
+        ])
+        body = _run(client, token, project, att, "build a node that loads tract-level heat data")
+        part = next(p for p in body["content"] if p["type"] == "datasetCandidates")
+        assert [r["datasetId"] for r in part["lanes"]["catalog"]] == hidden
+
+    def test_the_child_is_told_how_many_catalog_rows_it_was_not_shown(
+        self, client, user_and_token, tmp_curio, project, monkeypatch
+    ):
+        from utk_curio.backend.app.agents.application import tools
+
+        user, token = user_and_token
+        self._seed(user, "older", "newer")
+        monkeypatch.setattr(tools, "_CATALOG_SEARCH_MAX_ROWS", 1)
+        _install(client, token, project, NB, DF)
+        att = _attach(client, token, project, NB)
+        calls = _script(monkeypatch, [
+            _delegate_tail("dataset.discover", {"intent": "tract-level heat data"}),
+            "I found nothing.",
+            "Nothing was found.",
+        ])
+        _run(client, token, project, att, "build a node that loads tract-level heat data")
+        framed = json.loads(calls[1][-1]["content"].split("\n", 1)[1])
+        assert len(framed["catalog"]["rows"]) == 1
+        assert framed["catalog"].get("rowsElided") == len(self._listed(client, user, project)) - 1
+
+    def test_a_dataset_past_the_first_rows_can_be_confirmed(
+        self, client, user_and_token, tmp_curio, project, monkeypatch
+    ):
+        from utk_curio.backend.app.agents.application import tools
+
+        user, token = user_and_token
+        seeded = self._seed(user, "older", "newer")
+        monkeypatch.setattr(tools, "_CATALOG_SEARCH_MAX_ROWS", 1)
+        first = self._listed(client, user, project)[0]["id"]
+        hidden = next(i for i in seeded if i != first)
+        _install(client, token, project, DF)
+        finder = _attach(client, token, project, DF, target={"kind": "node", "targetId": "n1"})
+        r = client.post(
+            f"/api/agents/projects/{project}/attachments/{finder}/dataset-selection",
+            json={"picks": [{"lane": "catalog", "key": hidden}]}, headers=_auth(token),
+        )
+        assert r.status_code == 200, r.get_json()
+        assert [pick["datasetId"] for pick in r.get_json()["picks"]] == [hidden]
+
+
 class TestUnavailableSource:
     def test_no_verifiable_source_yields_a_request_never_code(self, client, user_and_token, tmp_curio, project, monkeypatch):
         user, token = user_and_token

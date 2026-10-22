@@ -20,6 +20,7 @@ from utk_curio.backend.app.packages.infrastructure.pip_runner import (
 from utk_curio.backend.app.packages.application.agent_reads import (
     agent_catalog_overview,
     agent_resolve_report,
+    template_for_writing,
     template_landscape,
 )
 from utk_curio.backend.app.packages.application.defaults_install import (
@@ -176,6 +177,7 @@ __all__ = [
     "export_package_archive",
     "agent_catalog_overview",
     "agent_resolve_report",
+    "template_for_writing",
     "template_landscape",
     "install_to_defaults",
     "uninstall_from_defaults",

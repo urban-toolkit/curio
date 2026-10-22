@@ -2,9 +2,10 @@
 
 A contract is something the code enforces: change it and the model, or the
 other half of the code, is wrong about what the system accepts. Each one is
-defined here exactly once. Python imports it from this module; the frontend
-receives a GENERATED copy, rendered by the functions below and written by
-``scripts/generate_contracts.py``.
+defined once. A contract the frontend shares is a JSON file in the frontend's
+``src/contracts/``, which the frontend imports and this module reads at import
+(``utk_curio/common/shared_constants.py``); the rest are defined here. Nothing
+is generated.
 
 The agents read these facts too. A page or prompt in ``agents/`` that states
 something the code owns holds a marker for it, and each marker is a field
@@ -12,16 +13,12 @@ that ``PROMPT_FIELDS`` renders from the code that owns it (see Prompt fields
 below). The backend renders every page and prompt when it starts
 (``agent_text``); nothing of them is generated or committed.
 
-``GENERATED_OUTPUTS`` is the one registry of committed outputs. The CLI writes
-each entry and ``test_generated_contracts`` re-renders each entry and fails on
-any difference, so a hand edit to an output, or a change here that was never
-regenerated, turns the suite red.
-
-Importable from an installed wheel, and with no I/O at import time: the module
-imports only the standard library. A renderer reads the files it projects when
-it is called, and a prompt field imports the module that owns its fact inside
-its own function (the built-in agents, the packages layer, the egress policy),
-so importing this module never pulls those in.
+Importable from an installed wheel: at import the module reads only the shared
+files, and imports only the standard library and their reader. A renderer
+reads the files it projects when it is called, and a prompt field imports the
+module that owns its fact inside its own function (the built-in agents, the
+packages layer, the egress policy), so importing this module never pulls
+those in.
 """
 
 from __future__ import annotations
@@ -34,15 +31,11 @@ from pathlib import Path
 from typing import Callable
 from urllib.parse import unquote
 
+from utk_curio.common import shared_constants
+
 #: The prompt slot an Autark content run reads (``manifest.prompts``): the key the built-in
 #: manifests declare and the reply-schema run looks up — one spelling, agreed here.
 AUTK_PROMPT_KEY = "autk-grammar"
-
-#: Where this module lives, relative to the repository root. Named in every
-#: generated header so a reader of an output knows what to edit instead.
-SOURCE_MODULE = "utk_curio/backend/app/agents/domain/contracts.py"
-#: The CLI that writes the outputs, named in the same header.
-GENERATOR = "scripts/generate_contracts.py"
 
 
 # --- Render outcome vocabulary ---------------------------------------------
@@ -51,9 +44,12 @@ GENERATOR = "scripts/generate_contracts.py"
 # when it drew nothing, reports a journal record whose ``kind`` is
 # ``empty-render:<cause>``. The cause decides who is at fault, and therefore
 # whether the harness asks for a corrected document or waits on the upstream.
+# ``renderCauses.json`` holds the kind and the causes for both sides.
+
+_RENDER_CAUSES = shared_constants.read("renderCauses")
 
 #: The kind a renderer stamps on an empty render, with its cause appended.
-EMPTY_RENDER_KIND = "empty-render"
+EMPTY_RENDER_KIND: str = _RENDER_CAUSES["emptyRenderKind"]
 
 
 @dataclass(frozen=True)
@@ -67,31 +63,12 @@ class RenderCause:
     description: str
 
 
-CAUSE_NO_LAYERS = "no-layers"
-CAUSE_NO_INPUT_ROWS = "no-input-rows"
-CAUSE_NOTHING_DRAWN = "nothing-drawn"
-CAUSE_EMPTY_SOURCE = "empty-source"
-
 #: Every cause a renderer can report. The order is the vocabulary's own and new
 #: causes are appended; which cause wins when several apply is decided by the
 #: rule order in ``renderOutcome``.
-RENDER_CAUSES: tuple[RenderCause, ...] = (
-    RenderCause(
-        CAUSE_NO_LAYERS, True,
-        "Every layer the document asks for names data the dataflow does not produce.",
-    ),
-    RenderCause(
-        CAUSE_NO_INPUT_ROWS, False,
-        "Zero rows arrived from upstream, so the upstream node is what must change.",
-    ),
-    RenderCause(
-        CAUSE_NOTHING_DRAWN, True,
-        "Rows arrived and the document drew none of them.",
-    ),
-    RenderCause(
-        CAUSE_EMPTY_SOURCE, True,
-        "The node's own data sources loaded zero rows.",
-    ),
+RENDER_CAUSES: tuple[RenderCause, ...] = tuple(
+    RenderCause(name, cause["documentAtFault"], cause["description"])
+    for name, cause in _RENDER_CAUSES["causes"].items()
 )
 
 #: The cause names alone, in table order.
@@ -114,7 +91,8 @@ def is_document_at_fault(cause: object) -> bool:
 #
 # A node's repair loop (``solve/verified_loop.py``) reports why it stopped as
 # ``stoppedBy``. The failure sentences, the loop's trace, the attempts card and
-# the per-node Solve row all say it with the phrase here.
+# the per-node Solve row all say it with the phrase ``solveStopReasons.json``
+# gives it; ARCHITECTURE's "The Solve loop" says when each reason happens.
 
 
 @dataclass(frozen=True)
@@ -128,22 +106,8 @@ class StopReason:
 
 
 #: Every reason a repair loop can stop. New reasons are appended.
-SOLVE_STOP_REASONS: tuple[StopReason, ...] = (
-    StopReason("rounds", "the attempt cap was reached"),
-    # The node's own budget: a node solved on its own.
-    StopReason("budget", "this node's time budget was spent"),
-    # What was left of the session's budget: a node in a Solve session.
-    StopReason("session", "this session's time budget was spent"),
-    StopReason("repeat", "the builder repeated itself"),
-    StopReason("decline", "the builder declined: it needs something from you"),
-    StopReason("generation", "the builder could not run"),
-    # An upstream node with no content, or a slice validation refuses.
-    StopReason("blocker", "something outside its code blocked it"),
-    StopReason("infrastructure", "the sandbox was unreachable"),
-    # A kind the sandbox does not run: its document is checked instead.
-    StopReason("not-executable", "the sandbox cannot run this kind of node"),
-    StopReason("source", "a source you must confirm"),
-    StopReason("passed", "it passed"),
+SOLVE_STOP_REASONS: tuple[StopReason, ...] = tuple(
+    StopReason(key, phrase) for key, phrase in shared_constants.read("solveStopReasons")["phrases"].items()
 )
 
 
@@ -167,8 +131,11 @@ STOPPED_BY_PHRASES: dict[str, str] = one_phrase_per_reason(SOLVE_STOP_REASONS)
 # The grammar is defined upstream: autk-grammar generates a JSON Schema from its
 # TypeScript types, and ``schemas/autk-grammar.v1.json`` is a byte-for-byte copy
 # of the released file (``scripts/sync_autk_schema.py``). The renderers below
-# read that file. The Curio facts they add are how a node names its input and
-# that a node draws one view.
+# read that file. The Curio facts they add, how a node names its input and that
+# a node draws one view, are in ``autkGrammar.json`` with the top-level families
+# the node routes, which a test holds to the schema's.
+
+_AUTK_GRAMMAR = shared_constants.read("autkGrammar")
 
 #: The vendored schema, beside this module so an installed wheel carries it.
 # domain/contracts.py -> agents/schemas/ (one level up since the module moved into domain/, memo dev/142 B1)
@@ -180,11 +147,13 @@ AUTK_TEMPLATE = "curio.builtin/autk-grammar"
 EDIT_FEATURES_TEMPLATE = "curio.builtin/edit-features"
 #: What a Vega-Lite or Autark node calls its inputs: ``input_0``, ``input_1``,
 #: ... in circle order. An upstream Autark node's layers keep their table names.
-INPUT_TABLE_PREFIX = "input_"
+INPUT_TABLE_PREFIX: str = _AUTK_GRAMMAR["inputTablePrefix"]
 
 
 def input_table_name(position: int) -> str:
-    """The name a grammar node's input at *position* is read by."""
+    """The name a grammar node's input at *position* is read by.
+    ``inputTableName`` in the frontend's ``contracts/autkGrammar.ts`` is the
+    node's twin; ``autkGrammar.cases.json`` beside it holds the cases both run."""
     return f"{INPUT_TABLE_PREFIX}{position}"
 
 
@@ -192,19 +161,17 @@ def input_table_name(position: int) -> str:
 #: of more than one map or more than one plot. An Autark node draws one view, a
 #: map on the one canvas or a plot in the one pane it hands autk-grammar, which
 #: puts every map of a list on that canvas and draws a plot only into a pane.
-#: The node's error (``autkOneViewProblem`` in the generated ``autkGrammar.ts``),
+#: The node's error (``autkOneViewProblem`` in ``contracts/autkGrammar.ts``),
 #: the agents' document check (``document_validation``) and the preamble say
 #: these words.
-AUTK_ONE_VIEW = (
-    "An Autark node draws one view: one map or one plot. Put each in its own "
-    "Autark node, and link them with interaction edges."
-)
+AUTK_ONE_VIEW: str = _AUTK_GRAMMAR["oneView"]
 
 
 def autk_one_view_problem(document: object) -> str | None:
     """``AUTK_ONE_VIEW`` when *document* has a map and a plot, or lists more
     than one map or more than one plot, else None. A list of one map or one
-    plot is that view. ``autkOneViewProblem`` is the node's copy."""
+    plot is that view. ``autkOneViewProblem`` is the node's twin, held to this
+    function by the cases in ``autkGrammar.cases.json``."""
     if not isinstance(document, dict):
         return None
     views = [document.get("map"), document.get("plot")]
@@ -366,15 +333,17 @@ def render_autk_region(schema: dict, label: str) -> str:
 # or Autark node whose editor is empty fills it with a starter chosen by a
 # ladder of rules over the input's column roles (frontend ``vegaDefaultSpec``,
 # ``autkDefaultSpec``, ``starterSpec``), and a Simple View node draws the
-# columns that hold images as cards (``imageColumns``). The tables are defined
-# here and reach the frontend as ``src/generated/visDefaults.ts``: the frontend
-# keeps each rule's builder, keyed by the rule's id, and the matching logic.
+# columns that hold images as cards (``imageColumns``). ``visDefaults.json``
+# holds the tables for both sides: the frontend keeps each rule's builder, keyed
+# by the rule's id, and the matching logic.
+
+_VIS_DEFAULTS = shared_constants.read("visDefaults")
 
 #: The ``$schema`` of a Vega-Lite spec Curio writes.
-VEGA_SCHEMA_URL = "https://vega.github.io/schema/vega-lite/v6.json"
+VEGA_SCHEMA_URL: str = _VIS_DEFAULTS["vegaSchemaUrl"]
 
 #: The roles a column can have, in the order a ladder groups them.
-COLUMN_ROLES: tuple[str, ...] = ("geometry", "temporal", "quantitative", "nominal")
+COLUMN_ROLES: tuple[str, ...] = tuple(_VIS_DEFAULTS["columnRoles"])
 
 
 @dataclass(frozen=True)
@@ -390,11 +359,9 @@ class DtypeRole:
 #: A dtype's role is the first entry's that matches it, in this order, and a
 #: dtype no entry matches gives its column no role. ``str`` is pandas 3's
 #: string dtype; pandas 2 said ``object``.
-DTYPE_ROLES: tuple[DtypeRole, ...] = (
-    DtypeRole("geometry", names=("geometry",)),
-    DtypeRole("temporal", prefixes=("datetime", "period", "timedelta")),
-    DtypeRole("quantitative", prefixes=("int", "uint", "float")),
-    DtypeRole("nominal", names=("bool", "object", "str", "string", "category")),
+DTYPE_ROLES: tuple[DtypeRole, ...] = tuple(
+    DtypeRole(entry["role"], names=tuple(entry["names"]), prefixes=tuple(entry["prefixes"]))
+    for entry in _VIS_DEFAULTS["dtypeRoles"]
 )
 
 
@@ -406,12 +373,9 @@ class CountRange:
     most: int | None = None
 
 
-def _roles(**counts: int | CountRange) -> tuple[tuple[str, CountRange], ...]:
-    """Role requirements in the order given; a bare number is a least count."""
-    return tuple(
-        (role, count if isinstance(count, CountRange) else CountRange(count))
-        for role, count in counts.items()
-    )
+def _count(entry: dict) -> CountRange:
+    """A ``{"least", "most"}`` count of the file as a :class:`CountRange`."""
+    return CountRange(entry["least"], entry.get("most"))
 
 
 @dataclass(frozen=True)
@@ -433,78 +397,31 @@ class StarterRule:
     layers: CountRange | None = None
 
 
+def _starter_ladder(rules: list[dict]) -> tuple[StarterRule, ...]:
+    """A ladder of the file, rule by rule, in its order."""
+    return tuple(
+        StarterRule(
+            rule["id"], rule["produces"], rule["description"],
+            columns=tuple((role, _count(count)) for role, count in rule["columns"].items()),
+            layers=_count(rule["layers"]) if "layers" in rule else None,
+        )
+        for rule in rules
+    )
+
+
 #: The Vega-Lite starter ladder.
-VEGA_STARTER_LADDER: tuple[StarterRule, ...] = (
-    StarterRule(
-        "geometry+quantitative", "geoshape",
-        "a choropleth colored by the first quantitative column",
-        columns=_roles(geometry=1, quantitative=1),
-    ),
-    StarterRule(
-        "geometry", "geoshape",
-        "the shapes alone, with no color",
-        columns=_roles(geometry=1),
-    ),
-    StarterRule(
-        "temporal+quantitative", "line",
-        "the first temporal column on x and the first quantitative column on y",
-        columns=_roles(temporal=1, quantitative=1),
-    ),
-    StarterRule(
-        "nominal+quantitative", "bar",
-        'the first nominal column on x, with an EXPLICIT "aggregate": "mean" on y',
-        columns=_roles(nominal=1, quantitative=1),
-    ),
-    StarterRule(
-        "two-quantitative", "point",
-        "a scatter of the first two",
-        columns=_roles(quantitative=2),
-    ),
-    StarterRule(
-        "one-quantitative", "bar",
-        'a histogram, binned x and "aggregate": "count" on y',
-        columns=_roles(quantitative=CountRange(1, 1)),
-    ),
-    StarterRule(
-        "one-nominal", "bar",
-        "the row count per value of the first nominal column",
-        columns=_roles(nominal=1),
-    ),
-)
+VEGA_STARTER_LADDER: tuple[StarterRule, ...] = _starter_ladder(_VIS_DEFAULTS["vegaStarterLadder"])
 
 #: The Autark starter ladder, over the input's layers that have geometry.
-AUTK_STARTER_LADDER: tuple[StarterRule, ...] = (
-    StarterRule(
-        "layers", "map",
-        "one layerRef per table, each named by its table",
-        layers=CountRange(2),
-    ),
-    StarterRule(
-        "geometry+quantitative", "map",
-        'a layer colored by the first quantitative column, with "title" and "getFnv": that column, '
-        '"getFnvType": "quantitative" and "colorMapInterpolator": "interpolateViridis"',
-        columns=_roles(quantitative=1), layers=CountRange(1, 1),
-    ),
-    StarterRule(
-        "geometry+nominal", "map",
-        'a layer colored by the first nominal column, with "title" and "getFnv": that column, '
-        '"getFnvType": "categorical" and "colorMapInterpolator": "schemeTableau10"',
-        columns=_roles(nominal=1), layers=CountRange(1, 1),
-    ),
-    StarterRule(
-        "geometry", "map",
-        "a plain layer",
-        layers=CountRange(1, 1),
-    ),
-)
+AUTK_STARTER_LADDER: tuple[StarterRule, ...] = _starter_ladder(_VIS_DEFAULTS["autkStarterLadder"])
 
 #: The column names Simple View checks for images first, in this order.
-IMAGE_COLUMNS: tuple[str, ...] = ("image_content", "image_url", "image", "thumbnail", "overlay_url")
+IMAGE_COLUMNS: tuple[str, ...] = tuple(_VIS_DEFAULTS["imageColumns"])
 #: The extensions an image URL has in a column not named above.
-IMAGE_EXTENSIONS: tuple[str, ...] = ("png", "jpg", "jpeg", "gif", "webp", "svg", "bmp", "avif")
+IMAGE_EXTENSIONS: tuple[str, ...] = tuple(_VIS_DEFAULTS["imageExtensions"])
 #: The share of a column's non-empty values that must be images for it to
 #: count as an image column.
-IMAGE_MATCH_THRESHOLD = 0.6
+IMAGE_MATCH_THRESHOLD: float = _VIS_DEFAULTS["imageMatchThreshold"]
 
 
 # --- The preamble's node vocabulary ----------------------------------------
@@ -529,8 +446,9 @@ TRILL_PROMPT_FIELDS: dict[str, tuple[str, ...]] = {
     "dataflowBase": ("nodes", "edges", "name", "task", "scenarios"),
     "node": ("id", "type", "content", "goal", "title", "x", "y", "in", "out", "metadata"),
     # #662: a node's widgets are what an agent declares for its code to read,
-    # and a copy's lineage is how two scenarios' levers pair.
-    "nodeMetadata": ("keywords", "widgets", "copiedFrom"),
+    # and a copy's lineage is how two scenarios' levers pair. A Spatial Join's
+    # operation and output are what an agent sets on one.
+    "nodeMetadata": ("keywords", "widgets", "copiedFrom", "spatialJoin"),
     "edge": ("id", "source", "target", "type", "sourceHandle", "targetHandle", "metadata"),
     # Where a scenario sits on the canvas and where it came from are the
     # canvas's own bookkeeping, and its description is for people.
@@ -901,10 +819,10 @@ def _not_code(src: _Sources) -> str:
 
 
 def _note_palette(_src: _Sources) -> str:
-    """The colour names a node's appearance accepts (``NAMED_COLORS``)."""
-    from utk_curio.backend.app.packages.domain.node_appearance import NAMED_COLORS
+    """The colour names a node's appearance accepts (``NOTE_PALETTE``)."""
+    from utk_curio.backend.app.packages.application.note_palette import NOTE_PALETTE
 
-    return ", ".join(NAMED_COLORS)
+    return ", ".join(NOTE_PALETTE.colors)
 
 
 def _web_calls_per_run(_src: _Sources) -> str:
@@ -1003,11 +921,11 @@ def _timeout_class_choices(_src: _Sources) -> str:
 
 
 def _note_palette_choices(_src: _Sources) -> str:
-    """The colour names a node's appearance accepts (``NAMED_COLORS``), as
+    """The colour names a node's appearance accepts (``NOTE_PALETTE``), as
     ``a|b|c``, where a JSON string lists them."""
-    from utk_curio.backend.app.packages.domain.node_appearance import NAMED_COLORS
+    from utk_curio.backend.app.packages.application.note_palette import NOTE_PALETTE
 
-    return "|".join(NAMED_COLORS)
+    return "|".join(NOTE_PALETTE.colors)
 
 
 def _suggested_prompt_chars(_src: _Sources) -> str:
@@ -1230,43 +1148,6 @@ def render_template(text: str, name: str = "the template", *, including: tuple[s
     return text
 
 
-def render_autk_grammar_ts() -> str:
-    """``src/generated/autkGrammar.ts``: the grammar's families, the input layer
-    name and the one view a node draws (``autk_one_view_problem``, as TypeScript)."""
-    return (
-        _ts_header()
-        + "\n"
-        + "/** The top-level keys an Autark document can name, from the vendored schema. */\n"
-        + _ts_const("AUTK_FAMILIES", list(autk_families(load_autk_schema())), " as const")
-        + "\n"
-        + "export type AutkFamily = (typeof AUTK_FAMILIES)[number];\n"
-        + "\n"
-        + "/** What a Vega-Lite or Autark node calls its inputs: input_0, input_1, ... in circle order. */\n"
-        + f"export const INPUT_TABLE_PREFIX = {_ts_string(INPUT_TABLE_PREFIX)};\n"
-        + "\n"
-        + "/** The name a grammar node's input at *position* is read by. */\n"
-        + "export function inputTableName(position: number): string {\n"
-        + "  return `${INPUT_TABLE_PREFIX}${position}`;\n"
-        + "}\n"
-        + "\n"
-        + "/** What a document with more than one view is told: an Autark node draws one map or one plot. */\n"
-        + _ts_const("AUTK_ONE_VIEW", AUTK_ONE_VIEW)
-        + "\n"
-        + "/**\n"
-        + " * AUTK_ONE_VIEW when *spec* has a map and a plot, or lists more than one map or\n"
-        + " * more than one plot, else null. A list of one map or one plot is that view.\n"
-        + " */\n"
-        + "export function autkOneViewProblem(spec: unknown): string | null {\n"
-        + "  if (spec === null || typeof spec !== \"object\" || Array.isArray(spec)) return null;\n"
-        + "  const { map, plot } = spec as { map?: unknown; plot?: unknown };\n"
-        + "  const views = [map, plot];\n"
-        + "  const both = views.every((view) => view != null);\n"
-        + "  const several = views.some((view) => Array.isArray(view) && view.length > 1);\n"
-        + "  return both || several ? AUTK_ONE_VIEW : null;\n"
-        + "}\n"
-    )
-
-
 # --- System turn composition -------------------------------------------------
 #
 # Every system turn, for an attached run or a delegated run, is composed here
@@ -1430,303 +1311,3 @@ def render_configuration(values: dict) -> str | None:
     if not sections:
         return None
     return "\n\n".join([configuration_frame(), *sections])
-
-
-# --- Renderers -------------------------------------------------------------
-
-
-def _ts_header() -> str:
-    return (
-        f"// Generated by {GENERATOR} from\n"
-        f"// {SOURCE_MODULE}. Do not edit by hand: change the\n"
-        f"// source module and run `python {GENERATOR}`.\n"
-    )
-
-
-def _ts_string(text: str) -> str:
-    """*text* as a string literal, quoted as prettier quotes it: in double
-    quotes unless it holds more double quotes than single ones."""
-    quote = "'" if text.count('"') > text.count("'") else '"'
-    return quote + text.replace("\\", "\\\\").replace(quote, "\\" + quote) + quote
-
-
-#: prettier's line width for the frontend's TypeScript (``max_line_length`` in
-#: its ``.editorconfig``), which a generated output keeps to.
-_TS_WIDTH = 100
-
-
-def _ts_flat(value) -> str:
-    """*value* (a string, number, list or dict) as a TypeScript literal on one line."""
-    if isinstance(value, str):
-        return _ts_string(value)
-    if isinstance(value, bool):
-        return "true" if value else "false"
-    if isinstance(value, (int, float)):
-        return repr(value)
-    if isinstance(value, dict):
-        return "{ " + ", ".join(f"{k}: {_ts_flat(v)}" for k, v in value.items()) + " }" if value else "{}"
-    return "[" + ", ".join(_ts_flat(v) for v in value) + "]"
-
-
-def _ts_broken(value, indent: int) -> str:
-    """A dict or list, opened at *indent*, broken one entry per line as
-    prettier breaks it. A dict in a list is always broken, which prettier
-    keeps; a property stays on one line when it fits."""
-    pad = " " * (indent + 2)
-    if isinstance(value, dict):
-        lines = []
-        for key, item in value.items():
-            flat = _ts_flat(item)
-            if len(pad) + len(key) + 2 + len(flat) + 1 <= _TS_WIDTH:
-                lines.append(f"{pad}{key}: {flat},")
-            elif isinstance(item, str) and len(key) >= 5:
-                # prettier moves a long string under its key, unless the key is short.
-                lines.append(f"{pad}{key}:\n{pad}  {flat},")
-            elif isinstance(item, (dict, list)) and item:
-                lines.append(f"{pad}{key}: {_ts_broken(item, indent + 2)},")
-            else:
-                lines.append(f"{pad}{key}: {flat},")
-        return "{\n" + "\n".join(lines) + "\n" + " " * indent + "}"
-    lines = [
-        f"{pad}{_ts_broken(item, indent + 2) if isinstance(item, dict) else _ts_flat(item)},"
-        for item in value
-    ]
-    return "[\n" + "\n".join(lines) + "\n" + " " * indent + "]"
-
-
-def _ts_const(name: str, value, suffix: str = "") -> str:
-    """``export const <name> = <value><suffix>;``, on one line when it fits."""
-    line = f"export const {name} = {_ts_flat(value)}{suffix};"
-    holds_dicts = isinstance(value, (list, tuple)) and any(isinstance(v, dict) for v in value)
-    if len(line) <= _TS_WIDTH and not holds_dicts:
-        return line + "\n"
-    if isinstance(value, str):
-        return f"export const {name} =\n  {_ts_flat(value)}{suffix};\n"
-    return f"export const {name} = {_ts_broken(value, 0)}{suffix};\n"
-
-
-def render_render_causes_ts() -> str:
-    """``src/generated/renderCauses.ts``: the render outcome vocabulary."""
-    causes = "".join(
-        f"  /** {cause.description} */\n  {_ts_string(cause.name)},\n"
-        for cause in RENDER_CAUSES
-    )
-    at_fault = "".join(
-        f"  {_ts_string(cause.name)}: {'true' if cause.document_at_fault else 'false'},\n"
-        for cause in RENDER_CAUSES
-    )
-    return (
-        _ts_header()
-        + "\n"
-        + "/** The kind prefix of an empty render: `empty-render:<cause>`. */\n"
-        + f"export const EMPTY_RENDER_KIND = {_ts_string(EMPTY_RENDER_KIND)};\n"
-        + "\n"
-        + "/** Every reason a render can draw nothing. */\n"
-        + "export const RENDER_CAUSES = [\n"
-        + causes
-        + "] as const;\n"
-        + "\n"
-        + "export type RenderCause = (typeof RENDER_CAUSES)[number];\n"
-        + "\n"
-        + "/** Whether rewriting the node's document is the repair for each cause. */\n"
-        + "export const DOCUMENT_AT_FAULT: Readonly<Record<RenderCause, boolean>> = {\n"
-        + at_fault
-        + "};\n"
-    )
-
-
-def render_agent_categories_ts() -> str:
-    """``src/generated/agentCategories.ts``: the agent manifest's category vocabulary."""
-    from utk_curio.backend.app.agents.domain.manifest import AGENT_CATEGORIES
-
-    names = ", ".join(_ts_string(c) for c in AGENT_CATEGORIES)
-    return (
-        _ts_header()
-        + "\n"
-        + "/** The categories an agent manifest can declare, as the manifest validator accepts them. */\n"
-        + f"export const AGENT_CATEGORIES = [{names}] as const;\n"
-        + "\n"
-        + "export type AgentCategory = (typeof AGENT_CATEGORIES)[number];\n"
-    )
-
-
-def _ts_key(name: str) -> str:
-    """*name* as an object key: bare when it is an identifier, else quoted."""
-    return name if re.fullmatch(r"[A-Za-z_$][A-Za-z0-9_$]*", name) else _ts_string(name)
-
-
-def render_solve_stop_reasons_ts() -> str:
-    """``src/generated/solveStopReasons.ts``: why a repair loop stopped, in words."""
-    keys = "".join(f"  {_ts_string(reason.key)},\n" for reason in SOLVE_STOP_REASONS)
-    phrases = "".join(
-        f"  {_ts_key(reason.key)}: {_ts_string(reason.phrase)},\n" for reason in SOLVE_STOP_REASONS
-    )
-    return (
-        _ts_header()
-        + "\n"
-        + "/** Every reason a node's repair loop can stop, as its `stoppedBy` names it. */\n"
-        + "export const STOP_REASONS = [\n"
-        + keys
-        + "] as const;\n"
-        + "\n"
-        + "export type StopReason = (typeof STOP_REASONS)[number];\n"
-        + "\n"
-        + "/** What each reason reads as, on the server and in the browser alike. */\n"
-        + "export const STOPPED_BY_PHRASES: Readonly<Record<StopReason, string>> = {\n"
-        + phrases
-        + "};\n"
-    )
-
-
-def _ts_range(count: CountRange) -> dict:
-    return {"least": count.least, **({"most": count.most} if count.most is not None else {})}
-
-
-def _ts_rule(rule: StarterRule) -> dict:
-    return {
-        "id": rule.id,
-        **({"layers": _ts_range(rule.layers)} if rule.layers else {}),
-        "columns": {role: _ts_range(count) for role, count in rule.columns},
-        "produces": rule.produces,
-        "description": rule.description,
-    }
-
-
-def render_vis_defaults_ts() -> str:
-    """``src/generated/visDefaults.ts``: the starter ladders, the dtype roles,
-    the image column rule's names and constants, and the Vega-Lite schema URL."""
-    return (
-        _ts_header()
-        + "\n"
-        + "/** The `$schema` of a Vega-Lite spec Curio writes. */\n"
-        + _ts_const("VEGA_SCHEMA_URL", VEGA_SCHEMA_URL)
-        + "\n"
-        + "/** The roles a column can have, in the order a ladder groups them. */\n"
-        + _ts_const("COLUMN_ROLES", list(COLUMN_ROLES), " as const")
-        + "\n"
-        + "export type ColumnRole = (typeof COLUMN_ROLES)[number];\n"
-        + "\n"
-        + "/** The pandas dtypes that give a column one role, matched in lower case. */\n"
-        + "export interface DtypeRole {\n"
-        + "  readonly role: ColumnRole;\n"
-        + "  /** Dtypes matched whole. */\n"
-        + "  readonly names: readonly string[];\n"
-        + "  /** Prefixes a dtype starts with. */\n"
-        + "  readonly prefixes: readonly string[];\n"
-        + "}\n"
-        + "\n"
-        + "/**\n"
-        + " * A dtype's role is the first entry's that matches it, in this order, and a\n"
-        + " * dtype no entry matches gives its column no role.\n"
-        + " */\n"
-        + _ts_const(
-            "DTYPE_ROLES: readonly DtypeRole[]",
-            [{"role": e.role, "names": list(e.names), "prefixes": list(e.prefixes)} for e in DTYPE_ROLES],
-        )
-        + "\n"
-        + "/** At least `least`, and at most `most` when it is set. */\n"
-        + "export interface CountRange {\n"
-        + "  readonly least: number;\n"
-        + "  readonly most?: number;\n"
-        + "}\n"
-        + "\n"
-        + "/** How many columns of each role a starter rule needs. */\n"
-        + "export type RoleCounts = Readonly<Partial<Record<ColumnRole, CountRange>>>;\n"
-        + "\n"
-        + "/** One rule of a starter ladder. The first rule whose condition holds wins. */\n"
-        + "export interface LadderRule {\n"
-        + "  /** Stable id: the frontend keys the rule's builder by it. */\n"
-        + "  readonly id: string;\n"
-        + "  /** The columns the rule needs; for an Autark rule, in every layer. */\n"
-        + "  readonly columns: RoleCounts;\n"
-        + "  /** The mark a Vega-Lite spec draws, or the family an Autark document names. */\n"
-        + "  readonly produces: string;\n"
-        + "  /** What the starter holds, in one line. */\n"
-        + "  readonly description: string;\n"
-        + "}\n"
-        + "\n"
-        + "/** An Autark starter rule, which also needs a number of layers with geometry. */\n"
-        + "export interface AutkLadderRule extends LadderRule {\n"
-        + "  readonly layers: CountRange;\n"
-        + "}\n"
-        + "\n"
-        + "/** The Vega-Lite starter ladder, in order. */\n"
-        + _ts_const(
-            "VEGA_STARTER_LADDER", [_ts_rule(r) for r in VEGA_STARTER_LADDER],
-            " as const satisfies readonly LadderRule[]",
-        )
-        + "\n"
-        + "export type VegaStarterRuleId = (typeof VEGA_STARTER_LADDER)[number][\"id\"];\n"
-        + "\n"
-        + "/** The Autark starter ladder, in order, over the input's layers with geometry. */\n"
-        + _ts_const(
-            "AUTK_STARTER_LADDER", [_ts_rule(r) for r in AUTK_STARTER_LADDER],
-            " as const satisfies readonly AutkLadderRule[]",
-        )
-        + "\n"
-        + "export type AutkStarterRuleId = (typeof AUTK_STARTER_LADDER)[number][\"id\"];\n"
-        + "\n"
-        + "/** The column names Simple View checks for images first, in this order. */\n"
-        + _ts_const("IMAGE_COLUMNS", list(IMAGE_COLUMNS), " as const")
-        + "\n"
-        + "/** The extensions an image URL has in a column not named above. */\n"
-        + _ts_const("IMAGE_EXTENSIONS", list(IMAGE_EXTENSIONS), " as const")
-        + "\n"
-        + "/**\n"
-        + " * The share of a column's non-empty values that must be images for it to\n"
-        + " * count as an image column.\n"
-        + " */\n"
-        + _ts_const("IMAGE_MATCH_THRESHOLD", IMAGE_MATCH_THRESHOLD)
-    )
-
-
-def render_note_colors_ts() -> str:
-    """``src/generated/noteColors.ts``: a note's palette and the colors its text
-    takes, from the node-appearance rule an agent's note is saved through."""
-    from utk_curio.backend.app.packages.domain import node_appearance as appearance
-
-    inks = {"dark": appearance.DARK_FOREGROUND, "light": appearance.LIGHT_FOREGROUND}
-    links = {"onLight": appearance.LINK_ON_LIGHT, "onDark": appearance.LINK_ON_DARK}
-    return (
-        _ts_header()
-        + "\n"
-        + "/** The colors a note's appearance can name, and the color each stands for. */\n"
-        + _ts_const("NOTE_COLORS", dict(appearance.NAMED_COLORS), " as const")
-        + "\n"
-        + "export type NoteColorName = keyof typeof NOTE_COLORS;\n"
-        + "\n"
-        + "/** The color of a note that names none, or names one that cannot be read. */\n"
-        + _ts_const("DEFAULT_NOTE_COLOR", appearance.DEFAULT_BACKGROUND)
-        + "\n"
-        + "/** A note's text takes the ink that reads better on its color. */\n"
-        + _ts_const("NOTE_INKS", inks, " as const")
-        + "\n"
-        + "/** A link's color under dark ink and under light ink, when it reads; else the ink. */\n"
-        + _ts_const("NOTE_LINKS", links, " as const")
-        + "\n"
-        + "/** The contrast an ink must reach on a note's color; no ink reaching it refuses the color. */\n"
-        + _ts_const("NOTE_MIN_CONTRAST", appearance.MIN_CONTRAST)
-    )
-
-
-#: Every committed output, the frontend's TypeScript: repo-relative path -> the
-#: function that renders it.
-GENERATED_OUTPUTS: dict[str, Callable[[], str]] = {
-    "utk_curio/frontend/urban-workflows/src/generated/renderCauses.ts": render_render_causes_ts,
-    "utk_curio/frontend/urban-workflows/src/generated/autkGrammar.ts": render_autk_grammar_ts,
-    "utk_curio/frontend/urban-workflows/src/generated/agentCategories.ts": render_agent_categories_ts,
-    "utk_curio/frontend/urban-workflows/src/generated/solveStopReasons.ts": render_solve_stop_reasons_ts,
-    "utk_curio/frontend/urban-workflows/src/generated/visDefaults.ts": render_vis_defaults_ts,
-    "utk_curio/frontend/urban-workflows/src/generated/noteColors.ts": render_note_colors_ts,
-}
-
-
-def stale_outputs(repo_root: Path) -> list[str]:
-    """The registered outputs whose file on disk differs from a fresh render."""
-    stale = []
-    for relative, render in GENERATED_OUTPUTS.items():
-        path = Path(repo_root) / relative
-        current = path.read_text(encoding="utf-8") if path.is_file() else None
-        if current != render():
-            stale.append(relative)
-    return stale

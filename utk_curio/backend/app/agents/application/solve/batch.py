@@ -28,6 +28,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 
 from utk_curio.backend.app.agents.application import attachments
+from utk_curio.backend.app.agents.application import dataflow_block as agents_dataflow_block
 from utk_curio.backend.app.agents.application import dataset_resolution as agents_dataset_resolution
 from utk_curio.backend.app.agents.application import delegation
 from utk_curio.backend.app.agents.application import source_grounding
@@ -157,6 +158,9 @@ class SolveBatch:
                   if verify else {})
         )
         self.batch_templates = agents_roster._roster_templates(user_key, project_id)  # dev/119: ONE snapshot per batch
+        # The dataflow block each node's content-mode runs are given, composed
+        # once per node (``_dataflow_block``).
+        self.dataflow_blocks: dict[str, str | None] = {}
         # dev/131: session bookkeeping lives ABOVE the resolution branch, because
         # every exit — including "no specialist installed" — must still report how
         # the session ended.
@@ -536,9 +540,11 @@ class SolveBatch:
         """dev/114 (DEC-072): the gate on content written without running it.
         #867: it holds the content to the datasets a verified Solve holds it
         to, the ids the node's goal names and the catalog rows the user
-        confirmed for the node."""
+        confirmed for the node. The error the node fails with, or None: an
+        ungrounded source with its remedy, or a chart's or a map's document
+        that does not validate, as the verified loop names that round."""
         node = self.nodes_by_id.get(node_id) or {}
-        _verdict, refusal = agents_grounding._gate_generated_content(
+        verdict, refusal = agents_grounding._gate_generated_content(
             self.user_key, self.project_id, self.solve_ctx,
             code=code, engine="python", node_type=node.get("type"),
             base=self.solve_ground,
@@ -548,8 +554,13 @@ class SolveBatch:
                     self.current["spec"], node_id, user_key=self.user_key,
                 )
             ),
+            node_id=node_id,
         )
-        return refusal
+        if refusal is None:
+            return None
+        if verdict.ok:  # every source is grounded: the document does not validate
+            return f"document-invalid: {refusal}"
+        return self._ungrounded_error(refusal, node_id)
 
     def _record_solved(self, node_id: str, text) -> dict:
         # The child replies with response formatting around the code —
@@ -559,9 +570,8 @@ class SolveBatch:
         # unverified URL never reaches the spec; the node fails LOUDLY
         # with the literal and the remedy named.
         node = self.nodes_by_id.get(node_id) or {}
-        refusal = self._gate_unverified(node_id, text_out)
-        if refusal:
-            err = self._ungrounded_error(refusal, node_id)
+        err = self._gate_unverified(node_id, text_out)
+        if err:
             self.results[node_id] = {"status": "failed", "error": err[:300]}
             return {"nodeId": node_id, "status": "failed", "error": err[:300]}
         # A Map Edits node's code is held to what the node reads, unrun too.
@@ -1144,9 +1154,8 @@ class SolveBatch:
             self.delegations.append(child)
         # dev/114: the gate runs on the batch base BEFORE the
         # mint so the node's failure names the source.
-        _refusal = self._gate_unverified(node_id, content.extract_node_content(text))
-        if _refusal:
-            err = self._ungrounded_error(_refusal, node_id)
+        err = self._gate_unverified(node_id, content.extract_node_content(text))
+        if err:
             self.results[node_id] = {"status": "failed", "error": err[:300]}
             yield "node_result", {"nodeId": node_id, "status": "failed", "error": err[:300]}
             return
@@ -1270,12 +1279,25 @@ class SolveBatch:
                 attachment_id=self.attachment_id,
                 node_id=node_id,
                 home_create=False,  # workers never write the spec
+                dataflow_block=self._dataflow_block(node_id),
             )
             queue.put(
                 (node_id, "solved" if status == "ok" else "failed", text, child)
             )
         except BaseException as exc:  # a lost item would deadlock the drain
             queue.put((node_id, "failed", f"solve worker error: {exc}", None))
+
+    def _dataflow_block(self, node_id: str) -> str | None:
+        """The dataflow block of *node_id*'s content-mode runs, composed once:
+        its template, and the dataflow's datasets as the batch read them when
+        it started (the grounding base), since a worker holds no request."""
+        if node_id not in self.dataflow_blocks:
+            node = self.nodes_by_id.get(node_id) or {}
+            self.dataflow_blocks[node_id] = agents_dataflow_block.compose(
+                self.user_key, self.project_id, node_type=node.get("type"),
+                datasets=self.solve_ground.get("dataflow_datasets"), user=self.acting_user,
+            )
+        return self.dataflow_blocks[node_id]
 
     def _worker_inputs(self, node_id: str, node: dict, wave_spec: dict, upstream_outputs) -> dict:
         inputs = {
@@ -1314,6 +1336,7 @@ class SolveBatch:
                 attachment_id=self.attachment_id,
                 node_id=_node_id,
                 home_create=False,  # workers never write the spec
+                dataflow_block=self._dataflow_block(_node_id),
             )
             return st, tx, ch
 

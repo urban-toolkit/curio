@@ -27,6 +27,7 @@ import queue as _queue
 import threading
 import time
 
+from utk_curio.backend.app.agents.application import dataflow_block as agents_dataflow_block
 from utk_curio.backend.app.agents.application import delegation
 from utk_curio.backend.app.agents.application import source_grounding
 from utk_curio.backend.app.agents.domain import content
@@ -109,6 +110,8 @@ class VerifiedRounds:
         self.recorded_failure = recorded_failure
         self.carry_forward = carry_forward
         self.result_summary_fn = result_summary_fn
+        self.grounding_base = grounding_base
+        self.dataflow_block: str | None = None
         self.run_delegate = delegate_runner or (
             lambda inputs: delegation.run_delegate(
                 user_key, project_id, resolution.coord,
@@ -116,6 +119,7 @@ class VerifiedRounds:
                 parent_execution_id=parent_execution_id,
                 parent_coord=parent_coord,
                 attachment_id=attachment_id,
+                dataflow_block=self._dataflow_block(),
             )
         )
         self.node_id = node.get("id")
@@ -317,6 +321,18 @@ class VerifiedRounds:
         return self._finish()
 
     # ── stage: generation ───────────────────────────────────────────────────
+
+    def _dataflow_block(self) -> str | None:
+        """The dataflow block of this node's content-mode runs, composed on the
+        first: with the datasets of the grounding base when the caller read
+        them, else as the acting user reads the Data Catalog. A caller with its
+        own delegate runner hands its runs the block itself."""
+        if self.dataflow_block is None:
+            self.dataflow_block = agents_dataflow_block.compose(
+                self.user_key, self.project_id, node_type=self.node_type,
+                datasets=(self.grounding_base or {}).get("dataflow_datasets"), user=self.acting_user,
+            ) or ""
+        return self.dataflow_block or None
 
     def _generation_inputs(self) -> dict:
         inputs = {

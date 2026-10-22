@@ -19,6 +19,7 @@ from utk_curio.backend.app.agents.application.errors import AgentServiceError
 from utk_curio.backend.app.agents.domain import builtin
 from utk_curio.backend.app.agents.domain import content
 from utk_curio.backend.app.agents.domain import plan_topology
+from utk_curio.backend.app.agents.domain import spatial_join_settings
 from utk_curio.backend.app.agents.domain.counts import count_label
 from utk_curio.backend.app.agents.repositories import project_agents
 from utk_curio.backend.app.agents.repositories import sessions
@@ -301,6 +302,12 @@ def _mint_dataflow_plan(
     for node, (entry, err) in zip(plan["nodes"], outcomes):
         if entry is None:
             return "refused", f"plan node {node['ref']!r}: {err}", None
+    setting_errors = spatial_join_settings.plan_problems(
+        plan["nodes"], [entry for entry, _err in outcomes],
+        lambda node_type: packages_services.template_behavior(user_key, project_id, node_type),
+    )
+    if setting_errors:
+        return "refused", "\n- ".join(["the plan's Spatial Join settings are invalid:"] + setting_errors), None
     spec = projects_storage.read_spec(user_key, project_id)
     if spec is None:
         return "refused", "no saved project spec is available", None
@@ -532,6 +539,10 @@ def _plan_review_part(proposal_id: str, plan: dict, existing_nodes: dict, existi
     preview_lines = [
         f"{node['title']} · {node['nodeType']} — {node['intent']}" for node in plan["nodes"]
     ]
+    # A Spatial Join's operation and output, on its own line's end.
+    for index, node in enumerate(plan["nodes"]):
+        if node.get(spatial_join_settings.KEY):
+            preview_lines[index] += f" · {spatial_join_settings.describe(node[spatial_join_settings.KEY])}"
     preview_lines += plan_scenarios.preview_lines(plan)
     for node_id in remove_nodes:
         victim = existing_nodes[node_id]

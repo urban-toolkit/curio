@@ -107,7 +107,7 @@ List the Nodes Catalog's node packages with this project's install state. Params
 
 ## packages.resolve
 
-Resolve one or more catalog packages against this account's installed set. Params: {"dirNames": ["<dirName from packages.catalog>", ...]}. Returns each package's requested permissions and python/js dependencies, plus any version conflicts. Use it to enrich an identify/recommend answer before proposing an install.
+Resolve one or more catalog packages against this account's installed set. Params: {"dirNames": ["<dirName from packages.catalog>", ...]}. Returns each package's requested permissions, its python/js dependencies, the packages it names in dependencies.packages (packageDeps), which adding it adds, and the public functions its modules define (functions: by module, each with its call and its docstring's first paragraph), which a template of the package, or of a package that names it in dependencies.packages, imports; plus any version conflicts. Use it to enrich an identify/recommend answer before proposing an install, and to find the functions a node's code can import.
 
 ### Parameters
 
@@ -115,7 +115,7 @@ Resolve one or more catalog packages against this account's installed set. Param
 
 ## dataflow.plan.write
 
-Propose a reviewed plan that changes the dataflow graph, by ending a reply with a dataflowPlan block (not a toolRequest): {"dataflowPlan": {"goal": "...", "nodes": [{"ref": "n1", "nodeType": "<packageId>/<templateId>", "title": "...", "intent": "...", "widgets": [...]}], "edges": [{"from": "n1", "to": "<ref or existing node id>", "kind": "data"|"interaction"}], "scenarios": [...], "removeNodes": ["<existing node id>"], "removeEdges": ["<existing edge id>"]}}. {{include:rules/plan-rules.md}}
+Propose a reviewed plan that changes the dataflow graph, by ending a reply with a dataflowPlan block (not a toolRequest): {"dataflowPlan": {"goal": "...", "nodes": [{"ref": "n1", "nodeType": "<packageId>/<templateId>", "title": "...", "intent": "...", "widgets": [...], "spatialJoin": {...}}], "edges": [{"from": "n1", "to": "<ref or existing node id>", "kind": "data"|"interaction"}], "scenarios": [...], "removeNodes": ["<existing node id>"], "removeEdges": ["<existing edge id>"]}}. {{include:rules/plan-rules.md}}
 
 ### Native
 
@@ -165,7 +165,7 @@ Propose installing ONE node package from the Nodes Catalog into this project. Pa
 
 ## node.create
 
-Propose adding ONE new node to the canvas. Params: {"nodeType": "<packageId>/<templateId>", "content": "...", "title": "<short header shown on the node>", "goal": "<one-line purpose>", "appearance": {"backgroundColor": "<palette name or #RRGGBB>"}, "widgets": [...]}: title, goal, appearance and widgets are optional; a note template renders title and backgroundColor, so give both for notes. nodeType must be an id from the "Available node templates" list, never invented. The user reviews the proposal; nothing is added without their approval.
+Propose adding ONE new node to the canvas. Params: {"nodeType": "<packageId>/<templateId>", "content": "...", "title": "<short header shown on the node>", "goal": "<one-line purpose>", "appearance": {"backgroundColor": "<palette name or #RRGGBB>"}, "widgets": [...], "spatialJoin": {...}}: title, goal, appearance, widgets and spatialJoin are optional; a note template renders title and backgroundColor, so give both for notes. nodeType must be an id from the "Available node templates" list, never invented. The user reviews the proposal; nothing is added without their approval.
 
 ### Parameters
 
@@ -214,3 +214,4 @@ Delegate one specialized capability to the agent that handles it, and receive it
 - widgets[]: A widget: name, type, label, default, and options (choices, display, min, max, step, units).
 - widgets.name: Letters, digits and underscores: the code places it as {{widgets.reference:name}}.
 - widgets.label: What the Widgets tab shows beside the control.
+- spatialJoin: A Spatial Join node's operation and output; it holds no content.

@@ -161,6 +161,21 @@ class TestResolvePicks:
         ])
         assert len(rows) == 1
 
+    def test_a_catalog_pick_is_read_again_from_the_listing(self):
+        """The card may be days old, as an external row's probe may be: a pick
+        is checked against the Data Catalog listing as it is when the user
+        confirms. A dataset it no longer holds is refused, and whether one is
+        installed is the listing's answer, not the card's."""
+        part = _part(catalog=[
+            {"datasetId": "d1", "name": "Areas", "installed": True, "sourceType": "catalog"},
+            {"datasetId": "gone", "name": "Gone", "installed": True, "sourceType": "catalog"},
+        ])
+        listing = [{"id": "d1", "name": "Areas", "installed": False}]
+        (row,) = dr.resolve_picks(part, [{"lane": "catalog", "key": "d1"}], catalog_rows=listing)
+        assert (row["datasetId"], row["installed"]) == ("d1", False)
+        with pytest.raises(dr.DatasetResolutionError, match="not in the Data Catalog"):
+            dr.resolve_picks(part, [{"lane": "catalog", "key": "gone"}], catalog_rows=listing)
+
 
 class TestRecordSelection:
     def test_an_installed_catalog_pick_resolves_the_node(self):

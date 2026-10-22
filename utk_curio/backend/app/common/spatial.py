@@ -31,6 +31,17 @@ class JoinInputError(ValueError):
     """A request the join cannot run. The message says what to change."""
 
 
+def settings_problem(predicate: object, output: object) -> str | None:
+    """Why the join has no such operation or output, saying what it takes, or
+    None. The route answers with it, and the agents check an operation and
+    an output they set on a node with it (``agents/domain/spatial_join_settings.py``)."""
+    if predicate not in PREDICATES:
+        return f"The operation must be one of {', '.join(PREDICATES)}; got {predicate!r}."
+    if output not in OUTPUTS:
+        return f"The output must be one of {', '.join(OUTPUTS)}; got {output!r}."
+    return None
+
+
 def spatial_join(
     left_fc: Any,
     right_fc: Any,
@@ -47,10 +58,9 @@ def spatial_join(
     A point on a polygon's edge follows shapely's rule for the operation: it
     intersects and touches the polygon, and is not within it.
     """
-    if predicate not in PREDICATES:
-        raise JoinInputError(f"The operation must be one of {', '.join(PREDICATES)}; got {predicate!r}.")
-    if output not in OUTPUTS:
-        raise JoinInputError(f"The output must be one of {', '.join(OUTPUTS)}; got {output!r}.")
+    problem = settings_problem(predicate, output)
+    if problem:
+        raise JoinInputError(problem)
     left_features = _features(left_fc, "input_0")
     right_features = _features(right_fc, "input_1")
     left = _frame(left_features, left_fc, "input_0")

@@ -10,8 +10,7 @@
 import React, { useState } from "react";
 import { useFlowContext } from "../../providers/FlowProvider";
 import { useSharedView } from "../../hook/useSharedView";
-import { NOTE_COLORS, type NoteColorName } from "../../generated/noteColors";
-import { noteColors } from "../../utils/noteColors";
+import { NOTE_COLORS, noteColors, type NoteColorName } from "../../utils/noteColors";
 import { NoteMarkdown } from "./NoteMarkdown";
 import styles from "./Note.module.css";
 

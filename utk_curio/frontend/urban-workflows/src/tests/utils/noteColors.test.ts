@@ -1,12 +1,14 @@
 /**
  * A Note's colors follow the backend's node-appearance rule
  * (`packages/domain/node_appearance.py`), which an agent's notes are saved
- * through: the palette is generated from it, and a color it would refuse
- * renders as the default yellow. The expected values here are what its
- * `derived_colors` returns for the same input.
+ * through: both read the palette from contracts/noteColors.json, and a color
+ * the rule would refuse renders as the default yellow. The expected values
+ * here are what its `derived_colors` returns for the same input.
  */
-import { NOTE_COLORS } from "../../generated/noteColors";
+import noteColorsFile from "../../contracts/noteColors.json";
 import { noteColors } from "../../utils/noteColors";
+
+const NOTE_COLORS = noteColorsFile.colors;
 
 describe("a note's colors", () => {
   test("a palette name is the backend's color for it, in any case", () => {

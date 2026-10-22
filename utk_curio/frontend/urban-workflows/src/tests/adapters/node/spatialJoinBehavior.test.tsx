@@ -7,9 +7,13 @@
  * joined. The body picks the operation and the output, both persisted on the
  * node, and the backend's counts reach the status line.
  */
+import * as fs from 'fs';
+import * as path from 'path';
 import React from 'react';
 import { renderHook, render, act, fireEvent, waitFor } from '@testing-library/react';
 import type { NodeBehaviorData, UseNodeStateReturn } from '../../../registry/types';
+
+const REPO_ROOT = path.join(__dirname, '..', '..', '..', '..', '..', '..', '..');
 
 jest.mock('reactflow', () => ({
   useEdges: () => [],
@@ -199,6 +203,20 @@ describe('the operation and the output (#576)', () => {
 
     expect(readBody(result.current.contentComponent).operation).toEqual({ value: 'intersects', options: OPERATIONS });
     expect(posted(fetchMock).predicate).toBe('intersects');
+  });
+
+  test("the selects offer exactly the dataflow format's choices, which are the join's own", async () => {
+    // A test of common/spatial.py holds the Trill enums to PREDICATES and
+    // OUTPUTS, the choices the route and the agents' check take.
+    const schema = JSON.parse(fs.readFileSync(path.join(REPO_ROOT, 'docs', 'schemas', 'trill.v1.json'), 'utf-8'));
+    const setting = schema.$defs.nodeMetadata.properties.spatialJoin.properties;
+    mockFetch(joined([]));
+    const { result, rerender } = renderJoin();
+    await feed(rerender);
+
+    const body = readBody(result.current.contentComponent);
+    expect(body.operation!.options).toEqual(setting.predicate.enum);
+    expect(body.output!.options).toEqual(setting.output.enum);
   });
 
   test('a saved operation is sent, and picking another saves it on the node', async () => {

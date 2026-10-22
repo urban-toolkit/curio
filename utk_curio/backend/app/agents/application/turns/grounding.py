@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import logging
 
+from utk_curio.backend.app.agents.application import dataflow_block as agents_dataflow_block
 from utk_curio.backend.app.agents.application import delegation
 from utk_curio.backend.app.agents.application import source_grounding
 from utk_curio.backend.app.agents.application import spec_reads as agents_spec_reads
@@ -17,6 +18,7 @@ from utk_curio.backend.app.agents.application import tools
 from utk_curio.backend.app.agents.application import verify
 from utk_curio.backend.app.agents.infrastructure import egress
 from utk_curio.backend.app.agents.infrastructure.providers import ProviderConfig
+from utk_curio.backend.app.agents.repositories import project_agents
 from utk_curio.backend.app.agents.repositories import sessions
 from utk_curio.backend.app.agents.application import catalog as agents_catalog
 from utk_curio.backend.app.agents.application import dataset_resolution as agents_dataset_resolution
@@ -24,7 +26,9 @@ from utk_curio.backend.app.agents.application.proposals import acquire as agents
 from utk_curio.backend.app.agents.application.proposals import mint as agents_mint
 from utk_curio.backend.app.agents.application.solve import budgets as agents_budgets
 from utk_curio.backend.app.agents.application.turns import roster as agents_roster
+from utk_curio.backend.app.agents.domain import document_validation
 from utk_curio.backend.app.datasets.domain.code_refs import dataset_ids_in_code
+from utk_curio.backend.app.execution import workflow_spec
 from utk_curio.backend.app.projects import storage as projects_storage
 
 log = logging.getLogger(__name__)
@@ -190,9 +194,13 @@ def _catalog_rows_for_discovery(user_key: str, project_id: str) -> list[dict]:
     to the discovery delegate, exactly as dev/115 already resolves the
     execution paths eagerly. Empty on failure: the delegate is then TOLD the
     catalog was unavailable rather than left to imagine it.
+
+    Every row of the listing: the delegate is shown the first of them
+    (``delegates._dataset_discover_inputs``), and its candidates, like a
+    selection, are checked against all of them (:func:`_grounded_catalog_rows`).
     """
     try:
-        return tools._catalog_search_rows(user_key, project_id, {})
+        return tools._catalog_listing_rows(user_key, project_id, {})
     except Exception:  # noqa: BLE001
         log.warning("Data Catalog listing unavailable for project %s", project_id,
                     exc_info=True)
@@ -377,7 +385,57 @@ def _verify_candidate_parts(parts: list, loop_ctx: dict | None = None) -> None:
                 if loop_ctx is not None and row["verification"].get("status") == "verified":
                     loop_ctx.setdefault("_verified_urls", {})[url] = row["verification"]
             agents_mint._mint_row_access(row)
-            agents_acquire._mint_row_acquirable(row, roster)
+            agents_acquire._mint_row_acquirable(row, roster, budget)
+
+
+def _grounded_catalog_rows(rows: list, listing: list) -> tuple[list, int]:
+    """The catalog-lane candidate *rows* whose ``datasetId`` the Data Catalog
+    *listing* holds, and how many it dropped. A kept row says installed or not
+    as the listing does, never as the reply did, and is named as the listing
+    names it when the reply named it nothing."""
+    listed = {str(r.get("id")): r for r in listing or [] if isinstance(r, dict) and r.get("id")}
+    kept = []
+    for row in rows:
+        found = listed.get(str(row.get("datasetId"))) if isinstance(row, dict) else None
+        if found is None:
+            continue
+        row["installed"] = bool(found.get("installed"))
+        row.setdefault("name", found.get("name"))
+        row.setdefault("sourceType", "catalog")
+        kept.append(row)
+    return kept, len(rows) - len(kept)
+
+
+#: What a reply's candidates card becomes when none of its rows is left: the
+#: user reads why, in place of a card with nothing to select.
+_NO_CANDIDATES_CARD = {
+    "type": "card",
+    "kind": "error",
+    "title": "No dataset candidates",
+    "lines": ["None of the datasets this reply proposed is in your Data Catalog."],
+}
+
+
+def _ground_catalog_lanes(parts: list, listing) -> None:
+    """A run's own candidates cards, checked as a delegated card is
+    (``delegates._mint_candidates_from_delegate``): a catalog row stays only
+    when the Data Catalog listing holds its dataset, and says installed or not
+    as the listing does (:func:`_grounded_catalog_rows`). A card left with no
+    row is replaced by :data:`_NO_CANDIDATES_CARD`. *listing* returns the
+    listing's rows; it is called once, and only when a card holds a catalog
+    row."""
+    rows = None
+    for index, part in enumerate(parts):
+        if not isinstance(part, dict) or part.get("type") != "datasetCandidates":
+            continue
+        lanes = part.get("lanes") or {}
+        if not lanes.get("catalog"):
+            continue
+        if rows is None:
+            rows = listing()
+        lanes["catalog"], _dropped = _grounded_catalog_rows(lanes["catalog"], rows)
+        if not any(lanes.get(lane) for lane in ("catalog", "external")):
+            parts[index] = {**_NO_CANDIDATES_CARD, "lines": list(_NO_CANDIDATES_CARD["lines"])}
 
 
 def _run_egress_budget(loop_ctx: dict) -> "egress.CallBudget":
@@ -400,14 +458,10 @@ _CANDIDATES_PENDING_TEXT = (
 )
 
 
-def _catalog_grounding_refs(project_id: str) -> tuple[dict, dict]:
-    """dev/114: ``(by_path, by_id)`` — the datasets the datasets domain lists
-    for this project, the SAME listing ``catalog.search`` serves, so a row the
-    tool showed is grounded by construction: by resolved path (the historical
-    literal form) and by id (the portable ``curio_data_path("<id>")`` call
-    the loader recipe emits, resolved by the sandbox at run time). A failing
-    catalog read degrades to empty maps (logged): the gate still refuses
-    ungrounded sources, honestly, rather than inventing a neighborhood."""
+def _catalog_listing_items(project_id: str) -> list | None:
+    """The datasets the datasets domain lists for this project, the SAME
+    listing ``catalog.search`` serves, read as the request's account; None,
+    logged, when the catalog cannot be read."""
     try:
         from flask import g, has_request_context
 
@@ -419,13 +473,28 @@ def _catalog_grounding_refs(project_id: str) -> tuple[dict, dict]:
         listing = DatasetCatalogService(user).list_catalog(dataflow_id=project_id)
     except Exception:  # a broken catalog is data, never a run error
         log.warning(
-            "Could not read the Data Catalog for source grounding (project %s) — "
+            "Could not read the Data Catalog for source grounding (project %s): "
             "catalog paths are treated as unknown this run", project_id, exc_info=True,
         )
-        return {}, {}
+        return None
+    return [item for item in (listing or {}).get("items") or [] if isinstance(item, dict)]
+
+
+def _catalog_grounding_refs(project_id: str, items: list | None = None) -> tuple[dict, dict]:
+    """dev/114: ``(by_path, by_id)``, the datasets the datasets domain lists
+    for this project, the SAME listing ``catalog.search`` serves, so a row the
+    tool showed is grounded by construction: by resolved path (the historical
+    literal form) and by id (the portable ``curio_data_path("<id>")`` call
+    the loader recipe emits, resolved by the sandbox at run time). A failing
+    catalog read degrades to empty maps (logged): the gate still refuses
+    ungrounded sources, honestly, rather than inventing a neighborhood.
+    *items*, the listing when the caller read it already, spares a second
+    read (:func:`_catalog_listing_items`)."""
+    if items is None:
+        items = _catalog_listing_items(project_id)
     by_path: dict = {}
     by_id: dict = {}
-    for item in (listing or {}).get("items") or []:
+    for item in items or []:
         if not isinstance(item, dict) or not item.get("id"):
             continue
         path = item.get("path")
@@ -549,7 +618,7 @@ def _grounding_context(
     hints: list[str] = []
     if "catalog.search" in (loop_ctx.get("granted") or []):
         hints.append("a `path` from a catalog.search row (granted — search first)")
-    if _delegates_discovery(user_key, loop_ctx.get("manifest")):
+    if _delegates_discovery(user_key, project_id, loop_ctx.get("manifest")):
         hints.append(
             "a URL the runtime verified — delegate the dataset.discover capability "
             "to find and verify candidates first, then build from the one the user confirms"
@@ -557,7 +626,7 @@ def _grounding_context(
     elif verified:
         hints.append("a URL already verified in this conversation")
     hints.append(
-        'declare "synthetic": true in the params ONLY when the user asked for made-up data'
+        "data made up in the code, ONLY when the user asked for made-up data in their own words"
     )
     if secrets:
         hints.append(
@@ -585,17 +654,18 @@ def _grounding_context(
     )
 
 
-def _delegates_discovery(user_key: str, manifest) -> bool:
-    """Whether *manifest*'s agent asks another for datasets: an agent its
-    ``delegatesTo`` names, resolved to a visible definition, declares
-    ``dataset.discover`` and is delegated it
-    (``delegation.visible_capability_entries``)."""
+def _delegates_discovery(user_key: str, project_id: str, manifest) -> bool:
+    """Whether *manifest*'s agent asks another for datasets: its delegation
+    paragraph offers ``dataset.discover`` (``delegation.offered_capability_entries``,
+    the list the run is given)."""
     if not getattr(manifest, "delegates_to", None):
         return False
     try:
+        spec = projects_storage.read_spec(user_key, project_id) or {}
+        installed = set(project_agents.project_agents(spec))
         return any(
             capability == "dataset.discover"
-            for capability, _name in delegation.visible_capability_entries(user_key, manifest)
+            for capability, _name in delegation.offered_capability_entries(user_key, installed, manifest)
         )
     except Exception:  # noqa: BLE001 - an unreadable definition delegates nothing
         return False
@@ -627,10 +697,16 @@ def _gate_generated_content(
     is_data_loading: bool | None = None,
     request_texts: tuple = (),
     requested_ids=(),
+    node_id: str | None = None,
+    widgets: list | None = None,
 ) -> tuple["source_grounding.GroundingVerdict", str | None]:
     """The ONE call every agent-authored-content boundary makes (dev/114):
     ``(verdict, refusal_text | None)``. The refusal is model-correctable
-    (DEC-067) and names only routes this run can take."""
+    (DEC-067) and names only routes this run can take. Content whose sources
+    are grounded and that is a chart's or a map's document is then checked as
+    Solve checks one (:func:`_document_refusal`), for *node_id*'s saved node,
+    or for the node a proposal creates with the *widgets* it declares: its
+    refusal comes with a verdict that is ``ok``."""
     ctx = _grounding_context(
         user_key, project_id, loop_ctx, node_type=node_type, params=params,
         extra_texts=extra_texts, base=base, is_data_loading=is_data_loading,
@@ -638,9 +714,70 @@ def _gate_generated_content(
     )
     engine_name = engine if isinstance(engine, str) and engine else "python"
     verdict = source_grounding.check_grounding(code, engine_name, ctx)
-    if verdict.ok:
-        return verdict, None
-    return verdict, source_grounding.refusal_text(verdict, ctx)
+    if not verdict.ok:
+        return verdict, source_grounding.refusal_text(verdict, ctx)
+    return verdict, _document_refusal(user_key, project_id, node_type, code, node_id=node_id, widgets=widgets)
+
+
+#: The id the node a proposal creates goes by while its document is checked.
+_PROPOSED_NODE_ID = "__proposed__"
+
+
+def _document_refusal(
+    user_key: str, project_id: str, node_type: object, code: object, *,
+    node_id: str | None = None, widgets: list | None = None,
+) -> str | None:
+    """Why a chart's or a map's document an agent wrote does not validate, as
+    Solve's document check says it (``document_validation``), or None; None
+    for any other content. Its fields are not held to columns: a proposal's
+    run is never handed its inputs' columns (DEC-063)."""
+    if not isinstance(node_type, str) or not node_type or not isinstance(code, str):
+        return None
+    from utk_curio.backend.app.packages import service as packages_services
+
+    try:
+        templates = {t["id"]: t for t in packages_services.available_templates(user_key, project_id)}
+    except Exception:  # noqa: BLE001 - an unreadable roster falls to the offline tables
+        templates = {}
+    grammar_id = workflow_spec.grammar_id_of(node_type, templates)
+    grammar = document_validation.grammar_of(node_type, grammar_id)
+    if grammar is None:
+        return None
+    row = templates.get(node_type.split("@", 1)[0]) or {}
+    verdict = document_validation.validate(
+        node_type, _proposed_document(user_key, project_id, node_type, code, node_id, widgets, templates, grammar),
+        grammar_id=grammar_id, content_kind=row.get("contentKind"),
+    )
+    if verdict["status"] != document_validation.STATUS_INVALID:
+        return None
+    return document_validation.refusal_text(node_type, verdict, grammar_id=grammar_id)
+
+
+def _proposed_document(user_key, project_id, node_type, code, node_id, widgets, templates, grammar) -> str:
+    """*code* with its references resolved as far as the dataflow knows them,
+    as the canvas resolves them before it draws: the node's widgets, the
+    shared tags, its wired inputs and their boxes. The node is *node_id*'s
+    saved one, or the one a proposal creates, with the *widgets* it declares.
+    A reference nothing resolves yet, such as the input chip of a circle no
+    edge reaches, is left as written, and the validator reads it as Solve
+    reads one of a node the saved dataflow does not hold."""
+    spec_doc = projects_storage.read_spec(user_key, project_id) or {}
+    dataflow = spec_doc.get("dataflow") if isinstance(spec_doc.get("dataflow"), dict) else {}
+    nodes = [n for n in dataflow.get("nodes") or [] if isinstance(n, dict)]
+    if node_id is None:
+        node_id = _PROPOSED_NODE_ID
+        nodes.append({"id": node_id, "type": node_type, "content": code,
+                      "metadata": {"widgets": list(widgets or [])}})
+    labels = {template_id: row.get("label") or "" for template_id, row in templates.items() if isinstance(row, dict)}
+    try:
+        spec = workflow_spec.parse_workflow_dict({**spec_doc, "dataflow": {**dataflow, "nodes": nodes}}, labels=labels)
+    except Exception:  # noqa: BLE001 - a dataflow that cannot be read resolves nothing
+        return code
+    node = next((n for n in spec.nodes if n.id == node_id), None)
+    if node is None:
+        return code
+    resolved, _unresolved_yet = spec.node_code_and_problems(node, "json", code, grammar)
+    return resolved
 
 
 def _source_grounding_inputs(ctx: "source_grounding.GroundingContext") -> dict:
@@ -750,11 +887,15 @@ def _solve_grounding_base(
     for node_id in targets:
         node = nodes_by_id.get(node_id) or {}
         texts.append(str(node.get("goal") or ""))
-    by_path, by_id = _catalog_grounding_refs(project_id)
+    items = _catalog_listing_items(project_id)
+    by_path, by_id = _catalog_grounding_refs(project_id, items or [])
     return {
         "catalog_paths": by_path,
         "catalog_ids": by_id,
         "texts": [t for t in texts if t.strip()],
         "verified": {},
         "secrets": _connection_key_refs(user_key),
+        # The dataflow's datasets with their lines, for the dataflow block
+        # each node's content-mode runs are given, from the same listing.
+        "dataflow_datasets": agents_dataflow_block.datasets_in(items),
     }

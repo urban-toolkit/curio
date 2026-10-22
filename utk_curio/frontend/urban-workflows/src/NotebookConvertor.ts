@@ -9,7 +9,7 @@ import { PARAMETER_NODE_TYPE, sharedWidgetsOfSpec } from "./utils/references/sha
 import { normalizeSelections } from "./utils/references/selectionTags";
 import { normalizeWidgets, type WidgetDef, type WidgetValue } from "./utils/widgets/widgetModel";
 import { INPUTS_DATASET, namesDataset, readsInputs, usesNamedDatasets } from "./utils/vegaDatasets";
-import { inputTableName } from "./generated/autkGrammar";
+import { inputTableName } from "./contracts/autkGrammar";
 import { normalizeScenarios } from "./utils/scenarios/scenarioModel";
 import { inputScenarios } from "./utils/scenarios/inputScenarios";
 import { NO_SCENARIO_COLOR, type ScenarioLabel } from "./utils/scenarios/scenarioColors";

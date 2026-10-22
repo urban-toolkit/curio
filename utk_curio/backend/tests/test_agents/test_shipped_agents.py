@@ -452,13 +452,13 @@ class TestTheFieldsOnlyCuriosAgentsUse:
 class TestTheSources:
     """Each prompt is a hand-written source in the folder of the agent that
     names it, and the pages they share are the base entry's. The backend
-    renders them; the generator writes none."""
+    renders them; nothing writes them."""
 
     def test_each_prompt_is_a_source_in_the_folder_that_names_it(self):
         from utk_curio.backend.app.agents.domain import contracts
         from utk_curio.backend.app.agents.domain.manifest import load_agent_manifest
 
-        assert not [path for path in contracts.GENERATED_OUTPUTS if path.endswith(".md")]
+        assert not hasattr(contracts, "GENERATED_OUTPUTS"), "contracts.py registers files to write"
         marked = set()
         for folder in _folders():
             for asset in load_agent_manifest(folder).prompts.values():
@@ -471,14 +471,14 @@ class TestTheSources:
         # Eleven state facts the code owns, each through a marker.
         assert len(marked) == 11, sorted(marked)
         # The shared preamble, the knowledge pages it includes, one per
-        # feature, the rules other prompts include, and the text the runtime
-        # composes a run's turns from are the pages of the base entry, each
-        # listed once and each a file there: a page added or forgotten fails
-        # here.
+        # feature, the rules other prompts include, the text the runtime
+        # composes a run's turns from, and the words of the dataflow block are
+        # the pages of the base entry, each listed once and each a file there:
+        # a page added or forgotten fails here.
         pages = _raw(BASE)["pages"]
         assert len(pages) == len(set(pages)), pages
         assert set(pages) == {
-            "default_preamble.md", "examples.md", "rules/package_contract.md",
+            "default_preamble.md", "examples.md", "dataflow-block.md", "rules/package_contract.md",
             "rules/research_notes_rules.md", "rules/research_verify_rules.md",
             "tools.md", "rules/plan-rules.md", "protocol.md", "frames.md",
             "delegate-contracts.md", "conversation-title.md", "keyword-types.md",

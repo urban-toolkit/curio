@@ -76,6 +76,9 @@ STRUCTURED_CAPABILITIES = frozenset({
 SOLVE_CAPABILITIES = ("node.content.generate", "dataset.discover")
 #: What an agent that plans a dataflow and runs Solve over its plan declares.
 ORCHESTRATE_CAPABILITY = "dataflow.orchestrate"
+#: What an agent that composes notes declares: its chat's node.create places
+#: notes, not code (``turns/delegates._notes_agent_run`` keys on it too).
+NOTES_CAPABILITY = "research.notes.compose"
 #: What an agent that builds nodes on the canvas declares. An agent that does
 #: not hands a source to build a node from to the one its delegatesTo names.
 NODE_BUILD_CAPABILITY = "node.build"
@@ -602,6 +605,10 @@ def _parse_dataflow_plan_verbose(raw: object) -> tuple[dict | None, list[str]]:
         if widget_errors:
             errors.extend(widget_errors)
             continue
+        setting_errors = _plan_node_spatial_join(node, node_raw, where)
+        if setting_errors:
+            errors.extend(setting_errors)
+            continue
         nodes.append(node)
     plan["nodes"] = nodes
     edges_raw = raw.get("edges", [])
@@ -727,6 +734,19 @@ def _plan_node_widgets(node: dict, raw: object, where: str) -> list[str]:
     if widgets:
         node["widgets"] = widgets
     return []
+
+
+def _plan_node_spatial_join(node: dict, node_raw: dict, where: str) -> list[str]:
+    """A planned Spatial Join's operation and output, set on *node* (absent
+    when it sets none), or the errors. Which template takes one is the mint's
+    question: the grammar knows no roster."""
+    from utk_curio.backend.app.agents.domain import spatial_join_settings
+
+    key = spatial_join_settings.KEY
+    setting, problems = spatial_join_settings.parse(node_raw.get(key), f"{where}.{key}")
+    if setting:
+        node[key] = setting
+    return problems
 
 
 def _parse_dataflow_plan(raw: object) -> dict | None:

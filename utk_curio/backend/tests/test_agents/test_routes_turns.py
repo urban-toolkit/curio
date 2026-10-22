@@ -1915,6 +1915,7 @@ class TestReuseLadder:
     def test_a13_default_fills_only_an_omitted_color_on_a_note_template(
         self, client, user_and_token, tmp_curio, alice_project, monkeypatch
     ):
+        from utk_curio.backend.app.packages.application.note_palette import NOTE_PALETTE
         from utk_curio.backend.app.packages.domain import node_appearance
         from utk_curio.backend.app.packages.application import agent_reads
         from utk_curio.backend.app.packages.application import project_packages
@@ -1947,7 +1948,7 @@ class TestReuseLadder:
         mirrored = [att["activeProposal"]] + list(att.get("queuedProposals") or [])
         by_id = {p["proposalId"]: p for p in mirrored}
         ordered = [by_id[p["proposalId"]] for p in proposals]
-        norm = lambda c: node_appearance.normalize_appearance({"backgroundColor": c})
+        norm = lambda c: node_appearance.normalize_appearance({"backgroundColor": c}, NOTE_PALETTE)
         assert [p.get("appearance") for p in ordered] == [norm("yellow"), norm("pink"), norm("green")]
         assert ordered[0]["title"] == "Question" and "title" not in ordered[1]
         assert spec_nodes_before is None
@@ -2270,6 +2271,30 @@ class TestDatasetFinderTools:
         result_msg = calls[1][-1]["content"]
         assert '"datasets": []' in result_msg
 
+    def test_a_search_that_stops_short_says_how_many_datasets_it_left_out(
+        self, client, user_and_token, tmp_curio, alice_project, monkeypatch
+    ):
+        from utk_curio.backend.app.agents.application import tools
+        from utk_curio.backend.app.datasets.application.catalog_service import DatasetCatalogService
+
+        user, token = user_and_token
+        self._seed_dataset(user, filename="cities.csv")
+        self._seed_dataset(user, filename="towns.csv")
+        monkeypatch.setattr(tools, "_CATALOG_SEARCH_MAX_ROWS", 1)
+        att_id, calls = self._setup(
+            client, token, alice_project, monkeypatch,
+            replies=[self._search_tail(), "Found it."],
+        )
+        self._run(client, token, alice_project, att_id)
+        result = calls[1][-1]["content"]
+        payload = json.loads(result.split("\n", 1)[1].split("\nNo further")[0])
+        with client.application.app_context():
+            listed = DatasetCatalogService(db_user(client, user)).list_catalog(
+                dataflow_id=alice_project
+            )["items"]
+        assert len(payload["datasets"]) == 1
+        assert payload.get("datasetsElided") == len(listed) - 1
+
     def test_install_mint_refuses_unknown_dataset(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
         _, token = user_and_token
         att_id, calls = self._setup(
@@ -2451,6 +2476,34 @@ class TestRosterGrantCoverage:
         )
         helper._run(client, token, alice_project, att_id)
         assert "Available node templates" not in calls[0][0]["content"]
+
+
+class TestTheRosterSaysWhatItLeftOut:
+    """Both halves of the template roster stop at a number of lines; a run
+    told only those lines is also told how many templates it was not shown."""
+
+    @staticmethod
+    def _templates(prefix: str, count: int) -> list[dict]:
+        return [
+            {"id": f"{prefix}/t{i}", "label": f"T{i}", "description": "", "authorable": True,
+             "dirName": f"{prefix}@1"}
+            for i in range(count)
+        ]
+
+    def test_the_available_half_says_how_many_it_left_out(self, monkeypatch):
+        from utk_curio.backend.app.agents.application.turns import roster
+
+        monkeypatch.setattr(roster, "_TEMPLATES_BLOCK_MAX_ENTRIES", 2)
+        block = roster._available_templates_block("p1", {"available": self._templates("a.pkg", 5)})
+        assert "- a.pkg/t1" in block and "- a.pkg/t2" not in block
+        assert block.endswith("(and 3 more not listed)")
+
+    def test_the_enlistable_half_says_how_many_it_left_out(self):
+        from utk_curio.backend.app.agents.application.turns import roster
+
+        block = roster._enlistable_templates_block("p1", {"notEnlisted": self._templates("b.pkg", 4)}, 3)
+        assert "- b.pkg/t2" in block and "- b.pkg/t3" not in block
+        assert block.endswith("(and 1 more not listed)")
 
 
 class TestSnapshotCostAndCoherence:
@@ -3260,6 +3313,87 @@ class TestVerifiedDiscovery:
         for tool in ("web.search", "web.fetch", "node.read"):
             assert tool in granted, tool
         assert m.capability_ids == ["research.notes.compose", "research.verify"]
+
+
+class TestTheFindersOwnCatalogRows:
+    """The Dataset Finder's own candidates card is checked as a delegated one
+    is: a catalog row the Data Catalog does not list leaves the card, and
+    whether a dataset is installed is the listing's answer, not the reply's.
+    The blocking round and the streamed one check alike."""
+
+    FINDER = "agent.curio.dataset-finder@1"
+    GHOST = "imported.ghost@1"
+
+    def _reply(self, catalog):
+        payload = {"datasetCandidates": {"lanes": {"external": [], "catalog": catalog}}}
+        return f"Here are candidate sources.\n```curio.v1\n{json.dumps(payload)}\n```"
+
+    def _claims(self, dataset_id):
+        """A dataset the Data Catalog holds, said to be installed when it is
+        not, and one the Data Catalog does not hold at all."""
+        return [
+            {"name": "Cities", "sourceType": "catalog", "datasetId": dataset_id, "installed": True},
+            {"name": "Invented", "sourceType": "catalog", "datasetId": self.GHOST, "installed": True},
+        ]
+
+    @staticmethod
+    def _catalog_lane(content):
+        part = next(p for p in content if p["type"] == "datasetCandidates")
+        return [(row["datasetId"], row["installed"]) for row in part["lanes"]["catalog"]]
+
+    def test_the_card_keeps_the_listed_row_with_the_listings_installed_state(
+        self, client, user_and_token, tmp_curio, alice_project, monkeypatch
+    ):
+        user, token = user_and_token
+        dataset_id = TestDatasetFinderTools()._seed_dataset(user)
+        helper = TestDataflowPlanMint()
+        att_id, _ = helper._setup(
+            client, user, token, alice_project, monkeypatch,
+            coord=self.FINDER, replies=[self._reply(self._claims(dataset_id))],
+        )
+        body = helper._run(client, token, alice_project, att_id).get_json()
+        assert self._catalog_lane(body["content"]) == [(dataset_id, False)]
+
+    def test_a_streamed_card_is_checked_the_same_way(
+        self, client, user_and_token, tmp_curio, alice_project, monkeypatch
+    ):
+        user, token = user_and_token
+        dataset_id = TestDatasetFinderTools()._seed_dataset(user)
+        helper = TestDataflowPlanMint()
+        att_id, _ = helper._setup(
+            client, user, token, alice_project, monkeypatch, coord=self.FINDER, replies=["unused"],
+        )
+        reply = self._reply(self._claims(dataset_id))
+
+        def _fake_stream(config, messages, **kwargs):
+            for i in range(0, len(reply), 11):
+                yield reply[i : i + 11]
+
+        monkeypatch.setattr('utk_curio.backend.app.agents.infrastructure.providers.stream_chat_turn', _fake_stream)
+        r = client.post(
+            f"/api/agents/projects/{alice_project}/attachments/{att_id}/run/stream",
+            json={"message": "find data"}, headers=_auth(token),
+        )
+        events = []
+        for block in r.get_data(as_text=True).strip().split("\n\n"):
+            lines = dict(l.split(": ", 1) for l in block.splitlines() if ": " in l)
+            events.append((lines["event"], json.loads(lines["data"])))
+        done = next(payload for kind, payload in events if kind == "done")
+        assert self._catalog_lane(done["content"]) == [(dataset_id, False)]
+
+    def test_a_card_whose_every_row_is_made_up_is_not_shown(
+        self, client, user_and_token, tmp_curio, alice_project, monkeypatch
+    ):
+        user, token = user_and_token
+        helper = TestDataflowPlanMint()
+        att_id, _ = helper._setup(
+            client, user, token, alice_project, monkeypatch,
+            coord=self.FINDER, replies=[self._reply(self._claims("unused")[1:])],
+        )
+        content = helper._run(client, token, alice_project, att_id).get_json()["content"]
+        assert [p for p in content if p["type"] == "datasetCandidates"] == []
+        card = next(p for p in content if p["type"] == "card")
+        assert card["kind"] == "error" and "Data Catalog" in " ".join(card["lines"])
 
 
 class TestPackageRecommendationTools:
