@@ -3,10 +3,11 @@
   "name": "Curio Built-in Agent Text",
   "kind": "base",
   "version": "1.0.0",
-  "purpose": "The pages every agent Curio ships reads: the preamble, the knowledge pages it includes, one per feature of Curio, the tools, the reply protocol, the frames around what a run is given, the delegated runs' contracts, the title prompt, the keyword types, what a check tells a model when it refuses or corrects what the model wrote, the rules its prompts include, and the index of the shipped dataflows a run learns from. An agent names a page as curio:<path>.",
+  "purpose": "The pages every agent Curio ships reads: the preamble, the knowledge pages it includes, one per feature of Curio, the tools, the reply protocol, the frames around what a run is given, the words of the block a run that writes code is given of its dataflow, the delegated runs' contracts, the title prompt, the keyword types, what a check tells a model when it refuses or corrects what the model wrote, the rules its prompts include, and the index of the shipped dataflows a run learns from. An agent names a page as curio:<path>.",
   "pages": [
     "autark-grammar.md",
     "conversation-title.md",
+    "dataflow-block.md",
     "default_preamble.md",
     "delegate-contracts.md",
     "examples.md",

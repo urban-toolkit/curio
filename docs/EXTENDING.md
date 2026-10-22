@@ -338,6 +338,8 @@ return accumulated_shadow(input_0, season=[!! season !!], model=model, output_fi
 
 `deep_umbra` imports `tile_bounds` from `scout_rasters`, the module of the Scout package, which Deep Umbra names in `dependencies.packages`. Adding Deep Umbra adds Scout too (§3.8, "Packages a package needs").
 
+Agents read the same files. A run that writes an Accumulated Shadow node's code gets the template's whole `description`, this starter, and the public functions of `deep_umbra` and of `scout_rasters`, each by its signature and the first paragraph of its docstring, the functions the starter imports first. They are read from the sources with `ast`, never imported (`read_functions` in [`packages/domain/function_nodes.py`](../utk_curio/backend/app/packages/domain/function_nodes.py)), from the modules the sandbox makes importable for the node (`modules_for_node`), in the run's dataflow block ([ARCHITECTURE.md, Agent Prompt Composition](ARCHITECTURE.md#agent-prompt-composition)). `packages.resolve` gives an agent a package's functions and its `dependencies.packages` too. The preamble names no package's templates or functions, so a package documents its functions in their docstrings and shows their use in its starters: that is what an agent knows of them.
+
 A model package's template may ship no `source`: DDRNet23-Slim's Image Segmentation ([`packages/model.curio.ddrnet23-slim@1`](../packages/model.curio.ddrnet23-slim@1/manifest.json)) opens with the cell the backend writes for its model's type (`model_default_cell` in [`packages/application/model_packages.py`](../utk_curio/backend/app/packages/application/model_packages.py), served with the starters):
 
 ```python

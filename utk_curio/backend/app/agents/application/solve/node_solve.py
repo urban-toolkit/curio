@@ -11,6 +11,7 @@ from __future__ import annotations
 import time
 import uuid
 
+from utk_curio.backend.app.agents.application import dataflow_block as agents_dataflow_block
 from utk_curio.backend.app.agents.application import delegation
 from utk_curio.backend.app.agents.application.errors import AgentServiceError
 from utk_curio.backend.app.agents.infrastructure import agent_jobs
@@ -213,6 +214,12 @@ def _run_node_loop(
     """The per-node Solve's rounds: the ONE verified-content loop, started from the node's current
     content, with the traced delegate runner (the trace lands in this node's own home)."""
     node_id = node.get("id")
+    # The dataflow block of every round's content-mode run, with the datasets
+    # the request read before the job started (the grounding base).
+    dataflow_block = agents_dataflow_block.compose(
+        user_key, project_id, node_type=node.get("type"),
+        datasets=(grounding_base or {}).get("dataflow_datasets"), user=acting_user,
+    )
 
     def _traced(delegate_inputs):
         st, tx, ch, _h = agents_delegates._run_delegate_traced(
@@ -223,6 +230,7 @@ def _run_node_loop(
             attachment_id=attachment_id,
             node_id=node_id,
             home_create=False,
+            dataflow_block=dataflow_block,
         )
         return st, tx, ch
 

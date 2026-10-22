@@ -35,9 +35,14 @@ from utk_curio.backend.app.packages.repositories.manifests import load_package_m
 from utk_curio.backend.app.packages.repositories.store import (
     list_user_packages,
     package_asset_path,
+    package_dir,
 )
 
 log = logging.getLogger(__name__)
+
+#: The language a starter is written in, by its file's extension: what a
+#: fenced block of it names.
+STARTER_LANGUAGES = {".py": "python", ".js": "javascript", ".mjs": "javascript", ".json": "json"}
 
 
 def _starter_object(canonical_id: str, name: str, code: str) -> dict:
@@ -113,6 +118,39 @@ def _read_source(user_key: str, dir_name: str, template: TemplateManifest) -> tu
         log.warning("Cannot read %s: %s", entry, exc)
         return None
     return entry.stem.replace("_", " "), code
+
+
+def template_starter(user_key: str, project_id: str, node_type: object) -> tuple[str | None, str]:
+    """The starter of the template *node_type* names, as the starters feed
+    reads it, and the language it is written in (:data:`STARTER_LANGUAGES`,
+    ``""`` for another file): its ``source`` file's text, or, for a model
+    package's template without one, the cell Curio writes for its model.
+    ``(None, "")`` when the template has none, or the project cannot use it.
+
+    The template resolves as :func:`content_starters` resolves it, to the
+    first package in the project's scope that holds it, in one snapshot under
+    the per-user seed lock."""
+    wanted = packages_templates.canonical_template_id(node_type)
+    if not wanted:
+        return None, ""
+    scope = packages_project_packages._lockfile_or_empty(user_key, project_id)  # project-spec I/O: outside
+    with package_seed_lock(user_key):
+        store = packages_store_reads._store_index(user_key)
+        for dir_name, manifest in packages_templates._in_scope(scope, store):
+            if isinstance(manifest, Exception):
+                continue
+            template = next((t for t in manifest.templates
+                             if f"{manifest.package_id}/{t.template_id}" == wanted), None)
+            if template is None:
+                continue
+            if template.source:
+                read = _read_source(user_key, dir_name, template)
+                suffix = "." + template.source.rsplit(".", 1)[-1].lower() if "." in template.source else ""
+                return (read[1], STARTER_LANGUAGES.get(suffix, "")) if read is not None else (None, "")
+            if manifest.kind == "model" and manifest.model is not None:
+                return model_default_cell(manifest, package_dir(user_key, dir_name)), "python"
+            return None, ""
+    return None, ""
 
 
 def content_starters(user_key: str, project_id: str, node_types: Iterable[object]) -> dict[str, dict]:

@@ -8,19 +8,29 @@ every caller, and import order between siblings cannot matter.
 
 from __future__ import annotations
 
+import json
+
 from utk_curio.backend.app.packages.domain.package_closure import required_packages
 from utk_curio.backend.app.packages.domain.versions import ResolverError
 from utk_curio.backend.app.packages.repositories import catalog_dir as packages_catalog_dir
+from utk_curio.backend.app.packages.repositories.store import package_dir
 from utk_curio.backend.app.packages.infrastructure.locks import package_seed_lock
 from utk_curio.backend.app.packages.application import (
+    function_nodes as packages_function_nodes,
     package_dependencies as packages_dependencies,
     project_packages as packages_project_packages,
+    starters as packages_starters,
     store_reads as packages_store_reads,
     templates as packages_templates,
 )
 from utk_curio.backend.app.packages.domain.errors import PackageServiceError
 from utk_curio.backend.app.packages.application.resolution import resolve_for_project_unlocked
 from utk_curio.backend.app.packages.application.seeding import BUILTIN_PACKAGE_ID
+
+#: At most this many characters of functions, as JSON, in one
+#: ``packages.resolve`` report, which then stays whole under the tool's
+#: output bound; each package past it says how many it left out.
+RESOLVE_FUNCTIONS_MAX_CHARS = 20_000
 
 
 def _catalog_manifests() -> dict[str, "PackageManifest"]:
@@ -124,6 +134,48 @@ def template_landscape(user_key: str, project_id: str) -> dict:
     }
 
 
+def template_for_writing(user_key: str, project_id: str, node_type: object) -> dict | None:
+    """The template a node of *node_type* is made from, as a run that writes
+    the node's code reads it: ``{"id", "label", "description", "starter",
+    "language", "functions"}``. The id, label and whole description are the
+    project's roster entry's, the starter the starters feed's
+    (``starters.template_starter``), and the functions those the node's code
+    can import (``function_nodes.node_functions``). None for a type the
+    project's roster does not hold."""
+    entry, _error = packages_templates.resolve_template(user_key, project_id, node_type)
+    if entry is None:
+        return None
+    starter, language = packages_starters.template_starter(user_key, project_id, entry["id"])
+    return {
+        "id": entry["id"],
+        "label": entry.get("label") or entry["id"],
+        "description": entry.get("description") or "",
+        "starter": starter,
+        "language": language,
+        "functions": packages_function_nodes.node_functions(user_key, node_type, project_id),
+    }
+
+
+def _bounded_functions(rows: list[dict], budget: list[int]) -> tuple[list[dict], int]:
+    """*rows* (``function_nodes.module_functions``) cut to what *budget*, the
+    characters left for the report's functions, holds; and how many functions
+    did not fit. *budget* is one shared counter, spent in place."""
+    kept: list[dict] = []
+    left_out = 0
+    for row in rows:
+        functions = []
+        for function in row["functions"]:
+            cost = len(json.dumps(function, ensure_ascii=False))
+            if left_out or cost > budget[0]:
+                left_out += 1
+                continue
+            budget[0] -= cost
+            functions.append(function)
+        if functions or row.get("problem"):
+            kept.append({**row, "functions": functions})
+    return kept, left_out
+
+
 def agent_resolve_report(user_key: str, dir_names: list[str]) -> dict:
     """Deps/permissions per requested package + a conflict probe (dev/84).
 
@@ -133,6 +185,11 @@ def agent_resolve_report(user_key: str, dir_names: list[str]) -> dict:
     not-yet-installed catalog packages overridden to their committed manifests.
     Raises :class:`PackageServiceError` for an unknown/unresolvable package, a
     needed one that cannot be had included.
+
+    Each package also says which packages it names in ``dependencies.packages``
+    (``packageDeps``) and the public functions its modules define
+    (``functions``), read from the account's copy, else the catalog's, at most
+    :data:`RESOLVE_FUNCTIONS_MAX_CHARS` of them in one report.
     """
     # The committed catalog is not package-store data: read it before the
     # lock (memo dev/99 §3.3). Then ONE acquisition covers the installed set,
@@ -157,26 +214,32 @@ def agent_resolve_report(user_key: str, dir_names: list[str]) -> dict:
         except ResolverError as exc:
             raise PackageServiceError(str(exc), 400) from exc
 
-    def _manifest_for(dir_name: str) -> "PackageManifest | None":
-        if dir_name in store:
-            manifest = store[dir_name]
-            return None if isinstance(manifest, Exception) else manifest
-        return catalog.get(dir_name)
+        def _manifest_for(dir_name: str) -> "PackageManifest | None":
+            if dir_name in store:
+                manifest = store[dir_name]
+                return None if isinstance(manifest, Exception) else manifest
+            return catalog.get(dir_name)
 
-    packages: list[dict] = []
-    for dir_name in dir_names:
-        manifest = _manifest_for(dir_name)
-        if manifest is None:
-            continue
-        packages.append(
-            {
-                "dirName": dir_name,
-                "name": manifest.name,
-                "permissions": list(manifest.permissions),
-                "pythonDeps": dict(manifest.python_deps),
-                "jsDeps": dict(manifest.js_deps),
-            }
-        )
+        budget = [RESOLVE_FUNCTIONS_MAX_CHARS]
+        packages: list[dict] = []
+        for dir_name in dir_names:
+            manifest = _manifest_for(dir_name)
+            if manifest is None:
+                continue
+            root = package_dir(user_key, dir_name) if dir_name in store else packages_catalog_dir.catalog_root() / dir_name
+            functions, left_out = _bounded_functions(packages_function_nodes.module_functions(root, manifest), budget)
+            packages.append(
+                {
+                    "dirName": dir_name,
+                    "name": manifest.name,
+                    "permissions": list(manifest.permissions),
+                    "pythonDeps": dict(manifest.python_deps),
+                    "jsDeps": dict(manifest.js_deps),
+                    "packageDeps": dict(manifest.package_deps),
+                    "functions": functions,
+                    **({"functionsLeftOut": left_out} if left_out else {}),
+                }
+            )
     return {
         "packages": packages,
         "conflicts": [

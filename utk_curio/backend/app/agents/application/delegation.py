@@ -37,6 +37,7 @@ from utk_curio.backend.app.agents.infrastructure.providers import (
     ReplySchemaRefused,
 )
 from utk_curio.backend.app.agents.application import catalog
+from utk_curio.backend.app.agents.application import dataflow_block as agents_dataflow_block
 from utk_curio.backend.app.agents.application.turns import examples as worked_examples
 from utk_curio.backend.app.agents.application.turns import policy
 from utk_curio.backend.app.agents.application.turns import prompts
@@ -299,12 +300,18 @@ def run_delegate(
     parent_execution_id: str,
     parent_coord: str,
     attachment_id: str | None,
+    dataflow_block: str | None = None,
 ) -> tuple[str, str, dict]:
     """One synchronous, depth-1 child run (DEC-046 — direct provider-port code).
 
     *config* is the caller's configuration. The child runs on its own, resolved
     here when it starts (``provider_config.resolve_llm``), so a choice changed
     in API Settings reaches the delegates a running Solve starts after it.
+
+    *dataflow_block*, the block a run that writes code is given
+    (``application/dataflow_block.py``), rides a message of its own before the
+    task, as a chat run's does before its canvas context. The caller composes
+    it, so nothing in *inputs*, which a model may write, becomes it.
 
     Returns ``(status, result_text, child_record)``: ``status`` is
     ``"ok"``/``"error"``, ``result_text`` is the bounded child reply (or the
@@ -346,8 +353,9 @@ def run_delegate(
 
     usage_sink: dict = {}
     task = {"role": "user", "content": _frame_inputs(parent_coord, capability, inputs)}
+    turns = [*([agents_dataflow_block.message(dataflow_block)] if dataflow_block else []), task]
     try:
-        turn = _ask_child(child, task, usage_sink)
+        turn = _ask_child(child, turns, usage_sink)
     except Exception as exc:
         ledger.settle(user_key, child.reservation, usage=usage_sink or None, status="error")
         return (
@@ -453,9 +461,10 @@ def _prepare_child(user_key: str, project_id: str, coord: str, capability: str, 
                      pins=pins, reservation=reservation)
 
 
-def _ask_child(child: _ChildRun, task: dict, usage_sink: dict) -> ChatTurn:
-    """One provider call for the child — and, when the endpoint takes no reply schema for this
-    model, the same call again, free, under the delegate's own instruction (the pins say so)."""
+def _ask_child(child: _ChildRun, turns: list[dict], usage_sink: dict) -> ChatTurn:
+    """One provider call for the child, its *turns* after its system turn (the task last), and,
+    when the endpoint takes no reply schema for this model, the same call again, free, under the
+    delegate's own instruction (the pins say so)."""
 
     def _ask(system_message: dict, schema) -> ChatTurn:
         # Through the services-bound provider symbol so the whole run shares
@@ -463,7 +472,7 @@ def _ask_child(child: _ChildRun, task: dict, usage_sink: dict) -> ChatTurn:
         # is then exactly what it was before reply schemas.
         extra = {"reply_schema": schema.request()} if schema is not None else {}
         return ChatTurn.of(providers.run_chat_turn(
-            child.config, [system_message, task],
+            child.config, [system_message, *turns],
             max_output_tokens=child.run_policy["max_output_tokens"],
             usage_out=usage_sink, **extra,
         ))

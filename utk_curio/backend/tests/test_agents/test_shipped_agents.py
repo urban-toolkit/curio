@@ -472,14 +472,14 @@ class TestTheSources:
         assert len(marked) == 11, sorted(marked)
         # The shared preamble, the knowledge pages it includes, one per
         # feature, the rules other prompts include, the text the runtime
-        # composes a run's turns from, the words of the preamble's Autark
-        # section and the messages the checks send are the pages of the base entry, each
-        # listed once and each a file there: a page added or forgotten fails
-        # here.
+        # composes a run's turns from, the words of the dataflow block, the
+        # words of the preamble's Autark section and the messages the checks
+        # send are the pages of the base entry, each listed once and each a
+        # file there: a page added or forgotten fails here.
         pages = _raw(BASE)["pages"]
         assert len(pages) == len(set(pages)), pages
         assert set(pages) == {
-            "default_preamble.md", "examples.md", "rules/package_contract.md",
+            "default_preamble.md", "examples.md", "dataflow-block.md", "rules/package_contract.md",
             "rules/research_notes_rules.md", "rules/research_verify_rules.md",
             "tools.md", "rules/plan-rules.md", "protocol.md", "frames.md",
             "delegate-contracts.md", "conversation-title.md", "keyword-types.md", "messages.md",
