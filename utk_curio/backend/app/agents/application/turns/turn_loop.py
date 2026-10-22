@@ -254,8 +254,19 @@ class AttachmentTurn:
         self._answered()
         reply = turn.text
         visible, parts = content.extract_content(reply)
-        agents_grounding._verify_candidate_parts(parts, self.loop_ctx)  # dev/67-4: no unverified laundering
+        self._check_candidates(parts)
         return {"reply": reply, "visible": visible, "parts": parts, "turn": turn}
+
+    def _check_candidates(self, parts: list) -> None:
+        """dev/67-4: no unverified laundering. A candidates card the reply
+        holds is checked before anyone sees it, as a delegated card is: its
+        catalog rows against the Data Catalog listing, its external rows by
+        the runtime's probe."""
+        agents_grounding._ground_catalog_lanes(
+            parts,
+            lambda: agents_grounding._catalog_rows_for_discovery(self.user_key, self.project_id),
+        )
+        agents_grounding._verify_candidate_parts(parts, self.loop_ctx)
 
     @staticmethod
     def _hold_split(buf: str) -> tuple[str, str]:
@@ -324,7 +335,7 @@ class AttachmentTurn:
                     yield ("delta", emit)
         reply = "".join(chunks)
         visible, parts = content.extract_content(reply)
-        agents_grounding._verify_candidate_parts(parts, self.loop_ctx)  # dev/67-4: no unverified laundering
+        self._check_candidates(parts)
         result = {"reply": reply, "visible": visible, "parts": parts,
                   "turn": ChatTurn(text=reply, tool_calls=tuple(calls))}
         if withheld is not None and not parts:

@@ -217,6 +217,11 @@ def resolve_picks(
     client never sends a name, path or URL of its own, so a selection cannot
     introduce a source the runtime did not propose and probe. Raises
     ``DatasetResolutionError`` naming the first key that does not resolve.
+
+    With *catalog_rows*, the Data Catalog listing as it is now, a catalog row
+    of the card is read from it again, as an external row is probed again at
+    confirmation: one the listing no longer holds is refused, and whether it
+    is installed is the listing's answer, not the card's.
     """
     if not isinstance(part, dict) or not isinstance(part.get("lanes"), dict):
         if not catalog_rows:
@@ -245,6 +250,17 @@ def resolve_picks(
             (r for r in rows if isinstance(r, dict) and row_key(lane, r) == key.strip()),
             None,
         )
+        if row is not None and lane == "catalog" and catalog_rows is not None:
+            listed = next(
+                (item for item in catalog_rows
+                 if isinstance(item, dict) and str(item.get("id") or "") == key.strip()),
+                None,
+            )
+            if listed is None:
+                raise DatasetResolutionError(
+                    f"{key!r} is not in the Data Catalog: select a dataset it holds"
+                )
+            row = {**row, "installed": bool(listed.get("installed"))}
         if row is None and lane == "catalog":
             # dev/132: a dataset the user JUST IMPORTED is not on the card —
             # the card is older than the file. It is still a legitimate pick:

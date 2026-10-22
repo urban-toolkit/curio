@@ -295,7 +295,7 @@ An agent that reads the dataflow sees each scenario with its fixed context, leve
 
 ### Finding data in portals
 
-The **Dataset Finder** can search the portals in the [Discovery Catalog](DISCOVERY-CATALOG.md) as well as your own datasets, and propose downloading one. Nothing is downloaded until you apply the proposal. See [DISCOVERY-CATALOG.md part 6](DISCOVERY-CATALOG.md#6-the-dataset-finder). Solve and the other agents ask whichever agent in the dataflow declares `dataset.discover`, so an agent of your own that declares it, with the same tools, searches in its place.
+The **Dataset Finder** can search the portals in the [Discovery Catalog](DISCOVERY-CATALOG.md) as well as your own datasets, and propose downloading one. Nothing is downloaded until you apply the proposal. See [DISCOVERY-CATALOG.md part 6](DISCOVERY-CATALOG.md#6-the-dataset-finder). In any agent's chat, the **From your Data Catalog** lane of a candidates card lists only datasets your Data Catalog holds, installed or not as the Data Catalog shows them, and a card left with no dataset says so. Confirming a row reads it from your Data Catalog again. Solve and the other agents ask whichever agent in the dataflow declares `dataset.discover`, so an agent of your own that declares it, with the same tools, searches in its place.
 
 ---
 

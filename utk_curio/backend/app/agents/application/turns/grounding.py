@@ -402,6 +402,38 @@ def _grounded_catalog_rows(rows: list, listing: list) -> tuple[list, int]:
     return kept, len(rows) - len(kept)
 
 
+#: What a reply's candidates card becomes when none of its rows is left: the
+#: user reads why, in place of a card with nothing to select.
+_NO_CANDIDATES_CARD = {
+    "type": "card",
+    "kind": "error",
+    "title": "No dataset candidates",
+    "lines": ["None of the datasets this reply proposed is in your Data Catalog."],
+}
+
+
+def _ground_catalog_lanes(parts: list, listing) -> None:
+    """A run's own candidates cards, checked as a delegated card is
+    (``delegates._mint_candidates_from_delegate``): a catalog row stays only
+    when the Data Catalog listing holds its dataset, and says installed or not
+    as the listing does (:func:`_grounded_catalog_rows`). A card left with no
+    row is replaced by :data:`_NO_CANDIDATES_CARD`. *listing* returns the
+    listing's rows; it is called once, and only when a card holds a catalog
+    row."""
+    rows = None
+    for index, part in enumerate(parts):
+        if not isinstance(part, dict) or part.get("type") != "datasetCandidates":
+            continue
+        lanes = part.get("lanes") or {}
+        if not lanes.get("catalog"):
+            continue
+        if rows is None:
+            rows = listing()
+        lanes["catalog"], _dropped = _grounded_catalog_rows(lanes["catalog"], rows)
+        if not any(lanes.get(lane) for lane in ("catalog", "external")):
+            parts[index] = {**_NO_CANDIDATES_CARD, "lines": list(_NO_CANDIDATES_CARD["lines"])}
+
+
 def _run_egress_budget(loop_ctx: dict) -> "egress.CallBudget":
     """dev/114: ONE egress budget per run (or per Solve batch) — created lazily
     on the loop context, shared by candidate verification and the grounding
