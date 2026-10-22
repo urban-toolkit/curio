@@ -164,7 +164,11 @@ def test_the_ids_a_function_names_are_the_ones_the_backend_resolves():
     functions = node_functions.read()
     naming = {kind: {f.name for f in functions if any(a.catalog == kind for a in f.arguments)}
               for kind in ("dataset", "collection", "model", "key")}
-    assert naming["dataset"] | naming["collection"] == LOADERS == set(source_grounding.CATALOG_REF_CALLS)
+    assert naming["dataset"] | naming["collection"] == LOADERS == set(source_grounding.data_catalog_calls())
+    # The gate's scan reads the id each loader names as a Data Catalog id.
+    for name in sorted(LOADERS):
+        refs = source_grounding.scan_sources(f'x = {name}("data.utk.x")', "python")
+        assert [(ref.kind, ref.literal, ref.call) for ref in refs] == [("catalog-id", "data.utk.x", name)]
     assert naming["collection"] == {"curio_load_collection"}
     assert naming["model"] == {"curio_load_model"}
     assert naming["key"] == {"curio_secret"}

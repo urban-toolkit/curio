@@ -26,6 +26,20 @@ The rules (all runtime-enforced; prompt wording only teaches them):
   for synthetic data (or the model declared ``synthetic: true`` for such a
   request) and is labeled synthetic — inline invented values are the same
   fabrication class as an invented filename;
+- a **catalog item** a function names (the functions page,
+  ``knowledge/node-functions.md``, says which argument names a Data Catalog
+  dataset or collection, a Model Catalog model or a Node code key) is one the
+  account has, written as a string in the call, since the runtime reads it
+  from the code before the node runs; a chip there is read as the run writes
+  it (:attr:`GroundingContext.chips`), and one the gate cannot resolve is
+  not judged;
+- a **function** the page gives is called only in code of an engine its
+  ``Engines:`` line names, the engine of the node's template when its nodes
+  hold code (:func:`code_engine`); a ``curio_`` name it does not give, which
+  the code neither defines nor imports, is no function at all;
+- an **import** of a module a package ships is grounded only in a node a run
+  hands that module to (``packages.modules_for_node``): a built-in node gets
+  none. An import of a library is the sandbox's to judge;
 - anything else is **refused with the correction named** — never proposed,
   never written, never described as existing.
 
@@ -40,11 +54,16 @@ draft adds).
 from __future__ import annotations
 
 import ast
+import importlib.machinery
 import os
 import re
+import sys
 from dataclasses import dataclass, field
+from functools import lru_cache
 from typing import Callable
 from urllib.parse import urlsplit, urlunsplit
+
+from utk_curio.backend.app.agents.domain import node_functions
 
 # File extensions that make a string literal read as a data file. Deliberately
 # a data-file list, not "anything with a dot": column names, format strings,
@@ -74,21 +93,18 @@ _URL_SCHEMES = ("http://", "https://")
 # The portable catalog references the datasets domain's loader recipe emits
 # and the sandbox resolves at run time: ``curio_load_data``, ``curio_data_path``
 # and ``curio_load_collection``. One pattern, owned by the datasets domain, so
-# the gate, execution and lineage find the same ids.
+# execution and lineage find the same ids; the page of the functions node code
+# calls says which they are, and test_node_functions.py pins the two together.
 from utk_curio.backend.app.datasets.domain.code_refs import DATASET_PATH_CALL_RE  # noqa: E402,F401
 
-#: The calls whose first argument, a string, is a Data Catalog dataset id.
-CATALOG_REF_CALLS = ("curio_load_data", "curio_data_path", "curio_load_collection")
+#: The kinds of catalog item a function's argument names that the Data Catalog
+#: holds (``node_functions.CATALOG_PHRASES``): a call of one is a dataset read.
+DATA_CATALOG_KINDS = ("dataset", "collection")
 
-# The same calls with the call's name captured, for the regex fallback scan;
-# options may follow the id, as DATASET_PATH_CALL_RE allows.
-_CATALOG_CALL_RE = re.compile(
-    r"""\b(curio_load_data|curio_data_path|curio_load_collection)\(\s*(["'])([A-Za-z0-9][A-Za-z0-9._@-]{0,199})\2\s*[,)]"""
-)
-# dev/116 (DEC-074): connection keys. The call shape is owned by
-# users/connection_keys (ONE regex); a credential-shaped literal is what the
-# gate refuses so a pasted key never executes, never reaches the journal and
-# never lands in a proposal.
+# dev/116 (DEC-074): connection keys. The value side is owned by
+# users/connection_keys; a credential-shaped literal is what the gate refuses
+# so a pasted key never executes, never reaches the journal and never lands in
+# a proposal. The calls that name a key are the page's.
 from utk_curio.backend.app.users.connection_keys import (  # noqa: E402
     SECRET_CALL_RE,
     secret_names as _secret_names,
@@ -181,6 +197,48 @@ class GroundingContext:
     #: message that names none, in the user's previous message), and the
     #: catalog rows the user confirmed for the node. Empty restricts nothing.
     requested_dataset_ids: set[str] = field(default_factory=set)
+    #: The engine the node's code runs in (:func:`code_engine`): a function
+    #: of the functions page another engine has is refused in it. None, for a
+    #: document or a note, judges no engine.
+    code_engine: str | None = None
+    #: The models the account has added, ``{model id: (major, ...)}``, as
+    #: ``models.search`` lists them: a ``curio_load_model`` of any other is
+    #: refused. None judges no model.
+    models: dict[str, tuple[int, ...]] | None = None
+    #: The modules a run hands this node (``packages.modules_for_node``), and
+    #: every module a package ships, by name (``packages.module_index``): an
+    #: import of a package's module the node does not get is refused. None
+    #: judges no import.
+    reachable_modules: frozenset[str] | None = None
+    package_modules: dict[str, dict] | None = None
+    #: What a run resolves the node's chips with, as ``WorkflowSpec.node_code``
+    #: gives them to ``code_references.resolve_references``: ``{"widgets",
+    #: "inputs", "shared", "selections"}``. None where the gate has no
+    #: dataflow; a chip it cannot resolve leaves its argument unjudged.
+    chips: dict | None = None
+
+
+@dataclass(frozen=True)
+class FunctionCall:
+    """One call, in node code, of a function the functions page gives, or of
+    a ``curio_`` name it does not give (*known* False)."""
+
+    name: str
+    line: int
+    #: The catalog item its first argument names (``dataset``,
+    #: ``collection``, ``model`` or ``key``), or None.
+    kind: str | None = None
+    #: That item's id or name, when the call writes it as a string, first.
+    item: str | None = None
+    #: Whether the call gives that argument some other way: computed, or by
+    #: keyword. Only a parsed Python call can say so.
+    computed: bool = False
+    #: Whether that argument holds a chip the gate could not resolve: it is
+    #: not judged.
+    unresolved: bool = False
+    #: Whether the page gives the function; a call of a ``curio_`` name it
+    #: does not give, which the code neither defines nor imports, is refused.
+    known: bool = True
 
 
 @dataclass
@@ -191,6 +249,56 @@ class GroundingVerdict:
     #: a non-data-loading node that opens no file).
     source: dict | None = None
     refs: list[SourceRef] = field(default_factory=list)
+    #: The violations that are the code's own, among *violations*: a function
+    #: its engine lacks, an id it computes, a model the account has not added,
+    #: a module the node does not get. The rest are its sources'.
+    code_violations: list[str] = field(default_factory=list)
+
+
+#: The kinds a Solve round the gate refused fails with (:func:`failure_kind`):
+#: a source the node's Dataset Finder can help find, or the code's own
+#: violations, which a change of code mends.
+SOURCE_KIND = "ungrounded-source"
+CODE_KIND = "ungrounded-code"
+
+
+# --------------------------------------------------------------------------
+# The functions page
+# --------------------------------------------------------------------------
+
+
+def page_functions() -> dict[str, node_functions.NodeFunction]:
+    """The functions node code calls, by name, as their page gives them
+    (``node_functions.read``): the engines that have each, and the argument
+    that names an item of a catalog."""
+    return {function.name: function for function in node_functions.read()}
+
+
+def catalog_kind(function: node_functions.NodeFunction) -> str | None:
+    """The kind of catalog item *function*'s first argument names, or None.
+    The page names one only in a function's first argument, given by
+    position, which ``test_node_functions.py`` holds it to."""
+    first = function.arguments[0] if function.arguments else None
+    return first.catalog if first is not None else None
+
+
+def data_catalog_calls(functions: dict | None = None) -> tuple[str, ...]:
+    """The calls whose first argument, a string, is a Data Catalog dataset or
+    collection id: the page's functions whose first argument names one."""
+    functions = page_functions() if functions is None else functions
+    return tuple(name for name, function in functions.items() if catalog_kind(function) in DATA_CATALOG_KINDS)
+
+
+@lru_cache(maxsize=8)
+def _catalog_call_re(names: tuple[str, ...]) -> re.Pattern | None:
+    """The calls *names* with the call's name captured, for the regex
+    fallback scan; options may follow the id, as DATASET_PATH_CALL_RE allows."""
+    if not names:
+        return None
+    return re.compile(
+        r"\b(" + "|".join(re.escape(name) for name in names) + r")"
+        + r"""\(\s*(["'])([A-Za-z0-9][A-Za-z0-9._@-]{0,199})\2\s*[,)]"""
+    )
 
 
 # --------------------------------------------------------------------------
@@ -310,7 +418,7 @@ def _in_part_keyword(code: str, start: int, part_calls: list[int]) -> bool:
     return depth == 1
 
 
-def _scan_python(code: str) -> list[SourceRef] | None:
+def _scan_python(code: str, loaders: frozenset[str]) -> list[SourceRef] | None:
     parsed = _parse_python(code)
     if parsed is None:
         return None
@@ -337,7 +445,7 @@ def _scan_python(code: str) -> list[SourceRef] | None:
             for child in ast.walk(node):
                 if child is not node:
                     fstring_children.add(id(child))
-        elif isinstance(node, ast.Call) and _is_dataset_path_call(node):
+        elif isinstance(node, ast.Call) and _call_name(node) in loaders:
             first = node.args[0] if node.args else None
             if isinstance(first, ast.Constant) and isinstance(first.value, str):
                 call_ids.add(id(first))
@@ -395,15 +503,12 @@ def _call_name(node: ast.Call) -> str | None:
     return func.id if isinstance(func, ast.Name) else func.attr if isinstance(func, ast.Attribute) else None
 
 
-def _is_dataset_path_call(node: ast.Call) -> bool:
-    return _call_name(node) in CATALOG_REF_CALLS
-
-
-def _scan_regex(code: str) -> list[SourceRef]:
+def _scan_regex(code: str, loaders: tuple[str, ...]) -> list[SourceRef]:
     refs: list[SourceRef] = []
     call_spans: list[tuple[int, int]] = []
     part_calls: list[int] = []
-    for match in _CATALOG_CALL_RE.finditer(code):
+    catalog_calls = _catalog_call_re(loaders)
+    for match in (catalog_calls.finditer(code) if catalog_calls is not None else ()):
         call_spans.append(match.span())
         if match.group(1) == PART_CALL:
             part_calls.append(match.start())
@@ -433,15 +538,18 @@ def scan_sources(code: object, engine: str | None = "python") -> list[SourceRef]
 
     Python content is walked with :mod:`ast` (string constants and the
     constant prefix of f-strings); a syntax error — or a non-python engine —
-    falls back to a regex over quoted literals with the same classifier.
+    falls back to a regex over quoted literals with the same classifier. The
+    id a Data Catalog loader names (:func:`data_catalog_calls`) is a
+    ``catalog-id``, not a path.
     """
     if not isinstance(code, str) or not code.strip():
         return []
+    loaders = data_catalog_calls()
     refs: list[SourceRef] | None = None
     if (engine or "python") == "python":
-        refs = _scan_python(code)
+        refs = _scan_python(code, frozenset(loaders))
     if refs is None:
-        refs = _scan_regex(code)
+        refs = _scan_regex(code, loaders)
     seen: set[tuple[str, str]] = set()
     unique: list[SourceRef] = []
     for ref in refs:
@@ -453,6 +561,236 @@ def scan_sources(code: object, engine: str | None = "python") -> list[SourceRef]
         if len(unique) >= MAX_REFS:
             break
     return unique
+
+
+#: A call of a function Curio gives node code, for the scan of a text.
+_FUNCTION_CALL_RE = re.compile(r"\b(curio_[a-z][a-z0-9_]*)\s*\(")
+#: A call's first argument written as a string, which a comma or the call's end closes.
+_FIRST_STRING_RE = re.compile(r"""\s*(["'])((?:(?!\1)[^\\\n]){1,200})\1\s*[,)]""")
+
+
+#: What a chip the gate cannot resolve reads as: a name in code, a word in a
+#: string. An argument that holds it is not judged.
+UNRESOLVED_CHIP = "__curio_chip__"
+
+
+def _with_chips_resolved(code: str, language: str = "python", chips: dict | None = None) -> str:
+    """*code* with each chip (``[!! season !!]``, ``[!! input_0 !!]``) written
+    as a run writes it before the node runs, from *chips* (the node's
+    widgets, wired inputs, the dataflow's shared tags and the node's selection
+    tags, :attr:`GroundingContext.chips`, through
+    ``code_references.resolve_references``), and each it cannot resolve as
+    :data:`UNRESOLVED_CHIP`, so the code parses."""
+    from utk_curio.backend.app.execution.code_references import REFERENCE_RE, resolve_references
+
+    if chips is not None and REFERENCE_RE.search(code):
+        try:
+            code, _problems = resolve_references(
+                code, chips.get("widgets") or (), language, chips.get("inputs") or (),
+                chips.get("shared") or (), chips.get("selections") or (),
+            )
+        except Exception:  # noqa: BLE001 - a chip the resolver cannot write stays unresolved
+            pass
+    return REFERENCE_RE.sub(UNRESOLVED_CHIP, code)
+
+
+def _holds_unresolved_chip(node: ast.AST) -> bool:
+    return any(
+        (isinstance(part, ast.Name) and part.id == UNRESOLVED_CHIP)
+        or (isinstance(part, ast.Constant) and isinstance(part.value, str) and UNRESOLVED_CHIP in part.value)
+        for part in ast.walk(node)
+    )
+
+
+def _bound_names(tree: ast.AST) -> set[str] | None:
+    """The names *tree*, node code, binds itself: what it defines, assigns,
+    takes as a parameter or imports. None when it imports ``*``, which may
+    bind any name."""
+    names: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            names.add(node.name)
+        elif isinstance(node, ast.Name) and isinstance(node.ctx, (ast.Store, ast.Del)):
+            names.add(node.id)
+        elif isinstance(node, ast.arg):
+            names.add(node.arg)
+        elif isinstance(node, (ast.Import, ast.ImportFrom)):
+            for alias in node.names:
+                if alias.name == "*":
+                    return None
+                names.add(alias.asname or alias.name.split(".", 1)[0])
+    return names
+
+
+def _without_comments_and_strings(code: str, engine: str) -> str:
+    """*code* with each comment and string literal turned into spaces, its line
+    breaks kept, so that a call a comment or a string only names is not read
+    as one: JavaScript's ``//`` and ``/* */`` comments and its three quotes,
+    or Python's ``#`` comments and its quotes, one or three at a time."""
+    python = engine == "python"
+    out = list(code)
+    at, end = 0, len(code)
+    while at < end:
+        char = code[at]
+        if (python and char == "#") or (not python and code.startswith("//", at)):
+            stop = code.find("\n", at)
+            stop = end if stop < 0 else stop
+        elif not python and code.startswith("/*", at):
+            stop = code.find("*/", at + 2)
+            stop = end if stop < 0 else stop + 2
+        elif char in "'\"" or (char == "`" and not python):
+            quote = code[at:at + 3] if python and code[at:at + 3] in ("'''", '"""') else char
+            stop = at + len(quote)
+            while stop < end and not code.startswith(quote, stop):
+                if code[stop] == "\n" and quote in ("'", '"'):
+                    break
+                stop += 2 if code[stop] == "\\" else 1
+            stop = min(end, stop + len(quote))
+        else:
+            at += 1
+            continue
+        out[at:stop] = ["\n" if c == "\n" else " " for c in code[at:stop]]
+        at = stop
+    return "".join(out)
+
+
+def _python_call(node: ast.Call, function: node_functions.NodeFunction, line: int) -> FunctionCall:
+    kind = catalog_kind(function)
+    first = node.args[0] if node.args else None
+    keyword = next((k.value for k in node.keywords if kind is not None and k.arg == function.arguments[0].name), None)
+    given = first if first is not None else keyword
+    unresolved = kind is not None and given is not None and _holds_unresolved_chip(given)
+    item = first.value.strip() if isinstance(first, ast.Constant) and isinstance(first.value, str) else None
+    item = None if unresolved or kind is None else item
+    return FunctionCall(
+        function.name, line, kind, item,
+        computed=kind is not None and item is None and given is not None and not unresolved,
+        unresolved=unresolved,
+    )
+
+
+def _python_calls(code: str, functions: dict) -> list[FunctionCall] | None:
+    parsed = _parse_python(code)
+    if parsed is None:
+        return None
+    tree, offset = parsed
+    bound = _bound_names(tree)
+    calls: list[FunctionCall] = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        line = max(1, node.lineno - offset)
+        function = functions.get(_call_name(node))
+        if function is not None:
+            calls.append(_python_call(node, function, line))
+        elif (
+            isinstance(node.func, ast.Name) and node.func.id.startswith("curio_")
+            and bound is not None and node.func.id not in bound
+        ):
+            calls.append(FunctionCall(node.func.id, line, known=False))
+    return sorted(calls, key=lambda call: call.line)
+
+
+#: A ``curio_`` name JavaScript node code binds itself.
+_JS_BINDING_RE = re.compile(r"\b(?:function\s*\*?|const|let|var|class)\s+(curio_[a-z][a-z0-9_]*)\b")
+#: A ``const``, ``let`` or ``var`` that destructures, ``const { a, curio_x } = ...``
+#: or ``let [curio_x] = ...``: every ``curio_`` name in its pattern counts as bound.
+_JS_DESTRUCTURING_RE = re.compile(r"\b(?:const|let|var)\s*([\[{][^;]*?[\]}])\s*(?:=(?!=)|of\b|in\b)")
+_JS_CURIO_NAME_RE = re.compile(r"\bcurio_[a-z][a-z0-9_]*\b")
+
+
+def _js_bound_names(text: str) -> set[str]:
+    """The ``curio_`` names JavaScript *text* (its comments and strings
+    blanked) declares itself: by name, or in a destructuring pattern."""
+    bound = set(_JS_BINDING_RE.findall(text))
+    for match in _JS_DESTRUCTURING_RE.finditer(text):
+        bound.update(_JS_CURIO_NAME_RE.findall(match.group(1)))
+    return bound
+#: A call of a bare name, not of a member, in JavaScript.
+_JS_BARE_CALL_RE = re.compile(r"(?<![\w.$])(curio_[a-z][a-z0-9_]*)\s*\(")
+
+
+def _text_calls(code: str, functions: dict, engine: str) -> list[FunctionCall]:
+    text = _without_comments_and_strings(code, engine)
+    calls: list[FunctionCall] = []
+    for match in _FUNCTION_CALL_RE.finditer(text):
+        function = functions.get(match.group(1))
+        if function is None:
+            continue
+        kind = catalog_kind(function)
+        written = _FIRST_STRING_RE.match(code, match.end()) if kind else None
+        item = written.group(2).strip() if written else None
+        unresolved = item is not None and UNRESOLVED_CHIP in item
+        calls.append(FunctionCall(
+            function.name, text.count("\n", 0, match.start()) + 1, kind,
+            None if unresolved else item, unresolved=unresolved,
+        ))
+    if engine != "python":
+        # A Python text that does not parse says nothing sure of its names.
+        bound = _js_bound_names(text)
+        for match in _JS_BARE_CALL_RE.finditer(text):
+            if match.group(1) not in functions and match.group(1) not in bound:
+                calls.append(FunctionCall(match.group(1), text.count("\n", 0, match.start()) + 1, known=False))
+    return sorted(calls, key=lambda call: call.line)
+
+
+def function_calls(
+    code: object, engine: str | None = "python", functions: dict | None = None, chips: dict | None = None,
+) -> list[FunctionCall]:
+    """Every call in *code* of a function the functions page gives (or
+    *functions*, by name), in the code's order, each with the catalog item
+    its first argument names, and every call of a ``curio_`` name the page
+    does not give that the code neither defines nor imports.
+
+    The code's chips are written as a run writes them, from *chips*
+    (:attr:`GroundingContext.chips`); one it cannot resolve leaves its
+    argument unresolved. Python content is parsed; a syntax error, or a
+    non-python engine, falls back to the code's text without its comments and
+    strings, where only an item written as a string, first, is read."""
+    if not isinstance(code, str) or not code.strip():
+        return []
+    functions = page_functions() if functions is None else functions
+    engine = engine or "python"
+    code = _with_chips_resolved(code, engine if engine in ("python", "javascript") else "python", chips)
+    calls = _python_calls(code, functions) if engine == "python" else None
+    return calls if calls is not None else _text_calls(code, functions, engine)
+
+
+def python_imports(code: object) -> list[tuple[str, int]]:
+    """``(module, line)`` for each top-level module Python *code* imports,
+    in the code's order: ``import a.b`` and ``from a.b import c`` import
+    ``a``. A relative import names no module of a package. Empty for code
+    that does not parse, which the sandbox reports itself."""
+    if not isinstance(code, str) or "import" not in code:
+        return []
+    parsed = _parse_python(_with_chips_resolved(code))
+    if parsed is None:
+        return []
+    tree, offset = parsed
+    found: dict[str, int] = {}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            names = [alias.name for alias in node.names]
+        elif isinstance(node, ast.ImportFrom) and not node.level and node.module:
+            names = [node.module]
+        else:
+            continue
+        line = max(1, node.lineno - offset)
+        for name in names:
+            top = name.split(".", 1)[0]
+            found[top] = min(line, found.get(top, line))
+    return sorted(found.items(), key=lambda item: item[1])
+
+
+def _is_a_library(name: str) -> bool:
+    """Whether Python or a library installed here has a module *name*: a
+    package's module of that name is that library's in any other node."""
+    if name in sys.stdlib_module_names:
+        return True
+    try:
+        return importlib.machinery.PathFinder.find_spec(name) is not None
+    except (ImportError, ValueError):
+        return False
 
 
 MAX_COMPOSED_REQUESTS = 4
@@ -616,18 +954,14 @@ def composed_requests(code: object) -> list[str]:
     return out
 
 
-def secret_calls(code: object) -> list[tuple[str, int]]:
-    """``(name, line)`` for every literal ``curio_secret("<name>")`` call."""
-    if not isinstance(code, str) or "curio_secret" not in code:
-        return []
+def secret_calls(code: object, engine: str | None = "python") -> list[tuple[str, int]]:
+    """``(name, line)`` for each Node code key *code* names as a string, in a
+    call whose argument the functions page says names one, such as
+    ``curio_secret("<name>")``, first seen first."""
     out: list[tuple[str, int]] = []
-    seen: set[str] = set()
-    for match in SECRET_CALL_RE.finditer(code):
-        name = match.group(2)
-        if name in seen:
-            continue
-        seen.add(name)
-        out.append((name, code.count("\n", 0, match.start()) + 1))
+    for call in function_calls(code, engine):
+        if call.kind == "key" and call.item and all(call.item != name for name, _line in out):
+            out.append((call.item, call.line))
     return out
 
 
@@ -788,6 +1122,17 @@ def loads_dataset(node_type: object, templates: dict | None = None) -> bool:
     return "loadsDataset" in packages_services.template_flags(node_type, templates)
 
 
+def code_engine(template: dict | None) -> str | None:
+    """The engine a node of *template*, a roster row, runs its code in: the
+    template's ``engine`` when its nodes hold code (``contentKind`` ``code``,
+    which ``hasCode`` declares and ``editor: code`` implies), else None. A
+    Vega-Lite or Autark template names ``python``, and its nodes hold a
+    document, not code."""
+    if not isinstance(template, dict) or template.get("contentKind") != "code":
+        return None
+    return str(template.get("engine") or "python")
+
+
 # --------------------------------------------------------------------------
 # The verdict
 # --------------------------------------------------------------------------
@@ -849,11 +1194,13 @@ def _unrequested_catalog_reads(catalog_reads: list[tuple[str, str]], ctx: Ground
     ]
 
 
-def check_grounding(code: object, engine: str | None, ctx: GroundingContext) -> GroundingVerdict:
-    """The gate. Every path ref must be user- or catalog-known; every URL ref
-    must be verified (session evidence or a probe now); a data-loading node
-    with no refs needs the synthetic request. Deterministic, model-free."""
-    refs = scan_sources(code, engine)
+def _judge_refs(
+    refs: list[SourceRef], ctx: GroundingContext, functions: dict,
+) -> tuple[list[str], list[dict], list[tuple[str, str]]]:
+    """``(violations, source refs, catalog reads)`` for the scan's literals:
+    a Data Catalog id must be one of this project's, of the kind the call's
+    argument names on the functions page; a path must be user- or
+    catalog-known; a URL must be verified (session evidence or a probe now)."""
     violations: list[str] = []
     source_refs: list[dict] = []
     catalog_reads: list[tuple[str, str]] = []  # #411: (where, dataset id)
@@ -862,9 +1209,10 @@ def check_grounding(code: object, engine: str | None, ctx: GroundingContext) -> 
         if ref.kind == "catalog-id":
             catalog = ctx.catalog_ids.get(ref.literal)
             if catalog is None:
+                kind = catalog_kind(functions[ref.call]) if ref.call in functions else "dataset"
                 violations.append(
-                    f"{ref.call}({ref.literal!r}) (line {ref.line}): not a dataset in "
-                    "this project's Data Catalog — use the id of a catalog.search row"
+                    f"{ref.call}({ref.literal!r}) (line {ref.line}): not a {kind} in "
+                    "this project's Data Catalog: use the id of a catalog.search row"
                 )
             else:
                 catalog_reads.append((f"{ref.call}({ref.literal!r}) (line {ref.line})", catalog.dataset_id))
@@ -950,27 +1298,163 @@ def check_grounding(code: object, engine: str | None, ctx: GroundingContext) -> 
             else:
                 why = detail or "unreachable"
             violations.append(f"{where}: {why} — only a URL the runtime verified may be fetched")
-    violations.extend(_unrequested_catalog_reads(catalog_reads, ctx))  # #411
-    # dev/116: connection keys by name — known names are grounded refs, an
-    # unknown name is refused with the saved names listed (DEC-067).
-    saved_names = sorted((ctx.secrets or {}).keys())
-    for name, line in secret_calls(code):
-        saved = (ctx.secrets or {}).get(name)
-        if saved is None:
-            listed = f"saved: {', '.join(saved_names)}" if saved_names else "none saved"
-            violations.append(
-                f"curio_secret({name!r}) (line {line}): no connection key named {name!r} "
-                f"({listed}) — save one in API Settings, API keys, then keep "
-                "the call as written"
+    return violations, source_refs, catalog_reads
+
+
+def _listed(names, none: str, limit: int = 8) -> str:
+    """``a, b`` for *names*, sorted, at most *limit* of them, else *none*."""
+    names = sorted(names)
+    if not names:
+        return none
+    more = f" and {len(names) - limit} more" if len(names) > limit else ""
+    return ", ".join(names[:limit]) + more
+
+
+def _holds_model(models: dict[str, tuple[int, ...]], model_id: str) -> bool:
+    """Whether *models* holds the model *model_id* names, ``<id>`` or
+    ``<id>@<major>``, as a node's ``curio_load_model`` finds it
+    (``packages.find_model_package``)."""
+    wanted, at, major = model_id.partition("@")
+    majors = models.get(wanted)
+    if majors is None:
+        return False
+    return not at or (major.isdigit() and int(major) in majors)
+
+
+def _engine_refusals(calls: list[FunctionCall], engine: str, functions: dict) -> list[str]:
+    """One refusal per function *calls* call that code in *engine* lacks: a
+    function of the page's another engine has, or a ``curio_`` name the page
+    does not give. Each names the functions *engine* code has, from the page."""
+    has = _listed([name for name, function in functions.items() if engine in function.engines], "none")
+    refusals: dict[str, str] = {}
+    for call in calls:
+        if call.name in refusals or (call.known and engine in functions[call.name].engines):
+            continue
+        if not call.known:
+            refusals[call.name] = (
+                f"{call.name} (line {call.line}): Curio gives node code no {call.name}, and this code "
+                f"neither defines nor imports one; the functions {engine} code has: {has}"
             )
-        else:
+            continue
+        refusals[call.name] = (
+            f"{call.name} (line {call.line}): {engine} code has no {call.name}, only "
+            f"{' and '.join(functions[call.name].engines)} code does; the functions {engine} code has: {has}"
+        )
+    return list(refusals.values())
+
+
+def _item_refusal(call: FunctionCall, ctx: GroundingContext, functions: dict) -> str | None:
+    """Why the catalog item *call* names is not one to read: computed, a
+    model the account has not added or a key it has not saved. A Data
+    Catalog id is judged with the scan's literals (:func:`_judge_refs`)."""
+    argument = functions[call.name].arguments[0]
+    if call.computed:
+        return (
+            f"{call.name} (line {call.line}): write its {argument.name} as a string in the call, such as "
+            f'{call.name}("<{argument.name}>"), since Curio reads {argument.text.rstrip(".")} '
+            "from the code before the node runs"
+        )
+    if call.item is None or call.kind in DATA_CATALOG_KINDS:
+        return None
+    if call.kind == "model" and ctx.models is not None and not _holds_model(ctx.models, call.item):
+        listed = _listed(ctx.models, "none added")
+        return (
+            f"{call.name}({call.item!r}) (line {call.line}): no model {call.item!r} among this account's "
+            f"models ({'added: ' + listed if ctx.models else listed}); load one of those, or ask the user "
+            "to add it with Add in the Model Catalog"
+        )
+    if call.kind == "key" and call.item not in (ctx.secrets or {}):
+        listed = _listed(ctx.secrets or {}, "none saved")
+        return (
+            f"{call.name}({call.item!r}) (line {call.line}): no connection key named {call.item!r} "
+            f"({'saved: ' + listed if ctx.secrets else listed}): save one in API Settings, API keys, "
+            "then keep the call as written"
+        )
+    return None
+
+
+def _judge_calls(
+    calls: list[FunctionCall], ctx: GroundingContext, functions: dict,
+) -> tuple[list[str], list[str], list[dict]]:
+    """``(the code's own violations, the keys' violations, source refs)`` for
+    *calls* (:func:`function_calls`): each a function of the page, in code of
+    an engine that has it, and the catalog item each names one the account
+    has, written as a string. dev/116: a saved connection key is a grounded
+    ref; an unknown one is refused with the saved names listed (DEC-067)."""
+    code_violations: list[str] = []
+    key_violations: list[str] = []
+    if ctx.code_engine is not None:
+        code_violations += _engine_refusals(calls, ctx.code_engine, functions)
+        calls = [call for call in calls if call.known and ctx.code_engine in functions[call.name].engines]
+    source_refs: list[dict] = []
+    judged: set[tuple[str, str]] = set()
+    for call in calls:
+        if not call.known or call.kind is None or (call.item is not None and (call.name, call.item) in judged):
+            continue
+        if call.item is not None:
+            judged.add((call.name, call.item))
+        refusal = _item_refusal(call, ctx, functions)
+        if refusal is not None:
+            (key_violations if call.kind == "key" and not call.computed else code_violations).append(refusal)
+        elif call.kind == "key" and call.item and all(ref["name"] != call.item for ref in source_refs):
+            saved = ctx.secrets[call.item]
             source_refs.append({
                 "kind": "secret",
-                "value": f'curio_secret("{name}")',
-                "name": name,
+                "value": f'{call.name}("{call.item}")',
+                "name": call.item,
                 "host": saved.host,
                 "delivery": saved.delivery,
             })
+    return code_violations, key_violations, source_refs
+
+
+def _import_refusals(code: object, ctx: GroundingContext) -> list[str]:
+    """One refusal per module a package ships that *code* imports and that a
+    run does not hand this node: the nodes that import it are named."""
+    if ctx.code_engine != "python" or ctx.reachable_modules is None or not ctx.package_modules:
+        return []
+    refusals: list[str] = []
+    for name, line in python_imports(code):
+        home = ctx.package_modules.get(name)
+        if home is None or name in ctx.reachable_modules or _is_a_library(name):
+            continue
+        nodes = _listed([f"{t['label']} ({t['id']})" for t in home.get("templates") or []], "none", limit=4)
+        if home.get("added"):
+            refusals.append(
+                f"import {name} (line {line}): {name} is a module of the package {home['package']}, "
+                f"and only these nodes import it: {nodes}"
+            )
+        else:
+            refusals.append(
+                f"import {name} (line {line}): {name} is a module of the package {home['package']}, which "
+                f"this account has not added; once the user adds it, these nodes import it: {nodes}"
+            )
+    return refusals
+
+
+def check_grounding(code: object, engine: str | None, ctx: GroundingContext) -> GroundingVerdict:
+    """The gate. Every path ref must be user- or catalog-known; every URL ref
+    must be verified (session evidence or a probe now); every catalog item a
+    call of the functions page names must be the account's, every such call
+    in an engine that has it, and every module a package ships one the node
+    gets; a data-loading node with no refs needs the synthetic request.
+    Deterministic, model-free. *engine* is the language the content is read
+    in; ``ctx.code_engine`` the one its code runs in, when it is code."""
+    functions = page_functions()
+    calls = function_calls(code, engine, functions, ctx.chips)
+    refs = scan_sources(code, engine)
+    # A Data Catalog id a chip names, resolved as the run resolves it, is
+    # judged as one the code writes; the scan reads the code's own literals.
+    written = {(ref.call, ref.literal) for ref in refs if ref.kind == "catalog-id"}
+    for call in calls:
+        if call.kind in DATA_CATALOG_KINDS and call.item and (call.name, call.item) not in written:
+            written.add((call.name, call.item))
+            refs.append(SourceRef("catalog-id", call.item, call.line, call=call.name))
+    violations, source_refs, catalog_reads = _judge_refs(refs, ctx, functions)
+    violations.extend(_unrequested_catalog_reads(catalog_reads, ctx))  # #411
+    code_violations, key_violations, key_refs = _judge_calls(calls, ctx, functions)
+    violations += code_violations + key_violations
+    source_refs += key_refs
     # A pasted key never executes, never reaches the journal, never lands in a
     # proposal: the literal is refused and the saved-key route is named.
     for name, line in credential_literals(code, engine):
@@ -979,7 +1463,12 @@ def check_grounding(code: object, engine: str | None, ctx: GroundingContext) -> 
             "connection key (API Settings, API keys) and write "
             'curio_secret("<name>") instead; a key value is never written into a node'
         )
-    if not refs and ctx.is_data_loading:
+    import_violations = _import_refusals(code, ctx)
+    violations += import_violations
+    code_violations += import_violations
+    # A chip the gate could not resolve may name the dataset the node loads.
+    unjudged_read = any(call.kind in DATA_CATALOG_KINDS and call.unresolved for call in calls)
+    if not refs and not unjudged_read and ctx.is_data_loading:
         if ctx.synthetic_requested:
             source_refs.append({"kind": "synthetic"})
         else:
@@ -988,10 +1477,20 @@ def check_grounding(code: object, engine: str | None, ctx: GroundingContext) -> 
                 "URL — data invented inline is fabricated evidence unless the user asked "
                 "for synthetic data"
             )
-    verdict = GroundingVerdict(ok=not violations, violations=violations, refs=refs)
+    verdict = GroundingVerdict(ok=not violations, violations=violations, refs=refs, code_violations=code_violations)
     if verdict.ok and source_refs:
         verdict.source = source_payload(source_refs)
     return verdict
+
+
+def failure_kind(verdict: GroundingVerdict) -> str:
+    """The kind a Solve round refused by *verdict* fails with:
+    :data:`CODE_KIND` when every violation is the code's own, which only a
+    change of code mends, else :data:`SOURCE_KIND`, which the node's Dataset
+    Finder can help with."""
+    if verdict.code_violations and len(verdict.code_violations) == len(verdict.violations):
+        return CODE_KIND
+    return SOURCE_KIND
 
 
 def source_payload(refs: list[dict]) -> dict:
@@ -1030,7 +1529,16 @@ def _ref_label(ref: dict) -> str:
 
 def refusal_text(verdict: GroundingVerdict, ctx: GroundingContext) -> str:
     """The model-correctable refusal (DEC-067): every violating literal, why,
-    and only the routes this run can actually take."""
+    and only the routes this run can actually take. A refusal of the code's
+    own calls and imports alone (:func:`failure_kind`) names no source route:
+    each violation says what to change in the code."""
+    if failure_kind(verdict) == CODE_KIND:
+        count = len(verdict.violations)
+        return " ".join([
+            f"code refused, {count} problem{'s' if count != 1 else ''} with what it calls or imports:",
+            *(f"({i}) {violation}" for i, violation in enumerate(verdict.violations, 1)),
+            "Change the code as each one says; no data source is missing.",
+        ])
     lines = [
         f"source grounding refused — {len(verdict.violations)} ungrounded source"
         f"{'s' if len(verdict.violations) != 1 else ''}:"
