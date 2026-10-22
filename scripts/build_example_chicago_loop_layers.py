@@ -134,8 +134,10 @@ LOOP_MAP = {
              "getFnvType": "quantitative", "colorMapInterpolator": "interpolateOrRd",
              "colorMapRange": [0, 1], "title": "Social vulnerability (SVI percentile)",
              "opacity": 0.55, "isPick": True},
-            {"dataRef": layer("water"), "title": "Water"},
-            {"dataRef": layer("parks"), "title": "Parks"},
+            # Water and parks in colors of their own: Autark draws a layer
+            # with none in the same grey as the roads.
+            {"dataRef": layer("water"), "title": "Water", "color": "#6baed6"},
+            {"dataRef": layer("parks"), "title": "Parks", "color": "#74c476"},
             {"dataRef": layer("roads"), "title": "Roads"},
             {"dataRef": layer("cta_lines"), "isColorMap": True, "getFnv": "legend",
              "getFnvType": "categorical", "colorMapInterpolator": "schemeTableau10",
