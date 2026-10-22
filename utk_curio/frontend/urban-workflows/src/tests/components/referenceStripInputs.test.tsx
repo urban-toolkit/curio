@@ -67,12 +67,15 @@ describe("input tags", () => {
     expect(onInsert).toHaveBeenCalledWith("input_0.lanes");
   });
 
-  test("columns not read yet are asked for; an input with nothing yet says to run its node", () => {
+  test("opening Inputs asks for the columns not read yet; an input with nothing yet says to run its node", () => {
     const onLoadColumns = jest.fn();
     const view = render(<ReferenceStrip widgets={[]} inputs={inputs} onInsert={jest.fn()} onLoadColumns={onLoadColumns} />);
+    expect(onLoadColumns).not.toHaveBeenCalled();
     openCategory(view.container, "inputs");
-    fireEvent.click(screen.getByLabelText("Show the columns of input_1"));
+    // Asked for as Inputs opens, before any list is.
     expect(onLoadColumns).toHaveBeenCalledWith(1);
+    fireEvent.click(screen.getByLabelText("Show the columns of input_1"));
+    expect(screen.getByText("Reading the columns...")).toBeTruthy();
     fireEvent.click(screen.getByLabelText("Show the columns of input_2"));
     expect(screen.getByText("Run the node that feeds this input to see its columns.")).toBeTruthy();
     expect(onLoadColumns).not.toHaveBeenCalledWith(2);
@@ -92,7 +95,8 @@ describe("input tags", () => {
     fireEvent.click(screen.getByLabelText("Show the columns of input_1"));
     expect(screen.queryAllByLabelText(/^Filter the columns of/)).toHaveLength(0);
     expect(screen.queryAllByPlaceholderText("Filter columns")).toHaveLength(0);
-    expect(view.container.querySelector('input[type="search"]')).toBeNull();
+    // No field of any kind anywhere in the header.
+    expect(view.container.querySelectorAll("[data-widget-strip] input, [data-widget-strip] textarea")).toHaveLength(0);
     const shown = Array.from(view.container.querySelectorAll('[data-input-columns="0"] [data-column-tag]')).map((c) => c.textContent);
     expect(shown).toEqual(columns);
     expect(view.container.querySelectorAll('[data-input-columns="1"] [data-column-tag]')).toHaveLength(18);

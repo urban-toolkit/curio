@@ -11,7 +11,7 @@
  * Widgets tab are stubbed.
  */
 import React from "react";
-import { render } from "@testing-library/react";
+import { fireEvent, render, within } from "@testing-library/react";
 
 const mockFlow: { nodes: any[]; edges: any[]; scenarios: any[] } = { nodes: [], edges: [], scenarios: [] };
 jest.mock("../../providers/FlowProvider", () => ({
@@ -52,7 +52,14 @@ jest.mock("../../components/editing/WidgetsEditor", () => ({
 
 import NodeEditor from "../../components/editing/NodeEditor";
 import { clearVegaLiteTemplate, registerVegaLiteTemplate } from "../_support/vegaLiteTemplate";
-import { draggedText, headerRow, openEveryCategory, type StripCategory } from "../_support/stripCategories";
+import {
+  chipsOf,
+  draggedText,
+  headerRow,
+  openCategory,
+  openEveryCategory,
+  type StripCategory,
+} from "../_support/stripCategories";
 
 const SCOUT_BARS = "curio.scout/bars@1";
 const WIDGETS = [
@@ -145,14 +152,13 @@ test("a built-in Vega-Lite node and a Scout chart over the same inputs give the 
   });
 });
 
-test("a code node over the same inputs shows no Scenarios and no inputs tag", () => {
-  setFlow(["code-node"]);
-  const view = render(
+function codeEditor(nodeId: string) {
+  return (
     <NodeEditor
       {...({
         setSendCodeCallback: jest.fn(),
         setOutputCallback: jest.fn(),
-        data: { nodeId: "code-node", widgets: WIDGETS, outputCallback: jest.fn() },
+        data: { nodeId, widgets: WIDGETS, outputCallback: jest.fn() },
         output: { code: "", content: "" },
         nodeType: "curio.builtin/computation-analysis",
         readOnly: false,
@@ -161,8 +167,13 @@ test("a code node over the same inputs shows no Scenarios and no inputs tag", ()
         widgets: true,
         defaultValue: "return input_0",
       } as any)}
-    />,
+    />
   );
+}
+
+test("a code node over the same inputs shows no Scenarios and no inputs tag", () => {
+  setFlow(["code-node"]);
+  const view = render(codeEditor("code-node"));
   expect(headerOf(view.container)).toEqual({
     row: ["Inputs 2", "Widgets 2", "Shared 1"],
     chips: {
@@ -171,4 +182,25 @@ test("a code node over the same inputs shows no Scenarios and no inputs tag", ()
       shared: ["@season -> [!! @season !!]"],
     },
   });
+});
+
+test.each([
+  ["a chart", "kept-open-chart", (nodeId: string) => chartEditor(nodeId, "curio.builtin/vis-vega")],
+  ["a code node", "kept-open-code", (nodeId: string) => codeEditor(nodeId)],
+] as const)("%s keeps Inputs and input_0's list open when its editor mounts again", (_kind, nodeId, editor) => {
+  // As after a run or a tab switch: the node's editor mounts again.
+  setFlow([nodeId]);
+  const first = render(editor(nodeId));
+  const chips = openCategory(first.container, "inputs");
+  fireEvent.click(within(chips).getByRole("button", { name: "Show the columns of input_0" }));
+  expect(chips.querySelector('[data-input-columns="0"]')).not.toBeNull();
+  first.unmount();
+
+  const again = render(editor(nodeId));
+  expect(headerRow(again.container).find((entry) => entry.category === "inputs")?.open).toBe(true);
+  const kept = chipsOf(again.container, "inputs");
+  expect(kept).not.toBeNull();
+  expect(kept!.querySelector('[data-input-columns="0"]')).not.toBeNull();
+  expect(within(kept!).getByRole("button", { name: "Hide the columns of input_0" }).getAttribute("aria-expanded"))
+    .toBe("true");
 });

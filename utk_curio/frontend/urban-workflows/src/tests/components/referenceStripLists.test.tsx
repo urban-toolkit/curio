@@ -10,19 +10,22 @@
  *   dataset that stacks them. Code and an Autark spec have no `inputs` line.
  * - A line holds an expander, the input's tag, and what the input holds
  *   (`data-input-about`): "from Existing: 5 columns", after the box the input
- *   comes from, else after the type of the node that feeds it; its layers, or
- *   a tuple's values; "input_0 and input_1, stacked: 8 fields" for `inputs`.
- *   Until an input's columns are read its line says only where it comes from.
- *   Opening Inputs reads them, so the counts show at a glance.
+ *   comes from, else after its label, the kind its node's header shows; "no
+ *   columns"; its layers, or a tuple's values; "input_0 and input_1, stacked:
+ *   8 fields" for `inputs`. Until an input's columns are read its line says
+ *   only where it comes from. Opening Inputs reads them, so the counts show at
+ *   a glance.
  * - An expander is a button with `aria-expanded`, a name and a title, and its
  *   chevron points right closed and down open. A category's chevron points
  *   down closed and up open (`data-chevron`).
  * - An open list comes right under its own line, before the next line, so
  *   `inputs` keeps a line of its own. Several can be open at once, and each
- *   stays open for its node while the dataflow is open, as the categories do.
+ *   stays open for its node while the dataflow is open, as the categories do,
+ *   with the edge that feeds its input: it never opens on another input when
+ *   the circles renumber.
  * - A layered input's list is a line per layer (`data-layer-line`): its layer
  *   tag, then that layer's columns. A tuple's list says how to read its values
- *   in code.
+ *   in code, and in a spec how many it holds.
  *
  * jsdom has no layout: where the lines and the lists land on screen is checked
  * by the e2e tests test_input_lines_e2e.py and test_input_lines_autark_e2e.py.
@@ -266,15 +269,16 @@ describe("a layered input", () => {
 });
 
 describe("a tuple", () => {
+  const stations: InputScope = {
+    slot: 0, label: "Data Loading", dataType: "geodataframe", columns: ["sensor", "name", "lat", "lon"],
+  };
+  // Summarize's `return means, peaks`: two tables with no names, so no layers,
+  // read as one tuple. Its read counts its values (`tuple`).
+  const summary = {
+    slot: 1, label: "Python Computation", dataType: "outputs", columns: [], dtypes: {}, layers: [], tuple: 2,
+  } as InputScope;
+
   test("says on its line it holds 2 values, and its list how to read them in code", () => {
-    const stations: InputScope = {
-      slot: 0, label: "Data Loading", dataType: "geodataframe", columns: ["sensor", "name", "lat", "lon"],
-    };
-    // Summarize's `return means, peaks`: two tables with no names, so no
-    // layers, read as one tuple. Its read counts its values (`tuple`).
-    const summary = {
-      slot: 1, label: "Python Computation", dataType: "outputs", columns: [], dtypes: {}, layers: [], tuple: 2,
-    } as InputScope;
     const view = render(<ReferenceStrip widgets={[]} inputs={[stations, summary]} language="python" onInsert={jest.fn()} />);
     const chips = openCategory(view.container, "inputs");
     expect(linesOf(chips)).toEqual([
@@ -286,6 +290,20 @@ describe("a tuple", () => {
     const list = chips.querySelector('[data-input-columns="1"]')!;
     expect(list.textContent).toContain("Read them in code as input_1[0] and input_1[1].");
     expect(list.textContent).not.toContain("This input has no columns.");
+    expect(list.querySelector("[data-column-tag], [data-layer-tag], [data-layer-line]")).toBeNull();
+  });
+
+  test("in a spec says on its line it holds 2 values, and its list says so too", () => {
+    const view = render(<ReferenceStrip widgets={[]} inputs={[stations, summary]} language="json" onInsert={jest.fn()} />);
+    const chips = openCategory(view.container, "inputs");
+    expect(linesOf(chips)).toEqual([
+      ["input_0", "from Data Loading: 4 columns"],
+      ["input_1", "from Python Computation: 2 values, a tuple"],
+    ]);
+
+    fireEvent.click(within(chips).getByRole("button", { name: "Show the columns of input_1" }));
+    const list = chips.querySelector('[data-input-columns="1"]')!;
+    expect(list.textContent).toBe("It holds 2 values, a tuple.");
     expect(list.querySelector("[data-column-tag], [data-layer-tag], [data-layer-line]")).toBeNull();
   });
 });
@@ -315,9 +333,10 @@ describe("counts at a glance", () => {
       { slot: 1, label: "Data Pool", columns: null },
     ];
     const view = render(chart(unread));
-    expect(linesOf(openCategory(view.container, "inputs")).slice(0, 2)).toEqual([
+    expect(linesOf(openCategory(view.container, "inputs"))).toEqual([
       ["input_0", "from Data Pool"],
       ["input_1", "from Data Pool"],
+      ["inputs", "input_0 and input_1, stacked"],
     ]);
 
     const read = unread.map((input) => ({
@@ -329,6 +348,57 @@ describe("counts at a glance", () => {
       ["input_1", "from Data Pool: 2 columns"],
       ["inputs", "input_0 and input_1, stacked: 5 fields"],
     ]);
+  });
+
+  test("an input read with no columns says so on its line and in its list", () => {
+    const value: InputScope = { slot: 0, label: "Python Computation", dataType: "int", columns: [], dtypes: {} };
+    const view = render(<ReferenceStrip widgets={[]} inputs={[value]} language="python" onInsert={jest.fn()} />);
+    const chips = openCategory(view.container, "inputs");
+    expect(linesOf(chips)).toEqual([["input_0", "from Python Computation: no columns"]]);
+    fireEvent.click(within(chips).getByRole("button", { name: "Show the columns of input_0" }));
+    expect(chips.querySelector('[data-input-columns="0"]')!.textContent).toBe("This input has no columns.");
+  });
+});
+
+describe("an open list goes with the edge of its input", () => {
+  // Three inputs, each fed by its own edge, as inputScopeFor names them.
+  const fed = (slot: number, edge: string, column: string) =>
+    ({ slot, edge, label: "Data Loading", dataType: "dataframe", columns: [column], dtypes: {} }) as InputScope;
+  const a = (slot: number) => fed(slot, "edge-a", "from_a");
+  const b = (slot: number) => fed(slot, "edge-b", "from_b");
+  const c = (slot: number) => fed(slot, "edge-c", "from_c");
+  const strip = (nodeId: string, inputs: InputScope[]) => (
+    <ReferenceStrip nodeId={nodeId} widgets={[]} inputs={inputs} language="python" onInsert={jest.fn()} />
+  );
+  const columnsIn = (chips: Element, slot: number) =>
+    Array.from(chips.querySelectorAll(`[data-input-columns="${slot}"] [data-column-tag]`)).map((tag) => tag.textContent);
+
+  test("deleting the edge of an open list closes it, and the input that takes its circle opens closed", () => {
+    const view = render(strip("renumbered-node", [a(0), b(1), c(2)]));
+    const chips = openCategory(view.container, "inputs");
+    fireEvent.click(within(chips).getByRole("button", { name: "Show the columns of input_1" }));
+    expect(columnsIn(chips, 1)).toEqual(["from_b"]);
+
+    // B's edge is deleted, and C closes up to circle 1 (useGraphEdits.closeUpCircles).
+    view.rerender(strip("renumbered-node", [a(0), c(1)]));
+    const after = chipsOf(view.container, "inputs")!;
+    expect(inOrder(after)).toEqual(["line of input_0", "line of input_1"]);
+    expect(within(after).getByRole("button", { name: "Show the columns of input_1" }).getAttribute("aria-expanded"))
+      .toBe("false");
+  });
+
+  test("an open list moves up with its input when the circles above it close up, and opens on no other input", () => {
+    const view = render(strip("closed-up-node", [a(0), b(1), c(2)]));
+    const chips = openCategory(view.container, "inputs");
+    fireEvent.click(within(chips).getByRole("button", { name: "Show the columns of input_2" }));
+
+    // A's edge is deleted: B and C each move up a circle, C's list with it.
+    view.rerender(strip("closed-up-node", [b(0), c(1)]));
+    const after = chipsOf(view.container, "inputs")!;
+    expect(inOrder(after)).toEqual(["line of input_0", "line of input_1", "list of input_1"]);
+    expect(columnsIn(after, 1)).toEqual(["from_c"]);
+    expect(within(after).getByRole("button", { name: "Show the columns of input_0" }).getAttribute("aria-expanded"))
+      .toBe("false");
   });
 });
 

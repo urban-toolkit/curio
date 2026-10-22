@@ -62,6 +62,14 @@ describe("inputScopeFor", () => {
     expect(scope[0].layers).toEqual([{ name: "roads", columns: ["highway"], dtypes: {} }]);
   });
 
+  test("each input carries the id of the edge that feeds it, which a renumber of the circles keeps", () => {
+    const withIds = edges.map((edge, i) => ({ ...edge, id: `edge-${i}` }));
+    expect(inputScopeFor("t", withIds, nodes, () => undefined, labelOf, () => undefined)).toMatchObject([
+      { slot: 0, edge: "edge-0", label: "Roads" },
+      { slot: 1, edge: "edge-1", label: "Parcels" },
+    ]);
+  });
+
   test("a tuple's count of values rides along", () => {
     const read = { columns: [], dtypes: {}, layers: [], tuple: 2 } as InputColumns;
     const scope = inputScopeFor("t", edges, nodes, () => ({ path: "a", dataType: "outputs" }), labelOf, () => read);
@@ -113,6 +121,26 @@ describe("readInputColumns (#662)", () => {
       ],
     });
     // Its tables have no names, so they are no layers: the input holds 2 values.
+    expect(await readInputColumns({ path: "art", dataType: "outputs" })).toMatchObject({ columns: [], tuple: 2 });
+  });
+
+  test("a tuple holding a table and a number, as `return means, 3` gives, holds 2 values too", async () => {
+    mockFetchPreviewData.mockResolvedValue({
+      dataType: "outputs",
+      data: [
+        { dataType: "dataframe", data: { sensor: ["a"], pm25_mean: [9.5] }, schema: { sensor: "str", pm25_mean: "float64" } },
+        { dataType: "int", data: 3 },
+      ],
+    });
+    // Not the table's columns: the input is the tuple, not its first value.
+    expect(await readInputColumns({ path: "art", dataType: "outputs" })).toMatchObject({ columns: [], tuple: 2 });
+  });
+
+  test("a tuple of numbers, as `return 3, 4` gives, holds 2 values", async () => {
+    mockFetchPreviewData.mockResolvedValue({
+      dataType: "outputs",
+      data: [{ dataType: "int", data: 3 }, { dataType: "int", data: 4 }],
+    });
     expect(await readInputColumns({ path: "art", dataType: "outputs" })).toMatchObject({ columns: [], tuple: 2 });
   });
 });

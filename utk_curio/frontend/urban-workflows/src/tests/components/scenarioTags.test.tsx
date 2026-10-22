@@ -20,11 +20,11 @@
  *   No input tag and no field shows a swatch.
  */
 import React from "react";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { ReferenceStrip } from "../../components/editing/widgets/WidgetTag";
 import { INPUT_REF_MIME, SCENARIO_REF_MIME } from "../../components/editing/widgets/monacoCodeReferences";
 import { resolveReferences, type InputScope } from "../../utils/references/codeReferences";
-import { draggedText, headerRow, openCategory } from "../_support/stripCategories";
+import { chipsOf, draggedText, headerRow, openCategory, openEveryCategory } from "../_support/stripCategories";
 
 function dragData() {
   const store = new Map<string, string>();
@@ -148,6 +148,17 @@ describe("Scenarios, in a Vega-Lite spec fed from boxes", () => {
     expect(onInsert).toHaveBeenCalledWith("scenario input_2");
   });
 
+  test("a screen reader reads each chip's words apart: an input's circle and its scenario, the swatches' names", () => {
+    const view = strip(inputs);
+    const chips = openCategory(view.container, "scenarios");
+    expect(within(chips).getByRole("button", { name: "input_0, Twice as tall" }))
+      .toBe(chips.querySelector('[data-scenario-input="0"]'));
+    expect(within(chips).getByRole("button", { name: "input_2, Roof survey" }))
+      .toBe(chips.querySelector('[data-scenario-input="2"]'));
+    expect(within(chips).getByRole("button", { name: "colors: Baseline, Twice as tall, Roof survey" }))
+      .toBe(chips.querySelector("[data-scenario-swatches]"));
+  });
+
   test("two inputs from no box beside a boxed one show two greys, each the color its chip writes", () => {
     const wired = [free(0, "Survey A"), { ...free(1, "Shade"), scenario: BASE }, free(2, "Survey B")];
     const view = strip(wired);
@@ -191,6 +202,11 @@ describe("a node fed from no box", () => {
     expect(headerRow(chart.container).map((entry) => entry.label)).toEqual(["Inputs 3"]);
     const map = render(<ReferenceStrip widgets={[]} inputs={wired} language="json" onInsert={jest.fn()} />);
     expect(headerRow(map.container).map((entry) => entry.label)).toEqual(["Inputs 2"]);
+    // With every category open, no scenario chip shows anywhere.
+    openEveryCategory(chart.container);
+    openEveryCategory(map.container);
+    expect(chipsOf(chart.container, "inputs")).not.toBeNull();
+    expect(chipsOf(map.container, "inputs")).not.toBeNull();
     expect(document.querySelector("[data-scenario-swatches], [data-scenario-input], [data-scenario-chip]")).toBeNull();
   });
 });
@@ -242,19 +258,22 @@ describe("the inputs tag, in Inputs", () => {
     const chips = openCategory(view.container, "inputs");
     openInputs();
     expect(chips.querySelector("[data-scenario-swatches], [data-scenario-chip], [data-scenario-input]")).toBeNull();
-    expect(view.container.querySelector("[data-input-swatch]")).toBeNull();
+    expect(chips.querySelector("[data-scenario-swatch]")).toBeNull();
   });
 
-  test("opening it asks for the columns of each input not read yet", () => {
+  test("opening Inputs asks for the columns of each input not read yet", () => {
     const onLoadColumns = jest.fn();
     const unread: InputScope[] = [inputs[0], { slot: 1, label: "Shade", scenario: BASE }];
     const view = render(
       <ReferenceStrip widgets={[]} inputs={unread} language="json" grammar="vega-lite"
         onInsert={jest.fn()} onLoadColumns={onLoadColumns} />,
     );
+    expect(onLoadColumns).not.toHaveBeenCalled();
     openCategory(view.container, "inputs");
-    openInputs();
+    // Asked for as Inputs opens, before the fields of inputs are.
     expect(onLoadColumns).toHaveBeenCalledWith(1);
+    expect(onLoadColumns).not.toHaveBeenCalledWith(0);
+    openInputs();
     expect(onLoadColumns).not.toHaveBeenCalledWith(0);
   });
 
