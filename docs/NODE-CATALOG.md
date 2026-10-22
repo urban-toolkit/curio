@@ -228,6 +228,14 @@ A package, or one of its templates, can name the tags and data types a dataflow 
 
 At the top level of the manifest it covers every node of the package; in a template, that template's nodes. A list holds up to 20 names, each up to 40 characters.
 
+A package can name the packages it needs in `dependencies.packages`, each as `<packageId>@<major>`, or a bare `<packageId>` for any major, with the versions it takes (`*`, `^1.2`, `>=1.2,<2.0`):
+
+```json
+"dependencies": { "packages": { "ai.example.shared@1": "^1.2" }, "python": {}, "js": {} }
+```
+
+A node of the package can import the Python modules those packages ship in their `sources/`. Adding the package adds them too, and the packages they name in turn: **Add to project**, **Add to all projects**, a card dropped on the canvas, and opening a dataflow whose lockfile names the package. Each one comes from the shared catalog at the highest version its entry allows, unless your account holds a copy the entry allows, which stays as it is. They go in the dataflow's lockfile beside the package, and the review before an add lists them under **Dependencies**. When a package it needs is in neither your account nor the catalog at a version its entry allows, the add is refused and nothing is added: the message names the missing package and the package that needs it. A copy in your account that the entry does not allow is not replaced: when the catalog's copy is one it allows, the message says to update it first.
+
 A package you save or import lands in your package store:
 
 ```

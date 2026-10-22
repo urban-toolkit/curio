@@ -30,6 +30,8 @@ export const InstallPermissionsDialog: React.FC<InstallPermissionsDialogProps> =
   busyLabel = "Adding…",
 }) => {
   const hasConflicts = conflicts.length > 0;
+  // The packages it names in `dependencies.packages` are added with it.
+  const packageDeps = Object.entries(pkg.dependencies.packages ?? {});
   const pythonDeps = Object.entries(pkg.dependencies.python);
   const jsDeps = Object.entries(pkg.dependencies.js);
 
@@ -60,9 +62,15 @@ export const InstallPermissionsDialog: React.FC<InstallPermissionsDialogProps> =
           </>
         )}
 
-        {(pythonDeps.length > 0 || jsDeps.length > 0) && (
+        {(packageDeps.length > 0 || pythonDeps.length > 0 || jsDeps.length > 0) && (
           <div className={styles.depsBox}>
             <p className={styles.depsTitle}>Dependencies</p>
+            {packageDeps.map(([name, range]) => (
+              <div key={`package:${name}`} className={styles.depRow}>
+                <code>package · {name}</code>
+                <code>{range}</code>
+              </div>
+            ))}
             {pythonDeps.map(([pkg, range]) => (
               <div key={`py:${pkg}`} className={styles.depRow}>
                 <code>python · {pkg}</code>

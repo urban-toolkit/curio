@@ -18,6 +18,7 @@ from utk_curio.backend.app.packages.domain.manifest import (
     ManifestError,
     PackageManifest,
 )
+from utk_curio.backend.app.packages.domain.package_closure import required_packages
 from utk_curio.backend.app.packages.domain.versions import (
     DepConflict,
     merge_python_deps,
@@ -31,6 +32,10 @@ from utk_curio.backend.app.packages.repositories.store import (
     package_dir,
 )
 from utk_curio.backend.app.packages.infrastructure.locks import package_seed_lock
+from utk_curio.backend.app.packages.application import (
+    package_dependencies as packages_dependencies,
+    store_reads as packages_store_reads,
+)
 
 
 @dataclass(frozen=True)
@@ -339,9 +344,20 @@ def resolver_overrides_for(user_key: str, packages: list[str]) -> dict[str, Path
 def resolve_snapshot(user_key: str, packages: list[str]):
     """Override discovery + resolution against ONE store snapshot (dev/99).
 
+    *packages* are resolved with every package they need
+    (``dependencies.packages``, the closure an add installs,
+    ``package_dependencies``), from the catalog when the store lacks one: the
+    Add review of a package whose needed package is not added yet sees what the
+    add brings, libraries included. A package one of them needs that cannot be
+    had raises :class:`UnmetPackageDependency`, a ``ResolverError``.
+
     The seed lock is released before anything slow: both callers hand the
-    result to the sandbox / the response after this returns.
+    result to the sandbox / the response after this returns. The catalog is
+    read before it is taken (dev/99 §3.3).
     """
+    catalog = packages_dependencies.catalog().snapshot()
     with package_seed_lock(user_key):
+        store = packages_dependencies.readable(packages_store_reads._store_index(user_key))
+        packages = required_packages(packages, store, catalog)
         overrides = resolver_overrides_for(user_key, packages)
         return resolve_for_project_unlocked(user_key, packages, overrides=overrides)

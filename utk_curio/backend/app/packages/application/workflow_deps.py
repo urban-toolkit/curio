@@ -7,6 +7,7 @@ parse, call and serialize and carry no rules; every function keeps its body.
 from __future__ import annotations
 
 from utk_curio.backend.app.packages.application import (
+    package_dependencies as packages_dependencies,
     prune as packages_prune,
     store_install as packages_store_install,
 )
@@ -14,7 +15,7 @@ from utk_curio.backend.app.packages.domain.errors import PackageServiceError
 from utk_curio.backend.app.packages.domain.package_id import PACKAGE_DIR_RE
 from utk_curio.backend.app.packages.infrastructure import pip_runner as packages_pip_runner
 from utk_curio.backend.app.packages.infrastructure.locks import package_seed_lock
-from utk_curio.backend.app.packages.repositories.store import list_user_packages
+from utk_curio.backend.app.packages.repositories.store import list_user_packages, user_packages_dir
 
 
 def check_workflow_deps(user_key: str, packages: list) -> dict:
@@ -23,14 +24,17 @@ def check_workflow_deps(user_key: str, packages: list) -> dict:
     *packages* is the loaded spec's ``dataflow.packages`` lockfile. A package is
     "needed" if it isn't in the user's store, OR it is but some of its declared
     python deps aren't actually installed (e.g. a lib was pip-uninstalled out
-    from under it). A dep that is installed at a satisfying version and still
-    does not import is reported apart from ``packages`` as ``broken``, because
-    reinstalling does not fix that.
+    from under it), OR a package it needs (``dependencies.packages``) is not in
+    the store: installing it brings that package. A dep that is installed at a
+    satisfying version and still does not import is reported apart from
+    ``packages`` as ``broken``, because reinstalling does not fix that.
     Returns ``{"packages": [...], "broken": [...]}``.
     """
     wanted = [
         dn for dn in packages if isinstance(dn, str) and PACKAGE_DIR_RE.match(dn)
     ]
+    # Read only for a package whose needed package the store lacks.
+    catalog = packages_dependencies.catalog()
     # Store membership + declared deps in ONE seed-lock hold (memo dev/99);
     # the pip presence probes run after release.
     with package_seed_lock(user_key):
@@ -39,7 +43,12 @@ def check_workflow_deps(user_key: str, packages: list) -> dict:
             dn: packages_prune._read_python_deps(user_key, dn)
             for dn in wanted if dn in in_store
         }
-    need: set[str] = set()
+        store = packages_dependencies.PackageFolder(user_packages_dir(user_key))
+        lacking = {
+            dn for dn in declared
+            if packages_dependencies.lacks_a_package(dn, store, catalog, in_store)
+        }
+    need: set[str] = set(lacking)
     # (package, dep) for every dep pip already considers done. Version-satisfied
     # but unimportable is a different problem with a different remedy, so those
     # are probed - and reported, not reinstalled.

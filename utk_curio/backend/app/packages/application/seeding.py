@@ -76,7 +76,10 @@ from utk_curio.backend.app.packages.repositories.store import (
     user_packages_dir,
 )
 from utk_curio.backend.app.packages.infrastructure.locks import package_seed_lock
-from utk_curio.backend.app.packages.application import model_packages as packages_model_packages
+from utk_curio.backend.app.packages.application import (
+    model_packages as packages_model_packages,
+    package_dependencies as packages_dependencies,
+)
 from utk_curio.backend.app.packages.application.store_install import _purge_stale_staging
 
 log = logging.getLogger(__name__)
@@ -106,6 +109,10 @@ def example_dep_package_ids() -> tuple[str, ...]:
     (copy into the user store) provision exactly the packages the examples
     depend on, with no hardcoded allowlist to keep in sync.
 
+    With them, every package those packages need (``dependencies.packages``,
+    and theirs in turn), from the catalog: the closure every add path asks
+    (``package_dependencies.catalog_packages_to_add``).
+
     Minus ``curio.builtin``, which every store is seeded with anyway (a test
     dataflow declares it). Shared source of truth: the launcher's catalog dep
     walk (``utk_curio/cli/dependencies.py::install_manifest_dependencies``)
@@ -113,7 +120,7 @@ def example_dep_package_ids() -> tuple[str, ...]:
     """
     from utk_curio.backend.app.projects.shipped import shipped_dataflows
 
-    ids: set[str] = set()
+    declared_dirs: list[str] = []
     for json_path in (s.path for s in shipped_dataflows()):
         try:
             spec = json.loads(json_path.read_text(encoding="utf-8"))
@@ -123,8 +130,9 @@ def example_dep_package_ids() -> tuple[str, ...]:
         declared = dataflow.get("packages") if isinstance(dataflow, dict) else None
         if isinstance(declared, list):
             for dir_name in declared:
-                if isinstance(dir_name, str) and "@" in dir_name:
-                    ids.add(dir_name.split("@", 1)[0])
+                if isinstance(dir_name, str) and "@" in dir_name and dir_name not in declared_dirs:
+                    declared_dirs.append(dir_name)
+    ids = {dir_name.split("@", 1)[0] for dir_name in packages_dependencies.catalog_packages_to_add(declared_dirs)}
     return tuple(sorted(ids - {BUILTIN_PACKAGE_ID}))
 
 
