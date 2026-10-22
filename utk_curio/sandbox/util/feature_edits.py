@@ -1,8 +1,8 @@
-"""The Interaction node's step (#662; its type is still
+"""The Map Edits node's step (#662; its type is still
 ``curio.builtin/edit-features``).
 
-The node keeps a log of edits, each made on features picked on its map or by
-a condition, and writes its code from that log: one call of
+The node keeps a log of edits, each made on features picked on the map it
+feeds or by a condition, and writes its code from that log: one call of
 ``curio_edit_features`` with the node's input, the edits in the order they
 were made, the column that identifies a feature (``key``) and, for an input
 that carries several layers, the layer they apply to. The output is a new
@@ -20,11 +20,11 @@ that write, a ``column`` and a ``value``:
   it is;
 - ``expr`` writes into ``column`` what the expression ``value`` makes of the
   feature, such as ``levels * 3.2`` (``edit_expr``);
-- ``add`` adds a feature drawn on the node's map: its ``geometry`` (GeoJSON, in
-  the coordinates the node's map drew the layer in, ``crs``), its ``values``
-  and its ``id``, written into the ``key`` column; it names no features;
+- ``add`` adds a feature drawn on the map: its ``geometry`` (GeoJSON, in the
+  coordinates the map drew the layer in, ``crs``), its ``values`` and its
+  ``id``, written into the ``key`` column; it names no features;
 - ``geometry`` gives the features it names a new ``geometry``, a shape redrawn
-  on the node's map;
+  on the map;
 - ``add_column`` adds ``column`` to every feature with ``value`` as its value,
   leaving a feature that already holds one as it is; it names no features.
 
@@ -83,8 +83,8 @@ EXPR = "expr"
 ADD = "add"
 GEOMETRY = "geometry"
 ADD_COLUMN = "add_column"
-#: In the order of the op enum in ``docs/schemas/trill.v1.json``.
-OPS = (REMOVE, SET, RESTORE, SCALE, OFFSET, EXPR, ADD, GEOMETRY, ADD_COLUMN)
+#: In the order of ``EDIT_OPS`` in ``utils/editFeatures/editFeatures.ts``.
+OPS =(REMOVE, SET, RESTORE, SCALE, OFFSET, EXPR, ADD, GEOMETRY, ADD_COLUMN)
 #: The ops that write a column.
 WRITES = (SET, SCALE, OFFSET, EXPR)
 #: The ops that name no features: they add one, or a column to all of them.
@@ -100,7 +100,7 @@ _GEOMETRY_TYPES = ("Point", "MultiPoint", "LineString", "MultiLineString", "Poly
 #: Kept in sync with ``VIEW_COLUMNS`` in ``utils/references/selectionTags.ts``.
 _VIEW_COLUMNS = frozenset({"__row_index__", "__input__", "_vgsid_", "interacted", "linked"})
 
-_NAME = "Interaction"
+_NAME = "Map Edits"
 #: What the node's map calls an unnamed layer: input_<circle>, then
 #: input_<circle>_<n> for the n-th more on that circle.
 _INPUT_PLACE = re.compile(r"input_(\d+)(?:_(\d+))?")

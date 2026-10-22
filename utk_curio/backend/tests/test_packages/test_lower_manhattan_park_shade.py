@@ -702,7 +702,7 @@ def test_towers_removed_hands_on_every_part_but_the_marked_ones(ran):
     assert not removed["around_park"].any()
     kept = marked[~marked["around_park"]]
     assert removed["height"].tolist() == kept["height"].tolist()
-    assert printed == [f"Interaction: the input, features matched on building_id: {MARKED_ROWS} removed."]
+    assert printed == [f"Map Edits: the input, features matched on building_id: {MARKED_ROWS} removed."]
 
 
 def test_height_cap_cuts_the_marked_parts_to_the_tall_building_height(ran):
@@ -712,7 +712,7 @@ def test_height_cap_cuts_the_marked_parts_to_the_tall_building_height(ran):
     assert (capped.loc[marked["around_park"].to_numpy(), "height"] == TALL_HEIGHT_M).all()
     assert (capped.loc[~marked["around_park"].to_numpy(), "height"].to_numpy()
             == marked.loc[~marked["around_park"], "height"].to_numpy()).all()
-    assert printed == [f"Interaction: the input, features matched on building_id: {MARKED_ROWS} changed."]
+    assert printed == [f"Map Edits: the input, features matched on building_id: {MARKED_ROWS} changed."]
 
 
 def test_the_three_scenarios_rasters_share_one_grid(ran):

@@ -1,4 +1,4 @@
-"""The Interaction node's edit log as a run applies it (``curio_edit_features``),
+"""The Map Edits node's edit log as a run applies it (``curio_edit_features``),
 on the cases the browser applies too: ``editFeaturesApply.cases.json``, which
 Jest runs through the one module the browser applies the log with, which the
 map the node feeds draws before Commit edits (``tests/utils/mapEditsApply.test.ts``).

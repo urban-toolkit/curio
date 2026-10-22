@@ -78,15 +78,16 @@ def test_builtin_package_every_template_has_behavior_and_icon(builtin_package_di
         )
 
 
-def test_the_edit_features_template_is_the_interaction_node(builtin_package_dir: Path):
-    """The node is called Interaction, with a hand icon; its template id and
-    behavior stay ``edit-features``, so saved dataflows load as they are."""
+def test_the_edit_features_template_is_the_map_edits_node(builtin_package_dir: Path):
+    """The node is called Map Edits, with a hand icon; its template id and
+    behavior stay ``edit-features``, so saved dataflows load as they are. No
+    template keeps its earlier names, Edit Features and Interaction."""
     manifest = load_package_manifest(builtin_package_dir)
     (template,) = [t for t in manifest.templates if t.template_id == "edit-features"]
-    assert template.label == "Interaction"
+    assert template.label == "Map Edits"
     assert template.icon_ref == "fa-solid:hand-pointer"
     assert template.behavior == "edit-features"
-    assert not any(t.label == "Edit Features" for t in manifest.templates)
+    assert not any(t.label in ("Edit Features", "Interaction") for t in manifest.templates)
 
 
 def test_the_note_holds_text_and_runs_nothing(builtin_package_dir: Path):
