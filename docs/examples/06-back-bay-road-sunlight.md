@@ -105,7 +105,7 @@ up on the map. Its list holds one edit, made by clicking the two towers on that 
 matched on their `building_id`. Its code holds that list:
 
 ```python
-# Edit Features writes this code from its edit list: each edit, in the
+# Map Edits writes this code from its edit list: each edit, in the
 # order it was made, on the features whose key is one of its ids. It is
 # written again when the list changes.
 return curio_edit_features(input_0, [

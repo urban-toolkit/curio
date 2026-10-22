@@ -158,7 +158,7 @@ MAP_SPEC = json.dumps({"map": {"layerRefs": [{
 
 #: The comment lines a new Map Edits node's code starts with.
 NOTE = (
-    "# Edit Features writes this code from its edit list: each edit, in the\n"
+    "# Map Edits writes this code from its edit list: each edit, in the\n"
     "# order it was made, on the features whose key is one of its ids. It is\n"
     "# written again when the list changes.\n"
 )

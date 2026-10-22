@@ -169,7 +169,7 @@ TOWERS_LOG = {
 #: The code the node writes from that log (``editFeaturesCode`` in
 #: ``utils/editFeatures/editFeatures.ts``): one call of ``curio_edit_features``.
 TOWERS_CODE = (
-    "# Edit Features writes this code from its edit list: each edit, in the\n"
+    "# Map Edits writes this code from its edit list: each edit, in the\n"
     "# order it was made, on the features whose key is one of its ids. It is\n"
     "# written again when the list changes.\n"
     "return curio_edit_features(input_0, [\n"

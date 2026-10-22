@@ -90,7 +90,7 @@ def interaction_code(circles: int) -> str:
     """The Map Edits node's code with no edits yet, fed by *circles* inputs:
     what ``editFeaturesCode(undefined, circles)`` writes (``editFeatures.ts``)."""
     return (
-        "# Edit Features writes this code from its edit list: each edit, in the\n"
+        "# Map Edits writes this code from its edit list: each edit, in the\n"
         "# order it was made, on the features whose key is one of its ids. It is\n"
         "# written again when the list changes.\n"
         "return curio_edit_features([" + ", ".join(f"input_{k}" for k in range(circles)) + "], [], by_input=True)\n"

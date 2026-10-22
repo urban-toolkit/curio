@@ -26,7 +26,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useFlowContext } from "../../providers/FlowProvider";
 import type { SelectionId } from "../../utils/references/selectionTags";
-import type { Geometry } from "../../utils/editFeatures/editFeatures";
+import { withArticle, type Geometry } from "../../utils/editFeatures/editFeatures";
 import { kindOf, type EditedFeature } from "../../utils/editFeatures/layerModel";
 import { editMap, editMapLayerId, useMapEdit } from "../../utils/editFeatures/mapEditBus";
 import { editSelection, selectedIdsIn, toggledIds } from "../../utils/editFeatures/mapEditSelection";
@@ -439,7 +439,7 @@ export default function MapEditOverlay({ mapId }: { mapId: string }) {
           : `Drag a corner to move it. Click or drag a midpoint to add one, and alt-click a corner to delete it.${parts > 1 ? " Alt-click inside a part to remove it." : ""}`
         : mode === "move"
           ? `Shift-drag the ${noun} to move it. Drag to pan.`
-          : `Click a ${noun} to pick it, and shift-click to add one. Drag to pan.`;
+          : `Click ${withArticle(noun)} to pick it, and shift-click to add one. Drag to pan.`;
   // Changing a shape, Done goes back to panning.
   const shaping = mode === "reshape" || mode === "move";
   const last = draftScreen[draftScreen.length - 1];

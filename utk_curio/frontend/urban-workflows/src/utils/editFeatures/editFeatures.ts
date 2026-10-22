@@ -121,7 +121,7 @@ export interface EditFeaturesSettings {
 }
 
 export const EDIT_CODE_NOTE = [
-  "# Edit Features writes this code from its edit list: each edit, in the",
+  "# Map Edits writes this code from its edit list: each edit, in the",
   "# order it was made, on the features whose key is one of its ids. It is",
   "# written again when the list changes.",
 ];
@@ -361,7 +361,7 @@ export function editProblem(raw: unknown): string | null {
   if (!EDIT_OPS.includes(raw.op as EditOp)) return `has the op ${show(raw.op)}, which is none of ${EDIT_OPS.join(", ")}`;
   const op = raw.op as EditOp;
   const extra = Object.keys(raw).find((name) => !["op", "layer", "label", "enabled", ...EDIT_FIELDS[op]].includes(name));
-  if (extra !== undefined) return `is a ${op}, which takes no ${extra}`;
+  if (extra !== undefined) return `is ${withArticle(op)}, which takes no ${extra}`;
   if (raw.layer !== undefined && (typeof raw.layer !== "string" || raw.layer === "")) return "has a layer that is not a name";
   if (raw.label !== undefined && typeof raw.label !== "string") return "has a label that is not a text";
   if (typeof raw.label === "string" && raw.label.trim() === "") return "has an empty label";
@@ -596,6 +596,11 @@ function idList(ids: readonly SelectionId[]): string {
   return ids.map((id) => String(id)).join(", ");
 }
 
+/** *word* after its article: "a point", "an area", "an add". */
+export function withArticle(word: string): string {
+  return `${/^[aeiou]/i.test(word) ? "an" : "a"} ${word}`;
+}
+
 /**
  * One line for *edit*, naming the features by *key* ("on building_id 3") or
  * by its condition ("where height > 100"), after its label when it has one.
@@ -605,7 +610,7 @@ export function describeEdit(edit: FeatureEdit, key: string | undefined, layerLa
   if (edit.op === "add") {
     const shape = (edit.geometry?.type ?? "feature").replace(/^Multi/, "").replace("LineString", "line").replace("Polygon", "area").toLowerCase();
     const values = Object.entries(edit.values ?? {}).filter(([, v]) => v !== null && v !== "").map(([c, v]) => `${c} ${String(v)}`);
-    const line = `Add a ${shape}${where} (${String(edit.id)})${values.length > 0 ? `: ${values.join(", ")}` : ""}`;
+    const line = `Add ${withArticle(shape)}${where} (${String(edit.id)})${values.length > 0 ? `: ${values.join(", ")}` : ""}`;
     return edit.label ? `${edit.label}: ${line}` : line;
   }
   if (edit.op === "add_column") {

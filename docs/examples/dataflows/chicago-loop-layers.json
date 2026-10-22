@@ -111,7 +111,7 @@
         "type": "curio.builtin/edit-features",
         "x": 675.7896808854323,
         "y": 727.0843465385058,
-        "content": "# Edit Features writes this code from its edit list: each edit, in the\n# order it was made, on the features whose key is one of its ids. It is\n# written again when the list changes.\nreturn curio_edit_features([input_0, input_1, input_2, input_3, input_4], [], by_input=True)\n",
+        "content": "# Map Edits writes this code from its edit list: each edit, in the\n# order it was made, on the features whose key is one of its ids. It is\n# written again when the list changes.\nreturn curio_edit_features([input_0, input_1, input_2, input_3, input_4], [], by_input=True)\n",
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "Read the map's layers, by the geometry of their features, and add, reshape, move, change or remove their features on the map, add properties, or make a new layer.",

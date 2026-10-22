@@ -105,7 +105,7 @@ describe("readEditFeaturesCode", () => {
   });
 
   test("reads the code the shipped examples hold", () => {
-    const shipped = '# Edit Features writes this code from its edit list: each edit, in the\n# order it was made, on the features whose key is one of its ids. It is\n# written again when the list changes.\nreturn curio_edit_features(input_0, [\n    {"op": "remove", "where": "around_park", "label": "Tall parts around a park"},\n], key="building_id")\n';
+    const shipped = '# Map Edits writes this code from its edit list: each edit, in the\n# order it was made, on the features whose key is one of its ids. It is\n# written again when the list changes.\nreturn curio_edit_features(input_0, [\n    {"op": "remove", "where": "around_park", "label": "Tall parts around a park"},\n], key="building_id")\n';
     expect(asCase(readEditFeaturesCode(shipped)).settings).toEqual({
       key: "building_id",
       edits: [{ op: "remove", where: "around_park", label: "Tall parts around a park" }],
