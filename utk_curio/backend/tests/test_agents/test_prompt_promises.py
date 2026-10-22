@@ -1,0 +1,177 @@
+"""What an agent is told it may do, the code that handles it does.
+
+Each prompt is read as a run reads it (``builtin.read_prompt_text``), and each
+case names the code that refuses what the deleted text promised, or does not
+do it.
+"""
+from __future__ import annotations
+
+import re
+
+DATAFLOW_BUILDER = "agent.curio.dataflow-builder@1"
+NODE_BUILDER = "agent.curio.node-builder@1"
+DATASET_FINDER = "agent.curio.dataset-finder@1"
+RESEARCHER = "agent.curio.researcher@1"
+
+
+def _prompt(coord: str, key: str = "instruction") -> str:
+    from utk_curio.backend.app.agents.domain import builtin
+
+    text = builtin.read_prompt_text(coord, key)
+    assert text, f"{coord} has no {key} prompt"
+    return text
+
+
+def _sentence(text: str, words: str) -> str:
+    """The sentence of *text* that holds *words*."""
+    found = [s for s in re.split(r"(?<=[.!?])\s+", text) if words in s]
+    assert found, f"no sentence holds {words!r}"
+    return found[0]
+
+
+def test_the_dataflow_builder_is_never_told_a_plan_may_carry_code():
+    """``_mint_dataflow_plan`` (``proposals/plans.py``) refuses every plan node
+    that carries content: plans describe intent, and Solve writes each node's
+    content after the plan is applied. So no case lets the plan carry it."""
+    instruction = _prompt(DATAFLOW_BUILDER)
+    assert "unless a node's code is trivial" not in instruction
+    assert "unless asked" not in instruction
+
+
+def test_the_dataflow_builder_is_not_offered_a_decomposition_that_only_rewords_goals():
+    """``workflow.plan.create`` runs the Dataflow Planner's
+    ``new_subtasks_prompt.md``, which rewrites the goals of the nodes a
+    dataflow already has and adds none."""
+    assert '"workflow.plan.create"' not in _prompt(DATAFLOW_BUILDER)
+
+
+def test_the_dataflow_builder_is_not_told_every_applied_plan_ends_with_a_topology_verdict():
+    """Only the whole-plan Apply ends its result with one
+    (``plans._log_plan_applied``); a plan applied node by node, then its
+    connections, ends without it."""
+    assert "the applied result names what changed and ends with a Topology verdict" not in _prompt(DATAFLOW_BUILDER)
+
+
+def test_the_node_builder_delegates_a_new_nodes_content_only_from_the_canvas():
+    """A ``node.content.generate`` delegation with no ``nodeId`` targets the
+    node the agent is attached to (``delegates._delegate_target_node_id``), and
+    its content becomes a review of that node's own content (``turn_loop``), not
+    content to put in a ``node.create``."""
+    step = _sentence(_prompt(NODE_BUILDER), "put the returned content in the node.create request's params.content")
+    assert "attached to the canvas" in step
+
+
+def test_the_node_builder_is_not_told_its_chat_starts_discovery():
+    """Only Solve asks the Dataset Finder for a node's candidates
+    (``grounding._source_resolver``, which calls ``dataset_resolution.initiate``,
+    from ``solve/batch.py``, ``node_solve.py`` and ``validate.py``); a chat run
+    that cannot ground a source starts none."""
+    assert "the runtime initiates that discovery itself" not in _prompt(NODE_BUILDER)
+
+
+def test_no_agent_is_told_to_declare_a_synthetic_flag_the_gate_ignores():
+    """``source_grounding.synthetic_requested`` reads only the user's own words;
+    a ``"synthetic": true`` param changes nothing. Neither the Node Builder nor a
+    source refusal's list of allowed sources asks for one."""
+    from utk_curio.backend.app.agents.application.turns import grounding
+
+    assert '"synthetic": true' not in _prompt(NODE_BUILDER)
+    base = {"catalog_paths": {}, "catalog_ids": {}, "verified": {}, "secrets": {}, "texts": []}
+    ctx = grounding._grounding_context("4242", "p-1", {}, node_type="curio.builtin/data-loading", base=base)
+    assert not any('"synthetic"' in hint for hint in ctx.hints), ctx.hints
+    assert any("in their own words" in hint for hint in ctx.hints), ctx.hints
+
+
+def test_the_content_mode_is_not_offered_a_model_search_it_cannot_run():
+    """The Node Builder's content mode runs as a delegate with no tools
+    (``delegation`` pins ``"tools": []``), so it never calls models.search."""
+    assert "models.search" not in _prompt(NODE_BUILDER, "node.content.generate")
+
+
+def test_the_content_mode_promises_a_one_line_conclusion_only_to_a_node_that_loads_data():
+    """Solve takes a one-line conclusion in place of code only where the source
+    gate refuses it (``verified_loop._source_gate``, ``rounds._is_prose_decline``),
+    which a node that loads data and opens no source is. Elsewhere the line runs
+    as code and fails."""
+    sentence = _sentence(_prompt(NODE_BUILDER, "node.content.generate"), "state that conclusion as your WHOLE reply")
+    assert "loads data" in sentence
+
+
+def _absent_output_a_consumer_refuses() -> str:
+    """The refusal a validation round sends for code that returns nothing to a
+    node that declares what it takes (``validation._consumer_type_mismatch``)."""
+    from utk_curio.backend.app.agents.domain import validation
+
+    spec = {"dataflow": {
+        "nodes": [{"id": "n1", "type": "curio.builtin/computation-analysis"},
+                  {"id": "n2", "type": "curio.builtin/vis-vega", "goal": "Trips chart"}],
+        "edges": [{"id": "e1", "source": "n1", "target": "n2"}],
+    }}
+    available = {"curio.builtin/vis-vega": {"inputs": [{"types": ["DATAFRAME"]}]}}
+    text = validation._consumer_type_mismatch(spec, "n1", "null", available)
+    assert text, "no refusal for an absent output"
+    return text
+
+
+def test_solves_refusals_offer_a_one_line_answer_only_to_a_node_that_loads_data():
+    """The content mode's rule holds in each refusal a Solve round sends back:
+    the one-line answer is taken in place of code only where the source gate
+    refuses it (``verified_loop._source_gate``), a node that loads data."""
+    from utk_curio.backend.app.agents.domain import result_shape as rs
+
+    nulls = {"kind": "geotable", "rowCount": 2, "columns": [{"name": "population", "dtype": "unknown"}],
+             "sampleRows": [{"population": None}, {"population": None}]}
+    conclusion = "# A join is not possible with the provided columns.\nreturn None"
+    offers = {
+        "no output": (rs.absent_output_refusal(code="return None"), "say so in one line with no code"),
+        "no output, its own conclusion": (rs.absent_output_refusal(code=conclusion), "with no code at all"),
+        "rows that hold nothing": (rs.null_refusal_text(columns=["population"], summary=nulls),
+                                   "say so in one line and return no code"),
+        "no rows": (rs.refusal_text(summary={"kind": "table", "rowCount": 0}, upstream_outputs=None),
+                    "Either join on columns whose values are the same kind of thing"),
+        "no output a consumer takes": (_absent_output_a_consumer_refuses(),
+                                       "say so in one line instead of returning code"),
+    }
+    for name, (text, words) in offers.items():
+        assert "loads data" in _sentence(text, words), name
+
+
+def test_a_research_check_is_told_which_inputs_the_runtime_probes():
+    """``delegates._enriched_delegate_inputs`` probes the delegation's ``url``
+    or ``endpoint`` input; a URL anywhere else in its inputs is not probed."""
+    text = _prompt(RESEARCHER, "research.verify")
+    assert "When you were given a URL or an endpoint" not in text
+    assert 'When your inputs carry a "url" or an "endpoint"' in text
+
+
+def test_the_dataset_finder_is_not_told_a_confirmed_fetchable_row_is_being_built():
+    """A confirmed row Curio downloads is downloaded first, and its builder
+    starts only when it lands within the confirmation's wait
+    (``acquire._DISCOVERY_APPLY_WAIT_S``); a node with no builder, or a Solve
+    already running, starts none (``dataset_selection._delegate_confirmed_fetch``)."""
+    text = _prompt(DATASET_FINDER)
+    for promise in ("DELEGATES automatically", "the delegation has already started", "writing the loader now"):
+        assert promise not in text, promise
+
+
+def test_the_dataset_finder_is_not_told_its_rows_come_in_two_kinds():
+    """A row's access verdict is fetchable, manual-download or unknown
+    (``verify.ACCESS_UNKNOWN`` among them)."""
+    assert "TWO kinds" not in _prompt(DATASET_FINDER)
+
+
+def test_the_dataset_finder_is_not_told_a_fetch_author_delegation_proposes_an_install():
+    """An install proposal is minted only when the project lacks the agent that
+    declares the capability (``delegates``, a ``not-installed`` resolution); an
+    installed Node Builder runs the request, and nothing reaches the user to
+    apply."""
+    assert "so an install proposal reaches the user" not in _prompt(DATASET_FINDER)
+
+
+def test_a_scout_charts_spec_is_kept_as_it_is_only_in_a_plan():
+    """Only a plan starts a node from its template's starter and sets the
+    template's widgets by name (``plans._content_starters``,
+    ``plan_scenarios._set_over``); ``node.create`` takes the content and the
+    widgets it is given, and ``node.content.write`` carries no widgets."""
+    sentence = _sentence(_prompt(DATAFLOW_BUILDER, "system"), "leave its spec as it is")
+    assert "in a plan" in sentence
