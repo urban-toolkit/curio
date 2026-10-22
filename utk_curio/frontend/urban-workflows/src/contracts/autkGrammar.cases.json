@@ -1,0 +1,76 @@
+{
+  "description": "What a grammar node calls its inputs, and which Autark documents hold more than one view, as the node and the backend decide it. inputTableNames: the name a node's input on each circle is read by. oneView: a document, and what it is told, named by its key in autkGrammar.json (\"oneView\"), or null for a document that draws one view or none. Read by src/tests/contracts/autkGrammarCases.test.ts (inputTableName and autkOneViewProblem in contracts/autkGrammar.ts) and by backend/tests/test_agents/test_autk_grammar_cases.py (contracts.input_table_name and autk_one_view_problem, which the agents' document check uses).",
+  "inputTableNames": [
+    { "position": 0, "name": "input_0" },
+    { "position": 1, "name": "input_1" },
+    { "position": 2, "name": "input_2" },
+    { "position": 12, "name": "input_12" }
+  ],
+  "oneView": [
+    {
+      "name": "a map alone is one view",
+      "spec": { "map": { "layerRefs": [{ "dataRef": "input_0" }] } },
+      "problem": null
+    },
+    {
+      "name": "a plot alone is one view",
+      "spec": { "plot": { "mark": "bar" } },
+      "problem": null
+    },
+    {
+      "name": "a list of one map is that map",
+      "spec": { "map": [{ "layerRefs": [{ "dataRef": "input_0" }] }] },
+      "problem": null
+    },
+    {
+      "name": "a list of one plot is that plot",
+      "spec": { "plot": [{ "mark": "bar" }] },
+      "problem": null
+    },
+    {
+      "name": "a document that only loads data draws no view",
+      "spec": { "data": [{ "type": "osm" }, { "type": "csv" }] },
+      "problem": null
+    },
+    {
+      "name": "a map named null is no map",
+      "spec": { "map": null, "plot": { "mark": "bar" } },
+      "problem": null
+    },
+    {
+      "name": "a map and a plot are two views",
+      "spec": { "map": { "layerRefs": [] }, "plot": { "mark": "bar" } },
+      "problem": "oneView"
+    },
+    {
+      "name": "a list of maps and a plot are more than one view",
+      "spec": { "map": [{ "layerRefs": [] }], "plot": { "mark": "bar" } },
+      "problem": "oneView"
+    },
+    {
+      "name": "two maps are two views",
+      "spec": { "map": [{ "layerRefs": [] }, { "layerRefs": [] }] },
+      "problem": "oneView"
+    },
+    {
+      "name": "three plots are three views",
+      "spec": { "plot": [{ "mark": "bar" }, { "mark": "line" }, { "mark": "point" }] },
+      "problem": "oneView"
+    },
+    {
+      "name": "a list is no document",
+      "spec": [{ "map": {} }, { "plot": {} }],
+      "problem": null
+    },
+    {
+      "name": "text is no document",
+      "spec": "{\"map\": {}, \"plot\": {}}",
+      "problem": null
+    },
+    {
+      "name": "null is no document",
+      "spec": null,
+      "problem": null
+    }
+  ]
+}

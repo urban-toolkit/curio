@@ -355,7 +355,10 @@ def test_each_list_and_name_the_prose_states_is_filled_from_the_code_that_owns_i
     from utk_curio.backend.app.agents.application.turns import delegates
     from utk_curio.backend.app.agents.domain import builtin, content, contracts, document_validation, tool_names
     from utk_curio.backend.app.execution.code_references import reference_text
-    from utk_curio.backend.app.packages.domain import backend_contract, node_appearance
+    import dataclasses
+
+    from utk_curio.backend.app.packages.application import note_palette
+    from utk_curio.backend.app.packages.domain import backend_contract
 
     def source(page):
         return (BASE / page).read_text(encoding="utf-8")
@@ -382,7 +385,8 @@ def test_each_list_and_name_the_prose_states_is_filled_from_the_code_that_owns_i
 
     _dev(monkeypatch)
     monkeypatch.setattr(content, "_CANDIDATE_SOURCE_TYPES", ("api", "lake"))
-    monkeypatch.setattr(node_appearance, "NAMED_COLORS", {"teal": "#00ffff", "rust": "#b7410e"})
+    monkeypatch.setattr(note_palette, "NOTE_PALETTE", dataclasses.replace(
+        note_palette.NOTE_PALETTE, colors={"teal": "#00ffff", "rust": "#b7410e"}, default_name="teal"))
     monkeypatch.setattr(backend_contract, "TIMEOUT_CLASSES", ("brief", "long"))
     monkeypatch.setattr(backend_contract, "HANDLER_NAME_RE", re.compile(r"^[a-z]{1,9}$"))
     monkeypatch.setattr(contracts, "VEGA_SCHEMA_URL", "https://example.org/vega-lite/v9.json")

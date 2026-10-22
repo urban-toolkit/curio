@@ -347,11 +347,21 @@ ROSTER = {CHICAGO: {"dirName": CHICAGO, "provider": "socrata",
 
 
 class _FakeDiscovery:
-    """``DiscoveryService`` as the confirmation sees it."""
+    """``DiscoveryService`` as the confirmation sees it: the portal describes
+    the two resources :data:`DISCOVERY_CANDIDATES` names, and no other."""
+
+    DESCRIBED = {(CHICAGO, "cauq-8yn6"), (CHICAGO, "sp34-6z76")}
 
     def __init__(self, started=None, job=None, error=None):
         self.started, self.job, self.error = started, job, error
         self.calls: list = []
+
+    def describe_resource(self, source_id, resource_id):
+        from utk_curio.backend.app.discovery.domain.errors import DiscoveryError
+
+        if (source_id, resource_id) not in self.DESCRIBED:
+            raise DiscoveryError(f"{resource_id} is not on {source_id}")
+        return {"resourceId": resource_id, "name": resource_id, "formats": ["csv", "geojson"]}
 
     def start_acquire(self, source_id, resource_id, fmt=None):
         from utk_curio.backend.app.discovery.domain.errors import DiscoveryError
