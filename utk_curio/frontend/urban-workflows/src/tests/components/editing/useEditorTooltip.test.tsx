@@ -14,12 +14,16 @@
 import React from "react";
 import { act, cleanup, fireEvent, render } from "@testing-library/react";
 import { TooltipLayer } from "../../../components/tooltip/TooltipLayer";
+import { resetTooltipStore } from "../../../components/tooltip/tooltipStore";
 import { useEditorTooltip } from "../../../components/editing/useEditorTooltip";
 import type { CodeLanguage, ReferenceScope } from "../../../utils/references/codeReferences";
 import type { WidgetDef } from "../../../utils/widgets/widgetModel";
 
 /** The layer may place a tooltip in the animation frame after it decides to show it. */
 const FRAME = 16;
+
+/** A mouse's pointer events, as the layer hears them. */
+const MOUSE = { pointerType: "mouse", isPrimary: true, pointerId: 1 };
 
 /** Monaco's `editor.MouseTargetType`, as its typings number it. */
 const MOUSE_TARGET_TYPE = {
@@ -214,8 +218,9 @@ function mount(editor: unknown, monaco: unknown, language: CodeLanguage) {
 describe("an editor's hover, in the Curio tooltip", () => {
   beforeEach(() => {
     jest.useFakeTimers();
-    // Far from any tooltip an earlier test closed, so none is still warm.
-    jest.advanceTimersByTime(60_000);
+    // Each test's fake clock starts again near where an earlier one closed a
+    // tooltip: the store starts as a page does, with none warm.
+    resetTooltipStore();
   });
 
   // In this block, so it runs before Testing Library unmounts the page: no
@@ -312,6 +317,40 @@ describe("an editor's hover, in the Curio tooltip", () => {
     expect(offset).toBeLessThanOrEqual(41);
   });
 
+  test("in a JavaScript node, a marker's message and the type information both show, the marker's first", async () => {
+    // "featurs" on line 2 runs from column 13 to 20.
+    const { editor, dom, emit } = fakeEditor("const zips = [!! input_0 !!];\nreturn zips.featurs;");
+    const { monaco } = fakeMonaco(
+      [
+        {
+          owner: "typescript",
+          severity: 8,
+          message: "Cannot find name 'featurs'.",
+          startLineNumber: 2,
+          startColumn: 13,
+          endLineNumber: 2,
+          endColumn: 20,
+        },
+      ],
+      {
+        kind: "let",
+        kindModifiers: "",
+        textSpan: { start: 42, length: 7 },
+        displayParts: [{ text: "let featurs: number", kind: "text" }],
+        documentation: [],
+        tags: [],
+      },
+    );
+    mount(editor, monaco, "javascript");
+    emit("onMouseMove", mouseOver(spanAt(dom, 100, 218, 56), { lineNumber: 2, column: 15 }));
+    await advance(400 + FRAME);
+    await advance(FRAME);
+    const text = said();
+    expect(text).toContain("Cannot find name 'featurs'.");
+    expect(text).toContain("let featurs: number");
+    expect(text.indexOf("Cannot find name")).toBeLessThan(text.indexOf("let featurs: number"));
+  });
+
   test("a place with no chip, marker or type information shows nothing", async () => {
     const { editor, dom, emit } = fakeEditor("x = 1\nprint(x)");
     const { monaco } = fakeMonaco();
@@ -341,6 +380,26 @@ describe("an editor's hover, in the Curio tooltip", () => {
     // Out of the editor.
     emit("onMouseLeave", { target: null, event: { browserEvent: new MouseEvent("mouseleave") } });
     await advance(100 + FRAME);
+    expect(shown()).toHaveLength(0);
+  });
+
+  test("the mouse may leave the editor for the tooltip, and it hides 100 ms after leaving the tooltip", async () => {
+    const { editor, dom, emit } = fakeEditor("s = [!! season !!]\nprint(s)");
+    const { monaco } = fakeMonaco();
+    mount(editor, monaco, "python");
+    emit("onMouseMove", mouseOver(spanAt(dom, 120, 200, 48), { lineNumber: 1, column: 11 }));
+    await advance(400 + FRAME);
+    expect(said()).toBe('season = "summer"');
+    // Up out of the editor, which Monaco reports as a leave, and onto the tooltip.
+    emit("onMouseLeave", { target: null, event: { browserEvent: new MouseEvent("mouseleave") } });
+    fireEvent.pointerMove(shown()[0], { ...MOUSE, clientX: 140, clientY: 190 });
+    await advance(1000);
+    expect(said()).toBe('season = "summer"');
+    // Off the tooltip, onto the page.
+    fireEvent.pointerMove(document.body, { ...MOUSE, clientX: 600, clientY: 600 });
+    await advance(99);
+    expect(shown()).toHaveLength(1);
+    await advance(1);
     expect(shown()).toHaveLength(0);
   });
 
