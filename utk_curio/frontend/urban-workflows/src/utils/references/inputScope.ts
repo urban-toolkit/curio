@@ -15,7 +15,7 @@ import { inputSlotOf, isDataEdge, wiredInputSlots } from "../inputSlots";
 import { readGrammarInput, type GrammarFrame, type GrammarInput } from "../grammarInput";
 import { toRows } from "../rowSource";
 import { fetchPreviewData } from "../../services/api";
-import { outputStatus } from "../../components/scenarios/scenarioLabels";
+import { outputStatus } from "../nodeOutputStatus";
 
 type ScopeEdge = {
     id?: string | null;
