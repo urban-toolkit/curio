@@ -1160,8 +1160,13 @@ export const useAutkGrammarBehavior = (
         }
         const next = pendingSpecRef.current;
         pendingSpecRef.current = null;
-        if (next != null) await applyGrammar(next);
+        if (next != null) await applyGrammarRef.current(next);
     };
+    // The run queued behind the one under way goes through the latest render's
+    // applyGrammar, so it reads the node's input as it is when it starts, not
+    // as it was when the run under way began.
+    const applyGrammarRef = useRef(applyGrammar);
+    applyGrammarRef.current = applyGrammar;
 
     // An edit made in the Interaction node linked to this map: draw again,
     // once the edits stop coming, where the camera is now.
