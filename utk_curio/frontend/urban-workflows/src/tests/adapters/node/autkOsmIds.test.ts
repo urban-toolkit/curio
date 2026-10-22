@@ -5,10 +5,11 @@
  * water by it (#1055). autk-db 4 gives a road's, a park's or a water's OSM id
  * as the feature's GeoJSON `id`, which a table leaves out, and a building
  * part's as that part's `id` in `properties.parts`. Both loaders hand the same
- * rows on: the sandbox's (compileDataSpecToAutkDbJs), which a run on the
+ * rows on, through one function, `withOsmIds`: the sandbox's
+ * (compileDataSpecToAutkDbJs, which embeds its source), which a run on the
  * server posts, and the in-browser fallback (loadSpecLayers).
  */
-import { compileDataSpecToAutkDbJs } from "../../../adapters/node/autkDataCompile";
+import { compileDataSpecToAutkDbJs, withOsmIds } from "../../../adapters/node/autkDataCompile";
 import { loadSpecLayers } from "../../../adapters/node/autkLayerMaterialize";
 
 jest.mock("../../../services/api", () => ({ fetchData: jest.fn() }));
@@ -198,4 +199,34 @@ test("the sandbox hands on the very rows the browser does", async () => {
   const [sandbox, browser] = [await sandboxLayers(), await browserLayers()];
   expect(Object.keys(sandbox)).toEqual(TABLES.map((table) => table.name));
   expect(sandbox).toEqual(browser);
+});
+
+describe("withOsmIds, the one function both loaders hand their layers on through", () => {
+  test("the sandbox's code embeds its own source", () => {
+    expect(compileDataSpecToAutkDbJs(SOURCES)).toContain(`const __withOsmIds = ${withOsmIds.toString()};`);
+  });
+
+  test("never changes the features it is handed", () => {
+    for (const [name, type] of [["table_osm_roads", "roads"], ["table_osm_buildings", "buildings"]]) {
+      const given = GIVEN[name]().features;
+      const before = JSON.parse(JSON.stringify(given));
+      expect(withOsmIds({ source: "osm", type }, given)).not.toEqual(before);
+      expect(given).toEqual(before);
+    }
+  });
+
+  test("hands the surface, a raster and a layer from another source back as they came, ids or not", () => {
+    // Features with ids: only the layer decides.
+    const zones = GIVEN.zones().features;
+    for (const table of [
+      { source: "osm", type: "surface" },
+      { source: "osm", type: "raster" },
+      { source: "geojson", type: "polygons" },
+      { source: "csv", type: "points" },
+      {},
+      null,
+    ]) {
+      expect(withOsmIds(table, zones)).toBe(zones);
+    }
+  });
 });

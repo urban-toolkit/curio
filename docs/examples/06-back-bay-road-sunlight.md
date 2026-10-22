@@ -212,8 +212,8 @@ reads the roads of each through a layer chip:
 ```python
 # Twice as tall's sunlight minus Baseline's, road by road, in minutes: what
 # each road loses where the taller buildings' shadows reach it. Both read the
-# same roads from the pool. A road carries no id, so each is matched by its
-# shape, and a shape that repeats by its order.
+# same roads from the pool, so each road is matched by its shape, and a shape
+# that repeats by its order.
 import numpy as np
 
 before = [!! input_0:table_osm_roads !!]
@@ -241,10 +241,9 @@ roads.insert(1, "change", np.where(roads["sunlight"] != 0, "changed", "unchanged
 return roads
 ```
 
-The roads carry no `osm_id` or `building_id`, so the node matches them by their shapes: both
-scenarios read the same roads from the pool. Each road holds Twice as tall's sunlight minus
-Baseline's, in `sunlight` and in the `compute` values the shadow step writes, and `change` says
-whether it changed.
+The node matches the roads by their shapes: both scenarios read the same roads from the pool.
+Each road keeps its `osm_id` and holds Twice as tall's sunlight minus Baseline's, in `sunlight`
+and in the `compute` values the shadow step writes, and `change` says whether it changed.
 
 **Roads by sunlight change**, an Autark node after it, draws that difference: it colours each road
 by its `sunlight` on a red, yellow and blue scale from -360 to 360 minutes. A road that loses
