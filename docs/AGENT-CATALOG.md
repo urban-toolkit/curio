@@ -80,7 +80,7 @@ Each agent's prompts, by the key its manifest gives them:
 
 | Key | File | When it runs |
 |---|---|---|
-| `system` | [`default_preamble.md`](../utk_curio/llm-prompts/default_preamble.md) | every call |
+| `system` | [`default_preamble.md`](../agents/agent.curio.builtin@1/default_preamble.md) | every call |
 | `instruction` | [`researcher_instruction.md`](../agents/agent.curio.researcher@1/prompts/researcher_instruction.md) | a message you type |
 | `research.notes.compose` | [`researcher_notes_instruction.md`](../agents/agent.curio.researcher@1/prompts/researcher_notes_instruction.md) | the Dataflow Builder asks for notes from search results |
 | `research.verify` | [`research_instruction.md`](../agents/agent.curio.researcher@1/prompts/research_instruction.md) | another agent asks for a fact to be checked |
@@ -89,7 +89,7 @@ Each agent's prompts, by the key its manifest gives them:
 
 | Key | File | When it runs |
 |---|---|---|
-| `system` | [`default_preamble.md`](../utk_curio/llm-prompts/default_preamble.md) | every call |
+| `system` | [`default_preamble.md`](../agents/agent.curio.builtin@1/default_preamble.md) | every call |
 | `instruction` | [`node_build_instruction.md`](../agents/agent.curio.node-builder@1/prompts/node_build_instruction.md) | a message you type |
 | `node.content.generate` | [`new_content_prompt.md`](../agents/agent.curio.node-builder@1/prompts/new_content_prompt.md) | someone asks for a node's content |
 | `autk-grammar` | [`new_content_autk_prompt.md`](../agents/agent.curio.node-builder@1/prompts/new_content_autk_prompt.md) | the same, for an Autark node |
@@ -100,14 +100,14 @@ Each agent's prompts, by the key its manifest gives them:
 
 | Key | File | When it runs |
 |---|---|---|
-| `system` | [`default_preamble.md`](../utk_curio/llm-prompts/default_preamble.md) | every call |
+| `system` | [`default_preamble.md`](../agents/agent.curio.builtin@1/default_preamble.md) | every call |
 | `instruction` | [`orchestration_instruction.md`](../agents/agent.curio.dataflow-builder@1/prompts/orchestration_instruction.md) | a message you type |
 
 **Dataset Finder**
 
 | Key | File | When it runs |
 |---|---|---|
-| `system` | [`default_preamble.md`](../utk_curio/llm-prompts/default_preamble.md) | every call |
+| `system` | [`default_preamble.md`](../agents/agent.curio.builtin@1/default_preamble.md) | every call |
 | `instruction` | [`discovery_instruction.md`](../agents/agent.curio.dataset-finder@1/prompts/discovery_instruction.md) | a message you type, and another agent or Solve asking for datasets |
 
 ### Walk-throughs
@@ -362,7 +362,7 @@ Whoever runs the install can set a Deployment default with `curio.py start` flag
 
 ## 5. Importing, publishing, and sharing
 
-**Import agent**, in the drawer's footer or the `/catalog/agents` header, takes a `manifest.json` and its `.md` or `.txt` prompt files, not an archive. The prompt files must match what the manifest references, except `curio:default_preamble.md`, which is Curio's own and takes no file; size limits apply; and a manifest that sets `catalog` is refused. An agent whose id and major you already have replaces yours when its version is newer, and is refused otherwise.
+**Import agent**, in the drawer's footer or the `/catalog/agents` header, takes a `manifest.json` and its `.md` or `.txt` prompt files, not an archive. The prompt files must match what the manifest references, except a `curio:<path>` path, which names a page of Curio's own and takes no file; size limits apply; and a manifest that sets `catalog` is refused. An agent whose id and major you already have replaces yours when its version is newer, and is refused otherwise.
 
 **Publish**, on `/catalog/agents`, copies one of your own imported definitions into the shared catalog, where every user on the install can browse it. Built-in agents cannot be published. **Unpublish** removes it from the shared catalog, and only the publisher can do it; only the publisher can publish over it, too. Other users who added the agent keep their copy and keep running it, and a newer version of the same major reaches them the next time they add the agent to a dataflow.
 
@@ -410,7 +410,7 @@ A minimal, complete manifest:
 | `purpose`, `roles` | | One-line description and display roles. |
 | `delegatesTo` | | Other `agent.` ids this agent may call, in preference order. An entry `{ "id", "capabilities": [...] }` delegates only those capabilities of that agent. An entry may name the agent itself only in that form, with capabilities that are its own [modes](#modes). A preference only: it grants nothing and never adds or imports anything. |
 | `requiresAgents` | | A subset of `delegatesTo`: the agents this one cannot work without. See [Required agents](#required-agents). |
-| `prompts` | | Prompt files by package-relative `path`, `sha256`, and declared `variables`. Absolute paths and `..` are rejected. The path `curio:default_preamble.md` names the preamble Curio shares with every agent: Curio reads it from its own prompts, an import takes no file and no digest for it, and an export carries it as `prompts/default_preamble.md`. |
+| `prompts` | | Prompt files by package-relative `path`, `sha256`, and declared `variables`. Absolute paths and `..` are rejected. A path `curio:<path>` names one of [the pages Curio shares](../agents/agent.curio.builtin@1/) with every agent, by its path there: `curio:default_preamble.md`, the preamble Curio's own agents run, or `curio:rules/research_verify_rules.md`, the rules for checking a fact. Curio reads the page from its own, an import takes no file and no digest for it, and an export carries it as `prompts/<path>`. A `curio:` path that names no page, or leads out of them, is refused. |
 | `compatibleTargets` | | Where the agent can attach: `{ kind: node\|canvas\|connection, requires: [...] }`. For `node`, `requires` lists what the node may be, any one of them enough: a flag its template declares, such as `loadsDataset` for a node that loads a dataset ([Node Catalog](NODE-CATALOG.md#6-the-manifest)), or a template id, such as `data-loading`. Empty means any node. |
 | `inputs`, `outputs` | | The context the agent reads (`inputs.reads`), the [catalog settings](#catalog-settings) every run of it receives (`inputs.requiredConfig`), and the named outputs it produces. |
 | `runtime` | | `execution` (`foreground` or `background`) and `reviewPolicy` (`report-only` or `review-before-apply`). |

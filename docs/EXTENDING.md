@@ -347,7 +347,7 @@ A generic Spatial Join that pairs the rows of two inputs whose shapes meet, by a
 
 This one belongs in `curio.builtin@1`, not in a model package, because it's reusable for any spatial workflow. Generally: if a capability is reusable outside the package's narrow theme, factor it out into builtin.
 
-The agents' prompts describe every `curio.builtin@1` template from this manifest: the shared preamble gives its label, description, control, port types, how many connections its inputs accept, and interaction support, and other prompts name templates by label. After adding or changing a built-in template, run `python scripts/generate_contracts.py` and commit the regenerated prompts with the manifest: the shared preamble in `utk_curio/llm-prompts/` and the instructions in the agents' folders in [`agents/`](../agents/). The backend suite fails until you do (see [CONTRIBUTING.md, Generated Files](CONTRIBUTING.md#generated-files)).
+The agents' prompts describe every `curio.builtin@1` template from this manifest: the shared preamble gives its label, description, control, port types, how many connections its inputs accept, and interaction support, and other prompts name templates by label. The backend reads them from the manifest when it starts, so a built-in template you add or change reaches the agents with no other edit (see [CONTRIBUTING.md, Agent Text](CONTRIBUTING.md#agent-text)).
 
 ### 4.4 Behavior hooks
 
