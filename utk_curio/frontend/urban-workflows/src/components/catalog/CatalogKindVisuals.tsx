@@ -71,7 +71,10 @@ export interface CatalogKindIconProps {
   kind: CatalogItemKind;
   size?: CatalogKindIconSize;
   className?: string;
+  /** Its tooltip, and its name for assistive tech unless it is *decorative*. */
   title?: string;
+  /** The same words are written beside it, so it is hidden from assistive tech. */
+  decorative?: boolean;
   children?: React.ReactNode;
 }
 
@@ -80,8 +83,10 @@ export const CatalogKindIcon: React.FC<CatalogKindIconProps> = ({
   size = "md",
   className,
   title,
+  decorative = false,
   children,
 }) => {
+  const named = !!title && !decorative;
   const meta = CATALOG_KIND_META[kind];
   return (
     <span
@@ -96,9 +101,9 @@ export const CatalogKindIcon: React.FC<CatalogKindIconProps> = ({
       data-tooltip={title ?? meta.label}
       // Given a title, the icon names what it shows, in the tooltip's words;
       // else it only decorates the words beside it.
-      role={title ? "img" : undefined}
-      aria-label={title || undefined}
-      aria-hidden={title ? undefined : true}
+      role={named ? "img" : undefined}
+      aria-label={named ? title : undefined}
+      aria-hidden={named ? undefined : true}
     >
       {children}
       <FontAwesomeIcon icon={meta.icon} />

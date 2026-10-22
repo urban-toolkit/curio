@@ -126,6 +126,7 @@ export const DatasetCard: React.FC<DatasetCardProps> = ({
             kind="dataset"
             size="md"
             title={detailsLabel}
+            decorative
           />
         </button>
         {onOpenDetails ? (
