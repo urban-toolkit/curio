@@ -320,12 +320,12 @@ export function EditFeaturesBody({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [layers, labels, settings?.keys, ownLayer, settings?.key, JSON.stringify(settings?.newLayers ?? [])]);
 
-  /** The column an edit names its features by. */
-  const keyOf = (edit: FeatureEdit) =>
-    edit.layer ? settings?.keys?.[edit.layer] ?? (settings?.newLayers?.some((l) => l.name === edit.layer) ? "id" : settings?.key) : settings?.key;
-  /** An entry's name in the Provenance drawer: what its edits do. */
-  const labelOf = (edits: readonly FeatureEdit[]) => {
-    const named = edits.slice(0, LABEL_EDITS).map((edit) => describeEdit(edit, keyOf(edit)));
+  /** The column an edit names its features by, in *of* (the node's code). */
+  const keyOf = (edit: FeatureEdit, of: EditFeaturesSettings | undefined = settings) =>
+    edit.layer ? of?.keys?.[edit.layer] ?? (of?.newLayers?.some((l) => l.name === edit.layer) ? "id" : of?.key) : of?.key;
+  /** An entry's name in the Provenance drawer: what its edits do, by the id columns of *of*, the code they are written into. */
+  const labelOf = (edits: readonly FeatureEdit[], of: EditFeaturesSettings | undefined) => {
+    const named = edits.slice(0, LABEL_EDITS).map((edit) => describeEdit(edit, keyOf(edit, of)));
     return edits.length > LABEL_EDITS ? `${named.join("; ")} and ${edits.length - LABEL_EDITS} more` : named.join("; ");
   };
 
@@ -369,7 +369,8 @@ export function EditFeaturesBody({
       );
     }
     for (const edit of tagged) next = withEdit(next, edit);
-    writeSettings(next, labelOf(tagged));
+    // Named by the code it writes: a node's first edit gives it its id column.
+    writeSettings(next, labelOf(tagged, next));
   };
   const addNewLayer = (def: NewLayerDef) => {
     writeSettings({ ...(settings ?? {}), newLayers: [...(settings?.newLayers ?? []), def] }, `New layer ${def.name}`);
