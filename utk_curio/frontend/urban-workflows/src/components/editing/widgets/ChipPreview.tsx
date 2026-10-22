@@ -28,8 +28,9 @@
  * layer list's first 3 with 3 rows each; numbers with at most 4 decimals, and
  * an empty cell as a grey "null".
  */
-import React from "react";
+import React, { useEffect, useSyncExternalStore } from "react";
 import styles from "./ChipPreview.module.css";
+import type { ChipPreviewSource } from "./chipPreviewSource";
 import {
   STACKED_FIELDS,
   inputName,
@@ -1067,6 +1068,46 @@ export function ChipPreview(props: ChipPreviewProps) {
           {TAG_HOW}
         </div>
       ) : null}
+    </div>
+  );
+}
+
+/**
+ * A chip's preview in the one Curio tooltip, for a header tag or a chip in an
+ * editor: it follows its node's *source* as reads come back, and asks it to
+ * read what the chip shows as it mounts, which is when the tooltip first
+ * shows. *messages* come first: the markers' at an editor's chip (a JSON
+ * error), as Monaco's hover put them.
+ */
+export function ChipPreviewTip({
+  source,
+  inner,
+  problem,
+  tag,
+  messages,
+}: {
+  source: ChipPreviewSource;
+  inner: string;
+  problem?: string | null;
+  tag?: boolean;
+  messages?: string[];
+}) {
+  const { scope, language, data } = useSyncExternalStore(source.subscribe, source.get, source.get);
+  useEffect(() => {
+    if (!problem) source.load(inner);
+  }, [source, inner, problem]);
+  const preview = (
+    <ChipPreview inner={inner} scope={scope} language={language} data={data} problem={problem} tag={tag} />
+  );
+  if (!messages || messages.length === 0) return preview;
+  return (
+    <div className={styles.tip}>
+      {messages.map((message, index) => (
+        <div key={index} className={styles.message} data-preview-message="true">
+          {message}
+        </div>
+      ))}
+      {preview}
     </div>
   );
 }

@@ -187,3 +187,18 @@
   line-height: 15px;
   color: var(--curio-text-secondary);
 }
+
+/* An editor chip's tooltip: the markers' messages there, then its preview. */
+.tip {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.message {
+  font-family: var(--curio-font-family);
+  font-size: var(--curio-font-size-sm);
+  line-height: 16px;
+  color: var(--curio-text-primary);
+  white-space: pre-wrap;
+}
