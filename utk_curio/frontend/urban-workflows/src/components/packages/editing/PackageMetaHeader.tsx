@@ -71,7 +71,7 @@ export function PackageMetaHeader({ pkg, category, suggestionActive }: PackageMe
         className={`${styles.categoryBadge} ${
           (styles as Record<string, string>)[`categoryBadge_${NODE_CATEGORY_KEY[category]}`] ?? ""
         }`}
-        title={NODE_CATEGORY_SHORT_LABEL[category]}
+        data-tooltip={NODE_CATEGORY_SHORT_LABEL[category]}
       >
         {NODE_CATEGORY_SHORT_LABEL[category]}
       </span>
@@ -79,7 +79,7 @@ export function PackageMetaHeader({ pkg, category, suggestionActive }: PackageMe
         <button
           type="button"
           className={styles.packageBadge}
-          title={packageTooltip}
+          data-tooltip={packageTooltip}
           aria-label={`Open package ${coord} in Packages palette`}
           {...packageBadgeClick}
         >

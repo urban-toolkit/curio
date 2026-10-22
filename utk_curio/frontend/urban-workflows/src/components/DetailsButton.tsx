@@ -26,7 +26,7 @@ export const DetailsButton = memo(function DetailsButton({
     <button
       type="button"
       className={`${styles.root} ${styles.icon} ${className ?? ""}`}
-      title={label}
+      data-tooltip={label}
       aria-label={label}
       onClick={(event) => {
         // Rows are clickable themselves: a dataset row selects its nodes.

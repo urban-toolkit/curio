@@ -115,7 +115,7 @@ const VersionBadge: React.FC = () => {
       {version}
       {mode ? (
         <span
-          title={mode.title}
+          data-tooltip={mode.title}
           style={{ pointerEvents: "auto", cursor: "help" }}
         >
           {` (${mode.label})`}

@@ -103,7 +103,7 @@ export default function RuleBuilder({ lead, conditions, setConditions, defs, pro
               <TextInput label="Value" testId={`interaction-rule-value-${i}`} value={c.value} onChange={(value) => set({ value })} />
             )}
             {i > 0 ? (
-              <button type="button" className={`nodrag nopan ${styles.iconButton}`} aria-label={`Remove condition ${i + 1}`} title="Remove this condition" onClick={() => setConditions(conditions.filter((_, j) => j !== i))}>
+              <button type="button" className={`nodrag nopan ${styles.iconButton}`} aria-label={`Remove condition ${i + 1}`} data-tooltip="Remove this condition" onClick={() => setConditions(conditions.filter((_, j) => j !== i))}>
                 <FontAwesomeIcon icon={faXmark} aria-hidden />
               </button>
             ) : (

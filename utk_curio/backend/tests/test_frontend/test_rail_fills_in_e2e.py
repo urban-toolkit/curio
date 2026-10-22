@@ -54,12 +54,12 @@ if TYPE_CHECKING:
     from .utils import FrontendPage
 
 #: The Data Catalog trigger while its palette is closed, and once it is open.
-OPEN_TRIGGER = '#datasets-palette button[title="Open dataset palette"]'
-CLOSE_TRIGGER = '#datasets-palette button[title="Close dataset palette"]'
+OPEN_TRIGGER = '#datasets-palette button[data-tooltip="Open dataset palette"]'
+CLOSE_TRIGGER = '#datasets-palette button[data-tooltip="Close dataset palette"]'
 
 #: The Built-in trigger, open or closed, and the Built-in palette's closing one.
-BUILTIN_TRIGGER = '#builtin-palette button[title$="built-in palette"]'
-BUILTIN_CLOSE_TRIGGER = '#builtin-palette button[title="Close built-in palette"]'
+BUILTIN_TRIGGER = '#builtin-palette button[data-tooltip$="built-in palette"]'
+BUILTIN_CLOSE_TRIGGER = '#builtin-palette button[data-tooltip="Close built-in palette"]'
 
 #: The Built-in trigger's text, its count then its label: no node until the
 #: registry has answered, and some once it has.
@@ -82,7 +82,7 @@ LATE_BLOCK_PX = 240
 #: what each press landed on.
 MOVE_THE_TRIGGERS_WHEN_THE_POINTER_ARRIVES_JS = """(px) => {
     const rail = document.querySelector('#tools-menu');
-    const trigger = document.querySelector('#datasets-palette button[title="Open dataset palette"]');
+    const trigger = document.querySelector('#datasets-palette button[data-tooltip="Open dataset palette"]');
     if (!rail || !trigger) return false;
     const race = { filled: false, aimStillOnTrigger: null, presses: [] };
     window.__curioRailRace = race;
@@ -96,8 +96,8 @@ MOVE_THE_TRIGGERS_WHEN_THE_POINTER_ARRIVES_JS = """(px) => {
     };
     window.addEventListener('pointermove', fillIn, true);
     window.addEventListener('pointerdown', (event) => {
-        const named = event.target instanceof Element ? event.target.closest('[title]') : null;
-        race.presses.push(named ? named.getAttribute('title') : String(event.target && event.target.nodeName));
+        const named = event.target instanceof Element ? event.target.closest('[data-tooltip]') : null;
+        race.presses.push(named ? named.getAttribute('data-tooltip') : String(event.target && event.target.nodeName));
     }, true);
     return true;
 }"""
@@ -107,7 +107,7 @@ TRIGGER_ROWS_JS = """() => {
     const rows = {};
     for (const sel of ['#builtin-palette', '#packages-palette', '#datasets-palette',
                        '#agents-palette', '#models-palette']) {
-        const trigger = document.querySelector(sel + ' button[title*="palette"]');
+        const trigger = document.querySelector(sel + ' button[data-tooltip*="palette"]');
         if (trigger) {
             const box = trigger.getBoundingClientRect();
             rows[sel] = [Math.round(box.top), Math.round(box.height)];

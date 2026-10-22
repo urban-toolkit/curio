@@ -111,7 +111,7 @@ describe("AgentDock — the dataflow goal", () => {
     // somewhere, just not in the visible-width budget.
     renderGoal();
     expect(screen.getByLabelText("Dataflow goal")).toHaveAttribute(
-      "title",
+      "data-tooltip",
       expect.stringContaining("shared with every agent"),
     );
   });

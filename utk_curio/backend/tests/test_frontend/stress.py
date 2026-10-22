@@ -728,7 +728,7 @@ def play_all(run: "StressRun", *, timeout_ms: int = 300000) -> list[str]:
     route ``utils.play_node`` already uses for per-node play buttons.
     """
     page, tour = run.page, run.tour
-    button = page.locator('#tools-menu button[title="Run all nodes"]')
+    button = page.locator('#tools-menu button[data-tooltip="Run all nodes"]')
     try:
         tour.click(button, force=True, hold=300)
     except PlaywrightError as exc:

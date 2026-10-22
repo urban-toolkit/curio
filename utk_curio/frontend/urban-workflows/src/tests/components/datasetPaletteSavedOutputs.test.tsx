@@ -62,6 +62,7 @@ jest.mock("../../services/datasetCatalog", () => ({
 jest.mock("../../utils/saveOutputDataset", () => ({ buildSaveableLiveOutputs: () => undefined }));
 
 import { DatasetsPaletteDropdown } from "../../components/menus/nodes/datasetPalette/DatasetsPaletteDropdown";
+import { getByTooltip } from "../_support/tooltips";
 
 const IN_PROJECT = {
   id: "data.utk.chicago-boundary@1",
@@ -128,7 +129,7 @@ test("lists this dataflow's saved outputs under Saved outputs, and nothing else 
 
 test("the badge counts both groups", () => {
   renderOpen();
-  const trigger = screen.getByTitle("Close dataset palette");
+  const trigger = getByTooltip(document.body, "Close dataset palette");
   expect(trigger.textContent).toContain("2");
 });
 
@@ -144,7 +145,7 @@ test.each([
     mockLoading = loading;
     mockRefreshing = refreshing;
     renderOpen();
-    const trigger = screen.getByTitle("Close dataset palette");
+    const trigger = getByTooltip(document.body, "Close dataset palette");
     expect(trigger.getAttribute("aria-busy")).toBe(busy);
   },
 );

@@ -404,7 +404,7 @@ const UniversalNodeBody = React.memo(function UniversalNodeBody({ data, isConnec
       {lockedByOther && (
         <div
           className="collab-lock-chip"
-          title={`Editing: ${lockInfo?.name || lockInfo?.username}`}
+          data-tooltip={`Editing: ${lockInfo?.name || lockInfo?.username}`}
           style={{
             position: "absolute",
             top: -8,

@@ -81,7 +81,7 @@ export const NodeSolveRow: React.FC<{
           type="button"
           className={styles.solve}
           disabled={running}
-          title="Runs the node's current code in the sandbox, fixes errors, re-runs, and lands only code that passed"
+          data-tooltip="Runs the node's current code in the sandbox, fixes errors, re-runs, and lands only code that passed"
           onClick={() => void solve()}
         >
           {running ? "Solving…" : "Solve this node"}

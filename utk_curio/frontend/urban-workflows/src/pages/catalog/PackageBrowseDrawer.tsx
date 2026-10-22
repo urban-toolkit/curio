@@ -183,7 +183,7 @@ const PackageBrowseDrawerContent: React.FC<PackageBrowseDrawerContentProps> = ({
               className={browseStyles.destructiveBtn}
               type="button"
               disabled={busy}
-              title={`Remove ${pkg.name} from your account; no dataflow uses it`}
+              data-tooltip={`Remove ${pkg.name} from your account; no dataflow uses it`}
               onClick={() => setConfirmRemove(true)}
             >
               Remove from account

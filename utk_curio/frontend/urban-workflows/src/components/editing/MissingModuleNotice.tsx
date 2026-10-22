@@ -185,7 +185,7 @@ export const MissingModuleNotice: React.FC<{
       <button
         type="button"
         style={BUTTON}
-        title={`pip install ${distribution} into Curio's Python environment, which is shared by everyone on this instance`}
+        data-tooltip={`pip install ${distribution} into Curio's Python environment, which is shared by everyone on this instance`}
         onClick={() => onInstall(distribution)}
       >
         Install {distribution}

@@ -76,7 +76,7 @@ export function DatasetMetaHeader({
       <button
         type="button"
         className={badgeClassName}
-        title={tooltip}
+        data-tooltip={tooltip}
         aria-label={`Reveal ${isProducer ? "output" : "dataset"} ${source.title} in the dataset palette`}
         {...badgeClick}
       >

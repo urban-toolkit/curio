@@ -174,7 +174,7 @@ const UpstreamCards: React.FC<{
               <div>
                 {/* The id in title=: a computed id is a uuid pair, so the label
                     is derived and the full value stays available on hover. */}
-                <strong title={source.datasetId}>
+                <strong data-tooltip={source.datasetId}>
                   {source.title || source.datasetId}
                 </strong>
                 <span>Dataset input</span>
@@ -447,7 +447,7 @@ export const DatasetDetailPanel: React.FC<DatasetDetailPanelProps> = ({
               type="button"
               onClick={handleExport}
               disabled={exporting || !canExport}
-              title={
+              data-tooltip={
                 canExport
                   ? undefined
                   : "This dataset has no single file to export."
@@ -553,7 +553,7 @@ export const DatasetDetailPanel: React.FC<DatasetDetailPanelProps> = ({
               />
             </div>
             {reference?.location ? (
-              <p className={styles.referenceLocation} title={reference.location}>
+              <p className={styles.referenceLocation} data-tooltip={reference.location}>
                 {reference.location}
               </p>
             ) : null}
@@ -579,7 +579,7 @@ export const DatasetDetailPanel: React.FC<DatasetDetailPanelProps> = ({
               <div><dt>Imported</dt><dd>{absoluteDate(dataset.createdAt ?? dataset.updatedAt)}</dd></div>
               {/*<div><dt>Last updated</dt><dd title={absoluteDate(dataset.updatedAt)}>{relativeTime(dataset.updatedAt)}</dd></div>*/}
               {dataset.sourceUpdatedAt ? (
-                <div><dt>Source updated</dt><dd title={absoluteDate(dataset.sourceUpdatedAt)}>{relativeTime(dataset.sourceUpdatedAt)}</dd></div>
+                <div><dt>Source updated</dt><dd data-tooltip={absoluteDate(dataset.sourceUpdatedAt)}>{relativeTime(dataset.sourceUpdatedAt)}</dd></div>
               ) : null}
             </dl>
           </div>
@@ -652,7 +652,7 @@ export const DatasetDetailPanel: React.FC<DatasetDetailPanelProps> = ({
                 {discovered.fetchedAt ? (
                   <div>
                     <dt>{manual ? "Imported" : fromStorage ? "Added" : "Downloaded"}</dt>
-                    <dd title={absoluteDate(discovered.fetchedAt)}>{relativeTime(discovered.fetchedAt)}</dd>
+                    <dd data-tooltip={absoluteDate(discovered.fetchedAt)}>{relativeTime(discovered.fetchedAt)}</dd>
                   </div>
                 ) : null}
               </dl>

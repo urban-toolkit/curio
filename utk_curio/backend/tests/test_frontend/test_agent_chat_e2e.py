@@ -606,7 +606,7 @@ class TestNodeAttachedChatHeader:
         expect(node).to_contain_text(label, timeout=20000)
 
         # Diagnostic, not gone: support still has to be able to recover both.
-        tooltip = subtitle.get_attribute("title") or ""
+        tooltip = subtitle.get_attribute("data-tooltip") or ""
         assert node_id in tooltip, f"the node id left the tooltip too: {tooltip!r}"
         assert "session " in tooltip, f"the session id left the tooltip: {tooltip!r}"
 

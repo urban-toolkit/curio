@@ -131,7 +131,7 @@ def _mean(page, node_id: str) -> float:
 
 
 def _executed(page, node_id: str):
-    return node_locator(page, node_id).locator('span[title="Executed"]')
+    return node_locator(page, node_id).locator('span[data-tooltip="Executed"]')
 
 
 def _rerun(page, shadow: str, statistics: str) -> None:

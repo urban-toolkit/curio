@@ -59,9 +59,10 @@ export interface DiscoveryResourceRowProps {
 const SampleThumb: React.FC<{ path: string; name: string }> = ({ path, name }) => {
   const { url } = useAuthedObjectUrl(path);
   return url ? (
-    <img className={styles.sample} src={url} alt={name} title={name} />
+    <img className={styles.sample} src={url} alt={name} data-tooltip={name} />
   ) : (
-    <span className={styles.sample} title={name} />
+    // An empty thumbnail stands in for the image, named as its tooltip says.
+    <span className={styles.sample} role="img" aria-label={name} data-tooltip={name} />
   );
 };
 
@@ -156,7 +157,7 @@ export function DiscoveryResourceRow({
       <button
         type="button"
         className={styles.filesToggle}
-        title="Download only part of it, such as the rows inside an area"
+        data-tooltip="Download only part of it, such as the rows inside an area"
         onClick={() => setNarrowing(true)}
       >
         Narrow…
@@ -189,7 +190,7 @@ export function DiscoveryResourceRow({
         ) : null}
         <div className={styles.badges}>
           {showSource ? (
-            <span className={styles.sourceTag} title={resource.sourceName}>
+            <span className={styles.sourceTag} data-tooltip={resource.sourceName}>
               <DiscoverySourceIcon iconUrl={iconUrl} name={resource.sourceName} size="sm" />
               {resource.sourceName}
             </span>
@@ -279,7 +280,7 @@ export function DiscoveryResourceRow({
                   <button
                     type="button"
                     className={styles.filesToggle}
-                    title="Add the row again, as its files are now"
+                    data-tooltip="Add the row again, as its files are now"
                     onClick={() => storage.onAdd(resource, { title: resource.name, refresh: true })}
                   >
                     Add again
@@ -292,7 +293,7 @@ export function DiscoveryResourceRow({
                 type="button"
                 className={styles.download}
                 disabled={!resource.acquirable}
-                title={unavailable ?? undefined}
+                data-tooltip={unavailable ?? undefined}
                 onClick={add}
               >
                 Add to Data Catalog
@@ -304,7 +305,7 @@ export function DiscoveryResourceRow({
                   type="button"
                   className={styles.download}
                   disabled={!onDownload || !resource.acquirable}
-                  title={onDownload ? unavailable ?? undefined : "Downloading is not available here"}
+                  data-tooltip={onDownload ? unavailable ?? undefined : "Downloading is not available here"}
                   onClick={() => (mustAsk ? setNarrowing(true) : onDownload?.(resource, format))}
                 >
                   {modelRow ? "Add to Model Catalog" : "Download"}

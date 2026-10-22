@@ -213,7 +213,7 @@ def spatial_join_explains_itself(ctx: Ctx) -> None:
     # the info button is the header's; hovering is harmless either way.
     node.hover()
     ctx.beat(400)
-    info = node.locator('button[title^="About"]')
+    info = node.locator('button[data-tooltip^="About"]')
     info.wait_for(state="visible", timeout=20000)
     activate_header_icon(info)
 

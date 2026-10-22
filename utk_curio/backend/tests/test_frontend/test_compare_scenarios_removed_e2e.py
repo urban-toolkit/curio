@@ -206,7 +206,7 @@ def test_a_dataflow_saved_with_a_compare_scenarios_node_opens_with_it_as_a_missi
     )
 
     card = node_locator(page, COMPARE).get_by_test_id("removed-node-type")
-    expect(card).to_have_attribute("title", f"No installed package provides {COMPARE_TYPE}")
+    expect(card).to_have_attribute("data-tooltip", f"No installed package provides {COMPARE_TYPE}")
     expect(card).to_contain_text("Removed node type")
     expect(card).to_contain_text(f"This dataflow asks for {COMPARE_TYPE}, which Builtin no longer has.")
     expect(card.get_by_role("button")).to_have_count(0)
@@ -214,7 +214,7 @@ def test_a_dataflow_saved_with_a_compare_scenarios_node_opens_with_it_as_a_missi
 
     # A type of a package nothing provides keeps the card that offers the install.
     missing = node_locator(page, NOWHERE).get_by_test_id("unresolved-node")
-    expect(missing).to_have_attribute("title", f"No installed package provides {NOWHERE_TYPE}")
+    expect(missing).to_have_attribute("data-tooltip", f"No installed package provides {NOWHERE_TYPE}")
     expect(missing).to_contain_text("Missing node package")
     expect(missing.get_by_role("button", name="Install Nowhere…")).to_have_count(1)
 

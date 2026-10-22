@@ -209,9 +209,9 @@ describe("a node shown as a notebook cell", () => {
     await mount(true);
     expect(screen.getByTestId("handle-in")).toHaveTextContent("0");
     expect(screen.getByTestId("handle-in_1")).toHaveTextContent("1");
-    expect(screen.getByTestId("handle-in")).toHaveAttribute("title", "input_0 · Load roads");
-    expect(screen.getByTestId("handle-in_1")).toHaveAttribute("title", "input_1");
-    expect(screen.getByTestId("handle-out")).toHaveAttribute("title", "output");
+    expect(screen.getByTestId("handle-in")).toHaveAttribute("data-tooltip", "input_0 · Load roads");
+    expect(screen.getByTestId("handle-in_1")).toHaveAttribute("data-tooltip", "input_1");
+    expect(screen.getByTestId("handle-out")).toHaveAttribute("data-tooltip", "output");
   });
 
   test("drops the cardinality markers at the box's edges", async () => {
@@ -230,7 +230,7 @@ describe("the same node on the canvas", () => {
     expect(screen.getByTestId("handle-in")).toHaveAttribute("data-position", "left");
     expect(screen.getByTestId("handle-in_1")).toHaveAttribute("data-top", "66%");
     expect(screen.getByTestId("handle-in/out")).toHaveAttribute("data-position", "top");
-    expect(screen.getByTestId("handle-in")).not.toHaveAttribute("title");
+    expect(screen.getByTestId("handle-in")).not.toHaveAttribute("data-tooltip");
     expect(screen.getByTestId("input-marker")).toBeInTheDocument();
     expect(screen.getByTestId("output-marker")).toBeInTheDocument();
     expect(lastStrip().inCell).toBeFalsy();

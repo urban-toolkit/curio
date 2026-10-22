@@ -68,7 +68,7 @@ export const ScenarioCard: React.FC<ScenarioCardProps> = ({
         <button
           type="button"
           className={`${styles.cardAvatar} ${styles.cardAvatarButton} ${local.avatarThumb}`}
-          title={detailsLabel}
+          data-tooltip={detailsLabel}
           aria-label={detailsLabel}
           onClick={() => onOpenDetails?.(scenario)}
         >
@@ -109,7 +109,7 @@ export const ScenarioCard: React.FC<ScenarioCardProps> = ({
           <button
             type="button"
             className={local.openLink}
-            title={`Open ${scenario.project.name}, where this scenario is edited`}
+            data-tooltip={`Open ${scenario.project.name}, where this scenario is edited`}
             onClick={() => onOpenProject(scenario)}
           >
             Open source project

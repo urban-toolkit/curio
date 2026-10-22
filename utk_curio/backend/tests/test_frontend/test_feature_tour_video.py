@@ -458,7 +458,7 @@ def _play_all(
     uses for the per-node play buttons.
     """
     page, tour = ctx.page, ctx.tour
-    button = page.locator('#tools-menu button[title="Run all nodes"]')
+    button = page.locator('#tools-menu button[data-tooltip="Run all nodes"]')
     try:
         tour.click(button, force=True, hold=400)
     except PlaywrightError as exc:
@@ -2741,7 +2741,7 @@ def scene_collaboration(ctx: Ctx) -> None:
     page.wait_for_url(re.compile(r".*/dataflow/[0-9a-f-]{36}"), timeout=30000)
     project_id = re.search(r"/dataflow/([0-9a-f-]{36})", page.url).group(1)
     # Only rendered when the server runs with --collab.
-    people = page.locator('button[title^="Collaboration"]')
+    people = page.locator('button[data-tooltip^="Collaboration"]')
     people.wait_for(state="visible", timeout=30000)
 
     other = page.context.browser.new_context(viewport=VIDEO_SIZE)
@@ -2754,7 +2754,7 @@ def scene_collaboration(ctx: Ctx) -> None:
         )
         page2.goto(f"{ctx.frontend}/dataflow/{project_id}")
         page2.wait_for_selector(".react-flow__node", timeout=45000)
-        expect(people).to_have_attribute("title", "Collaboration (2 online)", timeout=30000)
+        expect(people).to_have_attribute("data-tooltip", "Collaboration (2 online)", timeout=30000)
         tour.say(
             "Someone else opens the same dataflow",
             "The people icon counts who is here; the panel lists them.",

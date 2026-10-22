@@ -150,7 +150,7 @@ function ReferenceTag({
       role={onInsert ? "button" : undefined}
       tabIndex={onInsert ? 0 : undefined}
       aria-label={label}
-      title={title ? `${title}. ${how}` : how}
+      data-tooltip={title ? `${title}. ${how}` : how}
       {...dataAttributes}
       onDragStart={(event) => {
         event.dataTransfer.setData(mime, inner);
@@ -444,13 +444,13 @@ function InputLine({
         className={styles.expand}
         aria-expanded={open}
         aria-label={name}
-        title={name}
+        data-tooltip={name}
         onClick={onToggle}
       >
         <Chevron points={open ? "down" : "right"} />
       </button>
       {tag}
-      <span className={styles.inputAbout} title={about} data-input-about="true">
+      <span className={styles.inputAbout} data-tooltip={about} data-input-about="true">
         {about}
       </span>
     </div>
@@ -820,7 +820,7 @@ export function ReferenceStrip({
               className={styles.category}
               aria-expanded={isOpen}
               aria-label={`${CATEGORY_NAMES[category]} ${counts[category]}`}
-              title={`${isOpen ? "Hide" : "Show"} the ${CATEGORY_NAMES[category]} chips`}
+              data-tooltip={`${isOpen ? "Hide" : "Show"} the ${CATEGORY_NAMES[category]} chips`}
               data-strip-category={category}
               onClick={() => toggle(category)}
             >

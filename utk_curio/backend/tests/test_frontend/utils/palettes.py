@@ -40,8 +40,8 @@ def open_tools_palette(page, kind: str):
         ) from None
     close_title = trigger_title.replace("Open ", "Close ", 1)
     trigger = page.locator(
-        f'{root_sel} button[title="{trigger_title}"], '
-        f'{root_sel} button[title="{close_title}"]'
+        f'{root_sel} button[data-tooltip="{trigger_title}"], '
+        f'{root_sel} button[data-tooltip="{close_title}"]'
     )
     trigger.wait_for(state="visible", timeout=30000)
     panel = page.locator(root_sel).get_by_role("region", name=panel_name)
@@ -91,7 +91,7 @@ def click_package_summary_action(page, anchor, title: str):
     expect(
         page.locator('#packages-palette [data-curio-palette-catalog]')
     ).to_have_attribute("data-curio-palette-catalog", "loaded", timeout=30000)
-    button = anchor.locator(f'button[title="{title}"]')
+    button = anchor.locator(f'button[data-tooltip="{title}"]')
     expect(button).to_be_visible(timeout=20000)
     button.click()
 
@@ -120,5 +120,5 @@ def close_tools_palette(page, kind: str) -> None:
         return
     close_title = trigger_title.replace("Open ", "Close ", 1)
     # No ``force``, for the reason ``open_tools_palette`` gives (#994).
-    page.locator(f'{root_sel} button[title="{close_title}"]').click()
+    page.locator(f'{root_sel} button[data-tooltip="{close_title}"]').click()
     panel.first.wait_for(state="hidden", timeout=10000)

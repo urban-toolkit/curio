@@ -93,7 +93,7 @@ export const CatalogKindIcon: React.FC<CatalogKindIconProps> = ({
       ]
         .filter(Boolean)
         .join(" ")}
-      title={title ?? meta.label}
+      data-tooltip={title ?? meta.label}
       aria-hidden={title ? undefined : true}
     >
       {children}
@@ -122,7 +122,7 @@ export const CatalogItemStripHeader: React.FC<CatalogItemStripHeaderProps> = ({
   return (
     <div className={styles.stripRoot}>
       <div className={styles.stripLeading}>
-        <span className={styles.stripTypeIcon} title={meta.label} aria-hidden>
+        <span className={styles.stripTypeIcon} data-tooltip={meta.label} aria-hidden>
           <FontAwesomeIcon icon={meta.icon} />
         </span>
         <span className={styles.stripKindLabel}>{meta.label}</span>

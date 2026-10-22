@@ -496,7 +496,7 @@ def test_a_map_hidden_in_its_node_draws_nothing_and_a_dead_one_is_destroyed(
     _check_idle(page, "the map back on its output tab", problems, shown=True)
 
     # Minimized, the node is a chip; a click opens it again, and the map draws.
-    activate_header_icon(page.locator(f'[id="{MAP}resizable"] .curio-node-tools [title="Minimize"]'))
+    activate_header_icon(page.locator(f'[id="{MAP}resizable"] .curio-node-tools [data-tooltip="Minimize"]'))
     page.locator(f'[id="{MAP}resizable"]').wait_for(state="hidden", timeout=10000)
     _check_idle(page, "a minimized node's map", problems, shown=False)
     _draws(page, "opening the node from its chip", lambda: (
@@ -544,7 +544,7 @@ def test_a_map_hidden_in_its_node_draws_nothing_and_a_dead_one_is_destroyed(
 
     # A deleted node's map is destroyed.
     _keep_canvas(page, "deleted")
-    activate_header_icon(node.get_by_title("Delete node").first)
+    activate_header_icon(node.locator('[data-tooltip*="Delete node" i]').first)
     page.wait_for_function(
         "(id) => !document.querySelector(`.react-flow__node[data-id='${id}']`)", arg=MAP, timeout=10000,
     )

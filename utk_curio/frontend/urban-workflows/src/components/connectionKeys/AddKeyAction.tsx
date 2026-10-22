@@ -30,7 +30,7 @@ export const AddKeyAction: React.FC<{ remedy?: AgentRemedy | null; className?: s
     <button
       type="button"
       className={`${styles.button}${className ? ` ${className}` : ""}`}
-      title="Opens API Settings with this host filled in. The key never appears in your dataflow, proposals or chat."
+      data-tooltip="Opens API Settings with this host filled in. The key never appears in your dataflow, proposals or chat."
       onClick={() => requestConnectionKeys(focus)}
     >
       Add key for {remedy.host}

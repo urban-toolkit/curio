@@ -13,9 +13,10 @@ jest.mock("../../services/datasetCatalog", () => ({
 
 import { DatasetSchemaPanel } from "../../components/datasets/catalog/DatasetSchemaPanel";
 import { useDatasetResolvedSchema } from "../../components/datasets/catalog/useDatasetResolvedSchema";
+import { getByTooltip } from "../_support/tooltips";
 
 function nullCell(name: string): HTMLElement {
-  const row = screen.getByTitle(name).closest("div")?.parentElement as HTMLElement;
+  const row = getByTooltip(document.body, name).closest("div")?.parentElement as HTMLElement;
   return row.lastElementChild as HTMLElement;
 }
 
@@ -38,9 +39,9 @@ test("the Schema tab tells nullable, not nullable and not known apart", () => {
 
   expect(nullCell("score").textContent).toBe("null");
   expect(nullCell("gid").textContent).toBe("");
-  expect(nullCell("gid").getAttribute("title")).toBeNull();
+  expect(nullCell("gid").getAttribute("data-tooltip")).toBeNull();
   expect(nullCell("name").textContent).toBe("");
-  expect(nullCell("name").getAttribute("title")).toBe("Not known: no nulls in the rows read");
+  expect(nullCell("name").getAttribute("data-tooltip")).toBe("Not known: no nulls in the rows read");
   expect(screen.getByText(/1 nullable/)).toBeTruthy();
 });
 

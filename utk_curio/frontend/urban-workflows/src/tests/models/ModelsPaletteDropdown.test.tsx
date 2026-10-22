@@ -90,7 +90,7 @@ function Controlled({ lockfile }: { lockfile: string[] }) {
 
 /** The rail's card: the one control titled for opening or closing the palette. */
 function trigger(): HTMLElement {
-  return screen.getByTitle(/model palette$/);
+  return getByTooltip(document.body, /model palette$/);
 }
 
 function panel(): HTMLElement {

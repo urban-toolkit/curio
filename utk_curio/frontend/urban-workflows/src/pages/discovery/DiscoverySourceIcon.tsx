@@ -53,7 +53,7 @@ export const DiscoverySourceIcon: React.FC<DiscoverySourceIconProps> = ({
   return (
     <span
       className={[styles.frame, styles[`size_${size}`]].filter(Boolean).join(" ")}
-      title={name}
+      data-tooltip={name}
     >
       <img
         className={styles.image}

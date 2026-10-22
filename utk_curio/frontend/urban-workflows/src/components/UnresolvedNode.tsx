@@ -155,7 +155,7 @@ export function UnresolvedNode({
           background: "#fafafa",
           color: "#64748b",
         }}
-        title={`Waiting on descriptor for ${nodeType}`}
+        data-tooltip={`Waiting on descriptor for ${nodeType}`}
       >
         {handles}
         <strong style={{ color: "#334155", fontSize: 12 }}>Loading node…</strong>
@@ -187,7 +187,7 @@ export function UnresolvedNode({
           background: "#f8fafc",
           color: "#475569",
         }}
-        title={unresolvedNodeMessage(nodeType)}
+        data-tooltip={unresolvedNodeMessage(nodeType)}
         data-testid="unrecognized-node"
       >
         {handles}
@@ -218,7 +218,7 @@ export function UnresolvedNode({
           background: "#f8fafc",
           color: "#475569",
         }}
-        title={unresolvedNodeMessage(nodeType)}
+        data-tooltip={unresolvedNodeMessage(nodeType)}
         data-testid="removed-node-type"
       >
         {handles}
@@ -244,7 +244,7 @@ export function UnresolvedNode({
       }}
       // The full coordinate, for anyone reading a bug report rather than the
       // screen.
-      title={unresolvedNodeMessage(nodeType)}
+      data-tooltip={unresolvedNodeMessage(nodeType)}
       data-testid="unresolved-node"
     >
       {handles}

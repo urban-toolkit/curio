@@ -251,7 +251,7 @@ export default function LibraryManagerWindow({
     if (!s) return null;
     if (s.kind === "installing") {
       return (
-        <div className={styles.statusInstalling} title="Installing…">
+        <div className={styles.statusInstalling} data-tooltip="Installing…">
           <div className={styles.progressBar}><div className={styles.progressStripe} /></div>
           <span>Installing…</span>
         </div>
@@ -259,7 +259,7 @@ export default function LibraryManagerWindow({
     }
     if (s.kind === "removing") {
       return (
-        <div className={styles.statusInstalling} title="Removing…">
+        <div className={styles.statusInstalling} data-tooltip="Removing…">
           <div className={styles.progressBar}><div className={styles.progressStripe} /></div>
           <span>Removing…</span>
         </div>
@@ -277,7 +277,7 @@ export default function LibraryManagerWindow({
     // (#518).
     return (
       <div className={styles.statusErrorInline}>
-        <span title={s.message}>⚠ {s.badge ?? "Failed"}</span>
+        <span data-tooltip={s.message}>⚠ {s.badge ?? "Failed"}</span>
       </div>
     );
   };
@@ -359,7 +359,7 @@ export default function LibraryManagerWindow({
                     type="button"
                     className={styles.statusDismiss}
                     onClick={() => dismissStatus(s.libKind, s.spec)}
-                    title="Dismiss"
+                    data-tooltip="Dismiss"
                     aria-label="Dismiss"
                   >×</button>
                 </div>
@@ -421,7 +421,7 @@ export default function LibraryManagerWindow({
                         {r.installed === false && (
                           <span
                             className={styles.notInstalled}
-                            title="Declared by this package but not currently installed in the environment"
+                            data-tooltip="Declared by this package but not currently installed in the environment"
                           >not installed</span>
                         )}
                       </td>
@@ -432,7 +432,7 @@ export default function LibraryManagerWindow({
                             className={styles.removeButton}
                             disabled={status?.kind === "installing" || status?.kind === "removing"}
                             onClick={() => void handleRemove(r.kind, fullSpec)}
-                            title="Remove from your library list"
+                            data-tooltip="Remove from your library list"
                             aria-label="Remove"
                           >
                             <FontAwesomeIcon icon={faTrashCan} />

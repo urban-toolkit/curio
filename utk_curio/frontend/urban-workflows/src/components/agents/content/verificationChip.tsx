@@ -24,7 +24,7 @@ export function verificationLabel(status: string | undefined): string {
 export const VerificationChip: React.FC<{ verification: Verification }> = ({ verification }) => (
   <span
     className={verification.status === "verified" ? styles.installedChip : styles.notInstalledChip}
-    title={
+    data-tooltip={
       verification.detail ??
       (verification.datasetName ? `verified: ${verification.datasetName}` : undefined)
     }

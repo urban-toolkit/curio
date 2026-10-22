@@ -81,8 +81,8 @@ describe('DiscoverySourceIcon', () => {
   test('the name is still available as a title on both renderings', async () => {
     const withIcon = await renderIcon(ICON);
     await waitFor(() => expect(withIcon.container.querySelector('img')).not.toBeNull());
-    expect(withIcon.container.querySelector('[title="Alpha"]')).not.toBeNull();
+    expect(withIcon.container.querySelector('[data-tooltip="Alpha"]')).not.toBeNull();
     const without = await renderIcon(null);
-    expect(without.container.querySelector('[title="Alpha"]')).not.toBeNull();
+    expect(without.container.querySelector('[data-tooltip="Alpha"]')).not.toBeNull();
   });
 });

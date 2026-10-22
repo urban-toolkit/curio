@@ -49,6 +49,7 @@ jest.mock("../../services/datasetCatalog/pendingInstallView", () => ({
 }));
 
 import { DatasetsPaletteDropdown } from "../../components/menus/nodes/datasetPalette/DatasetsPaletteDropdown";
+import { getByTooltip } from "../_support/tooltips";
 
 const panel = () => screen.queryByRole("region", { name: "Dataset palette" });
 
@@ -58,13 +59,13 @@ describe("DatasetsPaletteDropdown dismissal", () => {
     const { rerender } = render(<DatasetsPaletteDropdown open={false} setOpen={setOpen} />);
     expect(panel()).toBeNull();
 
-    fireEvent.click(screen.getByTitle("Open dataset palette"));
+    fireEvent.click(getByTooltip(document.body, "Open dataset palette"));
     expect(setOpen).toHaveBeenCalledWith(true);
 
     rerender(<DatasetsPaletteDropdown open setOpen={setOpen} />);
     expect(panel()).not.toBeNull();
 
-    fireEvent.click(screen.getByTitle("Close dataset palette"));
+    fireEvent.click(getByTooltip(document.body, "Close dataset palette"));
     expect(setOpen).toHaveBeenLastCalledWith(false);
   });
 

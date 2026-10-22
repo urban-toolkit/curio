@@ -472,7 +472,7 @@ def _header_icon(page, node_id: str, title: str):
     classes = HEADER_ICONS.get(title, ())
     selector = ", ".join(f'svg[role="button"].{cls}' for cls in classes)
     if not selector:
-        return node.locator(f'[title="{title}"]').first
+        return node.locator(f'[data-tooltip="{title}"]').first
     # fa-circle also prefix-matches fa-circle-dot in a class selector? No: CSS
     # class selectors match whole tokens, so .fa-circle never matches
     # class="fa-circle-dot". The two pin states stay distinguishable.
@@ -757,7 +757,7 @@ def chapter_access(run: StressRun) -> None:
     with run.step("The version badge reports build and isolation"):
         # VersionBadge renders a bare div with inline styles - no class, no test
         # id - so the isolation span's own tooltip is the only stable handle.
-        badge = page.locator("span[title]").filter(
+        badge = page.locator("span[data-tooltip]").filter(
             has_text=re.compile(r"isolated", re.I)
         )
         expect(badge.first).to_be_attached(timeout=15000)

@@ -41,7 +41,7 @@ export const ConversationTitle: React.FC<{
       ref={title.buttonRef}
       className={`${styles.title} ${styles.titleButton}`}
       aria-label="Rename conversation title"
-      title="Click to rename"
+      data-tooltip="Click to rename"
       onClick={title.start}
     >
       {displayName}

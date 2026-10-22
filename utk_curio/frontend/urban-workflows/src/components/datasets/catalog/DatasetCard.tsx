@@ -117,7 +117,7 @@ export const DatasetCard: React.FC<DatasetCardProps> = ({
         <button
           type="button"
           className={`${styles.cardAvatar} ${formatAvatarClass(dataset.format)} ${styles.cardAvatarButton}`}
-          title={detailsLabel}
+          data-tooltip={detailsLabel}
           aria-label={detailsLabel}
           onClick={() => onOpenDetails?.(dataset)}
         >
@@ -182,7 +182,7 @@ export const DatasetCard: React.FC<DatasetCardProps> = ({
             /* Its Remove twin has had a tooltip in both states since this pair
                was evened up; Add had none on either the Data or the Node card,
                while the Agent card had one. Three buttons, two conventions. */
-            title={`Add ${dataset.title} to this project`}
+            data-tooltip={`Add ${dataset.title} to this project`}
             onClick={() => onInstall(dataset)}
           >
             Add to project
@@ -211,7 +211,7 @@ export const DatasetCard: React.FC<DatasetCardProps> = ({
                    `ensureProjectId`, so the click creates the dataflow the same
                    way Add does. Same defect as the Agent drawer's (#190, #199). */
                 disabled={cardBusy}
-                title={
+                data-tooltip={
                   hasProject
                     ? `Remove ${dataset.title} from this project`
                     : `Remove ${dataset.title}; this saves the dataflow first`
@@ -226,7 +226,7 @@ export const DatasetCard: React.FC<DatasetCardProps> = ({
                 type="button"
                 className={styles.btnSecondary}
                 disabled={cardBusy}
-                title={`Permanently delete ${dataset.title} from your Data Catalog`}
+                data-tooltip={`Permanently delete ${dataset.title} from your Data Catalog`}
                 onClick={() => onDelete(dataset)}
               >
                 Delete

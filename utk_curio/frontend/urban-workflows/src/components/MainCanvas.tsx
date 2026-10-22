@@ -5,7 +5,6 @@ import ReactFlow, {
     BackgroundVariant,
     Connection,
     ConnectionMode,
-    Controls,
     Edge,
     EdgeChange,
     FitViewOptions,
@@ -18,6 +17,7 @@ import ReactFlow, {
     type XYPosition,
 } from "reactflow";
 import { hideTooltip } from "./tooltip/tooltipStore";
+import { CanvasControls } from "./CanvasControls";
 import {
     CANVAS_TITLE_ATTR,
     fitViewWithMenuOffset,
@@ -768,7 +768,7 @@ export function MainCanvas() {
                 proOptions={{ hideAttribution: true }}
             >
                 {!notebookOn && <Background color="#a0a0a0" variant={BackgroundVariant.Dots} gap={20} size={2} />}
-                {!notebookOn && <Controls />}
+                {!notebookOn && <CanvasControls />}
                 {!notebookOn && <CanvasScenarioLayers view={scenarioView} editable={!isSharedView} />}
             </ReactFlow>
             </div>

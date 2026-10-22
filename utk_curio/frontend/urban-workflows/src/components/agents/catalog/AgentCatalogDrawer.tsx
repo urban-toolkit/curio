@@ -407,7 +407,7 @@ const AgentRow: React.FC<{
         <button
           type="button"
           className={`${cardStyles.cardAvatar} ${cardStyles.cardAvatarButton} ${avatarClass}`}
-          title={`View ${card.name} details`}
+          data-tooltip={`View ${card.name} details`}
           aria-label={`View ${card.name} details`}
           onClick={() => onOpenDetails(card)}
         >
@@ -485,7 +485,7 @@ const AgentRow: React.FC<{
                `resolveProjectId`), exactly as Add does; only this attribute
                still said otherwise. */
             disabled={busy}
-            title={
+            data-tooltip={
               hasProject
                 ? `Remove ${card.name} from this project`
                 : `Remove ${card.name}; this saves the dataflow first`
@@ -499,7 +499,7 @@ const AgentRow: React.FC<{
             type="button"
             className={`${cardStyles.btnInstall} ${styles.installBtn}`}
             disabled={busy}
-            title={installTitle(card)}
+            data-tooltip={installTitle(card)}
             onClick={() => onRequestInstall(card)}
           >
             {installLabel(card)}

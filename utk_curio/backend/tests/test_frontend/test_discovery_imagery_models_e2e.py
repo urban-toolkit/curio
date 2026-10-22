@@ -294,7 +294,7 @@ def test_a_hugging_face_model_goes_onto_a_node_and_runs(
     node_locator(page, ROUTE_TWO).locator("[data-curio-node-output]").wait_for(
         state="visible", timeout=300000
     )
-    page.get_by_title("Open model palette").click()
+    page.locator('[data-tooltip*="Open model palette" i]').click()
     model_row = f'#models-palette [data-model-id="{model_id}"]'
     expect(page.locator(f'#models-palette [data-model-id="{DDRNET}"]')).to_be_visible(timeout=30000)
     expect(page.locator(model_row)).to_have_count(0)
@@ -323,7 +323,7 @@ def test_a_hugging_face_model_goes_onto_a_node_and_runs(
 
     # And it runs: the photos through the downloaded model, overlays and all.
     # The palette floats over the left of the canvas, where the photos node is.
-    page.get_by_title("Close model palette").click()
+    page.locator('[data-tooltip*="Close model palette" i]').click()
     run_node_and_wait(page, PHOTOS, node_type="data-loading", timeout_ms=180000)
     text = run_node_and_wait(page, ROUTE_TWO, node_type="image-segmentation", timeout_ms=180000)
     assert "Saved to file" in text, f"the downloaded model did not run: {text!r}"
@@ -389,7 +389,7 @@ def test_a_model_dropped_on_the_canvas_becomes_a_node_that_runs_it(
     _enter(page, app_frontend, current_server, example=True, spec=spec)
     before = {node["id"] for node in canvas_nodes(page)}
 
-    page.get_by_title("Open model palette").click()
+    page.locator('[data-tooltip*="Open model palette" i]').click()
     model_row = f'#models-palette [data-model-id="{DDRNET}"]'
     expect(page.locator(model_row)).to_be_visible(timeout=30000)
     dropped = page.evaluate(
