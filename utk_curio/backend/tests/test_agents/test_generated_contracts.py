@@ -187,8 +187,11 @@ class TestRenderPrompt:
         compared: a Vega-Lite spec reading that dataset, a Raster Calculator
         for two rasters' difference, absolute=True for its size, and a Python
         node for two tables' or layers'. Compare Scenarios is gone, and the
-        section names it nowhere."""
-        template = prompt_path("default_preamble.md").read_text(encoding="utf-8")
+        section names it nowhere. The section is the knowledge page the
+        preamble includes, read here as written."""
+        preamble = prompt_path("default_preamble.md").read_text(encoding="utf-8")
+        assert preamble.count("{{include:knowledge/scenarios.md}}") == 1
+        template = prompt_path("scenarios.md").read_text(encoding="utf-8")
         section = template.split("## Scenarios", 1)[1]
         manifest = json.loads((REPO_ROOT / "packages" / "curio.scout@1" / "manifest.json").read_text(
             encoding="utf-8"))
@@ -423,8 +426,12 @@ class TestThePromptFacts:
         assert contracts.render_template("{{vega.schema_url}}") == contracts.VEGA_SCHEMA_URL
         urls = re.findall(r"https://vega\.github\.io/schema/vega-lite/[^\"\\\s]+", prompt_text("default_preamble.md"))
         assert urls and set(urls) == {contracts.VEGA_SCHEMA_URL}
-        template = prompt_path("default_preamble.md")
-        assert "vega.github.io/schema" not in template.read_text(encoding="utf-8")
+        # No page or prompt writes the URL by hand, the pages the preamble
+        # includes among them: each names it by its marker.
+        written = [path.name for path in prompt_files("*.md")
+                   if "vega.github.io/schema" in path.read_text(encoding="utf-8")]
+        assert not written, written
+        assert "{{vega.schema_url}}" in prompt_path("node-control.md").read_text(encoding="utf-8")
 
     @pytest.mark.parametrize("field, ladder", [
         ("vega.starter_ladder", "VEGA_STARTER_LADDER"),

@@ -15,7 +15,8 @@ layout to read:
    header the owner reviewed the test fails where the layers ran together.
    Then each layer's line is below the one before, the header lies inside the
    map's card, and every line and tag stays within the card's width. A
-   close-up with the layers open.
+   close-up with the layers open, then a frame of ``input_0``'s preview: how
+   many layers it carries, and the first 2 with their features.
 
 Both examples hold Autark nodes, and the map draws only with WebGPU, so this
 module runs on the GPU runner. Without a WebGPU adapter the map's test skips,
@@ -35,13 +36,17 @@ import time
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from .test_chip_previews_e2e import STEM as PREVIEW_STEM, TAG_HOW
 from .test_input_lines_e2e import EDGE_PX, _inside, _open_list, _ready_for_closeup, _wait_for_counts
 from .test_widget_tags_e2e import _open_tab
 from .utils import (
+    CLOSEUP_MAX_DIFF_RATIO,
+    CLOSEUP_PIXEL_THRESHOLD,
     REPO_ROOT,
     _wait_for_no_node_running,
     assert_autark_map_drawn,
     frame_nodes,
+    hover_until_tooltip_says,
     node_locator,
     open_strip_category,
     play_node,
@@ -51,7 +56,9 @@ from .utils import (
     require_webgpu,
     run_node_and_wait,
     save_node_closeup,
+    save_workflow_test_screenshot,
     stub_login_and_enter_workflow,
+    tooltip_close_up,
     wait_for_node_done,
 )
 
@@ -240,3 +247,22 @@ def test_each_layer_of_the_map_input_is_a_line_of_its_own(
     # The map with input_0's layers open.
     _ready_for_closeup(page, MAP, "grammar", '"table_osm_buildings"')
     save_node_closeup(page, "11-autark-pbf-loading-map-header", MAP, test_name=MAP_TEST, sweep_toasts=True)
+
+    # input_0's tag previews the layers it carries: how many, then the first
+    # 2, each with its feature count and first rows, and the line that says
+    # how many it leaves out. A frame of the tag and its preview.
+    selector = f'.react-flow__node[data-id="{MAP}"] [data-widget-strip] [data-input-tag="0"]'
+    page.locator(f"{selector}:visible").first.wait_for(state="visible", timeout=15000)
+    tip = hover_until_tooltip_says(
+        page, selector, "the map's input_0 tag", ["layers", "features", TAG_HOW], timeout=30000,
+    )
+    held = re.search(r"(\d+) layers", tip["text"])
+    assert held, f"the map's input_0 preview does not say how many layers it holds: {tip['text']!r}"
+    if int(held.group(1)) > 2:
+        assert f"first 2 of {held.group(1)} layers" in tip["text"], tip["text"]
+    save_workflow_test_screenshot(
+        page, PREVIEW_STEM, test_name="11-autark-pbf-loading-map-input-0-tag",
+        fit_reactflow=False, keep_tooltip=True, clip_rect=tooltip_close_up(page, tip),
+        pixel_threshold=CLOSEUP_PIXEL_THRESHOLD, max_diff_ratio=CLOSEUP_MAX_DIFF_RATIO,
+        closeup=True,
+    )

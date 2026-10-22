@@ -51,6 +51,17 @@ def _frame(crs="EPSG:4326"):
     )
 
 
+def test_the_columns_keep_the_frames_own_order_geometry_included():
+    # The schema is a JSON object, whose keys the sandbox's jsonify sorts; the
+    # frame's columns, its geometry among them, ride along as a list.
+    frame = gpd.GeoDataFrame(
+        {"neighborhood_name": ["Adams"], "accessibility": [0.3124]},
+        geometry=[_square()],
+        crs="EPSG:3395",
+    )[["geometry", "accessibility", "neighborhood_name"]]
+    assert parseOutput(frame)["columns"] == ["geometry", "accessibility", "neighborhood_name"]
+
+
 # --- D3, D17: the baseline payload -------------------------------------------
 
 def test_a_geodataframe_is_a_feature_collection_with_geometry():

@@ -58,6 +58,15 @@ export type GrammarFrame = {
   /** The position of the input it came from, among the node's inputs: its
    * bundle position, or 0 for a single input and for the layers of one. */
   circle: number;
+  /** How many rows the table has, when it was read from a preview cut from
+   * it (`/get-preview`'s `totalRows`). */
+  totalRows?: number;
+  /** How many rows that preview kept (`previewRows`). */
+  previewRows?: number;
+  /** The frame's columns in its own order, when its envelope lists them
+   * (`parseOutput`'s `columns`): its schema and data are JSON objects, whose
+   * keys the sandbox sends sorted. */
+  columnOrder?: string[];
 };
 
 export type GrammarInput = {
@@ -90,6 +99,10 @@ export type ReadOptions = {
   values?: boolean;
   /** Read the 100-row preview instead of the whole artifact (starter specs). */
   preview?: boolean;
+  /** Read an artifact with this instead of `fetchPreviewData` or `fetchData`:
+   * a caller that keeps what was read, as a chip's preview does
+   * (utils/references/inputScope). */
+  read?: (path: string) => Promise<any>;
 };
 
 const FRAME_TYPES = new Set<string>(["dataframe", "geodataframe"]);
@@ -128,6 +141,18 @@ function isObject(value: unknown): value is Record<string, any> {
   return value != null && typeof value === "object" && !Array.isArray(value);
 }
 
+const isCount = (value: unknown): value is number =>
+  typeof value === "number" && Number.isInteger(value) && value >= 0;
+
+/** The row counts a preview's *envelope* says, when it was cut from a longer
+ * table: how many rows the table has, and how many the preview kept. */
+function previewCounts(envelope: any): { totalRows?: number; previewRows?: number } {
+  const counts: { totalRows?: number; previewRows?: number } = {};
+  if (isCount(envelope?.totalRows)) counts.totalRows = envelope.totalRows;
+  if (isCount(envelope?.previewRows)) counts.previewRows = envelope.previewRows;
+  return counts;
+}
+
 function refused(dataType: unknown, label: string): GrammarInput {
   return {
     frames: [],
@@ -157,8 +182,13 @@ function frameOf(
     fromBundle: place.fromBundle,
     index: place.index,
     circle: place.circle ?? 0,
+    ...previewCounts(envelope),
+    ...(isColumnList(envelope?.columns) ? { columnOrder: envelope.columns } : {}),
   };
 }
+
+const isColumnList = (value: unknown): value is string[] =>
+  Array.isArray(value) && value.every((column) => typeof column === "string");
 
 type RasterOptions = { rasters?: boolean; source?: string; values?: boolean };
 
@@ -349,7 +379,7 @@ export async function readGrammarInput(input: any, opts: ReadOptions): Promise<G
     return { frames: [rasterFrameOf({ artifact: input.path }, named, { fromBundle: false, index: 0 })] };
   }
 
-  const read = (path: string) => (opts.preview ? fetchPreviewData(path) : fetchData(path));
+  const read = opts.read ?? ((path: string) => (opts.preview ? fetchPreviewData(path) : fetchData(path)));
   const source = isObject(input) && typeof input.path === "string" && input.path ? input.path : undefined;
   const envelope: any = source ? await read(source) : input;
   if (envelope == null) return { frames: [] };
