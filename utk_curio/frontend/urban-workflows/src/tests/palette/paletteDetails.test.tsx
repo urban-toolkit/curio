@@ -17,9 +17,6 @@ jest.mock("reactflow", () => ({
 jest.mock("../../providers/ToastProvider", () => ({
   useToastContext: () => ({ showToast: jest.fn() }),
 }));
-jest.mock("../../components/menus/nodes/toolsMenuPackagePalette", () => ({
-  OVERLAY_TRIGGER_DELAY_PROPS: { show: 0, hide: 0 },
-}));
 jest.mock("../../components/datasets/catalog/DatasetConnectionBadge", () => ({
   DatasetConnectionBadge: () => null,
 }));

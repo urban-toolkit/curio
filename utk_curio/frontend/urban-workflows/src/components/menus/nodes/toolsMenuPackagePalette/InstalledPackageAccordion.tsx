@@ -89,7 +89,7 @@ export const InstalledPackageAccordion = memo(function InstalledPackageAccordion
             <button
                 type="button"
                 className={packageStyles.packageSummaryExportBtn}
-                title="View details"
+                data-tooltip="View details"
                 aria-label={`View ${group.name} details`}
                 data-curio-package-palette-node-action="true"
                 onMouseDown={(e) => {
@@ -103,7 +103,7 @@ export const InstalledPackageAccordion = memo(function InstalledPackageAccordion
             <button
                 type="button"
                 className={packageStyles.packageSummaryExportBtn}
-                title="Export package"
+                data-tooltip="Export package"
                 aria-label={`Export ${group.name} as a .curio.zip archive`}
                 data-curio-package-palette-node-action="true"
                 onMouseDown={(e) => {
@@ -118,7 +118,7 @@ export const InstalledPackageAccordion = memo(function InstalledPackageAccordion
                 <button
                     type="button"
                     className={packageStyles.packageSummaryExportBtn}
-                    title="Edit package metadata"
+                    data-tooltip="Edit package metadata"
                     aria-label={`Edit metadata for ${group.name}`}
                     data-curio-package-palette-node-action="true"
                     onMouseDown={(e) => {
@@ -160,7 +160,6 @@ export const InstalledPackageAccordion = memo(function InstalledPackageAccordion
                 <PackageTemplateRow
                     key={desc.id}
                     desc={desc}
-                    tooltipPlacement="right"
                 />
             ))}
             {metadataOpen ? (

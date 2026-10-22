@@ -9,9 +9,6 @@ import { render, screen, within } from "@testing-library/react";
  * lists it.
  */
 
-jest.mock("../../components/menus/nodes/toolsMenuPackagePalette", () => ({
-  OVERLAY_TRIGGER_DELAY_PROPS: { delay: { show: 0, hide: 0 } },
-}));
 jest.mock("../../components/menus/nodes/datasetPalette/DatasetPaletteRows", () => ({
   DatasetRow: ({ dataset }: { dataset: { id: string; title: string } }) => (
     <div data-dataset-id={dataset.id}>{dataset.title}</div>

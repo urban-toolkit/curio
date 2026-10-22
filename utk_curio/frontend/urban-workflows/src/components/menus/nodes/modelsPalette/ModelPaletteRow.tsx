@@ -64,7 +64,9 @@ export const ModelPaletteRow = memo(function ModelPaletteRow({
           writeModelCardDrag(event.dataTransfer, model);
         }}
         onDragEnd={() => endModelCardDrag()}
-        title="Drag onto a node that runs a model"
+        aria-label="Drag onto a node that runs a model"
+        data-tooltip="Drag onto a node that runs a model"
+        data-tooltip-side="right"
       >
         <FontAwesomeIcon icon={faBrain} className={rowStyles.avatarIcon} />
       </div>
@@ -72,7 +74,8 @@ export const ModelPaletteRow = memo(function ModelPaletteRow({
         type="button"
         className={packageStyles.packageKindRowMeta}
         onClick={selectOnCanvas}
-        title={model.description || model.name}
+        data-tooltip={model.description || model.name}
+        data-tooltip-side="right"
       >
         <span className={packageStyles.packageKindRowLabel}>{model.name}</span>
         <span className={rowStyles.modelId}>{model.dirName}</span>

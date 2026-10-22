@@ -17,6 +17,7 @@ jest.mock("../../services/agents/agentsApi", () => ({
 }));
 
 import { agentsApi, AGENT_CATALOG_REFRESH_EVENT, AGENT_DRAG_MIME } from "../../services/agents";
+import { getByTooltip } from "../_support/tooltips";
 import { AgentsPaletteDropdown } from "../../components/menus/nodes/agentsPalette/AgentsPaletteDropdown";
 
 const api = agentsApi as jest.Mocked<typeof agentsApi>;
@@ -100,7 +101,7 @@ describe("AgentsPaletteDropdown", () => {
     await waitFor(() => expect(api.listProjectAgents).toHaveBeenCalled());
     fireEvent.click(screen.getByRole("button", { name: /Agent Catalog/i }));
     await screen.findByText("my-explainer");
-    const dragHandle = screen.getByTitle(/Drag onto a node or the canvas to attach/i);
+    const dragHandle = getByTooltip(document.body, /Drag onto a node or the canvas to attach/i);
     const setData = jest.fn();
     fireEvent.dragStart(dragHandle, {
       dataTransfer: { setData, effectAllowed: "" },

@@ -21,14 +21,6 @@ import { render, screen, fireEvent } from "@testing-library/react";
  * providers for the same assertion.
  */
 
-// DatasetPaletteRows imports one constant (OVERLAY_TRIGGER_DELAY_PROPS) through
-// the package-palette barrel, which re-exports PackagesPaletteDropdown and so
-// drags in the registry and vega/vega-lite - ESM that jest's transform does not
-// handle. Stub the barrel down to the constant that is actually used.
-jest.mock("../../components/menus/nodes/toolsMenuPackagePalette", () => ({
-  OVERLAY_TRIGGER_DELAY_PROPS: { delay: { show: 0, hide: 0 } },
-}));
-
 jest.mock("../../providers/FlowProvider", () => ({
   useFlowContext: () => ({
     projectId: "p1",

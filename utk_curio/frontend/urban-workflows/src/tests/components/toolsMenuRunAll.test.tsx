@@ -31,7 +31,6 @@ jest.mock("../../components/menus/nodes/toolsMenuPackagePalette", () => ({
     PackagesPaletteDropdown: paletteStub("packages"),
     groupPalettePackages: () => [],
     paletteDescriptorBootstrapKey: () => "",
-    OVERLAY_TRIGGER_DELAY_PROPS: {},
 }));
 jest.mock("../../registry", () => ({
     getPaletteNodeTypes: () => [],

@@ -12,9 +12,6 @@ import { render } from "@testing-library/react";
  * group takes the date of its latest layer, as the catalog's group does.
  */
 
-jest.mock("../../components/menus/nodes/toolsMenuPackagePalette", () => ({
-  OVERLAY_TRIGGER_DELAY_PROPS: { delay: { show: 0, hide: 0 } },
-}));
 jest.mock("../../components/menus/nodes/datasetPalette/DatasetPaletteRows", () => ({
   DatasetRow: ({ dataset }: { dataset: { id: string } }) => <div data-palette-entry={dataset.id} />,
   DatasetGroupRow: ({ group }: { group: { groupId: string } }) => (

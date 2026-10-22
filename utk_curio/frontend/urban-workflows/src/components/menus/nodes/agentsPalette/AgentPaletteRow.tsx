@@ -62,7 +62,9 @@ export const AgentPaletteRow = memo(function AgentPaletteRow({
         className={`${packageStyles.packageKindRowDrag} ${avatarClass}`}
         draggable
         onDragStart={onDragStart}
-        title="Drag onto a node or the canvas to attach"
+        aria-label="Drag onto a node or the canvas to attach"
+        data-tooltip="Drag onto a node or the canvas to attach"
+        data-tooltip-side="right"
       >
         <FontAwesomeIcon icon={agentCategoryIcon(agent.category)} className={rowStyles.avatarIcon} />
       </div>
@@ -70,7 +72,8 @@ export const AgentPaletteRow = memo(function AgentPaletteRow({
         type="button"
         className={packageStyles.packageKindRowMeta}
         onClick={onOpen}
-        title={tooltip}
+        data-tooltip={tooltip}
+        data-tooltip-side="right"
       >
         <span className={packageStyles.packageKindRowLabel}>{agent.name}</span>
         <span className={rowStyles.coord}>{shortCoord(agent)}</span>
