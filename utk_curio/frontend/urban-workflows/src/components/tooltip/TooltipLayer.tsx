@@ -241,8 +241,12 @@ export function TooltipLayer(): React.ReactElement | null {
       for (const record of records) {
         const changed = record.target;
         if (!(changed instanceof Element)) continue;
-        // One that no longer asks for a tooltip says nothing: the one open for it goes.
-        tooltipStore.refresh(changed, changed.matches(TARGET) ? contentOf(changed) : null);
+        // One that no longer asks for a tooltip says nothing: the one the
+        // keyboard or a touch opened for it goes. One the pointer opened goes
+        // as the pointer leaves it (settle), a moment later: a chart clears
+        // its tooltip in the gap between two marks.
+        const content = changed.matches(TARGET) ? contentOf(changed) : null;
+        if (content || tooltipStore.getState().shown?.via !== "pointer") tooltipStore.refresh(changed, content);
       }
     });
     observer.observe(document.body, {
