@@ -36,6 +36,7 @@ import { wiredInputSlots } from "../../utils/inputSlots";
 import { ICodeData } from "../../types";
 import { ReferenceStrip } from "./widgets/WidgetTag";
 import { insertReference, useCodeReferences } from "./widgets/monacoCodeReferences";
+import { useEditorTooltip } from "./useEditorTooltip";
 import type { CodeLanguage, InputScope, ReferenceScope } from "../../utils/references/codeReferences";
 import { NOTEBOOK_CODE_EDITOR_MAX, useNotebookEditorHeight } from "./useNotebookEditorHeight";
 import { nodeEditorLook } from "./nodeEditorLook";
@@ -138,6 +139,8 @@ function CodeEditor({
     // #662: the mounted editor, for the reference tags and chips.
     const [widgetEditor, setWidgetEditor] = useState<{ editor: any; monaco: any } | null>(null);
     useCodeReferences(widgetEditor?.editor, widgetEditor?.monaco, references, widgetLanguage);
+    // Its hovers, Monaco's own being off, in the Curio tooltip.
+    useEditorTooltip(widgetEditor?.editor, widgetEditor?.monaco, references, widgetLanguage);
     // In a notebook cell the editor is as tall as its lines and the output
     // takes its own height below it.
     const editorHeight = useNotebookEditorHeight(NOTEBOOK_CODE_EDITOR_MAX);
@@ -619,6 +622,10 @@ function CodeEditor({
                         ...NODE_EDITOR_SCROLLING,
                         // A plain input box, but on a dashboard tile.
                         ...look.editorOptions,
+                        // Monaco draws its hover in the node, where the canvas's
+                        // zoom scales it: the Curio tooltip shows it instead
+                        // (useEditorTooltip), on a dashboard tile too.
+                        hover: { enabled: false },
                     }}
                 />
             </div>
