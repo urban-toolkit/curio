@@ -435,11 +435,15 @@ are what its scenario chips write.
   only when it has chips. They start closed, a click opens a category's chips under the
   row, and `stripCategories.ts` keeps the open ones per node id outside React, so a tab
   switch or a remount keeps them; `ProjectLoader` closes them all when another dataflow
-  opens (`closeEveryCategory`). Inputs holds each input's tag, and in a Vega-Lite spec
-  with an input the `inputs` tag, which drags `[!! inputs !!]` and opens to
-  `stackedFields` (the three the stacking adds, then the inputs' columns, a layer's
-  geometry left out). `InputsChips` keeps those tags on one row, each a pill with its
-  chevron button, and opens each list as a panel below the row, in the tags' order.
+  opens (`closeEveryCategory`). Inputs, `InputsChips`, is a line per input in circle
+  order, and in a Vega-Lite spec with an input the line of `inputs`, whose tag drags
+  `[!! inputs !!]` and whose list is `stackedFields` (the three the stacking adds, then
+  the inputs' columns, a layer's geometry left out). A line holds its expander, its tag
+  and what its input holds (`aboutInput`: the box it comes from, else the label of its
+  node, then its columns, layers or tuple's values, `InputScope.tuple`). An open list
+  comes right under its line, never in it: a layered input's is one grid of a line per
+  layer. `stripCategories.ts` keeps the open lists per node id beside the categories,
+  and Inputs, open, asks for the columns not read yet of every input (`onLoadColumns`).
   Scenarios shows in a spec whose inputs' labels are all known and
   one comes from a box: in Vega-Lite, the swatches of `scenarioColorScale`, which drag
   `scenario colors`, then **text colors** and **order**; in Vega-Lite and Autark, a tag

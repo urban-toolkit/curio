@@ -407,8 +407,9 @@ one to list its chips under the row, and click it again to close it. Several
 can be open, and a category stays open while the dataflow is open. Drag a
 chip's tag into the code or spec, or click it to insert the chip at the cursor.
 
-- **Inputs**: a tag for each input (see [Several inputs](#several-inputs)), and
-  in a Vega-Lite spec the **inputs** tag
+- **Inputs**: a line for each input, with its tag and what it holds, whose
+  chevron lists its columns under the line (see [Several inputs](#several-inputs)),
+  and in a Vega-Lite spec the line of the **inputs** tag
   ([Every input in one dataset](#every-input-in-one-dataset)).
 - **Scenarios**: in a Vega-Lite or Autark spec whose node has an input from a
   scenario box, the chips of the boxes' colors and names
@@ -638,20 +639,27 @@ dict's tab is named after its key.
 
 In code and in a Vega-Lite or Autark spec, each input is a chip:
 
-1. Open **Inputs** above the code or spec: it shows a tag for each input,
-   **input_0**, **input_1**, and so on. Hover one to see which node feeds it.
+1. Open **Inputs** above the code or spec: it shows a line for each input, in
+   circle order, with its tag, **input_0**, **input_1**, and so on. The line
+   says where the input comes from, its scenario box or else the type of the
+   node that feeds it, and, once that node has run, what it holds:
+   **from Data Loading: 5 columns**.
 2. Drag a tag into the code, or click it to insert it at the cursor. It appears
    as a green chip, written `[!! input_1 !!]`.
-3. Click the chevron on an input's tag to list its columns, once the node that
-   feeds it has run. The list opens below the tags, headed **input_1 columns**,
-   and the tags stay where they are. Drag a column's tag where a column name
-   goes; it is written `[!! input_1.population !!]`. Click the chevron again to
-   close the list.
+3. Click the chevron at the start of an input's line to list its columns. The
+   list opens under the line, and the lines below it move down. Several lists
+   can be open at once, and they stay open while the dataflow is open. Drag a
+   column's tag where a column name goes; it is written
+   `[!! input_1.population !!]`. Click the chevron again to close the list.
 4. An input that carries several layers (an upstream Autark node's tables)
-   lists a tag for each layer, `[!! input_1:table_osm_roads !!]`, followed by
-   that layer's columns, `[!! input_1:table_osm_roads.lanes !!]`. A layer is
-   named as the Autark node names its table.
-5. A Vega-Lite spec with an input also lists the **inputs** tag,
+   lists a line for each layer: the layer's tag,
+   `[!! input_1:table_osm_roads !!]`, then that layer's columns,
+   `[!! input_1:table_osm_roads.lanes !!]`. A layer is named as the Autark node
+   names its table.
+5. An input that is a tuple, such as a Python node's `return means, peaks`,
+   says how many values it holds: **from Python Computation: 2 values, a
+   tuple**. In code, read them as `input_1[0]` and `input_1[1]`.
+6. A Vega-Lite spec with an input also lists the line of **inputs**,
    `[!! inputs !!]`, the dataset that stacks its inputs
    ([Every input in one dataset](#every-input-in-one-dataset)). The color of the
    scenario box an input comes from is under **Scenarios**
@@ -1020,11 +1028,13 @@ as tall, the rows read:
 | 0 | s-base | Baseline | r2 | 5 |
 | 1 | s-tall | Twice as tall | r1 | 3 |
 
-On a Vega-Lite node with an input, **Inputs** above the spec lists the
-**inputs** tag after `input_0`, `input_1`. It drags the dataset's chip,
-`[!! inputs !!]`, and its chevron lists the fields of these rows below the tags,
-headed **inputs fields**: `scenario_name`, `scenario` and `__input__`, then
-every column of the inputs, each with its type in its tooltip. A field's chip,
+On a Vega-Lite node with an input, **Inputs** above the spec ends with the line
+of **inputs**, after the lines of `input_0`, `input_1`. Its tag drags the
+dataset's chip, `[!! inputs !!]`, and the line names the inputs it stacks and,
+once they have run, how many fields these rows carry:
+**input_0 and input_1, stacked: 5 fields**. Its chevron lists the fields under
+the line: `scenario_name`, `scenario` and `__input__`, then every column of the
+inputs, each with its type in its tooltip. A field's chip,
 `[!! inputs.sunlight !!]`, writes its name.
 
 The inputs stack this way: a table keeps its rows, and a column one input
