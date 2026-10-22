@@ -1276,8 +1276,11 @@ def test_the_chicago_loop_layers_take_a_point_a_reshaped_road_and_a_property_on_
     _open(page, edit_id, "property", "table_osm_parks")
     edit.get_by_test_id("interaction-property-name").fill("surveyed")
     edit.get_by_test_id("interaction-property-value").fill("no")
+    keep_drawing(page, _map(map_id))
     edit.get_by_test_id("interaction-property-add").click()
     code, keywords = _wait_for_count_of_edits(page, edit_id, 3, "the parks' new property")
+    # The map draws the edits again, as after each edit: the close-up waits for it.
+    _wait_for_redraw(page, map_id, "the parks' new property")
     survey = _edits_of(code)[0][2]
     assert survey == {"op": "add_column", "layer": "table_osm_parks", "column": "surveyed", "value": "no"}, survey
     assert keywords.get("keys", {}).get("table_osm_parks") == "osm_id", keywords
