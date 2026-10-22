@@ -226,6 +226,21 @@ def test_the_backend_renders_the_messages_when_it_starts_and_a_check_reads_no_fi
 #: long as this, cut at each value too: a copy is caught by any one of them.
 _PIECE_CHARS = 30
 _CUT_RE = re.compile(r"(?<=[.;:!?])\s+|\n|\{[a-z][a-z0-9_]*\}")
+#: Text people read that says what a message says, in its feature's own words:
+#: (file, the piece it shares) and who reads it.
+SHARED_WITH_USERS = {
+    ("utk_curio/backend/app/agents/application/dataset_resolution.py",
+     "external rows carry the runtime's verification verdict."): "the Dataset Finder's chat record of its candidates",
+    ("utk_curio/backend/app/agents/application/proposals/plans.py",
+     "the node template registry is unavailable:"): "the reason an Apply gives",
+    ("utk_curio/backend/app/packages/application/templates.py",
+     "the node template registry is unavailable:"): "the node templates' own error",
+    ("utk_curio/backend/app/agents/application/solve/batch.py",
+     "is not installed in this project;"): "a Solve row's reason",
+    ("utk_curio/backend/app/execution/runtime_journal.py",
+     "a node must return the data it produces, and nothing downstream can read an absent output"):
+        "the run journal's reason for a node that returned nothing, which the node shows",
+}
 
 
 def _python_strings() -> list[tuple[str, str]]:
@@ -243,7 +258,9 @@ def _python_strings() -> list[tuple[str, str]]:
 
 def test_no_message_is_left_in_python(monkeypatch):
     """No sentence or clause of a message is still a string in ``utk_curio/``:
-    each message has one home, which an edit to the page reaches."""
+    each message has one home, which an edit to the page reaches. Text people
+    read may say the same in its feature (``SHARED_WITH_USERS``), and each
+    such entry is still there."""
     from utk_curio.backend.app.agents.domain import agent_text
 
     _fresh_loader(monkeypatch)
@@ -255,10 +272,19 @@ def test_no_message_is_left_in_python(monkeypatch):
                 pieces.setdefault(piece, name)
     assert len(pieces) > 100, f"the scan cut only {len(pieces)} pieces of the messages; it would mean nothing"
     python = _python_strings()
-    left = sorted({
-        f"{location}: {piece!r} ({name})"
+    found = {
+        (location, piece, name)
         for piece, name in pieces.items()
         for location, literal in python
         if piece in literal
-    })
-    assert not left, "messages still in Python:\n" + "\n".join(left[:40])
+    }
+    left = sorted(
+        f"{location}: {piece!r} ({name})" for location, piece, name in found
+        if (location.rsplit(":", 1)[0], piece) not in SHARED_WITH_USERS
+    )
+    shared = {(location.rsplit(":", 1)[0], piece) for location, piece, _name in found}
+    stale = sorted(key for key in SHARED_WITH_USERS if key not in shared)
+    assert not left and not stale, (
+        "messages still in Python:\n" + "\n".join(left[:40])
+        + (f"\nand these shared texts are gone; delete them: {stale}" if stale else "")
+    )
