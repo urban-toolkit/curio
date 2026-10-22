@@ -62,10 +62,11 @@ const onLine = (lineNumber: number, startColumn: number, endColumn: number): Chi
   endColumn,
 });
 
-const inline = (className: string, hover?: string) => ({
+// No hover message: Monaco's hover is off, and the chip's text shows in the
+// Curio tooltip (useEditorTooltip), which the canvas's zoom never scales.
+const inline = (className: string) => ({
   inlineClassName: className,
   inlineClassNameAffectsLetterSpacing: true,
-  ...(hover !== undefined ? { hoverMessage: { value: hover } } : {}),
 });
 
 /**
@@ -84,7 +85,7 @@ export function chipDecorations(marks: ChipMark[]): { range: ChipRange; options:
       out.push({ range: onLine(line, mark.range.startColumn, box.startColumn), options: inline(CHIP_HIDDEN_CLASS) });
       out.push({ range: onLine(line, box.endColumn, mark.range.endColumn), options: inline(CHIP_HIDDEN_CLASS) });
     }
-    out.push({ range: box, options: inline(kind, mark.hover) });
+    out.push({ range: box, options: inline(kind) });
     out.push({
       range: onLine(box.startLineNumber, box.startColumn, box.startColumn + 1),
       options: inline(CHIP_FIRST_CLASS),

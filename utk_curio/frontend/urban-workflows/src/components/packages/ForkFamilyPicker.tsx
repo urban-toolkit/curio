@@ -118,7 +118,7 @@ export function ForkFamilyPicker({ variant, rootKey, options, value, onChange }:
                 aria-haspopup="listbox"
                 aria-controls={listboxId}
                 aria-labelledby={visibleLabelId}
-                title={rootKey}
+                data-tooltip={rootKey}
                 onClick={() => setOpen((o) => !o)}
             >
                 <span id={visibleLabelId} className={s.triggerLabel}>

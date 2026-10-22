@@ -340,7 +340,7 @@ export const AgentDatasetCandidatesCard: React.FC<{
                 // Set by the runtime against the real source roster, never by
                 // the model. It is the difference between a row Curio can
                 // download and one it can only hand to Node Builder.
-                <span className={styles.installedChip} title="Curio can download this for you">
+                <span className={styles.installedChip} data-tooltip="Curio can download this for you">
                   Downloadable
                 </span>
               ) : null}
@@ -456,7 +456,7 @@ export const AgentDatasetCandidatesCard: React.FC<{
             type="button"
             className={styles.confirm}
             disabled={recording || picksFor(selected).length === 0}
-            title="Records this source for the node. Solve then builds the loader from exactly this source — nothing else is accepted."
+            data-tooltip="Records this source for the node. Solve then builds the loader from exactly this source; nothing else is accepted."
             onClick={() => void confirm()}
           >
             {recording ? "Recording…" : "Confirm source for this node"}

@@ -114,7 +114,7 @@ def test_a_minimized_node_is_still_minimized_after_a_save_and_a_reload(
     folded = {FOLDED_ID: "chip", OPEN_ID: "card"}
 
     # Minimize in the node's header folds it to its chip.
-    activate_header_icon(page.locator(f'[id="{FOLDED_ID}resizable"] .curio-node-tools [title="Minimize"]'))
+    activate_header_icon(page.locator(f'[id="{FOLDED_ID}resizable"] .curio-node-tools [data-tooltip="Minimize"]'))
     minimized = _drawn_once_settled(page, folded)
 
     # Saved from the File menu: the spec as the server stored it.

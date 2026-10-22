@@ -111,7 +111,7 @@ export const CatalogPublishPill = memo(function CatalogPublishPill({
                     type="button"
                     className={undoCls}
                     disabled={busy}
-                    title={unpublishActionTitle ?? `Remove ${what} from ${where}`}
+                    data-tooltip={unpublishActionTitle ?? `Remove ${what} from ${where}`}
                     onClick={(e) => {
                         e.preventDefault();
                         e.stopPropagation();
@@ -156,7 +156,7 @@ export const CatalogPublishPill = memo(function CatalogPublishPill({
                 type="button"
                 className={pillCls}
                 disabled={busy}
-                title={publishActionTitle ?? "Publish this installed package into the shared catalog (packages/)"}
+                data-tooltip={publishActionTitle ?? "Publish this installed package into the shared catalog (packages/)"}
                 onClick={(e) => {
                     e.preventDefault();
                     e.stopPropagation();

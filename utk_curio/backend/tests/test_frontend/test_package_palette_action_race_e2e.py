@@ -209,7 +209,7 @@ def test_export_click_survives_the_publish_pill_mounting_late(
     )
     expect(anchor).to_have_count(1, timeout=20000)
 
-    export_button = anchor.locator('button[title="Export package"]')
+    export_button = anchor.locator('button[data-tooltip="Export package"]')
     expect(export_button).to_be_visible(timeout=20000)
 
     # The row is on screen and its Export button is clickable, but the palette

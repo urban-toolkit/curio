@@ -171,7 +171,7 @@ describe('a storage row', () => {
     );
     const button = screen.getByRole('button', { name: 'Add to Data Catalog' });
     expect(button).toBeDisabled();
-    expect(button).toHaveAttribute('title', reason);
+    expect(button).toHaveAttribute('data-tooltip', reason);
     expect(screen.getByRole('note')).toHaveTextContent(reason);
     fireEvent.click(button);
     expect(onAdd).not.toHaveBeenCalled();
@@ -193,7 +193,7 @@ describe('a storage row', () => {
     );
     const button = screen.getByRole('button', { name: 'Add to Data Catalog' });
     expect(button).toBeEnabled();
-    expect(button).not.toHaveAttribute('title');
+    expect(button).not.toHaveAttribute('data-tooltip');
     expect(screen.queryByRole('note')).toBeNull();
   });
 

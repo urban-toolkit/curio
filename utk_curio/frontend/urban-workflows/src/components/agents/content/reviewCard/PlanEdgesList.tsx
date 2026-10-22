@@ -31,7 +31,7 @@ export const PlanEdgesList: React.FC<{
           <li key={index} className={styles.planEdgeRow}>
             {/* Wraps rather than cut: two rows to different targets
                 used to read the same (#511). */}
-            <span className={styles.planEdgeNames} title={names}>
+            <span className={styles.planEdgeNames} data-tooltip={names}>
               {names}
             </span>
             {state === "applied" ? (
@@ -43,7 +43,7 @@ export const PlanEdgesList: React.FC<{
                 type="button"
                 className={styles.apply}
                 disabled={edgeBusy !== null || blockedBy !== null}
-                title={blockedBy ? `create '${blockedBy}' first` : undefined}
+                data-tooltip={blockedBy ? `create '${blockedBy}' first` : undefined}
                 aria-label={`Connect ${edge.fromLabel} to ${edge.toLabel}`}
                 onClick={() => void onApplyEdges([index])}
               >

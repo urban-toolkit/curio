@@ -131,7 +131,11 @@ export function RadioChoices({
   );
 }
 
-/** A checkbox; with *text*, the words beside it, else only its accessible name *label*. */
+/**
+ * A checkbox; with *text*, the words beside it, else only its accessible name
+ * *label*. *title* is its tooltip, the Curio one: MUI hands a `title` on to the
+ * page, which draws the browser's own.
+ */
 export function CheckboxInput({
   checked,
   onChange,
@@ -153,10 +157,10 @@ export function CheckboxInput({
   const box = (
     <Checkbox
       checked={checked}
-      title={text ? undefined : title}
+      data-tooltip={text ? undefined : title}
       inputProps={{ "aria-label": label, "data-testid": testId, role } as React.InputHTMLAttributes<HTMLInputElement>}
       onChange={(e) => onChange(e.target.checked)}
     />
   );
-  return text ? <FormControlLabel title={title} control={box} label={text} /> : box;
+  return text ? <FormControlLabel data-tooltip={title} control={box} label={text} /> : box;
 }

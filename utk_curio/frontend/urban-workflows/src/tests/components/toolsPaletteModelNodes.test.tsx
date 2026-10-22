@@ -21,7 +21,6 @@ jest.mock("../../components/menus/nodes/toolsMenuPackagePalette", () => ({
         return [];
     },
     paletteDescriptorBootstrapKey: () => "",
-    OVERLAY_TRIGGER_DELAY_PROPS: {},
 }));
 
 jest.mock("../../registry", () => ({

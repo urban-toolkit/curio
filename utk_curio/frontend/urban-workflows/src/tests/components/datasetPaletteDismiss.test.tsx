@@ -21,14 +21,6 @@ import { render, screen, fireEvent } from "@testing-library/react";
  * providers for the same assertion.
  */
 
-// DatasetPaletteRows imports one constant (OVERLAY_TRIGGER_DELAY_PROPS) through
-// the package-palette barrel, which re-exports PackagesPaletteDropdown and so
-// drags in the registry and vega/vega-lite - ESM that jest's transform does not
-// handle. Stub the barrel down to the constant that is actually used.
-jest.mock("../../components/menus/nodes/toolsMenuPackagePalette", () => ({
-  OVERLAY_TRIGGER_DELAY_PROPS: { delay: { show: 0, hide: 0 } },
-}));
-
 jest.mock("../../providers/FlowProvider", () => ({
   useFlowContext: () => ({
     projectId: "p1",
@@ -57,6 +49,7 @@ jest.mock("../../services/datasetCatalog/pendingInstallView", () => ({
 }));
 
 import { DatasetsPaletteDropdown } from "../../components/menus/nodes/datasetPalette/DatasetsPaletteDropdown";
+import { getByTooltip } from "../_support/tooltips";
 
 const panel = () => screen.queryByRole("region", { name: "Dataset palette" });
 
@@ -66,13 +59,13 @@ describe("DatasetsPaletteDropdown dismissal", () => {
     const { rerender } = render(<DatasetsPaletteDropdown open={false} setOpen={setOpen} />);
     expect(panel()).toBeNull();
 
-    fireEvent.click(screen.getByTitle("Open dataset palette"));
+    fireEvent.click(getByTooltip(document.body, "Open dataset palette"));
     expect(setOpen).toHaveBeenCalledWith(true);
 
     rerender(<DatasetsPaletteDropdown open setOpen={setOpen} />);
     expect(panel()).not.toBeNull();
 
-    fireEvent.click(screen.getByTitle("Close dataset palette"));
+    fireEvent.click(getByTooltip(document.body, "Close dataset palette"));
     expect(setOpen).toHaveBeenLastCalledWith(false);
   });
 

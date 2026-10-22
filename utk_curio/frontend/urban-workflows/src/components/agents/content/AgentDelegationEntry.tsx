@@ -41,7 +41,7 @@ export const AgentDelegationEntry: React.FC<{
           type="button"
           className={`${styles.badge} ${tint}`}
           aria-label={`Open ${part.name}'s chat`}
-          title={`Open ${part.name}'s chat`}
+          data-tooltip={`Open ${part.name}'s chat`}
           onClick={() => onOpenChat!(part.attachmentId!)}
         >
           <FontAwesomeIcon icon={faRobot} />

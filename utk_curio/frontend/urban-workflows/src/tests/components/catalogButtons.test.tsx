@@ -63,7 +63,7 @@ test('shows a short name that the accessible name contains', () => {
     expect(label.length).toBeGreaterThan(0);
     expect(button.getAttribute('aria-label')!.startsWith(label)).toBe(true);
     // The full name is the tooltip too, for when the labels are hidden.
-    expect(button.getAttribute('title')).toBe(button.getAttribute('aria-label'));
+    expect(button.getAttribute('data-tooltip')).toBe(button.getAttribute('aria-label'));
   }
 });
 

@@ -21,7 +21,6 @@ import {
     faRotateLeft,
     faRightFromBracket,
 } from "@fortawesome/free-solid-svg-icons";
-import { OverlayTrigger, Tooltip } from "react-bootstrap";
 import { ICodeData } from "../../types";
 import { useFlowContext } from "../../providers/FlowProvider";
 import { useNotebookViewContext } from "../../providers/flow/notebookViewContext";
@@ -418,106 +417,88 @@ function NodeEditor({
             >
                 {code ? (
                     <Col>
-                        <OverlayTrigger
-                            placement="right"
-                            delay={overlayTriggerProps}
-                            overlay={<Tooltip>Code</Tooltip>}
-                        >
-                            <Nav.Item style={navItemStyle}>
-                                <Nav.Link
-                                    eventKey="code"
-                                    style={navLinkStyle}
-                                >
-                                    <FontAwesomeIcon
-                                        icon={faCode}
-                                    />
-                                </Nav.Link>
-                            </Nav.Item>
-                        </OverlayTrigger>
+                        {/* Each tab is an icon: its name is the word its
+                            tooltip shows. */}
+                        <Nav.Item style={navItemStyle}>
+                            <Nav.Link
+                                eventKey="code"
+                                style={navLinkStyle}
+                                aria-label="Code"
+                                data-tooltip="Code"
+                            >
+                                <FontAwesomeIcon
+                                    icon={faCode}
+                                />
+                            </Nav.Link>
+                        </Nav.Item>
                     </Col>
                 ) : null}
 
                 {widgetsTab ? (
                     <Col>
-                        <OverlayTrigger
-                            placement="right"
-                            delay={overlayTriggerProps}
-                            overlay={<Tooltip>Widgets</Tooltip>}
-                        >
-                            <Nav.Item style={navItemStyle}>
-                                <Nav.Link
-                                    eventKey="widgets"
-                                    style={navLinkStyle}
-                                >
-                                    <FontAwesomeIcon
-                                        icon={faToolbox}
-                                    />
-                                </Nav.Link>
-                            </Nav.Item>
-                        </OverlayTrigger>
+                        <Nav.Item style={navItemStyle}>
+                            <Nav.Link
+                                eventKey="widgets"
+                                style={navLinkStyle}
+                                aria-label="Widgets"
+                                data-tooltip="Widgets"
+                            >
+                                <FontAwesomeIcon
+                                    icon={faToolbox}
+                                />
+                            </Nav.Link>
+                        </Nav.Item>
                     </Col>
                 ) : null}
 
                 {grammar ? (
                     <Col>
-                        <OverlayTrigger
-                            placement="right"
-                            delay={overlayTriggerProps}
-                            overlay={<Tooltip>Grammar</Tooltip>}
-                        >
-                            <Nav.Item style={navItemStyle}>
-                                <Nav.Link
-                                    eventKey="grammar"
-                                    style={navLinkStyle}
-                                >
-                                    <FontAwesomeIcon
-                                        icon={faSpellCheck}
-                                    />
-                                </Nav.Link>
-                            </Nav.Item>
-                        </OverlayTrigger>
+                        <Nav.Item style={navItemStyle}>
+                            <Nav.Link
+                                eventKey="grammar"
+                                style={navLinkStyle}
+                                aria-label="Grammar"
+                                data-tooltip="Grammar"
+                            >
+                                <FontAwesomeIcon
+                                    icon={faSpellCheck}
+                                />
+                            </Nav.Link>
+                        </Nav.Item>
                     </Col>
                 ) : null}
 
                 {provenance == undefined || provenance ? (
                     <Col>
-                        <OverlayTrigger
-                            placement="right"
-                            delay={overlayTriggerProps}
-                            overlay={<Tooltip>Provenance</Tooltip>}
-                        >
-                            <Nav.Item style={navItemStyle}>
-                                <Nav.Link
-                                    eventKey="provenance"
-                                    style={navLinkStyle}
-                                >
-                                    <FontAwesomeIcon
-                                        icon={faRotateLeft}
-                                    />
-                                </Nav.Link>
-                            </Nav.Item>
-                        </OverlayTrigger>
+                        <Nav.Item style={navItemStyle}>
+                            <Nav.Link
+                                eventKey="provenance"
+                                style={navLinkStyle}
+                                aria-label="Provenance"
+                                data-tooltip="Provenance"
+                            >
+                                <FontAwesomeIcon
+                                    icon={faRotateLeft}
+                                />
+                            </Nav.Link>
+                        </Nav.Item>
                     </Col>
                 ) : null}
 
                 {(outputId != undefined || contentComponent != undefined) && !split ? (
                     <Col>
-                        <OverlayTrigger
-                            placement="right"
-                            delay={overlayTriggerProps}
-                            overlay={<Tooltip>Output</Tooltip>}
-                        >
-                            <Nav.Item style={navItemStyle}>
-                                <Nav.Link
-                                    eventKey="output"
-                                    style={navLinkStyle}
-                                >
-                                    <FontAwesomeIcon
-                                        icon={faRightFromBracket}
-                                    />
-                                </Nav.Link>
-                            </Nav.Item>
-                        </OverlayTrigger>
+                        <Nav.Item style={navItemStyle}>
+                            <Nav.Link
+                                eventKey="output"
+                                style={navLinkStyle}
+                                aria-label="Output"
+                                data-tooltip="Output"
+                            >
+                                <FontAwesomeIcon
+                                    icon={faRightFromBracket}
+                                />
+                            </Nav.Link>
+                        </Nav.Item>
                     </Col>
                 ) : null}
             </Row>
@@ -697,10 +678,5 @@ function NodeEditor({
         </>
     );
 }
-
-const overlayTriggerProps = {
-    show: 120,
-    hide: 10,
-};
 
 export default NodeEditor;

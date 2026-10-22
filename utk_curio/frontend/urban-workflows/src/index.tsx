@@ -74,6 +74,7 @@ import ProvenanceProvider from "./providers/ProvenanceProvider";
 import { RequireAuth } from "./components/RequireAuth";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { DatasetDetailsProvider } from "./components/datasets/catalog/DatasetDetailsProvider";
+import { TooltipLayer } from "./components/tooltip/TooltipLayer";
 
 import SignIn from "./pages/auth/SignIn";
 import SignUp from "./pages/auth/SignUp";
@@ -152,6 +153,8 @@ const App: React.FC = () => {
                         from page chrome rather than from a node still has to
                         land somewhere other than a blank document. */}
                     <ErrorBoundary label="route">
+                    {/* The one tooltip every hover shows, on every page. */}
+                    <TooltipLayer />
                     {/* The catalog pages' one dataset details modal; the canvas
                         mounts its own, with the dataflow behind it. */}
                     <DatasetDetailsProvider closeOnNavigate>

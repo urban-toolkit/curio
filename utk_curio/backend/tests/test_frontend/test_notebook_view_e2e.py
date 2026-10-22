@@ -676,7 +676,7 @@ def test_the_switch_shows_the_dataflow_as_a_column_of_cells(
     expect(page.locator(".react-flow__node .react-flow__handle")).not_to_have_count(0)
     expect(page.locator(".react-flow__node .react-flow__handle.connectable")).to_have_count(0)
     expect(page.locator(".react-flow__node .curio-node-header > .curio-node-tools")).to_have_count(len(ORDER))
-    expect(page.locator('.react-flow__node [title="Delete node"]')).to_have_count(0)
+    expect(page.locator('.react-flow__node [data-tooltip="Delete node"]')).to_have_count(0)
     expect(page.locator("#notebook-run-all").get_by_role("button", name="Run all nodes")).to_be_visible()
 
     # One arc per connection, all of it in the bar right of the cells.
@@ -928,7 +928,7 @@ def test_connections_and_cells_are_made_and_removed_on_the_canvas_only(
     # both its connections, once the two nodes are connected again.
     _show(page, "canvas")
     frame_nodes(page, [PRODUCER, TRANSFORM])
-    expect(node_locator(page, TRANSFORM).get_by_title("Delete node")).to_have_count(1)
+    expect(node_locator(page, TRANSFORM).locator('[data-tooltip*="Delete node" i]')).to_have_count(1)
     point = _midpoint_in_window(page, edge_id, "on the canvas")
     assert page.evaluate(_HITS_EDGE_JS, [point, edge_id]), (
         f"a click at the connection's midpoint {point} on the canvas lands elsewhere"

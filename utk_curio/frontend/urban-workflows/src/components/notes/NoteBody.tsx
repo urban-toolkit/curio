@@ -81,7 +81,7 @@ function NoteForm({
             role="radio"
             aria-checked={color === NOTE_COLORS[name]}
             aria-label={name}
-            title={name}
+            data-tooltip={name}
             className={styles.swatch}
             style={{ backgroundColor: NOTE_COLORS[name] }}
             onClick={() => setColor(NOTE_COLORS[name])}

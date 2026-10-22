@@ -125,7 +125,7 @@ describe("AgentChatPanel", () => {
     renderPanel();
     expect(screen.queryByText(/session s1234567/)).toBeNull();
     expect(screen.getByText(/attached to canvas/i)).toHaveAttribute(
-      "title",
+      "data-tooltip",
       expect.stringContaining("session s1234567890") as unknown as string,
     );
   });
@@ -1747,7 +1747,7 @@ describe("AgentChatPanel names the agent a label opens or hands work to", () => 
     const open = await within(row).findByRole("button", { name: "Open My Finder for this node" });
     expect(open).toHaveTextContent(/^Open My Finder$/);
     expect(open).toHaveAttribute(
-      "title",
+      "data-tooltip",
       "Opens this node's My Finder chat, where the candidates await your selection. Confirm one, then Solve again.",
     );
     expect(within(row).getByRole("status")).toHaveTextContent(

@@ -75,7 +75,7 @@ export function CatalogButtons({
           type="button"
           className={clsx(headerStyles.barButton, styles.catalogButton)}
           aria-label={name}
-          title={name}
+          data-tooltip={name}
           onClick={() => open[kind]?.()}
           // Warm the Data Catalog's first page while the pointer is on its way.
           onMouseEnter={

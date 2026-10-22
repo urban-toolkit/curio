@@ -26,6 +26,9 @@ export interface NodeRunControlsProps {
 /** Play's size in the header. */
 const HEADER_PLAY_PX = 22;
 
+/** Play's name and its tooltip. */
+const PLAY_LABEL = `Run this node (${RUN_NODE_SHORTCUT_LABEL})`;
+
 export function NodeRunControls({
     nodeId,
     part,
@@ -57,8 +60,10 @@ export function NodeRunControls({
                 // The shortcut is only useful if it
                 // is discoverable, and the play
                 // button is where someone looks for
-                // "how do I run this" (#223).
-                title={`Run this node (${RUN_NODE_SHORTCUT_LABEL})`}
+                // "how do I run this" (#223). The
+                // same words name the icon.
+                aria-label={PLAY_LABEL}
+                data-tooltip={PLAY_LABEL}
                 style={{
                     cursor: "pointer",
                     fontSize: `${HEADER_PLAY_PX}px`,

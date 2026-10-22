@@ -62,7 +62,7 @@ describe("the schema field column (#501)", () => {
       />,
     );
     expect(screen.getByText("median_household_income")).toHaveAttribute(
-      "title",
+      "data-tooltip",
       "median_household_income",
     );
   });

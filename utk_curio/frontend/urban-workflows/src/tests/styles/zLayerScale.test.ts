@@ -46,6 +46,8 @@ describe("overlay / layering scale (curioTokens.css)", () => {
         "modal-backdrop",
         "node-drawer",
         "toast",
+        // Over everything, toasts included: the one Curio tooltip.
+        "tooltip",
       ].sort(),
     );
   });
@@ -94,5 +96,17 @@ describe("overlay / layering scale (curioTokens.css)", () => {
     expect(layers["header-drawer"]).toBeLessThan(layers["modal-backdrop"]);
     expect(layers["modal-backdrop"]).toBeLessThan(layers["modal"]);
     expect(layers["modal"]).toBeLessThan(layers["dialog"]);
+  });
+
+  it("keeps the tooltip above every other tier, toasts included", () => {
+    // The one Curio tooltip shows over whatever the pointer rests on: a
+    // drawer, a modal, a toast. At z 1080, Bootstrap's tooltips drew under
+    // Curio's drawers.
+    expect(layers["tooltip"]).toBeDefined();
+    expect(layers["tooltip"]).toBeGreaterThan(layers["toast"]);
+    for (const [name, z] of Object.entries(layers)) {
+      if (name === "tooltip") continue;
+      expect(layers["tooltip"]).toBeGreaterThan(z);
+    }
   });
 });

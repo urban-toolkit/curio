@@ -184,7 +184,7 @@ _BODY_GAP_JS = """(id) => {
 #: How visible a node's tools are: the computed opacity of the group holding
 #: its Delete button.
 _TOOLS_OPACITY_JS = """(id) => {
-    const del = document.querySelector(`[id="${id}resizable"] [title="Delete node"]`);
+    const del = document.querySelector(`[id="${id}resizable"] [data-tooltip="Delete node"]`);
     const tools = del && del.closest('.curio-node-tools');
     return tools ? Number(getComputedStyle(tools).opacity) : null;
 }"""
@@ -198,9 +198,9 @@ _TOOLS_ORDER_JS = """(id) => {
     if (!tools) return null;
     const last = tools.lastElementChild;
     return {
-        titles: Array.from(tools.querySelectorAll('button')).map((b) => b.getAttribute('title') || ''),
-        last: last ? (last.getAttribute('title') || last.tagName.toLowerCase()) : null,
-        deletes: box.querySelectorAll('[title="Delete node"]').length,
+        titles: Array.from(tools.querySelectorAll('button')).map((b) => b.getAttribute('data-tooltip') || ''),
+        last: last ? (last.getAttribute('data-tooltip') || last.tagName.toLowerCase()) : null,
+        deletes: box.querySelectorAll('[data-tooltip="Delete node"]').length,
     };
 }"""
 
@@ -567,7 +567,7 @@ def test_the_node_still_resizes_and_minimizes(
     # on the pointer pair, which activate_header_icon sends.
     _point_at(page, PRODUCER)
     _wait_tools(page, PRODUCER, 1, "under the pointer")
-    minimize = _header(page, PRODUCER).locator('.curio-node-tools [title="Minimize"]')
+    minimize = _header(page, PRODUCER).locator('.curio-node-tools [data-tooltip="Minimize"]')
     expect(minimize).to_have_count(1)
     activate_header_icon(minimize)
     expect(page.locator(f'[id="{PRODUCER}resizable"]')).to_be_hidden()

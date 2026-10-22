@@ -33,7 +33,6 @@ jest.mock("../../components/menus/nodes/toolsMenuPackagePalette", () => ({
     PackagesPaletteDropdown: paletteStub("packages"),
     groupPalettePackages: () => [],
     paletteDescriptorBootstrapKey: () => "",
-    OVERLAY_TRIGGER_DELAY_PROPS: {},
 }));
 
 /** The eleven built-in templates, as packages/curio.builtin@1/manifest.json has them.
@@ -99,9 +98,9 @@ describe("built-in palette tiles are named", () => {
         );
         expect(tiles).toHaveLength(mockBuiltin.length);
         for (const tile of tiles) {
+            // A tooltip names nothing: the name is the aria-label or the text.
             const name =
                 tile.getAttribute("aria-label") ||
-                tile.getAttribute("title") ||
                 (tile.textContent ?? "").trim();
             expect(name).not.toBe("");
         }

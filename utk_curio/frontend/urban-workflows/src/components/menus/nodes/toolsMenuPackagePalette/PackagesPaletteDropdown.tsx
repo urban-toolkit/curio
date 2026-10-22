@@ -201,7 +201,7 @@ export const PackagesPaletteDropdown = memo(function PackagesPaletteDropdown({
                     onClick={toggle}
                     aria-expanded={open}
                     aria-haspopup="true"
-                    title={open ? "Close node package palette" : "Open node package palette"}
+                    data-tooltip={open ? "Close node package palette" : "Open node package palette"}
                 >
                     <span className={packageStyles.packagePaletteTriggerTop}>
                         <FontAwesomeIcon icon={faCube} className={packageStyles.packagePaletteTriggerIcon} />
@@ -274,7 +274,7 @@ export const PackagesPaletteDropdown = memo(function PackagesPaletteDropdown({
                         <button
                             type="button"
                             className={packageStyles.packageGetPackagesBtn}
-                            title="Browse and install node packages"
+                            data-tooltip="Browse and install node packages"
                             aria-label="Browse Node Catalog: open the Node Catalog drawer"
                             onClick={() => {
                                 openNodeCatalogDrawer();

@@ -38,7 +38,7 @@ export const PaletteAccordion = memo(function PaletteAccordion({
       <summary className={styles.summary} onClick={onSummaryClick}>
         <div className={styles.summaryRow}>
           <div className={styles.summaryTitleCluster}>
-            <span className={styles.summaryTitle} title={titleTooltip || title}>{title}</span>
+            <span className={styles.summaryTitle} data-tooltip={titleTooltip || title}>{title}</span>
             {actions}
           </div>
           {count != null ? <span className={styles.summaryCount}>{count}</span> : null}

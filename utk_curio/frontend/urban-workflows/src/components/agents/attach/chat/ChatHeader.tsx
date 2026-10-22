@@ -32,7 +32,7 @@ export const ChatHeader: React.FC<{
         type="button"
         className={styles.cycleBtn}
         aria-label="Previous agent"
-        title="Previous agent"
+        data-tooltip="Previous agent"
         disabled={!onPrev}
         onClick={onPrev}
       >
@@ -49,7 +49,7 @@ export const ChatHeader: React.FC<{
         type="button"
         className={styles.cycleBtn}
         aria-label="Next agent"
-        title="Next agent"
+        data-tooltip="Next agent"
         disabled={!onNext}
         onClick={onNext}
       >
@@ -61,18 +61,18 @@ export const ChatHeader: React.FC<{
           type="button"
           className={styles.headerBtn}
           aria-label="Clear conversation"
-          title="Clear conversation"
+          data-tooltip="Clear conversation"
           onClick={onClear}
         >
           <FontAwesomeIcon icon={faTrashCan} />
         </button>
       ) : null}
-      <button type="button" className={styles.headerBtn} aria-label="Close chat" title="Close chat" onClick={onClose}>
+      <button type="button" className={styles.headerBtn} aria-label="Close chat" data-tooltip="Close chat" onClick={onClose}>
         <FontAwesomeIcon icon={faXmark} />
       </button>
     </div>
     <div className={styles.headerRow}>
-      <span className={styles.subtitle} title={targetTooltip}>
+      <span className={styles.subtitle} data-tooltip={targetTooltip}>
         Attached to {targetLabel}
       </span>
       {titleError ? <span className={styles.titleError}>{titleError}</span> : null}

@@ -9,11 +9,6 @@ jest.mock("reactflow", () => ({
 jest.mock("../../providers/ToastProvider", () => ({
   useToastContext: () => ({ showToast: jest.fn() }),
 }));
-// The package-palette barrel bootstraps the whole node registry on import;
-// stub it to the two symbols DatasetPaletteRows actually needs.
-jest.mock("../../components/menus/nodes/toolsMenuPackagePalette", () => ({
-  OVERLAY_TRIGGER_DELAY_PROPS: { show: 0, hide: 0 },
-}));
 // DatasetConnectionBadge pulls in datasetLineage → FlowProvider → vega (ESM) at
 // import time; stub it since it isn't under test here.
 jest.mock("../../components/datasets/catalog/DatasetConnectionBadge", () => ({
@@ -24,11 +19,23 @@ jest.mock("../../utils/focusDatasetNodes", () => ({
 }));
 
 import { DatasetGroupRow } from "../../components/menus/nodes/datasetPalette/DatasetPaletteRows";
+import { TooltipLayer } from "../../components/tooltip/TooltipLayer";
+import { setTooltipTimings } from "../../components/tooltip/tooltipStore";
 import { focusLinkedNodes } from "../../utils/focusDatasetNodes";
 import type { DatasetPaletteGroup } from "../../services/datasetCatalog";
 import type { DatasetCatalogItem } from "../../services/datasetCatalog";
 
 const focusLinkedNodesMock = focusLinkedNodes as jest.Mock;
+
+/** The row, with the one tooltip layer the app mounts, which shows the row's tooltip. */
+function renderWithTooltips(row: DatasetPaletteGroup) {
+  return render(
+    <>
+      <TooltipLayer />
+      <DatasetGroupRow group={row} />
+    </>,
+  );
+}
 
 function member(id: string, title: string): DatasetCatalogItem {
   return {
@@ -62,6 +69,13 @@ function group(): DatasetPaletteGroup {
 
 describe("DatasetGroupRow", () => {
   beforeEach(() => focusLinkedNodesMock.mockClear());
+  // The tooltip shows as soon as the pointer is on the row: these tests read
+  // what it says, not when.
+  let restoreTimings: () => void = () => undefined;
+  beforeEach(() => {
+    restoreTimings = setTooltipTimings({ show: 0 });
+  });
+  afterEach(() => restoreTimings());
 
   test("a GeoPackage import says GeoPackage, not OSM PBF (#440)", async () => {
     const gpkg: DatasetPaletteGroup = {
@@ -70,7 +84,7 @@ describe("DatasetGroupRow", () => {
       title: "parcels",
       members: group().members.map((m) => ({ ...m, groupId: "gpkg.x1" })),
     };
-    const { container } = render(<DatasetGroupRow group={gpkg} />);
+    const { container } = renderWithTooltips(gpkg);
     expect(screen.getByText("GeoPackage")).toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: "Expand parcels: GeoPackage import with 3 layers" }),
@@ -97,7 +111,7 @@ describe("DatasetGroupRow", () => {
         discoverySource,
       })) as DatasetCatalogItem[],
     };
-    const { container } = render(<DatasetGroupRow group={downloaded} />);
+    const { container } = renderWithTooltips(downloaded);
     expect(screen.getByText("GeoJSON")).toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: "Expand Points of interest, Loop: GeoJSON import with 3 layers" }),
@@ -123,7 +137,7 @@ describe("DatasetGroupRow", () => {
         discoverySource,
       })) as DatasetCatalogItem[],
     };
-    const { container } = render(<DatasetGroupRow group={feed} />);
+    const { container } = renderWithTooltips(feed);
     expect(screen.getByText("GTFS")).toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: "Expand google_transit: GTFS import with 3 layers" }),
@@ -147,7 +161,7 @@ describe("DatasetGroupRow", () => {
     const { container } = render(<DatasetGroupRow group={group()} />);
     const handle = container.querySelector('[draggable="true"]');
     expect(handle).not.toBeNull();
-    expect(handle).toHaveAttribute("title", expect.stringMatching(/all 3 layers/));
+    expect(handle).toHaveAttribute("data-tooltip", expect.stringMatching(/all 3 layers/));
   });
 
   test("clicking the parent meta highlights nodes linked to the group or any layer", async () => {

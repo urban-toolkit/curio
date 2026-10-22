@@ -83,9 +83,11 @@ def node_settings_reads_plainly(ctx: Ctx) -> None:
     ctx.beat(600)
 
     # The claim, stated as an assertion as well as a picture: a baseline alone
-    # would pass on a dialog that had merely moved the old labels around.
+    # would pass on a dialog that had merely moved the old labels around. In
+    # the dialog: the node's own tabs carry those names too.
+    dialog = page.locator('[data-curio-modal-shell="true"]')
     for name in ("Code", "Widgets", "Grammar"):
-        expect(page.get_by_label(name, exact=True)).to_be_visible()
+        expect(dialog.get_by_label(name, exact=True)).to_be_visible()
     # Output rather than input: a kind may declare no input ports, but the
     # config always carries an output (a synthetic JSON one when the descriptor
     # has none), so this row is there for any node the scene might open on.
@@ -213,7 +215,7 @@ def spatial_join_explains_itself(ctx: Ctx) -> None:
     # the info button is the header's; hovering is harmless either way.
     node.hover()
     ctx.beat(400)
-    info = node.locator('button[title^="About"]')
+    info = node.locator('button[data-tooltip^="About"]')
     info.wait_for(state="visible", timeout=20000)
     activate_header_icon(info)
 

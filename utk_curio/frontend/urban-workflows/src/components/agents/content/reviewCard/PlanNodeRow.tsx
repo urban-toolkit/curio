@@ -82,7 +82,7 @@ export const PlanNodeRow: React.FC<{
             type="button"
             className={styles.apply}
             disabled={busy || Boolean(createBlocker)}
-            title={createBlocker ?? undefined}
+            data-tooltip={createBlocker ?? undefined}
             onClick={() => void apply()}
             aria-label={`Create node ${label}`}
           >
@@ -104,7 +104,7 @@ export const PlanNodeRow: React.FC<{
                     type="button"
                     className={styles.reviewLink}
                     aria-label={`Open ${reviewAgentName ?? "the node agent"}'s chat`}
-                    title={`Open ${reviewAgentName ?? "the node agent"}'s chat`}
+                    data-tooltip={`Open ${reviewAgentName ?? "the node agent"}'s chat`}
                     onClick={onOpenReview}
                   >
                     <FontAwesomeIcon icon={faRobot} />
@@ -119,7 +119,7 @@ export const PlanNodeRow: React.FC<{
                 type="button"
                 className={styles.apply}
                 disabled={rowBusy !== null || !solvable}
-                title={solveBlocker ?? undefined}
+                data-tooltip={solveBlocker ?? undefined}
                 onClick={() => void act("solve", onSolve)}
                 aria-label={`Solve node ${label}`}
               >

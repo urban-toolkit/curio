@@ -12,6 +12,7 @@ This document describes the internal architecture of Curio for contributors who 
   * [FlowProvider: Central Workflow State](#flowprovider-central-workflow-state)
   * [The notebook view](#the-notebook-view)
   * [Drawing scenarios](#drawing-scenarios)
+  * [Tooltips](#tooltips)
 * [Nodes: Types and Structure](#nodes-types-and-structure)
   * [Node Packages and Manifests](#node-packages-and-manifests)
   * [A dataflow's tags and data types](#a-dataflows-tags-and-data-types)
@@ -586,6 +587,48 @@ text in `data.code` (the spec's `content`) and the color in
   input, no widgets. `presentation_templates`, the roster's `presentation` flag and
   an enlisted package's notes read it, so the Researcher's notes find the Note
   rather than a Data Pool or a Parameter node.
+
+### Tooltips
+
+Every hover in Curio shows one tooltip, drawn by `components/tooltip/TooltipLayer.tsx`
+(mounted once in `index.tsx`) in a portal on `document.body`. It sits outside the
+canvas's viewport, so it is the same size at every zoom and no node clips it.
+
+- An element names its tooltip in `data-tooltip`, where it would have written a
+  `title`, which draws the browser's own; a control whose only name was its title
+  has an `aria-label` too. The layer listens on the document and shows the tooltip of
+  the nearest `[data-tooltip]` under the pointer or the keyboard's focus; while it
+  shows, the element's `aria-describedby` names it, or, for the keyboard's focus,
+  the focused control's. `noOtherTooltips.test.ts` fails on a `title` on an element,
+  on a component that hands it to one (React Flow's `Handle`, `FontAwesomeIcon`, any
+  MUI component), on an `OverlayTrigger` or on a Monaco `hoverMessage` in `src/`.
+- A tooltip with more than words (a list, a preview) comes from
+  `useTooltipContent(node)`, whose props, `data-tooltip-content`, go on the element.
+- `data-tooltip-side` says where it opens: `top`, the default, above the element and
+  centered on it, or below when there is no room; `right`, for the tool rail's
+  palette rows; `pointer`, for a chart's marks. `placeTooltip` (`tooltipPlacement.ts`)
+  keeps it in the window, 6 px from its target.
+- `tooltipStore.ts` holds the timing: the tooltip shows 400 ms after the pointer
+  rests, at once when another closed less than 600 ms before, and hides 100 ms after
+  the pointer leaves. The pointer may cross over onto the tooltip, and leaving the
+  tooltip hides it the same way, whoever opened it; one at the pointer (a chart's)
+  lets the pointer through instead. A held touch shows it after 500 ms, the
+  keyboard's focus at once. A press hides it, and it stays off while the pointer
+  stays on that target (a chart's next mark asks again); a wheel, a drag, Escape or
+  the window losing focus hide it, and so does a scroll of what holds the element it
+  is placed beside. A flow hides it when its view moves (`useViewportMotionHint`).
+  `setTooltipTimings` sets the delays and `resetTooltipStore` starts it afresh, for
+  tests.
+- Monaco's own hover is off in every editor (`hover: { enabled: false }`).
+  `useEditorTooltip` shows, in the Curio tooltip, the markers' messages first, then
+  what a chip writes or, in JavaScript, the TypeScript worker's quick info for the
+  word under the pointer. Cmd+K Cmd+I (Ctrl on Windows and Linux) shows it at the
+  caret: an action of each editor, so it works in the one with the focus.
+- A Vega-Lite chart's tooltip handler is `vegaTooltipHandler` (`vegaTooltip.ts`): it
+  writes the hovered mark's fields, as Vega's own handler words them, in the chart
+  element's `data-tooltip`, and the tooltip shows at the pointer.
+- An e2e capture hides an open tooltip unless the test passes `keep_tooltip`
+  (`test_frontend/utils/images.py`).
 
 ---
 
@@ -2436,6 +2479,7 @@ created empty for Solve to write.
 | `src/utils/notebookLayout.ts`, `src/utils/dataflowOrder.ts` | The notebook view's geometry (cells, dots, lanes, edge paths), what each view lets a viewer change in the graph, and the cell order Export as notebook shares |
 | `src/providers/ProvenanceProvider.tsx` | In-memory per-node execution history (saved with the workflow JSON) |
 | `src/components/UniversalNode.tsx` | Single React component that renders all node types |
+| `src/components/tooltip/` | The one Curio tooltip: `TooltipLayer`, `tooltipStore`, `tooltipPlacement`, `useTooltipContent` and the Vega handler (see [Tooltips](#tooltips)) |
 | `src/registry/packagesClient.ts` | Fetch installed manifests → build `NodeDescriptor`s → register against `nodeRegistry` |
 | `src/registry/builtinBehaviors.ts` | `registerBehavior()` calls for the built-in behavior hooks |
 | `src/registry/behaviorRegistry.ts` | `behavior` key → hook lookup (built-in + package-shipped) |

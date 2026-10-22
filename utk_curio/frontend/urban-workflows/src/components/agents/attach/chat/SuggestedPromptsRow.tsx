@@ -11,7 +11,7 @@ export const SuggestedPromptsRow: React.FC<{
   <div className={styles.suggestedRow} role="group" aria-label="Suggested prompts">
     <span className={styles.suggestedLabel}>Suggested prompts</span>
     {alternatives.map((alt, i) => (
-      <button key={i} type="button" className={styles.suggestedChip} title={alt} onClick={() => onPick(alt)}>
+      <button key={i} type="button" className={styles.suggestedChip} data-tooltip={alt} onClick={() => onPick(alt)}>
         {alt}
       </button>
     ))}

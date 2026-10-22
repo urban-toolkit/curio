@@ -15,7 +15,7 @@ describe("the canvas view switch", () => {
     expect(group).toBeInTheDocument();
     expect(screen.getByRole("radio", { name: "Canvas view" })).toHaveAttribute("aria-checked", "true");
     expect(screen.getByRole("radio", { name: "Notebook view" })).toHaveAttribute("aria-checked", "false");
-    expect(screen.getByRole("radio", { name: "Notebook view" })).toHaveAttribute("title", "Notebook view");
+    expect(screen.getByRole("radio", { name: "Notebook view" })).toHaveAttribute("data-tooltip", "Notebook view");
     expect(screen.getByText("Notebook")).toHaveClass("label");
   });
 

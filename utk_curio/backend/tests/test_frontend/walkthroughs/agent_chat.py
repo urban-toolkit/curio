@@ -117,7 +117,7 @@ def agent_chat_names_its_node(ctx: Ctx) -> None:
     subtitle = panel.get_by_text(re.compile(r"^Attached to "))
     expect(subtitle).to_have_text(f"Attached to {AGENT_CHAT_NODE_NAME}")
     # Both ids are still recoverable, just not in the reading line.
-    tooltip = subtitle.get_attribute("title") or ""
+    tooltip = subtitle.get_attribute("data-tooltip") or ""
     assert node_id in tooltip, f"the node id left the tooltip too: {tooltip!r}"
     assert "session " in tooltip, f"the session id left the tooltip: {tooltip!r}"
 

@@ -86,7 +86,7 @@ export default function EditFeatureForm({
             const change = (next: string) => setTexts({ ...texts, [def.name]: next });
             return (
               <React.Fragment key={def.name}>
-                <label htmlFor={id} title={def.name} className={styles.gridLabel}>
+                <label htmlFor={id} data-tooltip={def.name} className={styles.gridLabel}>
                   {def.name}
                 </label>
                 <span className={styles.gridValue}>

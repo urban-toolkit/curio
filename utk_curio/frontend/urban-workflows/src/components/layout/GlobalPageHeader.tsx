@@ -141,7 +141,7 @@ function AccountBlock() {
         {user.profile_image ? <img src={user.profile_image} alt={displayName} /> : initials}
       </div>
       <div className={styles.accountColumn}>
-        <span className={styles.userName} title={displayName}>
+        <span className={styles.userName} data-tooltip={displayName}>
           {displayName}
         </span>
         {enableUserAuth && (

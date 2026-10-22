@@ -283,7 +283,7 @@ export function NodeFromFunctionModal({
                             key={`${mod.module}.${fn.name}`}
                             value={`${pkg.dirName}|${mod.module}|${fn.name}`}
                             disabled={!!fn.problem}
-                            title={fn.problem ?? fn.doc}
+                            data-tooltip={fn.problem ?? fn.doc}
                           >
                             {mod.module}.{signatureText(fn)}
                           </option>

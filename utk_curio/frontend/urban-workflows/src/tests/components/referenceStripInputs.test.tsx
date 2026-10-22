@@ -34,7 +34,7 @@ describe("input tags", () => {
     openCategory(view.container, "inputs");
     const tags = view.container.querySelectorAll("[data-input-tag]");
     expect(Array.from(tags).map((t) => t.textContent)).toEqual(["input_0", "input_1", "input_2"]);
-    expect(tags[0].getAttribute("title")).toMatch(/^From Roads\./);
+    expect(tags[0].getAttribute("data-tooltip")).toMatch(/^From Roads\./);
 
     const drag = dragData();
     fireEvent.dragStart(tags[1], drag);
@@ -58,7 +58,7 @@ describe("input tags", () => {
     fireEvent.click(screen.getByLabelText("Show the columns of input_0"));
     const columns = view.container.querySelectorAll('[data-input-columns="0"] [data-column-tag]');
     expect(Array.from(columns).map((c) => c.textContent)).toEqual(["length", "lanes"]);
-    expect(columns[0].getAttribute("title")).toMatch(/float64/);
+    expect(columns[0].getAttribute("data-tooltip")).toMatch(/float64/);
 
     const drag = dragData();
     fireEvent.dragStart(columns[0], drag);
@@ -130,7 +130,7 @@ describe("an input carrying several layers", () => {
     const column = view.container.querySelector('[data-column-layer="table_osm_buildings"][data-column-tag="height"]')!;
     fireEvent.click(column);
     expect(onInsert).toHaveBeenCalledWith("input_0:table_osm_buildings.height");
-    expect(view.container.querySelector('[data-column-tag="highway"]')!.getAttribute("title"))
+    expect(view.container.querySelector('[data-column-tag="highway"]')!.getAttribute("data-tooltip"))
       .toMatch(/^Column of layer table_osm_roads of input_0, str\. /);
   });
 

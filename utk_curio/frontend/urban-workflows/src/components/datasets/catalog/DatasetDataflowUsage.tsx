@@ -111,7 +111,7 @@ export const DatasetDataflowUsageSection: React.FC<{
                 {name}
               </DetailLink>
               {collidingNames.has(name) ? (
-                <span className={styles.disambiguator} title={flow.dataflowId}>
+                <span className={styles.disambiguator} data-tooltip={flow.dataflowId}>
                   {flow.dataflowId.slice(0, 8)}
                 </span>
               ) : null}

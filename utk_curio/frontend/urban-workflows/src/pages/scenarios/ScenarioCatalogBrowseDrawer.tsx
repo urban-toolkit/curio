@@ -78,7 +78,7 @@ export function ScenarioCatalogBrowseDrawer({
             <button
               className={styles.addToPaletteBtn}
               type="button"
-              title={`Open ${scenario.project.name}, where this scenario is edited`}
+              data-tooltip={`Open ${scenario.project.name}, where this scenario is edited`}
               onClick={() => onOpenProject(scenario)}
             >
               Open source project
