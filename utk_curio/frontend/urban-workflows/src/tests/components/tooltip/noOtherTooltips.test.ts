@@ -29,13 +29,7 @@ const SRC = path.resolve(__dirname, "../../..");
  * What the guard does not read yet, each with its reason: a folder or a file
  * under src/.
  */
-const EXCEPTIONS: ReadonlyArray<{ what: string; under: string; reason: string }> = [
-  {
-    what: "The Map Edits node's files: EditFeaturesBody.tsx and its siblings",
-    under: "components/editFeatures/",
-    reason: "komar41's #1055 is being revised into Map Edits in another session",
-  },
-];
+const EXCEPTIONS: ReadonlyArray<{ what: string; under: string; reason: string }> = [];
 
 /** The editors the app mounts, each of which has to turn Monaco's hover off. */
 const EDITORS = ["components/editing/CodeEditor.tsx", "components/editing/GrammarEditor.tsx"];
