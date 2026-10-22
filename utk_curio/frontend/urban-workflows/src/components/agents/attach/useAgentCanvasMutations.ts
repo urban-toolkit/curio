@@ -38,7 +38,9 @@ const CENTER_ANIMATION_MS = 400;
  *   but out of view, and only the load-time fitView made it visible).
  * - ``node-content-applied`` → `FlowProvider.applyNodeContent` (provider
  *   state — dev/51 defect 2: direct RF-store writes are clobbered by the
- *   controlled re-sync and never reached the serializer or editor).
+ *   controlled re-sync and never reached the serializer or editor), with the
+ *   name of the agent that wrote it, which a node keeping a history of its
+ *   changes names the entry after.
  *
  * Idempotent per node id at two levels (dev/51 defect 3): a processed-ids ref
  * catches re-fired events before the store has synced, and the live-graph
@@ -111,7 +113,9 @@ export function useAgentCanvasMutations(): void {
 
   handlerRef.current = (mutation: AgentCanvasMutation) => {
     if (mutation.kind === "node-content-applied") {
-      applyNodeContent(mutation.nodeId, mutation.content);
+      // The agent that wrote it, which the node's change is named after.
+      if (mutation.agent) applyNodeContent(mutation.nodeId, mutation.content, mutation.agent);
+      else applyNodeContent(mutation.nodeId, mutation.content);
       return;
     }
     if (mutation.kind === "scenarios-created") {

@@ -108,8 +108,8 @@ from utk_curio.backend.app.agents.application.turns.policy import (
 )
 from utk_curio.backend.app.agents.application.turns.titles import (
     TITLE_MAX_OUTPUT_TOKENS,
-    TITLE_PROMPT,
     sanitize_title,
+    title_prompt,
 )
 from utk_curio.backend.app.agents.application.upload_import import (
     upload_import,
@@ -177,7 +177,7 @@ __all__ = [
     "CONTEXT_MAX_CHARS",
     "DEPLOYMENT_MAX_OUTPUT_TOKENS",
     "TITLE_MAX_OUTPUT_TOKENS",
-    "TITLE_PROMPT",
     "sanitize_title",
+    "title_prompt",
     "upload_import",
 ]

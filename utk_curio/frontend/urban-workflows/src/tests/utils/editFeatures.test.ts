@@ -5,9 +5,10 @@
  *
  * `editFeaturesCode.cases.json` holds the code for a few logs, other code the
  * node reads, and code it refuses. This checks the node writes exactly that
- * code, reads it back as the log it wrote, and says why it refuses the rest;
- * `utk_curio/sandbox/tests/test_feature_edits.py` reads the same code as Python
- * does and runs it in the sandbox.
+ * code, reads it back as the log it wrote, and says why it refuses the rest,
+ * word for word; `utk_curio/sandbox/tests/test_feature_edits_code.py` reads
+ * the same code with the sandbox's reader, which agents' code is held to, and
+ * `test_feature_edits.py` runs it in the sandbox.
  */
 import cases from "../../utils/editFeatures/editFeaturesCode.cases.json";
 import {
@@ -35,7 +36,7 @@ import { VisInteractionType } from "../../constants";
 
 type CodeCase = { name: string; settings: EditFeaturesSettings | null; code: string; circles?: number; comments?: string[] };
 type ReadCase = { name: string; code: string; settings: EditFeaturesSettings | null; circles: number; comments: string[] };
-type RefusedCase = { name: string; code: string; reason: string };
+type RefusedCase = { name: string; code: string; problem: string };
 
 /** Autark's buildings: a building's parts share its building_id, and none has an osm_id. */
 function buildings() {
@@ -94,9 +95,8 @@ describe("readEditFeaturesCode", () => {
   });
 
   test.each((cases.refused as RefusedCase[]).map((c) => [c.name, c] as const))("refuses, saying why: %s", (_name, c) => {
-    const read = readEditFeaturesCode(c.code);
-    expect(read).toHaveProperty("problem");
-    expect((read as { problem: string }).problem).toContain(c.reason);
+    // The whole text, which the sandbox's reader says too.
+    expect(readEditFeaturesCode(c.code)).toEqual({ problem: c.problem });
   });
 
   test("reads blank code as a new node: no edits, and the circles and comment lines left to the node", () => {

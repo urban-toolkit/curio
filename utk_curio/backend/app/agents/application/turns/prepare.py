@@ -237,7 +237,7 @@ def _messages(system: dict, prior: list, run_context: str | None, message: str) 
         system,
         *sessions.context_messages(prior),
         *(
-            [{"role": "user", "content": f"{agents_policy._CONTEXT_FRAME}{context_block}"}]
+            [{"role": "user", "content": f"{agents_policy.context_frame()}\n{context_block}"}]
             if context_block
             else []
         ),

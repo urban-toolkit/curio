@@ -374,6 +374,12 @@ def _where_holds(edit, properties) -> bool:
     return edit_expr.truthy(edit_expr.evaluate(edit["_where"], properties))
 
 
+#: The line ``_report_unknown`` prints for ids no feature has. An agent that
+#: writes a Map Edits node's code is held to it: a run that prints one names
+#: features the data does not hold.
+UNKNOWN_IDS_LINE = re.compile(rf"{_NAME}: .+ has no feature with .+; the \w+ skips (?:it|them)\.")
+
+
 def _report_unknown(label, key, op, ids, known):
     unknown = [i for i in ids if _id_key(i) not in known]
     if unknown:

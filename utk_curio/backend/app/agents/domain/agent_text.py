@@ -22,6 +22,12 @@ every page and every prompt once, and a read returns that render. Under
 ``curio.py start --dev`` (``CURIO_DEV=1``) a read renders the file again, so an
 edit shows on the next run.
 
+The texts the runtime composes a run's turns from (the tools, the reply
+protocol, the frames around what a run is given) are sections of pages: a
+``## <name>`` line, then the text, which :func:`section` reads by name from
+the page's render. A JSON value an agent is given, such as a delegated run's
+reply contract, is a block fenced as ``json`` (:func:`json_block`).
+
 A user's agent is never rendered: its own prompts are read as written, and
 only the pages it names as ``curio:<path>`` are Curio's renders.
 """
@@ -32,8 +38,10 @@ import json
 import logging
 import os
 import re
+from collections.abc import Mapping
 from functools import lru_cache
 from pathlib import Path
+from types import MappingProxyType
 
 from utk_curio import shipped
 from utk_curio.backend.app.agents.domain import contracts
@@ -54,6 +62,13 @@ PAGE_PREFIX = "curio:"
 _PAGE_RE = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9_.-]*(?:/[A-Za-z0-9_][A-Za-z0-9_.-]*)*\.md$")
 #: What ``curio.py start --dev`` sets for the processes it starts.
 _DEV_ENV = "CURIO_DEV"
+#: A section's heading: ``## `` and its name, on a line of its own outside a
+#: fenced block.
+_SECTION_RE = re.compile(r"^## (\S.*?)\s*$")
+#: What opens and closes a fenced block.
+_FENCE = "```"
+#: A block fenced as ``json``, its fences on lines of their own.
+_JSON_BLOCK_RE = re.compile(r"^```json[ \t]*\n(.*?)^```[ \t]*$", re.MULTILINE | re.DOTALL)
 
 #: Every render a read returns, by file: the start-up render, and each file
 #: read since that the start-up render did not cover.
@@ -211,6 +226,78 @@ def read(file: Path) -> str:
     if text is None:
         text = _TEXTS[file] = render(file)
     return text
+
+
+def page_text(page: str) -> str:
+    """*page*, a page of the base entry named by its path there, as an agent
+    reads it (:func:`read`). Raises :class:`AgentTextError` when it is no page
+    or its file is missing: the runtime composes a run's turns from it."""
+    file = page_file(page)
+    if not file.is_file():
+        raise AgentTextError(
+            f"{PAGE_PREFIX}{page} is missing at {file}. If this is an installed Curio, the package "
+            "is missing its agents/ folder (see MANIFEST.in)."
+        )
+    return read(file)
+
+
+# --- Sections and JSON blocks --------------------------------------------------
+
+
+def sections(page: str) -> Mapping[str, str]:
+    """The sections of *page*, a page of the base entry, as an agent reads it:
+    by name, the text under each ``## <name>`` line up to the next, without the
+    blank lines around it. What comes before the first section is for whoever
+    edits the page, and a ``## `` line inside a fenced block is text. Raises
+    :class:`AgentTextError` on a name given twice."""
+    return split_sections(page_text(page), PAGE_PREFIX + page)
+
+
+@lru_cache(maxsize=32)
+def split_sections(text: str, where: str) -> Mapping[str, str]:
+    """The sections of *text*, a page as an agent reads it, by name
+    (:func:`sections`); *where* names the page in an error."""
+    found: dict[str, list[str]] = {}
+    current = None
+    fenced = False
+    for line in text.splitlines():
+        heading = None if fenced else _SECTION_RE.match(line)
+        if heading:
+            current = heading.group(1)
+            if current in found:
+                raise AgentTextError(f"{where} has two sections named {current!r}")
+            found[current] = []
+            continue
+        if line.lstrip().startswith(_FENCE):
+            fenced = not fenced
+        if current is not None:
+            found[current].append(line)
+    return MappingProxyType({name: "\n".join(lines).strip("\n") for name, lines in found.items()})
+
+
+def section(page: str, name: str) -> str:
+    """The text of the section *name* of *page*, a page of the base entry, as
+    an agent reads it (:func:`sections`). Raises :class:`AgentTextError`
+    naming both when the page has no such section."""
+    found = sections(page)
+    if name not in found:
+        raise AgentTextError(
+            f"{PAGE_PREFIX}{page} has no section {name!r}; its sections are: {', '.join(found) or 'none'}"
+        )
+    return found[name]
+
+
+def json_block(text: str, where: str):
+    """The one block of *text* fenced as ``json``, parsed: a fresh value on
+    every call. Raises :class:`AgentTextError`, naming *where*, when *text*
+    holds no such block, several, or one that is not JSON."""
+    blocks = _JSON_BLOCK_RE.findall(text)
+    if len(blocks) != 1:
+        raise AgentTextError(f"{where} holds {len(blocks)} blocks fenced as json, where it holds one")
+    try:
+        return json.loads(blocks[0])
+    except ValueError as exc:
+        raise AgentTextError(f"{where}: its block fenced as json is not JSON ({exc})") from None
 
 
 def shipped_files() -> list[Path]:

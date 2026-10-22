@@ -1,5 +1,5 @@
 {
-  "description": "The code a Map Edits node writes from its edit list and reads back (#662, utils/editFeatures/editFeatures.ts). `ops`: the edits the node makes, in order, as editFeatures.ts (EDIT_OPS) and curio_edit_features (OPS) list them. Jest checks editFeaturesCode writes each case's `code` from its `settings`, `circles` (1 when absent) and `comments` (the node's own lines when absent), that readEditFeaturesCode reads it back as those and that the code it then writes is the same, reads each `read` code as its `settings`, `circles` and `comments`, and refuses each `refused` code with a reason holding `reason`. utk_curio/sandbox/tests/test_feature_edits.py checks Python reads each `cases` and `read` code's arguments as the same settings, against curio_edit_features's signature, and runs each `cases` code with curio_edit_features, checking the buildings left (`kept`).",
+  "description": "The code a Map Edits node writes from its edit list and reads back (#662, utils/editFeatures/editFeatures.ts). `ops`: the edits the node makes, in order, as editFeatures.ts (EDIT_OPS) and curio_edit_features (OPS) list them. Jest checks editFeaturesCode writes each case's `code` from its `settings`, `circles` (1 when absent) and `comments` (the node's own lines when absent), that readEditFeaturesCode reads it back as those and that the code it then writes is the same, reads each `read` code as its `settings`, `circles` and `comments`, and refuses each `refused` code with `problem`, the whole text it says. utk_curio/sandbox/tests/test_feature_edits_code.py checks the sandbox's reader (utk_curio/sandbox/util/feature_edits_code.py) reads every code the same way, word for word, and writes each case with no `settings` and no `comments` as a new node's code (new_node_code), and utk_curio/sandbox/tests/test_feature_edits.py runs each `cases` code with curio_edit_features, checking the buildings left (`kept`).",
   "ops": [
     "remove",
     "set",
@@ -436,6 +436,18 @@
         3
       ],
       "code": "# Map Edits writes this code from its edit list: each edit, in the\n# order it was made, on the features whose key is one of its ids. It is\n# written again when the list changes.\nreturn curio_edit_features(input_0, [\n    {\"op\": \"set\", \"ids\": [2], \"column\": \"name\", \"value\": \"Tower \\\"B\\\" \\\\ 'C', São Paulo 東京, a\\u2028b, [\\x21! selection towers !!]\", \"label\": \"Rename \\\"B\\\"\"},\n], key=\"building_id\", layer=\"table_osm_buildings\")\n"
+    },
+    {
+      "name": "a new node fed by two circles: no edits, so every input is handed on as it came",
+      "settings": null,
+      "code": "# Map Edits writes this code from its edit list: each edit, in the\n# order it was made, on the features whose key is one of its ids. It is\n# written again when the list changes.\nreturn curio_edit_features([input_0, input_1], [], by_input=True)\n",
+      "circles": 2,
+      "kept": [
+        1,
+        1,
+        2,
+        3
+      ]
     }
   ],
   "read": [
@@ -510,213 +522,546 @@
       "comments": [
         "# kept"
       ]
+    },
+    {
+      "name": "escapes Python knows, in a text",
+      "code": "return curio_edit_features(input_0, [\n    {\"op\": \"set\", \"ids\": [1], \"column\": \"name\", \"value\": \"\\x41\\101\\u00e9\\U0001F600\\t\\\\\"},\n], key=\"osm_id\")\n",
+      "settings": {
+        "key": "osm_id",
+        "edits": [
+          {
+            "op": "set",
+            "ids": [
+              1
+            ],
+            "column": "name",
+            "value": "AAé😀\t\\"
+          }
+        ]
+      },
+      "circles": 1,
+      "comments": []
+    },
+    {
+      "name": "an id written as a float",
+      "code": "return curio_edit_features(input_0, [\n    {\"op\": \"remove\", \"ids\": [1.0, 2], \"label\": \"Two towers\"},\n], key=\"building_id\")\n",
+      "settings": {
+        "key": "building_id",
+        "edits": [
+          {
+            "op": "remove",
+            "ids": [
+              1,
+              2
+            ],
+            "label": "Two towers"
+          }
+        ]
+      },
+      "circles": 1,
+      "comments": []
     }
   ],
   "refused": [
     {
       "name": "another statement before the call",
       "code": "x = 1\nreturn curio_edit_features(input_0, [])\n",
-      "reason": "holds something else"
+      "problem": "This node reads one call, return curio_edit_features(input_0, [...]), and this code holds something else."
     },
     {
       "name": "a drawn edit whose crs is not a CRS name",
       "code": "return curio_edit_features(input_0, [{\"op\": \"add\", \"id\": 9, \"geometry\": {\"type\": \"Point\", \"coordinates\": [0, 0]}, \"crs\": 4326}], key=\"osm_id\")\n",
-      "reason": "has a crs that is not a CRS name"
+      "problem": "Edit 1 has a crs that is not a CRS name."
     },
     {
       "name": "a statement after the call",
       "code": "return curio_edit_features(input_0, [])\nprint(1)\n",
-      "reason": "goes on after"
+      "problem": "The code goes on after the curio_edit_features call."
     },
     {
       "name": "a comment inside the call",
       "code": "return curio_edit_features(input_0, [  # none yet\n])\n",
-      "reason": "holds a comment"
+      "problem": "The call holds a comment, which would be lost when the node writes its code."
     },
     {
       "name": "a comment after the call",
       "code": "return curio_edit_features(input_0, [])  # done\n",
-      "reason": "goes on after"
+      "problem": "The code goes on after the curio_edit_features call."
     },
     {
       "name": "a keyword the step does not take",
       "code": "return curio_edit_features(input_0, [], ids=[1])\n",
-      "reason": "not ids"
+      "problem": "curio_edit_features takes key, layer, keys, new_layers, crs, by_input, not ids."
     },
     {
       "name": "a keyword given twice",
       "code": "return curio_edit_features(input_0, [], key=\"a\", key=\"b\")\n",
-      "reason": "gives key twice"
+      "problem": "The call gives key twice."
     },
     {
       "name": "a reference, whose value only a run knows",
       "code": "return curio_edit_features(input_0, [{\"op\": \"remove\", \"ids\": [!! selection towers !!]}])\n",
-      "reason": "reference"
+      "problem": "The call holds a [!! !!] reference, whose value the node cannot know before a run."
     },
     {
       "name": "a value that is not written out",
       "code": "return curio_edit_features(input_0, list())\n",
-      "reason": "list is not a value written out"
+      "problem": "Line 1: list is not a value written out."
     },
     {
       "name": "another input",
       "code": "return curio_edit_features(input_1, [])\n",
-      "reason": "first argument"
+      "problem": "The call's first argument is neither input_0 nor a list of the inputs in order, [input_0, input_1, ...]."
     },
     {
       "name": "the inputs out of their order",
       "code": "return curio_edit_features([input_1, input_0], [], by_input=True)\n",
-      "reason": "first argument"
+      "problem": "The call's first argument is neither input_0 nor a list of the inputs in order, [input_0, input_1, ...]."
     },
     {
       "name": "a list of inputs without by_input",
       "code": "return curio_edit_features([input_0, input_1], [])\n",
-      "reason": "takes by_input=True"
+      "problem": "A list of inputs takes by_input=True."
     },
     {
       "name": "by_input on one input",
       "code": "return curio_edit_features(input_0, [], by_input=True)\n",
-      "reason": "takes a list of inputs"
+      "problem": "by_input=True takes a list of inputs, [input_0, input_1, ...]."
     },
     {
       "name": "no list of edits",
       "code": "return curio_edit_features(input_0)\n",
-      "reason": "its list of edits"
+      "problem": "The call takes its input and its list of edits, then key, layer, keys, new_layers, crs, by_input by name."
     },
     {
       "name": "a value without its name after one with a name",
       "code": "return curio_edit_features(input_0, key=\"osm_id\", [])\n",
-      "reason": "without its name"
+      "problem": "The call gives a value without its name after one with a name."
     },
     {
       "name": "an edit the node does not make",
       "code": "return curio_edit_features(input_0, [{\"op\": \"delete\", \"ids\": [1]}], key=\"osm_id\")\n",
-      "reason": "Edit 1 has the op \"delete\""
+      "problem": "Edit 1 has the op \"delete\", which is none of remove, set, restore, scale, offset, expr, add, geometry, add_column."
     },
     {
       "name": "an edit holding a field the node does not write back",
       "code": "return curio_edit_features(input_0, [{\"op\": \"remove\", \"ids\": [1], \"note\": \"x\"}], key=\"osm_id\")\n",
-      "reason": "takes no note"
+      "problem": "Edit 1 is a remove, which takes no note."
     },
     {
       "name": "an edit naming its features by ids and by a condition",
       "code": "return curio_edit_features(input_0, [{\"op\": \"remove\", \"ids\": [1], \"where\": \"height > 1\"}], key=\"osm_id\")\n",
-      "reason": "both by ids and by a condition"
+      "problem": "Edit 1 names its features both by ids and by a condition."
     },
     {
       "name": "a scale by a text",
       "code": "return curio_edit_features(input_0, [{\"op\": \"scale\", \"ids\": [1], \"column\": \"height\", \"value\": \"2\"}], key=\"osm_id\")\n",
-      "reason": "which is not a number"
+      "problem": "Edit 1 scales height by \"2\", which is not a number."
     },
     {
       "name": "True as an id",
       "code": "return curio_edit_features(input_0, [{\"op\": \"remove\", \"ids\": [True]}], key=\"osm_id\")\n",
-      "reason": "names True, which is not an id"
+      "problem": "Edit 1 names True, which is not an id."
     },
     {
       "name": "a new layer of a geometry the node does not draw",
       "code": "return curio_edit_features(input_0, [], new_layers=[{\"name\": \"sketch\", \"geometry\": \"Circle\"}])\n",
-      "reason": "New layer 1 has the geometry \"Circle\""
+      "problem": "New layer 1 has the geometry \"Circle\", which is none of Point, LineString, Polygon."
     },
     {
       "name": "keys that do not name columns",
       "code": "return curio_edit_features(input_0, [], keys={\"table_osm_roads\": 1})\n",
-      "reason": "keys is not a dict"
+      "problem": "keys is not a dict of layer names and the columns that identify their features."
     },
     {
       "name": "a text in triple quotes",
       "code": "return curio_edit_features(input_0, [], key=\"\"\"osm_id\"\"\")\n",
-      "reason": "triple quotes"
+      "problem": "Line 1: the node reads texts in single or double quotes, not in triple quotes."
     },
     {
       "name": "an escape Python does not know",
       "code": "return curio_edit_features(input_0, [], key=\"osm\\_id\")\n",
-      "reason": "not an escape"
+      "problem": "Line 1: \\_ is not an escape the node reads."
     },
     {
       "name": "a whole number too large to read exactly",
       "code": "return curio_edit_features(input_0, [{\"op\": \"remove\", \"ids\": [12345678901234567890]}], key=\"osm_id\")\n",
-      "reason": "too large"
+      "problem": "Line 1: 12345678901234567890 is too large to read exactly."
     },
     {
       "name": "a return that does not start its line",
       "code": "  return curio_edit_features(input_0, [])\n",
-      "reason": "starts with spaces"
+      "problem": "The return line starts with spaces; the node writes it from the line's start."
     },
     {
       "name": "comment lines alone",
       "code": "# nothing yet\n",
-      "reason": "holds something else"
+      "problem": "This node reads one call, return curio_edit_features(input_0, [...]), and this code holds something else."
     },
     {
       "name": "a return of something else",
       "code": "return input_0\n",
-      "reason": "holds something else"
+      "problem": "This node reads one call, return curio_edit_features(input_0, [...]), and this code holds something else."
     },
     {
       "name": "a call that is not closed",
       "code": "return curio_edit_features(input_0, [\n",
-      "reason": "not closed"
+      "problem": "Line 2: the call is not closed."
     },
     {
       "name": "a condition that is not one, which a run refuses",
       "code": "return curio_edit_features(input_0, [{\"op\": \"remove\", \"where\": \"height >\"}], key=\"osm_id\")\n",
-      "reason": "Edit 1 has the condition \"height >\", which is not one"
+      "problem": "Edit 1 has the condition \"height >\", which is not one: the expression 'height >' ends too soon."
     },
     {
       "name": "an expression that is not one, which a run refuses",
       "code": "return curio_edit_features(input_0, [{\"op\": \"expr\", \"ids\": [1], \"column\": \"height\", \"value\": \"levels *\"}], key=\"osm_id\")\n",
-      "reason": "which is not an expression:"
+      "problem": "Edit 1 computes height from \"levels *\", which is not an expression: the expression 'levels *' ends too soon."
     },
     {
       "name": "an edit naming no features",
       "code": "return curio_edit_features(input_0, [{\"op\": \"remove\"}], key=\"osm_id\")\n",
-      "reason": "Edit 1 names no features"
+      "problem": "Edit 1 names no features: it takes ids or a where condition."
     },
     {
       "name": "an empty list of ids",
       "code": "return curio_edit_features(input_0, [{\"op\": \"remove\", \"ids\": []}], key=\"osm_id\")\n",
-      "reason": "has ids that are not a list of ids"
+      "problem": "Edit 1 has ids that are not a list of ids."
     },
     {
       "name": "a feature named by a dict",
       "code": "return curio_edit_features(input_0, [{\"op\": \"remove\", \"ids\": [{\"row\": 3}]}], key=\"osm_id\")\n",
-      "reason": "which is not an id"
+      "problem": "Edit 1 names {\"row\":3}, which is not an id."
     },
     {
       "name": "an empty condition",
       "code": "return curio_edit_features(input_0, [{\"op\": \"remove\", \"where\": \"\"}], key=\"osm_id\")\n",
-      "reason": "has a where that is not a condition"
+      "problem": "Edit 1 has a where that is not a condition."
     },
     {
       "name": "a set without its column",
       "code": "return curio_edit_features(input_0, [{\"op\": \"set\", \"ids\": [1], \"value\": 0}], key=\"osm_id\")\n",
-      "reason": "writes a value but names no column"
+      "problem": "Edit 1 writes a value but names no column."
     },
     {
       "name": "a set without its value",
       "code": "return curio_edit_features(input_0, [{\"op\": \"set\", \"ids\": [1], \"column\": \"height\"}], key=\"osm_id\")\n",
-      "reason": "writes no value into height"
+      "problem": "Edit 1 writes no value into height."
     },
     {
       "name": "an offset without its column",
       "code": "return curio_edit_features(input_0, [{\"op\": \"offset\", \"ids\": [1], \"value\": 3}], key=\"osm_id\")\n",
-      "reason": "writes a value but names no column"
+      "problem": "Edit 1 writes a value but names no column."
     },
     {
       "name": "an expression that is a number",
       "code": "return curio_edit_features(input_0, [{\"op\": \"expr\", \"ids\": [1], \"column\": \"height\", \"value\": 3}], key=\"osm_id\")\n",
-      "reason": "computes height from 3, which is not an expression"
+      "problem": "Edit 1 computes height from 3, which is not an expression."
     },
     {
       "name": "an empty label",
       "code": "return curio_edit_features(input_0, [{\"op\": \"remove\", \"ids\": [1], \"label\": \"\"}], key=\"osm_id\")\n",
-      "reason": "has an empty label"
+      "problem": "Edit 1 has an empty label."
     },
     {
       "name": "an entry switched off by a text",
       "code": "return curio_edit_features(input_0, [{\"op\": \"remove\", \"ids\": [1], \"enabled\": \"no\"}], key=\"osm_id\")\n",
-      "reason": "has an enabled that is not True or False"
+      "problem": "Edit 1 has an enabled that is not True or False."
+    },
+    {
+      "name": "an edit that is not a dict",
+      "code": "return curio_edit_features(input_0, [1], key=\"osm_id\")\n",
+      "problem": "Edit 1 is not a dict."
+    },
+    {
+      "name": "an op that is a number, as Python writes it",
+      "code": "return curio_edit_features(input_0, [{\"op\": 3.0, \"ids\": [1]}], key=\"osm_id\")\n",
+      "problem": "Edit 1 has the op 3, which is none of remove, set, restore, scale, offset, expr, add, geometry, add_column."
+    },
+    {
+      "name": "an op that is a small number",
+      "code": "return curio_edit_features(input_0, [{\"op\": 0.0000001, \"ids\": [1]}], key=\"osm_id\")\n",
+      "problem": "Edit 1 has the op 1e-7, which is none of remove, set, restore, scale, offset, expr, add, geometry, add_column."
+    },
+    {
+      "name": "an op that is a number written with five decimals",
+      "code": "return curio_edit_features(input_0, [{\"op\": 0.00001, \"ids\": [1]}], key=\"osm_id\")\n",
+      "problem": "Edit 1 has the op 0.00001, which is none of remove, set, restore, scale, offset, expr, add, geometry, add_column."
+    },
+    {
+      "name": "an op that is a very large number",
+      "code": "return curio_edit_features(input_0, [{\"op\": 1.5e300, \"ids\": [1]}], key=\"osm_id\")\n",
+      "problem": "Edit 1 has the op 1.5e+300, which is none of remove, set, restore, scale, offset, expr, add, geometry, add_column."
+    },
+    {
+      "name": "a field the node does not write back, after a key that is a number",
+      "code": "return curio_edit_features(input_0, [{\"op\": \"remove\", \"ids\": [1], \"note\": \"x\", \"2\": \"y\"}], key=\"osm_id\")\n",
+      "problem": "Edit 1 is a remove, which takes no 2."
+    },
+    {
+      "name": "a layer that is not a name",
+      "code": "return curio_edit_features(input_0, [{\"op\": \"remove\", \"ids\": [1], \"layer\": \"\"}], key=\"osm_id\")\n",
+      "problem": "Edit 1 has a layer that is not a name."
+    },
+    {
+      "name": "a label that is not a text",
+      "code": "return curio_edit_features(input_0, [{\"op\": \"remove\", \"ids\": [1], \"label\": 3}], key=\"osm_id\")\n",
+      "problem": "Edit 1 has a label that is not a text."
+    },
+    {
+      "name": "an add with no id",
+      "code": "return curio_edit_features(input_0, [{\"op\": \"add\", \"geometry\": {\"type\": \"Point\", \"coordinates\": [0, 0]}}], key=\"osm_id\")\n",
+      "problem": "Edit 1 adds a feature with no id."
+    },
+    {
+      "name": "an add whose id is True",
+      "code": "return curio_edit_features(input_0, [{\"op\": \"add\", \"id\": True, \"geometry\": {\"type\": \"Point\", \"coordinates\": [0, 0]}}], key=\"osm_id\")\n",
+      "problem": "Edit 1 adds a feature with no id."
+    },
+    {
+      "name": "an add of a shape the node does not draw",
+      "code": "return curio_edit_features(input_0, [{\"op\": \"add\", \"id\": 9, \"geometry\": {\"type\": \"Circle\", \"coordinates\": [0, 0]}}], key=\"osm_id\")\n",
+      "problem": "Edit 1 adds a feature with no geometry the node reads."
+    },
+    {
+      "name": "an add whose values are not a dict",
+      "code": "return curio_edit_features(input_0, [{\"op\": \"add\", \"id\": 9, \"geometry\": {\"type\": \"Point\", \"coordinates\": [0, 0]}, \"values\": [1]}], key=\"osm_id\")\n",
+      "problem": "Edit 1 adds a feature whose values are not a dict."
+    },
+    {
+      "name": "an add with a value that is a list",
+      "code": "return curio_edit_features(input_0, [{\"op\": \"add\", \"id\": 9, \"geometry\": {\"type\": \"Point\", \"coordinates\": [0, 0]}, \"values\": {\"height\": [1]}}], key=\"osm_id\")\n",
+      "problem": "Edit 1 adds a feature whose height is not a text, a number, True, False or None."
+    },
+    {
+      "name": "an add with a value of no name",
+      "code": "return curio_edit_features(input_0, [{\"op\": \"add\", \"id\": 9, \"geometry\": {\"type\": \"Point\", \"coordinates\": [0, 0]}, \"values\": {\"\": 1}}], key=\"osm_id\")\n",
+      "problem": "Edit 1 adds a feature whose unnamed value is not a text, a number, True, False or None."
+    },
+    {
+      "name": "a property added with no name",
+      "code": "return curio_edit_features(input_0, [{\"op\": \"add_column\", \"column\": \"\", \"value\": 1}], key=\"osm_id\")\n",
+      "problem": "Edit 1 adds a property but names none."
+    },
+    {
+      "name": "a property added with a value that is a dict",
+      "code": "return curio_edit_features(input_0, [{\"op\": \"add_column\", \"column\": \"kind\", \"value\": {\"a\": 1}}], key=\"osm_id\")\n",
+      "problem": "Edit 1 gives kind a value that is not a text, a number, True, False or None."
+    },
+    {
+      "name": "a condition that is a number",
+      "code": "return curio_edit_features(input_0, [{\"op\": \"remove\", \"where\": 3}], key=\"osm_id\")\n",
+      "problem": "Edit 1 has a where that is not a condition."
+    },
+    {
+      "name": "ids that are a number",
+      "code": "return curio_edit_features(input_0, [{\"op\": \"remove\", \"ids\": 3}], key=\"osm_id\")\n",
+      "problem": "Edit 1 has ids that are not a list of ids."
+    },
+    {
+      "name": "a redraw with no shape",
+      "code": "return curio_edit_features(input_0, [{\"op\": \"geometry\", \"ids\": [1]}], key=\"osm_id\")\n",
+      "problem": "Edit 1 redraws features with no geometry the node reads."
+    },
+    {
+      "name": "a set of a value that is a list",
+      "code": "return curio_edit_features(input_0, [{\"op\": \"set\", \"ids\": [1], \"column\": \"height\", \"value\": [1, 2]}], key=\"osm_id\")\n",
+      "problem": "Edit 1 writes a value into height that is not a text, a number, True, False or None."
+    },
+    {
+      "name": "an offset by a text",
+      "code": "return curio_edit_features(input_0, [{\"op\": \"offset\", \"ids\": [1], \"column\": \"height\", \"value\": \"2\"}], key=\"osm_id\")\n",
+      "problem": "Edit 1 offsets height by \"2\", which is not a number."
+    },
+    {
+      "name": "a condition with a text that is not closed",
+      "code": "return curio_edit_features(input_0, [{\"op\": \"remove\", \"where\": \"kind == 'tower\"}], key=\"osm_id\")\n",
+      "problem": "Edit 1 has the condition \"kind == 'tower\", which is not one: cannot read ''tower' in 'kind == 'tower'."
+    },
+    {
+      "name": "a condition with a number where an operator goes",
+      "code": "return curio_edit_features(input_0, [{\"op\": \"remove\", \"where\": \"height 100\"}], key=\"osm_id\")\n",
+      "problem": "Edit 1 has the condition \"height 100\", which is not one: unexpected '100' in 'height 100'."
+    },
+    {
+      "name": "a formula with two operators in a row",
+      "code": "return curio_edit_features(input_0, [{\"op\": \"expr\", \"ids\": [1], \"column\": \"height\", \"value\": \"levels ** 2\"}], key=\"osm_id\")\n",
+      "problem": "Edit 1 computes height from \"levels ** 2\", which is not an expression: unexpected '*' in 'levels ** 2'."
+    },
+    {
+      "name": "a condition calling a function the node does not know",
+      "code": "return curio_edit_features(input_0, [{\"op\": \"remove\", \"where\": \"foo(1) > 2\"}], key=\"osm_id\")\n",
+      "problem": "Edit 1 has the condition \"foo(1) > 2\", which is not one: foo is not a function: use abs, round, min or max."
+    },
+    {
+      "name": "a formula giving a function too many arguments",
+      "code": "return curio_edit_features(input_0, [{\"op\": \"expr\", \"ids\": [1], \"column\": \"height\", \"value\": \"round(1, 2, 3)\"}], key=\"osm_id\")\n",
+      "problem": "Edit 1 computes height from \"round(1, 2, 3)\", which is not an expression: round takes 1 or 2 arguments, not 3."
+    },
+    {
+      "name": "a formula whose parenthesis is not closed",
+      "code": "return curio_edit_features(input_0, [{\"op\": \"expr\", \"ids\": [1], \"column\": \"height\", \"value\": \"min(1, 2\"}], key=\"osm_id\")\n",
+      "problem": "Edit 1 computes height from \"min(1, 2\", which is not an expression: expected ) in 'min(1, 2'."
+    },
+    {
+      "name": "a new layer that is not a dict",
+      "code": "return curio_edit_features(input_0, [], new_layers=[3])\n",
+      "problem": "New layer 1 is not a dict."
+    },
+    {
+      "name": "a new layer with a field the node does not write back",
+      "code": "return curio_edit_features(input_0, [], new_layers=[{\"name\": \"a\", \"geometry\": \"Point\", \"color\": \"red\"}])\n",
+      "problem": "New layer 1 takes no color."
+    },
+    {
+      "name": "a new layer whose name has a space before it",
+      "code": "return curio_edit_features(input_0, [], new_layers=[{\"name\": \" a\", \"geometry\": \"Point\"}])\n",
+      "problem": "New layer 1 has no name."
+    },
+    {
+      "name": "a new layer whose properties are not a list",
+      "code": "return curio_edit_features(input_0, [], new_layers=[{\"name\": \"a\", \"geometry\": \"Point\", \"properties\": {}}])\n",
+      "problem": "New layer 1 has properties that are not a list."
+    },
+    {
+      "name": "a new layer's property that is not a dict",
+      "code": "return curio_edit_features(input_0, [], new_layers=[{\"name\": \"a\", \"geometry\": \"Point\", \"properties\": [\"height\"]}])\n",
+      "problem": "New layer 1 has a property that is not a dict."
+    },
+    {
+      "name": "a new layer's property with no name",
+      "code": "return curio_edit_features(input_0, [], new_layers=[{\"name\": \"a\", \"geometry\": \"Point\", \"properties\": [{\"type\": \"text\"}]}])\n",
+      "problem": "New layer 1 has a property with no name."
+    },
+    {
+      "name": "a new layer's property with a field the node does not write back",
+      "code": "return curio_edit_features(input_0, [], new_layers=[{\"name\": \"a\", \"geometry\": \"Point\", \"properties\": [{\"name\": \"height\", \"type\": \"number\", \"unit\": \"m\"}]}])\n",
+      "problem": "New layer 1 has a property height that takes no unit."
+    },
+    {
+      "name": "a new layer's property given twice",
+      "code": "return curio_edit_features(input_0, [], new_layers=[{\"name\": \"a\", \"geometry\": \"Point\", \"properties\": [{\"name\": \"height\", \"type\": \"number\"}, {\"name\": \"height\", \"type\": \"text\"}]}])\n",
+      "problem": "New layer 1 gives the property height twice."
+    },
+    {
+      "name": "a new layer's property of a type the node does not offer",
+      "code": "return curio_edit_features(input_0, [], new_layers=[{\"name\": \"a\", \"geometry\": \"Point\", \"properties\": [{\"name\": \"height\", \"type\": \"float\"}]}])\n",
+      "problem": "New layer 1 has a property height of the type \"float\", which is none of text, number, boolean, choice, date."
+    },
+    {
+      "name": "a new layer's property whose required is a text",
+      "code": "return curio_edit_features(input_0, [], new_layers=[{\"name\": \"a\", \"geometry\": \"Point\", \"properties\": [{\"name\": \"height\", \"type\": \"number\", \"required\": \"yes\"}]}])\n",
+      "problem": "New layer 1 has a property height whose required is not True or False."
+    },
+    {
+      "name": "a new layer's property whose choices are not texts",
+      "code": "return curio_edit_features(input_0, [], new_layers=[{\"name\": \"a\", \"geometry\": \"Point\", \"properties\": [{\"name\": \"use\", \"type\": \"choice\", \"choices\": [\"park\", 2]}]}])\n",
+      "problem": "New layer 1 has a property use whose choices are not a list of texts."
+    },
+    {
+      "name": "a new layer's property whose default is a list",
+      "code": "return curio_edit_features(input_0, [], new_layers=[{\"name\": \"a\", \"geometry\": \"Point\", \"properties\": [{\"name\": \"use\", \"type\": \"text\", \"default\": [\"park\"]}]}])\n",
+      "problem": "New layer 1 has a property use whose default is not a text, a number, True, False or None."
+    },
+    {
+      "name": "new layers that are not a list",
+      "code": "return curio_edit_features(input_0, [], new_layers={})\n",
+      "problem": "new_layers is not a list of layers."
+    },
+    {
+      "name": "a value after the keywords' place",
+      "code": "return curio_edit_features(input_0, [], \"osm_id\")\n",
+      "problem": "After its input and its edits, the call takes key, layer, keys, new_layers, crs, by_input by name."
+    },
+    {
+      "name": "by_input as a text",
+      "code": "return curio_edit_features(input_0, [], by_input=\"yes\")\n",
+      "problem": "by_input is not True or False."
+    },
+    {
+      "name": "a key that is a number",
+      "code": "return curio_edit_features(input_0, [], key=3)\n",
+      "problem": "key is not a text."
+    },
+    {
+      "name": "edits that are a dict",
+      "code": "return curio_edit_features(input_0, {})\n",
+      "problem": "The call's second argument is a dict, not a list of edits."
+    },
+    {
+      "name": "a dict whose key is a number",
+      "code": "return curio_edit_features(input_0, [{1: \"remove\"}], key=\"osm_id\")\n",
+      "problem": "A dict in the edits has the key 1, which is not a text."
+    },
+    {
+      "name": "a dict that gives a key twice",
+      "code": "return curio_edit_features(input_0, [{\"op\": \"remove\", \"op\": \"set\", \"ids\": [1]}], key=\"osm_id\")\n",
+      "problem": "A dict in the edits gives op twice."
+    },
+    {
+      "name": "an escape cut short",
+      "code": "return curio_edit_features(input_0, [], key=\"osm\\x4\")\n",
+      "problem": "Line 1: a text has an escape cut short."
+    },
+    {
+      "name": "an escape of half a character",
+      "code": "return curio_edit_features(input_0, [], key=\"osm\\ud800\")\n",
+      "problem": "Line 1: a text escapes a character Unicode has not."
+    },
+    {
+      "name": "a text that goes on past its line",
+      "code": "return curio_edit_features(input_0, [], key=\"osm\\\nid\")\n",
+      "problem": "Line 1: a text goes on past its line."
+    },
+    {
+      "name": "a text not closed on its line",
+      "code": "return curio_edit_features(input_0, [], key=\"osm_id\n)\n",
+      "problem": "Line 1: a text is not closed on its line."
+    },
+    {
+      "name": "a sign before no number",
+      "code": "return curio_edit_features(input_0, [{\"op\": \"remove\", \"ids\": [-]}], key=\"osm_id\")\n",
+      "problem": "Line 1: a sign stands before no number."
+    },
+    {
+      "name": "a number with a letter after it",
+      "code": "return curio_edit_features(input_0, [{\"op\": \"remove\", \"ids\": [3x]}], key=\"osm_id\")\n",
+      "problem": "Line 1: 3x is not a number the node reads."
+    },
+    {
+      "name": "a whole number starting with a zero",
+      "code": "return curio_edit_features(input_0, [{\"op\": \"remove\", \"ids\": [007]}], key=\"osm_id\")\n",
+      "problem": "Line 1: 007 starts with a zero, which Python refuses."
+    },
+    {
+      "name": "two items of a list with no comma between them",
+      "code": "return curio_edit_features(input_0, [{\"op\": \"remove\", \"ids\": [1 2]}], key=\"osm_id\")\n",
+      "problem": "Line 1: an item of a list has no , or ] after it."
+    },
+    {
+      "name": "a key of a dict with no colon after it",
+      "code": "return curio_edit_features(input_0, [{\"op\" \"remove\", \"ids\": [1]}], key=\"osm_id\")\n",
+      "problem": "Line 1: a key of a dict has no : after it."
+    },
+    {
+      "name": "two entries of a dict with no comma between them",
+      "code": "return curio_edit_features(input_0, [{\"op\": \"remove\" \"ids\": [1]}], key=\"osm_id\")\n",
+      "problem": "Line 1: a value of a dict has no , or } after it."
+    },
+    {
+      "name": "a character that starts no value",
+      "code": "return curio_edit_features(input_0, [], key=@)\n",
+      "problem": "Line 1: @ does not start a value the node reads."
+    },
+    {
+      "name": "two arguments with no comma between them",
+      "code": "return curio_edit_features(input_0 [])\n",
+      "problem": "Line 1: an argument has no , or ) after it."
+    },
+    {
+      "name": "a problem on a later line, after CRLF line ends",
+      "code": "# towers\r\nreturn curio_edit_features(input_0, [\r\n    {\"op\": \"remove\", \"ids\": [1 2]},\r\n], key=\"osm_id\")\r\n",
+      "problem": "Line 3: an item of a list has no , or ] after it."
     }
   ]
 }

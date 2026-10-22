@@ -5,7 +5,10 @@ properties.
 A small language read by its own parser, never by Python's ``eval``. Its twin
 is ``utils/editFeatures/editExpr.ts`` in the frontend, and both read the cases
 in ``utils/editFeatures/editExpr.cases.json``, so the node's table in the
-browser and a run agree on every value.
+browser and a run agree on every value. A text that is not an expression is
+refused in the twin's words, values written as JavaScript writes them
+(``js_values``), so the node and the sandbox's reader of its code
+(``feature_edits_code.py``) give one reason.
 
 - A column: a name (``height``, ``building:levels``), or any text in
   backticks (`` `Mean Acc shadow` ``).
@@ -33,6 +36,8 @@ from __future__ import annotations
 import math
 import re
 from decimal import ROUND_HALF_UP, Decimal
+
+from utk_curio.sandbox.util import js_values
 
 #: Deeper than this, an expression is refused, so a run never meets Python's
 #: own recursion limit where the browser would meet another.
@@ -71,7 +76,7 @@ def _tokens(text: str):
             return out
         match = _TOKEN.match(text, pos)
         if not match:
-            raise ExprError(f"cannot read {text[pos:pos + 20]!r} in {text!r}")
+            raise ExprError(f"cannot read '{text[pos:pos + 20]}' in '{text}'")
         kind = match.lastgroup
         value = match.group(kind)
         pos = match.end()
@@ -108,7 +113,7 @@ class _Parser:
     def _take(self, kind=None, value=None):
         token = self._peek(kind, value)
         if token is None:
-            raise ExprError(f"expected {value or kind or 'more'} in {self.text!r}")
+            raise ExprError(f"expected {value or kind or 'more'} in '{self.text}'")
         self.at += 1
         return token
 
@@ -122,7 +127,7 @@ class _Parser:
             raise ExprError("the expression is empty")
         node = self._or()
         if self.at != len(self.tokens):
-            raise ExprError(f"unexpected {self.tokens[self.at][1]!r} in {self.text!r}")
+            raise ExprError(f"unexpected '{js_values.string(self.tokens[self.at][1])}' in '{self.text}'")
         return node
 
     def _or(self):
@@ -182,7 +187,7 @@ class _Parser:
     def _atom(self):
         token = self._peek()
         if token is None:
-            raise ExprError(f"the expression {self.text!r} ends too soon")
+            raise ExprError(f"the expression '{self.text}' ends too soon")
         kind, value = token
         if kind in ("lit", "col"):
             self._take()
@@ -215,7 +220,7 @@ class _Parser:
             self._take("op", ")")
             self.depth -= 1
             return node
-        raise ExprError(f"unexpected {value!r} in {self.text!r}")
+        raise ExprError(f"unexpected '{js_values.string(value)}' in '{self.text}'")
 
 
 def _arity(name: str) -> str:

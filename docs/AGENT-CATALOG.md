@@ -295,6 +295,10 @@ Applying the whole plan saves its scenarios. Applied node by node, a copy can be
 
 An agent that reads the dataflow sees each scenario with its fixed context, levers and outcomes, each node's widget values, and each node's [selection tags](USAGE.md#selection-tags), with the view each reads and how many rows it holds.
 
+### Map Edits
+
+An agent writes a Map Edits node's code as the node writes it: one call that holds the node's edits, which the node lists and shows on its map. Code the node cannot read is refused, and the agent is told why in the node's own words. An edit names its features by ids their layer holds, or by a condition; when a run says an edit names ids no feature has, Solve corrects it. Solve makes edits in an empty Map Edits node only when its goal names them, such as *Remove the two tallest towers*; otherwise the node gets its call with no edits, as when you drop it, and you make the edits on the map. An agent writing a node beside a Map Edits node reads its edits. Once you apply a change an agent made to a Map Edits node, it is an entry named after the agent in the node's Provenance drawer, and the nodes below it are out of date until they run again, as when you edit the node yourself.
+
 ### Finding data in portals
 
 The **Dataset Finder** can search the portals in the [Discovery Catalog](DISCOVERY-CATALOG.md) as well as your own datasets, and propose downloading one. Nothing is downloaded until you apply the proposal. See [DISCOVERY-CATALOG.md part 6](DISCOVERY-CATALOG.md#6-the-dataset-finder). Solve and the other agents ask whichever agent in the dataflow declares `dataset.discover`, so an agent of your own that declares it, with the same tools, searches in its place.

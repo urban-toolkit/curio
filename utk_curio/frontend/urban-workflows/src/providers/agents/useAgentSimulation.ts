@@ -42,6 +42,7 @@ export function useAgentSimulation(opts: {
               kind: "node-content-applied",
               nodeId: payload.nodeId,
               content: String(payload.content ?? ""),
+              ...(typeof payload.agent === "string" && payload.agent ? { agent: payload.agent } : {}),
             });
           } else if (name === "edges_created" && Array.isArray(payload.createdEdges)) {
             const edges = payload.createdEdges as Array<{ id: string; source: string; target: string }>;

@@ -105,7 +105,7 @@ these lists meet.
 
 A Map Edits node's history in `nodeProvenance` also holds an entry for each
 change made in its body, `kind` `edit`, with the code it left and a `label`
-saying what it changed.
+saying what it changed, or, for a change an agent made, naming the agent.
 
 ### An edge
 

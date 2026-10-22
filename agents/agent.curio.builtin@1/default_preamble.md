@@ -30,4 +30,6 @@ Act like an assistant for users of a system for building visual analytics datafl
 
 {{include:knowledge/interaction-edges.md}}
 
+{{include:knowledge/map-edits.md}}
+
 {{include:knowledge/scenarios.md}}

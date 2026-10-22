@@ -13,7 +13,9 @@
  * applies the new edits, in the browser or on the server, as any Python
  * node's code runs, and Commit edits in the body starts one. Undo and Redo put
  * back an entry's code and file none. Nothing is written where nobody can
- * save it: the dashboard, a shared view.
+ * save it: the dashboard, a shared view. An agent's applied change to the
+ * code is written the same way (`nodeCodeWriters`), its entry named after
+ * the agent.
  *
  * Fed by several data nodes, its code hands the step all of them, one per
  * circle, and hands on every layer by name (`editFeaturesCode`'s *circles*).
@@ -26,6 +28,7 @@ import { autoRunTargets } from "../../providers/flow/useAutoRun";
 import { EditFeaturesBody, type CodeWrite } from "../../components/editFeatures/EditFeaturesBody";
 import { editFeaturesCode, readEditFeaturesCode } from "../../utils/editFeatures/editFeatures";
 import { circlesInto, nodeCode } from "../../utils/editFeatures/mapLayerEdits";
+import { registerNodeCodeWriter } from "../../utils/nodeCodeWriters";
 import { failureLine } from "../../utils/runFailure";
 
 export const useEditFeaturesBehavior: NodeBehaviorHook = (data, nodeState) => {
@@ -59,6 +62,13 @@ export const useEditFeaturesBehavior: NodeBehaviorHook = (data, nodeState) => {
     }
     if (change.label !== undefined) nodeEditProv(data.nodeId, code, change.label, before);
   };
+
+  // An agent's applied change is a change of the node's own, named after the
+  // agent; where nothing is written, the canvas writes the code as it is.
+  useEffect(() => {
+    if (!writable) return undefined;
+    return registerNodeCodeWriter(data.nodeId, (code, author) => write.current(code, { label: author }));
+  }, [data.nodeId, writable]);
 
   // An input connected or taken off: the code hands the step its circles.
   // Only code the node reads is written again, and only for another number of

@@ -298,7 +298,7 @@ class InProcessDriver:
         calls = self.calls
 
         def _fake_run(config, messages, **kwargs):
-            if messages and messages[0].get("content") == services_mod.TITLE_PROMPT:
+            if messages and messages[0].get("content") == services_mod.title_prompt():
                 return "Reconstruction"
             calls.append(messages)
             return responder(messages, len(calls) - 1)
@@ -542,6 +542,10 @@ def oracle_attempt(
             ),
             # #662: a planned node declares the widgets its code reads.
             widgets=oracle.widgets_for(
+                fixture.expected, example=example, origins=expected_graph.origins
+            ),
+            # A planned Map Edits node names the edits it is to hold.
+            edit_goals=oracle.edit_goals_for(
                 fixture.expected, example=example, origins=expected_graph.origins
             ),
         )
