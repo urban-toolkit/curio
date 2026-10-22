@@ -164,6 +164,7 @@ class _LazyRoster:
 
     def __init__(self, sources: dict | None = None) -> None:
         self._sources = sources
+        self._described: dict[tuple[str, str], bool] = {}
 
     def get(self, dir_name: object) -> dict | None:
         if self._sources is None:
@@ -187,3 +188,31 @@ class _LazyRoster:
             if source.get("provider") == "direct" and (source.get("capabilities") or {}).get("download"):
                 return dir_name
         return None
+
+    def describes(self, dir_name: str, resource_id: str, *, budget=None) -> bool:
+        """Whether the source *dir_name* describes *resource_id*: the Discovery
+        Catalog's own describe, the call a ``discovery.acquire`` proposal is
+        grounded in, asked once per resource in a pass. With *budget*, the
+        run's web budget, each ask spends one call, and a spent budget is a
+        no. A describe that fails, for a resource the source does not have or
+        for any other reason, is a no."""
+        key = (dir_name, resource_id)
+        if key not in self._described:
+            self._described[key] = self._describe(dir_name, resource_id, budget)
+        return self._described[key]
+
+    @staticmethod
+    def _describe(dir_name: str, resource_id: str, budget) -> bool:
+        if budget is not None:
+            if budget.exhausted:
+                return False
+            budget.spend()
+        try:
+            from utk_curio.backend.app.agents.application.proposals import acquire
+
+            acquire._discovery_service().describe_resource(dir_name, resource_id)
+        except Exception as exc:  # noqa: BLE001 - an unconfirmed resource is not offered, never a run error
+            log.info("%s did not describe %s (%s): the row is not offered for download",
+                     dir_name, resource_id, exc)
+            return False
+        return True

@@ -170,10 +170,10 @@ class TestOnlyTheRuntimeSaysActionable:
     def test_a_model_claim_is_stripped(self, app, shipped_root):
         assert self._row(acquirable=True).get("acquirable") is None
 
-    def test_a_real_connector_source_is_marked(self, app, shipped_root):
+    def test_a_real_connector_source_is_marked(self, app, shipped_root, fixture_corpus):
         assert self._row(**self.CHICAGO)["acquirable"] is True
 
-    def test_the_run_grant_does_not_decide_it(self, app, shipped_root):
+    def test_the_run_grant_does_not_decide_it(self, app, shipped_root, fixture_corpus):
         # A person confirming the row uses the download route, which needs only
         # their sign-in; there is no grant to consult here at all.
         row = {"name": "Bike Routes", "sourceType": "discovery", **self.CHICAGO}
@@ -182,7 +182,7 @@ class TestOnlyTheRuntimeSaysActionable:
         assert row["acquirable"] is True
 
     def test_a_connector_row_whose_landing_page_is_a_portal_is_still_downloadable(
-        self, app, shipped_root
+        self, app, shipped_root, fixture_corpus
     ):
         row = self._row(**self.CHICAGO, url="https://data.cityofchicago.org/d/ijzp-q8t2",
                         verification={"status": "verified", "httpStatus": 200,
@@ -289,7 +289,7 @@ class TestOnlyTheRuntimeSaysActionable:
         http = self._row(url=self.URL.replace("https://", "http://"), verification=self.GEOJSON)
         assert "sourceId" not in http
 
-    def test_a_downloadable_row_carries_no_portal_steps(self, app, shipped_root):
+    def test_a_downloadable_row_carries_no_portal_steps(self, app, shipped_root, fixture_corpus):
         row = {"name": "Bike Routes", "sourceType": "discovery", **self.CHICAGO,
                "access": verify.ACCESS_MANUAL, "downloadSteps": ["Open the portal page"]}
         _mint_row_acquirable(row, _LazyRoster())

@@ -381,7 +381,7 @@ def _verify_candidate_parts(parts: list, loop_ctx: dict | None = None) -> None:
                 if loop_ctx is not None and row["verification"].get("status") == "verified":
                     loop_ctx.setdefault("_verified_urls", {})[url] = row["verification"]
             agents_mint._mint_row_access(row)
-            agents_acquire._mint_row_acquirable(row, roster)
+            agents_acquire._mint_row_acquirable(row, roster, budget)
 
 
 def _grounded_catalog_rows(rows: list, listing: list) -> tuple[list, int]:

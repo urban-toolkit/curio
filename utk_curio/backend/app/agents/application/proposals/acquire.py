@@ -379,19 +379,22 @@ def _await_discovery_job(service, job_id: str | None, *, deadline: float | None 
     return None
 
 
-def _mint_row_acquirable(row: dict, roster: "_LazyRoster") -> None:
+def _mint_row_acquirable(row: dict, roster: "_LazyRoster", budget=None) -> None:
     """Whether Curio can download this row into the Data Catalog: the one answer.
 
     The model may name a source; it may not claim the source can be acted on,
     so a model-supplied ``acquirable`` never survives. The answer reads the
-    roster and the probe, never the run's grants: a person confirming the row
-    uses the download route, which needs only their sign-in, and an agent's
-    own ``discovery.acquire`` proposal is checked against its grant where it is
-    minted.
+    roster, the source and the probe, never the run's grants: a person
+    confirming the row uses the download route, which needs only their
+    sign-in, and an agent's own ``discovery.acquire`` proposal is checked
+    against its grant where it is minted.
 
     - A connector source (anything but ``direct``) is acquirable when the
-      roster has it and it downloads. The connector knows how to fetch the
-      resource, so the probe of a landing page does not decide it.
+      roster has it, it downloads, and it describes the resource: the
+      Discovery Catalog confirms the resource id, as for a
+      ``discovery.acquire`` proposal, spending one call of *budget*, the
+      run's web budget, when one is given. The connector knows how to fetch
+      the resource, so the probe of a landing page does not decide it.
     - A ``direct`` source downloads the URL itself, so the probe decides: an
       https URL the probe read as data, whose content type maps to a format the
       source accepts or which is a zip or a gzip the download unpacks, and
@@ -400,26 +403,25 @@ def _mint_row_acquirable(row: dict, roster: "_LazyRoster") -> None:
 
     A row with a plain link and no coordinate is tried as a ``direct`` row: the
     coordinate is minted here, after parsing, so it is never model-supplied and
-    never meets the parser's length cap. It stays only when the row qualifies.
-    A downloadable row offers that and nothing else, so it carries no portal
-    steps.
+    never meets the parser's length cap. A coordinate, minted or the model's,
+    stays only when the row qualifies, so one the runtime did not confirm never
+    reaches a download, a builder or a file's provenance. A downloadable row
+    offers that and nothing else, so it carries no portal steps.
     """
     row.pop("acquirable", None)
-    minted = False
     if not (row.get("sourceId") and row.get("resourceId")) and str(row.get("url") or "").startswith("https://"):
         direct = roster.direct()
         if direct:
             row["sourceId"], row["resourceId"] = direct, row["url"]
-            minted = True
-    if _acquirable(row, roster):
+    if _acquirable(row, roster, budget):
         row["acquirable"] = True
         row.pop("downloadSteps", None)
-    elif minted:
+    else:
         row.pop("sourceId", None)
         row.pop("resourceId", None)
 
 
-def _acquirable(row: dict, roster: "_LazyRoster") -> bool:
+def _acquirable(row: dict, roster: "_LazyRoster", budget=None) -> bool:
     source = roster.get(row.get("sourceId")) if row.get("resourceId") else None
     # A storage source (a folder, a bucket, a dataset repository) is added from
     # the Discovery Catalog page, and a service downloads for an area set there:
@@ -430,7 +432,7 @@ def _acquirable(row: dict, roster: "_LazyRoster") -> bool:
     if not capabilities.get("download"):
         return False
     if source.get("provider") != "direct":
-        return True
+        return roster.describes(row["sourceId"], row["resourceId"], budget=budget)
     url = str(row.get("url") or "")
     if not url.startswith("https://") or row.get("resourceId") != url:
         return False
