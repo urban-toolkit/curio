@@ -22,15 +22,10 @@ and no tooltip layer to read:
    ``[!! scenario colors !!]`` chip shows each box's name and color (Existing
    #2a9d8f, Towers removed #e76f51).
 
-The pointer is moved with ``page.mouse`` to an element's middle: a locator's
-hover fails its actionability check under React Flow's pane. None of these
-needs a GPU: the maps in example 26 and in Chicago Loop stay undrawn on a CPU
-runner, and nothing here reads them.
-
-TODO(frames): a frame of each preview, with its node, once the tooltip PR
-("One Curio tooltip") has merged: its capture hides an open tooltip unless
-asked to keep it (``keep_tooltip=True``), and clips a frame to the node and
-its tooltip. Until then these tests take no frame.
+A frame of each preview: the tooltip and what it describes, compared as
+tightly as a node's close-up. The pointer is moved with ``page.mouse``
+(utils/tooltips). None of these needs a GPU: the maps in example 26 and in
+Chicago Loop stay undrawn on a CPU runner, and nothing here reads them.
 
 Run::
 
@@ -47,11 +42,14 @@ from typing import TYPE_CHECKING
 from .test_input_lines_e2e import _open_list, _wait_for_counts
 from .test_widget_tags_e2e import _open_tab
 from .utils import (
+    CLOSEUP_MAX_DIFF_RATIO,
+    CLOSEUP_PIXEL_THRESHOLD,
     REPO_ROOT,
     _wait_for_no_node_running,
     api_json,
-    assert_in_view,
     assert_vega_canvas_rendered,
+    editor_chip_box,
+    element_box,
     frame_nodes,
     node_locator,
     open_strip_category,
@@ -59,9 +57,13 @@ from .utils import (
     require_owner_view,
     require_project_page,
     require_user_auth,
+    rest_pointer_on,
     run_all_and_wait,
     run_node_and_wait,
+    save_workflow_test_screenshot,
     stub_login_and_enter_workflow,
+    tooltip_close_up,
+    tooltip_saying,
     wait_for_node_done,
 )
 
@@ -83,6 +85,8 @@ VEGA_POOL = "3a98c743-bee9-492a-b1ce-dbc17be97f14"
 LOOP_CHART = "d0e547ba-e7d6-52e1-9c0e-f047443b715c"
 LOOP_PACKAGES = ("curio.scout@1", "model.scout.deep-umbra@1")
 
+#: The stem of this module's frames.
+STEM = "chip-previews"
 #: The line a header tag's preview ends with.
 TAG_HOW = "Drag into the code, or click to insert it at the cursor"
 #: How long a node of these examples may take to run, in ms.
@@ -90,73 +94,6 @@ RUN_MS = 120000
 #: How long a preview may take to show and read its input, in ms: its 400 ms,
 #: one read of the input, and a busy runner.
 PREVIEW_MS = 15000
-
-# The first element *selector* finds that is laid out, as a box.
-_BOX_JS = r"""(selector) => {
-    const el = Array.from(document.querySelectorAll(selector)).find((e) => e.getClientRects().length > 0);
-    if (!el) return null;
-    const r = el.getBoundingClientRect();
-    return { left: r.left, top: r.top, right: r.right, bottom: r.bottom };
-}"""
-
-# The box of the chip `[!! inner !!]` in the editor *nodeId* shows, its line
-# first scrolled to the editor's middle. Null until the line is drawn. The
-# lines these tests hover hold that one chip.
-_CHIP_JS = r"""({ nodeId, inner }) => {
-    const card = document.querySelector(`.react-flow__node[data-id="${nodeId}"]`);
-    const host = card && Array.from(card.querySelectorAll(".monaco-editor")).find((el) => el.getClientRects().length > 0);
-    if (!host) return null;
-    const written = `[!! ${inner} !!]`;
-    const editor = ((window.monaco && window.monaco.editor.getEditors()) || []).find((e) => host.contains(e.getDomNode()));
-    if (editor) {
-        const at = editor.getModel().getValue().split("\n").findIndex((line) => line.includes(written));
-        if (at >= 0) editor.revealLineInCenter(at + 1);
-    }
-    for (const line of host.querySelectorAll(".view-line")) {
-        if (!(line.textContent || "").replace(/ /g, " ").includes(written)) continue;
-        const spans = Array.from(line.querySelectorAll(".curio-widget-ref, .curio-widget-ref-problem"))
-            .filter((span) => span.getClientRects().length > 0);
-        if (!spans.length) return null;
-        const boxes = spans.map((span) => span.getBoundingClientRect());
-        return {
-            left: Math.min(...boxes.map((b) => b.left)),
-            top: Math.min(...boxes.map((b) => b.top)),
-            right: Math.max(...boxes.map((b) => b.right)),
-            bottom: Math.max(...boxes.map((b) => b.bottom)),
-        };
-    }
-    return null;
-}"""
-
-# A point on the canvas where the pointer rests on nothing that shows a
-# tooltip: the bare pane when some is in view, else a part of a card that
-# holds no control and no editor.
-_QUIET_POINT_JS = r"""() => {
-    const area = document.querySelector(".curio-canvas-drop-target") || document.body;
-    const loud = '[data-tooltip], [title], [aria-describedby], button, a, input, select, textarea, '
-        + '[role="button"], [role="tab"], [draggable="true"], .monaco-editor, .react-flow__handle, canvas';
-    const r = area.getBoundingClientRect();
-    let fallback = null;
-    for (let fy = 0.05; fy < 1; fy += 0.1) {
-        for (let fx = 0.05; fx < 1; fx += 0.1) {
-            const x = r.left + fx * r.width;
-            const y = r.top + fy * r.height;
-            const el = document.elementFromPoint(x, y);
-            if (!el || el.closest(loud)) continue;
-            if (el.classList.contains("react-flow__pane")) return { x, y };
-            fallback = fallback || { x, y };
-        }
-    }
-    return fallback;
-}"""
-
-# What each tooltip on screen says, its white space run together.
-_TOOLTIPS_JS = r"""() => Array.from(document.querySelectorAll('[role="tooltip"]')).filter((tip) => {
-    const style = getComputedStyle(tip);
-    const r = tip.getBoundingClientRect();
-    return style.display !== "none" && style.visibility !== "hidden" && Number(style.opacity) > 0
-        && r.width > 0 && r.height > 0;
-}).map((tip) => (tip.innerText || tip.textContent || "").replace(/\s+/g, " ").trim())"""
 
 
 def _open(page, app_frontend, current_server: str, path: Path, *, username: str) -> tuple[dict, dict]:
@@ -180,55 +117,33 @@ def _open(page, app_frontend, current_server: str, path: Path, *, username: str)
     return nodes, session
 
 
-def _box(page, selector: str, *, timeout: float = 15000) -> dict:
-    """The box of the first element *selector* finds that is laid out."""
-    deadline = time.time() + timeout / 1000
-    box = page.evaluate(_BOX_JS, selector)
-    while box is None and time.time() < deadline:
-        page.wait_for_timeout(200)
-        box = page.evaluate(_BOX_JS, selector)
-    assert box, f"nothing on the page matches {selector}"
-    return box
+def _visible_box(page, selector: str, *, timeout: float = 15000) -> dict:
+    """The box of the first element *selector* finds, once it is laid out."""
+    page.locator(f"{selector}:visible").first.wait_for(state="visible", timeout=timeout)
+    return element_box(page, selector)
 
 
-def _chip(page, node_id: str, inner: str, *, timeout: float = 15000) -> dict:
-    """The box of the chip ``[!! inner !!]`` in *node_id*'s editor, its line
-    scrolled into the editor's view."""
-    deadline = time.time() + timeout / 1000
-    box = page.evaluate(_CHIP_JS, {"nodeId": node_id, "inner": inner})
-    while box is None and time.time() < deadline:
-        page.wait_for_timeout(200)
-        box = page.evaluate(_CHIP_JS, {"nodeId": node_id, "inner": inner})
-    assert box, f"{node_id}'s editor shows no chip [!! {inner} !!]"
-    return box
-
-
-def _rest_away(page) -> None:
-    """Rest the pointer where nothing shows a tooltip, and wait until none shows."""
-    quiet = page.evaluate(_QUIET_POINT_JS)
-    assert quiet, "the canvas has no point where nothing shows a tooltip"
-    page.mouse.move(quiet["x"], quiet["y"])
-    deadline = time.time() + 5
-    while page.evaluate(_TOOLTIPS_JS) and time.time() < deadline:
-        page.wait_for_timeout(100)
-    assert page.evaluate(_TOOLTIPS_JS) == [], f"a tooltip stays on screen: {page.evaluate(_TOOLTIPS_JS)}"
-
-
-def _preview(page, box: dict, what: str, expected: list[str]) -> str:
+def _preview(page, box: dict, what: str, expected: list[str], selector: str | None = None) -> dict:
     """Rest the pointer on the middle of *box*, a fresh hover, and wait for its
     one tooltip to say each of *expected*, which a preview says once it has
-    read its input. Returns what it says."""
-    _rest_away(page)
-    page.mouse.move(*assert_in_view(page, (box["left"] + box["right"]) / 2, (box["top"] + box["bottom"]) / 2, what))
-    deadline = time.time() + PREVIEW_MS / 1000
-    tips = page.evaluate(_TOOLTIPS_JS)
-    while not (len(tips) == 1 and all(text in tips[0] for text in expected)) and time.time() < deadline:
-        page.wait_for_timeout(200)
-        tips = page.evaluate(_TOOLTIPS_JS)
-    assert len(tips) == 1, f"{what}: {len(tips)} tooltips on screen, not one: {tips}"
-    missing = [text for text in expected if text not in tips[0]]
-    assert not missing, f"{what}: the preview does not say {missing}: {tips[0]!r}"
-    return tips[0]
+    read its input. Returns the tooltip."""
+    rest_pointer_on(page, box, what, avoid=selector)
+    return tooltip_saying(page, what, expected, selector, timeout=PREVIEW_MS)
+
+
+def _frame(page, name: str, tip: dict, target: dict | None, failed: list[str]) -> None:
+    """A frame of *tip* and what it describes, as tightly compared as a node's
+    close-up. A frame that differs is noted in *failed*, so every preview is
+    checked before the frames' verdict."""
+    try:
+        save_workflow_test_screenshot(
+            page, STEM, test_name=name,
+            fit_reactflow=False, keep_tooltip=True, clip_rect=tooltip_close_up(page, tip, target),
+            pixel_threshold=CLOSEUP_PIXEL_THRESHOLD, max_diff_ratio=CLOSEUP_MAX_DIFF_RATIO,
+            closeup=True,
+        )
+    except AssertionError as error:
+        failed.append(f"{name}: {error}")
 
 
 def _assert_same_preview(tag: str, chip: str) -> None:
@@ -263,12 +178,19 @@ def test_the_join_previews_its_tuple_input_in_its_header_and_its_code(
 
     # The tuple's parts, as code reads them, with their columns and rows.
     expected = ["A tuple of 2 values", "input_1[0]", "input_1[1]", "pm25_mean", "pm25_peak", "sensor_A", "8.0417"]
-    tag_box = _box(page, f'.react-flow__node[data-id="{JOIN}"] [data-widget-strip] [data-input-tag="1"]')
-    tag = _preview(page, tag_box, "the join's input_1 tag", expected + [TAG_HOW])
-    assert "from Summarize" in tag, tag
-    chip = _preview(page, _chip(page, JOIN, "input_1"), "the join's [!! input_1 !!] chip", expected)
-    _assert_same_preview(tag, chip)
-    # TODO(frames): the join with each preview, once the tooltip PR has merged.
+    failed: list[str] = []
+    selector = f'.react-flow__node[data-id="{JOIN}"] [data-widget-strip] [data-input-tag="1"]'
+    tag = _preview(page, _visible_box(page, selector), "the join's input_1 tag", expected + [TAG_HOW], selector)
+    assert "from Summarize" in tag["text"], tag["text"]
+    _frame(page, "26-join-input-1-tag", tag, None, failed)
+
+    # The chip's box is read before the hover: reading it scrolls its line into
+    # view, and a scroll under a tooltip hides it.
+    chip_box = editor_chip_box(page, JOIN, "input_1")
+    chip = _preview(page, chip_box, "the join's [!! input_1 !!] chip", expected)
+    _frame(page, "26-join-input-1-chip", chip, chip_box, failed)
+    _assert_same_preview(tag["text"], chip["text"])
+    assert not failed, "\n".join(failed)
 
 
 def test_the_chart_previews_its_input_and_a_column_after_run_all(
@@ -293,24 +215,31 @@ def test_the_chart_previews_its_input_and_a_column_after_run_all(
     _open_tab(page, VEGA_CHART, "grammar")
     open_strip_category(page, VEGA_CHART, "inputs")
     strip = f'.react-flow__node[data-id="{VEGA_CHART}"] [data-widget-strip]'
+    failed: list[str] = []
 
     # input_0: the pool's rows, their size, kind and coordinate system.
-    _preview(
+    selector = f'{strip} [data-input-tag="0"]'
+    tag = _preview(
         page,
-        _box(page, f'{strip} [data-input-tag="0"]'),
+        _visible_box(page, selector),
         "the chart's input_0 tag",
         ["from Data Pool", "79 rows", "3 columns", "GeoDataFrame", "EPSG:3395", "MultiPolygon", "Adams", TAG_HOW],
+        selector,
     )
+    _frame(page, "interaction-vega-input-0-tag", tag, None, failed)
 
     # A column of input_0, in its open list: its dtype, values and range.
     _open_list(page, VEGA_CHART, 0)
-    _preview(
+    selector = f'{strip} [data-input-columns="0"] [data-column-tag="accessibility"]'
+    column = _preview(
         page,
-        _box(page, f'{strip} [data-input-columns="0"] [data-column-tag="accessibility"]'),
+        _visible_box(page, selector),
         "the accessibility column of input_0",
         ["float64", "0.3124", "range 0 to 1", "all 79 rows", TAG_HOW],
+        selector,
     )
-    # TODO(frames): the chart with each preview, once the tooltip PR has merged.
+    _frame(page, "interaction-vega-accessibility-column", column, None, failed)
+    assert not failed, "\n".join(failed)
 
 
 def test_the_unrun_chart_previews_its_stacked_inputs_and_scenario_colors(
@@ -335,21 +264,26 @@ def test_the_unrun_chart_previews_its_stacked_inputs_and_scenario_colors(
         page.wait_for_timeout(250)
         spec = read_node_code(page, LOOP_CHART)
     assert '"[!! inputs !!]"' in spec and "[!! scenario colors !!]" in spec, spec
+    failed: list[str] = []
 
     # Nothing has run: the stacked rows are to come, and begin with the
     # fields the stacking adds.
-    _preview(
+    chip_box = editor_chip_box(page, LOOP_CHART, "inputs")
+    inputs = _preview(
         page,
-        _chip(page, LOOP_CHART, "inputs"),
+        chip_box,
         "the chart's [!! inputs !!] chip",
         ["Not run yet", "scenario_name", "scenario", "__input__"],
     )
+    _frame(page, "chicago-loop-inputs-chip", inputs, chip_box, failed)
 
     # The boxes' colors, which need no run.
-    _preview(
+    chip_box = editor_chip_box(page, LOOP_CHART, "scenario colors")
+    colors = _preview(
         page,
-        _chip(page, LOOP_CHART, "scenario colors"),
+        chip_box,
         "the chart's [!! scenario colors !!] chip",
         ["Existing", "#2a9d8f", "Towers removed", "#e76f51"],
     )
-    # TODO(frames): the chart with each preview, once the tooltip PR has merged.
+    _frame(page, "chicago-loop-scenario-colors-chip", colors, chip_box, failed)
+    assert not failed, "\n".join(failed)
