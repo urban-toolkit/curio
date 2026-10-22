@@ -75,6 +75,7 @@ from .utils import (
     load_artifact_as_dict,
     mark_point,
     node_locator,
+    park_pointer,
     read_node_code,
     read_node_error_text,
     require_owner_view,
@@ -640,8 +641,14 @@ def _open_provenance(page, node_id: str):
 
 
 def _close_provenance(page) -> None:
+    """Close the node's Provenance drawer. Closing it hands focus back to the
+    button that opened it, whose tooltip would sit in a later capture, so the
+    focus and the pointer leave it."""
     page.keyboard.press("Escape")
     wait_for_drawer_closed(page, PROVENANCE_DRAWER)
+    page.evaluate("document.activeElement && document.activeElement.blur()")
+    park_pointer(page)
+    expect(page.locator('[role="tooltip"]')).to_have_count(0, timeout=5000)
 
 
 def _entries(panel) -> list[tuple[str, str]]:
