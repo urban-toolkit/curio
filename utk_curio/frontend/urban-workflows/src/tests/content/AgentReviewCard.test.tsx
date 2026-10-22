@@ -435,6 +435,45 @@ describe("AgentReviewCard: #662 a plan's widgets and scenarios", () => {
   });
 });
 
+describe("AgentReviewCard: a planned Spatial Join says how it joins", () => {
+  const joinPart = () =>
+    ({
+      type: "proposal",
+      proposalId: "p-join",
+      tool: "dataflow.plan.write",
+      summary: "Apply plan · 3 nodes, 2 edges",
+      preview: "",
+      pins: { baseGraphDigest: "abc" },
+      status: "pending",
+      plan: {
+        goal: "count sidewalk labels per neighborhood",
+        nodes: [
+          { ref: "labels", nodeType: "curio.builtin/data-loading", title: "Labels", intent: "label points" },
+          { ref: "hoods", nodeType: "curio.builtin/data-loading", title: "Neighborhoods", intent: "polygons" },
+          {
+            ref: "join", nodeType: "curio.builtin/spatial-join", title: "Labels per neighborhood",
+            intent: "count the labels within each neighborhood",
+            spatialJoin: { predicate: "within", output: "counts" },
+          },
+        ],
+        edgeCount: 2,
+      },
+    }) as AgentProposalPart;
+
+  it("its row names the operation and the output the plan sets, and no other row names one", () => {
+    render(
+      <AgentReviewCard
+        part={joinPart()}
+        onApplyPlanNode={jest.fn()}
+        onSavePlanGoal={jest.fn()}
+        planNodeState={{ appliedRefs: [], editedGoals: {} }}
+      />,
+    );
+    expect(screen.getByText("operation within, output counts")).toBeInTheDocument();
+    expect(screen.getAllByText(/^operation /)).toHaveLength(1);
+  });
+});
+
 describe("AgentReviewCard — dev/67-7 validation block", () => {
   const validated = (verdict: "pass" | "fail", evidence = {}): AgentProposalPart => ({
     ...part(),

@@ -446,8 +446,9 @@ TRILL_PROMPT_FIELDS: dict[str, tuple[str, ...]] = {
     "dataflowBase": ("nodes", "edges", "name", "task", "scenarios"),
     "node": ("id", "type", "content", "goal", "title", "x", "y", "in", "out", "metadata"),
     # #662: a node's widgets are what an agent declares for its code to read,
-    # and a copy's lineage is how two scenarios' levers pair.
-    "nodeMetadata": ("keywords", "widgets", "copiedFrom"),
+    # and a copy's lineage is how two scenarios' levers pair. A Spatial Join's
+    # operation and output are what an agent sets on one.
+    "nodeMetadata": ("keywords", "widgets", "copiedFrom", "spatialJoin"),
     "edge": ("id", "source", "target", "type", "sourceHandle", "targetHandle", "metadata"),
     # Where a scenario sits on the canvas and where it came from are the
     # canvas's own bookkeeping, and its description is for people.

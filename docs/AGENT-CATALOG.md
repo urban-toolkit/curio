@@ -261,7 +261,7 @@ The Researcher reads the dataflow as it is on screen with every message, unsaved
 
 Each attachment has its own chat transcript and its own **intent**, the editable first instruction, which starts as the definition's own prompt. An agent must be added to the dataflow before you can attach it.
 
-When an agent proposes a change to your dataflow, it does not apply it. The proposal appears as a **review card**, and applying it is a separate click, which first checks that the target has not changed since the proposal. Dismissing it leaves nothing behind.
+When an agent proposes a change to your dataflow, it does not apply it. The proposal appears as a **review card**, and applying it is a separate click, which first checks that the target has not changed since the proposal. Dismissing it leaves nothing behind. A chart or a map an agent proposes is checked against its grammar's schema before its card appears.
 
 A reply of Node Builder or Dataflow Builder that carries no review card says **No changes were made to the canvas** under it. A web address the egress policy refused shows its reason under the reply. So does any other tool call that failed, unless a later call of the same tool in that reply succeeded.
 
@@ -288,6 +288,8 @@ A node with several inputs reads each through its input chip, `[!! input_0 !!]`,
 ### Widgets and scenarios
 
 A planned node can declare widgets: values you set in its **Widgets** tab, which its code reads through references such as `[!! threshold !!]` (see [Widgets](USAGE.md#widgets)). The review card lists each node's widgets, and Solve writes code that places them and is told their current values. A value several nodes read is a **Parameter** node with one widget. A node the **Node Builder** proposes can declare widgets too. A widget a plan or a proposal declares is checked as the **Widgets** tab checks one you add.
+
+A planned **Spatial Join** says how its inputs' shapes meet and what it outputs, the two choices its body offers, and the review card lists them. A Spatial Join the **Node Builder** proposes carries them too. An agent can set only an operation and an output the node offers.
 
 A plan can also save [scenarios](USAGE.md#scenarios). A scenario in a plan is either a named selection of its nodes, or a duplicate of one: its nodes are copied with the connections between them and every connection entering them, as **Duplicate as scenario** copies them on the canvas, and the copies can be given other widget values. The review card names each scenario with its nodes, and for a duplicate the scenario it copies and the values it changes; each copy is listed as a node with its scenario beside its title.
 
