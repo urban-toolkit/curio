@@ -61,6 +61,14 @@ def catalog_tag_chips_are_plain(ctx: Ctx) -> None:
     opened the drawer was looking at the one surface the bug was not on.
     """
     page = ctx.page
+    # The Data and Node pages list the newest entry first, and the capture is
+    # the first card's chips, so a newly shipped dataset or package would
+    # change the frame. One named entry, found by search, keeps it the same
+    # card every time.
+    pinned = {
+        "Data": ("Search catalog datasets…", "Quad Cities SVI Census Tracts"),
+        "Node": ("Search packages…", "Custom UI"),
+    }
 
     for kind, route, card_sel in (
         ("Data", "/catalog/data", "article[data-dataset-id]"),
@@ -71,12 +79,10 @@ def catalog_tag_chips_are_plain(ctx: Ctx) -> None:
                 "Chips here used to take a colour from the format or category.")
         page.goto(f"{ctx.frontend}{route}")
         page.wait_for_load_state("domcontentloaded")
-        if kind == "Node":
-            # The page lists the newest package first, and the capture is the
-            # first card's chips, so a newly shipped package would change the
-            # frame. One named package keeps it the same card every time.
+        if kind in pinned:
+            placeholder, name = pinned[kind]
             page.locator(card_sel).first.wait_for(state="visible", timeout=30000)
-            page.get_by_placeholder("Search packages…").fill("Custom UI")
+            page.get_by_placeholder(placeholder).fill(name)
             expect(page.locator(card_sel)).to_have_count(1, timeout=10000)
 
         card = page.locator(card_sel).first

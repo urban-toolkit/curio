@@ -33,6 +33,7 @@ export enum NodeType {
   DATA_POOL = "curio.builtin/data-pool",
   JS_COMPUTATION = "curio.builtin/js-computation",
   AUTK_GRAMMAR = "curio.builtin/autk-grammar",
+  EDIT_FEATURES = "curio.builtin/edit-features",
 }
 
 export enum EdgeType {

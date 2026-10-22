@@ -526,5 +526,14 @@
     "data_type": [
       "Tables"
     ]
+  },
+  "dataflows/chicago-loop-layers": {
+    "tags": [
+      "Autark"
+    ],
+    "data_type": [
+      "Geometries",
+      "OpenStreetMap"
+    ]
   }
 }

@@ -238,6 +238,21 @@ def _attachment(**over) -> dict:
     return record
 
 
+def _history_entry(**over) -> dict:
+    """One entry of a node's history (``nodeExecRecord``): a run, unless *over* says otherwise."""
+    record = {
+        "id": 1,
+        "parentId": None,
+        "code": "print(1)",
+        "inputs": [],
+        "outputs": [],
+        "startTime": "Oct 21 2026 10:1:2",
+        "endTime": "Oct 21 2026 10:1:2",
+    }
+    record.update(over)
+    return record
+
+
 def _mutate(fn):
     doc = _good()
     fn(doc)
@@ -405,50 +420,13 @@ REJECTED = {
     "selection tag named as a reference": lambda d: _node(d)["metadata"].update(
         selections=[{"name": "selection picked", "node": "n2", "column": "osm_id", "ids": []}]
     ),
-    # #662: an Edit Features node's edits each name what they do and to which
-    # features; a set names its column and its value.
-    "feature edit the node does not make": lambda d: _node(d)["metadata"].update(
-        editFeatures={"key": "osm_id", "edits": [{"op": "delete", "ids": [1]}]}
+    # A node's history holds runs and edits (a Map Edits node's actions,
+    # entries switched off and entries deleted), and nothing else.
+    "node history entry of a kind it does not have": lambda d: d.update(
+        nodeProvenance={"n1": [_history_entry(kind="undo", label="undo")]}
     ),
-    "feature edit naming no features": lambda d: _node(d)["metadata"].update(
-        editFeatures={"key": "osm_id", "edits": [{"op": "remove", "ids": []}]}
-    ),
-    "feature set without its column": lambda d: _node(d)["metadata"].update(
-        editFeatures={"key": "osm_id", "edits": [{"op": "set", "ids": [1], "value": 0}]}
-    ),
-    "feature set without its value": lambda d: _node(d)["metadata"].update(
-        editFeatures={"key": "osm_id", "edits": [{"op": "set", "ids": [1], "column": "height"}]}
-    ),
-    "feature edit naming a feature by an object": lambda d: _node(d)["metadata"].update(
-        editFeatures={"key": "osm_id", "edits": [{"op": "remove", "ids": [{"row": 3}]}]}
-    ),
-    "feature edits written empty": lambda d: _node(d)["metadata"].update(editFeatures={"edits": []}),
-    "feature edits with a field the format does not have": lambda d: _node(d)["metadata"].update(
-        editFeatures={"key": "osm_id", "rows": [3]}
-    ),
-    # An Interaction node's entries name their features by ids or by a
-    # condition, never both; a number edit takes a number and an expression a
-    # text, and each names its column.
-    "feature edit naming its features by ids and by a condition": lambda d: _node(d)["metadata"].update(
-        editFeatures={"key": "osm_id", "edits": [{"op": "remove", "ids": [1], "where": "height > 100"}]}
-    ),
-    "feature edit naming its features by an empty condition": lambda d: _node(d)["metadata"].update(
-        editFeatures={"key": "osm_id", "edits": [{"op": "remove", "where": ""}]}
-    ),
-    "feature scale by a text": lambda d: _node(d)["metadata"].update(
-        editFeatures={"key": "osm_id", "edits": [{"op": "scale", "ids": [1], "column": "height", "value": "2"}]}
-    ),
-    "feature offset without its column": lambda d: _node(d)["metadata"].update(
-        editFeatures={"key": "osm_id", "edits": [{"op": "offset", "ids": [1], "value": 3}]}
-    ),
-    "feature expression that is a number": lambda d: _node(d)["metadata"].update(
-        editFeatures={"key": "osm_id", "edits": [{"op": "expr", "ids": [1], "column": "height", "value": 3}]}
-    ),
-    "feature edit with an empty label": lambda d: _node(d)["metadata"].update(
-        editFeatures={"key": "osm_id", "edits": [{"op": "remove", "ids": [1], "label": ""}]}
-    ),
-    "feature edit switched off by a text": lambda d: _node(d)["metadata"].update(
-        editFeatures={"key": "osm_id", "edits": [{"op": "remove", "ids": [1], "enabled": "no"}]}
+    "node history edit labelled by a number": lambda d: d.update(
+        nodeProvenance={"n1": [_history_entry(kind="edit", label=12)]}
     ),
 }
 
@@ -495,34 +473,17 @@ ACCEPTED = {
         {"name": "nothing_yet", "node": "n2", "column": "building_id", "ids": []},
         {"name": "many", "node": "n2", "column": "osm_id", "count": 25000},
     ]),
-    # An Edit Features node (#662): a remove, a set to null and a restore, by
-    # ids that are numbers and texts, on one layer of several.
-    "feature edits of every kind": lambda d: _node(d)["metadata"].update(
-        editFeatures={
-            "key": "building_id",
-            "layer": "table_osm_buildings",
-            "edits": [
-                {"op": "remove", "ids": [119, 443]},
-                {"op": "set", "ids": ["w12"], "column": "height", "value": None},
-                {"op": "restore", "ids": [443]},
-            ],
-        }
+    # A Map Edits node's edit log, saved before its code was its only
+    # state: node metadata takes extra keys, so the save loads, with the log
+    # ignored.
+    "an old save's edit log": lambda d: _node(d)["metadata"].update(
+        editFeatures={"key": "building_id", "edits": [{"op": "remove", "ids": [119, 443]}]}
     ),
-    # An Interaction node's log (#662): conditions, numbers, an expression, a
-    # label and an entry switched off.
-    "an Interaction log of every kind": lambda d: _node(d)["metadata"].update(
-        editFeatures={
-            "key": "building_id",
-            "edits": [
-                {"op": "scale", "where": "height > 100", "column": "height", "value": 0.5, "label": "Halve the towers"},
-                {"op": "offset", "ids": [136], "column": "height", "value": -6},
-                {"op": "expr", "ids": ["w12"], "column": "height", "value": "levels * 3.2", "enabled": False},
-                {"op": "set", "where": "kind == 'house'", "column": "kind", "value": "home"},
-                {"op": "remove", "where": "kind == 'shed'"},
-                {"op": "restore", "where": "height > 100", "enabled": True},
-            ],
-        }
-    ),
+    # A Map Edits node's history: a run, then an edit made in its body.
+    "a node history with an edit": lambda d: d.update(nodeProvenance={"n1": [
+        _history_entry(),
+        _history_entry(id=2, parentId=1, kind="edit", label="Remove building_id 34"),
+    ]}),
 }
 
 

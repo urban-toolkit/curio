@@ -53,9 +53,11 @@ describe("rekeyNodeProvenance", () => {
         // Read as source, as useCodeRestoresNodeSettings.test.ts reads this
         // hook: useCode cannot be mounted without the whole provider stack.
         const useCode = fs.readFileSync(path.join(__dirname, "..", "..", "hook", "useCode.ts"), "utf-8");
-        expect(useCode).toContain(
-            "loadNodeProvenance(rekeyNodeProvenance(trill.nodeProvenance, nodes.map((n) => n.id)))",
+        // The runs it loads are the rekeyed ones; each node's code as it
+        // loaded follows them (ProvenanceProvider's reload rule).
+        expect(useCode).toMatch(
+            /loadNodeProvenance\(\s*rekeyNodeProvenance\(trill\.nodeProvenance, nodes\.map\(\(n\) => n\.id\)\),/,
         );
-        expect(useCode).not.toMatch(/loadNodeProvenance\(trill\.nodeProvenance\)/);
+        expect(useCode).not.toMatch(/loadNodeProvenance\(\s*trill\.nodeProvenance\b/);
     });
 });

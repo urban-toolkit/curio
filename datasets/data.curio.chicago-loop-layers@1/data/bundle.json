@@ -1,0 +1,33 @@
+{
+  "version": 1,
+  "parts": [
+    {
+      "index": 0,
+      "label": "Census tracts with CDC/ATSDR's Social Vulnerability Index 2020",
+      "kind": "geodataframe",
+      "format": "geojson",
+      "file": "data/tracts.geojson"
+    },
+    {
+      "index": 1,
+      "label": "CTA 'L' rail lines (City of Chicago)",
+      "kind": "geodataframe",
+      "format": "geojson",
+      "file": "data/cta_lines.geojson"
+    },
+    {
+      "index": 2,
+      "label": "Trees (OpenStreetMap)",
+      "kind": "geodataframe",
+      "format": "parquet",
+      "file": "data/trees.parquet"
+    },
+    {
+      "index": 3,
+      "label": "CTA 'L' rail stations (City of Chicago)",
+      "kind": "geodataframe",
+      "format": "geojson",
+      "file": "data/cta_stations.geojson"
+    }
+  ]
+}

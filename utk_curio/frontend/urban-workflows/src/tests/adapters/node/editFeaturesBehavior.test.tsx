@@ -1,16 +1,17 @@
 /**
- * The Interaction node (#662; its type is still `curio.builtin/edit-features`)
- * on the canvas: its input drawn by the Autark node's map code with the layer
- * to edit pickable, a pick adding the picked features' ids to its list, Remove
- * turning them into an edit that is written with the code it makes, and a
- * layer with no column that identifies its features refused. Then its log:
- * the keys, conditions, the picked features' table, entries switched off,
- * deleted or undone, and Update results.
+ * The Map Edits node (#662; its type is still `curio.builtin/edit-features`)
+ * on the canvas, its code its only state. Linked to no Autark map it feeds, it
+ * says how to link one and keeps its list. Feeding a map and linked to it by
+ * an interaction edge, it lists its log: each entry, switched off, deleted,
+ * and each change an entry of its Provenance drawer, which Undo and Redo walk;
+ * an edit making the node and every node below it out of date, the map among
+ * them; Commit edits running them; a rule's matches and what it does; code
+ * the node cannot read; and a layer with no column that identifies its
+ * features.
  */
 import React from "react";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { NodeBehaviorData, UseNodeStateReturn } from "../../../registry/types";
-import { VisInteractionType } from "../../../constants";
 
 const mockFlowContext = React.createContext<Record<string, any>>({});
 jest.mock("../../../providers/FlowProvider", () => ({
@@ -24,21 +25,13 @@ jest.mock("../../../utils/autkInput", () => ({
   autkSourcesFrom: jest.fn(() => ({ sources: mockSources })),
 }));
 
-// The Autark node's map code, as the node's map calls it.
-const mockApply = jest.fn().mockResolvedValue(undefined);
-let mockMapData: any = null;
-jest.mock("../../../adapters/node/autkGrammarBehavior", () => ({
-  useAutkGrammarBehavior: (data: any) => {
-    mockMapData = data;
-    return { applyGrammar: mockApply, contentComponent: <div data-testid="autark-map" /> };
-  },
-}));
-
 import { useEditFeaturesBehavior } from "../../../adapters/node/editFeaturesBehavior";
-import { editFeaturesCode } from "../../../utils/editFeatures/editFeatures";
+import ProvenanceProvider, { useProvenanceContext, type NodeExecRecord } from "../../../providers/ProvenanceProvider";
+import { editFeaturesCode, readEditFeaturesCode, type EditFeaturesSettings } from "../../../utils/editFeatures/editFeatures";
 
 const NODE = "edit-1";
-const INPUT = { path: "art_layers", dataType: "dict" };
+const MAP = "map";
+const INPUT = { dataType: "outputs", data: [{ path: "art_roads" }, { path: "art_buildings" }] };
 
 function feature(properties: Record<string, unknown>) {
   return { type: "Feature", geometry: { type: "Polygon", coordinates: [[[0, 0], [1, 0], [1, 1], [0, 0]]] }, properties };
@@ -58,341 +51,349 @@ const ROADS = {
   outputTableName: "table_osm_roads",
   named: true,
   layerType: "roads",
-  geojsonObject: { type: "FeatureCollection", features: [feature({ highway: "primary" }), feature({ highway: "primary" })] },
+  geojsonObject: { type: "FeatureCollection", features: [feature({ osm_id: 7, highway: "primary" })] },
+};
+
+/** Two edits on the buildings, each naming its layer, as an edit on the map writes them. */
+const LOG: EditFeaturesSettings = {
+  keys: { table_osm_buildings: "building_id" },
+  edits: [
+    { op: "remove", ids: [119], layer: "table_osm_buildings" },
+    { op: "set", ids: [136], column: "height", value: 30, layer: "table_osm_buildings" },
+  ],
+};
+
+/**
+ * The data nodes feed the node, the node feeds the map, which feeds a count,
+ * which feeds a model; an interaction edge links the node and the map, and a
+ * chart is linked to the map by an interaction edge only, which runs nothing.
+ */
+const LINKED = {
+  more: [
+    { id: "roads", type: "curio.builtin/data-loading", data: { title: "Roads" } },
+    { id: "buildings", type: "curio.builtin/data-loading", data: { title: "Buildings" } },
+    { id: MAP, type: "curio.builtin/autk-grammar", data: { title: "Downtown Chicago layers" } },
+    { id: "count", type: "curio.builtin/computation-analysis", data: {} },
+    { id: "model", type: "curio.builtin/computation-analysis", data: {} },
+    { id: "chart", type: "curio.builtin/vis-vega", data: {} },
+  ],
+  edges: [
+    { id: "d1", source: "roads", target: NODE, sourceHandle: "out", targetHandle: "in_0" },
+    { id: "d2", source: "buildings", target: NODE, sourceHandle: "out", targetHandle: "in_1" },
+    { id: "d3", source: NODE, target: MAP, sourceHandle: "out", targetHandle: "in" },
+    { id: "link", source: NODE, target: MAP, sourceHandle: "in/out", targetHandle: "in/out", type: "BIDIRECTIONAL_EDGE" },
+    { id: "d5", source: MAP, target: "count", sourceHandle: "out", targetHandle: "in" },
+    { id: "d6", source: "count", target: "model", sourceHandle: "out", targetHandle: "in" },
+    { id: "i1", source: MAP, target: "chart", sourceHandle: "in/out", targetHandle: "in/out", type: "BIDIRECTIONAL_EDGE" },
+  ],
 };
 
 function nodeState(output = { code: "", content: "" }): UseNodeStateReturn {
   return { output, setOutput: jest.fn(), code: "", setCode: jest.fn() } as unknown as UseNodeStateReturn;
 }
 
-function mount(editFeatures: unknown, state = nodeState()) {
+/** The edits a code holds, as the node reads them; undefined for code it cannot read. */
+function settingsIn(code: unknown): EditFeaturesSettings | undefined {
+  const read = readEditFeaturesCode(String(code ?? ""));
+  return "problem" in read ? undefined : read.settings;
+}
+
+/**
+ * The node on a canvas that keeps what it writes, so each edit sees the log
+ * the one before it left, as on the canvas, under the provider that keeps its
+ * Provenance drawer's entries. Its code holds *log*, fed by two circles.
+ */
+function mountLive(log: EditFeaturesSettings | undefined, flowExtra: Record<string, any> = {}, state = nodeState(), extra: Record<string, unknown> = {}) {
   const updateDataNode = jest.fn();
   const markNodeStale = jest.fn();
-  const live = { nodeId: NODE, input: INPUT, editFeatures, defaultCode: editFeaturesCode(undefined), code: editFeaturesCode(undefined) };
-  const flow = { nodes: [{ id: NODE, data: live }], edges: [], updateDataNode, markNodeStale };
+  const markDirty = jest.fn();
+  const { more = [], edges = [], ...rest } = flowExtra;
+  const code = typeof extra.code === "string" ? extra.code : editFeaturesCode(log, 2);
+  const first = { nodeId: NODE, input: INPUT, ...extra, defaultCode: code, code };
+  const provenance: { current: ReturnType<typeof useProvenanceContext> | null } = { current: null };
+  function Probe() {
+    provenance.current = useProvenanceContext();
+    return null;
+  }
+  function Canvas({ children }: { children: React.ReactNode }) {
+    const [live, setLive] = React.useState<any>(first);
+    const flow = {
+      nodes: [{ id: NODE, type: "curio.builtin/edit-features", data: live }, ...more],
+      edges,
+      markNodeStale,
+      markDirty,
+      updateDataNode: (id: string, data: any) => {
+        updateDataNode(id, data);
+        setLive(data);
+      },
+      ...rest,
+    };
+    return <mockFlowContext.Provider value={flow}>{children}</mockFlowContext.Provider>;
+  }
   function Host() {
+    const live = React.useContext(mockFlowContext).nodes[0].data;
     const behavior = useEditFeaturesBehavior(live as unknown as NodeBehaviorData, state);
     return <>{behavior.contentComponent}</>;
   }
-  const view = render(
-    <mockFlowContext.Provider value={flow}>
-      <Host />
-    </mockFlowContext.Provider>,
+  render(
+    <ProvenanceProvider>
+      <Probe />
+      <Canvas>
+        <Host />
+      </Canvas>
+    </ProvenanceProvider>,
   );
-  return { ...view, updateDataNode, markNodeStale, state };
+  /** The code the node holds now. */
+  const codeNow = () => String(updateDataNode.mock.calls.at(-1)?.[1]?.code ?? code);
+  return {
+    updateDataNode,
+    markNodeStale,
+    markDirty,
+    codeNow,
+    log: () => settingsIn(codeNow())?.edits ?? [],
+    /** The entries of the node's Provenance drawer. */
+    entries: (): NodeExecRecord[] => provenance.current?.getAllNodeProvenance()[NODE] ?? [],
+  };
 }
 
-/** A pick on the map, as an Autark node reports it: the input rows it names. */
-function pick(rows: number[]) {
-  act(() => {
-    mockMapData.interactionsCallback({
-      autk_selection: { type: VisInteractionType.POINT, data: rows, priority: 1, layerRef: "table_osm_buildings" },
-    }, NODE);
-  });
-}
+const body = () => document.querySelector("[data-edit-body]") as HTMLElement;
 
 beforeEach(() => {
   mockSources = [ROADS, BUILDINGS];
-  mockMapData = null;
-  mockApply.mockClear();
 });
 
-test("the map draws the input with the layer to edit pickable, on top", async () => {
-  mount({ key: "building_id", layer: "table_osm_buildings" });
-  await screen.findByTestId("autark-map");
-  await waitFor(() => expect(mockApply).toHaveBeenCalled());
-  const doc = JSON.parse(mockApply.mock.calls[mockApply.mock.calls.length - 1][0]);
-  expect(doc.map.layerRefs).toEqual([{ dataRef: "table_osm_roads" }, { dataRef: "table_osm_buildings", isPick: true }]);
-  expect(mockMapData.input).toBe(INPUT);
-  expect(screen.getByRole("combobox", { name: "Id" })).toHaveValue("building_id");
-  expect(screen.getByRole("combobox", { name: "Layer" })).toHaveValue("table_osm_buildings");
-  // With no edits yet, both can still change.
-  expect(screen.getByRole("combobox", { name: "Id" })).toBeEnabled();
-  expect(screen.getByRole("combobox", { name: "Layer" })).toBeEnabled();
-  expect(document.querySelector("[data-edit-building-note]")?.textContent).toMatch(/applies to the whole building/);
+test("linked to no Autark map it feeds, the node says how to link one, and keeps its list", () => {
+  mountLive(undefined, { more: LINKED.more.slice(0, 2), edges: LINKED.edges.slice(0, 2) });
+  expect(screen.getByTestId("interaction-unlinked")).toHaveTextContent("Not linked to a map");
+  expect(screen.getByTestId("interaction-unlinked")).toHaveTextContent("Connect this node to an Autark map, then link the two with an interaction edge");
+  // No layers, no map, no tools; the list stays, empty.
+  for (const id of ["interaction-layers", "interaction-workbench", "interaction-edit-map", "edit-features-remove"]) {
+    expect(screen.queryByTestId(id)).toBeNull();
+  }
+  expect(document.querySelector("[data-edit-list]")?.getAttribute("data-edit-list")).toBe("0");
 });
 
-test("each pick adds the picked features' ids to the list, and Remove makes them an edit with its code", async () => {
-  const { updateDataNode, markNodeStale, state } = mount(
-    { key: "building_id", layer: "table_osm_buildings" },
-    nodeState({ code: "success", content: "Saved to file: art_out" }),
-  );
-  await screen.findByTestId("autark-map");
-  const picked = () => document.querySelector("[data-edit-picked]")!;
-  expect(picked().getAttribute("data-edit-picked")).toBe("");
-  // Both parts of building 119: one id.
-  pick([0, 1]);
-  expect(picked().textContent).toBe("Picked: building_id 119");
-  pick([2]);
-  pick([1]);
-  expect(picked().getAttribute("data-edit-picked")).toBe("119 136");
-  // A click on nothing picks nothing and keeps the list.
-  pick([]);
-  expect(picked().getAttribute("data-edit-picked")).toBe("119 136");
-
-  fireEvent.click(screen.getByTestId("edit-features-remove"));
-  const settings = { key: "building_id", layer: "table_osm_buildings", edits: [{ op: "remove", ids: [119, 136] }] };
-  const code = editFeaturesCode(settings as any);
-  expect(code).toContain('{"op": "remove", "ids": [119, 136]},');
-  expect(updateDataNode).toHaveBeenCalledWith(NODE, expect.objectContaining({ editFeatures: settings, code, defaultCode: code }));
-  expect(state.setCode).toHaveBeenCalledWith(code);
-  expect(markNodeStale).toHaveBeenCalledWith(NODE);
-  // The pick is spent.
-  expect(picked().getAttribute("data-edit-picked")).toBe("");
+test("unlinked, the list the node's code holds stays, to switch off or delete", () => {
+  const { log } = mountLive(LOG);
+  expect(screen.getByTestId("interaction-unlinked")).toHaveTextContent("Not linked to a map");
+  expect(document.querySelector("[data-edit-list]")?.getAttribute("data-edit-list")).toBe("2");
+  fireEvent.click(screen.getByLabelText("Delete edit 1"));
+  expect(log()).toEqual([LOG.edits![1]]);
 });
 
-test("Set value writes a number into a column of numbers", async () => {
-  const { updateDataNode } = mount({ key: "building_id", layer: "table_osm_buildings" });
-  await screen.findByTestId("autark-map");
-  pick([2]);
-  fireEvent.change(screen.getByTestId("edit-features-column"), { target: { value: "height" } });
-  fireEvent.change(screen.getByTestId("edit-features-value"), { target: { value: "30" } });
-  fireEvent.click(screen.getByTestId("edit-features-set"));
-  expect(updateDataNode).toHaveBeenCalledWith(NODE, expect.objectContaining({
-    editFeatures: { key: "building_id", layer: "table_osm_buildings", edits: [{ op: "set", ids: [136], column: "height", value: 30 }] },
-  }));
+test("a map that is linked but not fed is not the node's: it says to link the map it feeds", () => {
+  const notFed = LINKED.edges.filter((edge) => edge.id !== "d3");
+  mountLive(LOG, { more: LINKED.more, edges: notFed });
+  expect(screen.getByTestId("interaction-unlinked")).toHaveTextContent("Not linked to a map");
+  expect(screen.queryByTestId("interaction-connected")).toBeNull();
 });
 
-test("the edit list shows each edit, and the × deletes one", async () => {
-  const { updateDataNode } = mount({
-    key: "building_id",
-    layer: "table_osm_buildings",
-    edits: [{ op: "remove", ids: [119] }, { op: "restore", ids: [119] }],
-  });
-  await screen.findByTestId("autark-map");
+test("linked, the log lists each entry, and the × deletes the one it is on", async () => {
+  const { log } = mountLive(LOG, LINKED);
+  expect(await screen.findByTestId("interaction-connected")).toHaveTextContent("Linked to Downtown Chicago layers");
   const list = document.querySelector("[data-edit-list]")!;
   expect(list.getAttribute("data-edit-list")).toBe("2");
   expect(list.textContent).toContain("Remove building_id 119");
-  expect(list.textContent).toContain("Restore building_id 119");
-  // The edits name features of this layer by this column: neither can change under them.
-  for (const name of ["Layer", "Id"]) {
-    const menu = screen.getByRole("combobox", { name });
-    expect(menu).toBeDisabled();
-    expect(menu.getAttribute("title")).toMatch(/delete them to pick another/);
-  }
   fireEvent.click(screen.getByLabelText("Delete edit 1"));
-  expect(updateDataNode).toHaveBeenCalledWith(NODE, expect.objectContaining({
-    editFeatures: { key: "building_id", layer: "table_osm_buildings", edits: [{ op: "restore", ids: [119] }] },
-  }));
+  // The removal of 119 is gone; the change of 136 stays.
+  expect(log()).toEqual([LOG.edits![1]]);
+  expect(JSON.stringify(log())).not.toContain("119");
+  expect(document.querySelector("[data-edit-list]")!.textContent).not.toContain("119");
 });
 
-describe("the Interaction node", () => {
-  /**
-   * The node feeds a rasterizer, which feeds a model; a chart is linked to it
-   * by an interaction edge only, which carries a selection and runs nothing.
-   */
-  const BELOW = {
-    more: [{ id: "rasterize" }, { id: "model" }, { id: "chart" }],
-    edges: [
-      { id: "e1", source: NODE, target: "rasterize", sourceHandle: "out", targetHandle: "in" },
-      { id: "e2", source: "rasterize", target: "model", sourceHandle: "out", targetHandle: "in" },
-      { id: "e3", source: NODE, target: "chart", sourceHandle: "in/out", targetHandle: "in/out" },
-    ],
-  };
+test("an edit leaves the dataflow Unsaved and makes the node and every node below it stale, the map among them; a chart linked by an interaction edge is not below it", async () => {
+  const status = { [NODE]: "executed", [MAP]: "executed", count: "executed", model: "executed", chart: "executed" };
+  const { markNodeStale, markDirty } = mountLive(LOG, { ...LINKED, nodeExecStatus: status }, nodeState({ code: "success", content: "" }));
+  await screen.findByTestId("interaction-connected");
+  fireEvent.click(screen.getByLabelText("Delete edit 1"));
+  expect([...new Set(markNodeStale.mock.calls.map((call) => call[0]))].sort()).toEqual([NODE, MAP, "count", "model"].sort());
+  expect(markDirty).toHaveBeenCalled();
+});
 
-  /**
-   * The node on a canvas that keeps what it writes, so each edit sees the log
-   * the one before it left, as on the canvas.
-   */
-  function mountLive(editFeatures: unknown, flowExtra: Record<string, any> = {}, state = nodeState()) {
-    const updateDataNode = jest.fn();
-    const markNodeStale = jest.fn();
-    const { more = [], edges = [], ...rest } = flowExtra;
-    const first = { nodeId: NODE, input: INPUT, editFeatures, defaultCode: editFeaturesCode(undefined), code: editFeaturesCode(undefined) };
-    function Canvas({ children }: { children: React.ReactNode }) {
-      const [live, setLive] = React.useState<any>(first);
-      const flow = {
-        nodes: [{ id: NODE, data: live }, ...more],
-        edges,
-        markNodeStale,
-        updateDataNode: (id: string, data: any) => {
-          updateDataNode(id, data);
-          setLive(data);
-        },
-        ...rest,
-      };
-      return <mockFlowContext.Provider value={flow}>{children}</mockFlowContext.Provider>;
-    }
-    function Host() {
-      const live = React.useContext(mockFlowContext).nodes[0].data;
-      const behavior = useEditFeaturesBehavior(live as unknown as NodeBehaviorData, state);
-      return <>{behavior.contentComponent}</>;
-    }
-    render(
-      <Canvas>
-        <Host />
-      </Canvas>,
-    );
-    const log = () => (updateDataNode.mock.calls[updateDataNode.mock.calls.length - 1]?.[1]?.editFeatures?.edits ?? []) as any[];
-    return { updateDataNode, markNodeStale, log };
+test("Commit edits runs the node and every node below it, the map it feeds among them", async () => {
+  const runDownstream = jest.fn();
+  const status = { [NODE]: "stale", [MAP]: "stale", count: "stale", model: "executed" };
+  mountLive(LOG, { ...LINKED, nodeExecStatus: status, runDownstream });
+  await screen.findByTestId("interaction-connected");
+  const foot = screen.getByTestId("interaction-commit");
+  expect(foot).toHaveAttribute("data-commit-state", "stale");
+  // The map, the count and the model below the node.
+  expect(foot).toHaveTextContent("The 3 nodes below do not have these edits yet.");
+  const update = screen.getByTestId("interaction-update");
+  expect(update).toHaveTextContent(/^Commit edits$/);
+  expect(update).toHaveAttribute("title", "Runs this node and the 3 nodes below it with the edits");
+  fireEvent.click(update);
+  expect(runDownstream).toHaveBeenCalledWith([NODE]);
+});
+
+test("the foot says the edits are committed once the nodes below ran, and Commit waits while a run goes, in the browser or on the server", async () => {
+  const done = { [NODE]: "executed", [MAP]: "executed", count: "executed", model: "executed" };
+  mountLive(LOG, { ...LINKED, nodeExecStatus: done, runDownstream: jest.fn() });
+  await screen.findByTestId("interaction-connected");
+  expect(screen.getByTestId("interaction-commit")).toHaveAttribute("data-commit-state", "done");
+  expect(screen.getByTestId("interaction-commit")).toHaveTextContent("✓ Edits committed");
+  cleanup();
+  // The node ran; the map and the nodes below it never did.
+  mountLive(LOG, { ...LINKED, nodeExecStatus: { [NODE]: "executed" }, runDownstream: jest.fn() });
+  await screen.findByTestId("interaction-connected");
+  expect(screen.getByTestId("interaction-commit")).toHaveAttribute("data-commit-state", "stale");
+  expect(screen.getByTestId("interaction-commit")).not.toHaveTextContent(/edits committed/i);
+  cleanup();
+  mountLive(LOG, { ...LINKED, nodeExecStatus: { ...done, [NODE]: "stale" }, isRunActive: true });
+  await screen.findByTestId("interaction-connected");
+  expect(screen.getByTestId("interaction-update")).toHaveTextContent(/^Running…$/);
+  expect(screen.getByTestId("interaction-update")).toBeDisabled();
+  cleanup();
+  mountLive(LOG, { ...LINKED, nodeExecStatus: { ...done, [NODE]: "stale" }, serverRunActive: true });
+  await screen.findByTestId("interaction-connected");
+  expect(screen.getByTestId("interaction-update")).toBeDisabled();
+});
+
+test("Commit edits is offered only with nodes below the node", async () => {
+  mountLive(LOG, { more: LINKED.more.slice(0, 2), edges: LINKED.edges.slice(0, 2), runDownstream: jest.fn() });
+  expect(screen.queryByTestId("interaction-update")).toBeNull();
+});
+
+test("an entry switched off is kept, drawn off and skipped, and on again", async () => {
+  const { log } = mountLive(
+    { key: "building_id", layer: "table_osm_buildings", edits: [{ op: "remove", ids: [119] }, { op: "offset", ids: [136], column: "height", value: 3 }] },
+    LINKED,
+  );
+  await screen.findByTestId("interaction-connected");
+  // Counted once the layers are read.
+  await waitFor(() => expect(screen.getByTestId("interaction-counts")).toHaveTextContent("2 removed, 1 changed"));
+  fireEvent.click(screen.getByLabelText("Use edit 1"));
+  expect(log()).toEqual([
+    { op: "remove", ids: [119], enabled: false },
+    { op: "offset", ids: [136], column: "height", value: 3 },
+  ]);
+  const entries = document.querySelectorAll("[data-edit-op]");
+  expect(entries[0].getAttribute("data-edit-enabled")).toBe("false");
+  expect(entries[1].getAttribute("data-edit-enabled")).toBe("true");
+  expect(screen.getByTestId("interaction-counts")).toHaveTextContent("0 removed, 1 changed");
+  fireEvent.click(screen.getByLabelText("Use edit 1"));
+  expect(log()).toEqual([{ op: "remove", ids: [119] }, { op: "offset", ids: [136], column: "height", value: 3 }]);
+  expect(screen.getByTestId("interaction-counts")).toHaveTextContent("2 removed, 1 changed");
+});
+
+test("each change adds one entry to the node's Provenance drawer at once, named by what it changed, holding the code it left", async () => {
+  const { codeNow, entries } = mountLive(LOG, LINKED);
+  await screen.findByTestId("interaction-connected");
+  expect(entries()).toHaveLength(0);
+
+  fireEvent.click(screen.getByLabelText("Use edit 1"));
+  expect(entries()).toHaveLength(1);
+  expect(entries()[0]).toMatchObject({ kind: "edit", label: "Switch off: Remove building_id 119 in table_osm_buildings", code: codeNow(), inputs: [], outputs: [] });
+
+  fireEvent.click(screen.getByLabelText("Delete edit 2"));
+  expect(entries()).toHaveLength(2);
+  expect(entries()[1]).toMatchObject({ kind: "edit", label: "Delete: Set height to 30 on building_id 136 in table_osm_buildings", code: codeNow() });
+  expect(entries()[1].parentId).toBe(entries()[0].id);
+
+  // An action: a property added to the buildings.
+  fireEvent.click(await screen.findByTestId("interaction-layer-table_osm_buildings"));
+  fireEvent.click(screen.getByTestId("interaction-action-property"));
+  fireEvent.change(screen.getByTestId("interaction-property-name"), { target: { value: "kind" } });
+  fireEvent.change(screen.getByTestId("interaction-property-value"), { target: { value: "office" } });
+  fireEvent.click(screen.getByTestId("interaction-property-add"));
+  expect(entries()).toHaveLength(3);
+  expect(entries()[2].label).toMatch(/^Add a property kind/);
+  expect(entries()[2].code).toBe(codeNow());
+  expect(settingsIn(codeNow())?.edits?.at(-1)).toMatchObject({ op: "add_column", column: "kind", value: "office" });
+});
+
+test("Undo puts back the entry before and Redo the newest one after it, by the buttons and the keys; neither adds an entry, and the next change branches from there", async () => {
+  const { log, entries } = mountLive(LOG, LINKED);
+  await screen.findByTestId("interaction-connected");
+  const undo = () => screen.getByTestId("interaction-undo");
+  const redo = () => screen.getByTestId("interaction-redo");
+  // Nothing in the node's history yet.
+  expect(undo()).toBeDisabled();
+  expect(redo()).toBeDisabled();
+
+  fireEvent.click(screen.getByLabelText("Delete edit 2"));
+  fireEvent.click(screen.getByLabelText("Use edit 1"));
+  const off = [{ ...LOG.edits![0], enabled: false }];
+  expect(log()).toEqual(off);
+  expect(entries()).toHaveLength(2);
+
+  fireEvent.click(undo());
+  expect(log()).toEqual([LOG.edits![0]]);
+  // Back before the node's first change, to the code it held.
+  fireEvent.keyDown(body(), { key: "z", ctrlKey: true });
+  expect(log()).toEqual(LOG.edits);
+  expect(undo()).toBeDisabled();
+
+  fireEvent.click(redo());
+  expect(log()).toEqual([LOG.edits![0]]);
+  fireEvent.keyDown(body(), { key: "z", ctrlKey: true, shiftKey: true });
+  expect(log()).toEqual(off);
+  expect(redo()).toBeDisabled();
+  expect(entries()).toHaveLength(2);
+
+  // Back one, then a change: it branches from the entry put back.
+  fireEvent.keyDown(body(), { key: "z", metaKey: true });
+  expect(log()).toEqual([LOG.edits![0]]);
+  fireEvent.click(screen.getByLabelText("Delete edit 1"));
+  expect(log()).toEqual([]);
+  expect(entries()).toHaveLength(3);
+  expect(entries()[2].parentId).toBe(entries()[0].id);
+  expect(redo()).toBeDisabled();
+  fireEvent.click(undo());
+  expect(log()).toEqual([LOG.edits![0]]);
+});
+
+test("an old save's metadata.editFeatures is ignored: the node reads its code", async () => {
+  mountLive(LOG, LINKED, nodeState(), { editFeatures: { key: "building_id", edits: [{ op: "remove", ids: [999] }] } });
+  await screen.findByTestId("interaction-connected");
+  const list = document.querySelector("[data-edit-list]")!;
+  expect(list.getAttribute("data-edit-list")).toBe("2");
+  expect(list.textContent).not.toContain("999");
+});
+
+test("code of another shape is never rewritten: the node says why it cannot read it and offers nothing", async () => {
+  const { updateDataNode } = mountLive(undefined, LINKED, nodeState(), { code: "return input_0\n" });
+  const unreadable = screen.getByTestId("interaction-unreadable");
+  expect(unreadable).toHaveTextContent("holds something else");
+  for (const id of ["interaction-layers", "interaction-workbench", "interaction-log", "interaction-undo", "interaction-connected"]) {
+    expect(screen.queryByTestId(id)).toBeNull();
   }
-
-  const body = () => document.querySelector("[data-edit-body]") as HTMLElement;
-  const picked = () => document.querySelector("[data-edit-picked]")!.getAttribute("data-edit-picked");
-  const KEYED = { key: "building_id", layer: "table_osm_buildings" };
-
-  test("an edit makes the node and every node after it that ran stale; an interaction edge's chart is not after it", async () => {
-    const status = { [NODE]: "executed", rasterize: "executed", model: "executed", chart: "executed" };
-    const { markNodeStale } = mountLive(KEYED, { ...BELOW, nodeExecStatus: status }, nodeState({ code: "success", content: "" }));
-    await screen.findByTestId("autark-map");
-    pick([2]);
-    fireEvent.click(screen.getByTestId("edit-features-remove"));
-    expect(markNodeStale.mock.calls.map((call) => call[0]).sort()).toEqual([NODE, "model", "rasterize"]);
-  });
-
-  test("Update results runs the node and every node after it, and says how many are out of date", async () => {
-    const runDownstream = jest.fn();
-    const status = { [NODE]: "stale", rasterize: "stale", model: "executed" };
-    mountLive(KEYED, { ...BELOW, nodeExecStatus: status, runDownstream });
-    await screen.findByTestId("autark-map");
-    const update = screen.getByTestId("interaction-update");
-    expect(update).toHaveTextContent("Update results (2)");
-    expect(update).toBeEnabled();
-    fireEvent.click(update);
-    expect(runDownstream).toHaveBeenCalledWith([NODE]);
-  });
-
-  test("Update results is offered only with nodes after the node, and waits while a run goes", async () => {
-    mountLive(KEYED, { runDownstream: jest.fn() });
-    await screen.findByTestId("autark-map");
-    expect(screen.queryByTestId("interaction-update")).toBeNull();
-    cleanup();
-    mountLive(KEYED, { ...BELOW, isRunActive: true });
-    await screen.findByTestId("autark-map");
-    expect(screen.getByTestId("interaction-update")).toHaveTextContent(/^Update results$/);
-    expect(screen.getByTestId("interaction-update")).toBeDisabled();
-    cleanup();
-    mountLive(KEYED, { ...BELOW, serverRunActive: true });
-    await screen.findByTestId("autark-map");
-    expect(screen.getByTestId("interaction-update")).toBeDisabled();
-  });
-
-  test("the keys: arrows raise and lower the pick as one entry, Delete removes it, Escape clears it, and undo and redo", async () => {
-    const { log } = mountLive(KEYED);
-    await screen.findByTestId("autark-map");
-    pick([2]);
-    // A height column moves a floor, 3 m, a press.
-    fireEvent.keyDown(body(), { key: "ArrowUp" });
-    expect(log()).toEqual([{ op: "offset", ids: [136], column: "height", value: 3 }]);
-    fireEvent.keyDown(body(), { key: "ArrowUp" });
-    expect(log()).toEqual([{ op: "offset", ids: [136], column: "height", value: 6 }]);
-    fireEvent.keyDown(body(), { key: "ArrowDown" });
-    expect(log()).toEqual([{ op: "offset", ids: [136], column: "height", value: 3 }]);
-    // Handled here, so the canvas neither deletes the node nor moves it.
-    expect(fireEvent.keyDown(body(), { key: "Delete" })).toBe(false);
-    expect(log()).toEqual([{ op: "offset", ids: [136], column: "height", value: 3 }, { op: "remove", ids: [136] }]);
-    expect(picked()).toBe("");
-    fireEvent.keyDown(body(), { key: "z", ctrlKey: true });
-    expect(log()).toEqual([{ op: "offset", ids: [136], column: "height", value: 3 }]);
-    fireEvent.keyDown(body(), { key: "z", ctrlKey: true, shiftKey: true });
-    expect(log()).toEqual([{ op: "offset", ids: [136], column: "height", value: 3 }, { op: "remove", ids: [136] }]);
-    pick([0]);
-    expect(picked()).toBe("119");
-    fireEvent.keyDown(body(), { key: "Escape" });
-    expect(picked()).toBe("");
-    // Nothing picked: the node leaves Delete alone.
-    expect(fireEvent.keyDown(body(), { key: "Delete" })).toBe(true);
-  });
-
-  test("a key typed in one of the node's fields is the field's", async () => {
-    const { updateDataNode } = mountLive(KEYED);
-    await screen.findByTestId("autark-map");
-    pick([2]);
-    fireEvent.keyDown(screen.getByTestId("interaction-where"), { key: "ArrowUp" });
-    fireEvent.keyDown(screen.getByTestId("interaction-where"), { key: "Delete" });
-    expect(updateDataNode).not.toHaveBeenCalled();
-    expect(picked()).toBe("136");
-  });
-
-  test("a condition says how many features it picks, on the layer as the log leaves it, and applies to all of them", async () => {
-    const { log } = mountLive(KEYED);
-    await screen.findByTestId("autark-map");
-    fireEvent.change(screen.getByTestId("interaction-where"), { target: { value: "height >= 60" } });
-    expect(screen.getByTestId("interaction-matching")).toHaveTextContent(/^3 features$/);
-    fireEvent.change(screen.getByTestId("interaction-where-op"), { target: { value: "scale" } });
-    fireEvent.change(screen.getByTestId("interaction-where-column"), { target: { value: "height" } });
-    fireEvent.change(screen.getByTestId("interaction-where-value"), { target: { value: "0.5" } });
-    fireEvent.click(screen.getByTestId("interaction-where-apply"));
-    expect(log()).toEqual([{ op: "scale", where: "height >= 60", column: "height", value: 0.5 }]);
-    // Halved, only the tallest part is still 60 m or more.
-    expect(screen.getByTestId("interaction-matching")).toHaveTextContent(/^1 feature$/);
-    fireEvent.change(screen.getByTestId("interaction-where"), { target: { value: "height >" } });
-    expect(screen.getByTestId("interaction-where-apply")).toBeDisabled();
-    expect(screen.getByTestId("interaction-where-problem").textContent).not.toBe("");
-  });
-
-  test("a condition can compute a column with an expression, or remove what it picks", async () => {
-    const { log } = mountLive(KEYED);
-    await screen.findByTestId("autark-map");
-    fireEvent.change(screen.getByTestId("interaction-where"), { target: { value: "building_id == 119" } });
-    fireEvent.change(screen.getByTestId("interaction-where-op"), { target: { value: "expr" } });
-    fireEvent.change(screen.getByTestId("interaction-where-column"), { target: { value: "height" } });
-    fireEvent.change(screen.getByTestId("interaction-where-value"), { target: { value: "height / 2" } });
-    fireEvent.click(screen.getByTestId("interaction-where-apply"));
-    fireEvent.change(screen.getByTestId("interaction-where-op"), { target: { value: "remove" } });
-    fireEvent.click(screen.getByTestId("interaction-where-apply"));
-    expect(log()).toEqual([
-      { op: "expr", where: "building_id == 119", column: "height", value: "height / 2" },
-      { op: "remove", where: "building_id == 119" },
-    ]);
-  });
-
-  test("the picked features' table shows them as the log leaves them, and a value typed into it is an edit", async () => {
-    const { log } = mountLive({ ...KEYED, edits: [{ op: "offset", ids: [136], column: "height", value: 3 }] });
-    await screen.findByTestId("autark-map");
-    pick([2]);
-    const cell = screen.getByLabelText("height of 136") as HTMLInputElement;
-    expect(cell.value).toBe("63");
-    fireEvent.change(cell, { target: { value: "70" } });
-    fireEvent.blur(cell);
-    expect(log()).toEqual([
-      { op: "offset", ids: [136], column: "height", value: 3 },
-      { op: "set", ids: [136], column: "height", value: 70 },
-    ]);
-    // Text in a column of numbers is no value.
-    const again = screen.getByLabelText("height of 136") as HTMLInputElement;
-    fireEvent.change(again, { target: { value: "tall" } });
-    fireEvent.blur(again);
-    expect(log()).toHaveLength(2);
-  });
-
-  test("an entry switched off is kept, drawn off and skipped; entries are deleted and undone; the map draws the input", async () => {
-    const { log } = mountLive({
-      ...KEYED,
-      edits: [{ op: "remove", ids: [119] }, { op: "offset", ids: [136], column: "height", value: 3 }],
-    });
-    await screen.findByTestId("autark-map");
-    expect(screen.getByTestId("interaction-counts")).toHaveTextContent("2 removed, 1 changed");
-    fireEvent.click(screen.getByLabelText("Use edit 1"));
-    expect(log()).toEqual([
-      { op: "remove", ids: [119], enabled: false },
-      { op: "offset", ids: [136], column: "height", value: 3 },
-    ]);
-    const entries = document.querySelectorAll("[data-edit-op]");
-    expect(entries[0].getAttribute("data-edit-enabled")).toBe("false");
-    expect(entries[1].getAttribute("data-edit-enabled")).toBe("true");
-    expect(screen.getByTestId("interaction-counts")).toHaveTextContent("0 removed, 1 changed");
-    fireEvent.click(screen.getByLabelText("Delete edit 2"));
-    expect(log()).toEqual([{ op: "remove", ids: [119], enabled: false }]);
-    fireEvent.click(screen.getByTestId("interaction-undo"));
-    expect(log()).toEqual([]);
-    fireEvent.click(screen.getByTestId("interaction-redo"));
-    expect(log()).toEqual([{ op: "remove", ids: [119], enabled: false }]);
-    // The map shows the node's input as it came; the run applies the log.
-    expect(mockMapData.input).toBe(INPUT);
-  });
-
-  test("Scale multiplies the picked features' number by the factor", async () => {
-    const { log } = mountLive(KEYED);
-    await screen.findByTestId("autark-map");
-    pick([0]);
-    fireEvent.change(screen.getByTestId("interaction-factor"), { target: { value: "2" } });
-    fireEvent.click(screen.getByTestId("interaction-scale"));
-    expect(log()).toEqual([{ op: "scale", ids: [119], column: "height", value: 2 }]);
-  });
+  // Fed by two circles, the code is not written for them either.
+  await act(async () => {});
+  expect(updateDataNode).not.toHaveBeenCalled();
 });
 
-test("a layer with no column that identifies its features is refused, and nothing can be picked", async () => {
+test("a rule says how many features it matches, on the layer as the log leaves it, and removes them or computes a column for them", async () => {
+  const { log } = mountLive(undefined, LINKED);
+  fireEvent.click(await screen.findByTestId("interaction-layer-table_osm_buildings"));
+  fireEvent.click(screen.getByTestId("interaction-action-remove"));
+  fireEvent.click(screen.getByTestId("interaction-remove-by-rule"));
+  fireEvent.change(screen.getByLabelText("Test"), { target: { value: ">" } });
+  fireEvent.change(screen.getByTestId("interaction-rule-value-0"), { target: { value: "100" } });
+  expect(screen.getByTestId("interaction-matching")).toHaveTextContent("Matches 1 area of 3");
+  fireEvent.click(screen.getByTestId("interaction-remove-picked"));
+  expect(log()).toEqual([{ op: "remove", where: "height > 100" }]);
+  // Removed, the tower matches no more.
+  expect(screen.getByTestId("interaction-matching")).toHaveTextContent("Matches 0 areas of 2");
+  expect(screen.getByTestId("interaction-remove-picked")).toBeDisabled();
+
+  fireEvent.click(screen.getByTestId("interaction-back"));
+  fireEvent.click(screen.getByTestId("interaction-action-edit"));
+  fireEvent.click(screen.getByTestId("interaction-edit-by-rule"));
+  fireEvent.change(screen.getByTestId("interaction-rule-value-0"), { target: { value: "50" } });
+  expect(screen.getByTestId("interaction-matching")).toHaveTextContent("Matches 2 areas of 2");
+  fireEvent.change(screen.getByTestId("interaction-rule-op"), { target: { value: "expr" } });
+  fireEvent.change(screen.getByTestId("interaction-rule-set-value"), { target: { value: "height / 2" } });
+  fireEvent.click(screen.getByTestId("interaction-rule-apply"));
+  expect(log()).toEqual([
+    { op: "remove", where: "height > 100" },
+    { op: "expr", where: "height > 50", column: "height", value: "height / 2" },
+  ]);
+  // Halved, they match no more.
+  expect(screen.getByTestId("interaction-matching")).toHaveTextContent("Matches 0 areas of 2");
+});
+
+test("a layer with no column that identifies its features is refused: nothing in it can be picked or edited", async () => {
   mockSources = [{
     outputTableName: "input_0",
     named: false,
@@ -401,15 +402,17 @@ test("a layer with no column that identifies its features is refused, and nothin
       features: [feature({ __row_index__: 0, kind: "x" }), feature({ __row_index__: 1, kind: "x" })],
     },
   }];
-  mount(undefined);
-  const refusal = await waitFor(() => {
-    const el = document.querySelector("[data-edit-refusal]");
-    expect(el).not.toBeNull();
-    return el!;
-  });
-  expect(refusal.textContent).toMatch(/has no column that identifies its features/);
-  expect(screen.queryByTestId("autark-map")).toBeNull();
-  expect(screen.queryByTestId("edit-features-remove")).toBeNull();
+  mountLive(undefined, {
+    more: LINKED.more,
+    edges: [LINKED.edges[0], { ...LINKED.edges[2] }, LINKED.edges[3]],
+  }, nodeState(), { code: editFeaturesCode(undefined, 1) });
+  const card = await screen.findByTestId("interaction-layer-input_0");
+  expect(card).toHaveTextContent("no id column");
+  fireEvent.click(card);
+  expect(screen.getByTestId("interaction-active-layer")).toHaveTextContent("This layer has no column that identifies its features");
+  for (const action of ["add", "edit", "remove", "property"]) {
+    expect(screen.getByTestId(`interaction-action-${action}`)).toBeDisabled();
+  }
 });
 
 // Compare Scenarios is gone (step 6.4 of the plan answering komar41's review

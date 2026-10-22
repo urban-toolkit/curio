@@ -154,6 +154,14 @@ def test_dataset_parses_and_yields_expectations(dataset: CatalogDataset):
         # A variable of a NetCDF group is the variable its layer names.
         if dataset.manifest.layer_name:
             assert markers["CURIO_E2E_VARIABLES"].split(":")[0] == dataset.manifest.layer_name, markers
+    elif fmt == "bundle":
+        spec = json.loads(dataset.data_file.read_text(encoding="utf-8"))
+        files = [dataset.root / part["file"] for part in spec.get("parts", [])]
+        assert files, "a bundle needs at least one part"
+        unread = [str(path) for path in files if not path.is_file() or path.stat().st_size == 0]
+        assert not unread, f"{dataset.dataset_id} lists part files that are missing or empty: {unread}"
+        assert int(markers["CURIO_E2E_PARTS"]) == len(files)
+        assert all(int(length) > 0 for length in markers["CURIO_E2E_LENGTHS"].split(",")), markers
     else:  # pragma: no cover - plan_for() gates this
         pytest.fail(
             f"format {fmt!r} has a FormatPlan but no parse check here; add one "

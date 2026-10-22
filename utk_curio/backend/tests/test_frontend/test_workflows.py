@@ -187,7 +187,7 @@ EXAMPLE_08_MAP = "niteroi-map"
 EXAMPLE_11_HISTOGRAM = "pbf-plot"
 EXAMPLE_11_MAP = "pbf-map"
 
-#: Edit Features (#662) runs the code its edit list writes behind its own play
+#: Map Edits (#662) runs the code its edits are written in behind its own play
 #: button, but ``NodeSpec.has_play_button`` is False for it, so the canvas
 #: tests play it by its type: example 06's is played and must end Done like
 #: any other.
@@ -199,30 +199,37 @@ def _plays(node: NodeSpec) -> bool:
     return node.has_play_button or node.type == EDIT_FEATURES
 
 
-#: Where an Edit Features node's map stands: "drawing", "drawn" or "problem".
-_EDIT_MAP_STATE_JS = """(id) => {
-    const node = document.querySelector(`.react-flow__node[data-id="${id}"]`);
-    const map = node && node.querySelector("[data-edit-map-state]");
-    return map ? map.getAttribute("data-edit-map-state") : null;
-}"""
+def _linked_maps(spec, node_id: str) -> list[str]:
+    """The Autark maps the Map Edits node *node_id* feeds on a data edge and is
+    linked to by an Interaction edge: the ones it edits on."""
+    types = {n.id: n.type for n in spec.nodes}
+    fed = {e["target"] for e in spec.edges if e["source"] == node_id and e.get("type") != "Interaction"}
+    linked = {
+        e["target"] if e["source"] == node_id else e["source"]
+        for e in spec.edges if e.get("type") == "Interaction" and node_id in (e["source"], e["target"])
+    }
+    return sorted(m for m in fed & linked if types.get(m) == "AUTK_GRAMMAR")
 
 
-def _assert_edit_map_drew(page, node_id: str) -> None:
-    """An Edit Features node that ran shows its input drawn on its map, by the
-    Autark node's map code, before any frame is taken of it."""
+def _assert_lever_map_drew(page, spec, node_id: str) -> None:
+    """A Map Edits node that ran edits on the Autark map it feeds and is linked
+    to: its body names that map and lists the layers it is fed, with no notice
+    in their place, and the map drew, before any frame is taken of them."""
+    maps = _linked_maps(spec, node_id)
+    assert len(maps) == 1, f"Map Edits node {node_id} feeds and is linked to the maps {maps}, not one"
+    (map_id,) = maps
+    body = page.locator(f'.react-flow__node[data-id="{node_id}"] [data-edit-body="{node_id}"]')
     try:
-        page.wait_for_function(
-            "(id) => { const state = (" + _EDIT_MAP_STATE_JS + ")(id);"
-            " return !!state && state !== 'drawing'; }",
-            arg=node_id,
-            timeout=90000,
-        )
+        body.locator('[data-testid="interaction-layers"]').wait_for(state="attached", timeout=90000)
     except PlaywrightTimeoutError:
         pass
-    state = page.evaluate(_EDIT_MAP_STATE_JS, node_id)
-    problem = page.locator(f'.react-flow__node[data-id="{node_id}"] [data-edit-map-problem]').all_inner_texts()
-    assert state == "drawn", f"Edit Features node {node_id}: its map ended {state!r} {problem}"
-    assert_autark_map_drawn(page, node_id, timeout=60000, attach_as=f"{node_id}'s map")
+    linked_to = body.get_attribute("data-edit-map") if body.count() else None
+    notices = body.locator("[data-curio-node-empty]").all_inner_texts()
+    assert linked_to == map_id, f"Map Edits node {node_id} edits on {linked_to!r}, not the map it is linked to, {map_id}"
+    assert body.locator('[data-testid="interaction-layers"]').count() == 1 and not notices, (
+        f"Map Edits node {node_id} lists no layers to edit: {notices}"
+    )
+    assert_autark_map_drawn(page, map_id, timeout=60000, attach_as=f"the map {node_id} edits on")
 
 #: Interactions compared before and after, keyed by workflow, in the order
 #: they run. Each frames its two nodes together, so a hover held on one still
@@ -1237,10 +1244,11 @@ class TestWorkflowCanvas:
                 )
             # text mode: no output tab → nothing further to assert.
 
-        # An Edit Features node shows its input drawn on its own map.
+        # A Map Edits node lists its layers, linked to the map it edits on,
+        # which drew.
         for node in self.spec.nodes:
             if node.type == EDIT_FEATURES:
-                _assert_edit_map_drew(self.page, node.id)
+                _assert_lever_map_drew(self.page, self.spec, node.id)
 
         # Every code and grammar node shows an editor and at least one marker.
         assert_editor_panes_clear_of_markers(
@@ -1270,17 +1278,18 @@ class TestWorkflowCanvas:
 
         # Each map opens framed on the layers it draws (#773): not a speck in
         # the middle of the map, nor a crop past its edges. That is every
-        # Autark map, and the map Edit Features draws with the Autark node's
-        # map code. Checked once every close-up is taken, and for every map
-        # before failing on one.
+        # Autark map, the one a Map Edits node edits on among them. Checked
+        # once every close-up is taken, and for every map before failing on
+        # one.
         maps = [
             node.id for node in self._drawing_autark_nodes()
             if "map" in json.loads(self.spec.node_code(node, "json"))
-        ] + [
-            node.id for node in self.spec.nodes
-            if node.type == EDIT_FEATURES
-            and self.page.locator(f"#autk-grammar-map-{node.id}").count()
         ]
+        for node in self.spec.nodes:
+            if node.type == EDIT_FEATURES:
+                assert set(_linked_maps(self.spec, node.id)) <= set(maps), (
+                    f"the map Map Edits node {node.id} edits on is not among the maps checked: {maps}"
+                )
         unframed = [
             problem for problem in (
                 autark_map_framing(self.page, m, min_span=FRAMED_DRAWING_SPAN.get(m, AUTK_MAP_MIN_FRAMED_SPAN))

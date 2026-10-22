@@ -1,0 +1,184 @@
+{
+  "description": "The Map Edits node's edit log applied to a layer, read by Jest (tests/utils/mapEditsApply.test.ts, through applyFeatureEdits in applyEdits.ts, the one way the browser applies the log, which the map the node feeds draws before Commit edits, and the node's tools and table read) and by pytest (utk_curio/sandbox/tests/test_feature_edits_cases.py, through curio_edit_features), so the node, the map and a run hand on the same layer. `layers`: the input layers, by name. `cases`: the layer a case edits, the column that identifies its features (`key`), its edit log, and the layer a run hands on after it (`expected`), as curio_edit_features makes it.",
+  "layers": {
+    "buildings": {
+      "type": "FeatureCollection",
+      "features": [
+        { "type": "Feature", "geometry": { "type": "Polygon", "coordinates": [[[0, 0], [1, 0], [1, 1], [0, 1], [0, 0]]] }, "properties": { "building_id": 1, "height": 10, "levels": 3, "kind": "house", "roof": "gable" } },
+        { "type": "Feature", "geometry": { "type": "Polygon", "coordinates": [[[2, 0], [3, 0], [3, 1], [2, 1], [2, 0]]] }, "properties": { "building_id": 2, "height": 40, "levels": 12, "kind": "tower" } },
+        { "type": "Feature", "geometry": { "type": "Polygon", "coordinates": [[[4, 0], [5, 0], [5, 1], [4, 1], [4, 0]]] }, "properties": { "building_id": 3, "height": 25, "levels": 8, "kind": "office" } }
+      ]
+    }
+  },
+  "cases": [
+    {
+      "name": "remove by ids",
+      "layer": "buildings",
+      "key": "building_id",
+      "edits": [{ "op": "remove", "ids": [2] }],
+      "expected": {
+        "type": "FeatureCollection",
+        "features": [
+          { "type": "Feature", "geometry": { "type": "Polygon", "coordinates": [[[0, 0], [1, 0], [1, 1], [0, 1], [0, 0]]] }, "properties": { "building_id": 1, "height": 10, "levels": 3, "kind": "house", "roof": "gable" } },
+          { "type": "Feature", "geometry": { "type": "Polygon", "coordinates": [[[4, 0], [5, 0], [5, 1], [4, 1], [4, 0]]] }, "properties": { "building_id": 3, "height": 25, "levels": 8, "kind": "office" } }
+        ]
+      }
+    },
+    {
+      "name": "remove where a condition holds",
+      "layer": "buildings",
+      "key": "building_id",
+      "edits": [{ "op": "remove", "where": "height > 20" }],
+      "expected": {
+        "type": "FeatureCollection",
+        "features": [
+          { "type": "Feature", "geometry": { "type": "Polygon", "coordinates": [[[0, 0], [1, 0], [1, 1], [0, 1], [0, 0]]] }, "properties": { "building_id": 1, "height": 10, "levels": 3, "kind": "house", "roof": "gable" } }
+        ]
+      }
+    },
+    {
+      "name": "set a value by ids, and a new column where a condition holds",
+      "layer": "buildings",
+      "key": "building_id",
+      "edits": [
+        { "op": "set", "ids": [1], "column": "kind", "value": "shed" },
+        { "op": "set", "where": "levels >= 8", "column": "note", "value": "tall" }
+      ],
+      "expected": {
+        "type": "FeatureCollection",
+        "features": [
+          { "type": "Feature", "geometry": { "type": "Polygon", "coordinates": [[[0, 0], [1, 0], [1, 1], [0, 1], [0, 0]]] }, "properties": { "building_id": 1, "height": 10, "levels": 3, "kind": "shed", "roof": "gable" } },
+          { "type": "Feature", "geometry": { "type": "Polygon", "coordinates": [[[2, 0], [3, 0], [3, 1], [2, 1], [2, 0]]] }, "properties": { "building_id": 2, "height": 40, "levels": 12, "kind": "tower", "note": "tall" } },
+          { "type": "Feature", "geometry": { "type": "Polygon", "coordinates": [[[4, 0], [5, 0], [5, 1], [4, 1], [4, 0]]] }, "properties": { "building_id": 3, "height": 25, "levels": 8, "kind": "office", "note": "tall" } }
+        ]
+      }
+    },
+    {
+      "name": "restore by ids, and where a condition holds on the input, as the input has the features",
+      "layer": "buildings",
+      "key": "building_id",
+      "edits": [
+        { "op": "set", "ids": [2], "column": "height", "value": 99 },
+        { "op": "remove", "ids": [1, 2, 3] },
+        { "op": "restore", "ids": [2] },
+        { "op": "restore", "where": "kind == 'house'" }
+      ],
+      "expected": {
+        "type": "FeatureCollection",
+        "features": [
+          { "type": "Feature", "geometry": { "type": "Polygon", "coordinates": [[[0, 0], [1, 0], [1, 1], [0, 1], [0, 0]]] }, "properties": { "building_id": 1, "height": 10, "levels": 3, "kind": "house", "roof": "gable" } },
+          { "type": "Feature", "geometry": { "type": "Polygon", "coordinates": [[[2, 0], [3, 0], [3, 1], [2, 1], [2, 0]]] }, "properties": { "building_id": 2, "height": 40, "levels": 12, "kind": "tower" } }
+        ]
+      }
+    },
+    {
+      "name": "scale a number by ids",
+      "layer": "buildings",
+      "key": "building_id",
+      "edits": [{ "op": "scale", "ids": [2], "column": "height", "value": 2 }],
+      "expected": {
+        "type": "FeatureCollection",
+        "features": [
+          { "type": "Feature", "geometry": { "type": "Polygon", "coordinates": [[[0, 0], [1, 0], [1, 1], [0, 1], [0, 0]]] }, "properties": { "building_id": 1, "height": 10, "levels": 3, "kind": "house", "roof": "gable" } },
+          { "type": "Feature", "geometry": { "type": "Polygon", "coordinates": [[[2, 0], [3, 0], [3, 1], [2, 1], [2, 0]]] }, "properties": { "building_id": 2, "height": 80, "levels": 12, "kind": "tower" } },
+          { "type": "Feature", "geometry": { "type": "Polygon", "coordinates": [[[4, 0], [5, 0], [5, 1], [4, 1], [4, 0]]] }, "properties": { "building_id": 3, "height": 25, "levels": 8, "kind": "office" } }
+        ]
+      }
+    },
+    {
+      "name": "offset a number where a condition holds",
+      "layer": "buildings",
+      "key": "building_id",
+      "edits": [{ "op": "offset", "where": "kind == 'office'", "column": "levels", "value": 5 }],
+      "expected": {
+        "type": "FeatureCollection",
+        "features": [
+          { "type": "Feature", "geometry": { "type": "Polygon", "coordinates": [[[0, 0], [1, 0], [1, 1], [0, 1], [0, 0]]] }, "properties": { "building_id": 1, "height": 10, "levels": 3, "kind": "house", "roof": "gable" } },
+          { "type": "Feature", "geometry": { "type": "Polygon", "coordinates": [[[2, 0], [3, 0], [3, 1], [2, 1], [2, 0]]] }, "properties": { "building_id": 2, "height": 40, "levels": 12, "kind": "tower" } },
+          { "type": "Feature", "geometry": { "type": "Polygon", "coordinates": [[[4, 0], [5, 0], [5, 1], [4, 1], [4, 0]]] }, "properties": { "building_id": 3, "height": 25, "levels": 13, "kind": "office" } }
+        ]
+      }
+    },
+    {
+      "name": "compute a column by an expression where a condition holds",
+      "layer": "buildings",
+      "key": "building_id",
+      "edits": [{ "op": "expr", "where": "height < 30", "column": "floors", "value": "levels * 3" }],
+      "expected": {
+        "type": "FeatureCollection",
+        "features": [
+          { "type": "Feature", "geometry": { "type": "Polygon", "coordinates": [[[0, 0], [1, 0], [1, 1], [0, 1], [0, 0]]] }, "properties": { "building_id": 1, "height": 10, "levels": 3, "kind": "house", "roof": "gable", "floors": 9 } },
+          { "type": "Feature", "geometry": { "type": "Polygon", "coordinates": [[[2, 0], [3, 0], [3, 1], [2, 1], [2, 0]]] }, "properties": { "building_id": 2, "height": 40, "levels": 12, "kind": "tower" } },
+          { "type": "Feature", "geometry": { "type": "Polygon", "coordinates": [[[4, 0], [5, 0], [5, 1], [4, 1], [4, 0]]] }, "properties": { "building_id": 3, "height": 25, "levels": 8, "kind": "office", "floors": 24 } }
+        ]
+      }
+    },
+    {
+      "name": "add a drawn feature with its values and its id",
+      "layer": "buildings",
+      "key": "building_id",
+      "edits": [
+        { "op": "add", "id": 4, "geometry": { "type": "Polygon", "coordinates": [[[6, 0], [7, 0], [7, 1], [6, 1], [6, 0]]] }, "values": { "height": 15, "kind": "kiosk" } }
+      ],
+      "expected": {
+        "type": "FeatureCollection",
+        "features": [
+          { "type": "Feature", "geometry": { "type": "Polygon", "coordinates": [[[0, 0], [1, 0], [1, 1], [0, 1], [0, 0]]] }, "properties": { "building_id": 1, "height": 10, "levels": 3, "kind": "house", "roof": "gable" } },
+          { "type": "Feature", "geometry": { "type": "Polygon", "coordinates": [[[2, 0], [3, 0], [3, 1], [2, 1], [2, 0]]] }, "properties": { "building_id": 2, "height": 40, "levels": 12, "kind": "tower" } },
+          { "type": "Feature", "geometry": { "type": "Polygon", "coordinates": [[[4, 0], [5, 0], [5, 1], [4, 1], [4, 0]]] }, "properties": { "building_id": 3, "height": 25, "levels": 8, "kind": "office" } },
+          { "type": "Feature", "geometry": { "type": "Polygon", "coordinates": [[[6, 0], [7, 0], [7, 1], [6, 1], [6, 0]]] }, "properties": { "height": 15, "kind": "kiosk", "building_id": 4 } }
+        ]
+      }
+    },
+    {
+      "name": "redraw a shape by ids, and where a condition holds",
+      "layer": "buildings",
+      "key": "building_id",
+      "edits": [
+        { "op": "geometry", "ids": [3], "geometry": { "type": "Polygon", "coordinates": [[[4, 0], [6, 0], [6, 2], [4, 2], [4, 0]]] } },
+        { "op": "geometry", "where": "kind == 'tower'", "geometry": { "type": "Polygon", "coordinates": [[[2, 0], [3, 0], [3, 3], [2, 3], [2, 0]]] } }
+      ],
+      "expected": {
+        "type": "FeatureCollection",
+        "features": [
+          { "type": "Feature", "geometry": { "type": "Polygon", "coordinates": [[[0, 0], [1, 0], [1, 1], [0, 1], [0, 0]]] }, "properties": { "building_id": 1, "height": 10, "levels": 3, "kind": "house", "roof": "gable" } },
+          { "type": "Feature", "geometry": { "type": "Polygon", "coordinates": [[[2, 0], [3, 0], [3, 3], [2, 3], [2, 0]]] }, "properties": { "building_id": 2, "height": 40, "levels": 12, "kind": "tower" } },
+          { "type": "Feature", "geometry": { "type": "Polygon", "coordinates": [[[4, 0], [6, 0], [6, 2], [4, 2], [4, 0]]] }, "properties": { "building_id": 3, "height": 25, "levels": 8, "kind": "office" } }
+        ]
+      }
+    },
+    {
+      "name": "add a property to every feature that holds no value there",
+      "layer": "buildings",
+      "key": "building_id",
+      "edits": [{ "op": "add_column", "column": "roof", "value": "flat" }],
+      "expected": {
+        "type": "FeatureCollection",
+        "features": [
+          { "type": "Feature", "geometry": { "type": "Polygon", "coordinates": [[[0, 0], [1, 0], [1, 1], [0, 1], [0, 0]]] }, "properties": { "building_id": 1, "height": 10, "levels": 3, "kind": "house", "roof": "gable" } },
+          { "type": "Feature", "geometry": { "type": "Polygon", "coordinates": [[[2, 0], [3, 0], [3, 1], [2, 1], [2, 0]]] }, "properties": { "building_id": 2, "height": 40, "levels": 12, "kind": "tower", "roof": "flat" } },
+          { "type": "Feature", "geometry": { "type": "Polygon", "coordinates": [[[4, 0], [5, 0], [5, 1], [4, 1], [4, 0]]] }, "properties": { "building_id": 3, "height": 25, "levels": 8, "kind": "office", "roof": "flat" } }
+        ]
+      }
+    },
+    {
+      "name": "an added feature given a value, an entry switched off, and a remove where a condition holds",
+      "layer": "buildings",
+      "key": "building_id",
+      "edits": [
+        { "op": "add", "id": 4, "geometry": { "type": "Polygon", "coordinates": [[[6, 0], [7, 0], [7, 1], [6, 1], [6, 0]]] }, "values": { "kind": "kiosk" } },
+        { "op": "set", "ids": [4], "column": "height", "value": 6 },
+        { "op": "remove", "ids": [1], "enabled": false },
+        { "op": "remove", "where": "kind == 'office'" }
+      ],
+      "expected": {
+        "type": "FeatureCollection",
+        "features": [
+          { "type": "Feature", "geometry": { "type": "Polygon", "coordinates": [[[0, 0], [1, 0], [1, 1], [0, 1], [0, 0]]] }, "properties": { "building_id": 1, "height": 10, "levels": 3, "kind": "house", "roof": "gable" } },
+          { "type": "Feature", "geometry": { "type": "Polygon", "coordinates": [[[2, 0], [3, 0], [3, 1], [2, 1], [2, 0]]] }, "properties": { "building_id": 2, "height": 40, "levels": 12, "kind": "tower" } },
+          { "type": "Feature", "geometry": { "type": "Polygon", "coordinates": [[[6, 0], [7, 0], [7, 1], [6, 1], [6, 0]]] }, "properties": { "kind": "kiosk", "building_id": 4, "height": 6 } }
+        ]
+      }
+    }
+  ]
+}

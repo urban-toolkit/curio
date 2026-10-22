@@ -416,52 +416,6 @@
           "items": { "$ref": "#/$defs/selectionTag" },
           "description": "The node's selection tags (#662), added in its Widgets tab. Its code places each one as a `[!! selection name !!]` reference, which a run replaces with the tag's `ids`. A new selection in the view writes new ids. Emitted only when the node has selection tags."
         },
-        "editFeatures": {
-          "type": "object",
-          "description": "The edit log of an Interaction node (#662; type `curio.builtin/edit-features`). `key` is the column that identifies a feature (`osm_id`, `building_id`, or another column whose values differ in every feature), and `layer` the layer the edits apply to when the input names its layers. `edits` holds the edits in the order they were made, each on the features whose `key` is one of `ids` or, in place of `ids`, those its `where` condition holds for (an expression over the feature's columns, such as `height > 100 and levels >= 30`). `remove` drops them, `restore` puts them back as the input has them, `set` writes `value` into their `column`, `scale` multiplies the number there by `value`, `offset` adds `value` to it, and `expr` writes what the expression `value` makes of the feature (such as `levels * 3.2`). An edit with `enabled` false stays in the log and is skipped; `label` names it. The node's code is written from this log and applies it by `key`. Emitted only when the node holds any of these.",
-          "additionalProperties": false,
-          "properties": {
-            "key": { "type": "string", "minLength": 1 },
-            "layer": { "type": "string", "minLength": 1 },
-            "edits": {
-              "type": "array",
-              "minItems": 1,
-              "items": {
-                "type": "object",
-                "required": ["op"],
-                "additionalProperties": false,
-                "properties": {
-                  "op": { "type": "string", "enum": ["remove", "set", "restore", "scale", "offset", "expr"] },
-                  "ids": {
-                    "type": "array",
-                    "minItems": 1,
-                    "items": { "type": ["string", "number"] }
-                  },
-                  "where": { "type": "string", "pattern": "\\S" },
-                  "column": { "type": "string", "minLength": 1 },
-                  "value": { "type": ["string", "number", "boolean", "null"] },
-                  "label": { "type": "string", "minLength": 1 },
-                  "enabled": { "type": "boolean" }
-                },
-                "oneOf": [{ "required": ["ids"] }, { "required": ["where"] }],
-                "allOf": [
-                  {
-                    "if": { "properties": { "op": { "const": "set" } } },
-                    "then": { "required": ["column", "value"] }
-                  },
-                  {
-                    "if": { "properties": { "op": { "enum": ["scale", "offset"] } } },
-                    "then": { "required": ["column", "value"], "properties": { "value": { "type": "number" } } }
-                  },
-                  {
-                    "if": { "properties": { "op": { "const": "expr" } } },
-                    "then": { "required": ["column", "value"], "properties": { "value": { "type": "string", "pattern": "\\S" } } }
-                  }
-                ]
-              }
-            }
-          }
-        },
         "dataPool": {
           "type": "object",
           "description": "A Data Pool's conflict modes (#581): how the selections that reach it combine. `insideChart` resolves the selects of one chart, `betweenCharts` the latest selection of each chart linked to the pool. OVERWRITE keeps the newest, MERGE_AND the rows every active selection picked, MERGE_OR the rows any of them picked. An absent member means OVERWRITE, and only the other modes are written.",
@@ -703,13 +657,16 @@
     },
     "nodeExecRecord": {
       "type": "object",
-      "description": "One execution of one node, recorded browser-side by ProvenanceProvider so the user can replay how a node evolved.",
+      "description": "One entry of one node's history, recorded browser-side by ProvenanceProvider so the user can replay how a node evolved: an execution, or (with 'kind' edit) a change made in the node's body that ran nothing, such as a Map Edits node's Remove, or an entry of its list switched off or deleted. After a dataflow loads, the node's next entry descends from its newest entry whose 'code' is the node's content, else from its newest entry.",
       "required": ["id", "parentId", "code", "inputs", "outputs", "startTime", "endTime"],
       "additionalProperties": true,
       "properties": {
         "id": { "type": "integer", "description": "Monotonic counter within the session, re-derived from the maximum on load." },
-        "parentId": { "type": ["integer", "null"], "description": "The execution this one descends from, or null for the first." },
-        "code": { "type": "string", "description": "The node's content as executed." },
+        "parentId": { "type": ["integer", "null"], "description": "The entry this one descends from, or null for the first." },
+        "code": { "type": "string", "description": "The node's content as executed, or as an edit left it." },
+        "kind": { "type": "string", "enum": ["edit"], "description": "'edit' for a change made in the node's body, which ran nothing: its 'inputs' and 'outputs' are empty and its two times are the same. Absent for an execution." },
+        "label": { "type": "string", "description": "What an edit changed, as the provenance drawer lists it, such as 'Remove building_id 12' or 'Switch off: Set height to 60 on building_id 34'. Written only with 'kind'." },
+        "before": { "type": "string", "description": "An edit's node content before it, when the entry it descends from does not hold that content: the node's first edit, or one made after its content changed with no entry. What Undo puts back. Written only with 'kind'." },
         "inputs": { "type": "array", "items": { "type": "string" }, "description": "The kinds of data the run read, each once: DATAFRAME, GEODATAFRAME, VALUE, LIST, JSON, RASTER (mapTypes in utils/formatters.ts). The provenance drawer shows them on each of the node's runs. Coerced to an empty array if the stored value is not an array." },
         "outputs": { "type": "array", "items": { "type": "string" }, "description": "The kinds of data the run returned, named like 'inputs', or ERROR for a run that failed. Coerced like 'inputs'." },
         "startTime": {

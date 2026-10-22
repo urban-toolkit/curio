@@ -1,0 +1,39 @@
+{
+ "id": "data.curio.chicago-loop-layers",
+ "name": "Chicago Loop Layers",
+ "version": "1.0.0",
+ "format": "bundle",
+ "description": "Downtown Chicago: census tracts with CDC/ATSDR's Social Vulnerability Index 2020, the CTA 'L' rail lines and stations from the City of Chicago, and trees from OpenStreetMap.",
+ "publisher": "CDC/ATSDR; City of Chicago; OpenStreetMap contributors",
+ "license": "CDC/ATSDR public domain; City of Chicago Terms of Use; ODbL-1.0 (OpenStreetMap)",
+ "tags": [
+  "chicago",
+  "loop",
+  "census-tracts",
+  "svi",
+  "cta",
+  "trees",
+  "bundle"
+ ],
+ "dataFile": "data/bundle.json",
+ "compatibility": {
+  "major": 1
+ },
+ "sourceLabel": "CDC/ATSDR, City of Chicago, OpenStreetMap",
+ "rowCount": null,
+ "featureCount": null,
+ "schema": null,
+ "createdAt": "2026-10-22T00:00:00Z",
+ "updatedAt": "2026-10-22T00:00:00Z",
+ "sourceUpdatedAt": null,
+ "sourceEncoding": null,
+ "groupId": null,
+ "layerName": null,
+ "producerNodeId": null,
+ "producerNodeType": null,
+ "producerDataflowId": null,
+ "producerDataflowName": null,
+ "upstreamInputs": null,
+ "discoverySource": null,
+ "collection": null
+}

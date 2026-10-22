@@ -1,0 +1,165 @@
+{
+  "$schema": "https://curio.dev/schemas/example-prompt-fixture.v1.json",
+  "fixtureId": "chicago-loop-layers",
+  "version": 1,
+  "source": {
+    "path": "docs/examples/dataflows/chicago-loop-layers.json",
+    "sha256": "3fc6ea649cc57d4da025dc04beceaa75d57d62a4eac901d64decfc9a0bac1ebe",
+    "walkthrough": null
+  },
+  "prompt": "Make one Autark map of downtown Chicago that has a layer of every kind an Autark map draws. From the Data Catalog's Chicago Loop layers, load the census tracts, colored by CDC/ATSDR's Social Vulnerability Index, the CTA 'L' lines and stations, and OpenStreetMap's trees, each layer on its own, tracts first. Load OpenStreetMap's parks, water, roads and buildings, the buildings colored by height, from the OpenStreetMap extract of downtown Chicago that the examples ship, in the box the extract is cut at. Send every layer through a Map Edits node on its way to the map, and link the Map Edits node to the map with an interaction edge, so I can add, reshape, move, change or remove the features of any layer on the map.",
+  "context": null,
+  "required": {
+    "datasets": [
+      "data.curio.chicago-loop-layers"
+    ],
+    "packages": [],
+    "paths": [
+      "docs/examples/data/chicago_downtown.osm.pbf"
+    ]
+  },
+  "expected": {
+    "nodes": [
+      {
+        "ref": "visualization1",
+        "type": "curio.builtin/autk-grammar",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": true
+      },
+      {
+        "ref": "visualization2",
+        "type": "curio.builtin/autk-grammar",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": true
+      },
+      {
+        "ref": "loader1",
+        "type": "curio.builtin/data-loading",
+        "role": "loader",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "loader2",
+        "type": "curio.builtin/data-loading",
+        "role": "loader",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "loader3",
+        "type": "curio.builtin/data-loading",
+        "role": "loader",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "loader4",
+        "type": "curio.builtin/data-loading",
+        "role": "loader",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "transform1",
+        "type": "curio.builtin/edit-features",
+        "role": "transform",
+        "executable": true,
+        "hasContent": true
+      }
+    ],
+    "edges": [
+      {
+        "from": "visualization1",
+        "to": "transform1",
+        "kind": "data",
+        "slot": 1
+      },
+      {
+        "from": "loader1",
+        "to": "transform1",
+        "kind": "data"
+      },
+      {
+        "from": "loader2",
+        "to": "transform1",
+        "kind": "data",
+        "slot": 2
+      },
+      {
+        "from": "loader3",
+        "to": "transform1",
+        "kind": "data",
+        "slot": 3
+      },
+      {
+        "from": "loader4",
+        "to": "transform1",
+        "kind": "data",
+        "slot": 4
+      },
+      {
+        "from": "transform1",
+        "to": "visualization2",
+        "kind": "data"
+      },
+      {
+        "from": "transform1",
+        "to": "visualization2",
+        "kind": "interaction"
+      }
+    ],
+    "sources": {
+      "datasetIds": [
+        "data.curio.chicago-loop-layers"
+      ],
+      "paths": [
+        "docs/examples/data/chicago_downtown.osm.pbf"
+      ],
+      "urls": []
+    }
+  },
+  "intents": [],
+  "execution": {
+    "mode": "browser",
+    "browserOnlyKinds": [
+      "curio.builtin/autk-grammar",
+      "curio.builtin/edit-features"
+    ],
+    "notes": null
+  },
+  "capability": {
+    "tier": "T1",
+    "needs": [
+      "browser-only-execution"
+    ],
+    "skip": []
+  },
+  "thresholds": {
+    "pass": 0.9,
+    "templates": 1.0,
+    "topology": 0.9,
+    "dependencies": 1.0
+  },
+  "split": "train",
+  "review": {
+    "status": "pending-owner-review",
+    "draftedBy": "the rebuild of PR #1055's example (OpenStreetMap's layers from an Autark node, every layer through the Map Edits node), from the example JSON and scripts/build_example_chicago_loop_layers.py, 2026-10-21",
+    "reviewedBy": null,
+    "reviewedAt": null
+  },
+  "consent": {
+    "dataContent": "identifiers-only",
+    "licence": "MIT (this repository)",
+    "sourceLicences": [
+      {
+        "datasetId": "data.curio.chicago-loop-layers",
+        "licence": "CDC/ATSDR public domain; City of Chicago Terms of Use; ODbL-1.0 (OpenStreetMap)"
+      }
+    ],
+    "notes": "The prompt, the expected graph and the plan target are authored in this repository; the datasets appear only as ids."
+  },
+  "notes": "The Map Edits node's test dataflow: one layer of every kind Autark draws, through the node to the map, for editing on the map."
+}

@@ -4,7 +4,7 @@ This example runs the per-road sunlight shader from [Example 7](07-autark-gpu-sh
 scenarios over Boston's Back Bay: **Baseline**, with every building at its own height,
 **Twice as tall**, with every building's height doubled, and **Two towers removed**, with two
 towers taken out: 200 Clarendon, the tallest, and Raffles. The height factor is a widget on the
-shadow step, and the towers are removed by an Interaction node. Each scenario ends in a Roads node
+shadow step, and the towers are removed by a Map Edits node. Each scenario ends in a Roads node
 that takes its roads with their sunlight. Scout's Bars node charts each scenario's mean road
 sunlight on the June solstice from them, and a Python node takes the sunlight each road loses when
 the buildings get twice as tall, which an Autark map after it draws.
@@ -27,6 +27,7 @@ flowchart LR
   MM["Twice as tall · autk-grammar<br/>map · roads by sunlight"]
   MR["Twice as tall · Python<br/>Roads · the roads layer"]
   TE["Two towers removed · Interaction<br/>remove building_id 29623484, 29628154"]
+  TB["Two towers removed · autk-grammar<br/>map · buildings by height"]
   TC["Two towers removed · autk-grammar<br/>shadow WGSL, height_factor 1"]
   TM["Two towers removed · autk-grammar<br/>map · roads by sunlight"]
   TR["Two towers removed · Python<br/>Roads · the roads layer"]
@@ -39,6 +40,8 @@ flowchart LR
   P --> MC --> MM
   MC --> MR
   P --> TE --> TC --> TM
+  TE --> TB
+  TE <-. selections .-> TB
   TC --> TR
   BR --> CC
   MR --> CC
@@ -51,9 +54,9 @@ flowchart LR
 A single `data` node loads the PBF once, and a `data-pool` hands its layers to every scenario.
 The loader and the pool are the scenarios' fixed context: they sit outside all three, and all three
 read them. Each scenario's nodes are its levers: the shadow step, its map and its Roads node, and
-in Two towers removed the Interaction node before them. In Twice as tall and in Two towers removed
-the shadow step, the map and the Roads node are copies of their Baseline twins and name them, so
-the scenarios' levers are paired when they are compared.
+in Two towers removed the Map Edits node before them and its map of the buildings. In Twice as
+tall and in Two towers removed the shadow step, the map and the Roads node are copies of their
+Baseline twins and name them, so the scenarios' levers are paired when they are compared.
 
 ## Data
 
@@ -83,24 +86,26 @@ expects. The downstream compute and map nodes reference these layers by name (`t
 | --- | --- | --- | --- |
 | Baseline | blue | Shadow study, Roads by sunlight, Roads | 1 |
 | Twice as tall | orange | copies of the three, each naming its twin | 2 |
-| Two towers removed | green | Interaction, then copies of the three | 1 |
+| Two towers removed | green | Interaction and Buildings by height, then copies of the three | 1 |
 
 The **Scenario** catalog's **In project** tab (**Scenario** in the top bar) lists the three, and each
 one's details list the data pool as the fixed context it reads. Collapse them there and press
 **Run All**: each scenario is one box, the loader and the pool run once for all three, and each box
-shows its outcomes, its map and its Roads node, once they are done. Double-click a box to expand it
+shows its outcomes, its maps and its Roads node, once they are done. Double-click a box to expand it
 in place.
 
 ## Removing two towers
 
-In Two towers removed, an Interaction node sits between the pool and the shadow step. It edits
-the `table_osm_buildings` layer, picked in its **Layer** menu, and hands on the other four layers as
-they came. Its edit list holds one edit, made by double-clicking the two towers on its map and
-pressing **Remove**: 200 Clarendon (240.8 m) and Raffles (136 m), matched on their `building_id`.
-Its code is written from that list:
+In Two towers removed, a Map Edits node sits between the pool and the shadow step. It edits
+the `table_osm_buildings` layer, picked in its list of layers, and hands on the other four layers as
+they came. It also feeds **Buildings by height**, a map of the buildings, and an interaction edge
+links the two: a building picked on the map is picked in the node, and what the node picks lights
+up on the map. Its list holds one edit, made by clicking the two towers on that map
+(shift-click adds the second) and pressing **Remove**: 200 Clarendon (240.8 m) and Raffles (136 m),
+matched on their `building_id`. Its code holds that list:
 
 ```python
-# Edit Features writes this code from its edit list: each edit, in the
+# Map Edits writes this code from its edit list: each edit, in the
 # order it was made, on the features whose key is one of its ids. It is
 # written again when the list changes.
 return curio_edit_features(input_0, [

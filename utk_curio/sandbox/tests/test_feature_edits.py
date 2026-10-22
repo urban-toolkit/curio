@@ -1,11 +1,11 @@
-"""The Interaction node's step (#662; its type is still
+"""The Map Edits node's step (#662; its type is still
 ``curio.builtin/edit-features``), ``curio_edit_features``.
 
-The node keeps a log of edits made on features picked on its map or by a
-condition, and its code hands the log to this step with the node's input, the
-column that identifies a feature and the layer to edit. The step applies the
-edits by that column, never by a feature's place, reports ids no feature has,
-and hands on a new value: an Autark node's layers as the envelope
+The node keeps a log of edits made on features picked on the map it feeds or
+by a condition, and its code hands the log to this step with the node's
+input, the column that identifies a feature and the layer to edit. The step
+applies the edits by that column, never by a feature's place, reports ids no
+feature has, and hands on a new value: an Autark node's layers as the envelope
 ``persistLayersToBackend`` stores, with every feature, property and layer it
 did not edit as it came, or a table as a table.
 
@@ -250,23 +250,23 @@ class TestRefusals:
         {"op": "expr", "ids": [1], "value": "height * 2"},
     ])
     def test_an_edit_the_node_does_not_make_is_refused(self, edit):
-        with pytest.raises(ValueError, match=r"Interaction: edit 0 "):
+        with pytest.raises(ValueError, match=r"Map Edits: edit 0 "):
             _edit(_records(), [edit], **BUILDINGS)
 
     def test_no_input_says_so(self):
-        with pytest.raises(ValueError, match=r"Interaction has no input"):
+        with pytest.raises(ValueError, match=r"Map Edits has no input"):
             _edit(None, REMOVE_1, **BUILDINGS)
 
     def test_a_condition_or_an_expression_that_is_not_one_is_refused_before_anything_runs(self):
-        with pytest.raises(ValueError, match=r"Interaction: edit 0: "):
+        with pytest.raises(ValueError, match=r"Map Edits: edit 0: "):
             _edit(_records(), [{"op": "remove", "where": "height >"}], **BUILDINGS)
-        with pytest.raises(ValueError, match=r"Interaction: edit 1: "):
+        with pytest.raises(ValueError, match=r"Map Edits: edit 1: "):
             _edit(_records(), [REMOVE_1[0], {"op": "expr", "ids": [1], "column": "h", "value": "open('x')"}], **BUILDINGS)
 
     @pytest.mark.parametrize("value", ["x", None, True, float("nan")])
     def test_a_scale_or_an_offset_by_what_is_not_a_number_is_refused(self, value):
         for op in ("scale", "offset"):
-            with pytest.raises(ValueError, match=r"Interaction: edit 0 .*not a number"):
+            with pytest.raises(ValueError, match=r"Map Edits: edit 0 .*not a number"):
                 _edit(_records(), [{"op": op, "ids": [1], "column": "height", "value": value}], **BUILDINGS)
 
     def test_an_entry_switched_off_is_never_checked_or_applied(self, capsys):
@@ -299,19 +299,181 @@ class TestNamedTables:
             _edit([a, a.copy()], REMOVE_1, key="building_id", layer="table_osm_buildings")
 
 
-def test_the_schema_names_the_edits_the_step_makes():
+class TestByInput:
+    """The node fed by several data nodes, one per circle (``by_input``): it
+    names each unnamed layer after its circle, as the Autark map it feeds
+    does, and hands every layer on under that name."""
+
+    def _tables(self):
+        roads = gpd.GeoDataFrame({"osm_id": [7, 8]}, geometry=[Point(0, 2), Point(1, 2)], crs=3395)
+        buildings = gpd.GeoDataFrame({"building_id": [1, 2]}, geometry=[box(0, 0, 1, 1), box(1, 0, 2, 1)], crs=3395)
+        return roads, buildings
+
+    def test_each_circles_table_is_named_input_k_and_edited_by_that_name(self):
+        roads, buildings = self._tables()
+        out = _edit([roads, buildings], [{"op": "remove", "layer": "input_1", "ids": [1]}],
+                    keys={"input_1": "building_id"}, by_input=True)
+        assert [item["layerName"] for item in out["data"]] == ["input_0", "input_1"]
+        assert [f["properties"]["osm_id"] for f in out["data"][0]["data"]["features"]] == [7, 8]
+        assert [f["properties"]["building_id"] for f in out["data"][1]["data"]["features"]] == [2]
+
+    def test_with_no_edits_every_layer_is_still_handed_on_by_its_name(self, capsys):
+        roads, buildings = self._tables()
+        out = _edit([roads, buildings], [], by_input=True)
+        assert out["dataType"] == "outputs"
+        assert [item["layerName"] for item in out["data"]] == ["input_0", "input_1"]
+        assert "no edits yet" in capsys.readouterr().out
+        # Every edit switched off hands them on the same way.
+        out = _edit([roads, buildings], [{"op": "remove", "layer": "input_1", "ids": [1], "enabled": False}],
+                    keys={"input_1": "building_id"}, by_input=True)
+        assert [item["layerName"] for item in out["data"]] == ["input_0", "input_1"]
+
+    def test_a_layer_with_a_name_keeps_it_and_more_layers_on_one_circle_are_counted(self):
+        roads, _ = self._tables()
+        unnamed = {"dataType": "outputs", "data": [
+            {"dataType": "geodataframe", "data": _buildings()},
+            {"dataType": "geodataframe", "data": _roads()},
+        ]}
+        out = _edit([roads, _wrapper(), unnamed], [], by_input=True)
+        assert [item["layerName"] for item in out["data"]] == [
+            "input_0", "table_osm_roads", "table_osm_buildings", "input_2", "input_2_1",
+        ]
+
+    def test_a_circle_with_nothing_yet_is_left_out_and_none_at_all_says_so(self):
+        roads, _ = self._tables()
+        out = _edit([None, roads], [], by_input=True)
+        assert [item["layerName"] for item in out["data"]] == ["input_1"]
+        with pytest.raises(ValueError, match="Map Edits has no input"):
+            _edit([None, None], [], by_input=True)
+
+
+SQUARE = {"type": "Polygon", "coordinates": [[[9, 0], [10, 0], [10, 1], [9, 1], [9, 0]]]}
+
+
+class TestDrawnOnTheMap:
+    """The edits the node's map makes: a feature added, a shape redrawn, a
+    column added, and layers the node makes."""
+
+    def test_a_drawn_feature_is_added_with_its_values_and_its_id(self, capsys):
+        out = _edit(_records(), [{"op": "add", "id": "new-1", "geometry": SQUARE, "values": {"height": 20.0}}], **BUILDINGS)
+        fc = out["data"][1]["data"]
+        assert _ids(fc) == [1, 1, 2, 3, "new-1"]
+        added = fc["features"][-1]
+        assert added["geometry"] == SQUARE and added["properties"] == {"height": 20.0, "building_id": "new-1"}
+        assert fc["crs"] == CRS
+        assert "1 added" in capsys.readouterr().out
+
+    def test_an_add_with_an_id_the_layer_has_is_skipped(self, capsys):
+        out = _edit(_records(), [{"op": "add", "id": 2, "geometry": SQUARE}], **BUILDINGS)
+        assert _ids(out["data"][1]["data"]) == [1, 1, 2, 3]
+        assert "already has a feature with building_id 2" in capsys.readouterr().out
+
+    def test_an_added_feature_can_be_edited_removed_and_restored_away(self):
+        add = {"op": "add", "id": "new-1", "geometry": SQUARE, "values": {"height": 20.0}}
+        out = _edit(_records(), [add, {"op": "set", "ids": ["new-1"], "column": "height", "value": 9.0}], **BUILDINGS)
+        assert out["data"][1]["data"]["features"][-1]["properties"]["height"] == 9.0
+        gone = _edit(_records(), [add, {"op": "restore", "ids": ["new-1"]}], **BUILDINGS)
+        assert _ids(gone["data"][1]["data"]) == [1, 1, 2, 3]
+
+    def test_a_shape_redrawn_replaces_the_geometry_of_the_features_it_names(self):
+        out = _edit(_records(), [{"op": "geometry", "ids": [2], "geometry": SQUARE}], **BUILDINGS)
+        fc = out["data"][1]["data"]
+        assert [f["geometry"] for f in fc["features"] if f["properties"]["building_id"] == 2] == [SQUARE]
+        back = _edit(_records(), [{"op": "geometry", "ids": [2], "geometry": SQUARE}, {"op": "restore", "ids": [2]}], **BUILDINGS)
+        assert back["data"][1]["data"]["features"][2]["geometry"] != SQUARE
+
+    def test_a_column_is_added_to_every_feature_that_holds_no_value_there(self):
+        out = _edit(_records(), [{"op": "add_column", "column": "height", "value": 4.0}], **BUILDINGS)
+        heights = [f["properties"]["height"] for f in out["data"][1]["data"]["features"]]
+        assert heights == [10.0, 12.0, 30.0, 4.0]
+
+    def test_a_new_layer_is_made_and_handed_on_after_the_inputs_with_its_drawn_features(self):
+        new = [{"name": "cooling_centers", "geometry": "Point",
+                "properties": [{"name": "name", "type": "text", "required": True}]}]
+        point = {"type": "Point", "coordinates": [3, 3]}
+        out = _edit(_wrapper(), [{"op": "add", "layer": "cooling_centers", "id": "c1", "geometry": point,
+                                  "values": {"name": "Library"}}], new_layers=new, **BUILDINGS)
+        made = out["data"][-1]
+        assert (made["layerName"], made["layerType"]) == ("cooling_centers", "points")
+        assert made["data"]["features"] == [{"type": "Feature", "geometry": point, "properties": {"name": "Library", "id": "c1"}}]
+        assert made["data"]["crs"] == CRS
+        # The input's layers are handed on as they came.
+        assert [item["layerName"] for item in out["data"][:2]] == ["table_osm_roads", "table_osm_buildings"]
+
+    def test_a_new_layer_with_no_features_yet_is_handed_on_empty(self, capsys):
+        out = _edit(_wrapper(), [], new_layers=[{"name": "sketch", "geometry": "Polygon"}], **BUILDINGS)
+        assert out["data"][-1]["layerType"] == "polygons" and out["data"][-1]["data"]["features"] == []
+        assert "new layer sketch has no features yet" in capsys.readouterr().out
+
+    def test_a_new_layer_named_like_an_input_layer_is_refused(self):
+        with pytest.raises(ValueError, match="already has a layer table_osm_roads"):
+            _edit(_wrapper(), [], new_layers=[{"name": "table_osm_roads", "geometry": "Point"}], **BUILDINGS)
+
+    def test_edits_on_several_layers_each_use_their_own_id_column(self):
+        roads = _roads()
+        roads["features"][0]["properties"]["osm_id"] = 7
+        wrapper = _wrapper()
+        wrapper["data"][0]["data"] = roads
+        edits = [{"op": "remove", "ids": [1]},
+                 {"op": "set", "layer": "table_osm_roads", "ids": [7], "column": "highway", "value": "service"}]
+        out = _edit(wrapper, edits, keys={"table_osm_roads": "osm_id"}, **BUILDINGS)
+        assert out["data"][0]["data"]["features"][0]["properties"]["highway"] == "service"
+        assert _ids(out["data"][1]["data"]) == [2, 3]
+
+    def test_a_table_takes_a_drawn_feature_in_its_own_crs(self):
+        buildings = gpd.GeoDataFrame({"building_id": [1], "height": [5.0]}, geometry=[box(0, 0, 1, 1)], crs=4326)
+        # Drawn on the map in Mercator metres; the table is in degrees.
+        metres = {"type": "Point", "coordinates": [111319.49, 0.0]}
+        out = _edit(buildings, [
+            {"op": "add", "id": 2, "geometry": metres, "values": {"height": 8.0}},
+            {"op": "add_column", "column": "kind", "value": "office"},
+            {"op": "geometry", "ids": [1], "geometry": metres},
+        ], key="building_id", crs="EPSG:3395")
+        assert list(out["building_id"]) == [1, 2] and list(out["height"]) == [5.0, 8.0]
+        assert list(out["kind"]) == ["office", "office"]
+        assert round(out.geometry.iloc[1].x, 4) == 1.0 and round(out.geometry.iloc[0].x, 4) == 1.0
+
+    def test_the_unnamed_tables_a_map_hands_on_are_named_by_their_place(self):
+        """An Autark map hands on its inputs as they came: tables with no
+        name, which the node's map calls input_0, input_0_1, ..."""
+        roads = gpd.GeoDataFrame({"osm_id": [7, 8]}, geometry=[Point(0, 2), Point(1, 2)], crs=3395)
+        buildings = gpd.GeoDataFrame({"building_id": [1, 2]}, geometry=[box(0, 0, 1, 1), box(1, 0, 2, 1)], crs=3395)
+        out = _edit([roads, buildings], [
+            {"op": "remove", "ids": [7]},
+            {"op": "remove", "layer": "input_0_1", "ids": [2]},
+        ], key="osm_id", layer="input_0", keys={"input_0_1": "building_id"})
+        first, second = out["data"]
+        assert [f["properties"]["osm_id"] for f in first["data"]["features"]] == [8]
+        assert [f["properties"]["building_id"] for f in second["data"]["features"]] == [1]
+        # One table per input circle is called input_<k>.
+        out = _edit([roads, buildings], [{"op": "remove", "layer": "input_1", "ids": [1]}],
+                    key="osm_id", layer="input_0", keys={"input_1": "building_id"})
+        assert [f["properties"]["building_id"] for f in out["data"][1]["data"]["features"]] == [2]
+
+    @pytest.mark.parametrize("edit", [
+        {"op": "add", "id": "x", "geometry": {"type": "Circle"}},
+        {"op": "add", "geometry": SQUARE},
+        {"op": "geometry", "ids": [1]},
+        {"op": "add_column", "value": 1},
+    ])
+    def test_a_drawn_edit_that_is_not_whole_is_refused(self, edit):
+        with pytest.raises(ValueError, match="Map Edits: edit 0"):
+            _edit(_records(), [edit], **BUILDINGS)
+
+
+def test_the_node_names_the_edits_the_step_makes():
+    """The node's edits (``EDIT_OPS`` in ``editFeatures.ts``, which Jest pins to
+    the cases file's ``ops``) are the step's, in its order."""
     from utk_curio.sandbox.util.feature_edits import OPS
 
-    schema = json.loads((REPO_ROOT / "docs/schemas/trill.v1.json").read_text(encoding="utf-8"))
-    edit = schema["$defs"]["nodeMetadata"]["properties"]["editFeatures"]["properties"]["edits"]["items"]
-    assert tuple(edit["properties"]["op"]["enum"]) == OPS
+    assert tuple(json.loads(CASES.read_text(encoding="utf-8"))["ops"]) == OPS
 
 
-def _code_cases():
-    """The cases file's cases; read at collection, so a checkout without it
+def _code_cases(part="cases"):
+    """One part of the cases file; read at collection, so a checkout without it
     fails this test rather than the whole module."""
     try:
-        return json.loads(CASES.read_text(encoding="utf-8"))["cases"]
+        return json.loads(CASES.read_text(encoding="utf-8"))[part]
     except FileNotFoundError:
         return [{"name": "editFeaturesCode.cases.json is missing", "code": None, "kept": None}]
 
@@ -319,16 +481,64 @@ def _code_cases():
 @pytest.mark.parametrize("case", _code_cases(), ids=lambda c: c["name"])
 def test_the_code_the_node_writes_runs_its_edits(case):
     """Each code ``editFeaturesCode.cases.json`` holds (Jest checks the node
-    writes it) runs as a Python node's code does, with the helper in scope."""
+    writes it) runs as a Python node's code does, with the helper in scope: on
+    the roads and the buildings as one input, or one circle each."""
     from utk_curio.sandbox.util.feature_edits import edit_features
     from utk_curio.sandbox.util.input_names import call_as_node
 
     assert case["code"] is not None, case["name"]
     namespace = {"curio_edit_features": edit_features}
-    out = call_as_node(textwrap.indent(case["code"], "    "), namespace, _records(), [0])
+    records = _records()
+    if case.get("circles", 1) > 1:
+        out = call_as_node(textwrap.indent(case["code"], "    "), namespace, [[layer] for layer in records], [0, 1])
+    else:
+        out = call_as_node(textwrap.indent(case["code"], "    "), namespace, records, [0])
     buildings = out if isinstance(out, list) else out["data"]
     fc = buildings[1]["geojson"] if isinstance(out, list) else buildings[1]["data"]
     assert _ids(fc) == case["kept"]
+
+
+def _call_of(code):
+    """The positional arguments and the keywords of the one
+    ``curio_edit_features(...)`` call *code* returns, as Python reads them."""
+    import ast
+
+    (statement,) = ast.parse(code).body
+    assert isinstance(statement, ast.Return), code
+    call = statement.value
+    assert isinstance(call, ast.Call) and isinstance(call.func, ast.Name) and call.func.id == "curio_edit_features", code
+    return call.args, {keyword.arg: ast.literal_eval(keyword.value) for keyword in call.keywords}
+
+
+@pytest.mark.parametrize("case", _code_cases() + _code_cases("read"), ids=lambda c: c["name"])
+def test_python_reads_the_code_as_the_settings_the_node_reads(case):
+    """Each code the node writes, and each other code its reader takes, is a
+    call of the step as its signature has it, whose arguments hold, as Python
+    reads them, the settings the node reads from it: its inputs, its edits and
+    each keyword."""
+    import ast
+    import inspect
+
+    from utk_curio.sandbox.util.feature_edits import edit_features
+
+    assert case["code"] is not None, case["name"]
+    args, keywords = _call_of(case["code"])
+    params = inspect.signature(edit_features).parameters
+    assert set(keywords) <= set(params) - {"value", "edits"}, keywords
+    first, edits = args
+    circles = case.get("circles", 1)
+    if circles > 1:
+        assert isinstance(first, ast.List) and [ast.unparse(item) for item in first.elts] == [f"input_{k}" for k in range(circles)]
+        assert keywords.get("by_input") is True
+    else:
+        assert ast.unparse(first) == "input_0" and not keywords.get("by_input")
+    settings = case["settings"] or {}
+    assert ast.literal_eval(edits) == settings.get("edits", [])
+    assert keywords.get("key") == settings.get("key")
+    assert keywords.get("layer") == settings.get("layer")
+    assert (keywords.get("keys") or None) == settings.get("keys")
+    assert (keywords.get("new_layers") or None) == settings.get("newLayers")
+    assert keywords.get("crs") == settings.get("crs")
 
 
 def _expr_cases(part):
