@@ -11,6 +11,7 @@ from __future__ import annotations
 import os as _os
 
 from utk_curio.backend.app.agents.domain import content
+from utk_curio.backend.app.agents.domain import agent_text
 
 
 # Solve concurrency (dev/52, DEC-048): the dev/15 manifest's
@@ -200,9 +201,6 @@ _ATTEMPT_STDERR_CHARS = 1200
 #: the transcript can show what was tried. Bounded — a trail is a record, not
 #: a copy of the project (a five-round trail costs tens of KB, not MB).
 _ATTEMPT_CODE_CHARS = 4000
-
-
-_CODE_TRUNCATION_MARKER = "\n… [truncated: the attempt's code exceeded the trail's bound]"
 
 
 #: dev/127: how many repeated candidates before the correction ESCALATES.
