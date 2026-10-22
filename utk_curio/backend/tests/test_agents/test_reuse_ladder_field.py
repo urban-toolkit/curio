@@ -365,7 +365,7 @@ class TestFieldReplay:
         assert "not in the Nodes Catalog" in miss
         assert "packages.catalog" not in miss
         assert "No further tool calls" not in miss
-        assert delegated.startswith("[delegate result] agent.node-builder@1.0.0 (node.kind.author): ok")
+        assert delegated.startswith("[delegate result] agent.curio.node-builder@1 (node.kind.author): ok")
 
         execution = _execution(client, token, pid, att_id)
         assert [c["status"] for c in execution["toolCalls"]] == ["ok", "refused", "refused"]

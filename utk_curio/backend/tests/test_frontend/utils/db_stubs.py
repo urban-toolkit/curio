@@ -104,7 +104,7 @@ def api_json(
 #: A made-up agent that attaches to nodes only. Every catalog card accepts the
 #: canvas, so the browser tests that need a node-only agent (a canvas drop it
 #: refuses, a node chat's header) upload this one to the account.
-NODE_ONLY_AGENT = "agent.my-node-reader@1.0.0"
+NODE_ONLY_AGENT = "agent.test.my-node-reader@1"
 NODE_ONLY_AGENT_NAME = "My Node Reader"
 
 

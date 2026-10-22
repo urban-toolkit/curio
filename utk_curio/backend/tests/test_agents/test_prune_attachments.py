@@ -5,7 +5,7 @@ from utk_curio.backend.app.agents.application.attachments import prune_orphaned_
 
 
 def _att(att_id, target):
-    return {"attachmentId": att_id, "coord": "agent.x@1.0.0", "target": target, "revision": 1}
+    return {"attachmentId": att_id, "coord": "agent.test.x@1", "target": target, "revision": 1}
 
 
 def _spec(nodes, edges, attachments):

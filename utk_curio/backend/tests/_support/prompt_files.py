@@ -3,7 +3,7 @@
 The prompts the agents share are in ``utk_curio/llm-prompts/``: the preamble,
 the templates and fragments the generator reads, and the files read at run
 time. Each shipped agent's own prompts are in its folder,
-``agents/<id>@<version>/prompts/``. A scan of the prompts reads both, and a
+``agents/<id>@<major>/prompts/``. A scan of the prompts reads both, and a
 file name is one prompt's wherever it is.
 """
 

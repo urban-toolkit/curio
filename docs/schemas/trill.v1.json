@@ -155,7 +155,7 @@
         "agents": {
           "type": "array",
           "uniqueItems": true,
-          "description": "Hookable-agent lockfile: the '<agentId>@<version>' directory names installed into this dataflow. BACKEND-OWNED and written only by the agent endpoints - the canvas save path never serializes it - and STRIPPED ON SHARE by agents/repositories/project_agents.py:strip_agent_state, so a shared copy of a dataflow never carries it. Note the asymmetry with 'packages': agents pin a full semantic version, packages pin a major only. project_agents.project_agents silently drops malformed entries, so the runtime is more forgiving than this pattern.",
+          "description": "Hookable-agent lockfile: the '<agentId>@<major>' directory names installed into this dataflow, pinned to a major as 'packages' are. BACKEND-OWNED and written only by the agent endpoints - the canvas save path never serializes it - and STRIPPED ON SHARE by agents/repositories/project_agents.py:strip_agent_state, so a shared copy of a dataflow never carries it. project_agents.project_agents silently drops malformed entries, so the runtime is more forgiving than this pattern.",
           "items": { "$ref": "#/$defs/agentCoord" }
         },
         "agentAttachments": {
@@ -821,8 +821,8 @@
     },
     "agentCoord": {
       "type": "string",
-      "pattern": "^agent\\.[a-z0-9]+(?:-[a-z0-9]+)*@\\d+\\.\\d+\\.\\d+(?:[-+][A-Za-z0-9.-]+)?$",
-      "description": "An installed agent coordinate, '<agentId>@<version>'. Mirrors AGENT_DIR_RE in agents/repositories/storage.py, which composes AGENT_ID_RE and VERSION_RE from agents/domain/manifest.py. A FULL semantic version, unlike the major-only pin in dataflow.packages."
+      "pattern": "^agent\\.[a-z][a-z0-9-]{0,62}(?:\\.[a-z][a-z0-9-]{0,62}){1,4}@(?:0|[1-9][0-9]{0,3})$",
+      "description": "An installed agent coordinate, '<agentId>@<major>': 'agent.', the publisher and the agent, then the major of its version, as in dataflow.packages. Mirrors AGENT_DIR_RE in agents/repositories/storage.py, which composes AGENT_ID_RE and MAJOR_RE from agents/domain/manifest.py."
     },
     "portType": {
       "type": "string",

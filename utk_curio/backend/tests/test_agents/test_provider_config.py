@@ -56,7 +56,7 @@ class TestTheFallbackOrder:
     def test_the_default_configuration_answers(self, deployment):
         created = _own(deployment)
         deployment.set_default(USER, created["id"])
-        out = pc.resolve_llm(USER, "agent.researcher")
+        out = pc.resolve_llm(USER, "agent.curio.researcher")
         assert (out.api_type, out.base_url, out.api_key, out.model) == (
             "openai_compatible", "https://api.openai.com/v1", "user-secret-key", "gpt-4o-mini",
         )
@@ -73,20 +73,20 @@ class TestTheFallbackOrder:
     def test_nothing_configured_is_a_refusal_with_a_remedy(self, deployment, monkeypatch):
         monkeypatch.setattr(config, "DEFAULT_LLM_MODEL", "")
         with pytest.raises(pc.ProviderConfigError) as refused:
-            pc.resolve_llm(USER, "agent.researcher")
+            pc.resolve_llm(USER, "agent.curio.researcher")
         assert "API Settings" in str(refused.value)
-        assert refused.value.remedy == {"kind": "llm-config", "agentId": "agent.researcher"}
+        assert refused.value.remedy == {"kind": "llm-config", "agentId": "agent.curio.researcher"}
 
     def test_an_unchosen_delegate_answers_with_its_callers(self, deployment):
         caller = ProviderConfig(api_key="k", api_type="anthropic", base_url="", model="claude",
                                 config_id="llm-00000000000a", label="Caller", source="default")
-        out = pc.resolve_llm(USER, "agent.node-builder", caller=caller)
+        out = pc.resolve_llm(USER, "agent.curio.node-builder", caller=caller)
         assert (out.api_key, out.model, out.config_id, out.label) == ("k", "claude", "llm-00000000000a", "Caller")
         assert out.source == "caller"
 
 
 class TestAChoicePerAgent:
-    def _chosen(self, store, agent_id="agent.node-builder", **fields):
+    def _chosen(self, store, agent_id="agent.curio.node-builder", **fields):
         created = _own(store, label=fields.pop("label", "Chosen"), model=fields.pop("model", "chosen-model"), **fields)
         store.set_choices(USER, {agent_id: created["id"]},
                           choosable=frozenset({agent_id}), deployment_default=True)
@@ -95,57 +95,57 @@ class TestAChoicePerAgent:
     def test_an_attached_agent_runs_on_its_choice_over_the_default(self, deployment):
         default = _own(deployment, label="Default")
         deployment.set_default(USER, default["id"])
-        chosen = self._chosen(deployment, "agent.researcher")
-        out = pc.resolve_llm(USER, "agent.researcher")
+        chosen = self._chosen(deployment, "agent.curio.researcher")
+        out = pc.resolve_llm(USER, "agent.curio.researcher")
         assert (out.config_id, out.model, out.source) == (chosen["id"], "chosen-model", "assigned")
         # Another agent still follows the default.
-        assert pc.resolve_llm(USER, "agent.dataflow-builder").config_id == default["id"]
+        assert pc.resolve_llm(USER, "agent.curio.dataflow-builder").config_id == default["id"]
 
     def test_a_delegate_runs_on_its_own_choice_not_its_callers(self, deployment):
         chosen = self._chosen(deployment)
         caller = ProviderConfig(api_key="k", api_type="anthropic", base_url="", model="claude",
                                 source="default")
-        out = pc.resolve_llm(USER, "agent.node-builder", caller=caller)
+        out = pc.resolve_llm(USER, "agent.curio.node-builder", caller=caller)
         assert (out.config_id, out.api_key, out.source) == (chosen["id"], "user-secret-key", "assigned")
 
     def test_an_internal_agent_always_runs_on_its_callers(self, deployment):
         # A choice cannot be written for one; a hand-edited file is ignored.
         created = _own(deployment, label="Planner")
         doc = deployment.read(USER)
-        doc["agents"]["agent.dataflow-planner"] = created["id"]
+        doc["agents"]["agent.curio.dataflow-planner"] = created["id"]
         deployment._write(USER, doc)
         caller = ProviderConfig(api_key="k", api_type="anthropic", base_url="", model="claude",
                                 source="assigned")
-        out = pc.resolve_llm(USER, "agent.dataflow-planner", caller=caller)
+        out = pc.resolve_llm(USER, "agent.curio.dataflow-planner", caller=caller)
         assert (out.api_key, out.model, out.source) == ("k", "claude", "caller")
 
     def test_the_deployment_default_can_be_chosen(self, deployment):
-        deployment.set_choices(USER, {"agent.researcher": "deployment"},
-                               choosable=frozenset({"agent.researcher"}), deployment_default=True)
-        out = pc.resolve_llm(USER, "agent.researcher")
+        deployment.set_choices(USER, {"agent.curio.researcher": "deployment"},
+                               choosable=frozenset({"agent.curio.researcher"}), deployment_default=True)
+        out = pc.resolve_llm(USER, "agent.curio.researcher")
         assert (out.model, out.source, out.label) == ("llama4", "assigned", "Deployment default")
 
     def test_a_choice_that_names_nothing_is_refused_not_replaced(self, deployment):
-        chosen = self._chosen(deployment, "agent.researcher")
+        chosen = self._chosen(deployment, "agent.curio.researcher")
         doc = deployment.read(USER)
         del doc["configs"][chosen["id"]]  # a hand-edited file
         deployment._write(USER, doc)
-        with pytest.raises(pc.ProviderConfigError, match="chosen for agent.researcher") as refused:
-            pc.resolve_llm(USER, "agent.researcher")
-        assert refused.value.remedy == {"kind": "llm-config", "agentId": "agent.researcher"}
+        with pytest.raises(pc.ProviderConfigError, match="chosen for agent.curio.researcher") as refused:
+            pc.resolve_llm(USER, "agent.curio.researcher")
+        assert refused.value.remedy == {"kind": "llm-config", "agentId": "agent.curio.researcher"}
 
     def test_a_withdrawn_deployment_choice_is_refused(self, deployment, monkeypatch):
-        deployment.set_choices(USER, {"agent.researcher": "deployment"},
-                               choosable=frozenset({"agent.researcher"}), deployment_default=True)
+        deployment.set_choices(USER, {"agent.curio.researcher": "deployment"},
+                               choosable=frozenset({"agent.curio.researcher"}), deployment_default=True)
         monkeypatch.setattr(config, "DEFAULT_LLM_MODEL", "")
         with pytest.raises(pc.ProviderConfigError, match="no longer offers"):
-            pc.resolve_llm(USER, "agent.researcher")
+            pc.resolve_llm(USER, "agent.curio.researcher")
 
     def test_a_guest_caller_keeps_its_delegates_on_the_guest_configuration(self, deployment):
         self._chosen(deployment)
-        caller = pc.resolve_llm("guest", "agent.dataflow-builder")
+        caller = pc.resolve_llm("guest", "agent.curio.dataflow-builder")
         assert caller.source == "guest"
-        assert pc.resolve_llm("guest", "agent.node-builder", caller=caller) is caller
+        assert pc.resolve_llm("guest", "agent.curio.node-builder", caller=caller) is caller
 
     def test_a_default_that_names_nothing_is_refused_not_replaced(self, deployment):
         created = _own(deployment)
@@ -220,7 +220,7 @@ class TestKeysStayWithTheirEndpoint:
 
 class TestGuests:
     def test_a_hosted_guest_runs_on_the_guest_configuration(self, deployment):
-        out = pc.resolve_llm("guest", "agent.researcher")
+        out = pc.resolve_llm("guest", "agent.curio.researcher")
         assert (out.base_url, out.api_key, out.model, out.source) == (
             "https://guest.example.edu/v1", "guest-secret-key", "small-model", "guest",
         )

@@ -54,11 +54,11 @@ USERNAME = "agentconnaff"
 USER_NAME = "Connection Affordances User"
 
 # The one built-in that declares ``connection`` among its compatibleTargets
-# (agents/agent.node-builder@1.0.0/manifest.json): the Node Builder,
+# (agents/agent.curio.node-builder@1/manifest.json): the Node Builder,
 # which suggests the nodes that could go on a connection. The fixture asserts
 # that is still true, so a roster change fails loudly here instead of quietly
 # attaching to a node and testing nothing.
-AGENT_ID = "agent.node-builder"
+AGENT_ID = "agent.curio.node-builder"
 
 # The edge id in the shared spec both agent e2e modules build their canvas from.
 EDGE_ID = "agent-e2e-edge"

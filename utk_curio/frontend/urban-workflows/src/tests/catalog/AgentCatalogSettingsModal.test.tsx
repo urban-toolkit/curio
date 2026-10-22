@@ -48,13 +48,13 @@ function response(overrides: Partial<CatalogSettingsResponse> = {}, value: unkno
         isDefault: value === DEFAULT,
         readBy: [
           {
-            agentId: "agent.dataflow-planner",
+            agentId: "agent.curio.dataflow-planner",
             agentName: "Dataflow Planner",
             capability: "workflow.keywords.extract",
             internal: true,
           },
           {
-            agentId: "agent.dataflow-planner",
+            agentId: "agent.curio.dataflow-planner",
             agentName: "Dataflow Planner",
             capability: "workflow.keyword.bind",
             internal: true,

@@ -6,9 +6,9 @@
 
 /** One agent card as returned by the backend (camelCase). */
 export interface AgentCard {
-  id: string; // e.g. "agent.my-helper"
+  id: string; // e.g. "agent.acme.my-helper"
   version: string;
-  dirName: string; // "<id>@<version>"
+  dirName: string; // "<id>@<major>"
   name: string;
   category: string; // data | node | canvas | package | evaluate
   purpose: string;

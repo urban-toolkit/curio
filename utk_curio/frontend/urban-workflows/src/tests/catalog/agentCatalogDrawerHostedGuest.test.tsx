@@ -96,7 +96,7 @@ function card(id: string, over: Record<string, unknown> = {}) {
   return {
     id,
     version: "1.0.0",
-    dirName: `${id}@1.0.0`,
+    dirName: `${id}@1`,
     name: id.replace("agent.", ""),
     category: "node",
     purpose: "does a thing",
@@ -133,12 +133,12 @@ function renderDrawerAs(
 
 /** An agent the account already has, which a never-saved dataflow shows with Remove. */
 function anAgentTheAccountHas() {
-  api.catalog.mockResolvedValue({ agents: [card("agent.my-explainer", { imported: true })] } as any);
+  api.catalog.mockResolvedValue({ agents: [card("agent.test.my-explainer", { imported: true })] } as any);
 }
 
 beforeEach(() => {
   jest.clearAllMocks();
-  api.catalog.mockResolvedValue({ agents: [card("agent.my-explainer")] } as any);
+  api.catalog.mockResolvedValue({ agents: [card("agent.test.my-explainer")] } as any);
   api.listImports.mockResolvedValue({ agents: [] } as any);
   api.listProjectAgents.mockResolvedValue({ agents: [] } as any);
   api.installToProject.mockResolvedValue({ agents: [] } as any);
@@ -181,7 +181,7 @@ describe("a hosted guest, on a dataflow it has", () => {
     await clickAndConfirm("Add to project", "Add to project");
 
     await waitFor(() =>
-      expect(api.installToProject).toHaveBeenCalledWith("p1", "agent.my-explainer@1.0.0"),
+      expect(api.installToProject).toHaveBeenCalledWith("p1", "agent.test.my-explainer@1"),
     );
     expect(onEnsureProject).not.toHaveBeenCalled();
     expect(screen.queryByRole("alert")).toBeNull();
@@ -200,7 +200,7 @@ describe.each([
     await clickAndConfirm("Add to project", "Add to project");
 
     await waitFor(() =>
-      expect(api.installToProject).toHaveBeenCalledWith("created-1", "agent.my-explainer@1.0.0"),
+      expect(api.installToProject).toHaveBeenCalledWith("created-1", "agent.test.my-explainer@1"),
     );
   });
 

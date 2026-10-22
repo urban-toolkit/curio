@@ -29,7 +29,7 @@ from utk_curio.backend.tests.test_agents.test_routes_proposals import (
 
 
 class TestRun:
-    def _attach_builtin(self, client, token, project_id, coord="agent.researcher@1.0.0"):
+    def _attach_builtin(self, client, token, project_id, coord="agent.curio.researcher@1"):
         # The Researcher is dual-compatible (node + canvas), so a canvas
         # attachment is valid.
         client.post(f"/api/agents/projects/{project_id}/install", json={"coord": coord}, headers=_auth(token))
@@ -67,8 +67,8 @@ class TestRun:
         assert msgs[0]["role"] == "system"
         # dev/06 parity: the system turn composes the preamble + instruction,
         # exactly as every legacy call site did.
-        preamble = builtin.read_prompt_text("agent.researcher@1.0.0", "system")
-        instruction = builtin.read_instruction_text("agent.researcher@1.0.0")
+        preamble = builtin.read_prompt_text("agent.curio.researcher@1", "system")
+        instruction = builtin.read_instruction_text("agent.curio.researcher@1")
         from utk_curio.backend.app.agents.domain import content as content_mod
 
         # dev/39: the runtime-owned structured-tail instruction composes last,
@@ -102,7 +102,7 @@ class TestRun:
 class TestStreamRun:
     """SSE run path (memo dev/22): deltas → done, persistence parity with run."""
 
-    def _attach_builtin(self, client, token, project_id, coord="agent.researcher@1.0.0"):
+    def _attach_builtin(self, client, token, project_id, coord="agent.curio.researcher@1"):
         client.post(f"/api/agents/projects/{project_id}/install", json={"coord": coord}, headers=_auth(token))
         r = client.post(
             f"/api/agents/projects/{project_id}/attachments",
@@ -239,7 +239,7 @@ class TestExecutionRecords:
     The Dataset Finder runs these: its grants are a fixed list the records
     can pin exactly."""
 
-    COORD = "agent.dataset-finder@1.0.0"
+    COORD = "agent.curio.dataset-finder@1"
 
     def _attach_builtin(self, client, token, project_id, coord=COORD):
         client.post(f"/api/agents/projects/{project_id}/install", json={"coord": coord}, headers=_auth(token))
@@ -316,6 +316,8 @@ class TestExecutionRecords:
         assert isinstance(execution["durationMs"], int) and execution["durationMs"] >= 0
         pins = execution["pins"]
         assert pins["coord"] == self.COORD
+        # The coordinate names a major; the pin keeps the version that ran.
+        assert pins["version"] == "1.0.0"
         assert pins["intentEdited"] is False
         # Built-in roster manifests carry no prompt digest — tolerated null.
         assert pins["promptSha256"] is None
@@ -507,7 +509,7 @@ class TestExecutionRecords:
             "/api/agents/imports/upload",
             json={
                 "manifest": {
-                    "id": "agent.pinned",
+                    "id": "agent.test.pinned",
                     "name": "Pinned",
                     "category": "canvas",
                     "version": "1.0.0",
@@ -521,7 +523,7 @@ class TestExecutionRecords:
             headers=_auth(token),
         )
         assert r.status_code == 201, r.get_data(as_text=True)
-        att_id = self._attach_builtin(client, token, alice_project, coord="agent.pinned@1.0.0")
+        att_id = self._attach_builtin(client, token, alice_project, coord="agent.test.pinned@1")
         client.post(
             f"/api/agents/projects/{alice_project}/attachments/{att_id}/run",
             json={"message": "q1"}, headers=_auth(token),
@@ -535,12 +537,12 @@ class TestToolGrants:
     never grants; required-but-ungranted refuses the run before admission."""
 
     def _upload_install_attach(self, client, token, project_id, tools_section):
-        coord = "agent.tooled@1.0.0"
+        coord = "agent.test.tooled@1"
         r = client.post(
             "/api/agents/imports/upload",
             json={
                 "manifest": {
-                    "id": "agent.tooled",
+                    "id": "agent.test.tooled",
                     "name": "Tooled",
                     "category": "canvas",
                     "version": "1.0.0",
@@ -634,7 +636,7 @@ class TestToolGrants:
         ]
         assert len(warnings) == 1, caplog.text
         assert "datalake.acquire" in warnings[0]
-        assert "agent.tooled@1.0.0" in warnings[0]
+        assert "agent.test.tooled@1" in warnings[0]
         assert "discovery." in warnings[0]
         turns = client.get(
             f"/api/agents/projects/{alice_project}/attachments/{att_id}/session",
@@ -676,7 +678,7 @@ class TestRunContext:
     live-canvas inputs ride one provider message per send — fresh every time,
     never persisted, byte-identical runs without it."""
 
-    def _attach(self, client, token, project_id, coord="agent.node-builder@1.0.0"):
+    def _attach(self, client, token, project_id, coord="agent.curio.node-builder@1"):
         r = client.put(
             f"/api/projects/{project_id}",
             json={"name": "p", "spec": {"dataflow": {"nodes": [{"id": "n1", "content": "x"}], "edges": [], "packages": []}}, "outputs": []},
@@ -876,7 +878,7 @@ class TestToolLoop:
         _, token = user_and_token
         self._save_node(client, token, alice_project, {"id": "n1", "type": "CODE", "content": "print(1)"})
         att_id = self._install_attach(
-            client, token, alice_project, "agent.researcher@1.0.0",
+            client, token, alice_project, "agent.curio.researcher@1",
             {"kind": "node", "targetId": "n1"},
         )
         r = client.post(
@@ -946,7 +948,7 @@ class TestToolLoop:
         _, token = user_and_token
         # The Researcher checks a fact in its own chat, with web.fetch.
         att_id = self._install_attach(
-            client, token, alice_project, "agent.researcher@1.0.0", {"kind": "canvas"},
+            client, token, alice_project, "agent.curio.researcher@1", {"kind": "canvas"},
         )
         r = client.post(
             f"/api/agents/projects/{alice_project}/attachments/{att_id}/run/stream",
@@ -993,7 +995,7 @@ class TestToolLoop:
         _, token = user_and_token
         # The Dataset Finder is not granted node.runtime.read.
         att_id = self._install_attach(
-            client, token, alice_project, "agent.dataset-finder@1.0.0", {"kind": "canvas"},
+            client, token, alice_project, "agent.curio.dataset-finder@1", {"kind": "canvas"},
         )
         r = client.post(
             f"/api/agents/projects/{alice_project}/attachments/{att_id}/run/stream",
@@ -1051,10 +1053,10 @@ class TestToolLoop:
         monkeypatch.setattr('utk_curio.backend.app.agents.infrastructure.providers.run_chat_turn', _fake_run)
         _, token = user_and_token
         # The Dataset Finder declares no node.runtime.read, so it is not granted.
-        client.post(f"/api/agents/projects/{alice_project}/install", json={"coord": "agent.dataset-finder@1.0.0"}, headers=_auth(token))
+        client.post(f"/api/agents/projects/{alice_project}/install", json={"coord": "agent.curio.dataset-finder@1"}, headers=_auth(token))
         att_id = client.post(
             f"/api/agents/projects/{alice_project}/attachments",
-            json={"coord": "agent.dataset-finder@1.0.0", "target": {"kind": "canvas"}},
+            json={"coord": "agent.curio.dataset-finder@1", "target": {"kind": "canvas"}},
             headers=_auth(token),
         ).get_json()["attachmentId"]
         r = client.post(
@@ -1090,7 +1092,7 @@ class TestToolLoop:
         _, token = user_and_token
         self._save_node(client, token, alice_project, {"id": "n1", "content": "x"})
         att_id = self._install_attach(
-            client, token, alice_project, "agent.researcher@1.0.0",
+            client, token, alice_project, "agent.curio.researcher@1",
             {"kind": "node", "targetId": "n1"},
         )
         r = client.post(
@@ -1139,7 +1141,7 @@ class TestToolLoop:
         user, token = user_and_token
         self._save_node(client, token, alice_project, {"id": "n1", "content": "original"})
         att_id = self._install_attach(
-            client, token, alice_project, "agent.node-builder@1.0.0",
+            client, token, alice_project, "agent.curio.node-builder@1",
             {"kind": "node", "targetId": "n1"},
         )
         r = client.post(
@@ -1172,9 +1174,9 @@ class TestToolLoop:
         user, token = user_and_token
         # No built-in card is both tool-free and delegate-free, so an owned
         # definition that declares neither stands in for a grant-less run.
-        coord = "agent.plain-helper@1.0.0"
+        coord = "agent.test.plain-helper@1"
         storage.write_definition(_user_dir_key(user), coord, {
-            "id": "agent.plain-helper", "name": "Plain Helper", "category": "node",
+            "id": "agent.test.plain-helper", "name": "Plain Helper", "category": "node",
             "version": "1.0.0",
             "capabilities": [{"id": "conversation.respond", "contractVersion": "1"}],
             "compatibleTargets": [{"kind": "node", "requires": []}],
@@ -1204,7 +1206,7 @@ class TestStructuredContent:
     TAIL = '```curio.v1\n{"suggestedPrompts": {"primary": "Next step", "alternatives": ["Alt"]}}\n```'
     PARTS = [{"type": "suggestedPrompts", "primary": "Next step", "alternatives": ["Alt"]}]
 
-    def _attach_builtin(self, client, token, project_id, coord="agent.researcher@1.0.0"):
+    def _attach_builtin(self, client, token, project_id, coord="agent.curio.researcher@1"):
         client.post(f"/api/agents/projects/{project_id}/install", json={"coord": coord}, headers=_auth(token))
         r = client.post(
             f"/api/agents/projects/{project_id}/attachments",
@@ -1394,7 +1396,7 @@ class TestRunsAreRecordedNotRationed:
     here: runs are recorded, never refused.
     """
 
-    def _attach_builtin(self, client, token, project_id, coord="agent.researcher@1.0.0"):
+    def _attach_builtin(self, client, token, project_id, coord="agent.curio.researcher@1"):
         client.post(f"/api/agents/projects/{project_id}/install", json={"coord": coord}, headers=_auth(token))
         r = client.post(
             f"/api/agents/projects/{project_id}/attachments",
@@ -1487,7 +1489,7 @@ class TestOutputCapReachesTheProvider:
     now rather than something a user can override.
     """
 
-    COORD = "agent.researcher@1.0.0"
+    COORD = "agent.curio.researcher@1"
 
     def _install_and_attach(self, client, token, project_id):
         client.post(
@@ -1567,7 +1569,7 @@ class TestReuseLadder:
     and unreachable because the agent had no way to enlist it.
     """
 
-    COORD = "agent.researcher@1.0.0"
+    COORD = "agent.curio.researcher@1"
 
     def _write_store_package(self, user_key, dir_name, package_id, template_id, label):
         """A package in the user's STORE but not in any project lockfile —
@@ -2177,7 +2179,7 @@ class TestDatasetFinderTools:
     Catalog; dataset.install is the reviewed catalog-lane mutation over the
     existing dataset-only install flow."""
 
-    COORD = "agent.dataset-finder@1.0.0"
+    COORD = "agent.curio.dataset-finder@1"
 
     def _seed_dataset(self, user, filename="cities.csv"):
         from utk_curio.backend.app.datasets.install.installer import install_imported_file
@@ -2386,7 +2388,7 @@ class TestRosterGrantCoverage:
         from utk_curio.backend.app.projects.services import _user_dir_key
 
         agent_id = "agent.my-" + tool.replace(".", "-")
-        coord = f"{agent_id}@1.0.0"
+        coord = f"{agent_id}@1"
         storage.write_definition(_user_dir_key(user), coord, {
             "id": agent_id, "name": f"My {tool}", "category": "package",
             "version": "1.0.0",
@@ -2441,7 +2443,7 @@ class TestRosterGrantCoverage:
         user, token = user_and_token
         att_id, calls = helper._setup(
             client, user, token, alice_project, monkeypatch,
-            replies=["chatting"], coord="agent.dataset-finder@1.0.0",
+            replies=["chatting"], coord="agent.curio.dataset-finder@1",
         )
         helper._run(client, token, alice_project, att_id)
         assert "Available node templates" not in calls[0][0]["content"]
@@ -2636,7 +2638,7 @@ class TestPlanCorrectionRounds:
         helper = TestDataflowPlanMint()
         att_id, calls = helper._setup(
             client, user, token, alice_project, monkeypatch,
-            coord="agent.researcher@1.0.0",
+            coord="agent.curio.researcher@1",
             replies=["idea!\n" + self._bad_json_tail()],
         )
         body = helper._run(client, token, alice_project, att_id).get_json()
@@ -3086,7 +3088,7 @@ class TestFenceAgnosticPlanRecognition:
         helper = TestDataflowPlanMint()
         att_id, calls = helper._setup(
             client, user, token, alice_project, monkeypatch,
-            coord="agent.researcher@1.0.0",
+            coord="agent.curio.researcher@1",
             replies=[self._json_fence_reply()],
         )
         body = helper._run(client, token, alice_project, att_id).get_json()
@@ -3156,7 +3158,7 @@ class TestVerifiedDiscovery:
         helper = TestDataflowPlanMint()
         att_id, _ = helper._setup(
             client, user, token, alice_project, monkeypatch,
-            coord="agent.dataset-finder@1.0.0",
+            coord="agent.curio.dataset-finder@1",
             replies=[self._candidates_reply(rows)],
         )
         body = helper._run(client, token, alice_project, att_id).get_json()
@@ -3200,7 +3202,7 @@ class TestVerifiedDiscovery:
         helper = TestDataflowPlanMint()
         att_id, _ = helper._setup(
             client, user, token, alice_project, monkeypatch,
-            coord="agent.dataset-finder@1.0.0",
+            coord="agent.curio.dataset-finder@1",
             replies=[self._candidates_reply(rows)],
         )
         body = helper._run(client, token, alice_project, att_id).get_json()
@@ -3243,13 +3245,13 @@ class TestVerifiedDiscovery:
         user, token = user_and_token
         r = client.post(
             f"/api/agents/projects/{alice_project}/install",
-            json={"coord": "agent.researcher@1.0.0"}, headers=_auth(token),
+            json={"coord": "agent.curio.researcher@1"}, headers=_auth(token),
         )
         assert r.status_code == 201
         from utk_curio.backend.app.agents.application import tools
         from utk_curio.backend.app.agents.domain import builtin
 
-        m = builtin.get_builtin_manifest("agent.researcher@1.0.0")
+        m = builtin.get_builtin_manifest("agent.curio.researcher@1")
         granted = tools.resolve_grants(m.tools)
         for tool in ("web.search", "web.fetch", "node.read"):
             assert tool in granted, tool
@@ -3262,7 +3264,7 @@ class TestPackageRecommendationTools:
     package install flow (permissions dialog client-side, conflict re-check
     and lockfile write server-side). Both are the Node Builder's chat."""
 
-    COORD = "agent.node-builder@1.0.0"
+    COORD = "agent.curio.node-builder@1"
     PKG = "curio.weather@1"
 
     @pytest.fixture(autouse=True)

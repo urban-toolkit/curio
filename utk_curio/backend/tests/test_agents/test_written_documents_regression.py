@@ -41,8 +41,8 @@ TEMPLATES = _CODE_TEMPLATES + [
      "outputPorts": [{"types": ["DATAFRAME", "GEODATAFRAME"], "cardinality": "1"}]},
 ]
 
-DFB = "agent.dataflow-builder@1.0.0"
-NB = "agent.node-builder@1.0.0"
+DFB = "agent.curio.dataflow-builder@1"
+NB = "agent.curio.node-builder@1"
 DL = "curio.builtin/data-loading"
 TABLE = "curio.builtin/vis-simple"
 POOL = "curio.builtin/data-pool"

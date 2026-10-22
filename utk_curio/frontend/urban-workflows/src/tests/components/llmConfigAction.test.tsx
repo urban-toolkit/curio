@@ -16,9 +16,9 @@ it("opens API Settings on the agent the refusal names", () => {
   const asked: ApiSettingsFocus[] = [];
   const listener = (event: Event) => asked.push((event as CustomEvent<ApiSettingsFocus>).detail);
   window.addEventListener(API_SETTINGS_EVENT, listener);
-  render(<LlmConfigAction remedy={{ kind: "llm-config", agentId: "agent.node-builder" }} />);
+  render(<LlmConfigAction remedy={{ kind: "llm-config", agentId: "agent.curio.node-builder" }} />);
   fireEvent.click(screen.getByRole("button", { name: "Open API Settings" }));
-  expect(asked).toEqual([{ section: "agent-models", agentId: "agent.node-builder" }]);
+  expect(asked).toEqual([{ section: "agent-models", agentId: "agent.curio.node-builder" }]);
   window.removeEventListener(API_SETTINGS_EVENT, listener);
 });
 
@@ -35,9 +35,9 @@ it("renders nothing for another remedy, or none", () => {
 it("reads the remedy off a refused request's body", () => {
   const refused = Object.assign(new Error("No LLM configuration answers this run."), {
     status: 400,
-    body: { error: "No LLM configuration answers this run.", remedy: { kind: "llm-config", agentId: "agent.researcher" } },
+    body: { error: "No LLM configuration answers this run.", remedy: { kind: "llm-config", agentId: "agent.curio.researcher" } },
   });
-  expect(remedyOf(refused)).toEqual({ kind: "llm-config", agentId: "agent.researcher" });
+  expect(remedyOf(refused)).toEqual({ kind: "llm-config", agentId: "agent.curio.researcher" });
   expect(remedyOf(new Error("plain"))).toBeNull();
   expect(remedyOf(null)).toBeNull();
 });

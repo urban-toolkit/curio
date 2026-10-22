@@ -13,8 +13,8 @@ import pytest
 from utk_curio.backend.app.agents.application import attachments
 from utk_curio.backend.app.agents.application import dataset_resolution as dr
 
-DF = "agent.dataset-finder@1.0.0"
-NB = "agent.node-builder@1.0.0"
+DF = "agent.curio.dataset-finder@1"
+NB = "agent.curio.node-builder@1"
 
 
 def _spec_with_finder(**record):
@@ -247,7 +247,7 @@ class TestDelegationHome:
         # The delegate does not pick the home: another agent's task for the
         # same node lands at that Node Builder too.
         other, _ = services._delegation_home(
-            spec, "agent.researcher@1.0.0", "research.verify", {},
+            spec, "agent.curio.researcher@1", "research.verify", {},
             node_id="n1", user_key="1",
         )
         assert other["coord"] == NB and other["attachmentId"] == home["attachmentId"]

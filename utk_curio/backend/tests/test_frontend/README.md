@@ -763,12 +763,12 @@ Things worth knowing before adding to these:
   string for every parameter. The per-agent claim is on the captured system
   prompt, which the run composes from that agent's own preamble + instruction
   bytes. Keep that assertion or the parametrization becomes decoration.
-- **Never script `web.search` / `web.fetch`.** `agent.researcher` declares
+- **Never script `web.search` / `web.fetch`.** `agent.curio.researcher` declares
   them and `app/agents/egress.py` really opens sockets. The suite scripts its
   `node.create` instead, and it also declares the local read tools
   `dataflow.read` and `node.read`.
 - **`discovery.search` is the exception, and only because of the corpus.**
-  `agent.dataset-finder` declares it, and it too really opens sockets - but the
+  `agent.curio.dataset-finder` declares it, and it too really opens sockets - but the
   harness exports `CURIO_DISCOVERY_FIXTURES`, so in this stack the discovery
   transport answers from recorded responses instead. That is what makes an
   agent-driven download testable at all. It holds only while that variable is

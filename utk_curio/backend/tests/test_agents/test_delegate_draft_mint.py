@@ -18,9 +18,9 @@ import pytest
 from utk_curio.backend.app.agents.application.turns.delegates import _extract_draft_params
 from utk_curio.backend.app.packages.builder import jobs as build_jobs
 
-RESEARCHER = "agent.researcher@1.0.0"
-NODE_BUILDER = "agent.node-builder@1.0.0"
-DATAFLOW_BUILDER = "agent.dataflow-builder@1.0.0"
+RESEARCHER = "agent.curio.researcher@1"
+NODE_BUILDER = "agent.curio.node-builder@1"
+DATAFLOW_BUILDER = "agent.curio.dataflow-builder@1"
 #: The agent whose package-writing mode a package-authoring delegation reaches.
 WRITER = NODE_BUILDER
 
@@ -167,7 +167,7 @@ def _run(client, token, project_id, att_id, message="post-it my findings"):
 #: An agent of the user's own that asks the Node Builder to write a package
 #: and does not hold package.draft.apply. Every agent Curio ships that asks
 #: for a package holds that tool, so the grant gate is tested on this one.
-WITHOUT_THE_DRAFT_TOOL = "agent.my-planner@1.0.0"
+WITHOUT_THE_DRAFT_TOOL = "agent.test.my-planner@1"
 
 
 def _write_agent_without_the_draft_tool(user_key: str) -> str:
@@ -184,7 +184,7 @@ def _write_agent_without_the_draft_tool(user_key: str) -> str:
         "compatibleTargets": [{"kind": "canvas", "requires": []}],
         "tools": [{"id": "dataflow.read"}, {"id": "node.create"}],
         "delegatesTo": [{
-            "id": "agent.node-builder",
+            "id": "agent.curio.node-builder",
             "capabilities": ["package.build", "package.extend", "node.kind.author"],
         }],
         "provenance": {"publisher": "me", "trust": "imported"},
@@ -1195,7 +1195,7 @@ class TestRecommendationEvidence:
         assert (entry["coord"], entry["capability"], entry["status"]) == (
             NODE_BUILDER, "package.recommend", "ok")
         framed = calls[1][1]["content"]
-        assert "[delegated task from agent.dataflow-builder@1.0.0" in framed
+        assert "[delegated task from agent.curio.dataflow-builder@1" in framed
         assert '"existingPackages"' in framed
         assert "curio.notes@1" in framed and "curio.notes/note-surface" in framed
         # The child ran the recommendation mode, not the Node Builder's chat.

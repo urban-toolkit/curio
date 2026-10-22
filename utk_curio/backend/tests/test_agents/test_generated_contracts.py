@@ -152,7 +152,7 @@ class TestRenderPrompt:
         from utk_curio.backend.app.agents.domain import builtin
 
         renamed = [
-            dataclasses.replace(m, name="Flow Architect") if m.agent_id == "agent.dataflow-builder" else m
+            dataclasses.replace(m, name="Flow Architect") if m.agent_id == "agent.curio.dataflow-builder" else m
             for m in builtin.list_builtin_manifests()
         ]
         monkeypatch.setattr(builtin, "list_builtin_manifests", lambda: renamed)
@@ -161,7 +161,7 @@ class TestRenderPrompt:
         )
         # Every other template that names it follows too, and none keeps the
         # old name.
-        marker = "{{agent.name:agent.dataflow-builder}}"
+        marker = "{{agent.name:agent.curio.dataflow-builder}}"
         naming = [
             stem for stem in contracts.PROMPT_TEMPLATES
             if marker in (REPO_ROOT / contracts.PROMPTS_DIR / f"{stem}.template.md").read_text(encoding="utf-8")
@@ -175,8 +175,8 @@ class TestRenderPrompt:
         )
 
     def test_an_unknown_agent_raises(self):
-        with pytest.raises(contracts.PromptTemplateError, match="agent.nobody"):
-            contracts.render_template("{{agent.name:agent.nobody}}")
+        with pytest.raises(contracts.PromptTemplateError, match="agent.test.nobody"):
+            contracts.render_template("{{agent.name:agent.test.nobody}}")
 
     def test_a_template_label_follows_the_manifest(self):
         manifest = _manifest()

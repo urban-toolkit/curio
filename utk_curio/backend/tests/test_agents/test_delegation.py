@@ -31,9 +31,9 @@ def _delegate_tail(capability="node.content.generate", inputs='{"intent": "sum c
     )
 
 
-NB = "agent.node-builder@1.0.0"
-RS = "agent.researcher@1.0.0"
-DF = "agent.dataset-finder@1.0.0"
+NB = "agent.curio.node-builder@1"
+RS = "agent.curio.researcher@1"
+DF = "agent.curio.dataset-finder@1"
 
 
 def _verify_tail(inputs='{"intent": "check the column"}'):
@@ -96,7 +96,7 @@ def _run(client, token, project_id, att_id, message="build the content"):
 class TestRequiredClosure:
     """dev/106: delegation.required_closure / required_by — pure helpers."""
 
-    DFB = "agent.dataflow-builder@1.0.0"
+    DFB = "agent.curio.dataflow-builder@1"
 
     def test_dataflow_builder_closure_is_the_two_server_invoked_agents(
         self, client, user_and_token, tmp_curio
@@ -132,12 +132,12 @@ class TestRequiredClosure:
 
         root = dataclasses.replace(
             builtin.get_builtin_manifest(self.DFB),
-            delegates_to=["agent.researcher", "agent.nowhere"],
-            requires_agents=["agent.researcher", "agent.nowhere"],
+            delegates_to=["agent.curio.researcher", "agent.test.nowhere"],
+            requires_agents=["agent.curio.researcher", "agent.test.nowhere"],
         )
         coords, missing = delegation.required_closure(_user_dir_key(user), root)
         assert coords == [RS]
-        assert missing == ["agent.nowhere"]
+        assert missing == ["agent.test.nowhere"]
 
     def test_transitive_and_cycle_safe(self, client, user_and_token, tmp_curio, monkeypatch):
         user, _ = user_and_token
@@ -146,14 +146,14 @@ class TestRequiredClosure:
         rs = builtin.get_builtin_manifest(RS)
         # The Researcher (pretend) requires NB, and NB (pretend) requires the
         # Researcher: a cycle.
-        fake_rs = dataclasses.replace(rs, delegates_to=["agent.node-builder"], requires_agents=["agent.node-builder"])
+        fake_rs = dataclasses.replace(rs, delegates_to=["agent.curio.node-builder"], requires_agents=["agent.curio.node-builder"])
         nb = builtin.get_builtin_manifest(NB)
-        fake_nb = dataclasses.replace(nb, delegates_to=["agent.researcher"], requires_agents=["agent.researcher"])
+        fake_nb = dataclasses.replace(nb, delegates_to=["agent.curio.researcher"], requires_agents=["agent.curio.researcher"])
         df = builtin.get_builtin_manifest(DF)
         table = {
-            "agent.researcher": (RS, fake_rs),
-            "agent.node-builder": (NB, fake_nb),
-            "agent.dataset-finder": (DF, df),
+            "agent.curio.researcher": (RS, fake_rs),
+            "agent.curio.node-builder": (NB, fake_nb),
+            "agent.curio.dataset-finder": (DF, df),
         }
         monkeypatch.setattr(delegation, "find_visible", lambda key, aid: table.get(aid, (None, None)))
         coords, missing = delegation.required_closure(_user_dir_key(user), builtin.get_builtin_manifest(self.DFB))
@@ -231,7 +231,7 @@ class TestResolution:
         pid = _project(client, token)
         r = delegation.resolve(key, pid, self._manifest(key), "dataset.discover")
         assert r.outcome == "not-installed"
-        assert r.coord == "agent.dataset-finder@1.0.0"
+        assert r.coord == "agent.curio.dataset-finder@1"
 
     def test_delegates_to_order_is_preference_order(self, client, user_and_token, tmp_curio):
         user, token = user_and_token
@@ -243,7 +243,7 @@ class TestResolution:
         client.post(f"/api/agents/projects/{pid}/install", json={"coord": RS}, headers=_auth(token))
         r = delegation.resolve(key, pid, self._manifest(key), "execution.followup.plan")
         assert r.outcome == "ok"
-        assert r.coord == "agent.dataflow-planner@1.0.0"
+        assert r.coord == "agent.curio.dataflow-planner@1"
 
 
 class TestDelegateChildRun:
@@ -267,9 +267,9 @@ class TestDelegateChildRun:
         assert "curio.v1" not in child_system
         assert "delegateRequest" not in child_system
         # The child got the framed inputs, and the parent got the framed result.
-        assert "[delegated task from agent.node-builder@1.0.0" in calls[1][1]["content"]
+        assert "[delegated task from agent.curio.node-builder@1" in calls[1][1]["content"]
         assert '"intent": "sum column"' in calls[1][1]["content"]
-        assert "[delegate result] agent.node-builder@1.0.0" in calls[2][-1]["content"]
+        assert "[delegate result] agent.curio.node-builder@1" in calls[2][-1]["content"]
         assert "df.sum(axis=0)" in calls[2][-1]["content"]
 
     def test_execution_records_link_parent_and_child(self, client, user_and_token, tmp_curio, monkeypatch):
@@ -410,7 +410,7 @@ class TestTheChildRunsOnItsOwnConfiguration:
         pid = _project(client, token)
         att_id, _ = _setup(client, token, pid, monkeypatch, delegate=RS)
         child_config = self._config(client, token, "Child", "child-model")
-        self._choose(client, token, "agent.researcher", child_config)
+        self._choose(client, token, "agent.curio.researcher", child_config)
         models, turns, execution = self._run_counting_models(client, token, pid, att_id, monkeypatch)
         # The parent on the deployment default, the child on its own choice.
         assert models == ["test-model", "child-model", "test-model"]
@@ -429,7 +429,7 @@ class TestTheChildRunsOnItsOwnConfiguration:
         pid = _project(client, token)
         att_id, _ = _setup(client, token, pid, monkeypatch, delegate=RS)
         parent_config = self._config(client, token, "Parent", "parent-model")
-        self._choose(client, token, "agent.node-builder", parent_config)
+        self._choose(client, token, "agent.curio.node-builder", parent_config)
         models, _, execution = self._run_counting_models(client, token, pid, att_id, monkeypatch)
         assert models == ["parent-model", "parent-model", "parent-model"]
         (child,) = execution["delegations"]
@@ -445,7 +445,7 @@ class TestTheChildRunsOnItsOwnConfiguration:
         pid = _project(client, token)
         att_id, _ = _setup(client, token, pid, monkeypatch, delegate=RS)
         child_config = self._config(client, token, "Child", "child-model")
-        self._choose(client, token, "agent.researcher", child_config)
+        self._choose(client, token, "agent.curio.researcher", child_config)
         store = llm_configs.default_store()
         doc = store.read(_user_dir_key(user))
         del doc["configs"][child_config]  # a hand-edited file: the choice names nothing
@@ -676,7 +676,7 @@ class TestDec047DatasetFinderHandoff:
     Finder's delegation seam is reused ONLY for resolution + the reviewed
     install proposal, never for child-minted proposals."""
 
-    FINDER = "agent.dataset-finder@1.0.0"
+    FINDER = "agent.curio.dataset-finder@1"
 
     def test_missing_node_builder_yields_reviewed_install_proposal(self, client, user_and_token, tmp_curio, monkeypatch):
         user, token = user_and_token
@@ -746,7 +746,7 @@ class TestCapabilityFirstResolution:
     """dev/52 — the dev/03:366 widening: capability-first discovery over ALL
     current-project templates, with delegatesTo as preference."""
 
-    DFB = "agent.dataflow-builder@1.0.0"
+    DFB = "agent.curio.dataflow-builder@1"
 
     def _manifest(self):
         return builtin.get_builtin_manifest(self.DFB)
@@ -759,8 +759,8 @@ class TestCapabilityFirstResolution:
         user, token = user_and_token
         key = _user_dir_key(user)
         pid = _project(client, token)
-        df = builtin.get_builtin_manifest("agent.dataset-finder@1.0.0")
-        assert not df.delegates("agent.researcher", "research.notes.compose")
+        df = builtin.get_builtin_manifest("agent.curio.dataset-finder@1")
+        assert not df.delegates("agent.curio.researcher", "research.notes.compose")
         client.post(f"/api/agents/projects/{pid}/install", json={"coord": RS}, headers=_auth(token))
         r = delegation.resolve(key, pid, df, "research.notes.compose")
         assert r.outcome == "ok"
@@ -786,7 +786,7 @@ class TestCapabilityFirstResolution:
         key = _user_dir_key(user)
         pid_a = _project(client, token)
         pid_b = _project(client, token)
-        df = builtin.get_builtin_manifest("agent.dataset-finder@1.0.0")
+        df = builtin.get_builtin_manifest("agent.curio.dataset-finder@1")
         client.post(f"/api/agents/projects/{pid_b}/install", json={"coord": RS}, headers=_auth(token))
         r = delegation.resolve(key, pid_a, df, "research.notes.compose")
         assert r.outcome == "not-installed"
@@ -800,7 +800,7 @@ class TestCapabilityFirstResolution:
         pid = _project(client, token)
         r = delegation.resolve(key, pid, self._manifest(), "dataset.discover")
         assert r.outcome == "not-installed"
-        assert r.coord == "agent.dataset-finder@1.0.0"
+        assert r.coord == "agent.curio.dataset-finder@1"
 
 
 class TestDelegationTransparency:
@@ -877,7 +877,7 @@ class TestDelegationTransparency:
 
 
 #: A made-up agent whose chat hands one capability to its own mode.
-MINE = "agent.my-helper@1.0.0"
+MINE = "agent.test.my-helper@1"
 CHAT_PROMPT = "You are My Helper. Chat with the user about their dataflow."
 MODE_PROMPT = "You are My Helper, interpreting one node's output. Reply in one line."
 
@@ -888,7 +888,7 @@ def _write_my_helper(user):
     from utk_curio.backend.app.agents.repositories import storage
 
     manifest = {
-        "id": "agent.my-helper",
+        "id": "agent.test.my-helper",
         "name": "My Helper",
         "category": "node",
         "version": "1.0.0",
@@ -896,7 +896,7 @@ def _write_my_helper(user):
             {"id": "node.explain", "contractVersion": "1"},
             {"id": "node.output.interpret", "contractVersion": "1", "instruction": "interpret"},
         ],
-        "delegatesTo": [{"id": "agent.my-helper", "capabilities": ["node.output.interpret"]}],
+        "delegatesTo": [{"id": "agent.test.my-helper", "capabilities": ["node.output.interpret"]}],
         "prompts": {
             "instruction": {"path": "prompts/chat.md", "variables": []},
             "interpret": {"path": "prompts/interpret.md", "variables": []},
@@ -966,7 +966,7 @@ class TestOwnModes:
         assert "node.output.interpret \N{EM DASH} handled by My Helper" in calls[0][0]["content"]
         child_system = calls[1][0]["content"]
         assert MODE_PROMPT in child_system and CHAT_PROMPT not in child_system
-        assert "[delegated task from agent.my-helper@1.0.0" in calls[1][1]["content"]
+        assert "[delegated task from agent.test.my-helper@1" in calls[1][1]["content"]
         # It resolved to itself, and its record rides the parent's turn …
         part = next(p for p in r.get_json()["content"] if p["type"] == "delegation")
         assert (part["coord"], part["capability"], part["status"]) == (MINE, "node.output.interpret", "ok")
@@ -1100,7 +1100,7 @@ class TestChatContentReviewMint:
     def test_dataflow_builder_chat_update_routes_through_the_roster(self, client, user_and_token, tmp_curio, monkeypatch):
         user, token = user_and_token
         pid = _project(client, token)
-        DFB = "agent.dataflow-builder@1.0.0"
+        DFB = "agent.curio.dataflow-builder@1"
         for coord in (DFB, NB):
             client.post(
                 f"/api/agents/projects/{pid}/install",
@@ -1229,14 +1229,14 @@ class TestPackageRecommendDelegation:
     path. The Node Builder recommends in its own chat, with its catalog
     tools, so it never asks for the mode."""
 
-    DFB = "agent.dataflow-builder@1.0.0"
+    DFB = "agent.curio.dataflow-builder@1"
 
     def test_the_dataflow_builder_declares_the_delegate(self):
         m = builtin.get_builtin_manifest(self.DFB)
-        assert "agent.node-builder" in m.delegates_to
-        assert m.delegates("agent.node-builder", "package.recommend")
+        assert "agent.curio.node-builder" in m.delegates_to
+        assert m.delegates("agent.curio.node-builder", "package.recommend")
         nb = builtin.get_builtin_manifest(NB)
-        assert not nb.delegates("agent.node-builder", "package.recommend")
+        assert not nb.delegates("agent.curio.node-builder", "package.recommend")
         assert "packages.catalog" in [t.id for t in nb.tools]
 
     def test_the_installed_node_builder_resolves_the_recommendation(self, client, user_and_token, tmp_curio):
@@ -1265,19 +1265,19 @@ class TestEvaluatorDelegation:
     advisory semantic check — current-project-only, missing = the reviewed
     missing-specialist path, never assumed."""
 
-    EV = "agent.generated-content-evaluator@1.0.0"
+    EV = "agent.curio.generated-content-evaluator@1"
 
     def test_generators_declare_the_evaluator(self):
-        for parent in ("agent.node-builder@1.0.0", "agent.dataflow-builder@1.0.0"):
+        for parent in ("agent.curio.node-builder@1", "agent.curio.dataflow-builder@1"):
             m = builtin.get_builtin_manifest(parent)
-            assert "agent.generated-content-evaluator" in m.delegates_to, parent
+            assert "agent.curio.generated-content-evaluator" in m.delegates_to, parent
 
     def test_installed_evaluator_resolves(self, client, user_and_token, tmp_curio):
         user, token = user_and_token
         key = _user_dir_key(user)
         pid = _project(client, token)
         client.post(f"/api/agents/projects/{pid}/install", json={"coord": self.EV}, headers=_auth(token))
-        for parent in ("agent.node-builder@1.0.0", "agent.dataflow-builder@1.0.0"):
+        for parent in ("agent.curio.node-builder@1", "agent.curio.dataflow-builder@1"):
             r = delegation.resolve(
                 key, pid, builtin.get_builtin_manifest(parent), "content.quality.evaluate"
             )
@@ -1291,7 +1291,7 @@ class TestEvaluatorDelegation:
         key = _user_dir_key(user)
         pid = _project(client, token)
         r = delegation.resolve(
-            key, pid, builtin.get_builtin_manifest("agent.node-builder@1.0.0"),
+            key, pid, builtin.get_builtin_manifest("agent.curio.node-builder@1"),
             "content.quality.evaluate",
         )
         assert r.outcome == "ok"
@@ -1302,7 +1302,7 @@ class TestEvaluatorDelegation:
         key = _user_dir_key(user)
         pid = _project(client, token)
         r = delegation.resolve(
-            key, pid, builtin.get_builtin_manifest("agent.node-builder@1.0.0"),
+            key, pid, builtin.get_builtin_manifest("agent.curio.node-builder@1"),
             "research.verify",
         )
         assert r.outcome == "not-installed"
@@ -1314,7 +1314,7 @@ class TestMergedAgentModes:
     the catalog settings that mode reads; a parent delegates only the
     capabilities its entry names."""
 
-    PLANNER = "agent.dataflow-planner@1.0.0"
+    PLANNER = "agent.curio.dataflow-planner@1"
 
     def _config(self):
         from utk_curio.backend.app.agents.infrastructure.providers import ProviderConfig

@@ -1665,7 +1665,7 @@ _CODE_OUTPUTS: dict[str, Callable[[], str]] = {
 def prompt_outputs() -> dict[str, str]:
     """Where each template's rendered prompt is written, by stem: into the
     folder of the agent Curio ships whose manifest names ``prompts/<stem>.md``
-    (``agents/<id>@<version>/``), else beside its template in ``PROMPTS_DIR``:
+    (``agents/<id>@<major>/``), else beside its template in ``PROMPTS_DIR``:
     the shared preamble and the fragments other prompts include. A prompt two
     agents name is refused: each agent's prompt is a file of its own."""
     from utk_curio.backend.app.agents.domain import builtin

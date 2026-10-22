@@ -184,8 +184,8 @@ class TestTheBuildRunsOnTheBuildersConfiguration:
         user, token = user_and_token
         h, finder_id = self._ready(client, user, token, monkeypatch)
         client.put("/api/agents/llm/assignments", json={
-            "agent.dataset-finder": self._config(client, token, "Finder", "finder-model"),
-            "agent.node-builder": self._config(client, token, "Builder", "builder-model"),
+            "agent.curio.dataset-finder": self._config(client, token, "Finder", "finder-model"),
+            "agent.curio.node-builder": self._config(client, token, "Builder", "builder-model"),
         }, headers=_auth(token))
         inner = providers.run_chat_turn
         models = []
@@ -206,7 +206,7 @@ class TestTheBuildRunsOnTheBuildersConfiguration:
         user, token = user_and_token
         h, finder_id = self._ready(client, user, token, monkeypatch)
         builder = self._config(client, token, "Builder", "builder-model")
-        client.put("/api/agents/llm/assignments", json={"agent.node-builder": builder},
+        client.put("/api/agents/llm/assignments", json={"agent.curio.node-builder": builder},
                    headers=_auth(token))
         store = llm_configs.default_store()
         doc = store.read(h.ukey)
@@ -525,7 +525,7 @@ class TestAnAcquirableRowIsDownloaded:
 class TestSettlingAcquisitions:
     def _spec(self, picks, status=dr.STATE_AWAITING_INSTALL):
         return {"dataflow": {"agentAttachments": [{
-            "attachmentId": "f1", "coord": "agent.dataset-finder@1.0.0",
+            "attachmentId": "f1", "coord": "agent.curio.dataset-finder@1",
             "target": {"kind": "node", "targetId": "n1"},
             dr.RECORD_KEY: {"status": status, "picks": picks},
         }]}}

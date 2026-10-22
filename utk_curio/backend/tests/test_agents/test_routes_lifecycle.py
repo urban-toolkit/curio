@@ -41,7 +41,7 @@ class TestProjectInstall:
         _, token = user_and_token
         r = client.post(
             f"/api/agents/projects/{alice_project}/install",
-            json={"coord": "agent.ghost@1.0.0"},
+            json={"coord": "agent.test.ghost@1"},
             headers=_auth(token),
         )
         assert r.status_code == 404
@@ -57,13 +57,13 @@ class TestProjectInstall:
         assert r.status_code == 404
 
     # ── dev/106: the requiresAgents closure ─────────────────────────────
-    DFB = "agent.dataflow-builder@1.0.0"
+    DFB = "agent.curio.dataflow-builder@1"
     # dev/126: the Dataset Finder (resolution delegates dataset.discover from
     # a server path) and the Node Builder (every plan-created node is given
     # one at Apply, and Solve writes content through its content mode), in
     # the Dataflow Builder's own declaration order.
-    DF = "agent.dataset-finder@1.0.0"
-    NB = "agent.node-builder@1.0.0"
+    DF = "agent.curio.dataset-finder@1"
+    NB = "agent.curio.node-builder@1"
     CLOSURE = [DF, NB]
 
     def test_installing_the_builder_installs_its_required_specialist_in_one_write(
@@ -113,22 +113,22 @@ class TestProjectInstall:
     def test_unresolvable_dependency_409s_and_writes_nothing(self, client, user_and_token, tmp_curio, alice_project):
         user, token = user_and_token
         key = _user_dir_key(user)
-        d = storage.user_agents_dir(key) / "agent.needy@1.0.0"
+        d = storage.user_agents_dir(key) / "agent.test.needy@1"
         d.mkdir(parents=True, exist_ok=True)
         (d / "manifest.json").write_text(json.dumps({
-            "id": "agent.needy", "name": "Needy", "category": "node", "version": "1.0.0",
+            "id": "agent.test.needy", "name": "Needy", "category": "node", "version": "1.0.0",
             "capabilities": [{"id": "node.explain", "contractVersion": "1"}],
             "compatibleTargets": [{"kind": "node", "requires": []}],
-            "delegatesTo": ["agent.node-builder", "agent.ghost"],
-            "requiresAgents": ["agent.node-builder", "agent.ghost"],
+            "delegatesTo": ["agent.curio.node-builder", "agent.test.ghost"],
+            "requiresAgents": ["agent.curio.node-builder", "agent.test.ghost"],
             "provenance": {"publisher": "curio", "trust": "imported"},
         }), encoding="utf-8")
         r = client.post(
             f"/api/agents/projects/{alice_project}/install",
-            json={"coord": "agent.needy@1.0.0"}, headers=_auth(token),
+            json={"coord": "agent.test.needy@1"}, headers=_auth(token),
         )
         assert r.status_code == 409
-        assert "agent.ghost" in r.get_json()["error"]
+        assert "agent.test.ghost" in r.get_json()["error"]
         assert "nothing was installed" in r.get_json()["error"]
         listed = client.get(f"/api/agents/projects/{alice_project}", headers=_auth(token)).get_json()
         assert listed["agents"] == []  # not even the resolvable Node Builder landed
@@ -161,9 +161,9 @@ class TestProjectInstall:
         cat = client.get(f"/api/agents/catalog?projectId={alice_project}", headers=_auth(token)).get_json()["agents"]
         dfb = next(a for a in cat if a["dirName"] == self.DFB)
         assert dfb["requiresAgents"] == [
-            {"id": "agent.dataset-finder", "name": "Dataset Finder",
+            {"id": "agent.curio.dataset-finder", "name": "Dataset Finder",
              "coord": self.DF, "visible": True, "installedInProject": False},
-            {"id": "agent.node-builder", "name": "Node Builder",
+            {"id": "agent.curio.node-builder", "name": "Node Builder",
              "coord": self.NB, "visible": True, "installedInProject": False},
         ]
         # The Dataset Finder is the member that requires nothing.
@@ -195,7 +195,7 @@ class TestMaterialize:
         from utk_curio.backend.app.projects.services import _user_dir_key
 
         user, token = user_and_token
-        coord = "agent.dataset-finder@1.0.0"
+        coord = "agent.curio.dataset-finder@1"
         # Not in the store before install (it's a built-in resolved from the roster).
         assert storage.load_installed_agent_definition(_user_dir_key(user), coord) is None
         client.post(
@@ -210,10 +210,10 @@ class TestMaterialize:
     def test_materialized_builtin_is_not_publishable(self, client, user_and_token, tmp_curio):
         # Even after its bytes are in the store, a built-in stays non-publishable.
         _, token = user_and_token
-        coord = "agent.dataset-finder@1.0.0"
+        coord = "agent.curio.dataset-finder@1"
         client.post("/api/agents/imports", json={"coord": coord}, headers=_auth(token))
         by_id = {a["id"]: a for a in client.get("/api/agents/imports", headers=_auth(token)).get_json()["agents"]}
-        assert by_id["agent.dataset-finder"]["publishable"] is False
+        assert by_id["agent.curio.dataset-finder"]["publishable"] is False
         r = client.post("/api/agents/publications", json={"coord": coord}, headers=_auth(token))
         assert r.status_code == 400
 
@@ -234,7 +234,7 @@ class TestSavePreservesAgentState:
 
     def test_installed_agent_survives_a_canvas_save(self, client, user_and_token, tmp_curio, alice_project):
         user, token = user_and_token
-        coord = _write_def(user, "agent.my-agent")
+        coord = _write_def(user, "agent.test.my-agent")
         client.post(
             f"/api/agents/projects/{alice_project}/install",
             json={"coord": coord},
@@ -246,7 +246,7 @@ class TestSavePreservesAgentState:
 
     def test_attachment_survives_a_canvas_save(self, client, user_and_token, tmp_curio, alice_project):
         _, token = user_and_token
-        coord = "agent.researcher@1.0.0"  # dual-compatible, so a canvas attachment is valid
+        coord = "agent.curio.researcher@1"  # dual-compatible, so a canvas attachment is valid
         client.post(f"/api/agents/projects/{alice_project}/install", json={"coord": coord}, headers=_auth(token))
         att = client.post(
             f"/api/agents/projects/{alice_project}/attachments",
@@ -266,7 +266,7 @@ class TestSavePreservesAgentState:
         # A save that explicitly declares dataflow.agents wins (future client);
         # an empty list clears the lockfile rather than being carried forward.
         user, token = user_and_token
-        coord = _write_def(user, "agent.my-agent")
+        coord = _write_def(user, "agent.test.my-agent")
         client.post(
             f"/api/agents/projects/{alice_project}/install",
             json={"coord": coord},
@@ -294,7 +294,7 @@ class TestMaterializationHeal:
 
         user, token = user_and_token
         ukey = _user_dir_key(user)
-        coord = "agent.node-builder@1.0.0"
+        coord = "agent.curio.node-builder@1"
         # Fabricate the stale pre-dev/38 store copy: instruction only. A copy
         # that old has no modes either, so no capability names a prompt of its
         # own and no delegatesTo entry names the agent itself.
@@ -328,7 +328,7 @@ class TestMaterializationHeal:
 
         user, token = user_and_token
         ukey = _user_dir_key(user)
-        coord = "agent.node-builder@1.0.0"
+        coord = "agent.curio.node-builder@1"
         client.post(f"/api/agents/projects/{alice_project}/install", json={"coord": coord}, headers=_auth(token))
         manifest_path = storage.agent_definition_dir(ukey, coord) / "manifest.json"
         before = manifest_path.stat().st_mtime_ns, manifest_path.read_bytes()
@@ -344,7 +344,7 @@ class TestMaterializationHeal:
         user, token = user_and_token
         ukey = _user_dir_key(user)
         # An owned imported definition deliberately shadowing a built-in coord.
-        coord = _write_def(user, "agent.node-builder")
+        coord = _write_def(user, "agent.curio.node-builder")
         catalog._materialize_definition(ukey, coord)
         from utk_curio.backend.app.agents.repositories import storage
 
@@ -359,7 +359,7 @@ class TestMaterializePreamble:
         from utk_curio.backend.app.agents.repositories import storage as agents_storage
 
         user, token = user_and_token
-        coord = "agent.dataset-finder@1.0.0"
+        coord = "agent.curio.dataset-finder@1"
         r = client.post(
             f"/api/agents/projects/{alice_project}/install", json={"coord": coord}, headers=_auth(token)
         )
@@ -373,7 +373,7 @@ class TestBuiltinPromptPropagation:
     """dev/60 — roster bytes reach existing installs: the user's 'clear the
     canvas' refusal came from a STALE materialized instruction."""
 
-    COORD = "agent.dataflow-builder@1.0.0"
+    COORD = "agent.curio.dataflow-builder@1"
 
     def _install_with_stale_instruction(self, client, user, token, project_id):
         from utk_curio.backend.app.agents.domain import builtin
@@ -438,7 +438,7 @@ class TestBuiltinPromptPropagation:
         # its OWN bytes — dev/60 must not steamroll it (regression).
         user, token = user_and_token
         manifest = {
-            "id": "agent.dataflow-builder", "name": "My Builder", "category": "canvas",
+            "id": "agent.curio.dataflow-builder", "name": "My Builder", "category": "canvas",
             "version": "1.0.0", "purpose": "mine",
             "capabilities": [{"id": "dataflow.orchestrate", "contractVersion": "1"}],
             "prompts": {

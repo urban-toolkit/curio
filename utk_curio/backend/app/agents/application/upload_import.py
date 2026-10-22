@@ -37,10 +37,13 @@ def upload_import(user_key: str, manifest_raw: object, prompt_files: object) -> 
     prompt digests are computed from the uploaded bytes (client digests are
     ignored); the provided files must correspond exactly to the manifest's
     referenced prompt paths, except a prompt Curio shares (``curio:<file>``),
-    which has no file and no digest; size limits apply; an existing store
-    coordinate is a 409 (definitions are immutable, bump the version); the
-    write is atomic. Success registers the coordinate in My Imports (upload IS
-    an explicit account import) and returns the My Imports card, publishable.
+    which has no file and no digest; size limits apply. The coordinate is
+    ``<id>@<major>``: a newer version of a major the store holds replaces it,
+    as a node package's Update does, while the same or an older version is a
+    409 (a version is immutable), and so is a store copy of an agent Curio
+    ships; the write is atomic. Success registers the coordinate in My Imports
+    (upload IS an explicit account import) and returns the My Imports card,
+    publishable.
     """
 
     from utk_curio.backend.app.common.safe_paths import PathTraversalError
@@ -112,16 +115,23 @@ def upload_import(user_key: str, manifest_raw: object, prompt_files: object) -> 
         raise AgentServiceError(str(exc), 400) from exc
 
     coord = m.dir_name
-    if storage.load_installed_agent_definition(user_key, coord) is not None:
-        raise AgentServiceError(
-            f"{coord!r} already exists in your store — definitions are immutable; bump the version",
-            409,
-        )
+    existing = storage.load_installed_agent_definition(user_key, coord)
+    if existing is not None:
+        if existing.provenance.trust == "built-in":
+            raise AgentServiceError(f"{coord!r} is an agent Curio ships; give yours an id of its own", 409)
+        if agents_manifest.version_order(m.version) <= agents_manifest.version_order(existing.version):
+            raise AgentServiceError(
+                f"{coord!r} holds version {existing.version} in your store, and a version is "
+                f"immutable: upload a version of major {m.major} newer than {existing.version} to replace it",
+                409,
+            )
     try:
-        storage.write_definition_atomic(user_key, coord, manifest, prompt_files)
+        storage.write_definition_atomic(
+            user_key, coord, manifest, prompt_files, replace=existing is not None,
+        )
     except FileExistsError as exc:
         raise AgentServiceError(
-            f"{coord!r} already exists in your store — definitions are immutable; bump the version",
+            f"{coord!r} was written by another upload at the same time; upload it again",
             409,
         ) from exc
     except PathTraversalError as exc:

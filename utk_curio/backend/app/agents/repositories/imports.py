@@ -1,7 +1,7 @@
 """Account-level imported-agents registry — the "My Imports" list.
 
 Stored at ``<CURIO_LAUNCH_CWD>/.curio/users/<user_key>/imported-agents.json``
-with the shape ``{"version": 1, "agents": ["<agentId>@<version>", ...]}``. This
+with the shape ``{"version": 1, "agents": ["<agentId>@<major>", ...]}``. This
 is the direct analogue of the node-package ``default-packages.json`` list and
 uses the same tolerant read convention: a missing file is an empty set, and a
 corrupt/mismatched file is also treated as empty (the read path never raises, so
@@ -70,7 +70,7 @@ def save_imported_agents(user_key: str, coords: Iterable[str]) -> Path:
 def add_imported_agent(user_key: str, coord: str) -> set[str]:
     """Idempotently record *coord* as imported; return the new set."""
     if not (isinstance(coord, str) and AGENT_DIR_RE.match(coord)):
-        raise ValueError(f"invalid agent coordinate {coord!r}; expected '<agentId>@<version>'")
+        raise ValueError(f"invalid agent coordinate {coord!r}; expected '<agentId>@<major>'")
     current = load_imported_agents(user_key)
     if coord in current:
         return current

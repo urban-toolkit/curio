@@ -22,7 +22,7 @@ from utk_curio.backend.app.packages.builder import jobs as build_jobs
 
 from .test_delegate_draft_mint import _auth, _delegate_tail, _draft, _project, _run, _setup
 
-NODE_BUILDER = "agent.node-builder@1.0.0"
+NODE_BUILDER = "agent.curio.node-builder@1"
 TARGET = "ai.agent.notes@1"
 
 

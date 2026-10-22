@@ -8,8 +8,10 @@ and hand-rolled field validation with ``{where}.field`` error context.
 
 Key invariants enforced here (the point of this module):
 
-* Agent package ids begin with ``agent.`` (kebab-case), distinct from node
-  package ids like ``curio.builtin`` (see ``dev`` plan memo 07).
+* Agent package ids begin with ``agent.``, then name their publisher and the
+  agent (``agent.curio.node-builder``), as Discovery source ids begin with
+  ``source.``. An agent's folder is ``<id>@<major>``, the major of its
+  version, as a node package's, a dataset's and a source's are.
 * **Capability ids are semantic behavior contracts, never asset paths.** A
   capability id must be two-or-more dot-separated lowercase segments
   (``node.explain``, ``dataflow.orchestrate``, ``package.recommend``) and must
@@ -35,8 +37,13 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 # ── identifier grammars ─────────────────────────────────────────────────────
-# Agent package id: 'agent.' + kebab-case, e.g. 'agent.my-helper'.
-AGENT_ID_RE = re.compile(r"^agent\.[a-z0-9]+(?:-[a-z0-9]+)*$")
+# One segment of an agent id, as of a Discovery source id (``source_id._SEG``).
+_SEG = r"[a-z][a-z0-9-]{0,62}"
+# Agent package id: 'agent.', the publisher, then the agent, each a segment,
+# e.g. 'agent.curio.node-builder' or 'agent.acme.heat-risk-summarizer'.
+AGENT_ID_RE = re.compile(rf"^agent\.{_SEG}(?:\.{_SEG}){{1,4}}$")
+# The major in an agent's folder name, as in a node package's.
+MAJOR_RE = re.compile(r"^(?:0|[1-9][0-9]{0,3})$")
 
 # Semantic capability id: two or more dot-separated lowercase segments, e.g.
 # 'node.explain', 'dataset.fetch.author', 'package.recommend'. Deliberately
@@ -77,6 +84,21 @@ _CATALOG_KEYS = ("listed", "order")
 
 class AgentManifestError(ValueError):
     """Raised when an agent manifest is malformed or violates the supported schema."""
+
+
+def version_order(version: str) -> tuple:
+    """A semver string as a sort key: ``10.0.0`` after ``2.0.0``, and a
+    release after its pre-releases."""
+    core, _, pre_release = str(version).partition("-")
+    numbers = tuple(int(part) if part.isdigit() else 0 for part in core.split("+", 1)[0].split("."))
+    return numbers, not pre_release
+
+
+def coord_order(coord: str) -> tuple:
+    """An ``<id>@<major>`` coordinate as a sort key: by id, then by major as a
+    number, so ``@10`` comes after ``@2``."""
+    agent_id, _, major = str(coord).partition("@")
+    return agent_id, int(major) if major.isdigit() else -1, major
 
 
 def _require_str(raw: object, *, where: str, allow_empty: bool = False) -> str:
@@ -369,8 +391,14 @@ class AgentManifest:
     worked_examples: bool = False
 
     @property
+    def major(self) -> int:
+        """The major of :attr:`version`: ``1`` for ``1.4.0``."""
+        return int(self.version.split(".", 1)[0])
+
+    @property
     def dir_name(self) -> str:
-        return f"{self.agent_id}@{self.version}"
+        """The agent's coordinate and folder: ``<id>@<major>``."""
+        return f"{self.agent_id}@{self.major}"
 
     @property
     def capability_ids(self) -> list[str]:
@@ -426,13 +454,17 @@ def parse_agent_manifest(raw: object, *, where: str = "manifest") -> AgentManife
     agent_id = _require_str(raw.get("id"), where=f"{where}.id")
     if not AGENT_ID_RE.match(agent_id):
         raise AgentManifestError(
-            f"{where}.id {agent_id!r} must begin with 'agent.' and be kebab-case, "
-            f"matching {AGENT_ID_RE.pattern}"
+            f"{where}.id {agent_id!r} must be 'agent.', its publisher and its name, "
+            f"such as 'agent.curio.node-builder', matching {AGENT_ID_RE.pattern}"
         )
 
     version = _require_str(raw.get("version"), where=f"{where}.version")
     if not VERSION_RE.match(version):
         raise AgentManifestError(f"{where}.version {version!r} is not a valid semver string")
+    if not MAJOR_RE.match(version.split(".", 1)[0]):
+        raise AgentManifestError(
+            f"{where}.version {version!r} has a major that is not 0 to 9999 without leading zeros"
+        )
 
     category = raw.get("category")
     if category not in _CATEGORIES:
@@ -624,10 +656,10 @@ def parse_agent_manifest(raw: object, *, where: str = "manifest") -> AgentManife
 def load_agent_manifest(agent_dir_path: Path) -> AgentManifest:
     """Read ``<agent_dir>/manifest.json`` and validate the supported subset.
 
-    Cross-checks the directory name against the manifest's ``id`` and
-    ``version`` (the on-disk dir ``<id>@<version>`` is authoritative for which
-    agent is being loaded; the manifest must agree), mirroring the node-package
-    loader's dir/manifest agreement check.
+    Cross-checks the directory name against the manifest's ``id`` and the
+    major of its ``version`` (the on-disk dir ``<id>@<major>`` is authoritative
+    for which agent is being loaded; the manifest must agree), mirroring the
+    node-package loader's dir/manifest agreement check.
     """
     manifest_path = agent_dir_path / "manifest.json"
     if not manifest_path.is_file():
@@ -639,10 +671,10 @@ def load_agent_manifest(agent_dir_path: Path) -> AgentManifest:
 
     manifest = parse_agent_manifest(raw, where=str(manifest_path))
 
-    expected_dir = f"{manifest.agent_id}@{manifest.version}"
+    expected_dir = manifest.dir_name
     if agent_dir_path.name != expected_dir:
         raise AgentManifestError(
             f"directory name {agent_dir_path.name!r} does not match "
-            f"manifest id/version {expected_dir!r}"
+            f"the manifest's id and major {expected_dir!r}"
         )
     return manifest

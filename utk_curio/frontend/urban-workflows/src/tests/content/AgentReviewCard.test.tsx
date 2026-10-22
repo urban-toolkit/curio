@@ -94,7 +94,7 @@ describe("AgentReviewCard — dev/48 proposal kinds", () => {
       tool: "project.install",
       summary: "Install Node Builder in this project",
       preview: "Capability node.content.generate requires Node Builder…",
-      pins: { coord: "agent.node-builder@1.0.0" },
+      pins: { coord: "agent.curio.node-builder@1" },
       status: "pending",
     };
     render(<AgentReviewCard part={install} onApply={jest.fn()} />);

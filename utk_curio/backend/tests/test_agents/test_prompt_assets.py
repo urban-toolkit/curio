@@ -1,7 +1,7 @@
 """Every shipped agent's prompt files exist and are packaged.
 
 The agents Curio ships read their prompts from files: each agent's own in its
-folder, ``agents/<id>@<version>/prompts/``, and the preamble they share from
+folder, ``agents/<id>@<major>/prompts/``, and the preamble they share from
 ``utk_curio/llm-prompts/``. ``read_prompt_text`` returns ``None`` for a
 missing file, so a rename or a packaging gap costs an agent its entire system
 and task prompt with no symptom except worse answers and a logged error.
@@ -49,7 +49,7 @@ class TestPromptFilesResolve:
 #: delegated call reads its capability's mode, else the chat prompt. Every
 #: call composes the shared preamble with exactly one of these.
 PROMPT_TABLE = {
-    "agent.node-builder": {
+    "agent.curio.node-builder": {
         None: "node_build_instruction.md",
         "node.build": "node_build_instruction.md",
         "dataset.fetch.author": "node_build_instruction.md",
@@ -59,7 +59,7 @@ PROMPT_TABLE = {
         "package.extend": "package_build_instruction.md",
         "node.kind.author": "package_build_instruction.md",
     },
-    "agent.researcher": {
+    "agent.curio.researcher": {
         None: "researcher_instruction.md",
         "research.notes.compose": "researcher_notes_instruction.md",
         "research.verify": "research_instruction.md",
@@ -93,13 +93,13 @@ class TestWhichPromptRuns:
         from utk_curio.backend.app.agents.application import reply_schemas
         from utk_curio.backend.app.agents.application.turns import prompts
 
-        coord = builtin.builtin_coord("agent.node-builder")
+        coord = builtin.builtin_coord("agent.curio.node-builder")
         text = prompts._resolve_prompt_text(_KEY, coord, reply_schemas.AUTK_PROMPT_KEY)
         assert text == _file("new_content_autk_prompt.md")
         # Only the Node Builder writes node content, so only it has one.
         holders = {m.agent_id for m in builtin.list_builtin_manifests()
                    if reply_schemas.AUTK_PROMPT_KEY in m.prompts}
-        assert holders == {"agent.node-builder"}
+        assert holders == {"agent.curio.node-builder"}
 
 
 class TestTheResearchersCheckingRules:
@@ -122,7 +122,7 @@ class TestTheResearchersCheckingRules:
             assert text.count("{{research.verify_rules}}") == 1, template
         # Both rendered prompts carry them whole: the chat and the mode.
         rules = contracts.render_prompt(stem).rstrip("\n")
-        coord = builtin.builtin_coord("agent.researcher")
+        coord = builtin.builtin_coord("agent.curio.researcher")
         chat = builtin.read_prompt_text(coord, "instruction")
         mode = builtin.read_prompt_text(coord, "research.verify")
         assert chat and chat.count(rules) == 1
@@ -166,7 +166,7 @@ class TestTheResearchersNotesRules:
             assert text.count("{{research.notes_rules}}") == 1, template
         # Both rendered prompts carry them whole.
         rules = contracts.render_prompt(stem).rstrip("\n")
-        coord = builtin.builtin_coord("agent.researcher")
+        coord = builtin.builtin_coord("agent.curio.researcher")
         chat = builtin.read_prompt_text(coord, "instruction")
         mode = builtin.read_prompt_text(coord, "research.notes.compose")
         assert chat and chat.count(rules) == 1
@@ -187,7 +187,7 @@ class TestTheRecommendationMode:
 
         from utk_curio.backend.app.agents.application.tools import REGISTRY
 
-        text = builtin.read_prompt_text(builtin.builtin_coord("agent.node-builder"), "package.recommend")
+        text = builtin.read_prompt_text(builtin.builtin_coord("agent.curio.node-builder"), "package.recommend")
         assert text, "the Node Builder has no package.recommend prompt"
         named = sorted(t for t in REGISTRY if re.search(rf"(?<![\w.]){re.escape(t)}(?![\w])", text))
         assert named == []
@@ -199,8 +199,8 @@ class TestTheRecommendationMode:
 
 class TestTheJsonModes:
     @pytest.mark.parametrize("agent_id, capability", [
-        ("agent.node-builder", "package.build"),
-        ("agent.researcher", "research.notes.compose"),
+        ("agent.curio.node-builder", "package.build"),
+        ("agent.curio.researcher", "research.notes.compose"),
     ])
     def test_a_mode_that_answers_in_json_asks_for_no_tool(self, agent_id, capability):
         """Each runs only as a delegate, with no tools, and answers in one

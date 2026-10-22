@@ -73,7 +73,7 @@ def test_removed_legacy_routes_stay_removed(app):
         "/upload",
         "/datasets",
         "/api/packages/install-deps",
-        # The pre-agent LLM assistance. The Researcher (agent.researcher)
+        # The pre-agent LLM assistance. The Researcher (agent.curio.researcher)
         # explains a node, from the context it reads.
         "/llm/chat",
         "/llm/check",

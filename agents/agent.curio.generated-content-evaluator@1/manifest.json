@@ -1,5 +1,5 @@
 {
-  "id": "agent.generated-content-evaluator",
+  "id": "agent.curio.generated-content-evaluator",
   "name": "Generated Content Evaluator",
   "category": "evaluate",
   "version": "1.0.0",

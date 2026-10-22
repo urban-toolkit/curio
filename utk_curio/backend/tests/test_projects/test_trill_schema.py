@@ -229,7 +229,7 @@ def _node(doc: dict) -> dict:
 def _attachment(**over) -> dict:
     record = {
         "attachmentId": "a" * 32,
-        "coord": "agent.my-explainer@1.0.0",
+        "coord": "agent.test.my-explainer@1",
         "target": {"kind": "node", "targetId": "n1"},
         "sessionId": "b" * 32,
         "revision": 1,
@@ -288,9 +288,10 @@ REJECTED = {
     "dashboardWidth without height": lambda d: _node(d).update(dashboardWidth=5),
     # A node folded to its chip is written as minimized: true.
     "minimized as a string": lambda d: _node(d).update(minimized="true"),
-    "agent coord pinned to a major": lambda d: d["dataflow"].update(agents=["agent.foo@1"]),
+    "agent coord pinned to a whole version": lambda d: d["dataflow"].update(agents=["agent.test.foo@1.0.0"]),
+    "agent id without a publisher": lambda d: d["dataflow"].update(agents=["agent.foo@1"]),
     "package coord in the agent slot": lambda d: d["dataflow"].update(agents=["curio.builtin@1"]),
-    "agent id without the prefix": lambda d: d["dataflow"].update(agents=["foo@1.0.0"]),
+    "agent id without the prefix": lambda d: d["dataflow"].update(agents=["test.foo@1"]),
     "duplicate packages": lambda d: d["dataflow"].update(
         packages=["curio.builtin@1", "curio.builtin@1"]
     ),
@@ -645,9 +646,9 @@ WRITER_SHAPES = {
     "agent-minimal edge": _flow(nodes=[AGENT_NODE], edges=[AGENT_EDGE]),
     "all three agent sections": _flow(
         nodes=[AGENT_NODE],
-        agents=["agent.my-explainer@1.0.0"],
+        agents=["agent.test.my-explainer@1"],
         agentAttachments=[FULL_ATTACHMENT],
-        agentDefaults={"agent.my-explainer@1.0.0": {"model": "x"}},
+        agentDefaults={"agent.test.my-explainer@1": {"model": "x"}},
     ),
     "canvas-scoped attachment": _flow(
         agentAttachments=[_attachment(target={"kind": "canvas"})]

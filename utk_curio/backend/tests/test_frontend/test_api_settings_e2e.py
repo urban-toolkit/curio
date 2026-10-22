@@ -437,7 +437,7 @@ def test_the_default_chosen_here_answers_the_next_run(signed_in):
                  "spec": {"dataflow": {"nodes": [], "edges": [], "packages": []}},
                  "outputs": []},
     )["id"]
-    coord = builtin.builtin_coord("agent.researcher")
+    coord = builtin.builtin_coord("agent.curio.researcher")
     base = f"{session.backend}/api/agents/projects/{project}"
     api_json(f"{base}/install", session.token, method="POST", payload={"coord": coord})
     attachment = api_json(
@@ -513,7 +513,7 @@ def test_each_agent_runs_on_the_configuration_chosen_for_it(signed_in):
                  "spec": {"dataflow": {"nodes": [], "edges": [], "packages": []}},
                  "outputs": []},
     )["id"]
-    coord = builtin.builtin_coord("agent.dataflow-builder")
+    coord = builtin.builtin_coord("agent.curio.dataflow-builder")
     base = f"{session.backend}/api/agents/projects/{project}"
     api_json(f"{base}/install", session.token, method="POST", payload={"coord": coord})
     attachment = api_json(

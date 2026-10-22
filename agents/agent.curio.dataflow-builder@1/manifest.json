@@ -1,5 +1,5 @@
 {
-  "id": "agent.dataflow-builder",
+  "id": "agent.curio.dataflow-builder",
   "name": "Dataflow Builder",
   "category": "canvas",
   "version": "1.0.0",
@@ -77,10 +77,10 @@
     "trust": "built-in"
   },
   "delegatesTo": [
-    "agent.dataset-finder",
-    "agent.node-builder",
+    "agent.curio.dataset-finder",
+    "agent.curio.node-builder",
     {
-      "id": "agent.dataflow-planner",
+      "id": "agent.curio.dataflow-planner",
       "capabilities": [
         "workflow.plan.create",
         "execution.followup.plan",
@@ -89,15 +89,15 @@
       ]
     },
     {
-      "id": "agent.dataflow-reader",
+      "id": "agent.curio.dataflow-reader",
       "capabilities": [
         "workflow.suggest",
         "dataflow.explain"
       ]
     },
-    "agent.generated-content-evaluator",
+    "agent.curio.generated-content-evaluator",
     {
-      "id": "agent.researcher",
+      "id": "agent.curio.researcher",
       "capabilities": [
         "research.notes.compose",
         "research.verify"
@@ -105,7 +105,7 @@
     }
   ],
   "requiresAgents": [
-    "agent.dataset-finder",
-    "agent.node-builder"
+    "agent.curio.dataset-finder",
+    "agent.curio.node-builder"
   ]
 }

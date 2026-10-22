@@ -1,6 +1,6 @@
 """Curio's own agents are manifest folders, read as a user's agent is.
 
-Each agent Curio ships is a folder in ``agents/``, ``<id>@<version>/``, with a
+Each agent Curio ships is a folder in ``agents/``, ``<id>@<major>/``, with a
 ``manifest.json`` (``docs/schemas/agent-package.v1.json``) and a ``prompts/``
 folder: the layout of an agent a user uploads, read by the same loader
 (``manifest.load_agent_manifest``). Seven ship: four catalog cards and three
@@ -35,16 +35,16 @@ SCHEMA = REPO_ROOT / "docs" / "schemas" / "agent-package.v1.json"
 #: Every agent Curio ships, in the roster's order: who asks for a mode is
 #: listed in this order in the agent details window.
 ROSTER = (
-    "agent.researcher",
-    "agent.dataflow-planner",
-    "agent.dataflow-reader",
-    "agent.node-builder",
-    "agent.dataset-finder",
-    "agent.dataflow-builder",
-    "agent.generated-content-evaluator",
+    "agent.curio.researcher",
+    "agent.curio.dataflow-planner",
+    "agent.curio.dataflow-reader",
+    "agent.curio.node-builder",
+    "agent.curio.dataset-finder",
+    "agent.curio.dataflow-builder",
+    "agent.curio.generated-content-evaluator",
 )
 #: The catalog's cards. The rest are helpers.
-CARDS = {"agent.researcher", "agent.node-builder", "agent.dataset-finder", "agent.dataflow-builder"}
+CARDS = {"agent.curio.researcher", "agent.curio.node-builder", "agent.curio.dataset-finder", "agent.curio.dataflow-builder"}
 #: The version every shipped agent has: dataflow lockfiles, attachments and
 #: imports hold it in their coordinates.
 VERSION = "1.0.0"
@@ -86,7 +86,7 @@ def _copy_into_store(shipped: str, coord: str) -> Path:
 
 def _upload_payload(**manifest_over) -> tuple[dict, dict]:
     manifest = {
-        "id": "agent.my-summarizer",
+        "id": "agent.test.my-summarizer",
         "name": "My Summarizer",
         "category": "node",
         "version": "1.0.0",
@@ -262,7 +262,7 @@ class TestTheCatalogIsCuriosAlone:
         with pytest.raises(AgentServiceError, match="catalog") as refused:
             upload_import.upload_import(UKEY, manifest, files)
         assert refused.value.status == 400
-        assert storage.load_installed_agent_definition(UKEY, "agent.my-summarizer@1.0.0") is None
+        assert storage.load_installed_agent_definition(UKEY, "agent.test.my-summarizer@1") is None
 
     def test_a_copy_of_a_shipped_folder_loads_through_the_same_path(self, tmp_curio):
         """A helper's folder copied into a user's store under another id is
@@ -275,13 +275,13 @@ class TestTheCatalogIsCuriosAlone:
         from utk_curio.backend.app.agents.domain.manifest import load_agent_manifest
         from utk_curio.backend.app.agents.repositories import storage
 
-        shipped = AGENTS / f"agent.dataflow-planner@{VERSION}"
-        coord = "agent.my-planner@1.0.0"
+        shipped = AGENTS / f"agent.curio.dataflow-planner@{VERSION}"
+        coord = "agent.test.my-planner@1"
         target = _copy_into_store(shipped.name, coord)
         copy = storage.load_installed_agent_definition(UKEY, coord)
         original = load_agent_manifest(shipped)
         assert copy == dataclasses.replace(
-            original, agent_id="agent.my-planner",
+            original, agent_id="agent.test.my-planner",
             provenance=dataclasses.replace(original.provenance, trust="imported"),
         )
         assert copy.catalog is not None and copy.catalog.listed is False
@@ -295,8 +295,8 @@ class TestTheCatalogIsCuriosAlone:
         # Not a helper: it is listed as the user's import and gets the
         # user's own LLM choice, and the roster is the shipped folders alone.
         assert not builtin.is_internal(coord)
-        assert not builtin.is_internal("agent.my-planner")
-        assert "agent.my-planner" not in builtin.internal_agent_ids()
+        assert not builtin.is_internal("agent.test.my-planner")
+        assert "agent.test.my-planner" not in builtin.internal_agent_ids()
         assert [m.agent_id for m in builtin.list_builtin_manifests()] == list(ROSTER)
         cards = catalog.list_my_imports(UKEY)
         assert [card["dirName"] for card in cards] == [coord]
@@ -343,10 +343,10 @@ class TestTheCatalogIsCuriosAlone:
                 (root / names[-1] / "manifest.json").write_text(json.dumps(raw), encoding="utf-8")
             return root
 
-        reader, planner = f"agent.dataflow-reader@{VERSION}", f"agent.dataflow-planner@{VERSION}"
+        reader, planner = f"agent.curio.dataflow-reader@{VERSION}", f"agent.curio.dataflow-planner@{VERSION}"
         good = ship(reader, planner)
         monkeypatch.setattr(builtin, "agents_dir", lambda: good)
-        assert [m.agent_id for m in builtin.list_builtin_manifests()] == ["agent.dataflow-planner", "agent.dataflow-reader"]
+        assert [m.agent_id for m in builtin.list_builtin_manifests()] == ["agent.curio.dataflow-planner", "agent.curio.dataflow-reader"]
 
         no_place = ship(reader, planner, edit=lambda raw: raw.pop("catalog"))
         monkeypatch.setattr(builtin, "agents_dir", lambda: no_place)
@@ -367,16 +367,16 @@ class TestTheFieldsOnlyCuriosAgentsUse:
         from utk_curio.backend.app.agents.application import catalog
         from utk_curio.backend.app.agents.domain import builtin
 
-        coord = "agent.my-builder@1.0.0"
-        _copy_into_store(f"agent.node-builder@{VERSION}", coord)
+        coord = "agent.test.my-builder@1"
+        _copy_into_store(f"agent.curio.node-builder@{VERSION}", coord)
         copy = catalog._resolve_definition(UKEY, coord)
-        shipped = builtin.get_builtin_manifest(f"agent.node-builder@{VERSION}")
+        shipped = builtin.get_builtin_manifest(f"agent.curio.node-builder@{VERSION}")
         assert [c.label for c in copy.capabilities] == [c.label for c in shipped.capabilities]
         modes = catalog.agent_modes(copy)
         assert [mode["label"] for mode in modes] == copy.capability_ids
         runs = {row["path"]: row["runs"] for row in catalog.prompt_runs(copy, modes)}
         assert runs["prompts/new_content_autk_prompt.md"] == ["autk-grammar"]
-        assert builtin.gets_worked_examples(f"agent.node-builder@{VERSION}")
+        assert builtin.gets_worked_examples(f"agent.curio.node-builder@{VERSION}")
         assert not builtin.gets_worked_examples(coord)
         assert not builtin.gets_worked_examples(coord, "node.content.generate")
 
@@ -384,7 +384,7 @@ class TestTheFieldsOnlyCuriosAgentsUse:
         from utk_curio.backend.app.agents.application import catalog
         from utk_curio.backend.app.agents.domain import builtin
 
-        nb = builtin.get_builtin_manifest(f"agent.node-builder@{VERSION}")
+        nb = builtin.get_builtin_manifest(f"agent.curio.node-builder@{VERSION}")
         assert nb.worked_examples is True
         assert nb.capability("node.content.generate").worked_examples is True
         assert nb.capability("package.recommend").worked_examples is False

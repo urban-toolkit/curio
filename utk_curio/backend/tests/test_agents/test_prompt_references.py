@@ -1,7 +1,7 @@
 """Every built-in prompt names only things that exist.
 
 The prompts in ``utk_curio/llm-prompts/`` and in each shipped agent's folder
-(``agents/<id>@<version>/prompts/``) name tools, capabilities, node
+(``agents/<id>@<major>/prompts/``) name tools, capabilities, node
 templates, package folders, sandbox helpers and Data Catalog datasets, and they
 carry Vega-Lite examples. Each of those is defined somewhere else: the tool
 registry, the built-in agents, the shipped manifests, the sandbox, the shipped

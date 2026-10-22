@@ -311,7 +311,7 @@ def dataflow_goal_is_readable(ctx: Ctx) -> None:
     project_id = page.url.rstrip("/").rsplit("/", 1)[-1]
     base = f"{ctx.backend}/api/agents/projects/{project_id}"
     headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
-    coord = "agent.dataflow-builder@1.0.0"
+    coord = "agent.curio.dataflow-builder@1"
 
     installed = page.request.post(f"{base}/install", headers=headers, data={"coord": coord})
     assert installed.ok, f"install failed: {installed.status} {installed.text()[:200]}"

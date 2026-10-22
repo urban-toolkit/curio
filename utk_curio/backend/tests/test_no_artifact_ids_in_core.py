@@ -87,8 +87,8 @@ ALLOWED = {
         {"ai.utk.uhvi", "curio.example-ui", "curio.media", "curio.weather"},
         _DIGESTS,
     ),
-    "utk_curio/backend/app/agents/evaluation/live.py": ({"agent.dataflow-builder"}, _EVALUATION),
-    "utk_curio/tools/agent_eval.py": ({"agent.dataflow-builder"}, _EVALUATION),
+    "utk_curio/backend/app/agents/evaluation/live.py": ({"agent.curio.dataflow-builder"}, _EVALUATION),
+    "utk_curio/tools/agent_eval.py": ({"agent.curio.dataflow-builder"}, _EVALUATION),
     "utk_curio/frontend/urban-workflows/src/utils/nodeDisplayLabel.cases.json": ({"ai.utk.uhvi"}, _CASES),
     "utk_curio/frontend/urban-workflows/src/utils/scenarios/scenarioParts.cases.json": (
         {"curio.scout/donuts"},

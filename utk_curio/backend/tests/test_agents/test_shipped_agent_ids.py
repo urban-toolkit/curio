@@ -44,8 +44,8 @@ def _shipped_ids() -> set[str]:
 
 
 def _pattern(agent_id: str) -> re.Pattern:
-    """*agent_id* as a whole id: ``agent.node-builder`` or ``agent.node-builder@1.0.0``,
-    never part of a longer id such as ``agent.node-builder-copy``."""
+    """*agent_id* as a whole id: ``agent.curio.node-builder`` or ``agent.curio.node-builder@1``,
+    never part of a longer id such as ``agent.curio.node-builder-copy``."""
     return re.compile(r"(?<![A-Za-z0-9_.-])" + re.escape(agent_id) + r"(?![A-Za-z0-9_-])")
 
 
@@ -53,10 +53,10 @@ def test_the_scan_knows_every_shipped_agent():
     ids = _shipped_ids()
     # The four cards and the three helpers; a roster the scan cannot read
     # would make it pass on nothing.
-    assert {"agent.node-builder", "agent.dataset-finder", "agent.dataflow-builder",
-            "agent.researcher"} <= ids
-    assert _pattern("agent.node-builder").search('coord="agent.node-builder@1.0.0"')
-    assert not _pattern("agent.node-builder").search("agent.node-builder-copy")
+    assert {"agent.curio.node-builder", "agent.curio.dataset-finder", "agent.curio.dataflow-builder",
+            "agent.curio.researcher"} <= ids
+    assert _pattern("agent.curio.node-builder").search('coord="agent.curio.node-builder@1"')
+    assert not _pattern("agent.curio.node-builder").search("agent.curio.node-builder-copy")
 
 
 def test_no_app_code_names_a_shipped_agent():
