@@ -261,6 +261,37 @@
       ]
     },
     {
+      "name": "a building redrawn and one added, each edit naming the CRS of the layer it was drawn on",
+      "settings": {
+        "key": "building_id",
+        "layer": "table_osm_buildings",
+        "crs": "EPSG:3395",
+        "edits": [
+          {
+            "op": "geometry",
+            "ids": [2],
+            "geometry": {"type": "Polygon", "coordinates": [[[9, 0], [10, 0], [10, 1], [9, 1], [9, 0]]]},
+            "crs": "EPSG:3395"
+          },
+          {
+            "op": "add",
+            "id": 4,
+            "geometry": {"type": "Polygon", "coordinates": [[[11, 0], [12, 0], [12, 1], [11, 1], [11, 0]]]},
+            "crs": "EPSG:3395",
+            "values": {"height": 20}
+          }
+        ]
+      },
+      "code": "# Edit Features writes this code from its edit list: each edit, in the\n# order it was made, on the features whose key is one of its ids. It is\n# written again when the list changes.\nreturn curio_edit_features(input_0, [\n    {\"op\": \"geometry\", \"ids\": [2], \"geometry\": {\"type\": \"Polygon\", \"coordinates\": [[[9, 0], [10, 0], [10, 1], [9, 1], [9, 0]]]}, \"crs\": \"EPSG:3395\"},\n    {\"op\": \"add\", \"id\": 4, \"geometry\": {\"type\": \"Polygon\", \"coordinates\": [[[11, 0], [12, 0], [12, 1], [11, 1], [11, 0]]]}, \"crs\": \"EPSG:3395\", \"values\": {\"height\": 20}},\n], key=\"building_id\", layer=\"table_osm_buildings\", crs=\"EPSG:3395\")\n",
+      "kept": [
+        1,
+        1,
+        2,
+        3,
+        4
+      ]
+    },
+    {
       "name": "a new layer of points, a point drawn into it, and a building removed",
       "settings": {
         "key": "building_id",
@@ -486,6 +517,11 @@
       "name": "another statement before the call",
       "code": "x = 1\nreturn curio_edit_features(input_0, [])\n",
       "reason": "holds something else"
+    },
+    {
+      "name": "a drawn edit whose crs is not a CRS name",
+      "code": "return curio_edit_features(input_0, [{\"op\": \"add\", \"id\": 9, \"geometry\": {\"type\": \"Point\", \"coordinates\": [0, 0]}, \"crs\": 4326}], key=\"osm_id\")\n",
+      "reason": "has a crs that is not a CRS name"
     },
     {
       "name": "a statement after the call",

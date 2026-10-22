@@ -100,6 +100,9 @@ export interface FeatureEdit {
   id?: SelectionId;
   /** For an add or a redraw: the shape drawn on the node's map. */
   geometry?: Geometry;
+  /** For an add or a redraw: the CRS its shape is drawn in, its layer's own,
+   * so layers in different CRSs each read their shapes in theirs. */
+  crs?: string;
   /** For an add: the new feature's values. */
   values?: Record<string, EditValue>;
 }
@@ -111,7 +114,8 @@ export interface EditFeaturesSettings {
   keys?: Record<string, string>;
   /** The layers the node makes. */
   newLayers?: NewLayerDef[];
-  /** The CRS the node's map drew the layers in: the one a drawn shape is in. */
+  /** The CRS of the node's first drawn shape: the one a new layer's features
+   * are in, and a drawn shape's when its edit names none. */
   crs?: string;
   edits?: FeatureEdit[];
 }
@@ -173,10 +177,15 @@ export function normalizeEdit(raw: unknown): FeatureEdit | null {
     if (e.enabled === false) out.enabled = false;
     return out;
   };
+  const drawnIn = typeof e.crs === "string" && e.crs !== "" ? e.crs : undefined;
   if (op === "add") {
     if (!isId(e.id) || !isGeometry(e.geometry)) return null;
     const values = cleanValues(e.values);
-    return tail({ op, ...layer, id: e.id, geometry: e.geometry, ...(Object.keys(values).length > 0 ? { values } : {}) });
+    return tail({
+      op, ...layer, id: e.id, geometry: e.geometry,
+      ...(drawnIn ? { crs: drawnIn } : {}),
+      ...(Object.keys(values).length > 0 ? { values } : {}),
+    });
   }
   if (op === "add_column") {
     if (typeof e.column !== "string" || e.column === "" || !isValue(e.value ?? null)) return null;
@@ -189,6 +198,7 @@ export function normalizeEdit(raw: unknown): FeatureEdit | null {
   if (op === "geometry") {
     if (!isGeometry(e.geometry)) return null;
     out.geometry = e.geometry;
+    if (drawnIn) out.crs = drawnIn;
   }
   if (WRITE_OPS.includes(op)) {
     if (typeof e.column !== "string" || e.column === "" || !isValue(e.value)) return null;
@@ -247,12 +257,13 @@ export function normalizeNewLayer(raw: unknown): NewLayerDef | null {
   return { name: r.name.trim(), geometry: r.geometry as NewLayerGeometry, ...(properties.length > 0 ? { properties } : {}) };
 }
 
-/** One edit as a Python dict: op, layer, ids or where, column, value, id, geometry, values, label, enabled. */
+/** One edit as a Python dict: op, layer, ids or where, column, value, id, geometry, crs, values, label, enabled. */
 function editLine(edit: FeatureEdit): string {
   const parts = [`"op": ${pyLiteral(edit.op)}`];
   if (edit.layer) parts.push(`"layer": ${pyLiteral(edit.layer)}`);
   if (edit.op === "add") {
     parts.push(`"id": ${pyLiteral(edit.id)}`, `"geometry": ${pyLiteral(edit.geometry)}`);
+    if (edit.crs) parts.push(`"crs": ${pyLiteral(edit.crs)}`);
     if (edit.values && Object.keys(edit.values).length > 0) parts.push(`"values": ${pyLiteral(edit.values)}`);
   } else if (edit.op === "add_column") {
     parts.push(`"column": ${pyLiteral(edit.column ?? "")}`, `"value": ${pyLiteral(edit.value ?? null)}`);
@@ -262,7 +273,10 @@ function editLine(edit: FeatureEdit): string {
     if (WRITE_OPS.includes(edit.op)) {
       parts.push(`"column": ${pyLiteral(edit.column ?? "")}`, `"value": ${pyLiteral(edit.value ?? null)}`);
     }
-    if (edit.op === "geometry") parts.push(`"geometry": ${pyLiteral(edit.geometry)}`);
+    if (edit.op === "geometry") {
+      parts.push(`"geometry": ${pyLiteral(edit.geometry)}`);
+      if (edit.crs) parts.push(`"crs": ${pyLiteral(edit.crs)}`);
+    }
   }
   if (edit.label) parts.push(`"label": ${pyLiteral(edit.label)}`);
   if (edit.enabled === false) parts.push(`"enabled": False`);
@@ -320,8 +334,8 @@ const EDIT_FIELDS: Record<EditOp, readonly string[]> = {
   scale: ["ids", "where", "column", "value"],
   offset: ["ids", "where", "column", "value"],
   expr: ["ids", "where", "column", "value"],
-  geometry: ["ids", "where", "geometry"],
-  add: ["id", "geometry", "values"],
+  geometry: ["ids", "where", "geometry", "crs"],
+  add: ["id", "geometry", "crs", "values"],
   add_column: ["column", "value"],
 };
 const NOT_A_VALUE = "is not a text, a number, True, False or None";
@@ -352,6 +366,7 @@ export function editProblem(raw: unknown): string | null {
   if (raw.label !== undefined && typeof raw.label !== "string") return "has a label that is not a text";
   if (typeof raw.label === "string" && raw.label.trim() === "") return "has an empty label";
   if (raw.enabled !== undefined && typeof raw.enabled !== "boolean") return "has an enabled that is not True or False";
+  if (raw.crs !== undefined && (typeof raw.crs !== "string" || raw.crs === "")) return "has a crs that is not a CRS name";
   if (op === "add") {
     if (!isId(raw.id)) return "adds a feature with no id";
     if (!isGeometry(raw.geometry)) return "adds a feature with no geometry the node reads";

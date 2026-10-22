@@ -21,10 +21,11 @@ that write, a ``column`` and a ``value``:
 - ``expr`` writes into ``column`` what the expression ``value`` makes of the
   feature, such as ``levels * 3.2`` (``edit_expr``);
 - ``add`` adds a feature drawn on the map: its ``geometry`` (GeoJSON, in the
-  coordinates the map drew the layer in, ``crs``), its ``values`` and its
-  ``id``, written into the ``key`` column; it names no features;
+  coordinates of the layer it was drawn on, which its own ``crs`` names, else
+  the node's ``crs``), its ``values`` and its ``id``, written into the ``key``
+  column; it names no features;
 - ``geometry`` gives the features it names a new ``geometry``, a shape redrawn
-  on the map;
+  on the map, in its own ``crs`` as an add's is;
 - ``add_column`` adds ``column`` to every feature with ``value`` as its value,
   leaving a feature that already holds one as it is; it names no features.
 
@@ -482,6 +483,12 @@ def _write_column(out, column, positions, values):
     out[column] = pd.Series(current, index=out.index)
 
 
+def _drawn_in(edit, crs):
+    """The CRS *edit*'s shape is drawn in: its own ``crs``, the layer's it was
+    drawn on, else the node's *crs*, for code written before edits named one."""
+    return edit.get("crs") or crs
+
+
 def _shape(geometry, frame, crs):
     """A GeoJSON *geometry*, drawn in *crs*, as a shape in *frame*'s CRS."""
     import geopandas as gpd
@@ -547,7 +554,7 @@ def _edit_frame(layer: _Layer, edits, key, crs=None):
             if geometry:
                 import geopandas as gpd
 
-                row[geometry] = _shape(edit["geometry"], frame, crs)
+                row[geometry] = _shape(edit["geometry"], frame, _drawn_in(edit, crs))
                 addition = gpd.GeoDataFrame([row], index=[label], geometry=geometry, crs=frame.crs)
             else:
                 addition = pd.DataFrame([row], index=[label])
@@ -585,7 +592,7 @@ def _edit_frame(layer: _Layer, edits, key, crs=None):
                 raise ValueError(f"{_NAME}: {layer.label} is a table with no geometry; a shape cannot be redrawn in it.")
             target = mask & kept
             if target.any():
-                drawn = _shape(edit["geometry"], frame, crs)
+                drawn = _shape(edit["geometry"], frame, _drawn_in(edit, crs))
                 out[geometry] = out[geometry].where(~target, drawn)
                 counts_extra[GEOMETRY] += int(target.sum())
             continue

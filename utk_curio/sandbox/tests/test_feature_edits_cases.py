@@ -5,7 +5,9 @@ map the node feeds draws before Commit edits (``tests/utils/mapEditsApply.test.t
 The layer each case expects is the one a run hands on, so this pins it.
 
 And a feature drawn on the map over tables: the new layer it lands in is in
-the coordinates the map drew the tables in.
+the coordinates the map drew the tables in. A shape redrawn on a layer in
+metres, beside one in degrees, is read in its own layer's CRS, which its edit
+names.
 
 Every test imports the step itself, so a checkout without it fails test by
 test rather than at collection.
@@ -78,3 +80,44 @@ def test_a_feature_drawn_over_table_inputs_keeps_the_maps_crs(by_input):
     # The tables' layers name their CRS; the new layer names the same one.
     assert all(_names_wgs84(item["data"].get("crs")) for item in out["data"][:-1])
     assert _names_wgs84(made["data"].get("crs")), made["data"].get("crs")
+
+
+#: A road redrawn on the map, in its own layer's Web Mercator metres.
+REDRAWN = {"type": "LineString", "coordinates": [[-9755300.0, 5143300.0], [-9755200.0, 5143350.0]]}
+
+
+def _flat(coordinates):
+    return [value for point in coordinates for value in point]
+
+
+def test_a_road_redrawn_in_metres_beside_a_layer_in_degrees_keeps_its_coordinates():
+    """The node's first drawn shape was on trees in degrees, so the node names
+    EPSG:4326, and a road in metres is redrawn after it. Each drawn edit names
+    the CRS of its own layer, so the road is read in metres, as it was drawn,
+    and not as degrees, which handed it on at infinity."""
+    import geopandas as gpd
+    from shapely.geometry import LineString, Point
+    from utk_curio.sandbox.util.feature_edits import edit_features
+
+    trees = gpd.GeoDataFrame({"osm_id": [1]}, geometry=[Point(-87.631, 41.881)], crs=4326)
+    roads = gpd.GeoDataFrame(
+        {"osm_id": [7, 8]},
+        geometry=[
+            LineString([(-9755400.0, 5143200.0), (-9755300.0, 5143200.0)]),
+            LineString([(-9755300.0, 5143250.0), (-9755200.0, 5143250.0)]),
+        ],
+        crs=3857,
+    )
+    redraw = {"op": "geometry", "layer": "input_1", "ids": [8], "geometry": REDRAWN, "crs": "EPSG:3857"}
+    out = edit_features(
+        [trees, roads], [redraw], key="osm_id", layer="input_0", keys={"input_1": "osm_id"},
+        crs="EPSG:4326", by_input=True,
+    )
+
+    features = out["data"][1]["data"]["features"]
+    road = next(f for f in features if f["properties"]["osm_id"] == 8)
+    assert _flat(road["geometry"]["coordinates"]) == pytest.approx(_flat(REDRAWN["coordinates"]))
+    # The other road, and the trees in degrees, are as they came.
+    other = next(f for f in features if f["properties"]["osm_id"] == 7)
+    assert _flat(other["geometry"]["coordinates"]) == pytest.approx([-9755400.0, 5143200.0, -9755300.0, 5143200.0])
+    assert out["data"][0]["data"]["features"][0]["geometry"]["coordinates"] == pytest.approx([-87.631, 41.881])

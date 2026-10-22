@@ -337,24 +337,28 @@ export function EditFeaturesBody({
    * same change. */
   const writeOn = (more: FeatureEdit[], target: WorkbenchLayer, property?: PropertyDef) => {
     let next: EditFeaturesSettings = { ...(settings ?? {}) };
+    // A shape is drawn in its layer's own coordinates (a new layer's, the
+    // first layer's), so each drawn edit names that CRS: layers in different
+    // CRSs, such as degrees beside metres, each read their own shapes.
+    const drawnIn = crsName(target.newLayer ? workbenchLayers.find((l) => !l.newLayer)?.fc : target.fc);
     const tagged: FeatureEdit[] = [];
     for (const raw of more) {
-      let edit = raw;
-      if (target.newLayer) edit = { ...raw, layer: target.name };
+      let edit = raw.geometry && drawnIn ? { ...raw, crs: drawnIn } : raw;
+      if (target.newLayer) edit = { ...edit, layer: target.name };
       else {
         if (!next.layer) {
           next.layer = target.name;
           if (target.key) next.key = target.key;
         }
         if (target.name !== next.layer) {
-          edit = { ...raw, layer: target.name };
+          edit = { ...edit, layer: target.name };
           if (target.key) next.keys = { ...(next.keys ?? {}), [target.name]: target.key };
         }
       }
       if (normalizeEdit(edit)) tagged.push(edit);
     }
     if (tagged.length === 0) return;
-    if (tagged.some((e) => e.geometry) && !next.crs) next.crs = crsName(target.newLayer ? workbenchLayers.find((l) => !l.newLayer)?.fc : target.fc);
+    if (tagged.some((e) => e.geometry) && !next.crs && drawnIn) next.crs = drawnIn;
     if (property && target.newLayer) {
       next.newLayers = (next.newLayers ?? []).map((l) =>
         l.name === target.name ? { ...l, properties: [...(l.properties ?? []).filter((p) => p.name !== property.name), property] } : l,
