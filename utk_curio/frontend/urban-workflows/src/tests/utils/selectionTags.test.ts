@@ -48,8 +48,8 @@ const brush = (bounds: Record<string, unknown>) => ({
 });
 
 describe("the columns a tag can identify rows by", () => {
-  test("osm_id and building_id come first, though a building's parts share its building_id", () => {
-    expect(idColumns(objectRows(BUILDINGS), columnsOf(BUILDINGS))).toEqual(["osm_id", "building_id", "height", "name"]);
+  test("building_id comes first, then osm_id, though a building's parts share its building_id", () => {
+    expect(idColumns(objectRows(BUILDINGS), columnsOf(BUILDINGS))).toEqual(["building_id", "osm_id", "height", "name"]);
   });
 
   test("another column is offered only when every row holds a different text or number", () => {

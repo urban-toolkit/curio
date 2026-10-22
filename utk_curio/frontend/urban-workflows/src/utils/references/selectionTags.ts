@@ -24,8 +24,10 @@ import { isActiveSelect, matchSelections, type SelectDetail, type SelectionRows 
  * `code_references.py` and `maxItems` in `docs/schemas/trill.v1.json`. */
 export const SELECTION_ID_CAP = 10000;
 
-/** The columns that identify rows wherever Curio's OpenStreetMap layers go. */
-export const STABLE_ID_COLUMNS = ["osm_id", "building_id"] as const;
+/** The columns that identify rows wherever Curio's OpenStreetMap layers go,
+ * first the one a new tag or Map Edits node starts on: a building's
+ * `building_id`, which names every part of it, then the feature's `osm_id`. */
+export const STABLE_ID_COLUMNS = ["building_id", "osm_id"] as const;
 
 /** Columns a view adds to its own rows, which identify nothing upstream. */
 const VIEW_COLUMNS = new Set(["__row_index__", "__input__", "_vgsid_", "interacted", "linked"]);
@@ -100,8 +102,8 @@ const isId = (value: unknown): value is SelectionId =>
   typeof value === "string" || (typeof value === "number" && Number.isFinite(value));
 
 /**
- * The columns that can identify the rows of a view: `osm_id` and
- * `building_id` when the rows have them (a building's parts share its
+ * The columns that can identify the rows of a view: `building_id` and
+ * `osm_id` when the rows have them (a building's parts share its
  * `building_id`), then every other column in which each row holds a text or
  * a number and no two rows hold the same one. None, for rows that have no such
  * column.
