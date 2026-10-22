@@ -42,17 +42,18 @@ export interface SelectableFeature {
 /**
  * The ids among *features* that the selections in *incoming* pick, each once,
  * in the features' order: the selections *accepts* takes, by the node each
- * comes from and the layer it names (undefined when it names none).
+ * comes from and the layer it names (undefined when it names none). Null when
+ * it takes none, which is not a selection of nothing.
  */
 export function selectedIdsIn(
   incoming: unknown,
   accepts: (nodeId: string | undefined, layer: string | undefined) => boolean,
   features: readonly SelectableFeature[],
-): SelectionId[] {
+): SelectionId[] | null {
   const selections = (Array.isArray(incoming) ? incoming : []).filter(
     (selection: any) => accepts(selection?.nodeId, selectionLayer(selection?.details)),
   ) as IncomingSelection[];
-  if (selections.length === 0) return [];
+  if (selections.length === 0) return null;
   const rows = featureRows({ features: features.map((feature) => ({ properties: feature.properties })) });
   const ids: SelectionId[] = [];
   const seen = new Set<string>();

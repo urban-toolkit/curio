@@ -16,13 +16,21 @@ export type GrammarRun = {
   pick: (selection: number[]) => void;
   /** A brush on the plot, as autk-grammar reports one: positions in the plot's table. */
   brush: (selection: number[]) => void;
+  /** Each highlight the node asked of this run's map, in order: the table and the positions lit up (none: cleared). */
+  highlights: Array<[string, number[]]>;
+  /** The maps this run drew, made by `drawnMaps.make` when a test sets it. */
+  maps: any[];
 };
 
 /** Every run of the stand-in grammar, in order. */
 export const grammarRuns: GrammarRun[] = [];
 
+/** What makes the map a run draws, for a test that reads its camera; none unless a test sets it. */
+export const drawnMaps: { make: null | (() => any) } = { make: null };
+
 export const AutkGrammar = jest.fn().mockImplementation((targets: Record<string, unknown>) => {
   const handlers: Record<string, (event: any) => void> = {};
+  const highlights: Array<[string, number[]]> = [];
   const grammar: any = {
     data: {},
     interactions: {
@@ -31,13 +39,19 @@ export const AutkGrammar = jest.fn().mockImplementation((targets: Record<string,
         return () => { delete handlers[event]; };
       },
     },
+    highlightOnMap: jest.fn((table: string, positions: number[]) => { highlights.push([table, [...positions]]); }),
+    clearHighlightOnMap: jest.fn((table: string) => { highlights.push([table, []]); }),
   };
   grammar.run = jest.fn(async (spec: any) => {
+    const maps = drawnMaps.make && spec?.map ? [drawnMaps.make()] : [];
+    if (maps.length > 0) grammar.maps = maps;
     grammarRuns.push({
       targets,
       spec,
       pick: (selection) => handlers['map:picking']?.({ selection }),
       brush: (selection) => handlers['plot:selection']?.({ selection }),
+      highlights,
+      maps,
     });
   });
   return grammar;
@@ -84,6 +98,7 @@ export const autkGrammarModule = { AutkGrammar };
  * scenario, node or edge. */
 export function resetAutkNodeMocks(): void {
   grammarRuns.length = 0;
+  drawnMaps.make = null;
   AutkGrammar.mockClear();
   markNodeErrored.mockClear();
   showToast.mockClear();

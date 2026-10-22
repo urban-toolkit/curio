@@ -360,7 +360,7 @@ export default function MapEditOverlay({ mapId }: { mapId: string }) {
   const selected = useMemo<SelectionId[]>(
     () =>
       active
-        ? selectedIdsIn(mapData?.interactions, (from, layer) => from === session?.interactionId && (layer ?? active.table) === active.table, features)
+        ? selectedIdsIn(mapData?.interactions, (from, layer) => from === session?.interactionId && (layer ?? active.table) === active.table, features) ?? []
         : [],
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [mapData?.interactions, session?.interactionId, active?.table, features],

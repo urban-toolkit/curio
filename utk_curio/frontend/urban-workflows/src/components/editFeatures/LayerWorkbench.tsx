@@ -591,8 +591,9 @@ export default function LayerWorkbench({
     mapTableName(layer.table ?? layer.name, !!layer.newLayer || !!layer.ownName, { ...surface, circles });
 
   // A pick on a map: the map's selection, which the interaction edge carries
-  // here, replaces the pick, read on the layer worked on by its id column.
-  // Not while a shape waits to be added, nor while a rule picks.
+  // here, replaces the pick, read on the layer worked on by its id column; a
+  // selection of another layer picks nothing here. Not while a shape waits
+  // to be added, nor while a rule picks.
   useEffect(() => {
     if (!active || !layerKey || !mode || drawn || byRule) return;
     const ids = selectedIdsIn(
@@ -600,13 +601,13 @@ export default function LayerWorkbench({
       (from, layer) => surfaces.some((surface) => surface.mapId === from && (layer ?? tableOn(surface, active)) === tableOn(surface, active)),
       features,
     );
-    if (!sameIds(ids, picked)) setPicked(ids);
+    if (ids !== null && !sameIds(ids, picked)) setPicked(ids);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [incoming]);
 
-  // What the node selects, which the maps light up: the pick, else what a
-  // rule matches, else what was just added or edited.
-  const outgoing = picked.length > 0 ? picked : matches ?? recent;
+  // What the node selects, which the maps light up: what a rule matches while
+  // a rule picks, else the pick, else what was just added or edited.
+  const outgoing = byRule ? matches ?? [] : picked.length > 0 ? picked : recent;
   const outgoingKey = JSON.stringify(outgoing);
   useEffect(() => {
     if (!onSelection) return;
