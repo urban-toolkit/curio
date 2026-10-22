@@ -36,6 +36,7 @@ import {
     VEGA_LITE,
     describeEmptyInputs,
     describeReferenceProblems,
+    parseReference,
     resolveReferences,
     type CodeLanguage,
     type ReferenceScope,
@@ -44,6 +45,11 @@ import { useInputScope } from "../../hook/useInputScope";
 import { useSharedWidgets } from "../../hook/useSharedWidgets";
 import { useSelectionViews } from "../../hook/useSelectionViews";
 import { normalizeSelections, type SelectionTag } from "../../utils/references/selectionTags";
+import { parameterPreviewOf } from "../../utils/references/sharedParameters";
+import { readSelectionRows } from "../../utils/references/viewSelections";
+import { nodeLabel } from "../scenarios/scenarioLabels";
+import type { ChipPreviewData } from "./widgets/ChipPreview";
+import { useChipPreviewSource } from "./widgets/chipPreviewSource";
 
 const NO_WIDGETS: WidgetDef[] = [];
 const NO_SELECTIONS: SelectionTag[] = [];
@@ -172,7 +178,7 @@ function NodeEditor({
     // #662: what the node's references name: its widgets, its wired inputs,
     // the Parameter nodes' shared tags and its selection tags. Input, layer,
     // column, selection and shared tags sit above its code or spec.
-    const { inputs, emptyInputs, loadColumns } = useInputScope(data);
+    const { inputs, emptyInputs, loadColumns, previews: inputPreviews, loadPreview } = useInputScope(data);
     const shared = useSharedWidgets();
     const scope: ReferenceScope = useMemo(
         () => ({
@@ -183,6 +189,60 @@ function NodeEditor({
         }),
         [widgetsTab, widgets, inputs, shared, selections],
     );
+
+    // What the hover of a chip, in the code or in the header, previews
+    // (ChipPreview): each input's rows, read as its tooltip first shows; each
+    // Parameter node's title and how many nodes read it, and each selection
+    // tag's view and the rows its ids pick there, read as its tooltip shows.
+    const [selectionRows, setSelectionRows] = useState<
+        Record<string, { columns: string[]; rows: Record<string, unknown>[] } | { unreadable: true } | null>
+    >({});
+    const [parameters, setParameters] = useState<Record<string, { node: string; readers: number }>>({});
+    const flowNodeList: any[] = Array.isArray(flowNodes) ? flowNodes : [];
+    const viewsFound: Record<string, string> = Object.fromEntries(
+        selections.map((tag) => [tag.name, nodeLabel(flowNodeList.find((node) => node.id === tag.node), tag.node)]),
+    );
+    const viewsSignature = JSON.stringify(viewsFound);
+    const selectionPreviews = useMemo(
+        () =>
+            Object.fromEntries(
+                Object.entries(viewsFound).map(([name, view]) => [
+                    name,
+                    name in selectionRows ? { view, rows: selectionRows[name] } : { view },
+                ]),
+            ),
+        [viewsSignature, selectionRows],
+    );
+    const chipData: ChipPreviewData = useMemo(
+        () => ({ inputs: inputPreviews, parameters, selections: selectionPreviews }),
+        [inputPreviews, parameters, selectionPreviews],
+    );
+    const chipSnapshot = useMemo(
+        () => ({ scope, language: widgetLanguage, data: chipData }),
+        [scope, widgetLanguage, chipData],
+    );
+    const chipPreviews = useChipPreviewSource(chipSnapshot, (inner) => {
+        const parsed = parseReference(inner);
+        if (parsed.kind === "input") {
+            if (parsed.slot !== null) loadPreview(parsed.slot);
+        } else if (parsed.kind === "dataset" || parsed.kind === "stacked") {
+            for (const input of inputs) loadPreview(input.slot);
+        } else if (parsed.kind === "selection") {
+            const tag = selections.find((one) => one.name === parsed.name);
+            if (tag) {
+                void readSelectionRows(tag).then((rows) => setSelectionRows((held) => ({ ...held, [tag.name]: rows })));
+            }
+        } else if (parsed.kind === "shared") {
+            const parameter = parameterPreviewOf(flowNodeList, parsed.name);
+            setParameters((held) => {
+                if (JSON.stringify(held[parsed.name] ?? null) === JSON.stringify(parameter)) return held;
+                const next = { ...held };
+                if (parameter) next[parsed.name] = parameter;
+                else delete next[parsed.name];
+                return next;
+            });
+        }
+    });
     // The play callback is registered once, so a run without a Widgets tab
     // reads the scope from here.
     const runScopeRef = useRef({ scope, emptyInputs, referenceGrammar });
@@ -553,6 +613,7 @@ function NodeEditor({
                                             stripInputs={inputs}
                                             onLoadColumns={loadColumns}
                                             widgetLanguage={widgetLanguage}
+                                            chipPreviews={chipPreviews}
                                             restoredCode={restoredCode}
                                         />
                                     </Tab.Pane>
@@ -613,6 +674,7 @@ function NodeEditor({
                                             onLoadColumns={loadColumns}
                                             widgetLanguage={widgetLanguage}
                                             referenceGrammar={referenceGrammar}
+                                            chipPreviews={chipPreviews}
                                             restoredCode={restoredCode}
                                         />
                                     </Tab.Pane>

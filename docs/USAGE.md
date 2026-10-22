@@ -410,7 +410,10 @@ one to list its chips under the row, and click it again to close it. Several
 can be open, and a category stays open on that node while the dataflow is
 open. On the canvas the header takes at most half of the node's editor, and the
 open chips scroll inside it. Drag a chip's tag into the code or spec, or click
-it to insert the chip at the cursor.
+it to insert the chip at the cursor. Hover a tag, or its chip in the code or
+spec, to preview what it holds: an input's source, size and first rows, a
+column's first values and its range or distinct count, a widget's value, a
+scenario box's color. An input whose node has not run says which node to run.
 
 - **Inputs**: a line for each input, with its tag and what it holds, whose
   chevron lists its columns under the line (see [Several inputs](#several-inputs)),

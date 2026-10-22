@@ -654,9 +654,19 @@ canvas's viewport, so it is the same size at every zoom and no node clips it.
   tests.
 - Monaco's own hover is off in every editor (`hover: { enabled: false }`).
   `useEditorTooltip` shows, in the Curio tooltip, the markers' messages first, then
-  what a chip writes or, in JavaScript, the TypeScript worker's quick info for the
+  a chip's preview or, in JavaScript, the TypeScript worker's quick info for the
   word under the pointer. Cmd+K Cmd+I (Ctrl on Windows and Linux) shows it at the
   caret: an action of each editor, so it works in the one with the focus.
+- A chip's hover, its tag's in the header and its chip's in an editor, is one
+  `ChipPreview` (`components/editing/widgets/ChipPreview.tsx`) of what the chip holds:
+  an input's source, size and first rows, a column's values and range, the stacked
+  `inputs`, a widget's or a Parameter's value, a selection's rows, the scenario
+  colors. It reads the node's preview source (`chipPreviewSource.ts`), which
+  `NodeEditor` builds from `useInputScope` (each input's `readInputPreview`, the same
+  `/get-preview` read as the header's columns), the Parameter nodes and the selection
+  tags' views. Its tooltip content, `ChipPreviewTip`, asks the source to read what it
+  shows as it mounts, so only a tooltip that shows reads, and it follows the source
+  as the read comes back.
 - A Vega-Lite chart's tooltip handler is `vegaTooltipHandler` (`vegaTooltip.ts`): it
   writes the hovered mark's fields, as Vega's own handler words them, in the chart
   element's `data-tooltip`, and the tooltip shows at the pointer.

@@ -37,6 +37,7 @@ import { ICodeData } from "../../types";
 import { ReferenceStrip } from "./widgets/WidgetTag";
 import { insertReference, useCodeReferences } from "./widgets/monacoCodeReferences";
 import { useEditorTooltip } from "./useEditorTooltip";
+import type { ChipPreviewSource } from "./widgets/chipPreviewSource";
 import type { CodeLanguage, InputScope, ReferenceScope } from "../../utils/references/codeReferences";
 import { NOTEBOOK_CODE_EDITOR_MAX, useNotebookEditorHeight } from "./useNotebookEditorHeight";
 import { nodeEditorLook } from "./nodeEditorLook";
@@ -66,6 +67,8 @@ type CodeEditorProps = {
     /** Read an input's columns for its tags. */
     onLoadColumns?: (slot: number) => void;
     widgetLanguage?: CodeLanguage;
+    /** What its chips' and tags' hovers preview (chipPreviewSource). */
+    chipPreviews?: ChipPreviewSource | null;
     /** A run's code put back from the provenance drawer; each new one is
      *  written in, even when it is the code the editor loaded with. */
     restoredCode?: { code: string; nonce: number } | null;
@@ -132,6 +135,7 @@ function CodeEditor({
     stripInputs = NO_INPUTS,
     onLoadColumns,
     widgetLanguage = "python",
+    chipPreviews = null,
     restoredCode = null,
 }: CodeEditorProps) {
     const [code, setCode] = useState<string>(""); // code with all original markers
@@ -140,7 +144,7 @@ function CodeEditor({
     const [widgetEditor, setWidgetEditor] = useState<{ editor: any; monaco: any } | null>(null);
     useCodeReferences(widgetEditor?.editor, widgetEditor?.monaco, references, widgetLanguage);
     // Its hovers, Monaco's own being off, in the Curio tooltip.
-    useEditorTooltip(widgetEditor?.editor, widgetEditor?.monaco, references, widgetLanguage);
+    useEditorTooltip(widgetEditor?.editor, widgetEditor?.monaco, references, widgetLanguage, chipPreviews);
     // In a notebook cell the editor is as tall as its lines and the output
     // takes its own height below it.
     const editorHeight = useNotebookEditorHeight(NOTEBOOK_CODE_EDITOR_MAX);
@@ -594,6 +598,7 @@ function CodeEditor({
                 disabled={readOnly}
                 onInsert={(inner) => insertReference(widgetEditor?.editor, inner)}
                 onLoadColumns={onLoadColumns}
+                previews={chipPreviews}
             />
             <div className={look.wrapperClassName} style={{ flex: 2, minHeight: 0, ...editorHeight.wrapperStyle }}>
                 {/* Uncontrolled on purpose: a per-keystroke `value` round-trip

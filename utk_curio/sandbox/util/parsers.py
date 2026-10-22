@@ -240,6 +240,14 @@ def _frame_schema(frame):
     return frame.dtypes.astype(str).to_dict()
 
 
+def _frame_columns(frame):
+    """The frame's columns, in its own order. ``schema`` and a DataFrame's
+    ``data`` are JSON objects, whose order Flask's ``jsonify`` drops: it sorts
+    their keys. A list keeps it, so a chip's preview and the header's lists
+    show a frame's columns as its code made them."""
+    return [str(column) for column in frame.columns]
+
+
 def _is_frame_or_raster(value):
     """Whether *value* is a DataFrame, a GeoDataFrame or a rasterio dataset:
     what JSON cannot carry, and ``parseOutput`` sends as an envelope."""
@@ -294,6 +302,7 @@ def parseOutput(output):
         json_output['data'] = clean_df.to_dict(orient='list')
         json_output['dataType'] = 'dataframe'
         json_output['schema'] = _frame_schema(output)
+        json_output['columns'] = _frame_columns(output)
     elif is_geospatial_frame(output):
         gdf = fix_json_strings(output)
         # `is_geospatial_frame` guarantees an active column, so `.to_json()`,
@@ -322,6 +331,7 @@ def parseOutput(output):
         # property of the frame, not of the GeoJSON, and a consumer should not
         # have to know which branch it is on to read them.
         json_output['schema'] = _frame_schema(output)
+        json_output['columns'] = _frame_columns(output)
         # The frame's own name and Autark layer type, as the Arrow path sends
         # them in its X-Curio-Frame-Metadata header.
         frame_metadata = getattr(output, 'metadata', None)

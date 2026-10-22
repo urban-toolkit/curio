@@ -9,9 +9,14 @@
  *
  * - the messages of the markers at that place (the credential warning, a
  *   JSON error), first, as Monaco put them;
- * - a chip's text, what `referenceMarks` says it stands for;
+ * - a chip's preview of what it holds (ChipPreviewTip), the same as its tag's
+ *   in the header, when the node gives a preview source (*previews*); else
+ *   what `referenceMarks` says the chip stands for;
  * - in a JavaScript node, the type information TypeScript's worker gives for
  *   the word under the pointer, read when the tooltip is about to show.
+ *
+ * The scope, the language and the source are read as the pointer moves, so a
+ * read coming back, which changes the scope, leaves an open tooltip open.
  *
  * Monaco corrects its mouse positions for the canvas's zoom itself. Monaco's
  * own chord for its hover, Cmd/Ctrl+K Cmd/Ctrl+I, shows the same for what is
@@ -19,10 +24,12 @@
  * as Run this node is (runNodeMonacoAction.ts), which outranks Monaco's own.
  * It does nothing until the editor has mounted.
  */
-import { useEffect } from "react";
+import { createElement, useEffect, useRef } from "react";
 import { tooltipStore, type TooltipContent } from "../tooltip/tooltipStore";
 import type { TooltipBox } from "../tooltip/tooltipPlacement";
 import { referenceMarks } from "./widgets/monacoCodeReferences";
+import { ChipPreviewTip } from "./widgets/ChipPreview";
+import type { ChipPreviewSource } from "./widgets/chipPreviewSource";
 import type { CodeLanguage, ReferenceScope } from "../../utils/references/codeReferences";
 
 /** Monaco's `editor.MouseTargetType.CONTENT_TEXT`: the pointer on text. */
@@ -69,7 +76,10 @@ export function useEditorTooltip(
   monaco: any,
   scope: ReferenceScope,
   language: CodeLanguage,
+  previews?: ChipPreviewSource | null,
 ): void {
+  const latest = useRef({ scope, language, previews });
+  latest.current = { scope, language, previews };
   useEffect(() => {
     if (!editor || typeof editor.onMouseMove !== "function") return undefined;
     const id = `editor-${(editors += 1)}`;
@@ -77,6 +87,9 @@ export function useEditorTooltip(
     let current: string | null = null;
     /** The tooltip the chord opened, which goes when the caret moves. */
     let atCaret: string | null = null;
+    /** The preview shown for a chip, kept while the pointer moves on that chip
+     * so the open tooltip does not draw it again at each move. */
+    let shownPreview: { key: string; signature: string; source: ChipPreviewSource; content: TooltipContent } | null = null;
     const model = () => editor.getModel?.();
 
     const letGo = () => {
@@ -87,6 +100,7 @@ export function useEditorTooltip(
     /** What the editor says at *position*: the markers' messages and a chip's text. */
     const describe = (position: Position) => {
       const code: string = model()?.getValue?.() ?? "";
+      const { scope, language } = latest.current;
       const chip = referenceMarks(code, scope, language).find((mark) => within(mark.range, position)) ?? null;
       const markers: Marker[] = (
         (monaco?.editor?.getModelMarkers?.({ resource: model()?.uri }) ?? []) as Marker[]
@@ -112,13 +126,28 @@ export function useEditorTooltip(
     const contentAt = (position: Position): { key: string; content: TooltipContent | (() => Promise<TooltipContent | null>) } | null => {
       const { chip, markers } = describe(position);
       const messages = markers.map((marker) => marker.message);
-      // A chip is Curio's own: what it stands for, with no type information.
+      // A chip is Curio's own: what it holds, or what it stands for, with no
+      // type information.
       if (chip) {
+        const key = `${id}:chip:${chip.range.startLineNumber}:${chip.range.startColumn}`;
+        const source = latest.current.previews;
+        if (source) {
+          const signature = JSON.stringify([chip.name, chip.problem, messages]);
+          if (shownPreview?.key !== key || shownPreview.signature !== signature || shownPreview.source !== source) {
+            const node = createElement(ChipPreviewTip, {
+              source,
+              inner: chip.name,
+              problem: chip.problem,
+              messages: messages.filter((message) => message.trim() !== ""),
+            });
+            shownPreview = { key, signature, source, content: { kind: "preview", node } };
+          }
+          return { key, content: shownPreview.content };
+        }
         const text = joined([...messages, chip.hover]);
-        return text
-          ? { key: `${id}:chip:${chip.range.startLineNumber}:${chip.range.startColumn}`, content: { kind: "text", text } }
-          : null;
+        return text ? { key, content: { kind: "text", text } } : null;
       }
+      const language = latest.current.language;
       const word = language === "javascript" ? model()?.getWordAtPosition?.(position) : null;
       if (word) {
         // The markers' messages first, then the type information, as Monaco's hover put them.
@@ -222,7 +251,7 @@ export function useEditorTooltip(
       letGo();
       hideOurs();
     };
-  }, [editor, monaco, scope, language]);
+  }, [editor, monaco]);
 }
 
 export default useEditorTooltip;
