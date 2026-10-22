@@ -226,7 +226,11 @@ class SolveBatch:
             str((node_obj or {}).get("type") or ""), self.batch_templates
         )
 
-    def _ungrounded_error(self, refusal: str, node_id: str) -> str:
+    def _ungrounded_error(self, refusal: str, node_id: str, verdict=None) -> str:
+        # The code's own violations name what to change in it: no source is
+        # missing, so the Dataset Finder's remedy is not theirs.
+        if verdict is not None and source_grounding.failure_kind(verdict) == source_grounding.CODE_KIND:
+            return ("ungrounded code: " + " ".join(verdict.violations))[:300]
         return (
             "ungrounded source: " + refusal.split("Allowed sources:")[0]
             .replace("source grounding refused — ", "").strip()
@@ -533,15 +537,16 @@ class SolveBatch:
         return {"nodeId": node_id, "status": "failed", "error": err, **trail, **extra}
 
     def _gate_unverified(self, node_id: str, code: str) -> str | None:
-        """dev/114 (DEC-072): the gate on content written without running it.
-        #867: it holds the content to the datasets a verified Solve holds it
-        to, the ids the node's goal names and the catalog rows the user
-        confirmed for the node."""
+        """dev/114 (DEC-072): the gate on content written without running it:
+        the node's failure, or None. #867: it holds the content to the
+        datasets a verified Solve holds it to, the ids the node's goal names
+        and the catalog rows the user confirmed for the node."""
         node = self.nodes_by_id.get(node_id) or {}
-        _verdict, refusal = agents_grounding._gate_generated_content(
+        roster_row = (self.batch_templates or {}).get(_pkg_services.canonical_template_id(node.get("type")))
+        verdict, refusal = agents_grounding._gate_generated_content(
             self.user_key, self.project_id, self.solve_ctx,
-            code=code, engine="python", node_type=node.get("type"),
-            base=self.solve_ground,
+            code=code, engine=source_grounding.code_engine(roster_row), node_type=node.get("type"),
+            base=self.solve_ground, chips=agents_grounding._chip_context(self.current["spec"], node_id),
             request_texts=(str(node.get("goal") or ""),),
             requested_ids=source_grounding.confirmed_dataset_ids(
                 agents_dataset_resolution.confirmed_source(
@@ -549,7 +554,7 @@ class SolveBatch:
                 )
             ),
         )
-        return refusal
+        return self._ungrounded_error(refusal, node_id, verdict) if refusal else None
 
     def _record_solved(self, node_id: str, text) -> dict:
         # The child replies with response formatting around the code —
@@ -559,9 +564,8 @@ class SolveBatch:
         # unverified URL never reaches the spec; the node fails LOUDLY
         # with the literal and the remedy named.
         node = self.nodes_by_id.get(node_id) or {}
-        refusal = self._gate_unverified(node_id, text_out)
-        if refusal:
-            err = self._ungrounded_error(refusal, node_id)
+        err = self._gate_unverified(node_id, text_out)
+        if err:
             self.results[node_id] = {"status": "failed", "error": err[:300]}
             return {"nodeId": node_id, "status": "failed", "error": err[:300]}
         # A Map Edits node's code is held to what the node reads, unrun too.
@@ -1144,9 +1148,8 @@ class SolveBatch:
             self.delegations.append(child)
         # dev/114: the gate runs on the batch base BEFORE the
         # mint so the node's failure names the source.
-        _refusal = self._gate_unverified(node_id, content.extract_node_content(text))
-        if _refusal:
-            err = self._ungrounded_error(_refusal, node_id)
+        err = self._gate_unverified(node_id, content.extract_node_content(text))
+        if err:
             self.results[node_id] = {"status": "failed", "error": err[:300]}
             yield "node_result", {"nodeId": node_id, "status": "failed", "error": err[:300]}
             return

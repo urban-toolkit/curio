@@ -633,9 +633,9 @@ def _mint_node_content_write(
     entry, _err = packages_services.resolve_template(user_key, project_id, node.get("type"))
     verdict, refusal = agents_grounding._gate_generated_content(
         user_key, project_id, loop_ctx,
-        code=proposed, engine=(entry or {}).get("engine"),
+        code=proposed, engine=source_grounding.code_engine(entry),
         node_type=node.get("type"), params=params,
-        base=loop_ctx.get("_grounding_base"),
+        base=loop_ctx.get("_grounding_base"), chips=agents_grounding._chip_context(spec, node_id),
     )
     if refusal:
         return agents_tool_rounds._refuse_params(refusal)
@@ -715,7 +715,10 @@ def _mint_node_create(
         return agents_tool_rounds._refuse_params(agents_grounding._CANDIDATES_PENDING_TEXT)
     verdict, refusal = agents_grounding._gate_generated_content(
         user_key, project_id, loop_ctx,
-        code=proposed, engine=entry.get("engine"), node_type=entry["id"], params=params,
+        code=proposed, engine=source_grounding.code_engine(entry), node_type=entry["id"], params=params,
+        chips=agents_grounding._chip_context(
+            projects_storage.read_spec(user_key, project_id), widgets=params.get("widgets"),
+        ),
     )
     if refusal:
         return agents_tool_rounds._refuse_params(refusal)

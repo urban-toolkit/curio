@@ -93,9 +93,10 @@ def test_the_scanner_finds_an_id_followed_by_options():
     a bundle's one file is ``part=...``, and the generators emit
     ``bounds=None``: the id is still the whole first
     argument, so every scanner finds it, the frontend's included."""
-    from utk_curio.backend.app.agents.application.source_grounding import _CATALOG_CALL_RE
+    from utk_curio.backend.app.agents.application import source_grounding
     from utk_curio.backend.app.datasets.domain.code_refs import COLLECTION_CALL_RE
 
+    catalog_calls = source_grounding._catalog_call_re(source_grounding.data_catalog_calls())
     for code in (
         'src = curio_load_data("data.scout.depth", bounds=None)',
         "src = curio_load_data( 'data.scout.depth' , bounds=(-90.48, 41.44, -90.46, 41.46))",
@@ -103,7 +104,7 @@ def test_the_scanner_finds_an_id_followed_by_options():
     ):
         assert [i for _q, i in _DATASET_PATH_CALL_RE.findall(code)] == ["data.scout.depth"], code
         assert [i for _q, i in COLLECTION_CALL_RE.findall(code)] == ["data.scout.depth"], code
-        assert [m.group(3) for m in _CATALOG_CALL_RE.finditer(code)] == ["data.scout.depth"], code
+        assert [m.group(3) for m in catalog_calls.finditer(code)] == ["data.scout.depth"], code
     # The id must be the whole first argument, not the start of an expression.
     assert not _DATASET_PATH_CALL_RE.search('curio_load_data("data.scout" + suffix)')
     src = SNIPPETS_TS.read_text(encoding="utf-8")

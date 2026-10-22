@@ -220,6 +220,10 @@ class VerifiedRounds:
                 extra_texts=(str(self.node.get("goal") or ""), str(dataflow.get("task") or "")),
                 # #411: a catalog id in THIS node's goal is the dataset it loads.
                 request_texts=(str(self.node.get("goal") or ""),),
+                code_engine=source_grounding.code_engine(
+                    (self.available or {}).get(packages_services.canonical_template_id(self.node_type))
+                ),
+                chips=agents_grounding._chip_context(self.spec, self.node_id),
             )
         except Exception:
             log.warning("Grounding context unavailable for node %s", self.node_id, exc_info=True)
@@ -398,11 +402,13 @@ class VerifiedRounds:
         the next round corrects."""
         if self.grounding_ctx is None:
             return None
-        gate = source_grounding.check_grounding(self.candidate, "python", self.grounding_ctx)
+        gate = source_grounding.check_grounding(
+            self.candidate, self.grounding_ctx.code_engine or "python", self.grounding_ctx,
+        )
         if gate.ok:
             return None
         refusal = source_grounding.refusal_text(gate, self.grounding_ctx)
-        kind = "ungrounded-source"
+        kind = source_grounding.failure_kind(gate)
         declined = not self.use_current and agents_rounds._is_prose_decline(self.candidate)
         if declined:
             # The delegate followed its rule ("return a one-line

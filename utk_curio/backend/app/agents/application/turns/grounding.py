@@ -491,6 +491,8 @@ def _grounding_context(
     is_data_loading: bool | None = None,
     request_texts: tuple = (),
     requested_ids=(),
+    code_engine: str | None = None,
+    chips: dict | None = None,
 ) -> "source_grounding.GroundingContext":
     """dev/114 (DEC-072): everything the gate needs for ONE mint — catalog
     paths, the conversation's evidence, the run-budgeted prober, and the
@@ -499,13 +501,20 @@ def _grounding_context(
 
     #411: the datasets the content must read are ``_requested_dataset_ids``
     plus ``requested_ids`` (the catalog rows the user confirmed for a Solve
-    node)."""
+    node).
+
+    *code_engine* is the engine the node's code runs in
+    (``source_grounding.code_engine``), None for content that is no code: the
+    gate holds the code's calls to it, and a Python node's imports to the
+    modules a run hands it. *chips* are what a run resolves the node's chips
+    with (:func:`_chip_context`), None where there is no dataflow."""
     from utk_curio.backend.app.packages import service as packages_services
 
     if is_data_loading is None:
         is_data_loading = bool(node_type) and source_grounding.loads_dataset(
             node_type, packages_services.roster_templates(user_key, project_id),
         )
+    base_of = base if base is not None else {}
     if base is not None:
         catalog_paths = base.get("catalog_paths") or {}
         catalog_ids = base.get("catalog_ids") or {}
@@ -516,6 +525,13 @@ def _grounding_context(
         catalog_paths, catalog_ids = _catalog_grounding_refs(project_id)
         texts, verified = _session_grounding_evidence(user_key, project_id, loop_ctx)
         secrets = _connection_key_refs(user_key)
+    models = dict(base_of["models"]) if "models" in base_of else _model_refs(user_key)
+    reachable, package_modules = None, None
+    if code_engine == "python" and node_type:
+        package_modules = (
+            base_of["package_modules"] if "package_modules" in base_of else _package_modules(user_key, project_id)
+        )
+        reachable = _reachable_modules(user_key, node_type, project_id)
     texts.extend(t for t in extra_texts if isinstance(t, str) and t.strip())
     budget = _run_egress_budget(loop_ctx)
     cache: dict = loop_ctx.setdefault("_probe_cache", {})
@@ -582,6 +598,11 @@ def _grounding_context(
         requested_dataset_ids=(
             _requested_dataset_ids(loop_ctx, request_texts, catalog_ids) | set(requested_ids)
         ),
+        code_engine=code_engine,
+        models=models,
+        reachable_modules=reachable,
+        package_modules=package_modules,
+        chips=chips,
     )
 
 
@@ -627,20 +648,63 @@ def _gate_generated_content(
     is_data_loading: bool | None = None,
     request_texts: tuple = (),
     requested_ids=(),
+    chips: dict | None = None,
 ) -> tuple["source_grounding.GroundingVerdict", str | None]:
     """The ONE call every agent-authored-content boundary makes (dev/114):
     ``(verdict, refusal_text | None)``. The refusal is model-correctable
-    (DEC-067) and names only routes this run can take."""
+    (DEC-067) and names only routes this run can take. *engine* is the one
+    the node's code runs in (``source_grounding.code_engine``), None for
+    content that is no code, which is read as a document; *chips*, what a
+    run resolves the node's chips with (:func:`_chip_context`)."""
+    code_engine = engine if isinstance(engine, str) and engine else None
     ctx = _grounding_context(
         user_key, project_id, loop_ctx, node_type=node_type, params=params,
         extra_texts=extra_texts, base=base, is_data_loading=is_data_loading,
-        request_texts=request_texts, requested_ids=requested_ids,
+        request_texts=request_texts, requested_ids=requested_ids, code_engine=code_engine, chips=chips,
     )
-    engine_name = engine if isinstance(engine, str) and engine else "python"
-    verdict = source_grounding.check_grounding(code, engine_name, ctx)
+    verdict = source_grounding.check_grounding(code, code_engine or "python", ctx)
     if verdict.ok:
         return verdict, None
     return verdict, source_grounding.refusal_text(verdict, ctx)
+
+
+def _loader_calls(kind: str) -> str:
+    """The calls the gate reads a Data Catalog item of *kind* (``dataset`` or
+    ``collection``) from, as the functions page gives them:
+    ``curio_load_data("<id>") or curio_data_path("<id>")``."""
+    names = [
+        name for name, function in source_grounding.page_functions().items()
+        if source_grounding.catalog_kind(function) == kind
+    ]
+    return " or ".join(f'{name}("<id>")' for name in names)
+
+
+def _chip_context(spec: dict | None, node_id: object = None, widgets=None) -> dict | None:
+    """What a run resolves a node's chips with, as ``WorkflowSpec.node_code``
+    gives it: the node's widgets, its wired circles, each with the scenario
+    label its rows carry, the dataflow's shared tags and the node's selection
+    tags. *widgets* are those of a node the dataflow does not hold yet, as
+    node.create proposes it. None without a dataflow."""
+    from utk_curio.backend.app.execution import workflow_spec
+
+    if not isinstance(spec, dict):
+        return None
+    try:
+        flow = workflow_spec.parse_workflow_dict(spec)
+        node = next((n for n in flow.nodes if n.id == node_id), None) if node_id else None
+        labels = flow.input_scenarios(node.id) if node is not None else {}
+        return {
+            "widgets": list(widgets or []) if node is None else node.widgets,
+            "inputs": [
+                {"slot": slot, **({"scenario": labels[slot]} if slot in labels else {})}
+                for slot in (flow.input_slots(node.id) if node is not None else [])
+            ],
+            "shared": flow.shared_widgets(),
+            "selections": node.selections if node is not None else [],
+        }
+    except Exception:  # noqa: BLE001 - a dataflow that cannot be read resolves no chip
+        log.warning("Could not read the dataflow to resolve chips for source grounding", exc_info=True)
+        return None
 
 
 def _source_grounding_inputs(ctx: "source_grounding.GroundingContext") -> dict:
@@ -674,8 +738,9 @@ def _source_grounding_inputs(ctx: "source_grounding.GroundingContext") -> dict:
         "availableSecrets": secrets,
         "syntheticRequested": bool(ctx.synthetic_requested),
         "rule": (
-            "Load catalog datasets ONLY through their `use` line "
-            "(curio_data_path(\"<id>\") — the sandbox resolves it), open ONLY the "
+            "Load catalog datasets ONLY by their id, written as a string in "
+            f"{_loader_calls('dataset')} (a collection's in {_loader_calls('collection')}), "
+            "as each row's `use` line does: the sandbox resolves it. Open ONLY the "
             "local paths listed (catalogDatasets[].path or userPaths), and fetch ONLY "
             "these URLs (verifiedUrls). Never invent a filename, never "
             "assume a file exists, never write a URL from memory — the runtime "
@@ -698,6 +763,45 @@ def _source_grounding_inputs(ctx: "source_grounding.GroundingContext") -> dict:
             )
         ),
     }
+
+
+def _model_refs(user_key: str) -> dict[str, tuple[int, ...]]:
+    """The models this account has added, ``{model id: (major, ...)}``: the
+    model packages its store holds, which ``models.search`` lists and a
+    node's ``curio_load_model`` runs. A store that cannot be read holds
+    none, so the gate refuses every model, as it does every key."""
+    from utk_curio.backend.app.packages import service as packages_services
+
+    try:
+        held = packages_services.held_model_packages(user_key)
+    except Exception:  # noqa: BLE001 - an unreadable store adds no model
+        log.warning("Could not read the models of %s for source grounding", user_key, exc_info=True)
+        return {}
+    models: dict[str, set[int]] = {}
+    for item in held:
+        if item.folder.name == item.manifest.dir_name:
+            models.setdefault(item.manifest.package_id, set()).add(item.manifest.major)
+    return {model_id: tuple(sorted(majors)) for model_id, majors in models.items()}
+
+
+def _package_modules(user_key: str, project_id: str) -> dict:
+    """Every module a package ships, by name, with the nodes that import it
+    (``packages.module_index``). It never raises: what it cannot read adds
+    nothing, so the gate judges no import of it."""
+    from utk_curio.backend.app.packages import service as packages_services
+
+    return packages_services.module_index(user_key, project_id)
+
+
+def _reachable_modules(user_key: str, node_type: object, project_id: str) -> frozenset[str]:
+    """The modules a run hands a node of *node_type* (``packages.modules_for_node``,
+    the run's own reader): those of its package and of the packages it
+    depends on. A built-in node gets none."""
+    from utk_curio.backend.app.packages import service as packages_services
+
+    found = packages_services.modules_for_node(user_key, node_type, project_id)
+    sources = found if isinstance(found, list) else [found] if isinstance(found, dict) else []
+    return frozenset(name for source in sources for name in source.get("names") or ())
 
 
 def _connection_key_refs(user_key: str) -> dict:
@@ -743,8 +847,9 @@ def _solve_grounding_base(
 ) -> dict:
     """dev/114: ONE grounding base per Solve batch, built in the request
     thread (workers hold no request context): catalog paths, the mission and
-    plan texts (the human-authored intents), and the session-free verified
-    map (empty — Solve has no candidates transcript of its own)."""
+    plan texts (the human-authored intents), the session-free verified
+    map (empty: Solve has no candidates transcript of its own), and the
+    account's keys, models and the modules its packages ship."""
     dataflow = (spec or {}).get("dataflow") or {}
     texts = [str(dataflow.get("task") or ""), str(dataflow.get("name") or "")]
     for node_id in targets:
@@ -757,4 +862,6 @@ def _solve_grounding_base(
         "texts": [t for t in texts if t.strip()],
         "verified": {},
         "secrets": _connection_key_refs(user_key),
+        "models": _model_refs(user_key),
+        "package_modules": _package_modules(user_key, project_id),
     }
