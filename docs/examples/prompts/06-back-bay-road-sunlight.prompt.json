@@ -4,10 +4,10 @@
   "version": 1,
   "source": {
     "path": "docs/examples/06-back-bay-road-sunlight.json",
-    "sha256": "2a1654960521df059cf0098dd09f8ae4501fe068177ff8691ab7609efb6f5d39",
+    "sha256": "7aa461fcad852ccea46329685507c55ba1bb7419d819fab3cb586870b64438e6",
     "walkthrough": "docs/examples/06-back-bay-road-sunlight.md"
   },
-  "prompt": "I want a what-if shadow study for the Back Bay area of Boston, set up as three scenarios I can compare. The OSM extract is a file in this checkout at docs/examples/data/back_bay.osm.pbf. Load its layers in the browser with Autark once, and hand them to every scenario through a shared fan-out. In each scenario a GPU shader adds up every road segment's minutes of sunlight over the June solstice, with the building heights scaled by a height factor I set in a widget: 1 in a scenario called Baseline, 2 in a copy of it called Twice as tall, and 1 in a third copy called Two towers removed, where the buildings first lose two towers, 200 Clarendon and Raffles (building_id 29623484 and 29628154), every part of each. Show each scenario's roads on its own 3D map coloured by sunlight. Then compare the scenarios' roads: a bar chart of the three scenarios' mean road sunlight, and a map of how much sunlight each road loses in Twice as tall, on a red, yellow and blue scale from -360 to 360 minutes with no change in its middle.",
+  "prompt": "I want a what-if shadow study for the Back Bay area of Boston, set up as three scenarios I can compare. The OSM extract is a file in this checkout at docs/examples/data/back_bay.osm.pbf. Load its layers in the browser with Autark once, and hand them to every scenario through a shared fan-out. In each scenario a GPU shader adds up every road segment's minutes of sunlight over the June solstice, with the building heights scaled by a height factor I set in a widget: 1 in a scenario called Baseline, 2 in a copy of it called Twice as tall, and 1 in a third copy called Two towers removed, where the buildings first lose two towers, 200 Clarendon and Raffles (building_id 29623484 and 29628154), every part of each. I make those edits on a map of that scenario's buildings coloured by height, linked both ways to the step that edits them, so a building I pick on the map is picked there. Show each scenario's roads on its own 3D map coloured by sunlight. Then compare the scenarios' roads: a bar chart of the three scenarios' mean road sunlight, and a map of how much sunlight each road loses in Twice as tall, on a red, yellow and blue scale from -360 to 360 minutes with no change in its middle.",
   "context": null,
   "required": {
     "datasets": [],
@@ -77,6 +77,13 @@
         "hasContent": true
       },
       {
+        "ref": "visualization9",
+        "type": "curio.builtin/autk-grammar",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": true
+      },
+      {
         "ref": "analysis1",
         "type": "curio.builtin/computation-analysis",
         "role": "analysis",
@@ -119,7 +126,7 @@
         "hasContent": true
       },
       {
-        "ref": "visualization9",
+        "ref": "visualization10",
         "type": "curio.scout/bars",
         "role": "visualization",
         "executable": false,
@@ -175,18 +182,18 @@
       },
       {
         "from": "analysis1",
-        "to": "visualization9",
+        "to": "visualization10",
         "kind": "data"
       },
       {
         "from": "analysis2",
-        "to": "visualization9",
+        "to": "visualization10",
         "kind": "data",
         "slot": 1
       },
       {
         "from": "analysis3",
-        "to": "visualization9",
+        "to": "visualization10",
         "kind": "data",
         "slot": 2
       },
@@ -214,6 +221,16 @@
         "from": "transform1",
         "to": "visualization8",
         "kind": "data"
+      },
+      {
+        "from": "transform1",
+        "to": "visualization9",
+        "kind": "data"
+      },
+      {
+        "from": "transform1",
+        "to": "visualization9",
+        "kind": "interaction"
       }
     ],
     "sources": {
@@ -257,7 +274,7 @@
   "split": "validation",
   "review": {
     "status": "pending-owner-review",
-    "draftedBy": "the example 06 scenario study (#662), from the example JSON and its walkthrough, 2026-10-05; its third scenario from the Edit Features step, 2026-10-06; its difference map on an Autark node after the Compare Scenarios node, 2026-10-17; that map on a scale centered on no change, 2026-10-17; its comparisons without Compare Scenarios, a Roads step per scenario charted by Scout's Bars and a Python step taking the sunlight change, in the plan answering komar41's review (step 6.3), 2026-10-20",
+    "draftedBy": "the example 06 scenario study (#662), from the example JSON and its walkthrough, 2026-10-05; its third scenario from the Edit Features step, 2026-10-06; its difference map on an Autark node after the Compare Scenarios node, 2026-10-17; that map on a scale centered on no change, 2026-10-17; its comparisons without Compare Scenarios, a Roads step per scenario charted by Scout's Bars and a Python step taking the sunlight change, in the plan answering komar41's review (step 6.3), 2026-10-20; its Edit Features step feeding a map of the buildings, linked to it by an interaction edge, in the plan revising PR #1055 (step 7), 2026-10-22",
     "reviewedBy": null,
     "reviewedAt": null
   },
@@ -266,5 +283,5 @@
     "licence": "MIT (this repository)",
     "notes": "The prompt, the expected graph and the plan target are authored in this repository; the datasets appear only as ids."
   },
-  "notes": "The Autark steps run in the browser, and the Python steps in the sandbox: the Edit Features step between the pool and a shadow step, a Roads step after each shadow step, which Scout's Bars charts, and the Sunlight change step after Baseline's and Twice as tall's maps. An Autark map after the Sunlight change step draws each road's sunlight change on a diverging scale centered on no change. GPU shader work, so execution is opt-in."
+  "notes": "The Autark steps run in the browser, and the Python steps in the sandbox: the Edit Features step between the pool and a shadow step, which also feeds a map of the buildings it is linked to, a Roads step after each shadow step, which Scout's Bars charts, and the Sunlight change step after Baseline's and Twice as tall's maps. An Autark map after the Sunlight change step draws each road's sunlight change on a diverging scale centered on no change. GPU shader work, so execution is opt-in."
 }
