@@ -90,60 +90,62 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* The chevron of every expander, a category's or a tag's: down while closed,
-   up while open. */
+/* The chevron of every expander: a category's points down while closed and up
+   while open, an input line's right while closed and down while open. */
 .chevron {
   display: block;
   flex: none;
 }
 
 /* An open category's tags: one row, in order. */
-.categoryChips,
-.tagRow {
+.categoryChips {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 4px;
 }
 
-/* Inputs: its row of tags, then each open list below it. */
+/* Inputs: a line per input, each open list under its own line. */
 .categoryStack {
   display: flex;
   flex-direction: column;
   gap: 4px;
 }
 
-/* A tag that opens a list, as one pill: the tag, then its chevron button,
-   their borders shared. */
-.tagPill {
-  display: inline-flex;
-  align-items: stretch;
+/* A line under Inputs: its expander, its tag, then what its input holds. */
+.inputLine {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
 }
 
-.tagPill > :first-child {
-  border-top-right-radius: 0;
-  border-bottom-right-radius: 0;
-}
-
+/* A line's expander: a square button in the inputs' green, pressed while its
+   list is open. */
 .expand {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  flex: none;
   box-sizing: border-box;
-  min-width: 18px;
+  width: 22px;
   height: 22px;
-  margin-left: -1px;
-  padding: 0 4px;
+  padding: 0;
   border: 1px solid #a8d5b1;
-  border-radius: 0 var(--curio-radius-sm) var(--curio-radius-sm) 0;
+  border-radius: var(--curio-radius-sm);
   background: var(--curio-card-bg);
   color: var(--curio-accent-mint-fg);
   cursor: pointer;
 }
 
 .expand:hover {
-  background: var(--curio-accent-mint-bg);
   border-color: var(--curio-accent-mint-fg);
+  background: var(--curio-accent-mint-bg);
+}
+
+.expand[aria-expanded="true"] {
+  background: #cfe9d5;
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.15);
 }
 
 .expand:focus-visible {
@@ -151,35 +153,47 @@
   outline-offset: 1px;
 }
 
-/* A pill whose list is open shows as pressed. */
-.tagPill[data-open="true"] > :first-child,
-.tagPill[data-open="true"] > .expand {
-  background: #cfe9d5;
-  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.15);
+/* What a line's input holds, muted, cut short with an ellipsis on a narrow
+   node. */
+.inputAbout {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--curio-text-secondary);
+  font-size: 10px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
-/* An open list: a panel below the row of tags, headed by its tag's name, with
-   a rule on its left. */
-.list {
+/* An open list, under its own line and past its expander: the expander's width
+   and the line's gap. */
+.inputList {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  margin-left: 6px;
-  padding: 2px 0 2px 8px;
-  border-left: 2px solid #a8d5b1;
+  margin-left: 28px;
 }
 
-.listName {
-  color: var(--curio-text-secondary);
-  font-size: 10px;
-  font-weight: 600;
-}
-
+/* A list's chips: an input's columns, a layer's, or the fields of inputs. */
 .listChips {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 4px;
+}
+
+/* A layered input's list: a line per layer, its tag and then its columns, one
+   grid, so the layers' tags line up in one column. */
+.layers {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 4px 6px;
+}
+
+.layerLine {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: subgrid;
+  align-items: start;
 }
 
 .stripHint {
@@ -194,6 +208,12 @@
   border-color: #a8d5b1;
   background: var(--curio-accent-mint-bg);
   color: var(--curio-accent-mint-fg);
+}
+
+/* A layer's tag, first on its line, as wide as its name. */
+.layerTag {
+  composes: inputTag;
+  justify-self: start;
 }
 
 /* A shared tag, a Parameter node's widget: amber, like its chips. */
@@ -247,11 +267,6 @@
   height: 10px;
   border-radius: 2px;
   box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.2);
-}
-
-.columnFilter {
-  font-size: 10px;
-  width: 110px;
 }
 
 /* A node's Widgets tab and a Parameter node's body. A panel that holds more

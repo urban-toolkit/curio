@@ -192,6 +192,9 @@ export interface InputScope {
   /** The layers it carries, once known, when it carries several (an Autark
    * node's tables). */
   layers?: LayerScope[] | null;
+  /** How many values it holds, once known, when it is a tuple: several frames
+   * with no names, as a Python node's `return a, b` gives. */
+  tuple?: number;
   /** The layer name of the one frame it carries, when its value names the
    * table it is read as (`layerName`, on a reference or an envelope): known
    * before the input is read. */

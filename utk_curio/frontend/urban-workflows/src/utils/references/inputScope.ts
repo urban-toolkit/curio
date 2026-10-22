@@ -22,6 +22,8 @@ export interface InputColumns {
     dtypes: Record<string, string>;
     /** The named layers it carries, when it carries several. */
     layers?: LayerScope[];
+    /** How many values it holds, when it is a tuple of frames with no names. */
+    tuple?: number;
 }
 
 /** What identifies an input's value, so its columns are read once per value. */
@@ -67,6 +69,7 @@ export function inputScopeFor(
             scope.columns = read.columns;
             scope.dtypes = read.dtypes;
             if (read.layers) scope.layers = read.layers;
+            if (read.tuple) scope.tuple = read.tuple;
         } else if (value == null || value === "") {
             // Nothing has arrived yet, so there is nothing to read.
             scope.columns = null;
@@ -97,7 +100,8 @@ function frameColumns(frame: GrammarFrame): { columns: string[]; dtypes: Record<
 /**
  * The columns of an input's value, from its 100-row preview, as starter specs
  * read it, or the named layers it carries with theirs (an Autark node's
- * tables). An input that is not a table has none.
+ * tables). Several frames none of which is named are a tuple's values, which
+ * it counts. An input that is not a table has none.
  */
 export async function readInputColumns(value: unknown): Promise<InputColumns> {
     const read = await readGrammarInput(value, { label: "this input", preview: true, bundles: true });
@@ -105,6 +109,9 @@ export async function readInputColumns(value: unknown): Promise<InputColumns> {
         const layers = read.frames
             .filter((frame) => typeof frame.name === "string" && isReferenceableLayer(frame.name))
             .map((frame) => ({ name: frame.name as string, ...frameColumns(frame) }));
+        if (read.frames.every((frame) => frame.name == null)) {
+            return { columns: [], dtypes: {}, layers, tuple: read.frames.length };
+        }
         return { columns: [], dtypes: {}, layers };
     }
     const frame = read.frames[0];
