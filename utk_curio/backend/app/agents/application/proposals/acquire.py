@@ -394,7 +394,9 @@ def _mint_row_acquirable(row: dict, roster: "_LazyRoster", budget=None) -> None:
       Discovery Catalog confirms the resource id, as for a
       ``discovery.acquire`` proposal, spending one call of *budget*, the
       run's web budget, when one is given. The connector knows how to fetch
-      the resource, so the probe of a landing page does not decide it.
+      the resource, so the probe of a landing page does not decide it. Once
+      the budget is spent the source is not asked: the row keeps its
+      coordinate, unconfirmed, and is not acquirable (:func:`_unconfirmed`).
     - A ``direct`` source downloads the URL itself, so the probe decides: an
       https URL the probe read as data, whose content type maps to a format the
       source accepts or which is a zip or a gzip the download unpacks, and
@@ -404,24 +406,40 @@ def _mint_row_acquirable(row: dict, roster: "_LazyRoster", budget=None) -> None:
     A row with a plain link and no coordinate is tried as a ``direct`` row: the
     coordinate is minted here, after parsing, so it is never model-supplied and
     never meets the parser's length cap. A coordinate, minted or the model's,
-    stays only when the row qualifies, so one the runtime did not confirm never
-    reaches a download, a builder or a file's provenance. A downloadable row
-    offers that and nothing else, so it carries no portal steps.
+    stays only when the row qualifies or the source was not asked, so one the
+    source refused never reaches a download, a builder or a file's provenance.
+    A downloadable row offers that and nothing else, so it carries no portal
+    steps.
     """
     row.pop("acquirable", None)
     if not (row.get("sourceId") and row.get("resourceId")) and str(row.get("url") or "").startswith("https://"):
         direct = roster.direct()
         if direct:
             row["sourceId"], row["resourceId"] = direct, row["url"]
-    if _acquirable(row, roster, budget):
+    verdict = _acquirable(row, roster, budget)
+    if verdict:
         row["acquirable"] = True
         row.pop("downloadSteps", None)
-    else:
+    elif verdict is not None:
         row.pop("sourceId", None)
         row.pop("resourceId", None)
 
 
-def _acquirable(row: dict, roster: "_LazyRoster", budget=None) -> bool:
+def _unconfirmed(rows: list) -> int:
+    """How many of *rows* keep a Discovery coordinate the source was not asked
+    to confirm, the run's web budget being spent: after
+    :func:`_mint_row_acquirable`, every row with a coordinate that is not
+    acquirable."""
+    return sum(
+        1 for row in rows or []
+        if isinstance(row, dict) and row.get("sourceId") and row.get("resourceId")
+        and not row.get("acquirable")
+    )
+
+
+def _acquirable(row: dict, roster: "_LazyRoster", budget=None) -> bool | None:
+    """Whether Curio can download *row*: True or False, or None for a
+    connector row whose source was not asked, the budget being spent."""
     source = roster.get(row.get("sourceId")) if row.get("resourceId") else None
     # A storage source (a folder, a bucket, a dataset repository) is added from
     # the Discovery Catalog page, and a service downloads for an area set there:

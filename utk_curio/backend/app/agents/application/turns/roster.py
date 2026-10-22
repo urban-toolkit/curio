@@ -212,24 +212,24 @@ class _LazyRoster:
                 return dir_name
         return None
 
-    def describes(self, dir_name: str, resource_id: str, *, budget=None) -> bool:
+    def describes(self, dir_name: str, resource_id: str, *, budget=None) -> bool | None:
         """Whether the source *dir_name* describes *resource_id*: the Discovery
         Catalog's own describe, the call a ``discovery.acquire`` proposal is
-        grounded in, asked once per resource in a pass. With *budget*, the
-        run's web budget, each ask spends one call, and a spent budget is a
-        no. A describe that fails, for a resource the source does not have or
-        for any other reason, is a no."""
+        grounded in, asked once per resource in a pass. A describe that fails,
+        for a resource the source does not have or for any other reason, is
+        False. With *budget*, the run's web budget, each ask spends one call,
+        and once it is spent the source is not asked: None, unconfirmed."""
         key = (dir_name, resource_id)
         if key not in self._described:
-            self._described[key] = self._describe(dir_name, resource_id, budget)
+            if budget is not None:
+                if budget.exhausted:
+                    return None
+                budget.spend()
+            self._described[key] = self._describe(dir_name, resource_id)
         return self._described[key]
 
     @staticmethod
-    def _describe(dir_name: str, resource_id: str, budget) -> bool:
-        if budget is not None:
-            if budget.exhausted:
-                return False
-            budget.spend()
+    def _describe(dir_name: str, resource_id: str) -> bool:
         try:
             from utk_curio.backend.app.agents.application.proposals import acquire
 

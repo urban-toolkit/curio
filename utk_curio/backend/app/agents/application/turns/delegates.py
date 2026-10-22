@@ -28,6 +28,7 @@ from utk_curio.backend.app.agents.repositories import sessions
 from utk_curio.backend.app.agents.application import lifecycle as agents_lifecycle
 from utk_curio.backend.app.agents.application import spec_reads as agents_spec_reads
 from utk_curio.backend.app.agents.application import tools as agents_tools
+from utk_curio.backend.app.agents.application.proposals import acquire as agents_acquire
 from utk_curio.backend.app.agents.application.proposals import mint as agents_mint
 from utk_curio.backend.app.agents.application.proposals import plans as agents_plans
 from utk_curio.backend.app.agents.application.turns import grounding as agents_grounding
@@ -93,6 +94,10 @@ def _mint_candidates_from_delegate(
     loop_ctx["_candidates_pending_review"] = True
     total = sum(len(v) for v in parsed["lanes"].values())
     note = f" {dropped} catalog row(s) were dropped (not in the Data Catalog)." if dropped else ""
+    unconfirmed = agents_acquire._unconfirmed(parsed["lanes"].get("external"))
+    if unconfirmed:
+        note += (f" {unconfirmed} Discovery resource id(s) went unconfirmed, so their rows "
+                 "are not marked downloadable.")
     return parsed, (
         f"{total} dataset candidate(s) are shown to the user for review; external rows "
         "carry the runtime's verification verdict." + note +
