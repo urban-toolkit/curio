@@ -34,7 +34,6 @@ from .utils import (
     install_session_cookie,
     leave_agent_badge,
     node_locator,
-    read_node_code,
     require_owner_view,
     require_project_page,
     require_user_auth,
@@ -103,15 +102,23 @@ def _write_reply() -> str:
     return "I will remove building 2.\n\n```curio.v1\n" + json.dumps(request) + "\n```"
 
 
+#: The code a canvas node holds, as a save writes it: its data, read from the
+#: canvas, which a node showing its body rather than its editor holds too.
+_NODE_CODE_JS = """(nodeId) => {
+    const flow = window.__curio_reactFlow;
+    const node = flow && flow.getNodes().find((n) => n.id === nodeId);
+    const code = node && node.data ? (node.data.code ?? node.data.defaultCode) : null;
+    return typeof code === "string" ? code : null;
+}"""
+
+
 def _wait_for_code(page, node_id: str, code: str, *, timeout: float = 30.0) -> None:
-    """Wait until the node's editor holds *code*."""
+    """Wait until the node holds *code* on the canvas."""
+    page.wait_for_function("() => !!window.__curio_reactFlow", timeout=30000)
     deadline = time.time() + timeout
-    held = ""
+    held = None
     while time.time() < deadline:
-        try:
-            held = read_node_code(page, node_id, timeout=5000)
-        except Exception:  # noqa: BLE001 - polled: an editor still mounting is "not yet"
-            held = ""
+        held = page.evaluate(_NODE_CODE_JS, node_id)
         if held == code:
             return
         page.wait_for_timeout(250)
