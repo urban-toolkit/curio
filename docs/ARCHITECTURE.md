@@ -12,6 +12,7 @@ This document describes the internal architecture of Curio for contributors who 
   * [FlowProvider: Central Workflow State](#flowprovider-central-workflow-state)
   * [The notebook view](#the-notebook-view)
   * [Drawing scenarios](#drawing-scenarios)
+  * [Tooltips](#tooltips)
 * [Nodes: Types and Structure](#nodes-types-and-structure)
   * [Node Packages and Manifests](#node-packages-and-manifests)
   * [A dataflow's tags and data types](#a-dataflows-tags-and-data-types)
@@ -34,7 +35,8 @@ This document describes the internal architecture of Curio for contributors who 
 * [Interactions and Propagation](#interactions-and-propagation)
 * [Provenance Tracking](#provenance-tracking)
 * [The Trill Dataflow Format](#the-trill-dataflow-format)
-* [Generated Contracts](#generated-contracts)
+* [Agent text](#agent-text)
+  * [Generated Contracts](#generated-contracts)
   * [The Autark Schema](#the-autark-schema)
 * [Agent Prompt Composition](#agent-prompt-composition)
 * [LLM Configurations and Resolution](#llm-configurations-and-resolution)
@@ -610,6 +612,48 @@ text in `data.code` (the spec's `content`) and the color in
   input, no widgets. `presentation_templates`, the roster's `presentation` flag and
   an enlisted package's notes read it, so the Researcher's notes find the Note
   rather than a Data Pool or a Parameter node.
+
+### Tooltips
+
+Every hover in Curio shows one tooltip, drawn by `components/tooltip/TooltipLayer.tsx`
+(mounted once in `index.tsx`) in a portal on `document.body`. It sits outside the
+canvas's viewport, so it is the same size at every zoom and no node clips it.
+
+- An element names its tooltip in `data-tooltip`, where it would have written a
+  `title`, which draws the browser's own; a control whose only name was its title
+  has an `aria-label` too. The layer listens on the document and shows the tooltip of
+  the nearest `[data-tooltip]` under the pointer or the keyboard's focus; while it
+  shows, the element's `aria-describedby` names it, or, for the keyboard's focus,
+  the focused control's. `noOtherTooltips.test.ts` fails on a `title` on an element,
+  on a component that hands it to one (React Flow's `Handle`, `FontAwesomeIcon`, any
+  MUI component), on an `OverlayTrigger` or on a Monaco `hoverMessage` in `src/`.
+- A tooltip with more than words (a list, a preview) comes from
+  `useTooltipContent(node)`, whose props, `data-tooltip-content`, go on the element.
+- `data-tooltip-side` says where it opens: `top`, the default, above the element and
+  centered on it, or below when there is no room; `right`, for the tool rail's
+  palette rows; `pointer`, for a chart's marks. `placeTooltip` (`tooltipPlacement.ts`)
+  keeps it in the window, 6 px from its target.
+- `tooltipStore.ts` holds the timing: the tooltip shows 400 ms after the pointer
+  rests, at once when another closed less than 600 ms before, and hides 100 ms after
+  the pointer leaves. The pointer may cross over onto the tooltip, and leaving the
+  tooltip hides it the same way, whoever opened it; one at the pointer (a chart's)
+  lets the pointer through instead. A held touch shows it after 500 ms, the
+  keyboard's focus at once. A press hides it, and it stays off while the pointer
+  stays on that target (a chart's next mark asks again); a wheel, a drag, Escape or
+  the window losing focus hide it, and so does a scroll of what holds the element it
+  is placed beside. A flow hides it when its view moves (`useViewportMotionHint`).
+  `setTooltipTimings` sets the delays and `resetTooltipStore` starts it afresh, for
+  tests.
+- Monaco's own hover is off in every editor (`hover: { enabled: false }`).
+  `useEditorTooltip` shows, in the Curio tooltip, the markers' messages first, then
+  what a chip writes or, in JavaScript, the TypeScript worker's quick info for the
+  word under the pointer. Cmd+K Cmd+I (Ctrl on Windows and Linux) shows it at the
+  caret: an action of each editor, so it works in the one with the focus.
+- A Vega-Lite chart's tooltip handler is `vegaTooltipHandler` (`vegaTooltip.ts`): it
+  writes the hovered mark's fields, as Vega's own handler words them, in the chart
+  element's `data-tooltip`, and the tooltip shows at the pointer.
+- An e2e capture hides an open tooltip unless the test passes `keep_tooltip`
+  (`test_frontend/utils/images.py`).
 
 ---
 
@@ -1521,34 +1565,24 @@ Full field reference, ownership rules, and the CLI for checking your own project
 
 ---
 
-## Generated Contracts
+## Agent text
 
-Some contracts are read on both sides of the stack: by Python and TypeScript, or by the code and a model prompt. Each one is defined once and every other copy is generated from it, so the copies cannot disagree.
+Everything an agent reads is hand-written Markdown in `agents/`, the Agent Catalog's folder, and the backend renders it when it starts. No render is generated or committed, and `utk_curio/` holds none of the text: it holds the loader, the code that computes the facts the text states, and the checks.
 
-- **Source module.** [`utk_curio/backend/app/agents/domain/contracts.py`](../utk_curio/backend/app/agents/domain/contracts.py) holds each definition and one render function per output. It lives in the app package, so runtime code imports it from an installed wheel, and its module-level imports are the standard library only: a prompt field imports the module that owns its fact inside its own function. Python callers such as `result_shape.py`, `services.py` and `execution/runtime_journal.py` import the values directly.
-- **Registry.** `contracts.GENERATED_OUTPUTS` maps each repo-relative output path to the function that renders it. The generator and the drift test both iterate it, so a new output is one entry. It is built when it is read, since where a rendered prompt goes comes from the shipped agents' manifests (`contracts.prompt_outputs`).
-- **Generator.** [`scripts/generate_contracts.py`](../scripts/generate_contracts.py) is a thin CLI over the registry. It writes every output that differs from a fresh render; with `--check` it writes nothing, lists the stale files and exits non-zero.
-- **Outputs.** Committed to the repository. Code outputs start with a header that names the generator and the source module, and TypeScript outputs pass the frontend's `prettier` and `eslint` configs as generated. A prompt output has no header, since the model reads it verbatim; its hand-written text is a template in `utk_curio/llm-prompts/` (`<name>.template.md`), whose `{{...}}` markers are the generated parts. The prompt is written into the folder of the shipped agent whose manifest names `prompts/<name>.md`, and beside its template when no manifest names it: the shared preamble and the fragments other prompts include.
+- **Where it lives.**
+  - **The base entry**, [`agents/agent.curio.builtin@1/`](../agents/agent.curio.builtin@1/), holds the pages every agent Curio ships reads, as `packages/curio.builtin@1` is the base of the nodes. Its manifest says `kind: base` and lists its pages (`pages`): `default_preamble.md`, the preamble; `examples.md`, the worked examples' index (see [Agent Prompt Composition](#agent-prompt-composition)); and `rules/`, text that prompts include whole. `rules/package_contract.md` is the package backend contract, which the Node Builder's package-writing mode includes and a delegated call of that mode receives as its build-request contract's `backendContract`. `rules/research_verify_rules.md` and `rules/research_notes_rules.md` are the Researcher's rules for checking a fact and its notes format, each included by two of its prompts. Its README says how to edit a page. The base entry is no agent: `builtin` leaves it out of the roster, so no catalog listing, palette, LLM choice or delegation shows it, and `parse_agent_manifest` refuses a manifest of kind `base`. The loader finds it by its kind (`agent_text.base_dir`), so no code names its id.
+  - **Each agent Curio ships** keeps its own prompts in `agents/<id>@<major>/prompts/`, each named by its manifest.
+  - **A user's agent** keeps its prompts in its store folder, as uploaded.
+- **`curio:<path>`.** A manifest names a page of the base entry as `curio:<path>`, such as `curio:default_preamble.md`, the preamble every agent Curio ships names, or `curio:rules/research_verify_rules.md`. `agent_text.page_file` resolves it, and refuses a path that is not a page the base entry lists or that leads out of it: `..`, an absolute path, or a symbolic link to a file outside. The parser checks every `curio:` path, so an upload that names no page is refused with the list of pages. A page whose file is missing is logged and reads as None. An export or an install's copy carries the page as `prompts/<path>`, its rendered text; publishing an agent and adding a published one keep the name.
+- **Markers.** A page or prompt states a fact the code owns through a marker, `{{field}}` or `{{field:argument}}`, which `contracts.render_template` fills from `contracts.PROMPT_FIELDS` (below). `{{include:<path>}}` puts another page of the base entry in its place, rendered, without its final line breaks; a page that includes itself is refused. A marker no field defines, a field given the wrong argument, or a `{{` left in the result raises `PromptTemplateError`.
+- **When it is read.** `create_app` calls [`agent_text.render_at_start`](../utk_curio/backend/app/agents/domain/agent_text.py), which renders each page the base entry lists and each prompt each agent Curio ships names, once per process; a marker error stops the start and names the file. Every read returns that render (`agent_text.read`): an agent's prompts (`builtin.read_prompt_text`), a page by its path (`builtin.read_page`), the worked examples' index and the delegated package contract. Under `curio.py start --dev` (`CURIO_DEV=1`), a read renders the file again, so an edit shows on the next run. A user's own prompts are never rendered: they are read as written, `{{` included.
+- **Checks.** [`test_agent_text.py`](../utk_curio/backend/tests/test_agents/test_agent_text.py) starts the backend and fails on a file in `agents/` no manifest lists or a marker left in a render. It also checks that a marker no field defines stops the start, that a page cannot include itself, that a `curio:` path cannot lead out of the base entry, and that no list shows the base entry. [`test_generated_contracts.py`](../utk_curio/backend/tests/test_agents/test_generated_contracts.py) checks each fact the text states against the code that owns it; `test_prompt_references.py` checks every tool, capability, template, helper, dataset and model a page or prompt names against the code and catalogs that define it; `test_pip_wheel_layout.py` renders every page from a pip install.
 
-  | Output | Contract |
-  |---|---|
-  | `utk_curio/frontend/urban-workflows/src/generated/renderCauses.ts` | The empty-render kind prefix, the render causes, the `RenderCause` type and which causes blame the document (see [Render Outcomes](#render-outcomes)) |
-  | `utk_curio/frontend/urban-workflows/src/generated/autkGrammar.ts` | The Autark grammar's top-level families, the names a grammar node's inputs are read by, `input_<k>`, and the one view a node draws: `AUTK_ONE_VIEW`, what a document with more than one view is told, and `autkOneViewProblem`, the check that tells it (see [Referencing Upstream Data in Autark Nodes](#referencing-upstream-data-in-autark-nodes)) |
-  | `utk_curio/frontend/urban-workflows/src/generated/agentCategories.ts` | The agent manifest's category vocabulary and the `AgentCategory` type, from `manifest.AGENT_CATEGORIES` |
-  | `utk_curio/frontend/urban-workflows/src/generated/solveStopReasons.ts` | Why a node's repair loop stopped (`stoppedBy`), the `StopReason` type and the phrase each reason reads as, from `SOLVE_STOP_REASONS`; the server's failure sentences read the same table (see [The Solve loop](#the-solve-loop)) |
-  | `utk_curio/frontend/urban-workflows/src/generated/visDefaults.ts` | What a visualization node does with its input by itself, from the tables in `contracts.py`: the column roles and the pandas dtype each role comes from; the Vega-Lite and Autark starter ladders, each rule's id, condition, mark or family and description in ladder order; the Vega-Lite `$schema` URL; and the column names, URL extensions and share of image values behind Simple View's image columns. `starterSpec.ts`, `vegaDefaultSpec.ts`, `autkDefaultSpec.ts` and `imageColumns.ts` read it and keep each rule's builder, keyed by its id, and the matching logic |
-  | `utk_curio/frontend/urban-workflows/src/generated/noteColors.ts` | A note's palette, its default color, the two inks and two link colors, and the contrast an ink must reach, from `packages/domain/node_appearance.py`; `utils/noteColors.ts` derives a Note's colors from them (see [Notes](#notes)) |
-  | `utk_curio/llm-prompts/default_preamble.md` | The shared agent preamble: the Trill block, projected from [`docs/schemas/trill.v1.json`](schemas/trill.v1.json) to the fields `contracts.TRILL_PROMPT_FIELDS` names; every list of built-in templates (description, control, port types, the connections an input accepts, output cardinality, interaction support), read from the built-in manifest and the packages layer's `input_capacity`, and naming each template by its label; the handles of a node's input circles and the input chips; the label of each template its prose names; the section on Autark documents, rendered from the vendored schema (see [The Autark Schema](#the-autark-schema)); and the starter ladders, the dtype roles, the Vega-Lite `$schema` URL and the image column names, extensions and share, from the same tables as `visDefaults.ts` |
-  | `utk_curio/llm-prompts/package_contract.md` | The package backend contract: the handler name pattern, the timeout classes, the two permissions and the variable that names a handler's data directory, from `packages/domain/backend_contract.py`. `package_build_instruction.md` (the Node Builder's package-writing mode) includes it whole, and a delegated call of that mode receives the file as its build-request contract's `backendContract` |
-  | `utk_curio/llm-prompts/research_verify_rules.md` | The Researcher's rules for checking a fact: verify before asserting, a failure to verify is a finding, the VERIFIED, REPORTED and UNVERIFIED labels with what was checked, and the web-call budget. `researcher_instruction.md` (its chat) and `research_instruction.md` (its `research.verify` mode) include it whole |
-  | `utk_curio/llm-prompts/research_notes_rules.md` | The Researcher's notes format: the question note first, then one answer note per finding, content in markdown with a source link for every web fact, nothing invented. `researcher_instruction.md` (its chat) and `researcher_notes_instruction.md` (its `research.notes.compose` mode) include it whole |
-  | Every other prompt in `contracts.PROMPT_TEMPLATES`, in its agent's folder in `agents/` | What that prompt states from code, through the fields below: the built-in agents' names, the built-in templates' labels, the input chips and the handles of a node's input circles, the templates the coherence check skips, the note palette, the web-call budget, the rows per candidates lane, and the node context's runtime keys, `inputContract` kinds and runtime row fields |
-
-- **Prompt fields.** `contracts.PROMPT_FIELDS` is the one registry of what a prompt template may state from code. A marker is `{{field}}`, or `{{field:argument}}` for a field that takes an argument, and each field is one function that reads its source. `contracts.render_prompt` fills the markers a template holds, and raises on a field the registry does not define and on any `{{` left in the result.
+- **Prompt fields.** `contracts.PROMPT_FIELDS` is the one registry of what a page or prompt may state from code, and each field is one function that reads its source when the file is rendered. Its module-level imports are the standard library only: a field imports the module that owns its fact inside its own function.
 
   | Field | Renders | Source |
   |---|---|---|
-  | `trill.schema`, `builtin.nodes`, `builtin.control`, `builtin.inputs`, `builtin.outputs`, `builtin.input_count`, `builtin.output_count`, `builtin.interaction`, `autk.grammar` | The preamble's Trill block, lists of built-in templates and section on Autark documents | The Trill schema, the built-in manifest, `input_capacity`, the vendored Autark schema |
+  | `trill.schema`, `builtin.nodes`, `builtin.control`, `builtin.inputs`, `builtin.outputs`, `builtin.input_count`, `builtin.output_count`, `builtin.interaction`, `autk.grammar` | The preamble's Trill block, projected from [`docs/schemas/trill.v1.json`](schemas/trill.v1.json) to the fields `contracts.TRILL_PROMPT_FIELDS` names; its lists of built-in templates (description, control, port types, the connections an input accepts, output cardinality, interaction support), naming each template by its label; and its section on Autark documents (see [The Autark Schema](#the-autark-schema)) | The Trill schema, the built-in manifest, `input_capacity`, the vendored Autark schema |
   | `agent.name:<agent id>` | A built-in agent's display name | The shipped agents' manifests (`builtin.list_builtin_manifests`) |
   | `template.label:<package id>/<template id>` | A built-in template's label | The built-in manifest |
   | `inputs.handles` | The handles of a node's input circles, `"in", "in_1", "in_2", ...` | `workflow_spec.slot_handle_id` |
@@ -1561,17 +1595,34 @@ Some contracts are read on both sides of the stack: by Python and TypeScript, or
   | `input_contract.single`, `input_contract.several`, `input_contract.gathered` | The `inputContract` kinds a node's inputs can have | `input_contract.KIND_SINGLE`, `KIND_SEVERAL`, `KIND_GATHERED` |
   | `vega.runtime_field:<name>` | A field Curio adds to every row a Vega-Lite node reads | `document_validation.RUNTIME_FIELDS` |
   | `backend.handler_pattern`, `backend.timeout_classes`, `backend.server_code_permission`, `backend.server_network_permission`, `backend.data_dir_env` | The package backend contract's names | `packages/domain/backend_contract.py` |
-  | `package.contract` | `package_contract.md`, whole | `package_contract.template.md` |
-  | `research.verify_rules` | `research_verify_rules.md`, whole | `research_verify_rules.template.md` |
-  | `research.notes_rules` | `research_notes_rules.md`, whole | `research_notes_rules.template.md` |
+  | `include:<path>` | A page of the base entry, rendered, whole | The page |
   | `vega.starter_ladder`, `autk.starter_ladder` | A starter ladder, one line per rule in order: the layers and column roles it needs, the mark or family it writes, and its description | `contracts.VEGA_STARTER_LADDER`, `AUTK_STARTER_LADDER` |
   | `starter.dtype_roles` | Which pandas dtypes give which column role, in the order they are tried | `contracts.DTYPE_ROLES` |
   | `vega.schema_url` | The `$schema` of a Vega-Lite spec Curio writes | `contracts.VEGA_SCHEMA_URL` |
   | `image.columns`, `image.column:<name>`, `image.extensions`, `image.threshold` | The column names Simple View checks for images first, one of them by name, the extensions an image URL has elsewhere, and the share of a column's values that must be images | `contracts.IMAGE_COLUMNS`, `IMAGE_EXTENSIONS`, `IMAGE_MATCH_THRESHOLD` |
 
+To change agent text, edit its file in `agents/` (the base entry's README walks through it). A fact the code owns that no field states yet is a new field in `PROMPT_FIELDS`.
+
+### Generated Contracts
+
+Some contracts are read by both Python and TypeScript. Each one is defined once and the TypeScript copy is generated from it, so the copies cannot disagree.
+
+- **Source module.** [`utk_curio/backend/app/agents/domain/contracts.py`](../utk_curio/backend/app/agents/domain/contracts.py) holds each definition and one render function per output. It lives in the app package, so runtime code imports it from an installed wheel. Python callers such as `result_shape.py`, `services.py` and `execution/runtime_journal.py` import the values directly.
+- **Registry.** `contracts.GENERATED_OUTPUTS` maps each repo-relative output path to the function that renders it. The generator and the drift test both iterate it, so a new output is one entry.
+- **Generator.** [`scripts/generate_contracts.py`](../scripts/generate_contracts.py) is a thin CLI over the registry. It writes every output that differs from a fresh render; with `--check` it writes nothing, lists the stale files and exits non-zero.
+- **Outputs.** Committed to the repository. Each starts with a header that names the generator and the source module, and passes the frontend's `prettier` and `eslint` configs as generated.
+
+  | Output | Contract |
+  |---|---|
+  | `utk_curio/frontend/urban-workflows/src/generated/renderCauses.ts` | The empty-render kind prefix, the render causes, the `RenderCause` type and which causes blame the document (see [Render Outcomes](#render-outcomes)) |
+  | `utk_curio/frontend/urban-workflows/src/generated/autkGrammar.ts` | The Autark grammar's top-level families, the names a grammar node's inputs are read by, `input_<k>`, and the one view a node draws: `AUTK_ONE_VIEW`, what a document with more than one view is told, and `autkOneViewProblem`, the check that tells it (see [Referencing Upstream Data in Autark Nodes](#referencing-upstream-data-in-autark-nodes)) |
+  | `utk_curio/frontend/urban-workflows/src/generated/agentCategories.ts` | The agent manifest's category vocabulary and the `AgentCategory` type, from `manifest.AGENT_CATEGORIES` |
+  | `utk_curio/frontend/urban-workflows/src/generated/solveStopReasons.ts` | Why a node's repair loop stopped (`stoppedBy`), the `StopReason` type and the phrase each reason reads as, from `SOLVE_STOP_REASONS`; the server's failure sentences read the same table (see [The Solve loop](#the-solve-loop)) |
+  | `utk_curio/frontend/urban-workflows/src/generated/visDefaults.ts` | What a visualization node does with its input by itself, from the tables in `contracts.py`: the column roles and the pandas dtype each role comes from; the Vega-Lite and Autark starter ladders, each rule's id, condition, mark or family and description in ladder order; the Vega-Lite `$schema` URL; and the column names, URL extensions and share of image values behind Simple View's image columns. `starterSpec.ts`, `vegaDefaultSpec.ts`, `autkDefaultSpec.ts` and `imageColumns.ts` read it and keep each rule's builder, keyed by its id, and the matching logic |
+  | `utk_curio/frontend/urban-workflows/src/generated/noteColors.ts` | A note's palette, its default color, the two inks and two link colors, and the contrast an ink must reach, from `packages/domain/node_appearance.py`; `utils/noteColors.ts` derives a Note's colors from them (see [Notes](#notes)) |
 - **Drift test.** [`test_generated_contracts.py`](../utk_curio/backend/tests/test_agents/test_generated_contracts.py) re-renders every registered output and fails on any difference, printing the diff and the command to run. It is pure Python, so it runs in the normal backend suite and a hand edit to an output turns it red.
 
-To change a contract, edit `contracts.py`, run `python scripts/generate_contracts.py`, and commit the source and the regenerated outputs together. To change a prompt, edit its `.template.md`, never its `.md`, and regenerate the same way; a code change that moves a field's source needs the regeneration too. A prompt with no template is edited where it is, in its agent's folder.
+To change a contract, edit `contracts.py`, run `python scripts/generate_contracts.py`, and commit the source and the regenerated outputs together.
 
 ### The Autark Schema
 
@@ -1591,7 +1642,7 @@ Every system turn an agent receives is built by one function, `contracts.compose
 
 | Slot | Holds | Owner |
 |---|---|---|
-| preamble | The shared `default_preamble.md`, which a manifest names `curio:default_preamble.md` (every built-in's), an imported definition's own `prompts.system`, or none | the repository, or the definition |
+| preamble | The base entry's `default_preamble.md`, which a manifest names `curio:default_preamble.md` (every built-in's), an imported definition's own `prompts.system`, or none | the repository, or the definition |
 | instruction | Exactly one: the agent's `instruction` prompt, the invoked mode's, the definition's `autk-grammar` prompt for an Autark document under its reply schema, or the attachment's edited intent | the repository, or the user |
 | configuration | The catalog settings the run reads, framed as data | the user |
 | tool protocol | How to ask for a tool: the granted tools and the `toolRequest` syntax, or on native tools one line on calling them; with the `datasetCandidates` schema for a run that can search the catalog | the runtime |
@@ -1599,7 +1650,7 @@ Every system turn an agent receives is built by one function, `contracts.compose
 
 A run selects its instruction and never appends to one. An edited intent replaces the instruction slot only, and everything a user wrote precedes every runtime-owned slot. A delegated run carries the first three slots, plus the worked examples when its mode takes them: it is tool-less and depth-1.
 
-**Worked examples.** [`utk_curio/llm-prompts/examples.md`](../utk_curio/llm-prompts/examples.md) lists every shipped dataflow (`projects/shipped.py`) once, under "Used" or "Not used", with one line on what it shows. [`turns/examples.py`](../utk_curio/backend/app/agents/application/turns/examples.py) reads it on every run and scores each "Used" dataflow by the words it shares with what the run knows: the user's message, the dataflow's task, and the attached node's goal and template type, or for a delegated run its subtask, workflow goal and node context. Its line, file name, task and categories count; short and common words do not. A dataflow that uses the node's template type or one of the project's datasets ranks higher, but only a shared word selects one. The top two become one block: a heading, then each line and its Trill without layout, categories or datasets, up to `MAX_BLOCK_CHARS`; an example that does not fit is left out. The block is chosen per run, so it is a runtime slot and the cached preamble stays the same. A built-in takes it when its shipped manifest says `workedExamples`, at the top for its instruction or on a mode's capability (`builtin.gets_worked_examples`): the Dataflow Builder, the Node Builder (its chat, and its `node.content.generate` mode under either instruction) and `workflow.suggest`. A project marked by an evaluation (`dataflow.evaluation`) never shows the example its fixture is scored against, nor any example that shares a node or edge id or a code line of `SHARED_LINE_CHARS` (25) or more with it. An install without `docs/examples` gets no block and logs one warning. The Dataflow Builder can also read any "Used" example with the `examples.read` tool: with no key it lists each one's key, title and line (`listing`), and with a key it returns that example as the block shows it (`find`, `shown`). It follows the same `excluded_by` rule, so an evaluation project's example is left out of the list and refused by key.
+**Worked examples.** The base entry's [`examples.md`](../agents/agent.curio.builtin@1/examples.md) lists every shipped dataflow (`projects/shipped.py`) once, under "Used" or "Not used", with one line on what it shows; its links are relative to its folder. [`turns/examples.py`](../utk_curio/backend/app/agents/application/turns/examples.py) reads it as rendered at start (see [Agent text](#agent-text)) and on every run scores each "Used" dataflow by the words it shares with what the run knows: the user's message, the dataflow's task, and the attached node's goal and template type, or for a delegated run its subtask, workflow goal and node context. Its line, file name, task and categories count; short and common words do not. A dataflow that uses the node's template type or one of the project's datasets ranks higher, but only a shared word selects one. The top two become one block: a heading, then each line and its Trill without layout, categories or datasets, up to `MAX_BLOCK_CHARS`; an example that does not fit is left out. The block is chosen per run, so it is a runtime slot and the cached preamble stays the same. A built-in takes it when its shipped manifest says `workedExamples`, at the top for its instruction or on a mode's capability (`builtin.gets_worked_examples`): the Dataflow Builder, the Node Builder (its chat, and its `node.content.generate` mode under either instruction) and `workflow.suggest`. A project marked by an evaluation (`dataflow.evaluation`) never shows the example its fixture is scored against, nor any example that shares a node or edge id or a code line of `SHARED_LINE_CHARS` (25) or more with it. An install without `docs/examples` gets no block and logs one warning. The Dataflow Builder can also read any "Used" example with the `examples.read` tool: with no key it lists each one's key, title and line (`listing`), and with a key it returns that example as the block shows it (`find`, `shown`). It follows the same `excluded_by` rule, so an evaluation project's example is left out of the list and refused by key.
 
 The slots reach the provider apart. `contracts.system_message` puts the joined text in the system message's `content` and the slots beside it, and [`providers.py`](../utk_curio/backend/app/agents/infrastructure/providers.py) maps them per provider: Anthropic receives one text block per slot, with the preamble marked cacheable; Gemini a list of system instructions; an OpenAI-compatible server the one joined system message, since some local chat templates reject several. A system message without slots (the title call) is sent as its text.
 
@@ -2460,6 +2511,7 @@ created empty for Solve to write.
 | `src/utils/notebookLayout.ts`, `src/utils/dataflowOrder.ts` | The notebook view's geometry (cells, dots, lanes, edge paths), what each view lets a viewer change in the graph, and the cell order Export as notebook shares |
 | `src/providers/ProvenanceProvider.tsx` | In-memory per-node execution history (saved with the workflow JSON) |
 | `src/components/UniversalNode.tsx` | Single React component that renders all node types |
+| `src/components/tooltip/` | The one Curio tooltip: `TooltipLayer`, `tooltipStore`, `tooltipPlacement`, `useTooltipContent` and the Vega handler (see [Tooltips](#tooltips)) |
 | `src/registry/packagesClient.ts` | Fetch installed manifests → build `NodeDescriptor`s → register against `nodeRegistry` |
 | `src/registry/builtinBehaviors.ts` | `registerBehavior()` calls for the built-in behavior hooks |
 | `src/registry/behaviorRegistry.ts` | `behavior` key → hook lookup (built-in + package-shipped) |
@@ -2517,7 +2569,8 @@ created empty for Solve to write.
 | `backend/app/datasets/infrastructure/` | Storage helpers, file metadata, output paths, catalog utilities |
 | `backend/app/datasets/schemas/` | Request and catalog-item serialization schemas |
 | `backend/app/agents/routes/` | `/api/agents/*` endpoints, one module per resource (`catalog`, `lifecycle`, `attachments`, `proposals`, `turns`, `solve`, `llm`); `common.py` holds the blueprint and the shared helpers; the route table is a contract test (`tests/test_agents/route_table.json`) |
-| `backend/app/agents/domain/contracts.py` | The single source of every generated contract, and the registry of its outputs (see [Generated Contracts](#generated-contracts)) |
+| `backend/app/agents/domain/contracts.py` | The single source of every generated contract, and the registry of its outputs (see [Generated Contracts](#generated-contracts)); the prompt fields that fill the markers of the agents' text (see [Agent text](#agent-text)) |
+| `backend/app/agents/domain/agent_text.py` | The loader of the agents' text: the base entry and its pages (`curio:<path>`, kept inside it), the start-up render every read returns, and `--dev`'s render at each read (see [Agent text](#agent-text)) |
 | `backend/app/agents/schemas/autk-grammar.v1.json` | The vendored Autark grammar schema, with its release record beside it (see [The Autark Schema](#the-autark-schema)) |
 | `backend/app/agents/domain/document_validation.py` | Validates the documents agents write (Vega-Lite, Autark) before they reach a node |
 | `backend/app/agents/service.py` | The facade every agent route and every other feature calls (mirrors `datasets/service.py`, `packages/service.py`); re-exports the use cases under `application/` (`tests/test_agents/test_layering.py` enforces the layering) |
@@ -2529,8 +2582,8 @@ created empty for Solve to write.
 | `backend/app/agents/application/solve/` | Solve: `session.py` (the stream entry points and the session helpers), `batch.py` (`SolveBatch`: passes, waves, the fold, one finish), `rounds.py` (attempts, probes, remedies), `verified_loop.py` (`VerifiedRounds`: the generate → gate → execute → correct loop, one named stage per method), `node_solve.py`, `budgets.py`, `simulation.py` (`SimulationDriver`), `run_node.py`, `validate.py` |
 | `backend/app/agents/application/tool_rounds.py` | The bounded tool loop and the native tool-call machinery (`_RunConversation`) |
 | `backend/app/agents/application/llm_listing.py` | `GET /api/agents/llm`: the account's configurations, the deployment's offer, what answers each agent |
-| `backend/app/agents/domain/manifest.py` | Parse and validate `manifest.json` into a typed `AgentManifest`; `AGENT_CATEGORIES`; the prompts Curio shares (`curio:<file>`) and the `catalog` placement |
-| `backend/app/agents/domain/builtin.py` | The loader of the 7 built-in agents: the folders `agents/<agentId>@<major>/` beside `utk_curio/`, each a `manifest.json` and its `prompts/`, read as an imported agent is (`load_agent_manifest`), in the order their `catalog.order` gives. `catalog.listed` marks the four catalog cards; the rest are internal: never listed, installed or attached, and resolved from their shipped folder when delegated to. It reads their prompts, the shared preamble from `utk_curio/llm-prompts/`, and gives the shape an export or an install carries, without the fields only built-ins use (`catalog`, `workedExamples`, a capability's `label`, a prompt's `runs`). Two internal agents run their capabilities as modes, and the Node Builder and the Researcher run modes beside their chat (see [Agent Prompt Composition](#agent-prompt-composition)) |
+| `backend/app/agents/domain/manifest.py` | Parse and validate `manifest.json` into a typed `AgentManifest`; `AGENT_CATEGORIES`; the pages of Curio's agent text a manifest names (`curio:<path>`), the `catalog` placement, and the refusal of a base entry's manifest |
+| `backend/app/agents/domain/builtin.py` | The loader of the 7 built-in agents: the folders `agents/<agentId>@<major>/` beside `utk_curio/`, each a `manifest.json` and its `prompts/`, read as an imported agent is (`load_agent_manifest`), in the order their `catalog.order` gives, leaving out the base entry beside them. `catalog.listed` marks the four catalog cards; the rest are internal: never listed, installed or attached, and resolved from their shipped folder when delegated to. It reads their prompts and the base entry's pages as rendered at start, and gives the shape an export or an install carries, without the fields only built-ins use (`catalog`, `workedExamples`, a capability's `label`, a prompt's `runs`). Two internal agents run their capabilities as modes, and the Node Builder and the Researcher run modes beside their chat (see [Agent Prompt Composition](#agent-prompt-composition)) |
 | `backend/app/agents/repositories/storage.py` | Definition store under `.curio/users/<u>/agents/<coord>/` |
 | `backend/app/agents/repositories/imports.py` | My imports registry (`imported-agents.json`) |
 | `backend/app/agents/repositories/catalog_settings.py` | The account's catalog settings (`catalog-settings.json`) and the configuration slot a run receives |

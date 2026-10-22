@@ -215,8 +215,8 @@ def test_a_renamed_node_survives_a_dashboard_layout_save(
 
     # Pin the renamed node and save, so the dashboard has it as a tile.
     node = _node(page, node_id)
-    activate_header_icon(node.locator('[title="Pin to dashboard"]').first)
-    expect(node.locator('[title="Unpin from dashboard"]')).to_have_count(1, timeout=10000)
+    activate_header_icon(node.locator('[data-tooltip="Pin to dashboard"]').first)
+    expect(node.locator('[data-tooltip="Unpin from dashboard"]')).to_have_count(1, timeout=10000)
     save_dataflow(page)
 
     # Onto the dashboard, move the tile, and save the layout.
@@ -232,7 +232,7 @@ def test_a_renamed_node_survives_a_dashboard_layout_save(
     )
     # The tile's title band reads the name the canvas saved.
     expect(tile.locator(".curio-dashboard-tile-handle").first).to_have_attribute(
-        "title", NEW_NAME, timeout=15000
+        "data-tooltip", NEW_NAME, timeout=15000
     )
     page.get_by_test_id("edit-layout-btn").click()
     before = page.evaluate(

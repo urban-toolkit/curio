@@ -13,6 +13,7 @@ import "@testing-library/jest-dom";
 import { MemoryRouter } from "react-router-dom";
 
 import { ModelsPaletteDropdown } from "../../components/menus/nodes/modelsPalette";
+import { getByTooltip } from "../_support/tooltips";
 import {
   builtinPackage,
   ddrnetPackage,
@@ -89,7 +90,7 @@ function Controlled({ lockfile }: { lockfile: string[] }) {
 
 /** The rail's card: the one control titled for opening or closing the palette. */
 function trigger(): HTMLElement {
-  return screen.getByTitle(/model palette$/);
+  return getByTooltip(document.body, /model palette$/);
 }
 
 function panel(): HTMLElement {
@@ -227,7 +228,7 @@ describe("ModelsPaletteDropdown", () => {
     await screen.findByText("DDRNet23-Slim (street scenes)");
     const row = document.querySelector('[data-model-id="model.curio.ddrnet23-slim"]') as HTMLElement;
     const setData = jest.fn();
-    fireEvent.dragStart(within(row).getByTitle("Drag onto a node that runs a model"), {
+    fireEvent.dragStart(getByTooltip(row, "Drag onto a node that runs a model"), {
       dataTransfer: { setData, effectAllowed: "" },
     });
     expect(setData).toHaveBeenCalledWith(

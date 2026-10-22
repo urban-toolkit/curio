@@ -113,7 +113,7 @@ export const AgentSolveAttemptsCard: React.FC<{
             type="button"
             className={styles.open}
             aria-label={`Open the ${name || "node's agent"} for ${label}`}
-            title="Opens this node's own agent, where the generated replies live and where you can ask for a different approach."
+            data-tooltip="Opens this node's own agent, where the generated replies live and where you can ask for a different approach."
             onClick={() => onOpenChat(part.attachmentId as string)}
           >
             {name ? `Open ${name}` : "Open the node's agent"}

@@ -69,7 +69,7 @@ export const CatalogHeaderImport: React.FC<CatalogHeaderImportProps> = ({
         type="button"
         className={styles.publishButton}
         disabled={busy}
-        title={title ?? label}
+        data-tooltip={title ?? label}
         onClick={() => {
           if (isFilePicker) fileInputRef.current?.click();
           else onClick?.();

@@ -2,16 +2,35 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://raw.githubusercontent.com/urban-toolkit/curio/main/docs/schemas/agent-package.v1.json",
   "title": "Curio Hookable Agent Manifest (v1)",
-  "description": "Schema for a Curio hookable-agent manifest.json. An agent ships in a directory named '<agentId>@<major>', the major of its version, containing this manifest and a prompts/ directory with its prompt assets, referenced by path and digest; a prompt Curio shares, such as the preamble, is named 'curio:<file>' instead. The agents Curio ships are such directories in its agents/ folder, read by the same loader as an uploaded agent. Field names are camelCase. Agent package ids begin with 'agent.', then name the publisher and the agent ('agent.curio.dataflow-builder'), as Discovery source ids begin with 'source.'. Capabilities are semantic behavior contracts, kept independent of the prompt files that implement them. This schema is the canonical spec; the backend validator in utk_curio/backend/app/agents/domain/manifest.py implements the supported subset. User-facing overview: docs/AGENT-CATALOG.md.",
+  "description": "Schema for a Curio hookable-agent manifest.json. An agent ships in a directory named '<agentId>@<major>', the major of its version, containing this manifest and a prompts/ directory with its prompt assets, referenced by path and digest; a page of Curio's agent text, such as the preamble, is named 'curio:<path>' instead. The agents Curio ships are such directories in its agents/ folder, read by the same loader as an uploaded agent, beside the base entry (kind 'base'), which holds the pages they share. Field names are camelCase. Agent package ids begin with 'agent.', then name the publisher and the agent ('agent.curio.dataflow-builder'), as Discovery source ids begin with 'source.'. Capabilities are semantic behavior contracts, kept independent of the prompt files that implement them. This schema is the canonical spec; the backend validator in utk_curio/backend/app/agents/domain/manifest.py implements the supported subset. User-facing overview: docs/AGENT-CATALOG.md.",
   "type": "object",
   "required": [
     "id",
     "version",
     "name",
-    "category",
-    "capabilities",
     "provenance"
   ],
+  "if": {
+    "required": [
+      "kind"
+    ],
+    "properties": {
+      "kind": {
+        "const": "base"
+      }
+    }
+  },
+  "then": {
+    "required": [
+      "pages"
+    ]
+  },
+  "else": {
+    "required": [
+      "category",
+      "capabilities"
+    ]
+  },
   "additionalProperties": true,
   "properties": {
     "$schema": {
@@ -32,6 +51,25 @@
       "type": "string",
       "minLength": 1,
       "description": "Human-readable agent name shown in the Agent Catalog."
+    },
+    "kind": {
+      "type": "string",
+      "enum": [
+        "agent",
+        "base"
+      ],
+      "default": "agent",
+      "description": "'agent' for an agent, or 'base' for the base entry, the folder in Curio's agents/ that holds the pages every agent Curio ships reads (agents/agent.curio.builtin@1), as packages/curio.builtin@1 is the base of the nodes. A base entry lists its 'pages' and is no agent: no catalog lists it, no agent delegates to it, and an upload of one is refused."
+    },
+    "pages": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^[A-Za-z0-9_][A-Za-z0-9_.-]*(?:/[A-Za-z0-9_][A-Za-z0-9_.-]*)*\\.md$"
+      },
+      "minItems": 1,
+      "uniqueItems": true,
+      "description": "A base entry's pages, each a .md file by its path in its folder, such as 'default_preamble.md' or 'rules/package_contract.md'. Any agent names one as 'curio:<path>'. The backend renders each when it starts."
     },
     "category": {
       "type": "string",
@@ -190,8 +228,8 @@
         "properties": {
           "path": {
             "type": "string",
-            "pattern": "^(?:curio:default_preamble\\.md|[A-Za-z0-9_.][A-Za-z0-9_./-]*)$",
-            "description": "Path to the prompt file inside the package, relative to its root. Must be contained inside the package: no leading '/', no '..' segment, and no leading '-'. The upload flow writes every prompt as 'prompts/<filename>.txt', so a manifest that names anything else cannot be imported through the UI even though the path itself is legal. Or 'curio:default_preamble.md', the preamble Curio shares with every agent: it is read from Curio's own prompts, an upload carries no file for it, and an export carries it as 'prompts/default_preamble.md'."
+            "pattern": "^(?:curio:)?[A-Za-z0-9_.][A-Za-z0-9_./-]*$",
+            "description": "Path to the prompt file inside the package, relative to its root. Must be contained inside the package: no leading '/', no '..' segment, and no leading '-'. The upload flow writes every prompt as 'prompts/<filename>.txt', so a manifest that names anything else cannot be imported through the UI even though the path itself is legal. Or 'curio:<path>', a page of Curio's agent text by its path in the base entry, such as 'curio:default_preamble.md', the preamble Curio shares with every agent: it is read from Curio, rendered, an upload carries no file for it, and an export carries it as 'prompts/<path>'. A 'curio:' path that leads out of the base entry, or names no page it lists, is refused."
           },
           "runs": {
             "type": "string",

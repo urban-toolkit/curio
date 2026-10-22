@@ -558,7 +558,7 @@ export default function UpMenu() {
                         aria-label="Collaboration"
                         aria-pressed={collab.panelOpen}
                         onClick={() => collab.setPanelOpen(!collab.panelOpen)}
-                        title={
+                        data-tooltip={
                             collab.connected
                                 ? `Collaboration (${collab.users.length} online)`
                                 : "Collaboration disconnected"
@@ -588,7 +588,7 @@ export default function UpMenu() {
                         className={clsx(headerStyles.barButton, styles.saveStatus)}
                         disabled={saving}
                         onClick={handleSave}
-                        title={
+                        data-tooltip={
                             saving          ? "Saving…"
                             : projectDirty  ? "Unsaved changes - click to save"
                             : !projectSavedAt ? "Not saved yet - click to save"

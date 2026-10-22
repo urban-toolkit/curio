@@ -220,7 +220,7 @@ export const DiscoverySourceBody: React.FC<DiscoverySourceBodyProps> = ({
                 className={detailStyles.rescan}
                 disabled={listing.scanning}
                 onClick={listing.rescan}
-                title="Walk the source again for files added or removed since its last scan"
+                data-tooltip="Walk the source again for files added or removed since its last scan"
               >
                 {listing.scanning ? "Scanning…" : "Rescan"}
               </button>

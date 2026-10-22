@@ -67,7 +67,7 @@ def catalog_details_clear_the_version_badge(ctx: Ctx) -> None:
     )
     page.wait_for_timeout(600)
 
-    badge = page.locator("span[title]").filter(has_text=re.compile("isolated", re.I))
+    badge = page.locator("span[data-tooltip]").filter(has_text=re.compile("isolated", re.I))
     if badge.count() == 0:
         raise AssertionError(
             "no version badge on /catalog - the scene cannot show #236. The "

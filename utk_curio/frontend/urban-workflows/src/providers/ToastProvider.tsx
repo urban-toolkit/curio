@@ -195,7 +195,7 @@ export const ToastProvider = ({ children }: { children: ReactNode }) => {
                                 // sentence underneath is still read once.
                                 <span
                                     data-testid="toast-count"
-                                    title={`Reported ${toast.ids.length} times`}
+                                    data-tooltip={`Reported ${toast.ids.length} times`}
                                     style={{
                                         marginRight: "8px",
                                         padding: "0 6px",

@@ -24,7 +24,7 @@ export function RunAllButton() {
                 data-run-active={isRunActive ? "true" : undefined}
                 data-auto-run={autoRunOn ? "true" : undefined}
                 onClick={isRunActive ? cancelRun : playAllNodes}
-                title={
+                data-tooltip={
                     isRunActive
                         ? "Cancel the run in progress"
                         : autoRunOn

@@ -20,6 +20,7 @@ import { colorForCategory } from "../constants/nodeCategoryPalette";
 import type { CanvasTemplateConfig } from "../utils/canvasTemplateConfig";
 import { readCanvasTemplateConfig } from "../utils/canvasTemplateConfig";
 import { HeaderIconButton } from "./HeaderIconButton";
+import { useTooltipContent } from "./tooltip/useTooltipContent";
 import {
     EditableNodeHeaderLabel,
     NodeSaveAsModal,
@@ -172,7 +173,21 @@ export const NodeContainer = ({
     const [pinnedToDashboard, setPinnedToDashboard] = useState<boolean>(!!dashboardPins[nodeId]);
     const [, setExpectedInputType] = useState(data.in);
     const [, setExpectedOutputType] = useState(data.out);
-    const [showWarnings, setShowWarnings] = useState<boolean>(false);
+    // A node's warnings: the count names the icon, and the list is its tooltip.
+    const warnings: string[] = Array.isArray(data.warnings) ? data.warnings : [];
+    const warningsCount = `${warnings.length} warning${warnings.length === 1 ? "" : "s"}`;
+    const warningsTooltip = useTooltipContent(
+        warnings.length > 0 ? (
+            <>
+                <div className="curio-tooltip-muted">{warningsCount}</div>
+                <ul style={{ margin: "4px 0 0", paddingLeft: "16px" }}>
+                    {warnings.map((warning, index) => (
+                        <li key={nodeId + "_warning_" + index}>{warning}</li>
+                    ))}
+                </ul>
+            </>
+        ) : null,
+    );
     // Folded to its chip: the header's Minimize, or View > Minimize Nodes. The
     // fold is kept in the node's data, so a save writes it and a load brings it
     // back. Only the canvas folds a node; a dashboard tile shows it whole.
@@ -615,33 +630,19 @@ export const NodeContainer = ({
                             : {}),
                     }}
                 >
-                    <FontAwesomeIcon
-                        style={{ fontSize: "24px", color: "#e8c548" }}
-                        icon={faTriangleExclamation}
-                        title={`${data.warnings.length} warning${data.warnings.length === 1 ? "" : "s"}`}
-                        onMouseEnter={() => setShowWarnings(true)}
-                        onMouseLeave={() => setShowWarnings(false)}
-                    />
-                    <ul
-                        style={{
-                            padding: "5px",
-                            backgroundColor: "white",
-                            border: "1px solid black",
-                            zIndex: 300,
-                            position: "fixed",
-                            width: "300px",
-                            maxHeight: "200px",
-                            marginLeft: "30px",
-                            overflowY: "auto",
-                            ...(showWarnings ? {} : { display: "none" }),
-                        }}
+                    {/* The list shows in the Curio tooltip, which the card
+                        does not clip and the canvas's zoom does not scale. */}
+                    <span
+                        {...warningsTooltip}
+                        role="img"
+                        aria-label={warningsCount}
+                        style={{ display: "inline-flex" }}
                     >
-                        {data.warnings.map((warning: string, index: number) => (
-                            <li key={nodeId + "_warning_" + index}>
-                                <p>{warning}</p>
-                            </li>
-                        ))}
-                    </ul>
+                        <FontAwesomeIcon
+                            style={{ fontSize: "24px", color: "#e8c548" }}
+                            icon={faTriangleExclamation}
+                        />
+                    </span>
                 </div>
             ) : null}
 
@@ -692,7 +693,7 @@ export const NodeContainer = ({
                         // page hands React Flow as the tile's ``dragHandle``. No
                         // ``nodrag`` here, deliberately: this band is the handle.
                         className="curio-dashboard-tile-handle"
-                        title={headerKindLabel}
+                        data-tooltip={headerKindLabel}
                         style={{
                             display: "flex",
                             alignItems: "center",

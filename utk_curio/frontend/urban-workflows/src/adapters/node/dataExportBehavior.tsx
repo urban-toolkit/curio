@@ -202,7 +202,7 @@ export const useDataExportBehavior: NodeBehaviorHook = (data, nodeState) => {
           type="button"
           className="btn btn-outline-secondary btn-sm nodrag nowheel"
           disabled={!wired || waiting}
-          title={title}
+          data-tooltip={title}
           aria-label={label}
           onClick={onClick}
           style={{ maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}

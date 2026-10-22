@@ -1,7 +1,7 @@
 """Worked examples: which shipped dataflows a run gets, and where they land.
 
-``turns/examples.py`` picks the "Used" dataflows of ``llm-prompts/examples.md``
-closest to what a run knows and renders them as one runtime block, bounded in
+``turns/examples.py`` picks the "Used" dataflows of the base entry's
+``examples.md`` closest to what a run knows and renders them as one runtime block, bounded in
 size. These tests pin the choice for fixed questions, the bound, the
 exclusion, the missing-folder case, the agents that opt in, and that the block
 reaches an attached run's system turn and a delegated run's.
@@ -246,12 +246,20 @@ class TestWhoTakesThem:
     def test_a_manifest_holds_only_the_worked_examples_flag(self):
         """Whether a run takes worked examples is a flag in the agent's
         shipped manifest, the agent's and a mode's, never example text; and
-        the flags are the takers above."""
+        the flags are the takers above. The base entry beside the agents
+        holds the pages they share and is no agent: its manifest holds no
+        flag and no example text either."""
         from pathlib import Path
 
         agents = Path(__file__).resolve().parents[4] / "agents"
-        folders = sorted(path.parent for path in agents.glob("*/manifest.json"))
+        # The agents as the roster lists them, so the base entry never counts as one.
+        folders = sorted(agents / m.dir_name for m in builtin.list_builtin_manifests())
         assert len(folders) == 7, folders
+        base = agents / "agent.curio.builtin@1"
+        assert sorted(path.parent for path in agents.glob("*/manifest.json")) == sorted([*folders, base])
+        raw = json.loads((base / "manifest.json").read_text(encoding="utf-8"))
+        assert raw["kind"] == "base"
+        assert "worked" not in json.dumps(raw).lower(), base.name
         flagged = set()
         for folder in folders:
             raw = json.loads((folder / "manifest.json").read_text(encoding="utf-8"))

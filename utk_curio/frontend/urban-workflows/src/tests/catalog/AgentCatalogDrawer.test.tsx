@@ -352,7 +352,7 @@ describe("AgentCatalogDrawer", () => {
     expect(screen.getByText(/Requires:/)).toBeInTheDocument();
     expect(screen.getByText("Node Builder (not installed)")).toBeInTheDocument();
     const btn = screen.getByRole("button", { name: "Add to project (+1 required)" });
-    expect(btn).toHaveAttribute("title", "Also adds Node Builder (required)");
+    expect(btn).toHaveAttribute("data-tooltip", "Also adds Node Builder (required)");
     await clickAndConfirm("Add to project (+1 required)", "Add to project");
     await waitFor(() =>
       expect(api.installToProject).toHaveBeenCalledWith("p1", "agent.curio.dataflow-builder@1"),

@@ -409,7 +409,7 @@ describe("AgentReviewCard: #662 a plan's widgets and scenarios", () => {
     expect(screen.getByRole("button", { name: "Create node Shadows (Real heights)" })).toBeEnabled();
     const copy = screen.getByRole("button", { name: "Create node Shadows (Twice as tall)" });
     expect(copy).toBeDisabled();
-    expect(copy).toHaveAttribute("title", "create 'Shadows' first");
+    expect(copy).toHaveAttribute("data-tooltip", "create 'Shadows' first");
   });
 
   it("once its original exists the copy can be created, and a saved scenario says so", () => {
@@ -517,11 +517,11 @@ describe("AgentReviewCard — dev/67-8 connection review stage", () => {
       />,
     );
     // The whole pair shows on hover too, handle included (#511).
-    expect(screen.getByText("Load → Merge [in_0]")).toHaveAttribute("title", "Load → Merge [in_0]");
+    expect(screen.getByText("Load → Merge [in_0]")).toHaveAttribute("data-tooltip", "Load → Merge [in_0]");
     // Edge 0: target ref "b" not created yet → disabled with the reason.
     const first = screen.getByRole("button", { name: "Connect Load to Merge" });
     expect(first).toBeDisabled();
-    expect(first).toHaveAttribute("title", "create 'Merge' first");
+    expect(first).toHaveAttribute("data-tooltip", "create 'Merge' first");
     // Edge 1: source ref "b" not created either → disabled; existing-id
     // endpoints alone never block.
     expect(screen.getByRole("button", { name: "Connect Merge to Old Analyze" })).toBeDisabled();
@@ -610,7 +610,7 @@ describe("AgentReviewCard — dev/71 progressive lifecycle rows", () => {
     });
     const solveB = screen.getByRole("button", { name: "Solve node Analyze" });
     expect(solveB).toBeDisabled();
-    expect(solveB).toHaveAttribute("title", "needs 'Load' connected first");
+    expect(solveB).toHaveAttribute("data-tooltip", "needs 'Load' connected first");
   });
 
   it("Solve enables when the edge is applied and upstream is approved", async () => {

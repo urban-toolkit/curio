@@ -26,12 +26,12 @@ export const NodeRunPills: React.FC<{
           <span className={styles.nodeId}>{nodeId.slice(0, 8)}</span>
           <span className={styles[`status_${status}` as keyof typeof styles] ?? ""}>{STATUS_LABEL[status] ?? status}</span>
           {needsUser ? (
-            <span className={styles.needsYou} title={waiting?.reason ?? undefined}>
+            <span className={styles.needsYou} data-tooltip={waiting?.reason ?? undefined}>
               needs you
             </span>
           ) : null}
           {waiting && waiting.kind === "upstream" ? (
-            <span className={styles.waitingUpstream} title={waiting.reason ?? undefined}>
+            <span className={styles.waitingUpstream} data-tooltip={waiting.reason ?? undefined}>
               waiting upstream
             </span>
           ) : null}
@@ -40,7 +40,7 @@ export const NodeRunPills: React.FC<{
               type="button"
               className={styles.nodeSolve}
               aria-label={`Solve node ${nodeId.slice(0, 8)} on its own`}
-              title={
+              data-tooltip={
                 needsUser
                   ? `This node is waiting for you to confirm a source: open its ${finder ?? "candidates"} first`
                   : "Runs this node's own agent: generate, run in the sandbox, fix, and write only code that passed"

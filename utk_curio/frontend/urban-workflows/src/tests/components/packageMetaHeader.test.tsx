@@ -67,7 +67,7 @@ describe("the category pill", () => {
       const { container } = renderHeader(packageId);
       // Two pills for a package node, one for a built-in — either way the
       // category one is present.
-      expect(container.querySelector("span[title]")).not.toBeNull();
+      expect(container.querySelector("span[data-tooltip]")).not.toBeNull();
     },
   );
 });

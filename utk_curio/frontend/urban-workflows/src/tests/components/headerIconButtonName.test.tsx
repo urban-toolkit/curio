@@ -36,7 +36,7 @@ describe("HeaderIconButton", () => {
       <HeaderIconButton icon={faMinus} title="Minimize" onActivate={() => {}} />,
     );
     expect(screen.getByRole("button", { name: "Minimize" })).toHaveAttribute(
-      "title",
+      "data-tooltip",
       "Minimize",
     );
   });

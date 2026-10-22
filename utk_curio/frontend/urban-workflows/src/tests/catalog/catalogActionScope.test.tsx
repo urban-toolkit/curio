@@ -1248,7 +1248,7 @@ describe("the drawer cards' Add and Remove both carry tooltips", () => {
     // The inverse gap: the Agent card had an Add tooltip and the other two did
     // not. Three buttons, two conventions, in both directions.
     const src = read(rel);
-    expect(src).toMatch(/title=\{(`Add |installTitle\()/);
+    expect(src).toMatch(/data-tooltip=\{(`Add |installTitle\()/);
   });
 });
 

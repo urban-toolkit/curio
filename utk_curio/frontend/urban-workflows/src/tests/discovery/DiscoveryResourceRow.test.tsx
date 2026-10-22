@@ -116,7 +116,7 @@ describe('DiscoveryResourceRow', () => {
     );
     const button = screen.getByRole('button', { name: 'Download' });
     expect(button).toBeDisabled();
-    expect(button).toHaveAttribute('title', reason);
+    expect(button).toHaveAttribute('data-tooltip', reason);
     expect(screen.getByRole('note')).toHaveTextContent(reason);
   });
 

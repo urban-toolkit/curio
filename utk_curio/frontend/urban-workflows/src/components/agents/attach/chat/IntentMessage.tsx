@@ -87,7 +87,7 @@ export const IntentMessage: React.FC<{
             type="button"
             className={styles.intentEdit}
             aria-label="Edit initial intent"
-            title="Edit initial intent"
+            data-tooltip="Edit initial intent"
             onClick={startEdit}
           >
             <FontAwesomeIcon icon={faPen} />

@@ -139,7 +139,7 @@ describe("Scenarios, in a Vega-Lite spec fed from boxes", () => {
     ]);
     const first = chips.querySelector('[data-scenario-input="0"]')!;
     expect(first.textContent).toBe("input_0Twice as tall");
-    expect(first.getAttribute("title")).toMatch(/^The color of Twice as tall, the scenario box input_0 comes from\. /);
+    expect(first.getAttribute("data-tooltip")).toMatch(/^The color of Twice as tall, the scenario box input_0 comes from\. /);
     const drag = dragData();
     fireEvent.dragStart(first, drag);
     expect(drag.store.get(SCENARIO_REF_MIME)).toBe("scenario input_0");
@@ -217,7 +217,7 @@ describe("the inputs tag, in Inputs", () => {
     const view = strip(inputs, { onInsert });
     const tag = openCategory(view.container, "inputs").querySelector("[data-inputs-tag]")!;
     expect(tag.getAttribute("draggable")).toBe("true");
-    expect(tag.getAttribute("title")).toContain("[!! inputs !!]");
+    expect(tag.getAttribute("data-tooltip")).toContain("[!! inputs !!]");
     const drag = dragData();
     fireEvent.dragStart(tag, drag);
     expect(drag.store.get(INPUT_REF_MIME)).toBe("inputs");
@@ -239,7 +239,7 @@ describe("the inputs tag, in Inputs", () => {
     expect(fields.map((f) => f.getAttribute("data-inputs-field"))).toEqual([
       "scenario_name", "scenario", "__input__", "segment", "sunlight", "shade",
     ]);
-    const title = (name: string) => fields.find((f) => f.getAttribute("data-inputs-field") === name)!.getAttribute("title");
+    const title = (name: string) => fields.find((f) => f.getAttribute("data-inputs-field") === name)!.getAttribute("data-tooltip");
     expect(title("sunlight")).toMatch(/^Field of inputs, float64\. /);
     expect(title("segment")).toMatch(/^Field of inputs, object\. /);
     expect(title("scenario_name")).toMatch(/^Field of inputs, text: /);

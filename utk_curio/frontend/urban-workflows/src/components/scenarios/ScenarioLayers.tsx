@@ -240,7 +240,7 @@ export function ScenarioLayers({ view, labelOf, statusOf, onExpand, onCollapse, 
               className={styles.box}
               data-scenario-box={box.scenario.id}
               data-testid={`scenario-box-${box.scenario.id}`}
-              title="Double-click to expand"
+              data-tooltip="Double-click to expand"
               style={{ left: x, top: y, width: layout.width, height: layout.height, borderColor: box.scenario.color }}
               onDoubleClick={() => onExpand(box.scenario.id)}
               onPointerDown={startDrag(box.scenario.id)}

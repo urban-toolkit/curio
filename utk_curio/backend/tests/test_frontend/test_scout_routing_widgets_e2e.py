@@ -96,7 +96,7 @@ def _route_start(page, node_id: str) -> dict:
 
 
 def _executed(page, node_id: str):
-    return node_locator(page, node_id).locator('span[title="Executed"]')
+    return node_locator(page, node_id).locator('span[data-tooltip="Executed"]')
 
 
 def test_moving_weather_routings_origin_moves_the_route_and_survives_a_reopen(

@@ -155,13 +155,13 @@ describe("each expander is a chevron button", () => {
       expect(button.closest(line)).not.toBeNull();
       expect([
         button.tagName, button.getAttribute("type"), button.getAttribute("aria-expanded"),
-        button.getAttribute("title"), chevronOf(button),
+        button.getAttribute("data-tooltip"), chevronOf(button),
       ]).toEqual(["BUTTON", "button", "false", `Show ${what}`, "right"]);
 
       fireEvent.click(button);
       const open = within(chips).getByRole("button", { name: `Hide ${what}` });
       expect(open).toBe(button);
-      expect([open.getAttribute("aria-expanded"), open.getAttribute("title"), chevronOf(open)]).toEqual([
+      expect([open.getAttribute("aria-expanded"), open.getAttribute("data-tooltip"), chevronOf(open)]).toEqual([
         "true", `Hide ${what}`, "down",
       ]);
     }

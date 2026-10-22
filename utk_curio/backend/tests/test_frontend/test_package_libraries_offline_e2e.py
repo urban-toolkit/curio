@@ -328,7 +328,7 @@ def _expand_palette_package(anchor) -> None:
     details = anchor.locator("details").first
     details.wait_for(state="attached", timeout=15000)
     if not details.evaluate("(el) => el.open"):
-        anchor.locator("summary").first.locator("span[title]").first.click()
+        anchor.locator("summary").first.locator("span[data-tooltip]").first.click()
     expect(details).to_have_attribute("open", "", timeout=10000)
 
 

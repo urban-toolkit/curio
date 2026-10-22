@@ -117,7 +117,7 @@ describe("AgentRunStatusLine: what answered the reply", () => {
       />,
     );
     const text = screen.getByText(/Finished in/);
-    expect(text.getAttribute("title")).toBe("10 in / 5 out, as the provider reported\nanswered by Work (gpt-4o-mini)");
+    expect(text.getAttribute("data-tooltip")).toBe("10 in / 5 out, as the provider reported\nanswered by Work (gpt-4o-mini)");
   });
 });
 

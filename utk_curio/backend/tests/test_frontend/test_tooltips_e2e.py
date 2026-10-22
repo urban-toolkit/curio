@@ -1,0 +1,781 @@
+"""Playwright E2E: one Curio tooltip for every hover.
+
+Every hover in Curio is one tooltip, drawn over the page in a portal on
+``document.body`` (``components/tooltip/TooltipLayer.tsx``) and placed from its
+target's box on screen. So it is the same size at every canvas zoom, no card
+clips it, and nothing else draws one: no native ``title``, no Bootstrap
+tooltip, no Monaco hover. Checked where jsdom has no layout to read:
+
+1. Example 26's join at canvas zoom 0.5, 1 and 2: its Delete node button, its
+   ``input_1`` tag under Inputs, and the avatar of an agent attached to it.
+   Each time one ``[role=tooltip]`` shows, outside the canvas's viewport and
+   the app's root, 6 px above its target and centered on it (below it when
+   there is no room above), with the same width and height at every zoom. A
+   close-up frame of each: the tooltip and its target, with a margin.
+2. A chip in the join's code and one in the chart's spec, both
+   ``[!! input_1 !!]``, at zoom 1 and 2: the same tooltip box at both, and no
+   Monaco hover on screen.
+3. The keyboard: Tab onto Delete node shows its tooltip, Escape hides it, and
+   a mouse click on a button shows none after it.
+4. A bar of example 02's zip chart: the tooltip at the pointer says what the
+   chart element's ``data-tooltip`` says, the bar's fields, and the chart
+   carries no ``title``.
+5. No element with a ``title`` and no SVG ``<title>``: on the canvas with 26
+   open, its editors, their Inputs and the tool rail's palettes open; on the
+   Data Catalog and Node Catalog pages, a card's details open; on a
+   dashboard; on API Settings. A title a library draws and Curio cannot take
+   off goes in ``LIBRARY_TITLES``, with its reason.
+
+The pointer is moved with ``page.mouse`` to an element's middle: a locator's
+hover fails its actionability check under React Flow's pane. No test here
+needs a GPU: the map in example 26 stays undrawn on a CPU runner, and nothing
+reads it.
+
+Run::
+
+    CURIO_TESTING=1 pytest utk_curio/backend/tests/test_frontend/test_tooltips_e2e.py -v
+"""
+
+from __future__ import annotations
+
+import json
+import math
+import re
+import time
+from pathlib import Path
+from typing import TYPE_CHECKING
+
+import pytest
+from playwright.sync_api import TimeoutError as PlaywrightTimeoutError, expect
+
+from .test_dashboard_page_e2e import _chart_drew, _open_dashboard, _pinned_and_saved
+from .test_selection_tags_e2e import ZIP_BARS_ID, ZIPS_EXAMPLE, _UNSCROLL_JS
+from .test_widget_tags_e2e import _open_tab
+from .utils import (
+    CLOSEUP_MAX_DIFF_RATIO,
+    CLOSEUP_PIXEL_THRESHOLD,
+    NODE_ONLY_AGENT_NAME,
+    REPO_ROOT,
+    _wait_for_reactflow_ready,
+    api_json,
+    assert_in_view,
+    drawing_selector,
+    ensure_node_only_agent,
+    frame_node,
+    mark_point,
+    node_locator,
+    open_strip_category,
+    open_tools_palette,
+    require_owner_view,
+    require_project_page,
+    require_user_auth,
+    run_all_and_wait,
+    save_workflow_test_screenshot,
+    stub_db_login,
+    stub_login_and_enter_workflow,
+)
+from .walkthroughs import load_example_spec
+
+if TYPE_CHECKING:
+    from .utils import FrontendPage
+
+SEVERAL_INPUTS = Path(REPO_ROOT) / "docs" / "examples" / "26-several-inputs.json"
+#: Example 26's join, which reads three inputs, the second a tuple, and the
+#: chart that reads the join as its input_1.
+JOIN = "several-join"
+CHART = "several-chart"
+#: The canvas zooms a tooltip has to look the same at.
+ZOOMS = (0.5, 1.0, 2.0)
+#: The stem of this module's frames.
+STEM = "tooltips"
+#: How far apart two sizes may be and still be one, in px.
+EDGE_PX = 1.0
+#: How far a tooltip may sit from where its rules put it, in px: its box and
+#: its target's are each rounded to the pixel on their own.
+PLACE_PX = 2.0
+#: The gap between a tooltip and its target, or the pointer, in px.
+GAP_PX = 6.0
+#: The room around a tooltip and its target in their close-up, in px.
+FRAME_MARGIN_PX = 16
+#: How long a tooltip may take to show, in ms: its 400 ms, and a busy runner.
+SHOW_MS = 5000
+#: How long example 02 may take to run, in ms.
+RUN_MS = 180000
+
+#: The join's targets, by name: what the pointer rests on.
+TARGETS = {
+    "delete-node": f'.react-flow__node[data-id="{JOIN}"] button[aria-label="Delete node"]',
+    "input-tag": f'.react-flow__node[data-id="{JOIN}"] [data-widget-strip] [data-input-tag="1"]',
+    "agent-badge": f'.react-flow__node[data-id="{JOIN}"] button[aria-label^="Open chat with"]',
+}
+#: The editors whose ``[!! input_1 !!]`` chip is hovered: (node, tab). The
+#: join's code unpacks it; the chart's spec names it as a dataset.
+CHIPS = {"code": (JOIN, "code"), "spec": (CHART, "grammar")}
+
+#: Titles a library draws that Curio cannot take off: (a selector the element
+#: matches or sits in, why it stays).
+LIBRARY_TITLES: list[tuple[str, str]] = [
+    (
+        ".monaco-editor .cldr",
+        "Monaco's own folding control, titled 'Click to collapse the range.' by Monaco: "
+        "an editor on a dashboard tile keeps Monaco's look by design (nodeEditorLook), folding included",
+    ),
+]
+
+# The first element *selector* finds that is laid out, as a box.
+_BOX_JS = r"""(selector) => {
+    const el = Array.from(document.querySelectorAll(selector)).find((e) => e.getClientRects().length > 0);
+    if (!el) return null;
+    const r = el.getBoundingClientRect();
+    return { left: r.left, top: r.top, right: r.right, bottom: r.bottom, width: r.width, height: r.height };
+}"""
+
+# Pan and zoom the canvas so the page point (x, y) lands at the middle of the
+# pane, at *zoom*. Returns the view asked for.
+_CENTER_JS = r"""({ x, y, zoom }) => {
+    const flow = window.__curio_reactFlow;
+    const viewport = document.querySelector(".curio-canvas-drop-target .react-flow__viewport");
+    if (!flow || !viewport) return null;
+    const pane = viewport.parentElement.getBoundingClientRect();
+    const at = flow.getViewport();
+    // The point in flow units, then the view that puts it at the pane's middle.
+    const fx = (x - pane.left - at.x) / at.zoom;
+    const fy = (y - pane.top - at.y) / at.zoom;
+    const view = { x: pane.width / 2 - fx * zoom, y: pane.height / 2 - fy * zoom, zoom };
+    flow.setViewport(view);
+    return view;
+}"""
+
+# One read of _center's wait: true once React Flow reports the view asked for
+# and the canvas draws it, for *reads* reads in a row. A view that got there
+# and was moved off is set again, as set_canvas_zoom does.
+_VIEW_HELD_JS = r"""({ x, y, zoom, reads }) => {
+    const flow = window.__curio_reactFlow;
+    const viewport = document.querySelector(".curio-canvas-drop-target .react-flow__viewport");
+    if (!flow || !viewport) return false;
+    const wait = window.__curio_tooltipView = window.__curio_tooltipView || { held: 0 };
+    const at = flow.getViewport();
+    const drawn = new DOMMatrixReadOnly(getComputedStyle(viewport).transform);
+    const near = (a, b) => Math.abs(a - b) < 0.01;
+    const there = near(at.x, x) && near(at.y, y) && near(at.zoom, zoom)
+        && near(drawn.e, x) && near(drawn.f, y) && near(drawn.a, zoom) && near(drawn.d, zoom);
+    if (there) {
+        wait.held += 1;
+        return wait.held >= reads;
+    }
+    if (wait.held > 0) flow.setViewport({ x, y, zoom });
+    wait.held = 0;
+    return false;
+}"""
+
+# A point on the canvas where the pointer rests on nothing that shows a
+# tooltip, away from the element *avoid* finds: the bare pane when some is in
+# view, else a part of a card that holds no control and no editor.
+_QUIET_POINT_JS = r"""(avoid) => {
+    const area = document.querySelector(".curio-canvas-drop-target") || document.body;
+    const away = avoid ? Array.from(document.querySelectorAll(avoid)).find((e) => e.getClientRects().length > 0) : null;
+    const loud = '[data-tooltip], [title], [aria-describedby], button, a, input, select, textarea, '
+        + '[role="button"], [role="tab"], [draggable="true"], .monaco-editor, .react-flow__handle, canvas';
+    const r = area.getBoundingClientRect();
+    let fallback = null;
+    for (let fy = 0.05; fy < 1; fy += 0.1) {
+        for (let fx = 0.05; fx < 1; fx += 0.1) {
+            const x = r.left + fx * r.width;
+            const y = r.top + fy * r.height;
+            const el = document.elementFromPoint(x, y);
+            if (!el || el.closest(loud) || (away && (away.contains(el) || el.contains(away)))) continue;
+            if (el.classList.contains("react-flow__pane")) return { x, y };
+            fallback = fallback || { x, y };
+        }
+    }
+    return fallback;
+}"""
+
+# The tooltips on screen: what each says, its box, where it hangs in the page,
+# and the box of the element it describes (aria-describedby) that is, holds or
+# sits in the element *selector* finds.
+_TOOLTIPS_JS = r"""(selector) => {
+    const seen = (el) => {
+        const style = getComputedStyle(el);
+        const r = el.getBoundingClientRect();
+        return style.display !== "none" && style.visibility !== "hidden" && Number(style.opacity) > 0
+            && r.width > 0 && r.height > 0;
+    };
+    const asBox = (r) => ({ left: r.left, top: r.top, right: r.right, bottom: r.bottom, width: r.width, height: r.height });
+    const hovered = selector
+        ? Array.from(document.querySelectorAll(selector)).find((e) => e.getClientRects().length > 0) || null
+        : null;
+    const root = document.getElementById("root");
+    return Array.from(document.querySelectorAll('[role="tooltip"]')).filter(seen).map((tip) => {
+        const described = tip.id
+            ? Array.from(document.querySelectorAll("[aria-describedby]")).filter((el) =>
+                (el.getAttribute("aria-describedby") || "").split(/\s+/).includes(tip.id))
+            : [];
+        const target = described.find((el) =>
+            !hovered || el === hovered || el.contains(hovered) || hovered.contains(el)) || null;
+        return {
+            id: tip.id,
+            text: (tip.innerText || tip.textContent || "").replace(/\s+/g, " ").trim(),
+            box: asBox(tip.getBoundingClientRect()),
+            inViewport: !!tip.closest(".react-flow__viewport"),
+            inRoot: !!(root && root.contains(tip)),
+            inBody: document.body.contains(tip),
+            described: described.length,
+            target: target ? asBox(target.getBoundingClientRect()) : null,
+        };
+    });
+}"""
+
+# How many of Monaco's own hovers are on screen.
+_MONACO_HOVERS_JS = r"""() => Array.from(document.querySelectorAll(".monaco-hover")).filter((el) => {
+    const style = getComputedStyle(el);
+    const r = el.getBoundingClientRect();
+    return style.display !== "none" && style.visibility !== "hidden" && r.width > 0 && r.height > 0;
+}).length"""
+
+# The box of the chip `[!! inner !!]` in the editor *nodeId* shows, its line
+# first scrolled to the editor's middle. Null until the line is drawn.
+_CHIP_JS = r"""({ nodeId, inner }) => {
+    const card = document.querySelector(`.react-flow__node[data-id="${nodeId}"]`);
+    const host = card && Array.from(card.querySelectorAll(".monaco-editor")).find((el) => el.getClientRects().length > 0);
+    if (!host) return null;
+    const written = `[!! ${inner} !!]`;
+    const editor = ((window.monaco && window.monaco.editor.getEditors()) || []).find((e) => host.contains(e.getDomNode()));
+    if (editor) {
+        const at = editor.getModel().getValue().split("\n").findIndex((line) => line.includes(written));
+        if (at >= 0) editor.revealLineInCenter(at + 1);
+    }
+    for (const line of host.querySelectorAll(".view-line")) {
+        if (!(line.textContent || "").replace(/ /g, " ").includes(written)) continue;
+        const spans = Array.from(line.querySelectorAll(".curio-widget-ref, .curio-widget-ref-problem"))
+            .filter((span) => span.getClientRects().length > 0);
+        if (!spans.length) return null;
+        const boxes = spans.map((span) => span.getBoundingClientRect());
+        const left = Math.min(...boxes.map((b) => b.left));
+        const right = Math.max(...boxes.map((b) => b.right));
+        const top = Math.min(...boxes.map((b) => b.top));
+        const bottom = Math.max(...boxes.map((b) => b.bottom));
+        return { left, top, right, bottom, width: right - left, height: bottom - top };
+    }
+    return null;
+}"""
+
+# Focus the element just before the one *selector* finds among the page's
+# focusable elements, in document order, so a Tab reaches it next. Returns
+# what was focused, or null.
+_FOCUS_BEFORE_JS = r"""(selector) => {
+    const target = Array.from(document.querySelectorAll(selector)).find((e) => e.getClientRects().length > 0);
+    if (!target) return null;
+    const focusable = Array.from(document.querySelectorAll(
+        'a[href], button, input, select, textarea, summary, [tabindex], [contenteditable]:not([contenteditable="false"])'))
+        .filter((el) => !el.disabled && el.tabIndex >= 0 && el.getClientRects().length > 0);
+    const index = focusable.indexOf(target);
+    if (index <= 0) return null;
+    const before = focusable[index - 1];
+    before.focus();
+    return before.getAttribute("aria-label") || (before.textContent || "").trim().slice(0, 40) || before.tagName;
+}"""
+
+# The chart element's data-tooltip, where Curio's Vega handler writes the
+# hovered mark's tooltip, and every title on it or in it.
+_CHART_JS = r"""(nodeId) => {
+    const el = document.getElementById("vega" + nodeId);
+    if (!el) return null;
+    const titled = [el, ...el.querySelectorAll("[title]")]
+        .filter((e) => e.hasAttribute("title"))
+        .map((e) => `${e.tagName.toLowerCase()} title=${JSON.stringify(e.getAttribute("title"))}`);
+    return { tooltip: el.getAttribute("data-tooltip"), titled };
+}"""
+
+# Every element that would draw a native tooltip, a title attribute or an SVG
+# <title>, outside the elements the selectors in *allowed* find; each as a
+# line that says what and where it is.
+_TITLES_JS = r"""(allowed) => {
+    const skip = (el) => allowed.some((selector) => el.closest(selector));
+    const name = (el) => {
+        const bits = [el.tagName.toLowerCase()];
+        if (el.id) bits.push(`#${el.id}`);
+        for (const attr of ["class", "data-testid", "aria-label", "data-tooltip"]) {
+            if (el.hasAttribute(attr)) bits.push(`${attr}=${JSON.stringify(el.getAttribute(attr).slice(0, 60))}`);
+        }
+        const node = el.closest(".react-flow__node");
+        if (node) bits.push(`in node ${node.getAttribute("data-id")}`);
+        return bits.join(" ");
+    };
+    const found = [];
+    for (const el of document.body.querySelectorAll("[title]")) {
+        if (!skip(el)) found.push(`${name(el)}: title=${JSON.stringify(el.getAttribute("title"))}`);
+    }
+    for (const el of document.querySelectorAll("svg title")) {
+        if (!skip(el)) found.push(`${name(el.parentElement || el)}: <title>${JSON.stringify((el.textContent || "").trim())}`);
+    }
+    return found;
+}"""
+
+
+def _open_26(page, app_frontend, current_server: str, *, username: str, agent: bool = False) -> dict:
+    """Open example 26 as a new dataflow and wait for every node; with *agent*,
+    the node-only agent is attached to the join first. Returns the dataflow."""
+    page.emulate_media(reduced_motion="reduce")
+    spec = json.loads(SEVERAL_INPUTS.read_text(encoding="utf-8"))
+    login = stub_db_login(
+        page,
+        frontend_url=app_frontend.base_url,
+        backend_url=current_server,
+        username=username,
+        name="Tooltips",
+        project_name=spec["dataflow"]["name"],
+        project_spec=spec,
+    )
+    project_id = login["project"]["id"]
+    if agent:
+        # Installed and attached over HTTP, as test_agent_chat_e2e.py does:
+        # the browser's part starts at the badge.
+        coord = ensure_node_only_agent(current_server, login["token"])
+        base = f"{current_server}/api/agents/projects/{project_id}"
+        api_json(f"{base}/install", login["token"], method="POST", payload={"coord": coord})
+        api_json(
+            f"{base}/attachments", login["token"], method="POST",
+            payload={"coord": coord, "target": {"kind": "node", "targetId": JOIN}},
+        )
+    page.goto(f"{app_frontend.base_url}/dataflow/{project_id}")
+    page.wait_for_load_state("domcontentloaded")
+    page.wait_for_url(f"**/dataflow/{project_id}", timeout=20000)
+    require_owner_view(page)
+    for node in spec["dataflow"]["nodes"]:
+        node_locator(page, node["id"]).wait_for(state="attached", timeout=45000)
+    _wait_for_reactflow_ready(page)
+    return spec["dataflow"]
+
+
+def _box(page, selector: str) -> dict:
+    box = page.evaluate(_BOX_JS, selector)
+    assert box, f"nothing on the page matches {selector}"
+    return box
+
+
+def _middle(box: dict) -> tuple[float, float]:
+    return (box["left"] + box["right"]) / 2, (box["top"] + box["bottom"]) / 2
+
+
+def _center(page, point: tuple[float, float], zoom: float, *, timeout: float = 15000) -> None:
+    """Pan and zoom the canvas so the page point *point* lands at the middle
+    of the pane, at *zoom*, and wait until the canvas draws that view."""
+    page.evaluate("() => { delete window.__curio_tooltipView; }")
+    view = page.evaluate(_CENTER_JS, {"x": point[0], "y": point[1], "zoom": zoom})
+    assert view, "the page has no canvas to move"
+    try:
+        page.wait_for_function(_VIEW_HELD_JS, arg={**view, "reads": 3}, polling=100, timeout=timeout)
+    except PlaywrightTimeoutError:
+        now = page.evaluate("() => window.__curio_reactFlow && window.__curio_reactFlow.getViewport()")
+        raise AssertionError(f"the canvas did not settle at {view} within {timeout:.0f} ms: it shows {now}") from None
+
+
+def _center_on(page, selector: str, zoom: float) -> dict:
+    """The canvas at *zoom*, with the element *selector* finds at the middle
+    of the pane; returns its box there."""
+    # Twice, in case anything moved once the canvas did.
+    for _ in range(2):
+        _center(page, _middle(_box(page, selector)), zoom)
+    return _box(page, selector)
+
+
+def _move_away(page, avoid: str | None = None) -> None:
+    """Rest the pointer where nothing shows a tooltip, away from what the
+    selector *avoid* finds."""
+    quiet = page.evaluate(_QUIET_POINT_JS, avoid)
+    assert quiet, "the canvas has no point where nothing shows a tooltip"
+    page.mouse.move(quiet["x"], quiet["y"])
+
+
+def _rest_on(page, box: dict, what: str, *, avoid: str | None = None) -> tuple[float, float]:
+    """Move the pointer from a quiet point to the middle of *box*, and leave it
+    there: a fresh hover, wherever the pointer was."""
+    _move_away(page, avoid)
+    point = assert_in_view(page, *_middle(box), what)
+    page.mouse.move(*point)
+    return point
+
+
+def _one_tooltip(page, what: str, selector: str | None = None, *, timeout: float = SHOW_MS) -> dict:
+    """Wait for the one tooltip *what* shows, and return it.
+
+    It counts once it is on screen with its text and, given *selector*, once
+    the element it describes (``aria-describedby``) is, holds or sits in the
+    element the selector finds. It is in a portal on ``document.body``,
+    outside the app's root and the canvas's viewport, whose zoom would scale
+    it.
+    """
+    deadline = time.time() + timeout / 1000
+    tips = page.evaluate(_TOOLTIPS_JS, selector)
+    while not (len(tips) == 1 and tips[0]["text"] and (selector is None or tips[0]["target"])):
+        if time.time() >= deadline:
+            break
+        page.wait_for_timeout(100)
+        tips = page.evaluate(_TOOLTIPS_JS, selector)
+    assert len(tips) == 1, f"{what}: {len(tips)} tooltips on screen, not one: {tips}"
+    tip = tips[0]
+    assert tip["text"], f"{what}: the tooltip says nothing: {tip}"
+    if selector is not None:
+        assert tip["target"], (
+            f"{what}: the tooltip describes no element that is, holds or sits in {selector} "
+            f"(aria-describedby): {tip}"
+        )
+    assert tip["inBody"] and not tip["inRoot"], f"{what}: the tooltip is not in a portal on document.body: {tip}"
+    assert not tip["inViewport"], f"{what}: the tooltip is inside the canvas's viewport, which its zoom scales: {tip}"
+    return tip
+
+
+def _no_tooltip(page, what: str, *, timeout: float = 2000) -> None:
+    deadline = time.time() + timeout / 1000
+    tips = page.evaluate(_TOOLTIPS_JS, None)
+    while tips and time.time() < deadline:
+        page.wait_for_timeout(100)
+        tips = page.evaluate(_TOOLTIPS_JS, None)
+    assert tips == [], f"{what}: a tooltip is still on screen: {tips}"
+
+
+def _around(page, tip: dict) -> dict:
+    """The box of the page that holds *tip* and its target, FRAME_MARGIN_PX
+    around them, in whole pixels and inside the viewport: their close-up."""
+    viewport = page.viewport_size or {"width": 1280, "height": 720}
+    boxes = (tip["box"], tip["target"])
+    left = max(0, math.floor(min(b["left"] for b in boxes) - FRAME_MARGIN_PX))
+    top = max(0, math.floor(min(b["top"] for b in boxes) - FRAME_MARGIN_PX))
+    right = min(viewport["width"], math.ceil(max(b["right"] for b in boxes) + FRAME_MARGIN_PX))
+    bottom = min(viewport["height"], math.ceil(max(b["bottom"] for b in boxes) + FRAME_MARGIN_PX))
+    return {"x": left, "y": top, "width": right - left, "height": bottom - top}
+
+
+def _assert_beside_target(tip: dict, what: str) -> None:
+    """6 px above its target and centered on it, or below it when there is no
+    room above."""
+    box, target = tip["box"], tip["target"]
+    off = abs(_middle(box)[0] - _middle(target)[0])
+    above, below = target["top"] - box["bottom"], box["top"] - target["bottom"]
+    assert off <= PLACE_PX, f"{what}: the tooltip is {off:.1f} px off its target's middle: {tip}"
+    assert min(abs(above - GAP_PX), abs(below - GAP_PX)) <= PLACE_PX, (
+        f"{what}: the tooltip is not {GAP_PX:.0f} px above or below its target "
+        f"(gap above {above:.1f}, below {below:.1f}): {tip}"
+    )
+
+
+def _assert_at_pointer(tip: dict, point: tuple[float, float], what: str) -> None:
+    """Over the pointer's x and 6 px above it, or below it when there is no
+    room above: a chart's tooltip goes where the pointer is."""
+    (x, y), box = point, tip["box"]
+    assert box["left"] - PLACE_PX <= x <= box["right"] + PLACE_PX, (
+        f"{what}: the tooltip {box} is not over the pointer's x, {x:.1f}"
+    )
+    assert min(abs(y - box["bottom"] - GAP_PX), abs(box["top"] - y - GAP_PX)) <= PLACE_PX, (
+        f"{what}: the tooltip {box} is not {GAP_PX:.0f} px above or below the pointer's y, {y:.1f}"
+    )
+
+
+def _assert_no_titles(page, where: str) -> None:
+    found = page.evaluate(_TITLES_JS, [selector for selector, _ in LIBRARY_TITLES])
+    assert not found, (
+        f"{where}: {len(found)} element(s) would draw the browser's own tooltip. Each one writes "
+        "data-tooltip instead, or, when a library draws it, goes in LIBRARY_TITLES with its reason:\n  "
+        + "\n  ".join(found[:80])
+    )
+
+
+def _open_first_details(page, card: str) -> None:
+    """Open the first *card*'s details with its View details button."""
+    page.locator(card).first.get_by_role("button", name="View details").click(timeout=20000)
+    expect(page.get_by_role("dialog").first).to_be_visible(timeout=10000)
+
+
+@pytest.mark.parametrize("target", list(TARGETS))
+def test_a_tooltip_is_the_same_at_every_canvas_zoom(
+    app_frontend: "FrontendPage",
+    current_server: str,
+    page,
+    target: str,
+):
+    require_project_page()
+    require_user_auth()
+    _open_26(
+        page, app_frontend, current_server,
+        username=f"tooltips_{target.replace('-', '_')}", agent=target == "agent-badge",
+    )
+    selector = TARGETS[target]
+    if target == "input-tag":
+        frame_node(page, JOIN, zoom=1.0)
+        _open_tab(page, JOIN, "code")
+        open_strip_category(page, JOIN, "inputs")
+    page.locator(f"{selector}:visible").first.wait_for(state="visible", timeout=30000)
+
+    sizes: list[tuple[float, dict]] = []
+    frames_failed: list[str] = []
+    for zoom in ZOOMS:
+        what = f"{target} at zoom {zoom}"
+        box = _center_on(page, selector, zoom)
+        _rest_on(page, box, what, avoid=selector)
+        tip = _one_tooltip(page, what, selector)
+        _assert_beside_target(tip, what)
+        if target == "delete-node":
+            assert tip["text"] == "Delete node", f"{what}: {tip['text']!r}"
+        if target == "agent-badge":
+            assert NODE_ONLY_AGENT_NAME in tip["text"], f"{what}: {tip['text']!r}"
+        sizes.append((zoom, tip["box"]))
+        try:
+            # The tooltip and its target are the subject: a close-up of them,
+            # compared as tightly as a node's.
+            save_workflow_test_screenshot(
+                page, STEM, test_name=f"{target}-zoom-{round(zoom * 100):03d}",
+                fit_reactflow=False, keep_tooltip=True, clip_rect=_around(page, tip),
+                pixel_threshold=CLOSEUP_PIXEL_THRESHOLD, max_diff_ratio=CLOSEUP_MAX_DIFF_RATIO,
+                closeup=True,
+            )
+        except AssertionError as error:
+            # Every zoom is measured all the same; the frames' verdict comes last.
+            frames_failed.append(f"zoom {zoom}: {error}")
+
+    (first_zoom, first), *rest = sizes
+    for zoom, box in rest:
+        assert abs(box["width"] - first["width"]) <= EDGE_PX and abs(box["height"] - first["height"]) <= EDGE_PX, (
+            f"{target}: the tooltip is {box['width']:.1f} x {box['height']:.1f} px at zoom {zoom}, "
+            f"and {first['width']:.1f} x {first['height']:.1f} px at zoom {first_zoom}"
+        )
+    assert not frames_failed, "\n".join(frames_failed)
+
+
+@pytest.mark.parametrize("editor", list(CHIPS))
+def test_a_chip_in_an_editor_shows_the_same_tooltip_at_zoom_1_and_2(
+    app_frontend: "FrontendPage",
+    current_server: str,
+    page,
+    editor: str,
+):
+    require_project_page()
+    require_user_auth()
+    node_id, tab = CHIPS[editor]
+    _open_26(page, app_frontend, current_server, username=f"tooltips_chip_{editor}")
+    frame_node(page, node_id, zoom=1.0)
+    _open_tab(page, node_id, tab)
+    node_locator(page, node_id).locator(".monaco-editor").first.wait_for(state="visible", timeout=30000)
+
+    sizes: list[tuple[float, dict]] = []
+    for zoom in (1.0, 2.0):
+        what = f"the chip [!! input_1 !!] in {node_id}'s {editor} at zoom {zoom}"
+        _center(page, _middle(_chip(page, node_id, "input_1")), zoom)
+        _rest_on(page, _chip(page, node_id, "input_1"), what)
+        tip = _one_tooltip(page, what)
+        assert "input_1" in tip["text"], f"{what}: {tip['text']!r}"
+        assert page.evaluate(_MONACO_HOVERS_JS) == 0, f"{what}: Monaco's own hover is on screen too"
+        sizes.append((zoom, tip["box"]))
+
+    (_, one), (_, two) = sizes
+    assert abs(two["width"] - one["width"]) <= EDGE_PX and abs(two["height"] - one["height"]) <= EDGE_PX, (
+        f"the {editor} chip's tooltip is {one['width']:.1f} x {one['height']:.1f} px at zoom 1 "
+        f"and {two['width']:.1f} x {two['height']:.1f} px at zoom 2"
+    )
+
+
+def _chip(page, node_id: str, inner: str, *, timeout: float = 15000) -> dict:
+    """The box of the chip ``[!! inner !!]`` in *node_id*'s editor, its line
+    scrolled into the editor's view."""
+    deadline = time.time() + timeout / 1000
+    box = page.evaluate(_CHIP_JS, {"nodeId": node_id, "inner": inner})
+    while box is None and time.time() < deadline:
+        page.wait_for_timeout(200)
+        box = page.evaluate(_CHIP_JS, {"nodeId": node_id, "inner": inner})
+    assert box, f"{node_id}'s editor shows no chip [!! {inner} !!]"
+    return box
+
+
+def test_tab_shows_a_tooltip_escape_hides_it_and_a_click_shows_none(
+    app_frontend: "FrontendPage",
+    current_server: str,
+    page,
+):
+    require_project_page()
+    require_user_auth()
+    _open_26(page, app_frontend, current_server, username="tooltips_keyboard")
+    delete = TARGETS["delete-node"]
+    _center_on(page, delete, 1.0)
+    _move_away(page, delete)
+
+    # The control before Delete node takes the focus, and Tab moves it on: a
+    # few presses at most, in case the page holds a stop the list above missed.
+    before = page.evaluate(_FOCUS_BEFORE_JS, delete)
+    assert before is not None, "nothing comes before the join's Delete node in the tab order"
+    reached: list[str | None] = []
+    for _ in range(5):
+        page.keyboard.press("Tab")
+        reached.append(page.evaluate("() => document.activeElement && document.activeElement.getAttribute('aria-label')"))
+        if reached[-1] == "Delete node":
+            break
+    assert reached[-1] == "Delete node", f"Tab from {before!r} went to {reached}, never to Delete node"
+    tip = _one_tooltip(page, "Delete node, reached with Tab", delete)
+    assert tip["text"] == "Delete node", tip
+    _assert_beside_target(tip, "Delete node, reached with Tab")
+
+    page.keyboard.press("Escape")
+    _no_tooltip(page, "after Escape on Delete node")
+
+    # A click's focus shows nothing: the join's Code tab, clicked with the
+    # mouse, which then rests on it for longer than a tooltip waits.
+    tab = _box(page, f'.react-flow__node[data-id="{JOIN}"] .nav-link[data-rr-ui-event-key="code"]')
+    page.mouse.click(*assert_in_view(page, *_middle(tab), "the join's Code tab"))
+    page.wait_for_timeout(1000)
+    assert page.evaluate(_TOOLTIPS_JS, None) == [], "a tooltip showed after a click on the join's Code tab"
+
+
+def test_a_chart_mark_shows_its_data_at_the_pointer_and_no_title(
+    app_frontend: "FrontendPage",
+    current_server: str,
+    page,
+):
+    require_project_page()
+    require_user_auth()
+    page.emulate_media(reduced_motion="reduce")
+    stub_login_and_enter_workflow(
+        page,
+        frontend_url=app_frontend.base_url,
+        backend_url=current_server,
+        name="Chart Tooltips",
+        username="tooltips_chart",
+        project_name="Chart tooltips",
+        project_spec=load_example_spec(ZIPS_EXAMPLE),
+    )
+    require_owner_view(page)
+    node_locator(page, ZIP_BARS_ID).wait_for(state="visible", timeout=45000)
+    run_all_and_wait(page, timeout_ms=RUN_MS)
+
+    page.evaluate(_UNSCROLL_JS, ZIP_BARS_ID)
+    frame_node(page, ZIP_BARS_ID)
+    page.locator(f"#vega{ZIP_BARS_ID} canvas").first.wait_for(state="attached", timeout=60000)
+    selector = drawing_selector(page, ZIP_BARS_ID)
+    assert selector, "the zip chart drew nothing"
+
+    # Down the left end of the bars, where every bar is drawn, until one shows
+    # its fields: "zip: 60614", then the rest of its tooltip encoding.
+    seen: list[str] = []
+    for down in (0.05, 0.2, 0.12, 0.28, 0.36, 0.44):
+        mark = mark_point(page, selector, (0.1, down))
+        if not mark:
+            seen.append(f"{down:.0%} down: no bar")
+            continue
+        point = assert_in_view(page, mark["x"], mark["y"], f"the bar {down:.0%} down the zip chart")
+        _move_away(page, f"#vega{ZIP_BARS_ID}")
+        page.mouse.move(*point)
+        try:
+            tip = _one_tooltip(page, f"the bar {down:.0%} down the zip chart", timeout=3000)
+        except AssertionError as error:
+            seen.append(f"{down:.0%} down: {error}")
+            continue
+        if re.search(r"(^| )zip: \S", tip["text"]):
+            break
+        seen.append(f"{down:.0%} down: {tip['text']!r}")
+    else:
+        raise AssertionError(f"no bar of the zip chart showed its fields in a tooltip: {seen}")
+
+    chart = page.evaluate(_CHART_JS, ZIP_BARS_ID)
+    assert chart, "the zip chart has no element"
+    assert chart["titled"] == [], f"the zip chart still writes a native title: {chart['titled']}"
+    assert " ".join((chart["tooltip"] or "").split()) == tip["text"], (
+        f"the tooltip says {tip['text']!r}; the chart's data-tooltip, {chart['tooltip']!r}"
+    )
+    _assert_at_pointer(tip, point, "the zip chart's tooltip")
+
+
+def test_the_canvas_draws_no_native_tooltip(
+    app_frontend: "FrontendPage",
+    current_server: str,
+    page,
+):
+    require_project_page()
+    require_user_auth()
+    dataflow = _open_26(page, app_frontend, current_server, username="tooltips_canvas_titles")
+    for node in dataflow["nodes"]:
+        card = node_locator(page, node["id"])
+        for tab in ("code", "grammar"):
+            if card.locator(f'.nav-link[data-rr-ui-event-key="{tab}"]').count():
+                _open_tab(page, node["id"], tab)
+                break
+        if card.locator('[data-widget-strip]:visible [data-strip-category="inputs"]').count():
+            open_strip_category(page, node["id"], "inputs")
+    _assert_no_titles(page, "the canvas, example 26 open with every editor and its Inputs open")
+
+    for kind in ("builtin", "packages", "datasets", "agents", "models"):
+        open_tools_palette(page, kind)
+        _assert_no_titles(page, f"the canvas, with the tool rail's {kind} palette open")
+
+
+@pytest.mark.parametrize(
+    "path, heading, card",
+    [
+        ("/catalog/data", "Data Catalog", "article[data-dataset-id]"),
+        ("/catalog/nodes", "Node Catalog", "article[data-pkg-dir]"),
+    ],
+    ids=["data-catalog", "node-catalog"],
+)
+def test_a_catalog_page_draws_no_native_tooltip(
+    app_frontend: "FrontendPage",
+    current_server: str,
+    page,
+    path: str,
+    heading: str,
+    card: str,
+):
+    require_project_page()
+    require_user_auth()
+    # The canvas first, which also waits out the page's first build.
+    _open_26(page, app_frontend, current_server, username=f"tooltips_{heading.split()[0].lower()}_catalog")
+    page.goto(f"{app_frontend.base_url}{path}")
+    page.wait_for_load_state("networkidle")
+    expect(page.get_by_role("heading", name=heading, level=1)).to_be_visible(timeout=30000)
+    page.locator(card).first.wait_for(state="visible", timeout=30000)
+    _assert_no_titles(page, f"the {heading} page")
+
+    _open_first_details(page, card)
+    _assert_no_titles(page, f"the {heading} page, a card's details open")
+
+
+def test_a_dashboard_draws_no_native_tooltip(
+    app_frontend: "FrontendPage",
+    current_server: str,
+    page,
+):
+    require_project_page()
+    require_user_auth()
+    session = _pinned_and_saved(page, app_frontend, current_server, prefix="tooltips_dashboard")
+    _open_dashboard(page, app_frontend.base_url, session["project"]["id"])
+    _chart_drew(page)
+    _assert_no_titles(page, "a dashboard, its chart drawn")
+
+
+def test_api_settings_draws_no_native_tooltip(
+    app_frontend: "FrontendPage",
+    current_server: str,
+    page,
+):
+    require_project_page()
+    require_user_auth()
+    page.emulate_media(reduced_motion="reduce")
+    login = stub_db_login(
+        page,
+        frontend_url=app_frontend.base_url,
+        backend_url=current_server,
+        username="tooltips_settings",
+        name="Tooltip Settings",
+        project_name="Tooltip settings",
+    )
+    # A configuration, so a row and its buttons are on the page.
+    api_json(
+        f"{current_server}/api/agents/llm/configs", login["token"], method="POST",
+        payload={"label": "Scripted A", "apiType": "testing", "model": "scripted-a"},
+    )
+    page.goto(f"{app_frontend.base_url}/settings/keys")
+    expect(page.get_by_role("heading", name="API Settings", level=1)).to_be_visible(timeout=90000)
+    expect(page.get_by_test_id("api-keys-tab").get_by_text("Scripted A").first).to_be_visible(timeout=15000)
+    _assert_no_titles(page, "API Settings, its API keys")
+
+    page.get_by_role("tab", name="Agent configuration", exact=True).click()
+    expect(page.get_by_role("tab", name="Agent configuration", exact=True)).to_have_attribute(
+        "aria-selected", "true"
+    )
+    _assert_no_titles(page, "API Settings, its Agent configuration")

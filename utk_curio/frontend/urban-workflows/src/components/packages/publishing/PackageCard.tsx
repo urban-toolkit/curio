@@ -131,7 +131,7 @@ export const PackageCard: React.FC<PackageCardProps> = ({
               ? `${styles.cardAvatar} ${styles.avatar_model} ${styles.cardAvatarButton}`
               : `${styles.cardIcon} ${styles.cardAvatarButton}`
           }
-          title={`View ${pkg.name} details`}
+          data-tooltip={`View ${pkg.name} details`}
           aria-label={`View ${pkg.name} details`}
           disabled={!onOpenDetails}
           onClick={() => onOpenDetails?.(pkg)}
@@ -222,7 +222,7 @@ export const PackageCard: React.FC<PackageCardProps> = ({
             type="button"
             className={styles.btnInstall}
             disabled={cardBusy}
-            title={`Add ${pkg.name} to this project`}
+            data-tooltip={`Add ${pkg.name} to this project`}
             onClick={() => onInstall(pkg)}
           >
             Add to project
@@ -254,7 +254,7 @@ export const PackageCard: React.FC<PackageCardProps> = ({
                  same dead end as the Agent and Data cards (#190, #199).
                  `performUninstall` saves the dataflow on the click now. */
               disabled={cardBusy}
-              title={
+              data-tooltip={
                 hasProject
                   ? `Remove ${pkg.name} from this project`
                   : `Remove ${pkg.name}; this saves the dataflow first`

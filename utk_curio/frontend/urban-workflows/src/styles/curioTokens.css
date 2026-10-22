@@ -78,6 +78,8 @@
   --curio-font-size-sm: 12px;
   --curio-font-size-md: 13px;
   --curio-font-size-lg: 14px;
+  /* The line a --curio-font-size-sm text sits on, as the tooltip sets it. */
+  --curio-line-height-sm: 16px;
 
   /* ── Geometry ──────────────────────────────────────────────────────── */
   --curio-radius-sm: 4px;
@@ -109,6 +111,7 @@
   --curio-shadow-browse-card-raised: 0 4px 16px rgba(0, 0, 0, 0.1);
   --curio-shadow-modal: 0 12px 32px rgba(0, 0, 0, 0.18);
   --curio-shadow-context-menu: 0 4px 12px rgba(0, 0, 0, 0.3);
+  --curio-shadow-tooltip: 0 6px 18px rgba(0, 0, 0, 0.14);
 
   /* ── Accent palette ────────────────────────────────────────────────────
      Raw colours behind the semantic roles above. Nothing outside this file
@@ -412,4 +415,8 @@
   --curio-z-modal: 10055;
   --curio-z-dialog: 10060;
   --curio-z-toast: 10070;
+  /* The one Curio tooltip (components/tooltip) shows over whatever the
+     pointer rests on, a toast included. Bootstrap's, at 1080, drew under the
+     drawers. */
+  --curio-z-tooltip: 10080;
 }

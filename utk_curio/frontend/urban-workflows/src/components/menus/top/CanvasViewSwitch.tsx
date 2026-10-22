@@ -43,7 +43,7 @@ export function CanvasViewSwitch({
           role="radio"
           aria-checked={value === view}
           aria-label={`${label} view`}
-          title={`${label} view`}
+          data-tooltip={`${label} view`}
           data-curio-canvas-view={view}
           className={clsx(styles.option, value === view && styles.optionChecked)}
           onClick={() => {

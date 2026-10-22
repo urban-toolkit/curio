@@ -44,6 +44,7 @@ jest.mock("vega", () => {
     logLevel() { return this; }
     renderer() { return this; }
     initialize() { return this; }
+    tooltip() { return this; }
     hover() { return this; }
     width() { return this; }
     height() { return this; }

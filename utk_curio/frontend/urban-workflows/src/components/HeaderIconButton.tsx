@@ -39,7 +39,7 @@ export function HeaderIconButton({
     <button
       type="button"
       aria-label={title}
-      title={title}
+      data-tooltip={title}
       style={{ ...resetStyle, ...style }}
       {...handlers}
     >

@@ -234,7 +234,7 @@ export default function ImageCardGrid({
             )}
             <div style={captionStyle}>
               {captionColumns(row).slice(0, 4).map((column) => (
-                <span key={column} style={fieldStyle} title={`${column}: ${String(row[column])}`}>
+                <span key={column} style={fieldStyle} data-tooltip={`${column}: ${String(row[column])}`}>
                   {column}: {row[column] == null ? 'null' : String(row[column])}
                 </span>
               ))}

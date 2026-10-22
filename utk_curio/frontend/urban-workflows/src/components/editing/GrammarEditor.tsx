@@ -8,6 +8,7 @@ import { registerRunNodeAction } from "./runNodeMonacoAction";
 import { describeError } from "../../adapters/node/autkRunSettlement";
 import { ReferenceStrip } from "./widgets/WidgetTag";
 import { insertReference, useCodeReferences } from "./widgets/monacoCodeReferences";
+import { useEditorTooltip } from "./useEditorTooltip";
 import type { CodeLanguage, InputScope, ReferenceScope } from "../../utils/references/codeReferences";
 import { NOTEBOOK_SPEC_EDITOR_MAX, useNotebookEditorHeight } from "./useNotebookEditorHeight";
 import { nodeEditorLook } from "./nodeEditorLook";
@@ -68,6 +69,8 @@ export default function GrammarEditor({
     useCodeReferences(widgetEditor?.editor, widgetEditor?.monaco, references, widgetLanguage, {
         hideJsonMarkers: true,
     });
+    // Its hovers, Monaco's own being off, in the Curio tooltip.
+    useEditorTooltip(widgetEditor?.editor, widgetEditor?.monaco, references, widgetLanguage);
     // In a notebook cell the spec is as tall as its lines, over its output.
     const editorHeight = useNotebookEditorHeight(NOTEBOOK_SPEC_EDITOR_MAX);
     const grammarRef = useRef(grammar);
@@ -317,6 +320,8 @@ export default function GrammarEditor({
                         ...NODE_EDITOR_SCROLLING,
                         // A plain input box, but on a dashboard tile.
                         ...look.editorOptions,
+                        // As in CodeEditor: the Curio tooltip shows the hovers.
+                        hover: { enabled: false },
                     }}
                 />
             </div>

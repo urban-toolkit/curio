@@ -221,7 +221,7 @@ test("Commit edits runs the node and every node below it, the map it feeds among
   expect(foot).toHaveTextContent("The 3 nodes below do not have these edits yet.");
   const update = screen.getByTestId("interaction-update");
   expect(update).toHaveTextContent(/^Commit edits$/);
-  expect(update).toHaveAttribute("title", "Runs this node and the 3 nodes below it with the edits");
+  expect(update).toHaveAttribute("data-tooltip", "Runs this node and the 3 nodes below it with the edits");
   fireEvent.click(update);
   expect(runDownstream).toHaveBeenCalledWith([NODE]);
 });

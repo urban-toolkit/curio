@@ -40,9 +40,10 @@ describe("what a reference is drawn as", () => {
     expect(byClass(CHIP_CLASS)).toEqual([line(9, 15)]);
     expect(byClass(CHIP_FIRST_CLASS)).toEqual([line(9, 10)]);
     expect(byClass(CHIP_LAST_CLASS)).toEqual([line(14, 15)]);
-    expect(decorations.find((d) => d.options.inlineClassName === CHIP_CLASS)?.options.hoverMessage).toEqual({
-      value: 'season = "summer"',
-    });
+    // What the chip says on hover, which the editor's Curio tooltip shows
+    // (useEditorTooltip.test.tsx); the decoration carries no Monaco hover.
+    expect(referenceMarks(CODE, scope, "python")[0].hover).toBe('season = "summer"');
+    expect(decorations.find((d) => d.options.inlineClassName === CHIP_CLASS)?.options).not.toHaveProperty("hoverMessage");
   });
 
   test("every decoration takes the line off Monaco's fixed-width path", () => {

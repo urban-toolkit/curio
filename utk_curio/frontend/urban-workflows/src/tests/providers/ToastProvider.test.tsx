@@ -164,7 +164,7 @@ describe("ToastProvider", () => {
       screen.getByText("This browser does not expose WebGPU."),
     ).toBeInTheDocument();
     const tally = screen.getByTestId("toast-count");
-    expect(tally).toHaveAttribute("title", "Reported 5 times");
+    expect(tally).toHaveAttribute("data-tooltip", "Reported 5 times");
     expect(tally.textContent).toContain("5");
   });
 

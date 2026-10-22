@@ -77,7 +77,7 @@ export const CopyButton = memo(function CopyButton({
       // Both, deliberately: the title is what a mouse user gets and the
       // aria-label is what a screen reader gets, and an icon-only button has no
       // other name.
-      title={name}
+      data-tooltip={name}
       aria-label={name}
       data-copy-status={status}
       onClick={(event) => {

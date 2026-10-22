@@ -31,6 +31,7 @@ import type { ScenarioLabel } from "../utils/scenarios/scenarioColors";
 import type { NodeEmptyReason } from "../utils/nodeEmptyState";
 import { resolveGrammarEmptyReason } from "../utils/nodeEmptyState";
 import { clearEmptyState, writeEmptyState } from "../utils/writeEmptyState";
+import { vegaTooltipHandler } from "../components/tooltip/vegaTooltip";
 
 // const schema = require('./vega-schema.json');
 const vega = require("vega");
@@ -641,6 +642,8 @@ export const useVega = ({
     let view = new vega.View(vega.parse(vegaspec), dashboardOn ? offlineViewOptionsOnce() : undefined)
       .logLevel(vega.Warn) // set view logging level
       .renderer("canvas")
+      // A mark's tooltip in the Curio tooltip, not the browser's title.
+      .tooltip(vegaTooltipHandler)
       .initialize("#vega" + data.nodeId)
       .hover();
     // Emptied once there is a view that shows none of it: a spec vega cannot

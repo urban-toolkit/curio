@@ -1,6 +1,10 @@
 import React from "react";
 import { render, screen, fireEvent } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { AgentAvatarBadge } from "../../components/agents/attach/AgentAvatarBadge";
+import { TooltipLayer } from "../../components/tooltip/TooltipLayer";
+import { setTooltipTimings } from "../../components/tooltip/tooltipStore";
+import { getByTooltip } from "../_support/tooltips";
 
 function attachment(over: Partial<any> = {}): any {
   return {
@@ -21,14 +25,22 @@ function attachment(over: Partial<any> = {}): any {
 }
 
 describe("AgentAvatarBadge", () => {
-  it("renders a hover tooltip with the agent name (macOS Dock style)", () => {
-    render(
-      <AgentAvatarBadge attachment={attachment()} active={false} onOpen={jest.fn()} onDetach={jest.fn()} />,
-    );
-    // The name is shown only in the tooltip label (the chip itself is an icon).
-    const tooltip = screen.getByText("Researcher");
-    expect(tooltip).toBeInTheDocument();
-    expect(tooltip).toHaveAttribute("aria-hidden", "true");
+  it("shows the agent name in the Curio tooltip on hover", async () => {
+    const restore = setTooltipTimings({ show: 0 });
+    try {
+      render(
+        <>
+          <TooltipLayer />
+          <AgentAvatarBadge attachment={attachment()} active={false} onOpen={jest.fn()} onDetach={jest.fn()} />
+        </>,
+      );
+      // The name is shown only in the tooltip (the chip itself is an icon).
+      expect(screen.queryByText("Researcher")).toBeNull();
+      await userEvent.hover(screen.getByRole("button", { name: /Open chat with Researcher/ }));
+      expect(await screen.findByRole("tooltip")).toHaveTextContent(/^Researcher$/);
+    } finally {
+      restore();
+    }
   });
 
   it("applies the blue focus-border (active) class only when selected", () => {
@@ -53,7 +65,7 @@ describe("AgentAvatarBadge", () => {
         onDetach={jest.fn()}
       />,
     );
-    expect(screen.getByText("Researcher: Dataset Import Help")).toBeInTheDocument();
+    expect(getByTooltip(document.body, "Researcher: Dataset Import Help")).toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: "Open chat with Researcher: Dataset Import Help" }),
     ).toBeInTheDocument();

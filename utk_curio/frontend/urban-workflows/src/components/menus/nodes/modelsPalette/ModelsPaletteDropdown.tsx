@@ -75,7 +75,7 @@ export const ModelsPaletteDropdown = memo(function ModelsPaletteDropdown({
           onClick={() => setOpen(!open)}
           aria-expanded={open}
           aria-haspopup="true"
-          title={open ? "Close model palette" : "Open model palette"}
+          data-tooltip={open ? "Close model palette" : "Open model palette"}
         >
           <span className={styles.triggerTop}>
             <FontAwesomeIcon icon={faBrain} className={styles.triggerIcon} />

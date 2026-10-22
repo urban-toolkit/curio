@@ -89,7 +89,7 @@ function Item({ id, byId, currentId, open, toggle, details }: ItemSharedProps & 
         className={styles.head}
         aria-expanded={isOpen}
         aria-current={current ? "true" : undefined}
-        title={item.tooltip ? `${item.title}\n${item.tooltip}` : item.title}
+        data-tooltip={item.tooltip ? `${item.title}\n${item.tooltip}` : item.title}
         onClick={() => toggle(id)}
       >
         <span className={styles.dot} aria-hidden="true" />

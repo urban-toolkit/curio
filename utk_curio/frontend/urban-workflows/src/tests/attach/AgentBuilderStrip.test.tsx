@@ -56,7 +56,7 @@ describe("AgentBuilderStrip (dev/52 DR-5)", () => {
     );
     const solve = screen.getByRole("button", { name: "Solve" });
     expect(solve).toBeDisabled();
-    expect(solve).toHaveAttribute("title", "Apply or dismiss the plan review first");
+    expect(solve).toHaveAttribute("data-tooltip", "Apply or dismiss the plan review first");
   });
 
   it("applied phase shows per-node progress and solves the batch", async () => {
@@ -491,7 +491,7 @@ describe("AgentBuilderStrip — dev/115 verified Solve as a background job", () 
     expect(screen.getByRole("status")).toHaveTextContent(/nothing was replayed/);
     const retry = screen.getByRole("button", { name: "Retry 1 interrupted" });
     expect(retry).not.toBeDisabled();
-    expect(retry).toHaveAttribute("title", expect.stringContaining("linked to the interrupted one"));
+    expect(retry).toHaveAttribute("data-tooltip", expect.stringContaining("linked to the interrupted one"));
   });
 
   it("the live pills speak the verified loop's states in words", () => {
@@ -525,7 +525,7 @@ describe("AgentBuilderStrip — dev/115 verified Solve as a background job", () 
     );
     expect(screen.getByRole("button", { name: "Solving…" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Stop" })).toHaveAttribute(
-      "title", expect.stringContaining("a running fetch cannot be aborted"),
+      "data-tooltip", expect.stringContaining("a running fetch cannot be aborted"),
     );
   });
 });
@@ -687,7 +687,7 @@ describe("AgentBuilderStrip — dev/131 the session, and nodes that depend on yo
     );
     const solve = screen.getByRole("button", { name: /Solve/ });
     expect(solve).toBeDisabled();
-    expect(solve).toHaveAttribute("title", expect.stringContaining("Waiting for you"));
+    expect(solve).toHaveAttribute("data-tooltip", expect.stringContaining("Waiting for you"));
   });
 
   it("keeps Solve active when something else can still be attempted", () => {
@@ -805,11 +805,11 @@ describe("AgentBuilderStrip names each node's own finder", () => {
     const open = within(group).getByRole("button", { name: "Open My Finder for this node" });
     expect(open).toHaveTextContent(/^Open My Finder$/);
     expect(open).toHaveAttribute(
-      "title",
+      "data-tooltip",
       "Opens this node's My Finder chat, where the candidates await your selection. Confirm one, then Solve again.",
     );
     expect(screen.getByRole("button", { name: "Solve node a on its own" })).toHaveAttribute(
-      "title",
+      "data-tooltip",
       "This node is waiting for you to confirm a source: open its My Finder first",
     );
     expect(screen.getByRole("group", { name: "My Orchestrator" })).not.toHaveTextContent(/Dataset Finder/);

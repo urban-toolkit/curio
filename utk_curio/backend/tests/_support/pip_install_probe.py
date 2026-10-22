@@ -271,24 +271,42 @@ def _isolated_runs(nodes):
     return {"docs": os.path.realpath(os.path.join(work, "docs")), "runs": runs}
 
 
+def _digest(text):
+    return None if text is None else hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
 def _shipped_agents():
     """The agents Curio ships (``agents/domain/builtin.py``): the folder they
     are read from, and by coordinate the sha256 of each prompt a run of each
     reads, its own and the shared preamble, or None for one it cannot read."""
-    import hashlib
-
     from utk_curio.backend.app.agents.domain import builtin
-
-    def digest(text):
-        return None if text is None else hashlib.sha256(text.encode("utf-8")).hexdigest()
 
     return {
         "root": str(builtin.agents_dir()),
         "prompts": {
-            m.dir_name: {key: digest(builtin.read_prompt_text(m.dir_name, key)) for key in m.prompts}
+            m.dir_name: {key: _digest(builtin.read_prompt_text(m.dir_name, key)) for key in m.prompts}
             for m in builtin.list_builtin_manifests()
         },
     }
+
+
+def _agent_text():
+    """The base entry Curio ships (``agents/domain/agent_text.py``): its
+    folder, and by path the sha256 of each page it lists, rendered, or None
+    for one it cannot read."""
+    from utk_curio.backend.app.agents.domain import agent_text, builtin
+
+    return {
+        "root": str(agent_text.base_dir()),
+        "pages": {page: _digest(builtin.read_page(page, wanted_by="the probe")) for page in agent_text.pages()},
+    }
+
+
+def _default_preamble():
+    """The preamble every agent shares, its page in the base entry rendered."""
+    from utk_curio.backend.app.agents.domain import agent_text, builtin
+
+    return agent_text.render(agent_text.page_file(builtin.PREAMBLE_FILE))
 
 
 def _agent_eval_out():
@@ -351,8 +369,9 @@ def main():
     report["dataflows"] = _guarded(_shipped_dataflows)
     report["worked_examples"] = _guarded(_worked_examples)
     report["trill_schema"] = _guarded(lambda: contracts._Sources().trill)
-    report["default_preamble"] = _guarded(contracts.render_default_preamble)
+    report["default_preamble"] = _guarded(_default_preamble)
     report["agents"] = _guarded(_shipped_agents)
+    report["agent_text"] = _guarded(_agent_text)
     report["prompt_fixtures"] = _guarded(_prompt_fixtures)
     report["folder_sources"] = _guarded(_folder_sources)
 

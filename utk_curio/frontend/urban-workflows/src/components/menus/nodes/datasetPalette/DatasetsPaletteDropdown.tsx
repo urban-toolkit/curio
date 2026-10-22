@@ -194,7 +194,7 @@ export const DatasetsPaletteDropdown = memo(function DatasetsPaletteDropdown({
           // The count below is being fetched again (after a save, an install
           // or an import), so the number shown may be about to change.
           aria-busy={catalog.loading || catalog.refreshing}
-          title={open ? "Close dataset palette" : "Open dataset palette"}
+          data-tooltip={open ? "Close dataset palette" : "Open dataset palette"}
         >
           <span className={styles.triggerTop}>
             <FontAwesomeIcon icon={faDatabase} className={styles.triggerIcon} />

@@ -59,7 +59,7 @@ export function EditableNodeHeaderLabel({
   return (
     <div className={styles.labelWrap}>
       {executed ? (
-        <span className={styles.execMark} title="Executed">
+        <span className={styles.execMark} data-tooltip="Executed">
           &#10003;
         </span>
       ) : null}
@@ -81,7 +81,7 @@ export function EditableNodeHeaderLabel({
             keywordHighlighted ? styles.labelTextHighlighted : ""
           }`}
           data-curio-pkg-palette-node-action="true"
-          title="Click to edit node title"
+          data-tooltip="Click to edit node title"
           aria-label={`Edit node title: ${displayLabel}`}
           {...labelEditClick}
         >
@@ -90,7 +90,7 @@ export function EditableNodeHeaderLabel({
       ) : (
         <span
           className={`${styles.labelText} ${keywordHighlighted ? styles.labelTextHighlighted : ""}`}
-          title={displayLabel}
+          data-tooltip={displayLabel}
         >
           {displayLabel}
         </span>
@@ -101,7 +101,7 @@ export function EditableNodeHeaderLabel({
           // The gear is one of the node's tools (Node.css).
           className={`${styles.configBtn} ${keywordHighlighted ? styles.configBtnHighlighted : ""} curio-node-tools`}
           data-curio-pkg-palette-node-action="true"
-          title="Node settings"
+          data-tooltip="Node settings"
           aria-label={`Node settings for ${displayLabel}`}
           {...configClick}
         >

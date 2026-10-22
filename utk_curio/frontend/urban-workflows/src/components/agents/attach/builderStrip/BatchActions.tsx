@@ -24,7 +24,7 @@ export const BatchActions: React.FC<{
       type="button"
       className={styles.solve}
       disabled={solveRunning || Boolean(solveDisabledReason)}
-      title={
+      data-tooltip={
         solveDisabledReason ??
         (phase === "interrupted"
           ? "A new execution linked to the interrupted one; nothing is replayed"
@@ -45,7 +45,7 @@ export const BatchActions: React.FC<{
         type="button"
         className={styles.run}
         disabled={cancelling}
-        title="Ends the session after the current node finishes (a running fetch cannot be aborted). Everything already written stays."
+        data-tooltip="Ends the session after the current node finishes (a running fetch cannot be aborted). Everything already written stays."
         onClick={onCancel}
       >
         {cancelling ? "Stopping…" : "Stop"}
@@ -55,7 +55,7 @@ export const BatchActions: React.FC<{
       type="button"
       className={styles.run}
       disabled={phase !== "ready" || Boolean(runDisabledReason) || isRunActive}
-      title={runDisabledReason ?? (isRunActive ? "A run is already in progress" : undefined)}
+      data-tooltip={runDisabledReason ?? (isRunActive ? "A run is already in progress" : undefined)}
       onClick={onRun}
     >
       Run workflow

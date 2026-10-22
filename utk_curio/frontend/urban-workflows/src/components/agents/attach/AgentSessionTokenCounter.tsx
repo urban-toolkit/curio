@@ -21,7 +21,7 @@ export const AgentSessionTokenCounter: React.FC<{
   return (
     <span
       className={`${styles.counter} ${live ? styles.live : ""}`}
-      title={breakdown}
+      data-tooltip={breakdown}
       aria-label={`Session token usage: ${breakdown}`}
     >
       {formatTokenCount(total)} tokens
