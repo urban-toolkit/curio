@@ -22,13 +22,23 @@ export interface Projection {
   pixels: (xy: XY, length: number) => number;
 }
 
-/** How the map shows a data coordinate now, and back: through its camera and its origin. */
+/**
+ * How the map shows a data coordinate now, and back: through its camera and its origin.
+ *
+ * Each draw of a map is a new map on a canvas of its own, and the map an edit
+ * draws again keeps its view. While the next one draws, the map it replaces
+ * has left the page with its canvas, which measures nothing, but keeps its
+ * camera, and its renderer keeps the canvas's size as it was laid out: it
+ * shows each feature where it showed it, where the next one shows it again,
+ * so a click on the map then still finds the feature under it.
+ */
 export function projectionOf(map: any, geographic: boolean): Projection | null {
   const camera = map?.camera;
   const canvas: HTMLCanvasElement | undefined = map?.canvas;
   if (!camera || !canvas || typeof camera.getViewProjectionMatrix !== "function") return null;
-  const width = canvas.offsetWidth;
-  const height = canvas.offsetHeight;
+  const replaced = canvas.isConnected === false;
+  const width = replaced ? Number(map.renderer?.cssWidth) : canvas.offsetWidth;
+  const height = replaced ? Number(map.renderer?.cssHeight) : canvas.offsetHeight;
   if (!(width > 0 && height > 0)) return null;
   let origin: number[] = [0, 0];
   try {
