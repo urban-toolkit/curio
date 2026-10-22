@@ -37,7 +37,7 @@ describe("AgentAvatarBadge", () => {
       // The name is shown only in the tooltip (the chip itself is an icon).
       expect(screen.queryByText("Researcher")).toBeNull();
       await userEvent.hover(screen.getByRole("button", { name: /Open chat with Researcher/ }));
-      expect(await screen.findByRole("tooltip")).toHaveTextContent("Researcher");
+      expect(await screen.findByRole("tooltip")).toHaveTextContent(/^Researcher$/);
     } finally {
       restore();
     }

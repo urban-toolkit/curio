@@ -94,6 +94,10 @@ export const CatalogKindIcon: React.FC<CatalogKindIconProps> = ({
         .filter(Boolean)
         .join(" ")}
       data-tooltip={title ?? meta.label}
+      // Given a title, the icon names what it shows, in the tooltip's words;
+      // else it only decorates the words beside it.
+      role={title ? "img" : undefined}
+      aria-label={title || undefined}
       aria-hidden={title ? undefined : true}
     >
       {children}
