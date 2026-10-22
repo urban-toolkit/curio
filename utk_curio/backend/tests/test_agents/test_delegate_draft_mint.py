@@ -147,7 +147,7 @@ def _setup(client, token, project_id, monkeypatch, *, parent=RESEARCHER, replies
         from utk_curio.backend.app.agents.application.turns import delegates
         from utk_curio.backend.app.agents.application.turns import titles
 
-        if messages and messages[0].get("content") == titles.TITLE_PROMPT:
+        if messages and messages[0].get("content") == titles.title_prompt():
             return "Title"
         calls.append(messages)
         return replies[min(len(calls) - 1, len(replies) - 1)]
@@ -1352,9 +1352,10 @@ def test_package_writing_reuse_first_is_executable_on_both_paths():
 
 def test_build_request_contract_teaches_the_reuse_reply():
     """The A8 lesson: nobody emits a protocol they were never shown."""
-    from utk_curio.backend.app.agents.application.turns.delegates import _BUILD_REQUEST_CONTRACT
+    from utk_curio.backend.app.agents.application.turns.delegates import _contract
 
-    taught = json.dumps(_BUILD_REQUEST_CONTRACT)
-    assert "insteadOfAuthoring" in _BUILD_REQUEST_CONTRACT
+    contract = _contract("build-request")
+    taught = json.dumps(contract)
+    assert "insteadOfAuthoring" in contract
     assert "reuseExisting" in taught
     assert "dirName" in taught

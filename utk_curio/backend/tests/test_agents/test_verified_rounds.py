@@ -854,7 +854,7 @@ class TestValidateNodeCarriesDatasetPaths:
         calls = []
 
         def _fake_run(config, messages, **kwargs):
-            if messages and messages[0].get("content") == titles.TITLE_PROMPT:
+            if messages and messages[0].get("content") == titles.title_prompt():
                 return "Title"
             calls.append(messages)
             return replies[min(len(calls) - 1, len(replies) - 1)]
@@ -942,7 +942,7 @@ class TestVerifiedSolve:
         ca_calls: list = []
 
         def _fake_run(config, messages, **kwargs):
-            if messages and messages[0].get("content") == titles.TITLE_PROMPT:
+            if messages and messages[0].get("content") == titles.title_prompt():
                 return "Title"
             calls.append(messages)
             frame = messages[-1].get("content") or ""
@@ -1451,7 +1451,7 @@ class TestSolveNode:
         calls: list = []
 
         def _fake_run(config, messages, **kwargs):
-            if messages and messages[0].get("content") == titles.TITLE_PROMPT:
+            if messages and messages[0].get("content") == titles.title_prompt():
                 return "Title"
             calls.append(messages)
             return script[min(len(calls) - 1, len(script) - 1)] if script else "df = input_0[0]\nreturn df"

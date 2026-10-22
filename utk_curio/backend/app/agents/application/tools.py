@@ -23,18 +23,27 @@ its grants as native tools (:func:`native_tools`), named by the reversible
 block (``content.tail_instruction``). Either way the request passes the same
 parser, budgets, grant check and mint: the schema tells the model the shape,
 and never replaces the server's own validation.
+
+**What a run is told.** A contract's description and the text of each of its
+params are the base entry's ``tools.md``, the section named by its id
+(:func:`tool_text`); this module holds each schema's shape.
 """
 
 from __future__ import annotations
 
 import copy
 import json
+import re
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
+from functools import lru_cache
+from types import MappingProxyType
 from typing import Iterable
 
 from utk_curio.backend.app.agents.application.turns import examples as worked_examples
-from utk_curio.backend.app.agents.domain import plan_topology
+from utk_curio.backend.app.agents.domain import agent_text, builtin, contracts, plan_topology
 from utk_curio.backend.app.agents.domain.tool_names import (
+    DELEGATE_TOOL,
     tool_id_of,
     wire_name,
 )
@@ -70,79 +79,183 @@ def _map(description: str) -> dict:
     return {"type": "object", "description": description}
 
 
-def _no_params() -> dict:
+#: models.search bounds: the most rows a call returns, and the most labels per
+#: row (``contracts``, which the tool's text reads them from too).
+_MODELS_SEARCH_MAX_ROWS = contracts.MODELS_SEARCH_MAX_ROWS
+_MODEL_LABELS_MAX = contracts.MODEL_LABELS_MAX
+
+
+# --- What a run is told of each tool -------------------------------------------
+#
+# The base entry's tools.md: one section per tool by its id, the native
+# delegation tool's (``delegate``), and ``parameters``, the texts of the
+# parameters several tools take. A section's first part is the tool's
+# description, ``### Native`` the description a run on native tools gets in its
+# place, and ``### Parameters`` one ``- <path>: <text>`` line per parameter, by
+# its path in the tool's parameters: ``nodes.ref`` is the ``ref`` of each entry
+# of ``nodes``, and ``widgets[]`` an entry of ``widgets``.
+
+#: The section of ``tools.md`` with the texts of the parameters several tools take.
+SHARED_PARAMETERS = "parameters"
+_SUBSECTION_RE = re.compile(r"^### (.+?)[ \t]*$", re.MULTILINE)
+_SUBSECTIONS = ("Native", "Parameters")
+_PARAMETER_RE = re.compile(
+    r"^- (?P<path>[A-Za-z][A-Za-z0-9]*(?:\[\])?(?:\.[A-Za-z][A-Za-z0-9]*(?:\[\])?)*): (?P<text>\S.*)$"
+)
+
+
+@dataclass(frozen=True)
+class ToolText:
+    """What ``tools.md`` says of one tool."""
+
+    description: str
+    #: What a run on native tools gets in place of the description, or None.
+    native_description: str | None
+    #: The text of each parameter, by its path in the tool's parameters.
+    parameters: Mapping[str, str]
+
+
+def tool_texts() -> Mapping[str, ToolText]:
+    """Every section of the base entry's ``tools.md``, by name, read as an
+    agent reads the page (``agent_text``)."""
+    return _tool_texts(agent_text.page_text(builtin.TOOLS_FILE))
+
+
+@lru_cache(maxsize=8)
+def _tool_texts(text: str) -> Mapping[str, ToolText]:
+    where = agent_text.PAGE_PREFIX + builtin.TOOLS_FILE
+    return MappingProxyType({
+        name: _tool_text(name, body, f"{where}, section {name}")
+        for name, body in agent_text.split_sections(text, where).items()
+    })
+
+
+def _tool_text(name: str, body: str, where: str) -> ToolText:
+    """One section of ``tools.md``. The section ``parameters`` is parameter
+    lines alone."""
+    lead, *rest = ("", "Parameters", body) if name == SHARED_PARAMETERS else _SUBSECTION_RE.split(body)
+    parts = dict(zip(rest[0::2], rest[1::2]))
+    if set(parts) - set(_SUBSECTIONS) or len(parts) != len(rest) // 2:
+        raise agent_text.AgentTextError(
+            f"{where}: a tool's subsections are {' and '.join(_SUBSECTIONS)}, each at most once, "
+            f"not {rest[0::2]}"
+        )
+    parameters: dict[str, str] = {}
+    for line in parts.get("Parameters", "").splitlines():
+        if not line.strip():
+            continue
+        match = _PARAMETER_RE.match(line)
+        if match is None:
+            raise agent_text.AgentTextError(f"{where}: {line!r} is no '- <path>: <text>' line")
+        if match["path"] in parameters:
+            raise agent_text.AgentTextError(f"{where} gives the parameter {match['path']!r} twice")
+        parameters[match["path"]] = match["text"]
+    native = parts.get("Native", "").strip("\n")
+    return ToolText(lead.strip("\n"), native or None, MappingProxyType(parameters))
+
+
+def tool_text(tool_id: str) -> ToolText:
+    """What ``tools.md`` says of the tool *tool_id*, or of the native
+    delegation tool. Raises ``agent_text.AgentTextError`` when it has no
+    section for it."""
+    texts = tool_texts()
+    if tool_id not in texts:
+        raise agent_text.AgentTextError(
+            f"{agent_text.PAGE_PREFIX}{builtin.TOOLS_FILE} has no section for the tool {tool_id!r}"
+        )
+    return texts[tool_id]
+
+
+class _Say:
+    """The text of each parameter one tool's schema asks for, by its path:
+    the tool's own, else one several tools share. ``asked`` keeps each path
+    asked for."""
+
+    def __init__(self, tool_id: str) -> None:
+        self.tool_id = tool_id
+        self.own = tool_text(tool_id).parameters
+        self.shared = tool_text(SHARED_PARAMETERS).parameters
+        self.asked: list[str] = []
+
+    def __call__(self, path: str) -> str:
+        self.asked.append(path)
+        for found in (self.own, self.shared):
+            if path in found:
+                return found[path]
+        raise agent_text.AgentTextError(
+            f"{agent_text.PAGE_PREFIX}{builtin.TOOLS_FILE} gives no text for the parameter {path!r} "
+            f"of {self.tool_id}, in its section or in {SHARED_PARAMETERS}"
+        )
+
+
+Say = Callable[[str], str]
+
+
+def _no_parameters(_say: Say) -> dict:
     return _object({})
 
 
-#: models.search bounds: the most rows a call returns, and the most labels per
-#: row. A Transformers checkpoint may name hundreds of classes.
-_MODELS_SEARCH_MAX_ROWS = 40
-_MODEL_LABELS_MAX = 40
+def _node_id(say: Say) -> dict:
+    return _text(say("nodeId"))
 
-_NODE_ID = _text("The node's id. Defaults to the node this agent is attached to.")
-_APPEARANCE = _object({"backgroundColor": _text("A palette name or #RRGGBB.")})
-#: #662: one widget a node declares (``$defs.widget``); the server checks the rest.
-_WIDGETS = {
-    "type": "array",
-    "items": {
-        **_object(
-            {
-                "name": _text("Letters, digits and underscores: the code places it as [!! name !!]."),
-                "type": {"type": "string", "enum": list(WIDGET_KINDS)},
-                "label": _text("What the Widgets tab shows beside the control."),
-            },
-            "name", "type",
-        ),
-        "description": "A widget: name, type, label, default, and options (choices, display, min, max, step, units).",
-    },
-    "description": "The node's widgets: values the user sets in its Widgets tab, which its code reads.",
-}
-#: #662: one scenario a plan saves: a selection, or a duplicate of one.
-_SCENARIO = _object(
-    {
-        "name": _text("The scenario's name."),
-        "nodes": _texts("A selection's nodes: refs of this plan or existing node ids."),
-        "duplicateOf": _text("A duplicate: the name of a scenario earlier in this list, whose nodes it copies."),
-        "copies": _map("A duplicate: each node of that scenario to the ref its copy takes."),
-        "values": _map("A duplicate: a copy's ref to the widget values it changes, {name: value}."),
-        "description": _text("What it changes, in one line."),
-        "color": _text("A #RRGGBB color; the next free one when absent."),
-    },
-    "name",
-)
 
-#: What a plan may do, told to both forms of dataflow.plan.write.
-_PLAN_RULES = (
-    "A plan may add "
-    "nodes, add connections (edge-only plans are valid), and/or remove, "
-    "each part optional. kind defaults to data; an interaction edge carries "
-    "selections, never data: it links two visualizations when one of them is "
-    "a Vega-Lite or Autark node, or a visualization to a data-pool node. Data "
-    "edges must keep the graph acyclic: a plan that closes a cycle is "
-    "refused with the loop named. nodeType must come from the Available "
-    "node templates list. A node may declare widgets, and a plan may save "
-    "scenarios: selections of its nodes, or duplicates of one. The user "
-    "reviews the whole plan (removals listed by name); nothing changes "
-    "without approval."
-)
+def _appearance(say: Say) -> dict:
+    return _object({"backgroundColor": _text(say("appearance.backgroundColor"))})
+
+
+def _widgets(say: Say) -> dict:
+    """#662: the widgets a node declares (``$defs.widget``); the server checks the rest."""
+    return {
+        "type": "array",
+        "items": {
+            **_object(
+                {
+                    "name": _text(say("widgets.name")),
+                    "type": {"type": "string", "enum": list(WIDGET_KINDS)},
+                    "label": _text(say("widgets.label")),
+                },
+                "name", "type",
+            ),
+            "description": say("widgets[]"),
+        },
+        "description": say("widgets"),
+    }
+
+
+def _scenario(say: Say) -> dict:
+    """#662: one scenario a plan saves: a selection, or a duplicate of one."""
+    return _object(
+        {
+            "name": _text(say("scenarios.name")),
+            "nodes": _texts(say("scenarios.nodes")),
+            "duplicateOf": _text(say("scenarios.duplicateOf")),
+            "copies": _map(say("scenarios.copies")),
+            "values": _map(say("scenarios.values")),
+            "description": _text(say("scenarios.description")),
+            "color": _text(say("scenarios.color")),
+        },
+        "name",
+    )
 
 
 @dataclass(frozen=True)
 class ToolContract:
     """A typed, versioned reference to one domain-owned operation.
 
-    ``parameters`` is the JSON Schema of its params, offered to a model that
-    calls tools natively. ``native_description`` replaces ``description`` there
-    when the fenced one teaches a block syntax a native call does not use, or
-    spells out params the schema already gives: a native description holds at
-    most 1,024 characters (OpenAI's limit)."""
+    What a run is told of it is the section of ``tools.md`` named by its id
+    (:func:`tool_text`). ``parameters`` is the JSON Schema of its params,
+    offered to a model that calls tools natively: its shape is
+    ``parameter_schema``'s and each parameter's text the section's.
+    ``native_description`` replaces ``description`` there when the fenced one
+    teaches a block syntax a native call does not use, or spells out params
+    the schema already gives: a native description holds at most 1,024
+    characters (OpenAI's limit)."""
 
     id: str
     contract_version: str
     effect: str  # "read" | "mutate"
-    description: str
-    parameters: dict = field(default_factory=_no_params, compare=False)
-    native_description: str | None = None
+    #: The JSON Schema of its params, given the text of each (``_Say``).
+    parameter_schema: Callable[[Say], dict] = field(default=_no_parameters, compare=False)
     #: What the tool does, in plain words for people, where the agent details
     #: window lists an agent's tools. A mutate contract's starts "Propose".
     label: str = ""
@@ -151,101 +264,75 @@ class ToolContract:
         if self.effect not in _EFFECTS:
             raise ValueError(f"tool effect must be one of {_EFFECTS}, got {self.effect!r}")
 
+    @property
+    def description(self) -> str:
+        return tool_text(self.id).description
+
+    @property
+    def native_description(self) -> str | None:
+        return tool_text(self.id).native_description
+
+    @property
+    def parameters(self) -> dict:
+        return self.parameter_schema(_Say(self.id))
+
 
 # The server-owned allowlist (DEC-017). Each contract has a named consumer in
-# the built-in roster (dev/41 §4.3, dev/48) — nothing speculative.
+# the built-in roster (dev/41 §4.3, dev/48): nothing speculative.
 REGISTRY: dict[str, ToolContract] = {
     "dataflow.read": ToolContract(
         id="dataflow.read",
         contract_version="2",
         effect="read",
         label="Read the dataflow",
-        description=(
-            "Read the project's saved dataflow, structure-first: every node "
-            "(id, type, goal, content length, widgets) and ALL edges, plus each "
-            "node's last runtime status and the dataflow's scenarios with their "
-            "levers, fixed context and outcomes. Node content is elided: use "
-            'node.read for one node\'s content, or params {"include": ["content"]} '
-            "for the full spec (large)."
-        ),
-        parameters=_object({
+        parameter_schema=lambda say: _object({
             "include": {
                 "type": "array",
                 "items": {"type": "string", "enum": ["content"]},
-                "description": 'Pass ["content"] for the full spec, node content included (large).',
+                "description": say("include"),
             },
         }),
     ),
     # dev/67-4 (DEC-053), consumer: the Researcher, in its chat. Policy-gated
-    # egress (SSRF guards, byte caps, per-run budget) — verification of
+    # egress (SSRF guards, byte caps, per-run budget): verification of
     # external dataset APIs, never crawling.
     "web.fetch": ToolContract(
         id="web.fetch",
         contract_version="1",
         effect="read",
         label="Read a web page",
-        description=(
-            'Fetch one public https URL and return its status, content type, '
-            'and a bounded body preview. Params: {"url": "https://..."}. '
-            "Use it to VERIFY endpoints, dataset ids, and API shapes — never "
-            "to crawl. Private/internal addresses are refused; at most 4 "
-            "web calls per run."
-        ),
-        parameters=_object({"url": _text("One public https URL.")}, "url"),
+        parameter_schema=lambda say: _object({"url": _text(say("url"))}, "url"),
     ),
     "web.search": ToolContract(
         id="web.search",
         contract_version="1",
         effect="read",
         label="Search the web",
-        description=(
-            'Search the web for factual verification. Params: {"q": "<query>"}. '
-            "Returns bounded {title, url, snippet} rows from this deployment's "
-            "search provider (DuckDuckGo unless the operator named another), "
-            "or an error that says why it could not search. At most 4 web "
-            "calls per run."
-        ),
-        parameters=_object({"q": _text("The search query.")}, "q"),
+        parameter_schema=lambda say: _object({"q": _text(say("q"))}, "q"),
     ),
-    # dev/67-2 (DEC-052) — consumers: the builder/debug/explainer agents. The
+    # dev/67-2 (DEC-052), consumers: the builder/debug/explainer agents. The
     # runtime journal's read surface: why a node's last run failed.
     "node.runtime.read": ToolContract(
         id="node.runtime.read",
         contract_version="1",
         effect="read",
         label="Read a node's last run",
-        description=(
-            "Read one node's LAST execution outcome: status, error traceback "
-            "tail, stdout tail, output metadata, and whether the node's "
-            'content changed since that run. Params: {"nodeId": "..."} — '
-            "defaults to the node this agent is attached to. A node that "
-            'never ran reports status "never-executed".'
-        ),
-        parameters=_object({"nodeId": _NODE_ID}),
+        parameter_schema=lambda say: _object({"nodeId": _node_id(say)}),
     ),
     "node.read": ToolContract(
         id="node.read",
         contract_version="1",
         effect="read",
         label="Read a node",
-        description=(
-            'Read one node from the saved spec. Params: {"nodeId": "..."} — '
-            "defaults to the node this agent is attached to."
-        ),
-        parameters=_object({"nodeId": _NODE_ID}),
+        parameter_schema=lambda say: _object({"nodeId": _node_id(say)}),
     ),
     "node.content.write": ToolContract(
         id="node.content.write",
         contract_version="1",
         effect="mutate",
         label="Propose a content change",
-        description=(
-            'Propose replacing one node\'s content. Params: {"nodeId": "...", '
-            '"content": "..."}. The user reviews the proposal before anything '
-            "is applied; nothing changes without their explicit approval."
-        ),
-        parameters=_object(
-            {"nodeId": _NODE_ID, "content": _text("The node's complete new content.")},
+        parameter_schema=lambda say: _object(
+            {"nodeId": _node_id(say), "content": _text(say("content"))},
             "content",
         ),
     ),
@@ -257,20 +344,10 @@ REGISTRY: dict[str, ToolContract] = {
         contract_version="1",
         effect="read",
         label="Search the Data Catalog",
-        description=(
-            "Search the project's Data Catalog. Params (all optional): "
-            '{"q": "<text>", "format": "<fmt>", "origin": "<origin>"}. '
-            "Returns dataset rows with id, name, format, origin, installed "
-            "state, and description — catalog-lane candidates must come from "
-            "these results only. Rows whose data file is resolved also carry "
-            "`path` (the absolute file a node may open) and `loader` (the "
-            "loader code for that path): the ONLY local paths generated node "
-            "content may reference (dev/114)."
-        ),
-        parameters=_object({
-            "q": _text("Text to search for."),
-            "format": _text("A dataset format."),
-            "origin": _text("A dataset origin."),
+        parameter_schema=lambda say: _object({
+            "q": _text(say("q")),
+            "format": _text(say("format")),
+            "origin": _text(say("origin")),
         }),
     ),
     # Consumer: the Node Builder, in its chat and its content mode. Grounds a
@@ -282,27 +359,9 @@ REGISTRY: dict[str, ToolContract] = {
         contract_version="1",
         effect="read",
         label="Search the Model Catalog",
-        description=(
-            "Search the Model Catalog: the trained models node code can run. "
-            'Params (all optional): {"q": "<text>", "limit": <1 to '
-            f"{_MODELS_SEARCH_MAX_ROWS}>}}; q matches a model's name, id, "
-            "description and publisher. Returns model rows with id, name, "
-            "task, runtime, origin, description, labels (the classes it "
-            f"answers, at most {_MODEL_LABELS_MAX}) and loader. Every row is "
-            "a model this account has added, and so can run: origin "
-            '"shipped" comes with Curio, "downloaded" is one of its own, '
-            "added from the Discovery Catalog or imported. Copy the row's "
-            "`loader` line into the node's code exactly as given "
-            '(model = curio_load_model("<id>")); a model id that is not in '
-            "these results does not run until the user adds it in the Model "
-            "Catalog. Reads no network."
-        ),
-        parameters=_object({
-            "q": _text("Text to search for."),
-            "limit": {
-                "type": "integer",
-                "description": f"The most rows to return, 1 to {_MODELS_SEARCH_MAX_ROWS}.",
-            },
+        parameter_schema=lambda say: _object({
+            "q": _text(say("q")),
+            "limit": {"type": "integer", "description": say("limit")},
         }),
     ),
     # Consumer: the Dataflow Builder. Any worked example on request, beside
@@ -312,20 +371,7 @@ REGISTRY: dict[str, ToolContract] = {
         contract_version="1",
         effect="read",
         label="Read worked examples",
-        description=(
-            "Read Curio's worked examples: shipped dataflows that show how "
-            'nodes, code and specs fit together. Params (optional): {"key": '
-            '"<key from the list>"}. With no key, returns the list: each '
-            "example's key, title and one line on what it shows. With a key, "
-            "returns that example's line and its Trill (name, task, every node "
-            "with its type and content, every edge), without layout. An "
-            "unknown key is an error; call with no key for the keys. The "
-            "datasets and node types a plan uses come from this project, not "
-            "from an example. Reads no network."
-        ),
-        parameters=_object({
-            "key": _text("An example's key, from the list this tool returns with no key. Omit it for the list."),
-        }),
+        parameter_schema=lambda say: _object({"key": _text(say("key"))}),
     ),
     # Discovery Catalog, consumer: the Dataset Finder. Three contracts, not
     # two, and deliberately the same roster/detail/reviewed-mutate shape
@@ -336,40 +382,16 @@ REGISTRY: dict[str, ToolContract] = {
         contract_version="1",
         effect="read",
         label="List the data portals",
-        description=(
-            "List the data portals and storage this deployment connects to. "
-            "Params: none. Returns rows with sourceId, name, provider, "
-            "publisher, the formats it can deliver, whether it can be "
-            "searched, and whether this account holds the credential the "
-            "source needs - never the credential itself. Reads no network and "
-            "costs no web budget. External-lane dataset candidates must name a "
-            "sourceId from these results."
-        ),
-        parameters=_no_params(),
     ),
     "discovery.search": ToolContract(
         id="discovery.search",
         contract_version="1",
         effect="read",
         label="Search the data portals",
-        description=(
-            "Search connected data portals LIVE. Params: "
-            '{"q": "<text>", "sourceId": "<sourceId@major from '
-            'discovery.sources, optional>", "format": "<fmt, optional>"}. '
-            "PREFER naming a sourceId: without one this searches every portal "
-            "at once and is charged one web call PER PORTAL, which can spend "
-            "the whole per-run budget of 4 in a single request. Returns "
-            "resource rows with sourceId, resourceId, name, publisher, formats "
-            "and last-updated date - candidates must carry the sourceId and "
-            "resourceId these results returned, never an invented one."
-        ),
-        parameters=_object({
-            "q": _text("Text to search for."),
-            "sourceId": _text(
-                "A sourceId@major from discovery.sources. Without one, every "
-                "portal is searched and each is charged one web call."
-            ),
-            "format": _text("A format the resource must offer."),
+        parameter_schema=lambda say: _object({
+            "q": _text(say("q")),
+            "sourceId": _text(say("sourceId")),
+            "format": _text(say("format")),
         }),
     ),
     "discovery.acquire": ToolContract(
@@ -377,21 +399,11 @@ REGISTRY: dict[str, ToolContract] = {
         contract_version="1",
         effect="mutate",
         label="Propose a download",
-        description=(
-            "Propose downloading ONE resource from a connected data portal "
-            "into the Data Catalog, where it becomes an ordinary dataset. "
-            'Params: {"sourceId": "<sourceId@major>", "resourceId": "<id from '
-            'discovery.search results>", "format": "<one of the formats that '
-            'result listed, optional>"}. The user reviews the proposal; '
-            "nothing is downloaded and nothing is added to the catalog without "
-            "their approval. This never writes fetch code, and it never "
-            "installs a dataset into a dataflow - that is dataset.install."
-        ),
-        parameters=_object(
+        parameter_schema=lambda say: _object(
             {
-                "sourceId": _text("The portal's sourceId@major."),
-                "resourceId": _text("A resourceId from discovery.search results."),
-                "format": _text("One of the formats that result listed."),
+                "sourceId": _text(say("sourceId")),
+                "resourceId": _text(say("resourceId")),
+                "format": _text(say("format")),
             },
             "sourceId", "resourceId",
         ),
@@ -404,15 +416,7 @@ REGISTRY: dict[str, ToolContract] = {
         contract_version="1",
         effect="read",
         label="Search the Node Catalog",
-        description=(
-            "List the Nodes Catalog's node packages with this project's "
-            'install state. Params (optional): {"q": "<text>"} substring '
-            "filter. Returns rows with dirName, packageId, name, description, "
-            "installed, and builtin — recommendation candidates must come from "
-            "these results only; builtin packages are always present and are "
-            "never proposed."
-        ),
-        parameters=_object({"q": _text("Text a package's name or description must contain.")}),
+        parameter_schema=lambda say: _object({"q": _text(say("q"))}),
     ),
     # dev/84, consumer: the Node Builder, in its chat.
     # deps/permissions/conflicts come from the real resolver, never invented.
@@ -421,15 +425,7 @@ REGISTRY: dict[str, ToolContract] = {
         contract_version="1",
         effect="read",
         label="Check a package's dependencies and permissions",
-        description=(
-            "Resolve one or more catalog packages against this account's "
-            'installed set. Params: {"dirNames": ["<dirName from '
-            'packages.catalog>", ...]}. Returns each package\'s requested '
-            "permissions and python/js dependencies, plus any version "
-            "conflicts — use it to enrich an identify/recommend answer before "
-            "proposing an install."
-        ),
-        parameters=_object({"dirNames": _texts("dirNames from packages.catalog results.")}, "dirNames"),
+        parameter_schema=lambda say: _object({"dirNames": _texts(say("dirNames"))}, "dirNames"),
     ),
     # dev/52, consumer: the Dataflow Builder. The DR-1 graph-level
     # mutation: the model emits a `dataflowPlan` tail block (not a
@@ -440,36 +436,19 @@ REGISTRY: dict[str, ToolContract] = {
         contract_version="1",
         effect="mutate",
         label="Propose a plan",
-        description=(
-            "Propose a reviewed plan that changes the dataflow graph, by ending "
-            "a reply with a dataflowPlan block (not a toolRequest): "
-            '{"dataflowPlan": {"goal": "...", "nodes": [{"ref": "n1", '
-            '"nodeType": "<packageId>/<templateId>", "title": "...", '
-            '"intent": "...", "widgets": [...]}], "edges": [{"from": "n1", "to": '
-            '"<ref or existing node id>", "kind": "data"|"interaction"}], '
-            '"scenarios": [...], "removeNodes": ["<existing node id>"], '
-            '"removeEdges": ["<existing edge id>"]}}. '
-            + _PLAN_RULES
-        ),
-        native_description=(
-            "Propose a reviewed plan that changes the dataflow graph: its "
-            "arguments are the plan. " + _PLAN_RULES
-        ),
-        parameters=_object(
+        parameter_schema=lambda say: _object(
             {
-                "goal": _text("What the plan achieves, in one line."),
+                "goal": _text(say("goal")),
                 "nodes": {
                     "type": "array",
                     "items": _object(
                         {
-                            "ref": _text("A short id, unique in this plan, that edges name."),
-                            "nodeType": _text(
-                                "A <packageId>/<templateId> id from the Available node templates list."
-                            ),
-                            "title": _text("A short title."),
-                            "intent": _text("One line: what this step does and produces."),
-                            "expects": _text("The input or output this step expects, in one line."),
-                            "widgets": _WIDGETS,
+                            "ref": _text(say("nodes.ref")),
+                            "nodeType": _text(say("nodes.nodeType")),
+                            "title": _text(say("nodes.title")),
+                            "intent": _text(say("nodes.intent")),
+                            "expects": _text(say("nodes.expects")),
+                            "widgets": _widgets(say),
                         },
                         "ref", "nodeType", "title", "intent",
                     ),
@@ -478,17 +457,17 @@ REGISTRY: dict[str, ToolContract] = {
                     "type": "array",
                     "items": _object(
                         {
-                            "from": _text("A ref from this plan, or an existing node's id."),
-                            "to": _text("A ref from this plan, or an existing node's id."),
+                            "from": _text(say("edges.from")),
+                            "to": _text(say("edges.to")),
                             "kind": {"type": "string", "enum": ["data", "interaction"]},
-                            "toHandle": _text("The target's input circle: in, in_1, in_2, ... Data edges only."),
+                            "toHandle": _text(say("edges.toHandle")),
                         },
                         "from", "to",
                     ),
                 },
-                "scenarios": {"type": "array", "items": _SCENARIO},
-                "removeNodes": _texts("Existing node ids to remove."),
-                "removeEdges": _texts("Existing edge ids to remove."),
+                "scenarios": {"type": "array", "items": _scenario(say)},
+                "removeNodes": _texts(say("removeNodes")),
+                "removeEdges": _texts(say("removeEdges")),
             },
             "goal",
         ),
@@ -501,13 +480,7 @@ REGISTRY: dict[str, ToolContract] = {
         contract_version="1",
         effect="mutate",
         label="Propose adding a dataset",
-        description=(
-            "Propose installing ONE dataset from the Data Catalog into this "
-            'project. Params: {"datasetId": "<id from catalog.search results>"}. '
-            "The user reviews the proposal; nothing is installed without "
-            "their approval, and this never installs an agent."
-        ),
-        parameters=_object({"datasetId": _text("A dataset id from catalog.search results.")}, "datasetId"),
+        parameter_schema=lambda say: _object({"datasetId": _text(say("datasetId"))}, "datasetId"),
     ),
     # dev/84, consumers: the Node Builder and the Researcher. The reviewed install
     # lane: applying routes through the existing package install flow
@@ -518,35 +491,21 @@ REGISTRY: dict[str, ToolContract] = {
         contract_version="1",
         effect="mutate",
         label="Propose a package install",
-        description=(
-            "Propose installing ONE node package from the Nodes Catalog into "
-            'this project. Params: {"dirName": "<the versioned dirName, e.g. '
-            "curio.notes@1 — from packages.catalog results or shown in "
-            "parentheses in the 'Installed but NOT enlisted in this project' "
-            'list>", "reason": "why this work needs it"}. '
-            "The user reviews the proposal through the package install dialog "
-            "(permissions, dependencies, conflicts); nothing is installed "
-            "without their approval. Built-in packages are always present and "
-            "must never be proposed."
-        ),
-        parameters=_object(
+        parameter_schema=lambda say: _object(
             {
-                "dirName": _text(
-                    "The versioned dirName, such as curio.notes@1, from packages.catalog "
-                    "results or the 'Installed but NOT enlisted in this project' list."
-                ),
-                "reason": _text("Why this work needs the package."),
+                "dirName": _text(say("dirName")),
+                "reason": _text(say("reason")),
                 "notes": {
                     "type": "array",
                     "items": _object(
                         {
-                            "title": _text("The note's title."),
-                            "content": _text("The finding the note states."),
-                            "color": _text("A palette name or #RRGGBB."),
+                            "title": _text(say("notes.title")),
+                            "content": _text(say("notes.content")),
+                            "color": _text(say("notes.color")),
                         },
                         "content",
                     ),
-                    "description": "Findings to add as notes once the package is enlisted.",
+                    "description": say("notes"),
                 },
             },
             "dirName",
@@ -554,34 +513,20 @@ REGISTRY: dict[str, ToolContract] = {
     ),
     # dev/48, consumer: the Node Builder. Reuse-first: nodeType must come
     # from the run's "Available node templates" list (composed at run time
-    # from the packages registry — this module owns no template knowledge).
+    # from the packages registry; this module owns no template knowledge).
     "node.create": ToolContract(
         id="node.create",
         contract_version="1",
         effect="mutate",
         label="Propose a node",
-        description=(
-            "Propose adding ONE new node to the canvas. Params: "
-            '{"nodeType": "<packageId>/<templateId>", "content": "...", '
-            '"title": "<short header shown on the node>", "goal": "<one-line '
-            'purpose>", "appearance": {"backgroundColor": "<palette name or '
-            '#RRGGBB>"}, "widgets": [...]}: title, goal, appearance and '
-            "widgets are optional; a note "
-            "template renders title and backgroundColor, so give both for "
-            "notes. nodeType must be an id from the "
-            '"Available node templates" list — never invented. The user '
-            "reviews the proposal; nothing is added without their approval."
-        ),
-        parameters=_object(
+        parameter_schema=lambda say: _object(
             {
-                "nodeType": _text(
-                    "A <packageId>/<templateId> id from the Available node templates list."
-                ),
-                "content": _text("The node's content."),
-                "title": _text("A short header shown on the node."),
-                "goal": _text("The node's purpose, in one line."),
-                "appearance": _APPEARANCE,
-                "widgets": _WIDGETS,
+                "nodeType": _text(say("nodeType")),
+                "content": _text(say("content")),
+                "title": _text(say("title")),
+                "goal": _text(say("goal")),
+                "appearance": _appearance(say),
+                "widgets": _widgets(say),
             },
             "nodeType", "content",
         ),
@@ -591,7 +536,7 @@ REGISTRY: dict[str, ToolContract] = {
     # ONE package-authoring mutate contract, and the one way an agent makes a
     # node type: requesting it checks every template the draft adds
     # (justification, label, grounded code), runs the isolated build service
-    # (validate → resolve → compile → preview → package, all staged and
+    # (validate, resolve, compile, preview, package, all staged and
     # content-addressed) and mints the reviewed package-draft proposal; Apply
     # promotes the exact reviewed artifact digest through the promotion
     # coordinator, never a silent install.
@@ -600,72 +545,30 @@ REGISTRY: dict[str, ToolContract] = {
         contract_version="1",
         effect="mutate",
         label="Propose a package draft",
-        description=(
-            "Propose ONE built node package as a reviewed draft. Params: the "
-            'typed build request, {"mode": "create"|"extend", '
-            '"baseDigest": "<64-hex, extend only>", '
-            '"manifest": {...}, "files": {"<path>": {"text"|"base64": "..."}}, '
-            "The draft's identity is manifest.id + compatibility.major; the "
-            "package id MUST be reverse-DNS (two or more dot-separated "
-            "segments, e.g. curio.notes, never a single segment like "
-            'curio-notes). An optional "target": "<packageId>@<major>" may '
-            "restate it but must agree. Other params: "
-            '"behaviorEntries": ["sources/<entry>.tsx", ...], "dependencies": '
-            '{"python"|"js"|"packages": {name: constraint}}, '
-            '"previewTemplates": [...], "nodes": [{"templateId": "...", '
-            '"title": "...", "content": "...", "appearance": '
-            '{"backgroundColor": "<palette name or #RRGGBB>"}}], '
-            '"justification": "<the closest existing templates and why each is '
-            'inadequate>"}. A draft that adds a template (every template of a '
-            "create, a new one in an extend) needs the justification, which "
-            "the user judges during review, and gives each new template a "
-            "label no existing template has: one that already does the job is "
-            "reused, not drafted again. The build "
-            "service compiles/validates/previews the draft; the user reviews "
-            "the diff, dependencies, and preview before anything installs. "
-            "Never claim the package exists before the user applies it."
-        ),
-        # The same rules without the param shapes, which the schema gives.
-        native_description=(
-            "Propose ONE built node package as a reviewed draft, from the "
-            "typed build request in the params. Its identity is manifest.id + "
-            "compatibility.major; the id MUST be reverse-DNS (two or more "
-            "dot-separated segments: curio.notes, never curio-notes), and an "
-            'optional "target": "<packageId>@<major>" must agree with it. A '
-            "draft that adds a template (every template of a create, a new one "
-            'in an extend) needs the "justification" and gives each new '
-            "template a label no existing template has: one that already does "
-            "the job is reused, not drafted again. The user reviews the built "
-            "draft's diff, dependencies and preview before anything installs. "
-            "Never claim the package exists before the user applies it."
-        ),
-        parameters=_object(
+        parameter_schema=lambda say: _object(
             {
                 "mode": {"type": "string", "enum": ["create", "extend"]},
-                "baseDigest": _text("The installed target's 64-hex digest. Extend only."),
-                "target": _text("<packageId>@<major>, which must agree with the manifest."),
-                "manifest": _map("The package manifest."),
-                "files": _map('Each file path mapped to {"text": ...} or {"base64": ...}.'),
-                "behaviorEntries": _texts("The behavior sources, such as sources/<entry>.tsx."),
-                "dependencies": _map('{"python"|"js"|"packages": {name: constraint}}.'),
-                "previewTemplates": _texts("The ids of the templates to preview."),
+                "baseDigest": _text(say("baseDigest")),
+                "target": _text(say("target")),
+                "manifest": _map(say("manifest")),
+                "files": _map(say("files")),
+                "behaviorEntries": _texts(say("behaviorEntries")),
+                "dependencies": _map(say("dependencies")),
+                "previewTemplates": _texts(say("previewTemplates")),
                 "nodes": {
                     "type": "array",
                     "items": _object(
                         {
-                            "templateId": _text("A template id from the manifest."),
-                            "title": _text("The node's title."),
-                            "content": _text("The node's content."),
-                            "appearance": _APPEARANCE,
+                            "templateId": _text(say("nodes.templateId")),
+                            "title": _text(say("nodes.title")),
+                            "content": _text(say("nodes.content")),
+                            "appearance": _appearance(say),
                         },
                         "templateId",
                     ),
-                    "description": "Nodes to add once the package is applied.",
+                    "description": say("nodes"),
                 },
-                "justification": _text(
-                    "The closest existing templates, and why each is inadequate. "
-                    "Needed when the draft adds a template."
-                ),
+                "justification": _text(say("justification")),
             },
             "mode", "manifest",
         ),
@@ -706,32 +609,23 @@ def grant_descriptions(granted: Iterable[str]) -> list[tuple[str, str]]:
     return out
 
 
-#: The native name of delegation: one tool whose ``capability`` names what to
-#: delegate. It has no dot, so no tool id encodes to it.
-DELEGATE_TOOL = "delegate"
-
-
-
-
 def delegate_tool(capabilities: Iterable[str]) -> dict:
     """The native delegation tool, its ``capability`` limited to *capabilities*
-    (the delegates this agent may use). Who handles each one is in the run's
-    delegation paragraph (``content.delegation_instruction``)."""
+    (the delegates this agent may use), described by ``tools.md``'s section
+    ``delegate``. Who handles each one is in the run's delegation paragraph
+    (``content.delegation_instruction``)."""
+    say = _Say(DELEGATE_TOOL)
     return {
         "name": DELEGATE_TOOL,
-        "description": (
-            "Delegate one specialized capability to the agent that handles it, "
-            "and receive its result. The capabilities you may delegate, and who "
-            "handles each, are listed in your instructions."
-        ),
+        "description": tool_text(DELEGATE_TOOL).description,
         "parameters": _object(
             {
                 "capability": {
                     "type": "string",
                     "enum": list(capabilities),
-                    "description": "The capability to delegate.",
+                    "description": say("capability"),
                 },
-                "inputs": _map("What the delegate needs for the task."),
+                "inputs": _map(say("inputs")),
             },
             "capability",
         ),

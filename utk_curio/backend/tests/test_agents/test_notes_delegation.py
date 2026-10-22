@@ -13,9 +13,9 @@ from pathlib import Path
 from utk_curio.backend.app.agents.application import tools as agent_tools
 from utk_curio.backend.app.common.user_storage import users_base
 from utk_curio.backend.app.agents.application.turns.delegates import (
-    _NOTES_REPLY_CONTRACT,
     _delegated_search_results,
     _enriched_delegate_inputs,
+    _notes_reply_contract,
 )
 
 
@@ -69,7 +69,7 @@ class TestNotesComposeEnrichment:
             "guest", "p1", {}, "research.notes.compose",
             {"question": "how much do cool roofs lower summer surface temperatures in Chicago?"})
         assert enriched["searchResults"]["results"][0]["title"] == "T"
-        assert enriched["notesReplyContract"] is _NOTES_REPLY_CONTRACT
+        assert enriched["notesReplyContract"] is _notes_reply_contract()
         assert isinstance(enriched["notesTemplates"], list)
         assert enriched["question"] == "how much do cool roofs lower summer surface temperatures in Chicago?"
 
@@ -86,7 +86,7 @@ class TestNotesComposeEnrichment:
         assert enriched == supplied
 
     def test_contract_teaches_the_a13_row_and_the_honesty_rule(self):
-        text = json.dumps(_NOTES_REPLY_CONTRACT)
+        text = json.dumps(_notes_reply_contract())
         for marker in ("inputs.searchResults", "NEVER invent findings",
                        "title 'Question', color yellow", "notesTemplates",
                        "empty notes list is valid"):
@@ -312,7 +312,7 @@ class TestDataflowBuilderNotesLane:
         def _fake_run(config, messages, **kwargs):
             from utk_curio.backend.app.agents.application.turns import titles as services_mod
 
-            if messages and messages[0].get("content") == services_mod.TITLE_PROMPT:
+            if messages and messages[0].get("content") == services_mod.title_prompt():
                 return "Title"
             calls.append(messages)
             return replies[min(len(calls) - 1, len(replies) - 1)]
@@ -441,7 +441,7 @@ class TestNotesLandOnTheBuiltInNote:
         def _fake_run(config, messages, **kwargs):
             from utk_curio.backend.app.agents.application.turns import titles as services_mod
 
-            if messages and messages[0].get("content") == services_mod.TITLE_PROMPT:
+            if messages and messages[0].get("content") == services_mod.title_prompt():
                 return "Title"
             calls.append(messages)
             return replies[min(len(calls) - 1, len(replies) - 1)]

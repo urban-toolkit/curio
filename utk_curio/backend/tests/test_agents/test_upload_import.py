@@ -115,7 +115,7 @@ class TestUploadImport:
         # dev/39: the runtime-owned structured-tail instruction composes last.
         system = calls[0][0]
         assert (system["role"], system["content"]) == (
-            "system", f"{INSTRUCTION}\n\n{content_mod.TAIL_INSTRUCTION}",
+            "system", f"{INSTRUCTION}\n\n{content_mod.tail_instruction()}",
         )
         # An uploaded definition with no system prompt has no preamble slot.
         assert [slot["kind"] for slot in system["slots"]] == ["instruction", "tool-protocol"]

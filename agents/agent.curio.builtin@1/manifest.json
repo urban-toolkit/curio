@@ -3,14 +3,21 @@
   "name": "Curio Built-in Agent Text",
   "kind": "base",
   "version": "1.0.0",
-  "purpose": "The pages every agent Curio ships reads: the preamble, the rules its prompts include, and the index of the shipped dataflows a run learns from. An agent names a page as curio:<path>.",
+  "purpose": "The pages every agent Curio ships reads: the preamble, the tools, the reply protocol, the frames around what a run is given, the delegated runs' contracts, the title prompt, the keyword types, the rules its prompts include, and the index of the shipped dataflows a run learns from. An agent names a page as curio:<path>.",
   "pages": [
+    "conversation-title.md",
     "default_preamble.md",
-    "knowledge/map-edits.md",
+    "delegate-contracts.md",
     "examples.md",
+    "frames.md",
+    "keyword-types.md",
+    "knowledge/map-edits.md",
+    "protocol.md",
     "rules/package_contract.md",
+    "rules/plan-rules.md",
     "rules/research_notes_rules.md",
-    "rules/research_verify_rules.md"
+    "rules/research_verify_rules.md",
+    "tools.md"
   ],
   "provenance": {
     "publisher": "curio",

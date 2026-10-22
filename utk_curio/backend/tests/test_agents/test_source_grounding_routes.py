@@ -84,7 +84,7 @@ def _script(monkeypatch, replies):
     def _fake_run(config, messages, **kwargs):
         from utk_curio.backend.app.agents.application.turns import titles as services_mod
 
-        if messages and messages[0].get("content") == services_mod.TITLE_PROMPT:
+        if messages and messages[0].get("content") == services_mod.title_prompt():
             return "Title"
         calls.append(messages)
         entry = replies[min(len(calls) - 1, len(replies) - 1)]

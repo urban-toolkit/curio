@@ -313,7 +313,7 @@ class TestIntent:
         preamble = builtin.read_prompt_text("agent.curio.researcher@1", "system")
         assert calls[0][0]["role"] == "system"
         assert calls[0][0]["content"].startswith(
-            f"{preamble}\n\nanswer in one sentence\n\n{content_mod.TAIL_INSTRUCTION}"
+            f"{preamble}\n\nanswer in one sentence\n\n{content_mod.tail_instruction()}"
         )
 
 
@@ -340,7 +340,7 @@ class TestSession:
         def _fake_run(config, messages, **kwargs):
             # Answer the post-first-run title call (memo dev/25) out of band so
             # `replies`/`calls` keep tracking the conversation runs only.
-            if messages and messages[0].get("content") == titles.TITLE_PROMPT:
+            if messages and messages[0].get("content") == titles.title_prompt():
                 return "Session Test Title"
             calls.append(messages)
             return replies[len(calls) - 1]

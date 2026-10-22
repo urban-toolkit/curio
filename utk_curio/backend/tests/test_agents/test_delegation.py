@@ -77,7 +77,7 @@ def _setup(client, token, project_id, monkeypatch, *, delegate=None, install_del
     def _fake_run(config, messages, **kwargs):
         from utk_curio.backend.app.agents.application.turns import titles as services_mod
 
-        if messages and messages[0].get("content") == services_mod.TITLE_PROMPT:
+        if messages and messages[0].get("content") == services_mod.title_prompt():
             return "Title"
         calls.append(messages)
         return script[min(len(calls) - 1, len(script) - 1)]
@@ -346,7 +346,7 @@ class TestDelegateChildRun:
         def _fake_run(config, messages, **kwargs):
             from utk_curio.backend.app.agents.application.turns import titles as services_mod
 
-            if messages and messages[0].get("content") == services_mod.TITLE_PROMPT:
+            if messages and messages[0].get("content") == services_mod.title_prompt():
                 return "Title"
             reply = real_script[min(state["n"], 2)]
             state["n"] += 1
@@ -389,7 +389,7 @@ class TestTheChildRunsOnItsOwnConfiguration:
         def _fake_run(config, messages, **kwargs):
             from utk_curio.backend.app.agents.application.turns import titles as services_mod
 
-            if messages and messages[0].get("content") == services_mod.TITLE_PROMPT:
+            if messages and messages[0].get("content") == services_mod.title_prompt():
                 return "Title"
             models.append(config.model)
             if len(models) == 1:
@@ -475,7 +475,7 @@ class TestADelegateFailureNeverCarriesTheKey:
         def _fake_run(config_, messages, **kwargs):
             from utk_curio.backend.app.agents.application.turns import titles as services_mod
 
-            if messages and messages[0].get("content") == services_mod.TITLE_PROMPT:
+            if messages and messages[0].get("content") == services_mod.title_prompt():
                 return "Title"
             prompts.append(messages)
             state["n"] += 1
@@ -589,7 +589,7 @@ class TestDelegationTailAndBudget:
         def _fake_run(config, messages, **kwargs):
             from utk_curio.backend.app.agents.application.turns import titles as services_mod
 
-            if messages and messages[0].get("content") == services_mod.TITLE_PROMPT:
+            if messages and messages[0].get("content") == services_mod.title_prompt():
                 return "Title"
             calls.append(messages)
             return "hi"
@@ -643,7 +643,7 @@ class TestDelegateStreamEvents:
         def _fake_run(config, messages, **kwargs):
             from utk_curio.backend.app.agents.application.turns import titles as services_mod
 
-            if messages and messages[0].get("content") == services_mod.TITLE_PROMPT:
+            if messages and messages[0].get("content") == services_mod.title_prompt():
                 return "Title"
             calls.append(messages)
             return script[min(len(calls) - 1, 2)]
@@ -693,7 +693,7 @@ class TestDec047DatasetFinderHandoff:
         def _fake_run(config, messages, **kwargs):
             from utk_curio.backend.app.agents.application.turns import titles as services_mod
 
-            if messages and messages[0].get("content") == services_mod.TITLE_PROMPT:
+            if messages and messages[0].get("content") == services_mod.title_prompt():
                 return "Title"
             calls.append(messages)
             return script[min(len(calls) - 1, 1)]
@@ -729,7 +729,7 @@ class TestDec047DatasetFinderHandoff:
         def _fake_run(config, messages, **kwargs):
             from utk_curio.backend.app.agents.application.turns import titles as services_mod
 
-            if messages and messages[0].get("content") == services_mod.TITLE_PROMPT:
+            if messages and messages[0].get("content") == services_mod.title_prompt():
                 return "Title"
             calls.append(messages)
             return "ok"
@@ -931,7 +931,7 @@ class TestOwnModes:
         def _fake_run(config, messages, **kwargs):
             from utk_curio.backend.app.agents.application.turns import titles as services_mod
 
-            if messages and messages[0].get("content") == services_mod.TITLE_PROMPT:
+            if messages and messages[0].get("content") == services_mod.title_prompt():
                 return "Title"
             calls.append(messages)
             return replies[min(len(calls) - 1, len(replies) - 1)]
@@ -1121,7 +1121,7 @@ class TestChatContentReviewMint:
         def _fake_run(config, messages, **kwargs):
             from utk_curio.backend.app.agents.application.turns import titles as services_mod
 
-            if messages and messages[0].get("content") == services_mod.TITLE_PROMPT:
+            if messages and messages[0].get("content") == services_mod.title_prompt():
                 return "Title"
             calls.append(messages)
             return script[min(len(calls) - 1, len(script) - 1)]
@@ -1197,7 +1197,7 @@ class TestChatContentReviewMintStream:
         def _fake_run(config, messages, **kwargs):
             from utk_curio.backend.app.agents.application.turns import titles as services_mod
 
-            if messages and messages[0].get("content") == services_mod.TITLE_PROMPT:
+            if messages and messages[0].get("content") == services_mod.title_prompt():
                 return "Title"
             calls.append(messages)
             return script[min(len(calls) - 1, 2)]
@@ -1379,7 +1379,7 @@ class TestMergedAgentModes:
         assert len(record["pins"]["configurationSha256"]) == 64
         # Slot order: preamble, instruction, configuration; no tool protocol.
         preamble = builtin.read_prompt_text(self.PLANNER, "system")
-        configuration = system.index(contracts.CONFIGURATION_FRAME)
+        configuration = system.index(contracts.configuration_frame())
         assert system.index(preamble.strip()[:200]) < system.index(bind.strip()) < configuration
         assert "curio.v1" not in system
         # The provider receives the same three slots.
@@ -1417,7 +1417,7 @@ class TestMergedAgentModes:
             assert taxonomy in system, capability
         for capability in ("workflow.plan.create", "workflow.coherence.validate"):
             system, record = self._delegate(key, pid, monkeypatch, capability)
-            assert contracts.CONFIGURATION_FRAME not in system, capability
+            assert contracts.configuration_frame() not in system, capability
             assert "configurationSha256" not in record["pins"]
 
     def test_edited_keyword_types_change_the_next_run(self, client, user_and_token, tmp_curio, monkeypatch):
