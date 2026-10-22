@@ -1,69 +1,77 @@
 #!/usr/bin/env python3
 """Build the Data Catalog dataset ``data.curio.chicago-loop-layers``.
 
-Downtown Chicago, the Loop with the West Loop, the South Loop, Streeterville
-and the Near North lakefront up to Oak Street Beach, as eight layers of every
-geometry an Autark map draws, for the chicago-loop-layers example (one Autark
-map, many kinds of layer) and the Interaction node that edits them:
+Downtown Chicago in the box of the examples' ``chicago_downtown.osm.pbf``
+(``scripts/build_example_pbfs.py``), as the layers of the chicago-loop-layers
+example that an Autark node cannot load from that extract:
 
-=================  =========  ==================================================
-part               geometry   source
-=================  =========  ==================================================
-tracts.geojson     polygons   CDC/ATSDR Social Vulnerability Index 2020, the
-                              Cook County tracts that meet BOX, CDC's columns
-buildings.parquet  polygons   Overture Maps buildings (``source.overture.maps``)
-parks.geojson      polygons   OpenStreetMap parks and green space, no yards
-water.geojson      polygons   OpenStreetMap water (the river, the harbours)
-roads.parquet      lines      OpenStreetMap roads, no footways or cycleways
-cta_lines.geojson  lines      City of Chicago portal, CTA 'L' (Rail) Lines
-trees.geojson      points     OpenStreetMap, ``natural=tree``
-cta_stations       points     City of Chicago portal, CTA 'L' (Rail) Stations
-=================  =========  ==================================================
+====================  =========  ================================================
+part                  geometry   source
+====================  =========  ================================================
+tracts.geojson        polygons   CDC/ATSDR Social Vulnerability Index 2020, the
+                                 Cook County tracts that meet BOX, CDC's columns
+cta_lines.geojson     lines      City of Chicago portal, CTA 'L' (Rail) Lines
+trees.parquet         points     OpenStreetMap, ``natural=tree``, from BBBike's
+                                 Chicago extract
+cta_stations.geojson  points     City of Chicago portal, CTA 'L' (Rail) Stations
+====================  =========  ================================================
 
-The Overture buildings come through Curio's own Discovery Catalog provider,
-the code a **Download** runs. The OpenStreetMap layers are read from BBBike's
-Chicago extract (PBF_URL) with GDAL's OSM driver, keeping the tags Autark's
-parks, water and roads layers keep: the live Overpass API refused these
-queries for hours when this was built. The rest are fetched from their public
-APIs. Every layer is cut at BOX, in EPSG:4326.
+The example loads OpenStreetMap's parks, water, roads and buildings with an
+Autark node from ``chicago_downtown.osm.pbf``, so the dataset leaves them out.
+Every part is cut at BOX in EPSG:4326 (``write_dataset``): what lies in it is
+kept, and a line or a polygon that crosses its edge is cut there. The trees are
+GeoParquet, about a tenth of their GeoJSON; the other parts are small enough as
+GeoJSON.
 
-This is AUTHORING-ONLY tooling. It needs network access and the repository's
-Node packages (``npm install`` at the root installs the autk-db Curio pins)::
+This is AUTHORING-ONLY tooling. It needs network access::
 
     conda run -n curio python scripts/build_chicago_loop_layers_dataset.py
 
-Licenses: OpenStreetMap and Overture are ODbL 1.0; the City of Chicago portal's
-data is under its Terms of Use; CDC/ATSDR's SVI is public domain.
+Licenses: OpenStreetMap is ODbL 1.0; the City of Chicago portal's data is under
+its Terms of Use; CDC/ATSDR's SVI is public domain.
 """
 from __future__ import annotations
 
 import json
 import shutil
-import sys
-import time
 import urllib.parse
 import urllib.request
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(REPO))
-
-from utk_curio.backend.app.discovery.domain.manifest import load_source_manifest  # noqa: E402
-from utk_curio.backend.app.discovery.infrastructure.transport import HttpDiscoveryTransport  # noqa: E402
-from utk_curio.backend.app.discovery.providers import overture  # noqa: E402
 
 DATASET_ID = "data.curio.chicago-loop-layers"
 OUT = REPO / "datasets" / f"{DATASET_ID}@1"
-#: West, south, east, north: the shipped downtown roads' box, taken north to
-#: Oak Street Beach and east to the lakefront.
-BOX = [-87.662, 41.859, -87.605, 41.906]
-PLACE = "Downtown Chicago, the Loop to Oak Street Beach"
-OVERTURE = "source.overture.maps@1"
+#: West, south, east, north: the box ``chicago_downtown.osm.pbf`` is cut at
+#: (``build_example_pbfs.py``), which the example's Autark node loads.
+BOX = (-87.662, 41.859, -87.613, 41.898)
+#: The date the dataset is stamped with, its ``createdAt`` and ``updatedAt``.
+STAMP = "2026-10-22T00:00:00Z"
+#: The most the dataset's files may take, so ``datasets/`` stays within the
+#: catalog's size budget (``test_catalog_dataset_coverage.py``).
+MAX_BYTES = 500_000
 PORTAL = "https://data.cityofchicago.org/resource"
 SVI_LAYER = ("https://services3.arcgis.com/ZvidGQkLaDJxRSJ2/arcgis/rest/services/"
              "CDC_ATSDR_Social_Vulnerability_Index_2020_USA/FeatureServer/2")
 SVI_FIELDS = ("FIPS", "LOCATION", "AREA_SQMI", "E_TOTPOP", "E_HU", "E_POV150", "E_AGE65", "E_NOVEH",
               "RPL_THEME1", "RPL_THEME2", "RPL_THEME3", "RPL_THEME4", "RPL_THEMES")
+STATION_FIELDS = ("station_id", "longname", "lines", "address", "ada", "legend")
+#: OpenStreetMap's Chicago extract from BBBike.
+PBF_URL = "https://download.bbbike.org/osm/bbbike/Chicago/Chicago.osm.pbf"
+TREE_TAGS = ("genus", "species", "leaf_type")
+
+#: Each part's file, label, kind and format, in the bundle's order.
+PARTS = [
+    ("tracts.geojson", "Census tracts with CDC/ATSDR's Social Vulnerability Index 2020", "geodataframe", "geojson"),
+    ("cta_lines.geojson", "CTA 'L' rail lines (City of Chicago)", "geodataframe", "geojson"),
+    ("trees.parquet", "Trees (OpenStreetMap)", "geodataframe", "parquet"),
+    ("cta_stations.geojson", "CTA 'L' rail stations (City of Chicago)", "geodataframe", "geojson"),
+]
+NAME = "Chicago Loop Layers"
+DESCRIPTION = (
+    "Downtown Chicago: census tracts with CDC/ATSDR's Social Vulnerability Index 2020, the CTA 'L' rail "
+    "lines and stations from the City of Chicago, and trees from OpenStreetMap."
+)
 
 
 def _get_json(url: str, timeout: int = 120):
@@ -71,64 +79,9 @@ def _get_json(url: str, timeout: int = 120):
         return json.loads(answer.read().decode("utf-8"))
 
 
-def _inside(lon: float, lat: float) -> bool:
-    west, south, east, north = BOX
-    return west <= lon <= east and south <= lat <= north
-
-
 def _write_geojson(path: Path, features: list[dict]) -> None:
     path.write_text(json.dumps({"type": "FeatureCollection", "features": features},
                                separators=(",", ":"), ensure_ascii=False), encoding="utf-8")
-
-
-def svi_tracts(work: Path) -> Path:
-    west, south, east, north = BOX
-    query = urllib.parse.urlencode({
-        "where": "STCNTY='17031'", "outFields": ",".join(SVI_FIELDS), "returnGeometry": "true",
-        "geometry": f"{west},{south},{east},{north}", "geometryType": "esriGeometryEnvelope",
-        "inSR": "4326", "spatialRel": "esriSpatialRelIntersects", "outSR": "4326", "f": "geojson",
-    })
-    collection = _get_json(f"{SVI_LAYER}/query?{query}")
-    features = collection.get("features") or []
-    if not features:
-        raise SystemExit("CDC's SVI layer returned no tracts")
-    for feature in features:
-        feature["properties"] = {k: feature["properties"].get(k) for k in SVI_FIELDS}
-    # Cut at BOX, as the other layers are: CDC returns every tract that touches it.
-    import geopandas as gpd
-    from shapely.geometry import box
-
-    tracts = gpd.GeoDataFrame.from_features(features, crs="EPSG:4326")
-    tracts = gpd.clip(tracts, box(*BOX)).reset_index(drop=True)
-    path = work / "tracts.geojson"
-    tracts.to_file(path, driver="GeoJSON")
-    print(f"{len(tracts)} tracts")
-    return path
-
-
-def overture_buildings(work: Path) -> tuple[Path, str]:
-    manifest = load_source_manifest(REPO / "discovery" / OVERTURE)
-    service = overture.OvertureService(manifest, transport=HttpDiscoveryTransport())
-    (buildings,) = service.load(manifest.resource("buildings"), {"area": {"box": BOX, "label": PLACE}},
-                                work, stage=print)
-    print(f"{buildings.features} buildings, Overture release {service.release}")
-    return buildings.path, service.release
-
-
-#: OpenStreetMap's Chicago extract from BBBike: the live Overpass API often
-#: refuses queries this size, and an extract is the same data, dated.
-PBF_URL = "https://download.bbbike.org/osm/bbbike/Chicago/Chicago.osm.pbf"
-#: The tags Autark's parks and water layers keep (see the Discovery manifest).
-#: Gardens are left out: in OpenStreetMap they are mostly private yards.
-PARK_TAGS = {"leisure": {"park", "playground", "dog_park", "nature_reserve", "pitch"},
-             "landuse": {"grass", "recreation_ground", "village_green", "cemetery", "forest", "meadow"},
-             "natural": {"wood", "scrub", "grassland"}}
-WATER_TAGS = {"natural": {"water", "wetland", "bay"}, "landuse": {"reservoir", "basin"},
-              "waterway": {"riverbank", "dock"}}
-MIN_PARK_M2 = 150
-#: Autark's roads layer leaves out footways, cycleways, steps and pedestrian streets.
-NOT_ROADS = {"footway", "cycleway", "steps", "pedestrian", "path", "corridor", "elevator", "platform",
-             "bridleway", "proposed", "construction", "raceway", "bus_stop"}
 
 
 def _other(tags: str | None) -> dict:
@@ -143,186 +96,112 @@ def _other(tags: str | None) -> dict:
     return found
 
 
-def _osm_ids(frame):
-    """Each feature's OpenStreetMap id, a number: a way's id for an area made of
-    one way, else the relation's, node's or way's own. It identifies a feature,
-    so an Interaction node can edit it."""
-    import pandas as pd
+# -- Sources (network) -------------------------------------------------------
 
-    ids = frame["osm_way_id"] if "osm_way_id" in frame.columns else pd.Series([None] * len(frame), index=frame.index)
-    ids = ids.where(ids.notna(), frame["osm_id"])
-    return pd.to_numeric(ids, errors="coerce").astype("Int64")
+def svi_tracts(work: Path) -> Path:
+    """CDC/ATSDR's SVI 2020 for the Cook County tracts that meet BOX, CDC's columns, whole."""
+    west, south, east, north = BOX
+    query = urllib.parse.urlencode({
+        "where": "STCNTY='17031'", "outFields": ",".join(SVI_FIELDS), "returnGeometry": "true",
+        "geometry": f"{west},{south},{east},{north}", "geometryType": "esriGeometryEnvelope",
+        "inSR": "4326", "spatialRel": "esriSpatialRelIntersects", "outSR": "4326", "f": "geojson",
+    })
+    features = _get_json(f"{SVI_LAYER}/query?{query}").get("features") or []
+    if not features:
+        raise SystemExit("CDC's SVI layer returned no tracts")
+    for feature in features:
+        feature["properties"] = {k: feature["properties"].get(k) for k in SVI_FIELDS}
+    path = work / "tracts.cdc.geojson"
+    _write_geojson(path, features)
+    return path
 
 
-def pbf_layers(work: Path) -> dict[str, Path]:
-    """Parks, water, roads and trees from the extract, cut at BOX."""
+def portal_layer(work: Path, dataset: str, name: str, keep=None) -> Path:
+    """A City of Chicago portal layer, all of it, with its columns or the ones in *keep*."""
+    features = []
+    for feature in _get_json(f"{PORTAL}/{dataset}.geojson?$limit=50000")["features"]:
+        if not feature.get("geometry"):
+            continue
+        feature["properties"] = {k: v for k, v in (feature.get("properties") or {}).items()
+                                 if not k.startswith(":@") and (keep is None or k in keep)}
+        features.append(feature)
+    path = work / f"{name}.portal.geojson"
+    _write_geojson(path, features)
+    return path
+
+
+def pbf_trees(work: Path) -> Path:
+    """OpenStreetMap's trees (``natural=tree``) in BBBike's Chicago extract, read with GDAL's OSM driver."""
     import geopandas as gpd
     import pandas as pd
-    from shapely.geometry import box
 
     pbf = work / "Chicago.osm.pbf"
     if not pbf.exists():
         print("Downloading OpenStreetMap's Chicago extract (BBBike)...")
         urllib.request.urlretrieve(PBF_URL, pbf)
-    area = box(*BOX)
-
-    def read(layer):
-        return gpd.read_file(pbf, layer=layer, bbox=tuple(BOX), engine="pyogrio")
-
-    def tagged(frame, wanted):
-        other = frame["other_tags"].map(_other)
-        kind = pd.Series([None] * len(frame), index=frame.index, dtype=object)
-        for key, values in wanted.items():
-            column = frame[key] if key in frame.columns else other.map(lambda t, k=key: t.get(k))
-            hit = column.isin(values) & kind.isna()
-            kind[hit] = column[hit]
-        keep = kind.notna()
-        return frame[keep].assign(kind=kind[keep], osm_id=_osm_ids(frame[keep]))[["osm_id", "name", "kind", "geometry"]]
-
-    polygons = read("multipolygons")
-    parks = gpd.clip(tagged(polygons, PARK_TAGS), area)
-    # Small patches of grass along streets and yards are not parks a map should show.
-    parks = parks[parks.to_crs(parks.estimate_utm_crs()).area >= MIN_PARK_M2]
-    water = gpd.clip(tagged(polygons, WATER_TAGS), area)
-    lines = read("lines")
-    roads = lines[lines["highway"].notna() & ~lines["highway"].isin(NOT_ROADS)].copy()
-    other = roads["other_tags"].map(_other)
-    for key in ("oneway", "maxspeed", "lanes"):
-        roads[key] = other.map(lambda t, k=key: t.get(k))
-    roads["osm_id"] = _osm_ids(roads)
-    roads = gpd.clip(roads[["osm_id", "highway", "oneway", "maxspeed", "lanes", "name", "geometry"]], area)
-    points = read("points")
+    points = gpd.read_file(pbf, layer="points", bbox=BOX, engine="pyogrio")
     tags = points["other_tags"].map(_other)
     trees = points[tags.map(lambda t: t.get("natural") == "tree")].copy()
-    for key in ("genus", "species", "leaf_type"):
+    for key in TREE_TAGS:
         trees[key] = tags[trees.index].map(lambda t, k=key: t.get(k))
-    trees["osm_id"] = _osm_ids(trees)
-    trees = gpd.clip(trees[["osm_id", "genus", "species", "leaf_type", "geometry"]], area)
-    out = {}
-    for name, frame in (("parks", parks), ("water", water), ("roads", roads), ("trees", trees)):
-        frame = frame[~frame.geometry.is_empty]
-        # A feature cut in two by the box's edge keeps one id: keep its parts as one.
-        frame = frame.dissolve(by="osm_id", as_index=False) if frame["osm_id"].duplicated().any() else frame
-        frame = frame.reset_index(drop=True)
-        path = work / f"{name}.pbf.geojson"
-        frame.to_file(path, driver="GeoJSON")
-        out[name] = path
-        print(f"{len(frame)} {name}")
-    return out
-
-
-def portal_geojson(work: Path, dataset: str, name: str, keep=None) -> Path:
-    west, south, east, north = BOX
-    collection = _get_json(f"{PORTAL}/{dataset}.geojson?$limit=50000")
-    features = []
-    for feature in collection["features"]:
-        geometry = feature.get("geometry")
-        if not geometry:
-            continue
-        if geometry["type"] == "Point":
-            lon, lat = geometry["coordinates"][:2]
-            if not _inside(lon, lat):
-                continue
-        else:
-            points = json.dumps(geometry["coordinates"])
-            coords = [float(v) for v in points.replace("[", " ").replace("]", " ").replace(",", " ").split()]
-            pairs = list(zip(coords[0::2], coords[1::2]))
-            if not any(_inside(lon, lat) for lon, lat in pairs):
-                continue
-        feature["properties"] = {k: v for k, v in (feature.get("properties") or {}).items()
-                                 if not k.startswith(":@") and (keep is None or k in keep)}
-        features.append(feature)
-    if features and features[0]["geometry"]["type"] != "Point":
-        # The portal's line segments have no id: number them in a fixed order.
-        features.sort(key=lambda f: (str(f["properties"].get("legend")), str(f["properties"].get("description"))))
-        for number, feature in enumerate(features, start=1):
-            feature["properties"] = {"line_id": number, **feature["properties"]}
-    path = work / f"{name}.geojson"
-    _write_geojson(path, features)
-    print(f"{len(features)} {name}")
+    # Its id, a number, identifies a tree, so an Interaction node can edit it.
+    trees["osm_id"] = pd.to_numeric(trees["osm_id"], errors="coerce").astype("Int64")
+    path = work / "trees.pbf.geojson"
+    trees[["osm_id", *TREE_TAGS, "geometry"]].to_file(path, driver="GeoJSON")
     return path
 
 
-PARTS = [
-    ("tracts.geojson", "Census tracts with CDC/ATSDR's SVI 2020", "geodataframe", "geojson"),
-    ("buildings.parquet", "Buildings (Overture Maps)", "geodataframe", "parquet"),
-    ("parks.geojson", "Parks (OpenStreetMap)", "geodataframe", "geojson"),
-    ("water.geojson", "Water (OpenStreetMap)", "geodataframe", "geojson"),
-    ("roads.parquet", "Roads (OpenStreetMap)", "geodataframe", "parquet"),
-    ("cta_lines.geojson", "CTA 'L' rail lines (City of Chicago)", "geodataframe", "geojson"),
-    ("trees.geojson", "Trees (OpenStreetMap, natural=tree)", "geodataframe", "geojson"),
-    ("cta_stations.geojson", "CTA 'L' rail stations (City of Chicago)", "geodataframe", "geojson"),
-]
+# -- The dataset (no network) ------------------------------------------------
 
-
-def main() -> None:
+def cut(frame):
+    """*frame* cut at BOX, in its own order: what lies in it, and the part
+    inside it of a line or a polygon that crosses its edge."""
     import geopandas as gpd
+    from shapely.geometry import box
 
-    # A cache beside the repository's other scratch files, so a rerun after an
-    # Overpass refusal does not ask again for the layers it already has.
-    work = REPO / ".curio" / "build-cache" / DATASET_ID
-    work.mkdir(parents=True, exist_ok=True)
-    osm = pbf_layers(work)
-    files = {
-        "tracts.geojson": svi_tracts(work),
-        "parks.geojson": osm["parks"],
-        "water.geojson": osm["water"],
-        "trees.geojson": osm["trees"],
-        "cta_lines.geojson": portal_geojson(work, "xbyr-jnvx", "cta_lines"),
-        "cta_stations.geojson": portal_geojson(work, "3tzw-cg4m", "cta_stations",
-                                               keep={"station_id", "longname", "lines", "address", "ada",
-                                                     "legend"}),
-    }
-    roads = osm["roads"]
-    buildings, release = overture_buildings(work)
+    frame = gpd.clip(frame, box(*BOX), keep_geom_type=True).sort_index()
+    return frame[~frame.geometry.is_empty].reset_index(drop=True)
 
-    if OUT.exists():
-        shutil.rmtree(OUT)
-    (OUT / "data").mkdir(parents=True)
-    for name, path in files.items():
-        shutil.copyfile(path, OUT / "data" / name)
-    frame = gpd.read_file(roads)
-    keep = [c for c in ("osm_id", "highway", "oneway", "maxspeed", "lanes", "name", "geometry") if c in frame.columns]
-    frame[keep].to_parquet(OUT / "data" / "roads.parquet")
-    shutil.copyfile(buildings, OUT / "data" / "buildings.parquet")
 
-    counts = {}
-    for name, *_ in PARTS:
-        part = OUT / "data" / name
-        counts[name] = len(gpd.read_parquet(part) if name.endswith(".parquet") else gpd.read_file(part))
-    bundle = {"version": 1, "parts": [
-        {"index": i, "label": label, "kind": kind, "format": fmt, "file": f"data/{name}"}
-        for i, (name, label, kind, fmt) in enumerate(PARTS)]}
-    (OUT / "data" / "bundle.json").write_text(json.dumps(bundle, indent=2) + "\n", encoding="utf-8")
-    west, south, east, north = BOX
-    today = time.strftime("%Y-%m-%dT00:00:00Z", time.gmtime())
-    listing = "; ".join(f"{name} ({counts[name]:,})" for name, *_ in PARTS)
-    manifest = {
+def cut_lines(frame):
+    """The CTA lines cut at BOX. The portal's line segments have no id: they
+    are numbered, ``line_id`` from 1, by their line code and description."""
+    frame = cut(frame.drop(columns=["line_id"], errors="ignore"))
+    keys = frame[["legend", "description"]].astype("string").fillna("")
+    order = sorted(range(len(frame)), key=lambda i: (keys.iat[i, 0], keys.iat[i, 1]))
+    frame = frame.iloc[order].reset_index(drop=True)
+    frame.insert(0, "line_id", range(1, len(frame) + 1))
+    return frame
+
+
+CUTS = {"cta_lines.geojson": cut_lines}
+
+
+def write_part(frame, path: Path) -> None:
+    if path.suffix == ".parquet":
+        frame.to_parquet(path, compression="zstd")
+    else:
+        frame.to_file(path, driver="GeoJSON")
+
+
+def manifest() -> dict:
+    return {
         "id": DATASET_ID,
-        "name": "Chicago Loop Map Layers",
+        "name": NAME,
         "version": "1.0.0",
         "format": "bundle",
-        "description": (
-            f"Downtown Chicago, longitude {west} to {east}, latitude {south} to {north}: the Loop with the West "
-            "Loop, the South Loop, Streeterville and the lakefront up to Oak Street Beach, as eight layers of "
-            "every geometry an Autark map draws: " + listing + ". Tracts: CDC/ATSDR's Social Vulnerability "
-            "Index 2020 for the Cook County tracts that meet the box, cut at it (CDC's column names, -999 missing; AREA_SQMI is the whole tract's). "
-            f"Buildings: Overture Maps release {release}, height in metres where Overture has it. Parks, water, "
-            "roads and trees (natural=tree): OpenStreetMap, from BBBike's Chicago extract. CTA 'L' "
-            "lines and stations: City of Chicago data portal. All EPSG:4326. Built by "
-            "scripts/build_chicago_loop_layers_dataset.py."
-        ),
-        "publisher": "CDC/ATSDR; Overture Maps Foundation; OpenStreetMap contributors; City of Chicago",
-        "license": "ODbL-1.0 (OpenStreetMap, Overture); City of Chicago Terms of Use; CDC/ATSDR public domain",
-        "tags": ["chicago", "loop", "svi", "buildings", "parks", "roads", "trees", "cta", "bundle"],
+        "description": DESCRIPTION,
+        "publisher": "CDC/ATSDR; City of Chicago; OpenStreetMap contributors",
+        "license": "CDC/ATSDR public domain; City of Chicago Terms of Use; ODbL-1.0 (OpenStreetMap)",
+        "tags": ["chicago", "loop", "census-tracts", "svi", "cta", "trees", "bundle"],
         "dataFile": "data/bundle.json",
         "compatibility": {"major": 1},
-        "sourceLabel": "CDC/ATSDR, Overture Maps, OpenStreetMap, City of Chicago",
+        "sourceLabel": "CDC/ATSDR, City of Chicago, OpenStreetMap",
         "rowCount": None,
         "featureCount": None,
         "schema": None,
-        "createdAt": today,
-        "updatedAt": today,
+        "createdAt": STAMP,
+        "updatedAt": STAMP,
         "sourceUpdatedAt": None,
         "sourceEncoding": None,
         "groupId": None,
@@ -335,8 +214,46 @@ def main() -> None:
         "discoverySource": None,
         "collection": None,
     }
-    (OUT / "manifest.json").write_text(json.dumps(manifest, indent=1, ensure_ascii=False) + "\n", encoding="utf-8")
-    print(f"wrote {OUT.relative_to(REPO)}: {listing}")
+
+
+def write_dataset(sources: dict[str, Path], out: Path = OUT) -> dict[str, int]:
+    """Write the dataset into *out* from each part's source, a GeoJSON file of
+    any extent in EPSG:4326, cut at BOX. Returns each part's rows."""
+    import geopandas as gpd
+
+    if out.exists():
+        shutil.rmtree(out)
+    (out / "data").mkdir(parents=True)
+    rows = {}
+    for name, *_ in PARTS:
+        frame = CUTS.get(name, cut)(gpd.read_file(sources[name]))
+        write_part(frame, out / "data" / name)
+        rows[name] = len(frame)
+    bundle = {"version": 1, "parts": [
+        {"index": i, "label": label, "kind": kind, "format": fmt, "file": f"data/{name}"}
+        for i, (name, label, kind, fmt) in enumerate(PARTS)]}
+    (out / "data" / "bundle.json").write_text(json.dumps(bundle, indent=2) + "\n", encoding="utf-8")
+    (out / "manifest.json").write_text(json.dumps(manifest(), indent=1, ensure_ascii=False) + "\n",
+                                       encoding="utf-8")
+    size = sum(path.stat().st_size for path in out.rglob("*") if path.is_file())
+    if size > MAX_BYTES:
+        raise SystemExit(f"{out.name} takes {size:,} bytes, over {MAX_BYTES:,}: the catalog has no room for it")
+    return rows
+
+
+def main() -> None:
+    # A cache beside the repository's other scratch files, so a rerun does not
+    # download again what it already has.
+    work = REPO / ".curio" / "build-cache" / DATASET_ID
+    work.mkdir(parents=True, exist_ok=True)
+    sources = {
+        "tracts.geojson": svi_tracts(work),
+        "cta_lines.geojson": portal_layer(work, "xbyr-jnvx", "cta_lines"),
+        "trees.parquet": pbf_trees(work),
+        "cta_stations.geojson": portal_layer(work, "3tzw-cg4m", "cta_stations", keep=STATION_FIELDS),
+    }
+    rows = write_dataset(sources)
+    print(f"wrote {OUT.relative_to(REPO)}: " + "; ".join(f"{name} ({n:,})" for name, n in rows.items()))
 
 
 if __name__ == "__main__":
