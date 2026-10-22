@@ -662,9 +662,44 @@ def _summary(layer: _Layer, key, counts) -> str:
     return f"{_NAME}: {layer.label}, features matched on {key}: {what}."
 
 
+def _geojson_crs(crs):
+    """*crs* (``EPSG:4326``, 4326, a pyproj CRS or a GeoJSON ``crs``) as the
+    GeoJSON ``crs`` a layer names, or None when it names none."""
+    if crs is None or crs == "":
+        return None
+    if isinstance(crs, dict):
+        return crs
+    try:
+        from pyproj import CRS
+
+        code = CRS.from_user_input(crs).to_epsg()
+    except Exception:
+        return None
+    if code is None:
+        return None
+    return {"type": "name", "properties": {"name": f"urn:ogc:def:crs:EPSG::{code}"}}
+
+
+def _drawn_crs(layers, crs):
+    """The GeoJSON ``crs`` a new layer's features are in: *crs*, the one the
+    node's map drew the layers in and so a drawn shape is in, else the CRS of
+    the input's first layer that names one, a table's included."""
+    named = _geojson_crs(crs)
+    if named is not None:
+        return named
+    for item in layers:
+        if item.fc is not None and item.fc.get("crs") is not None:
+            return item.fc["crs"]
+        if item.frame is not None:
+            named = _geojson_crs(getattr(item.frame, "crs", None))
+            if named is not None:
+                return named
+    return None
+
+
 def _new_layers(defs, crs_of):
     """The empty layers *defs* name (``new_layers``), each an Autark layer of
-    its geometry, in the CRS the input's layers are in (*crs_of*)."""
+    its geometry, in the CRS its drawn features are in (*crs_of*)."""
     made = []
     for position, spec in enumerate(defs or []):
         if not isinstance(spec, dict) or not isinstance(spec.get("name"), str) or not spec["name"].strip():
@@ -736,8 +771,7 @@ def edit_features(value, edits, key=None, layer=None, keys=None, new_layers=None
         return value
     if not by_input:
         layers, single_table = _layers_of(value)
-    first_fc = next((item.fc for item in layers if item.fc is not None), None)
-    made = _new_layers(new_layers, (first_fc or {}).get("crs"))
+    made = _new_layers(new_layers, _drawn_crs(layers, crs))
     made_names = {item.name for item in made}
     taken = {item.name for item in layers if item.name}
     clash = sorted(made_names & taken)
