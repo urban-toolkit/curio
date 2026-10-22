@@ -532,7 +532,8 @@
       "Autark"
     ],
     "data_type": [
-      "Geometries"
+      "Geometries",
+      "OpenStreetMap"
     ]
   }
 }

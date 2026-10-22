@@ -4,21 +4,31 @@
   "version": 1,
   "source": {
     "path": "docs/examples/dataflows/chicago-loop-layers.json",
-    "sha256": "99807f4c9fd3d50f4ed37db8fbac2a7fb0bcf2773a5659897d5cb4c75ecf3207",
+    "sha256": "4dcdefb45ce9b1044006d4aa39ff8cd411dcacc213ffd500e129e4026d18767c",
     "walkthrough": null
   },
-  "prompt": "Make one Autark map of downtown Chicago that has a layer of every kind an Autark map draws, from the Data Catalog's Chicago Loop layers: the census tracts colored by CDC/ATSDR's Social Vulnerability Index, Overture's buildings extruded by height, OpenStreetMap's parks, water, roads and trees, and the CTA 'L' lines and stations. Load each layer on its own, tracts first. Connect the same layers to an Interaction node too, in the same order, and link the Interaction node to the map with an interaction edge, so I can add, reshape, move, change or remove the features of any layer on the map.",
+  "prompt": "Make one Autark map of downtown Chicago that has a layer of every kind an Autark map draws. From the Data Catalog's Chicago Loop layers, load the census tracts, colored by CDC/ATSDR's Social Vulnerability Index, the CTA 'L' lines and stations, and OpenStreetMap's trees, each layer on its own, tracts first. Load OpenStreetMap's parks, water, roads and buildings, the buildings colored by height, from the OpenStreetMap extract of downtown Chicago that the examples ship, in the box the extract is cut at. Send every layer through an Interaction node on its way to the map, and link the Interaction node to the map with an interaction edge, so I can add, reshape, move, change or remove the features of any layer on the map.",
   "context": null,
   "required": {
     "datasets": [
       "data.curio.chicago-loop-layers"
     ],
-    "packages": []
+    "packages": [],
+    "paths": [
+      "docs/examples/data/chicago_downtown.osm.pbf"
+    ]
   },
   "expected": {
     "nodes": [
       {
         "ref": "visualization1",
+        "type": "curio.builtin/autk-grammar",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": true
+      },
+      {
+        "ref": "visualization2",
         "type": "curio.builtin/autk-grammar",
         "role": "visualization",
         "executable": false,
@@ -53,34 +63,6 @@
         "hasContent": true
       },
       {
-        "ref": "loader5",
-        "type": "curio.builtin/data-loading",
-        "role": "loader",
-        "executable": true,
-        "hasContent": true
-      },
-      {
-        "ref": "loader6",
-        "type": "curio.builtin/data-loading",
-        "role": "loader",
-        "executable": true,
-        "hasContent": true
-      },
-      {
-        "ref": "loader7",
-        "type": "curio.builtin/data-loading",
-        "role": "loader",
-        "executable": true,
-        "hasContent": true
-      },
-      {
-        "ref": "loader8",
-        "type": "curio.builtin/data-loading",
-        "role": "loader",
-        "executable": true,
-        "hasContent": true
-      },
-      {
         "ref": "transform1",
         "type": "curio.builtin/edit-features",
         "role": "transform",
@@ -90,9 +72,10 @@
     ],
     "edges": [
       {
-        "from": "loader1",
-        "to": "visualization1",
-        "kind": "data"
+        "from": "visualization1",
+        "to": "transform1",
+        "kind": "data",
+        "slot": 1
       },
       {
         "from": "loader1",
@@ -101,19 +84,7 @@
       },
       {
         "from": "loader2",
-        "to": "visualization1",
-        "kind": "data",
-        "slot": 1
-      },
-      {
-        "from": "loader2",
         "to": "transform1",
-        "kind": "data",
-        "slot": 1
-      },
-      {
-        "from": "loader3",
-        "to": "visualization1",
         "kind": "data",
         "slot": 2
       },
@@ -121,71 +92,22 @@
         "from": "loader3",
         "to": "transform1",
         "kind": "data",
-        "slot": 2
-      },
-      {
-        "from": "loader4",
-        "to": "visualization1",
-        "kind": "data",
         "slot": 3
       },
       {
         "from": "loader4",
         "to": "transform1",
         "kind": "data",
-        "slot": 3
-      },
-      {
-        "from": "loader5",
-        "to": "visualization1",
-        "kind": "data",
         "slot": 4
-      },
-      {
-        "from": "loader5",
-        "to": "transform1",
-        "kind": "data",
-        "slot": 4
-      },
-      {
-        "from": "loader6",
-        "to": "visualization1",
-        "kind": "data",
-        "slot": 5
-      },
-      {
-        "from": "loader6",
-        "to": "transform1",
-        "kind": "data",
-        "slot": 5
-      },
-      {
-        "from": "loader7",
-        "to": "visualization1",
-        "kind": "data",
-        "slot": 6
-      },
-      {
-        "from": "loader7",
-        "to": "transform1",
-        "kind": "data",
-        "slot": 6
-      },
-      {
-        "from": "loader8",
-        "to": "visualization1",
-        "kind": "data",
-        "slot": 7
-      },
-      {
-        "from": "loader8",
-        "to": "transform1",
-        "kind": "data",
-        "slot": 7
       },
       {
         "from": "transform1",
-        "to": "visualization1",
+        "to": "visualization2",
+        "kind": "data"
+      },
+      {
+        "from": "transform1",
+        "to": "visualization2",
         "kind": "interaction"
       }
     ],
@@ -193,13 +115,15 @@
       "datasetIds": [
         "data.curio.chicago-loop-layers"
       ],
-      "paths": [],
+      "paths": [
+        "docs/examples/data/chicago_downtown.osm.pbf"
+      ],
       "urls": []
     }
   },
   "intents": [],
   "execution": {
-    "mode": "sandbox",
+    "mode": "browser",
     "browserOnlyKinds": [
       "curio.builtin/autk-grammar",
       "curio.builtin/edit-features"
@@ -207,8 +131,10 @@
     "notes": null
   },
   "capability": {
-    "tier": "T0",
-    "needs": [],
+    "tier": "T1",
+    "needs": [
+      "browser-only-execution"
+    ],
     "skip": []
   },
   "thresholds": {
@@ -220,7 +146,7 @@
   "split": "train",
   "review": {
     "status": "pending-owner-review",
-    "draftedBy": "claude-opus-5-5 from the example JSON and scripts/build_example_chicago_loop_layers.py, 2026-10-21",
+    "draftedBy": "the rebuild of PR #1055's example (OpenStreetMap's layers from an Autark node, every layer through the Interaction node), from the example JSON and scripts/build_example_chicago_loop_layers.py, 2026-10-21",
     "reviewedBy": null,
     "reviewedAt": null
   },
@@ -230,10 +156,10 @@
     "sourceLicences": [
       {
         "datasetId": "data.curio.chicago-loop-layers",
-        "licence": "ODbL-1.0 (OpenStreetMap, Overture); City of Chicago Terms of Use; CDC/ATSDR public domain"
+        "licence": "CDC/ATSDR public domain; City of Chicago Terms of Use; ODbL-1.0 (OpenStreetMap)"
       }
     ],
     "notes": "The prompt, the expected graph and the plan target are authored in this repository; the datasets appear only as ids."
   },
-  "notes": "The Interaction node's test dataflow: one layer of every kind Autark draws, for editing on the map."
+  "notes": "The Interaction node's test dataflow: one layer of every kind Autark draws, through the node to the map, for editing on the map."
 }

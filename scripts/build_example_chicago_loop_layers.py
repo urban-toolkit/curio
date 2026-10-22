@@ -2,33 +2,43 @@
 """Write the chicago-loop-layers example: one Autark map of downtown Chicago with
 a layer of every kind an Autark map draws, for an Interaction node to edit.
 
-The data is one bundle, ``data.curio.chicago-loop-layers`` (built by
-``scripts/build_chicago_loop_layers_dataset.py``), loaded part by part:
+The layers come from two places:
 
-- polygons: census tracts with CDC/ATSDR's Social Vulnerability Index, Overture
-  buildings (extruded by height), OpenStreetMap parks and water;
-- lines: OpenStreetMap roads, the CTA 'L' rail lines;
-- points: OpenStreetMap trees, the CTA 'L' stations.
+- an Autark node loads OpenStreetMap's parks, water, roads and buildings from
+  the examples' ``chicago_downtown.osm.pbf``, in the box it is cut at
+  (``queryArea.bbox``, as chicago-rain-wind-routing loads it: the extract also
+  carries the whole Chicago boundary);
+- the bundle ``data.curio.chicago-loop-layers`` (built by
+  ``scripts/build_chicago_loop_layers_dataset.py``) gives the rest, part by
+  part: census tracts with CDC/ATSDR's Social Vulnerability Index (polygons),
+  the CTA 'L' rail lines (lines), OpenStreetMap's trees and the CTA 'L'
+  stations (points).
 
-Each loader marks its frame with the Autark layer type it is (``buildings``,
-``parks``, ``water``, ``roads``, ``polygons``, ``polylines``, ``points``), so the
-map draws each the way Autark draws that kind of layer. The tracts are the
-map's first input: Autark clips every later layer to the first polygon layer
-it loads, and the tracts cover the whole area.
+Each loader marks its frame with the Autark layer type it is (``polygons``,
+``polylines``, ``points``), so the map draws each the way Autark draws that
+kind of layer; the Autark node's layers carry their own types.
 
     python scripts/build_example_chicago_loop_layers.py
 
-The eight loaders feed both the map, one per circle, and an Interaction
-node, on the same circles, so a layer has one name in both (input_0 ...
-input_7). An interaction edge links the Interaction node and the map both
-ways, as two Autark views are linked: a pick on the map reaches the node, the
-editing happens on the map, and the map draws, and hands on, its layers with
-the node's edits. Every layer has
-a column that identifies its features (FIPS, id, osm_id, line_id, station_id,
-name).
+The layers go Data → Interaction → map on data edges: the five data nodes feed
+the Interaction node, one per circle (CIRCLES), and it feeds the map, handing
+on every layer under its name. A loader's layer has no name of its own, so it
+is named after its circle (input_0, input_2, ...); the Autark node's layers
+keep their tables' names (table_osm_parks, ...). The map reads each with a
+layer chip (``[!! input_0:input_2 !!]``: the layer input_2 of the map's one
+input). The tracts are the first circle, so they are the first layer the map
+loads: Autark clips every later layer to the first polygon layer it loads, and
+the tracts cover the box but for the lake along its east edge. An
+interaction edge links the Interaction
+node and the map both ways, as two Autark views are linked: the editing
+happens on the map, which shows the edits at once, and Commit edits hands the
+edited layers to the map. The bundle's layers have a column that identifies
+their features (FIPS, line_id, osm_id, station_id), and Autark's buildings
+have building_id; Autark's parks, water and roads carry their OpenStreetMap
+tags and no id column.
 
 AUTHORING-ONLY tooling. The output is deterministic, so a rerun rewrites the
-same file.
+same file. It keeps the layout saved on the canvas (``keep_canvas``).
 """
 from __future__ import annotations
 
@@ -41,7 +51,16 @@ OUT = REPO / "docs" / "examples" / "dataflows" / "chicago-loop-layers.json"
 NAME = "Chicago Loop layers"
 NAMESPACE = uuid.uuid5(uuid.NAMESPACE_URL, f"https://curio.dev/examples/{NAME}")
 LAYERS = "data.curio.chicago-loop-layers"
-STAMP = "2026-10-20T00:00:00Z"
+STAMP = "2026-10-22T00:00:00Z"
+#: The examples' OpenStreetMap extract of downtown Chicago, and the box it is
+#: cut at (west, south, east, north; ``build_example_pbfs.py``).
+PBF = "docs/examples/data/chicago_downtown.osm.pbf"
+BOX = [-87.662, 41.859, -87.613, 41.898]
+#: The OpenStreetMap load's name: its layers are the tables <name>_<layer>.
+OSM_TABLE = "table_osm"
+OSM_LAYERS = ["parks", "water", "roads", "buildings"]
+#: The Interaction node's circles, in order: the node that feeds each.
+CIRCLES = ["tracts", "osm", "cta_lines", "trees", "cta_stations"]
 
 
 def nid(key: str) -> str:
@@ -59,6 +78,25 @@ def loader(part: str, layer_type: str, intro: str, extra: str = "") -> str:
     )
 
 
+def layer(key: str) -> str:
+    """The map's chip for a layer the Interaction node hands on: a loader's
+    layer is named after its circle on the node (input_<k>), and each of the
+    Autark node's layers after its table (table_osm_parks)."""
+    name = f"{OSM_TABLE}_{key}" if key in OSM_LAYERS else f"input_{CIRCLES.index(key)}"
+    return f"[!! input_0:{name} !!]"
+
+
+def interaction_code(circles: int) -> str:
+    """The Interaction node's code with no edits yet, fed by *circles* inputs:
+    what ``editFeaturesCode(undefined, circles)`` writes (``editFeatures.ts``)."""
+    return (
+        "# Edit Features writes this code from its edit list: each edit, in the\n"
+        "# order it was made, on the features whose key is one of its ids. It is\n"
+        "# written again when the list changes.\n"
+        "return curio_edit_features([" + ", ".join(f"input_{k}" for k in range(circles)) + "], [], by_input=True)\n"
+    )
+
+
 TRACTS = loader(
     "tracts.geojson", "polygons",
     "The census tracts that meet the area, with CDC/ATSDR's Social Vulnerability\n"
@@ -67,24 +105,23 @@ TRACTS = loader(
     "for column in [c for c in frame.columns if c.startswith((\"RPL_\", \"E_\"))]:\n"
     "    frame[column] = frame[column].where(frame[column] != -999)\n",
 )
-BUILDINGS = loader(
-    "buildings.parquet", "buildings",
-    "Overture Maps' buildings. Autark extrudes a buildings layer by its height\n"
-    "# column, in metres: Overture's height, else 3.5 m a floor, else 10 m.",
-    "frame = frame[~frame[\"is_underground\"].fillna(False).astype(bool)]\n"
-    "height = frame[\"height\"].fillna(frame[\"num_floors\"] * 3.5).fillna(10.0)\n"
-    "frame = frame.assign(height=height)[[\"id\", \"height\", \"num_floors\", \"class\", \"geometry\"]]\n"
-    "frame = frame.reset_index(drop=True)\n",
-)
-PARKS = loader("parks.geojson", "parks", "OpenStreetMap's parks, playgrounds and other green space.")
-WATER = loader("water.geojson", "water", "OpenStreetMap's water: the Chicago River and the lake's edge.")
-ROADS = loader("roads.parquet", "roads", "OpenStreetMap's roads, with their highway class, oneway, maxspeed and name.")
+OSM = {
+    "data": [
+        {
+            "type": "osm",
+            "pbfFileUrl": PBF,
+            "queryArea": {"bbox": BOX},
+            "outputTableName": OSM_TABLE,
+            "autoLoadLayers": {"layers": OSM_LAYERS},
+        }
+    ]
+}
 CTA_LINES = loader(
     "cta_lines.geojson", "polylines",
     "The CTA 'L' rail lines, from the City of Chicago data portal; legend is\n"
     "# the line's code (RD Red, BL Blue, ML the Loop's shared track, ...).",
 )
-TREES = loader("trees.geojson", "points", "OpenStreetMap's mapped trees (natural=tree), as points.")
+TREES = loader("trees.parquet", "points", "OpenStreetMap's mapped trees (natural=tree), as points.")
 CTA_STATIONS = loader(
     "cta_stations.geojson", "points",
     "The CTA 'L' stations; ada is whether the station is accessible.",
@@ -93,80 +130,66 @@ CTA_STATIONS = loader(
 LOOP_MAP = {
     "map": {
         "layerRefs": [
-            {"dataRef": "[!! input_0 !!]", "isColorMap": True, "getFnv": "RPL_THEMES",
+            {"dataRef": layer("tracts"), "isColorMap": True, "getFnv": "RPL_THEMES",
              "getFnvType": "quantitative", "colorMapInterpolator": "interpolateOrRd",
              "colorMapRange": [0, 1], "title": "Social vulnerability (SVI percentile)",
              "opacity": 0.55, "isPick": True},
-            {"dataRef": "[!! input_3 !!]", "title": "Water"},
-            {"dataRef": "[!! input_2 !!]", "title": "Parks"},
-            {"dataRef": "[!! input_4 !!]", "title": "Roads"},
-            {"dataRef": "[!! input_5 !!]", "isColorMap": True, "getFnv": "legend",
+            {"dataRef": layer("water"), "title": "Water"},
+            {"dataRef": layer("parks"), "title": "Parks"},
+            {"dataRef": layer("roads"), "title": "Roads"},
+            {"dataRef": layer("cta_lines"), "isColorMap": True, "getFnv": "legend",
              "getFnvType": "categorical", "colorMapInterpolator": "schemeTableau10",
              "title": "CTA 'L' line"},
-            {"dataRef": "[!! input_1 !!]", "isColorMap": True, "getFnv": "height",
+            {"dataRef": layer("buildings"), "isColorMap": True, "getFnv": "height",
              "getFnvType": "quantitative", "colorMapInterpolator": "interpolateViridis",
              "colorMapRange": [0, 250], "title": "Building height (m)", "isPick": True},
-            {"dataRef": "[!! input_6 !!]", "title": "Trees"},
-            {"dataRef": "[!! input_7 !!]", "isColorMap": True, "getFnv": "ada",
+            {"dataRef": layer("trees"), "title": "Trees"},
+            {"dataRef": layer("cta_stations"), "isColorMap": True, "getFnv": "ada",
              "getFnvType": "categorical", "colorMapInterpolator": "schemeSet1",
              "title": "CTA station", "isPick": True},
         ]
     }
 }
-#: The Interaction node's code with no edits yet, fed by the eight loaders
-#: (``editFeaturesCode(undefined, 8)``).
-NO_EDITS = (
-    "# Edit Features writes this code from its edit list: each edit, in the\n"
-    "# order it was made, on the features whose key is one of its ids. It is\n"
-    "# written again when the list changes.\n"
-    "return curio_edit_features([" + ", ".join(f"input_{k}" for k in range(8)) + "], [], by_input=True)\n"
-)
 
-#: key, type, title, goal, content, x, y
+#: key, type, title, goal, content, x, y, and what else a node sets
 NODES = [
     ("tracts", "curio.builtin/data-loading", "Census tracts (SVI)",
      "Load the census tracts that meet downtown Chicago, with CDC/ATSDR's Social Vulnerability Index 2020.",
-     TRACTS, 0, 0),
-    ("buildings", "curio.builtin/data-loading", "Buildings",
-     "Load Overture Maps' buildings of downtown Chicago, with a height for every one.", BUILDINGS, 0, 150),
-    ("parks", "curio.builtin/data-loading", "Parks", "Load OpenStreetMap's parks of downtown Chicago.", PARKS, 0, 300),
-    ("water", "curio.builtin/data-loading", "Water", "Load OpenStreetMap's water of downtown Chicago.", WATER, 0, 450),
-    ("roads", "curio.builtin/data-loading", "Roads", "Load OpenStreetMap's roads of downtown Chicago.", ROADS, 0, 600),
+     TRACTS, 0, 0, {}),
+    # In the place of the loaders the Autark node replaces, collapsed as the
+    # saved layout has the loaders.
+    ("osm", "curio.builtin/autk-grammar", "OpenStreetMap layers",
+     "Load OpenStreetMap's parks, water, roads and buildings of downtown Chicago.",
+     json.dumps(OSM, indent=2), 0, 358, {"minimized": True}),
     ("cta_lines", "curio.builtin/data-loading", "CTA 'L' lines",
-     "Load the CTA 'L' rail lines of downtown Chicago.", CTA_LINES, 0, 750),
+     "Load the CTA 'L' rail lines of downtown Chicago.", CTA_LINES, 0, 750, {}),
     ("trees", "curio.builtin/data-loading", "Trees", "Load OpenStreetMap's mapped trees of downtown Chicago.",
-     TREES, 0, 900),
+     TREES, 0, 900, {}),
     ("cta_stations", "curio.builtin/data-loading", "CTA 'L' stations",
-     "Load the CTA 'L' stations of downtown Chicago, accessible or not.", CTA_STATIONS, 0, 1050),
+     "Load the CTA 'L' stations of downtown Chicago, accessible or not.", CTA_STATIONS, 0, 1050, {}),
     ("loop_map", "curio.builtin/autk-grammar", "Downtown Chicago layers",
      "Draw every layer on one map: tracts by social vulnerability, buildings by height, parks, water, roads, "
-     "the 'L', trees and stations.", json.dumps(LOOP_MAP, indent=2), 560, 200),
+     "the 'L', trees and stations.", json.dumps(LOOP_MAP, indent=2), 1240, 200,
+     # A map large enough to tell the layers apart.
+     {"width": 960, "height": 720}),
     ("interaction", "curio.builtin/edit-features", "Edit the map's layers",
      "Read the map's layers, by the geometry of their features, and add, reshape, move, change or remove their "
-     "features on the map, add properties, or make a new layer.", NO_EDITS, 1600, 200),
+     "features on the map, add properties, or make a new layer.", interaction_code(len(CIRCLES)), 560, 200,
+     # Room for the layer list and the forms, beside the map.
+     {"width": 560, "height": 900}),
 ]
-#: source key -> (target key, input index)
-LAYER_KEYS = ["tracts", "buildings", "parks", "water", "roads", "cta_lines", "trees", "cta_stations"]
-EDGES = (
-    [(key, "loop_map", k) for k, key in enumerate(LAYER_KEYS)]
-    + [(key, "interaction", k) for k, key in enumerate(LAYER_KEYS)]
-)
+#: source key, target key, input circle
+EDGES = [(key, "interaction", k) for k, key in enumerate(CIRCLES)] + [("interaction", "loop_map", 0)]
 #: The interaction edges, both ways: the Interaction node and the map it edits on.
 LINKS = [("interaction", "loop_map")]
 
 
 def build() -> dict:
     nodes = []
-    for key, typ, title, goal, content, x, y in NODES:
+    for key, typ, title, goal, content, x, y, extra in NODES:
         nodes.append({"id": nid(key), "type": typ, "x": x, "y": y, "content": content, "out": "DEFAULT",
                       "in": "DEFAULT", "goal": goal, "metadata": {"keywords": [], "packageTemplateLabel": title},
-                      "title": title})
-        if typ == "curio.builtin/autk-grammar":
-            # A map large enough to tell the layers apart.
-            nodes[-1].update({"width": 960, "height": 720})
-        if typ == "curio.builtin/edit-features":
-            # Room for the layer list and the forms, beside the map.
-            nodes[-1].update({"width": 560, "height": 900})
+                      "title": title, **extra})
     edges = []
     for source, target, index in EDGES:
         handle = "in" if index == 0 else f"in_{index}"
