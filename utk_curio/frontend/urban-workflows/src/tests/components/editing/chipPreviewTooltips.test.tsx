@@ -135,14 +135,28 @@ function fakeMonaco(markers: Array<{ message: string; startLineNumber: number; s
   return { editor: { MouseTargetType: { CONTENT_TEXT }, getModelMarkers: () => markers } };
 }
 
-/** What the test changes: the node's data, as a read coming back changes it. */
-const controls: { setData: (data: ChipPreviewData) => void } = { setData: () => undefined };
+/** What the test reads and changes: the node's data, as a run or a read coming back changes it. */
+const controls: { data: ChipPreviewData; setData: (data: ChipPreviewData) => void } = {
+  data: {},
+  setData: () => undefined,
+};
 
 /** The join's header and its code's hover, from one preview source whose
  * reads go to *load*. */
-function Join({ editor, monaco, load }: { editor: unknown; monaco: unknown; load: (inner: string) => void }) {
-  const [data, setData] = useState<ChipPreviewData>({ inputs: { 1: { source: SUMMARY } } });
+function Join({
+  editor,
+  monaco,
+  load,
+  initial,
+}: {
+  editor: unknown;
+  monaco: unknown;
+  load: (inner: string) => void;
+  initial: ChipPreviewData;
+}) {
+  const [data, setData] = useState<ChipPreviewData>(initial);
   controls.setData = setData;
+  controls.data = data;
   const snapshot = useMemo(() => ({ scope: SCOPE, language: "python" as const, data }), [data]);
   const source = useChipPreviewSource(snapshot, load);
   useEditorTooltip(editor, monaco, SCOPE, "python", source);
@@ -158,13 +172,20 @@ function Join({ editor, monaco, load }: { editor: unknown; monaco: unknown; load
   );
 }
 
-function mount(monaco: unknown) {
+function mount(
+  monaco: unknown,
+  { initial = { inputs: { 1: { source: SUMMARY } } }, onLoad }: { initial?: ChipPreviewData; onLoad?: (inner: string) => void } = {},
+) {
   const { editor, dom, emit } = fakeEditor(CODE);
   const loads: string[] = [];
+  const load = (inner: string) => {
+    loads.push(inner);
+    onLoad?.(inner);
+  };
   render(
     <>
       <TooltipLayer />
-      <Join editor={editor} monaco={monaco} load={(inner) => loads.push(inner)} />
+      <Join editor={editor} monaco={monaco} load={load} initial={initial} />
     </>,
   );
   // Inputs open, so the input tags show.
@@ -215,9 +236,11 @@ describe("a chip's preview in the one Curio tooltip", () => {
     expect(said()).toContain("Reading input_1...");
     expect(loads).toEqual(["input_1"]);
 
-    // The read comes back: the open tooltip shows the tuple.
+    // The read comes back: the open tooltip shows the tuple. It asks again as
+    // its input changes, which reads nothing once the read is kept.
     act(() => controls.setData({ inputs: { 1: { source: SUMMARY, preview: tuplePreview } } }));
     await advance(FRAME);
+    expect(loads).toEqual(["input_1", "input_1"]);
     const tagText = said();
     expect(tagText).toContain("input_1 from Summarize · a Python Computation node");
     expect(tagText).toContain("A tuple of 2 values. Read them in code as input_1[0] and input_1[1].");
@@ -234,7 +257,59 @@ describe("a chip's preview in the one Curio tooltip", () => {
     await advance(1 + FRAME);
     expect(said()).toBe(tagText.slice(0, -TAG_HOW.length).trim());
     expect(shown()[0].querySelector('[data-chip-preview="input"]')).not.toBeNull();
-    expect(loads).toEqual(["input_1", "input_1"]);
+    expect(loads).toEqual(["input_1", "input_1", "input_1"]);
+  });
+
+  test("the pointer going straight from the tag to its chip in the code gets the chip's preview, which stays", async () => {
+    const { dom, emit, tag } = mount(fakeMonaco(), {
+      initial: { inputs: { 1: { source: SUMMARY, preview: tuplePreview } } },
+    });
+    moveTo(tag);
+    await advance(400 + FRAME);
+    expect(said().endsWith(TAG_HOW)).toBe(true);
+
+    // Onto the chip within the 100 ms the tag's tooltip waits before it hides.
+    const chip = overChip(dom, 120, 200, 21);
+    moveTo(chip.target.element);
+    emit("onMouseMove", chip);
+    await advance(50);
+    expect(said()).toContain("A tuple of 2 values");
+    expect(said()).not.toContain(TAG_HOW);
+
+    // The tag's pending hide does not close it: it stays while the pointer rests on the chip.
+    await advance(1000);
+    expect(shown()).toHaveLength(1);
+    expect(said()).toContain("A tuple of 2 values");
+    expect(said()).not.toContain(TAG_HOW);
+  });
+
+  test("a chip's open tooltip reads its input once a value arrives, then shows its rows", async () => {
+    let reads = 0;
+    const notRun: InputSource = { ...SUMMARY, status: "not-run" };
+    const { dom, emit } = mount(fakeMonaco(), {
+      initial: { inputs: { 1: { source: notRun } } },
+      // As useInputScope's loadPreview: a value not read yet is read once.
+      onLoad: () => {
+        const held = controls.data.inputs?.[1];
+        if (!held || held.source.status === "not-run" || held.preview) return;
+        reads += 1;
+        void Promise.resolve().then(() =>
+          controls.setData({ inputs: { 1: { source: held.source, preview: tuplePreview } } }),
+        );
+      },
+    });
+    emit("onMouseMove", overChip(dom, 120, 200, 21));
+    await advance(400 + FRAME);
+    expect(said()).toContain("Not run yet. Run Summarize to see its rows.");
+    expect(reads).toBe(0);
+
+    // Summarize runs, and input_1 holds a value under the open tooltip.
+    act(() => controls.setData({ inputs: { 1: { source: SUMMARY } } }));
+    expect(reads).toBe(1);
+    await advance(FRAME);
+    expect(said()).toContain("A tuple of 2 values");
+    expect(said()).toContain("8.0417");
+    expect(reads).toBe(1);
   });
 
   test("an editor chip's preview comes after the messages of the markers on it", async () => {

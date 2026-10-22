@@ -23,9 +23,12 @@ jest.mock("../../services/api", () => ({
   fetchPreviewData: (...args: any[]) => mockFetchPreviewData(...args),
 }));
 
+import fs from "fs";
+import path from "path";
 import React from "react";
 import { cleanup, render } from "@testing-library/react";
-import { ChipPreview, TAG_HOW, type ChipPreviewData } from "../../components/editing/widgets/ChipPreview";
+import { ChipPreview, TAG_HOW, cellWidth, type ChipPreviewData } from "../../components/editing/widgets/ChipPreview";
+import { declaredValue } from "../_support/cssRules";
 import type { CodeLanguage, InputScope, ReferenceScope } from "../../utils/references/codeReferences";
 import { readInputPreview, type InputPreview, type InputSource } from "../../utils/references/inputScope";
 import { tableTextColor } from "../../utils/scenarios/scenarioColors";
@@ -212,7 +215,7 @@ describe("an input", () => {
     expect(linesOf(root)).toEqual(["A tuple of 2 values."]);
   });
 
-  test("a tuple's first 3 parts, a value as itself, then how many more", () => {
+  test("a tuple's first 2 parts, a value as itself, then how many more", () => {
     const table = (tuplePreview as Extract<InputPreview, { kind: "tuple" }>).parts[0];
     const preview: InputPreview = {
       kind: "tuple",
@@ -229,11 +232,16 @@ describe("an input", () => {
       "A tuple of 5 values. Read them in code as input_1[0], input_1[1], input_1[2], input_1[3] and input_1[4].",
       "input_1[1] = 3",
     ]);
-    expect(tablesOf(root).map((t) => t.caption)).toEqual([
-      "input_1[0] · 3 rows × 2 columns",
-      "input_1[2] · 3 rows × 2 columns",
-    ]);
-    expect(footOf(root)).toEqual(["first 3 of 5 values"]);
+    expect(tablesOf(root).map((t) => t.caption)).toEqual(["input_1[0] · 3 rows × 2 columns"]);
+    expect(footOf(root)).toEqual(["first 2 of 5 values"]);
+  });
+
+  test("a circle with no edge has nothing to read, rather than being read", () => {
+    const root = show({ inner: "input_3", scope: scopeOf(JOIN_INPUTS), language: "python", data: { inputs: {} } });
+    expect(linesOf(root)).toEqual(["Nothing is connected to input_3."]);
+    cleanup();
+    const column = show({ inner: "input_3.sensor", scope: scopeOf(JOIN_INPUTS), language: "python", data: { inputs: {} } });
+    expect(linesOf(column)).toEqual(["Nothing is connected to input_3."]);
   });
 
   test("from a scenario box: the box with its swatch, then the node's title", () => {
@@ -360,10 +368,9 @@ describe("an input", () => {
     expect(tables.map((t) => t.caption)).toEqual([
       "table_osm_roads · 1,234 features, LineString",
       "table_osm_buildings · 2 features, Polygon",
-      "table_osm_parks · 7 features, MultiPolygon",
     ]);
     expect(tables[0].rows).toEqual([["0"], ["1"], ["2"]]);
-    expect(footOf(root)).toEqual(["first 3 of 4 layers"]);
+    expect(footOf(root)).toEqual(["first 2 of 4 layers"]);
 
     cleanup();
     const layer = show({
@@ -413,6 +420,29 @@ describe("caps and formatting", () => {
     expect(root.querySelector("tbody tr:nth-child(2) td:nth-child(2) [data-null]")).not.toBeNull();
     expect(table.rows).toHaveLength(5);
     expect(footOf(root)).toEqual(["first 5 of 73 rows, 6 of 9 columns"]);
+  });
+
+  test("each cell ends in an ellipsis at its column's share of the card, so the columns it says it shows fit", () => {
+    // The card's 480 px, less its padding and border, holds n shares and the gaps between them.
+    for (let columns = 1; columns <= 6; columns += 1) {
+      const share = Number(/^min\((\d+)px,/.exec(cellWidth(columns))?.[1]);
+      expect(columns * share + (columns - 1) * 14).toBeLessThanOrEqual(480 - 2 * (10 + 1));
+      expect(share).toBeGreaterThan(50);
+    }
+    expect(cellWidth(6)).toBe("min(64px, calc((100vw - 108px) / 6))");
+    // A cell, its column's name and its dtype each cut with an ellipsis, on one line.
+    const css = fs.readFileSync(path.resolve(__dirname, "../../components/editing/widgets/ChipPreview.module.css"), "utf8");
+    for (const selector of [".cell", ".columnName", ".columnDtype"]) {
+      expect([
+        declaredValue(css, selector, "overflow"),
+        declaredValue(css, selector, "text-overflow"),
+        declaredValue(css, selector, "white-space"),
+      ]).toEqual(["hidden", "ellipsis", "nowrap"]);
+    }
+    // The head and the foot keep their height; the body between them is cut.
+    expect(declaredValue(css, ".head", "flex")).toBe("none");
+    expect(declaredValue(css, ".foot", "flex")).toBe("none");
+    expect([declaredValue(css, ".body", "min-height"), declaredValue(css, ".body", "overflow")]).toEqual(["0", "hidden"]);
   });
 });
 
@@ -614,6 +644,19 @@ describe("a selection", () => {
     expect(headOf(root)).toBe("selection picked from the view ZIP code bars");
     expect(linesOf(root)).toEqual(["7 zip values selected", "60601, 60602, 60603, 60604, 60605, ..."]);
     expect(tablesOf(root)[0].rows).toEqual([["60601", "12"], ["60602", "7"], ["60603", "3"]]);
+  });
+
+  test("a view that failed to hand over its rows says so, not that it has not drawn", () => {
+    const root = show({
+      inner: "selection picked",
+      scope: scopeOf([], { selections: [picked] }),
+      data: { selections: { picked: { view: "ZIP code bars", rows: { unreadable: true } } } },
+    });
+    expect(linesOf(root)).toEqual([
+      "7 zip values selected",
+      "60601, 60602, 60603, 60604, 60605, ...",
+      "Curio could not read the rows of ZIP code bars.",
+    ]);
   });
 
   test("before the view has drawn, the ids alone", () => {

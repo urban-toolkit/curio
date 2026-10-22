@@ -24,13 +24,19 @@
  * - A chip with a problem shows the problem. An input not run, stale, failed
  *   or being read says so; a header tag ends with how to use it (*tag*).
  *
- * It shows 5 rows by 6 columns, cells cut at 24 characters, a tuple's or a
- * layer list's first 3 with 3 rows each; numbers with at most 4 decimals, and
- * an empty cell as a grey "null".
+ * It shows 5 rows by 6 columns, cells cut at 24 characters and at their share
+ * of the card's width, a tuple's or a layer list's first 2 with 3 rows each;
+ * numbers with at most 4 decimals, and an empty cell as a grey "null". Its head
+ * and its foot always show; what lies between them is cut to the card.
  */
 import React, { useEffect, useSyncExternalStore } from "react";
 import styles from "./ChipPreview.module.css";
 import type { ChipPreviewSource } from "./chipPreviewSource";
+import {
+  TOOLTIP_MARGIN,
+  TOOLTIP_PREVIEW_MAX_HEIGHT,
+  TOOLTIP_PREVIEW_MAX_WIDTH,
+} from "../../tooltip/tooltipPlacement";
 import {
   STACKED_FIELDS,
   inputName,
@@ -82,8 +88,36 @@ const TABLE_COLUMNS = 6;
 const CELL_CHARS = 24;
 /** The characters a value on a line of its own shows. */
 const VALUE_CHARS = 120;
-/** The values of a tuple, and the layers of an input, a preview shows. */
-const SHOWN_PARTS = 3;
+/** The values of a tuple, and the layers of an input, a preview shows: two
+ * tables of 3 rows fit its height with its head and its foot. */
+const SHOWN_PARTS = 2;
+/** The tooltip card's padding and border around a preview, in px (`.rich` in
+ * TooltipLayer.module.css): what the card's size leaves the preview. */
+const CARD_PADDING_X = 10;
+const CARD_PADDING_Y = 8;
+const CARD_BORDER = 1;
+/** The room between two columns of a table, in px (`.table th` and `td`). */
+const COLUMN_GAP = 14;
+/** The widest and tallest a preview is: the card's size, less its padding and border. */
+const PREVIEW_WIDTH = TOOLTIP_PREVIEW_MAX_WIDTH - 2 * (CARD_PADDING_X + CARD_BORDER);
+const PREVIEW_HEIGHT = TOOLTIP_PREVIEW_MAX_HEIGHT - 2 * (CARD_PADDING_Y + CARD_BORDER);
+
+/**
+ * The widest a cell of a table of *columns* columns is, as CSS, so every
+ * column it shows fits the card, on a narrow window too: its share of the
+ * preview's width, less the gaps between the columns. A longer cell ends in an
+ * ellipsis.
+ */
+export function cellWidth(columns: number): string {
+  const gaps = (columns - 1) * COLUMN_GAP;
+  const share = Math.floor((PREVIEW_WIDTH - gaps) / columns);
+  const chrome = 2 * (TOOLTIP_MARGIN + CARD_PADDING_X + CARD_BORDER) + gaps;
+  return `min(${share}px, calc((100vw - ${chrome}px) / ${columns}))`;
+}
+
+/** The tallest a preview is, as CSS, on a short window too: its head and its
+ * foot keep their height, and what lies between them is cut. */
+const PREVIEW_MAX_HEIGHT = `min(${PREVIEW_HEIGHT}px, calc(100vh - ${2 * (TOOLTIP_MARGIN + CARD_PADDING_Y + CARD_BORDER)}px))`;
 /** The ids of a selection a preview lists. */
 const SHOWN_IDS = 5;
 /** The dtypes of the fields the stacking adds, as Python's stack_inputs gives them. */
@@ -102,8 +136,9 @@ export interface ChipPreviewData {
   /** Each shared tag's Parameter node, by the tag's name (`parameterPreviewOf`). */
   parameters?: Record<string, { node: string; readers: number }>;
   /** Each selection tag's view, by the tag's name: its title, and the rows
-   * the tag's ids pick once the view has drawn (`readSelectionRows`). */
-  selections?: Record<string, { view: string; rows?: { columns: string[]; rows: Row[] } | null }>;
+   * the tag's ids pick once the view has drawn (`readSelectionRows`): null
+   * before, `{ unreadable: true }` when the view failed to hand them over. */
+  selections?: Record<string, { view: string; rows?: { columns: string[]; rows: Row[] } | { unreadable: true } | null }>;
 }
 
 export interface ChipPreviewProps {
@@ -218,6 +253,8 @@ function Table({
   const shownColumns = columns.slice(0, TABLE_COLUMNS);
   const shownRows = rows.slice(0, maxRows);
   const numeric = new Set(shownColumns.filter((column) => isNumericColumn(dtypes[column], shownRows, column)));
+  // Each cell at most its share of the card, so every column shown fits.
+  const width = { maxWidth: cellWidth(shownColumns.length) };
   return (
     <table className={styles.table}>
       {caption ? <caption className={styles.caption}>{caption}</caption> : null}
@@ -225,11 +262,11 @@ function Table({
         <tr>
           {shownColumns.map((column) => (
             <th key={column} scope="col" className={numeric.has(column) ? styles.number : undefined}>
-              <span className={styles.columnName} data-column-name="true">
+              <span className={styles.columnName} style={width} data-column-name="true">
                 {cut(column, CELL_CHARS)}
               </span>
               {dtypes[column] ? (
-                <span className={styles.columnDtype} data-column-dtype="true">
+                <span className={styles.columnDtype} style={width} data-column-dtype="true">
                   {dtypes[column]}
                 </span>
               ) : null}
@@ -244,8 +281,10 @@ function Table({
               const color = swatchOf?.(column, row[column]);
               return (
                 <td key={column} className={numeric.has(column) ? styles.number : undefined}>
-                  {color ? <Swatch color={color} /> : null}
-                  <Cell value={row[column]} />
+                  <span className={styles.cell} style={width} data-cell="true">
+                    {color ? <Swatch color={color} /> : null}
+                    <Cell value={row[column]} />
+                  </span>
                 </td>
               );
             })}
@@ -346,8 +385,10 @@ function SourceText({ input, source }: { input?: InputScope; source?: InputSourc
 }
 
 /** What stands in for an input's rows until they can be shown: why, or null
- * once they can. *columnText* is a column's, which waits for its type too. */
-function waitingLine(name: string, state: InputPreviewState | undefined, column = false): React.ReactNode {
+ * once they can. A circle with no edge (*wired* false) has nothing to read;
+ * *column* is a column's, which waits for its type too. */
+function waitingLine(name: string, wired: boolean, state: InputPreviewState | undefined, column = false): React.ReactNode {
+  if (!wired) return <Line>Nothing is connected to {name}.</Line>;
   if (state?.source.status === "errored") return <Line>The node that feeds {name} failed.</Line>;
   if (state?.source.status === "not-run") {
     return column ? (
@@ -490,7 +531,7 @@ function inputParts(slot: number | null, scope: ReferenceScope, language: CodeLa
       <SourceText input={input} source={state?.source} />
     </Head>
   );
-  const waiting = waitingLine(name, state);
+  const waiting = waitingLine(name, input !== undefined, state);
   if (waiting || !state?.preview) return { kind: "input", head, body: waiting };
   const { body, foot } = holdingOf(name, state.preview, language);
   return {
@@ -540,7 +581,7 @@ function columnParts(
       ) : null}
     </Head>
   );
-  const waiting = waitingLine(name, state, true);
+  const waiting = waitingLine(name, input !== undefined, state, true);
   if (waiting) return { kind: "column", head, body: waiting };
   if (!table || !table.columns.includes(column)) {
     return { kind: "column", head, body: <Line>{owner} has no column {column}.</Line> };
@@ -559,7 +600,7 @@ function columnParts(
   };
 }
 
-function layerParts(slot: number | null, layer: string, data?: ChipPreviewData): Parts {
+function layerParts(slot: number | null, layer: string, scope: ReferenceScope, data?: ChipPreviewData): Parts {
   const name = inputName(slot);
   const state = slot === null ? undefined : data?.inputs?.[slot];
   const head = (
@@ -568,7 +609,7 @@ function layerParts(slot: number | null, layer: string, data?: ChipPreviewData):
       <Text>layer of {name}</Text>
     </Head>
   );
-  const waiting = waitingLine(name, state);
+  const waiting = waitingLine(name, scope.inputs.some((input) => input.slot === slot), state);
   if (waiting) return { kind: "layer", head, body: waiting };
   const table = tableFor(state?.preview, layer);
   if (!table) return { kind: "layer", head, body: <Line>{name} has no layer {layer}.</Line> };
@@ -919,7 +960,9 @@ function selectionParts(inner: string, name: string, scope: ReferenceScope, data
   if (!tag) return { kind: "selection", head, body: <Line>This node has no selection tag named {name}.</Line> };
   const ids = Array.isArray(tag.ids) ? tag.ids : null;
   const size = ids ? ids.length : tag.count ?? 0;
-  const rows = view?.rows;
+  const read = view?.rows;
+  const unreadable = !!read && "unreadable" in read;
+  const rows = read && !("unreadable" in read) ? read : null;
   return {
     kind: "selection",
     head,
@@ -932,7 +975,9 @@ function selectionParts(inner: string, name: string, scope: ReferenceScope, data
             {ids.length > SHOWN_IDS ? ", ..." : ""}
           </Line>
         ) : null}
-        {rows && rows.rows.length > 0 ? (
+        {unreadable ? (
+          <Line>Curio could not read the rows of {view?.view ?? "its view"}.</Line>
+        ) : rows && rows.rows.length > 0 ? (
           <Table columns={rows.columns} dtypes={{}} rows={rows.rows} maxRows={PART_ROWS} />
         ) : rows ? null : (
           <Line tone="muted">The selected rows show once {view?.view ?? "its view"} has drawn.</Line>
@@ -1034,7 +1079,7 @@ function partsOf({ inner, scope, language, data, problem }: ChipPreviewProps): P
   switch (parsed.kind) {
     case "input":
       if (parsed.column !== undefined) return columnParts(parsed.slot, parsed.layer, parsed.column, scope, data);
-      if (parsed.layer !== undefined) return layerParts(parsed.slot, parsed.layer, data);
+      if (parsed.layer !== undefined) return layerParts(parsed.slot, parsed.layer, scope, data);
       return inputParts(parsed.slot, scope, language, data);
     case "dataset":
       return datasetParts(scope, data);
@@ -1055,9 +1100,12 @@ function partsOf({ inner, scope, language, data, problem }: ChipPreviewProps): P
 export function ChipPreview(props: ChipPreviewProps) {
   const parts = partsOf(props);
   return (
-    <div className={styles.preview} data-chip-preview={parts.kind}>
+    <div className={styles.preview} style={{ maxHeight: PREVIEW_MAX_HEIGHT }} data-chip-preview={parts.kind}>
       {parts.head}
-      {parts.body}
+      {/* What is cut when the card is too short: never the head or the foot. */}
+      <div className={styles.body} data-preview-body="true">
+        {parts.body}
+      </div>
       {(parts.foot ?? []).map((text) => (
         <div key={text} className={styles.foot} data-preview-foot="true">
           {text}
@@ -1093,9 +1141,11 @@ export function ChipPreviewTip({
   messages?: string[];
 }) {
   const { scope, language, data } = useSyncExternalStore(source.subscribe, source.get, source.get);
+  // Again whenever the inputs change under an open tooltip: a value that
+  // arrives is read then. A read is kept, so asking again reads nothing.
   useEffect(() => {
     if (!problem) source.load(inner);
-  }, [source, inner, problem]);
+  }, [source, inner, problem, data?.inputs]);
   const preview = (
     <ChipPreview inner={inner} scope={scope} language={language} data={data} problem={problem} tag={tag} />
   );
