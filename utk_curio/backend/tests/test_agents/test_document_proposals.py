@@ -119,6 +119,13 @@ def _write(node_id, content) -> str:
     return "```curio.v1\n" + json.dumps({"toolRequest": request}) + "\n```"
 
 
+def _results(calls: list, tool: str) -> list[str]:
+    """Each result the model was handed for *tool*, in order. Every recorded
+    call is the one message list the loop appends to, so a result is read by
+    its prefix, never by its index."""
+    return grounding_routes._tool_results(calls[-1], tool)
+
+
 def _proposals(body) -> list[dict]:
     return [p for p in body["content"] if p["type"] == "proposal"]
 
@@ -141,9 +148,10 @@ class TestACreatedNode:
             "Proposed: review it above.",
         ])
         body = grounding_routes._run(client, token, charts, att, "chart the mean trips per scenario")
-        refused = calls[1][-1]["content"]
+        refused, proposed = _results(calls, "node.create")
         assert "document refused" in refused, refused
         assert "'else' was unexpected" in refused
+        assert proposed.startswith("[tool result] node.create: proposed"), proposed
         # The chart that resolves through its own widgets and the scenario chips is proposed as written.
         [proposal] = _proposals(body)
         assert proposal["preview"] == SCOUT_STYLE
@@ -160,9 +168,10 @@ class TestACreatedNode:
             "Proposed: review it above.",
         ])
         body = grounding_routes._run(client, token, charts, att, "map the population density")
-        refused = calls[1][-1]["content"]
+        refused, proposed = _results(calls, "node.create")
         assert "document refused" in refused, refused
         assert "a map with no layers renders nothing" in refused
+        assert proposed.startswith("[tool result] node.create: proposed"), proposed
         [proposal] = _proposals(body)
         assert proposal["preview"] == MAP_OF_INPUT_0
 
@@ -181,9 +190,10 @@ class TestAReplacedContent:
             "Proposed: review it above.",
         ])
         body = grounding_routes._run(client, token, charts, att, "chart the trips per scenario")
-        refused = calls[1][-1]["content"]
+        refused, proposed = _results(calls, "node.content.write")
         assert "document refused" in refused, refused
         assert "'else' was unexpected" in refused
+        assert proposed.startswith("[tool result] node.content.write: proposed"), proposed
         [proposal] = _proposals(body)
         assert proposal["preview"] == WITH_SCENARIO_CHIPS
         assert _node(user, charts, "chart")["content"] == ""  # proposed, not written

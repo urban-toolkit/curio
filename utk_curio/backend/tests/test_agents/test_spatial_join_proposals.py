@@ -12,6 +12,7 @@ import json
 
 from utk_curio.backend.tests._support.agent_routes import _auth
 from utk_curio.backend.tests.test_agents import test_routes_proposals as routes
+from utk_curio.backend.tests.test_agents import test_source_grounding_routes as grounding_routes
 
 DL = "curio.builtin/data-loading"
 JOIN = "curio.builtin/spatial-join"
@@ -158,7 +159,9 @@ class TestAProposedJoin:
         r = helper._run(client, token, project_id, att_id)
         assert r.status_code == 200, r.get_json()
         proposal = next((p for p in r.get_json()["content"] if p["type"] == "proposal"), None)
-        return helper, att_id, proposal, calls
+        # Every recorded call is the one message list the loop appends to, so
+        # each node.create result is read by its prefix, never by its index.
+        return helper, att_id, proposal, grounding_routes._tool_results(calls[-1], "node.create")
 
     def test_its_setting_reaches_the_card_and_the_node(
         self, client, user_and_token, tmp_curio, alice_project, monkeypatch
@@ -169,8 +172,10 @@ class TestAProposedJoin:
         helper = _JoinNodeBuilder()
         no_code = helper._create_tail_json(nodeType=CA, content="")
         reply = helper._create_tail_json(nodeType=JOIN, title="Nearest label", spatialJoin={"predicate": "nearest"})
-        helper, att_id, proposal, calls = self._run(client, user, token, alice_project, monkeypatch, no_code, reply)
-        assert "params.content must be a non-empty string" in calls[1][-1]["content"]
+        helper, att_id, proposal, results = self._run(client, user, token, alice_project, monkeypatch, no_code, reply)
+        refused, proposed = results
+        assert "params.content must be a non-empty string" in refused, refused
+        assert proposed.startswith("[tool result] node.create: proposed"), proposed
         assert proposal is not None, "a Spatial Join with no content was not proposed"
         assert proposal["summary"] == "Create a new Spatial Join node · Nearest label · operation nearest"
         resp = client.post(
@@ -188,9 +193,9 @@ class TestAProposedJoin:
     ):
         user, token = user_and_token
         reply = _JoinNodeBuilder()._create_tail_json(nodeType=JOIN, spatialJoin={"output": "polygons"})
-        _, _, proposal, calls = self._run(client, user, token, alice_project, monkeypatch, reply)
+        _, _, proposal, [refused] = self._run(client, user, token, alice_project, monkeypatch, reply)
         assert proposal is None
-        assert "params.spatialJoin: The output must be one of pairs, counts; got 'polygons'." in calls[1][-1]["content"]
+        assert "params.spatialJoin: The output must be one of pairs, counts; got 'polygons'." in refused, refused
 
     def test_a_setting_on_a_node_that_is_no_join_is_refused(
         self, client, user_and_token, tmp_curio, alice_project, monkeypatch
@@ -199,9 +204,9 @@ class TestAProposedJoin:
         reply = _JoinNodeBuilder()._create_tail_json(
             nodeType=CA, content="return input_0", spatialJoin={"predicate": "within"},
         )
-        _, _, proposal, calls = self._run(client, user, token, alice_project, monkeypatch, reply)
+        _, _, proposal, [refused] = self._run(client, user, token, alice_project, monkeypatch, reply)
         assert proposal is None, "a code node with a join's setting was proposed"
         assert (
             "params.spatialJoin: a Computation Analysis node has no operation or output; "
             "only a Spatial Join node takes spatialJoin"
-        ) in calls[1][-1]["content"]
+        ) in refused, refused
