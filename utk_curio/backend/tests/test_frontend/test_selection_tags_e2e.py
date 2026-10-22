@@ -656,19 +656,19 @@ ZIP_BARS_ID = "d23e2587-57bf-4db4-84fe-cdb7c2de638d"
 #: Example 02's data transformation node, which holds the tag on that chart.
 ZIP_TAG_NODE_ID = "e5e7e21f-609d-496b-b231-659ee91ff9af"
 
-# What one field reads in the tooltip of the mark under the pointer: vega's own
-# tooltip handler writes the hovered mark's tooltip into the chart's container
-# as its title, one line per field ("zip: 60614\nVEGETATED_SQFT: ..."), at
-# every pointer move over it.
+# What one field reads in the tooltip of the mark under the pointer: Curio's
+# vega tooltip handler writes the hovered mark's tooltip into the chart's
+# container as its data-tooltip, one line per field ("zip: 60614\nVEGETATED_SQFT:
+# ..."), at every pointer move over it, where vega's own wrote a title.
 _HOVERED_JS = r"""([nodeId, field]) => {
     const el = document.getElementById("vega" + nodeId);
-    const lines = ((el && el.getAttribute("title")) || "").split("\n");
+    const lines = ((el && el.getAttribute("data-tooltip")) || "").split("\n");
     const line = lines.find((l) => l.startsWith(field + ": "));
     return line === undefined ? null : line.slice(field.length + 2);
 }"""
 _FORGET_HOVER_JS = r"""(nodeId) => {
     const el = document.getElementById("vega" + nodeId);
-    if (el) el.removeAttribute("title");
+    if (el) el.removeAttribute("data-tooltip");
 }"""
 
 # The ids a selection tag holds, as text; null when it holds a count instead.
