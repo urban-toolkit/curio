@@ -671,7 +671,16 @@ _CATALOG_PARAM_MAX_CHARS = 200
 
 
 def _catalog_search_rows(user_key: str, project_id: str, params: dict) -> list[dict]:
-    """Bounded catalog rows for the dev/50 read tool.
+    """Bounded catalog rows for the dev/50 read tool: the first
+    ``_CATALOG_SEARCH_MAX_ROWS`` of :func:`_catalog_listing_rows`."""
+    return _catalog_listing_rows(user_key, project_id, params)[:_CATALOG_SEARCH_MAX_ROWS]
+
+
+def _catalog_listing_rows(user_key: str, project_id: str, params: dict) -> list[dict]:
+    """Every row of the Data Catalog listing *params* filters, as the
+    catalog.search tool shows a row. A candidate row is checked against
+    these, all of them, since a dataset past the rows a search shows is
+    still one the Data Catalog holds.
 
     Thin wrapper over the datasets domain (`ADR-AG-007`): the acting user
     rides the request context (the datasets service is user-object keyed,
@@ -699,7 +708,7 @@ def _catalog_search_rows(user_key: str, project_id: str, params: dict) -> list[d
         origin=_param("origin"),
     )
     rows = []
-    for item in (listing.get("items") or [])[:_CATALOG_SEARCH_MAX_ROWS]:
+    for item in listing.get("items") or []:
         row = {
             "id": item.get("id"),
             "name": item.get("title"),

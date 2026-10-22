@@ -190,9 +190,13 @@ def _catalog_rows_for_discovery(user_key: str, project_id: str) -> list[dict]:
     to the discovery delegate, exactly as dev/115 already resolves the
     execution paths eagerly. Empty on failure: the delegate is then TOLD the
     catalog was unavailable rather than left to imagine it.
+
+    Every row of the listing: the delegate is shown the first of them
+    (``delegates._dataset_discover_inputs``), and its candidates, like a
+    selection, are checked against all of them (:func:`_grounded_catalog_rows`).
     """
     try:
-        return tools._catalog_search_rows(user_key, project_id, {})
+        return tools._catalog_listing_rows(user_key, project_id, {})
     except Exception:  # noqa: BLE001
         log.warning("Data Catalog listing unavailable for project %s", project_id,
                     exc_info=True)
@@ -378,6 +382,24 @@ def _verify_candidate_parts(parts: list, loop_ctx: dict | None = None) -> None:
                     loop_ctx.setdefault("_verified_urls", {})[url] = row["verification"]
             agents_mint._mint_row_access(row)
             agents_acquire._mint_row_acquirable(row, roster)
+
+
+def _grounded_catalog_rows(rows: list, listing: list) -> tuple[list, int]:
+    """The catalog-lane candidate *rows* whose ``datasetId`` the Data Catalog
+    *listing* holds, and how many it dropped. A kept row says installed or not
+    as the listing does, never as the reply did, and is named as the listing
+    names it when the reply named it nothing."""
+    listed = {str(r.get("id")): r for r in listing or [] if isinstance(r, dict) and r.get("id")}
+    kept = []
+    for row in rows:
+        found = listed.get(str(row.get("datasetId"))) if isinstance(row, dict) else None
+        if found is None:
+            continue
+        row["installed"] = bool(found.get("installed"))
+        row.setdefault("name", found.get("name"))
+        row.setdefault("sourceType", "catalog")
+        kept.append(row)
+    return kept, len(rows) - len(kept)
 
 
 def _run_egress_budget(loop_ctx: dict) -> "egress.CallBudget":

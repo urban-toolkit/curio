@@ -402,6 +402,14 @@ class AttachmentTurn:
             if req["capability"] == "node.content.generate"
             else None
         )
+        # Discovery: the runtime lists the Data Catalog once. The child is
+        # shown it and its candidates are checked against it, whatever
+        # catalog the request carried.
+        catalog_rows = (
+            agents_grounding._catalog_rows_for_discovery(self.user_key, self.project_id)
+            if req["capability"] == "dataset.discover"
+            else None
+        )
         status, text, child, home_att = agents_delegates._run_delegate_traced(
             self.user_key,
             self.project_id,
@@ -409,6 +417,7 @@ class AttachmentTurn:
             req["capability"],
             agents_delegates._enriched_delegate_inputs(
                 self.user_key, self.project_id, loop_ctx, req["capability"], inputs,
+                catalog_rows=catalog_rows,
             ),
             self.config,
             parent_execution_id=self.execution_id,
@@ -466,9 +475,7 @@ class AttachmentTurn:
             # on this turn — runtime-minted (catalog rows tool-grounded,
             # external rows probed), never the model's claim.
             cand_part, text, cand_outcome = agents_delegates._mint_candidates_from_delegate(
-                loop_ctx, text,
-                (inputs.get("catalog") or {}).get("rows")
-                or agents_delegates._dataset_discover_inputs(self.user_key, self.project_id, {})["catalog"]["rows"],
+                loop_ctx, text, catalog_rows,
                 name=getattr(resolution.manifest, "name", None),
             )
             delegate_summary = text

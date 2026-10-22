@@ -355,9 +355,9 @@ def settle_acquisitions(spec: dict, held: dict) -> list[str]:
 
 def _catalog_row(catalog_rows: list[dict] | None, dataset_id: str) -> dict | None:
     """A candidate-shaped row for a dataset that is IN the project's Data
-    Catalog (dev/132), or None. ``catalog_rows`` is the runtime's own listing —
-    ``tools._catalog_search_rows`` — resolved by the caller in the request
-    context, as dev/126 already does for discovery."""
+    Catalog (dev/132), or None. ``catalog_rows`` is the runtime's own listing,
+    every row of it (``tools._catalog_listing_rows``), resolved by the caller
+    in the request context, as dev/126 already does for discovery."""
     for item in catalog_rows or []:
         if not isinstance(item, dict) or str(item.get("id") or "") != dataset_id:
             continue
@@ -550,25 +550,21 @@ def initiate(
         "mission": (mission or str(node.get("goal") or "") or "").strip()[:2000],
         "nodeId": node_id,
     }
-    if catalog_rows is not None:
-        # dev/126: the rows were listed where a request context existed (a
-        # detached Solve job has none). Supplying them here also means
-        # ``_dataset_discover_inputs`` leaves them alone — the model-supplied
-        # key rule, applied to the runtime's own input.
-        inputs["catalog"] = {
-            "note": (
-                "The project's Data Catalog as catalog.search returned it"
-                if catalog_rows else
-                "The Data Catalog listing was empty or unavailable — the catalog lane "
-                "must stay empty; say so."
-            ),
-            "rows": catalog_rows,
-        }
+    if catalog_rows is None:
+        # dev/126: a caller that held a request context listed the rows there
+        # (a detached Solve job has none); one listing serves the child's
+        # input and the check of its candidates.
+        try:
+            catalog_rows = tools._catalog_listing_rows(user_key, project_id, {})
+        except Exception:  # noqa: BLE001
+            log.warning("Catalog listing unavailable for the candidates of node %s",
+                        node_id, exc_info=True)
+            catalog_rows = []
     composed = node_context.compose_node_context(user_key, project_id, spec, node_id)
     if composed is not None:
         inputs["nodeContext"] = composed
     inputs = delegates._enriched_delegate_inputs(
-        user_key, project_id, loop_ctx, DISCOVER, inputs
+        user_key, project_id, loop_ctx, DISCOVER, inputs, catalog_rows=catalog_rows,
     )
     status, text, _child, _home = delegates._run_delegate_traced(
         user_key, project_id, resolution.coord, DISCOVER, inputs, config,
@@ -580,13 +576,6 @@ def initiate(
     if status != "ok":
         return {"status": "unavailable", "attachmentId": attachment_id,
                 "detail": f"the {finder_name} run failed: {(text or '')[:200]}"}
-    if catalog_rows is None:
-        try:
-            catalog_rows = tools._catalog_search_rows(user_key, project_id, {})
-        except Exception:  # noqa: BLE001
-            log.warning("Catalog listing unavailable while minting candidates for node %s",
-                        node_id, exc_info=True)
-            catalog_rows = []
     part, model_text, outcome = delegates._mint_candidates_from_delegate(
         loop_ctx, text, catalog_rows, name=finder_name,
     )
