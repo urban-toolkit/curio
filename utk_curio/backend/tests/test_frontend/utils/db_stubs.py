@@ -120,7 +120,7 @@ def ensure_node_only_agent(backend_url: str, token: str) -> str:
                     "id": NODE_ONLY_AGENT.split("@", 1)[0],
                     "name": NODE_ONLY_AGENT_NAME,
                     "category": "node",
-                    "version": NODE_ONLY_AGENT.split("@", 1)[1],
+                    "version": NODE_ONLY_AGENT.split("@", 1)[1] + ".0.0",
                     "purpose": "Answer questions about the node it is attached to.",
                     "capabilities": [{"id": "node.explain", "contractVersion": "1"}],
                     "compatibleTargets": [{"kind": "node", "requires": []}],

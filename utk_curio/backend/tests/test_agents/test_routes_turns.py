@@ -2387,7 +2387,7 @@ class TestRosterGrantCoverage:
         from utk_curio.backend.app.agents.repositories import storage
         from utk_curio.backend.app.projects.services import _user_dir_key
 
-        agent_id = "agent.my-" + tool.replace(".", "-")
+        agent_id = "agent.test.my-" + tool.replace(".", "-")
         coord = f"{agent_id}@1"
         storage.write_definition(_user_dir_key(user), coord, {
             "id": agent_id, "name": f"My {tool}", "category": "package",

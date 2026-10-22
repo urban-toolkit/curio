@@ -45,9 +45,9 @@ ROSTER = (
 )
 #: The catalog's cards. The rest are helpers.
 CARDS = {"agent.curio.researcher", "agent.curio.node-builder", "agent.curio.dataset-finder", "agent.curio.dataflow-builder"}
-#: The version every shipped agent has: dataflow lockfiles, attachments and
-#: imports hold it in their coordinates.
-VERSION = "1.0.0"
+#: The major every shipped agent has: dataflow lockfiles, attachments and
+#: imports hold it in their coordinates, ``<id>@<major>``.
+MAJOR = 1
 #: The preamble every shipped agent names, and where an export carries it.
 SHARED_PREAMBLE = "curio:default_preamble.md"
 PREAMBLE_FILE = "prompts/default_preamble.md"
@@ -104,7 +104,7 @@ def _upload_payload(**manifest_over) -> tuple[dict, dict]:
 
 class TestTheFolders:
     def test_seven_agents_ship_each_in_a_folder_of_its_own(self):
-        assert [folder.name for folder in _folders()] == sorted(f"{agent_id}@{VERSION}" for agent_id in ROSTER)
+        assert [folder.name for folder in _folders()] == sorted(f"{agent_id}@{MAJOR}" for agent_id in ROSTER)
         for folder in _folders():
             assert (folder / "manifest.json").is_file(), folder.name
             assert (folder / "prompts").is_dir(), folder.name
@@ -275,7 +275,7 @@ class TestTheCatalogIsCuriosAlone:
         from utk_curio.backend.app.agents.domain.manifest import load_agent_manifest
         from utk_curio.backend.app.agents.repositories import storage
 
-        shipped = AGENTS / f"agent.curio.dataflow-planner@{VERSION}"
+        shipped = AGENTS / f"agent.curio.dataflow-planner@{MAJOR}"
         coord = "agent.test.my-planner@1"
         target = _copy_into_store(shipped.name, coord)
         copy = storage.load_installed_agent_definition(UKEY, coord)
@@ -343,7 +343,7 @@ class TestTheCatalogIsCuriosAlone:
                 (root / names[-1] / "manifest.json").write_text(json.dumps(raw), encoding="utf-8")
             return root
 
-        reader, planner = f"agent.curio.dataflow-reader@{VERSION}", f"agent.curio.dataflow-planner@{VERSION}"
+        reader, planner = f"agent.curio.dataflow-reader@{MAJOR}", f"agent.curio.dataflow-planner@{MAJOR}"
         good = ship(reader, planner)
         monkeypatch.setattr(builtin, "agents_dir", lambda: good)
         assert [m.agent_id for m in builtin.list_builtin_manifests()] == ["agent.curio.dataflow-planner", "agent.curio.dataflow-reader"]
@@ -368,15 +368,15 @@ class TestTheFieldsOnlyCuriosAgentsUse:
         from utk_curio.backend.app.agents.domain import builtin
 
         coord = "agent.test.my-builder@1"
-        _copy_into_store(f"agent.curio.node-builder@{VERSION}", coord)
+        _copy_into_store(f"agent.curio.node-builder@{MAJOR}", coord)
         copy = catalog._resolve_definition(UKEY, coord)
-        shipped = builtin.get_builtin_manifest(f"agent.curio.node-builder@{VERSION}")
+        shipped = builtin.get_builtin_manifest(f"agent.curio.node-builder@{MAJOR}")
         assert [c.label for c in copy.capabilities] == [c.label for c in shipped.capabilities]
         modes = catalog.agent_modes(copy)
         assert [mode["label"] for mode in modes] == copy.capability_ids
         runs = {row["path"]: row["runs"] for row in catalog.prompt_runs(copy, modes)}
         assert runs["prompts/new_content_autk_prompt.md"] == ["autk-grammar"]
-        assert builtin.gets_worked_examples(f"agent.curio.node-builder@{VERSION}")
+        assert builtin.gets_worked_examples(f"agent.curio.node-builder@{MAJOR}")
         assert not builtin.gets_worked_examples(coord)
         assert not builtin.gets_worked_examples(coord, "node.content.generate")
 
@@ -384,7 +384,7 @@ class TestTheFieldsOnlyCuriosAgentsUse:
         from utk_curio.backend.app.agents.application import catalog
         from utk_curio.backend.app.agents.domain import builtin
 
-        nb = builtin.get_builtin_manifest(f"agent.curio.node-builder@{VERSION}")
+        nb = builtin.get_builtin_manifest(f"agent.curio.node-builder@{MAJOR}")
         assert nb.worked_examples is True
         assert nb.capability("node.content.generate").worked_examples is True
         assert nb.capability("package.recommend").worked_examples is False

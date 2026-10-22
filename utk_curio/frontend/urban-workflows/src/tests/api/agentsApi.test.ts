@@ -39,7 +39,7 @@ describe("agentsApi", () => {
   it("removeImport() DELETEs an escaped coord", () => {
     agentsApi.removeImport("agent.test.my-explainer@1");
     expect(mockFetch).toHaveBeenCalledWith(
-      "/api/agents/imports/agent.test.my-explainer%401.0.0",
+      "/api/agents/imports/agent.test.my-explainer%401",
       { method: "DELETE" },
     );
   });
@@ -60,7 +60,7 @@ describe("agentsApi", () => {
   it("uninstallFromProject() DELETEs the escaped coord under the project", () => {
     agentsApi.uninstallFromProject("p1", "agent.curio.researcher@1");
     expect(mockFetch).toHaveBeenCalledWith(
-      "/api/agents/projects/p1/agent.curio.researcher%401.0.0",
+      "/api/agents/projects/p1/agent.curio.researcher%401",
       { method: "DELETE" },
     );
   });
@@ -75,7 +75,7 @@ describe("agentsApi", () => {
 
   it("unpublish() DELETEs the escaped coord under publications", () => {
     agentsApi.unpublish("agent.test.my-custom@1");
-    expect(mockFetch).toHaveBeenCalledWith("/api/agents/publications/agent.test.my-custom%401.0.0", {
+    expect(mockFetch).toHaveBeenCalledWith("/api/agents/publications/agent.test.my-custom%401", {
       method: "DELETE",
     });
   });

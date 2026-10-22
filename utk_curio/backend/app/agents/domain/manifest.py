@@ -9,7 +9,7 @@ and hand-rolled field validation with ``{where}.field`` error context.
 Key invariants enforced here (the point of this module):
 
 * Agent package ids begin with ``agent.``, then name their publisher and the
-  agent (``agent.curio.node-builder``), as Discovery source ids begin with
+  agent (``agent.acme.heat-risk-summarizer``), as Discovery source ids begin with
   ``source.``. An agent's folder is ``<id>@<major>``, the major of its
   version, as a node package's, a dataset's and a source's are.
 * **Capability ids are semantic behavior contracts, never asset paths.** A
@@ -40,7 +40,7 @@ from pathlib import Path
 # One segment of an agent id, as of a Discovery source id (``source_id._SEG``).
 _SEG = r"[a-z][a-z0-9-]{0,62}"
 # Agent package id: 'agent.', the publisher, then the agent, each a segment,
-# e.g. 'agent.curio.node-builder' or 'agent.acme.heat-risk-summarizer'.
+# e.g. 'agent.acme.heat-risk-summarizer'.
 AGENT_ID_RE = re.compile(rf"^agent\.{_SEG}(?:\.{_SEG}){{1,4}}$")
 # The major in an agent's folder name, as in a node package's.
 MAJOR_RE = re.compile(r"^(?:0|[1-9][0-9]{0,3})$")
@@ -455,7 +455,7 @@ def parse_agent_manifest(raw: object, *, where: str = "manifest") -> AgentManife
     if not AGENT_ID_RE.match(agent_id):
         raise AgentManifestError(
             f"{where}.id {agent_id!r} must be 'agent.', its publisher and its name, "
-            f"such as 'agent.curio.node-builder', matching {AGENT_ID_RE.pattern}"
+            f"such as 'agent.acme.heat-risk-summarizer', matching {AGENT_ID_RE.pattern}"
         )
 
     version = _require_str(raw.get("version"), where=f"{where}.version")

@@ -176,10 +176,10 @@ def _write_agent_without_the_draft_tool(user_key: str) -> str:
     writing to the Node Builder's writing mode."""
     from utk_curio.backend.app.agents.repositories import storage
 
-    agent_id, version = WITHOUT_THE_DRAFT_TOOL.split("@", 1)
+    agent_id, major = WITHOUT_THE_DRAFT_TOOL.split("@", 1)
     storage.write_definition(user_key, WITHOUT_THE_DRAFT_TOOL, {
         "id": agent_id, "name": "My Planner", "category": "canvas",
-        "version": version,
+        "version": f"{major}.0.0",
         "capabilities": [{"id": "conversation.respond", "contractVersion": "1"}],
         "compatibleTargets": [{"kind": "canvas", "requires": []}],
         "tools": [{"id": "dataflow.read"}, {"id": "node.create"}],

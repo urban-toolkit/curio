@@ -19,14 +19,14 @@ def cwd(tmp_path, monkeypatch):
 def _make_def_dir(tmp_path, coord="agent.test.my-custom@1"):
     d = tmp_path / "src" / coord
     d.mkdir(parents=True, exist_ok=True)
-    agent_id, version = coord.rsplit("@", 1)
+    agent_id, major = coord.rsplit("@", 1)
     (d / "manifest.json").write_text(
         json.dumps(
             {
                 "id": agent_id,
                 "name": "Custom",
                 "category": "node",
-                "version": version,
+                "version": f"{major}.0.0",
                 "capabilities": [{"id": "node.explain", "contractVersion": "1"}],
                 "provenance": {"publisher": "me", "trust": "imported"},
             }

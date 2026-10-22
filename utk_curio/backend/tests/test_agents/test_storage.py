@@ -40,7 +40,7 @@ def _manifest_dict(agent_id="agent.test.my-explainer", version="1.0.0"):
 
 
 def _write_definition(user_key, agent_id="agent.test.my-explainer", version="1.0.0"):
-    d = storage.user_agents_dir(user_key) / f"{agent_id}@{version}"
+    d = storage.user_agents_dir(user_key) / f"{agent_id}@{version.split('.', 1)[0]}"
     d.mkdir(parents=True, exist_ok=True)
     (d / "manifest.json").write_text(json.dumps(_manifest_dict(agent_id, version)), encoding="utf-8")
     return d

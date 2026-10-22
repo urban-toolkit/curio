@@ -36,7 +36,7 @@ describe("matchesAgentSearch", () => {
 
   it("matches each promised field, case-insensitively", () => {
     expect(matchesAgentSearch(card(), "EXPLAINER")).toBe(true); // name
-    expect(matchesAgentSearch(card(), "agent.my-")).toBe(true); // id
+    expect(matchesAgentSearch(card(), "agent.test.my-")).toBe(true); // id
     expect(matchesAgentSearch(card(), "flow does")).toBe(true); // purpose
     expect(matchesAgentSearch(card({ category: "evaluate" }), "Evaluate")).toBe(true); // category
     expect(matchesAgentSearch(card(), "node.explain")).toBe(true); // capability

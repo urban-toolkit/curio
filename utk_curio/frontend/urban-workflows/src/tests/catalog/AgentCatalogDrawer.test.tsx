@@ -50,7 +50,7 @@ function card(id: string, over: Record<string, unknown> = {}) {
     id,
     version: "1.0.0",
     dirName: `${id}@1`,
-    name: id.replace("agent.", ""),
+    name: id.split(".").pop(),
     category: "node",
     purpose: "does a thing",
     capabilities: ["node.explain"],

@@ -61,9 +61,11 @@ def _drop_from_lockfile(user, project_id, coord):
 
 
 def _write_def(user, agent_id="agent.test.my-explainer", version="1.0.0"):
-    """Materialize a valid agent definition in the user's FS store."""
+    """Materialize a valid agent definition in the user's FS store, in its
+    ``<id>@<major>`` folder; returns that coordinate."""
     user_key = _user_dir_key(user)
-    d = storage.user_agents_dir(user_key) / f"{agent_id}@{version}"
+    coord = f"{agent_id}@{version.split('.', 1)[0]}"
+    d = storage.user_agents_dir(user_key) / coord
     d.mkdir(parents=True, exist_ok=True)
     (d / "manifest.json").write_text(
         json.dumps(
@@ -80,7 +82,7 @@ def _write_def(user, agent_id="agent.test.my-explainer", version="1.0.0"):
         ),
         encoding="utf-8",
     )
-    return f"{agent_id}@{version}"
+    return coord
 
 
 #: A made-up agent with a plain chat profile: the three read tools and nothing
