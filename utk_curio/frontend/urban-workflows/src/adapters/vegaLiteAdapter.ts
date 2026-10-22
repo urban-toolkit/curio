@@ -7,7 +7,7 @@
  */
 
 import { GrammarAdapter, registerGrammarAdapter } from '../registry/grammarAdapter';
-import { VEGA_SCHEMA_URL } from '../generated/visDefaults';
+import visDefaults from '../contracts/visDefaults.json';
 import { prepareVegaInput } from '../utils/vegaInput';
 import { vegaTooltipHandler } from '../components/tooltip/vegaTooltip';
 
@@ -47,7 +47,7 @@ export const vegaLiteAdapter: GrammarAdapter = {
 
   getDefaultSpec(): unknown {
     return {
-      $schema: VEGA_SCHEMA_URL,
+      $schema: visDefaults.vegaSchemaUrl,
       mark: 'point',
       encoding: {
         x: { field: 'x', type: 'quantitative' },

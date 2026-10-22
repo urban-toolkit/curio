@@ -46,6 +46,7 @@ from utk_curio.backend.app.packages.domain.package_id import (
     PACKAGE_DIR_RE,
     TEMPLATE_ID_RE,
 )
+from utk_curio.backend.app.packages.application.note_palette import NOTE_PALETTE
 from utk_curio.backend.app.packages.domain.node_appearance import AppearanceError, normalize_appearance
 
 BUILD_CONTRACT_VERSION = "1"
@@ -351,7 +352,7 @@ def _parse_appearance(raw: Any, where: str) -> dict[str, str] | None:
                 f"{MAX_APPEARANCE_VALUE_CHARS} chars"
             )
     try:
-        return normalize_appearance(raw)
+        return normalize_appearance(raw, NOTE_PALETTE)
     except AppearanceError as exc:
         raise BuildRequestError(f"{where}.appearance: {exc}") from exc
 

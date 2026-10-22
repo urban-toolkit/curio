@@ -1,0 +1,14 @@
+{
+  "colors": {
+    "yellow": "#fef3c0",
+    "pink": "#fbd3e0",
+    "blue": "#cfe8f7",
+    "green": "#d5f0d1",
+    "orange": "#ffddc0",
+    "lavender": "#e4dcf7"
+  },
+  "defaultColor": "yellow",
+  "inks": { "dark": "#1f2430", "light": "#ffffff" },
+  "links": { "onLight": "#1d4ed8", "onDark": "#93c5fd" },
+  "minContrast": 4.5
+}

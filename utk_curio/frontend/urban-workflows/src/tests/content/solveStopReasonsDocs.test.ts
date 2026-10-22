@@ -4,14 +4,16 @@
  *
  * "The Solve loop" holds a table of the reasons: the key the loop sends as
  * `stoppedBy`, when it happens, and the phrase every surface shows for it. The
- * keys and phrases are `SOLVE_STOP_REASONS` in contracts.py, read here through
- * the generated solveStopReasons.ts (test_generated_contracts keeps that file
- * equal to contracts.py). A reason added, renamed or reworded there fails here
- * until the table says the same.
+ * keys and phrases are contracts/solveStopReasons.json, which the attempts
+ * card shows and contracts.py reads for the server's sentences. A reason
+ * added, renamed or reworded there fails here until the table says the same.
  */
 import * as fs from "fs";
 import * as path from "path";
-import { STOPPED_BY_PHRASES, STOP_REASONS } from "../../generated/solveStopReasons";
+import solveStopReasons from "../../contracts/solveStopReasons.json";
+
+const STOPPED_BY_PHRASES: Readonly<Record<string, string>> = solveStopReasons.phrases;
+const STOP_REASONS = Object.keys(STOPPED_BY_PHRASES);
 
 const REPO_ROOT = path.join(__dirname, "..", "..", "..", "..", "..", "..");
 const ARCHITECTURE = path.join(REPO_ROOT, "docs", "ARCHITECTURE.md");

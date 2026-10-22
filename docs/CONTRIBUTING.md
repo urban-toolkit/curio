@@ -26,7 +26,7 @@ This guide is for students getting their first taste of open-source work and for
   * [Frontend E2E Tests](#frontend-e2e-tests)
   * [Database Migrations](#database-migrations)
   * [Agent Text](#agent-text)
-  * [Generated Files](#generated-files)
+  * [Shared Constants](#shared-constants)
   * [Vendored Autark Schema](#vendored-autark-schema)
 * [Organizing Contributions](#organizing-contributions)
   * [Defining the Scope of a Pull Request](#defining-the-scope-of-a-pull-request)
@@ -63,7 +63,7 @@ The codebase follows a modular structure under the `utk_curio/` directory. This 
 curio/
 ├── utk_curio/
 │   ├── backend/                            # Manages database access and user authentication
-│   │   ├── app/agents/domain/contracts.py  # The single source of every generated contract and prompt field (see Generated Files)
+│   │   ├── app/agents/domain/contracts.py  # The contracts the code and the agents agree on, and the prompt fields (see Agent Text)
 │   │   ├── app/agents/schemas/             # The vendored Autark grammar schema (see Vendored Autark Schema)
 │   │   ├── app/discovery/                  # The Discovery Catalog: portal, storage, service and model sources
 │   │   ├── app/packages/                   # The Node and Model Catalogs: node packages, and model packages with their weights
@@ -75,7 +75,7 @@ curio/
 │       └── urban-workflows/                # Main Curio interface for dataflow editing
 │           └── src/
 │               ├── components/             # React components and CSS
-│               ├── generated/              # Written by scripts/generate_contracts.py; never edited by hand
+│               ├── contracts/              # Constants shared with the backend, one JSON file each (see Shared Constants)
 │               └── tests/                  # Jest unit tests
 │
 ├── curio.py                        # CLI entry point for running and managing all services
@@ -83,7 +83,7 @@ curio/
 ├── packages/                       # The shared node catalog: one directory per node package
 ├── datasets/                       # The shared Data Catalog: datasets published on this install
 ├── discovery/                      # The Discovery Catalog: one manifest per portal or storage source this install can reach
-├── scripts/                        # test.sh, clean.sh, new_package.py, regen_integrity.py, generate_contracts.py, sync_autk_schema.py
+├── scripts/                        # test.sh, clean.sh, new_package.py, regen_integrity.py, sync_autk_schema.py
 ├── docs/                           # Documentation, usage guides, and examples
 │   └── examples/dataflows/         # Dataflow JSONs used by the E2E suite
 └── requirements.txt                # Curio framework dependencies (data-ops libs live in each package's manifest.dependencies.python)
@@ -446,34 +446,24 @@ every read. The base entry's README walks through it. The backend suite
 renders every file (`test_agent_text.py`) and fails on a marker no field
 defines. See [ARCHITECTURE.md, Agent text](ARCHITECTURE.md#agent-text).
 
-### Generated Files
+### Shared Constants
 
-Some files are generated from a single source and committed: everything under
-`utk_curio/frontend/urban-workflows/src/generated/`, rendered from
-`utk_curio/backend/app/agents/domain/contracts.py`. Each starts with a header
-naming its generator and source. Do not edit one by hand: edit the source,
-then regenerate and commit both.
+The vocabularies and tables the frontend and the backend both read are JSON
+files in `utk_curio/frontend/urban-workflows/src/contracts/`: why a render drew
+nothing, why a repair loop stopped, the agent categories, a note's colors, the
+Autark facts a grammar node uses, and the starter ladders, dtype roles, Vega-Lite
+`$schema` URL and image column rule of the visualization nodes. The frontend
+imports each file and the backend reads it
+(`utk_curio/common/shared_constants.py`), so a change is one edit to the file,
+with nothing to run. An object that names one key twice is refused.
 
-Some frontend behaviour is defined in `contracts.py` too, because the preamble
-describes it: the Vega-Lite and Autark starter ladders, the pandas dtype each
-column role comes from, the Vega-Lite `$schema` URL, and the names, extensions
-and share behind Simple View's image columns. The frontend reads them from
-`src/generated/visDefaults.ts`. To add, remove or reorder a starter rule, edit
-its table in `contracts.py`, regenerate, and add or remove its builder in
-`vegaDefaultSpec.ts` or `autkDefaultSpec.ts`, keyed by the rule's id.
-
-```bash
-# rewrite every generated file
-python scripts/generate_contracts.py
-
-# write nothing; exit non-zero and list the stale files
-python scripts/generate_contracts.py --check
-```
-
-The backend suite runs the same check
-(`utk_curio/backend/tests/test_agents/test_generated_contracts.py`), so a stale
-or hand-edited output fails CI. See
-[ARCHITECTURE.md, Generated Contracts](ARCHITECTURE.md#generated-contracts).
+To add, remove or reorder a starter rule, edit its ladder in `visDefaults.json`
+and add or remove its builder in `vegaDefaultSpec.ts` or `autkDefaultSpec.ts`,
+keyed by the rule's id. `inputTableName` and `autkOneViewProblem` are code over
+`autkGrammar.json` on both sides, in `contracts/autkGrammar.ts` and
+`contracts.py`; a change to either goes into both, with a case for it in
+`autkGrammar.cases.json`, which Jest and the backend suite both run. See
+[ARCHITECTURE.md, Shared Constants](ARCHITECTURE.md#shared-constants).
 
 ### Vendored Autark Schema
 
@@ -485,15 +475,16 @@ records its version and digest. To move to a new release:
 ```bash
 # vendor the schema from the release on npm
 python scripts/sync_autk_schema.py --version <version>
-
-# re-render the TypeScript that reads it; the backend renders the preamble when it starts
-python scripts/generate_contracts.py
 ```
 
 `--from PATH` vendors a local build of that version instead.
 `test_autk_schema_vendored.py` checks the copy against its record in the
 backend suite, and the weekly `autk-schema` workflow runs
-`python scripts/sync_autk_schema.py --check` against npm.
+`python scripts/sync_autk_schema.py --check` against npm. A release that adds
+or drops a top-level family needs it in `families` of
+`src/contracts/autkGrammar.json` too: `test_shared_constants.py` fails until
+the file lists the schema's families, and Jest until `FAMILY_KIND` in
+`utils/autkSpecKind.ts` routes each one.
 
 ## Organizing Contributions
 

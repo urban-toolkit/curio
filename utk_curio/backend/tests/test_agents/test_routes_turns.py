@@ -1915,6 +1915,7 @@ class TestReuseLadder:
     def test_a13_default_fills_only_an_omitted_color_on_a_note_template(
         self, client, user_and_token, tmp_curio, alice_project, monkeypatch
     ):
+        from utk_curio.backend.app.packages.application.note_palette import NOTE_PALETTE
         from utk_curio.backend.app.packages.domain import node_appearance
         from utk_curio.backend.app.packages.application import agent_reads
         from utk_curio.backend.app.packages.application import project_packages
@@ -1947,7 +1948,7 @@ class TestReuseLadder:
         mirrored = [att["activeProposal"]] + list(att.get("queuedProposals") or [])
         by_id = {p["proposalId"]: p for p in mirrored}
         ordered = [by_id[p["proposalId"]] for p in proposals]
-        norm = lambda c: node_appearance.normalize_appearance({"backgroundColor": c})
+        norm = lambda c: node_appearance.normalize_appearance({"backgroundColor": c}, NOTE_PALETTE)
         assert [p.get("appearance") for p in ordered] == [norm("yellow"), norm("pink"), norm("green")]
         assert ordered[0]["title"] == "Question" and "title" not in ordered[1]
         assert spec_nodes_before is None

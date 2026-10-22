@@ -24,8 +24,9 @@ jest.mock("../../../hook/useSharedView", () => ({
 }));
 
 import { useNoteBehavior } from "../../../adapters/node/noteBehavior";
-import { NOTE_COLORS } from "../../../generated/noteColors";
+import noteColors from "../../../contracts/noteColors.json";
 
+const NOTE_COLORS = noteColors.colors;
 const NOTE = "curio.builtin/note@1";
 
 function behaviorOf(data: Record<string, unknown>): NodeBehaviorResult {

@@ -7,9 +7,13 @@ import {
   faRobot,
 } from "@fortawesome/free-solid-svg-icons";
 import type { IconDefinition } from "@fortawesome/fontawesome-svg-core";
-import type { AgentCategory } from "../../../../generated/agentCategories";
 
-export type { AgentCategory };
+/**
+ * A category an agent manifest can declare: a key of `AGENT_CATEGORY_ICON`
+ * below, whose keys tests hold to contracts/agentCategories.json, the
+ * vocabulary the manifest validator reads.
+ */
+export type AgentCategory = keyof typeof AGENT_CATEGORY_ICON;
 
 /**
  * How an agent's category is drawn: one colour and one glyph per category.
@@ -71,13 +75,13 @@ export const AGENT_CATEGORY_KEYS: readonly AgentPaletteKey[] = [
  * - `node` is a node graph, for an agent scoped to one node.
  * - `evaluate` is a checked clipboard: it reviews rather than acts.
  */
-export const AGENT_CATEGORY_ICON: Record<AgentPaletteKey, IconDefinition> = {
+export const AGENT_CATEGORY_ICON = {
   data: faDatabase,
   package: faCube,
   canvas: faDiagramProject,
   node: faCircleNodes,
   evaluate: faClipboardCheck,
-};
+} satisfies Record<string, IconDefinition>;
 
 /** The glyph for "an agent", where the category is not the point. */
 export const AGENT_KIND_ICON: IconDefinition = faRobot;

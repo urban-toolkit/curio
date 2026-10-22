@@ -88,15 +88,13 @@ def test_no_prompt_lives_under_utk_curio():
 
 
 def test_no_prompt_is_generated():
-    """The generator writes the frontend's TypeScript and no prompt, no prompt
-    has a template beside it, and a prompt that states a fact from code holds
-    the fact's marker, which an agent never reads."""
+    """Nothing is generated: ``contracts.py`` keeps no registry of files to
+    write, no prompt has a template beside it, and a prompt that states a fact
+    from code holds the fact's marker, which an agent never reads."""
     from utk_curio.backend.app.agents.domain import builtin, contracts
 
-    written = sorted(contracts.GENERATED_OUTPUTS)
-    assert written, "the generator writes nothing; this test would be vacuous"
-    prompts = [path for path in written if not path.startswith("utk_curio/frontend/urban-workflows/src/generated/")]
-    assert not prompts, f"the generator writes prompts: {prompts}"
+    assert not hasattr(contracts, "GENERATED_OUTPUTS"), "contracts.py registers files to write"
+    assert not hasattr(contracts, "stale_outputs"), "contracts.py checks written files"
     assert not sorted(AGENTS.rglob("*.template.md"))
     source = (AGENTS / "agent.curio.dataflow-builder@1" / "prompts" / "orchestration_instruction.md").read_text(
         encoding="utf-8")
