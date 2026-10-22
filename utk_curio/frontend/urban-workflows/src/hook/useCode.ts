@@ -20,7 +20,6 @@ import { normalizeWidgets, type WidgetDef } from "../utils/widgets/widgetModel";
 import { runKeyWithShared, sharedWidgetsOfSpec } from "../utils/references/sharedParameters";
 import { normalizeSelections, type SelectionTag } from "../utils/references/selectionTags";
 import { lineageFromSpec } from "../utils/scenarios/duplicateSelection";
-import { normalizeEditFeatures, type EditFeaturesSettings } from "../utils/editFeatures/editFeatures";
 
 // Module-level singletons so every node shares the same interpreter
 // connection pool. Exported so collaboration's remote-graph handler can
@@ -85,8 +84,6 @@ type CreateCodeNodeOptions = {
     copiedFrom?: string[];
     // #662: the node's selection tags and the ids they hold (metadata.selections).
     selections?: SelectionTag[];
-    // #662: an Edit Features node's edit list (metadata.editFeatures).
-    editFeatures?: EditFeaturesSettings;
     // #407: a node whose saved output a project load restored mounts as having
     // run: the output it shows, and the source that produced it.
     output?: { code: string; content: string };
@@ -262,10 +259,6 @@ export function useCode(): IUseCode {
             if(node.metadata != undefined && Array.isArray(node.metadata.selections))
                 nodeMeta.selections = normalizeSelections(node.metadata.selections);
 
-            // #662: and an Edit Features node's edit list.
-            if(node.metadata != undefined && node.metadata.editFeatures != undefined)
-                nodeMeta.editFeatures = normalizeEditFeatures(node.metadata.editFeatures);
-
             if(typeof node.title === "string" && node.title)
                 nodeMeta.title = node.title;
 
@@ -440,7 +433,6 @@ export function useCode(): IUseCode {
             widgets = undefined,
             copiedFrom = undefined,
             selections = undefined,
-            editFeatures = undefined,
             output = undefined,
             executedCode = undefined,
         } = options;
@@ -492,7 +484,6 @@ export function useCode(): IUseCode {
                 widgets,
                 copiedFrom,
                 selections,
-                editFeatures,
                 saveOutputDataset:
                     saveOutputDataset !== undefined
                         ? saveOutputDataset
