@@ -238,7 +238,7 @@ INTERACTIONS = {
         Interaction("bar-hover", source=EXAMPLE_17_BARS, target=EXAMPLE_17_MAP, gesture="hover"),
         Interaction("map-pick", source=EXAMPLE_17_MAP, target=EXAMPLE_17_BARS, gesture="pick"),
     ),
-    # A Vega-Lite interval brush on a scatter, and an Autark map, through a pool.
+    # A Vega-Lite interval brush on a scatter, and an Autark map, joined directly.
     # A pick lights one point of 6,085, and most tracts' points are in the
     # scatter's dense band, drawn under thousands of others: in a sweep of 80
     # picks across the map, most changed fewer pixels than a gesture has to
@@ -262,7 +262,7 @@ INTERACTIONS = {
     "interaction-autark.json": (
         Interaction("plot-brush", source="ia-plot", target="ia-map", gesture="brush"),
     ),
-    # An Autark scatter's 2D brush and an Autark map, through a pool. The
+    # An Autark scatter's 2D brush and an Autark map, joined directly. The
     # roads crowd the right of the plot (intercept 27 to 35 of 0 to 35, most
     # of them above an angle of 0), so the brush spans that crowd across and
     # its upper two thirds down, and has to light at least half the roads. It
@@ -1403,8 +1403,8 @@ class TestWorkflowCanvas:
             f"{where} redrew {step.target} instead of highlighting it"
         )
         if step.gesture == "brush" and not on_vega:
-            # The marks lit are the ones under the brush, once the selection has
-            # come back to the plot through the pool (#536).
+            # The marks lit are the ones under the brush, the selection having
+            # come back to the plot if a pool links them (#536).
             wrong = brush_mismatches(page, source_drawing)
             assert wrong is not None, f"{where} left no brush on {step.source}"
             assert not wrong, f"{where} lit the wrong marks: " + ", ".join(

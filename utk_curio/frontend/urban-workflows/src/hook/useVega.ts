@@ -157,6 +157,14 @@ export const useVega = ({
   const datasetViewRef = React.useRef(false);
   const incomingSelectionRef = React.useRef<any>(data.interactions);
   incomingSelectionRef.current = data.interactions;
+  // Whether a direct selection lit rows in the view, and the first input's
+  // rows' own `interacted` flags, by row (a Data Pool's echo, or none): what
+  // those rows go back to when the selection is taken away.
+  const directAppliedRef = React.useRef(false);
+  const inputFlagsRef = React.useRef<unknown[]>([]);
+  const keepInputFlags = (rows: unknown) => {
+    inputFlagsRef.current = Array.isArray(rows) ? rows.map((row: any) => row?.interacted) : [];
+  };
 
   /**
    * Sets the `interacted` flag on the rows the view already holds of
@@ -183,13 +191,24 @@ export const useVega = ({
    * never rebuilt for it. Also re-applied after new rows arrive, so a selection
    * that is still active survives an upstream run. It picks out rows of the
    * first input, which a spec reading `inputs` draws there too, under
-   * `__input__` 0; the other inputs' rows there keep their flags.
+   * `__input__` 0; the other inputs' rows there keep their flags. When the
+   * edge goes, or the chart at its other end, the flow hands an empty list,
+   * and the rows go back to the flags the chart's input carries.
    */
   const applyDirectSelection = (view: any) => {
     const incoming = incomingSelectionRef.current;
-    if (!view || !Array.isArray(incoming) || incoming.length === 0) return;
-    const picked = new Set(matchSelections(incoming, objectRows(lastValuesRef.current)));
-    const flagOf = (t: any) => (picked.has(t.__row_index__) ? "1" : "0");
+    if (!view || !Array.isArray(incoming)) return;
+    let flagOf: (t: any) => string;
+    if (incoming.length > 0) {
+      const picked = new Set(matchSelections(incoming, objectRows(lastValuesRef.current)));
+      flagOf = (t: any) => (picked.has(t.__row_index__) ? "1" : "0");
+      directAppliedRef.current = true;
+    } else if (directAppliedRef.current) {
+      flagOf = (t: any) => String(inputFlagsRef.current[t.__row_index__] ?? "0");
+      directAppliedRef.current = false;
+    } else {
+      return;
+    }
     setInteracted(view, flagOf);
     if (heldDatasetsRef.current.some((d) => d.name === INPUTS_DATASET)) {
       setInteracted(view, (t: any) => ((t.__input__ ?? 0) === 0 ? flagOf(t) : t.interacted), INPUTS_DATASET);
@@ -295,6 +314,7 @@ export const useVega = ({
     const heldRows = heldDatasetsRef.current.find((d) => d.name === dataset)?.values;
     if (prevView && dataset && Array.isArray(echoRows) && Array.isArray(heldRows) && echoRows.length === heldRows.length) {
       setEmptyState(prepared);
+      if (echoed === 0) keepInputFlags(echoRows);
       const flagOf = (t: any) => echoRows[t.__row_index__]?.interacted ?? t.interacted;
       // A spec reading `inputs` draws that input's rows there too.
       const stacked = heldDatasetsRef.current.some((d) => d.name === INPUTS_DATASET);
@@ -318,6 +338,7 @@ export const useVega = ({
     setEmptyState(prepared);
     const values = prepared.datasets[0]?.values ?? [];
     lastValuesRef.current = values;
+    keepInputFlags(values);
     heldDatasetsRef.current = prepared.datasets;
 
     let changeset = vega
@@ -563,6 +584,7 @@ export const useVega = ({
     setEmptyState(prepared);
     const values = prepared.datasets[0]?.values ?? [];
     lastValuesRef.current = values;
+    keepInputFlags(values);
     heldDatasetsRef.current = prepared.datasets;
     heldInputRef.current = data.input;
     // A spec that reads `inputs` draws every input's rows, named by their

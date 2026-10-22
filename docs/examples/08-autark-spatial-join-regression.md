@@ -4,7 +4,8 @@ This example combines OSM road geometry with a 24-band land-surface-temperature 
 the per-road warming trend over Niterói (2001 to 2024). It mixes the Autark grammar with imperative JS/Python
 nodes: an `autk-grammar` **data** node loads roads from a local PBF, a Python node loads the raster, a JS
 DuckDB node spatially joins per-band LST averages onto each road, and a second `autk-grammar` node fits a
-per-feature OLS regression on the GPU and feeds a thematic map + brushable scatter linked through a Data Pool.
+per-feature OLS regression on the GPU and feeds a thematic map and a brushable scatter, linked by an
+interaction edge.
 
 It is a Curio port of the upstream Autark use case at
 [github.com/urban-toolkit/autark/tree/main/usecases/src/niteroi](https://github.com/urban-toolkit/autark/tree/main/usecases/src/niteroi).
@@ -21,16 +22,14 @@ flowchart LR
   OSM[autk-grammar data<br/>Niterói OSM PBF] -->|input_0| JOIN[js-computation<br/>DuckDB raster spatial join]
   RASTER[data-loading<br/>24-band LST GeoTIFF] -->|input_1| JOIN
   JOIN --> OLS[autk-grammar<br/>OLS regression]
-  OLS --> POOL[data-pool]
-  POOL --> MAP[autk-grammar<br/>thematic 3D map]
-  POOL --> PLOT[autk-grammar<br/>brushable scatter]
-  POOL <-. brush/pick .-> MAP
-  POOL <-. brush/pick .-> PLOT
+  OLS --> MAP[autk-grammar<br/>thematic 3D map]
+  OLS --> PLOT[autk-grammar<br/>brushable scatter]
+  PLOT <-. brush/pick .-> MAP
 ```
 
 The one step the grammar can't express, sampling a raster, stays in a JS DuckDB node; the regression and
-the linked views live in the grammar, and the Data Pool fans the result out to both views and routes brush
-selections back.
+the linked views live in the grammar. The regression feeds both views, and an interaction edge between
+them carries the scatter's brush and the map's picks.
 
 ## Data
 
@@ -129,12 +128,11 @@ name so the surface/parks/water context layers pass through untouched.
 }]
 ```
 
-## Step 5: Linked map + scatter through a Data Pool
+## Step 5: Linked map + scatter
 
-The compute output flows into a **`data-pool`** node, which fans the augmented layer stack out to two
-`autk-grammar` views and routes brush/pick selections between them (`Interaction` edges `pool→map` and
-`pool→plot`). The `map` renders the full stack and colours roads by `angle`; the `plot` is a brushable
-`intercept`-vs-`angle` scatter, and brushing it highlights the matching roads on the 3D map.
+The compute output feeds two `autk-grammar` views, and an interaction edge between them carries
+selections both ways. The `map` renders the full stack and colours roads by `angle`; the `plot` is a
+brushable `intercept`-vs-`angle` scatter, and brushing it highlights the matching roads on the 3D map.
 
 ```json
 "map": { "layerRefs": [

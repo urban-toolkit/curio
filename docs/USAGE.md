@@ -1148,9 +1148,8 @@ A `geoshape` mark draws a `Point` as a small filled circle. If a spec asks for
 body and lists the candidates.
 
 If you paste a spec into a vanilla Vega editor, add the projection yourself.
-Interval brushing over a projection does not propagate downstream:
-Vega-Lite rewrites those selections to internal row ids, so no named columns
-reach the Data Pool. Point selection works normally.
+An interval brush on a map with a projection selects nothing in the views
+linked to it; a point selection does.
 
 Geometry is attached only when the spec draws it; a bar chart over a
 `GeoDataFrame` sees its non-geometry columns.
@@ -1195,12 +1194,11 @@ The first matching rule wins:
 
 ### Linking charts
 
-A selection in one chart highlights the matching rows in the charts linked to it. Link them with an interaction edge, either through a Data Pool or directly:
+An interaction edge carries selections between two views, never data. Draw one between the top handles of two charts, maps or plots, and a selection in either highlights the matching rows in the other. The receiving view marks each of its rows in a column named `interacted`, `"1"` when selected and `"0"` otherwise, and styles the marked rows through its spec, for example `"color": {"condition": {"test": "datum.interacted === '1'", "value": "red"}, "value": "blue"}`. A selection only restyles the rows; the view is not redrawn, and its own selection stays where it is. A chart styles its own selection by the selection's name, for example `{"param": "brush", "empty": false, "value": "red"}`.
 
-- **Through a Data Pool.** Draw an interaction edge between the chart and the pool, and feed the charts from the pool. The pool marks each row in a column named `interacted`, `"1"` when selected and `"0"` otherwise, and every chart it feeds receives the marked rows.
-- **Directly.** Draw an interaction edge between two charts. The receiving chart marks its own rows the same way.
+Link the views through a Data Pool instead when a Simple View shows the selection, when selections are combined with Merge (AND) or Merge (OR), when a Vega-Lite chart marks its own selection in `interacted`, or when three or more views share one selection. Draw an interaction edge from each view to the pool, and feed the views from the pool: the pool marks the rows the selections pick, and every view it feeds receives the marked rows.
 
-The receiving chart styles the marked rows through its spec, for example `"color": {"condition": {"test": "datum.interacted === '1'", "value": "red"}, "value": "blue"}`. A selection only restyles the rows; the chart is not redrawn, and its own selection stays where it is.
+Removing an interaction edge, or a node at either end, removes the highlight it gave.
 
 A point selection over fields (`"select": {"type": "point", "fields": ["unit_id"]}`) sends the values of the points picked, such as `{"unit_id": 103}`, and the receiving chart marks every row that holds them, in whatever order it holds its rows. A point selection without fields matches rows by position, so both charts must read the same rows in the same order. An interval selection matches by column name, so the receiving chart needs the columns the interval names.
 

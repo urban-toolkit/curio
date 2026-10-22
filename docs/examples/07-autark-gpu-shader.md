@@ -5,8 +5,8 @@ the result as a thematic map linked to a brushable histogram. The driving questi
 sunlight does each Chicago Loop road segment receive over the course of a June day, given the shadows
 cast by every building around it?* The shader answers it per road segment in **one** GPU dispatch; it
 loops over all buildings inside WGSL so each daylight hour earns 60 minutes only when no building shades
-the road. The `data`, `compute`, `map`, and `plot` blocks live in five connected nodes wired through a
-`data-pool` so brush selections on the histogram light up matching roads on the map.
+the road. The `data`, `compute`, `map`, and `plot` blocks live in four connected nodes, and an
+interaction edge between the histogram and the map lights up the roads a brush selects.
 
 It is a translation of the upstream Autark shadow use case at
 [github.com/urban-toolkit/autark/tree/main/usecases/src/shadows](https://github.com/urban-toolkit/autark/tree/main/usecases/src/shadows).
@@ -21,17 +21,15 @@ It is a translation of the upstream Autark shadow use case at
 ```mermaid
 flowchart LR
   D[sh-data<br/>Chicago Loop PBF] --> C[sh-compute<br/>WGSL sunlight shader<br/>batched over buildings]
-  C --> Pool[sh-pool<br/>data-pool]
-  Pool --> M[sh-map<br/>roads by minutes of sunlight]
-  Pool --> P[sh-plot<br/>brushable histogram]
-  M <-. brush .-> Pool
-  P <-. brush .-> Pool
+  C --> M[sh-map<br/>roads by minutes of sunlight]
+  C --> P[sh-plot<br/>brushable histogram]
+  P <-. brush .-> M
 ```
 
 `sh-data` loads OSM from a local PBF and emits the layers as a `{path, dataType}` artifact. `sh-compute`
-runs the sunlight shader in a single dispatch and writes a `sunlight` column onto every road. `sh-pool`
-fans the augmented layers out to the renderers; the Interaction edges back from `sh-map` / `sh-plot`
-route brushes through the pool to the matching roads.
+runs the sunlight shader in a single dispatch, writes a `sunlight` column onto every road, and feeds the
+augmented layers to both views. The interaction edge between `sh-plot` and `sh-map` carries the
+histogram's brush to the matching roads.
 
 ## Data
 
@@ -175,8 +173,8 @@ Set `uniforms.doy` to `265` (September) or `355` (December) to change the season
 
 The `map` block renders the full layer stack and colours roads by `sunlight`. The runtime lifts the compute
 output to both `properties.compute.sunlight` and top-level `properties.sunlight`, so `getFnv: "sunlight"`
-resolves directly. `isPick` turns on selection so the pool can route the histogram brush back to matching
-segments; `isColorMap` shows the colour ramp at load.
+resolves directly. `isPick` makes the roads the layer a double-click picks; `isColorMap` shows the colour
+ramp at load.
 
 ```json
 "map": { "layerRefs": [
@@ -193,9 +191,8 @@ segments; `isColorMap` shows the colour ramp at load.
 ## Step 4: Brushable histogram (`sh-plot`)
 
 The `plot` block bins `sunlight` into a 13-bucket histogram (0 to 780 minutes is the physical range). Brushing
-the chart (`brushX`) fires an `autk_selection` carrying the plot's `dataRef` as its `layerRef`; the pool's
-multi-layer routing applies the brush to roads only, leaving surface/parks/water/buildings untouched, and
-re-emits the wrapper so the map highlights the matching roads.
+the chart (`brushX`) selects roads, the table the plot reads, so the map highlights the matching roads and
+leaves surface, parks, water and buildings as they are.
 
 ```json
 "plot": {

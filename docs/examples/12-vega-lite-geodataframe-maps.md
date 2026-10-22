@@ -96,5 +96,5 @@ exactly as they always have.
 - Curio picks `mercator` for lon/lat data where plain Vega-Lite would use
   `equalEarth`, so add a `projection` if you paste one of these specs into
   another editor.
-- Brushing an interval on a map does not propagate to a `Data Pool`. Point
-  selection does.
+- An interval brush on a map selects nothing in the views linked to it. A
+  point selection does.

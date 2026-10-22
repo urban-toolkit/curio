@@ -114,11 +114,11 @@ _SCENARIO = _object(
 #: What a plan may do, told to both forms of dataflow.plan.write.
 _PLAN_RULES = (
     "A plan may add "
-    "nodes, add connections (edge-only plans are valid), and/or remove — "
-    "each part optional. kind defaults to data; an interaction edge is the "
-    "feedback link between a visualization and a data-pool node, or between "
-    "two visualizations when one of them is a Vega-Lite or Autark node. Data "
-    "edges must keep the graph acyclic — a plan that closes a cycle is "
+    "nodes, add connections (edge-only plans are valid), and/or remove, "
+    "each part optional. kind defaults to data; an interaction edge carries "
+    "selections, never data: it links two visualizations when one of them is "
+    "a Vega-Lite or Autark node, or a visualization to a data-pool node. Data "
+    "edges must keep the graph acyclic: a plan that closes a cycle is "
     "refused with the loop named. nodeType must come from the Available "
     "node templates list. A node may declare widgets, and a plan may save "
     "scenarios: selections of its nodes, or duplicates of one. The user "

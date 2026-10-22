@@ -297,6 +297,45 @@ describe("a selection from a chart joined by a direct interaction edge", () => {
     expect(counts.drawn).toBe(3);
     expect(view.changes).toEqual([]);
   });
+
+  // The edge removed, or the chart at its other end deleted: the flow hands
+  // this chart an empty list, and the rows it lit go back to the flags its
+  // own input carries.
+  test("a selection taken away puts back the flags of the chart's input", async () => {
+    // The same input on every render: only the selection changes.
+    const input = two();
+    const { hook, view } = await drawn(input, [BASE, TALL], OVER_THE_FIRST, picked(1));
+    expect(view.changes.map((change: any) => change.name)).toEqual(["input_0", "inputs"]);
+
+    await act(async () => {
+      hook.rerender({ input, labels: [BASE, TALL], interactions: [] });
+    });
+
+    await waitFor(() => expect(view.changes).toHaveLength(4));
+    expect(view.changes.slice(2).map((change: any) => change.name)).toEqual(["input_0", "inputs"]);
+    expect(flagsOf(view.changes[2], [{ __row_index__: 0, interacted: "0" }, { __row_index__: 1, interacted: "1" }]))
+      .toEqual(["0", "0"]);
+    // Another input's row keeps its flag.
+    expect(flagsOf(view.changes[3], rows)).toEqual(["0", "0", "1"]);
+    expect(mockShowToast).not.toHaveBeenCalled();
+  });
+
+  test("a selection taken away puts back the flags a Data Pool's echo set on the chart's input", async () => {
+    const echoed = markSelectionEcho(frame({ segment: ["r1", "r2"], sunlight: [5, 6], interacted: ["0", "1"] }));
+    const input = both(echoed, frame({ segment: ["r1"], sunlight: [3] }));
+    const { hook, view } = await drawn(input, [BASE, TALL], OVER_THE_FIRST, picked(0));
+    // The direct selection lights the first row over the echo's second.
+    expect(flagsOf(view.changes[0], [{ __row_index__: 0, interacted: "0" }, { __row_index__: 1, interacted: "1" }]))
+      .toEqual(["1", "0"]);
+
+    await act(async () => {
+      hook.rerender({ input, labels: [BASE, TALL], interactions: [] });
+    });
+
+    await waitFor(() => expect(view.changes).toHaveLength(4));
+    expect(flagsOf(view.changes[2], [{ __row_index__: 0, interacted: "1" }, { __row_index__: 1, interacted: "0" }]))
+      .toEqual(["0", "1"]);
+  });
 });
 
 describe("a new input stacks the rows again", () => {

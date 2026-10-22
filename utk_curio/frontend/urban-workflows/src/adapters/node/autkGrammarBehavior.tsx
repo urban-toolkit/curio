@@ -122,6 +122,9 @@ export const useAutkGrammarBehavior = (
     // Unsubscribe functions returned by grammar.interactions.on(); cleared and
     // re-populated on every applyGrammar call and on unmount.
     const interactionOffRef = useRef<Array<() => void>>([]);
+    // The layer of the pick or brush this node last sent that picked
+    // something, until it sends an empty one or is drawn again.
+    const ownSelectionRef = useRef<{ layerRef: string | undefined } | null>(null);
     // Disposer for the map canvas's window-bound pointer listeners (the
     // interaction zoom fix and the press guard), cleared and re-populated on
     // each applyGrammar run with a map, and on unmount.
@@ -836,6 +839,7 @@ export const useAutkGrammarBehavior = (
                         const data = fields && layerRef
                             ? keyValues(rows, inputFeaturesRef.current[layerRef] ?? [], fields)
                             : rows;
+                        ownSelectionRef.current = data.length > 0 ? { layerRef } : null;
                         d.interactionsCallback?.({
                             autk_selection: {
                                 type: data.length > 0 ? VisInteractionType.POINT : VisInteractionType.UNDETERMINED,
@@ -850,6 +854,25 @@ export const useAutkGrammarBehavior = (
                     const off1 = grammar.interactions.on('map:picking',    ({ selection }) => emitInteraction(selection, pickedLayerRef, 'map'));
                     const off2 = grammar.interactions.on('plot:selection', ({ selection }) => emitInteraction(selection, plotLayerRef, 'plot'));
                     interactionOffRef.current = [off1, off2];
+                }
+
+                // The map or plot drawn again shows none of the pick or brush
+                // this node sent before: it says so, as a Vega chart does when
+                // it compiles (hook/useVega.ts), so the views linked to it stop
+                // showing that selection too.
+                const lost = ownSelectionRef.current;
+                if (lost) {
+                    ownSelectionRef.current = null;
+                    const d = dataRef.current;
+                    d.interactionsCallback?.({
+                        autk_selection: {
+                            type: VisInteractionType.UNDETERMINED,
+                            data: [],
+                            priority: 1,
+                            source: NodeType.AUTK_GRAMMAR,
+                            layerRef: lost.layerRef,
+                        },
+                    }, d.nodeId);
                 }
 
                 handOn(data.input ?? null);

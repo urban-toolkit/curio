@@ -109,11 +109,12 @@ class TestInteractionEdgeErrors:
         plan = {"edges": [{"from": "vis", "to": "combine", "kind": "interaction"}]}
         (err,) = pt.interaction_edge_errors(plan, self.type_of, ROSTER)
         assert err.startswith(
-            "edges[0]: an interaction edge connects a visualization "
-            "(autk-grammar, vis-simple, vis-vega) to a data-pool node"
+            "edges[0]: an interaction edge links two views when one of them highlights "
+            "what it receives (autk-grammar, vis-vega), or links a view "
+            "(autk-grammar, vis-simple, vis-vega) or a data-pool to a data-pool"
         )
         assert "'combine' is computation-analysis" in err
-        assert "target the data-pool" in err
+        assert "use a data edge, or end the interaction edge at a view that highlights or at a data-pool" in err
 
     def test_two_visualizations_linked_directly_when_one_highlights(self):
         # A selection crosses a direct edge both ways, and a Vega-Lite chart or
@@ -131,12 +132,16 @@ class TestInteractionEdgeErrors:
         types = {"t1": "curio.builtin/vis-simple@1", "t2": "curio.builtin/vis-simple@1"}
         plan = {"edges": [{"from": "t1", "to": "t2", "kind": "interaction"}]}
         (err,) = pt.interaction_edge_errors(plan, types.get, ROSTER)
-        assert "a visualization that highlights what it receives (autk-grammar, vis-vega)" in err
+        assert "two views when one of them highlights what it receives (autk-grammar, vis-vega)" in err
+        assert "'t1' is vis-simple" in err
 
-    def test_pool_to_pool_is_refused(self):
+    def test_pool_to_pool_is_legal_both_directions(self):
+        # Two Data Pools linked by an interaction edge, as the canvas links
+        # them: one flags the other's rows its `linked` column names.
         types = dict(TYPES, pool2="curio.builtin/data-pool")
-        plan = {"edges": [{"from": "pool", "to": "pool2", "kind": "interaction"}]}
-        assert len(pt.interaction_edge_errors(plan, types.get, ROSTER)) == 1
+        for src, dst in (("pool", "pool2"), ("pool2", "pool")):
+            plan = {"edges": [{"from": src, "to": dst, "kind": "interaction"}]}
+            assert pt.interaction_edge_errors(plan, types.get, ROSTER) == [], (src, dst)
 
     def test_unknown_template_fails_open(self):
         plan = {"edges": [{"from": "vis", "to": "mystery", "kind": "interaction"}]}

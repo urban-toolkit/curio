@@ -408,11 +408,13 @@ def _plan_revision_errors(plan: dict, existing_nodes: dict, existing_edges: list
 
 def _plan_topology_refusal(plan: dict, existing_nodes: dict, existing_edges: list, available: dict,
                            remove_node_set: set, remove_edges: list) -> str | None:
-    """dev/112 (DEC-070): the topology refusal, or None — interaction edges obey the preamble's rule
-    and no plan DATA edge may close a cycle in the NET graph; validated BEFORE anything materializes."""
+    """dev/112 (DEC-070): the topology refusal, or None: an interaction edge must reach a node that
+    shows the selection it carries, and no plan DATA edge may close a cycle in the NET graph;
+    validated BEFORE anything materializes."""
     # dev/112 (DEC-070): topology validated BEFORE anything materializes, like
-    # fan-in. (1) Interaction edges obey the preamble's rule (visualization ↔
-    # data-pool) — an executable rule, not prose the model must infer. (2) No
+    # fan-in. (1) An interaction edge must reach a node that shows the
+    # selection it carries (plan_topology.interaction_edge_errors): an
+    # executable rule, not prose the model must infer. (2) No
     # plan DATA edge may close a cycle in the NET graph. Before this, an
     # agent asked to "make it an interaction edge" had its kind dropped by
     # the grammar and re-applied the same data edge — the same cycle — on
@@ -445,8 +447,8 @@ def _plan_topology_refusal(plan: dict, existing_nodes: dict, existing_edges: lis
                 ["the plan creates a cycle in the dataflow (data edges must form a DAG):"]
                 + cycle_errors
                 + [
-                    "remove one data edge of the loop, or — for a visualization feeding "
-                    "back into a data-pool — make that edge \"kind\": \"interaction\""
+                    "remove one data edge of the loop, or, where it should carry selections "
+                    "between two views, make that edge \"kind\": \"interaction\""
                 ]
         )
     return None
