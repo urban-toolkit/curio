@@ -2,13 +2,10 @@
 """Write every generated contract output from its single source.
 
 The contracts live in ``utk_curio/backend/app/agents/domain/contracts.py``;
-this is a thin CLI over its ``GENERATED_OUTPUTS`` registry: the TypeScript
-under ``src/generated/`` and every prompt rendered from a ``.template.md`` in
-``utk_curio/llm-prompts/``, written into the folder of the agent in
-``agents/`` whose manifest names it, else beside its template (the shared
-preamble and fragments). Run it after changing that module, a prompt
-template, an agent's manifest, or a source a prompt field reads, and commit
-the outputs with the change.
+this is a thin CLI over its ``GENERATED_OUTPUTS`` registry: the frontend's
+TypeScript under ``src/generated/``. Run it after changing that module, and
+commit the outputs with the change. It writes no prompt: the backend renders
+the agents' text in ``agents/`` when it starts.
 
     python scripts/generate_contracts.py           # write every output
     python scripts/generate_contracts.py --check   # write nothing; exit 1 and

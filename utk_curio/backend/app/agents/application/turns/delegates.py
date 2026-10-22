@@ -588,10 +588,10 @@ def _build_request_contract() -> dict:
 
     memo dev/91: the backend authoring contract rides it as
     ``backendContract``, stated where the delegate can see it (the A8 lesson:
-    nobody invents a schema they were shown). Its text is the generated
-    ``llm-prompts/package_contract.md``, the same text the package-writing
-    mode's own prompt includes, read on every run like any prompt."""
-    backend = builtin.read_prompt_file(
+    nobody invents a schema they were shown). Its text is the base entry's
+    page ``rules/package_contract.md``, rendered, the same text the
+    package-writing mode's own prompt includes, read like any prompt."""
+    backend = builtin.read_page(
         builtin.PACKAGE_CONTRACT_FILE, wanted_by="the build-request contract"
     )
     if not backend:

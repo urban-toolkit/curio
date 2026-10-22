@@ -1,6 +1,7 @@
 """Worked examples: shipped dataflows chosen per run, for the run's runtime slot.
 
-``llm-prompts/examples.md`` indexes every dataflow Curio ships, one line each,
+``examples.md``, a page of the base entry in ``agents/`` (``agent_text``),
+indexes every dataflow Curio ships, one line each,
 under "Used" or "Not used". A line links its file and says what the dataflow
 shows; the file itself holds the task, categories, node types and datasets,
 so a line never repeats them.
@@ -27,6 +28,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from utk_curio import shipped
+from utk_curio.backend.app.agents.domain import agent_text
 from utk_curio.backend.app.agents.domain import builtin
 from utk_curio.backend.app.agents.domain import contracts
 from utk_curio.backend.app.datasets.domain.code_refs import dataset_ids_in_code
@@ -34,7 +36,7 @@ from utk_curio.backend.app.projects import services as projects_services
 
 log = logging.getLogger(__name__)
 
-#: The index, beside the prompts in ``llm-prompts/``.
+#: The index: a page of the base entry, by its path there.
 INDEX_FILE = "examples.md"
 #: The index's two sections: the dataflows a run may be given, and the rest.
 USED = "Used"
@@ -110,7 +112,7 @@ class IndexEntry:
 
     section: str
     title: str
-    #: The link as written, relative to ``llm-prompts/`` so it works on GitHub.
+    #: The link as written, relative to the base entry's folder so it works on GitHub.
     target: str
     text: str
 
@@ -118,12 +120,14 @@ class IndexEntry:
     def path(self) -> Path:
         """The linked file on this machine: the link names a repository path
         (``docs/examples/...``), found through ``utk_curio/shipped.py``."""
-        linked = posixpath.normpath(f"{contracts.PROMPTS_DIR}/{self.target}")
+        base = agent_text.base_dir()
+        folder = f"{agent_text.AGENTS_DIR}/{base.name}" if base is not None else agent_text.AGENTS_DIR
+        linked = posixpath.normpath(f"{folder}/{self.target}")
         try:
             return shipped.path(linked).resolve()
         except ValueError:
             # Not a file Curio ships, so no shipped dataflow has this path.
-            return (builtin.PROMPT_SOURCE_DIR / self.target).resolve()
+            return (shipped.path(folder) / self.target).resolve()
 
     @property
     def line(self) -> str:
@@ -170,8 +174,8 @@ def parse_index(text: str) -> list[IndexEntry]:
 
 
 def read_index() -> list[IndexEntry]:
-    """The index as it is on disk now, read on every call like the prompts; empty when missing."""
-    text = builtin.read_prompt_file(INDEX_FILE, wanted_by="the worked examples")
+    """The index as an agent reads it, like the prompts (``agent_text.read``); empty when missing."""
+    text = builtin.read_page(INDEX_FILE, wanted_by="the worked examples")
     return parse_index(text) if text else []
 
 

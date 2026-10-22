@@ -36,8 +36,9 @@ def upload_import(user_key: str, manifest_raw: object, prompt_files: object) -> 
     ``catalog``, which only the agents Curio ships set, is refused;
     prompt digests are computed from the uploaded bytes (client digests are
     ignored); the provided files must correspond exactly to the manifest's
-    referenced prompt paths, except a prompt Curio shares (``curio:<file>``),
-    which has no file and no digest; size limits apply. The coordinate is
+    referenced prompt paths, except a page of Curio's agent text
+    (``curio:<path>``), which has no file and no digest; a manifest of kind
+    ``base`` is no agent and is refused; size limits apply. The coordinate is
     ``<id>@<major>``: a newer version of a major the store holds replaces it,
     as a node package's Update does, while the same or an older version is a
     409 (a version is immutable), and so is a store copy of an agent Curio

@@ -1,10 +1,16 @@
-"""Every generated contract output matches a fresh render of its source.
+"""Every generated contract output matches a fresh render of its source, and
+every fact the agents' text states from code is read from that code.
 
 ``contracts.py`` is the one definition of each contract; the files listed in
 ``contracts.GENERATED_OUTPUTS`` are copies written by
 ``scripts/generate_contracts.py``. A hand edit to a copy, or a change to the
 source that was never regenerated, is exactly the drift the module exists to
 prevent, so it fails here.
+
+The pages and prompts in ``agents/`` state facts the code owns through
+markers that ``contracts.PROMPT_FIELDS`` fills when the backend renders them
+(``agent_text``). These tests read each one as written and as an agent reads
+it (``prompt_text``).
 """
 
 from __future__ import annotations
@@ -16,7 +22,8 @@ from pathlib import Path
 
 import pytest
 
-from utk_curio.backend.app.agents.domain import contracts
+from utk_curio.backend.app.agents.domain import agent_text, contracts
+from utk_curio.backend.tests._support.prompt_files import prompt_files, prompt_path, prompt_text
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
 
@@ -44,40 +51,13 @@ def test_the_check_and_the_registry_agree():
     assert contracts.stale_outputs(REPO_ROOT) == []
 
 
-def _prompt_outputs() -> list[str]:
-    """The generated prompts: beside their templates in ``PROMPTS_DIR``, or in
-    the folder of the shipped agent whose manifest names them (``agents/``)."""
-    return [r for r in contracts.GENERATED_OUTPUTS if r.endswith(".md")]
-
-
 def test_every_code_output_names_its_generator_and_source():
-    prompts = _prompt_outputs()
+    assert contracts.GENERATED_OUTPUTS
     for relative, render in contracts.GENERATED_OUTPUTS.items():
-        if relative in prompts:
-            continue  # sent to the model verbatim, so it carries no header
         head = render()[:400]
-        assert contracts.GENERATOR in head
-        assert contracts.SOURCE_MODULE in head
-        assert "Do not edit by hand" in head
-
-
-def test_every_generated_prompt_has_its_template_in_the_prompts_folder():
-    prompts = _prompt_outputs()
-    assert prompts
-    assert all(r.startswith((f"{contracts.PROMPTS_DIR}/", "agents/")) for r in prompts), prompts
-    for relative in prompts:
-        name = relative.rsplit("/", 1)[-1]
-        assert (REPO_ROOT / contracts.PROMPTS_DIR / name.replace(".md", ".template.md")).is_file(), relative
-
-
-def test_every_prompt_template_is_registered():
-    # A template no entry renders is a prompt nobody regenerates.
-    registered = {r.rsplit("/", 1)[-1] for r in _prompt_outputs()}
-    templates = sorted((REPO_ROOT / contracts.PROMPTS_DIR).glob("*.template.md"))
-    assert len(templates) == len(contracts.PROMPT_TEMPLATES)
-    for path in templates:
-        output = path.name.replace(".template.md", ".md")
-        assert output in registered, f"{path.name} has no entry in GENERATED_OUTPUTS"
+        assert contracts.GENERATOR in head, relative
+        assert contracts.SOURCE_MODULE in head, relative
+        assert "Do not edit by hand" in head, relative
 
 
 def test_a_note_draws_the_colors_an_agents_note_is_saved_in():
@@ -156,20 +136,17 @@ class TestRenderPrompt:
             for m in builtin.list_builtin_manifests()
         ]
         monkeypatch.setattr(builtin, "list_builtin_manifests", lambda: renamed)
-        assert contracts.render_prompt("orchestration_instruction").startswith(
+        assert agent_text.render(prompt_path("orchestration_instruction.md")).startswith(
             "# Flow Architect\n\nYou are the Flow Architect: "
         )
-        # Every other template that names it follows too, and none keeps the
-        # old name.
+        # Every other page or prompt that names it follows too, and none
+        # keeps the old name.
         marker = "{{agent.name:agent.curio.dataflow-builder}}"
-        naming = [
-            stem for stem in contracts.PROMPT_TEMPLATES
-            if marker in (REPO_ROOT / contracts.PROMPTS_DIR / f"{stem}.template.md").read_text(encoding="utf-8")
-        ]
+        naming = [path for path in prompt_files() if marker in path.read_text(encoding="utf-8")]
         assert len(naming) >= 2, naming
-        rendered = {stem: contracts.render_prompt(stem) for stem in naming}
-        for stem, text in rendered.items():
-            assert "Flow Architect" in text and "Dataflow Builder" not in text, stem
+        rendered = {path.name: agent_text.render(path) for path in naming}
+        for name, text in rendered.items():
+            assert "Flow Architect" in text and "Dataflow Builder" not in text, name
         assert any(
             "the Flow Architect plans and builds a whole dataflow" in text for text in rendered.values()
         )
@@ -211,7 +188,7 @@ class TestRenderPrompt:
         for two rasters' difference, absolute=True for its size, and a Python
         node for two tables' or layers'. Compare Scenarios is gone, and the
         section names it nowhere."""
-        template = (REPO_ROOT / contracts.PROMPTS_DIR / "default_preamble.template.md").read_text(encoding="utf-8")
+        template = prompt_path("default_preamble.md").read_text(encoding="utf-8")
         section = template.split("## Scenarios", 1)[1]
         manifest = json.loads((REPO_ROOT / "packages" / "curio.scout@1" / "manifest.json").read_text(
             encoding="utf-8"))
@@ -231,7 +208,7 @@ class TestRenderPrompt:
         assert "one input per scenario" in section
         assert "{{inputs.stacked}}" in section
         assert '"inputs"' not in section, "the section names the dataset bare"
-        scenarios = contracts.render_prompt("default_preamble").split("## Scenarios", 1)[1]
+        scenarios = prompt_text("default_preamble.md").split("## Scenarios", 1)[1]
         assert '"data": {"name": "[!! inputs !!]"}' in scenarios
 
 
@@ -245,7 +222,7 @@ class TestThePromptFacts:
             if not line.endswith((": controllable through python code.",
                                   ": controllable through JavaScript code."))
         ]
-        text = contracts.render_prompt("evaluate_coherence_subtasks_prompt")
+        text = prompt_text("evaluate_coherence_subtasks_prompt.md")
         head = "Do not generate warnings for nodes made from these templates:\n\n"
         skipped = text.split(head, 1)[1].split("\n\n", 1)[0].splitlines()
         assert skipped == expected
@@ -278,11 +255,11 @@ class TestThePromptFacts:
         assert column == "[!! input_0.population !!]"
         with pytest.raises(contracts.PromptTemplateError, match="circle number"):
             contracts.render_template("{{inputs.chip:population}}")
-        preamble = contracts.render_prompt("default_preamble")
+        preamble = prompt_text("default_preamble.md")
         assert f'"targetHandle": {handles}, circle 0 first.' in preamble
         assert f"`{chip0}` is the input on circle 0" in preamble
         assert f"`{column}`" in preamble
-        orchestration = contracts.render_prompt("orchestration_instruction")
+        orchestration = prompt_text("orchestration_instruction.md")
         assert f'"toHandle" ({handles})' in orchestration
         assert f"`{chip0}`, `[!! input_1 !!]`, ..." in orchestration
         lists = contracts.builtin_lists(_manifest())
@@ -296,7 +273,7 @@ class TestThePromptFacts:
 
         chip = contracts.render_template("{{inputs.stacked}}")
         assert chip == reference_text(STACKED_DATASET) == "[!! inputs !!]"
-        assert f'"data": {{"name": "{chip}"}}' in contracts.render_prompt("default_preamble")
+        assert f'"data": {{"name": "{chip}"}}' in prompt_text("default_preamble.md")
 
     def test_the_orchestration_rule_links_two_views_directly_and_names_the_four_pool_cases(self):
         """An interaction edge carries selections, never data. Two views link
@@ -308,7 +285,7 @@ class TestThePromptFacts:
         def label(template_id: str) -> str:
             return contracts.render_template("{{template.label:curio.builtin/" + template_id + "}}")
 
-        rule = contracts.render_prompt("orchestration_instruction")
+        rule = prompt_text("orchestration_instruction.md")
         assert "carries selections, never data" in rule
         assert "Link two views with one interaction edge between them" in rule
         assert f"Put a {label('data-pool')} between views only when" in rule
@@ -342,20 +319,20 @@ class TestThePromptFacts:
         assert season == reference_text(SHARED_PREFIX + "season") == "[!! @season !!]"
         with pytest.raises(contracts.PromptTemplateError, match="not a widget name"):
             contracts.render_template("{{widgets.reference:2x}}")
-        preamble = contracts.render_prompt("default_preamble")
+        preamble = prompt_text("default_preamble.md")
         assert f'a "type" ({kinds})' in preamble
         assert "`[!! threshold !!]` for the widget named threshold" in preamble
         assert f"`{season}` for the Parameter node named season" in preamble
         assert "## Scenarios" in preamble and '"metadata"."copiedFrom"' in preamble
-        orchestration = contracts.render_prompt("orchestration_instruction")
+        orchestration = prompt_text("orchestration_instruction.md")
         assert f"`{factor}` for the widget named factor" in orchestration
         assert '"duplicateOf"' in orchestration and '"copies"' in orchestration and '"values"' in orchestration
-        content = contracts.render_prompt("new_content_prompt")
+        content = prompt_text("new_content_prompt.md")
         assert f"`{factor}` for the widget named factor" in content and '"sharedTags"' in content
-        assert "`[!! threshold !!]` for the widget named threshold" in contracts.render_prompt("node_build_instruction")
-        # No prompt teaches the old marker form any more.
-        for stem in contracts.PROMPT_TEMPLATES:
-            assert "$TYPE$" not in contracts.render_prompt(stem), stem
+        assert "`[!! threshold !!]` for the widget named threshold" in prompt_text("node_build_instruction.md")
+        # No page or prompt teaches the old marker form any more.
+        for path in prompt_files():
+            assert "$TYPE$" not in prompt_text(path.name), path.name
 
     def test_a_widget_name_that_ends_in_a_line_break_is_refused(self):
         """A marker's argument may hold a line break, and a widget name is read
@@ -371,28 +348,28 @@ class TestThePromptFacts:
         palette = ", ".join(NAMED_COLORS)
         # The package-writing mode, and the post-it look the Researcher's chat
         # asks for when it has a notes package written.
-        for stem in ("package_build_instruction", "researcher_instruction"):
-            assert f"a palette name ({palette})" in contracts.render_prompt(stem), stem
+        for name in ("package_build_instruction.md", "researcher_instruction.md"):
+            assert f"a palette name ({palette})" in prompt_text(name), name
 
     def test_the_web_call_budget_is_the_egress_policys(self):
         from utk_curio.backend.app.common.egress_policy import MAX_CALLS_PER_RUN
 
         # The Researcher's chat and its checking mode; the notes mode makes
         # no web call of its own.
-        for stem in ("research_instruction", "researcher_instruction"):
-            assert f"at most {MAX_CALLS_PER_RUN} web calls per run" in contracts.render_prompt(stem), stem
+        for name in ("research_instruction.md", "researcher_instruction.md"):
+            assert f"at most {MAX_CALLS_PER_RUN} web calls per run" in prompt_text(name), name
 
     def test_the_rows_per_lane_are_the_candidate_cards(self):
         from utk_curio.backend.app.agents.domain import content
 
         rows = content._CANDIDATES_MAX_ROWS_PER_LANE
-        assert f"two lanes, at most {rows} rows each" in contracts.render_prompt("discovery_instruction")
+        assert f"two lanes, at most {rows} rows each" in prompt_text("discovery_instruction.md")
 
     def test_the_node_context_fields_are_the_composers(self):
         from utk_curio.backend.app.agents.domain import input_contract, node_context
         from utk_curio.backend.app.agents.domain.document_validation import RUNTIME_FIELDS
 
-        text = contracts.render_prompt("new_content_prompt")
+        text = prompt_text("new_content_prompt.md")
         assert "{" + ", ".join(node_context.RUNTIME_BLOCK_KEYS) + "}" in text
         assert f'If its "kind" is "{input_contract.KIND_SEVERAL}", ' in text
         assert f'If its "kind" is "{input_contract.KIND_GATHERED}", ' in text
@@ -409,15 +386,17 @@ class TestThePromptFacts:
         input kinds, and no prompt teaches ``arg`` or the old chip spelling."""
         from utk_curio.backend.app.agents.domain import input_contract
 
-        text = contracts.render_prompt("new_content_prompt")
+        text = prompt_text("new_content_prompt.md")
         for kind in (input_contract.KIND_SINGLE, input_contract.KIND_SEVERAL, input_contract.KIND_GATHERED):
             assert f'If its "kind" is "{kind}", ' in text, kind
         assert 'If its "kind" is "list"' not in text
-        from utk_curio.backend.tests._support.prompt_files import prompt_files
-
-        texts = {stem: contracts.render_prompt(stem) for stem in contracts.PROMPT_TEMPLATES}
-        texts.update({path.name: path.read_text(encoding="utf-8") for path in prompt_files("*.md")})
-        assert len(texts) > len(contracts.PROMPT_TEMPLATES)
+        # Every page and prompt, as written and as an agent reads it.
+        files = prompt_files("*.md")
+        texts = {}
+        for path in files:
+            texts[f"{path.name}, as written"] = path.read_text(encoding="utf-8")
+            texts[f"{path.name}, as read"] = prompt_text(path.name)
+        assert files and len(texts) == 2 * len(files)
         for name, rendered in texts.items():
             assert not re.search(r"(?<![\w.$])arg(?![\w$])", rendered), name
             assert not re.search(r"\[!!\s*input\s+[\d?]", rendered), name
@@ -425,7 +404,7 @@ class TestThePromptFacts:
     def test_the_package_contract_is_the_backend_contracts(self):
         from utk_curio.backend.app.packages.domain import backend_contract as bc
 
-        fragment = contracts.render_prompt(contracts.PACKAGE_CONTRACT)
+        fragment = prompt_text("package_contract.md")
         assert f'"name": "<a name matching {bc.HANDLER_NAME_RE.pattern}>"' in fragment
         assert '"timeoutClass": ' + "|".join(f'"{c}"' for c in bc.TIMEOUT_CLASSES) + "}]}" in fragment
         assert f"the '{bc.PERMISSION_SERVER_CODE}' permission" in fragment
@@ -433,18 +412,18 @@ class TestThePromptFacts:
         assert f"rides the {bc.DATA_DIR_ENV} env var" in fragment
 
     def test_the_package_writing_mode_includes_the_contract_whole(self):
-        fragment = contracts.render_prompt(contracts.PACKAGE_CONTRACT)
+        fragment = prompt_text("package_contract.md")
         assert fragment.endswith(".\n") and not fragment.endswith("\n\n")
-        instruction = contracts.render_prompt("package_build_instruction")
+        instruction = prompt_text("package_build_instruction.md")
         assert "\n\n" + fragment.rstrip("\n") + "\n\n" in instruction
 
     def test_every_vega_lite_schema_url_is_the_one_the_frontend_writes(self):
         import re
 
         assert contracts.render_template("{{vega.schema_url}}") == contracts.VEGA_SCHEMA_URL
-        urls = re.findall(r"https://vega\.github\.io/schema/vega-lite/[^\"\\\s]+", contracts.render_default_preamble())
+        urls = re.findall(r"https://vega\.github\.io/schema/vega-lite/[^\"\\\s]+", prompt_text("default_preamble.md"))
         assert urls and set(urls) == {contracts.VEGA_SCHEMA_URL}
-        template = REPO_ROOT / contracts.PROMPTS_DIR / "default_preamble.template.md"
+        template = prompt_path("default_preamble.md")
         assert "vega.github.io/schema" not in template.read_text(encoding="utf-8")
 
     @pytest.mark.parametrize("field, ladder", [
@@ -470,7 +449,7 @@ class TestThePromptFacts:
                 # A bare role is at least one column; anything else is spelt out.
                 assert (term == role) == (count.least == 1 and count.most is None)
                 assert term.startswith("exactly ") == (count.most == count.least)
-        assert text in contracts.render_default_preamble()
+        assert text in prompt_text("default_preamble.md")
 
     def test_the_starter_tables_are_well_formed(self):
         families = contracts.autk_families(contracts.load_autk_schema())
@@ -497,7 +476,7 @@ class TestThePromptFacts:
             assert part.endswith(f" {entry.role}")
             assert re.findall(r"`([^`]+)`", part) == [*entry.names, *entry.prefixes]
             assert ("starts with" in part) == bool(entry.prefixes)
-        assert text in contracts.render_default_preamble()
+        assert text in prompt_text("default_preamble.md")
 
     def test_the_image_facts_are_the_tables(self):
         import re
@@ -515,7 +494,7 @@ class TestThePromptFacts:
             contracts.render_template("{{image.column:not_a_column}}")
 
     def test_the_simple_view_paragraph_states_the_image_rule_the_frontend_applies(self):
-        text = contracts.render_default_preamble()
+        text = prompt_text("default_preamble.md")
         columns = contracts.render_template("{{image.columns}}")
         threshold = contracts.render_template("{{image.threshold}}")
         extensions = contracts.render_template("{{image.extensions}}")
@@ -591,13 +570,13 @@ class TestTheAutarkRenderers:
         [plot_line] = [row for row in region.splitlines() if row.startswith('- "plot":')]
         assert map_line.startswith(f'- "map": {one_view} Requires "layerRefs"')
         assert plot_line.startswith(f'- "plot": {one_view} Every plot requires')
-        preamble = contracts.render_default_preamble()
+        preamble = prompt_text("default_preamble.md")
         for line in (map_line, plot_line):
             assert "several" not in line
             assert line in preamble
 
     def test_the_preamble_fills_every_field_and_names_no_retired_node(self):
-        text = contracts.render_default_preamble()
+        text = prompt_text("default_preamble.md")
         assert "{{" not in text
         assert "AUTK_MAP" not in text
         assert "initialView" not in text
@@ -679,11 +658,13 @@ class TestThePreambleVocabulary:
     def test_no_prompt_names_a_node_by_its_legacy_name(self):
         import re
 
-        from utk_curio.backend.tests._support.prompt_files import prompt_files
-
-        for path in prompt_files("*.md"):
-            found = re.findall(r"\b(" + "|".join(_LEGACY_NAMES) + r")\b", path.read_text(encoding="utf-8"))
-            assert not found, f"{path.name} names {sorted(set(found))}"
+        # Every page and prompt, as written and as an agent reads it.
+        files = prompt_files("*.md")
+        assert files
+        for path in files:
+            for how, text in (("as written", path.read_text(encoding="utf-8")), ("as read", prompt_text(path.name))):
+                found = re.findall(r"\b(" + "|".join(_LEGACY_NAMES) + r")\b", text)
+                assert not found, f"{path.name}, {how}, names {sorted(set(found))}"
 
 
 class TestTheTrillBlock:
@@ -735,7 +716,7 @@ class TestTheTrillBlock:
         assert "description" not in text
 
     def test_the_preamble_carries_it(self):
-        assert contracts.render_trill_block(_trill()) in contracts.render_default_preamble()
+        assert contracts.render_trill_block(_trill()) in prompt_text("default_preamble.md")
 
     def test_the_worked_examples_are_valid_trill(self):
         # The worked examples teach the format, so each has to satisfy the

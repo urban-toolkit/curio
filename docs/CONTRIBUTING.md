@@ -25,6 +25,7 @@ This guide is for students getting their first taste of open-source work and for
   * [Frontend Unit Tests](#frontend-unit-tests)
   * [Frontend E2E Tests](#frontend-e2e-tests)
   * [Database Migrations](#database-migrations)
+  * [Agent Text](#agent-text)
   * [Generated Files](#generated-files)
   * [Vendored Autark Schema](#vendored-autark-schema)
 * [Organizing Contributions](#organizing-contributions)
@@ -62,13 +63,12 @@ The codebase follows a modular structure under the `utk_curio/` directory. This 
 curio/
 ├── utk_curio/
 │   ├── backend/                            # Manages database access and user authentication
-│   │   ├── app/agents/domain/contracts.py  # The single source of every generated contract (see Generated Files)
+│   │   ├── app/agents/domain/contracts.py  # The single source of every generated contract and prompt field (see Generated Files)
 │   │   ├── app/agents/schemas/             # The vendored Autark grammar schema (see Vendored Autark Schema)
 │   │   ├── app/discovery/                  # The Discovery Catalog: portal, storage, service and model sources
 │   │   ├── app/packages/                   # The Node and Model Catalogs: node packages, and model packages with their weights
 │   │   ├── migrations/                     # Alembic migrations
 │   │   └── tests/                          # pytest files for backend (+ test_frontend/ for Playwright E2E)
-│   ├── llm-prompts/                        # The agents' shared prompts and every prompt template; an X.md rendered from X.template.md is generated
 │   ├── sandbox/                            # Executes user Python code in a secure environment
 │   │   └── tests/                          # unittest files for sandbox
 │   └── frontend/                           # All frontend logic
@@ -79,7 +79,7 @@ curio/
 │               └── tests/                  # Jest unit tests
 │
 ├── curio.py                        # CLI entry point for running and managing all services
-├── agents/                         # The agents Curio ships: one directory per agent, a manifest.json and its prompts/
+├── agents/                         # Everything the agents read: one directory per agent, a manifest.json and its prompts/, and the base entry agent.curio.builtin@1 with the pages they share
 ├── packages/                       # The shared node catalog: one directory per node package
 ├── datasets/                       # The shared Data Catalog: datasets published on this install
 ├── discovery/                      # The Discovery Catalog: one manifest per portal or storage source this install can reach
@@ -135,7 +135,7 @@ Refer to [USAGE.md](USAGE.md) for Docker instructions and frontend build steps.
 * Contribute to the `examples/` directory
 
 A new dataflow in `docs/examples/` or `docs/examples/dataflows/` ships, so list it in
-[`utk_curio/llm-prompts/examples.md`](../utk_curio/llm-prompts/examples.md): under
+[`agents/agent.curio.builtin@1/examples.md`](../agents/agent.curio.builtin@1/examples.md): under
 "Used" with one line on what it shows when agents should learn from it, or under
 "Not used" with the reason. The line leaves out the city, topic, node types and
 datasets: they are read from the file. `test_prompt_references.py` fails until the
@@ -427,27 +427,28 @@ FLASK_APP=server.py flask db migrate -m "Migration Name"
 FLASK_APP=server.py flask db upgrade
 ```
 
+### Agent Text
+
+Everything the agents read is hand-written Markdown in `agents/`: each agent's
+prompts in its folder, and the pages they share in the base entry,
+[`agents/agent.curio.builtin@1/`](../agents/agent.curio.builtin@1/): the
+preamble, the worked examples' index and the rules prompts include. Where a
+page or prompt states a fact the code owns (an agent's name, a template's
+label, the Trill block), it holds a marker, `{{field}}`, which the backend
+fills from `contracts.PROMPT_FIELDS` when it starts; `{{include:<path>}}` puts
+another page in its place. To change agent text, edit its file and restart the
+backend, or run `python curio.py start --dev`, which renders a file again on
+every read. The base entry's README walks through it. The backend suite
+renders every file (`test_agent_text.py`) and fails on a marker no field
+defines. See [ARCHITECTURE.md, Agent text](ARCHITECTURE.md#agent-text).
+
 ### Generated Files
 
 Some files are generated from a single source and committed: everything under
-`utk_curio/frontend/urban-workflows/src/generated/`, and every prompt rendered
-from a `<name>.template.md` in `utk_curio/llm-prompts/` (the shared preamble,
-most agent instructions, and `package_contract.md`), all rendered from
-`utk_curio/backend/app/agents/domain/contracts.py`. A rendered prompt is
-written into the folder of the agent in `agents/` whose manifest names
-`prompts/<name>.md`, and beside its template when no agent's manifest names it:
-the shared preamble, which manifests name `curio:default_preamble.md`, and the
-fragments other prompts include. Each generated code file starts with a header
-naming its generator and source. A prompt has no header, because the model
-reads it verbatim; its hand-written text lives in its template, and the
-`{{...}}` markers in the template are the generated parts: agent names,
-template labels, the Trill block and other facts the code owns (the full list
-is in `contracts.PROMPT_FIELDS`). Those facts are read from
-`docs/schemas/trill.v1.json`, `packages/curio.builtin@1/manifest.json`, the
-manifests in `agents/` and the backend modules each field names, so a change
-to any of them needs a regeneration too. Do not edit an output by hand: edit
-the template or the source, then regenerate and commit both. A prompt with no
-template is edited in its agent's folder.
+`utk_curio/frontend/urban-workflows/src/generated/`, rendered from
+`utk_curio/backend/app/agents/domain/contracts.py`. Each starts with a header
+naming its generator and source. Do not edit one by hand: edit the source,
+then regenerate and commit both.
 
 Some frontend behaviour is defined in `contracts.py` too, because the preamble
 describes it: the Vega-Lite and Autark starter ladders, the pandas dtype each
@@ -481,7 +482,7 @@ records its version and digest. To move to a new release:
 # vendor the schema from the release on npm
 python scripts/sync_autk_schema.py --version <version>
 
-# re-render the preamble and the TypeScript that read it
+# re-render the TypeScript that reads it; the backend renders the preamble when it starts
 python scripts/generate_contracts.py
 ```
 
