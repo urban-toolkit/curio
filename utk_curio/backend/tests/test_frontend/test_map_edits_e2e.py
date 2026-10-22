@@ -603,6 +603,7 @@ def _commit(page, edit_id: str, saved: list[str], drawn: list[str], *, below: in
     """Commit edits, from the foot of the node's list, which says how many
     nodes below lack the edits: each of *saved* runs again, its output saved to
     a new file, each map of *drawn* ends done, and the foot says committed."""
+    frame_nodes(page, [edit_id])
     box = node_locator(page, edit_id)
     foot = box.get_by_test_id("interaction-commit")
     expect(foot).to_have_attribute("data-commit-state", "stale", timeout=10000)
@@ -982,6 +983,7 @@ def test_each_change_is_an_entry_in_the_node_provenance_and_putting_one_back_res
     test_name = "test_each_change_is_an_entry_in_the_node_provenance_and_putting_one_back_restores_its_edits"
     _enter(page, app_frontend, current_server, _spec(), "map_edits_provenance_e2e")
     _run_all(page)
+    frame_nodes(page, [EDIT_2, MAP_2])
     panel = _open_provenance(page, EDIT_2)
     ran = _entries(panel)
     assert ran, "the node's run is not in its Provenance drawer"
