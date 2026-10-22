@@ -28,6 +28,12 @@
   white-space: pre-line;
 }
 
+/* One at the pointer (a chart's) sits just above it: the pointer goes
+   through to the marks under it, so moving up never lands on it. */
+.through {
+  pointer-events: none;
+}
+
 /* Content a target registered: cut to its size, never scrolled. */
 .rich {
   padding: 8px 10px;

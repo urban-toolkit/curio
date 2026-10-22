@@ -28,6 +28,7 @@
 import React from "react";
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { TooltipLayer } from "../../../components/tooltip/TooltipLayer";
+import { resetTooltipStore } from "../../../components/tooltip/tooltipStore";
 import { useTooltipContent } from "../../../components/tooltip/useTooltipContent";
 
 /** The layer may place a tooltip in the animation frame after it decides to show it. */
@@ -134,8 +135,9 @@ function setup(ui: React.ReactElement) {
 describe("the one Curio tooltip", () => {
   beforeEach(() => {
     jest.useFakeTimers();
-    // Far from any tooltip an earlier test closed, so none is still warm.
-    jest.advanceTimersByTime(60_000);
+    // Each test's fake clock starts again near where an earlier one closed a
+    // tooltip: the store starts as a page does, with none warm.
+    resetTooltipStore();
     at = document.body;
   });
 
@@ -264,6 +266,28 @@ describe("the one Curio tooltip", () => {
       expect(shown()).toHaveLength(0);
     });
 
+    test("over the gap between the target and the tooltip, onto it and off it: it hides 100 ms after", async () => {
+      setup(
+        <>
+          <button data-tooltip="From Summarize: 2 values, a tuple">i</button>
+          <span>gap</span>
+        </>,
+      );
+      moveTo(screen.getByText("i"));
+      await advance(400 + FRAME);
+      // The 6 px between the target and the tooltip, on the way up to it.
+      moveTo(screen.getByText("gap"));
+      await advance(50);
+      moveTo(tooltip() as HTMLElement);
+      await advance(1000);
+      expect(said()).toBe("From Summarize: 2 values, a tuple");
+      moveTo(document.body);
+      await advance(99);
+      expect(shown()).toHaveLength(1);
+      await advance(1);
+      expect(shown()).toHaveLength(0);
+    });
+
     test("a press inside the tooltip keeps it", async () => {
       setup(<button data-tooltip="sensor, pm25_mean">c</button>);
       moveTo(screen.getByText("c"));
@@ -295,6 +319,45 @@ describe("the one Curio tooltip", () => {
       moveTo(button);
       await advance(400 + FRAME);
       expect(said()).toBe("Run this node");
+    });
+
+    test("a press keeps off only its own target's: a chart's next mark, a button in a pressed row", async () => {
+      setup(
+        <>
+          <div data-testid="chart" data-tooltip="zip: 60614" data-tooltip-side="pointer" />
+          <div data-tooltip="Drag onto the canvas">
+            <span>row</span>
+            <button data-tooltip="Copy the id">copy</button>
+          </div>
+        </>,
+      );
+      const chart = screen.getByTestId("chart");
+      moveTo(chart);
+      await advance(400 + FRAME);
+      expect(said()).toBe("zip: 60614");
+      press(chart);
+      release(chart);
+      await advance(0);
+      expect(shown()).toHaveLength(0);
+      // The pointer moves on to the next mark, which writes its own tooltip.
+      act(() => chart.setAttribute("data-tooltip", "zip: 60622"));
+      moveTo(chart);
+      await advance(400 + FRAME);
+      expect(said()).toBe("zip: 60622");
+
+      moveTo(document.body);
+      await advance(1000);
+      const row = screen.getByText("row");
+      moveTo(row);
+      await advance(400 + FRAME);
+      expect(said()).toBe("Drag onto the canvas");
+      press(row);
+      release(row);
+      await advance(0);
+      expect(shown()).toHaveLength(0);
+      moveTo(screen.getByText("copy"));
+      await advance(400 + FRAME);
+      expect(said()).toBe("Copy the id");
     });
 
     test("Escape hides it at once", async () => {
@@ -331,6 +394,29 @@ describe("the one Curio tooltip", () => {
         expect({ what, shown: shown().length }).toEqual({ what, shown: 0 });
       }
     });
+
+    test("a scroll elsewhere leaves it: a chat that scrolls as it streams", async () => {
+      setup(
+        <>
+          <div data-testid="chat" style={{ overflow: "auto", height: 40 }}>
+            <p>streaming</p>
+          </div>
+          <div data-testid="panel" style={{ overflow: "auto", height: 40 }}>
+            <button data-tooltip="Fit view">f</button>
+          </div>
+        </>,
+      );
+      moveTo(screen.getByText("f"));
+      await advance(400 + FRAME);
+      expect(said()).toBe("Fit view");
+      fireEvent.scroll(screen.getByTestId("chat"));
+      await advance(0);
+      expect(said()).toBe("Fit view");
+      // What holds its target scrolls: the target moved from under it.
+      fireEvent.scroll(screen.getByTestId("panel"));
+      await advance(0);
+      expect(shown()).toHaveLength(0);
+    });
   });
 
   describe("the keyboard and touch", () => {
@@ -357,6 +443,31 @@ describe("the one Curio tooltip", () => {
       act(() => remove.blur());
       await advance(0);
       expect(shown()).toHaveLength(0);
+    });
+
+    test("one the keyboard opened goes when its target's data-tooltip is taken off", async () => {
+      setup(<button data-tooltip="Unsaved changes">u</button>);
+      const button = screen.getByText("u");
+      tabTo(button);
+      await advance(FRAME);
+      expect(said()).toBe("Unsaved changes");
+      act(() => button.removeAttribute("data-tooltip"));
+      await advance(0);
+      expect(shown()).toHaveLength(0);
+    });
+
+    test("keyboard focus on a control inside a target: that control is the one it describes", async () => {
+      setup(
+        <span data-testid="thumb" data-tooltip="12 m">
+          <input type="range" aria-label="Height" />
+        </span>,
+      );
+      const input = screen.getByLabelText("Height");
+      tabTo(input);
+      await advance(FRAME);
+      expect(said()).toBe("12 m");
+      expect(describedBy(input)).toEqual([(tooltip() as HTMLElement).id]);
+      expect(describedBy(screen.getByTestId("thumb"))).toEqual([]);
     });
 
     test("focus from a click shows nothing, under the pointer or after it leaves", async () => {

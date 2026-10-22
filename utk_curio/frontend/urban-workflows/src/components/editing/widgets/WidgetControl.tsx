@@ -69,6 +69,7 @@ export function WidgetControl({ widget, value, onChange, disabled = false, ariaL
         key: dragTooltipKey,
         target: null,
         anchor: () => (thumb.isConnected ? thumb.getBoundingClientRect() : null),
+        anchorElement: thumb,
         side: "top",
         pointer: null,
         content: { kind: "text", text },

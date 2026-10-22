@@ -58,8 +58,18 @@ export type TooltipContent = { kind: "text"; text: string } | { kind: "preview";
 export interface TooltipRequest {
   /** What asks: the element itself, or a key an editor chooses. Equal keys are one tooltip. */
   key: unknown;
-  /** The element the tooltip describes, which gets its aria-describedby while it shows. */
+  /** The element that asks for the tooltip: its target, by its `data-tooltip`. */
   target: Element | null;
+  /**
+   * The element whose aria-describedby names the tooltip while it shows, when
+   * it is not *target*: the control inside it that has the keyboard's focus.
+   */
+  describes?: Element | null;
+  /**
+   * The element it is placed beside, when it is not *target* (a span in an
+   * editor): a scroll of anything that holds it moves it from under the tooltip.
+   */
+  anchorElement?: Element | null;
   /** The box it is placed from, read each time it is placed. */
   anchor: () => TooltipBox | null;
   side: TooltipSide;
@@ -217,7 +227,7 @@ export const tooltipStore = {
     present(request, via);
   },
 
-  /** Hide it now: a press, a wheel, a scroll, a drag, Escape, the window losing focus. */
+  /** Hide it now: a press, a wheel, a scroll under it, a drag, Escape, the window losing focus. */
   hide(): void {
     conceal();
   },
@@ -263,4 +273,18 @@ export const tooltipStore = {
 /** Hide the tooltip now: the canvas moved under it. */
 export function hideTooltip(): void {
   tooltipStore.hide();
+}
+
+/**
+ * The store as a page starts it: nothing shown or about to show, and no
+ * tooltip closed lately, so none is warm. For a test, whose fake clock starts
+ * again where an earlier test's left a tooltip closed.
+ */
+export function resetTooltipStore(): void {
+  stopShowing();
+  stopHiding();
+  generation += 1;
+  reading = null;
+  closedAt = Number.NEGATIVE_INFINITY;
+  if (state.shown) emit({ shown: null });
 }

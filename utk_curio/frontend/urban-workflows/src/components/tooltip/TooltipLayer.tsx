@@ -12,13 +12,18 @@
  *
  * The rules:
  * - the pointer resting on a target shows it, after a wait the store keeps;
- *   leaving hides it a moment later, and the pointer may move onto it;
- * - a press on a target hides it, and it stays off until the pointer leaves
- *   that target; a press inside the tooltip keeps it;
- * - a wheel, a scroll, a drag, Escape or the window losing focus hide it;
- * - focus from the keyboard shows it at once, until blur or Escape. The layer
- *   tells keyboard focus from a click's by which came last, a key or a press:
- *   jsdom's :focus-visible does not decide it as Chrome does;
+ *   leaving hides it a moment later, and the pointer may cross over onto it.
+ *   Leaving the tooltip hides it the same way, whoever opened it. One at the
+ *   pointer (a chart's) lets the pointer through to the marks under it;
+ * - a press on a target hides it, and it stays off while the pointer stays on
+ *   that target; a press inside the tooltip keeps it. A press on a chart
+ *   leaves its marks' tooltips on;
+ * - a wheel, a drag, Escape or the window losing focus hide it, and so does a
+ *   scroll of what holds the element it is placed beside;
+ * - focus from the keyboard shows it at once, until blur or Escape, and the
+ *   focused control is the one it describes. The layer tells keyboard focus
+ *   from a click's by which came last, a key or a press: jsdom's
+ *   :focus-visible does not decide it as Chrome does;
  * - a touch held a moment (TOOLTIP_HOLD_MS) shows it, and the next touch anywhere hides
  *   it; a tap stays a tap;
  * - an open tooltip follows its target's `data-tooltip` as it changes (Vega
@@ -52,12 +57,17 @@ function contentOf(target: Element): TooltipContent | null {
   return text ? { kind: "text", text } : null;
 }
 
+/** The side *target* asks for. */
+function sideOf(target: Element): TooltipSide {
+  const asked = target.getAttribute("data-tooltip-side") as TooltipSide | null;
+  return asked && SIDES.includes(asked) ? asked : "top";
+}
+
 /** The tooltip *target* asks for, or null when it says nothing. */
 function requestFor(target: Element, pointer: { x: number; y: number } | null): TooltipRequest | null {
   const content = contentOf(target);
   if (!content) return null;
-  const asked = target.getAttribute("data-tooltip-side") as TooltipSide | null;
-  const side = asked && SIDES.includes(asked) ? asked : "top";
+  const side = sideOf(target);
   return {
     key: target,
     target,
@@ -81,15 +91,20 @@ export function TooltipLayer(): React.ReactElement | null {
   const id = `curio-tooltip-${useId().replace(/[^a-zA-Z0-9_-]/g, "")}`;
   const ref = useRef<HTMLDivElement | null>(null);
   const shown = state.shown;
-  const target = shown?.request.target ?? null;
+  const described = shown ? (shown.request.describes ?? shown.request.target) : null;
 
   useEffect(() => {
-    /** What the pointer is over, where it is, and a target a press closed. */
+    /** What the pointer is over, and where it is. */
     let hovered: Element | null = null;
     let pointer: { x: number; y: number } | null = null;
+    /** A target a press closed: its tooltip stays off while the pointer stays on it. */
     let pressed: Element | null = null;
     /** The target this layer last asked a tooltip for; it lets go of no other, an editor's included. */
     let current: Element | null = null;
+    /** Whether the pointer is on the tooltip, whoever opened it. */
+    let onTip = false;
+    /** Whether a mouse button is held: a drag asks for no tooltip on its way. */
+    let buttonDown = false;
     /** Which came last, a key or a press: keyboard focus shows a tooltip, a click's does not. */
     let keyboard = false;
     let hold: ReturnType<typeof setTimeout> | null = null;
@@ -108,17 +123,24 @@ export function TooltipLayer(): React.ReactElement | null {
     // Where the pointer is now decides: on the tooltip it stays, on a target
     // it is asked for, anywhere else this layer's goes.
     const settle = () => {
-      const el = hovered;
-      if (!el || !el.isConnected) {
-        letGo();
-        return;
-      }
-      if (inTooltip(el)) {
+      const el = hovered && hovered.isConnected ? hovered : null;
+      if (el && inTooltip(el)) {
+        onTip = true;
         tooltipStore.keep();
         return;
       }
-      if (pressed && !pressed.contains(el)) pressed = null;
+      if (onTip) {
+        // Off the tooltip: it goes a moment later, whoever opened it (an
+        // editor's included), unless what the pointer is on now asks for it.
+        onTip = false;
+        tooltipStore.leave();
+      }
+      if (!el) {
+        letGo();
+        return;
+      }
       const target = targetOf(el);
+      if (pressed && target !== pressed) pressed = null;
       const request = target && !pressed ? requestFor(target, pointer) : null;
       if (!request) {
         letGo();
@@ -131,27 +153,32 @@ export function TooltipLayer(): React.ReactElement | null {
 
     // A pointer with a button held is dragging: it asks for nothing on its way.
     const onOver = (event: PointerEvent) => {
-      if (event.pointerType === "touch" || event.buttons !== 0) return;
+      if (event.pointerType === "touch") return;
+      buttonDown = event.buttons !== 0;
+      if (buttonDown) return;
       hovered = event.target instanceof Element ? event.target : null;
       pointer = { x: event.clientX, y: event.clientY };
       settle();
     };
     // On the way up, so a chart that rewrites its tooltip at a move has done so.
     const onMove = (event: PointerEvent) => {
-      if (event.pointerType === "touch" || event.buttons !== 0) return;
+      if (event.pointerType === "touch") return;
+      buttonDown = event.buttons !== 0;
+      if (buttonDown) return;
       hovered = event.target instanceof Element ? event.target : hovered;
       pointer = { x: event.clientX, y: event.clientY };
       settle();
     };
     const onOut = (event: PointerEvent) => {
       if (event.pointerType === "touch" || event.relatedTarget) return;
-      // Out of the window.
+      // Out of the window, from the tooltip or from anything else.
       hovered = null;
       settle();
     };
     const onDown = (event: PointerEvent) => {
       keyboard = false;
       const el = event.target instanceof Element ? event.target : null;
+      if (event.pointerType !== "touch") buttonDown = true;
       if (inTooltip(el)) return;
       if (event.pointerType === "touch") {
         // The next touch anywhere hides one, and a touch held long enough shows one.
@@ -166,11 +193,14 @@ export function TooltipLayer(): React.ReactElement | null {
         }, tooltipHoldMs());
         return;
       }
-      pressed = targetOf(el);
+      // A chart's marks each say their own: a press on one leaves the others on.
+      const target = targetOf(el);
+      pressed = target && sideOf(target) !== "pointer" ? target : null;
       tooltipStore.hide();
     };
     const onUp = (event: PointerEvent) => {
       if (event.pointerType === "touch") stopHold();
+      else buttonDown = false;
     };
     const onKey = (event: KeyboardEvent) => {
       keyboard = true;
@@ -178,26 +208,41 @@ export function TooltipLayer(): React.ReactElement | null {
     };
     const onFocus = (event: FocusEvent) => {
       if (!keyboard) return;
-      const target = targetOf(event.target);
+      const focused = event.target instanceof Element ? event.target : null;
+      const target = targetOf(focused);
       const request = target ? requestFor(target, null) : null;
-      if (request) tooltipStore.show(request, "focus");
+      // It describes the control with the focus: the target, or a control in it.
+      if (request) tooltipStore.show({ ...request, describes: focused }, "focus");
     };
     const onBlur = (event: FocusEvent) => {
       const target = targetOf(event.target);
       if (target) tooltipStore.blurred(target);
     };
     const hide = () => tooltipStore.hide();
+    // A scroll moves what it scrolls: a tooltip beside something in it goes,
+    // and one beside anything else stays (a chat that scrolls as it streams).
+    const onScroll = (event: Event) => {
+      const open = tooltipStore.getState().shown;
+      if (!open) return;
+      const beside = open.request.anchorElement ?? open.request.target;
+      const scrolled = event.target;
+      if (!beside || !(scrolled instanceof Node) || scrolled.contains(beside)) tooltipStore.hide();
+    };
 
     // A target's tooltip changed under the pointer, or appeared (a chart
     // writes its mark's tooltip at the move that reaches the mark); or the
-    // target of one the keyboard opened changed what it says.
+    // target of one the keyboard opened changed what it says. During a drag
+    // the pointer last seen is from before the press, so nothing is asked for.
     const observer = new MutationObserver((records) => {
       const el = hovered;
-      if (el && records.some((record) => record.target instanceof Element && record.target.contains(el))) settle();
+      if (el && !buttonDown && records.some((record) => record.target instanceof Element && record.target.contains(el))) {
+        settle();
+      }
       for (const record of records) {
-        if (record.target instanceof Element && record.target.matches(TARGET)) {
-          tooltipStore.refresh(record.target, contentOf(record.target));
-        }
+        const changed = record.target;
+        if (!(changed instanceof Element)) continue;
+        // One that no longer asks for a tooltip says nothing: the one open for it goes.
+        tooltipStore.refresh(changed, changed.matches(TARGET) ? contentOf(changed) : null);
       }
     });
     observer.observe(document.body, {
@@ -218,7 +263,7 @@ export function TooltipLayer(): React.ReactElement | null {
     document.addEventListener("focusin", onFocus, capture);
     document.addEventListener("focusout", onBlur, capture);
     document.addEventListener("wheel", hide, passive);
-    document.addEventListener("scroll", hide, passive);
+    document.addEventListener("scroll", onScroll, passive);
     document.addEventListener("dragstart", hide, capture);
     window.addEventListener("blur", hide);
     return () => {
@@ -234,18 +279,18 @@ export function TooltipLayer(): React.ReactElement | null {
       document.removeEventListener("focusin", onFocus, capture);
       document.removeEventListener("focusout", onBlur, capture);
       document.removeEventListener("wheel", hide, passive);
-      document.removeEventListener("scroll", hide, passive);
+      document.removeEventListener("scroll", onScroll, passive);
       document.removeEventListener("dragstart", hide, capture);
       window.removeEventListener("blur", hide);
     };
   }, []);
 
-  // The target names the tooltip as its description while it shows.
+  // The element it describes names the tooltip while it shows.
   useLayoutEffect(() => {
-    if (!target) return undefined;
-    describe(target, id, true);
-    return () => describe(target, id, false);
-  }, [target, id]);
+    if (!described) return undefined;
+    describe(described, id, true);
+    return () => describe(described, id, false);
+  }, [described, id]);
 
   // Placed from its target's box on screen, once its own size is known.
   useLayoutEffect(() => {
@@ -257,6 +302,10 @@ export function TooltipLayer(): React.ReactElement | null {
     }
     const anchor = shown.request.anchor();
     if (!anchor) return;
+    // Measured at the window's corner, with all the room it may take: at its
+    // last place near the right edge it would wrap narrower than it is.
+    el.style.left = "0px";
+    el.style.top = "0px";
     const box = el.getBoundingClientRect();
     const place = placeTooltip({
       target: anchor,
@@ -273,13 +322,15 @@ export function TooltipLayer(): React.ReactElement | null {
   if (!shown) return null;
   const { content } = shown;
   const caps = tooltipMaxSize(content.kind, { width: window.innerWidth, height: window.innerHeight });
+  // One at the pointer sits just above it: the pointer goes through to the marks.
+  const through = shown.request.side === "pointer" ? ` ${styles.through}` : "";
   return createPortal(
     <div
       ref={ref}
       id={id}
       role="tooltip"
       data-curio-tooltip=""
-      className={`${styles.tooltip} ${content.kind === "text" ? styles.text : styles.rich}`}
+      className={`${styles.tooltip} ${content.kind === "text" ? styles.text : styles.rich}${through}`}
       style={{ maxWidth: caps.maxWidth, maxHeight: caps.maxHeight }}
     >
       {content.kind === "text" ? content.text : content.node}
