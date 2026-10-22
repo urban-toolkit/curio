@@ -286,7 +286,7 @@ class TestSolve:
             from utk_curio.backend.app.agents.application.turns import titles
             from utk_curio.backend.app.agents.infrastructure import providers
 
-            if messages and messages[0].get("content") == titles.TITLE_PROMPT:
+            if messages and messages[0].get("content") == titles.title_prompt():
                 return "Title"
             state["n"] += 1
             if state["n"] == 2:
@@ -507,7 +507,7 @@ class TestStreamedSolve:
         gate = threading.Event()
 
         def _fake_run(config, messages, **kwargs):
-            if messages and messages[0].get("content") == titles.TITLE_PROMPT:
+            if messages and messages[0].get("content") == titles.title_prompt():
                 return "Title"
             gate.wait(timeout=10)  # children hold until the cancel lands
             return "generated"
@@ -656,7 +656,7 @@ class TestGeneratedContentExtraction:
             from utk_curio.backend.app.agents.application.turns import titles
             from utk_curio.backend.app.agents.infrastructure import providers
 
-            if messages and messages[0].get("content") == titles.TITLE_PROMPT:
+            if messages and messages[0].get("content") == titles.title_prompt():
                 return "Title"
             state["n"] += 1
             return wrapped

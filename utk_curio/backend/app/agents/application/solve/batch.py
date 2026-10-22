@@ -35,6 +35,7 @@ from utk_curio.backend.app.agents.application.errors import AgentServiceError
 from utk_curio.backend.app.agents.domain import content
 from utk_curio.backend.app.agents.domain import failure_text
 from utk_curio.backend.app.agents.domain.counts import count_label
+from utk_curio.backend.app.agents.domain import map_edits
 from utk_curio.backend.app.agents.domain import node_context
 from utk_curio.backend.app.agents.domain.manifest import AgentManifest
 from utk_curio.backend.app.agents.infrastructure import provider_config
@@ -318,7 +319,7 @@ class SolveBatch:
         ``pending`` — it was never attempted, so no new status enters the
         state machine."""
         if status == "no-content":
-            return self._record_no_content(node_id)
+            return self._record_no_content(node_id, text)
         if status == "deadline":
             return self._record_deadline(node_id)
         if child is not None:
@@ -337,20 +338,38 @@ class SolveBatch:
         self.unstarted.append(node_id)
         return None
 
-    def _record_no_content(self, node_id: str) -> dict:
+    def _record_no_content(self, node_id: str, reason: str | None = None) -> dict:
         # dev/134: nothing is owed and nothing was spent. Not "skipped"
         # (that means a bound refused it) and not "pending" (that means
         # work remains): the node is resolved, and the reason says why
-        # there was never anything to write.
+        # there was never anything to write: *reason*, else its kind's.
         node = self.nodes_by_id.get(node_id) or {}
-        reason = (
+        reason = reason or (
             f"{node.get('type')} is wired, not written: this kind has no "
             "content to author; it renders or forwards its input"
         )
         result = {"status": "solved",
                   "verification": {"status": "no-content", "reason": reason[:300]}}
         self.results[node_id] = result
+        fresh = self._new_map_edits_code(node_id, node)
+        if fresh is not None:
+            # Persisted with the wave, and never handed to the canvas as a
+            # change: no agent wrote it, and the canvas gives a node it shows
+            # blank this same code.
+            self.applied_contents.append({"nodeId": node_id, "content": fresh})
         return {"nodeId": node_id, "status": "solved", **result}
+
+    def _new_map_edits_code(self, node_id: str, node: dict) -> str | None:
+        """The code a blank Map Edits node gets when its goal names no edits:
+        the code the node writes for itself when it is dropped, its call with
+        no edits over its circles. None for a node of another kind and for one
+        that holds code already, whose call stays as the user left it."""
+        if str(node.get("content") or "").strip():
+            return None
+        if not map_edits.is_map_edits(self.user_key, self.project_id, node.get("type")):
+            return None
+        spec = self.current.get("spec") or self.spec or {}
+        return map_edits.new_node_code(node_id, (spec.get("dataflow") or {}).get("edges"))
 
     def _record_deadline(self, node_id: str) -> dict:
         # dev/118: the budget ran out before this node was dispatched — it
@@ -417,7 +436,7 @@ class SolveBatch:
             # dev/118 commit 4: the artifact a dependent's validation reuses.
             "output": (outcome.get("evidence") or {}).get("output"),
         }
-        return {"nodeId": node_id, "status": "solved", "content": candidate, **trail}
+        return {"nodeId": node_id, "status": "solved", "content": candidate, **self._written_by(), **trail}
 
     def _verified_not_executable(self, node_id: str, outcome: dict, evidence: dict, trail: dict) -> dict:
         # dev/118 (DEC-075): a browser-rendered kind — SAID to be
@@ -440,7 +459,7 @@ class SolveBatch:
         )
         self.results[node_id] = {"status": "solved", "verification": verification, **trail}
         self.applied_contents.append({"nodeId": node_id, "content": candidate})
-        return {"nodeId": node_id, "status": "solved", "content": candidate,
+        return {"nodeId": node_id, "status": "solved", "content": candidate, **self._written_by(),
                 "verification": verification, **trail}
 
     def _verified_failure(self, node_id: str, outcome: dict, evidence: dict, trail: dict) -> dict:
@@ -545,6 +564,13 @@ class SolveBatch:
             err = self._ungrounded_error(refusal, node_id)
             self.results[node_id] = {"status": "failed", "error": err[:300]}
             return {"nodeId": node_id, "status": "failed", "error": err[:300]}
+        # A Map Edits node's code is held to what the node reads, unrun too.
+        unreadable = map_edits.refusal(
+            self.user_key, self.project_id, node.get("type"), text_out, current=str(node.get("content") or ""),
+        )
+        if unreadable:
+            self.results[node_id] = {"status": "failed", "error": unreadable[:300]}
+            return {"nodeId": node_id, "status": "failed", "error": unreadable[:300]}
         result: dict = {"status": "solved"}
         if not self.is_executable(node):
             # dev/118 (DEC-075): written like before, and SAID to be unexecuted.
@@ -554,9 +580,17 @@ class SolveBatch:
             }
         self.results[node_id] = result
         self.applied_contents.append({"nodeId": node_id, "content": text_out})
-        return {"nodeId": node_id, "status": "solved", "content": text_out, **(
+        return {"nodeId": node_id, "status": "solved", "content": text_out, **self._written_by(), **(
             {"verification": result["verification"]} if "verification" in result else {}
         )}
+
+    def _written_by(self) -> dict:
+        """``{"agent": name}``: the agent that writes this batch's content, as
+        its manifest names it, which a node's history names the change after;
+        empty when no agent is resolved."""
+        delegate = getattr(self.resolution, "manifest", None)
+        name = getattr(delegate, "name", None) or getattr(self.resolution, "coord", None)
+        return {"agent": name} if isinstance(name, str) and name else {}
 
     # ── persistence ─────────────────────────────────────────────────────────
 
@@ -577,10 +611,22 @@ class SolveBatch:
             if node is None:
                 self.results[item["nodeId"]] = {"status": "skipped"}  # deleted meanwhile
                 continue
-            if (node.get("content") or "").strip():
+            if self.holds_content(node):
                 self.results[item["nodeId"]] = {"status": "skipped"}  # user edit wins
                 continue
             node["content"] = item["content"]
+
+    def holds_content(self, node: dict) -> bool:
+        """Whether *node* holds content Solve keeps rather than writes: any
+        but blank, and for a Map Edits node, any but its call with no edits,
+        which the node writes for itself."""
+        text = str((node or {}).get("content") or "")
+        if not text.strip():
+            return False
+        return not (
+            map_edits.is_map_edits(self.user_key, self.project_id, node.get("type"))
+            and map_edits.holds_no_edits(text)
+        )
 
     def persist_wave(self, wave_ids: list[str]) -> None:
         """dev/118 (DEC-075): the wave boundary IS the persist — and the
@@ -1179,9 +1225,18 @@ class SolveBatch:
             if node is None:
                 queue.put((node_id, "skipped", None, None))
                 return
-            if (node.get("content") or "").strip():
+            if self.holds_content(node):
                 # User content preserved.
                 queue.put((node_id, "skipped", None, None))
+                return
+            if (
+                map_edits.is_map_edits(self.user_key, self.project_id, node.get("type"))
+                and not map_edits.goal_names_edits(node.get("goal"))
+            ):
+                # An empty Map Edits node gets edits only when its goal names
+                # the edits to make: an agent never makes them up. Blank, it
+                # gets its call with no edits (``_record_no_content``).
+                queue.put((node_id, "no-content", map_edits.no_edits_reason(), None))
                 return
             if self.content_kind(node) == workflow_spec.CONTENT_KIND_NONE:
                 # dev/134: this kind authors NOTHING — it renders or

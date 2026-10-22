@@ -102,7 +102,7 @@ class TestTheBlock:
     def test_the_block_is_the_heading_then_each_line_and_its_trill(self):
         sixteen = _pool()[SIXTEEN]
         block = examples.render([sixteen])
-        assert block.startswith(examples.HEADING)
+        assert block.startswith(examples.heading())
         assert f"{sixteen.entry.line}\n```json\n" in block
         # The line is shown without its link.
         assert "](" not in block.split("```json")[0]
@@ -357,13 +357,13 @@ class TestTheBlockReachesRuns:
         assert r.status_code == 200, r.get_data(as_text=True)
         system = calls[0][0]
         runtime = [s["text"] for s in system["slots"] if s["kind"] == "runtime"]
-        block = next((text for text in runtime if text.startswith(examples.HEADING)), None)
+        block = next((text for text in runtime if text.startswith(examples.heading())), None)
         assert block is not None, [text[:60] for text in runtime]
         assert "Simple View: tables and images: " in block
         assert block in system["content"]
         # The cached preamble stays fixed: the block is never in it.
         assert system["slots"][0]["kind"] == "preamble"
-        assert examples.HEADING not in system["slots"][0]["text"]
+        assert examples.heading() not in system["slots"][0]["text"]
 
     def test_an_agent_that_does_not_take_them_gets_none(
         self, client, user_and_token, tmp_curio, alice_project, monkeypatch
@@ -375,7 +375,7 @@ class TestTheBlockReachesRuns:
             replies=["chatting"], coord="agent.curio.researcher@1",
         )
         helper._run(client, token, alice_project, att_id, message=IMAGES)
-        assert examples.HEADING not in calls[0][0]["content"]
+        assert examples.heading() not in calls[0][0]["content"]
 
     def _delegate(self, client, token, user, monkeypatch, coord, capability, inputs) -> dict:
         from utk_curio.backend.app.agents.infrastructure.providers import ProviderConfig
@@ -407,7 +407,7 @@ class TestTheBlockReachesRuns:
                                 "node.content.generate", {"subtask": IMAGES})
         kinds = [slot["kind"] for slot in system["slots"]]
         assert kinds[-1] == "runtime" and "tool-protocol" not in kinds
-        assert system["slots"][-1]["text"].startswith(examples.HEADING)
+        assert system["slots"][-1]["text"].startswith(examples.heading())
         assert "Simple View: tables and images: " in system["content"]
 
     def test_a_delegated_mode_takes_them_only_when_it_opts_in(
@@ -419,6 +419,6 @@ class TestTheBlockReachesRuns:
                                  {"workflowGoal": IMAGES})
         explain = self._delegate(client, token, user, monkeypatch, reader, "dataflow.explain",
                                  {"workflowGoal": IMAGES})
-        assert examples.HEADING in suggest["content"]
-        assert examples.HEADING not in explain["content"]
+        assert examples.heading() in suggest["content"]
+        assert examples.heading() not in explain["content"]
         assert "runtime" not in [slot["kind"] for slot in explain["slots"]]

@@ -21,6 +21,7 @@ import { getUnversionedFlowNodeType } from "../../utils/flowNodeCanonicalType";
 import type { useCollab } from "../CollaborationProvider";
 import { normalizeFlowInput } from "../../utils/flowOutputRef";
 import { markSelectionEcho, SelectionEchoOptions } from "../../utils/selectionEcho";
+import { nodeCodeWriter } from "../../utils/nodeCodeWriters";
 import type { IOutput } from "./flowTypes";
 import { nodeGrowsInputs, nodeHasSeveralPorts } from "./growingInputs";
 
@@ -49,9 +50,17 @@ export function useGraphEdits({
 }) {
     // The bridge's content path (dev/51): both fields, one provider-state
     // update — ``defaultCode`` drives the Monaco editor's value and ``code``
-    // is what TrillGenerator serializes on save.
+    // is what TrillGenerator serializes on save. A node whose code is its
+    // state (a Map Edits node) takes the change through its own writer, as
+    // its own changes are made, the entry it files named after *author*, the
+    // agent that wrote the code.
     const applyNodeContent = useCallback(
-        (nodeId: string, content: string) => {
+        (nodeId: string, content: string, author?: string) => {
+            const writer = nodeCodeWriter(nodeId);
+            if (writer) {
+                writer(content, author || "Agent");
+                return;
+            }
             setNodes((nds: Node[]) =>
                 nds.map((n) =>
                     n.id === nodeId

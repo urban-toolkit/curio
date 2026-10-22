@@ -821,7 +821,8 @@ Each edit is an entry in the node's list and in its Provenance drawer: switch it
 off, delete it, or **Undo** and **Redo** it (Ctrl+Z and Shift+Ctrl+Z, Cmd on a
 Mac). Edits find features by a column whose values differ in every feature, such
 as `osm_id` or `building_id`, and an edit by `building_id` changes every part of
-a building.
+a building. Agents read these edits, and the edits an agent makes show as entries
+named after it.
 
 A rule or an expression reads a feature's columns by name (`height`, or
 `` `Mean Acc shadow` `` in backticks). It takes numbers, quoted texts, `true`,

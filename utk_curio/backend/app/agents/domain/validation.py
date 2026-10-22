@@ -109,6 +109,7 @@ def validate_candidate(
     prior_outputs: dict | None = None,
     templates: dict | None = None,
     acting_user=None,
+    keep_stdout: bool = False,
 ) -> dict:
     """Run the dataflow through *node_id* with the candidate overlaid and
     return ``{"verdict", "evidence"}`` (see module docstring). dev/115:
@@ -116,7 +117,9 @@ def validate_candidate(
     Data Catalog's ``curio_data_path("<id>")`` loaders resolve exactly as
     on Play. ``acting_user`` (#485) is the account's ``User`` row, captured in
     the request: validation runs on a thread of its own, where the account's
-    collections and added models cannot be found without it."""
+    collections and added models cannot be found without it. With
+    *keep_stdout*, a pass also holds ``stdout``, the target's whole output,
+    for a check that reads what the run printed."""
     from utk_curio.backend.app.discovery.application.exec_collections import (
         resolve_spec_collections,
     )
@@ -134,6 +137,7 @@ def validate_candidate(
         strict_upstream=True,  # dev/118: an empty upstream is a blocker, never None downstream
         templates=templates,  # dev/119: the roster classifies executability
         acting_user=acting_user,
+        keep_stdout=keep_stdout,
     )
     executed = [nid for nid, rec in report["nodes"].items() if rec.get("executed")]
     reused = [nid for nid, rec in report["nodes"].items() if rec.get("status") == "reused"]
@@ -208,4 +212,7 @@ def validate_candidate(
         evidence.update({"kind": "type-mismatch", "detail": mismatch})
         return {"verdict": "fail", "evidence": evidence}
     evidence["kind"] = "executed"
-    return {"verdict": "pass", "evidence": evidence}
+    passed = {"verdict": "pass", "evidence": evidence}
+    if keep_stdout:
+        passed["stdout"] = report.get("targetStdout") or ""
+    return passed

@@ -33,7 +33,14 @@ export type AgentCreatedNode = {
 
 export type AgentCanvasMutation =
   | { kind: "node-created"; node: AgentCreatedNode }
-  | { kind: "node-content-applied"; nodeId: string; content: string }
+  | {
+      kind: "node-content-applied";
+      nodeId: string;
+      content: string;
+      /** The name of the agent that wrote the content, which a node that
+       * keeps a history of its changes names the entry after. */
+      agent?: string;
+    }
   | {
       /** dev/52: a whole applied plan graph — bulk nodes + edges, then a
        * fit. dev/59: removals apply FIRST (the live graph drops victims

@@ -131,8 +131,8 @@ _CANDIDATE_NAME_MAX_CHARS = 120
 _CANDIDATE_TEXT_MAX_CHARS = 160
 _CANDIDATE_URL_MAX_CHARS = 300
 
-# The tail budget for a candidates block (#356). CANDIDATES_INSTRUCTION invites
-# 8 rows per lane, but datasetCandidates was on neither allowance list in
+# The tail budget for a candidates block (#356). The block protocol.md teaches
+# invites 8 rows per lane, but datasetCandidates was on neither allowance list in
 # parse_parts, so a block that followed the documented schema exactly blew the
 # 4096-byte classic cap and fell out to visible text - #269's symptom, reached
 # by obeying the instructions. Measured on realistic rows: 6+6 already leaked.
@@ -154,23 +154,6 @@ _CANDIDATE_ROW_MAX_BYTES = (
 )
 CANDIDATES_TAIL_MAX_BYTES = (
     2 * _CANDIDATES_MAX_ROWS_PER_LANE * _CANDIDATE_ROW_MAX_BYTES + 256
-)
-
-# The runtime-owned instruction appended to every attachment run's system turn
-# (after the preamble + intent composition, dev/38 — so an edited intent can
-# neither strip nor spoof it). Deliberately optional in tone, and it invites
-# only suggestedPrompts: the card contract exists (above) but nothing should
-# prompt the model to fabricate result cards before a real producer exists.
-TAIL_INSTRUCTION = (
-    "When one or more follow-up prompts would help the user continue, you may "
-    "end your reply with exactly one fenced block of this form:\n"
-    "```curio.v1\n"
-    '{"suggestedPrompts": {"primary": "<the single most useful next prompt>", '
-    '"alternatives": ["<up to 3 short alternative prompts>"]}}\n'
-    "```\n"
-    "The block must be the very last thing in the reply, the JSON must be "
-    "valid, and each prompt must stay under 200 characters. Omit the block "
-    "entirely when no follow-up is useful."
 )
 
 
@@ -1277,141 +1260,78 @@ _CANDIDATES_TOOL = "catalog.search"
 _DISCOVERY_CANDIDATES_TOOL = "discovery.search"
 _CANDIDATES_TOOLS = (_CANDIDATES_TOOL, _DISCOVERY_CANDIDATES_TOOL)
 
-#: Appended only for a run holding ``discovery.search``. Kept separate so the
-#: base instruction stays byte-identical for every run that cannot use it.
-CANDIDATES_DISCOVERY_ADDENDUM = (
-    "An external row for a dataset you found with discovery.search may also "
-    'carry "sourceId" and "resourceId", copied exactly from that result. '
-    "Include both or neither. A row with both can be downloaded into the Data "
-    "Catalog for the user; a row without them is handed to Node Builder "
-    "instead. Never invent either value - a pair that does not match a real "
-    "source is dropped."
-)
 
-# The datasetCandidates schema, shown to agents that can actually produce one.
+# --- The reply protocol ---------------------------------------------------------
 #
-# The Dataset Finder's intent tells it to "propose candidates as ONE
-# datasetCandidates block with two lanes", but until this existed nothing ever
-# showed it the shape — the tail taught only suggestedPrompts and toolRequest.
-# Asked by name for a structured block whose syntax it had never seen, the model
-# invented one, usually XML. That is not a terminal ``curio.v1`` fence, so the
-# parser never saw it and the documented fail-open folded the raw markup into the
-# visible transcript, losing the whole candidates card along with it (#269).
-#
-# It lives here rather than in the prompt file for the same reason the rest of
-# the tail does (dev/38): an edited intent can neither strip nor spoof it.
-CANDIDATES_INSTRUCTION = (
-    "When you have dataset candidates to propose, end your reply with exactly "
-    "one fenced block of this form instead:\n"
-    "```curio.v1\n"
-    '{"datasetCandidates": {"lanes": {'
-    '"external": [{"name": "<dataset name>", '
-    '"sourceType": "api|endpoint|portal|catalog|document|database", '
-    '"url": "https://...", "provider": "<who publishes it>", '
-    '"format": "<e.g. GeoJSON>", "coverage": "<area and years>", '
-    '"requirement": "<key or licence needed, if any>", '
-    '"fit": {"score": 0, "rationale": "<why it fits>"}}], '
-    '"catalog": [{"name": "<dataset name>", '
-    '"datasetId": "<id from catalog.search>", "sourceType": "catalog", '
-    '"installed": false, '
-    '"fit": {"score": 0, "rationale": "<why it fits>"}}]}}}\n'
-    "```\n"
-    "Both lanes are optional but at least one row is required, at most 8 rows "
-    "each. Every catalog row needs the datasetId catalog.search returned; only "
-    "http(s) URLs are accepted; fit.score is 0-100. Names stay under 120 "
-    "characters and the other text fields under 160. Do not invent any other "
-    "markup for candidates: a block that does not match this shape reaches the "
-    "user as plain text, with no card to select from."
-)
+# What a run is told of how it replies is the base entry's protocol.md, one
+# section per text. The runtime composes a run's tail from the sections (after
+# the preamble and instruction, dev/38, so an edited intent can neither strip
+# nor spoof it), and puts the run's own lists, its granted tools and its
+# delegates, after the sections that end in a colon.
 
 
-#: What a run on native tools is told in place of the tool list and the
-#: ``toolRequest`` syntax, which the native tools themselves carry.
-NATIVE_TOOLS_INSTRUCTION = (
-    "Your tools are offered to you as native tools. Call at most one per "
-    "reply; you will receive its result and can then continue. A tool's name "
-    "is its id with each dot written as two underscores: dataflow.read is "
-    "called dataflow__read."
-)
+def _protocol(name: str) -> str:
+    """The section *name* of the base entry's ``protocol.md``, as an agent reads it."""
+    from utk_curio.backend.app.agents.domain import agent_text, builtin
+
+    return agent_text.section(builtin.PROTOCOL_FILE, name)
 
 
 def tail_instruction(
     grants: list[tuple[str, str]] | None = None, *, native_tools: bool = False
 ) -> str:
-    """The system-turn tail instruction for one run (memo dev/41).
+    """The system-turn tail instruction for one run (memo dev/41), from the
+    base entry's ``protocol.md``.
 
-    Grant-less runs get :data:`TAIL_INSTRUCTION` byte-identical (regression-
-    pinned); runs with granted tools get an appended paragraph enumerating
-    exactly the granted ids with their registry descriptions and the
-    ``toolRequest`` syntax. The list is server-resolved grants — never the
-    manifest's raw declarations.
+    A grant-less run gets its ``suggested-prompts`` section alone. A run
+    with granted tools gets a paragraph after
+    it: the ``tools`` section, exactly the granted ids with their registry
+    descriptions, and the ``tool-request`` section's ``toolRequest`` syntax.
+    The list is server-resolved grants, never the manifest's raw
+    declarations.
 
-    A run offered its tools natively (*native_tools*) gets
-    :data:`NATIVE_TOOLS_INSTRUCTION` instead of that paragraph: only the tool
-    list and the call syntax differ.
+    A run offered its tools natively (*native_tools*) gets the
+    ``native-tools`` section instead of that paragraph: only the tool list and
+    the call syntax differ.
 
-    A run that can search the catalog also gets the ``datasetCandidates`` schema
-    (#269): those agents are asked for that block by name, so they have to be
-    told what it looks like.
+    A run that can search the catalog also gets the ``datasetCandidates``
+    schema (#269, the ``dataset-candidates`` section): those agents are asked
+    for that block by name, so they have to be told what it looks like.
     """
+    tail = _protocol("suggested-prompts")
     if native_tools:
-        instruction = f"{TAIL_INSTRUCTION}\n\n{NATIVE_TOOLS_INSTRUCTION}"
+        instruction = f"{tail}\n\n{_protocol('native-tools')}"
     elif not grants:
-        return TAIL_INSTRUCTION
+        return tail
     else:
         lines = "\n".join(f"- {tool_id}: {description}" for tool_id, description in grants)
-        instruction = (
-            f"{TAIL_INSTRUCTION}\n\n"
-            "You may also use these tools, granted for this conversation:\n"
-            f"{lines}\n"
-            "To use one, end your reply with exactly one fenced block of this form "
-            "instead (one tool per reply; you will receive the result and can then "
-            "answer):\n"
-            "```curio.v1\n"
-            '{"toolRequest": {"tool": "<tool id>", "params": {}}}\n'
-            "```"
-        )
+        instruction = f"{tail}\n\n{_protocol('tools')}\n{lines}\n{_protocol('tool-request')}"
     granted_ids = {tool_id for tool_id, _ in grants or ()}
     if granted_ids & set(_CANDIDATES_TOOLS):
-        instruction = f"{instruction}\n\n{CANDIDATES_INSTRUCTION}"
+        instruction = f"{instruction}\n\n{_protocol('dataset-candidates')}"
         # Only described to a run that can actually produce them. A run without
         # the discovery tools cannot obtain a sourceId, so telling it about the
-        # fields would invite it to invent a pair the runtime then rejects -
+        # fields would invite it to invent a pair the runtime then rejects,
         # and would change the prompt for every existing agent for nothing.
         if _DISCOVERY_CANDIDATES_TOOL in granted_ids:
-            instruction = f"{instruction}\n{CANDIDATES_DISCOVERY_ADDENDUM}"
+            instruction = f"{instruction}\n{_protocol('dataset-candidates-from-portals')}"
     return instruction
 
 
 def delegation_instruction(entries: list[tuple[str, str]], *, native_tools: bool = False) -> str:
-    """The delegation paragraph for one run's system tail (memo dev/48).
+    """The delegation paragraph for one run's system tail (memo dev/48), from
+    the base entry's ``protocol.md``: its ``delegation`` section, one line per
+    entry, then the ``delegate-tool`` or ``delegate-request`` section.
 
     Composed only when the agent's manifest names delegates that resolve to
-    visible definitions — the entries are ``(capability_id, delegate name)``
+    visible definitions: the entries are ``(capability_id, delegate name)``
     pairs the runtime resolved server-side, never the manifest's raw list.
     With *native_tools* the run delegates through the ``delegate`` tool, so the
     paragraph names it instead of the ``delegateRequest`` syntax.
     """
     lines = "\n".join(f"- {cap} — handled by {name}" for cap, name in entries)
-    lead = (
-        "You may also delegate these specialized capabilities, granted for "
-        "this conversation:\n"
-        f"{lines}\n"
-    )
-    if native_tools:
-        return lead + (
-            "To delegate, call the delegate tool with the capability and the "
-            "inputs it needs (one request per reply; you will receive the "
-            "delegate's result and can then continue)."
-        )
-    return lead + (
-        "To delegate, end your reply with exactly one fenced block of this "
-        "form instead (one request per reply; you will receive the delegate's "
-        "result and can then continue):\n"
-        "```curio.v1\n"
-        '{"delegateRequest": {"capability": "<capability id>", "inputs": {}}}\n'
-        "```"
-    )
+    ending = _protocol("delegate-tool" if native_tools else "delegate-request")
+    return f"{_protocol('delegation')}\n{lines}\n{ending}"
 
 
 # Node-content extraction (dev/57): plausible single-field JSON wrappers a

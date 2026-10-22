@@ -49,7 +49,7 @@ def _mock_provider(monkeypatch, reply="ok", title="Dataset Import Help"):
     title_calls = []
 
     def _fake_run(config, messages, **kwargs):
-        if messages and messages[0].get("content") == titles.TITLE_PROMPT:
+        if messages and messages[0].get("content") == titles.title_prompt():
             title_calls.append((messages, kwargs))
             return title
         return reply
@@ -185,7 +185,7 @@ class TestAutoTitleRoutes:
 
     def test_failed_title_call_leaves_reply_intact_and_title_null(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
         def _fake_run(config, messages, **kwargs):
-            if messages and messages[0].get("content") == titles.TITLE_PROMPT:
+            if messages and messages[0].get("content") == titles.title_prompt():
                 raise RuntimeError("title provider down")
             return "the reply"
 
@@ -318,7 +318,7 @@ class TestManualTitleRoutes:
         ukey = _user_dir_key(user)
 
         def _fake_run(config, messages, **kwargs):
-            if messages and messages[0].get("content") == titles.TITLE_PROMPT:
+            if messages and messages[0].get("content") == titles.title_prompt():
                 attachment_management.update_attachment_title(ukey, alice_project, att_id, "Manual Wins")
                 return "Auto Title"
             return "ok"

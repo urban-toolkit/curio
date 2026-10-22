@@ -19,6 +19,7 @@ from utk_curio.backend.app.agents.application import source_grounding
 from utk_curio.backend.app.agents.domain import content
 from utk_curio.backend.app.agents.domain import contracts
 from utk_curio.backend.app.agents.domain import failure_text
+from utk_curio.backend.app.agents.domain import map_edits
 from utk_curio.backend.app.agents.infrastructure.providers import ProviderConfig
 from utk_curio.backend.app.agents.application import spec_reads as agents_spec_reads
 from utk_curio.backend.app.agents.application.solve import budgets as agents_budgets
@@ -74,6 +75,8 @@ _HEAD_FIRST_KINDS = (
     "document-invalid", "empty-result",
     # dev/136: and the render that drew nothing.
     contracts.EMPTY_RENDER_KIND,
+    # Map Edits' refusals: what it cannot read, or the ids no feature has.
+    map_edits.KIND,
 )
 
 

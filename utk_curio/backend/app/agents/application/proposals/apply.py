@@ -156,6 +156,14 @@ def _apply_node_content_write(
         "Applied: node content updated",
         [node_name, f"proposal {proposal_id[:8]}"],
     )
+    applied = {"nodeId": node_id, "content": proposal.get("content", "")}
+    # The agent that wrote it, as its manifest names it: a node that keeps a
+    # history of its changes names the entry after it.
+    writer = agents_spec_reads._agent_name(
+        user_key, str((attachments.get_attachment(spec, attachment_id) or {}).get("coord") or ""),
+    )
+    if writer:
+        applied["agent"] = writer
     return {
         "attachmentId": attachment_id,
         "proposalId": proposal_id,
@@ -163,7 +171,7 @@ def _apply_node_content_write(
         "mutationApplied": True,
         # The frontend canvas bridge (dev/48 §3.3) applies this to the LIVE
         # node too, so the next canvas save can't clobber the mutation.
-        "appliedContent": {"nodeId": node_id, "content": proposal.get("content", "")},
+        "appliedContent": applied,
     }
 
 

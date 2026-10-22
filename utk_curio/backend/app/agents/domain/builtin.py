@@ -51,6 +51,16 @@ PREAMBLE_FILE = "default_preamble.md"
 #: package-writing prompt includes it, and a delegated call of that mode
 #: receives it as an input.
 PACKAGE_CONTRACT_FILE = "rules/package_contract.md"
+#: The pages of the base entry the runtime composes a run's turns from, each
+#: read by its sections (``agent_text.section``): what a run is told of each
+#: tool, how it replies, and the lines that frame what it is given.
+TOOLS_FILE = "tools.md"
+PROTOCOL_FILE = "protocol.md"
+FRAMES_FILE = "frames.md"
+#: The page of the reply contracts a delegated run receives in its inputs.
+DELEGATE_CONTRACTS_FILE = "delegate-contracts.md"
+#: The page of the title call's system prompt.
+TITLE_FILE = "conversation-title.md"
 #: What only the agents Curio ships carry: an export or an install's copy of
 #: one leaves these out, at the top and on each capability and prompt.
 _SHIPPED_ONLY = ("catalog", "workedExamples")
