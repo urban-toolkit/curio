@@ -97,7 +97,7 @@ function card(id: string, over: Record<string, unknown> = {}) {
     id,
     version: "1.0.0",
     dirName: `${id}@1`,
-    name: id.split(".").pop(),
+    name: id.slice(id.lastIndexOf(".") + 1),
     category: "node",
     purpose: "does a thing",
     capabilities: ["node.explain"],

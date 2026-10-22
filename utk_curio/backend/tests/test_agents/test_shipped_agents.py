@@ -69,15 +69,16 @@ def _preamble() -> str:
 
 def _copy_into_store(shipped: str, coord: str) -> Path:
     """Copy the shipped folder *shipped* into ``UKEY``'s agent store as *coord*,
-    an import of the user's own: the manifest takes the copy's id and version
-    and the trust an import has, and every other byte is as shipped."""
+    an import of the user's own: the manifest takes the copy's id, a version
+    of its major and the trust an import has, and every other byte is as
+    shipped."""
     from utk_curio.backend.app.agents.repositories import imports, storage
 
     target = storage.agent_definition_dir(UKEY, coord)
     shutil.copytree(AGENTS / shipped, target)
     raw = _raw(target)
-    agent_id, version = coord.split("@", 1)
-    raw.update(id=agent_id, version=version)
+    agent_id, major = coord.split("@", 1)
+    raw.update(id=agent_id, version=f"{major}.0.0")
     raw["provenance"] = {**raw["provenance"], "trust": "imported"}
     (target / "manifest.json").write_text(json.dumps(raw, indent=2) + "\n", encoding="utf-8")
     imports.add_imported_agent(UKEY, coord)
