@@ -79,6 +79,33 @@ def test_blank_code_is_a_new_node_with_no_edits():
     assert read_edit_features_code(None) == {"settings": None}
 
 
+def test_values_are_spelled_as_javascript_spells_them():
+    """A reason shows values as the browser writes them: these are what
+    ``String`` and ``JSON.stringify`` give in Node."""
+    from utk_curio.sandbox.util import js_values
+
+    numbers = [1e21, 1e20, 0.000001, 1e-7, 123.456, -0.0, 2 ** 53, 5e-324, 1.5e300, 0.1 + 0.2, 100, 1e16]
+    assert [js_values.number(n) for n in numbers] == [
+        "1e+21", "100000000000000000000", "0.000001", "1e-7", "123.456", "0", "9007199254740992",
+        "5e-324", "1.5e+300", "0.30000000000000004", "100", "10000000000000000",
+    ]
+    record = {"b": 1, "2": [1.5, None, True, 'x"y'], "a": {"10": 2, "1": 3}}
+    assert js_values.stringify(record) == '{"2":[1.5,null,true,"x\\"y"],"b":1,"a":{"1":3,"10":2}}'
+    spaces = "".join(chr(code) for code in (0xFEFF, 0x2028, 0x20))
+    assert js_values.trim(spaces + "a b" + chr(0xA0) + chr(0x3000)) == "a b"
+
+
+def test_the_keywords_the_reader_takes_are_the_steps():
+    """The call takes, after its input and its edits, exactly the keywords
+    ``curio_edit_features`` has, in its order."""
+    import inspect
+
+    from utk_curio.sandbox.util.feature_edits import edit_features
+    from utk_curio.sandbox.util.feature_edits_code import KEYWORDS
+
+    assert list(inspect.signature(edit_features).parameters)[2:] == list(KEYWORDS)
+
+
 def test_the_reader_reads_by_its_own_rules_never_by_python():
     """Python would take code the node refuses (a comment inside the call, a
     triple-quoted text, a name where a value goes), so the reader reads by the

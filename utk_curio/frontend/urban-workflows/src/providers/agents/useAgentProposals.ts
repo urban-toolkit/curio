@@ -204,6 +204,7 @@ function bridgeApplyResult(proposalId: string, result: AgentApplyResult): void {
       kind: "node-content-applied",
       nodeId: result.appliedContent.nodeId,
       content: result.appliedContent.content,
+      ...(result.appliedContent.agent ? { agent: result.appliedContent.agent } : {}),
     });
   } else if (result.appliedGraph) {
     // dev/52: a whole applied plan — bulk insert + edges + fit; dev/59:

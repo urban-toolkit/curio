@@ -14,6 +14,7 @@ import uuid
 from utk_curio.backend.app.agents.application import source_grounding
 from utk_curio.backend.app.agents.application import verify
 from utk_curio.backend.app.agents.domain import content
+from utk_curio.backend.app.agents.domain import map_edits
 from utk_curio.backend.app.agents.domain import widget_grammar
 from utk_curio.backend.app.agents.application import tool_rounds as agents_tool_rounds
 from utk_curio.backend.app.agents.application.proposals import acquire as agents_acquire
@@ -638,6 +639,11 @@ def _mint_node_content_write(
     )
     if refusal:
         return agents_tool_rounds._refuse_params(refusal)
+    # A Map Edits node's code is held to what the node reads; the code it
+    # holds already is the user's own.
+    unreadable = map_edits.refusal(node.get("type"), proposed, current=node.get("content") or "")
+    if unreadable:
+        return agents_tool_rounds._refuse_params(unreadable)
     basis = hashlib.sha256((node.get("content") or "").encode("utf-8")).hexdigest()
     proposal_id = uuid.uuid4().hex
     # The node as the user knows it, the way node.create names one: its kind,
@@ -713,6 +719,9 @@ def _mint_node_create(
     )
     if refusal:
         return agents_tool_rounds._refuse_params(refusal)
+    unreadable = map_edits.refusal(entry["id"], proposed)
+    if unreadable:
+        return agents_tool_rounds._refuse_params(unreadable)
     goal = params.get("goal")
     goal = goal.strip() if isinstance(goal, str) and goal.strip() else None
     # dev/105 A2 (additive): the node's HEADER. The note behavior renders

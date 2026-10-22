@@ -12,6 +12,9 @@ Honesty rules: a neighbor that never executed says ``never-executed`` —
 nothing here fabricates schemas or results; ``outputSchema`` joins when the
 runtime journal starts capturing column metadata (recorded 67-2 follow-up).
 
+A Map Edits neighbour's row carries its call (``mapEditsCall``), cut at a
+bound: the what-if a node is written beside is part of its context.
+
 dev/135: the status WORD was all this composer forwarded, so a child asked to
 fix a node that had failed was told ``error`` and nothing else — not the
 message, not the output type, not when it ran or where. The journal has held
@@ -23,6 +26,7 @@ produced the record.
 
 from __future__ import annotations
 
+from utk_curio.backend.app.agents.domain import map_edits
 from utk_curio.backend.app.execution import runtime_journal
 
 _MAX_NEIGHBORS = 8
@@ -167,7 +171,7 @@ def compose_node_context(
     def _row(nid: str) -> dict:
         neighbor = nodes[nid]
         content_text = str(neighbor.get("content") or "")
-        return {
+        row = {
             "id": nid,
             "type": neighbor.get("type"),
             "goal": str(neighbor.get("goal") or "")[:_GOAL_MAX_CHARS],
@@ -178,6 +182,11 @@ def compose_node_context(
             # cannot be fixed in isolation — its reason travels with it.
             "runtime": _runtime_block(nid),
         }
+        if content_text.strip() and map_edits.is_map_edits(neighbor.get("type")):
+            # A Map Edits neighbour's edits, in its own call: what a node
+            # written beside a what-if is told the what-if changed.
+            row["mapEditsCall"] = map_edits.context_call(content_text)
+        return row
 
     current = str(node.get("content") or "")
     if len(current) > _CONTENT_MAX_CHARS:
