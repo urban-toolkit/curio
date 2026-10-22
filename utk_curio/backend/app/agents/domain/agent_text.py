@@ -369,10 +369,19 @@ def render_at_start() -> dict[Path, str]:
     Curio ships, and keep the renders for every read: the backend calls this
     when it starts. Once per process: another app in the same process reads
     the same renders. Raises ``contracts.PromptTemplateError`` on a marker no
-    field defines, so broken text stops the start, not a run."""
+    field defines, so broken text stops the start, not a run, and keeps none
+    of the start's renders: not even a page another page read while it
+    rendered, as the preamble's Autark section reads ``autark-grammar.md``."""
     global _STARTED
     if not _STARTED:
-        _TEXTS.update({file: render(file) for file in shipped_files()})
+        before = dict(_TEXTS)
+        try:
+            renders = {file: render(file) for file in shipped_files()}
+        except BaseException:
+            _TEXTS.clear()
+            _TEXTS.update(before)
+            raise
+        _TEXTS.update(renders)
         _STARTED = True
     return rendered()
 
