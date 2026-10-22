@@ -11,19 +11,25 @@
  */
 import type { InputScope } from "../../utils/references/codeReferences";
 
-/** Example 26's Summarize, as `/get-preview` sends its tuple: two tables, cut to nothing. */
+/**
+ * Example 26's Summarize, as `/get-preview` sends its tuple: two tables, cut to
+ * nothing. Its JSON objects come with their keys sorted (the sandbox's
+ * jsonify), so each table's own order, [sensor, pm25_mean], rides in `columns`.
+ */
 export const SUMMARY_TUPLE = {
   dataType: "outputs",
   data: [
     {
       dataType: "dataframe",
-      data: { sensor: ["sensor_A", "sensor_B", "sensor_C"], pm25_mean: [8.041667, 10.041667, 12.041667] },
-      schema: { sensor: "str", pm25_mean: "float64" },
+      data: { pm25_mean: [8.041667, 10.041667, 12.041667], sensor: ["sensor_A", "sensor_B", "sensor_C"] },
+      schema: { pm25_mean: "float64", sensor: "str" },
+      columns: ["sensor", "pm25_mean"],
     },
     {
       dataType: "dataframe",
-      data: { sensor: ["sensor_A", "sensor_B", "sensor_C"], pm25_peak: [11.0, 13.0, 15.0] },
-      schema: { sensor: "str", pm25_peak: "float64" },
+      data: { pm25_peak: [11.0, 13.0, 15.0], sensor: ["sensor_A", "sensor_B", "sensor_C"] },
+      schema: { pm25_peak: "float64", sensor: "str" },
+      columns: ["sensor", "pm25_peak"],
     },
   ],
   filename: "several-summary-artifact",
@@ -74,13 +80,16 @@ export const LOOP_INPUTS: InputScope[] = [
 ];
 
 /**
- * The shadow statistics each box's raster calculator returns, one row each.
- * Illustrative numbers, as the mockup's: real ones come from a run of the
- * shadow model, which needs a GPU.
+ * The shadow statistics each box's raster calculator returns, one row of
+ * [mean, median, min, max, count], as the JSON sends it: keys sorted, the
+ * frame's order in `columns`. Illustrative numbers, as the mockup's: real ones
+ * come from a run of the shadow model, which needs a GPU.
  */
+const STATISTICS_SCHEMA = { count: "int64", max: "float64", mean: "float64", median: "float64", min: "float64" };
+const STATISTICS_COLUMNS = ["mean", "median", "min", "max", "count"];
 export const LOOP_STATISTICS = [
-  { dataType: "dataframe", data: { mean: [2.31], median: [1.84], min: [0], max: [9.8], std: [1.2] },
-    schema: { mean: "float64", median: "float64", min: "float64", max: "float64", std: "float64" } },
-  { dataType: "dataframe", data: { mean: [1.97], median: [1.52], min: [0], max: [9.1], std: [1.1] },
-    schema: { mean: "float64", median: "float64", min: "float64", max: "float64", std: "float64" } },
+  { dataType: "dataframe", data: { count: [65536], max: [9.8], mean: [2.31], median: [1.84], min: [0] },
+    schema: STATISTICS_SCHEMA, columns: STATISTICS_COLUMNS },
+  { dataType: "dataframe", data: { count: [65536], max: [9.1], mean: [1.97], median: [1.52], min: [0] },
+    schema: STATISTICS_SCHEMA, columns: STATISTICS_COLUMNS },
 ];

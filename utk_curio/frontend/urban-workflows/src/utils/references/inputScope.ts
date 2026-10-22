@@ -89,7 +89,8 @@ export function inputScopeFor(
     });
 }
 
-/** A frame's columns and their dtypes. */
+/** A frame's columns and their dtypes, in the frame's own order when its
+ * envelope gives it (`columnOrder`): its schema's keys come sorted. */
 function frameColumns(frame: GrammarFrame): { columns: string[]; dtypes: Record<string, string> } {
     let names: string[];
     if (frame.schema) {
@@ -99,6 +100,8 @@ function frameColumns(frame: GrammarFrame): { columns: string[]; dtypes: Record<
     } else {
         names = Object.keys(toRows({ data: frame.payload })[0] ?? {});
     }
+    const order = frame.columnOrder;
+    if (order) names = [...order.filter((name) => names.includes(name)), ...names.filter((name) => !order.includes(name))];
     const columns = names.filter(isReferenceableColumn);
     const dtypes: Record<string, string> = {};
     for (const name of columns) {

@@ -69,6 +69,27 @@ describe("readInputPreview", () => {
     });
   });
 
+  test("each table keeps its own column order, which the JSON's sorted keys lose", async () => {
+    // As the sandbox sends a table: schema and data with their keys sorted,
+    // and the frame's own order in `columns`.
+    mockFetchPreviewData.mockResolvedValue({
+      dataType: "dataframe",
+      data: { pm25_mean: [8.041667], sensor: ["sensor_A"] },
+      schema: { pm25_mean: "float64", sensor: "str" },
+      columns: ["sensor", "pm25_mean"],
+    });
+    const table = tableOf(await readInputPreview({ path: "means", dataType: "dataframe" }));
+    expect(table.columns).toEqual(["sensor", "pm25_mean"]);
+    expect(Object.keys(table.rows[0])).toEqual(["sensor", "pm25_mean"]);
+    // The header's lists read the same order.
+    expect((await readInputColumns({ path: "means", dataType: "dataframe" })).columns).toEqual(["sensor", "pm25_mean"]);
+    // Each part of example 26's tuple too.
+    mockFetchPreviewData.mockResolvedValue(SUMMARY_TUPLE);
+    const preview = await readInputPreview(SUMMARY_REF);
+    const parts = (preview as { parts: Array<{ table: PreviewTable }> }).parts;
+    expect(parts.map((part) => part.table.columns)).toEqual([["sensor", "pm25_mean"], ["sensor", "pm25_peak"]]);
+  });
+
   test("a tuple holding a table and a number keeps the number as a value of its own", async () => {
     mockFetchPreviewData.mockResolvedValue({
       dataType: "outputs",

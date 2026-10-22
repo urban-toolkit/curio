@@ -246,7 +246,9 @@ describe("an input", () => {
     const swatch = root.querySelector("[data-preview-head] [data-swatch]");
     expect(swatch?.getAttribute("data-swatch")).toBe("#2a9d8f");
     expect(linesOf(root)).toEqual(["1 row × 5 columns · DataFrame"]);
-    expect(tablesOf(root)[0].rows).toEqual([["2.31", "1.84", "0", "9.8", "1.2"]]);
+    // The frame's own order, not the JSON's sorted keys.
+    expect(tablesOf(root)[0].columns.map(([name]) => name)).toEqual(["mean", "median", "min", "max", "count"]);
+    expect(tablesOf(root)[0].rows).toEqual([["2.31", "1.84", "0", "9.8", "65536"]]);
   });
 
   test("not run: the source, and which node to run", () => {

@@ -63,6 +63,10 @@ export type GrammarFrame = {
   totalRows?: number;
   /** How many rows that preview kept (`previewRows`). */
   previewRows?: number;
+  /** The frame's columns in its own order, when its envelope lists them
+   * (`parseOutput`'s `columns`): its schema and data are JSON objects, whose
+   * keys the sandbox sends sorted. */
+  columnOrder?: string[];
 };
 
 export type GrammarInput = {
@@ -179,8 +183,12 @@ function frameOf(
     index: place.index,
     circle: place.circle ?? 0,
     ...previewCounts(envelope),
+    ...(isColumnList(envelope?.columns) ? { columnOrder: envelope.columns } : {}),
   };
 }
+
+const isColumnList = (value: unknown): value is string[] =>
+  Array.isArray(value) && value.every((column) => typeof column === "string");
 
 type RasterOptions = { rasters?: boolean; source?: string; values?: boolean };
 
