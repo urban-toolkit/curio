@@ -855,13 +855,14 @@ class TestTheParagraphNamesWhoRuns:
         def _fake_run(config, messages, **kwargs):
             from utk_curio.backend.app.agents.application.turns import titles as services_mod
 
-            if messages and messages[0].get("content") == services_mod.TITLE_PROMPT:
+            if messages and messages[0].get("content") == services_mod.title_prompt():
                 return "Title"
             calls.append(messages)
             return "ok"
 
         monkeypatch.setattr('utk_curio.backend.app.agents.infrastructure.providers.run_chat_turn', _fake_run)
-        _run(client, token, pid, att_id, message="hello")
+        r = _run(client, token, pid, att_id, message="hello")
+        assert r.status_code == 200, r.get_json()
         return calls[0][0]["content"]
 
     def test_an_agent_in_the_dataflow_its_entries_do_not_name_is_offered(
