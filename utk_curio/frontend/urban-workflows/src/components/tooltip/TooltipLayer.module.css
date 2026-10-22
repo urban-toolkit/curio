@@ -1,0 +1,40 @@
+/* The one Curio tooltip: a white card over the page, the same size at every
+   canvas zoom, since it is drawn on document.body from on-screen boxes. Its
+   max width and height come from tooltipPlacement.ts, as inline styles. */
+.tooltip {
+  position: fixed;
+  left: 0;
+  top: 0;
+  z-index: var(--curio-z-tooltip);
+  box-sizing: border-box;
+  background: var(--curio-card-bg);
+  color: var(--curio-text-primary);
+  border: 1px solid var(--curio-border-strong);
+  border-radius: var(--curio-radius-md);
+  box-shadow: var(--curio-shadow-tooltip);
+  font-family: var(--curio-font-family);
+  font-size: var(--curio-font-size-sm);
+  line-height: var(--curio-line-height-sm);
+  font-weight: 400;
+  text-align: left;
+  overflow-wrap: anywhere;
+  pointer-events: auto;
+}
+
+/* Plain text: the attribute's own line breaks kept, as a chart's "field:
+   value" lines need. */
+.text {
+  padding: 4px 8px;
+  white-space: pre-line;
+}
+
+/* Content a target registered: cut to its size, never scrolled. */
+.rich {
+  padding: 8px 10px;
+  overflow: hidden;
+}
+
+/* What a rich tooltip says under its first line: secondary text. */
+.rich :global(.curio-tooltip-muted) {
+  color: var(--curio-text-secondary);
+}

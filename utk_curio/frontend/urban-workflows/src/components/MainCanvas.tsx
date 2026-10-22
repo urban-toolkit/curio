@@ -14,8 +14,10 @@ import ReactFlow, {
     useReactFlow,
     useStore,
     useStoreApi,
+    type Viewport,
     type XYPosition,
 } from "reactflow";
+import { hideTooltip } from "./tooltip/tooltipStore";
 import {
     CANVAS_TITLE_ATTR,
     fitViewWithMenuOffset,
@@ -200,6 +202,16 @@ export function MainCanvas() {
     const reactFlow = useReactFlow();
     const { setViewport, screenToFlowPosition } = useReactFlow();
     const viewportMotionHint = useViewportMotionHint();
+    // Any move of the view, a gesture's or a fit's, takes the tooltip off the
+    // target it was placed beside, which is somewhere else now.
+    const hintMove = viewportMotionHint.onMove;
+    const handleViewportMove = useCallback(
+        (event: MouseEvent | TouchEvent | null, viewport: Viewport) => {
+            hideTooltip();
+            hintMove(event, viewport);
+        },
+        [hintMove],
+    );
 
     // The notebook view holds React Flow on its own pane: zoom 1, no gestures,
     // and a translate extent equal to the pane, so the page scrolls instead.
@@ -735,7 +747,7 @@ export function MainCanvas() {
                 minZoom={0.05}
                 translateExtent={translateExtent}
                 onMoveStart={viewportMotionHint.onMoveStart}
-                onMove={viewportMotionHint.onMove}
+                onMove={handleViewportMove}
                 onMoveEnd={viewportMotionHint.onMoveEnd}
                 nodesDraggable={!isSharedView}
                 elementsSelectable={true}

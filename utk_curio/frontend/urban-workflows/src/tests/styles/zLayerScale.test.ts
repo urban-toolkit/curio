@@ -46,6 +46,8 @@ describe("overlay / layering scale (curioTokens.css)", () => {
         "modal-backdrop",
         "node-drawer",
         "toast",
+        // Over everything, toasts included: the one Curio tooltip.
+        "tooltip",
       ].sort(),
     );
   });
