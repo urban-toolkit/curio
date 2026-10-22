@@ -248,6 +248,8 @@ describe("readInputColumns, a view of the same read", () => {
     mockFetchPreviewData.mockResolvedValue({ dataType: "int", data: 3 });
     expect(await readInputColumns({ path: "v", dataType: "int" })).toEqual({ columns: [], dtypes: {} });
     expect(await readInputColumns({ path: "r", dataType: "raster" })).toEqual({ columns: [], dtypes: {} });
+    // Neither is read for its columns: a value is read for its preview alone.
+    expect(mockFetchPreviewData).not.toHaveBeenCalled();
     mockFetchPreviewData.mockResolvedValue({ dataType: "list", data: [{ dataType: "int", data: 1 }] });
     expect(await readInputColumns({ path: "l", dataType: "list" })).toEqual({ columns: [], dtypes: {} });
   });

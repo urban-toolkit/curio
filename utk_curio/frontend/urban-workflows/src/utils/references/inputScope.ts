@@ -121,7 +121,16 @@ function frameColumns(frame: GrammarFrame): { columns: string[]; dtypes: Record<
  * read.
  */
 export async function readInputColumns(value: unknown): Promise<InputColumns> {
+    // A value is no table: it has no columns, and is not read for them.
+    if (isScalarInput(value)) return { columns: [], dtypes: {} };
     return columnsOfPreview(await readInputPreview(value));
+}
+
+/** Whether *value* names a value that is no table, list or dict: a number, a
+ * text, true or false. The header lists no columns for it and reads nothing;
+ * its preview reads it when its tooltip shows. */
+export function isScalarInput(value: unknown): boolean {
+    return isRecord(value) && typeof value.dataType === "string" && SCALAR_TYPES.has(value.dataType);
 }
 
 /** The header's view of what *preview* holds: its columns, its layers' or how many values its tuple holds. */
