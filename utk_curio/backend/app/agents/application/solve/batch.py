@@ -537,10 +537,13 @@ class SolveBatch:
         return {"nodeId": node_id, "status": "failed", "error": err, **trail, **extra}
 
     def _gate_unverified(self, node_id: str, code: str) -> str | None:
-        """dev/114 (DEC-072): the gate on content written without running it:
-        the node's failure, or None. #867: it holds the content to the
-        datasets a verified Solve holds it to, the ids the node's goal names
-        and the catalog rows the user confirmed for the node."""
+        """dev/114 (DEC-072): the gate on content written without running it.
+        #867: it holds the content to the datasets a verified Solve holds it
+        to, the ids the node's goal names and the catalog rows the user
+        confirmed for the node. The error the node fails with, or None: an
+        ungrounded source with its remedy, the code's own violations, or a
+        chart's or a map's document that does not validate, as the verified
+        loop names that round."""
         node = self.nodes_by_id.get(node_id) or {}
         roster_row = (self.batch_templates or {}).get(_pkg_services.canonical_template_id(node.get("type")))
         verdict, refusal = agents_grounding._gate_generated_content(
@@ -553,8 +556,13 @@ class SolveBatch:
                     self.current["spec"], node_id, user_key=self.user_key,
                 )
             ),
+            node_id=node_id,
         )
-        return self._ungrounded_error(refusal, node_id, verdict) if refusal else None
+        if refusal is None:
+            return None
+        if verdict.ok:  # every source is grounded: the document does not validate
+            return f"document-invalid: {refusal}"
+        return self._ungrounded_error(refusal, node_id, verdict)
 
     def _record_solved(self, node_id: str, text) -> dict:
         # The child replies with response formatting around the code —

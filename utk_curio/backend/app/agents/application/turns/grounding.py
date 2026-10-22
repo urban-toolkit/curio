@@ -25,7 +25,9 @@ from utk_curio.backend.app.agents.application.proposals import acquire as agents
 from utk_curio.backend.app.agents.application.proposals import mint as agents_mint
 from utk_curio.backend.app.agents.application.solve import budgets as agents_budgets
 from utk_curio.backend.app.agents.application.turns import roster as agents_roster
+from utk_curio.backend.app.agents.domain import document_validation
 from utk_curio.backend.app.datasets.domain.code_refs import dataset_ids_in_code
+from utk_curio.backend.app.execution import workflow_spec
 from utk_curio.backend.app.projects import storage as projects_storage
 
 log = logging.getLogger(__name__)
@@ -628,7 +630,7 @@ def _grounding_context(
     elif verified:
         hints.append("a URL already verified in this conversation")
     hints.append(
-        'declare "synthetic": true in the params ONLY when the user asked for made-up data'
+        "data made up in the code, ONLY when the user asked for made-up data in their own words"
     )
     if secrets:
         hints.append(
@@ -705,13 +707,19 @@ def _gate_generated_content(
     request_texts: tuple = (),
     requested_ids=(),
     chips: dict | None = None,
+    node_id: str | None = None,
+    widgets: list | None = None,
 ) -> tuple["source_grounding.GroundingVerdict", str | None]:
     """The ONE call every agent-authored-content boundary makes (dev/114):
     ``(verdict, refusal_text | None)``. The refusal is model-correctable
     (DEC-067) and names only routes this run can take. *engine* is the one
     the node's code runs in (``source_grounding.code_engine``), None for
     content that is no code, which is read as a document; *chips*, what a
-    run resolves the node's chips with (:func:`_chip_context`)."""
+    run resolves the node's chips with (:func:`_chip_context`). Content whose
+    sources are grounded and that is a chart's or a map's document is then
+    checked as Solve checks one (:func:`_document_refusal`), for *node_id*'s
+    saved node, or for the node a proposal creates with the *widgets* it
+    declares: its refusal comes with a verdict that is ``ok``."""
     code_engine = engine if isinstance(engine, str) and engine else None
     ctx = _grounding_context(
         user_key, project_id, loop_ctx, node_type=node_type, params=params,
@@ -719,9 +727,70 @@ def _gate_generated_content(
         request_texts=request_texts, requested_ids=requested_ids, code_engine=code_engine, chips=chips,
     )
     verdict = source_grounding.check_grounding(code, code_engine or "python", ctx)
-    if verdict.ok:
-        return verdict, None
-    return verdict, source_grounding.refusal_text(verdict, ctx)
+    if not verdict.ok:
+        return verdict, source_grounding.refusal_text(verdict, ctx)
+    return verdict, _document_refusal(user_key, project_id, node_type, code, node_id=node_id, widgets=widgets)
+
+
+#: The id the node a proposal creates goes by while its document is checked.
+_PROPOSED_NODE_ID = "__proposed__"
+
+
+def _document_refusal(
+    user_key: str, project_id: str, node_type: object, code: object, *,
+    node_id: str | None = None, widgets: list | None = None,
+) -> str | None:
+    """Why a chart's or a map's document an agent wrote does not validate, as
+    Solve's document check says it (``document_validation``), or None; None
+    for any other content. Its fields are not held to columns: a proposal's
+    run is never handed its inputs' columns (DEC-063)."""
+    if not isinstance(node_type, str) or not node_type or not isinstance(code, str):
+        return None
+    from utk_curio.backend.app.packages import service as packages_services
+
+    try:
+        templates = {t["id"]: t for t in packages_services.available_templates(user_key, project_id)}
+    except Exception:  # noqa: BLE001 - an unreadable roster falls to the offline tables
+        templates = {}
+    grammar_id = workflow_spec.grammar_id_of(node_type, templates)
+    grammar = document_validation.grammar_of(node_type, grammar_id)
+    if grammar is None:
+        return None
+    row = templates.get(node_type.split("@", 1)[0]) or {}
+    verdict = document_validation.validate(
+        node_type, _proposed_document(user_key, project_id, node_type, code, node_id, widgets, templates, grammar),
+        grammar_id=grammar_id, content_kind=row.get("contentKind"),
+    )
+    if verdict["status"] != document_validation.STATUS_INVALID:
+        return None
+    return document_validation.refusal_text(node_type, verdict, grammar_id=grammar_id)
+
+
+def _proposed_document(user_key, project_id, node_type, code, node_id, widgets, templates, grammar) -> str:
+    """*code* with its references resolved as far as the dataflow knows them,
+    as the canvas resolves them before it draws: the node's widgets, the
+    shared tags, its wired inputs and their boxes. The node is *node_id*'s
+    saved one, or the one a proposal creates, with the *widgets* it declares.
+    A reference nothing resolves yet, such as the input chip of a circle no
+    edge reaches, is left as written, and the validator reads it as Solve
+    reads one of a node the saved dataflow does not hold."""
+    spec_doc = projects_storage.read_spec(user_key, project_id) or {}
+    dataflow = spec_doc.get("dataflow") if isinstance(spec_doc.get("dataflow"), dict) else {}
+    nodes = [n for n in dataflow.get("nodes") or [] if isinstance(n, dict)]
+    if node_id is None:
+        node_id = _PROPOSED_NODE_ID
+        nodes.append({"id": node_id, "type": node_type, "content": code,
+                      "metadata": {"widgets": list(widgets or [])}})
+    labels = {template_id: row.get("label") or "" for template_id, row in templates.items() if isinstance(row, dict)}
+    try:
+        spec = workflow_spec.parse_workflow_dict({**spec_doc, "dataflow": {**dataflow, "nodes": nodes}}, labels=labels)
+    except Exception:  # noqa: BLE001 - a dataflow that cannot be read resolves nothing
+        return code
+    node = next((n for n in spec.nodes if n.id == node_id), None)
+    if node is None:
+        return code
+    resolved, _unresolved_yet = spec.node_code_and_problems(node, "json", code, grammar)
+    return resolved
 
 
 def _loader_calls(kind: str) -> str:
