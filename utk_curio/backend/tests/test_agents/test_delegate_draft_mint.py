@@ -1076,6 +1076,24 @@ class TestAuthoringDelegateReuseEvidence:
                 delegates._REUSE_EVIDENCE_MAX_TEMPLATES
             )
 
+    def test_a_cut_payload_says_how_many_packages_it_left_out(
+            self, client, user_and_token, tmp_curio, monkeypatch):
+        """The delegate cannot read the rest, so it is told the rows it was
+        shown are not every package there is."""
+        from utk_curio.backend.app.agents.application.turns import delegates
+        from utk_curio.backend.app.packages import service as packages_services
+
+        user, token = user_and_token
+        pid = _project(client, token)
+        key = _ukey(client, user)
+        for i in range(3):
+            _write_store_package(key, f"ai.test.p{i}@1", f"ai.test.p{i}", f"P{i}", ["t"])
+        monkeypatch.setattr(delegates, "_REUSE_EVIDENCE_MAX_PACKAGES", 1)
+        evidence = delegates._authoring_reuse_evidence(key, pid)
+        everything = packages_services.template_landscape(key, pid)["catalog"]
+        assert len(evidence["packages"]) == 1
+        assert evidence.get("packagesElided") == len(everything) - 1
+
     def test_a_broken_registry_degrades_to_no_evidence(
             self, client, user_and_token, tmp_curio, monkeypatch, caplog):
         """Honest absence, and never an exception into the delegation path —
