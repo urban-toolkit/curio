@@ -631,6 +631,56 @@
       "name": "an expression that is not one, which a run refuses",
       "code": "return curio_edit_features(input_0, [{\"op\": \"expr\", \"ids\": [1], \"column\": \"height\", \"value\": \"levels *\"}], key=\"osm_id\")\n",
       "reason": "which is not an expression:"
+    },
+    {
+      "name": "an edit naming no features",
+      "code": "return curio_edit_features(input_0, [{\"op\": \"remove\"}], key=\"osm_id\")\n",
+      "reason": "Edit 1 names no features"
+    },
+    {
+      "name": "an empty list of ids",
+      "code": "return curio_edit_features(input_0, [{\"op\": \"remove\", \"ids\": []}], key=\"osm_id\")\n",
+      "reason": "has ids that are not a list of ids"
+    },
+    {
+      "name": "a feature named by a dict",
+      "code": "return curio_edit_features(input_0, [{\"op\": \"remove\", \"ids\": [{\"row\": 3}]}], key=\"osm_id\")\n",
+      "reason": "which is not an id"
+    },
+    {
+      "name": "an empty condition",
+      "code": "return curio_edit_features(input_0, [{\"op\": \"remove\", \"where\": \"\"}], key=\"osm_id\")\n",
+      "reason": "has a where that is not a condition"
+    },
+    {
+      "name": "a set without its column",
+      "code": "return curio_edit_features(input_0, [{\"op\": \"set\", \"ids\": [1], \"value\": 0}], key=\"osm_id\")\n",
+      "reason": "writes a value but names no column"
+    },
+    {
+      "name": "a set without its value",
+      "code": "return curio_edit_features(input_0, [{\"op\": \"set\", \"ids\": [1], \"column\": \"height\"}], key=\"osm_id\")\n",
+      "reason": "writes no value into height"
+    },
+    {
+      "name": "an offset without its column",
+      "code": "return curio_edit_features(input_0, [{\"op\": \"offset\", \"ids\": [1], \"value\": 3}], key=\"osm_id\")\n",
+      "reason": "writes a value but names no column"
+    },
+    {
+      "name": "an expression that is a number",
+      "code": "return curio_edit_features(input_0, [{\"op\": \"expr\", \"ids\": [1], \"column\": \"height\", \"value\": 3}], key=\"osm_id\")\n",
+      "reason": "computes height from 3, which is not an expression"
+    },
+    {
+      "name": "an empty label",
+      "code": "return curio_edit_features(input_0, [{\"op\": \"remove\", \"ids\": [1], \"label\": \"\"}], key=\"osm_id\")\n",
+      "reason": "has an empty label"
+    },
+    {
+      "name": "an entry switched off by a text",
+      "code": "return curio_edit_features(input_0, [{\"op\": \"remove\", \"ids\": [1], \"enabled\": \"no\"}], key=\"osm_id\")\n",
+      "reason": "has an enabled that is not True or False"
     }
   ]
 }

@@ -30,7 +30,7 @@ import { jsonOf, pyLiteral, readCallArgs, shown, Unreadable, type JsonValue, typ
 /** What the node's code calls (`utk_curio/sandbox/util/feature_edits.py`). */
 export const EDIT_HELPER = "curio_edit_features";
 
-/** In the order of the op enum in `docs/schemas/trill.v1.json` and `OPS` in `feature_edits.py`. */
+/** In the order of `OPS` in `feature_edits.py`: Jest and pytest pin both to the `ops` of `editFeaturesCode.cases.json`. */
 export const EDIT_OPS = ["remove", "set", "restore", "scale", "offset", "expr", "add", "geometry", "add_column"] as const;
 export type EditOp = (typeof EDIT_OPS)[number];
 /** The ops that write a column. */
@@ -350,6 +350,7 @@ export function editProblem(raw: unknown): string | null {
   if (extra !== undefined) return `is a ${op}, which takes no ${extra}`;
   if (raw.layer !== undefined && (typeof raw.layer !== "string" || raw.layer === "")) return "has a layer that is not a name";
   if (raw.label !== undefined && typeof raw.label !== "string") return "has a label that is not a text";
+  if (typeof raw.label === "string" && raw.label.trim() === "") return "has an empty label";
   if (raw.enabled !== undefined && typeof raw.enabled !== "boolean") return "has an enabled that is not True or False";
   if (op === "add") {
     if (!isId(raw.id)) return "adds a feature with no id";
