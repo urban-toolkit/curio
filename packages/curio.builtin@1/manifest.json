@@ -124,7 +124,7 @@
     {
       "bidirectional": true,
       "category": "data",
-      "description": "The Data Pool is responsible for storing data that can be interacted by all connected visualizations. Interactions can also be propagated to other Data Pools.",
+      "description": "Shows its input as a table and passes the rows on to every node it feeds, marking in an interacted column the rows selected in the views linked to it by interaction edges. Linked to another Data Pool, it passes that pool the marks of the rows its linked column names.",
       "editor": "none",
       "engine": "python",
       "hasCode": false,
