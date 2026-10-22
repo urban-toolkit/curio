@@ -32,8 +32,6 @@ from __future__ import annotations
 import json
 import re
 
-from utk_curio.backend.app.agents.domain import agent_text
-
 TAIL_FENCE = "```curio.v1"
 TAIL_MAX_BYTES = 4096
 MAX_PARTS = 8
@@ -303,13 +301,13 @@ def parse_tool_request_verbose(raw: object) -> tuple[dict | None, list[str]]:
     each one must name the real field path and the real number.
     """
     if not isinstance(raw, dict):
-        return None, [agent_text.message("request.not-object")]
+        return None, ["toolRequest must be an object"]
     tool = raw.get("tool")
     if not (isinstance(tool, str) and _TOOL_ID_RE.match(tool)):
-        return None, [agent_text.message("request.tool-not-an-id")]
+        return None, ["toolRequest.tool must be a tool id like node.create"]
     params = raw.get("params", {})
     if not isinstance(params, dict):
-        return None, [agent_text.message("request.params-not-object")]
+        return None, ["toolRequest.params must be an object"]
     errors: list[str] = []
     path = _CONTENT_PARAM_PATHS.get(tool)
     if path is not None:
@@ -317,30 +315,27 @@ def parse_tool_request_verbose(raw: object) -> tuple[dict | None, list[str]]:
         content_text, rest = _pop_content_field(params, path)
         if content_text is not None and len(content_text) > PROPOSAL_CONTENT_MAX_CHARS:
             errors.append(
-                agent_text.message(
-                    "request.content-too-long", where=where, count=len(content_text),
-                    proposal_content_max_chars=PROPOSAL_CONTENT_MAX_CHARS,
-                )
+                f"{where} is {len(content_text)} chars "
+                f"(max {PROPOSAL_CONTENT_MAX_CHARS})"
             )
         try:
             rest_bytes = len(json.dumps(rest).encode("utf-8"))
         except (TypeError, ValueError) as exc:
-            return None, [agent_text.message("request.params-not-json", exc=exc)]
+            return None, [f"toolRequest.params is not JSON-serializable: {exc}"]
         if rest_bytes > _CONTENT_PARAM_REST_MAX_BYTES:
             errors.append(
-                agent_text.message(
-                    "request.params-rest-too-big", where=where, rest_bytes=rest_bytes,
-                    max_bytes=_CONTENT_PARAM_REST_MAX_BYTES,
-                )
+                f"the params other than {where} are {rest_bytes} bytes "
+                f"(max {_CONTENT_PARAM_REST_MAX_BYTES}) — put the code in "
+                f"{where}, not in other fields"
             )
     else:
         budget = _TOOL_PARAM_BUDGETS.get(tool, _TOOL_PARAMS_MAX_BYTES)
         try:
             params_bytes = len(json.dumps(params).encode("utf-8"))
         except (TypeError, ValueError) as exc:
-            return None, [agent_text.message("request.params-not-json", exc=exc)]
+            return None, [f"toolRequest.params is not JSON-serializable: {exc}"]
         if params_bytes > budget:
-            errors.append(agent_text.message("request.params-too-big", params_bytes=params_bytes, budget=budget))
+            errors.append(f"toolRequest.params is {params_bytes} bytes (max {budget})")
     if errors:
         return None, errors
     return {"type": "toolRequest", "tool": tool, "params": params}, []
@@ -456,12 +451,12 @@ def _parse_dataset_candidates(raw: object) -> dict | None:
 def _field_error(where: str, value: object, max_chars: int) -> str | None:
     """A precise, model-correctable description of what is wrong, or None."""
     if not isinstance(value, str):
-        return agent_text.message("plan.field-not-string", where=where)
+        return f"{where} must be a string"
     text = value.strip()
     if not text:
-        return agent_text.message("plan.field-empty", where=where)
+        return f"{where} must not be empty"
     if len(text) > max_chars:
-        return agent_text.message("plan.field-too-long", where=where, count=len(text), max_chars=max_chars)
+        return f"{where} is {len(text)} chars (max {max_chars})"
     return None
 
 
@@ -473,10 +468,10 @@ def _parse_removal_list(
     if raw is None:
         return []
     if not isinstance(raw, list):
-        errors.append(agent_text.message("plan.removal-not-list", key=key))
+        errors.append(f"{key} must be a list of ids")
         return []
     if len(raw) > max_entries:
-        errors.append(agent_text.message("plan.removal-too-many", key=key, count=len(raw), max_entries=max_entries))
+        errors.append(f"{key} has {len(raw)} entries (max {max_entries})")
         return []
     out: list[str] = []
     seen: set[str] = set()
@@ -487,7 +482,7 @@ def _parse_removal_list(
             continue
         entry = str(value).strip()
         if entry in seen:
-            errors.append(agent_text.message("plan.removal-duplicate", key=key, i=i, entry=repr(entry)))
+            errors.append(f"{key}[{i}] duplicates {entry!r}")
             continue
         seen.add(entry)
         out.append(entry)
@@ -507,7 +502,7 @@ def _parse_dataflow_plan_verbose(raw: object) -> tuple[dict | None, list[str]]:
 
     errors: list[str] = []
     if not isinstance(raw, dict):
-        return None, [agent_text.message("plan.not-object")]
+        return None, ["dataflowPlan must be an object"]
     err = _field_error("goal", raw.get("goal"), _PLAN_GOAL_MAX_CHARS)
     if err:
         errors.append(err)
@@ -537,18 +532,19 @@ def _parse_dataflow_plan_verbose(raw: object) -> tuple[dict | None, list[str]]:
         # them. Refusing edge-only plans taught the model to invent filler
         # nodes "to make the plan valid".
         errors.append(
-            agent_text.message("plan.changes-nothing")
+            "the plan changes nothing — add nodes, add edges (existing node ids "
+            "allowed), make scenarios, or remove nodes/edges"
         )
         nodes_raw = []
     elif len(nodes_raw) > _PLAN_MAX_NODES:
-        errors.append(agent_text.message("plan.too-many-nodes", count=len(nodes_raw), max_nodes=_PLAN_MAX_NODES))
+        errors.append(f"nodes has {len(nodes_raw)} entries (max {_PLAN_MAX_NODES})")
         nodes_raw = []
     nodes: list[dict] = []
     refs: set[str] = set()
     for i, node_raw in enumerate(nodes_raw):
         where = f"nodes[{i}]"
         if not isinstance(node_raw, dict):
-            errors.append(agent_text.message("plan.node-not-object", where=where))
+            errors.append(f"{where} must be an object")
             continue
         node_errors = [
             e
@@ -565,7 +561,7 @@ def _parse_dataflow_plan_verbose(raw: object) -> tuple[dict | None, list[str]]:
             continue
         ref = str(node_raw["ref"]).strip()
         if ref in refs:
-            errors.append(agent_text.message("plan.ref-reused", where=where, ref=repr(ref)))
+            errors.append(f"{where}.ref {ref!r} is used by an earlier node — refs must be unique")
             continue
         refs.add(ref)
         node = {
@@ -588,13 +584,10 @@ def _parse_dataflow_plan_verbose(raw: object) -> tuple[dict | None, list[str]]:
         node_content = node_raw.get("content")
         if node_content is not None:
             if not isinstance(node_content, str):
-                errors.append(agent_text.message("plan.node-content-not-string", where=where))
+                errors.append(f"{where}.content must be a string")
             elif len(node_content) > PROPOSAL_CONTENT_MAX_CHARS:
                 errors.append(
-                    agent_text.message(
-                        "plan.node-content-too-long", where=where, count=len(node_content),
-                        proposal_content_max_chars=PROPOSAL_CONTENT_MAX_CHARS,
-                    )
+                    f"{where}.content is {len(node_content)} chars (max {PROPOSAL_CONTENT_MAX_CHARS})"
                 )
             else:
                 node["content"] = node_content
@@ -617,10 +610,10 @@ def _parse_dataflow_plan_verbose(raw: object) -> tuple[dict | None, list[str]]:
     plan["nodes"] = nodes
     edges_raw = raw.get("edges", [])
     if not isinstance(edges_raw, list):
-        errors.append(agent_text.message("plan.edges-not-list"))
+        errors.append("edges must be a list")
         edges_raw = []
     elif len(edges_raw) > _PLAN_MAX_EDGES:
-        errors.append(agent_text.message("plan.too-many-edges", count=len(edges_raw), max_edges=_PLAN_MAX_EDGES))
+        errors.append(f"edges has {len(edges_raw)} entries (max {_PLAN_MAX_EDGES})")
         edges_raw = []
     edges: list[dict] = []
     seen_edges: set[tuple[str, str, str, str]] = set()
@@ -628,7 +621,7 @@ def _parse_dataflow_plan_verbose(raw: object) -> tuple[dict | None, list[str]]:
     for i, edge_raw in enumerate(edges_raw):
         where = f"edges[{i}]"
         if not isinstance(edge_raw, dict):
-            errors.append(agent_text.message("plan.edge-not-object", where=where))
+            errors.append(f"{where} must be an object")
             continue
         src, dst = edge_raw.get("from"), edge_raw.get("to")
         endpoint_errors = []
@@ -641,7 +634,7 @@ def _parse_dataflow_plan_verbose(raw: object) -> tuple[dict | None, list[str]]:
                 endpoint_errors.append(err)
             elif str(value).strip() in removed:
                 endpoint_errors.append(
-                    agent_text.message("plan.edge-endpoint-removed", where=where, label=label, value=repr(value))
+                    f"{where}.{label} references {value!r}, which this plan removes"
                 )
         if endpoint_errors:
             errors.extend(endpoint_errors)
@@ -660,21 +653,19 @@ def _parse_dataflow_plan_verbose(raw: object) -> tuple[dict | None, list[str]]:
             kind_norm = str(kind_raw).strip().lower()
             if kind_norm not in PLAN_EDGE_KINDS:
                 errors.append(
-                    agent_text.message(
-                        "plan.edge-kind-unknown", where=where, kind_raw=repr(kind_raw),
-                        plan_edge_kinds=", ".join(repr(k) for k in PLAN_EDGE_KINDS),
-                    )
+                    f"{where}.kind {kind_raw!r} is not one of "
+                    + ", ".join(repr(k) for k in PLAN_EDGE_KINDS)
                 )
                 continue
             kind = kind_norm
         if kind == "interaction" and to_handle:
             errors.append(
-                agent_text.message("plan.interaction-edge-to-handle", where=where)
+                f"{where}: an interaction edge has no input circle: drop toHandle"
             )
             continue
         src, dst = str(src).strip(), str(dst).strip()
         if src == dst:
-            errors.append(agent_text.message("plan.edge-to-itself", where=where, src=repr(src)))
+            errors.append(f"{where} connects {src!r} to itself")
             continue
         # dev/125: the duplicate key includes the KIND. dev/112 §6 decided a
         # (from,to) pair was a duplicate whatever its kind; the shipped corpus
@@ -691,10 +682,8 @@ def _parse_dataflow_plan_verbose(raw: object) -> tuple[dict | None, list[str]]:
         edge_key = (src, dst, kind, to_handle or "")
         if edge_key in seen_edges:
             errors.append(
-                agent_text.message(
-                    "plan.edge-duplicate", where=where, src=repr(src), dst=repr(dst), kind=kind,
-                    on_handle=f" on {to_handle!r}" if to_handle else "",
-                )
+                f"{where} duplicates an earlier {src!r}→{dst!r} {kind} edge"
+                + (f" on {to_handle!r}" if to_handle else "")
             )
             continue
         seen_edges.add(edge_key)
@@ -714,10 +703,8 @@ def _parse_dataflow_plan_verbose(raw: object) -> tuple[dict | None, list[str]]:
         ))
         if len(plan["nodes"]) > _PLAN_MAX_NODES or len(plan["edges"]) > _PLAN_MAX_EDGES:
             errors.append(
-                agent_text.message(
-                    "plan.too-big-with-copies", nodes=len(plan['nodes']), edges=len(plan['edges']),
-                    max_nodes=_PLAN_MAX_NODES, max_edges=_PLAN_MAX_EDGES,
-                )
+                f"with its copies the plan has {len(plan['nodes'])} nodes and "
+                f"{len(plan['edges'])} edges (max {_PLAN_MAX_NODES} and {_PLAN_MAX_EDGES})"
             )
     # dev/59: keys present only when used — additive plans stay byte-identical.
     if remove_nodes:
@@ -740,7 +727,7 @@ def _plan_node_widgets(node: dict, raw: object, where: str) -> list[str]:
     if problems:
         return problems
     if node["nodeType"].split("@", 1)[0] == PARAMETER_TYPE and len(widgets) != 1:
-        return [agent_text.message("plan.parameter-one-widget", where=where)]
+        return [f"{where} is a Parameter node, which holds exactly one widget: give it in widgets"]
     if widgets:
         node["widgets"] = widgets
     return []
@@ -846,7 +833,7 @@ def plan_tail_diagnosis(tail_body: str | None) -> list[str] | None:
     try:
         payload = json.loads(tail_body)
     except (ValueError, TypeError) as exc:
-        return [agent_text.message("plan.block-not-json", exc=exc)]
+        return [f"the block is not valid JSON: {exc}"]
     if not isinstance(payload, dict) or "dataflowPlan" not in payload:
         return None
     _, errors = _parse_dataflow_plan_verbose(payload["dataflowPlan"])
@@ -867,7 +854,7 @@ def tool_tail_diagnosis(tail_body: str | None) -> list[str] | None:
     try:
         payload = json.loads(tail_body)
     except (ValueError, TypeError) as exc:
-        return [agent_text.message("request.block-not-json", exc=exc)]
+        return [f"the block is not valid JSON: {exc}"]
     if not isinstance(payload, dict) or "toolRequest" not in payload:
         return None
     _, errors = parse_tool_request_verbose(payload["toolRequest"])
@@ -922,13 +909,13 @@ def parse_delegate_request_verbose(raw: object) -> tuple[dict | None, list[str]]
     sibling :func:`parse_tool_request_verbose` has for tools. A native
     ``delegate`` call reads the errors back; a fenced block fails open."""
     if not isinstance(raw, dict):
-        return None, [agent_text.message("request.delegate-not-object")]
+        return None, ["the delegate request must be an object"]
     capability = raw.get("capability")
     if not (isinstance(capability, str) and _TOOL_ID_RE.match(capability)):
-        return None, [agent_text.message("request.delegate-capability-not-an-id")]
+        return None, ["capability must be a capability id like node.content.generate"]
     inputs = raw.get("inputs", {})
     if not isinstance(inputs, dict):
-        return None, [agent_text.message("request.delegate-inputs-not-object")]
+        return None, ["inputs must be an object"]
     budget = (
         PLAN_TAIL_MAX_BYTES  # dev/90 A6: authoring inputs = a look spec + findings
         if capability in PACKAGE_AUTHORING_CAPABILITIES
@@ -937,9 +924,9 @@ def parse_delegate_request_verbose(raw: object) -> tuple[dict | None, list[str]]
     try:
         size = len(json.dumps(inputs).encode("utf-8"))
     except (TypeError, ValueError) as exc:
-        return None, [agent_text.message("request.delegate-inputs-not-json", exc=exc)]
+        return None, [f"inputs is not JSON-serializable: {exc}"]
     if size > budget:
-        return None, [agent_text.message("request.delegate-inputs-too-big", size=size, budget=budget)]
+        return None, [f"inputs is {size} bytes (max {budget})"]
     return {"type": "delegateRequest", "capability": capability, "inputs": inputs}, []
 
 

@@ -31,7 +31,6 @@ on eight example fixtures rather than as a wrong score.
 from __future__ import annotations
 
 from utk_curio.backend.app.agents.domain.contracts import AUTK_TEMPLATE, EDIT_FEATURES_TEMPLATE
-from utk_curio.backend.app.agents.domain import agent_text
 
 INTERACTION_EDGE_TYPE = "Interaction"
 #: The Map Edits node, linked by an interaction edge to an Autark map it
@@ -246,18 +245,15 @@ def interaction_edge_errors(plan: dict, type_of_endpoint, templates: dict, data_
             other_type = dst if src == EDITOR_TEMPLATE else src
             if other_type != MAP_TEMPLATE:
                 errors.append(
-                    agent_text.message(
-                        "topology.edit-features-other-node", i=i, editor_type=template_suffix(EDITOR_TEMPLATE),
-                        map_type=template_suffix(MAP_TEMPLATE), other=repr(other),
-                        other_type=template_suffix(other_type) or 'untyped',
-                    )
+                    f"edges[{i}]: an interaction edge joins the {template_suffix(EDITOR_TEMPLATE)} node to an "
+                    f"{template_suffix(MAP_TEMPLATE)} map it feeds, and to no other node; {other!r} is "
+                    f"{template_suffix(other_type) or 'untyped'}: use a data edge"
                 )
             elif (str(editor), str(other)) not in fed:
                 errors.append(
-                    agent_text.message(
-                        "topology.edit-features-not-fed", i=i, editor_type=template_suffix(EDITOR_TEMPLATE),
-                        map_type=template_suffix(MAP_TEMPLATE), editor=repr(editor), other=repr(other),
-                    )
+                    f"edges[{i}]: an interaction edge joins the {template_suffix(EDITOR_TEMPLATE)} node to an "
+                    f"{template_suffix(MAP_TEMPLATE)} map it feeds, and {editor!r} does not feed {other!r}: add a "
+                    f"data edge from {editor!r} to {other!r}, or link {editor!r} to the map it feeds"
                 )
             continue
         if (src in pools and dst in (pools | visualizations)) or (dst in pools and src in visualizations):
@@ -267,11 +263,10 @@ def interaction_edge_errors(plan: dict, type_of_endpoint, templates: dict, data_
         offender = edge["to"] if dst not in pools | visualizations else edge["from"]
         offender_sfx = template_suffix(dst if offender == edge["to"] else src)
         errors.append(
-            agent_text.message(
-                "topology.interaction-edge-refused", i=i,
-                highlighters=', '.join(sorted(template_suffix(t) for t in highlighters)),
-                views=', '.join(sorted(template_suffix(t) for t in visualizations)), pool_names=pool_names,
-                offender=repr(offender), offender_type=offender_sfx or 'untyped',
-            )
+            f"edges[{i}]: an interaction edge links two views when one of them highlights "
+            f"what it receives ({', '.join(sorted(template_suffix(t) for t in highlighters))}), "
+            f"or links a view ({', '.join(sorted(template_suffix(t) for t in visualizations))}) "
+            f"or a {pool_names} to a {pool_names}; {offender!r} is {offender_sfx or 'untyped'}: "
+            f"use a data edge, or end the interaction edge at a view that highlights or at a {pool_names}"
         )
     return errors

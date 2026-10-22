@@ -318,7 +318,7 @@ class TestANativeCall:
         assert body["reply"] == "Enough."
         assert [o["toolChoice"] for o in _offered()] == ["auto"] * tool_rounds.MAX_TOOL_ROUNDS + ["none"]
         last_result = _run_calls()[-1][-1]
-        assert last_result["content"].endswith("\n" + agent_text.message("tool-round.final-round"))
+        assert last_result["content"].endswith(tool_rounds._FINAL_ROUND_NOTE)
 
     def test_a_fenced_block_in_a_native_run_is_answered_in_kind(self, client, headers, project):
         att = _attach(client, headers, project, CHAT)

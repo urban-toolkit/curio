@@ -28,7 +28,6 @@ from utk_curio.backend.app.execution.workflow_spec import slot_handle_id
 from utk_curio.backend.app.agents.application.proposals import plan_scenarios
 from utk_curio.backend.app.agents.application.proposals import store as agents_store
 from utk_curio.backend.app.projects import storage as projects_storage
-from utk_curio.backend.app.agents.domain import agent_text
 
 log = logging.getLogger(__name__)
 
@@ -166,29 +165,27 @@ def _validate_plan_fanin(
             continue
         src_list = ", ".join(repr(s) for s in sources[:4])
         existing_note = (
-            " " + agent_text.message(
-                "plan.fanin-existing-note", existing_count=existing_count, s='s' if existing_count != 1 else '',
-            )
+            f" (plus {existing_count} existing connection"
+            f"{'s' if existing_count != 1 else ''})"
             if existing_count
             else ""
         )
         if max_in == 0:
             errors.append(
-                agent_text.message("plan.fanin-no-inputs", label=repr(label), node_type=node_type, src_list=src_list)
+                f"target {label!r} ({node_type}) accepts no inputs — remove the "
+                f"edge(s) from {src_list}"
             )
         elif max_in == 1:
             errors.append(
-                agent_text.message(
-                    "plan.fanin-single-input", label=repr(label), node_type=node_type, total=total,
-                    existing_note=existing_note, src_list=src_list,
-                )
+                f"target {label!r} ({node_type}) accepts 1 input but the plan wires "
+                f"{total}{existing_note}: wire {src_list} into one node that takes "
+                "several inputs (a code step that combines them), and connect that "
+                "node to the target"
             )
         else:
             errors.append(
-                agent_text.message(
-                    "plan.fanin-too-many-inputs", label=repr(label), node_type=node_type, max_inputs=max_in,
-                    total=total, existing_note=existing_note,
-                )
+                f"target {label!r} ({node_type}) accepts at most {max_in} inputs "
+                f"but the plan wires {total}{existing_note}: reduce the fan-in"
             )
     for i, edge in enumerate(plan.get("edges", [])):
         handle = edge.get("toHandle")
@@ -208,7 +205,7 @@ def _validate_plan_fanin(
         index = _circle_index(handle)
         if index < 0 or (max_in is not None and index >= max_in):
             errors.append(
-                agent_text.message("plan.handle-invalid", i=i, handle=repr(handle), circles=_circle_names(max_in))
+                f"edges[{i}].toHandle {handle!r}: this node's inputs are {_circle_names(max_in)}"
             )
     return errors
 
@@ -267,7 +264,7 @@ def _mint_dataflow_plan(
 
     session_id = loop_ctx.get("session_id")
     if not isinstance(session_id, str):
-        return "refused", agent_text.message("plan.no-conversation"), None
+        return "refused", "proposals need a persistent conversation", None
     # dev/67-5: plans describe intent — generated code never rides a plan.
     # There is no "trivial code" shortcut (67-0): every node's content is
     # produced and validated per node after creation. Supersedes dev/52's
@@ -276,13 +273,15 @@ def _mint_dataflow_plan(
     if content_refs:
         return (
             "refused",
-            agent_text.message("plan.nodes-carry-content", content_refs=', '.join(repr(r) for r in content_refs)),
+            "plan nodes must not carry content — plans describe intent; node "
+            "content is generated and validated per node after creation. "
+            f"Remove the content from: {', '.join(repr(r) for r in content_refs)}",
             None,
         )
     try:
         available = {t["id"]: t for t in packages_services.available_templates(user_key, project_id)}
     except Exception as exc:
-        return "refused", agent_text.message("mint.template-registry-unavailable", exc=exc), None
+        return "refused", f"the node template registry is unavailable: {exc}", None
     # dev/93 D3: the ONE availability gate, shared with node.create — a plan
     # may name any available template (a plan places a typed PLACEHOLDER whose
     # content arrives later from Solve), hence require_authorable=False. The
@@ -302,16 +301,16 @@ def _mint_dataflow_plan(
     )
     for node, (entry, err) in zip(plan["nodes"], outcomes):
         if entry is None:
-            return "refused", agent_text.message("plan.node-problem", ref=repr(node['ref']), problem=err), None
+            return "refused", f"plan node {node['ref']!r}: {err}", None
     setting_errors = spatial_join_settings.plan_problems(
         plan["nodes"], [entry for entry, _err in outcomes],
         lambda node_type: packages_services.template_behavior(user_key, project_id, node_type),
     )
     if setting_errors:
-        return "refused", "\n- ".join([agent_text.message("plan.spatial-join-invalid")] + setting_errors), None
+        return "refused", "\n- ".join(["the plan's Spatial Join settings are invalid:"] + setting_errors), None
     spec = projects_storage.read_spec(user_key, project_id)
     if spec is None:
-        return "refused", agent_text.message("mint.no-saved-spec"), None
+        return "refused", "no saved project spec is available", None
     # Revision validation against the saved spec (dev/59): removal targets and
     # existing-id edge endpoints must be real; the grammar could only check
     # shape. Errors feed the same correction rounds as every plan failure.
@@ -325,14 +324,14 @@ def _mint_dataflow_plan(
     remove_edges = plan.get("removeEdges", [])
     revision_errors = _plan_revision_errors(plan, existing_nodes, existing_edges)
     if revision_errors:
-        return "refused", "\n- ".join([agent_text.message("plan.revision-targets-invalid")] + revision_errors), None
+        return "refused", "\n- ".join(["the plan's revision targets are invalid:"] + revision_errors), None
     remove_node_set = set(remove_nodes)
     # #662: widgets and scenarios against the saved dataflow; each scenario
     # takes its color here, so the review card shows it.
     scenarios = plan_scenarios.existing_scenarios(spec)
     scenario_errors = plan_scenarios.mint_errors(plan, available, existing_nodes, scenarios, remove_node_set)
     if scenario_errors:
-        return "refused", "\n- ".join([agent_text.message("plan.widgets-scenarios-invalid")] + scenario_errors), None
+        return "refused", "\n- ".join(["the plan's widgets or scenarios are invalid:"] + scenario_errors), None
     plan_scenarios.assign_colors(plan, scenarios)
     # dev/67-3 (DEC-051): fan-in validates BEFORE anything materializes — an
     # invalid multi-input topology is unmintable, and the corrective error
@@ -342,7 +341,7 @@ def _mint_dataflow_plan(
         remove_node_set, set(remove_edges),
     )
     if fanin_errors:
-        return "refused", "\n- ".join([agent_text.message("plan.fanin-invalid")] + fanin_errors), None
+        return "refused", "\n- ".join(["the plan wires invalid fan-in:"] + fanin_errors), None
     refusal = _plan_topology_refusal(plan, existing_nodes, existing_edges, available, remove_node_set, remove_edges)
     if refusal:
         return "refused", refusal, None
@@ -394,12 +393,13 @@ def _plan_revision_errors(plan: dict, existing_nodes: dict, existing_edges: list
     for node_id in remove_nodes:
         if node_id not in existing_nodes:
             revision_errors.append(
-                agent_text.message("plan.remove-node-unknown", node_id=repr(node_id))
+                f"removeNodes: {node_id!r} is not a node in the saved dataflow — "
+                "use real node ids (dataflow.read shows them)"
             )
     for edge_id in remove_edges:
         if edge_id not in existing_edge_ids:
             revision_errors.append(
-                agent_text.message("plan.remove-edge-unknown", edge_id=repr(edge_id))
+                f"removeEdges: {edge_id!r} is not an edge in the saved dataflow"
             )
     plan_refs = {n["ref"] for n in plan["nodes"]}
     for i, edge in enumerate(plan["edges"]):
@@ -407,7 +407,8 @@ def _plan_revision_errors(plan: dict, existing_nodes: dict, existing_edges: list
             endpoint = edge[label]
             if endpoint not in plan_refs and endpoint not in existing_nodes:
                 revision_errors.append(
-                    agent_text.message("plan.edge-endpoint-unknown", i=i, label=label, endpoint=repr(endpoint))
+                    f"edges[{i}].{label} {endpoint!r} is neither a plan ref nor an "
+                    "existing node id"
                 )
     return revision_errors
 
@@ -440,23 +441,22 @@ def _plan_topology_refusal(plan: dict, existing_nodes: dict, existing_edges: lis
     # A Map Edits node's link is to a map it feeds once the plan applies.
     kind_errors = plan_topology.interaction_edge_errors(plan, _type_of_endpoint, available, net_pairs)
     if kind_errors:
-        return "\n- ".join([agent_text.message("plan.interaction-edges-invalid")] + kind_errors)
+        return "\n- ".join(["the plan wires invalid interaction edges:"] + kind_errors)
     closing = plan_topology.closing_plan_edges(net_pairs, plan)
     if closing:
         def _label(node_id: str) -> str:
             return _plan_endpoint_label(node_id, plan, existing_nodes)
         cycle_errors = [
-            agent_text.message(
-                "plan.edge-closes-cycle", source=repr(_label(u)), target=repr(_label(v)),
-                cycle=plan_topology.format_cycle(path, _label),
-            )
+            f"edge {_label(u)!r} → {_label(v)!r} closes a cycle: "
+            + plan_topology.format_cycle(path, _label)
             for u, v, path in closing[:5]
         ]
         return "\n- ".join(
-                [agent_text.message("plan.creates-cycle")]
+                ["the plan creates a cycle in the dataflow (data edges must form a DAG):"]
                 + cycle_errors
                 + [
-                    agent_text.message("plan.cycle-remedy")
+                    "remove one data edge of the loop, or, where it should carry selections "
+                    "between two views, make that edge \"kind\": \"interaction\""
                 ]
         )
     return None

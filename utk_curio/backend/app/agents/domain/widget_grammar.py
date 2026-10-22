@@ -23,7 +23,6 @@ from utk_curio.backend.app.execution.code_references import (
     normalize_widgets,
     widget_with_default,
 )
-from utk_curio.backend.app.agents.domain import agent_text
 
 #: The keys a widget has, in the order a node stores them.
 WIDGET_KEYS = ("name", "type", "label", "default", "value", "options")
@@ -48,58 +47,52 @@ def _size_problem(value: object, where: str) -> str | None:
     try:
         text = json.dumps(value, ensure_ascii=False, allow_nan=False)
     except (TypeError, ValueError):
-        return agent_text.message("widget.value-not-json", where=where)
+        return f"{where} is not a JSON value"
     if len(text) > _VALUE_MAX_CHARS:
-        return agent_text.message(
-            "widget.value-too-long", where=where, count=len(text), value_max_chars=_VALUE_MAX_CHARS,
-        )
+        return f"{where} is {len(text)} chars as JSON (max {_VALUE_MAX_CHARS})"
     return None
 
 
 def _options_problems(options: object, where: str) -> list[str]:
     if not isinstance(options, dict):
-        return [agent_text.message("widget.options-not-object", where=where)]
+        return [f"{where} must be an object"]
     problems = []
     unknown = sorted(set(options) - set(OPTION_KEYS))
     if unknown:
-        problems.append(agent_text.message(
-            "widget.options-unknown-keys", where=where, unknown=', '.join(unknown), option_keys=', '.join(OPTION_KEYS),
-        ))
+        problems.append(f"{where} has keys a widget's options do not: {', '.join(unknown)} "
+                        f"(they are {', '.join(OPTION_KEYS)})")
     choices = options.get("choices")
     if choices is not None and (
         not isinstance(choices, list) or len(choices) > _CHOICES_MAX
         or not all(isinstance(c, str) and len(c) <= _TEXT_MAX_CHARS for c in choices)
     ):
-        problems.append(agent_text.message("widget.choices-shape", where=where, choices_max=_CHOICES_MAX))
+        problems.append(f"{where}.choices must be a list of up to {_CHOICES_MAX} texts")
     if options.get("display") is not None and options["display"] not in CHOICE_DISPLAYS:
-        problems.append(agent_text.message(
-            "widget.display-choice", where=where, choice_displays=', '.join(CHOICE_DISPLAYS),
-        ))
+        problems.append(f"{where}.display must be one of {', '.join(CHOICE_DISPLAYS)}")
     for key in ("min", "max", "step"):
         if options.get(key) is not None and not _number(options[key]):
-            problems.append(agent_text.message("widget.option-not-number", where=where, key=key))
+            problems.append(f"{where}.{key} must be a number")
     units = options.get("units")
     if units is not None and (not isinstance(units, str) or len(units) > _UNITS_MAX_CHARS):
-        problems.append(agent_text.message("widget.units-shape", where=where, units_max_chars=_UNITS_MAX_CHARS))
+        problems.append(f"{where}.units must be a text of up to {_UNITS_MAX_CHARS} chars")
     return problems
 
 
 def _shape_problems(entry: object, where: str) -> list[str]:
     """What keeps *entry* from being read as a widget at all."""
     if not isinstance(entry, dict):
-        return [agent_text.message("widget.not-object", where=where)]
+        return [f"{where} must be an object"]
     problems = []
     unknown = sorted(set(entry) - set(WIDGET_KEYS))
     if unknown:
-        problems.append(agent_text.message(
-            "widget.unknown-keys", where=where, unknown=', '.join(unknown), widget_keys=', '.join(WIDGET_KEYS),
-        ))
+        problems.append(f"{where} has keys a widget does not: {', '.join(unknown)} "
+                        f"(a widget has {', '.join(WIDGET_KEYS)})")
     for key in ("name", "type"):
         if not isinstance(entry.get(key), str):
-            problems.append(agent_text.message("widget.field-not-text", where=where, key=key))
+            problems.append(f"{where}.{key} must be a text")
     label = entry.get("label")
     if label is not None and (not isinstance(label, str) or len(label) > _TEXT_MAX_CHARS):
-        problems.append(agent_text.message("widget.label-shape", where=where, text_max_chars=_TEXT_MAX_CHARS))
+        problems.append(f"{where}.label must be a text of up to {_TEXT_MAX_CHARS} chars")
     if entry.get("options") is not None:
         problems.extend(_options_problems(entry["options"], f"{where}.options"))
     for key in ("default", "value"):
@@ -127,9 +120,9 @@ def parse_widgets(raw: object, where: str) -> tuple[list[dict], list[str]]:
     if raw is None:
         return [], []
     if not isinstance(raw, list):
-        return [], [agent_text.message("widget.not-list", where=where)]
+        return [], [f"{where} must be a list of widgets"]
     if len(raw) > MAX_WIDGETS:
-        return [], [agent_text.message("widget.too-many", where=where, count=len(raw), max_widgets=MAX_WIDGETS)]
+        return [], [f"{where} has {len(raw)} widgets (max {MAX_WIDGETS})"]
     problems: list[str] = []
     kept: list[dict] = []
     for index, entry in enumerate(raw):

@@ -29,7 +29,6 @@ from utk_curio.backend.app.agents.domain import document_validation
 from utk_curio.backend.app.datasets.domain.code_refs import dataset_ids_in_code
 from utk_curio.backend.app.execution import workflow_spec
 from utk_curio.backend.app.projects import storage as projects_storage
-from utk_curio.backend.app.agents.domain import agent_text
 
 log = logging.getLogger(__name__)
 
@@ -449,6 +448,15 @@ def _run_egress_budget(loop_ctx: dict) -> "egress.CallBudget":
     return budget
 
 
+#: dev/114: the text a same-run node.create/insert gets after the runtime
+#: minted dataset candidates — the user reviews first (DEC-006).
+_CANDIDATES_PENDING_TEXT = (
+    "dataset candidates are shown to the user for review — do not propose a "
+    "node in this turn; end your reply by asking the user to select and "
+    "confirm a source, then build from the confirmed one on the next turn"
+)
+
+
 def _catalog_grounding_refs(project_id: str) -> tuple[dict, dict]:
     """dev/114: ``(by_path, by_id)`` — the datasets the datasets domain lists
     for this project, the SAME listing ``catalog.search`` serves, so a row the
@@ -576,7 +584,7 @@ def _grounding_context(
         if budget.exhausted:
             return {
                 "status": "unverified",
-                "detail": agent_text.message("grounding.probe-budget-spent"),
+                "detail": "the egress budget was spent before this URL — not checked",
             }
         if keyed:
             # dev/116: a probe carrying a connection key is evidence for ONE
@@ -597,23 +605,21 @@ def _grounding_context(
 
     hints: list[str] = []
     if "catalog.search" in (loop_ctx.get("granted") or []):
-        hints.append(agent_text.message("grounding.hint-catalog-search"))
+        hints.append("a `path` from a catalog.search row (granted — search first)")
     if _delegates_discovery(user_key, project_id, loop_ctx.get("manifest")):
         hints.append(
-            agent_text.message("grounding.hint-discover")
+            "a URL the runtime verified — delegate the dataset.discover capability "
+            "to find and verify candidates first, then build from the one the user confirms"
         )
     elif verified:
-        hints.append(agent_text.message("grounding.hint-verified-url"))
+        hints.append("a URL already verified in this conversation")
     hints.append(
-        agent_text.message("grounding.hint-synthetic")
+        "data made up in the code, ONLY when the user asked for made-up data in their own words"
     )
     if secrets:
         hints.append(
-            agent_text.message(
-                "grounding.hint-connection-key",
-                use_lines="; ".join(
+            "a saved connection key by name — " + "; ".join(
                 ref.use_line for ref in list(secrets.values())[:6]
-            ),
             )
         )
     secret_values = _exec_secrets_resolver(user_key)
@@ -792,13 +798,29 @@ def _source_grounding_inputs(ctx: "source_grounding.GroundingContext") -> dict:
         "verifiedUrls": sorted(ctx.verified_urls)[:24],
         "availableSecrets": secrets,
         "syntheticRequested": bool(ctx.synthetic_requested),
-        "rule": agent_text.message(
-            "grounding.source-rule",
-            keyed_host=" " + agent_text.message("grounding.source-rule-keyed-host")
+        "rule": (
+            "Load catalog datasets ONLY through their `use` line "
+            "(curio_data_path(\"<id>\") — the sandbox resolves it), open ONLY the "
+            "local paths listed (catalogDatasets[].path or userPaths), and fetch ONLY "
+            "these URLs (verifiedUrls). Never invent a filename, never "
+            "assume a file exists, never write a URL from memory — the runtime "
+            "refuses ungrounded content. If none of these fits the intent, return "
+            "a one-line explanation of what source is missing instead of code."
+            + (
+                " A key-gated host is reachable ONLY through a saved connection key: "
+                "copy its `use` line (curio_secret(\"<name>\") — the sandbox resolves "
+                "it) and send the value the way `delivery` says (query:<param> / "
+                "header:<Name> / code = as the API documents). Never write a key "
+                "value into the code; if the host needs a key and availableSecrets "
+                "lists none for it, return the one-line explanation naming the host."
                 if secrets else
-                " " + agent_text.message("grounding.source-rule-no-key"),
-            synthetic=" " + agent_text.message("grounding.source-rule-synthetic")
-                if ctx.synthetic_requested else "",
+                " A key-gated host has no saved connection key here: do not invent one — "
+                "return the one-line explanation naming the host that needs a key."
+            )
+            + (
+                " The user asked for synthetic data: build it inline and say so."
+                if ctx.synthetic_requested else ""
+            )
         ),
     }
 
