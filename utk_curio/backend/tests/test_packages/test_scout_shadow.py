@@ -158,9 +158,9 @@ MAX_MEDIAN_MINUTES = 0.05
 
 #: The buildings SCOUT's second scenario removes (the dataset's manifest names them).
 REMOVED_IDS = [8, 10, 12, 13, 14, 18, 19, 31, 34, 51, 66, 77, 82, 106, 122]
-#: The Interaction node (#662, #958; its type is still the Edit Features node's).
+#: The Map Edits node (#662, #958; its type id is still the Edit Features node's).
 INTERACTION_TYPE = "curio.builtin/edit-features"
-#: Towers removed's Interaction node, its edit log: one removal of those
+#: Towers removed's Map Edits node, its edits: one removal of those
 #: buildings, matched on building_id, under a label.
 TOWERS_LOG = {
     "key": "building_id",
@@ -1252,7 +1252,7 @@ def test_example_24_feeds_the_rasterizers_one_raster_to_the_node_and_the_mask():
 
 def test_the_two_scenarios_are_scouts_two_building_sets(tmp_path):
     """"Existing" rasterizes the shipped buildings, SCOUT's A. "Towers removed"
-    reads them through its Interaction node, its lever: the node's code, its
+    reads them through its Map Edits node, its lever: the node's code, its
     only state, is the code the node writes from an edit log of one removal,
     labelled, of the 15 buildings SCOUT's B leaves out, matched on
     building_id, and no metadata key holds that log too. Run as the node

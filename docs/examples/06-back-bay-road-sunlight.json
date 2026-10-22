@@ -189,7 +189,7 @@
         "content": "{\n  \"map\": {\n    \"layerRefs\": [\n      {\n        \"dataRef\": \"table_osm_buildings\",\n        \"isPick\": true,\n        \"selectFields\": [\n          \"building_id\"\n        ],\n        \"isColorMap\": true,\n        \"getFnv\": \"height\",\n        \"getFnvType\": \"quantitative\",\n        \"colorMapInterpolator\": \"interpolateViridis\",\n        \"colorMapRange\": [\n          0,\n          250\n        ],\n        \"title\": \"Building height (m)\"\n      }\n    ]\n  }\n}",
         "out": "DEFAULT",
         "in": "DEFAULT",
-        "goal": "Draw the buildings Two towers removed's Interaction node hands on, coloured by height. The two are linked, so a building picked on this map is picked in the Interaction node.",
+        "goal": "Draw the buildings Two towers removed's Map Edits node hands on, coloured by height. The two are linked, so a building picked on this map is picked in the Map Edits node.",
         "metadata": {
           "keywords": []
         }

@@ -59,7 +59,7 @@ class TestCompleteness:
         # and the 28 test dataflows (#662 added scenarios, quad-cities-flood-vulnerability,
         # chicago-loop-shadow-towers, chicago-rain-wind-routing and netcdf-hourly-rain, the plan for #914
         # lower-manhattan-park-shade, and komar41's #914 the scenario
-        # comparison charts, and chicago-loop-layers for the Interaction node).
+        # comparison charts, and chicago-loop-layers for the Map Edits node).
         assert len(fixtures) == 55
 
     def test_fixture_ids_are_unique(self):

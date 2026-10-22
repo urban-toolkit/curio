@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Write the chicago-loop-layers example: one Autark map of downtown Chicago with
-a layer of every kind an Autark map draws, for an Interaction node to edit.
+a layer of every kind an Autark map draws, for a Map Edits node to edit.
 
 The layers come from two places:
 
@@ -21,7 +21,7 @@ kind of layer; the Autark node's layers carry their own types.
     python scripts/build_example_chicago_loop_layers.py
 
 The layers go Data → Interaction → map on data edges: the five data nodes feed
-the Interaction node, one per circle (CIRCLES), and it feeds the map, handing
+the Map Edits node, one per circle (CIRCLES), and it feeds the map, handing
 on every layer under its name. A loader's layer has no name of its own, so it
 is named after its circle (input_0, input_2, ...); the Autark node's layers
 keep their tables' names (table_osm_parks, ...). The map reads each with a
@@ -59,7 +59,7 @@ BOX = [-87.662, 41.859, -87.613, 41.898]
 #: The OpenStreetMap load's name: its layers are the tables <name>_<layer>.
 OSM_TABLE = "table_osm"
 OSM_LAYERS = ["parks", "water", "roads", "buildings"]
-#: The Interaction node's circles, in order: the node that feeds each.
+#: The Map Edits node's circles, in order: the node that feeds each.
 CIRCLES = ["tracts", "osm", "cta_lines", "trees", "cta_stations"]
 
 
@@ -79,7 +79,7 @@ def loader(part: str, layer_type: str, intro: str, extra: str = "") -> str:
 
 
 def layer(key: str) -> str:
-    """The map's chip for a layer the Interaction node hands on: a loader's
+    """The map's chip for a layer the Map Edits node hands on: a loader's
     layer is named after its circle on the node (input_<k>), and each of the
     Autark node's layers after its table (table_osm_parks)."""
     name = f"{OSM_TABLE}_{key}" if key in OSM_LAYERS else f"input_{CIRCLES.index(key)}"
@@ -87,7 +87,7 @@ def layer(key: str) -> str:
 
 
 def interaction_code(circles: int) -> str:
-    """The Interaction node's code with no edits yet, fed by *circles* inputs:
+    """The Map Edits node's code with no edits yet, fed by *circles* inputs:
     what ``editFeaturesCode(undefined, circles)`` writes (``editFeatures.ts``)."""
     return (
         "# Edit Features writes this code from its edit list: each edit, in the\n"
@@ -180,7 +180,7 @@ NODES = [
 ]
 #: source key, target key, input circle
 EDGES = [(key, "interaction", k) for k, key in enumerate(CIRCLES)] + [("interaction", "loop_map", 0)]
-#: The interaction edges, both ways: the Interaction node and the map it edits on.
+#: The interaction edges, both ways: the Map Edits node and the map it edits on.
 LINKS = [("interaction", "loop_map")]
 
 

@@ -15,12 +15,12 @@ context:
   within the Distance from a park (a Parameter, 75 m) of any park;
 - the Season Parameter, which every Accumulated Shadow reads.
 
-Three scenarios: Existing; Towers removed, whose Interaction node removes the
-marked parts; and Height cap, whose Interaction node cuts them down to the
+Three scenarios: Existing; Towers removed, whose Map Edits node removes the
+marked parts; and Height cap, whose Map Edits node cuts them down to the
 Tall building height. Each rasterizes its buildings
 (``curio.scout@1``), runs Deep Umbra on them
 (``model.scout.deep-umbra@1``), measures the shade in each park, and draws its
-buildings in 3D and its shadow on Autark maps; each what-if's Interaction node
+buildings in 3D and its shadow on Autark maps; each what-if's Map Edits node
 is linked to its buildings map, which it edits on. Scout's Dots with a range
 charts each park's mean minutes of shadow in the three scenarios, and for
 each what-if a Raster Calculator (``curio.scout@1``) takes the change in
@@ -172,7 +172,7 @@ MEANS = {
     },
 }
 
-#: The code each Interaction node writes from its edit log (editFeaturesCode).
+#: The code each Map Edits node writes from its edits (editFeaturesCode).
 EDIT_NOTE = (
     "# Edit Features writes this code from its edit list: each edit, in the\n"
     "# order it was made, on the features whose key is one of its ids. It is\n"
@@ -406,7 +406,7 @@ def test_the_wiring_reads_each_input_where_its_code_does():
 
 
 def test_the_levers_are_interaction_nodes_whose_code_is_their_log():
-    """Towers removed and Height cap are Interaction nodes keyed on
+    """Towers removed and Height cap are Map Edits nodes keyed on
     building_id, each with one labelled edit picked by the condition
     around_park, so a user can add more and press Commit edits; each node's
     code, its only state, is the code it writes from its log: one call that

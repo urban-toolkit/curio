@@ -380,7 +380,7 @@
         "content": "{\n  \"map\": {\n    \"layerRefs\": [\n      {\n        \"dataRef\": \"[!! input_0 !!]\",\n        \"isPick\": true,\n        \"selectFields\": [\n          \"building_id\"\n        ],\n        \"getFnv\": \"height\",\n        \"getFnvType\": \"quantitative\",\n        \"colorMapInterpolator\": \"interpolateViridis\",\n        \"colorMapRange\": [\n          0,\n          550\n        ],\n        \"title\": \"Building height (m)\"\n      }\n    ]\n  }\n}",
         "out": "DEFAULT",
         "in": "DEFAULT",
-        "goal": "Draw the towers removed buildings in 3D, colored by height. It is linked to Towers removed's Interaction node, so a building picked on this map is picked there.",
+        "goal": "Draw the towers removed buildings in 3D, colored by height. It is linked to Towers removed's Map Edits node, so a building picked on this map is picked there.",
         "metadata": {
           "keywords": []
         },
@@ -492,7 +492,7 @@
         "content": "{\n  \"map\": {\n    \"layerRefs\": [\n      {\n        \"dataRef\": \"[!! input_0 !!]\",\n        \"isPick\": true,\n        \"selectFields\": [\n          \"building_id\"\n        ],\n        \"getFnv\": \"height\",\n        \"getFnvType\": \"quantitative\",\n        \"colorMapInterpolator\": \"interpolateViridis\",\n        \"colorMapRange\": [\n          0,\n          550\n        ],\n        \"title\": \"Building height (m)\"\n      }\n    ]\n  }\n}",
         "out": "DEFAULT",
         "in": "DEFAULT",
-        "goal": "Draw the height cap buildings in 3D, colored by height. It is linked to Height cap's Interaction node, so a building picked on this map is picked there.",
+        "goal": "Draw the height cap buildings in 3D, colored by height. It is linked to Height cap's Map Edits node, so a building picked on this map is picked there.",
         "metadata": {
           "keywords": []
         },
