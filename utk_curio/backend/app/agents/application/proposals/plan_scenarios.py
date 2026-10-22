@@ -28,7 +28,6 @@ from utk_curio.backend.app.execution.code_references import check_widget_def, no
 from utk_curio.backend.app.execution.workflow_spec import PARAMETER_TYPE
 from utk_curio.backend.app.projects.scenarios import next_scenario_color, normalize_scenarios
 from utk_curio.backend.app.scenario_catalog.domain.duplicate import lineage_of
-from utk_curio.backend.app.agents.domain import agent_text
 
 #: What a node's content is, for the templates whose code or spec places a
 #: widget's reference (the roster's ``contentKind``).
@@ -65,9 +64,8 @@ def mint_errors(plan: dict, available: dict, existing_nodes: dict, scenarios: li
         entry = available.get(node["nodeType"]) or {}
         if entry.get("contentKind") not in _PLACES_WIDGETS:
             errors.append(
-                agent_text.message(
-                    "plan.widgets-not-placeable", ref=repr(node['ref']), label=entry.get('label') or node['nodeType'],
-                )
+                f"plan node {node['ref']!r} ({entry.get('label') or node['nodeType']}) cannot hold "
+                "widgets: a widget is placed in a node's code or spec, or held by a Parameter node"
             )
     # A shared tag's name is the Parameter node's: the Widgets tab's own rule.
     taken = _parameter_widgets(existing_nodes.values(), removed)
@@ -76,26 +74,24 @@ def mint_errors(plan: dict, available: dict, existing_nodes: dict, scenarios: li
             continue
         message = check_widget_def(node["widgets"][0], taken, parameter=True)
         if message:
-            errors.append(agent_text.message("plan.node-problem", ref=repr(node['ref']), problem=message))
+            errors.append(f"plan node {node['ref']!r}: {message}")
         taken.append(node["widgets"][0])
     owner = {member: s["name"] for s in scenarios for member in s["nodes"]}
     taken = {s["name"] for s in scenarios}
     refs = {n["ref"] for n in plan["nodes"]}
     for index, scenario in enumerate(plan.get("scenarios") or []):
         if scenario["name"] in taken:
-            errors.append(agent_text.message("plan.scenario-name-taken", index=index, name=repr(scenario['name'])))
+            errors.append(f"scenarios[{index}] {scenario['name']!r}: the dataflow already has a scenario "
+                          f"named {scenario['name']!r}: each scenario needs its own name")
         for member in scenario["nodes"]:
             if member in refs:
                 continue
             if member not in existing_nodes:
-                errors.append(agent_text.message(
-                    "plan.scenario-member-unknown", index=index, name=repr(scenario['name']), member=repr(member),
-                ))
+                errors.append(f"scenarios[{index}] {scenario['name']!r}: {member!r} is neither a ref "
+                              "of this plan nor an existing node id (dataflow.read shows them)")
             elif member in owner:
-                errors.append(agent_text.message(
-                    "plan.scenario-member-taken", index=index, name=repr(scenario['name']), member=repr(member),
-                    owner=repr(owner[member]),
-                ))
+                errors.append(f"scenarios[{index}] {scenario['name']!r}: {member!r} is already in the "
+                              f"scenario {owner[member]!r}: a node belongs to one scenario")
     return errors
 
 

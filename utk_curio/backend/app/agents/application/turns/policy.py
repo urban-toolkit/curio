@@ -111,6 +111,9 @@ def _add_usage(total: dict, sink: dict) -> None:
 CONTEXT_MAX_CHARS = 120_000
 
 
+_CONTEXT_TRUNCATION_MARKER = "\n…[truncated: context exceeded the run-context bound]"
+
+
 def context_frame() -> str:
     """The line that opens the canvas context a run is given, framing it as
     data: the section ``canvas-context`` of the base entry's ``frames.md``.
@@ -123,4 +126,4 @@ def _bounded_context(run_context: str | None) -> str | None:
         return None
     if len(run_context) <= CONTEXT_MAX_CHARS:
         return run_context
-    return run_context[:CONTEXT_MAX_CHARS] + ("\n" + agent_text.message("turn.context-truncated"))
+    return run_context[:CONTEXT_MAX_CHARS] + _CONTEXT_TRUNCATION_MARKER

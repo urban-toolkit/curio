@@ -24,7 +24,6 @@ from utk_curio.backend.app.agents.infrastructure.providers import ProviderConfig
 from utk_curio.backend.app.agents.application import spec_reads as agents_spec_reads
 from utk_curio.backend.app.agents.application.solve import budgets as agents_budgets
 from utk_curio.backend.app.agents.application.solve import verified_loop
-from utk_curio.backend.app.agents.domain import agent_text
 
 log = logging.getLogger(__name__)
 
@@ -49,7 +48,7 @@ def _attempt_code_field(candidate: object, *, prose: bool = False) -> dict:
         return {}
     field: dict = {}
     if len(text) > agents_budgets._ATTEMPT_CODE_CHARS:
-        field["code"] = text[:agents_budgets._ATTEMPT_CODE_CHARS] + ("\n" + agent_text.message("solve.attempt-code-truncated"))
+        field["code"] = text[:agents_budgets._ATTEMPT_CODE_CHARS] + agents_budgets._CODE_TRUNCATION_MARKER
         field["codeTruncated"] = True
     else:
         field["code"] = text
@@ -317,7 +316,7 @@ def _correction_url_evidence(candidate: str, error_text: str, ctx) -> list[dict]
             known.pop(url, None)
         entry = {"url": url, "verification": verdict}
         if how == "composed":
-            entry["request"] = agent_text.message("solve.url-evidence-composed")
+            entry["request"] = "the URL composed from the code's url + params"
         note = _endpoint_note(verdict)
         if note:
             entry["note"] = note
@@ -342,7 +341,7 @@ def _placeholder_probe(url: str, ctx) -> dict | None:
     names = sorted(set(secret_params.values()))
     entry: dict = {
         "url": shown,
-        "request": agent_text.message("solve.url-evidence-placeholder"),
+        "request": "the URL composed from the code's url + params; the saved key was sent in place of curio_secret(...)",
         "keyed": ", ".join(names),
     }
     resolver = getattr(ctx, "secret_values", None)
@@ -356,7 +355,7 @@ def _placeholder_probe(url: str, ctx) -> dict | None:
     if missing:
         entry["verification"] = {
             "status": "unverified",
-            "detail": agent_text.message("solve.key-not-saved", names=', '.join(repr(m) for m in missing)),
+            "detail": f"no connection key named {', '.join(repr(m) for m in missing)} is saved — not probed",
         }
         return entry
     params = {param: values[name] for param, name in secret_params.items()}
@@ -386,9 +385,10 @@ def _keyed_probe(candidate: str, url: str, how: str, ctx) -> dict | None:
     result: dict = {"keyed": saved.name, "keyedDelivery": saved.delivery}
     in_code = saved.name in source_grounding.secret_names(candidate)
     if not saved.delivery.startswith(("query:", "header:")):
-        result["keyedNote"] = agent_text.message(
-            "solve.keyed-note-code-delivery", name=repr(saved.name),
-            not_used="" if in_code else " " + agent_text.message("solve.keyed-note-not-used", use_line=saved.use_line),
+        result["keyedNote"] = (
+            f"a connection key {saved.name!r} is saved for this host"
+            + ("" if in_code else f" — the code does not use it yet: {saved.use_line}")
+            + "; the code decides how the API receives it"
         )
         return result
     resolver = getattr(ctx, "secret_values", None)
@@ -418,19 +418,21 @@ def _keyed_probe(candidate: str, url: str, how: str, ctx) -> dict | None:
     content_type = str(outcome.get("contentType") or "").lower()
     sent = f"as {kind} {target!r}"
     if status == "verified" and content_type and "json" not in content_type:
-        result["keyedNote"] = agent_text.message(
-            "solve.keyed-note-not-data", name=repr(saved.name), sent=sent, content_type=content_type.split(';')[0],
-            title=' (' + str(outcome.get('pageTitle')) + ')' if outcome.get('pageTitle') else '',
+        result["keyedNote"] = (
+            f"even with the saved key {saved.name!r} sent {sent}, the request answered "
+            f"{content_type.split(';')[0]}{' (' + str(outcome.get('pageTitle')) + ')' if outcome.get('pageTitle') else ''}"
+            " — the key or the way it is sent is wrong; say so instead of guessing parameters"
         )
     elif status == "verified":
-        result["keyedNote"] = agent_text.message(
-            "solve.keyed-note-answers-data", name=repr(saved.name), sent=sent, use_line=saved.use_line,
-            not_used="" if in_code else " " + agent_text.message("solve.keyed-note-not-used-yet"),
+        result["keyedNote"] = (
+            f"with the saved key {saved.name!r} sent {sent} the request answers data — "
+            f"the code must send it the same way: {saved.use_line}"
+            + ("" if in_code else " (the code does not use it yet)")
         )
     else:
-        result["keyedNote"] = agent_text.message(
-            "solve.keyed-note-outcome", name=repr(saved.name), sent=sent, status=status,
-            http_status=f" {outcome.get('httpStatus')}" if outcome.get("httpStatus") else "",
+        result["keyedNote"] = (
+            f"with the saved key {saved.name!r} sent {sent}: {status}"
+            + (f" {outcome.get('httpStatus')}" if outcome.get("httpStatus") else "")
         )
     return result
 
@@ -477,13 +479,16 @@ def _endpoint_note(verdict: dict) -> str:
     final_url = verdict.get("finalUrl")
     title = verdict.get("pageTitle")
     sample = verdict.get("bodySample")
-    where = " " + agent_text.message("solve.after-redirect", final_url=final_url) if final_url else ""
+    where = f" after redirecting to {final_url}" if final_url else ""
     if status == "verified" and content_type and "json" not in content_type.lower():
-        what = agent_text.message("solve.html-page-titled", title=title) if title else f"{content_type.split(';')[0]} content"
-        return agent_text.message("solve.endpoint-not-data", what=what, where=where)
+        what = f'an HTML page titled "{title}"' if title else f"{content_type.split(';')[0]} content"
+        return (
+            f"answered {what}{where} — not data. Read the page title: a key or "
+            "sign-in requirement cannot be fixed by changing parameters; say what is missing."
+        )
     if status == "unreachable" and verdict.get("httpStatus"):
         said = f': "{sample}"' if sample else (f' ("{title}")' if title else "")
-        return agent_text.message("solve.endpoint-status", http_status=verdict['httpStatus'], where=where, said=said)
+        return f"the request itself answered {verdict['httpStatus']}{where}{said}"
     return ""
 
 

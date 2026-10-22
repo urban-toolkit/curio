@@ -93,7 +93,6 @@ from utk_curio.backend.app.users.connection_keys import (  # noqa: E402
     SECRET_CALL_RE,
     secret_names as _secret_names,
 )
-from utk_curio.backend.app.agents.domain import agent_text
 
 # KEEP IN SYNC with the editor's twin (dev/117):
 # frontend/urban-workflows/src/services/connectionKeys/credentialLiterals.ts —
@@ -843,7 +842,9 @@ def _unrequested_catalog_reads(catalog_reads: list[tuple[str, str]], ctx: Ground
         return []
     asked = ", ".join(repr(d) for d in sorted(requested))
     return [
-        agent_text.message("grounding.unrequested-dataset", read_at=read_at, dataset=repr(dataset_id), asked=asked)
+        f"{read_at}: loads the Data Catalog dataset {dataset_id!r}, but the user "
+        f"asked for {asked}; load the dataset the user asked for, or ask the user "
+        "before using another one"
         for read_at, dataset_id in catalog_reads
     ]
 
@@ -862,9 +863,8 @@ def check_grounding(code: object, engine: str | None, ctx: GroundingContext) -> 
             catalog = ctx.catalog_ids.get(ref.literal)
             if catalog is None:
                 violations.append(
-                    agent_text.message(
-                        "grounding.not-a-catalog-dataset", call=ref.call, literal=repr(ref.literal), line=ref.line,
-                    )
+                    f"{ref.call}({ref.literal!r}) (line {ref.line}): not a dataset in "
+                    "this project's Data Catalog — use the id of a catalog.search row"
                 )
             else:
                 catalog_reads.append((f"{ref.call}({ref.literal!r}) (line {ref.line})", catalog.dataset_id))
@@ -879,7 +879,8 @@ def check_grounding(code: object, engine: str | None, ctx: GroundingContext) -> 
         if ref.kind == "path":
             if ref.partial:
                 violations.append(
-                    agent_text.message("grounding.path-from-prefix", where=where)
+                    f"{where}: the file name is composed at run time from a prefix — "
+                    "write the complete path as one literal so it can be grounded"
                 )
                 continue
             catalog = _catalog_match(ref.literal, ctx)
@@ -897,7 +898,8 @@ def check_grounding(code: object, engine: str | None, ctx: GroundingContext) -> 
                 source_refs.append({"kind": "user-path", "value": ref.literal[:_VALUE_MAX_CHARS]})
             else:
                 violations.append(
-                    agent_text.message("grounding.local-file-unseen", where=where)
+                    f"{where}: a local file Curio cannot see — the user gave no such path "
+                    "and no Data Catalog dataset resolves to it"
                 )
             continue
         # URL
@@ -905,7 +907,8 @@ def check_grounding(code: object, engine: str | None, ctx: GroundingContext) -> 
         if evidence is None:
             if ctx.probe is None:
                 violations.append(
-                    agent_text.message("grounding.url-unverified-no-probe", where=where)
+                    f"{where}: not verified this run and no probe is available — "
+                    "only a URL the runtime has verified may be fetched"
                 )
                 continue
             try:
@@ -937,16 +940,16 @@ def check_grounding(code: object, engine: str | None, ctx: GroundingContext) -> 
         else:
             detail = evidence.get("detail") or ""
             if http_status == 400:
-                why = agent_text.message("grounding.url-400")
+                why = "answered 400 — the endpoint exists but this request shape is wrong; check the parameters"
             elif http_status is not None:
-                why = agent_text.message("grounding.url-answered", status=http_status)
+                why = f"answered {http_status}"
             elif status == "refused":
-                why = agent_text.message("grounding.egress-refused-detail", detail=detail) if detail else agent_text.message("grounding.egress-refused")
+                why = f"refused by the egress policy ({detail})" if detail else "refused by the egress policy"
             elif status == "unverified":
-                why = detail or agent_text.message("grounding.url-unchecked")
+                why = detail or "could not be checked"
             else:
                 why = detail or "unreachable"
-            violations.append(agent_text.message("grounding.url-unverified", where=where, why=why))
+            violations.append(f"{where}: {why} — only a URL the runtime verified may be fetched")
     violations.extend(_unrequested_catalog_reads(catalog_reads, ctx))  # #411
     # dev/116: connection keys by name — known names are grounded refs, an
     # unknown name is refused with the saved names listed (DEC-067).
@@ -954,9 +957,11 @@ def check_grounding(code: object, engine: str | None, ctx: GroundingContext) -> 
     for name, line in secret_calls(code):
         saved = (ctx.secrets or {}).get(name)
         if saved is None:
-            listed = agent_text.message("grounding.secret-saved", names=', '.join(saved_names)) if saved_names else agent_text.message("grounding.secret-none-saved")
+            listed = f"saved: {', '.join(saved_names)}" if saved_names else "none saved"
             violations.append(
-                agent_text.message("grounding.secret-unknown", name=repr(name), line=line, saved=listed)
+                f"curio_secret({name!r}) (line {line}): no connection key named {name!r} "
+                f"({listed}) — save one in API Settings, API keys, then keep "
+                "the call as written"
             )
         else:
             source_refs.append({
@@ -970,14 +975,18 @@ def check_grounding(code: object, engine: str | None, ctx: GroundingContext) -> 
     # proposal: the literal is refused and the saved-key route is named.
     for name, line in credential_literals(code, engine):
         violations.append(
-            agent_text.message("grounding.credential-literal", name=name, line=line)
+            f"{name} (line {line}): a credential literal in node code — save it as a "
+            "connection key (API Settings, API keys) and write "
+            'curio_secret("<name>") instead; a key value is never written into a node'
         )
     if not refs and ctx.is_data_loading:
         if ctx.synthetic_requested:
             source_refs.append({"kind": "synthetic"})
         else:
             violations.append(
-                agent_text.message("grounding.no-source")
+                "no grounded source: this data-loading node opens no file and fetches no "
+                "URL — data invented inline is fabricated evidence unless the user asked "
+                "for synthetic data"
             )
     verdict = GroundingVerdict(ok=not violations, violations=violations, refs=refs)
     if verdict.ok and source_refs:
@@ -1023,16 +1032,17 @@ def refusal_text(verdict: GroundingVerdict, ctx: GroundingContext) -> str:
     """The model-correctable refusal (DEC-067): every violating literal, why,
     and only the routes this run can actually take."""
     lines = [
-        agent_text.message(
-            "grounding.refused", count=len(verdict.violations), s='s' if len(verdict.violations) != 1 else '',
-        )
+        f"source grounding refused — {len(verdict.violations)} ungrounded source"
+        f"{'s' if len(verdict.violations) != 1 else ''}:"
     ]
     for i, violation in enumerate(verdict.violations, 1):
         lines.append(f"({i}) {violation}")
-    allowed = [agent_text.message("grounding.allowed-user-path")]
+    allowed = ["a path the user typed in this conversation"]
     allowed.extend(ctx.hints)
-    lines.append(agent_text.message("grounding.allowed", sources="; ".join(allowed)))
+    lines.append("Allowed sources: " + "; ".join(allowed) + ".")
     lines.append(
-        agent_text.message("grounding.never-invent")
+        "Never invent a filename, never assume a file exists, never write a URL from "
+        "memory — if no source can be grounded, ask the user for a path or URL instead "
+        "of proposing."
     )
     return " ".join(lines)

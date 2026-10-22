@@ -55,7 +55,6 @@ from utk_curio.backend.app.agents.domain import upstream_schema as agents_upstre
 from utk_curio.backend.app.execution import workflow_spec
 from utk_curio.backend.app.packages import service as _pkg_services
 from utk_curio.backend.app.projects import storage as projects_storage
-from utk_curio.backend.app.agents.domain import agent_text
 
 log = logging.getLogger(__name__)
 
@@ -232,14 +231,9 @@ class SolveBatch:
         )
 
     def _ungrounded_error(self, refusal: str, node_id: str) -> str:
-        """The failure line of a node the source gate refused: the refusal
-        without its head and its allowed routes, each cut by the words of its
-        message before the message's first value."""
-        head = agent_text.message("grounding.refused", count="\0", s="").split("\0")[0]
-        allowed = agent_text.message("grounding.allowed", sources="\0").split("\0")[0].rstrip()
         return (
-            "ungrounded source: " + refusal.split(allowed)[0]
-            .replace(head, "").strip()
+            "ungrounded source: " + refusal.split("Allowed sources:")[0]
+            .replace("source grounding refused — ", "").strip()
         )[:220] + self._ungrounded_remedy(node_id)
 
     def _ungrounded_remedy(self, node_id: str) -> str:

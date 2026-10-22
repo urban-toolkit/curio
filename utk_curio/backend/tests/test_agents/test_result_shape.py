@@ -86,7 +86,7 @@ class TestTheDiagnosis:
         text = rs.refusal_text(
             summary=JOINED_EMPTY, upstream_outputs=rows, output_data_type="geodataframe",
         )
-        assert text.startswith("the code ran but produced an EMPTY result: 0 rows")
+        assert text.startswith("the code ran but produced an EMPTY result — 0 rows")
         assert "geodataframe" in text
         assert "input_0 'Chicago Boundaries'" in text and "2 rows" in text
         assert "input_1 'Population Data'" in text and "3 rows" in text

@@ -71,10 +71,13 @@ def _mint_candidates_from_delegate(
     the run is marked so a same-turn node.create is refused (the user reviews
     first). *name* is the delegate's, as its manifest gives it. Returns
     ``(part | None, text_for_model, outcome)``."""
-    who = name or agent_text.message("dataset.candidates-finder-fallback")
+    who = name or "the agent asked for datasets"
     block = _extract_candidates_reply(child_text)
     if block is None:
-        return None, agent_text.message("dataset.candidates-unrecognized", who=who), "no-candidates"
+        return None, (
+            f"{who} returned no recognizable datasetCandidates block; "
+            "report that honestly, and do not invent candidates or a source"
+        ), "no-candidates"
     lanes = block.get("lanes") or {}
     catalog_raw = lanes.get("catalog") if isinstance(lanes.get("catalog"), list) else []
     kept, dropped = agents_grounding._grounded_catalog_rows(catalog_raw, catalog_rows)
@@ -83,16 +86,25 @@ def _mint_candidates_from_delegate(
         "catalog": kept,
     }})
     if parsed is None:
-        note = " " + agent_text.message("dataset.candidates-none-usable-dropped", dropped=dropped) if dropped else ""
-        return None, agent_text.message("dataset.candidates-none-usable", who=who, note=note), "no-candidates"
+        note = f" ({dropped} catalog row(s) dropped: not in the Data Catalog)" if dropped else ""
+        return None, (
+            f"{who} returned no usable candidates" + note +
+            "; report that honestly, and ask the user for a path or URL instead of guessing"
+        ), "no-candidates"
     agents_grounding._verify_candidate_parts([parsed], loop_ctx)
     loop_ctx["_candidates_pending_review"] = True
     total = sum(len(v) for v in parsed["lanes"].values())
-    note = " " + agent_text.message("dataset.candidates-shown-dropped", dropped=dropped) if dropped else ""
+    note = f" {dropped} catalog row(s) were dropped (not in the Data Catalog)." if dropped else ""
     unconfirmed = agents_acquire._unconfirmed(parsed["lanes"].get("external"))
     if unconfirmed:
-        note += (" " + agent_text.message("dataset.candidates-unconfirmed", unconfirmed=unconfirmed))
-    return parsed, agent_text.message("dataset.candidates-shown", total=total, note=note), "ok"
+        note += (f" {unconfirmed} Discovery resource id(s) went unconfirmed, so their rows "
+                 "are not marked downloadable.")
+    return parsed, (
+        f"{total} dataset candidate(s) are shown to the user for review; external rows "
+        "carry the runtime's verification verdict." + note +
+        " Do NOT propose a node in this turn — ask the user to select and confirm; "
+        "you will build from the confirmed source on the next turn."
+    ), "ok"
 
 
 def _dataset_discover_inputs(
@@ -115,9 +127,10 @@ def _dataset_discover_inputs(
     )
     enriched["catalog"] = {
         "note": (
-            agent_text.message("dataset.catalog-listed")
+            "The project's Data Catalog as catalog.search returned it"
             if rows else
-            agent_text.message("dataset.catalog-unavailable")
+            "The Data Catalog listing was empty or unavailable: the catalog lane "
+            "must stay empty; say so."
         ),
         **tools._cut("rows", rows, tools._CATALOG_SEARCH_MAX_ROWS),
     }
@@ -435,8 +448,10 @@ def _mint_content_review_from_delegate(
          "params": {"nodeId": node_id, "content": text_out}},
     )
     if part is None:
-        return None, home_att, agent_text.message(
-            "delegate.content-not-minted", error=(p_error or agent_text.message("delegate.content-not-minted-unknown"))[:200],
+        return None, home_att, (
+            "the generated content could not become a reviewed proposal "
+            f"({(p_error or 'unknown error')[:200]}) — report this honestly: "
+            "nothing was changed and nothing awaits review"
         )
     if validation:
         # dev/115: an EXECUTED review carries its verdict and attempt trail —
@@ -455,12 +470,15 @@ def _mint_content_review_from_delegate(
         except Exception:
             pass
     where = (
-        agent_text.message("delegate.content-minted-here")
+        "in this conversation"
         if home_att == parent_attachment_id
-        else agent_text.message("delegate.content-minted-at-node", home_name=home_name or 'content')
+        else f"at the node's own {home_name or 'content'} agent"
     )
-    return part, home_att, agent_text.message(
-        "delegate.content-minted", proposal_id=part['proposalId'], node_id=repr(node_id), where=where,
+    return part, home_att, (
+        f"the generated content was minted as reviewed proposal "
+        f"{part['proposalId']} for node {node_id!r} ({where}); it awaits the "
+        "user's explicit Apply — summarize the change in one or two "
+        "sentences, do NOT restate the code, and do NOT say it was applied"
     )
 
 
@@ -594,13 +612,18 @@ def _reuse_finding_text(user_key: str, project_id: str, finding: dict) -> str:
 
         enlisted = dir_name in packages_services.get_project_lockfile(user_key, project_id)
         hint = (
-            " " + agent_text.message("delegate.reuse-existing-enlisted")
+            " It is already in this project: use it directly."
             if enlisted else
-            " " + agent_text.message("delegate.reuse-existing-not-enlisted", dir_name=dir_name)
+            " It is installed but NOT in this project: propose package.install "
+            f"for {dir_name} first, then use its template."
         )
     except Exception:  # noqa: BLE001 — an unknown lockfile just omits the hint
         pass
-    return agent_text.message("delegate.reuse-existing", dir_name=dir_name, reason=reason, hint=hint)
+    return (
+        f"the authoring delegate reports that {dir_name} already does this{reason}. "
+        f"Nothing was authored, which is the correct outcome.{hint} Do NOT ask for "
+        "a new package that duplicates it."
+    )
 
 
 #: Bounds on the runtime-gathered search rows injected into a delegation —
@@ -618,7 +641,7 @@ def _delegated_search_results(question: object) -> dict:
     evidence). Failures ride in as their honest error text: the child must
     SAY search was unavailable, never invent findings."""
     if not isinstance(question, str) or not question.strip():
-        return {"error": agent_text.message("delegate.search-no-question")}
+        return {"error": "no 'question' input was supplied to the delegation"}
 
     status, text = agents_tools._execute_web_search({"q": question.strip()})
     if status != "ok":
@@ -627,7 +650,7 @@ def _delegated_search_results(question: object) -> dict:
     try:
         rows = _json.loads(text).get("results") or []
     except (ValueError, AttributeError):
-        return {"error": agent_text.message("delegate.search-malformed")}
+        return {"error": "the search provider returned malformed JSON"}
     bounded = []
     for row in rows[:_DELEGATED_SEARCH_MAX_ROWS]:
         if not isinstance(row, dict):
@@ -704,26 +727,39 @@ def _mint_notes_from_delegate(
     """
     payload = _extract_notes_reply(child_text)
     if payload is None:
-        return [], agent_text.message("delegate.notes-contract-mismatch"), "failed"
+        return [], (
+            "the delegate's reply did not match the notes reply contract "
+            "(ONE JSON object with 'answer' and a 'notes' list) — nothing "
+            "was placed; the reply was kept as text"
+        ), "failed"
     answer = payload.get("answer")
     answer = answer.strip() if isinstance(answer, str) else ""
     rows = _notes_from_delegate_inputs({"notes": payload.get("notes")}) or []
     if not rows:
         # Empty notes is a VALID reply (no findings / no template offered) —
         # the answer is the product (dev/93 D5: this run produced it).
-        return [], (answer or agent_text.message("delegate.notes-empty")), "ok"
+        return [], (answer or "the delegate returned no answer and no notes"), "ok"
     if "node.create" not in (loop_ctx.get("granted") or []):
-        return [], agent_text.message("delegate.notes-not-granted", answer=f"{answer}\n\n" if answer else ""), "failed"
+        return [], (
+            (f"{answer}\n\n" if answer else "")
+            + "the delegate composed notes but this agent is not granted "
+              "node.create — the notes were kept as text only"
+        ), "failed"
     node_type = payload.get("nodeType")
     entry = err = None
     if isinstance(node_type, str) and node_type.strip():
         entry, err = agents_roster._available_template(user_key, project_id, node_type.strip())
     if entry is None:
         reason = (
-            agent_text.message("delegate.notes-skipped-template-error", err=err)
-            if err else agent_text.message("delegate.notes-skipped-no-template")
+            f"the chosen notes template was not available ({err})"
+            if err else "no installed notes template was available"
         )
-        return [], agent_text.message("delegate.notes-skipped", answer=f"{answer}\n\n" if answer else "", reason=reason), "ok"
+        return [], (
+            (f"{answer}\n\n" if answer else "")
+            + f"notes skipped: {reason} — ask the Researcher (attached to a "
+              "node or the canvas) to enlist or author a notes package; its "
+              "own runs hold the reuse ladder a delegate cannot reach"
+        ), "ok"
     parts: list = []
     last_refusal = ""
     for index, row in enumerate(rows):
@@ -743,12 +779,15 @@ def _mint_notes_from_delegate(
         else:
             last_refusal = text
     if not parts:
-        return [], agent_text.message(
-            "delegate.notes-none-proposed", answer=f"{answer}\n\n" if answer else "", last_refusal=last_refusal,
+        return [], (
+            (f"{answer}\n\n" if answer else "")
+            + f"no notes could be proposed: {last_refusal}"
         ), "failed"
-    summary = agent_text.message(
-        "delegate.notes-proposed", answer=f"{answer}\n\n" if answer else "", count=len(parts),
-        refusal=f" ({last_refusal})" if last_refusal else "",
+    summary = (
+        (f"{answer}\n\n" if answer else "")
+        + f"{len(parts)} reviewed note proposal(s) created"
+        + (f" ({last_refusal})" if last_refusal else "")
+        + " — they await the user's explicit Apply; do NOT claim the notes exist"
     )
     return parts, summary, "ok"
 
@@ -789,7 +828,7 @@ def _extract_draft_params_verbose(child_text: str) -> tuple[dict | None, str]:
     """
 
     if not isinstance(child_text, str) or not child_text.strip():
-        return None, agent_text.message("delegate.draft-empty")
+        return None, "the delegate replied with no text at all"
     candidates: list[str] = []
     stripped = child_text.strip()
     if stripped.startswith("{"):
@@ -798,7 +837,11 @@ def _extract_draft_params_verbose(child_text: str) -> tuple[dict | None, str]:
             r"```(?:json|curio\.v1)?\s*\n(.*?)```", child_text, _re2.DOTALL):
         candidates.append(match.group(1).strip())
     if not candidates:
-        return None, agent_text.message("delegate.draft-no-json")
+        return None, (
+            "no JSON build request found in the reply: it must be ONE JSON "
+            "object, either the whole reply or a single ```json fenced block. "
+            "Prose describing the package is not a build request"
+        )
     decode_errors: list[str] = []
     shape_errors: list[str] = []
     for candidate in candidates:
@@ -808,7 +851,7 @@ def _extract_draft_params_verbose(child_text: str) -> tuple[dict | None, str]:
             decode_errors.append(str(exc))
             continue
         if not isinstance(payload, dict):
-            shape_errors.append(agent_text.message("delegate.draft-not-object", name=type(payload).__name__))
+            shape_errors.append(f"the JSON is a {type(payload).__name__}, not an object")
             continue
         tool_req = payload.get("toolRequest")
         if (isinstance(tool_req, dict)
@@ -822,13 +865,19 @@ def _extract_draft_params_verbose(child_text: str) -> tuple[dict | None, str]:
             return inner, ""
         keys = ", ".join(sorted(k for k in inner if isinstance(k, str))[:12]) or "none"
         shape_errors.append(
-            agent_text.message("delegate.draft-not-build-request", keys=keys)
+            "the JSON parsed but is not a build request — it must carry "
+            f"\"mode\" ('create' or 'extend') and a \"manifest\" object (top-level "
+            f"keys were: {keys})"
         )
     if decode_errors and not shape_errors:
         # The overwhelmingly common weak-model failure: a long body containing
         # an embedded source file, cut off mid-string. Say so explicitly —
         # "invalid JSON" alone does not tell the model what to do differently.
-        return None, agent_text.message("delegate.draft-json-invalid", decode_errors=decode_errors[0])
+        return None, (
+            f"the JSON did not parse ({decode_errors[0]}). If the reply was cut "
+            "off mid-object, re-emit the COMPLETE build request and keep the "
+            "file bodies short enough to finish"
+        )
     return None, (shape_errors or decode_errors)[0]
 
 
@@ -937,7 +986,10 @@ def _mint_package_draft_from_delegate(
     read "Delegated task · ok" beside a summary saying nothing was produced.
     """
     if "package.draft.apply" not in (loop_ctx.get("granted") or []):
-        return None, agent_text.message("delegate.draft-not-granted"), "failed"
+        return None, (
+            "the delegate produced a package draft but this agent is not "
+            "granted package.draft.apply — the draft was kept as text only"
+        ), "failed"
 
     notes = _notes_from_delegate_inputs(delegate_inputs or {})
     pinned_package_id: str | None = None
@@ -962,8 +1014,11 @@ def _mint_package_draft_from_delegate(
                 pinned_package_id = draft_id
             if (pinned_package_id is not None and isinstance(draft_id, str)
                     and draft_id != pinned_package_id):
-                parse_error = agent_text.message(
-                    "delegate.draft-renamed", pinned_package_id=repr(pinned_package_id), draft_id=repr(draft_id),
+                parse_error = (
+                    f"this correction changed the package id from "
+                    f"{pinned_package_id!r} to {draft_id!r}. Fix the SAME "
+                    "package — a rename does not resolve the error, it just "
+                    "creates a duplicate package"
                 )
                 params = None
         if params is not None:
@@ -977,10 +1032,12 @@ def _mint_package_draft_from_delegate(
             if status == "proposed":
                 if reconciled:
                     text += (
-                        " " + agent_text.message("delegate.draft-notes-reconciled", count=len(notes))
+                        f" (the draft's {len(notes)} note(s) carry the caller's "
+                        "findings verbatim — runtime-reconciled from the "
+                        "delegation inputs)"
                     )
                 if round_index:
-                    text += " " + agent_text.message("delegate.draft-corrected", round_index=round_index)
+                    text += f" (after {round_index} correction round(s))"
                 return part, text, "ok"
             # The build service refused. Some refusals cannot improve by
             # re-authoring (a policy or permission verdict); retrying those
@@ -998,12 +1055,20 @@ def _mint_package_draft_from_delegate(
             "validationError": last_error[:2000],
         })
         if status != "ok":
-            return None, agent_text.message(
-                "delegate.draft-rerun-failed", attempt_text=attempt_text or agent_text.message("delegate.draft-rerun-failed-no-reply"), last_error=last_error,
+            return None, (
+                "the authoring delegate could not be re-run to correct its "
+                f"draft ({attempt_text or 'no reply'}); the last error was: "
+                f"{last_error}"
             ), "failed"
 
-    spent = " " + agent_text.message("delegate.draft-unusable-attempts", rounds=rounds) if rounds > 1 else ""
-    return None, agent_text.message("delegate.draft-unusable", spent=spent, last_error=last_error), "failed"
+    spent = f" after {rounds} attempt(s)" if rounds > 1 else ""
+    return None, (
+        f"the authoring delegate produced no usable package draft{spent}. The "
+        f"last error was: {last_error} — fix THAT and keep the same package id, "
+        "or tell the user plainly that authoring failed. Do NOT re-delegate "
+        "under a different package name, and if a package that already does "
+        "this job is listed as installed, use it instead of authoring one"
+    ), "failed"
 
 
 def _draft_corrector(
@@ -1073,6 +1138,16 @@ _REUSE_EVIDENCE_MAX_TEMPLATES = 8
 
 
 _REUSE_EVIDENCE_DESC_CHARS = 200
+
+
+#: What a delegated ``package.recommend`` is told about ``existingPackages``:
+#: its candidates are these rows and nothing else.
+_RECOMMEND_EVIDENCE_NOTE = (
+    "Packages that exist for this user: the only packages you may recommend. "
+    "installedInProject false means the caller must enlist the package before "
+    "its templates can be used; a need none of these rows meets is a finding, "
+    "not a recommendation."
+)
 
 
 def _authoring_reuse_evidence(
@@ -1149,7 +1224,13 @@ def _authoring_reuse_evidence(
     if not packages:
         return None
     return {
-        "note": note or agent_text.message("delegate.reuse-evidence"),
+        "note": note or (
+            "Packages that already exist for this user. If one of these already "
+            "satisfies the requested need, say so and author nothing — name its "
+            "dirName so the caller can use it (installedInProject false means the "
+            "caller must enlist it first). Extend one by name instead of creating "
+            "a near-duplicate."
+        ),
         # The delegate cannot read the rest: it is told how many it was not shown.
         **({"packagesElided": len(rows) - len(packages)} if len(rows) > len(packages) else {}),
         "packages": packages,
@@ -1182,7 +1263,7 @@ def _enriched_delegate_inputs(
         # the same rows an authoring delegate is shown, as its only candidates.
         if "existingPackages" not in inputs:
             evidence = _authoring_reuse_evidence(
-                user_key, project_id, note=agent_text.message("delegate.recommend-evidence"))
+                user_key, project_id, note=_RECOMMEND_EVIDENCE_NOTE)
             if evidence:
                 inputs = {**inputs, "existingPackages": evidence}
         return inputs
@@ -1266,7 +1347,7 @@ def _resolve_delegate_request(
     capability = req.get("capability", "")
     manifest = loop_ctx.get("manifest")
     if manifest is None or not manifest.delegates_to:
-        return "refused", agent_text.message("delegate.no-delegates"), None
+        return "refused", "this agent declares no delegates", None
     resolution = delegation.resolve(user_key, project_id, manifest, capability)
     if resolution.outcome == "ok":
         return "ok", "", resolution
@@ -1301,6 +1382,6 @@ def _resolve_delegate_request(
         return status, text, None
     return (
         "refused",
-        agent_text.message("delegate.capability-undeclared", capability=repr(capability)),
+        f"no delegate of this agent declares capability {capability!r}",
         None,
     )

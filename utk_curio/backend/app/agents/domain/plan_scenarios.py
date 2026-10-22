@@ -29,7 +29,6 @@ from itertools import count
 from typing import Callable
 
 from utk_curio.backend.app.agents.domain.widget_grammar import value_problem, with_values
-from utk_curio.backend.app.agents.domain import agent_text
 
 SCENARIOS_MAX = 16
 NAME_MAX_CHARS = 60
@@ -51,9 +50,9 @@ def _members(entry: dict, where: str, removed: set, owner: dict,
     """A selection's members, or the errors that stop it."""
     raw = entry.get("nodes")
     if not isinstance(raw, list) or not raw:
-        return [], [agent_text.message("scenario.nodes-missing", where=where)]
+        return [], [f"{where}.nodes must list the scenario's nodes: refs of this plan or existing node ids"]
     if len(raw) > _MEMBERS_MAX:
-        return [], [agent_text.message("scenario.too-many-nodes", where=where, count=len(raw), members_max=_MEMBERS_MAX)]
+        return [], [f"{where}.nodes has {len(raw)} entries (max {_MEMBERS_MAX})"]
     errors: list[str] = []
     members: list[str] = []
     for index, value in enumerate(raw):
@@ -64,11 +63,10 @@ def _members(entry: dict, where: str, removed: set, owner: dict,
             continue
         member = str(value).strip()
         if member in removed:
-            errors.append(agent_text.message("scenario.member-removed", here=here, member=repr(member)))
+            errors.append(f"{here} {member!r} is a node this plan removes")
         elif member in owner:
-            errors.append(agent_text.message(
-                "scenario.member-taken", here=here, member=repr(member), owner=repr(owner[member]),
-            ))
+            errors.append(f"{here} {member!r} is already in the scenario {owner[member]!r}: "
+                          "a node belongs to one scenario")
         elif member not in members:
             members.append(member)
     return members, errors
@@ -79,21 +77,16 @@ def _copy_refs(entry: dict, where: str, source: dict, refs: set,
     """Each node of the duplicated scenario to its copy's ref, or the errors."""
     copies = entry.get("copies")
     if not isinstance(copies, dict):
-        skeleton = "{" + ", ".join(f'"{m}": "<new ref>"' for m in source["nodes"]) + "}"
-        return {}, [agent_text.message(
-            "scenario.copies-missing", where=where, name=repr(source['name']), skeleton=skeleton,
-        )]
+        return {}, [f"{where}.copies must name a ref for the copy of each node of {source['name']!r}: "
+                    + "{" + ", ".join(f'"{m}": "<new ref>"' for m in source["nodes"]) + "}"]
     errors = []
     missing = [m for m in source["nodes"] if m not in copies]
     extra = [k for k in copies if k not in source["nodes"]]
     if missing:
-        errors.append(agent_text.message(
-            "scenario.copies-incomplete", where=where, missing=', '.join(repr(m) for m in missing),
-        ))
+        errors.append(f"{where}.copies names no copy for {', '.join(repr(m) for m in missing)}")
     if extra:
-        errors.append(agent_text.message(
-            "scenario.copies-extra", where=where, extra=', '.join(repr(k) for k in extra), name=repr(source['name']),
-        ))
+        errors.append(f"{where}.copies names {', '.join(repr(k) for k in extra)}, "
+                      f"which {source['name']!r} does not hold")
     taken: set[str] = set()
     out: dict[str, str] = {}
     for original in source["nodes"]:
@@ -106,7 +99,7 @@ def _copy_refs(entry: dict, where: str, source: dict, refs: set,
             continue
         ref = str(copies[original]).strip()
         if ref in refs or ref in taken:
-            errors.append(agent_text.message("scenario.copy-ref-taken", here=here, ref=repr(ref)))
+            errors.append(f"{here} {ref!r} is already a ref of this plan: a copy needs a ref of its own")
             continue
         taken.add(ref)
         out[original] = ref
@@ -119,29 +112,23 @@ def _value_errors(entry: dict, where: str, copies: dict, nodes_by_ref: dict) -> 
     if values is None:
         return []
     if not isinstance(values, dict):
-        return [agent_text.message("scenario.values-not-map", where=where)]
+        return [f"{where}.values must map a copy's ref to its widget values"]
     original_of = {copy: original for original, copy in copies.items()}
     errors = []
     for ref, chosen in values.items():
         here = f"{where}.values.{ref}"
         if ref not in original_of:
-            errors.append(agent_text.message(
-                "scenario.values-not-a-copy", here=here, ref=repr(ref),
-                original_of=', '.join(repr(c) for c in original_of) or 'none',
-            ))
+            errors.append(f"{here}: {ref!r} is not a copy this duplicate makes "
+                          f"({', '.join(repr(c) for c in original_of) or 'none'})")
             continue
         if not isinstance(chosen, dict) or not chosen:
-            errors.append(agent_text.message("scenario.values-not-widget-map", here=here))
+            errors.append(f"{here} must map widget names to values")
             continue
         widgets = {w["name"]: w for w in nodes_by_ref[original_of[ref]].get("widgets") or []}
         for name, value in chosen.items():
             if name not in widgets:
-                errors.append(agent_text.message(
-                    "scenario.values-unknown-widget", here=here, name=name, widget=repr(name),
-                    widgets_it_has=" " + agent_text.message(
-                        "scenario.values-widgets-it-has", widgets=', '.join(widgets),
-                    ) if widgets else "",
-                ))
+                errors.append(f"{here}.{name}: the node has no widget named {name!r}"
+                              + (f" (it has {', '.join(widgets)})" if widgets else ""))
                 continue
             problem = value_problem(widgets[name], value, f"{here}.{name}")
             if problem:
@@ -202,13 +189,12 @@ def _duplicate(entry: dict, where: str, plan: dict, by_name: dict, field_error: 
     source_name = str(entry["duplicateOf"]).strip()
     source = by_name.get(source_name)
     if source is None:
-        return [], {}, [agent_text.message("scenario.duplicate-unknown", where=where, source_name=repr(source_name))]
+        return [], {}, [f"{where}.duplicateOf {source_name!r} names no scenario earlier in this list"]
     refs = {n["ref"] for n in plan["nodes"]}
     outside = [m for m in source["nodes"] if m not in refs]
     if outside:
-        return [], {}, [agent_text.message(
-            "scenario.duplicate-outside-plan", where=where, source_name=repr(source_name), outside=repr(outside[0]),
-        )]
+        return [], {}, [f"{where}: {source_name!r} holds {outside[0]!r}, which is not a node this plan "
+                        "adds; a duplicate copies the nodes this plan adds"]
     copies, errors = _copy_refs(entry, where, source, refs, field_error, ref_max)
     if errors:
         return [], {}, errors
@@ -228,9 +214,9 @@ def parse_scenarios(raw: object, plan: dict, removed: set, field_error: FieldErr
     if raw is None:
         return []
     if not isinstance(raw, list):
-        return [agent_text.message("scenario.not-list")]
+        return ["scenarios must be a list of scenarios"]
     if len(raw) > SCENARIOS_MAX:
-        return [agent_text.message("scenario.too-many", count=len(raw), scenarios_max=SCENARIOS_MAX)]
+        return [f"scenarios has {len(raw)} entries (max {SCENARIOS_MAX})"]
     errors: list[str] = []
     kept: list[dict] = []
     by_name: dict[str, dict] = {}
@@ -238,14 +224,12 @@ def parse_scenarios(raw: object, plan: dict, removed: set, field_error: FieldErr
     for index, entry in enumerate(raw):
         where = f"scenarios[{index}]"
         if not isinstance(entry, dict):
-            errors.append(agent_text.message("scenario.not-object", where=where))
+            errors.append(f"{where} must be an object")
             continue
         unknown = sorted(set(entry) - set(SCENARIO_KEYS))
         if unknown:
-            errors.append(agent_text.message(
-                "scenario.unknown-keys", where=where, unknown=', '.join(unknown),
-                scenario_keys=', '.join(SCENARIO_KEYS),
-            ))
+            errors.append(f"{where} has keys a scenario does not: {', '.join(unknown)} "
+                          f"(a scenario has {', '.join(SCENARIO_KEYS)})")
             continue
         err = field_error(f"{where}.name", entry.get("name"), NAME_MAX_CHARS)
         if err:
@@ -253,15 +237,15 @@ def parse_scenarios(raw: object, plan: dict, removed: set, field_error: FieldErr
             continue
         name = str(entry["name"]).strip()
         if name in by_name:
-            errors.append(agent_text.message("scenario.name-taken", where=where, name=repr(name)))
+            errors.append(f"{where}.name {name!r} names an earlier scenario: each scenario needs its own name")
             continue
         if (entry.get("nodes") is None) == (entry.get("duplicateOf") is None):
-            errors.append(agent_text.message("scenario.selection-or-duplicate", where=where))
+            errors.append(f"{where} must give either nodes (a selection) or duplicateOf (a duplicate)")
             continue
         stored: dict = {"name": name}
         if entry.get("color") is not None:
             if not isinstance(entry["color"], str) or not COLOR_RE.match(entry["color"]):
-                errors.append(agent_text.message("scenario.color-format", where=where, color=repr(entry['color'])))
+                errors.append(f"{where}.color {entry['color']!r} is not a #RRGGBB color")
                 continue
             stored["color"] = entry["color"]
         if entry.get("description") is not None:
@@ -273,7 +257,7 @@ def parse_scenarios(raw: object, plan: dict, removed: set, field_error: FieldErr
         if entry.get("nodes") is not None:
             members, found = _members(entry, where, removed, owner, field_error)
         elif entry.get("copies") is None and entry.get("values") is not None:
-            members, found = [], [agent_text.message("scenario.values-need-copies", where=where)]
+            members, found = [], [f"{where}.values needs copies: the refs the copies take"]
         else:
             members, values, found = _duplicate(entry, where, plan, by_name, field_error, ref_max)
             if not found:

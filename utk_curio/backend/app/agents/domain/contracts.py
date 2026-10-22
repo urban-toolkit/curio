@@ -251,18 +251,17 @@ def map_layers(schema: dict) -> tuple[str, list[str]]:
 def render_autk_shape(schema: dict) -> str:
     """One line naming what an Autark document is, for a refusal's text. The
     map example leads, so it survives the attempt trail's shorter cut."""
-    from utk_curio.backend.app.agents.domain import agent_text
-
     layers, layer_required = map_layers(schema)
     common, either = _compute_required(schema)
     source_types = _definition(schema, "DataSourceSpec").get("properties", {}).get("type", {}).get("enum", [])
     first = input_table_name(0)
-    example_layer = "{" + ", ".join(f'"{field}": "{first}"' for field in layer_required) + "}"
-    return agent_text.message(
-        "document.autk-shape", layers=layers, example_layer=example_layer, first=first,
-        families=_either(autk_families(schema)), plot_fields=_every(_plot_required(schema)),
-        compute_fields=_every(common), compute_one_of=_either(either),
-        source_type=source_types[0] if source_types else "",
+    example_layer = ", ".join(f'"{field}": "{first}"' for field in layer_required)
+    return (
+        f'an Autark grammar JSON document, such as the map {{"map": {{"{layers}": [{{{example_layer}}}]}}}}, '
+        f'where "{first}" is this node\'s first input. A document names at least one of '
+        f"{_either(autk_families(schema))}; a plot needs {_every(_plot_required(schema))}; "
+        f"a compute pass needs {_every(common)}, plus {_either(either)}; "
+        f'a loader is {{"data": [{{"type": "{source_types[0] if source_types else ""}", ...}}]}}'
     )
 
 

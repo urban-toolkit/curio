@@ -59,8 +59,6 @@ import json
 import uuid
 from dataclasses import dataclass, field
 
-from utk_curio.backend.app.agents.domain import agent_text
-
 
 class NativeToolsRefused(RuntimeError):
     """The endpoint refused a request that offered native tools (a 400 or a
@@ -124,9 +122,9 @@ def _call_from_json(call_id: str, name: str, raw: str) -> ToolCall:
     try:
         arguments = json.loads(raw)
     except ValueError as exc:
-        return ToolCall(call_id, name, {}, error=agent_text.message("request.call-arguments-not-json", exc=exc))
+        return ToolCall(call_id, name, {}, error=f"the arguments are not valid JSON: {exc}")
     if not isinstance(arguments, dict):
-        return ToolCall(call_id, name, {}, error=agent_text.message("request.call-arguments-not-json-object"))
+        return ToolCall(call_id, name, {}, error="the arguments must be a JSON object")
     return ToolCall(call_id, name, arguments)
 
 
@@ -475,7 +473,7 @@ def _anthropic_calls(resp) -> tuple:
         calls.append(ToolCall(
             str(getattr(block, "id", "") or _call_id()), str(getattr(block, "name", "") or ""),
             dict(arguments) if isinstance(arguments, dict) else {},
-            error="" if isinstance(arguments, dict) else agent_text.message("request.call-arguments-not-object"),
+            error="" if isinstance(arguments, dict) else "the arguments must be an object",
         ))
     return tuple(calls)
 
@@ -517,7 +515,7 @@ def _gemini_calls(response, tools: list | None) -> tuple:
             continue
         arguments = _plain(getattr(function_call, "args", None) or {})
         if not isinstance(arguments, dict):
-            calls.append(ToolCall(_call_id(), name, {}, error=agent_text.message("request.call-arguments-not-object")))
+            calls.append(ToolCall(_call_id(), name, {}, error="the arguments must be an object"))
             continue
         calls.append(ToolCall(_call_id(), name, _gemini_arguments(arguments, schemas.get(name))))
     return tuple(calls)

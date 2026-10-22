@@ -44,7 +44,6 @@ from utk_curio.backend.app.agents.application import spec_reads
 from utk_curio.backend.app.agents.application import tools
 from utk_curio.backend.app.agents.domain import node_context
 from utk_curio.backend.app.agents.repositories import sessions
-from utk_curio.backend.app.agents.domain import agent_text
 
 log = logging.getLogger(__name__)
 
@@ -461,7 +460,11 @@ def confirmed_source(spec: dict | None, node_id: str, *, user_key: str | None = 
     if not picks:
         return None
     return {
-        "note": agent_text.message("dataset.confirmed-source"),
+        "note": (
+            "The user confirmed these sources for this node. Load ONLY these: a "
+            "catalog row through curio_data_path(\"<datasetId>\"), an external "
+            "row from its exact url."
+        ),
         "picks": [
             {k: v for k, v in pick.items() if k in
              ("lane", "name", "datasetId", "url", "format", "requirement", "installed",

@@ -56,7 +56,6 @@ from utk_curio.backend.app.common.egress_policy import (  # noqa: F401 - re-expo
     trusted_host_of,
     url_origin,
 )
-from utk_curio.backend.app.agents.domain import agent_text
 
 MAX_BODY_BYTES = 256 * 1024
 TIMEOUT_S = 10
@@ -64,6 +63,7 @@ TIMEOUT_S = 10
 # is orders of magnitude larger, so it gets its own timeout rather than
 # stretching the one that bounds an agent's verification call.
 DOWNLOAD_TIMEOUT_S = 120
+_TRUNCATION_MARKER = "\n…[truncated: response exceeded the egress body bound]"
 _STREAM_CHUNK = 64 * 1024
 
 
@@ -328,7 +328,7 @@ def fetch(
         truncated = len(body) > max_bytes
         text = body[:max_bytes].decode("utf-8", errors="replace")
         if truncated:
-            text += "\n" + agent_text.message("egress.body-truncated")
+            text += _TRUNCATION_MARKER
         result = EgressResult(
             url=url,
             final_url=current,
