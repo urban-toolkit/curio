@@ -8,8 +8,10 @@ node's reader), and a run's report of ids no feature has tells an edit that
 names features the data does not hold (``feature_edits.UNKNOWN_IDS_LINE``).
 
 The checks are keyed by the template's ``behavior`` (``edit-features``),
-never by its id, so a package template that names the behavior gets them
-too. Code the node holds already is the user's own and is never refused.
+never by its id, read from the account's copy of the template as a run finds
+the node's package, else from the catalog's: a template a user made that
+names the behavior gets them too. Code the node holds already is the user's
+own and is never refused.
 """
 from __future__ import annotations
 
@@ -43,10 +45,11 @@ _SENTENCES = re.compile(rf"(?<=[.!?;:])\s+|\s+[{_DASHES}]+\s+|\n+")
 _EDIT_WORD = re.compile(r"(?:" + "|".join(re.escape(word) for word in EDIT_WORDS) + r")\b", re.IGNORECASE)
 
 
-def is_map_edits(node_type) -> bool:
-    """Whether a node of *node_type* is a Map Edits node: its template names
-    the Map Edits behavior."""
-    return packages_services.template_behavior(node_type) == BEHAVIOR
+def is_map_edits(user_key, project_id, node_type) -> bool:
+    """Whether a node of *node_type* in *user_key*'s dataflow *project_id* is
+    a Map Edits node: its template names the Map Edits behavior, its copy in
+    the account read as a run finds it, else the catalog's."""
+    return packages_services.template_behavior(user_key, project_id, node_type) == BEHAVIOR
 
 
 def read(code) -> dict:
@@ -66,13 +69,13 @@ def holds_no_edits(code) -> bool:
     return not settings.get("edits") and not settings.get("newLayers")
 
 
-def refusal(node_type, code, *, current: str | None = None) -> str | None:
-    """Why *code*, written by an agent for a node of *node_type*, is refused:
-    Map Edits cannot read it, in the node's own words. None for a node of
-    another kind, for code the node reads, and for the code the node holds
-    already (*current*), which is the user's own: compared as an agent's code
-    is written into a node (``extract_node_content``)."""
-    if not is_map_edits(node_type):
+def refusal(user_key, project_id, node_type, code, *, current: str | None = None) -> str | None:
+    """Why *code*, written by an agent for a node of *node_type* in *user_key*'s
+    dataflow *project_id*, is refused: Map Edits cannot read it, in the node's
+    own words. None for a node of another kind, for code the node reads, and
+    for the code the node holds already (*current*), which is the user's own:
+    compared as an agent's code is written into a node (``extract_node_content``)."""
+    if not is_map_edits(user_key, project_id, node_type):
         return None
     if current is not None and content.extract_node_content(code) == content.extract_node_content(current):
         return None

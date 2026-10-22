@@ -66,11 +66,15 @@ def _seed_builtin(user_key: str) -> None:
     shutil.copyfile(shipped.path("packages") / "curio.builtin@1" / "manifest.json", target / "manifest.json")
 
 
-def _project(client, user, token, nodes, edges=()) -> str:
+def _project(client, user, token, nodes, edges=(), packages=()) -> str:
     from utk_curio.backend.app.projects.services import _user_dir_key
 
     _seed_builtin(_user_dir_key(user))
-    body = {"name": "p", "spec": {"dataflow": {"nodes": nodes, "edges": list(edges), "packages": []}}, "outputs": []}
+    body = {
+        "name": "p",
+        "spec": {"dataflow": {"nodes": nodes, "edges": list(edges), "packages": list(packages)}},
+        "outputs": [],
+    }
     response = client.post("/api/projects", json=body, headers=_auth(token))
     assert response.status_code == 201, response.get_data(as_text=True)
     return response.get_json()["id"]
@@ -486,10 +490,77 @@ class TestAnEmptyMapEditsNodeIsFilledOnlyWhenItsGoalNamesEdits:
             except (ValueError, AttributeError, UnicodeDecodeError):
                 continue
             for node in (flow or {}).get("nodes") or []:
-                if isinstance(node, dict) and map_edits.is_map_edits(node.get("type")):
+                if isinstance(node, dict) and map_edits.is_map_edits(None, None, node.get("type")):
                     seen.append((node["id"], map_edits.goal_names_edits(node.get("goal")),
                                  not map_edits.holds_no_edits(node.get("content"))))
         assert len(seen) >= 5, seen
         assert all(names == holds for _id, names, holds in seen), seen
         assert {holds for _id, _names, holds in seen} == {True, False}, seen
+
+    def test_the_words_a_goal_names_edits_by(self):
+        """The words the rule reads, which the knowledge page on Map Edits names
+        for agents: what each of the node's edits does, as its list says it,
+        and the plain words for the same."""
+        from utk_curio.backend.app.agents.domain import map_edits
+
+        assert map_edits.EDIT_WORDS == (
+            "remove", "delete", "drop", "restore", "put back", "set", "change", "scale", "multiply",
+            "raise", "lower", "increase", "decrease", "cut", "cap", "compute", "redraw", "reshape",
+            "move", "add", "draw",
+        )
+
+
+#: A package the user made, whose template names the Map Edits behavior.
+USER_PACKAGE = "user.whatif@1"
+USER_EDITS = "user.whatif/edits"
+
+
+def _write_user_package(user_key: str) -> None:
+    from utk_curio.backend.app.packages.repositories.store import user_packages_dir
+
+    folder = user_packages_dir(user_key) / USER_PACKAGE
+    folder.mkdir(parents=True, exist_ok=True)
+    (folder / "manifest.json").write_text(json.dumps({
+        "id": "user.whatif", "version": "1.0.0", "name": "What-if edits", "publisher": "t",
+        "description": "Edits for a what-if", "compatibility": {"major": 1}, "permissions": [],
+        "templates": [{
+            "id": "edits", "label": "What-if Edits", "category": "data", "engine": "python",
+            "editor": "code", "hasCode": True, "behavior": "edit-features",
+            "description": "Edits a map's layers for a what-if.",
+            "inputPorts": [{"types": ["GEODATAFRAME", "DATAFRAME", "LIST", "JSON"], "cardinality": "[1,n]"}],
+            "outputPorts": [{"types": ["GEODATAFRAME", "DATAFRAME", "JSON"], "cardinality": "1"}],
+        }],
+    }), encoding="utf-8")
+
+
+class TestTheBehaviorIsReadAsARunFindsTheNodesPackage:
+    def test_the_accounts_copy_names_it_and_the_catalogs_does_where_the_account_has_none(self, tmp_curio):
+        from utk_curio.backend.app.packages import service as packages_services
+
+        _write_user_package("4242")
+        assert packages_services.template_behavior("4242", None, USER_EDITS) == "edit-features"
+        assert packages_services.template_behavior("4242", None, USER_EDITS + "@1") == "edit-features"
+        # The account holds no copy of the built-in package here: the catalog's names it.
+        assert packages_services.template_behavior("4242", None, EDIT) == "edit-features"
+        assert packages_services.template_behavior("4242", None, DL) == "code"
+        assert packages_services.template_behavior("4242", None, "user.ghost/none") is None
+
+    def test_a_users_template_that_names_the_behavior_is_held_to_the_nodes_reader(
+        self, client, user_and_token, tmp_curio, monkeypatch,
+    ):
+        from utk_curio.backend.app.projects.services import _user_dir_key
+
+        user, token = user_and_token
+        project = _project(
+            client, user, token, [{"id": "n1", "type": DL, "content": LOADER, "x": 0, "y": 0}],
+            packages=[USER_PACKAGE],
+        )
+        _write_user_package(_user_dir_key(user))
+        _install(client, token, project, NB)
+        att = _attach(client, token, project, NB)
+        calls = _script(monkeypatch, [_create_tail(UNREADABLE, node_type=USER_EDITS), "I could not write it."])
+        body = _run(client, token, project, att, "add a what-if node that removes building 2")
+        assert not _proposals(body), "code the user's Map Edits template cannot read was proposed"
+        [refusal] = _refusals(calls, "node.create")
+        assert "Map Edits" in refusal and PROBLEM in refusal, refusal
 

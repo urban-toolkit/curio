@@ -641,7 +641,7 @@ def _mint_node_content_write(
         return agents_tool_rounds._refuse_params(refusal)
     # A Map Edits node's code is held to what the node reads; the code it
     # holds already is the user's own.
-    unreadable = map_edits.refusal(node.get("type"), proposed, current=node.get("content") or "")
+    unreadable = map_edits.refusal(user_key, project_id, node.get("type"), proposed, current=node.get("content") or "")
     if unreadable:
         return agents_tool_rounds._refuse_params(unreadable)
     basis = hashlib.sha256((node.get("content") or "").encode("utf-8")).hexdigest()
@@ -719,7 +719,7 @@ def _mint_node_create(
     )
     if refusal:
         return agents_tool_rounds._refuse_params(refusal)
-    unreadable = map_edits.refusal(entry["id"], proposed)
+    unreadable = map_edits.refusal(user_key, project_id, entry["id"], proposed)
     if unreadable:
         return agents_tool_rounds._refuse_params(unreadable)
     goal = params.get("goal")

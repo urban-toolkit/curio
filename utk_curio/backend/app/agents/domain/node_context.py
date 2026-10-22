@@ -182,7 +182,7 @@ def compose_node_context(
             # cannot be fixed in isolation — its reason travels with it.
             "runtime": _runtime_block(nid),
         }
-        if content_text.strip() and map_edits.is_map_edits(neighbor.get("type")):
+        if content_text.strip() and map_edits.is_map_edits(user_key, project_id, neighbor.get("type")):
             # A Map Edits neighbour's edits, in its own call: what a node
             # written beside a what-if is told the what-if changed.
             row["mapEditsCall"] = map_edits.context_call(content_text)

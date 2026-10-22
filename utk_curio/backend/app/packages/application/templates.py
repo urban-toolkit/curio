@@ -395,16 +395,10 @@ def catalog_template_flags() -> dict[str, frozenset[str]]:
     return _catalog_facts()["flags"]
 
 
-def template_behavior(node_type: object) -> str | None:
-    """The behavior the template of a node of *node_type* names (a manifest
-    template's ``behavior``, such as ``edit-features``), read from the
-    catalog's copy of it; None when it names none. Any spelling of the type is
-    read as its canonical id. A feature's checks are keyed by it, so a package
-    template that names a built-in behavior gets them too."""
-    canonical = canonical_template_id(node_type)
-    if not canonical:
-        return None
-    return _catalog_facts()["behaviors"].get(canonical)
+def catalog_template_behaviors() -> dict[str, str]:
+    """``{canonical template id: the behavior it names}`` for the templates of
+    the package catalog's own copies (``catalog_root``) that name one."""
+    return _catalog_facts()["behaviors"]
 
 
 def template_flags(node_type: object, templates: dict | None = None) -> frozenset[str]:

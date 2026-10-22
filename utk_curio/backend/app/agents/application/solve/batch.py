@@ -547,7 +547,9 @@ class SolveBatch:
             self.results[node_id] = {"status": "failed", "error": err[:300]}
             return {"nodeId": node_id, "status": "failed", "error": err[:300]}
         # A Map Edits node's code is held to what the node reads, unrun too.
-        unreadable = map_edits.refusal(node.get("type"), text_out, current=str(node.get("content") or ""))
+        unreadable = map_edits.refusal(
+            self.user_key, self.project_id, node.get("type"), text_out, current=str(node.get("content") or ""),
+        )
         if unreadable:
             self.results[node_id] = {"status": "failed", "error": unreadable[:300]}
             return {"nodeId": node_id, "status": "failed", "error": unreadable[:300]}
@@ -596,15 +598,17 @@ class SolveBatch:
                 continue
             node["content"] = item["content"]
 
-    @staticmethod
-    def holds_content(node: dict) -> bool:
+    def holds_content(self, node: dict) -> bool:
         """Whether *node* holds content Solve keeps rather than writes: any
         but blank, and for a Map Edits node, any but its call with no edits,
         which the node writes for itself."""
         text = str((node or {}).get("content") or "")
         if not text.strip():
             return False
-        return not (map_edits.is_map_edits(node.get("type")) and map_edits.holds_no_edits(text))
+        return not (
+            map_edits.is_map_edits(self.user_key, self.project_id, node.get("type"))
+            and map_edits.holds_no_edits(text)
+        )
 
     def persist_wave(self, wave_ids: list[str]) -> None:
         """dev/118 (DEC-075): the wave boundary IS the persist — and the
@@ -1207,7 +1211,10 @@ class SolveBatch:
                 # User content preserved.
                 queue.put((node_id, "skipped", None, None))
                 return
-            if map_edits.is_map_edits(node.get("type")) and not map_edits.goal_names_edits(node.get("goal")):
+            if (
+                map_edits.is_map_edits(self.user_key, self.project_id, node.get("type"))
+                and not map_edits.goal_names_edits(node.get("goal"))
+            ):
                 # An empty Map Edits node is filled only when its goal names
                 # the edits to make: an agent never makes them up.
                 queue.put((node_id, "no-content", map_edits.no_edits_reason(), None))

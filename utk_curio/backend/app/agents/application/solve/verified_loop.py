@@ -452,7 +452,7 @@ class VerifiedRounds:
         which round 0 may run, is the user's own and is never refused."""
         if self.use_current:
             return None
-        refusal = map_edits.refusal(self.node_type, self.candidate)
+        refusal = map_edits.refusal(self.user_key, self.project_id, self.node_type, self.candidate)
         if refusal is None:
             return None
         yield from self._record_failed_round(map_edits.KIND, refusal)
@@ -601,7 +601,7 @@ class VerifiedRounds:
         stdout, self.round_stdout = self.round_stdout, None
         if self.use_current or not stdout or self.verdict_result.get("verdict") != "pass":
             return None
-        if not map_edits.is_map_edits(self.node_type):
+        if not map_edits.is_map_edits(self.user_key, self.project_id, self.node_type):
             return None
         lines = map_edits.made_up_ids(stdout)
         if not lines:

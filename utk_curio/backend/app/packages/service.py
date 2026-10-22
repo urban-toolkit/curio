@@ -70,11 +70,12 @@ from utk_curio.backend.app.packages.application.templates import (
     resolve_templates,
     roster_templates,
     TEMPLATE_FLAGS,
-    template_behavior,
+    catalog_template_behaviors,
     template_content_kind,
     template_flags,
     template_is_executable,
 )
+from utk_curio.backend.app.packages.application.node_templates import installed_template, template_behavior
 from utk_curio.backend.app.packages.builder.factory import FactoryError
 
 from utk_curio.backend.app.packages.application.store_install import (
@@ -208,6 +209,8 @@ __all__ = [
     "resolve_templates",
     "roster_templates",
     "TEMPLATE_FLAGS",
+    "catalog_template_behaviors",
+    "installed_template",
     "template_behavior",
     "template_content_kind",
     "template_flags",
