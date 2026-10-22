@@ -29,12 +29,12 @@ on eight example fixtures rather than as a wrong score.
 """
 from __future__ import annotations
 
-from utk_curio.backend.app.agents.domain.contracts import AUTK_TEMPLATE
+from utk_curio.backend.app.agents.domain.contracts import AUTK_TEMPLATE, EDIT_FEATURES_TEMPLATE
 
 INTERACTION_EDGE_TYPE = "Interaction"
 #: The Interaction node, linked by an interaction edge to an Autark map it
 #: feeds on a data edge and to no other node (``interaction_edge_errors``).
-EDITOR_TEMPLATE = "curio.builtin/edit-features"
+EDITOR_TEMPLATE = EDIT_FEATURES_TEMPLATE
 MAP_TEMPLATE = AUTK_TEMPLATE
 
 

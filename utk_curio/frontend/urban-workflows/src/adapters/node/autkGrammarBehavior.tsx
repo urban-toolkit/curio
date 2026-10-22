@@ -1229,7 +1229,9 @@ export const useAutkGrammarBehavior = (
         return () => clearTimeout(timer);
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [editVersion]);
-    useEffect(() => () => registerEditMap(data.nodeId, null), [data.nodeId]);
+    useEffect(() => () => {
+        if (editFedRef.current) registerEditMap(data.nodeId, null);
+    }, [data.nodeId]);
 
     // Show only this layer, as the Interaction node feeding the map asks: the
     // map's other layers hidden, and back as they were when it stops asking.
