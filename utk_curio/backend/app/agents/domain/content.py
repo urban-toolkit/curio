@@ -76,6 +76,9 @@ STRUCTURED_CAPABILITIES = frozenset({
 SOLVE_CAPABILITIES = ("node.content.generate", "dataset.discover")
 #: What an agent that plans a dataflow and runs Solve over its plan declares.
 ORCHESTRATE_CAPABILITY = "dataflow.orchestrate"
+#: What an agent that composes notes declares: its chat's node.create places
+#: notes, not code (``turns/delegates._notes_agent_run`` keys on it too).
+NOTES_CAPABILITY = "research.notes.compose"
 #: What an agent that builds nodes on the canvas declares. An agent that does
 #: not hands a source to build a node from to the one its delegatesTo names.
 NODE_BUILD_CAPABILITY = "node.build"

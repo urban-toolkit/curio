@@ -31,6 +31,7 @@ from utk_curio.backend.app.agents.infrastructure.providers import ChatTurn
 from utk_curio.backend.app.agents.infrastructure.providers import NativeToolsRefused
 from utk_curio.backend.app.agents.infrastructure.providers import ToolCall
 from utk_curio.backend.app.agents.repositories import ledger
+from utk_curio.backend.app.agents.application import dataflow_block as agents_dataflow_block
 from utk_curio.backend.app.agents.application import tool_rounds as agents_tool_rounds
 from utk_curio.backend.app.agents.application.turns import delegates as agents_delegates
 from utk_curio.backend.app.agents.application.turns import grounding as agents_grounding
@@ -402,20 +403,28 @@ class AttachmentTurn:
             if req["capability"] == "node.content.generate"
             else None
         )
+        enriched = agents_delegates._enriched_delegate_inputs(
+            self.user_key, self.project_id, loop_ctx, req["capability"], inputs,
+        )
         status, text, child, home_att = agents_delegates._run_delegate_traced(
             self.user_key,
             self.project_id,
             resolution.coord,
             req["capability"],
-            agents_delegates._enriched_delegate_inputs(
-                self.user_key, self.project_id, loop_ctx, req["capability"], inputs,
-            ),
+            enriched,
             self.config,
             parent_execution_id=self.execution_id,
             parent_coord=loop_ctx["coord"],
             attachment_id=loop_ctx.get("attachment_id"),
             parent_name=getattr(loop_ctx.get("manifest"), "name", None),
             node_id=gen_node_id,
+            # What the dataflow can use, for a child that writes code: the
+            # runtime's, never a value the model put in the inputs, with the
+            # datasets this turn read already.
+            dataflow_block=agents_dataflow_block.for_delegated_run(
+                self.user_key, self.project_id, req["capability"], enriched,
+                datasets=loop_ctx.get("dataflow_datasets"),
+            ),
         )
         self.delegations.append(child)
         delegate_summary = text
