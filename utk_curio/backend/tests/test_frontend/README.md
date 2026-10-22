@@ -208,7 +208,7 @@ The DB stub is strictly additive - Strategy A still works against the same test 
 |---|---|
 | `api_json(url, token, *, method="GET", payload=None, timeout=10.0, raw=False)` | Authenticated JSON request, stdlib only. The escape hatch for asserting backend state from a browser test: a seeding or persistence problem then fails in about a second with the offending payload, instead of as a 15-second locator timeout that says nothing about which side broke. `raw=True` returns bytes, for binary endpoints such as a `.curio.zip`. |
 | `require_owner_view(page, *, timeout=4000)` | **Fails** when the dataflow opened read-only as the shared guest. A guest cannot see another user's installed packages, datasets or agents, so every catalog fetch comes back empty and the test asserts nothing. That is a setup bug: boot the stack with `--deploy`. |
-| `open_tools_palette(page, kind)` | Opens one left-rail palette, `"builtin"`, `"packages"`, `"datasets"`, `"agents"` or `"models"`, and returns its panel locator. Re-callable: it matches either the `Open …` or the `Close …` title and clicks only when the panel is not already showing, so a test that needs two palettes can come back to the first one. They are mutually exclusive (`ToolsMenu` keeps a single `activePalette`), so opening one closes the other. `close_tools_palette(page, kind)` closes one, and `tools_palette_is_open(page, kind)` says whether it shows. |
+| `open_tools_palette(page, kind)` | Opens one left-rail palette, `"builtin"`, `"packages"`, `"datasets"`, `"agents"` or `"models"`, and returns its panel locator. Re-callable: it matches either the `Open …` or the `Close …` tooltip (`data-tooltip`) and clicks only when the panel is not already showing, so a test that needs two palettes can come back to the first one. They are mutually exclusive (`ToolsMenu` keeps a single `activePalette`), so opening one closes the other. `close_tools_palette(page, kind)` closes one, and `tools_palette_is_open(page, kind)` says whether it shows. |
 
 ### Canvas authoring helpers
 
@@ -260,6 +260,14 @@ Node-header icons need `activate_header_icon` rather than `click()`: they activa
 on `pointerdown` + `pointerup` and swallow the native click (so press-and-drag
 still moves the node), and app chrome overlaps the header band at the top of the
 canvas, which means a real click at the button's centre lands on the overlay.
+
+A control's words are in its `data-tooltip`: Curio writes no `title` (Tooltips in
+`docs/ARCHITECTURE.md`), so select `[data-tooltip="Delete node"]`, never
+`[title=...]`. Playwright's `get_by_title` matched part of the title in any case;
+`[data-tooltip*="..." i]` does the same. The tooltip itself is the one
+`[role="tooltip"]`, in a portal on `document.body`, shown 400 ms after the pointer
+rests on its control (move the pointer with `page.mouse`: a locator's `hover`
+fails its actionability check under React Flow's pane).
 
 ### Browser-test conventions
 
@@ -339,6 +347,12 @@ finished: the dataset install-save is debounced 500 ms past it and answers
 seconds later, so any toast it raises lands well after the status flips. The
 helper sweeps, waits for a quiet window, and sweeps again, right before the
 shutter.
+
+An open Curio tooltip is hidden in every capture, so a pointer left resting on a
+control does not put its tooltip in the frame. Pass `keep_tooltip=True` when the
+tooltip is the subject, and `clip_rect`, a box of the page as
+`{x, y, width, height}`, to capture that box alone: `test_tooltips_e2e.py`
+frames each tooltip with its control and a margin, compared like a node close-up.
 
 A *"couldn't be generated"* warning is a **bug**, not routine noise (#180):
 `test_computed_json_output_e2e.py` fails on it. Sweeping is for the ordinary
@@ -503,7 +517,7 @@ test_frontend/
     sandbox.py                # direct sandbox calls, execute_workflow_programmatically
     vega_svg.py               # Vega-Lite SVG helpers
     capture_waits.py          # viewport fit, dismiss_toasts, webfont and running-node waits
-    images.py                 # captures, _compare_images
+    images.py                 # captures (a Curio tooltip hidden unless kept), _compare_images
     dialogs.py                # accept_confirm_dialog, wait_for_drawer_closed, leave_agent_badge
     screenshots.py            # save_workflow_test_screenshot, mint and re-mint, frame_nodes
     closeups.py               # save_node_closeup, close-up budgets, viewport hints

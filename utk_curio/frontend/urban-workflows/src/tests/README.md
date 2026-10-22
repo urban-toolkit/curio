@@ -102,6 +102,30 @@ jest.mock('../../services/api', () => ({
 }));
 ```
 
+### Tooltips
+
+An element's tooltip is its `data-tooltip` (see Tooltips in `docs/ARCHITECTURE.md`);
+nothing in the app writes a `title`, so Testing Library's ByTitle queries find
+nothing. Query by the tooltip's words with `_support/tooltips.ts`, the same family on
+the attribute: a string matches the whole text, a RegExp part of it.
+
+```typescript
+import { getByTooltip, queryByTooltip } from '../_support/tooltips';
+
+fireEvent.click(getByTooltip(document.body, 'Open dataset palette'));
+expect(queryByTooltip(document.body, /library list/)).toBeNull();
+```
+
+A test that shows the tooltip itself renders `TooltipLayer` and sets the waits to
+zero with `setTooltipTimings` from `components/tooltip/tooltipStore`, which returns
+the function that puts them back:
+
+```typescript
+let restore: () => void;
+beforeEach(() => { restore = setTooltipTimings({ show: 0, hide: 0 }); });
+afterEach(() => restore());
+```
+
 ## Running Specific Tests
 
 ```bash
