@@ -3,11 +3,11 @@
 One validation/normalization/derivation truth for the per-node
 ``appearance.backgroundColor`` used by: build-request parsing
 (``build_models``), proposal minting and Apply (``agents.services``), and the
-frontend's color logic: the palette, the inks, the links and the contrast are
-``noteColors.json`` in the frontend's ``src/contracts/``, which the built-in
-Note draws with and this module reads (``utk_curio/common/shared_constants.py``).
-No caller re-implements color rules; forking this logic is the bug the memo
-forbids.
+frontend's color logic. The rules take the palette, the inks, the links and
+the contrast as a :class:`NotePalette`: Curio's is ``noteColors.json`` in the
+frontend's ``src/contracts/``, which the built-in Note draws with and
+``application/note_palette.py`` reads, so this layer reads no file. No caller
+re-implements color rules; forking this logic is the bug the memo forbids.
 
 Contract (dev/89 §3, the research notes' definition-of-done profile):
 
@@ -31,28 +31,45 @@ spec never carry raw text/border CSS (dev/89 §3).
 from __future__ import annotations
 
 import re
+from dataclasses import dataclass
 from typing import Any, Mapping
 
-from utk_curio.common import shared_constants
 
-_NOTE_COLORS = shared_constants.read("noteColors")
+@dataclass(frozen=True)
+class NotePalette:
+    """What a node's appearance is checked and drawn in."""
 
-#: Central palette: design tokens, which the frontend draws from the same file.
-NAMED_COLORS: dict[str, str] = dict(_NOTE_COLORS["colors"])
+    #: The central palette: design tokens, by the name a note's appearance gives.
+    colors: Mapping[str, str]
+    #: The palette name of a note that names none or one that cannot be read.
+    default_name: str
+    #: The ink pair the behavior renders with.
+    dark_foreground: str
+    light_foreground: str
+    #: The link colors under dark ink and under light ink, falling back to the
+    #: ink when neither clears the contrast against the background.
+    link_on_light: str
+    link_on_dark: str
+    #: The contrast an ink must reach (WCAG AA for normal text).
+    min_contrast: float
 
-DEFAULT_COLOR_NAME: str = _NOTE_COLORS["defaultColor"]
-DEFAULT_BACKGROUND = NAMED_COLORS[DEFAULT_COLOR_NAME]
+    @classmethod
+    def from_json(cls, data: Mapping[str, Any]) -> "NotePalette":
+        """The palette as ``noteColors.json`` writes it."""
+        return cls(
+            colors=dict(data["colors"]),
+            default_name=data["defaultColor"],
+            dark_foreground=data["inks"]["dark"],
+            light_foreground=data["inks"]["light"],
+            link_on_light=data["links"]["onLight"],
+            link_on_dark=data["links"]["onDark"],
+            min_contrast=data["minContrast"],
+        )
 
-# WCAG AA for normal text.
-MIN_CONTRAST: float = _NOTE_COLORS["minContrast"]
+    @property
+    def default_background(self) -> str:
+        return self.colors[self.default_name]
 
-# Foreground candidates: the ink pair the behavior renders with.
-DARK_FOREGROUND: str = _NOTE_COLORS["inks"]["dark"]
-LIGHT_FOREGROUND: str = _NOTE_COLORS["inks"]["light"]
-# Link candidates (light-bg blue / dark-bg blue), falling back to the
-# foreground when neither clears AA against the background.
-LINK_ON_LIGHT: str = _NOTE_COLORS["links"]["onLight"]
-LINK_ON_DARK: str = _NOTE_COLORS["links"]["onDark"]
 
 _HEX_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
 
@@ -85,13 +102,13 @@ def contrast_ratio(hex_a: str, hex_b: str) -> float:
     return (lighter + 0.05) / (darker + 0.05)
 
 
-def _best_foreground(background: str) -> tuple[str, float]:
-    dark = contrast_ratio(background, DARK_FOREGROUND)
-    light = contrast_ratio(background, LIGHT_FOREGROUND)
-    return (DARK_FOREGROUND, dark) if dark >= light else (LIGHT_FOREGROUND, light)
+def _best_foreground(background: str, palette: NotePalette) -> tuple[str, float]:
+    dark = contrast_ratio(background, palette.dark_foreground)
+    light = contrast_ratio(background, palette.light_foreground)
+    return (palette.dark_foreground, dark) if dark >= light else (palette.light_foreground, light)
 
 
-def normalize_background(value: Any) -> str:
+def normalize_background(value: Any, palette: NotePalette) -> str:
     """Normalize one requested background to a lowercase ``#RRGGBB``.
 
     Accepts a palette name (case-insensitive) or a six-digit hex. Everything
@@ -102,12 +119,12 @@ def normalize_background(value: Any) -> str:
     if not isinstance(value, str) or not value:
         raise AppearanceError(
             "backgroundColor must be a palette name "
-            f"({', '.join(sorted(NAMED_COLORS))}) or a six-digit #RRGGBB hex"
+            f"({', '.join(sorted(palette.colors))}) or a six-digit #RRGGBB hex"
         )
     candidate = value.strip()
     if candidate != value or any(c.isspace() for c in candidate):
         raise AppearanceError(f"backgroundColor {value!r} contains whitespace — refused")
-    named = NAMED_COLORS.get(candidate.lower())
+    named = palette.colors.get(candidate.lower())
     if named is not None:
         return named
     if not _HEX_RE.match(candidate):
@@ -117,17 +134,17 @@ def normalize_background(value: Any) -> str:
             "are refused)"
         )
     normalized = candidate.lower()
-    _, best = _best_foreground(normalized)
-    if best < MIN_CONTRAST:
+    _, best = _best_foreground(normalized, palette)
+    if best < palette.min_contrast:
         raise AppearanceError(
             f"backgroundColor {value!r} cannot produce WCAG AA text contrast "
-            f"(best foreground reaches {best:.2f}:1, needs {MIN_CONTRAST}:1) — "
+            f"(best foreground reaches {best:.2f}:1, needs {palette.min_contrast}:1) — "
             "choose a lighter or darker color"
         )
     return normalized
 
 
-def normalize_appearance(raw: Any) -> dict[str, str] | None:
+def normalize_appearance(raw: Any, palette: NotePalette) -> dict[str, str] | None:
     """Validate one appearance object: ``None`` stays ``None``; otherwise
     exactly ``{"backgroundColor": <name-or-hex>}`` normalized to hex."""
     if raw is None:
@@ -142,17 +159,17 @@ def normalize_appearance(raw: Any) -> dict[str, str] | None:
         )
     if "backgroundColor" not in raw:
         raise AppearanceError("appearance requires backgroundColor")
-    return {"backgroundColor": normalize_background(raw["backgroundColor"])}
+    return {"backgroundColor": normalize_background(raw["backgroundColor"], palette)}
 
 
-def resolve_background(stored: Any) -> str:
+def resolve_background(stored: Any, palette: NotePalette) -> str:
     """Render-path tolerance: a stored value that is missing or no longer
     valid falls back to the default yellow — QUIETLY, because legacy specs
     are data to render, not requests to refuse (dev/89 §6)."""
     try:
-        return normalize_background(stored)
+        return normalize_background(stored, palette)
     except AppearanceError:
-        return DEFAULT_BACKGROUND
+        return palette.default_background
 
 
 def _shade(hex_color: str, factor: float) -> str:
@@ -164,15 +181,15 @@ def _shade(hex_color: str, factor: float) -> str:
     return _hex((r + (255 - r) * t, g + (255 - g) * t, b + (255 - b) * t))
 
 
-def derived_colors(background: Any) -> dict[str, str]:
+def derived_colors(background: Any, palette: NotePalette) -> dict[str, str]:
     """Foreground, muted text, border, link, and focus colors for one
     background — every pair AA-safe by construction. Computed at render
     time, never persisted (dev/89 §4)."""
-    bg = resolve_background(background)
-    foreground, _ = _best_foreground(bg)
-    dark_ink = foreground == DARK_FOREGROUND
-    link = LINK_ON_LIGHT if dark_ink else LINK_ON_DARK
-    if contrast_ratio(bg, link) < MIN_CONTRAST:
+    bg = resolve_background(background, palette)
+    foreground, _ = _best_foreground(bg, palette)
+    dark_ink = foreground == palette.dark_foreground
+    link = palette.link_on_light if dark_ink else palette.link_on_dark
+    if contrast_ratio(bg, link) < palette.min_contrast:
         link = foreground
     # Muted text: pull the ink 25% toward the background; step back toward
     # full ink until it clears AA (always terminates at the foreground).
@@ -180,7 +197,7 @@ def derived_colors(background: Any) -> dict[str, str]:
     br, bgc, bb = _rgb(bg)
     for mix in (0.25, 0.15, 0.0):
         muted = _hex((fr + (br - fr) * mix, fg_ + (bgc - fg_) * mix, fb + (bb - fb) * mix))
-        if contrast_ratio(bg, muted) >= MIN_CONTRAST:
+        if contrast_ratio(bg, muted) >= palette.min_contrast:
             break
     border = _shade(bg, 0.82 if dark_ink else 1.35)
     return {

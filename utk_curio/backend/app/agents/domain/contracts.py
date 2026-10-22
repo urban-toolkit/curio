@@ -779,10 +779,10 @@ def _not_code(src: _Sources) -> str:
 
 
 def _note_palette(_src: _Sources) -> str:
-    """The colour names a node's appearance accepts (``NAMED_COLORS``)."""
-    from utk_curio.backend.app.packages.domain.node_appearance import NAMED_COLORS
+    """The colour names a node's appearance accepts (``NOTE_PALETTE``)."""
+    from utk_curio.backend.app.packages.application.note_palette import NOTE_PALETTE
 
-    return ", ".join(NAMED_COLORS)
+    return ", ".join(NOTE_PALETTE.colors)
 
 
 def _web_calls_per_run(_src: _Sources) -> str:

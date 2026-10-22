@@ -85,23 +85,26 @@ def test_the_agent_categories_are_the_files():
 
 def test_a_notes_colors_are_the_files():
     """The palette, the default, the inks, the links and the contrast an
-    agent's note is saved by, and the pairing the frontend draws: the dark ink
-    and its link on a light note, the light ink and its link on a dark one."""
+    agent's note is saved by, which the application layer hands the rules,
+    and the pairing the frontend draws: the dark ink and its link on a light
+    note, the light ink and its link on a dark one."""
+    from utk_curio.backend.app.packages.application.note_palette import NOTE_PALETTE as palette
     from utk_curio.backend.app.packages.domain import node_appearance as appearance
 
     data = _file("noteColors")
-    assert list(appearance.NAMED_COLORS.items()) == list(data["colors"].items())
-    assert appearance.DEFAULT_COLOR_NAME == data["defaultColor"]
-    assert appearance.DEFAULT_BACKGROUND == data["colors"][data["defaultColor"]]
-    assert appearance.MIN_CONTRAST == data["minContrast"]
-    assert (appearance.DARK_FOREGROUND, appearance.LIGHT_FOREGROUND) == (data["inks"]["dark"], data["inks"]["light"])
-    assert (appearance.LINK_ON_LIGHT, appearance.LINK_ON_DARK) == (data["links"]["onLight"], data["links"]["onDark"])
-    light, dark = appearance.derived_colors(data["defaultColor"]), appearance.derived_colors("#000000")
+    assert list(palette.colors.items()) == list(data["colors"].items())
+    assert palette.default_name == data["defaultColor"]
+    assert palette.default_background == data["colors"][data["defaultColor"]]
+    assert palette.min_contrast == data["minContrast"]
+    assert (palette.dark_foreground, palette.light_foreground) == (data["inks"]["dark"], data["inks"]["light"])
+    assert (palette.link_on_light, palette.link_on_dark) == (data["links"]["onLight"], data["links"]["onDark"])
+    light = appearance.derived_colors(data["defaultColor"], palette)
+    dark = appearance.derived_colors("#000000", palette)
     assert (light["foreground"], light["link"]) == (data["inks"]["dark"], data["links"]["onLight"])
     assert (dark["foreground"], dark["link"]) == (data["inks"]["light"], data["links"]["onDark"])
     for name, color in data["colors"].items():
-        assert appearance.derived_colors(name)["background"] == color, name
-    assert appearance.resolve_background(None) == data["colors"][data["defaultColor"]]
+        assert appearance.derived_colors(name, palette)["background"] == color, name
+    assert appearance.resolve_background(None, palette) == data["colors"][data["defaultColor"]]
 
 
 def test_the_autark_facts_are_the_files_and_its_families_the_vendored_schemas():

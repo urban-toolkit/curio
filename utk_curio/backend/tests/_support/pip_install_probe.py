@@ -314,7 +314,7 @@ def _shared_constants():
     from (``common/shared_constants.py``), the sha256 of each file there, and
     a value of each module that reads one."""
     from utk_curio.backend.app.agents.domain import contracts, manifest
-    from utk_curio.backend.app.packages.domain import node_appearance
+    from utk_curio.backend.app.packages.application.note_palette import NOTE_PALETTE
     from utk_curio.common import shared_constants
 
     folder = shared_constants.CONTRACTS_DIR
@@ -324,7 +324,7 @@ def _shared_constants():
         "stopped_by": contracts.STOPPED_BY_PHRASES,
         "one_view": contracts.AUTK_ONE_VIEW,
         "categories": list(manifest.AGENT_CATEGORIES),
-        "palette": node_appearance.NAMED_COLORS,
+        "palette": dict(NOTE_PALETTE.colors),
     }
 
 

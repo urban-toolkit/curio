@@ -581,8 +581,9 @@ text in `data.code` (the spec's `content`) and the color in
   HTML (`skipHtml`), an element allowlist, URLs kept only when https (`httpsOnly`),
   links in a new tab with the arrow, and an image as its alt text.
 - `utils/noteColors.ts` derives the background, ink and link color the way
-  `packages/domain/node_appearance.py` does, from the palette and inks both
-  read in `src/contracts/noteColors.json` (see [Shared Constants](#shared-constants)).
+  the rules of `packages/domain/node_appearance.py` do, from the palette and
+  inks of `src/contracts/noteColors.json`, which `packages/application/note_palette.py`
+  reads and hands those rules (see [Shared Constants](#shared-constants)).
 - A note template is a template with a behavior whose content kind is `note`
   (`is_note_template` in `packages/application/templates.py`): no editor, no
   input, no widgets. `presentation_templates`, the roster's `presentation` flag and
@@ -1550,7 +1551,7 @@ Some vocabularies and tables are read by both the frontend and the backend. Each
 | `renderCauses.json` | The empty-render kind prefix, and each cause a render can draw nothing for: whether it blames the document, and what it means (see [Render Outcomes](#render-outcomes)) | `utils/renderOutcome.ts` | `contracts.EMPTY_RENDER_KIND`, `RENDER_CAUSES`, `is_document_at_fault` |
 | `solveStopReasons.json` | Each reason a node's repair loop stops for (`stoppedBy`), and the phrase it reads as (see [The Solve loop](#the-solve-loop)) | The attempts card and the per-node Solve row (`AgentSolveAttemptsCard.tsx`) | `contracts.SOLVE_STOP_REASONS` and `STOPPED_BY_PHRASES`, which the failure sentences read |
 | `agentCategories.json` | The categories an agent manifest can declare | The agent palette (`agentCategoryStyle.ts`) | `manifest.AGENT_CATEGORIES`, for the validator and the catalog's facets |
-| `noteColors.json` | A note's palette, its default color, the two inks and the two link colors, and the contrast an ink must reach (see [Notes](#notes)) | `utils/noteColors.ts` | `packages/domain/node_appearance.py` |
+| `noteColors.json` | A note's palette, its default color, the two inks and the two link colors, and the contrast an ink must reach (see [Notes](#notes)) | `utils/noteColors.ts` | `packages/application/note_palette.py`, which hands the palette to the rules of `packages/domain/node_appearance.py`: the domain layer reads no file |
 | `autkGrammar.json` | The Autark grammar's top-level families, the prefix of the names a grammar node's inputs are read by (`input_<k>`), and what a document with more than one view is told (see [Referencing Upstream Data in Autark Nodes](#referencing-upstream-data-in-autark-nodes)) | `contracts/autkGrammar.ts`, `utils/autkSpecKind.ts` | `contracts.INPUT_TABLE_PREFIX` and `AUTK_ONE_VIEW` |
 | `visDefaults.json` | What a visualization node does with its input by itself: the column roles and the pandas dtypes each role comes from, the Vega-Lite and Autark starter ladders (each rule's id, condition, mark or family and description, in ladder order), the Vega-Lite `$schema` URL, and the column names, URL extensions and share of image values behind Simple View's image columns | `starterSpec.ts`, `vegaDefaultSpec.ts`, `autkDefaultSpec.ts` and `imageColumns.ts`, which keep each rule's builder, keyed by its id, and the matching logic | `contracts.py`'s tables, which the prompt fields render into the preamble |
 
@@ -1587,7 +1588,7 @@ Everything an agent reads is hand-written Markdown in `agents/`, the Agent Catal
   | `inputs.handles` | The handles of a node's input circles, `"in", "in_1", "in_2", ...` | `workflow_spec.slot_handle_id` |
   | `inputs.chip:<k>`, `inputs.chip:<k>.<column>` | The chip node code reads input *k* by, or a column of it, `[!! input_0 !!]` | `code_references.reference_text` |
   | `builtin.not_code` | The built-in templates whose nodes hold no Python or JavaScript code, one per line | The built-in manifest, by the rule `builtin.control` uses |
-  | `note.palette` | The colour names a node's appearance accepts | `node_appearance.NAMED_COLORS` |
+  | `note.palette` | The colour names a node's appearance accepts | `note_palette.NOTE_PALETTE` |
   | `egress.calls_per_run` | The web calls one run may make | `egress_policy.MAX_CALLS_PER_RUN` |
   | `candidates.rows_per_lane` | The rows each lane of a candidates card holds | `content._CANDIDATES_MAX_ROWS_PER_LANE` |
   | `node_context.runtime_keys` | The keys of a node row's `runtime` block | `node_context.RUNTIME_BLOCK_KEYS` |

@@ -189,6 +189,7 @@ class TestFieldReplay:
         proceed to the notes — as cards BELOW it, one node at a time — with no
         second message. The install apply queues the A16 sequence and returns
         the ordered ids; applying each (the frontend walk) lands its node."""
+        from utk_curio.backend.app.packages.application.note_palette import NOTE_PALETTE
         from utk_curio.backend.app.packages.domain import node_appearance
         from utk_curio.backend.app.projects.services import _user_dir_key
 
@@ -231,8 +232,8 @@ class TestFieldReplay:
         assert cards[0]["summary"].endswith("· Question")
 
         # The frontend walk: one apply at a time, each landing exactly one node.
-        yellow = node_appearance.normalize_appearance({"backgroundColor": "yellow"})
-        green = node_appearance.normalize_appearance({"backgroundColor": "green"})
+        yellow = node_appearance.normalize_appearance({"backgroundColor": "yellow"}, NOTE_PALETTE)
+        green = node_appearance.normalize_appearance({"backgroundColor": "green"}, NOTE_PALETTE)
         for i, fid in enumerate(follow_ups):
             assert _apply(client, token, pid, att_id, fid).status_code == 200
             assert len(_spec_nodes(client, token, pid)) == i + 1
@@ -248,6 +249,7 @@ class TestFieldReplay:
         landed — white and headed "Note". Now: titles round-trip and the A13
         defaults fill the colors the model omitted (question yellow, answer
         green) on the Researcher's own attachment path."""
+        from utk_curio.backend.app.packages.application.note_palette import NOTE_PALETTE
         from utk_curio.backend.app.packages.domain import node_appearance
         from utk_curio.backend.app.packages.application import project_packages as packages_services
         from utk_curio.backend.app.projects.services import _user_dir_key
@@ -271,8 +273,8 @@ class TestFieldReplay:
         for p in proposals:
             assert _apply(client, token, pid, att_id, p["proposalId"]).status_code == 200
 
-        yellow = node_appearance.normalize_appearance({"backgroundColor": "yellow"})
-        green = node_appearance.normalize_appearance({"backgroundColor": "green"})
+        yellow = node_appearance.normalize_appearance({"backgroundColor": "yellow"}, NOTE_PALETTE)
+        green = node_appearance.normalize_appearance({"backgroundColor": "green"}, NOTE_PALETTE)
         notes = [n for n in _spec_nodes(client, token, pid) if "note-surface" in n["type"]]
         assert [(n.get("title"), n["metadata"]["appearance"]) for n in notes] == [
             ("Question", yellow), ("Cool roofs in Chicago", green),

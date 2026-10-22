@@ -281,9 +281,9 @@ class TestThePromptFacts:
                 contracts.render_template(marker)
 
     def test_the_note_palette_is_the_named_colors(self):
-        from utk_curio.backend.app.packages.domain.node_appearance import NAMED_COLORS
+        from utk_curio.backend.app.packages.application.note_palette import NOTE_PALETTE
 
-        palette = ", ".join(NAMED_COLORS)
+        palette = ", ".join(NOTE_PALETTE.colors)
         # The package-writing mode, and the post-it look the Researcher's chat
         # asks for when it has a notes package written.
         for name in ("package_build_instruction.md", "researcher_instruction.md"):

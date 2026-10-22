@@ -471,7 +471,7 @@ class TestNotesLandOnTheBuiltInNote:
 
     def test_the_notes_mode_places_the_findings_on_the_built_in_note(
             self, client, user_and_token, tmp_curio, monkeypatch):
-        from utk_curio.backend.app.packages.domain.node_appearance import NAMED_COLORS
+        from utk_curio.backend.app.packages.application.note_palette import NOTE_PALETTE
 
         user, token = user_and_token
         delegate = ('```curio.v1\n{"delegateRequest": {"capability": '
@@ -500,14 +500,14 @@ class TestNotesLandOnTheBuiltInNote:
         notes = self._notes(user_key, pid)
         assert notes["Question"]["type"] == NOTE
         assert notes["Question"]["content"] == self.QUESTION
-        assert notes["Question"]["metadata"]["appearance"] == {"backgroundColor": NAMED_COLORS["yellow"]}
+        assert notes["Question"]["metadata"]["appearance"] == {"backgroundColor": NOTE_PALETTE.colors["yellow"]}
         assert notes["Cool roofs in Chicago"]["type"] == NOTE
         assert notes["Cool roofs in Chicago"]["content"] == self.ANSWER
-        assert notes["Cool roofs in Chicago"]["metadata"]["appearance"] == {"backgroundColor": NAMED_COLORS["green"]}
+        assert notes["Cool roofs in Chicago"]["metadata"]["appearance"] == {"backgroundColor": NOTE_PALETTE.colors["green"]}
 
     def test_the_researchers_chat_places_its_notes_on_the_built_in_note(
             self, client, user_and_token, tmp_curio, monkeypatch):
-        from utk_curio.backend.app.packages.domain.node_appearance import NAMED_COLORS
+        from utk_curio.backend.app.packages.application.note_palette import NOTE_PALETTE
 
         def create(title, content):
             return "```curio.v1\n" + json.dumps({"toolRequest": {"tool": "node.create", "params": {
@@ -534,10 +534,10 @@ class TestNotesLandOnTheBuiltInNote:
         notes = self._notes(user_key, pid)
         # No color was asked for: the question is yellow and the answer green.
         assert notes["Question"]["type"] == NOTE
-        assert notes["Question"]["metadata"]["appearance"] == {"backgroundColor": NAMED_COLORS["yellow"]}
+        assert notes["Question"]["metadata"]["appearance"] == {"backgroundColor": NOTE_PALETTE.colors["yellow"]}
         assert notes["Cool roofs in Chicago"]["type"] == NOTE
         assert notes["Cool roofs in Chicago"]["content"] == self.ANSWER
-        assert notes["Cool roofs in Chicago"]["metadata"]["appearance"] == {"backgroundColor": NAMED_COLORS["green"]}
+        assert notes["Cool roofs in Chicago"]["metadata"]["appearance"] == {"backgroundColor": NOTE_PALETTE.colors["green"]}
 
 
 # ── the prompts carry the contract (commit 3) ────────────────────────────────

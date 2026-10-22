@@ -334,7 +334,7 @@ def test_a_pip_install_reads_the_constants_it_shares_with_the_browser_from_the_f
     frontend. A pip install's backend reads them there, inside ``utk_curio/``,
     byte for byte as a clone holds them, and its modules hold their values."""
     from utk_curio.backend.app.agents.domain import contracts, manifest
-    from utk_curio.backend.app.packages.domain import node_appearance
+    from utk_curio.backend.app.packages.application.note_palette import NOTE_PALETTE
 
     found = _read(pip_install, "shared_constants")
     assert Path(found["folder"]).resolve() == (pip_install.site / "utk_curio" / SHARED_WITH_THE_FRONTEND).resolve()
@@ -344,7 +344,7 @@ def test_a_pip_install_reads_the_constants_it_shares_with_the_browser_from_the_f
     assert found["stopped_by"] == contracts.STOPPED_BY_PHRASES
     assert found["one_view"] == contracts.AUTK_ONE_VIEW
     assert found["categories"] == list(manifest.AGENT_CATEGORIES)
-    assert found["palette"] == node_appearance.NAMED_COLORS
+    assert found["palette"] == dict(NOTE_PALETTE.colors)
 
 
 def test_a_pip_install_lists_every_shipped_dataset_model_source_and_package(pip_install):
