@@ -441,7 +441,7 @@ Curio finds the agent for each of its own jobs by the capability it declares:
 | `dataflow.orchestrate` | plan a dataflow; its chat has the **Solve** strip, and API Settings lists the agents its Solve runs |
 | `node.build` | build nodes on the canvas; its chat says when a reply changed nothing on it |
 
-When several agents in the dataflow declare a capability, the one the asking agent's `delegatesTo` names first is picked.
+When several agents in the dataflow declare a capability, the one the asking agent's `delegatesTo` names first is picked. An agent in the dataflow that the asking agent's `delegatesTo` does not name for a capability takes it too, and an agent is told, by name, every agent its work can go to.
 
 ### Modes
 
@@ -468,7 +468,7 @@ An agent can also hand work to one of its own modes. List the agent itself in `d
 "delegatesTo": [{ "id": "agent.you.my-explainer", "capabilities": ["node.output.interpret"] }]
 ```
 
-A chat with the agent then runs the `instruction` prompt, and when the model asks for `node.output.interpret`, that mode runs as a second call, with no tools, and its answer comes back to the chat. A task for no node opens no chat of its own: it shows in the agent's reply.
+A chat with the agent then runs the `instruction` prompt, and when the model asks for `node.output.interpret`, that mode runs as a second call, with no tools, and its answer comes back to the chat. A task for no node opens no chat of its own: it shows in the agent's reply. A capability of its own that no such entry names is never handed back to the agent.
 
 A definition that declares `node.content.generate` may also declare an `autk-grammar` prompt. A run that writes an Autark document on a provider that takes a reply schema uses it in place of the capability's instruction, and holds the reply to the Autark schema. Without that prompt, its runs are never held to the schema.
 

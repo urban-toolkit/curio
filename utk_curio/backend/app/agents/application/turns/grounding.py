@@ -17,6 +17,7 @@ from utk_curio.backend.app.agents.application import tools
 from utk_curio.backend.app.agents.application import verify
 from utk_curio.backend.app.agents.infrastructure import egress
 from utk_curio.backend.app.agents.infrastructure.providers import ProviderConfig
+from utk_curio.backend.app.agents.repositories import project_agents
 from utk_curio.backend.app.agents.repositories import sessions
 from utk_curio.backend.app.agents.application import catalog as agents_catalog
 from utk_curio.backend.app.agents.application import dataset_resolution as agents_dataset_resolution
@@ -603,7 +604,7 @@ def _grounding_context(
     hints: list[str] = []
     if "catalog.search" in (loop_ctx.get("granted") or []):
         hints.append("a `path` from a catalog.search row (granted — search first)")
-    if _delegates_discovery(user_key, loop_ctx.get("manifest")):
+    if _delegates_discovery(user_key, project_id, loop_ctx.get("manifest")):
         hints.append(
             "a URL the runtime verified — delegate the dataset.discover capability "
             "to find and verify candidates first, then build from the one the user confirms"
@@ -639,17 +640,18 @@ def _grounding_context(
     )
 
 
-def _delegates_discovery(user_key: str, manifest) -> bool:
-    """Whether *manifest*'s agent asks another for datasets: an agent its
-    ``delegatesTo`` names, resolved to a visible definition, declares
-    ``dataset.discover`` and is delegated it
-    (``delegation.visible_capability_entries``)."""
+def _delegates_discovery(user_key: str, project_id: str, manifest) -> bool:
+    """Whether *manifest*'s agent asks another for datasets: its delegation
+    paragraph offers ``dataset.discover`` (``delegation.offered_capability_entries``,
+    the list the run is given)."""
     if not getattr(manifest, "delegates_to", None):
         return False
     try:
+        spec = projects_storage.read_spec(user_key, project_id) or {}
+        installed = set(project_agents.project_agents(spec))
         return any(
             capability == "dataset.discover"
-            for capability, _name in delegation.visible_capability_entries(user_key, manifest)
+            for capability, _name in delegation.offered_capability_entries(user_key, installed, manifest)
         )
     except Exception:  # noqa: BLE001 - an unreadable definition delegates nothing
         return False

@@ -89,6 +89,8 @@ def resolve(user_key: str, project_id: str, parent: AgentManifest, capability: s
 
     An internal built-in is never installed: it resolves from the roster, so
     it is ``ok`` wherever the walk reaches it, and never an install proposal.
+    The parent's own capabilities reach it only through an entry naming
+    itself (its modes): neither fallback hands one back to it.
     """
     from utk_curio.backend.app.projects import storage as projects_storage
 
@@ -121,8 +123,9 @@ def resolve_among(
     # Capability-first fallback: any other installed template declaring it.
     preferred = {a for a in preferred_ids if parent.delegates(a, capability)}
     for coord in sorted(installed, key=coord_order):
-        if coord.split("@", 1)[0] in preferred:
-            continue  # already walked above
+        agent_id = coord.split("@", 1)[0]
+        if agent_id in preferred or agent_id == parent.agent_id:
+            continue  # walked above, or the parent itself
         m = catalog._resolve_definition(user_key, coord)
         if m is not None and capability in m.capability_ids:
             return Resolution("ok", coord, m)
@@ -134,7 +137,10 @@ def resolve_among(
         for m in builtin.list_builtin_manifests():
             # An internal agent is reached only through a parent that
             # delegates it that capability, which the walk above covers.
-            if capability in m.capability_ids and not builtin.is_internal(m.dir_name):
+            if (
+                capability in m.capability_ids and not builtin.is_internal(m.dir_name)
+                and m.agent_id != parent.agent_id
+            ):
                 missing = Resolution("not-installed", m.dir_name, m)
                 break
     return missing or Resolution("unresolvable")
@@ -191,6 +197,41 @@ def visible_capability_entries(user_key: str, parent: AgentManifest) -> list[tup
             if cap not in seen and parent.delegates(agent_id, cap):
                 seen.add(cap)
                 entries.append((cap, m.name))
+    return entries
+
+
+def offered_capability_entries(
+    user_key: str, installed: set[str], parent: AgentManifest
+) -> list[tuple[str, str]]:
+    """``(capability_id, agent name)`` pairs for a run's delegation paragraph,
+    in a dataflow whose lockfile is *installed*: every capability the run can
+    hand off, under the name of the agent :func:`resolve_among` would run.
+
+    First the capabilities :func:`visible_capability_entries` offers, in its
+    order; a delegate that is visible but not installed keeps its own name,
+    since asking for it proposes its install. Then the capabilities of the
+    other agents installed in the dataflow that those entries do not offer,
+    which the capability-first fallback reaches. The parent's own
+    capabilities are offered only through an entry naming itself."""
+    entries: list[tuple[str, str]] = []
+    offered: set[str] = set()
+    for capability, name in visible_capability_entries(user_key, parent):
+        resolved = resolve_among(user_key, installed, parent, capability)
+        if resolved.outcome == "ok" and resolved.manifest is not None:
+            name = resolved.manifest.name
+        offered.add(capability)
+        entries.append((capability, name))
+    for coord in sorted(installed, key=coord_order):
+        if coord.split("@", 1)[0] == parent.agent_id:
+            continue
+        m = catalog._resolve_definition(user_key, coord)
+        for capability in (m.capability_ids if m is not None else ()):
+            if capability in offered:
+                continue
+            resolved = resolve_among(user_key, installed, parent, capability)
+            if resolved.outcome == "ok" and resolved.manifest is not None:
+                offered.add(capability)
+                entries.append((capability, resolved.manifest.name))
     return entries
 
 
