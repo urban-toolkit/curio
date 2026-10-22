@@ -1,6 +1,6 @@
 """The agents Curio ships: one folder each in ``agents/``, read as a user's agent is.
 
-Each folder is ``agents/<agentId>@<version>/``: a ``manifest.json``
+Each folder is ``agents/<agentId>@<major>/``: a ``manifest.json``
 (``docs/schemas/agent-package.v1.json``) and a ``prompts/`` folder, the layout
 of an agent a user uploads, read by the same loader
 (``manifest.load_agent_manifest``). Their manifests also carry the fields only
@@ -119,7 +119,7 @@ def list_builtin_manifests() -> list[AgentManifest]:
 
 
 def get_builtin_manifest(coord: str) -> AgentManifest | None:
-    """The agent Curio ships at ``<agentId>@<version>`` *coord*, or None."""
+    """The agent Curio ships at ``<agentId>@<major>`` *coord*, or None."""
     entry = _entry(str(coord or ""))
     return _parse(*entry) if entry is not None else None
 
@@ -144,13 +144,13 @@ def internal_agent_ids() -> frozenset[str]:
 
 def is_internal(coord: object) -> bool:
     """Whether *coord* (or a bare agent id) is a helper Curio ships. A
-    definition of the same id at another version is the owner's own, and is not."""
-    agent_id, _, version = str(coord or "").partition("@")
+    definition of the same id at another major is the owner's own, and is not."""
+    agent_id, _, major = str(coord or "").partition("@")
     shipped_coord = builtin_coord(agent_id)
     if shipped_coord is None:
         return False
     m = get_builtin_manifest(shipped_coord)
-    return not m.catalog.listed and version in ("", m.version)
+    return not m.catalog.listed and major in ("", str(m.major))
 
 
 def gets_worked_examples(coord: str, capability: str | None = None) -> bool:

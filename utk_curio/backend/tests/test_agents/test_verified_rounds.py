@@ -40,7 +40,7 @@ def _spec(node):
 
 
 class _Resolution:
-    coord = "agent.node-builder@1.0.0"
+    coord = "agent.curio.node-builder@1"
     outcome = "ok"
 
 
@@ -83,7 +83,7 @@ def _rounds(app, node, *, replies, exec_fn, start_from_current=False, spec=None,
     with app.test_request_context():
         gen = rounds._verified_content_rounds(
             KEY, PID, spec=spec, node=node, resolution=_Resolution(), config=None,
-            parent_execution_id="exec-1", parent_coord="agent.dataflow-builder@1.0.0",
+            parent_execution_id="exec-1", parent_coord="agent.curio.dataflow-builder@1",
             attachment_id="att-1", exec_fn=exec_fn,
             grounding_loop_ctx={"granted": [], "manifest": None},
             start_from_current=start_from_current, delegate_runner=_delegate, **extra,
@@ -525,7 +525,7 @@ class TestConnectionKeys:
         with app.test_request_context():
             gen = rounds._verified_content_rounds(
                 KEY, PID, spec=_spec(node), node=node, resolution=_Resolution(), config=None,
-                parent_execution_id="e", parent_coord="agent.dataflow-builder@1.0.0",
+                parent_execution_id="e", parent_coord="agent.curio.dataflow-builder@1",
                 attachment_id="att-1", exec_fn=exec_fn, grounding_loop_ctx=shared_ctx,
                 delegate_runner=lambda inputs: ("ok", replies[min(len(probes) // 2, 2)], {"executionId": "c"}),
             )
@@ -840,11 +840,11 @@ class TestValidateNodeCarriesDatasetPaths:
         dataset_id = routes_turns.TestDatasetFinderTools()._seed_dataset(user, filename="heat.csv")
         body = {"name": "p", "spec": {"dataflow": {"nodes": [], "edges": [], "packages": []}}, "outputs": []}
         pid = client.post("/api/projects", json=body, headers=_auth(token)).get_json()["id"]
-        for coord in ("agent.dataflow-builder@1.0.0", "agent.node-builder@1.0.0"):
+        for coord in ("agent.curio.dataflow-builder@1", "agent.curio.node-builder@1"):
             client.post(f"/api/agents/projects/{pid}/install", json={"coord": coord}, headers=_auth(token))
         att = client.post(
             f"/api/agents/projects/{pid}/attachments",
-            json={"coord": "agent.dataflow-builder@1.0.0", "target": {"kind": "canvas"}},
+            json={"coord": "agent.curio.dataflow-builder@1", "target": {"kind": "canvas"}},
             headers=_auth(token),
         ).get_json()["attachmentId"]
         plan = {"goal": "heat", "nodes": [
@@ -906,8 +906,8 @@ class TestVerifiedSolve:
     outage leaves the node pending; propose mode mints an EXECUTED review;
     ``verify: false`` keeps the legacy write."""
 
-    DFB = "agent.dataflow-builder@1.0.0"
-    NB = "agent.node-builder@1.0.0"
+    DFB = "agent.curio.dataflow-builder@1"
+    NB = "agent.curio.node-builder@1"
 
     def _plan_tail(self, with_stats=True):
         nodes = [{"ref": "load", "nodeType": DL, "title": "Load", "intent": "load the tract heat data"}]
@@ -1427,7 +1427,7 @@ class TestSolveNode:
     round 0 runs the current code; a node with content lands as an executed
     review; an empty node is written on PASS; exhaustion mints nothing."""
 
-    NB = "agent.node-builder@1.0.0"
+    NB = "agent.curio.node-builder@1"
     LOADER = 'import pandas as pd\ndataset_path = curio_data_path("{DATASET}")\ndf = pd.read_csv(dataset_path)\nreturn df'
 
     def _setup(self, client, user, token, monkeypatch, *, content, child_replies=(), exec_outcomes=None,

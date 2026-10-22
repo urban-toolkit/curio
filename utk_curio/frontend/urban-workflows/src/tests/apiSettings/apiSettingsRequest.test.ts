@@ -12,7 +12,7 @@ import {
 describe("the settings page's URL for a card's request", () => {
   const cases: [ApiSettingsFocus | null, string][] = [
     [null, "/settings/keys"],
-    [{ section: "agent-models", agentId: "agent.dataflow-builder" }, "/settings/agents?agent=agent.dataflow-builder"],
+    [{ section: "agent-models", agentId: "agent.curio.dataflow-builder" }, "/settings/agents?agent=agent.curio.dataflow-builder"],
     [{ section: "agent-models" }, "/settings/agents"],
     [{ section: "llm-configs", configId: "c1" }, "/settings/keys?config=c1"],
     [{ section: "source-key", slot: "mapillary.token" }, "/settings/keys?service=mapillary.token"],

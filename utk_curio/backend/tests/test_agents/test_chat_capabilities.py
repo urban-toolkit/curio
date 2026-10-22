@@ -180,7 +180,7 @@ class TestItIsAPreference:
         from utk_curio.backend.app.agents.domain import builtin
 
         testing_provider.reset()
-        manifest = builtin.get_builtin_manifest(builtin.builtin_coord("agent.researcher"))
+        manifest = builtin.get_builtin_manifest(builtin.builtin_coord("agent.curio.researcher"))
         assert "structured-output" in manifest.provider_capabilities
         assert cc.chat_capabilities(_cfg(api_type="testing"), USER).structured_output is False
 
@@ -190,7 +190,7 @@ class TestItIsAPreference:
             "label": "Scripted", "apiType": "testing", "model": "scripted"})
         client.put("/api/agents/llm/default", headers=headers,
                    json={"configId": created.get_json()["config"]["id"]})
-        coord = builtin.builtin_coord("agent.researcher")
+        coord = builtin.builtin_coord("agent.curio.researcher")
         client.post(f"/api/agents/projects/{alice_project}/install", json={"coord": coord}, headers=headers)
         att = client.post(f"/api/agents/projects/{alice_project}/attachments",
                           json={"coord": coord, "target": {"kind": "canvas"}},
@@ -213,7 +213,7 @@ class TestCachedInputReachesTheRun:
             "label": "Scripted", "apiType": "testing", "model": "scripted"})
         client.put("/api/agents/llm/default", headers=headers,
                    json={"configId": created.get_json()["config"]["id"]})
-        coord = builtin.builtin_coord("agent.researcher")
+        coord = builtin.builtin_coord("agent.curio.researcher")
         client.post(f"/api/agents/projects/{alice_project}/install", json={"coord": coord}, headers=headers)
         att = client.post(f"/api/agents/projects/{alice_project}/attachments",
                           json={"coord": coord, "target": {"kind": "canvas"}},

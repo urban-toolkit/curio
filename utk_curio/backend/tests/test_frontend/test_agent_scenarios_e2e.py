@@ -51,7 +51,7 @@ from .utils import (
 )
 
 USERNAME = "agent_scenarios_e2e_user"
-DFB_COORD = "agent.dataflow-builder@1.0.0"
+DFB_COORD = "agent.curio.dataflow-builder@1"
 DFB_NAME = "Dataflow Builder"
 CA = "curio.builtin/computation-analysis"
 

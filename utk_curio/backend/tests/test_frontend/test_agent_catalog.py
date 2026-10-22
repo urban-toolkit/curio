@@ -49,15 +49,15 @@ if TYPE_CHECKING:
     from .utils import FrontendPage
 
 # A built-in with no requiresAgents: the plain install path.
-AGENT_COORD = "agent.researcher@1.0.0"
-AGENT_ID = "agent.researcher"
+AGENT_COORD = "agent.curio.researcher@1"
+AGENT_ID = "agent.curio.researcher"
 AGENT_NAME = "Researcher"
 
-# A built-in that declares hard dependencies (on agent.dataset-finder and
-# agent.node-builder), which is what makes the closure assertable end to end.
+# A built-in that declares hard dependencies (on agent.curio.dataset-finder and
+# agent.curio.node-builder), which is what makes the closure assertable end to end.
 # The Node Builder is the one asserted; it requires the Dataset Finder itself.
-DEPENDENT_COORD = "agent.dataflow-builder@1.0.0"
-REQUIRED_ID = "agent.node-builder"
+DEPENDENT_COORD = "agent.curio.dataflow-builder@1"
+REQUIRED_ID = "agent.curio.node-builder"
 
 DRAWER_ROOT = '[data-curio-agent-catalog-drawer="true"]'
 SEARCH_PLACEHOLDER = "Search agents, publishers, tags…"

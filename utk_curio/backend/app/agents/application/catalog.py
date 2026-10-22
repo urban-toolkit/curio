@@ -17,6 +17,7 @@ from utk_curio.backend.app.agents.domain import contracts
 from utk_curio.backend.app.agents.domain.manifest import AGENT_CATEGORIES
 from utk_curio.backend.app.agents.domain.manifest import AgentManifest
 from utk_curio.backend.app.agents.domain.manifest import AgentManifestError
+from utk_curio.backend.app.agents.domain.manifest import version_order
 from utk_curio.backend.app.agents.repositories import catalog_settings
 from utk_curio.backend.app.agents.repositories import imports
 from utk_curio.backend.app.agents.repositories import project_agents
@@ -300,13 +301,17 @@ def _require_definition(user_key: str, coord: str) -> AgentManifest:
     return m
 
 
-def _copy_published(user_key: str, coord: str) -> None:
+def _copy_published(user_key: str, coord: str, *, newer_than: str | None = None) -> None:
     """Copy a published definition into the user store, stamped ``global``
     trust: it came from the Global Catalog, so it runs from the adder's own
     copy after its publisher unpublishes it (#438), the way a shared dataset
     or node package does, and it is never this account's to publish. A prompt
     it names as Curio's (``curio:<file>``) stays a name, read from Curio's own
-    prompts, as in the publisher's copy."""
+    prompts, as in the publisher's copy.
+
+    With *newer_than*, the version of an earlier copy, the published one
+    replaces that copy only when its version is newer: one ``<id>@<major>``
+    holds one version, so a new release of the same major reaches the adder."""
     try:
         bundle = storage.read_definition_bundle_from_dir(
             publications.published_agent_dir(coord), carry_shared=False,
@@ -316,9 +321,13 @@ def _copy_published(user_key: str, coord: str) -> None:
     if bundle is None:
         return
     manifest = dict(bundle["manifest"])
+    if newer_than is not None and version_order(str(manifest.get("version", ""))) <= version_order(newer_than):
+        return
     manifest["provenance"] = {**(manifest.get("provenance") or {}), "trust": "global"}
     try:
-        storage.write_definition_atomic(user_key, coord, manifest, bundle["prompts"])
+        storage.write_definition_atomic(
+            user_key, coord, manifest, bundle["prompts"], replace=newer_than is not None,
+        )
     except FileExistsError:
         pass  # a concurrent add wrote it first
 
@@ -332,11 +341,14 @@ def _materialize_definition(user_key: str, coord: str) -> None:
 
     Heals stale copies (memo dev/44): a built-in store copy that predates a
     shipped asset (e.g. the pre-dev/38 missing system preamble) is rewritten to
-    the current shipped set on the next install/import, idempotently, and
-    never touches a non-built-in definition (an owned import deliberately
-    shadowing a built-in coord keeps its own bytes, as does an earlier copy of
-    a published one)."""
+    the current shipped set on the next install/import, idempotently. An
+    earlier copy of a published one is replaced when the publication's version
+    is newer, and an owned import deliberately shadowing a built-in coord keeps
+    its own bytes."""
     existing = storage.load_installed_agent_definition(user_key, coord)
+    if existing is not None and existing.provenance.trust == "global":
+        _copy_published(user_key, coord, newer_than=existing.version)
+        return
     if existing is not None and existing.provenance.trust != "built-in":
         return  # owned/imported shadow: its bytes are authoritative
     bundle = builtin_definition_bundle(coord)

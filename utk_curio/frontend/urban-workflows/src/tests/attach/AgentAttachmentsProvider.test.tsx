@@ -54,7 +54,7 @@ const api = agentsApi as jest.Mocked<typeof agentsApi>;
 
 const attachment = {
   attachmentId: "a1",
-  coord: "agent.my-explainer@1.0.0",
+  coord: "agent.test.my-explainer@1",
   target: { kind: "canvas" as const },
   sessionId: "s1",
   revision: 1,
@@ -624,7 +624,7 @@ describe("AgentAttachmentsProvider apply→canvas bridge (memo dev/48 §3.3)", (
       attachmentId: "a1",
       proposalId: "p1",
       status: "applied",
-      installedCoord: "agent.node-builder@1.0.0",
+      installedCoord: "agent.curio.node-builder@1",
     });
     renderProvider();
     fireEvent.click(screen.getByText("open"));
@@ -640,7 +640,7 @@ describe("AgentAttachmentsProvider apply→canvas bridge (memo dev/48 §3.3)", (
       attachmentId: "a1",
       proposalId: "p1",
       status: "applied",
-      installedCoord: "agent.node-builder@1.0.0",
+      installedCoord: "agent.curio.node-builder@1",
     });
     renderProvider();
     fireEvent.click(screen.getByText("open"));
@@ -657,8 +657,8 @@ describe("AgentAttachmentsProvider delegate activity lines (memo dev/48)", () =>
     const seen: string[][] = [];
     api.runAttachmentStream.mockImplementation(async (_p, _a, _m, onDelta, onEvent) => {
       onEvent?.("delegate_requested", { capability: "node.content.generate" });
-      onEvent?.("delegate_started", { capability: "node.content.generate", coord: "agent.node-builder@1.0.0" });
-      onEvent?.("delegate_result", { capability: "node.content.generate", coord: "agent.node-builder@1.0.0", status: "ok", durationMs: 12 });
+      onEvent?.("delegate_started", { capability: "node.content.generate", coord: "agent.curio.node-builder@1" });
+      onEvent?.("delegate_result", { capability: "node.content.generate", coord: "agent.curio.node-builder@1", status: "ok", durationMs: 12 });
       onDelta("done");
       return { reply: "done", executionId: "e9", usage: null };
     });
@@ -680,7 +680,7 @@ describe("AgentAttachmentsProvider delegate activity lines (memo dev/48)", () =>
     });
     const flat = seen.flat();
     expect(flat).toContain("delegating node.content.generate …");
-    expect(flat).toContain("agent.node-builder@1.0.0 · ok");
+    expect(flat).toContain("agent.curio.node-builder@1 · ok");
     // Transient: cleared once the turn finalizes.
     expect(seen[seen.length - 1]).toEqual([]);
   });
@@ -694,7 +694,7 @@ describe("AgentAttachmentsProvider lines that stay under a reply (#447, #243)", 
   // nothing for an agent that declares node.build.
   const nodeBuilder = {
     ...attachment,
-    coord: "agent.node-builder@1.0.0",
+    coord: "agent.curio.node-builder@1",
     name: "Node Builder",
     capabilities: ["node.build", "dataset.fetch.author", "node.content.generate"],
   };
@@ -856,7 +856,7 @@ describe("AgentAttachmentsProvider stream fallback payload parity (dev/53)", () 
     api.runAttachmentStream.mockRejectedValue(new Error("stream transport failed"));
     api.runAttachment.mockResolvedValue({
       attachmentId: "a1",
-      coord: "agent.dataflow-builder@1.0.0",
+      coord: "agent.curio.dataflow-builder@1",
       reply: "Here is the plan.",
       executionId: "e7",
       usage: { inputTokens: 5, outputTokens: 6 },

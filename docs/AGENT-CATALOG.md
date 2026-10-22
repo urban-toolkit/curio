@@ -20,17 +20,17 @@ This guide is in six parts, plus operator notes:
 
 ### Concept
 
-An **agent** in Curio is a small self-contained folder, shaped like a node package, identified by an id and a version:
+An **agent** in Curio is a small self-contained folder, shaped like a node package, named by its id and the major of its version:
 
 ```
-<agentId>@<version>     e.g.   agent.researcher@1.0.0
-                               agent.dataflow-builder@1.0.0
+<agentId>@<major>     e.g.   agent.curio.researcher@1
+                             agent.curio.dataflow-builder@1
 ```
 
 The folder holds a `manifest.json` (the contract) and the prompt files the manifest references:
 
 ```
-agent.researcher@1.0.0/
+agent.curio.researcher@1/
   manifest.json
   prompts/researcher_instruction.md
   prompts/researcher_notes_instruction.md
@@ -39,7 +39,7 @@ agent.researcher@1.0.0/
 
 Its manifest also names the preamble Curio shares with every agent, `curio:default_preamble.md`. An exported or added copy of the agent carries it as `prompts/default_preamble.md`.
 
-Agent ids always begin with **`agent.`**, which keeps them apart from node package ids (`curio.builtin`, `ai.utk.uhvi`) and dataset ids (`data.utk.chicago-boundary`). The version is a full semver string.
+An agent id is **`agent.`**, its publisher and its name (`agent.curio.researcher`, `agent.acme.heat-risk-summarizer`), as a dataset id is `data.` and its publisher (`data.utk.chicago-boundary`). The manifest's version is a full semver string, and a newer version of the same major replaces the older one in its folder.
 
 ### The agents
 
@@ -64,7 +64,7 @@ The other three are helpers. They have modes only, never a chat: they are never 
 | **Dataflow Reader** | Explain the whole dataflow (Dataflow Builder); suggest its next steps (Dataset Finder, Dataflow Builder) |
 | **Generated Content Evaluator** | Check generated node content against its goal (Node Builder, Dataflow Builder) |
 
-Each of the seven is a folder in Curio's [`agents/`](../agents/), `agents/<agentId>@1.0.0/`, in the format of an agent you import ([The manifest](#6-the-manifest)). Its manifest's `catalog` says whether it is a catalog agent or a helper, and its place in the order the lists of who asks follow.
+Each of the seven is a folder in Curio's [`agents/`](../agents/), `agents/<agentId>@1/`, in the format of an agent you import ([The manifest](#6-the-manifest)). Its manifest's `catalog` says whether it is a catalog agent or a helper, and its place in the order the lists of who asks follow.
 
 ### How an agent picks what to run
 
@@ -81,34 +81,34 @@ Each agent's prompts, by the key its manifest gives them:
 | Key | File | When it runs |
 |---|---|---|
 | `system` | [`default_preamble.md`](../utk_curio/llm-prompts/default_preamble.md) | every call |
-| `instruction` | [`researcher_instruction.md`](../agents/agent.researcher@1.0.0/prompts/researcher_instruction.md) | a message you type |
-| `research.notes.compose` | [`researcher_notes_instruction.md`](../agents/agent.researcher@1.0.0/prompts/researcher_notes_instruction.md) | the Dataflow Builder asks for notes from search results |
-| `research.verify` | [`research_instruction.md`](../agents/agent.researcher@1.0.0/prompts/research_instruction.md) | another agent asks for a fact to be checked |
+| `instruction` | [`researcher_instruction.md`](../agents/agent.curio.researcher@1/prompts/researcher_instruction.md) | a message you type |
+| `research.notes.compose` | [`researcher_notes_instruction.md`](../agents/agent.curio.researcher@1/prompts/researcher_notes_instruction.md) | the Dataflow Builder asks for notes from search results |
+| `research.verify` | [`research_instruction.md`](../agents/agent.curio.researcher@1/prompts/research_instruction.md) | another agent asks for a fact to be checked |
 
 **Node Builder**
 
 | Key | File | When it runs |
 |---|---|---|
 | `system` | [`default_preamble.md`](../utk_curio/llm-prompts/default_preamble.md) | every call |
-| `instruction` | [`node_build_instruction.md`](../agents/agent.node-builder@1.0.0/prompts/node_build_instruction.md) | a message you type |
-| `node.content.generate` | [`new_content_prompt.md`](../agents/agent.node-builder@1.0.0/prompts/new_content_prompt.md) | someone asks for a node's content |
-| `autk-grammar` | [`new_content_autk_prompt.md`](../agents/agent.node-builder@1.0.0/prompts/new_content_autk_prompt.md) | the same, for an Autark node |
-| `package.recommend` | [`package_recommendation_instruction.md`](../agents/agent.node-builder@1.0.0/prompts/package_recommendation_instruction.md) | the Dataflow Builder asks which packages a task needs |
-| `package.build`, `package.extend`, `node.kind.author` | [`package_build_instruction.md`](../agents/agent.node-builder@1.0.0/prompts/package_build_instruction.md) | someone asks for a package to be written |
+| `instruction` | [`node_build_instruction.md`](../agents/agent.curio.node-builder@1/prompts/node_build_instruction.md) | a message you type |
+| `node.content.generate` | [`new_content_prompt.md`](../agents/agent.curio.node-builder@1/prompts/new_content_prompt.md) | someone asks for a node's content |
+| `autk-grammar` | [`new_content_autk_prompt.md`](../agents/agent.curio.node-builder@1/prompts/new_content_autk_prompt.md) | the same, for an Autark node |
+| `package.recommend` | [`package_recommendation_instruction.md`](../agents/agent.curio.node-builder@1/prompts/package_recommendation_instruction.md) | the Dataflow Builder asks which packages a task needs |
+| `package.build`, `package.extend`, `node.kind.author` | [`package_build_instruction.md`](../agents/agent.curio.node-builder@1/prompts/package_build_instruction.md) | someone asks for a package to be written |
 
 **Dataflow Builder**
 
 | Key | File | When it runs |
 |---|---|---|
 | `system` | [`default_preamble.md`](../utk_curio/llm-prompts/default_preamble.md) | every call |
-| `instruction` | [`orchestration_instruction.md`](../agents/agent.dataflow-builder@1.0.0/prompts/orchestration_instruction.md) | a message you type |
+| `instruction` | [`orchestration_instruction.md`](../agents/agent.curio.dataflow-builder@1/prompts/orchestration_instruction.md) | a message you type |
 
 **Dataset Finder**
 
 | Key | File | When it runs |
 |---|---|---|
 | `system` | [`default_preamble.md`](../utk_curio/llm-prompts/default_preamble.md) | every call |
-| `instruction` | [`discovery_instruction.md`](../agents/agent.dataset-finder@1.0.0/prompts/discovery_instruction.md) | a message you type, and another agent or Solve asking for datasets |
+| `instruction` | [`discovery_instruction.md`](../agents/agent.curio.dataset-finder@1/prompts/discovery_instruction.md) | a message you type, and another agent or Solve asking for datasets |
 
 ### Walk-throughs
 
@@ -171,9 +171,9 @@ Agent state lives in files under `.curio/` and inside each project's spec; the a
 
 | Layer | On disk | Written by |
 |---|---|---|
-| **Shipped agents**, the seven Curio ships | `agents/<agentId>@<version>/` beside `utk_curio/` (`utk_curio/_shipped/agents/` in a pip install), each a `manifest.json` and `prompts/` | Nothing: Curio reads them. Adding one to a project copies it into your definition store. |
-| **Shared catalog**, published agents | `.curio/agents-catalog/<agentId>@<version>/` | **Publish** adds one; **Unpublish** removes it. |
-| **Definition store**, the agents themselves | `.curio/users/<user-key>/agents/<agentId>@<version>/` (`manifest.json` and `prompts/`) | **Import agent** adds one; adding a built-in or published agent copies it here. |
+| **Shipped agents**, the seven Curio ships | `agents/<agentId>@<major>/` beside `utk_curio/` (`utk_curio/_shipped/agents/` in a pip install), each a `manifest.json` and `prompts/` | Nothing: Curio reads them. Adding one to a project copies it into your definition store. |
+| **Shared catalog**, published agents | `.curio/agents-catalog/<agentId>@<major>/` | **Publish** adds one; **Unpublish** removes it. |
+| **Definition store**, the agents themselves | `.curio/users/<user-key>/agents/<agentId>@<major>/` (`manifest.json` and `prompts/`) | **Import agent** adds one; adding a built-in or published agent copies it here. |
 | **Per-user list**, the agents in all your projects | `.curio/users/<user-key>/imported-agents.json` | **Add to all projects** and **Import agent** add an entry; **Remove from all projects** drops it. |
 | **Catalog settings**, values you own | `.curio/users/<user-key>/catalog-settings.json` | **Settings** on `/catalog/agents` saves a setting you changed; **Restore default** removes it. See [Catalog settings](#catalog-settings). |
 | **Per-dataflow lockfile**, the agents one dataflow has | `dataflow.agents` in the project's `spec.trill.json` | **Add to project** and **Remove from project** in the drawer. **Add to all projects** and **Remove from all projects** change every project. |
@@ -362,22 +362,22 @@ Whoever runs the install can set a Deployment default with `curio.py start` flag
 
 ## 5. Importing, publishing, and sharing
 
-**Import agent**, in the drawer's footer or the `/catalog/agents` header, takes a `manifest.json` and its `.md` or `.txt` prompt files, not an archive. The prompt files must match what the manifest references, except `curio:default_preamble.md`, which is Curio's own and takes no file; size limits apply; a manifest that sets `catalog` is refused; and a definition whose id and version you already have is refused: a change is a new version.
+**Import agent**, in the drawer's footer or the `/catalog/agents` header, takes a `manifest.json` and its `.md` or `.txt` prompt files, not an archive. The prompt files must match what the manifest references, except `curio:default_preamble.md`, which is Curio's own and takes no file; size limits apply; and a manifest that sets `catalog` is refused. An agent whose id and major you already have replaces yours when its version is newer, and is refused otherwise.
 
-**Publish**, on `/catalog/agents`, copies one of your own imported definitions into the shared catalog, where every user on the install can browse it. Built-in agents cannot be published. **Unpublish** removes it from the shared catalog, and only the publisher can do it; only the publisher can publish over it, too. Other users who added the agent keep their copy and keep running it.
+**Publish**, on `/catalog/agents`, copies one of your own imported definitions into the shared catalog, where every user on the install can browse it. Built-in agents cannot be published. **Unpublish** removes it from the shared catalog, and only the publisher can do it; only the publisher can publish over it, too. Other users who added the agent keep their copy and keep running it, and a newer version of the same major reaches them the next time they add the agent to a dataflow.
 
 ---
 
 ## 6. The manifest
 
-An agent package is a folder named `<agentId>@<version>` holding a `manifest.json` and a `prompts/` directory. The agents Curio ships are such folders in its [`agents/`](../agents/), read the way an imported agent is. The manifest uses **camelCase** field names; [`docs/schemas/agent-package.v1.json`](schemas/agent-package.v1.json) (JSON Schema Draft 2020-12) is the full reference.
+An agent package is a folder named `<agentId>@<major>`, the major of its version, holding a `manifest.json` and a `prompts/` directory. The agents Curio ships are such folders in its [`agents/`](../agents/), read the way an imported agent is. The manifest uses **camelCase** field names; [`docs/schemas/agent-package.v1.json`](schemas/agent-package.v1.json) (JSON Schema Draft 2020-12) is the full reference.
 
 A minimal, complete manifest:
 
 ```json
 {
   "$schema": "../../docs/schemas/agent-package.v1.json",
-  "id": "agent.my-helper",
+  "id": "agent.you.my-helper",
   "name": "My Helper",
   "category": "node",
   "version": "1.0.0",
@@ -401,8 +401,8 @@ A minimal, complete manifest:
 
 | Field | Required | What it declares |
 |---|---|---|
-| `id` | Yes | `agent.`-prefixed, kebab-case package id. Together with `version` it forms the folder name `<id>@<version>`. |
-| `version` | Yes | Semver-style version string. |
+| `id` | Yes | `agent.`, the publisher and the agent's name, each kebab-case: `agent.you.my-helper`. With the major of `version` it forms the folder name `<id>@<major>`. |
+| `version` | Yes | Semver-style version string. A newer version of the same major replaces an older one. |
 | `name` | Yes | Human-readable name shown in the catalog. |
 | `category` | Yes | One of `data`, `node`, `canvas`, `package`, `evaluate`. See [Categories](#categories). |
 | `capabilities` | Yes | Non-empty list of `{ id, contractVersion }`: the contracts this agent implements. A capability that also names an `instruction` is a mode; see [Modes](#modes). |
@@ -465,7 +465,7 @@ When another agent delegates `node.output.interpret`, the run uses `prompts/inte
 An agent can also hand work to one of its own modes. List the agent itself in `delegatesTo`, naming only those capabilities:
 
 ```json
-"delegatesTo": [{ "id": "agent.my-explainer", "capabilities": ["node.output.interpret"] }]
+"delegatesTo": [{ "id": "agent.you.my-explainer", "capabilities": ["node.output.interpret"] }]
 ```
 
 A chat with the agent then runs the `instruction` prompt, and when the model asks for `node.output.interpret`, that mode runs as a second call, with no tools, and its answer comes back to the chat. A task for no node opens no chat of its own: it shows in the agent's reply.

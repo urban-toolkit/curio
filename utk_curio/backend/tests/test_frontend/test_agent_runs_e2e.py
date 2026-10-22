@@ -57,7 +57,7 @@ CODE_NODE_ID = "agent-e2e-code"
 
 # Read tools that are cheap, deterministic and - the point - reach nothing
 # outside this process. web.search / web.fetch are deliberately absent: they
-# really open sockets (app/agents/egress.py), and agent.researcher, the card
+# really open sockets (app/agents/egress.py), and agent.curio.researcher, the card
 # that declares them, is scripted on its node.create and declares
 # dataflow.read and node.read as well, so nothing is lost.
 #
@@ -65,7 +65,7 @@ CODE_NODE_ID = "agent-e2e-code"
 # knowing: this harness exports CURIO_DISCOVERY_FIXTURES, so in THIS stack it
 # would answer from the recorded corpus rather than a portal. It stays out
 # anyway, because the safety would then depend on a harness detail rather than
-# on the tool, and agent.dataset-finder declares discovery.sources too - which
+# on the tool, and agent.curio.dataset-finder declares discovery.sources too - which
 # reads manifests off disk and is safe unconditionally.
 SAFE_READ_TOOLS = (
     "dataflow.read", "node.read", "node.runtime.read", "packages.catalog",
@@ -83,7 +83,7 @@ SAFE_READ_TOOLS = (
 # Ordered MOST specific first, because an agent that declares several gets the
 # first match and that match should be the thing it is *for*. Reviewing the
 # baseline captures is what surfaced the ordering: with node.create ahead of
-# dataflow.plan.write, agent.dataflow-builder - whose whole capability is
+# dataflow.plan.write, agent.curio.dataflow-builder - whose whole capability is
 # dataflow.orchestrate - minted a single node instead of a plan. node.create
 # sits ahead of node.content.write for the same reason and one more: applying it
 # puts a NEW NODE on the canvas, which is the most visible proof an agent did
@@ -515,7 +515,7 @@ def test_a_refusal_of_native_tools_falls_back_to_the_fenced_protocol(current_ser
     round again on the fenced protocol, and the run completes."""
     require_project_page()
     require_user_auth()
-    spec = next(s for s in _CARDS if s.agent_id == "agent.researcher")
+    spec = next(s for s in _CARDS if s.agent_id == "agent.curio.researcher")
     token, base, attachment_id = _attached(spec, current_server, "fallback")
     script_agent_replies(
         current_server,
@@ -558,7 +558,7 @@ def test_an_autark_document_is_written_under_its_schema(current_server: str):
 
     require_project_page()
     require_user_auth()
-    spec = next(s for s in _CARDS if s.agent_id == "agent.node-builder")
+    spec = next(s for s in _CARDS if s.agent_id == "agent.curio.node-builder")
     project = _project_spec()
     project["dataflow"]["nodes"].append({
         "id": AUTK_NODE_ID, "type": "curio.builtin/autk-grammar", "x": 1400, "y": 120,
@@ -586,7 +586,7 @@ def test_an_autark_document_is_written_under_its_schema(current_server: str):
     assert "held to the Autark document's schema" in captured_system_prompt(current_server, call=1)
     (entry,) = [p for p in run["content"] if p.get("type") == "delegation"]
     assert entry["status"] == "ok", entry
-    assert entry["coord"] == builtin.builtin_coord("agent.node-builder"), entry
+    assert entry["coord"] == builtin.builtin_coord("agent.curio.node-builder"), entry
     turns = api_json(f"{base}/attachments/{entry['attachmentId']}/session", token)["turns"]
     proposals = [part for turn in turns for part in (turn.get("content") or [])
                  if part.get("type") == "proposal"]

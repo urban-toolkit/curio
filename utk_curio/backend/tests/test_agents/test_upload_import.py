@@ -27,7 +27,7 @@ def alice_project(client, user_and_token):
 INSTRUCTION = "You are the heat-risk summarizer. Answer with three bullet points."
 
 
-def _payload(agent_id="agent.heat-risk-summarizer", version="1.0.0", **manifest_over):
+def _payload(agent_id="agent.test.heat-risk-summarizer", version="1.0.0", **manifest_over):
     manifest = {
         "id": agent_id,
         "name": "Heat Risk Summarizer",
@@ -128,21 +128,36 @@ class TestUploadImport:
         assert card["publishable"] is True
 
     def test_duplicate_coordinate_is_409_immutable(self, client, user_and_token, tmp_curio):
-        _, token = user_and_token
+        user, token = user_and_token
         assert _upload(client, token).status_code == 201
         r = _upload(client, token)
         assert r.status_code == 409
         assert "immutable" in r.get_json()["error"]
-        # A bumped version is a new immutable artifact.
-        assert _upload(client, token, _payload(version="1.0.1")).status_code == 201
+        # A newer version of the same major replaces it in its <id>@<major>
+        # folder, as a node package's Update does; an older one is refused.
+        card = _upload(client, token, _payload(version="1.0.1")).get_json()
+        assert card["dirName"] == "agent.test.heat-risk-summarizer@1"
+        stored = storage.load_installed_agent_definition(_user_dir_key(user), card["dirName"])
+        assert stored is not None and stored.version == "1.0.1"
+        older = _upload(client, token, _payload(version="1.0.0"))
+        assert older.status_code == 409
+        assert "1.0.1" in older.get_json()["error"]
+        # A new major is an agent of its own, beside the first.
+        assert _upload(client, token, _payload(version="2.0.0")).get_json()["dirName"] == (
+            "agent.test.heat-risk-summarizer@2"
+        )
 
     def test_shadowing_a_materialized_builtin_is_409(self, client, user_and_token, tmp_curio):
         _, token = user_and_token
         client.post(
-            "/api/agents/imports", json={"coord": "agent.researcher@1.0.0"}, headers=_auth(token)
+            "/api/agents/imports", json={"coord": "agent.curio.researcher@1"}, headers=_auth(token)
         )  # materializes the built-in into the store
-        r = _upload(client, token, _payload(agent_id="agent.researcher", version="1.0.0"))
+        r = _upload(client, token, _payload(agent_id="agent.curio.researcher", version="1.0.0"))
         assert r.status_code == 409
+        # Not even as a newer version of its major: it stays the one Curio ships.
+        r = _upload(client, token, _payload(agent_id="agent.curio.researcher", version="1.9.0"))
+        assert r.status_code == 409
+        assert "an agent Curio ships" in r.get_json()["error"]
 
     def test_missing_and_extra_prompt_files_400(self, client, user_and_token, tmp_curio):
         _, token = user_and_token

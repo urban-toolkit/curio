@@ -409,9 +409,9 @@ class TestBaselinesPerGpuKind:
     def test_the_kinds_baseline_sits_beside_the_default_one(self):
         # Built from the default name, never parsed back out of a file name:
         # baseline names hold dots of their own.
-        default = "/x/screenshot_agent-run_agent.dataflow-builder.png"
+        default = "/x/screenshot_agent-run_agent.curio.dataflow-builder.png"
         assert e2e_utils.kind_baseline(default, "utk-gpu") == (
-            "/x/screenshot_agent-run_agent.dataflow-builder.utk-gpu.png")
+            "/x/screenshot_agent-run_agent.curio.dataflow-builder.utk-gpu.png")
         assert e2e_utils.GPU_KINDS == ("arcade-gpu", "utk-gpu")
 
     def test_a_run_of_a_kind_compares_with_its_kinds_baseline(self, expected_dir, monkeypatch):

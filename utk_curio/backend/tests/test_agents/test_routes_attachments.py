@@ -14,7 +14,7 @@ from utk_curio.backend.tests._support.agent_routes import _auth, _write_def
 class TestAttachments:
     def test_attach_canvas_then_list_then_detach(self, client, user_and_token, tmp_curio, alice_project):
         _, token = user_and_token
-        coord = "agent.researcher@1.0.0"  # dual-compatible built-in (node + canvas)
+        coord = "agent.curio.researcher@1"  # dual-compatible built-in (node + canvas)
         client.post(
             f"/api/agents/projects/{alice_project}/install",
             json={"coord": coord}, headers=_auth(token),
@@ -50,14 +50,14 @@ class TestAttachments:
         _, token = user_and_token
         r = client.post(
             f"/api/agents/projects/{alice_project}/attachments",
-            json={"coord": "agent.researcher@1.0.0", "target": {"kind": "canvas"}},
+            json={"coord": "agent.curio.researcher@1", "target": {"kind": "canvas"}},
             headers=_auth(token),
         )
         assert r.status_code == 400
 
     def test_attach_bad_node_target_rejected(self, client, user_and_token, tmp_curio, alice_project):
         _, token = user_and_token
-        coord = "agent.researcher@1.0.0"  # attaches to any node
+        coord = "agent.curio.researcher@1"  # attaches to any node
         client.post(
             f"/api/agents/projects/{alice_project}/install",
             json={"coord": coord}, headers=_auth(token),
@@ -73,7 +73,7 @@ class TestAttachments:
         _, token = user_and_token
         r = client.post(
             f"/api/agents/projects/{alice_project}/attachments",
-            json={"coord": "agent.researcher@1.0.0"},
+            json={"coord": "agent.curio.researcher@1"},
             headers=_auth(token),
         )
         assert r.status_code == 400
@@ -87,7 +87,7 @@ class TestPruneAttachmentsOnDelete:
         user, token = user_and_token
         # A made-up agent that attaches to nodes only: no card does.
         node_coord = _write_def(user)
-        canvas_coord = "agent.dataflow-builder@1.0.0"  # canvas-only
+        canvas_coord = "agent.curio.dataflow-builder@1"  # canvas-only
         for c in (node_coord, canvas_coord):
             client.post(f"/api/agents/projects/{alice_project}/install", json={"coord": c}, headers=_auth(token))
         # Persist a node so a node-target attachment validates against the spec.
@@ -137,7 +137,7 @@ class TestAttachCompatibility:
     def test_canvas_only_agent_rejected_on_a_node(self, client, user_and_token, tmp_curio, alice_project):
         # dataflow-builder is a canvas-only built-in.
         _, token = user_and_token
-        coord = "agent.dataflow-builder@1.0.0"
+        coord = "agent.curio.dataflow-builder@1"
         self._install(client, token, alice_project, coord)
         # Persist a node so the node target would otherwise exist.
         client.put(
@@ -163,7 +163,7 @@ class TestAttachCompatibility:
 
     def test_dual_agent_attaches_to_either(self, client, user_and_token, tmp_curio, alice_project):
         _, token = user_and_token
-        coord = "agent.researcher@1.0.0"  # dual: node + canvas
+        coord = "agent.curio.researcher@1"  # dual: node + canvas
         self._install(client, token, alice_project, coord)
         client.put(
             f"/api/projects/{alice_project}",
@@ -177,7 +177,7 @@ class TestAttachCompatibility:
         _, token = user_and_token
         cat = client.get("/api/agents/catalog", headers=_auth(token)).get_json()["agents"]
         by_id = {a["id"]: a for a in cat}
-        assert sorted(by_id["agent.researcher"]["hooks"]) == ["canvas", "node"]
+        assert sorted(by_id["agent.curio.researcher"]["hooks"]) == ["canvas", "node"]
 
     def test_stale_materialized_builtin_resolves_fresh_roster_metadata(
         self, client, user_and_token, tmp_curio, alice_project
@@ -188,9 +188,9 @@ class TestAttachCompatibility:
         # attach is accepted.
         user, token = user_and_token
         ukey = _user_dir_key(user)
-        coord = "agent.researcher@1.0.0"
+        coord = "agent.curio.researcher@1"
         stale = {
-            "id": "agent.researcher",
+            "id": "agent.curio.researcher",
             "name": "Researcher",
             "category": "node",
             "version": "1.0.0",
@@ -206,7 +206,7 @@ class TestAttachCompatibility:
             json={"coord": coord}, headers=_auth(token),
         )
         listed = client.get(f"/api/agents/projects/{alice_project}", headers=_auth(token)).get_json()
-        researcher = next(a for a in listed["agents"] if a["id"] == "agent.researcher")
+        researcher = next(a for a in listed["agents"] if a["id"] == "agent.curio.researcher")
         assert sorted(researcher["hooks"]) == ["canvas", "node"]  # fresh roster, not the stale copy
         r = self._attach(client, token, alice_project, coord, {"kind": "canvas"})
         assert r.status_code == 201, r.get_data(as_text=True)
@@ -216,7 +216,7 @@ class TestIntent:
     """Attachment intent (memo dev/19): served from the prompt source unless
     edited; PATCH persists an override used as the run's system turn."""
 
-    def _attach_builtin(self, client, token, project_id, coord="agent.researcher@1.0.0"):
+    def _attach_builtin(self, client, token, project_id, coord="agent.curio.researcher@1"):
         client.post(f"/api/agents/projects/{project_id}/install", json={"coord": coord}, headers=_auth(token))
         r = client.post(
             f"/api/agents/projects/{project_id}/attachments",
@@ -231,7 +231,7 @@ class TestIntent:
         _, token = user_and_token
         card = self._attach_builtin(client, token, alice_project)
         # Same file the runtime resolves — no literal duplicated in the test either.
-        assert card["intent"] == builtin.read_instruction_text("agent.researcher@1.0.0")
+        assert card["intent"] == builtin.read_instruction_text("agent.curio.researcher@1")
         assert card["intentEdited"] is False
 
     def test_patch_persists_and_null_restores(self, client, user_and_token, tmp_curio, alice_project):
@@ -262,7 +262,7 @@ class TestIntent:
             headers=_auth(token),
         )
         card = r.get_json()
-        assert card["intent"] == builtin.read_instruction_text("agent.researcher@1.0.0")
+        assert card["intent"] == builtin.read_instruction_text("agent.curio.researcher@1")
         assert card["intentEdited"] is False
 
     def test_patch_validation_and_404(self, client, user_and_token, tmp_curio, alice_project):
@@ -310,7 +310,7 @@ class TestIntent:
         from utk_curio.backend.app.agents.domain import builtin
         from utk_curio.backend.app.agents.domain import content as content_mod
 
-        preamble = builtin.read_prompt_text("agent.researcher@1.0.0", "system")
+        preamble = builtin.read_prompt_text("agent.curio.researcher@1", "system")
         assert calls[0][0]["role"] == "system"
         assert calls[0][0]["content"].startswith(
             f"{preamble}\n\nanswer in one sentence\n\n{content_mod.TAIL_INSTRUCTION}"
@@ -321,7 +321,7 @@ class TestSession:
     """Persistent chat sessions (memo dev/20): the transcript survives across
     requests, feeds bounded context into runs, and dies with its attachment."""
 
-    def _attach_builtin(self, client, token, project_id, coord="agent.researcher@1.0.0"):
+    def _attach_builtin(self, client, token, project_id, coord="agent.curio.researcher@1"):
         client.post(f"/api/agents/projects/{project_id}/install", json={"coord": coord}, headers=_auth(token))
         r = client.post(
             f"/api/agents/projects/{project_id}/attachments",
@@ -466,7 +466,7 @@ class TestSession:
 
         self._mock_provider(monkeypatch, ["a1"])
         user, token = user_and_token
-        coord = "agent.node-builder@1.0.0"
+        coord = "agent.curio.node-builder@1"
         client.post(f"/api/agents/projects/{alice_project}/install", json={"coord": coord}, headers=_auth(token))
         client.put(
             f"/api/projects/{alice_project}",
@@ -499,7 +499,7 @@ class TestAttachRequiresGating:
     target must match a declared template-id suffix; empty requires = any
     node (every pre-dev/50 agent byte-identical)."""
 
-    FINDER = "agent.dataset-finder@1.0.0"
+    FINDER = "agent.curio.dataset-finder@1"
 
     def _project_with_nodes(self, client, token):
         body = {
@@ -554,6 +554,6 @@ class TestAttachRequiresGating:
         pid = self._project_with_nodes(client, token)
         r = self._attach(
             client, token, pid, {"kind": "node", "targetId": "comp1"},
-            coord="agent.node-builder@1.0.0",
+            coord="agent.curio.node-builder@1",
         )
         assert r.status_code == 201, r.get_data(as_text=True)

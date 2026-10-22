@@ -114,7 +114,7 @@ def cmd_list(args) -> int:
 
 
 #: The agent an evaluation attaches, and so the one a measured model runs as.
-_BUILDER = "agent.dataflow-builder"
+_BUILDER = "agent.curio.dataflow-builder"
 
 
 def _switch_to_model(client, model: str, tag: str) -> tuple[str | None, str]:

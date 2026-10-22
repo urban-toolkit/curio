@@ -1,5 +1,5 @@
 {
-  "id": "agent.dataset-finder",
+  "id": "agent.curio.dataset-finder",
   "name": "Dataset Finder",
   "category": "data",
   "version": "1.0.0",
@@ -89,26 +89,26 @@
   },
   "delegatesTo": [
     {
-      "id": "agent.node-builder",
+      "id": "agent.curio.node-builder",
       "capabilities": [
         "node.build",
         "dataset.fetch.author"
       ]
     },
     {
-      "id": "agent.dataflow-reader",
+      "id": "agent.curio.dataflow-reader",
       "capabilities": [
         "workflow.suggest"
       ]
     },
     {
-      "id": "agent.dataflow-planner",
+      "id": "agent.curio.dataflow-planner",
       "capabilities": [
         "workflow.keyword.bind"
       ]
     },
     {
-      "id": "agent.researcher",
+      "id": "agent.curio.researcher",
       "capabilities": [
         "research.verify"
       ]

@@ -148,7 +148,7 @@ describe("scenarioCanvasView", () => {
 describe("collapsing changes nothing but the drawing", () => {
   const reader: AgentAttachment = {
     attachmentId: "a1",
-    coord: "agent.dataflow-reader@1.0.0",
+    coord: "agent.curio.dataflow-reader@1",
     target: { kind: "canvas" },
     sessionId: "s1",
     revision: 1,

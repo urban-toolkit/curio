@@ -26,7 +26,7 @@ import { EDGE_AGENT_BADGES_ATTR } from "../../services/agents";
 function attachment(over: Partial<any> = {}): any {
   return {
     attachmentId: "att-1",
-    coord: "agent.node-builder@1.0.0",
+    coord: "agent.curio.node-builder@1",
     target: { kind: "connection", targetId: "edge-1" },
     sessionId: "s1",
     revision: 1,

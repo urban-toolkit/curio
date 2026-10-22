@@ -109,7 +109,7 @@ class TestTheDecisions:
 
         manifest = next(
             m for m in builtin.list_builtin_manifests()
-            if m.agent_id == "agent.dataflow-builder"
+            if m.agent_id == "agent.curio.dataflow-builder"
         )
         assert manifest.review_policy == "review-before-apply"
 

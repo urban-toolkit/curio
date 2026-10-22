@@ -33,9 +33,9 @@ from typing import Callable, Iterable, Mapping
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
 
-DFB_COORD = "agent.dataflow-builder@1.0.0"
-RESEARCHER_COORD = "agent.researcher@1.0.0"
-DATASET_FINDER_COORD = "agent.dataset-finder@1.0.0"
+DFB_COORD = "agent.curio.dataflow-builder@1"
+RESEARCHER_COORD = "agent.curio.researcher@1"
+DATASET_FINDER_COORD = "agent.curio.dataset-finder@1"
 
 
 def auth(token: str) -> dict:

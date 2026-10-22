@@ -10,7 +10,7 @@ import { AgentImportModal } from "../../components/agents/catalog/AgentImportMod
 
 const api = agentsApi as jest.Mocked<typeof agentsApi>;
 
-const MANIFEST = { id: "agent.my-agent", version: "1.0.0" };
+const MANIFEST = { id: "agent.test.my-agent", version: "1.0.0" };
 
 describe("buildUploadPayload", () => {
   it("assembles manifest + prompts/<name> entries", () => {
@@ -63,7 +63,7 @@ describe("AgentImportModal", () => {
   }
 
   it("uploads the assembled payload and reports the new dirName", async () => {
-    api.uploadImport.mockResolvedValue({ dirName: "agent.my-agent@1.0.0" } as any);
+    api.uploadImport.mockResolvedValue({ dirName: "agent.test.my-agent@1" } as any);
     const onImported = jest.fn();
     render(<AgentImportModal onImported={onImported} onClose={jest.fn()} />);
     expect(screen.getByRole("button", { name: "Import" })).toBeDisabled(); // no manifest yet
@@ -80,12 +80,12 @@ describe("AgentImportModal", () => {
         "prompts/instruction.txt": "do the thing",
       }),
     );
-    expect(onImported).toHaveBeenCalledWith("agent.my-agent@1.0.0");
+    expect(onImported).toHaveBeenCalledWith("agent.test.my-agent@1");
   });
 
   it("shows the server's field-specific error verbatim", async () => {
     api.uploadImport.mockRejectedValue(
-      Object.assign(new Error("'agent.x@1.0.0' already exists in your store — definitions are immutable; bump the version"), {
+      Object.assign(new Error("'agent.test.x@1' already exists in your store — definitions are immutable; bump the version"), {
         status: 409,
       }),
     );

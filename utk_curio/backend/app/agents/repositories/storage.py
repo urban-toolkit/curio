@@ -3,8 +3,8 @@
 Agent definitions are immutable artifacts on disk, exactly like node packages —
 Curio keeps catalog state on the filesystem (datasets, packages), reserving the
 database for users and the project index only. A definition lives in a directory
-named ``<agentId>@<version>`` holding ``manifest.json`` (validated by
-``app/agents/manifest.py``) and a ``prompts/`` directory.
+named ``<agentId>@<major>``, the major of its version, holding ``manifest.json``
+(validated by ``app/agents/manifest.py``) and a ``prompts/`` directory.
 
 This module resolves and lists definitions under a user's store, reusing the
 same ``.curio/users/<user_key>/`` root as node packages and the shared
@@ -31,7 +31,7 @@ from utk_curio.backend.app.common.user_storage import (
 from utk_curio.backend.app.agents.domain import builtin
 from utk_curio.backend.app.agents.domain.manifest import (
     AGENT_ID_RE,
-    VERSION_RE,
+    MAJOR_RE,
     AgentManifest,
     AgentManifestError,
     load_agent_manifest,
@@ -39,23 +39,23 @@ from utk_curio.backend.app.agents.domain.manifest import (
 
 log = logging.getLogger(__name__)
 
-# On-disk directory for one definition: ``<agentId>@<version>`` (agent id and
-# semver grammars come straight from the manifest module so the dir name and
+# On-disk directory for one definition: ``<agentId>@<major>`` (the id and the
+# major grammars come straight from the manifest module so the dir name and
 # the manifest can never disagree on what a valid coordinate looks like).
 AGENT_DIR_RE = re.compile(
-    AGENT_ID_RE.pattern[:-1] + r"@" + VERSION_RE.pattern[1:]
+    AGENT_ID_RE.pattern[:-1] + r"@" + MAJOR_RE.pattern[1:]
 )
 
 
-def parse_agent_dir_name(dir_name: str) -> tuple[str, str]:
-    """Split ``<agentId>@<version>`` into ``(agent_id, version)``; validate first."""
+def parse_agent_dir_name(dir_name: str) -> tuple[str, int]:
+    """Split ``<agentId>@<major>`` into ``(agent_id, major)``; validate first."""
     if not isinstance(dir_name, str) or not AGENT_DIR_RE.match(dir_name):
         raise AgentManifestError(
-            f"invalid agent directory name {dir_name!r}; expected '<agentId>@<version>' "
+            f"invalid agent directory name {dir_name!r}; expected '<agentId>@<major>' "
             f"matching {AGENT_DIR_RE.pattern}"
         )
-    agent_id, version = dir_name.rsplit("@", 1)
-    return agent_id, version
+    agent_id, major = dir_name.rsplit("@", 1)
+    return agent_id, int(major)
 
 
 def user_agents_dir(user_key: str) -> Path:
@@ -64,7 +64,7 @@ def user_agents_dir(user_key: str) -> Path:
 
 
 def agent_definition_dir(user_key: str, dir_name: str) -> Path:
-    """Resolve a single ``<agentId>@<version>`` under a user's agent store.
+    """Resolve a single ``<agentId>@<major>`` under a user's agent store.
 
     Validates the directory name against :data:`AGENT_DIR_RE` and the shared
     containment check before returning, mirroring ``packages.storage.package_dir``.
@@ -163,7 +163,7 @@ def load_installed_agent_definition(user_key: str, dir_name: str) -> AgentManife
 
 
 def list_installed_agent_definitions(user_key: str) -> list[AgentManifest]:
-    """Load every valid definition in the user's store, sorted by id then version.
+    """Load every valid definition in the user's store, sorted by id then major.
 
     A directory whose manifest is missing or invalid is skipped with a warning
     rather than raising — one bad artifact must never make the whole store
@@ -180,31 +180,40 @@ def list_installed_agent_definitions(user_key: str) -> list[AgentManifest]:
             out.append(load_agent_manifest(child))
         except AgentManifestError:
             log.warning("Skipping invalid agent definition at %s", child, exc_info=True)
-    out.sort(key=lambda m: (m.agent_id, m.version))
+    out.sort(key=lambda m: (m.agent_id, m.major))
     return out
 
 
 def write_definition_atomic(
-    user_key: str, dir_name: str, manifest: dict, prompt_files: dict[str, str]
+    user_key: str,
+    dir_name: str,
+    manifest: dict,
+    prompt_files: dict[str, str],
+    *,
+    replace: bool = False,
 ) -> Path:
     """Atomic variant of :func:`write_definition` for user uploads (memo dev/36).
 
     Stages the definition in a temp directory inside the user's agents store and
     ``os.replace``s it into place, so a failed/interrupted upload never leaves a
     partially visible artifact (``RISK-IMPORT-001``). Refuses to replace an
-    existing definition — uploads are immutable (``DEC-029``); callers pre-check
-    and surface a 409.
+    existing definition unless *replace*: one ``<agentId>@<major>`` folder holds
+    one version at a time, so a newer version of the same major takes it, as a
+    node package's Update takes its own, and the caller decides when
+    (a version itself is immutable, ``DEC-029``). The old folder is moved aside
+    first and put back if the swap fails.
     """
     import os
     import shutil
     import tempfile
 
     target = agent_definition_dir(user_key, dir_name)  # validated + contained
-    if target.exists():
+    if target.exists() and not replace:
         raise FileExistsError(f"definition {dir_name!r} already exists")
     base = user_agents_dir(user_key)
     base.mkdir(parents=True, exist_ok=True)
     staging = Path(tempfile.mkdtemp(prefix=".upload-", dir=base))
+    retired = Path(tempfile.mkdtemp(prefix=".replaced-", dir=base))
     try:
         (staging / "manifest.json").write_text(
             json.dumps(manifest, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
@@ -217,10 +226,19 @@ def write_definition_atomic(
                 )
             dest.parent.mkdir(parents=True, exist_ok=True)
             dest.write_text(text, encoding="utf-8")
-        os.replace(staging, target)
+        old = retired / "old"
+        if target.exists():
+            os.replace(target, old)
+        try:
+            os.replace(staging, target)
+        except Exception:
+            if old.exists():
+                os.replace(old, target)
+            raise
     except Exception:
         shutil.rmtree(staging, ignore_errors=True)
         raise
     finally:
         shutil.rmtree(staging, ignore_errors=True)
+        shutil.rmtree(retired, ignore_errors=True)
     return target

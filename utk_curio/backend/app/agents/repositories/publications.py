@@ -1,7 +1,7 @@
 """Shared publications catalog — the global Catalog Hub for user-published agents.
 
 Filesystem-backed (``DEC-040``), deployment-shared: publishing copies an owned
-definition into ``.curio/agents-catalog/<agentId>@<version>/`` (a sibling of
+definition into ``.curio/agents-catalog/<agentId>@<major>/`` (a sibling of
 ``.curio/users/``), where every user's Global Catalog can then browse it. This is
 the agent analogue of the node-package shared catalog under ``<repo_root>/packages/``.
 
@@ -37,7 +37,7 @@ def _catalog_base() -> Path:
 
 
 def published_agent_dir(dir_name: str) -> Path:
-    """Resolve a published ``<agentId>@<version>`` dir with containment + grammar checks."""
+    """Resolve a published ``<agentId>@<major>`` dir with containment + grammar checks."""
     if not (isinstance(dir_name, str) and AGENT_DIR_RE.match(dir_name)):
         raise AgentManifestError(f"invalid agent directory name {dir_name!r}")
     base = _catalog_base()
@@ -88,7 +88,7 @@ def is_publisher(dir_name: str, user_key: str) -> bool:
 
 
 def get_published_manifest(dir_name: str) -> AgentManifest | None:
-    """Resolve a published ``<agentId>@<version>`` coordinate, or None."""
+    """Resolve a published ``<agentId>@<major>`` coordinate, or None."""
     try:
         d = published_agent_dir(dir_name)
     except (AgentManifestError, PathTraversalError):

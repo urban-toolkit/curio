@@ -50,7 +50,7 @@ EXTERNAL_ENV_FLAG = "CURIO_EVAL_EXTERNAL"
 BUDGET_ENV = "CURIO_EVAL_FIXTURE_BUDGET_S"
 DEFAULT_FIXTURE_BUDGET_S = 900
 
-DFB_COORD = "agent.dataflow-builder@1.0.0"
+DFB_COORD = "agent.curio.dataflow-builder@1"
 
 
 class LiveEvalRefused(Exception):
@@ -142,7 +142,7 @@ class LiveRun:
         # the default. Never a key, only the host it goes to.
         listing = self.client.json("/api/agents/llm")
         builder = next(
-            (row for row in listing.get("agents") or [] if row.get("id") == "agent.dataflow-builder"),
+            (row for row in listing.get("agents") or [] if row.get("id") == "agent.curio.dataflow-builder"),
             None,
         )
         active = (builder or {}).get("answers") or listing.get("active") or {}

@@ -1,4 +1,4 @@
-# {{agent.name:agent.node-builder}}: node content
+# {{agent.name:agent.curio.node-builder}}: node content
 
 To create his dataflow the user defined a set of subtasks that are put together to form a bigger task that describe the purpose of the dataflow. 
 

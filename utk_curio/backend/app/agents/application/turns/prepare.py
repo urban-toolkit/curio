@@ -250,6 +250,8 @@ def _run_pins(coord: str, manifest, record: dict, config: ProviderConfig, grante
     """The DEC-031 reproducibility pins resolved from what actually dispatches (memo dev/37)."""
     return {
         "coord": coord,
+        # The coordinate names a major; the version says which one ran.
+        "version": manifest.version if manifest is not None else None,
         "promptSha256": agents_prompts._prompt_digest(manifest),
         "intentEdited": bool(record.get("intent")),
         "provider": config.api_type,

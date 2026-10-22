@@ -155,9 +155,9 @@ describe("an agent palette row", () => {
   test("opens the agent's details, not the whole catalog drawer", () => {
     const onOpen = jest.fn();
     const agent: any = {
-      id: "agent.researcher",
+      id: "agent.curio.researcher",
       version: "1.0.0",
-      dirName: "agent.researcher@1.0.0",
+      dirName: "agent.curio.researcher@1",
       name: "Researcher",
       category: "node",
       purpose: "assistant for a node or the canvas",
