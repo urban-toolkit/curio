@@ -126,6 +126,11 @@ beforeEach(() => { restore = setTooltipTimings({ show: 0, hide: 0 }); });
 afterEach(() => restore());
 ```
 
+A test that times the waits with Jest's fake clock calls `resetTooltipStore()` in its
+`beforeEach` instead: each test's clock starts again near where an earlier test closed
+a tooltip, which would otherwise still count as closed a moment ago and show the next
+one at once.
+
 ## Running Specific Tests
 
 ```bash
