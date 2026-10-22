@@ -749,7 +749,7 @@ boundary splits the dataflow into three parts:
   common context.
 - **Levers:** the nodes in the scenario, which is what an alternative changes: its
   data loaders, widget values, code and specs, and the features it removes or
-  changes by hand (see [The Interaction node](#the-interaction-node)).
+  changes by hand (see [The Map Edits node](#the-map-edits-node)).
 - **Outcomes:** the outputs of the scenario's last nodes, which is what gets
   compared.
 
@@ -801,76 +801,34 @@ chart or a Data Pool saves nothing itself: the node feeding it does. Scenarios,
 their colors, descriptions, collapsed state and box positions are saved with the
 dataflow. Deleting a node removes it from its scenario.
 
-### The Interaction node
+### The Map Edits node
 
-The **Interaction** node removes features from a layer, or changes them, by hand or
-by a condition: two towers taken out of a city's buildings, or every building over
-100 m lowered, say. It also draws new features, reshapes them, and adds properties
-and layers. The same data nodes feed it and an Autark map, and an interaction edge
-links it to the map, both ways, as two Autark views are linked (see
-[Linking charts](#linking-charts)).
+The **Map Edits** node edits a map's layers on the map. It removes features,
+changes their values, reshapes or moves them, draws new ones, and adds
+properties and layers.
 
-1. Connect the nodes that load your layers to an Autark map, one to each input
-   circle, whose document draws them (`[!! input_0 !!]`, ...).
-2. Drag **Interaction** from the **Built-in** palette onto the canvas and connect the
-   same nodes to it, in the same order. A layer whose node gives it no name is named
-   after its circle, `input_0`, `input_1`, and so on, on both, so the node and the
-   map call it alike.
-3. Link the two with an interaction edge: drag from the dot on top of the Interaction
-   node to the dot on top of the map. The node's body now says **Linked to** the map.
-4. Pick a layer in the node's body, then what to do with it: **Add** features drawn
-   on the map, **Edit** a feature picked on the map (reshape it, move it, change its
-   values), **Remove** features picked on the map by a click (shift-click adds more), or by a rule
-   such as `height > 100`, or **Add a property** to every feature. **Show only this
-   layer** hides the map's other layers while you work.
-5. The map shows the picks and the edits at once, and hands on its layers with them.
-   Press **Commit edits** to run the node, the map and every node below them with the
-   edits.
+1. Connect the nodes that load your layers to Map Edits, and Map Edits to an
+   Autark map.
+2. Link them with an interaction edge, from the dot on top of Map Edits to the
+   dot on top of the map, so a feature picked on the map is picked in Map Edits.
+3. Pick a layer, then **Add**, **Edit**, **Remove** or **Add a property**. Pick
+   features on the map with a click (shift-click adds more), or by a rule such
+   as `height > 100`.
+4. The map shows each edit at once, and **Commit edits** runs the nodes below
+   with them.
 
-The node hands on its inputs with its edits too, so a node it feeds gets the edited
-layers. An Interaction node linked to no map edits nothing: its body only says how to
-link one, and that a log it already holds is kept. When the Interaction node is all that feeds the map it is linked to, the
-map draws the node's input with the edits as they are made, and hands on what the
-node handed it at the last Commit edits.
+Each edit is an entry in the node's list and in its Provenance drawer: switch it
+off, delete it, or **Undo** and **Redo** it (Ctrl+Z and Shift+Ctrl+Z, Cmd on a
+Mac). Edits find features by a column whose values differ in every feature, such
+as `osm_id` or `building_id`, and an edit by `building_id` changes every part of
+a building.
 
-Each edit is added to the node's log, under its body. The switch before an edit
-turns it off: it stays in the log, and the run skips it. The × beside an edit deletes
-it, and **Undo** and **Redo**, or Ctrl+Z and Shift+Ctrl+Z (Cmd on a Mac), take back
-the last edit and make it again. Each edit names its layer and the column that
-identifies the layer's features: `osm_id` or `building_id` when the layer has them,
-or another column whose values differ in every feature. A feature's place in a layer
-is never its id.
+A rule or an expression reads a feature's columns by name (`height`, or
+`` `Mean Acc shadow` `` in backticks). It takes numbers, quoted texts, `true`,
+`false`, `null`, `+ - * / %`, `== != < <= > >=`, `and`, `or`, `not`,
+parentheses, `abs`, `round`, `min` and `max`.
 
-The edits apply in order. An edit by ids applies to every feature whose id is one of
-them; an edit by a condition applies to the features the condition picks after the
-edits before it, and a restore by a condition reads the input. A building's parts
-share its `building_id`, so an edit by `building_id` applies to the whole building,
-every part. A raise, a lower or a scale leaves a feature with no number in its column
-as it is. The output is the edited layer, with the input's other layers as they came;
-the input itself is never changed. An id no feature has is reported in the node's
-output, and the run goes on.
-
-A condition or an expression reads a feature's columns by name (`height`,
-`building:levels`), or in backticks when the name has spaces (`` `Mean Acc shadow` ``).
-It takes numbers, texts in quotes, `true`, `false` and `null`, `+ - * / %`, the
-comparisons `== != < <= > >=`, `and`, `or`, `not`, parentheses, and `abs`, `round`,
-`min` and `max`. A column a feature lacks is null, arithmetic with null or a text is
-null, and a comparison with null is false.
-
-The log is saved with the dataflow, and the node's code is written from it. Fed by
-several nodes, it hands the step every circle (`by_input=True`):
-
-```python
-return curio_edit_features([input_0, input_1], [
-    {"op": "remove", "ids": [29623484, 29628154], "layer": "input_1"},
-    {"op": "scale", "where": "height > 100", "column": "height", "value": 0.5, "layer": "input_1"},
-    {"op": "set", "ids": [42], "column": "height", "value": 30, "enabled": False, "layer": "input_1"},
-], keys={"input_1": "building_id"}, by_input=True)
-```
-
-A change of the log writes the code again, and the node and the nodes below it that
-ran then wait for a run; **Commit edits** says how many. In a scenario, an
-Interaction node is a lever.
+In a scenario, a Map Edits node is a lever.
 
 ### Comparing scenarios
 
@@ -1216,6 +1174,8 @@ The chosen modes are saved with the dataflow.
 
 An Autark map takes part the same way: a selection highlights its features, and a pick on the map, or a selection in an Autark plot, is a selection the others receive.
 
+A Map Edits node and the map it edits on are linked the same way, by an interaction edge that carries selections both ways: a feature picked on the map is picked in the node, and what the node picks lights up on the map.
+
 An Autark view names the columns that identify its rows with `selectFields`, on the pickable map layer or on the plot. A pick or a brush on it then sends their values, as a point selection over fields does, and a feature that holds none selects nothing. Without `selectFields`, it matches rows by position.
 
 ```json
@@ -1232,9 +1192,8 @@ compute over tables. A table comes from the document's own `data` section (an
 OSM extract, a GeoJSON or CSV file) or from the node's input. The document
 writes no `data` entry for its input; it names the tables the input provides.
 
-An OpenStreetMap layer the node hands on has each feature's OpenStreetMap id in
-`osm_id`, a building part's its own, beside the `building_id` its building's
-parts share.
+Each feature of an OpenStreetMap layer the node hands on has its OpenStreetMap
+id in `osm_id`, and a building's parts share its `building_id`.
 
 A node draws one view: one map or one plot. A document with a map and a plot,
 or whose `map` or `plot` lists more than one, does not run, and the node's
