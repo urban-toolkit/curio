@@ -176,7 +176,7 @@ export function keyColumns(fc: { features?: any[] } | null | undefined): string[
   return idColumns(featureRows(fc), featureColumns(fc));
 }
 
-/** The key the node starts with: `osm_id` or `building_id` when the layer has one. */
+/** The key the node starts with: `building_id` when the layer has it (the whole building), else `osm_id`. */
 export function defaultKey(columns: readonly string[]): string | undefined {
   return STABLE_ID_COLUMNS.find((column) => columns.includes(column));
 }
