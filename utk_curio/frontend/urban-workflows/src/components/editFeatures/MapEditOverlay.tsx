@@ -47,11 +47,9 @@ import {
   type CameraView,
   type XY,
 } from "../../utils/editFeatures/mapEditGeometry";
+import { isTypingTarget } from "../canvasKeyBindings";
+import styles from "./MapEditOverlay.module.css";
 
-const BLUE = "#1F6FEB";
-const RED = "#D1242F";
-/** Handles grow in when they appear, around their own middle. */
-const HANDLE_IN: React.CSSProperties = { cursor: "copy", transformBox: "fill-box", transformOrigin: "center", animation: "curio-handles-in 180ms ease-out" };
 /** How many matched or picked features are outlined at most. */
 const MAX_OUTLINED = 3000;
 
@@ -340,7 +338,7 @@ export default function MapEditOverlay({ mapId }: { mapId: string }) {
       if (!(event.target as Element).closest?.("[data-map-edit-ui]")) event.stopPropagation();
     };
     const onKey = (event: KeyboardEvent) => {
-      if (live.current.mode !== "draw" || /^(INPUT|SELECT|TEXTAREA)$/.test((event.target as HTMLElement)?.tagName ?? "")) return;
+      if (live.current.mode !== "draw" || isTypingTarget(event.target)) return;
       let handled = true;
       if (event.key === "Enter") live.current.finishDraft();
       else if (event.key === "Escape") setDraft([]);
@@ -367,7 +365,7 @@ export default function MapEditOverlay({ mapId }: { mapId: string }) {
 
   if (!active) return null;
   // The box is there before the camera is, so the listeners have their host.
-  if (!projection) return <div ref={box} data-testid="map-edit-overlay" style={{ position: "absolute", inset: 0, pointerEvents: "none" }} />;
+  if (!projection) return <div ref={box} data-testid="map-edit-overlay" className={styles.overlay} />;
   const p = projection;
   const path = (geometry: Geometry) => {
     const { rings, closed } = toRings(geometry);
@@ -375,7 +373,7 @@ export default function MapEditOverlay({ mapId }: { mapId: string }) {
   };
   /** A ring around a feature too small to see on the map as it is zoomed. */
   const SMALL_PX = 14;
-  const outline = (f: EditedFeature, color: string, dashed: boolean) => {
+  const outline = (f: EditedFeature, dashed: boolean) => {
     if (!f.geometry) return null;
     const id = String(f.id);
     if (kindOf(f.geometry) === "points") {
@@ -385,8 +383,8 @@ export default function MapEditOverlay({ mapId }: { mapId: string }) {
         const radius = Math.max(7, p.pixels(ring[0], size.pointRadius) + 2);
         return (
           <g key={`${id}-${r}`}>
-            <circle cx={x} cy={y} r={radius + 2} fill="none" stroke="#FFFFFF" strokeWidth={4} />
-            <circle cx={x} cy={y} r={radius} fill={`${color}40`} stroke={color} strokeWidth={2.5} strokeDasharray={dashed ? "3 2" : undefined} />
+            <circle className={styles.casing} cx={x} cy={y} r={radius + 2} strokeWidth={4} />
+            <circle className={`${styles.outline} ${styles.point}`} cx={x} cy={y} r={radius} strokeWidth={2.5} strokeDasharray={dashed ? "3 2" : undefined} />
           </g>
         );
       });
@@ -398,25 +396,20 @@ export default function MapEditOverlay({ mapId }: { mapId: string }) {
     const width = dashed ? 2 : 3.5;
     return (
       <g key={id}>
-        {/* A white casing, so the outline reads on a busy map. */}
-        <path d={d} fill="none" stroke="#FFFFFF" strokeWidth={width + 3} strokeLinejoin="round" strokeLinecap="round" />
+        <path className={styles.casing} d={d} strokeWidth={width + 3} />
         <path
+          className={`${styles.outline} ${kindOf(f.geometry) === "areas" ? styles.area : ""}`}
           d={d}
-          fill={kindOf(f.geometry) === "areas" ? `${color}2E` : "none"}
-          stroke={color}
           strokeWidth={width}
           strokeDasharray={dashed ? "5 3" : undefined}
-          strokeLinejoin="round"
-          strokeLinecap="round"
           fillRule="evenodd"
         />
         {small ? (
           <circle
+            className={styles.outline}
             cx={(Math.max(...xs) + Math.min(...xs)) / 2}
             cy={(Math.max(...ys) + Math.min(...ys)) / 2}
             r={12}
-            fill="none"
-            stroke={color}
             strokeWidth={2.5}
             strokeDasharray={dashed ? "3 2" : undefined}
           />
@@ -425,8 +418,8 @@ export default function MapEditOverlay({ mapId }: { mapId: string }) {
     );
   };
   // What the node selects, and the shape drawn but not yet added, outlined on
-  // the ground where the map draws them (buildings flat): what a rule matches
-  // in red, as about to change.
+  // the ground where the map draws them (buildings flat), in the map's
+  // highlight: what a rule matches dashed, as it is kept matching later.
   const withDraft: EditedFeature[] = active.draft ? [...shown, { id: DRAFT, geometry: active.draft, properties: {}, status: "added" }] : shown;
   const outlined = withDraft.filter((f) => f.id !== null && selectedKeys.has(String(f.id))).slice(0, MAX_OUTLINED);
   const picked = active.rule ? [] : outlined;
@@ -434,42 +427,42 @@ export default function MapEditOverlay({ mapId }: { mapId: string }) {
   const draftScreen = draft.map(p.toScreen);
   const hoverScreen = hover && mode === "draw" && draft.length > 0 ? p.toScreen(hover) : null;
   const noun = active.noun;
+  const parts = selectedOne?.geometry ? partsOf(selectedOne.geometry).length : 0;
   const tip =
     mode === "draw"
       ? kind === "points"
-        ? `Point tool · click to place a ${noun} · drag to pan`
-        : `${kind === "lines" ? "Line" : "Area"} tool · click to add points · double-click to finish · Esc to cancel`
+        ? `Click the map to place a ${noun}. Drag to pan.`
+        : "Click the map to add points. Double-click or press Enter to finish, or Esc to cancel."
       : mode === "reshape"
         ? kind === "points"
-          ? `Moving the ${noun} · drag it`
-          : `Moving points · drag a corner · click or drag a midpoint to add one · alt-click a corner to delete it${selectedOne?.geometry && partsOf(selectedOne.geometry).length > 1 ? " · alt-click inside a part to remove it" : ""}`
+          ? `Drag the ${noun} to move it.`
+          : `Drag a corner to move it. Click or drag a midpoint to add one, and alt-click a corner to delete it.${parts > 1 ? " Alt-click inside a part to remove it." : ""}`
         : mode === "move"
-          ? `Moving the whole ${noun} · shift-drag it · drag to pan`
-          : `Drag to pan · click a ${noun} to pick it · shift-click adds`;
-  // Changing a shape, the tip says so in blue, with Done to go back to panning.
+          ? `Shift-drag the ${noun} to move it. Drag to pan.`
+          : `Click a ${noun} to pick it, and shift-click to add one. Drag to pan.`;
+  // Changing a shape, Done goes back to panning.
   const shaping = mode === "reshape" || mode === "move";
   const last = draftScreen[draftScreen.length - 1];
 
   return (
-    <div ref={box} data-testid="map-edit-overlay" data-edit-mode={mode} data-edit-layer={active.table} style={{ position: "absolute", inset: 0, pointerEvents: "none", cursor: mode === "draw" ? "crosshair" : undefined }}>
-      <svg width={p.width} height={p.height} style={{ position: "absolute", left: 0, top: 0, overflow: "visible" }} aria-hidden="true">
-        {matched.map((f) => outline(f, RED, true))}
-        {picked.map((f) => outline(f, BLUE, false))}
-        <style>{"@keyframes curio-handles-in { from { opacity: 0; transform: scale(0.6); } to { opacity: 1; transform: scale(1); } } @media (prefers-reduced-motion: reduce) { .curio-handle { animation: none !important; } }"}</style>
+    <div ref={box} data-testid="map-edit-overlay" data-edit-mode={mode} data-edit-layer={active.table} className={`${styles.overlay} ${mode === "draw" ? styles.drawing : ""}`}>
+      <svg width={p.width} height={p.height} className={styles.svg} aria-hidden="true">
+        {matched.map((f) => outline(f, true))}
+        {picked.map((f) => outline(f, false))}
         {handles
           ? handles.rings.map((ring, r) => (
-              <g key={`ring-${r}`} style={{ pointerEvents: "auto" }}>
+              <g key={`ring-${r}`} className={styles.handles}>
                 {mode === "reshape" && ring.length > 1
                   ? ring.slice(0, handles.closed[r] ? ring.length : ring.length - 1).map((xy, i) => {
                       const next = ring[(i + 1) % ring.length];
                       const [x, y] = p.toScreen([(xy[0] + next[0]) / 2, (xy[1] + next[1]) / 2]);
-                      return <circle key={`m${i}-${selectedOne?.id}`} className="curio-handle" data-handle="mid" data-ring={r} data-index={i} cx={x} cy={y} r={4} fill="#FFFFFF" stroke={BLUE} strokeWidth={1.5} opacity={0.85} style={HANDLE_IN} />;
+                      return <circle key={`m${i}-${selectedOne?.id}`} className={`${styles.handle} ${styles.mid}`} data-handle="mid" data-ring={r} data-index={i} cx={x} cy={y} r={4} strokeWidth={1.5} />;
                     })
                   : null}
                 {mode === "reshape"
                   ? ring.map((xy, i) => {
                       const [x, y] = p.toScreen(xy);
-                      return <circle key={`c${i}-${selectedOne?.id}`} className="curio-handle" data-handle="corner" data-ring={r} data-index={i} cx={x} cy={y} r={6} fill="#FFFFFF" stroke={BLUE} strokeWidth={2} style={{ ...HANDLE_IN, cursor: "grab" }} />;
+                      return <circle key={`c${i}-${selectedOne?.id}`} className={`${styles.handle} ${styles.corner}`} data-handle="corner" data-ring={r} data-index={i} cx={x} cy={y} r={6} strokeWidth={2} />;
                     })
                   : null}
               </g>
@@ -478,39 +471,27 @@ export default function MapEditOverlay({ mapId }: { mapId: string }) {
         {draftScreen.length > 0 ? (
           <>
             <polyline
+              className={`${styles.outline} ${kind === "areas" ? styles.draft : ""}`}
               points={[...draftScreen, ...(hoverScreen ? [hoverScreen] : [])].map((pt) => pt.join(",")).join(" ")}
-              fill={kind === "areas" ? `${BLUE}26` : "none"}
-              stroke={BLUE}
               strokeWidth={3}
-              strokeLinejoin="round"
             />
             {draftScreen.map(([x, y], i) => (
-              <circle key={i} cx={x} cy={y} r={5} fill="#FFFFFF" stroke={BLUE} strokeWidth={2.5} />
+              <circle key={i} className={styles.vertex} cx={x} cy={y} r={5} strokeWidth={2.5} />
             ))}
           </>
         ) : null}
       </svg>
       {last ? (
-        <span
-          data-testid="map-edit-draft-label"
-          style={{ position: "absolute", left: last[0] + 10, top: last[1] - 30, background: BLUE, color: "#FFFFFF", fontSize: 12, fontWeight: 600, padding: "3px 9px", borderRadius: 999, whiteSpace: "nowrap" }}
-        >
+        <span data-testid="map-edit-draft-label" className={styles.draftLabel} style={{ left: last[0] + 10, top: last[1] - 30 }}>
           New {noun} · {draft.length} point{draft.length === 1 ? "" : "s"}
         </span>
       ) : null}
-      <div data-map-edit-ui="true" style={{ position: "absolute", left: 10, top: 10, display: "flex", gap: 6, alignItems: "center", pointerEvents: "auto" }}>
-        <span data-testid="map-edit-tip" style={{ background: shaping ? BLUE : "rgba(22,27,34,0.88)", color: "#FFFFFF", fontSize: 12, padding: "6px 10px", borderRadius: 8, transition: "background-color 160ms ease" }}>
+      <div data-map-edit-ui="true" className={styles.toolbar}>
+        <span data-testid="map-edit-tip" className={styles.tip}>
           {tip}
         </span>
         {shaping && session?.onShapeDone ? (
-          <button
-            type="button"
-            data-testid="map-edit-done"
-            className="nodrag nopan"
-            onPointerDown={(e) => e.stopPropagation()}
-            onClick={() => session.onShapeDone?.()}
-            style={{ minHeight: 28, padding: "0 12px", borderRadius: 8, border: `1px solid ${BLUE}`, background: "#FFFFFF", color: BLUE, fontWeight: 600, fontSize: 12, cursor: "pointer" }}
-          >
+          <button type="button" data-testid="map-edit-done" className={`nodrag nopan ${styles.button}`} onPointerDown={(e) => e.stopPropagation()} onClick={() => session.onShapeDone?.()}>
             Done
           </button>
         ) : null}
@@ -518,11 +499,10 @@ export default function MapEditOverlay({ mapId }: { mapId: string }) {
           <button
             type="button"
             data-testid="map-edit-finish"
-            className="nodrag nopan"
+            className={`nodrag nopan ${styles.button}`}
             disabled={draft.length < (kind === "areas" ? 3 : 2)}
             onPointerDown={(e) => e.stopPropagation()}
             onClick={() => finishDraft()}
-            style={{ minHeight: 28, padding: "0 10px", borderRadius: 8, border: 0, background: BLUE, color: "#FFFFFF", fontWeight: 600, fontSize: 12, opacity: draft.length < (kind === "areas" ? 3 : 2) ? 0.5 : 1 }}
           >
             Finish
           </button>

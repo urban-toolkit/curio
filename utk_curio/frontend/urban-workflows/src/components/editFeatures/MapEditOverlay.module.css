@@ -1,0 +1,141 @@
+/* What a Map Edits node draws over the Autark map it edits on (#662): the
+   outlines of what it selects and of the shape being drawn, in the colour the
+   map draws a selection in, the handles, and a tip with its buttons on the
+   dark of Curio's menus (components/menus/darkMenu.module.css). Buttons are
+   the Widgets tab's (WidgetTags.module.css). */
+
+.overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.drawing {
+  cursor: crosshair;
+}
+
+.svg {
+  position: absolute;
+  left: 0;
+  top: 0;
+  overflow: visible;
+}
+
+/* A casing under an outline, so it reads on a busy map. */
+.casing {
+  fill: none;
+  stroke: var(--curio-card-bg);
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+.outline {
+  fill: none;
+  stroke: var(--curio-map-highlight);
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+/* The highlight's fill: an area's, a point's, the shape being drawn's. */
+.area {
+  fill: var(--curio-map-highlight);
+  fill-opacity: 0.18;
+}
+
+.point {
+  fill: var(--curio-map-highlight);
+  fill-opacity: 0.25;
+}
+
+.draft {
+  fill: var(--curio-map-highlight);
+  fill-opacity: 0.15;
+}
+
+/* A corner of the shape being drawn. */
+.vertex {
+  fill: var(--curio-card-bg);
+  stroke: var(--curio-map-highlight);
+}
+
+.handles {
+  pointer-events: auto;
+}
+
+/* A handle of the picked feature: a corner to drag, or a midpoint that adds
+   one. Handles grow in when they appear, around their own middle. */
+.handle {
+  fill: var(--curio-card-bg);
+  stroke: var(--curio-map-highlight);
+  cursor: copy;
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: handlesIn 180ms ease-out;
+}
+
+.corner {
+  cursor: grab;
+}
+
+.mid {
+  opacity: 0.85;
+}
+
+@keyframes handlesIn {
+  from {
+    opacity: 0;
+    transform: scale(0.6);
+  }
+
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .handle {
+    animation: none;
+  }
+}
+
+/* The tip and its buttons, at the map's top left. */
+.toolbar {
+  --widget-h: 22px;
+  position: absolute;
+  left: 10px;
+  top: 10px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  pointer-events: auto;
+  font-family: var(--curio-font-family);
+}
+
+.tip {
+  padding: 4px 8px;
+  border: 1px solid var(--curio-border-context-menu);
+  border-radius: var(--curio-radius-sm);
+  background: var(--curio-top-bar-bg);
+  box-shadow: var(--curio-shadow-context-menu);
+  color: var(--curio-text-on-dark);
+  font-size: var(--curio-font-size-sm);
+  line-height: 1.4;
+}
+
+.button {
+  composes: button from "../editing/widgets/WidgetTags.module.css";
+}
+
+/* The shape being drawn: what it is and how many points it has, by its last point. */
+.draftLabel {
+  position: absolute;
+  padding: 2px 8px;
+  border-radius: var(--curio-radius-pill);
+  background: var(--curio-top-bar-bg);
+  color: var(--curio-text-on-dark);
+  font-family: var(--curio-font-family);
+  font-size: var(--curio-font-size-xs);
+  font-weight: 600;
+  white-space: nowrap;
+}
