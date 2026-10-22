@@ -209,7 +209,6 @@ class TestNodesTheServerDoesNotRun:
         assert recorder.calls["b"]["input"] == {"path": "art-a", "dataType": "dataframe"}
 
     MAP_SPEC = json.dumps({"map": {"layerRefs": [{"dataRef": "[!! input_0 !!]"}, {"dataRef": "[!! input_1 !!]"}]}})
-    EDITS = {"key": "id", "layer": "input_1", "edits": [{"op": "remove", "where": "height < 10"}]}
 
     TEMPLATES = {
         # As the store's roster has it: the Interaction node runs its code.
@@ -223,42 +222,26 @@ class TestNodesTheServerDoesNotRun:
 
     def test_data_interaction_map_runs_the_node_and_the_map_forwards_its_edited_layers(self):
         # Data → Interaction → map, the node and the map linked both ways: the
-        # node's own run hands on the edited layers, and the map passes them on.
+        # node's own run hands on the edited layers, which its code holds, and
+        # the map passes them on.
+        code = 'return curio_edit_features([input_0, input_1], [{"op": "remove", "where": "height < 10"}], by_input=True)'
         recorder, _, finished = run(spec(
             [node("tracts"), node("buildings"),
-             node("ix", "curio.builtin/edit-features", "return curio_edit_features([input_0, input_1], [], by_input=True)",
-                  metadata={"editFeatures": self.EDITS}),
+             node("ix", "curio.builtin/edit-features", code),
              node("map", AUTARK, self.MAP_SPEC), node("count")],
             [edge("tracts", "ix"), edge("buildings", "ix", "in_1"), edge("ix", "map"),
              self.link("ix", "map"), edge("map", "count")],
         ), templates=self.TEMPLATES)
         assert "by_input=True" in recorder.calls["ix"]["code"]
+        assert '"where": "height < 10"' in recorder.calls["ix"]["code"]
         assert "map" not in recorder.calls
         assert finished["map"]["status"] == "forwarded"
         assert recorder.calls["count"]["input"]["path"] == "art-ix"
 
-    def test_a_map_linked_to_a_node_that_does_not_feed_it_runs_the_nodes_edits(self):
-        # The map is fed by the data, the node only linked to it: the browser's
-        # map applies the node's log to what it hands on, and so does the run.
-        recorder, _, finished = run(spec(
-            [node("tracts"), node("buildings"),
-             node("ix", "curio.builtin/edit-features", "return {}", metadata={"editFeatures": self.EDITS}),
-             node("map", AUTARK, self.MAP_SPEC), node("count")],
-            [edge("tracts", "map"), edge("buildings", "map", "in_1"), edge("tracts", "ix"),
-             self.link("map", "ix"), edge("map", "count")],
-        ), templates=self.TEMPLATES)
-        code = recorder.calls["map"]["code"]
-        assert "curio_edit_features(" in code
-        assert "[input_0, input_1]" in code and "by_input=True" in code
-        assert '\\"height < 10\\"' in code or "height < 10" in code
-        # Still forwarded, so the canvas draws the map, as it always has.
-        assert finished["map"]["status"] == "forwarded"
-        assert recorder.calls["count"]["input"]["path"] == "art-map"
-
     def test_an_interaction_node_feeding_a_map_unlinked_is_just_data(self):
         recorder, _, finished = run(spec(
             [node("buildings"),
-             node("ix", "curio.builtin/edit-features", "return input_0", metadata={"editFeatures": self.EDITS}),
+             node("ix", "curio.builtin/edit-features", "return input_0"),
              node("map", AUTARK, self.MAP_SPEC)],
             [edge("buildings", "ix"), edge("ix", "map")],
         ), templates=self.TEMPLATES)
