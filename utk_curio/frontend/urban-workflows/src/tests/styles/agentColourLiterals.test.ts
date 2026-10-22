@@ -128,6 +128,47 @@ describe("agent stylesheets carry no colour literals", () => {
   );
 });
 
+/**
+ * The Map Edits node's body and the overlay it draws on a map follow the same
+ * rule, in their stylesheets and in their components too: the overlay draws
+ * its outlines and handles in SVG, where a colour can be written straight
+ * into the markup, and the node's own blue palette did exactly that.
+ */
+const MAP_EDITS_DIR = "components/editFeatures";
+
+function sourceFiles(rel: string): string[] {
+  const out: string[] = [];
+  const walk = (dir: string) => {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) walk(full);
+      else if (/\.(css|tsx?)$/.test(entry.name)) out.push(full);
+    }
+  };
+  walk(path.join(SRC, rel));
+  return out;
+}
+
+describe("the Map Edits node's stylesheets and components carry no colour literals", () => {
+  const files = sourceFiles(MAP_EDITS_DIR);
+
+  it("found the files it is guarding", () => {
+    // A guard on the guard: a moved directory would pass every case vacuously.
+    expect(files.filter((f) => f.endsWith(".css")).length).toBeGreaterThanOrEqual(2);
+    expect(files.filter((f) => f.endsWith(".tsx")).length).toBeGreaterThan(10);
+  });
+
+  it.each(files.map((f) => [path.relative(SRC, f).split(path.sep).join("/"), f]))(
+    "%s",
+    (_name, file) => {
+      const offenders = codeLines(fs.readFileSync(file, "utf8")).filter((line) =>
+        HEX.test(line),
+      );
+      expect(offenders).toEqual([]);
+    },
+  );
+});
+
 describe("the palette grew one accent, on purpose", () => {
   const tokens = fs.readFileSync(path.join(SRC, "styles/curioTokens.css"), "utf8");
 
