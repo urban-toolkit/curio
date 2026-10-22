@@ -397,9 +397,10 @@ def _assert_framed(page, map_id: str) -> None:
 
 
 def _wait_for_map_drawn(page, map_id: str, what: str) -> None:
-    """Wait until the map's canvas holds a whole drawing: opaque, and the same
-    in two reads in a row. A draw starts on a new, clear canvas and fills it
-    once its layers are read."""
+    """Wait until the map's canvas holds a whole drawing: mostly opaque, as
+    ``assert_autark_map_drawn`` reads a drawn map, and the same in two reads in
+    a row. A draw starts on a new, clear canvas and fills it once its layers
+    are read."""
     import numpy as np
     from PIL import Image
 
@@ -412,9 +413,9 @@ def _wait_for_map_drawn(page, map_id: str, what: str) -> None:
             image = Image.open(BytesIO(base64.b64decode(url.split(",", 1)[1]))).convert("RGBA")
             opaque = float((np.asarray(image)[:, :, 3] >= 250).mean())
             rgb = image.convert("RGB")
-            if opaque > 0.9 and previous is not None and _changed(previous, rgb) <= 0.001:
+            if opaque > 0.5 and previous is not None and _changed(previous, rgb) <= 0.001:
                 return
-            previous = rgb if opaque > 0.9 else None
+            previous = rgb if opaque > 0.5 else None
         if time.time() >= deadline:
             raise AssertionError(f"the map {map_id} did not finish drawing after {what}: its canvas is {opaque:.0%} opaque")
         page.wait_for_timeout(500)
@@ -1237,22 +1238,31 @@ def test_the_chicago_loop_layers_take_a_point_a_reshaped_road_and_a_property_on_
     # A second click keeps it on; Pan turns it off.
     reshape.click()
     expect(reshape).to_have_attribute("aria-checked", "true")
-    handle = page.evaluate(_HANDLE_JS, map_id)
-    assert handle, "Move points shows no corner of the road on the map to drag"
-    drop = assert_in_view(page, handle["x"] + 24, handle["y"] + 16, "where the road's corner is dropped")
-    page.mouse.move(handle["x"], handle["y"])
-    page.mouse.down()
-    page.mouse.move(*drop, steps=8)
-    page.mouse.up()
-    code, keywords = _wait_for_count_of_edits(page, edit_id, 2, "the road's reshape")
-    road = _edits_of(code)[0][1]
-    assert (road["op"], road.get("layer"), road.get("ids")) == ("geometry", "table_osm_roads", [road_id]), road
-    assert road["geometry"]["type"] in ("LineString", "MultiLineString"), road
-    assert keywords.get("keys", {}).get("table_osm_roads") == "osm_id", keywords
-    moved = page.evaluate(_HANDLE_AT_JS, {"id": map_id, "ring": handle["ring"], "index": handle["index"]})
-    assert moved and math.hypot(moved["x"] - drop[0], moved["y"] - drop[1]) < 4, (
-        f"the corner dragged to {drop} is drawn at {moved}"
-    )
+    with canvas_painted_at_shown_zoom(page):
+        frame_nodes(page, [edit_id, map_id])
+        dismiss_toasts(page)
+        wait_for_node_still(page, map_id)
+        handle = page.evaluate(_HANDLE_JS, map_id)
+        assert handle, "Move points shows no corner of the road on the map to drag"
+        drop = assert_in_view(page, handle["x"] + 24, handle["y"] + 16, "where the road's corner is dropped")
+        _frame(page, "reshape-road", "drag", "before", map_id, edit_id, stem=CHICAGO_STEM)
+        keep_drawing(page, _map(map_id))
+        page.mouse.move(handle["x"], handle["y"])
+        page.mouse.down()
+        page.mouse.move(*drop, steps=8)
+        page.mouse.up()
+        code, keywords = _wait_for_count_of_edits(page, edit_id, 2, "the road's reshape")
+        road = _edits_of(code)[0][1]
+        assert (road["op"], road.get("layer"), road.get("ids")) == ("geometry", "table_osm_roads", [road_id]), road
+        assert road["geometry"]["type"] in ("LineString", "MultiLineString"), road
+        assert keywords.get("keys", {}).get("table_osm_roads") == "osm_id", keywords
+        _wait_for_redraw(page, map_id, "the road's reshape")
+        moved = page.evaluate(_HANDLE_AT_JS, {"id": map_id, "ring": handle["ring"], "index": handle["index"]})
+        assert moved and math.hypot(moved["x"] - drop[0], moved["y"] - drop[1]) < 4, (
+            f"the corner dragged to {drop} is drawn at {moved}"
+        )
+        wait_for_node_still(page, edit_id)
+        _frame(page, "reshape-road", "drag", "after", map_id, edit_id, stem=CHICAGO_STEM)
     expect(edit.locator('[data-edit-op="geometry"]')).to_contain_text(f"Redraw osm_id {road_id}")
     pan = edit.get_by_test_id("interaction-pan")
     pan.click()
