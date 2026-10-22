@@ -124,6 +124,27 @@ describe('an edit in node provenance', () => {
         expect(records[3].parentId).toBe(records[0].id);
     });
 
+    it('keeps the code an edit replaced only where no entry before it holds it, for Undo', () => {
+        const { result } = renderHook(() => useProvenanceContext(), { wrapper });
+        // The node's first change: no entry holds the code it started from.
+        act(() => { result.current.nodeEditProv('edit-1', 'code 1', 'Remove building_id 12', 'start'); });
+        // The next one starts from the entry before it.
+        act(() => { result.current.nodeEditProv('edit-1', 'code 2', 'Remove building_id 13', 'code 1'); });
+        // One made after the code changed with no entry (a hand edit).
+        act(() => { result.current.nodeEditProv('edit-1', 'code 4', 'Remove building_id 14', 'code 3'); });
+        const records = result.current.provenanceGraphNodes['edit-1'];
+        expect(records.map((r) => r.before)).toEqual(['start', undefined, 'code 3']);
+    });
+
+    it('moving the entry in use renders its views again, though nothing is filed', () => {
+        const { result } = renderHook(() => useProvenanceContext(), { wrapper });
+        act(() => { result.current.nodeEditProv('edit-1', 'code 1', 'Remove building_id 12', 'start'); });
+        const before = result.current.selectedRevision;
+        act(() => { result.current.setSelectedExec('edit-1', null); });
+        expect(result.current.selectedRevision).not.toBe(before);
+        expect(result.current.selectedParentExecRef.current['edit-1']).toBeNull();
+    });
+
     it('is nothing outside a provider: the context by default files no entry', () => {
         const { result } = renderHook(() => useProvenanceContext());
         expect(() => result.current.nodeEditProv('edit-1', 'code', 'label')).not.toThrow();

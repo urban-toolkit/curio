@@ -12,18 +12,15 @@
  * edits the last Commit ran. A map linked to a node that does not feed it
  * applies the log to its own layers, and hands those on.
  */
-import { EdgeType } from "../../constants";
+import { EdgeType, NodeType } from "../../constants";
 import { getUnversionedFlowNodeType } from "../flowNodeCanonicalType";
 import {
   NEW_LAYER_KEY,
-  normalizeEditFeatures,
+  readEditFeaturesCode,
   type EditFeaturesSettings,
   type NewLayerGeometry,
 } from "./editFeatures";
 import { editedFeatures } from "./layerModel";
-
-/** The Interaction node's type id, still the Edit Features one. */
-const EDIT_FEATURES_NODE_TYPE = "curio.builtin/edit-features";
 
 /** The circle an edge goes into: `in` is 0, `in_<k>` is k. */
 export function circleOf(handle: unknown): number {
@@ -31,8 +28,9 @@ export function circleOf(handle: unknown): number {
   return m ? Number(m[1]) : 0;
 }
 
-const isAutkMap = (node: any) => !!node && getUnversionedFlowNodeType(node) === "curio.builtin/autk-grammar";
-const isInteraction = (node: any) => !!node && getUnversionedFlowNodeType(node) === EDIT_FEATURES_NODE_TYPE;
+export const isAutkMap = (node: any) => !!node && getUnversionedFlowNodeType(node) === NodeType.AUTK_GRAMMAR;
+/** Whether *node* is an Interaction node (its type id is still Edit Features'). */
+export const isInteraction = (node: any) => !!node && getUnversionedFlowNodeType(node) === NodeType.EDIT_FEATURES;
 
 /** Whether *edge* is an interaction edge: the in/out link, not a data edge. */
 export function isInteractionEdge(edge: any): boolean {
@@ -72,10 +70,21 @@ export function interactionOn(mapId: string, nodes: readonly any[], edges: reado
   const only = feeds && into.every((e) => e.source === node.id);
   return {
     nodeId: node.id,
-    settings: normalizeEditFeatures(node.data?.editFeatures),
+    settings: nodeSettings(node),
     feeds,
     ...(only ? { drawFrom: node.data?.input } : {}),
   };
+}
+
+/** The code a node's data holds: what its editor floats, else what it loaded with. */
+export function nodeCode(data: any): string {
+  return typeof data?.code === "string" && data.code !== "" ? data.code : String(data?.defaultCode ?? "");
+}
+
+/** The edits an Interaction node's code holds, or undefined when the node cannot read its code. */
+export function nodeSettings(node: any): EditFeaturesSettings | undefined {
+  const read = readEditFeaturesCode(nodeCode(node?.data));
+  return "problem" in read ? undefined : read.settings;
 }
 
 /** How many circles feed *nodeId*: one past the highest a data edge goes into. */
@@ -88,9 +97,31 @@ export function circlesInto(nodeId: string, edges: readonly any[]): number {
   return Math.max(circles, 1);
 }
 
-/** The Autark map the Interaction node *nodeId* is linked to by an interaction edge, if any. */
+/** Whether a data edge goes from *source* into *target*. */
+export function feeds(source: string, target: string, edges: readonly any[]): boolean {
+  return edges.some((edge) => edge.source === source && edge.target === target && !isInteractionEdge(edge));
+}
+
+/**
+ * The Autark map the Interaction node *nodeId* edits on: one it feeds on a
+ * data edge and is linked to by an interaction edge, the first such link
+ * when there are several. Null when there is none: a map linked but not fed
+ * is not one.
+ */
 export function mapFedBy(nodeId: string, nodes: readonly any[], edges: readonly any[]): string | null {
-  return linkedTo(nodeId, edges, isAutkMap, nodes)?.id ?? null;
+  return linkedMaps(nodeId, nodes, edges)[0] ?? null;
+}
+
+/** Every Autark map *nodeId* feeds and is linked to, in the order of their links. */
+export function linkedMaps(nodeId: string, nodes: readonly any[], edges: readonly any[]): string[] {
+  const out: string[] = [];
+  for (const edge of edges) {
+    if (!isInteractionEdge(edge)) continue;
+    const other = edge.source === nodeId ? edge.target : edge.target === nodeId ? edge.source : null;
+    if (other == null || out.includes(other) || !feeds(nodeId, other, edges)) continue;
+    if (isAutkMap(nodes.find((n) => n.id === other))) out.push(other);
+  }
+  return out;
 }
 
 /**

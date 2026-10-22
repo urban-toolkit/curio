@@ -22,7 +22,7 @@ jest.mock("../../../adapters/node/autkGrammarBehavior", () => ({
 }));
 
 import { useEditFeaturesBehavior } from "../../../adapters/node/editFeaturesBehavior";
-import { editFeaturesCode } from "../../../utils/editFeatures/editFeatures";
+import { editFeaturesCode, readEditFeaturesCode } from "../../../utils/editFeatures/editFeatures";
 
 const NODE = "edit-1";
 const INPUT = { path: "art_layers", dataType: "dict" };
@@ -56,23 +56,24 @@ function nodeState(): UseNodeStateReturn {
   return { output: { code: "", content: "" }, setOutput: jest.fn(), code: "", setCode: jest.fn() } as unknown as UseNodeStateReturn;
 }
 
-/** The node on a canvas that keeps what it writes. */
 /**
- * The node only edits when linked to an Autark map (the same data nodes
- * feeding both, an interaction edge between them): every test mounts it so.
+ * The node only edits on an Autark map it feeds and is linked to (an
+ * interaction edge between them): every test mounts it so.
  */
 const LINKED = {
   nodes: [
     { id: "map", type: "curio.builtin/autk-grammar", data: { title: "Downtown Chicago layers" } },
   ],
   edges: [
+    { source: NODE, target: "map", sourceHandle: "out", targetHandle: "in" },
     { source: "map", target: NODE, sourceHandle: "in/out", targetHandle: "in/out", type: "BIDIRECTIONAL_EDGE" },
   ],
 };
 
-function mountLive(editFeatures: unknown, canvas: { nodes?: any[]; edges?: any[] } = LINKED) {
+/** The node on a canvas that keeps what it writes, its code holding no edits yet. */
+function mountLive(canvas: { nodes?: any[]; edges?: any[] } = LINKED) {
   const updateDataNode = jest.fn();
-  const first = { nodeId: NODE, input: INPUT, editFeatures, defaultCode: editFeaturesCode(undefined), code: editFeaturesCode(undefined) };
+  const first = { nodeId: NODE, input: INPUT, defaultCode: editFeaturesCode(undefined), code: editFeaturesCode(undefined) };
   function Canvas({ children }: { children: React.ReactNode }) {
     const [live, setLive] = React.useState<any>(first);
     const flow = {
@@ -97,7 +98,11 @@ function mountLive(editFeatures: unknown, canvas: { nodes?: any[]; edges?: any[]
       <Host />
     </Canvas>,
   );
-  const settings = () => updateDataNode.mock.calls[updateDataNode.mock.calls.length - 1]?.[1]?.editFeatures;
+  // The edits the node's code holds now, as the node reads them.
+  const settings = () => {
+    const read = readEditFeaturesCode(updateDataNode.mock.calls[updateDataNode.mock.calls.length - 1]?.[1]?.code);
+    return "problem" in read ? undefined : read.settings;
+  };
   return { updateDataNode, settings, state };
 }
 
@@ -106,7 +111,7 @@ beforeEach(() => {
 });
 
 test("the Edit view lists the input's layers by the geometry of their features", async () => {
-  mountLive(undefined);
+  mountLive();
   const list = await screen.findByTestId("interaction-layers");
   expect(list).toHaveTextContent("Found 2 layers in 2 geometry types. Pick a layer to work on:");
   expect(within(list).getByText("Lines · LineString")).toBeInTheDocument();
@@ -125,11 +130,11 @@ test("the Edit view lists the input's layers by the geometry of their features",
   expect(screen.queryByTestId("interaction-edit-map")).toBeNull();
 });
 
-test("linked to an Autark map, fed by two data nodes, the node edits on the map and hands on both circles", async () => {
-  // The same data nodes feed the node and the map, and an interaction edge
-  // links the two, as two Autark views are linked.
+test("fed by two data nodes, feeding an Autark map and linked to it, the node edits on the map and hands on both circles", async () => {
+  // The data nodes feed the node, the node feeds the map, and an interaction
+  // edge links the node and the map, as two Autark views are linked.
   mockSources = [{ ...ROADS, outputTableName: "input_0", named: false }, { ...BUILDINGS, outputTableName: "input_1", named: false }];
-  const { state } = mountLive(undefined, {
+  const { state } = mountLive({
     nodes: [
       { id: "roads", type: "curio.builtin/data-loading", data: { title: "Roads" } },
       { id: "buildings", type: "curio.builtin/data-loading", data: { title: "Buildings" } },
@@ -138,8 +143,7 @@ test("linked to an Autark map, fed by two data nodes, the node edits on the map 
     edges: [
       { source: "roads", target: NODE, sourceHandle: "out", targetHandle: "in_0" },
       { source: "buildings", target: NODE, sourceHandle: "out", targetHandle: "in_1" },
-      { source: "roads", target: "map", sourceHandle: "out", targetHandle: "in_0" },
-      { source: "buildings", target: "map", sourceHandle: "out", targetHandle: "in_1" },
+      { source: NODE, target: "map", sourceHandle: "out", targetHandle: "in" },
       { source: NODE, target: "map", sourceHandle: "in/out", targetHandle: "in/out", type: "BIDIRECTIONAL_EDGE" },
     ],
   });
@@ -156,12 +160,12 @@ test("linked to an Autark map, fed by two data nodes, the node edits on the map 
 });
 
 test("a new layer is made with its geometry and properties, and the node's code makes it", async () => {
-  const { settings, state } = mountLive(undefined);
+  const { settings, state } = mountLive();
   fireEvent.click(await screen.findByTestId("interaction-new-layer-open"));
   fireEvent.change(screen.getByTestId("interaction-new-layer-name"), { target: { value: "cooling_centers" } });
   fireEvent.click(screen.getByTestId("interaction-new-layer-Point"));
   fireEvent.click(screen.getByTestId("interaction-new-layer-create"));
-  expect(settings().newLayers).toEqual([{ name: "cooling_centers", geometry: "Point", properties: [{ name: "name", type: "text", required: true }] }]);
+  expect(settings()?.newLayers).toEqual([{ name: "cooling_centers", geometry: "Point", properties: [{ name: "name", type: "text", required: true }] }]);
   expect((state.setCode as jest.Mock).mock.calls.at(-1)[0]).toContain('new_layers=[{"name": "cooling_centers", "geometry": "Point"');
   // It is picked, ready to draw into.
   await waitFor(() => expect(screen.getByTestId("interaction-active-layer")).toHaveAttribute("data-layer", "cooling_centers"));
@@ -171,7 +175,7 @@ test("a new layer is made with its geometry and properties, and the node's code 
 });
 
 test("a property added to a layer is an add_column edit, and a second layer's edit names it and its id column", async () => {
-  const { settings } = mountLive(undefined);
+  const { settings } = mountLive();
   fireEvent.click(await screen.findByTestId("interaction-layer-table_osm_buildings"));
   fireEvent.click(screen.getByTestId("interaction-action-property"));
   fireEvent.change(screen.getByTestId("interaction-property-name"), { target: { value: "kind" } });
@@ -189,7 +193,7 @@ test("a property added to a layer is an add_column edit, and a second layer's ed
   fireEvent.click(screen.getByTestId("interaction-action-property"));
   fireEvent.change(screen.getByTestId("interaction-property-name"), { target: { value: "surface" } });
   fireEvent.click(screen.getByTestId("interaction-property-add"));
-  expect(settings().keys).toEqual({ table_osm_roads: "osm_id" });
-  expect(settings().edits[1]).toEqual({ op: "add_column", layer: "table_osm_roads", column: "surface", value: null });
+  expect(settings()?.keys).toEqual({ table_osm_roads: "osm_id" });
+  expect(settings()?.edits?.[1]).toEqual({ op: "add_column", layer: "table_osm_roads", column: "surface", value: null });
 });
 

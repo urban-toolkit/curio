@@ -409,7 +409,7 @@ export default function LayerWorkbench({
   onEdit,
   onEdits,
   onNewLayer,
-  onAddLayerProperty,
+  removePickedRef,
   mapId,
   nodeId = "",
 }: {
@@ -421,12 +421,16 @@ export default function LayerWorkbench({
   /** The features picked in the layer being worked on. */
   picked: SelectionId[];
   setPicked: (ids: SelectionId[]) => void;
-  /** One entry for the log, on *layer*. */
-  onEdit: (edit: FeatureEdit, layer: WorkbenchLayer) => void;
+  /**
+   * One entry for the log, on *layer*; with *property*, the property a new
+   * layer's next features are asked for, written in the same change.
+   */
+  onEdit: (edit: FeatureEdit, layer: WorkbenchLayer, property?: PropertyDef) => void;
   /** Several entries at once, on *layer*. */
   onEdits: (edits: FeatureEdit[], layer: WorkbenchLayer) => void;
   onNewLayer: (def: NewLayerDef) => void;
-  onAddLayerProperty: (layerName: string, def: PropertyDef) => void;
+  /** Set to what removes the picked features of the layer worked on (the body's Delete): true when it did. */
+  removePickedRef?: React.MutableRefObject<(() => boolean) | null>;
   /** The Autark map the node is linked to: the drawing happens there. */
   mapId: string;
   nodeId?: string;
@@ -572,6 +576,16 @@ export default function LayerWorkbench({
   // Linked to a map: the action is drawn there.
   const handlers = useRef({ onSelect, onDrawn, onReshape });
   handlers.current = { onSelect, onDrawn, onReshape };
+  // The body's Delete: the features picked to remove or edit, removed as Remove removes them.
+  if (removePickedRef) {
+    removePickedRef.current = () => {
+      if (!writable || !active || !(active.key || active.newLayer) || picked.length === 0 || drawn) return false;
+      if (action !== "remove" && action !== "edit") return false;
+      onEdit({ op: "remove", ids: picked }, active);
+      setPicked([]);
+      return true;
+    };
+  }
   useEffect(() => {
     const soloTable = solo && active ? active.table ?? active.name : null;
     if (!active || !kind || (!mode && !soloTable)) {
@@ -1259,8 +1273,9 @@ export default function LayerWorkbench({
             onClick={() => {
               const def: PropertyDef = { name: newProp.name.trim(), type: newProp.type };
               const values = formValues([{ ...def, name: "v" }], { v: newProp.value });
-              if (active.newLayer) onAddLayerProperty(active.name, { ...def, ...(values.v !== undefined ? { default: values.v } : {}) });
-              onEdit({ op: "add_column", column: def.name, value: values.v ?? null }, active);
+              // A new layer's next features are asked for it too, in the same change.
+              const property = active.newLayer ? { ...def, ...(values.v !== undefined ? { default: values.v } : {}) } : undefined;
+              onEdit({ op: "add_column", column: def.name, value: values.v ?? null }, active, property);
               setNewProp({ name: "", type: "text", value: "" });
               setAction(null);
             }}

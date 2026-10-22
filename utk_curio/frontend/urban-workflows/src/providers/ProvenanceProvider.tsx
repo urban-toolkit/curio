@@ -2,10 +2,11 @@ import React, { createContext, useContext, ReactNode, useState, useRef } from "r
 import { formatDate } from "../utils/formatters";
 
 /**
- * One entry of a node's history: a run, or an edit made in the node's body (a
- * Map Edits node's Apply, Remove or put back), which ran nothing. Each holds
- * the node's code as it left it, and descends from the entry the node's next
- * one branches from (`selectedParentExecRef`), so the history is a tree.
+ * One entry of a node's history: a run, or an edit made in the node's body (an
+ * Interaction node's action, or an entry of its list switched off or
+ * deleted), which ran nothing. Each holds the node's code as it left it, and
+ * descends from the entry the node's next one branches from
+ * (`selectedParentExecRef`), so the history is a tree.
  */
 export interface NodeExecRecord {
     id: number;
@@ -18,8 +19,14 @@ export interface NodeExecRecord {
     endTime: string;
     /** "edit" for an edit; a run has none. */
     kind?: "edit";
-    /** What an edit changed, as the drawer lists it: "height 60 on building_id 34". */
+    /** What an edit changed, as the drawer lists it: "Remove building_id 119". */
     label?: string;
+    /**
+     * An edit's code before it, when the entry it descends from does not hold
+     * it (the first edit of a node, or one after its code changed with no
+     * entry): what Undo puts back.
+     */
+    before?: string;
 }
 
 interface ProvenanceContextProps {
@@ -35,11 +42,17 @@ interface ProvenanceContextProps {
         outputData?: string,
         interaction?: boolean
     ) => void;
-    /** Files an edit made in *nodeId*'s body: the code it left, named by *label*. */
-    nodeEditProv: (nodeId: string, code: string, label: string) => void;
+    /**
+     * Files an edit made in *nodeId*'s body: the code it left, named by
+     * *label*, and the code it replaced (*before*), kept when the entry it
+     * descends from does not hold it.
+     */
+    nodeEditProv: (nodeId: string, code: string, label: string, before?: string) => void;
     provenanceGraphNodes: Record<string, NodeExecRecord[]>;
     provenanceGraphNodesRef: React.MutableRefObject<Record<string, NodeExecRecord[]>>;
     selectedParentExecRef: React.MutableRefObject<Record<string, number | null>>;
+    /** Counts the changes of the entry in use that filed nothing, so a view of it renders again. */
+    selectedRevision?: number;
     setSelectedExec: (nodeId: string, execId: number | null) => void;
     /** A loaded dataflow's histories, and each node's code as it loaded, by node id. */
     loadNodeProvenance: (data: Record<string, NodeExecRecord[]>, codes?: Record<string, string>) => void;
@@ -118,11 +131,13 @@ const ProvenanceProvider = ({ children }: { children: ReactNode }) => {
     };
 
     // An edit runs nothing: it reads and returns no data, and starts and ends at once.
-    const nodeEditProv = (nodeId: string, code: string, label: string) => {
+    const nodeEditProv = (nodeId: string, code: string, label: string, before?: string) => {
         const at = formatDate(new Date());
+        const parentId = selectedParentExecRef.current[nodeId] ?? null;
+        const parent = (provenanceGraphNodesRef.current[nodeId] ?? []).find((record) => record.id === parentId);
         file(nodeId, {
             id: execIdCounterRef.current++,
-            parentId: selectedParentExecRef.current[nodeId] ?? null,
+            parentId,
             code,
             inputs: [],
             outputs: [],
@@ -130,11 +145,17 @@ const ProvenanceProvider = ({ children }: { children: ReactNode }) => {
             endTime: at,
             kind: "edit",
             label,
+            // The code it replaced, where no entry before it holds it: what Undo puts back.
+            ...(before !== undefined && before !== parent?.code ? { before } : {}),
         });
     };
 
+    // Which entry is in use changes with no entry filed (a put back, an Undo
+    // or a Redo): the drawer reads it again.
+    const [selectedRevision, setSelectedRevision] = useState(0);
     const setSelectedExec = (nodeId: string, execId: number | null) => {
         selectedParentExecRef.current[nodeId] = execId;
+        setSelectedRevision((revision) => revision + 1);
     };
 
     const loadNodeProvenance = (data: Record<string, NodeExecRecord[]>, codes: Record<string, string> = {}) => {
@@ -166,6 +187,7 @@ const ProvenanceProvider = ({ children }: { children: ReactNode }) => {
                 provenanceGraphNodes,
                 provenanceGraphNodesRef,
                 selectedParentExecRef,
+                selectedRevision,
                 setSelectedExec,
                 loadNodeProvenance,
                 getAllNodeProvenance,

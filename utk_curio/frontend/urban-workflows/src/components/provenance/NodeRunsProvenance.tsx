@@ -24,26 +24,28 @@ export interface NodeRunsProvenanceProps {
 }
 
 /**
- * A node's runs in the provenance drawer, and the edits made in its body (a
- * Map Edits node's Apply, Remove or put back), each listed by what it changed.
+ * A node's runs in the provenance drawer, and the edits made in its body (an
+ * Interaction node's actions, and the entries of its list switched off or
+ * deleted), each listed by what it changed.
  * An opened run shows what it read and returned, when it ran and for how long,
  * and its code; an opened edit shows when it was made and the code it left.
  * Either one's button puts that code back in the node without running it, and
  * the node's next run or edit branches from it.
  */
 export function NodeRunsProvenance({ nodeId, restore, onNodeGone }: NodeRunsProvenanceProps) {
-  const { provenanceGraphNodes, selectedParentExecRef, setSelectedExec } = useProvenanceContext();
+  const { provenanceGraphNodes, selectedParentExecRef, selectedRevision, setSelectedExec } = useProvenanceContext();
   const records = provenanceGraphNodes[nodeId] ?? NO_RUNS;
   const items = useMemo(() => runItems(records), [records]);
   const byId = useMemo(() => new Map(records.map((record) => [String(record.id), record])), [records]);
   const noun = records.some(isEdit) ? ENTRY_NOUN : RUN_NOUN;
 
   // The run the next one branches from. The provider moves it to each run it
-  // files, in a ref, so the drawer reads it again whenever a run is filed.
+  // files, in a ref, so the drawer reads it again whenever a run is filed,
+  // and whenever the entry in use moves with nothing filed (an Undo or a Redo).
   const [currentId, setCurrentId] = useState<string | null>(() => runInUse(selectedParentExecRef.current, nodeId));
   useEffect(() => {
     setCurrentId(runInUse(selectedParentExecRef.current, nodeId));
-  }, [records, nodeId, selectedParentExecRef]);
+  }, [records, nodeId, selectedParentExecRef, selectedRevision]);
 
   // Closed with its node: deleted on the canvas, or by a collaborator.
   const { nodes } = useFlowContext();

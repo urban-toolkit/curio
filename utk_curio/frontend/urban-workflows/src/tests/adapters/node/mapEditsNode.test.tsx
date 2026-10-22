@@ -63,7 +63,7 @@ import NodeEditor from "../../../components/editing/NodeEditor";
 import { useNodeState } from "../../../hook/useNodeState";
 import ProvenanceProvider, { useProvenanceContext, type NodeExecRecord } from "../../../providers/ProvenanceProvider";
 import { ProvenanceDrawerContext, type NodeProvenanceTarget } from "../../../providers/provenanceDrawerContext";
-import { editFeaturesCode, normalizeEditFeatures, type EditFeaturesSettings } from "../../../utils/editFeatures/editFeatures";
+import { editFeaturesCode, normalizeEditFeatures, readEditFeaturesCode, type EditFeaturesSettings } from "../../../utils/editFeatures/editFeatures";
 import { grammarRuns, nodeInput, resetAutkNodeMocks } from "../../_support/autkNodeMocks";
 import { stubWebGpu, unstubWebGpu } from "../../_support/autkNode";
 
@@ -210,8 +210,11 @@ function mountCanvas({
     </ProvenanceProvider>,
   );
   return {
-    /** The node's settings as the canvas holds them (saved as `metadata.editFeatures`). */
-    settings: () => latest.current[NODE].editFeatures as EditFeaturesSettings | undefined,
+    /** The node's settings as its code holds them, its only state. */
+    settings: (): EditFeaturesSettings | undefined => {
+      const read = readEditFeaturesCode(latest.current[NODE].code);
+      return "problem" in read ? undefined : read.settings;
+    },
     markDirty,
     openNodeProvenance,
     /** The map's play: its document run, to the end of the run. */
