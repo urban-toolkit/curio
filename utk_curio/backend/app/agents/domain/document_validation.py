@@ -510,8 +510,8 @@ _SUFFIX_GRAMMARS = {
     "autk-grammar": "autk-grammar",
 }
 
-#: What each grammar's document IS, for the refusal a non-document reply gets.
-_GRAMMAR_SHAPES = {
+#: The proof's copy of what a Vega-Lite document is; it leaves with the proof.
+_TODAY_GRAMMAR_SHAPES = {
     "vega-lite": (
         'a Vega-Lite JSON document — {"$schema": "https://vega.github.io/schema/'
         'vega-lite/v6.json", "mark": …, "encoding": …}. Do NOT include a "data" '
@@ -521,15 +521,25 @@ _GRAMMAR_SHAPES = {
 
 
 def grammar_shape(grammar: str | None) -> str:
-    """What a document in *grammar* is, for the refusal a non-document reply gets."""
-    if grammar == "autk-grammar":
-        from utk_curio.backend.app.agents.domain import contracts
+    """What a document in *grammar* is, for the refusal a non-document reply
+    gets. A Vega-Lite document's ``$schema`` is the one Curio writes
+    (``contracts.VEGA_SCHEMA_URL``)."""
+    from utk_curio.backend.app.agents.domain import contracts
 
+    if grammar == "autk-grammar":
         try:
             return contracts.render_autk_shape(contracts.load_autk_schema())
         except Exception:  # noqa: BLE001
             return "an Autark grammar JSON document"
-    return _GRAMMAR_SHAPES.get(grammar or "", "a JSON document")
+    if grammar == "vega-lite":
+        # The words stay as they were until this refusal moves into the base entry.
+        dash = chr(0x2014)
+        return (
+            f'a Vega-Lite JSON document {dash} {{"$schema": "{contracts.VEGA_SCHEMA_URL}", "mark": …, '
+            '"encoding": …}. Do NOT include a "data" block: Curio injects this node\'s input as '
+            "the data at render time"
+        )
+    return "a JSON document"
 
 
 def _authors_nothing(node_type: object, content_kind: object) -> bool:

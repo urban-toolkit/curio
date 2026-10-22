@@ -71,8 +71,8 @@ STOP_WORDS = frozenset({
     "docs", "example", "examples", "json", "node", "nodes",
 })
 
-#: What opens the block.
-HEADING = (
+#: The proof's copy of what opens the block; it leaves with the proof.
+_TODAY_HEADING = (
     "Worked examples: shipped Curio dataflows close to this task, chosen for this "
     "run. Learn from how their nodes, code and specs fit together. The datasets "
     "and node types this task uses come from this project, not from these "
@@ -317,19 +317,26 @@ def select(query: str, *, node_type: object = None, dataset_ids=(), exclude=(),
     return [example for _score, _position, example in ranked[:TOP_K]]
 
 
+def heading() -> str:
+    """What opens the block: the section ``worked-examples`` of the base
+    entry's ``frames.md``."""
+    return agent_text.section(builtin.FRAMES_FILE, "worked-examples")
+
+
 def render(chosen: list[Example], *, cap: int = MAX_BLOCK_CHARS) -> str | None:
     """The block for *chosen*, in order: the heading, then each example's line
     and its Trill. An example that would take the block past *cap* is left out;
     None when none fits."""
+    head = heading()
     pieces: list[str] = []
-    size = len(HEADING)
+    size = len(head)
     for example in chosen:
         piece = shown(example)
         if size + len(_SEP) + len(piece) > cap:
             continue
         pieces.append(piece)
         size += len(_SEP) + len(piece)
-    return _SEP.join([HEADING, *pieces]) if pieces else None
+    return _SEP.join([head, *pieces]) if pieces else None
 
 
 def shown(example: Example) -> str:

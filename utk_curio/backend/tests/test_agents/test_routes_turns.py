@@ -74,7 +74,7 @@ class TestRun:
         # dev/39: the runtime-owned structured-tail instruction composes last,
         # followed by the tools the agent is granted, the read tools first.
         assert msgs[0]["content"].startswith(
-            f"{preamble}\n\n{instruction}\n\n{content_mod.TAIL_INSTRUCTION}"
+            f"{preamble}\n\n{instruction}\n\n{content_mod.tail_instruction()}"
         )
         assert "- dataflow.read:" in msgs[0]["content"]
         assert msgs[1] == {"role": "user", "content": "explain this node"}
@@ -263,7 +263,7 @@ class TestExecutionRecords:
         calls = []
 
         def _fake_run(config, messages, usage_out=None, **kwargs):
-            if messages and messages[0].get("content") == titles.TITLE_PROMPT:
+            if messages and messages[0].get("content") == titles.title_prompt():
                 if usage_out is not None:
                     usage_out.update({"inputTokens": 5, "outputTokens": 3})
                 return "Exec Title"
@@ -646,13 +646,17 @@ class TestToolGrants:
 
     def test_registered_read_tool_is_granted_and_pinned(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
         from utk_curio.backend.app.agents.application import tools as tools_mod
-        from utk_curio.backend.app.agents.application.tools import ToolContract
+        from utk_curio.backend.app.agents.application.tools import ToolContract, ToolText
 
         monkeypatch.setitem(
             tools_mod.REGISTRY,
             "ghost.tool",
-            ToolContract(id="ghost.tool", contract_version="1", effect="read", description="d"),
+            ToolContract(id="ghost.tool", contract_version="1", effect="read"),
         )
+        # What a run is told of a tool is its section of the base entry's
+        # tools.md; the ghost's says "d".
+        texts = {**tools_mod.tool_texts(), "ghost.tool": ToolText("d", None, {})}
+        monkeypatch.setattr(tools_mod, "tool_texts", lambda: texts)
         monkeypatch.setattr(
             'utk_curio.backend.app.agents.infrastructure.providers.run_chat_turn',
             lambda c, m, **kw: "ok",
@@ -703,7 +707,7 @@ class TestRunContext:
         calls = []
 
         def _fake_run(config, messages, **kwargs):
-            if messages and messages[0].get("content") == titles.TITLE_PROMPT:
+            if messages and messages[0].get("content") == titles.title_prompt():
                 return "Title"
             calls.append(messages)
             return "ok"
@@ -724,7 +728,7 @@ class TestRunContext:
         msgs = calls[0]
         assert msgs[-1] == {"role": "user", "content": "write it"}
         assert msgs[-2]["role"] == "user"
-        assert msgs[-2]["content"].startswith("[attachment context — current canvas state]\n")
+        assert msgs[-2]["content"].startswith("[attachment context: current canvas state]\n")
         assert "Current Trill" in msgs[-2]["content"]
         # Ephemeral: the transcript persists only what the user saw.
         turns = client.get(
@@ -1043,7 +1047,7 @@ class TestToolLoop:
             from utk_curio.backend.app.agents.application.turns import titles
             from utk_curio.backend.app.agents.infrastructure import providers
 
-            if messages and messages[0].get("content") == titles.TITLE_PROMPT:
+            if messages and messages[0].get("content") == titles.title_prompt():
                 return "Title"
             calls.append(messages)
             if len(calls) == 1:
@@ -1083,7 +1087,7 @@ class TestToolLoop:
             from utk_curio.backend.app.agents.application.turns import titles
             from utk_curio.backend.app.agents.infrastructure import providers
 
-            if messages and messages[0].get("content") == titles.TITLE_PROMPT:
+            if messages and messages[0].get("content") == titles.title_prompt():
                 return "Title"
             calls.append(messages)
             return f"Round {len(calls)}.\n" + TestToolLoop.TOOL_TAIL  # always wants more
@@ -1127,7 +1131,7 @@ class TestToolLoop:
             from utk_curio.backend.app.agents.application.turns import titles
             from utk_curio.backend.app.agents.infrastructure import providers
 
-            if messages and messages[0].get("content") == titles.TITLE_PROMPT:
+            if messages and messages[0].get("content") == titles.title_prompt():
                 return "Title"
             calls.append(messages)
             if len(calls) == 1:
@@ -1165,7 +1169,7 @@ class TestToolLoop:
         calls = []
 
         def _fake_run(config, messages, **kwargs):
-            if messages and messages[0].get("content") == titles.TITLE_PROMPT:
+            if messages and messages[0].get("content") == titles.title_prompt():
                 return "Title"
             calls.append(messages)
             return "ok"
@@ -1193,7 +1197,7 @@ class TestToolLoop:
         )
         assert r.status_code == 200, r.get_data(as_text=True)
         system = calls[0][0]["content"]
-        assert system == f"Answer briefly.\n\n{content_mod.TAIL_INSTRUCTION}"
+        assert system == f"Answer briefly.\n\n{content_mod.tail_instruction()}"
         assert "You may also use these tools" not in system
         assert "delegateRequest" not in system
 
@@ -1225,7 +1229,7 @@ class TestStructuredContent:
         calls = []
 
         def _fake_run(config, messages, **kwargs):
-            if messages and messages[0].get("content") == titles.TITLE_PROMPT:
+            if messages and messages[0].get("content") == titles.title_prompt():
                 return "Content Title"
             calls.append(messages)
             return replies[len(calls) - 1]
@@ -1419,7 +1423,7 @@ class TestRunsAreRecordedNotRationed:
             if sink is not None:
                 sink["inputTokens"] = 12
                 sink["outputTokens"] = 34
-            if messages and messages[0].get("content") == titles.TITLE_PROMPT:
+            if messages and messages[0].get("content") == titles.title_prompt():
                 return "Title"
             return reply
 
@@ -2218,7 +2222,7 @@ class TestDatasetFinderTools:
             from utk_curio.backend.app.agents.application.turns import titles
             from utk_curio.backend.app.agents.infrastructure import providers
 
-            if messages and messages[0].get("content") == titles.TITLE_PROMPT:
+            if messages and messages[0].get("content") == titles.title_prompt():
                 return "Title"
             calls.append(messages)
             return replies[min(len(calls) - 1, len(replies) - 1)]
@@ -3310,7 +3314,7 @@ class TestPackageRecommendationTools:
             from utk_curio.backend.app.agents.application.turns import titles
             from utk_curio.backend.app.agents.infrastructure import providers
 
-            if messages and messages[0].get("content") == titles.TITLE_PROMPT:
+            if messages and messages[0].get("content") == titles.title_prompt():
                 return "Title"
             calls.append(messages)
             return replies[min(len(calls) - 1, len(replies) - 1)]

@@ -298,7 +298,7 @@ class InProcessDriver:
         calls = self.calls
 
         def _fake_run(config, messages, **kwargs):
-            if messages and messages[0].get("content") == services_mod.TITLE_PROMPT:
+            if messages and messages[0].get("content") == services_mod.title_prompt():
                 return "Reconstruction"
             calls.append(messages)
             return responder(messages, len(calls) - 1)

@@ -9,6 +9,10 @@ from __future__ import annotations
 
 from utk_curio.backend.app.agents.domain.manifest import CAPABILITY_ID_RE
 
+#: The native name of delegation: one tool whose ``capability`` names what to
+#: delegate. It has no dot, so no tool id encodes to it.
+DELEGATE_TOOL = "delegate"
+
 
 def wire_name(tool_id: str) -> str:
     """*tool_id* as a native tool name. Providers allow only letters, digits,

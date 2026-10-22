@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import time
 
+from utk_curio.backend.app.agents.domain import agent_text, builtin
+
 
 #: The output ceiling every agent run is dispatched with.
 #:
@@ -112,7 +114,15 @@ CONTEXT_MAX_CHARS = 120_000
 _CONTEXT_TRUNCATION_MARKER = "\n…[truncated: context exceeded the run-context bound]"
 
 
-_CONTEXT_FRAME = "[attachment context — current canvas state]\n"
+#: The proof's copy of the canvas context's frame; it leaves with the proof.
+_TODAY_CONTEXT_FRAME = "[attachment context — current canvas state]\n"
+
+
+def context_frame() -> str:
+    """The line that opens the canvas context a run is given, framing it as
+    data: the section ``canvas-context`` of the base entry's ``frames.md``.
+    The context follows it on the next line."""
+    return agent_text.section(builtin.FRAMES_FILE, "canvas-context")
 
 
 def _bounded_context(run_context: str | None) -> str | None:

@@ -19,6 +19,7 @@ from utk_curio.backend.app.agents.application import delegation
 from utk_curio.backend.app.agents.application import source_grounding
 from utk_curio.backend.app.agents.application import tools
 from utk_curio.backend.app.agents.application import verify
+from utk_curio.backend.app.agents.domain import agent_text
 from utk_curio.backend.app.agents.domain import builtin
 from utk_curio.backend.app.agents.domain import content
 from utk_curio.backend.app.agents.domain import node_context
@@ -130,7 +131,7 @@ def _dataset_discover_inputs(user_key: str, project_id: str, inputs: dict) -> di
             "rows": rows,
         }
     if "discoveryReplyContract" not in enriched:
-        enriched["discoveryReplyContract"] = agents_grounding._DISCOVERY_RULE + "\n\n" + content.CANDIDATES_INSTRUCTION
+        enriched["discoveryReplyContract"] = _discovery_reply_contract()
     return enriched
 
 
@@ -481,6 +482,76 @@ def _mint_content_review_from_delegate(
 PACKAGE_AUTHORING_CAPABILITIES = content.PACKAGE_AUTHORING_CAPABILITIES
 
 
+# --- What a delegated run is told to reply with ---------------------------------
+#
+# The base entry's delegate-contracts.md, one section per contract, which the
+# runtime puts in a delegate's inputs (the dev/67-6 enrichment pattern:
+# deterministic server-side inputs, never model-invented). DEC-046 children
+# are tool-less and never see the grants paragraph where a tool's schema
+# lives, so a child answers to a schema it can SEE.
+
+
+def _contracts_section(name: str) -> str:
+    """The section *name* of the base entry's ``delegate-contracts.md``."""
+    return agent_text.section(builtin.DELEGATE_CONTRACTS_FILE, name)
+
+
+#: Each reply contract parsed, by its section, with the text it was parsed from.
+_PARSED_CONTRACTS: dict[str, tuple[str, dict]] = {}
+
+
+def _contract(name: str) -> dict:
+    """The reply contract the section *name* of ``delegate-contracts.md``
+    holds as its one block fenced as json: one dict while the section reads
+    the same, as when it was this module's constant; no caller changes it."""
+    text = _contracts_section(name)
+    held = _PARSED_CONTRACTS.get(name)
+    if held is None or held[0] != text:
+        where = f"{agent_text.PAGE_PREFIX}{builtin.DELEGATE_CONTRACTS_FILE}, section {name}"
+        held = _PARSED_CONTRACTS[name] = (text, agent_text.json_block(text, where))
+    return held[1]
+
+
+def _build_request_contract() -> dict:
+    """The build-request contract a delegated package-writing call receives:
+    the section ``build-request`` of ``delegate-contracts.md`` (dev/90 A8: a
+    live run showed the child inventing a plausible-but-wrong shape,
+    "package"/"behaviors"/"behaviorKey", twice, and the parent cannot teach a
+    schema it does not carry either).
+
+    memo dev/91: the backend authoring contract rides it as
+    ``backendContract``, stated where the delegate can see it (the A8 lesson:
+    nobody invents a schema they were shown). Its text is the base entry's
+    page ``rules/package_contract.md``, rendered, the same text the
+    package-writing mode's own prompt includes, read like any prompt."""
+    contract = _contract("build-request")
+    backend = builtin.read_page(
+        builtin.PACKAGE_CONTRACT_FILE, wanted_by="the build-request contract"
+    )
+    if not backend:
+        return contract
+    return {**contract, "backendContract": backend}
+
+
+def _notes_reply_contract() -> dict:
+    """dev/95 (Follow-up D): the reply schema for a delegated
+    ``research.notes.compose``, the section ``notes-reply`` of
+    ``delegate-contracts.md``, taught via inputs and recognized ONLY by this
+    schema at the mint (DEC-063: never by reading intent out of prose)."""
+    return _contract("notes-reply")
+
+
+def _discovery_reply_contract() -> str:
+    """dev/114: what a tool-less Dataset Finder child answers to, the section
+    ``dataset-candidates`` of ``delegate-contracts.md``, then the
+    ``datasetCandidates`` block of ``protocol.md`` (#269: ONE schema, never a
+    second copy)."""
+    candidates = agent_text.section(builtin.PROTOCOL_FILE, "dataset-candidates")
+    return f"{_contracts_section('dataset-candidates')}\n\n{candidates}"
+
+
+# --- The proof's copies (they leave with the proof) ----------------------------
+
 # dev/90 A8: the build-request contract, supplied to AUTHORING delegates as
 # an input. DEC-046 children are tool-less and never see the grants paragraph
 # where the tool schema lives — a live run showed the child inventing a
@@ -488,7 +559,7 @@ PACKAGE_AUTHORING_CAPABILITIES = content.PACKAGE_AUTHORING_CAPABILITIES
 # the parent cannot teach a schema it does not carry either. The runtime is
 # the one place that always knows the contract (the dev/67-6 enrichment
 # pattern: deterministic server-side inputs, never model-invented).
-_BUILD_REQUEST_CONTRACT: dict = {
+_TODAY_BUILD_REQUEST_CONTRACT: dict = {
     "reply": (
         "Reply with ONE JSON object of exactly this shape (optionally inside "
         "a ```json fence), nothing after it. Do NOT invent other keys — "
@@ -583,20 +654,14 @@ _BUILD_REQUEST_CONTRACT: dict = {
 }
 
 
-def _build_request_contract() -> dict:
-    """The build-request contract a delegated package-writing call receives.
-
-    memo dev/91: the backend authoring contract rides it as
-    ``backendContract``, stated where the delegate can see it (the A8 lesson:
-    nobody invents a schema they were shown). Its text is the base entry's
-    page ``rules/package_contract.md``, rendered, the same text the
-    package-writing mode's own prompt includes, read like any prompt."""
+def _today_build_request_contract() -> dict:
+    """The proof's copy of the build-request contract as Python composed it."""
     backend = builtin.read_page(
         builtin.PACKAGE_CONTRACT_FILE, wanted_by="the build-request contract"
     )
     if not backend:
-        return _BUILD_REQUEST_CONTRACT
-    return {**_BUILD_REQUEST_CONTRACT, "backendContract": backend}
+        return _TODAY_BUILD_REQUEST_CONTRACT
+    return {**_TODAY_BUILD_REQUEST_CONTRACT, "backendContract": backend}
 
 
 def _extract_reuse_finding(child_text: str) -> dict | None:
@@ -673,7 +738,7 @@ def _reuse_finding_text(user_key: str, project_id: str, finding: dict) -> str:
 #: answers to a schema it can SEE, never a shape it must invent) and
 #: recognized ONLY by this schema at the mint (DEC-063: never by reading
 #: intent out of prose).
-_NOTES_REPLY_CONTRACT: dict = {
+_TODAY_NOTES_REPLY_CONTRACT: dict = {
     "reply": (
         "Reply with ONE JSON object of exactly this shape (optionally inside "
         "a ```json fence), nothing after it."
@@ -1366,7 +1431,7 @@ def _enriched_delegate_inputs(
             enriched["notesTemplates"] = packages_services.presentation_templates(
                 user_key, project_id)
         if "notesReplyContract" not in enriched:
-            enriched["notesReplyContract"] = _NOTES_REPLY_CONTRACT
+            enriched["notesReplyContract"] = _notes_reply_contract()
         return enriched
     if capability == "dataset.discover":
         # dev/114 — the SIXTH runtime-supplied-inputs application (DEC-063):

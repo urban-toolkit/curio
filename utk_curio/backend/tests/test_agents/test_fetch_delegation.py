@@ -253,7 +253,7 @@ class TestAfterTheImportSolvingContinues:
         frames: list[str] = []
 
         def _reply(config, messages, **kwargs):
-            if messages and messages[0].get("content") == titles.TITLE_PROMPT:
+            if messages and messages[0].get("content") == titles.title_prompt():
                 return "Title"
             frames.append(messages[-1].get("content") or "")
             return loader
@@ -401,7 +401,7 @@ class TestAnAcquirableRowIsDownloaded:
         monkeypatch.setattr(
             'utk_curio.backend.app.agents.infrastructure.providers.run_chat_turn',
             lambda config, messages, **k: (
-                "Title" if messages[0].get("content") == titles.TITLE_PROMPT else loader
+                "Title" if messages[0].get("content") == titles.title_prompt() else loader
             ),
         )
         monkeypatch.setattr(
@@ -442,7 +442,7 @@ class TestAnAcquirableRowIsDownloaded:
         monkeypatch.setattr(
             'utk_curio.backend.app.agents.infrastructure.providers.run_chat_turn',
             lambda config, messages, **k: (
-                "Title" if messages[0].get("content") == titles.TITLE_PROMPT else loader
+                "Title" if messages[0].get("content") == titles.title_prompt() else loader
             ),
         )
         monkeypatch.setattr(

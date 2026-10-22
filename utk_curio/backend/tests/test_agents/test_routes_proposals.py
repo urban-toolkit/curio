@@ -54,7 +54,7 @@ class TestReviewProposals:
             from utk_curio.backend.app.agents.application.turns import titles
             from utk_curio.backend.app.agents.infrastructure import providers
 
-            if messages and messages[0].get("content") == titles.TITLE_PROMPT:
+            if messages and messages[0].get("content") == titles.title_prompt():
                 return "Title"
             calls.append(messages)
             return script[min(len(calls) - 1, len(script) - 1)]
@@ -397,7 +397,7 @@ class TestNodeCreate:
             from utk_curio.backend.app.agents.application.turns import titles
             from utk_curio.backend.app.agents.infrastructure import providers
 
-            if messages and messages[0].get("content") == titles.TITLE_PROMPT:
+            if messages and messages[0].get("content") == titles.title_prompt():
                 return "Title"
             calls.append(messages)
             return script[min(len(calls) - 1, len(script) - 1)]
@@ -735,7 +735,7 @@ class TestDataflowPlanMint:
             from utk_curio.backend.app.agents.application.turns import titles
             from utk_curio.backend.app.agents.infrastructure import providers
 
-            if messages and messages[0].get("content") == titles.TITLE_PROMPT:
+            if messages and messages[0].get("content") == titles.title_prompt():
                 return "Title"
             calls.append(messages)
             return script[min(len(calls) - 1, len(script) - 1)]
@@ -1380,7 +1380,7 @@ class TestDestructiveReplan:
             from utk_curio.backend.app.agents.application.turns import titles
             from utk_curio.backend.app.agents.infrastructure import providers
 
-            if messages and messages[0].get("content") == titles.TITLE_PROMPT:
+            if messages and messages[0].get("content") == titles.title_prompt():
                 return "Title"
             calls.append(messages)
             return replies[min(len(calls) - 1, len(replies) - 1)]
@@ -2201,7 +2201,7 @@ class TestPackageBuilderTools:
             from utk_curio.backend.app.agents.application.turns import titles
             from utk_curio.backend.app.agents.infrastructure import providers
 
-            if messages and messages[0].get("content") == titles.TITLE_PROMPT:
+            if messages and messages[0].get("content") == titles.title_prompt():
                 return "Title"
             calls.append(messages)
             return replies[min(len(calls) - 1, len(replies) - 1)]
@@ -2967,7 +2967,7 @@ class TestPlanTopologyMint:
             from utk_curio.backend.app.agents.application import spec_reads
             from utk_curio.backend.app.agents.application.turns import titles
             from utk_curio.backend.app.agents.infrastructure import providers
-            if messages and messages[0].get("content") == titles.TITLE_PROMPT:
+            if messages and messages[0].get("content") == titles.title_prompt():
                 return "Title"
             calls.append(messages)
             return replies[min(len(calls) - 1, len(replies) - 1)]

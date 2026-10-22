@@ -26,6 +26,7 @@ Invariants (dev/15 / DEC-046, structural rather than bookkept):
 
 from __future__ import annotations
 
+import re
 import time
 import uuid
 from dataclasses import dataclass
@@ -42,6 +43,7 @@ from utk_curio.backend.app.agents.application.turns import policy
 from utk_curio.backend.app.agents.application.turns import prompts
 from utk_curio.backend.app.agents.infrastructure import providers
 from utk_curio.backend.app.agents.repositories import project_agents
+from utk_curio.backend.app.agents.domain import agent_text
 from utk_curio.backend.app.agents.domain import builtin
 from utk_curio.backend.app.agents.repositories import catalog_settings
 from utk_curio.backend.app.agents.repositories import ledger
@@ -206,9 +208,42 @@ def delegate_name(user_key: str, parent: AgentManifest, capability: str) -> str 
     return None
 
 
+#: The run values the delegated task's frame names, each once: the
+#: delegating agent and the capability it asked for.
+_FRAME_VALUES = ("parent", "capability")
+
+
 def _frame_inputs(parent_coord: str, capability: str, inputs: dict) -> str:
     """The parent-supplied inputs as ONE bounded untrusted context message
-    (the dev/44 framing pattern — data, never instructions)."""
+    (the dev/44 framing pattern: data, never instructions), under the section
+    ``delegated-task`` of the base entry's ``frames.md``."""
+    import json
+
+    body = json.dumps(inputs, ensure_ascii=False, indent=2) if inputs else "{}"
+    frame = _fill_frame(
+        agent_text.section(builtin.FRAMES_FILE, "delegated-task"),
+        {"parent": parent_coord, "capability": capability},
+    )
+    return f"{frame}\n{body}"
+
+
+def _fill_frame(frame: str, values: dict[str, str]) -> str:
+    """*frame* with ``{parent}`` and ``{capability}`` each replaced by its run
+    value, in one pass, so a value is never read as a placeholder. Raises
+    ``agent_text.AgentTextError`` when the frame names either other than once:
+    a frame that lost one would drop who asked, or what for."""
+    for name in _FRAME_VALUES:
+        if frame.count("{" + name + "}") != 1:
+            raise agent_text.AgentTextError(
+                f"{agent_text.PAGE_PREFIX}{builtin.FRAMES_FILE}, section delegated-task, names "
+                f"{{{name}}} {frame.count('{' + name + '}')} times, where it names it once"
+            )
+    return re.sub(r"\{(" + "|".join(_FRAME_VALUES) + r")\}", lambda match: values[match.group(1)], frame)
+
+
+def _today_frame_inputs(parent_coord: str, capability: str, inputs: dict) -> str:
+    """The proof's copy of the delegated task's frame as Python composed it;
+    it leaves with the proof."""
     import json
 
     body = json.dumps(inputs, ensure_ascii=False, indent=2) if inputs else "{}"

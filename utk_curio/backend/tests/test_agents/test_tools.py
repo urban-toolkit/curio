@@ -58,7 +58,7 @@ class TestRegistry:
 
     def test_contract_validates_effect(self):
         with pytest.raises(ValueError):
-            ToolContract(id="x.y", contract_version="1", effect="write", description="")
+            ToolContract(id="x.y", contract_version="1", effect="write")
 
     def test_a_package_draft_carries_the_justification_of_its_new_node_types(self):
         # A package draft is the one way an agent makes a node type. Its
