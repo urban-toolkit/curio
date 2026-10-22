@@ -416,6 +416,10 @@
           "items": { "$ref": "#/$defs/selectionTag" },
           "description": "The node's selection tags (#662), added in its Widgets tab. Its code places each one as a `[!! selection name !!]` reference, which a run replaces with the tag's `ids`. A new selection in the view writes new ids. Emitted only when the node has selection tags."
         },
+        "editFeatures": {
+          "type": "object",
+          "description": "Never written: the edit log of an Interaction node (type `curio.builtin/edit-features`) in a save made before its code held its edits. A load ignores it, and the node reads its edits from its code."
+        },
         "dataPool": {
           "type": "object",
           "description": "A Data Pool's conflict modes (#581): how the selections that reach it combine. `insideChart` resolves the selects of one chart, `betweenCharts` the latest selection of each chart linked to the pool. OVERWRITE keeps the newest, MERGE_AND the rows every active selection picked, MERGE_OR the rows any of them picked. An absent member means OVERWRITE, and only the other modes are written.",
