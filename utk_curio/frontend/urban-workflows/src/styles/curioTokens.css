@@ -379,6 +379,11 @@
   --curio-role-running-fg: var(--curio-accent-sky-fg);
   --curio-role-running-bg: var(--curio-accent-sky-bg);
   --curio-focus-ring: var(--curio-accent-sky-fg);
+  /* The colour an Autark map draws a selection in: autk-map's own highlight
+     (MapStyle's default). The Map Edits node outlines its picks, and what a
+     rule matches, over the map in it, so the outline and the map's highlight
+     read as one selection. */
+  --curio-map-highlight: #5DADE2;
 
   /* ── Overlay / layering scale ──────────────────────────────────────────
      Single source of truth for the high stacking band. Higher sits in

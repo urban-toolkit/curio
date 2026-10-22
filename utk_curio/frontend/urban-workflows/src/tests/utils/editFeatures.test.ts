@@ -1,18 +1,24 @@
 /**
- * The Interaction node's edit log (#662; its type is still
+ * The Map Edits node's edit log (#662; its type is still
  * `curio.builtin/edit-features`): what it keeps, the code it writes from it,
  * the ids a pick on its map names, and the layers it refuses.
  *
- * `editFeaturesCode.cases.json` holds the code for a few logs. This checks
- * the node writes exactly that; `utk_curio/sandbox/tests/test_feature_edits.py`
- * runs the same code in the sandbox.
+ * `editFeaturesCode.cases.json` holds the code for a few logs, other code the
+ * node reads, and code it refuses. This checks the node writes exactly that
+ * code, reads it back as the log it wrote, and says why it refuses the rest;
+ * `utk_curio/sandbox/tests/test_feature_edits.py` reads the same code as Python
+ * does and runs it in the sandbox.
  */
 import cases from "../../utils/editFeatures/editFeaturesCode.cases.json";
 import {
   addPicked,
   defaultKey,
   describeEdit,
+  EDIT_CODE_NOTE,
+  EDIT_OPS,
   editFeaturesCode,
+  readEditFeaturesCode,
+  type EditFeaturesRead,
   keyColumns,
   keyRefusal,
   normalizeEdit,
@@ -27,7 +33,9 @@ import {
 } from "../../utils/editFeatures/editFeatures";
 import { VisInteractionType } from "../../constants";
 
-type CodeCase = { name: string; settings: EditFeaturesSettings | null; code: string };
+type CodeCase = { name: string; settings: EditFeaturesSettings | null; code: string; circles?: number; comments?: string[] };
+type ReadCase = { name: string; code: string; settings: EditFeaturesSettings | null; circles: number; comments: string[] };
+type RefusedCase = { name: string; code: string; reason: string };
 
 /** Autark's buildings: a building's parts share its building_id, and none has an osm_id. */
 function buildings() {
@@ -47,7 +55,61 @@ const pickOf = (rows: number[]) => ({
 
 describe("editFeaturesCode", () => {
   test.each((cases.cases as CodeCase[]).map((c) => [c.name, c] as const))("%s", (_name, c) => {
-    expect(editFeaturesCode(normalizeEditFeatures(c.settings))).toBe(c.code);
+    expect(editFeaturesCode(normalizeEditFeatures(c.settings), c.circles ?? 1, c.comments)).toBe(c.code);
+  });
+
+  test("names the edits the sandbox's step makes, in its order", () => {
+    // curio_edit_features's OPS is pinned to the same list (test_feature_edits.py).
+    expect([...EDIT_OPS]).toEqual(cases.ops);
+  });
+
+  test("writes the line breaks Python's splitlines knows as escapes, and no text as a reference", () => {
+    const code = editFeaturesCode({ key: "osm_id", edits: [{ op: "set", ids: [1], column: "note", value: `a${String.fromCharCode(0x2028)}b [!! x !!]` }] });
+    expect(code).toContain('"value": "a\\u2028b [\\x21! x !!]"');
+    expect(readEditFeaturesCode(code)).toMatchObject({ settings: { edits: [{ value: `a${String.fromCharCode(0x2028)}b [!! x !!]` }] } });
+  });
+});
+
+describe("readEditFeaturesCode", () => {
+  // What a read holds, written as the cases write it.
+  const asCase = (read: EditFeaturesRead) => {
+    if ("problem" in read) throw new Error(read.problem);
+    return { settings: read.settings ?? null, circles: read.circles, comments: read.comments };
+  };
+
+  test.each((cases.cases as CodeCase[]).map((c) => [c.name, c] as const))("reads back what it wrote: %s", (_name, c) => {
+    const read = readEditFeaturesCode(c.code);
+    expect(asCase(read)).toEqual({
+      settings: normalizeEditFeatures(c.settings) ?? null,
+      circles: c.circles ?? 1,
+      comments: c.comments ?? EDIT_CODE_NOTE,
+    });
+    // ...and writes that read as the same code: nothing it reads is lost.
+    const back = read as Exclude<EditFeaturesRead, { problem: string }>;
+    expect(editFeaturesCode(back.settings, back.circles, back.comments)).toBe(c.code);
+  });
+
+  test.each((cases.read as ReadCase[]).map((c) => [c.name, c] as const))("reads code it did not write: %s", (_name, c) => {
+    expect(asCase(readEditFeaturesCode(c.code))).toEqual({ settings: normalizeEditFeatures(c.settings) ?? null, circles: c.circles, comments: c.comments });
+  });
+
+  test.each((cases.refused as RefusedCase[]).map((c) => [c.name, c] as const))("refuses, saying why: %s", (_name, c) => {
+    const read = readEditFeaturesCode(c.code);
+    expect(read).toHaveProperty("problem");
+    expect((read as { problem: string }).problem).toContain(c.reason);
+  });
+
+  test("reads blank code as a new node: no edits, and the circles and comment lines left to the node", () => {
+    expect(readEditFeaturesCode("")).toEqual({ settings: undefined });
+    expect(readEditFeaturesCode("  \n")).toEqual({ settings: undefined });
+  });
+
+  test("reads the code the shipped examples hold", () => {
+    const shipped = '# Map Edits writes this code from its edit list: each edit, in the\n# order it was made, on the features whose key is one of its ids. It is\n# written again when the list changes.\nreturn curio_edit_features(input_0, [\n    {"op": "remove", "where": "around_park", "label": "Tall parts around a park"},\n], key="building_id")\n';
+    expect(asCase(readEditFeaturesCode(shipped)).settings).toEqual({
+      key: "building_id",
+      edits: [{ op: "remove", where: "around_park", label: "Tall parts around a park" }],
+    });
   });
 });
 
@@ -158,11 +220,11 @@ describe("which column identifies a feature", () => {
     const refusal = keyRefusal(keyColumns(placesOnly), "parcels");
     expect(refusal).toMatch(/^parcels has no column that identifies its features/);
     expect(refusal).toMatch(/never by their place in the layer/);
-    expect(refusal).toMatch(/The Interaction node matches features by such a column/);
+    expect(refusal).toMatch(/The Map Edits node matches features by such a column/);
   });
 });
 
-describe("the Interaction log", () => {
+describe("the Map Edits log", () => {
   test("an entry names its features by ids or by a condition, never both", () => {
     expect(normalizeEdit({ op: "remove", ids: [1], where: "a > 1" })).toBeNull();
     expect(normalizeEdit({ op: "remove" })).toBeNull();

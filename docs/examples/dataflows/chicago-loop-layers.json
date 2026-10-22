@@ -1,0 +1,191 @@
+{
+  "dataflow": {
+    "categories": {
+      "complexity": [
+        "Beginner"
+      ],
+      "city": [
+        "Chicago"
+      ]
+    },
+    "nodes": [
+      {
+        "id": "5e34e9f1-de95-583e-ac62-76b64e94d7c6",
+        "type": "curio.builtin/data-loading",
+        "x": 0,
+        "y": 0,
+        "content": "# The census tracts that meet the area, with CDC/ATSDR's Social Vulnerability\n# Index 2020: RPL_THEMES is the overall percentile, 0 least and 1 most\n# vulnerable; CDC writes -999 where it has no value.\nframe = curio_load_data(\"data.curio.chicago-loop-layers\", part=\"tracts.geojson\")\nfor column in [c for c in frame.columns if c.startswith((\"RPL_\", \"E_\"))]:\n    frame[column] = frame[column].where(frame[column] != -999)\n# Tell the Autark map what kind of layer this is, so it draws it as one.\nframe.metadata = {\"layerType\": \"polygons\"}\nreturn frame\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Load the census tracts that meet downtown Chicago, with CDC/ATSDR's Social Vulnerability Index 2020.",
+        "metadata": {
+          "keywords": [],
+          "packageTemplateLabel": "Census tracts (SVI)"
+        },
+        "title": "Census tracts (SVI)"
+      },
+      {
+        "id": "8de3c334-a7ef-515e-9ec8-6b65c1680a5e",
+        "type": "curio.builtin/autk-grammar",
+        "x": 0,
+        "y": 430,
+        "content": "{\n  \"data\": [\n    {\n      \"type\": \"osm\",\n      \"pbfFileUrl\": \"docs/examples/data/chicago_downtown.osm.pbf\",\n      \"queryArea\": {\n        \"bbox\": [\n          -87.662,\n          41.859,\n          -87.613,\n          41.898\n        ]\n      },\n      \"outputTableName\": \"table_osm\",\n      \"autoLoadLayers\": {\n        \"layers\": [\n          \"parks\",\n          \"water\",\n          \"roads\",\n          \"buildings\"\n        ]\n      }\n    }\n  ]\n}",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Load OpenStreetMap's parks, water, roads and buildings of downtown Chicago.",
+        "metadata": {
+          "keywords": [],
+          "packageTemplateLabel": "OpenStreetMap layers"
+        },
+        "title": "OpenStreetMap layers"
+      },
+      {
+        "id": "2ee4cd84-5843-5ddc-896d-136fd7d5b628",
+        "type": "curio.builtin/data-loading",
+        "x": 0,
+        "y": 860,
+        "content": "# The CTA 'L' rail lines, from the City of Chicago data portal; legend is\n# the line's code (RD Red, BL Blue, ML the Loop's shared track, ...).\nframe = curio_load_data(\"data.curio.chicago-loop-layers\", part=\"cta_lines.geojson\")\n# Tell the Autark map what kind of layer this is, so it draws it as one.\nframe.metadata = {\"layerType\": \"polylines\"}\nreturn frame\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Load the CTA 'L' rail lines of downtown Chicago.",
+        "metadata": {
+          "keywords": [],
+          "packageTemplateLabel": "CTA 'L' lines"
+        },
+        "title": "CTA 'L' lines"
+      },
+      {
+        "id": "84e96936-a53e-59d3-ba8e-ee40a035154b",
+        "type": "curio.builtin/data-loading",
+        "x": 0,
+        "y": 1290,
+        "content": "# OpenStreetMap's mapped trees (natural=tree), as points.\nframe = curio_load_data(\"data.curio.chicago-loop-layers\", part=\"trees.parquet\")\n# Tell the Autark map what kind of layer this is, so it draws it as one.\nframe.metadata = {\"layerType\": \"points\"}\nreturn frame\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Load OpenStreetMap's mapped trees of downtown Chicago.",
+        "metadata": {
+          "keywords": [],
+          "packageTemplateLabel": "Trees"
+        },
+        "title": "Trees"
+      },
+      {
+        "id": "5abae988-9ecb-5f71-85cc-958df3999990",
+        "type": "curio.builtin/data-loading",
+        "x": 0,
+        "y": 1720,
+        "content": "# The CTA 'L' stations; ada is whether the station is accessible.\nframe = curio_load_data(\"data.curio.chicago-loop-layers\", part=\"cta_stations.geojson\")\nframe[\"ada\"] = frame[\"ada\"].map({True: \"accessible\", False: \"not accessible\"}).fillna(\"unknown\")\n# Tell the Autark map what kind of layer this is, so it draws it as one.\nframe.metadata = {\"layerType\": \"points\"}\nreturn frame\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Load the CTA 'L' stations of downtown Chicago, accessible or not.",
+        "metadata": {
+          "keywords": [],
+          "packageTemplateLabel": "CTA 'L' stations"
+        },
+        "title": "CTA 'L' stations"
+      },
+      {
+        "id": "d517325b-266b-575d-ab48-2685bb889536",
+        "type": "curio.builtin/autk-grammar",
+        "x": 1426,
+        "y": 675,
+        "content": "{\n  \"map\": {\n    \"layerRefs\": [\n      {\n        \"dataRef\": \"[!! input_0:input_0 !!]\",\n        \"isColorMap\": true,\n        \"getFnv\": \"RPL_THEMES\",\n        \"getFnvType\": \"quantitative\",\n        \"colorMapInterpolator\": \"interpolateOrRd\",\n        \"colorMapRange\": [\n          0,\n          1\n        ],\n        \"title\": \"Social vulnerability (SVI percentile)\",\n        \"opacity\": 0.55,\n        \"isPick\": true\n      },\n      {\n        \"dataRef\": \"[!! input_0:table_osm_water !!]\",\n        \"title\": \"Water\",\n        \"color\": \"#6baed6\"\n      },\n      {\n        \"dataRef\": \"[!! input_0:table_osm_parks !!]\",\n        \"title\": \"Parks\",\n        \"color\": \"#74c476\"\n      },\n      {\n        \"dataRef\": \"[!! input_0:table_osm_roads !!]\",\n        \"title\": \"Roads\"\n      },\n      {\n        \"dataRef\": \"[!! input_0:input_2 !!]\",\n        \"isColorMap\": true,\n        \"getFnv\": \"legend\",\n        \"getFnvType\": \"categorical\",\n        \"colorMapInterpolator\": \"schemeTableau10\",\n        \"title\": \"CTA 'L' line\"\n      },\n      {\n        \"dataRef\": \"[!! input_0:table_osm_buildings !!]\",\n        \"isColorMap\": true,\n        \"getFnv\": \"height\",\n        \"getFnvType\": \"quantitative\",\n        \"colorMapInterpolator\": \"interpolateViridis\",\n        \"colorMapRange\": [\n          0,\n          250\n        ],\n        \"title\": \"Building height (m)\",\n        \"isPick\": true\n      },\n      {\n        \"dataRef\": \"[!! input_0:input_3 !!]\",\n        \"title\": \"Trees\",\n        \"color\": \"#238b45\"\n      },\n      {\n        \"dataRef\": \"[!! input_0:input_4 !!]\",\n        \"isColorMap\": true,\n        \"getFnv\": \"ada\",\n        \"getFnvType\": \"categorical\",\n        \"colorMapInterpolator\": \"schemeSet1\",\n        \"title\": \"CTA station\",\n        \"isPick\": true\n      }\n    ]\n  }\n}",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Draw every layer on one map: tracts by social vulnerability, buildings by height, parks, water, roads, the 'L', trees and stations.",
+        "metadata": {
+          "keywords": [],
+          "packageTemplateLabel": "Downtown Chicago layers"
+        },
+        "title": "Downtown Chicago layers",
+        "width": 960,
+        "height": 720
+      },
+      {
+        "id": "ece11802-86f4-5ea9-9faf-f5cf6e2d732f",
+        "type": "curio.builtin/edit-features",
+        "x": 645,
+        "y": 734,
+        "content": "# Map Edits writes this code from its edit list: each edit, in the\n# order it was made, on the features whose key is one of its ids. It is\n# written again when the list changes.\nreturn curio_edit_features([input_0, input_1, input_2, input_3, input_4], [], by_input=True)\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Read the map's layers, by the geometry of their features, and add, reshape, move, change or remove their features on the map, add properties, or make a new layer.",
+        "metadata": {
+          "keywords": [],
+          "packageTemplateLabel": "Edit the map's layers"
+        },
+        "title": "Edit the map's layers",
+        "width": 661,
+        "height": 602
+      }
+    ],
+    "edges": [
+      {
+        "id": "reactflow__edge-5e34e9f1-de95-583e-ac62-76b64e94d7c6out-ece11802-86f4-5ea9-9faf-f5cf6e2d732fin",
+        "source": "5e34e9f1-de95-583e-ac62-76b64e94d7c6",
+        "target": "ece11802-86f4-5ea9-9faf-f5cf6e2d732f",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-8de3c334-a7ef-515e-9ec8-6b65c1680a5eout-ece11802-86f4-5ea9-9faf-f5cf6e2d732fin_1",
+        "source": "8de3c334-a7ef-515e-9ec8-6b65c1680a5e",
+        "target": "ece11802-86f4-5ea9-9faf-f5cf6e2d732f",
+        "sourceHandle": "out",
+        "targetHandle": "in_1"
+      },
+      {
+        "id": "reactflow__edge-2ee4cd84-5843-5ddc-896d-136fd7d5b628out-ece11802-86f4-5ea9-9faf-f5cf6e2d732fin_2",
+        "source": "2ee4cd84-5843-5ddc-896d-136fd7d5b628",
+        "target": "ece11802-86f4-5ea9-9faf-f5cf6e2d732f",
+        "sourceHandle": "out",
+        "targetHandle": "in_2"
+      },
+      {
+        "id": "reactflow__edge-84e96936-a53e-59d3-ba8e-ee40a035154bout-ece11802-86f4-5ea9-9faf-f5cf6e2d732fin_3",
+        "source": "84e96936-a53e-59d3-ba8e-ee40a035154b",
+        "target": "ece11802-86f4-5ea9-9faf-f5cf6e2d732f",
+        "sourceHandle": "out",
+        "targetHandle": "in_3"
+      },
+      {
+        "id": "reactflow__edge-5abae988-9ecb-5f71-85cc-958df3999990out-ece11802-86f4-5ea9-9faf-f5cf6e2d732fin_4",
+        "source": "5abae988-9ecb-5f71-85cc-958df3999990",
+        "target": "ece11802-86f4-5ea9-9faf-f5cf6e2d732f",
+        "sourceHandle": "out",
+        "targetHandle": "in_4"
+      },
+      {
+        "id": "reactflow__edge-ece11802-86f4-5ea9-9faf-f5cf6e2d732fout-d517325b-266b-575d-ab48-2685bb889536in",
+        "source": "ece11802-86f4-5ea9-9faf-f5cf6e2d732f",
+        "target": "d517325b-266b-575d-ab48-2685bb889536",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-ece11802-86f4-5ea9-9faf-f5cf6e2d732fin/out-d517325b-266b-575d-ab48-2685bb889536in/out",
+        "source": "ece11802-86f4-5ea9-9faf-f5cf6e2d732f",
+        "target": "d517325b-266b-575d-ab48-2685bb889536",
+        "sourceHandle": "in/out",
+        "targetHandle": "in/out",
+        "type": "Interaction"
+      }
+    ],
+    "scenarios": [],
+    "packages": [],
+    "datasets": [
+      {
+        "datasetId": "data.curio.chicago-loop-layers",
+        "dirName": "data.curio.chicago-loop-layers@1",
+        "origin": "imported",
+        "producerNodeId": null,
+        "consumerNodeIds": [],
+        "installedAt": "2026-10-22T00:00:00Z"
+      }
+    ],
+    "name": "Chicago Loop layers",
+    "task": "",
+    "timestamp": 1792540800000,
+    "provenance_id": "Chicago Loop layers"
+  }
+}

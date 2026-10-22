@@ -9,6 +9,8 @@ export interface NodeEmptyStateProps {
   reason: NodeEmptyReason;
   /** Overrides the standard hint where a node can say something more specific. */
   hint?: string;
+  /** Overrides the standard title, likewise. */
+  title?: string;
 }
 
 /**
@@ -24,11 +26,12 @@ export interface NodeEmptyStateProps {
 export const NodeEmptyState = memo(function NodeEmptyState({
   reason,
   hint,
+  title,
 }: NodeEmptyStateProps) {
   const copy = NODE_EMPTY_COPY[reason];
   return (
     <div className={styles.root} data-curio-node-empty={reason}>
-      <span className={styles.title}>{copy.title}</span>
+      <span className={styles.title}>{title ?? copy.title}</span>
       {hint ?? copy.hint ? (
         <span className={styles.hint}>{hint ?? copy.hint}</span>
       ) : null}

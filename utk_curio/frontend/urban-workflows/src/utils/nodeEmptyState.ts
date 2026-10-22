@@ -33,7 +33,11 @@ export type NodeEmptyReason =
   /** A geoshape spec, but the data has no geometry column to draw. */
   | "geometry-unresolved"
   /** Several geometry columns and no way to tell which one is meant. */
-  | "geometry-ambiguous";
+  | "geometry-ambiguous"
+  /** A node that works on a map (Map Edits) is linked to no map it feeds. */
+  | "unlinked"
+  /** A node that writes its own code holds code of another shape, which it cannot read. */
+  | "code-unreadable";
 
 export interface NodeEmptyCopy {
   /** The state, in the user's terms. */
@@ -96,6 +100,17 @@ export const NODE_EMPTY_COPY: Record<NodeEmptyReason, NodeEmptyCopy> = {
   "geometry-ambiguous": {
     title: "Several geometry columns",
     hint: 'Add "shape": {"field": "<name>", "type": "geojson"} to pick one.',
+  },
+  // The Map Edits node's own states: it edits on the map it feeds and is
+  // linked to, and reads the code it writes.
+  unlinked: {
+    title: "Not linked to a map",
+    hint: "Connect this node to an Autark map, then link the two with an interaction edge, from the dot on top of this node to the dot on top of the map.",
+  },
+  // The node names what it found where its own code should be, when it can.
+  "code-unreadable": {
+    title: "This code is not one this node writes",
+    hint: "The node reads only the code it writes itself.",
   },
 };
 

@@ -61,6 +61,8 @@ SKIPPED_DIR_NAMES = {"node_modules", "dist", "__pycache__"}
 #: Scripts that build shipped data, or record test fixtures from a named
 #: source, and so name what they build.
 NOT_SCANNED = {
+    "scripts/build_chicago_loop_layers_dataset.py": "builds the Chicago Loop layers dataset",
+    "scripts/build_example_chicago_loop_layers.py": "builds the Chicago Loop layers example from its dataset",
     "scripts/build_example_datasets.py": "builds the example datasets and writes their manifests",
     "scripts/build_example_mapillary.py": "builds the Mapillary sample dataset",
     "scripts/build_example_scenario_charts.py": "builds the datasets the scenario chart examples read",

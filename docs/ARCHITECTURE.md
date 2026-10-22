@@ -523,43 +523,46 @@ scenario's outcome on a circle of its own:
 
 ### Editing features
 
-The Interaction node (type `curio.builtin/edit-features`) is a Python code node
-whose code is written from its edit log (`metadata.editFeatures`: `key`, `layer`,
-`edits`):
+The Map Edits node (type `curio.builtin/edit-features`) is a Python code node
+whose code is its only state: one call of `curio_edit_features`
+(`utk_curio/sandbox/util/feature_edits.py`), seeded in the in-process namespace
+(`worker._globals_cache`) and the isolated one (`zygote.build_namespace_template`).
 
-- `src/utils/editFeatures/editFeatures.ts` normalizes the log and writes the code,
-  one call of `curio_edit_features` (`utk_curio/sandbox/util/feature_edits.py`),
-  seeded in the in-process namespace (`worker._globals_cache`) and the isolated one
-  (`zygote.build_namespace_template`).
-  `adapters/node/editFeaturesBehavior.tsx` writes the log and the code together
-  when the body changes the log, and marks the node stale with every node below it
-  that ran, the nodes `autoRunTargets` (`providers/flow/useAutoRun.ts`) gives.
-- `components/editFeatures/EditFeaturesBody.tsx` reads the input as the Autark map
-  reads it (`readAutkInput`, `autkSourcesFrom`), offers the id columns a selection
-  tag offers (`idColumns` in `utils/references/selectionTags.ts`) and refuses a layer
-  with none. `EditFeaturesMap.tsx` draws the input with `useAutkGrammarBehavior`, the
-  layer to edit with `isPick`, and turns a pick's rows into ids with `selectedIds`.
-  The body takes its keys with the `nokey` class, so React Flow neither deletes nor
-  moves the node on them. Its Update results calls the flow's `runDownstream`, which
-  starts the run an automatic run starts (#845) for `autoRunTargets` of the node,
-  on the server or, where runs stay in the browser, there.
-- Conditions (`where`) and `expr` edits are one small expression language written
-  twice, `utk_curio/sandbox/util/edit_expr.py` for runs and
-  `src/utils/editFeatures/editExpr.ts` for the body, neither through `eval`.
-  `applyEdits.ts` applies the log in the browser, so the picked features' table and
-  a condition's count show what a run hands on. Both twins read
-  `src/utils/editFeatures/editExpr.cases.json`, in Jest and in pytest.
-- `feature_edits.edit_features` matches features by `key`, never by position, and
-  edits GeoJSON as it is when the input is an Autark node's layers: the other
-  features, properties and layers pass through untouched, and the result is the
-  envelope `persistLayersToBackend` stores for an Autark node. A table gives a table,
-  its columns keeping their types. Unknown ids are printed, and the run goes on.
-- A Data Pool's layers read from one artifact, one or several, name it (`filename`),
-  and a code node is sent that artifact (`executionInputRef`), as a run on the
-  server passes the pool through. In-process, the layers of a stored
-  Autark envelope reach Python as GeoDataFrames that keep `layerName` and
-  `layerType` in their `metadata` (`worker._keep_layer_identity`); the isolated
-  child gets the envelope itself. `edit_features` reads both.
+- `src/utils/editFeatures/editFeatures.ts` writes the call from the node's edits
+  (`editFeaturesCode`) and reads it back (`readEditFeaturesCode`, through
+  `pyLiteral.ts`); Jest and pytest share `editFeaturesCode.cases.json`. Code of
+  another shape is never rewritten: the body says why it cannot read it and
+  offers no actions, and a run still runs it.
+- `components/editFeatures/EditFeaturesBody.tsx` reads the edits from the code on
+  every render, and each change writes a new code through
+  `adapters/node/editFeaturesBehavior.tsx`, which marks the dataflow dirty, marks
+  the node and the nodes below it that ran stale (`autoRunTargets`), and adds an
+  entry to the node's history (`nodeEditProv`). Undo and Redo put back an entry's
+  code and add none. Commit edits calls `runDownstream` for the node.
+- The data edge carries the edits. An Autark map a Map Edits node feeds draws that
+  node's input with the edits its code holds (`mapEditsPreview.ts`, applied by
+  `applyEdits.ts`, the twin of the run's `_edit_fc`), keeps its view, files no
+  run for that draw, and hands on what it was fed: the node's last run.
+- The interaction edge carries selections, as between two views. A pick on the
+  linked map is the map's selection (`MapEditOverlay`), which `useInteractions`
+  routes to the node, matched by the layer's id column (`mapEditSelection.ts`,
+  `matchSelections`); what the node picks, or a rule matches, goes back the same
+  way and lights up on the map. `mapEditBus.ts` lends the map only the drawing
+  tools: the layer worked on, the mode and the shape being drawn. The node edits
+  on the maps it feeds and is linked to (`linkedMaps` in `mapLayerEdits.ts`), and
+  `plan_topology` allows its interaction edge only to such a map.
+- Fed by several nodes, the code hands the step every circle (`by_input=True`),
+  and the step names each unnamed layer after its circle, `input_<k>`, as the
+  map does.
+- Rules (`where`) and `expr` edits are one expression language written twice,
+  `edit_expr.py` for runs and `editExpr.ts` for the body, neither through
+  `eval`; both read `editExpr.cases.json`.
+- `edit_features` matches features by their id column, never by position, edits
+  an Autark node's GeoJSON layers in place and a table as a table, and hands on
+  every other feature, property and layer as it came. In-process, an Autark
+  node's layers reach it as GeoDataFrames that keep `layerName` and `layerType`
+  in their `metadata` (`worker._keep_layer_identity`); the isolated child gets
+  the envelope itself.
 
 ### Notes
 

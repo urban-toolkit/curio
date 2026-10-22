@@ -227,6 +227,8 @@ A visualization shows a selection it receives through the column "interacted", a
 
 A point selection over key columns matches rows by their values, so the two visualizations may read different rows that share those columns: a Vega-Lite point select with "fields": ["unit_id"], or an Autark map layer (the one with "isPick": true) or plot with "selectFields": ["unit_id"], whose table must come from the node's input. A point selection without them matches rows by position, so both visualizations must read the same rows in the same order; an interval selection matches by column name.
 
+A {{template.label:curio.builtin/edit-features}} node feeds the {{template.label:curio.builtin/autk-grammar}} map it edits on, and an Interaction edge links the two, so features picked on the map reach it. Its code, one `curio_edit_features(...)` call, is written by the node from its edits.
+
 Nodes that can have interaction connection edge:
 
 {{builtin.interaction}}
