@@ -6,7 +6,8 @@
  * between two views, and what the node picks, or a rule matches, goes back
  * the same way and lights up on the map. A map the node feeds but is not
  * linked to draws the edits, and a click there selects nothing in the node.
- * The map keeps its view when an edit draws it again, and after Commit edits.
+ * A layer the node makes is drawn on top once it has features. The map keeps
+ * its view when an edit draws it again, and after Commit edits.
  *
  * Each node is the behavior the canvas registers for its type, with the
  * node's own state (hook/useNodeState) for the Interaction node; the map draws
@@ -14,7 +15,7 @@
  * on the map, as autk-grammar reports one.
  */
 import React from "react";
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { NodeBehaviorData, UseNodeStateReturn } from "../../../registry/types";
 
 // The flow, as a canvas that keeps what its nodes write and routes their selections.
@@ -302,6 +303,17 @@ test("on a map the node feeds but is not linked to, the edits show and a click s
   expect(canvas.interactionsOf(NODE)).toBeUndefined();
 });
 
+test("a layer the node makes is drawn on top of the map once it has features", async () => {
+  const centers = { name: "cooling_centers", geometry: "Point" as const };
+  const tables = () => (grammarRuns[grammarRuns.length - 1]?.spec?.map?.layerRefs ?? []).map((ref: any) => ref.dataRef);
+  await mountCanvas({ settings: { ...KEYED, newLayers: [centers] } }).playMap();
+  expect(tables()).toEqual(["input_0"]);
+  cleanup();
+  const library = { op: "add" as const, layer: "cooling_centers", id: "c1", geometry: { type: "Point", coordinates: [0.5, 0.5] }, values: {} };
+  await mountCanvas({ settings: { ...KEYED, newLayers: [centers], edits: [library] } }).playMap();
+  expect(tables()).toEqual(["input_0", "cooling_centers"]);
+});
+
 test("Delete removes the picked features and Escape clears the pick, while the body, not a field, has the keys", async () => {
   const canvas = mountCanvas();
   await canvas.playMap();
@@ -321,16 +333,21 @@ test("Delete removes the picked features and Escape clears the pick, while the b
   expect(fireEvent.keyDown(body(), { key: "Delete" })).toBe(true);
 });
 
-test("a feature picked on the map takes a value typed into its field, a number in a column of numbers", async () => {
-  const canvas = mountCanvas();
+test("a feature picked on the map shows its values as the log leaves them, and takes a value typed into its field, a number in a column of numbers", async () => {
+  const raised = { op: "offset" as const, ids: [136], column: "height", value: 3 };
+  const canvas = mountCanvas({ settings: { ...KEYED, edits: [raised] } });
   await canvas.playMap();
   await openAction("edit");
   pickOnMap([1]);
   const field = (await screen.findByTestId("interaction-field-height")) as HTMLInputElement;
-  expect(field.value).toBe("20");
+  // 20 m as loaded, and 3 m more by the edit before.
+  expect(field.value).toBe("23");
+  // Text in a column of numbers is no value.
+  fireEvent.change(field, { target: { value: "tall" } });
+  expect(screen.getByTestId("interaction-form-submit")).toBeDisabled();
   fireEvent.change(field, { target: { value: "30" } });
   fireEvent.click(screen.getByTestId("interaction-form-submit"));
-  expect(canvas.settings()?.edits).toEqual([{ op: "set", ids: [136], column: "height", value: 30 }]);
+  expect(canvas.settings()?.edits).toEqual([raised, { op: "set", ids: [136], column: "height", value: 30 }]);
 });
 
 test("the link taken off, the node drops the picks that came from the map, and says to link one", async () => {
@@ -378,8 +395,13 @@ function fakeMap(origin: number[] = [1000, 2000]) {
   };
 }
 
-test("the map keeps the view it was zoomed to when an edit draws it again, a Remove included, and after Commit edits", async () => {
-  drawnMaps.make = () => fakeMap();
+test("the map keeps the view it was zoomed to when an edit draws it again, a Remove at the layer's edge included, and after Commit edits", async () => {
+  // Each draw makes a new map. A Remove at the layer's edge moves the middle
+  // of the layer autk-map draws relative to: from the second map on, the
+  // origin is 10 units east of the first's, and the camera moves with it.
+  const origins = [[1000, 2000], [1010, 2000], [1010, 2000]];
+  let made = 0;
+  drawnMaps.make = () => fakeMap(origins[Math.min(made++, origins.length - 1)]);
   const canvas = mountCanvas();
   await canvas.playMap();
   // The first draw frames the layers.
@@ -397,15 +419,18 @@ test("the map keeps the view it was zoomed to when an edit draws it again, a Rem
   await waitFor(() => expect(grammarRuns).toHaveLength(2));
   await waitFor(() => expect(grammarRuns[1].maps[0].camera.resetCamera).toHaveBeenCalled());
   const second = grammarRuns[1].maps[0];
-  // Put back where it was, not framed again.
+  // Put back on the same ground, moved with the origin, not framed again.
   expect(second.camera.resetCamera).toHaveBeenCalledTimes(1);
-  expect(second.camera.resetCamera).toHaveBeenCalledWith([0, 1, 0], [120, -40, 0], [120, -40, 300]);
+  expect(second.camera.resetCamera).toHaveBeenCalledWith([0, 1, 0], [110, -40, 0], [110, -40, 300]);
   expect(second.ownReset).not.toHaveBeenCalled();
 
-  // Commit edits: the node's run hands the map a new output, and the map draws it, where it was.
+  // Commit edits: the node's run hands the map a new output, and the map's
+  // own run draws it, where it was.
   canvas.feedMap({ path: "art-interaction-2", dataType: "outputs" });
   await canvas.playMap();
-  const third = grammarRuns[grammarRuns.length - 1].maps[0];
-  expect(third.camera.resetCamera).toHaveBeenCalledWith([0, 1, 0], [120, -40, 0], [120, -40, 300]);
+  await waitFor(() => expect(grammarRuns).toHaveLength(3));
+  const third = grammarRuns[2].maps[0];
+  expect(third.camera.resetCamera).toHaveBeenLastCalledWith([0, 1, 0], [110, -40, 0], [110, -40, 300]);
+  expect(third.camera.getLookAt()).toEqual([110, -40, 0]);
   expect(third.ownReset).not.toHaveBeenCalled();
 });
