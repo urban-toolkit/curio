@@ -179,6 +179,8 @@ from .canvas_authoring import (  # noqa: F401
     drag_to_canvas_with_the_mouse,
     set_node_code,
     read_node_code,
+    STRIP_CATEGORIES,
+    open_strip_category,
     connect_nodes,
     EXPORT_DOWNLOAD_TIMEOUT_MS,
     node_execution_timeout_ms,

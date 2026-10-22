@@ -1217,8 +1217,8 @@
       "expected": "{\"a\": [!! scenario colours !!], \"b\": \"[!! scenario input_3 !!]\", \"c\": \"[!! scenario input_? !!]\"}",
       "problems": [
         "[!! scenario colours !!] names no scenario chip. The scenario chips are scenario colors, scenario text_colors, scenario order and scenario input_<k>.",
-        "[!! scenario input_3 !!]: input_3 has no edge. Connect one to that circle, or drag the swatch of one of this node's input tags here.",
-        "[!! scenario input_? !!]: the edge for this input was deleted. Drag the swatch of one of this node's input tags here."
+        "[!! scenario input_3 !!]: input_3 has no edge. Connect one to that circle, or write scenario input_<k> for a circle that has one.",
+        "[!! scenario input_? !!]: the edge for this input was deleted. Write scenario input_<k> for a circle that has one."
       ]
     },
     {

@@ -36,7 +36,7 @@ type GrammarEditorProps = {
     onLoadColumns?: (slot: number) => void;
     widgetLanguage?: CodeLanguage;
     /** The spec's grammar where its chips write a field escaped (`VEGA_LITE`),
-     * which also gives a node of several inputs the `inputs` tag. */
+     * which also gives the header the `inputs` tag and the scenarios' scales. */
     referenceGrammar?: string;
     /** A run's spec put back from the provenance drawer; each new one is
      *  written in, even when it is the spec the editor loaded with. */
@@ -279,6 +279,7 @@ export default function GrammarEditor({
                 </div>
             )}
             <ReferenceStrip
+                nodeId={nodeId}
                 widgets={references.widgets}
                 inputs={stripInputs}
                 shared={references.shared}
