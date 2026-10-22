@@ -3,11 +3,14 @@ plan answering komar41's review, step 6.3).
 
 Until the plan's step 6.3, example 06 took each road's sunlight change with a
 Compare Scenarios node in Difference over Baseline's map and Twice as tall's,
-on their roads layer, the roads matched by their shapes, since they carry no
+on their roads layer, the roads matched by their shapes, since they carried no
 id. A Python node over the same two maps takes it now, and what it writes must
 be what Compare wrote, column for column and value for value, so the Autark
 map after it draws the same roads in the same colors and the numbers
-``test_example06_scenarios_e2e.py`` pins stay.
+``test_example06_scenarios_e2e.py`` pins stay. Each road now also carries its
+OpenStreetMap id, ``osm_id``, which Compare's inputs did not: the node hands
+on Baseline's, each road's own, and the rest of what it writes is what
+Compare wrote.
 
 Each test runs the node's shipped code as the sandbox runs a node with two
 input circles, on what each scenario's map hands on: the layers the example's
@@ -43,6 +46,8 @@ LOADER = "whatif-data"
 CHANGE = "whatif-compare-difference"
 PYTHON_TYPE = "curio.builtin/computation-analysis"
 ROADS = "table_osm_roads"
+#: The column each road's OpenStreetMap id comes in, as an Autark node hands it on.
+OSM_ID = "osm_id"
 #: The layers the data node loads, in its order, and the autk-db they come
 #: from (``test_autk_server_data_load.py`` pins both).
 LAYERS = ["table_osm_surface", "table_osm_parks", "table_osm_water", ROADS, "table_osm_buildings"]
@@ -130,6 +135,18 @@ def workspace(tmp_path, monkeypatch):
     release_connection()
 
 
+def _road_ids(layers: list) -> list:
+    """Each road's OpenStreetMap id, in the roads layer's order, as the data
+    node hands it on: the ``osm_id`` of every road, which is the id autk-db
+    gives the road's feature."""
+    (roads,) = [layer for layer in layers if layer["name"] == ROADS]
+    features = roads["geojson"]["features"]
+    assert all(feature["properties"].get(OSM_ID) == feature["id"] for feature in features), (
+        "a road does not carry its OpenStreetMap id as osm_id"
+    )
+    return [feature["id"] for feature in features]
+
+
 def _minutes(scenario: str, road: int) -> int:
     """The minutes of sunlight road *road* gets in *scenario*, in whole hours
     of 60 minutes as the shader adds them: none to thirteen hours in Baseline,
@@ -200,13 +217,14 @@ def _compares_difference(baseline: dict, twice: dict):
     """What Compare Scenarios' Difference wrote for Baseline's roads and Twice
     as tall's, each road matched by its shape, as the store gives it back: the
     roads in Baseline's order, geometry first and ``change`` second, then the
-    roads layer's other columns in their order. Each number column, and each
-    number in a column of dicts (the ``compute`` values a shadow step writes),
-    is Twice as tall's value minus Baseline's; ``change`` says ``changed``
-    where any value differs; every other value, and the shape, is Twice as
-    tall's (``roads_change``, which the fixture of Compare's own output holds
-    to it). The two maps here hand on their roads in one order and with the
-    same shapes, so each road's match is the road in its place."""
+    roads layer's other columns in their order. Each number column but
+    ``osm_id``, and each number in a column of dicts (the ``compute`` values a
+    shadow step writes), is Twice as tall's value minus Baseline's; ``change``
+    says ``changed`` where any value differs; every other value, each road's
+    ``osm_id`` among them, and the shape, is Twice as tall's (``roads_change``,
+    which the fixture of Compare's own output holds to it). The two maps here
+    hand on their roads in one order and with the same shapes, so each road's
+    match is the road in its place."""
     from utk_curio.backend.tests._support.scenario_changes import roads_change
     from utk_curio.sandbox.util.input_layers import curio_layer
     from utk_curio.sandbox.util.parsers import load_from_duckdb, save_to_duckdb
@@ -223,7 +241,8 @@ def test_the_change_is_what_compares_difference_wrote_on_back_bays_roads(workspa
     draws its roads as it drew Compare's. Each number is Twice as tall's
     minutes minus Baseline's, not rounded, in ``sunlight`` and its ``compute``
     twin alike: below zero where a road lost sunlight, zero elsewhere, and
-    within the map's scale."""
+    within the map's scale. Each road keeps its own OpenStreetMap id,
+    Baseline's, in ``osm_id``, which Compare's inputs did not carry."""
     from geopandas.testing import assert_geodataframe_equal
 
     from utk_curio.backend.tests._support.scenario_changes import assert_frame_matches
@@ -232,17 +251,22 @@ def test_the_change_is_what_compares_difference_wrote_on_back_bays_roads(workspa
     ours = _the_nodes_change(workspace, baseline, twice)
     compares = _compares_difference(baseline, twice)
     held = _compare_fixture()
-    assert_frame_matches(ours, held, what="the Sunlight change")
-    assert_frame_matches(compares, held, what="roads_change")
+    # Compare wrote no osm_id, as its inputs had none; every other column is
+    # what it wrote, in its order.
+    assert_frame_matches(ours.drop(columns=[OSM_ID]), held, what="the Sunlight change")
+    assert_frame_matches(compares.drop(columns=[OSM_ID]), held, what="roads_change")
     assert list(ours.columns) == list(compares.columns)
     assert list(ours.columns)[:2] == ["geometry", "change"]
     assert ours.dtypes.astype(str).tolist() == compares.dtypes.astype(str).tolist()
     assert_geodataframe_equal(ours, compares)
     assert ours.crs.to_epsg() == 3395
     assert "metadata" not in ours.__dict__ and "metadata" not in compares.__dict__
-    # The roads carry no id Compare would have joined on, so it matched them
-    # by their shapes, as the node does: each road is on both sides.
-    assert not {"osm_id", "building_id"} & set(compares.columns)
+    # Each road keeps its own OpenStreetMap id, Baseline's road's, and no two
+    # roads share one: the roads are still matched by their shapes, as Compare
+    # matched them, so each road is on both sides.
+    assert ours[OSM_ID].tolist() == _road_ids(back_bay_layers)
+    assert ours[OSM_ID].is_unique
+    assert "building_id" not in ours.columns
     assert len(ours) == ROAD_COUNT
     change = [_minutes("s-twice", road) - _minutes("s-baseline", road) for road in range(ROAD_COUNT)]
     assert ours["sunlight"].tolist() == change
@@ -258,7 +282,7 @@ def test_a_road_is_matched_by_its_shape_not_by_its_place(workspace, back_bay_lay
     repeat it: each road is still matched to itself by its shape, as Compare
     matched it, so the change is what Compare wrote, which the order of the
     roads never moved, and what the roads in their own order give, road for
-    road in Baseline's order."""
+    road in Baseline's order, each with its own OpenStreetMap id."""
     from geopandas.testing import assert_geodataframe_equal
 
     from utk_curio.backend.tests._support.scenario_changes import assert_frame_matches
@@ -274,7 +298,10 @@ def test_a_road_is_matched_by_its_shape_not_by_its_place(workspace, back_bay_lay
     reordered = _handed_on(back_bay_layers, "s-twice", order=order)
     ours = _the_nodes_change(workspace, baseline, reordered)
     twice = _handed_on(back_bay_layers, "s-twice")
-    assert_frame_matches(ours, _compare_fixture(), what="the Sunlight change on Twice as tall's roads reordered")
+    # Compare wrote no osm_id, as its inputs had none.
+    assert_frame_matches(ours.drop(columns=[OSM_ID]), _compare_fixture(),
+                         what="the Sunlight change on Twice as tall's roads reordered")
+    assert ours[OSM_ID].tolist() == _road_ids(back_bay_layers)
     assert_geodataframe_equal(ours, _compares_difference(baseline, twice))
     in_place = _the_nodes_change(workspace, baseline, twice)
     assert_geodataframe_equal(ours, in_place)

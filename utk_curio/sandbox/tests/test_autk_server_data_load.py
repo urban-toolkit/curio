@@ -8,7 +8,8 @@ the loaders of examples 06 (Back Bay), 07 (Chicago Loop), 08 (Niterói) and 11
 (Lower Manhattan), and of the test dataflow ``lower-manhattan-park-shade``
 (Lower Manhattan's parks and the buildings around them), through
 ``execute_js_code`` and pins what it hands on with autk-db 4.1.1: each layer's
-name, type, feature count and CRS, and its first feature's keys.
+name, type, feature count and CRS, its first feature's keys, and every
+OpenStreetMap feature's id in ``osm_id``.
 
 No socket: the extract is served from disk by a ``fetch`` placed before the
 compiled code, which refuses every other request, at the address the sandbox
@@ -147,3 +148,29 @@ def test_the_server_compiled_load_hands_on_the_layers(example, node_id, extract,
         )
         for layer in loaded
     ] == layers
+    for layer in loaded:
+        _assert_osm_ids(layer)
+
+
+def _assert_osm_ids(layer: dict) -> None:
+    """Every feature of *layer* carries its OpenStreetMap id in ``osm_id``: a
+    road's, a park's or a water's the id autk-db gives its feature, a building
+    part's its own part's, which the parts of one building never share. The
+    surface, the area's land, is no OpenStreetMap element and has none."""
+    name, features = layer["name"], layer["geojson"]["features"]
+    ids = [feature["properties"].get("osm_id") for feature in features]
+    if layer["type"] == "surface":
+        assert ids == [None] * len(features), (name, ids[:5])
+        return
+    assert all(type(osm_id) is int and osm_id > 0 for osm_id in ids), (
+        name, [osm_id for osm_id in ids if type(osm_id) is not int or osm_id <= 0][:5],
+    )
+    if layer["type"] != "buildings":
+        assert ids == [feature.get("id") for feature in features], name
+        return
+    parts: dict = {}
+    for feature, osm_id in zip(features, ids):
+        parts.setdefault(feature["properties"].get("building_id"), []).append(osm_id)
+    assert any(len(own) > 1 for own in parts.values()), f"{name} has no building of several parts"
+    shared = {building: own for building, own in parts.items() if len(set(own)) < len(own)}
+    assert not shared, (name, dict(list(shared.items())[:3]))

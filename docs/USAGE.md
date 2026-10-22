@@ -1187,6 +1187,10 @@ compute over tables. A table comes from the document's own `data` section (an
 OSM extract, a GeoJSON or CSV file) or from the node's input. The document
 writes no `data` entry for its input; it names the tables the input provides.
 
+An OpenStreetMap layer the node hands on has each feature's OpenStreetMap id in
+`osm_id`, a building part's its own, beside the `building_id` its building's
+parts share.
+
 A node draws one view: one map or one plot. A document with a map and a plot,
 or whose `map` or `plot` lists more than one, does not run, and the node's
 error says to put each in its own `Autark` node and link them with interaction

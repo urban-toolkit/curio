@@ -196,6 +196,18 @@ describe("which column identifies a feature", () => {
     expect(keyRefusal(keyColumns(named), "parcels")).toBeNull();
   });
 
+  test("building parts that carry both start on building_id, the whole building, and offer osm_id, one part", () => {
+    const parts = {
+      type: "FeatureCollection",
+      features: [
+        { type: "Feature", geometry: null, properties: { osm_id: 101, building_id: 7, height: 10 } },
+        { type: "Feature", geometry: null, properties: { osm_id: 102, building_id: 7, height: 10 } },
+      ],
+    };
+    expect(keyColumns(parts)).toEqual(["building_id", "osm_id"]);
+    expect(defaultKey(keyColumns(parts))).toBe("building_id");
+  });
+
   test("a layer with no such column is refused, and a row's place is never one", () => {
     const placesOnly = {
       type: "FeatureCollection",
