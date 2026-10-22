@@ -2,7 +2,7 @@
  * What the Interaction node reads off a layer to offer the right tools (#662):
  * the kind of geometry its features have, the properties a new feature of it
  * is asked for, the next id an added feature takes, and the layer's features,
- * shapes included, as the edit log leaves them (for the node's edit map).
+ * shapes included, as the edit log leaves them (`applyEdits`).
  *
  * A property is read from the values the layer holds: a number column asks
  * for a number, a yes/no column for yes or no, a text column with a few
@@ -10,7 +10,7 @@
  * empty is required. The id column is never asked for: the node writes it.
  */
 import type { SelectionId } from "../references/selectionTags";
-import { evaluate, parseExpr, truthy } from "./editExpr";
+import { applyFeatureEdits, type EditStatus } from "./applyEdits";
 import {
   NEW_LAYER_KEY,
   type EditValue,
@@ -172,21 +172,19 @@ export interface EditedFeature {
   geometry: Geometry | null;
   properties: Record<string, unknown>;
   /** Added by the log, redrawn by it, or as the input has it. */
-  status: "input" | "added" | "redrawn" | "changed";
+  status: EditStatus;
 }
 
-function idKey(value: unknown): string | null {
-  if (value === null || value === undefined) return null;
-  if (typeof value === "number") return Number.isFinite(value) ? `n:${value}` : null;
-  if (typeof value === "boolean") return `b:${value}`;
-  return `s:${String(value)}`;
+/** Whether *edit* applies to the layer *layerName* (null: the node's own layer). */
+export function editsLayer(edit: FeatureEdit, layerName: string | null, nodeLayer: string | null): boolean {
+  return (edit.layer ?? nodeLayer ?? null) === (layerName ?? null);
 }
 
 /**
  * The features of the layer *layerName* (null: the node's own layer) as the
  * edits of the log that apply to it leave them, shapes included: what the
- * node's edit map draws. The same ops, in the same order, as
- * `curio_edit_features`.
+ * node's tools pick, draw and reshape. Applied by `applyFeatureEdits`, the
+ * one way the browser applies the log, as `curio_edit_features` does.
  */
 export function editedFeatures(
   fc: { features?: any[] } | null | undefined,
@@ -195,59 +193,20 @@ export function editedFeatures(
   layerName: string | null,
   nodeLayer: string | null,
 ): EditedFeature[] {
-  const input: EditedFeature[] = (fc?.features ?? []).map((f) => ({
-    id: key ? ((f?.properties?.[key] ?? null) as SelectionId | null) : null,
-    geometry: (f?.geometry ?? null) as Geometry | null,
-    properties: (f?.properties ?? {}) as Record<string, unknown>,
-    status: "input",
-  }));
-  const base: (EditedFeature | null)[] = [...input];
-  const state: (EditedFeature | null)[] = [...input];
-  const known = new Set(input.map((f) => idKey(f.id)).filter((id): id is string => id !== null));
-  const mine = (edit: FeatureEdit) => (edit.layer ?? nodeLayer ?? null) === (layerName ?? null);
-  for (const edit of edits) {
-    if (edit.enabled === false || !mine(edit) || !key) continue;
-    if (edit.op === "add") {
-      const id = idKey(edit.id);
-      if (id === null || known.has(id) || !edit.geometry) continue;
-      known.add(id);
-      base.push(null);
-      state.push({ id: edit.id as SelectionId, geometry: edit.geometry, properties: { ...(edit.values ?? {}), [key]: edit.id }, status: "added" });
-      continue;
-    }
-    if (edit.op === "add_column") {
-      const column = edit.column as string;
-      state.forEach((f, i) => {
-        if (f && (f.properties[column] === null || f.properties[column] === undefined)) {
-          state[i] = { ...f, properties: { ...f.properties, [column]: edit.value ?? null }, status: f.status === "input" ? "changed" : f.status };
-        }
-      });
-      continue;
-    }
-    let targets: number[];
-    if (edit.where !== undefined) {
-      const condition = parseExpr(edit.where);
-      const source = edit.op === "restore" ? base : state;
-      targets = source.flatMap((f, i) => (f !== null && truthy(evaluate(condition, f.properties as any)) ? [i] : []));
-    } else {
-      const wanted = new Set((edit.ids ?? []).map(idKey));
-      targets = state.flatMap((f, i) => {
-        const id = idKey((f ?? base[i])?.id);
-        return id !== null && wanted.has(id) ? [i] : [];
-      });
-    }
-    for (const i of targets) {
-      const current = state[i];
-      if (edit.op === "remove") state[i] = null;
-      else if (edit.op === "restore") state[i] = base[i];
-      else if (!current) continue;
-      else if (edit.op === "geometry" && edit.geometry) state[i] = { ...current, geometry: edit.geometry, status: current.status === "added" ? "added" : "redrawn" };
-      else if (edit.op === "set" && edit.column) {
-        state[i] = { ...current, properties: { ...current.properties, [edit.column]: edit.value ?? null }, status: current.status === "input" ? "changed" : current.status };
-      }
-    }
-  }
-  return state.filter((f): f is EditedFeature => f !== null);
+  const mine = key ? edits.filter((edit) => editsLayer(edit, layerName, nodeLayer)) : [];
+  const { state, status } = applyFeatureEdits(fc?.features ?? [], mine, key ?? "");
+  const out: EditedFeature[] = [];
+  state.forEach((feature, i) => {
+    if (feature === null) return;
+    const properties = (feature.properties ?? {}) as Record<string, unknown>;
+    out.push({
+      id: key ? ((properties[key] ?? null) as SelectionId | null) : null,
+      geometry: (feature.geometry ?? null) as Geometry | null,
+      properties,
+      status: status[i],
+    });
+  });
+  return out;
 }
 
 /** The id column of a new layer's features. */

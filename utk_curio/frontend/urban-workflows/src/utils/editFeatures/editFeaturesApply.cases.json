@@ -1,5 +1,5 @@
 {
-  "description": "The Interaction node's edit log applied to a layer, read by Jest (tests/utils/mapEditsApply.test.ts, through the node's table, applyEdits.ts, and through what the linked map draws before Commit edits, layerModel.ts editedFeatures) and by pytest (utk_curio/sandbox/tests/test_feature_edits_cases.py, through curio_edit_features), so the node, the map and a run hand on the same layer. `layers`: the input layers, by name. `cases`: the layer a case edits, the column that identifies its features (`key`), its edit log, and the layer a run hands on after it (`expected`), as curio_edit_features makes it.",
+  "description": "The Interaction node's edit log applied to a layer, read by Jest (tests/utils/mapEditsApply.test.ts, through applyFeatureEdits in applyEdits.ts, the one way the browser applies the log, which the map the node feeds draws before Commit edits, and the node's tools and table read) and by pytest (utk_curio/sandbox/tests/test_feature_edits_cases.py, through curio_edit_features), so the node, the map and a run hand on the same layer. `layers`: the input layers, by name. `cases`: the layer a case edits, the column that identifies its features (`key`), its edit log, and the layer a run hands on after it (`expected`), as curio_edit_features makes it.",
   "layers": {
     "buildings": {
       "type": "FeatureCollection",

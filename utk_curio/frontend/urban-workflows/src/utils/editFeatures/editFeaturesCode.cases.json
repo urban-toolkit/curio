@@ -621,6 +621,16 @@
       "name": "a call that is not closed",
       "code": "return curio_edit_features(input_0, [\n",
       "reason": "not closed"
+    },
+    {
+      "name": "a condition that is not one, which a run refuses",
+      "code": "return curio_edit_features(input_0, [{\"op\": \"remove\", \"where\": \"height >\"}], key=\"osm_id\")\n",
+      "reason": "Edit 1 has the condition \"height >\", which is not one"
+    },
+    {
+      "name": "an expression that is not one, which a run refuses",
+      "code": "return curio_edit_features(input_0, [{\"op\": \"expr\", \"ids\": [1], \"column\": \"height\", \"value\": \"levels *\"}], key=\"osm_id\")\n",
+      "reason": "which is not an expression:"
     }
   ]
 }

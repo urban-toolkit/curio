@@ -1,8 +1,8 @@
 """The Interaction node's edit log as a run applies it (``curio_edit_features``),
 on the cases the browser applies too: ``editFeaturesApply.cases.json``, which
-Jest runs through the node's table and through what its linked map draws
-before Commit edits (``tests/utils/mapEditsApply.test.ts``). The layer each case
-expects is the one a run hands on, so this pins it.
+Jest runs through the one module the browser applies the log with, which the
+map the node feeds draws before Commit edits (``tests/utils/mapEditsApply.test.ts``).
+The layer each case expects is the one a run hands on, so this pins it.
 
 And a feature drawn on the map over tables: the new layer it lands in is in
 the coordinates the map drew the tables in.

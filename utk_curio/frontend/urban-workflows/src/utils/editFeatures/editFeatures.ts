@@ -24,6 +24,7 @@ import type { SelectDetail } from "../selectionMatch";
 import { featureRows } from "../selectionMatch";
 import { idColumns, selectedIds, STABLE_ID_COLUMNS, type SelectionId } from "../references/selectionTags";
 import { REFERENCE_PATTERN } from "../references/codeReferences";
+import { exprProblem } from "./editExpr";
 import { jsonOf, pyLiteral, readCallArgs, shown, Unreadable, type JsonValue, type Literal } from "./pyLiteral";
 
 /** What the node's code calls (`utk_curio/sandbox/util/feature_edits.py`). */
@@ -367,6 +368,8 @@ export function editProblem(raw: unknown): string | null {
   if (byIds && byWhere) return "names its features both by ids and by a condition";
   if (!byIds && !byWhere) return "names no features: it takes ids or a where condition";
   if (byWhere && (typeof raw.where !== "string" || raw.where.trim() === "")) return "has a where that is not a condition";
+  const whereProblem = byWhere ? exprProblem(raw.where as string) : null;
+  if (whereProblem) return `has the condition ${show(raw.where)}, which is not one: ${whereProblem}`;
   if (byIds && (!Array.isArray(raw.ids) || raw.ids.length === 0)) return "has ids that are not a list of ids";
   const notId = byIds ? (raw.ids as unknown[]).find((id) => !isId(id)) : undefined;
   if (byIds && (raw.ids as unknown[]).some((id) => !isId(id))) return `names ${show(notId)}, which is not an id`;
@@ -379,7 +382,8 @@ export function editProblem(raw: unknown): string | null {
     return `${op === "scale" ? "scales" : "offsets"} ${raw.column} by ${show(raw.value)}, which is not a number`;
   }
   if (op === "expr" && typeof raw.value !== "string") return `computes ${raw.column} from ${show(raw.value)}, which is not an expression`;
-  return null;
+  const formulaProblem = op === "expr" ? exprProblem(raw.value as string) : null;
+  return formulaProblem ? `computes ${raw.column} from ${show(raw.value)}, which is not an expression: ${formulaProblem}` : null;
 }
 
 /** Why the dict *raw* is not a layer the node makes, or null when it is one. */
