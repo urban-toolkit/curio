@@ -470,12 +470,21 @@ class TestTheSources:
                     marked.add(source.name)
         # Eleven state facts the code owns, each through a marker.
         assert len(marked) == 11, sorted(marked)
-        # The shared preamble and the rules other prompts include are pages
-        # of the base entry.
-        assert set(_raw(BASE)["pages"]) == {
+        # The shared preamble, the knowledge pages it includes, one per
+        # feature, and the rules other prompts include are the pages of the
+        # base entry, each listed once and each a file there: a page added or
+        # forgotten fails here.
+        pages = _raw(BASE)["pages"]
+        assert len(pages) == len(set(pages)), pages
+        assert set(pages) == {
             "default_preamble.md", "examples.md", "rules/package_contract.md",
             "rules/research_notes_rules.md", "rules/research_verify_rules.md",
+            *(f"knowledge/{name}.md" for name in (
+                "nodes", "node-control", "widgets", "autark", "compatibility",
+                "vega-lite-starter", "autark-starter", "vega-lite-maps", "interaction-edges", "scenarios",
+            )),
         }
+        assert {path.relative_to(BASE).as_posix() for path in BASE.rglob("*.md")} - {"README.md"} == set(pages)
         # No template anywhere: a source is the file the backend renders.
         assert not list(AGENTS.rglob("*.template.md"))
 
