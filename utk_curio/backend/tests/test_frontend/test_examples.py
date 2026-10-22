@@ -36,10 +36,11 @@ EXAMPLE_INVARIANTS = [
      {"curio.builtin/data-loading": 5, "curio.builtin/vis-vega": 2}, False),
     # Its comparisons are Scout's Bars over a Roads node per scenario and a
     # Python node that takes the sunlight change (no Compare Scenarios node).
-    ("06-back-bay-road-sunlight.json", 15, 17,
-     {"curio.builtin/autk-grammar": 8, "curio.builtin/data-pool": 1,
+    # Its Edit Features node feeds a map of the buildings and is linked to it.
+    ("06-back-bay-road-sunlight.json", 16, 19,
+     {"curio.builtin/autk-grammar": 9, "curio.builtin/data-pool": 1,
       "curio.builtin/computation-analysis": 4, "curio.builtin/edit-features": 1,
-      "curio.scout/bars": 1}, False),
+      "curio.scout/bars": 1}, True),
     ("07-autark-gpu-shader.json", 5, 6,
      {"curio.builtin/autk-grammar": 4, "curio.builtin/data-pool": 1}, True),
     ("08-autark-spatial-join-regression.json", 7, 8,
@@ -289,9 +290,10 @@ def test_example_06_is_three_scenarios_over_one_context():
     code, and the one value that differs is the shadow step's ``height_factor``
     widget, 1 against 2, which its spec reads as a uniform. Two towers removed
     is an Edit Features node that removes two towers, 200 Clarendon and
-    Raffles, by their ``building_id``, before copies of Baseline's three nodes
-    with factor 1. Each scenario ends in a Roads node that takes the roads
-    layer out of the five its shadow step hands on.
+    Raffles, by their ``building_id``, and the map of the buildings it feeds
+    and edits on, linked to it by an interaction edge, before copies of
+    Baseline's three nodes with factor 1. Each scenario ends in a Roads node
+    that takes the roads layer out of the five its shadow step hands on.
 
     Outside them, no Compare Scenarios node is left. Scout's Bars charts the
     three Roads nodes' mean sunlight, its circles in the order of the boxes; a
@@ -317,8 +319,9 @@ def test_example_06_is_three_scenarios_over_one_context():
         assert nodes[copy]["content"] == nodes[original]["content"], (
             f"{copy} holds other code than its twin {original}"
         )
-    # Two towers removed: its Edit Features node, then copies of Baseline's three.
-    edit, *copies = towers["nodes"]
+    # Two towers removed: its Edit Features node and the map of its buildings,
+    # then copies of Baseline's three.
+    edit, buildings, *copies = towers["nodes"]
     assert copies == ["whatif-towers-compute", "whatif-towers-map", "whatif-towers-roads"]
     for original, copy in zip(baseline["nodes"], copies):
         assert nodes[copy]["metadata"].get("copiedFrom") == [original], copy
@@ -326,17 +329,32 @@ def test_example_06_is_three_scenarios_over_one_context():
             f"{copy} holds other code than its twin {original}"
         )
     assert nodes[edit]["type"] == "curio.builtin/edit-features"
-    assert nodes[edit]["metadata"]["editFeatures"] == {
-        "key": "building_id",
-        "layer": "table_osm_buildings",
-        "edits": [{"op": "remove", "ids": [29623484, 29628154]}],
-    }
+    # Its edits are in its code, the node's only state, and in no metadata key.
+    assert "editFeatures" not in nodes[edit]["metadata"], nodes[edit]["metadata"]
     assert '{"op": "remove", "ids": [29623484, 29628154]},' in nodes[edit]["content"]
     assert '], key="building_id", layer="table_osm_buildings")' in nodes[edit]["content"]
-    feeds = sorted((edge["source"], edge["target"]) for edge in flow["edges"] if edit in (edge["source"], edge["target"]))
-    assert feeds == [("whatif-pool", edit), (edit, "whatif-towers-compute")], (
-        "Two towers removed reads the pool, the context the others read, through its Edit Features node"
+    feeds = sorted(
+        (edge["source"], edge["target"]) for edge in flow["edges"]
+        if edit in (edge["source"], edge["target"]) and edge.get("type") != "Interaction"
     )
+    assert feeds == [("whatif-pool", edit), (edit, buildings), (edit, "whatif-towers-compute")], (
+        "Two towers removed reads the pool, the context the others read, through its Edit Features node, "
+        "which feeds the shadow step and the map of its buildings"
+    )
+    # The map it feeds is the one it edits on: the dataflow's one interaction
+    # edge joins the two, from dot to dot, for selections both ways. The map
+    # picks on the buildings by their building_id, and nothing reads it.
+    links = [(e["source"], e["target"], e.get("sourceHandle"), e.get("targetHandle"))
+             for e in flow["edges"] if e.get("type") == "Interaction"]
+    assert links == [(edit, buildings, "in/out", "in/out")], links
+    assert nodes[buildings]["type"] == "curio.builtin/autk-grammar"
+    # As large as the scenario's other map.
+    assert [nodes[n].get(k) for n in (buildings, "whatif-towers-map") for k in ("width", "height")] == [759, 640] * 2
+    (layer,) = json.loads(nodes[buildings]["content"])["map"]["layerRefs"]
+    assert (layer["dataRef"], layer.get("isPick"), layer.get("selectFields")) == (
+        "table_osm_buildings", True, ["building_id"],
+    ), layer
+    assert not [e for e in flow["edges"] if e["source"] == buildings], "a node reads the buildings map"
 
     def factor(node_id):
         [widget] = nodes[node_id]["metadata"]["widgets"]

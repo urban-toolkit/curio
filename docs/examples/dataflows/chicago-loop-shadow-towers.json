@@ -128,37 +128,25 @@
         "content": "# Edit Features writes this code from its edit list: each edit, in the\n# order it was made, on the features whose key is one of its ids. It is\n# written again when the list changes.\nreturn curio_edit_features(input_0, [\n    {\"op\": \"remove\", \"ids\": [8, 10, 12, 13, 14, 18, 19, 31, 34, 51, 66, 77, 82, 106, 122], \"label\": \"SCOUT's 15 removed buildings\"},\n], key=\"building_id\")\n",
         "out": "DEFAULT",
         "in": "DEFAULT",
-        "goal": "Remove the 15 buildings SCOUT's high-rise case removes, by their building_id. Further buildings, picked on the map or by a condition, can be removed, raised or lowered here before Update results.",
+        "goal": "Remove the 15 buildings SCOUT's high-rise case removes, by their building_id. Further buildings, picked on the map or by a condition, can be removed, raised or lowered here before Commit edits.",
         "metadata": {
-          "keywords": [],
-          "editFeatures": {
-            "key": "building_id",
-            "edits": [
-              {
-                "op": "remove",
-                "ids": [
-                  8,
-                  10,
-                  12,
-                  13,
-                  14,
-                  18,
-                  19,
-                  31,
-                  34,
-                  51,
-                  66,
-                  77,
-                  82,
-                  106,
-                  122
-                ],
-                "label": "SCOUT's 15 removed buildings"
-              }
-            ]
-          }
+          "keywords": []
         },
         "title": "Remove towers"
+      },
+      {
+        "id": "549969fc-8e6a-574d-b9dc-aa38487f51c8",
+        "type": "curio.builtin/autk-grammar",
+        "x": 1290,
+        "y": 1350,
+        "content": "{\n  \"map\": {\n    \"layerRefs\": [\n      {\n        \"dataRef\": \"[!! input_0 !!]\",\n        \"isPick\": true,\n        \"selectFields\": [\n          \"building_id\"\n        ],\n        \"getFnv\": \"height\",\n        \"getFnvType\": \"quantitative\",\n        \"colorMapInterpolator\": \"interpolateViridis\",\n        \"colorMapRange\": [\n          0,\n          550\n        ],\n        \"title\": \"Building height (m)\"\n      }\n    ]\n  }\n}",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Draw the remaining buildings on a map, colored by height. It is linked to Towers removed's Interaction node, so a building picked on this map is picked there.",
+        "metadata": {
+          "keywords": []
+        },
+        "title": "Buildings map"
       },
       {
         "id": "abd7fc96-4bfc-5eff-85a3-5e4991ba89b9",
@@ -366,6 +354,21 @@
         "targetHandle": "in"
       },
       {
+        "id": "reactflow__edge-acfa08e6-b472-5174-9ff0-8e469d04c901out-549969fc-8e6a-574d-b9dc-aa38487f51c8in",
+        "source": "acfa08e6-b472-5174-9ff0-8e469d04c901",
+        "target": "549969fc-8e6a-574d-b9dc-aa38487f51c8",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-acfa08e6-b472-5174-9ff0-8e469d04c901in/out-549969fc-8e6a-574d-b9dc-aa38487f51c8in/out",
+        "source": "acfa08e6-b472-5174-9ff0-8e469d04c901",
+        "target": "549969fc-8e6a-574d-b9dc-aa38487f51c8",
+        "sourceHandle": "in/out",
+        "targetHandle": "in/out",
+        "type": "Interaction"
+      },
+      {
         "id": "reactflow__edge-f7786d1f-9f64-5bbe-b007-dff18db386c6out-74e0af5a-c06e-52ae-94ad-94acc2de1642in",
         "source": "f7786d1f-9f64-5bbe-b007-dff18db386c6",
         "target": "74e0af5a-c06e-52ae-94ad-94acc2de1642",
@@ -475,6 +478,7 @@
         "color": "#e76f51",
         "nodes": [
           "acfa08e6-b472-5174-9ff0-8e469d04c901",
+          "549969fc-8e6a-574d-b9dc-aa38487f51c8",
           "abd7fc96-4bfc-5eff-85a3-5e4991ba89b9",
           "a2c5b8ed-658d-52ea-8e5b-18041d9385de",
           "ac470b24-69c3-5242-8d07-cc969e868e54",

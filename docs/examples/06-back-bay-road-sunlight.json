@@ -175,20 +175,23 @@
         "in": "DEFAULT",
         "goal": "Remove two towers, 200 Clarendon, Back Bay's tallest, and Raffles, from the buildings the shadow step reads: every part of each, matched on its building_id.",
         "metadata": {
-          "keywords": [],
-          "editFeatures": {
-            "key": "building_id",
-            "layer": "table_osm_buildings",
-            "edits": [
-              {
-                "op": "remove",
-                "ids": [
-                  29623484,
-                  29628154
-                ]
-              }
-            ]
-          }
+          "keywords": []
+        }
+      },
+      {
+        "id": "whatif-towers-buildings",
+        "type": "curio.builtin/autk-grammar",
+        "x": 1970,
+        "y": 2858,
+        "width": 759,
+        "height": 640,
+        "title": "Buildings by height",
+        "content": "{\n  \"map\": {\n    \"layerRefs\": [\n      {\n        \"dataRef\": \"table_osm_buildings\",\n        \"isPick\": true,\n        \"selectFields\": [\n          \"building_id\"\n        ],\n        \"isColorMap\": true,\n        \"getFnv\": \"height\",\n        \"getFnvType\": \"quantitative\",\n        \"colorMapInterpolator\": \"interpolateViridis\",\n        \"colorMapRange\": [\n          0,\n          250\n        ],\n        \"title\": \"Building height (m)\"\n      }\n    ]\n  }\n}",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Draw the buildings Two towers removed's Interaction node hands on, coloured by height. The two are linked, so a building picked on this map is picked in the Interaction node.",
+        "metadata": {
+          "keywords": []
         }
       },
       {
@@ -382,6 +385,21 @@
         "target": "whatif-towers-compute"
       },
       {
+        "id": "reactflow__edge-whatif-towers-editout-whatif-towers-buildingsin",
+        "source": "whatif-towers-edit",
+        "target": "whatif-towers-buildings",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-whatif-towers-editin/out-whatif-towers-buildingsin/out",
+        "source": "whatif-towers-edit",
+        "target": "whatif-towers-buildings",
+        "sourceHandle": "in/out",
+        "targetHandle": "in/out",
+        "type": "Interaction"
+      },
+      {
         "id": "reactflow__edge-whatif-towers-computeout-whatif-towers-mapin",
         "source": "whatif-towers-compute",
         "target": "whatif-towers-map"
@@ -464,6 +482,7 @@
         "description": "Every building at its own height, without two towers: 200 Clarendon, the tallest, and Raffles.",
         "nodes": [
           "whatif-towers-edit",
+          "whatif-towers-buildings",
           "whatif-towers-compute",
           "whatif-towers-map",
           "whatif-towers-roads"

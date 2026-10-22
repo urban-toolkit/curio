@@ -20,7 +20,8 @@ marked parts; and Height cap, whose Interaction node cuts them down to the
 Tall building height. Each rasterizes its buildings
 (``curio.scout@1``), runs Deep Umbra on them
 (``model.scout.deep-umbra@1``), measures the shade in each park, and draws its
-buildings in 3D and its shadow on Autark maps. Scout's Dots with a range
+buildings in 3D and its shadow on Autark maps; each what-if's Interaction node
+is linked to its buildings map, which it edits on. Scout's Dots with a range
 charts each park's mean minutes of shadow in the three scenarios, and for
 each what-if a Raster Calculator (``curio.scout@1``) takes the change in
 shadow cell by cell and a Python node each park's change in shade, each drawn
@@ -219,8 +220,12 @@ SHADOW_RANGE = [0, 720]
 CHANGE_RANGE = [-720, 720]
 
 
-def _map(get_fnv, interpolator, color_range, title, *, quantitative=False, center=None) -> dict:
-    layer = {"dataRef": "[!! input_0 !!]", "getFnv": get_fnv}
+def _map(get_fnv, interpolator, color_range, title, *, quantitative=False, center=None, pick_by=None) -> dict:
+    layer = {"dataRef": "[!! input_0 !!]"}
+    if pick_by is not None:
+        layer["isPick"] = True
+        layer["selectFields"] = [pick_by]
+    layer["getFnv"] = get_fnv
     if quantitative:
         layer["getFnvType"] = "quantitative"
     layer["colorMapInterpolator"] = interpolator
@@ -365,7 +370,9 @@ def test_the_wiring_reads_each_input_where_its_code_does():
     """Building heights and Open-air parks read the loader's layers by name;
     each scenario's chain starts at Building heights (Existing) or at its
     lever, which reads Buildings around parks; each Shade per park reads its
-    shadow on input_0 and the parks on input_1."""
+    shadow on input_0 and the parks on input_1. Each lever is linked to the
+    buildings map it feeds by an interaction edge, from its in/out dot to the
+    map's, for selections both ways: the dataflow's only interaction edges."""
     spec = _dataflow()
     nodes = _nodes(spec)
     into = _into(spec)
@@ -391,20 +398,35 @@ def test_the_wiring_reads_each_input_where_its_code_does():
         assert (into[(_node_id(key, "shade"), "in")], into[(_node_id(key, "shade"), "in_1")]) == (
             _node_id(key, "shadow"), "park-shade-parks",
         )
+    links = sorted((e["source"], e["target"], e["sourceHandle"], e["targetHandle"])
+                   for e in spec["edges"] if e.get("type") == "Interaction")
+    assert links == sorted(
+        (_node_id(key, "lever"), _node_id(key, "buildings-map"), "in/out", "in/out") for _s, _n, _c, key in SCENARIOS[1:]
+    ), links
 
 
 def test_the_levers_are_interaction_nodes_whose_code_is_their_log():
     """Towers removed and Height cap are Interaction nodes keyed on
     building_id, each with one labelled edit picked by the condition
-    around_park, so a user can add more and press Update results; each node's
-    code is the code it writes from its log."""
+    around_park, so a user can add more and press Commit edits; each node's
+    code, its only state, is the code it writes from its log: one call that
+    carries the log, and no metadata key holds the log too."""
+    from utk_curio.sandbox.util.input_names import call_as_node
+
     nodes = _nodes(_dataflow())
     for scenario, name, _color, key in SCENARIOS[1:]:
         lever = nodes[_node_id(key, "lever")]
         settings, code = LEVERS[scenario]
         assert (lever["type"], lever["title"]) == (INTERACTION, name)
-        assert lever["metadata"]["editFeatures"] == settings
+        assert "editFeatures" not in lever["metadata"], lever["metadata"]
         assert lever["content"] == code
+        calls = []
+        call_as_node(
+            textwrap.indent(lever["content"], "    "),
+            {"curio_edit_features": lambda value, edits, **kwargs: calls.append((value, edits, kwargs))},
+            "the buildings", [0],
+        )
+        assert calls == [("the buildings", settings["edits"], {"key": settings["key"]})], (scenario, calls)
 
 
 def test_the_chart_and_the_changes_hold_what_they_compare():
@@ -449,18 +471,21 @@ def test_the_chart_and_the_changes_hold_what_they_compare():
 
 def test_every_map_is_valid_and_the_maps_side_by_side_share_one_range(tmp_path):
     """Each scenario's buildings in 3D over the rasterizers' height range and
-    its shadow over a summer day's minutes; each what-if's change in shadow on
-    a scale centered on no change, and each park's change on a scale whose
-    middle stays visible, both over the same minutes either way. Every
-    document is valid for the grammar."""
+    its shadow over a summer day's minutes; each what-if's buildings picked by
+    building_id, the column its lever's edits find them by, as the map the
+    lever edits on; each what-if's change in shadow on a scale centered on no
+    change, and each park's change on a scale whose middle stays visible, both
+    over the same minutes either way. Every document is valid for the
+    grammar."""
     from utk_curio.backend.app.agents.domain import document_validation
 
     spec = _dataflow()
     nodes = _nodes(spec)
     expected = {}
-    for _scenario, _name, _color, key in SCENARIOS:
+    for scenario, _name, _color, key in SCENARIOS:
         expected[_node_id(key, "buildings-map")] = _map(
-            "height", "interpolateViridis", HEIGHT_RANGE, "Building height (m)", quantitative=True)
+            "height", "interpolateViridis", HEIGHT_RANGE, "Building height (m)", quantitative=True,
+            pick_by=None if scenario == "existing" else LEVERS[scenario][0]["key"])
         expected[_node_id(key, "shadow-map")] = _map(
             "band_1", "interpolateReds", SHADOW_RANGE, "Accumulated shadow (minutes)")
     for _scenario, name, _color, key in SCENARIOS[1:]:

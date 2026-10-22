@@ -389,25 +389,29 @@ class TestTheShippedCorpus:
         )
 
     def test_the_examples_that_need_interaction_edges_are_exactly_these(self):
-        """The T2 set. dev/112's ``edges[].kind`` is not on this branch, so
-        these eleven cannot be reconstructed by any plan here -- a capability
-        gap the harness reports rather than a bar it lowers."""
+        """The examples whose graphs carry an interaction edge: views linked
+        to each other or to a pool, and Interaction nodes linked to the Autark
+        maps they feed and edit on (06's, chicago-loop-shadow-towers' and
+        lower-manhattan-park-shade's levers among them)."""
         with_interaction = set()
         for path in example_paths():
             spec = json.loads(path.read_text(encoding="utf-8"))
             if canonical_graph_from_spec(spec, templates=TEMPLATES).interaction_edges():
                 with_interaction.add(path.stem)
         assert with_interaction == {
+            "06-back-bay-road-sunlight",
             "07-autark-gpu-shader",
             "08-autark-spatial-join-regression",
             "09-heterogeneous-data-linked-views",
             "11-autark-pbf-loading",
             "17-autark-geodataframe-maps",
             "chicago-loop-layers",
+            "chicago-loop-shadow-towers",
             "interaction-autark",
             "interaction-vega",
             "interaction-vega-autark",
             "interaction-vega-simple",
+            "lower-manhattan-park-shade",
             "regression",
         }
 
