@@ -1228,13 +1228,17 @@ def test_example_24_feeds_the_rasterizers_one_raster_to_the_node_and_the_mask():
 
 def test_the_two_scenarios_are_scouts_two_building_sets(tmp_path):
     """"Existing" rasterizes the shipped buildings, SCOUT's A. "Towers removed"
-    reads them through its Interaction node, its lever: the node's edit log
-    holds one removal, labelled, of the 15 buildings SCOUT's B leaves out,
-    matched on building_id, and its code is the code the node writes from that
-    log. Run as the node runs, that code leaves SCOUT's B. Each layer, read as
-    Rasterize Buildings reads it, gives the height tiles SCOUT committed for
-    it, so the dataflow's two shadow runs are the proof's two."""
+    reads them through its Interaction node, its lever: the node's code, its
+    only state, is the code the node writes from an edit log of one removal,
+    labelled, of the 15 buildings SCOUT's B leaves out, matched on
+    building_id, and no metadata key holds that log too. Run as the node
+    runs, that code leaves SCOUT's B. Each layer, read as Rasterize Buildings
+    reads it, gives the height tiles SCOUT committed for it, so the dataflow's
+    two shadow runs are the proof's two."""
     import geopandas as gpd
+
+    from utk_curio.sandbox.util.feature_edits import edit_features
+    from utk_curio.sandbox.util.input_names import call_as_node
 
     spec = _dataflow()
     nodes = {node["id"]: node for node in spec["nodes"]}
@@ -1243,8 +1247,16 @@ def test_the_two_scenarios_are_scouts_two_building_sets(tmp_path):
     types = {name: sorted(nodes[n]["type"] for n in scenario["nodes"]) for name, scenario in scenarios.items()}
     assert types["Towers removed"] == sorted([*types["Existing"], INTERACTION_TYPE]), types
     (lever,) = [nodes[n] for n in scenarios["Towers removed"]["nodes"] if nodes[n]["type"] == INTERACTION_TYPE]
-    assert lever["metadata"]["editFeatures"] == TOWERS_LOG, lever["metadata"].get("editFeatures")
+    assert "editFeatures" not in lever["metadata"], lever["metadata"]
     assert lever["content"] == TOWERS_CODE, lever["content"]
+    # The code is one call of curio_edit_features, which carries the log.
+    calls = []
+    call_as_node(
+        textwrap.indent(lever["content"], "    "),
+        {"curio_edit_features": lambda value, edits, **settings: calls.append((value, edits, settings))},
+        "the buildings", [0],
+    )
+    assert calls == [("the buildings", TOWERS_LOG["edits"], {"key": TOWERS_LOG["key"]})], calls
 
     # The lever reads the buildings, the context both scenarios share, and
     # Towers removed's rasterizer reads the lever.
@@ -1254,9 +1266,6 @@ def test_the_two_scenarios_are_scouts_two_building_sets(tmp_path):
     (rasterizer,) = [n for n in scenarios["Towers removed"]["nodes"]
                      if nodes[n]["type"] == RASTERIZE_TYPE]
     assert into[(rasterizer, "in")] == lever["id"]
-
-    from utk_curio.sandbox.util.feature_edits import edit_features
-    from utk_curio.sandbox.util.input_names import call_as_node
 
     buildings = gpd.read_file(BUILDINGS)
     assert list(buildings["building_id"]) == list(range(123))

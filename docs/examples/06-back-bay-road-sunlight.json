@@ -175,20 +175,7 @@
         "in": "DEFAULT",
         "goal": "Remove two towers, 200 Clarendon, Back Bay's tallest, and Raffles, from the buildings the shadow step reads: every part of each, matched on its building_id.",
         "metadata": {
-          "keywords": [],
-          "editFeatures": {
-            "key": "building_id",
-            "layer": "table_osm_buildings",
-            "edits": [
-              {
-                "op": "remove",
-                "ids": [
-                  29623484,
-                  29628154
-                ]
-              }
-            ]
-          }
+          "keywords": []
         }
       },
       {

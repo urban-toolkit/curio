@@ -298,17 +298,7 @@
         "in": "DEFAULT",
         "goal": "Remove the building parts Buildings around parks marks, by the condition around_park. More parts, picked on the map or by another condition, can be removed, raised or lowered here before Update results.",
         "metadata": {
-          "keywords": [],
-          "editFeatures": {
-            "key": "building_id",
-            "edits": [
-              {
-                "op": "remove",
-                "where": "around_park",
-                "label": "Tall parts around a park"
-              }
-            ]
-          }
+          "keywords": []
         },
         "title": "Towers removed"
       },
@@ -420,19 +410,7 @@
         "in": "DEFAULT",
         "goal": "Cut the building parts Buildings around parks marks down to the Tall building height, its height_cap_m, by the condition around_park. More parts can be removed, raised or lowered here before Update results.",
         "metadata": {
-          "keywords": [],
-          "editFeatures": {
-            "key": "building_id",
-            "edits": [
-              {
-                "op": "expr",
-                "where": "around_park",
-                "column": "height",
-                "value": "min(height, height_cap_m)",
-                "label": "Tall parts around a park cut to the cap"
-              }
-            ]
-          }
+          "keywords": []
         },
         "title": "Height cap"
       },

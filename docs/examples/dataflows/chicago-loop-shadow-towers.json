@@ -130,33 +130,7 @@
         "in": "DEFAULT",
         "goal": "Remove the 15 buildings SCOUT's high-rise case removes, by their building_id. Further buildings, picked on the map or by a condition, can be removed, raised or lowered here before Update results.",
         "metadata": {
-          "keywords": [],
-          "editFeatures": {
-            "key": "building_id",
-            "edits": [
-              {
-                "op": "remove",
-                "ids": [
-                  8,
-                  10,
-                  12,
-                  13,
-                  14,
-                  18,
-                  19,
-                  31,
-                  34,
-                  51,
-                  66,
-                  77,
-                  82,
-                  106,
-                  122
-                ],
-                "label": "SCOUT's 15 removed buildings"
-              }
-            ]
-          }
+          "keywords": []
         },
         "title": "Remove towers"
       },

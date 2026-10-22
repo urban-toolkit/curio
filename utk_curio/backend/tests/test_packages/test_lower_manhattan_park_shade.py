@@ -396,15 +396,25 @@ def test_the_wiring_reads_each_input_where_its_code_does():
 def test_the_levers_are_interaction_nodes_whose_code_is_their_log():
     """Towers removed and Height cap are Interaction nodes keyed on
     building_id, each with one labelled edit picked by the condition
-    around_park, so a user can add more and press Update results; each node's
-    code is the code it writes from its log."""
+    around_park, so a user can add more and press Commit edits; each node's
+    code, its only state, is the code it writes from its log: one call that
+    carries the log, and no metadata key holds the log too."""
+    from utk_curio.sandbox.util.input_names import call_as_node
+
     nodes = _nodes(_dataflow())
     for scenario, name, _color, key in SCENARIOS[1:]:
         lever = nodes[_node_id(key, "lever")]
         settings, code = LEVERS[scenario]
         assert (lever["type"], lever["title"]) == (INTERACTION, name)
-        assert lever["metadata"]["editFeatures"] == settings
+        assert "editFeatures" not in lever["metadata"], lever["metadata"]
         assert lever["content"] == code
+        calls = []
+        call_as_node(
+            textwrap.indent(lever["content"], "    "),
+            {"curio_edit_features": lambda value, edits, **kwargs: calls.append((value, edits, kwargs))},
+            "the buildings", [0],
+        )
+        assert calls == [("the buildings", settings["edits"], {"key": settings["key"]})], (scenario, calls)
 
 
 def test_the_chart_and_the_changes_hold_what_they_compare():

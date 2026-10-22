@@ -326,11 +326,8 @@ def test_example_06_is_three_scenarios_over_one_context():
             f"{copy} holds other code than its twin {original}"
         )
     assert nodes[edit]["type"] == "curio.builtin/edit-features"
-    assert nodes[edit]["metadata"]["editFeatures"] == {
-        "key": "building_id",
-        "layer": "table_osm_buildings",
-        "edits": [{"op": "remove", "ids": [29623484, 29628154]}],
-    }
+    # Its edits are in its code, the node's only state, and in no metadata key.
+    assert "editFeatures" not in nodes[edit]["metadata"], nodes[edit]["metadata"]
     assert '{"op": "remove", "ids": [29623484, 29628154]},' in nodes[edit]["content"]
     assert '], key="building_id", layer="table_osm_buildings")' in nodes[edit]["content"]
     feeds = sorted((edge["source"], edge["target"]) for edge in flow["edges"] if edit in (edge["source"], edge["target"]))
