@@ -162,7 +162,7 @@ REGISTRY: dict[str, ToolContract] = {
         label="Read the dataflow",
         description=(
             "Read the project's saved dataflow, structure-first: every node "
-            "(id, type, goal, content length, widgets) and ALL edges, plus each "
+            "(id, type, goal, content length, widgets, selection tags) and ALL edges, plus each "
             "node's last runtime status and the dataflow's scenarios with their "
             "levers, fixed context and outcomes. Node content is elided: use "
             'node.read for one node\'s content, or params {"include": ["content"]} '
@@ -944,7 +944,11 @@ def _execute_packages_resolve(user_key: str, params: dict) -> tuple[str, str]:
 
 
 def _node_row(node: dict, goal_cap: int) -> dict:
-    from utk_curio.backend.app.execution.code_references import effective_value, normalize_widgets
+    from utk_curio.backend.app.execution.code_references import (
+        effective_value,
+        normalize_selections,
+        normalize_widgets,
+    )
 
     content = str(node.get("content") or "")
     row = {
@@ -959,6 +963,16 @@ def _node_row(node: dict, goal_cap: int) -> dict:
     widgets = normalize_widgets((node.get("metadata") or {}).get("widgets"))
     if widgets:
         row["widgets"] = [{"name": w["name"], "type": w["type"], "value": effective_value(w)} for w in widgets]
+    # The selection tags its code reads as [!! selection <name> !!]: each
+    # names its view and the column that identifies the view's rows. How many
+    # ids each holds, never the ids (up to SELECTION_ID_CAP of them).
+    selections = normalize_selections((node.get("metadata") or {}).get("selections"))
+    if selections:
+        row["selections"] = [
+            {"name": tag["name"], "view": tag["node"], "column": tag["column"],
+             "selected": len(tag["ids"]) if "ids" in tag else tag["count"]}
+            for tag in selections
+        ]
     lineage = (node.get("metadata") or {}).get("copiedFrom")
     if isinstance(lineage, list) and lineage:
         row["copiedFrom"] = [str(i) for i in lineage]

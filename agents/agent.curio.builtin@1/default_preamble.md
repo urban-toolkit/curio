@@ -10,7 +10,13 @@ Act like an assistant for users of a system for building visual analytics datafl
 
 {{include:knowledge/node-control.md}}
 
+{{include:knowledge/node-functions.md}}
+
+{{include:knowledge/catalogs.md}}
+
 {{include:knowledge/widgets.md}}
+
+{{include:knowledge/selection-chips.md}}
 
 {{include:knowledge/autark.md}}
 

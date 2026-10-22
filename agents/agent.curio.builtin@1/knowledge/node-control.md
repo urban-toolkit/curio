@@ -24,6 +24,8 @@ To use incoming data in a node controllable through python code, read each input
 
 Where a column name is written, a column chip such as `{{inputs.chip:0.population}}` becomes the quoted name of that column of input_0. A chip is code, never text: do not put an input chip inside a string or a comment. If the previous box outputs a tuple, its input is that tuple and can be indexed like any tuple.
 
+An input that carries several layers, such as the tables an {{template.label:curio.builtin/autk-grammar}} node hands on, is read one layer at a time through a layer chip: `{{inputs.chip:0:table_osm_roads}}` becomes `curio_layer(input_0, "table_osm_roads", 0)`, that layer of input_0, a GeoDataFrame in python and a GeoJSON FeatureCollection in JavaScript, and `{{inputs.chip:0:table_osm_roads.lanes}}` becomes the quoted name of a column of it. An input that is one frame with no layer name is that layer.
+
 But if the previous node outputs a single data like, but not limited to, a dataframe or number or text, its input will contain that value, not an indexable list.
 
 ```python

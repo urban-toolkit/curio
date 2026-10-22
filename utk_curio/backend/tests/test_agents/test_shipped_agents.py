@@ -480,8 +480,9 @@ class TestTheSources:
             "default_preamble.md", "examples.md", "rules/package_contract.md",
             "rules/research_notes_rules.md", "rules/research_verify_rules.md",
             *(f"knowledge/{name}.md" for name in (
-                "nodes", "node-control", "widgets", "autark", "compatibility",
-                "vega-lite-starter", "autark-starter", "vega-lite-maps", "interaction-edges", "scenarios",
+                "nodes", "node-control", "node-functions", "catalogs", "widgets", "selection-chips", "autark",
+                "compatibility", "vega-lite-starter", "autark-starter", "vega-lite-maps", "interaction-edges",
+                "scenarios",
             )),
         }
         assert {path.relative_to(BASE).as_posix() for path in BASE.rglob("*.md")} - {"README.md"} == set(pages)
