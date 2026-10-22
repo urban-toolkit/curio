@@ -15,9 +15,10 @@ fixed context has no saved output. Then, in an empty dataflow:
    output that run saved.
 2. Run scenario ends with every outcome done.
 3. Expanded, every outcome shows its output: a map drawn, a chart drawn, or
-   the result of a code node. Each map gets a close-up. An Interaction node
-   among the levers has drawn its own map, and a frame of the whole dataflow
-   is taken.
+   the result of a code node. Each map gets a close-up. A Map Edits node
+   among the levers edits on a map it feeds and is linked to, one of the
+   outcomes, and lists the layers it is fed there. A frame of the whole
+   dataflow is taken.
 
 A test whose dataflow has an Autark node runs on the GPU runner
 (``runner_split.SHIPPED_DROPS_MODULE``), the others on the CPU runners.
@@ -35,6 +36,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 import pytest
+from playwright.sync_api import expect
 
 from .test_scenario_drop_e2e import (
     _box,
@@ -90,8 +92,8 @@ SHIPPED = (
 DRAWER = '[data-curio-scenario-catalog-drawer="true"]'
 AUTARK = "curio.builtin/autk-grammar"
 VEGA = "curio.builtin/vis-vega"
-#: The Interaction node, a lever that draws its input on a map of its own.
-INTERACTION = "curio.builtin/edit-features"
+#: The Map Edits node, a lever linked to the map of its edits it feeds.
+MAP_EDITS = "curio.builtin/edit-features"
 TEST_NAME = "test_a_shipped_scenario_drops_from_a_project_never_run_and_runs"
 
 #: How long the drop may take, its run of the context on the server included.
@@ -122,6 +124,18 @@ def _cases():
             name = f"{Path(dataflow).stem}-{_slug(scenario['name'])}"
             cases.append(pytest.param(dataflow, scenario["id"], id=name))
     return cases
+
+
+def _linked_maps(dataflow: dict, lever: str) -> list[str]:
+    """The Autark maps *lever* feeds on a data edge and is linked to by an
+    interaction edge, in *dataflow*: the ones a Map Edits node edits on."""
+    types = {node["id"]: node["type"] for node in dataflow["nodes"]}
+    fed = {edge["target"] for edge in dataflow["edges"] if edge["source"] == lever and edge.get("type") != "Interaction"}
+    linked = {
+        edge["target"] if edge["source"] == lever else edge["source"]
+        for edge in dataflow["edges"] if edge.get("type") == "Interaction" and lever in (edge["source"], edge["target"])
+    }
+    return sorted(node_id for node_id in fed & linked if str(types.get(node_id, "")).startswith(AUTARK))
 
 
 def _listed(labels: list[str]) -> str:
@@ -277,18 +291,22 @@ def test_a_shipped_scenario_drops_from_a_project_never_run_and_runs(
             assert output and output["code"] == "success" and "Saved to file:" in output["content"], (
                 f"{outcome['label']} ({node_id}) shows no output: {output}"
             )
-    # A lever that draws a map of its own, an Interaction node, has drawn it
-    # before the whole dataflow is framed.
+    # A Map Edits lever edits on the map it feeds and is linked to, an
+    # outcome drawn above, and lists the layers it is fed, before the whole
+    # dataflow is framed.
+    outcome_ids = {outcome["nodeId"] for outcome in plan["outcomes"]}
     for lever in plan["levers"]:
-        if types[lever].startswith(INTERACTION):
-            box = node_locator(page, copies[lever])
-            _open_tab(page, copies[lever], "output")
-            box.locator('[data-edit-map-state]:not([data-edit-map-state="drawing"])').wait_for(
-                state="attached", timeout=90000,
+        if types[lever].startswith(MAP_EDITS):
+            linked = _linked_maps(plan["dataflow"], lever)
+            assert len(linked) == 1 and linked[0] in outcome_ids, (
+                f"{name}: the Map Edits node {lever} feeds and is linked to {linked}, not one map among the outcomes"
             )
-            state = box.locator("[data-edit-map-state]").get_attribute("data-edit-map-state")
-            problem = box.locator("[data-edit-map-problem]").all_inner_texts()
-            assert state == "drawn", f"{name}: the Interaction node {copies[lever]}'s map ended {state!r}: {problem}"
+            _open_tab(page, copies[lever], "output")
+            body = node_locator(page, copies[lever]).locator(f'[data-edit-body="{copies[lever]}"]')
+            expect(body).to_have_attribute("data-edit-map", copies[linked[0]], timeout=30000)
+            body.get_by_test_id("interaction-layers").wait_for(state="visible", timeout=90000)
+            notices = body.locator("[data-curio-node-empty]").all_inner_texts()
+            assert not notices, f"{name}: the Map Edits node {copies[lever]} lists no layers: {notices}"
     # Saved first, so the header shows the save whatever the autosave reached (#584).
     save_dataflow_and_settle_header(page)
     save_workflow_test_screenshot(

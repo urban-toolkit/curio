@@ -3,9 +3,9 @@
 Example 06 runs example 07's per-road sunlight shader in three scenarios over
 one fixed context, the Back Bay loader and its data pool: "Baseline", every
 building at its own height, "Twice as tall", a copy of it with every building
-doubled, and "Two towers removed", where an Edit Features node removes two
+doubled, and "Two towers removed", where a Map Edits node removes two
 towers, 200 Clarendon and Raffles, by their ``building_id`` before copies of
-Baseline's nodes. The
+Baseline's nodes, and feeds a map of the buildings it is linked to. The
 factor is a ``height_factor`` widget on each shadow step, read as an Autark
 uniform. Each scenario ends in a Roads node that takes the roads layer out of
 the five its shadow step hands on. Outside them, Scout's Bars (``curio.scout@1``)
@@ -21,7 +21,8 @@ The first test drives the example as it ships:
    shadow step's ``height_factor`` tag sits in its Widgets tab, with its value,
    and as a chip in its spec.
 2. All collapsed, Run All: the loader loads once for all, on the server, the
-   scenarios run hidden, and each box shows its outcome done. The Edit Features node reads the
+   scenarios run hidden, and each box shows its outcomes done, Two towers
+   removed's map of its buildings among them. The Map Edits node reads the
    loader's layers through the pool and hands them on without every part of
    both towers. Each shadow step's batched shader reads every building part it
    is handed: autk-grammar says it left none out (#757). A double-click expands
@@ -39,7 +40,8 @@ The first test drives the example as it ships:
    change node draws it, under the title "Sunlight change (minutes)", its
    legend labelled -360, 0 and 360: a scale centered on no change.
 5. A save and a reopen: the scenarios, their colours, the collapsed ones, the
-   widgets and their values, the edit list, and the saved outputs come back.
+   widgets and their values, the Map Edits node's code, which holds its edits,
+   and the saved outputs come back.
 
 The second test drags both scenarios from the Scenario Catalog into an empty
 project, once the seeded example has run: they arrive with their results, read
@@ -63,6 +65,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 
+from .test_map_edits_e2e import _edits_of
 from .test_multi_input_e2e import _wait_for_circles
 from .test_scenario_drop_e2e import (
     _copies,
@@ -139,6 +142,9 @@ T_COMPUTE, T_MAP, T_ROADS = "whatif-modified-compute", "whatif-modified-map", "w
 E_EDIT, E_COMPUTE, E_MAP, E_ROADS = (
     "whatif-towers-edit", "whatif-towers-compute", "whatif-towers-map", "whatif-towers-roads",
 )
+#: The map of the buildings Two towers removed's Map Edits node hands on,
+#: which it is linked to: an outcome of the scenario.
+E_BUILDINGS = "whatif-towers-buildings"
 #: Scout's Bars chart of mean sunlight and the Python node that takes the
 #: sunlight change, which keep the ids of the Compare nodes they replaced.
 CHART, DIFFERENCE = "whatif-compare-chart", "whatif-compare-difference"
@@ -157,8 +163,11 @@ COLORS = {BASELINE: "#3567c7", TWICE: "#e86a3c", TOWERS: "#2f8f4a"}
 MEMBERS = {
     BASELINE: [B_COMPUTE, B_MAP, B_ROADS],
     TWICE: [T_COMPUTE, T_MAP, T_ROADS],
-    TOWERS: [E_EDIT, E_COMPUTE, E_MAP, E_ROADS],
+    TOWERS: [E_EDIT, E_BUILDINGS, E_COMPUTE, E_MAP, E_ROADS],
 }
+#: The outcomes each box lists that the test checks done: its Roads node, which
+#: the chart reads, and Two towers removed's map of its buildings.
+OUTCOMES = {BASELINE: [B_ROADS], TWICE: [T_ROADS], TOWERS: [E_BUILDINGS, E_ROADS]}
 ROADS = "table_osm_roads"
 BUILDINGS = "table_osm_buildings"
 EDIT_TYPE = "curio.builtin/edit-features"
@@ -466,7 +475,7 @@ def _assert_parts_pack_a_box(fc: dict) -> None:
 
 
 def _handed_building_ids(wrapper: dict) -> list:
-    """The same, in the layers Edit Features hands on, as an Autark node does."""
+    """The same, in the layers Map Edits hands on, as an Autark node does."""
     for item in wrapper["data"]:
         if item.get("layerName") == BUILDINGS:
             return _ids_of(item["data"])
@@ -474,11 +483,11 @@ def _handed_building_ids(wrapper: dict) -> list:
 
 
 def _assert_towers_removed(page) -> None:
-    """The Edit Features node read the loader's layers, through the pool, and
+    """The Map Edits node read the loader's layers, through the pool, and
     handed them on without every part of both towers: every id it names is a
     building of the input, so none is unknown."""
     source = page.evaluate(_INPUT_ARTIFACT_JS, E_EDIT)
-    assert source, "the pool did not name the artifact it read, for the Edit Features node to read"
+    assert source, "the pool did not name the artifact it read, for the Map Edits node to read"
     loaded = _loaded_buildings(load_artifact_as_dict(source))
     _assert_parts_pack_a_box(loaded)
     before = _ids_of(loaded)
@@ -593,7 +602,7 @@ def test_example_06_compares_its_three_scenarios_in_the_canvas(
     left_out, stop_left_out = _record_batched_left_out(page)
     run_all_and_wait(page, timeout_ms=RUN_MS)
     for node_id, node_type in (
-        (B_MAP, AUTARK), (T_MAP, AUTARK), (E_EDIT, EDIT_TYPE), (E_MAP, AUTARK),
+        (B_MAP, AUTARK), (T_MAP, AUTARK), (E_EDIT, EDIT_TYPE), (E_BUILDINGS, AUTARK), (E_MAP, AUTARK),
         (B_ROADS, PYTHON), (T_ROADS, PYTHON), (E_ROADS, PYTHON), (CHART, BARS), (DIFFERENCE, PYTHON),
         (DIFFERENCE_MAP, AUTARK),
     ):
@@ -621,8 +630,9 @@ def test_example_06_compares_its_three_scenarios_in_the_canvas(
     for scenario_id in NAMES:
         _frame_box(page, scenario_id, MEMBERS[scenario_id])
         assert _box_color(page, scenario_id) == _rgb(COLORS[scenario_id])
-        # Its last outcome: the Roads node, which the chart reads.
-        for outcome in MEMBERS[scenario_id][-1:]:
+        # Its outcomes: the Roads node, which the chart reads, and Two
+        # towers removed's map of the buildings its Map Edits node hands on.
+        for outcome in OUTCOMES[scenario_id]:
             page.wait_for_function(
                 """([box, node]) => {
                     const row = document.querySelector(`[data-scenario-box="${box}"] [data-scenario-outcome="${node}"]`);
@@ -708,7 +718,12 @@ def test_example_06_compares_its_three_scenarios_in_the_canvas(
     saved_values = {w["name"]: w.get("value", w["default"]) for w in by_id[CHART]["metadata"]["widgets"]}
     assert saved_values == {"y": "sunlight", "combine": "mean", "y_title": "mean of sunlight"}, saved_values
     assert by_id[E_EDIT]["content"] == shipped[E_EDIT]["content"], f"{E_EDIT} rewrote its code"
-    assert by_id[E_EDIT]["metadata"]["editFeatures"] == shipped[E_EDIT]["metadata"]["editFeatures"]
+    # Its edits are in its code, the node's only state: the two towers removed
+    # by building_id, on the buildings layer.
+    edits, keywords = _edits_of(by_id[E_EDIT]["content"])
+    assert edits == [{"op": "remove", "ids": sorted(TOWER_PARTS)}], edits
+    assert (keywords.get("key"), keywords.get("layer")) == ("building_id", BUILDINGS), keywords
+    assert "editFeatures" not in by_id[E_EDIT]["metadata"], by_id[E_EDIT]["metadata"]
     scenarios = {scenario["id"]: scenario for scenario in saved["scenarios"]}
     assert [(s["name"], s["color"]) for s in saved["scenarios"]] == [
         (NAMES[s], COLORS[s]) for s in (BASELINE, TWICE, TOWERS)

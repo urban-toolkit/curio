@@ -540,7 +540,7 @@
  "tests.test_frontend.test_scout_rasters_e2e::test_the_package_node_rasterizes_buildings_and_a_map_draws_its_mosaic[chromium]": 20.4,
  "tests.test_frontend.test_scout_routing_e2e::test_two_routing_scenarios_are_mapped_and_charted[chromium]": 83.8,
  "tests.test_frontend.test_scout_routing_widgets_e2e::test_moving_weather_routings_origin_moves_the_route_and_survives_a_reopen[chromium]": 67.5,
- "tests.test_frontend.test_scout_shadow_e2e::test_an_edit_in_the_towers_lever_reaches_the_shadow_with_update_results[chromium]": 24.8,
+ "tests.test_frontend.test_scout_shadow_e2e::test_an_edit_in_the_towers_lever_reaches_the_shadow_with_commit_edits[chromium]": 24.8,
  "tests.test_frontend.test_scout_shadow_e2e::test_two_building_sets_are_shadowed_charted_and_mapped[chromium]": 32.1,
  "tests.test_frontend.test_scout_shadow_widgets_e2e::test_the_season_and_an_added_widget_reach_deep_umbra_and_survive_a_reopen[chromium]": 40.6,
  "tests.test_frontend.test_select_node_text_e2e::test_a_box_selection_selects_nodes_and_no_text[chromium]": 5.2,

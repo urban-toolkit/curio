@@ -9,8 +9,9 @@ extract's edge, from ``lower_mnt.osm.pbf``, which the backend serves, so the
 run needs no network. Building heights, Open-air parks and Buildings around
 parks are the context, with the Season, Distance from a park and Tall
 building height Parameters. In
-Existing, Towers removed and Height cap (whose Interaction nodes remove or cut
-down the building parts Buildings around parks marks), Rasterize Buildings
+Existing, Towers removed and Height cap (whose Map Edits nodes remove or cut
+down the building parts Buildings around parks marks, each linked to the map
+of the buildings it feeds), Rasterize Buildings
 (``curio.scout@1``) and Accumulated Shadow
 (``model.scout.deep-umbra@1``) give the shadow, Shade per park measures it in
 each park, and Autark maps draw the buildings in 3D and the shadow. Scout's
@@ -37,7 +38,8 @@ Run All in the browser runs the whole dataflow:
    shade, column for column the what-if's Shade per park minus Existing's,
    matched by the park's name, takes shadow away in every park. The Autark map
    after each change draws it.
-4. Each scenario's buildings and shadow draw.
+4. Each scenario's buildings and shadow draw, and each what-if's Map Edits
+   node edits on the map of its buildings.
 
 Every map's legend is titled as its layer is, and labels the color range it
 shares with the maps of its kind: 0 to 550 m for the buildings, 0 to 720
@@ -57,7 +59,10 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 import pytest
+from playwright.sync_api import expect
 
+from .test_map_edits_e2e import _assert_linked
+from .test_widget_tags_e2e import _open_tab
 from .utils import (
     REPO_ROOT,
     _COLOR_PIXELS_JS,
@@ -105,6 +110,7 @@ COMPARE_TYPE = "curio.builtin/compare-scenarios"
 DOTS_TYPE = "curio.scout/dots-with-a-range"
 CALCULATOR_TYPE = "curio.scout/raster-calculator"
 PYTHON_TYPE = "curio.builtin/computation-analysis"
+MAP_EDITS_TYPE = "curio.builtin/edit-features"
 #: The chart, which keeps the id of the Compare Scenarios node it replaced, as
 #: each change does.
 CHART = "park-shade-chart"
@@ -373,11 +379,23 @@ def test_three_scenarios_of_lower_manhattans_park_shade_are_charted_and_mapped(
         save_node_closeup(page, f"park-shade-park-change-map-{scenario}", park_map, test_name=TEST_NAME,
                           sweep_toasts=True)
 
-    # 4. Each scenario's buildings and shadow.
+    # 4. Each scenario's buildings and shadow. A what-if's buildings map is
+    # the one its Map Edits lever feeds and is linked to: the lever names it
+    # and lists the layer it edits there.
     for scenario, _name, key in SCENARIOS:
         for what in ("buildings-map", "shadow-map"):
             map_id = f"park-shade-{key}-{what}"
+            lever = f"park-shade-{key}-lever"
+            if what == "buildings-map" and lever in nodes:
+                assert nodes[lever]["type"] == MAP_EDITS_TYPE, nodes[lever]["type"]
+                frame_nodes(page, [lever, map_id])
+                _open_tab(page, lever, "output")
+                _assert_linked(page, lever, map_id, nodes[map_id]["title"])
+                expect(node_locator(page, lever).get_by_test_id("interaction-layer-input_0")).to_be_attached()
             frame_nodes(page, [map_id])
             assert_autark_map_drawn(page, map_id, timeout=60000, attach_as=f"the {scenario} {what}")
             _assert_legend_shows_its_range(page, dataflow, map_id)
             save_node_closeup(page, f"park-shade-{what}-{scenario}", map_id, test_name=TEST_NAME, sweep_toasts=True)
+    assert sorted(n for n, node in nodes.items() if node["type"] == MAP_EDITS_TYPE) == [
+        "park-shade-capped-lever", "park-shade-removed-lever",
+    ], "the what-ifs' levers are not the dataflow's Map Edits nodes"
