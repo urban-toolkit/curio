@@ -44,6 +44,7 @@ from .utils import (
     frame_nodes,
     node_locator,
     open_strip_category,
+    play_node,
     require_owner_view,
     require_project_page,
     require_user_auth,
@@ -189,9 +190,10 @@ def test_each_layer_of_the_map_input_is_a_line_of_its_own(
 
     # The load runs alone. The map and the plot draw from its layers on their
     # own, and a draw shows a node's output pane, so the map's Grammar tab
-    # opens only once both have drawn and nothing runs.
-    run_node_and_wait(page, LOAD, node_type=nodes[LOAD]["type"], timeout_ms=RUN_MS)
-    for node_id in (MAP, PLOT):
+    # opens only once both have drawn and nothing runs. The load shows no text
+    # output, so it is waited for by its status alone.
+    play_node(page, LOAD)
+    for node_id in (LOAD, MAP, PLOT):
         wait_for_node_done(page, node_id, node_type=nodes[node_id]["type"], timeout_ms=RUN_MS)
     assert_autark_map_drawn(page, MAP, timeout=90000, attach_as="the map, drawn from the load's layers")
     _wait_for_no_node_running(page)
