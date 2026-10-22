@@ -42,6 +42,15 @@ describe("readSelectionRows", () => {
     expect(await readSelectionRows({ name: "picked", node: "zip-bars", column: "zip", ids: ["60601"] })).toBeNull();
   });
 
+  test("a view that fails to hand over its rows is unreadable, not undrawn", async () => {
+    provideViewRows("zip-bars", () => {
+      throw new Error("the chart's dataset is gone");
+    });
+    expect(await readSelectionRows({ name: "picked", node: "zip-bars", column: "zip", ids: ["60601"] })).toEqual({
+      unreadable: true,
+    });
+  });
+
   test("a tag that holds a count in place of its ids picks no row", async () => {
     provideViewRows("zip-bars", held);
     expect(await readSelectionRows({ name: "picked", node: "zip-bars", column: "zip", count: 12000 })).toEqual({

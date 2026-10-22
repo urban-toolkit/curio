@@ -192,20 +192,13 @@ function NodeEditor({
 
     // What the hover of a chip, in the code or in the header, previews
     // (ChipPreview): each input's rows, read as its tooltip first shows; each
-    // Parameter node's title and how many nodes read it; each selection tag's
-    // view, and the rows its ids pick there, read as its tooltip shows.
+    // Parameter node's title and how many nodes read it, and each selection
+    // tag's view and the rows its ids pick there, read as its tooltip shows.
     const [selectionRows, setSelectionRows] = useState<
-        Record<string, { columns: string[]; rows: Record<string, unknown>[] } | null>
+        Record<string, { columns: string[]; rows: Record<string, unknown>[] } | { unreadable: true } | null>
     >({});
+    const [parameters, setParameters] = useState<Record<string, { node: string; readers: number }>>({});
     const flowNodeList: any[] = Array.isArray(flowNodes) ? flowNodes : [];
-    const parametersFound = Object.fromEntries(
-        Array.from(new Set(shared.map((widget) => widget.name))).flatMap((name) => {
-            const parameter = parameterPreviewOf(flowNodeList, name);
-            return parameter ? [[name, parameter] as const] : [];
-        }),
-    );
-    const parametersSignature = JSON.stringify(parametersFound);
-    const parameters = useMemo(() => parametersFound, [parametersSignature]);
     const viewsFound: Record<string, string> = Object.fromEntries(
         selections.map((tag) => [tag.name, nodeLabel(flowNodeList.find((node) => node.id === tag.node), tag.node)]),
     );
@@ -239,6 +232,15 @@ function NodeEditor({
             if (tag) {
                 void readSelectionRows(tag).then((rows) => setSelectionRows((held) => ({ ...held, [tag.name]: rows })));
             }
+        } else if (parsed.kind === "shared") {
+            const parameter = parameterPreviewOf(flowNodeList, parsed.name);
+            setParameters((held) => {
+                if (JSON.stringify(held[parsed.name] ?? null) === JSON.stringify(parameter)) return held;
+                const next = { ...held };
+                if (parameter) next[parsed.name] = parameter;
+                else delete next[parsed.name];
+                return next;
+            });
         }
     });
     // The play callback is registered once, so a run without a Widgets tab
