@@ -201,8 +201,8 @@ def null_refusal_text(
         "this: compare the key columns' VALUES, not their names, and join on "
         "columns whose values are the same kind of thing. Never keep rows of "
         "nulls, fabricate values, or let a join that matched nothing stand so "
-        "the dataflow can proceed — if these inputs cannot be joined, say so in "
-        "one line and return no code."
+        "the dataflow can proceed. If this node loads data and what it loads "
+        "cannot be joined, say so in one line and return no code."
     )
     return head[:_DETAIL_CHARS]
 
@@ -263,8 +263,8 @@ def refusal_text(
     Three things the text must do: state the cause CLASS (a join or a filter
     matched nothing), show the inputs' values (the column names looked joinable
     — the values never did), and offer the honest alternative, which the loop
-    already treats as a terminal decline rather than something to retry
-    forever.
+    treats as a terminal decline only for a node that loads data
+    (``verified_loop._source_gate``).
     """
     kind = str((summary or {}).get("kind") or "result")
     head = (
@@ -282,7 +282,8 @@ def refusal_text(
         "VALUES, not their names — two columns can both look like an id and "
         "describe different things (a community-area number is not a census "
         "tract id). Either join on columns whose values are the same kind of "
-        "thing, or say plainly that these inputs cannot be joined."
+        "thing, or, if this node loads data and what it loads cannot be joined, "
+        "say so in one line with no code."
     )
     return head[:_DETAIL_CHARS]
 
@@ -384,14 +385,14 @@ def absent_output_refusal(
     conclusion = declared_conclusion(code)
     if conclusion:
         head += (
-            f". Your code says: {conclusion!r} — if that is your conclusion, it "
-            "is the right one to state: return that sentence as your whole "
+            f". Your code says: {conclusion!r}. If this node loads data and "
+            "that is your conclusion, return that sentence as your whole "
             "answer, with no code at all, and it is recorded as this node's "
             "honest outcome"
         )
     else:
         head += (
-            ". If the data cannot be produced from these inputs, say so in one "
+            ". If this node loads data and its source cannot be read, say so in one "
             "line with no code, and it is recorded as this node's honest "
             "outcome"
         )

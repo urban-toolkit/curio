@@ -79,8 +79,8 @@ def _consumer_type_mismatch(
                 "the code returned no output (None), which downstream node "
                 f"{str(label)[:60]!r} cannot accept (it declares "
                 f"{', '.join(sorted(declared))}) — return the data this node "
-                "produces, or, if it cannot be produced from these inputs, say "
-                "so in one line instead of returning code"
+                "produces, or, if this node loads data and its source cannot be "
+                "read, say so in one line instead of returning code"
             )
         if port_type not in declared:
             label = (consumer.get("goal") or edge.get("target") or "?")

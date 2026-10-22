@@ -622,9 +622,17 @@ class TestTheTrillBlock:
         assert metadata["properties"]["copiedFrom"] == {"type": "array", "items": {"type": "string"}}
 
     def test_it_carries_no_field_the_format_does_not_have(self):
+        import json
+
         text = contracts.render_trill_block(_trill())
-        for phantom in ('"output"', '"annotations"', '"Data"', '"warnings"'):
+        for phantom in ('"annotations"', '"Data"', '"warnings"'):
             assert phantom not in text, phantom
+        # "output" is a field of a Spatial Join's setting, and of nothing else.
+        block = json.loads(text)
+        metadata = block["properties"]["dataflow"]["properties"]["nodes"]["items"]["properties"]["metadata"]
+        spatial_join = metadata["properties"].pop("spatialJoin")
+        assert list(spatial_join["properties"]) == ["predicate", "output"]
+        assert '"output"' not in json.dumps(block)
         assert "description" not in text
 
     def test_the_preamble_carries_it(self):

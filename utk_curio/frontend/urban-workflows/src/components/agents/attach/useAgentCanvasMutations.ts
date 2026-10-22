@@ -92,6 +92,7 @@ export function useAgentCanvasMutations(): void {
     // what the spec does and the next save writes them back.
     const widgets = normalizeWidgets(node.metadata?.widgets);
     const copiedFrom = lineageFromSpec(node.metadata?.copiedFrom);
+    const spatialJoin = node.metadata?.spatialJoin;
     createCodeNode(node.type, {
       nodeId: node.id,
       code: node.content,
@@ -103,6 +104,7 @@ export function useAgentCanvasMutations(): void {
       title: node.title,
       ...(widgets.length ? { widgets } : {}),
       ...(copiedFrom.length ? { copiedFrom } : {}),
+      ...(spatialJoin ? { spatialJoin } : {}),
     });
   };
 

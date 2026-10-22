@@ -628,7 +628,7 @@ class TestNodeBuilderComposite:
         assert 'curio_data_path("<id>")' in text
         assert '"dataset.discover"' in text
         assert "do not propose in that same turn" in text
-        assert '"synthetic": true' in text
+        assert "synthetic data ONLY when the user explicitly asked for made-up data in their own words" in text
         assert "Never invent a filename" in text
         assert "ask the user for a path or URL instead of proposing" in text
 
@@ -1082,7 +1082,11 @@ class TestResearcher:
         # fallback is retired (plan a-few-things-snuggly-goblet, step 6).
         # 2026-10-22: two views link directly, and a Data Pool goes between
         # them only in its four cases (owner, 10-21; PR #1058).
-        "94f195692c47d9f3e881d11a3c8dfa08730e60b46a3f55c72ba3c5149607d619"
+        # 2026-10-22: a planned Spatial Join says how it joins in
+        # "spatialJoin"; and the text that promised what the code refuses
+        # goes: a plan carrying code, a Topology verdict ending every applied
+        # result, and workflow.plan.create decomposing a task (plan step 11).
+        "ef3dafa1ef3537c1324716a4a1fbecd2e44a411d22570da93ff928618a9afa43"
     )
 
     def test_manifest_surface(self):

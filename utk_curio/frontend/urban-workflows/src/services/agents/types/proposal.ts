@@ -33,6 +33,13 @@ export interface AgentPlanWidget {
   options?: Record<string, unknown>;
 }
 
+/** A Spatial Join's operation and output, as a planned or created one sets
+ * them (`metadata.spatialJoin`). */
+export interface AgentSpatialJoinSetting {
+  predicate?: string;
+  output?: "pairs" | "counts";
+}
+
 /** #662: a scenario a plan saves, on the review card. */
 export interface AgentPlanScenario {
   name: string;
@@ -206,10 +213,12 @@ export interface AgentProposalPart {
       /** dev/67-5: expected input/output one-liner for the plan card. */
       expects?: string;
       /** #662: the widgets it declares, the scenario it is in, and for a
-       * copy the ref of the node it copies. */
+       * copy the ref of the node it copies. A Spatial Join's operation and
+       * output. */
       widgets?: AgentPlanWidget[];
       scenario?: string;
       copyOf?: string;
+      spatialJoin?: AgentSpatialJoinSetting;
     }>;
     edgeCount: number;
     /** dev/67-8: the connection stage's labeled, index-stable edge rows. */
@@ -255,8 +264,14 @@ export interface AgentCreatedNodePayload {
   /** dev/89: optional display title persisted on the spec node. */
   title?: string;
   /** dev/89: canonical persisted appearance (backend-normalized). #662: the
-   * node's widgets, and for a copy the ids it descends from. */
-  metadata?: { appearance?: { backgroundColor?: string }; widgets?: AgentPlanWidget[]; copiedFrom?: string[] };
+   * node's widgets, and for a copy the ids it descends from. A Spatial
+   * Join's operation and output. */
+  metadata?: {
+    appearance?: { backgroundColor?: string };
+    widgets?: AgentPlanWidget[];
+    copiedFrom?: string[];
+    spatialJoin?: AgentSpatialJoinSetting;
+  };
 }
 
 /** Apply-endpoint response (dev/41 base + the dev/48/52 bridge payloads). */
