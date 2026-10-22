@@ -38,7 +38,7 @@
         "content": "",
         "out": "DEFAULT",
         "in": "DEFAULT",
-        "goal": "Fan augmented buildings out to map and plot; route brush selections back from plot to map.",
+        "goal": "Feed the augmented buildings to the map and the plot, marking the buildings the plot's brush selects.",
         "metadata": {
           "keywords": []
         }
@@ -66,7 +66,7 @@
         "content": "{\n  \"plot\": {\n    \"dataRef\": \"table_osm_buildings\",\n    \"mark\": \"bar\",\n    \"axis\": [\n      \"height_m\",\n      \"@transform\"\n    ],\n    \"title\": \"Chicago Loop building heights\",\n    \"transform\": {\n      \"preset\": \"binning-1d\",\n      \"options\": {\n        \"bins\": 15\n      }\n    },\n    \"events\": [\n      \"brushX\"\n    ]\n  }\n}",
         "out": "DEFAULT",
         "in": "DEFAULT",
-        "goal": "Show a brushable histogram of normalised heights; brushing routes through the pool to highlight buildings on the 3D map.",
+        "goal": "Show a brushable histogram of normalised heights; brushing highlights the matching buildings on the 3D map through the pool.",
         "metadata": {
           "keywords": []
         }
