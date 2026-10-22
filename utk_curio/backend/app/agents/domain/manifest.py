@@ -39,6 +39,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from utk_curio.backend.app.agents.domain import agent_text
+from utk_curio.common import shared_constants
 
 # ── identifier grammars ─────────────────────────────────────────────────────
 # One segment of an agent id, as of a Discovery source id (``source_id._SEG``).
@@ -62,8 +63,9 @@ VERSION_RE = re.compile(r"^\d+\.\d+\.\d+(?:[-+][A-Za-z0-9.-]+)?$")
 _ASSET_PATH_RE = re.compile(r"^[A-Za-z0-9_.][A-Za-z0-9_./-]*$")
 
 #: The manifest category vocabulary, exported so the catalog facets rail on
-#: exactly these keys instead of restating them.
-AGENT_CATEGORIES = ("data", "node", "canvas", "package", "evaluate")
+#: exactly these keys instead of restating them. ``agentCategories.json`` in the
+#: frontend's ``src/contracts/`` holds it for the agent palette too.
+AGENT_CATEGORIES: tuple[str, ...] = tuple(shared_constants.read("agentCategories")["categories"])
 _CATEGORIES = AGENT_CATEGORIES
 _EXECUTIONS = ("foreground", "background")
 _REVIEW_POLICIES = ("report-only", "review-before-apply")

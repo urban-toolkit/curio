@@ -35,8 +35,8 @@ This document describes the internal architecture of Curio for contributors who 
 * [Interactions and Propagation](#interactions-and-propagation)
 * [Provenance Tracking](#provenance-tracking)
 * [The Trill Dataflow Format](#the-trill-dataflow-format)
+* [Shared Constants](#shared-constants)
 * [Agent text](#agent-text)
-  * [Generated Contracts](#generated-contracts)
   * [The Autark Schema](#the-autark-schema)
 * [Agent Prompt Composition](#agent-prompt-composition)
 * [LLM Configurations and Resolution](#llm-configurations-and-resolution)
@@ -613,8 +613,9 @@ text in `data.code` (the spec's `content`) and the color in
   HTML (`skipHtml`), an element allowlist, URLs kept only when https (`httpsOnly`),
   links in a new tab with the arrow, and an image as its alt text.
 - `utils/noteColors.ts` derives the background, ink and link color the way
-  `packages/domain/node_appearance.py` does, from the palette and inks
-  `src/generated/noteColors.ts` copies from it.
+  the rules of `packages/domain/node_appearance.py` do, from the palette and
+  inks of `src/contracts/noteColors.json`, which `packages/application/note_palette.py`
+  reads and hands those rules (see [Shared Constants](#shared-constants)).
 - A note template is a template with a behavior whose content kind is `note`
   (`is_note_template` in `packages/application/templates.py`): no editor, no
   input, no widgets. `presentation_templates`, the roster's `presentation` flag and
@@ -943,7 +944,7 @@ decides whether they go in as the spec's own `data` (one input read by the whole
 spec) or as named `datasets`;
 [`autkInput.ts`](../utk_curio/frontend/urban-workflows/src/utils/autkInput.ts)
 turns the frames into the tables an Autark document names. Both name an input
-`input_<k>` through `inputTableName`, generated from `contracts.py`. A
+`input_<k>` through `inputTableName` (`src/contracts/autkGrammar.ts`). A
 `DataFrame`'s geometry column is found by value in both, through
 [`geometryField.ts`](../utk_curio/frontend/urban-workflows/src/utils/geometryField.ts).
 
@@ -963,8 +964,8 @@ starter its package ships (`opensWithPackageStarter`,
 [`registry/packageStarter.ts`](../utk_curio/frontend/urban-workflows/src/registry/packageStarter.ts)),
 so a package template whose input arrives before the starters feed still opens
 with its starter and widgets. Each ladder's rules, in order, and the dtype
-roles are generated into `src/generated/visDefaults.ts` (see
-[Generated Contracts](#generated-contracts)). Both mark themselves errored on a failed run,
+roles are in `src/contracts/visDefaults.json`, which the backend reads too (see
+[Shared Constants](#shared-constants)). Both mark themselves errored on a failed run,
 so a node they feed shows `upstream-errored`.
 
 ### Resolving Geometry in Vega-Lite Nodes
@@ -1067,9 +1068,9 @@ A source loads as the autk-db layer type its frame carries: a layer record's `ty
 
 A `DataFrame` becomes a FeatureCollection from its one geometry column; with none or several, it is refused with a reason, as is an input type the node cannot read, and the tables the document expected from it count as zero rows from upstream (`no-input-rows`, with the reason). A feature without a geometry keeps its row: autk-db refuses a row with no geometry, so it gets an empty one (a GeometryCollection with none in it), which a map draws as nothing and a plot still counts. `loadableFeatures` (`autkDataCompile.ts`) is that rule for every table Curio hands autk-db: a node's inputs, and a data section's GeoJSON sources in the sandbox and in the browser. autk-db reads a layer's kind off its first row, so a first row with no geometry trades places with the first that has one, and it stores the rows whose geometry is empty before the others. Map picks, plot selections and highlights go through the table's load and map orders (`loadableSource`), so a position always names the input's row.
 
-The names `input_<k>` are defined once, as `INPUT_TABLE_PREFIX` and `input_table_name` in `contracts.py`; the Vega-Lite and Autark paths import the generated `inputTableName`, and the preamble states it (see [Generated Contracts](#generated-contracts)).
+The names `input_<k>` are defined once, as the prefix in `src/contracts/autkGrammar.json`: `contracts.py` reads it into `INPUT_TABLE_PREFIX` and `input_table_name`, the Vega-Lite and Autark paths import `inputTableName` (`src/contracts/autkGrammar.ts`), and the preamble states it (see [Shared Constants](#shared-constants)).
 
-**One view.** A node draws one view: one map, on the one canvas it hands autk-grammar as `targets.map`, or one plot, in the one pane it hands it as `targets.plot`. autk-grammar draws every map of a `map` list on that canvas, and draws a plot only into a pane. So a document with a map and a plot, or whose `map` or `plot` lists more than one, is refused before anything runs, the WebGPU probe included: `autkOneViewProblem`, generated from `autk_one_view_problem` in `contracts.py`, gives the node's error, `AUTK_ONE_VIEW`, which names the fix (each view in its own Autark node, linked with interaction edges). The error marks the node errored and reaches Solve through the node's runtime report. The agents' document check refuses such a document with the same sentence before it is written (see [The Autark Schema](#the-autark-schema)), and the preamble's lines on `map` and `plot` say it. A `map` or `plot` written as a list of one is read as that map or plot, so the layer counts, the dropped `dataRef`s, the picked layer and the plot's layer read it.
+**One view.** A node draws one view: one map, on the one canvas it hands autk-grammar as `targets.map`, or one plot, in the one pane it hands it as `targets.plot`. autk-grammar draws every map of a `map` list on that canvas, and draws a plot only into a pane. So a document with a map and a plot, or whose `map` or `plot` lists more than one, is refused before anything runs, the WebGPU probe included: `autkOneViewProblem` (`src/contracts/autkGrammar.ts`, the twin of `autk_one_view_problem` in `contracts.py`) gives the node's error, the sentence `autkGrammar.json` holds as `oneView` (`contracts.AUTK_ONE_VIEW`), which names the fix (each view in its own Autark node, linked with interaction edges). The error marks the node errored and reaches Solve through the node's runtime report. The agents' document check refuses such a document with the same sentence before it is written (see [The Autark Schema](#the-autark-schema)), and the preamble's lines on `map` and `plot` say it. A `map` or `plot` written as a list of one is read as that map or plot, so the layer counts, the dropped `dataRef`s, the picked layer and the plot's layer read it.
 
 **Framing.** autk-map's flat camera starts 10,000 world units above the map's origin whatever its layers hold, and the grammar's document has no camera. Once the grammar has run, `frameMaps` ([`autkMapView.ts`](../utk_curio/frontend/urban-workflows/src/adapters/node/autkMapView.ts)) frames each map it drew (autk-grammar's `maps`, one for each `map` entry of the document, which every reader of a node's maps takes through `grammarMaps`) on the extent of the geometry its layers drew (autk-map keeps it relative to the map's origin) with the arithmetic of autk-map's terrain mode (`fitCameraToTerrainBounds`: the limiting side fills the view with 8% to spare), through the camera's own `resetCamera` and `resize`. The camera is raised by the tallest building and stays under half of its far plane. A map drawn while hidden is framed when it is first shown, and the map's R key frames it again.
 
@@ -1176,7 +1177,7 @@ A node the browser renders (Vega-Lite, Autark) can run without an error and stil
 
 A renderer that already knows why nothing was drawn (a `geoshape` over data with no geometry column, for example) passes that sentence as `explanation`, and a `nothing-drawn` message carries it in place of the generic reason. One that knows why its input cannot be drawn (a `DataFrame` with no geometry column, a refused input type) passes `inputProblem`: a `no-input-rows` message carries it, the upstream stays at fault, and a partial note adds it. A count the renderer could not make stays `undefined`, and an uncounted render gets no verdict. The default Autark data path is the common case: the sandbox hands back a DuckDB artifact reference rather than the layers, so a data-only node there lists the tables it loaded without claiming anything about their rows. Autark counts are taken before empty sources are dropped, so an empty table is still known to exist.
 
-The harness reads the cause from the `kind`, never from the message. [`result_shape.py`](../utk_curio/backend/app/agents/domain/result_shape.py) asks `is_document_at_fault`, which reads the same table: a cause at fault turns a valid document's round into a failed round and asks for a correction, `no-input-rows` leaves the document untouched and reports the upstream, and a cause the backend does not recognize is treated as at fault. The prefix, the cause names and the at-fault table are defined once and generated for the frontend (see [Generated Contracts](#generated-contracts)).
+The harness reads the cause from the `kind`, never from the message. [`result_shape.py`](../utk_curio/backend/app/agents/domain/result_shape.py) asks `is_document_at_fault`, which reads the same table: a cause at fault turns a valid document's round into a failed round and asks for a correction, `no-input-rows` leaves the document untouched and reports the upstream, and a cause the backend does not recognize is treated as at fault. The prefix, the cause names and the at-fault table are defined once, in `src/contracts/renderCauses.json`, which the frontend imports and the backend reads (see [Shared Constants](#shared-constants)).
 
 ### Running Python Code
 
@@ -1584,6 +1585,29 @@ Full field reference, ownership rules, and the CLI for checking your own project
 
 ---
 
+## Shared Constants
+
+Some vocabularies and tables are read by both the frontend and the backend. Each is one JSON file in [`utk_curio/frontend/urban-workflows/src/contracts/`](../utk_curio/frontend/urban-workflows/src/contracts/): the frontend imports it, and the backend reads it through [`utk_curio/common/shared_constants.py`](../utk_curio/common/shared_constants.py) when the module that holds its values is imported. Nothing is generated, so a change to a file reaches both sides.
+
+| File | What it holds | Frontend | Backend |
+|---|---|---|---|
+| `renderCauses.json` | The empty-render kind prefix, and each cause a render can draw nothing for: whether it blames the document, and what it means (see [Render Outcomes](#render-outcomes)) | `utils/renderOutcome.ts` | `contracts.EMPTY_RENDER_KIND`, `RENDER_CAUSES`, `is_document_at_fault` |
+| `solveStopReasons.json` | Each reason a node's repair loop stops for (`stoppedBy`), and the phrase it reads as (see [The Solve loop](#the-solve-loop)) | The attempts card and the per-node Solve row (`AgentSolveAttemptsCard.tsx`) | `contracts.SOLVE_STOP_REASONS` and `STOPPED_BY_PHRASES`, which the failure sentences read |
+| `agentCategories.json` | The categories an agent manifest can declare | The agent palette (`agentCategoryStyle.ts`) | `manifest.AGENT_CATEGORIES`, for the validator and the catalog's facets |
+| `noteColors.json` | A note's palette, its default color, the two inks and the two link colors, and the contrast an ink must reach (see [Notes](#notes)) | `utils/noteColors.ts` | `packages/application/note_palette.py`, which hands the palette to the rules of `packages/domain/node_appearance.py`: the domain layer reads no file |
+| `autkGrammar.json` | The Autark grammar's top-level families, the prefix of the names a grammar node's inputs are read by (`input_<k>`), and what a document with more than one view is told (see [Referencing Upstream Data in Autark Nodes](#referencing-upstream-data-in-autark-nodes)) | `contracts/autkGrammar.ts`, `utils/autkSpecKind.ts` | `contracts.INPUT_TABLE_PREFIX` and `AUTK_ONE_VIEW` |
+| `visDefaults.json` | What a visualization node does with its input by itself: the column roles and the pandas dtypes each role comes from, the Vega-Lite and Autark starter ladders (each rule's id, condition, mark or family and description, in ladder order), the Vega-Lite `$schema` URL, and the column names, URL extensions and share of image values behind Simple View's image columns | `starterSpec.ts`, `vegaDefaultSpec.ts`, `autkDefaultSpec.ts` and `imageColumns.ts`, which keep each rule's builder, keyed by its id, and the matching logic | `contracts.py`'s tables, which the prompt fields render into the preamble |
+
+- **Where.** The folder is in the frontend's source, so the Docker image's frontend build, which copies only `utk_curio/frontend/`, and the Jest job and the release's frontend build, which run before or without Python, read the files where they are. A clone and the Docker image keep the folder there for the backend too, and a pip install has it inside its package, which carries the frontend's source (`MANIFEST.in` and `include-package-data`). `test_pip_wheel_layout.py` checks that a pip install's backend reads them there.
+- **Reading.** `shared_constants.read` parses a file as `JSON.parse` does, except that an object naming one key twice raises, where `JSON.parse` and `json.loads` keep the last value.
+- **Types.** Where a vocabulary is an object's keys (the render causes, the stop reasons, the note colors), its TypeScript type is the keys of the imported file. A type over a list is declared beside the table that routes it: `ColumnRole` beside `groupColumns`, the Autark families as the keys of `FAMILY_KIND`, `AgentCategory` as the keys of `AGENT_CATEGORY_ICON`. A Jest test holds each table to its file.
+- **Code over them.** `inputTableName` and `autkOneViewProblem` in `contracts/autkGrammar.ts` are the twins of `contracts.input_table_name` and `autk_one_view_problem`; `autkGrammar.cases.json` beside them holds the cases Jest and pytest both run.
+- **Tests.** `test_shared_constants.py` holds every backend constant to its file, the Autark families to the vendored schema's, and finds no Python module spelling a shared sentence or palette color of its own. `src/tests/contracts/sharedConstants.test.ts` does the same for the frontend.
+
+To change a shared value, edit its file. A new Autark family goes into `autkGrammar.json`: `test_shared_constants.py` fails until it matches the vendored schema, and Jest until `FAMILY_KIND` routes it.
+
+---
+
 ## Agent text
 
 Everything an agent reads is hand-written Markdown in `agents/`, the Agent Catalog's folder, and the backend renders it when it starts. No render is generated or committed, and `utk_curio/` holds none of the text: it holds the loader, the code that computes the facts the text states, and the checks.
@@ -1598,7 +1622,7 @@ Everything an agent reads is hand-written Markdown in `agents/`, the Agent Catal
 - **When it is read.** `create_app` calls [`agent_text.render_at_start`](../utk_curio/backend/app/agents/domain/agent_text.py), which renders each page the base entry lists and each prompt each agent Curio ships names, once per process; a marker error stops the start and names the file. Every read returns that render (`agent_text.read`): an agent's prompts (`builtin.read_prompt_text`), a page by its path (`builtin.read_page`), a section of a page by its name (`agent_text.section`), the worked examples' index and the delegated package contract. Under `curio.py start --dev` (`CURIO_DEV=1`), a read renders the file again, so an edit shows on the next run. A user's own prompts are never rendered: they are read as written, `{{` included.
 - **Checks.** [`test_agent_text.py`](../utk_curio/backend/tests/test_agents/test_agent_text.py) starts the backend and fails on a file in `agents/` no manifest lists or a marker left in a render. It also checks that a marker no field defines stops the start, that a page cannot include itself, that a `curio:` path cannot lead out of the base entry, and that no list shows the base entry. [`test_generated_contracts.py`](../utk_curio/backend/tests/test_agents/test_generated_contracts.py) checks each fact the text states against the code that owns it; `test_prompt_references.py` checks every tool, capability, template, helper, dataset and model a page or prompt names against the code and catalogs that define it; `test_pip_wheel_layout.py` renders every page from a pip install. [`test_python_prose.py`](../utk_curio/backend/tests/test_agents/test_python_prose.py) checks that each text the runtime composes a run's turns from is its page's, that each number and name it states is filled from the code that owns it, and that none of it is still a string in Python. [`test_knowledge_pages.py`](../utk_curio/backend/tests/test_agents/test_knowledge_pages.py) fails on a knowledge page no page or prompt includes, a built-in template no page names by its `{{template.label:...}}` marker, a kind of chip the runtime resolves (the shared cases table) that no page shows, and a function node code calls that the functions page does not give. `test_node_functions.py` holds the functions page's shapes and ties the arguments it says name a catalog's item to the calls the backend resolves ids from (`DATASET_PATH_CALL_RE`, `MODEL_CALL_RE`, `SECRET_CALL_RE`), and [`test_node_functions_sandbox.py`](../utk_curio/backend/tests/test_node_functions_sandbox.py) compares the page with the functions node code gets in process, in the isolated child and in JavaScript.
 
-- **Prompt fields.** `contracts.PROMPT_FIELDS` is the one registry of what a page or prompt may state from code, and each field is one function that reads its source when the file is rendered. Its module-level imports are the standard library only: a field imports the module that owns its fact inside its own function.
+- **Prompt fields.** `contracts.PROMPT_FIELDS` is the one registry of what a page or prompt may state from code, and each field is one function that reads its source when the file is rendered. Its module-level imports are the standard library and the shared constants' reader: a field imports the module that owns its fact inside its own function.
 
   | Field | Renders | Source |
   |---|---|---|
@@ -1610,7 +1634,7 @@ Everything an agent reads is hand-written Markdown in `agents/`, the Agent Catal
   | `inputs.stacked_column:<column>` | The chip of a column of every input's rows stacked, `[!! inputs.sunlight !!]` | `code_references.stacked_reference_inner` |
   | `selections.reference:<name>`, `selections.id_cap` | The reference node code places a selection tag by, `[!! selection picked !!]`, and the most ids a tag holds | `code_references.selection_reference_inner`, `SELECTION_ID_CAP` |
   | `builtin.not_code` | The built-in templates whose nodes hold no Python or JavaScript code, one per line | The built-in manifest, by the rule `builtin.control` uses |
-  | `note.palette` | The colour names a node's appearance accepts | `node_appearance.NAMED_COLORS` |
+  | `note.palette` | The colour names a node's appearance accepts | `note_palette.NOTE_PALETTE` |
   | `egress.calls_per_run` | The web calls one run may make | `egress_policy.MAX_CALLS_PER_RUN` |
   | `candidates.rows_per_lane` | The rows each lane of a candidates card holds | `content._CANDIDATES_MAX_ROWS_PER_LANE` |
   | `node_context.runtime_keys` | The keys of a node row's `runtime` block | `node_context.RUNTIME_BLOCK_KEYS` |
@@ -1624,32 +1648,11 @@ Everything an agent reads is hand-written Markdown in `agents/`, the Agent Catal
   | `image.columns`, `image.column:<name>`, `image.extensions`, `image.threshold` | The column names Simple View checks for images first, one of them by name, the extensions an image URL has elsewhere, and the share of a column's values that must be images | `contracts.IMAGE_COLUMNS`, `IMAGE_EXTENSIONS`, `IMAGE_MATCH_THRESHOLD` |
   | `suggested_prompts.max_chars`, `suggested_prompts.alternatives` | How many characters a suggested prompt holds, and how many alternatives a block holds | `content._PROMPT_MAX_CHARS`, `_MAX_ALTERNATIVES` |
   | `candidates.source_types`, `candidates.name_chars`, `candidates.text_chars` | The source types a candidates row may name, joined with pipes, and how many characters its name and each other text field hold | `content._CANDIDATE_SOURCE_TYPES`, `_CANDIDATE_NAME_MAX_CHARS`, `_CANDIDATE_TEXT_MAX_CHARS` |
-  | `note.palette_choices`, `backend.timeout_class_choices` | The note palette joined with pipes, and the timeout classes joined with " \| ", as a JSON string lists them | `node_appearance.NAMED_COLORS`, `backend_contract.TIMEOUT_CLASSES` |
+  | `note.palette_choices`, `backend.timeout_class_choices` | The note palette joined with pipes, and the timeout classes joined with " \| ", as a JSON string lists them | `note_palette.NOTE_PALETTE`, `backend_contract.TIMEOUT_CLASSES` |
   | `models.search_max_rows`, `models.max_labels` | The most rows `models.search` returns, and the most labels a row lists | `contracts.MODELS_SEARCH_MAX_ROWS`, `MODEL_LABELS_MAX` |
   | `tools.wire_name:<tool id>`, `tools.delegate` | The name a run on native tools calls a tool by, and the native delegation tool's name | `tool_names.wire_name`, `DELEGATE_TOOL` |
 
 To change agent text, edit its file in `agents/` (the base entry's README walks through it). A fact the code owns that no field states yet is a new field in `PROMPT_FIELDS`.
-
-### Generated Contracts
-
-Some contracts are read by both Python and TypeScript. Each one is defined once and the TypeScript copy is generated from it, so the copies cannot disagree.
-
-- **Source module.** [`utk_curio/backend/app/agents/domain/contracts.py`](../utk_curio/backend/app/agents/domain/contracts.py) holds each definition and one render function per output. It lives in the app package, so runtime code imports it from an installed wheel. Python callers such as `result_shape.py`, `services.py` and `execution/runtime_journal.py` import the values directly.
-- **Registry.** `contracts.GENERATED_OUTPUTS` maps each repo-relative output path to the function that renders it. The generator and the drift test both iterate it, so a new output is one entry.
-- **Generator.** [`scripts/generate_contracts.py`](../scripts/generate_contracts.py) is a thin CLI over the registry. It writes every output that differs from a fresh render; with `--check` it writes nothing, lists the stale files and exits non-zero.
-- **Outputs.** Committed to the repository. Each starts with a header that names the generator and the source module, and passes the frontend's `prettier` and `eslint` configs as generated.
-
-  | Output | Contract |
-  |---|---|
-  | `utk_curio/frontend/urban-workflows/src/generated/renderCauses.ts` | The empty-render kind prefix, the render causes, the `RenderCause` type and which causes blame the document (see [Render Outcomes](#render-outcomes)) |
-  | `utk_curio/frontend/urban-workflows/src/generated/autkGrammar.ts` | The Autark grammar's top-level families, the names a grammar node's inputs are read by, `input_<k>`, and the one view a node draws: `AUTK_ONE_VIEW`, what a document with more than one view is told, and `autkOneViewProblem`, the check that tells it (see [Referencing Upstream Data in Autark Nodes](#referencing-upstream-data-in-autark-nodes)) |
-  | `utk_curio/frontend/urban-workflows/src/generated/agentCategories.ts` | The agent manifest's category vocabulary and the `AgentCategory` type, from `manifest.AGENT_CATEGORIES` |
-  | `utk_curio/frontend/urban-workflows/src/generated/solveStopReasons.ts` | Why a node's repair loop stopped (`stoppedBy`), the `StopReason` type and the phrase each reason reads as, from `SOLVE_STOP_REASONS`; the server's failure sentences read the same table (see [The Solve loop](#the-solve-loop)) |
-  | `utk_curio/frontend/urban-workflows/src/generated/visDefaults.ts` | What a visualization node does with its input by itself, from the tables in `contracts.py`: the column roles and the pandas dtype each role comes from; the Vega-Lite and Autark starter ladders, each rule's id, condition, mark or family and description in ladder order; the Vega-Lite `$schema` URL; and the column names, URL extensions and share of image values behind Simple View's image columns. `starterSpec.ts`, `vegaDefaultSpec.ts`, `autkDefaultSpec.ts` and `imageColumns.ts` read it and keep each rule's builder, keyed by its id, and the matching logic |
-  | `utk_curio/frontend/urban-workflows/src/generated/noteColors.ts` | A note's palette, its default color, the two inks and two link colors, and the contrast an ink must reach, from `packages/domain/node_appearance.py`; `utils/noteColors.ts` derives a Note's colors from them (see [Notes](#notes)) |
-- **Drift test.** [`test_generated_contracts.py`](../utk_curio/backend/tests/test_agents/test_generated_contracts.py) re-renders every registered output and fails on any difference, printing the diff and the command to run. It is pure Python, so it runs in the normal backend suite and a hand edit to an output turns it red.
-
-To change a contract, edit `contracts.py`, run `python scripts/generate_contracts.py`, and commit the source and the regenerated outputs together.
 
 ### The Autark Schema
 
@@ -1910,7 +1913,7 @@ Solve runs from the Dataflow Builder's **Solve** over an applied plan, or from *
 | still fails | Nothing is written. The node shows failed, and every attempt appears in the chat as its own card, with the exception line, the frame that raised it, and the code that attempt ran. |
 | cannot run (sandbox unreachable) | The node stays pending with the reason, never failed: an outage is not a content failure. |
 
-The loop reports why it stopped as `stoppedBy`, and the failure sentences, the attempts card and the per-node Solve row say it with that reason's phrase, from `SOLVE_STOP_REASONS` in [`contracts.py`](../utk_curio/backend/app/agents/domain/contracts.py) (see [Generated Contracts](#generated-contracts)):
+The loop reports why it stopped as `stoppedBy`, and the failure sentences, the attempts card and the per-node Solve row say it with that reason's phrase, from [`solveStopReasons.json`](../utk_curio/frontend/urban-workflows/src/contracts/solveStopReasons.json), which the frontend imports and `contracts.SOLVE_STOP_REASONS` reads (see [Shared Constants](#shared-constants)):
 
 | `stoppedBy` | When | Phrase |
 |---|---|---|
@@ -2562,7 +2565,7 @@ created empty for Solve to write.
 | `src/constants.ts` | `SupportedType` and `EdgeType` enums, and `NodeType`, the built-in template ids (node types live in package manifests) |
 | `src/adapters/node/` | Built-in behavior hook implementations (code, vega, autk family, …) |
 | `src/utils/renderOutcome.ts` | The empty-render decision every browser renderer calls (see [Render Outcomes](#render-outcomes)) |
-| `src/generated/` | Contract copies written by `scripts/generate_contracts.py`; never edited by hand |
+| `src/contracts/` | The constants the frontend shares with the backend, one JSON file each, and `autkGrammar.ts`, the code over two of them (see [Shared Constants](#shared-constants)) |
 | `src/ConnectionValidator.ts` | Edge validation logic |
 | `src/api/` | API client wrappers (`projectsApi`, `connectionKeysApi`, `llmConfigsApi`, `monitorApi`); `authApi` lives at `src/utils/authApi.ts` and the packages client in `src/services/packages/` |
 | `src/services/packages/` | The node-package service layer (memo dev/143): `packagesApi` (the request object) + `packagesBlobTransport` (sideload, archive download, factory build, `triggerBlobDownload`) + `packageBackendApi` (the only transports), `usePackageCatalog` (THE catalog hook the canvas drawers and the `/catalog/nodes` and `/catalog/models` pages render, scope and `packageKind` as options, with `probeInstallConflicts` the one pre-install probe), the pure logic the surfaces share (`packageListUtils`, `forkPackageLineage`, `packageDependencyNotice`, `packageRestartCopy`, `factoryDraft`), the model package helpers (`modelPackages`, `modelApplication`, `modelCode`) and every package type by concern under `types/` (`SortMode` included). Import from its barrel, `services/packages`; `tests/packages/servicesBarrel.test.ts` enforces that the layer renders nothing, that no node-catalog surface reaches transport, and that the layer never imports `registry/` at runtime: the registry consumes the layer, never the reverse |
@@ -2608,7 +2611,7 @@ created empty for Solve to write.
 | `backend/app/datasets/infrastructure/` | Storage helpers, file metadata, output paths, catalog utilities |
 | `backend/app/datasets/schemas/` | Request and catalog-item serialization schemas |
 | `backend/app/agents/routes/` | `/api/agents/*` endpoints, one module per resource (`catalog`, `lifecycle`, `attachments`, `proposals`, `turns`, `solve`, `llm`); `common.py` holds the blueprint and the shared helpers; the route table is a contract test (`tests/test_agents/route_table.json`) |
-| `backend/app/agents/domain/contracts.py` | The single source of every generated contract, and the registry of its outputs (see [Generated Contracts](#generated-contracts)); the prompt fields that fill the markers of the agents' text (see [Agent text](#agent-text)) |
+| `backend/app/agents/domain/contracts.py` | The contracts the code and the agents agree on: the prompt fields that fill the markers of the agents' text (see [Agent text](#agent-text)), and the constants it reads from the files it shares with the frontend (see [Shared Constants](#shared-constants)) |
 | `backend/app/agents/domain/agent_text.py` | The loader of the agents' text: the base entry and its pages (`curio:<path>`, kept inside it), the start-up render every read returns, and `--dev`'s render at each read (see [Agent text](#agent-text)) |
 | `backend/app/agents/schemas/autk-grammar.v1.json` | The vendored Autark grammar schema, with its release record beside it (see [The Autark Schema](#the-autark-schema)) |
 | `backend/app/agents/domain/document_validation.py` | Validates the documents agents write (Vega-Lite, Autark) before they reach a node |

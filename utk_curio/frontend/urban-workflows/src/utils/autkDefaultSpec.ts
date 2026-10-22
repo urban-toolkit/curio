@@ -15,7 +15,7 @@
  *
  * Pure, with no autk import, so it is testable under jest.
  */
-import { AUTK_STARTER_LADDER, type AutkStarterRuleId } from "../generated/visDefaults";
+import visDefaults from "../contracts/visDefaults.json";
 import { autkTableName } from "./autkInput";
 import { resolveGeometryField } from "./geometryField";
 import type { GrammarFrame, GrammarInput } from "./grammarInput";
@@ -46,12 +46,12 @@ export interface AutkStarterRule {
 /**
  * Each rule's document past its family key, by rule id. The rule itself (its
  * place in the ladder, the layers and columns it needs and the family it
- * writes) is generated into `AUTK_STARTER_LADDER`, which the agents' shared
- * preamble states too.
+ * writes) is in `autkStarterLadder` of contracts/visDefaults.json, which the
+ * agents' shared preamble states too; a test holds these ids to the ladder's,
+ * one builder per rule.
  */
-export const AUTK_STARTER_BUILDERS: Record<
-  AutkStarterRuleId,
-  (layers: StarterLayer[]) => Record<string, unknown>
+export const AUTK_STARTER_BUILDERS: Readonly<
+  Record<string, (layers: StarterLayer[]) => Record<string, unknown>>
 > = {
   layers: (layers) => ({ layerRefs: layers.map((layer) => ({ dataRef: layer.name })) }),
   "geometry+quantitative": ([layer]) => ({
@@ -76,12 +76,12 @@ export const AUTK_STARTER_BUILDERS: Record<
 };
 
 /**
- * The ladder: first match wins, in the generated order. A rule holds when the
+ * The ladder: first match wins, in the file's order. A rule holds when the
  * input has as many layers as it needs and every layer has the columns it
  * needs. The prose counterpart is the table in `docs/USAGE.md`; adding or
  * reordering a rule trips `autkDefaultSpec.test.ts`.
  */
-export const AUTK_STARTER_RULES: AutkStarterRule[] = AUTK_STARTER_LADDER.map(
+export const AUTK_STARTER_RULES: AutkStarterRule[] = visDefaults.autkStarterLadder.map(
   (rule): AutkStarterRule => ({
     id: rule.id,
     when: (layers) =>

@@ -1,0 +1,21 @@
+{
+  "emptyRenderKind": "empty-render",
+  "causes": {
+    "no-layers": {
+      "documentAtFault": true,
+      "description": "Every layer the document asks for names data the dataflow does not produce."
+    },
+    "no-input-rows": {
+      "documentAtFault": false,
+      "description": "Zero rows arrived from upstream, so the upstream node is what must change."
+    },
+    "nothing-drawn": {
+      "documentAtFault": true,
+      "description": "Rows arrived and the document drew none of them."
+    },
+    "empty-source": {
+      "documentAtFault": true,
+      "description": "The node's own data sources loaded zero rows."
+    }
+  }
+}

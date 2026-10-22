@@ -18,7 +18,7 @@
  * No autk import here: this stays testable under jest.
  */
 import type { FeatureCollection } from "geojson";
-import { inputTableName } from "../generated/autkGrammar";
+import { inputTableName } from "../contracts/autkGrammar";
 import { loadableFeatures, requestedLayerTables } from "../adapters/node/autkDataCompile";
 import { readableBuildingProperties } from "./buildingHeight";
 import { detectCoordinateFormat } from "./geoCrs";
