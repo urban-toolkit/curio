@@ -295,12 +295,16 @@ export function EditFeaturesBody({
     const titles = circleTitles(nodeId, flow?.nodes ?? [], flow?.edges ?? []);
     return Object.fromEntries(Object.entries(titles).map(([k, title]) => [`input_${k}`, title]));
   }, [nodeId, flow?.nodes, flow?.edges]);
+  // The layer the node's own edits apply to: the one its code names, else
+  // the only one there is, as the map's preview (`targetOf`) and a run read it.
+  const inputNames = (layers ?? []).map((l) => l.name ?? l.table);
+  const ownLayer = settings?.layer ?? (inputNames.length === 1 ? inputNames[0] : undefined);
   const workbenchLayers = useMemo<WorkbenchLayer[]>(() => {
     const input = (layers ?? []).map((l) => {
       const name = l.name ?? l.table;
       const label = l.name ? l.name : labels[l.table] ?? l.table;
       const ids = keyColumns(l.fc);
-      const saved = settings?.keys?.[name] ?? (name === settings?.layer ? settings?.key : undefined);
+      const saved = settings?.keys?.[name] ?? (name === ownLayer ? settings?.key : undefined);
       const layerKey = saved && ids.includes(saved) ? saved : defaultKey(ids) ?? ids[0];
       return { name, label, table: l.table, ownName: l.name !== null, fc: l.fc as WorkbenchLayer["fc"], key: layerKey };
     });
@@ -314,7 +318,7 @@ export function EditFeaturesBody({
     }));
     return [...input, ...made];
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [layers, labels, settings?.keys, settings?.layer, settings?.key, JSON.stringify(settings?.newLayers ?? [])]);
+  }, [layers, labels, settings?.keys, ownLayer, settings?.key, JSON.stringify(settings?.newLayers ?? [])]);
 
   /** The column an edit names its features by. */
   const keyOf = (edit: FeatureEdit) =>
@@ -561,7 +565,7 @@ export function EditFeaturesBody({
             <LayerWorkbench
               layers={workbenchLayers}
               edits={edits}
-              nodeLayer={settings?.layer ?? null}
+              nodeLayer={ownLayer ?? null}
               writable={editable}
               picked={picked}
               setPicked={setPicked}
