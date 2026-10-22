@@ -685,8 +685,29 @@ _CATALOG_DESC_MAX_CHARS = 200
 _CATALOG_PARAM_MAX_CHARS = 200
 
 
+def _cut(key: str, rows: list, bound: int) -> dict:
+    """``{key: the first *bound* rows}``, and, when it left rows out,
+    ``{key}Elided``: how many, so a model shown a cut list knows it is one
+    (the ``columnsElided`` of ``upstream_schema``). The count comes first, so
+    a result cut at the tool output bound still carries it."""
+    payload: dict = {}
+    if len(rows) > bound:
+        payload[f"{key}Elided"] = len(rows) - bound
+    payload[key] = rows[:bound]
+    return payload
+
+
 def _catalog_search_rows(user_key: str, project_id: str, params: dict) -> list[dict]:
-    """Bounded catalog rows for the dev/50 read tool.
+    """Bounded catalog rows for the dev/50 read tool: the first
+    ``_CATALOG_SEARCH_MAX_ROWS`` of :func:`_catalog_listing_rows`."""
+    return _catalog_listing_rows(user_key, project_id, params)[:_CATALOG_SEARCH_MAX_ROWS]
+
+
+def _catalog_listing_rows(user_key: str, project_id: str, params: dict) -> list[dict]:
+    """Every row of the Data Catalog listing *params* filters, as the
+    catalog.search tool shows a row. A candidate row is checked against
+    these, all of them, since a dataset past the rows a search shows is
+    still one the Data Catalog holds.
 
     Thin wrapper over the datasets domain (`ADR-AG-007`): the acting user
     rides the request context (the datasets service is user-object keyed,
@@ -714,7 +735,7 @@ def _catalog_search_rows(user_key: str, project_id: str, params: dict) -> list[d
         origin=_param("origin"),
     )
     rows = []
-    for item in (listing.get("items") or [])[:_CATALOG_SEARCH_MAX_ROWS]:
+    for item in listing.get("items") or []:
         row = {
             "id": item.get("id"),
             "name": item.get("title"),
@@ -754,9 +775,16 @@ def _row_limit(value: object, bound: int) -> int:
 
 
 def _models_search_rows(user_key: str, params: dict) -> list[dict]:
-    """Bounded rows for ``models.search``: the model packages in *user_key*'s
-    store, the only models its node code runs, each with the line that loads
-    it.
+    """Bounded rows for ``models.search``: the first *limit* (at most
+    ``_MODELS_SEARCH_MAX_ROWS``) of :func:`_models_search_all`."""
+    return _models_search_all(user_key, params)[:_row_limit(params.get("limit"), _MODELS_SEARCH_MAX_ROWS)]
+
+
+def _models_search_all(user_key: str, params: dict) -> list[dict]:
+    """Every row ``models.search`` matches: the model packages in
+    *user_key*'s store, the only models its node code runs, each with the line
+    that loads it, and its labels up to ``_MODEL_LABELS_MAX``, with
+    ``labelsElided`` when it has more.
 
     A thin wrapper over the packages domain (`ADR-AG-007`), which owns the
     listing and the loader line.
@@ -779,11 +807,11 @@ def _models_search_rows(user_key: str, params: dict) -> list[dict]:
             "runtime": block.runtime,
             "origin": "downloaded" if held.in_store else "shipped",
             "description": (manifest.description or "")[:_CATALOG_DESC_MAX_CHARS],
-            "labels": list(block.labels)[:_MODEL_LABELS_MAX],
+            **_cut("labels", list(block.labels), _MODEL_LABELS_MAX),
             "loader": packages.model_loader_line(manifest.package_id),
         })
     rows.sort(key=lambda row: (row["origin"] != "shipped", row["name"].lower()))
-    return rows[:_row_limit(params.get("limit"), _MODELS_SEARCH_MAX_ROWS)]
+    return rows
 
 
 def _execute_examples_read(user_key: str, project_id: str, params: dict) -> tuple[str, str]:
@@ -817,8 +845,10 @@ _PACKAGES_RESOLVE_MAX_DIRNAMES = 8
 
 
 def _packages_catalog_rows(user_key: str, project_id: str, params: dict) -> list[dict]:
-    """Bounded package rows for the dev/84 read tool — a thin wrapper over the
-    packages domain's agent overview (`ADR-AG-007`: one truth, owned there)."""
+    """Every package row the dev/84 read tool matches, each description
+    bounded; the tool shows the first ``_PACKAGES_CATALOG_MAX_ROWS``. A thin
+    wrapper over the packages domain's agent overview (`ADR-AG-007`: one
+    truth, owned there)."""
     from utk_curio.backend.app.packages import service as packages_services
 
     rows = packages_services.agent_catalog_overview(user_key, project_id)
@@ -829,10 +859,7 @@ def _packages_catalog_rows(user_key: str, project_id: str, params: dict) -> list
             r for r in rows
             if needle in f"{r['dirName']} {r['packageId']} {r['name']} {r['description']}".lower()
         ]
-    out = []
-    for r in rows[:_PACKAGES_CATALOG_MAX_ROWS]:
-        out.append({**r, "description": r["description"][:_PACKAGES_DESC_MAX_CHARS]})
-    return out
+    return [{**r, "description": r["description"][:_PACKAGES_DESC_MAX_CHARS]} for r in rows]
 
 
 def _execute_packages_resolve(user_key: str, params: dict) -> tuple[str, str]:
@@ -1126,12 +1153,16 @@ def execute_read_tool(
                 payload["unavailableSources"] = unavailable
             return "ok", _truncate(json.dumps(payload, ensure_ascii=False))
         if tool_id == "models.search":
-            return "ok", _truncate(json.dumps({"models": _models_search_rows(user_key, params)}, ensure_ascii=False))
+            payload = _cut(
+                "models", _models_search_all(user_key, params),
+                _row_limit(params.get("limit"), _MODELS_SEARCH_MAX_ROWS),
+            )
+            return "ok", _truncate(json.dumps(payload, ensure_ascii=False))
         if tool_id == "examples.read":
             return _execute_examples_read(user_key, project_id, params)
         if tool_id == "packages.catalog":
             rows = _packages_catalog_rows(user_key, project_id, params)
-            return "ok", _truncate(json.dumps({"packages": rows}, ensure_ascii=False))
+            return "ok", _truncate(json.dumps(_cut("packages", rows, _PACKAGES_CATALOG_MAX_ROWS), ensure_ascii=False))
         if tool_id == "packages.resolve":
             return _execute_packages_resolve(user_key, params)
         spec = projects_storage.read_spec(user_key, project_id)
@@ -1186,8 +1217,8 @@ def execute_read_tool(
             record["contentChangedSinceRun"] = bool(executed_sha) and executed_sha != current_sha
             return "ok", _truncate(json.dumps(record, ensure_ascii=False))
         if tool_id == "catalog.search":
-            rows = _catalog_search_rows(user_key, project_id, params)
-            return "ok", _truncate(json.dumps({"datasets": rows}, ensure_ascii=False))
+            rows = _catalog_listing_rows(user_key, project_id, params)
+            return "ok", _truncate(json.dumps(_cut("datasets", rows, _CATALOG_SEARCH_MAX_ROWS), ensure_ascii=False))
         return "error", f"unknown read tool {tool_id!r}"
     except Exception as exc:  # tool failures are data, never run errors
         return "error", f"tool failed: {exc}"

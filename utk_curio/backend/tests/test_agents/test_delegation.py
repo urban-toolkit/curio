@@ -743,28 +743,29 @@ class TestDec047DatasetFinderHandoff:
 
 
 class TestCapabilityFirstResolution:
-    """dev/52 — the dev/03:366 widening: capability-first discovery over ALL
-    current-project templates, with delegatesTo as preference."""
+    """dev/52, the dev/03:366 widening: capability-first discovery over the
+    current project's templates, with delegatesTo as preference. A scoped
+    entry still delegates only the capabilities it names."""
 
     DFB = "agent.curio.dataflow-builder@1"
 
     def _manifest(self):
         return builtin.get_builtin_manifest(self.DFB)
 
-    def test_non_delegates_to_installed_template_resolves(self, client, user_and_token, tmp_curio):
-        # The Researcher declares research.notes.compose, which the Dataset
-        # Finder's delegatesTo does NOT delegate (its entry for the Researcher
-        # is scoped to research.verify): capability-first finds it once
-        # installed.
+    def test_a_scoped_entry_is_never_crossed(self, client, user_and_token, tmp_curio):
+        # "An entry { "id", "capabilities": [...] } delegates only those
+        # capabilities of that agent" (AGENT-CATALOG, delegatesTo). The
+        # Researcher declares research.notes.compose, and the Dataset Finder's
+        # entry for the Researcher is scoped to research.verify: installed,
+        # the Researcher takes the Finder's checks and never its notes.
         user, token = user_and_token
         key = _user_dir_key(user)
         pid = _project(client, token)
         df = builtin.get_builtin_manifest("agent.curio.dataset-finder@1")
         assert not df.delegates("agent.curio.researcher", "research.notes.compose")
         client.post(f"/api/agents/projects/{pid}/install", json={"coord": RS}, headers=_auth(token))
-        r = delegation.resolve(key, pid, df, "research.notes.compose")
-        assert r.outcome == "ok"
-        assert r.coord == RS
+        assert delegation.resolve(key, pid, df, "research.verify").coord == RS
+        assert delegation.resolve(key, pid, df, "research.notes.compose").outcome == "unresolvable"
 
     def test_delegates_to_preference_still_wins(self, client, user_and_token, tmp_curio):
         # For dataflow-builder, node.build is declared by node-builder (in its
@@ -781,16 +782,19 @@ class TestCapabilityFirstResolution:
     def test_capability_first_never_crosses_projects(self, client, user_and_token, tmp_curio):
         # Installed in ANOTHER project only → never "ok" from here; the
         # visible-roster fallback yields the reviewed install proposal for
-        # THIS project instead (execution never crosses projects).
+        # THIS project instead (execution never crosses projects). The
+        # Dataset Finder's delegatesTo names no Dataflow Builder, so
+        # capability-first reaches it.
         user, token = user_and_token
         key = _user_dir_key(user)
         pid_a = _project(client, token)
         pid_b = _project(client, token)
         df = builtin.get_builtin_manifest("agent.curio.dataset-finder@1")
-        client.post(f"/api/agents/projects/{pid_b}/install", json={"coord": RS}, headers=_auth(token))
-        r = delegation.resolve(key, pid_a, df, "research.notes.compose")
+        client.post(f"/api/agents/projects/{pid_b}/install", json={"coord": self.DFB}, headers=_auth(token))
+        assert delegation.resolve(key, pid_b, df, "dataflow.orchestrate").outcome == "ok"
+        r = delegation.resolve(key, pid_a, df, "dataflow.orchestrate")
         assert r.outcome == "not-installed"
-        assert r.coord == RS
+        assert r.coord == self.DFB
 
     def test_missing_delegates_to_entry_still_preferred_over_fallback_absence(self, client, user_and_token, tmp_curio):
         # Nothing installed declares dataset.discover, but dataset-finder (a
@@ -801,6 +805,102 @@ class TestCapabilityFirstResolution:
         r = delegation.resolve(key, pid, self._manifest(), "dataset.discover")
         assert r.outcome == "not-installed"
         assert r.coord == "agent.curio.dataset-finder@1"
+
+    def test_an_agent_is_never_handed_back_its_own_capability(self, client, user_and_token, tmp_curio):
+        # The Dataset Finder declares dataset.discover, and no entry of its
+        # delegatesTo hands that to it: its own capabilities reach it through
+        # an entry naming itself only, as My Helper's mode does.
+        user, token = user_and_token
+        key = _user_dir_key(user)
+        pid = _project(client, token)
+        client.post(f"/api/agents/projects/{pid}/install", json={"coord": DF}, headers=_auth(token))
+        df = builtin.get_builtin_manifest(DF)
+        assert delegation.resolve(key, pid, df, "dataset.discover").outcome == "unresolvable"
+
+
+def _write_one_capability_agent(user, slug: str, name: str, capability: str) -> str:
+    """An agent of the user's store, ``agent.test.<slug>``, that declares one
+    *capability*; returns its coordinate."""
+    from utk_curio.backend.app.agents.repositories import storage
+
+    coord = f"agent.test.{slug}@1"
+    storage.write_definition(_user_dir_key(user), coord, {
+        "id": f"agent.test.{slug}",
+        "name": name,
+        "category": "node",
+        "version": "1.0.0",
+        "capabilities": [{"id": capability, "contractVersion": "1"}],
+        "prompts": {"instruction": {"path": "prompts/instruction.md", "variables": []}},
+        "compatibleTargets": [{"kind": "canvas", "requires": []}],
+        "inputs": {"reads": [], "requiredConfig": []},
+        "provenance": {"publisher": "me", "trust": "imported"},
+    }, {"prompts/instruction.md": f"You are {name}."})
+    return coord
+
+
+class TestTheParagraphNamesWhoRuns:
+    """The delegation paragraph lists each capability a run can hand off with
+    the agent that takes it, the one resolution picks: an agent in the
+    dataflow its delegatesTo does not name included, and under its own name
+    when it takes a capability in the place of the agent the run prefers."""
+
+    def _system(self, client, token, pid, coord, monkeypatch) -> str:
+        att_id = client.post(
+            f"/api/agents/projects/{pid}/attachments",
+            json={"coord": coord, "target": {"kind": "canvas"}},
+            headers=_auth(token),
+        ).get_json()["attachmentId"]
+        calls = []
+
+        def _fake_run(config, messages, **kwargs):
+            from utk_curio.backend.app.agents.application.turns import titles as services_mod
+
+            if messages and messages[0].get("content") == services_mod.title_prompt():
+                return "Title"
+            calls.append(messages)
+            return "ok"
+
+        monkeypatch.setattr('utk_curio.backend.app.agents.infrastructure.providers.run_chat_turn', _fake_run)
+        r = _run(client, token, pid, att_id, message="hello")
+        assert r.status_code == 200, r.get_json()
+        return calls[0][0]["content"]
+
+    def test_an_agent_in_the_dataflow_its_entries_do_not_name_is_offered(
+        self, client, user_and_token, tmp_curio, monkeypatch
+    ):
+        # The Dataset Finder's delegatesTo names no agent that explains a node:
+        # with My Explainer in the dataflow, its explanations run there.
+        user, token = user_and_token
+        pid = _project(client, token)
+        explainer = _write_one_capability_agent(user, "my-explainer", "My Explainer", "node.explain")
+        for coord in (DF, RS, explainer):
+            installed = client.post(f"/api/agents/projects/{pid}/install", json={"coord": coord}, headers=_auth(token))
+            assert installed.status_code == 201, installed.get_json()
+        system = self._system(client, token, pid, DF, monkeypatch)
+        assert "node.explain \N{EM DASH} handled by My Explainer" in system
+        # An agent an entry names takes only what the entry names: the
+        # Finder's entry for the Researcher names research.verify alone.
+        assert "research.verify \N{EM DASH} handled by Researcher" in system
+        assert "research.notes.compose \N{EM DASH} handled by" not in system
+        # And its own capabilities are not offered back to it.
+        assert "dataset.discover \N{EM DASH} handled by" not in system
+
+    def test_a_capability_is_offered_under_the_name_of_the_agent_that_takes_it(
+        self, client, user_and_token, tmp_curio, monkeypatch
+    ):
+        # The Node Builder prefers the Researcher for research.verify. With the
+        # Researcher not in the dataflow and My Checker in it, My Checker runs.
+        user, token = user_and_token
+        pid = _project(client, token)
+        checker = _write_one_capability_agent(user, "my-checker", "My Checker", "research.verify")
+        for coord in (NB, checker):
+            installed = client.post(f"/api/agents/projects/{pid}/install", json={"coord": coord}, headers=_auth(token))
+            assert installed.status_code == 201, installed.get_json()
+        nb = builtin.get_builtin_manifest(NB)
+        assert delegation.resolve(_user_dir_key(user), pid, nb, "research.verify").coord == checker
+        system = self._system(client, token, pid, NB, monkeypatch)
+        assert "research.verify \N{EM DASH} handled by My Checker" in system
+        assert "research.verify \N{EM DASH} handled by Researcher" not in system
 
 
 class TestDelegationTransparency:

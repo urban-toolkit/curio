@@ -154,6 +154,29 @@ class TestTheReview:
         # The corrected plan minted, and takes the color the dataflow's own scenario does not wear.
         assert proposal["plan"]["scenarios"][0]["color"] == "#e86a3c"
 
+    def test_a_scenario_named_like_one_the_dataflow_has_is_refused_and_the_model_told_why(
+        self, client, user_and_token, tmp_curio, alice_project, monkeypatch
+    ):
+        """Scenario chips color and order a dataflow's scenarios by name, so a
+        plan saves no second scenario under a name the dataflow gives one."""
+        user, token = user_and_token
+
+        def named():
+            spec = _spec(user, alice_project)
+            spec["dataflow"]["scenarios"] = [{"id": "s0", "name": "Real heights", "color": "#3567c7", "nodes": ["n1"]}]
+            _write_spec(user, alice_project, spec)
+
+        renamed = _plan()
+        renamed["scenarios"][0]["name"] = "Mapped heights"
+        renamed["scenarios"][1]["duplicateOf"] = "Mapped heights"
+        _, proposal, calls = _mint(
+            client, user, token, alice_project, monkeypatch,
+            replies=[_reply(_plan()), _reply(renamed)], before_run=named,
+        )
+        assert len(calls) == 2, "a plan naming a scenario as the dataflow already does was minted"
+        assert "the dataflow already has a scenario named 'Real heights'" in calls[1][-1]["content"]
+        assert [s["name"] for s in proposal["plan"]["scenarios"]] == ["Mapped heights", "Twice as tall"]
+
     def test_widgets_on_a_node_that_holds_no_code_are_refused(
         self, client, user_and_token, tmp_curio, alice_project, monkeypatch
     ):
@@ -252,6 +275,23 @@ class TestThePlanApply:
         body = _apply(client, token, alice_project, att_id, proposal["proposalId"]).get_json()
         assert "scenarios" not in body["appliedGraph"]
         assert [s["name"] for s in _spec(user, alice_project)["dataflow"]["scenarios"]] == ["Theirs"]
+
+    def test_a_scenario_whose_name_was_taken_since_the_mint_is_not_saved(
+        self, client, user_and_token, tmp_curio, alice_project, monkeypatch
+    ):
+        """The user named a scenario as the plan does between the mint and the
+        apply: the apply checks names again, as it checks nodes, and the plan's
+        scenario is refused, never saved beside the user's under one name."""
+        user, token = user_and_token
+        mine = _plan(scenarios=None)
+        mine["scenarios"] = [{"name": "Mine", "nodes": ["shadows"]}]
+        att_id, proposal, _ = _mint(client, user, token, alice_project, monkeypatch, mine)
+        spec = _spec(user, alice_project)
+        spec["dataflow"]["scenarios"] = [{"id": "s0", "name": "Mine", "color": "#3567c7", "nodes": ["n1"]}]
+        _write_spec(user, alice_project, spec)
+        body = _apply(client, token, alice_project, att_id, proposal["proposalId"]).get_json()
+        assert "scenarios" not in body["appliedGraph"]
+        assert [s["id"] for s in _spec(user, alice_project)["dataflow"]["scenarios"]] == ["s0"]
 
 
 class TestTheNodeByNodeApply:

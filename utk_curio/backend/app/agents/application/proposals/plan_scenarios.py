@@ -6,16 +6,18 @@ what needs the saved dataflow:
 
 * at mint: a node that holds widgets is one whose code or spec places them, or
   a Parameter node, whose name no other Parameter node has; an existing node a
-  selection names is in the dataflow and in no other scenario; each scenario
-  takes its color, as a scenario made on the canvas does;
+  selection names is in the dataflow and in no other scenario; a scenario
+  takes a name none of the dataflow's has, since scenario chips color and
+  order scenarios by name; each scenario takes its color, as a scenario made
+  on the canvas does;
 * on the review card: each scenario with its nodes by name, and each node in
   one labelled with it, so a copy and its original read apart;
 * at apply: a created node carries its widgets, a Spatial Join its operation
   and output (``metadata.spatialJoin``), and, for a copy, where it came
   from (``metadata.copiedFrom``); a scenario is saved once all its nodes exist,
   by the whole-plan apply and the per-node one alike, and checked against the
-  dataflow's scenarios again then, since the plan's shape digest covers ids
-  only.
+  dataflow's scenarios, their nodes and their names, again then, since the
+  plan's shape digest covers ids only.
 """
 from __future__ import annotations
 
@@ -75,8 +77,12 @@ def mint_errors(plan: dict, available: dict, existing_nodes: dict, scenarios: li
             errors.append(f"plan node {node['ref']!r}: {message}")
         taken.append(node["widgets"][0])
     owner = {member: s["name"] for s in scenarios for member in s["nodes"]}
+    taken = {s["name"] for s in scenarios}
     refs = {n["ref"] for n in plan["nodes"]}
     for index, scenario in enumerate(plan.get("scenarios") or []):
+        if scenario["name"] in taken:
+            errors.append(f"scenarios[{index}] {scenario['name']!r}: the dataflow already has a scenario "
+                          f"named {scenario['name']!r}: each scenario needs its own name")
         for member in scenario["nodes"]:
             if member in refs:
                 continue
@@ -200,8 +206,8 @@ def _set_over(template_widgets: list, planned: list) -> list[dict]:
 def apply_scenarios(spec: dict, proposal: dict, ref_to_id: dict, *, final: bool) -> list[dict]:
     """Save each plan scenario whose nodes all exist now and that is not saved
     yet, and answer the ones saved. A scenario that would take a node another
-    scenario holds is refused, and so, when *final* (the whole-plan apply), is
-    one whose nodes are not all there."""
+    scenario holds, or a name another scenario has, is refused, and so, when
+    *final* (the whole-plan apply), is one whose nodes are not all there."""
     plan = proposal.get("plan") or {}
     planned = plan.get("scenarios") or []
     if not planned:
@@ -212,6 +218,7 @@ def apply_scenarios(spec: dict, proposal: dict, ref_to_id: dict, *, final: bool)
     node_ids = {n.get("id") for n in dataflow.get("nodes") or [] if isinstance(n, dict)}
     current = existing_scenarios(spec)
     owner = {m: s["name"] for s in current for m in s["nodes"]}
+    names = {s["name"] for s in current}
     created: list[dict] = []
     for index, scenario in enumerate(planned):
         key = str(index)
@@ -222,7 +229,7 @@ def apply_scenarios(spec: dict, proposal: dict, ref_to_id: dict, *, final: bool)
             if final:
                 states[key] = "refused"
             continue
-        if any(m in owner for m in members):
+        if any(m in owner for m in members) or scenario["name"] in names:
             states[key] = "refused"
             continue
         entry = {"id": str(uuid.uuid4()), "name": scenario["name"], "color": scenario["color"]}
@@ -231,6 +238,7 @@ def apply_scenarios(spec: dict, proposal: dict, ref_to_id: dict, *, final: bool)
         entry["nodes"] = members
         current.append(entry)
         owner.update({m: entry["name"] for m in members})
+        names.add(entry["name"])
         states[key] = "applied"
         saved_ids[key] = entry["id"]
         created.append(entry)
