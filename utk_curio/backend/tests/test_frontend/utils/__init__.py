@@ -124,6 +124,7 @@ from .tooltips import (  # noqa: F401
     box_middle,
     editor_chip_box,
     element_box,
+    hover_until_tooltip_says,
     monaco_hovers,
     move_pointer_away,
     no_tooltip,

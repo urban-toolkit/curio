@@ -221,16 +221,50 @@ def monaco_hovers(page) -> int:
     return page.evaluate(_MONACO_HOVERS_JS)
 
 
-def tooltip_saying(page, what: str, expected: list[str], selector: str | None = None, *, timeout: float = 15000) -> dict:
-    """Wait until the one tooltip *what* shows says each of *expected*, as a
-    chip's preview does once it has read what it shows, and return it as
-    ``one_tooltip`` does."""
+def tooltip_saying(
+    page,
+    what: str,
+    expected: list[str],
+    selector: str | None = None,
+    *,
+    absent: tuple[str, ...] = (),
+    timeout: float = 15000,
+) -> dict:
+    """Wait until the one tooltip *what* shows says each of *expected* and
+    none of *absent*, as a chip's preview does once it has read what it shows,
+    and return it as ``one_tooltip`` does. *absent* tells it from another
+    target's tooltip that says the same and more."""
+    def says(text: str) -> bool:
+        return all(part in text for part in expected) and not any(part in text for part in absent)
+
     deadline = time.time() + timeout / 1000
     tips = tooltips_on_screen(page, selector)
-    while not (len(tips) == 1 and all(text in tips[0]["text"] for text in expected)) and time.time() < deadline:
+    while not (len(tips) == 1 and says(tips[0]["text"])) and time.time() < deadline:
         page.wait_for_timeout(200)
         tips = tooltips_on_screen(page, selector)
     tip = one_tooltip(page, what, selector, timeout=0)
-    missing = [text for text in expected if text not in tip["text"]]
+    missing = [part for part in expected if part not in tip["text"]]
     assert not missing, f"{what}: the tooltip does not say {missing}: {tip['text']!r}"
+    stray = [part for part in absent if part in tip["text"]]
+    assert not stray, f"{what}: the tooltip says {stray}, which is another target's: {tip['text']!r}"
     return tip
+
+
+def hover_until_tooltip_says(
+    page,
+    box: dict,
+    what: str,
+    expected: list[str],
+    selector: str | None = None,
+    *,
+    absent: tuple[str, ...] = (),
+    timeout: float = 15000,
+) -> dict:
+    """A fresh hover of *box*: the pointer rests where nothing shows a
+    tooltip until none shows, then on the middle of *box*, and the tooltip
+    there is waited for as ``tooltip_saying`` waits for it. Without the wait
+    for none, the tooltip of what the pointer left could still be on screen."""
+    move_pointer_away(page, selector)
+    no_tooltip(page, f"{what}, before the pointer moves onto it", timeout=5000)
+    page.mouse.move(*assert_in_view(page, *box_middle(box), what))
+    return tooltip_saying(page, what, expected, selector, absent=absent, timeout=timeout)
