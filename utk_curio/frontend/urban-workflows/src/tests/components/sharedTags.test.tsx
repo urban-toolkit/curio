@@ -15,6 +15,7 @@ import {
   isReferenceDrag,
 } from "../../components/editing/widgets/monacoCodeReferences";
 import type { WidgetDef } from "../../utils/widgets/widgetModel";
+import { openCategory } from "../_support/stripCategories";
 
 function dragData() {
   const store = new Map<string, string>();
@@ -34,12 +35,14 @@ describe("the strip above a node's code", () => {
   test("offers each shared tag under Shared, though the node has no widgets or inputs", () => {
     const view = render(<ReferenceStrip widgets={[]} shared={[season, factor]} onInsert={jest.fn()} />);
     expect(view.container.querySelector("[data-shared-strip]")?.textContent).toBe("Shared");
-    const tags = Array.from(view.container.querySelectorAll("[data-shared-tag]")).map((t) => t.textContent);
+    const chips = openCategory(view.container, "shared");
+    const tags = Array.from(chips.querySelectorAll("[data-shared-tag]")).map((t) => t.textContent);
     expect(tags).toEqual(["@season", "@factor"]);
   });
 
   test("a shared tag drags its reference, as a shared tag and not a widget's", () => {
     const view = render(<ReferenceStrip widgets={[factor]} shared={[season]} onInsert={jest.fn()} />);
+    openCategory(view.container, "shared");
     const drag = dragData();
     fireEvent.dragStart(view.container.querySelector('[data-shared-tag="season"]')!, drag);
     expect(drag.store.get(SHARED_REF_MIME)).toBe("@season");
@@ -50,12 +53,14 @@ describe("the strip above a node's code", () => {
   test("a click inserts the reference at the cursor", () => {
     const onInsert = jest.fn();
     const view = render(<ReferenceStrip widgets={[]} shared={[season]} onInsert={onInsert} />);
+    openCategory(view.container, "shared");
     fireEvent.click(view.container.querySelector('[data-shared-tag="season"]')!);
     expect(onInsert).toHaveBeenCalledWith("@season");
   });
 
   test("two Parameter nodes with one name are one tag", () => {
     const view = render(<ReferenceStrip widgets={[]} shared={[factor, { ...factor, default: 3 }]} onInsert={jest.fn()} />);
+    openCategory(view.container, "shared");
     expect(view.container.querySelectorAll("[data-shared-tag]")).toHaveLength(1);
   });
 

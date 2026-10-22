@@ -155,7 +155,7 @@ class TestTheSharedCases:
             "is for a Vega-Lite or Autark spec, not for code",
             "is for a Vega-Lite spec, not for code",
             "names no scenario chip",
-            "drag the swatch of one of this node's input tags here",
+            "write scenario input_<k> for a circle that has one",
             "is a scale, not text",
             "is a list of names, not text",
             "comes from is not known here",

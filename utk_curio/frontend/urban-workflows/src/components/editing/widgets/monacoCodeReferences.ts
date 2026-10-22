@@ -21,6 +21,7 @@ import {
   type ChipSpan,
 } from "./referenceChips";
 import { effectiveValue, type WidgetDef, type WidgetValue } from "../../../utils/widgets/widgetModel";
+import { anyFromABox } from "../../../utils/scenarios/scenarioColors";
 import {
   findReferences,
   inputName,
@@ -47,8 +48,9 @@ export const SHARED_REF_MIME = "application/x-curio-shared";
 /** What a dragged selection tag carries: what stands inside its reference,
  * such as `selection picked`. */
 export const SELECTION_REF_MIME = "application/x-curio-selection";
-/** What a dragged scenario tag carries (the swatches, their order tag, an
- * input's swatch): what stands inside its chip, such as `scenario colors`. */
+/** What a dragged scenario tag under Scenarios carries (the swatches, text
+ * colors, order, an input's tag): what stands inside its chip, such as
+ * `scenario colors`. */
 export const SCENARIO_REF_MIME = "application/x-curio-scenario";
 
 const REFERENCE_MIMES = [WIDGET_REF_MIME, INPUT_REF_MIME, SHARED_REF_MIME, SELECTION_REF_MIME, SCENARIO_REF_MIME];
@@ -83,7 +85,7 @@ export interface ReferenceMark extends ChipMark {
 }
 
 /** *names* as a list in words: `a`, `a and b`, `a, b and c`. */
-function inWords(names: string[]): string {
+export function inWords(names: string[]): string {
   return names.length < 2 ? names.join("") : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
 }
 
@@ -126,6 +128,17 @@ function hoverFor(inner: string, scope: ReferenceScope, language: CodeLanguage):
   if (parsed.kind === "scenario") {
     // What the chip writes, as a run writes it.
     const value = resolveReferences(referenceText(inner), scope, "json").code;
+    // A node fed from no box has no Scenarios in its header; its chips still
+    // write the inputs' nodes' names, which the grammar's palette colors.
+    if (!anyFromABox(scope.inputs.flatMap((input) => (input.scenario ? [input.scenario] : [])))) {
+      const writes =
+        parsed.chip === "input"
+          ? `the gray the scale gives input_${parsed.slot}`
+          : parsed.chip === "order"
+            ? "the names of the nodes its inputs come from"
+            : "the names alone, in the grammar's own colors";
+      return `${inner} = ${value}: no input of this node comes from a scenario box, so it writes ${writes}`;
+    }
     if (parsed.chip !== "input") return `${inner} = ${value}, from the boxes this node's inputs come from`;
     const label = scope.inputs.find((i) => i.slot === parsed.slot)?.scenario;
     return label?.scenario != null

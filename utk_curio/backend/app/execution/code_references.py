@@ -839,12 +839,12 @@ def _scenario_problem(reference: str, parsed: dict, inputs: list, context: tuple
     if chip == "input":
         slot = parsed["slot"]
         if slot is None:
-            return f"{reference}: the edge for this input was deleted. Drag the swatch of one of this node's input tags here."
+            return f"{reference}: the edge for this input was deleted. Write scenario input_<k> for a circle that has one."
         found = next((i for i in inputs if i.get("slot") == slot), None)
         if found is None:
             return (
                 f"{reference}: input_{slot} has no edge. Connect one to that circle, "
-                "or drag the swatch of one of this node's input tags here."
+                "or write scenario input_<k> for a circle that has one."
             )
         if not isinstance(found.get("scenario"), dict):
             return f"{reference}: the scenario box input_{slot} comes from is not known here."

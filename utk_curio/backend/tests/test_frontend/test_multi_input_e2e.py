@@ -1,14 +1,14 @@
 """Playwright E2E: several inputs on one node, read through chips (#662).
 
 A Python node takes several edges: connecting one makes a new empty circle
-appear below it. Its code reads each input through a chip dragged from the
-strip above the editor, and each column of an input through a column chip.
-This drives the whole path in a browser:
+appear below it. Its code reads each input through a chip dragged from Inputs
+in the header above the editor, and each column of an input through a column
+chip. This drives the whole path in a browser:
 
 1. Two producers into one Python node: the second edge lands on the circle the
    first one made, and a third, empty circle appears.
-2. The input tags and a column tag are dragged into the code, where each lands
-   at its drop point as a chip.
+2. With Inputs open, the input tags and a column tag are dragged into the code,
+   where each lands at its drop point as a chip.
 3. A run reads both inputs: ``[!! input_0 !!]`` is ``input_0``,
    ``[!! input_1 !!]`` is ``input_1``, and the column chip is the column's name.
 4. Deleting the first producer closes the gap: the second producer's edge moves
@@ -36,6 +36,7 @@ from .utils import (
     drag_builtin_to_canvas,
     node_execution_timeout_ms,
     node_locator,
+    open_strip_category,
     read_node_code,
     read_node_output_text,
     require_owner_view,
@@ -154,6 +155,8 @@ INPUT_MIME = "application/x-curio-input"
 
 
 def _drag_tag_to_line_end(page, node_id: str, selector: str, line: int, *, timeout: float = 15000) -> None:
+    # Every tag this test drags, an input's or a column's, is under Inputs.
+    open_strip_category(page, node_id, "inputs")
     deadline = time.time() + timeout / 1000
     args = {"nodeId": node_id, "lineNumber": line}
     point = page.evaluate(_LINE_END_POINT_JS, args)
@@ -291,6 +294,7 @@ def test_a_node_reads_several_inputs_through_chips(
     run_node_and_wait(page, b, node_type=NODE_TYPE)
     dismiss_toasts(page)
     strip = node_locator(page, t).locator("[data-widget-strip]")
+    open_strip_category(page, t, "inputs")
     strip.locator('[data-input-tag="1"]').wait_for(state="visible", timeout=10000)
     _drag_tag_to_line_end(page, t, '[data-input-tag="0"]', 1)
     _drag_tag_to_line_end(page, t, '[data-input-tag="1"]', 2)
@@ -331,4 +335,5 @@ def test_a_node_reads_several_inputs_through_chips(
     node_locator(page, t).wait_for(state="visible", timeout=45000)
     _wait_for_code(page, t, "[!! input_0.population !!]", timeout=45000)
     _wait_for_circles(page, t, ["in", "in_1"])
+    open_strip_category(page, t, "inputs")
     node_locator(page, t).locator('[data-widget-strip] [data-input-tag="0"]').wait_for(state="visible", timeout=15000)

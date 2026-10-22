@@ -38,6 +38,7 @@ import {
   takeOpenedDataflowFile,
 } from "../utils/openedDataflowFile";
 import { restoredByNode, restoredOutputs, withOutputs } from "../utils/restoredOutputs";
+import { closeEveryCategory } from "./editing/widgets/stripCategories";
 
 import { SHARE_UUID_RE as UUID_RE } from "../utils/shareLinks";
 import { dashboardRefusal, getEmbeddedDashboard } from "../standalone/dashboardPayload";
@@ -136,6 +137,8 @@ export const ProjectLoader: React.FC<{
     // nothing, inheriting whatever the previous dataflow left in the store.
     if (!id || id === "new") {
       TrillGenerator.reset();
+      // Another dataflow: every node's header starts closed.
+      closeEveryCategory();
       // An unsaved dataflow is still a dataflow, so it gets a scope rather than
       // "no project, show everything" — that fallback is what put the previous
       // dataflow's packages in a brand-new one (#204, #220).
@@ -169,6 +172,7 @@ export const ProjectLoader: React.FC<{
     if (projectId === id) return;
 
     loaded.current = id;
+    closeEveryCategory();
 
     // Pin the project id immediately with an empty lockfile so the palette
     // filter knows we're in a project; loadProject below will replace the
@@ -363,6 +367,7 @@ export const ProjectLoader: React.FC<{
     if (id && id !== "new") return;
     const spec = takeOpenedDataflowFile();
     if (!spec) return;
+    closeEveryCategory();
     try {
       loadTrill(spec);
     } catch (err) {
