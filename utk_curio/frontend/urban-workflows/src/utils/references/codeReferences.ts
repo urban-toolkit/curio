@@ -180,6 +180,9 @@ export interface ReferenceProblem {
 export interface InputScope {
   /** Its circle, counted from 0. */
   slot: number;
+  /** The id of the edge that feeds it, which keeps its list in the node's
+   * header open with it when the circles renumber. */
+  edge?: string;
   /** The node that feeds it, shown on its tag and in its chips' hover. */
   label?: string;
   /** Its data type, once it has arrived. */
@@ -192,8 +195,8 @@ export interface InputScope {
   /** The layers it carries, once known, when it carries several (an Autark
    * node's tables). */
   layers?: LayerScope[] | null;
-  /** How many values it holds, once known, when it is a tuple: several frames
-   * with no names, as a Python node's `return a, b` gives. */
+  /** How many values it holds, once known, when it is a tuple: a bundle of
+   * several values with no names, as a Python node's `return a, b` gives. */
   tuple?: number;
   /** The layer name of the one frame it carries, when its value names the
    * table it is read as (`layerName`, on a reference or an envelope): known
@@ -827,12 +830,12 @@ function scenarioProblem(
   if (parsed.chip === "input") {
     const slot = parsed.slot;
     if (slot === null) {
-      return `${reference}: the edge for this input was deleted. Drag the swatch of one of this node's input tags here.`;
+      return `${reference}: the edge for this input was deleted. Write scenario input_<k> for a circle that has one.`;
     }
     const input = inputs.find((i) => i.slot === slot);
     if (input === undefined) {
       return `${reference}: input_${slot} has no edge. Connect one to that circle, `
-        + "or drag the swatch of one of this node's input tags here.";
+        + "or write scenario input_<k> for a circle that has one.";
     }
     if (input.scenario == null) return `${reference}: the scenario box input_${slot} comes from is not known here.`;
     return null;

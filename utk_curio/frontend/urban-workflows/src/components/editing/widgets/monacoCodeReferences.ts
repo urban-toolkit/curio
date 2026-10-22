@@ -48,8 +48,9 @@ export const SHARED_REF_MIME = "application/x-curio-shared";
 /** What a dragged selection tag carries: what stands inside its reference,
  * such as `selection picked`. */
 export const SELECTION_REF_MIME = "application/x-curio-selection";
-/** What a dragged scenario tag carries (the swatches, their order tag, an
- * input's swatch): what stands inside its chip, such as `scenario colors`. */
+/** What a dragged scenario tag under Scenarios carries (the swatches, text
+ * colors, order, an input's tag): what stands inside its chip, such as
+ * `scenario colors`. */
 export const SCENARIO_REF_MIME = "application/x-curio-scenario";
 
 const REFERENCE_MIMES = [WIDGET_REF_MIME, INPUT_REF_MIME, SHARED_REF_MIME, SELECTION_REF_MIME, SCENARIO_REF_MIME];
@@ -84,7 +85,7 @@ export interface ReferenceMark extends ChipMark {
 }
 
 /** *names* as a list in words: `a`, `a and b`, `a, b and c`. */
-function inWords(names: string[]): string {
+export function inWords(names: string[]): string {
   return names.length < 2 ? names.join("") : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
 }
 

@@ -6,6 +6,7 @@ import {
   SELECTION_REF_MIME,
   SHARED_REF_MIME,
   WIDGET_REF_MIME,
+  inWords,
 } from "./monacoCodeReferences";
 import { STRIP_CATEGORIES, useOpenCategories, useOpenLists, type StripCategory } from "./stripCategories";
 import type { WidgetDef } from "../../../utils/widgets/widgetModel";
@@ -117,12 +118,15 @@ export function uniqueSharedNames(shared: WidgetDef[]): string[] {
   return Array.from(new Set(shared.map((w) => w.name)));
 }
 
-/** A tag that drags (or, clicked, inserts) the reference to *inner*. */
+/** A tag that drags (or, clicked, inserts) the reference to *inner*. *label*
+ * names it for a screen reader when its text runs words together, as a name
+ * beside a swatch does. */
 function ReferenceTag({
   className,
   mime,
   inner,
   text,
+  label,
   title,
   dataAttributes,
   onInsert,
@@ -132,6 +136,7 @@ function ReferenceTag({
   mime: string;
   inner: string;
   text: React.ReactNode;
+  label?: string;
   title?: string;
   dataAttributes: Record<string, string>;
   onInsert?: (inner: string) => void;
@@ -144,6 +149,7 @@ function ReferenceTag({
       draggable={!disabled}
       role={onInsert ? "button" : undefined}
       tabIndex={onInsert ? 0 : undefined}
+      aria-label={label}
       title={title ? `${title}. ${how}` : how}
       {...dataAttributes}
       onDragStart={(event) => {
@@ -262,6 +268,7 @@ function ScenarioChips({
                 {name}
               </span>
             ))}
+            label={`colors: ${domain.join(", ")}`}
             title={`The scenarios' colors, a color scale: ${domain.map((name, i) => `${name} ${range[i]}`).join(", ")}`}
             dataAttributes={{ "data-scenario-swatches": "true" }}
             onInsert={onInsert}
@@ -308,6 +315,7 @@ function ScenarioChips({
                 </span>
               </>
             }
+            label={`${name}, ${label.name}`}
             title={
               label.scenario != null
                 ? `The color of ${label.name}, the scenario box ${name} comes from`
@@ -362,24 +370,26 @@ function countOf(n: number, one: string, many: string): string {
   return `${n} ${n === 1 ? one : many}`;
 }
 
-/** *names* in a sentence: "input_0", "input_0 and input_1", "input_0, input_1 and input_2". */
-function namesInWords(names: string[]): string {
-  if (names.length <= 1) return names.join("");
-  return `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
-}
-
 /** The layers *input* carries, or null when it carries none. */
 function layersOf(input: InputScope): LayerScope[] | null {
   return Array.isArray(input.layers) && input.layers.length > 0 ? input.layers : null;
 }
 
-/** How much *input* holds, once its columns are read: "5 columns", "5 layers",
- * "2 values, a tuple". Null before. */
+/** How much *input* holds, once its columns are read: "5 columns", "no
+ * columns", "5 layers", "2 values, a tuple". Null before. */
 function heldBy(input: InputScope): string | null {
   if (input.tuple) return `${countOf(input.tuple, "value", "values")}, a tuple`;
   const layers = layersOf(input);
   if (layers) return countOf(layers.length, "layer", "layers");
-  return Array.isArray(input.columns) ? countOf(input.columns.length, "column", "columns") : null;
+  if (!Array.isArray(input.columns)) return null;
+  return input.columns.length > 0 ? countOf(input.columns.length, "column", "columns") : "no columns";
+}
+
+/** What keeps an input's list open: the edge that feeds it, so the list stays
+ * with its input when the circles above it close up and goes with its edge,
+ * else its circle. */
+function listKeyOf(input: InputScope): string {
+  return input.edge ? `edge ${input.edge}` : `circle ${input.slot}`;
 }
 
 /**
@@ -399,7 +409,7 @@ function aboutInput(input: InputScope): string {
  * (`stackedFields`). "input_0 and input_1, stacked: 8 fields".
  */
 function aboutStacked(inputs: InputScope[]): string {
-  const stacks = `${namesInWords(inputs.map((input) => inputName(input.slot)))}, stacked`;
+  const stacks = `${inWords(inputs.map((input) => inputName(input.slot)))}, stacked`;
   if (!inputs.every((input) => Array.isArray(input.columns))) return stacks;
   return `${stacks}: ${countOf(stackedFields(inputs).fields.length, "field", "fields")}`;
 }
@@ -542,7 +552,7 @@ function InputColumns({
       {tuple ? (
         <span className={styles.stripHint}>
           {code
-            ? `Read them in code as ${namesInWords(values)}.`
+            ? `Read them in code as ${inWords(values)}.`
             : `It holds ${countOf(tuple, "value", "values")}, a tuple.`}
         </span>
       ) : null}
@@ -592,8 +602,9 @@ function InputColumns({
  * lines below move down: an input's columns, its layers or how to read its
  * tuple (*code*: in code), or the fields of `inputs`. Several can be open, and
  * each stays open for its node (*nodeId*) while the dataflow is open
- * (`stripCategories`). Open, Inputs reads the columns not read yet of every
- * input, so each line shows what its input holds.
+ * (`stripCategories`), with the edge that feeds its input (`listKeyOf`). Open,
+ * Inputs reads the columns not read yet of every input, so each line shows
+ * what its input holds.
  */
 function InputsChips({
   nodeId,
@@ -621,7 +632,8 @@ function InputsChips({
   return (
     <>
       {inputs.map((input) => {
-        const list = String(input.slot);
+        const circle = String(input.slot);
+        const list = listKeyOf(input);
         const name = inputName(input.slot);
         return (
           <React.Fragment key={input.slot}>
@@ -630,7 +642,7 @@ function InputsChips({
               about={aboutInput(input)}
               open={open.has(list)}
               onToggle={() => toggle(list)}
-              attributes={{ "data-input-line": list }}
+              attributes={{ "data-input-line": circle }}
               tag={
                 <ReferenceTag
                   className={styles.inputTag}
@@ -638,7 +650,7 @@ function InputsChips({
                   inner={inputReferenceInner(input.slot)}
                   text={name}
                   title={input.label ? `From ${input.label}` : undefined}
-                  dataAttributes={{ "data-input-tag": list }}
+                  dataAttributes={{ "data-input-tag": circle }}
                   onInsert={onInsert}
                   disabled={disabled}
                 />
@@ -699,7 +711,8 @@ const CATEGORY_NAME_ATTRIBUTES: Partial<Record<StripCategory, string>> = {
  * Selections and Shared. Every category starts closed; a click opens its chips
  * under the row, and another closes them. Several can be open, and one stays
  * open for its node (*nodeId*) while the dataflow is open (`stripCategories`).
- * Nothing when the node can use no chip.
+ * On the canvas the header takes at most half its editor's height, and the
+ * open chips scroll inside it. Nothing when the node can use no chip.
  *
  * It reads the editor's *language* and *grammar* and the node's inputs, never
  * its code, so a built-in node and a package node of one grammar list the same
@@ -761,6 +774,7 @@ export function ReferenceStrip({
   };
   const shown = STRIP_CATEGORIES.filter((category) => counts[category] > 0);
   if (shown.length === 0) return null;
+  const opened = shown.filter((category) => open.has(category));
 
   const chipsOf = (category: StripCategory): React.ReactNode => {
     switch (category) {
@@ -817,21 +831,25 @@ export function ReferenceStrip({
           );
         })}
       </div>
-      {shown
-        .filter((category) => open.has(category))
-        .map((category) => (
-          // A category's tags are one row; Inputs is a line per input, each
-          // open list under its line.
-          <div
-            key={category}
-            className={category === "inputs" ? styles.categoryStack : styles.categoryChips}
-            role="group"
-            aria-label={`${CATEGORY_NAMES[category]} chips`}
-            data-strip-chips={category}
-          >
-            {chipsOf(category)}
-          </div>
-        ))}
+      {opened.length > 0 ? (
+        // The open categories' chips, which scroll when the header is as tall
+        // as it gets.
+        <div className={styles.stripOpen}>
+          {opened.map((category) => (
+            // A category's tags are one row; Inputs is a line per input, each
+            // open list under its line.
+            <div
+              key={category}
+              className={category === "inputs" ? styles.categoryStack : styles.categoryChips}
+              role="group"
+              aria-label={`${CATEGORY_NAMES[category]} chips`}
+              data-strip-chips={category}
+            >
+              {chipsOf(category)}
+            </div>
+          ))}
+        </div>
+      ) : null}
     </div>
   );
 }

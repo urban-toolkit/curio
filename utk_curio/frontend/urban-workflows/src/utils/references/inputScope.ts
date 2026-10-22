@@ -1,7 +1,7 @@
 /**
  * What a node's input references can name (#662): its wired circles, each with
- * the name of the node that feeds it, its data type, the layer name its value
- * gives, and its columns once they have been read.
+ * the edge and the name of the node that feed it, its data type, the layer name
+ * its value gives, and its columns once they have been read.
  */
 import type { InputScope, LayerScope } from "./codeReferences";
 import { isReferenceableColumn, isReferenceableLayer } from "./codeReferences";
@@ -10,6 +10,7 @@ import { readGrammarInput, type GrammarFrame } from "../grammarInput";
 import { toRows } from "../rowSource";
 
 type ScopeEdge = {
+    id?: string | null;
     source?: string | null;
     target?: string | null;
     sourceHandle?: string | null;
@@ -22,7 +23,7 @@ export interface InputColumns {
     dtypes: Record<string, string>;
     /** The named layers it carries, when it carries several. */
     layers?: LayerScope[];
-    /** How many values it holds, when it is a tuple of frames with no names. */
+    /** How many values it holds, when it is a tuple: a bundle of values with no names. */
     tuple?: number;
 }
 
@@ -56,6 +57,8 @@ export function inputScopeFor(
         const source = nodes.find((n) => n.id === edge?.source);
         const value = valueOf(slot);
         const scope: InputScope = { slot };
+        // The edge keeps its id when the circles renumber, the circle does not.
+        if (edge?.id) scope.edge = edge.id;
         const label = source?.data ? labelOf(source.data) : null;
         if (label) scope.label = label;
         const dataType = value && typeof value === "object" ? (value as any).dataType : undefined;
@@ -100,18 +103,22 @@ function frameColumns(frame: GrammarFrame): { columns: string[]; dtypes: Record<
 /**
  * The columns of an input's value, from its 100-row preview, as starter specs
  * read it, or the named layers it carries with theirs (an Autark node's
- * tables). Several frames none of which is named are a tuple's values, which
- * it counts. An input that is not a table has none.
+ * tables). A bundle of two values or more none of which is named is a tuple,
+ * tables or not, whose values it counts: the frames read from it and the items
+ * that are no frame (`skipped`). An input that is not a table has none.
  */
 export async function readInputColumns(value: unknown): Promise<InputColumns> {
     const read = await readGrammarInput(value, { label: "this input", preview: true, bundles: true });
+    const values = read.frames.length + (read.skipped?.length ?? 0);
+    const declared = value && typeof value === "object" ? (value as { dataType?: unknown }).dataType : undefined;
+    const bundle = declared === "outputs" || read.frames.length > 1;
+    if (bundle && values > 1 && read.frames.every((frame) => frame.name == null)) {
+        return { columns: [], dtypes: {}, layers: [], tuple: values };
+    }
     if (read.frames.length > 1) {
         const layers = read.frames
             .filter((frame) => typeof frame.name === "string" && isReferenceableLayer(frame.name))
             .map((frame) => ({ name: frame.name as string, ...frameColumns(frame) }));
-        if (read.frames.every((frame) => frame.name == null)) {
-            return { columns: [], dtypes: {}, layers, tuple: read.frames.length };
-        }
         return { columns: [], dtypes: {}, layers };
     }
     const frame = read.frames[0];
