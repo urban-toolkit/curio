@@ -156,11 +156,10 @@ NODES = [
     ("tracts", "curio.builtin/data-loading", "Census tracts (SVI)",
      "Load the census tracts that meet downtown Chicago, with CDC/ATSDR's Social Vulnerability Index 2020.",
      TRACTS, 0, 0, {}),
-    # In the place of the loaders the Autark node replaces, collapsed as the
-    # saved layout has the loaders.
+    # In the place of the loaders the Autark node replaces.
     ("osm", "curio.builtin/autk-grammar", "OpenStreetMap layers",
      "Load OpenStreetMap's parks, water, roads and buildings of downtown Chicago.",
-     json.dumps(OSM, indent=2), 0, 358, {"minimized": True}),
+     json.dumps(OSM, indent=2), 0, 358, {}),
     ("cta_lines", "curio.builtin/data-loading", "CTA 'L' lines",
      "Load the CTA 'L' rail lines of downtown Chicago.", CTA_LINES, 0, 750, {}),
     ("trees", "curio.builtin/data-loading", "Trees", "Load OpenStreetMap's mapped trees of downtown Chicago.",
@@ -209,14 +208,15 @@ def build() -> dict:
     }}
 
 
-#: What a save on the canvas sets on a node: kept from the shipped file.
-CANVAS_KEYS = ("x", "y", "width", "height", "minimized")
+#: What a save on the canvas sets on a node: kept from the shipped file. A
+#: shipped example opens with every node open, as the others do.
+CANVAS_KEYS = ("x", "y", "width", "height")
 
 
 def keep_canvas(flow: dict) -> dict:
     """Keep the layout arranged on the canvas and saved into the shipped file
-    (each node's place, size and whether it is collapsed). A node the file
-    does not have keeps its own place."""
+    (each node's place and size). A node the file does not have keeps its own
+    place."""
     if not OUT.exists():
         return flow
     old = {n["id"]: n for n in json.loads(OUT.read_text())["dataflow"].get("nodes") or []}
