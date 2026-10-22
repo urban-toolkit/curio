@@ -161,6 +161,13 @@ describe("useAgentCanvasMutations (the apply→canvas bridge, dev/48 §3.3 + dev
     );
     expect(mockApplyNodeContent).toHaveBeenCalledWith("n1", "print(2)");
   });
+
+  it("node-content-applied hands on the name of the agent that wrote the content, which the node's entry is named after", () => {
+    render(<Host />);
+    const applied = { kind: "node-content-applied" as const, nodeId: "n1", content: "print(2)", agent: "Node Builder" };
+    act(() => notifyAgentCanvasMutation(applied));
+    expect(mockApplyNodeContent).toHaveBeenCalledWith("n1", "print(2)", "Node Builder");
+  });
 });
 
 describe("graph-created (dev/52 — a whole applied plan)", () => {

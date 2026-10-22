@@ -268,9 +268,14 @@ def run_through_node(
     strict_upstream: bool = False,
     templates: dict | None = None,
     acting_user=None,
+    keep_stdout: bool = False,
 ) -> dict:
     """Execute the dataflow's ancestor slice THROUGH *node_id* and report
     per-node outcomes (memo dev/67-7).
+
+    With *keep_stdout*, the report also holds ``targetStdout``: everything
+    the target printed, where its record keeps only the tail. It stays out of
+    ``nodes``, which a run streams to the page.
 
     ``acting_user`` is the account's ``User`` row, captured in the request by
     a caller that runs this on a thread of its own: the models its nodes load
@@ -506,6 +511,8 @@ def run_through_node(
             "durationMs": duration_ms,
         }
         report["nodes"][node.id] = record
+        if keep_stdout and node.id == node_id:
+            report["targetStdout"] = stdout_text
         runtime_journal.record_execution(
             user_key, project_id, node.id,
             code=content_text, stdout=stdout_raw, stderr=stderr_text, output=out,

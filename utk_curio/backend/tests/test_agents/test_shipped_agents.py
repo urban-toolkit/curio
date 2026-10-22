@@ -473,7 +473,7 @@ class TestTheSources:
         # The shared preamble, the rules other prompts include, and the text
         # the runtime composes a run's turns from are pages of the base entry.
         assert set(_raw(BASE)["pages"]) == {
-            "default_preamble.md", "examples.md", "rules/package_contract.md",
+            "default_preamble.md", "examples.md", "knowledge/map-edits.md", "rules/package_contract.md",
             "rules/research_notes_rules.md", "rules/research_verify_rules.md",
             "tools.md", "rules/plan-rules.md", "protocol.md", "frames.md",
             "delegate-contracts.md", "conversation-title.md", "keyword-types.md",

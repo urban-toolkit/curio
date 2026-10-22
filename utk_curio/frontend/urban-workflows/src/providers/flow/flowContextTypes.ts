@@ -76,8 +76,11 @@ export interface FlowContextProps {
     /** Set one node's content for BOTH the editor (``defaultCode``) and the
      * serializer (``code``) through provider state — the agent apply→canvas
      * bridge's content path (dev/51; RF-store writes get clobbered by the
-     * controlled re-sync). Merges into ``data``, never replaces it. */
-    applyNodeContent: (nodeId: string, content: string) => void;
+     * controlled re-sync). Merges into ``data``, never replaces it. A node
+     * whose code is its state takes it through its own writer
+     * (``utils/nodeCodeWriters``), its change named after *author*, the
+     * agent that wrote it. */
+    applyNodeContent: (nodeId: string, content: string, author?: string) => void;
     updateSubtasks: (trill: any) => void;
     cleanCanvas: () => void;
     flagBasedOnKeyword: (keywordIndex?: number) => void;

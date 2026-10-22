@@ -5,8 +5,9 @@ DEC-073 → dev/118 → dev/126 → dev/127 → dev/129 → dev/131 → dev/133 
 → dev/136 → dev/137 → dev/138): the ONE generate → gate → execute → correct
 loop every Solve path runs. Nothing about WHAT a round does changed; what
 changed is that each stage has a name — :meth:`_generation_inputs`,
-:meth:`_source_gate`, :meth:`_input_contract_gate`, :meth:`_repeat_check`,
-:meth:`_validate`, :meth:`_document_check`, :meth:`_absent_output_check`,
+:meth:`_source_gate`, :meth:`_input_contract_gate`, :meth:`_map_edits_gate`,
+:meth:`_repeat_check`, :meth:`_validate`, :meth:`_made_up_ids_check`,
+:meth:`_document_check`, :meth:`_absent_output_check`,
 :meth:`_empty_result_check`, :meth:`_record_round` — and :meth:`run` reads
 as the loop it is.
 
@@ -33,6 +34,7 @@ from utk_curio.backend.app.agents.domain import contracts
 from utk_curio.backend.app.agents.domain import document_validation
 from utk_curio.backend.app.agents.domain import failure_text
 from utk_curio.backend.app.agents.domain import input_contract
+from utk_curio.backend.app.agents.domain import map_edits
 from utk_curio.backend.app.agents.domain import node_context
 from utk_curio.backend.app.agents.domain import result_shape
 from utk_curio.backend.app.agents.domain import upstream_schema
@@ -140,6 +142,9 @@ class VerifiedRounds:
         self.reuse_retried = False
         self.dataset_paths = None
         self.secrets = None
+        # The whole output of the round's run, which only the made-up ids
+        # check reads: never part of a verdict, an attempt or an event.
+        self.round_stdout: str | None = None
         self._seed_from_recorded_failure()
         self._seed_from_carry_forward()
         # dev/128: what this node's inputs ARE, a fact of the graph, computed
@@ -293,8 +298,10 @@ class VerifiedRounds:
             for stage in (
                 self._source_gate,
                 self._input_contract_gate,
+                self._map_edits_gate,
                 self._repeat_check,
                 self._validate,
+                self._made_up_ids_check,
                 self._document_check,
                 self._absent_output_check,
                 self._empty_result_check,
@@ -438,6 +445,20 @@ class VerifiedRounds:
         self._carry(refusal)
         return CONTINUE
 
+    def _map_edits_gate(self):
+        """A Map Edits node's code is held to what the node reads, before the
+        sandbox runs it: code the node cannot read fails the round, in the
+        node's own words, which the correction gets. The code on the node,
+        which round 0 may run, is the user's own and is never refused."""
+        if self.use_current:
+            return None
+        refusal = map_edits.refusal(self.user_key, self.project_id, self.node_type, self.candidate)
+        if refusal is None:
+            return None
+        yield from self._record_failed_round(map_edits.KIND, refusal)
+        self._carry(refusal)
+        return CONTINUE
+
     def _repeat_check(self):
         """A repeat is judged AFTER the gate: a refused candidate keeps its own
         kind. dev/116 live fix (2026-09-09): the correction changed only
@@ -528,6 +549,7 @@ class VerifiedRounds:
                     prior_outputs=prior,
                     templates=self.loop_templates,
                     acting_user=self.acting_user,
+                    keep_stdout=True,
                     progress=lambda nid, i, total: progress_queue.put(
                         ("progress", nid, i, total)
                     ),
@@ -567,7 +589,27 @@ class VerifiedRounds:
             self.verdict_result = yield from self._validate_with(
                 None, candidate, self.dataset_paths, self.secrets)
             self.reuse_retried = True
+        self.round_stdout = self.verdict_result.pop("stdout", None)
         return None
+
+    def _made_up_ids_check(self):
+        """The Map Edits step reports ids no feature has, and its run goes on,
+        so a node an agent filled with made-up ids passes the sandbox. The
+        round fails on the step's own lines, read from the run's whole output,
+        however much comes after them. The code on the node is the user's own
+        and is never refused."""
+        stdout, self.round_stdout = self.round_stdout, None
+        if self.use_current or not stdout or self.verdict_result.get("verdict") != "pass":
+            return None
+        if not map_edits.is_map_edits(self.user_key, self.project_id, self.node_type):
+            return None
+        lines = map_edits.made_up_ids(stdout)
+        if not lines:
+            return None
+        refusal = map_edits.made_up_ids_refusal(lines)
+        yield from self._record_failed_round(map_edits.KIND, refusal)
+        self._carry(refusal)
+        return CONTINUE
 
     # ── stages: verdicts the sandbox cannot give ────────────────────────────
 

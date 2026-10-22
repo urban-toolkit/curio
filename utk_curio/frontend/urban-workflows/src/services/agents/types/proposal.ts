@@ -267,8 +267,9 @@ export interface AgentApplyResult {
   mutationApplied?: boolean;
   /** node.create: the inserted node, for the live canvas. */
   createdNode?: AgentCreatedNodePayload;
-  /** node.content.write: the applied content, for the live node. */
-  appliedContent?: { nodeId: string; content: string };
+  /** node.content.write: the applied content, for the live node, and the
+   * name of the agent that wrote it. */
+  appliedContent?: { nodeId: string; content: string; agent?: string };
   /** project.install: the installed agent coordinate. */
   installedCoord?: string;
   /** dataflow.plan.write (dev/52; removals per dev/59): the applied plan

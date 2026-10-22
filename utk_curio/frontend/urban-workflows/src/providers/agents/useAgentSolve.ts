@@ -155,7 +155,13 @@ export function useAgentSolve(opts: {
           setSolveRemedies((prev) => ({ ...prev, [attachmentId]: { ...(prev[attachmentId] ?? {}), [nodeId]: typed } }));
         }
         if (payload.status === "solved" && typeof payload.content === "string") {
-          notifyAgentCanvasMutation({ kind: "node-content-applied", nodeId, content: payload.content });
+          notifyAgentCanvasMutation({
+            kind: "node-content-applied",
+            nodeId,
+            content: payload.content,
+            // The agent that wrote it, which the node's change is named after.
+            ...(typeof payload.agent === "string" && payload.agent ? { agent: payload.agent } : {}),
+          });
         }
       }
     };
