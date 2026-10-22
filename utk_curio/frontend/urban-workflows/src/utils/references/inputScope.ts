@@ -355,7 +355,7 @@ function crsOf(name: string | null): string | null {
 }
 
 /** *cells* as one column over the rows read. */
-function summaryOf(cells: unknown[]): ColumnSummary {
+export function columnSummaryOf(cells: readonly unknown[]): ColumnSummary {
     let empty = 0;
     let min = Number.POSITIVE_INFINITY;
     let max = Number.NEGATIVE_INFINITY;
@@ -401,7 +401,7 @@ function tableOf(frame: GrammarFrame): PreviewTable {
     );
     const summaries: Record<string, ColumnSummary> = {};
     for (const column of columns) {
-        summaries[column] = summaryOf(Array.from({ length: readRows }, (_, index) => cellAt(column, index)));
+        summaries[column] = columnSummaryOf(Array.from({ length: readRows }, (_, index) => cellAt(column, index)));
     }
     const table: PreviewTable = {
         frameType: geo ? "geodataframe" : "dataframe",
