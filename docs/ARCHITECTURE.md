@@ -640,7 +640,9 @@ canvas's viewport, so it is the same size at every zoom and no node clips it.
 - `data-tooltip-side` says where it opens: `top`, the default, above the element and
   centered on it, or below when there is no room; `right`, for the tool rail's
   palette rows; `pointer`, for a chart's marks. `placeTooltip` (`tooltipPlacement.ts`)
-  keeps it in the window, 6 px from its target.
+  keeps it in the window, 6 px from its target. An open tooltip is placed again
+  whenever its size changes (a preview growing as its read comes back), so it never
+  covers its target.
 - `tooltipStore.ts` holds the timing: the tooltip shows 400 ms after the pointer
   rests, at once when another closed less than 600 ms before, and hides 100 ms after
   the pointer leaves. The pointer may cross over onto the tooltip, and leaving the
@@ -655,8 +657,11 @@ canvas's viewport, so it is the same size at every zoom and no node clips it.
 - Monaco's own hover is off in every editor (`hover: { enabled: false }`).
   `useEditorTooltip` shows, in the Curio tooltip, the markers' messages first, then
   a chip's preview or, in JavaScript, the TypeScript worker's quick info for the
-  word under the pointer. Cmd+K Cmd+I (Ctrl on Windows and Linux) shows it at the
-  caret: an action of each editor, so it works in the one with the focus.
+  word under the pointer. It is placed from where Monaco draws what it describes (a
+  chip's name, a word), so a redraw of the line keeps it in place, and it hides when
+  the editor's text scrolls, not when only the size Monaco can scroll changes.
+  Cmd+K Cmd+I (Ctrl on Windows and Linux) shows it at the caret: an action of each
+  editor, so it works in the one with the focus.
 - A chip's hover, its tag's in the header and its chip's in an editor, is one
   `ChipPreview` (`components/editing/widgets/ChipPreview.tsx`) of what the chip holds:
   an input's source, size and first rows, a column's values and range, the stacked
