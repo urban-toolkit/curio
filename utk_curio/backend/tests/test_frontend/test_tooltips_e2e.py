@@ -11,7 +11,7 @@ tooltip, no Monaco hover. Checked where jsdom has no layout to read:
    Each time one ``[role=tooltip]`` shows, outside the canvas's viewport and
    the app's root, 6 px above its target and centered on it (below it when
    there is no room above), with the same width and height at every zoom. A
-   frame of each, with the tooltip kept.
+   close-up frame of each: the tooltip and its target, with a margin.
 2. A chip in the join's code and one in the chart's spec, both
    ``[!! input_1 !!]``, at zoom 1 and 2: the same tooltip box at both, and no
    Monaco hover on screen.
@@ -39,6 +39,7 @@ Run::
 from __future__ import annotations
 
 import json
+import math
 import re
 import time
 from pathlib import Path
@@ -51,6 +52,8 @@ from .test_dashboard_page_e2e import _chart_drew, _open_dashboard, _pinned_and_s
 from .test_selection_tags_e2e import ZIP_BARS_ID, ZIPS_EXAMPLE, _UNSCROLL_JS
 from .test_widget_tags_e2e import _open_tab
 from .utils import (
+    CLOSEUP_MAX_DIFF_RATIO,
+    CLOSEUP_PIXEL_THRESHOLD,
     NODE_ONLY_AGENT_NAME,
     REPO_ROOT,
     _wait_for_reactflow_ready,
@@ -92,6 +95,8 @@ EDGE_PX = 1.0
 PLACE_PX = 2.0
 #: The gap between a tooltip and its target, or the pointer, in px.
 GAP_PX = 6.0
+#: The room around a tooltip and its target in their close-up, in px.
+FRAME_MARGIN_PX = 16
 #: How long a tooltip may take to show, in ms: its 400 ms, and a busy runner.
 SHOW_MS = 5000
 #: How long example 02 may take to run, in ms.
@@ -424,6 +429,18 @@ def _no_tooltip(page, what: str, *, timeout: float = 2000) -> None:
     assert tips == [], f"{what}: a tooltip is still on screen: {tips}"
 
 
+def _around(page, tip: dict) -> dict:
+    """The box of the page that holds *tip* and its target, FRAME_MARGIN_PX
+    around them, in whole pixels and inside the viewport: their close-up."""
+    viewport = page.viewport_size or {"width": 1280, "height": 720}
+    boxes = (tip["box"], tip["target"])
+    left = max(0, math.floor(min(b["left"] for b in boxes) - FRAME_MARGIN_PX))
+    top = max(0, math.floor(min(b["top"] for b in boxes) - FRAME_MARGIN_PX))
+    right = min(viewport["width"], math.ceil(max(b["right"] for b in boxes) + FRAME_MARGIN_PX))
+    bottom = min(viewport["height"], math.ceil(max(b["bottom"] for b in boxes) + FRAME_MARGIN_PX))
+    return {"x": left, "y": top, "width": right - left, "height": bottom - top}
+
+
 def _assert_beside_target(tip: dict, what: str) -> None:
     """6 px above its target and centered on it, or below it when there is no
     room above."""
@@ -498,9 +515,13 @@ def test_a_tooltip_is_the_same_at_every_canvas_zoom(
             assert NODE_ONLY_AGENT_NAME in tip["text"], f"{what}: {tip['text']!r}"
         sizes.append((zoom, tip["box"]))
         try:
+            # The tooltip and its target are the subject: a close-up of them,
+            # compared as tightly as a node's.
             save_workflow_test_screenshot(
                 page, STEM, test_name=f"{target}-zoom-{round(zoom * 100):03d}",
-                fit_reactflow=False, keep_tooltip=True,
+                fit_reactflow=False, keep_tooltip=True, clip_rect=_around(page, tip),
+                pixel_threshold=CLOSEUP_PIXEL_THRESHOLD, max_diff_ratio=CLOSEUP_MAX_DIFF_RATIO,
+                closeup=True,
             )
         except AssertionError as error:
             # Every zoom is measured all the same; the frames' verdict comes last.

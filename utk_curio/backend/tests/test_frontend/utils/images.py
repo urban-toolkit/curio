@@ -59,34 +59,69 @@ def _map_canvases_painted(page: Page):
             page.evaluate(_UNPAINT_MAP_CANVASES_JS)
 
 
-def _capture_full_page(page: Page):
+# The Curio tooltip (components/tooltip/TooltipLayer.tsx) is hidden for the
+# length of one capture, and so is any that shows during it. A pointer a test
+# leaves resting on a control shows that control's tooltip, where its title
+# drew the browser's own, which no screenshot holds; hidden, the frame is the
+# one it was. A frame whose subject is the tooltip keeps it.
+_HIDE_TOOLTIPS_JS = """async () => {
+    const style = document.createElement('style');
+    style.setAttribute('data-curio-capture-hides-tooltips', '');
+    style.textContent = '[data-curio-tooltip] { visibility: hidden !important; }';
+    document.head.appendChild(style);
+    if (document.querySelector('[data-curio-tooltip]')) {
+        await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+    }
+}"""
+
+_SHOW_TOOLTIPS_JS = """() => {
+    for (const style of document.querySelectorAll('style[data-curio-capture-hides-tooltips]')) style.remove();
+}"""
+
+
+@contextmanager
+def _tooltips_hidden(page: Page, keep_tooltip: bool):
+    """No Curio tooltip shows while inside, unless *keep_tooltip*."""
+    if keep_tooltip:
+        yield
+        return
+    page.evaluate(_HIDE_TOOLTIPS_JS)
+    try:
+        yield
+    finally:
+        page.evaluate(_SHOW_TOOLTIPS_JS)
+
+
+def _capture_full_page(page: Page, *, keep_tooltip: bool = False, clip: dict | None = None):
     """Return a Pillow RGB image of the full scrollable page.
 
     Scrolls to top-left first so the capture is deterministic, then uses
-    Playwright's ``full_page=True`` to grab everything.
+    Playwright's ``full_page=True`` to grab everything. With *clip*, a box of
+    the page as ``{x, y, width, height}`` in CSS pixels, only that box.
+    An open Curio tooltip is hidden unless *keep_tooltip*.
     """
     from PIL import Image
 
     page.evaluate("window.scrollTo(0, 0)")
-    with _map_canvases_painted(page):
-        raw = page.screenshot(full_page=True)
+    with _tooltips_hidden(page, keep_tooltip), _map_canvases_painted(page):
+        raw = page.screenshot(full_page=True, clip=clip) if clip else page.screenshot(full_page=True)
     return Image.open(BytesIO(raw)).convert("RGB")
 
 
-def _capture_element(page: Page, selector: str):
+def _capture_element(page: Page, selector: str, *, keep_tooltip: bool = False):
     """Return a Pillow RGB image of one element, or raise if it is not there.
 
     For a baseline whose subject is a panel rather than a page. A full-page
     capture of, say, an agent chat turn is more than half static canvas and
     chrome, which does not just waste the image - it dilutes the comparison,
     since a regression inside the panel is a small fraction of the frame
-    against a 10% budget.
+    against a 10% budget. An open Curio tooltip is hidden unless *keep_tooltip*.
     """
     from PIL import Image
 
     locator = page.locator(selector)
     locator.wait_for(state="visible", timeout=15000)
-    with _map_canvases_painted(page):
+    with _tooltips_hidden(page, keep_tooltip), _map_canvases_painted(page):
         raw = locator.screenshot()
     return Image.open(BytesIO(raw)).convert("RGB")
 
