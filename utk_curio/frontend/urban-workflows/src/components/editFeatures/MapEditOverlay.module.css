@@ -99,11 +99,12 @@
   }
 }
 
-/* The tip and its buttons, at the map's top left. */
+/* The tip and its buttons, at the map's top left, past Autark's menu button
+   (40px square, 10px in from the corner). */
 .toolbar {
   --widget-h: 22px;
   position: absolute;
-  left: 10px;
+  left: 58px;
   top: 10px;
   display: flex;
   align-items: center;

@@ -15,7 +15,8 @@ import styles from "./EditFeatures.module.css";
 export type RuleOp = "set" | "expr";
 const RULE_OPS: { op: RuleOp; label: string }[] = [
   { op: "set", label: "Set to" },
-  { op: "expr", label: "Set to the expression" },
+  // As the list names the edit: "Compute height as height * 0.5".
+  { op: "expr", label: "Compute as" },
 ];
 
 /** The change being written: its column, how and by what, each with its setter. */
