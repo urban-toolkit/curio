@@ -9,10 +9,11 @@ saved spec, so the mint, both apply paths, and the applied summary agree:
    feedback channel (``type: "Interaction"``, ``in/out`` handles) and are
    excluded exactly as the canvas's ``hasCycle`` and the execution runner
    exclude them.
-2. Are the plan's interaction edges legal?  The default preamble teaches the
-   rule ("Visualizations can be connected to a Data Pool with an edge of type
-   Interaction"), and here it is executable: one endpoint is a pool, the other a
-   visualization, both read from the roster's ``bidirectional`` templates.
+2. Are the plan's interaction edges legal?  An interaction edge carries
+   selections, never data, so one of its ends must show what it receives: it
+   links two visualizations of which one highlights, a visualization and a
+   pool, or two pools, all read from the roster's ``bidirectional`` templates.
+   The canvas refuses the same edges (``src/registry/interactionRoles.ts``).
 
 Before this module, plan mint validated endpoints and fan-in only; the bulk
 bridge inserts edges without the canvas's connect-time cycle check; and the
@@ -207,10 +208,10 @@ def format_cycle(path: list[str], label_of) -> str:
 
 
 def interaction_edge_errors(plan: dict, type_of_endpoint, templates: dict) -> list[str]:
-    """Corrective errors for plan edges of kind ``interaction`` that do not join
-    a visualization to a pool (``interaction_roles``, from the *templates*
-    roster), or two visualizations of which one highlights
-    (``interaction_highlighters``).  ``type_of_endpoint(endpoint) -> str | None`` returns the (possibly
+    """Corrective errors for plan edges of kind ``interaction`` that do not link
+    two visualizations of which one highlights (``interaction_highlighters``),
+    a visualization and a pool, or two pools (``interaction_roles``, from the
+    *templates* roster).  ``type_of_endpoint(endpoint) -> str | None`` returns the (possibly
     versioned) template id of a plan ref or existing node id; an unknown
     template fails open: no fabricated refusal."""
     pools, visualizations = interaction_roles(templates)
@@ -223,17 +224,17 @@ def interaction_edge_errors(plan: dict, type_of_endpoint, templates: dict) -> li
         src, dst = (strip_type_version(type_of_endpoint(edge[end])) for end in ("from", "to"))
         if src not in templates or dst not in templates:
             continue
-        if (src in pools and dst in visualizations) or (dst in pools and src in visualizations):
+        if (src in pools and dst in (pools | visualizations)) or (dst in pools and src in visualizations):
             continue
         if src in visualizations and dst in visualizations and {src, dst} & highlighters:
             continue
         offender = edge["to"] if dst not in pools | visualizations else edge["from"]
         offender_sfx = template_suffix(dst if offender == edge["to"] else src)
         errors.append(
-            f"edges[{i}]: an interaction edge connects a visualization "
-            f"({', '.join(sorted(template_suffix(t) for t in visualizations))}) to a "
-            f"{pool_names} node, or to a visualization that highlights what it receives "
-            f"({', '.join(sorted(template_suffix(t) for t in highlighters))}); {offender!r} is "
-            f"{offender_sfx or 'untyped'}: use a data edge, or target the {pool_names}"
+            f"edges[{i}]: an interaction edge links two views when one of them highlights "
+            f"what it receives ({', '.join(sorted(template_suffix(t) for t in highlighters))}), "
+            f"or links a view ({', '.join(sorted(template_suffix(t) for t in visualizations))}) "
+            f"or a {pool_names} to a {pool_names}; {offender!r} is {offender_sfx or 'untyped'}: "
+            f"use a data edge, or end the interaction edge at a view that highlights or at a {pool_names}"
         )
     return errors

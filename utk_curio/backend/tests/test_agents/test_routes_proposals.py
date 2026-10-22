@@ -2909,8 +2909,9 @@ class TestRestartHonestyOnApply:
 class TestPlanTopologyMint:
     """dev/112 (DEC-070) — the owner's 2026-08-25 session, made unmintable:
     a plan data edge that closes a cycle is refused with the path named; an
-    interaction edge is kept as such (visualization ↔ data-pool only);
-    edge-only plans mint; removed connections are reviewed by name."""
+    interaction edge is kept as such, and refused where neither end shows the
+    selection it receives; edge-only plans mint; removed connections are
+    reviewed by name."""
 
     COORD = "agent.dataflow-builder@1.0.0"
     TEMPLATES = [
@@ -3020,7 +3021,8 @@ class TestPlanTopologyMint:
         assert self._proposal(body) is None
         feedback = calls[1][-1]["content"]
         assert "invalid interaction edges" in feedback
-        assert "'combine' is computation-analysis" in feedback and "target the data-pool" in feedback
+        assert "'combine' is computation-analysis" in feedback
+        assert "end the interaction edge at a view that highlights or at a data-pool" in feedback
 
     def test_removal_only_plan_that_breaks_a_user_cycle_mints_and_names_the_connection(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
         user, token = user_and_token
