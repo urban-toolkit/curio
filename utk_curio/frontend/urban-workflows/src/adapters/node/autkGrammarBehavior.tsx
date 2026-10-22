@@ -50,7 +50,7 @@ import {
     withRasterSources, type CurioRasterSource,
 } from './autkRasters';
 import { applyComputeBlocks } from './autkComputeBlocks';
-import { frameMaps } from './autkMapView';
+import { frameMaps, keepMapViews, mapViews, type MapView } from './autkMapView';
 import { grammarMaps, trackMaps } from './autkMapDrawing';
 import { mapSession, onMapSession, registerEditMap } from '../../utils/editFeatures/mapEditBus';
 import { layerIdFor, restoreMapLayers, snapshotBeforeSolo, snapshotMapLayers, soloMapLayer, type MapLayerState } from './autkMapState';
@@ -77,24 +77,31 @@ function selectionLayerOf(spec: any): string | undefined {
 export type AutkBehaviorOptions = {
     /**
      * Whether a failed run marks the node errored, as an Autark node's does, so
-     * the nodes it feeds say so. An Edit Features node (#662) draws its input
-     * through this map: a map that cannot draw says so in its body, and the
-     * node's run stands as it ran.
+     * the nodes it feeds say so. A Map Edits node draws its input through this
+     * map: a map that cannot draw says so in its body, and the node's run
+     * stands as it ran.
      */
     marksNodeErrored?: boolean;
     /**
      * Whether each run is listed among the node's runs in the provenance drawer, as every node
-     * lists its own (#860). The Interaction node's map draws under that node's
+     * lists its own (#860). The Map Edits node's map draws under that node's
      * id, and a draw of it is not a run of that node, as a chart's redraw for a
      * recolored scenario box is not (useVega's `recordsProvenance`).
      */
     recordsProvenance?: boolean;
+    /**
+     * Whether a draw keeps the view of the maps the last draw made. Only the
+     * first draw frames the layers (`frameMaps`); each later one puts back
+     * the camera the person zoomed and panned to (`keepMapViews`), as the Map
+     * Edits node's map does when an edit draws it again.
+     */
+    keepsView?: boolean;
 };
 
 export const useAutkGrammarBehavior = (
     data: NodeBehaviorData,
     nodeState: UseNodeStateReturn,
-    { marksNodeErrored = true, recordsProvenance = true }: AutkBehaviorOptions = {},
+    { marksNodeErrored = true, recordsProvenance = true, keepsView = false }: AutkBehaviorOptions = {},
 ): NodeBehaviorResult => {
     const toasts = useToastContext();
     const wrapperRef = useRef<HTMLDivElement>(null);
@@ -137,6 +144,9 @@ export const useAutkGrammarBehavior = (
         destroyMapsRef.current?.();
         destroyMapsRef.current = null;
     };
+    // With keepsView: the view of the maps the last draw made, taken before
+    // they are destroyed, which the next draw puts back.
+    const keptViewsRef = useRef<Array<MapView | null> | null>(null);
     // Whether the node is on the page. It turns false in the commit that takes
     // the node off the page (the layout effect below), the moment its canvas
     // goes, so a run that goes on in that same moment already reads it.
@@ -365,7 +375,9 @@ export const useAutkGrammarBehavior = (
         const hasPlot = spec.plot != null;
 
         // Each run draws on a canvas of its own. The previous run's maps are
-        // destroyed with theirs (AutkGrammar has no destroy() of its own).
+        // destroyed with theirs (AutkGrammar has no destroy() of its own),
+        // their view taken first where the next draw keeps it.
+        if (keepsView && grammarRef.current) keptViewsRef.current = mapViews(grammarRef.current);
         destroyLastMaps();
         const wrapper = wrapperRef.current;
         if (wrapper) {
@@ -844,16 +856,9 @@ export const useAutkGrammarBehavior = (
                     return;
                 }
                 bleedRasterEdges(grammar, spec);
-                frameMaps(grammar);
+                if (keepsView && keptViewsRef.current) keepMapViews(grammar, keptViewsRef.current);
+                else frameMaps(grammar);
                 const shownMap = grammarMaps(grammar)[0];
-                // A draw after an edit keeps the view the edit was made in.
-                const saved = savedCameraRef.current;
-                savedCameraRef.current = null;
-                if (saved && shownMap?.camera && shownMap.renderer) {
-                    shownMap.camera.resetCamera(saved.up, saved.lookAt, saved.eye);
-                    shownMap.camera.resize(shownMap.renderer.pixelWidth, shownMap.renderer.pixelHeight);
-                    shownMap.requestRender?.();
-                }
                 restoreMapLayers(shownMap, savedLayersRef.current);
                 savedLayersRef.current = null;
                 if (soloRef.current) soloMapLayer(shownMap, layerIdFor(spec, soloRef.current.table), null, colorMapped(soloRef.current.table));
