@@ -222,6 +222,14 @@ export const tooltipStore = {
     conceal();
   },
 
+  /** *target*'s tooltip says *content* now; the one open for it follows, or goes when it says nothing. */
+  refresh(target: Element, content: TooltipContent | null): void {
+    const shown = state.shown;
+    if (!shown || shown.request.target !== target) return;
+    if (!content) conceal();
+    else if (!sameContent(shown.content, content)) emit({ shown: { ...shown, content } });
+  },
+
   /** The keyboard's focus left *target*: a tooltip its focus opened goes. */
   blurred(target: Element): void {
     const shown = state.shown;

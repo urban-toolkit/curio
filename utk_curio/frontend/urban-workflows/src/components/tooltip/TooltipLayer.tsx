@@ -129,15 +129,16 @@ export function TooltipLayer(): React.ReactElement | null {
       tooltipStore.rest(request);
     };
 
+    // A pointer with a button held is dragging: it asks for nothing on its way.
     const onOver = (event: PointerEvent) => {
-      if (event.pointerType === "touch") return;
+      if (event.pointerType === "touch" || event.buttons !== 0) return;
       hovered = event.target instanceof Element ? event.target : null;
       pointer = { x: event.clientX, y: event.clientY };
       settle();
     };
     // On the way up, so a chart that rewrites its tooltip at a move has done so.
     const onMove = (event: PointerEvent) => {
-      if (event.pointerType === "touch") return;
+      if (event.pointerType === "touch" || event.buttons !== 0) return;
       hovered = event.target instanceof Element ? event.target : hovered;
       pointer = { x: event.clientX, y: event.clientY };
       settle();
@@ -188,10 +189,16 @@ export function TooltipLayer(): React.ReactElement | null {
     const hide = () => tooltipStore.hide();
 
     // A target's tooltip changed under the pointer, or appeared (a chart
-    // writes its mark's tooltip at the move that reaches the mark).
+    // writes its mark's tooltip at the move that reaches the mark); or the
+    // target of one the keyboard opened changed what it says.
     const observer = new MutationObserver((records) => {
       const el = hovered;
       if (el && records.some((record) => record.target instanceof Element && record.target.contains(el))) settle();
+      for (const record of records) {
+        if (record.target instanceof Element && record.target.matches(TARGET)) {
+          tooltipStore.refresh(record.target, contentOf(record.target));
+        }
+      }
     });
     observer.observe(document.body, {
       subtree: true,

@@ -10,7 +10,8 @@ import styles from "./AgentAvatarBadge.module.css";
 /**
  * A single attached-agent avatar: a category-tinted robot chip that opens the
  * agent's chat on click and detaches via a hover ✕. Shared by the node badges
- * and the canvas dock so both render identically (per the concept).
+ * and the canvas dock so both render identically (per the concept). Its name
+ * is the badge's tooltip, the one Curio tooltip, the same size at any zoom.
  */
 export const AgentAvatarBadge: React.FC<{
   attachment: AgentAttachment;
@@ -23,7 +24,7 @@ export const AgentAvatarBadge: React.FC<{
   // multiple instances of the same template stay distinguishable.
   const displayName = attachmentDisplayName(attachment);
   return (
-    <div className={`${styles.badge} ${active ? styles.badgeActive : ""}`}>
+    <div className={`${styles.badge} ${active ? styles.badgeActive : ""}`} data-tooltip={displayName}>
       <button
         type="button"
         className={`${styles.avatar} ${tint}`}
@@ -58,10 +59,6 @@ export const AgentAvatarBadge: React.FC<{
       >
         ✕
       </button>
-      {/* macOS Dock-style name label, shown below the chip on hover. */}
-      <span className={styles.tooltip} aria-hidden="true">
-        {displayName}
-      </span>
     </div>
   );
 };
