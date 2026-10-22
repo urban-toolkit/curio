@@ -22,7 +22,8 @@ guides, images, walkthroughs or screenshot baselines.
 The release builds the sdist, then the wheel from the sdist
 (``publish-pip-to-pypi.yml``). The tests run those two steps through
 setuptools' build backend on a project made of Curio's build files, its code
-(without the frontend and the test suites), every folder it ships beside the
+(without the test suites, and without the frontend but for the files it shares
+with the backend), every folder it ships beside the
 code, ``docs/``, and the record of the files the package leaves out, which
 ``scripts/record_left_out_files.py`` writes before the build. They unpack the
 wheel as pip installs it, into a site-packages that already holds Hugging
@@ -71,6 +72,9 @@ BUILD_FILES = ("pyproject.toml", "setup.py", "MANIFEST.in", "package.json", "pac
 RECORD = PurePosixPath("utk_curio", "backend", "app", "datasets", "infrastructure", "left_out_files.record.json")
 #: Hugging Face's datasets package, as a site-packages holds it before Curio is installed.
 HUGGING_FACE = '"""A stand-in for Hugging Face\'s datasets package."""\n\nHUGGING_FACE = True\n'
+#: The files the frontend shares with the backend, under ``utk_curio/``, which
+#: the backend reads (``utk_curio/common/shared_constants.py``).
+SHARED_WITH_THE_FRONTEND = PurePosixPath("frontend", "urban-workflows", "src", "contracts")
 
 
 def _sha256(data: bytes) -> str:
@@ -139,16 +143,19 @@ def _read(pip_install, reader: str):
 
 def _code_only(directory: str, names: list[str]) -> set[str]:
     """What the project leaves out of the checkout's ``utk_curio/``: the
-    frontend and the test suites, which the probe never runs, compiled files,
-    hidden folders such as a run's ``.curio``, and a record of a local release
-    build (the project records its own)."""
+    frontend but for the files it shares with the backend, and the test
+    suites, which the probe never runs, compiled files, hidden folders such as
+    a run's ``.curio``, and a record of a local release build (the project
+    records its own)."""
     here = Path(directory)
     ignored = {
         name for name in names
         if name in ("__pycache__", "node_modules") or name.endswith(".pyc") or name.startswith(".")
     }
-    if here == REPO / "utk_curio":
-        ignored |= {"frontend"} & set(names)
+    inside = here.relative_to(REPO / "utk_curio").parts if here.is_relative_to(REPO / "utk_curio") else ()
+    if inside[:1] == SHARED_WITH_THE_FRONTEND.parts[:1] and len(inside) < len(SHARED_WITH_THE_FRONTEND.parts):
+        # Of the frontend, only the way down to the shared files.
+        ignored |= set(names) - {SHARED_WITH_THE_FRONTEND.parts[len(inside)]}
     if here.parent == REPO / "utk_curio" and here.name in ("backend", "sandbox"):
         ignored |= {"tests"} & set(names)
     return ignored | ({RECORD.name} & set(names))
@@ -319,6 +326,25 @@ def test_a_pip_install_reads_every_shipped_folder_from_inside_utk_curio(pip_inst
     }
     outside = {what: path for what, path in where.items() if not Path(path).resolve().is_relative_to(package)}
     assert not outside, f"a pip install reads these outside {package}: {outside}"
+
+
+def test_a_pip_install_reads_the_constants_it_shares_with_the_browser_from_the_frontends_source(pip_install):
+    """The constants the browser and the server share are JSON files in the
+    frontend's source, which the pip package carries with the rest of the
+    frontend. A pip install's backend reads them there, inside ``utk_curio/``,
+    byte for byte as a clone holds them, and its modules hold their values."""
+    from utk_curio.backend.app.agents.domain import contracts, manifest
+    from utk_curio.backend.app.packages.domain import node_appearance
+
+    found = _read(pip_install, "shared_constants")
+    assert Path(found["folder"]).resolve() == (pip_install.site / "utk_curio" / SHARED_WITH_THE_FRONTEND).resolve()
+    checkout = REPO / "utk_curio" / SHARED_WITH_THE_FRONTEND
+    files = {path.name: _sha256(path.read_bytes()) for path in sorted(checkout.glob("*.json"))}
+    assert len(files) >= 6 and found["files"] == files
+    assert found["stopped_by"] == contracts.STOPPED_BY_PHRASES
+    assert found["one_view"] == contracts.AUTK_ONE_VIEW
+    assert found["categories"] == list(manifest.AGENT_CATEGORIES)
+    assert found["palette"] == node_appearance.NAMED_COLORS
 
 
 def test_a_pip_install_lists_every_shipped_dataset_model_source_and_package(pip_install):

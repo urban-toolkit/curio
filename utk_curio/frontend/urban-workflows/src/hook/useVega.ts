@@ -10,7 +10,7 @@ import type { RenderCounts } from "../utils/renderOutcome";
 import { injectInputs, prepareVegaInputs, usesNamedDatasets, type VegaDataset } from "../utils/vegaInput";
 import { DEFAULT_INPUT_DATASET } from "../utils/vegaGeoSpec";
 import { INPUTS_DATASET } from "../utils/vegaDatasets";
-import { inputTableName } from "../generated/autkGrammar";
+import { inputTableName } from "../contracts/autkGrammar";
 import { usableCounts } from "../utils/vegaUsableRows";
 import { matchSelections, objectRows, type PointValue } from "../utils/selectionMatch";
 import { columnsOfRows, provideViewRows } from "../utils/references/viewSelections";

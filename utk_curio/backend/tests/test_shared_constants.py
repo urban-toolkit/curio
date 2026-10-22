@@ -146,6 +146,55 @@ def test_what_a_visualization_node_does_by_itself_is_the_files():
     assert contracts.IMAGE_MATCH_THRESHOLD == data["imageMatchThreshold"]
 
 
+def test_the_starter_tables_are_well_formed():
+    from utk_curio.backend.app.agents.domain import contracts
+
+    families = contracts.autk_families(contracts.load_autk_schema())
+    for rules in (contracts.VEGA_STARTER_LADDER, contracts.AUTK_STARTER_LADDER):
+        ids = [rule.id for rule in rules]
+        assert len(set(ids)) == len(ids)
+        for rule in rules:
+            assert {role for role, _ in rule.columns} <= set(contracts.COLUMN_ROLES), rule.id
+            # The description is one line of the preamble's list.
+            assert rule.description and "\n" not in rule.description, rule.id
+    for rule in contracts.AUTK_STARTER_LADDER:
+        assert rule.layers is not None, rule.id
+        assert rule.produces in families, rule.id
+    assert all(rule.layers is None for rule in contracts.VEGA_STARTER_LADDER)
+    assert {entry.role for entry in contracts.DTYPE_ROLES} <= set(contracts.COLUMN_ROLES)
+
+
+class TestTheRenderCauseTable:
+    def test_the_cause_names_and_their_order(self):
+        from utk_curio.backend.app.agents.domain import contracts
+
+        assert contracts.EMPTY_RENDER_CAUSES == (
+            "no-layers", "no-input-rows", "nothing-drawn", "empty-source",
+        )
+
+    def test_only_no_input_rows_spares_the_document(self):
+        from utk_curio.backend.app.agents.domain import contracts
+
+        at_fault = {c.name: c.document_at_fault for c in contracts.RENDER_CAUSES}
+        assert at_fault == {
+            "no-layers": True, "no-input-rows": False,
+            "nothing-drawn": True, "empty-source": True,
+        }
+
+    def test_an_unknown_cause_is_still_the_documents_fault(self):
+        from utk_curio.backend.app.agents.domain import contracts
+
+        assert contracts.is_document_at_fault("teleported") is True
+        assert contracts.is_document_at_fault("") is True
+        assert contracts.is_document_at_fault(None) is True
+
+    def test_every_cause_is_described_in_one_line(self):
+        from utk_curio.backend.app.agents.domain import contracts
+
+        for cause in contracts.RENDER_CAUSES:
+            assert cause.description and "\n" not in cause.description
+
+
 def _shared_sentences_and_colors() -> list[str]:
     """Every value of the shared files with a space in it (a sentence, a
     phrase or a description), and every color of a note's palette."""

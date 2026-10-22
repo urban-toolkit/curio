@@ -29,11 +29,7 @@
  * Pure, with no `vega` / `vega-lite` import, so it is testable under jest.
  */
 
-import {
-  VEGA_SCHEMA_URL,
-  VEGA_STARTER_LADDER,
-  type VegaStarterRuleId,
-} from "../generated/visDefaults";
+import visDefaults from "../contracts/visDefaults.json";
 import {
   classifyColumns,
   groupColumns,
@@ -55,21 +51,22 @@ export interface DefaultSpecRule {
 // it compiles the spec (useVega.compileGrammar), so one written here would
 // only ever be overwritten.
 const base = (rest: Record<string, unknown>) => ({
-  $schema: VEGA_SCHEMA_URL,
+  $schema: visDefaults.vegaSchemaUrl,
   ...rest,
 });
 
 /**
  * Each rule's spec past its `mark`, by rule id. The rule itself (its place in
- * the ladder, the columns it needs and the mark it draws) is generated into
- * `VEGA_STARTER_LADDER`, which the agents' shared preamble states too.
+ * the ladder, the columns it needs and the mark it draws) is in
+ * `vegaStarterLadder` of contracts/visDefaults.json, which the agents' shared
+ * preamble states too; a test holds these ids to the ladder's, one builder per
+ * rule.
  *
  * The bar rules state their `aggregate` rather than relying on vega-lite's
  * implicit behaviour, which silently overplots one bar per row.
  */
-export const VEGA_STARTER_BUILDERS: Record<
-  VegaStarterRuleId,
-  (c: Record<ColumnRole, string[]>) => Record<string, unknown>
+export const VEGA_STARTER_BUILDERS: Readonly<
+  Record<string, (c: Record<ColumnRole, string[]>) => Record<string, unknown>>
 > = {
   "geometry+quantitative": (c) => ({
     // Written out in full rather than relying on the geoshape injection:
@@ -117,13 +114,13 @@ export const VEGA_STARTER_BUILDERS: Record<
 };
 
 /**
- * The ladder: first match wins, in the generated order.
+ * The ladder: first match wins, in the file's order.
  *
  * The prose counterpart is the table in `docs/USAGE.md`. Adding or reordering a
  * rule trips `vegaDefaultSpec.test.ts`, which is there to point whoever does it
  * at that doc.
  */
-export const DEFAULT_SPEC_RULES: DefaultSpecRule[] = VEGA_STARTER_LADDER.map(
+export const DEFAULT_SPEC_RULES: DefaultSpecRule[] = visDefaults.vegaStarterLadder.map(
   (rule): DefaultSpecRule => ({
     id: rule.id,
     when: (c) => meetsRoles(c, rule.columns),

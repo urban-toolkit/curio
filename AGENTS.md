@@ -8,7 +8,7 @@ Curio is a framework for urban visual analytics built on dataflows: a React canv
 - `utk_curio/backend/`: Flask API. `app/` has one package per feature, `migrations/` the Alembic migrations, `tests/` the pytest suites.
 - `utk_curio/frontend/urban-workflows/`: React and TypeScript canvas, built with webpack. Frontend paths below start at its `src/`.
 - `utk_curio/sandbox/`: Flask service that runs node Python and JavaScript and stores results as DuckDB artifacts.
-- `utk_curio/common/`: code shared by backend, sandbox and the page server (`redaction.py`, `backend_address.py`).
+- `utk_curio/common/`: code shared by backend, sandbox and the page server (`redaction.py`, `backend_address.py`), and `shared_constants.py`, which reads the constants the frontend shares (`src/contracts/*.json`).
 - `utk_curio/shipped.py`: where `agents/`, `packages/`, `datasets/`, `discovery/`, `scripts/`, `vendor/` and the parts of `docs/` Curio reads are: beside `utk_curio/` in a clone, `utk_curio/_shipped/` in a pip install. Every reader of them asks it.
 - `utk_curio/tools/`: operator tools outside the Flask app (`agent_eval.py`, `preview_runner.py`).
 - `agents/`: everything the agents read. The shipped Agent Catalog, one directory per agent (`<agentId>@<major>/`: `manifest.json`, `prompts/`), read by `agents/domain/builtin.py` as an imported agent is; its manifest's `catalog` says card or helper and the roster's order. Beside them the base entry, `agent.curio.builtin@1/` (kind `base`, no agent), with the pages they share, which its manifest lists: the preamble (named `curio:default_preamble.md` in a manifest), `examples.md` (the index of shipped dataflows that runs get as worked examples, `agents/application/turns/examples.py`) and `rules/`. Every file is a source the backend renders when it starts (`agents/domain/agent_text.py`).
@@ -68,7 +68,7 @@ Under `utk_curio/backend/app/`:
 - `src/adapters/node/`: one behavior hook per built-in node kind (`codeNodeBehavior.tsx`, `vegaBehavior.ts`, `autkGrammarBehavior.tsx`, `dataPoolBehavior.tsx`, ...), exported from `index.ts`.
 - `src/components/UniversalNode.tsx`: the component that renders every node.
 - `src/registry/`: node descriptors and behaviors, built from installed package manifests.
-- `src/generated/`: contracts written by `scripts/generate_contracts.py` from `utk_curio/backend/app/agents/domain/contracts.py`; never edited by hand.
+- `src/contracts/`: the constants the frontend shares with the backend, one JSON file each (`renderCauses`, `solveStopReasons`, `agentCategories`, `noteColors`, `autkGrammar`, `visDefaults`), imported here and read by the backend through `utk_curio/common/shared_constants.py`; `autkGrammar.ts` holds `inputTableName` and `autkOneViewProblem`, with the cases both sides run in `autkGrammar.cases.json`.
 - `src/api/`: REST clients (projects, connection keys, LLM configurations, monitor).
 
 ## Tests
@@ -130,7 +130,6 @@ Other workflows: `autk-schema.yml` (weekly check of the vendored Autark schema),
 - `scripts/test.sh`: boots and runs each suite; CI calls it and `curio test` wraps it.
 - `scripts/clean.sh`: removes build artifacts and runtime data. `scripts/kill-curio.sh`: kills leftover Curio server processes.
 - `scripts/new_package.py`: scaffolds a node package. `scripts/regen_integrity.py`: rewrites a package's `integrity.json`.
-- `scripts/generate_contracts.py`: writes `src/generated/` from `contracts.py`; `--check` lists stale outputs.
 - `scripts/ci_requirements.py`: writes `scripts/ci-requirements.txt`, the libraries `curio.py setup --with-examples` installs from the manifests, which CI's image installs before its source; rerun it after changing a manifest's Python dependencies or the packages an example declares (`test_ci_requirements.py` fails on a stale list).
 - `scripts/sync_autk_schema.py`: vendors the Autark grammar schema; `--check` compares it with the release.
 - `scripts/validate_trill.py`: validates dataflow JSON against `docs/schemas/trill.v1.json`.

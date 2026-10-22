@@ -3,11 +3,10 @@ import {
   partialRenderNote,
   renderOutcome,
 } from "../../utils/renderOutcome";
-import {
-  DOCUMENT_AT_FAULT,
-  EMPTY_RENDER_KIND,
-  RENDER_CAUSES,
-} from "../../generated/renderCauses";
+import renderCauses from "../../contracts/renderCauses.json";
+
+const EMPTY_RENDER_KIND = renderCauses.emptyRenderKind;
+const RENDER_CAUSES = Object.keys(renderCauses.causes);
 
 /**
  * dev/136: the order of the rules IS the attribution, so the tests are mostly
@@ -181,7 +180,7 @@ describe("renderOutcome", () => {
       .toEqual({ empty: false, cause: null, message: "" });
   });
 
-  it("every cause it reports is in the generated vocabulary", () => {
+  it("every cause it reports is in the shared vocabulary", () => {
     const reported = [
       renderOutcome({ layersRequested: 1, layersDrawn: 0 }).cause,
       renderOutcome({ sourceRows: 0 }).cause,
@@ -190,8 +189,8 @@ describe("renderOutcome", () => {
     ];
     expect([...reported].sort()).toEqual([...RENDER_CAUSES].sort());
     // Only an empty INPUT spares the document; the backend reads the same table.
-    expect(DOCUMENT_AT_FAULT["no-input-rows"]).toBe(false);
-    expect(DOCUMENT_AT_FAULT["empty-source"]).toBe(true);
+    expect(renderCauses.causes["no-input-rows"].documentAtFault).toBe(false);
+    expect(renderCauses.causes["empty-source"].documentAtFault).toBe(true);
   });
 
   it("bounds every message", () => {
@@ -278,7 +277,7 @@ describe("partialRenderNote", () => {
 });
 
 describe("emptyRenderKind", () => {
-  it("stamps the generated prefix and the cause", () => {
+  it("stamps the shared prefix and the cause", () => {
     expect(emptyRenderKind("empty-source")).toBe(`${EMPTY_RENDER_KIND}:empty-source`);
     expect(emptyRenderKind("no-input-rows")).toBe("empty-render:no-input-rows");
   });

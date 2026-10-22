@@ -3,8 +3,8 @@
 A node's repair loop names the reason it stopped (``stoppedBy``). The failure
 sentences and the trace on the server, and the attempts card and the per-node
 Solve row in the browser, put that reason into words from one table,
-``contracts.SOLVE_STOP_REASONS``, which ``src/generated/solveStopReasons.ts``
-copies for the frontend. A node solved on its own runs on its own time budget,
+``contracts/solveStopReasons.json``, which the frontend imports and
+``contracts.SOLVE_STOP_REASONS`` reads. A node solved on its own runs on its own time budget,
 and a node in a Solve session runs on what is left of the session's, so those
 are two reasons with two phrases.
 """

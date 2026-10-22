@@ -22,7 +22,7 @@ import { fitPlotToPane } from '../../utils/autkPlotSizing';
 import { UNREPORTED_MESSAGE, describeError, runAndAlwaysSettle } from './autkRunSettlement';
 import { withExtensionRetry } from './duckdbExtensionRetry';
 import { AutkSpecKind, classifyAutkSpec, classifyAutkSpecString } from '../../utils/autkSpecKind';
-import { autkOneViewProblem } from '../../generated/autkGrammar';
+import { autkOneViewProblem } from '../../contracts/autkGrammar';
 import {
     autkNeedsInput, autkSourcesFrom, documentTableRefs, inputRow, keyValues, loadableSource, ownTableNames,
     readAutkInput, selectFieldsOf, selectFieldsProblem, tablePositions, tablesToLoad, type LoadOrder,
@@ -377,7 +377,7 @@ export const useAutkGrammarBehavior = (
         // A node draws one view, a map on its one canvas or a plot in its one
         // pane: a document with a map and a plot, or with more than one of
         // either, is refused before anything runs, with the words the agents'
-        // document check says too (generated/autkGrammar). A list of one map
+        // document check says too (contracts/autkGrammar). A list of one map
         // or one plot is that view, so the checks below read it.
         const severalViews = autkOneViewProblem(spec);
         if (severalViews) {

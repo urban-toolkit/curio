@@ -16,7 +16,7 @@ import {
   agentCategoryKey,
 } from "../../components/menus/nodes/agentsPalette/agentCategoryStyle";
 import { AUTK_STARTER_RULES } from "../../utils/autkDefaultSpec";
-import { classifyAutkSpec } from "../../utils/autkSpecKind";
+import { FAMILY_KIND, classifyAutkSpec } from "../../utils/autkSpecKind";
 import { RECOGNIZED_COLUMNS, resolveImageColumns } from "../../utils/imageColumns";
 import { contrastRatio, noteColors } from "../../utils/noteColors";
 import { emptyRenderKind, renderOutcome } from "../../utils/renderOutcome";
@@ -102,6 +102,8 @@ describe("the Autark grammar", () => {
     expect(families.length).toBeGreaterThan(1);
     for (const family of families) expect(classifyAutkSpec({ [family]: [{}] })).not.toBe("unknown");
     expect(classifyAutkSpec({ title: [{}] })).toBe("unknown");
+    // The routing table's keys are the AutkFamily type.
+    expect(Object.keys(FAMILY_KIND).sort()).toEqual([...families].sort());
   });
 });
 

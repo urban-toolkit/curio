@@ -68,7 +68,7 @@
  */
 
 import { WIDGET_NAME_RE, effectiveValue, type WidgetDef, type WidgetValue } from "../widgets/widgetModel";
-import { inputTableName } from "../../generated/autkGrammar";
+import { inputTableName } from "../../contracts/autkGrammar";
 import { vegaFieldName } from "../vegaFieldNames";
 import { isOverCap, overCapText, selectionSize, type SelectionTag } from "./selectionTags";
 import {

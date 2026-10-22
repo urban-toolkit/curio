@@ -2,11 +2,12 @@
 
 One validation/normalization/derivation truth for the per-node
 ``appearance.backgroundColor`` used by: build-request parsing
-(``build_models``), proposal minting and Apply (``agents.services``), and,
-mirrored constant for constant, the frontend's color logic: the built-in Note
-draws with ``src/generated/noteColors.ts``, which ``agents/domain/contracts.py``
-generates from the constants below. No caller re-implements color rules;
-forking this logic is the bug the memo forbids.
+(``build_models``), proposal minting and Apply (``agents.services``), and the
+frontend's color logic: the palette, the inks, the links and the contrast are
+``noteColors.json`` in the frontend's ``src/contracts/``, which the built-in
+Note draws with and this module reads (``utk_curio/common/shared_constants.py``).
+No caller re-implements color rules; forking this logic is the bug the memo
+forbids.
 
 Contract (dev/89 §3, the research notes' definition-of-done profile):
 
@@ -32,29 +33,26 @@ from __future__ import annotations
 import re
 from typing import Any, Mapping
 
-#: Central palette — design tokens, mirrored by the frontend utility.
-NAMED_COLORS: dict[str, str] = {
-    "yellow": "#fef3c0",
-    "pink": "#fbd3e0",
-    "blue": "#cfe8f7",
-    "green": "#d5f0d1",
-    "orange": "#ffddc0",
-    "lavender": "#e4dcf7",
-}
+from utk_curio.common import shared_constants
 
-DEFAULT_COLOR_NAME = "yellow"
+_NOTE_COLORS = shared_constants.read("noteColors")
+
+#: Central palette: design tokens, which the frontend draws from the same file.
+NAMED_COLORS: dict[str, str] = dict(_NOTE_COLORS["colors"])
+
+DEFAULT_COLOR_NAME: str = _NOTE_COLORS["defaultColor"]
 DEFAULT_BACKGROUND = NAMED_COLORS[DEFAULT_COLOR_NAME]
 
 # WCAG AA for normal text.
-MIN_CONTRAST = 4.5
+MIN_CONTRAST: float = _NOTE_COLORS["minContrast"]
 
 # Foreground candidates: the ink pair the behavior renders with.
-DARK_FOREGROUND = "#1f2430"
-LIGHT_FOREGROUND = "#ffffff"
+DARK_FOREGROUND: str = _NOTE_COLORS["inks"]["dark"]
+LIGHT_FOREGROUND: str = _NOTE_COLORS["inks"]["light"]
 # Link candidates (light-bg blue / dark-bg blue), falling back to the
 # foreground when neither clears AA against the background.
-LINK_ON_LIGHT = "#1d4ed8"
-LINK_ON_DARK = "#93c5fd"
+LINK_ON_LIGHT: str = _NOTE_COLORS["links"]["onLight"]
+LINK_ON_DARK: str = _NOTE_COLORS["links"]["onDark"]
 
 _HEX_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
 

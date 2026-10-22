@@ -1407,8 +1407,8 @@ describe("AgentChatPanel — dev/116 the per-node Solve row's remedy", () => {
   });
 
   it("a failed outcome names what stopped the loop, in the words the server uses", async () => {
-    const { STOPPED_BY_PHRASES } = require("../../generated/solveStopReasons") as {
-      STOPPED_BY_PHRASES: Readonly<Record<string, string>>;
+    const { phrases: STOPPED_BY_PHRASES } = require("../../contracts/solveStopReasons.json") as {
+      phrases: Readonly<Record<string, string>>;
     };
     const onSolveNode = jest.fn().mockResolvedValue({ verdict: "fail", rounds: 2, stoppedBy: "budget" });
     renderPanel({
