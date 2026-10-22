@@ -64,11 +64,15 @@ def _agents_copy(tmp_path, monkeypatch) -> Path:
 
 
 def _python_files() -> list[Path]:
-    """Every Python file in ``utk_curio/`` but the tests."""
-    return [
-        path for path in sorted((REPO_ROOT / "utk_curio").rglob("*.py"))
-        if "/tests/" not in path.relative_to(REPO_ROOT).as_posix()
-    ]
+    """Every Python file of Curio's own in ``utk_curio/``: the tests, the
+    frontend and installed packages (``node_modules``) left out."""
+    files = []
+    for path in sorted((REPO_ROOT / "utk_curio").rglob("*.py")):
+        relative = path.relative_to(REPO_ROOT).as_posix()
+        if "/tests/" in relative or relative.startswith("utk_curio/frontend/") or "/node_modules/" in relative:
+            continue
+        files.append(path)
+    return files
 
 
 def _message_calls() -> list[tuple[str, object, list[str], bool]]:

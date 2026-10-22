@@ -239,7 +239,7 @@ def _long_strings() -> list[tuple[str, int, str, str, bool]]:
     found = []
     for path in sorted((REPO_ROOT / "utk_curio").rglob("*.py")):
         relative = path.relative_to(REPO_ROOT).as_posix()
-        if "/tests/" in relative or "/node_modules/" in relative:
+        if "/tests/" in relative or relative.startswith("utk_curio/frontend/") or "/node_modules/" in relative:
             continue
         strings = _Strings(relative)
         strings.visit(ast.parse(path.read_text(encoding="utf-8")))

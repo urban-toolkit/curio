@@ -451,12 +451,13 @@ is a message of the base entry's `messages.md`, one section per message, which
 the check reads by its id: `agent_text.message("tool-round.not-granted", tool=name)`. A
 new refusal is a new section and the call that says it, and a value only the
 run knows, such as a node's id or the problems found, is a `{name}` place the
-call fills. Text that only people read is no message: an error on Play, the
-reason an Apply or a card gives, an HTTP error, a chat record, the command
-line's and the logs' text stay with their feature, in Python. To tell them
-apart, follow the text: if it goes back into a model's conversation (a tool's
-result, a correction round, what Solve sends the content builder), it is a
-message, even when a card shows it too. `test_messages.py` checks every call
+call fills. A message is text a check addresses to the model about what the
+model wrote: a refusal, a correction, or the notes its next attempt is given,
+even when a card shows it too. A feature's own record or data is no message,
+even when a run reads it later: an error on Play, the run journal's reason, a
+probe's verdict and a candidate's download steps, the reason an Apply or a
+card gives, an HTTP error, a chat record, the command line's and the logs'
+text stay with their feature, in Python. `test_messages.py` checks every call
 against the page, and `test_prose_guard.py` fails on a string in
 `utk_curio/`'s Python whose words run past 200 characters unless it is a
 message to users or code; a new one of those goes in the test's `USERS` or
