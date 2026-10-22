@@ -758,16 +758,3 @@ def _solve_grounding_base(
         "verified": {},
         "secrets": _connection_key_refs(user_key),
     }
-
-
-#: dev/114: the sixth runtime-supplied-inputs application (DEC-063) — the
-#: rule a tool-less Dataset Finder child answers to. The row schema itself is
-#: content.CANDIDATES_INSTRUCTION (#269): ONE schema, never a second copy.
-_DISCOVERY_RULE = (
-    "You are running as a delegate without tools. The `catalog` input IS the "
-    "project's Data Catalog (catalog.search was run for you): catalog-lane rows "
-    "must come ONLY from it, quoting each row's id as datasetId — any other id is "
-    "dropped. External rows are suggestions the runtime will probe; do not claim "
-    "verification. Reply with the datasetCandidates block described below and a "
-    "one-line summary; nothing else."
-)

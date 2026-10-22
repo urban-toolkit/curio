@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import logging
 
+from utk_curio.backend.app.agents.domain import agent_text, builtin
+
 log = logging.getLogger(__name__)
 
 
@@ -61,12 +63,10 @@ def _template_line(entry: dict, *, suffix: str = "") -> str:
     return f"- {entry['id']} — {entry['label']}" + (f": {desc}" if desc else "") + suffix
 
 
-_NO_NOTE_TEMPLATE_LINE = (
-    "None of these renders a note (no presentation template is enlisted in this "
-    "project): code templates and node types you see on the canvas cannot hold "
-    "note content — take the 'Installed but NOT enlisted in this project' rung "
-    "(when offered) or delegate authoring; do not node.create on any of the above."
-)
+def _frame(name: str) -> str:
+    """The section *name* of the base entry's ``frames.md``: a roster's
+    heading, or what a run is told when it has none."""
+    return agent_text.section(builtin.FRAMES_FILE, name)
 
 
 def _available_templates_block(
@@ -79,12 +79,13 @@ def _available_templates_block(
     Two sections, because one bucket could not express the difference that
     matters (memo dev/93 D4). "Available" is what this project can
     instantiate right now. "Installed but not enlisted" is what the user
-    already owns and could enlist with one reviewed ``package.install`` —
+    already owns and could enlist with one reviewed ``package.install``:
     without it, a template the user has looks identical to a template that
     does not exist anywhere, and an agent told to reuse concludes "there is
     no installed notes template on your canvas" and authors a duplicate
     package. The second section is offered only to a run that can act on it
     (a ``package.install`` grant); everyone else sees the roster unchanged.
+    Its heading and lines are ``frames.md``'s (:func:`_frame`).
     """
     entries = [t for t in (landscape or {}).get("available", []) if t.get("authorable")]
     shown = entries[:_TEMPLATES_BLOCK_MAX_ENTRIES]
@@ -99,27 +100,16 @@ def _available_templates_block(
         # this project's only available template was a Python compute node
         # (not authorable, so filtered out above), the section vanished, and
         # the model reached for the node type it could see on the canvas via
-        # dataflow.read — refused, one round spent. Silence read as "no rule
+        # dataflow.read: refused, one round spent. Silence read as "no rule
         # here"; the explicit line names the rule and the way out.
-        return (
-            "Available node templates: none — nothing enlisted in this project "
-            "can hold authored content. Node types you see on the canvas or in "
-            "dataflow.read that are not listed here cannot take content; use the "
-            "'Installed but NOT enlisted in this project' list (when offered) or "
-            "delegate authoring instead of creating a node."
-        )
-    block = (
-        "Available node templates (a node.create nodeType or a plan nodeType "
-        "MUST be one of these ids; the versioned form "
-        "'<packageId>/<templateId>@<major>' is also accepted):\n"
-        + "\n".join(_template_line(t) for t in shown)
-    )
+        return _frame("no-templates")
+    block = _frame("templates") + "\n" + "\n".join(_template_line(t) for t in shown)
     # dev/105 S1: the live roster held twelve built-in CODE templates and no
     # note template; the model took the post-it compute node it saw on the
-    # canvas — refused, one round spent. A note-composing run is told, in the
+    # canvas: refused, one round spent. A note-composing run is told, in the
     # roster itself, that nothing here renders a note and where the rung is.
     if notes_agent and not any(t.get("presentation") for t in shown):
-        block = f"{block}\n{_NO_NOTE_TEMPLATE_LINE}"
+        block = f"{block}\n{_frame('no-note-template')}"
     return block
 
 
@@ -129,6 +119,7 @@ def _enlistable_templates_block(project_id: str, landscape: dict | None, budget:
     Separate function, one shared line format: the sections are composed
     together but only this one is grant-gated, and it names the dirName the
     ``package.install`` proposal takes so the model never has to guess it.
+    Its heading is ``frames.md``'s (:func:`_frame`).
     """
     if budget <= 0:
         return None
@@ -146,11 +137,7 @@ def _enlistable_templates_block(project_id: str, landscape: dict | None, budget:
     lines = [
         _template_line(r, suffix=f" (package {r['dirName']})") for r in shown
     ]
-    return (
-        "Installed but NOT enlisted in this project — you already have these; "
-        "propose package.install with the named package to use one, and do NOT "
-        "author a duplicate package:\n" + "\n".join(lines)
-    )
+    return _frame("templates-not-enlisted") + "\n" + "\n".join(lines)
 
 
 def _available_template(user_key: str, project_id: str, node_type: object) -> tuple[dict | None, str]:

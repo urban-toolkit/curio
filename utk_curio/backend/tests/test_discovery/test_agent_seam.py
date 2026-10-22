@@ -14,13 +14,18 @@ from __future__ import annotations
 
 import json
 
-from utk_curio.backend.app.agents.domain import content
+from utk_curio.backend.app.agents.domain import agent_text, builtin, content
 from utk_curio.backend.app.agents.application import tools
 from utk_curio.backend.app.agents.application import verify
 from utk_curio.backend.app.agents.application.proposals.acquire import _mint_row_acquirable
 from utk_curio.backend.app.agents.application.tool_rounds import _egress_cost
 from utk_curio.backend.app.agents.application.turns.grounding import _verify_candidate_parts
 from utk_curio.backend.app.agents.application.turns.roster import _LazyRoster
+
+
+def _protocol(name: str) -> str:
+    """A section of the base entry's ``protocol.md``, as a run reads it."""
+    return agent_text.section(builtin.PROTOCOL_FILE, name)
 
 
 class TestTheContracts:
@@ -261,23 +266,23 @@ class TestTheInstructionIsGrantShaped:
         """Changing the prompt for every existing agent would be a behaviour
         change nobody asked for."""
         without = content.tail_instruction([("catalog.search", "x")])
-        assert content.CANDIDATES_DISCOVERY_ADDENDUM not in without
+        assert _protocol("dataset-candidates-from-portals") not in without
 
     def test_a_run_with_it_is_told_about_the_fields(self):
         with_discovery = content.tail_instruction(
             [("catalog.search", "x"), ("discovery.search", "y")]
         )
-        assert content.CANDIDATES_DISCOVERY_ADDENDUM in with_discovery
+        assert _protocol("dataset-candidates-from-portals") in with_discovery
         assert "sourceId" in with_discovery
 
     def test_the_discovery_tool_alone_still_unlocks_the_schema(self):
         """A run that can search portals can fill the external lane even
         without the Data Catalog tool."""
         only_discovery = content.tail_instruction([("discovery.search", "y")])
-        assert content.CANDIDATES_INSTRUCTION in only_discovery
+        assert _protocol("dataset-candidates") in only_discovery
 
     def test_the_addendum_forbids_inventing_a_pair(self):
-        assert "Never invent" in content.CANDIDATES_DISCOVERY_ADDENDUM
+        assert "Never invent" in _protocol("dataset-candidates-from-portals")
 
 
 class TestTheRosterExecutor:

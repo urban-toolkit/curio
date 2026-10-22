@@ -19,6 +19,7 @@ from utk_curio.backend.app.agents.application import delegation
 from utk_curio.backend.app.agents.application import source_grounding
 from utk_curio.backend.app.agents.application import tools
 from utk_curio.backend.app.agents.application import verify
+from utk_curio.backend.app.agents.domain import agent_text
 from utk_curio.backend.app.agents.domain import builtin
 from utk_curio.backend.app.agents.domain import content
 from utk_curio.backend.app.agents.domain import node_context
@@ -130,7 +131,7 @@ def _dataset_discover_inputs(user_key: str, project_id: str, inputs: dict) -> di
             "rows": rows,
         }
     if "discoveryReplyContract" not in enriched:
-        enriched["discoveryReplyContract"] = agents_grounding._DISCOVERY_RULE + "\n\n" + content.CANDIDATES_INSTRUCTION
+        enriched["discoveryReplyContract"] = _discovery_reply_contract()
     return enriched
 
 
@@ -481,122 +482,72 @@ def _mint_content_review_from_delegate(
 PACKAGE_AUTHORING_CAPABILITIES = content.PACKAGE_AUTHORING_CAPABILITIES
 
 
-# dev/90 A8: the build-request contract, supplied to AUTHORING delegates as
-# an input. DEC-046 children are tool-less and never see the grants paragraph
-# where the tool schema lives — a live run showed the child inventing a
-# plausible-but-wrong shape ("package"/"behaviors"/"behaviorKey") twice, and
-# the parent cannot teach a schema it does not carry either. The runtime is
-# the one place that always knows the contract (the dev/67-6 enrichment
-# pattern: deterministic server-side inputs, never model-invented).
-_BUILD_REQUEST_CONTRACT: dict = {
-    "reply": (
-        "Reply with ONE JSON object of exactly this shape (optionally inside "
-        "a ```json fence), nothing after it. Do NOT invent other keys — "
-        "there is no 'package', 'behaviors', or 'behaviorKey' key."
-    ),
-    # memo dev/94: the SECOND legal reply. "Reuse first" was previously a rule
-    # with no reachable outcome on this path — the delegate had no shape in
-    # which to say "one of these already does it", so the only reply the
-    # runtime recognised was a draft, and authoring was the only way to answer
-    # at all. Teaching the shape is the A8 lesson again: nobody emits a
-    # protocol they were never shown.
-    "insteadOfAuthoring": (
-        "When one of inputs.existingPackages already satisfies the need, "
-        "author NOTHING and reply with ONE JSON object of exactly this shape "
-        "instead of a draft: {\"reuseExisting\": {\"dirName\": \"<its "
-        "dirName>\", \"reason\": \"<one line: what it already does>\"}}. That "
-        "is a complete, successful answer — the caller acts on it (enlisting "
-        "the package if it is not yet in the project). Prefer extending an "
-        "existing package (mode 'extend') over creating a near-duplicate."
-    ),
-    "shape": {
-        "mode": "create | extend",
-        "justification": ("<the closest existing templates you considered and why "
-                          "each is inadequate: needed when the draft adds a template>"),
-        "baseDigest": "<64-hex digest of the installed target — extend only>",
-        "manifest": {
-            "id": ("reverse-DNS: two or more dot-separated lowercase segments, "
-                   "e.g. 'curio.notes' — single-segment ids are invalid"),
-            "version": "1.0.0",
-            "name": "<display name>",
-            "publisher": "<author>",
-            "description": "<one line>",
-            "license": "MIT",
-            "compatibility": {"curioRuntime": ">=0.5.0", "major": 1},
-            "permissions": [],
-            "dependencies": {"packages": {}, "python": {}, "js": {}},
-            "templates": [{
-                "id": "<kebab-case template id>",
-                "label": "<display label>",
-                "category": "visualization",
-                "engine": "python | javascript",
-                "editor": "code | widgets | grammar | none",
-                "behavior": "<the behavior key your source registers — custom looks only>",
-                "hasCode": False,
-                "hasWidgets": False,
-                "hasGrammar": False,
-                "inputPorts": [],
-                "outputPorts": [],
-                "backendHandler": ("<declared backend handler name this "
-                                   "template's Run invokes — backend "
-                                   "templates only>"),
-            }],
-            "backend": {
-                "entry": "backend/handler.py",
-                "handlers": [{"name": "<a-z0-9- name>",
-                              "timeoutClass": "quick | standard"}],
-            },
-        },
-        "files": {"sources/<name>.tsx": {"text": "<complete file body>"}},
-        "behaviorEntries": ["sources/<name>.tsx"],
-        "previewTemplates": ["<each template id with a custom behavior>"],
-        "nodes": [{
-            "templateId": "<template id>",
-            "title": "<node title>",
-            "content": "<the fixed note/body text>",
-            "appearance": {"backgroundColor":
-                           "yellow|pink|blue|green|orange|lavender|#rrggbb"},
-        }],
-    },
-    "rules": [
-        "every template the draft adds (all of a create's, the new ones of an "
-        "extend) needs the top-level justification, which the user reads "
-        "first on the review card, and a label no existing template has: a "
-        "template that already does the job is reused (insteadOfAuthoring), "
-        "never drafted again",
-        "a presentation-only template is engine 'javascript', editor 'none', "
-        "hasCode false, empty ports",
-        "the behavior source registers EXACTLY the template's behavior key: "
-        "window.curio.registerBehavior(key, (data, nodeState) => "
-        "({ contentComponent: <React element> })) — import react normally, "
-        "render React elements only, never raw HTML",
-        "field contract: the note text arrives as data.code (data.content is "
-        "an equivalent alias), the title as data.title, the per-instance "
-        "color as data.appearance.backgroundColor (also nodeState.appearance."
-        "backgroundColor) — read THESE fields, never invented ones",
-        "prefer ZERO JS dependencies — write small rendering logic yourself",
-        "the caller's inputs.notes ARE the requested nodes: copy each "
-        "{title, content, color} into nodes[] VERBATIM — never invent "
-        "placeholder content, never leave content empty when the caller "
-        "supplied findings (the runtime enforces this reconciliation)",
-    ],
-}
+# --- What a delegated run is told to reply with ---------------------------------
+#
+# The base entry's delegate-contracts.md, one section per contract, which the
+# runtime puts in a delegate's inputs (the dev/67-6 enrichment pattern:
+# deterministic server-side inputs, never model-invented). DEC-046 children
+# are tool-less and never see the grants paragraph where a tool's schema
+# lives, so a child answers to a schema it can SEE.
+
+
+def _contracts_section(name: str) -> str:
+    """The section *name* of the base entry's ``delegate-contracts.md``."""
+    return agent_text.section(builtin.DELEGATE_CONTRACTS_FILE, name)
+
+
+#: Each reply contract parsed, by its section, with the text it was parsed from.
+_PARSED_CONTRACTS: dict[str, tuple[str, dict]] = {}
+
+
+def _contract(name: str) -> dict:
+    """The reply contract the section *name* of ``delegate-contracts.md``
+    holds as its one block fenced as json: one dict while the section reads
+    the same, as when it was this module's constant; no caller changes it."""
+    text = _contracts_section(name)
+    held = _PARSED_CONTRACTS.get(name)
+    if held is None or held[0] != text:
+        where = f"{agent_text.PAGE_PREFIX}{builtin.DELEGATE_CONTRACTS_FILE}, section {name}"
+        held = _PARSED_CONTRACTS[name] = (text, agent_text.json_block(text, where))
+    return held[1]
 
 
 def _build_request_contract() -> dict:
-    """The build-request contract a delegated package-writing call receives.
+    """The build-request contract a delegated package-writing call receives:
+    the section ``build-request`` of ``delegate-contracts.md`` (dev/90 A8: a
+    live run showed the child inventing a plausible-but-wrong shape,
+    "package"/"behaviors"/"behaviorKey", twice, and the parent cannot teach a
+    schema it does not carry either).
 
     memo dev/91: the backend authoring contract rides it as
     ``backendContract``, stated where the delegate can see it (the A8 lesson:
     nobody invents a schema they were shown). Its text is the base entry's
     page ``rules/package_contract.md``, rendered, the same text the
     package-writing mode's own prompt includes, read like any prompt."""
+    contract = _contract("build-request")
     backend = builtin.read_page(
         builtin.PACKAGE_CONTRACT_FILE, wanted_by="the build-request contract"
     )
     if not backend:
-        return _BUILD_REQUEST_CONTRACT
-    return {**_BUILD_REQUEST_CONTRACT, "backendContract": backend}
+        return contract
+    return {**contract, "backendContract": backend}
+
+
+def _notes_reply_contract() -> dict:
+    """dev/95 (Follow-up D): the reply schema for a delegated
+    ``research.notes.compose``, the section ``notes-reply`` of
+    ``delegate-contracts.md``, taught via inputs and recognized ONLY by this
+    schema at the mint (DEC-063: never by reading intent out of prose)."""
+    return _contract("notes-reply")
+
+
+def _discovery_reply_contract() -> str:
+    """dev/114: what a tool-less Dataset Finder child answers to, the section
+    ``dataset-candidates`` of ``delegate-contracts.md``, then the
+    ``datasetCandidates`` block of ``protocol.md`` (#269: ONE schema, never a
+    second copy)."""
+    candidates = agent_text.section(builtin.PROTOCOL_FILE, "dataset-candidates")
+    return f"{_contracts_section('dataset-candidates')}\n\n{candidates}"
 
 
 def _extract_reuse_finding(child_text: str) -> dict | None:
@@ -666,41 +617,6 @@ def _reuse_finding_text(user_key: str, project_id: str, finding: dict) -> str:
         f"Nothing was authored, which is the correct outcome.{hint} Do NOT ask for "
         "a new package that duplicates it."
     )
-
-
-#: dev/95 (Follow-up D): the server-owned reply schema for a delegated
-#: ``research.notes.compose`` — taught via inputs (the A8 posture: the child
-#: answers to a schema it can SEE, never a shape it must invent) and
-#: recognized ONLY by this schema at the mint (DEC-063: never by reading
-#: intent out of prose).
-_NOTES_REPLY_CONTRACT: dict = {
-    "reply": (
-        "Reply with ONE JSON object of exactly this shape (optionally inside "
-        "a ```json fence), nothing after it."
-    ),
-    "shape": {
-        "answer": "<the prose answer to the question — always present>",
-        "nodeType": ("<one 'id' from inputs.notesTemplates — omit when that "
-                     "list is empty>"),
-        "notes": [{
-            "title": "<short note title>",
-            "content": "<the finding as clean markdown — bold fact labels, "
-                       "'- ' bullets, [source](https://...) links>",
-            "color": "yellow|pink|blue|green|orange|lavender|#rrggbb",
-        }],
-    },
-    "rules": [
-        "compose findings ONLY from inputs.searchResults — when it carries "
-        "an 'error', say in 'answer' that search was unavailable and reply "
-        "with an empty notes list; NEVER invent findings from memory",
-        "the reference row (dev/90 A13): the FIRST note carries the user's "
-        "question verbatim (title 'Question', color yellow); then one green "
-        "note per answer with a subject title and every web-gathered fact "
-        "linked to its source",
-        "an empty notes list is valid when nothing should be placed "
-        "(no template installed, or no findings)",
-    ],
-}
 
 
 #: Bounds on the runtime-gathered search rows injected into a delegation —
@@ -1366,7 +1282,7 @@ def _enriched_delegate_inputs(
             enriched["notesTemplates"] = packages_services.presentation_templates(
                 user_key, project_id)
         if "notesReplyContract" not in enriched:
-            enriched["notesReplyContract"] = _NOTES_REPLY_CONTRACT
+            enriched["notesReplyContract"] = _notes_reply_contract()
         return enriched
     if capability == "dataset.discover":
         # dev/114 — the SIXTH runtime-supplied-inputs application (DEC-063):

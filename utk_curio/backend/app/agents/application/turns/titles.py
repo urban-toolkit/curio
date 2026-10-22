@@ -9,6 +9,7 @@ and import order between siblings cannot matter.
 from __future__ import annotations
 
 from utk_curio.backend.app.agents.application import attachments
+from utk_curio.backend.app.agents.domain import agent_text, builtin
 from utk_curio.backend.app.agents.infrastructure.providers import ChatTurn
 from utk_curio.backend.app.agents.infrastructure.providers import ProviderConfig
 from utk_curio.backend.app.agents.repositories import ledger
@@ -17,10 +18,10 @@ from utk_curio.backend.app.projects import storage as projects_storage
 
 
 # ── conversation titles (memo dev/25) ────────────────────────────────────────
-TITLE_PROMPT = (
-    "Summarize the user's request as a short descriptive title of three or "
-    "four words. Reply with the title only — no quotes and no trailing period."
-)
+def title_prompt() -> str:
+    """The title call's system prompt: the base entry's
+    ``conversation-title.md``, without its final line break."""
+    return agent_text.page_text(builtin.TITLE_FILE).rstrip("\n")
 
 
 # A 3–4 word title needs very few tokens; keep the utility call cheap.
@@ -68,7 +69,7 @@ def _generate_conversation_title(
         raw = _turn_text(
             config,
             [
-                {"role": "system", "content": TITLE_PROMPT},
+                {"role": "system", "content": title_prompt()},
                 {"role": "user", "content": message},
             ],
             max_output_tokens=TITLE_MAX_OUTPUT_TOKENS,

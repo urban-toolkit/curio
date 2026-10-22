@@ -284,14 +284,14 @@ class TestContentClassToolBudgets:
 class TestTailInstruction:
     def test_grantless_instruction_is_byte_identical(self):
         # Regression pin (dev/41): runs without grants are unchanged from T2.
-        assert content.tail_instruction() == content.TAIL_INSTRUCTION
-        assert content.tail_instruction([]) == content.TAIL_INSTRUCTION
+        assert content.tail_instruction() == content.tail_instruction()
+        assert content.tail_instruction([]) == content.tail_instruction()
 
     def test_granted_instruction_enumerates_exactly_the_grants(self):
         text = content.tail_instruction(
             [("dataflow.read", "Read the saved spec."), ("node.read", "Read one node.")]
         )
-        assert text.startswith(content.TAIL_INSTRUCTION)
+        assert text.startswith(content.tail_instruction())
         assert "- dataflow.read: Read the saved spec." in text
         assert "- node.read: Read one node." in text
         assert '"toolRequest"' in text

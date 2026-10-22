@@ -222,15 +222,24 @@ class TestUserOwnedValuesStayOutOfPrompts:
     the Agent Catalog never reach."""
 
     def test_no_prompt_file_carries_a_keyword_type(self):
-        from utk_curio.backend.app.agents.domain import contracts
+        """The keyword types Curio ships are one page, the setting's default
+        as its one json block; no other page or prompt carries one, neither
+        as the configuration slot renders it nor by its description."""
+        from utk_curio.backend.app.agents.domain import agent_text, contracts
 
-        lines = set(contracts.KEYWORD_TYPES.render(contracts.KEYWORD_TYPES.default).splitlines())
+        default = contracts.KEYWORD_TYPES.default
+        lines = set(contracts.KEYWORD_TYPES.render(default).splitlines())
+        descriptions = [entry["description"] for entry in default]
+        home = prompt_path(contracts.KEYWORD_TYPES_PAGE)
+        assert agent_text.json_block(prompt_text(home.name), home.name) == default
         files = prompt_files("*.md")
-        assert files
+        assert home in files
         for path in files:
             for how, text in (("as written", path.read_text(encoding="utf-8")), ("as read", prompt_text(path.name))):
                 found = lines & set(text.splitlines())
                 assert not found, f"{path.name}, {how}, carries keyword types: {sorted(found)[:2]}"
+                carried = [description for description in descriptions if description in text]
+                assert path == home or not carried, f"{path.name}, {how}, carries keyword types: {carried[:2]}"
 
 
 class TestPromptsArePackaged:

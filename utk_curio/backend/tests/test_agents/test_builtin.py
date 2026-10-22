@@ -425,7 +425,7 @@ class TestPreambleAndInputs:
         # Their loaders resolve their datasets by id.
         assert len(re.findall(r"curio_(?:load_data|data_path)\(", text)) >= 3
         # And every run that is shown them is told so.
-        assert "never a guessed filename" in examples.HEADING
+        assert "never a guessed filename" in examples.heading()
 
     def test_preamble_text_readable_for_all_builtins(self):
         from utk_curio.backend.app.agents.domain import builtin
