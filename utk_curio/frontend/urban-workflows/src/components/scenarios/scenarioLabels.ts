@@ -14,17 +14,6 @@ export function nodeLabel(node: NodeLike | undefined, id: string): string {
   }
 }
 
-export type OutputTone = "done" | "error" | "stale" | "none";
-
-/** An outcome's latest output, as a word: done, failed, stale or not run. */
-export function outputStatus(
-  node: NodeLike | undefined,
-  execStatus: Record<string, "stale" | "executed" | "errored">,
-): { text: string; tone: OutputTone } {
-  if (!node) return { text: "Not run", tone: "none" };
-  const status = execStatus[node.id];
-  if (status === "errored" || node.data?.output?.code === "error") return { text: "Error", tone: "error" };
-  if (status === "stale") return { text: "Stale", tone: "stale" };
-  if (status === "executed" || node.data?.output?.code === "success") return { text: "Done", tone: "done" };
-  return { text: "Not run", tone: "none" };
-}
+// An outcome's latest output, as a word, lives where a header's chips can read
+// it without the node registry (utils/nodeOutputStatus).
+export { outputStatus, type OutputTone } from "../../utils/nodeOutputStatus";

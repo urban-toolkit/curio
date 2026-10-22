@@ -355,6 +355,18 @@ def input_reference_inner(slot: int | None, column: str | None = None, layer: st
     )
 
 
+def selection_reference_inner(name: str) -> str:
+    """What stands inside a reference to the selection tag *name*;
+    ``selectionReferenceInner`` in ``codeReferences.ts``."""
+    return f"selection {name}"
+
+
+def stacked_reference_inner(column: str) -> str:
+    """What stands inside a chip of the field *column* of the dataset
+    ``inputs``; ``stackedReferenceInner`` in ``codeReferences.ts``."""
+    return f"{STACKED_DATASET}.{column}"
+
+
 def legacy_reference_message(reference: str, inner: str) -> str | None:
     """Why *reference* is refused when it names an input the old way,
     ``input 1`` with a space, naming its new spelling; else None. The

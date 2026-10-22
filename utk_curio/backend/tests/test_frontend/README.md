@@ -522,6 +522,7 @@ test_frontend/
     screenshots.py            # save_workflow_test_screenshot, mint and re-mint, frame_nodes
     closeups.py               # save_node_closeup, close-up budgets, viewport hints
     interactions.py           # interaction frames, brush and mark probes
+    tooltips.py               # the Curio tooltip: hovers, the one on screen, its close-up box
     servers.py                # ports, e2e_existing_servers
     auth.py                   # signup helpers, require_owner_view
     db_stubs.py               # stub_* helpers, api_json

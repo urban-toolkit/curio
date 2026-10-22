@@ -43,6 +43,8 @@ An agent id is **`agent.`**, its publisher and its name (`agent.curio.researcher
 
 ### The agents
 
+Agents build with Curio's own nodes, [functions](../agents/agent.curio.builtin@1/knowledge/node-functions.md), catalogs and chips, as you do, and read what you made with them.
+
 **Seven agents ship with Curio.** Four of them are the catalog: **Researcher**, **Node Builder**, **Dataflow Builder** and **Dataset Finder**. This guide uses three words for what an agent does:
 
 - **In chat:** what you can ask an agent where you dropped it.
@@ -293,7 +295,7 @@ A plan can also save [scenarios](USAGE.md#scenarios). A scenario in a plan is ei
 
 Applying the whole plan saves its scenarios. Applied node by node, a copy can be created only after the node it copies, and a scenario is saved with the last of its nodes. A scenario that would take a node another scenario holds is not saved, since a node belongs to one scenario. A duplicate copies nodes the plan adds; scenarios already on the canvas are duplicated there. Solve writes a copy's code as it writes any planned node's, so the two can differ; compare them before relying on the comparison.
 
-An agent that reads the dataflow sees each scenario with its fixed context, levers and outcomes, and each node's widget values.
+An agent that reads the dataflow sees each scenario with its fixed context, levers and outcomes, each node's widget values, and each node's [selection tags](USAGE.md#selection-tags), with the view each reads and how many rows it holds.
 
 ### Map Edits
 
