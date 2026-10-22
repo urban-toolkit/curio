@@ -106,7 +106,7 @@ def record_dataset_selection(
             # dev/132: and what can be DONE with it now — the card's verdict
             # may be days old, and the delegation below depends on this one.
             agents_mint._mint_row_access(row)
-        agents_acquire._mint_row_acquirable(row, roster)
+        agents_acquire._mint_row_acquirable(row, roster, budget)
     # A row Curio can download is downloaded now, by the Discovery Catalog, and
     # recorded as the catalog pick it becomes.
     acquisitions = agents_acquire._acquire_confirmed_picks(rows)

@@ -3,7 +3,8 @@
 The lines that frame what the runtime hands a run: the canvas context, a delegated task's inputs,
 the configuration, the worked examples and the template rosters. One section per line, by the name
 the runtime reads it by; the runtime puts what each frames after it. In `delegated-task`,
-`{parent}` and `{capability}` are filled with the delegating agent and the capability it asked for.
+`{parent}` and `{capability}` are filled with the delegating agent and the capability it asked for,
+and in `templates-left-out`, `{count}` with how many templates a roster did not list.
 
 ## canvas-context
 
@@ -36,3 +37,7 @@ None of these renders a note (no presentation template is enlisted in this proje
 ## templates-not-enlisted
 
 Installed but NOT enlisted in this project (you already have these; propose package.install with the named package to use one, and do NOT author a duplicate package):
+
+## templates-left-out
+
+(and {count} more not listed)
