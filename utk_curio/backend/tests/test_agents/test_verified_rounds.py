@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import threading
 import time
+from pathlib import Path
 
 import pytest
 
@@ -27,6 +28,7 @@ from utk_curio.backend.tests.test_agents import test_routes_proposals as routes_
 from utk_curio.backend.tests.test_agents import test_routes_solve as routes_solve
 from utk_curio.backend.tests.test_agents import test_routes_turns as routes_turns
 
+REPO = Path(__file__).resolve().parents[4]
 KEY = "4242"
 PID = "p-rounds"
 DL = "curio.builtin/data-loading"
@@ -1657,7 +1659,7 @@ class TestValidationKnowsTheAccount:
     the Data Catalog and the Model Catalog do, so a lookup made without the
     user finds nothing, as it does on a real deployment."""
 
-    MODEL = "model.example.segmenter@1"
+    MODEL = "model.curio.ddrnet23-slim@1"
 
     def _setup(self, client, user, token, monkeypatch, *, content):
         return TestSolveNode()._setup(client, user, token, monkeypatch, content=content)
@@ -1715,13 +1717,15 @@ class TestValidationKnowsTheAccount:
         monkeypatch.setattr(packages, "resolve_model_dirs", _dirs)
         user, token = user_and_token
         # A data-loading node must load a source to pass the grounding gate,
-        # so this one reads the seeded dataset and names the model as well.
+        # so this one reads the seeded dataset and names the model as well:
+        # one the account added, as the gate holds a model to.
         ctx = self._setup(client, user, token, monkeypatch, content=(
             'import pandas as pd\n'
             f'model = curio_load_model("{self.MODEL}")\n'
             'df = pd.read_csv(curio_data_path("{DATASET}"))\n'
             'return df'
         ))
+        packages.install_package_from_directory(ctx["ukey"], REPO / "packages" / self.MODEL)
         payload = self._validated_payload(client, token, ctx)
         assert self.MODEL in (payload.get("models") or {}), (
             f"the model was looked up without the account on the validation thread: {payload.get('models')}"

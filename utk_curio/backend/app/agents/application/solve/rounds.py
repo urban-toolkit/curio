@@ -68,6 +68,8 @@ def _content_sha(text: str) -> str:
 #: literal, a decline names the missing input); a traceback reads from its tail.
 _HEAD_FIRST_KINDS = (
     "ungrounded-source", "source-missing", "repeated-attempt",
+    # The gate's refusal of the code's own calls and imports names them first.
+    source_grounding.CODE_KIND,
     # dev/128: the shape refusal's first line IS the answer.
     "input-contract",
     # dev/129/133/134: these details are composed prose, not tracebacks — the

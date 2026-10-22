@@ -5,17 +5,21 @@ Application layer of the packages package. What counts as a module is
 ``domain/python_modules.py``; the install-time refusal of a name two packages
 ship is ``store_install.refuse_a_module_name_in_use``, which is also why the
 modules of a package and of the packages it depends on never share a name.
+:func:`module_index` lists every module by name, with the nodes a run hands
+it to, for the agents' grounding gate.
 """
 
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 from typing import AbstractSet
 
 from utk_curio.backend.app.packages.domain.manifest import ManifestError
-from utk_curio.backend.app.packages.domain.package_id import BUILTIN_PACKAGE_ID
+from utk_curio.backend.app.packages.domain.package_id import BUILTIN_PACKAGE_ID, PACKAGE_DIR_RE
 from utk_curio.backend.app.packages.domain.spec_packages import dir_name_from_node_type
 from utk_curio.backend.app.packages.infrastructure.locks import package_seed_lock
+from utk_curio.backend.app.packages.repositories import catalog_dir as packages_catalog_dir
 from utk_curio.backend.app.packages.repositories.manifests import load_package_manifest
 from utk_curio.backend.app.packages.repositories.python_modules import (
     SOURCES_DIR,
@@ -65,6 +69,14 @@ def _installed_dir_for(
     named = dir_name_from_node_type(node_type)
     if named is not None:
         return named if int(named.rsplit("@", 1)[1]) in majors else None
+    return _dir_for_package(package_id, majors_by_pkg, pins)
+
+
+def _dir_for_package(package_id: str, majors_by_pkg: dict[str, list[int]], pins: AbstractSet[str]) -> str | None:
+    """The installed ``<packageId>@<major>`` an unversioned node type of
+    *package_id* comes from: the only major installed, else the one the
+    dataflow's lockfile pins, else the highest."""
+    majors = majors_by_pkg.get(package_id) or []
     if not majors:
         return None
     pinned = _pinned_major(package_id, pins) if len(majors) > 1 else None
@@ -179,3 +191,102 @@ def modules_for_node(user_key: str | None, node_type: object, project_id: str | 
     if not sources:
         return None
     return sources[0] if len(sources) == 1 else sources
+
+
+def _python_code_templates(manifest) -> list[dict]:
+    """``{"id", "label"}`` of each template of *manifest* whose nodes hold
+    Python code: the nodes that can import a module."""
+    return [
+        {"id": f"{manifest.package_id}/{template.template_id}", "label": template.label or template.template_id}
+        for template in manifest.templates
+        if template.engine == "python"
+        and packages_templates.template_content_kind(template) == packages_templates.CONTENT_KIND_CODE
+    ]
+
+
+def _store_modules(user_key: str, project_id: str | None, majors_by_pkg: dict[str, list[int]]) -> dict[str, dict]:
+    """:func:`module_index` for the packages of *user_key*'s store: each
+    package as an unversioned node type finds it, with the modules a run
+    hands its nodes (:func:`_module_sources`)."""
+    pins = _dataflow_pins(user_key, project_id, majors_by_pkg)
+    index: dict[str, dict] = {}
+    with package_seed_lock(user_key):
+        held = []
+        for package_id in sorted(majors_by_pkg):
+            dir_name = _dir_for_package(package_id, majors_by_pkg, pins)
+            if package_id == BUILTIN_PACKAGE_ID or dir_name is None:
+                continue
+            try:
+                held.append((dir_name, load_package_manifest(package_dir(user_key, dir_name))))
+            except ManifestError:
+                continue
+        for dir_name, manifest in held:
+            templates = _python_code_templates(manifest)
+            for source in _module_sources(user_key, dir_name, manifest, majors_by_pkg, pins):
+                shipper = Path(source["root"]).parent.name
+                for name in source["names"]:
+                    entry = index.setdefault(name, {"package": shipper, "added": True, "templates": []})
+                    entry["templates"].extend(t for t in templates if t not in entry["templates"])
+    return index
+
+
+#: ``_catalog_modules``'s last reading, keyed by the catalog folder and its
+#: modification time, so a package published into it is read again.
+_CATALOG_MODULES: dict[tuple[str, int], dict[str, dict]] = {}
+
+
+def _catalog_modules() -> dict[str, dict]:
+    """:func:`module_index` for the packages of the catalog, each with its
+    own templates; the highest major of a package names a module first."""
+    root = packages_catalog_dir.catalog_root()
+    try:
+        key = (str(root), root.stat().st_mtime_ns)
+    except OSError:
+        return {}
+    cached = _CATALOG_MODULES.get(key)
+    if cached is not None:
+        return cached
+    index: dict[str, dict] = {}
+    for folder in sorted((f for f in root.iterdir() if f.is_dir() and PACKAGE_DIR_RE.match(f.name)), reverse=True):
+        try:
+            manifest = load_package_manifest(folder)
+        except (ManifestError, OSError, ValueError):
+            continue
+        if manifest.package_id == BUILTIN_PACKAGE_ID:
+            continue
+        for name in module_names(folder, manifest):
+            index.setdefault(name, {"package": folder.name, "added": False, "templates": _python_code_templates(manifest)})
+    _CATALOG_MODULES.clear()
+    _CATALOG_MODULES[key] = index
+    return index
+
+
+def module_index(user_key: str | None, project_id: str | None = None) -> dict[str, dict]:
+    """Every module a package ships, by its name: ``{"package", "added",
+    "templates"}``.
+
+    *package* is the ``<packageId>@<major>`` that ships it, and *added* says
+    whether *user_key*'s store holds it. *templates* are the templates whose
+    nodes import it, ``{"id", "label"}`` each: for a package of the store, as
+    :func:`modules_for_node` hands modules to a run, the Python code templates
+    of that package and of every package that depends on it; for a package of
+    the catalog the store does not hold, its own. The built-in package ships
+    none. Never raises: what cannot be read adds nothing."""
+    index: dict[str, dict] = {}
+    installed: set[str] = set()
+    if user_key:
+        try:
+            majors_by_pkg = packages_store_reads._installed_majors_by_pkg(user_key)
+            installed = set(majors_by_pkg)
+            index = _store_modules(user_key, project_id, majors_by_pkg)
+        except Exception as exc:  # noqa: BLE001 - an unreadable store ships no module
+            log.warning("Could not read the modules of %s's packages: %s", user_key, exc)
+    try:
+        catalog = _catalog_modules()
+    except Exception as exc:  # noqa: BLE001 - an unreadable catalog ships no module
+        log.warning("Could not read the modules of the catalog's packages: %s", exc)
+        catalog = {}
+    for name, entry in catalog.items():
+        if name not in index and entry["package"].rsplit("@", 1)[0] not in installed:
+            index[name] = {**entry, "templates": list(entry["templates"])}
+    return index

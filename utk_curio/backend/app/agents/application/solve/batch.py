@@ -230,7 +230,11 @@ class SolveBatch:
             str((node_obj or {}).get("type") or ""), self.batch_templates
         )
 
-    def _ungrounded_error(self, refusal: str, node_id: str) -> str:
+    def _ungrounded_error(self, refusal: str, node_id: str, verdict=None) -> str:
+        # The code's own violations name what to change in it: no source is
+        # missing, so the Dataset Finder's remedy is not theirs.
+        if verdict is not None and source_grounding.failure_kind(verdict) == source_grounding.CODE_KIND:
+            return ("ungrounded code: " + " ".join(verdict.violations))[:300]
         return (
             "ungrounded source: " + refusal.split("Allowed sources:")[0]
             .replace("source grounding refused — ", "").strip()
@@ -541,13 +545,15 @@ class SolveBatch:
         #867: it holds the content to the datasets a verified Solve holds it
         to, the ids the node's goal names and the catalog rows the user
         confirmed for the node. The error the node fails with, or None: an
-        ungrounded source with its remedy, or a chart's or a map's document
-        that does not validate, as the verified loop names that round."""
+        ungrounded source with its remedy, the code's own violations, or a
+        chart's or a map's document that does not validate, as the verified
+        loop names that round."""
         node = self.nodes_by_id.get(node_id) or {}
+        roster_row = (self.batch_templates or {}).get(_pkg_services.canonical_template_id(node.get("type")))
         verdict, refusal = agents_grounding._gate_generated_content(
             self.user_key, self.project_id, self.solve_ctx,
-            code=code, engine="python", node_type=node.get("type"),
-            base=self.solve_ground,
+            code=code, engine=source_grounding.code_engine(roster_row), node_type=node.get("type"),
+            base=self.solve_ground, chips=agents_grounding._chip_context(self.current["spec"], node_id),
             request_texts=(str(node.get("goal") or ""),),
             requested_ids=source_grounding.confirmed_dataset_ids(
                 agents_dataset_resolution.confirmed_source(
@@ -560,7 +566,7 @@ class SolveBatch:
             return None
         if verdict.ok:  # every source is grounded: the document does not validate
             return f"document-invalid: {refusal}"
-        return self._ungrounded_error(refusal, node_id)
+        return self._ungrounded_error(refusal, node_id, verdict)
 
     def _record_solved(self, node_id: str, text) -> dict:
         # The child replies with response formatting around the code —
