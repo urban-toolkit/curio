@@ -266,6 +266,25 @@ describe("a layered input", () => {
       .filter((tag) => !tag.closest("[data-layer-line]"));
     expect(loose).toEqual([]);
   });
+
+  test("a layer with no columns says so on its line, after its tag", () => {
+    const osm: InputScope = {
+      slot: 0,
+      label: "Autark",
+      columns: [],
+      layers: [
+        { name: "table_osm_surface", columns: [] },
+        { name: "table_osm_roads", columns: ["highway"] },
+      ],
+    };
+    const view = render(<ReferenceStrip widgets={[]} inputs={[osm]} language="json" onInsert={jest.fn()} />);
+    const chips = openCategory(view.container, "inputs");
+    fireEvent.click(within(chips).getByRole("button", { name: "Show the columns of input_0" }));
+    const [surface, roads] = Array.from(chips.querySelectorAll("[data-layer-line]"));
+    expect(Array.from(surface.children).map((part) => part.textContent)).toEqual(["table_osm_surface", "no columns"]);
+    expect(surface.querySelector("[data-column-tag]")).toBeNull();
+    expect(roads.textContent).not.toContain("no columns");
+  });
 });
 
 describe("a tuple", () => {
