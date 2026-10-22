@@ -54,10 +54,12 @@ import {
   type NewLayerDef,
   type PropertyDef,
 } from "../../utils/editFeatures/editFeatures";
-import LayerWorkbench, { crsName, type WorkbenchLayer } from "./LayerWorkbench";
+import LayerWorkbench, { crsName, type EditSurface, type WorkbenchLayer } from "./LayerWorkbench";
 import { getUnversionedFlowNodeType } from "../../utils/flowNodeCanonicalType";
-import { NodeType } from "../../constants";
-import { circlesInto, circleTitles, mapFedBy, nodeCode, nodeName } from "../../utils/editFeatures/mapLayerEdits";
+import { NodeType, VisInteractionType } from "../../constants";
+import { inputSlotOf, isDataEdge, wiredInputSlots } from "../../utils/inputSlots";
+import { EDIT_SELECTION } from "../../utils/editFeatures/mapEditSelection";
+import { circlesInto, circleTitles, linkedMaps, nodeCode, nodeName } from "../../utils/editFeatures/mapLayerEdits";
 import { redoStep, undoStep, type HistoryStep } from "../../utils/nodeRuns";
 import styles from "./EditFeatures.module.css";
 
@@ -211,9 +213,21 @@ export function EditFeaturesBody({
   useSyncExternalStore(subscribeToCodeEdits, codeEditRevision);
   const { provenanceGraphNodes, selectedParentExecRef, setSelectedExec } = useProvenanceContext();
   const live = (flow?.nodes ?? []).find((n: any) => n.id === nodeId)?.data;
-  // The Autark map the node feeds and is linked to: the node edits on it.
-  const mapId = mapFedBy(nodeId, flow?.nodes ?? [], flow?.edges ?? []);
+  // The Autark maps the node feeds and is linked to: it picks and draws on
+  // each, and names the first.
+  const linked = linkedMaps(nodeId, flow?.nodes ?? [], flow?.edges ?? []);
+  const linkedKey = linked.join(" ");
+  const mapId = linked[0] ?? null;
   const mapNode = mapId ? (flow?.nodes ?? []).find((n: any) => n.id === mapId) : undefined;
+  const surfaces = useMemo<EditSurface[]>(() => {
+    const edges: any[] = flow?.edges ?? [];
+    return linked.map((id) => {
+      const wired = wiredInputSlots(edges, id);
+      const into = edges.find((edge) => edge.source === nodeId && edge.target === id && isDataEdge(edge));
+      return { mapId: id, position: Math.max(0, wired.indexOf(inputSlotOf(into?.targetHandle))), several: wired.length > 1 };
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [linkedKey, flow?.edges, nodeId]);
   const input = live?.input;
   const code = nodeCode(live);
   const read = useMemo(() => readEditFeaturesCode(code), [code]);
@@ -232,8 +246,25 @@ export function EditFeaturesBody({
   // Removes the picked features of the layer the Edit view works on (Delete).
   const removePickedRef = useRef<(() => boolean) | null>(null);
 
-  // A pick names features of one layer by one key: a new choice starts anew.
-  useEffect(() => setPicked([]), [layer?.table, key]);
+  // A pick names features of one layer by one key: a new choice starts anew,
+  // and so does a map linked or unlinked, whose picks it was.
+  useEffect(() => setPicked([]), [layer?.table, key, linkedKey]);
+
+  // What the node selects, sent once for each change: the interaction edges
+  // carry it to the maps, which light it up.
+  const sentRef = useRef<string | null>(null);
+  const lastSentRef = useRef<Record<string, any> | null>(null);
+  const sendSelection = (details: Record<string, any> | null) => {
+    // Nothing selected: what the maps lit up last is cleared, once.
+    const last = lastSentRef.current?.[EDIT_SELECTION];
+    const next = details ?? (last && (last.data?.length ?? 0) > 0 ? { [EDIT_SELECTION]: { ...last, type: VisInteractionType.UNDETERMINED, data: [] } } : null);
+    if (!next) return;
+    const text = JSON.stringify(next);
+    if (text === sentRef.current) return;
+    sentRef.current = text;
+    lastSentRef.current = next;
+    live?.interactionsCallback?.(next, nodeId);
+  };
 
   // The layer as the log leaves it: what the counts read.
   const logKey = JSON.stringify(settings?.edits ?? []);
@@ -263,7 +294,7 @@ export function EditFeaturesBody({
       const ids = keyColumns(l.fc);
       const saved = settings?.keys?.[name] ?? (name === settings?.layer ? settings?.key : undefined);
       const layerKey = saved && ids.includes(saved) ? saved : defaultKey(ids) ?? ids[0];
-      return { name, label, table: l.table, fc: l.fc as WorkbenchLayer["fc"], key: layerKey };
+      return { name, label, table: l.table, ownName: l.name !== null, fc: l.fc as WorkbenchLayer["fc"], key: layerKey };
     });
     const first = input[0]?.fc;
     const made = (settings?.newLayers ?? []).map((def) => ({
@@ -534,7 +565,10 @@ export function EditFeaturesBody({
             onEdits={(more, target) => writeOn(more, target)}
             onNewLayer={addNewLayer}
             removePickedRef={removePickedRef}
-            mapId={mapId}
+            surfaces={surfaces}
+            circles={circles}
+            incoming={live?.interactions}
+            onSelection={sendSelection}
             nodeId={nodeId}
           />
         )}

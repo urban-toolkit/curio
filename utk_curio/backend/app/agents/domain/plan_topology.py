@@ -29,11 +29,13 @@ on eight example fixtures rather than as a wrong score.
 """
 from __future__ import annotations
 
+from utk_curio.backend.app.agents.domain.contracts import AUTK_TEMPLATE
+
 INTERACTION_EDGE_TYPE = "Interaction"
-#: The Interaction node, linked by an interaction edge to the Autark map it
-#: feeds and to no other node (``interaction_edge_errors``).
+#: The Interaction node, linked by an interaction edge to an Autark map it
+#: feeds on a data edge and to no other node (``interaction_edge_errors``).
 EDITOR_TEMPLATE = "curio.builtin/edit-features"
-MAP_TEMPLATE = "curio.builtin/autk-grammar"
+MAP_TEMPLATE = AUTK_TEMPLATE
 
 
 
@@ -214,16 +216,22 @@ def format_cycle(path: list[str], label_of) -> str:
     return " → ".join(str(label_of(n)) for n in path)
 
 
-def interaction_edge_errors(plan: dict, type_of_endpoint, templates: dict) -> list[str]:
+def interaction_edge_errors(plan: dict, type_of_endpoint, templates: dict, data_pairs=None) -> list[str]:
     """Corrective errors for plan edges of kind ``interaction`` that do not join
     a visualization to a pool (``interaction_roles``, from the *templates*
     roster), or two visualizations of which one highlights
-    (``interaction_highlighters``).  ``type_of_endpoint(endpoint) -> str | None`` returns the (possibly
+    (``interaction_highlighters``), or the Interaction node to an Autark map it
+    feeds.  ``type_of_endpoint(endpoint) -> str | None`` returns the (possibly
     versioned) template id of a plan ref or existing node id; an unknown
-    template fails open: no fabricated refusal."""
+    template fails open: no fabricated refusal.  *data_pairs* are the
+    (source, target) data edges the graph holds once the plan applies
+    (``net_data_edges``); without them, the plan's own data edges."""
     pools, visualizations = interaction_roles(templates)
     highlighters = interaction_highlighters(templates)
     pool_names = " or ".join(sorted(template_suffix(t) for t in pools)) or "pool"
+    if data_pairs is None:
+        data_pairs = [(e["from"], e["to"]) for e in plan.get("edges", []) or [] if not is_interaction_edge(e)]
+    fed = {(str(source), str(target)) for source, target in data_pairs}
     errors: list[str] = []
     for i, edge in enumerate(plan.get("edges", []) or []):
         if not is_interaction_edge(edge):
@@ -232,12 +240,20 @@ def interaction_edge_errors(plan: dict, type_of_endpoint, templates: dict) -> li
         if src not in templates or dst not in templates:
             continue
         if EDITOR_TEMPLATE in (src, dst):
-            if {src, dst} == {EDITOR_TEMPLATE, MAP_TEMPLATE}:
-                continue
-            errors.append(
-                f"edges[{i}]: an interaction edge joins the {template_suffix(EDITOR_TEMPLATE)} node to the "
-                f"{template_suffix(MAP_TEMPLATE)} map it feeds, and to no other node; use a data edge"
-            )
+            editor, other = (edge["from"], edge["to"]) if src == EDITOR_TEMPLATE else (edge["to"], edge["from"])
+            other_type = dst if src == EDITOR_TEMPLATE else src
+            if other_type != MAP_TEMPLATE:
+                errors.append(
+                    f"edges[{i}]: an interaction edge joins the {template_suffix(EDITOR_TEMPLATE)} node to an "
+                    f"{template_suffix(MAP_TEMPLATE)} map it feeds, and to no other node; {other!r} is "
+                    f"{template_suffix(other_type) or 'untyped'}: use a data edge"
+                )
+            elif (str(editor), str(other)) not in fed:
+                errors.append(
+                    f"edges[{i}]: an interaction edge joins the {template_suffix(EDITOR_TEMPLATE)} node to an "
+                    f"{template_suffix(MAP_TEMPLATE)} map it feeds, and {editor!r} does not feed {other!r}: add a "
+                    f"data edge from {editor!r} to {other!r}, or link {editor!r} to the map it feeds"
+                )
             continue
         if (src in pools and dst in visualizations) or (dst in pools and src in visualizations):
             continue

@@ -1,13 +1,16 @@
 /**
- * What an Interaction node does on the Autark map it feeds (#662): an overlay
- * over the map's canvas, drawn through the map's own camera, where the
- * layer the node works on is picked, drawn into and reshaped
- * (`utils/editFeatures/mapEditBus`).
+ * What an Interaction node does on an Autark map it feeds and is linked to
+ * (#662): an overlay over the map's canvas, drawn through the map's own
+ * camera, where the layer the node works on is picked, drawn into and
+ * reshaped (`utils/editFeatures/mapEditBus`). It is mounted only on a map an
+ * Interaction node feeds.
  *
  * The map keeps its own gestures: a drag pans it and the wheel zooms it, in
  * every mode. A click is the node's:
  *
- * - pick: a click picks the feature under it (shift-click adds it);
+ * - pick: a click picks the feature under it (shift-click adds it, or takes it
+ *   out): the map's selection, which the interaction edge carries to the node
+ *   as a selection crosses between two views (`mapEditSelection`);
  * - draw: a click places a point, or a corner of a line or an area, and a
  *   double-click, Enter or Finish ends it; Backspace takes back a corner and
  *   Escape gives up;
@@ -15,15 +18,18 @@
  *   part of a feature of several to remove it, alt-click a corner to
  *   delete it; move: drag the picked feature to move it whole.
  *
- * Only what the action is about is drawn here: the pick, the features a rule
- * matches, the handles and the line being drawn. The map draws the layers,
- * with the edits made, again after each one.
+ * Only what the action is about is drawn here: what the node selects (its
+ * pick, or the features a rule matches), which comes back on the interaction
+ * edge, the handles and the shape being drawn. The map draws the layers, with
+ * the edits made, again after each one.
  */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useFlowContext } from "../../providers/FlowProvider";
 import type { SelectionId } from "../../utils/references/selectionTags";
 import type { Geometry } from "../../utils/editFeatures/editFeatures";
 import { kindOf, type EditedFeature } from "../../utils/editFeatures/layerModel";
 import { editMap, editMapLayerId, fromMercator, toMercator, useMapEdit } from "../../utils/editFeatures/mapEditBus";
+import { editSelection, selectedIdsIn, toggledIds } from "../../utils/editFeatures/mapEditSelection";
 import { partsOf, withoutPart } from "../../utils/editFeatures/geometryParts";
 import { toRings } from "../../utils/editFeatures/geometryRings";
 
@@ -294,9 +300,17 @@ type Gesture =
   | { kind: "corner" | "mid"; ring: number; index: number; shape?: Geometry }
   | { kind: "move"; origin: Geometry; at: XY };
 
+/** The id the shape drawn but not yet added goes by, among the outlines. */
+const DRAFT = "__drawn__";
+
 export default function MapEditOverlay({ mapId }: { mapId: string }) {
   const { session, map } = useMapEdit(mapId);
   const active = session?.active ?? null;
+  // The map's node: the selections the interaction edge brings it, and where
+  // its own selection goes.
+  const flow = useFlowContext() as any;
+  const mapData = (flow?.nodes ?? []).find((n: any) => n.id === mapId)?.data;
+  const sendSelection = mapData?.interactionsCallback ?? flow?.interactionsCallback;
   const box = useRef<HTMLDivElement>(null);
   const [, setTick] = useState(0);
   const [draft, setDraft] = useState<XY[]>([]);
@@ -341,13 +355,32 @@ export default function MapEditOverlay({ mapId }: { mapId: string }) {
     () => features.map((f) => (dragShape && f.id !== null && String(f.id) === String(dragShape.id) ? { ...f, geometry: dragShape.geometry } : f)),
     [features, dragShape],
   );
-  const selectedKeys = useMemo(
-    () => new Set([...(active?.selected ?? []), ...(active?.recent ?? [])].map(String)),
-    [active?.selected, active?.recent],
+  // What the node selects on this layer: its pick, or what a rule matches,
+  // which the interaction edge brings back to the map.
+  const selected = useMemo<SelectionId[]>(
+    () =>
+      active
+        ? selectedIdsIn(mapData?.interactions, (from, layer) => from === session?.interactionId && (layer ?? active.table) === active.table, features)
+        : [],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [mapData?.interactions, session?.interactionId, active?.table, features],
   );
-  const matchKeys = useMemo(() => new Set((active?.matches ?? []).map(String)), [active?.matches]);
-  const selectedOne = active?.selected.length === 1 ? shown.find((f) => f.id !== null && String(f.id) === String(active.selected[0])) : undefined;
+  const selectedKeys = useMemo(() => new Set([...selected.map(String), ...(active?.draft ? [DRAFT] : [])]), [selected, active?.draft]);
+  const selectedOne = selected.length === 1 ? shown.find((f) => f.id !== null && String(f.id) === String(selected[0])) : undefined;
   const handles = selectedOne?.geometry && (mode === "reshape" || mode === "move") ? toRings(selectedOne.geometry) : null;
+
+  /**
+   * A click that picks: the map's selection, *id*'s feature alone, or with
+   * shift added to what the node selects now or taken out of it; a click on
+   * nothing clears it. Sent through the map's node, as its own pick is, keyed
+   * by the layer's id column. Not while a shape waits to be added, nor while
+   * a rule picks.
+   */
+  const pick = (id: SelectionId | null, additive: boolean) => {
+    if (!active?.key || active.draft || active.rule) return;
+    const ids = id === null ? (additive ? selected : []) : additive ? toggledIds(selected, id) : [id];
+    sendSelection?.(editSelection(ids, active.key, active.table), mapId);
+  };
 
   // Every layer is worked on in 2D, from straight above with the buildings
   // drawn flat: outlines and handles are on the ground, and a raised roof,
@@ -389,8 +422,8 @@ export default function MapEditOverlay({ mapId }: { mapId: string }) {
   // The latest of everything the listeners read, so they are added once.
   // How big the map draws the layer's points and lines, for what a click reaches.
   const size = drawnSize(map, active?.table ? editMapLayerId(mapId, active.table) : undefined);
-  const live = useRef({ session, active, projection, shown, selectedOne, handles, mode, kind, draft, finishDraft, dragShape, size });
-  live.current = { session, active, projection, shown, selectedOne, handles, mode, kind, draft, finishDraft, dragShape, size };
+  const live = useRef({ session, active, projection, shown, selectedOne, handles, mode, kind, draft, finishDraft, dragShape, size, pick });
+  live.current = { session, active, projection, shown, selectedOne, handles, mode, kind, draft, finishDraft, dragShape, size, pick };
 
   useEffect(() => {
     const host = box.current?.parentElement;
@@ -529,10 +562,10 @@ export default function MapEditOverlay({ mapId }: { mapId: string }) {
       }
       if (m === "reshape" || m === "move") {
         const found = hitAt(all, g.start, p, z);
-        if (found) s.onSelect(found.id, false);
+        if (found) live.current.pick(found.id, false);
         return;
       }
-      s.onSelect(hitAt(all, g.start, p, z)?.id ?? null, g.shift);
+      live.current.pick(hitAt(all, g.start, p, z)?.id ?? null, g.shift);
     };
     const onDouble = (event: MouseEvent) => {
       // The map's own double-click pick is not the node's.
@@ -631,10 +664,13 @@ export default function MapEditOverlay({ mapId }: { mapId: string }) {
       </g>
     );
   };
-  // The pick and the features a rule matches are shown by the overlay's own
-  // outlines alone, on the ground where the map draws them (buildings flat).
-  const picked = shown.filter((f) => f.id !== null && selectedKeys.has(String(f.id))).slice(0, MAX_OUTLINED);
-  const matched = matchKeys.size > 0 ? shown.filter((f) => f.id !== null && matchKeys.has(String(f.id))).slice(0, MAX_OUTLINED) : [];
+  // What the node selects, and the shape drawn but not yet added, outlined on
+  // the ground where the map draws them (buildings flat): what a rule matches
+  // in red, as about to change.
+  const withDraft: EditedFeature[] = active.draft ? [...shown, { id: DRAFT, geometry: active.draft, properties: {}, status: "added" }] : shown;
+  const outlined = withDraft.filter((f) => f.id !== null && selectedKeys.has(String(f.id))).slice(0, MAX_OUTLINED);
+  const picked = active.rule ? [] : outlined;
+  const matched = active.rule ? outlined : [];
   const draftScreen = draft.map(p.toScreen);
   const hoverScreen = hover && mode === "draw" && draft.length > 0 ? p.toScreen(hover) : null;
   const noun = active.noun;

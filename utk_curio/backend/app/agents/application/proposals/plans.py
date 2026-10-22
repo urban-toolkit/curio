@@ -426,12 +426,13 @@ def _plan_topology_refusal(plan: dict, existing_nodes: dict, existing_edges: lis
         node = existing_nodes.get(endpoint)
         return node.get("type") if node else None
 
-    kind_errors = plan_topology.interaction_edge_errors(plan, _type_of_endpoint, available)
-    if kind_errors:
-        return "\n- ".join(["the plan wires invalid interaction edges:"] + kind_errors)
     net_pairs = plan_topology.net_data_edges(
         existing_edges, plan, remove_node_set, set(remove_edges)
     )
+    # An Interaction node's link is to a map it feeds once the plan applies.
+    kind_errors = plan_topology.interaction_edge_errors(plan, _type_of_endpoint, available, net_pairs)
+    if kind_errors:
+        return "\n- ".join(["the plan wires invalid interaction edges:"] + kind_errors)
     closing = plan_topology.closing_plan_edges(net_pairs, plan)
     if closing:
         def _label(node_id: str) -> str:

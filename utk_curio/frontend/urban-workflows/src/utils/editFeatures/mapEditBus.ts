@@ -1,19 +1,23 @@
 /**
- * How an Interaction node edits on the Autark map that feeds it (#662).
+ * The drawing tools an Interaction node lends the Autark maps it feeds and is
+ * linked to (#662).
  *
  * The Interaction node is the panel: its layers, the action, the forms and
- * the edit log. The map is where features are picked, drawn and reshaped.
- * They meet here, by the map's node id:
+ * the edit log. A map is where features are drawn and reshaped. They meet
+ * here, by the map's node id and the Interaction node's:
  *
  * - the Interaction node publishes a session (`publishMapSession`) while an
- *   action is under way: the layer being worked on, its features as the log
- *   leaves them, the pick, and what a click on the map does;
+ *   action is under way: the layer being worked on, as the map names it, and
+ *   its features as the log leaves them, the mode of the action, the shape
+ *   being drawn, and what a shape drawn or reshaped on the map becomes;
  * - the Autark node registers each map it draws (`registerEditMap`), whose
  *   camera and origin the overlay on it (`MapEditOverlay`) reads.
  *
- * The edit log itself reaches the map as the Interaction node's setting
- * (`utils/editFeatures/mapLayerEdits`): the map draws, and hands on, its
- * layers with the edits applied.
+ * Picks are not here: a pick on the map is the map's selection, which the
+ * interaction edge carries to the Interaction node, as a selection crosses
+ * between two views, and what the node picks, or a rule matches, comes back
+ * the same way (`providers/flow/useInteractions`). The edits reach the map on
+ * the data edge (`mapEditsPreview`).
  */
 import { useSyncExternalStore } from "react";
 import type { SelectionId } from "../references/selectionTags";
@@ -23,23 +27,22 @@ import type { EditedFeature, GeometryKind } from "./layerModel";
 export type MapEditMode = "select" | "draw" | "reshape" | "move";
 
 export interface MapEditActive {
-  /** The table name the map draws the layer under. */
+  /** The table the map draws the layer under. */
   table: string;
   label: string;
   kind: GeometryKind;
   /** What one feature is called: "road". */
   noun: string;
   mode: MapEditMode;
+  /** Picks by a rule: what the node selects is what the rule matches, outlined as about to change. */
+  rule?: boolean;
   /** The layer's features as the log leaves them. */
   features: EditedFeature[];
-  selected: SelectionId[];
-  /** Features a rule matches, drawn as about to be removed. */
-  matches?: SelectionId[];
-  /** Features just added or edited, lit up once the map draws them again. */
-  recent?: SelectionId[];
+  /** The shape drawn but not yet added. */
+  draft?: Geometry | null;
   /** Longitude-latitude coordinates (else the map's own Mercator metres). */
   geographic: boolean;
-  /** The column a feature's id is read from, for the map's own highlight. */
+  /** The column a feature's id is read from, which a pick names it by. */
   key?: string;
 }
 
@@ -48,14 +51,14 @@ export interface MapEditSession {
   /** Show only this layer: the table the map keeps drawing, hiding its others. */
   solo?: string | null;
   active: MapEditActive | null;
-  onSelect: (id: SelectionId | null, additive: boolean) => void;
   onDrawn: (geometry: Geometry) => void;
   onReshape: (id: SelectionId, geometry: Geometry) => void;
   /** Turns the shape mode (reshape, move) off again: the map's Done. */
   onShapeDone?: () => void;
 }
 
-const sessions = new Map<string, MapEditSession>();
+/** Each map's sessions, by the Interaction node that published each, the latest last. */
+const sessions = new Map<string, Map<string, MapEditSession>>();
 const maps = new Map<string, any>();
 const layerIds = new Map<string, (table: string) => string>();
 const listeners = new Map<string, Set<() => void>>();
@@ -64,19 +67,30 @@ function notify(mapId: string) {
   for (const listener of listeners.get(mapId) ?? []) listener();
 }
 
-/** Publish, or with null take back, the session an Interaction node edits *mapId* with. */
-export function publishMapSession(mapId: string, session: MapEditSession | null): void {
-  const current = sessions.get(mapId);
+/**
+ * Publish, or with null take back, the session the Interaction node
+ * *nodeId* edits *mapId* with. A node takes back its own session only: a map
+ * two nodes feed keeps the other's.
+ */
+export function publishMapSession(mapId: string, nodeId: string, session: MapEditSession | null): void {
+  const mine = sessions.get(mapId) ?? new Map<string, MapEditSession>();
   if (session === null) {
-    if (!current) return;
-    sessions.delete(mapId);
-  } else sessions.set(mapId, session);
+    if (!mine.has(nodeId)) return;
+    mine.delete(nodeId);
+  } else {
+    // The latest published is the one the map shows.
+    mine.delete(nodeId);
+    mine.set(nodeId, session);
+  }
+  if (mine.size > 0) sessions.set(mapId, mine);
+  else sessions.delete(mapId);
   notify(mapId);
 }
 
-/** The session *mapId* is edited with, if any. */
+/** The session *mapId* is edited with now: the latest an Interaction node published. */
 export function mapSession(mapId: string): MapEditSession | undefined {
-  return sessions.get(mapId);
+  const mine = sessions.get(mapId);
+  return mine ? [...mine.values()].at(-1) : undefined;
 }
 
 /** The autk map *mapId* drew last, for the overlay on it. */
@@ -97,7 +111,6 @@ export function editMapLayerId(mapId: string, table: string): string {
   return layerIds.get(mapId)?.(table) ?? table;
 }
 
-
 function subscribe(mapId: string, listener: () => void): () => void {
   const set = listeners.get(mapId) ?? new Set();
   set.add(listener);
@@ -109,7 +122,7 @@ function subscribe(mapId: string, listener: () => void): () => void {
 export function useMapEdit(mapId: string): { session: MapEditSession | undefined; map: any } {
   const session = useSyncExternalStore(
     (listener) => subscribe(mapId, listener),
-    () => sessions.get(mapId),
+    () => mapSession(mapId),
     () => undefined,
   );
   const map = useSyncExternalStore(

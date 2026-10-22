@@ -14,14 +14,18 @@
  *    property (a new column with a value for every feature).
  * 3. The action: its form here, its drawing on the map.
  *
- * The node is linked to an Autark map (*mapId*), and the drawing happens on
- * that map (`MapEditOverlay`, through `mapEditBus`). Every action becomes an
- * entry of the node's edit log, through *onEdit*.
+ * The node feeds the Autark maps it is linked to (*surfaces*), and the
+ * drawing happens on them (`MapEditOverlay`, through `mapEditBus`). A pick
+ * there is the map's selection, which the interaction edge brings the node
+ * (*incoming*), and what the node picks, or a rule matches, goes back the
+ * same way (*onSelection*). Every action becomes an entry of the node's edit
+ * log, through *onEdit*.
  */
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import type { SelectionId } from "../../utils/references/selectionTags";
 import {
   NEW_LAYER_GEOMETRIES,
+  NEW_LAYER_KEY,
   PROPERTY_TYPES,
   type EditValue,
   type FeatureEdit,
@@ -50,8 +54,20 @@ import {
 } from "../../utils/editFeatures/layerModel";
 import { evaluate, exprProblem, parseExpr, truthy } from "../../utils/editFeatures/editExpr";
 import { publishMapSession, type MapEditMode } from "../../utils/editFeatures/mapEditBus";
+import { editSelection, sameIds, selectedIdsIn } from "../../utils/editFeatures/mapEditSelection";
+import { mapTableName } from "../../utils/editFeatures/mapEditsPreview";
 import { partsOf, withPart } from "../../utils/editFeatures/geometryParts";
+import { NodeType } from "../../constants";
 import styles from "./EditFeatures.module.css";
+
+/** An Autark map the node feeds and is linked to: where it picks and draws. */
+export interface EditSurface {
+  mapId: string;
+  /** The circle the node feeds there, among the map's wired circles. */
+  position: number;
+  /** Whether the map has more than one wired circle. */
+  several: boolean;
+}
 
 
 /** A layer the workbench offers: one of the input's, or one the node makes. */
@@ -62,6 +78,8 @@ export interface WorkbenchLayer {
   label: string;
   /** The table the map draws it as (`input_0`), when it is one of the input's. */
   table?: string;
+  /** Whether the input names the layer itself, rather than by its place. */
+  ownName?: boolean;
   fc: { features?: any[]; crs?: any };
   /** The column that identifies its features, or undefined when it has none. */
   key?: string;
@@ -396,9 +414,6 @@ export function ruleText(conditions: readonly Condition[], defs: readonly Proper
   return parts.length > 0 ? parts.join(" and ") : null;
 }
 
-/** The id the shape drawn but not yet added goes by, on the map. */
-const DRAFT = "__drawn__";
-
 export default function LayerWorkbench({
   layers,
   edits,
@@ -410,7 +425,10 @@ export default function LayerWorkbench({
   onEdits,
   onNewLayer,
   removePickedRef,
-  mapId,
+  surfaces,
+  circles = 1,
+  incoming,
+  onSelection,
   nodeId = "",
 }: {
   layers: WorkbenchLayer[];
@@ -431,8 +449,14 @@ export default function LayerWorkbench({
   onNewLayer: (def: NewLayerDef) => void;
   /** Set to what removes the picked features of the layer worked on (the body's Delete): true when it did. */
   removePickedRef?: React.MutableRefObject<(() => boolean) | null>;
-  /** The Autark map the node is linked to: the drawing happens there. */
-  mapId: string;
+  /** The Autark maps the node feeds and is linked to: the picking and drawing happen there. */
+  surfaces: EditSurface[];
+  /** How many circles feed the node: its code names every layer when more than one. */
+  circles?: number;
+  /** The selections the interaction edges bring the node (its `data.interactions`): a pick on a map is one. */
+  incoming?: unknown;
+  /** Sends what the node selects, which the maps light up; null when it selects nothing. */
+  onSelection?: (details: Record<string, any> | null) => void;
   nodeId?: string;
 }) {
   const [activeName, setActiveName] = useState<string | null>(null);
@@ -523,14 +547,6 @@ export default function LayerWorkbench({
   const countOf = (layer: WorkbenchLayer) =>
     layer.newLayer ? edits.filter((e) => e.op === "add" && e.layer === layer.name && e.enabled !== false).length : (layer.fc.features ?? []).length;
 
-  const onSelect = (id: SelectionId | null, additive: boolean) => {
-    if (drawn || (action === "edit" && editBy === "rule")) return;
-    if (id === null) {
-      if (!additive) setPicked([]);
-      return;
-    }
-    setPicked(additive ? (picked.some((p) => String(p) === String(id)) ? picked.filter((p) => String(p) !== String(id)) : [...picked, id]) : [id]);
-  };
   // A part drawn is added to the feature being added, or to the picked one.
   const onDrawn = (geometry: Geometry) => {
     if (partFor === "draft" && drawn) {
@@ -568,14 +584,40 @@ export default function LayerWorkbench({
           : action === "edit" && pickedOne && shapeMode
             ? shapeMode
             : "select";
-  const shown = useMemo<EditedFeature[]>(
-    () => (drawn ? [...features, { id: DRAFT, geometry: drawn, properties: {}, status: "added" }] : features),
-    [features, drawn],
-  );
+  /** The column the layer worked on names its features by. */
+  const layerKey = active ? active.key ?? (active.newLayer ? NEW_LAYER_KEY : undefined) : undefined;
+  /** The table *surface*'s map draws *layer* under. */
+  const tableOn = (surface: EditSurface, layer: WorkbenchLayer) =>
+    mapTableName(layer.table ?? layer.name, !!layer.newLayer || !!layer.ownName, { ...surface, circles });
+
+  // A pick on a map: the map's selection, which the interaction edge carries
+  // here, replaces the pick, read on the layer worked on by its id column.
+  // Not while a shape waits to be added, nor while a rule picks.
+  useEffect(() => {
+    if (!active || !layerKey || !mode || drawn || byRule) return;
+    const ids = selectedIdsIn(
+      incoming,
+      (from, layer) => surfaces.some((surface) => surface.mapId === from && (layer ?? tableOn(surface, active)) === tableOn(surface, active)),
+      features,
+    );
+    if (!sameIds(ids, picked)) setPicked(ids);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [incoming]);
+
+  // What the node selects, which the maps light up: the pick, else what a
+  // rule matches, else what was just added or edited.
+  const outgoing = picked.length > 0 ? picked : matches ?? recent;
+  const outgoingKey = JSON.stringify(outgoing);
+  useEffect(() => {
+    if (!onSelection) return;
+    if (!active || !layerKey || surfaces.length === 0) onSelection(null);
+    else onSelection(editSelection(outgoing, layerKey, tableOn(surfaces[0], active), NodeType.EDIT_FEATURES));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [outgoingKey, active?.name, layerKey, JSON.stringify(surfaces)]);
 
   // Linked to a map: the action is drawn there.
-  const handlers = useRef({ onSelect, onDrawn, onReshape });
-  handlers.current = { onSelect, onDrawn, onReshape };
+  const handlers = useRef({ onDrawn, onReshape });
+  handlers.current = { onDrawn, onReshape };
   // The body's Delete: the features picked to remove or edit, removed as Remove removes them.
   if (removePickedRef) {
     removePickedRef.current = () => {
@@ -586,45 +628,52 @@ export default function LayerWorkbench({
       return true;
     };
   }
+  // The drawing tools, lent to each map the node feeds and is linked to: the
+  // layer worked on as that map names it, the mode of the action and the
+  // shape being drawn.
+  const surfacesKey = JSON.stringify(surfaces);
   useEffect(() => {
-    const soloTable = solo && active ? active.table ?? active.name : null;
-    if (!active || !kind || (!mode && !soloTable)) {
-      publishMapSession(mapId, null);
-      return;
+    for (const surface of surfaces) {
+      if (!active || !kind || (!mode && !solo)) {
+        publishMapSession(surface.mapId, nodeId, null);
+        continue;
+      }
+      const table = tableOn(surface, active);
+      publishMapSession(surface.mapId, nodeId, {
+        interactionId: nodeId,
+        solo: solo ? table : null,
+        active: !mode ? null : {
+          table,
+          label: active.label,
+          kind,
+          noun: nouns.one,
+          mode,
+          rule: byRule,
+          features,
+          draft: drawn,
+          geographic,
+          key: layerKey,
+        },
+        onDrawn: (geometry) => handlers.current.onDrawn(geometry),
+        onReshape: (id, geometry) => handlers.current.onReshape(id, geometry),
+        onShapeDone: () => setShapeMode(null),
+      });
     }
-    publishMapSession(mapId, {
-      interactionId: nodeId,
-      solo: soloTable,
-      active: !mode ? null : {
-        table: active.table ?? active.name,
-        label: active.label,
-        kind,
-        noun: nouns.one,
-        mode,
-        features: shown,
-        selected: drawn ? [DRAFT] : picked,
-        matches: matches ?? undefined,
-        recent,
-        geographic,
-        key: active.key ?? (active.newLayer ? "id" : undefined),
-      },
-      onSelect: (id, additive) => handlers.current.onSelect(id, additive),
-      onDrawn: (geometry) => handlers.current.onDrawn(geometry),
-      onReshape: (id, geometry) => handlers.current.onReshape(id, geometry),
-      onShapeDone: () => setShapeMode(null),
-    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mapId, active, kind, mode, shown, drawn, picked, matches, recent, geographic, nouns.one, solo]);
+  }, [surfacesKey, active, kind, mode, features, drawn, geographic, nouns.one, solo, byRule, layerKey]);
   // Back on the list of layers, the map shows them all again.
   useEffect(() => {
     if (activeName === null) setSolo(false);
   }, [activeName]);
-  useEffect(
-    () => () => {
-      publishMapSession(mapId, null);
-    },
-    [mapId],
-  );
+  // A map no longer linked, and every map when the node leaves: the node's
+  // session taken back from it, and only the node's.
+  useEffect(() => {
+    const mapIds = surfaces.map((surface) => surface.mapId);
+    return () => {
+      for (const mapId of mapIds) publishMapSession(mapId, nodeId, null);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [surfacesKey, nodeId]);
 
   const addDrawn = () => {
     if (!active || !drawn) return;

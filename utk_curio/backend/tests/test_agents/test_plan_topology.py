@@ -146,16 +146,29 @@ class TestInteractionEdgeErrors:
             "edit": "curio.builtin/edit-features@1", "map": "curio.builtin/autk-grammar@1",
             "bars": "curio.builtin/vis-vega@1", "pool": "curio.builtin/data-pool@1",
         }
+        feeds = {"from": "edit", "to": "map"}
         for src, dst in (("edit", "map"), ("map", "edit")):
-            plan = {"edges": [{"from": src, "to": dst, "kind": "interaction"}]}
+            plan = {"edges": [feeds, {"from": src, "to": dst, "kind": "interaction"}]}
             assert pt.interaction_edge_errors(plan, types.get, ROSTER) == [], (src, dst)
         for other in ("bars", "pool"):
-            plan = {"edges": [{"from": "edit", "to": other, "kind": "interaction"}]}
+            plan = {"edges": [{"from": "edit", "to": other}, {"from": "edit", "to": other, "kind": "interaction"}]}
             (err,) = pt.interaction_edge_errors(plan, types.get, ROSTER)
-            assert "joins the edit-features node to the autk-grammar map it feeds, and to no other node" in err
+            assert "joins the edit-features node to an autk-grammar map it feeds, and to no other node" in err
         # It is no pool: the other rules name the Data Pool alone.
         pools, _ = pt.interaction_roles(ROSTER)
         assert pools == {"curio.builtin/data-pool"}
+
+    def test_the_interaction_node_links_only_to_a_map_it_feeds_and_the_refusal_names_the_fix(self):
+        types = {"edit": "curio.builtin/edit-features@1", "map": "curio.builtin/autk-grammar@1", "tracts": "curio.builtin/data-loading@1"}
+        link = {"from": "edit", "to": "map", "kind": "interaction"}
+        # The map is fed by the data, not by the node.
+        plan = {"edges": [{"from": "tracts", "to": "map"}, link]}
+        (err,) = pt.interaction_edge_errors(plan, types.get, ROSTER)
+        assert "'edit' does not feed 'map': add a data edge from 'edit' to 'map'" in err
+        # A data edge the saved dataflow already holds feeds it.
+        assert pt.interaction_edge_errors({"edges": [link]}, types.get, ROSTER, [("edit", "map")]) == []
+        # Fed the other way round is not fed.
+        assert len(pt.interaction_edge_errors({"edges": [link]}, types.get, ROSTER, [("map", "edit")])) == 1
 
     def test_unknown_template_fails_open(self):
         plan = {"edges": [{"from": "vis", "to": "mystery", "kind": "interaction"}]}
