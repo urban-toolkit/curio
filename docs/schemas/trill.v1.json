@@ -760,13 +760,15 @@
     },
     "nodeExecRecord": {
       "type": "object",
-      "description": "One execution of one node, recorded browser-side by ProvenanceProvider so the user can replay how a node evolved.",
+      "description": "One entry of one node's history, recorded browser-side by ProvenanceProvider so the user can replay how a node evolved: an execution, or (with 'kind' edit) a change made in the node's body that ran nothing, such as a Map Edits node's Apply, Remove or put back. After a dataflow loads, the node's next entry descends from its newest entry whose 'code' is the node's content, else from its newest entry.",
       "required": ["id", "parentId", "code", "inputs", "outputs", "startTime", "endTime"],
       "additionalProperties": true,
       "properties": {
         "id": { "type": "integer", "description": "Monotonic counter within the session, re-derived from the maximum on load." },
-        "parentId": { "type": ["integer", "null"], "description": "The execution this one descends from, or null for the first." },
-        "code": { "type": "string", "description": "The node's content as executed." },
+        "parentId": { "type": ["integer", "null"], "description": "The entry this one descends from, or null for the first." },
+        "code": { "type": "string", "description": "The node's content as executed, or as an edit left it." },
+        "kind": { "type": "string", "enum": ["edit"], "description": "'edit' for a change made in the node's body, which ran nothing: its 'inputs' and 'outputs' are empty and its two times are the same. Absent for an execution." },
+        "label": { "type": "string", "description": "What an edit changed, as the provenance drawer lists it, such as 'height 60 on building_id 34' or 'remove building_id 12'. Written only with 'kind'." },
         "inputs": { "type": "array", "items": { "type": "string" }, "description": "The kinds of data the run read, each once: DATAFRAME, GEODATAFRAME, VALUE, LIST, JSON, RASTER (mapTypes in utils/formatters.ts). The provenance drawer shows them on each of the node's runs. Coerced to an empty array if the stored value is not an array." },
         "outputs": { "type": "array", "items": { "type": "string" }, "description": "The kinds of data the run returned, named like 'inputs', or ERROR for a run that failed. Coerced like 'inputs'." },
         "startTime": {

@@ -94,3 +94,77 @@ describe('ProvenanceProvider', () => {
         expect(idA).not.toBe(idB);
     });
 });
+
+// A Map Edits node files each change made in its body as an entry of its own.
+describe('an edit in node provenance', () => {
+    it('is filed at once with the code it left and its label, reading and returning nothing', () => {
+        const { result } = renderHook(() => useProvenanceContext(), { wrapper });
+        act(() => { result.current.nodeEditProv('edit-1', 'code 1', 'remove building_id 12'); });
+        const [edit] = result.current.provenanceGraphNodes['edit-1'];
+        expect(edit).toMatchObject({
+            parentId: null, code: 'code 1', inputs: [], outputs: [], kind: 'edit', label: 'remove building_id 12',
+        });
+        expect(edit.startTime).not.toBe('');
+        expect(edit.endTime).toBe(edit.startTime);
+        expect(result.current.selectedParentExecRef.current['edit-1']).toBe(edit.id);
+    });
+
+    it('descends from the entry before it, a run or an edit, and a put-back entry is where the next one branches', () => {
+        const { result } = renderHook(() => useProvenanceContext(), { wrapper });
+        act(() => { result.current.nodeEditProv('edit-1', 'code 1', 'remove building_id 12'); });
+        act(() => { result.current.nodeExecProv('t', 't', 'wf', 'edit-1', ['GEODATAFRAME'], ['GEODATAFRAME'], 'code 1'); });
+        act(() => { result.current.nodeEditProv('edit-1', 'code 2', 'height 60 on building_id 34'); });
+        let records = result.current.provenanceGraphNodes['edit-1'];
+        expect(records.map((r) => r.parentId)).toEqual([null, records[0].id, records[1].id]);
+        expect(records.map((r) => r.kind)).toEqual(['edit', undefined, 'edit']);
+
+        act(() => { result.current.setSelectedExec('edit-1', records[0].id); });
+        act(() => { result.current.nodeEditProv('edit-1', 'code 3', 'put back building_id 12'); });
+        records = result.current.provenanceGraphNodes['edit-1'];
+        expect(records[3].parentId).toBe(records[0].id);
+    });
+
+    it('is nothing outside a provider: the context by default files no entry', () => {
+        const { result } = renderHook(() => useProvenanceContext());
+        expect(() => result.current.nodeEditProv('edit-1', 'code', 'label')).not.toThrow();
+        expect(result.current.provenanceGraphNodes).toEqual({});
+    });
+});
+
+describe('a dataflow loaded with its node histories', () => {
+    const entry = (id: number, parentId: number | null, code: string, kind?: 'edit'): NodeExecRecord => ({
+        id, parentId, code, inputs: [], outputs: [], startTime: '', endTime: '', ...(kind ? { kind, label: `edit ${id}` } : {}),
+    });
+
+    it("continues each node's history from its newest entry that holds the code it loaded with", () => {
+        const { result } = renderHook(() => useProvenanceContext(), { wrapper });
+        act(() => {
+            result.current.loadNodeProvenance(
+                {
+                    edits: [entry(1, null, 'a', 'edit'), entry(2, 1, 'b', 'edit'), entry(3, 2, 'a'), entry(4, 3, 'c', 'edit')],
+                    code: [entry(5, null, 'x = 1'), entry(6, 5, 'x = 2')],
+                },
+                { edits: 'a', code: 'x = 1' },
+            );
+        });
+        expect(result.current.selectedParentExecRef.current).toEqual({ edits: 3, code: 5 });
+
+        act(() => { result.current.nodeEditProv('edits', 'd', 'edit 7'); });
+        act(() => { result.current.nodeExecProv('t', 't', 'wf', 'code', [], [], 'x = 3'); });
+        expect(result.current.provenanceGraphNodes.edits[4]).toMatchObject({ id: 7, parentId: 3 });
+        expect(result.current.provenanceGraphNodes.code[2]).toMatchObject({ id: 8, parentId: 5 });
+    });
+
+    it('continues from the newest entry when none holds the code, and not from a new root', () => {
+        const { result } = renderHook(() => useProvenanceContext(), { wrapper });
+        act(() => {
+            result.current.loadNodeProvenance(
+                { n1: [entry(2, null, 'a'), entry(9, 2, 'b'), entry(4, 2, 'c')], n2: [entry(1, null, 'q')] },
+                { n1: 'hand-edited' },
+            );
+        });
+        expect(result.current.selectedParentExecRef.current).toEqual({ n1: 9, n2: 1 });
+        act(() => { result.current.nodeExecProv('t', 't', 'wf', 'n1', [], [], 'z'); });
+        expect(result.current.provenanceGraphNodes.n1[3].parentId).toBe(9);
+    });
+});

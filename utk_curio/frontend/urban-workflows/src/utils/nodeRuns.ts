@@ -1,12 +1,13 @@
 /**
  * A node's runs, as `ProvenanceProvider` files them, turned into the items its
- * provenance history shows: each tagged with its run number and named by the
- * kinds of data it read and returned.
+ * provenance history shows: each tagged with its number and named by the
+ * kinds of data it read and returned. An edit made in the node's body (a Map
+ * Edits node's Apply, Remove or put back) is named by what it changed.
  */
 import type { NodeExecRecord } from "../providers/ProvenanceProvider";
 import type { HistoryItem } from "./provenanceTree";
 
-/** The history's items, in the order the runs were filed. */
+/** The history's items, in the order the runs and edits were filed. */
 export function runItems(records: readonly NodeExecRecord[]): HistoryItem[] {
   const ids = new Set(records.map((record) => record.id));
   return records.map((record, i) => {
@@ -16,11 +17,21 @@ export function runItems(records: readonly NodeExecRecord[]): HistoryItem[] {
       parentId: record.parentId != null && ids.has(record.parentId) ? String(record.parentId) : null,
       order: i,
       tag: String(record.id),
-      title: runKinds(record),
+      title: entryTitle(record),
       when: at ? at.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) : "",
       tooltip: at ? at.toLocaleString() : record.startTime || undefined,
     };
   });
+}
+
+/** Whether *record* is an edit, which ran nothing. */
+export function isEdit(record: Pick<NodeExecRecord, "kind">): boolean {
+  return record.kind === "edit";
+}
+
+/** What an entry's row reads: an edit's label ("remove building_id 12"), or a run's kinds of data. */
+export function entryTitle(record: Pick<NodeExecRecord, "inputs" | "outputs" | "kind" | "label">): string {
+  return isEdit(record) ? record.label || "Edit" : runKinds(record);
 }
 
 /** "In: DATAFRAME | Out: GEODATAFRAME": the kinds of data a run read and
