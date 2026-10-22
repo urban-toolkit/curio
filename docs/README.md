@@ -5,6 +5,7 @@
 - [Installation and usage](USAGE.md)
 - [Quick start](QUICK-START.md)
 - [Authoring nodes](AUTHORING-NODES.md): build your own node, from a clone to a shareable package
+- [Functions node code calls](../agents/agent.curio.builtin@1/knowledge/node-functions.md): every function Curio gives a node's Python or JavaScript code, with its arguments
 - [Node catalog](NODE-CATALOG.md): add, share, and publish node packages, and save a canvas node as one
 - [Data catalog](DATA-CATALOG.md): import, reuse, and publish datasets, including your nodes' outputs
 - [Agent catalog](AGENT-CATALOG.md): browse, add, and attach Curio's AI agents, and write your own
