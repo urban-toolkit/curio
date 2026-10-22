@@ -19,6 +19,7 @@ import {
   type NewLayerDef,
   type NewLayerGeometry,
   type PropertyDef,
+  type PropertyType,
 } from "./editFeatures";
 
 /** The kinds of geometry the node draws and edits. */
@@ -211,3 +212,53 @@ export function editedFeatures(
 
 /** The id column of a new layer's features. */
 export const newLayerKey = NEW_LAYER_KEY;
+
+/** Whether *fc*'s coordinates are longitude-latitude. */
+export function isGeographic(fc: { features?: any[]; crs?: any } | undefined): boolean {
+  const name = String(fc?.crs?.properties?.name ?? "");
+  if (/3395|3857|900913/.test(name)) return false;
+  if (/4326|CRS84/.test(name)) return true;
+  let geographic = true;
+  let seen = 0;
+  for (const f of (fc?.features ?? []).slice(0, 30)) {
+    const walk = (v: any) => {
+      if (!Array.isArray(v)) return;
+      if (typeof v[0] === "number") {
+        seen += 1;
+        if (Math.abs(v[0]) > 180 || Math.abs(v[1]) > 90) geographic = false;
+      } else v.forEach(walk);
+    };
+    walk(f?.geometry?.coordinates);
+  }
+  return seen > 0 && geographic;
+}
+
+/** The CRS name a drawn shape in *fc*'s coordinates is in. */
+export function crsName(fc: { features?: any[]; crs?: any } | undefined): string {
+  const name = String(fc?.crs?.properties?.name ?? "");
+  const code = /EPSG::?(\d+)/.exec(name);
+  if (code) return `EPSG:${code[1]}`;
+  if (/CRS84/.test(name)) return "EPSG:4326";
+  return isGeographic(fc) ? "EPSG:4326" : "EPSG:3395";
+}
+
+/**
+ * *defs* with the columns the log's "Add a property" edits give the layer
+ * *layerName*: a property added is one its features are asked for, and one
+ * they are edited by, like the columns the layer came with.
+ */
+export function withAddedColumns(
+  defs: PropertyDef[],
+  edits: readonly FeatureEdit[],
+  layerName: string,
+  nodeLayer: string | null,
+): PropertyDef[] {
+  const out = [...defs];
+  for (const edit of edits) {
+    if (edit.op !== "add_column" || edit.enabled === false || !edit.column) continue;
+    if ((edit.layer ?? nodeLayer ?? null) !== layerName || out.some((d) => d.name === edit.column)) continue;
+    const type: PropertyType = typeof edit.value === "number" ? "number" : typeof edit.value === "boolean" ? "boolean" : "text";
+    out.push({ name: edit.column, type });
+  }
+  return out;
+}

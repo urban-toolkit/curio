@@ -54,7 +54,8 @@ import {
   type NewLayerDef,
   type PropertyDef,
 } from "../../utils/editFeatures/editFeatures";
-import LayerWorkbench, { crsName, type EditSurface, type WorkbenchLayer } from "./LayerWorkbench";
+import { crsName } from "../../utils/editFeatures/layerModel";
+import LayerWorkbench, { type EditSurface, type WorkbenchLayer } from "./LayerWorkbench";
 import { getUnversionedFlowNodeType } from "../../utils/flowNodeCanonicalType";
 import { NodeType, VisInteractionType } from "../../constants";
 import { inputSlotOf, isDataEdge, wiredInputSlots } from "../../utils/inputSlots";
