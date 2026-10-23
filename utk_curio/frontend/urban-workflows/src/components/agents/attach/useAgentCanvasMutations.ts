@@ -111,8 +111,10 @@ export function useAgentCanvasMutations(): void {
       ...(spatialJoin ? { spatialJoin } : {}),
     });
     // Code an agent wrote starts the node's history, an edit named after the
-    // agent, as its applied change to a node's code is named. A planned node
-    // comes with no code: the code later written into it is its first entry.
+    // agent, as its applied change to a node's code is named. Only a node.create
+    // or package draft apply names the agent: a plan's node gets no entry, even
+    // when its template's starter is its code, and the code later written into
+    // it is its first edit.
     if (node.agent && typeof node.content === "string" && node.content.trim()) {
       nodeEditProv(node.id, node.content, node.agent);
     }
