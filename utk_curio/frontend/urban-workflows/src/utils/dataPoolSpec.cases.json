@@ -1,0 +1,109 @@
+{
+  "description": "A Data Pool's two conflict modes as the pool reads and writes them (#581), and what an agent's setting stores. Read by src/tests/utils/dataPoolSpec.test.ts, through dataPoolMode, dataPoolToSpec and dataPoolFromSpec in utils/dataPoolSpec.ts, and by backend/tests/test_agents/test_node_settings.py, through agents/domain/data_pool_settings.py. given: the modes, as a node's data.dataPool or a spec's metadata.dataPool holds them. written: what dataPoolToSpec writes into the spec, null for nothing. loaded: what dataPoolFromSpec puts back on the node, null for nothing. read: the mode the pool resolves each member with (dataPoolMode), for a given that is an object. agent: what an agent's dataPool setting stores (stores, always what the pool writes), or the member it is refused for (refuses: a member that names no mode, which the pool would read as OVERWRITE, or a key a pool does not have; null when the setting is no object).",
+  "cases": [
+    {
+      "name": "both modes",
+      "given": {"insideChart": "MERGE_AND", "betweenCharts": "MERGE_OR"},
+      "written": {"insideChart": "MERGE_AND", "betweenCharts": "MERGE_OR"},
+      "loaded": {"insideChart": "MERGE_AND", "betweenCharts": "MERGE_OR"},
+      "read": {"insideChart": "MERGE_AND", "betweenCharts": "MERGE_OR"},
+      "agent": {"stores": {"insideChart": "MERGE_AND", "betweenCharts": "MERGE_OR"}}
+    },
+    {
+      "name": "one mode",
+      "given": {"betweenCharts": "MERGE_AND"},
+      "written": {"betweenCharts": "MERGE_AND"},
+      "loaded": {"betweenCharts": "MERGE_AND"},
+      "read": {"insideChart": "OVERWRITE", "betweenCharts": "MERGE_AND"},
+      "agent": {"stores": {"betweenCharts": "MERGE_AND"}}
+    },
+    {
+      "name": "an explicit overwrite is left out",
+      "given": {"insideChart": "OVERWRITE", "betweenCharts": "MERGE_AND"},
+      "written": {"betweenCharts": "MERGE_AND"},
+      "loaded": {"insideChart": "OVERWRITE", "betweenCharts": "MERGE_AND"},
+      "read": {"insideChart": "OVERWRITE", "betweenCharts": "MERGE_AND"},
+      "agent": {"stores": {"betweenCharts": "MERGE_AND"}}
+    },
+    {
+      "name": "both overwrite write nothing",
+      "given": {"insideChart": "OVERWRITE", "betweenCharts": "OVERWRITE"},
+      "written": null,
+      "loaded": {"insideChart": "OVERWRITE", "betweenCharts": "OVERWRITE"},
+      "read": {"insideChart": "OVERWRITE", "betweenCharts": "OVERWRITE"},
+      "agent": {"stores": null}
+    },
+    {
+      "name": "no member",
+      "given": {},
+      "written": null,
+      "loaded": null,
+      "read": {"insideChart": "OVERWRITE", "betweenCharts": "OVERWRITE"},
+      "agent": {"stores": null}
+    },
+    {
+      "name": "a mode's label",
+      "given": {"betweenCharts": "MERGE_(AND)"},
+      "written": null,
+      "loaded": null,
+      "read": {"insideChart": "OVERWRITE", "betweenCharts": "OVERWRITE"},
+      "agent": {"refuses": "betweenCharts"}
+    },
+    {
+      "name": "a mode in lower case",
+      "given": {"insideChart": "merge_and"},
+      "written": null,
+      "loaded": null,
+      "read": {"insideChart": "OVERWRITE", "betweenCharts": "OVERWRITE"},
+      "agent": {"refuses": "insideChart"}
+    },
+    {
+      "name": "a good mode beside one that names none",
+      "given": {"insideChart": "MERGE_OR", "betweenCharts": "AND"},
+      "written": {"insideChart": "MERGE_OR"},
+      "loaded": {"insideChart": "MERGE_OR"},
+      "read": {"insideChart": "MERGE_OR", "betweenCharts": "OVERWRITE"},
+      "agent": {"refuses": "betweenCharts"}
+    },
+    {
+      "name": "a number",
+      "given": {"insideChart": 3},
+      "written": null,
+      "loaded": null,
+      "read": {"insideChart": "OVERWRITE", "betweenCharts": "OVERWRITE"},
+      "agent": {"refuses": "insideChart"}
+    },
+    {
+      "name": "null",
+      "given": {"betweenCharts": null},
+      "written": null,
+      "loaded": null,
+      "read": {"insideChart": "OVERWRITE", "betweenCharts": "OVERWRITE"},
+      "agent": {"refuses": "betweenCharts"}
+    },
+    {
+      "name": "a key a pool does not have",
+      "given": {"betweenCharts": "MERGE_OR", "propagate": "MERGE_AND"},
+      "written": {"betweenCharts": "MERGE_OR"},
+      "loaded": {"betweenCharts": "MERGE_OR"},
+      "read": {"insideChart": "OVERWRITE", "betweenCharts": "MERGE_OR"},
+      "agent": {"refuses": "propagate"}
+    },
+    {
+      "name": "a list",
+      "given": ["MERGE_OR"],
+      "written": null,
+      "loaded": null,
+      "read": null,
+      "agent": {"refuses": null}
+    },
+    {
+      "name": "a mode alone",
+      "given": "MERGE_OR",
+      "written": null,
+      "loaded": null,
+      "read": null,
+      "agent": {"refuses": null}
+    }
+  ]
+}
