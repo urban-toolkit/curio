@@ -5,6 +5,7 @@
     "session": "this session's time budget was spent",
     "repeat": "the builder repeated itself",
     "decline": "the builder declined: it needs something from you",
+    "answer": "the builder answered instead of writing code",
     "generation": "the builder could not run",
     "blocker": "something outside its code blocked it",
     "infrastructure": "the sandbox was unreachable",

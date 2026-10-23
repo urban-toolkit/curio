@@ -100,13 +100,16 @@ def test_the_content_mode_is_not_offered_a_model_search_it_cannot_run():
     assert "models.search" not in _prompt(NODE_BUILDER, "node.content.generate")
 
 
-def test_the_content_mode_promises_a_one_line_conclusion_only_to_a_node_that_loads_data():
-    """Solve takes a one-line conclusion in place of code only where the source
-    gate refuses it (``verified_loop._source_gate``, ``rounds._is_prose_decline``),
-    which a node that loads data and opens no source is. Elsewhere the line runs
-    as code and fails."""
+def test_the_content_mode_promises_a_one_line_conclusion_on_every_node():
+    """Solve takes a one-line conclusion in place of code on every node whose
+    content is code: the loop reads it before any gate or the sandbox
+    (``verified_loop._one_line_answer``), which
+    ``test_verified_rounds.TestOneLineAnswers`` proves on a join that loads no
+    data. So the content mode offers it to every node, not only to one that
+    loads data."""
     sentence = _sentence(_prompt(NODE_BUILDER, "node.content.generate"), "state that conclusion as your WHOLE reply")
-    assert "loads data" in sentence
+    assert "in one line, with no code at all" in sentence
+    assert "loads data" not in sentence
 
 
 def _absent_output_a_consumer_refuses() -> str:
@@ -125,10 +128,13 @@ def _absent_output_a_consumer_refuses() -> str:
     return text
 
 
-def test_solves_refusals_offer_a_one_line_answer_only_to_a_node_that_loads_data():
-    """The content mode's rule holds in each refusal a Solve round sends back:
-    the one-line answer is taken in place of code only where the source gate
-    refuses it (``verified_loop._source_gate``), a node that loads data."""
+def test_solves_refusals_offer_a_one_line_answer_on_every_node():
+    """Each refusal a Solve round sends back offers the one-line answer
+    without narrowing it to a node that loads data. Only the verified loop
+    sends them (``result_shape``'s from its stages, ``validation``'s from
+    ``validate_candidate``), and the loop reads the answer on every node whose
+    content is code (``verified_loop._one_line_answer``;
+    ``test_verified_rounds.TestOneLineAnswers``)."""
     from utk_curio.backend.app.agents.domain import result_shape as rs
 
     nulls = {"kind": "geotable", "rowCount": 2, "columns": [{"name": "population", "dtype": "unknown"}],
@@ -145,7 +151,7 @@ def test_solves_refusals_offer_a_one_line_answer_only_to_a_node_that_loads_data(
                                        "say so in one line instead of returning code"),
     }
     for name, (text, words) in offers.items():
-        assert "loads data" in _sentence(text, words), name
+        assert "loads data" not in _sentence(text, words), name
 
 
 def test_a_research_check_is_told_which_inputs_the_runtime_probes():

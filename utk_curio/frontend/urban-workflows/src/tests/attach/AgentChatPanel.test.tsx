@@ -1423,6 +1423,23 @@ describe("AgentChatPanel — dev/116 the per-node Solve row's remedy", () => {
     );
   });
 
+  it("says one attempt in the singular", async () => {
+    const { phrases: STOPPED_BY_PHRASES } = require("../../contracts/solveStopReasons.json") as {
+      phrases: Readonly<Record<string, string>>;
+    };
+    const onSolveNode = jest.fn().mockResolvedValue({ verdict: "fail", rounds: 1, stoppedBy: "budget" });
+    renderPanel({
+      attachment: { ...attachment, coord: "agent.curio.node-builder@1", name: "Node Builder", target: { kind: "node" as const, targetId: "n1" } },
+      targetName: "Data Loading",
+      onSolveNode,
+    });
+    const row = screen.getByRole("group", { name: "Solve this node" });
+    fireEvent.click(within(row).getByRole("button", { name: "Solve this node" }));
+    expect(await within(row).findByRole("status")).toHaveTextContent(
+      `Not fixed after 1 attempt (${STOPPED_BY_PHRASES.budget}): every attempt is below`,
+    );
+  });
+
   // dev/126: the awaiting-selection remedy — the twin of the key remedy. The
   // node's source is with the user, so the row offers the chat that holds the
   // candidates instead of a failure message with advice in it.

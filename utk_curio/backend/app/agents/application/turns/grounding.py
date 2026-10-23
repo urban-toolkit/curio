@@ -172,18 +172,24 @@ def _ungrounded_remedy(attachment_id: str | None = None, *, name: str | None = N
 
 
 def _source_missing_remedy(remedy: dict | None) -> str:
-    """The one sentence a ``source-missing`` failure ends with (dev/116)."""
+    """The sentence a ``source-missing`` failure ends with (dev/116), written
+    to be appended as it is (:func:`_then_sentence`): it starts with a capital
+    and ends with its full stop."""
     if isinstance(remedy, dict) and remedy.get("kind") == "connection-key" and remedy.get("host"):
-        return (
-            f" — add a connection key for {remedy['host']} (API Settings, API keys), "
-            "then Solve again"
-        )
+        return f"Add a connection key for {remedy['host']} (API Settings, API keys), then Solve again."
     if isinstance(remedy, dict) and remedy.get("kind") == "use-connection-key" and remedy.get("host"):
-        return (
-            f" — a connection key {remedy.get('name')!r} is saved for {remedy['host']}; "
-            "Solve again so the builder uses it"
-        )
-    return " — provide what it names (a key, a path or a URL), then Solve again"
+        name = f' "{remedy["name"]}"' if remedy.get("name") else ""
+        return f"A connection key{name} is saved for {remedy['host']}. Solve again so the builder uses it."
+    return "Provide what it names (a key, a path or a URL), then Solve again."
+
+
+def _then_sentence(text: str, sentence: str) -> str:
+    """*text*, then *sentence*: *text* ends its own sentence first, with a
+    full stop unless it already has one."""
+    text = text.rstrip()
+    if not text:
+        return sentence
+    return f"{text}{'' if text.endswith(('.', '!', '?', '…')) else '.'} {sentence}"
 
 
 def _catalog_rows_for_discovery(user_key: str, project_id: str) -> list[dict]:

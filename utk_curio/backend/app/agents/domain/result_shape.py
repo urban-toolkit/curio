@@ -255,10 +255,10 @@ def refusal_text(
     """What the model is told, and what a human reads in the trail (dev/133).
 
     Three things the text must do: state the cause CLASS (a join or a filter
-    matched nothing), show the inputs' values (the column names looked joinable
-    — the values never did), and offer the honest alternative, which the loop
-    treats as a terminal decline only for a node that loads data
-    (``verified_loop._source_gate``).
+    matched nothing), show the inputs' values (the column names looked joinable,
+    the values never did), and offer the honest alternative, a one-line
+    answer, which the loop reads in place of code on every node whose content
+    is code (``verified_loop._one_line_answer``).
     """
     kind = str((summary or {}).get("kind") or "result")
     head = agent_text.message(

@@ -983,10 +983,10 @@ describe("AgentAttachmentsProvider streamed solve (dev/63)", () => {
       emit("node_result", { nodeId: "n1", status: "failed",
         error: "not fixed after 15 attempts: execution-error: SyntaxError: invalid syntax" });
       emit("node_result", { nodeId: "n2", status: "pending",
-        reason: "waiting: upstream node 'n1' has no content yet; solve or fill it first" });
+        reason: "upstream node 'n1' has no content yet; solve or fill it first" });
     });
     expect(screen.getByTestId("solve-errors")).toHaveTextContent("n1:not fixed after 15 attempts");
-    expect(screen.getByTestId("solve-notices")).toHaveTextContent("n2:pending");
+    expect(screen.getByTestId("solve-notices")).toHaveTextContent("n2:pending: upstream node 'n1' has no content yet");
     // Pass 2 attempts them again: the previous pass's lines go FIRST.
     act(() => {
       emit("solve_pass", { pass: 2, targets: ["n1", "n2"], waiting: [] });
@@ -1006,7 +1006,7 @@ describe("AgentAttachmentsProvider streamed solve (dev/63)", () => {
         results: { n1: { status: "solved" }, n2: { status: "solved" } },
         appliedContents: [], builderSession: { phase: "ready" },
         endedBy: "complete",
-        waiting: [{ nodeId: "n2", kind: "upstream", reason: "waiting: upstream" }],
+        waiting: [{ nodeId: "n2", kind: "upstream", reason: "upstream node 'n1' has no content yet" }],
       } as never);
     });
     // A session that finished everything waits for nothing — the other half of
