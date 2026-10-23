@@ -38,6 +38,14 @@ Read one node's LAST execution outcome: status, error traceback tail, stdout tai
 
 Read one node from the saved spec. Params: {"nodeId": "..."} (defaults to the node this agent is attached to).
 
+## node.history.read
+
+Read one node's history as the saved dataflow keeps it and its Provenance drawer lists it: each run of the node and each edit of it, newest first. Params: {"nodeId": "..."} (defaults to the node this agent is attached to). Each entry gives its id, the entry it descends from (parentId), its kind ("run" or "edit"), an edit's label (the agent that made it, or what it changed), when it started and ended, the kinds of data a run read and returned, and the length of its code (codeChars). Add "entryId": <an entry's id> for that entry's code and, for an edit that holds it, the code it replaced (before). A list or a code cut to fit says how much it left out (entriesElided, codeElided). Compare an entry's code with another entry's, or with the node's code now (node.read), to say what changed. An entry made since the dataflow was last saved is not in it yet.
+
+### Parameters
+
+- entryId: An entry's id from this tool's list, for that entry's code. Omit it for the list.
+
 ## node.content.write
 
 Propose replacing one node's content. Params: {"nodeId": "...", "content": "..."}. The user reviews the proposal before anything is applied; nothing changes without their explicit approval.

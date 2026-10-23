@@ -370,6 +370,20 @@ REGISTRY: dict[str, ToolContract] = {
         label="Read a node",
         parameter_schema=lambda say: _object({"nodeId": _node_id(say)}),
     ),
+    # Consumers: the Node Builder and the Dataflow Builder, in their chats.
+    # What changed in a node: its runs and edits as its Provenance drawer
+    # lists them, from the saved dataflow (the projects domain keys them as a
+    # load does).
+    "node.history.read": ToolContract(
+        id="node.history.read",
+        contract_version="1",
+        effect="read",
+        label="Read a node's history",
+        parameter_schema=lambda say: _object({
+            "nodeId": _node_id(say),
+            "entryId": {"type": "integer", "description": say("entryId")},
+        }),
+    ),
     "node.content.write": ToolContract(
         id="node.content.write",
         contract_version="1",
@@ -865,16 +879,22 @@ def _execute_scenarios_search(project_id: str, params: dict) -> tuple[str, str]:
     return "ok", _truncate(json.dumps(_cut("scenarios", rows, _SCENARIOS_SEARCH_MAX_ROWS), ensure_ascii=False))
 
 
-def _row_limit(value: object, bound: int) -> int:
-    """A ``limit`` param as a row count from 1 to *bound*; *bound* when absent or not a whole number.
-    A native call may send ``5.0`` (Gemini's arguments carry every number as a float)."""
+def _whole_number(value: object) -> int | None:
+    """*value* as a whole number, however a model wrote it (``5``, ``"5"``, or
+    ``5.0``: Gemini's arguments carry every number as a float), or None."""
     if isinstance(value, str) and value.strip().isdigit():
         value = int(value.strip())
     if isinstance(value, float) and value.is_integer():
         value = int(value)
     if isinstance(value, bool) or not isinstance(value, int):
-        return bound
-    return max(1, min(value, bound))
+        return None
+    return value
+
+
+def _row_limit(value: object, bound: int) -> int:
+    """A ``limit`` param as a row count from 1 to *bound*; *bound* when absent or not a whole number."""
+    number = _whole_number(value)
+    return bound if number is None else max(1, min(number, bound))
 
 
 def _models_search_rows(user_key: str, params: dict) -> list[dict]:
@@ -1151,6 +1171,87 @@ def _resolve_node_id(target: dict | None, params: dict) -> str | None:
     return None
 
 
+#: node.history.read bounds: the newest entries a list shows, and the most of
+#: one entry's code, and of the code it replaced, that a read gives.
+_NODE_HISTORY_MAX_ENTRIES = 40
+_NODE_HISTORY_CODE_MAX_CHARS = 12_000
+
+
+def _cut_text(key: str, text: str, bound: int) -> dict:
+    """``{key: the first *bound* characters of text}``, and, when it left
+    characters out, ``{key}Elided``: how many, first, as :func:`_cut` says of
+    rows."""
+    payload: dict = {}
+    if len(text) > bound:
+        payload[f"{key}Elided"] = len(text) - bound
+    payload[key] = text[:bound]
+    return payload
+
+
+def _history_row(record: dict) -> dict:
+    """One entry of a node's history as node.history.read lists it: its id and
+    parent, run or edit, an edit's label (whoever made it, or what it
+    changed), when it started and ended, the kinds of data it read and
+    returned, and how long its code is."""
+    edit = record.get("kind") == "edit"
+    row: dict = {"id": record.get("id"), "parentId": record.get("parentId"), "kind": "edit" if edit else "run"}
+    if edit and isinstance(record.get("label"), str):
+        row["label"] = record["label"]
+    code = record.get("code")
+    return {
+        **row,
+        "startTime": record.get("startTime"),
+        "endTime": record.get("endTime"),
+        "inputs": record["inputs"] if isinstance(record.get("inputs"), list) else [],
+        "outputs": record["outputs"] if isinstance(record.get("outputs"), list) else [],
+        "codeChars": len(code) if isinstance(code, str) else 0,
+    }
+
+
+def _execute_node_history_read(spec: dict, target: dict | None, params: dict) -> tuple[str, str]:
+    """``node.history.read``: a node's entries, newest first, or with
+    ``entryId`` that entry's code, from the saved dataflow's
+    ``nodeProvenance``, keyed by node id as a load keys it
+    (``projects/node_provenance``, the twin of ``utils/nodeProvenanceKeys.ts``)."""
+    from utk_curio.backend.app.projects.node_provenance import rekey_node_provenance
+
+    node_id = _resolve_node_id(target, params)
+    if not node_id:
+        return "error", agent_text.message("tools.no-node-id")
+    nodes = [n for n in (spec.get("dataflow") or {}).get("nodes") or [] if isinstance(n, dict)]
+    if not any(n.get("id") == node_id for n in nodes):
+        return "error", agent_text.message("tools.node-not-in-spec", node_id=repr(node_id))
+    saved = spec.get("nodeProvenance")
+    keyed = rekey_node_provenance(saved if isinstance(saved, dict) else {}, [str(n.get("id")) for n in nodes])
+    records = sorted(
+        (record for record in keyed.get(node_id) or [] if isinstance(record, dict)),
+        key=lambda record: _whole_number(record.get("id")) or 0,
+        reverse=True,
+    )
+    if not records:
+        note = agent_text.message("tools.node-history-none", node_id=repr(node_id))
+        return "ok", json.dumps({"nodeId": node_id, "entries": [], "note": note}, ensure_ascii=False)
+    asked = params.get("entryId")
+    if asked is None:
+        rows = [_history_row(record) for record in records]
+        return "ok", _truncate(json.dumps(
+            {"nodeId": node_id, **_cut("entries", rows, _NODE_HISTORY_MAX_ENTRIES)}, ensure_ascii=False,
+        ))
+    entry_id = _whole_number(asked)
+    record = next((r for r in records if entry_id is not None and _whole_number(r.get("id")) == entry_id), None)
+    if record is None:
+        return "error", agent_text.message("tools.node-history-no-entry", node_id=repr(node_id), entry_id=repr(asked))
+    payload = {
+        "nodeId": node_id,
+        "entry": _history_row(record),
+        **_cut_text("code", str(record.get("code") or ""), _NODE_HISTORY_CODE_MAX_CHARS),
+    }
+    # An edit whose parent does not hold the code it replaced holds it itself.
+    if isinstance(record.get("before"), str):
+        payload.update(_cut_text("before", record["before"], _NODE_HISTORY_CODE_MAX_CHARS))
+    return "ok", _truncate(json.dumps(payload, ensure_ascii=False))
+
+
 def _discovery_service():
     """The discovery service for the acting user.
 
@@ -1377,6 +1478,8 @@ def execute_read_tool(
             # Best-effort staleness signal: the run predates the current content.
             record["contentChangedSinceRun"] = bool(executed_sha) and executed_sha != current_sha
             return "ok", _truncate(json.dumps(record, ensure_ascii=False))
+        if tool_id == "node.history.read":
+            return _execute_node_history_read(spec, target, params)
         if tool_id == "catalog.search":
             rows = _catalog_listing_rows(user_key, project_id, params)
             return "ok", _truncate(json.dumps(_cut("datasets", rows, _CATALOG_SEARCH_MAX_ROWS), ensure_ascii=False))

@@ -339,10 +339,15 @@ const FlowProvider = ({
         hostedGuest,
     });
 
+    // The nodes' Provenance drawers: a run files an entry, and so does an
+    // agent's applied change to a node's code.
+    const { nodeExecProv, nodeEditProv } = useProvenanceContext();
+
     const {
         applyNodeContent, addNode, propagateDownstreamInputs, applyOutput, onEdgesDelete, onNodesDelete,
     } = useGraphEdits({
         setNodes, setEdges, reactFlow, workflowNameRef, collabRef, outputsRef, markNodeStaleRef, setOutputs,
+        nodeEditProv, markDirtyRef,
     });
 
     const { onConnect, isValidConnection } = useConnect({
@@ -411,7 +416,6 @@ const FlowProvider = ({
     // saves it first and records its outputs in it. Hosted guests, viewers of
     // a shared dataflow and `--no-project` keep the run in the browser, and so
     // does a canvas with nobody signed in, which cannot save either.
-    const { nodeExecProv } = useProvenanceContext();
     const runsOnServer =
         !dashboardOn &&
         !isStandaloneDashboard() &&

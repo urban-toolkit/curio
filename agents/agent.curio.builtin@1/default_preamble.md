@@ -35,3 +35,5 @@ Act like an assistant for users of a system for building visual analytics datafl
 {{include:knowledge/scenarios.md}}
 
 {{include:knowledge/dashboards.md}}
+
+{{include:knowledge/provenance.md}}

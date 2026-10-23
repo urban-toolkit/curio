@@ -2,11 +2,11 @@ import React, { createContext, useContext, ReactNode, useState, useRef } from "r
 import { formatDate } from "../utils/formatters";
 
 /**
- * One entry of a node's history: a run, or an edit made in the node's body (a
- * Map Edits node's action, or an entry of its list switched off or
- * deleted), which ran nothing. Each holds the node's code as it left it, and
- * descends from the entry the node's next one branches from
- * (`selectedParentExecRef`), so the history is a tree.
+ * One entry of a node's history: a run, or an edit, which ran nothing: one
+ * made in the node's body (a Map Edits node's action, or an entry of its list
+ * switched off or deleted), or an agent's change the user applied. Each holds
+ * the node's code as it left it, and descends from the entry the node's next
+ * one branches from (`selectedParentExecRef`), so the history is a tree.
  */
 export interface NodeExecRecord {
     id: number;
@@ -19,7 +19,7 @@ export interface NodeExecRecord {
     endTime: string;
     /** "edit" for an edit; a run has none. */
     kind?: "edit";
-    /** What an edit changed, as the drawer lists it: "Remove building_id 119". */
+    /** What an edit changed, as the drawer lists it: "Remove building_id 119", or the agent that made it: "Node Builder". */
     label?: string;
     /**
      * An edit's code before it, when the entry it descends from does not hold
@@ -43,9 +43,9 @@ interface ProvenanceContextProps {
         interaction?: boolean
     ) => void;
     /**
-     * Files an edit made in *nodeId*'s body: the code it left, named by
-     * *label*, and the code it replaced (*before*), kept when the entry it
-     * descends from does not hold it.
+     * Files an edit of *nodeId*, one made in its body or an agent's applied
+     * change: the code it left, named by *label*, and the code it replaced
+     * (*before*), kept when the entry it descends from does not hold it.
      */
     nodeEditProv: (nodeId: string, code: string, label: string, before?: string) => void;
     provenanceGraphNodes: Record<string, NodeExecRecord[]>;

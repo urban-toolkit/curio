@@ -27,6 +27,7 @@ class TestRegistry:
             "dataflow.read", "node.read", "node.content.write", "node.create",
             "catalog.search", "dataset.install",
             "dataflow.plan.write", "node.runtime.read",
+            "node.history.read",  # a node's runs and edits, as its Provenance drawer lists them
             "web.fetch", "web.search",
             "packages.catalog", "packages.resolve", "package.install",  # dev/84
             "package.draft.apply",  # dev/89
@@ -47,6 +48,7 @@ class TestRegistry:
         assert tools.REGISTRY["dataset.install"].effect == "mutate"
         assert tools.REGISTRY["dataflow.plan.write"].effect == "mutate"
         assert tools.REGISTRY["node.runtime.read"].effect == "read"
+        assert tools.REGISTRY["node.history.read"].effect == "read"
         assert tools.REGISTRY["web.fetch"].effect == "read"
         assert tools.REGISTRY["web.search"].effect == "read"
         assert tools.REGISTRY["discovery.sources"].effect == "read"

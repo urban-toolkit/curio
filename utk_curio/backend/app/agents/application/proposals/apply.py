@@ -165,11 +165,9 @@ def _apply_node_content_write(
         [node_name, f"proposal {proposal_id[:8]}"],
     )
     applied = {"nodeId": node_id, "content": proposal.get("content", "")}
-    # The agent that wrote it, as its manifest names it: a node that keeps a
-    # history of its changes names the entry after it.
-    writer = agents_spec_reads._agent_name(
-        user_key, str((attachments.get_attachment(spec, attachment_id) or {}).get("coord") or ""),
-    )
+    # The agent that wrote it: the change is an entry of the node's history
+    # named after it.
+    writer = _writer_name(user_key, spec, attachment_id)
     if writer:
         applied["agent"] = writer
     return {
@@ -181,6 +179,22 @@ def _apply_node_content_write(
         # node too, so the next canvas save can't clobber the mutation.
         "appliedContent": applied,
     }
+
+
+def _writer_name(user_key: str, spec: dict, attachment_id: str) -> str | None:
+    """The name of the agent that wrote what an apply applies, as its manifest
+    names it, or None. The canvas names the change's entry in the node's
+    history after it."""
+    return agents_spec_reads._agent_name(
+        user_key, str((attachments.get_attachment(spec, attachment_id) or {}).get("coord") or ""),
+    )
+
+
+def _created_for_canvas(created: dict, writer: str | None) -> dict:
+    """A node an apply created, as the canvas bridge takes it: a copy, naming
+    the agent that wrote it, whose history the canvas starts named after it.
+    The spec's node carries no name."""
+    return {**created, "agent": writer} if writer else dict(created)
 
 
 def _apply_node_settings_write(
@@ -226,9 +240,7 @@ def _apply_node_settings_write(
     )
     applied = {"nodeId": node_id, "settings": change}
     # The agent that proposed it, as its manifest names it.
-    writer = agents_spec_reads._agent_name(
-        user_key, str((attachments.get_attachment(spec, attachment_id) or {}).get("coord") or ""),
-    )
+    writer = _writer_name(user_key, spec, attachment_id)
     if writer:
         applied["agent"] = writer
     return {
@@ -607,6 +619,7 @@ def _apply_package_draft(
         "Applied: package draft installed",
         [name, target, f"proposal {proposal_id[:8]}"],
     )
+    writer = _writer_name(user_key, spec, attachment_id)
     return {
         "attachmentId": attachment_id,
         "proposalId": proposal_id,
@@ -616,7 +629,7 @@ def _apply_package_draft(
                              "replaced": bool(journal.get("backupHeld"))},
         # Consumed by the frontend canvas bridge — registry refresh happens
         # BEFORE these nodes are painted (dev/89 registry-before-canvas).
-        "createdNodes": created_nodes,
+        "createdNodes": [_created_for_canvas(node, writer) for node in created_nodes],
         "requiresRegistryRefresh": True,
         **({"restartRecommended": restart} if isinstance(restart, dict)
            and restart.get("libs") else {}),
@@ -772,7 +785,7 @@ def _apply_node_create(
         "mutationApplied": True,
         # Consumed by the frontend canvas bridge (dev/48 §3.3) — the apply
         # response is the only carrier of the created node.
-        "createdNode": dict(created),
+        "createdNode": _created_for_canvas(created, _writer_name(user_key, spec, attachment_id)),
     }
 
 
