@@ -211,6 +211,32 @@ def test_the_tool_offers_each_setting_with_the_nodes_choices_and_widget_values_b
         assert f'"{key}"' in contract.description, key
 
 
+def test_both_builders_are_told_to_change_an_existing_nodes_setting_in_place():
+    """Asked to change a setting of a node already on the canvas, a builder
+    proposes node.settings.write with just that change, never a new node or
+    rewritten content."""
+    from utk_curio.backend.app.agents.domain import builtin
+
+    assert "propose node.settings.write with that node's REAL id" in builtin.read_prompt_text(DFB, "instruction")
+    assert "propose node.settings.write with just that change" in builtin.read_prompt_text(NB, "instruction")
+
+
+def test_every_agent_reads_how_an_existing_nodes_settings_change():
+    """The pages the preamble includes say it of each setting where they
+    describe it: the pool's modes, the view's column, the join's operation and
+    output, and widget values."""
+    from utk_curio.backend.app.agents.domain import builtin
+
+    preamble = builtin.read_prompt_text(DFB, "system")
+    for words in (
+        "A pool already on the canvas changes its modes through node.settings.write",
+        "A view already on the canvas changes its column through node.settings.write",
+        "one already on the canvas changes them through node.settings.write",
+        "A node already on the canvas takes new widget values through node.settings.write",
+    ):
+        assert words in preamble, words
+
+
 class TestAChangeReachesTheCardAndTheNode:
     def test_a_pools_mode_is_changed_beside_the_one_it_leaves(
         self, client, user_and_token, tmp_curio, monkeypatch,
