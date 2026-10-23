@@ -338,10 +338,10 @@ REGISTRY: dict[str, ToolContract] = {
         label="Read a node",
         parameter_schema=lambda say: _object({"nodeId": _node_id(say)}),
     ),
-    # Consumers: the Node Builder, the Dataflow Reader and the Dataflow
-    # Builder. What changed in a node: its runs and edits as its Provenance
-    # drawer lists them, from the saved dataflow (the projects domain keys
-    # them as a load does).
+    # Consumers: the Node Builder and the Dataflow Builder, in their chats.
+    # What changed in a node: its runs and edits as its Provenance drawer
+    # lists them, from the saved dataflow (the projects domain keys them as a
+    # load does).
     "node.history.read": ToolContract(
         id="node.history.read",
         contract_version="1",
