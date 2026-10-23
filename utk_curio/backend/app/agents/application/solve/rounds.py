@@ -297,6 +297,17 @@ def _one_line_answer(candidate: str, *, data_loading: bool) -> tuple[str, str] |
     return ONE_LINE_ANSWER_KIND, agent_text.message("solve.builder-answered", answer=line)
 
 
+#: The stops on the content builder's one-line answer: the loop's last
+#: candidate is that line, which is no content to review or apply.
+_ANSWER_STOPS = ("answer", "decline")
+
+
+def _ended_on_an_answer(outcome: dict | None) -> bool:
+    """Whether the verified loop stopped on the builder's one-line answer, or
+    on a loader's decline, so that its candidate is the builder's line."""
+    return str((outcome or {}).get("stoppedBy") or "") in _ANSWER_STOPS
+
+
 def _correction_url_evidence(candidate: str, error_text: str, ctx) -> list[dict]:
     """dev/115: when a failed run names an HTTP problem, re-probe the URLs the
     candidate fetches (DEC-053, budgeted through the grounding context) so the

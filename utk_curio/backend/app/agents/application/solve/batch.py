@@ -594,15 +594,8 @@ class SolveBatch:
         if unreadable:
             self.results[node_id] = {"status": "failed", "error": unreadable[:300]}
             return {"nodeId": node_id, "status": "failed", "error": unreadable[:300]}
-        # The builder's one-line answer in place of code is reported, as the
-        # verified loop reports it, and never written as the node's code.
-        answered = (
-            agents_rounds._one_line_answer(text_out, data_loading=self.is_data_loading(node))
-            if self.content_kind(node) == workflow_spec.CONTENT_KIND_CODE else None
-        )
-        if answered is not None:
-            kind, detail = answered
-            err = f"{kind}: {detail}"[:300]
+        err = self._unwritten_answer(node, text_out)
+        if err:
             self.results[node_id] = {"status": "failed", "error": err}
             return {"nodeId": node_id, "status": "failed", "error": err}
         result: dict = {"status": "solved"}
@@ -617,6 +610,19 @@ class SolveBatch:
         return {"nodeId": node_id, "status": "solved", "content": text_out, **self._written_by(), **(
             {"verification": result["verification"]} if "verification" in result else {}
         )}
+
+    def _unwritten_answer(self, node: dict, text_out: str) -> str | None:
+        """The error a node fails with when the builder answered in one line
+        instead of writing its code, or None. The verified loop reports that
+        line, and so do the paths that write or propose content without
+        running it: it is never written, or offered for review, as code."""
+        if self.content_kind(node) != workflow_spec.CONTENT_KIND_CODE:
+            return None
+        answered = agents_rounds._one_line_answer(text_out, data_loading=self.is_data_loading(node))
+        if answered is None:
+            return None
+        kind, detail = answered
+        return f"{kind}: {detail}"[:300]
 
     def _written_by(self) -> dict:
         """``{"agent": name}``: the agent that writes this batch's content, as
@@ -1118,6 +1124,14 @@ class SolveBatch:
         # (verdict, rounds, attempts) rides the part, PASS or
         # FAIL (dev/67-7's labeled choice); a sandbox outage
         # mints nothing and the node stays pending.
+        if agents_rounds._ended_on_an_answer(outcome):
+            # The builder's one-line answer is no content: nothing is minted
+            # for Apply anyway to write, and the node fails with the answer,
+            # as it does when Solve writes.
+            event = self.record_outcome(node_id, "verified", outcome, None)
+            if event is not None:
+                yield "node_result", event
+            return
         for c in outcome.get("delegations") or []:
             if c is not None:
                 self.delegations.append(c)
@@ -1178,7 +1192,10 @@ class SolveBatch:
             self.delegations.append(child)
         # dev/114: the gate runs on the batch base BEFORE the
         # mint so the node's failure names the source.
-        err = self._gate_unverified(node_id, content.extract_node_content(text))
+        text_out = content.extract_node_content(text)
+        err = self._gate_unverified(node_id, text_out) or self._unwritten_answer(
+            self.nodes_by_id.get(node_id) or {}, text_out,
+        )
         if err:
             self.results[node_id] = {"status": "failed", "error": err[:300]}
             yield "node_result", {"nodeId": node_id, "status": "failed", "error": err[:300]}
