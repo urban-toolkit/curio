@@ -165,12 +165,12 @@ Propose installing ONE node package from the Nodes Catalog into this project. Pa
 
 ## node.create
 
-Propose adding ONE new node to the canvas. Params: {"nodeType": "<packageId>/<templateId>", "content": "...", "title": "<short header shown on the node>", "goal": "<one-line purpose>", "appearance": {"backgroundColor": "<palette name or #RRGGBB>"}, "widgets": [...], "spatialJoin": {...}}: title, goal, appearance, widgets and spatialJoin are optional; a note template renders title and backgroundColor, so give both for notes. nodeType must be an id from the "Available node templates" list, never invented. The user reviews the proposal; nothing is added without their approval.
+Propose adding ONE new node to the canvas. Params: {"nodeType": "<packageId>/<templateId>", "content": "...", "title": "<short header shown on the node>", "goal": "<one-line purpose>", "appearance": {"backgroundColor": "<palette name or #RRGGBB>"}, "widgets": [...], "spatialJoin": {...}}: title, goal, appearance, widgets and spatialJoin are optional; a note template renders title and backgroundColor, so give both for notes. A {{template.label:curio.builtin/parameter}} node holds no content and exactly one widget, whose name no other {{template.label:curio.builtin/parameter}} node's widget has. nodeType must be an id from the "Available node templates" list, never invented. The user reviews the proposal; nothing is added without their approval.
 
 ### Parameters
 
 - nodeType: A <packageId>/<templateId> id from the Available node templates list.
-- content: The node's content.
+- content: The node's content: empty for a node that holds none, such as a {{template.label:curio.builtin/spatial-join}} or a {{template.label:curio.builtin/parameter}}.
 - title: A short header shown on the node.
 - goal: The node's purpose, in one line.
 
