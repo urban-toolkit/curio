@@ -519,12 +519,18 @@ def _wait_for_lit(page, map_id: str, expected, what: str, table: str = LAYER, ke
             return
         page.wait_for_timeout(250)
     shown = sorted(expected) if not isinstance(expected, set) else sorted(expected, key=str)
-    # What every table's layer shows, so a failure says whether the layer picks at all.
+    # What every table's layer shows, so a failure says whether the layer picks
+    # at all, and the selections the map was brought, which it lights.
     state = page.evaluate(_MAP_STATE_JS, map_id) or {}
     layers = {name: (layer.get("pick"), _ids(layer.get("lit"), key)) for name, layer in state.items()}
+    brought = [
+        (entry.get("nodeId"), ((entry.get("details") or {}).get("autk_selection") or {}).get("layerRef"),
+         ((entry.get("details") or {}).get("autk_selection") or {}).get("data"))
+        for entry in page.evaluate(_INTERACTIONS_JS, map_id) or []
+    ]
     raise AssertionError(
         f"{what}: the map {map_id} lights the {key} {got} on {table}, not {shown}; "
-        f"each table as (picks, lit {key}): {layers}"
+        f"each table as (picks, lit {key}): {layers}; selections brought as (from, layer, rows): {brought}"
     )
 
 
