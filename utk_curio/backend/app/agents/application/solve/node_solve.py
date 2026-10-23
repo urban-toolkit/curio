@@ -401,23 +401,41 @@ def _conclude(user_key, project_id, attachment_id, session_id, spec, node, label
         )
         card_kind = "result"
     elif (outcome.get("evidence") or {}).get("upstreamEmpty"):
-        text = (
-            f"Not verified: {(outcome.get('evidence') or {}).get('detail') or 'an upstream node has no content yet'} "
-            f"— {label!r} waits for it; solve or fill that node, then Solve this one again. Nothing was changed."
+        text = agents_grounding._then_sentence(
+            f"Not verified: {(outcome.get('evidence') or {}).get('detail') or 'an upstream node has no content yet'}",
+            f"{label!r} waits for it: solve or fill that node, then Solve this one again. Nothing was changed.",
         )
         card_kind = "result"
     else:
-        text = (
-            f"Not fixed after {rounds} attempt{'s' if rounds != 1 else ''}"
-            f"{agents_rounds._stopped_by_clause(outcome.get('stoppedBy'))}: {label!r} still "
-            "fails — every attempt is listed below with the code it ran; nothing was written."
-        )
-        remedy_payload = (outcome.get("evidence") or {}).get("remedy")
-        if isinstance(remedy_payload, dict):
-            done["remedy"] = remedy_payload
-            text += agents_grounding._source_missing_remedy(remedy_payload).replace(" — ", " ", 1).capitalize() + "."
-        card_kind = "error"
+        text, card_kind = _not_fixed(label, outcome, done), "error"
     return text, card_kind, parts
+
+
+def _not_fixed(label: str, outcome: dict, done: dict) -> str:
+    """What the per-node Solve says when nothing was written, read by the
+    failure's kind as the batch reads it. The builder's one-line answer on a
+    node that loads no data is Solve's answer for the node, in the builder's
+    words. A decline for the node's source ends with its remedy, as written.
+    Writes the remedy, when the outcome carries one, into *done*."""
+    rounds = outcome["rounds"]
+    evidence = outcome.get("evidence") or {}
+    head = (
+        f"Not fixed after {rounds} attempt{'s' if rounds != 1 else ''}"
+        f"{agents_rounds._stopped_by_clause(outcome.get('stoppedBy'))}"
+    )
+    if evidence.get("kind") == agents_rounds.ONE_LINE_ANSWER_KIND:
+        answer = str(outcome.get("candidate") or "").strip()
+        return agents_grounding._then_sentence(f"{head}. Its answer for {label!r}: {answer}", "Nothing was written.")
+    text = (
+        f"{head}: {label!r} still fails. Every attempt is listed below with the code it ran; "
+        "nothing was written."
+    )
+    remedy_payload = evidence.get("remedy")
+    if isinstance(remedy_payload, dict):
+        done["remedy"] = remedy_payload
+    if evidence.get("kind") == "source-missing":
+        text = agents_grounding._then_sentence(text, agents_grounding._source_missing_remedy(remedy_payload))
+    return text
 
 
 def _append_solve_turn(user_key, project_id, attachment_id, session_id, coord, config, execution_id,
