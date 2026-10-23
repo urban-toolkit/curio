@@ -8,6 +8,15 @@
         { "type": "Feature", "geometry": { "type": "Polygon", "coordinates": [[[2, 0], [3, 0], [3, 1], [2, 1], [2, 0]]] }, "properties": { "building_id": 2, "height": 40, "levels": 12, "kind": "tower" } },
         { "type": "Feature", "geometry": { "type": "Polygon", "coordinates": [[[4, 0], [5, 0], [5, 1], [4, 1], [4, 0]]] }, "properties": { "building_id": 3, "height": 25, "levels": 8, "kind": "office" } }
       ]
+    },
+    "osm_building_parts": {
+      "type": "FeatureCollection",
+      "features": [
+        { "type": "Feature", "geometry": { "type": "Polygon", "coordinates": [[[0, 0], [1, 0], [1, 1], [0, 1], [0, 0]]] }, "properties": { "building_id": 29623484, "osm_id": 29623484, "height": 240.8 } },
+        { "type": "Feature", "geometry": { "type": "Polygon", "coordinates": [[[1, 0], [2, 0], [2, 1], [1, 1], [1, 0]]] }, "properties": { "building_id": 29623484, "osm_id": 236608503, "height": 30 } },
+        { "type": "Feature", "geometry": { "type": "Polygon", "coordinates": [[[3, 0], [4, 0], [4, 1], [3, 1], [3, 0]]] }, "properties": { "building_id": 12345678901, "osm_id": 12345678901, "height": 12 } },
+        { "type": "Feature", "geometry": { "type": "Polygon", "coordinates": [[[4, 0], [5, 0], [5, 1], [4, 1], [4, 0]]] }, "properties": { "building_id": 12345678901, "osm_id": 98765432109, "height": 9 } }
+      ]
     }
   },
   "cases": [
@@ -144,6 +153,58 @@
           { "type": "Feature", "geometry": { "type": "Polygon", "coordinates": [[[0, 0], [1, 0], [1, 1], [0, 1], [0, 0]]] }, "properties": { "building_id": 1, "height": 10, "levels": 3, "kind": "house", "roof": "gable" } },
           { "type": "Feature", "geometry": { "type": "Polygon", "coordinates": [[[2, 0], [3, 0], [3, 3], [2, 3], [2, 0]]] }, "properties": { "building_id": 2, "height": 40, "levels": 12, "kind": "tower" } },
           { "type": "Feature", "geometry": { "type": "Polygon", "coordinates": [[[4, 0], [6, 0], [6, 2], [4, 2], [4, 0]]] }, "properties": { "building_id": 3, "height": 25, "levels": 8, "kind": "office" } }
+        ]
+      }
+    },
+    {
+      "name": "redraw one part of a building of several parts, named by its building_id and its own osm_id",
+      "layer": "osm_building_parts",
+      "key": "building_id",
+      "edits": [
+        { "op": "geometry", "where": "building_id == 29623484 and osm_id == 236608503", "geometry": { "type": "Polygon", "coordinates": [[[1, 0], [2, 0], [2, 2], [1, 1], [1, 0]]] } }
+      ],
+      "expected": {
+        "type": "FeatureCollection",
+        "features": [
+          { "type": "Feature", "geometry": { "type": "Polygon", "coordinates": [[[0, 0], [1, 0], [1, 1], [0, 1], [0, 0]]] }, "properties": { "building_id": 29623484, "osm_id": 29623484, "height": 240.8 } },
+          { "type": "Feature", "geometry": { "type": "Polygon", "coordinates": [[[1, 0], [2, 0], [2, 2], [1, 1], [1, 0]]] }, "properties": { "building_id": 29623484, "osm_id": 236608503, "height": 30 } },
+          { "type": "Feature", "geometry": { "type": "Polygon", "coordinates": [[[3, 0], [4, 0], [4, 1], [3, 1], [3, 0]]] }, "properties": { "building_id": 12345678901, "osm_id": 12345678901, "height": 12 } },
+          { "type": "Feature", "geometry": { "type": "Polygon", "coordinates": [[[4, 0], [5, 0], [5, 1], [4, 1], [4, 0]]] }, "properties": { "building_id": 12345678901, "osm_id": 98765432109, "height": 9 } }
+        ]
+      }
+    },
+    {
+      "name": "move a building of several parts, ids past 2^32, one redraw for each part",
+      "layer": "osm_building_parts",
+      "key": "building_id",
+      "edits": [
+        { "op": "geometry", "where": "building_id == 12345678901 and osm_id == 12345678901", "geometry": { "type": "Polygon", "coordinates": [[[3.5, 2], [4.5, 2], [4.5, 3], [3.5, 3], [3.5, 2]]] } },
+        { "op": "geometry", "where": "building_id == 12345678901 and osm_id == 98765432109", "geometry": { "type": "Polygon", "coordinates": [[[4.5, 2], [5.5, 2], [5.5, 3], [4.5, 3], [4.5, 2]]] } }
+      ],
+      "expected": {
+        "type": "FeatureCollection",
+        "features": [
+          { "type": "Feature", "geometry": { "type": "Polygon", "coordinates": [[[0, 0], [1, 0], [1, 1], [0, 1], [0, 0]]] }, "properties": { "building_id": 29623484, "osm_id": 29623484, "height": 240.8 } },
+          { "type": "Feature", "geometry": { "type": "Polygon", "coordinates": [[[1, 0], [2, 0], [2, 1], [1, 1], [1, 0]]] }, "properties": { "building_id": 29623484, "osm_id": 236608503, "height": 30 } },
+          { "type": "Feature", "geometry": { "type": "Polygon", "coordinates": [[[3.5, 2], [4.5, 2], [4.5, 3], [3.5, 3], [3.5, 2]]] }, "properties": { "building_id": 12345678901, "osm_id": 12345678901, "height": 12 } },
+          { "type": "Feature", "geometry": { "type": "Polygon", "coordinates": [[[4.5, 2], [5.5, 2], [5.5, 3], [4.5, 3], [4.5, 2]]] }, "properties": { "building_id": 12345678901, "osm_id": 98765432109, "height": 9 } }
+        ]
+      }
+    },
+    {
+      "name": "a redraw by ids names a whole building: every one of its parts takes the shape",
+      "layer": "osm_building_parts",
+      "key": "building_id",
+      "edits": [
+        { "op": "geometry", "ids": [29623484], "geometry": { "type": "Polygon", "coordinates": [[[0, 0], [2, 0], [2, 2], [0, 2], [0, 0]]] } }
+      ],
+      "expected": {
+        "type": "FeatureCollection",
+        "features": [
+          { "type": "Feature", "geometry": { "type": "Polygon", "coordinates": [[[0, 0], [2, 0], [2, 2], [0, 2], [0, 0]]] }, "properties": { "building_id": 29623484, "osm_id": 29623484, "height": 240.8 } },
+          { "type": "Feature", "geometry": { "type": "Polygon", "coordinates": [[[0, 0], [2, 0], [2, 2], [0, 2], [0, 0]]] }, "properties": { "building_id": 29623484, "osm_id": 236608503, "height": 30 } },
+          { "type": "Feature", "geometry": { "type": "Polygon", "coordinates": [[[3, 0], [4, 0], [4, 1], [3, 1], [3, 0]]] }, "properties": { "building_id": 12345678901, "osm_id": 12345678901, "height": 12 } },
+          { "type": "Feature", "geometry": { "type": "Polygon", "coordinates": [[[4, 0], [5, 0], [5, 1], [4, 1], [4, 0]]] }, "properties": { "building_id": 12345678901, "osm_id": 98765432109, "height": 9 } }
         ]
       }
     },

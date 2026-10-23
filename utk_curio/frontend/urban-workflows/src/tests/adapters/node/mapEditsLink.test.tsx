@@ -13,7 +13,10 @@
  * building, on the layer an action works on, and nothing is drawn over it; a
  * play of the map drops the pick. The drawing tools, the shape being drawn,
  * a shape's corners and midpoints, are layers of the map itself, and a
- * building being reshaped is drawn by them instead of its own layer.
+ * building being reshaped is drawn by them instead of its own layer. A
+ * building of several parts, each with an osm_id of its own, is reshaped,
+ * moved and added to part by part, each edit naming the part it changes; one
+ * whose parts no column tells apart keeps its shape.
  *
  * Each node is the behavior the canvas registers for its type, with the
  * node's own state (hook/useNodeState) for the Map Edits node; the map draws
@@ -595,12 +598,13 @@ function clickMap(lonLat: [number, number], shift = false) {
 
 /**
  * One step of a drag on the map: a press, a move or a release on the map's
- * canvas at *xy*, in the map's own pixels, the main button held while *held*.
+ * canvas at *xy*, in the map's own pixels, the main button held while *held*,
+ * and shift with *shift*.
  */
-function pointerOnMap(type: "pointerdown" | "pointermove" | "pointerup", [x, y]: [number, number], held: boolean) {
+function pointerOnMap(type: "pointerdown" | "pointermove" | "pointerup", [x, y]: [number, number], held: boolean, shift = false) {
   const canvas = document.getElementById(`autk-grammar-map-${MAP}`) as HTMLCanvasElement;
   act(() => {
-    canvas.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, button: 0, buttons: held ? 1 : 0, clientX: x, clientY: y }));
+    canvas.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, button: 0, buttons: held ? 1 : 0, shiftKey: shift, clientX: x, clientY: y }));
   });
 }
 
@@ -875,6 +879,259 @@ test("Move points draws a building's corners, midpoints and shape as layers of t
     await waitFor(() => expect(loadedLayers(next)).toEqual([]));
     expect(next.skipped.input_0).toEqual([]);
     expect(overlay()).toHaveAttribute("data-corners", "[]");
+  } finally {
+    putBack();
+  }
+});
+
+/**
+ * Building 119 in one part, building 136 in two with a gap between them,
+ * then building 200: positions 0, 1 and 2, and 3. Each part holds its
+ * building's building_id and an osm_id of its own, as OSM's building parts
+ * do, the first part its building's own.
+ */
+const OSM_PARTED = {
+  type: "FeatureCollection",
+  features: [
+    [119, 119, 0, 1],
+    [136, 136, 1, 1.4],
+    [136, 1361, 1.6, 2],
+    [200, 200, 2, 3],
+  ].map(([id, osm, west, east], i) => ({
+    type: "Feature",
+    geometry: { type: "Polygon", coordinates: [[[west, 0], [east, 0], [east, 1], [west, 1], [west, 0]]] },
+    properties: { building_id: id, osm_id: osm, height: 10 * (i + 1) },
+  })),
+};
+
+/** The corners of building 136's two parts, in degrees, and the middle of each. */
+const PART_ONE: [number, number][] = [[1, 0], [1.4, 0], [1.4, 1], [1, 1]];
+const PART_TWO: [number, number][] = [[1.6, 0], [2, 0], [2, 1], [1.6, 1]];
+const MIDDLE_PART_ONE: [number, number] = [1.2, 0.5];
+const MIDDLE_PART_TWO: [number, number] = [1.8, 0.5];
+
+/** A ring of corners closed, its first corner again at its end. */
+const closedRing = (ring: [number, number][]) => [...ring, ring[0]];
+
+/** The midpoint of each side of a closed ring of corners. */
+const midpointsOf = (ring: [number, number][]): [number, number][] =>
+  ring.map(([x, y], k) => {
+    const [nx, ny] = ring[(k + 1) % ring.length];
+    return [(x + nx) / 2, (y + ny) / 2];
+  });
+
+/** Positions in degrees, in whole kilometres of the map. */
+const inKm = (points: readonly number[][]) => points.map((xy) => km(toMercator(xy as [number, number])));
+
+/** Where the map shows a position in degrees, in its own pixels. */
+const onScreen = (lonLat: [number, number]): [number, number] => {
+  const [x, y] = toMercator(lonLat);
+  return [Math.round(x / 1000), Math.round(SIZE - y / 1000)];
+};
+
+/** The shape of each row of building *id* the map drew last, by the row's osm_id. */
+const drawnPartsOf = (id: number): Record<string, any> =>
+  Object.fromEntries(
+    (grammarRuns[grammarRuns.length - 1]?.spec?.data ?? [])
+      .flatMap((source: any) => source?.geojsonObject?.features ?? [])
+      .filter((feature: any) => feature?.properties?.building_id === id)
+      .map((feature: any) => [String(feature.properties.osm_id), feature.geometry]),
+  );
+
+test("Move points on a building of two parts, each with its own osm_id, draws the corners of both, and a drag of the second part's corner redraws that part alone, named by its osm_id", async () => {
+  const putBack = layOutCanvases();
+  try {
+    nodeInput.current = OSM_PARTED;
+    drawnMaps.make = projectingMap;
+    const canvas = mountCanvas();
+    await canvas.playMap();
+    await openAction("edit");
+    clickMap(MIDDLE_PART_ONE);
+    fireEvent.click(await screen.findByTestId("interaction-reshape"));
+    const map = lastMap();
+    const overlay = () => screen.getByTestId("map-edit-overlay");
+    await waitFor(() => expect(overlay()).toHaveAttribute("data-edit-mode", "reshape"));
+
+    // The corners and midpoints of both parts are points the map draws, and
+    // each part's outline a line, while the building's layer skips both its
+    // rows, drawn second and third.
+    const handles = inKm([...PART_ONE, ...midpointsOf(PART_ONE), ...PART_TWO, ...midpointsOf(PART_TWO)]).sort(byPlace);
+    await waitFor(() => expect(pointsOn(map).map(km).sort(byPlace)).toEqual(handles));
+    const outlines = (on = map) => linesOn(on).map((line) => line.map(km));
+    expect(outlines()).toContainEqual(inKm(closedRing(PART_ONE)));
+    expect(outlines()).toContainEqual(inKm(closedRing(PART_TWO)));
+    await waitFor(() => expect(map.skipped.input_0).toEqual([1, 2]));
+    expect(drawnOverMap()).toEqual([]);
+
+    // The overlay lists each corner with its part, the building's rows in
+    // the layer's order, and its ring and index in that part.
+    const listed = JSON.parse(overlay().getAttribute("data-corners") ?? "[]");
+    expect(listed.map((c: any) => [c.part, c.ring, c.index])).toEqual([
+      [0, 0, 0], [0, 0, 1], [0, 0, 2], [0, 0, 3],
+      [1, 0, 0], [1, 0, 1], [1, 0, 2], [1, 0, 3],
+    ]);
+
+    // A drag from the second part's corner at (2, 1): while it lasts, the map
+    // draws that part with the corner moved and the first part as it was.
+    const corner = listed[6];
+    const from: [number, number] = [Math.round(corner.x), Math.round(corner.y)];
+    const to: [number, number] = [from[0] + 20, from[1] - 15];
+    const moved = inKm(closedRing(PART_TWO));
+    moved[2] = [to[0], SIZE - to[1]];
+    pointerOnMap("pointerdown", from, true);
+    pointerOnMap("pointermove", to, true);
+    await waitFor(() => expect(outlines()).toContainEqual(moved));
+    expect(outlines()).toContainEqual(inKm(closedRing(PART_ONE)));
+    expect(canvas.settings()?.edits ?? []).toEqual([]);
+
+    // Let go: one edit, of the second part alone, named by the building's id
+    // and the part's own osm_id, in the list as such.
+    const drawn = grammarRuns.length;
+    pointerOnMap("pointerup", to, false);
+    const edits = canvas.settings()?.edits ?? [];
+    expect(edits).toEqual([expect.objectContaining({ op: "geometry", where: "building_id == 136 and osm_id == 1361" })]);
+    expect(edits[0]).not.toHaveProperty("ids");
+    expect(inKm((edits[0] as any).geometry.coordinates[0])).toEqual(moved);
+    expect(document.querySelector('[data-edit-op="geometry"]')).toHaveTextContent("Redraw where building_id == 136 and osm_id == 1361");
+
+    // The map draws the edit: the first part keeps its shape, the second is reshaped.
+    await waitFor(() => expect(grammarRuns).toHaveLength(drawn + 1));
+    const parts = drawnPartsOf(136);
+    expect(parts["136"]).toEqual({ type: "Polygon", coordinates: [closedRing(PART_ONE)] });
+    expect(inKm(parts["1361"].coordinates[0])).toEqual(moved);
+  } finally {
+    putBack();
+  }
+});
+
+test("Move whole area on a building of two parts moves both by the same offset, each keeping its shape, as one edit per part in one change", async () => {
+  const putBack = layOutCanvases();
+  try {
+    nodeInput.current = OSM_PARTED;
+    drawnMaps.make = projectingMap;
+    const canvas = mountCanvas();
+    await canvas.playMap();
+    await openAction("edit");
+    clickMap(MIDDLE_PART_ONE);
+    fireEvent.click(await screen.findByTestId("interaction-move"));
+    const map = lastMap();
+    await waitFor(() => expect(screen.getByTestId("map-edit-overlay")).toHaveAttribute("data-edit-mode", "move"));
+
+    // A shift-drag from inside the first part, 20 pixels east and 15 north:
+    // while it lasts, the map draws both parts moved.
+    const from = onScreen(MIDDLE_PART_ONE);
+    const to: [number, number] = [from[0] + 20, from[1] - 15];
+    const shiftedRing = (ring: [number, number][]) => inKm(closedRing(ring)).map(([x, y]) => [x + 20, y + 15]);
+    const outlines = () => linesOn(map).map((line) => line.map(km));
+    pointerOnMap("pointerdown", from, true, true);
+    pointerOnMap("pointermove", to, true, true);
+    await waitFor(() => expect(outlines()).toContainEqual(shiftedRing(PART_ONE)));
+    expect(outlines()).toContainEqual(shiftedRing(PART_TWO));
+    expect(canvas.settings()?.edits ?? []).toEqual([]);
+
+    // Let go: an edit for each part, named by its own osm_id, each part
+    // moved by the same offset and keeping its shape.
+    pointerOnMap("pointerup", to, false, true);
+    const edits = (canvas.settings()?.edits ?? []) as any[];
+    expect(edits).toEqual([
+      expect.objectContaining({ op: "geometry", where: "building_id == 136 and osm_id == 136" }),
+      expect.objectContaining({ op: "geometry", where: "building_id == 136 and osm_id == 1361" }),
+    ]);
+    expect(edits.map((edit) => inKm(edit.geometry.coordinates[0]))).toEqual([shiftedRing(PART_ONE), shiftedRing(PART_TWO)]);
+    const offsets = edits.flatMap((edit, k) => {
+      const before = closedRing([PART_ONE, PART_TWO][k]);
+      return edit.geometry.coordinates[0].map(([x, y]: number[], i: number) => [x - before[i][0], y - before[i][1]]);
+    });
+    for (const [dx, dy] of offsets) {
+      expect(dx).toBeCloseTo(offsets[0][0], 9);
+      expect(dy).toBeCloseTo(offsets[0][1], 9);
+    }
+    // One change: one entry in the node's Provenance drawer.
+    expect(canvas.runsOf(NODE)).toEqual([
+      expect.objectContaining({
+        kind: "edit",
+        label: "Redraw where building_id == 136 and osm_id == 136; Redraw where building_id == 136 and osm_id == 1361",
+      }),
+    ]);
+  } finally {
+    putBack();
+  }
+});
+
+test("Add a part on a building of two parts joins the part the building was picked by, and the other part keeps its shape", async () => {
+  const putBack = layOutCanvases();
+  try {
+    nodeInput.current = OSM_PARTED;
+    drawnMaps.make = projectingMap;
+    const canvas = mountCanvas();
+    await canvas.playMap();
+    await openAction("edit");
+    // Building 136 picked by a click on its second part.
+    clickMap(MIDDLE_PART_TWO);
+    fireEvent.click(await screen.findByTestId("interaction-add-part"));
+    await waitFor(() => expect(screen.getByTestId("map-edit-overlay")).toHaveAttribute("data-edit-mode", "draw"));
+
+    // A triangle drawn north of it, ended with Enter.
+    const triangle: [number, number][] = [[1.65, 1.3], [1.95, 1.3], [1.8, 1.7]];
+    for (const corner of triangle) clickMap(corner);
+    const drawn = grammarRuns.length;
+    fireEvent.keyDown(document.body, { key: "Enter" });
+
+    // One edit, of the second part alone: it and the triangle.
+    const edits = (canvas.settings()?.edits ?? []) as any[];
+    expect(edits).toEqual([expect.objectContaining({ op: "geometry", where: "building_id == 136 and osm_id == 1361" })]);
+    expect(edits[0]).not.toHaveProperty("ids");
+    expect(edits[0].geometry.type).toBe("MultiPolygon");
+    expect(edits[0].geometry.coordinates[0]).toEqual([closedRing(PART_TWO)]);
+    expect(inKm(edits[0].geometry.coordinates[1][0])).toEqual(inKm(closedRing(triangle)));
+
+    // The map draws the edit: the first part as it was.
+    await waitFor(() => expect(grammarRuns).toHaveLength(drawn + 1));
+    expect(drawnPartsOf(136)["136"]).toEqual({ type: "Polygon", coordinates: [closedRing(PART_ONE)] });
+  } finally {
+    putBack();
+  }
+});
+
+test("a building whose parts no column tells apart keeps its shape: Move points, Move whole area and Add a part are off for it, a tip says why, and nothing is written", async () => {
+  const putBack = layOutCanvases();
+  try {
+    nodeInput.current = PARTED;
+    drawnMaps.make = projectingMap;
+    const canvas = mountCanvas();
+    await canvas.playMap();
+    await openAction("edit");
+    const overlay = () => screen.getByTestId("map-edit-overlay");
+
+    // Building 119, of one part: Move points shows its corners.
+    clickMap(MIDDLE_ONE_PART);
+    fireEvent.click(await screen.findByTestId("interaction-reshape"));
+    await waitFor(() => expect(overlay()).toHaveAttribute("data-edit-mode", "reshape"));
+    expect(JSON.parse(overlay().getAttribute("data-corners") ?? "[]")).toHaveLength(4);
+
+    // A click on building 136, whose two parts hold its building_id and no
+    // osm_id of their own: it is picked, its shape tools are off, a tip says
+    // why, and the map shows none of its corners.
+    clickMap(MIDDLE_FIRST_PART);
+    const tip = await screen.findByTestId("interaction-parts-untold");
+    expect(tip).toHaveTextContent("2 parts");
+    expect(tip).toHaveTextContent("osm_id");
+    const tools = ["interaction-reshape", "interaction-move", "interaction-add-part"];
+    for (const tool of tools) expect(screen.getByTestId(tool)).toBeDisabled();
+    await waitFor(() => expect(overlay()).toHaveAttribute("data-edit-mode", "select"));
+    expect(overlay()).toHaveAttribute("data-corners", "[]");
+    await waitFor(() => expect(loadedLayers(lastMap())).toEqual([]));
+
+    // Clicks on the tools, and a drag from one of its corners, write nothing.
+    for (const tool of tools) fireEvent.click(screen.getByTestId(tool));
+    const from = onScreen([1.5, 1]);
+    const to: [number, number] = [from[0] + 20, from[1] - 15];
+    pointerOnMap("pointerdown", from, true);
+    pointerOnMap("pointermove", to, true);
+    pointerOnMap("pointerup", to, false);
+    expect(canvas.settings()?.edits ?? []).toEqual([]);
+    expect(overlay()).toHaveAttribute("data-edit-mode", "select");
+    expect(screen.getByTestId("interaction-parts-untold")).toBeInTheDocument();
   } finally {
     putBack();
   }
