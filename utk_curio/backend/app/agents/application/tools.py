@@ -55,7 +55,6 @@ _EFFECTS = ("read", "mutate")
 
 # Tool results are untrusted context data: bounded, truncated with a marker.
 TOOL_RESULT_MAX_CHARS = 32_000
-_TRUNCATION_MARKER = "\n…[truncated: result exceeded the tool output bound]"
 
 
 def _object(properties: dict, *required: str) -> dict:
@@ -670,7 +669,7 @@ def native_tools(granted: Iterable[str], delegate_capabilities: Iterable[str] = 
 def _truncate(text: str) -> str:
     if len(text) <= TOOL_RESULT_MAX_CHARS:
         return text
-    return text[:TOOL_RESULT_MAX_CHARS] + _TRUNCATION_MARKER
+    return text[:TOOL_RESULT_MAX_CHARS] + ("\n" + agent_text.message("tools.result-truncated"))
 
 
 # catalog.search bounds (dev/50): plenty for ranking, small enough to never
@@ -826,7 +825,7 @@ def _execute_examples_read(user_key: str, project_id: str, params: dict) -> tupl
 
     key = params.get("key")
     if key is not None and not isinstance(key, str):
-        return "error", "params.key must be an example's key; call examples.read with no key to list the keys"
+        return "error", agent_text.message("tools.example-key-invalid")
     exclude = worked_examples.excluded_by(projects_storage.read_spec(user_key, project_id))
     if not (key or "").strip():
         return "ok", _truncate(json.dumps({"examples": worked_examples.listing(exclude=exclude)}, ensure_ascii=False))
@@ -870,7 +869,7 @@ def _execute_packages_resolve(user_key: str, params: dict) -> tuple[str, str]:
     if not isinstance(dir_names, list) or not dir_names or not all(
         isinstance(d, str) and d.strip() for d in dir_names
     ):
-        return "error", 'params.dirNames must be a non-empty list of package dirName strings'
+        return "error", agent_text.message("tools.dir-names-invalid")
     cleaned = [d.strip() for d in dir_names[:_PACKAGES_RESOLVE_MAX_DIRNAMES]]
     try:
         report = packages_services.agent_resolve_report(user_key, cleaned)
@@ -979,7 +978,7 @@ def _dataflow_projection(stripped: dict, user_key: str, project_id: str) -> dict
         projection["scenarios"] = scenarios
     if len(json.dumps(projection, ensure_ascii=False)) > TOOL_RESULT_MAX_CHARS:
         projection["nodes"] = [_node_row(n, goal_cap=40) for n in nodes_raw]
-        projection["elided"] = "node goals shortened to fit the tool output bound"
+        projection["elided"] = agent_text.message("tools.goals-shortened")
     return projection
 
 
@@ -1167,7 +1166,7 @@ def execute_read_tool(
             return _execute_packages_resolve(user_key, params)
         spec = projects_storage.read_spec(user_key, project_id)
         if spec is None:
-            return "error", "no saved project spec is available"
+            return "error", agent_text.message("mint.no-saved-spec")
         if tool_id == "dataflow.read":
             stripped = project_agents.strip_agent_state(spec)
             include = params.get("include")
@@ -1179,22 +1178,22 @@ def execute_read_tool(
         if tool_id == "node.read":
             node_id = _resolve_node_id(target, params)
             if not node_id:
-                return "error", "no nodeId given and this agent is not attached to a node"
+                return "error", agent_text.message("tools.no-node-id")
             nodes = (spec.get("dataflow") or {}).get("nodes") or []
             node = next((n for n in nodes if isinstance(n, dict) and n.get("id") == node_id), None)
             if node is None:
-                return "error", f"node {node_id!r} not found in the saved spec"
+                return "error", agent_text.message("tools.node-not-in-spec", node_id=repr(node_id))
             return "ok", _truncate(json.dumps(node, ensure_ascii=False))
         if tool_id == "node.runtime.read":
             from utk_curio.backend.app.execution import runtime_journal
 
             node_id = _resolve_node_id(target, params)
             if not node_id:
-                return "error", "no nodeId given and this agent is not attached to a node"
+                return "error", agent_text.message("tools.no-node-id")
             nodes = (spec.get("dataflow") or {}).get("nodes") or []
             node = next((n for n in nodes if isinstance(n, dict) and n.get("id") == node_id), None)
             if node is None:
-                return "error", f"node {node_id!r} not found in the saved spec"
+                return "error", agent_text.message("tools.node-not-in-spec", node_id=repr(node_id))
             # dev/137: two origins describe two different things about one node
             # — what its CODE did and what its RENDER drew. The run leads when
             # there is one; a grammar node has only its render; and a code node
@@ -1219,19 +1218,15 @@ def execute_read_tool(
         if tool_id == "catalog.search":
             rows = _catalog_listing_rows(user_key, project_id, params)
             return "ok", _truncate(json.dumps(_cut("datasets", rows, _CATALOG_SEARCH_MAX_ROWS), ensure_ascii=False))
-        return "error", f"unknown read tool {tool_id!r}"
+        return "error", agent_text.message("tools.unknown-read-tool", tool_id=repr(tool_id))
     except Exception as exc:  # tool failures are data, never run errors
-        return "error", f"tool failed: {exc}"
+        return "error", agent_text.message("tools.tool-failed", exc=exc)
 
 
 # web.fetch preview bound: enough to judge an API's shape, small enough to
 # never crowd the context (the tool-result cap still applies on top).
 _WEB_BODY_PREVIEW_MAX_CHARS = 4000
 _WEB_SEARCH_MAX_ROWS = 8
-
-#: How a web tool's result opens when the egress policy refused the request.
-#: The agent loop reads it to mark the call, whose line the chat keeps (#447).
-EGRESS_REFUSED = "refused by the egress policy"
 
 
 def _execute_web_fetch(params: dict) -> tuple[str, str]:
@@ -1240,13 +1235,13 @@ def _execute_web_fetch(params: dict) -> tuple[str, str]:
 
     url = params.get("url")
     if not isinstance(url, str) or not url.strip():
-        return "error", "params.url must be a non-empty URL string"
+        return "error", agent_text.message("tools.url-required")
     try:
         result = egress.fetch(url.strip())
     except egress.EgressRefused as exc:
-        return "error", f"{EGRESS_REFUSED}: {exc}"
+        return "error", f"{agent_text.message("tools.egress-refused")}: {exc}"
     except Exception as exc:
-        return "error", f"the endpoint is unreachable: {exc}"
+        return "error", agent_text.message("tools.endpoint-unreachable", exc=exc)
     return "ok", _truncate(json.dumps({
         "url": result.url,
         "finalUrl": result.final_url,
@@ -1280,14 +1275,10 @@ def _execute_web_search(params: dict) -> tuple[str, str]:
 
     query = params.get("q")
     if not isinstance(query, str) or not query.strip():
-        return "error", "params.q must be a non-empty query string"
+        return "error", agent_text.message("tools.query-required")
     template = os.environ.get("CURIO_SEARCH_URL") or DEFAULT_SEARCH_URL
     if "{q}" not in template:
-        return "error", (
-            "web search is not configured for this deployment: "
-            "CURIO_SEARCH_URL (--agent-search-url) has no {q} where the query "
-            "goes - verify direct URLs with web.fetch instead"
-        )
+        return "error", agent_text.message("tools.search-not-configured", q="{q}")
     try:
         # dev/90 A2: the provider host is OPERATOR configuration, so it is
         # exempt from the address policy (a local SearXNG works); redirects
@@ -1298,9 +1289,9 @@ def _execute_web_search(params: dict) -> tuple[str, str]:
         )
         payload = json.loads(result.body)
     except egress.EgressRefused as exc:
-        return "error", f"{EGRESS_REFUSED}: {exc}"
+        return "error", f"{agent_text.message("tools.egress-refused")}: {exc}"
     except Exception as exc:
-        return "error", f"the search provider failed: {exc}"
+        return "error", agent_text.message("tools.search-provider-failed", exc=exc)
     rows_raw = _search_rows_of(payload)
     rows = []
     for row in (rows_raw or [])[:_WEB_SEARCH_MAX_ROWS]:
