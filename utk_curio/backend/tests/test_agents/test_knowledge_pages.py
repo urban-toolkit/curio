@@ -186,9 +186,14 @@ def test_the_catalogs_page_says_what_each_catalog_holds_and_which_tools_reach_it
                     "Scenario Catalog"):
         assert f"- {catalog}: " in page, catalog
     for tool in ("packages.catalog", "packages.resolve", "package.install", "models.search", "catalog.search",
-                 "dataset.install", "discovery.sources", "discovery.search", "discovery.acquire", "dataflow.read"):
+                 "dataset.install", "discovery.sources", "discovery.search", "discovery.acquire", "dataflow.read",
+                 "scenarios.search"):
         assert tool in REGISTRY and tool in page, tool
     assert 'curio_secret("<name>")' in page
+    # A scenario of another project comes in by the user's drag, from the
+    # Scenario Catalog drawer's Browse all tab.
+    scenarios = next(line for line in page.splitlines() if line.startswith("- Scenario Catalog: "))
+    assert "scenarios.search" in scenarios and "Scenario, Browse all" in scenarios
 
 
 def test_dataflow_read_lists_each_nodes_selection_tags(tmp_curio):

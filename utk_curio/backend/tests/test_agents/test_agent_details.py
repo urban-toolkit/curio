@@ -43,7 +43,8 @@ _TOOLS = {
     ],
     "agent.curio.dataflow-builder": [
         "Read the dataflow", "Read a node's last run", "Read worked examples",
-        "Propose a plan", "Propose a node", "Propose a settings change", "Propose a package draft",
+        "Search the Scenario Catalog", "Propose a plan", "Propose a node", "Propose a settings change",
+        "Propose a package draft",
     ],
     "agent.curio.dataset-finder": [
         "Search the Data Catalog", "List the data portals", "Search the data portals",
@@ -167,8 +168,8 @@ class TestTools:
         _, token = user_and_token
         tools = _cards(client, token)["agent.curio.dataflow-builder"]["tools"]
         assert [t["id"] for t in tools] == [
-            "dataflow.read", "node.runtime.read", "examples.read", "dataflow.plan.write", "node.create",
-            "node.settings.write", "package.draft.apply",
+            "dataflow.read", "node.runtime.read", "examples.read", "scenarios.search", "dataflow.plan.write",
+            "node.create", "node.settings.write", "package.draft.apply",
         ]
 
     def test_every_tool_contract_has_one_label_and_a_proposal_says_so(self):

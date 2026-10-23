@@ -48,6 +48,8 @@ No scenario ships with Curio. The catalog lists the scenarios in your own projec
 
 Each card shows a square of the scenario's color before its name, then its project, how many nodes it holds, its description, and its project's graph; in the **In project** tab the graph marks the scenario's nodes. On the `/catalog/scenarios` page, the strip at the top is the same on every card.
 
+Agents find your scenarios too: asked for a scenario of another project, the [Dataflow Builder](AGENT-CATALOG.md#widgets-and-scenarios) names it and its project for you to drag in from **Browse all**, and an agent that reads your dataflow tells which project a scenario you dragged in came from.
+
 ### Action matrix
 
 | Action | Where | What it changes | What you see |

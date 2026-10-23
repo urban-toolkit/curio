@@ -62,6 +62,9 @@
       "id": "examples.read"
     },
     {
+      "id": "scenarios.search"
+    },
+    {
       "id": "package.draft.apply"
     }
   ],
