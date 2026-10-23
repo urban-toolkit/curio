@@ -16,6 +16,9 @@ import { idKey } from "./applyEdits";
 /** The detail a map's pick, and the Map Edits node's own, is sent as: the one an Autark map's pick is. */
 export const EDIT_SELECTION = "autk_selection";
 
+/** A selection as a view sends it: by its detail, which names the node type it came from and its layer. */
+export type SentSelection = Record<string, SelectDetail & { source?: string; layerRef?: string }>;
+
 /**
  * The selection that names *ids*, values of the column *key*, on the layer the
  * map draws as *table*, sent by a node of type *source*. No ids: a selection

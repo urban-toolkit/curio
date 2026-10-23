@@ -256,8 +256,10 @@ export default function LayerWorkbench({
 
   // A pick on a map: the map's selection, which the interaction edge carries
   // here, replaces the pick, read on the layer worked on by its id column; a
-  // selection of another layer picks nothing here. Not while a shape waits
-  // to be added, nor while a rule picks.
+  // selection of another layer picks nothing here. A pick of nothing, a click
+  // on no feature or the map drawn again by a run, also stops lighting up
+  // what was just edited. Not while a shape waits to be added, nor while a
+  // rule picks.
   useEffect(() => {
     if (!active || !layerKey || !mode || drawn || byRule) return;
     const ids = selectedIdsIn(
@@ -265,7 +267,9 @@ export default function LayerWorkbench({
       (from, layer) => surfaces.some((surface) => surface.mapId === from && (layer ?? tableOn(surface, active)) === tableOn(surface, active)),
       features,
     );
-    if (ids !== null && !sameIds(ids, picked)) setPicked(ids);
+    if (ids === null) return;
+    if (!sameIds(ids, picked)) setPicked(ids);
+    if (ids.length === 0) setRecent([]);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [incoming]);
 

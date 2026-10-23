@@ -546,11 +546,25 @@ whose code is its only state: one call of `curio_edit_features`
   `applyEdits.ts`, the twin of the run's `_edit_fc`), keeps its view, files no
   run for that draw, and hands on what it was fed: the node's last run.
 - The interaction edge carries selections, as between two views. A pick on the
-  linked map is the map's selection (`MapEditOverlay`), which `useInteractions`
-  routes to the node, matched by the layer's id column (`mapEditSelection.ts`,
-  `matchSelections`); what the node picks, or a rule matches, goes back the same
-  way and lights up on the map. `mapEditBus.ts` lends the map only the drawing
-  tools: the layer worked on, the mode and the shape being drawn. The node edits
+  linked map (`MapEditOverlay`) is the map's own selection, sent as autk-map's
+  pick is (`sendOwnSelection`), so a draw that is not an edit's preview says it
+  is gone. `useInteractions` routes it to the node, matched by the layer's id
+  column (`mapEditSelection.ts`, `matchSelections`); what the node picks, or a
+  rule matches, goes back the same way, and the map lights it with autk-map's
+  own highlight. autk-map highlights its picking layer only, so while an action
+  is open the layer it works on is that layer (`showForEdits` in
+  `autkMapState.ts`). Nothing is outlined over the map for a pick.
+  `mapEditBus.ts` lends the map only the drawing tools: the layer worked on, the
+  mode and the shape being drawn. Nothing is drawn over the map either:
+  `MapEditOverlay` hears the pointer and holds the tip, and the tools are layers
+  of the map itself (`mapEditLayers.ts`), loaded through autk-map's
+  `loadCollection` and drawn in its highlight: the shape being drawn and its
+  corners, a shape waiting to be added, and a feature being reshaped or moved
+  with its corners and midpoints, which a press takes where the map shows them.
+  autk-map draws its buildings over every flat layer, so that feature is
+  skipped in its own layer meanwhile, at the positions the map's node
+  registers (`registerEditMap`). The tool layers are never kept across a
+  redraw, hidden by Show only this layer or picked on. The node edits
   on the maps it feeds and is linked to (`linkedMaps` in `mapLayerEdits.ts`), and
   `plan_topology` allows its interaction edge only to such a map.
 - Fed by several nodes, the code hands the step every circle (`by_input=True`),
@@ -1072,7 +1086,7 @@ A layer chip on such an input writes the same name, whatever layer it names: one
 
 A source loads as the autk-db layer type its frame carries: a layer record's `type`, the envelope's `layerType`, or a geodataframe's `metadata.layerType` (`gdf.metadata`, kept in the artifact's `value_json`, sent as `X-Curio-Frame-Metadata` on the Arrow path and as `data.metadata` on the JSON path). A Discovery OpenStreetMap download's loader sets it. A `buildings` source's features get a `height` (and `min_height`) where autk-map, which reads the first height key a feature has, would read none, and where a feature has no `height` key, so a compute that reads `properties.height` reads the height the map draws (`utils/buildingHeight.ts`): a `height` of null beside `building:levels`, `building:levels` alone (3.4 m a level), or no height at all (6 m above the base). Every other feature is passed as it came, and the table keeps one feature per row.
 
-A `DataFrame` becomes a FeatureCollection from its one geometry column; with none or several, it is refused with a reason, as is an input type the node cannot read, and the tables the document expected from it count as zero rows from upstream (`no-input-rows`, with the reason). A feature without a geometry keeps its row: autk-db refuses a row with no geometry, so it gets an empty one (a GeometryCollection with none in it), which a map draws as nothing and a plot still counts. `loadableFeatures` (`autkDataCompile.ts`) is that rule for every table Curio hands autk-db: a node's inputs, and a data section's GeoJSON sources in the sandbox and in the browser. autk-db reads a layer's kind off its first row, so a first row with no geometry trades places with the first that has one, and it stores the rows whose geometry is empty before the others. Map picks, plot selections and highlights go through the table's load and map orders (`loadableSource`), so a position always names the input's row.
+A `DataFrame` becomes a FeatureCollection from its one geometry column; with none or several, it is refused with a reason, as is an input type the node cannot read, and the tables the document expected from it count as zero rows from upstream (`no-input-rows`, with the reason). A feature without a geometry keeps its row: autk-db refuses a row with no geometry, so it gets an empty one (a GeometryCollection with none in it), which a map draws as nothing and a plot still counts. `loadableFeatures` (`autkDataCompile.ts`) is that rule for every table Curio hands autk-db: a node's inputs, and a data section's GeoJSON sources in the sandbox and in the browser. autk-db reads a layer's kind off its first row, so a first row with no geometry trades places with the first that has one, and it stores the rows whose geometry is empty before the others. A plot reads the table as handed, so its selections go through the table's load order (`loadableSource`). A map draws a layer as autk-db exports it, which can leave rows out and keep the others in an order of its own, and autk-map draws one component for each feature with something to draw, which names its feature (`featureIndex`): each feature Curio hands autk-db for a map carries its input row (`INPUT_ROW`), read back from the export once a draw, the first time a pick or a highlight on that layer needs it (`drawnRows`), so a position always names the input's row. A map pick names the layer that picks when it is made (`pickingTableOf`): autk-map has one, the last a document marks `isPick` or one picked in its layer menu.
 
 The names `input_<k>` are defined once, as the prefix in `src/contracts/autkGrammar.json`: `contracts.py` reads it into `INPUT_TABLE_PREFIX` and `input_table_name`, the Vega-Lite and Autark paths import `inputTableName` (`src/contracts/autkGrammar.ts`), and the preamble states it (see [Shared Constants](#shared-constants)).
 

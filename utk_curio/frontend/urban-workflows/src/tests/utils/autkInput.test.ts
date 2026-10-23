@@ -9,9 +9,12 @@ jest.mock("../../services/api", () => ({
 }));
 
 import {
+  INPUT_ROW,
   autkNeedsInput,
   autkSourcesFrom,
   documentTableRefs,
+  drawnFeatures,
+  drawnRows,
   loadableSource,
   ownTableNames,
   inputRow,
@@ -398,6 +401,15 @@ describe("loadableSource", () => {
     expect(loadableSource(plain)).toEqual({ source: plain, order: { load: null, map: null } });
   });
 
+  test("a source for a map has each feature carry its input row; the source as it came is left alone", () => {
+    const came = source([null, null, point(2, 2), point(3, 3)]);
+    const { source: loaded } = loadableSource(came, { tagRows: true });
+    const features = loaded.geojsonObject.features as any[];
+    // Handed as rows 2, 1, 0, 3, each with its row.
+    expect(features.map((f) => [f.properties.value, f.properties[INPUT_ROW]])).toEqual([[2, 2], [1, 1], [0, 0], [3, 3]]);
+    expect((came.geojsonObject.features as any[]).some((f) => INPUT_ROW in f.properties)).toBe(false);
+  });
+
   test("guard: the keyed-selection fixture's units are drawn and loaded in other orders than they came", () => {
     const { order } = loadableSource({
       type: "geojson",
@@ -411,6 +423,39 @@ describe("loadableSource", () => {
     expect(inputRow(drawnAt(UNIT_ROW[103]), order.map)).toBe(UNIT_ROW[103]);
     expect(drawnAt(UNIT_ROW[103])).not.toBe(UNIT_ROW[103]);
     expect(order.load!.slice(0, 2)).toEqual([1, 0]);
+  });
+});
+
+// autk-db can leave rows out of a layer and keep the others in an order of its
+// own; the rows a map draws are read back from the features it exported.
+describe("drawnRows", () => {
+  const tagged = (row: number, geometry: any = point(row, row)) => ({
+    type: "Feature", geometry, properties: { value: row, [INPUT_ROW]: row },
+  });
+
+  test("the rows a map draws, as autk-db exported them: one left out, the others in another order", () => {
+    // autk-db left row 1 out and exported rows 3, 0 and 2, with row 4, which
+    // has no geometry, among them: autk-grammar hands the map the others.
+    const drawn = drawnFeatures({ features: [tagged(3), tagged(4, null), tagged(0), tagged(2)] });
+    expect(drawn.map((f) => f.properties.value)).toEqual([3, 0, 2]);
+    const order = drawnRows(drawn);
+    expect(order).toEqual([3, 0, 2]);
+    // A pick at the map's second position is input row 0, and a highlight of
+    // rows 2 and 1 lights the third position alone.
+    expect(inputRow(1, order)).toBe(0);
+    expect(tablePositions([2, 1], order)).toEqual([2]);
+  });
+
+  test("a feature the map draws nothing for has no position: each one drawn names its feature", () => {
+    // autk-map drew no component for the second feature, a point with no coordinates.
+    const drawn = [tagged(5), tagged(6, { type: "Point", coordinates: [] }), tagged(7)];
+    expect(drawnRows(drawn, [{ featureIndex: 0 }, { featureIndex: 2 }])).toEqual([5, 7]);
+  });
+
+  test("guard: features that carry no row read back nothing, so the order autk-db stores stands", () => {
+    expect(drawnRows([{ type: "Feature", geometry: point(0, 0), properties: { value: 0 } }])).toBeNull();
+    expect(drawnRows([])).toBeNull();
+    expect(drawnRows(drawnFeatures(null))).toBeNull();
   });
 });
 
