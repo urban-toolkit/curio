@@ -48,7 +48,6 @@ Run::
 from __future__ import annotations
 
 import json
-import time
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -57,14 +56,16 @@ import pytest
 from playwright.sync_api import expect
 
 from .test_map_edits_e2e import (
+    OUTLINES,
     _assert_linked,
     _back_to_layers,
     _commit,
-    _dashed_outlines,
     _edits_of,
     _open,
+    _overlay,
     _rule,
     _wait_for_edits,
+    _wait_for_lit,
     _wait_for_selection,
 )
 from .test_scenario_drop_e2e import _saved_spec
@@ -534,12 +535,8 @@ def test_an_edit_in_the_towers_lever_reaches_the_shadow_with_commit_edits(
         f"Matches {len(taller)} {'area' if len(taller) == 1 else 'areas'} of {left}", timeout=10000,
     )
     _wait_for_selection(page, buildings_map, lever, set(taller), f"the rule {TALLER}")
-    deadline = time.time() + 10
-    while time.time() < deadline and _dashed_outlines(page, buildings_map) != len(taller):
-        page.wait_for_timeout(250)
-    assert _dashed_outlines(page, buildings_map) == len(taller), (
-        f"the map outlines {_dashed_outlines(page, buildings_map)} buildings as the rule's matches, not {len(taller)}"
-    )
+    _wait_for_lit(page, buildings_map, taller, f"the rule {TALLER}")
+    expect(_overlay(page, buildings_map).locator(OUTLINES)).to_have_count(0)
     remove = edit.get_by_test_id("interaction-remove-picked")
     expect(remove).to_have_text(f"Remove {len(taller)} {'area' if len(taller) == 1 else 'areas'}")
     remove.click()
