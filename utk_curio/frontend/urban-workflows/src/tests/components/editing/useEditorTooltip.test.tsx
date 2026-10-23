@@ -174,6 +174,21 @@ function spanAt(dom: HTMLElement, left: number, top: number, width: number): HTM
   return span;
 }
 
+/**
+ * What `document.elementFromPoint` finds from now on, wherever it is asked:
+ * jsdom, which lays nothing out, has no such call.
+ */
+function underThePointer(element: Element) {
+  (document as any).elementFromPoint = jest.fn(() => element);
+}
+
+/** The move that brings the mouse onto *span*, its browser event sent to the span. */
+function arriveOn(span: HTMLElement, position: Position) {
+  const arrival = mouseOver(span, position);
+  span.dispatchEvent(arrival.event.browserEvent);
+  return arrival;
+}
+
 type ScrollChange = "scrollTopChanged" | "scrollLeftChanged" | "scrollWidthChanged" | "scrollHeightChanged";
 
 /**
@@ -271,6 +286,7 @@ describe("an editor's hover, in the Curio tooltip", () => {
     cleanup();
     jest.useRealTimers();
     for (const node of editorNodes.splice(0)) node.remove();
+    delete (document as any).elementFromPoint;
   });
 
   test("a chip under the mouse shows its text, 400 ms after the mouse rests", async () => {
@@ -498,6 +514,43 @@ describe("an editor's hover, in the Curio tooltip", () => {
     const tip = shown()[0];
     expect(tip.dataset.placement).toBe("top");
     expect([tip.style.left, tip.style.top]).toEqual(["144px", "194px"]);
+  });
+
+  test("a leave Monaco reports as it draws the chip's line again under the resting mouse: the tooltip still shows", async () => {
+    // Monaco takes a move whose element is not in the editor for a leave, and
+    // its hit test of that move first draws what it holds to draw: the line
+    // is drawn again, the move's span leaves the page, and the mouse rests on
+    // the new span with no move to come.
+    const { editor, dom, emit } = fakeEditor("s = [!! season !!]\nprint(s)");
+    const { monaco } = fakeMonaco();
+    mount(editor, monaco, "python");
+    const first = spanAt(dom, 120, 200, 48);
+    const arrival = arriveOn(first, { lineNumber: 1, column: 11 });
+    emit("onMouseMove", arrival);
+    first.remove();
+    underThePointer(spanAt(dom, 120, 200, 48));
+    emit("onMouseLeave", { target: null, event: arrival.event });
+    await advance(399);
+    expect(shown()).toHaveLength(0);
+    await advance(1 + FRAME);
+    expect(said()).toBe('season = "summer"');
+  });
+
+  test("a leave as the chip's line is drawn again, with the mouse no longer over the editor, hides it", async () => {
+    const { editor, dom, emit } = fakeEditor("s = [!! season !!]\nprint(s)");
+    const { monaco } = fakeMonaco();
+    mount(editor, monaco, "python");
+    const page = document.createElement("div");
+    document.body.appendChild(page);
+    editorNodes.push(page);
+    const first = spanAt(dom, 120, 200, 48);
+    const arrival = arriveOn(first, { lineNumber: 1, column: 11 });
+    emit("onMouseMove", arrival);
+    first.remove();
+    underThePointer(page);
+    emit("onMouseLeave", { target: null, event: arrival.event });
+    await advance(400 + FRAME);
+    expect(shown()).toHaveLength(0);
   });
 
   test("an editor that has not mounted yet does nothing", async () => {
