@@ -95,6 +95,16 @@ class TestTheStopTable:
         assert phrases["budget"] == "this node's time budget was spent"
         assert phrases["session"] == "this session's time budget was spent"
 
+    def test_a_decline_and_a_one_line_answer_are_two_reasons(self):
+        # A loader's builder declines for something only the user can give; any
+        # other node's builder answers why the node cannot be done, which asks
+        # the user for nothing.
+        from utk_curio.backend.app.agents.domain import contracts
+
+        phrases = contracts.STOPPED_BY_PHRASES
+        assert phrases["decline"] == "the builder declined: it needs something from you"
+        assert phrases["answer"] == "the builder answered instead of writing code"
+
     def test_every_phrase_continues_a_sentence_on_one_line(self):
         # A phrase follows "3 attempts · " on the card and sits inside the
         # parentheses of "not fixed after 3 attempts (...)". No en or em dash.
@@ -190,6 +200,27 @@ class TestANodeSolvedOnItsOwn:
         trails = _trails(_session_turns(client, token, ctx), "n1")
         assert [p["stoppedBy"] for p in trails] == ["not-executable"]
         assert done.get("stoppedBy") == "not-executable", done
+
+    def test_a_one_line_answer_is_the_answer_and_names_its_reason(
+        self, client, user_and_token, tmp_curio, monkeypatch
+    ):
+        # A node that loads no data, whose builder answers in one line instead
+        # of writing code: the answer never runs, the loop stops on it, and the
+        # sentence gives it with the reason, as the card and the row do.
+        user, token = user_and_token
+        h = _tvr.TestSolveNode()
+        ctx = h._setup(client, user, token, monkeypatch, content="", child_replies=[_tvr.JOIN_ANSWER],
+                       node_type=_tvr.CA)
+        done = h._solve_node(client, token, ctx)[-1][1]
+        assert done["verdict"] == "fail" and done["rounds"] == 1, done
+        assert done.get("stoppedBy") == "answer", done
+        assert ctx["payloads"] == []
+        turns = _session_turns(client, token, ctx)
+        text = turns[-1]["text"]
+        assert text.startswith("Not fixed after 1 attempt (the builder answered instead of writing code)"), text
+        assert _tvr.JOIN_ANSWER in text and "a key, a path or a URL" not in text, text
+        assert [p["stoppedBy"] for p in _trails(turns, "n1")] == ["answer"]
+        assert h._content(ctx) == ""
 
 
 class TestANodeInASolveSession:

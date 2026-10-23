@@ -97,6 +97,18 @@ def test_the_content_mode_promises_a_one_line_conclusion_only_to_a_node_that_loa
     assert "loads data" in sentence
 
 
+def test_the_content_mode_promises_a_one_line_conclusion_on_every_node():
+    """Solve takes a one-line conclusion in place of code on every node whose
+    content is code: the loop reads it before any gate or the sandbox
+    (``verified_loop._one_line_answer``), which
+    ``test_verified_rounds.TestOneLineAnswers`` proves on a join that loads no
+    data. So the content mode offers it to every node, not only to one that
+    loads data."""
+    sentence = _sentence(_prompt(NODE_BUILDER, "node.content.generate"), "state that conclusion as your WHOLE reply")
+    assert "in one line, with no code at all" in sentence
+    assert "loads data" not in sentence
+
+
 def _absent_output_a_consumer_refuses() -> str:
     """The refusal a validation round sends for code that returns nothing to a
     node that declares what it takes (``validation._consumer_type_mismatch``)."""
@@ -134,6 +146,32 @@ def test_solves_refusals_offer_a_one_line_answer_only_to_a_node_that_loads_data(
     }
     for name, (text, words) in offers.items():
         assert "loads data" in _sentence(text, words), name
+
+
+def test_solves_refusals_offer_a_one_line_answer_on_every_node():
+    """Each refusal a Solve round sends back offers the one-line answer
+    without narrowing it to a node that loads data. Only the verified loop
+    sends them (``result_shape``'s from its stages, ``validation``'s from
+    ``validate_candidate``), and the loop reads the answer on every node whose
+    content is code (``verified_loop._one_line_answer``;
+    ``test_verified_rounds.TestOneLineAnswers``)."""
+    from utk_curio.backend.app.agents.domain import result_shape as rs
+
+    nulls = {"kind": "geotable", "rowCount": 2, "columns": [{"name": "population", "dtype": "unknown"}],
+             "sampleRows": [{"population": None}, {"population": None}]}
+    conclusion = "# A join is not possible with the provided columns.\nreturn None"
+    offers = {
+        "no output": (rs.absent_output_refusal(code="return None"), "say so in one line with no code"),
+        "no output, its own conclusion": (rs.absent_output_refusal(code=conclusion), "with no code at all"),
+        "rows that hold nothing": (rs.null_refusal_text(columns=["population"], summary=nulls),
+                                   "say so in one line and return no code"),
+        "no rows": (rs.refusal_text(summary={"kind": "table", "rowCount": 0}, upstream_outputs=None),
+                    "Either join on columns whose values are the same kind of thing"),
+        "no output a consumer takes": (_absent_output_a_consumer_refuses(),
+                                       "say so in one line instead of returning code"),
+    }
+    for name, (text, words) in offers.items():
+        assert "loads data" not in _sentence(text, words), name
 
 
 def test_a_research_check_is_told_which_inputs_the_runtime_probes():
