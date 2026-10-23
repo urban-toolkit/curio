@@ -9,6 +9,7 @@ the traceback plus fresh URL evidence, and the attempt trail is recorded.
 from __future__ import annotations
 
 import json
+import re
 import threading
 import time
 from pathlib import Path
@@ -35,6 +36,23 @@ DL = "curio.builtin/data-loading"
 CA = "curio.builtin/computation-analysis"
 VEGA = "curio.builtin/vis-vega"
 NOAA = "https://api.noaa.gov/climate/v1/data"
+#: A content builder's one-line answer in place of code, on a node that loads no data.
+JOIN_ANSWER = (
+    "These inputs cannot be joined: the tracts carry census tract ids "
+    "and the areas carry community-area numbers."
+)
+
+
+def _sentence_with(text: str, words: str) -> str:
+    """The sentence of *text* that holds *words*."""
+    found = [s for s in re.split(r"(?<=[.!?])\s+", text) if words in s]
+    assert found, f"no sentence of {text!r} holds {words!r}"
+    return found[0]
+
+
+def _dashed(text: str) -> bool:
+    """Whether *text* holds an en or an em dash."""
+    return chr(0x2013) in text or chr(0x2014) in text
 
 
 def _spec(node):
@@ -437,7 +455,7 @@ class TestConnectionKeys:
             "kind": "connection-key", "host": "api.noaa.gov", "suggestedName": "noaa",
         }
         assert outcome["attempts"][1]["remedy"]["kind"] == "connection-key"
-        assert "add a connection key for api.noaa.gov" in packages_grounding._source_missing_remedy(
+        assert "Add a connection key for api.noaa.gov" in packages_grounding._source_missing_remedy(
             outcome["evidence"]["remedy"])
         # With a key already saved for the host, the remedy is to Solve again.
         self._save(host="api.noaa.gov")
@@ -747,7 +765,7 @@ class TestEmptyUpstreamWaits:
         body = helper._solve(client, token, ctx)
         assert body["results"][ctx["load"]]["status"] == "failed"
         stats = body["results"][ctx["stats"]]
-        assert stats["status"] == "pending" and stats["reason"].startswith("waiting: upstream node")
+        assert stats["status"] == "pending" and stats["reason"].startswith("upstream node")
         assert stats["rounds"] == 1
         assert ctx["exec_payloads"] == []  # neither the empty loader nor the stats node ran
         assert body["builderSession"]["nodeRuns"][ctx["stats"]] == "pending"  # Retry after the loader is fixed
@@ -1266,7 +1284,7 @@ class TestVerifiedSolve:
         monkeypatch.setattr('utk_curio.backend.app.agents.domain.validation.validate_candidate', _bounded)
         body = self._solve(client, token, ctx)
         stats = body["results"][ctx["stats"]]
-        assert stats["status"] == "skipped" and stats["reason"].startswith("skipped: the upstream slice has 30 nodes")
+        assert stats["status"] == "skipped" and stats["reason"].startswith("the upstream slice has 30 nodes")
         assert stats["rounds"] == 1  # a bound is not corrected — one round says so
         assert "not fixed" not in json.dumps(stats)
         assert body["results"][ctx["load"]]["status"] == "solved"
@@ -1958,3 +1976,242 @@ class TestRepairBudget:
         body = helper._solve(client, token, ctx)
         assert body["results"][ctx["load"]]["status"] == "solved"
         assert handed and all(isinstance(s, int) and 1 <= s <= 30 for s in handed), handed
+
+
+class TestTheRemedyAsWritten:
+    """A failure that waits on something the user gives ends with its remedy
+    as written: a sentence that starts with a capital and keeps the host, API
+    Settings, Solve and a saved key's name in their case. The per-node Solve's
+    card and the batch's failure append it the same way, and neither holds a
+    dash."""
+
+    def _card(self, app, remedy):
+        """The per-node Solve's card for a loader whose builder declined for a
+        key, with *remedy* as the outcome's: its text and the done payload."""
+        from utk_curio.backend.app.agents.application.solve import node_solve
+
+        node = {"id": "n1", "type": DL, "goal": "fetch the NOAA data", "content": "return 1"}
+        evidence = {"kind": "source-missing",
+                    "detail": "the content builder declined: The NOAA API requires an API key."}
+        if remedy is not None:
+            evidence["remedy"] = remedy
+        outcome = {"verdict": "fail", "rounds": 2, "attempts": [], "evidence": evidence,
+                   "candidate": "The NOAA API requires an API key.", "stoppedBy": "decline"}
+        done: dict = {}
+        with app.test_request_context():
+            text, card_kind, _parts = node_solve._conclude(
+                KEY, PID, "att-1", None, _spec(node), node, node["goal"], True, {}, outcome, done,
+            )
+        assert card_kind == "error"
+        return text, done
+
+    def test_the_cards_remedy_keeps_its_case_and_holds_no_dash(self, app):
+        text, done = self._card(app, {"kind": "connection-key", "host": "api.noaa.gov", "suggestedName": "noaa"})
+        assert done["remedy"]["host"] == "api.noaa.gov"
+        assert "api.noaa.gov" in text and "API Settings" in text and "Solve again" in text, text
+        assert _sentence_with(text, "API Settings")[0].isupper(), text
+        assert not _dashed(text), text
+        text, _done = self._card(app, {"kind": "use-connection-key", "host": "api.noaa.gov", "name": "MyKey"})
+        assert "MyKey" in text and "api.noaa.gov" in text and "Solve again" in text, text
+        assert _sentence_with(text, "MyKey")[0].isupper(), text
+        assert not _dashed(text), text
+        # A decline that names no host asks for what it names, the same way.
+        text, done = self._card(app, None)
+        assert "remedy" not in done
+        assert _sentence_with(text, "Solve again")[0].isupper(), text
+        assert not _dashed(text), text
+
+    def test_the_batch_appends_the_remedy_as_written(self, client, user_and_token, tmp_curio, monkeypatch):
+        helper = TestVerifiedSolve()
+        user, token = user_and_token
+        ctx = helper._setup(client, user, token, monkeypatch, with_stats=False,
+                            dl_replies=["No catalog dataset covers the tract heat data."])
+        load = helper._solve(client, token, ctx)["results"][ctx["load"]]
+        assert load["status"] == "failed" and "source-missing" in load["error"], load
+        assert _sentence_with(load["error"], "Solve again")[0].isupper(), load["error"]
+        assert not _dashed(load["error"]), load["error"]
+
+
+class TestStatusWordsOnce:
+    """A node that waits on its upstream, or that validation skips, says its
+    status once. Its reason is written without the status, as every other
+    pending reason is, because the strip's notice and the Solve card put the
+    status before it."""
+
+    def _card_line(self, client, token, ctx, node_id):
+        turns = client.get(f"/api/agents/projects/{ctx['pid']}/attachments/{ctx['att']}/session",
+                           headers=_auth(token)).get_json()["turns"]
+        card = next(p for t in reversed(turns) for p in (t.get("content") or []) if p.get("type") == "card")
+        return next(line for line in card["lines"] if line.startswith(node_id[:8]))
+
+    def _says_its_status_once(self, result, line, status):
+        assert result["status"] == status, result
+        assert not re.match(r"(?i)(pending|waiting|skipped)\b", result["reason"]), result["reason"]
+        assert re.findall(r"\b(?:pending|waiting|skipped)\b", line) == [status], line
+
+    def test_a_node_waiting_on_its_upstream_says_pending_once(self, client, user_and_token, tmp_curio, monkeypatch):
+        helper = TestVerifiedSolve()
+        user, token = user_and_token
+        ctx = helper._setup(client, user, token, monkeypatch,
+                            dl_replies=["No catalog dataset covers the tract heat data."])
+        stats = helper._solve(client, token, ctx)["results"][ctx["stats"]]
+        self._says_its_status_once(stats, self._card_line(client, token, ctx, ctx["stats"]), "pending")
+
+    def test_a_node_validation_skips_says_skipped_once(self, client, user_and_token, tmp_curio, monkeypatch):
+        helper = TestVerifiedSolve()
+        user, token = user_and_token
+        ctx = helper._setup(client, user, token, monkeypatch, dl_replies=[helper.LOADER])
+        from utk_curio.backend.app.agents.domain import validation as _validation
+
+        original = _validation.validate_candidate
+
+        def _bounded(user_key, project_id, spec, node_id, candidate, **kw):
+            if node_id == ctx["stats"]:
+                return {"verdict": "fail", "evidence": {
+                    "kind": "precondition",
+                    "detail": "the upstream slice has 30 nodes (validation bound 25); run the dataflow manually",
+                }}
+            return original(user_key, project_id, spec, node_id, candidate, **kw)
+
+        monkeypatch.setattr('utk_curio.backend.app.agents.domain.validation.validate_candidate', _bounded)
+        stats = helper._solve(client, token, ctx)["results"][ctx["stats"]]
+        self._says_its_status_once(stats, self._card_line(client, token, ctx, ctx["stats"]), "skipped")
+
+
+class TestOneLineAnswers:
+    """The content builder may answer in one line instead of writing code: the
+    Node Builder's content mode offers it, and so does each refusal a Solve
+    round sends back. Solve reads that line before any gate or the sandbox on
+    every node whose content is code. On a node that loads no data it is the
+    node's outcome, which Solve gives as its answer; nothing runs and nothing
+    is written."""
+
+    def _join(self):
+        loader = "import pandas as pd\nreturn pd.DataFrame({'GEOID': [17031010100]})"
+        nodes = [
+            {"id": "tracts", "type": DL, "goal": "Census tracts", "content": loader},
+            {"id": "areas", "type": DL, "goal": "Community areas", "content": loader.replace("GEOID", "area_numbe")},
+            {"id": "join", "type": CA, "goal": "join the tracts to the community areas", "content": ""},
+        ]
+        spec = {"dataflow": {"name": "wf", "task": "heat by area", "nodes": nodes, "edges": [
+            {"id": "e1", "source": "tracts", "target": "join", "targetHandle": "in"},
+            {"id": "e2", "source": "areas", "target": "join", "targetHandle": "in_1"},
+        ]}}
+        return spec, nodes[2]
+
+    def test_a_join_answered_in_one_line_stops_after_one_round_with_no_sandbox_run(self, app, tmp_curio):
+        spec, node = self._join()
+        # The sandbox would refuse the line as Python, as a real one does.
+        exec_fn = _Exec(fail_markers=("cannot be joined",), stderr="SyntaxError: invalid syntax")
+        events, outcome, inputs = _rounds(app, node, replies=[JOIN_ANSWER] * 3, exec_fn=exec_fn, spec=spec)
+        assert exec_fn.calls == []  # neither the line nor the slice above it ran
+        assert outcome["verdict"] == "fail" and outcome["rounds"] == 1 and len(inputs) == 1, outcome
+        assert outcome["stoppedBy"] == "answer"
+        assert outcome["evidence"]["kind"] == "one-line-answer"
+        assert JOIN_ANSWER in outcome["evidence"]["detail"]
+        assert "remedy" not in outcome["evidence"]
+        [attempt] = outcome["attempts"]
+        assert attempt["kind"] == "one-line-answer" and attempt["verdict"] == "fail"
+        assert attempt["code"] == JOIN_ANSWER and attempt["codeIsProse"] is True
+        assert [kind for kind, _ in events] == ["generation_round", "round_verdict"]
+
+    def test_solve_gives_the_answer_and_writes_nothing(self, client, user_and_token, tmp_curio, monkeypatch):
+        helper = TestVerifiedSolve()
+        user, token = user_and_token
+        ctx = helper._setup(client, user, token, monkeypatch, dl_replies=[helper.LOADER], ca_replies=[JOIN_ANSWER])
+        body = helper._solve(client, token, ctx)
+        assert body["results"][ctx["load"]]["status"] == "solved"
+        stats = body["results"][ctx["stats"]]
+        assert stats["status"] == "failed" and stats["rounds"] == 1 and stats["stoppedBy"] == "answer", stats
+        assert JOIN_ANSWER in stats["error"], stats["error"]
+        # It asks the user for nothing: no key, path or URL is missing.
+        assert "a key, a path or a URL" not in stats["error"] and "remedy" not in stats
+        assert len(ctx["exec_payloads"]) == 1  # the loader alone ran
+        assert helper._node_content(ctx, ctx["stats"]) == ""
+
+    def test_the_unverified_path_writes_no_one_line_answer_as_code(self, client, user_and_token, tmp_curio, monkeypatch):
+        helper = TestVerifiedSolve()
+        user, token = user_and_token
+        ctx = helper._setup(client, user, token, monkeypatch, dl_replies=[helper.LOADER], ca_replies=[JOIN_ANSWER])
+        body = helper._solve(client, token, ctx, verify=False)
+        assert body["results"][ctx["load"]] == {"status": "solved"}
+        stats = body["results"][ctx["stats"]]
+        assert stats["status"] == "failed" and JOIN_ANSWER in stats["error"], stats
+        assert helper._node_content(ctx, ctx["stats"]) == ""
+        assert ctx["exec_payloads"] == []  # nothing ran
+
+
+class TestNoReviewOfAnAnswer:
+    """A one-line answer, or a loader's decline, is the builder's line, not
+    content: no path mints a review of it, so Apply anyway can never write
+    that prose into a node. Simulation Mode's validate (validate-node) and a
+    proposing Solve, run or unrun, report it instead."""
+
+    DECLINE = "No catalog dataset covers the tract heat data."
+
+    @staticmethod
+    def _reviews_holding(client, token, pid, words):
+        """Every review, in every chat of the project, that holds *words*."""
+        cards = client.get(f"/api/agents/projects/{pid}/attachments", headers=_auth(token)).get_json()["attachments"]
+        found = []
+        for card in cards:
+            r = client.get(f"/api/agents/projects/{pid}/attachments/{card['attachmentId']}/session",
+                           headers=_auth(token))
+            for turn in (r.get_json() or {}).get("turns") or []:
+                found += [p for p in (turn.get("content") or [])
+                          if p.get("type") == "proposal" and words in json.dumps(p)]
+        return found
+
+    @staticmethod
+    def _propose(client, token, ctx, **body):
+        """A proposing Solve's final results, from its stream."""
+        r = client.post(f"/api/agents/projects/{ctx['pid']}/attachments/{ctx['att']}/solve/stream",
+                        json={"mode": "propose", **body}, headers=_auth(token))
+        assert r.status_code == 200, r.get_json()
+        events = routes_solve.TestStreamedSolve()._sse_events(r)
+        return next(p for kind, p in reversed(events) if kind == "done")["results"]
+
+    def test_validate_mints_no_review_of_an_answer(self, client, user_and_token, tmp_curio, monkeypatch):
+        user, token = user_and_token
+        h = TestSolveNode()
+        ctx = h._setup(client, user, token, monkeypatch, content="", child_replies=[JOIN_ANSWER], node_type=CA)
+        r = client.post(f"/api/agents/projects/{ctx['pid']}/attachments/{ctx['att']}/validate-node",
+                        json={"nodeId": "n1"}, headers=_auth(token))
+        assert r.status_code == 200, r.get_json()
+        done = routes_solve.TestStreamedSolve()._sse_events(r)[-1][1]
+        assert done["verdict"] == "fail" and "proposalId" not in done, done
+        assert self._reviews_holding(client, token, ctx["pid"], JOIN_ANSWER) == []
+        # The answer is said in the node's chat instead, and nothing ran.
+        turns = client.get(f"/api/agents/projects/{ctx['pid']}/attachments/{ctx['att']}/session",
+                           headers=_auth(token)).get_json()["turns"]
+        assert any(JOIN_ANSWER in (t.get("text") or "") for t in turns), [t.get("text") for t in turns]
+        assert ctx["payloads"] == [] and h._content(ctx) == ""
+
+    def test_a_proposing_solve_mints_no_review_of_an_answer(self, client, user_and_token, tmp_curio, monkeypatch):
+        helper = TestVerifiedSolve()
+        user, token = user_and_token
+        ctx = helper._setup(client, user, token, monkeypatch, dl_replies=[helper.LOADER], ca_replies=[JOIN_ANSWER])
+        stats = self._propose(client, token, ctx)[ctx["stats"]]
+        assert stats["status"] == "failed" and JOIN_ANSWER in stats["error"] and "proposalId" not in stats, stats
+        assert self._reviews_holding(client, token, ctx["pid"], JOIN_ANSWER) == []
+
+    def test_a_proposing_solve_mints_no_review_of_a_loaders_decline(
+        self, client, user_and_token, tmp_curio, monkeypatch
+    ):
+        helper = TestVerifiedSolve()
+        user, token = user_and_token
+        ctx = helper._setup(client, user, token, monkeypatch, with_stats=False, dl_replies=[self.DECLINE])
+        load = self._propose(client, token, ctx)[ctx["load"]]
+        assert load["status"] == "failed" and "source-missing" in load["error"] and "proposalId" not in load, load
+        assert self._reviews_holding(client, token, ctx["pid"], self.DECLINE) == []
+
+    def test_an_unverified_proposing_solve_mints_no_review_of_an_answer(
+        self, client, user_and_token, tmp_curio, monkeypatch
+    ):
+        helper = TestVerifiedSolve()
+        user, token = user_and_token
+        ctx = helper._setup(client, user, token, monkeypatch, dl_replies=[helper.LOADER], ca_replies=[JOIN_ANSWER])
+        stats = self._propose(client, token, ctx, verify=False)[ctx["stats"]]
+        assert stats["status"] == "failed" and JOIN_ANSWER in stats["error"] and "proposalId" not in stats, stats
+        assert self._reviews_holding(client, token, ctx["pid"], JOIN_ANSWER) == []
+        assert ctx["exec_payloads"] == []  # nothing ran

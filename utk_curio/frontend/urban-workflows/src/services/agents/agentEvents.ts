@@ -78,6 +78,15 @@ export type AgentCanvasMutation =
       scenarios: AgentAppliedScenario[];
     }
   | {
+      /** What a plan removes, once the row or the Connect all that completes
+       * it lands: the nodes and connections leave through the reviewed path,
+       * as a whole applied plan's do. Idempotent per plan id. */
+      kind: "plan-removals";
+      planId: string;
+      removedNodeIds: string[];
+      removedEdgeIds: string[];
+    }
+  | {
       /** dev/67-8: connection-stage edges — inserted quietly (no fit, no
        * center); idempotent per batchId. */
       kind: "edges-created";
@@ -124,6 +133,7 @@ export function subscribeAgentCanvasMutations(
         detail.kind === "node-content-applied" ||
         detail.kind === "graph-created" ||
         detail.kind === "scenarios-created" ||
+        detail.kind === "plan-removals" ||
         detail.kind === "edges-created" ||
         detail.kind === "package-nodes-created")
     ) {

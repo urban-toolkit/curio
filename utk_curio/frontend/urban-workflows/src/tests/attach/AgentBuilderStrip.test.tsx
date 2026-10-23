@@ -708,7 +708,7 @@ describe("AgentBuilderStrip — dev/131 the session, and nodes that depend on yo
         attachment={attachment({ phase: "applied", nodeRuns: { a: "pending", b: "pending" } })}
         onSolve={jest.fn()}
         onComposePrompt={jest.fn()}
-        solveWaiting={[waiting(), waiting({ nodeId: "b", kind: "upstream", reason: "waiting: upstream node 'a' has no content yet" })]}
+        solveWaiting={[waiting(), waiting({ nodeId: "b", kind: "upstream", reason: "upstream node 'a' has no content yet" })]}
       />,
     );
     expect(screen.getAllByText("needs you")).toHaveLength(1);

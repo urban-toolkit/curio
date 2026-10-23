@@ -45,20 +45,32 @@ def test_the_dataflow_builder_is_not_offered_a_decomposition_that_only_rewords_g
     assert '"workflow.plan.create"' not in _prompt(DATAFLOW_BUILDER)
 
 
-def test_the_dataflow_builder_is_not_told_every_applied_plan_ends_with_a_topology_verdict():
-    """Only the whole-plan Apply ends its result with one
-    (``plans._log_plan_applied``); a plan applied node by node, then its
-    connections, ends without it."""
-    assert "the applied result names what changed and ends with a Topology verdict" not in _prompt(DATAFLOW_BUILDER)
+def test_the_dataflow_builder_is_told_every_applied_plan_ends_with_a_topology_verdict():
+    """Every way a plan is applied ends its result with the verdict: Apply plan
+    (``plans._log_plan_applied``), and the row or Connect all that completes a
+    plan applied a part at a time, which writes it through the same function.
+    ``test_routes_proposals.py::TestPlansAppliedRowByRow`` checks the last
+    row's result and Connect all's, word for word as Apply plan's, and
+    ``test_routes_solve.py::TestSimulationDriver::test_auto_removes_what_the_plan_removes_and_the_stream_carries_it``
+    Simulation Mode's."""
+    assert (
+        "After the user applies a plan, the applied result names what changed and ends with a Topology verdict"
+        in _prompt(DATAFLOW_BUILDER)
+    )
 
 
-def test_the_node_builder_delegates_a_new_nodes_content_only_from_the_canvas():
-    """A ``node.content.generate`` delegation with no ``nodeId`` targets the
-    node the agent is attached to (``delegates._delegate_target_node_id``), and
-    its content becomes a review of that node's own content (``turn_loop``), not
-    content to put in a ``node.create``."""
+def test_the_node_builder_names_the_new_nodes_type_when_it_delegates_its_content():
+    """A ``node.content.generate`` delegation that names a ``nodeType`` and no
+    ``nodeId`` writes a new node of that template, wherever the agent is
+    attached (``delegates._delegate_target_node_id``): its content returns to
+    the run for its ``node.create``, and the node the agent is attached to is
+    offered no change. ``test_delegation.py::TestChatContentReviewMint::test_content_for_a_new_node_returns_to_the_run_for_its_node_create``
+    checks it from a node's Node Builder, and
+    ``test_source_grounding_routes.py::TestContentForANewNode`` that the content
+    is grounded as that template's."""
     step = _sentence(_prompt(NODE_BUILDER), "put the returned content in the node.create request's params.content")
-    assert "attached to the canvas" in step
+    assert "attached to the canvas" not in step
+    assert '"nodeType"' in step
 
 
 def test_the_node_builder_is_not_told_its_chat_starts_discovery():
@@ -88,13 +100,16 @@ def test_the_content_mode_is_not_offered_a_model_search_it_cannot_run():
     assert "models.search" not in _prompt(NODE_BUILDER, "node.content.generate")
 
 
-def test_the_content_mode_promises_a_one_line_conclusion_only_to_a_node_that_loads_data():
-    """Solve takes a one-line conclusion in place of code only where the source
-    gate refuses it (``verified_loop._source_gate``, ``rounds._is_prose_decline``),
-    which a node that loads data and opens no source is. Elsewhere the line runs
-    as code and fails."""
+def test_the_content_mode_promises_a_one_line_conclusion_on_every_node():
+    """Solve takes a one-line conclusion in place of code on every node whose
+    content is code: the loop reads it before any gate or the sandbox
+    (``verified_loop._one_line_answer``), which
+    ``test_verified_rounds.TestOneLineAnswers`` proves on a join that loads no
+    data. So the content mode offers it to every node, not only to one that
+    loads data."""
     sentence = _sentence(_prompt(NODE_BUILDER, "node.content.generate"), "state that conclusion as your WHOLE reply")
-    assert "loads data" in sentence
+    assert "in one line, with no code at all" in sentence
+    assert "loads data" not in sentence
 
 
 def _absent_output_a_consumer_refuses() -> str:
@@ -113,10 +128,13 @@ def _absent_output_a_consumer_refuses() -> str:
     return text
 
 
-def test_solves_refusals_offer_a_one_line_answer_only_to_a_node_that_loads_data():
-    """The content mode's rule holds in each refusal a Solve round sends back:
-    the one-line answer is taken in place of code only where the source gate
-    refuses it (``verified_loop._source_gate``), a node that loads data."""
+def test_solves_refusals_offer_a_one_line_answer_on_every_node():
+    """Each refusal a Solve round sends back offers the one-line answer
+    without narrowing it to a node that loads data. Only the verified loop
+    sends them (``result_shape``'s from its stages, ``validation``'s from
+    ``validate_candidate``), and the loop reads the answer on every node whose
+    content is code (``verified_loop._one_line_answer``;
+    ``test_verified_rounds.TestOneLineAnswers``)."""
     from utk_curio.backend.app.agents.domain import result_shape as rs
 
     nulls = {"kind": "geotable", "rowCount": 2, "columns": [{"name": "population", "dtype": "unknown"}],
@@ -133,7 +151,7 @@ def test_solves_refusals_offer_a_one_line_answer_only_to_a_node_that_loads_data(
                                        "say so in one line instead of returning code"),
     }
     for name, (text, words) in offers.items():
-        assert "loads data" in _sentence(text, words), name
+        assert "loads data" not in _sentence(text, words), name
 
 
 def test_a_research_check_is_told_which_inputs_the_runtime_probes():
