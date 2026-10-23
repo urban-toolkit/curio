@@ -18,12 +18,15 @@ is its only state.
 2. A rule lights up what it matches on the map, then removes it at once; the
    removal switched off stays in the list and is skipped, and an expression by
    a rule halves the tall part. Commit edits hands the total on.
-3. On a zoomed map, a height set on a building keeps the map's view, and
+3. The map lights a pick, both parts of a building, with its own highlight and
+   nothing drawn over it; a plain click on another building replaces the pick,
+   and the map played draws again with nothing picked.
+4. On a zoomed map, a height set on a building keeps the map's view, and
    Commit edits hands the new height on through the map.
-4. Each change is an entry in the node's Provenance drawer before any run, and
+5. Each change is an entry in the node's Provenance drawer before any run, and
    putting the first entry's code back restores the map, the panel and the
    list.
-5. On a map the node feeds but is not linked to, the edits show, and a click
+6. On a map the node feeds but is not linked to, the edits show, and a click
    selects nothing in the node.
 
 Then the shipped Chicago Loop layers (``chicago-loop-layers.json``): a point
@@ -76,6 +79,7 @@ from .utils import (
     mark_point,
     node_locator,
     park_pointer,
+    play_node,
     read_node_code,
     read_node_error_text,
     require_owner_view,
@@ -91,9 +95,11 @@ from .utils import (
     stub_login_and_enter_workflow,
     wait_for_drawer_closed,
     wait_for_node_capture,
+    wait_for_node_run_to_end,
     wait_for_node_settled,
     wait_for_node_still,
     wait_for_run_guard_released,
+    watch_node_run,
 )
 from .utils.node_drawings import _AUTK_MAP_PIXELS_IN_FRAME_JS
 from .walkthroughs.steps import PROVENANCE_DRAWER, PROVENANCE_PANEL, await_drawer_at_rest
@@ -174,6 +180,10 @@ REMOVE_TWO = NOTE + (
 
 #: Where a click is tried on a map, as fractions of the part of it in view.
 PICK_SPOTS = ((0.4, 0.5), (0.6, 0.5), (0.45, 0.55), (0.7, 0.5), (0.3, 0.5), (0.5, 0.5), (0.2, 0.6), (0.8, 0.6))
+#: Where a click is tried on building 1, the left half of the layer the map
+#: frames, and on building 2, its right half.
+LEFT_SPOTS = ((0.25, 0.5), (0.3, 0.5), (0.2, 0.55), (0.35, 0.45))
+RIGHT_SPOTS = ((0.75, 0.5), (0.7, 0.5), (0.8, 0.55), (0.65, 0.45))
 #: How a test zooms a map in: wheel steps over its middle, at most.
 ZOOM_STEPS = 12
 ZOOM_DELTA = 240
@@ -468,9 +478,64 @@ def _rule(page, edit_id: str, test: str, value: str, column: str = "height") -> 
     row.get_by_test_id("interaction-rule-value-0").fill(value)
 
 
-def _dashed_outlines(page, map_id: str) -> int:
-    """How many features the overlay outlines dashed: what a rule matches."""
-    return _overlay(page, map_id).locator("path[stroke-dasharray]").count()
+#: What would be drawn over a map for a pick or a rule's matches: none, Autark
+#: lights them itself.
+OUTLINES = "svg path, svg circle"
+
+# What an Autark node's map shows, as autk-map and autk-db hold it: for each
+# table its document draws, whether its layer is the one that picks and the
+# features that layer lights (window.__curio_mapState).
+_MAP_STATE_JS = "(id) => (window.__curio_mapState ? window.__curio_mapState(id) : null)"
+
+
+def _lit(page, map_id: str, table: str = LAYER, key: str = KEY) -> list | None:
+    """The *key* of each row Autark lights on *table* of the map *map_id*,
+    sorted: none when *table*'s layer is not the one that picks, where autk-map
+    draws no highlight. None when the map reports no such table."""
+    state = page.evaluate(_MAP_STATE_JS, map_id)
+    if not state or table not in state:
+        return None
+    layer = state[table]
+    return sorted(_ids(layer.get("lit"), key)) if layer.get("pick") else []
+
+
+def _wait_for_lit(page, map_id: str, expected, what: str, table: str = LAYER, key: str = KEY) -> None:
+    """Wait until the map lights exactly the rows *expected* names, a *key*
+    per row, on *table*; with *expected* a set, every row holding one of those
+    keys and no other, however many rows each has. autk-map holds what it
+    lights before it draws it, so no frame is waited for."""
+    def matches(got) -> bool:
+        if got is None:
+            return False
+        if isinstance(expected, set):
+            return set(got) == expected and (len(got) > 0) == (len(expected) > 0)
+        return got == sorted(expected)
+
+    got = None
+    deadline = time.time() + 15
+    while time.time() < deadline:
+        got = _lit(page, map_id, table, key)
+        if matches(got):
+            return
+        page.wait_for_timeout(250)
+    shown = sorted(expected) if not isinstance(expected, set) else sorted(expected, key=str)
+    # What every table's layer shows, so a failure says whether the layer picks
+    # at all, and the selections the map was brought, which it lights.
+    state = page.evaluate(_MAP_STATE_JS, map_id) or {}
+    layers = {
+        name: (layer.get("pick"), _ids(layer.get("lit"), key), layer.get("positions"), layer.get("drawn"), layer.get("rows"))
+        for name, layer in state.items()
+    }
+    brought = [
+        (entry.get("nodeId"), ((entry.get("details") or {}).get("autk_selection") or {}).get("layerRef"),
+         ((entry.get("details") or {}).get("autk_selection") or {}).get("data"))
+        for entry in page.evaluate(_INTERACTIONS_JS, map_id) or []
+    ]
+    raise AssertionError(
+        f"{what}: the map {map_id} lights the {key} {got} on {table}, not {shown}; "
+        f"each table as (picks, lit {key}, positions lit, features drawn, rows read back): {layers}; "
+        f"selections brought as (from, layer, rows): {brought}"
+    )
 
 
 _SHOWN_JS = """([selector, x, y]) => document.elementFromPoint(x, y) === document.querySelector(selector)"""
@@ -663,7 +728,7 @@ def test_a_building_picked_on_the_linked_map_is_removed_at_once_and_committed_an
 ):
     """Each Map Edits node names the map it is linked to and lists its layer.
     In One removed's Remove, a building clicked on the linked map is picked in
-    the node, which sends the pick back for the map to outline. Remove writes
+    the node, which sends the pick back for the map to light up. Remove writes
     the edit into the node's code by building_id, lists it, and the map draws
     without the building at once; the dataflow reads Unsaved, and the count
     below keeps what it had. Commit edits runs the node, the map and the
@@ -700,7 +765,8 @@ def test_a_building_picked_on_the_linked_map_is_removed_at_once_and_committed_an
 
     # A building clicked on the map: the map's selection, which the
     # interaction edge carries to the node, picks it there, and the node's
-    # pick goes back to the map, which outlines it.
+    # pick goes back to the map, which lights every part of it with its own
+    # highlight. Nothing is drawn over the map.
     with canvas_painted_at_shown_zoom(page):
         frame_nodes(page, [EDIT_2, MAP_2])
         target_before = wait_for_node_still(page, EDIT_2)
@@ -710,8 +776,8 @@ def test_a_building_picked_on_the_linked_map_is_removed_at_once_and_committed_an
         expect(remove).to_have_text("Remove 1 area")
         expect(remove).to_be_enabled()
         _wait_for_selection(page, MAP_2, EDIT_2, {picked}, "the node's pick")
-        expect(_overlay(page, MAP_2).locator("svg path").first).to_be_attached(timeout=10000)
-        assert _dashed_outlines(page, MAP_2) == 0, "a pick by a click is outlined as a rule's match"
+        _wait_for_lit(page, MAP_2, [picked] * PARTS[picked], f"a pick of building {picked}")
+        expect(_overlay(page, MAP_2).locator(OUTLINES)).to_have_count(0)
         _, reached = wait_for_node_capture(
             page, EDIT_2, lambda capture: changed_pixels(target_before, capture) > INTERACTION_MIN_CHANGED_PIXELS,
             timeout_ms=INTERACTION_SHOWN_TIMEOUT_MS,
@@ -780,7 +846,7 @@ def test_a_rule_lights_its_matches_on_the_map_removes_them_and_a_switched_off_en
     app_frontend: "FrontendPage", current_server: str, page,
 ):
     """A rule, ``height < 40``, matches building 1's two parts: the map lights
-    them up as it is written, dashed, and Remove takes them off the map at
+    them up as it is written, and Remove takes them off the map at
     once. Switched off, the removal stays in the list and the map draws them
     again. An expression by a rule halves the tall part, ``height > 40``.
     Commit edits runs the node and every node below it: the total drops by
@@ -805,7 +871,8 @@ def test_a_rule_lights_its_matches_on_the_map_removes_them_and_a_switched_off_en
     matching = edit.get_by_test_id("interaction-matching")
 
     # The rule, written: what it matches lights up on the map, by the
-    # selection the node sends over the interaction edge, outlined dashed.
+    # selection the node sends over the interaction edge, every part of
+    # building 1 and nothing of building 2. Nothing is drawn over the map.
     with canvas_painted_at_shown_zoom(page):
         frame_nodes(page, [EDIT_2, MAP_2])
         dismiss_toasts(page)
@@ -815,12 +882,8 @@ def test_a_rule_lights_its_matches_on_the_map_removes_them_and_a_switched_off_en
         _rule(page, EDIT_2, "<", "40")
         expect(matching).to_have_text("Matches 2 areas of 3")
         _wait_for_selection(page, MAP_2, EDIT_2, {1}, "the rule height < 40")
-        deadline = time.time() + 10
-        while time.time() < deadline and _dashed_outlines(page, MAP_2) != PARTS[1]:
-            page.wait_for_timeout(250)
-        assert _dashed_outlines(page, MAP_2) == PARTS[1], (
-            f"the map outlines {_dashed_outlines(page, MAP_2)} features as the rule's matches, not building 1's {PARTS[1]} parts"
-        )
+        _wait_for_lit(page, MAP_2, [1] * PARTS[1], "the rule height < 40")
+        expect(_overlay(page, MAP_2).locator(OUTLINES)).to_have_count(0)
         after, reached = wait_for_node_capture(
             page, MAP_2, lambda capture: changed_pixels(before, capture) > INTERACTION_MIN_CHANGED_PIXELS,
             timeout_ms=INTERACTION_SHOWN_TIMEOUT_MS,
@@ -886,6 +949,62 @@ def test_a_rule_lights_its_matches_on_the_map_removes_them_and_a_switched_off_en
     assert saved[EDIT_2]["content"] == code, saved[EDIT_2]["content"]
     assert _edits_of(saved[EDIT_2]["content"])[0] == [removal_off, halve]
     assert saved[EDIT]["content"] == NO_EDITS
+
+
+def test_a_building_of_two_parts_is_lit_by_the_map_a_plain_click_replaces_it_and_a_play_drops_it(
+    app_frontend: "FrontendPage", current_server: str, page,
+):
+    """In Remove, building 1, of two parts, clicked on the map: the map lights
+    both parts with its own highlight, and nothing is drawn over it. A plain
+    click on building 2 replaces the pick, and the map lights building 2
+    alone. The map played: it draws again with nothing picked and nothing lit.
+    What is wrong at each step is kept, and the test fails at the end with all
+    of it."""
+    _enter(page, app_frontend, current_server, _spec(), "map_edits_replace_e2e")
+    _run_all(page)
+    edit = node_locator(page, EDIT_2)
+    frame_nodes(page, [EDIT_2, MAP_2])
+    _open_tab(page, EDIT_2, "output")
+    _assert_linked(page, EDIT_2, MAP_2)
+    _assert_framed(page, MAP_2)
+    _open(page, EDIT_2, "remove")
+    remove = edit.get_by_test_id("interaction-remove-picked")
+    picked = edit.get_by_text("1 area picked.")
+    outlines = _overlay(page, MAP_2).locator(OUTLINES)
+    wrong: list[str] = []
+
+    def check(step: str, assertion) -> None:
+        try:
+            assertion()
+        except AssertionError as error:
+            wrong.append(f"{step}: {error}")
+
+    # Building 1, of two parts, clicked.
+    _click_a_building(page, EDIT_2, MAP_2, picked, spots=LEFT_SPOTS)
+    first = _picked_on_the_map(page, EDIT_2, MAP_2)
+    assert first == 1, f"a click on the left half of the map picked building {first}"
+    check("building 1 clicked", lambda: _wait_for_lit(page, MAP_2, [1] * PARTS[1], "building 1 clicked"))
+    check("building 1 clicked", lambda: expect(outlines).to_have_count(0))
+
+    # A plain click on building 2 replaces the pick.
+    _click_a_building(page, EDIT_2, MAP_2, picked, spots=RIGHT_SPOTS)
+    check("building 2 clicked", lambda: _wait_for_selection(page, EDIT_2, MAP_2, {2}, "building 2 clicked"))
+    check("building 2 clicked", lambda: expect(remove).to_have_text("Remove 1 area"))
+    check("building 2 clicked", lambda: _wait_for_lit(page, MAP_2, [2] * PARTS[2], "building 2 clicked"))
+    check("building 2 clicked", lambda: expect(outlines).to_have_count(0))
+
+    # The map played: drawn again, with nothing picked and nothing lit.
+    frame_nodes(page, [MAP_2])
+    keep_drawing(page, _map(MAP_2))
+    watch_node_run(page, MAP_2)
+    play_node(page, MAP_2)
+    status = wait_for_node_run_to_end(page, MAP_2, node_type=MAP_TYPE)
+    assert status == "done", f"the map's play ended {status}: {read_node_error_text(node_locator(page, MAP_2))}"
+    _wait_for_redraw(page, MAP_2, "a play of the map")
+    check("the map played", lambda: _wait_for_lit(page, MAP_2, [], "the map played"))
+    check("the map played", lambda: expect(remove).to_be_disabled())
+    check("the map played", lambda: expect(outlines).to_have_count(0))
+    assert not wrong, "\n".join(wrong)
 
 
 def test_a_height_set_on_a_zoomed_map_keeps_the_view_and_commit_edits_hands_it_on(
@@ -1220,6 +1339,9 @@ def test_the_chicago_loop_layers_take_a_point_a_reshaped_road_and_a_property_on_
     assert (keywords.get("layer"), keywords.get("key"), keywords.get("by_input")) == ("input_3", "osm_id", True), keywords
     expect(edit.locator('[data-edit-op="add"]')).to_contain_text(f"Add a point ({tree['id']})")
     _wait_for_redraw(page, map_id, "the tree's add")
+    # The tree just added is lit by the map itself: the trees are the layer
+    # the action works on, the one that picks.
+    _wait_for_lit(page, map_id, [tree["id"]], "the tree's add", table="input_3", key="osm_id")
 
     # 2. A road: Edit, only the roads shown, one picked with a click, and one
     # of its corners dragged with Move points.
@@ -1239,6 +1361,8 @@ def test_the_chicago_loop_layers_take_a_point_a_reshaped_road_and_a_property_on_
     rows, layer = _selection(page, edit_id, map_id)
     assert layer == "table_osm_roads", (rows, layer)
     (road_id,) = set(_ids(rows, "osm_id"))
+    # The picked road is lit by the map itself, every piece of it.
+    _wait_for_lit(page, map_id, {road_id}, "a road picked", table="table_osm_roads", key="osm_id")
     reshape = edit.get_by_test_id("interaction-reshape")
     reshape.click()
     expect(reshape).to_have_attribute("aria-checked", "true")

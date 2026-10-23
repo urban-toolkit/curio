@@ -546,11 +546,16 @@ whose code is its only state: one call of `curio_edit_features`
   `applyEdits.ts`, the twin of the run's `_edit_fc`), keeps its view, files no
   run for that draw, and hands on what it was fed: the node's last run.
 - The interaction edge carries selections, as between two views. A pick on the
-  linked map is the map's selection (`MapEditOverlay`), which `useInteractions`
-  routes to the node, matched by the layer's id column (`mapEditSelection.ts`,
-  `matchSelections`); what the node picks, or a rule matches, goes back the same
-  way and lights up on the map. `mapEditBus.ts` lends the map only the drawing
-  tools: the layer worked on, the mode and the shape being drawn. The node edits
+  linked map (`MapEditOverlay`) is the map's own selection, sent as autk-map's
+  pick is (`sendOwnSelection`), so a draw that is not an edit's preview says it
+  is gone. `useInteractions` routes it to the node, matched by the layer's id
+  column (`mapEditSelection.ts`, `matchSelections`); what the node picks, or a
+  rule matches, goes back the same way, and the map lights it with autk-map's
+  own highlight. autk-map highlights its picking layer only, so while an action
+  is open the layer it works on is that layer (`showForEdits` in
+  `autkMapState.ts`). Nothing is outlined over the map for a pick.
+  `mapEditBus.ts` lends the map only the drawing tools: the layer worked on, the
+  mode and the shape being drawn. The node edits
   on the maps it feeds and is linked to (`linkedMaps` in `mapLayerEdits.ts`), and
   `plan_topology` allows its interaction edge only to such a map.
 - Fed by several nodes, the code hands the step every circle (`by_input=True`),

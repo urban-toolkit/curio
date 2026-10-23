@@ -9,7 +9,9 @@
  * A layer the node makes is drawn on top once it has features. The map keeps
  * its view when an edit draws it again, and after Commit edits. A click on the
  * map picks the feature under it, and a shift-click adds or drops one, while
- * the map draws an edit again too.
+ * the map draws an edit again too. The map lights a pick, every part of a
+ * building, on the layer an action works on, and nothing is drawn over it; a
+ * play of the map drops the pick.
  *
  * Each node is the behavior the canvas registers for its type, with the
  * node's own state (hook/useNodeState) for the Map Edits node; the map draws
@@ -590,6 +592,126 @@ test("a building picked in Edit, clicked again in Remove while the map draws the
     ]);
   } finally {
     release();
+    putBack();
+  }
+});
+
+/**
+ * Building 119 in one part, building 136 in two side by side, as an OSM
+ * building of several parts is, both its rows holding its id, then building
+ * 200: positions 0, 1 and 2, and 3.
+ */
+const PARTED = {
+  type: "FeatureCollection",
+  features: [
+    [119, 0, 1],
+    [136, 1, 1.5],
+    [136, 1.5, 2],
+    [200, 2, 3],
+  ].map(([id, west, east], i) => ({
+    type: "Feature",
+    geometry: { type: "Polygon", coordinates: [[[west, 0], [east, 0], [east, 1], [west, 1], [west, 0]]] },
+    properties: { building_id: id, height: 10 * (i + 1) },
+  })),
+};
+
+/** The middles of building 119, of building 136's first part, and of building 200, in degrees. */
+const MIDDLE_ONE_PART: [number, number] = [0.5, 0.5];
+const MIDDLE_FIRST_PART: [number, number] = [1.25, 0.5];
+const MIDDLE_LAST: [number, number] = [2.5, 0.5];
+
+/** What the map lights is Autark's own highlight: nothing is drawn over the map for a pick. */
+const outlinesOverMap = () =>
+  document.querySelectorAll('[data-testid="map-edit-overlay"] svg path, [data-testid="map-edit-overlay"] svg circle').length;
+
+test("picks of a building in two parts and of others are lit by the map alone, and a plain click replaces the pick", async () => {
+  const putBack = layOutCanvases();
+  try {
+    nodeInput.current = PARTED;
+    drawnMaps.make = projectingMap;
+    const canvas = mountCanvas();
+    await canvas.playMap();
+    const remove = () => screen.getByTestId("interaction-remove-picked");
+    await openAction("remove");
+
+    // A click on building 136 picks it: the map lights both its parts.
+    clickMap(MIDDLE_FIRST_PART);
+    await waitFor(() => expect(remove()).toHaveTextContent("Remove 1 area"));
+    await waitFor(() => expect(litUp()).toEqual([1, 2]));
+    expect(outlinesOverMap()).toBe(0);
+
+    // A shift-click adds building 119, listed before it.
+    clickMap(MIDDLE_ONE_PART, true);
+    await waitFor(() => expect(remove()).toHaveTextContent("Remove 2 areas"));
+    await waitFor(() => expect(litUp()).toEqual([0, 1, 2]));
+    expect(outlinesOverMap()).toBe(0);
+
+    // A plain click on building 200 replaces the pick.
+    clickMap(MIDDLE_LAST);
+    await waitFor(() => expect(remove()).toHaveTextContent("Remove 1 area"));
+    await waitFor(() => expect(litUp()).toEqual([3]));
+    expect(canvas.interactionsOf(NODE)[0].details.autk_selection.data).toEqual([{ building_id: 200 }]);
+    expect(outlinesOverMap()).toBe(0);
+  } finally {
+    putBack();
+  }
+});
+
+test("a play of the map drops the pick made on it, and after an Apply lights nothing just edited", async () => {
+  const putBack = layOutCanvases();
+  try {
+    nodeInput.current = PARTED;
+    drawnMaps.make = projectingMap;
+    const canvas = mountCanvas();
+    await canvas.playMap();
+    const remove = () => screen.getByTestId("interaction-remove-picked");
+
+    // Remove: a click picks building 136, which the map lights.
+    await openAction("remove");
+    clickMap(MIDDLE_FIRST_PART);
+    await waitFor(() => expect(remove()).toHaveTextContent("Remove 1 area"));
+    await waitFor(() => expect(litUp()).toEqual([1, 2]));
+
+    // Played, the map draws anew without the pick it made, and the node
+    // picks nothing either.
+    await canvas.playMap();
+    await waitFor(() => expect(remove()).toBeDisabled());
+    await waitFor(() => expect(litUp()).toEqual([]));
+
+    // Edit: a click picks building 136 again and a height is applied, which
+    // the map draws as a preview, keeping the pick to edit again.
+    fireEvent.click(screen.getByTestId("interaction-back"));
+    fireEvent.click(screen.getByTestId("interaction-action-edit"));
+    clickMap(MIDDLE_FIRST_PART);
+    const height = (await screen.findByTestId("interaction-field-height")) as HTMLInputElement;
+    const drawn = grammarRuns.length;
+    fireEvent.change(height, { target: { value: "99" } });
+    fireEvent.click(screen.getByTestId("interaction-form-submit"));
+    await waitFor(() => expect(canvas.settings()?.edits).toEqual([{ op: "set", ids: [136], column: "height", value: 99 }]));
+    await waitFor(() => expect(grammarRuns).toHaveLength(drawn + 1));
+    await waitFor(() => expect(litUp()).toEqual([1, 2]));
+
+    // Played again: nothing is picked, and what was just edited is not lit.
+    await canvas.playMap();
+    await waitFor(() => expect(litUp()).toEqual([]));
+    await waitFor(() => expect(screen.queryByTestId("interaction-field-height")).toBeNull());
+  } finally {
+    putBack();
+  }
+});
+
+test("an action makes the layer it works on the layer the map picks on, with Show only this layer off", async () => {
+  const putBack = layOutCanvases();
+  try {
+    nodeInput.current = PARTED;
+    drawnMaps.make = projectingMap;
+    const canvas = mountCanvas();
+    await canvas.playMap();
+    const map = grammarRuns[grammarRuns.length - 1].maps[0];
+
+    await openAction("remove");
+    await waitFor(() => expect(map.updateRenderInfo).toHaveBeenCalledWith("input_0", { isPick: true }));
+  } finally {
     putBack();
   }
 });
