@@ -48,6 +48,7 @@ from utk_curio.backend.app.agents.application.turns import grounding as agents_g
 from utk_curio.backend.app.agents.domain import validation as agents_validation
 from utk_curio.backend.app.execution import workflow_spec
 from utk_curio.backend.app.packages import service as packages_services
+from utk_curio.backend.app.agents.domain import agent_text
 
 log = logging.getLogger(__name__)
 
@@ -431,7 +432,7 @@ class VerifiedRounds:
             # explanation of what source is missing instead of code").
             # Record ITS words as the attempt, not a gate verdict on
             # prose (dev/115 field fix, 2026-09-08).
-            refusal = f"the content builder declined: {self.candidate.strip()}"
+            refusal = agent_text.message("solve.builder-declined", decline=self.candidate.strip())
             kind = "source-missing"
         # dev/127: what was refused, verbatim — the literal the gate named is
         # IN this text, so showing it is the point.
@@ -490,11 +491,7 @@ class VerifiedRounds:
             return None
         if not agents_rounds._same_code(self.candidate, self.previous_attempt):
             return None
-        detail = (
-            "the correction repeated the previous attempt (only comments or spacing "
-            "changed) — not run again; change the request that failed: "
-            + (self.previous_error or "")[:400]
-        )
+        detail = agent_text.message("solve.repeated-attempt", previous_error=(self.previous_error or "")[:400])
         yield from self._record_failed_round(
             "repeated-attempt", detail, trace="repeated the previous attempt", source="generated",
         )
@@ -506,12 +503,7 @@ class VerifiedRounds:
             # that it must change approach, not phrasing. Only an
             # implausible run of identical candidates stops the loop, so a
             # stuck model cannot spend fifteen minutes of provider calls.
-            detail = (
-                f"you have now returned the same code {self.repeats} times. Stop repeating it: "
-                "change the APPROACH — a different library call, a different key or column, "
-                "a different shape of the result — or say plainly what you cannot do. "
-                + detail
-            )
+            detail = agent_text.message("solve.repeated-attempt-escalated", repeats=self.repeats, detail=detail)
             self.previous_error = detail
             self.attempts[-1]["detail"] = detail[:agents_budgets._ATTEMPT_DETAIL_CHARS]
             if self.repeats >= agents_budgets._MAX_REPEATED_ATTEMPTS_HARD:
@@ -704,7 +696,7 @@ class VerifiedRounds:
         try:
             return spec.node_code(node, "json", candidate, grammar), None
         except workflow_spec.CodeReferenceError as exc:
-            return candidate, f"the document's references cannot be resolved: {exc}"
+            return candidate, agent_text.message("solve.document-references-unresolved", exc=exc)
 
     def _empty_render_check(self):
         """dev/136: a valid document is not a drawn picture. When the node's

@@ -18,6 +18,7 @@ from utk_curio.backend.app.agents.application import dataset_resolution as agent
 from utk_curio.backend.app.agents.application import spec_reads as agents_spec_reads
 from utk_curio.backend.app.agents.application.proposals import store as agents_store
 from utk_curio.backend.app.projects import storage as projects_storage
+from utk_curio.backend.app.agents.domain import agent_text
 
 log = logging.getLogger(__name__)
 
@@ -182,7 +183,7 @@ def _mint_discovery_acquire(
     resource_id = str(params.get("resourceId") or "").strip()
     fmt = str(params.get("format") or "").strip().lower() or None
     if not source_id or not resource_id:
-        return "refused", "a download needs both a sourceId and a resourceId", None
+        return "refused", agent_text.message("acquire.source-and-resource-required"), None
 
     service = _discovery_service()
     try:
@@ -194,30 +195,29 @@ def _mint_discovery_acquire(
         ]
         return (
             "refused",
-            f"there is no Discovery Catalog source {source_id!r} here; this deployment "
-            f"connects to {', '.join(str(k) for k in known) or 'none'}",
+            agent_text.message(
+                "acquire.unknown-source", source_id=repr(source_id), known=', '.join(str(k) for k in known) or 'none',
+            ),
             None,
         )
     if not manifest.capabilities.download:
-        return "refused", f"{manifest.name} does not offer downloads", None
+        return "refused", agent_text.message("acquire.source-offers-no-downloads", name=manifest.name), None
     if manifest.is_storage:
         return (
             "refused",
-            f"{manifest.name} is a storage source; add its resources from its "
-            "page in the Discovery Catalog",
+            agent_text.message("acquire.storage-source-not-offered", name=manifest.name),
             None,
         )
     if manifest.is_service:
         return (
             "refused",
-            f"{manifest.name} downloads for an area set on its page in the "
-            "Discovery Catalog",
+            agent_text.message("acquire.service-source-not-offered", name=manifest.name),
             None,
         )
     if manifest.is_model:
         return (
             "refused",
-            f"{manifest.name} adds models to the Model Catalog, not datasets",
+            agent_text.message("acquire.model-source-not-datasets", name=manifest.name),
             None,
         )
 
@@ -225,8 +225,7 @@ def _mint_discovery_acquire(
     if held is not None:
         return (
             "refused",
-            f"{held.get('title')!r} is already in the user's Data Catalog from "
-            "this resource - tell them instead of proposing a second copy",
+            agent_text.message("acquire.already-held", title=repr(held.get('title'))),
             None,
         )
 
@@ -236,26 +235,31 @@ def _mint_discovery_acquire(
         help_url = manifest.auth.help_url
         return (
             "refused",
-            f"{exc} - ask the user to add the {manifest.auth.secret_id} token in "
-            f"API Settings{f' ({help_url})' if help_url else ''}. Never ask them "
-            "to paste it to you.",
+            agent_text.message(
+                "acquire.credential-required", exc=exc, secret_id=manifest.auth.secret_id,
+                help=f' ({help_url})' if help_url else '',
+            ),
             None,
         )
     except DiscoveryError as exc:
-        return "refused", f"{manifest.name} could not describe {resource_id!r}: {exc}", None
+        return "refused", agent_text.message(
+            "acquire.describe-failed", name=manifest.name, resource_id=repr(resource_id), exc=exc,
+        ), None
 
     offered = [str(f) for f in (detail.get("formats") or [])]
     if fmt and fmt not in offered:
         return (
             "refused",
-            f"that resource is not offered as {fmt!r}; it offers "
-            f"{', '.join(offered) or 'nothing this catalog can ingest'}",
+            agent_text.message(
+                "acquire.format-not-offered", fmt=repr(fmt),
+                offered=', '.join(offered) or agent_text.message("acquire.format-not-offered-none"),
+            ),
             None,
         )
 
     spec = projects_storage.read_spec(user_key, project_id)
     if spec is None:
-        return "refused", "no saved project spec is available", None
+        return "refused", agent_text.message("mint.no-saved-spec"), None
 
     name = str(detail.get("name") or resource_id)
     chosen = fmt or (offered[0] if offered else None)
@@ -291,9 +295,7 @@ def _mint_discovery_acquire(
     )
     return (
         "proposed",
-        f"proposal {proposal_id} created to download {name!r} from "
-        f"{manifest.name}; it awaits the user's explicit review - do NOT assume "
-        "it was downloaded",
+        agent_text.message("acquire.proposed", proposal_id=proposal_id, name=repr(name), source=manifest.name),
         part,
     )
 

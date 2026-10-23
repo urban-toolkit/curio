@@ -438,7 +438,7 @@ class TestExternalDiscovery:
             extra_replies=[_create_tail(f'import requests\nr = requests.get("{NOAA}", timeout=10)\nreturn r.json()')],
         )
         assert _proposals(body) == []
-        assert "shown to the user for review — do not propose a node in this turn" in calls[3][-1]["content"]
+        assert "shown to the user for review: do not propose a node in this turn" in calls[3][-1]["content"]
 
     def test_next_turn_create_with_the_verified_url_is_grounded_without_a_new_probe(self, client, user_and_token, tmp_curio, project, monkeypatch):
         user, token = user_and_token
