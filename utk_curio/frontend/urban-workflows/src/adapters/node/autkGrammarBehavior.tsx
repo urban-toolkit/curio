@@ -55,7 +55,7 @@ import { frameMaps, keepMapViews, mapViews, type MapView } from './autkMapView';
 import { grammarMaps, trackMaps } from './autkMapDrawing';
 import { mapSession, onMapSession, registerEditMap } from '../../utils/editFeatures/mapEditBus';
 import {
-    drawnFeatureAt, layerIdFor, mapLayerOf, mapStateOf, pickingTableOf, restoreMapLayers, showForEdits,
+    drawnFeatureAt, featurePositions, layerIdFor, mapLayerOf, mapStateOf, pickingTableOf, restoreMapLayers, showForEdits,
     snapshotBeforeSolo, snapshotMapLayers, type DrawnTables, type EditsView, type MapLayerState, type MapTableState,
 } from './autkMapState';
 import { drawnInput, editFeedsOf, fedByInteraction, feedsVersion, newLayerTables, type EditFeed } from '../../utils/editFeatures/mapEditsPreview';
@@ -967,11 +967,26 @@ export const useAutkGrammarBehavior = (
                     // What was set on each layer through the map's menu, the
                     // layer a Map Edits node shows alone and the layer its
                     // action works on, kept across the draw; the overlay on the
-                    // map reads its camera.
+                    // map reads its camera, and where this draw put a
+                    // feature's rows, read back from what autk-db exported,
+                    // which the layer skips while the drawing tools draw the
+                    // feature reshaped or moved.
                     const shownMap = grammarMaps(grammar)[0];
                     restoreMapLayers(shownMap, savedLayersRef.current);
                     if (soloRef.current) showAsEditsAsk(shownMap, spec, null, soloRef.current.before);
-                    registerEditMap(nodeId, shownMap ?? null, (table: string) => layerIdFor(spec, table));
+                    const inputFeatures = inputFeaturesRef.current;
+                    const loadOrders = loadOrdersRef.current;
+                    registerEditMap(
+                        nodeId,
+                        shownMap ?? null,
+                        (table) => layerIdFor(spec, table),
+                        async (table, key, id) => featurePositions(
+                            inputFeatures[table] ?? [],
+                            (await drawnRowsOf(grammar, table)) ?? loadOrders[table]?.map,
+                            key,
+                            id,
+                        ),
+                    );
                 }
                 savedLayersRef.current = null;
                 // autk-plot's SVG is inline, so it sits on a line of text whose

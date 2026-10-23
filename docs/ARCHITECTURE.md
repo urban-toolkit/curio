@@ -555,7 +555,16 @@ whose code is its only state: one call of `curio_edit_features`
   is open the layer it works on is that layer (`showForEdits` in
   `autkMapState.ts`). Nothing is outlined over the map for a pick.
   `mapEditBus.ts` lends the map only the drawing tools: the layer worked on, the
-  mode and the shape being drawn. The node edits
+  mode and the shape being drawn. Nothing is drawn over the map either:
+  `MapEditOverlay` hears the pointer and holds the tip, and the tools are layers
+  of the map itself (`mapEditLayers.ts`), loaded through autk-map's
+  `loadCollection` and drawn in its highlight: the shape being drawn and its
+  corners, a shape waiting to be added, and a feature being reshaped or moved
+  with its corners and midpoints, which a press takes where the map shows them.
+  autk-map draws its buildings over every flat layer, so that feature is
+  skipped in its own layer meanwhile, at the positions the map's node
+  registers (`registerEditMap`). The tool layers are never kept across a
+  redraw, hidden by Show only this layer or picked on. The node edits
   on the maps it feeds and is linked to (`linkedMaps` in `mapLayerEdits.ts`), and
   `plan_topology` allows its interaction edge only to such a map.
 - Fed by several nodes, the code hands the step every circle (`by_input=True`),
