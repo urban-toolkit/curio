@@ -248,3 +248,56 @@ def test_a_spec_is_kept_as_it_is_and_a_templates_widgets_set_only_in_a_plan():
         f"does, and do not say so: {unnarrowed}"
     )
     assert not [(where, claim) for where, text in charts for claim in _claims(text) if "in a plan" not in claim]
+
+
+#: Where a template's starter and widgets are set: the words each claim says it in.
+_IN_BOTH = "in a plan or a node.create"
+#: The sentence #1070 narrowed, as it reads once it holds in both.
+_WIDENED = _NARROWED.replace("in a plan, set", f"{_IN_BOTH}, set")
+
+
+def _tool_section(text: str, tool: str) -> str:
+    """The ``## <tool>`` section of the rendered ``tools.md``."""
+    sections = re.split(r"^## ", text, flags=re.MULTILINE)
+    found = [s for s in sections if s.split("\n", 1)[0].strip() == tool]
+    assert found, f"tools.md has no section {tool}"
+    return found[0]
+
+
+def test_a_spec_is_kept_as_it_is_and_a_templates_widgets_set_in_a_plan_or_a_node_create():
+    """A plan and a ``node.create`` both start a node of a template whose
+    starter is its whole content from that starter, and set the template's
+    widgets by name (``plans._content_starters`` and the node.create mint,
+    both through ``plan_scenarios._set_over``); ``node.content.write`` carries
+    no widgets. ``test_routes_starter_templates.py::TestACreatedTemplateStartsFromItsStarter``
+    checks the node.create half, and ``TestAPlannedTemplateKeepsItsStarter``
+    the plan's. So a sentence that tells an agent to keep a spec as it is, or
+    to set a template's widgets, says it holds in a plan or a node.create,
+    wherever an agent reads it: every page and prompt, and every template's
+    description and starter. The two tools that place a node say it, where a
+    run reads each of them."""
+    # The check finds the widened sentence, and holds a sentence to both: one
+    # that names only the plan, as #1070 left it, no longer passes.
+    assert _claims(_WIDENED) == [_WIDENED]
+    assert _claims(_NARROWED) == [_NARROWED] and _IN_BOTH not in _NARROWED
+    for innocent in ("A widget is a value a node's code reads that the user sets in the node's Widgets tab.",
+                     "A copy whose height factor widget is set to 2.", "Keep your answers specific."):
+        assert _claims(innocent) == [], innocent
+
+    texts = _what_agents_read()
+    places = [where for where, _text in texts]
+    assert any(place.endswith("default_preamble.md") for place in places), places
+    assert any(place.endswith("orchestration_instruction.md") for place in places), places
+    charts = [(where, text) for where, text in texts
+              if where.startswith("curio.scout/") and where.endswith(", its description")]
+    assert len(charts) >= 15, charts
+    unsaid = [(where, claim) for where, text in texts for claim in _claims(text) if _IN_BOTH not in claim]
+    assert not unsaid, (
+        "these tell an agent to keep a spec as it is or to set a template's widgets, which a plan and a "
+        f"node.create do, and do not say where: {unsaid}"
+    )
+    assert not [(where, claim) for where, text in charts for claim in _claims(text) if _IN_BOTH not in claim]
+    (tools_page,) = [text for where, text in texts if where.endswith("agent.curio.builtin@1/tools.md")]
+    for tool in ("dataflow.plan.write", "node.create"):
+        said = _claims(_tool_section(tools_page, tool))
+        assert said and all(_IN_BOTH in claim for claim in said), (tool, said)
