@@ -37,11 +37,11 @@ The charts:
     scenario with a label above, colored by scenario.
   * Social vulnerability against average flood depth: 520x320, a rule per
     tract from its No NbS depth to its All NbS depth, which the pointer
-    darkens, under a circle per tract and scenario. It reads ``inputs``, his
-    #914's stacked dataset (each input's rows, with ``__input__``), which main
-    does not have. Here its one input holds those stacked rows, ``__input__``
-    included, and main hands them to the spec as its data, so the spec stays
-    his.
+    darkens, under a circle per tract and scenario. It reads ``inputs``, the
+    dataset a chart stacks its inputs in (each input's rows, with its circle
+    under ``__input__``), as on his #914: a loader of the tracts' No NbS
+    depths feeds the chart's first input, and one of their All NbS depths its
+    second.
 
 * komar41's two charts from #1097:
 
@@ -56,8 +56,9 @@ The charts:
   ``docs/examples/03-vega-lite-linked-temporal-charts.json``, on rows of the
   shape its computation node returns. It has no tooltip.
 
-Each chart's node is big enough to show the whole chart at its author's size,
-so every mark can be hovered.
+His FloodRisk charts are in nodes of the sizes he gave them, and the others in
+nodes big enough to show the whole chart at its author's size, so every mark
+can be hovered.
 
 Run::
 
@@ -139,18 +140,20 @@ DEPTH_BY_PERIOD = (
     "])\n"
 )
 
-TRACT_DEPTH = (
-    "import pandas as pd\n"
-    "\n"
-    "# Each tract's average depth, No NbS then All NbS, stacked as his #914 stacks\n"
-    "# a node's inputs: each input's rows, with __input__.\n"
-    f"tracts = {json.dumps(TRACTS)}\n"
-    "return pd.DataFrame([\n"
-    '    {"tract_fips": fips, "tract": name, "svi": svi, "mean_depth_m": depths[k], "__input__": k}\n'
-    "    for k in (0, 1)\n"
-    "    for fips, name, svi, depths in tracts\n"
-    "])\n"
-)
+def _tract_depth(k: int) -> str:
+    """The code of a loader of each tract's average depth with scenario *k*: the
+    chart stacks its inputs' rows in ``inputs``, input *k*'s under
+    ``__input__`` *k*."""
+    return (
+        "import pandas as pd\n"
+        "\n"
+        f"# Each tract's average depth with {SCENARIOS[k]}.\n"
+        f"tracts = {json.dumps(TRACTS)}\n"
+        "return pd.DataFrame([\n"
+        f'    {{"tract_fips": fips, "tract": name, "svi": svi, "mean_depth_m": depths[{k}]}}\n'
+        "    for fips, name, svi, depths in tracts\n"
+        "])\n"
+    )
 
 #: The rows of komar41's grouped bars from #1097: the sun hours a park loses,
 #: per period of the day and per method that computes them.
@@ -413,11 +416,13 @@ def _shade_says(mark: dict, marktype: str) -> list[str]:
 class Chart:
     slug: str
     title: str
-    loader_id: str
-    loader: str
+    #: The loaders that feed the chart, each an id and its code, in the order
+    #: of the chart's inputs.
+    loaders: tuple[tuple[str, str], ...]
     node_id: str
     spec: dict
-    #: The node's box: big enough for the whole chart at its author's size.
+    #: The node's box: his, or big enough for the whole chart at its author's
+    #: size.
     box: tuple[int, int]
     #: The scene graph's mark types hovered in turn: a bar is a ``rect``, a
     #: circle or a point a ``symbol``.
@@ -443,11 +448,10 @@ CHARTS = [
     Chart(
         slug="depth-by-period",
         title="Average flood depth, with and without NbS",
-        loader_id="fixed-size-depth-loader",
-        loader=DEPTH_BY_PERIOD,
+        loaders=(("fixed-size-depth-loader", DEPTH_BY_PERIOD),),
         node_id="fixed-size-depth-chart",
         spec=DEPTH_CHART,
-        box=(780, 500),
+        box=(754, 432),
         hovered=("rect",),
         marks={"rect": len(PERIOD_DEPTHS)},
         keys={"rect": ("period", "scenario_name")},
@@ -458,11 +462,10 @@ CHARTS = [
     Chart(
         slug="svi-against-depth",
         title="Social vulnerability against average flood depth",
-        loader_id="fixed-size-svi-loader",
-        loader=TRACT_DEPTH,
+        loaders=(("fixed-size-svi-loader", _tract_depth(0)), ("fixed-size-svi-loader-all-nbs", _tract_depth(1))),
         node_id="fixed-size-svi-chart",
         spec=SVI_CHART,
-        box=(860, 560),
+        box=(748, 476),
         hovered=("rule", "symbol"),
         marks={"rule": len(TRACTS), "symbol": 2 * len(TRACTS)},
         keys={"rule": ("tract_fips",), "symbol": ("tract_fips", "scenario_name")},
@@ -473,8 +476,7 @@ CHARTS = [
     Chart(
         slug="sun-lost-bars",
         title="Sun hours lost by period and method",
-        loader_id="fixed-size-sun-loader",
-        loader=SUN_LOST_BY_PERIOD,
+        loaders=(("fixed-size-sun-loader", SUN_LOST_BY_PERIOD),),
         node_id="fixed-size-sun-chart",
         spec=SUN_LOST_BARS,
         box=(780, 440),
@@ -488,8 +490,7 @@ CHARTS = [
     Chart(
         slug="shade-and-sun",
         title="Park in shade and sun lost over the day",
-        loader_id="fixed-size-shade-loader",
-        loader=SHADE_AND_SUN_BY_HOUR,
+        loaders=(("fixed-size-shade-loader", SHADE_AND_SUN_BY_HOUR),),
         node_id="fixed-size-shade-chart",
         spec=SHADE_AND_SUN,
         box=(800, 440),
@@ -503,8 +504,7 @@ CHARTS = [
     Chart(
         slug="example-03-bars",
         title="Total violations by camera and year",
-        loader_id="fixed-size-camera-loader",
-        loader=VIOLATIONS_BY_CAMERA,
+        loaders=(("fixed-size-camera-loader", VIOLATIONS_BY_CAMERA),),
         node_id="fixed-size-camera-chart",
         spec=EXAMPLE_03_BARS,
         box=(720, 480),
@@ -705,11 +705,15 @@ _OFF_CHART_JS = """(id) => {
 
 
 def _dataflow(chart: Chart) -> dict:
-    def node(node_id: str, node_type: str, x: int, content: str, **box) -> dict:
+    def node(node_id: str, node_type: str, x: int, y: int, content: str, **box) -> dict:
         return {
-            "id": node_id, "type": node_type, "x": x, "y": 0, "content": content,
+            "id": node_id, "type": node_type, "x": x, "y": y, "content": content,
             "in": "DEFAULT", "out": "DEFAULT", "goal": "", "metadata": {"keywords": []}, **box,
         }
+
+    def handle(k: int) -> str:
+        """The chart's *k*-th input circle."""
+        return "in" if k == 0 else f"in_{k}"
 
     name = f"{chart.title}, fixed size"
     return {"dataflow": {
@@ -718,14 +722,18 @@ def _dataflow(chart: Chart) -> dict:
         "timestamp": 1789193389280,
         "provenance_id": name,
         "nodes": [
-            node(chart.loader_id, "curio.builtin/data-loading", 0, chart.loader),
-            node(chart.node_id, "curio.builtin/vis-vega", 620, json.dumps(chart.spec, indent=2),
+            *(node(loader_id, "curio.builtin/data-loading", 0, 420 * k, code)
+              for k, (loader_id, code) in enumerate(chart.loaders)),
+            node(chart.node_id, "curio.builtin/vis-vega", 620, 0, json.dumps(chart.spec, indent=2),
                  title=chart.title, width=chart.box[0], height=chart.box[1]),
         ],
-        "edges": [{
-            "id": f"reactflow__edge-{chart.loader_id}out-{chart.node_id}in",
-            "source": chart.loader_id, "target": chart.node_id, "sourceHandle": "out", "targetHandle": "in",
-        }],
+        "edges": [
+            {
+                "id": f"reactflow__edge-{loader_id}out-{chart.node_id}{handle(k)}",
+                "source": loader_id, "target": chart.node_id, "sourceHandle": "out", "targetHandle": handle(k),
+            }
+            for k, (loader_id, _code) in enumerate(chart.loaders)
+        ],
     }}
 
 
@@ -862,7 +870,20 @@ def _brief(record: dict, what: str = "hover") -> str:
     return f"{record[what]}: plot {plot[0]}x{plot[1]}, group {group[0]}x{group[1]}, view {record['viewSize']}"
 
 
-def _measured(chart: Chart, before: dict, unsettled: list[dict], hovers: list[dict], resizes: list[dict]) -> str:
+def _drawing(chart: Chart, legends, drawn: dict, clear: dict) -> str:
+    """What the chart drew before the hovers, as the checks after the sizes read
+    it: its legends, its marks of each type and the values they are colored
+    by, and the marks clear enough to hover."""
+    colored = {
+        marktype: sorted({str(m["datum"].get(field)) for m in drawn[marktype]})
+        for marktype, (field, _values) in chart.colored.items()
+    }
+    counts = {marktype: len(marks) for marktype, marks in drawn.items()}
+    return f"legends {legends}, marks {json.dumps(counts)}, colored {json.dumps(colored)}, clear {json.dumps(clear)}"
+
+
+def _measured(chart: Chart, before: dict, unsettled: list[dict], drawing: str,
+              hovers: list[dict], resizes: list[dict]) -> str:
     """What the test measured, one line per chart for the CI log."""
     fields = ("plot", "group", "viewSize", "canvas", "mount")
     each_hover = [{k: h.get(k) for k in ("hover", "mark", "target") + fields + ("missed",)} for h in hovers]
@@ -872,6 +893,7 @@ def _measured(chart: Chart, before: dict, unsettled: list[dict], hovers: list[di
         f"first draw plot {before['plot']} group {before['group']} view {before['viewSize']} "
         f"canvas {before['canvas']} mount {before['mount']} origin {before['origin']}"
         f"{' (still moving: ' + json.dumps([u['plot'] for u in unsettled]) + ')' if unsettled else ''}; "
+        f"{drawing}; "
         f"after hover {HOVERS} plot {hovers[-1]['plot']} group {hovers[-1]['group']} view {hovers[-1]['viewSize']} "
         f"canvas {hovers[-1]['canvas']}; after resize {RESIZES} plot {resizes[-1]['plot']} "
         f"group {resizes[-1]['group']} view {resizes[-1]['viewSize']} canvas {resizes[-1]['canvas']}; "
@@ -919,7 +941,8 @@ def test_a_chart_draws_its_plot_at_its_authors_size_through_hovers_and_resizes(
     resizes = [_resize_once(page, chart.node_id, k) for k in range(RESIZES)]
     # Past pytest's capture, so a passing run's log holds the sizes too.
     with capsys.disabled():
-        print("\n" + _measured(chart, before, unsettled, hovers, resizes), flush=True)
+        drawing = _drawing(chart, legends, drawn, clear)
+        print("\n" + _measured(chart, before, unsettled, drawing, hovers, resizes), flush=True)
 
     width, height = chart.fixed
     authored = ((width, height), (width, height))
