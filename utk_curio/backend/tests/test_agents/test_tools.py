@@ -11,6 +11,7 @@ from utk_curio.backend.app.agents.application import tools
 from utk_curio.backend.app.agents.application.turns import examples
 from utk_curio.backend.app.agents.domain.manifest import ToolRequirement
 from utk_curio.backend.app.agents.application.tools import ToolContract
+from utk_curio.backend.tests._support.agent_routes import _auth
 
 
 def _req(tool_id: str, required: bool = False) -> ToolRequirement:
@@ -33,6 +34,7 @@ class TestRegistry:
             "discovery.sources", "discovery.search", "discovery.acquire",
             "models.search",  # the Model Catalog
             "examples.read",  # the worked examples
+            "scenarios.search",  # the Scenario Catalog
         }
         assert tools.REGISTRY["dataflow.read"].effect == "read"
         assert tools.REGISTRY["node.read"].effect == "read"
@@ -55,6 +57,7 @@ class TestRegistry:
         assert tools.REGISTRY["package.draft.apply"].effect == "mutate"  # dev/89
         assert tools.REGISTRY["models.search"].effect == "read"
         assert tools.REGISTRY["examples.read"].effect == "read"
+        assert tools.REGISTRY["scenarios.search"].effect == "read"
 
     def test_contract_validates_effect(self):
         with pytest.raises(ValueError):
@@ -364,6 +367,134 @@ class TestDataflowReadProjection:
         assert all(set(n) == {"id", "type", "goal", "hasContent", "contentChars"} for n in payload["nodes"])
 
 
+def _project_with_scenarios(client, token, name: str, scenarios: list[dict]) -> str:
+    """A project of the signed-in account, saved through its route, with two
+    nodes, ``a`` and ``b``, and *scenarios*. Its id."""
+    nodes = [
+        {"id": node_id, "type": "curio.builtin/computation-analysis@1", "content": "return input_0", "x": 0, "y": 0}
+        for node_id in ("a", "b")
+    ]
+    spec = {"dataflow": {"name": name, "nodes": nodes, "edges": [], "scenarios": scenarios}}
+    resp = client.post("/api/projects", json={"name": name, "spec": spec, "outputs": []}, headers=_auth(token))
+    assert resp.status_code == 201, resp.get_data(as_text=True)
+    return resp.get_json()["id"]
+
+
+def _signed_in_read(app, user, tool_id: str, project_id: str, params: dict) -> tuple[str, str]:
+    """*tool_id* run as a chat turn runs it: in a request whose signed-in
+    account is *user* (``g.user``)."""
+    from flask import g
+
+    from utk_curio.backend.app.projects.services import _user_dir_key
+
+    with app.test_request_context():
+        g.user = user
+        return tools.execute_read_tool(
+            tool_id, user_key=_user_dir_key(user), project_id=project_id, target=None, params=params,
+        )
+
+
+class TestDataflowReadScenarioSource:
+    """A scenario dragged in from another project keeps that project's and
+    that scenario's ids (``source``). dataflow.read names them, reading only
+    the projects such scenarios name, each once, and says when that project,
+    or that scenario in it, is gone. dataflow.read runs on every turn, so a
+    dataflow with no dropped scenario reads no other project."""
+
+    @staticmethod
+    def _scenarios(app, user, project_id: str) -> dict[str, dict]:
+        status, text = _signed_in_read(app, user, "dataflow.read", project_id, {})
+        assert status == "ok", text
+        return {row["name"]: row for row in json.loads(text)["scenarios"]}
+
+    def test_a_dropped_scenario_names_its_project_and_scenario(self, app, client, user_and_token):
+        user, token = user_and_token
+        # Renamed in its project since the drop: the source is read as it is now.
+        loop = _project_with_scenarios(client, token, "Loop shadow", [
+            {"id": "s-towers", "name": "Without towers", "color": "#3567c7", "nodes": ["a"]},
+        ])
+        mine = _project_with_scenarios(client, token, "My study", [
+            {"id": "s1", "name": "Existing", "color": "#e86a3c", "nodes": ["a"]},
+            {"id": "s2", "name": "Towers removed", "color": "#3567c7", "nodes": ["b"],
+             "source": {"project": loop, "scenario": "s-towers"}},
+        ])
+
+        rows = self._scenarios(app, user, mine)
+
+        assert rows["Towers removed"]["source"] == {"project": "Loop shadow", "scenario": "Without towers"}
+        # A scenario made here has no source.
+        assert "source" not in rows["Existing"]
+        # The agent names the source by its names, never by its ids.
+        assert loop not in json.dumps(rows)
+
+    def test_a_source_that_is_gone_says_so(self, app, client, user_and_token):
+        user, token = user_and_token
+        loop = _project_with_scenarios(client, token, "Loop shadow", [
+            {"id": "s-towers", "name": "Towers removed", "color": "#3567c7", "nodes": ["a"]},
+        ])
+        old = _project_with_scenarios(client, token, "Old study", [
+            {"id": "s-old", "name": "Old heights", "color": "#3567c7", "nodes": ["a"]},
+        ])
+        resp = client.delete(f"/api/projects/{old}", headers=_auth(token))
+        assert resp.status_code in (200, 204), resp.get_data(as_text=True)
+        mine = _project_with_scenarios(client, token, "My study", [
+            {"id": "s1", "name": "Old heights", "color": "#3567c7", "nodes": ["a"],
+             "source": {"project": old, "scenario": "s-old"}},
+            {"id": "s2", "name": "Towers kept", "color": "#e86a3c", "nodes": ["b"],
+             "source": {"project": loop, "scenario": "s-kept"}},
+            {"id": "s3", "name": "Not ours", "color": "#2f8f4a", "nodes": [],
+             "source": {"project": "no-such-project", "scenario": "s1"}},
+        ])
+
+        rows = self._scenarios(app, user, mine)
+
+        # Its project was deleted, or is none of this account's.
+        assert rows["Old heights"]["source"] == {"status": "project-gone"}
+        assert rows["Not ours"]["source"] == {"status": "project-gone"}
+        # Its project is still here, and no longer holds it.
+        assert rows["Towers kept"]["source"] == {"project": "Loop shadow", "status": "scenario-gone"}
+
+    def test_a_dataflow_without_a_dropped_scenario_reads_no_other_project(
+        self, app, client, user_and_token, monkeypatch
+    ):
+        from utk_curio.backend.app.scenario_catalog.infrastructure import projects as scenario_projects
+
+        user, token = user_and_token
+        loop = _project_with_scenarios(client, token, "Loop shadow", [
+            {"id": "s-towers", "name": "Towers removed", "color": "#3567c7", "nodes": ["a"]},
+        ])
+        mine = _project_with_scenarios(client, token, "My study", [
+            {"id": "s1", "name": "Existing", "color": "#e86a3c", "nodes": ["a"]},
+        ])
+        twice = _project_with_scenarios(client, token, "Two drops", [
+            {"id": "s1", "name": "Towers removed", "color": "#3567c7", "nodes": ["a"],
+             "source": {"project": loop, "scenario": "s-towers"}},
+            {"id": "s2", "name": "Towers removed again", "color": "#e86a3c", "nodes": ["b"],
+             "source": {"project": loop, "scenario": "s-towers"}},
+        ])
+        read, listed = [], []
+        owned = scenario_projects.owned_project
+
+        def owned_project(account, project_id):
+            read.append(project_id)
+            return owned(account, project_id)
+
+        def project_summaries(account):
+            listed.append(account)
+            return []
+
+        monkeypatch.setattr(scenario_projects, "owned_project", owned_project)
+        monkeypatch.setattr(scenario_projects, "project_summaries", project_summaries)
+
+        assert "source" not in self._scenarios(app, user, mine)["Existing"]
+        assert (read, listed) == ([], [])
+
+        # Two scenarios dropped from one project read that project, once.
+        rows = self._scenarios(app, user, twice)
+        assert (read, listed) == ([loop], [])
+        assert rows["Towers removed again"]["source"] == {"project": "Loop shadow", "scenario": "Towers removed"}
+
+
 class TestNodeRuntimeRead:
     """dev/67-2 — the journal's read tool: honest never-executed, traceback
     evidence, and the best-effort content-changed signal."""
@@ -589,6 +720,99 @@ class TestModelsSearch:
         assert "required" not in contract.parameters
         for word in ("id", "name", "task", "origin", "labels", "loader", 'curio_load_model("<id>")', "added"):
             assert word in contract.description, word
+
+
+class TestScenariosSearch:
+    """scenarios.search: the Scenario Catalog's own listing
+    (``ScenarioCatalogService.list_catalog``), read as the signed-in account,
+    one row per scenario: its key, name, description, project, node count and
+    whether it is one of this dataflow's own, never its project's preview. A
+    search that stops short says how many rows it left out, and a run with no
+    signed-in account is told so."""
+
+    ROW_KEYS = {"key", "name", "description", "project", "nodeCount", "inThisDataflow"}
+
+    @staticmethod
+    def _listing(user, q=None) -> list[dict]:
+        """The Scenario Catalog's own listing, in its order."""
+        from utk_curio.backend.app.scenario_catalog.service import ScenarioCatalogService
+
+        return ScenarioCatalogService(user).list_catalog(q=q)["items"]
+
+    def test_rows_are_the_catalogs_own_filtered_by_q_without_a_preview(self, app, client, user_and_token):
+        user, token = user_and_token
+        loop = _project_with_scenarios(client, token, "Loop shadow", [
+            {"id": "s1", "name": "Towers removed", "color": "#3567c7", "description": "no zebra tower stands",
+             "nodes": ["a"]},
+            {"id": "s2", "name": "Towers kept", "color": "#e86a3c", "nodes": ["b"]},
+        ])
+        mine = _project_with_scenarios(client, token, "My study", [
+            {"id": "s1", "name": "Zebra crossings", "color": "#2f8f4a", "nodes": ["a", "b"]},
+        ])
+
+        status, text = _signed_in_read(app, user, "scenarios.search", mine, {"q": "  Zebra "})
+
+        assert status == "ok", text
+        rows = json.loads(text)["scenarios"]
+        # The rows the Scenario Catalog lists for that search, in its order.
+        assert [row["key"] for row in rows] == [item["key"] for item in self._listing(user, q="zebra")]
+        assert {row["key"]: row for row in rows} == {
+            f"{loop}/s1": {"key": f"{loop}/s1", "name": "Towers removed", "description": "no zebra tower stands",
+                           "project": "Loop shadow", "nodeCount": 1, "inThisDataflow": False},
+            f"{mine}/s1": {"key": f"{mine}/s1", "name": "Zebra crossings", "description": "",
+                           "project": "My study", "nodeCount": 2, "inThisDataflow": True},
+        }
+
+        # No search: the whole listing, in its order, each row without the
+        # graph a card draws.
+        status, text = _signed_in_read(app, user, "scenarios.search", mine, {})
+        assert status == "ok", text
+        rows = json.loads(text)["scenarios"]
+        keys = [item["key"] for item in self._listing(user)]
+        assert f"{loop}/s2" in keys
+        assert [row["key"] for row in rows] == keys[:tools._SCENARIOS_SEARCH_MAX_ROWS]
+        assert all(set(row) == self.ROW_KEYS for row in rows)
+        assert "preview" not in text
+
+    def test_a_search_that_stops_short_says_how_many_scenarios_it_left_out(
+        self, app, client, user_and_token, monkeypatch
+    ):
+        user, token = user_and_token
+        mine = _project_with_scenarios(client, token, "My study", [
+            {"id": "s1", "name": "Baseline", "color": "#3567c7", "nodes": ["a"]},
+            {"id": "s2", "name": "Twice as tall", "color": "#e86a3c", "nodes": ["b"]},
+        ])
+        monkeypatch.setattr(tools, "_SCENARIOS_SEARCH_MAX_ROWS", 1)
+
+        status, text = _signed_in_read(app, user, "scenarios.search", mine, {})
+
+        assert status == "ok", text
+        payload = json.loads(text)
+        everything = self._listing(user)
+        assert len(everything) >= 2
+        assert [row["key"] for row in payload["scenarios"]] == [everything[0]["key"]]
+        # The count comes first, so a result cut at the tool output bound still carries it.
+        assert list(payload) == ["scenariosElided", "scenarios"]
+        assert payload["scenariosElided"] == len(everything) - 1
+
+    def test_a_run_with_no_signed_in_account_is_told_so(self, app):
+        from utk_curio.backend.app.agents.domain import agent_text
+
+        with app.test_request_context():
+            status, text = tools.execute_read_tool(
+                "scenarios.search", user_key="42", project_id="p1", target=None, params={},
+            )
+
+        assert (status, text) == ("error", agent_text.message("tools.scenarios-no-account"))
+
+    def test_the_contract_states_its_param_and_rows(self):
+        contract = tools.REGISTRY["scenarios.search"]
+        assert (contract.effect, contract.label) == ("read", "Search the Scenario Catalog")
+        assert contract.parameters["properties"]["q"]["type"] == "string"
+        assert "required" not in contract.parameters
+        # Where the user brings a scenario of another project in from.
+        for words in (*sorted(self.ROW_KEYS), "scenariosElided", "Scenario, Browse all"):
+            assert words in contract.description, words
 
 
 class TestExamplesRead:
