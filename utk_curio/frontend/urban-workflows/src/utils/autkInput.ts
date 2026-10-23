@@ -270,33 +270,84 @@ function withReadableHeights(fc: FeatureCollection): FeatureCollection {
 /**
  * Which input row each position of a loaded table stands for. `load` is the
  * table as Curio hands it to autk-db (what a plot reads and selects in); `map`
- * is the table as autk-db stores it, which a map draws. `null` means positions
- * and input rows agree.
+ * is the table as autk-db stores it, for a layer whose drawn rows cannot be
+ * read back (`drawnRows`). `null` means positions and input rows agree.
  */
 export type LoadOrder = { load: number[] | null; map: number[] | null };
+
+/**
+ * The property each feature handed to autk-db for a map carries: its input
+ * row. A map draws a layer as autk-db exports it (`getLayer`), which can leave
+ * rows out and keep the others in an order of its own, so the rows a map draws
+ * are read back from what it exported (`drawnRows`).
+ */
+export const INPUT_ROW = "__curio_row";
 
 /**
  * The source as autk-db will load it, and the order that lets a pick or a
  * highlight still name the input's rows. The rows go through
  * `loadableFeatures`: a row with no geometry gets an empty one, and a first row
  * with none trades places with the first that has one. autk-db then stores the
- * rows whose geometry is empty before the others, each in the order handed, and
- * a map draws the table as stored: nothing for such a row, every other row in
- * its place.
+ * rows whose geometry is empty before the others, each in the order handed. A
+ * source for a map (*tagRows*) has each feature carry its input row
+ * (`INPUT_ROW`), by which the rows the map draws are read back.
  */
-export function loadableSource(source: AutkSource): { source: AutkSource; order: LoadOrder } {
+export function loadableSource(
+  source: AutkSource,
+  { tagRows = false }: { tagRows?: boolean } = {},
+): { source: AutkSource; order: LoadOrder } {
   const features: any[] = (source.geojsonObject as any)?.features ?? [];
   const loadable = loadableFeatures(features);
   const load = loadable.order;
   const rows = load ?? features.map((_, i) => i);
   const empty = rows.filter((i) => !hasGeometry(features[i]));
   const map = empty.length > 0 ? [...empty, ...rows.filter((i) => hasGeometry(features[i]))] : load;
+  const handed = tagRows
+    ? loadable.features.map((feature: any, at: number) => ({ ...feature, properties: { ...(feature?.properties ?? {}), [INPUT_ROW]: rows[at] } }))
+    : loadable.features;
   return {
-    source: loadable.features === features
+    source: handed === features
       ? source
-      : { ...source, geojsonObject: { ...source.geojsonObject, features: loadable.features } as FeatureCollection },
+      : { ...source, geojsonObject: { ...source.geojsonObject, features: handed } as FeatureCollection },
     order: { load, map },
   };
+}
+
+/**
+ * The features of a layer autk-db exported (`getLayer`) as autk-grammar hands
+ * them to a map: those with a geometry, in the export's order.
+ */
+export function drawnFeatures(exported: { features?: any[] } | null | undefined): any[] {
+  const features: any[] = Array.isArray(exported?.features) ? exported!.features! : [];
+  return features.filter((feature) => feature?.geometry != null);
+}
+
+/** What autk-map draws a feature it was handed as: one component, which names the feature by its index. */
+export type DrawnComponent = { featureIndex?: number };
+
+/**
+ * The input row each position of a map layer stands for, from the features it
+ * was handed (*features*, `drawnFeatures`). autk-map draws each one as one
+ * component, in their order, and none for a feature with nothing to draw; a
+ * component names its feature (*components*, autk-map's `featureIndex`), and
+ * the feature carries its input row (`INPUT_ROW`). Without *components*, each
+ * feature is a position. Null when a feature drawn carries no row, as one a
+ * document loads itself does not.
+ */
+export function drawnRows(
+  features: readonly any[] | null | undefined,
+  components?: readonly DrawnComponent[] | null,
+): number[] | null {
+  if (!features || features.length === 0) return null;
+  const count = Array.isArray(components) ? components.length : features.length;
+  const rows: number[] = [];
+  for (let position = 0; position < count; position++) {
+    const index = components?.[position]?.featureIndex;
+    const row = features[Number.isInteger(index) ? index! : position]?.properties?.[INPUT_ROW];
+    if (!Number.isInteger(row)) return null;
+    rows.push(row);
+  }
+  return rows;
 }
 
 /** The input row a table position stands for. */
