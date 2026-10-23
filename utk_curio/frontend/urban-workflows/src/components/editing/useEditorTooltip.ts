@@ -293,7 +293,27 @@ export function useEditorTooltip(
       const shown = tooltipStore.getState().shown?.request.key;
       if (typeof shown === "string" && shown.startsWith(`${id}:`)) tooltipStore.hide();
     };
-    const leave = editor.onMouseLeave?.(() => letGo());
+    // Monaco takes a move whose element is not in the editor for a leave
+    // (mouseHandler.js), and its hit test of that move first draws what it
+    // holds to draw (view.js). So a move that lands as Monaco draws its line
+    // again reports a leave: the move's element has just left the page, the
+    // pointer rests on the line drawn in its place, and no move comes while
+    // it rests. That leave keeps the tooltip coming.
+    const stillOver = (event: any): boolean => {
+      const browserEvent = event?.event?.browserEvent;
+      const element = browserEvent?.target;
+      const dom: HTMLElement | null = editor.getDomNode?.() ?? null;
+      if (!dom || !(element instanceof Node) || element.isConnected) return false;
+      const { clientX, clientY } = browserEvent;
+      if (typeof document.elementFromPoint !== "function" || !Number.isFinite(clientX) || !Number.isFinite(clientY)) {
+        return false;
+      }
+      const under = document.elementFromPoint(clientX, clientY);
+      return under !== null && dom.contains(under);
+    };
+    const leave = editor.onMouseLeave?.((event: any) => {
+      if (!stillOver(event)) letGo();
+    });
     // A press, a scroll of the text or an edit leaves nothing where the
     // tooltip points. Monaco also reports a scroll when only the size it can
     // scroll changes, as it measures its lines' widths again after drawing
