@@ -56,19 +56,23 @@ export type MapTableState = {
     pick: boolean;
     /** The properties of the input rows the layer highlights. */
     lit: Array<Record<string, unknown>>;
+    /** The positions the node last asked autk-map to highlight on the layer. */
+    asked: number[];
 };
 
 /**
  * What *map* shows of each table *spec* draws: whether its layer picks, and
  * the input rows it highlights, read from autk-map's own layers and taken back
- * to the input's rows through *orders*, as a pick on the map is. The e2e tests
- * read it (`window.__curio_mapState`).
+ * to the input's rows through *orders*, as a pick on the map is; beside the
+ * positions the node last asked it to highlight (*asked*). The e2e tests read
+ * it (`window.__curio_mapState`).
  */
 export function mapStateOf(
     map: any,
     spec: any,
     orders: Record<string, LoadOrder>,
     features: Record<string, readonly any[]>,
+    asked: Record<string, number[]> = {},
 ): Record<string, MapTableState> | null {
     if (!map) return null;
     const out: Record<string, MapTableState> = {};
@@ -82,6 +86,7 @@ export function mapStateOf(
             lit: (Array.isArray(positions) ? positions : []).map((position: number) => ({
                 ...(features[table]?.[inputRow(position, orders[table]?.map)]?.properties ?? {}),
             })),
+            asked: asked[table] ?? [],
         };
     }
     return out;

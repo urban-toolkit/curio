@@ -256,6 +256,8 @@ export const useAutkGrammarBehavior = (
     // Each input table's features as they came, by name: the rows a pick or a
     // brush reads the key columns of, when its view names them (selectFields).
     const inputFeaturesRef = useRef<Record<string, readonly any[]>>({});
+    // The positions the node last asked the map to highlight, by table.
+    const askedRef = useRef<Record<string, number[]>>({});
 
     // What the node knows about its input edge, asked the way the Vega-Lite
     // node asks (hook/useGrammarInputState).
@@ -1381,6 +1383,7 @@ export const useAutkGrammarBehavior = (
         for (const mapSpec of maps) {
             for (const lr of mapSpec.layerRefs) {
                 const sel = positions(lr.dataRef, 'map');
+                askedRef.current[lr.dataRef] = sel;
                 sel.length === 0
                     ? grammar.clearHighlightOnMap?.(lr.dataRef)
                     : grammar.highlightOnMap?.(lr.dataRef, sel);
@@ -1416,7 +1419,7 @@ export const useAutkGrammarBehavior = (
     // the rows it lights, for the e2e tests.
     useEffect(() => {
         mapStateReaders.set(data.nodeId, () =>
-            mapStateOf(grammarMaps(grammarRef.current)[0], specRef.current, loadOrdersRef.current, inputFeaturesRef.current));
+            mapStateOf(grammarMaps(grammarRef.current)[0], specRef.current, loadOrdersRef.current, inputFeaturesRef.current, askedRef.current));
         return () => {
             mapStateReaders.delete(data.nodeId);
         };
