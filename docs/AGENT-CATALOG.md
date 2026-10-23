@@ -57,7 +57,7 @@ An agent uses only what you have: the code it writes reads your Data Catalog's d
 |---|---|---|---|
 | **Researcher** | Explains a node or the dataflow, diagnoses errors, helps define what to build, answers web questions as notes, checks facts | Read the dataflow and a node's last run; search and read the web; propose notes as Note nodes; propose a notes package | Notes from search results (Dataflow Builder); Check a fact (Node Builder, Dataset Finder, Dataflow Builder) |
 | **Node Builder** | Builds a node, rewrites a node's content, suggests nodes for a connection, finds or writes node types | Read the dataflow and a node's last run; search the Data and Model Catalogs; propose a node, a content change, a package install or a package draft | Write a node's content (Node Builder, Dataflow Builder, Solve); Recommend packages (Dataflow Builder); Write a package (Node Builder, Researcher, Dataflow Builder) |
-| **Dataflow Builder** | Plans a whole dataflow, then solves its nodes | Read the dataflow and runs; propose a plan, a node or a package draft; read worked examples | None |
+| **Dataflow Builder** | Plans a whole dataflow, then solves its nodes | Read the dataflow and runs; search the Scenario Catalog; propose a plan, a node or a package draft; read worked examples | None |
 | **Dataset Finder** | Finds datasets in the Data Catalog and in portals | Search the catalog and portals; propose a download | Find datasets (Node Builder, Dataflow Builder, Solve) |
 
 The other three are helpers. They have modes only, never a chat: they are never listed, added or attached, and a catalog agent asks for their modes without them being added to the dataflow.
@@ -303,7 +303,9 @@ A plan can also save [scenarios](USAGE.md#scenarios). A scenario in a plan is ei
 
 Applying the whole plan saves its scenarios. Applied node by node, a copy can be created only after the node it copies, and a scenario is saved with the last of its nodes. A scenario that would take a node another scenario holds is not saved, since a node belongs to one scenario. A plan's scenario takes a name no scenario of the dataflow has, and one that would repeat a name you gave a scenario after the review is not saved. A duplicate copies nodes the plan adds; scenarios already on the canvas are duplicated there. Solve writes a copy's code as it writes any planned node's, so the two can differ; compare them before relying on the comparison.
 
-An agent that reads the dataflow sees each scenario with its fixed context, levers and outcomes, each node's widget values, each node's [selection tags](USAGE.md#selection-tags), with the view each reads and how many rows it holds, and what each Spatial Join, Data Pool and Simple View is set to when it is not the node's default.
+An agent that reads the dataflow sees each scenario with its fixed context, levers and outcomes, each node's widget values, each node's [selection tags](USAGE.md#selection-tags), with the view each reads and how many rows it holds, and what each Spatial Join, Data Pool and Simple View is set to when it is not the node's default. For a scenario dragged in from another project, it sees the project and the scenario it came from, by their names now, or that the project or the scenario is gone.
+
+The **Dataflow Builder** finds the scenarios in your [Scenario Catalog](SCENARIO-CATALOG.md). Asked for a scenario of another project, such as *Towers removed* from *Loop shadow*, it names the scenario and its project and tells you to drag it in from **Scenario**, **Browse all**, where it arrives with its saved results, rather than rebuilding it.
 
 ### Map Edits
 
@@ -359,7 +361,7 @@ A Solve of the Dataflow Builder runs on the Builder's configuration, and writes 
 
 The choice is per account, for every version of the agent and every project. A shared project carries none, so it runs on the configurations of whoever runs it. An agent's details show what it runs on, with **Change in API Settings**, which opens the **Agent configuration** tab on its row; a reply's status line says, on hover, which configuration and model answered it; and a mode another agent asked for names, in the chat, what it ran on.
 
-An agent's tools (reading the dataflow, searching the Data Catalog or the Model Catalog, reading a shipped example dataflow, proposing a node or a plan, asking another agent for one of its modes) work the same on every configuration, and every change waits for your review. For a Custom endpoint, Curio asks once per model whether it calls tools, the first time an agent with tools runs on it: one short request, billed like any other and kept in the usage record.
+An agent's tools (reading the dataflow, searching the Data Catalog, the Model Catalog or the Scenario Catalog, reading a shipped example dataflow, proposing a node or a plan, asking another agent for one of its modes) work the same on every configuration, and every change waits for your review. For a Custom endpoint, Curio asks once per model whether it calls tools, the first time an agent with tools runs on it: one short request, billed like any other and kept in the usage record.
 
 ### Choosing the model
 

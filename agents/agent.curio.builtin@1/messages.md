@@ -81,6 +81,10 @@ params.key must be an example's key; call examples.read with no key to list the 
 
 params.dirNames must be a non-empty list of package dirName strings
 
+## tools.scenarios-no-account
+
+no account is signed in to this run, so there is no Scenario Catalog to search
+
 ## tools.goals-shortened
 
 node goals shortened to fit the tool output bound

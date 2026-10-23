@@ -685,6 +685,13 @@ class TestCatalogReadGrants:
         assert self._holders("examples.read") == {"agent.curio.dataflow-builder"}
         assert "examples.read" in self._granted("agent.curio.dataflow-builder")
 
+    def test_the_dataflow_builder_searches_the_scenario_catalog(self):
+        # A scenario of another project is one the user drags in: the Builder
+        # names it and its project. A helper runs only as a delegated mode,
+        # which has no tools, so no helper holds it.
+        assert self._holders("scenarios.search") == {"agent.curio.dataflow-builder"}
+        assert "scenarios.search" in self._granted("agent.curio.dataflow-builder")
+
     def test_only_the_node_builder_reads_the_node_catalog(self):
         # It recommends and installs packages in its chat.
         for tool in ("packages.catalog", "packages.resolve"):
@@ -817,6 +824,7 @@ class TestDataflowBuilderComposite:
             "dataflow.read", "dataflow.plan.write", "node.runtime.read",
             "node.create",
             "examples.read",  # any worked example, beside the ones a run is given
+            "scenarios.search",  # a scenario of another project, for the user to drag in
             "package.draft.apply",
         ]
         assert m.provenance.trust == "built-in"
