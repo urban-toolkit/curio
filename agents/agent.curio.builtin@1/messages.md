@@ -129,6 +129,14 @@ no nodeId given and this agent is not attached to a node
 
 node {node_id} not found in the saved spec
 
+## tools.node-history-none
+
+the saved dataflow holds no history of node {node_id}: no run of it or edit to it was saved yet
+
+## tools.node-history-no-entry
+
+node {node_id} has no history entry {entry_id}: call node.history.read without entryId to list its entries
+
 ## mint.dataset-id-required
 
 params.datasetId must be a non-empty dataset id string
