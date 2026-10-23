@@ -1578,18 +1578,22 @@ def test_a_chicago_building_of_several_parts_is_reshaped_one_part_at_a_time(
     # it, dragged with Move points: one a press reaches, inside the map with
     # nothing over it, drawn in the map's highlight when one such is. A press
     # takes the corner nearest it, wherever the map draws its buildings over.
+    # It is dropped a little out from its neighbours' middle, or in toward
+    # it, where no side of its part crosses another: autk-db refuses a
+    # building whose shape crosses itself, and then draws none of the layer.
     dismiss_toasts(page)
     corners = _wait_for_corners(page, map_id, bool, "the zoom")
     roomy = [c for c in _to_drag(corners) if c["inside"] and c["onTop"] and _room(c, corners) >= PRESS_ROOM]
-    corner = max(roomy, key=lambda c: (c["lit"], _room(c, corners)), default=None)
-    assert corner, (
-        f"Move points shows no corner of building {building} to drag with {PRESS_ROOM} pixels around it "
-        f"(the most room a corner has is {_best_room(corners):.1f}): {corners}"
+    roomy.sort(key=lambda c: (c["lit"], _room(c, corners)), reverse=True)
+    corner, drop = next(((c, d) for c in roomy for d in [_drop_keeping_shape(c, corners)] if d), (None, None))
+    assert corner and drop, (
+        f"Move points shows no corner of building {building} to drag with {PRESS_ROOM} pixels around it and its "
+        f"part's sides kept apart (the most room a corner has is {_best_room(corners):.1f}): {corners}"
     )
     part = corner["part"] or 0
     part_id = (rows[part].get("properties") or {}).get(PART_KEY)
     where = f"{KEY} == {_literal(building)} and {PART_KEY} == {_literal(part_id)}"
-    drop = assert_in_view(page, corner["x"] + 24, corner["y"] + 16, "where the part's corner is dropped")
+    drop = assert_in_view(page, drop[0], drop[1], "where the part's corner is dropped")
     keep_drawing(page, _map(map_id))
     page.mouse.move(corner["x"], corner["y"])
     page.mouse.down()
@@ -1609,9 +1613,12 @@ def test_a_chicago_building_of_several_parts_is_reshaped_one_part_at_a_time(
     except AssertionError as error:
         wrong.append(f"the list does not name the part: {error}")
 
-    # The map draws the edit, and shows the building's other parts where they were.
+    # The map draws the edit, and shows the building's other parts where they
+    # were. The node's first edit names its layer and key in its code, which
+    # starts its pick anew: the building is picked again, as before.
     _wait_for_redraw(page, map_id, "the part's corner dragged")
-    after = {(c["part"], c["ring"], c["index"]): c for c in _wait_for_corners(page, map_id, bool, "the redraw")}
+    shown = _picked_with_corners(page, map_id, building, f"building {building} picked after the drag")
+    after = {(c["part"], c["ring"], c["index"]): c for c in shown}
     for before in corners:
         now = after.get((before["part"], before["ring"], before["index"]))
         dragged = (before["part"], before["ring"], before["index"]) == (corner["part"], corner["ring"], corner["index"])
@@ -1640,9 +1647,7 @@ def test_a_chicago_building_of_several_parts_is_reshaped_one_part_at_a_time(
 
     # The building picked again, as the map shows it with Move points on,
     # and the node with the edit in its list.
-    page.evaluate(_SEND_JS, [map_id, _map_pick(building)])
-    _wait_for_lit(page, map_id, {building}, f"building {building} picked again", table=BUILDINGS)
-    _wait_for_corners(page, map_id, bool, f"building {building} picked again")
+    _picked_with_corners(page, map_id, building, f"building {building} picked after Commit edits")
     save_node_closeup(page, CHICAGO_STEM, map_id, test_name=f"{test_name}_closeup_{map_id}", sweep_toasts=True)
     save_node_closeup(page, CHICAGO_STEM, edit_id, test_name=f"{test_name}_closeup_{edit_id}", sweep_toasts=True)
 
@@ -1731,6 +1736,75 @@ def _to_drag(corners: list[dict]) -> list[dict]:
 def _best_room(corners: list[dict]) -> float:
     """The most room, in page pixels, a corner to drag has from every other corner."""
     return max((_room(corner, corners) for corner in _to_drag(corners)), default=0.0)
+
+
+def _picked_with_corners(page, map_id: str, building, what: str) -> list[dict]:
+    """Pick *building* on the map *map_id*, as the map's own pick is sent, and
+    wait until Move points shows its corners. The pick is sent again when a
+    change of the node's code started its pick anew meanwhile."""
+    for _ in range(3):
+        page.evaluate(_SEND_JS, [map_id, _map_pick(building)])
+        _wait_for_lit(page, map_id, {building}, what, table=BUILDINGS)
+        deadline = time.time() + 5
+        while time.time() < deadline:
+            corners = _corners(page, map_id)
+            if corners:
+                return corners
+            page.wait_for_timeout(250)
+    raise AssertionError(f"after {what}, Move points shows no corner of building {building} on the map {map_id}")
+
+
+def _crosses(a, b, c, d) -> bool:
+    """Whether the segments *a* to *b* and *c* to *d* cross or touch."""
+    def turn(p, q, r):
+        return (q[0] - p[0]) * (r[1] - p[1]) - (q[1] - p[1]) * (r[0] - p[0])
+
+    def on(p, q, r):
+        return min(p[0], q[0]) - 1e-9 <= r[0] <= max(p[0], q[0]) + 1e-9 and min(p[1], q[1]) - 1e-9 <= r[1] <= max(p[1], q[1]) + 1e-9
+
+    t1, t2, t3, t4 = turn(c, d, a), turn(c, d, b), turn(a, b, c), turn(a, b, d)
+    if ((t1 > 0) != (t2 > 0)) and ((t3 > 0) != (t4 > 0)) and t1 and t2 and t3 and t4:
+        return True
+    return any(t == 0 and on(p, q, r) for t, p, q, r in ((t1, c, d, a), (t2, c, d, b), (t3, a, b, c), (t4, a, b, d)))
+
+
+def _drop_keeping_shape(corner: dict, corners: list[dict]) -> tuple[float, float] | None:
+    """Where to drag *corner*, in page coordinates, so that no side of its part
+    crosses another (autk-db checks each part with ``ST_IsValid``): a little
+    out from the middle of its two neighbours in its ring, else in toward it,
+    at least 5 pixels from where it is; None when neither keeps the sides
+    apart."""
+    rings: dict = {}
+    indexes: dict = {}
+    for c in sorted(corners, key=lambda c: c["index"]):
+        if c["part"] == corner["part"]:
+            rings.setdefault(c["ring"], []).append((c["x"], c["y"]))
+            indexes.setdefault(c["ring"], []).append(c["index"])
+    ring = rings.get(corner["ring"], [])
+    if len(ring) < 3:
+        return None
+    at = indexes[corner["ring"]].index(corner["index"])
+    before, after = ring[at - 1], ring[(at + 1) % len(ring)]
+    middle = ((before[0] + after[0]) / 2, (before[1] + after[1]) / 2)
+    away = (corner["x"] - middle[0], corner["y"] - middle[1])
+    # Every side of the part but the two the corner ends, which move with it.
+    sides = [
+        (points[i], points[(i + 1) % len(points)], key, i)
+        for key, points in rings.items() for i in range(len(points))
+        if not (key == corner["ring"] and i in (at, (at - 1) % len(ring)))
+    ]
+    for share in (0.6, -0.5):
+        drop = (corner["x"] + share * away[0], corner["y"] + share * away[1])
+        if math.hypot(drop[0] - corner["x"], drop[1] - corner["y"]) < 5:
+            continue
+        moved = [(before, drop), (drop, after)]
+        if not any(
+            _crosses(a, b, p, q) for a, b in moved for p, q, key, i in sides
+            # A moved side meets its neighbouring sides at their shared corner.
+            if not (key == corner["ring"] and (i == (at - 2) % len(ring) and a == before or i == (at + 1) % len(ring) and b == after))
+        ):
+            return drop
+    return None
 
 
 def _within(corners: list[dict], box: dict, margin: float) -> bool:
