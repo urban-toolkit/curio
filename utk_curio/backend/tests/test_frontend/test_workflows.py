@@ -56,6 +56,7 @@ from .utils import (
     save_dataflow_and_settle_header,
     save_workflow_test_screenshot,
     assert_vega_canvas_rendered,
+    assert_vega_charts_fit,
     assert_vega_node_empty_state,
     load_artifact_as_dict,
     execute_workflow_programmatically,
@@ -1262,6 +1263,16 @@ class TestWorkflowCanvas:
             if "plot" in json.loads(self.spec.node_code(node, "json")):
                 assert_autark_plot_drawn(self.page, node.id)
         self._save_screenshot(request)
+
+        # Each Vega-Lite chart shows whole in its node, nothing past the node's
+        # right or bottom edge. A chart whose spec sets its own size keeps it,
+        # with its axes, title and legend around it (#1097), so the example
+        # gives its node the room.
+        assert_vega_charts_fit(
+            self.page,
+            os.path.basename(self.spec.filepath),
+            [node.id for node in self.spec.nodes if node.type == "VIS_VEGA"],
+        )
 
         # A map or plot that drew nothing leaves a blank node, which in the
         # full-page frame above can stay under the budget. Each one is also

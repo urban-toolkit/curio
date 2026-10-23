@@ -240,6 +240,7 @@ from .node_drawings import (  # noqa: F401
     autark_map_framing,
     assert_autark_drawing_fits,
     assert_editor_panes_clear_of_markers,
+    assert_vega_charts_fit,
     assert_vega_node_empty_state,
     _COLOR_PIXELS_JS,
     _assert_legend_title,
