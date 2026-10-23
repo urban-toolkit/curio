@@ -56,6 +56,7 @@ jest.mock("../../registry/projectPackagesStore", () => ({
 
 import { useAgentCanvasMutations } from "../../components/agents/attach/useAgentCanvasMutations";
 import {
+  type AgentCanvasMutation,
   notifyAgentCanvasMutation,
   subscribeAgentCanvasMutations,
 } from "../../services/agents";
@@ -425,7 +426,7 @@ describe("graph-created removals (dev/59)", () => {
 });
 
 describe("plan-removals (a plan completed a row at a time, or by Connect all)", () => {
-  const removals = (planId: string) => ({
+  const removals = (planId: string): AgentCanvasMutation => ({
     kind: "plan-removals",
     planId,
     removedNodeIds: ["old-loader"],
@@ -435,7 +436,7 @@ describe("plan-removals (a plan completed a row at a time, or by Connect all)", 
   it("removes what the plan removes through the reviewed path, as graph-created does", () => {
     mockGetNodes.mockReturnValue([{ id: "old-loader" }, { id: "cleaner" }]);
     render(<Host />);
-    act(() => notifyAgentCanvasMutation(removals("rows-1") as never));
+    act(() => notifyAgentCanvasMutation(removals("rows-1")));
     expect(mockApplyReviewedRemovals).toHaveBeenCalledWith(["old-loader"], ["edge-1"]);
     // The rows already placed the plan's nodes: nothing is inserted.
     expect(mockCreateCodeNode).not.toHaveBeenCalled();
@@ -444,8 +445,8 @@ describe("plan-removals (a plan completed a row at a time, or by Connect all)", 
   it("leaves out a node already gone, and removes once per plan", () => {
     mockGetNodes.mockReturnValue([{ id: "cleaner" }]); // the user deleted it live
     render(<Host />);
-    act(() => notifyAgentCanvasMutation(removals("rows-2") as never));
-    act(() => notifyAgentCanvasMutation(removals("rows-2") as never));
+    act(() => notifyAgentCanvasMutation(removals("rows-2")));
+    act(() => notifyAgentCanvasMutation(removals("rows-2")));
     expect(mockApplyReviewedRemovals).toHaveBeenCalledTimes(1);
     expect(mockApplyReviewedRemovals).toHaveBeenCalledWith([], ["edge-1"]);
   });
