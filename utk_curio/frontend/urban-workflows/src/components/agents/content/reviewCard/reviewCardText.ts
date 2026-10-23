@@ -130,7 +130,8 @@ function planChangeLine(part: AgentProposalPart): string | null {
   if (removed) {
     return (
       `Applying adds ${n} node${n === 1 ? "" : "s"} and removes ${removed}. ` +
-      "Removal deletes their content and cannot be undone."
+      "Removal deletes their content and cannot be undone." +
+      tilesLeavingLine(part.plan.removals ?? [])
     );
   }
   if (removedEdges) {
@@ -146,6 +147,16 @@ function planChangeLine(part: AgentProposalPart): string | null {
     return `Applying adds ${e} connection${e === 1 ? "" : "s"}; existing work is untouched.`;
   }
   return `Applying adds these ${n} connected node${n === 1 ? "" : "s"} to the canvas; existing work is untouched.`;
+}
+
+/** How many of a plan's removals are dashboard tiles, which leave the
+ * dashboard, as the effect line's last sentence; empty when none is. */
+function tilesLeavingLine(removals: Array<{ pinned?: boolean }>): string {
+  const tiles = removals.filter((victim) => victim.pinned).length;
+  if (!tiles) return "";
+  return tiles === 1
+    ? " 1 of them is a dashboard tile, which leaves the dashboard."
+    : ` ${tiles} of them are dashboard tiles, which leave the dashboard.`;
 }
 
 /** A plan node's readiness for its row (dev/71): dependencies by name, its
