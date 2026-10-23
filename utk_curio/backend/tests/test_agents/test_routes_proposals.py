@@ -2304,6 +2304,55 @@ class TestPlansAppliedRowByRow:
         assert [e["id"] for e in spec["dataflow"]["edges"]] == ["edge-1"]
         assert self._card_status(client, token, alice_project, att_id, pid) == "stale"
 
+    def test_apply_plan_after_some_rows_creates_only_what_they_did_not(
+        self, client, user_and_token, tmp_curio, alice_project, monkeypatch
+    ):
+        """Two of three rows applied, then the card's Apply: the rows' nodes
+        and connections are in the dataflow already, so the apply creates
+        only the rest. No connection is drawn twice, and Clean and Check,
+        which take one input each, keep one feed."""
+        user, token = user_and_token
+        base = TestDestructiveReplan()
+        summary = "curio.builtin/data-summary"
+        nodes = [
+            base._new_node(),  # a: API Fetch, which replaces Load CSV and feeds Clean
+            {"ref": "b", "nodeType": summary, "title": "Check", "intent": "summarize the cleaned rows"},
+            {"ref": "c", "nodeType": "curio.builtin/computation-analysis", "title": "Report",
+             "intent": "report the summary"},
+        ]
+        edges = [{"from": "a", "to": "cleaner"}, {"from": "cleaner", "to": "b"}, {"from": "b", "to": "c"}]
+        att_id, _ = base._setup(
+            client, user, token, alice_project, monkeypatch,
+            replies=["Revising.\n" + base._revision_tail(nodes=nodes, edges=edges)],
+            cleaner_type=summary,
+        )
+        proposal = base._proposal(base._run(client, token, alice_project, att_id))
+        pid = proposal["proposalId"]
+        for ref in ("a", "b"):
+            r = self._apply_node(client, token, alice_project, att_id, pid, ref)
+            assert r.status_code == 200, r.get_json()
+            assert r.get_json()["status"] == "pending"  # Report is still to come
+        r = base._apply(client, token, alice_project, att_id, pid)
+        assert r.status_code == 200, r.get_json()
+        body = r.get_json()
+        spec = self._spec(user, alice_project)
+
+        def ids_titled(title):
+            return [n["id"] for n in spec["dataflow"]["nodes"] if str(n.get("goal") or "").startswith(f"{title} ")]
+
+        # Each planned node once, and Load CSV gone.
+        assert [len(ids_titled(t)) for t in ("API Fetch", "Check", "Report")] == [1, 1, 1]
+        assert "old-loader" not in {n["id"] for n in spec["dataflow"]["nodes"]}
+        fetch, check, report = (ids_titled(t)[0] for t in ("API Fetch", "Check", "Report"))
+        pairs = [(e["source"], e["target"]) for e in spec["dataflow"]["edges"]]
+        assert len(pairs) == len(set(pairs)), f"a connection was drawn twice: {pairs}"
+        assert sorted(pairs) == sorted([(fetch, "cleaner"), ("cleaner", check), (check, report)])
+        targets = [target for _, target in pairs]
+        assert (targets.count("cleaner"), targets.count(check)) == (1, 1)
+        # The apply drew only the connection the rows had not.
+        assert [(e["source"], e["target"]) for e in body["appliedGraph"]["edges"]] == [(check, report)]
+        assert [n["id"] for n in body["appliedGraph"]["nodes"]] == [report]
+
 
 #: Why a test draft's node type is new. A draft that adds a template carries
 #: one: the closest existing templates and why each is inadequate.
