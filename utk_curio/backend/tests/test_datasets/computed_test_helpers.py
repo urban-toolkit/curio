@@ -3,10 +3,26 @@ from __future__ import annotations
 
 import json
 from datetime import datetime, timezone
+from pathlib import Path
 
 
 def auth_headers(token: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+
+
+def bundle_parts_size(bundle: Path) -> int:
+    """The bytes of the files the ``bundle.json`` at *bundle* lists, read from
+    the files themselves. Each part's ``file`` is relative to the dataset's
+    folder, two levels above ``bundle.json``. A bundle that lists no part, or a
+    part that is not there, fails the test that asked."""
+    bundle = Path(bundle)
+    folder = bundle.parent.parent
+    spec = json.loads(bundle.read_text(encoding="utf-8"))
+    files = [folder / part["file"] for part in spec["parts"]]
+    assert files, f"{bundle} lists no parts"
+    missing = [str(file) for file in files if not file.is_file()]
+    assert not missing, f"{bundle} lists parts that are not there: {missing}"
+    return sum(file.stat().st_size for file in files)
 
 
 def write_legacy_computed_dir(
