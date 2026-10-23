@@ -192,6 +192,9 @@ ZOOM_DELTA = 240
 REMOVED_MIN_SHARE = 0.02
 #: The map's background, the colour where it draws nothing (autk-map's style).
 MAP_BACKGROUND = (232, 239, 242)
+#: autk-map's highlight, #5dade2: the colour the map draws a Map Edits node's
+#: tools in, its corners and the shape being drawn or changed.
+MAP_HIGHLIGHT = (93, 173, 226)
 #: How long a run of the dataflow, or of a node and the nodes below it, may take.
 RUN_MS = 300000
 
@@ -1343,7 +1346,7 @@ def test_the_chicago_loop_layers_take_a_point_a_reshaped_road_and_a_property_on_
         frame_nodes(page, [edit_id, map_id])
         dismiss_toasts(page)
         wait_for_node_still(page, map_id)
-        handle = page.evaluate(_HANDLE_JS, map_id)
+        handle = _corner_to_drag(page, map_id)
         assert handle, "Move points shows no corner of the road on the map to drag"
         drop = assert_in_view(page, handle["x"] + 24, handle["y"] + 16, "where the road's corner is dropped")
         _frame(page, "reshape-road", "drag", "before", map_id, edit_id, stem=CHICAGO_STEM)
@@ -1369,7 +1372,8 @@ def test_the_chicago_loop_layers_take_a_point_a_reshaped_road_and_a_property_on_
     pan.click()
     expect(pan).to_have_attribute("aria-checked", "true")
     expect(reshape).to_have_attribute("aria-checked", "false")
-    expect(_overlay(page, map_id).locator('circle[data-handle="corner"]')).to_have_count(0)
+    expect(_overlay(page, map_id)).to_have_attribute("data-corners", "[]")
+    expect(_overlay(page, map_id).locator("svg")).to_have_count(0)
     edit.get_by_test_id("interaction-solo").uncheck()
 
     # 3. A property on every park.
@@ -1495,34 +1499,73 @@ _DRAWN_POINT_JS = """async ({ id, at, background }) => {
     return null;
 }"""
 
-# A corner handle Move points draws over the map, in page coordinates: the
-# first whose middle is well inside the map's canvas, room left for the drag,
-# and on top there.
-_HANDLE_JS = """(id) => {
+# A corner Move points shows, in page coordinates: the first the map's overlay
+# lists (data-corners, in the map's own pixels, which its box scales to the
+# page) whose middle is well inside the map's canvas, room left for the drag,
+# with the map on top there and drawing it in its highlight.
+_HANDLE_JS = """async ({ id, highlight }) => {
     const node = document.querySelector(`.react-flow__node[data-id="${id}"]`);
     const canvas = document.getElementById('autk-grammar-map-' + id);
-    if (!node || !canvas) return null;
+    const overlay = node && node.querySelector('[data-testid="map-edit-overlay"]');
+    if (!overlay || !canvas) return null;
+    await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+    if (window.__curio_renderMapsForReading) await window.__curio_renderMapsForReading();
+    const img = new Image();
+    img.src = canvas.toDataURL('image/png');
+    await img.decode();
+    const scratch = document.createElement('canvas');
+    scratch.width = img.width;
+    scratch.height = img.height;
+    const ctx = scratch.getContext('2d');
+    ctx.drawImage(img, 0, 0);
+    const px = ctx.getImageData(0, 0, img.width, img.height).data;
     const area = canvas.getBoundingClientRect();
-    for (const circle of node.querySelectorAll('[data-testid="map-edit-overlay"] circle[data-handle="corner"]')) {
-        const box = circle.getBoundingClientRect();
-        const x = box.left + box.width / 2, y = box.top + box.height / 2;
+    const box = overlay.getBoundingClientRect();
+    const sx = box.width / Number(overlay.getAttribute('data-map-width'));
+    const sy = box.height / Number(overlay.getAttribute('data-map-height'));
+    const lit = (x, y) => {
+        const cx = Math.floor((x - area.left) * img.width / area.width);
+        const cy = Math.floor((y - area.top) * img.height / area.height);
+        if (cx < 0 || cy < 0 || cx >= img.width || cy >= img.height) return false;
+        const i = (cy * img.width + cx) * 4;
+        return px[i + 3] >= 250 && Math.max(Math.abs(px[i] - highlight[0]), Math.abs(px[i + 1] - highlight[1]),
+            Math.abs(px[i + 2] - highlight[2])) <= 16;
+    };
+    for (const corner of JSON.parse(overlay.getAttribute('data-corners') || '[]')) {
+        const x = box.left + corner.x * sx, y = box.top + corner.y * sy;
         const inside = x > area.left + 30 && x < area.right - 30 && y > area.top + 30 && y < area.bottom - 30;
-        if (inside && document.elementFromPoint(x, y) === circle) {
-            return { x, y, ring: circle.getAttribute('data-ring'), index: circle.getAttribute('data-index') };
+        if (inside && document.elementFromPoint(x, y) === canvas && lit(x, y)) {
+            return { x, y, ring: corner.ring, index: corner.index };
         }
     }
     return null;
 }"""
 
-# Where the corner handle *ring*, *index* is drawn now, in page coordinates.
+# Where the corner *ring*, *index* is shown now, in page coordinates.
 _HANDLE_AT_JS = """({ id, ring, index }) => {
     const node = document.querySelector(`.react-flow__node[data-id="${id}"]`);
-    const circle = node && node.querySelector(
-        `[data-testid="map-edit-overlay"] circle[data-handle="corner"][data-ring="${ring}"][data-index="${index}"]`);
-    if (!circle) return null;
-    const box = circle.getBoundingClientRect();
-    return { x: box.left + box.width / 2, y: box.top + box.height / 2 };
+    const overlay = node && node.querySelector('[data-testid="map-edit-overlay"]');
+    if (!overlay) return null;
+    const corner = JSON.parse(overlay.getAttribute('data-corners') || '[]')
+        .find((c) => c.ring === ring && c.index === index);
+    if (!corner) return null;
+    const box = overlay.getBoundingClientRect();
+    return {
+        x: box.left + corner.x * box.width / Number(overlay.getAttribute('data-map-width')),
+        y: box.top + corner.y * box.height / Number(overlay.getAttribute('data-map-height')),
+    };
 }"""
+
+
+def _corner_to_drag(page, map_id: str) -> dict | None:
+    """A corner of the feature Move points shows on the map *map_id* to drag
+    (``_HANDLE_JS``), once the map draws one, or None after 10 s."""
+    deadline = time.time() + 10
+    while True:
+        handle = page.evaluate(_HANDLE_JS, {"id": map_id, "highlight": list(MAP_HIGHLIGHT)})
+        if handle or time.time() >= deadline:
+            return handle
+        page.wait_for_timeout(250)
 
 
 def _handed_layers(stored: dict) -> dict:
