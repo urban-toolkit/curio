@@ -41,6 +41,8 @@ import ast
 import logging
 import re
 
+from utk_curio.backend.app.agents.domain import agent_text
+
 log = logging.getLogger(__name__)
 
 KIND_SINGLE = "single"
@@ -345,10 +347,7 @@ def refusal_text(shape: dict, violation: dict) -> str:
         slots.append(f"{_slot_chip(slot)} = {label}{detail}")
     body = "; ".join(slots)
     chips = [_slot_chip(slot) for slot in (shape.get("slots") or [])[:2]] or [f"{circle}[0]", f"{circle}[1]"]
-    return (
-        f"input contract refused: {shape.get('length')} inputs reach this node on "
-        f"one circle, so `{circle}` is a LIST of them in order: " + body + ". "
-        f"Your code used `{used}`: a list has no attribute {attribute!r}. "
-        f"Read the input you need by its index ({', '.join(chips)}, ...): "
-        f"`{circle}` alone is the list itself."
+    return agent_text.message(
+        "input-contract.refused", count=shape.get('length'), circle=circle, body=body, used=used,
+        attribute_name=repr(attribute), chips=', '.join(chips),
     )

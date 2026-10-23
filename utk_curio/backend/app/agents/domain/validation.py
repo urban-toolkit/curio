@@ -19,6 +19,7 @@ Verdicts:
 from __future__ import annotations
 
 from utk_curio.backend.app.execution import runner
+from utk_curio.backend.app.agents.domain import agent_text
 
 # Sandbox runtime dataType → template port type vocabulary. Unmapped types
 # skip the compatibility check (fail-open — honesty over false alarms).
@@ -75,19 +76,14 @@ def _consumer_type_mismatch(
             continue
         if absent:
             label = (consumer.get("goal") or edge.get("target") or "?")
-            return (
-                "the code returned no output (None), which downstream node "
-                f"{str(label)[:60]!r} cannot accept (it declares "
-                f"{', '.join(sorted(declared))}) — return the data this node "
-                "produces, or, if this node loads data and its source cannot be "
-                "read, say so in one line instead of returning code"
+            return agent_text.message(
+                "result-shape.consumer-no-output", label=repr(str(label)[:60]), declared=', '.join(sorted(declared)),
             )
         if port_type not in declared:
             label = (consumer.get("goal") or edge.get("target") or "?")
-            return (
-                f"the output type {output_data_type!r} is not accepted by "
-                f"downstream node {str(label)[:60]!r} (declares "
-                f"{', '.join(sorted(declared))})"
+            return agent_text.message(
+                "result-shape.consumer-type-mismatch", output_data_type=repr(output_data_type),
+                label=repr(str(label)[:60]), declared=', '.join(sorted(declared)),
             )
     return None
 

@@ -504,16 +504,25 @@ def _lit(page, map_id: str, table: str = LAYER, key: str = KEY) -> list | None:
 
 def _wait_for_lit(page, map_id: str, expected, what: str, table: str = LAYER, key: str = KEY) -> None:
     """Wait until the map lights exactly the rows *expected* names, a *key*
-    per row, on *table*. autk-map holds what it lights before it draws it, so
-    no frame is waited for."""
+    per row, on *table*; with *expected* a set, every row holding one of those
+    keys and no other, however many rows each has. autk-map holds what it
+    lights before it draws it, so no frame is waited for."""
+    def matches(got) -> bool:
+        if got is None:
+            return False
+        if isinstance(expected, set):
+            return set(got) == expected and (len(got) > 0) == (len(expected) > 0)
+        return got == sorted(expected)
+
     got = None
     deadline = time.time() + 15
     while time.time() < deadline:
         got = _lit(page, map_id, table, key)
-        if got == sorted(expected):
+        if matches(got):
             return
         page.wait_for_timeout(250)
-    raise AssertionError(f"{what}: the map {map_id} lights the {key} {got} on {table}, not {sorted(expected)}")
+    shown = sorted(expected) if not isinstance(expected, set) else sorted(expected, key=str)
+    raise AssertionError(f"{what}: the map {map_id} lights the {key} {got} on {table}, not {shown}")
 
 
 _SHOWN_JS = """([selector, x, y]) => document.elementFromPoint(x, y) === document.querySelector(selector)"""
@@ -1317,6 +1326,9 @@ def test_the_chicago_loop_layers_take_a_point_a_reshaped_road_and_a_property_on_
     assert (keywords.get("layer"), keywords.get("key"), keywords.get("by_input")) == ("input_3", "osm_id", True), keywords
     expect(edit.locator('[data-edit-op="add"]')).to_contain_text(f"Add a point ({tree['id']})")
     _wait_for_redraw(page, map_id, "the tree's add")
+    # The tree just added is lit by the map itself: the trees are the layer
+    # the action works on, the one that picks.
+    _wait_for_lit(page, map_id, [tree["id"]], "the tree's add", table="input_3", key="osm_id")
 
     # 2. A road: Edit, only the roads shown, one picked with a click, and one
     # of its corners dragged with Move points.
@@ -1336,6 +1348,8 @@ def test_the_chicago_loop_layers_take_a_point_a_reshaped_road_and_a_property_on_
     rows, layer = _selection(page, edit_id, map_id)
     assert layer == "table_osm_roads", (rows, layer)
     (road_id,) = set(_ids(rows, "osm_id"))
+    # The picked road is lit by the map itself, every piece of it.
+    _wait_for_lit(page, map_id, {road_id}, "a road picked", table="table_osm_roads", key="osm_id")
     reshape = edit.get_by_test_id("interaction-reshape")
     reshape.click()
     expect(reshape).to_have_attribute("aria-checked", "true")

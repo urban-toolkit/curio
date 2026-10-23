@@ -355,12 +355,11 @@ def find(key: str, *, exclude=()) -> Example:
     example = next((e for e in used_examples() if e.is_named_by(key)), None)
     if example is None:
         raise LookupError(
-            f"no worked example has the key {key!r}; call examples.read with no key to list the keys"
+            agent_text.message("turn.example-unknown-key", key=repr(key))
         )
     if any(example.is_named_by(item) for item in exclude):
         raise LookupError(
-            f"the worked example {key!r} is not available in this project; "
-            "call examples.read with no key to list the ones that are"
+            agent_text.message("turn.example-excluded", key=repr(key))
         )
     return example
 

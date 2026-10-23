@@ -64,6 +64,8 @@ from __future__ import annotations
 import json
 import logging
 
+from utk_curio.backend.app.agents.domain import agent_text
+
 log = logging.getLogger(__name__)
 
 STATUS_VALID = "valid"
@@ -89,7 +91,7 @@ def _parse_json(content: str) -> tuple[object | None, str | None]:
     try:
         return json.loads(content), None
     except ValueError as exc:
-        return None, f"the document is not valid JSON: {exc}"
+        return None, agent_text.message("document.not-json", exc=exc)
 
 
 def validate_vega_lite(
@@ -103,7 +105,7 @@ def validate_vega_lite(
         return {"status": STATUS_INVALID, "detail": _detail(error)}
     if not isinstance(payload, dict):
         return {"status": STATUS_INVALID,
-                "detail": "a Vega-Lite document must be a JSON object"}
+                "detail": agent_text.message("document.vega-not-object")}
     try:
         import altair as alt
     except Exception as exc:  # noqa: BLE001
@@ -295,10 +297,10 @@ def check_vega_fields(
             return {
                 "status": STATUS_INVALID,
                 "detail": _detail(
-                    f"{where} reads {column!r}, a geometry column, but the dataset "
-                    f"{INPUTS_DATASET!r} stacks its inputs' rows without their geometry; "
-                    f"a view that draws it reads one input's own dataset, input_0 for "
-                    f"the first circle, input_1 for the second"
+                    agent_text.message(
+                        "document.vega-inputs-geometry", where=where, column=repr(column),
+                        inputs_dataset=repr(INPUTS_DATASET),
+                    )
                 ),
             }
     if opaque:
@@ -312,9 +314,10 @@ def check_vega_fields(
         return {
             "status": STATUS_INVALID,
             "detail": _detail(
-                f"{where} reads {unescaped_field(field)!r}, which is not a column of this node's "
-                f"input; available columns: {available}"
-                + (f" (plus {', '.join(added)}, added by Curio)")
+                agent_text.message(
+                    "document.vega-unknown-field", where=where, field=repr(unescaped_field(field)), available=available,
+                    added=', '.join(added),
+                )
             ),
         }
     return None
@@ -329,7 +332,7 @@ def _vega_message(exc: Exception) -> str:
     """
     lines = [line.strip() for line in str(exc).splitlines() if line.strip()]
     if not lines:
-        return _detail(f"{type(exc).__name__}: the document does not match the Vega-Lite schema")
+        return _detail(agent_text.message("document.vega-schema-mismatch", error=type(exc).__name__))
     head = lines[0]
     # A JSON path (``$.encoding.color.condition``) is the useful location when
     # altair emits one; the bare "On instance:" label and the schema dump that
@@ -373,7 +376,7 @@ def validate_autk_grammar(
         return {"status": STATUS_INVALID, "detail": _detail(error)}
     if not isinstance(payload, dict):
         return {"status": STATUS_INVALID,
-                "detail": "an Autark grammar document must be a JSON object"}
+                "detail": agent_text.message("document.autk-not-object")}
     several_views = contracts.autk_one_view_problem(payload)
     if several_views:
         return {"status": STATUS_INVALID, "detail": _detail(several_views)}
@@ -421,14 +424,16 @@ def _messages(error, jsonschema) -> list[str]:
         types = [t for sub in error.context
                  for t in ([sub.validator_value] if isinstance(sub.validator_value, str) else sub.validator_value)]
         given = _JSON_TYPES.get(type(error.instance), "value")
-        return [f"{_where(error)}: expected {_or(dict.fromkeys(types))}, not {given}"]
+        return [agent_text.message(
+            "document.autk-wrong-type", where=_where(error), types=_or(dict.fromkeys(types)), given=given,
+        )]
     lacking = [_lacking(subs) for subs in branches.values()]
     if len(lacking) > 1 and all(lacking):
         # Every branch that fits only lacks fields: what all of them need, then the choice.
         common = [f for f in lacking[0] if all(f in fields for fields in lacking)]
         choice = [f for fields in lacking for f in fields if f not in common]
         needs = ([_and([f'"{f}"' for f in common])] if common else []) + (
-            [f"one of {_or(dict.fromkeys(choice))}"] if choice else [])
+            [agent_text.message("document.autk-one-of", choices=_or(dict.fromkeys(choice)))] if choice else [])
         return [f"{_where(error)}: missing " + ", and ".join(needs)]
     best = jsonschema.exceptions.best_match([sub for subs in branches.values() for sub in subs])
     return [m for sub in branches[best.relative_schema_path[0]] for m in _messages(sub, jsonschema)]
@@ -447,7 +452,7 @@ def _where(error) -> str:
     path = ""
     for part in error.absolute_path:
         path += f"[{part}]" if isinstance(part, int) else (f".{part}" if path else str(part))
-    return path or "the document"
+    return path or agent_text.message("document.root-name")
 
 
 def _and(items) -> str:
@@ -482,16 +487,13 @@ def _draws_nothing(payload: dict, schema: dict) -> str | None:
     from utk_curio.backend.app.agents.domain import contracts
 
     if not any(payload.get(f) not in (None, [], {}) for f in contracts.autk_families(schema)):
-        return (
-            "the document has nothing for Autark to run; it must be "
-            + contracts.render_autk_shape(schema)
-        )
+        return agent_text.message("document.autk-runs-nothing", shape=contracts.render_autk_shape(schema))
     layers, _ = contracts.map_layers(schema)
     maps = payload.get("map")
     for index, grammar in enumerate(maps if isinstance(maps, list) else [maps] if maps else []):
         if isinstance(grammar, dict) and not grammar.get(layers):
             where = f"map[{index}]" if isinstance(maps, list) else "map"
-            return f'"{where}.{layers}" is empty, and a map with no layers renders nothing'
+            return agent_text.message("document.autk-map-no-layers", where=where, layers=layers)
     return None
 
 
@@ -520,16 +522,10 @@ def grammar_shape(grammar: str | None) -> str:
         try:
             return contracts.render_autk_shape(contracts.load_autk_schema())
         except Exception:  # noqa: BLE001
-            return "an Autark grammar JSON document"
+            return agent_text.message("document.autk-shape-fallback")
     if grammar == "vega-lite":
-        # The words stay as they were until this refusal moves into the base entry.
-        dash = chr(0x2014)
-        return (
-            f'a Vega-Lite JSON document {dash} {{"$schema": "{contracts.VEGA_SCHEMA_URL}", "mark": …, '
-            '"encoding": …}. Do NOT include a "data" block: Curio injects this node\'s input as '
-            "the data at render time"
-        )
-    return "a JSON document"
+        return agent_text.message("document.vega-shape", schema_url=contracts.VEGA_SCHEMA_URL)
+    return agent_text.message("document.json-shape")
 
 
 def _authors_nothing(node_type: object, content_kind: object) -> bool:
@@ -607,9 +603,12 @@ def validate(
             return {
                 "status": STATUS_INVALID,
                 "detail": _detail(
-                    "there is no document here at all"
-                    + (f" (the reply was {stripped!r})" if stripped else "")
-                    + f"; this node's content must be {grammar_shape(grammar)}"
+                    agent_text.message(
+                        "document.no-document", reply=" " + agent_text.message(
+                            "document.no-document-reply", reply=repr(stripped),
+                        ) if stripped else "",
+                        shape=grammar_shape(grammar),
+                    )
                 ),
             }
         # A wired box's marker, or nothing at all: there is no document.
@@ -626,8 +625,9 @@ def validate(
         return {
             "status": STATUS_INVALID,
             "detail": _detail(
-                f"the reply is prose, not a document ({stripped[:120]!r}…); this "
-                f"node's content must be {grammar_shape(grammar)}"
+                agent_text.message(
+                    "document.prose-not-document", reply=repr(stripped[:120]), shape=grammar_shape(grammar),
+                )
             ),
         }
     if refused_chips:
@@ -651,8 +651,4 @@ def refusal_text(node_type: object, verdict: dict, *, grammar_id: object = None)
         grammar or canonical_suffix(node_type) or "document"
     )
     detail = _detail(verdict.get("detail")).removesuffix(".")
-    return (
-        f"document refused — this node's content is a {what} document and it does not "
-        f"validate: {detail}. Fix exactly that and return the "
-        "whole document; nothing is written to the node until it validates."
-    )
+    return agent_text.message("document.refused", what=what, detail=detail)

@@ -28,13 +28,13 @@ from __future__ import annotations
 
 from utk_curio.backend.app.agents.domain import map_edits
 from utk_curio.backend.app.execution import runtime_journal
+from utk_curio.backend.app.agents.domain import agent_text
 
 _MAX_NEIGHBORS = 8
 _GOAL_MAX_CHARS = 200
 _INTENT_MAX_CHARS = 300
 _CONTENT_MAX_CHARS = 6000
 _MAX_DATASETS = 12
-_CONTENT_TRUNCATION_MARKER = "\n…[truncated: content exceeds the context bound]"
 #: dev/135: the same bound dev/111's client-side summary uses, so the runtime
 #: and the browser cannot describe one node's failure at different sizes.
 _RUNTIME_MESSAGE_CHARS = 240
@@ -190,7 +190,7 @@ def compose_node_context(
 
     current = str(node.get("content") or "")
     if len(current) > _CONTENT_MAX_CHARS:
-        current = current[:_CONTENT_MAX_CHARS] + _CONTENT_TRUNCATION_MARKER
+        current = current[:_CONTENT_MAX_CHARS] + ("\n" + agent_text.message("context.content-truncated"))
     datasets = []
     for entry in (dataflow.get("datasets") or [])[:_MAX_DATASETS]:
         if isinstance(entry, dict):
