@@ -34,6 +34,7 @@ from utk_curio.backend.app.agents.application import delegation
 from utk_curio.backend.app.agents.application import source_grounding
 from utk_curio.backend.app.agents.application.errors import AgentServiceError
 from utk_curio.backend.app.agents.domain import content
+from utk_curio.backend.app.agents.domain import dashboards
 from utk_curio.backend.app.agents.domain import failure_text
 from utk_curio.backend.app.agents.domain.counts import count_label
 from utk_curio.backend.app.agents.domain import map_edits
@@ -585,6 +586,13 @@ class SolveBatch:
         if err:
             self.results[node_id] = {"status": "failed", "error": err[:300]}
             return {"nodeId": node_id, "status": "failed", "error": err[:300]}
+        # A pinned tile's spec is held to what its dashboard publishes, unrun
+        # too: the node ends on it, since Solve cannot add the node upstream
+        # that its data needs.
+        unpublishable = dashboards.refusal(self.user_key, self.project_id, node, text_out)
+        if unpublishable:
+            self.results[node_id] = {"status": "failed", "error": unpublishable[:300]}
+            return {"nodeId": node_id, "status": "failed", "error": unpublishable[:300]}
         # A Map Edits node's code is held to what the node reads, unrun too.
         unreadable = map_edits.refusal(
             self.user_key, self.project_id, node.get("type"), text_out, current=str(node.get("content") or ""),
