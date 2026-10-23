@@ -17,6 +17,8 @@ from __future__ import annotations
 
 import json
 
+import pytest
+
 from utk_curio.backend.tests._support.agent_routes import _auth
 from utk_curio.backend.tests.test_agents.test_map_edits_grounding import _project, _seed_builtin, _write_tail
 from utk_curio.backend.tests.test_agents.test_source_grounding_routes import (
@@ -183,9 +185,68 @@ class TestTheMintSendsTheSpecBack:
         assert proposal["preview"] == MAP_STYLED
 
 
+def _solve_a_pinned_planned_map(client, user_and_token, monkeypatch, *, verify: bool) -> dict:
+    """A plan's Autark map, applied, then pinned by the user, then solved,
+    with the builder writing ``MAP_WITH_PARKS`` for it each time it is asked.
+    Gives the map's id (``tile``), the Solve's answer (``body``), where the
+    dataflow is stored (``key``, ``project``) and each ask of the builder for
+    the map's spec (``asked``). Nothing reaches a sandbox."""
+    from utk_curio.backend.app.projects import storage as projects_storage
+    from utk_curio.backend.app.projects.services import _user_dir_key
+
+    user, token = user_and_token
+    project = _project(client, user, token, [])
+    plan = {
+        "goal": "a map of the parks of Boston Harbor",
+        "nodes": [{"ref": "map", "nodeType": AUTK, "title": "Parks", "intent": "Map the parks of Boston Harbor"}],
+        "edges": [],
+    }
+    plan_tail = "Plan.\n```curio.v1\n" + json.dumps({"dataflowPlan": plan}) + "\n```"
+    asked: list[str] = []
+
+    def _reply(calls):
+        frame = calls[-1][-1]["content"]
+        if "[delegated task" not in frame:
+            return plan_tail
+        asked.append(frame)
+        return MAP_WITH_PARKS
+
+    def _no_sandbox(endpoint, payload):
+        return {"stdout": [], "stderr": "", "output": {"path": "art-1", "dataType": "dataframe"}}
+
+    monkeypatch.setattr("utk_curio.backend.app.execution.runner._http_exec", _no_sandbox)
+    _install(client, token, project, DFB, NB)
+    att = _attach(client, token, project, DFB)
+    _script(monkeypatch, [_reply])
+    [proposal] = _proposals(_run(client, token, project, att, "plan a map of the parks of Boston Harbor"))
+    applied = client.post(
+        f"/api/agents/projects/{project}/attachments/{att}/proposals/{proposal['proposalId']}/apply",
+        headers=_auth(token),
+    ).get_json()
+    tile = next(n["id"] for n in applied["appliedGraph"]["nodes"] if str(n.get("type", "")).startswith(AUTK))
+    # The user pins the planned map before Solve fills it.
+    key = _user_dir_key(user)
+    spec = projects_storage.read_spec(key, project)
+    next(n for n in spec["dataflow"]["nodes"] if n["id"] == tile)["dashboardPinned"] = True
+    projects_storage.write_spec(key, project, spec)
+    body = client.post(
+        f"/api/agents/projects/{project}/attachments/{att}/solve",
+        json={"verify": verify}, headers=_auth(token),
+    ).get_json()
+    return {"tile": tile, "body": body, "key": key, "project": project, "asked": asked}
+
+
+def _content(key: str, project: str, node_id: str) -> str:
+    from utk_curio.backend.app.projects import storage as projects_storage
+
+    spec = projects_storage.read_spec(key, project)
+    return next(n for n in spec["dataflow"]["nodes"] if n["id"] == node_id)["content"]
+
+
 class TestSolveEndsTheNodeOnIt:
     """Solve cannot add the node upstream that the remedy needs, so the
-    refusal ends the node with its message instead of a correction round."""
+    refusal ends the node with its message instead of a correction round, and
+    the node waits for the user."""
 
     def test_the_verified_loop_ends_the_node_before_the_sandbox_without_a_correction(self, app, tmp_curio):
         from utk_curio.backend.app.agents.domain import dashboards
@@ -205,43 +266,28 @@ class TestSolveEndsTheNodeOnIt:
     ):
         """``verify: false`` writes content without running it, and holds a
         pinned tile's spec to its dashboard as a verified Solve does."""
-        from utk_curio.backend.app.projects import storage as projects_storage
-        from utk_curio.backend.app.projects.services import _user_dir_key
-
-        user, token = user_and_token
-        project = _project(client, user, token, [])
-        plan = {
-            "goal": "a map of the parks of Boston Harbor",
-            "nodes": [{"ref": "map", "nodeType": AUTK, "title": "Parks", "intent": "Map the parks of Boston Harbor"}],
-            "edges": [],
-        }
-        plan_tail = "Plan.\n```curio.v1\n" + json.dumps({"dataflowPlan": plan}) + "\n```"
-
-        def _reply(calls):
-            return MAP_WITH_PARKS if "[delegated task" in calls[-1][-1]["content"] else plan_tail
-
-        _install(client, token, project, DFB, NB)
-        att = _attach(client, token, project, DFB)
-        _script(monkeypatch, [_reply])
-        [proposal] = _proposals(_run(client, token, project, att, "plan a map of the parks of Boston Harbor"))
-        applied = client.post(
-            f"/api/agents/projects/{project}/attachments/{att}/proposals/{proposal['proposalId']}/apply",
-            headers=_auth(token),
-        ).get_json()
-        tile = next(n["id"] for n in applied["appliedGraph"]["nodes"] if str(n.get("type", "")).startswith(AUTK))
-        # The user pins the planned map before Solve fills it.
-        key = _user_dir_key(user)
-        spec = projects_storage.read_spec(key, project)
-        next(n for n in spec["dataflow"]["nodes"] if n["id"] == tile)["dashboardPinned"] = True
-        projects_storage.write_spec(key, project, spec)
-        body = client.post(
-            f"/api/agents/projects/{project}/attachments/{att}/solve",
-            json={"verify": False}, headers=_auth(token),
-        ).get_json()
-        result = body["results"][tile]
+        solved = _solve_a_pinned_planned_map(client, user_and_token, monkeypatch, verify=False)
+        result = solved["body"]["results"][solved["tile"]]
         assert result["status"] == "failed" and result["error"] == _message(), result
-        spec = projects_storage.read_spec(key, project)
-        assert next(n for n in spec["dataflow"]["nodes"] if n["id"] == tile)["content"] == ""
+        assert _content(solved["key"], solved["project"], solved["tile"]) == ""
+
+    @pytest.mark.parametrize("verify", [True, False], ids=["verified", "unverified"])
+    def test_a_later_pass_of_the_session_leaves_the_node_to_the_user(
+        self, client, user_and_token, tmp_curio, monkeypatch, verify,
+    ):
+        """The node waits for the user, who loads the data in a node upstream
+        or unpins the tile: its result names that remedy, and the session's
+        next turn does not ask the builder for the spec again. The suite's
+        sessions make two turns (``_pinned_repair_budget`` in conftest.py)."""
+        from utk_curio.backend.app.agents.domain import dashboards
+
+        solved = _solve_a_pinned_planned_map(client, user_and_token, monkeypatch, verify=verify)
+        tile = solved["tile"]
+        result = solved["body"]["results"][tile]
+        assert result["status"] == "failed", result
+        assert result["remedy"] == {"kind": dashboards.KIND, "nodeId": tile}, result
+        assert len(solved["asked"]) == 1, f"the builder was asked for the spec {len(solved['asked'])} times"
+        assert _content(solved["key"], solved["project"], tile) == ""
 
 
 class TestAPlanNamesTheTilesItRemoves:
