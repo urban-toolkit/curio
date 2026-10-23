@@ -408,7 +408,9 @@ class AttachmentTurn:
         loop_ctx = self.loop_ctx
         inputs = req.get("inputs") or {}
         # dev/73: node-scoped content generation homes its trace AND its
-        # minted review at the node's own agent.
+        # minted review at the node's own agent. Content for a new node (a
+        # nodeType and no nodeId) has no node: it returns to this run, for
+        # its node.create.
         gen_node_id = (
             agents_delegates._delegate_target_node_id(loop_ctx, inputs)
             if req["capability"] == "node.content.generate"

@@ -112,13 +112,13 @@ _PROMPT_RUNS = {
 #: for them, and nothing asks for the keywords to be extracted.
 _PLANNER_MODES = [
     ("Plan a dataflow's tasks", ["workflow.plan.create"],
-     "prompts/new_subtasks_prompt.md", ["Dataflow Builder"]),
+     "prompts/new_subtasks_prompt.md", []),
     ("Plan a follow-up from a node's run", ["execution.followup.plan"],
-     "prompts/new_subtask_from_exec_prompt.md", ["Node Builder", "Dataflow Builder"]),
+     "prompts/new_subtask_from_exec_prompt.md", ["Node Builder"]),
     ("Refresh a dataflow's tasks", ["workflow.plan.refresh"],
-     "prompts/task_refresh_prompt.md", ["Dataflow Builder"]),
+     "prompts/task_refresh_prompt.md", []),
     ("Check a plan's coherence", ["workflow.coherence.validate"],
-     "prompts/evaluate_coherence_subtasks_prompt.md", ["Dataflow Builder"]),
+     "prompts/evaluate_coherence_subtasks_prompt.md", []),
     ("Bind the keywords of a description", ["workflow.keyword.bind"],
      "prompts/keywords_binding_prompt.md", ["Dataset Finder"]),
     ("Extract the keywords of a description", ["workflow.keywords.extract"],

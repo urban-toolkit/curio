@@ -450,6 +450,14 @@ the params other than {where} are {rest_bytes} bytes (max {max_bytes}): put the 
 
 toolRequest.params is {params_bytes} bytes (max {budget})
 
+## request.notes-too-big
+
+params.notes is {notes_bytes} bytes (max {max_bytes}): give at most {max_notes} notes, each a finding in a few sentences
+
+## request.params-beside-notes-too-big
+
+the params other than params.notes are {rest_bytes} bytes (max {max_bytes}): keep dirName and reason short, and put the findings in params.notes
+
 ## plan.field-not-string
 
 {where} must be a string
@@ -800,7 +808,7 @@ an Autark grammar JSON document, such as the map {"map": {"{layers}": [{example_
 
 ## result-shape.consumer-no-output
 
-the code returned no output (None), which downstream node {label} cannot accept (it declares {declared}): return the data this node produces, or, if this node loads data and its source cannot be read, say so in one line instead of returning code
+the code returned no output (None), which downstream node {label} cannot accept (it declares {declared}): return the data this node produces, or, if it cannot be produced (its source cannot be read, or its inputs cannot be joined), say so in one line instead of returning code
 
 ## result-shape.consumer-type-mismatch
 
@@ -820,7 +828,7 @@ Its inputs were: {described}
 
 ## result-shape.null-advice
 
-A join that matched nothing with how="left" (or a fill) does exactly this: compare the key columns' VALUES, not their names, and join on columns whose values are the same kind of thing. Never keep rows of nulls, fabricate values, or let a join that matched nothing stand so the dataflow can proceed. If this node loads data and what it loads cannot be joined, say so in one line and return no code.
+A join that matched nothing with how="left" (or a fill) does exactly this: compare the key columns' VALUES, not their names, and join on columns whose values are the same kind of thing. Never keep rows of nulls, fabricate values, or let a join that matched nothing stand so the dataflow can proceed. If these inputs cannot be joined, say so in one line and return no code.
 
 ## result-shape.empty
 
@@ -836,7 +844,7 @@ Its inputs were NOT empty: {described}
 
 ## result-shape.empty-advice
 
-A join, merge or filter matched nothing: compare the key columns' VALUES, not their names, since two columns can both look like an id and describe different things (a community-area number is not a census tract id). Either join on columns whose values are the same kind of thing, or, if this node loads data and what it loads cannot be joined, say so in one line with no code.
+A join, merge or filter matched nothing: compare the key columns' VALUES, not their names, since two columns can both look like an id and describe different things (a community-area number is not a census tract id). Either join on columns whose values are the same kind of thing, or, if they cannot be joined, say so in one line with no code.
 
 ## result-shape.empty-render
 
@@ -860,11 +868,11 @@ the code ran and returned NO output{typed}: a node must return the data it produ
 
 ## result-shape.absent-conclusion
 
-Your code says: {conclusion}. If this node loads data and that is your conclusion, return that sentence as your whole answer, with no code at all, and it is recorded as this node's honest outcome
+Your code says: {conclusion}. If that is your conclusion, return that sentence as your whole answer, with no code at all, and it is recorded as this node's honest outcome
 
 ## result-shape.absent-decline
 
-If this node loads data and its source cannot be read, say so in one line with no code, and it is recorded as this node's honest outcome
+If this node cannot produce its data (its source cannot be read, or its inputs cannot be joined), say so in one line with no code, and it is recorded as this node's honest outcome
 
 ## result-shape.absent-given
 
@@ -1355,6 +1363,10 @@ the request itself answered {http_status}{where}{said}
 ## solve.builder-declined
 
 the content builder declined: {decline}
+
+## solve.builder-answered
+
+the content builder answered: {answer}
 
 ## solve.repeated-attempt
 

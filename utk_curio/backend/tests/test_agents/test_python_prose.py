@@ -322,6 +322,7 @@ FACTS = [
     ("tools.md", "{{egress.calls_per_run}}", "utk_curio.backend.app.common.egress_policy", "MAX_CALLS_PER_RUN"),
     ("tools.md", "{{models.search_max_rows}}", "utk_curio.backend.app.agents.domain.contracts", "MODELS_SEARCH_MAX_ROWS"),
     ("tools.md", "{{models.max_labels}}", "utk_curio.backend.app.agents.domain.contracts", "MODEL_LABELS_MAX"),
+    ("tools.md", "{{notes.max}}", "utk_curio.backend.app.agents.domain.contracts", "MAX_NOTES"),
     ("protocol.md", "{{suggested_prompts.max_chars}}", "utk_curio.backend.app.agents.domain.content", "_PROMPT_MAX_CHARS"),
     ("protocol.md", "{{suggested_prompts.alternatives}}", "utk_curio.backend.app.agents.domain.content", "_MAX_ALTERNATIVES"),
     ("protocol.md", "{{candidates.rows_per_lane}}", "utk_curio.backend.app.agents.domain.content", "_CANDIDATES_MAX_ROWS_PER_LANE"),
