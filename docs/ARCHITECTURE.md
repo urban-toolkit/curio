@@ -606,6 +606,20 @@ whose code is its only state: one call of `curio_edit_features`
   Edits node the code and the name of the agent that wrote it, which the
   apply's `appliedContent.agent` and Solve's `node_result.agent` carry, and the
   entry the writer files in the node's history is named after that agent.
+- An agent's applied change to a node's settings (`node.settings.write`, see
+  [Dataflow plans](#dataflow-plans)) goes through the node's own setters the
+  same way (`utils/nodeSettingsWriters.ts`), registered by node id and setting
+  while the node is mounted: the Data Pool's, the Simple View's and the Spatial
+  Join's behaviors register the setter their selects pick through, `NodeEditor`
+  the one its Widgets tab gives a value through (only with a Widgets tab), and
+  the Parameter node its own. `applyNodeSettings` hands each setting to its
+  setter, so the pool resolves its selections again, the join joins again, and
+  a widget's new value marks its node stale, leaves the dataflow Unsaved and
+  asks for an automatic run. A setting no mounted setter takes goes into the
+  node's data through `updateDataNode`, as a load of its metadata puts it
+  there, and a widget's value made there still marks what reads it stale. It
+  files no Provenance entry: an entry holds code, so putting one back could
+  not put back a setting.
 - Agents learn the call from `knowledge/map-edits.md` in the base entry, which
   the preamble includes: its edits and their fields, its keywords, and the words
   a goal names edits by. `test_map_edits_page.py` compares the page with the
@@ -1852,6 +1866,8 @@ A Data Pool's conflict modes (`dataPool`, `agents/domain/data_pool_settings.py`)
 - **The view's image column.** The view trims the name it reads and reads an empty one as every image column (`resolveImageColumnChoice`), so an empty name is refused and a name is kept trimmed.
 
 A setting is refused on a node whose template's `behavior` is not `data-pool` or `simple-vis`. The card's rows, the plan's text preview and a `node.create`'s summary say each in its node's own words, such as `Conflict between visualizations: Merge (AND)` or `Image column: overlay_url`: the pool's selects, the view's picker, the card and the backend all read them from `src/contracts/nodeSettings.json` ([Shared Constants](#shared-constants)). The canvas bridge hands each to the live node as a load does (`dataPoolFromSpec` for the modes). `dataflow.read` rows show what each saved node's setting makes it do, its defaults left out: a pool's modes other than `OVERWRITE`, a view's column, and a join's operation and output other than `intersects` and `pairs`. The preamble's Trill block shows both shapes.
+
+An agent changes a node already on the canvas with `node.settings.write` (`proposals/mint._mint_node_settings_write`): any of `dataPool`, `simpleVis` and `spatialJoin`, and `widgets` as `{name: value}`, for the node it names or the one it is attached to. Each setting is read by its node's own rule (`node_settings.parse_change`): a key it gives is picked as the node's select picks it, `OVERWRITE` and the join's defaults among them, a key it leaves out stays, and `{}` puts the whole setting back to its default, which for a Simple View is every image column. A setting the node's template does not keep is refused as a planned node's is, a widget value by the Widgets tab's rule (`widget_grammar.parse_values`, through `check_widget_value`), and a change that changes nothing is refused too, each in words from `messages.md`. The proposal pins what it touches (`_settings_basis`: the node's type, each setting it names as the node reads it, and each widget it gives a value to), so Apply answers 409 once one of them changed, and not when the node moved or another of its settings changed. Apply writes each setting as the node stores it (`node_settings.write`) and the widget values into `metadata.widgets`, logs the applied turn, and answers `appliedSettings` with the agent's name, which the canvas bridge hands to the node's own setters ([Editing features](#editing-features)). The card's lines say each change in the node's own words (`node_settings.describe_change`, `widget_grammar.describe_value`): a setting's label and value, `Image column: all` for every column, and a widget's label, else its name, with its value.
 
 ### Package drafts
 
