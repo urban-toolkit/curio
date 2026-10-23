@@ -10,6 +10,7 @@ import { PlanNodesList } from "./reviewCard/PlanNodesList";
 import { PlanScenariosList } from "./reviewCard/PlanScenariosList";
 import { PlanSummary } from "./reviewCard/PlanSummary";
 import { ReviewActions } from "./reviewCard/ReviewActions";
+import { SettingLines } from "./reviewCard/SettingLines";
 import { SourceBlock } from "./reviewCard/SourceBlock";
 import { ValidationBlock } from "./reviewCard/ValidationBlock";
 import type { PlanNodeReviewState } from "./reviewCard/reviewCardText";
@@ -30,8 +31,9 @@ export type { PlanNodeReviewState } from "./reviewCard/reviewCardText";
  * Since memo dev/142 (F4) the card COMPOSES one section per concern: source,
  * a draft's justification, plan summary and removals, package-draft details,
  * the backend trust edge, validation, the plan's node and connection lists,
- * the effect line, the actions — and keeps only what spans them: the busy /
- * error state of an action, and which section a proposal kind shows.
+ * a settings change's lines, the effect line and the actions. It keeps only
+ * what spans them: the busy / error state of an action, and which section a
+ * proposal kind shows.
  */
 export const AgentReviewCard: React.FC<{
   part: AgentProposalPart;
@@ -111,6 +113,8 @@ export const AgentReviewCard: React.FC<{
           onOpenAgentChat={onOpenAgentChat}
           delegateExists={delegateExists}
         />
+      ) : part.settingLines?.length ? (
+        <SettingLines lines={part.settingLines} />
       ) : (
         <div className={styles.preview}>{part.preview}</div>
       )}
