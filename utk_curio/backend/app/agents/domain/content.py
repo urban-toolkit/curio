@@ -612,7 +612,7 @@ def _parse_dataflow_plan_verbose(raw: object) -> tuple[dict | None, list[str]]:
         if widget_errors:
             errors.extend(widget_errors)
             continue
-        setting_errors = _plan_node_spatial_join(node, node_raw, where)
+        setting_errors = _plan_node_settings(node, node_raw, where)
         if setting_errors:
             errors.extend(setting_errors)
             continue
@@ -749,16 +749,15 @@ def _plan_node_widgets(node: dict, raw: object, where: str) -> list[str]:
     return []
 
 
-def _plan_node_spatial_join(node: dict, node_raw: dict, where: str) -> list[str]:
-    """A planned Spatial Join's operation and output, set on *node* (absent
-    when it sets none), or the errors. Which template takes one is the mint's
-    question: the grammar knows no roster."""
-    from utk_curio.backend.app.agents.domain import spatial_join_settings
+def _plan_node_settings(node: dict, node_raw: dict, where: str) -> list[str]:
+    """A planned node's settings, set on *node* (each absent when it sets
+    none), or the errors: a Spatial Join's operation and output, a Data Pool's
+    conflict modes, a Simple View's image column (``node_settings``). Which
+    template takes one is the mint's question: the grammar knows no roster."""
+    from utk_curio.backend.app.agents.domain import node_settings
 
-    key = spatial_join_settings.KEY
-    setting, problems = spatial_join_settings.parse(node_raw.get(key), f"{where}.{key}")
-    if setting:
-        node[key] = setting
+    settings, problems = node_settings.parse(node_raw, where)
+    node.update(settings)
     return problems
 
 
