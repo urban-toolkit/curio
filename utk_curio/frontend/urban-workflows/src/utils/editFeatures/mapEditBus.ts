@@ -48,13 +48,28 @@ export interface MapEditActive {
   key?: string;
 }
 
+/**
+ * One row of the picked feature, as the session's features hold it, and the
+ * shape the map's tools gave it. A feature of several rows, as an OSM
+ * building of several parts is, changes part by part (`featureParts`).
+ */
+export interface ReshapedPart {
+  row: EditedFeature;
+  geometry: Geometry;
+}
+
 export interface MapEditSession {
   interactionId: string;
   /** Show only this layer: the table the map keeps drawing, hiding its others. */
   solo?: string | null;
   active: MapEditActive | null;
-  onDrawn: (geometry: Geometry) => void;
-  onReshape: (id: SelectionId, geometry: Geometry) => void;
+  /**
+   * A shape drawn on the map, with the row the click that picked the feature
+   * landed on, if any: the part a new part of it joins.
+   */
+  onDrawn: (geometry: Geometry, pickedRow?: EditedFeature | null) => void;
+  /** New shapes for rows of the picked feature, made in one gesture: one change. */
+  onReshape: (parts: ReshapedPart[]) => void;
   /** Turns the shape mode (reshape, move) off again: the map's Done. */
   onShapeDone?: () => void;
 }

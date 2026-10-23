@@ -268,13 +268,13 @@ export function hitAt(features: readonly EditedFeature[], s: XY, p: Projection, 
  * The handle a press at screen point *s* takes: the nearest corner within
  * reach, else the nearest midpoint, where the map shows them.
  */
-export function handleAt(
-  handles: { corners: readonly Handle[]; midpoints: readonly Handle[] },
+export function handleAt<H extends Handle>(
+  handles: { corners: readonly H[]; midpoints: readonly H[] },
   s: XY,
   p: Projection,
-): (Handle & { kind: "corner" | "mid" }) | null {
-  const nearest = (list: readonly Handle[]): Handle | null => {
-    let best: Handle | null = null;
+): (H & { kind: "corner" | "mid" }) | null {
+  const nearest = (list: readonly H[]): H | null => {
+    let best: H | null = null;
     let bestDistance = MIN_REACH;
     for (const handle of list) {
       const [x, y] = p.toScreen(handle.at);

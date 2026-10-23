@@ -9,8 +9,11 @@
  * - `layer`, the layer the edits apply to, by name, when the input names its
  *   layers (an Autark node hands on several).
  * - `edits`, in the order they were made (`FeatureEdit`): `remove`, `set`,
- *   `restore`, `scale`, `offset` or `expr`, each on the features whose `key`
- *   is one of `ids` or that its `where` condition picks (`editExpr`).
+ *   `restore`, `scale`, `offset`, `expr` or `geometry`, each on the features
+ *   whose `key` is one of `ids` or that its `where` condition picks
+ *   (`editExpr`); `add`, a feature drawn on the map; or `add_column`, a
+ *   property every feature is given. The map's tools change one part of a
+ *   feature of several rows at a time, by `where` (`featureParts`).
  *
  * The node's code is its only state: one call of the sandbox's
  * `curio_edit_features` (`utk_curio/sandbox/util/feature_edits.py`), which

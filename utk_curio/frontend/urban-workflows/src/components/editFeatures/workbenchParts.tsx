@@ -42,6 +42,8 @@ export interface ModeOption<T extends string> {
   label: string;
   icon?: IconDefinition;
   testId?: string;
+  /** Off: shown, and not picked by a click. */
+  disabled?: boolean;
 }
 
 /** A choice of one: a bordered group of options, the one picked filled. */
@@ -66,6 +68,7 @@ export function ModeSwitch<T extends string>({
           role="radio"
           aria-checked={value === option.value}
           data-testid={option.testId}
+          disabled={option.disabled}
           className={`nodrag nopan ${styles.mode} ${value === option.value ? styles.modeChecked : ""}`}
           onClick={() => onChange(option.value)}
         >
