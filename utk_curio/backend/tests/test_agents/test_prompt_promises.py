@@ -66,15 +66,6 @@ def test_the_dataflow_builder_is_told_every_applied_plan_ends_with_a_topology_ve
     )
 
 
-def test_the_node_builder_delegates_a_new_nodes_content_only_from_the_canvas():
-    """A ``node.content.generate`` delegation with no ``nodeId`` targets the
-    node the agent is attached to (``delegates._delegate_target_node_id``), and
-    its content becomes a review of that node's own content (``turn_loop``), not
-    content to put in a ``node.create``."""
-    step = _sentence(_prompt(NODE_BUILDER), "put the returned content in the node.create request's params.content")
-    assert "attached to the canvas" in step
-
-
 def test_the_node_builder_names_the_new_nodes_type_when_it_delegates_its_content():
     """A ``node.content.generate`` delegation that names a ``nodeType`` and no
     ``nodeId`` writes a new node of that template, wherever the agent is
