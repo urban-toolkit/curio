@@ -53,7 +53,10 @@ import { applyComputeBlocks } from './autkComputeBlocks';
 import { frameMaps, keepMapViews, mapViews, type MapView } from './autkMapView';
 import { grammarMaps, trackMaps } from './autkMapDrawing';
 import { mapSession, onMapSession, registerEditMap } from '../../utils/editFeatures/mapEditBus';
-import { layerIdFor, restoreMapLayers, snapshotBeforeSolo, snapshotMapLayers, soloMapLayer, type MapLayerState } from './autkMapState';
+import {
+    layerIdFor, mapStateOf, restoreMapLayers, snapshotBeforeSolo, snapshotMapLayers, soloMapLayer,
+    type MapLayerState, type MapTableState,
+} from './autkMapState';
 import { drawnInput, editFeedsOf, fedByInteraction, feedsVersion, newLayerTables, type EditFeed } from '../../utils/editFeatures/mapEditsPreview';
 import { codeEditRevision, subscribeToCodeEdits } from '../../utils/references/codeEdits';
 import MapEditOverlay from '../../components/editFeatures/MapEditOverlay';
@@ -61,6 +64,13 @@ import MapEditOverlay from '../../components/editFeatures/MapEditOverlay';
 /** What a map no Map Edits node feeds listens to for code edits: nothing. */
 const NO_CODE_EDITS = () => () => {};
 const NO_REVISION = () => 0;
+
+/** What each Autark node's map shows now, by node id (autkMapState `mapStateOf`). */
+const mapStateReaders = new Map<string, () => Record<string, MapTableState> | null>();
+// The e2e tests read what a map lights through it (test_frontend/test_map_edits_e2e.py).
+if (typeof window !== 'undefined') {
+    (window as any).__curio_mapState = (nodeId: string) => mapStateReaders.get(nodeId)?.() ?? null;
+}
 
 /**
  * The layer a document's selections come from when they name none: its map's
@@ -1378,6 +1388,16 @@ export const useAutkGrammarBehavior = (
     }, [data.input]);
     // eslint-disable-next-line react-hooks/exhaustive-deps
     useEffect(syncHighlightsNow, [(data as any).interactions]);
+
+    // What the map shows now, as autk-map holds it: the layer that picks and
+    // the rows it lights, for the e2e tests.
+    useEffect(() => {
+        mapStateReaders.set(data.nodeId, () =>
+            mapStateOf(grammarMaps(grammarRef.current)[0], specRef.current, loadOrdersRef.current, inputFeaturesRef.current));
+        return () => {
+            mapStateReaders.delete(data.nodeId);
+        };
+    }, [data.nodeId]);
 
     // #662: a selection tag on this node reads the features of the layer its
     // pick or brush came from, the rows a direct selection is matched against

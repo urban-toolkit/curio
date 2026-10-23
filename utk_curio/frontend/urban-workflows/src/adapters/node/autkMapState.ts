@@ -9,6 +9,7 @@
  * document draws it, and a layer gone is forgotten.
  */
 import { grammarMaps } from './autkMapDrawing';
+import { inputRow, type LoadOrder } from '../../utils/autkInput';
 
 /** The render settings of a layer a person can change, by layer id. */
 export type MapLayerState = Record<string, Record<string, unknown>>;
@@ -33,15 +34,57 @@ const idOf = (layer: any): string | undefined => {
  * code's `[!! input_k !!]` form.
  */
 export function layerIdFor(spec: any, table: string): string {
-    const maps = spec?.map ? (Array.isArray(spec.map) ? spec.map : [spec.map]) : [];
-    const bare = (ref: unknown) => String(ref ?? '').replace(/^\[!!\s*(.*?)\s*!!\]$/, '$1');
-    for (const map of maps) {
-        for (const ref of map?.layerRefs ?? []) {
-            if (bare(ref?.dataRef) !== table) continue;
-            return typeof ref?.title === 'string' && ref.title.trim() !== '' ? ref.title : table;
-        }
+    for (const ref of layerRefsOf(spec)) {
+        if (bareRef(ref?.dataRef) !== table) continue;
+        return typeof ref?.title === 'string' && ref.title.trim() !== '' ? ref.title : table;
     }
     return table;
+}
+
+/** The layers *spec*'s maps draw, in its order. */
+function layerRefsOf(spec: any): any[] {
+    const maps = spec?.map ? (Array.isArray(spec.map) ? spec.map : [spec.map]) : [];
+    return maps.flatMap((map: any) => (Array.isArray(map?.layerRefs) ? map.layerRefs : []));
+}
+
+/** A layer's table, from its `dataRef` as written or as a `[!! input_k !!]` chip. */
+const bareRef = (ref: unknown) => String(ref ?? '').replace(/^\[!!\s*(.*?)\s*!!\]$/, '$1');
+
+/** What a map shows of one table its document draws, as autk-map holds it. */
+export type MapTableState = {
+    /** Whether the table's layer is the one that picks: autk-map draws a highlight there only. */
+    pick: boolean;
+    /** The properties of the input rows the layer highlights. */
+    lit: Array<Record<string, unknown>>;
+};
+
+/**
+ * What *map* shows of each table *spec* draws: whether its layer picks, and
+ * the input rows it highlights, read from autk-map's own layers and taken back
+ * to the input's rows through *orders*, as a pick on the map is. The e2e tests
+ * read it (`window.__curio_mapState`).
+ */
+export function mapStateOf(
+    map: any,
+    spec: any,
+    orders: Record<string, LoadOrder>,
+    features: Record<string, readonly any[]>,
+): Record<string, MapTableState> | null {
+    if (!map) return null;
+    const out: Record<string, MapTableState> = {};
+    for (const ref of layerRefsOf(spec)) {
+        const table = bareRef(ref?.dataRef);
+        const layer = layersOf(map).find((l) => idOf(l) === layerIdFor(spec, table));
+        if (!table || !layer) continue;
+        const positions: unknown = layer.highlightedIds;
+        out[table] = {
+            pick: layer.layerRenderInfo?.isPick === true,
+            lit: (Array.isArray(positions) ? positions : []).map((position: number) => ({
+                ...(features[table]?.[inputRow(position, orders[table]?.map)]?.properties ?? {}),
+            })),
+        };
+    }
+    return out;
 }
 
 /**
