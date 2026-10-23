@@ -29,7 +29,7 @@ spec
 │   ├── scenarios[]             named selections of the nodes
 │   ├── agents[]                agent lockfile             (backend-owned, stripped on share)
 │   └── agentAttachments[]      live agent bindings        (backend-owned, stripped on share)
-├── nodeProvenance              per-node execution history (browser-side only)
+├── nodeProvenance              per-node history of runs and edits (written by the canvas, read by agents)
 └── dataflowProvenance          version history of the whole dataflow
 ```
 
@@ -103,9 +103,11 @@ ids of the nodes it descends from, oldest first, ending with the node it was
 copied from. Two nodes are the same lever in two scenarios when their ids and
 these lists meet.
 
-A Map Edits node's history in `nodeProvenance` also holds an entry for each
-change made in its body, `kind` `edit`, with the code it left and a `label`
-saying what it changed, or, for a change an agent made, naming the agent.
+A node's history in `nodeProvenance` also holds an entry, `kind` `edit`, with
+the code it left, for each change an agent made to its code that the user
+applied, its `label` naming the agent, and a node an agent added with code
+starts with one. A Map Edits node's history holds one for each change made in
+its body too, its `label` saying what it changed.
 
 ### An edge
 
