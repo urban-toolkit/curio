@@ -14,7 +14,9 @@ tooltip, no Monaco hover. Checked where jsdom has no layout to read:
    close-up frame of each: the tooltip and its target, with a margin.
 2. A chip in the join's code and one in the chart's spec, both
    ``[!! input_1 !!]``, at zoom 1 and 2: the same tooltip box at both, and no
-   Monaco hover on screen.
+   Monaco hover on screen. The same chips when Monaco draws their line again
+   as the pointer lands on them, which Monaco reports as a leave: the
+   tooltip shows all the same.
 3. The keyboard: Tab onto Delete node shows its tooltip, Escape hides it, and
    a mouse click on a button shows none after it.
 4. A bar of example 02's zip chart: the tooltip at the pointer says what the
@@ -82,6 +84,7 @@ from .utils import (
     stub_db_login,
     stub_login_and_enter_workflow,
     tooltip_close_up,
+    tooltip_saying,
     tooltips_on_screen,
 )
 from .walkthroughs import load_example_spec
@@ -117,6 +120,8 @@ TARGETS = {
 #: The editors whose ``[!! input_1 !!]`` chip is hovered: (node, tab). The
 #: join's code unpacks it; the chart's spec names it as a dataset.
 CHIPS = {"code": (JOIN, "code"), "spec": (CHART, "grammar")}
+#: Monaco's ``editor.MouseTargetType.CONTENT_TEXT``: the pointer on text.
+CONTENT_TEXT = 6
 
 #: Titles a library draws that Curio cannot take off: (a selector the element
 #: matches or sits in, why it stays).
@@ -218,6 +223,74 @@ _TITLES_JS = r"""(allowed) => {
         if (!skip(el)) found.push(`${name(el.parentElement || el)}: <title>${JSON.stringify((el.textContent || "").trim())}`);
     }
     return found;
+}"""
+
+# For the first move onto a span of the chip `[!! inner !!]` in the editor of
+# the node *nodeId*: a decoration on the chip's line, added in the move's
+# capture on the document, which Monaco holds to draw in its next frame. Its
+# hit test of that same move draws it first (view.js), so the line is drawn
+# again under the pointer and the move's span leaves the page, as when any
+# change lands on the line as the pointer does. Records what Monaco reports
+# from then on. Returns the chip's line, or 0 with no such editor or chip.
+_REDRAW_ON_ARRIVAL_JS = r"""({ nodeId, inner }) => {
+    const card = document.querySelector(`.react-flow__node[data-id="${nodeId}"]`);
+    const host = card && Array.from(card.querySelectorAll(".monaco-editor")).find((el) => el.getClientRects().length > 0);
+    const editor = host && ((window.monaco && window.monaco.editor.getEditors()) || []).find((e) => host.contains(e.getDomNode()));
+    if (!editor) return 0;
+    const written = `[!! ${inner} !!]`;
+    const line = editor.getModel().getValue().split("\n").findIndex((text) => text.includes(written)) + 1;
+    if (line < 1) return 0;
+    const chipOf = (el) => (el && el.closest ? el.closest(".curio-widget-ref, .curio-widget-ref-problem") : null);
+    const seen = { span: null, decorated: false, moves: [], leaves: 0, leftAfterMove: false };
+    const onMove = (event) => {
+        const span = chipOf(event.target);
+        if (seen.span || !span || !host.contains(span)) return;
+        seen.span = span;
+        editor.createDecorationsCollection([{
+            range: { startLineNumber: line, startColumn: 1, endLineNumber: line, endColumn: 2 },
+            options: { inlineClassName: "curio-test-redrawn" },
+        }]);
+        seen.decorated = true;
+    };
+    document.addEventListener("mousemove", onMove, { capture: true });
+    const subscriptions = [
+        editor.onMouseMove((e) => {
+            if (seen.span) seen.moves.push({ type: e.target.type, line: e.target.position ? e.target.position.lineNumber : null });
+        }),
+        editor.onMouseLeave(() => {
+            seen.leaves += 1;
+            if (seen.moves.length) seen.leftAfterMove = true;
+        }),
+    ];
+    window.__curio_redrawOnArrival = {
+        read: ({ x, y }) => {
+            const under = document.elementFromPoint(x, y);
+            return {
+                line,
+                decorated: seen.decorated,
+                moves: seen.moves,
+                leaves: seen.leaves,
+                leftAfterMove: seen.leftAfterMove,
+                spanOffPage: seen.span ? !seen.span.isConnected : null,
+                pointerOnChip: !!(under && host.contains(under) && chipOf(under)),
+            };
+        },
+        stop: () => {
+            document.removeEventListener("mousemove", onMove, { capture: true });
+            subscriptions.forEach((s) => s.dispose());
+        },
+    };
+    return line;
+}"""
+
+# What the redraw armed by _REDRAW_ON_ARRIVAL_JS saw, the pointer at (x, y),
+# and it stops.
+_REDRAW_READ_JS = r"""({ x, y }) => {
+    const armed = window.__curio_redrawOnArrival;
+    if (!armed) return null;
+    const seen = armed.read({ x, y });
+    armed.stop();
+    return seen;
 }"""
 
 
@@ -404,6 +477,55 @@ def test_a_chip_in_an_editor_shows_the_same_tooltip_at_zoom_1_and_2(
         f"the {editor} chip's tooltip is {one['width']:.1f} x {one['height']:.1f} px at zoom 1 "
         f"and {two['width']:.1f} x {two['height']:.1f} px at zoom 2"
     )
+
+
+@pytest.mark.parametrize("editor", list(CHIPS))
+def test_a_chip_whose_line_monaco_draws_again_as_the_pointer_lands_shows_its_tooltip(
+    app_frontend: "FrontendPage",
+    current_server: str,
+    page,
+    editor: str,
+):
+    # Monaco takes a move whose element is not in the editor for a leave
+    # (mouseHandler.js), and its hit test of the move first draws what it
+    # holds to draw. So a change that lands on the chip's line as the pointer
+    # does takes the move's span off the page, Monaco reports a leave, and the
+    # resting pointer sends no move to come back. The tooltip shows all the same.
+    require_project_page()
+    require_user_auth()
+    node_id, tab = CHIPS[editor]
+    _open_26(page, app_frontend, current_server, username=f"tooltips_redrawn_{editor}")
+    frame_node(page, node_id, zoom=1.0)
+    _open_tab(page, node_id, tab)
+    node_locator(page, node_id).locator(".monaco-editor").first.wait_for(state="visible", timeout=30000)
+    what = f"the chip [!! input_1 !!] in {node_id}'s {editor}, its line drawn again as the pointer lands on it"
+    _center(page, box_middle(editor_chip_box(page, node_id, "input_1")), 1.0)
+
+    move_pointer_away(page)
+    no_tooltip(page, f"{what}, before the pointer moves onto it", timeout=5000)
+    box = editor_chip_box(page, node_id, "input_1")
+    assert page.evaluate(_REDRAW_ON_ARRIVAL_JS, {"nodeId": node_id, "inner": "input_1"}), (
+        f"{what}: {node_id}'s editor shows no chip [!! input_1 !!]"
+    )
+    point = assert_in_view(page, *box_middle(box), what)
+    page.mouse.move(*point)
+    # Monaco's leave comes in the move's own handling: less than the 400 ms
+    # a tooltip waits is room enough.
+    page.wait_for_timeout(200)
+    seen = page.evaluate(_REDRAW_READ_JS, {"x": point[0], "y": point[1]})
+    on_text = bool(seen) and any(move["type"] == CONTENT_TEXT and move["line"] == seen["line"] for move in seen["moves"])
+    assert on_text and seen["decorated"] and seen["spanOffPage"] and seen["leftAfterMove"] and seen["pointerOnChip"], (
+        f"{what}: the setup did not reproduce. The move onto the chip was to draw its line again, take the move's "
+        f"span off the page, and have Monaco report a move on the chip's text, then a leave, with the pointer "
+        f"still on the chip: {seen}"
+    )
+
+    tip = tooltip_saying(page, what, ["input_1"])
+    assert monaco_hovers(page) == 0, f"{what}: Monaco's own hover is on screen too: {tip}"
+    # Only that leave is let go by: the pointer leaving the editor after it
+    # hides the tooltip as any leave does.
+    move_pointer_away(page)
+    no_tooltip(page, f"{what}, after the pointer left the editor")
 
 
 def test_tab_shows_a_tooltip_escape_hides_it_and_a_click_shows_none(

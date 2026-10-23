@@ -659,7 +659,8 @@ canvas's viewport, so it is the same size at every zoom and no node clips it.
   `useEditorTooltip` shows, in the Curio tooltip, the markers' messages first, then
   a chip's preview or, in JavaScript, the TypeScript worker's quick info for the
   word under the pointer. It is placed from where Monaco draws what it describes (a
-  chip's name, a word), so a redraw of the line keeps it in place, and it hides when
+  chip's name, a word), so a redraw of the line keeps it in place. A redraw as the
+  pointer lands, which Monaco reports as a leave, keeps it coming too. It hides when
   the editor's text scrolls, not when only the size Monaco can scroll changes.
   Cmd+K Cmd+I (Ctrl on Windows and Linux) shows it at the caret: an action of each
   editor, so it works in the one with the focus.
