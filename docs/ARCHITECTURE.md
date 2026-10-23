@@ -1539,7 +1539,7 @@ Interactions are stored in `FlowProvider.interactions[]` and passed down to node
 
 ### Propagation Strategies
 
-A Data Pool resolves the selections that reach it with two modes, chosen in the two selects at the top of its body and saved with the node (`metadata.dataPool`):
+A Data Pool resolves the selections that reach it with two modes, chosen in the two selects at the top of its body, or set by an agent's plan or `node.create` ([Dataflow plans](#dataflow-plans)), and saved with the node (`metadata.dataPool`). The selects' words are `src/contracts/nodeSettings.json`:
 
 - **Conflict inside visualization** (`insideChart`) combines the selects of one chart, such as a Vega chart with two params.
 - **Conflict between visualizations** (`betweenCharts`) combines the charts linked to the pool by an interaction edge.
@@ -1603,6 +1603,7 @@ Some vocabularies and tables are read by both the frontend and the backend. Each
 | `noteColors.json` | A note's palette, its default color, the two inks and the two link colors, and the contrast an ink must reach (see [Notes](#notes)) | `utils/noteColors.ts` | `packages/application/note_palette.py`, which hands the palette to the rules of `packages/domain/node_appearance.py`: the domain layer reads no file |
 | `autkGrammar.json` | The Autark grammar's top-level families, the prefix of the names a grammar node's inputs are read by (`input_<k>`), and what a document with more than one view is told (see [Referencing Upstream Data in Autark Nodes](#referencing-upstream-data-in-autark-nodes)) | `contracts/autkGrammar.ts`, `utils/autkSpecKind.ts` | `contracts.INPUT_TABLE_PREFIX` and `AUTK_ONE_VIEW` |
 | `visDefaults.json` | What a visualization node does with its input by itself: the column roles and the pandas dtypes each role comes from, the Vega-Lite and Autark starter ladders (each rule's id, condition, mark or family and description, in ladder order), the Vega-Lite `$schema` URL, and the column names, URL extensions and share of image values behind Simple View's image columns | `starterSpec.ts`, `vegaDefaultSpec.ts`, `autkDefaultSpec.ts` and `imageColumns.ts`, which keep each rule's builder, keyed by its id, and the matching logic | `contracts.py`'s tables, which the prompt fields render into the preamble |
+| `nodeSettings.json` | The words of a Data Pool's two selects and of each of its modes, keyed by `ResolutionType`, and of a Simple View's image column (see [Dataflow plans](#dataflow-plans)) | The pool's selects (`DataPoolContent.tsx`), the view's picker (`simpleVisBehavior.tsx`) and an agent's review card (`reviewCardText.ts`) | `agents/domain/data_pool_settings.py` and `simple_vis_settings.py`: the modes an agent may set, and the words of a plan's preview and a `node.create`'s summary |
 
 - **Where.** The folder is in the frontend's source, so the Docker image's frontend build, which copies only `utk_curio/frontend/`, and the Jest job and the release's frontend build, which run before or without Python, read the files where they are. A clone and the Docker image keep the folder there for the backend too, and a pip install has it inside its package, which carries the frontend's source (`MANIFEST.in` and `include-package-data`). `test_pip_wheel_layout.py` checks that a pip install's backend reads them there.
 - **Reading.** `shared_constants.read` parses a file as `JSON.parse` does, except that an object naming one key twice raises, where `JSON.parse` and `json.loads` keep the last value.
@@ -1829,6 +1830,13 @@ Every removed connection is named on the card, and the result of a whole-plan Ap
 A planned node may declare its widgets, checked by the Widgets tab's own rules (`checkWidgetDef` and `checkWidgetValue` in `widgetModel.ts`, twinned in `execution/code_references.py` and pinned by `widgetChecks.cases.json`), and the apply writes them at `metadata.widgets`. A plan may also save scenarios (`domain/plan_scenarios.py`, `proposals/plan_scenarios.py`): a selection names plan refs or existing node ids, and a duplicate names an earlier selection, the ref each copy takes, and the widget values a copy changes. The grammar expands a duplicate into plan nodes and edges by the canvas's own rule (`scenario_catalog/domain/duplicate.py`, the twin of `duplicateSelection.ts`, pinned by `duplicateSelection.cases.json`), so the card reviews each copy as a node and each copied connection as one. A copy carries `copyOf`, which the apply turns into `metadata.copiedFrom`; it is created after its original, by the whole-plan apply and the per-node one alike. A scenario is saved once all of its nodes exist, with the next of `SCENARIO_COLORS` when the plan gives none, and is refused when another scenario took one of its nodes or its name since the plan was proposed. Its name is one no scenario of the dataflow has: the scenario chips color and order a dataflow's scenarios by name, so the mint sends a plan that repeats one back to the agent (`proposals/plan_scenarios.mint_errors`), and the apply checks names again (`apply_scenarios`). A plan is complete once its nodes, connections and scenarios all exist.
 
 A planned node may also carry `spatialJoin`, a Spatial Join's operation and output (`agents/domain/spatial_join_settings.py`). Its keys are those of `$defs.nodeMetadata.spatialJoin`, and its values are judged by the join's own rule, `common/spatial.settings_problem`, the one the `/spatial_join` route answers with. The mint refuses it on a node whose template's `behavior` is not `spatial-join`, as `packages.template_behavior` reads it: the account's copy of the template, else the catalog's. The choices are the join's own, `common/spatial.PREDICATES` and `OUTPUTS`, which the tool schemas offer; tests hold the Trill enums, the node's two selects and the manifest's description to them. The apply writes it at `metadata.spatialJoin`, by the whole-plan apply and the per-node one alike, and the card's row names it. `node.create` takes it the same way, and a template whose content kind is `none`, such as the Spatial Join, is proposed without content. The canvas bridge hands it to the live node as a load does, and the preamble's Trill block shows its shape.
+
+A Data Pool's conflict modes (`dataPool`, `agents/domain/data_pool_settings.py`) and a Simple View's image column (`simpleVis`, `simple_vis_settings.py`) take the same path, and `agents/domain/node_settings.py` walks the three settings for the grammar, the mint, the card, both applies, `node.create` and the canvas bridge. Each is judged by its node's own rule:
+
+- **The pool's modes.** `utils/dataPoolSpec.ts` reads a value that names no mode as `OVERWRITE` and writes only the modes that are not `OVERWRITE`. So the mint refuses a value the pool would read as `OVERWRITE` without a word, and stores a setting as the pool writes it: an explicit `OVERWRITE` sets nothing. `dataPoolSpec.cases.json` holds the cases Jest and pytest both run, and tests hold the Trill enums, `ResolutionType`, the tool schemas and the agents' modes to one list.
+- **The view's image column.** The view trims the name it reads and reads an empty one as every image column (`resolveImageColumnChoice`), so an empty name is refused and a name is kept trimmed.
+
+A setting is refused on a node whose template's `behavior` is not `data-pool` or `simple-vis`. The card's rows, the plan's text preview and a `node.create`'s summary say each in its node's own words, such as `Conflict between visualizations: Merge (AND)` or `Image column: overlay_url`: the pool's selects, the view's picker, the card and the backend all read them from `src/contracts/nodeSettings.json` ([Shared Constants](#shared-constants)). The canvas bridge hands each to the live node as a load does (`dataPoolFromSpec` for the modes). `dataflow.read` rows show what each saved node's setting makes it do, its defaults left out: a pool's modes other than `OVERWRITE`, a view's column, and a join's operation and output other than `intersects` and `pairs`. The preamble's Trill block shows both shapes.
 
 ### Package drafts
 
@@ -2545,7 +2553,7 @@ composes `withPackageStarter` over the behavior hook so the starter is injected
 on a fresh drop (see [Behavior Hooks](#behavior-hooks)).
 
 A template that declares `starterIsContent` gives its starter to a node an
-agent's plan creates too. Both plan applies, the whole plan and one node
+agent's plan or `node.create` creates too. Both plan applies, the whole plan and one node
 (`agents/application/proposals/plans.py`), read it with `content_starters`
 (`packages/application/starters.py`, each template resolved as the project's
 available templates resolve it). The node's content is the starter, and its
@@ -2554,6 +2562,15 @@ its name (`plan_scenarios.created_node_metadata`). It never joins `nodeRuns` as
 pending, so Solve does not write it, and its ref is `approved`, so the
 Simulation Mode driver does not validate it either. Every other planned node is
 created empty for Solve to write.
+
+A `node.create` of such a template gives no content, and any other content is
+refused (`mint.starter-is-content`, which names the template's widgets). The
+mint reads the starter with `content_starters` and sets the request's widgets
+over the template's with `plan_scenarios._set_over`, so the review card shows
+the spec and the widgets Apply writes. Neither the source-grounding gate nor
+the document check reads the starter, as neither reads a plan's. A template
+whose starter is not its whole content keeps its rule: the request gives the
+content.
 
 ### Auth Routes
 
