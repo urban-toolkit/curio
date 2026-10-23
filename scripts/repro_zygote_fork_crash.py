@@ -3,11 +3,13 @@
 
 Background. Isolated execution intermittently failed with "This node was killed
 by signal 11": a child forked from the zygote died in DuckDB's ``close()``,
-inside ``codec._write_dataframe_parquet``. ``import duckdb`` opens a default
-connection with a pool of threads, the zygote imports duckdb while warming up,
-and DuckDB's state is not fork-safe (duckdb/duckdb-python#292). The zygote now
-closes that connection before serving (``zygote._release_import_time_duckdb``).
-This script measures whether that removes the crash.
+inside ``codec._write_dataframe_parquet``. On DuckDB 1.x, ``import duckdb``
+opens a default connection with a pool of threads, the zygote imports duckdb
+while warming up, and DuckDB's state is not fork-safe
+(duckdb/duckdb-python#292). The zygote now closes that connection before
+serving (``zygote._release_import_time_duckdb``). This script measures whether
+that removes the crash. DuckDB 2.0 opens the connection on first use only, so
+on 2.0 both variants fork with no DuckDB pool.
 
 Each iteration starts a fresh zygote, runs the ``data-pool-dataframe`` node the
 moment it is ready, runs it again, and stops the zygote. Two variants,

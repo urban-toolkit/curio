@@ -26,11 +26,12 @@ Forking from the Flask process itself would be cheaper still, and wrong:
 
 This process is started before either of those is true, starts no threads of
 its own (hence the ``selectors`` loop rather than a thread per connection), and
-never opens the DuckDB store. What it imports is another matter: ``import
-duckdb`` opens an in-memory default connection with a thread pool, and numpy's
-OpenBLAS starts one too. OpenBLAS tears its pool down before every fork;
-DuckDB does not, which is why ``warm_up`` closes that connection before the
-first fork. See :func:`_release_import_time_duckdb`.
+never opens the DuckDB store. What it imports is another matter: on DuckDB
+1.x, ``import duckdb`` opens an in-memory default connection with a thread
+pool (2.0 opens it on first use only), and numpy's OpenBLAS starts one too.
+OpenBLAS tears its pool down before every fork; DuckDB does not, which is why
+``warm_up`` closes that connection before the first fork. See
+:func:`_release_import_time_duckdb`.
 
 Wire protocol, newline-delimited JSON over AF_UNIX, one connection per
 execution:
@@ -183,12 +184,12 @@ def _unavailable_under_isolation(name):
 def _release_import_time_duckdb():
     """Close the connection ``import duckdb`` opened, before anything forks.
 
-    ``import duckdb`` does more than load a library: it opens an in-memory
-    default connection, and with it a pool of one thread per core. DuckDB's
-    state is not fork-safe (duckdb/duckdb-python#292), and a child forked
-    from a process holding that pool died with signal 11 in DuckDB's
-    ``close()`` inside ``codec._write_dataframe_parquet`` in one or two
-    executions out of a hundred. The in-process path, which never forks,
+    On DuckDB 1.x, ``import duckdb`` does more than load a library: it opens
+    an in-memory default connection, and with it a pool of one thread per
+    core. DuckDB's state is not fork-safe (duckdb/duckdb-python#292), and a
+    child forked from a process holding that pool died with signal 11 in
+    DuckDB's ``close()`` inside ``codec._write_dataframe_parquet`` in one or
+    two executions out of a hundred. The in-process path, which never forks,
     never did.
 
     Closing the connection joins those threads, so every child is forked from
@@ -196,6 +197,11 @@ def _release_import_time_duckdb():
     module-level API (``duckdb.sql`` and friends) opens a fresh default
     connection on first use -- in the child, with its full thread pool --
     and explicit ``duckdb.connect()`` calls were never affected.
+
+    DuckDB 2.0 opens the default connection on first use only, so its import
+    leaves the zygote no pool, and this asks for nothing: asking would open
+    the pool, only to close it before the first fork. The allocator setting
+    the release makes on 1.x is skipped with it, since it needs a connection.
 
     The thread counts on either side are logged so a run can see what
     changed. What is left is expected: numpy's OpenBLAS pool, which tears

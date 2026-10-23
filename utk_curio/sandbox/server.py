@@ -178,9 +178,10 @@ if __name__ == '__main__':
                 "CURIO_ISOLATION=off to accept the risk explicitly."
             )
 
-    # DuckDB's import-time connection holds a thread per core and serves
-    # nothing here: node code that calls duckdb.sql reopens it with its full
-    # pool, and the store has a connection of its own.
+    # The connection DuckDB 1.x's import opens holds a thread per core and
+    # serves nothing here (2.0 opens it on first use only): node code that
+    # calls duckdb.sql reopens it with its full pool, and the store has a
+    # connection of its own.
     from utk_curio.sandbox.util.duckdb_threads import release_default_connection
     release_default_connection("[sandbox]", "so its threads stay idle in this process")
 
