@@ -639,6 +639,24 @@ describe("AgentAttachmentsProvider apply→canvas bridge (memo dev/48 §3.3)", (
     ]);
   });
 
+  it("an appliedSettings apply response dispatches node-settings-applied with the node and its settings", async () => {
+    const settings = { dataPool: { betweenCharts: "MERGE_AND" }, widgets: { combine: "max" } };
+    api.applyProposal.mockResolvedValue({
+      attachmentId: "a1",
+      proposalId: "p1",
+      status: "applied",
+      mutationApplied: true,
+      appliedSettings: { nodeId: "pool", settings, agent: "Node Builder" },
+    });
+    renderProvider();
+    fireEvent.click(screen.getByText("open"));
+    await waitFor(() => expect(screen.getByTestId("turns")).toHaveTextContent("old-q"));
+    await act(async () => {
+      fireEvent.click(screen.getByText("apply"));
+    });
+    expect(events).toEqual([{ kind: "node-settings-applied", nodeId: "pool", settings }]);
+  });
+
   it("a project.install apply repaints the AGENTS palette (dev/106)", async () => {
     api.applyProposal.mockResolvedValue({
       attachmentId: "a1",

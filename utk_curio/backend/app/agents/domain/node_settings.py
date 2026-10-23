@@ -1,4 +1,5 @@
-"""The settings an agent sets on a node a plan or a node.create places.
+"""The settings an agent sets on a node a plan or a node.create places, or
+changes on a node already on the canvas (``node.settings.write``).
 
 Three nodes keep a choice their body offers at ``metadata.<key>``: a Spatial
 Join its operation and output (``spatial_join_settings``), a Data Pool its
@@ -6,9 +7,11 @@ conflict modes (``data_pool_settings``) and a Simple View its image column
 (``simple_vis_settings``). Each module parses its setting by its node's own
 rule, says why a template keeps none (only one whose ``behavior`` is the
 node's does), words it as the node does for the review card, and reads what a
-saved node's setting makes it do. This module walks the three, so a plan's
-grammar and mint, a node.create, the card, both applies and ``dataflow.read``
-treat each one the same way.
+saved node's setting makes it do. A change of a node on the canvas is parsed
+by the same rule, each key it gives picked as the node's select picks it and
+each key it leaves out kept (``parse_change``, ``after``). This module walks
+the three, so a plan's grammar and mint, a node.create, a settings change, the
+card, the applies and ``dataflow.read`` treat each one the same way.
 """
 from __future__ import annotations
 
@@ -35,6 +38,50 @@ def parse(raw: dict, prefix: str) -> tuple[dict, list[str]]:
         if setting:
             found[module.KEY] = setting
     return found, problems
+
+
+def parse_change(raw: dict, prefix: str) -> tuple[dict, list[str]]:
+    """The settings *raw* (``node.settings.write``'s params) changes on a node
+    on the canvas, by key, each as its node's select picks it
+    (``module.parse_change``), or the errors; *prefix* is where they are."""
+    found: dict = {}
+    problems: list[str] = []
+    for module in SETTINGS:
+        change, errors = module.parse_change(raw.get(module.KEY), f"{prefix}.{module.KEY}")
+        problems.extend(errors)
+        if change is not None:
+            found[module.KEY] = change
+    return found, problems
+
+
+def write(metadata: dict, changes: dict) -> None:
+    """Write *changes* into a saved node's *metadata*: each setting as its
+    node stores it once the change is picked (``module.after``), and none at
+    all where that is the node's default."""
+    for module in SETTINGS:
+        if module.KEY not in changes:
+            continue
+        setting = module.after(metadata.get(module.KEY), changes[module.KEY])
+        if setting:
+            metadata[module.KEY] = setting
+        else:
+            metadata.pop(module.KEY, None)
+
+
+def changes_anything(metadata: object, changes: dict) -> bool:
+    """Whether *changes* changes what a saved node with *metadata* does."""
+    held = metadata if isinstance(metadata, dict) else {}
+    return any(
+        module.after(held.get(module.KEY), changes[module.KEY]) != module.saved(held.get(module.KEY))
+        for module in SETTINGS if module.KEY in changes
+    )
+
+
+def describe_change(changes: dict) -> list[str]:
+    """Each setting *changes* picks, as the review card words it: each key it
+    gives, one put back to its default among them, and a Simple View's every
+    image column in the view's own word."""
+    return [module.describe(changes[module.KEY]) for module in SETTINGS if module.KEY in changes]
 
 
 def template_problems(settings: dict, behavior: object, label: object, where_of: Callable[[str], str]) -> list[str]:

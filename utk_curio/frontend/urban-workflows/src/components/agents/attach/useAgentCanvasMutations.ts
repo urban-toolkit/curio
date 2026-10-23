@@ -45,6 +45,8 @@ const CENTER_ANIMATION_MS = 400;
  *   controlled re-sync and never reached the serializer or editor), with the
  *   name of the agent that wrote it, which a node keeping a history of its
  *   changes names the entry after.
+ * - ``node-settings-applied`` → `FlowProvider.applyNodeSettings`, which hands
+ *   each setting to the node's own setter (`utils/nodeSettingsWriters`).
  *
  * Idempotent per node id at two levels (dev/51 defect 3): a processed-ids ref
  * catches re-fired events before the store has synced, and the live-graph
@@ -81,7 +83,8 @@ function appliedEdgeToCanvasEdge(edge: {
 
 export function useAgentCanvasMutations(): void {
   const { createCodeNode } = useCode();
-  const { applyNodeContent, onEdgesChange, applyReviewedRemovals, scenarios, setScenarios } = useFlowContext();
+  const { applyNodeContent, applyNodeSettings, onEdgesChange, applyReviewedRemovals, scenarios, setScenarios } =
+    useFlowContext();
   const { nodeEditProv } = useProvenanceContext();
   const { reveal } = useNotebookViewContext();
   const reactFlow = useReactFlow();
@@ -152,6 +155,10 @@ export function useAgentCanvasMutations(): void {
       // The agent that wrote it, which the node's change is named after.
       if (mutation.agent) applyNodeContent(mutation.nodeId, mutation.content, mutation.agent);
       else applyNodeContent(mutation.nodeId, mutation.content);
+      return;
+    }
+    if (mutation.kind === "node-settings-applied") {
+      applyNodeSettings(mutation.nodeId, mutation.settings);
       return;
     }
     if (mutation.kind === "scenarios-created") {

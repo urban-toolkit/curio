@@ -41,6 +41,7 @@ import { useProvenanceContext } from "./ProvenanceProvider";
 import { useUserContext } from "./UserProvider";
 import { isHostedGuest } from "../components/apiSettings/useHostedGuest";
 import { DEFAULT_SAVE_OUTPUT_DATASET } from "../utils/saveOutputDataset";
+import { writeNodeSettings, type NodeSettings } from "../utils/nodeSettingsWriters";
 import { authApi } from "../utils/authApi";
 
 export type { IOutput, IInteraction, IPropagation, NodeExecOutcome } from "./flow/flowTypes";
@@ -112,6 +113,7 @@ export const FlowContext = createContext<FlowContextProps>({
     updateKeywords: () => {},
     updateDefaultCode: () => {},
     applyNodeContent: () => {},
+    applyNodeSettings: () => {},
     updateWarnings: () => {},
     cleanCanvas: () => {},
     acceptSuggestion: () => {},
@@ -446,6 +448,16 @@ const FlowProvider = ({
         if (runsOnServer) void serverRun.startRun(targets);
         else playNodesUpTo(targets);
     };
+    // An agent's applied settings change: each setting through the setter its
+    // node registered, as a pick in the node makes it; the rest into the
+    // node's data, a widget's new value leaving what reads it out of date.
+    const applyNodeSettings = (nodeId: string, settings: NodeSettings) => writeNodeSettings({
+        nodes: () => reactFlow.getNodes(),
+        updateDataNode: workflowOps.updateDataNode,
+        markNodeStale: workflowOps.markNodeStale,
+        markDirty: workflowOps.markDirty,
+        requestAutoRun: autoRunner.requestAutoRun,
+    }, nodeId, settings);
     // Stop ends whichever run is going, on the server or in the browser, and
     // the automatic run waiting for it.
     const stopRuns = () => { autoRunner.dropWaiting(); cancelRun(); serverRun.stopRun(); };
@@ -553,6 +565,7 @@ const FlowProvider = ({
                 cleanCanvas: () => { leaveRuns(); workflowOps.cleanCanvas(); },
                 discardProject: () => { leaveRuns(); workflowOps.discardProject(); },
                 applyNodeContent,
+                applyNodeSettings,
                 defaultSaveOutputDataset,
                 setDefaultSaveOutputDataset,
 

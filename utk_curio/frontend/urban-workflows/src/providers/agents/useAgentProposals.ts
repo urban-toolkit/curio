@@ -224,6 +224,14 @@ function bridgeApplyResult(proposalId: string, result: AgentApplyResult): void {
       content: result.appliedContent.content,
       ...(result.appliedContent.agent ? { agent: result.appliedContent.agent } : {}),
     });
+  } else if (result.appliedSettings) {
+    // An existing node's settings: the live node takes them through its own
+    // setters, and files no Provenance entry, which holds code.
+    notifyAgentCanvasMutation({
+      kind: "node-settings-applied",
+      nodeId: result.appliedSettings.nodeId,
+      settings: result.appliedSettings.settings,
+    });
   } else if (result.appliedGraph) {
     // dev/52: a whole applied plan — bulk insert + edges + fit; dev/59:
     // removals ride the same event, applied first.

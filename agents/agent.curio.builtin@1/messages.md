@@ -81,6 +81,10 @@ params.key must be an example's key; call examples.read with no key to list the 
 
 params.dirNames must be a non-empty list of package dirName strings
 
+## tools.scenarios-no-account
+
+no account is signed in to this run, so there is no Scenario Catalog to search
+
 ## tools.goals-shortened
 
 node goals shortened to fit the tool output bound
@@ -401,6 +405,30 @@ remove one data edge of the loop, or, where it should carry selections between t
 ## simple-vis.not-a-view
 
 {where}: a {label} node has no image column; only a Simple View node takes {key}
+
+## node-settings.unknown-params
+
+params has keys node.settings.write does not take: {unknown} (it takes {keys})
+
+## node-settings.nothing-given
+
+params names no setting to change: give {keys}
+
+## node-settings.widgets-not-map
+
+{where} must map each widget's name to its new value, such as {"combine": "max"}
+
+## node-settings.unknown-widget
+
+{where}: the {label} node has no widget named {widget}; it has {widgets}
+
+## node-settings.changes-nothing
+
+params changes nothing: the {label} node already has {settings}
+
+## mint.settings-write-proposed
+
+proposal {proposal_id} created for the settings of node {node_id}; it awaits the user's explicit review: do NOT assume it was applied
 
 ## plan.widgets-not-placeable
 
@@ -1343,6 +1371,10 @@ Name features the input holds, by their ids or by a where condition.
 ## map-edits.and-more
 
 …and {more} more
+
+## dashboards.tile-loads-own-data
+
+This node is pinned to the dashboard, which carries only saved outputs, so its spec cannot load its own data. Move the "data" section into a node of its own upstream, and draw that node's output here.
 
 ## solve.attempt-code-truncated
 

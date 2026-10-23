@@ -8,7 +8,7 @@ is the `ref` of each entry of `nodes`, and `widgets[]` an entry of `widgets`). T
 
 ## dataflow.read
 
-Read the project's saved dataflow, structure-first: every node (id, type, goal, content length, widgets, selection tags, and what a Spatial Join, a Data Pool or a Simple View is set to when it is not its default) and ALL edges, plus each node's last runtime status and the dataflow's scenarios with their levers, fixed context and outcomes. Node content is elided: use node.read for one node's content, or params {"include": ["content"]} for the full spec (large).
+Read the project's saved dataflow, structure-first: every node (id, type, goal, content length, widgets, selection tags, what a Spatial Join, a Data Pool or a Simple View is set to when it is not its default, and "pinned": true for a tile of the dataflow's dashboard) and ALL edges, plus each node's last runtime status and the dataflow's scenarios with their levers, fixed context and outcomes. A scenario the user dragged in from another project names its source: that project's and that scenario's names, or the status "project-gone" or "scenario-gone" when that project, or that scenario in it, no longer exists. Node content is elided: use node.read for one node's content, or params {"include": ["content"]} for the full spec (large).
 
 ### Parameters
 
@@ -54,6 +54,17 @@ Propose replacing one node's content. Params: {"nodeId": "...", "content": "..."
 
 - content: The node's complete new content.
 
+## node.settings.write
+
+Propose changing the settings of ONE node already on the canvas, as picking them in the node does: a Data Pool's conflict modes, a Simple View's image column, a Spatial Join's operation and output, or the values of its widgets, a Parameter node's value among them. Params: {"nodeId": "...", "dataPool": {...}, "simpleVis": {...}, "spatialJoin": {...}, "widgets": {"<widget name>": <value>}}, each optional, at least one given. Each key a setting gives is picked and each key it leaves out stays as it is; {} puts the whole setting back to its default. The node's code, and every setting the request does not name, are left as they are. Never propose a new node or rewritten content for a change these take. The user reviews the proposal before anything is applied; nothing changes without their explicit approval.
+
+### Parameters
+
+- dataPool: The Data Pool's conflict modes to change: each mode given is picked, one left out stays, and {} puts both back to OVERWRITE.
+- simpleVis: The Simple View's image column: {"imageColumn": "<column>"} shows that column alone, and {} shows every image column.
+- spatialJoin: The Spatial Join's operation and output to change: each one given is picked, one left out stays, and {} puts both back to intersects and pairs.
+- widgets: A new value for each widget named, {"<widget name>": <value>}: a widget the node has, and a value its type and options take.
+
 ## catalog.search
 
 Search the project's Data Catalog. Params (all optional): {"q": "<text>", "format": "<fmt>", "origin": "<origin>"}. Returns dataset rows with id, name, format, origin, installed state, and description. Catalog-lane candidates must come from these results only. Rows whose data file is resolved also carry `path` (the absolute file a node may open) and `loader` (the loader code for that path): the ONLY local paths generated node content may reference (dev/114).
@@ -80,6 +91,14 @@ Read Curio's worked examples: shipped dataflows that show how nodes, code and sp
 ### Parameters
 
 - key: An example's key, from the list this tool returns with no key. Omit it for the list.
+
+## scenarios.search
+
+Search the Scenario Catalog: the scenarios saved in this account's projects, this dataflow's own among them. Params (optional): {"q": "<text>"}; q matches a scenario's name, its description and its project's name. Returns scenario rows with key, name, description, project (the name of the project it is saved in), nodeCount and inThisDataflow (true for this dataflow's own scenarios); when it stops short, scenariosElided says how many rows it left out. A scenario of another project comes into this dataflow, with its saved results, when the user drags its card in from Scenario, Browse all: name the scenario and its project and tell the user so, rather than rebuilding it. Reads no network.
+
+### Parameters
+
+- q: Text a scenario's name, its description or its project's name contains.
 
 ## discovery.sources
 

@@ -520,6 +520,7 @@ class TestNodeBuilderComposite:
             "node.runtime.read",  # dev/67-2: diagnose before regenerating
             "node.history.read",  # what changed: the node's runs and edits, as its drawer lists them
             "node.content.write",  # dev/67-6: modify-existing, reviewed
+            "node.settings.write",  # an existing node's settings and widget values, reviewed
             "catalog.search",  # dev/114 (DEC-072): the only source of a real local path
             "models.search",  # the Model Catalog: a model this account can run
             "packages.catalog", "packages.resolve",  # dev/84: what exists, what it needs
@@ -686,6 +687,13 @@ class TestCatalogReadGrants:
         assert self._holders("examples.read") == {"agent.curio.dataflow-builder"}
         assert "examples.read" in self._granted("agent.curio.dataflow-builder")
 
+    def test_the_dataflow_builder_searches_the_scenario_catalog(self):
+        # A scenario of another project is one the user drags in: the Builder
+        # names it and its project. A helper runs only as a delegated mode,
+        # which has no tools, so no helper holds it.
+        assert self._holders("scenarios.search") == {"agent.curio.dataflow-builder"}
+        assert "scenarios.search" in self._granted("agent.curio.dataflow-builder")
+
     def test_only_the_node_builder_reads_the_node_catalog(self):
         # It recommends and installs packages in its chat.
         for tool in ("packages.catalog", "packages.resolve"):
@@ -814,11 +822,15 @@ class TestDataflowBuilderComposite:
         # note proposals mint on (grant-gated at the parent).
         # #917: package.draft.apply is the one a package the Node Builder's
         # writing mode drafts for it mints on, grant-gated the same way.
+        # node.settings.write changes a setting of a node already on the
+        # canvas, which a plan only places.
         assert [t.id for t in m.tools] == [
             "dataflow.read", "dataflow.plan.write", "node.runtime.read",
             "node.history.read",  # what changed in a node: its runs and edits
             "node.create",
+            "node.settings.write",
             "examples.read",  # any worked example, beside the ones a run is given
+            "scenarios.search",  # a scenario of another project, for the user to drag in
             "package.draft.apply",
         ]
         assert m.provenance.trust == "built-in"
@@ -1094,7 +1106,10 @@ class TestResearcher:
         # check is no longer offered (proposal paths, step 2). A pool starts
         # at OVERWRITE and the plan sets its modes in "dataPool"; a Simple
         # View names its image column in "simpleVis" (step 3).
-        "e6cdb1caee09f5743cf16a2d2a9732ddce1c548afa54ad28d259dbbface151db"
+        # 2026-10-23: a setting of an existing node changes through
+        # node.settings.write, never a new node, a plan or rewritten content
+        # (step 4).
+        "cb0317f7593ad1540d9b22e8181b71f696813bef3c00beed863eca5179fc4d6b"
     )
 
     def test_manifest_surface(self):

@@ -55,6 +55,7 @@ from utk_curio.backend.app.agents.domain.tool_names import (
     wire_name,
 )
 from utk_curio.backend.app.agents.domain.manifest import ToolRequirement
+from utk_curio.backend.app.agents.domain import dashboards
 from utk_curio.backend.app.common import spatial
 from utk_curio.backend.app.execution.code_references import WIDGET_KINDS
 
@@ -393,6 +394,24 @@ REGISTRY: dict[str, ToolContract] = {
             "content",
         ),
     ),
+    # Consumers: the Node Builder and the Dataflow Builder. A node already on
+    # the canvas: a Data Pool's modes, a Simple View's image column, a Spatial
+    # Join's operation and output and its widget values, each judged by its
+    # node's own rule; the apply writes them, and the canvas makes the change
+    # through the node's own setters.
+    "node.settings.write": ToolContract(
+        id="node.settings.write",
+        contract_version="1",
+        effect="mutate",
+        label="Propose a settings change",
+        parameter_schema=lambda say: _object({
+            "nodeId": _node_id(say),
+            "dataPool": _data_pool(say),
+            "simpleVis": _simple_vis(say),
+            "spatialJoin": _spatial_join(say),
+            "widgets": _map(say("widgets")),
+        }),
+    ),
     # dev/50, consumer: the Dataset Finder. Grounds the "From your Data
     # Catalog" lane in the real catalog (the datasets domain owns the data;
     # this module owns none of its own).
@@ -429,6 +448,16 @@ REGISTRY: dict[str, ToolContract] = {
         effect="read",
         label="Read worked examples",
         parameter_schema=lambda say: _object({"key": _text(say("key"))}),
+    ),
+    # Consumer: the Dataflow Builder. A scenario of another project is one the
+    # user drags in from the Scenario Catalog, which owns the listing (this
+    # module owns none of its own).
+    "scenarios.search": ToolContract(
+        id="scenarios.search",
+        contract_version="1",
+        effect="read",
+        label="Search the Scenario Catalog",
+        parameter_schema=lambda say: _object({"q": _text(say("q"))}),
     ),
     # Discovery Catalog, consumer: the Dataset Finder. Three contracts, not
     # two, and deliberately the same roster/detail/reviewed-mutate shape
@@ -731,6 +760,8 @@ _DISCOVERY_DESC_MAX_CHARS = 200
 _CATALOG_SEARCH_MAX_ROWS = 40
 _CATALOG_DESC_MAX_CHARS = 200
 _CATALOG_PARAM_MAX_CHARS = 200
+#: scenarios.search bounds, as the Data Catalog's.
+_SCENARIOS_SEARCH_MAX_ROWS = 40
 
 
 def _cut(key: str, rows: list, bound: int) -> dict:
@@ -808,6 +839,44 @@ def _catalog_listing_rows(user_key: str, project_id: str, params: dict) -> list[
             row["loader"] = snippet.get("code")
         rows.append(row)
     return rows
+
+
+def _request_user():
+    """The signed-in account the request runs as (``g.user``), as
+    :func:`_catalog_listing_rows` reads it; None outside a request or with no
+    one signed in."""
+    from flask import g, has_app_context
+
+    return getattr(g, "user", None) if has_app_context() else None
+
+
+def _execute_scenarios_search(project_id: str, params: dict) -> tuple[str, str]:
+    """``scenarios.search``: the Scenario Catalog's own listing, the one its
+    drawer browses (``ScenarioCatalogService.list_catalog``), read as the
+    signed-in account, as :func:`_catalog_listing_rows` reads the Data
+    Catalog's. One row per scenario, never its project's graph preview, the
+    first ``_SCENARIOS_SEARCH_MAX_ROWS`` with how many were left out
+    (:func:`_cut`). The catalog is an account's, so a run with none is told
+    so before anything is read."""
+    from utk_curio.backend.app.scenario_catalog.service import ScenarioCatalogService
+
+    user = _request_user()
+    if user is None:
+        return "error", agent_text.message("tools.scenarios-no-account")
+    query = params.get("q")
+    q = query.strip()[:_CATALOG_PARAM_MAX_CHARS] if isinstance(query, str) and query.strip() else None
+    rows = [
+        {
+            "key": item["key"],
+            "name": item["name"],
+            "description": (item.get("description") or "")[:_CATALOG_DESC_MAX_CHARS],
+            "project": item["project"]["name"],
+            "nodeCount": item["nodeCount"],
+            "inThisDataflow": item["project"]["id"] == project_id,
+        }
+        for item in ScenarioCatalogService(user).list_catalog(q=q).get("items") or []
+    ]
+    return "ok", _truncate(json.dumps(_cut("scenarios", rows, _SCENARIOS_SEARCH_MAX_ROWS), ensure_ascii=False))
 
 
 def _whole_number(value: object) -> int | None:
@@ -948,6 +1017,9 @@ def _node_row(node: dict, goal_cap: int) -> dict:
         "hasContent": bool(content.strip()),
         "contentChars": len(content),
     }
+    # A node pinned to the dataflow's dashboard is one of its tiles.
+    if dashboards.is_pinned(node):
+        row["pinned"] = True
     # #662: the values its code reads through widget references, and the node
     # a copy was copied from; each only when there is one.
     widgets = normalize_widgets((node.get("metadata") or {}).get("widgets"))
@@ -977,20 +1049,69 @@ def _scenario_rows(stripped: dict) -> list[dict]:
     """#662: the dataflow's scenarios, each with what it is made of: its
     levers (its nodes), its fixed context (the nodes outside it that it reads)
     and its outcomes (what gets compared). The parts are read by the rule the
-    canvas and the Scenario Catalog read them by (``scenarioParts``)."""
+    canvas and the Scenario Catalog read them by (``scenarioParts``). A
+    scenario dragged in from another project also names where it came from
+    (:func:`_scenario_sources`)."""
     from utk_curio.backend.app.projects.scenarios import normalize_scenarios
     from utk_curio.backend.app.scenario_catalog.domain.parts import scenario_parts, spec_nodes_and_edges
 
     nodes, edges = spec_nodes_and_edges(stripped)
     raw = (stripped.get("dataflow") or {}).get("scenarios")
+    scenarios = normalize_scenarios(raw, [n["id"] for n in nodes])
+    sources = _scenario_sources([scenario["source"] for scenario in scenarios if "source" in scenario])
     rows = []
-    for scenario in normalize_scenarios(raw, [n["id"] for n in nodes]):
+    for scenario in scenarios:
         parts = scenario_parts(scenario, nodes, edges)
         row = {"id": scenario["id"], "name": scenario["name"], "color": scenario["color"]}
         if scenario.get("description"):
             row["description"] = scenario["description"]
-        rows.append({**row, "levers": parts["levers"], "context": parts["context"], "outcomes": parts["outcomes"]})
+        row = {**row, "levers": parts["levers"], "context": parts["context"], "outcomes": parts["outcomes"]}
+        source = scenario.get("source")
+        if source is not None and (source["project"], source["scenario"]) in sources:
+            row["source"] = sources[(source["project"], source["scenario"])]
+        rows.append(row)
     return rows
+
+
+def _scenario_sources(sources: list[dict]) -> dict[tuple[str, str], dict]:
+    """Where each scenario dragged in from another project came from, by
+    ``(projectId, scenarioId)``, the ids its ``source`` keeps: that project's
+    and that scenario's names as they are now, ``{"project", "scenario"}``;
+    ``{"project", "status": "scenario-gone"}`` when the project no longer holds
+    the scenario; ``{"status": "project-gone"}`` when the project is gone or is
+    none of the account's.
+
+    Reads only the projects *sources* name, each once, as the signed-in
+    account owns them (``owned_project``). dataflow.read runs on every turn, so
+    with no source nothing is read, not even the request's account; with no
+    signed-in account no source is named."""
+    if not sources:
+        return {}
+    user = _request_user()
+    if user is None:
+        return {}
+    from utk_curio.backend.app.projects.scenarios import scenario_summaries
+    from utk_curio.backend.app.scenario_catalog.infrastructure import projects as scenario_projects
+
+    held: dict[str, tuple[str, dict[str, str]] | None] = {}
+    named: dict[tuple[str, str], dict] = {}
+    for source in sources:
+        project_id, scenario_id = source["project"], source["scenario"]
+        if project_id not in held:
+            try:
+                row, spec, _is_example = scenario_projects.owned_project(user, project_id)
+            except scenario_projects.ProjectNotFound:
+                held[project_id] = None
+            else:
+                held[project_id] = (row.name, {s["id"]: s["name"] for s in scenario_summaries(spec)})
+        project = held[project_id]
+        if project is None:
+            named[(project_id, scenario_id)] = {"status": "project-gone"}
+        elif scenario_id in project[1]:
+            named[(project_id, scenario_id)] = {"project": project[0], "scenario": project[1][scenario_id]}
+        else:
+            named[(project_id, scenario_id)] = {"project": project[0], "status": "scenario-gone"}
+    return named
 
 
 def _dataflow_projection(stripped: dict, user_key: str, project_id: str) -> dict:
@@ -1304,6 +1425,8 @@ def execute_read_tool(
             return "ok", _truncate(json.dumps(_cut("packages", rows, _PACKAGES_CATALOG_MAX_ROWS), ensure_ascii=False))
         if tool_id == "packages.resolve":
             return _execute_packages_resolve(user_key, params)
+        if tool_id == "scenarios.search":
+            return _execute_scenarios_search(project_id, params)
         spec = projects_storage.read_spec(user_key, project_id)
         if spec is None:
             return "error", agent_text.message("mint.no-saved-spec")

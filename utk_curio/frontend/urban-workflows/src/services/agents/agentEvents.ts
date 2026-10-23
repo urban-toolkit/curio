@@ -15,6 +15,7 @@
 import type {
   AgentAppliedScenario,
   AgentDataPoolSetting,
+  AgentNodeSettings,
   AgentPlanWidget,
   AgentSimpleVisSetting,
   AgentSpatialJoinSetting,
@@ -59,6 +60,14 @@ export type AgentCanvasMutation =
       /** The name of the agent that wrote the content, which a node that
        * keeps a history of its changes names the entry after. */
       agent?: string;
+    }
+  | {
+      /** An applied change of an existing node's settings: the live node
+       * takes each through its own setter, as a pick in it would
+       * (`utils/nodeSettingsWriters`). */
+      kind: "node-settings-applied";
+      nodeId: string;
+      settings: AgentNodeSettings;
     }
   | {
       /** dev/52: a whole applied plan graph — bulk nodes + edges, then a
@@ -141,6 +150,7 @@ export function subscribeAgentCanvasMutations(
       detail &&
       (detail.kind === "node-created" ||
         detail.kind === "node-content-applied" ||
+        detail.kind === "node-settings-applied" ||
         detail.kind === "graph-created" ||
         detail.kind === "scenarios-created" ||
         detail.kind === "plan-removals" ||

@@ -226,7 +226,10 @@ def _is_autark_node(node: dict, packages: "TemplateGrammars") -> bool:
     return declares_behavior(node.get("type"), _AUTK_GRAMMAR_BEHAVIORS, _AUTK_GRAMMAR_TYPES, packages)
 
 
-def _is_pinned(node: dict) -> bool:
+def is_pinned(node: dict) -> bool:
+    """Whether a saved *node* is pinned to its dataflow's dashboard, so a tile
+    of the page: ``dashboardPinned`` on the node itself, as ``TrillGenerator``
+    writes it."""
     return bool(node.get("dashboardPinned"))
 
 
@@ -253,6 +256,15 @@ def _autark_spec_has_data_sources(node: dict) -> bool:
         return False
     sources = parsed.get("data")
     return isinstance(sources, list) and len(sources) > 0
+
+
+def tile_loads_its_own_data(node: dict, packages: "TemplateGrammars") -> bool:
+    """Whether a saved *node* is a tile the dashboard refuses to publish: it
+    is pinned, its template declares the Autark node's behavior, and its spec,
+    the node's ``content``, has data sources of its own, which it would fetch
+    when the page draws. *packages* reads what the node's template declares.
+    The agents hold a spec they write for a pinned node to this check too."""
+    return is_pinned(node) and _is_autark_node(node, packages) and _autark_spec_has_data_sources(node)
 
 
 def passes_through(node: dict, packages: Optional["TemplateGrammars"] = None) -> bool:
@@ -295,7 +307,7 @@ def dashboard_source_node_ids(spec: dict, packages: Optional["TemplateGrammars"]
     edges = dataflow.get("edges") or []
 
     by_id = {node.get("id"): node for node in nodes if node.get("id")}
-    pinned = [node["id"] for node in nodes if node.get("id") and _is_pinned(node)]
+    pinned = [node["id"] for node in nodes if node.get("id") and is_pinned(node)]
     sources: Set[str] = set()
     if not pinned:
         return sources
@@ -331,14 +343,11 @@ def _refuse_tiles_that_fetch_their_own_data(
 ) -> None:
     """Refuse a dashboard whose pinned Autark tiles would still call out to draw."""
     dataflow = (spec or {}).get("dataflow") or {}
-    offenders: List[str] = []
-    for node in dataflow.get("nodes") or []:
-        if not _is_pinned(node):
-            continue
-        if not _is_autark_node(node, packages):
-            continue
-        if _autark_spec_has_data_sources(node):
-            offenders.append(str(node.get("id") or "a tile"))
+    offenders = [
+        str(node.get("id") or "a tile")
+        for node in dataflow.get("nodes") or []
+        if tile_loads_its_own_data(node, packages)
+    ]
     if offenders:
         raise DashboardCannotBeStandaloneError(offenders, name=name)
 

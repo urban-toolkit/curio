@@ -53,6 +53,18 @@ export interface AgentSimpleVisSetting {
   imageColumn?: string;
 }
 
+/** A change of an existing node's settings (`node.settings.write`), by the
+ * key the node keeps each at: each key a setting gives is picked as the
+ * node's select picks it (OVERWRITE among a pool's modes), a key it leaves
+ * out stays, and a Simple View's setting without a column picks every image
+ * column; widget values are by widget name. */
+export interface AgentNodeSettings {
+  dataPool?: AgentDataPoolSetting;
+  simpleVis?: AgentSimpleVisSetting;
+  spatialJoin?: AgentSpatialJoinSetting;
+  widgets?: Record<string, unknown>;
+}
+
 /** #662: a scenario a plan saves, on the review card. */
 export interface AgentPlanScenario {
   name: string;
@@ -121,7 +133,7 @@ export type AgentProposalStatus = "pending" | "applied" | "dismissed" | "superse
 export interface AgentProposalPart {
   type: "proposal";
   proposalId: string;
-  /** "node.content.write" | "node.create" | "project.install" | "package.draft.apply" | future kinds. */
+  /** "node.content.write" | "node.settings.write" | "node.create" | "project.install" | "package.draft.apply" | future kinds. */
   tool: string;
   summary: string;
   /** The full proposed content (plain text — rendered inert). */
@@ -139,6 +151,9 @@ export interface AgentProposalPart {
     executable?: boolean;
   };
   status: AgentProposalStatus;
+  /** node.settings.write: each change, one line apiece, in its node's own
+   * words, such as "Conflict between visualizations: Merge (AND)". */
+  settingLines?: string[];
   /** package.draft.apply, when the draft adds node types: the closest existing
    * templates the model considered and why each is inadequate. The user judges it. */
   justification?: string;
@@ -247,8 +262,9 @@ export interface AgentProposalPart {
       toLabel: string;
     }>;
     /** dev/59 (DEC-049.2): removals reviewed by NAME — every victim listed
-     * with a content flag; present only on destructive revisions. */
-    removals?: Array<{ id: string; label: string; nodeType?: string; contentChars: number }>;
+     * with a content flag; present only on destructive revisions. `pinned`
+     * only on a dashboard tile, which its removal takes off the dashboard. */
+    removals?: Array<{ id: string; label: string; nodeType?: string; contentChars: number; pinned?: boolean }>;
     removedEdgeCount?: number;
     cascadeCount?: number;
     /** dev/112: removed CONNECTIONS reviewed by name too (DEC-049.2 for edges). */
@@ -307,6 +323,10 @@ export interface AgentApplyResult {
   /** node.content.write: the applied content, for the live node, and the
    * name of the agent that wrote it. */
   appliedContent?: { nodeId: string; content: string; agent?: string };
+  /** node.settings.write: the change the saved node took, which the live
+   * node takes through its own setters, and the name of the agent that
+   * proposed it. */
+  appliedSettings?: { nodeId: string; settings: AgentNodeSettings; agent?: string };
   /** project.install: the installed agent coordinate. */
   installedCoord?: string;
   /** dataflow.plan.write (dev/52; removals per dev/59): the applied plan

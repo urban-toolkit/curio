@@ -162,6 +162,9 @@
       "id": "node.content.write"
     },
     {
+      "id": "node.settings.write"
+    },
+    {
       "id": "catalog.search"
     },
     {

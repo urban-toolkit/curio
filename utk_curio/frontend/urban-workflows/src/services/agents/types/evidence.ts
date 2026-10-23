@@ -81,9 +81,12 @@ export interface AgentSourceRef {
 
 /** dev/116: what a `source-missing` failure asks the user for.
  *  dev/126 adds `dataset-selection`: the node's source is with the user —
- *  its Dataset Finder holds candidates awaiting a selection. */
+ *  its Dataset Finder holds candidates awaiting a selection.
+ *  `dashboard-tile`: a pinned tile whose spec loads its own data waits for the
+ *  user, who loads the data in a node upstream or unpins it. It has no action:
+ *  the node's failure says what to do. */
 export interface AgentRemedy {
-  kind: "connection-key" | "use-connection-key" | "dataset-selection" | "llm-config" | string;
+  kind: "connection-key" | "use-connection-key" | "dataset-selection" | "llm-config" | "dashboard-tile" | string;
   /** llm-config: the agent no LLM configuration answers. */
   agentId?: string | null;
   host?: string;

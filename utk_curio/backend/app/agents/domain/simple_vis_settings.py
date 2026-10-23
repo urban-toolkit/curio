@@ -13,7 +13,10 @@ every image column (``resolveImageColumnChoice`` in
 that is empty, which the view would read as every column without a word, is
 refused. The shape is ``$defs.nodeMetadata.properties.simpleVis`` in
 ``docs/schemas/trill.v1.json`` (a string of at least one character), and the
-words are ``src/contracts/nodeSettings.json``, which the view reads too. Only a
+words are ``src/contracts/nodeSettings.json``, which the view reads too. An
+agent changes a view already on the canvas (``node.settings.write``) by the
+same rule, and one that names no column picks every image column, as the
+view's All does, which clears the setting. Only a
 template whose ``behavior`` is the view's keeps a setting: the behavior
 ``packages.template_behavior`` reads, which the caller passes in.
 """
@@ -61,6 +64,26 @@ def parse(raw: object, where: str) -> tuple[dict | None, list[str]]:
     return {"imageColumn": column}, []
 
 
+def parse_change(raw: object, where: str) -> tuple[dict | None, list[str]]:
+    """The change *raw* (``node.settings.write``'s) makes to a view on the
+    canvas: the column it names, trimmed, or ``{}``, every image column, as
+    the view's All picks it, when it names none; or the errors that say what
+    the view would not take, as ``parse`` says them. Absent changes nothing."""
+    if raw is None:
+        return None, []
+    setting, errors = parse(raw, where)
+    if errors:
+        return None, errors
+    return (setting or {}), []
+
+
+def after(current: object, change: dict) -> dict | None:
+    """What a view stores once *change* is picked: the column it names, or
+    None for every image column, which the view writes as no setting."""
+    column = _column(change.get("imageColumn"))
+    return {"imageColumn": column} if column else None
+
+
 def template_problem(behavior: object, label: object, where: str) -> str | None:
     """Why a node whose template names *behavior* keeps no setting, or None."""
     if behavior == BEHAVIOR:
@@ -70,8 +93,9 @@ def template_problem(behavior: object, label: object, where: str) -> str | None:
 
 def describe(setting: dict | None) -> str:
     """The setting as the view's select names it, as a review card reads it:
-    ``Image column: overlay_url``."""
-    return "; ".join(f"{_WORDS['settings'][key]}: {setting[key]}" for key in SETTING_KEYS if key in (setting or {}))
+    ``Image column: overlay_url``, or the select's own word for every image
+    column, ``Image column: all``, when it names none."""
+    return f"{_WORDS['settings']['imageColumn']}: {_column((setting or {}).get('imageColumn')) or _WORDS['all']}"
 
 
 def saved(raw: object) -> dict | None:

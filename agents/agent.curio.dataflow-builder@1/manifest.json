@@ -59,7 +59,13 @@
       "id": "node.create"
     },
     {
+      "id": "node.settings.write"
+    },
+    {
       "id": "examples.read"
+    },
+    {
+      "id": "scenarios.search"
     },
     {
       "id": "package.draft.apply"
