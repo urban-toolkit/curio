@@ -16,6 +16,11 @@ import { CopyButton } from '../../components/CopyButton';
 import ImageCardGrid from './components/ImageCardGrid';
 import { toRows } from '../../utils/rowSource';
 import { unwrapValueEnvelopes } from '../../utils/sandboxEnvelope';
+import nodeSettings from '../../contracts/nodeSettings.json';
+
+/** The picker's label, which an agent's review card and the backend say the
+ *  setting in too (contracts/nodeSettings.json). */
+const IMAGE_COLUMN_LABEL = nodeSettings.simpleVis.settings.imageColumn;
 
 function buildTableRows(parsedOutput: ICodeDataContent): any[] {
   // Was a fourth copy of the same column-major flatten; see utils/rowSource.
@@ -208,9 +213,9 @@ export const useSimpleVisBehavior: NodeBehaviorHook = (data, nodeState) => {
               className="nodrag"
               style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '4px 8px', fontSize: 11 }}
             >
-              <span>Image column</span>
+              <span>{IMAGE_COLUMN_LABEL}</span>
               <select
-                aria-label="Image column"
+                aria-label={IMAGE_COLUMN_LABEL}
                 data-curio-image-column="true"
                 value={choice}
                 onChange={(e) => pickColumn(e.target.value)}
