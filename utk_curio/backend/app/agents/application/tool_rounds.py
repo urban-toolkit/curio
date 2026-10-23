@@ -279,6 +279,7 @@ def _refuse_params(text: str) -> tuple[str, str, None]:
 # error card, never silently dropped under the reply's confident prose.
 MUTATE_PROPOSAL_TOOLS = frozenset({
     "node.content.write",
+    "node.settings.write",
     "node.create",
     "dataset.install",
     "discovery.acquire",

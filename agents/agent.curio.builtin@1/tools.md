@@ -46,6 +46,17 @@ Propose replacing one node's content. Params: {"nodeId": "...", "content": "..."
 
 - content: The node's complete new content.
 
+## node.settings.write
+
+Propose changing the settings of ONE node already on the canvas, as picking them in the node does: a Data Pool's conflict modes, a Simple View's image column, a Spatial Join's operation and output, or the values of its widgets, a Parameter node's value among them. Params: {"nodeId": "...", "dataPool": {...}, "simpleVis": {...}, "spatialJoin": {...}, "widgets": {"<widget name>": <value>}}, each optional, at least one given. Each key a setting gives is picked and each key it leaves out stays as it is; {} puts the whole setting back to its default. The node's code, and every setting the request does not name, are left as they are. Never propose a new node or rewritten content for a change these take. The user reviews the proposal before anything is applied; nothing changes without their explicit approval.
+
+### Parameters
+
+- dataPool: The Data Pool's conflict modes to change: each mode given is picked, one left out stays, and {} puts both back to OVERWRITE.
+- simpleVis: The Simple View's image column: {"imageColumn": "<column>"} shows that column alone, and {} shows every image column.
+- spatialJoin: The Spatial Join's operation and output to change: each one given is picked, one left out stays, and {} puts both back to intersects and pairs.
+- widgets: A new value for each widget named, {"<widget name>": <value>}: a widget the node has, and a value its type and options take.
+
 ## catalog.search
 
 Search the project's Data Catalog. Params (all optional): {"q": "<text>", "format": "<fmt>", "origin": "<origin>"}. Returns dataset rows with id, name, format, origin, installed state, and description. Catalog-lane candidates must come from these results only. Rows whose data file is resolved also carry `path` (the absolute file a node may open) and `loader` (the loader code for that path): the ONLY local paths generated node content may reference (dev/114).
