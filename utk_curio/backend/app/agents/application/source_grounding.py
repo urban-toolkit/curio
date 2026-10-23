@@ -1102,15 +1102,11 @@ def confirmed_dataset_ids(confirmed: object) -> set[str]:
 
 
 def synthetic_requested(texts: list[str] | tuple[str, ...], params: dict | None = None) -> bool:
-    """True when the USER asked for made-up data, or the model declared
-    ``synthetic: true`` — the declaration is only honoured when the user's
-    texts justify it (the model may not self-authorize)."""
+    """True when the USER asked for made-up data in their own words. A
+    model's ``synthetic`` declaration counts for nothing: *params* is
+    accepted so every caller passes the same shape, and is not read."""
     lowered = " ".join(t.lower() for t in (texts or ()) if isinstance(t, str))
-    asked = any(marker in lowered for marker in SYNTHETIC_MARKERS)
-    # ``params`` is accepted so every caller passes the same shape; a bare
-    # declaration without the user's words is deliberately NOT enough.
-    _ = isinstance(params, dict) and params.get("synthetic") is True
-    return asked
+    return any(marker in lowered for marker in SYNTHETIC_MARKERS)
 
 
 def loads_dataset(node_type: object, templates: dict | None = None) -> bool:

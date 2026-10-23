@@ -503,7 +503,9 @@ class SolveBatch:
             # dev/118 live fix: the upstream has no content (it failed, or
             # is not a target) — this node waits, pending with the reason;
             # Retry runs it once the upstream is solved or filled.
-            reason = f"waiting: {raw_detail[:240]}" if raw_detail else "waiting: an upstream node has no content yet"
+            # The status says it waits: the notice and the card put it before
+            # the reason, which says on what, as every pending reason does.
+            reason = raw_detail[:240] if raw_detail else "an upstream node has no content yet"
             # The session summary reads what the node waits on from here, not
             # from the reason's wording.
             self.results[node_id] = {"status": "pending", "reason": reason, "waitingOn": "upstream", **trail}
@@ -512,7 +514,7 @@ class SolveBatch:
             # dev/118 (DEC-075): the runner refused the SLICE (the 25-node
             # bound, a cycle) — a bound on validation, not a failure of the
             # content: skipped, with the bound named.
-            reason = f"skipped: {raw_detail[:240]}" if raw_detail else "skipped: validation refused the slice"
+            reason = raw_detail[:240] if raw_detail else "validation refused the slice"
             self.results[node_id] = {"status": "skipped", "reason": reason, **trail}
             return {"nodeId": node_id, "status": "skipped", "reason": reason, **trail}
         # dev/127: a refusal's head names the literal; a traceback is read
@@ -530,16 +532,16 @@ class SolveBatch:
         )
         rounds = outcome.get("rounds") or 0
         remedy_payload = evidence.get("remedy") if isinstance(evidence.get("remedy"), dict) else None
-        remedy = (
-            self._ungrounded_remedy(node_id)
-            if kind == "ungrounded-source" else
-            agents_grounding._source_missing_remedy(remedy_payload)
-            if kind == "source-missing" else ""
-        )
+        if kind == "ungrounded-source":
+            clause = self._ungrounded_remedy(node_id)
+            detail = f"{detail[:200 - len(clause)]}{clause}"
+        elif kind == "source-missing":
+            # The remedy is a sentence of its own, appended as written.
+            sentence = agents_grounding._source_missing_remedy(remedy_payload)
+            detail = agents_grounding._then_sentence(detail[:200 - len(sentence) - 2], sentence)
         bound = agents_rounds._stopped_by_clause(outcome.get("stoppedBy"))
         err = (
-            f"not fixed after {rounds} attempt{'s' if rounds != 1 else ''}{bound}: "
-            f"{kind}: {detail[:200 - len(remedy)] if remedy else detail}{remedy}"
+            f"not fixed after {rounds} attempt{'s' if rounds != 1 else ''}{bound}: {kind}: {detail}"
         )[:300]
         extra = {"remedy": remedy_payload} if remedy_payload else {}
         self.results[node_id] = {"status": "failed", "error": err, **trail, **extra}
@@ -592,6 +594,17 @@ class SolveBatch:
         if unreadable:
             self.results[node_id] = {"status": "failed", "error": unreadable[:300]}
             return {"nodeId": node_id, "status": "failed", "error": unreadable[:300]}
+        # The builder's one-line answer in place of code is reported, as the
+        # verified loop reports it, and never written as the node's code.
+        answered = (
+            agents_rounds._one_line_answer(text_out, data_loading=self.is_data_loading(node))
+            if self.content_kind(node) == workflow_spec.CONTENT_KIND_CODE else None
+        )
+        if answered is not None:
+            kind, detail = answered
+            err = f"{kind}: {detail}"[:300]
+            self.results[node_id] = {"status": "failed", "error": err}
+            return {"nodeId": node_id, "status": "failed", "error": err}
         result: dict = {"status": "solved"}
         if not self.is_executable(node):
             # dev/118 (DEC-075): written like before, and SAID to be unexecuted.

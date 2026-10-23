@@ -8,6 +8,7 @@ and import order between siblings cannot matter.
 
 from __future__ import annotations
 
+import ast
 import logging
 import hashlib
 import io
@@ -65,10 +66,15 @@ def _content_sha(text: str) -> str:
     return hashlib.sha256((text or "").encode("utf-8")).hexdigest()
 
 
+#: The kind of a round whose candidate is the content builder's one-line answer
+#: on a node that loads no data: why the node cannot be done, such as two
+#: inputs that cannot be joined, in the builder's own words.
+ONE_LINE_ANSWER_KIND = "one-line-answer"
+
 #: Attempt kinds whose detail is read from the HEAD (a refusal names the
 #: literal, a decline names the missing input); a traceback reads from its tail.
 _HEAD_FIRST_KINDS = (
-    "ungrounded-source", "source-missing", "repeated-attempt",
+    "ungrounded-source", "source-missing", ONE_LINE_ANSWER_KIND, "repeated-attempt",
     # The gate's refusal of the code's own calls and imports names them first.
     source_grounding.CODE_KIND,
     # dev/128: the shape refusal's first line IS the answer.
@@ -260,12 +266,35 @@ _CODE_MARKERS = ("import ", "return ", " = ", "(", "def ", "{")
 
 
 def _is_prose_decline(candidate: str) -> bool:
-    """A short, single-line reply with no code shape — the content builder's
-    sanctioned "what source is missing" line rather than content."""
+    """A short, single-line reply with no code shape: the content builder's
+    sanctioned one-line answer rather than content."""
     text = (candidate or "").strip()
     if not text or "\n" in text or len(text) > agents_budgets._PROSE_DECLINE_MAX_CHARS:
         return False
     return not any(marker in text for marker in _CODE_MARKERS)
+
+
+def _one_line_answer(candidate: str, *, data_loading: bool) -> tuple[str, str] | None:
+    """The kind and the detail of a *candidate* that is the content builder's
+    one-line answer in place of code, or None.
+
+    The line has no code shape (:func:`_is_prose_decline`) and Python cannot
+    read it as code either, so a bare expression such as ``input_0[0]`` stays
+    code that a round corrects. A data-loading node's answer declines, naming
+    what its source needs (``source-missing``); any other node's says why the
+    node cannot be done (:data:`ONE_LINE_ANSWER_KIND`)."""
+    if not _is_prose_decline(candidate):
+        return None
+    line = candidate.strip()
+    try:
+        ast.parse(line)
+    except Exception:  # noqa: BLE001 - a line Python cannot read is no code
+        pass
+    else:
+        return None
+    if data_loading:
+        return "source-missing", agent_text.message("solve.builder-declined", decline=line)
+    return ONE_LINE_ANSWER_KIND, agent_text.message("solve.builder-answered", answer=line)
 
 
 def _correction_url_evidence(candidate: str, error_text: str, ctx) -> list[dict]:

@@ -52,7 +52,7 @@ def _sentence_with(text: str, words: str) -> str:
 
 def _dashed(text: str) -> bool:
     """Whether *text* holds an en or an em dash."""
-    return "–" in text or "—" in text
+    return chr(0x2013) in text or chr(0x2014) in text
 
 
 def _spec(node):
@@ -455,7 +455,7 @@ class TestConnectionKeys:
             "kind": "connection-key", "host": "api.noaa.gov", "suggestedName": "noaa",
         }
         assert outcome["attempts"][1]["remedy"]["kind"] == "connection-key"
-        assert "add a connection key for api.noaa.gov" in packages_grounding._source_missing_remedy(
+        assert "Add a connection key for api.noaa.gov" in packages_grounding._source_missing_remedy(
             outcome["evidence"]["remedy"])
         # With a key already saved for the host, the remedy is to Solve again.
         self._save(host="api.noaa.gov")
@@ -765,7 +765,7 @@ class TestEmptyUpstreamWaits:
         body = helper._solve(client, token, ctx)
         assert body["results"][ctx["load"]]["status"] == "failed"
         stats = body["results"][ctx["stats"]]
-        assert stats["status"] == "pending" and stats["reason"].startswith("waiting: upstream node")
+        assert stats["status"] == "pending" and stats["reason"].startswith("upstream node")
         assert stats["rounds"] == 1
         assert ctx["exec_payloads"] == []  # neither the empty loader nor the stats node ran
         assert body["builderSession"]["nodeRuns"][ctx["stats"]] == "pending"  # Retry after the loader is fixed
@@ -1284,7 +1284,7 @@ class TestVerifiedSolve:
         monkeypatch.setattr('utk_curio.backend.app.agents.domain.validation.validate_candidate', _bounded)
         body = self._solve(client, token, ctx)
         stats = body["results"][ctx["stats"]]
-        assert stats["status"] == "skipped" and stats["reason"].startswith("skipped: the upstream slice has 30 nodes")
+        assert stats["status"] == "skipped" and stats["reason"].startswith("the upstream slice has 30 nodes")
         assert stats["rounds"] == 1  # a bound is not corrected — one round says so
         assert "not fixed" not in json.dumps(stats)
         assert body["results"][ctx["load"]]["status"] == "solved"
