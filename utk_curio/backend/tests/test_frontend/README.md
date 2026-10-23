@@ -49,9 +49,9 @@ CI splits the suite between a self-hosted GPU runner, the only kind with
 hardware WebGPU, and a matrix of CPU runners
 ([`runner_split.py`](runner_split.py)). The run chooses
 each job's runner: GitHub-hosted `ubuntu-latest` while the organization's
-hosted runners have room and the self-hosted arcade runners (`[self-hosted,
-cpu]`) after that, and for the GPU
-share an arcade GPU runner (`arcade-gpu-01` to `arcade-gpu-04`) while one is free and `utk-gpu` otherwise. The GPU share is
+hosted runners have room, the self-hosted arcade runners (`[self-hosted,
+cpu]`) after that, and the `utk-desktop` runners when arcade is full too; for the GPU
+share an arcade GPU runner (`arcade-gpu-01` to `arcade-gpu-04`) while one is free, then `utk-gpu`, then `utk-desktop-01`. The GPU share is
 still called `utk`, after the first GPU runner. A test runs on `utk` when its
 browser runs WebGPU: a `test_workflows.py` case whose dataflow has an Autark node, a
 walkthrough scene whose example or script drives Autark or the GPU, and any
@@ -435,11 +435,11 @@ python scripts/ci_report.py --junit "End-to-end tests=.curio/e2e.xml" \
 
 ### Baselines per GPU kind
 
-The GPU job runs on one of two GPU models: an arcade runner (arcade-gpu-01 to
-04 share an H100) or utk-gpu (an RTX PRO 6000). Nearly every frame draws the
-same on both. A frame that does not, like example 07's plot close-up, whose
+The GPU job runs on one of three GPU models: an arcade runner (arcade-gpu-01 to
+04 share an H100), utk-gpu (an RTX PRO 6000) or utk-desktop-01 (an RTX 3070,
+kind `utk-desktop`). Nearly every frame draws the same on all three. A frame that does not, like example 07's plot close-up, whose
 GPU-computed histogram draws 6% apart, may also keep a baseline of one GPU kind
-beside its default one: `<name>.utk-gpu.png` or `<name>.arcade-gpu.png`.
+beside its default one: `<name>.utk-gpu.png`, `<name>.arcade-gpu.png` or `<name>.utk-desktop.png`.
 
 - The test-gpu job sets `CURIO_E2E_GPU_KIND` from its runner's name. A frame
   with a baseline of that kind is compared with it. Every other frame, and every
@@ -1023,7 +1023,7 @@ the autouse `e2e_clean_db` must not truncate between them.
 | `CURIO_SANDBOX_TOKEN` | The sandbox's shared secret for `/exec`, `/execJs`, `/get`, `/artifact-meta` and `/monitor` (`sandbox/app/auth.py`). The self-managed path mints one and publishes it to this process; **with `CURIO_E2E_USE_EXISTING=1` you must set it yourself, to the same value the running stack was started with**: `curio.py start` mints a random one otherwise, and nothing can recover it. A mismatch fails with that sentence. |
 | `CURIO_E2E_FRONTEND_PORT` | Frontend port for existing servers (default: `8080`) |
 | `CURIO_E2E_COMPARE_DIR` | Record every screenshot comparison, passing or not, into this directory: one folder each with the expected, created and difference images and `record.json`, which `scripts/ci_report.py` turns into one HTML page. Unset, nothing is recorded. |
-| `CURIO_E2E_GPU_KIND` | The run's GPU kind, `arcade-gpu` or `utk-gpu`: a frame with a baseline of that kind is compared with it (see *Baselines per GPU kind*). CI's test-gpu job sets it from its runner's name. Unset, every frame is compared with its default baseline. |
+| `CURIO_E2E_GPU_KIND` | The run's GPU kind, `arcade-gpu`, `utk-gpu` or `utk-desktop`: a frame with a baseline of that kind is compared with it (see *Baselines per GPU kind*). CI's test-gpu job sets it from its runner's name. Unset, every frame is compared with its default baseline. |
 | `CURIO_TESTING` | Two jobs: switches the backend to test-only DB paths under `.curio/test/`, **and** is the second factor the `/api/testing/*` blueprint and the scripted LLM provider require. Exported by `../conftest.py`; externally-booted servers (compose stacks included) must be given it explicitly. |
 | `DATABASE_URL_TEST` | SQLAlchemy URL for the test DB (defaults to `sqlite:///…/.curio/test/urban_workflow_test.db`). |
 | `CURIO_TEST_WORKSPACE` | Persist the per-session test workspace here instead of a temp dir (debugging). |

@@ -123,10 +123,11 @@ REMINT_FORCE: tuple = ()
 
 
 #: The GPU models CI's test-gpu job draws on: the arcade runners
-#: (arcade-gpu-01..04) share an H100, and utk-gpu has an RTX PRO 6000. A frame
-#: the two draw differently (example 07's plot close-up) keeps a baseline per
-#: GPU kind, ``<name>.<kind>.png``, beside its default one.
-GPU_KINDS = ("arcade-gpu", "utk-gpu")
+#: (arcade-gpu-01..04) share an H100, utk-gpu has an RTX PRO 6000, and
+#: utk-desktop-01 an RTX 3070. A frame they draw differently (example 07's plot
+#: close-up) keeps a baseline per GPU kind, ``<name>.<kind>.png``, beside its
+#: default one.
+GPU_KINDS = ("arcade-gpu", "utk-gpu", "utk-desktop")
 
 #: Names the run's GPU kind, one of GPU_KINDS. CI's test-gpu job sets it from
 #: its runner's name. A run without it (a local run, a CPU runner) compares
@@ -134,7 +135,7 @@ GPU_KINDS = ("arcade-gpu", "utk-gpu")
 GPU_KIND_ENV = "CURIO_E2E_GPU_KIND"
 
 #: The ``gpu_pool`` dispatch input that sends test-gpu to each GPU kind.
-_GPU_POOL = {"arcade-gpu": "arcade", "utk-gpu": "utk"}
+_GPU_POOL = {"arcade-gpu": "arcade", "utk-gpu": "utk", "utk-desktop": "desktop"}
 
 #: Frames a re-mint writes as baselines of the run's GPU kind, named by parts
 #: of their baseline names (``--remint-gpu-kind <kind>:<part>,...``). Such a

@@ -4,7 +4,8 @@
 #
 # Every commit brings an image of several GB, pulled by start-stack or built by
 # the job (test-gpu, test-gpu-stress). An arcade runner's daemon is its own;
-# utk-gpu's is the host's, which the deployed stacks share. Removed:
+# utk-gpu's is the host's, which the deployed stacks share, and a utk-desktop
+# runner's is its desktop's. Removed:
 # - the CI stacks' image names, `curio-ci*-curio` (start-stack tags them,
 #   compose builds under them), which otherwise hold their last jobs' images
 #   for good, one per project;
@@ -20,8 +21,8 @@
 # its pull or build, removes no name and no image of another commit, so the
 # image an earlier job left stays for the runner's next job. A job has one
 # once CURIO_CI_OWN_IMAGE is 1: start-stack sets it after its pull, and a job
-# that builds its image after the build. utk-gpu keeps no CI image between
-# jobs.
+# that builds its image after the build. utk-gpu and the utk-desktop runners
+# keep no CI image between jobs.
 #
 # The deployed stacks' images and every image a container uses stay:
 # `docker image rm` without -f skips an image in use. The disk use before and
