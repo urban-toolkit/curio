@@ -9,6 +9,7 @@ and import order between siblings cannot matter.
 from __future__ import annotations
 
 import hashlib
+import json
 import uuid
 
 from utk_curio.backend.app.agents.application import source_grounding
@@ -26,7 +27,7 @@ from utk_curio.backend.app.agents.application.proposals import store as agents_s
 from utk_curio.backend.app.agents.application.turns import delegates as agents_delegates
 from utk_curio.backend.app.agents.application.turns import grounding as agents_grounding
 from utk_curio.backend.app.agents.application.turns import roster as agents_roster
-from utk_curio.backend.app.execution.code_references import check_widget_def
+from utk_curio.backend.app.execution.code_references import check_widget_def, normalize_widgets
 from utk_curio.backend.app.execution.workflow_spec import CONTENT_KIND_NONE, PARAMETER_TYPE
 from utk_curio.backend.app.projects import storage as projects_storage
 from utk_curio.backend.app.agents.domain import agent_text
@@ -541,6 +542,8 @@ def _mint_proposal(
     tool = req.get("tool")
     if tool == "node.content.write":
         return _mint_node_content_write(user_key, project_id, loop_ctx, req)
+    if tool == "node.settings.write":
+        return _mint_node_settings_write(user_key, project_id, loop_ctx, req)
     if tool == "node.create":
         return _mint_node_create(user_key, project_id, loop_ctx, req)
     if tool == "dataset.install":
@@ -587,20 +590,23 @@ def _node_display_name(node: dict, entry: dict | None) -> str:
     return name + (f" · {title}" if isinstance(title, str) and title.strip() else "")
 
 
+def _target_node_id(loop_ctx: dict, params: dict) -> str | None:
+    """The node a request names in ``nodeId``, else the node the agent is
+    attached to, else None."""
+    node_id = params.get("nodeId")
+    if isinstance(node_id, str) and node_id:
+        return node_id
+    target = loop_ctx.get("target")
+    return target.get("targetId") if isinstance(target, dict) and target.get("kind") == "node" else None
+
+
 def _mint_node_content_write(
     user_key: str, project_id: str, loop_ctx: dict, req: dict
 ) -> tuple[str, str, dict | None]:
     """The dev/41 mutation: replace one existing node's content, digest-pinned."""
 
     params = req.get("params") or {}
-    node_id = params.get("nodeId")
-    if not isinstance(node_id, str) or not node_id:
-        target = loop_ctx.get("target")
-        node_id = (
-            target.get("targetId")
-            if isinstance(target, dict) and target.get("kind") == "node"
-            else None
-        )
+    node_id = _target_node_id(loop_ctx, params)
     if not node_id:
         return "refused", agent_text.message("tools.no-node-id"), None
     proposed = content.extract_node_content(params.get("content"))
@@ -664,6 +670,114 @@ def _mint_node_content_write(
     return (
         "proposed",
         agent_text.message("mint.content-write-proposed", proposal_id=proposal_id, node_id=repr(node_id)),
+        part,
+    )
+
+
+#: What node.settings.write changes, in the order its schema lists them: the
+#: settings ``node_settings`` walks, then the node's widget values.
+_SETTING_PARAMS = ("dataPool", "simpleVis", "spatialJoin", "widgets")
+
+
+def _settings_basis(node: dict, change: dict) -> str:
+    """The digest of what *change* touches on *node*, as the node reads it:
+    its type, each setting the change names as the node does it
+    (``node_settings.saved``) and each widget it gives a value to. The apply
+    takes it again, so a setting changed since the review stales the card and
+    one the change does not touch leaves it as it is."""
+    metadata = node.get("metadata") if isinstance(node.get("metadata"), dict) else {}
+    values = change.get("widgets") or {}
+    touched = {
+        "type": node.get("type"),
+        "settings": {key: setting for key, setting in node_settings.saved(metadata).items() if key in change},
+        "widgets": [widget for widget in normalize_widgets(metadata.get("widgets")) if widget["name"] in values],
+    }
+    return hashlib.sha256(json.dumps(touched, sort_keys=True, ensure_ascii=False).encode("utf-8")).hexdigest()
+
+
+def _mint_node_settings_write(
+    user_key: str, project_id: str, loop_ctx: dict, req: dict
+) -> tuple[str, str, dict | None]:
+    """A change of one existing node's settings: a Data Pool's modes, a Simple
+    View's image column, a Spatial Join's operation and output, and the values
+    of its widgets, each judged by its node's own rule on a node whose
+    template keeps it, worded for the card as the node words it, and pinned to
+    what it touches (``_settings_basis``)."""
+    params = req.get("params") or {}
+    taken = ("nodeId", *_SETTING_PARAMS)
+    unknown = sorted(str(key) for key in set(params) - set(taken))
+    if unknown:
+        return agents_tool_rounds._refuse_params(agent_text.message(
+            "node-settings.unknown-params", unknown=", ".join(unknown), keys=", ".join(taken),
+        ))
+    if all(params.get(key) is None for key in _SETTING_PARAMS):
+        return agents_tool_rounds._refuse_params(agent_text.message(
+            "node-settings.nothing-given", keys=", ".join(_SETTING_PARAMS[:-1]) + " or " + _SETTING_PARAMS[-1],
+        ))
+    node_id = _target_node_id(loop_ctx, params)
+    if not node_id:
+        return "refused", agent_text.message("tools.no-node-id"), None
+    spec = projects_storage.read_spec(user_key, project_id)
+    if spec is None:
+        return "refused", agent_text.message("mint.no-saved-spec"), None
+    nodes = (spec.get("dataflow") or {}).get("nodes") or []
+    node = next((n for n in nodes if isinstance(n, dict) and n.get("id") == node_id), None)
+    if node is None:
+        return "refused", agent_text.message("tools.node-not-in-spec", node_id=repr(node_id)), None
+    from utk_curio.backend.app.packages import service as packages_services
+
+    entry, _err = packages_services.resolve_template(user_key, project_id, node.get("type"))
+    label = (entry or {}).get("label") or node.get("type")
+    metadata = node.get("metadata") if isinstance(node.get("metadata"), dict) else {}
+    # Each setting by its node's rule, on a node whose template keeps it.
+    change, problems = node_settings.parse_change(params, "params")
+    if change:
+        behavior = packages_services.template_behavior(user_key, project_id, node.get("type"))
+        problems += node_settings.template_problems(change, behavior, label, lambda key: f"params.{key}")
+    # Each value by its widget's rule, as the Widgets tab takes it.
+    widgets = normalize_widgets(metadata.get("widgets"))
+    values, widget_problems = widget_grammar.parse_values(params.get("widgets"), widgets, "params.widgets", label)
+    problems += widget_problems
+    if problems:
+        return agents_tool_rounds._refuse_params("; ".join(problems))
+    by_name = {widget["name"]: widget for widget in widgets}
+    lines = node_settings.describe_change(change) + [
+        widget_grammar.describe_value(by_name[name], value) for name, value in (values or {}).items()
+    ]
+    if not node_settings.changes_anything(metadata, change) and not widget_grammar.changes_anything(widgets, values or {}):
+        return agents_tool_rounds._refuse_params(agent_text.message(
+            "node-settings.changes-nothing", label=label, settings="; ".join(lines),
+        ))
+    if values is not None:
+        change["widgets"] = values
+    basis = _settings_basis(node, change)
+    proposal_id = uuid.uuid4().hex
+    node_name = _node_display_name(node, entry)
+    summary = f"Change the settings of the {node_name}"
+    part = content.make_proposal_part(
+        proposal_id=proposal_id,
+        tool="node.settings.write",
+        summary=summary,
+        preview="\n".join(lines),
+        pins={"nodeId": node_id, "settingsSha256": basis},
+    )
+    # The card's lines, each change in its node's own words.
+    part["settingLines"] = lines
+    proposal = {
+        "proposalId": proposal_id,
+        "tool": "node.settings.write",
+        "nodeId": node_id,
+        "nodeName": node_name,
+        "settings": change,
+        "settingLines": lines,
+        "settingsSha256": basis,
+        "summary": summary,
+        "status": "pending",
+    }
+    agents_store._store_proposal(user_key, project_id, spec, loop_ctx, proposal, part)
+    return (
+        "proposed",
+        agent_text.message("mint.settings-write-proposed", proposal_id=proposal_id, node_id=repr(node_id)),
         part,
     )
 
