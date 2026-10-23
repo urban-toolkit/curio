@@ -64,7 +64,7 @@ The other three are helpers. They have modes only, never a chat: they are never 
 
 | Helper | Modes (who asks) |
 |---|---|
-| **Dataflow Planner** | Plan a dataflow's tasks, refresh them and check a plan's coherence (Dataflow Builder); plan a follow-up from a node's run (Node Builder, Dataflow Builder); bind the keywords of a description (Dataset Finder); extract them (no agent asks for this) |
+| **Dataflow Planner** | Plan a follow-up from a node's run (Node Builder); bind the keywords of a description (Dataset Finder); plan a dataflow's tasks, refresh them, check a plan's coherence and extract a description's keywords (no agent asks for these) |
 | **Dataflow Reader** | Explain the whole dataflow (Dataflow Builder); suggest its next steps (Dataset Finder, Dataflow Builder) |
 | **Generated Content Evaluator** | Check generated node content against its goal (Node Builder, Dataflow Builder) |
 
@@ -281,6 +281,8 @@ The reverse holds too. Removing an agent that another added agent requires is re
 
 The **Dataflow Builder** plans a whole dataflow. Once you apply its plan, **Solve** in its strip fills in the planned nodes in one batch, and **Solve this node**, in the chat of an agent attached to a node, does the same for one node.
 
+You apply a plan whole, with the card's **Apply**, or a node at a time, with each row's **Apply** and then **Connect all**. Either way, the nodes and connections the plan removes leave the dataflow when the last of it is applied, and the chat's result says what changed and whether the dataflow is left with a cycle. If you edited a node the plan removes after you reviewed it, the plan is refused: ask the agent to plan again.
+
 Solve runs what it writes. A node with code is generated, run in the sandbox, corrected when the run fails, and written only once a run passes. The nodes run in waves, the loaders first and then what depends on them, and the strip shows which wave is running (*wave 2 of 3*). A chart or map document is checked against its grammar's schema and reported as validated, not executed. A node with nothing to write, such as a Data Pool or a Spatial Join, is left wired as it is. A node of a package template whose starter is its whole content ([Authoring nodes](AUTHORING-NODES.md#widgets-in-a-template)) starts with that starter and the template's widgets, set as the plan declares them, and Solve leaves it as it is too.
 
 When Solve cannot fix a node, nothing is written, and the chat shows every attempt as its own row: the exception, where it was raised, and the code that attempt ran. The message names what stopped the loop, normally the time budget: the Solve's 15 minutes, or the node's own 15 minutes when you use **Solve this node**. A Solve keeps working for up to 15 minutes, and runs on if you close the chat or reload the page. **Stop** ends it after the current node, and what was written stays. What it did not reach stays *pending* with the reason, and **Solve** continues from there; after a failure or a server restart, the same button reads **Retry**.
@@ -291,7 +293,7 @@ A node with several inputs reads each through its input chip, `[!! input_0 !!]`,
 
 ### Widgets and scenarios
 
-A planned node can declare widgets: values you set in its **Widgets** tab, which its code reads through references such as `[!! threshold !!]` (see [Widgets](USAGE.md#widgets)). The review card lists each node's widgets, and Solve writes code that places them and is told their current values. A value several nodes read is a **Parameter** node with one widget. A node the **Node Builder** proposes can declare widgets too. A widget a plan or a proposal declares is checked as the **Widgets** tab checks one you add.
+A planned node can declare widgets: values you set in its **Widgets** tab, which its code reads through references such as `[!! threshold !!]` (see [Widgets](USAGE.md#widgets)). The review card lists each node's widgets, and Solve writes code that places them and is told their current values. A value several nodes read is a **Parameter** node with one widget. A node the **Node Builder** proposes can declare widgets too, and it can propose a **Parameter** node, with its one widget. A widget a plan or a proposal declares is checked as the **Widgets** tab checks one you add.
 
 A planned **Spatial Join** says how its inputs' shapes meet and what it outputs, the two choices its body offers, and the review card lists them. A Spatial Join the **Node Builder** proposes carries them too. An agent can set only an operation and an output the node offers.
 
