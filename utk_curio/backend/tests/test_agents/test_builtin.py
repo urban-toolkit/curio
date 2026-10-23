@@ -518,6 +518,7 @@ class TestNodeBuilderComposite:
             "node.read",  # the content mode's own read, kept by the merge
             "node.create",  # a node type is made only by a package draft
             "node.runtime.read",  # dev/67-2: diagnose before regenerating
+            "node.history.read",  # what changed: the node's runs and edits, as its drawer lists them
             "node.content.write",  # dev/67-6: modify-existing, reviewed
             "catalog.search",  # dev/114 (DEC-072): the only source of a real local path
             "models.search",  # the Model Catalog: a model this account can run
@@ -815,6 +816,7 @@ class TestDataflowBuilderComposite:
         # writing mode drafts for it mints on, grant-gated the same way.
         assert [t.id for t in m.tools] == [
             "dataflow.read", "dataflow.plan.write", "node.runtime.read",
+            "node.history.read",  # what changed in a node: its runs and edits
             "node.create",
             "examples.read",  # any worked example, beside the ones a run is given
             "package.draft.apply",
