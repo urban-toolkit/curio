@@ -11,6 +11,9 @@ changed is that each stage has a name — :meth:`_generation_inputs`,
 :meth:`_empty_result_check`, :meth:`_record_round` — and :meth:`run` reads
 as the loop it is.
 
+:meth:`_dashboard_gate`, after :meth:`_map_edits_gate`, ends the loop on a
+pinned tile's spec that loads its own data.
+
 Stage methods are generators (they relay ``node_executed`` and
 ``round_verdict`` events) and return a control token: ``None`` to proceed
 to the next stage, ``CONTINUE`` to start the next round, ``BREAK`` to leave
@@ -32,6 +35,7 @@ from utk_curio.backend.app.agents.application import delegation
 from utk_curio.backend.app.agents.application import source_grounding
 from utk_curio.backend.app.agents.domain import content
 from utk_curio.backend.app.agents.domain import contracts
+from utk_curio.backend.app.agents.domain import dashboards
 from utk_curio.backend.app.agents.domain import document_validation
 from utk_curio.backend.app.agents.domain import failure_text
 from utk_curio.backend.app.agents.domain import input_contract
@@ -308,6 +312,7 @@ class VerifiedRounds:
                 self._source_gate,
                 self._input_contract_gate,
                 self._map_edits_gate,
+                self._dashboard_gate,
                 self._repeat_check,
                 self._validate,
                 self._made_up_ids_check,
@@ -481,6 +486,22 @@ class VerifiedRounds:
         yield from self._record_failed_round(map_edits.KIND, refusal)
         self._carry(refusal)
         return CONTINUE
+
+    def _dashboard_gate(self):
+        """A pinned tile's spec is held to what its dashboard publishes, before
+        the sandbox runs it: a spec that loads its own data fails the round
+        with the remedy, a node upstream that loads the data, and ends the
+        loop, since Solve cannot add that node and no correction of this spec
+        can. The code on the node, which round 0 may run, is the user's own
+        and is never refused."""
+        if self.use_current:
+            return None
+        refusal = dashboards.refusal(self.user_key, self.project_id, self.node, self.candidate)
+        if refusal is None:
+            return None
+        yield from self._record_failed_round(dashboards.KIND, refusal)
+        self.stopped_by = "blocker"
+        return BREAK
 
     def _repeat_check(self):
         """A repeat is judged AFTER the gate: a refused candidate keeps its own
