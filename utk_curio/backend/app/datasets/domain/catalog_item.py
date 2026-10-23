@@ -11,6 +11,7 @@ from typing import Any
 
 from utk_curio.backend.app.datasets.infrastructure.catalog_utils import iso_from_timestamp, stable_id, title_from_filename
 from utk_curio.backend.app.datasets.domain.constants import AUTARK_LAYER_TYPES, SUPPORTED_SUFFIXES
+from utk_curio.backend.app.datasets.infrastructure.data_size import data_size_bytes
 from utk_curio.backend.app.datasets.infrastructure.file_meta import read_file_meta
 from utk_curio.backend.app.datasets.domain.manifest import DatasetManifest
 
@@ -486,7 +487,8 @@ def item_from_file(path: Path, *, source_label: str, origin: str = "imported") -
 def item_from_manifest(manifest: DatasetManifest, dataset_root: Path, *, origin: str = "hub") -> dict[str, Any]:
     data_path = dataset_root / manifest.data_file
     data_stat = _regular_file_stat(data_path)
-    size_bytes = data_stat.st_size if data_stat is not None else None
+    # A bundle's data file is the index of its parts: its size is theirs (#1060).
+    size_bytes = data_size_bytes(manifest.format, data_path) if data_stat is not None else None
     updated_at = manifest.updated_at or manifest.created_at or iso_from_timestamp()
     created_at = manifest.created_at or manifest.updated_at or updated_at
     return base_item(
