@@ -54,7 +54,7 @@ import { frameMaps, keepMapViews, mapViews, type MapView } from './autkMapView';
 import { grammarMaps, trackMaps } from './autkMapDrawing';
 import { mapSession, onMapSession, registerEditMap } from '../../utils/editFeatures/mapEditBus';
 import {
-    drawnFeatureAt, layerIdFor, mapLayerOf, mapStateOf, restoreMapLayers, snapshotBeforeSolo,
+    drawnFeatureAt, layerIdFor, mapLayerOf, mapStateOf, pickingTableOf, restoreMapLayers, snapshotBeforeSolo,
     snapshotMapLayers, soloMapLayer, type DrawnTables, type MapLayerState, type MapTableState,
 } from './autkMapState';
 import { drawnInput, editFeedsOf, fedByInteraction, feedsVersion, newLayerTables, type EditFeed } from '../../utils/editFeatures/mapEditsPreview';
@@ -558,11 +558,13 @@ export const useAutkGrammarBehavior = (
                 const orders: Record<string, LoadOrder> = {};
                 const features: Record<string, readonly any[]> = {};
                 upstreamSources = prepared.sources.map((source) => {
-                    const loadable = loadableSource(source);
+                    // Each feature a map draws carries its input row, read back from what autk-db exported.
+                    const loadable = loadableSource(source, { tagRows: hasMaps });
                     orders[source.outputTableName] = loadable.order;
                     features[source.outputTableName] = (source.geojsonObject as any)?.features ?? [];
                     return loadable.source;
                 });
+                taggedTables = hasMaps ? prepared.sources.map((source) => source.outputTableName) : [];
                 loadOrdersRef.current = orders;
                 inputFeaturesRef.current = features;
             } catch (e) {
@@ -967,33 +969,33 @@ export const useAutkGrammarBehavior = (
                     // Data Pool can target the right layer in a multi-layer wrapper —
                     // otherwise the pool's legacy path operates on data[0] and a brush
                     // on (say) roads ends up marking surface features. The picked map
-                    // layer is the one with isPick:true; the plot's source is its
-                    // dataRef. Both are resolved once here and closed over below.
+                    // layer is the one that picks when the pick is made, else the
+                    // first with isPick:true; the plot's source is its dataRef.
                     const pickedLayerRef: string | undefined =
                         spec.map?.layerRefs?.find?.((l: any) => l.isPick)?.dataRef
                         ?? spec.map?.layerRefs?.[0]?.dataRef;
                     const plotLayerRef: string | undefined = spec.plot?.dataRef;
-                    // The key columns the picked layer and the plot name their
+                    // The key columns a picked layer and the plot name their
                     // rows by, if any (selectFields).
-                    const keys = {
-                        map: selectFieldsOf(spec.map?.layerRefs?.find?.((l: any) => l.isPick) ?? spec.map?.layerRefs?.[0]),
-                        plot: selectFieldsOf(spec.plot),
-                    };
+                    const mapRefs: any[] = Array.isArray(spec.map?.layerRefs) ? spec.map.layerRefs : [];
+                    const keysOf = (layerRef: string | undefined, from: 'map' | 'plot') => from === 'map'
+                        ? selectFieldsOf(mapRefs.find((l: any) => l?.dataRef === layerRef))
+                        : selectFieldsOf(spec.plot);
 
-                    const emitInteraction = (
+                    const sendInteraction = (
                         selection: number[],
                         layerRef: string | undefined,
                         from: 'map' | 'plot',
+                        order: number[] | null | undefined,
                     ) => {
                         const d = dataRef.current;
                         // Rows of the input, not positions in what was drawn.
-                        const order = layerRef ? loadOrdersRef.current[layerRef]?.[from === 'map' ? 'map' : 'load'] : null;
                         const rows = selection.map((position) => inputRow(position, order));
                         // A view that names its key columns sends their values,
                         // as a Vega-Lite point select over fields does (#847), so
                         // a chart over other rows finds the ones they name. A
                         // pick on rows that hold none selects nothing.
-                        const fields = keys[from];
+                        const fields = keysOf(layerRef, from);
                         const data = fields && layerRef
                             ? keyValues(rows, inputFeaturesRef.current[layerRef] ?? [], fields)
                             : rows;
@@ -1008,8 +1010,29 @@ export const useAutkGrammarBehavior = (
                             },
                         }, d.nodeId);
                     };
+                    const emitInteraction = (
+                        selection: number[],
+                        layerRef: string | undefined,
+                        from: 'map' | 'plot',
+                    ) => {
+                        // A pick names positions in the layer as the map drew it.
+                        const drawn = from === 'map' && layerRef ? drawnRowsOf(grammar, layerRef) : null;
+                        if (!drawn) {
+                            sendInteraction(selection, layerRef, from, layerRef ? loadOrdersRef.current[layerRef]?.[from === 'map' ? 'map' : 'load'] : null);
+                            return;
+                        }
+                        void drawn.then((order) => {
+                            // A map drawn again since shows none of this pick.
+                            if (grammarRef.current !== grammar) return;
+                            sendInteraction(selection, layerRef, from, order ?? loadOrdersRef.current[layerRef!]?.map);
+                        });
+                    };
 
-                    const off1 = grammar.interactions.on('map:picking',    ({ selection }) => emitInteraction(selection, pickedLayerRef, 'map'));
+                    // A pick is on the layer that picks on its map now, which
+                    // can be another than the document's first `isPick` layer;
+                    // autk-grammar names the map by a table it draws.
+                    const off1 = grammar.interactions.on('map:picking', ({ selection, layerId }) =>
+                        emitInteraction(selection, pickingTableOf(grammar, spec, layerId) ?? pickedLayerRef, 'map'));
                     const off2 = grammar.interactions.on('plot:selection', ({ selection }) => emitInteraction(selection, plotLayerRef, 'plot'));
                     interactionOffRef.current = [off1, off2];
                 }
@@ -1365,9 +1388,10 @@ export const useAutkGrammarBehavior = (
         const current = dataRef.current;
         if (!grammar || !spec || !current.input) return;
 
-        // The layers as the map drew them, a Map Edits node's edits made.
+        // The layers as the map drew them, a Map Edits node's edits made. A
+        // map drawn again meanwhile lights them itself.
         const layers = autkSourcesFrom(await readDrawnInput(current.input), spec).sources;
-        if (layers.length === 0) return;
+        if (layers.length === 0 || grammarRef.current !== grammar) return;
 
         const incoming: IncomingSelection[] = Array.isArray((current as any).interactions)
             ? (current as any).interactions
@@ -1395,14 +1419,18 @@ export const useAutkGrammarBehavior = (
         const maps  = spec.map  ? (Array.isArray(spec.map)  ? spec.map  : [spec.map])  : [];
         const plots = spec.plot ? (Array.isArray(spec.plot) ? spec.plot : [spec.plot]) : [];
 
-        for (const mapSpec of maps) {
-            for (const lr of mapSpec.layerRefs) {
-                const sel = positions(lr.dataRef, 'map');
-                sel.length === 0
-                    ? grammar.clearHighlightOnMap?.(lr.dataRef)
-                    : grammar.highlightOnMap?.(lr.dataRef, sel);
-            }
-        }
+        // A map layer names the rows it lights by the positions it drew them
+        // at, read back once a draw (`drawnRowsOf`).
+        const mapRefs: any[] = maps.flatMap((mapSpec: any) => mapSpec.layerRefs ?? []);
+        const drawnOrders = await Promise.all(mapRefs.map((lr: any) =>
+            ((rowsByLayer.get(lr.dataRef) ?? []).length > 0 ? drawnRowsOf(grammar, lr.dataRef) : null)));
+        if (grammarRef.current !== grammar) return;
+        mapRefs.forEach((lr: any, at: number) => {
+            const sel = tablePositions(rowsByLayer.get(lr.dataRef) ?? [], drawnOrders[at] ?? loadOrdersRef.current[lr.dataRef]?.map);
+            sel.length === 0
+                ? grammar.clearHighlightOnMap?.(lr.dataRef)
+                : grammar.highlightOnMap?.(lr.dataRef, sel);
+        });
         for (const plotSpec of plots) {
             const sel = positions(plotSpec.dataRef, 'load');
             sel.length === 0
