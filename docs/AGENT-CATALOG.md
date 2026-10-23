@@ -267,7 +267,7 @@ Each attachment has its own chat transcript and its own **intent**, the editable
 
 When an agent proposes a change to your dataflow, it does not apply it. The proposal appears as a **review card**, and applying it is a separate click, which first checks that the target has not changed since the proposal. Dismissing it leaves nothing behind. A chart or a map an agent proposes is checked against its grammar's schema before its card appears.
 
-Once you apply a change an agent made to a node's code, the change is an entry of the node's [Provenance](USAGE.md#provenance) drawer, named after the agent, with the code it left, and a node an agent adds with code starts its history with one. You open the entry and put its code back as you would a run's; an agent never does that for you. The Node Builder and the Dataflow Builder read a node's history as the dataflow was last saved, so you can ask either what changed in a node since a run.
+Once you apply a change an agent made to a node's code, the change is an entry of the node's [Provenance](USAGE.md#provenance) drawer, named after the agent, with the code it left, and a node an agent proposes with its code starts its history with one once you apply it. You open the entry and put its code back as you would a run's; an agent never does that for you. The Node Builder and the Dataflow Builder read a node's history as the dataflow was last saved, so you can ask either what changed in a node since a run.
 
 A reply of Node Builder or Dataflow Builder that carries no review card says **No changes were made to the canvas** under it. A web address the egress policy refused shows its reason under the reply. So does any other tool call that failed, unless a later call of the same tool in that reply succeeded.
 
