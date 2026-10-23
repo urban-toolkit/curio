@@ -263,6 +263,10 @@ export interface AgentCreatedNodePayload {
   y: number;
   /** dev/89: optional display title persisted on the spec node. */
   title?: string;
+  /** node.create and package.draft.apply: the name of the agent that wrote
+   * the node, which its Provenance history starts named after. The spec node
+   * carries none. */
+  agent?: string;
   /** dev/89: canonical persisted appearance (backend-normalized). #662: the
    * node's widgets, and for a copy the ids it descends from. A Spatial
    * Join's operation and output. */
