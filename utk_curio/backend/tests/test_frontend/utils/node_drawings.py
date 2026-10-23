@@ -393,7 +393,7 @@ def _past_the_pane(pane: dict) -> str:
     )
 
 
-def assert_vega_charts_fit(page, where: str, node_ids, *, timeout: float = 5000) -> None:
+def assert_vega_charts_fit(page, where: str, node_ids, *, every: bool = True, timeout: float = 5000) -> None:
     """Assert every Vega-Lite chart on the canvas shows whole in its node: the
     pane it is drawn in scrolls neither way, so nothing runs past the node's
     right or bottom edge.
@@ -401,13 +401,15 @@ def assert_vega_charts_fit(page, where: str, node_ids, *, timeout: float = 5000)
     A chart whose spec sets its own size keeps it, with its axes, title and
     legend around it (#1097), so its node must be big enough for all of them.
     *node_ids* are the dataflow's Vega-Lite nodes: each must have a pane that is
-    shown, so a chart that never showed cannot pass. *where* names the dataflow
-    in the message, which names each chart that runs past its node and by how
-    much.
+    shown, so a chart that never showed cannot pass. With ``every=False`` only
+    they are checked, for a test that adds charts of its own beside a shipped
+    dataflow's. *where* names the dataflow in the message, which names each
+    chart that runs past its node and by how much.
     """
     deadline = time.monotonic() + timeout / 1000
     while True:
-        panes = {pane["node"]: pane for pane in page.evaluate(_VEGA_PANES_JS)}
+        panes = {pane["node"]: pane for pane in page.evaluate(_VEGA_PANES_JS)
+                 if every or pane["node"] in node_ids}
         past = [pane for pane in panes.values()
                 if pane["content"][0] > pane["pane"][0] or pane["content"][1] > pane["pane"][1]]
         if not past or time.monotonic() >= deadline:

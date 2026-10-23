@@ -72,6 +72,7 @@ from .utils import (
     api_json,
     assert_autark_map_drawn,
     assert_vega_canvas_rendered,
+    assert_vega_charts_fit,
     frame_nodes,
     load_artifact_as_dict,
     load_raster_cells,
@@ -305,6 +306,8 @@ def test_three_scenarios_of_lower_manhattans_park_shade_are_charted_and_mapped(
         assert means["towers-removed"][park] < means["height-cap"][park] < existing, (where, park)
     frame_nodes(page, [CHART])
     _assert_chart_drew(page, CHART, colors)
+    # The chart shows whole in its node, its axes and legend included (#1097).
+    assert_vega_charts_fit(page, DATAFLOW.name, [CHART])
 
     # 3. Each what-if's change, in shadow and in each park, mapped after it:
     # the Raster Calculator's raster and the Python node's parks.
