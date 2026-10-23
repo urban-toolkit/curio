@@ -463,8 +463,9 @@ TRILL_PROMPT_FIELDS: dict[str, tuple[str, ...]] = {
     "node": ("id", "type", "content", "goal", "title", "x", "y", "in", "out", "metadata"),
     # #662: a node's widgets are what an agent declares for its code to read,
     # and a copy's lineage is how two scenarios' levers pair. A Spatial Join's
-    # operation and output are what an agent sets on one.
-    "nodeMetadata": ("keywords", "widgets", "copiedFrom", "spatialJoin"),
+    # operation and output, a Data Pool's conflict modes and a Simple View's
+    # image column are what an agent sets on one.
+    "nodeMetadata": ("keywords", "widgets", "copiedFrom", "spatialJoin", "dataPool", "simpleVis"),
     "edge": ("id", "source", "target", "type", "sourceHandle", "targetHandle", "metadata"),
     # Where a scenario sits on the canvas and where it came from are the
     # canvas's own bookkeeping, and its description is for people.
