@@ -40,6 +40,19 @@ export interface AgentSpatialJoinSetting {
   output?: "pairs" | "counts";
 }
 
+/** A Data Pool's conflict modes, as a planned or created one sets them
+ * (`metadata.dataPool`): each a ResolutionType other than OVERWRITE. */
+export interface AgentDataPoolSetting {
+  insideChart?: string;
+  betweenCharts?: string;
+}
+
+/** A Simple View's image column, as a planned or created one sets it
+ * (`metadata.simpleVis`). */
+export interface AgentSimpleVisSetting {
+  imageColumn?: string;
+}
+
 /** #662: a scenario a plan saves, on the review card. */
 export interface AgentPlanScenario {
   name: string;
@@ -214,11 +227,13 @@ export interface AgentProposalPart {
       expects?: string;
       /** #662: the widgets it declares, the scenario it is in, and for a
        * copy the ref of the node it copies. A Spatial Join's operation and
-       * output. */
+       * output, a Data Pool's modes, a Simple View's image column. */
       widgets?: AgentPlanWidget[];
       scenario?: string;
       copyOf?: string;
       spatialJoin?: AgentSpatialJoinSetting;
+      dataPool?: AgentDataPoolSetting;
+      simpleVis?: AgentSimpleVisSetting;
     }>;
     edgeCount: number;
     /** dev/67-8: the connection stage's labeled, index-stable edge rows. */
@@ -232,8 +247,9 @@ export interface AgentProposalPart {
       toLabel: string;
     }>;
     /** dev/59 (DEC-049.2): removals reviewed by NAME — every victim listed
-     * with a content flag; present only on destructive revisions. */
-    removals?: Array<{ id: string; label: string; nodeType?: string; contentChars: number }>;
+     * with a content flag; present only on destructive revisions. `pinned`
+     * only on a dashboard tile, which its removal takes off the dashboard. */
+    removals?: Array<{ id: string; label: string; nodeType?: string; contentChars: number; pinned?: boolean }>;
     removedEdgeCount?: number;
     cascadeCount?: number;
     /** dev/112: removed CONNECTIONS reviewed by name too (DEC-049.2 for edges). */
@@ -265,12 +281,15 @@ export interface AgentCreatedNodePayload {
   title?: string;
   /** dev/89: canonical persisted appearance (backend-normalized). #662: the
    * node's widgets, and for a copy the ids it descends from. A Spatial
-   * Join's operation and output. */
+   * Join's operation and output, a Data Pool's modes, a Simple View's image
+   * column. */
   metadata?: {
     appearance?: { backgroundColor?: string };
     widgets?: AgentPlanWidget[];
     copiedFrom?: string[];
     spatialJoin?: AgentSpatialJoinSetting;
+    dataPool?: AgentDataPoolSetting;
+    simpleVis?: AgentSimpleVisSetting;
   };
 }
 

@@ -34,6 +34,7 @@ from utk_curio.backend.app.agents.application import delegation
 from utk_curio.backend.app.agents.application import source_grounding
 from utk_curio.backend.app.agents.application.errors import AgentServiceError
 from utk_curio.backend.app.agents.domain import content
+from utk_curio.backend.app.agents.domain import dashboards
 from utk_curio.backend.app.agents.domain import failure_text
 from utk_curio.backend.app.agents.domain.counts import count_label
 from utk_curio.backend.app.agents.domain import map_edits
@@ -435,6 +436,10 @@ class SolveBatch:
             self.results[node_id] = {"status": "pending", "reason": reason, **trail, **extra}
             return {"nodeId": node_id, "status": "pending", "reason": reason,
                     **trail, **extra}
+        if evidence.get("kind") == dashboards.KIND:
+            # A pinned tile's spec loads its own data: the node waits for the
+            # user, who loads the data upstream or unpins it.
+            evidence = {**evidence, "remedy": dashboards.remedy(node_id)}
         return self._verified_failure(node_id, outcome, evidence, trail)
 
     def _verified_pass(self, node_id: str, outcome: dict, trail: dict) -> dict:
@@ -587,6 +592,14 @@ class SolveBatch:
         if err:
             self.results[node_id] = {"status": "failed", "error": err[:300]}
             return {"nodeId": node_id, "status": "failed", "error": err[:300]}
+        # A pinned tile's spec is held to what its dashboard publishes, unrun
+        # too: the node ends on it and waits for the user, since Solve cannot
+        # add the node upstream that its data needs.
+        unpublishable = dashboards.refusal(self.user_key, self.project_id, node, text_out)
+        if unpublishable:
+            failed = {"status": "failed", "error": unpublishable[:300], "remedy": dashboards.remedy(node_id)}
+            self.results[node_id] = failed
+            return {"nodeId": node_id, **failed}
         # A Map Edits node's code is held to what the node reads, unrun too.
         unreadable = map_edits.refusal(
             self.user_key, self.project_id, node.get("type"), text_out, current=str(node.get("content") or ""),
@@ -1124,10 +1137,11 @@ class SolveBatch:
         # (verdict, rounds, attempts) rides the part, PASS or
         # FAIL (dev/67-7's labeled choice); a sandbox outage
         # mints nothing and the node stays pending.
-        if agents_rounds._ended_on_an_answer(outcome):
-            # The builder's one-line answer is no content: nothing is minted
-            # for Apply anyway to write, and the node fails with the answer,
-            # as it does when Solve writes.
+        if agents_rounds._ended_on_an_answer(outcome) or (outcome.get("evidence") or {}).get("kind") == dashboards.KIND:
+            # The builder's one-line answer is no content, and a pinned tile's
+            # spec that loads its own data is refused: nothing is minted for
+            # Apply anyway to write, and the node fails as it does when Solve
+            # writes (a refused tile then waits for the user).
             event = self.record_outcome(node_id, "verified", outcome, None)
             if event is not None:
                 yield "node_result", event
@@ -1193,9 +1207,18 @@ class SolveBatch:
         # dev/114: the gate runs on the batch base BEFORE the
         # mint so the node's failure names the source.
         text_out = content.extract_node_content(text)
-        err = self._gate_unverified(node_id, text_out) or self._unwritten_answer(
-            self.nodes_by_id.get(node_id) or {}, text_out,
-        )
+        node = self.nodes_by_id.get(node_id) or {}
+        err = self._gate_unverified(node_id, text_out)
+        if not err:
+            # A pinned tile's spec that loads its own data is refused before
+            # the mint, and the node waits for the user, as when Solve writes.
+            unpublishable = dashboards.refusal(self.user_key, self.project_id, node, text_out)
+            if unpublishable:
+                failed = {"status": "failed", "error": unpublishable[:300], "remedy": dashboards.remedy(node_id)}
+                self.results[node_id] = failed
+                yield "node_result", {"nodeId": node_id, **failed}
+                return
+            err = self._unwritten_answer(node, text_out)
         if err:
             self.results[node_id] = {"status": "failed", "error": err[:300]}
             yield "node_result", {"nodeId": node_id, "status": "failed", "error": err[:300]}

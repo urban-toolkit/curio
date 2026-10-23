@@ -546,11 +546,25 @@ whose code is its only state: one call of `curio_edit_features`
   `applyEdits.ts`, the twin of the run's `_edit_fc`), keeps its view, files no
   run for that draw, and hands on what it was fed: the node's last run.
 - The interaction edge carries selections, as between two views. A pick on the
-  linked map is the map's selection (`MapEditOverlay`), which `useInteractions`
-  routes to the node, matched by the layer's id column (`mapEditSelection.ts`,
-  `matchSelections`); what the node picks, or a rule matches, goes back the same
-  way and lights up on the map. `mapEditBus.ts` lends the map only the drawing
-  tools: the layer worked on, the mode and the shape being drawn. The node edits
+  linked map (`MapEditOverlay`) is the map's own selection, sent as autk-map's
+  pick is (`sendOwnSelection`), so a draw that is not an edit's preview says it
+  is gone. `useInteractions` routes it to the node, matched by the layer's id
+  column (`mapEditSelection.ts`, `matchSelections`); what the node picks, or a
+  rule matches, goes back the same way, and the map lights it with autk-map's
+  own highlight. autk-map highlights its picking layer only, so while an action
+  is open the layer it works on is that layer (`showForEdits` in
+  `autkMapState.ts`). Nothing is outlined over the map for a pick.
+  `mapEditBus.ts` lends the map only the drawing tools: the layer worked on, the
+  mode and the shape being drawn. Nothing is drawn over the map either:
+  `MapEditOverlay` hears the pointer and holds the tip, and the tools are layers
+  of the map itself (`mapEditLayers.ts`), loaded through autk-map's
+  `loadCollection` and drawn in its highlight: the shape being drawn and its
+  corners, a shape waiting to be added, and a feature being reshaped or moved
+  with its corners and midpoints, which a press takes where the map shows them.
+  autk-map draws its buildings over every flat layer, so that feature is
+  skipped in its own layer meanwhile, at the positions the map's node
+  registers (`registerEditMap`). The tool layers are never kept across a
+  redraw, hidden by Show only this layer or picked on. The node edits
   on the maps it feeds and is linked to (`linkedMaps` in `mapLayerEdits.ts`), and
   `plan_topology` allows its interaction edge only to such a map.
 - Fed by several nodes, the code hands the step every circle (`by_input=True`),
@@ -1072,7 +1086,7 @@ A layer chip on such an input writes the same name, whatever layer it names: one
 
 A source loads as the autk-db layer type its frame carries: a layer record's `type`, the envelope's `layerType`, or a geodataframe's `metadata.layerType` (`gdf.metadata`, kept in the artifact's `value_json`, sent as `X-Curio-Frame-Metadata` on the Arrow path and as `data.metadata` on the JSON path). A Discovery OpenStreetMap download's loader sets it. A `buildings` source's features get a `height` (and `min_height`) where autk-map, which reads the first height key a feature has, would read none, and where a feature has no `height` key, so a compute that reads `properties.height` reads the height the map draws (`utils/buildingHeight.ts`): a `height` of null beside `building:levels`, `building:levels` alone (3.4 m a level), or no height at all (6 m above the base). Every other feature is passed as it came, and the table keeps one feature per row.
 
-A `DataFrame` becomes a FeatureCollection from its one geometry column; with none or several, it is refused with a reason, as is an input type the node cannot read, and the tables the document expected from it count as zero rows from upstream (`no-input-rows`, with the reason). A feature without a geometry keeps its row: autk-db refuses a row with no geometry, so it gets an empty one (a GeometryCollection with none in it), which a map draws as nothing and a plot still counts. `loadableFeatures` (`autkDataCompile.ts`) is that rule for every table Curio hands autk-db: a node's inputs, and a data section's GeoJSON sources in the sandbox and in the browser. autk-db reads a layer's kind off its first row, so a first row with no geometry trades places with the first that has one, and it stores the rows whose geometry is empty before the others. Map picks, plot selections and highlights go through the table's load and map orders (`loadableSource`), so a position always names the input's row.
+A `DataFrame` becomes a FeatureCollection from its one geometry column; with none or several, it is refused with a reason, as is an input type the node cannot read, and the tables the document expected from it count as zero rows from upstream (`no-input-rows`, with the reason). A feature without a geometry keeps its row: autk-db refuses a row with no geometry, so it gets an empty one (a GeometryCollection with none in it), which a map draws as nothing and a plot still counts. `loadableFeatures` (`autkDataCompile.ts`) is that rule for every table Curio hands autk-db: a node's inputs, and a data section's GeoJSON sources in the sandbox and in the browser. autk-db reads a layer's kind off its first row, so a first row with no geometry trades places with the first that has one, and it stores the rows whose geometry is empty before the others. A plot reads the table as handed, so its selections go through the table's load order (`loadableSource`). A map draws a layer as autk-db exports it, which can leave rows out and keep the others in an order of its own, and autk-map draws one component for each feature with something to draw, which names its feature (`featureIndex`): each feature Curio hands autk-db for a map carries its input row (`INPUT_ROW`), read back from the export once a draw, the first time a pick or a highlight on that layer needs it (`drawnRows`), so a position always names the input's row. A map pick names the layer that picks when it is made (`pickingTableOf`): autk-map has one, the last a document marks `isPick` or one picked in its layer menu.
 
 The names `input_<k>` are defined once, as the prefix in `src/contracts/autkGrammar.json`: `contracts.py` reads it into `INPUT_TABLE_PREFIX` and `input_table_name`, the Vega-Lite and Autark paths import `inputTableName` (`src/contracts/autkGrammar.ts`), and the preamble states it (see [Shared Constants](#shared-constants)).
 
@@ -1539,7 +1553,7 @@ Interactions are stored in `FlowProvider.interactions[]` and passed down to node
 
 ### Propagation Strategies
 
-A Data Pool resolves the selections that reach it with two modes, chosen in the two selects at the top of its body and saved with the node (`metadata.dataPool`):
+A Data Pool resolves the selections that reach it with two modes, chosen in the two selects at the top of its body, or set by an agent's plan or `node.create` ([Dataflow plans](#dataflow-plans)), and saved with the node (`metadata.dataPool`). The selects' words are `src/contracts/nodeSettings.json`:
 
 - **Conflict inside visualization** (`insideChart`) combines the selects of one chart, such as a Vega chart with two params.
 - **Conflict between visualizations** (`betweenCharts`) combines the charts linked to the pool by an interaction edge.
@@ -1603,6 +1617,7 @@ Some vocabularies and tables are read by both the frontend and the backend. Each
 | `noteColors.json` | A note's palette, its default color, the two inks and the two link colors, and the contrast an ink must reach (see [Notes](#notes)) | `utils/noteColors.ts` | `packages/application/note_palette.py`, which hands the palette to the rules of `packages/domain/node_appearance.py`: the domain layer reads no file |
 | `autkGrammar.json` | The Autark grammar's top-level families, the prefix of the names a grammar node's inputs are read by (`input_<k>`), and what a document with more than one view is told (see [Referencing Upstream Data in Autark Nodes](#referencing-upstream-data-in-autark-nodes)) | `contracts/autkGrammar.ts`, `utils/autkSpecKind.ts` | `contracts.INPUT_TABLE_PREFIX` and `AUTK_ONE_VIEW` |
 | `visDefaults.json` | What a visualization node does with its input by itself: the column roles and the pandas dtypes each role comes from, the Vega-Lite and Autark starter ladders (each rule's id, condition, mark or family and description, in ladder order), the Vega-Lite `$schema` URL, and the column names, URL extensions and share of image values behind Simple View's image columns | `starterSpec.ts`, `vegaDefaultSpec.ts`, `autkDefaultSpec.ts` and `imageColumns.ts`, which keep each rule's builder, keyed by its id, and the matching logic | `contracts.py`'s tables, which the prompt fields render into the preamble |
+| `nodeSettings.json` | The words of a Data Pool's two selects and of each of its modes, keyed by `ResolutionType`, and of a Simple View's image column (see [Dataflow plans](#dataflow-plans)) | The pool's selects (`DataPoolContent.tsx`), the view's picker (`simpleVisBehavior.tsx`) and an agent's review card (`reviewCardText.ts`) | `agents/domain/data_pool_settings.py` and `simple_vis_settings.py`: the modes an agent may set, and the words of a plan's preview and a `node.create`'s summary |
 
 - **Where.** The folder is in the frontend's source, so the Docker image's frontend build, which copies only `utk_curio/frontend/`, and the Jest job and the release's frontend build, which run before or without Python, read the files where they are. A clone and the Docker image keep the folder there for the backend too, and a pip install has it inside its package, which carries the frontend's source (`MANIFEST.in` and `include-package-data`). `test_pip_wheel_layout.py` checks that a pip install's backend reads them there.
 - **Reading.** `shared_constants.read` parses a file as `JSON.parse` does, except that an object naming one key twice raises, where `JSON.parse` and `json.loads` keep the last value.
@@ -1619,7 +1634,7 @@ To change a shared value, edit its file. A new Autark family goes into `autkGram
 Everything an agent reads is hand-written Markdown in `agents/`, the Agent Catalog's folder, and the backend renders it when it starts. No render is generated or committed, and `utk_curio/` holds none of the text: it holds the loader, the code that computes the facts the text states, and the checks, whose words to a model are messages of the base entry (below). Errors people see stay with their feature.
 
 - **Where it lives.**
-  - **The base entry**, [`agents/agent.curio.builtin@1/`](../agents/agent.curio.builtin@1/), holds the pages every agent Curio ships reads, as `packages/curio.builtin@1` is the base of the nodes. Its manifest says `kind: base` and lists its pages (`pages`): `default_preamble.md`, the preamble, which holds the Trill block and includes the pages of `knowledge/`, one per feature of Curio (its nodes, their code and chips, the functions node code calls, the catalogs, widgets, selection tags, Autark, Vega-Lite, interaction edges, Map Edits and scenarios); `examples.md`, the worked examples' index (see [Agent Prompt Composition](#agent-prompt-composition)); `tools.md`, `protocol.md`, `frames.md`, `delegate-contracts.md` and `conversation-title.md`, the text the runtime composes a run's turns from (see [Agent Prompt Composition](#agent-prompt-composition)); `keyword-types.md`, the keyword types Curio ships; `messages.md`, what a check tells a model when it refuses or corrects what the model wrote (see Messages, below); `autark-grammar.md`, the words of the preamble's section on Autark documents (see [The Autark Schema](#the-autark-schema)); and `rules/`, text that prompts and pages include whole. `rules/plan-rules.md` is a dataflow plan's rules, which both of `dataflow.plan.write`'s descriptions include. `rules/package_contract.md` is the package backend contract, which the Node Builder's package-writing mode includes and a delegated call of that mode receives as its build-request contract's `backendContract`. `rules/research_verify_rules.md` and `rules/research_notes_rules.md` are the Researcher's rules for checking a fact and its notes format, each included by two of its prompts. Its README says how to edit a page. The base entry is no agent: `builtin` leaves it out of the roster, so no catalog listing, palette, LLM choice or delegation shows it, and `parse_agent_manifest` refuses a manifest of kind `base`. The loader finds it by its kind (`agent_text.base_dir`), so no code names its id.
+  - **The base entry**, [`agents/agent.curio.builtin@1/`](../agents/agent.curio.builtin@1/), holds the pages every agent Curio ships reads, as `packages/curio.builtin@1` is the base of the nodes. Its manifest says `kind: base` and lists its pages (`pages`): `default_preamble.md`, the preamble, which holds the Trill block and includes the pages of `knowledge/`, one per feature of Curio (its nodes, their code and chips, the functions node code calls, the catalogs, widgets, selection tags, Autark, Vega-Lite, interaction edges, Map Edits, scenarios and dashboards); `examples.md`, the worked examples' index (see [Agent Prompt Composition](#agent-prompt-composition)); `tools.md`, `protocol.md`, `frames.md`, `delegate-contracts.md` and `conversation-title.md`, the text the runtime composes a run's turns from (see [Agent Prompt Composition](#agent-prompt-composition)); `keyword-types.md`, the keyword types Curio ships; `messages.md`, what a check tells a model when it refuses or corrects what the model wrote (see Messages, below); `autark-grammar.md`, the words of the preamble's section on Autark documents (see [The Autark Schema](#the-autark-schema)); and `rules/`, text that prompts and pages include whole. `rules/plan-rules.md` is a dataflow plan's rules, which both of `dataflow.plan.write`'s descriptions include. `rules/package_contract.md` is the package backend contract, which the Node Builder's package-writing mode includes and a delegated call of that mode receives as its build-request contract's `backendContract`. `rules/research_verify_rules.md` and `rules/research_notes_rules.md` are the Researcher's rules for checking a fact and its notes format, each included by two of its prompts. Its README says how to edit a page. The base entry is no agent: `builtin` leaves it out of the roster, so no catalog listing, palette, LLM choice or delegation shows it, and `parse_agent_manifest` refuses a manifest of kind `base`. The loader finds it by its kind (`agent_text.base_dir`), so no code names its id.
   - **Each agent Curio ships** keeps its own prompts in `agents/<id>@<major>/prompts/`, each named by its manifest.
   - **A user's agent** keeps its prompts in its store folder, as uploaded.
 - **`curio:<path>`.** A manifest names a page of the base entry as `curio:<path>`, such as `curio:default_preamble.md`, the preamble every agent Curio ships names, or `curio:rules/research_verify_rules.md`. `agent_text.page_file` resolves it, and refuses a path that is not a page the base entry lists or that leads out of it: `..`, an absolute path, or a symbolic link to a file outside. The parser checks every `curio:` path, so an upload that names no page is refused with the list of pages. A page whose file is missing is logged and reads as None. An export or an install's copy carries the page as `prompts/<path>`, its rendered text; publishing an agent and adding a published one keep the name.
@@ -1831,6 +1846,13 @@ A planned node may declare its widgets, checked by the Widgets tab's own rules (
 
 A planned node may also carry `spatialJoin`, a Spatial Join's operation and output (`agents/domain/spatial_join_settings.py`). Its keys are those of `$defs.nodeMetadata.spatialJoin`, and its values are judged by the join's own rule, `common/spatial.settings_problem`, the one the `/spatial_join` route answers with. The mint refuses it on a node whose template's `behavior` is not `spatial-join`, as `packages.template_behavior` reads it: the account's copy of the template, else the catalog's. The choices are the join's own, `common/spatial.PREDICATES` and `OUTPUTS`, which the tool schemas offer; tests hold the Trill enums, the node's two selects and the manifest's description to them. The apply writes it at `metadata.spatialJoin`, by the whole-plan apply and the per-node one alike, and the card's row names it. `node.create` takes it the same way, and a template whose content kind is `none`, such as the Spatial Join, is proposed without content. The canvas bridge hands it to the live node as a load does, and the preamble's Trill block shows its shape.
 
+A Data Pool's conflict modes (`dataPool`, `agents/domain/data_pool_settings.py`) and a Simple View's image column (`simpleVis`, `simple_vis_settings.py`) take the same path, and `agents/domain/node_settings.py` walks the three settings for the grammar, the mint, the card, both applies, `node.create` and the canvas bridge. Each is judged by its node's own rule:
+
+- **The pool's modes.** `utils/dataPoolSpec.ts` reads a value that names no mode as `OVERWRITE` and writes only the modes that are not `OVERWRITE`. So the mint refuses a value the pool would read as `OVERWRITE` without a word, and stores a setting as the pool writes it: an explicit `OVERWRITE` sets nothing. `dataPoolSpec.cases.json` holds the cases Jest and pytest both run, and tests hold the Trill enums, `ResolutionType`, the tool schemas and the agents' modes to one list.
+- **The view's image column.** The view trims the name it reads and reads an empty one as every image column (`resolveImageColumnChoice`), so an empty name is refused and a name is kept trimmed.
+
+A setting is refused on a node whose template's `behavior` is not `data-pool` or `simple-vis`. The card's rows, the plan's text preview and a `node.create`'s summary say each in its node's own words, such as `Conflict between visualizations: Merge (AND)` or `Image column: overlay_url`: the pool's selects, the view's picker, the card and the backend all read them from `src/contracts/nodeSettings.json` ([Shared Constants](#shared-constants)). The canvas bridge hands each to the live node as a load does (`dataPoolFromSpec` for the modes). `dataflow.read` rows show what each saved node's setting makes it do, its defaults left out: a pool's modes other than `OVERWRITE`, a view's column, and a join's operation and output other than `intersects` and `pairs`. The preamble's Trill block shows both shapes.
+
 ### Package drafts
 
 A package draft (`package.draft.apply`) is the one way an agent makes a node type. `proposals/mint._mint_package_draft_apply` parses the build request, then holds every template the draft adds (each template of a create; in an extend, each one the installed target does not declare) to three checks before anything is built (`_new_template_checks`):
@@ -1917,6 +1939,16 @@ A kind nothing here can validate is not written at all: the node stays pending w
 
 A failing node carries its reason in its own body, one line, expandable, read from the same runtime record the agents read, so it survives a reload.
 
+### Dashboard tiles
+
+A dashboard draws its tiles from the outputs saved with the dataflow, so the page is refused when a pinned Autark tile's spec has data sources of its own, which it would fetch when the page draws (`projects/dashboard_payload.py`). That check is one public predicate, `tile_loads_its_own_data`: the node is pinned (`is_pinned`, `dashboardPinned` on the saved node), its template declares the Autark node's behavior, and its spec has a non-empty `data` list. The dashboard's refusal asks it, and so do the agents: `agents/domain/dashboards.py` `refusal` asks it of the saved node with the spec an agent wrote as its `content`, reading the templates with `TemplateGrammars.for_account(user_key)` as the dashboard reads the owner's.
+
+- The `node.content.write` mint sends such a spec back with `dashboards.tile-loads-own-data` (`messages.md`), which names the remedy: the data in a node of its own upstream of the tile.
+- Solve ends the node on it, since that node is not one Solve can add: the verified loop fails the round in `_dashboard_gate`, after `_map_edits_gate`, and stops with `blocker`, and the unverified path fails the node. Either way the node's result carries the remedy `{"kind": "dashboard-tile", "nodeId": ...}` (`dashboards.remedy`), one of `rounds._USER_ACTION_REMEDIES`: the node waits for the user, so a later pass of the session leaves it until its blocker signature changes, as when a node is added upstream of it. The remedy has no action; the failure says what to do.
+- Code the node holds already is the user's own and is never refused. `node.create` and plans need no check: they make only new nodes, and no agent pins a node.
+- `dataflow.read` gives a pinned node's row `"pinned": true`. A plan's removals carry `"pinned": true` for a pinned victim, whose preview line says the tile leaves the dashboard; the review card marks such a removal and counts the tiles in its effect line (`reviewCardText.ts`).
+- Agents learn the dashboard from `knowledge/dashboards.md`, which the preamble includes; `test_dashboards_grounding.py` holds the page to the row and to `DEFAULT_PAYLOAD_LIMIT_BYTES`.
+
 ### The run journal
 
 Every execution leaves a record wherever it ran. A node's code in the sandbox, a validation run the agent runtime drove, and a render in the browser (a Vega-Lite chart, an Autark map, a Data Pool, a Simple View, a Spatial Join, a Data Export) all write the same per-node journal, each stamped with the `origin` that produced it. An agent attached to a node reads that record.
@@ -1951,7 +1983,7 @@ The loop reports why it stopped as `stoppedBy`, and the failure sentences, the a
 | `decline` | A data-loading node's content builder answers in one line, in place of code, what its source needs, such as a key, a path or a URL | the builder declined: it needs something from you |
 | `answer` | The content builder of any other node whose content is code answers in one line, in place of code, why the node cannot be done, such as two inputs that cannot be joined | the builder answered instead of writing code |
 | `generation` | The content builder's run fails, so there is no candidate to check | the builder could not run |
-| `blocker` | An upstream node has no content, validation refuses the slice (a cycle, or more nodes to run than `--validation-node-limit`), or a valid document's last render drew nothing because no rows reached it | something outside its code blocked it |
+| `blocker` | An upstream node has no content, validation refuses the slice (a cycle, or more nodes to run than `--validation-node-limit`), a valid document's last render drew nothing because no rows reached it, or a pinned dashboard tile's spec loads its own data ([Dashboard tiles](#dashboard-tiles)) | something outside its code blocked it |
 | `infrastructure` | The sandbox cannot be reached, or the validation run itself raises an error | the sandbox was unreachable |
 | `not-executable` | The sandbox does not run the node's kind, such as a Vega-Lite chart or an Autark grammar, and the document check finds nothing to correct | the sandbox cannot run this kind of node |
 | `source` | A data-loading node's last attempt failed on its source (refused by the source gate, or declined for a missing one) and discovery has candidates for the user to confirm; the node waits for them, whatever ended the loop | a source you must confirm |
@@ -2549,7 +2581,7 @@ composes `withPackageStarter` over the behavior hook so the starter is injected
 on a fresh drop (see [Behavior Hooks](#behavior-hooks)).
 
 A template that declares `starterIsContent` gives its starter to a node an
-agent's plan creates too. Both plan applies, the whole plan and one node
+agent's plan or `node.create` creates too. Both plan applies, the whole plan and one node
 (`agents/application/proposals/plans.py`), read it with `content_starters`
 (`packages/application/starters.py`, each template resolved as the project's
 available templates resolve it). The node's content is the starter, and its
@@ -2558,6 +2590,15 @@ its name (`plan_scenarios.created_node_metadata`). It never joins `nodeRuns` as
 pending, so Solve does not write it, and its ref is `approved`, so the
 Simulation Mode driver does not validate it either. Every other planned node is
 created empty for Solve to write.
+
+A `node.create` of such a template gives no content, and any other content is
+refused (`mint.starter-is-content`, which names the template's widgets). The
+mint reads the starter with `content_starters` and sets the request's widgets
+over the template's with `plan_scenarios._set_over`, so the review card shows
+the spec and the widgets Apply writes. Neither the source-grounding gate nor
+the document check reads the starter, as neither reads a plan's. A template
+whose starter is not its whole content keeps its rule: the request gives the
+content.
 
 ### Auth Routes
 

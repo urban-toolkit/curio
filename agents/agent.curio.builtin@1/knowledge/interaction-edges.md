@@ -4,6 +4,8 @@ An edge of type: "Interaction" (in the Trill specification) carries selections b
 
 A {{template.label:curio.builtin/data-pool}} goes between visualizations only when a {{template.label:curio.builtin/vis-simple}} must show the selection, when selections are merged (AND or OR), when a {{template.label:curio.builtin/vis-vega}} chart colors its own selection through "interacted", or when three or more visualizations share one selection. Each visualization is then linked to the {{template.label:curio.builtin/data-pool}}, which marks the selected rows in its column "interacted" and passes them to every node it feeds.
 
+A {{template.label:curio.builtin/data-pool}} starts at OVERWRITE, keeping the newest selection only. A plan or a node.create sets how the selections combine in the pool's "dataPool", shaped as a node's "metadata"."dataPool" in the Trill schema: "insideChart" combines the selects of one chart, and "betweenCharts" the latest selection of each chart linked to the pool. MERGE_AND keeps the rows every selection picked, MERGE_OR the rows any of them picked, and OVERWRITE the newest selection's. So a pool that shows the rows selected in both charts has "betweenCharts": "MERGE_AND".
+
 A visualization shows a selection it receives through the column "interacted", and a chart shows its own through its selection's name. For example, this Vega-Lite specification defines a scatterplot with an interval selection that colors red the points it selects and the points another visualization selects.
 
 ```json

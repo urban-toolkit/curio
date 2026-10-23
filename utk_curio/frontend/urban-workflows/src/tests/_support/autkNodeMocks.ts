@@ -35,6 +35,13 @@ export const drawnMaps: { make: null | (() => any) } = { make: null };
  */
 export const heldDraws: { until: Promise<void> | null } = { until: null };
 
+/**
+ * What autk-db exports of each table the node hands a run, from the features
+ * handed, as `grammar.data` holds it: a test that sets it makes autk-db leave
+ * rows out or keep them in an order of its own. None unless a test sets it.
+ */
+export const drawnExports: { of: null | ((table: string, handed: any[]) => any[]) } = { of: null };
+
 export const AutkGrammar = jest.fn().mockImplementation((targets: Record<string, unknown>) => {
   const handlers: Record<string, (event: any) => void> = {};
   const highlights: Array<[string, number[]]> = [];
@@ -52,6 +59,15 @@ export const AutkGrammar = jest.fn().mockImplementation((targets: Record<string,
   grammar.run = jest.fn(async (spec: any) => {
     const maps = drawnMaps.make && spec?.map ? [drawnMaps.make()] : [];
     if (maps.length > 0) grammar.maps = maps;
+    const exportOf = drawnExports.of;
+    if (exportOf) {
+      grammar.data = Object.fromEntries((Array.isArray(spec?.data) ? spec.data : [])
+        .filter((source: any) => Array.isArray(source?.geojsonObject?.features))
+        .map((source: any) => [
+          source.outputTableName,
+          Promise.resolve({ type: 'FeatureCollection', features: exportOf(source.outputTableName, source.geojsonObject.features) }),
+        ]));
+    }
     grammarRuns.push({
       targets,
       spec,
@@ -108,6 +124,7 @@ export function resetAutkNodeMocks(): void {
   grammarRuns.length = 0;
   drawnMaps.make = null;
   heldDraws.until = null;
+  drawnExports.of = null;
   AutkGrammar.mockClear();
   markNodeErrored.mockClear();
   showToast.mockClear();

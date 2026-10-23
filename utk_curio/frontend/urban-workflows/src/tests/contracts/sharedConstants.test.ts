@@ -32,6 +32,7 @@ const FILES = [
   "noteColors",
   "autkGrammar",
   "visDefaults",
+  "nodeSettings",
 ];
 
 /** A shared file, read when a test runs, so a checkout without it fails each test on its own. */

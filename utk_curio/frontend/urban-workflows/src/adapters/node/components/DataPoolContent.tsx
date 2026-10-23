@@ -7,12 +7,12 @@ import { previewTotalRows, rowsFromParseOutput } from '../../../utils/tabularPre
 import { NodeEmptyState } from '../../../components/nodes/NodeEmptyState';
 import { isTabularPayload, resolveNodeEmptyReason } from '../../../utils/nodeEmptyState';
 import { ResolutionType } from '../../../constants';
+import nodeSettings from '../../../contracts/nodeSettings.json';
 
-const MODE_LABELS: Record<ResolutionType, string> = {
-  [ResolutionType.OVERWRITE]: 'Overwrite',
-  [ResolutionType.MERGE_AND]: 'Merge (AND)',
-  [ResolutionType.MERGE_OR]: 'Merge (OR)',
-};
+/** The words of each mode and of each select, which an agent's review card
+ *  and the backend say them in too (contracts/nodeSettings.json). */
+const MODE_LABELS: Record<string, string> = nodeSettings.dataPool.modes;
+const SELECT_LABELS = nodeSettings.dataPool.settings;
 
 /** One conflict mode: a label and a select over every ResolutionType. */
 function ModeSelect({ label, value, onChange, testId }: {
@@ -206,13 +206,13 @@ export default function DataPoolContent({
         style={{ flexShrink: 0, display: 'flex', flexWrap: 'wrap', columnGap: 12, rowGap: 4, marginBottom: 6, fontSize: 12 }}
       >
         <ModeSelect
-          label="Conflict inside visualization"
+          label={SELECT_LABELS.insideChart}
           value={insideChartMode}
           onChange={onInsideChartModeChange}
           testId="data-pool-mode-inside"
         />
         <ModeSelect
-          label="Conflict between visualizations"
+          label={SELECT_LABELS.betweenCharts}
           value={betweenChartsMode}
           onChange={onBetweenChartsModeChange}
           testId="data-pool-mode-between"

@@ -18,8 +18,9 @@ from utk_curio.backend.app.agents.application import delegation
 from utk_curio.backend.app.agents.application.errors import AgentServiceError
 from utk_curio.backend.app.agents.domain import builtin
 from utk_curio.backend.app.agents.domain import content
+from utk_curio.backend.app.agents.domain import dashboards
+from utk_curio.backend.app.agents.domain import node_settings
 from utk_curio.backend.app.agents.domain import plan_topology
-from utk_curio.backend.app.agents.domain import spatial_join_settings
 from utk_curio.backend.app.agents.domain.counts import count_label
 from utk_curio.backend.app.agents.repositories import project_agents
 from utk_curio.backend.app.agents.repositories import sessions
@@ -303,12 +304,12 @@ def _mint_dataflow_plan(
     for node, (entry, err) in zip(plan["nodes"], outcomes):
         if entry is None:
             return "refused", agent_text.message("plan.node-problem", ref=repr(node['ref']), problem=err), None
-    setting_errors = spatial_join_settings.plan_problems(
+    setting_errors = node_settings.plan_problems(
         plan["nodes"], [entry for entry, _err in outcomes],
         lambda node_type: packages_services.template_behavior(user_key, project_id, node_type),
     )
     if setting_errors:
-        return "refused", "\n- ".join([agent_text.message("plan.spatial-join-invalid")] + setting_errors), None
+        return "refused", "\n- ".join([agent_text.message("plan.node-settings-invalid")] + setting_errors), None
     spec = projects_storage.read_spec(user_key, project_id)
     if spec is None:
         return "refused", agent_text.message("mint.no-saved-spec"), None
@@ -539,15 +540,19 @@ def _plan_review_part(proposal_id: str, plan: dict, existing_nodes: dict, existi
     preview_lines = [
         f"{node['title']} · {node['nodeType']} — {node['intent']}" for node in plan["nodes"]
     ]
-    # A Spatial Join's operation and output, on its own line's end.
+    # A node's settings, each in its node's words, on its own line's end: a
+    # Spatial Join's operation and output, a Data Pool's modes, a Simple
+    # View's image column.
     for index, node in enumerate(plan["nodes"]):
-        if node.get(spatial_join_settings.KEY):
-            preview_lines[index] += f" · {spatial_join_settings.describe(node[spatial_join_settings.KEY])}"
+        for words in node_settings.describe(node):
+            preview_lines[index] += f" · {words}"
     preview_lines += plan_scenarios.preview_lines(plan)
     for node_id in remove_nodes:
         victim = existing_nodes[node_id]
         label = (victim.get("goal") or node_id)[:80]
-        preview_lines.append(f"− Remove: {label} · {victim.get('type') or 'untyped'}")
+        # A pinned victim is a dashboard tile, which its removal takes off the dashboard.
+        tile = " · a dashboard tile, which leaves the dashboard" if dashboards.is_pinned(victim) else ""
+        preview_lines.append(f"− Remove: {label} · {victim.get('type') or 'untyped'}{tile}")
     part = content.make_proposal_part(
         proposal_id=proposal_id,
         tool="dataflow.plan.write",
@@ -596,6 +601,8 @@ def _plan_review_part(proposal_id: str, plan: dict, existing_nodes: dict, existi
                 "label": (existing_nodes[node_id].get("goal") or node_id)[:80],
                 "nodeType": existing_nodes[node_id].get("type"),
                 "contentChars": len(existing_nodes[node_id].get("content") or ""),
+                # Only on a dashboard tile, which leaves the dashboard.
+                **({"pinned": True} if dashboards.is_pinned(existing_nodes[node_id]) else {}),
             }
             for node_id in remove_nodes
         ]
