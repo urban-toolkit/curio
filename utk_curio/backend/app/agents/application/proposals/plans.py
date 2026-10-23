@@ -1126,6 +1126,23 @@ def _plan_edge_context(
     }
 
 
+def _existing_plan_edge(edges: list, source: str, target: str, interaction: bool,
+                        doomed: frozenset | set = frozenset()) -> dict | None:
+    """The dataflow's connection that a plan edge from *source* to *target* of
+    its kind (*interaction* or data) already is, or None: one a row drew, or
+    the user. One the plan removes (*doomed*) does not count. A row applies
+    such an edge as a no-op, and Apply plan creates none for it."""
+    return next(
+        (
+            e for e in edges
+            if isinstance(e, dict) and str(e.get("id")) not in doomed
+            and e.get("source") == source and e.get("target") == target
+            and plan_topology.is_interaction_edge(e) == interaction
+        ),
+        None,
+    )
+
+
 def _apply_one_plan_edge(ctx: dict, index: int, *, record_missing: bool = True):
     """Apply ONE plan edge against the CURRENT spec (the 67-8 policy: endpoint
     resolution, already-connected no-op, DEC-051 fan-in, input circles).
@@ -1170,15 +1187,7 @@ def _apply_one_plan_edge(ctx: dict, index: int, *, record_missing: bool = True):
         return {**row, "status": "refused", "reason": reason}, None
     wants_interaction = plan_topology.is_interaction_edge(plan_edge)
     doomed = ctx["doomed"]
-    already = next(
-        (
-            e for e in ctx["edges"]
-            if isinstance(e, dict) and str(e.get("id")) not in doomed
-            and e.get("source") == source and e.get("target") == target
-            and plan_topology.is_interaction_edge(e) == wants_interaction
-        ),
-        None,
-    )
+    already = _existing_plan_edge(ctx["edges"], source, target, wants_interaction, doomed)
     if already is not None:
         edge_states[key] = "applied"
         return {
@@ -1666,30 +1675,32 @@ def _remove_plan_victims(spec: dict, nodes: list, edges: list, remove_node_set: 
 def _create_plan_nodes(user_key, spec: dict, nodes: list, plan: dict, proposal: dict,
                        starters: dict, *, agents: list[dict] | None = None,
                        templates: dict | None = None) -> tuple[list, list, dict]:
-    """The plan's new nodes at the mint-time layout (+ review-stage overlays); refs already applied
-    per-node are REAL nodes — skipped, their ids seed the edge resolution. Each created node gets its
-    agents (*agents*, ``_plan_node_agents``) in THIS apply's single spec write (dev/126). A ref in
-    *starters* starts with its template's starter and widgets (``_content_starters``)."""
+    """The plan's new nodes at the mint-time layout (+ review-stage overlays). A ref a row applied
+    is a node of the dataflow already: it is not created again, and its id seeds the edge
+    resolution, as a connection already there is not drawn again (``_create_plan_edges``). Each
+    created node gets its agents (*agents*, ``_plan_node_agents``) in THIS apply's single spec
+    write (dev/126). A ref in *starters* starts with its template's starter and widgets
+    (``_content_starters``)."""
     right = _right_edge(nodes)
     ys = [n.get("y") for n in nodes if isinstance(n, dict) and isinstance(n.get("y"), (int, float))]
     base_x = (right + _NODE_H_GUTTER) if right is not None else 80.0
     base_y = min(ys) if ys else 80.0
     depths = _plan_depths(plan.get("nodes", []), plan.get("edges", []))
     rows: dict[int, int] = {}
-    # dev/67-5: the mint-time layout + review-stage overlays; refs already
-    # applied per-node are REAL nodes — skipped here, their ids seed the edge
+    # dev/67-5: the mint-time layout + review-stage overlays; the refs rows
+    # applied are REAL nodes, skipped here, whose ids seed the edge
     # resolution so mixed per-node/whole-plan flows wire correctly.
     positions = proposal.get("positions") or {}
     edited_goals = proposal.get("editedGoals") or {}
-    already_applied = set(proposal.get("appliedRefs") or [])
     ref_to_id: dict[str, str] = dict(proposal.get("appliedNodeIds") or {})
+    in_dataflow = {n.get("id") for n in nodes if isinstance(n, dict) and n.get("id")}
     created_nodes: list[dict] = []
     attached_results: list[dict] = []
     for plan_node in plan.get("nodes", []):
         depth = depths.get(plan_node["ref"], 0)
         row = rows.get(depth, 0)
         rows[depth] = row + 1
-        if plan_node["ref"] in already_applied:
+        if ref_to_id.get(plan_node["ref"]) in in_dataflow:
             continue
         node_id = str(uuid.uuid4())
         ref_to_id[plan_node["ref"]] = node_id
@@ -1757,6 +1768,11 @@ def _create_plan_edges(user_key, project_id, proposal_id, spec: dict, proposal: 
         # dev/59: endpoints resolve through the ref map ∪ existing ids.
         source = ref_to_id.get(plan_edge["from"], plan_edge["from"])
         target = ref_to_id.get(plan_edge["to"], plan_edge["to"])
+        # A connection the plan's rows drew already, or the user did, is in
+        # the dataflow: the apply creates only what is not, so no node is fed
+        # twice by one plan edge.
+        if _existing_plan_edge(edges, source, target, plan_topology.is_interaction_edge(plan_edge)) is not None:
+            continue
         if plan_topology.is_interaction_edge(plan_edge):
             # dev/112: the Trill's feedback edge — in/out handles both ends,
             # type Interaction (what loadTrill/TrillGenerator round-trip); no
