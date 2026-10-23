@@ -165,6 +165,30 @@ describe("AgentSolveAttemptsCard (dev/127)", () => {
     expect(screen.getByText(/the builder declined: it needs something from you/)).toBeInTheDocument();
   });
 
+  it("names a one-line answer as a stop of its own and shows it as prose", () => {
+    render(
+      <AgentSolveAttemptsCard
+        part={part({
+          rounds: 1,
+          stoppedBy: "answer",
+          attempts: [
+            {
+              round: 1,
+              verdict: "fail",
+              kind: "one-line-answer",
+              error: "the content builder answered: These inputs cannot be joined.",
+              code: "These inputs cannot be joined.",
+              codeIsProse: true,
+            },
+          ],
+        })}
+      />,
+    );
+    expect(screen.getByText("1 attempt · the builder answered instead of writing code")).toBeInTheDocument();
+    expect(screen.getByText("What the builder said instead of writing code")).toBeInTheDocument();
+    expect(document.querySelector("pre")).toBeNull();
+  });
+
   it("says when a field or the trail itself was truncated", () => {
     render(
       <AgentSolveAttemptsCard

@@ -363,8 +363,11 @@ class SimulationDriver:
             return self._pause({
                 "kind": "validation-failed", "ref": ref,
                 "proposalId": proposal_id,
+                # Without a proposal (the builder answered in one line instead
+                # of writing code) there is nothing to review or apply.
                 "message": "validation failed — review the proposed content "
-                "(Apply anyway or edit), then continue",
+                "(Apply anyway or edit), then continue" if proposal_id else
+                "validation failed and nothing was proposed: edit the node or its inputs, then continue",
             })
         return None
 

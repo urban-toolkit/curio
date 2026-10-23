@@ -508,7 +508,9 @@ class SolveBatch:
             # dev/118 live fix: the upstream has no content (it failed, or
             # is not a target) — this node waits, pending with the reason;
             # Retry runs it once the upstream is solved or filled.
-            reason = f"waiting: {raw_detail[:240]}" if raw_detail else "waiting: an upstream node has no content yet"
+            # The status says it waits: the notice and the card put it before
+            # the reason, which says on what, as every pending reason does.
+            reason = raw_detail[:240] if raw_detail else "an upstream node has no content yet"
             # The session summary reads what the node waits on from here, not
             # from the reason's wording.
             self.results[node_id] = {"status": "pending", "reason": reason, "waitingOn": "upstream", **trail}
@@ -517,7 +519,7 @@ class SolveBatch:
             # dev/118 (DEC-075): the runner refused the SLICE (the 25-node
             # bound, a cycle) — a bound on validation, not a failure of the
             # content: skipped, with the bound named.
-            reason = f"skipped: {raw_detail[:240]}" if raw_detail else "skipped: validation refused the slice"
+            reason = raw_detail[:240] if raw_detail else "validation refused the slice"
             self.results[node_id] = {"status": "skipped", "reason": reason, **trail}
             return {"nodeId": node_id, "status": "skipped", "reason": reason, **trail}
         # dev/127: a refusal's head names the literal; a traceback is read
@@ -535,16 +537,16 @@ class SolveBatch:
         )
         rounds = outcome.get("rounds") or 0
         remedy_payload = evidence.get("remedy") if isinstance(evidence.get("remedy"), dict) else None
-        remedy = (
-            self._ungrounded_remedy(node_id)
-            if kind == "ungrounded-source" else
-            agents_grounding._source_missing_remedy(remedy_payload)
-            if kind == "source-missing" else ""
-        )
+        if kind == "ungrounded-source":
+            clause = self._ungrounded_remedy(node_id)
+            detail = f"{detail[:200 - len(clause)]}{clause}"
+        elif kind == "source-missing":
+            # The remedy is a sentence of its own, appended as written.
+            sentence = agents_grounding._source_missing_remedy(remedy_payload)
+            detail = agents_grounding._then_sentence(detail[:200 - len(sentence) - 2], sentence)
         bound = agents_rounds._stopped_by_clause(outcome.get("stoppedBy"))
         err = (
-            f"not fixed after {rounds} attempt{'s' if rounds != 1 else ''}{bound}: "
-            f"{kind}: {detail[:200 - len(remedy)] if remedy else detail}{remedy}"
+            f"not fixed after {rounds} attempt{'s' if rounds != 1 else ''}{bound}: {kind}: {detail}"
         )[:300]
         extra = {"remedy": remedy_payload} if remedy_payload else {}
         self.results[node_id] = {"status": "failed", "error": err, **trail, **extra}
@@ -605,6 +607,10 @@ class SolveBatch:
         if unreadable:
             self.results[node_id] = {"status": "failed", "error": unreadable[:300]}
             return {"nodeId": node_id, "status": "failed", "error": unreadable[:300]}
+        err = self._unwritten_answer(node, text_out)
+        if err:
+            self.results[node_id] = {"status": "failed", "error": err}
+            return {"nodeId": node_id, "status": "failed", "error": err}
         result: dict = {"status": "solved"}
         if not self.is_executable(node):
             # dev/118 (DEC-075): written like before, and SAID to be unexecuted.
@@ -617,6 +623,19 @@ class SolveBatch:
         return {"nodeId": node_id, "status": "solved", "content": text_out, **self._written_by(), **(
             {"verification": result["verification"]} if "verification" in result else {}
         )}
+
+    def _unwritten_answer(self, node: dict, text_out: str) -> str | None:
+        """The error a node fails with when the builder answered in one line
+        instead of writing its code, or None. The verified loop reports that
+        line, and so do the paths that write or propose content without
+        running it: it is never written, or offered for review, as code."""
+        if self.content_kind(node) != workflow_spec.CONTENT_KIND_CODE:
+            return None
+        answered = agents_rounds._one_line_answer(text_out, data_loading=self.is_data_loading(node))
+        if answered is None:
+            return None
+        kind, detail = answered
+        return f"{kind}: {detail}"[:300]
 
     def _written_by(self) -> dict:
         """``{"agent": name}``: the agent that writes this batch's content, as
@@ -1118,6 +1137,14 @@ class SolveBatch:
         # (verdict, rounds, attempts) rides the part, PASS or
         # FAIL (dev/67-7's labeled choice); a sandbox outage
         # mints nothing and the node stays pending.
+        if agents_rounds._ended_on_an_answer(outcome):
+            # The builder's one-line answer is no content: nothing is minted
+            # for Apply anyway to write, and the node fails with the answer,
+            # as it does when Solve writes.
+            event = self.record_outcome(node_id, "verified", outcome, None)
+            if event is not None:
+                yield "node_result", event
+            return
         for c in outcome.get("delegations") or []:
             if c is not None:
                 self.delegations.append(c)
@@ -1178,7 +1205,10 @@ class SolveBatch:
             self.delegations.append(child)
         # dev/114: the gate runs on the batch base BEFORE the
         # mint so the node's failure names the source.
-        err = self._gate_unverified(node_id, content.extract_node_content(text))
+        text_out = content.extract_node_content(text)
+        err = self._gate_unverified(node_id, text_out) or self._unwritten_answer(
+            self.nodes_by_id.get(node_id) or {}, text_out,
+        )
         if err:
             self.results[node_id] = {"status": "failed", "error": err[:300]}
             yield "node_result", {"nodeId": node_id, "status": "failed", "error": err[:300]}

@@ -51,7 +51,7 @@ export const NodeSolveRow: React.FC<{
         setNotice(
           // dev/127: the trail is a card in this chat now, with the code each
           // attempt ran — the notice says where to look and what stopped it.
-          `Not fixed after ${done.rounds ?? "?"} attempts${
+          `Not fixed after ${done.rounds ?? "?"} attempt${done.rounds === 1 ? "" : "s"}${
             done.stoppedBy ? ` (${stoppedByPhrase(done.stoppedBy) || done.stoppedBy})` : ""
           }: every attempt is below with the code it ran; nothing was written.`,
         );

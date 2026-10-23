@@ -5,7 +5,7 @@ DEC-073 → dev/118 → dev/126 → dev/127 → dev/129 → dev/131 → dev/133 
 → dev/136 → dev/137 → dev/138): the ONE generate → gate → execute → correct
 loop every Solve path runs. Nothing about WHAT a round does changed; what
 changed is that each stage has a name — :meth:`_generation_inputs`,
-:meth:`_source_gate`, :meth:`_input_contract_gate`, :meth:`_map_edits_gate`,
+:meth:`_one_line_answer`, :meth:`_source_gate`, :meth:`_input_contract_gate`, :meth:`_map_edits_gate`,
 :meth:`_repeat_check`, :meth:`_validate`, :meth:`_made_up_ids_check`,
 :meth:`_document_check`, :meth:`_absent_output_check`,
 :meth:`_empty_result_check`, :meth:`_record_round` — and :meth:`run` reads
@@ -309,6 +309,7 @@ class VerifiedRounds:
                 self.candidate = content.extract_node_content(text)
             token = None
             for stage in (
+                self._one_line_answer,
                 self._source_gate,
                 self._input_contract_gate,
                 self._map_edits_gate,
@@ -418,6 +419,45 @@ class VerifiedRounds:
 
     # ── stages: gates before the sandbox ────────────────────────────────────
 
+    def _one_line_answer(self):
+        """The content builder may answer in one line instead of writing code,
+        as its content mode and every refusal of a round offer. That line is
+        read here, before any gate or the sandbox, on every node whose content
+        is code: a data-loading node's answer declines, naming what its source
+        needs, and any other node's says why the node cannot be done, such as
+        two inputs that cannot be joined. Either ends the loop. The code on
+        the node, which round 0 may run, is the user's own and never an
+        answer, and a chart's or a map's document is read by
+        :meth:`_document_check`."""
+        if self.use_current:
+            return None
+        if workflow_spec.content_kind(self.node_type, self.loop_templates) != workflow_spec.CONTENT_KIND_CODE:
+            return None
+        answered = agents_rounds._one_line_answer(self.candidate, data_loading=self.is_data_loading)
+        if answered is None:
+            return None
+        kind, detail = answered
+        return (yield from self._stop_on_the_answer(kind, detail))
+
+    def _stop_on_the_answer(self, kind: str, detail: str):
+        """Record the builder's one-line answer as the round's attempt, in its
+        words and as prose, and end the loop: the same builder asked again
+        with the same inputs only repeats it. A decline names an input nobody
+        in this loop can supply (a key, a path, a URL), so the user is the
+        correction, and when it is about a credential and the failed attempt
+        named a host, the remedy is concrete (dev/116): add a connection key
+        for that host, or use the saved one."""
+        attempt = yield from self._record_failed_round(kind, detail, trace_limit=160, prose=True)
+        if kind == agents_rounds.ONE_LINE_ANSWER_KIND:
+            self.stopped_by = "answer"
+            return BREAK
+        remedy = agents_rounds._decline_remedy(self.candidate, self.previous_attempt, self.grounding_ctx)
+        if remedy:
+            self.verdict_result["evidence"]["remedy"] = remedy
+            attempt["remedy"] = remedy
+        self.stopped_by = "decline"
+        return BREAK
+
     def _source_gate(self):
         """DEC-072: the gate runs BEFORE the sandbox does — a fabricated path
         or an unverified URL never executes, and the refusal is the error
@@ -429,33 +469,21 @@ class VerifiedRounds:
         )
         if gate.ok:
             return None
+        if not self.use_current and agents_rounds._is_prose_decline(self.candidate):
+            # The delegate followed its rule ("return a one-line explanation
+            # of what source is missing instead of code") in a line
+            # :meth:`_one_line_answer` leaves to this gate: on a node whose
+            # content is no code, or a line Python reads. Record ITS words as
+            # the attempt, not a gate verdict on prose (dev/115 field fix,
+            # 2026-09-08).
+            return (yield from self._stop_on_the_answer(
+                "source-missing", agent_text.message("solve.builder-declined", decline=self.candidate.strip()),
+            ))
         refusal = source_grounding.refusal_text(gate, self.grounding_ctx)
         kind = source_grounding.failure_kind(gate)
-        declined = not self.use_current and agents_rounds._is_prose_decline(self.candidate)
-        if declined:
-            # The delegate followed its rule ("return a one-line
-            # explanation of what source is missing instead of code").
-            # Record ITS words as the attempt, not a gate verdict on
-            # prose (dev/115 field fix, 2026-09-08).
-            refusal = agent_text.message("solve.builder-declined", decline=self.candidate.strip())
-            kind = "source-missing"
         # dev/127: what was refused, verbatim — the literal the gate named is
         # IN this text, so showing it is the point.
-        attempt = yield from self._record_failed_round(kind, refusal, trace_limit=160, prose=declined)
-        if declined:
-            # dev/116: when the decline is about a credential and the
-            # failed attempt named a host, the remedy is concrete —
-            # add a connection key for that host (or use the saved one).
-            remedy = agents_rounds._decline_remedy(self.candidate, self.previous_attempt, self.grounding_ctx)
-            if remedy:
-                self.verdict_result["evidence"]["remedy"] = remedy
-                attempt["remedy"] = remedy
-            # A decline names an input nobody in this loop can supply
-            # (a key, a path, a URL). Asking the same builder again
-            # with the same inputs only repeats it — the user is the
-            # correction; stop and say so.
-            self.stopped_by = "decline"
-            return BREAK
+        yield from self._record_failed_round(kind, refusal, trace_limit=160)
         self._carry(refusal)
         return CONTINUE
 
