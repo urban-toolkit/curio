@@ -1657,6 +1657,7 @@ Everything an agent reads is hand-written Markdown in `agents/`, the Agent Catal
   | `candidates.source_types`, `candidates.name_chars`, `candidates.text_chars` | The source types a candidates row may name, joined with pipes, and how many characters its name and each other text field hold | `content._CANDIDATE_SOURCE_TYPES`, `_CANDIDATE_NAME_MAX_CHARS`, `_CANDIDATE_TEXT_MAX_CHARS` |
   | `note.palette_choices`, `backend.timeout_class_choices` | The note palette joined with pipes, and the timeout classes joined with " \| ", as a JSON string lists them | `note_palette.NOTE_PALETTE`, `backend_contract.TIMEOUT_CLASSES` |
   | `models.search_max_rows`, `models.max_labels` | The most rows `models.search` returns, and the most labels a row lists | `contracts.MODELS_SEARCH_MAX_ROWS`, `MODEL_LABELS_MAX` |
+  | `notes.max` | The most notes a `package.install` carries, which its mint keeps | `contracts.MAX_NOTES` |
   | `tools.wire_name:<tool id>`, `tools.delegate` | The name a run on native tools calls a tool by, and the native delegation tool's name | `tool_names.wire_name`, `DELEGATE_TOOL` |
 
 To change agent text, edit its file in `agents/` (the base entry's README walks through it). A fact the code owns that no field states yet is a new field in `PROMPT_FIELDS`.

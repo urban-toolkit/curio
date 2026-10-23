@@ -860,7 +860,7 @@ def _notes_from_delegate_inputs(inputs: dict) -> list[dict] | None:
     if not isinstance(raw, list):
         return None
     rows: list[dict] = []
-    for item in raw[:16]:
+    for item in raw[:content.MAX_NOTES]:
         if not isinstance(item, dict):
             continue
         content_text = item.get("content")
