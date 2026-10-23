@@ -250,12 +250,15 @@ SHARED_WITH_USERS = {
 def _python_strings() -> list[tuple[str, str]]:
     """Every string literal in ``utk_curio/``'s Python, its tests left out,
     with where it is: adjacent literals joined as Python joins them, and each
-    literal part of an f-string."""
+    literal part of an f-string. A docstring, or a string statement that does
+    nothing, is left out as the prose guard leaves it out: no check says it."""
     found = []
     for path in _python_files():
         relative = path.relative_to(REPO_ROOT).as_posix()
-        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
-            if isinstance(node, ast.Constant) and isinstance(node.value, str):
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        statements = {id(node.value) for node in ast.walk(tree) if isinstance(node, ast.Expr)}
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Constant) and isinstance(node.value, str) and id(node) not in statements:
                 found.append((f"{relative}:{node.lineno}", node.value))
     return found
 
