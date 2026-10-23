@@ -7,6 +7,11 @@ import type { NodeExecRecord } from "../providers/ProvenanceProvider";
  * finds them. Move each such entry under the longest node id it ends with,
  * merging with runs already filed there in run order. Keys that already are a
  * node id, or that match no node, are kept as they are.
+ *
+ * Its twin, `projects/node_provenance.py`, keys the histories a saved dataflow
+ * holds the same way for the agents' node.history.read, so an agent reads what
+ * a node's Provenance drawer lists; `nodeProvenanceKeys.cases.json` beside
+ * this file holds the cases both run.
  */
 export function rekeyNodeProvenance(
     saved: Record<string, NodeExecRecord[]>,
