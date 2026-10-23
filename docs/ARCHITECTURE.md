@@ -561,6 +561,15 @@ whose code is its only state: one call of `curio_edit_features`
   `loadCollection` and drawn in its highlight: the shape being drawn and its
   corners, a shape waiting to be added, and a feature being reshaped or moved
   with its corners and midpoints, which a press takes where the map shows them.
+  A feature of several rows, as an OSM building of several parts is (one row
+  per part, each with its building's `building_id` and its own `osm_id`), shows
+  every part's corners, each tagged with its row. The bus hands the node each
+  row a gesture changes (`onReshape`), and the node writes an edit for each:
+  by `ids` for a feature of one row, else by `where`, the layer's key and the
+  part's own `osm_id` (`featureParts.ts`), so the parts a gesture leaves keep
+  their shapes. A move writes an edit for every part, in one change; a part
+  drawn joins the part the pick was clicked on. A feature whose rows no
+  `osm_id` tells apart keeps its shape: its tools are off.
   autk-map draws its buildings over every flat layer, so that feature is
   skipped in its own layer meanwhile, at the positions the map's node
   registers (`registerEditMap`). The tool layers are never kept across a

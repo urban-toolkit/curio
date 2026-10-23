@@ -18,7 +18,7 @@ return curio_edit_features(input_0, [
 
 ### The edits
 
-An edit names its features by `ids`, values of its layer's key column, or by `where`, a condition on their properties (`height > 100 and levels >= 30`), never both.
+An edit names its features by `ids`, values of its layer's key column, or by `where`, a condition on their properties (`height > 100 and levels >= 30`), never both. `ids` names every row that holds the id: OpenStreetMap's buildings are a row per part, each with its building's `building_id` and an `osm_id` of its own, so an edit by `building_id` changes every part of a building.
 
 | op | fields |
 |---|---|
@@ -36,6 +36,7 @@ Every edit may also hold `layer`, `label` and `enabled`.
 
 - `set` writes a value: a text, a number, True, False or None. `scale` multiplies a number by `value`, `offset` adds `value` to it, and `expr` writes what an expression of the feature's properties makes (`min(height, 60)`).
 - `geometry` and `add` take a GeoJSON geometry, and `add` an `id` and its `values`.
+- The map's tools change a building's shape one part at a time, each part named by its own id, `where` its `building_id` and its `osm_id` both hold: `{"op": "geometry", "where": "building_id == 29623484 and osm_id == 236608503", "geometry": ...}`. The building's other parts keep their shapes.
 - `add_column` adds a property, with `value`, to every feature that has none.
 
 ### The rule
