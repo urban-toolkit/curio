@@ -519,6 +519,7 @@ class TestNodeBuilderComposite:
             "node.create",  # a node type is made only by a package draft
             "node.runtime.read",  # dev/67-2: diagnose before regenerating
             "node.content.write",  # dev/67-6: modify-existing, reviewed
+            "node.settings.write",  # an existing node's settings and widget values, reviewed
             "catalog.search",  # dev/114 (DEC-072): the only source of a real local path
             "models.search",  # the Model Catalog: a model this account can run
             "packages.catalog", "packages.resolve",  # dev/84: what exists, what it needs
@@ -813,9 +814,12 @@ class TestDataflowBuilderComposite:
         # note proposals mint on (grant-gated at the parent).
         # #917: package.draft.apply is the one a package the Node Builder's
         # writing mode drafts for it mints on, grant-gated the same way.
+        # node.settings.write changes a setting of a node already on the
+        # canvas, which a plan only places.
         assert [t.id for t in m.tools] == [
             "dataflow.read", "dataflow.plan.write", "node.runtime.read",
             "node.create",
+            "node.settings.write",
             "examples.read",  # any worked example, beside the ones a run is given
             "package.draft.apply",
         ]

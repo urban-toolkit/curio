@@ -24,11 +24,14 @@ if (!(global as any).DOMMatrixReadOnly) {
 }
 
 const mockShowToast = jest.fn();
+// Where a node's settings land when no setter of the node's own takes them.
+const mockUpdateDataNode = jest.fn();
+const mockMarkNodeStale = jest.fn();
 
 jest.mock('../../hook/useWorkflowOperations', () => ({
   useWorkflowOperations: () => ({
     markNodeExecuted: jest.fn(),
-    markNodeStale: jest.fn(),
+    markNodeStale: (...args: unknown[]) => mockMarkNodeStale(...args),
     markDirty: jest.fn(),
     persistDataflowForInstall: jest.fn().mockResolvedValue(undefined),
     beginPendingInstall: jest.fn(),
@@ -39,7 +42,7 @@ jest.mock('../../hook/useWorkflowOperations', () => ({
     setAllMinimized: jest.fn(),
     expandStatus: {},
     setExpandStatus: jest.fn(),
-    updateDataNode: jest.fn(),
+    updateDataNode: (...args: unknown[]) => mockUpdateDataNode(...args),
     updateDefaultCode: jest.fn(),
     workflowGoal: '',
     acceptSuggestion: jest.fn(),
@@ -190,5 +193,35 @@ describe('apply→canvas bridge integration (dev/48 §3.3 / dev/51 regression)',
     await flush();
     const node = api.nodes.find((n: any) => n.id === CREATED.id);
     expect(node?.data?.code).toBe('print(2)');
+  });
+
+  it('node-settings-applied on a node no setter of its own is mounted for goes into its data through updateDataNode', async () => {
+    // ReactFlow draws its own default node here, so no node behavior or
+    // editor registers a setter, and the change takes the fallback.
+    mockUpdateDataNode.mockClear();
+    mockMarkNodeStale.mockClear();
+    const combine = { name: 'combine', type: 'choice', default: 'mean', options: { choices: ['mean', 'max'] } };
+    renderCanvas();
+    await flush();
+    await act(async () => {
+      notifyAgentCanvasMutation({ kind: 'node-created', node: { ...CREATED, metadata: { widgets: [combine] } } });
+    });
+    await flush();
+    await act(async () => {
+      notifyAgentCanvasMutation({
+        kind: 'node-settings-applied',
+        nodeId: CREATED.id,
+        settings: { widgets: { combine: 'max' } },
+      });
+    });
+    await flush();
+    expect(mockUpdateDataNode).toHaveBeenCalledTimes(1);
+    const [nodeId, data] = mockUpdateDataNode.mock.calls[0];
+    expect(nodeId).toBe(CREATED.id);
+    expect(data.widgets.find((w: any) => w.name === 'combine').value).toBe('max');
+    // The rest of the node's data stays as it was.
+    expect(data.code).toBe("print('new')");
+    // A widget's new value leaves its node out of date, as the Widgets tab's does.
+    expect(mockMarkNodeStale).toHaveBeenCalledWith(CREATED.id);
   });
 });

@@ -38,6 +38,7 @@ jest.mock('../../../services/api', () => ({
 }));
 
 import { useSpatialJoinBehavior } from '../../../adapters/node/spatialJoinBehavior';
+import { writeNodeSettings } from '../../../utils/nodeSettingsWriters';
 
 const POINTS = {
   type: 'FeatureCollection',
@@ -255,6 +256,35 @@ describe('the operation and the output (#576)', () => {
 
     expect(posted(fetchMock).output).toBe('pairs');
     expect(readBody(result.current.contentComponent).output!.value).toBe('pairs');
+  });
+
+  test("an agent's applied change picks the operation and the output as the selects do, in one change of the node", () => {
+    mockFetch(joined([]));
+    const { data } = renderJoin({ spatialJoin: { output: 'counts' } });
+    const fallback = jest.fn();
+    act(() => writeNodeSettings(
+      { nodes: () => [{ id: 'sj-1', data }], updateDataNode: fallback },
+      'sj-1',
+      { spatialJoin: { predicate: 'within', output: 'pairs' } },
+    ));
+    expect(fallback).not.toHaveBeenCalled();
+    // Both at once: two picks made one after the other would each have
+    // written over the other.
+    expect(mockUpdateDataNode).toHaveBeenCalledTimes(1);
+    expect(mockUpdateDataNode).toHaveBeenCalledWith('sj-1', expect.objectContaining({
+      spatialJoin: { predicate: 'within', output: 'pairs' },
+    }));
+  });
+
+  test("an agent's change of the operation keeps the output the node holds", () => {
+    mockFetch(joined([]));
+    renderJoin({ spatialJoin: { output: 'counts' } });
+    act(() => writeNodeSettings(
+      { nodes: () => [], updateDataNode: jest.fn() }, 'sj-1', { spatialJoin: { predicate: 'within' } },
+    ));
+    expect(mockUpdateDataNode).toHaveBeenCalledWith('sj-1', expect.objectContaining({
+      spatialJoin: { output: 'counts', predicate: 'within' },
+    }));
   });
 });
 

@@ -33,10 +33,13 @@ class TestRegistry:
             "discovery.sources", "discovery.search", "discovery.acquire",
             "models.search",  # the Model Catalog
             "examples.read",  # the worked examples
+            "node.settings.write",  # an existing node's settings and widget values
         }
         assert tools.REGISTRY["dataflow.read"].effect == "read"
         assert tools.REGISTRY["node.read"].effect == "read"
         assert tools.REGISTRY["node.content.write"].effect == "mutate"
+        # A settings change is applied only on review, as a content change is.
+        assert tools.REGISTRY["node.settings.write"].effect == "mutate"
         assert tools.REGISTRY["node.create"].effect == "mutate"
         assert tools.REGISTRY["catalog.search"].effect == "read"
         assert tools.REGISTRY["dataset.install"].effect == "mutate"
