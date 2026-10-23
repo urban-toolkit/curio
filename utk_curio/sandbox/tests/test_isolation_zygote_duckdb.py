@@ -1,11 +1,13 @@
 """The zygote closing DuckDB's import-time connection, minus the rest of the zygote.
 
-``import duckdb`` opens a default connection with a pool of threads, and a
-child forked from a process holding that pool can crash inside DuckDB (see
-``zygote._release_import_time_duckdb``). These tests pin that the zygote closes
-it, that doing so never raises, and that DuckDB still works afterwards. Whether
-the zygote really ends up single-threaded needs a live zygote on Linux, so that
-is in test_isolation_linux.py.
+On DuckDB 1.x, ``import duckdb`` opens a default connection with a pool of
+threads, and a child forked from a process holding that pool can crash inside
+DuckDB (see ``zygote._release_import_time_duckdb``). These tests pin that the
+zygote closes it, that doing so never raises, and that DuckDB still works
+afterwards. DuckDB 2.0's import opens none, and asking for the default
+connection opens one, with its pool: there the zygote must open nothing.
+Whether the zygote really ends up single-threaded needs a live zygote on Linux,
+so that is in test_isolation_linux.py.
 """
 
 import io
@@ -43,9 +45,34 @@ class _FakeConnection:
         self.closed = True
 
 
-def _fake_duckdb(connection, *, as_function=True):
+def _fake_duckdb(connection, *, as_function=True, version=None):
+    """A DuckDB whose default connection, *connection*, is open, as 1.x's import leaves it."""
     module = types.ModuleType("duckdb")
     module.default_connection = (lambda: connection) if as_function else connection
+    if version is not None:
+        module.__version__ = version
+    return module
+
+
+def _duckdb_that_opens_on_first_use(version):
+    """A DuckDB whose import opened no default connection, as 2.0's does.
+
+    Every call that reaches the default connection opens one, with its pool:
+    asking for it, and the module-level calls that run on it. Each is recorded
+    in ``opened``.
+    """
+    module = types.ModuleType("duckdb")
+    module.__version__ = version
+    module.opened = []
+
+    def opens(name):
+        def call(*args, **kwargs):
+            module.opened.append(name)
+            return _FakeConnection()
+        return call
+
+    for name in ("default_connection", "close", "connect", "sql", "execute"):
+        setattr(module, name, opens(name))
     return module
 
 
@@ -140,6 +167,39 @@ class ReleaseImportTimeDuckdbTest(unittest.TestCase):
             zygote._release_import_time_duckdb()
         thread_names.assert_not_called()
 
+    def test_opens_nothing_where_the_import_opened_nothing(self):
+        """DuckDB 2.0 opens its default connection on first use only.
+
+        Asked for it, the release would open one, with its pool, only to close
+        it: on CI's runners 19 threads on 4 cores, in the zygote and in both
+        servers at every start.
+        """
+        for version in ("2.0.0", "2.1.0", "3.0.0.dev12"):
+            module = _duckdb_that_opens_on_first_use(version)
+            log = self._release(module)
+            self.assertEqual(
+                module.opened, [],
+                f"on DuckDB {version}, the release called {module.opened}, which "
+                f"opens DuckDB's default connection, with its pool, only to close it",
+            )
+            self.assertEqual(log, "", f"on DuckDB {version}")
+
+    def test_closes_it_where_the_import_opened_it(self):
+        """DuckDB 1.x opens its default connection at import."""
+        for version in ("1.5.3", "1.4.4", "0.10.3"):
+            connection = _FakeConnection()
+            self._release(_fake_duckdb(connection, version=version))
+            self.assertTrue(connection.closed, f"on DuckDB {version}")
+
+    def test_a_version_it_cannot_read_counts_as_one_whose_import_opened_it(self):
+        """Asking for a default connection that is open opens nothing, so this side is safe."""
+        for version in ("", "unknown", None):
+            connection = _FakeConnection()
+            module = _fake_duckdb(connection)
+            module.__version__ = version
+            self._release(module)
+            self.assertTrue(connection.closed, f"with __version__ = {version!r}")
+
     def test_reports_the_threads_it_released(self):
         log = self._release(_fake_duckdb(_FakeConnection()),
                             names=(["python"] * 9, ["python"]))
@@ -182,31 +242,47 @@ class RealDuckdbTest(unittest.TestCase):
     """Against the installed DuckDB, in a fresh interpreter.
 
     A subprocess, so closing the default connection cannot disturb anything
-    else this test process has done with DuckDB.
+    else this test process has done with DuckDB. What the release must do
+    depends on what the bare ``import duckdb`` did there, seen as the threads
+    it started: DuckDB 1.x opens the default connection and its pool, 2.0
+    nothing.
     """
 
     def test_duckdb_still_works_after_the_release(self):
         script = textwrap.dedent("""
-            import os
-            import duckdb
+            import psutil
             from utk_curio.sandbox.isolation import zygote
 
-            def threads():
-                try:
-                    return len(os.listdir("/proc/self/task"))
-                except OSError:
-                    return -1
+            me = psutil.Process()
+            before_import = me.num_threads()
+            import duckdb
+            at_import = me.num_threads()
 
-            before = threads()
+            # Counts the release's requests for the default connection: on a
+            # DuckDB whose import opened none, each one opens it.
+            real = duckdb.default_connection
+            asked = []
+
+            def default_connection():
+                asked.append(1)
+                return real()
+
+            duckdb.default_connection = default_connection
             zygote._release_import_time_duckdb()
-            after = threads()
+            after = me.num_threads()
+            duckdb.default_connection = real
+
+            # Asked for now, the default connection opens with a pool of its
+            # own, unless the release left one open.
+            reopened = real()
+            probe = me.num_threads() - after
             # The module-level API reopens a default connection on demand,
             # and explicit connections were never affected.
             print(duckdb.sql("select 42").fetchall()[0][0])
             con = duckdb.connect(":memory:")
             print(con.execute("select 7").fetchall()[0][0])
             con.close()
-            print(before, after)
+            print(before_import, at_import, after, len(asked), probe)
         """)
         env = dict(os.environ)
         env["PYTHONPATH"] = os.pathsep.join(
@@ -217,9 +293,25 @@ class RealDuckdbTest(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         answer, explicit, counts = result.stdout.strip().splitlines()[-3:]
         self.assertEqual((answer, explicit), ("42", "7"))
-        before, after = (int(n) for n in counts.split())
-        if before > 1:  # only measurable where /proc exists
-            self.assertLess(after, before, "closing the connection joined no threads")
+        before_import, at_import, after, asked, probe = (int(n) for n in counts.split())
+        seen = (f"threads {before_import} before the import, {at_import} after it, "
+                f"{after} after the release; asked {asked} time(s)\n{result.stderr[-2000:]}")
+        if at_import > before_import:
+            # DuckDB 1.x: the import opened the default connection, and its pool.
+            self.assertLess(after, at_import, f"closing the connection joined no threads: {seen}")
+        else:
+            # DuckDB 2.0: the import opened nothing, and the release must not either.
+            self.assertEqual(
+                asked, 0,
+                f"the release asked for DuckDB's default connection, which opens it, "
+                f"with its pool, only to close it: {seen}",
+            )
+            self.assertLessEqual(after, at_import, f"the release left threads running: {seen}")
+        self.assertGreater(
+            probe, 0,
+            f"the release left DuckDB's default connection open: asked for "
+            f"afterwards, it started no threads of its own: {seen}",
+        )
 
 
 class WarmUpTest(unittest.TestCase):
