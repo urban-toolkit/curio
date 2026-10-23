@@ -5,7 +5,7 @@
  * and the card clips it; and its option to draw it outside places it wrong
  * under a zoom, adding unscaled offsets. So both editors turn it off
  * (`hover: { enabled: false }`), and this hook shows what Monaco showed, in
- * the Curio tooltip, placed from the hovered span's box on screen:
+ * the Curio tooltip:
  *
  * - the messages of the markers at that place (the credential warning, a
  *   JSON error), first, as Monaco put them;
@@ -14,6 +14,14 @@
  *   what `referenceMarks` says the chip stands for;
  * - in a JavaScript node, the type information TypeScript's worker gives for
  *   the word under the pointer, read when the tooltip is about to show.
+ *
+ * A pointer that rests sends no new move, so what the editor does meanwhile
+ * must not lose the tooltip. It is placed from where Monaco draws what it
+ * describes (a chip's name, a word), read each time it is placed, else from
+ * the hovered span's box: Monaco draws a line again, with a new span under
+ * the pointer, when its decorations or tokens change. It hides when the text
+ * scrolls, and not when Monaco reports a scroll that only changes the size it
+ * can scroll (its lines measured again after it draws them).
  *
  * The scope, the language and the source are read as the pointer moves, so a
  * read coming back, which changes the scope, leaves an open tooltip open.
@@ -47,6 +55,28 @@ interface Span {
 /** A Monaco marker: a span of the code and what is wrong there. */
 interface Marker extends Span {
   message: string;
+}
+
+/** A part of one line, from one column up to another: what a tooltip describes. */
+interface LinePart {
+  lineNumber: number;
+  startColumn: number;
+  endColumn: number;
+}
+
+/** What shows for a place in the code: the key it shows by, what it says,
+ * and the part of the line it describes when it is one (a chip's name, a word). */
+interface Found {
+  key: string;
+  content: TooltipContent | (() => Promise<TooltipContent | null>);
+  part: LinePart | null;
+}
+
+/** *range* as a part of one line, or null when it runs over several. */
+function onOneLine(range: Span): LinePart | null {
+  return range.startLineNumber === range.endLineNumber
+    ? { lineNumber: range.startLineNumber, startColumn: range.startColumn, endColumn: range.endColumn }
+    : null;
 }
 
 /** Whether *position* falls in *span*, its ends included. */
@@ -122,14 +152,16 @@ export function useEditorTooltip(
       return text || null;
     };
 
-    /** What shows for *position*, under the key it shows by, or null for nothing. */
-    const contentAt = (position: Position): { key: string; content: TooltipContent | (() => Promise<TooltipContent | null>) } | null => {
+    /** What shows for *position*, or null for nothing. */
+    const contentAt = (position: Position): Found | null => {
       const { chip, markers } = describe(position);
       const messages = markers.map((marker) => marker.message);
       // A chip is Curio's own: what it holds, or what it stands for, with no
       // type information.
       if (chip) {
         const key = `${id}:chip:${chip.range.startLineNumber}:${chip.range.startColumn}`;
+        // Its name, as the chip draws it, centered in the chip.
+        const part = onOneLine(chip.nameRange ?? chip.range);
         const source = latest.current.previews;
         if (source) {
           const signature = JSON.stringify([chip.name, chip.problem, messages]);
@@ -142,10 +174,10 @@ export function useEditorTooltip(
             });
             shownPreview = { key, signature, source, content: { kind: "preview", node } };
           }
-          return { key, content: shownPreview.content };
+          return { key, content: shownPreview.content, part };
         }
         const text = joined([...messages, chip.hover]);
-        return text ? { key, content: { kind: "text", text } } : null;
+        return text ? { key, content: { kind: "text", text }, part } : null;
       }
       const language = latest.current.language;
       const word = language === "javascript" ? model()?.getWordAtPosition?.(position) : null;
@@ -157,12 +189,39 @@ export function useEditorTooltip(
             const text = joined([...messages, await typeInformation(position)]);
             return text ? { kind: "text", text } : null;
           },
+          part: { lineNumber: position.lineNumber, startColumn: word.startColumn, endColumn: word.endColumn },
         };
       }
       const text = joined(messages);
       return text
-        ? { key: `${id}:marker:${markers[0].startLineNumber}:${markers[0].startColumn}`, content: { kind: "text", text } }
+        ? {
+            key: `${id}:marker:${markers[0].startLineNumber}:${markers[0].startColumn}`,
+            content: { kind: "text", text },
+            part: null,
+          }
         : null;
+    };
+
+    /** The box on screen of *position*, a width of none: Monaco's place for
+     * it, scaled as the canvas shows the editor, as Monaco's own mouse
+     * handling scales a position (editorDom.js). */
+    const caretBox = (position: Position): TooltipBox | null => {
+      const dom: HTMLElement | null = editor.getDomNode?.() ?? null;
+      const at = editor.getScrolledVisiblePosition?.(position);
+      if (!dom || !at || typeof at.left !== "number" || typeof at.top !== "number" || typeof at.height !== "number") {
+        return null;
+      }
+      const box = dom.getBoundingClientRect();
+      const scale = dom.offsetWidth > 0 ? box.width / dom.offsetWidth : 1;
+      return { left: box.left + at.left * scale, top: box.top + at.top * scale, width: 0, height: at.height * scale };
+    };
+
+    /** The box on screen of *part* of a line, from Monaco's place for its two ends. */
+    const partBox = (part: LinePart): TooltipBox | null => {
+      const start = caretBox({ lineNumber: part.lineNumber, column: part.startColumn });
+      const end = caretBox({ lineNumber: part.lineNumber, column: part.endColumn });
+      if (!start || !end) return null;
+      return { left: start.left, top: start.top, width: Math.max(0, end.left - start.left), height: start.height };
     };
 
     const contentText = monaco?.editor?.MouseTargetType?.CONTENT_TEXT ?? CONTENT_TEXT;
@@ -179,27 +238,25 @@ export function useEditorTooltip(
         return;
       }
       const element: Element | null = target.element ?? null;
+      const { part } = found;
       current = found.key;
       tooltipStore.rest({
         key: found.key,
         target: null,
-        anchor: () => (element && element.isConnected ? element.getBoundingClientRect() : null),
-        anchorElement: element ?? editor.getDomNode?.() ?? null,
+        // Read each time it is placed. A chip's name or a word is where Monaco
+        // draws it, through any redraw of its line; a marker's message goes by
+        // the hovered span while it is on the page, else the character there.
+        anchor: () =>
+          (part ? partBox(part) : null) ??
+          (element && element.isConnected ? element.getBoundingClientRect() : null) ??
+          partBox({ lineNumber: position.lineNumber, startColumn: position.column, endColumn: position.column + 1 }),
+        // A scroll of anything that holds the editor moves it from under the tooltip.
+        anchorElement: editor.getDomNode?.() ?? element,
         side: "top",
         pointer: null,
         content: found.content,
       });
     });
-
-    /** The caret's box on screen: Monaco's place for it, scaled as the canvas shows the editor. */
-    const caretBox = (position: Position): TooltipBox | null => {
-      const dom: HTMLElement | null = editor.getDomNode?.() ?? null;
-      const at = editor.getScrolledVisiblePosition?.(position);
-      if (!dom || !at || typeof at.left !== "number") return null;
-      const box = dom.getBoundingClientRect();
-      const scale = dom.offsetWidth > 0 ? box.width / dom.offsetWidth : 1;
-      return { left: box.left + at.left * scale, top: box.top + at.top * scale, width: 0, height: at.height * scale };
-    };
 
     // Monaco's own chord for its hover shows the Curio tooltip for the caret,
     // in this editor only: an action of the editor runs where it has the focus.
@@ -237,9 +294,14 @@ export function useEditorTooltip(
       if (typeof shown === "string" && shown.startsWith(`${id}:`)) tooltipStore.hide();
     };
     const leave = editor.onMouseLeave?.(() => letGo());
-    // A press, a scroll or an edit leaves nothing where the tooltip points.
+    // A press, a scroll of the text or an edit leaves nothing where the
+    // tooltip points. Monaco also reports a scroll when only the size it can
+    // scroll changes, as it measures its lines' widths again after drawing
+    // them: the text stays put, and the tooltip with it.
     const down = editor.onMouseDown?.(() => tooltipStore.hide());
-    const scroll = editor.onDidScrollChange?.(() => hideOurs());
+    const scroll = editor.onDidScrollChange?.((event: any) => {
+      if (event?.scrollTopChanged !== false || event?.scrollLeftChanged !== false) hideOurs();
+    });
     const edit = editor.onDidChangeModelContent?.(() => hideOurs());
     const caret = editor.onDidChangeCursorPosition?.(() => {
       if (atCaret && tooltipStore.getState().shown?.request.key === atCaret) tooltipStore.hide();

@@ -7,6 +7,10 @@
  * warning, a JSON error), and in a JavaScript node the type information
  * TypeScript's worker gives, as Monaco's own hover showed it.
  *
+ * A pointer that rests on a chip sends no new move, so what the editor does
+ * meanwhile must not lose the chip's tooltip: a scroll that moves no text,
+ * and a redraw of the chip's line, which replaces the span under the pointer.
+ *
  * Monaco is not mounted under Jest: the hook is driven through a fake editor
  * that hands its listeners to the test, as referenceChips.test.ts does, and a
  * fake `monaco` with the markers and the worker each case needs.
@@ -107,6 +111,17 @@ function fakeModel(code: string) {
 const editorNodes: HTMLElement[] = [];
 
 /**
+ * Where a fake editor draws its text, from its top left corner, which jsdom
+ * puts at the page's: a line every 18 px from 200 px down, a character every
+ * 8 px from 56 px across. So "season" in `s = [!! season !!]`, columns 9 to
+ * 15, is drawn 120 to 168 px across, as `spanAt(dom, 120, 200, 48)` draws it.
+ */
+const TEXT_LEFT = 56;
+const TEXT_TOP = 200;
+const CHAR_WIDTH = 8;
+const LINE_HEIGHT = 18;
+
+/**
  * A mounted editor over *code*. Every `on...` event it offers keeps its
  * listener for `emit`; any other call (an action, a command, a key binding)
  * does nothing and returns something disposable.
@@ -122,6 +137,12 @@ function fakeEditor(code: string) {
     getDomNode: () => dom,
     getValue: () => code,
     getPosition: () => ({ lineNumber: 1, column: 1 }),
+    // Monaco's place for a position, from the editor's top left corner.
+    getScrolledVisiblePosition: ({ lineNumber, column }: Position) => ({
+      left: TEXT_LEFT + (column - 1) * CHAR_WIDTH,
+      top: TEXT_TOP + (lineNumber - 1) * LINE_HEIGHT,
+      height: LINE_HEIGHT,
+    }),
   };
   const editor = new Proxy(known, {
     get(target, prop) {
@@ -151,6 +172,25 @@ function spanAt(dom: HTMLElement, left: number, top: number, width: number): HTM
     ({ left, top, width, height: 18, right: left + width, bottom: top + 18, x: left, y: top, toJSON: () => ({}) }) as DOMRect;
   dom.appendChild(span);
   return span;
+}
+
+type ScrollChange = "scrollTopChanged" | "scrollLeftChanged" | "scrollWidthChanged" | "scrollHeightChanged";
+
+/**
+ * Monaco's IScrollEvent with *changed* set. Monaco sends one whenever its
+ * scroll state changes: the text scrolled, or only the size it can scroll,
+ * as when it measures its lines' widths again after drawing them.
+ */
+function scrolled(...changed: ScrollChange[]) {
+  const flags = { scrollTopChanged: false, scrollLeftChanged: false, scrollWidthChanged: false, scrollHeightChanged: false };
+  for (const flag of changed) flags[flag] = true;
+  return {
+    scrollTop: flags.scrollTopChanged ? LINE_HEIGHT : 0,
+    scrollLeft: flags.scrollLeftChanged ? 3 * CHAR_WIDTH : 0,
+    scrollWidth: flags.scrollWidthChanged ? 640 : 600,
+    scrollHeight: flags.scrollHeightChanged ? 420 : 400,
+    ...flags,
+  };
 }
 
 /** The mouse over *span*, at *position* of the text: Monaco's IEditorMouseEvent. */
@@ -401,6 +441,63 @@ describe("an editor's hover, in the Curio tooltip", () => {
     expect(shown()).toHaveLength(1);
     await advance(1);
     expect(shown()).toHaveLength(0);
+  });
+
+  test("a change in the size the editor can scroll leaves the chip's tooltip open: no text moved", async () => {
+    // A pointer that rests sends no new move, so a tooltip hidden now would
+    // not come back while it rests.
+    const { editor, dom, emit } = fakeEditor("s = [!! season !!]\nprint(s)");
+    const { monaco } = fakeMonaco();
+    mount(editor, monaco, "python");
+    emit("onMouseMove", mouseOver(spanAt(dom, 120, 200, 48), { lineNumber: 1, column: 11 }));
+    await advance(400 + FRAME);
+    expect(said()).toBe('season = "summer"');
+    // Its lines measured wider, then a taller content: the text stays put.
+    emit("onDidScrollChange", scrolled("scrollWidthChanged"));
+    emit("onDidScrollChange", scrolled("scrollHeightChanged"));
+    await advance(100 + FRAME);
+    expect(said()).toBe('season = "summer"');
+  });
+
+  test("a scroll of the text hides it at once, down or sideways", async () => {
+    const { editor, dom, emit } = fakeEditor("s = [!! season !!]\nprint(s)");
+    const { monaco } = fakeMonaco();
+    mount(editor, monaco, "python");
+    const chip = spanAt(dom, 120, 200, 48);
+
+    emit("onMouseMove", mouseOver(chip, { lineNumber: 1, column: 11 }));
+    await advance(400 + FRAME);
+    expect(said()).toBe('season = "summer"');
+    emit("onDidScrollChange", scrolled("scrollTopChanged", "scrollHeightChanged"));
+    await advance(FRAME);
+    expect(shown()).toHaveLength(0);
+
+    emit("onMouseMove", mouseOver(chip, { lineNumber: 1, column: 11 }));
+    await advance(400 + FRAME);
+    expect(said()).toBe('season = "summer"');
+    emit("onDidScrollChange", scrolled("scrollLeftChanged"));
+    await advance(FRAME);
+    expect(shown()).toHaveLength(0);
+  });
+
+  test("a chip whose line Monaco draws again before its tooltip shows: the tooltip goes beside the chip all the same", async () => {
+    // Monaco draws a line again when its decorations or tokens change, and
+    // the span under the pointer is a new one; the pointer sends no move.
+    const { editor, dom, emit } = fakeEditor("s = [!! season !!]\nprint(s)");
+    const { monaco } = fakeMonaco();
+    mount(editor, monaco, "python");
+    const first = spanAt(dom, 120, 200, 48);
+    emit("onMouseMove", mouseOver(first, { lineNumber: 1, column: 11 }));
+    await advance(200);
+    first.remove();
+    spanAt(dom, 120, 200, 48);
+    await advance(200 + FRAME);
+    expect(said()).toBe('season = "summer"');
+    // Centered over "season", 120 to 168 px across, and 6 px above it; jsdom
+    // gives the tooltip no size.
+    const tip = shown()[0];
+    expect(tip.dataset.placement).toBe("top");
+    expect([tip.style.left, tip.style.top]).toEqual(["144px", "194px"]);
   });
 
   test("an editor that has not mounted yet does nothing", async () => {

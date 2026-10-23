@@ -27,7 +27,10 @@
  * - a touch held a moment (TOOLTIP_HOLD_MS) shows it, and the next touch anywhere hides
  *   it; a tap stays a tap;
  * - an open tooltip follows its target's `data-tooltip` as it changes (Vega
- *   rewrites it as the pointer crosses marks), and goes when it is cleared.
+ *   rewrites it as the pointer crosses marks), and goes when it is cleared;
+ * - an open tooltip is placed again whenever its size changes: a preview
+ *   grows as its read comes back, and grown down from where it was it would
+ *   cover its target and take the pointer from it.
  *
  * The listeners are on the way down (capture), since React Flow's pane and
  * nodes stop presses, wheels and touches from bubbling.
@@ -36,7 +39,13 @@ import React, { useEffect, useId, useLayoutEffect, useRef, useSyncExternalStore 
 import { createPortal } from "react-dom";
 import styles from "./TooltipLayer.module.css";
 import { placeTooltip, tooltipMaxSize, type TooltipSide } from "./tooltipPlacement";
-import { tooltipHoldMs, tooltipStore, type TooltipContent, type TooltipRequest } from "./tooltipStore";
+import {
+  tooltipHoldMs,
+  tooltipStore,
+  type ShownTooltip,
+  type TooltipContent,
+  type TooltipRequest,
+} from "./tooltipStore";
 
 const TARGET = "[data-tooltip], [data-tooltip-content]";
 const SIDES: readonly TooltipSide[] = ["top", "right", "pointer"];
@@ -76,6 +85,35 @@ function requestFor(target: Element, pointer: { x: number; y: number } | null): 
     pointer: side === "pointer" ? pointer : null,
     content,
   };
+}
+
+/**
+ * Put *card*, the open tooltip *shown*, where its rules say, from its target's
+ * box on screen and its own size; or hide it when the element that asked for
+ * it left the page.
+ */
+function placeCard(card: HTMLElement, shown: ShownTooltip): void {
+  if (shown.request.target && !shown.request.target.isConnected) {
+    tooltipStore.hide();
+    return;
+  }
+  const anchor = shown.request.anchor();
+  if (!anchor) return;
+  // Measured at the window's corner, with all the room it may take: at its
+  // last place near the right edge it would wrap narrower than it is.
+  card.style.left = "0px";
+  card.style.top = "0px";
+  const box = card.getBoundingClientRect();
+  const place = placeTooltip({
+    target: anchor,
+    size: { width: box.width, height: box.height },
+    viewport: { width: window.innerWidth, height: window.innerHeight },
+    side: shown.request.side,
+    pointer: shown.request.pointer,
+  });
+  card.style.left = `${Math.round(place.left)}px`;
+  card.style.top = `${Math.round(place.top)}px`;
+  card.dataset.placement = place.placement;
 }
 
 /** Add or remove *id* among the ids *el*'s aria-describedby names, keeping the others. */
@@ -299,29 +337,31 @@ export function TooltipLayer(): React.ReactElement | null {
   // Placed from its target's box on screen, once its own size is known.
   useLayoutEffect(() => {
     const el = ref.current;
-    if (!el || !shown) return;
-    if (shown.request.target && !shown.request.target.isConnected) {
-      tooltipStore.hide();
-      return;
-    }
-    const anchor = shown.request.anchor();
-    if (!anchor) return;
-    // Measured at the window's corner, with all the room it may take: at its
-    // last place near the right edge it would wrap narrower than it is.
-    el.style.left = "0px";
-    el.style.top = "0px";
-    const box = el.getBoundingClientRect();
-    const place = placeTooltip({
-      target: anchor,
-      size: { width: box.width, height: box.height },
-      viewport: { width: window.innerWidth, height: window.innerHeight },
-      side: shown.request.side,
-      pointer: shown.request.pointer,
-    });
-    el.style.left = `${Math.round(place.left)}px`;
-    el.style.top = `${Math.round(place.top)}px`;
-    el.dataset.placement = place.placement;
+    if (el && shown) placeCard(el, shown);
   });
+
+  // Placed again whenever its size changes, which its content may do with no
+  // render of this layer (a preview following its source), in the next frame:
+  // moving the card inside the observer's callback would resize it there.
+  const open = shown !== null;
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!open || !el || typeof ResizeObserver !== "function") return undefined;
+    let frame: number | null = null;
+    const observer = new ResizeObserver(() => {
+      if (frame !== null) return;
+      frame = requestAnimationFrame(() => {
+        frame = null;
+        const now = tooltipStore.getState().shown;
+        if (now && el.isConnected) placeCard(el, now);
+      });
+    });
+    observer.observe(el);
+    return () => {
+      observer.disconnect();
+      if (frame !== null) cancelAnimationFrame(frame);
+    };
+  }, [open]);
 
   if (!shown) return null;
   const { content } = shown;
