@@ -522,7 +522,10 @@ def _wait_for_lit(page, map_id: str, expected, what: str, table: str = LAYER, ke
     # What every table's layer shows, so a failure says whether the layer picks
     # at all, and the selections the map was brought, which it lights.
     state = page.evaluate(_MAP_STATE_JS, map_id) or {}
-    layers = {name: (layer.get("pick"), _ids(layer.get("lit"), key), layer.get("asked")) for name, layer in state.items()}
+    layers = {
+        name: (layer.get("pick"), _ids(layer.get("lit"), key), layer.get("asked"), layer.get("drawn"), layer.get("rows"))
+        for name, layer in state.items()
+    }
     brought = [
         (entry.get("nodeId"), ((entry.get("details") or {}).get("autk_selection") or {}).get("layerRef"),
          ((entry.get("details") or {}).get("autk_selection") or {}).get("data"))
@@ -530,7 +533,8 @@ def _wait_for_lit(page, map_id: str, expected, what: str, table: str = LAYER, ke
     ]
     raise AssertionError(
         f"{what}: the map {map_id} lights the {key} {got} on {table}, not {shown}; "
-        f"each table as (picks, lit {key}, positions asked): {layers}; selections brought as (from, layer, rows): {brought}"
+        f"each table as (picks, lit {key}, positions asked, features drawn, rows read): {layers}; "
+        f"selections brought as (from, layer, rows): {brought}"
     )
 
 

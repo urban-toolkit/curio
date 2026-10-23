@@ -58,6 +58,9 @@ export type MapTableState = {
     lit: Array<Record<string, unknown>>;
     /** The positions the node last asked autk-map to highlight on the layer. */
     asked: number[];
+    /** How many features the layer draws, and how many rows the node read for it. */
+    drawn: number | null;
+    rows: number;
 };
 
 /**
@@ -87,6 +90,8 @@ export function mapStateOf(
                 ...(features[table]?.[inputRow(position, orders[table]?.map)]?.properties ?? {}),
             })),
             asked: asked[table] ?? [],
+            drawn: Array.isArray(layer.components) ? layer.components.length : null,
+            rows: features[table]?.length ?? 0,
         };
     }
     return out;
