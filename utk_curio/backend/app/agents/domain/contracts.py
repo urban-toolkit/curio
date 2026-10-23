@@ -251,22 +251,38 @@ def map_layers(schema: dict) -> tuple[str, list[str]]:
 def render_autk_shape(schema: dict) -> str:
     """One line naming what an Autark document is, for a refusal's text. The
     map example leads, so it survives the attempt trail's shorter cut."""
+    from utk_curio.backend.app.agents.domain import agent_text
+
     layers, layer_required = map_layers(schema)
     common, either = _compute_required(schema)
     source_types = _definition(schema, "DataSourceSpec").get("properties", {}).get("type", {}).get("enum", [])
     first = input_table_name(0)
-    example_layer = ", ".join(f'"{field}": "{first}"' for field in layer_required)
-    return (
-        f'an Autark grammar JSON document, such as the map {{"map": {{"{layers}": [{{{example_layer}}}]}}}}, '
-        f'where "{first}" is this node\'s first input. A document names at least one of '
-        f"{_either(autk_families(schema))}; a plot needs {_every(_plot_required(schema))}; "
-        f"a compute pass needs {_every(common)}, plus {_either(either)}; "
-        f'a loader is {{"data": [{{"type": "{source_types[0] if source_types else ""}", ...}}]}}'
+    example_layer = "{" + ", ".join(f'"{field}": "{first}"' for field in layer_required) + "}"
+    return agent_text.message(
+        "document.autk-shape", layers=layers, example_layer=example_layer, first=first,
+        families=_either(autk_families(schema)), plot_fields=_every(_plot_required(schema)),
+        compute_fields=_every(common), compute_one_of=_either(either),
+        source_type=source_types[0] if source_types else "",
     )
 
 
+#: The page of the base entry that holds the words of the preamble's section
+#: on Autark documents, one section per line (``render_autk_region``).
+AUTK_GRAMMAR_PAGE = "autark-grammar.md"
+
+
+def _autk_words(name: str, **values: str) -> str:
+    """The section *name* of ``AUTK_GRAMMAR_PAGE``, its places filled."""
+    from utk_curio.backend.app.agents.domain import agent_text
+
+    where = f"{agent_text.PAGE_PREFIX}{AUTK_GRAMMAR_PAGE}, section {name}"
+    return agent_text.fill(agent_text.section(AUTK_GRAMMAR_PAGE, name), values, where)
+
+
 def render_autk_region(schema: dict, label: str) -> str:
-    """The preamble's section on Autark documents, from the schema."""
+    """The preamble's section on Autark documents: the words of the base
+    entry's ``autark-grammar.md``, filled from the schema, with the lines of
+    the schema's own choices between them."""
     root = _definition(schema, schema.get("$ref", "UrbanSpec"))
     props = root.get("properties", {})
     layers, layer_required = map_layers(schema)
@@ -284,42 +300,42 @@ def render_autk_region(schema: dict, label: str) -> str:
     layer_title = layer_title.split(" Read by the ", 1)[0]
 
     lines = [
-        f"{label} nodes ({AUTK_TEMPLATE}) are controlled through grammar: their content "
-        f"is one JSON document that follows the Autark grammar's JSON Schema ({schema.get('$id')}). "
-        f"Keys the schema does not name are allowed. A document names at least one of "
-        f"{_either(autk_families(schema))}.",
-        f'In the document, the node\'s inputs are the layers named "{input_table_name(0)}", '
-        f'"{input_table_name(1)}", ... in the order of its input circles; the layers an upstream '
-        f'{label} node produces keep their table names, such as "table_osm_buildings". The '
-        f'document writes no "data" entry for its inputs.',
+        _autk_words(
+            "intro", label=label, template=AUTK_TEMPLATE, schema_id=str(schema.get("$id")),
+            families=_either(autk_families(schema)),
+        ),
+        _autk_words("inputs", first=input_table_name(0), second=input_table_name(1), label=label),
         "",
-        f'- "data": {props.get("data", {}).get("description", "")} Each entry\'s "type" selects its fields:',
+        "- " + _autk_words("data", description=props.get("data", {}).get("description", "")),
     ]
     for values, definition in _variants(schema, "DataSourceSpec", "type"):
         required = [f for f in definition.get("required", []) if f != "type"]
         lines.append(
             f"  - {_either(values)}: {definition.get('description', '')}"
-            + (f" Requires {_every(required)}." if required else "")
+            + (" " + _autk_words("requires", fields=_every(required)) if required else "")
         )
     lines += [
-        f'- "compute": {props.get("compute", {}).get("description", "")} '
-        f"{compute.get('description', '')} Every pass also requires {_every(common)}.",
+        "- " + _autk_words(
+            "compute", description=props.get("compute", {}).get("description", ""),
+            pass_description=compute.get("description", ""), fields=_every(common),
+        ),
     ]
     for field in common:
         description = compute_fields.get(field, {}).get("description")
         if description:
             lines.append(f'  - "{field}": {description}')
     lines += [
-        f"  - A uniform is written inline or as {{\"fromFeature\": {{...}}}}. {directive.get('description', '')} "
-        f"Its \"iterate\": {iterate.get('description', '')}".rstrip(),
+        ("  - " + _autk_words(
+            "uniform", directive=directive.get("description", ""), iterate=iterate.get("description", ""),
+        )).rstrip(),
         # The schema's own descriptions of "map" and "plot" allow several, and a
         # document may name both; a node draws one view.
-        f'- "map": {AUTK_ONE_VIEW} Requires {_every(_definition(schema, "MapSpec").get("required", []))}, '
-        f'and each entry of "{layers}" requires {_every(layer_required)}. '
-        f'"colorMapInterpolator" is one of {_either(interpolators)}. '
-        f'A layer that shows a legend names it with "title": {layer_title}'.rstrip(),
-        f'- "plot": {AUTK_ONE_VIEW} Every plot requires '
-        f'{_every(_plot_required(schema))}; "mark" selects the rest:',
+        ("- " + _autk_words(
+            "map", one_view=AUTK_ONE_VIEW, map_fields=_every(_definition(schema, "MapSpec").get("required", [])),
+            layers=layers, layer_fields=_every(layer_required), interpolators=_either(interpolators),
+            layer_title=layer_title,
+        )).rstrip(),
+        "- " + _autk_words("plot", one_view=AUTK_ONE_VIEW, plot_fields=_every(_plot_required(schema))),
     ]
     for values, definition in _variants(schema, "PlotSpec", "mark"):
         lines.append(f"  - {_either(values)}: {definition.get('description', '')}")

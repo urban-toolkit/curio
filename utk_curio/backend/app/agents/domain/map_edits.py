@@ -21,6 +21,7 @@ from utk_curio.backend.app.agents.domain import content
 from utk_curio.backend.app.agents.domain import plan_topology
 from utk_curio.backend.app.execution import workflow_spec
 from utk_curio.backend.app.packages import service as packages_services
+from utk_curio.backend.app.agents.domain import agent_text
 
 #: The behavior a Map Edits template names.
 BEHAVIOR = "edit-features"
@@ -28,7 +29,6 @@ BEHAVIOR = "edit-features"
 KIND = "map-edits"
 #: The most of a neighbour's Map Edits call a node's context carries.
 CALL_MAX_CHARS = 2000
-CALL_TRUNCATION_MARKER = "\n…[truncated: the call exceeds the context bound]"
 #: The most made-up-id lines a refusal quotes.
 _MAX_QUOTED = 10
 #: The words a sentence of a node's goal starts with when it names an edit to
@@ -82,7 +82,7 @@ def refusal(user_key, project_id, node_type, code, *, current: str | None = None
     if current is not None and content.extract_node_content(code) == content.extract_node_content(current):
         return None
     problem = read(code).get("problem")
-    return f"Map Edits cannot read this code: {problem}" if problem else None
+    return agent_text.message("map-edits.unreadable", problem=problem) if problem else None
 
 
 def made_up_ids(stdout) -> list[str]:
@@ -104,11 +104,10 @@ def made_up_ids_refusal(lines: list[str]) -> str:
     """The round's refusal for the run's lines that name ids no feature has."""
     quoted = lines[:_MAX_QUOTED]
     more = len(lines) - len(quoted)
-    return (
-        "Map Edits: the run says these edits name ids no feature has, so they change nothing:\n"
-        + "\n".join(quoted)
-        + (f"\n…and {more} more" if more else "")
-        + "\nName features the input holds, by their ids or by a where condition."
+    return agent_text.message(
+        "map-edits.made-up-ids", lines="\n".join(quoted), more="\n" + agent_text.message(
+            "map-edits.and-more", more=more,
+        ) if more else "",
     )
 
 
@@ -157,4 +156,4 @@ def context_call(code) -> str:
     text = str(code or "")
     if len(text) <= CALL_MAX_CHARS:
         return text
-    return text[:CALL_MAX_CHARS] + CALL_TRUNCATION_MARKER
+    return text[:CALL_MAX_CHARS] + ("\n" + agent_text.message("map-edits.call-truncated"))

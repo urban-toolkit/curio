@@ -109,6 +109,7 @@ from utk_curio.backend.app.users.connection_keys import (  # noqa: E402
     SECRET_CALL_RE,
     secret_names as _secret_names,
 )
+from utk_curio.backend.app.agents.domain import agent_text
 
 # KEEP IN SYNC with the editor's twin (dev/117):
 # frontend/urban-workflows/src/services/connectionKeys/credentialLiterals.ts —
@@ -1187,9 +1188,7 @@ def _unrequested_catalog_reads(catalog_reads: list[tuple[str, str]], ctx: Ground
         return []
     asked = ", ".join(repr(d) for d in sorted(requested))
     return [
-        f"{read_at}: loads the Data Catalog dataset {dataset_id!r}, but the user "
-        f"asked for {asked}; load the dataset the user asked for, or ask the user "
-        "before using another one"
+        agent_text.message("grounding.unrequested-dataset", read_at=read_at, dataset=repr(dataset_id), asked=asked)
         for read_at, dataset_id in catalog_reads
     ]
 
@@ -1211,8 +1210,9 @@ def _judge_refs(
             if catalog is None:
                 kind = catalog_kind(functions[ref.call]) if ref.call in functions else "dataset"
                 violations.append(
-                    f"{ref.call}({ref.literal!r}) (line {ref.line}): not a {kind} in "
-                    "this project's Data Catalog: use the id of a catalog.search row"
+                    agent_text.message(
+                        "grounding.not-in-catalog", call=ref.call, literal=repr(ref.literal), line=ref.line, kind=kind,
+                    )
                 )
             else:
                 catalog_reads.append((f"{ref.call}({ref.literal!r}) (line {ref.line})", catalog.dataset_id))
@@ -1227,8 +1227,7 @@ def _judge_refs(
         if ref.kind == "path":
             if ref.partial:
                 violations.append(
-                    f"{where}: the file name is composed at run time from a prefix — "
-                    "write the complete path as one literal so it can be grounded"
+                    agent_text.message("grounding.path-from-prefix", where=where)
                 )
                 continue
             catalog = _catalog_match(ref.literal, ctx)
@@ -1246,8 +1245,7 @@ def _judge_refs(
                 source_refs.append({"kind": "user-path", "value": ref.literal[:_VALUE_MAX_CHARS]})
             else:
                 violations.append(
-                    f"{where}: a local file Curio cannot see — the user gave no such path "
-                    "and no Data Catalog dataset resolves to it"
+                    agent_text.message("grounding.local-file-unseen", where=where)
                 )
             continue
         # URL
@@ -1255,8 +1253,7 @@ def _judge_refs(
         if evidence is None:
             if ctx.probe is None:
                 violations.append(
-                    f"{where}: not verified this run and no probe is available — "
-                    "only a URL the runtime has verified may be fetched"
+                    agent_text.message("grounding.url-unverified-no-probe", where=where)
                 )
                 continue
             try:
@@ -1288,16 +1285,16 @@ def _judge_refs(
         else:
             detail = evidence.get("detail") or ""
             if http_status == 400:
-                why = "answered 400 — the endpoint exists but this request shape is wrong; check the parameters"
+                why = agent_text.message("grounding.url-400")
             elif http_status is not None:
-                why = f"answered {http_status}"
+                why = agent_text.message("grounding.url-answered", status=http_status)
             elif status == "refused":
-                why = f"refused by the egress policy ({detail})" if detail else "refused by the egress policy"
+                why = agent_text.message("grounding.egress-refused-detail", detail=detail) if detail else agent_text.message("grounding.egress-refused")
             elif status == "unverified":
-                why = detail or "could not be checked"
+                why = detail or agent_text.message("grounding.url-unchecked")
             else:
                 why = detail or "unreachable"
-            violations.append(f"{where}: {why} — only a URL the runtime verified may be fetched")
+            violations.append(agent_text.message("grounding.url-unverified", where=where, why=why))
     return violations, source_refs, catalog_reads
 
 
@@ -1306,7 +1303,7 @@ def _listed(names, none: str, limit: int = 8) -> str:
     names = sorted(names)
     if not names:
         return none
-    more = f" and {len(names) - limit} more" if len(names) > limit else ""
+    more = " " + agent_text.message("grounding.list-more", count=len(names) - limit) if len(names) > limit else ""
     return ", ".join(names[:limit]) + more
 
 
@@ -1331,14 +1328,13 @@ def _engine_refusals(calls: list[FunctionCall], engine: str, functions: dict) ->
         if call.name in refusals or (call.known and engine in functions[call.name].engines):
             continue
         if not call.known:
-            refusals[call.name] = (
-                f"{call.name} (line {call.line}): Curio gives node code no {call.name}, and this code "
-                f"neither defines nor imports one; the functions {engine} code has: {has}"
+            refusals[call.name] = agent_text.message(
+                "grounding.unknown-function", name=call.name, line=call.line, engine=engine, has=has,
             )
             continue
-        refusals[call.name] = (
-            f"{call.name} (line {call.line}): {engine} code has no {call.name}, only "
-            f"{' and '.join(functions[call.name].engines)} code does; the functions {engine} code has: {has}"
+        refusals[call.name] = agent_text.message(
+            "grounding.function-not-in-engine", name=call.name, line=call.line, engine=engine,
+            engines=' and '.join(functions[call.name].engines), has=has,
         )
     return list(refusals.values())
 
@@ -1349,26 +1345,23 @@ def _item_refusal(call: FunctionCall, ctx: GroundingContext, functions: dict) ->
     Catalog id is judged with the scan's literals (:func:`_judge_refs`)."""
     argument = functions[call.name].arguments[0]
     if call.computed:
-        return (
-            f"{call.name} (line {call.line}): write its {argument.name} as a string in the call, such as "
-            f'{call.name}("<{argument.name}>"), since Curio reads {argument.text.rstrip(".")} '
-            "from the code before the node runs"
+        return agent_text.message(
+            "grounding.item-computed", call=call.name, line=call.line, argument=argument.name,
+            reads=argument.text.rstrip("."),
         )
     if call.item is None or call.kind in DATA_CATALOG_KINDS:
         return None
     if call.kind == "model" and ctx.models is not None and not _holds_model(ctx.models, call.item):
-        listed = _listed(ctx.models, "none added")
-        return (
-            f"{call.name}({call.item!r}) (line {call.line}): no model {call.item!r} among this account's "
-            f"models ({'added: ' + listed if ctx.models else listed}); load one of those, or ask the user "
-            "to add it with Add in the Model Catalog"
+        listed = _listed(ctx.models, agent_text.message("grounding.model-none-added"))
+        return agent_text.message(
+            "grounding.model-unknown", call=call.name, item=repr(call.item), line=call.line,
+            models=agent_text.message("grounding.model-added", names=listed) if ctx.models else listed,
         )
     if call.kind == "key" and call.item not in (ctx.secrets or {}):
-        listed = _listed(ctx.secrets or {}, "none saved")
-        return (
-            f"{call.name}({call.item!r}) (line {call.line}): no connection key named {call.item!r} "
-            f"({'saved: ' + listed if ctx.secrets else listed}): save one in API Settings, API keys, "
-            "then keep the call as written"
+        listed = _listed(ctx.secrets or {}, agent_text.message("grounding.secret-none-saved"))
+        return agent_text.message(
+            "grounding.secret-unknown", call=call.name, item=repr(call.item), line=call.line,
+            saved=agent_text.message("grounding.secret-saved", names=listed) if ctx.secrets else listed,
         )
     return None
 
@@ -1421,13 +1414,15 @@ def _import_refusals(code: object, ctx: GroundingContext) -> list[str]:
         nodes = _listed([f"{t['label']} ({t['id']})" for t in home.get("templates") or []], "none", limit=4)
         if home.get("added"):
             refusals.append(
-                f"import {name} (line {line}): {name} is a module of the package {home['package']}, "
-                f"and only these nodes import it: {nodes}"
+                agent_text.message(
+                    "grounding.import-not-reachable", name=name, line=line, package=home['package'], nodes=nodes,
+                )
             )
         else:
             refusals.append(
-                f"import {name} (line {line}): {name} is a module of the package {home['package']}, which "
-                f"this account has not added; once the user adds it, these nodes import it: {nodes}"
+                agent_text.message(
+                    "grounding.import-package-not-added", name=name, line=line, package=home['package'], nodes=nodes,
+                )
             )
     return refusals
 
@@ -1459,9 +1454,7 @@ def check_grounding(code: object, engine: str | None, ctx: GroundingContext) -> 
     # proposal: the literal is refused and the saved-key route is named.
     for name, line in credential_literals(code, engine):
         violations.append(
-            f"{name} (line {line}): a credential literal in node code — save it as a "
-            "connection key (API Settings, API keys) and write "
-            'curio_secret("<name>") instead; a key value is never written into a node'
+            agent_text.message("grounding.credential-literal", name=name, line=line)
         )
     import_violations = _import_refusals(code, ctx)
     violations += import_violations
@@ -1473,9 +1466,7 @@ def check_grounding(code: object, engine: str | None, ctx: GroundingContext) -> 
             source_refs.append({"kind": "synthetic"})
         else:
             violations.append(
-                "no grounded source: this data-loading node opens no file and fetches no "
-                "URL — data invented inline is fabricated evidence unless the user asked "
-                "for synthetic data"
+                agent_text.message("grounding.no-source")
             )
     verdict = GroundingVerdict(ok=not violations, violations=violations, refs=refs, code_violations=code_violations)
     if verdict.ok and source_refs:
@@ -1535,22 +1526,21 @@ def refusal_text(verdict: GroundingVerdict, ctx: GroundingContext) -> str:
     if failure_kind(verdict) == CODE_KIND:
         count = len(verdict.violations)
         return " ".join([
-            f"code refused, {count} problem{'s' if count != 1 else ''} with what it calls or imports:",
+            agent_text.message("grounding.code-refused", count=count, s='s' if count != 1 else ''),
             *(f"({i}) {violation}" for i, violation in enumerate(verdict.violations, 1)),
-            "Change the code as each one says; no data source is missing.",
+            agent_text.message("grounding.code-change"),
         ])
     lines = [
-        f"source grounding refused — {len(verdict.violations)} ungrounded source"
-        f"{'s' if len(verdict.violations) != 1 else ''}:"
+        agent_text.message(
+            "grounding.refused", count=len(verdict.violations), s='s' if len(verdict.violations) != 1 else '',
+        )
     ]
     for i, violation in enumerate(verdict.violations, 1):
         lines.append(f"({i}) {violation}")
-    allowed = ["a path the user typed in this conversation"]
+    allowed = [agent_text.message("grounding.allowed-user-path")]
     allowed.extend(ctx.hints)
-    lines.append("Allowed sources: " + "; ".join(allowed) + ".")
+    lines.append(agent_text.message("grounding.allowed", sources="; ".join(allowed)))
     lines.append(
-        "Never invent a filename, never assume a file exists, never write a URL from "
-        "memory — if no source can be grounded, ask the user for a path or URL instead "
-        "of proposing."
+        agent_text.message("grounding.never-invent")
     )
     return " ".join(lines)

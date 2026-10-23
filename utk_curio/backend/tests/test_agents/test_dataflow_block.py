@@ -93,8 +93,7 @@ def _words() -> dict:
 def _is_title_call(messages) -> bool:
     from utk_curio.backend.app.agents.application.turns import titles
 
-    prompt = titles.title_prompt() if hasattr(titles, "title_prompt") else titles.TITLE_PROMPT
-    return bool(messages) and messages[0].get("content") == prompt
+    return bool(messages) and messages[0].get("content") == titles.title_prompt()
 
 
 def _record(monkeypatch, reply):
