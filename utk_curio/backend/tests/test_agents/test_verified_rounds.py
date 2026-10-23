@@ -2139,3 +2139,79 @@ class TestOneLineAnswers:
         assert stats["status"] == "failed" and JOIN_ANSWER in stats["error"], stats
         assert helper._node_content(ctx, ctx["stats"]) == ""
         assert ctx["exec_payloads"] == []  # nothing ran
+
+
+class TestNoReviewOfAnAnswer:
+    """A one-line answer, or a loader's decline, is the builder's line, not
+    content: no path mints a review of it, so Apply anyway can never write
+    that prose into a node. Simulation Mode's validate (validate-node) and a
+    proposing Solve, run or unrun, report it instead."""
+
+    DECLINE = "No catalog dataset covers the tract heat data."
+
+    @staticmethod
+    def _reviews_holding(client, token, pid, words):
+        """Every review, in every chat of the project, that holds *words*."""
+        cards = client.get(f"/api/agents/projects/{pid}/attachments", headers=_auth(token)).get_json()["attachments"]
+        found = []
+        for card in cards:
+            r = client.get(f"/api/agents/projects/{pid}/attachments/{card['attachmentId']}/session",
+                           headers=_auth(token))
+            for turn in (r.get_json() or {}).get("turns") or []:
+                found += [p for p in (turn.get("content") or [])
+                          if p.get("type") == "proposal" and words in json.dumps(p)]
+        return found
+
+    @staticmethod
+    def _propose(client, token, ctx, **body):
+        """A proposing Solve's final results, from its stream."""
+        r = client.post(f"/api/agents/projects/{ctx['pid']}/attachments/{ctx['att']}/solve/stream",
+                        json={"mode": "propose", **body}, headers=_auth(token))
+        assert r.status_code == 200, r.get_json()
+        events = routes_solve.TestStreamedSolve()._sse_events(r)
+        return next(p for kind, p in reversed(events) if kind == "done")["results"]
+
+    def test_validate_mints_no_review_of_an_answer(self, client, user_and_token, tmp_curio, monkeypatch):
+        user, token = user_and_token
+        h = TestSolveNode()
+        ctx = h._setup(client, user, token, monkeypatch, content="", child_replies=[JOIN_ANSWER], node_type=CA)
+        r = client.post(f"/api/agents/projects/{ctx['pid']}/attachments/{ctx['att']}/validate-node",
+                        json={"nodeId": "n1"}, headers=_auth(token))
+        assert r.status_code == 200, r.get_json()
+        done = routes_solve.TestStreamedSolve()._sse_events(r)[-1][1]
+        assert done["verdict"] == "fail" and "proposalId" not in done, done
+        assert self._reviews_holding(client, token, ctx["pid"], JOIN_ANSWER) == []
+        # The answer is said in the node's chat instead, and nothing ran.
+        turns = client.get(f"/api/agents/projects/{ctx['pid']}/attachments/{ctx['att']}/session",
+                           headers=_auth(token)).get_json()["turns"]
+        assert any(JOIN_ANSWER in (t.get("text") or "") for t in turns), [t.get("text") for t in turns]
+        assert ctx["payloads"] == [] and h._content(ctx) == ""
+
+    def test_a_proposing_solve_mints_no_review_of_an_answer(self, client, user_and_token, tmp_curio, monkeypatch):
+        helper = TestVerifiedSolve()
+        user, token = user_and_token
+        ctx = helper._setup(client, user, token, monkeypatch, dl_replies=[helper.LOADER], ca_replies=[JOIN_ANSWER])
+        stats = self._propose(client, token, ctx)[ctx["stats"]]
+        assert stats["status"] == "failed" and JOIN_ANSWER in stats["error"] and "proposalId" not in stats, stats
+        assert self._reviews_holding(client, token, ctx["pid"], JOIN_ANSWER) == []
+
+    def test_a_proposing_solve_mints_no_review_of_a_loaders_decline(
+        self, client, user_and_token, tmp_curio, monkeypatch
+    ):
+        helper = TestVerifiedSolve()
+        user, token = user_and_token
+        ctx = helper._setup(client, user, token, monkeypatch, with_stats=False, dl_replies=[self.DECLINE])
+        load = self._propose(client, token, ctx)[ctx["load"]]
+        assert load["status"] == "failed" and "source-missing" in load["error"] and "proposalId" not in load, load
+        assert self._reviews_holding(client, token, ctx["pid"], self.DECLINE) == []
+
+    def test_an_unverified_proposing_solve_mints_no_review_of_an_answer(
+        self, client, user_and_token, tmp_curio, monkeypatch
+    ):
+        helper = TestVerifiedSolve()
+        user, token = user_and_token
+        ctx = helper._setup(client, user, token, monkeypatch, dl_replies=[helper.LOADER], ca_replies=[JOIN_ANSWER])
+        stats = self._propose(client, token, ctx, verify=False)[ctx["stats"]]
+        assert stats["status"] == "failed" and JOIN_ANSWER in stats["error"] and "proposalId" not in stats, stats
+        assert self._reviews_holding(client, token, ctx["pid"], JOIN_ANSWER) == []
+        assert ctx["exec_payloads"] == []  # nothing ran
