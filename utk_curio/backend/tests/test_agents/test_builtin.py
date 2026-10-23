@@ -1086,7 +1086,9 @@ class TestResearcher:
         # "spatialJoin"; and the text that promised what the code refuses
         # goes: a plan carrying code, a Topology verdict ending every applied
         # result, and workflow.plan.create decomposing a task (plan step 11).
-        "ef3dafa1ef3537c1324716a4a1fbecd2e44a411d22570da93ff928618a9afa43"
+        # 2026-10-23: a pool starts at OVERWRITE and the plan sets its modes
+        # in "dataPool"; a Simple View names its image column in "simpleVis".
+        "ce602024e4ae9f068e634bb5ecb6255c4a1830ef05f3c123595d0443923b688a"
     )
 
     def test_manifest_surface(self):
