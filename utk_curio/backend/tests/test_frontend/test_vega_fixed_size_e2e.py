@@ -1,38 +1,63 @@
-"""Playwright E2E: a Vega-Lite chart whose author fixed its size keeps its plot through hovers.
+"""Playwright E2E: a Vega-Lite chart whose author set its size draws its plot at that size.
 
-komar41, reviewing what main took from his #914, reported that a chart whose
-author fixed both its width and its height shrinks: on his layered charts with
-a legend, the plot gave way to the axes and the legend, one hover at a time.
+komar41 reported in #1097 that a Vega-Lite chart whose author set both its
+width and its height, and no ``autosize``, draws smaller than its author asked
+and shrinks under the pointer.
 
 Main sizes a Vega-Lite spec in ``utils/vegaSpecSizing.ts``, which ``useVega``'s
 ``compileGrammar`` calls. A width or a height the author left out follows the
 node, and a spec that sets no ``autosize`` gets ``{"type": "fit", "contains":
-"padding", "resize": true}``, even when its author fixed both sizes. ``fit``
-fits the whole chart, axes and legend included, into the given size, and
-``resize: true`` has Vega lay the view out again on every update. A hover is an
-update.
+"padding", "resize": true}``, even when its author set both sizes. ``fit``
+fits the whole chart, axes, title and legend included, into the given size,
+and ``resize: true`` has Vega lay the view out again on every update. A hover
+is an update, and so is the ``view.resize()`` the node's resize observer calls.
 
-The two charts are his, from the FloodRisk dataflow on his #914, typed again
-here: their titles and subtitles, fixed sizes, layers, tooltips, the ``hover``
-select and the scenario legend, in nodes of the sizes he gave them.
+A chart whose author set its size must draw its plot at that size, with its
+axes, title and legend around it, and keep it there. The plot is the view's
+``width`` and ``height`` signals, and its root group's box, which Vega draws
+them as. Each chart's plot must equal its spec's width and height:
 
-* Average flood depth, with and without NbS: 440x280, a bar per period and
-  scenario with a label above, colored by scenario.
-* Social vulnerability against average flood depth: 520x320, a rule per tract
-  from its No NbS depth to its All NbS depth, which the pointer darkens, under
-  a circle per tract and scenario.
+* at its first draw, once it has stopped moving;
+* after each of 20 hovers. The pointer moves onto one of the chart's marks,
+  found where the view's scene graph draws it now, and stays until Vega's own
+  pointer state holds that mark and, on a chart with tooltips, the tooltip Vega
+  writes on the chart's element names it (on a rule, the ``hover`` select holds
+  its tract too). Then it leaves the chart, until Vega holds no mark and the
+  tooltip clears;
+* after each of 20 ``view.resize().runAsync()`` calls made in the page, the
+  call the node's resize observer makes.
 
-The second chart reads ``inputs``, his #914's stacked dataset (each input's
-rows, with ``__input__``), which main does not have. Here its one input holds
-those stacked rows, ``__input__`` included, and main hands them to the spec as
-its data, so the spec stays his.
+The charts:
 
-Each chart is hovered 20 times. The pointer moves onto one of its marks, found
-where the view's scene graph draws it now, and stays until the tooltip Vega
-writes on the chart's element names that mark (on a rule, the ``hover`` select
-holds its tract too). Then it leaves the chart and the tooltip clears. After
-every hover the plot, the view's ``width`` and ``height`` and its root group's
-box, must keep the size it had before the first one.
+* komar41's two FloodRisk charts from his #914, typed again here: their titles
+  and subtitles, sizes, layers, tooltips, the ``hover`` select and the
+  scenario legend.
+
+  * Average flood depth, with and without NbS: 440x280, a bar per period and
+    scenario with a label above, colored by scenario.
+  * Social vulnerability against average flood depth: 520x320, a rule per
+    tract from its No NbS depth to its All NbS depth, which the pointer
+    darkens, under a circle per tract and scenario. It reads ``inputs``, his
+    #914's stacked dataset (each input's rows, with ``__input__``), which main
+    does not have. Here its one input holds those stacked rows, ``__input__``
+    included, and main hands them to the spec as its data, so the spec stays
+    his.
+
+* komar41's two charts from #1097:
+
+  * grouped bars, 420x220, exactly as the issue writes them: a bar per period
+    and method, with a tooltip and a color legend;
+  * a layered area and line on two y axes, 460x220. The issue describes it but
+    gives no spec, so this one is built from that description: the share of a
+    park in shade as an area on the left axis, and the sun hours lost so far
+    as a line with points and tooltips on the right axis.
+
+* Example 03's bar chart, 320x260 with a legend, read from
+  ``docs/examples/03-vega-lite-linked-temporal-charts.json``, on rows of the
+  shape its computation node returns. It has no tooltip.
+
+Each chart's node is big enough to show the whole chart at its author's size,
+so every mark can be hovered.
 
 Run::
 
@@ -42,14 +67,16 @@ Run::
 from __future__ import annotations
 
 import json
+import os
 import time
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Callable
 
 import pytest
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 
 from .utils import (
+    REPO_ROOT,
     assert_in_view,
     assert_vega_canvas_rendered,
     dismiss_toasts,
@@ -67,8 +94,9 @@ from .utils import (
 if TYPE_CHECKING:
     from .utils import FrontendPage
 
-#: How many times each chart is hovered.
+#: How many times each chart is hovered, and how many times it is resized.
 HOVERS = 20
+RESIZES = 20
 SCENARIOS = ["No NbS", "All NbS"]
 COLORS = ["#e76f51", "#2a9d8f"]
 #: The minus sign his labels start with.
@@ -121,6 +149,67 @@ TRACT_DEPTH = (
     '    {"tract_fips": fips, "tract": name, "svi": svi, "mean_depth_m": depths[k], "__input__": k}\n'
     "    for k in (0, 1)\n"
     "    for fips, name, svi, depths in tracts\n"
+    "])\n"
+)
+
+#: The rows of komar41's grouped bars from #1097: the sun hours a park loses,
+#: per period of the day and per method that computes them.
+SUN_METHODS = ["Ray casting", "Shadow map", "Sky view"]
+SUN_LOST = [
+    ["Morning", "Ray casting", 1.6], ["Morning", "Shadow map", 1.4], ["Morning", "Sky view", 1.1],
+    ["Midday", "Ray casting", 2.9], ["Midday", "Shadow map", 2.7], ["Midday", "Sky view", 2.2],
+    ["Afternoon", "Ray casting", 3.4], ["Afternoon", "Shadow map", 3.1], ["Afternoon", "Sky view", 2.6],
+    ["Evening", "Ray casting", 1.2], ["Evening", "Shadow map", 0.9], ["Evening", "Sky view", 0.8],
+]
+
+SUN_LOST_BY_PERIOD = (
+    "import pandas as pd\n"
+    "\n"
+    "# The sun hours the park loses, per period of the day and per method.\n"
+    f"rows = {json.dumps(SUN_LOST)}\n"
+    "return pd.DataFrame([\n"
+    '    {"period": period, "method": method, "sun_lost_h": hours}\n'
+    "    for period, method, hours in rows\n"
+    "])\n"
+)
+
+#: The rows of the layered chart: per hour of the day, the share of the park in
+#: shade and the sun hours it has lost so far.
+SHADE_BY_HOUR = [
+    [6, 92, 0.2], [7, 85, 0.5], [8, 74, 0.9], [9, 61, 1.2], [10, 48, 1.5],
+    [11, 37, 1.7], [12, 30, 1.9], [13, 28, 2.1], [14, 33, 2.4], [15, 45, 2.8],
+    [16, 58, 3.3], [17, 70, 3.9], [18, 81, 4.6], [19, 89, 5.3], [20, 95, 6.0],
+]
+
+SHADE_AND_SUN_BY_HOUR = (
+    "import pandas as pd\n"
+    "\n"
+    "# Per hour of the day: the share of the park in shade, and the sun hours lost so far.\n"
+    f"rows = {json.dumps(SHADE_BY_HOUR)}\n"
+    "return pd.DataFrame([\n"
+    '    {"hour": hour, "shaded_pct": shaded, "sun_lost_h": lost}\n'
+    "    for hour, shaded, lost in rows\n"
+    "])\n"
+)
+
+#: Rows of the shape example 03's computation node returns: a row per camera
+#: and year, its total violations, for the five cameras with the most.
+CAMERAS = ["CHI003", "CHI021", "CHI045", "CHI079", "CHI120"]
+CAMERA_YEARS = list(range(2017, 2025))
+CAMERA_VIOLATIONS = [
+    [camera, year, 18000 + 4100 * c + 2300 * ((7 * year + 3 * c) % 9)]
+    for c, camera in enumerate(CAMERAS)
+    for year in CAMERA_YEARS
+]
+
+VIOLATIONS_BY_CAMERA = (
+    "import pandas as pd\n"
+    "\n"
+    "# One row per camera and year, as example 03's computation node returns them.\n"
+    f"rows = {json.dumps(CAMERA_VIOLATIONS)}\n"
+    "return pd.DataFrame([\n"
+    '    {"CAMERA ID": camera, "Year": year, "total_violations": total}\n'
+    "    for camera, year, total in rows\n"
     "])\n"
 )
 
@@ -243,6 +332,82 @@ SVI_CHART = {
     ],
 }
 
+#: komar41's grouped bars, exactly as #1097 writes them.
+SUN_LOST_BARS = {
+    "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
+    "width": 420,
+    "height": 220,
+    "mark": {"type": "bar", "tooltip": True},
+    "encoding": {
+        "x": {"field": "period", "type": "nominal"},
+        "xOffset": {"field": "method", "type": "nominal"},
+        "y": {"field": "sun_lost_h", "type": "quantitative"},
+        "color": {"field": "method", "type": "nominal"},
+    },
+}
+
+#: komar41's "layered area + line, 460x220, two y axes" from #1097, built from
+#: that description, since the issue gives no spec for it: an area on the left
+#: axis, and a line with points and tooltips on an independent right axis.
+SHADE_AND_SUN = {
+    "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
+    "width": 460,
+    "height": 220,
+    "encoding": {
+        "x": {"field": "hour", "type": "quantitative", "title": "Hour of the day", "scale": {"domain": [5, 21]}},
+    },
+    "layer": [
+        {
+            "mark": {"type": "area", "color": "#8fb3d9", "opacity": 0.6},
+            "encoding": {"y": {"field": "shaded_pct", "type": "quantitative", "title": "Park in shade (%)"}},
+        },
+        {
+            "mark": {"type": "line", "color": "#e76f51", "point": {"filled": True, "size": 50, "color": "#e76f51"}},
+            "encoding": {
+                "y": {"field": "sun_lost_h", "type": "quantitative", "title": "Sun lost so far (h)"},
+                "tooltip": [
+                    {"field": "hour", "type": "quantitative", "title": "Hour"},
+                    {"field": "sun_lost_h", "type": "quantitative", "title": "Sun lost so far (h)", "format": ".1f"},
+                ],
+            },
+        },
+    ],
+    "resolve": {"scale": {"y": "independent"}},
+}
+
+
+def _example_chart(path: str, node_id: str) -> dict:
+    """The Vega-Lite spec of node *node_id* in the example at *path*."""
+    with open(os.path.join(REPO_ROOT, path), encoding="utf-8") as fh:
+        nodes = json.load(fh)["dataflow"]["nodes"]
+    return json.loads(next(node["content"] for node in nodes if node["id"] == node_id))
+
+
+#: Example 03's bar chart, as the example ships it.
+EXAMPLE_03_BARS = _example_chart(
+    "docs/examples/03-vega-lite-linked-temporal-charts.json", "c2ba6e0e-e239-4167-a382-ffd1993cb3d1",
+)
+
+
+def _flood_says(mark: dict, marktype: str) -> list[str]:
+    """What the tooltip of one of his FloodRisk marks says about it."""
+    if marktype == "rect":
+        return [f"Period: {mark['period']}", f"Scenario: {mark['scenario']}"]
+    if marktype == "rule":
+        return [f"Tract: {mark['tract']}", "Lowered by NbS (m): "]
+    return [f"Tract: {mark['tract']}", f"Scenario: {mark['scenario']}"]
+
+
+def _sun_lost_says(mark: dict, marktype: str) -> list[str]:
+    """What the tooltip of one of his grouped bars says about it: with
+    ``"tooltip": true``, each encoded field, by its name."""
+    return [f"period: {mark['datum']['period']}", f"method: {mark['datum']['method']}"]
+
+
+def _shade_says(mark: dict, marktype: str) -> list[str]:
+    """What the tooltip of a point on the layered chart's line says about it."""
+    return [f"Hour: {mark['datum']['hour']}", "Sun lost so far (h): "]
+
 
 @dataclass(frozen=True)
 class Chart:
@@ -252,13 +417,22 @@ class Chart:
     loader: str
     node_id: str
     spec: dict
-    #: The node's box, as he sized it.
+    #: The node's box: big enough for the whole chart at its author's size.
     box: tuple[int, int]
     #: The scene graph's mark types hovered in turn: a bar is a ``rect``, a
-    #: circle a ``symbol``.
+    #: circle or a point a ``symbol``.
     hovered: tuple[str, ...]
-    #: How many marks of each type his chart draws from these rows.
+    #: How many marks of each type the chart draws from these rows.
     marks: dict
+    #: The fields of a hovered mark's datum that tell it from the others.
+    keys: dict
+    #: What the tooltip of a hovered mark says about it; None for a chart
+    #: without tooltips.
+    says: Callable[[dict, str], list[str]] | None
+    #: The field marks of each type are colored by, and the values they name.
+    colored: dict
+    #: Whether the chart draws a legend.
+    legend: bool
 
     @property
     def fixed(self) -> tuple[int, int]:
@@ -273,9 +447,13 @@ CHARTS = [
         loader=DEPTH_BY_PERIOD,
         node_id="fixed-size-depth-chart",
         spec=DEPTH_CHART,
-        box=(754, 432),
+        box=(780, 500),
         hovered=("rect",),
         marks={"rect": len(PERIOD_DEPTHS)},
+        keys={"rect": ("period", "scenario_name")},
+        says=_flood_says,
+        colored={"rect": ("scenario_name", SCENARIOS)},
+        legend=True,
     ),
     Chart(
         slug="svi-against-depth",
@@ -284,9 +462,58 @@ CHARTS = [
         loader=TRACT_DEPTH,
         node_id="fixed-size-svi-chart",
         spec=SVI_CHART,
-        box=(748, 476),
+        box=(860, 560),
         hovered=("rule", "symbol"),
         marks={"rule": len(TRACTS), "symbol": 2 * len(TRACTS)},
+        keys={"rule": ("tract_fips",), "symbol": ("tract_fips", "scenario_name")},
+        says=_flood_says,
+        colored={"symbol": ("scenario_name", SCENARIOS)},
+        legend=True,
+    ),
+    Chart(
+        slug="sun-lost-bars",
+        title="Sun hours lost by period and method",
+        loader_id="fixed-size-sun-loader",
+        loader=SUN_LOST_BY_PERIOD,
+        node_id="fixed-size-sun-chart",
+        spec=SUN_LOST_BARS,
+        box=(780, 440),
+        hovered=("rect",),
+        marks={"rect": len(SUN_LOST)},
+        keys={"rect": ("period", "method")},
+        says=_sun_lost_says,
+        colored={"rect": ("method", SUN_METHODS)},
+        legend=True,
+    ),
+    Chart(
+        slug="shade-and-sun",
+        title="Park in shade and sun lost over the day",
+        loader_id="fixed-size-shade-loader",
+        loader=SHADE_AND_SUN_BY_HOUR,
+        node_id="fixed-size-shade-chart",
+        spec=SHADE_AND_SUN,
+        box=(800, 440),
+        hovered=("symbol",),
+        marks={"symbol": len(SHADE_BY_HOUR)},
+        keys={"symbol": ("hour",)},
+        says=_shade_says,
+        colored={},
+        legend=False,
+    ),
+    Chart(
+        slug="example-03-bars",
+        title="Total violations by camera and year",
+        loader_id="fixed-size-camera-loader",
+        loader=VIOLATIONS_BY_CAMERA,
+        node_id="fixed-size-camera-chart",
+        spec=EXAMPLE_03_BARS,
+        box=(720, 480),
+        hovered=("rect",),
+        marks={"rect": len(CAMERA_VIOLATIONS)},
+        keys={"rect": ("Year", "CAMERA ID")},
+        says=None,
+        colored={"rect": ("CAMERA ID", CAMERAS)},
+        legend=True,
     ),
 ]
 
@@ -314,13 +541,16 @@ _KEEP_VEGA_VIEWS_INIT = """(() => {
 # The chart's plot: the view's width and height signals, which size the plot,
 # and its root group's box, which Vega draws them as; then what sizes the rest:
 # the view size Vega lays the chart out in (_width, _height), the canvas's CSS
-# size, the origin, and the autosize the view runs with. With *settle*, the
-# view runs twice first: with resize: true each run asks for another layout,
-# which the next update does.
-_PLOT_JS = """async ([id, settle]) => {
+# size, the mount's visible and scrolled size, the origin, and the autosize the
+# view runs with. With *resize*, the view is first resized as the node's resize
+# observer resizes it. With *settle*, the view runs twice before the read: with
+# resize: true each run asks for another layout, which the next update does.
+_PLOT_JS = """async ([id, settle, resize]) => {
     const view = (window.__curioVegaViews || {})["vega" + id];
+    const mount = document.getElementById("vega" + id);
     const canvas = document.querySelector(`#vega${id} canvas`);
-    if (!view || !canvas) return null;
+    if (!view || !canvas || !mount) return null;
+    if (resize) await view.resize().runAsync();
     if (settle) {
         await view.runAsync();
         await view.runAsync();
@@ -332,6 +562,7 @@ _PLOT_JS = """async ([id, settle]) => {
         group: [group.width ?? null, group.height ?? null],
         viewSize: [view._width ?? null, view._height ?? null],
         canvas: [canvas.offsetWidth, canvas.offsetHeight],
+        mount: [mount.clientWidth, mount.clientHeight, mount.scrollWidth, mount.scrollHeight],
         origin: view.origin(),
         autosize: view.autosize(),
     };
@@ -341,6 +572,7 @@ _PLOT_JS = """async ([id, settle]) => {
 # middle, from the view's scene graph as it is now: an item's bounds are in its
 # group's coordinates, and the canvas draws the root group at the view's origin
 # plus its padding, scaled as the canvas is (the canvas zooms with the dataflow).
+# Each comes with its datum's plain fields.
 _MARKS_JS = """([id, marktype]) => {
     const view = (window.__curioVegaViews || {})["vega" + id];
     const canvas = document.querySelector(`#vega${id} canvas`);
@@ -348,6 +580,13 @@ _MARKS_JS = """([id, marktype]) => {
     const box = canvas.getBoundingClientRect();
     const sx = box.width / canvas.offsetWidth, sy = box.height / canvas.offsetHeight;
     const pad = view.padding(), origin = view.origin();
+    const plain = (d) => {
+        const fields = {};
+        for (const [k, v] of Object.entries(d || {})) {
+            if (v === null || ["string", "number", "boolean"].includes(typeof v)) fields[k] = v;
+        }
+        return fields;
+    };
     const found = [];
     const visit = (mark, dx, dy) => {
         if (!mark) return;
@@ -365,6 +604,7 @@ _MARKS_JS = """([id, marktype]) => {
                     scenario: d.scenario_name ?? null,
                     tract: d.tract_short ?? null,
                     fips: d.tract_fips ?? null,
+                    datum: plain(d),
                 });
             }
             return;
@@ -394,20 +634,45 @@ _LEGENDS_JS = """(id) => {
     return legends;
 }"""
 
-# Vega's own tooltip, which it writes as the title of the element the chart
-# draws in: the hovered mark's fields, one "Title: value" per line.
+# Vega's tooltip, which Curio's handler writes as the data-tooltip of the
+# element the chart draws in: the hovered mark's fields, one "Title: value" per
+# line.
 _TOOLTIP_JS = """(id) => {
     const el = document.getElementById("vega" + id);
-    return el ? (el.getAttribute("title") || "") : null;
+    return el ? (el.getAttribute("data-tooltip") || "") : null;
 }"""
 _TOOLTIP_NAMES_JS = """([id, parts]) => {
     const el = document.getElementById("vega" + id);
-    const title = el && el.getAttribute("title");
-    return !!title && parts.every((part) => title.includes(part));
+    const tip = el && el.getAttribute("data-tooltip");
+    return !!tip && parts.every((part) => tip.includes(part));
 }"""
 _TOOLTIP_CLEARED_JS = """(id) => {
     const el = document.getElementById("vega" + id);
-    return !!el && !el.getAttribute("title");
+    return !!el && !el.getAttribute("data-tooltip");
+}"""
+
+# The item Vega holds under the pointer: the one its canvas handler picked on
+# the last pointer move over the canvas, null once the pointer left it. A hover
+# runs the view on that item whether or not the chart has a tooltip.
+_UNDER_POINTER_JS = """(id) => {
+    const view = (window.__curioVegaViews || {})["vega" + id];
+    const item = view && view._handler && view._handler._active;
+    if (!item || !item.mark) return null;
+    const datum = {};
+    for (const [k, v] of Object.entries(item.datum || {})) {
+        if (v === null || ["string", "number", "boolean"].includes(typeof v)) datum[k] = v;
+    }
+    return {mark: item.mark.marktype, datum};
+}"""
+_POINTER_ON_JS = """([id, marktype, key]) => {
+    const view = (window.__curioVegaViews || {})["vega" + id];
+    const item = view && view._handler && view._handler._active;
+    return !!item && !!item.mark && item.mark.marktype === marktype && !!item.datum
+        && Object.entries(key).every(([field, value]) => item.datum[field] === value);
+}"""
+_POINTER_OFF_JS = """(id) => {
+    const view = (window.__curioVegaViews || {})["vega" + id];
+    return !!view && !!view._handler && !view._handler._active;
 }"""
 
 # What the rules' hover select holds.
@@ -469,30 +734,33 @@ def _size(plot: dict) -> tuple:
     return tuple(plot["plot"]), tuple(plot["group"])
 
 
-def _settled_plot(page, node_id: str, *, reads: int = 5, timeout_s: float = 30) -> dict:
+def _settled_plot(page, node_id: str, *, reads: int = 5, timeout_s: float = 30) -> tuple[dict, list[dict]]:
     """The chart's plot once it has stopped moving: the same in *reads* reads in
     a row, 200 ms apart, read without running the view. A drawn chart is
     resized once more after its first draw, and again by its mount's resize
-    observer."""
+    observer. Returns that plot and no reads; or, for a plot that kept moving,
+    its last read and the last *reads* reads, which the test reports once it
+    has measured the rest."""
     def drawn(plot: dict) -> tuple:
         return _size(plot) + (tuple(plot["canvas"]),)
 
     seen: list[dict] = []
     deadline = time.monotonic() + timeout_s
     while time.monotonic() < deadline:
-        plot = page.evaluate(_PLOT_JS, [node_id, False])
+        plot = page.evaluate(_PLOT_JS, [node_id, False, False])
         if plot:
             seen.append(plot)
             last = seen[-reads:]
             if len(last) == reads and all(drawn(p) == drawn(plot) for p in last):
-                return plot
+                return plot, []
         page.wait_for_timeout(200)
-    raise AssertionError(f"chart {node_id}'s plot never settled before any hover: {seen[-reads:]}")
+    assert seen, f"chart {node_id} has no view or no canvas"
+    return seen[-1], seen[-reads:]
 
 
 def _plot_after(page, node_id: str) -> dict:
     """The chart's plot once the view has run the layouts it asked for."""
-    plot = page.evaluate(_PLOT_JS, [node_id, True])
+    plot = page.evaluate(_PLOT_JS, [node_id, True, False])
     assert plot, f"chart {node_id} has no view or no canvas"
     return plot
 
@@ -514,19 +782,12 @@ def _targets(marks: list[dict], marktype: str) -> list[dict]:
     return sorted(marks, key=lambda m: (m["x"], m["y"]))
 
 
-def _names(mark: dict, marktype: str) -> list[str]:
-    """What the tooltip of *mark* says about it."""
-    if marktype == "rect":
-        return [f"Period: {mark['period']}", f"Scenario: {mark['scenario']}"]
-    if marktype == "rule":
-        return [f"Tract: {mark['tract']}", "Lowered by NbS (m): "]
-    return [f"Tract: {mark['tract']}", f"Scenario: {mark['scenario']}"]
-
-
 def _hover_once(page, chart: Chart, k: int) -> dict:
     """Hover chart *chart*'s marks the *k*-th time: onto a mark where it is
-    drawn now, until its tooltip names it, then off the chart until the tooltip
-    clears. Returns what the hover reached and the plot after it."""
+    drawn now, until Vega holds that mark under the pointer and, on a chart with
+    tooltips, its tooltip names it; then off the chart until Vega holds no mark
+    and the tooltip clears. Returns what the hover reached and the plot after
+    it."""
     node_id = chart.node_id
     marktype = chart.hovered[k % len(chart.hovered)]
     record: dict = {"hover": k + 1, "mark": marktype}
@@ -536,25 +797,33 @@ def _hover_once(page, chart: Chart, k: int) -> dict:
         record.update(_plot_after(page, node_id))
         return record
     target = targets[(k // len(chart.hovered)) % len(targets)]
-    names = _names(target, marktype)
-    record["target"] = names[0]
-    landed = False
+    key = {field: target["datum"].get(field) for field in chart.keys[marktype]}
+    names = chart.says(target, marktype) if chart.says else []
+    record["target"] = names[0] if names else ", ".join(f"{field}: {value}" for field, value in key.items())
+    landed = held = False
     # A rule is two pixels wide: if its middle misses by rounding, try beside it.
     for dx in (0, -0.6, 0.6, -1.2, 1.2):
-        x, y = assert_in_view(page, target["x"] + dx, target["y"], f"{names[0]} in chart {node_id}")
+        x, y = assert_in_view(page, target["x"] + dx, target["y"], f"{record['target']} in chart {node_id}")
         assert page.evaluate(_CANVAS_AT_JS, [node_id, x, y]), (
-            f"something covers chart {node_id} at ({x:.0f}, {y:.0f}), where {names[0]} is drawn"
+            f"something covers chart {node_id} at ({x:.0f}, {y:.0f}), where {record['target']} is drawn"
         )
         page.mouse.move(x, y)
         try:
-            page.wait_for_function(_TOOLTIP_NAMES_JS, arg=[node_id, names], timeout=2000)
+            page.wait_for_function(_POINTER_ON_JS, arg=[node_id, marktype, key], timeout=2000)
+            held = True
+            if names:
+                page.wait_for_function(_TOOLTIP_NAMES_JS, arg=[node_id, names], timeout=2000)
             landed = True
             break
         except PlaywrightTimeoutError:
             continue
+    record["under"] = page.evaluate(_UNDER_POINTER_JS, node_id)
     record["tooltip"] = page.evaluate(_TOOLTIP_JS, node_id)
     if not landed:
-        record["missed"] = f"the tooltip never named {names}"
+        record["missed"] = (
+            f"the tooltip never named {names}" if held
+            else f"Vega never held the {marktype} {key} under the pointer: it held {record['under']}"
+        )
     if marktype == "rule":
         record["select"] = page.evaluate(_HOVER_SELECT_JS, node_id)
         if landed and target["fips"] not in (record["select"] or ""):
@@ -562,6 +831,12 @@ def _hover_once(page, chart: Chart, k: int) -> dict:
     off = page.evaluate(_OFF_CHART_JS, node_id)
     assert off, f"no point beside chart {node_id}'s canvas is in the window"
     page.mouse.move(*off)
+    try:
+        page.wait_for_function(_POINTER_OFF_JS, arg=node_id, timeout=5000)
+    except PlaywrightTimeoutError:
+        record["missed"] = (
+            f"Vega still held {page.evaluate(_UNDER_POINTER_JS, node_id)} after the pointer left the chart"
+        )
     try:
         page.wait_for_function(_TOOLTIP_CLEARED_JS, arg=node_id, timeout=5000)
     except PlaywrightTimeoutError:
@@ -574,26 +849,38 @@ def _hover_once(page, chart: Chart, k: int) -> dict:
     return record
 
 
-def _brief(record: dict) -> str:
+def _resize_once(page, node_id: str, k: int) -> dict:
+    """Resize the chart the *k*-th time, as its node's resize observer does:
+    ``view.resize().runAsync()`` in the page. Returns the plot after it."""
+    plot = page.evaluate(_PLOT_JS, [node_id, True, True])
+    assert plot, f"chart {node_id} has no view or no canvas"
+    return {"resize": k + 1, **plot}
+
+
+def _brief(record: dict, what: str = "hover") -> str:
     plot, group = _size(record)
-    return f"{record['hover']}: plot {plot[0]}x{plot[1]}, group {group[0]}x{group[1]}, view {record['viewSize']}"
+    return f"{record[what]}: plot {plot[0]}x{plot[1]}, group {group[0]}x{group[1]}, view {record['viewSize']}"
 
 
-def _measured(chart: Chart, before: dict, hovers: list[dict]) -> str:
+def _measured(chart: Chart, before: dict, unsettled: list[dict], hovers: list[dict], resizes: list[dict]) -> str:
     """What the test measured, one line per chart for the CI log."""
-    series = [{k: h.get(k) for k in ("hover", "mark", "target", "plot", "group", "viewSize", "canvas", "missed")}
-              for h in hovers]
+    fields = ("plot", "group", "viewSize", "canvas", "mount")
+    each_hover = [{k: h.get(k) for k in ("hover", "mark", "target") + fields + ("missed",)} for h in hovers]
+    each_resize = [{k: r.get(k) for k in ("resize",) + fields} for r in resizes]
     return (
-        f"[vega-fixed-size] {chart.slug}: fixed {chart.fixed[0]}x{chart.fixed[1]}, autosize {before['autosize']}, "
-        f"before the hovers plot {before['plot']} group {before['group']} view {before['viewSize']} "
-        f"canvas {before['canvas']} origin {before['origin']}; after hover {HOVERS} plot {hovers[-1]['plot']} "
-        f"group {hovers[-1]['group']} view {hovers[-1]['viewSize']} canvas {hovers[-1]['canvas']}; "
-        f"each hover: {json.dumps(series)}"
+        f"[vega-fixed-size] {chart.slug}: spec {chart.fixed[0]}x{chart.fixed[1]}, autosize {before['autosize']}, "
+        f"first draw plot {before['plot']} group {before['group']} view {before['viewSize']} "
+        f"canvas {before['canvas']} mount {before['mount']} origin {before['origin']}"
+        f"{' (still moving: ' + json.dumps([u['plot'] for u in unsettled]) + ')' if unsettled else ''}; "
+        f"after hover {HOVERS} plot {hovers[-1]['plot']} group {hovers[-1]['group']} view {hovers[-1]['viewSize']} "
+        f"canvas {hovers[-1]['canvas']}; after resize {RESIZES} plot {resizes[-1]['plot']} "
+        f"group {resizes[-1]['group']} view {resizes[-1]['viewSize']} canvas {resizes[-1]['canvas']}; "
+        f"each hover: {json.dumps(each_hover)}; each resize: {json.dumps(each_resize)}"
     )
 
 
 @pytest.mark.parametrize("chart", CHARTS, ids=[chart.slug for chart in CHARTS])
-def test_a_chart_of_fixed_size_keeps_its_plot_through_twenty_hovers(
+def test_a_chart_draws_its_plot_at_its_authors_size_through_hovers_and_resizes(
     app_frontend: "FrontendPage", current_server: str, page, capsys, chart: Chart,
 ):
     require_project_page()
@@ -622,31 +909,55 @@ def test_a_chart_of_fixed_size_keeps_its_plot_through_twenty_hovers(
     dismiss_toasts(page)
     frame_nodes(page, [chart.node_id])
 
+    # The chart at its first draw: its plot, its legend, and a mark for every row.
+    before, unsettled = _settled_plot(page, chart.node_id)
+    legends = page.evaluate(_LEGENDS_JS, chart.node_id)
+    drawn = {marktype: _marks(page, chart.node_id, marktype) for marktype in chart.marks}
+    clear = {marktype: len(_targets(_marks(page, chart.node_id, marktype), marktype)) for marktype in chart.hovered}
+
+    hovers = [_hover_once(page, chart, k) for k in range(HOVERS)]
+    resizes = [_resize_once(page, chart.node_id, k) for k in range(RESIZES)]
+    # Past pytest's capture, so a passing run's log holds the sizes too.
+    with capsys.disabled():
+        print("\n" + _measured(chart, before, unsettled, hovers, resizes), flush=True)
+
+    width, height = chart.fixed
+    authored = ((width, height), (width, height))
+    assert _size(before) == authored, (
+        f"{chart.title}, {width}x{height} in its spec, drew its plot at {before['plot'][0]}x{before['plot'][1]} "
+        f"(group {before['group'][0]}x{before['group'][1]}), not {width}x{height}: view {before['viewSize']}, "
+        f"canvas {before['canvas']}, origin {before['origin']}, autosize {before['autosize']}"
+    )
+    off_size = [h for h in hovers if _size(h) != authored]
+    assert not off_size, (
+        f"{chart.title}, {width}x{height} in its spec: after {len(off_size)} of {HOVERS} hovers its plot was not "
+        f"{width}x{height}: " + "; ".join(_brief(h) for h in off_size)
+    )
+    off_size = [r for r in resizes if _size(r) != authored]
+    assert not off_size, (
+        f"{chart.title}, {width}x{height} in its spec: after {len(off_size)} of {RESIZES} resizes its plot was not "
+        f"{width}x{height}: " + "; ".join(_brief(r, "resize") for r in off_size)
+    )
+    assert not unsettled, f"chart {chart.node_id}'s plot never settled before any hover: {unsettled}"
+
     # His chart as he drew it: its legend, and a mark for every row.
-    before = _settled_plot(page, chart.node_id)
     assert all(isinstance(v, (int, float)) and v > 0 for v in before["plot"] + before["group"]), (
         f"{chart.title}'s view gives no plot size to hold: {before}"
     )
-    legends = page.evaluate(_LEGENDS_JS, chart.node_id)
-    assert legends and legends >= 1, f"{chart.title} draws no legend: {legends}"
+    if chart.legend:
+        assert legends and legends >= 1, f"{chart.title} draws no legend: {legends}"
+    else:
+        assert legends == 0, f"{chart.title} draws {legends} legends, not none"
     for marktype, count in chart.marks.items():
-        marks = _marks(page, chart.node_id, marktype)
+        marks = drawn[marktype]
         assert len(marks) == count, f"{chart.title} draws {len(marks)} {marktype} marks, not {count}"
-        if marktype in ("rect", "symbol"):
-            assert sorted({m["scenario"] for m in marks}) == sorted(SCENARIOS), (
-                f"{chart.title}'s {marktype} marks name the scenarios {sorted({m['scenario'] for m in marks})}"
-            )
+        if marktype in chart.colored:
+            field, values = chart.colored[marktype]
+            named = sorted({m["datum"].get(field) for m in marks})
+            assert named == sorted(values), f"{chart.title}'s {marktype} marks name the {field} values {named}"
     for marktype in chart.hovered:
-        assert len(_targets(_marks(page, chart.node_id, marktype), marktype)) >= 4, (
-            f"{chart.title} draws fewer than four {marktype} marks clear enough to hover"
-        )
+        assert clear[marktype] >= 4, f"{chart.title} draws fewer than four {marktype} marks clear enough to hover"
 
-    hovers = [_hover_once(page, chart, k) for k in range(HOVERS)]
-    # Past pytest's capture, so a passing run's log holds the sizes too.
-    with capsys.disabled():
-        print("\n" + _measured(chart, before, hovers), flush=True)
-
-    width, height = chart.fixed
     changed = [h for h in hovers if _size(h) != _size(before)]
     assert not changed, (
         f"{chart.title}, fixed at {width}x{height}: the plot changed size under the pointer. "
