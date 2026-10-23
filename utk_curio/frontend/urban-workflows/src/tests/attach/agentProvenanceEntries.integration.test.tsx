@@ -5,10 +5,11 @@
  * A Python node has no writer of its own (utils/nodeCodeWriters), so the
  * canvas writes the code and files the change as a Map Edits node files its
  * own: an edit holding the code it left and the code it replaced
- * (`useGraphEdits.applyNodeContent`). A node an agent adds with code starts
- * its history with such an edit (`useAgentCanvasMutations`); a planned node,
- * added with no code, starts with none, and the code written into it later
- * is its first.
+ * (`useGraphEdits.applyNodeContent`), with the dataflow left Unsaved, so the
+ * next save keeps the entry where an agent reads it. A node an agent adds
+ * with code starts its history with such an edit (`useAgentCanvasMutations`);
+ * a planned node, added with no code, starts with none, and the code written
+ * into it later is its first.
  *
  * Drives the REAL FlowProvider, ProvenanceProvider, useCode and bridge, as
  * agentCanvasBridge.integration.test.tsx does; only IO collaborators are
@@ -30,12 +31,14 @@ if (!(global as any).DOMMatrixReadOnly) {
 }
 
 const mockShowToast = jest.fn();
+// What leaves the dataflow Unsaved: the next save writes what changed.
+const mockMarkDirty = jest.fn();
 
 jest.mock('../../hook/useWorkflowOperations', () => ({
   useWorkflowOperations: () => ({
     markNodeExecuted: jest.fn(),
     markNodeStale: jest.fn(),
-    markDirty: jest.fn(),
+    markDirty: mockMarkDirty,
     persistDataflowForInstall: jest.fn().mockResolvedValue(undefined),
     beginPendingInstall: jest.fn(),
     endPendingInstall: jest.fn(),
@@ -182,6 +185,10 @@ const ADDED_BY_AGENT = { ...PYTHON, id: 'agent-node', content: AFTER, agent: AGE
 /** A planned node: added with no code. */
 const PLANNED = { ...PYTHON, id: 'planned-node', content: '', agent: AGENT };
 
+beforeEach(() => {
+  mockMarkDirty.mockClear();
+});
+
 describe("an agent's applied change is an entry of the node's history", () => {
   it('on a Python node, an edit named after the agent that holds the code it left and the code it replaced', async () => {
     renderCanvas();
@@ -190,8 +197,12 @@ describe("an agent's applied change is an entry of the node's history", () => {
     // Added with no agent named: no entry yet.
     expect(entries(PYTHON.id)).toEqual([]);
 
+    mockMarkDirty.mockClear();
     await dispatch({ kind: 'node-content-applied', nodeId: PYTHON.id, content: AFTER, agent: AGENT });
     expect(code(PYTHON.id)).toBe(AFTER);
+    // The dataflow reads Unsaved, as after an edit made in a Map Edits node,
+    // so the next save keeps the entry.
+    expect(mockMarkDirty).toHaveBeenCalled();
     expect(entries(PYTHON.id)).toHaveLength(1);
     expect(entries(PYTHON.id)[0]).toMatchObject({
       kind: 'edit', label: AGENT, code: AFTER, before: BEFORE, inputs: [], outputs: [], parentId: null,
@@ -209,9 +220,12 @@ describe("an agent's applied change is an entry of the node's history", () => {
     renderCanvas();
     await flush();
     await dispatch({ kind: 'node-created', node: PYTHON });
+    mockMarkDirty.mockClear();
     await dispatch({ kind: 'node-content-applied', nodeId: PYTHON.id, content: BEFORE, agent: AGENT });
     expect(code(PYTHON.id)).toBe(BEFORE);
     expect(entries(PYTHON.id)).toEqual([]);
+    // Nothing changed, so nothing waits to be saved.
+    expect(mockMarkDirty).not.toHaveBeenCalled();
   });
 
   it("a change applied without the agent's name is named Agent, as a Map Edits node names it", async () => {
