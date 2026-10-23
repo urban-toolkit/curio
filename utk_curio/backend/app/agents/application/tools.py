@@ -55,6 +55,7 @@ from utk_curio.backend.app.agents.domain.tool_names import (
     wire_name,
 )
 from utk_curio.backend.app.agents.domain.manifest import ToolRequirement
+from utk_curio.backend.app.agents.domain import dashboards
 from utk_curio.backend.app.common import spatial
 from utk_curio.backend.app.execution.code_references import WIDGET_KINDS
 
@@ -928,6 +929,9 @@ def _node_row(node: dict, goal_cap: int) -> dict:
         "hasContent": bool(content.strip()),
         "contentChars": len(content),
     }
+    # A node pinned to the dataflow's dashboard is one of its tiles.
+    if dashboards.is_pinned(node):
+        row["pinned"] = True
     # #662: the values its code reads through widget references, and the node
     # a copy was copied from; each only when there is one.
     widgets = normalize_widgets((node.get("metadata") or {}).get("widgets"))
