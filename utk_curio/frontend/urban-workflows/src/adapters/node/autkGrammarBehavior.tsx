@@ -24,7 +24,7 @@ import { withExtensionRetry } from './duckdbExtensionRetry';
 import { AutkSpecKind, classifyAutkSpec, classifyAutkSpecString } from '../../utils/autkSpecKind';
 import { autkOneViewProblem } from '../../contracts/autkGrammar';
 import {
-    autkNeedsInput, autkSourcesFrom, documentTableRefs, inputRow, keyValues, loadableSource, ownTableNames,
+    autkNeedsInput, autkSourcesFrom, documentTableRefs, drawnFeatures, drawnRows, inputRow, keyValues, loadableSource, ownTableNames,
     readAutkInput, selectFieldsOf, selectFieldsProblem, tablePositions, tablesToLoad, type LoadOrder,
     type PreparedAutkInput,
 } from '../../utils/autkInput';
@@ -53,7 +53,10 @@ import { applyComputeBlocks } from './autkComputeBlocks';
 import { frameMaps, keepMapViews, mapViews, type MapView } from './autkMapView';
 import { grammarMaps, trackMaps } from './autkMapDrawing';
 import { mapSession, onMapSession, registerEditMap } from '../../utils/editFeatures/mapEditBus';
-import { layerIdFor, restoreMapLayers, snapshotBeforeSolo, snapshotMapLayers, soloMapLayer, type MapLayerState } from './autkMapState';
+import {
+    drawnFeatureAt, layerIdFor, mapLayerOf, mapStateOf, restoreMapLayers, snapshotBeforeSolo,
+    snapshotMapLayers, soloMapLayer, type DrawnTables, type MapLayerState, type MapTableState,
+} from './autkMapState';
 import { drawnInput, editFeedsOf, fedByInteraction, feedsVersion, newLayerTables, type EditFeed } from '../../utils/editFeatures/mapEditsPreview';
 import { codeEditRevision, subscribeToCodeEdits } from '../../utils/references/codeEdits';
 import MapEditOverlay from '../../components/editFeatures/MapEditOverlay';
@@ -61,6 +64,18 @@ import MapEditOverlay from '../../components/editFeatures/MapEditOverlay';
 /** What a map no Map Edits node feeds listens to for code edits: nothing. */
 const NO_CODE_EDITS = () => () => {};
 const NO_REVISION = () => 0;
+
+/** What each Autark node's map draws and lights now, by node id (autkMapState `mapStateOf`, `drawnFeatureAt`). */
+const mapStateReaders = new Map<string, {
+    state: () => Promise<Record<string, MapTableState> | null>;
+    featureAt: (table: string, position: number) => Promise<Record<string, unknown> | null>;
+}>();
+// The e2e tests read what a map draws and lights through them (test_frontend/test_autark_positions_e2e.py).
+if (typeof window !== 'undefined') {
+    (window as any).__curio_mapState = (nodeId: string) => mapStateReaders.get(nodeId)?.state() ?? null;
+    (window as any).__curio_mapFeatureAt = (nodeId: string, table: string, position: number) =>
+        mapStateReaders.get(nodeId)?.featureAt(table, position) ?? null;
+}
 
 /**
  * The layer a document's selections come from when they name none: its map's
@@ -235,6 +250,38 @@ export const useAutkGrammarBehavior = (
     // Each input table's features as they came, by name: the rows a pick or a
     // brush reads the key columns of, when its view names them (selectFields).
     const inputFeaturesRef = useRef<Record<string, readonly any[]>>({});
+    // What the last draw's maps were handed of each table, as autk-db exported
+    // it, which can leave rows out and keep the others in an order of its own,
+    // and the input row each position of its layer stands for (`drawnRows`):
+    // read back the first time a pick or a highlight on that layer needs it.
+    // `tagged` holds the tables whose features carry their input row.
+    const drawnRef = useRef<{
+        grammar: unknown;
+        tagged: ReadonlySet<string>;
+        features: Map<string, Promise<any[] | null>>;
+        rows: Map<string, Promise<number[] | null>>;
+    } | null>(null);
+    const drawnFeaturesOf = (grammar: any, table: string): Promise<any[] | null> | null => {
+        const drawn = drawnRef.current;
+        const exports = grammar?.data;
+        if (!drawn || drawn.grammar !== grammar || !exports || typeof exports !== 'object' || !(table in exports)) return null;
+        // Each read of the grammar's data exports the table again: once per draw.
+        if (!drawn.features.has(table)) {
+            drawn.features.set(table, Promise.resolve(exports[table]).then(drawnFeatures, () => null));
+        }
+        return drawn.features.get(table)!;
+    };
+    // Null for a table whose order is known without it: one a document loads
+    // itself, or none of this draw's maps drew.
+    const drawnRowsOf = (grammar: any, table: string): Promise<number[] | null> | null => {
+        const drawn = drawnRef.current;
+        const features = drawn?.tagged.has(table) ? drawnFeaturesOf(grammar, table) : null;
+        if (!drawn || !features) return null;
+        if (!drawn.rows.has(table)) {
+            drawn.rows.set(table, features.then((list) => drawnRows(list, mapLayerOf(grammar, table)?.components)));
+        }
+        return drawn.rows.get(table)!;
+    };
 
     // What the node knows about its input edge, asked the way the Vega-Lite
     // node asks (hook/useGrammarInputState).
@@ -468,6 +515,8 @@ export const useAutkGrammarBehavior = (
         // is data the browser already holds, so it stays client-side and is NOT
         // sent to the backend. A data-only document does not read it.
         let upstreamSources: any[] = [];
+        // Those whose features carry their input row, for a document that draws a map.
+        let taggedTables: string[] = [];
         // The input's rasters, loaded into the grammar's database by
         // loadGeoTiff (adapters/node/autkRasters), for a document that draws.
         let rasterSources: CurioRasterSource[] = [];
@@ -908,6 +957,7 @@ export const useAutkGrammarBehavior = (
                 // Store for interaction effects
                 grammarRef.current = grammar;
                 specRef.current    = spec;
+                drawnRef.current   = { grammar, tagged: new Set(taggedTables), features: new Map(), rows: new Map() };
 
                 // Grammar → Curio: forward map-picking and plot-selection events to
                 // the Curio interaction bus so connected nodes (data-pool, Vega) react.
@@ -1378,6 +1428,24 @@ export const useAutkGrammarBehavior = (
     }, [data.input]);
     // eslint-disable-next-line react-hooks/exhaustive-deps
     useEffect(syncHighlightsNow, [(data as any).interactions]);
+
+    // What this node's map draws and lights, as autk-map and autk-db hold it,
+    // for the e2e tests.
+    useEffect(() => {
+        const drawn: DrawnTables = {
+            features: (table) => drawnFeaturesOf(grammarRef.current, table),
+            rows: (table) => drawnRowsOf(grammarRef.current, table),
+        };
+        mapStateReaders.set(data.nodeId, {
+            state: () => mapStateOf(grammarRef.current, specRef.current, drawn),
+            featureAt: async (table, position) =>
+                drawnFeatureAt(grammarRef.current, table, await drawn.features(table), position),
+        });
+        return () => {
+            mapStateReaders.delete(data.nodeId);
+        };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [data.nodeId]);
 
     // #662: a selection tag on this node reads the features of the layer its
     // pick or brush came from, the rows a direct selection is matched against
