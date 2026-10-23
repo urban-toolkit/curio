@@ -24,6 +24,9 @@ export type AgentCreatedNode = {
   y: number;
   /** dev/89: optional display title the apply persisted on the spec node. */
   title?: string;
+  /** The name of the agent that wrote the node, which a node it adds with
+   * code starts its Provenance history named after. Never saved on the node. */
+  agent?: string;
   /** dev/89: canonical persisted appearance (normalized by the backend's
    * shared node-appearance utility) — carried into live ``data.appearance``
    * so the next canvas save round-trips it. #662: the same for the node's
