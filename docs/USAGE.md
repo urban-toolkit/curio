@@ -511,6 +511,13 @@ run to open it: when it ran, for how long, and its code. **Put this code back in
 the node** puts that code in the node's editor without running it, and the
 node's next run branches from that run.
 
+A change an agent made to the node's code that you applied is an entry too,
+named after the agent, such as **Node Builder**, and a node an agent added with
+code starts with one. Open it to see when it was made and the code it left, and
+put that code back as you would a run's. The Node Builder and the Dataflow
+Builder read these histories as the dataflow was last saved, so you can ask
+either what changed in a node since a run.
+
 ## Widgets
 
 A widget is a value a node's code reads that you set in a form, without editing
