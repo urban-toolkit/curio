@@ -133,7 +133,7 @@ export type AgentProposalStatus = "pending" | "applied" | "dismissed" | "superse
 export interface AgentProposalPart {
   type: "proposal";
   proposalId: string;
-  /** "node.content.write" | "node.create" | "project.install" | "package.draft.apply" | future kinds. */
+  /** "node.content.write" | "node.settings.write" | "node.create" | "project.install" | "package.draft.apply" | future kinds. */
   tool: string;
   summary: string;
   /** The full proposed content (plain text — rendered inert). */
