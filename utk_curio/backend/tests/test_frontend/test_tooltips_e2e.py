@@ -522,6 +522,10 @@ def test_a_chip_whose_line_monaco_draws_again_as_the_pointer_lands_shows_its_too
 
     tip = tooltip_saying(page, what, ["input_1"])
     assert monaco_hovers(page) == 0, f"{what}: Monaco's own hover is on screen too: {tip}"
+    # Only that leave is let go by: the pointer leaving the editor after it
+    # hides the tooltip as any leave does.
+    move_pointer_away(page)
+    no_tooltip(page, f"{what}, after the pointer left the editor")
 
 
 def test_tab_shows_a_tooltip_escape_hides_it_and_a_click_shows_none(
