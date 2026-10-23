@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 import { useReactFlow } from "reactflow";
 import { useCode } from "../../../hook/useCode";
 import { useFlowContext } from "../../../providers/FlowProvider";
+import { useProvenanceContext } from "../../../providers/ProvenanceProvider";
 import { useNotebookViewContext } from "../../../providers/flow/notebookViewContext";
 import { fitViewWithMenuOffset } from "../../../utils/fitViewWithMenuOffset";
 import {
@@ -35,7 +36,9 @@ const CENTER_ANIMATION_MS = 400;
  *   callbacks as a palette drop) with the SERVER-minted id, then **center the
  *   viewport on it** — the backend places new nodes right of the whole graph
  *   extent, which is usually off-screen (dev/51 defect 1: the node existed
- *   but out of view, and only the load-time fitView made it visible).
+ *   but out of view, and only the load-time fitView made it visible). A node
+ *   the apply names its agent on, added with code, starts its Provenance
+ *   history with an edit named after that agent.
  * - ``node-content-applied`` → `FlowProvider.applyNodeContent` (provider
  *   state — dev/51 defect 2: direct RF-store writes are clobbered by the
  *   controlled re-sync and never reached the serializer or editor), with the
@@ -78,6 +81,7 @@ function appliedEdgeToCanvasEdge(edge: {
 export function useAgentCanvasMutations(): void {
   const { createCodeNode } = useCode();
   const { applyNodeContent, onEdgesChange, applyReviewedRemovals, scenarios, setScenarios } = useFlowContext();
+  const { nodeEditProv } = useProvenanceContext();
   const { reveal } = useNotebookViewContext();
   const reactFlow = useReactFlow();
   const { getNodes, setCenter, getZoom } = reactFlow;
@@ -106,6 +110,12 @@ export function useAgentCanvasMutations(): void {
       ...(copiedFrom.length ? { copiedFrom } : {}),
       ...(spatialJoin ? { spatialJoin } : {}),
     });
+    // Code an agent wrote starts the node's history, an edit named after the
+    // agent, as its applied change to a node's code is named. A planned node
+    // comes with no code: the code later written into it is its first entry.
+    if (node.agent && typeof node.content === "string" && node.content.trim()) {
+      nodeEditProv(node.id, node.content, node.agent);
+    }
   };
 
   // #662: scenarios the apply saved join the canvas's, which a save writes.
