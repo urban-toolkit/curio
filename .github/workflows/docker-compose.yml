@@ -143,7 +143,7 @@ on:
       # the run writes no other frame, and its test-gpu job must run on that
       # kind (gpu_pool). See the test_frontend README.
       remint_gpu_kind:
-        description: 'With remint: <utk-gpu or arcade-gpu>:<comma-separated parts of baseline names> to write as baselines of that GPU kind (test-gpu must run there: gpu_pool)'
+        description: 'With remint: <utk-gpu, arcade-gpu or utk-desktop>:<comma-separated parts of baseline names> to write as baselines of that GPU kind (test-gpu must run there: gpu_pool)'
         type: string
         default: ''
       # Where the CPU jobs and test-gpu run (scripts/ci_pick_runners.py).
@@ -783,9 +783,10 @@ jobs:
           PYTEST_ADDOPTS: --junitxml=${{ github.workspace }}/ci-report/e2e{run}.xml
           # This runner's GPU model, for the frames that keep a baseline per
           # GPU kind (GPU_KINDS in utils/screenshots.py): the arcade runners
-          # share an H100, utk-gpu has an RTX PRO 6000. Any other runner gets
-          # none, so its frames compare with their default baselines.
-          CURIO_E2E_GPU_KIND: ${{ startsWith(runner.name, 'arcade-gpu-') && 'arcade-gpu' || (runner.name == 'utk-gpu' && 'utk-gpu' || '') }}
+          # share an H100, utk-gpu has an RTX PRO 6000, utk-desktop-01 an RTX
+          # 3070. Any other runner gets none, so its frames compare with their
+          # default baselines.
+          CURIO_E2E_GPU_KIND: ${{ startsWith(runner.name, 'arcade-gpu-') && 'arcade-gpu' || (runner.name == 'utk-gpu' && 'utk-gpu' || (startsWith(runner.name, 'utk-desktop-') && 'utk-desktop' || '')) }}
         shell: bash
         run: |
           set -euo pipefail
