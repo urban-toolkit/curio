@@ -801,7 +801,8 @@ class TestDataflowBuilderComposite:
             # dev/73: chat-path content updates; dev/84 Recommend packages,
             # dev/89 package-scale steps: its modes.
             "agent.curio.node-builder",
-            "agent.curio.dataflow-planner", "agent.curio.dataflow-reader",
+            # Not the Dataflow Planner: what its modes answer changes no node.
+            "agent.curio.dataflow-reader",
             "agent.curio.generated-content-evaluator",  # dev/86: advisory semantic check
             "agent.curio.researcher",  # dev/95 (Follow-up D) reviewed notes, dev/67-4 verification
         ]
@@ -1085,7 +1086,11 @@ class TestResearcher:
         # "spatialJoin"; and the text that promised what the code refuses
         # goes: a plan carrying code, a Topology verdict ending every applied
         # result, and workflow.plan.create decomposing a task (plan step 11).
-        "ef3dafa1ef3537c1324716a4a1fbecd2e44a411d22570da93ff928618a9afa43"
+        # 2026-10-23: every applied plan ends with the Topology verdict again,
+        # since one applied row by row or by Connect all now does; and the
+        # Dataflow Planner leaves the Builder's delegations, so its coherence
+        # check is no longer offered (proposal paths, step 2).
+        "3365ca6473c7af76f48a65b68db0cf4bc2cf9f8afe7032715eb744b7e6e2ad57"
     )
 
     def test_manifest_surface(self):

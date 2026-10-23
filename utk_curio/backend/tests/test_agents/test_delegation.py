@@ -1191,9 +1191,13 @@ class TestChatContentReviewMint:
         )
         att_id = self._attach_node(client, token, pid)
         body = _run(client, token, pid, att_id, message="add a summary below this node").get_json()
-        # The run read the content back, as its node.create's.
-        assert calls[2][-1]["content"].startswith("[delegate result] ")
-        assert "return input_0.describe()" in calls[2][-1]["content"]
+        # The run read the content back, as its node.create's. The run's calls
+        # share one message list, so the result is found by its prefix.
+        results = [
+            m["content"] for m in calls[0]
+            if m.get("role") == "user" and str(m.get("content") or "").startswith("[delegate result] ")
+        ]
+        assert len(results) == 1 and "return input_0.describe()" in results[0], results
         proposals = [p for p in body["content"] if p["type"] == "proposal"]
         assert [p["tool"] for p in proposals] == ["node.create"]
         assert proposals[0]["preview"] == "return input_0.describe()"
