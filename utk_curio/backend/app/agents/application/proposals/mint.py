@@ -15,6 +15,7 @@ import uuid
 from utk_curio.backend.app.agents.application import source_grounding
 from utk_curio.backend.app.agents.application import verify
 from utk_curio.backend.app.agents.domain import content
+from utk_curio.backend.app.agents.domain import dashboards
 from utk_curio.backend.app.agents.domain import map_edits
 from utk_curio.backend.app.agents.domain import node_settings
 from utk_curio.backend.app.agents.domain import widget_grammar
@@ -640,6 +641,10 @@ def _mint_node_content_write(
     unreadable = map_edits.refusal(user_key, project_id, node.get("type"), proposed, current=node.get("content") or "")
     if unreadable:
         return agents_tool_rounds._refuse_params(unreadable)
+    # A pinned tile's spec is held to what its dashboard publishes.
+    unpublishable = dashboards.refusal(user_key, project_id, node, proposed)
+    if unpublishable:
+        return agents_tool_rounds._refuse_params(unpublishable)
     basis = hashlib.sha256((node.get("content") or "").encode("utf-8")).hexdigest()
     proposal_id = uuid.uuid4().hex
     # The node as the user knows it, the way node.create names one: its kind,

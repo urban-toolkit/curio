@@ -18,6 +18,7 @@ from utk_curio.backend.app.agents.application import delegation
 from utk_curio.backend.app.agents.application.errors import AgentServiceError
 from utk_curio.backend.app.agents.domain import builtin
 from utk_curio.backend.app.agents.domain import content
+from utk_curio.backend.app.agents.domain import dashboards
 from utk_curio.backend.app.agents.domain import node_settings
 from utk_curio.backend.app.agents.domain import plan_topology
 from utk_curio.backend.app.agents.domain.counts import count_label
@@ -549,7 +550,9 @@ def _plan_review_part(proposal_id: str, plan: dict, existing_nodes: dict, existi
     for node_id in remove_nodes:
         victim = existing_nodes[node_id]
         label = (victim.get("goal") or node_id)[:80]
-        preview_lines.append(f"− Remove: {label} · {victim.get('type') or 'untyped'}")
+        # A pinned victim is a dashboard tile, which its removal takes off the dashboard.
+        tile = " · a dashboard tile, which leaves the dashboard" if dashboards.is_pinned(victim) else ""
+        preview_lines.append(f"− Remove: {label} · {victim.get('type') or 'untyped'}{tile}")
     part = content.make_proposal_part(
         proposal_id=proposal_id,
         tool="dataflow.plan.write",
@@ -598,6 +601,8 @@ def _plan_review_part(proposal_id: str, plan: dict, existing_nodes: dict, existi
                 "label": (existing_nodes[node_id].get("goal") or node_id)[:80],
                 "nodeType": existing_nodes[node_id].get("type"),
                 "contentChars": len(existing_nodes[node_id].get("content") or ""),
+                # Only on a dashboard tile, which leaves the dashboard.
+                **({"pinned": True} if dashboards.is_pinned(existing_nodes[node_id]) else {}),
             }
             for node_id in remove_nodes
         ]

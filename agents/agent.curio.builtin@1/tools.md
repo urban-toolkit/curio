@@ -8,7 +8,7 @@ is the `ref` of each entry of `nodes`, and `widgets[]` an entry of `widgets`). T
 
 ## dataflow.read
 
-Read the project's saved dataflow, structure-first: every node (id, type, goal, content length, widgets, selection tags, and what a Spatial Join, a Data Pool or a Simple View is set to when it is not its default) and ALL edges, plus each node's last runtime status and the dataflow's scenarios with their levers, fixed context and outcomes. Node content is elided: use node.read for one node's content, or params {"include": ["content"]} for the full spec (large).
+Read the project's saved dataflow, structure-first: every node (id, type, goal, content length, widgets, selection tags, what a Spatial Join, a Data Pool or a Simple View is set to when it is not its default, and "pinned": true for a tile of the dataflow's dashboard) and ALL edges, plus each node's last runtime status and the dataflow's scenarios with their levers, fixed context and outcomes. Node content is elided: use node.read for one node's content, or params {"include": ["content"]} for the full spec (large).
 
 ### Parameters
 

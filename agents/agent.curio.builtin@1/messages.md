@@ -1360,6 +1360,10 @@ Name features the input holds, by their ids or by a where condition.
 
 …and {more} more
 
+## dashboards.tile-loads-own-data
+
+This node is pinned to the dashboard, which carries only saved outputs, so its spec cannot load its own data. Move the "data" section into a node of its own upstream, and draw that node's output here.
+
 ## solve.attempt-code-truncated
 
 … [truncated: the attempt's code exceeded the trail's bound]
