@@ -329,6 +329,7 @@ class CatalogMutations:
             item["format"], data_path.as_posix(), dataset_id=item.get("id"),
             layer_type=autark_layer_type(item),
         )
+        data_path.stat()  # a data file gone mid-install still raises OSError
         item["sizeBytes"] = data_size_bytes(manifest.format, data_path)
         if row_count is not None:
             item["rowCount"] = row_count
@@ -778,6 +779,7 @@ class CatalogMutations:
             except InstallerError as exc:
                 raise DatasetCatalogError(str(exc)) from exc
             item["path"] = data_path.as_posix()
+            data_path.stat()  # a data file gone mid-install still raises OSError
             item["sizeBytes"] = data_size_bytes(result.manifest.format, data_path)
             item["dirName"] = dir_name
 
@@ -895,6 +897,7 @@ class CatalogMutations:
                 installed_manifest = load_dataset_manifest(result.dest)
                 installed_item = item_from_manifest(installed_manifest, result.dest, origin="computed")
                 installed_item["path"] = inst_data_path.as_posix()
+                inst_data_path.stat()  # a data file gone mid-install still raises OSError
                 installed_item["sizeBytes"] = data_size_bytes(installed_manifest.format, inst_data_path)
                 if row_count is not None:
                     installed_item["rowCount"] = row_count
