@@ -968,18 +968,24 @@ export const useAutkGrammarBehavior = (
                     // layer a Map Edits node shows alone and the layer its
                     // action works on, kept across the draw; the overlay on the
                     // map reads its camera, and where this draw put a
-                    // feature's rows, which the layer skips while the drawing
-                    // tools draw the feature reshaped or moved.
+                    // feature's rows, read back from what autk-db exported,
+                    // which the layer skips while the drawing tools draw the
+                    // feature reshaped or moved.
                     const shownMap = grammarMaps(grammar)[0];
                     restoreMapLayers(shownMap, savedLayersRef.current);
                     if (soloRef.current) showAsEditsAsk(shownMap, spec, null, soloRef.current.before);
-                    const drawnFeatures = inputFeaturesRef.current;
-                    const drawnOrders = loadOrdersRef.current;
+                    const inputFeatures = inputFeaturesRef.current;
+                    const loadOrders = loadOrdersRef.current;
                     registerEditMap(
                         nodeId,
                         shownMap ?? null,
                         (table) => layerIdFor(spec, table),
-                        (table, key, id) => featurePositions(drawnFeatures[table] ?? [], drawnOrders[table]?.map, key, id),
+                        async (table, key, id) => featurePositions(
+                            inputFeatures[table] ?? [],
+                            (await drawnRowsOf(grammar, table)) ?? loadOrders[table]?.map,
+                            key,
+                            id,
+                        ),
                     );
                 }
                 savedLayersRef.current = null;

@@ -63,7 +63,7 @@ export interface MapEditSession {
 const sessions = new Map<string, Map<string, MapEditSession>>();
 const maps = new Map<string, any>();
 const layerIds = new Map<string, (table: string) => string>();
-const featurePositions = new Map<string, (table: string, key: string, id: SelectionId) => number[]>();
+const featurePositions = new Map<string, (table: string, key: string, id: SelectionId) => Promise<number[]>>();
 const listeners = new Map<string, Set<() => void>>();
 
 function notify(mapId: string) {
@@ -99,13 +99,14 @@ export function mapSession(mapId: string): MapEditSession | undefined {
 /**
  * The autk map *mapId* drew last, for the overlay on it: with the id it gives
  * the layer that draws a table (*layerIdOf*), and where in that layer it
- * draws the rows of a feature, by its id column (*positionsOf*).
+ * draws the rows of a feature, by its id column (*positionsOf*, once the map
+ * has read back the rows it drew).
  */
 export function registerEditMap(
   mapId: string,
   map: any,
   layerIdOf?: (table: string) => string,
-  positionsOf?: (table: string, key: string, id: SelectionId) => number[],
+  positionsOf?: (table: string, key: string, id: SelectionId) => Promise<number[]>,
 ): void {
   if (map) maps.set(mapId, map);
   else maps.delete(mapId);
@@ -129,8 +130,8 @@ export function editMapLayerId(mapId: string, table: string): string {
  * Where *mapId*'s map draws the rows of *table* whose column *key* holds *id*:
  * their positions in the layer that draws it, none when the map does not say.
  */
-export function editMapPositions(mapId: string, table: string, key: string, id: SelectionId): number[] {
-  return featurePositions.get(mapId)?.(table, key, id) ?? [];
+export function editMapPositions(mapId: string, table: string, key: string, id: SelectionId): Promise<number[]> {
+  return featurePositions.get(mapId)?.(table, key, id) ?? Promise.resolve([]);
 }
 
 function subscribe(mapId: string, listener: () => void): () => void {

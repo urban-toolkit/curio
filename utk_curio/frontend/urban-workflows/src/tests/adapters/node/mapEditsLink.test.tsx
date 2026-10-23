@@ -52,7 +52,7 @@ import ProvenanceProvider, { useProvenanceContext } from "../../../providers/Pro
 import { editFeaturesCode, readEditFeaturesCode, type EditFeaturesSettings } from "../../../utils/editFeatures/editFeatures";
 import { editSelection } from "../../../utils/editFeatures/mapEditSelection";
 import { toMercator } from "../../../utils/editFeatures/mapEditBus";
-import { drawnMaps, grammarRuns, heldDraws, nodeInput, resetAutkNodeMocks } from "../../_support/autkNodeMocks";
+import { drawnExports, drawnMaps, grammarRuns, heldDraws, nodeInput, resetAutkNodeMocks } from "../../_support/autkNodeMocks";
 import { stubWebGpu, unstubWebGpu } from "../../_support/autkNode";
 
 const LOADER = "buildings";
@@ -832,7 +832,8 @@ test("Move points draws a building's corners, midpoints and shape as layers of t
     await waitFor(() => expect(pointsOn(map).map(km).sort(byPlace)).toEqual(handles));
     const ring = [...corners, corners[0]].map((xy) => km(toMercator(xy)));
     expect(linesOn(map).map((line) => line.map(km))).toContainEqual(ring);
-    expect(map.skipped.input_0).toEqual([1]);
+    // Where the layer draws it comes once the map has read back the rows it drew.
+    await waitFor(() => expect(map.skipped.input_0).toEqual([1]));
     expect(map.updateRenderInfo).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({ color: { r: 93, g: 173, b: 226 } }));
     expect(drawnOverMap()).toEqual([]);
 
@@ -867,13 +868,32 @@ test("Move points draws a building's corners, midpoints and shape as layers of t
     await waitFor(() => expect(grammarRuns).toHaveLength(drawn + 1));
     const next = lastMap();
     await waitFor(() => expect(pointsOn(next).map(km)).toContainEqual(moved[2]));
-    expect(next.skipped.input_0).toEqual([1]);
+    await waitFor(() => expect(next.skipped.input_0).toEqual([1]));
 
     // Done: the tools leave the map, and the building is drawn by its layer again.
     fireEvent.click(screen.getByTestId("map-edit-done"));
     await waitFor(() => expect(loadedLayers(next)).toEqual([]));
     expect(next.skipped.input_0).toEqual([]);
     expect(overlay()).toHaveAttribute("data-corners", "[]");
+  } finally {
+    putBack();
+  }
+});
+
+// autk-db can keep a layer's rows in an order of its own; the map names them
+// by the rows read back from what autk-db exported.
+test("on a layer autk-db keeps in another order, a pick lights the building where the map drew it, and Move points skips it there", async () => {
+  const putBack = layOutCanvases();
+  try {
+    // autk-db exports buildings 136, 200 and 119, in that order.
+    drawnExports.of = (_table, handed) => [handed[1], handed[2], handed[0]];
+    drawnMaps.make = projectingMap;
+    await mountCanvas().playMap();
+    await openAction("edit");
+    clickMap(MIDDLE_136);
+    await waitFor(() => expect(litUp()).toEqual([0]));
+    fireEvent.click(await screen.findByTestId("interaction-reshape"));
+    await waitFor(() => expect(lastMap().skipped.input_0).toEqual([0]));
   } finally {
     putBack();
   }

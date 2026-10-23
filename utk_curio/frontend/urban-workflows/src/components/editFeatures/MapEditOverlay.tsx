@@ -139,11 +139,22 @@ export default function MapEditOverlay({
   // each of its parts, and skipped where its layer draws it.
   const changing = (mode === "reshape" || mode === "move") && selectedOne && selectedOne.id !== null ? selectedOne.id : null;
   const changingKey = changing === null ? null : String(changing);
-  const hiddenPositions = useMemo(
-    () => (changing !== null && active?.key ? editMapPositions(mapId, active.table, active.key, changing) : []),
+  // Where its layer draws it, once the map has read back the rows it drew.
+  const [hiddenPositions, setHiddenPositions] = useState<number[]>([]);
+  useEffect(() => {
+    let live = true;
+    if (changing !== null && active?.key) {
+      void editMapPositions(mapId, active.table, active.key, changing).then((positions) => {
+        if (live) setHiddenPositions(positions);
+      });
+    } else {
+      setHiddenPositions((now) => (now.length === 0 ? now : []));
+    }
+    return () => {
+      live = false;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [map, mapId, active?.table, active?.key, changingKey],
-  );
+  }, [map, mapId, active?.table, active?.key, changingKey]);
   const changed = useMemo(() => {
     const parts = new Map<string, Geometry>();
     for (const f of shown) if (changingKey !== null && f.geometry && f.id !== null && String(f.id) === changingKey) parts.set(JSON.stringify(f.geometry), f.geometry);
