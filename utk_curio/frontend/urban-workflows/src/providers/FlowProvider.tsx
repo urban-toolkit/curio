@@ -345,7 +345,7 @@ const FlowProvider = ({
         applyNodeContent, addNode, propagateDownstreamInputs, applyOutput, onEdgesDelete, onNodesDelete,
     } = useGraphEdits({
         setNodes, setEdges, reactFlow, workflowNameRef, collabRef, outputsRef, markNodeStaleRef, setOutputs,
-        nodeEditProv,
+        nodeEditProv, markDirtyRef,
     });
 
     const { onConnect, isValidConnection } = useConnect({
