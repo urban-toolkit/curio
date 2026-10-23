@@ -1,7 +1,9 @@
 /**
  * The geometry tools of a feature picked in the Map Edits node's Edit (#662):
  * one way at a time of what a drag on the map does, panning it, moving the
- * feature's points or moving it whole, and a part added to it.
+ * feature's points or moving it whole, and a part added to it. A feature of
+ * several parts that no osm_id tells apart keeps its shape: the tools are
+ * off, and a tip says why (#1092).
  */
 import React from "react";
 import { faBezierCurve, faHand, faUpDownLeftRight } from "@fortawesome/free-solid-svg-icons";
@@ -17,6 +19,7 @@ export default function GeometryTools({
   kind,
   nouns,
   feature,
+  refusal = null,
   shapeMode,
   onShapeMode,
   partFor,
@@ -27,6 +30,8 @@ export default function GeometryTools({
   nouns: Nouns;
   /** The feature picked. */
   feature: EditedFeature;
+  /** Why its shape cannot be changed on the map, which turns the tools off; null when it can. */
+  refusal?: string | null;
   shapeMode: ShapeMode;
   onShapeMode: (mode: ShapeMode) => void;
   /** Whether a part is being drawn for the picked feature. */
@@ -35,11 +40,12 @@ export default function GeometryTools({
   onCancelPart: () => void;
 }) {
   const parts = partsOf(feature.geometry).length;
+  const off = refusal !== null;
   const modes: ModeOption<"pan" | "reshape" | "move">[] = [
     { value: "pan", label: "Pan", icon: faHand, testId: "interaction-pan" },
-    { value: "reshape", label: kind === "points" ? "Move point" : "Move points", icon: faBezierCurve, testId: "interaction-reshape" },
+    { value: "reshape", label: kind === "points" ? "Move point" : "Move points", icon: faBezierCurve, testId: "interaction-reshape", disabled: off },
     // A point is one corner: moving it whole is moving its point.
-    ...(kind === "points" ? [] : [{ value: "move" as const, label: `Move whole ${nouns.one}`, icon: faUpDownLeftRight, testId: "interaction-move" }]),
+    ...(kind === "points" ? [] : [{ value: "move" as const, label: `Move whole ${nouns.one}`, icon: faUpDownLeftRight, testId: "interaction-move", disabled: off }]),
   ];
   return (
     <div className={styles.section}>
@@ -51,14 +57,14 @@ export default function GeometryTools({
           </span>
         ) : null}
       </div>
-      <ModeSwitch label="Shape" value={shapeMode ?? "pan"} options={modes} onChange={(mode) => onShapeMode(mode === "pan" ? null : mode)} />
+      <ModeSwitch label="Shape" value={off ? "pan" : shapeMode ?? "pan"} options={modes} onChange={(mode) => onShapeMode(mode === "pan" ? null : mode)} />
       <span className={styles.toolRow}>
-        {partFor === "picked" ? (
+        {partFor === "picked" && !off ? (
           <button type="button" className={`nodrag nopan ${styles.button}`} data-testid="interaction-cancel-part" onClick={onCancelPart}>
             Cancel the new part
           </button>
         ) : (
-          <button type="button" className={`nodrag nopan ${styles.button}`} data-testid="interaction-add-part" onClick={onAddPart}>
+          <button type="button" className={`nodrag nopan ${styles.button}`} data-testid="interaction-add-part" disabled={off} onClick={onAddPart}>
             + Add a part
           </button>
         )}
@@ -68,8 +74,10 @@ export default function GeometryTools({
           </span>
         ) : null}
       </span>
-      <span className={styles.hint}>
-        {partFor === "picked"
+      <span className={styles.hint} data-testid={off ? "interaction-parts-untold" : undefined}>
+        {off
+          ? refusal
+          : partFor === "picked"
           ? kind === "points"
             ? `Click ${onTheMap} to place the new ${KIND_NOUN[kind]}. It joins this ${nouns.one}.`
             : `Draw the new part ${onTheMap}: click to add points, then double-click or press Enter. It joins this ${nouns.one}.`

@@ -18,6 +18,11 @@
  *   part of a feature of several to remove it, alt-click a corner to
  *   delete it; move: drag the picked feature to move it whole.
  *
+ * A feature of several rows, as an OSM building of several parts is, shows
+ * the corners of every part. A drag changes the part it is on alone, and a
+ * move moves every part, each keeping its shape: the edits name each part
+ * by its own row (`featureParts`), and the other parts keep their shapes.
+ *
  * Nothing is drawn over the map. What the node selects (its pick, or the
  * features a rule matches), which comes back on the interaction edge, the map
  * lights with Autark's own highlight, and the drawing tools are layers of the
@@ -30,11 +35,11 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useFlowContext } from "../../providers/FlowProvider";
 import type { SelectionId } from "../../utils/references/selectionTags";
 import { withArticle, type Geometry } from "../../utils/editFeatures/editFeatures";
-import { kindOf } from "../../utils/editFeatures/layerModel";
+import { kindOf, type EditedFeature } from "../../utils/editFeatures/layerModel";
 import { editMap, editMapLayerId, editMapPositions, useMapEdit } from "../../utils/editFeatures/mapEditBus";
 import { editSelection, selectedIdsIn, toggledIds, type SentSelection } from "../../utils/editFeatures/mapEditSelection";
 import { partsOf, withoutPart } from "../../utils/editFeatures/geometryParts";
-import { handlesOf, toRings } from "../../utils/editFeatures/geometryRings";
+import { handlesOf, toRings, type Handle } from "../../utils/editFeatures/geometryRings";
 import { showMapEditTools, type MapEditTools } from "../../utils/editFeatures/mapEditLayers";
 import {
   cameraKey,
@@ -55,10 +60,17 @@ import {
 import { isTypingTarget } from "../canvasKeyBindings";
 import styles from "./MapEditOverlay.module.css";
 
+/**
+ * What a press started. A corner or a midpoint is of one row of the picked
+ * feature, by its place among the layer's features; a move takes every row.
+ */
 type Gesture =
   | { kind: "click"; start: XY; moved: boolean; shift: boolean }
-  | { kind: "corner" | "mid"; ring: number; index: number; shape?: Geometry }
-  | { kind: "move"; origin: Geometry; at: XY };
+  | { kind: "corner" | "mid"; row: number; ring: number; index: number; shape?: Geometry }
+  | { kind: "move"; origins: [number, Geometry][]; at: XY };
+
+/** A handle of one row of the picked feature: the row's place among the features, and its part, the row's place among the feature's rows. */
+type PartHandle = Handle & { row: number; part: number };
 
 /** A screen position to a tenth of a pixel. */
 const tenth = (v: number) => Math.round(v * 10) / 10;
@@ -80,8 +92,11 @@ export default function MapEditOverlay({
   const [, setTick] = useState(0);
   const [draft, setDraft] = useState<XY[]>([]);
   const [hover, setHover] = useState<XY | null>(null);
-  const [dragShape, setDragShape] = useState<{ id: SelectionId; geometry: Geometry } | null>(null);
+  // The shapes a drag gives rows of the picked feature, by each row's place among the features.
+  const [dragShapes, setDragShapes] = useState<Record<number, Geometry> | null>(null);
   const gesture = useRef<Gesture | null>(null);
+  // The row the last click that picked landed on: the part a new part joins.
+  const pickedRow = useRef<EditedFeature | null>(null);
   // The map's tilt before an action looked from above, put back after it.
   const tilt = useRef<CameraView | null>(null);
   const flatNow = useRef(false);
@@ -117,8 +132,8 @@ export default function MapEditOverlay({
   const projection = active && map ? projectionOf(map, active.geographic) : null;
   const features = active?.features ?? [];
   const shown = useMemo(
-    () => features.map((f) => (dragShape && f.id !== null && String(f.id) === String(dragShape.id) ? { ...f, geometry: dragShape.geometry } : f)),
-    [features, dragShape],
+    () => features.map((f, row) => (dragShapes?.[row] ? { ...f, geometry: dragShapes[row] } : f)),
+    [features, dragShapes],
   );
   // What the node selects on this layer: its pick, or what a rule matches,
   // which the interaction edge brings back to the map.
@@ -130,14 +145,31 @@ export default function MapEditOverlay({
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [mapData?.interactions, session?.interactionId, active?.table, features],
   );
-  const selectedOne = selected.length === 1 ? shown.find((f) => f.id !== null && String(f.id) === String(selected[0])) : undefined;
-  // The picked feature's corners and midpoints, while its points are moved.
-  const reshaped = selectedOne?.geometry && mode === "reshape" ? toRings(selectedOne.geometry) : null;
-  const handles = reshaped ? handlesOf(reshaped) : null;
+  // The picked feature's rows, its parts, by their places among the features:
+  // an OSM building of several parts is a row for each.
+  const pickedId = selected.length === 1 ? selected[0] : null;
+  const pickedRows = useMemo(
+    () => (pickedId === null ? [] : features.flatMap((f, row) => (f.id !== null && String(f.id) === String(pickedId) ? [row] : []))),
+    [features, pickedId],
+  );
+  // The corners and midpoints of each of its parts, while their points are moved.
+  const handles = useMemo(() => {
+    if (mode !== "reshape") return null;
+    const corners: PartHandle[] = [];
+    const midpoints: PartHandle[] = [];
+    pickedRows.forEach((row, part) => {
+      const geometry = shown[row]?.geometry;
+      if (!geometry) return;
+      const own = handlesOf(toRings(geometry));
+      corners.push(...own.corners.map((handle) => ({ ...handle, row, part })));
+      midpoints.push(...own.midpoints.map((handle) => ({ ...handle, row, part })));
+    });
+    return corners.length > 0 ? { corners, midpoints } : null;
+  }, [mode, pickedRows, shown]);
 
   // The picked feature, while it is reshaped or moved, is drawn by the tools,
   // each of its parts, and skipped where its layer draws it.
-  const changing = (mode === "reshape" || mode === "move") && selectedOne && selectedOne.id !== null ? selectedOne.id : null;
+  const changing = (mode === "reshape" || mode === "move") && pickedRows.length > 0 ? pickedId : null;
   const changingKey = changing === null ? null : String(changing);
   // Where its layer draws it, once the map has read back the rows it drew.
   const [hiddenPositions, setHiddenPositions] = useState<number[]>([]);
@@ -155,11 +187,10 @@ export default function MapEditOverlay({
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [map, mapId, active?.table, active?.key, changingKey]);
-  const changed = useMemo(() => {
-    const parts = new Map<string, Geometry>();
-    for (const f of shown) if (changingKey !== null && f.geometry && f.id !== null && String(f.id) === changingKey) parts.set(JSON.stringify(f.geometry), f.geometry);
-    return [...parts.values()];
-  }, [shown, changingKey]);
+  const changed = useMemo(
+    () => (changingKey === null ? [] : pickedRows.flatMap((row) => (shown[row]?.geometry ? [shown[row].geometry as Geometry] : []))),
+    [shown, pickedRows, changingKey],
+  );
 
   // The tools, drawn by the map as layers of its own: a shape waiting to be
   // added, the feature being reshaped or moved with its handles, and the
@@ -224,8 +255,8 @@ export default function MapEditOverlay({
 
   const finishDraft = useCallback(() => {
     if (!session) return;
-    if (kind === "lines" && draft.length >= 2) session.onDrawn({ type: "LineString", coordinates: draft });
-    else if (kind === "areas" && draft.length >= 3) session.onDrawn({ type: "Polygon", coordinates: [[...draft, draft[0]]] });
+    if (kind === "lines" && draft.length >= 2) session.onDrawn({ type: "LineString", coordinates: draft }, pickedRow.current);
+    else if (kind === "areas" && draft.length >= 3) session.onDrawn({ type: "Polygon", coordinates: [[...draft, draft[0]]] }, pickedRow.current);
     else return;
     setDraft([]);
   }, [session, kind, draft]);
@@ -233,8 +264,8 @@ export default function MapEditOverlay({
   // The latest of everything the listeners read, so they are added once.
   // How big the map draws the layer's points and lines, for what a click reaches.
   const size = drawnSize(map, active?.table ? editMapLayerId(mapId, active.table) : undefined);
-  const live = useRef({ session, active, projection, shown, selectedOne, reshaped, handles, mode, kind, draft, finishDraft, dragShape, size, pick });
-  live.current = { session, active, projection, shown, selectedOne, reshaped, handles, mode, kind, draft, finishDraft, dragShape, size, pick };
+  const live = useRef({ session, active, projection, features, shown, pickedRows, handles, mode, kind, draft, finishDraft, dragShapes, size, pick });
+  live.current = { session, active, projection, features, shown, pickedRows, handles, mode, kind, draft, finishDraft, dragShapes, size, pick };
 
   useEffect(() => {
     const host = box.current?.parentElement;
@@ -254,44 +285,52 @@ export default function MapEditOverlay({
       event.preventDefault();
     };
     const onDown = (event: PointerEvent) => {
-      const { projection: p, selectedOne: one, reshaped: h, handles: k, mode: m, shown: all, size: z } = live.current;
+      const { projection: p, handles: k, mode: m, features: rows, shown: all, pickedRows: picked, size: z } = live.current;
       // Heard on the window, ahead of the page's own listeners: a press on this map only.
       if (!p || event.button !== 0 || !host.contains(event.target as Node)) return;
       // The overlay's own buttons are buttons.
       if ((event.target as Element).closest?.("[data-map-edit-ui]")) return;
       const s = local(event);
-      // A press on a corner or a midpoint, where the map shows it.
-      const handle = h && k && one ? handleAt(k, s, p) : null;
-      if (h && one && handle) {
+      // A press on a corner or a midpoint, where the map shows it: a corner
+      // of one part of the picked feature.
+      const handle = k ? handleAt(k, s, p) : null;
+      const shape = handle ? all[handle.row]?.geometry : null;
+      if (handle && shape) {
         stop(event);
         if (event.altKey && handle.kind === "corner") {
-          const rings = h.rings.map((rr) => [...rr]);
-          const min = h.closed[handle.ring] ? 3 : kindOf(one.geometry) === "points" ? 1 : 2;
+          const own = toRings(shape);
+          const rings = own.rings.map((rr) => [...rr]);
+          const min = own.closed[handle.ring] ? 3 : kindOf(shape) === "points" ? 1 : 2;
           if (rings[handle.ring].length > min) {
             rings[handle.ring].splice(handle.index, 1);
-            live.current.session?.onReshape(one.id as SelectionId, h.rebuild(rings));
+            live.current.session?.onReshape([{ row: rows[handle.row], geometry: own.rebuild(rings) }]);
           }
           return;
         }
-        gesture.current = { kind: handle.kind, ring: handle.ring, index: handle.index };
+        gesture.current = { kind: handle.kind, row: handle.row, ring: handle.ring, index: handle.index };
         return;
       }
-      // Moving points, an alt-click inside one part of a feature of several
-      // takes that part away (a corner's own alt-click deletes the corner).
-      if (m === "reshape" && event.altKey && one?.geometry && one.id !== null) {
-        const parts = partsOf(one.geometry);
-        const hit = parts.length > 1 ? parts.findIndex((part) => hitAt([{ ...one, geometry: part }], s, p, z) !== null) : -1;
-        const rest = hit >= 0 ? withoutPart(one.geometry, hit) : null;
-        if (rest) {
+      // Moving points, an alt-click inside one piece of a part whose shape is
+      // several takes that piece away (a corner's own alt-click deletes the corner).
+      if (m === "reshape" && event.altKey) {
+        const row = picked.find((r) => all[r]?.geometry && hitAt([all[r]], s, p, z) !== null);
+        const own = row === undefined ? null : all[row].geometry;
+        const pieces = partsOf(own);
+        const hit = pieces.length > 1 ? pieces.findIndex((piece) => hitAt([{ ...all[row as number], geometry: piece }], s, p, z) !== null) : -1;
+        const rest = hit >= 0 ? withoutPart(own, hit) : null;
+        if (row !== undefined && rest) {
           stop(event);
-          live.current.session?.onReshape(one.id as SelectionId, rest);
+          live.current.session?.onReshape([{ row: rows[row], geometry: rest }]);
           return;
         }
       }
-      // Moving a feature whole is a shift-drag on it; a plain drag pans the map.
-      if (m === "move" && event.shiftKey && one?.geometry && hitAt(all, s, p, z)?.id === one.id) {
+      // Moving a feature whole, every part of it, is a shift-drag on it; a
+      // plain drag pans the map.
+      const under = m === "move" && event.shiftKey && picked.length > 0 ? hitAt(all, s, p, z) : null;
+      if (under && under.id !== null && String(under.id) === String(all[picked[0]].id)) {
         stop(event);
-        gesture.current = { kind: "move", origin: one.geometry, at: p.toData(s[0], s[1]) };
+        const origins = picked.flatMap((row): [number, Geometry][] => (all[row].geometry ? [[row, all[row].geometry as Geometry]] : []));
+        gesture.current = { kind: "move", origins, at: p.toData(s[0], s[1]) };
         host.style.cursor = "grabbing";
         return;
       }
@@ -299,7 +338,7 @@ export default function MapEditOverlay({
       gesture.current = { kind: "click", start: s, moved: false, shift: event.shiftKey };
     };
     const onMove = (event: PointerEvent) => {
-      const { projection: p, selectedOne: one, handles: k, mode: m } = live.current;
+      const { projection: p, handles: k, mode: m, features: rows, shown: all, pickedRows: picked } = live.current;
       if (!p) return;
       const s = local(event);
       if (m === "draw") setHover(p.toData(s[0], s[1]));
@@ -307,8 +346,8 @@ export default function MapEditOverlay({
       if (!g) {
         // A corner shows it can be dragged and a midpoint that it adds one;
         // moving it whole, the picked feature that it can be grabbed with shift held.
-        const handle = k && one ? handleAt(k, s, p) : null;
-        const grab = m === "move" && event.shiftKey && !!one?.geometry && hitAt([one], s, p, live.current.size) !== null;
+        const handle = k ? handleAt(k, s, p) : null;
+        const grab = m === "move" && event.shiftKey && hitAt(picked.map((row) => all[row]), s, p, live.current.size) !== null;
         host.style.cursor = handle ? (handle.kind === "corner" ? "grab" : "copy") : grab ? "grab" : "";
         return;
       }
@@ -323,60 +362,66 @@ export default function MapEditOverlay({
       // a move with the button held even when it never saw the press, and
       // panning under the pointer would leave the feature where it was.
       stop(event);
-      if (!one?.geometry || one.id === null) return;
       const at = p.toData(s[0], s[1]);
       if (g.kind === "move") {
-        setDragShape({ id: one.id, geometry: shifted(g.origin, at[0] - g.at[0], at[1] - g.at[1]) });
+        // Every part by the same offset, each keeping its shape.
+        setDragShapes(Object.fromEntries(g.origins.map(([row, origin]) => [row, shifted(origin, at[0] - g.at[0], at[1] - g.at[1])])));
         return;
       }
-      // The shape the drag started on, with a midpoint's corner once added.
-      const base = toRings(g.shape ?? one.geometry);
+      // The part's shape the drag started on, with a midpoint's corner once added.
+      const geometry = rows[g.row]?.geometry;
+      if (!geometry || !picked.includes(g.row)) return;
+      const base = toRings(g.shape ?? geometry);
       const rings = base.rings.map((rr) => [...rr]);
       if (g.kind === "corner") rings[g.ring][g.index] = at;
       else {
         // A midpoint adds its corner once; the rest of the drag moves it.
         rings[g.ring].splice(g.index + 1, 0, at);
-        gesture.current = { kind: "corner", ring: g.ring, index: g.index + 1, shape: base.rebuild(rings) };
+        gesture.current = { kind: "corner", row: g.row, ring: g.ring, index: g.index + 1, shape: base.rebuild(rings) };
       }
-      setDragShape({ id: one.id, geometry: base.rebuild(rings) });
+      setDragShapes({ [g.row]: base.rebuild(rings) });
     };
     const onUp = (event: PointerEvent) => {
       const g = gesture.current;
       gesture.current = null;
       if (g?.kind === "move") host.style.cursor = "grab";
-      const { projection: p, session: s, mode: m, kind: k, shown: all, dragShape: dragged, size: z } = live.current;
+      const { projection: p, session: s, mode: m, kind: k, features: rows, shown: all, dragShapes: dragged, size: z } = live.current;
       if (!g || !p || !s) return;
-      // A click on a midpoint adds its corner there; no drag is needed.
+      // A click on a midpoint adds its corner there, to that part; no drag is needed.
       if (g.kind === "mid") {
-        const one = live.current.selectedOne;
-        if (one?.geometry && one.id !== null) {
-          const base = toRings(one.geometry);
+        const geometry = rows[g.row]?.geometry;
+        if (geometry) {
+          const base = toRings(geometry);
           const rings = base.rings.map((rr) => [...rr]);
           const a = rings[g.ring][g.index], b = rings[g.ring][(g.index + 1) % rings[g.ring].length];
           rings[g.ring].splice(g.index + 1, 0, [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2]);
-          s.onReshape(one.id as SelectionId, base.rebuild(rings));
+          s.onReshape([{ row: rows[g.row], geometry: base.rebuild(rings) }]);
         }
-        setDragShape(null);
+        setDragShapes(null);
         return;
       }
       if (g.kind !== "click") {
-        if (dragged) s.onReshape(dragged.id, dragged.geometry);
-        setDragShape(null);
+        // The parts the drag changed, in the layer's order: one change.
+        const changed = Object.entries(dragged ?? {}).flatMap(([row, geometry]) => (rows[Number(row)] ? [{ row: rows[Number(row)], geometry }] : []));
+        if (changed.length > 0) s.onReshape(changed);
+        setDragShapes(null);
         return;
       }
       if (g.moved) return;
       const at = p.toData(g.start[0], g.start[1]);
       if (m === "draw") {
-        if (k === "points") s.onDrawn({ type: "Point", coordinates: at });
+        if (k === "points") s.onDrawn({ type: "Point", coordinates: at }, pickedRow.current);
         else setDraft((current) => [...current, at]);
         return;
       }
+      // A click picks the feature under it, by the row it lands on.
+      const found = hitAt(all, g.start, p, z);
+      pickedRow.current = found ? rows[all.indexOf(found)] ?? null : null;
       if (m === "reshape" || m === "move") {
-        const found = hitAt(all, g.start, p, z);
         if (found) live.current.pick(found.id, false);
         return;
       }
-      live.current.pick(hitAt(all, g.start, p, z)?.id ?? null, g.shift);
+      live.current.pick(found?.id ?? null, g.shift);
     };
     const onDouble = (event: MouseEvent) => {
       // The map's own double-click pick is not the node's.
@@ -420,13 +465,16 @@ export default function MapEditOverlay({
   // The box is there before the camera is, so the listeners have their host.
   if (!projection) return <div ref={box} data-testid="map-edit-overlay" data-corners="[]" className={styles.overlay} />;
   const p = projection;
-  // The corners a drag moves, where the map shows them, in its own pixels.
-  const corners = (handles?.corners ?? []).map(({ ring, index, at }) => {
+  // The corners a drag moves, where the map shows them, in its own pixels:
+  // each with its part, the row's place among the feature's rows, and its
+  // ring and index in that part's shape.
+  const corners = (handles?.corners ?? []).map(({ part, ring, index, at }) => {
     const [x, y] = p.toScreen(at);
-    return { ring, index, x: tenth(x), y: tenth(y) };
+    return { part, ring, index, x: tenth(x), y: tenth(y) };
   });
   const noun = active.noun;
-  const parts = selectedOne?.geometry ? partsOf(selectedOne.geometry).length : 0;
+  // Whether a part's shape is several pieces, one of which an alt-click takes away.
+  const pieces = pickedRows.some((row) => partsOf(shown[row]?.geometry).length > 1);
   // The shape being drawn: what it is and how many points it has, then how to go on.
   const progress = mode === "draw" && draft.length > 0 ? `New ${noun} · ${draft.length} point${draft.length === 1 ? "" : "s"}. ` : "";
   const tip =
@@ -438,7 +486,7 @@ export default function MapEditOverlay({
       : mode === "reshape"
         ? kind === "points"
           ? `Drag the ${noun} to move it.`
-          : `Drag a corner to move it. Click or drag a midpoint to add one, and alt-click a corner to delete it.${parts > 1 ? " Alt-click inside a part to remove it." : ""}`
+          : `Drag a corner to move it. Click or drag a midpoint to add one, and alt-click a corner to delete it.${pieces ? " Alt-click inside a part to remove it." : ""}`
         : mode === "move"
           ? `Shift-drag the ${noun} to move it. Drag to pan.`
           : `Click ${withArticle(noun)} to pick it, and shift-click to add one. Drag to pan.`);

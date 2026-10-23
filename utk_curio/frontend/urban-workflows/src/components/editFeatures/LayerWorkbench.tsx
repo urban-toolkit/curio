@@ -46,7 +46,8 @@ import {
   type GeometryKind,
 } from "../../utils/editFeatures/layerModel";
 import { evaluate, exprProblem, parseExpr, truthy } from "../../utils/editFeatures/editExpr";
-import { publishMapSession, type MapEditMode } from "../../utils/editFeatures/mapEditBus";
+import { partRedraw, partsRefusal, rowsOf, samePart } from "../../utils/editFeatures/featureParts";
+import { publishMapSession, type MapEditMode, type ReshapedPart } from "../../utils/editFeatures/mapEditBus";
 import { editSelection, sameIds, selectedIdsIn } from "../../utils/editFeatures/mapEditSelection";
 import { mapTableName } from "../../utils/editFeatures/mapEditsPreview";
 import { withPart } from "../../utils/editFeatures/geometryParts";
@@ -192,7 +193,14 @@ export default function LayerWorkbench({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active?.name]);
   const geographic = active ? isGeographic(active.fc) || (active.newLayer ? isGeographic(layers.find((l) => !l.newLayer)?.fc) : false) : false;
+  /** The column the layer worked on names its features by. */
+  const layerKey = active ? active.key ?? (active.newLayer ? NEW_LAYER_KEY : undefined) : undefined;
   const pickedOne = picked.length === 1 ? features.find((f) => f.id !== null && String(f.id) === String(picked[0])) : undefined;
+  // The picked feature's rows, its parts: an OSM building of several parts
+  // is a row for each. The map's tools change one at a time, each named by its
+  // own osm_id; a feature whose rows nothing tells apart keeps its shape.
+  const pickedRows = useMemo(() => (pickedOne ? rowsOf(features, pickedOne.id) : []), [features, pickedOne]);
+  const shapeRefusal = partsRefusal(pickedRows, layerKey);
   const textsOf = (f: EditedFeature) =>
     Object.fromEntries(defs.map((d) => [d.name, f.properties[d.name] === null || f.properties[d.name] === undefined ? "" : String(f.properties[d.name])]));
   useEffect(() => {
@@ -211,28 +219,40 @@ export default function LayerWorkbench({
     return features.filter((f) => f.id !== null && truthy(evaluate(condition, f.properties as any))).map((f) => f.id as SelectionId);
   }, [rule, ruleProblem, features]);
 
-  // A part drawn is added to the feature being added, or to the picked one.
-  const onDrawn = (geometry: Geometry) => {
+  // A part drawn is added to the feature being added, or to the picked one:
+  // to the part the click that picked it landed on, else its first; its
+  // other parts keep their shapes.
+  const onDrawn = (geometry: Geometry, pickedRow?: EditedFeature | null) => {
     if (partFor === "draft" && drawn) {
       setDrawn(withPart(drawn, geometry) ?? drawn);
       setPartFor(null);
       return;
     }
-    if (partFor === "picked" && active && pickedOne?.geometry && pickedOne.id !== null) {
-      const merged = withPart(pickedOne.geometry, geometry);
-      if (merged) {
-        onEdit({ op: "geometry", ids: [pickedOne.id], geometry: merged }, active);
-        setRecent([pickedOne.id]);
+    if (partFor === "picked" && active && pickedRows.length > 0) {
+      const row = pickedRows.find((r) => samePart(r, pickedRow)) ?? pickedRows[0];
+      const merged = row.geometry ? withPart(row.geometry, geometry) : null;
+      const edit = merged ? partRedraw(features, row, layerKey, merged) : null;
+      if (edit && row.id !== null) {
+        onEdit(edit, active);
+        setRecent([row.id]);
       }
       setPartFor(null);
       return;
     }
     setDrawn(geometry);
   };
-  const onReshape = (id: SelectionId, geometry: Geometry) => {
-    if (!active) return;
-    onEdit({ op: "geometry", ids: [id], geometry }, active);
-    setRecent([id]);
+  // New shapes for parts of the picked feature, made in one gesture: one
+  // change, an edit for each part, each named alone.
+  const onReshape = (parts: ReshapedPart[]) => {
+    if (!active || parts.length === 0) return;
+    const edits = parts.flatMap(({ row, geometry }) => {
+      const edit = partRedraw(features, row, layerKey, geometry);
+      return edit ? [edit] : [];
+    });
+    if (edits.length !== parts.length) return;
+    if (edits.length === 1) onEdit(edits[0], active);
+    else onEdits(edits, active);
+    if (parts[0].row.id !== null) setRecent([parts[0].row.id]);
   };
 
   // What a click on the map does now: nothing until an action that draws.
@@ -243,13 +263,12 @@ export default function LayerWorkbench({
         ? drawn && partFor !== "draft" ? "select" : "draw"
         : action === "edit" && editBy === "rule"
           ? "select" // a rule changes values only: no points or features to move
-          : action === "edit" && pickedOne && partFor === "picked"
+          // A feature whose parts nothing tells apart keeps its shape.
+          : action === "edit" && pickedOne && shapeRefusal === null && partFor === "picked"
           ? "draw"
-          : action === "edit" && pickedOne && shapeMode
+          : action === "edit" && pickedOne && shapeRefusal === null && shapeMode
             ? shapeMode
             : "select";
-  /** The column the layer worked on names its features by. */
-  const layerKey = active ? active.key ?? (active.newLayer ? NEW_LAYER_KEY : undefined) : undefined;
   /** The table *surface*'s map draws *layer* under. */
   const tableOn = (surface: EditSurface, layer: WorkbenchLayer) =>
     mapTableName(layer.table ?? layer.name, !!layer.newLayer || !!layer.ownName, { ...surface, circles });
@@ -323,8 +342,8 @@ export default function LayerWorkbench({
           geographic,
           key: layerKey,
         },
-        onDrawn: (geometry) => handlers.current.onDrawn(geometry),
-        onReshape: (id, geometry) => handlers.current.onReshape(id, geometry),
+        onDrawn: (geometry, pickedRow) => handlers.current.onDrawn(geometry, pickedRow),
+        onReshape: (parts) => handlers.current.onReshape(parts),
         onShapeDone: () => setShapeMode(null),
       });
     }
@@ -508,6 +527,7 @@ export default function LayerWorkbench({
               kind={kind}
               nouns={nouns}
               feature={pickedOne}
+              refusal={shapeRefusal}
               shapeMode={shapeMode}
               onShapeMode={setShapeMode}
               partFor={partFor}
