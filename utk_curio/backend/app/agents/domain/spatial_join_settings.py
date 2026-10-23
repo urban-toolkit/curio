@@ -11,7 +11,10 @@ The shape is ``$defs.nodeMetadata.properties.spatialJoin`` in
 ``docs/schemas/trill.v1.json`` (a test pins these keys to it), and the rule is
 the join's own, the one its route answers with (``common/spatial.settings_problem``).
 Only a template whose ``behavior`` is the Spatial Join's keeps a setting: the
-behavior ``packages.template_behavior`` reads, which the caller passes in.
+behavior ``packages.template_behavior`` reads, which the caller passes in. An
+agent changes a join already on the canvas (``node.settings.write``) by the
+same rule, each key it gives picked as the join's select picks it
+(``parse_change``, ``after``).
 """
 from __future__ import annotations
 
@@ -46,6 +49,32 @@ def parse(raw: object, where: str) -> tuple[dict | None, list[str]]:
         return None, [f"{where}: {problem}"]
     setting = {key: raw[key] for key in SETTING_KEYS if key in raw}
     return (setting or None), []
+
+
+#: What the join does with nothing saved, by key.
+_DEFAULTS = {"predicate": spatial.DEFAULT_PREDICATE, "output": spatial.DEFAULT_OUTPUT}
+
+
+def parse_change(raw: object, where: str) -> tuple[dict | None, list[str]]:
+    """The change *raw* (``node.settings.write``'s) makes to a join on the
+    canvas: each key it gives, as the join's select picks it, and both at the
+    join's defaults (intersects, pairs) when it gives none; or the errors that
+    say what the join would not take, as ``parse`` says them. Absent changes
+    nothing. The join judges each key on its own, so a key the change leaves
+    out cannot make one it gives wrong."""
+    if raw is None:
+        return None, []
+    _setting, errors = parse(raw, where)
+    if errors:
+        return None, errors
+    return {key: raw.get(key, _DEFAULTS[key]) for key in SETTING_KEYS if key in raw or not raw}, []
+
+
+def after(current: object, change: dict) -> dict | None:
+    """What a join whose ``metadata.spatialJoin`` is *current* stores once
+    *change* is picked: its operation and output with each one *change*
+    gives, its defaults left out as the join writes them (``saved``)."""
+    return saved({**(saved(current) or {}), **change})
 
 
 def template_problem(behavior: object, label: object, where: str) -> str | None:

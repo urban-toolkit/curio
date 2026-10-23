@@ -394,6 +394,30 @@ remove one data edge of the loop, or, where it should carry selections between t
 
 {where}: a {label} node has no image column; only a Simple View node takes {key}
 
+## node-settings.unknown-params
+
+params has keys node.settings.write does not take: {unknown} (it takes {keys})
+
+## node-settings.nothing-given
+
+params names no setting to change: give {keys}
+
+## node-settings.widgets-not-map
+
+{where} must map each widget's name to its new value, such as {"combine": "max"}
+
+## node-settings.unknown-widget
+
+{where}: the {label} node has no widget named {widget}; it has {widgets}
+
+## node-settings.changes-nothing
+
+params changes nothing: the {label} node already has {settings}
+
+## mint.settings-write-proposed
+
+proposal {proposal_id} created for the settings of node {node_id}; it awaits the user's explicit review: do NOT assume it was applied
+
 ## plan.widgets-not-placeable
 
 plan node {ref} ({label}) cannot hold widgets: a widget is placed in a node's code or spec, or held by a Parameter node

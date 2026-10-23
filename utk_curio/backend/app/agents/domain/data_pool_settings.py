@@ -11,7 +11,9 @@ can fix.
 The rule is the pool's own, ``utils/dataPoolSpec.ts``: a value that names no
 mode reads as OVERWRITE, and only the modes that are not OVERWRITE are written.
 So a value the pool would read as OVERWRITE without a word is refused, and a
-setting is stored as the pool writes it. ``dataPoolSpec.cases.json`` beside
+setting is stored as the pool writes it. An agent changes a pool already on
+the canvas (``node.settings.write``) by the same rule, each mode it gives
+picked as the pool's select picks it (``parse_change``, ``after``). ``dataPoolSpec.cases.json`` beside
 the TypeScript holds the cases both sides run. The shape is
 ``$defs.nodeMetadata.properties.dataPool`` in ``docs/schemas/trill.v1.json``,
 and the modes and their words are ``src/contracts/nodeSettings.json``, which
@@ -68,6 +70,27 @@ def parse(raw: object, where: str) -> tuple[dict | None, list[str]]:
 
 def _names_a_mode(value: object) -> bool:
     return isinstance(value, str) and value in MODES
+
+
+def parse_change(raw: object, where: str) -> tuple[dict | None, list[str]]:
+    """The change *raw* (``node.settings.write``'s) makes to a pool on the
+    canvas: each mode it gives, as the pool's select picks it, OVERWRITE among
+    them, and both modes at OVERWRITE when it gives none; or the errors that
+    say what the pool would not take, as ``parse`` says them. Absent changes
+    nothing."""
+    if raw is None:
+        return None, []
+    _setting, errors = parse(raw, where)
+    if errors:
+        return None, errors
+    return {key: raw.get(key, DEFAULT) for key in SETTING_KEYS if key in raw or not raw}, []
+
+
+def after(current: object, change: dict) -> dict | None:
+    """What a pool whose ``metadata.dataPool`` is *current* stores once
+    *change* is picked: its modes with each one *change* gives, as the pool
+    writes them (``saved``), or None when both are OVERWRITE."""
+    return saved({**(saved(current) or {}), **change})
 
 
 def template_problem(behavior: object, label: object, where: str) -> str | None:
