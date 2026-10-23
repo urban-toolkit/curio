@@ -87,6 +87,15 @@ describe("the map as a Map Edits node feeding it asks", () => {
     expect(shown()).toEqual({ buildings: { shown: true, picks: false }, parks: { shown: true, picks: true } });
   });
 
+  test("an action ended puts back only the layer that picked: a layer hidden meanwhile through the map's menu stays hidden", () => {
+    const { map, grammar, shown } = pickingMap(["buildings", "parks"], "parks");
+    const before = snapshotBeforeSolo(grammar);
+    showForEdits(map, null, { solo: null, picking: "buildings" }, before);
+    map.updateRenderInfo("parks", { isSkip: true });
+    showForEdits(map, { solo: null, picking: "buildings" }, { solo: null, picking: null }, before);
+    expect(shown()).toEqual({ buildings: { shown: true, picks: false }, parks: { shown: false, picks: true } });
+  });
+
   test("a map drawn again during an action picks on the action's layer and keeps what was set on its layers", () => {
     const { map, shown } = pickingMap(["buildings", "parks"], "parks");
     // Hidden through the map's menu during the action, and kept across the draw.

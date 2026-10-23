@@ -182,8 +182,11 @@ export type EditsView = { solo: string | null; picking: string | null };
  * *map* as the Map Edits node feeding it asks now (*now*), after what it asked
  * before (*was*): its *solo* layer shown alone, and its *picking* layer, the
  * one an action works on, the layer that picks. autk-map lights a pick on its
- * picking layer only, so the node's pick and a rule's matches show there. With
- * neither, each layer gets back what it had in *before*. Layers go by their ids.
+ * picking layer only, so the node's pick and a rule's matches show there. When
+ * the layer shown alone is shown with the others again, each layer gets back
+ * what it had in *before*; when an action ends with none shown alone, only the
+ * layer that picked before picks again, and what was set on the layers
+ * meanwhile through the map's menu stays. Layers go by their ids.
  */
 export function showForEdits(
     map: any,
@@ -193,14 +196,21 @@ export function showForEdits(
     colorMapped = false,
 ): void {
     if (!map) return;
-    if (now.solo !== null) soloMapLayer(map, now.solo, null, colorMapped);
-    else if (was?.solo || now.picking === null) soloMapLayer(map, null, before);
-    if (now.picking === null || now.picking === now.solo) return;
     // One picking layer at a time: setting it takes picking off the others.
-    try {
-        map.updateRenderInfo(now.picking, { isPick: true });
-    } catch {
-        // A layer that cannot pick stays as it is.
+    const pick = (id: string) => {
+        try {
+            map.updateRenderInfo(id, { isPick: true });
+        } catch {
+            // A layer that cannot pick stays as it is.
+        }
+        map.requestRender?.();
+    };
+    if (now.solo !== null) soloMapLayer(map, now.solo, null, colorMapped);
+    else if (was?.solo) soloMapLayer(map, null, before);
+    else if (now.picking === null) {
+        const picked = Object.keys(before ?? {}).find((id) => before?.[id]?.isPick === true);
+        if (picked) pick(picked);
+        return;
     }
-    map.requestRender?.();
+    if (now.picking !== null && now.picking !== now.solo) pick(now.picking);
 }
