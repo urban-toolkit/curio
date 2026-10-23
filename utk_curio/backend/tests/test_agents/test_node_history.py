@@ -7,8 +7,8 @@ load keys it (the shared cases, ``nodeProvenanceKeys.cases.json``). It lists a
 node's entries, newest first, and gives one entry's code; a cut list or code
 says how much it left out, as the other read tools do; a node with no history
 and an entry the node does not have each answer in their own words. The Node
-Builder, the Dataflow Reader and the Dataflow Builder are granted it, and the
-knowledge page every agent reads says what an entry is.
+Builder and the Dataflow Builder are granted it, and the knowledge page every
+agent reads says what an entry is.
 
 New names are read inside each test, so this module imports on a checkout
 without them and each test fails on its own.
@@ -28,8 +28,8 @@ CASES_FILE = (
     Path(__file__).resolve().parents[3]
     / "frontend" / "urban-workflows" / "src" / "utils" / "nodeProvenanceKeys.cases.json"
 )
-#: The agents asked "what changed?" about a node or a dataflow.
-GRANTED = ("agent.curio.node-builder", "agent.curio.dataflow-reader", "agent.curio.dataflow-builder")
+#: The agents granted it: asked "what changed?" about a node or a dataflow in their chats.
+GRANTED = ("agent.curio.node-builder", "agent.curio.dataflow-builder")
 
 
 def _cases():
@@ -170,7 +170,7 @@ def test_an_entry_the_node_does_not_have_says_so(tmp_curio):
     assert _read({}, target={"kind": "canvas"}) == ("error", agent_text.message("tools.no-node-id"))
 
 
-def test_the_node_builder_the_dataflow_reader_and_the_dataflow_builder_are_granted_it():
+def test_the_node_builder_and_the_dataflow_builder_are_granted_it():
     from utk_curio.backend.app.agents.application import tools
     from utk_curio.backend.app.agents.domain import builtin
 
@@ -179,6 +179,10 @@ def test_the_node_builder_the_dataflow_reader_and_the_dataflow_builder_are_grant
     for agent_id in GRANTED:
         manifest = builtin.get_builtin_manifest(builtin.builtin_coord(agent_id))
         assert TOOL in tools.resolve_grants(manifest.tools), agent_id
+    # The Dataflow Reader runs only as a mode another agent asks for, and a
+    # delegated mode runs with no tools: a grant to it would be dead.
+    reader = builtin.get_builtin_manifest(builtin.builtin_coord("agent.curio.dataflow-reader"))
+    assert TOOL not in tools.resolve_grants(reader.tools)
     # Offered natively under a name that decodes to its id, with its two params.
     (spec,) = tools.native_tools([TOOL])
     assert tools.tool_id_of(spec["name"]) == TOOL
