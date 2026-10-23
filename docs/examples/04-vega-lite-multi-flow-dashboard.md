@@ -172,7 +172,7 @@ Group by `(INTERSECTION, Year)`, rank within each year, and keep rank ≤ 3. Ren
 
 ## Branch E: Camera count vs. compliance (two inputs → concat view)
 
-Two `Data Transformation` nodes feed one `Python Computation` node: the first, on its first input circle, counts unique cameras per intersection and bins them into `1 / 2 / 3 / 4+`; the second, on its second circle, computes the percent reduction in violations between each intersection's first and last year. The node joins `[!! input_0 !!]` and `[!! input_1 !!]` on `INTERSECTION`, and after a cleanup pass the result drives an `hconcat` of a boxplot (violation distribution per camera-count bin) and a per-intersection bar chart (percent reduction), wired together through a `cameraFilter` param so picking a bin filters the bar chart:
+Two `Data Transformation` nodes feed one `Python Computation` node: the first, on its first input circle, counts unique cameras per intersection and bins them into `1 / 2 / 3 / 4+`; the second, on its second circle, computes the percent reduction in violations between each intersection's first and last year. The node joins `[!! input_0 !!]` and `[!! input_1 !!]` on `INTERSECTION`, and after a cleanup pass the result drives an `hconcat` of a boxplot (violation distribution per camera-count bin) and a bar chart of the 20 intersections with the largest percent reduction, wired together through a `cameraFilter` param so picking a bin filters the bar chart to that bin's top 20:
 
 ```json
 {
@@ -215,7 +215,12 @@ Two `Data Transformation` nodes feed one `Python Computation` node: the first, o
         "cursor": "pointer"
       },
       "transform": [
-        { "filter": "cameraFilter == null || datum.CAMERA_BIN == cameraFilter" }
+        { "filter": "cameraFilter == null || datum.CAMERA_BIN == cameraFilter" },
+        {
+          "window": [{ "op": "row_number", "as": "reduction_rank" }],
+          "sort": [{ "field": "Percent_Reduction", "order": "descending" }]
+        },
+        { "filter": "datum.reduction_rank <= 20" }
       ],
       "encoding": {
         "x": {
@@ -227,7 +232,7 @@ Two `Data Transformation` nodes feed one `Python Computation` node: the first, o
           "field": "INTERSECTION",
           "type": "nominal",
           "sort": "-x",
-          "title": "Intersection"
+          "title": "Intersection, top 20 by percent reduction"
         },
         "color": {
           "field": "Percent_Reduction",
