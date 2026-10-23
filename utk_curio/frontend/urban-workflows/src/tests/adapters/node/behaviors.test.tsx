@@ -1112,6 +1112,151 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
         });
       });
 
+      // autk-db can leave rows out of a layer and keep the others in an order
+      // of its own, and autk-grammar hands a map only the features with a
+      // geometry: a map's positions are not the input's rows. Each feature
+      // Curio hands autk-db carries its row, read back from the export.
+      describe('positions as autk-db exported each layer', () => {
+        // Row 0 left out, the others the other way round, and a feature with
+        // no geometry between them, which the map is not handed.
+        const cropped = (handed: any[]) => [handed[2], { ...handed[1], geometry: null }, handed[1]];
+        const reversed = (handed: any[]) => [...handed].reverse();
+        /** A grammar that exports each table as *exportOf* says; its map's layer of *picking* is the one that picks. */
+        const exporting = (
+          exportOf: Record<string, (handed: any[]) => any[]>,
+          picking: string,
+          listeners: Record<string, (event: any) => void> = {},
+        ) => () => {
+          const layers: Record<string, any> = {};
+          const map = {
+            layerManager: { get layers() { return Object.values(layers); } },
+            get activePickingLayer() { return layers[picking] ?? null; },
+          };
+          const grammar: any = {
+            data: {},
+            mapLayer: (table: string) => (layers[table] ? { map, layerId: table } : undefined),
+            highlightOnMap: jest.fn(), clearHighlightOnMap: jest.fn(),
+            interactions: {
+              on: (event: string, listener: (event: any) => void) => {
+                listeners[event] = listener;
+                return () => {};
+              },
+            },
+            run: jest.fn(async (spec: any) => {
+              grammar.data = {};
+              for (const source of spec.data) {
+                const exported = (exportOf[source.outputTableName] ?? ((handed: any[]) => handed))(source.geojsonObject.features);
+                grammar.data[source.outputTableName] = Promise.resolve({ type: 'FeatureCollection', features: exported });
+                layers[source.outputTableName] = {
+                  layerInfo: { id: source.outputTableName },
+                  components: exported.filter((f: any) => f.geometry != null).map((_: any, i: number) => ({ featureIndex: i })),
+                };
+              }
+            }),
+          };
+          return grammar;
+        };
+        const lastGrammar = () => {
+          const results = grammarMock().AutkGrammar.mock.results;
+          return results[results.length - 1].value;
+        };
+        const select = (row: number) => [{ nodeId: 'bar', details: { highlight: { type: 'POINT', data: [row], priority: 1 } }, priority: 1 }];
+
+        test('a selection lights the position the map drew its row at, and nothing for a row left out', async () => {
+          grammarMock().AutkGrammar.mockImplementationOnce(exporting({ input_0: cropped }, 'input_0'));
+          const base = makeMockData({ outputCallback: jest.fn(), input: INPUT } as any);
+          const state = makeMockNodeState();
+          const { result, rerender } = renderHook(
+            ({ d }: { d: any }) => useAutkGrammarBehavior(d, state),
+            { initialProps: { d: base } },
+          );
+          await act(async () => { await result.current.applyGrammar!(MAP); });
+          const grammar = lastGrammar();
+
+          // The map drew row 2 first and row 1 second.
+          await act(async () => { rerender({ d: { ...base, interactions: select(2) } }); });
+          await waitFor(() => expect(grammar.highlightOnMap).toHaveBeenLastCalledWith('input_0', [0]));
+          await act(async () => { rerender({ d: { ...base, interactions: select(1) } }); });
+          await waitFor(() => expect(grammar.highlightOnMap).toHaveBeenLastCalledWith('input_0', [1]));
+          // Row 0 is not drawn: nothing lights.
+          const lit = grammar.highlightOnMap.mock.calls.length;
+          grammar.clearHighlightOnMap.mockClear();
+          await act(async () => { rerender({ d: { ...base, interactions: select(0) } }); });
+          await waitFor(() => expect(grammar.clearHighlightOnMap).toHaveBeenCalledWith('input_0'));
+          expect(grammar.highlightOnMap.mock.calls.length).toBe(lit);
+        });
+
+        test('a pick names the row the map drew at its position', async () => {
+          const listeners: Record<string, (event: any) => void> = {};
+          grammarMock().AutkGrammar.mockImplementationOnce(exporting({ input_0: cropped }, 'input_0', listeners));
+          const interactionsCallback = jest.fn();
+          const base = makeMockData({ nodeId: 'map-1', outputCallback: jest.fn(), interactionsCallback, input: INPUT } as any);
+          const state = makeMockNodeState();
+          const { result } = renderHook(({ d }: { d: any }) => useAutkGrammarBehavior(d, state), { initialProps: { d: base } });
+          await act(async () => { await result.current.applyGrammar!(MAP); });
+
+          await act(async () => { listeners['map:picking']({ selection: [0], layerId: 'input_0' }); });
+          await waitFor(() => expect(interactionsCallback).toHaveBeenLastCalledWith(
+            { autk_selection: expect.objectContaining({ type: 'POINT', data: [2], layerRef: 'input_0' }) }, 'map-1',
+          ));
+        });
+
+        // autk-map has one layer that picks: the last a document marks
+        // isPick, or one picked in its menu since.
+        test("a pick is on the layer that picks now, not the document's first that may", async () => {
+          const listeners: Record<string, (event: any) => void> = {};
+          grammarMock().AutkGrammar.mockImplementationOnce(exporting({ input_1: reversed }, 'input_1', listeners));
+          const interactionsCallback = jest.fn();
+          const base = makeMockData({
+            nodeId: 'map-1', outputCallback: jest.fn(), interactionsCallback,
+            input: { dataType: 'outputs', data: [INPUT, INPUT] },
+          } as any);
+          const state = makeMockNodeState();
+          const { result } = renderHook(({ d }: { d: any }) => useAutkGrammarBehavior(d, state), { initialProps: { d: base } });
+          const both = JSON.stringify({ map: { layerRefs: [{ dataRef: 'input_0', isPick: true }, { dataRef: 'input_1', isPick: true }] } });
+          await act(async () => { await result.current.applyGrammar!(both); });
+
+          // autk-grammar names the map by a table it draws, here the first.
+          await act(async () => { listeners['map:picking']({ selection: [0], layerId: 'input_0' }); });
+          await waitFor(() => expect(interactionsCallback).toHaveBeenLastCalledWith(
+            { autk_selection: expect.objectContaining({ type: 'POINT', data: [2], layerRef: 'input_1' }) }, 'map-1',
+          ));
+        });
+
+        test('guard: a pick read back once the map was drawn again is not sent', async () => {
+          const listeners: Record<string, (event: any) => void> = {};
+          let release = () => {};
+          const held = exporting({ input_0: cropped }, 'input_0', listeners);
+          grammarMock().AutkGrammar
+            .mockImplementationOnce(() => {
+              // Its export of input_0 comes only once released.
+              const grammar = held();
+              const run = grammar.run;
+              grammar.run = jest.fn(async (spec: any) => {
+                await run(spec);
+                const exported = grammar.data.input_0;
+                grammar.data = { input_0: new Promise((resolve) => { release = () => resolve(exported); }) };
+              });
+              return grammar;
+            })
+            .mockImplementationOnce(exporting({ input_0: cropped }, 'input_0'));
+          const interactionsCallback = jest.fn();
+          const base = makeMockData({ nodeId: 'map-1', outputCallback: jest.fn(), interactionsCallback, input: INPUT } as any);
+          const state = makeMockNodeState();
+          const { result } = renderHook(({ d }: { d: any }) => useAutkGrammarBehavior(d, state), { initialProps: { d: base } });
+          await act(async () => { await result.current.applyGrammar!(MAP); });
+
+          await act(async () => { listeners['map:picking']({ selection: [0], layerId: 'input_0' }); });
+          await act(async () => { await result.current.applyGrammar!(MAP); });
+          await act(async () => {
+            release();
+            await new Promise((resolve) => setTimeout(resolve, 0));
+          });
+          const picks = interactionsCallback.mock.calls.filter(([sent]) => sent?.autk_selection?.type === 'POINT');
+          expect(picks).toEqual([]);
+        });
+      });
+
       test("a plot's own selection back through a pool is left alone; another chart's is applied", async () => {
         const setPlotSelection = jest.fn();
         const clearHighlightOnPlot = jest.fn();

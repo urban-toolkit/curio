@@ -8,7 +8,7 @@ is the `ref` of each entry of `nodes`, and `widgets[]` an entry of `widgets`). T
 
 ## dataflow.read
 
-Read the project's saved dataflow, structure-first: every node (id, type, goal, content length, widgets, selection tags) and ALL edges, plus each node's last runtime status and the dataflow's scenarios with their levers, fixed context and outcomes. Node content is elided: use node.read for one node's content, or params {"include": ["content"]} for the full spec (large).
+Read the project's saved dataflow, structure-first: every node (id, type, goal, content length, widgets, selection tags, and what a Spatial Join, a Data Pool or a Simple View is set to when it is not its default) and ALL edges, plus each node's last runtime status and the dataflow's scenarios with their levers, fixed context and outcomes. Node content is elided: use node.read for one node's content, or params {"include": ["content"]} for the full spec (large).
 
 ### Parameters
 
@@ -123,7 +123,7 @@ Resolve one or more catalog packages against this account's installed set. Param
 
 ## dataflow.plan.write
 
-Propose a reviewed plan that changes the dataflow graph, by ending a reply with a dataflowPlan block (not a toolRequest): {"dataflowPlan": {"goal": "...", "nodes": [{"ref": "n1", "nodeType": "<packageId>/<templateId>", "title": "...", "intent": "...", "widgets": [...], "spatialJoin": {...}}], "edges": [{"from": "n1", "to": "<ref or existing node id>", "kind": "data"|"interaction"}], "scenarios": [...], "removeNodes": ["<existing node id>"], "removeEdges": ["<existing edge id>"]}}. {{include:rules/plan-rules.md}}
+Propose a reviewed plan that changes the dataflow graph, by ending a reply with a dataflowPlan block (not a toolRequest): {"dataflowPlan": {"goal": "...", "nodes": [{"ref": "n1", "nodeType": "<packageId>/<templateId>", "title": "...", "intent": "...", "widgets": [...], "spatialJoin": {...}, "dataPool": {...}, "simpleVis": {...}}], "edges": [{"from": "n1", "to": "<ref or existing node id>", "kind": "data"|"interaction"}], "scenarios": [...], "removeNodes": ["<existing node id>"], "removeEdges": ["<existing edge id>"]}}. {{include:rules/plan-rules.md}}
 
 ### Native
 
@@ -173,7 +173,7 @@ Propose installing ONE node package from the Nodes Catalog into this project. Pa
 
 ## node.create
 
-Propose adding ONE new node to the canvas. Params: {"nodeType": "<packageId>/<templateId>", "content": "...", "title": "<short header shown on the node>", "goal": "<one-line purpose>", "appearance": {"backgroundColor": "<palette name or #RRGGBB>"}, "widgets": [...], "spatialJoin": {...}}: title, goal, appearance, widgets and spatialJoin are optional; a note template renders title and backgroundColor, so give both for notes. A {{template.label:curio.builtin/parameter}} node holds no content and exactly one widget, whose name no other {{template.label:curio.builtin/parameter}} node's widget has. nodeType must be an id from the "Available node templates" list, never invented. The user reviews the proposal; nothing is added without their approval.
+Propose adding ONE new node to the canvas. Params: {"nodeType": "<packageId>/<templateId>", "content": "...", "title": "<short header shown on the node>", "goal": "<one-line purpose>", "appearance": {"backgroundColor": "<palette name or #RRGGBB>"}, "widgets": [...], "spatialJoin": {...}, "dataPool": {...}, "simpleVis": {...}}: title, goal, appearance, widgets, spatialJoin, dataPool and simpleVis are optional; a note template renders title and backgroundColor, so give both for notes. A template whose starter is a node's whole content, such as a Scout chart, gives the node that starter in a plan or a node.create: leave its content empty, set the template's widgets by name in "widgets", and its spec stays as it is. A {{template.label:curio.builtin/parameter}} node holds no content and exactly one widget, whose name no other {{template.label:curio.builtin/parameter}} node's widget has. nodeType must be an id from the "Available node templates" list, never invented. The user reviews the proposal; nothing is added without their approval.
 
 ### Parameters
 
@@ -223,3 +223,8 @@ Delegate one specialized capability to the agent that handles it, and receive it
 - widgets.name: Letters, digits and underscores: the code places it as {{widgets.reference:name}}.
 - widgets.label: What the Widgets tab shows beside the control.
 - spatialJoin: A Spatial Join node's operation and output; it holds no content.
+- dataPool: A Data Pool node's conflict modes, each OVERWRITE when absent; it holds no content.
+- dataPool.insideChart: How the selects of one chart combine.
+- dataPool.betweenCharts: How the latest selections of the charts linked to the pool combine.
+- simpleVis: A Simple View node's image column; it holds no content.
+- simpleVis.imageColumn: The one image column it shows, by name; every image column when absent.

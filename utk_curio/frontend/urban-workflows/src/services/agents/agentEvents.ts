@@ -12,7 +12,13 @@
  * attach/detach so the palette and the dock re-read without a page reload.
  */
 
-import type { AgentAppliedScenario, AgentPlanWidget, AgentSpatialJoinSetting } from "./types/proposal";
+import type {
+  AgentAppliedScenario,
+  AgentDataPoolSetting,
+  AgentPlanWidget,
+  AgentSimpleVisSetting,
+  AgentSpatialJoinSetting,
+} from "./types/proposal";
 
 export type AgentCreatedNode = {
   id: string;
@@ -31,12 +37,16 @@ export type AgentCreatedNode = {
    * shared node-appearance utility) — carried into live ``data.appearance``
    * so the next canvas save round-trips it. #662: the same for the node's
    * widgets and, on a copy, its lineage (``data.widgets``, ``data.copiedFrom``),
-   * and for a Spatial Join its operation and output (``data.spatialJoin``). */
+   * for a Spatial Join its operation and output (``data.spatialJoin``), for a
+   * Data Pool its modes (``data.dataPool``) and for a Simple View its image
+   * column (``data.simpleVis``). */
   metadata?: {
     appearance?: { backgroundColor?: string };
     widgets?: AgentPlanWidget[];
     copiedFrom?: string[];
     spatialJoin?: AgentSpatialJoinSetting;
+    dataPool?: AgentDataPoolSetting;
+    simpleVis?: AgentSimpleVisSetting;
   };
 };
 

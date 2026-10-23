@@ -262,6 +262,10 @@ proposal {proposal_id} created for node {node_id}; it awaits the user's explicit
 
 params.widgets: a {label} node cannot hold widgets; a widget is placed in a node's code or spec
 
+## mint.starter-is-content
+
+params.content: a {label} node starts from its template's own content, which a node.create does not replace. Leave content empty, and put the values it shows in params.widgets, under the names of its template's widgets: {widgets}
+
 ## mint.appearance-invalid
 
 params.appearance: {exc}
@@ -322,9 +326,9 @@ the plan's widgets or scenarios are invalid:
 
 the plan wires invalid fan-in:
 
-## plan.spatial-join-invalid
+## plan.node-settings-invalid
 
-the plan's Spatial Join settings are invalid:
+the plan's node settings are invalid:
 
 ## plan.remove-node-unknown
 
@@ -365,6 +369,38 @@ remove one data edge of the loop, or, where it should carry selections between t
 ## spatial-join.not-a-join
 
 {where}: a {label} node has no operation or output; only a Spatial Join node takes {key}
+
+## data-pool.not-object
+
+{where} must be an object, such as {"betweenCharts": "MERGE_AND"}
+
+## data-pool.unknown-keys
+
+{where} has keys a Data Pool does not: {unknown} (it has {setting_keys})
+
+## data-pool.not-a-mode
+
+{where} must be one of {modes}; got {value}, which a Data Pool reads as {default}
+
+## data-pool.not-a-pool
+
+{where}: a {label} node has no conflict modes; only a Data Pool node takes {key}
+
+## simple-vis.not-object
+
+{where} must be an object, such as {"imageColumn": "overlay_url"}
+
+## simple-vis.unknown-keys
+
+{where} has keys a Simple View does not: {unknown} (it has {setting_keys})
+
+## simple-vis.image-column-empty
+
+{where} must name a column, such as "overlay_url"; got {value}, which a Simple View reads as every image column
+
+## simple-vis.not-a-view
+
+{where}: a {label} node has no image column; only a Simple View node takes {key}
 
 ## plan.widgets-not-placeable
 

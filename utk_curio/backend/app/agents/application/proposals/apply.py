@@ -24,6 +24,7 @@ from utk_curio.backend.app.agents.application.proposals import mint as agents_mi
 from utk_curio.backend.app.agents.application.proposals import plans as agents_plans
 from utk_curio.backend.app.agents.application.proposals import store as agents_store
 from utk_curio.backend.app.agents.application.turns import roster as agents_roster
+from utk_curio.backend.app.agents.domain import node_settings
 from utk_curio.backend.app.agents.infrastructure import testing_provider
 from utk_curio.backend.app.projects import storage as projects_storage
 
@@ -630,7 +631,7 @@ def _insert_node(
     appearance: dict | None = None,
     title: str | None = None,
     widgets: list | None = None,
-    spatial_join: dict | None = None,
+    settings: dict | None = None,
 ) -> dict:
     """Append one server-minted node to the spec's dataflow (dev/48): fresh
     uuid id (collision-impossible, never from any param; a test run may
@@ -641,8 +642,9 @@ def _insert_node(
     node-appearance utility and persists at the canonical
     ``metadata.appearance.backgroundColor`` shape; callers that omit it stay
     byte-for-byte identical. ``widgets`` (#662), checked at mint, persist at
-    ``metadata.widgets`` the same way, and a Spatial Join's operation and
-    output (``spatial_join``) at ``metadata.spatialJoin``.
+    ``metadata.widgets`` the same way, and the node's ``settings``, by key
+    (``node_settings``: a Spatial Join's operation and output, a Data Pool's
+    modes, a Simple View's image column), each at ``metadata.<key>``.
     """
     dataflow = spec.setdefault("dataflow", {})
     nodes = dataflow.setdefault("nodes", [])
@@ -668,8 +670,8 @@ def _insert_node(
         created["metadata"] = {"appearance": dict(appearance)}
     if widgets:
         created.setdefault("metadata", {})["widgets"] = [dict(w) for w in widgets]
-    if spatial_join:
-        created.setdefault("metadata", {})["spatialJoin"] = dict(spatial_join)
+    for key, setting in (settings or {}).items():
+        created.setdefault("metadata", {})[key] = dict(setting)
     nodes.append(created)
     return created
 
@@ -701,7 +703,7 @@ def _apply_node_create(
         appearance=proposal.get("appearance"),  # dev/89: typed round-trip
         title=proposal.get("title"),  # dev/105 A2: the header the note renders
         widgets=proposal.get("widgets"),  # #662: what its code's references name
-        spatial_join=proposal.get("spatialJoin"),  # a Spatial Join's operation and output
+        settings=node_settings.of(proposal),  # a join's operation, a pool's modes, a view's image column
     )
     proposal["status"] = "applied"
     projects_storage.write_spec(user_key, project_id, spec)
