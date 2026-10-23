@@ -345,11 +345,20 @@ export interface AgentApplyResult {
   followUpProposals?: string[];
 }
 
+/** What left the dataflow when an apply completed a plan that removes: its
+ * nodes and connections, for the live canvas. Present on the row or Connect
+ * all that completes the plan. */
+export interface AgentPlanRemovals {
+  removedNodeIds?: string[];
+  removedEdgeIds?: string[];
+}
+
 /** dev/67-5 apply-node response: one created node + the per-node ledger. */
-export interface AgentPlanNodeApplyResult {
+export interface AgentPlanNodeApplyResult extends AgentPlanRemovals {
   attachmentId: string;
   proposalId: string;
-  status: "pending" | "already-applied";
+  /** "applied" when this row completed the plan. */
+  status: "pending" | "applied" | "already-applied";
   ref: string;
   /** already-applied only: the existing node's id. */
   nodeId?: string;
@@ -393,7 +402,7 @@ export interface AgentAttachedAgentRow {
 }
 
 /** dev/67-8 apply-edges response: per-edge outcomes + the bridge payload. */
-export interface AgentPlanEdgesResult {
+export interface AgentPlanEdgesResult extends AgentPlanRemovals {
   attachmentId: string;
   proposalId: string;
   status: AgentProposalStatus;

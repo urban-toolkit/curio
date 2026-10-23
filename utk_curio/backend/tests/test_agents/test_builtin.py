@@ -99,11 +99,10 @@ _DELEGABLE = {
     "agent.curio.dataflow-builder": {
         "content.quality.evaluate", "dataflow.explain",
         "dataset.discover", "dataset.fetch.author", "dataset.select",
-        "execution.followup.plan", "node.build", "node.content.generate",
+        "node.build", "node.content.generate",
         "node.kind.author", "package.build", "package.extend",
         "package.recommend", "research.notes.compose",
-        "research.verify", "workflow.coherence.validate", "workflow.plan.create",
-        "workflow.plan.refresh", "workflow.suggest",
+        "research.verify", "workflow.suggest",
     },
     "agent.curio.researcher": {"node.kind.author", "package.build", "package.extend"},
 }
@@ -802,7 +801,8 @@ class TestDataflowBuilderComposite:
             # dev/73: chat-path content updates; dev/84 Recommend packages,
             # dev/89 package-scale steps: its modes.
             "agent.curio.node-builder",
-            "agent.curio.dataflow-planner", "agent.curio.dataflow-reader",
+            # Not the Dataflow Planner: what its modes answer changes no node.
+            "agent.curio.dataflow-reader",
             "agent.curio.generated-content-evaluator",  # dev/86: advisory semantic check
             "agent.curio.researcher",  # dev/95 (Follow-up D) reviewed notes, dev/67-4 verification
         ]
@@ -1086,9 +1086,13 @@ class TestResearcher:
         # "spatialJoin"; and the text that promised what the code refuses
         # goes: a plan carrying code, a Topology verdict ending every applied
         # result, and workflow.plan.create decomposing a task (plan step 11).
-        # 2026-10-23: a pool starts at OVERWRITE and the plan sets its modes
-        # in "dataPool"; a Simple View names its image column in "simpleVis".
-        "ce602024e4ae9f068e634bb5ecb6255c4a1830ef05f3c123595d0443923b688a"
+        # 2026-10-23: every applied plan ends with the Topology verdict again,
+        # since one applied row by row or by Connect all now does; and the
+        # Dataflow Planner leaves the Builder's delegations, so its coherence
+        # check is no longer offered (proposal paths, step 2). A pool starts
+        # at OVERWRITE and the plan sets its modes in "dataPool"; a Simple
+        # View names its image column in "simpleVis" (step 3).
+        "e6cdb1caee09f5743cf16a2d2a9732ddce1c548afa54ad28d259dbbface151db"
     )
 
     def test_manifest_surface(self):

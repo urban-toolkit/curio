@@ -26,7 +26,8 @@ from utk_curio.backend.app.agents.application.proposals import store as agents_s
 from utk_curio.backend.app.agents.application.turns import delegates as agents_delegates
 from utk_curio.backend.app.agents.application.turns import grounding as agents_grounding
 from utk_curio.backend.app.agents.application.turns import roster as agents_roster
-from utk_curio.backend.app.execution.workflow_spec import CONTENT_KIND_NONE
+from utk_curio.backend.app.execution.code_references import check_widget_def
+from utk_curio.backend.app.execution.workflow_spec import CONTENT_KIND_NONE, PARAMETER_TYPE
 from utk_curio.backend.app.projects import storage as projects_storage
 from utk_curio.backend.app.agents.domain import agent_text
 
@@ -667,12 +668,23 @@ def _mint_node_content_write(
     )
 
 
-def _node_create_widgets(entry: dict, raw: object) -> tuple[list, list[str]]:
+def _node_create_widgets(entry: dict, raw: object, nodes: list) -> tuple[list, list[str]]:
     """#662: the widgets a created node declares, or why they are refused: a
-    widget is placed by a node's code or spec, so only such a node holds one."""
+    widget is placed by a node's code or spec, so only such a node holds one.
+    A Parameter node holds exactly one, which no other Parameter node of the
+    dataflow (*nodes*) names: a plan's Parameter node's rule
+    (``plan_scenarios.mint_errors``), in its words."""
     widgets, problems = widget_grammar.parse_widgets(raw, "params.widgets")
     if problems:
         return [], problems
+    if str(entry.get("id") or "").split("@", 1)[0] == PARAMETER_TYPE:
+        if len(widgets) != 1:
+            return [], [agent_text.message("plan.parameter-one-widget", where="the node you create")]
+        taken = agents_plan_scenarios._parameter_widgets(nodes, set())
+        problem = check_widget_def(widgets[0], taken, parameter=True)
+        if problem:
+            return [], [f"params.widgets[0] ({widgets[0]['name']!r}): {problem}"]
+        return widgets, []
     if widgets and entry.get("contentKind") not in ("code", "grammar"):
         return [], [agent_text.message("mint.widgets-not-placeable", label=entry.get('label') or entry.get('id'))]
     return widgets, []
@@ -739,9 +751,17 @@ def _mint_node_create(
     settings, setting_errors = _node_create_settings(user_key, project_id, entry, params)
     if setting_errors:
         return agents_tool_rounds._refuse_params("; ".join(setting_errors))
+    # The dataflow the widgets are checked in: a Parameter node's widget is
+    # named as no other Parameter node's is.
+    saved = projects_storage.read_spec(user_key, project_id)
+    if saved is None:
+        return "refused", agent_text.message("mint.no-saved-spec"), None
     # Read before the gate: a chart's or a map's document is checked with the
     # widgets the node declares.
-    widgets, widget_errors = _node_create_widgets(entry, params.get("widgets"))
+    widgets, widget_errors = _node_create_widgets(
+        entry, params.get("widgets"),
+        [n for n in (saved.get("dataflow") or {}).get("nodes") or [] if isinstance(n, dict)],
+    )
     if widget_errors:
         return agents_tool_rounds._refuse_params("; ".join(widget_errors))
     if starter is not None:
@@ -758,7 +778,7 @@ def _mint_node_create(
     verdict, refusal = (None, None) if starter is not None else agents_grounding._gate_generated_content(
         user_key, project_id, loop_ctx,
         code=proposed, engine=source_grounding.code_engine(entry), node_type=entry["id"], params=params,
-        chips=agents_grounding._chip_context(projects_storage.read_spec(user_key, project_id), widgets=widgets),
+        chips=agents_grounding._chip_context(saved, widgets=widgets),
         widgets=widgets,
     )
     if refusal:

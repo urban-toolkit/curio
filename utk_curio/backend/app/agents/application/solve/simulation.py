@@ -161,7 +161,7 @@ def _simulate_events(
     """The driver body: read fresh state → one action → persist → emit —
     repeated in auto until completion, a pause, or cancellation. Canvas
     mutations ride the stream (``node_created`` / ``node_content_applied`` /
-    ``edges_created``) so the frontend applies them live."""
+    ``edges_created`` / ``plan_removals``) so the frontend applies them live."""
     yield from SimulationDriver(
         user_key, project_id, attachment_id, config, plan_proposal_id, simulate_execution_id, mode, stop, exec_fn,
     ).events()
@@ -315,10 +315,30 @@ class SimulationDriver:
             pass
 
     # ── the actions ──────────────────────────────────────────────────────────
+    def _refused(self, exc: AgentServiceError) -> dict:
+        """An apply the plan's own checks refused (a node it removes was
+        edited since the review, say): the run pauses with the reason."""
+        return self._pause({"kind": "apply-refused", "message": str(exc)})
+
+    def _removals(self, result: dict):
+        """What left the dataflow when this apply completed the plan, for the
+        live canvas, whose next save would otherwise put it back. Ahead of the
+        apply's own nodes and edges, as a whole applied plan's removals are."""
+        if result.get("removedNodeIds") or result.get("removedEdgeIds"):
+            yield "plan_removals", {
+                "proposalId": self.plan_proposal_id,
+                "removedNodeIds": result.get("removedNodeIds") or [],
+                "removedEdgeIds": result.get("removedEdgeIds") or [],
+            }
+
     def _create(self, ref):
-        result = agents_plans.apply_plan_node(
-            self.user_key, self.project_id, self.attachment_id, self.plan_proposal_id, ref
-        )
+        try:
+            result = agents_plans.apply_plan_node(
+                self.user_key, self.project_id, self.attachment_id, self.plan_proposal_id, ref
+            )
+        except AgentServiceError as exc:
+            return self._refused(exc)
+        yield from self._removals(result)
         if result.get("createdNode"):
             yield "node_created", {"createdNode": result["createdNode"]}
         if result.get("createdEdges"):
@@ -402,9 +422,13 @@ class SimulationDriver:
         return None
 
     def _connect(self):
-        edges_result = agents_plans.apply_plan_edges(
-            self.user_key, self.project_id, self.attachment_id, self.plan_proposal_id, None
-        )
+        try:
+            edges_result = agents_plans.apply_plan_edges(
+                self.user_key, self.project_id, self.attachment_id, self.plan_proposal_id, None
+            )
+        except AgentServiceError as exc:
+            return self._refused(exc)
+        yield from self._removals(edges_result)
         if edges_result.get("createdEdges"):
             yield "edges_created", {"createdEdges": edges_result["createdEdges"]}
         refused = {

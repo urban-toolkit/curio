@@ -6,6 +6,7 @@
 import { useCallback, useMemo, useState } from "react";
 
 import { agentsApi, notifyAgentCanvasMutation } from "../../services/agents";
+import { bridgePlanRemovals } from "./useAgentProposals";
 
 export interface AgentSimulationSlice {
   runSimulation: (attachmentId: string, mode: "step" | "auto") => Promise<Record<string, unknown>>;
@@ -47,6 +48,12 @@ export function useAgentSimulation(opts: {
           } else if (name === "edges_created" && Array.isArray(payload.createdEdges)) {
             const edges = payload.createdEdges as Array<{ id: string; source: string; target: string }>;
             notifyAgentCanvasMutation({ kind: "edges-created", batchId: `sim:${edges.map((e) => e.id).join(",")}`, edges });
+          } else if (name === "plan_removals") {
+            // The apply that completed the plan removed what it names.
+            bridgePlanRemovals(String(payload.proposalId ?? ""), {
+              removedNodeIds: Array.isArray(payload.removedNodeIds) ? (payload.removedNodeIds as string[]) : [],
+              removedEdgeIds: Array.isArray(payload.removedEdgeIds) ? (payload.removedEdgeIds as string[]) : [],
+            });
           } else if (name === "stage") {
             narrate(`${String(payload.action)}${payload.label ? `: ${String(payload.label)}` : ""}`);
           } else if (name === "node_executed") {

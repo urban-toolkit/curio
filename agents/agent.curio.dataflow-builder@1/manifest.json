@@ -80,15 +80,6 @@
     "agent.curio.dataset-finder",
     "agent.curio.node-builder",
     {
-      "id": "agent.curio.dataflow-planner",
-      "capabilities": [
-        "workflow.plan.create",
-        "execution.followup.plan",
-        "workflow.plan.refresh",
-        "workflow.coherence.validate"
-      ]
-    },
-    {
       "id": "agent.curio.dataflow-reader",
       "capabilities": [
         "workflow.suggest",
