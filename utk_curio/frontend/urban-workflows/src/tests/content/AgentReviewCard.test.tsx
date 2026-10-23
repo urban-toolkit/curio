@@ -474,6 +474,57 @@ describe("AgentReviewCard: a planned Spatial Join says how it joins", () => {
   });
 });
 
+describe("AgentReviewCard: a planned Data Pool and Simple View say their settings in their own words", () => {
+  const settingsPart = () =>
+    ({
+      type: "proposal",
+      proposalId: "p-settings",
+      tool: "dataflow.plan.write",
+      summary: "Apply plan · 4 nodes, 3 edges",
+      preview: "",
+      pins: { baseGraphDigest: "abc" },
+      status: "pending",
+      plan: {
+        goal: "show the overlays of the photos picked in both charts",
+        nodes: [
+          { ref: "photos", nodeType: "curio.builtin/data-loading", title: "Photos", intent: "street photos" },
+          {
+            ref: "pool", nodeType: "curio.builtin/data-pool", title: "Picked photos",
+            intent: "the photos picked in both charts", dataPool: { betweenCharts: "MERGE_AND" },
+          },
+          {
+            ref: "either", nodeType: "curio.builtin/data-pool", title: "Either chart",
+            intent: "the photos picked in either chart",
+            dataPool: { insideChart: "MERGE_OR", betweenCharts: "MERGE_OR" },
+          },
+          {
+            ref: "view", nodeType: "curio.builtin/vis-simple", title: "Overlays",
+            intent: "the overlay of each picked photo", simpleVis: { imageColumn: "overlay_url" },
+          },
+        ],
+        edgeCount: 3,
+      },
+    }) as unknown as AgentProposalPart;
+
+  it("a pool's row names its modes as its selects do, a view's its image column, and no other row names one", () => {
+    render(
+      <AgentReviewCard
+        part={settingsPart()}
+        onApplyPlanNode={jest.fn()}
+        onSavePlanGoal={jest.fn()}
+        planNodeState={{ appliedRefs: [], editedGoals: {} }}
+      />,
+    );
+    expect(screen.getByText("Conflict between visualizations: Merge (AND)")).toBeInTheDocument();
+    expect(
+      screen.getByText("Conflict inside visualization: Merge (OR); Conflict between visualizations: Merge (OR)"),
+    ).toBeInTheDocument();
+    expect(screen.getAllByText(/^Conflict /)).toHaveLength(2);
+    expect(screen.getByText("Image column: overlay_url")).toBeInTheDocument();
+    expect(screen.getAllByText(/^Image column: /)).toHaveLength(1);
+  });
+});
+
 describe("AgentReviewCard — dev/67-7 validation block", () => {
   const validated = (verdict: "pass" | "fail", evidence = {}): AgentProposalPart => ({
     ...part(),
