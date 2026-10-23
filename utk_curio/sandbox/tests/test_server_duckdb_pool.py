@@ -127,7 +127,10 @@ SERVE_SCRIPT = textwrap.dedent("""
         seen["left"] = left
         if imported is not None:
             try:
-                imported.execute("select 1")
+                # Read to the end: on DuckDB 2.0 a result left unread keeps the
+                # connection busy, and the duckdb.sql below runs on it while it
+                # is still the default.
+                imported.execute("select 1").fetchall()
                 seen["open"] = True
             except Exception as exc:
                 seen["open"] = "closed" not in str(exc).lower()
