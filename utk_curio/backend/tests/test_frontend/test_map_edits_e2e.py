@@ -519,7 +519,13 @@ def _wait_for_lit(page, map_id: str, expected, what: str, table: str = LAYER, ke
             return
         page.wait_for_timeout(250)
     shown = sorted(expected) if not isinstance(expected, set) else sorted(expected, key=str)
-    raise AssertionError(f"{what}: the map {map_id} lights the {key} {got} on {table}, not {shown}")
+    # What every table's layer shows, so a failure says whether the layer picks at all.
+    state = page.evaluate(_MAP_STATE_JS, map_id) or {}
+    layers = {name: (layer.get("pick"), _ids(layer.get("lit"), key)) for name, layer in state.items()}
+    raise AssertionError(
+        f"{what}: the map {map_id} lights the {key} {got} on {table}, not {shown}; "
+        f"each table as (picks, lit {key}): {layers}"
+    )
 
 
 _SHOWN_JS = """([selector, x, y]) => document.elementFromPoint(x, y) === document.querySelector(selector)"""
