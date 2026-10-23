@@ -6,6 +6,7 @@ import json
 from utk_curio.backend.app.common.user_storage import users_base
 from utk_curio.backend.tests.test_datasets.computed_test_helpers import (
     auth_headers,
+    bundle_parts_size,
     create_project,
     save_project_with_output,
 )
@@ -245,6 +246,16 @@ def test_process_python_code_auto_installs_outputs_bundle(client, user_and_token
     ).get_json()
     assert preview.get("bundle") is True
     assert len(preview.get("parts") or []) >= 2
+
+    # Its size in the store is the bytes of its parts, not of its bundle.json (#1060).
+    from pathlib import Path
+
+    bundle = Path(item["path"])
+    parts = bundle_parts_size(bundle)
+    assert item["sizeBytes"] == parts, (
+        f"sizeBytes {item['sizeBytes']}: its parts are {parts} bytes "
+        f"and its bundle.json {bundle.stat().st_size}"
+    )
 
 
 def test_process_python_code_auto_installs_dataset(client, user_and_token, monkeypatch):
