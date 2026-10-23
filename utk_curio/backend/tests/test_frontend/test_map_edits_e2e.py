@@ -204,9 +204,10 @@ RUN_MS = 300000
 #: and the column that tells a building's parts apart: each part's own OSM id.
 BUILDINGS = "table_osm_buildings"
 PART_KEY = "osm_id"
-#: How wide a building's corners spread on the page, in pixels, once the map
-#: is zoomed in on it for a corner to be dragged.
-PARTS_SPREAD = 200
+#: How much room, in page pixels, the map is zoomed in to give a corner to be
+#: dragged, and the least a corner needs for a press to take it alone.
+CORNER_ROOM = 16
+PRESS_ROOM = 6
 
 
 def _spec(last_code: str = COUNT_CODE, last_title: str = "Count", *, linked: bool = True) -> dict:
@@ -1457,8 +1458,8 @@ def test_a_chicago_building_of_several_parts_is_reshaped_one_part_at_a_time(
     """The shipped Chicago Loop layers: OSM's buildings come one row per part,
     each part with its building's ``building_id`` and an ``osm_id`` of its
     own, and autk-db's crop keeps buildings the map draws two or more parts of.
-    The largest such building near the middle of the map, picked on it in the
-    node's Edit, the map zoomed in on it:
+    Such a building near the middle of the map, whose parts have corners with
+    room around them, picked on it in the node's Edit, the map zoomed in on it:
 
     1. Move points shows the corners of every part;
     2. a corner of one part, dragged, is one edit that names that part alone,
@@ -1504,8 +1505,9 @@ def test_a_chicago_building_of_several_parts_is_reshaped_one_part_at_a_time(
         f"it draws {len(drawn)} rows of {len(drawn_parts)} buildings, "
         f"{sum(len(parts) >= 2 for parts in drawn_parts.values())} of them in two or more parts"
     )
-    # Largest first, by its smallest part, so that each part has room on the map.
-    parted.sort(key=lambda building: -min(_extent(row["geometry"]) for row in rows_of[building]))
+    # First the buildings whose first part, and whose other parts, each have a
+    # corner with the most room around it: a press takes that corner alone.
+    parted.sort(key=lambda building: -_drag_room(rows_of[building]))
 
     edit = node_locator(page, edit_id)
     frame_nodes(page, [edit_id, map_id])
@@ -1550,12 +1552,13 @@ def test_a_chicago_building_of_several_parts_is_reshaped_one_part_at_a_time(
             f"building {building}, not the {expected_corners} corners of its {len(rows)} parts"
         )
 
-    # Zoomed in on it with the wheel, at its middle, until its corners spread
-    # over PARTS_SPREAD pixels, so that a press takes the corner it is on.
+    # Zoomed in on it with the wheel, at its middle, in half steps, until a
+    # corner to drag has CORNER_ROOM pixels around it, the whole building kept
+    # well inside the map.
     page.mouse.move(*_middle(corners))
-    delta = -ZOOM_DELTA
-    for step in range(ZOOM_STEPS):
-        if _spread(corners) >= PARTS_SPREAD:
+    delta = -ZOOM_DELTA // 2
+    for step in range(2 * ZOOM_STEPS):
+        if _best_room(corners) >= CORNER_ROOM:
             break
         page.mouse.wheel(0, delta)
         page.wait_for_timeout(500)
@@ -1563,17 +1566,25 @@ def test_a_chicago_building_of_several_parts_is_reshaped_one_part_at_a_time(
         if step == 0 and _spread(now) < _spread(corners):
             # This wheel zooms out the other way round.
             delta = -delta
+        elif not _within(now, box, 40):
+            # Zoomed past the map's edges: a step back, and no further.
+            page.mouse.wheel(0, -delta)
+            page.wait_for_timeout(500)
+            corners = _wait_for_corners(page, map_id, bool, "a zoom back")
+            break
         corners = now
 
     # 2. A corner of a part other than the first, with no other corner near
-    # it, dragged with Move points.
+    # it, dragged with Move points: one a press reaches, inside the map with
+    # nothing over it, drawn in the map's highlight when one such is. A press
+    # takes the corner nearest it, wherever the map draws its buildings over.
     dismiss_toasts(page)
     corners = _wait_for_corners(page, map_id, bool, "the zoom")
-    parts = {corner["part"] for corner in corners}
-    usable = [corner for corner in corners if corner["usable"] and (len(parts) < 2 or corner["part"] != 0)]
-    corner = max(usable, key=lambda c: _room(c, corners), default=None)
-    assert corner and _room(corner, corners) >= 6, (
-        f"Move points shows no corner of building {building} to drag with room around it: {corners}"
+    roomy = [c for c in _to_drag(corners) if c["inside"] and c["onTop"] and _room(c, corners) >= PRESS_ROOM]
+    corner = max(roomy, key=lambda c: (c["lit"], _room(c, corners)), default=None)
+    assert corner, (
+        f"Move points shows no corner of building {building} to drag with {PRESS_ROOM} pixels around it "
+        f"(the most room a corner has is {_best_room(corners):.1f}): {corners}"
     )
     part = corner["part"] or 0
     part_id = (rows[part].get("properties") or {}).get(PART_KEY)
@@ -1672,24 +1683,63 @@ def _told_apart(rows: list[dict]) -> bool:
     return len(rows) >= 2 and all(row.get("geometry") for row in rows) and None not in ids and len(set(ids)) == len(ids)
 
 
-def _extent(geometry: dict | None) -> float:
-    """The longer side of a shape's bounding box, in its layer's units."""
-    values = _coordinates(geometry or {})
-    xs, ys = values[0::2], values[1::2]
-    return max(max(xs) - min(xs), max(ys) - min(ys)) if xs else 0.0
-
-
-def _corner_count(geometry: dict | None) -> int:
-    """How many corners Move points shows for a shape: each of its rings',
-    an area's without the corner that closes it."""
+def _rings_of(geometry: dict | None) -> list[list[tuple[float, float]]]:
+    """A shape's corners, ring by ring, as Move points shows them: an area's
+    rings without the corner that closes each."""
     kind, coordinates = (geometry or {}).get("type"), (geometry or {}).get("coordinates") or []
     rings = {
         "Point": [[coordinates]], "MultiPoint": [[point] for point in coordinates],
         "LineString": [coordinates], "MultiLineString": coordinates,
         "Polygon": coordinates, "MultiPolygon": [ring for polygon in coordinates for ring in polygon],
     }.get(kind, [])
-    closed = kind in ("Polygon", "MultiPolygon")
-    return sum(len(ring) - 1 if closed and len(ring) > 1 and ring[0] == ring[-1] else len(ring) for ring in rings)
+    out = []
+    for ring in rings:
+        points = [(float(point[0]), float(point[1])) for point in ring]
+        if kind in ("Polygon", "MultiPolygon") and len(points) > 1 and points[0] == points[-1]:
+            points = points[:-1]
+        out.append(points)
+    return out
+
+
+def _corner_count(geometry: dict | None) -> int:
+    """How many corners Move points shows for a shape."""
+    return sum(len(ring) for ring in _rings_of(geometry))
+
+
+def _drag_room(rows: list[dict]) -> float:
+    """How much room, in its layer's units, a building gives a corner to drag:
+    the most a corner of its first part has from every other corner of the
+    building, and the most a corner of its other parts has, whichever is less."""
+    corners = [(part, point) for part, row in enumerate(rows) for ring in _rings_of(row.get("geometry")) for point in ring]
+
+    def room(i: int) -> float:
+        x, y = corners[i][1]
+        return min((math.hypot(x - ox, y - oy) for j, (_, (ox, oy)) in enumerate(corners) if j != i), default=math.inf)
+
+    first = max((room(i) for i, (part, _) in enumerate(corners) if part == 0), default=0.0)
+    others = max((room(i) for i, (part, _) in enumerate(corners) if part > 0), default=0.0)
+    return min(first, others)
+
+
+def _to_drag(corners: list[dict]) -> list[dict]:
+    """The corners a test drags: those of the parts after the first, when the
+    overlay names their parts, else every one."""
+    parts = {corner["part"] for corner in corners}
+    return [corner for corner in corners if len(parts) < 2 or corner["part"] != 0]
+
+
+def _best_room(corners: list[dict]) -> float:
+    """The most room, in page pixels, a corner to drag has from every other corner."""
+    return max((_room(corner, corners) for corner in _to_drag(corners)), default=0.0)
+
+
+def _within(corners: list[dict], box: dict, margin: float) -> bool:
+    """Whether every one of *corners* lies *margin* pixels inside *box*."""
+    return all(
+        box["x"] + margin < c["x"] < box["x"] + box["width"] - margin
+        and box["y"] + margin < c["y"] < box["y"] + box["height"] - margin
+        for c in corners
+    )
 
 
 def _wait_for_corners(page, map_id: str, ready, what: str) -> list[dict]:
@@ -1828,9 +1878,10 @@ _DRAWN_POINT_JS = """async ({ id, at, background }) => {
 # Each corner Move points shows, in page coordinates, as the map's overlay
 # lists them (data-corners, in the map's own pixels, which its box scales to
 # the page): its part (the row of the feature it is a corner of, null when
-# the overlay names none), its ring and index in that part, and whether a
-# press can take it: its middle well inside the map's canvas, room left for
-# the drag, with the map on top there and drawing it in its highlight.
+# the overlay names none), its ring and index in that part, whether its
+# middle is well inside the map's canvas, room left for the drag (inside),
+# with the map on top there (onTop) and drawing it in its highlight (lit),
+# and all three (usable).
 _CORNERS_JS = """async ({ id, highlight }) => {
     const node = document.querySelector(`.react-flow__node[data-id="${id}"]`);
     const canvas = document.getElementById('autk-grammar-map-' + id);
@@ -1862,9 +1913,11 @@ _CORNERS_JS = """async ({ id, highlight }) => {
     return JSON.parse(overlay.getAttribute('data-corners') || '[]').map((corner) => {
         const x = box.left + corner.x * sx, y = box.top + corner.y * sy;
         const inside = x > area.left + 30 && x < area.right - 30 && y > area.top + 30 && y < area.bottom - 30;
+        const onTop = document.elementFromPoint(x, y) === canvas;
+        const shown = lit(x, y);
         return {
             part: corner.part === undefined ? null : corner.part, ring: corner.ring, index: corner.index, x, y,
-            usable: inside && document.elementFromPoint(x, y) === canvas && lit(x, y),
+            inside, onTop, lit: shown, usable: inside && onTop && shown,
         };
     });
 }"""
