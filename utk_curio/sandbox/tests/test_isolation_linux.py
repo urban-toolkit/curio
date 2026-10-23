@@ -1315,9 +1315,10 @@ def _thread_names_of(pid):
 def test_the_zygote_is_single_threaded_once_it_has_forked(isolated):
     """After its first fork, only the accept loop may be left running.
 
-    ``import duckdb`` opens a connection with a pool of threads, and children
-    forked with that pool alive crashed inside DuckDB, so the zygote closes it
-    before serving (``zygote._release_import_time_duckdb``). numpy's OpenBLAS
+    On DuckDB 1.x, ``import duckdb`` opens a connection with a pool of threads
+    (2.0 opens it on first use only), and children forked with that pool alive
+    crashed inside DuckDB, so the zygote closes it before serving
+    (``zygote._release_import_time_duckdb``). numpy's OpenBLAS
     pool is still there when serving starts but tears itself down on the first
     fork, hence one execution before counting.
 
