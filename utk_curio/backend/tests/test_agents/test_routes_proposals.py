@@ -485,6 +485,25 @@ class TestNodeCreate:
         # Apply is deterministic — no quota consumed.
         assert ledger.aggregates(_user_dir_key(user))["runs"] == runs_before
 
+    def test_the_created_node_names_the_agent_that_proposed_it(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        """The canvas starts the node's history with an entry named after the
+        agent, as it names an applied change to a node's code: the apply names
+        the agent on the node it hands the canvas, never on the saved node."""
+        from utk_curio.backend.app.agents.domain import builtin
+
+        user, token = user_and_token
+        att_id, _ = self._setup(client, token=token, user=user, project_id=alice_project, monkeypatch=monkeypatch)
+        proposal = self._proposal_from_run(self._run(client, token, alice_project, att_id))
+        resp = client.post(
+            f"/api/agents/projects/{alice_project}/attachments/{att_id}/proposals/{proposal['proposalId']}/apply",
+            headers=_auth(token),
+        )
+        assert resp.status_code == 200, resp.get_data(as_text=True)
+        created = resp.get_json()["createdNode"]
+        assert created["agent"] == builtin.get_builtin_manifest(self.COORD).name
+        saved = next(n for n in self._spec_nodes(user, alice_project) if n["id"] == created["id"])
+        assert "agent" not in saved
+
     def test_large_content_node_create_mints_and_applies(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
         """Issue #245 — the reported bug, end to end.
 
@@ -2270,6 +2289,38 @@ class TestPackageBuilderTools:
         spec = projects_storage.read_spec(user_key, alice_project)
         node = next(n for n in spec["dataflow"]["nodes"] if n["id"] == created["id"])
         assert node["metadata"]["appearance"]["backgroundColor"] == "#fbd3e0"
+
+    def test_the_created_nodes_name_the_agent_that_drafted_them(self, client, user_and_token, tmp_curio,
+                                                                 alice_project, monkeypatch):
+        """Each node the draft adds starts its history on the canvas with an
+        entry named after the agent, as a node.create apply's does; the saved
+        nodes carry no name."""
+        from utk_curio.backend.app.agents.domain import builtin
+        from utk_curio.backend.app.projects import storage as projects_storage
+        from utk_curio.backend.app.projects.services import _user_dir_key
+
+        user, token = user_and_token
+        att_id, _ = self._setup(
+            client, token, alice_project, monkeypatch,
+            replies=[self._draft_tail(self._draft_params()), "Proposed for your review."],
+        )
+        run = self._run(client, token, alice_project, att_id)
+        assert run.status_code == 200, run.get_data(as_text=True)
+        proposal = next(p for p in run.get_json()["content"] if p["type"] == "proposal")
+        resp = client.post(
+            f"/api/agents/projects/{alice_project}/attachments/{att_id}"
+            f"/proposals/{proposal['proposalId']}/apply",
+            headers=_auth(token),
+        )
+        assert resp.status_code == 200, resp.get_data(as_text=True)
+        created = resp.get_json()["createdNodes"]
+        name = builtin.get_builtin_manifest(self.COORD).name
+        assert created and [node["agent"] for node in created] == [name] * len(created)
+        with client.application.app_context():
+            user_key = _user_dir_key(user)
+        ids = {node["id"] for node in created}
+        saved = [n for n in projects_storage.read_spec(user_key, alice_project)["dataflow"]["nodes"] if n["id"] in ids]
+        assert len(saved) == len(created) and all("agent" not in n for n in saved)
 
     def test_invalid_draft_refuses_at_mint(self, client, user_and_token, tmp_curio,
                                            alice_project, monkeypatch):

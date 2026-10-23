@@ -1,0 +1,156 @@
+{
+  "description": "How a load keys the node histories a saved dataflow holds (its nodeProvenance): rekeyNodeProvenance in nodeProvenanceKeys.ts, and its twin rekey_node_provenance in utk_curio/backend/app/projects/node_provenance.py, which the agents' node.history.read keys them with. Jest (src/tests/utils/nodeProvenanceKeysCases.test.ts) and pytest (backend/tests/test_projects/test_node_provenance_keys.py) run every case. 'saved' is what the dataflow holds, 'nodeIds' its nodes, and 'keyed' the histories a load files by node id.",
+  "cases": [
+    {
+      "name": "a key that is a node id stays",
+      "saved": {
+        "node-1": [
+          {"id": 1, "parentId": null, "code": "run 1", "inputs": [], "outputs": [], "startTime": "", "endTime": ""}
+        ]
+      },
+      "nodeIds": ["node-1"],
+      "keyed": {
+        "node-1": [
+          {"id": 1, "parentId": null, "code": "run 1", "inputs": [], "outputs": [], "startTime": "", "endTime": ""}
+        ]
+      }
+    },
+    {
+      "name": "an old key moves under the node id it ends with",
+      "saved": {
+        "loading@1-3f2a9c1e-7b4d-4e8a-9c1f-2d6b8e0a4c57": [
+          {"id": 1, "parentId": null, "code": "run 1", "inputs": [], "outputs": [], "startTime": "", "endTime": ""},
+          {"id": 2, "parentId": 1, "code": "run 2", "inputs": [], "outputs": [], "startTime": "", "endTime": ""}
+        ]
+      },
+      "nodeIds": ["3f2a9c1e-7b4d-4e8a-9c1f-2d6b8e0a4c57"],
+      "keyed": {
+        "3f2a9c1e-7b4d-4e8a-9c1f-2d6b8e0a4c57": [
+          {"id": 1, "parentId": null, "code": "run 1", "inputs": [], "outputs": [], "startTime": "", "endTime": ""},
+          {"id": 2, "parentId": 1, "code": "run 2", "inputs": [], "outputs": [], "startTime": "", "endTime": ""}
+        ]
+      }
+    },
+    {
+      "name": "old and new entries of one node merge in the order they were made",
+      "saved": {
+        "3f2a9c1e-7b4d-4e8a-9c1f-2d6b8e0a4c57": [
+          {"id": 3, "parentId": 2, "code": "run 3", "inputs": [], "outputs": [], "startTime": "", "endTime": ""}
+        ],
+        "vega@1-3f2a9c1e-7b4d-4e8a-9c1f-2d6b8e0a4c57": [
+          {"id": 1, "parentId": null, "code": "run 1", "inputs": [], "outputs": [], "startTime": "", "endTime": ""},
+          {"id": 2, "parentId": 1, "code": "run 2", "inputs": [], "outputs": [], "startTime": "", "endTime": ""}
+        ]
+      },
+      "nodeIds": ["3f2a9c1e-7b4d-4e8a-9c1f-2d6b8e0a4c57"],
+      "keyed": {
+        "3f2a9c1e-7b4d-4e8a-9c1f-2d6b8e0a4c57": [
+          {"id": 1, "parentId": null, "code": "run 1", "inputs": [], "outputs": [], "startTime": "", "endTime": ""},
+          {"id": 2, "parentId": 1, "code": "run 2", "inputs": [], "outputs": [], "startTime": "", "endTime": ""},
+          {"id": 3, "parentId": 2, "code": "run 3", "inputs": [], "outputs": [], "startTime": "", "endTime": ""}
+        ]
+      }
+    },
+    {
+      "name": "the longest node id an old key ends with takes it",
+      "saved": {
+        "loading-a-b": [
+          {"id": 1, "parentId": null, "code": "run 1", "inputs": [], "outputs": [], "startTime": "", "endTime": ""}
+        ]
+      },
+      "nodeIds": ["b", "a-b"],
+      "keyed": {
+        "a-b": [
+          {"id": 1, "parentId": null, "code": "run 1", "inputs": [], "outputs": [], "startTime": "", "endTime": ""}
+        ]
+      }
+    },
+    {
+      "name": "a node id with a dash keeps its own entries, though it ends with another node's id",
+      "saved": {
+        "a-b": [
+          {"id": 1, "parentId": null, "code": "run 1", "inputs": [], "outputs": [], "startTime": "", "endTime": ""}
+        ],
+        "b": [
+          {"id": 2, "parentId": null, "code": "run 2", "inputs": [], "outputs": [], "startTime": "", "endTime": ""}
+        ]
+      },
+      "nodeIds": ["b", "a-b"],
+      "keyed": {
+        "a-b": [
+          {"id": 1, "parentId": null, "code": "run 1", "inputs": [], "outputs": [], "startTime": "", "endTime": ""}
+        ],
+        "b": [
+          {"id": 2, "parentId": null, "code": "run 2", "inputs": [], "outputs": [], "startTime": "", "endTime": ""}
+        ]
+      }
+    },
+    {
+      "name": "a key of no node in the dataflow stays as it is",
+      "saved": {
+        "node-1": [
+          {"id": 1, "parentId": null, "code": "run 1", "inputs": [], "outputs": [], "startTime": "", "endTime": ""}
+        ],
+        "loading-gone": [
+          {"id": 2, "parentId": null, "code": "run 2", "inputs": [], "outputs": [], "startTime": "", "endTime": ""}
+        ]
+      },
+      "nodeIds": ["node-1"],
+      "keyed": {
+        "node-1": [
+          {"id": 1, "parentId": null, "code": "run 1", "inputs": [], "outputs": [], "startTime": "", "endTime": ""}
+        ],
+        "loading-gone": [
+          {"id": 2, "parentId": null, "code": "run 2", "inputs": [], "outputs": [], "startTime": "", "endTime": ""}
+        ]
+      }
+    },
+    {
+      "name": "entries keep their saved order where no keys merge",
+      "saved": {
+        "node-1": [
+          {"id": 2, "parentId": 1, "code": "run 2", "inputs": [], "outputs": [], "startTime": "", "endTime": ""},
+          {"id": 1, "parentId": null, "code": "run 1", "inputs": [], "outputs": [], "startTime": "", "endTime": ""}
+        ]
+      },
+      "nodeIds": ["node-1"],
+      "keyed": {
+        "node-1": [
+          {"id": 2, "parentId": 1, "code": "run 2", "inputs": [], "outputs": [], "startTime": "", "endTime": ""},
+          {"id": 1, "parentId": null, "code": "run 1", "inputs": [], "outputs": [], "startTime": "", "endTime": ""}
+        ]
+      }
+    },
+    {
+      "name": "a value that is no list is left out",
+      "saved": {
+        "node-1": [
+          {"id": 1, "parentId": null, "code": "run 1", "inputs": [], "outputs": [], "startTime": "", "endTime": ""}
+        ],
+        "node-2": {"id": 2, "parentId": null, "code": "run 2", "inputs": [], "outputs": [], "startTime": "", "endTime": ""}
+      },
+      "nodeIds": ["node-1", "node-2"],
+      "keyed": {
+        "node-1": [
+          {"id": 1, "parentId": null, "code": "run 1", "inputs": [], "outputs": [], "startTime": "", "endTime": ""}
+        ]
+      }
+    },
+    {
+      "name": "a run's and an agent's edit's fields come through as saved",
+      "saved": {
+        "computation@1-node-1": [
+          {"id": 4, "parentId": null, "code": "return input_0[input_0['year'] >= 2020]", "inputs": ["DATAFRAME"], "outputs": ["DATAFRAME"], "startTime": "Oct 22 2026 10:42:5", "endTime": "Oct 22 2026 10:42:7"},
+          {"id": 5, "parentId": 4, "code": "return input_0", "inputs": [], "outputs": [], "startTime": "Oct 23 2026 9:3:12", "endTime": "Oct 23 2026 9:3:12", "kind": "edit", "label": "Node Builder"}
+        ]
+      },
+      "nodeIds": ["node-1"],
+      "keyed": {
+        "node-1": [
+          {"id": 4, "parentId": null, "code": "return input_0[input_0['year'] >= 2020]", "inputs": ["DATAFRAME"], "outputs": ["DATAFRAME"], "startTime": "Oct 22 2026 10:42:5", "endTime": "Oct 22 2026 10:42:7"},
+          {"id": 5, "parentId": 4, "code": "return input_0", "inputs": [], "outputs": [], "startTime": "Oct 23 2026 9:3:12", "endTime": "Oct 23 2026 9:3:12", "kind": "edit", "label": "Node Builder"}
+        ]
+      }
+    }
+  ]
+}
