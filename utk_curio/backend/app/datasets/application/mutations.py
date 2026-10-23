@@ -30,6 +30,7 @@ from utk_curio.backend.app.datasets.domain.constants import (
     is_layer_group_id,
 )
 from utk_curio.backend.app.datasets.domain.errors import DatasetCatalogError
+from utk_curio.backend.app.datasets.infrastructure.data_size import data_size_bytes
 from utk_curio.backend.app.datasets.infrastructure.file_meta import count_file, patch_manifest_file, write_file_meta
 from utk_curio.backend.app.datasets.infrastructure.text_encoding import TextDecodeError, to_utf8
 from utk_curio.backend.app.datasets.repositories.installed import InstalledDatasetRepository
@@ -328,7 +329,7 @@ class CatalogMutations:
             item["format"], data_path.as_posix(), dataset_id=item.get("id"),
             layer_type=autark_layer_type(item),
         )
-        item["sizeBytes"] = data_path.stat().st_size
+        item["sizeBytes"] = data_size_bytes(manifest.format, data_path)
         if row_count is not None:
             item["rowCount"] = row_count
         if feature_count is not None:
@@ -777,7 +778,7 @@ class CatalogMutations:
             except InstallerError as exc:
                 raise DatasetCatalogError(str(exc)) from exc
             item["path"] = data_path.as_posix()
-            item["sizeBytes"] = data_path.stat().st_size
+            item["sizeBytes"] = data_size_bytes(result.manifest.format, data_path)
             item["dirName"] = dir_name
 
             # Backfill rowCount/featureCount into the user-store manifest when
@@ -894,7 +895,7 @@ class CatalogMutations:
                 installed_manifest = load_dataset_manifest(result.dest)
                 installed_item = item_from_manifest(installed_manifest, result.dest, origin="computed")
                 installed_item["path"] = inst_data_path.as_posix()
-                installed_item["sizeBytes"] = inst_data_path.stat().st_size
+                installed_item["sizeBytes"] = data_size_bytes(installed_manifest.format, inst_data_path)
                 if row_count is not None:
                     installed_item["rowCount"] = row_count
                 if feature_count is not None:
