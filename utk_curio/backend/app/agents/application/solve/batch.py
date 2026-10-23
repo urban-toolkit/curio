@@ -436,6 +436,10 @@ class SolveBatch:
             self.results[node_id] = {"status": "pending", "reason": reason, **trail, **extra}
             return {"nodeId": node_id, "status": "pending", "reason": reason,
                     **trail, **extra}
+        if evidence.get("kind") == dashboards.KIND:
+            # A pinned tile's spec loads its own data: the node waits for the
+            # user, who loads the data upstream or unpins it.
+            evidence = {**evidence, "remedy": dashboards.remedy(node_id)}
         return self._verified_failure(node_id, outcome, evidence, trail)
 
     def _verified_pass(self, node_id: str, outcome: dict, trail: dict) -> dict:
@@ -587,12 +591,13 @@ class SolveBatch:
             self.results[node_id] = {"status": "failed", "error": err[:300]}
             return {"nodeId": node_id, "status": "failed", "error": err[:300]}
         # A pinned tile's spec is held to what its dashboard publishes, unrun
-        # too: the node ends on it, since Solve cannot add the node upstream
-        # that its data needs.
+        # too: the node ends on it and waits for the user, since Solve cannot
+        # add the node upstream that its data needs.
         unpublishable = dashboards.refusal(self.user_key, self.project_id, node, text_out)
         if unpublishable:
-            self.results[node_id] = {"status": "failed", "error": unpublishable[:300]}
-            return {"nodeId": node_id, "status": "failed", "error": unpublishable[:300]}
+            failed = {"status": "failed", "error": unpublishable[:300], "remedy": dashboards.remedy(node_id)}
+            self.results[node_id] = failed
+            return {"nodeId": node_id, **failed}
         # A Map Edits node's code is held to what the node reads, unrun too.
         unreadable = map_edits.refusal(
             self.user_key, self.project_id, node.get("type"), text_out, current=str(node.get("content") or ""),

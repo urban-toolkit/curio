@@ -17,7 +17,8 @@ from utk_curio.backend.app.agents.domain import content
 from utk_curio.backend.app.projects import dashboard_payload
 from utk_curio.backend.app.projects.template_grammars import TemplateGrammars
 
-#: The kind of a Solve attempt this check fails.
+#: The kind of a Solve attempt this check fails, and of the remedy its node
+#: waits on.
 KIND = "dashboard-tile"
 
 
@@ -43,3 +44,11 @@ def refusal(user_key, project_id, node, code) -> str | None:
     if not dashboard_payload.tile_loads_its_own_data(tile, TemplateGrammars.for_account(user_key)):
         return None
     return agent_text.message("dashboards.tile-loads-own-data")
+
+
+def remedy(node_id) -> dict:
+    """What a Solve result names for the node *node_id* this check refused:
+    the node waits for the user, who loads the data in a node upstream of it
+    or unpins it, so a later pass of the session leaves it until that
+    changes. No action goes with it; the refusal says what to do."""
+    return {"kind": KIND, "nodeId": node_id}

@@ -97,7 +97,9 @@ def _last_attempt_code(trail: dict) -> str | None:
 #: parked on one of these has no new input to carry — attempting it again would
 #: ask the same question of the same model, so the session WAITS and rechecks.
 #: Everything else (an execution error, a refusal, a decline) IS a new input.
-_USER_ACTION_REMEDIES = ("dataset-selection", "connection-key")
+#: A pinned tile whose spec loads its own data waits for a node upstream, or
+#: for the user to unpin it (``dashboards.remedy``).
+_USER_ACTION_REMEDIES = ("dataset-selection", "connection-key", dashboards.KIND)
 
 
 def _awaits_user_action(result: dict | None) -> bool:
