@@ -1604,7 +1604,7 @@ def _check_plan_victims(user_key, project_id, proposal_id, spec: dict, proposal:
             label = ((victim or {}).get("goal") or node_id)[:60]
             raise agents_store._mark_stale(
                 user_key, project_id, proposal_id, spec, proposal, session_id,
-                f"the node you were about to remove changed ({label}) — "
+                f"the node you were about to remove changed ({label}): "
                 "ask the agent to replan",
             )
     return spec_nodes_by_id, remove_nodes
