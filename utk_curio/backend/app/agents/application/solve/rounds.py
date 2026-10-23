@@ -18,6 +18,7 @@ import tokenize
 from utk_curio.backend.app.agents.application import source_grounding
 from utk_curio.backend.app.agents.domain import content
 from utk_curio.backend.app.agents.domain import contracts
+from utk_curio.backend.app.agents.domain import dashboards
 from utk_curio.backend.app.agents.domain import failure_text
 from utk_curio.backend.app.agents.domain import map_edits
 from utk_curio.backend.app.agents.infrastructure.providers import ProviderConfig
@@ -80,6 +81,8 @@ _HEAD_FIRST_KINDS = (
     contracts.EMPTY_RENDER_KIND,
     # Map Edits' refusals: what it cannot read, or the ids no feature has.
     map_edits.KIND,
+    # A pinned tile's spec that loads its own data, and the remedy.
+    dashboards.KIND,
 )
 
 
