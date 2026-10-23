@@ -185,8 +185,9 @@ class TestTheMintSendsTheSpecBack:
         assert proposal["preview"] == MAP_STYLED
 
 
-def _solve_a_pinned_planned_map(client, user_and_token, monkeypatch, *, verify: bool) -> dict:
-    """A plan's Autark map, applied, then pinned by the user, then solved,
+def _solve_a_pinned_planned_map(client, user_and_token, monkeypatch, *, verify: bool, mode: str = "write") -> dict:
+    """A plan's Autark map, applied, then pinned by the user, then solved in
+    *mode* (``"propose"`` is Simulation Mode's solve, which mints reviews),
     with the builder writing ``MAP_WITH_PARKS`` for it each time it is asked.
     Gives the map's id (``tile``), the Solve's answer (``body``), where the
     dataflow is stored (``key``, ``project``) and each ask of the builder for
@@ -231,7 +232,7 @@ def _solve_a_pinned_planned_map(client, user_and_token, monkeypatch, *, verify: 
     projects_storage.write_spec(key, project, spec)
     body = client.post(
         f"/api/agents/projects/{project}/attachments/{att}/solve",
-        json={"verify": verify}, headers=_auth(token),
+        json={"verify": verify, "mode": mode}, headers=_auth(token),
     ).get_json()
     return {"tile": tile, "body": body, "key": key, "project": project, "asked": asked}
 
@@ -285,6 +286,24 @@ class TestSolveEndsTheNodeOnIt:
         tile = solved["tile"]
         result = solved["body"]["results"][tile]
         assert result["status"] == "failed", result
+        assert result["remedy"] == {"kind": dashboards.KIND, "nodeId": tile}, result
+        assert len(solved["asked"]) == 1, f"the builder was asked for the spec {len(solved['asked'])} times"
+        assert _content(solved["key"], solved["project"], tile) == ""
+
+    @pytest.mark.parametrize("verify", [True, False], ids=["verified", "unverified"])
+    def test_a_proposing_solve_mints_no_review_and_leaves_the_node_to_the_user(
+        self, client, user_and_token, tmp_curio, monkeypatch, verify,
+    ):
+        """Solve that proposes instead of writing (Simulation Mode's solve)
+        holds the spec to the same check: no review is minted for Apply anyway
+        to write, the result names the remedy, and the session's next turn
+        does not ask the builder for the spec again."""
+        from utk_curio.backend.app.agents.domain import dashboards
+
+        solved = _solve_a_pinned_planned_map(client, user_and_token, monkeypatch, verify=verify, mode="propose")
+        tile = solved["tile"]
+        result = solved["body"]["results"][tile]
+        assert result["status"] == "failed" and "proposalId" not in result, result
         assert result["remedy"] == {"kind": dashboards.KIND, "nodeId": tile}, result
         assert len(solved["asked"]) == 1, f"the builder was asked for the spec {len(solved['asked'])} times"
         assert _content(solved["key"], solved["project"], tile) == ""
