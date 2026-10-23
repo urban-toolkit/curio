@@ -217,39 +217,6 @@ def _what_agents_read() -> list[tuple[str, str]]:
     return texts
 
 
-def test_a_spec_is_kept_as_it_is_and_a_templates_widgets_set_only_in_a_plan():
-    """Only a plan starts a node from its template's starter and sets the
-    template's widgets by name (``plans._content_starters``,
-    ``plan_scenarios._set_over``); ``node.create`` takes the content and the
-    widgets it is given, and ``node.content.write`` carries no widgets. So a
-    sentence that tells an agent to keep a spec as it is, or to set a
-    template's widgets, says it is in a plan, wherever an agent reads it:
-    every page and prompt, and every template's description and starter, the
-    text of a package's nodes that a run's dataflow block shows. Scout's
-    charts' descriptions make no such claim without it."""
-    # The check finds the sentence #1070 narrowed, and holds it to the plan.
-    assert _claims(_NARROWED) == [_NARROWED]
-    assert _claims(_NARROWED.replace("in a plan, set", "set")) and "in a plan" not in _NARROWED.replace(
-        "in a plan, set", "set")
-    for innocent in ("A widget is a value a node's code reads that the user sets in the node's Widgets tab.",
-                     "A copy whose height factor widget is set to 2.", "Keep your answers specific."):
-        assert _claims(innocent) == [], innocent
-
-    texts = _what_agents_read()
-    places = [where for where, _text in texts]
-    assert any(place.endswith("default_preamble.md") for place in places), places
-    assert any(place.endswith("orchestration_instruction.md") for place in places), places
-    charts = [(where, text) for where, text in texts
-              if where.startswith("curio.scout/") and where.endswith(", its description")]
-    assert len(charts) >= 15, charts
-    unnarrowed = [(where, claim) for where, text in texts for claim in _claims(text) if "in a plan" not in claim]
-    assert not unnarrowed, (
-        "these tell an agent to keep a spec as it is or to set a template's widgets, which only a plan "
-        f"does, and do not say so: {unnarrowed}"
-    )
-    assert not [(where, claim) for where, text in charts for claim in _claims(text) if "in a plan" not in claim]
-
-
 #: Where a template's starter and widgets are set: the words each claim says it in.
 _IN_BOTH = "in a plan or a node.create"
 #: The sentence #1070 narrowed, as it reads once it holds in both.
