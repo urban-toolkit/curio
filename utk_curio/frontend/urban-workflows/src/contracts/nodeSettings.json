@@ -1,5 +1,5 @@
 {
-  "description": "The words of the settings a node's body offers, said wherever the setting is shown: a Data Pool's two conflict modes (data.dataPool, metadata.dataPool), each select's label and each mode's, and a Simple View's image column (metadata.simpleVis). The keys of dataPool.settings and dataPool.modes are the setting's keys and ResolutionType (constants.ts), in their order. Read by the Data Pool's body (adapters/node/components/DataPoolContent.tsx), the Simple View (adapters/node/simpleVisBehavior.tsx), an agent's review card (components/agents/content/reviewCard/reviewCardText.ts) and the backend, whose preview text and node.create summary say them (agents/domain/data_pool_settings.py and simple_vis_settings.py, through utk_curio/common/shared_constants.py).",
+  "description": "The words of the settings a node's body offers, said wherever the setting is shown: a Data Pool's two conflict modes (data.dataPool, metadata.dataPool), each select's label and each mode's, and a Simple View's image column (metadata.simpleVis), with simpleVis.all the select's word for every image column. The keys of dataPool.settings and dataPool.modes are the setting's keys and ResolutionType (constants.ts), in their order. Read by the Data Pool's body (adapters/node/components/DataPoolContent.tsx), the Simple View (adapters/node/simpleVisBehavior.tsx), an agent's review card (components/agents/content/reviewCard/reviewCardText.ts) and the backend, whose preview text, node.create summary and settings change say them (agents/domain/data_pool_settings.py and simple_vis_settings.py, through utk_curio/common/shared_constants.py).",
   "dataPool": {
     "settings": {
       "insideChart": "Conflict inside visualization",
@@ -14,6 +14,7 @@
   "simpleVis": {
     "settings": {
       "imageColumn": "Image column"
-    }
+    },
+    "all": "all"
   }
 }

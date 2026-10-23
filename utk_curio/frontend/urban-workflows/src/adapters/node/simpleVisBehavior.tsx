@@ -16,11 +16,14 @@ import { CopyButton } from '../../components/CopyButton';
 import ImageCardGrid from './components/ImageCardGrid';
 import { toRows } from '../../utils/rowSource';
 import { unwrapValueEnvelopes } from '../../utils/sandboxEnvelope';
+import { registerNodeSettingWriter } from '../../utils/nodeSettingsWriters';
 import nodeSettings from '../../contracts/nodeSettings.json';
 
-/** The picker's label, which an agent's review card and the backend say the
- *  setting in too (contracts/nodeSettings.json). */
+/** The picker's label, and its word for every image column, which an agent's
+ *  review card and the backend say the setting in too
+ *  (contracts/nodeSettings.json). */
 const IMAGE_COLUMN_LABEL = nodeSettings.simpleVis.settings.imageColumn;
+const ALL_IMAGE_COLUMNS_WORD = nodeSettings.simpleVis.all;
 
 function buildTableRows(parsedOutput: ICodeDataContent): any[] {
   // Was a fourth copy of the same column-major flatten; see utils/rowSource.
@@ -187,14 +190,27 @@ export const useSimpleVisBehavior: NodeBehaviorHook = (data, nodeState) => {
     return pinned.length > 0 ? pinned : imageColumns;
   }, [choice, imageColumns]);
 
+  // All clears the setting: the node shows every image column, as one that
+  // never picked a column does. A dataflow saved before keeps the word "all",
+  // which the node still reads as every column.
   const pickColumn = useCallback(
     (value: string) => {
-      updateDataNode(data.nodeId, {
-        ...data,
-        simpleVis: { ...(data as any).simpleVis, imageColumn: value },
-      });
+      const simpleVis = { ...(data as any).simpleVis };
+      if (value === ALL_IMAGE_COLUMNS) delete simpleVis.imageColumn;
+      else simpleVis.imageColumn = value;
+      updateDataNode(data.nodeId, { ...data, simpleVis });
     },
     [data, updateDataNode],
+  );
+
+  // An agent's applied change picks the column as the picker does
+  // (utils/nodeSettingsWriters); one that names no column picks All.
+  const pickColumnRef = useRef(pickColumn);
+  pickColumnRef.current = pickColumn;
+  useEffect(
+    () => registerNodeSettingWriter(data.nodeId, 'simpleVis', (setting) =>
+      pickColumnRef.current(setting.imageColumn || ALL_IMAGE_COLUMNS)),
+    [data.nodeId],
   );
 
   // Memoize so the JSX reference is stable across re-renders. NodeEditor
@@ -221,7 +237,7 @@ export const useSimpleVisBehavior: NodeBehaviorHook = (data, nodeState) => {
                 onChange={(e) => pickColumn(e.target.value)}
                 style={{ fontSize: 11 }}
               >
-                <option value={ALL_IMAGE_COLUMNS}>all</option>
+                <option value={ALL_IMAGE_COLUMNS}>{ALL_IMAGE_COLUMNS_WORD}</option>
                 {imageColumns.map((column) => (
                   <option key={column} value={column}>{column}</option>
                 ))}
