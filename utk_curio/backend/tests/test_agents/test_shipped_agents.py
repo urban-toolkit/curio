@@ -487,7 +487,7 @@ class TestTheSources:
             *(f"knowledge/{name}.md" for name in (
                 "nodes", "node-control", "node-functions", "catalogs", "widgets", "selection-chips", "autark",
                 "compatibility", "vega-lite-starter", "autark-starter", "vega-lite-maps", "interaction-edges",
-                "map-edits", "scenarios",
+                "map-edits", "scenarios", "dashboards",
             )),
         }
         assert {path.relative_to(BASE).as_posix() for path in BASE.rglob("*.md")} - {"README.md"} == set(pages)
