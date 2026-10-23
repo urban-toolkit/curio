@@ -1,7 +1,8 @@
 """A package template whose starter is a node's whole content (``starterIsContent``)
 keeps it when the Dataflow Builder's plan creates the node, whole or node by
 node: the node starts with the template's spec and the plan's widgets, and Solve
-leaves it as it is.
+leaves it as it is. A Node Builder ``node.create`` of such a template starts it
+the same way, at mint, so its card shows what Apply writes.
 
 Every other template keeps its path, in which a planned node is created empty
 and Solve writes its content: Scout's Raster Calculator, whose operation
@@ -18,8 +19,10 @@ from utk_curio.backend.tests._support.agent_routes import _auth
 
 # Imported for their helpers. conftest.py runs each class only in the file
 # that defines it, never again here.
+from utk_curio.backend.tests.test_agents import test_source_grounding_routes as grounding_routes
 from utk_curio.backend.tests.test_agents.test_routes_proposals import (
     TestDataflowPlanMint,
+    TestNodeCreate,
     TestPerNodePlanApply,
 )
 from utk_curio.backend.tests.test_agents.test_routes_solve import TestSolve
@@ -240,3 +243,83 @@ class TestEveryOtherTemplateKeepsItsPath:
         # The agent wrote each one's code: the calculator's, its operation.
         for node in created.values():
             assert saved[node["id"]]["content"] == OPERATION
+
+
+def _scout_bars() -> tuple[str, list[dict]]:
+    """Scout's Bars chart, as the package Curio ships holds it: its starter, the
+    node's whole content, and its widgets."""
+    package = REPO / "packages" / "curio.scout@1"
+    manifest = json.loads((package / "manifest.json").read_text(encoding="utf-8"))
+    (template,) = [t for t in manifest["templates"] if t["id"] == "bars"]
+    assert template.get("starterIsContent") is True
+    return (package / template["source"]).read_text(encoding="utf-8"), template["widgets"]
+
+
+class TestACreatedTemplateStartsFromItsStarter:
+    """The Node Builder's ``node.create`` of Scout's Bars, a template whose
+    starter is its whole content, as a plan creates one: with no content of
+    its own, the node starts from the template's spec and widgets, the widgets
+    the request gives set over the ones of their names."""
+
+    def _run(self, client, user, token, project_id, monkeypatch, *replies):
+        helper = TestNodeCreate()
+        att_id, calls = helper._setup(client, user=user, token=token, project_id=project_id,
+                                      monkeypatch=monkeypatch, replies=[*replies, "Proposed: review it above."])
+        key = TestDataflowPlanMint()._ukey(user)
+        _enlist(key, project_id, [_install_scout_rasters(key)])
+        r = helper._run(client, token, project_id, att_id)
+        assert r.status_code == 200, r.get_json()
+        proposal = next((p for p in r.get_json()["content"] if p["type"] == "proposal"), None)
+        # Each node.create result is read by its prefix, never by its index.
+        return helper, att_id, proposal, grounding_routes._tool_results(calls[-1], "node.create")
+
+    def test_with_no_content_it_starts_from_its_template_and_the_asked_value_is_set(
+        self, client, user_and_token, tmp_curio, alice_project, monkeypatch
+    ):
+        user, token = user_and_token
+        starter, widgets = _scout_bars()
+        create = TestNodeCreate()._create_tail_json
+        calculator = create(nodeType="curio.scout/raster-calculator", content="")
+        bars = create(nodeType="curio.scout/bars", title="Mean shadow", content="",
+                      widgets=[{"name": "y", "type": "text", "value": "shadow_minutes"}])
+        helper, att_id, proposal, results = self._run(
+            client, user, token, alice_project, monkeypatch, calculator, bars,
+        )
+        refused, proposed = results
+        # A template whose starter is not its content keeps today's rule: its
+        # code is the agent's to write.
+        assert "params.content must be a non-empty string" in refused, refused
+        assert proposed.startswith("[tool result] node.create: proposed"), proposed
+        # The card shows what Apply writes: the template's spec, as its package holds it.
+        assert proposal is not None
+        assert proposal["preview"] == starter
+        assert proposal["summary"] == "Create a new Bars node · Mean shadow · widgets y, combine, y_title"
+        resp = client.post(
+            f"/api/agents/projects/{alice_project}/attachments/{att_id}/proposals/{proposal['proposalId']}/apply",
+            headers=_auth(token),
+        )
+        assert resp.status_code == 200, resp.get_json()
+        created = resp.get_json()["createdNode"]
+        assert created["content"] == starter
+        got = created["metadata"]["widgets"]
+        # The template's widgets, in its order, the asked value set over its own.
+        assert [w["name"] for w in got] == [w["name"] for w in widgets] == ["y", "combine", "y_title"]
+        assert got[0]["value"] == "shadow_minutes"
+        assert got[0]["label"] == "Y column"
+        assert got[1] == widgets[1] and got[2] == widgets[2]
+        stored = next(n for n in helper._spec_nodes(user, alice_project) if n["id"] == created["id"])
+        assert stored["content"] == starter
+        assert stored["metadata"]["widgets"] == got
+
+    def test_content_of_its_own_is_refused_in_words_that_name_its_widgets(
+        self, client, user_and_token, tmp_curio, alice_project, monkeypatch
+    ):
+        user, token = user_and_token
+        starter, _widgets = _scout_bars()
+        retyped = starter.replace('"type": "bar"', '"type": "line"')
+        assert retyped != starter
+        reply = TestNodeCreate()._create_tail_json(nodeType="curio.scout/bars", content=retyped)
+        _, _, proposal, [refused] = self._run(client, user, token, alice_project, monkeypatch, reply)
+        assert proposal is None, "a retyped Scout chart was proposed"
+        assert "params.content: a Bars node starts from its template's own content" in refused, refused
+        assert "y, combine, y_title" in refused, refused

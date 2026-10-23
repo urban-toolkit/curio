@@ -55,22 +55,23 @@ def template_problem(behavior: object, label: object, where: str) -> str | None:
     return agent_text.message("spatial-join.not-a-join", where=where, label=label or 'this', key=KEY)
 
 
-def plan_problems(nodes: list, entries: list, behavior_of) -> list[str]:
-    """For each planned node that sets one, why its template keeps no setting:
-    *entries* are the roster rows the mint resolved, in the nodes' order, and
-    *behavior_of* gives a node type's behavior."""
-    problems = []
-    for node, entry in zip(nodes, entries):
-        if not node.get(KEY):
-            continue
-        label = (entry or {}).get("label") or node["nodeType"]
-        problem = template_problem(behavior_of(node["nodeType"]), label, f"plan node {node['ref']!r}")
-        if problem:
-            problems.append(problem)
-    return problems
-
-
 def describe(setting: dict | None) -> str:
     """The setting as a review card reads it: ``operation within, output counts``."""
     words = {"predicate": "operation", "output": "output"}
     return ", ".join(f"{words[key]} {setting[key]}" for key in SETTING_KEYS if key in (setting or {}))
+
+
+def saved(raw: object) -> dict | None:
+    """What a saved node's ``metadata.spatialJoin`` makes the join do, its
+    defaults (intersects, pairs) left out, or None: ``resolvePredicate`` and
+    ``resolveOutputMode`` in ``spatialJoinBehavior.tsx`` read anything else as
+    those defaults."""
+    if not isinstance(raw, dict):
+        return None
+    setting = {}
+    predicate, output = raw.get("predicate"), raw.get("output")
+    if isinstance(predicate, str) and predicate in spatial.PREDICATES and predicate != spatial.DEFAULT_PREDICATE:
+        setting["predicate"] = predicate
+    if isinstance(output, str) and output in spatial.OUTPUTS and output != spatial.DEFAULT_OUTPUT:
+        setting["output"] = output
+    return setting or None

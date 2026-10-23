@@ -9,7 +9,11 @@
  * A layer the node makes is drawn on top once it has features. The map keeps
  * its view when an edit draws it again, and after Commit edits. A click on the
  * map picks the feature under it, and a shift-click adds or drops one, while
- * the map draws an edit again too.
+ * the map draws an edit again too. The map lights a pick, every part of a
+ * building, on the layer an action works on, and nothing is drawn over it; a
+ * play of the map drops the pick. The drawing tools, the shape being drawn,
+ * a shape's corners and midpoints, are layers of the map itself, and a
+ * building being reshaped is drawn by them instead of its own layer.
  *
  * Each node is the behavior the canvas registers for its type, with the
  * node's own state (hook/useNodeState) for the Map Edits node; the map draws
@@ -48,7 +52,7 @@ import ProvenanceProvider, { useProvenanceContext } from "../../../providers/Pro
 import { editFeaturesCode, readEditFeaturesCode, type EditFeaturesSettings } from "../../../utils/editFeatures/editFeatures";
 import { editSelection } from "../../../utils/editFeatures/mapEditSelection";
 import { toMercator } from "../../../utils/editFeatures/mapEditBus";
-import { drawnMaps, grammarRuns, heldDraws, nodeInput, resetAutkNodeMocks } from "../../_support/autkNodeMocks";
+import { drawnExports, drawnMaps, grammarRuns, heldDraws, nodeInput, resetAutkNodeMocks } from "../../_support/autkNodeMocks";
 import { stubWebGpu, unstubWebGpu } from "../../_support/autkNode";
 
 const LOADER = "buildings";
@@ -220,7 +224,7 @@ const litUp = (table = "input_0") => {
 
 const body = () => document.querySelector("[data-edit-body]") as HTMLElement;
 
-async function openAction(action: "remove" | "edit") {
+async function openAction(action: "remove" | "edit" | "add") {
   fireEvent.click(await screen.findByTestId("interaction-layer-input_0"));
   fireEvent.click(screen.getByTestId(`interaction-action-${action}`));
 }
@@ -479,9 +483,16 @@ function layOutCanvases(): () => void {
  * down on World Mercator metres: its origin at the canvas's bottom left
  * corner, a kilometre to a pixel. Destroyed, it keeps its camera, and its
  * renderer the canvas's size as it was laid out, as autk-map's map does.
+ *
+ * A layer loaded from a collection is added last to its layers, with its id,
+ * type and features, and a layer removed leaves them; the positions skipped
+ * in each layer are kept by its id, each toggled as autk-map's vector layers
+ * do, until the layer's are cleared.
  */
 function projectingMap() {
   const span = SIZE * 1000;
+  const layers: any[] = [{ position: new Float32Array([0, 0, 100, 50]), _dimension: 2 }];
+  const skipped: Record<string, number[]> = {};
   const camera: any = {
     eye: [span / 2, span / 2, 10000],
     lookAt: [span / 2, span / 2, 0],
@@ -506,13 +517,62 @@ function projectingMap() {
     camera,
     canvas: document.getElementById(`autk-grammar-map-${MAP}`),
     renderer: { pixelWidth: SIZE, pixelHeight: SIZE, cssWidth: SIZE, cssHeight: SIZE },
-    layerManager: { layers: [{ position: new Float32Array([0, 0, 100, 50]), _dimension: 2 }], hasOrigin: true, origin: [0, 0] },
+    layerManager: { layers, hasOrigin: true, origin: [0, 0] },
+    // autk-map's highlight, #5dade2.
+    style: { getHighlightColor: () => ({ r: 93, g: 173, b: 226 }) },
+    loadCollection: jest.fn((id: string, { collection, type }: { collection: { features: any[] }; type?: string }) => {
+      layers.push({ layerInfo: { id, typeLayer: type }, layerRenderInfo: {}, features: collection.features });
+    }),
+    removeLayer: jest.fn((id: string) => {
+      const at = layers.findIndex((layer) => layer.layerInfo?.id === id);
+      if (at >= 0) layers.splice(at, 1);
+    }),
+    setSkippedIds: jest.fn((id: string, positions: number[]) => {
+      const now = new Set(skipped[id] ?? []);
+      for (const position of positions) {
+        if (now.has(position)) now.delete(position);
+        else now.add(position);
+      }
+      skipped[id] = [...now].sort((a, b) => a - b);
+    }),
+    clearSkippedIds: jest.fn((id: string) => {
+      skipped[id] = [];
+    }),
+    skipped,
     resetCamera: jest.fn(),
     requestRender: jest.fn(),
     updateRenderInfo: jest.fn(),
     destroy: jest.fn(),
   };
 }
+
+/** The layers loaded into *map* besides its document's: each with its id, type and features. */
+const loadedLayers = (map: any): any[] => map.layerManager.layers.filter((layer: any) => layer.layerInfo);
+
+/** The positions of the points *map*'s loaded points layers draw. */
+const pointsOn = (map: any): number[][] =>
+  loadedLayers(map)
+    .filter((layer) => layer.layerInfo.typeLayer === "points")
+    .flatMap((layer) => layer.features.map((feature: any) => feature.geometry.coordinates));
+
+/** The lines *map*'s loaded line and area layers draw: each line's points, and each area's outer ring. */
+const linesOn = (map: any): number[][][] =>
+  loadedLayers(map)
+    .filter((layer) => layer.layerInfo.typeLayer === "polylines" || layer.layerInfo.typeLayer === "polygons")
+    .flatMap((layer) => layer.features.map((feature: any) => (feature.geometry.type === "Polygon" ? feature.geometry.coordinates[0] : feature.geometry.coordinates)));
+
+/** A position in World Mercator metres, in whole kilometres: the map's own pixels here (a -0 read as 0). */
+const km = (xy: readonly number[]) => xy.map((v) => Math.round(v / 1000) || 0);
+
+/** Positions in the order of their x, then their y. */
+const byPlace = (a: number[], b: number[]) => a[0] - b[0] || a[1] - b[1];
+
+/** The map the stand-in grammar drew last. */
+const lastMap = () => grammarRuns[grammarRuns.length - 1].maps[0];
+
+/** What the overlay holds over the map but its tip and buttons: nothing, since the map draws the tools. */
+const drawnOverMap = () =>
+  Array.from(screen.getByTestId("map-edit-overlay").children).filter((child) => !child.hasAttribute("data-map-edit-ui"));
 
 /** The middles of buildings 136 and 200, in degrees. */
 const MIDDLE_136: [number, number] = [1.5, 0.5];
@@ -530,6 +590,17 @@ function clickMap(lonLat: [number, number], shift = false) {
   act(() => {
     canvas.dispatchEvent(new MouseEvent("pointerdown", { ...at, buttons: 1 }));
     canvas.dispatchEvent(new MouseEvent("pointerup", { ...at, buttons: 0 }));
+  });
+}
+
+/**
+ * One step of a drag on the map: a press, a move or a release on the map's
+ * canvas at *xy*, in the map's own pixels, the main button held while *held*.
+ */
+function pointerOnMap(type: "pointerdown" | "pointermove" | "pointerup", [x, y]: [number, number], held: boolean) {
+  const canvas = document.getElementById(`autk-grammar-map-${MAP}`) as HTMLCanvasElement;
+  act(() => {
+    canvas.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, button: 0, buttons: held ? 1 : 0, clientX: x, clientY: y }));
   });
 }
 
@@ -590,6 +661,277 @@ test("a building picked in Edit, clicked again in Remove while the map draws the
     ]);
   } finally {
     release();
+    putBack();
+  }
+});
+
+/**
+ * Building 119 in one part, building 136 in two side by side, as an OSM
+ * building of several parts is, both its rows holding its id, then building
+ * 200: positions 0, 1 and 2, and 3.
+ */
+const PARTED = {
+  type: "FeatureCollection",
+  features: [
+    [119, 0, 1],
+    [136, 1, 1.5],
+    [136, 1.5, 2],
+    [200, 2, 3],
+  ].map(([id, west, east], i) => ({
+    type: "Feature",
+    geometry: { type: "Polygon", coordinates: [[[west, 0], [east, 0], [east, 1], [west, 1], [west, 0]]] },
+    properties: { building_id: id, height: 10 * (i + 1) },
+  })),
+};
+
+/** The middles of building 119, of building 136's first part, and of building 200, in degrees. */
+const MIDDLE_ONE_PART: [number, number] = [0.5, 0.5];
+const MIDDLE_FIRST_PART: [number, number] = [1.25, 0.5];
+const MIDDLE_LAST: [number, number] = [2.5, 0.5];
+
+/** What the map lights is Autark's own highlight: nothing is drawn over the map for a pick. */
+const outlinesOverMap = () =>
+  document.querySelectorAll('[data-testid="map-edit-overlay"] svg path, [data-testid="map-edit-overlay"] svg circle').length;
+
+test("picks of a building in two parts and of others are lit by the map alone, and a plain click replaces the pick", async () => {
+  const putBack = layOutCanvases();
+  try {
+    nodeInput.current = PARTED;
+    drawnMaps.make = projectingMap;
+    const canvas = mountCanvas();
+    await canvas.playMap();
+    const remove = () => screen.getByTestId("interaction-remove-picked");
+    await openAction("remove");
+
+    // A click on building 136 picks it: the map lights both its parts.
+    clickMap(MIDDLE_FIRST_PART);
+    await waitFor(() => expect(remove()).toHaveTextContent("Remove 1 area"));
+    await waitFor(() => expect(litUp()).toEqual([1, 2]));
+    expect(outlinesOverMap()).toBe(0);
+
+    // A shift-click adds building 119, listed before it.
+    clickMap(MIDDLE_ONE_PART, true);
+    await waitFor(() => expect(remove()).toHaveTextContent("Remove 2 areas"));
+    await waitFor(() => expect(litUp()).toEqual([0, 1, 2]));
+    expect(outlinesOverMap()).toBe(0);
+
+    // A plain click on building 200 replaces the pick.
+    clickMap(MIDDLE_LAST);
+    await waitFor(() => expect(remove()).toHaveTextContent("Remove 1 area"));
+    await waitFor(() => expect(litUp()).toEqual([3]));
+    expect(canvas.interactionsOf(NODE)[0].details.autk_selection.data).toEqual([{ building_id: 200 }]);
+    expect(outlinesOverMap()).toBe(0);
+  } finally {
+    putBack();
+  }
+});
+
+test("a play of the map drops the pick made on it, and after an Apply lights nothing just edited", async () => {
+  const putBack = layOutCanvases();
+  try {
+    nodeInput.current = PARTED;
+    drawnMaps.make = projectingMap;
+    const canvas = mountCanvas();
+    await canvas.playMap();
+    const remove = () => screen.getByTestId("interaction-remove-picked");
+
+    // Remove: a click picks building 136, which the map lights.
+    await openAction("remove");
+    clickMap(MIDDLE_FIRST_PART);
+    await waitFor(() => expect(remove()).toHaveTextContent("Remove 1 area"));
+    await waitFor(() => expect(litUp()).toEqual([1, 2]));
+
+    // Played, the map draws anew without the pick it made, and the node
+    // picks nothing either.
+    await canvas.playMap();
+    await waitFor(() => expect(remove()).toBeDisabled());
+    await waitFor(() => expect(litUp()).toEqual([]));
+
+    // Edit: a click picks building 136 again and a height is applied, which
+    // the map draws as a preview, keeping the pick to edit again.
+    fireEvent.click(screen.getByTestId("interaction-back"));
+    fireEvent.click(screen.getByTestId("interaction-action-edit"));
+    clickMap(MIDDLE_FIRST_PART);
+    const height = (await screen.findByTestId("interaction-field-height")) as HTMLInputElement;
+    const drawn = grammarRuns.length;
+    fireEvent.change(height, { target: { value: "99" } });
+    fireEvent.click(screen.getByTestId("interaction-form-submit"));
+    await waitFor(() => expect(canvas.settings()?.edits).toEqual([{ op: "set", ids: [136], column: "height", value: 99 }]));
+    await waitFor(() => expect(grammarRuns).toHaveLength(drawn + 1));
+    await waitFor(() => expect(litUp()).toEqual([1, 2]));
+
+    // Played again: nothing is picked, and what was just edited is not lit.
+    await canvas.playMap();
+    await waitFor(() => expect(litUp()).toEqual([]));
+    await waitFor(() => expect(screen.queryByTestId("interaction-field-height")).toBeNull());
+  } finally {
+    putBack();
+  }
+});
+
+test("an action makes the layer it works on the layer the map picks on, with Show only this layer off", async () => {
+  const putBack = layOutCanvases();
+  try {
+    nodeInput.current = PARTED;
+    drawnMaps.make = projectingMap;
+    const canvas = mountCanvas();
+    await canvas.playMap();
+    const map = grammarRuns[grammarRuns.length - 1].maps[0];
+
+    await openAction("remove");
+    await waitFor(() => expect(map.updateRenderInfo).toHaveBeenCalledWith("input_0", { isPick: true }));
+  } finally {
+    putBack();
+  }
+});
+
+test("Add on a layer of areas draws the shape being drawn and its corners as layers of the Autark map, and Escape takes them off", async () => {
+  const putBack = layOutCanvases();
+  try {
+    drawnMaps.make = projectingMap;
+    await mountCanvas().playMap();
+    const map = lastMap();
+    await openAction("add");
+    await waitFor(() => expect(screen.getByTestId("map-edit-overlay")).toHaveAttribute("data-edit-mode", "draw"));
+
+    // Three clicks: the map draws the line so far through them, and their corners.
+    const clicked: [number, number][] = [[0.5, 1.5], [1.5, 1.5], [1.5, 2.5]];
+    for (const corner of clicked) clickMap(corner);
+    const corners = clicked.map((corner) => km(toMercator(corner)));
+    await waitFor(() => expect(pointsOn(map).map(km).sort(byPlace)).toEqual([...corners].sort(byPlace)));
+    expect(linesOn(map).map((line) => line.map(km))).toContainEqual(corners);
+    expect(drawnOverMap()).toEqual([]);
+
+    // Escape gives the shape up: the map draws none of the tools.
+    fireEvent.keyDown(document.body, { key: "Escape" });
+    await waitFor(() => expect(loadedLayers(map)).toEqual([]));
+  } finally {
+    putBack();
+  }
+});
+
+test("Move points draws a building's corners, midpoints and shape as layers of the map, skipped in its own layer, and a drag from a corner reshapes it", async () => {
+  const putBack = layOutCanvases();
+  try {
+    drawnMaps.make = projectingMap;
+    const canvas = mountCanvas();
+    await canvas.playMap();
+    await openAction("edit");
+    clickMap(MIDDLE_136);
+    fireEvent.click(await screen.findByTestId("interaction-reshape"));
+    const map = lastMap();
+    const overlay = () => screen.getByTestId("map-edit-overlay");
+    await waitFor(() => expect(overlay()).toHaveAttribute("data-edit-mode", "reshape"));
+
+    // Building 136's corners and midpoints are points the map draws, in its
+    // highlight, and its outline a line, while its own layer skips it: drawn
+    // second, at position 1.
+    const corners: [number, number][] = [[1, 0], [2, 0], [2, 1], [1, 1]];
+    const midpoints: [number, number][] = [[1.5, 0], [2, 0.5], [1.5, 1], [1, 0.5]];
+    const handles = [...corners, ...midpoints].map((xy) => km(toMercator(xy))).sort(byPlace);
+    await waitFor(() => expect(pointsOn(map).map(km).sort(byPlace)).toEqual(handles));
+    const ring = [...corners, corners[0]].map((xy) => km(toMercator(xy)));
+    expect(linesOn(map).map((line) => line.map(km))).toContainEqual(ring);
+    // Where the layer draws it comes once the map has read back the rows it drew.
+    await waitFor(() => expect(map.skipped.input_0).toEqual([1]));
+    expect(map.updateRenderInfo).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({ color: { r: 93, g: 173, b: 226 } }));
+    expect(drawnOverMap()).toEqual([]);
+
+    // The overlay lists the corners where the map shows them, in the map's own pixels.
+    expect(overlay()).toHaveAttribute("data-map-width", String(SIZE));
+    expect(overlay()).toHaveAttribute("data-map-height", String(SIZE));
+    const listed = JSON.parse(overlay().getAttribute("data-corners") ?? "[]");
+    expect(listed.map((c: any) => [c.ring, c.index])).toEqual([[0, 0], [0, 1], [0, 2], [0, 3]]);
+    const [cx, cy] = toMercator([2, 1]);
+    expect(listed[2].x).toBeCloseTo(cx / 1000, 0);
+    expect(listed[2].y).toBeCloseTo(SIZE - cy / 1000, 0);
+
+    // A drag from that corner: while it lasts, the map draws the building
+    // with the corner moved, and its layer still skips it.
+    const from: [number, number] = [Math.round(listed[2].x), Math.round(listed[2].y)];
+    const to: [number, number] = [from[0] + 20, from[1] - 15];
+    const moved = [...ring];
+    moved[2] = [to[0], SIZE - to[1]];
+    pointerOnMap("pointerdown", from, true);
+    pointerOnMap("pointermove", to, true);
+    await waitFor(() => expect(linesOn(map).map((line) => line.map(km))).toContainEqual(moved));
+    expect(map.skipped.input_0).toEqual([1]);
+    expect(canvas.settings()?.edits ?? []).toEqual([]);
+
+    // Let go: the reshape is an edit, and the map drawn with it skips the
+    // building in its layer again while Move points is on.
+    const drawn = grammarRuns.length;
+    pointerOnMap("pointerup", to, false);
+    const edits = canvas.settings()?.edits ?? [];
+    expect(edits).toEqual([expect.objectContaining({ op: "geometry", ids: [136] })]);
+    expect((edits[0] as any).geometry.coordinates[0].map((xy: [number, number]) => km(toMercator(xy)))).toEqual(moved);
+    await waitFor(() => expect(grammarRuns).toHaveLength(drawn + 1));
+    const next = lastMap();
+    await waitFor(() => expect(pointsOn(next).map(km)).toContainEqual(moved[2]));
+    await waitFor(() => expect(next.skipped.input_0).toEqual([1]));
+
+    // Done: the tools leave the map, and the building is drawn by its layer again.
+    fireEvent.click(screen.getByTestId("map-edit-done"));
+    await waitFor(() => expect(loadedLayers(next)).toEqual([]));
+    expect(next.skipped.input_0).toEqual([]);
+    expect(overlay()).toHaveAttribute("data-corners", "[]");
+  } finally {
+    putBack();
+  }
+});
+
+// autk-db can keep a layer's rows in an order of its own; the map names them
+// by the rows read back from what autk-db exported.
+test("on a layer autk-db keeps in another order, a pick lights the building where the map drew it, and Move points skips it there", async () => {
+  const putBack = layOutCanvases();
+  try {
+    // autk-db exports buildings 136, 200 and 119, in that order.
+    drawnExports.of = (_table, handed) => [handed[1], handed[2], handed[0]];
+    drawnMaps.make = projectingMap;
+    await mountCanvas().playMap();
+    await openAction("edit");
+    clickMap(MIDDLE_136);
+    await waitFor(() => expect(litUp()).toEqual([0]));
+    fireEvent.click(await screen.findByTestId("interaction-reshape"));
+    await waitFor(() => expect(lastMap().skipped.input_0).toEqual([0]));
+  } finally {
+    putBack();
+  }
+});
+
+test("the overlay draws nothing over the map in any mode: picking, drawing, reshaping and moving", async () => {
+  const putBack = layOutCanvases();
+  try {
+    drawnMaps.make = projectingMap;
+    await mountCanvas().playMap();
+    const inMode = async (mode: string) => {
+      await waitFor(() => expect(screen.getByTestId("map-edit-overlay")).toHaveAttribute("data-edit-mode", mode));
+      expect(drawnOverMap()).toEqual([]);
+    };
+
+    // Remove: building 136 picked.
+    await openAction("remove");
+    clickMap(MIDDLE_136);
+    await waitFor(() => expect(screen.getByTestId("interaction-remove-picked")).toHaveTextContent("Remove 1 area"));
+    await inMode("select");
+
+    // Add: an area being drawn.
+    fireEvent.click(screen.getByTestId("interaction-back"));
+    fireEvent.click(screen.getByTestId("interaction-action-add"));
+    clickMap([0.5, 1.5]);
+    clickMap([1.5, 1.5]);
+    await inMode("draw");
+    fireEvent.keyDown(document.body, { key: "Escape" });
+
+    // Edit: building 136 picked, then reshaped and moved.
+    fireEvent.click(screen.getByTestId("interaction-back"));
+    fireEvent.click(screen.getByTestId("interaction-action-edit"));
+    clickMap(MIDDLE_136);
+    fireEvent.click(await screen.findByTestId("interaction-reshape"));
+    await inMode("reshape");
+    fireEvent.click(screen.getByTestId("interaction-move"));
+    await inMode("move");
+  } finally {
     putBack();
   }
 });

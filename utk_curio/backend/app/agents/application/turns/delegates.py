@@ -351,18 +351,33 @@ def _delegation_part_for(resolution, capability: str, status: str, text: str,
 
 
 def _delegate_target_node_id(loop_ctx: dict, inputs: dict) -> str | None:
-    """The node a content-generation delegation targets: the model's
-    ``nodeId`` input, else the parent attachment's node target — the same
+    """The node a content-generation delegation writes for: the one its
+    ``nodeId`` input names; else none when it names a ``nodeType``, the
+    template of a new node, whose content returns to the run for its
+    ``node.create``; else the node the run's agent is attached to. The
     resolution ``_enriched_delegate_inputs`` grounds the child with."""
     node_id = (inputs or {}).get("nodeId")
     if isinstance(node_id, str) and node_id:
         return node_id
+    if _new_node_type(inputs):
+        return None
     target = loop_ctx.get("target")
     if isinstance(target, dict) and target.get("kind") == "node":
         target_id = target.get("targetId")
         if isinstance(target_id, str) and target_id:
             return target_id
     return None
+
+
+def _new_node_type(inputs: dict | None) -> str | None:
+    """The template of the new node a content-generation delegation writes
+    for: its ``nodeType`` input, when it names no ``nodeId``."""
+    inputs = inputs or {}
+    node_id = inputs.get("nodeId")
+    node_type = inputs.get("nodeType")
+    if isinstance(node_id, str) and node_id:
+        return None
+    return node_type.strip() if isinstance(node_type, str) and node_type.strip() else None
 
 
 def _mint_content_review_from_delegate(
@@ -845,7 +860,7 @@ def _notes_from_delegate_inputs(inputs: dict) -> list[dict] | None:
     if not isinstance(raw, list):
         return None
     rows: list[dict] = []
-    for item in raw[:16]:
+    for item in raw[:content.MAX_NOTES]:
         if not isinstance(item, dict):
             continue
         content_text = item.get("content")
@@ -1162,9 +1177,11 @@ def _enriched_delegate_inputs(
 ) -> dict:
     """dev/67-6: content-generation delegates get the composed node context
     appended server-side (never overwriting the model's own keys) — the child
-    stops generating blind to the graph. The node resolves from the model's
-    ``nodeId`` input or the parent attachment's node target; no node, no
-    enrichment (honest absence beats a fabricated neighborhood).
+    stops generating blind to the graph. The node resolves as
+    :func:`_delegate_target_node_id` resolves it; no node, no context (honest
+    absence beats a fabricated neighborhood). A new node, named by its
+    ``nodeType``, is grounded as that template: a data-loading one gets its
+    sources, whatever node the agent is attached to.
 
     *catalog_rows* is the Data Catalog listing a ``dataset.discover`` child is
     shown, when the caller has already read it (:func:`_dataset_discover_inputs`)."""
@@ -1228,25 +1245,24 @@ def _enriched_delegate_inputs(
         return _dataset_discover_inputs(user_key, project_id, inputs, catalog_rows=catalog_rows)
     if capability != "node.content.generate" or "nodeContext" in inputs:
         return inputs
-    node_id = inputs.get("nodeId")
-    if not isinstance(node_id, str) or not node_id:
-        target = loop_ctx.get("target")
-        node_id = (
-            target.get("targetId")
-            if isinstance(target, dict) and target.get("kind") == "node"
-            else None
-        )
-    if not node_id:
+    node_id = _delegate_target_node_id(loop_ctx, inputs)
+    node_type = _new_node_type(inputs)
+    if node_id:
+        spec = projects_storage.read_spec(user_key, project_id)
+        composed = node_context.compose_node_context(user_key, project_id, spec, node_id)
+        if composed is None:
+            return inputs
+        enriched = {**inputs, "nodeContext": composed}
+        node_type = composed.get("nodeType")
+    elif node_type:
+        # A new node: there is no node to give the context of, and it is
+        # grounded as its template, whatever node the agent is attached to.
+        enriched = dict(inputs)
+    else:
         return inputs
-    spec = projects_storage.read_spec(user_key, project_id)
-    composed = node_context.compose_node_context(user_key, project_id, spec, node_id)
-    if composed is None:
-        return inputs
-    enriched = {**inputs, "nodeContext": composed}
     # dev/114 — the SEVENTH application: a data-loading node's content child
     # is HANDED its grounded sources (catalog paths, the user's paths, the
     # URLs already verified) instead of guessing a filename.
-    node_type = composed.get("nodeType")
     if "sourceGrounding" not in enriched and source_grounding.loads_dataset(
         node_type, agents_roster._roster_templates(user_key, project_id)
     ):

@@ -1162,6 +1162,53 @@ class TestChatContentReviewMint:
         assert r.status_code == 200
         assert r.get_json()["appliedContent"]["content"] == "print('fixed')"
 
+    def test_content_for_a_new_node_returns_to_the_run_for_its_node_create(
+        self, client, user_and_token, tmp_curio, monkeypatch
+    ):
+        """Attached to n1 and asked for a node below it, the Node Builder
+        delegates the new node's content with that node's nodeType: the content
+        comes back to it for its node.create, and n1's own content is offered no
+        change. With neither a nodeId nor a nodeType the delegation is for n1
+        (the test above)."""
+        from utk_curio.backend.tests.test_agents import test_routes_proposals as routes
+
+        user, token = user_and_token
+        routes.TestNodeCreate()._write_builtin_package(_user_dir_key(user))
+        pid = _project(client, token)
+        create = "```curio.v1\n" + json.dumps({"toolRequest": {"tool": "node.create", "params": {
+            "nodeType": "curio.builtin/computation-analysis", "content": "return input_0.describe()",
+        }}}) + "\n```"
+        _, calls = _setup(
+            client, token, pid, monkeypatch,
+            replies=[
+                _delegate_tail(inputs=json.dumps({
+                    "intent": "summarize what n1 returns", "nodeType": "curio.builtin/computation-analysis",
+                })),
+                "return input_0.describe()",
+                create,
+                "Proposed the summary node: review it above.",
+            ],
+        )
+        att_id = self._attach_node(client, token, pid)
+        body = _run(client, token, pid, att_id, message="add a summary below this node").get_json()
+        # The run read the content back, as its node.create's. The run's calls
+        # share one message list, so the result is found by its prefix.
+        results = [
+            m["content"] for m in calls[0]
+            if m.get("role") == "user" and str(m.get("content") or "").startswith("[delegate result] ")
+        ]
+        assert len(results) == 1 and "return input_0.describe()" in results[0], results
+        proposals = [p for p in body["content"] if p["type"] == "proposal"]
+        assert [p["tool"] for p in proposals] == ["node.create"]
+        assert proposals[0]["preview"] == "return input_0.describe()"
+        # Nothing offers to replace n1's code.
+        cards = client.get(f"/api/agents/projects/{pid}/attachments", headers=_auth(token)).get_json()["attachments"]
+        reviews = [
+            c["activeProposal"] for c in cards
+            if c.get("activeProposal") and c["activeProposal"].get("tool") == "node.content.write"
+        ]
+        assert reviews == []
+
     def test_canvas_parent_homes_the_review_at_the_nodes_agent(self, client, user_and_token, tmp_curio, monkeypatch):
         user, token = user_and_token
         pid = _project(client, token)

@@ -40,6 +40,19 @@ export interface AgentSpatialJoinSetting {
   output?: "pairs" | "counts";
 }
 
+/** A Data Pool's conflict modes, as a planned or created one sets them
+ * (`metadata.dataPool`): each a ResolutionType other than OVERWRITE. */
+export interface AgentDataPoolSetting {
+  insideChart?: string;
+  betweenCharts?: string;
+}
+
+/** A Simple View's image column, as a planned or created one sets it
+ * (`metadata.simpleVis`). */
+export interface AgentSimpleVisSetting {
+  imageColumn?: string;
+}
+
 /** #662: a scenario a plan saves, on the review card. */
 export interface AgentPlanScenario {
   name: string;
@@ -214,11 +227,13 @@ export interface AgentProposalPart {
       expects?: string;
       /** #662: the widgets it declares, the scenario it is in, and for a
        * copy the ref of the node it copies. A Spatial Join's operation and
-       * output. */
+       * output, a Data Pool's modes, a Simple View's image column. */
       widgets?: AgentPlanWidget[];
       scenario?: string;
       copyOf?: string;
       spatialJoin?: AgentSpatialJoinSetting;
+      dataPool?: AgentDataPoolSetting;
+      simpleVis?: AgentSimpleVisSetting;
     }>;
     edgeCount: number;
     /** dev/67-8: the connection stage's labeled, index-stable edge rows. */
@@ -266,12 +281,15 @@ export interface AgentCreatedNodePayload {
   title?: string;
   /** dev/89: canonical persisted appearance (backend-normalized). #662: the
    * node's widgets, and for a copy the ids it descends from. A Spatial
-   * Join's operation and output. */
+   * Join's operation and output, a Data Pool's modes, a Simple View's image
+   * column. */
   metadata?: {
     appearance?: { backgroundColor?: string };
     widgets?: AgentPlanWidget[];
     copiedFrom?: string[];
     spatialJoin?: AgentSpatialJoinSetting;
+    dataPool?: AgentDataPoolSetting;
+    simpleVis?: AgentSimpleVisSetting;
   };
 }
 
@@ -328,11 +346,20 @@ export interface AgentApplyResult {
   followUpProposals?: string[];
 }
 
+/** What left the dataflow when an apply completed a plan that removes: its
+ * nodes and connections, for the live canvas. Present on the row or Connect
+ * all that completes the plan. */
+export interface AgentPlanRemovals {
+  removedNodeIds?: string[];
+  removedEdgeIds?: string[];
+}
+
 /** dev/67-5 apply-node response: one created node + the per-node ledger. */
-export interface AgentPlanNodeApplyResult {
+export interface AgentPlanNodeApplyResult extends AgentPlanRemovals {
   attachmentId: string;
   proposalId: string;
-  status: "pending" | "already-applied";
+  /** "applied" when this row completed the plan. */
+  status: "pending" | "applied" | "already-applied";
   ref: string;
   /** already-applied only: the existing node's id. */
   nodeId?: string;
@@ -376,7 +403,7 @@ export interface AgentAttachedAgentRow {
 }
 
 /** dev/67-8 apply-edges response: per-edge outcomes + the bridge payload. */
-export interface AgentPlanEdgesResult {
+export interface AgentPlanEdgesResult extends AgentPlanRemovals {
   attachmentId: string;
   proposalId: string;
   status: AgentProposalStatus;

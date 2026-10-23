@@ -45,20 +45,32 @@ def test_the_dataflow_builder_is_not_offered_a_decomposition_that_only_rewords_g
     assert '"workflow.plan.create"' not in _prompt(DATAFLOW_BUILDER)
 
 
-def test_the_dataflow_builder_is_not_told_every_applied_plan_ends_with_a_topology_verdict():
-    """Only the whole-plan Apply ends its result with one
-    (``plans._log_plan_applied``); a plan applied node by node, then its
-    connections, ends without it."""
-    assert "the applied result names what changed and ends with a Topology verdict" not in _prompt(DATAFLOW_BUILDER)
+def test_the_dataflow_builder_is_told_every_applied_plan_ends_with_a_topology_verdict():
+    """Every way a plan is applied ends its result with the verdict: Apply plan
+    (``plans._log_plan_applied``), and the row or Connect all that completes a
+    plan applied a part at a time, which writes it through the same function.
+    ``test_routes_proposals.py::TestPlansAppliedRowByRow`` checks the last
+    row's result and Connect all's, word for word as Apply plan's, and
+    ``test_routes_solve.py::TestSimulationDriver::test_auto_removes_what_the_plan_removes_and_the_stream_carries_it``
+    Simulation Mode's."""
+    assert (
+        "After the user applies a plan, the applied result names what changed and ends with a Topology verdict"
+        in _prompt(DATAFLOW_BUILDER)
+    )
 
 
-def test_the_node_builder_delegates_a_new_nodes_content_only_from_the_canvas():
-    """A ``node.content.generate`` delegation with no ``nodeId`` targets the
-    node the agent is attached to (``delegates._delegate_target_node_id``), and
-    its content becomes a review of that node's own content (``turn_loop``), not
-    content to put in a ``node.create``."""
+def test_the_node_builder_names_the_new_nodes_type_when_it_delegates_its_content():
+    """A ``node.content.generate`` delegation that names a ``nodeType`` and no
+    ``nodeId`` writes a new node of that template, wherever the agent is
+    attached (``delegates._delegate_target_node_id``): its content returns to
+    the run for its ``node.create``, and the node the agent is attached to is
+    offered no change. ``test_delegation.py::TestChatContentReviewMint::test_content_for_a_new_node_returns_to_the_run_for_its_node_create``
+    checks it from a node's Node Builder, and
+    ``test_source_grounding_routes.py::TestContentForANewNode`` that the content
+    is grounded as that template's."""
     step = _sentence(_prompt(NODE_BUILDER), "put the returned content in the node.create request's params.content")
-    assert "attached to the canvas" in step
+    assert "attached to the canvas" not in step
+    assert '"nodeType"' in step
 
 
 def test_the_node_builder_is_not_told_its_chat_starts_discovery():
@@ -223,20 +235,36 @@ def _what_agents_read() -> list[tuple[str, str]]:
     return texts
 
 
-def test_a_spec_is_kept_as_it_is_and_a_templates_widgets_set_only_in_a_plan():
-    """Only a plan starts a node from its template's starter and sets the
-    template's widgets by name (``plans._content_starters``,
-    ``plan_scenarios._set_over``); ``node.create`` takes the content and the
-    widgets it is given, and ``node.content.write`` carries no widgets. So a
-    sentence that tells an agent to keep a spec as it is, or to set a
-    template's widgets, says it is in a plan, wherever an agent reads it:
-    every page and prompt, and every template's description and starter, the
-    text of a package's nodes that a run's dataflow block shows. Scout's
-    charts' descriptions make no such claim without it."""
-    # The check finds the sentence #1070 narrowed, and holds it to the plan.
-    assert _claims(_NARROWED) == [_NARROWED]
-    assert _claims(_NARROWED.replace("in a plan, set", "set")) and "in a plan" not in _NARROWED.replace(
-        "in a plan, set", "set")
+#: Where a template's starter and widgets are set: the words each claim says it in.
+_IN_BOTH = "in a plan or a node.create"
+#: The sentence #1070 narrowed, as it reads once it holds in both.
+_WIDENED = _NARROWED.replace("in a plan, set", f"{_IN_BOTH}, set")
+
+
+def _tool_section(text: str, tool: str) -> str:
+    """The ``## <tool>`` section of the rendered ``tools.md``."""
+    sections = re.split(r"^## ", text, flags=re.MULTILINE)
+    found = [s for s in sections if s.split("\n", 1)[0].strip() == tool]
+    assert found, f"tools.md has no section {tool}"
+    return found[0]
+
+
+def test_a_spec_is_kept_as_it_is_and_a_templates_widgets_set_in_a_plan_or_a_node_create():
+    """A plan and a ``node.create`` both start a node of a template whose
+    starter is its whole content from that starter, and set the template's
+    widgets by name (``plans._content_starters`` and the node.create mint,
+    both through ``plan_scenarios._set_over``); ``node.content.write`` carries
+    no widgets. ``test_routes_starter_templates.py::TestACreatedTemplateStartsFromItsStarter``
+    checks the node.create half, and ``TestAPlannedTemplateKeepsItsStarter``
+    the plan's. So a sentence that tells an agent to keep a spec as it is, or
+    to set a template's widgets, says it holds in a plan or a node.create,
+    wherever an agent reads it: every page and prompt, and every template's
+    description and starter. The two tools that place a node say it, where a
+    run reads each of them."""
+    # The check finds the widened sentence, and holds a sentence to both: one
+    # that names only the plan, as #1070 left it, no longer passes.
+    assert _claims(_WIDENED) == [_WIDENED]
+    assert _claims(_NARROWED) == [_NARROWED] and _IN_BOTH not in _NARROWED
     for innocent in ("A widget is a value a node's code reads that the user sets in the node's Widgets tab.",
                      "A copy whose height factor widget is set to 2.", "Keep your answers specific."):
         assert _claims(innocent) == [], innocent
@@ -248,9 +276,13 @@ def test_a_spec_is_kept_as_it_is_and_a_templates_widgets_set_only_in_a_plan():
     charts = [(where, text) for where, text in texts
               if where.startswith("curio.scout/") and where.endswith(", its description")]
     assert len(charts) >= 15, charts
-    unnarrowed = [(where, claim) for where, text in texts for claim in _claims(text) if "in a plan" not in claim]
-    assert not unnarrowed, (
-        "these tell an agent to keep a spec as it is or to set a template's widgets, which only a plan "
-        f"does, and do not say so: {unnarrowed}"
+    unsaid = [(where, claim) for where, text in texts for claim in _claims(text) if _IN_BOTH not in claim]
+    assert not unsaid, (
+        "these tell an agent to keep a spec as it is or to set a template's widgets, which a plan and a "
+        f"node.create do, and do not say where: {unsaid}"
     )
-    assert not [(where, claim) for where, text in charts for claim in _claims(text) if "in a plan" not in claim]
+    assert not [(where, claim) for where, text in charts for claim in _claims(text) if _IN_BOTH not in claim]
+    (tools_page,) = [text for where, text in texts if where.endswith("agent.curio.builtin@1/tools.md")]
+    for tool in ("dataflow.plan.write", "node.create"):
+        said = _claims(_tool_section(tools_page, tool))
+        assert said and all(_IN_BOTH in claim for claim in said), (tool, said)

@@ -16,6 +16,7 @@ import {
 } from "../../../registry/projectPackagesStore";
 import { EdgeType } from "../../../constants";
 import { normalizeWidgets } from "../../../utils/widgets/widgetModel";
+import { dataPoolFromSpec } from "../../../utils/dataPoolSpec";
 import { lineageFromSpec } from "../../../utils/scenarios/duplicateSelection";
 import { joinScenarios } from "../../../utils/scenarios/scenarioEdits";
 import type { Scenario } from "../../../utils/scenarios/scenarioModel";
@@ -93,6 +94,10 @@ export function useAgentCanvasMutations(): void {
     const widgets = normalizeWidgets(node.metadata?.widgets);
     const copiedFrom = lineageFromSpec(node.metadata?.copiedFrom);
     const spatialJoin = node.metadata?.spatialJoin;
+    // A Data Pool's modes, the ones that name a mode, and a Simple View's
+    // image column, as loadTrill reads them.
+    const dataPool = dataPoolFromSpec(node.metadata?.dataPool);
+    const simpleVis = node.metadata?.simpleVis;
     createCodeNode(node.type, {
       nodeId: node.id,
       code: node.content,
@@ -105,12 +110,29 @@ export function useAgentCanvasMutations(): void {
       ...(widgets.length ? { widgets } : {}),
       ...(copiedFrom.length ? { copiedFrom } : {}),
       ...(spatialJoin ? { spatialJoin } : {}),
+      ...(dataPool ? { dataPool } : {}),
+      ...(simpleVis ? { simpleVis } : {}),
     });
   };
 
   // #662: scenarios the apply saved join the canvas's, which a save writes.
   const joinSaved = (saved: Scenario[] | undefined) => {
     if (saved?.length) setScenarios(joinScenarios(scenarios, saved));
+  };
+
+  // What an applied plan removes, through the REVIEWED path (dev/62): the
+  // user authorized every victim by name on the review card, and the edge
+  // cascade travels in the same event, so victims and their edges leave in
+  // one operation with manual-delete bookkeeping, without the manual "remove
+  // the edges first" guard (which reads the not-yet-committed edge state and
+  // would refuse every connected victim). Already-absent elements (user
+  // deleted them live) are a no-op.
+  const removeReviewed = (live: Set<string>, nodeIds: string[] | undefined, edgeIds: string[] | undefined) => {
+    const removedNodeIds = (nodeIds ?? []).filter((id) => live.has(id));
+    const removedEdgeIds = edgeIds ?? [];
+    if (removedNodeIds.length || removedEdgeIds.length) {
+      applyReviewedRemovals(removedNodeIds, removedEdgeIds);
+    }
   };
 
   handlerRef.current = (mutation: AgentCanvasMutation) => {
@@ -122,6 +144,16 @@ export function useAgentCanvasMutations(): void {
     }
     if (mutation.kind === "scenarios-created") {
       joinSaved(mutation.scenarios);
+      return;
+    }
+    if (mutation.kind === "plan-removals") {
+      // A plan applied a row at a time, or by Connect all, removes what it
+      // names when it completes, as a whole applied plan does. Its rows
+      // already placed its nodes: nothing to insert, no fit.
+      const key = `removals:${mutation.planId}`;
+      if (processedRef.current.has(key)) return;
+      processedRef.current.add(key);
+      removeReviewed(new Set(getNodes().map((n) => n.id)), mutation.removedNodeIds, mutation.removedEdgeIds);
       return;
     }
     if (mutation.kind === "edges-created") {
@@ -145,18 +177,8 @@ export function useAgentCanvasMutations(): void {
       if (processedRef.current.has(mutation.planId)) return;
       processedRef.current.add(mutation.planId);
       const live = new Set(getNodes().map((n) => n.id));
-      // Removals FIRST (dev/59), through the REVIEWED path (dev/62): the
-      // user authorized every victim by name on the review card, and the
-      // edge cascade travels in the same event — so victims and their edges
-      // leave in one operation with manual-delete bookkeeping, without the
-      // manual "remove the edges first" guard (which reads the not-yet-
-      // committed edge state and would refuse every connected victim).
-      // Already-absent elements (user deleted them live) are a no-op.
-      const removedNodeIds = (mutation.removedNodeIds ?? []).filter((id) => live.has(id));
-      const removedEdgeIds = mutation.removedEdgeIds ?? [];
-      if (removedNodeIds.length || removedEdgeIds.length) {
-        applyReviewedRemovals(removedNodeIds, removedEdgeIds);
-      }
+      // Removals FIRST (dev/59), through the reviewed path.
+      removeReviewed(live, mutation.removedNodeIds, mutation.removedEdgeIds);
       for (const node of mutation.nodes) {
         if (!live.has(node.id)) insertNode(node);
       }

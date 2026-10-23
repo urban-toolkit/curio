@@ -1,9 +1,9 @@
 /**
  * What a Map Edits node does on an Autark map it feeds and is linked to
- * (#662): an overlay over the map's canvas, drawn through the map's own
+ * (#662): it hears the pointer on the map, read through the map's own
  * camera, where the layer the node works on is picked, drawn into and
- * reshaped (`utils/editFeatures/mapEditBus`). It is mounted only on a map a
- * Map Edits node feeds.
+ * reshaped (`utils/editFeatures/mapEditBus`), and holds the tip with its
+ * buttons. It is mounted only on a map a Map Edits node feeds.
  *
  * The map keeps its own gestures: a drag pans it and the wheel zooms it, in
  * every mode. A click is the node's:
@@ -18,25 +18,30 @@
  *   part of a feature of several to remove it, alt-click a corner to
  *   delete it; move: drag the picked feature to move it whole.
  *
- * Only what the action is about is drawn here: what the node selects (its
- * pick, or the features a rule matches), which comes back on the interaction
- * edge, the handles and the shape being drawn. The map draws the layers, with
- * the edits made, again after each one.
+ * Nothing is drawn over the map. What the node selects (its pick, or the
+ * features a rule matches), which comes back on the interaction edge, the map
+ * lights with Autark's own highlight, and the drawing tools are layers of the
+ * map itself (`mapEditLayers`): the shape being drawn and its corners, a shape
+ * waiting to be added, and the picked feature while it is reshaped or moved,
+ * with its corners and midpoints, which a press takes where the map shows
+ * them. The map draws the layers, with the edits made, again after each one.
  */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useFlowContext } from "../../providers/FlowProvider";
 import type { SelectionId } from "../../utils/references/selectionTags";
 import { withArticle, type Geometry } from "../../utils/editFeatures/editFeatures";
-import { kindOf, type EditedFeature } from "../../utils/editFeatures/layerModel";
-import { editMap, editMapLayerId, useMapEdit } from "../../utils/editFeatures/mapEditBus";
-import { editSelection, selectedIdsIn, toggledIds } from "../../utils/editFeatures/mapEditSelection";
+import { kindOf } from "../../utils/editFeatures/layerModel";
+import { editMap, editMapLayerId, editMapPositions, useMapEdit } from "../../utils/editFeatures/mapEditBus";
+import { editSelection, selectedIdsIn, toggledIds, type SentSelection } from "../../utils/editFeatures/mapEditSelection";
 import { partsOf, withoutPart } from "../../utils/editFeatures/geometryParts";
-import { toRings } from "../../utils/editFeatures/geometryRings";
+import { handlesOf, toRings } from "../../utils/editFeatures/geometryRings";
+import { showMapEditTools, type MapEditTools } from "../../utils/editFeatures/mapEditLayers";
 import {
   cameraKey,
   cameraView,
   drawnSize,
   fromAbove,
+  handleAt,
   hitAt,
   isFromAbove,
   projectionOf,
@@ -50,25 +55,27 @@ import {
 import { isTypingTarget } from "../canvasKeyBindings";
 import styles from "./MapEditOverlay.module.css";
 
-/** How many matched or picked features are outlined at most. */
-const MAX_OUTLINED = 3000;
-
 type Gesture =
   | { kind: "click"; start: XY; moved: boolean; shift: boolean }
   | { kind: "corner" | "mid"; ring: number; index: number; shape?: Geometry }
   | { kind: "move"; origin: Geometry; at: XY };
 
-/** The id the shape drawn but not yet added goes by, among the outlines. */
-const DRAFT = "__drawn__";
+/** A screen position to a tenth of a pixel. */
+const tenth = (v: number) => Math.round(v * 10) / 10;
 
-export default function MapEditOverlay({ mapId }: { mapId: string }) {
+export default function MapEditOverlay({
+  mapId,
+  sendSelection,
+}: {
+  mapId: string;
+  /** Sends a pick as the map's own selection, as autk-map's pick is sent. */
+  sendSelection: (selection: SentSelection) => void;
+}) {
   const { session, map } = useMapEdit(mapId);
   const active = session?.active ?? null;
-  // The map's node: the selections the interaction edge brings it, and where
-  // its own selection goes.
+  // The map's node: the selections the interaction edge brings it.
   const flow = useFlowContext() as any;
   const mapData = (flow?.nodes ?? []).find((n: any) => n.id === mapId)?.data;
-  const sendSelection = mapData?.interactionsCallback ?? flow?.interactionsCallback;
   const box = useRef<HTMLDivElement>(null);
   const [, setTick] = useState(0);
   const [draft, setDraft] = useState<XY[]>([]);
@@ -123,28 +130,74 @@ export default function MapEditOverlay({ mapId }: { mapId: string }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [mapData?.interactions, session?.interactionId, active?.table, features],
   );
-  const selectedKeys = useMemo(() => new Set([...selected.map(String), ...(active?.draft ? [DRAFT] : [])]), [selected, active?.draft]);
   const selectedOne = selected.length === 1 ? shown.find((f) => f.id !== null && String(f.id) === String(selected[0])) : undefined;
-  const handles = selectedOne?.geometry && (mode === "reshape" || mode === "move") ? toRings(selectedOne.geometry) : null;
+  // The picked feature's corners and midpoints, while its points are moved.
+  const reshaped = selectedOne?.geometry && mode === "reshape" ? toRings(selectedOne.geometry) : null;
+  const handles = reshaped ? handlesOf(reshaped) : null;
+
+  // The picked feature, while it is reshaped or moved, is drawn by the tools,
+  // each of its parts, and skipped where its layer draws it.
+  const changing = (mode === "reshape" || mode === "move") && selectedOne && selectedOne.id !== null ? selectedOne.id : null;
+  const changingKey = changing === null ? null : String(changing);
+  // Where its layer draws it, once the map has read back the rows it drew.
+  const [hiddenPositions, setHiddenPositions] = useState<number[]>([]);
+  useEffect(() => {
+    let live = true;
+    if (changing !== null && active?.key) {
+      void editMapPositions(mapId, active.table, active.key, changing).then((positions) => {
+        if (live) setHiddenPositions(positions);
+      });
+    } else {
+      setHiddenPositions((now) => (now.length === 0 ? now : []));
+    }
+    return () => {
+      live = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [map, mapId, active?.table, active?.key, changingKey]);
+  const changed = useMemo(() => {
+    const parts = new Map<string, Geometry>();
+    for (const f of shown) if (changingKey !== null && f.geometry && f.id !== null && String(f.id) === changingKey) parts.set(JSON.stringify(f.geometry), f.geometry);
+    return [...parts.values()];
+  }, [shown, changingKey]);
+
+  // The tools, drawn by the map as layers of its own: a shape waiting to be
+  // added, the feature being reshaped or moved with its handles, and the
+  // shape being drawn, its corners and the pointer.
+  const tools: MapEditTools | null =
+    active && projection
+      ? {
+          shapes: [...(active.draft ? [active.draft] : []), ...changed],
+          path: mode === "draw" && draft.length > 0 ? [...draft, ...(hover ? [hover] : [])] : [],
+          corners: [...(mode === "draw" ? draft : []), ...(handles?.corners.map((c) => c.at) ?? [])],
+          midpoints: handles?.midpoints.map((c) => c.at) ?? [],
+          hidden: changing !== null && hiddenPositions.length > 0 ? { layer: editMapLayerId(mapId, active.table), positions: hiddenPositions } : null,
+        }
+      : null;
+  const geographic = !!active?.geographic;
+  useEffect(() => {
+    showMapEditTools(map, tools, geographic);
+  });
+  // A map replaced by the next draw, or left, keeps none of them.
+  useEffect(() => () => showMapEditTools(map, null, false), [map]);
 
   /**
    * A click that picks: the map's selection, *id*'s feature alone, or with
    * shift added to what the node selects now or taken out of it; a click on
-   * nothing clears it. Sent through the map's node, as its own pick is, keyed
-   * by the layer's id column. Not while a shape waits to be added, nor while
-   * a rule picks.
+   * nothing clears it. Sent as the map's own pick is, keyed by the layer's id
+   * column. Not while a shape waits to be added, nor while a rule picks.
    */
   const pick = (id: SelectionId | null, additive: boolean) => {
     if (!active?.key || active.draft || active.rule) return;
     const ids = id === null ? (additive ? selected : []) : additive ? toggledIds(selected, id) : [id];
-    sendSelection?.(editSelection(ids, active.key, active.table), mapId);
+    sendSelection(editSelection(ids, active.key, active.table));
   };
 
   // Every layer is worked on in 2D, from straight above with the buildings
-  // drawn flat: outlines and handles are on the ground, and a raised roof,
-  // tilted or off the middle of the view, is not over its footprint. One fixed
-  // view for points, lines and areas alike. The tilt and the heights come back
-  // after, around where the map then looks.
+  // drawn flat: the tools are on the ground, and a raised roof, tilted or off
+  // the middle of the view, is not over its footprint. One fixed view for
+  // points, lines and areas alike. The tilt and the heights come back after,
+  // around where the map then looks.
   const flat = !!active;
   flatNow.current = flat;
   useEffect(() => {
@@ -180,8 +233,8 @@ export default function MapEditOverlay({ mapId }: { mapId: string }) {
   // The latest of everything the listeners read, so they are added once.
   // How big the map draws the layer's points and lines, for what a click reaches.
   const size = drawnSize(map, active?.table ? editMapLayerId(mapId, active.table) : undefined);
-  const live = useRef({ session, active, projection, shown, selectedOne, handles, mode, kind, draft, finishDraft, dragShape, size, pick });
-  live.current = { session, active, projection, shown, selectedOne, handles, mode, kind, draft, finishDraft, dragShape, size, pick };
+  const live = useRef({ session, active, projection, shown, selectedOne, reshaped, handles, mode, kind, draft, finishDraft, dragShape, size, pick });
+  live.current = { session, active, projection, shown, selectedOne, reshaped, handles, mode, kind, draft, finishDraft, dragShape, size, pick };
 
   useEffect(() => {
     const host = box.current?.parentElement;
@@ -201,30 +254,28 @@ export default function MapEditOverlay({ mapId }: { mapId: string }) {
       event.preventDefault();
     };
     const onDown = (event: PointerEvent) => {
-      const { projection: p, selectedOne: one, handles: h, mode: m, shown: all, size: z } = live.current;
+      const { projection: p, selectedOne: one, reshaped: h, handles: k, mode: m, shown: all, size: z } = live.current;
       // Heard on the window, ahead of the page's own listeners: a press on this map only.
       if (!p || event.button !== 0 || !host.contains(event.target as Node)) return;
-      const target = event.target as Element;
       // The overlay's own buttons are buttons.
-      if (target.closest?.("[data-map-edit-ui]")) return;
-      const ring = target.getAttribute?.("data-ring");
-      const index = target.getAttribute?.("data-index");
-      if (h && one && ring !== null && index !== null && ring !== undefined) {
+      if ((event.target as Element).closest?.("[data-map-edit-ui]")) return;
+      const s = local(event);
+      // A press on a corner or a midpoint, where the map shows it.
+      const handle = h && k && one ? handleAt(k, s, p) : null;
+      if (h && one && handle) {
         stop(event);
-        const r = Number(ring), i = Number(index);
-        if (event.altKey && target.getAttribute("data-handle") === "corner") {
+        if (event.altKey && handle.kind === "corner") {
           const rings = h.rings.map((rr) => [...rr]);
-          const min = h.closed[r] ? 3 : kindOf(one.geometry) === "points" ? 1 : 2;
-          if (rings[r].length > min) {
-            rings[r].splice(i, 1);
+          const min = h.closed[handle.ring] ? 3 : kindOf(one.geometry) === "points" ? 1 : 2;
+          if (rings[handle.ring].length > min) {
+            rings[handle.ring].splice(handle.index, 1);
             live.current.session?.onReshape(one.id as SelectionId, h.rebuild(rings));
           }
           return;
         }
-        gesture.current = { kind: target.getAttribute("data-handle") === "mid" ? "mid" : "corner", ring: r, index: i };
+        gesture.current = { kind: handle.kind, ring: handle.ring, index: handle.index };
         return;
       }
-      const s = local(event);
       // Moving points, an alt-click inside one part of a feature of several
       // takes that part away (a corner's own alt-click deletes the corner).
       if (m === "reshape" && event.altKey && one?.geometry && one.id !== null) {
@@ -248,15 +299,17 @@ export default function MapEditOverlay({ mapId }: { mapId: string }) {
       gesture.current = { kind: "click", start: s, moved: false, shift: event.shiftKey };
     };
     const onMove = (event: PointerEvent) => {
-      const { projection: p, selectedOne: one, mode: m } = live.current;
+      const { projection: p, selectedOne: one, handles: k, mode: m } = live.current;
       if (!p) return;
       const s = local(event);
       if (m === "draw") setHover(p.toData(s[0], s[1]));
       const g = gesture.current;
       if (!g) {
-        // Moving it whole, the picked feature shows it can be grabbed with shift held.
+        // A corner shows it can be dragged and a midpoint that it adds one;
+        // moving it whole, the picked feature that it can be grabbed with shift held.
+        const handle = k && one ? handleAt(k, s, p) : null;
         const grab = m === "move" && event.shiftKey && !!one?.geometry && hitAt([one], s, p, live.current.size) !== null;
-        host.style.cursor = grab ? "grab" : "";
+        host.style.cursor = handle ? (handle.kind === "corner" ? "grab" : "copy") : grab ? "grab" : "";
         return;
       }
       // Shift-drag would tilt and turn Autark's camera, which the view from
@@ -365,71 +418,20 @@ export default function MapEditOverlay({ mapId }: { mapId: string }) {
 
   if (!active) return null;
   // The box is there before the camera is, so the listeners have their host.
-  if (!projection) return <div ref={box} data-testid="map-edit-overlay" className={styles.overlay} />;
+  if (!projection) return <div ref={box} data-testid="map-edit-overlay" data-corners="[]" className={styles.overlay} />;
   const p = projection;
-  const path = (geometry: Geometry) => {
-    const { rings, closed } = toRings(geometry);
-    return rings.map((ring, r) => ring.map((xy, i) => `${i === 0 ? "M" : "L"}${p.toScreen(xy).map((v) => v.toFixed(1)).join(" ")}`).join(" ") + (closed[r] ? " Z" : "")).join(" ");
-  };
-  /** A ring around a feature too small to see on the map as it is zoomed. */
-  const SMALL_PX = 14;
-  const outline = (f: EditedFeature, dashed: boolean) => {
-    if (!f.geometry) return null;
-    const id = String(f.id);
-    if (kindOf(f.geometry) === "points") {
-      return toRings(f.geometry).rings.map((ring, r) => {
-        const [x, y] = p.toScreen(ring[0]);
-        // Around the point as the map draws it.
-        const radius = Math.max(7, p.pixels(ring[0], size.pointRadius) + 2);
-        return (
-          <g key={`${id}-${r}`}>
-            <circle className={styles.casing} cx={x} cy={y} r={radius + 2} strokeWidth={4} />
-            <circle className={`${styles.outline} ${styles.point}`} cx={x} cy={y} r={radius} strokeWidth={2.5} strokeDasharray={dashed ? "3 2" : undefined} />
-          </g>
-        );
-      });
-    }
-    const d = path(f.geometry);
-    const screen = toRings(f.geometry).rings.flat().map(p.toScreen);
-    const xs = screen.map(([x]) => x), ys = screen.map(([, y]) => y);
-    const small = screen.length > 0 && Math.max(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys)) < SMALL_PX;
-    const width = dashed ? 2 : 3.5;
-    return (
-      <g key={id}>
-        <path className={styles.casing} d={d} strokeWidth={width + 3} />
-        <path
-          className={`${styles.outline} ${kindOf(f.geometry) === "areas" ? styles.area : ""}`}
-          d={d}
-          strokeWidth={width}
-          strokeDasharray={dashed ? "5 3" : undefined}
-          fillRule="evenodd"
-        />
-        {small ? (
-          <circle
-            className={styles.outline}
-            cx={(Math.max(...xs) + Math.min(...xs)) / 2}
-            cy={(Math.max(...ys) + Math.min(...ys)) / 2}
-            r={12}
-            strokeWidth={2.5}
-            strokeDasharray={dashed ? "3 2" : undefined}
-          />
-        ) : null}
-      </g>
-    );
-  };
-  // What the node selects, and the shape drawn but not yet added, outlined on
-  // the ground where the map draws them (buildings flat), in the map's
-  // highlight: what a rule matches dashed, as it is kept matching later.
-  const withDraft: EditedFeature[] = active.draft ? [...shown, { id: DRAFT, geometry: active.draft, properties: {}, status: "added" }] : shown;
-  const outlined = withDraft.filter((f) => f.id !== null && selectedKeys.has(String(f.id))).slice(0, MAX_OUTLINED);
-  const picked = active.rule ? [] : outlined;
-  const matched = active.rule ? outlined : [];
-  const draftScreen = draft.map(p.toScreen);
-  const hoverScreen = hover && mode === "draw" && draft.length > 0 ? p.toScreen(hover) : null;
+  // The corners a drag moves, where the map shows them, in its own pixels.
+  const corners = (handles?.corners ?? []).map(({ ring, index, at }) => {
+    const [x, y] = p.toScreen(at);
+    return { ring, index, x: tenth(x), y: tenth(y) };
+  });
   const noun = active.noun;
   const parts = selectedOne?.geometry ? partsOf(selectedOne.geometry).length : 0;
+  // The shape being drawn: what it is and how many points it has, then how to go on.
+  const progress = mode === "draw" && draft.length > 0 ? `New ${noun} · ${draft.length} point${draft.length === 1 ? "" : "s"}. ` : "";
   const tip =
-    mode === "draw"
+    progress +
+    (mode === "draw"
       ? kind === "points"
         ? `Click the map to place a ${noun}. Drag to pan.`
         : "Click the map to add points. Double-click or press Enter to finish, or Esc to cancel."
@@ -439,53 +441,21 @@ export default function MapEditOverlay({ mapId }: { mapId: string }) {
           : `Drag a corner to move it. Click or drag a midpoint to add one, and alt-click a corner to delete it.${parts > 1 ? " Alt-click inside a part to remove it." : ""}`
         : mode === "move"
           ? `Shift-drag the ${noun} to move it. Drag to pan.`
-          : `Click ${withArticle(noun)} to pick it, and shift-click to add one. Drag to pan.`;
+          : `Click ${withArticle(noun)} to pick it, and shift-click to add one. Drag to pan.`);
   // Changing a shape, Done goes back to panning.
   const shaping = mode === "reshape" || mode === "move";
-  const last = draftScreen[draftScreen.length - 1];
 
   return (
-    <div ref={box} data-testid="map-edit-overlay" data-edit-mode={mode} data-edit-layer={active.table} className={`${styles.overlay} ${mode === "draw" ? styles.drawing : ""}`}>
-      <svg width={p.width} height={p.height} className={styles.svg} aria-hidden="true">
-        {matched.map((f) => outline(f, true))}
-        {picked.map((f) => outline(f, false))}
-        {handles
-          ? handles.rings.map((ring, r) => (
-              <g key={`ring-${r}`} className={styles.handles}>
-                {mode === "reshape" && ring.length > 1
-                  ? ring.slice(0, handles.closed[r] ? ring.length : ring.length - 1).map((xy, i) => {
-                      const next = ring[(i + 1) % ring.length];
-                      const [x, y] = p.toScreen([(xy[0] + next[0]) / 2, (xy[1] + next[1]) / 2]);
-                      return <circle key={`m${i}-${selectedOne?.id}`} className={`${styles.handle} ${styles.mid}`} data-handle="mid" data-ring={r} data-index={i} cx={x} cy={y} r={4} strokeWidth={1.5} />;
-                    })
-                  : null}
-                {mode === "reshape"
-                  ? ring.map((xy, i) => {
-                      const [x, y] = p.toScreen(xy);
-                      return <circle key={`c${i}-${selectedOne?.id}`} className={`${styles.handle} ${styles.corner}`} data-handle="corner" data-ring={r} data-index={i} cx={x} cy={y} r={6} strokeWidth={2} />;
-                    })
-                  : null}
-              </g>
-            ))
-          : null}
-        {draftScreen.length > 0 ? (
-          <>
-            <polyline
-              className={`${styles.outline} ${kind === "areas" ? styles.draft : ""}`}
-              points={[...draftScreen, ...(hoverScreen ? [hoverScreen] : [])].map((pt) => pt.join(",")).join(" ")}
-              strokeWidth={3}
-            />
-            {draftScreen.map(([x, y], i) => (
-              <circle key={i} className={styles.vertex} cx={x} cy={y} r={5} strokeWidth={2.5} />
-            ))}
-          </>
-        ) : null}
-      </svg>
-      {last ? (
-        <span data-testid="map-edit-draft-label" className={styles.draftLabel} style={{ left: last[0] + 10, top: last[1] - 30 }}>
-          New {noun} · {draft.length} point{draft.length === 1 ? "" : "s"}
-        </span>
-      ) : null}
+    <div
+      ref={box}
+      data-testid="map-edit-overlay"
+      data-edit-mode={mode}
+      data-edit-layer={active.table}
+      data-corners={JSON.stringify(corners)}
+      data-map-width={p.width}
+      data-map-height={p.height}
+      className={`${styles.overlay} ${mode === "draw" ? styles.drawing : ""}`}
+    >
       <div data-map-edit-ui="true" className={styles.toolbar}>
         <span data-testid="map-edit-tip" className={styles.tip}>
           {tip}

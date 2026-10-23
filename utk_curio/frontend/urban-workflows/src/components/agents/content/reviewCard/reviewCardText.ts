@@ -6,6 +6,7 @@
  */
 import type { AgentProposalPart, AgentSourceRef } from "../../../../services/agents";
 import { tryGetNodeDescriptor } from "../../../../registry/nodeRegistry";
+import nodeSettings from "../../../../contracts/nodeSettings.json";
 
 /** dev/114 (DEC-072): the Source block's kind headline — how the runtime
  * grounded what the proposed code opens or fetches. */
@@ -211,8 +212,22 @@ function spatialJoinText(setting: { predicate?: string; output?: string }): stri
   return parts.join(", ");
 }
 
+/** A setting as its node's own control words it, `<label>: <value>`, each
+ * set one in the node's order, joined as the backend's preview joins them. */
+function settingText(
+  setting: Record<string, string | undefined>,
+  labels: Record<string, string>,
+  values: Record<string, string> = {},
+): string {
+  return Object.keys(labels)
+    .filter((key) => setting[key] !== undefined)
+    .map((key) => `${labels[key]}: ${values[setting[key]!] ?? setting[key]}`)
+    .join("; ");
+}
+
 /** #662: a planned node's widgets, its scenario, and the node a copy copies;
- * a Spatial Join's operation and output. */
+ * a Spatial Join's operation and output; a Data Pool's modes and a Simple
+ * View's image column, in the pool's and the view's own words. */
 export function planNodeExtras(part: AgentProposalPart, node: { ref: string }): string[] {
   const row = part.plan!.nodes.find((n) => n.ref === node.ref);
   if (!row) return [];
@@ -223,6 +238,10 @@ export function planNodeExtras(part: AgentProposalPart, node: { ref: string }): 
   }
   if (row.widgets?.length) lines.push(`widgets: ${row.widgets.map(widgetText).join(", ")}`);
   if (row.spatialJoin) lines.push(spatialJoinText(row.spatialJoin));
+  if (row.dataPool) {
+    lines.push(settingText({ ...row.dataPool }, nodeSettings.dataPool.settings, nodeSettings.dataPool.modes));
+  }
+  if (row.simpleVis) lines.push(settingText({ ...row.simpleVis }, nodeSettings.simpleVis.settings));
   return lines;
 }
 

@@ -33,10 +33,14 @@ import json
 import re
 
 from utk_curio.backend.app.agents.domain import agent_text
+from utk_curio.backend.app.agents.domain.contracts import MAX_NOTES
 
 TAIL_FENCE = "```curio.v1"
 TAIL_MAX_BYTES = 4096
 MAX_PARTS = 8
+#: What one note may take of a request (at most ``MAX_NOTES`` of them): a
+#: finding in a few sentences, with its title and its color.
+_NOTE_MAX_BYTES = 2048
 
 _PROMPT_MAX_CHARS = 200
 _MAX_ALTERNATIVES = 3
@@ -267,8 +271,15 @@ _CONTENT_PARAM_PATHS = {
 # appearance, widgets) keeps a classic-tail budget, never the plan budget.
 _CONTENT_PARAM_REST_MAX_BYTES = TAIL_MAX_BYTES
 
+#: The tools whose params carry notes, ``params.notes``: the findings a
+#: package.install enlists a notes package for, which become notes once it is
+#: applied. The list gets a budget of its own, sized for MAX_NOTES notes, as a
+#: node's content does; the params beside it keep the classic cap.
+_NOTES_PARAM_TOOLS = frozenset({"package.install"})
+_NOTES_PARAM_MAX_BYTES = MAX_NOTES * _NOTE_MAX_BYTES
+
 #: The tools whose TAIL may exceed TAIL_MAX_BYTES (both gates in parse_parts).
-_BIG_TAIL_TOOLS = frozenset(_TOOL_PARAM_BUDGETS) | frozenset(_CONTENT_PARAM_PATHS)
+_BIG_TAIL_TOOLS = frozenset(_TOOL_PARAM_BUDGETS) | frozenset(_CONTENT_PARAM_PATHS) | _NOTES_PARAM_TOOLS
 
 
 def _pop_content_field(params: dict, path: tuple[str, ...]) -> tuple[str | None, dict]:
@@ -336,6 +347,24 @@ def parse_tool_request_verbose(raw: object) -> tuple[dict | None, list[str]]:
                     max_bytes=_CONTENT_PARAM_REST_MAX_BYTES,
                 )
             )
+    elif tool in _NOTES_PARAM_TOOLS and isinstance(params.get("notes"), list):
+        # The notes are lifted only when they are a list, so a wrong-typed one
+        # stays in the rest, as a content field does.
+        rest = {key: value for key, value in params.items() if key != "notes"}
+        try:
+            notes_bytes = len(json.dumps(params["notes"]).encode("utf-8"))
+            rest_bytes = len(json.dumps(rest).encode("utf-8"))
+        except (TypeError, ValueError) as exc:
+            return None, [agent_text.message("request.params-not-json", exc=exc)]
+        if notes_bytes > _NOTES_PARAM_MAX_BYTES:
+            errors.append(agent_text.message(
+                "request.notes-too-big", notes_bytes=notes_bytes, max_bytes=_NOTES_PARAM_MAX_BYTES,
+                max_notes=MAX_NOTES,
+            ))
+        if rest_bytes > _TOOL_PARAMS_MAX_BYTES:
+            errors.append(agent_text.message(
+                "request.params-beside-notes-too-big", rest_bytes=rest_bytes, max_bytes=_TOOL_PARAMS_MAX_BYTES,
+            ))
     else:
         budget = _TOOL_PARAM_BUDGETS.get(tool, _TOOL_PARAMS_MAX_BYTES)
         try:
@@ -612,7 +641,7 @@ def _parse_dataflow_plan_verbose(raw: object) -> tuple[dict | None, list[str]]:
         if widget_errors:
             errors.extend(widget_errors)
             continue
-        setting_errors = _plan_node_spatial_join(node, node_raw, where)
+        setting_errors = _plan_node_settings(node, node_raw, where)
         if setting_errors:
             errors.extend(setting_errors)
             continue
@@ -749,16 +778,15 @@ def _plan_node_widgets(node: dict, raw: object, where: str) -> list[str]:
     return []
 
 
-def _plan_node_spatial_join(node: dict, node_raw: dict, where: str) -> list[str]:
-    """A planned Spatial Join's operation and output, set on *node* (absent
-    when it sets none), or the errors. Which template takes one is the mint's
-    question: the grammar knows no roster."""
-    from utk_curio.backend.app.agents.domain import spatial_join_settings
+def _plan_node_settings(node: dict, node_raw: dict, where: str) -> list[str]:
+    """A planned node's settings, set on *node* (each absent when it sets
+    none), or the errors: a Spatial Join's operation and output, a Data Pool's
+    conflict modes, a Simple View's image column (``node_settings``). Which
+    template takes one is the mint's question: the grammar knows no roster."""
+    from utk_curio.backend.app.agents.domain import node_settings
 
-    key = spatial_join_settings.KEY
-    setting, problems = spatial_join_settings.parse(node_raw.get(key), f"{where}.{key}")
-    if setting:
-        node[key] = setting
+    settings, problems = node_settings.parse(node_raw, where)
+    node.update(settings)
     return problems
 
 

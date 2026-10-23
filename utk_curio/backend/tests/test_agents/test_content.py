@@ -281,6 +281,44 @@ class TestContentClassToolBudgets:
         assert "toolRequest" not in visible
 
 
+class TestInstallNotesBudget:
+    """package.install carries the findings that become notes once the
+    package is enlisted, in ``params.notes``: they get a budget of their own,
+    as node.create's content does, and the dirName and the reason keep the
+    classic 1 KB."""
+
+    def _notes(self, count, chars):
+        return [{"title": f"Finding {i}", "content": "x" * chars, "color": "green"} for i in range(count)]
+
+    def _params(self, **params):
+        return {"dirName": "curio.notes@1", "reason": "the findings need a note template", **params}
+
+    def test_ten_notes_of_600_characters_parse_whole(self):
+        params = self._params(notes=self._notes(10, 600))
+        body = json.dumps({"toolRequest": {"tool": "package.install", "params": params}})
+        assert len(body.encode()) > content.TAIL_MAX_BYTES
+        (part,) = content.parse_parts(body)
+        assert part == {"type": "toolRequest", "tool": "package.install", "params": params}
+        visible, parts = content.extract_content(f"I will install it.\n\n```curio.v1\n{body}\n```")
+        assert [p["params"]["notes"] for p in parts] == [params["notes"]]
+        assert "toolRequest" not in visible
+
+    def test_notes_over_their_budget_are_refused_with_their_own_message(self):
+        _, errors = content.parse_tool_request_verbose(
+            {"tool": "package.install", "params": self._params(notes=self._notes(16, 3000))})
+        assert len(errors) == 1 and errors[0].startswith("params.notes is "), errors
+
+    def test_the_dirname_and_the_reason_keep_the_classic_cap(self):
+        reason = "r" * 1100
+        _, errors = content.parse_tool_request_verbose(
+            {"tool": "package.install", "params": self._params(reason=reason, notes=self._notes(2, 100))})
+        assert len(errors) == 1 and errors[0].startswith("the params other than params.notes are "), errors
+        # With no notes, the request is the classic one, refused as before.
+        _, errors = content.parse_tool_request_verbose(
+            {"tool": "package.install", "params": self._params(reason=reason)})
+        assert len(errors) == 1 and errors[0].startswith("toolRequest.params is "), errors
+
+
 class TestTailInstruction:
     def test_grantless_instruction_is_byte_identical(self):
         # Regression pin (dev/41): runs without grants are unchanged from T2.

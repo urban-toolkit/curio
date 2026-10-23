@@ -16,17 +16,19 @@ from utk_curio.backend.app.agents.application import verify
 from utk_curio.backend.app.agents.domain import content
 from utk_curio.backend.app.agents.domain import dashboards
 from utk_curio.backend.app.agents.domain import map_edits
-from utk_curio.backend.app.agents.domain import spatial_join_settings
+from utk_curio.backend.app.agents.domain import node_settings
 from utk_curio.backend.app.agents.domain import widget_grammar
 from utk_curio.backend.app.agents.application import tool_rounds as agents_tool_rounds
 from utk_curio.backend.app.agents.application.proposals import acquire as agents_acquire
 from utk_curio.backend.app.agents.application.proposals import cards as agents_cards
+from utk_curio.backend.app.agents.application.proposals import plan_scenarios as agents_plan_scenarios
 from utk_curio.backend.app.agents.application.proposals import plans as agents_plans
 from utk_curio.backend.app.agents.application.proposals import store as agents_store
 from utk_curio.backend.app.agents.application.turns import delegates as agents_delegates
 from utk_curio.backend.app.agents.application.turns import grounding as agents_grounding
 from utk_curio.backend.app.agents.application.turns import roster as agents_roster
-from utk_curio.backend.app.execution.workflow_spec import CONTENT_KIND_NONE
+from utk_curio.backend.app.execution.code_references import check_widget_def
+from utk_curio.backend.app.execution.workflow_spec import CONTENT_KIND_NONE, PARAMETER_TYPE
 from utk_curio.backend.app.projects import storage as projects_storage
 from utk_curio.backend.app.agents.domain import agent_text
 
@@ -671,31 +673,55 @@ def _mint_node_content_write(
     )
 
 
-def _node_create_widgets(entry: dict, raw: object) -> tuple[list, list[str]]:
+def _node_create_widgets(entry: dict, raw: object, nodes: list) -> tuple[list, list[str]]:
     """#662: the widgets a created node declares, or why they are refused: a
-    widget is placed by a node's code or spec, so only such a node holds one."""
+    widget is placed by a node's code or spec, so only such a node holds one.
+    A Parameter node holds exactly one, which no other Parameter node of the
+    dataflow (*nodes*) names: a plan's Parameter node's rule
+    (``plan_scenarios.mint_errors``), in its words."""
     widgets, problems = widget_grammar.parse_widgets(raw, "params.widgets")
     if problems:
         return [], problems
+    if str(entry.get("id") or "").split("@", 1)[0] == PARAMETER_TYPE:
+        if len(widgets) != 1:
+            return [], [agent_text.message("plan.parameter-one-widget", where="the node you create")]
+        taken = agents_plan_scenarios._parameter_widgets(nodes, set())
+        problem = check_widget_def(widgets[0], taken, parameter=True)
+        if problem:
+            return [], [f"params.widgets[0] ({widgets[0]['name']!r}): {problem}"]
+        return widgets, []
     if widgets and entry.get("contentKind") not in ("code", "grammar"):
         return [], [agent_text.message("mint.widgets-not-placeable", label=entry.get('label') or entry.get('id'))]
     return widgets, []
 
 
-def _node_create_spatial_join(
-    user_key: str, project_id: str, entry: dict, raw: object,
-) -> tuple[dict | None, list[str]]:
-    """A created Spatial Join's operation and output, or why they are refused:
-    the join's own rule, on a node whose template keeps them."""
+def _node_create_settings(
+    user_key: str, project_id: str, entry: dict, params: dict,
+) -> tuple[dict, list[str]]:
+    """A created node's settings, by key (a Spatial Join's operation and
+    output, a Data Pool's conflict modes, a Simple View's image column), or
+    why they are refused: each node's own rule, on a node whose template
+    keeps the setting."""
     from utk_curio.backend.app.packages import service as packages_services
 
-    where = f"params.{spatial_join_settings.KEY}"
-    setting, problems = spatial_join_settings.parse(raw, where)
-    if problems or setting is None:
-        return None, problems
+    settings, problems = node_settings.parse(params, "params")
+    if problems or not settings:
+        return {}, problems
     behavior = packages_services.template_behavior(user_key, project_id, entry["id"])
-    problem = spatial_join_settings.template_problem(behavior, entry.get("label") or entry["id"], where)
-    return (None, [problem]) if problem else (setting, [])
+    problems = node_settings.template_problems(
+        settings, behavior, entry.get("label") or entry["id"], lambda key: f"params.{key}",
+    )
+    return ({}, problems) if problems else (settings, [])
+
+
+def _node_create_starter(user_key: str, project_id: str, entry: dict) -> dict | None:
+    """What a created node starts with when its template's starter is its
+    whole content (``starterIsContent``): the starter and the template's
+    widgets, as a planned node of it starts (``plans._content_starters``), or
+    None for any other template, whose content the request gives."""
+    from utk_curio.backend.app.packages import service as packages_services
+
+    return packages_services.content_starters(user_key, project_id, [entry["id"]]).get(entry["id"])
 
 
 def _mint_node_create(
@@ -711,33 +737,58 @@ def _mint_node_create(
     if entry is None:
         return agents_tool_rounds._refuse_params(err)
     proposed = content.extract_node_content(params.get("content"))
+    # A template whose starter is its whole content, such as each Scout
+    # chart, gives the node that starter, as a plan does: the request gives
+    # no content, and sets the template's widgets by name.
+    starter = _node_create_starter(user_key, project_id, entry)
+    if starter is not None and proposed:
+        return agents_tool_rounds._refuse_params(agent_text.message(
+            "mint.starter-is-content", label=entry.get("label") or entry["id"],
+            widgets=", ".join(w["name"] for w in starter["widgets"]),
+        ))
+    if starter is not None:
+        proposed = starter["content"]
     # A node that holds no content, such as a Spatial Join, is proposed without it.
     if not proposed and entry.get("contentKind") != CONTENT_KIND_NONE:
         return agents_tool_rounds._refuse_params(agent_text.message("mint.content-required"))
     if len(proposed) > content.PROPOSAL_CONTENT_MAX_CHARS:
         return agents_tool_rounds._refuse_params(agent_text.message("mint.content-too-large"))
-    join, join_errors = _node_create_spatial_join(user_key, project_id, entry, params.get(spatial_join_settings.KEY))
-    if join_errors:
-        return agents_tool_rounds._refuse_params("; ".join(join_errors))
+    settings, setting_errors = _node_create_settings(user_key, project_id, entry, params)
+    if setting_errors:
+        return agents_tool_rounds._refuse_params("; ".join(setting_errors))
+    # The dataflow the widgets are checked in: a Parameter node's widget is
+    # named as no other Parameter node's is.
+    saved = projects_storage.read_spec(user_key, project_id)
+    if saved is None:
+        return "refused", agent_text.message("mint.no-saved-spec"), None
     # Read before the gate: a chart's or a map's document is checked with the
     # widgets the node declares.
-    widgets, widget_errors = _node_create_widgets(entry, params.get("widgets"))
+    widgets, widget_errors = _node_create_widgets(
+        entry, params.get("widgets"),
+        [n for n in (saved.get("dataflow") or {}).get("nodes") or [] if isinstance(n, dict)],
+    )
     if widget_errors:
         return agents_tool_rounds._refuse_params("; ".join(widget_errors))
+    if starter is not None:
+        # The template's widgets, each the request names set as it says, at
+        # mint, so the card shows what Apply writes.
+        widgets = agents_plan_scenarios._set_over(starter["widgets"], widgets)
     # dev/114 (DEC-072): the source-grounding gate — BEFORE any store write.
     # A same-run node.create after the runtime minted dataset candidates is
     # refused too: the user reviews and confirms a source first (DEC-006).
     if loop_ctx.get("_candidates_pending_review"):
         return agents_tool_rounds._refuse_params(agent_text.message("grounding.candidates-pending"))
-    verdict, refusal = agents_grounding._gate_generated_content(
+    # A starter is the template's own content, which a plan does not gate
+    # either; any other content passes the gate.
+    verdict, refusal = (None, None) if starter is not None else agents_grounding._gate_generated_content(
         user_key, project_id, loop_ctx,
         code=proposed, engine=source_grounding.code_engine(entry), node_type=entry["id"], params=params,
-        chips=agents_grounding._chip_context(projects_storage.read_spec(user_key, project_id), widgets=widgets),
+        chips=agents_grounding._chip_context(saved, widgets=widgets),
         widgets=widgets,
     )
     if refusal:
         return agents_tool_rounds._refuse_params(refusal)
-    unreadable = map_edits.refusal(user_key, project_id, entry["id"], proposed)
+    unreadable = None if starter is not None else map_edits.refusal(user_key, project_id, entry["id"], proposed)
     if unreadable:
         return agents_tool_rounds._refuse_params(unreadable)
     goal = params.get("goal")
@@ -773,8 +824,8 @@ def _mint_node_create(
     summary = f"Create a new {entry['label']} node" + (f" · {title}" if title else "")
     if widgets:
         summary += " · widgets " + ", ".join(w["name"] for w in widgets)
-    if join:
-        summary += " · " + spatial_join_settings.describe(join)
+    for words in node_settings.describe(settings):
+        summary += " · " + words
     part = content.make_proposal_part(
         proposal_id=proposal_id,
         tool="node.create",
@@ -793,7 +844,7 @@ def _mint_node_create(
         "summary": summary,
         "status": "pending",
     }
-    if verdict.source:
+    if verdict is not None and verdict.source:
         # dev/114: what the code opens/fetches and how it was grounded — the
         # card's Source block; display + provenance, never a pin.
         part["source"] = verdict.source
@@ -806,8 +857,7 @@ def _mint_node_create(
         proposal["appearance"] = appearance
     if widgets:
         proposal["widgets"] = widgets
-    if join:
-        proposal[spatial_join_settings.KEY] = join
+    proposal.update(settings)
     agents_store._store_proposal(user_key, project_id, spec, loop_ctx, proposal, part)
     loop_ctx["_note_creates"] = loop_ctx.get("_note_creates", 0) + 1  # A13 index
     return (

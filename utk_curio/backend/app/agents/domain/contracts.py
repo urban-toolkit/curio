@@ -463,8 +463,9 @@ TRILL_PROMPT_FIELDS: dict[str, tuple[str, ...]] = {
     "node": ("id", "type", "content", "goal", "title", "x", "y", "in", "out", "metadata"),
     # #662: a node's widgets are what an agent declares for its code to read,
     # and a copy's lineage is how two scenarios' levers pair. A Spatial Join's
-    # operation and output are what an agent sets on one.
-    "nodeMetadata": ("keywords", "widgets", "copiedFrom", "spatialJoin"),
+    # operation and output, a Data Pool's conflict modes and a Simple View's
+    # image column are what an agent sets on one.
+    "nodeMetadata": ("keywords", "widgets", "copiedFrom", "spatialJoin", "dataPool", "simpleVis"),
     "edge": ("id", "source", "target", "type", "sourceHandle", "targetHandle", "metadata"),
     # Where a scenario sits on the canvas and where it came from are the
     # canvas's own bookkeeping, and its description is for people.
@@ -613,6 +614,11 @@ def builtin_lists(manifest: dict) -> dict[str, str]:
 #: A Transformers checkpoint may name hundreds of classes.
 MODELS_SEARCH_MAX_ROWS = 40
 MODEL_LABELS_MAX = 40
+
+#: How many notes one request carries: a package.install's ``notes``, and
+#: the rows a mint keeps of any notes list
+#: (``turns/delegates._notes_from_delegate_inputs``).
+MAX_NOTES = 16
 
 
 # --- Prompt fields ------------------------------------------------------------
@@ -1123,6 +1129,7 @@ PROMPT_FIELDS: dict[str, PromptField] = {
     "candidates.text_chars": PromptField(_candidate_text_chars),
     "models.search_max_rows": PromptField(lambda _src: str(MODELS_SEARCH_MAX_ROWS)),
     "models.max_labels": PromptField(lambda _src: str(MODEL_LABELS_MAX)),
+    "notes.max": PromptField(lambda _src: str(MAX_NOTES)),
     "tools.wire_name": PromptField(_wire_name, takes_arg=True),
     "tools.delegate": PromptField(_delegate_tool),
     "include": PromptField(_include, takes_arg=True),
