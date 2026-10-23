@@ -31,6 +31,7 @@ import { unversionedNodeType } from "../../utils/flowNodeCanonicalType";
 import { notebookOutputBox } from "../../utils/notebookLayout";
 import { useNodeHeaderSlot } from "./nodeHeaderSlot";
 import { normalizeWidgets, type WidgetDef } from "../../utils/widgets/widgetModel";
+import { registerNodeSettingWriter, withWidgetValues } from "../../utils/nodeSettingsWriters";
 import { isVegaLiteNodeType } from "../../registry/vegaLiteNodes";
 import {
     VEGA_LITE,
@@ -146,6 +147,19 @@ function NodeEditor({
         markNodeStale?.(data.nodeId);
         markDirty?.();
     };
+    // An agent's applied change gives widgets new values as the Widgets tab
+    // gives one (utils/nodeSettingsWriters): the node is out of date, the
+    // dataflow Unsaved, and an automatic run takes it.
+    const writeValuesRef = useRef<(values: Record<string, unknown>) => void>(() => undefined);
+    writeValuesRef.current = (values) => {
+        if (!widgets.some((widget) => Object.prototype.hasOwnProperty.call(values, widget.name))) return;
+        updateWidgets(withWidgetValues(widgets, values));
+        requestAutoRun?.([data.nodeId]);
+    };
+    useEffect(() => {
+        if (!widgetsTab) return undefined;
+        return registerNodeSettingWriter(data.nodeId, "widgets", (values) => writeValuesRef.current(values));
+    }, [data.nodeId, widgetsTab]);
 
     // #662: the node's selection tags, each holding the ids a view's selection
     // picks. Held in node data as widgets are (saved at metadata.selections);

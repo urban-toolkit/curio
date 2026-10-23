@@ -6,6 +6,7 @@ import { useToastContext } from '../../providers/ToastProvider';
 import { fetchData } from '../../services/api';
 import { backendUrl } from '../../utils/backendUrl';
 import { inputSlotOf, isDataEdge, slotHandleId } from '../../utils/inputSlots';
+import { registerNodeSettingWriter } from '../../utils/nodeSettingsWriters';
 
 /**
  * Spatial Join behavior: pair the rows of two inputs whose shapes meet (#576).
@@ -117,16 +118,36 @@ export const useSpatialJoinBehavior: NodeBehaviorHook = (data, nodeState) => {
   // warnings (e.g. an operation that can never match these shapes).
   const [lastResult, setLastResult] = useState<JoinResult | null>(null);
 
-  const commitPredicate = useCallback((value: SpatialJoinPredicate) => {
-    if (value === predicate) return;
+  // Each select picks its own key; an agent's applied change can pick both, so
+  // the keys picked go into the node in one change, over the ones it holds.
+  const commitSettings = useCallback((picked: { predicate?: SpatialJoinPredicate; output?: SpatialJoinOutput }) => {
+    const next = { ...(data as any).spatialJoin };
+    let changed = false;
+    if (picked.predicate !== undefined && picked.predicate !== predicate) {
+      next.predicate = picked.predicate;
+      changed = true;
+    }
+    if (picked.output !== undefined && picked.output !== outputMode) {
+      next.output = picked.output;
+      changed = true;
+    }
     // Persisted on the node so TrillGenerator writes it (metadata.spatialJoin).
-    updateDataNode(data.nodeId, { ...data, spatialJoin: { ...(data as any).spatialJoin, predicate: value } });
-  }, [data, predicate, updateDataNode]);
+    if (changed) updateDataNode(data.nodeId, { ...data, spatialJoin: next });
+  }, [data, predicate, outputMode, updateDataNode]);
+  const commitPredicate = useCallback((value: SpatialJoinPredicate) => commitSettings({ predicate: value }), [commitSettings]);
+  const commitOutputMode = useCallback((value: SpatialJoinOutput) => commitSettings({ output: value }), [commitSettings]);
 
-  const commitOutputMode = useCallback((value: SpatialJoinOutput) => {
-    if (value === outputMode) return;
-    updateDataNode(data.nodeId, { ...data, spatialJoin: { ...(data as any).spatialJoin, output: value } });
-  }, [data, outputMode, updateDataNode]);
+  // An agent's applied change picks the operation and the output as the
+  // selects do (utils/nodeSettingsWriters).
+  const commitSettingsRef = useRef(commitSettings);
+  commitSettingsRef.current = commitSettings;
+  useEffect(
+    () => registerNodeSettingWriter(data.nodeId, 'spatialJoin', (setting) => commitSettingsRef.current({
+      predicate: PREDICATES.some((p) => p.value === setting.predicate) ? setting.predicate as SpatialJoinPredicate : undefined,
+      output: setting.output === 'counts' || setting.output === 'pairs' ? setting.output : undefined,
+    })),
+    [data.nodeId],
+  );
 
   const wired = useMemo(() => {
     const circles = edges

@@ -11,6 +11,7 @@ import { ResolutionType } from '../../constants';
 import { isSelectionEcho } from '../../utils/selectionEcho';
 import { columnRows, featureRows, isActiveSelect, matchSelections } from '../../utils/selectionMatch';
 import { dataPoolMode, DataPoolModes } from '../../utils/dataPoolSpec';
+import { registerNodeSettingWriter } from '../../utils/nodeSettingsWriters';
 import { copyForFlags } from '../../utils/poolFlagCopy';
 
 /** The charts joined to a pool by an interaction edge. */
@@ -44,13 +45,30 @@ export const useDataPoolBehavior: NodeBehaviorHook = (data) => {
   const savedModes = (data as { dataPool?: DataPoolModes }).dataPool;
   const insideChartMode = dataPoolMode(savedModes?.insideChart);
   const betweenChartsMode = dataPoolMode(savedModes?.betweenCharts);
-  const saveMode = useCallback((key: keyof DataPoolModes, value: string) => {
-    const mode = dataPoolMode(value);
-    if (mode === dataPoolMode(savedModes?.[key])) return;
-    updateDataNode(data.nodeId, { ...data, dataPool: { ...(savedModes ?? {}), [key]: mode } });
+  // Each select picks its own mode; an agent's applied change can pick both,
+  // so the modes picked go into the node in one change, over the ones it holds.
+  const saveModes = useCallback((picked: DataPoolModes) => {
+    const next: DataPoolModes = { ...(savedModes ?? {}) };
+    let changed = false;
+    for (const key of ['insideChart', 'betweenCharts'] as const) {
+      if (picked[key] === undefined) continue;
+      const mode = dataPoolMode(picked[key]);
+      if (mode === dataPoolMode(savedModes?.[key])) continue;
+      next[key] = mode;
+      changed = true;
+    }
+    if (changed) updateDataNode(data.nodeId, { ...data, dataPool: next });
   }, [data, savedModes, updateDataNode]);
-  const onInsideChartModeChange = useCallback((value: string) => saveMode('insideChart', value), [saveMode]);
-  const onBetweenChartsModeChange = useCallback((value: string) => saveMode('betweenCharts', value), [saveMode]);
+  const onInsideChartModeChange = useCallback((value: string) => saveModes({ insideChart: value }), [saveModes]);
+  const onBetweenChartsModeChange = useCallback((value: string) => saveModes({ betweenCharts: value }), [saveModes]);
+  // An agent's applied change picks the modes as the selects do
+  // (utils/nodeSettingsWriters).
+  const saveModesRef = useRef(saveModes);
+  saveModesRef.current = saveModes;
+  useEffect(
+    () => registerNodeSettingWriter(data.nodeId, 'dataPool', (modes) => saveModesRef.current(modes)),
+    [data.nodeId],
+  );
 
   const {
     createTableData,
