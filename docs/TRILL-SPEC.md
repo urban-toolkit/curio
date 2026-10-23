@@ -105,8 +105,8 @@ these lists meet.
 
 A node's history in `nodeProvenance` also holds an entry, `kind` `edit`, with
 the code it left, for each change an agent made to its code that the user
-applied, its `label` naming the agent, and a node an agent added with code
-starts with one. A Map Edits node's history holds one for each change made in
+applied, its `label` naming the agent, and a node an agent proposed with its
+code starts with one. A Map Edits node's history holds one for each change made in
 its body too, its `label` saying what it changed.
 
 ### An edge
