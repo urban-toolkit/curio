@@ -25,7 +25,9 @@ from utk_curio.backend.app.agents.application.proposals import plans as agents_p
 from utk_curio.backend.app.agents.application.proposals import store as agents_store
 from utk_curio.backend.app.agents.application.turns import roster as agents_roster
 from utk_curio.backend.app.agents.domain import node_settings
+from utk_curio.backend.app.agents.domain import widget_grammar
 from utk_curio.backend.app.agents.infrastructure import testing_provider
+from utk_curio.backend.app.execution.code_references import normalize_widgets
 from utk_curio.backend.app.projects import storage as projects_storage
 
 
@@ -37,7 +39,8 @@ def apply_proposal(
 
     Explicit, authenticated, revision-safe (`REQ-REVIEW-001`/`DEC-006`): the
     pinned revision basis is re-checked against current state (content digest
-    for ``node.content.write``; template availability for ``node.create``);
+    for ``node.content.write``; what it touches of the node for
+    ``node.settings.write``; template availability for ``node.create``);
     drift marks the proposal ``stale`` and returns 409 instead of applying.
     Success executes the domain-owned write under the project's spec write
     path, logs a result-card turn (docs/08 — results are logged as chat
@@ -69,6 +72,10 @@ def apply_proposal(
         )
     if tool == "node.content.write":
         return _apply_node_content_write(
+            user_key, project_id, attachment_id, proposal_id, spec, proposal, session_id
+        )
+    if tool == "node.settings.write":
+        return _apply_node_settings_write(
             user_key, project_id, attachment_id, proposal_id, spec, proposal, session_id
         )
     if tool == "project.install":
@@ -173,6 +180,66 @@ def _apply_node_content_write(
         # The frontend canvas bridge (dev/48 §3.3) applies this to the LIVE
         # node too, so the next canvas save can't clobber the mutation.
         "appliedContent": applied,
+    }
+
+
+def _apply_node_settings_write(
+    user_key: str,
+    project_id: str,
+    attachment_id: str,
+    proposal_id: str,
+    spec: dict,
+    proposal: dict,
+    session_id: object,
+) -> dict:
+    """A change of one existing node's settings, checked against what the
+    review pinned (``mint._settings_basis``): the settings it names, as the
+    node reads them, and the widgets it gives values to. Each is written into
+    the saved node as the node stores it once picked; the canvas makes the
+    same change through the node's own setters (``appliedSettings``)."""
+    node_id = proposal.get("nodeId")
+    change = proposal.get("settings") or {}
+    nodes = (spec.get("dataflow") or {}).get("nodes") or []
+    node = next((n for n in nodes if isinstance(n, dict) and n.get("id") == node_id), None)
+    if node is None or agents_mint._settings_basis(node, change) != proposal.get("settingsSha256"):
+        raise agents_store._mark_stale(
+            user_key, project_id, proposal_id, spec, proposal, session_id,
+            "the node's settings changed since this was proposed; ask the agent to propose again",
+        )
+    # The domain-owned mutation: the settings it names, nothing else.
+    metadata = node.get("metadata") if isinstance(node.get("metadata"), dict) else {}
+    node_settings.write(metadata, change)
+    if "widgets" in change:
+        metadata["widgets"] = widget_grammar.with_values(normalize_widgets(metadata.get("widgets")), change["widgets"])
+    if metadata:
+        node["metadata"] = metadata
+    else:
+        node.pop("metadata", None)
+    proposal["status"] = "applied"
+    projects_storage.write_spec(user_key, project_id, spec)
+    node_name = proposal.get("nodeName") or f"node {node_id}"
+    agents_store._log_applied_turn(
+        user_key, project_id, session_id, attachment_id, proposal_id,
+        f"Applied: {node_name} settings changed.",
+        "Applied: node settings changed",
+        [node_name, *(proposal.get("settingLines") or []), f"proposal {proposal_id[:8]}"],
+    )
+    applied = {"nodeId": node_id, "settings": change}
+    # The agent that proposed it, as its manifest names it.
+    writer = agents_spec_reads._agent_name(
+        user_key, str((attachments.get_attachment(spec, attachment_id) or {}).get("coord") or ""),
+    )
+    if writer:
+        applied["agent"] = writer
+    return {
+        "attachmentId": attachment_id,
+        "proposalId": proposal_id,
+        "status": "applied",
+        "mutationApplied": True,
+        # The canvas bridge hands each setting to the live node's own setter,
+        # so the node makes the change as a pick in it does, and the next
+        # canvas save writes what the spec holds now.
+        "appliedSettings": applied,
     }
 
 

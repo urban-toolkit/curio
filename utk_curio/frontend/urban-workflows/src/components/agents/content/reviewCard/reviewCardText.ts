@@ -92,6 +92,8 @@ export function nodeKindExecutable(pins: AgentProposalPart["pins"] | undefined):
 
 export const EFFECT_LINE: Record<string, string> = {
   "node.create": "Applying adds this node to the canvas.",
+  "node.settings.write":
+    "Applying makes only these changes, as picking them in the node does; its code is untouched.",
   "project.install":
     "Applying installs only this project template: nothing is imported, attached, run, or published.",
   "dataset.install":

@@ -380,6 +380,24 @@ REGISTRY: dict[str, ToolContract] = {
             "content",
         ),
     ),
+    # Consumers: the Node Builder and the Dataflow Builder. A node already on
+    # the canvas: a Data Pool's modes, a Simple View's image column, a Spatial
+    # Join's operation and output and its widget values, each judged by its
+    # node's own rule; the apply writes them, and the canvas makes the change
+    # through the node's own setters.
+    "node.settings.write": ToolContract(
+        id="node.settings.write",
+        contract_version="1",
+        effect="mutate",
+        label="Propose a settings change",
+        parameter_schema=lambda say: _object({
+            "nodeId": _node_id(say),
+            "dataPool": _data_pool(say),
+            "simpleVis": _simple_vis(say),
+            "spatialJoin": _spatial_join(say),
+            "widgets": _map(say("widgets")),
+        }),
+    ),
     # dev/50, consumer: the Dataset Finder. Grounds the "From your Data
     # Catalog" lane in the real catalog (the datasets domain owns the data;
     # this module owns none of its own).

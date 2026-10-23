@@ -5,6 +5,7 @@ import type { Connection, Edge, EdgeChange, Node, NodeChange, NodeRemoveChange }
 import type { InstallSyncOutcome, PendingInstall } from "../../services/datasetCatalog/datasetCatalogTypes";
 import type { DataflowCategories, HandCategories } from "../../utils/dataflowCategories";
 import type { NotebookPane } from "../../utils/notebookLayout";
+import type { NodeSettings } from "../../utils/nodeSettingsWriters";
 import type { Scenario } from "../../utils/scenarios/scenarioModel";
 import type { IInteraction, IOutput, IPropagation, NodeExecOutcome } from "./flowTypes";
 import type { CanvasView } from "./useNotebookView";
@@ -81,6 +82,11 @@ export interface FlowContextProps {
      * (``utils/nodeCodeWriters``), its change named after *author*, the
      * agent that wrote it. */
     applyNodeContent: (nodeId: string, content: string, author?: string) => void;
+    /** Change one node's settings, as the agent bridge applies a reviewed
+     * change: each through the setter the node registered for it, as a pick
+     * in the node makes it, the rest into its data through ``updateDataNode``
+     * (``utils/nodeSettingsWriters``). Files no Provenance entry. */
+    applyNodeSettings: (nodeId: string, settings: NodeSettings) => void;
     updateSubtasks: (trill: any) => void;
     cleanCanvas: () => void;
     flagBasedOnKeyword: (keywordIndex?: number) => void;

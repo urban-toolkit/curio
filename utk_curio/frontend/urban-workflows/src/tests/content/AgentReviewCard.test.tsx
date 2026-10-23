@@ -525,6 +525,43 @@ describe("AgentReviewCard: a planned Data Pool and Simple View say their setting
   });
 });
 
+describe("AgentReviewCard: a settings change names the node and says each change in the node's own words", () => {
+  // The lines are the backend's (agents/domain/node_settings.describe_change
+  // and widget_grammar.describe_value), each in its node's words.
+  const settingsPart = (settingLines: string[]) =>
+    ({
+      type: "proposal",
+      proposalId: "p-change",
+      tool: "node.settings.write",
+      summary: "Change the settings of the Data Pool node · Picked photos",
+      preview: settingLines.join("\n"),
+      pins: { nodeId: "pool", settingsSha256: "abc" },
+      status: "pending",
+      settingLines,
+    }) as unknown as AgentProposalPart;
+
+  it("the header names the node, each change is a line of its own, and the card says what Apply does", () => {
+    const lines = ["Conflict inside visualization: Overwrite", "Conflict between visualizations: Merge (AND)"];
+    render(<AgentReviewCard part={settingsPart(lines)} onApply={jest.fn()} onDismiss={jest.fn()} />);
+    expect(screen.getByText("Change the settings of the Data Pool node · Picked photos")).toBeInTheDocument();
+    for (const line of lines) expect(screen.getAllByText(line)).toHaveLength(1);
+    expect(
+      screen.getByText("Applying makes only these changes, as picking them in the node does; its code is untouched."),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Apply" })).toBeInTheDocument();
+  });
+
+  it.each([
+    ["a view's image column", "Image column: overlay_url"],
+    ["every image column", "Image column: all"],
+    ["a join's operation", "operation within"],
+    ["a widget's value, by its label", "Combine: max"],
+  ])("%s reads as its node says it, once", (_what, line) => {
+    render(<AgentReviewCard part={settingsPart([line])} onApply={jest.fn()} />);
+    expect(screen.getAllByText(line)).toHaveLength(1);
+  });
+});
+
 describe("AgentReviewCard — dev/67-7 validation block", () => {
   const validated = (verdict: "pass" | "fail", evidence = {}): AgentProposalPart => ({
     ...part(),

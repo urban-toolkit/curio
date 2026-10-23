@@ -71,7 +71,7 @@ class TestTheDecisions:
 
     @pytest.mark.parametrize(
         "tool",
-        ["node.content.write", "node.create", "package.draft.apply",
+        ["node.content.write", "node.settings.write", "node.create", "package.draft.apply",
          "node.template.create", ""],
     )
     def test_everything_else_is_a_decision_a_person_makes(self, tool):

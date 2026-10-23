@@ -5,7 +5,9 @@ places each one as a ``[!! name !!]`` reference, which a run replaces with the
 value. They are stored at ``metadata.widgets``. An agent declares them on a
 planned node (``dataflow.plan.write``) or a created one (``node.create``), and
 each declaration is checked here, so a wrong one comes back to the model as an
-error it can fix. A run would only drop it (``normalize_widgets``), and the
+error it can fix. It changes the values of a node already on the canvas
+(``node.settings.write``) by name, each checked as the Widgets tab checks a
+value the user sets (:func:`parse_values`). A run would only drop it (``normalize_widgets``), and the
 code's reference would then fail as naming no widget.
 
 The shape is ``$defs.widget`` in ``docs/schemas/trill.v1.json`` (a test pins
@@ -20,6 +22,7 @@ import json
 from utk_curio.backend.app.execution.code_references import (
     check_widget_def,
     check_widget_value,
+    effective_value,
     normalize_widgets,
     widget_with_default,
 )
@@ -155,3 +158,45 @@ def with_values(widgets: list[dict], values: dict) -> list[dict]:
     """*widgets* with ``value`` set from *values* (name to value), as the
     Widgets tab sets a value; the others as they are."""
     return [{**w, "value": values[w["name"]]} if w["name"] in values else dict(w) for w in widgets]
+
+
+def parse_values(raw: object, widgets: list[dict], where: str, label: object) -> tuple[dict | None, list[str]]:
+    """The new values *raw* (``node.settings.write``'s ``widgets``, a widget's
+    name to its value) gives a node on the canvas whose widgets are *widgets*
+    (its ``metadata.widgets``, as ``normalize_widgets`` reads them), or an
+    error for each name the node has no widget by and each value its widget
+    would not take, in the Widgets tab's words (:func:`value_problem`);
+    *label* names the node. Absent changes nothing."""
+    if raw is None:
+        return None, []
+    if not isinstance(raw, dict) or not raw:
+        return None, [agent_text.message("node-settings.widgets-not-map", where=where)]
+    held = {widget["name"]: widget for widget in widgets}
+    problems: list[str] = []
+    for name, value in raw.items():
+        here = f"{where}.{name}"
+        if name not in held:
+            problems.append(agent_text.message(
+                "node-settings.unknown-widget", where=here, label=label, widget=repr(name),
+                widgets=", ".join(held) or "none",
+            ))
+            continue
+        problem = value_problem(held[name], value, here)
+        if problem:
+            problems.append(problem)
+    return (None, problems) if problems else (dict(raw), [])
+
+
+def changes_anything(widgets: list[dict], values: dict) -> bool:
+    """Whether *values* gives any of *widgets* a value it does not hold now
+    (its ``value``, else its ``default``)."""
+    held = {widget["name"]: widget for widget in widgets}
+    return any(name in held and effective_value(held[name]) != value for name, value in values.items())
+
+
+def describe_value(widget: dict, value: object) -> str:
+    """*value* as a review card reads it, beside the words the widget's row
+    in its Widgets tab shows, its label or else its name: ``Combine: max``. A
+    text reads as it is, any other value as JSON."""
+    shown = value if isinstance(value, str) else json.dumps(value, ensure_ascii=False)
+    return f"{widget.get('label') or widget['name']}: {shown}"
