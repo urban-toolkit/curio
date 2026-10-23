@@ -20,19 +20,28 @@ DuckDB 2.0 opens the default connection on first use only
 no call that tells whether the connection is open without opening it:
 ``default_connection()``, the module-level ``close()`` and
 ``connect(":default:")`` all open one when none is. So the version decides,
-and on 2.x the release asks for nothing, since asking would open a pool (19
-threads on CI's 4-core runners) only to close it. What that leaves open is a
-default connection something in the process opened through the module-level
-API before the release. Nothing in Curio's startup does, and the server tests
-(``test_server_duckdb_pool.py``) fail if a default connection is open when a
-server begins serving.
+and on 2.x the servers' release asks for nothing, since asking would open a
+pool (19 threads on CI's 4-core runners) only to close it. What that leaves
+open is a default connection something in the process opened through the
+module-level API before the release. Nothing in Curio's startup does, and the
+server tests (``test_server_duckdb_pool.py``) fail if a default connection is
+open when a server begins serving.
+
+The zygote still asks on 2.x, and closes what that opens, before its first
+fork (*before_fork*). Its children write their outputs through DuckDB, and on
+2.0 a child forked from a zygote that had never opened a DuckDB database died
+with signal 11 in DuckDB's ``COPY`` in ``codec._write_dataframe_parquet``
+(``test_scouts_weather_routing_runs_as_the_exec_user``, the exec-user suite's
+weather routing node). One forked after the open and close did not. The
+allocator setting below is off by default, and closing any database turns it
+off again.
 
 Callers:
 
-- the zygote (``sandbox/isolation/zygote.py``), before its first fork, since
-  DuckDB's state is not fork-safe;
+- the zygote (``sandbox/isolation/zygote.py``), before its first fork, on
+  every DuckDB, since DuckDB's state is not fork-safe;
 - the backend and the sandbox servers, at startup, so the pool does not idle
-  in them.
+  in them. They fork no node code.
 """
 
 import collections
@@ -131,12 +140,16 @@ def describe_threads(names):
     return f"{len(names)} ({listed})"
 
 
-def release_default_connection(who, consequence, *, names=None, import_first=False):
+def release_default_connection(who, consequence, *, names=None, import_first=False,
+                               before_fork=False):
     """Close the default connection DuckDB's import opened in this process.
 
     That is DuckDB 1.x, once it is loaded. On 2.x this returns without asking
     for the connection, which would open it, so the allocator setting it makes
-    on 1.x is skipped too, since setting it needs a connection.
+    on 1.x is skipped too, since setting it needs a connection. With
+    *before_fork*, it asks on 2.x as well and closes what that opens: the
+    zygote's children need a process that has opened a DuckDB database (see
+    the module's docstring).
 
     *who* prefixes the lines this writes to stderr (``"[sandbox]"``), and
     *consequence* ends the warning a failed close gives (``"so its threads stay
@@ -158,7 +171,7 @@ def release_default_connection(who, consequence, *, names=None, import_first=Fal
     duckdb = sys.modules.get("duckdb")
     if duckdb is None:
         return
-    if not _opened_at_import(duckdb):
+    if not before_fork and not _opened_at_import(duckdb):
         # DuckDB 2.x: the import opened nothing, and asking for the default
         # connection would open it, with its pool, only to close it.
         return

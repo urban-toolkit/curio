@@ -9,7 +9,8 @@ while warming up, and DuckDB's state is not fork-safe
 (duckdb/duckdb-python#292). The zygote now closes that connection before
 serving (``zygote._release_import_time_duckdb``). This script measures whether
 that removes the crash. DuckDB 2.0 opens the connection on first use only, so
-on 2.0 both variants fork with no DuckDB pool.
+on 2.0 both variants fork with no DuckDB pool, and only the released one forks
+from a zygote that has opened and closed a DuckDB database.
 
 Each iteration starts a fresh zygote, runs the ``data-pool-dataframe`` node the
 moment it is ready, runs it again, and stops the zygote. Two variants,

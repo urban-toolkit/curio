@@ -199,9 +199,13 @@ def _release_import_time_duckdb():
     and explicit ``duckdb.connect()`` calls were never affected.
 
     DuckDB 2.0 opens the default connection on first use only, so its import
-    leaves the zygote no pool, and this asks for nothing: asking would open
-    the pool, only to close it before the first fork. The allocator setting
-    the release makes on 1.x is skipped with it, since it needs a connection.
+    leaves the zygote no pool. This still asks for it, which opens it, and
+    closes it before the first fork. On 2.0, a child forked from a zygote that
+    had never opened a DuckDB database died with signal 11 in DuckDB's
+    ``COPY`` in ``codec._write_dataframe_parquet``
+    (``test_scouts_weather_routing_runs_as_the_exec_user``, the exec-user
+    suite's weather routing node), and one forked after the open and close
+    did not. The servers, which fork no node code, skip it on 2.0.
 
     The thread counts on either side are logged so a run can see what
     changed. What is left is expected: numpy's OpenBLAS pool, which tears
@@ -219,6 +223,7 @@ def _release_import_time_duckdb():
         "so children fork with its threads running",
         # Looked up on each call, so a test can stand in for it.
         names=lambda: _thread_names(),
+        before_fork=True,
     )
 
 
