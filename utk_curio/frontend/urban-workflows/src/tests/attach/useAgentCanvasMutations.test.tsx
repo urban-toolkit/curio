@@ -7,6 +7,7 @@ jest.mock("../../hook/useCode", () => ({
 }));
 
 const mockApplyNodeContent = jest.fn();
+const mockApplyNodeSettings = jest.fn();
 const mockOnEdgesChange = jest.fn();
 const mockApplyReviewedRemovals = jest.fn();
 // #662: the canvas's scenarios, which an applied plan's join.
@@ -15,6 +16,7 @@ const mockScenarios = { current: [] as Array<{ id: string; name: string; color: 
 jest.mock("../../providers/FlowProvider", () => ({
   useFlowContext: () => ({
     applyNodeContent: mockApplyNodeContent,
+    applyNodeSettings: mockApplyNodeSettings,
     onEdgesChange: mockOnEdgesChange,
     applyReviewedRemovals: mockApplyReviewedRemovals,
     scenarios: mockScenarios.current,
@@ -168,6 +170,17 @@ describe("useAgentCanvasMutations (the apply→canvas bridge, dev/48 §3.3 + dev
     const applied = { kind: "node-content-applied" as const, nodeId: "n1", content: "print(2)", agent: "Node Builder" };
     act(() => notifyAgentCanvasMutation(applied));
     expect(mockApplyNodeContent).toHaveBeenCalledWith("n1", "print(2)", "Node Builder");
+  });
+
+  it("node-settings-applied routes through FlowProvider.applyNodeSettings, which hands each to the node's own setter", () => {
+    render(<Host />);
+    const settings = { dataPool: { betweenCharts: "MERGE_AND" }, widgets: { combine: "max" } };
+    act(() => notifyAgentCanvasMutation({ kind: "node-settings-applied", nodeId: "pool", settings }));
+    expect(mockApplyNodeSettings).toHaveBeenCalledTimes(1);
+    expect(mockApplyNodeSettings).toHaveBeenCalledWith("pool", settings);
+    // A settings change is no content change, and inserts no node.
+    expect(mockApplyNodeContent).not.toHaveBeenCalled();
+    expect(mockCreateCodeNode).not.toHaveBeenCalled();
   });
 });
 
