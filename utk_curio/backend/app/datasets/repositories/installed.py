@@ -12,6 +12,7 @@ from utk_curio.backend.app.datasets.domain.catalog_item import (
     origin_from_dataflow_ref,
 )
 from utk_curio.backend.app.datasets.infrastructure.catalog_utils import iso_from_timestamp, stable_id
+from utk_curio.backend.app.datasets.infrastructure.data_size import data_size_bytes
 from utk_curio.backend.app.datasets.domain.errors import DatasetCatalogError
 
 class InstalledDatasetRepository:
@@ -92,7 +93,10 @@ class InstalledDatasetRepository:
                         item["format"], data_path.as_posix(), dataset_id=item.get("id"),
                         layer_type=autark_layer_type(item),
                     )
-                    item["sizeBytes"] = data_path.stat().st_size
+                    # A data file gone since it resolved raises OSError here,
+                    # so the placeholder below lists it.
+                    data_path.stat()
+                    item["sizeBytes"] = data_size_bytes(manifest.format, data_path)
                     item["installed"] = True
                     # Persisted install time from the project ref — distinct from
                     # the manifest's createdAt/import time (see catalog_item).
