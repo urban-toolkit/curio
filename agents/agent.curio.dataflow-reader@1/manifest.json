@@ -70,6 +70,9 @@
   "tools": [
     {
       "id": "dataflow.read"
+    },
+    {
+      "id": "node.history.read"
     }
   ],
   "runtime": {
