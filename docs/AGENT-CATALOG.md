@@ -307,7 +307,7 @@ An agent writes a Map Edits node's code as the node writes it: one call that hol
 
 ### Dashboards
 
-An agent knows which nodes are tiles of the dataflow's [dashboard](USAGE.md#dashboards), so it can tell you whether a chart is on it. You pin and unpin nodes; an agent never does. A spec an agent writes for a pinned Autark node is sent back when it loads its own data, which the dashboard cannot carry, and the agent is told to load that data in a node upstream of the tile instead. Solve stops on such a node and says why. The review card of a plan that removes pinned nodes marks each tile it removes and says how many leave the dashboard.
+An agent knows which nodes are tiles of the dataflow's [dashboard](USAGE.md#dashboards), so it can tell you whether a chart is on it. You pin and unpin nodes; an agent never does. A spec an agent writes for a pinned Autark node is sent back when it loads its own data, which the dashboard cannot carry, and the agent is told to load that data in a node upstream of the tile instead. Solve stops on such a node, says why, and leaves it for you. The review card of a plan that removes pinned nodes marks each tile it removes and says how many leave the dashboard.
 
 ### Finding data in portals
 
