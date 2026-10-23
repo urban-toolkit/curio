@@ -56,6 +56,9 @@
       "id": "node.create"
     },
     {
+      "id": "node.settings.write"
+    },
+    {
       "id": "examples.read"
     },
     {
