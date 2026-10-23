@@ -52,6 +52,20 @@ def test_the_dataflow_builder_is_not_told_every_applied_plan_ends_with_a_topolog
     assert "the applied result names what changed and ends with a Topology verdict" not in _prompt(DATAFLOW_BUILDER)
 
 
+def test_the_dataflow_builder_is_told_every_applied_plan_ends_with_a_topology_verdict():
+    """Every way a plan is applied ends its result with the verdict: Apply plan
+    (``plans._log_plan_applied``), and the row or Connect all that completes a
+    plan applied a part at a time, which writes it through the same function.
+    ``test_routes_proposals.py::TestPlansAppliedRowByRow`` checks the last
+    row's result and Connect all's, word for word as Apply plan's, and
+    ``test_routes_solve.py::TestSimulationDriver::test_auto_removes_what_the_plan_removes_and_the_stream_carries_it``
+    Simulation Mode's."""
+    assert (
+        "After the user applies a plan, the applied result names what changed and ends with a Topology verdict"
+        in _prompt(DATAFLOW_BUILDER)
+    )
+
+
 def test_the_node_builder_delegates_a_new_nodes_content_only_from_the_canvas():
     """A ``node.content.generate`` delegation with no ``nodeId`` targets the
     node the agent is attached to (``delegates._delegate_target_node_id``), and
@@ -59,6 +73,20 @@ def test_the_node_builder_delegates_a_new_nodes_content_only_from_the_canvas():
     content to put in a ``node.create``."""
     step = _sentence(_prompt(NODE_BUILDER), "put the returned content in the node.create request's params.content")
     assert "attached to the canvas" in step
+
+
+def test_the_node_builder_names_the_new_nodes_type_when_it_delegates_its_content():
+    """A ``node.content.generate`` delegation that names a ``nodeType`` and no
+    ``nodeId`` writes a new node of that template, wherever the agent is
+    attached (``delegates._delegate_target_node_id``): its content returns to
+    the run for its ``node.create``, and the node the agent is attached to is
+    offered no change. ``test_delegation.py::TestChatContentReviewMint::test_content_for_a_new_node_returns_to_the_run_for_its_node_create``
+    checks it from a node's Node Builder, and
+    ``test_source_grounding_routes.py::TestContentForANewNode`` that the content
+    is grounded as that template's."""
+    step = _sentence(_prompt(NODE_BUILDER), "put the returned content in the node.create request's params.content")
+    assert "attached to the canvas" not in step
+    assert '"nodeType"' in step
 
 
 def test_the_node_builder_is_not_told_its_chat_starts_discovery():

@@ -99,11 +99,10 @@ _DELEGABLE = {
     "agent.curio.dataflow-builder": {
         "content.quality.evaluate", "dataflow.explain",
         "dataset.discover", "dataset.fetch.author", "dataset.select",
-        "execution.followup.plan", "node.build", "node.content.generate",
+        "node.build", "node.content.generate",
         "node.kind.author", "package.build", "package.extend",
         "package.recommend", "research.notes.compose",
-        "research.verify", "workflow.coherence.validate", "workflow.plan.create",
-        "workflow.plan.refresh", "workflow.suggest",
+        "research.verify", "workflow.suggest",
     },
     "agent.curio.researcher": {"node.kind.author", "package.build", "package.extend"},
 }

@@ -1153,6 +1153,38 @@ describe("AgentAttachmentsProvider streamed solve (dev/63)", () => {
     ]);
   });
 
+  it("runSimulation hands the canvas what the plan it completes removes", async () => {
+    api.simulate.mockImplementation(
+      async (_p: string, _a: string, _m: string, onEvent: (n: string, pl: Record<string, unknown>) => void) => {
+        onEvent("plan_removals", { proposalId: "p1", removedNodeIds: ["old-loader"], removedEdgeIds: ["edge-1"] });
+        return { status: "completed", mode: "auto" };
+      },
+    );
+    renderProvider();
+    await act(async () => {
+      fireEvent.click(screen.getByText("run-simulation"));
+    });
+    expect(events).toContainEqual(
+      expect.objectContaining({ removedNodeIds: ["old-loader"], removedEdgeIds: ["edge-1"] }),
+    );
+  });
+
+  it("applyPlanEdges hands the canvas what the plan it completes removes", async () => {
+    // A plan of connections that also removes one: Connect all completes it.
+    const completing = {
+      attachmentId: "a1", proposalId: "p1", status: "applied",
+      results: {}, edgeStates: { "0": "applied" },
+      createdEdges: [{ id: "ce1", source: "vis", target: "pool", sourceHandle: "in/out", targetHandle: "in/out", type: "Interaction" }],
+      removedNodeIds: [], removedEdgeIds: ["e5"],
+    };
+    api.applyPlanEdges.mockResolvedValue(completing as never);
+    renderProvider();
+    await act(async () => {
+      fireEvent.click(screen.getByText("apply-plan-edges"));
+    });
+    expect(events).toContainEqual(expect.objectContaining({ removedNodeIds: [], removedEdgeIds: ["e5"] }));
+  });
+
   it("applyPlanEdges dispatches edges-created for the applied edges (dev/67-8)", async () => {
     api.applyPlanEdges.mockResolvedValue({
       attachmentId: "a1", proposalId: "p1", status: "pending",
@@ -1210,6 +1242,29 @@ describe("AgentAttachmentsProvider per-node plan apply (dev/67-5)", () => {
     });
     expect(events.map((e: any) => e.kind)).toEqual(["node-created", "edges-created"]);
     expect((events[1] as any).edges[0]).toMatchObject({ id: "pe1", targetHandle: "in" });
+  });
+
+  it("applyPlanNode hands the canvas what the plan it completes removes, before the node", async () => {
+    // The last row of a plan that replaces Load CSV: the call that completes
+    // it removes Load CSV and its connection, as a whole applied plan does.
+    const completing = {
+      attachmentId: "a1", proposalId: "p1", status: "applied", ref: "ra",
+      createdNode: { id: "nid-1", type: "t", content: "", goal: "g", x: 1, y: 2 },
+      createdEdges: [{ id: "pe1", source: "nid-1", target: "cleaner", sourceHandle: "out", targetHandle: "in" }],
+      appliedRefs: ["ra"],
+      removedNodeIds: ["old-loader"], removedEdgeIds: ["edge-1"],
+    };
+    api.applyPlanNode.mockResolvedValue(completing as never);
+    renderProvider();
+    await act(async () => {
+      fireEvent.click(screen.getByText("apply-plan-node"));
+    });
+    const removal = events.findIndex((e: any) => Array.isArray(e.removedNodeIds));
+    expect(events[removal]).toMatchObject({ removedNodeIds: ["old-loader"], removedEdgeIds: ["edge-1"] });
+    // First, as a whole applied plan's removals are: the new feed then lands
+    // on the circle the removed one leaves.
+    expect(removal).toBe(0);
+    expect(events.slice(1).map((e: any) => e.kind)).toEqual(["node-created", "edges-created"]);
   });
 
   it("applyPlanNode dispatches node-created for the created node", async () => {

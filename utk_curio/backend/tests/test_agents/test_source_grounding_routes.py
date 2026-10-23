@@ -893,6 +893,53 @@ class TestContentReviewMintInheritsTheGate:
         assert '"sourceGrounding"' in calls[1][-1]["content"]
 
 
+class TestContentForANewNode:
+    """A Node Builder attached to a node that delegates the content of a new
+    node names its nodeType: the content mode is grounded as that template,
+    never as the node the agent is attached to, whose context it is not given."""
+
+    def _delegate_for_a_new_node(self, client, token, pid, monkeypatch, node_type):
+        _install(client, token, pid, NB)
+        att = _attach(client, token, pid, NB, target={"kind": "node", "targetId": "n1"})
+        calls = _script(monkeypatch, [
+            _delegate_tail("node.content.generate", {"intent": "a new node below n1", "nodeType": node_type}),
+            "return input_0.mean()",
+            "Here is the content for the new node.",
+        ])
+        body = _run(client, token, pid, att, "add a node below this one")
+        return body, calls[1][-1]["content"]
+
+    def test_a_loaders_builder_writing_an_analysis_is_not_handed_the_loaders_sources(
+        self, client, user_and_token, tmp_curio, project, monkeypatch
+    ):
+        _, token = user_and_token
+        body, task = self._delegate_for_a_new_node(client, token, project, monkeypatch, CA)
+        assert task.startswith("[delegated task")
+        assert '"sourceGrounding"' not in task
+        assert '"nodeContext"' not in task
+        assert _proposals(body) == []  # the loader's own content is offered no change
+
+    def test_an_analysis_builder_writing_a_loader_is_handed_its_sources(
+        self, client, user_and_token, tmp_curio, monkeypatch
+    ):
+        user, token = user_and_token
+        from utk_curio.backend.app.projects.services import _user_dir_key
+
+        routes_proposals.TestNodeCreate()._write_builtin_package(_user_dir_key(user), templates=TEMPLATES)
+        resp = client.post("/api/projects", json={
+            "name": "p",
+            "spec": {"dataflow": {"nodes": [
+                {"id": "n1", "type": CA, "goal": "average the readings", "content": "return input_0.mean()",
+                 "x": 10, "y": 20},
+            ], "edges": [], "packages": []}},
+            "outputs": [],
+        }, headers=_auth(token))
+        assert resp.status_code == 201, resp.get_data(as_text=True)
+        _, task = self._delegate_for_a_new_node(client, token, resp.get_json()["id"], monkeypatch, DL)
+        assert '"sourceGrounding"' in task
+        assert '"nodeContext"' not in task
+
+
 class TestCandidatesMint:
     """The runtime mint over a tool-less Dataset Finder child's reply."""
 
