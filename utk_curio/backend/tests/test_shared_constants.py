@@ -23,7 +23,9 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 CONTRACTS = REPO_ROOT / "utk_curio" / "frontend" / "urban-workflows" / "src" / "contracts"
 
 #: Each shared file, by its name without ``.json``.
-FILES = ("renderCauses", "solveStopReasons", "agentCategories", "noteColors", "autkGrammar", "visDefaults")
+FILES = (
+    "renderCauses", "solveStopReasons", "agentCategories", "noteColors", "autkGrammar", "visDefaults", "nodeSettings",
+)
 
 
 def _file(name: str):

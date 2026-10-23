@@ -16,6 +16,7 @@ import {
 } from "../../../registry/projectPackagesStore";
 import { EdgeType } from "../../../constants";
 import { normalizeWidgets } from "../../../utils/widgets/widgetModel";
+import { dataPoolFromSpec } from "../../../utils/dataPoolSpec";
 import { lineageFromSpec } from "../../../utils/scenarios/duplicateSelection";
 import { joinScenarios } from "../../../utils/scenarios/scenarioEdits";
 import type { Scenario } from "../../../utils/scenarios/scenarioModel";
@@ -93,6 +94,10 @@ export function useAgentCanvasMutations(): void {
     const widgets = normalizeWidgets(node.metadata?.widgets);
     const copiedFrom = lineageFromSpec(node.metadata?.copiedFrom);
     const spatialJoin = node.metadata?.spatialJoin;
+    // A Data Pool's modes, the ones that name a mode, and a Simple View's
+    // image column, as loadTrill reads them.
+    const dataPool = dataPoolFromSpec(node.metadata?.dataPool);
+    const simpleVis = node.metadata?.simpleVis;
     createCodeNode(node.type, {
       nodeId: node.id,
       code: node.content,
@@ -105,6 +110,8 @@ export function useAgentCanvasMutations(): void {
       ...(widgets.length ? { widgets } : {}),
       ...(copiedFrom.length ? { copiedFrom } : {}),
       ...(spatialJoin ? { spatialJoin } : {}),
+      ...(dataPool ? { dataPool } : {}),
+      ...(simpleVis ? { simpleVis } : {}),
     });
   };
 

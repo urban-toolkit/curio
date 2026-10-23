@@ -1089,8 +1089,10 @@ class TestResearcher:
         # 2026-10-23: every applied plan ends with the Topology verdict again,
         # since one applied row by row or by Connect all now does; and the
         # Dataflow Planner leaves the Builder's delegations, so its coherence
-        # check is no longer offered (proposal paths, step 2).
-        "3365ca6473c7af76f48a65b68db0cf4bc2cf9f8afe7032715eb744b7e6e2ad57"
+        # check is no longer offered (proposal paths, step 2). A pool starts
+        # at OVERWRITE and the plan sets its modes in "dataPool"; a Simple
+        # View names its image column in "simpleVis" (step 3).
+        "e6cdb1caee09f5743cf16a2d2a9732ddce1c548afa54ad28d259dbbface151db"
     )
 
     def test_manifest_surface(self):
