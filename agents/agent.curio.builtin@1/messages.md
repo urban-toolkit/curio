@@ -446,6 +446,14 @@ the params other than {where} are {rest_bytes} bytes (max {max_bytes}): put the 
 
 toolRequest.params is {params_bytes} bytes (max {budget})
 
+## request.notes-too-big
+
+params.notes is {notes_bytes} bytes (max {max_bytes}): give at most {max_notes} notes, each a finding in a few sentences
+
+## request.params-beside-notes-too-big
+
+the params other than params.notes are {rest_bytes} bytes (max {max_bytes}): keep dirName and reason short, and put the findings in params.notes
+
 ## plan.field-not-string
 
 {where} must be a string

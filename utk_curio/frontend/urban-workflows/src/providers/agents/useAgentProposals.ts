@@ -95,6 +95,9 @@ export function useAgentProposals(opts: {
       if (!pid) throw new Error("no project");
       try {
         const result = await agentsApi.applyPlanNode(pid, attachmentId, proposalId, ref);
+        // The last row removes what the plan removes, first, as a whole
+        // applied plan's removals go.
+        bridgePlanRemovals(proposalId, result);
         // The created node reaches the LIVE canvas through the same bridge
         // path as node.create applies (dev/48 §3.3).
         if (result.createdNode) {
@@ -125,6 +128,7 @@ export function useAgentProposals(opts: {
       if (!pid) throw new Error("no project");
       try {
         const result = await agentsApi.applyPlanEdges(pid, attachmentId, proposalId, indices);
+        bridgePlanRemovals(proposalId, result);
         if (result.createdEdges.length) {
           notifyAgentCanvasMutation({
             kind: "edges-created",
@@ -182,6 +186,20 @@ export function useAgentProposals(opts: {
     () => ({ applyProposal, applyPlanNode, applyPlanEdges, savePlanGoal, dismissProposal, recordDatasetSelection, importDataset }),
     [applyProposal, applyPlanNode, applyPlanEdges, savePlanGoal, dismissProposal, recordDatasetSelection, importDataset],
   );
+}
+
+/** What the plan removes, when the row or the Connect all that completes it
+ * lands: the saved spec lost it, so the live canvas loses it too, or its next
+ * save would put it back. */
+export function bridgePlanRemovals(
+  proposalId: string,
+  result: { removedNodeIds?: string[]; removedEdgeIds?: string[] },
+): void {
+  const removedNodeIds = result.removedNodeIds ?? [];
+  const removedEdgeIds = result.removedEdgeIds ?? [];
+  if (removedNodeIds.length || removedEdgeIds.length) {
+    notifyAgentCanvasMutation({ kind: "plan-removals", planId: proposalId, removedNodeIds, removedEdgeIds });
+  }
 }
 
 /** The apply→canvas bridge (dev/48 §3.3): the saved spec was mutated; carry

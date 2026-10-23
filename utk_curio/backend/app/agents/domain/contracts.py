@@ -614,6 +614,11 @@ def builtin_lists(manifest: dict) -> dict[str, str]:
 MODELS_SEARCH_MAX_ROWS = 40
 MODEL_LABELS_MAX = 40
 
+#: How many notes one request carries: a package.install's ``notes``, and
+#: the rows a mint keeps of any notes list
+#: (``turns/delegates._notes_from_delegate_inputs``).
+MAX_NOTES = 16
+
 
 # --- Prompt fields ------------------------------------------------------------
 #
@@ -1123,6 +1128,7 @@ PROMPT_FIELDS: dict[str, PromptField] = {
     "candidates.text_chars": PromptField(_candidate_text_chars),
     "models.search_max_rows": PromptField(lambda _src: str(MODELS_SEARCH_MAX_ROWS)),
     "models.max_labels": PromptField(lambda _src: str(MODEL_LABELS_MAX)),
+    "notes.max": PromptField(lambda _src: str(MAX_NOTES)),
     "tools.wire_name": PromptField(_wire_name, takes_arg=True),
     "tools.delegate": PromptField(_delegate_tool),
     "include": PromptField(_include, takes_arg=True),
