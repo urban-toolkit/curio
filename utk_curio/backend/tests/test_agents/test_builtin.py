@@ -1096,7 +1096,10 @@ class TestResearcher:
         # check is no longer offered (proposal paths, step 2). A pool starts
         # at OVERWRITE and the plan sets its modes in "dataPool"; a Simple
         # View names its image column in "simpleVis" (step 3).
-        "e6cdb1caee09f5743cf16a2d2a9732ddce1c548afa54ad28d259dbbface151db"
+        # 2026-10-23: a setting of an existing node changes through
+        # node.settings.write, never a new node, a plan or rewritten content
+        # (step 4).
+        "cb0317f7593ad1540d9b22e8181b71f696813bef3c00beed863eca5179fc4d6b"
     )
 
     def test_manifest_surface(self):
