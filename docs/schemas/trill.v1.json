@@ -15,7 +15,7 @@
     "dataflow": { "$ref": "#/$defs/dataflow" },
     "nodeProvenance": {
       "type": "object",
-      "description": "Per-node execution history, keyed by node id. Written on every save from ProvenanceProvider.getAllNodeProvenance() and restored by useCode.loadTrill. Browser-side only - nothing server-side produces or consumes it.",
+      "description": "Per-node history of runs and edits, keyed by node id. Written on every save from ProvenanceProvider.getAllNodeProvenance() and restored by useCode.loadTrill, which files an older dataflow's keys under the node id they end with (utils/nodeProvenanceKeys.ts). No server code writes it; the agents' node.history.read reads it from the saved dataflow, keyed the same way (projects/node_provenance.py).",
       "additionalProperties": {
         "type": "array",
         "items": { "$ref": "#/$defs/nodeExecRecord" }
@@ -657,15 +657,15 @@
     },
     "nodeExecRecord": {
       "type": "object",
-      "description": "One entry of one node's history, recorded browser-side by ProvenanceProvider so the user can replay how a node evolved: an execution, or (with 'kind' edit) a change made in the node's body that ran nothing, such as a Map Edits node's Remove, or an entry of its list switched off or deleted. After a dataflow loads, the node's next entry descends from its newest entry whose 'code' is the node's content, else from its newest entry.",
+      "description": "One entry of one node's history, recorded browser-side by ProvenanceProvider so the user can replay how a node evolved: an execution, or (with 'kind' edit) a change that ran nothing, made in the node's body, such as a Map Edits node's Remove, or an entry of its list switched off or deleted, or an agent's change the user applied. After a dataflow loads, the node's next entry descends from its newest entry whose 'code' is the node's content, else from its newest entry.",
       "required": ["id", "parentId", "code", "inputs", "outputs", "startTime", "endTime"],
       "additionalProperties": true,
       "properties": {
         "id": { "type": "integer", "description": "Monotonic counter within the session, re-derived from the maximum on load." },
         "parentId": { "type": ["integer", "null"], "description": "The entry this one descends from, or null for the first." },
         "code": { "type": "string", "description": "The node's content as executed, or as an edit left it." },
-        "kind": { "type": "string", "enum": ["edit"], "description": "'edit' for a change made in the node's body, which ran nothing: its 'inputs' and 'outputs' are empty and its two times are the same. Absent for an execution." },
-        "label": { "type": "string", "description": "What an edit changed, as the provenance drawer lists it, such as 'Remove building_id 12' or 'Switch off: Set height to 60 on building_id 34'. Written only with 'kind'." },
+        "kind": { "type": "string", "enum": ["edit"], "description": "'edit' for a change that ran nothing, made in the node's body or applied from an agent: its 'inputs' and 'outputs' are empty and its two times are the same. Absent for an execution." },
+        "label": { "type": "string", "description": "What an edit changed, as the provenance drawer lists it, such as 'Remove building_id 12' or 'Switch off: Set height to 60 on building_id 34', or for an agent's change the agent's name, such as 'Node Builder'. Written only with 'kind'." },
         "before": { "type": "string", "description": "An edit's node content before it, when the entry it descends from does not hold that content: the node's first edit, or one made after its content changed with no entry. What Undo puts back. Written only with 'kind'." },
         "inputs": { "type": "array", "items": { "type": "string" }, "description": "The kinds of data the run read, each once: DATAFRAME, GEODATAFRAME, VALUE, LIST, JSON, RASTER (mapTypes in utils/formatters.ts). The provenance drawer shows them on each of the node's runs. Coerced to an empty array if the stored value is not an array." },
         "outputs": { "type": "array", "items": { "type": "string" }, "description": "The kinds of data the run returned, named like 'inputs', or ERROR for a run that failed. Coerced like 'inputs'." },
