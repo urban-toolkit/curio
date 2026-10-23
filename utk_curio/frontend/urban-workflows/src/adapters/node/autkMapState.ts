@@ -174,3 +174,33 @@ export function soloMapLayer(
     else if (picking) set(picking, { isPick: true });
     map.requestRender?.();
 }
+
+/** What a Map Edits node feeding a map asks of it: the layer shown alone, and the layer an action works on. */
+export type EditsView = { solo: string | null; picking: string | null };
+
+/**
+ * *map* as the Map Edits node feeding it asks now (*now*), after what it asked
+ * before (*was*): its *solo* layer shown alone, and its *picking* layer, the
+ * one an action works on, the layer that picks. autk-map lights a pick on its
+ * picking layer only, so the node's pick and a rule's matches show there. With
+ * neither, each layer gets back what it had in *before*. Layers go by their ids.
+ */
+export function showForEdits(
+    map: any,
+    was: EditsView | null,
+    now: EditsView,
+    before: MapLayerState | null,
+    colorMapped = false,
+): void {
+    if (!map) return;
+    if (now.solo !== null) soloMapLayer(map, now.solo, null, colorMapped);
+    else if (was?.solo || now.picking === null) soloMapLayer(map, null, before);
+    if (now.picking === null || now.picking === now.solo) return;
+    // One picking layer at a time: setting it takes picking off the others.
+    try {
+        map.updateRenderInfo(now.picking, { isPick: true });
+    } catch {
+        // A layer that cannot pick stays as it is.
+    }
+    map.requestRender?.();
+}

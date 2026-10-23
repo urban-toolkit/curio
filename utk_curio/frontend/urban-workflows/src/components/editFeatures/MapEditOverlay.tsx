@@ -18,18 +18,19 @@
  *   part of a feature of several to remove it, alt-click a corner to
  *   delete it; move: drag the picked feature to move it whole.
  *
- * Only what the action is about is drawn here: what the node selects (its
- * pick, or the features a rule matches), which comes back on the interaction
- * edge, the handles and the shape being drawn. The map draws the layers, with
- * the edits made, again after each one.
+ * What the node selects (its pick, or the features a rule matches), which
+ * comes back on the interaction edge, the map lights with Autark's own
+ * highlight. Only the drawing tools are drawn here: the handles, the shape
+ * being drawn, a shape waiting to be added and a shape while it is dragged.
+ * The map draws the layers, with the edits made, again after each one.
  */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useFlowContext } from "../../providers/FlowProvider";
 import type { SelectionId } from "../../utils/references/selectionTags";
 import { withArticle, type Geometry } from "../../utils/editFeatures/editFeatures";
-import { kindOf, type EditedFeature } from "../../utils/editFeatures/layerModel";
+import { kindOf } from "../../utils/editFeatures/layerModel";
 import { editMap, editMapLayerId, useMapEdit } from "../../utils/editFeatures/mapEditBus";
-import { editSelection, selectedIdsIn, toggledIds } from "../../utils/editFeatures/mapEditSelection";
+import { editSelection, selectedIdsIn, toggledIds, type SentSelection } from "../../utils/editFeatures/mapEditSelection";
 import { partsOf, withoutPart } from "../../utils/editFeatures/geometryParts";
 import { toRings } from "../../utils/editFeatures/geometryRings";
 import {
@@ -50,9 +51,6 @@ import {
 import { isTypingTarget } from "../canvasKeyBindings";
 import styles from "./MapEditOverlay.module.css";
 
-/** How many matched or picked features are outlined at most. */
-const MAX_OUTLINED = 3000;
-
 type Gesture =
   | { kind: "click"; start: XY; moved: boolean; shift: boolean }
   | { kind: "corner" | "mid"; ring: number; index: number; shape?: Geometry }
@@ -61,14 +59,19 @@ type Gesture =
 /** The id the shape drawn but not yet added goes by, among the outlines. */
 const DRAFT = "__drawn__";
 
-export default function MapEditOverlay({ mapId }: { mapId: string }) {
+export default function MapEditOverlay({
+  mapId,
+  sendSelection,
+}: {
+  mapId: string;
+  /** Sends a pick as the map's own selection, as autk-map's pick is sent. */
+  sendSelection: (selection: SentSelection) => void;
+}) {
   const { session, map } = useMapEdit(mapId);
   const active = session?.active ?? null;
-  // The map's node: the selections the interaction edge brings it, and where
-  // its own selection goes.
+  // The map's node: the selections the interaction edge brings it.
   const flow = useFlowContext() as any;
   const mapData = (flow?.nodes ?? []).find((n: any) => n.id === mapId)?.data;
-  const sendSelection = mapData?.interactionsCallback ?? flow?.interactionsCallback;
   const box = useRef<HTMLDivElement>(null);
   const [, setTick] = useState(0);
   const [draft, setDraft] = useState<XY[]>([]);
@@ -123,21 +126,19 @@ export default function MapEditOverlay({ mapId }: { mapId: string }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [mapData?.interactions, session?.interactionId, active?.table, features],
   );
-  const selectedKeys = useMemo(() => new Set([...selected.map(String), ...(active?.draft ? [DRAFT] : [])]), [selected, active?.draft]);
   const selectedOne = selected.length === 1 ? shown.find((f) => f.id !== null && String(f.id) === String(selected[0])) : undefined;
   const handles = selectedOne?.geometry && (mode === "reshape" || mode === "move") ? toRings(selectedOne.geometry) : null;
 
   /**
    * A click that picks: the map's selection, *id*'s feature alone, or with
    * shift added to what the node selects now or taken out of it; a click on
-   * nothing clears it. Sent through the map's node, as its own pick is, keyed
-   * by the layer's id column. Not while a shape waits to be added, nor while
-   * a rule picks.
+   * nothing clears it. Sent as the map's own pick is, keyed by the layer's id
+   * column. Not while a shape waits to be added, nor while a rule picks.
    */
   const pick = (id: SelectionId | null, additive: boolean) => {
     if (!active?.key || active.draft || active.rule) return;
     const ids = id === null ? (additive ? selected : []) : additive ? toggledIds(selected, id) : [id];
-    sendSelection?.(editSelection(ids, active.key, active.table), mapId);
+    sendSelection(editSelection(ids, active.key, active.table));
   };
 
   // Every layer is worked on in 2D, from straight above with the buildings
@@ -371,59 +372,35 @@ export default function MapEditOverlay({ mapId }: { mapId: string }) {
     const { rings, closed } = toRings(geometry);
     return rings.map((ring, r) => ring.map((xy, i) => `${i === 0 ? "M" : "L"}${p.toScreen(xy).map((v) => v.toFixed(1)).join(" ")}`).join(" ") + (closed[r] ? " Z" : "")).join(" ");
   };
-  /** A ring around a feature too small to see on the map as it is zoomed. */
-  const SMALL_PX = 14;
-  const outline = (f: EditedFeature, dashed: boolean) => {
-    if (!f.geometry) return null;
-    const id = String(f.id);
-    if (kindOf(f.geometry) === "points") {
-      return toRings(f.geometry).rings.map((ring, r) => {
+  const outline = (id: string, geometry: Geometry) => {
+    if (kindOf(geometry) === "points") {
+      return toRings(geometry).rings.map((ring, r) => {
         const [x, y] = p.toScreen(ring[0]);
         // Around the point as the map draws it.
         const radius = Math.max(7, p.pixels(ring[0], size.pointRadius) + 2);
         return (
           <g key={`${id}-${r}`}>
             <circle className={styles.casing} cx={x} cy={y} r={radius + 2} strokeWidth={4} />
-            <circle className={`${styles.outline} ${styles.point}`} cx={x} cy={y} r={radius} strokeWidth={2.5} strokeDasharray={dashed ? "3 2" : undefined} />
+            <circle className={`${styles.outline} ${styles.point}`} cx={x} cy={y} r={radius} strokeWidth={2.5} />
           </g>
         );
       });
     }
-    const d = path(f.geometry);
-    const screen = toRings(f.geometry).rings.flat().map(p.toScreen);
-    const xs = screen.map(([x]) => x), ys = screen.map(([, y]) => y);
-    const small = screen.length > 0 && Math.max(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys)) < SMALL_PX;
-    const width = dashed ? 2 : 3.5;
+    const d = path(geometry);
     return (
       <g key={id}>
-        <path className={styles.casing} d={d} strokeWidth={width + 3} />
-        <path
-          className={`${styles.outline} ${kindOf(f.geometry) === "areas" ? styles.area : ""}`}
-          d={d}
-          strokeWidth={width}
-          strokeDasharray={dashed ? "5 3" : undefined}
-          fillRule="evenodd"
-        />
-        {small ? (
-          <circle
-            className={styles.outline}
-            cx={(Math.max(...xs) + Math.min(...xs)) / 2}
-            cy={(Math.max(...ys) + Math.min(...ys)) / 2}
-            r={12}
-            strokeWidth={2.5}
-            strokeDasharray={dashed ? "3 2" : undefined}
-          />
-        ) : null}
+        <path className={styles.casing} d={d} strokeWidth={6.5} />
+        <path className={`${styles.outline} ${kindOf(geometry) === "areas" ? styles.area : ""}`} d={d} strokeWidth={3.5} fillRule="evenodd" />
       </g>
     );
   };
-  // What the node selects, and the shape drawn but not yet added, outlined on
-  // the ground where the map draws them (buildings flat), in the map's
-  // highlight: what a rule matches dashed, as it is kept matching later.
-  const withDraft: EditedFeature[] = active.draft ? [...shown, { id: DRAFT, geometry: active.draft, properties: {}, status: "added" }] : shown;
-  const outlined = withDraft.filter((f) => f.id !== null && selectedKeys.has(String(f.id))).slice(0, MAX_OUTLINED);
-  const picked = active.rule ? [] : outlined;
-  const matched = active.rule ? outlined : [];
+  // The shapes the map does not draw yet, on the ground where it would
+  // (buildings flat), in the map's highlight: the shape drawn but not yet
+  // added, and a shape while it is dragged.
+  const pending: Array<[string, Geometry]> = [
+    ...(active.draft ? [[DRAFT, active.draft] as [string, Geometry]] : []),
+    ...(dragShape ? [[`dragged-${String(dragShape.id)}`, dragShape.geometry] as [string, Geometry]] : []),
+  ];
   const draftScreen = draft.map(p.toScreen);
   const hoverScreen = hover && mode === "draw" && draft.length > 0 ? p.toScreen(hover) : null;
   const noun = active.noun;
@@ -447,8 +424,7 @@ export default function MapEditOverlay({ mapId }: { mapId: string }) {
   return (
     <div ref={box} data-testid="map-edit-overlay" data-edit-mode={mode} data-edit-layer={active.table} className={`${styles.overlay} ${mode === "draw" ? styles.drawing : ""}`}>
       <svg width={p.width} height={p.height} className={styles.svg} aria-hidden="true">
-        {matched.map((f) => outline(f, true))}
-        {picked.map((f) => outline(f, false))}
+        {pending.map(([id, geometry]) => outline(id, geometry))}
         {handles
           ? handles.rings.map((ring, r) => (
               <g key={`ring-${r}`} className={styles.handles}>

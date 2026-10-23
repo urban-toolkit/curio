@@ -9,7 +9,9 @@
  * A layer the node makes is drawn on top once it has features. The map keeps
  * its view when an edit draws it again, and after Commit edits. A click on the
  * map picks the feature under it, and a shift-click adds or drops one, while
- * the map draws an edit again too.
+ * the map draws an edit again too. The map lights a pick, every part of a
+ * building, on the layer an action works on, and nothing is drawn over it; a
+ * play of the map drops the pick.
  *
  * Each node is the behavior the canvas registers for its type, with the
  * node's own state (hook/useNodeState) for the Map Edits node; the map draws
