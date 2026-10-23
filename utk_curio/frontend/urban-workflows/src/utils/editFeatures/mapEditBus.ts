@@ -11,7 +11,9 @@
  *   its features as the log leaves them, the mode of the action, the shape
  *   being drawn, and what a shape drawn or reshaped on the map becomes;
  * - the Autark node registers each map it draws (`registerEditMap`), whose
- *   camera and origin the overlay on it (`MapEditOverlay`) reads.
+ *   camera and origin the overlay on it (`MapEditOverlay`) reads, and where
+ *   it draws a feature, which its layer skips while the drawing tools, layers
+ *   of the map itself (`mapEditLayers`), draw it reshaped or moved.
  *
  * Picks are not here: a pick on the map is the map's selection, which the
  * interaction edge carries to the Map Edits node, as a selection crosses
@@ -61,6 +63,7 @@ export interface MapEditSession {
 const sessions = new Map<string, Map<string, MapEditSession>>();
 const maps = new Map<string, any>();
 const layerIds = new Map<string, (table: string) => string>();
+const featurePositions = new Map<string, (table: string, key: string, id: SelectionId) => number[]>();
 const listeners = new Map<string, Set<() => void>>();
 
 function notify(mapId: string) {
@@ -93,12 +96,23 @@ export function mapSession(mapId: string): MapEditSession | undefined {
   return mine ? [...mine.values()].at(-1) : undefined;
 }
 
-/** The autk map *mapId* drew last, for the overlay on it. */
-export function registerEditMap(mapId: string, map: any, layerIdOf?: (table: string) => string): void {
+/**
+ * The autk map *mapId* drew last, for the overlay on it: with the id it gives
+ * the layer that draws a table (*layerIdOf*), and where in that layer it
+ * draws the rows of a feature, by its id column (*positionsOf*).
+ */
+export function registerEditMap(
+  mapId: string,
+  map: any,
+  layerIdOf?: (table: string) => string,
+  positionsOf?: (table: string, key: string, id: SelectionId) => number[],
+): void {
   if (map) maps.set(mapId, map);
   else maps.delete(mapId);
   if (map && layerIdOf) layerIds.set(mapId, layerIdOf);
   else layerIds.delete(mapId);
+  if (map && positionsOf) featurePositions.set(mapId, positionsOf);
+  else featurePositions.delete(mapId);
   notify(mapId);
 }
 
@@ -109,6 +123,14 @@ export function editMap(mapId: string): any {
 /** The id *mapId*'s map gives the layer that draws *table* (a titled layer goes by its title). */
 export function editMapLayerId(mapId: string, table: string): string {
   return layerIds.get(mapId)?.(table) ?? table;
+}
+
+/**
+ * Where *mapId*'s map draws the rows of *table* whose column *key* holds *id*:
+ * their positions in the layer that draws it, none when the map does not say.
+ */
+export function editMapPositions(mapId: string, table: string, key: string, id: SelectionId): number[] {
+  return featurePositions.get(mapId)?.(table, key, id) ?? [];
 }
 
 function subscribe(mapId: string, listener: () => void): () => void {

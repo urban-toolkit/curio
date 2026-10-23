@@ -6,10 +6,14 @@
  * what was set on each layer through the map's own menu: hidden or shown,
  * its opacity, colors and color map, borders, point and line sizes. A layer
  * is matched by its id, the table it draws, so a new layer starts as the
- * document draws it, and a layer gone is forgotten.
+ * document draws it, and a layer gone is forgotten. The drawing tools a Map
+ * Edits node puts on the map as layers (`mapEditLayers`) are none of the
+ * document's: never kept, hidden or picked on.
  */
 import { grammarMaps } from './autkMapDrawing';
-import { inputRow, type LoadOrder } from '../../utils/autkInput';
+import { inputRow, tablePositions, type LoadOrder } from '../../utils/autkInput';
+import { idKey } from '../../utils/editFeatures/applyEdits';
+import { isMapEditToolLayer } from '../../utils/editFeatures/mapEditLayers';
 
 /** The render settings of a layer a person can change, by layer id. */
 export type MapLayerState = Record<string, Record<string, unknown>>;
@@ -88,6 +92,23 @@ export function mapStateOf(
 }
 
 /**
+ * Where a map draws the rows of *features*, a table it draws, whose column
+ * *key* holds *id*: their positions in the table's layer, through the order
+ * it draws them in (`LoadOrder.map`), as a highlight names them.
+ */
+export function featurePositions(
+    features: readonly any[],
+    order: number[] | null | undefined,
+    key: string,
+    id: unknown,
+): number[] {
+    const wanted = idKey(id);
+    if (wanted === null) return [];
+    const rows = features.flatMap((feature, row) => (idKey(feature?.properties?.[key]) === wanted ? [row] : []));
+    return tablePositions(rows, order);
+}
+
+/**
  * The settings of each layer the first map of *grammar* draws, before a layer
  * is shown alone: with which one a click selects (`isPick`), which a redraw
  * does not keep, since an edit's own pick sets it.
@@ -107,7 +128,7 @@ export function snapshotMapLayers(grammar: unknown): MapLayerState | null {
     for (const layer of layersOf(map)) {
         const id = idOf(layer);
         const info = layer?.layerRenderInfo;
-        if (!id || !info) continue;
+        if (!id || !info || isMapEditToolLayer(id)) continue;
         const kept: Record<string, unknown> = {};
         for (const key of KEPT) if (info[key] !== undefined) kept[key] = info[key];
         // The color map as configured; its domain comes from the new data.
@@ -123,7 +144,7 @@ export function restoreMapLayers(map: any, state: MapLayerState | null): void {
     for (const layer of layersOf(map)) {
         const id = idOf(layer);
         const kept = id ? state[id] : undefined;
-        if (!id || !kept) continue;
+        if (!id || !kept || isMapEditToolLayer(id)) continue;
         const { colormap, ...renderInfo } = kept;
         try {
             if (Object.keys(renderInfo).length > 0) map.updateRenderInfo(id, renderInfo);
@@ -159,7 +180,7 @@ export function soloMapLayer(
     let picking: string | null = null;
     for (const layer of layersOf(map)) {
         const id = idOf(layer);
-        if (!id) continue;
+        if (!id || isMapEditToolLayer(id)) continue;
         if (table !== null) {
             set(id, { isSkip: id !== table, isColorMap: id === table && colorMapped });
             continue;

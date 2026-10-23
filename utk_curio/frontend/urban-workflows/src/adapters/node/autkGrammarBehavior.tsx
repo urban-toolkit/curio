@@ -55,7 +55,7 @@ import { frameMaps, keepMapViews, mapViews, type MapView } from './autkMapView';
 import { grammarMaps, trackMaps } from './autkMapDrawing';
 import { mapSession, onMapSession, registerEditMap } from '../../utils/editFeatures/mapEditBus';
 import {
-    layerIdFor, mapStateOf, restoreMapLayers, showForEdits, snapshotBeforeSolo, snapshotMapLayers,
+    featurePositions, layerIdFor, mapStateOf, restoreMapLayers, showForEdits, snapshotBeforeSolo, snapshotMapLayers,
     type EditsView, type MapLayerState, type MapTableState,
 } from './autkMapState';
 import { drawnInput, editFeedsOf, fedByInteraction, feedsVersion, newLayerTables, type EditFeed } from '../../utils/editFeatures/mapEditsPreview';
@@ -926,11 +926,20 @@ export const useAutkGrammarBehavior = (
                     // What was set on each layer through the map's menu, the
                     // layer a Map Edits node shows alone and the layer its
                     // action works on, kept across the draw; the overlay on the
-                    // map reads its camera.
+                    // map reads its camera, and where this draw put a
+                    // feature's rows, which the layer skips while the drawing
+                    // tools draw the feature reshaped or moved.
                     const shownMap = grammarMaps(grammar)[0];
                     restoreMapLayers(shownMap, savedLayersRef.current);
                     if (soloRef.current) showAsEditsAsk(shownMap, spec, null, soloRef.current.before);
-                    registerEditMap(nodeId, shownMap ?? null, (table: string) => layerIdFor(spec, table));
+                    const drawnFeatures = inputFeaturesRef.current;
+                    const drawnOrders = loadOrdersRef.current;
+                    registerEditMap(
+                        nodeId,
+                        shownMap ?? null,
+                        (table) => layerIdFor(spec, table),
+                        (table, key, id) => featurePositions(drawnFeatures[table] ?? [], drawnOrders[table]?.map, key, id),
+                    );
                 }
                 savedLayersRef.current = null;
                 // autk-plot's SVG is inline, so it sits on a line of text whose
