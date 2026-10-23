@@ -45,13 +45,6 @@ def test_the_dataflow_builder_is_not_offered_a_decomposition_that_only_rewords_g
     assert '"workflow.plan.create"' not in _prompt(DATAFLOW_BUILDER)
 
 
-def test_the_dataflow_builder_is_not_told_every_applied_plan_ends_with_a_topology_verdict():
-    """Only the whole-plan Apply ends its result with one
-    (``plans._log_plan_applied``); a plan applied node by node, then its
-    connections, ends without it."""
-    assert "the applied result names what changed and ends with a Topology verdict" not in _prompt(DATAFLOW_BUILDER)
-
-
 def test_the_dataflow_builder_is_told_every_applied_plan_ends_with_a_topology_verdict():
     """Every way a plan is applied ends its result with the verdict: Apply plan
     (``plans._log_plan_applied``), and the row or Connect all that completes a
