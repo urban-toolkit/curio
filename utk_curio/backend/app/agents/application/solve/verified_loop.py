@@ -489,11 +489,10 @@ class VerifiedRounds:
 
     def _dashboard_gate(self):
         """A pinned tile's spec is held to what its dashboard publishes, before
-        the sandbox runs it: a spec that loads its own data fails the round
-        with the remedy, a node upstream that loads the data, and ends the
-        loop, since Solve cannot add that node and no correction of this spec
-        can. The code on the node, which round 0 may run, is the user's own
-        and is never refused."""
+        the sandbox runs it: a spec that loads its own data fails the round,
+        and the loop ends there, since its remedy, a node upstream that loads
+        the data, is one Solve cannot add. The code on the node, which round 0
+        may run, is the user's own and is never refused."""
         if self.use_current:
             return None
         refusal = dashboards.refusal(self.user_key, self.project_id, self.node, self.candidate)
