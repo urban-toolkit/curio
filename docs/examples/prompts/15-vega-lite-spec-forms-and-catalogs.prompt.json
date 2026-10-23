@@ -4,7 +4,7 @@
   "version": 1,
   "source": {
     "path": "docs/examples/15-vega-lite-spec-forms-and-catalogs.json",
-    "sha256": "3ae54d15616b4a00bfc7eaeb8f38f30c56293cf92c192c4a8166cb1563332bb4",
+    "sha256": "5483d5652bcc9cd2184455ec72ff439dcac7bdc9a9a1979a90635f6151978ffc",
     "walkthrough": "docs/examples/15-vega-lite-spec-forms-and-catalogs.md"
   },
   "prompt": "Load three datasets from the Data Catalog that are stored in different formats: the Chicago ZIP boundaries, the green roofs table and the Project Sidewalk labels. Join them spatially, then draw a series of maps and charts in which I have written parts of the spec myself, so I can check that what I write is kept rather than overwritten and that the storage format makes no difference.",
