@@ -485,9 +485,9 @@ def _rule(page, edit_id: str, test: str, value: str, column: str = "height") -> 
 #: lights them itself.
 OUTLINES = "svg path, svg circle"
 
-# What an Autark node's map shows, as autk-map holds it: for each table its
-# document draws, whether its layer is the one that picks and the input rows
-# that layer lights (window.__curio_mapState).
+# What an Autark node's map shows, as autk-map and autk-db hold it: for each
+# table its document draws, whether its layer is the one that picks and the
+# features that layer lights (window.__curio_mapState).
 _MAP_STATE_JS = "(id) => (window.__curio_mapState ? window.__curio_mapState(id) : null)"
 
 
@@ -522,7 +522,23 @@ def _wait_for_lit(page, map_id: str, expected, what: str, table: str = LAYER, ke
             return
         page.wait_for_timeout(250)
     shown = sorted(expected) if not isinstance(expected, set) else sorted(expected, key=str)
-    raise AssertionError(f"{what}: the map {map_id} lights the {key} {got} on {table}, not {shown}")
+    # What every table's layer shows, so a failure says whether the layer picks
+    # at all, and the selections the map was brought, which it lights.
+    state = page.evaluate(_MAP_STATE_JS, map_id) or {}
+    layers = {
+        name: (layer.get("pick"), _ids(layer.get("lit"), key), layer.get("positions"), layer.get("drawn"), layer.get("rows"))
+        for name, layer in state.items()
+    }
+    brought = [
+        (entry.get("nodeId"), ((entry.get("details") or {}).get("autk_selection") or {}).get("layerRef"),
+         ((entry.get("details") or {}).get("autk_selection") or {}).get("data"))
+        for entry in page.evaluate(_INTERACTIONS_JS, map_id) or []
+    ]
+    raise AssertionError(
+        f"{what}: the map {map_id} lights the {key} {got} on {table}, not {shown}; "
+        f"each table as (picks, lit {key}, positions lit, features drawn, rows read back): {layers}; "
+        f"selections brought as (from, layer, rows): {brought}"
+    )
 
 
 _SHOWN_JS = """([selector, x, y]) => document.elementFromPoint(x, y) === document.querySelector(selector)"""
