@@ -1126,21 +1126,36 @@ def _plan_edge_context(
     }
 
 
-def _existing_plan_edge(edges: list, source: str, target: str, interaction: bool,
+def _existing_plan_edge(edges: list, plan_edges: list, index: int, source: str, target: str,
                         doomed: frozenset | set = frozenset()) -> dict | None:
-    """The dataflow's connection that a plan edge from *source* to *target* of
-    its kind (*interaction* or data) already is, or None: one a row drew, or
-    the user. One the plan removes (*doomed*) does not count. A row applies
-    such an edge as a no-op, and Apply plan creates none for it."""
-    return next(
-        (
-            e for e in edges
-            if isinstance(e, dict) and str(e.get("id")) not in doomed
-            and e.get("source") == source and e.get("target") == target
-            and plan_topology.is_interaction_edge(e) == interaction
-        ),
-        None,
-    )
+    """The dataflow's connection that plan edge *index*, from *source* to
+    *target*, already is, or None: one a row drew, or the user. It is one of
+    the same two ends, kind and input circle. An edge that names its circle
+    (``toHandle``) is on that circle; one that names none is on a circle no
+    other plan edge between the same two ends names, so a node fed twice by
+    one node (a Spatial Join of a layer with itself) keeps both feeds. An edge
+    the plan removes (*doomed*) does not count. A row applies such an edge as
+    a no-op, and Apply plan creates none for it."""
+    plan_edge = plan_edges[index]
+    interaction = plan_topology.is_interaction_edge(plan_edge)
+    named = plan_edge.get("toHandle")
+    taken = {
+        other.get("toHandle") for i, other in enumerate(plan_edges)
+        if i != index and other.get("toHandle")
+        and other["from"] == plan_edge["from"] and other["to"] == plan_edge["to"]
+        and not plan_topology.is_interaction_edge(other)
+    }
+    for e in edges:
+        if not isinstance(e, dict) or str(e.get("id")) in doomed:
+            continue
+        if e.get("source") != source or e.get("target") != target:
+            continue
+        if plan_topology.is_interaction_edge(e) != interaction:
+            continue
+        circle = e.get("targetHandle") or "in"
+        if interaction or (circle == named if named else circle not in taken):
+            return e
+    return None
 
 
 def _apply_one_plan_edge(ctx: dict, index: int, *, record_missing: bool = True):
@@ -1187,7 +1202,7 @@ def _apply_one_plan_edge(ctx: dict, index: int, *, record_missing: bool = True):
         return {**row, "status": "refused", "reason": reason}, None
     wants_interaction = plan_topology.is_interaction_edge(plan_edge)
     doomed = ctx["doomed"]
-    already = _existing_plan_edge(ctx["edges"], source, target, wants_interaction, doomed)
+    already = _existing_plan_edge(ctx["edges"], ctx["plan_edges"], index, source, target, doomed)
     if already is not None:
         edge_states[key] = "applied"
         return {
@@ -1737,7 +1752,8 @@ def _create_plan_edges(user_key, project_id, proposal_id, spec: dict, proposal: 
                        nodes: list, edges: list, ref_to_id: dict, spec_nodes_by_id: dict) -> list:
     """The plan's edges: endpoints resolve through the ref map ∪ existing ids (dev/59); handles are
     explicit end-to-end (DEC-051): an edge into a node with several inputs gets a deterministic
-    free circle; an interaction edge (dev/112) takes no port and no circle."""
+    free circle; an interaction edge (dev/112) takes no port and no circle. An edge a row applied,
+    or one already in the dataflow on its circle (``_existing_plan_edge``), is not drawn again."""
     # dev/67-3 (DEC-051): handles are explicit end-to-end. An edge into a
     # growing node gets a deterministic free circle (a named free toHandle
     # wins; occupied or unnamed falls to the lowest free); the bridge passes
@@ -1764,14 +1780,20 @@ def _create_plan_edges(user_key, project_id, proposal_id, spec: dict, proposal: 
         if str(e.get("type") or "") != "Interaction" and _takes_circles(available.get(types_by_id.get(e.get("target")))):
             circles_taken.setdefault(e.get("target"), set()).add(e.get("targetHandle") or "in")
     created_edges: list[dict] = []
-    for plan_edge in plan.get("edges", []):
+    # A connection a row applied, or one the dataflow held before this apply
+    # (a row drew it, or the user did), is not drawn again: no node is fed
+    # twice by one plan edge. What this apply draws never stands in for
+    # another plan edge, so a node fed twice by one node keeps both feeds.
+    edge_states = proposal.get("edgeStates") or {}
+    before = list(edges)
+    plan_edges = plan.get("edges", [])
+    for index, plan_edge in enumerate(plan_edges):
         # dev/59: endpoints resolve through the ref map ∪ existing ids.
         source = ref_to_id.get(plan_edge["from"], plan_edge["from"])
         target = ref_to_id.get(plan_edge["to"], plan_edge["to"])
-        # A connection the plan's rows drew already, or the user did, is in
-        # the dataflow: the apply creates only what is not, so no node is fed
-        # twice by one plan edge.
-        if _existing_plan_edge(edges, source, target, plan_topology.is_interaction_edge(plan_edge)) is not None:
+        if edge_states.get(str(index)) == "applied" or _existing_plan_edge(
+            before, plan_edges, index, source, target,
+        ) is not None:
             continue
         if plan_topology.is_interaction_edge(plan_edge):
             # dev/112: the Trill's feedback edge — in/out handles both ends,
