@@ -6,7 +6,8 @@ description: >-
   its bin/ first on PATH. The pytest a job runs on the runner then uses what
   the image installed, and `scripts/test.sh --skip-setup` installs nothing.
   The browser stays the runner's own Chrome, which the e2e suite launches
-  (browser_type_launch_args in utk_curio/backend/tests/conftest.py). A virtual
+  (browser_type_launch_args in utk_curio/backend/tests/conftest.py); on a
+  utk-desktop runner it draws with the fonts of ubuntu-latest. A virtual
   environment rather than the runner's own Python: on a self-hosted runner
   that Python keeps what earlier jobs installed, and it would be imported
   first. Writes only under RUNNER_TEMP, never the workspace, so the stack's
@@ -43,3 +44,35 @@ runs:
         "$venv/bin/python" -c 'import playwright, pytest'
         echo "$venv/bin" >> "$GITHUB_PATH"
         echo "Copied $(du -sh "$site" | cut -f1) of packages in $(( $(date +%s) - started )) s"
+
+    # The screenshot baselines are drawn with the fonts of ubuntu-latest, which
+    # the arcade runners copy. A utk-desktop runner is an Ubuntu desktop, whose
+    # fontconfig resolves sans-serif and system-ui to Noto Sans and Helvetica to
+    # Nimbus Sans instead of DejaVu Sans and Liberation Sans, so text wraps
+    # elsewhere and frames fail. Its jobs see only ubuntu-latest's font folders
+    # (Noto only for color emoji); the desktop's own session keeps its fonts.
+    - name: 🔤 The fonts of ubuntu-latest (utk-desktop runners)
+      shell: bash
+      run: |
+        set -euo pipefail
+        case "${RUNNER_NAME:-}" in utk-desktop-*) ;; *) exit 0 ;; esac
+        conf="$RUNNER_TEMP/ubuntu-latest-fonts.conf"
+        {
+          echo '<?xml version="1.0"?>'
+          echo '<!DOCTYPE fontconfig SYSTEM "urn:fontconfig:fonts.dtd">'
+          echo '<fontconfig>'
+          for dir in dejavu lato liberation liberation2 noto; do
+            if [ -d "/usr/share/fonts/truetype/$dir" ]; then
+              echo "  <dir>/usr/share/fonts/truetype/$dir</dir>"
+            fi
+          done
+          echo '  <selectfont>'
+          echo '    <rejectfont><glob>/usr/share/fonts/truetype/noto/*</glob></rejectfont>'
+          echo '    <acceptfont><glob>/usr/share/fonts/truetype/noto/NotoColorEmoji*</glob></acceptfont>'
+          echo '  </selectfont>'
+          echo "  <cachedir>$RUNNER_TEMP/fontconfig-cache</cachedir>"
+          echo '  <include ignore_missing="yes">/etc/fonts/conf.d</include>'
+          echo '</fontconfig>'
+        } > "$conf"
+        echo "FONTCONFIG_FILE=$conf" >> "$GITHUB_ENV"
+        echo "sans-serif is now $(FONTCONFIG_FILE="$conf" fc-match sans-serif)"

@@ -49,9 +49,9 @@ CI splits the suite between a self-hosted GPU runner, the only kind with
 hardware WebGPU, and a matrix of CPU runners
 ([`runner_split.py`](runner_split.py)). The run chooses
 each job's runner: GitHub-hosted `ubuntu-latest` while the organization's
-hosted runners have room and the self-hosted arcade runners (`[self-hosted,
-cpu]`) after that, and for the GPU
-share an arcade GPU runner (`arcade-gpu-01` to `arcade-gpu-04`) while one is free and `utk-gpu` otherwise. The GPU share is
+hosted runners have room, the self-hosted arcade runners (`[self-hosted,
+cpu]`) after that, and the `utk-desktop` runners when arcade is full too; for the GPU
+share an arcade GPU runner (`arcade-gpu-01` to `arcade-gpu-04`) while one is free, then `utk-gpu`, then `utk-desktop-01`. The GPU share is
 still called `utk`, after the first GPU runner. A test runs on `utk` when its
 browser runs WebGPU: a `test_workflows.py` case whose dataflow has an Autark node, a
 walkthrough scene whose example or script drives Autark or the GPU, and any
@@ -436,8 +436,9 @@ python scripts/ci_report.py --junit "End-to-end tests=.curio/e2e.xml" \
 ### Baselines per GPU kind
 
 The GPU job runs on one of two GPU models: an arcade runner (arcade-gpu-01 to
-04 share an H100) or utk-gpu (an RTX PRO 6000). Nearly every frame draws the
-same on both. A frame that does not, like example 07's plot close-up, whose
+04 share an H100) or utk-gpu (an RTX PRO 6000). It can also run on
+utk-desktop-01 (an RTX 3070), which has no kind of its own and compares with the
+default baselines. Nearly every frame draws the same on both. A frame that does not, like example 07's plot close-up, whose
 GPU-computed histogram draws 6% apart, may also keep a baseline of one GPU kind
 beside its default one: `<name>.utk-gpu.png` or `<name>.arcade-gpu.png`.
 

@@ -150,14 +150,14 @@ on:
       # `auto` defers to the repository variables CURIO_CI_POOL and
       # CURIO_CI_GPU_POOL, and picks when those are unset.
       pool:
-        description: 'CPU jobs: auto (GitHub-hosted first, then arcade), hosted, or arcade'
+        description: 'CPU jobs: auto (GitHub-hosted first, then arcade, then the utk-desktop runners), hosted, arcade, or desktop'
         type: choice
-        options: [auto, hosted, arcade]
+        options: [auto, hosted, arcade, desktop]
         default: auto
       gpu_pool:
-        description: 'test-gpu: auto (arcade GPU runners first, then utk), arcade, or utk'
+        description: 'test-gpu: auto (arcade GPU runners first, then utk, then utk-desktop-01), arcade, utk, or desktop'
         type: choice
-        options: [auto, arcade, utk]
+        options: [auto, arcade, utk, desktop]
         default: auto
       # A flake hunt: unit, jest, e2e-desktop, test-gpu and test-isolated each
       # run their suite this many times (scripts/ci_repeat.sh), and the CI
@@ -187,9 +187,11 @@ env:
 #
 #   * CPU jobs: GitHub-hosted ubuntu-latest while the organization's hosted
 #     runners have room, the self-hosted arcade runners ([self-hosted, cpu],
-#     40 of them) for the rest.
+#     40 of them) for the rest, and the utk-desktop runners (utk-desktop-01
+#     and -02, [self-hosted, desktop]) when arcade is full too.
 #   * test-gpu: an arcade GPU runner (arcade-gpu-01..04, [self-hosted, gpu,
-#     h100]) while one is free, utk-gpu ([self-hosted, gpu, curio]) otherwise.
+#     h100]) while one is free, then utk-gpu ([self-hosted, gpu, curio]), and
+#     utk-desktop-01 ([self-hosted, gpu, desktop]) when utk-gpu is busy too.
 #   * test-desktop-stress, unit (sandbox) and preview-runner: always
 #     ubuntu-latest. The first two measure a 4-core, 16 GB laptop.
 #   * test-gpu-stress: always utk-gpu.
@@ -201,7 +203,7 @@ env:
 # keeps its workspace and its Docker daemon between jobs. Each arcade runner is
 # a container with a daemon of its own (uic-evl/evl-github-runners); utk-gpu
 # runs on its host as the user deploy, on the host's daemon, which also runs
-# other stacks. So every job that can run on one starts by removing the
+# other stacks, and each utk-desktop runner on its desktop's daemon. So every job that can run on one starts by removing the
 # curio-ci* stacks an earlier job left and handing back the files containers
 # wrote as root (build-image's first step, `&reclaim`), and a job that starts a
 # stack tears it down at its end with stop-stack, which also removes the images
@@ -212,8 +214,8 @@ env:
 # while CPU jobs each get a runner of their own. Keyed per ref, not repo-wide:
 # GitHub keeps only ONE job pending per group, so a repo-wide group let each
 # newly queued job evict the previously pending one. test-gpu's group also
-# names its GPU pool, so runs on arcade and utk-gpu never wait for or
-# evict each other. `cancel-in-progress: false` means eviction only ever kills
+# names its GPU pool, so runs on arcade, utk-gpu and utk-desktop-01 never wait
+# for or evict each other. `cancel-in-progress: false` means eviction only ever kills
 # a job that has not started, which holds no containers, ports or GPU to leak.
 # test-gpu-stress and a re-mint's test-gpu have groups of their own.
 
@@ -430,8 +432,9 @@ jobs:
     needs: pick-runners
     runs-on: ${{ fromJSON(needs.pick-runners.outputs.runners)['test-gpu'] }}
     timeout-minutes: ${{ inputs.repeat > 1 && 350 || 90 }}
-    # One queue per ref and GPU pool (h100 is arcade's, curio is utk-gpu), so
-    # a run on one pool never waits for, or evicts, a run on the other.
+    # One queue per ref and GPU pool (h100 is arcade's, curio is utk-gpu,
+    # desktop is utk-desktop-01), so a run on one pool never waits for, or
+    # evicts, a run on another.
     concurrency:
       group: gpu-ci-${{ github.ref }}-${{ fromJSON(needs.pick-runners.outputs.runners || '{"test-gpu":["","","none"]}')['test-gpu'][2] }}${{ inputs.remint && '-remint' || '' }}
       cancel-in-progress: false

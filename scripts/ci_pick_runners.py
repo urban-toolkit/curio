@@ -1,10 +1,15 @@
 """Choose the runner for each job of a Full stack build run.
 
 CPU jobs run on GitHub-hosted ``ubuntu-latest`` while the organization's
-hosted runners have room, and on the self-hosted arcade pool
-(``[self-hosted, cpu]``) after that. The GPU job (test-gpu) runs on the arcade
-GPU pool (arcade-gpu-01..04, ``[self-hosted, gpu, h100]``) while it has a free
-runner, and on utk-gpu (``[self-hosted, gpu, curio]``) when it has none.
+hosted runners have room, on the self-hosted arcade pool (``[self-hosted,
+cpu]``) after that, and on the utk-desktop runners (utk-desktop-01 and -02,
+``[self-hosted, desktop]``) when arcade is full too. The GPU job (test-gpu)
+runs on the arcade GPU pool (arcade-gpu-01..04, ``[self-hosted, gpu, h100]``)
+while it has a free runner, then on utk-gpu (``[self-hosted, gpu, curio]``),
+and on utk-desktop-01 (``[self-hosted, gpu, desktop]``) when utk-gpu is busy
+too. utk-desktop-02 has no ``gpu`` label: its 12 GB do not hold test-gpu's
+shards. A desktop runs one job of either kind, so the desktops' room counts
+the jobs of both.
 GitHub cannot express "this runner, or that one if busy": ``runs-on`` has no
 "or", and it sends ``ubuntu-latest`` jobs only to its own runners. So a run
 picks twice: the pick-runners job, for the jobs that start at once, and
@@ -21,7 +26,9 @@ other repository of the organization, which this cannot see, so a curio job
 that has waited ``HOSTED_FULL_AFTER_S`` for a hosted runner also counts as the
 limit reached. The arcade CPU group serves this repository alone, so its count
 is exact. The GPU runners also take other repositories' jobs; a job sent to
-the arcade GPU pool while those hold it waits for a runner.
+the arcade GPU pool while those hold it waits for a runner. The desktops can
+be asleep or off: a desktop job queued with a desktop that should be free
+means they are not taking jobs, and no more go there.
 
 A pick leaves its own run's jobs out, unless ``--this-run-except`` names the
 job that runs it: build-image's pick counts the jobs of its run that are
@@ -30,9 +37,9 @@ waits on ``needs`` does not exist in the jobs API until those finish, so no
 pick sees it; ``--hosted-reserved`` holds back room for the ones that always
 run hosted.
 
-``CURIO_CI_POOL`` = ``hosted`` or ``arcade`` sends every CPU job there, and
-``CURIO_CI_GPU_POOL`` = ``arcade`` or ``utk`` the GPU job; ``auto`` (or unset)
-picks. They come from the dispatch form, or the repository variables of the
+``CURIO_CI_POOL`` = ``hosted``, ``arcade`` or ``desktop`` sends every CPU job
+there, and ``CURIO_CI_GPU_POOL`` = ``arcade``, ``utk`` or ``desktop`` the GPU
+job; ``auto`` (or unset) picks. They come from the dispatch form, or the repository variables of the
 same names when the form says ``auto``.
 
     python scripts/ci_pick_runners.py --hosted-reserved 1 --gpu test-gpu build-image jest ci-report
@@ -54,13 +61,25 @@ RUNS_ON = {
     "hosted": "ubuntu-latest",
     "arcade-gpu": ["self-hosted", "gpu", "h100"],
     "utk": ["self-hosted", "gpu", "curio"],
+    "desktop": ["self-hosted", "desktop"],
+    "desktop-gpu": ["self-hosted", "gpu", "desktop"],
 }
-CPU_POOLS = ("arcade", "hosted")
+CPU_POOLS = ("arcade", "hosted", "desktop")
+#: The GPU pools a dispatch can name, and the place each one is.
+GPU_POOLS = {"arcade": "arcade-gpu", "utk": "utk", "desktop": "desktop-gpu"}
 
 #: Runners in the arcade CPU pool (arcade-cpu-01..40).
 CPU_RUNNERS = 40
 #: Runners in the arcade GPU pool (arcade-gpu-01..04, all on one H100).
 GPU_RUNNERS = 4
+#: utk-gpu, one runner.
+UTK_RUNNERS = 1
+#: The utk-desktop runners (utk-desktop-01 and -02), each one job at a time.
+DESKTOP_RUNNERS = 2
+#: Those of them that also take the GPU job (30 GB, RTX 3070; the only ones
+#: labelled gpu).
+GPU_DESKTOPS = ("utk-desktop-01",)
+DESKTOP_GPU_RUNNERS = len(GPU_DESKTOPS)
 #: Concurrent GitHub-hosted jobs the organization's plan allows.
 HOSTED_SLOTS = 20
 
@@ -80,6 +99,8 @@ def pool_of(job: dict) -> str | None:
     """Where a job runs or waits to run, or None for anywhere else."""
     labels = {label.lower() for label in job.get("labels") or []}
     runner = (job.get("runner_name") or "").lower()
+    if runner.startswith("utk-desktop") or "desktop" in labels:
+        return "desktop-gpu" if "gpu" in labels else "desktop"
     if runner.startswith("arcade-cpu") or "cpu" in labels:
         return "arcade"
     if runner.startswith("arcade-gpu") or "h100" in labels:
@@ -103,6 +124,8 @@ def busy(jobs: list[dict], now: datetime) -> dict:
     counts = {pool: 0 for pool in RUNS_ON}
     running = {pool: 0 for pool in RUNS_ON}
     oldest_queued = {pool: 0.0 for pool in RUNS_ON}
+    # Jobs running on a desktop that takes the GPU job, and the CPU ones among them.
+    on_gpu_desktops = cpu_on_gpu_desktops = 0
     for job in jobs:
         if job.get("status") not in ACTIVE:
             continue
@@ -112,16 +135,45 @@ def busy(jobs: list[dict], now: datetime) -> dict:
         counts[pool] += 1
         if job["status"] == "in_progress":
             running[pool] += 1
+            if (job.get("runner_name") or "").lower() in GPU_DESKTOPS:
+                on_gpu_desktops += 1
+                cpu_on_gpu_desktops += pool == "desktop"
         elif job["status"] == "queued":
             oldest_queued[pool] = max(oldest_queued[pool], _age_s(job, now))
     counts["arcade_stuck"] = oldest_queued["arcade"] > STUCK_AFTER_S and running["arcade"] < CPU_RUNNERS
     counts["arcade_gpu_stuck"] = oldest_queued["arcade-gpu"] > STUCK_AFTER_S and running["arcade-gpu"] < GPU_RUNNERS
     counts["hosted_full"] = oldest_queued["hosted"] > HOSTED_FULL_AFTER_S
+    # A CPU job can take either desktop and the GPU job only utk-desktop-01, so
+    # each kind waits too long only while a desktop it can take runs nothing.
+    counts["desktop_stuck"] = (
+        (oldest_queued["desktop"] > STUCK_AFTER_S
+         and running["desktop"] + running["desktop-gpu"] < DESKTOP_RUNNERS)
+        or (oldest_queued["desktop-gpu"] > STUCK_AFTER_S and on_gpu_desktops < DESKTOP_GPU_RUNNERS))
+    counts["desktop_cpu_on_gpu"] = cpu_on_gpu_desktops
     return counts
 
 
-def assign_cpu(keys: list[str], free_hosted: int, pool: str = "auto") -> dict:
-    """GitHub-hosted for each job while it has room, arcade after that."""
+def desktop_room(counts: dict) -> tuple[int, int]:
+    """Free desktops for CPU jobs, and for the GPU job.
+
+    A CPU job can take any desktop, the GPU job only utk-desktop-01. A running
+    CPU job's runner says which desktop it holds; a queued one's does not, so
+    CPU jobs are also taken to fill the desktops without a GPU first, and the
+    rest to hold utk-desktop-01, whichever holds more.
+    """
+    if counts["desktop_stuck"]:
+        return 0, 0
+    cpu_free = max(DESKTOP_RUNNERS - counts["desktop"] - counts["desktop-gpu"], 0)
+    cpu_on_gpu_desktops = max(counts.get("desktop_cpu_on_gpu", 0),
+                              counts["desktop"] - (DESKTOP_RUNNERS - DESKTOP_GPU_RUNNERS))
+    gpu_free = max(DESKTOP_GPU_RUNNERS - counts["desktop-gpu"] - cpu_on_gpu_desktops, 0)
+    return cpu_free, gpu_free
+
+
+def assign_cpu(keys: list[str], free_hosted: int, pool: str = "auto",
+               free_arcade: int = CPU_RUNNERS, free_desktop: int = 0) -> dict:
+    """GitHub-hosted for each job while it has room, arcade after that, then a
+    free desktop. With every pool full, a job waits on arcade, the largest."""
     if pool in CPU_POOLS:
         return {key: pool for key in keys}
     chosen = {}
@@ -129,14 +181,20 @@ def assign_cpu(keys: list[str], free_hosted: int, pool: str = "auto") -> dict:
         if free_hosted > 0:
             chosen[key] = "hosted"
             free_hosted -= 1
-        else:
+        elif free_arcade > 0 or free_desktop <= 0:
             chosen[key] = "arcade"
+            free_arcade -= 1
+        else:
+            chosen[key] = "desktop"
+            free_desktop -= 1
     return chosen
 
 
-def assign_gpu(keys: list[str], free_arcade_gpu: int, pool: str = "auto") -> dict:
-    """An arcade GPU runner for each job while one is free, utk after that."""
-    forced = {"arcade": "arcade-gpu", "utk": "utk"}.get(pool)
+def assign_gpu(keys: list[str], free_arcade_gpu: int, pool: str = "auto",
+               free_utk: int = UTK_RUNNERS, free_desktop_gpu: int = 0) -> dict:
+    """An arcade GPU runner for each job while one is free, utk after that,
+    then a free desktop. With every one busy, a job waits on utk."""
+    forced = GPU_POOLS.get(pool)
     if forced:
         return {key: forced for key in keys}
     chosen = {}
@@ -144,8 +202,12 @@ def assign_gpu(keys: list[str], free_arcade_gpu: int, pool: str = "auto") -> dic
         if free_arcade_gpu > 0:
             chosen[key] = "arcade-gpu"
             free_arcade_gpu -= 1
-        else:
+        elif free_utk > 0 or free_desktop_gpu <= 0:
             chosen[key] = "utk"
+            free_utk -= 1
+        else:
+            chosen[key] = "desktop-gpu"
+            free_desktop_gpu -= 1
     return chosen
 
 
@@ -197,17 +259,23 @@ def pick(cpu_keys: list[str], gpu_keys: list[str], pool: str, gpu_pool: str, fet
     (they are not in ``cpu_keys``), held back from the hosted room.
     """
     how = []
-    if pool in CPU_POOLS and gpu_pool in ("arcade", "utk"):
+    if pool in CPU_POOLS and gpu_pool in GPU_POOLS:
         how.append(f"CPU jobs on {pool}, GPU jobs on {gpu_pool} (forced)")
         return {**assign_cpu(cpu_keys, 0, pool), **assign_gpu(gpu_keys, 0, gpu_pool)}, how
     try:
         counts = busy(fetch(), datetime.now(timezone.utc))
     except Exception as exc:  # noqa: BLE001 - a pick must never fail the run
         how.append(f"the jobs API failed ({exc}); picking as if every pool were idle")
-        counts = {**{p: 0 for p in RUNS_ON},
-                  "arcade_stuck": False, "arcade_gpu_stuck": False, "hosted_full": False}
+        counts = {**{p: 0 for p in RUNS_ON}, "arcade_stuck": False, "arcade_gpu_stuck": False,
+                  "hosted_full": False, "desktop_stuck": False}
 
     free = max(HOSTED_SLOTS - counts["hosted"] - hosted_reserved, 0)
+    arcade_free = max(CPU_RUNNERS - counts["arcade"], 0)
+    desktop_free, desktop_gpu_free = desktop_room(counts)
+    if counts["desktop_stuck"]:
+        how.append(f"No job goes to the desktops: a desktop job has waited over {STUCK_AFTER_S} s")
+    after_hosted = (f"then arcade, {arcade_free} of {CPU_RUNNERS} free, "
+                    f"then the desktops, {desktop_free} of {DESKTOP_RUNNERS} free")
     if pool in CPU_POOLS:
         how.append(f"CPU jobs on {pool}")
     elif counts["arcade_stuck"]:
@@ -215,22 +283,29 @@ def pick(cpu_keys: list[str], gpu_keys: list[str], pool: str, gpu_pool: str, fet
         how.append(f"CPU jobs on hosted: an arcade job has waited over {STUCK_AFTER_S} s")
     elif counts["hosted_full"]:
         free = 0
-        how.append(f"CPU jobs on arcade: a hosted job has waited over {HOSTED_FULL_AFTER_S} s, "
-                   "so the organization's hosted limit is reached")
+        how.append(f"CPU jobs not on hosted: a hosted job has waited over {HOSTED_FULL_AFTER_S} s, "
+                   f"so the organization's hosted limit is reached; {after_hosted}")
     else:
         how.append(f"CPU jobs: GitHub-hosted first, {free} of {HOSTED_SLOTS} hosted slots free "
-                   f"(this repository's jobs, {hosted_reserved} kept for this run's hosted-only jobs)")
+                   f"(this repository's jobs, {hosted_reserved} kept for this run's hosted-only jobs), "
+                   f"{after_hosted}")
 
     gpu_free = max(GPU_RUNNERS - counts["arcade-gpu"], 0)
+    utk_free = max(UTK_RUNNERS - counts["utk"], 0)
     if gpu_keys:
-        if gpu_pool not in ("arcade", "utk") and counts["arcade_gpu_stuck"]:
-            gpu_pool = "utk"
-            how.append(f"GPU jobs on utk: an arcade GPU job has waited over {STUCK_AFTER_S} s")
-        if gpu_pool in ("arcade", "utk"):
+        if gpu_pool in GPU_POOLS:
             how.append(f"GPU jobs on {gpu_pool}")
         else:
-            how.append(f"GPU jobs: arcade first, {gpu_free} of {GPU_RUNNERS} arcade GPU runners free")
-    return {**assign_cpu(cpu_keys, free, pool), **assign_gpu(gpu_keys, gpu_free, gpu_pool)}, how
+            if counts["arcade_gpu_stuck"]:
+                gpu_free = 0
+                how.append(f"GPU jobs skip arcade: an arcade GPU job has waited over {STUCK_AFTER_S} s")
+            how.append(f"GPU jobs: arcade first, {gpu_free} of {GPU_RUNNERS} arcade GPU runners free, "
+                       f"then utk, {utk_free} of {UTK_RUNNERS} free, "
+                       f"then utk-desktop-01, {desktop_gpu_free} of {DESKTOP_GPU_RUNNERS} free")
+    gpu_chosen = assign_gpu(gpu_keys, gpu_free, gpu_pool, utk_free, desktop_gpu_free)
+    # A GPU job sent to utk-desktop-01 holds a desktop a CPU job could have had.
+    desktop_free = max(desktop_free - list(gpu_chosen.values()).count("desktop-gpu"), 0)
+    return {**assign_cpu(cpu_keys, free, pool, arcade_free, desktop_free), **gpu_chosen}, how
 
 
 def _setting(name: str, allowed: tuple[str, ...]) -> str:
@@ -253,7 +328,7 @@ def main(argv: list[str]) -> int:
     if not args.cpu and not args.gpu:
         parser.error("no job keys")
     pool = _setting("CURIO_CI_POOL", CPU_POOLS)
-    gpu_pool = _setting("CURIO_CI_GPU_POOL", ("arcade", "utk"))
+    gpu_pool = _setting("CURIO_CI_GPU_POOL", tuple(GPU_POOLS))
 
     def fetch():
         if args.this_run_except:
