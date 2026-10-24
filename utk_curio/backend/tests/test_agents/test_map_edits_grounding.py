@@ -323,6 +323,33 @@ class TestSolveReadsMadeUpIdsFromTheWholeRun:
         assert line in inputs[1]["validationError"]
 
 
+#: A bow tie, an outline that crosses itself, by the two buildings, and what
+#: tells the code that adds it apart in the code a run sends.
+BOW_TIE = {"type": "Polygon", "coordinates": [[[0, 0], [1, 1], [1, 0], [0, 1], [0, 0]]]}
+CROSSING_MARK = '"op": "add", "id": 3'
+
+
+class TestSolveReadsSkippedAreasFromTheRun:
+    """The sandbox's step skips an edit whose area the map cannot draw, says
+    so, and the run goes on: a Map Editor node an agent filled with such an
+    area passes the sandbox. Solve reads the step's line, and the round fails
+    with it (#1121)."""
+
+    def test_an_area_that_crosses_itself_fails_the_round_with_the_steps_own_line(self, app, tmp_curio):
+        crossing = [{"op": "add", "id": 3, "geometry": BOW_TIE}]
+        said = _sandbox_says(crossing)
+        [line] = [text for text in said if "cross itself" in text]
+        sandbox = _Sandbox({
+            CROSSING_MARK: said,
+            REMOVE_TWO_MARK: _sandbox_says([{"op": "remove", "ids": [2]}]),
+        })
+        _events, outcome, inputs = _solve_rounds(app, [_code(crossing), REMOVE_TWO], sandbox)
+        assert [attempt["kind"] for attempt in outcome["attempts"]] == ["map-edits", "executed"], outcome["attempts"]
+        assert line in outcome["attempts"][0]["detail"]
+        assert line in inputs[1]["validationError"]
+        assert outcome["candidate"] == REMOVE_TWO_LANDED
+
+
 class TestSolveContextGivesTheNeighboursCalls:
     """A node's context names its Map Editor neighbours' calls, so what an
     agent writes below a what-if knows what it changed."""

@@ -17,6 +17,13 @@
         { "type": "Feature", "geometry": { "type": "Polygon", "coordinates": [[[3, 0], [4, 0], [4, 1], [3, 1], [3, 0]]] }, "properties": { "building_id": 12345678901, "osm_id": 12345678901, "height": 12 } },
         { "type": "Feature", "geometry": { "type": "Polygon", "coordinates": [[[4, 0], [5, 0], [5, 1], [4, 1], [4, 0]]] }, "properties": { "building_id": 12345678901, "osm_id": 98765432109, "height": 9 } }
       ]
+    },
+    "crossing_buildings": {
+      "type": "FeatureCollection",
+      "features": [
+        { "type": "Feature", "geometry": { "type": "Polygon", "coordinates": [[[0, 0], [1, 0], [1, 1], [0, 1], [0, 0]]] }, "properties": { "building_id": 1, "height": 10 } },
+        { "type": "Feature", "geometry": { "type": "Polygon", "coordinates": [[[2, 0], [3, 1], [3, 0], [2, 1], [2, 0]]] }, "properties": { "building_id": 2, "height": 20 } }
+      ]
     }
   },
   "cases": [
@@ -238,6 +245,69 @@
           { "type": "Feature", "geometry": { "type": "Polygon", "coordinates": [[[0, 0], [1, 0], [1, 1], [0, 1], [0, 0]]] }, "properties": { "building_id": 1, "height": 10, "levels": 3, "kind": "house", "roof": "gable" } },
           { "type": "Feature", "geometry": { "type": "Polygon", "coordinates": [[[2, 0], [3, 0], [3, 1], [2, 1], [2, 0]]] }, "properties": { "building_id": 2, "height": 40, "levels": 12, "kind": "tower" } },
           { "type": "Feature", "geometry": { "type": "Polygon", "coordinates": [[[6, 0], [7, 0], [7, 1], [6, 1], [6, 0]]] }, "properties": { "kind": "kiosk", "building_id": 4, "height": 6 } }
+        ]
+      }
+    },
+    {
+      "name": "a redraw whose outline would cross itself is skipped, and the building keeps its shape (#1121)",
+      "layer": "buildings",
+      "key": "building_id",
+      "edits": [
+        { "op": "geometry", "ids": [2], "geometry": { "type": "Polygon", "coordinates": [[[2, 0], [3, 1], [3, 0], [2, 1], [2, 0]]] } }
+      ],
+      "expected": {
+        "type": "FeatureCollection",
+        "features": [
+          { "type": "Feature", "geometry": { "type": "Polygon", "coordinates": [[[0, 0], [1, 0], [1, 1], [0, 1], [0, 0]]] }, "properties": { "building_id": 1, "height": 10, "levels": 3, "kind": "house", "roof": "gable" } },
+          { "type": "Feature", "geometry": { "type": "Polygon", "coordinates": [[[2, 0], [3, 0], [3, 1], [2, 1], [2, 0]]] }, "properties": { "building_id": 2, "height": 40, "levels": 12, "kind": "tower" } },
+          { "type": "Feature", "geometry": { "type": "Polygon", "coordinates": [[[4, 0], [5, 0], [5, 1], [4, 1], [4, 0]]] }, "properties": { "building_id": 3, "height": 25, "levels": 8, "kind": "office" } }
+        ]
+      }
+    },
+    {
+      "name": "an add whose outline would cross itself is not added, and an edit of its id names no feature (#1121)",
+      "layer": "buildings",
+      "key": "building_id",
+      "edits": [
+        { "op": "add", "id": 4, "geometry": { "type": "Polygon", "coordinates": [[[6, 0], [7, 1], [7, 0], [6, 1], [6, 0]]] }, "values": { "kind": "kiosk" } },
+        { "op": "set", "ids": [4], "column": "height", "value": 6 }
+      ],
+      "expected": {
+        "type": "FeatureCollection",
+        "features": [
+          { "type": "Feature", "geometry": { "type": "Polygon", "coordinates": [[[0, 0], [1, 0], [1, 1], [0, 1], [0, 0]]] }, "properties": { "building_id": 1, "height": 10, "levels": 3, "kind": "house", "roof": "gable" } },
+          { "type": "Feature", "geometry": { "type": "Polygon", "coordinates": [[[2, 0], [3, 0], [3, 1], [2, 1], [2, 0]]] }, "properties": { "building_id": 2, "height": 40, "levels": 12, "kind": "tower" } },
+          { "type": "Feature", "geometry": { "type": "Polygon", "coordinates": [[[4, 0], [5, 0], [5, 1], [4, 1], [4, 0]]] }, "properties": { "building_id": 3, "height": 25, "levels": 8, "kind": "office" } }
+        ]
+      }
+    },
+    {
+      "name": "a building whose outline crosses itself already still takes a redraw that crosses itself, as the map's tools let it",
+      "layer": "crossing_buildings",
+      "key": "building_id",
+      "edits": [
+        { "op": "geometry", "ids": [2], "geometry": { "type": "Polygon", "coordinates": [[[2, 0], [3, 2], [3, 0], [2, 2], [2, 0]]] } }
+      ],
+      "expected": {
+        "type": "FeatureCollection",
+        "features": [
+          { "type": "Feature", "geometry": { "type": "Polygon", "coordinates": [[[0, 0], [1, 0], [1, 1], [0, 1], [0, 0]]] }, "properties": { "building_id": 1, "height": 10 } },
+          { "type": "Feature", "geometry": { "type": "Polygon", "coordinates": [[[2, 0], [3, 2], [3, 0], [2, 2], [2, 0]]] }, "properties": { "building_id": 2, "height": 20 } }
+        ]
+      }
+    },
+    {
+      "name": "a redraw by a condition whose outline would cross itself takes only the building whose outline crosses itself already",
+      "layer": "crossing_buildings",
+      "key": "building_id",
+      "edits": [
+        { "op": "geometry", "where": "height >= 10", "geometry": { "type": "Polygon", "coordinates": [[[0, 0], [1, 1], [1, 0], [0, 1], [0, 0]]] } }
+      ],
+      "expected": {
+        "type": "FeatureCollection",
+        "features": [
+          { "type": "Feature", "geometry": { "type": "Polygon", "coordinates": [[[0, 0], [1, 0], [1, 1], [0, 1], [0, 0]]] }, "properties": { "building_id": 1, "height": 10 } },
+          { "type": "Feature", "geometry": { "type": "Polygon", "coordinates": [[[0, 0], [1, 1], [1, 0], [0, 1], [0, 0]]] }, "properties": { "building_id": 2, "height": 20 } }
         ]
       }
     }
