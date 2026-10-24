@@ -12,6 +12,7 @@ import {
   inferProperties,
   mainKind,
   nextId,
+  propertiesFor,
 } from "../../utils/editFeatures/layerModel";
 import { applyEdits } from "../../utils/editFeatures/applyEdits";
 import { normalizeEdit, normalizeEditFeatures, type FeatureEdit } from "../../utils/editFeatures/editFeatures";
@@ -46,6 +47,18 @@ describe("the properties a new feature is asked for", () => {
       { name: "maxspeed", type: "text" },
       { name: "lanes", type: "number", required: true },
     ]);
+  });
+
+  test("leave out the column Autark tags each OSM feature with, naming the layer it came from (#1122)", () => {
+    const buildings = {
+      features: [
+        { properties: { building_id: 1, __autk_layer: "buildings", height: 20 } },
+        { properties: { building_id: 2, __autk_layer: "buildings", height: 30 } },
+        { properties: { building_id: 3, __autk_layer: "buildings", height: 20 } },
+      ],
+    };
+    expect(inferProperties(buildings, "building_id")).toEqual([{ name: "height", type: "number", required: true }]);
+    expect(propertiesFor(buildings, "building_id").map((def) => def.name)).toEqual(["height"]);
   });
 
   test("a form says what is missing or of the wrong kind, and reads its texts as values", () => {

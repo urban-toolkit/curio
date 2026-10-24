@@ -2489,6 +2489,9 @@ def _assert_same_shape(handed: dict, drawn: dict, what: str) -> None:
 #: A building of the Chicago Loop layers in seven parts, each with an
 #: ``osm_id`` of its own, near the middle of the map.
 PARTED_BUILDING = 20449794
+#: The column Autark tags each OSM feature with, naming the layer it came
+#: from: no property of the feature, so the node's form leaves it out (#1122).
+AUTARK_LAYER = "__autk_layer"
 
 
 def test_a_chicago_building_of_several_parts_takes_a_height_on_one_part_chosen_in_its_form(
@@ -2590,6 +2593,18 @@ def test_a_chicago_building_of_several_parts_takes_a_height_on_one_part_chosen_i
     fixed = text_of(f"interaction-fixed-{PART_KEY}")
     if fixed != f"{len(rows)} values, cannot be changed":
         wrong.append(f"beside {PART_KEY}, the form reads {fixed!r}, not '{len(rows)} values, cannot be changed'")
+    # Autark's own column, naming the layer each OSM feature came from, is no
+    # property of the building: the form has no row for it (#1122).
+    autark_rows = [
+        kind for kind in ("field", "fixed", "mixed") if edit.get_by_test_id(f"interaction-{kind}-{AUTARK_LAYER}").count()
+    ]
+    if autark_rows:
+        carried = any(AUTARK_LAYER in (row.get("properties") or {}) for row in rows)
+        where_from = ", which the building's parts carry" if carried else ""
+        wrong.append(
+            f"the form of building {building} has a row for {AUTARK_LAYER} (its {', '.join(autark_rows)}), the column "
+            f"Autark names each feature's layer by{where_from}"
+        )
 
     # 2. The parts menu, on all the parts; one part chosen in it.
     if not menu.count():
