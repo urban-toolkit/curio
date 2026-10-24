@@ -237,13 +237,22 @@ class TestTheWidgetAParameterSuggests:
         (fn,) = read_functions(
             "def f(a: bool, b: int = 3, c: float = 1.5, d: str = 'q', e: Literal['x', 'y'] = 'y',"
             " g: list[str] = ['k'], h: list[int] = [1], i: datetime = None, j=2, k=2.5, l='t',"
-            " m=['u'], n=[1.5], o: int = 2.5, p: Literal['x'] = 'z'):\n    pass\n",
+            " m=['u'], n=[1.5], o: int = 2.5, p: Literal['x'] = 'z', q: date = '2026-06-21'):\n    pass\n",
             "m",
         )
         suggestions = [suggest_widget(p) for p in fn.parameters]
         assert all(suggestions)
         for widget in suggestions:
             assert check_widget_def(widget) is None, widget
+
+    def test_a_date_annotation_suggests_a_date_widget(self):
+        from utk_curio.backend.app.packages.domain.function_nodes import read_functions, suggest_widget
+
+        (fn,) = read_functions("def f(day: datetime.date = None, when: Optional[date] = None):\n    pass\n", "m")
+        # As a date-time widget does, a date widget starts at its kind's value.
+        assert [(w["type"], w["default"]) for w in map(suggest_widget, fn.parameters)] == [
+            ("date", "1970-01-01"), ("date", "1970-01-01"),
+        ]
 
     def test_the_label_reads_like_a_label(self):
         from utk_curio.backend.app.packages.domain.function_nodes import widget_label

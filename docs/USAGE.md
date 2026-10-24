@@ -532,6 +532,7 @@ nodes have them.
 | Checkbox group | a checkbox for each choice | the checked choices, such as `["water", "forest"]` |
 | Multi-select | a list to add choices from | the chosen choices, as for a checkbox group |
 | Date and time | a date and time field | a text, such as `"2026-06-21T12:00:00"` (local time) |
+| Date | a date field, with a calendar | a text, such as `"2026-06-21"` |
 | Location | a latitude and a longitude, or a place search | `{"lat": 41.8781, "lon": -87.6298}` |
 | List of numbers | a field, such as `[1, 2.5]` | a list of numbers |
 | List of texts | a field, such as `["a", "b"]` | a list of texts |

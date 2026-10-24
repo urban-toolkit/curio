@@ -3,6 +3,7 @@
  * and the run key that makes a changed value run the node again.
  */
 import {
+  DATE_FALLBACK,
   DATETIME_FALLBACK,
   checkWidgetDef,
   checkWidgetValue,
@@ -10,6 +11,7 @@ import {
   defaultValueFor,
   effectiveValue,
   nodeRunKey,
+  normalizeDate,
   normalizeDateTime,
   normalizeWidgets,
   type WidgetDef,
@@ -93,9 +95,10 @@ describe("normalizeWidgets", () => {
       { name: "s", type: "slider", options: { min: 3, max: 9 } },
       { name: "g", type: "checkbox-group", options: { choices: ["a"] } },
       { name: "t", type: "datetime" },
+      { name: "d", type: "date" },
       { name: "l", type: "location" },
     ]);
-    expect(out.map((w) => w.default)).toEqual([3, [], DATETIME_FALLBACK, { lat: 0, lon: 0 }]);
+    expect(out.map((w) => w.default)).toEqual([3, [], DATETIME_FALLBACK, DATE_FALLBACK, { lat: 0, lon: 0 }]);
   });
 });
 
@@ -115,6 +118,21 @@ describe("dates and times", () => {
 
   test("the fallback is a value the widget accepts", () => {
     expect(checkWidgetValue({ type: "datetime" }, defaultValueFor("datetime"))).toBeNull();
+  });
+});
+
+describe("dates", () => {
+  test("a date is a day of the calendar, with no time", () => {
+    expect(normalizeDate("2026-06-21")).toBe("2026-06-21");
+    expect(normalizeDate("2028-02-29")).toBe("2028-02-29");
+    expect(normalizeDate("2026-02-29")).toBeNull();
+    expect(normalizeDate("2026-06-21T12:00:00")).toBeNull();
+    expect(normalizeDate("0050-01-01")).toBeNull();
+    expect(normalizeDate("")).toBeNull();
+  });
+
+  test("the fallback is a value the widget accepts", () => {
+    expect(checkWidgetValue({ type: "date" }, defaultValueFor("date"))).toBeNull();
   });
 });
 
@@ -143,6 +161,9 @@ describe("checkWidgetValue", () => {
     [{ type: "datetime" }, "2026-06-21T12:00:00", true],
     [{ type: "datetime" }, "2026-06-21T12:00", false],
     [{ type: "datetime" }, "2026-13-01T00:00:00", false],
+    [{ type: "date" }, "2026-06-21", true],
+    [{ type: "date" }, "2026-06-21T12:00:00", false],
+    [{ type: "date" }, "2026-13-01", false],
     [{ type: "location" }, { lat: 41.88, lon: -87.63 }, true],
     [{ type: "location" }, { lat: 91, lon: 0 }, false],
     [{ type: "location" }, { lat: 0, lon: 181 }, false],
