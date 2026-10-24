@@ -56,7 +56,6 @@ from .utils import (
     require_project_page,
     require_user_auth,
     require_webgpu,
-    save_node_closeup,
     save_workflow_test_screenshot,
     serve_built_frontend,
     stub_db_login,
@@ -707,7 +706,6 @@ def test_a_visitor_changes_a_pinned_control_and_the_next_one_gets_the_kept_outpu
         _pool_shows(first, 5)
         _chart_redrew(first, saved_pixels)
         save_workflow_test_screenshot(first, VIEWER_RUN_STEM, test_name="changed", sweep_toasts=True)
-        save_node_closeup(first, VIEWER_RUN_STEM, CHART, test_name="changed_chart", sweep_toasts=True)
 
         started = _runs_started(first_asked)
         assert len(started) == 1, f"one change started {len(started)} runs: {first_asked!r}"
