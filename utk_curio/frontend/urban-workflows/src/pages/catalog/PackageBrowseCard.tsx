@@ -107,7 +107,7 @@ export const PackageBrowseCard: React.FC<PackageBrowseCardProps> = ({
         {/* The weights' license, in full on a line of its own, above the
             chips, which keep their place at the foot of the body. */}
         {model ? (
-          <p className={styles.weightsLicense} title="Weights license" data-curio-weights-license="true">
+          <p className={styles.weightsLicense} data-tooltip="Weights license" data-curio-weights-license="true">
             {model.model.license || "Unknown license"}
           </p>
         ) : null}

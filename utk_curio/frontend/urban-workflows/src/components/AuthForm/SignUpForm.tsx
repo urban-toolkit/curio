@@ -5,6 +5,9 @@ import { AuthFormHeading } from "./AuthFormHeading";
 import { AltAuthBox } from "./AltAuthBox";
 import { useNavigate, Link } from "react-router-dom";
 
+/** What a username may hold, as its pattern says. */
+const USERNAME_RULE = "3-32 characters: letters, digits, underscore";
+
 export const SignUpForm: React.FC = () => {
   const { signup, signinGuest, allowGuest, skipProjectPage } =
     useUserContext();
@@ -76,10 +79,18 @@ export const SignUpForm: React.FC = () => {
             style={inputStyle}
             type="text"
             value={username}
-            onChange={(e) => setUsername(e.target.value)}
+            onChange={(e) => {
+              e.currentTarget.setCustomValidity("");
+              setUsername(e.target.value);
+            }}
             autoComplete="username"
             pattern="^[a-zA-Z0-9_]{3,32}$"
-            title="3-32 characters: letters, digits, underscore"
+            // The rule is the browser's message when the pattern is not met,
+            // as a title made it, and the field's Curio tooltip.
+            onInvalid={(e) => {
+              if (e.currentTarget.validity.patternMismatch) e.currentTarget.setCustomValidity(USERNAME_RULE);
+            }}
+            data-tooltip={USERNAME_RULE}
             required
           />
         </div>

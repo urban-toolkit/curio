@@ -21,6 +21,8 @@ import { getUnversionedFlowNodeType } from "../../utils/flowNodeCanonicalType";
 import type { useCollab } from "../CollaborationProvider";
 import { normalizeFlowInput } from "../../utils/flowOutputRef";
 import { markSelectionEcho, SelectionEchoOptions } from "../../utils/selectionEcho";
+import { nodeCodeWriter } from "../../utils/nodeCodeWriters";
+import { nodeCode } from "../../utils/editFeatures/mapLayerEdits";
 import type { IOutput } from "./flowTypes";
 import { nodeGrowsInputs, nodeHasSeveralPorts } from "./growingInputs";
 
@@ -37,6 +39,7 @@ function withSlotValues(node: Node, slots: number[], value: unknown, sourceId: s
 
 export function useGraphEdits({
     setNodes, setEdges, reactFlow, workflowNameRef, collabRef, outputsRef, markNodeStaleRef, setOutputs,
+    nodeEditProv, markDirtyRef,
 }: {
     setNodes: React.Dispatch<React.SetStateAction<Node[]>>;
     setEdges: React.Dispatch<React.SetStateAction<Edge[]>>;
@@ -46,12 +49,34 @@ export function useGraphEdits({
     outputsRef: React.MutableRefObject<IOutput[]>;
     markNodeStaleRef: React.MutableRefObject<(nodeId: string) => void>;
     setOutputs: (fnOrValue: ((prev: IOutput[]) => IOutput[]) | IOutput[]) => void;
+    /**
+     * Files an edit in a node's Provenance drawer (ProvenanceProvider's
+     * `nodeEditProv`), which FlowProvider passes: an agent's applied change
+     * to a node with no writer of its own is one.
+     */
+    nodeEditProv?: (nodeId: string, code: string, label: string, before?: string) => void;
+    /** Leaves the dataflow Unsaved, so the next save writes what changed: an entry filed here among it. */
+    markDirtyRef?: React.MutableRefObject<() => void>;
 }) {
     // The bridge's content path (dev/51): both fields, one provider-state
     // update — ``defaultCode`` drives the Monaco editor's value and ``code``
-    // is what TrillGenerator serializes on save.
+    // is what TrillGenerator serializes on save. The change is an entry of
+    // the node's Provenance drawer named after *author*, the agent that wrote
+    // the code. A node whose code is its state (a Map Edits node) takes it
+    // through its own writer, as its own changes are made; any other node
+    // takes the code as it is, and the change is filed as that writer files
+    // it: an edit holding the code it left and the code it replaced, with the
+    // dataflow left Unsaved, so the next save keeps the entry where an agent
+    // reads it; nothing when the code stays as it was.
     const applyNodeContent = useCallback(
-        (nodeId: string, content: string) => {
+        (nodeId: string, content: string, author?: string) => {
+            const label = author || "Agent";
+            const writer = nodeCodeWriter(nodeId);
+            if (writer) {
+                writer(content, label);
+                return;
+            }
+            const live = reactFlow.getNodes().find((n) => n.id === nodeId);
             setNodes((nds: Node[]) =>
                 nds.map((n) =>
                     n.id === nodeId
@@ -59,8 +84,13 @@ export function useGraphEdits({
                         : n,
                 ),
             );
+            if (!live) return;
+            const before = nodeCode(live.data);
+            if (content === before) return;
+            nodeEditProv?.(nodeId, content, label, before);
+            markDirtyRef?.current();
         },
-        [setNodes],
+        [setNodes, reactFlow, nodeEditProv, markDirtyRef],
     );
 
     const addNode = useCallback(

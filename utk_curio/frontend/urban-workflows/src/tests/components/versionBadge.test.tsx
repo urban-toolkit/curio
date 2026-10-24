@@ -72,7 +72,7 @@ describe("VersionBadge", () => {
 
     const mode = await screen.findByText(NOT_ISOLATED);
     expect(mode).toHaveAttribute(
-      "title",
+      "data-tooltip",
       expect.stringContaining("this platform cannot provide it"),
     );
   });
@@ -83,7 +83,7 @@ describe("VersionBadge", () => {
 
     const mode = await screen.findByText(ISOLATED);
     expect(mode).toHaveAttribute(
-      "title",
+      "data-tooltip",
       expect.stringContaining("confined child process"),
     );
   });
@@ -135,7 +135,7 @@ describe("VersionBadge", () => {
     await renderBadge();
 
     const badge = await screen.findByText(NOT_ISOLATED);
-    expect(badge).toHaveAttribute("title", expect.stringContaining("could not be started"));
+    expect(badge).toHaveAttribute("data-tooltip", expect.stringContaining("could not be started"));
   });
 
   test("pending is not a downgrade: a fresh page on an isolated stack still says isolated", async () => {

@@ -5,6 +5,7 @@ import type { Connection, Edge, EdgeChange, Node, NodeChange, NodeRemoveChange }
 import type { InstallSyncOutcome, PendingInstall } from "../../services/datasetCatalog/datasetCatalogTypes";
 import type { DataflowCategories, HandCategories } from "../../utils/dataflowCategories";
 import type { NotebookPane } from "../../utils/notebookLayout";
+import type { NodeSettings } from "../../utils/nodeSettingsWriters";
 import type { Scenario } from "../../utils/scenarios/scenarioModel";
 import type { IInteraction, IOutput, IPropagation, NodeExecOutcome } from "./flowTypes";
 import type { CanvasView } from "./useNotebookView";
@@ -76,8 +77,16 @@ export interface FlowContextProps {
     /** Set one node's content for BOTH the editor (``defaultCode``) and the
      * serializer (``code``) through provider state — the agent apply→canvas
      * bridge's content path (dev/51; RF-store writes get clobbered by the
-     * controlled re-sync). Merges into ``data``, never replaces it. */
-    applyNodeContent: (nodeId: string, content: string) => void;
+     * controlled re-sync). Merges into ``data``, never replaces it. A node
+     * whose code is its state takes it through its own writer
+     * (``utils/nodeCodeWriters``), its change named after *author*, the
+     * agent that wrote it. */
+    applyNodeContent: (nodeId: string, content: string, author?: string) => void;
+    /** Change one node's settings, as the agent bridge applies a reviewed
+     * change: each through the setter the node registered for it, as a pick
+     * in the node makes it, the rest into its data through ``updateDataNode``
+     * (``utils/nodeSettingsWriters``). Files no Provenance entry. */
+    applyNodeSettings: (nodeId: string, settings: NodeSettings) => void;
     updateSubtasks: (trill: any) => void;
     cleanCanvas: () => void;
     flagBasedOnKeyword: (keywordIndex?: number) => void;

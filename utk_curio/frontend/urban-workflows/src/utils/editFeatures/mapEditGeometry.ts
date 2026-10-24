@@ -1,15 +1,15 @@
 /**
- * How a Map Edits node's overlay sees the Autark map it draws on (#662,
+ * How a Map Edits node's overlay sees the Autark map it edits on (#662,
  * `components/editFeatures/MapEditOverlay`): a data coordinate on the screen
  * and back, through the map's camera and its origin; the view from straight
  * above that every action is worked in, and the tilt put back after it; the
  * buildings drawn flat meanwhile; and which feature a click reaches, as the
- * map draws its points and lines.
+ * map draws its points and lines, and which handle a press takes.
  */
 import type { Geometry } from "./editFeatures";
 import { kindOf, type EditedFeature } from "./layerModel";
 import { fromMercator, toMercator } from "./mapEditBus";
-import { toRings } from "./geometryRings";
+import { toRings, type Handle } from "./geometryRings";
 
 export type XY = [number, number];
 
@@ -98,8 +98,8 @@ export function showView(map: any, view: CameraView): void {
 
 /**
  * *view* seen from straight above, as far away and facing the same way: the
- * overlay draws on the ground, and a raised building's roof only covers its
- * footprint when the map is not tilted.
+ * drawing tools are on the ground, and a raised building's roof only covers
+ * its footprint when the map is not tilted.
  */
 export function fromAbove(view: CameraView): CameraView {
   const [ex, ey, ez] = view.eye;
@@ -262,6 +262,34 @@ export function hitAt(features: readonly EditedFeature[], s: XY, p: Projection, 
     }
   }
   return best;
+}
+
+/**
+ * The handle a press at screen point *s* takes: the nearest corner within
+ * reach, else the nearest midpoint, where the map shows them.
+ */
+export function handleAt<H extends Handle>(
+  handles: { corners: readonly H[]; midpoints: readonly H[] },
+  s: XY,
+  p: Projection,
+): (H & { kind: "corner" | "mid" }) | null {
+  const nearest = (list: readonly H[]): H | null => {
+    let best: H | null = null;
+    let bestDistance = MIN_REACH;
+    for (const handle of list) {
+      const [x, y] = p.toScreen(handle.at);
+      const distance = Math.hypot(x - s[0], y - s[1]);
+      if (distance <= bestDistance) {
+        best = handle;
+        bestDistance = distance;
+      }
+    }
+    return best;
+  };
+  const corner = nearest(handles.corners);
+  if (corner) return { ...corner, kind: "corner" };
+  const mid = nearest(handles.midpoints);
+  return mid ? { ...mid, kind: "mid" } : null;
 }
 
 export function shifted(geometry: Geometry, dx: number, dy: number): Geometry {

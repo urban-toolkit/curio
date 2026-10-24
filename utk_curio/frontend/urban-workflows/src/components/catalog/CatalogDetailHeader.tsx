@@ -36,7 +36,8 @@ export const CatalogDetailHeader: React.FC<CatalogDetailHeaderProps> = ({
 }) => (
   <div className={styles.header}>
     <div className={styles.titleBlock}>
-      <CatalogKindIcon kind={kind} size="lg" title={title} />
+      {/* The heading beside it says the same name. */}
+      <CatalogKindIcon kind={kind} size="lg" title={title} decorative />
       <div className={styles.titleText}>
         <h2 className={styles.title}>{title}</h2>
         {subtitle ? <p className={styles.subtitle}>{subtitle}</p> : null}

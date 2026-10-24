@@ -122,7 +122,7 @@ describe("a node whose type no installed package provides, when a run triggers i
       message: `No installed package provides ${COMPARE}`,
     });
     const card = utils.getByTestId("removed-node-type");
-    expect(card).toHaveAttribute("title", `No installed package provides ${COMPARE}`);
+    expect(card).toHaveAttribute("data-tooltip", `No installed package provides ${COMPARE}`);
     expect(card).toHaveTextContent("Removed node type");
   });
 
@@ -137,7 +137,7 @@ describe("a node whose type no installed package provides, when a run triggers i
       message: `No installed package provides ${NOWHERE}`,
     });
     const card = utils.getByTestId("unresolved-node");
-    expect(card).toHaveAttribute("title", `No installed package provides ${NOWHERE}`);
+    expect(card).toHaveAttribute("data-tooltip", `No installed package provides ${NOWHERE}`);
     expect(card).toHaveTextContent("Missing node package");
   });
 
@@ -171,7 +171,7 @@ describe("a node whose type no installed package provides, when a run triggers i
       failed: true,
       message: "Unrecognized node type: DATA_LOADING",
     });
-    expect(utils.getByTestId("unrecognized-node")).toHaveAttribute("title", "Unrecognized node type: DATA_LOADING");
+    expect(utils.getByTestId("unrecognized-node")).toHaveAttribute("data-tooltip", "Unrecognized node type: DATA_LOADING");
   });
 
   test("waits while the registry may still deliver its type, and reports once it has settled without it", async () => {

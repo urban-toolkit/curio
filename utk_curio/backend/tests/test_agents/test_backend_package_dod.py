@@ -27,6 +27,14 @@ _PROMPT_PATH = (
 )
 
 
+def _prompt() -> str:
+    """The package-writing prompt as the Node Builder reads it: its source,
+    rendered."""
+    from utk_curio.backend.app.agents.domain import agent_text
+
+    return agent_text.render(_PROMPT_PATH)
+
+
 @pytest.fixture(autouse=True)
 def _fresh_build_jobs():
     from utk_curio.backend.app.packages.builder import jobs as build_jobs
@@ -100,7 +108,7 @@ class TestViolatingBackendDraftRefused:
 
 class TestPromptCarriesTheBackendContract:
     def test_backend_contract_markers_present(self):
-        text = _PROMPT_PATH.read_text(encoding="utf-8")
+        text = _prompt()
         for marker in (
             "ONE backend contract",
             '"entry": "backend/<file>.py"',
@@ -117,7 +125,7 @@ class TestPromptCarriesTheBackendContract:
             assert marker in text, marker
 
     def test_the_dev89_refusal_paragraph_is_gone(self):
-        text = _PROMPT_PATH.read_text(encoding="utf-8")
+        text = _prompt()
         assert "out of scope: report that it awaits" not in text
         # The scan families are named so the model authors within them.
         assert "subprocess/multiprocessing/ctypes" in text
@@ -145,12 +153,12 @@ class TestPromptCarriesTheBackendContract:
 
     def test_the_delegate_and_the_prompt_share_one_backend_contract(self):
         from utk_curio.backend.app.agents.application.turns.delegates import _build_request_contract
-        from utk_curio.backend.app.agents.domain import builtin
+        from utk_curio.backend.app.agents.domain import agent_text, builtin
 
-        shared = (builtin.PROMPT_SOURCE_DIR / builtin.PACKAGE_CONTRACT_FILE).read_text(encoding="utf-8")
+        shared = agent_text.render(agent_text.page_file(builtin.PACKAGE_CONTRACT_FILE))
         assert shared.startswith("## Backend contract\n\nServer-side compute follows ONE backend contract")
         assert _build_request_contract()["backendContract"] == shared
-        assert shared.rstrip("\n") in _PROMPT_PATH.read_text(encoding="utf-8")
+        assert shared.rstrip("\n") in _prompt()
 
 
 class TestLazyImportContract:
@@ -220,7 +228,7 @@ class TestLazyImportContract:
     def test_prompt_and_contract_teach_the_rule(self):
         from utk_curio.backend.app.agents.application.turns.delegates import _build_request_contract
 
-        text = _PROMPT_PATH.read_text(encoding="utf-8")
+        text = _prompt()
         assert "Import declared python dependencies INSIDE your handler function" in text
         assert "fails the probe by construction" in text
         contract = _build_request_contract()["backendContract"]

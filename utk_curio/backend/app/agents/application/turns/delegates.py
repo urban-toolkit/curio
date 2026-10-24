@@ -15,10 +15,12 @@ import time
 import uuid
 
 from utk_curio.backend.app.agents.application import attachments
+from utk_curio.backend.app.agents.application import dataflow_block as agents_dataflow_block
 from utk_curio.backend.app.agents.application import delegation
 from utk_curio.backend.app.agents.application import source_grounding
 from utk_curio.backend.app.agents.application import tools
 from utk_curio.backend.app.agents.application import verify
+from utk_curio.backend.app.agents.domain import agent_text
 from utk_curio.backend.app.agents.domain import builtin
 from utk_curio.backend.app.agents.domain import content
 from utk_curio.backend.app.agents.domain import node_context
@@ -27,6 +29,7 @@ from utk_curio.backend.app.agents.repositories import sessions
 from utk_curio.backend.app.agents.application import lifecycle as agents_lifecycle
 from utk_curio.backend.app.agents.application import spec_reads as agents_spec_reads
 from utk_curio.backend.app.agents.application import tools as agents_tools
+from utk_curio.backend.app.agents.application.proposals import acquire as agents_acquire
 from utk_curio.backend.app.agents.application.proposals import mint as agents_mint
 from utk_curio.backend.app.agents.application.proposals import plans as agents_plans
 from utk_curio.backend.app.agents.application.turns import grounding as agents_grounding
@@ -68,69 +71,58 @@ def _mint_candidates_from_delegate(
     the run is marked so a same-turn node.create is refused (the user reviews
     first). *name* is the delegate's, as its manifest gives it. Returns
     ``(part | None, text_for_model, outcome)``."""
-    who = name or "the agent asked for datasets"
+    who = name or agent_text.message("dataset.candidates-finder-fallback")
     block = _extract_candidates_reply(child_text)
     if block is None:
-        return None, (
-            f"{who} returned no recognizable datasetCandidates block; "
-            "report that honestly, and do not invent candidates or a source"
-        ), "no-candidates"
-    known = {str(r.get("id")) for r in catalog_rows if isinstance(r, dict) and r.get("id")}
+        return None, agent_text.message("dataset.candidates-unrecognized", who=who), "no-candidates"
     lanes = block.get("lanes") or {}
     catalog_raw = lanes.get("catalog") if isinstance(lanes.get("catalog"), list) else []
-    kept = [r for r in catalog_raw if isinstance(r, dict) and str(r.get("datasetId")) in known]
-    dropped = len(catalog_raw) - len(kept)
-    for row in kept:
-        # Installed state is the LISTING's, never the child's claim.
-        listed = next((r for r in catalog_rows if str(r.get("id")) == str(row.get("datasetId"))), None)
-        if listed is not None:
-            row["installed"] = bool(listed.get("installed"))
-            row.setdefault("name", listed.get("name"))
-            row.setdefault("sourceType", "catalog")
+    kept, dropped = agents_grounding._grounded_catalog_rows(catalog_raw, catalog_rows)
     parsed = content._parse_dataset_candidates({"lanes": {
         "external": lanes.get("external") if isinstance(lanes.get("external"), list) else [],
         "catalog": kept,
     }})
     if parsed is None:
-        note = f" ({dropped} catalog row(s) dropped: not in the Data Catalog)" if dropped else ""
-        return None, (
-            f"{who} returned no usable candidates" + note +
-            "; report that honestly, and ask the user for a path or URL instead of guessing"
-        ), "no-candidates"
+        note = " " + agent_text.message("dataset.candidates-none-usable-dropped", dropped=dropped) if dropped else ""
+        return None, agent_text.message("dataset.candidates-none-usable", who=who, note=note), "no-candidates"
     agents_grounding._verify_candidate_parts([parsed], loop_ctx)
     loop_ctx["_candidates_pending_review"] = True
     total = sum(len(v) for v in parsed["lanes"].values())
-    note = f" {dropped} catalog row(s) were dropped (not in the Data Catalog)." if dropped else ""
-    return parsed, (
-        f"{total} dataset candidate(s) are shown to the user for review; external rows "
-        "carry the runtime's verification verdict." + note +
-        " Do NOT propose a node in this turn — ask the user to select and confirm; "
-        "you will build from the confirmed source on the next turn."
-    ), "ok"
+    note = " " + agent_text.message("dataset.candidates-shown-dropped", dropped=dropped) if dropped else ""
+    unconfirmed = agents_acquire._unconfirmed(parsed["lanes"].get("external"))
+    if unconfirmed:
+        note += (" " + agent_text.message("dataset.candidates-unconfirmed", unconfirmed=unconfirmed))
+    return parsed, agent_text.message("dataset.candidates-shown", total=total, note=note), "ok"
 
 
-def _dataset_discover_inputs(user_key: str, project_id: str, inputs: dict) -> dict:
+def _dataset_discover_inputs(
+    user_key: str, project_id: str, inputs: dict, *, catalog_rows: list | None = None
+) -> dict:
     """dev/114: the sixth DEC-063 application — a tool-less Dataset Finder
-    child gets the catalog listing and the reply schema as INPUTS."""
+    child gets the catalog listing and the reply schema as INPUTS.
+
+    The catalog is always the runtime's: *catalog_rows* when the caller
+    listed them (a Solve lists them while its request lasts), else read here.
+    A ``catalog`` the parent wrote into its request is replaced, since the
+    child's candidates are checked against the runtime's listing and a list
+    the parent made up would only mislead it. The child is shown the
+    listing's first rows, as catalog.search shows them, and how many it was
+    not shown."""
     enriched = dict(inputs)
-    if "catalog" not in enriched:
-        try:
-            rows = tools._catalog_search_rows(user_key, project_id, {})
-        except Exception:
-            log.warning("Could not list the Data Catalog for a dataset.discover "
-                        "delegate (project %s)", project_id, exc_info=True)
-            rows = []
-        enriched["catalog"] = {
-            "note": (
-                "The project's Data Catalog as catalog.search returned it"
-                if rows else
-                "The Data Catalog listing was empty or unavailable — the catalog lane "
-                "must stay empty; say so."
-            ),
-            "rows": rows,
-        }
+    rows = (
+        catalog_rows if catalog_rows is not None
+        else agents_grounding._catalog_rows_for_discovery(user_key, project_id)
+    )
+    enriched["catalog"] = {
+        "note": (
+            agent_text.message("dataset.catalog-listed")
+            if rows else
+            agent_text.message("dataset.catalog-unavailable")
+        ),
+        **tools._cut("rows", rows, tools._CATALOG_SEARCH_MAX_ROWS),
+    }
     if "discoveryReplyContract" not in enriched:
-        enriched["discoveryReplyContract"] = agents_grounding._DISCOVERY_RULE + "\n\n" + content.CANDIDATES_INSTRUCTION
+        enriched["discoveryReplyContract"] = _discovery_reply_contract()
     return enriched
 
 
@@ -259,6 +251,7 @@ def _run_delegate_traced(
     parent_name: str | None = None,
     node_id: str | None = None,
     home_create: bool = True,
+    dataflow_block: str | None = None,
 ) -> tuple[str, str, dict, str | None]:
     """One delegated task, TRACED (memo dev/72): the DEC-046 seam stays pure —
     this wrapper resolves the task's home attachment, writes the framed task
@@ -269,7 +262,8 @@ def _run_delegate_traced(
 
     An agent that hands work to one of its own modes and names no node opens
     no chat of its own: like an internal agent's, its record rides the
-    parent's turn."""
+    parent's turn. *dataflow_block* goes to the child as
+    ``delegation.run_delegate`` says."""
     home_attachment_id: str | None = None
     home_session_id: str | None = None
     try:
@@ -306,6 +300,7 @@ def _run_delegate_traced(
         parent_execution_id=parent_execution_id,
         parent_coord=parent_coord,
         attachment_id=attachment_id,
+        dataflow_block=dataflow_block,
     )
     if isinstance(home_session_id, str):
         try:
@@ -356,18 +351,33 @@ def _delegation_part_for(resolution, capability: str, status: str, text: str,
 
 
 def _delegate_target_node_id(loop_ctx: dict, inputs: dict) -> str | None:
-    """The node a content-generation delegation targets: the model's
-    ``nodeId`` input, else the parent attachment's node target — the same
+    """The node a content-generation delegation writes for: the one its
+    ``nodeId`` input names; else none when it names a ``nodeType``, the
+    template of a new node, whose content returns to the run for its
+    ``node.create``; else the node the run's agent is attached to. The
     resolution ``_enriched_delegate_inputs`` grounds the child with."""
     node_id = (inputs or {}).get("nodeId")
     if isinstance(node_id, str) and node_id:
         return node_id
+    if _new_node_type(inputs):
+        return None
     target = loop_ctx.get("target")
     if isinstance(target, dict) and target.get("kind") == "node":
         target_id = target.get("targetId")
         if isinstance(target_id, str) and target_id:
             return target_id
     return None
+
+
+def _new_node_type(inputs: dict | None) -> str | None:
+    """The template of the new node a content-generation delegation writes
+    for: its ``nodeType`` input, when it names no ``nodeId``."""
+    inputs = inputs or {}
+    node_id = inputs.get("nodeId")
+    node_type = inputs.get("nodeType")
+    if isinstance(node_id, str) and node_id:
+        return None
+    return node_type.strip() if isinstance(node_type, str) and node_type.strip() else None
 
 
 def _mint_content_review_from_delegate(
@@ -440,10 +450,8 @@ def _mint_content_review_from_delegate(
          "params": {"nodeId": node_id, "content": text_out}},
     )
     if part is None:
-        return None, home_att, (
-            "the generated content could not become a reviewed proposal "
-            f"({(p_error or 'unknown error')[:200]}) — report this honestly: "
-            "nothing was changed and nothing awaits review"
+        return None, home_att, agent_text.message(
+            "delegate.content-not-minted", error=(p_error or agent_text.message("delegate.content-not-minted-unknown"))[:200],
         )
     if validation:
         # dev/115: an EXECUTED review carries its verdict and attempt trail —
@@ -462,15 +470,12 @@ def _mint_content_review_from_delegate(
         except Exception:
             pass
     where = (
-        "in this conversation"
+        agent_text.message("delegate.content-minted-here")
         if home_att == parent_attachment_id
-        else f"at the node's own {home_name or 'content'} agent"
+        else agent_text.message("delegate.content-minted-at-node", home_name=home_name or 'content')
     )
-    return part, home_att, (
-        f"the generated content was minted as reviewed proposal "
-        f"{part['proposalId']} for node {node_id!r} ({where}); it awaits the "
-        "user's explicit Apply — summarize the change in one or two "
-        "sentences, do NOT restate the code, and do NOT say it was applied"
+    return part, home_att, agent_text.message(
+        "delegate.content-minted", proposal_id=part['proposalId'], node_id=repr(node_id), where=where,
     )
 
 
@@ -481,122 +486,72 @@ def _mint_content_review_from_delegate(
 PACKAGE_AUTHORING_CAPABILITIES = content.PACKAGE_AUTHORING_CAPABILITIES
 
 
-# dev/90 A8: the build-request contract, supplied to AUTHORING delegates as
-# an input. DEC-046 children are tool-less and never see the grants paragraph
-# where the tool schema lives — a live run showed the child inventing a
-# plausible-but-wrong shape ("package"/"behaviors"/"behaviorKey") twice, and
-# the parent cannot teach a schema it does not carry either. The runtime is
-# the one place that always knows the contract (the dev/67-6 enrichment
-# pattern: deterministic server-side inputs, never model-invented).
-_BUILD_REQUEST_CONTRACT: dict = {
-    "reply": (
-        "Reply with ONE JSON object of exactly this shape (optionally inside "
-        "a ```json fence), nothing after it. Do NOT invent other keys — "
-        "there is no 'package', 'behaviors', or 'behaviorKey' key."
-    ),
-    # memo dev/94: the SECOND legal reply. "Reuse first" was previously a rule
-    # with no reachable outcome on this path — the delegate had no shape in
-    # which to say "one of these already does it", so the only reply the
-    # runtime recognised was a draft, and authoring was the only way to answer
-    # at all. Teaching the shape is the A8 lesson again: nobody emits a
-    # protocol they were never shown.
-    "insteadOfAuthoring": (
-        "When one of inputs.existingPackages already satisfies the need, "
-        "author NOTHING and reply with ONE JSON object of exactly this shape "
-        "instead of a draft: {\"reuseExisting\": {\"dirName\": \"<its "
-        "dirName>\", \"reason\": \"<one line: what it already does>\"}}. That "
-        "is a complete, successful answer — the caller acts on it (enlisting "
-        "the package if it is not yet in the project). Prefer extending an "
-        "existing package (mode 'extend') over creating a near-duplicate."
-    ),
-    "shape": {
-        "mode": "create | extend",
-        "justification": ("<the closest existing templates you considered and why "
-                          "each is inadequate: needed when the draft adds a template>"),
-        "baseDigest": "<64-hex digest of the installed target — extend only>",
-        "manifest": {
-            "id": ("reverse-DNS: two or more dot-separated lowercase segments, "
-                   "e.g. 'curio.notes' — single-segment ids are invalid"),
-            "version": "1.0.0",
-            "name": "<display name>",
-            "publisher": "<author>",
-            "description": "<one line>",
-            "license": "MIT",
-            "compatibility": {"curioRuntime": ">=0.5.0", "major": 1},
-            "permissions": [],
-            "dependencies": {"packages": {}, "python": {}, "js": {}},
-            "templates": [{
-                "id": "<kebab-case template id>",
-                "label": "<display label>",
-                "category": "visualization",
-                "engine": "python | javascript",
-                "editor": "code | widgets | grammar | none",
-                "behavior": "<the behavior key your source registers — custom looks only>",
-                "hasCode": False,
-                "hasWidgets": False,
-                "hasGrammar": False,
-                "inputPorts": [],
-                "outputPorts": [],
-                "backendHandler": ("<declared backend handler name this "
-                                   "template's Run invokes — backend "
-                                   "templates only>"),
-            }],
-            "backend": {
-                "entry": "backend/handler.py",
-                "handlers": [{"name": "<a-z0-9- name>",
-                              "timeoutClass": "quick | standard"}],
-            },
-        },
-        "files": {"sources/<name>.tsx": {"text": "<complete file body>"}},
-        "behaviorEntries": ["sources/<name>.tsx"],
-        "previewTemplates": ["<each template id with a custom behavior>"],
-        "nodes": [{
-            "templateId": "<template id>",
-            "title": "<node title>",
-            "content": "<the fixed note/body text>",
-            "appearance": {"backgroundColor":
-                           "yellow|pink|blue|green|orange|lavender|#rrggbb"},
-        }],
-    },
-    "rules": [
-        "every template the draft adds (all of a create's, the new ones of an "
-        "extend) needs the top-level justification, which the user reads "
-        "first on the review card, and a label no existing template has: a "
-        "template that already does the job is reused (insteadOfAuthoring), "
-        "never drafted again",
-        "a presentation-only template is engine 'javascript', editor 'none', "
-        "hasCode false, empty ports",
-        "the behavior source registers EXACTLY the template's behavior key: "
-        "window.curio.registerBehavior(key, (data, nodeState) => "
-        "({ contentComponent: <React element> })) — import react normally, "
-        "render React elements only, never raw HTML",
-        "field contract: the note text arrives as data.code (data.content is "
-        "an equivalent alias), the title as data.title, the per-instance "
-        "color as data.appearance.backgroundColor (also nodeState.appearance."
-        "backgroundColor) — read THESE fields, never invented ones",
-        "prefer ZERO JS dependencies — write small rendering logic yourself",
-        "the caller's inputs.notes ARE the requested nodes: copy each "
-        "{title, content, color} into nodes[] VERBATIM — never invent "
-        "placeholder content, never leave content empty when the caller "
-        "supplied findings (the runtime enforces this reconciliation)",
-    ],
-}
+# --- What a delegated run is told to reply with ---------------------------------
+#
+# The base entry's delegate-contracts.md, one section per contract, which the
+# runtime puts in a delegate's inputs (the dev/67-6 enrichment pattern:
+# deterministic server-side inputs, never model-invented). DEC-046 children
+# are tool-less and never see the grants paragraph where a tool's schema
+# lives, so a child answers to a schema it can SEE.
+
+
+def _contracts_section(name: str) -> str:
+    """The section *name* of the base entry's ``delegate-contracts.md``."""
+    return agent_text.section(builtin.DELEGATE_CONTRACTS_FILE, name)
+
+
+#: Each reply contract parsed, by its section, with the text it was parsed from.
+_PARSED_CONTRACTS: dict[str, tuple[str, dict]] = {}
+
+
+def _contract(name: str) -> dict:
+    """The reply contract the section *name* of ``delegate-contracts.md``
+    holds as its one block fenced as json: one dict while the section reads
+    the same, as when it was this module's constant; no caller changes it."""
+    text = _contracts_section(name)
+    held = _PARSED_CONTRACTS.get(name)
+    if held is None or held[0] != text:
+        where = f"{agent_text.PAGE_PREFIX}{builtin.DELEGATE_CONTRACTS_FILE}, section {name}"
+        held = _PARSED_CONTRACTS[name] = (text, agent_text.json_block(text, where))
+    return held[1]
 
 
 def _build_request_contract() -> dict:
-    """The build-request contract a delegated package-writing call receives.
+    """The build-request contract a delegated package-writing call receives:
+    the section ``build-request`` of ``delegate-contracts.md`` (dev/90 A8: a
+    live run showed the child inventing a plausible-but-wrong shape,
+    "package"/"behaviors"/"behaviorKey", twice, and the parent cannot teach a
+    schema it does not carry either).
 
     memo dev/91: the backend authoring contract rides it as
     ``backendContract``, stated where the delegate can see it (the A8 lesson:
-    nobody invents a schema they were shown). Its text is the generated
-    ``llm-prompts/package_contract.md``, the same text the package-writing
-    mode's own prompt includes, read on every run like any prompt."""
-    backend = builtin.read_prompt_file(
+    nobody invents a schema they were shown). Its text is the base entry's
+    page ``rules/package_contract.md``, rendered, the same text the
+    package-writing mode's own prompt includes, read like any prompt."""
+    contract = _contract("build-request")
+    backend = builtin.read_page(
         builtin.PACKAGE_CONTRACT_FILE, wanted_by="the build-request contract"
     )
     if not backend:
-        return _BUILD_REQUEST_CONTRACT
-    return {**_BUILD_REQUEST_CONTRACT, "backendContract": backend}
+        return contract
+    return {**contract, "backendContract": backend}
+
+
+def _notes_reply_contract() -> dict:
+    """dev/95 (Follow-up D): the reply schema for a delegated
+    ``research.notes.compose``, the section ``notes-reply`` of
+    ``delegate-contracts.md``, taught via inputs and recognized ONLY by this
+    schema at the mint (DEC-063: never by reading intent out of prose)."""
+    return _contract("notes-reply")
+
+
+def _discovery_reply_contract() -> str:
+    """dev/114: what a tool-less Dataset Finder child answers to, the section
+    ``dataset-candidates`` of ``delegate-contracts.md``, then the
+    ``datasetCandidates`` block of ``protocol.md`` (#269: ONE schema, never a
+    second copy)."""
+    candidates = agent_text.section(builtin.PROTOCOL_FILE, "dataset-candidates")
+    return f"{_contracts_section('dataset-candidates')}\n\n{candidates}"
 
 
 def _extract_reuse_finding(child_text: str) -> dict | None:
@@ -654,53 +609,13 @@ def _reuse_finding_text(user_key: str, project_id: str, finding: dict) -> str:
 
         enlisted = dir_name in packages_services.get_project_lockfile(user_key, project_id)
         hint = (
-            " It is already in this project: use it directly."
+            " " + agent_text.message("delegate.reuse-existing-enlisted")
             if enlisted else
-            " It is installed but NOT in this project: propose package.install "
-            f"for {dir_name} first, then use its template."
+            " " + agent_text.message("delegate.reuse-existing-not-enlisted", dir_name=dir_name)
         )
     except Exception:  # noqa: BLE001 — an unknown lockfile just omits the hint
         pass
-    return (
-        f"the authoring delegate reports that {dir_name} already does this{reason}. "
-        f"Nothing was authored, which is the correct outcome.{hint} Do NOT ask for "
-        "a new package that duplicates it."
-    )
-
-
-#: dev/95 (Follow-up D): the server-owned reply schema for a delegated
-#: ``research.notes.compose`` — taught via inputs (the A8 posture: the child
-#: answers to a schema it can SEE, never a shape it must invent) and
-#: recognized ONLY by this schema at the mint (DEC-063: never by reading
-#: intent out of prose).
-_NOTES_REPLY_CONTRACT: dict = {
-    "reply": (
-        "Reply with ONE JSON object of exactly this shape (optionally inside "
-        "a ```json fence), nothing after it."
-    ),
-    "shape": {
-        "answer": "<the prose answer to the question — always present>",
-        "nodeType": ("<one 'id' from inputs.notesTemplates — omit when that "
-                     "list is empty>"),
-        "notes": [{
-            "title": "<short note title>",
-            "content": "<the finding as clean markdown — bold fact labels, "
-                       "'- ' bullets, [source](https://...) links>",
-            "color": "yellow|pink|blue|green|orange|lavender|#rrggbb",
-        }],
-    },
-    "rules": [
-        "compose findings ONLY from inputs.searchResults — when it carries "
-        "an 'error', say in 'answer' that search was unavailable and reply "
-        "with an empty notes list; NEVER invent findings from memory",
-        "the reference row (dev/90 A13): the FIRST note carries the user's "
-        "question verbatim (title 'Question', color yellow); then one green "
-        "note per answer with a subject title and every web-gathered fact "
-        "linked to its source",
-        "an empty notes list is valid when nothing should be placed "
-        "(no template installed, or no findings)",
-    ],
-}
+    return agent_text.message("delegate.reuse-existing", dir_name=dir_name, reason=reason, hint=hint)
 
 
 #: Bounds on the runtime-gathered search rows injected into a delegation —
@@ -718,7 +633,7 @@ def _delegated_search_results(question: object) -> dict:
     evidence). Failures ride in as their honest error text: the child must
     SAY search was unavailable, never invent findings."""
     if not isinstance(question, str) or not question.strip():
-        return {"error": "no 'question' input was supplied to the delegation"}
+        return {"error": agent_text.message("delegate.search-no-question")}
 
     status, text = agents_tools._execute_web_search({"q": question.strip()})
     if status != "ok":
@@ -727,7 +642,7 @@ def _delegated_search_results(question: object) -> dict:
     try:
         rows = _json.loads(text).get("results") or []
     except (ValueError, AttributeError):
-        return {"error": "the search provider returned malformed JSON"}
+        return {"error": agent_text.message("delegate.search-malformed")}
     bounded = []
     for row in rows[:_DELEGATED_SEARCH_MAX_ROWS]:
         if not isinstance(row, dict):
@@ -804,39 +719,26 @@ def _mint_notes_from_delegate(
     """
     payload = _extract_notes_reply(child_text)
     if payload is None:
-        return [], (
-            "the delegate's reply did not match the notes reply contract "
-            "(ONE JSON object with 'answer' and a 'notes' list) — nothing "
-            "was placed; the reply was kept as text"
-        ), "failed"
+        return [], agent_text.message("delegate.notes-contract-mismatch"), "failed"
     answer = payload.get("answer")
     answer = answer.strip() if isinstance(answer, str) else ""
     rows = _notes_from_delegate_inputs({"notes": payload.get("notes")}) or []
     if not rows:
         # Empty notes is a VALID reply (no findings / no template offered) —
         # the answer is the product (dev/93 D5: this run produced it).
-        return [], (answer or "the delegate returned no answer and no notes"), "ok"
+        return [], (answer or agent_text.message("delegate.notes-empty")), "ok"
     if "node.create" not in (loop_ctx.get("granted") or []):
-        return [], (
-            (f"{answer}\n\n" if answer else "")
-            + "the delegate composed notes but this agent is not granted "
-              "node.create — the notes were kept as text only"
-        ), "failed"
+        return [], agent_text.message("delegate.notes-not-granted", answer=f"{answer}\n\n" if answer else ""), "failed"
     node_type = payload.get("nodeType")
     entry = err = None
     if isinstance(node_type, str) and node_type.strip():
         entry, err = agents_roster._available_template(user_key, project_id, node_type.strip())
     if entry is None:
         reason = (
-            f"the chosen notes template was not available ({err})"
-            if err else "no installed notes template was available"
+            agent_text.message("delegate.notes-skipped-template-error", err=err)
+            if err else agent_text.message("delegate.notes-skipped-no-template")
         )
-        return [], (
-            (f"{answer}\n\n" if answer else "")
-            + f"notes skipped: {reason} — ask the Researcher (attached to a "
-              "node or the canvas) to enlist or author a notes package; its "
-              "own runs hold the reuse ladder a delegate cannot reach"
-        ), "ok"
+        return [], agent_text.message("delegate.notes-skipped", answer=f"{answer}\n\n" if answer else "", reason=reason), "ok"
     parts: list = []
     last_refusal = ""
     for index, row in enumerate(rows):
@@ -856,15 +758,12 @@ def _mint_notes_from_delegate(
         else:
             last_refusal = text
     if not parts:
-        return [], (
-            (f"{answer}\n\n" if answer else "")
-            + f"no notes could be proposed: {last_refusal}"
+        return [], agent_text.message(
+            "delegate.notes-none-proposed", answer=f"{answer}\n\n" if answer else "", last_refusal=last_refusal,
         ), "failed"
-    summary = (
-        (f"{answer}\n\n" if answer else "")
-        + f"{len(parts)} reviewed note proposal(s) created"
-        + (f" ({last_refusal})" if last_refusal else "")
-        + " — they await the user's explicit Apply; do NOT claim the notes exist"
+    summary = agent_text.message(
+        "delegate.notes-proposed", answer=f"{answer}\n\n" if answer else "", count=len(parts),
+        refusal=f" ({last_refusal})" if last_refusal else "",
     )
     return parts, summary, "ok"
 
@@ -905,7 +804,7 @@ def _extract_draft_params_verbose(child_text: str) -> tuple[dict | None, str]:
     """
 
     if not isinstance(child_text, str) or not child_text.strip():
-        return None, "the delegate replied with no text at all"
+        return None, agent_text.message("delegate.draft-empty")
     candidates: list[str] = []
     stripped = child_text.strip()
     if stripped.startswith("{"):
@@ -914,11 +813,7 @@ def _extract_draft_params_verbose(child_text: str) -> tuple[dict | None, str]:
             r"```(?:json|curio\.v1)?\s*\n(.*?)```", child_text, _re2.DOTALL):
         candidates.append(match.group(1).strip())
     if not candidates:
-        return None, (
-            "no JSON build request found in the reply: it must be ONE JSON "
-            "object, either the whole reply or a single ```json fenced block. "
-            "Prose describing the package is not a build request"
-        )
+        return None, agent_text.message("delegate.draft-no-json")
     decode_errors: list[str] = []
     shape_errors: list[str] = []
     for candidate in candidates:
@@ -928,7 +823,7 @@ def _extract_draft_params_verbose(child_text: str) -> tuple[dict | None, str]:
             decode_errors.append(str(exc))
             continue
         if not isinstance(payload, dict):
-            shape_errors.append(f"the JSON is a {type(payload).__name__}, not an object")
+            shape_errors.append(agent_text.message("delegate.draft-not-object", name=type(payload).__name__))
             continue
         tool_req = payload.get("toolRequest")
         if (isinstance(tool_req, dict)
@@ -942,19 +837,13 @@ def _extract_draft_params_verbose(child_text: str) -> tuple[dict | None, str]:
             return inner, ""
         keys = ", ".join(sorted(k for k in inner if isinstance(k, str))[:12]) or "none"
         shape_errors.append(
-            "the JSON parsed but is not a build request — it must carry "
-            f"\"mode\" ('create' or 'extend') and a \"manifest\" object (top-level "
-            f"keys were: {keys})"
+            agent_text.message("delegate.draft-not-build-request", keys=keys)
         )
     if decode_errors and not shape_errors:
         # The overwhelmingly common weak-model failure: a long body containing
         # an embedded source file, cut off mid-string. Say so explicitly —
         # "invalid JSON" alone does not tell the model what to do differently.
-        return None, (
-            f"the JSON did not parse ({decode_errors[0]}). If the reply was cut "
-            "off mid-object, re-emit the COMPLETE build request and keep the "
-            "file bodies short enough to finish"
-        )
+        return None, agent_text.message("delegate.draft-json-invalid", decode_errors=decode_errors[0])
     return None, (shape_errors or decode_errors)[0]
 
 
@@ -971,7 +860,7 @@ def _notes_from_delegate_inputs(inputs: dict) -> list[dict] | None:
     if not isinstance(raw, list):
         return None
     rows: list[dict] = []
-    for item in raw[:16]:
+    for item in raw[:content.MAX_NOTES]:
         if not isinstance(item, dict):
             continue
         content_text = item.get("content")
@@ -1063,10 +952,7 @@ def _mint_package_draft_from_delegate(
     read "Delegated task · ok" beside a summary saying nothing was produced.
     """
     if "package.draft.apply" not in (loop_ctx.get("granted") or []):
-        return None, (
-            "the delegate produced a package draft but this agent is not "
-            "granted package.draft.apply — the draft was kept as text only"
-        ), "failed"
+        return None, agent_text.message("delegate.draft-not-granted"), "failed"
 
     notes = _notes_from_delegate_inputs(delegate_inputs or {})
     pinned_package_id: str | None = None
@@ -1091,11 +977,8 @@ def _mint_package_draft_from_delegate(
                 pinned_package_id = draft_id
             if (pinned_package_id is not None and isinstance(draft_id, str)
                     and draft_id != pinned_package_id):
-                parse_error = (
-                    f"this correction changed the package id from "
-                    f"{pinned_package_id!r} to {draft_id!r}. Fix the SAME "
-                    "package — a rename does not resolve the error, it just "
-                    "creates a duplicate package"
+                parse_error = agent_text.message(
+                    "delegate.draft-renamed", pinned_package_id=repr(pinned_package_id), draft_id=repr(draft_id),
                 )
                 params = None
         if params is not None:
@@ -1109,12 +992,10 @@ def _mint_package_draft_from_delegate(
             if status == "proposed":
                 if reconciled:
                     text += (
-                        f" (the draft's {len(notes)} note(s) carry the caller's "
-                        "findings verbatim — runtime-reconciled from the "
-                        "delegation inputs)"
+                        " " + agent_text.message("delegate.draft-notes-reconciled", count=len(notes))
                     )
                 if round_index:
-                    text += f" (after {round_index} correction round(s))"
+                    text += " " + agent_text.message("delegate.draft-corrected", round_index=round_index)
                 return part, text, "ok"
             # The build service refused. Some refusals cannot improve by
             # re-authoring (a policy or permission verdict); retrying those
@@ -1132,20 +1013,12 @@ def _mint_package_draft_from_delegate(
             "validationError": last_error[:2000],
         })
         if status != "ok":
-            return None, (
-                "the authoring delegate could not be re-run to correct its "
-                f"draft ({attempt_text or 'no reply'}); the last error was: "
-                f"{last_error}"
+            return None, agent_text.message(
+                "delegate.draft-rerun-failed", attempt_text=attempt_text or agent_text.message("delegate.draft-rerun-failed-no-reply"), last_error=last_error,
             ), "failed"
 
-    spent = f" after {rounds} attempt(s)" if rounds > 1 else ""
-    return None, (
-        f"the authoring delegate produced no usable package draft{spent}. The "
-        f"last error was: {last_error} — fix THAT and keep the same package id, "
-        "or tell the user plainly that authoring failed. Do NOT re-delegate "
-        "under a different package name, and if a package that already does "
-        "this job is listed as installed, use it instead of authoring one"
-    ), "failed"
+    spent = " " + agent_text.message("delegate.draft-unusable-attempts", rounds=rounds) if rounds > 1 else ""
+    return None, agent_text.message("delegate.draft-unusable", spent=spent, last_error=last_error), "failed"
 
 
 def _draft_corrector(
@@ -1165,19 +1038,22 @@ def _draft_corrector(
     def _redelegate(extra: dict) -> tuple[str, str]:
         inputs = dict(req.get("inputs") or {})
         inputs.update(extra)
+        enriched = _enriched_delegate_inputs(user_key, project_id, loop_ctx, req["capability"], inputs)
         status, text, child, _home = _run_delegate_traced(
             user_key,
             project_id,
             resolution.coord,
             req["capability"],
-            _enriched_delegate_inputs(
-                user_key, project_id, loop_ctx, req["capability"], inputs,
-            ),
+            enriched,
             config,
             parent_execution_id=execution_id,
             parent_coord=loop_ctx["coord"],
             attachment_id=loop_ctx.get("attachment_id"),
             parent_name=getattr(loop_ctx.get("manifest"), "name", None),
+            dataflow_block=agents_dataflow_block.for_delegated_run(
+                user_key, project_id, req["capability"], enriched,
+                datasets=loop_ctx.get("dataflow_datasets"),
+            ),
         )
         delegations.append(child)
         return status, text
@@ -1212,16 +1088,6 @@ _REUSE_EVIDENCE_MAX_TEMPLATES = 8
 
 
 _REUSE_EVIDENCE_DESC_CHARS = 200
-
-
-#: What a delegated ``package.recommend`` is told about ``existingPackages``:
-#: its candidates are these rows and nothing else.
-_RECOMMEND_EVIDENCE_NOTE = (
-    "Packages that exist for this user: the only packages you may recommend. "
-    "installedInProject false means the caller must enlist the package before "
-    "its templates can be used; a need none of these rows meets is a finding, "
-    "not a recommendation."
-)
 
 
 def _authoring_reuse_evidence(
@@ -1298,25 +1164,27 @@ def _authoring_reuse_evidence(
     if not packages:
         return None
     return {
-        "note": note or (
-            "Packages that already exist for this user. If one of these already "
-            "satisfies the requested need, say so and author nothing — name its "
-            "dirName so the caller can use it (installedInProject false means the "
-            "caller must enlist it first). Extend one by name instead of creating "
-            "a near-duplicate."
-        ),
+        "note": note or agent_text.message("delegate.reuse-evidence"),
+        # The delegate cannot read the rest: it is told how many it was not shown.
+        **({"packagesElided": len(rows) - len(packages)} if len(rows) > len(packages) else {}),
         "packages": packages,
     }
 
 
 def _enriched_delegate_inputs(
-    user_key: str, project_id: str, loop_ctx: dict, capability: str, inputs: dict
+    user_key: str, project_id: str, loop_ctx: dict, capability: str, inputs: dict,
+    *, catalog_rows: list | None = None,
 ) -> dict:
     """dev/67-6: content-generation delegates get the composed node context
     appended server-side (never overwriting the model's own keys) — the child
-    stops generating blind to the graph. The node resolves from the model's
-    ``nodeId`` input or the parent attachment's node target; no node, no
-    enrichment (honest absence beats a fabricated neighborhood)."""
+    stops generating blind to the graph. The node resolves as
+    :func:`_delegate_target_node_id` resolves it; no node, no context (honest
+    absence beats a fabricated neighborhood). A new node, named by its
+    ``nodeType``, is grounded as that template: a data-loading one gets its
+    sources, whatever node the agent is attached to.
+
+    *catalog_rows* is the Data Catalog listing a ``dataset.discover`` child is
+    shown, when the caller has already read it (:func:`_dataset_discover_inputs`)."""
     if capability == "research.verify" and "verification" not in inputs:
         # dev/67-4: DEC-046 children are structurally tool-less — the runtime
         # runs the deterministic validators and the child synthesizes over
@@ -1331,7 +1199,7 @@ def _enriched_delegate_inputs(
         # the same rows an authoring delegate is shown, as its only candidates.
         if "existingPackages" not in inputs:
             evidence = _authoring_reuse_evidence(
-                user_key, project_id, note=_RECOMMEND_EVIDENCE_NOTE)
+                user_key, project_id, note=agent_text.message("delegate.recommend-evidence"))
             if evidence:
                 inputs = {**inputs, "existingPackages": evidence}
         return inputs
@@ -1366,35 +1234,35 @@ def _enriched_delegate_inputs(
             enriched["notesTemplates"] = packages_services.presentation_templates(
                 user_key, project_id)
         if "notesReplyContract" not in enriched:
-            enriched["notesReplyContract"] = _NOTES_REPLY_CONTRACT
+            enriched["notesReplyContract"] = _notes_reply_contract()
         return enriched
     if capability == "dataset.discover":
         # dev/114 — the SIXTH runtime-supplied-inputs application (DEC-063):
         # a tool-less Dataset Finder child cannot run catalog.search, so the
         # runtime lists the catalog for it and teaches the ONE reply schema
-        # (#269's). Model-supplied keys always win.
-        return _dataset_discover_inputs(user_key, project_id, inputs)
+        # (#269's). Model-supplied keys win, but for the catalog: that is
+        # always the runtime's listing.
+        return _dataset_discover_inputs(user_key, project_id, inputs, catalog_rows=catalog_rows)
     if capability != "node.content.generate" or "nodeContext" in inputs:
         return inputs
-    node_id = inputs.get("nodeId")
-    if not isinstance(node_id, str) or not node_id:
-        target = loop_ctx.get("target")
-        node_id = (
-            target.get("targetId")
-            if isinstance(target, dict) and target.get("kind") == "node"
-            else None
-        )
-    if not node_id:
+    node_id = _delegate_target_node_id(loop_ctx, inputs)
+    node_type = _new_node_type(inputs)
+    if node_id:
+        spec = projects_storage.read_spec(user_key, project_id)
+        composed = node_context.compose_node_context(user_key, project_id, spec, node_id)
+        if composed is None:
+            return inputs
+        enriched = {**inputs, "nodeContext": composed}
+        node_type = composed.get("nodeType")
+    elif node_type:
+        # A new node: there is no node to give the context of, and it is
+        # grounded as its template, whatever node the agent is attached to.
+        enriched = dict(inputs)
+    else:
         return inputs
-    spec = projects_storage.read_spec(user_key, project_id)
-    composed = node_context.compose_node_context(user_key, project_id, spec, node_id)
-    if composed is None:
-        return inputs
-    enriched = {**inputs, "nodeContext": composed}
     # dev/114 — the SEVENTH application: a data-loading node's content child
     # is HANDED its grounded sources (catalog paths, the user's paths, the
     # URLs already verified) instead of guessing a filename.
-    node_type = composed.get("nodeType")
     if "sourceGrounding" not in enriched and source_grounding.loads_dataset(
         node_type, agents_roster._roster_templates(user_key, project_id)
     ):
@@ -1414,7 +1282,7 @@ def _resolve_delegate_request(
     capability = req.get("capability", "")
     manifest = loop_ctx.get("manifest")
     if manifest is None or not manifest.delegates_to:
-        return "refused", "this agent declares no delegates", None
+        return "refused", agent_text.message("delegate.no-delegates"), None
     resolution = delegation.resolve(user_key, project_id, manifest, capability)
     if resolution.outcome == "ok":
         return "ok", "", resolution
@@ -1449,6 +1317,6 @@ def _resolve_delegate_request(
         return status, text, None
     return (
         "refused",
-        f"no delegate of this agent declares capability {capability!r}",
+        agent_text.message("delegate.capability-undeclared", capability=repr(capability)),
         None,
     )

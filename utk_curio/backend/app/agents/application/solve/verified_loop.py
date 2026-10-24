@@ -5,10 +5,14 @@ DEC-073 → dev/118 → dev/126 → dev/127 → dev/129 → dev/131 → dev/133 
 → dev/136 → dev/137 → dev/138): the ONE generate → gate → execute → correct
 loop every Solve path runs. Nothing about WHAT a round does changed; what
 changed is that each stage has a name — :meth:`_generation_inputs`,
-:meth:`_source_gate`, :meth:`_input_contract_gate`, :meth:`_repeat_check`,
-:meth:`_validate`, :meth:`_document_check`, :meth:`_absent_output_check`,
+:meth:`_one_line_answer`, :meth:`_source_gate`, :meth:`_input_contract_gate`, :meth:`_map_edits_gate`,
+:meth:`_repeat_check`, :meth:`_validate`, :meth:`_made_up_ids_check`,
+:meth:`_document_check`, :meth:`_absent_output_check`,
 :meth:`_empty_result_check`, :meth:`_record_round` — and :meth:`run` reads
 as the loop it is.
+
+:meth:`_dashboard_gate`, after :meth:`_map_edits_gate`, ends the loop on a
+pinned tile's spec that loads its own data.
 
 Stage methods are generators (they relay ``node_executed`` and
 ``round_verdict`` events) and return a control token: ``None`` to proceed
@@ -26,13 +30,16 @@ import queue as _queue
 import threading
 import time
 
+from utk_curio.backend.app.agents.application import dataflow_block as agents_dataflow_block
 from utk_curio.backend.app.agents.application import delegation
 from utk_curio.backend.app.agents.application import source_grounding
 from utk_curio.backend.app.agents.domain import content
 from utk_curio.backend.app.agents.domain import contracts
+from utk_curio.backend.app.agents.domain import dashboards
 from utk_curio.backend.app.agents.domain import document_validation
 from utk_curio.backend.app.agents.domain import failure_text
 from utk_curio.backend.app.agents.domain import input_contract
+from utk_curio.backend.app.agents.domain import map_edits
 from utk_curio.backend.app.agents.domain import node_context
 from utk_curio.backend.app.agents.domain import result_shape
 from utk_curio.backend.app.agents.domain import upstream_schema
@@ -45,6 +52,7 @@ from utk_curio.backend.app.agents.application.turns import grounding as agents_g
 from utk_curio.backend.app.agents.domain import validation as agents_validation
 from utk_curio.backend.app.execution import workflow_spec
 from utk_curio.backend.app.packages import service as packages_services
+from utk_curio.backend.app.agents.domain import agent_text
 
 log = logging.getLogger(__name__)
 
@@ -107,6 +115,8 @@ class VerifiedRounds:
         self.recorded_failure = recorded_failure
         self.carry_forward = carry_forward
         self.result_summary_fn = result_summary_fn
+        self.grounding_base = grounding_base
+        self.dataflow_block: str | None = None
         self.run_delegate = delegate_runner or (
             lambda inputs: delegation.run_delegate(
                 user_key, project_id, resolution.coord,
@@ -114,6 +124,7 @@ class VerifiedRounds:
                 parent_execution_id=parent_execution_id,
                 parent_coord=parent_coord,
                 attachment_id=attachment_id,
+                dataflow_block=self._dataflow_block(),
             )
         )
         self.node_id = node.get("id")
@@ -140,6 +151,9 @@ class VerifiedRounds:
         self.reuse_retried = False
         self.dataset_paths = None
         self.secrets = None
+        # The whole output of the round's run, which only the made-up ids
+        # check reads: never part of a verdict, an attempt or an event.
+        self.round_stdout: str | None = None
         self._seed_from_recorded_failure()
         self._seed_from_carry_forward()
         # dev/128: what this node's inputs ARE, a fact of the graph, computed
@@ -215,6 +229,10 @@ class VerifiedRounds:
                 extra_texts=(str(self.node.get("goal") or ""), str(dataflow.get("task") or "")),
                 # #411: a catalog id in THIS node's goal is the dataset it loads.
                 request_texts=(str(self.node.get("goal") or ""),),
+                code_engine=source_grounding.code_engine(
+                    (self.available or {}).get(packages_services.canonical_template_id(self.node_type))
+                ),
+                chips=agents_grounding._chip_context(self.spec, self.node_id),
             )
         except Exception:
             log.warning("Grounding context unavailable for node %s", self.node_id, exc_info=True)
@@ -291,10 +309,14 @@ class VerifiedRounds:
                 self.candidate = content.extract_node_content(text)
             token = None
             for stage in (
+                self._one_line_answer,
                 self._source_gate,
                 self._input_contract_gate,
+                self._map_edits_gate,
+                self._dashboard_gate,
                 self._repeat_check,
                 self._validate,
+                self._made_up_ids_check,
                 self._document_check,
                 self._absent_output_check,
                 self._empty_result_check,
@@ -310,6 +332,18 @@ class VerifiedRounds:
         return self._finish()
 
     # ── stage: generation ───────────────────────────────────────────────────
+
+    def _dataflow_block(self) -> str | None:
+        """The dataflow block of this node's content-mode runs, composed on the
+        first: with the datasets of the grounding base when the caller read
+        them, else as the acting user reads the Data Catalog. A caller with its
+        own delegate runner hands its runs the block itself."""
+        if self.dataflow_block is None:
+            self.dataflow_block = agents_dataflow_block.compose(
+                self.user_key, self.project_id, node_type=self.node_type,
+                datasets=(self.grounding_base or {}).get("dataflow_datasets"), user=self.acting_user,
+            ) or ""
+        return self.dataflow_block or None
 
     def _generation_inputs(self) -> dict:
         inputs = {
@@ -385,42 +419,71 @@ class VerifiedRounds:
 
     # ── stages: gates before the sandbox ────────────────────────────────────
 
+    def _one_line_answer(self):
+        """The content builder may answer in one line instead of writing code,
+        as its content mode and every refusal of a round offer. That line is
+        read here, before any gate or the sandbox, on every node whose content
+        is code: a data-loading node's answer declines, naming what its source
+        needs, and any other node's says why the node cannot be done, such as
+        two inputs that cannot be joined. Either ends the loop. The code on
+        the node, which round 0 may run, is the user's own and never an
+        answer, and a chart's or a map's document is read by
+        :meth:`_document_check`."""
+        if self.use_current:
+            return None
+        if workflow_spec.content_kind(self.node_type, self.loop_templates) != workflow_spec.CONTENT_KIND_CODE:
+            return None
+        answered = agents_rounds._one_line_answer(self.candidate, data_loading=self.is_data_loading)
+        if answered is None:
+            return None
+        kind, detail = answered
+        return (yield from self._stop_on_the_answer(kind, detail))
+
+    def _stop_on_the_answer(self, kind: str, detail: str):
+        """Record the builder's one-line answer as the round's attempt, in its
+        words and as prose, and end the loop: the same builder asked again
+        with the same inputs only repeats it. A decline names an input nobody
+        in this loop can supply (a key, a path, a URL), so the user is the
+        correction, and when it is about a credential and the failed attempt
+        named a host, the remedy is concrete (dev/116): add a connection key
+        for that host, or use the saved one."""
+        attempt = yield from self._record_failed_round(kind, detail, trace_limit=160, prose=True)
+        if kind == agents_rounds.ONE_LINE_ANSWER_KIND:
+            self.stopped_by = "answer"
+            return BREAK
+        remedy = agents_rounds._decline_remedy(self.candidate, self.previous_attempt, self.grounding_ctx)
+        if remedy:
+            self.verdict_result["evidence"]["remedy"] = remedy
+            attempt["remedy"] = remedy
+        self.stopped_by = "decline"
+        return BREAK
+
     def _source_gate(self):
         """DEC-072: the gate runs BEFORE the sandbox does — a fabricated path
         or an unverified URL never executes, and the refusal is the error
         the next round corrects."""
         if self.grounding_ctx is None:
             return None
-        gate = source_grounding.check_grounding(self.candidate, "python", self.grounding_ctx)
+        gate = source_grounding.check_grounding(
+            self.candidate, self.grounding_ctx.code_engine or "python", self.grounding_ctx,
+        )
         if gate.ok:
             return None
+        if not self.use_current and agents_rounds._is_prose_decline(self.candidate):
+            # The delegate followed its rule ("return a one-line explanation
+            # of what source is missing instead of code") in a line
+            # :meth:`_one_line_answer` leaves to this gate: on a node whose
+            # content is no code, or a line Python reads. Record ITS words as
+            # the attempt, not a gate verdict on prose (dev/115 field fix,
+            # 2026-09-08).
+            return (yield from self._stop_on_the_answer(
+                "source-missing", agent_text.message("solve.builder-declined", decline=self.candidate.strip()),
+            ))
         refusal = source_grounding.refusal_text(gate, self.grounding_ctx)
-        kind = "ungrounded-source"
-        declined = not self.use_current and agents_rounds._is_prose_decline(self.candidate)
-        if declined:
-            # The delegate followed its rule ("return a one-line
-            # explanation of what source is missing instead of code").
-            # Record ITS words as the attempt, not a gate verdict on
-            # prose (dev/115 field fix, 2026-09-08).
-            refusal = f"the content builder declined: {self.candidate.strip()}"
-            kind = "source-missing"
+        kind = source_grounding.failure_kind(gate)
         # dev/127: what was refused, verbatim — the literal the gate named is
         # IN this text, so showing it is the point.
-        attempt = yield from self._record_failed_round(kind, refusal, trace_limit=160, prose=declined)
-        if declined:
-            # dev/116: when the decline is about a credential and the
-            # failed attempt named a host, the remedy is concrete —
-            # add a connection key for that host (or use the saved one).
-            remedy = agents_rounds._decline_remedy(self.candidate, self.previous_attempt, self.grounding_ctx)
-            if remedy:
-                self.verdict_result["evidence"]["remedy"] = remedy
-                attempt["remedy"] = remedy
-            # A decline names an input nobody in this loop can supply
-            # (a key, a path, a URL). Asking the same builder again
-            # with the same inputs only repeats it — the user is the
-            # correction; stop and say so.
-            self.stopped_by = "decline"
-            return BREAK
+        yield from self._record_failed_round(kind, refusal, trace_limit=160)
         self._carry(refusal)
         return CONTINUE
 
@@ -438,6 +501,35 @@ class VerifiedRounds:
         self._carry(refusal)
         return CONTINUE
 
+    def _map_edits_gate(self):
+        """A Map Edits node's code is held to what the node reads, before the
+        sandbox runs it: code the node cannot read fails the round, in the
+        node's own words, which the correction gets. The code on the node,
+        which round 0 may run, is the user's own and is never refused."""
+        if self.use_current:
+            return None
+        refusal = map_edits.refusal(self.user_key, self.project_id, self.node_type, self.candidate)
+        if refusal is None:
+            return None
+        yield from self._record_failed_round(map_edits.KIND, refusal)
+        self._carry(refusal)
+        return CONTINUE
+
+    def _dashboard_gate(self):
+        """A pinned tile's spec is held to what its dashboard publishes, before
+        the sandbox runs it: a spec that loads its own data fails the round,
+        and the loop ends there, since its remedy, a node upstream that loads
+        the data, is one Solve cannot add. The code on the node, which round 0
+        may run, is the user's own and is never refused."""
+        if self.use_current:
+            return None
+        refusal = dashboards.refusal(self.user_key, self.project_id, self.node, self.candidate)
+        if refusal is None:
+            return None
+        yield from self._record_failed_round(dashboards.KIND, refusal)
+        self.stopped_by = "blocker"
+        return BREAK
+
     def _repeat_check(self):
         """A repeat is judged AFTER the gate: a refused candidate keeps its own
         kind. dev/116 live fix (2026-09-09): the correction changed only
@@ -447,11 +539,7 @@ class VerifiedRounds:
             return None
         if not agents_rounds._same_code(self.candidate, self.previous_attempt):
             return None
-        detail = (
-            "the correction repeated the previous attempt (only comments or spacing "
-            "changed) — not run again; change the request that failed: "
-            + (self.previous_error or "")[:400]
-        )
+        detail = agent_text.message("solve.repeated-attempt", previous_error=(self.previous_error or "")[:400])
         yield from self._record_failed_round(
             "repeated-attempt", detail, trace="repeated the previous attempt", source="generated",
         )
@@ -463,12 +551,7 @@ class VerifiedRounds:
             # that it must change approach, not phrasing. Only an
             # implausible run of identical candidates stops the loop, so a
             # stuck model cannot spend fifteen minutes of provider calls.
-            detail = (
-                f"you have now returned the same code {self.repeats} times. Stop repeating it: "
-                "change the APPROACH — a different library call, a different key or column, "
-                "a different shape of the result — or say plainly what you cannot do. "
-                + detail
-            )
+            detail = agent_text.message("solve.repeated-attempt-escalated", repeats=self.repeats, detail=detail)
             self.previous_error = detail
             self.attempts[-1]["detail"] = detail[:agents_budgets._ATTEMPT_DETAIL_CHARS]
             if self.repeats >= agents_budgets._MAX_REPEATED_ATTEMPTS_HARD:
@@ -528,6 +611,7 @@ class VerifiedRounds:
                     prior_outputs=prior,
                     templates=self.loop_templates,
                     acting_user=self.acting_user,
+                    keep_stdout=True,
                     progress=lambda nid, i, total: progress_queue.put(
                         ("progress", nid, i, total)
                     ),
@@ -567,7 +651,27 @@ class VerifiedRounds:
             self.verdict_result = yield from self._validate_with(
                 None, candidate, self.dataset_paths, self.secrets)
             self.reuse_retried = True
+        self.round_stdout = self.verdict_result.pop("stdout", None)
         return None
+
+    def _made_up_ids_check(self):
+        """The Map Edits step reports ids no feature has, and its run goes on,
+        so a node an agent filled with made-up ids passes the sandbox. The
+        round fails on the step's own lines, read from the run's whole output,
+        however much comes after them. The code on the node is the user's own
+        and is never refused."""
+        stdout, self.round_stdout = self.round_stdout, None
+        if self.use_current or not stdout or self.verdict_result.get("verdict") != "pass":
+            return None
+        if not map_edits.is_map_edits(self.user_key, self.project_id, self.node_type):
+            return None
+        lines = map_edits.made_up_ids(stdout)
+        if not lines:
+            return None
+        refusal = map_edits.made_up_ids_refusal(lines)
+        yield from self._record_failed_round(map_edits.KIND, refusal)
+        self._carry(refusal)
+        return CONTINUE
 
     # ── stages: verdicts the sandbox cannot give ────────────────────────────
 
@@ -640,7 +744,7 @@ class VerifiedRounds:
         try:
             return spec.node_code(node, "json", candidate, grammar), None
         except workflow_spec.CodeReferenceError as exc:
-            return candidate, f"the document's references cannot be resolved: {exc}"
+            return candidate, agent_text.message("solve.document-references-unresolved", exc=exc)
 
     def _empty_render_check(self):
         """dev/136: a valid document is not a drawn picture. When the node's

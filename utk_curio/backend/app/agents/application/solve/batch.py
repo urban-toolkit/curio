@@ -28,13 +28,16 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 
 from utk_curio.backend.app.agents.application import attachments
+from utk_curio.backend.app.agents.application import dataflow_block as agents_dataflow_block
 from utk_curio.backend.app.agents.application import dataset_resolution as agents_dataset_resolution
 from utk_curio.backend.app.agents.application import delegation
 from utk_curio.backend.app.agents.application import source_grounding
 from utk_curio.backend.app.agents.application.errors import AgentServiceError
 from utk_curio.backend.app.agents.domain import content
+from utk_curio.backend.app.agents.domain import dashboards
 from utk_curio.backend.app.agents.domain import failure_text
 from utk_curio.backend.app.agents.domain.counts import count_label
+from utk_curio.backend.app.agents.domain import map_edits
 from utk_curio.backend.app.agents.domain import node_context
 from utk_curio.backend.app.agents.domain.manifest import AgentManifest
 from utk_curio.backend.app.agents.infrastructure import provider_config
@@ -53,6 +56,7 @@ from utk_curio.backend.app.agents.domain import upstream_schema as agents_upstre
 from utk_curio.backend.app.execution import workflow_spec
 from utk_curio.backend.app.packages import service as _pkg_services
 from utk_curio.backend.app.projects import storage as projects_storage
+from utk_curio.backend.app.agents.domain import agent_text
 
 log = logging.getLogger(__name__)
 
@@ -156,6 +160,9 @@ class SolveBatch:
                   if verify else {})
         )
         self.batch_templates = agents_roster._roster_templates(user_key, project_id)  # dev/119: ONE snapshot per batch
+        # The dataflow block each node's content-mode runs are given, composed
+        # once per node (``_dataflow_block``).
+        self.dataflow_blocks: dict[str, str | None] = {}
         # dev/131: session bookkeeping lives ABOVE the resolution branch, because
         # every exit — including "no specialist installed" — must still report how
         # the session ended.
@@ -225,10 +232,18 @@ class SolveBatch:
             str((node_obj or {}).get("type") or ""), self.batch_templates
         )
 
-    def _ungrounded_error(self, refusal: str, node_id: str) -> str:
+    def _ungrounded_error(self, refusal: str, node_id: str, verdict=None) -> str:
+        # The code's own violations name what to change in it: no source is
+        # missing, so the Dataset Finder's remedy is not theirs.
+        if verdict is not None and source_grounding.failure_kind(verdict) == source_grounding.CODE_KIND:
+            return ("ungrounded code: " + " ".join(verdict.violations))[:300]
+        # A source's refusal loses its head and its allowed routes, each cut
+        # by the words of its message before the message's first value.
+        head = agent_text.message("grounding.refused", count="\0", s="").split("\0")[0]
+        allowed = agent_text.message("grounding.allowed", sources="\0").split("\0")[0].rstrip()
         return (
-            "ungrounded source: " + refusal.split("Allowed sources:")[0]
-            .replace("source grounding refused — ", "").strip()
+            "ungrounded source: " + refusal.split(allowed)[0]
+            .replace(head, "").strip()
         )[:220] + self._ungrounded_remedy(node_id)
 
     def _ungrounded_remedy(self, node_id: str) -> str:
@@ -318,7 +333,7 @@ class SolveBatch:
         ``pending`` — it was never attempted, so no new status enters the
         state machine."""
         if status == "no-content":
-            return self._record_no_content(node_id)
+            return self._record_no_content(node_id, text)
         if status == "deadline":
             return self._record_deadline(node_id)
         if child is not None:
@@ -337,20 +352,38 @@ class SolveBatch:
         self.unstarted.append(node_id)
         return None
 
-    def _record_no_content(self, node_id: str) -> dict:
+    def _record_no_content(self, node_id: str, reason: str | None = None) -> dict:
         # dev/134: nothing is owed and nothing was spent. Not "skipped"
         # (that means a bound refused it) and not "pending" (that means
         # work remains): the node is resolved, and the reason says why
-        # there was never anything to write.
+        # there was never anything to write: *reason*, else its kind's.
         node = self.nodes_by_id.get(node_id) or {}
-        reason = (
+        reason = reason or (
             f"{node.get('type')} is wired, not written: this kind has no "
             "content to author; it renders or forwards its input"
         )
         result = {"status": "solved",
                   "verification": {"status": "no-content", "reason": reason[:300]}}
         self.results[node_id] = result
+        fresh = self._new_map_edits_code(node_id, node)
+        if fresh is not None:
+            # Persisted with the wave, and never handed to the canvas as a
+            # change: no agent wrote it, and the canvas gives a node it shows
+            # blank this same code.
+            self.applied_contents.append({"nodeId": node_id, "content": fresh})
         return {"nodeId": node_id, "status": "solved", **result}
+
+    def _new_map_edits_code(self, node_id: str, node: dict) -> str | None:
+        """The code a blank Map Edits node gets when its goal names no edits:
+        the code the node writes for itself when it is dropped, its call with
+        no edits over its circles. None for a node of another kind and for one
+        that holds code already, whose call stays as the user left it."""
+        if str(node.get("content") or "").strip():
+            return None
+        if not map_edits.is_map_edits(self.user_key, self.project_id, node.get("type")):
+            return None
+        spec = self.current.get("spec") or self.spec or {}
+        return map_edits.new_node_code(node_id, (spec.get("dataflow") or {}).get("edges"))
 
     def _record_deadline(self, node_id: str) -> dict:
         # dev/118: the budget ran out before this node was dispatched — it
@@ -403,6 +436,10 @@ class SolveBatch:
             self.results[node_id] = {"status": "pending", "reason": reason, **trail, **extra}
             return {"nodeId": node_id, "status": "pending", "reason": reason,
                     **trail, **extra}
+        if evidence.get("kind") == dashboards.KIND:
+            # A pinned tile's spec loads its own data: the node waits for the
+            # user, who loads the data upstream or unpins it.
+            evidence = {**evidence, "remedy": dashboards.remedy(node_id)}
         return self._verified_failure(node_id, outcome, evidence, trail)
 
     def _verified_pass(self, node_id: str, outcome: dict, trail: dict) -> dict:
@@ -417,7 +454,7 @@ class SolveBatch:
             # dev/118 commit 4: the artifact a dependent's validation reuses.
             "output": (outcome.get("evidence") or {}).get("output"),
         }
-        return {"nodeId": node_id, "status": "solved", "content": candidate, **trail}
+        return {"nodeId": node_id, "status": "solved", "content": candidate, **self._written_by(), **trail}
 
     def _verified_not_executable(self, node_id: str, outcome: dict, evidence: dict, trail: dict) -> dict:
         # dev/118 (DEC-075): a browser-rendered kind — SAID to be
@@ -440,7 +477,7 @@ class SolveBatch:
         )
         self.results[node_id] = {"status": "solved", "verification": verification, **trail}
         self.applied_contents.append({"nodeId": node_id, "content": candidate})
-        return {"nodeId": node_id, "status": "solved", "content": candidate,
+        return {"nodeId": node_id, "status": "solved", "content": candidate, **self._written_by(),
                 "verification": verification, **trail}
 
     def _verified_failure(self, node_id: str, outcome: dict, evidence: dict, trail: dict) -> dict:
@@ -471,7 +508,9 @@ class SolveBatch:
             # dev/118 live fix: the upstream has no content (it failed, or
             # is not a target) — this node waits, pending with the reason;
             # Retry runs it once the upstream is solved or filled.
-            reason = f"waiting: {raw_detail[:240]}" if raw_detail else "waiting: an upstream node has no content yet"
+            # The status says it waits: the notice and the card put it before
+            # the reason, which says on what, as every pending reason does.
+            reason = raw_detail[:240] if raw_detail else "an upstream node has no content yet"
             # The session summary reads what the node waits on from here, not
             # from the reason's wording.
             self.results[node_id] = {"status": "pending", "reason": reason, "waitingOn": "upstream", **trail}
@@ -480,7 +519,7 @@ class SolveBatch:
             # dev/118 (DEC-075): the runner refused the SLICE (the 25-node
             # bound, a cycle) — a bound on validation, not a failure of the
             # content: skipped, with the bound named.
-            reason = f"skipped: {raw_detail[:240]}" if raw_detail else "skipped: validation refused the slice"
+            reason = raw_detail[:240] if raw_detail else "validation refused the slice"
             self.results[node_id] = {"status": "skipped", "reason": reason, **trail}
             return {"nodeId": node_id, "status": "skipped", "reason": reason, **trail}
         # dev/127: a refusal's head names the literal; a traceback is read
@@ -498,16 +537,16 @@ class SolveBatch:
         )
         rounds = outcome.get("rounds") or 0
         remedy_payload = evidence.get("remedy") if isinstance(evidence.get("remedy"), dict) else None
-        remedy = (
-            self._ungrounded_remedy(node_id)
-            if kind == "ungrounded-source" else
-            agents_grounding._source_missing_remedy(remedy_payload)
-            if kind == "source-missing" else ""
-        )
+        if kind == "ungrounded-source":
+            clause = self._ungrounded_remedy(node_id)
+            detail = f"{detail[:200 - len(clause)]}{clause}"
+        elif kind == "source-missing":
+            # The remedy is a sentence of its own, appended as written.
+            sentence = agents_grounding._source_missing_remedy(remedy_payload)
+            detail = agents_grounding._then_sentence(detail[:200 - len(sentence) - 2], sentence)
         bound = agents_rounds._stopped_by_clause(outcome.get("stoppedBy"))
         err = (
-            f"not fixed after {rounds} attempt{'s' if rounds != 1 else ''}{bound}: "
-            f"{kind}: {detail[:200 - len(remedy)] if remedy else detail}{remedy}"
+            f"not fixed after {rounds} attempt{'s' if rounds != 1 else ''}{bound}: {kind}: {detail}"
         )[:300]
         extra = {"remedy": remedy_payload} if remedy_payload else {}
         self.results[node_id] = {"status": "failed", "error": err, **trail, **extra}
@@ -517,20 +556,29 @@ class SolveBatch:
         """dev/114 (DEC-072): the gate on content written without running it.
         #867: it holds the content to the datasets a verified Solve holds it
         to, the ids the node's goal names and the catalog rows the user
-        confirmed for the node."""
+        confirmed for the node. The error the node fails with, or None: an
+        ungrounded source with its remedy, the code's own violations, or a
+        chart's or a map's document that does not validate, as the verified
+        loop names that round."""
         node = self.nodes_by_id.get(node_id) or {}
-        _verdict, refusal = agents_grounding._gate_generated_content(
+        roster_row = (self.batch_templates or {}).get(_pkg_services.canonical_template_id(node.get("type")))
+        verdict, refusal = agents_grounding._gate_generated_content(
             self.user_key, self.project_id, self.solve_ctx,
-            code=code, engine="python", node_type=node.get("type"),
-            base=self.solve_ground,
+            code=code, engine=source_grounding.code_engine(roster_row), node_type=node.get("type"),
+            base=self.solve_ground, chips=agents_grounding._chip_context(self.current["spec"], node_id),
             request_texts=(str(node.get("goal") or ""),),
             requested_ids=source_grounding.confirmed_dataset_ids(
                 agents_dataset_resolution.confirmed_source(
                     self.current["spec"], node_id, user_key=self.user_key,
                 )
             ),
+            node_id=node_id,
         )
-        return refusal
+        if refusal is None:
+            return None
+        if verdict.ok:  # every source is grounded: the document does not validate
+            return f"document-invalid: {refusal}"
+        return self._ungrounded_error(refusal, node_id, verdict)
 
     def _record_solved(self, node_id: str, text) -> dict:
         # The child replies with response formatting around the code —
@@ -540,11 +588,29 @@ class SolveBatch:
         # unverified URL never reaches the spec; the node fails LOUDLY
         # with the literal and the remedy named.
         node = self.nodes_by_id.get(node_id) or {}
-        refusal = self._gate_unverified(node_id, text_out)
-        if refusal:
-            err = self._ungrounded_error(refusal, node_id)
+        err = self._gate_unverified(node_id, text_out)
+        if err:
             self.results[node_id] = {"status": "failed", "error": err[:300]}
             return {"nodeId": node_id, "status": "failed", "error": err[:300]}
+        # A pinned tile's spec is held to what its dashboard publishes, unrun
+        # too: the node ends on it and waits for the user, since Solve cannot
+        # add the node upstream that its data needs.
+        unpublishable = dashboards.refusal(self.user_key, self.project_id, node, text_out)
+        if unpublishable:
+            failed = {"status": "failed", "error": unpublishable[:300], "remedy": dashboards.remedy(node_id)}
+            self.results[node_id] = failed
+            return {"nodeId": node_id, **failed}
+        # A Map Edits node's code is held to what the node reads, unrun too.
+        unreadable = map_edits.refusal(
+            self.user_key, self.project_id, node.get("type"), text_out, current=str(node.get("content") or ""),
+        )
+        if unreadable:
+            self.results[node_id] = {"status": "failed", "error": unreadable[:300]}
+            return {"nodeId": node_id, "status": "failed", "error": unreadable[:300]}
+        err = self._unwritten_answer(node, text_out)
+        if err:
+            self.results[node_id] = {"status": "failed", "error": err}
+            return {"nodeId": node_id, "status": "failed", "error": err}
         result: dict = {"status": "solved"}
         if not self.is_executable(node):
             # dev/118 (DEC-075): written like before, and SAID to be unexecuted.
@@ -554,9 +620,30 @@ class SolveBatch:
             }
         self.results[node_id] = result
         self.applied_contents.append({"nodeId": node_id, "content": text_out})
-        return {"nodeId": node_id, "status": "solved", "content": text_out, **(
+        return {"nodeId": node_id, "status": "solved", "content": text_out, **self._written_by(), **(
             {"verification": result["verification"]} if "verification" in result else {}
         )}
+
+    def _unwritten_answer(self, node: dict, text_out: str) -> str | None:
+        """The error a node fails with when the builder answered in one line
+        instead of writing its code, or None. The verified loop reports that
+        line, and so do the paths that write or propose content without
+        running it: it is never written, or offered for review, as code."""
+        if self.content_kind(node) != workflow_spec.CONTENT_KIND_CODE:
+            return None
+        answered = agents_rounds._one_line_answer(text_out, data_loading=self.is_data_loading(node))
+        if answered is None:
+            return None
+        kind, detail = answered
+        return f"{kind}: {detail}"[:300]
+
+    def _written_by(self) -> dict:
+        """``{"agent": name}``: the agent that writes this batch's content, as
+        its manifest names it, which a node's history names the change after;
+        empty when no agent is resolved."""
+        delegate = getattr(self.resolution, "manifest", None)
+        name = getattr(delegate, "name", None) or getattr(self.resolution, "coord", None)
+        return {"agent": name} if isinstance(name, str) and name else {}
 
     # ── persistence ─────────────────────────────────────────────────────────
 
@@ -577,10 +664,22 @@ class SolveBatch:
             if node is None:
                 self.results[item["nodeId"]] = {"status": "skipped"}  # deleted meanwhile
                 continue
-            if (node.get("content") or "").strip():
+            if self.holds_content(node):
                 self.results[item["nodeId"]] = {"status": "skipped"}  # user edit wins
                 continue
             node["content"] = item["content"]
+
+    def holds_content(self, node: dict) -> bool:
+        """Whether *node* holds content Solve keeps rather than writes: any
+        but blank, and for a Map Edits node, any but its call with no edits,
+        which the node writes for itself."""
+        text = str((node or {}).get("content") or "")
+        if not text.strip():
+            return False
+        return not (
+            map_edits.is_map_edits(self.user_key, self.project_id, node.get("type"))
+            and map_edits.holds_no_edits(text)
+        )
 
     def persist_wave(self, wave_ids: list[str]) -> None:
         """dev/118 (DEC-075): the wave boundary IS the persist — and the
@@ -1038,6 +1137,15 @@ class SolveBatch:
         # (verdict, rounds, attempts) rides the part, PASS or
         # FAIL (dev/67-7's labeled choice); a sandbox outage
         # mints nothing and the node stays pending.
+        if agents_rounds._ended_on_an_answer(outcome) or (outcome.get("evidence") or {}).get("kind") == dashboards.KIND:
+            # The builder's one-line answer is no content, and a pinned tile's
+            # spec that loads its own data is refused: nothing is minted for
+            # Apply anyway to write, and the node fails as it does when Solve
+            # writes (a refused tile then waits for the user).
+            event = self.record_outcome(node_id, "verified", outcome, None)
+            if event is not None:
+                yield "node_result", event
+            return
         for c in outcome.get("delegations") or []:
             if c is not None:
                 self.delegations.append(c)
@@ -1098,9 +1206,20 @@ class SolveBatch:
             self.delegations.append(child)
         # dev/114: the gate runs on the batch base BEFORE the
         # mint so the node's failure names the source.
-        _refusal = self._gate_unverified(node_id, content.extract_node_content(text))
-        if _refusal:
-            err = self._ungrounded_error(_refusal, node_id)
+        text_out = content.extract_node_content(text)
+        node = self.nodes_by_id.get(node_id) or {}
+        err = self._gate_unverified(node_id, text_out)
+        if not err:
+            # A pinned tile's spec that loads its own data is refused before
+            # the mint, and the node waits for the user, as when Solve writes.
+            unpublishable = dashboards.refusal(self.user_key, self.project_id, node, text_out)
+            if unpublishable:
+                failed = {"status": "failed", "error": unpublishable[:300], "remedy": dashboards.remedy(node_id)}
+                self.results[node_id] = failed
+                yield "node_result", {"nodeId": node_id, **failed}
+                return
+            err = self._unwritten_answer(node, text_out)
+        if err:
             self.results[node_id] = {"status": "failed", "error": err[:300]}
             yield "node_result", {"nodeId": node_id, "status": "failed", "error": err[:300]}
             return
@@ -1179,9 +1298,18 @@ class SolveBatch:
             if node is None:
                 queue.put((node_id, "skipped", None, None))
                 return
-            if (node.get("content") or "").strip():
+            if self.holds_content(node):
                 # User content preserved.
                 queue.put((node_id, "skipped", None, None))
+                return
+            if (
+                map_edits.is_map_edits(self.user_key, self.project_id, node.get("type"))
+                and not map_edits.goal_names_edits(node.get("goal"))
+            ):
+                # An empty Map Edits node gets edits only when its goal names
+                # the edits to make: an agent never makes them up. Blank, it
+                # gets its call with no edits (``_record_no_content``).
+                queue.put((node_id, "no-content", map_edits.no_edits_reason(), None))
                 return
             if self.content_kind(node) == workflow_spec.CONTENT_KIND_NONE:
                 # dev/134: this kind authors NOTHING — it renders or
@@ -1215,12 +1343,25 @@ class SolveBatch:
                 attachment_id=self.attachment_id,
                 node_id=node_id,
                 home_create=False,  # workers never write the spec
+                dataflow_block=self._dataflow_block(node_id),
             )
             queue.put(
                 (node_id, "solved" if status == "ok" else "failed", text, child)
             )
         except BaseException as exc:  # a lost item would deadlock the drain
             queue.put((node_id, "failed", f"solve worker error: {exc}", None))
+
+    def _dataflow_block(self, node_id: str) -> str | None:
+        """The dataflow block of *node_id*'s content-mode runs, composed once:
+        its template, and the dataflow's datasets as the batch read them when
+        it started (the grounding base), since a worker holds no request."""
+        if node_id not in self.dataflow_blocks:
+            node = self.nodes_by_id.get(node_id) or {}
+            self.dataflow_blocks[node_id] = agents_dataflow_block.compose(
+                self.user_key, self.project_id, node_type=node.get("type"),
+                datasets=self.solve_ground.get("dataflow_datasets"), user=self.acting_user,
+            )
+        return self.dataflow_blocks[node_id]
 
     def _worker_inputs(self, node_id: str, node: dict, wave_spec: dict, upstream_outputs) -> dict:
         inputs = {
@@ -1259,6 +1400,7 @@ class SolveBatch:
                 attachment_id=self.attachment_id,
                 node_id=_node_id,
                 home_create=False,  # workers never write the spec
+                dataflow_block=self._dataflow_block(_node_id),
             )
             return st, tx, ch
 

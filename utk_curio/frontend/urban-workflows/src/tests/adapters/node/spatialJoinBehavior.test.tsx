@@ -7,9 +7,13 @@
  * joined. The body picks the operation and the output, both persisted on the
  * node, and the backend's counts reach the status line.
  */
+import * as fs from 'fs';
+import * as path from 'path';
 import React from 'react';
 import { renderHook, render, act, fireEvent, waitFor } from '@testing-library/react';
 import type { NodeBehaviorData, UseNodeStateReturn } from '../../../registry/types';
+
+const REPO_ROOT = path.join(__dirname, '..', '..', '..', '..', '..', '..', '..');
 
 jest.mock('reactflow', () => ({
   useEdges: () => [],
@@ -34,6 +38,7 @@ jest.mock('../../../services/api', () => ({
 }));
 
 import { useSpatialJoinBehavior } from '../../../adapters/node/spatialJoinBehavior';
+import { writeNodeSettings } from '../../../utils/nodeSettingsWriters';
 
 const POINTS = {
   type: 'FeatureCollection',
@@ -201,6 +206,20 @@ describe('the operation and the output (#576)', () => {
     expect(posted(fetchMock).predicate).toBe('intersects');
   });
 
+  test("the selects offer exactly the dataflow format's choices, which are the join's own", async () => {
+    // A test of common/spatial.py holds the Trill enums to PREDICATES and
+    // OUTPUTS, the choices the route and the agents' check take.
+    const schema = JSON.parse(fs.readFileSync(path.join(REPO_ROOT, 'docs', 'schemas', 'trill.v1.json'), 'utf-8'));
+    const setting = schema.$defs.nodeMetadata.properties.spatialJoin.properties;
+    mockFetch(joined([]));
+    const { result, rerender } = renderJoin();
+    await feed(rerender);
+
+    const body = readBody(result.current.contentComponent);
+    expect(body.operation!.options).toEqual(setting.predicate.enum);
+    expect(body.output!.options).toEqual(setting.output.enum);
+  });
+
   test('a saved operation is sent, and picking another saves it on the node', async () => {
     const fetchMock = mockFetch(joined([]));
     const { result, rerender } = renderJoin({ spatialJoin: { predicate: 'within' } });
@@ -237,6 +256,35 @@ describe('the operation and the output (#576)', () => {
 
     expect(posted(fetchMock).output).toBe('pairs');
     expect(readBody(result.current.contentComponent).output!.value).toBe('pairs');
+  });
+
+  test("an agent's applied change picks the operation and the output as the selects do, in one change of the node", () => {
+    mockFetch(joined([]));
+    const { data } = renderJoin({ spatialJoin: { output: 'counts' } });
+    const fallback = jest.fn();
+    act(() => writeNodeSettings(
+      { nodes: () => [{ id: 'sj-1', data }], updateDataNode: fallback },
+      'sj-1',
+      { spatialJoin: { predicate: 'within', output: 'pairs' } },
+    ));
+    expect(fallback).not.toHaveBeenCalled();
+    // Both at once: two picks made one after the other would each have
+    // written over the other.
+    expect(mockUpdateDataNode).toHaveBeenCalledTimes(1);
+    expect(mockUpdateDataNode).toHaveBeenCalledWith('sj-1', expect.objectContaining({
+      spatialJoin: { predicate: 'within', output: 'pairs' },
+    }));
+  });
+
+  test("an agent's change of the operation keeps the output the node holds", () => {
+    mockFetch(joined([]));
+    renderJoin({ spatialJoin: { output: 'counts' } });
+    act(() => writeNodeSettings(
+      { nodes: () => [], updateDataNode: jest.fn() }, 'sj-1', { spatialJoin: { predicate: 'within' } },
+    ));
+    expect(mockUpdateDataNode).toHaveBeenCalledWith('sj-1', expect.objectContaining({
+      spatialJoin: { output: 'counts', predicate: 'within' },
+    }));
   });
 });
 

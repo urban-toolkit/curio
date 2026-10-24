@@ -15,11 +15,12 @@ import {
 import type { AgentSolveAttemptsPart } from "../../services/agents";
 
 /** The table the server's failure sentences read too. */
-const generatedStopReasons = () =>
-  require("../../generated/solveStopReasons") as {
-    STOP_REASONS: readonly string[];
-    STOPPED_BY_PHRASES: Readonly<Record<string, string>>;
+const sharedStopReasons = () => {
+  const { phrases } = require("../../contracts/solveStopReasons.json") as {
+    phrases: Readonly<Record<string, string>>;
   };
+  return { STOP_REASONS: Object.keys(phrases), STOPPED_BY_PHRASES: phrases };
+};
 
 const part = (over: Partial<AgentSolveAttemptsPart> = {}): AgentSolveAttemptsPart => ({
   type: "solveAttempts",
@@ -87,7 +88,7 @@ describe("AgentSolveAttemptsCard (dev/127)", () => {
   });
 
   it("says every stop in the words of the table the server reads", () => {
-    const { STOP_REASONS, STOPPED_BY_PHRASES } = generatedStopReasons();
+    const { STOP_REASONS, STOPPED_BY_PHRASES } = sharedStopReasons();
     expect(STOP_REASONS.length).toBeGreaterThan(0);
     expect(Object.keys(STOPPED_BY_PHRASES).sort()).toEqual([...STOP_REASONS].sort());
     for (const reason of STOP_REASONS) {
@@ -96,7 +97,7 @@ describe("AgentSolveAttemptsCard (dev/127)", () => {
   });
 
   it("names the session's time budget apart from the node's", () => {
-    const { STOPPED_BY_PHRASES } = generatedStopReasons();
+    const { STOPPED_BY_PHRASES } = sharedStopReasons();
     expect(STOPPED_BY_PHRASES.session).toBe("this session's time budget was spent");
     expect(STOPPED_BY_PHRASES.budget).toBe("this node's time budget was spent");
     render(<AgentSolveAttemptsCard part={part({ stoppedBy: "session" })} />);
@@ -110,7 +111,7 @@ describe("AgentSolveAttemptsCard (dev/127)", () => {
       path.resolve(__dirname, "../../components/agents/content/AgentSolveAttemptsCard.tsx"),
       "utf8",
     );
-    expect(source).toContain('from "../../../generated/solveStopReasons"');
+    expect(source).toContain('from "../../../contracts/solveStopReasons.json"');
     expect(source).not.toMatch(/time budget|attempt cap/);
   });
 
@@ -162,6 +163,30 @@ describe("AgentSolveAttemptsCard (dev/127)", () => {
     ).toBeInTheDocument();
     expect(document.querySelector("pre")).toBeNull();
     expect(screen.getByText(/the builder declined: it needs something from you/)).toBeInTheDocument();
+  });
+
+  it("names a one-line answer as a stop of its own and shows it as prose", () => {
+    render(
+      <AgentSolveAttemptsCard
+        part={part({
+          rounds: 1,
+          stoppedBy: "answer",
+          attempts: [
+            {
+              round: 1,
+              verdict: "fail",
+              kind: "one-line-answer",
+              error: "the content builder answered: These inputs cannot be joined.",
+              code: "These inputs cannot be joined.",
+              codeIsProse: true,
+            },
+          ],
+        })}
+      />,
+    );
+    expect(screen.getByText("1 attempt · the builder answered instead of writing code")).toBeInTheDocument();
+    expect(screen.getByText("What the builder said instead of writing code")).toBeInTheDocument();
+    expect(document.querySelector("pre")).toBeNull();
   });
 
   it("says when a field or the trail itself was truncated", () => {

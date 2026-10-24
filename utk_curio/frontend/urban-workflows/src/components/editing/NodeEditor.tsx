@@ -21,7 +21,6 @@ import {
     faRotateLeft,
     faRightFromBracket,
 } from "@fortawesome/free-solid-svg-icons";
-import { OverlayTrigger, Tooltip } from "react-bootstrap";
 import { ICodeData } from "../../types";
 import { useFlowContext } from "../../providers/FlowProvider";
 import { useNotebookViewContext } from "../../providers/flow/notebookViewContext";
@@ -32,11 +31,13 @@ import { unversionedNodeType } from "../../utils/flowNodeCanonicalType";
 import { notebookOutputBox } from "../../utils/notebookLayout";
 import { useNodeHeaderSlot } from "./nodeHeaderSlot";
 import { normalizeWidgets, type WidgetDef } from "../../utils/widgets/widgetModel";
+import { registerNodeSettingWriter, withWidgetValues } from "../../utils/nodeSettingsWriters";
 import { isVegaLiteNodeType } from "../../registry/vegaLiteNodes";
 import {
     VEGA_LITE,
     describeEmptyInputs,
     describeReferenceProblems,
+    parseReference,
     resolveReferences,
     type CodeLanguage,
     type ReferenceScope,
@@ -45,6 +46,11 @@ import { useInputScope } from "../../hook/useInputScope";
 import { useSharedWidgets } from "../../hook/useSharedWidgets";
 import { useSelectionViews } from "../../hook/useSelectionViews";
 import { normalizeSelections, type SelectionTag } from "../../utils/references/selectionTags";
+import { parameterPreviewOf } from "../../utils/references/sharedParameters";
+import { readSelectionRows } from "../../utils/references/viewSelections";
+import { nodeLabel } from "../scenarios/scenarioLabels";
+import type { ChipPreviewData } from "./widgets/ChipPreview";
+import { useChipPreviewSource } from "./widgets/chipPreviewSource";
 
 const NO_WIDGETS: WidgetDef[] = [];
 const NO_SELECTIONS: SelectionTag[] = [];
@@ -141,6 +147,19 @@ function NodeEditor({
         markNodeStale?.(data.nodeId);
         markDirty?.();
     };
+    // An agent's applied change gives widgets new values as the Widgets tab
+    // gives one (utils/nodeSettingsWriters): the node is out of date, the
+    // dataflow Unsaved, and an automatic run takes it.
+    const writeValuesRef = useRef<(values: Record<string, unknown>) => void>(() => undefined);
+    writeValuesRef.current = (values) => {
+        if (!widgets.some((widget) => Object.prototype.hasOwnProperty.call(values, widget.name))) return;
+        updateWidgets(withWidgetValues(widgets, values));
+        requestAutoRun?.([data.nodeId]);
+    };
+    useEffect(() => {
+        if (!widgetsTab) return undefined;
+        return registerNodeSettingWriter(data.nodeId, "widgets", (values) => writeValuesRef.current(values));
+    }, [data.nodeId, widgetsTab]);
 
     // #662: the node's selection tags, each holding the ids a view's selection
     // picks. Held in node data as widgets are (saved at metadata.selections);
@@ -173,7 +192,7 @@ function NodeEditor({
     // #662: what the node's references name: its widgets, its wired inputs,
     // the Parameter nodes' shared tags and its selection tags. Input, layer,
     // column, selection and shared tags sit above its code or spec.
-    const { inputs, emptyInputs, loadColumns } = useInputScope(data);
+    const { inputs, emptyInputs, loadColumns, previews: inputPreviews, loadPreview } = useInputScope(data);
     const shared = useSharedWidgets();
     const scope: ReferenceScope = useMemo(
         () => ({
@@ -184,6 +203,60 @@ function NodeEditor({
         }),
         [widgetsTab, widgets, inputs, shared, selections],
     );
+
+    // What the hover of a chip, in the code or in the header, previews
+    // (ChipPreview): each input's rows, read as its tooltip first shows; each
+    // Parameter node's title and how many nodes read it, and each selection
+    // tag's view and the rows its ids pick there, read as its tooltip shows.
+    const [selectionRows, setSelectionRows] = useState<
+        Record<string, { columns: string[]; rows: Record<string, unknown>[] } | { unreadable: true } | null>
+    >({});
+    const [parameters, setParameters] = useState<Record<string, { node: string; readers: number }>>({});
+    const flowNodeList: any[] = Array.isArray(flowNodes) ? flowNodes : [];
+    const viewsFound: Record<string, string> = Object.fromEntries(
+        selections.map((tag) => [tag.name, nodeLabel(flowNodeList.find((node) => node.id === tag.node), tag.node)]),
+    );
+    const viewsSignature = JSON.stringify(viewsFound);
+    const selectionPreviews = useMemo(
+        () =>
+            Object.fromEntries(
+                Object.entries(viewsFound).map(([name, view]) => [
+                    name,
+                    name in selectionRows ? { view, rows: selectionRows[name] } : { view },
+                ]),
+            ),
+        [viewsSignature, selectionRows],
+    );
+    const chipData: ChipPreviewData = useMemo(
+        () => ({ inputs: inputPreviews, parameters, selections: selectionPreviews }),
+        [inputPreviews, parameters, selectionPreviews],
+    );
+    const chipSnapshot = useMemo(
+        () => ({ scope, language: widgetLanguage, data: chipData }),
+        [scope, widgetLanguage, chipData],
+    );
+    const chipPreviews = useChipPreviewSource(chipSnapshot, (inner) => {
+        const parsed = parseReference(inner);
+        if (parsed.kind === "input") {
+            if (parsed.slot !== null) loadPreview(parsed.slot);
+        } else if (parsed.kind === "dataset" || parsed.kind === "stacked") {
+            for (const input of inputs) loadPreview(input.slot);
+        } else if (parsed.kind === "selection") {
+            const tag = selections.find((one) => one.name === parsed.name);
+            if (tag) {
+                void readSelectionRows(tag).then((rows) => setSelectionRows((held) => ({ ...held, [tag.name]: rows })));
+            }
+        } else if (parsed.kind === "shared") {
+            const parameter = parameterPreviewOf(flowNodeList, parsed.name);
+            setParameters((held) => {
+                if (JSON.stringify(held[parsed.name] ?? null) === JSON.stringify(parameter)) return held;
+                const next = { ...held };
+                if (parameter) next[parsed.name] = parameter;
+                else delete next[parsed.name];
+                return next;
+            });
+        }
+    });
     // The play callback is registered once, so a run without a Widgets tab
     // reads the scope from here.
     const runScopeRef = useRef({ scope, emptyInputs, referenceGrammar });
@@ -418,106 +491,88 @@ function NodeEditor({
             >
                 {code ? (
                     <Col>
-                        <OverlayTrigger
-                            placement="right"
-                            delay={overlayTriggerProps}
-                            overlay={<Tooltip>Code</Tooltip>}
-                        >
-                            <Nav.Item style={navItemStyle}>
-                                <Nav.Link
-                                    eventKey="code"
-                                    style={navLinkStyle}
-                                >
-                                    <FontAwesomeIcon
-                                        icon={faCode}
-                                    />
-                                </Nav.Link>
-                            </Nav.Item>
-                        </OverlayTrigger>
+                        {/* Each tab is an icon: its name is the word its
+                            tooltip shows. */}
+                        <Nav.Item style={navItemStyle}>
+                            <Nav.Link
+                                eventKey="code"
+                                style={navLinkStyle}
+                                aria-label="Code"
+                                data-tooltip="Code"
+                            >
+                                <FontAwesomeIcon
+                                    icon={faCode}
+                                />
+                            </Nav.Link>
+                        </Nav.Item>
                     </Col>
                 ) : null}
 
                 {widgetsTab ? (
                     <Col>
-                        <OverlayTrigger
-                            placement="right"
-                            delay={overlayTriggerProps}
-                            overlay={<Tooltip>Widgets</Tooltip>}
-                        >
-                            <Nav.Item style={navItemStyle}>
-                                <Nav.Link
-                                    eventKey="widgets"
-                                    style={navLinkStyle}
-                                >
-                                    <FontAwesomeIcon
-                                        icon={faToolbox}
-                                    />
-                                </Nav.Link>
-                            </Nav.Item>
-                        </OverlayTrigger>
+                        <Nav.Item style={navItemStyle}>
+                            <Nav.Link
+                                eventKey="widgets"
+                                style={navLinkStyle}
+                                aria-label="Widgets"
+                                data-tooltip="Widgets"
+                            >
+                                <FontAwesomeIcon
+                                    icon={faToolbox}
+                                />
+                            </Nav.Link>
+                        </Nav.Item>
                     </Col>
                 ) : null}
 
                 {grammar ? (
                     <Col>
-                        <OverlayTrigger
-                            placement="right"
-                            delay={overlayTriggerProps}
-                            overlay={<Tooltip>Grammar</Tooltip>}
-                        >
-                            <Nav.Item style={navItemStyle}>
-                                <Nav.Link
-                                    eventKey="grammar"
-                                    style={navLinkStyle}
-                                >
-                                    <FontAwesomeIcon
-                                        icon={faSpellCheck}
-                                    />
-                                </Nav.Link>
-                            </Nav.Item>
-                        </OverlayTrigger>
+                        <Nav.Item style={navItemStyle}>
+                            <Nav.Link
+                                eventKey="grammar"
+                                style={navLinkStyle}
+                                aria-label="Grammar"
+                                data-tooltip="Grammar"
+                            >
+                                <FontAwesomeIcon
+                                    icon={faSpellCheck}
+                                />
+                            </Nav.Link>
+                        </Nav.Item>
                     </Col>
                 ) : null}
 
                 {provenance == undefined || provenance ? (
                     <Col>
-                        <OverlayTrigger
-                            placement="right"
-                            delay={overlayTriggerProps}
-                            overlay={<Tooltip>Provenance</Tooltip>}
-                        >
-                            <Nav.Item style={navItemStyle}>
-                                <Nav.Link
-                                    eventKey="provenance"
-                                    style={navLinkStyle}
-                                >
-                                    <FontAwesomeIcon
-                                        icon={faRotateLeft}
-                                    />
-                                </Nav.Link>
-                            </Nav.Item>
-                        </OverlayTrigger>
+                        <Nav.Item style={navItemStyle}>
+                            <Nav.Link
+                                eventKey="provenance"
+                                style={navLinkStyle}
+                                aria-label="Provenance"
+                                data-tooltip="Provenance"
+                            >
+                                <FontAwesomeIcon
+                                    icon={faRotateLeft}
+                                />
+                            </Nav.Link>
+                        </Nav.Item>
                     </Col>
                 ) : null}
 
                 {(outputId != undefined || contentComponent != undefined) && !split ? (
                     <Col>
-                        <OverlayTrigger
-                            placement="right"
-                            delay={overlayTriggerProps}
-                            overlay={<Tooltip>Output</Tooltip>}
-                        >
-                            <Nav.Item style={navItemStyle}>
-                                <Nav.Link
-                                    eventKey="output"
-                                    style={navLinkStyle}
-                                >
-                                    <FontAwesomeIcon
-                                        icon={faRightFromBracket}
-                                    />
-                                </Nav.Link>
-                            </Nav.Item>
-                        </OverlayTrigger>
+                        <Nav.Item style={navItemStyle}>
+                            <Nav.Link
+                                eventKey="output"
+                                style={navLinkStyle}
+                                aria-label="Output"
+                                data-tooltip="Output"
+                            >
+                                <FontAwesomeIcon
+                                    icon={faRightFromBracket}
+                                />
+                            </Nav.Link>
+                        </Nav.Item>
                     </Col>
                 ) : null}
             </Row>
@@ -572,6 +627,7 @@ function NodeEditor({
                                             stripInputs={inputs}
                                             onLoadColumns={loadColumns}
                                             widgetLanguage={widgetLanguage}
+                                            chipPreviews={chipPreviews}
                                             restoredCode={restoredCode}
                                         />
                                     </Tab.Pane>
@@ -632,6 +688,7 @@ function NodeEditor({
                                             onLoadColumns={loadColumns}
                                             widgetLanguage={widgetLanguage}
                                             referenceGrammar={referenceGrammar}
+                                            chipPreviews={chipPreviews}
                                             restoredCode={restoredCode}
                                         />
                                     </Tab.Pane>
@@ -697,10 +754,5 @@ function NodeEditor({
         </>
     );
 }
-
-const overlayTriggerProps = {
-    show: 120,
-    hide: 10,
-};
 
 export default NodeEditor;

@@ -58,7 +58,7 @@ class TestRegistry:
 
     def test_the_configuration_slot_frames_the_values_as_data(self):
         text = contracts.render_configuration({"keywordTypes": _HAZARDS})
-        assert text.startswith(contracts.CONFIGURATION_FRAME)
+        assert text.startswith(contracts.configuration_frame())
         assert "Keyword types:\n- Hazard: a natural hazard. Examples: \"flood\", \"heat wave\".\n- Asset: what a hazard can damage." in text
         assert contracts.render_configuration({}) is None
         assert contracts.render_configuration({"notASetting": 1}) is None
@@ -220,7 +220,7 @@ class TestAttachedRunOrder:
         def _fake_run(config, messages, **kwargs):
             from utk_curio.backend.app.agents.application.turns import titles as services_mod
 
-            if messages and messages[0].get("content") == services_mod.TITLE_PROMPT:
+            if messages and messages[0].get("content") == services_mod.title_prompt():
                 return "Title"
             calls.append(messages)
             return "Mapped."
@@ -234,8 +234,8 @@ class TestAttachedRunOrder:
         order = [
             system.index("HAZARD PREAMBLE."),
             system.index("HAZARD INSTRUCTION."),
-            system.index(contracts.CONFIGURATION_FRAME),
-            system.index(content.TAIL_INSTRUCTION),
+            system.index(contracts.configuration_frame()),
+            system.index(content.tail_instruction()),
             system.index("Available node templates"),
             system.index("You may also delegate"),
         ]

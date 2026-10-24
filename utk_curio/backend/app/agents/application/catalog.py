@@ -305,9 +305,9 @@ def _copy_published(user_key: str, coord: str, *, newer_than: str | None = None)
     """Copy a published definition into the user store, stamped ``global``
     trust: it came from the Global Catalog, so it runs from the adder's own
     copy after its publisher unpublishes it (#438), the way a shared dataset
-    or node package does, and it is never this account's to publish. A prompt
-    it names as Curio's (``curio:<file>``) stays a name, read from Curio's own
-    prompts, as in the publisher's copy.
+    or node package does, and it is never this account's to publish. A page
+    it names as Curio's (``curio:<path>``) stays a name, read from Curio's
+    agent text, as in the publisher's copy.
 
     With *newer_than*, the version of an earlier copy, the published one
     replaces that copy only when its version is newer: one ``<id>@<major>``

@@ -4,7 +4,7 @@ took other agents over and run their prompts as modes."""
 
 from __future__ import annotations
 
-from utk_curio.backend.app.agents.domain import builtin
+from utk_curio.backend.app.agents.domain import agent_text, builtin
 from utk_curio.backend.app.agents.domain.manifest import AgentManifest
 from utk_curio.backend.tests._support.prompt_files import prompt_folders, prompt_path
 
@@ -99,11 +99,10 @@ _DELEGABLE = {
     "agent.curio.dataflow-builder": {
         "content.quality.evaluate", "dataflow.explain",
         "dataset.discover", "dataset.fetch.author", "dataset.select",
-        "execution.followup.plan", "node.build", "node.content.generate",
+        "node.build", "node.content.generate",
         "node.kind.author", "package.build", "package.extend",
         "package.recommend", "research.notes.compose",
-        "research.verify", "workflow.coherence.validate", "workflow.plan.create",
-        "workflow.plan.refresh", "workflow.suggest",
+        "research.verify", "workflow.suggest",
     },
     "agent.curio.researcher": {"node.kind.author", "package.build", "package.extend"},
 }
@@ -283,7 +282,7 @@ class TestRoster:
         for m in builtin.list_builtin_manifests():
             for asset in m.prompts.values():
                 path = (
-                    builtin.PROMPT_SOURCE_DIR / asset.shared if asset.shared
+                    agent_text.page_file(asset.shared) if asset.shared
                     else builtin.agents_dir() / m.dir_name / asset.path
                 )
                 assert path.is_file(), _file(asset)
@@ -396,7 +395,7 @@ class TestPreambleAndInputs:
     def test_prompt_text_is_read_by_key(self):
         coord = "agent.curio.dataflow-planner@1"
         bind = builtin.read_prompt_text(coord, "workflow.keyword.bind")
-        assert bind == prompt_path("keywords_binding_prompt.md").read_text(encoding="utf-8")
+        assert bind == agent_text.render(prompt_path("keywords_binding_prompt.md"))
         # An undeclared key reads nothing, not the preamble.
         assert builtin.read_prompt_text(coord, "workflow.nope") is None
         assert builtin.read_prompt_text("agent.curio.researcher@1", "dataflow.explain") is None
@@ -406,7 +405,7 @@ class TestPreambleAndInputs:
         # loading exemplar every agent saw, and all three of its loaders read
         # bare filenames — the pattern #298's bras_ibge_data.csv reproduced.
         # The exemplars are now the worked examples (the "Used" dataflows of
-        # llm-prompts/examples.md), so the same rule holds for them.
+        # the base entry's examples.md), so the same rule holds for them.
         import json
         import re
 
@@ -425,7 +424,7 @@ class TestPreambleAndInputs:
         # Their loaders resolve their datasets by id.
         assert len(re.findall(r"curio_(?:load_data|data_path)\(", text)) >= 3
         # And every run that is shown them is told so.
-        assert "never a guessed filename" in examples.HEADING
+        assert "never a guessed filename" in examples.heading()
 
     def test_preamble_text_readable_for_all_builtins(self):
         from utk_curio.backend.app.agents.domain import builtin
@@ -519,7 +518,9 @@ class TestNodeBuilderComposite:
             "node.read",  # the content mode's own read, kept by the merge
             "node.create",  # a node type is made only by a package draft
             "node.runtime.read",  # dev/67-2: diagnose before regenerating
+            "node.history.read",  # what changed: the node's runs and edits, as its drawer lists them
             "node.content.write",  # dev/67-6: modify-existing, reviewed
+            "node.settings.write",  # an existing node's settings and widget values, reviewed
             "catalog.search",  # dev/114 (DEC-072): the only source of a real local path
             "models.search",  # the Model Catalog: a model this account can run
             "packages.catalog", "packages.resolve",  # dev/84: what exists, what it needs
@@ -567,14 +568,14 @@ class TestNodeBuilderComposite:
         # a composite declares no delegatesTo and a report-only runtime. Each
         # agent runs exactly its shipped file: the manifest the roster serves
         # is that file parsed, and every prompt a run reads is the file its
-        # folder holds, or the preamble Curio shares (``curio:``).
+        # folder holds, rendered, or the page Curio shares (``curio:``).
         import json
         from pathlib import Path
 
         from utk_curio.backend.app.agents.domain.manifest import parse_agent_manifest
 
         agents = Path(__file__).resolve().parents[4] / "agents"
-        shared = Path(__file__).resolve().parents[3] / "llm-prompts"
+        shared = agents / "agent.curio.builtin@1"
 
         def shipped(coord: str) -> dict:
             return json.loads((agents / coord / "manifest.json").read_text(encoding="utf-8"))
@@ -602,7 +603,7 @@ class TestNodeBuilderComposite:
                     shared / asset.path.removeprefix("curio:") if asset.path.startswith("curio:")
                     else agents / m.dir_name / asset.path
                 )
-                assert builtin.read_prompt_text(m.dir_name, key) == file.read_text(encoding="utf-8"), (
+                assert builtin.read_prompt_text(m.dir_name, key) == agent_text.render(file), (
                     m.agent_id, key,
                 )
             if m.agent_id in composites:
@@ -628,7 +629,7 @@ class TestNodeBuilderComposite:
         assert 'curio_data_path("<id>")' in text
         assert '"dataset.discover"' in text
         assert "do not propose in that same turn" in text
-        assert '"synthetic": true' in text
+        assert "synthetic data ONLY when the user explicitly asked for made-up data in their own words" in text
         assert "Never invent a filename" in text
         assert "ask the user for a path or URL instead of proposing" in text
 
@@ -685,6 +686,13 @@ class TestCatalogReadGrants:
     def test_the_dataflow_builder_reads_the_worked_examples(self):
         assert self._holders("examples.read") == {"agent.curio.dataflow-builder"}
         assert "examples.read" in self._granted("agent.curio.dataflow-builder")
+
+    def test_the_dataflow_builder_searches_the_scenario_catalog(self):
+        # A scenario of another project is one the user drags in: the Builder
+        # names it and its project. A helper runs only as a delegated mode,
+        # which has no tools, so no helper holds it.
+        assert self._holders("scenarios.search") == {"agent.curio.dataflow-builder"}
+        assert "scenarios.search" in self._granted("agent.curio.dataflow-builder")
 
     def test_only_the_node_builder_reads_the_node_catalog(self):
         # It recommends and installs packages in its chat.
@@ -802,7 +810,8 @@ class TestDataflowBuilderComposite:
             # dev/73: chat-path content updates; dev/84 Recommend packages,
             # dev/89 package-scale steps: its modes.
             "agent.curio.node-builder",
-            "agent.curio.dataflow-planner", "agent.curio.dataflow-reader",
+            # Not the Dataflow Planner: what its modes answer changes no node.
+            "agent.curio.dataflow-reader",
             "agent.curio.generated-content-evaluator",  # dev/86: advisory semantic check
             "agent.curio.researcher",  # dev/95 (Follow-up D) reviewed notes, dev/67-4 verification
         ]
@@ -813,10 +822,15 @@ class TestDataflowBuilderComposite:
         # note proposals mint on (grant-gated at the parent).
         # #917: package.draft.apply is the one a package the Node Builder's
         # writing mode drafts for it mints on, grant-gated the same way.
+        # node.settings.write changes a setting of a node already on the
+        # canvas, which a plan only places.
         assert [t.id for t in m.tools] == [
             "dataflow.read", "dataflow.plan.write", "node.runtime.read",
+            "node.history.read",  # what changed in a node: its runs and edits
             "node.create",
+            "node.settings.write",
             "examples.read",  # any worked example, beside the ones a run is given
+            "scenarios.search",  # a scenario of another project, for the user to drag in
             "package.draft.apply",
         ]
         assert m.provenance.trust == "built-in"
@@ -1082,7 +1096,20 @@ class TestResearcher:
         # fallback is retired (plan a-few-things-snuggly-goblet, step 6).
         # 2026-10-22: two views link directly, and a Data Pool goes between
         # them only in its four cases (owner, 10-21; PR #1058).
-        "94f195692c47d9f3e881d11a3c8dfa08730e60b46a3f55c72ba3c5149607d619"
+        # 2026-10-22: a planned Spatial Join says how it joins in
+        # "spatialJoin"; and the text that promised what the code refuses
+        # goes: a plan carrying code, a Topology verdict ending every applied
+        # result, and workflow.plan.create decomposing a task (plan step 11).
+        # 2026-10-23: every applied plan ends with the Topology verdict again,
+        # since one applied row by row or by Connect all now does; and the
+        # Dataflow Planner leaves the Builder's delegations, so its coherence
+        # check is no longer offered (proposal paths, step 2). A pool starts
+        # at OVERWRITE and the plan sets its modes in "dataPool"; a Simple
+        # View names its image column in "simpleVis" (step 3).
+        # 2026-10-23: a setting of an existing node changes through
+        # node.settings.write, never a new node, a plan or rewritten content
+        # (step 4).
+        "cb0317f7593ad1540d9b22e8181b71f696813bef3c00beed863eca5179fc4d6b"
     )
 
     def test_manifest_surface(self):
@@ -1148,11 +1175,11 @@ class TestResearcher:
         # dev/90 Follow-up D DELIVERED by dev/95: the delegatesTo growth this
         # pin used to forbid is now the deliberate change (the dev/48 D4
         # precedent: a byte-pin updates WITH its memo, never incidentally).
-        # The prompt sha updates only with the dev/95 prompt edit itself.
+        # The prompt sha updates only with the dev/95 prompt edit itself. It
+        # covers the text the agent reads: its source, rendered.
         import hashlib
 
-        prompt = (builtin.agents_dir() / "agent.curio.dataflow-builder@1" / "prompts"
-                  / "orchestration_instruction.md").read_bytes()
+        prompt = builtin.read_prompt_text("agent.curio.dataflow-builder@1", "instruction").encode("utf-8")
         assert hashlib.sha256(prompt).hexdigest() == self.DATAFLOW_BUILDER_PROMPT_SHA256
         dfb = builtin.get_builtin_manifest("agent.curio.dataflow-builder@1")
         assert "agent.curio.researcher" in dfb.delegates_to  # dev/95 Follow-up D

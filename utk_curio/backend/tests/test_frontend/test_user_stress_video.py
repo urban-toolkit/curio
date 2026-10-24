@@ -465,6 +465,15 @@ def node_output_or_empty(page, node_id: str, *, timeout: float = 8000) -> str:
     return box.text_content() or ""
 
 
+# A node's warnings, as its data holds them: the warning icon by its header
+# lists them only in its tooltip.
+_NODE_WARNINGS_JS = r"""(nodeId) => {
+    const node = window.__curio_reactFlow && window.__curio_reactFlow.getNode(nodeId);
+    const warnings = node && node.data ? node.data.warnings : null;
+    return Array.isArray(warnings) ? warnings.map(String) : [];
+}"""
+
+
 def node_failure_detail(page, node_id: str) -> str:
     """Whatever the app says about a failed node, from wherever it says it.
 
@@ -475,7 +484,8 @@ def node_failure_detail(page, node_id: str) -> str:
       puts ``error.message`` (``showToast(error.message, 'error')``) - a Vega node
       has no output box at all, so the toast is the *only* place its reason
       appears;
-    * ``data.warnings``, rendered as a list next to the node header.
+    * ``data.warnings``, which the warning icon by the node header lists in its
+      tooltip, so they are read from the node's data.
 
     Returns ``""`` when none of them said anything, which is itself worth
     reporting: a node in an error state with no message anywhere.
@@ -489,9 +499,9 @@ def node_failure_detail(page, node_id: str) -> str:
         text = " ".join((toasts.nth(i).text_content() or "").split())
         if text:
             parts.append(f"[toast] {text}")
-    warnings = node_locator(page, node_id).locator("li p")
-    for i in range(min(warnings.count(), 5)):
-        text = " ".join((warnings.nth(i).text_content() or "").split())
+    warnings = page.evaluate(_NODE_WARNINGS_JS, node_id) or []
+    for warning in warnings[:5]:
+        text = " ".join(str(warning).split())
         if text:
             parts.append(f"[warning] {text}")
     return "\n".join(parts)

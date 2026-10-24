@@ -103,7 +103,7 @@ export function DiscoveryFilesPanel({ dirName, resourceId, onAddFiles }: Discove
                 <td>
                   {/* A block inside the cell: a table cell ignores max-width, so
                       a long path would widen the table past the panel. */}
-                  <span className={styles.path} title={file.relpath}>
+                  <span className={styles.path} data-tooltip={file.relpath}>
                     {file.relpath}
                   </span>
                 </td>

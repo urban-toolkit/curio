@@ -84,7 +84,7 @@ def _script(monkeypatch, replies):
     def _fake_run(config, messages, **kwargs):
         from utk_curio.backend.app.agents.application.turns import titles as services_mod
 
-        if messages and messages[0].get("content") == services_mod.TITLE_PROMPT:
+        if messages and messages[0].get("content") == services_mod.title_prompt():
             return "Title"
         calls.append(messages)
         entry = replies[min(len(calls) - 1, len(replies) - 1)]
@@ -438,7 +438,7 @@ class TestExternalDiscovery:
             extra_replies=[_create_tail(f'import requests\nr = requests.get("{NOAA}", timeout=10)\nreturn r.json()')],
         )
         assert _proposals(body) == []
-        assert "shown to the user for review — do not propose a node in this turn" in calls[3][-1]["content"]
+        assert "shown to the user for review: do not propose a node in this turn" in calls[3][-1]["content"]
 
     def test_next_turn_create_with_the_verified_url_is_grounded_without_a_new_probe(self, client, user_and_token, tmp_curio, project, monkeypatch):
         user, token = user_and_token
@@ -501,6 +501,127 @@ class TestExternalDiscovery:
         [proposal] = _proposals(_run(client, token, project, att))
         assert proposal["source"]["refs"][0]["requirement"] == "credential-gated"
         assert "credential-gated" in proposal["source"]["label"]
+
+
+class TestTheRuntimesListingGroundsTheCard:
+    """A delegated Dataset Finder's catalog rows are checked against the Data
+    Catalog the runtime lists, never against rows the parent model wrote into
+    its request, and against the whole catalog: the child is shown its first
+    rows, told how many it was not shown, and a dataset past them is still one
+    the catalog holds. A selection reads the whole listing too."""
+
+    @staticmethod
+    def _seed(user, *names):
+        return [
+            routes_turns.TestDatasetFinderTools()._seed_dataset(user, filename=f"{name}.csv")
+            for name in names
+        ]
+
+    @staticmethod
+    def _listed(client, user, project):
+        from utk_curio.backend.app.datasets.application.catalog_service import DatasetCatalogService
+        from utk_curio.backend.tests._support.agent_routes import db_user
+
+        with client.application.app_context():
+            return DatasetCatalogService(db_user(client, user)).list_catalog(dataflow_id=project)["items"]
+
+    def test_the_parents_rows_neither_reach_the_child_nor_ground_its_card(
+        self, client, user_and_token, tmp_curio, project, monkeypatch
+    ):
+        user, token = user_and_token
+        (dataset_id,) = self._seed(user, "heat")
+        _install(client, token, project, NB, DF)
+        att = _attach(client, token, project, NB)
+        _fake_probe(monkeypatch, {})
+        ghost = "imported.ghost@1"
+        child = _candidates_reply(external=[], catalog=[
+            {"name": "Ghost heat", "sourceType": "catalog", "datasetId": ghost, "installed": True},
+            {"name": "Heat", "sourceType": "catalog", "datasetId": dataset_id},
+        ])
+        calls = _script(monkeypatch, [
+            _delegate_tail("dataset.discover", {
+                "intent": "tract-level heat data",
+                "catalog": {"note": "The Data Catalog", "rows": [
+                    {"id": ghost, "name": "Ghost heat", "installed": True},
+                ]},
+            }),
+            child,
+            "Please select the source you want and confirm.",
+        ])
+        body = _run(client, token, project, att, "build a node that loads tract-level heat data")
+        part = next(p for p in body["content"] if p["type"] == "datasetCandidates")
+        assert [(r["datasetId"], r["installed"]) for r in part["lanes"]["catalog"]] == [(dataset_id, False)]
+        child_frame = calls[1][-1]["content"]
+        assert dataset_id in child_frame and ghost not in child_frame
+
+    def test_a_dataset_past_the_rows_the_child_was_shown_stays_on_the_card(
+        self, client, user_and_token, tmp_curio, project, monkeypatch
+    ):
+        from utk_curio.backend.app.agents.application import tools
+
+        user, token = user_and_token
+        seeded = self._seed(user, "older", "newer")
+        monkeypatch.setattr(tools, "_CATALOG_SEARCH_MAX_ROWS", 1)
+        _install(client, token, project, NB, DF)
+        att = _attach(client, token, project, NB)
+        _fake_probe(monkeypatch, {NOAA: {"status": "verified", "httpStatus": 200, "checkedAt": "now"}})
+        hidden: list = []
+
+        def child(calls):
+            frame = calls[-1][-1]["content"]
+            hidden.append(next(i for i in seeded if i not in frame))
+            return _candidates_reply(
+                external=[{"name": "NOAA Climate Data API", "sourceType": "api", "url": NOAA}],
+                catalog=[{"name": "Heat", "sourceType": "catalog", "datasetId": hidden[0]}],
+            )
+
+        _script(monkeypatch, [
+            _delegate_tail("dataset.discover", {"intent": "tract-level heat data"}),
+            child,
+            "Please select the source you want and confirm.",
+        ])
+        body = _run(client, token, project, att, "build a node that loads tract-level heat data")
+        part = next(p for p in body["content"] if p["type"] == "datasetCandidates")
+        assert [r["datasetId"] for r in part["lanes"]["catalog"]] == hidden
+
+    def test_the_child_is_told_how_many_catalog_rows_it_was_not_shown(
+        self, client, user_and_token, tmp_curio, project, monkeypatch
+    ):
+        from utk_curio.backend.app.agents.application import tools
+
+        user, token = user_and_token
+        self._seed(user, "older", "newer")
+        monkeypatch.setattr(tools, "_CATALOG_SEARCH_MAX_ROWS", 1)
+        _install(client, token, project, NB, DF)
+        att = _attach(client, token, project, NB)
+        calls = _script(monkeypatch, [
+            _delegate_tail("dataset.discover", {"intent": "tract-level heat data"}),
+            "I found nothing.",
+            "Nothing was found.",
+        ])
+        _run(client, token, project, att, "build a node that loads tract-level heat data")
+        framed = json.loads(calls[1][-1]["content"].split("\n", 1)[1])
+        assert len(framed["catalog"]["rows"]) == 1
+        assert framed["catalog"].get("rowsElided") == len(self._listed(client, user, project)) - 1
+
+    def test_a_dataset_past_the_first_rows_can_be_confirmed(
+        self, client, user_and_token, tmp_curio, project, monkeypatch
+    ):
+        from utk_curio.backend.app.agents.application import tools
+
+        user, token = user_and_token
+        seeded = self._seed(user, "older", "newer")
+        monkeypatch.setattr(tools, "_CATALOG_SEARCH_MAX_ROWS", 1)
+        first = self._listed(client, user, project)[0]["id"]
+        hidden = next(i for i in seeded if i != first)
+        _install(client, token, project, DF)
+        finder = _attach(client, token, project, DF, target={"kind": "node", "targetId": "n1"})
+        r = client.post(
+            f"/api/agents/projects/{project}/attachments/{finder}/dataset-selection",
+            json={"picks": [{"lane": "catalog", "key": hidden}]}, headers=_auth(token),
+        )
+        assert r.status_code == 200, r.get_json()
+        assert [pick["datasetId"] for pick in r.get_json()["picks"]] == [hidden]
 
 
 class TestUnavailableSource:
@@ -629,7 +750,7 @@ class TestSolveSourceGrounding:
         # loader (pending, reason named) instead of running against an empty
         # upstream — and NOTHING of the fabricated code reached the sandbox.
         assert body["results"][stats]["status"] == "pending"
-        assert body["results"][stats]["reason"].startswith("waiting: upstream node")
+        assert body["results"][stats]["reason"].startswith("upstream node")
         assert exec_payloads == []
         # dev/115: every round was refused by the gate (kind ungrounded-source)
         # and NEVER reached the sandbox; the error names the literal + remedy.
@@ -770,6 +891,53 @@ class TestContentReviewMintInheritsTheGate:
         assert entry["status"] == "ok"  # the child ran; the mint refused honestly
         # The child received the grounding inputs for a data-loading node.
         assert '"sourceGrounding"' in calls[1][-1]["content"]
+
+
+class TestContentForANewNode:
+    """A Node Builder attached to a node that delegates the content of a new
+    node names its nodeType: the content mode is grounded as that template,
+    never as the node the agent is attached to, whose context it is not given."""
+
+    def _delegate_for_a_new_node(self, client, token, pid, monkeypatch, node_type):
+        _install(client, token, pid, NB)
+        att = _attach(client, token, pid, NB, target={"kind": "node", "targetId": "n1"})
+        calls = _script(monkeypatch, [
+            _delegate_tail("node.content.generate", {"intent": "a new node below n1", "nodeType": node_type}),
+            "return input_0.mean()",
+            "Here is the content for the new node.",
+        ])
+        body = _run(client, token, pid, att, "add a node below this one")
+        return body, calls[1][-1]["content"]
+
+    def test_a_loaders_builder_writing_an_analysis_is_not_handed_the_loaders_sources(
+        self, client, user_and_token, tmp_curio, project, monkeypatch
+    ):
+        _, token = user_and_token
+        body, task = self._delegate_for_a_new_node(client, token, project, monkeypatch, CA)
+        assert task.startswith("[delegated task")
+        assert '"sourceGrounding"' not in task
+        assert '"nodeContext"' not in task
+        assert _proposals(body) == []  # the loader's own content is offered no change
+
+    def test_an_analysis_builder_writing_a_loader_is_handed_its_sources(
+        self, client, user_and_token, tmp_curio, monkeypatch
+    ):
+        user, token = user_and_token
+        from utk_curio.backend.app.projects.services import _user_dir_key
+
+        routes_proposals.TestNodeCreate()._write_builtin_package(_user_dir_key(user), templates=TEMPLATES)
+        resp = client.post("/api/projects", json={
+            "name": "p",
+            "spec": {"dataflow": {"nodes": [
+                {"id": "n1", "type": CA, "goal": "average the readings", "content": "return input_0.mean()",
+                 "x": 10, "y": 20},
+            ], "edges": [], "packages": []}},
+            "outputs": [],
+        }, headers=_auth(token))
+        assert resp.status_code == 201, resp.get_data(as_text=True)
+        _, task = self._delegate_for_a_new_node(client, token, resp.get_json()["id"], monkeypatch, DL)
+        assert '"sourceGrounding"' in task
+        assert '"nodeContext"' not in task
 
 
 class TestCandidatesMint:

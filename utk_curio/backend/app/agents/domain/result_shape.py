@@ -36,6 +36,7 @@ from utk_curio.backend.app.agents.domain.contracts import (
     EMPTY_RENDER_KIND,
     is_document_at_fault,
 )
+from utk_curio.backend.app.agents.domain import agent_text
 
 #: The summary kinds emptiness is defined for. A ``VALUE``, a ``dict``, a raster
 #: or a plot has no row count, and inventing one would be a guess.
@@ -185,24 +186,17 @@ def null_refusal_text(
     """What the model is told about rows that hold nothing (dev/137)."""
     count = row_count(summary)
     named = ", ".join(str(c) for c in columns[:_MAX_COLUMNS_NAMED])
-    head = (
-        f"the code ran and produced {count if count is not None else 'some'} "
-        f"row{'' if count == 1 else 's'}, but every sampled value of {named} is "
-        "NULL — the result has rows and no data in them"
+    head = agent_text.message(
+        "result-shape.null", count=count if count is not None else 'some', s='' if count == 1 else 's', named=named,
     )
     rows = [row for row in (upstream_outputs or []) if isinstance(row, dict)]
     if rows:
         described = "; ".join(
             _slot_line(index, row) for index, row in enumerate(rows[:_MAX_SLOTS])
         )
-        head += f". Its inputs were: {described}"
+        head += ". " + agent_text.message("result-shape.null-inputs", described=described)
     head += (
-        ". A join that matched nothing with how=\"left\" (or a fill) does exactly "
-        "this: compare the key columns' VALUES, not their names, and join on "
-        "columns whose values are the same kind of thing. Never keep rows of "
-        "nulls, fabricate values, or let a join that matched nothing stand so "
-        "the dataflow can proceed — if these inputs cannot be joined, say so in "
-        "one line and return no code."
+        ". " + agent_text.message("result-shape.null-advice")
     )
     return head[:_DETAIL_CHARS]
 
@@ -261,28 +255,25 @@ def refusal_text(
     """What the model is told, and what a human reads in the trail (dev/133).
 
     Three things the text must do: state the cause CLASS (a join or a filter
-    matched nothing), show the inputs' values (the column names looked joinable
-    — the values never did), and offer the honest alternative, which the loop
-    already treats as a terminal decline rather than something to retry
-    forever.
+    matched nothing), show the inputs' values (the column names looked joinable,
+    the values never did), and offer the honest alternative, a one-line
+    answer, which the loop reads in place of code on every node whose content
+    is code (``verified_loop._one_line_answer``).
     """
     kind = str((summary or {}).get("kind") or "result")
-    head = (
-        "the code ran but produced an EMPTY result — 0 rows"
-        + (f" out of a {output_data_type}" if output_data_type else f" ({kind})")
+    head = agent_text.message(
+        "result-shape.empty", of=" " + agent_text.message(
+            "result-shape.empty-out-of", output_data_type=output_data_type,
+        ) if output_data_type else f" ({kind})",
     )
     rows = [row for row in (upstream_outputs or []) if isinstance(row, dict)]
     if rows:
         described = "; ".join(
             _slot_line(index, row) for index, row in enumerate(rows[:_MAX_SLOTS])
         )
-        head += f". Its inputs were NOT empty: {described}"
+        head += ". " + agent_text.message("result-shape.empty-inputs", described=described)
     head += (
-        ". A join, merge or filter matched nothing: compare the key columns' "
-        "VALUES, not their names — two columns can both look like an id and "
-        "describe different things (a community-area number is not a census "
-        "tract id). Either join on columns whose values are the same kind of "
-        "thing, or say plainly that these inputs cannot be joined."
+        ". " + agent_text.message("result-shape.empty-advice")
     )
     return head[:_DETAIL_CHARS]
 
@@ -326,16 +317,15 @@ def empty_render_refusal(
     node's inputs actually contain, so the correction is written against the
     data rather than against the goal.
     """
-    head = "the document is valid and its last render drew NOTHING: " + str(message or "").strip()
+    head = agent_text.message("result-shape.empty-render", message=str(message or "").strip())
     rows = [row for row in (upstream_outputs or []) if isinstance(row, dict)]
     if rows and is_document_at_fault(cause):
         described = "; ".join(
             _slot_line(index, row) for index, row in enumerate(rows[:_MAX_SLOTS])
         )
-        head += f". This node's input holds: {described}"
+        head += ". " + agent_text.message("result-shape.empty-render-inputs", described=described)
         head += (
-            ". Encode fields that exist and hold values, and remove any filter "
-            "or scale domain that excludes every row; return the whole document."
+            ". " + agent_text.message("result-shape.empty-render-advice")
         )
     return head[:_DETAIL_CHARS]
 
@@ -375,30 +365,24 @@ def absent_output_refusal(
     upstream_outputs: list | None = None,
 ) -> str:
     """What the model is told when its code produced NO output (dev/138)."""
-    head = (
-        "the code ran and returned NO output"
-        + (f" (the sandbox typed it {output_data_type!r})" if output_data_type else "")
-        + " — a node must return the data it produces, and nothing downstream "
-        "can read an absent output"
+    head = agent_text.message(
+        "result-shape.absent", typed=" " + agent_text.message(
+            "result-shape.absent-typed", output_type=repr(output_data_type),
+        ) if output_data_type else "",
     )
     conclusion = declared_conclusion(code)
     if conclusion:
         head += (
-            f". Your code says: {conclusion!r} — if that is your conclusion, it "
-            "is the right one to state: return that sentence as your whole "
-            "answer, with no code at all, and it is recorded as this node's "
-            "honest outcome"
+            ". " + agent_text.message("result-shape.absent-conclusion", conclusion=repr(conclusion))
         )
     else:
         head += (
-            ". If the data cannot be produced from these inputs, say so in one "
-            "line with no code, and it is recorded as this node's honest "
-            "outcome"
+            ". " + agent_text.message("result-shape.absent-decline")
         )
     rows = [row for row in (upstream_outputs or []) if isinstance(row, dict)]
     if rows:
         described = "; ".join(
             _slot_line(index, row) for index, row in enumerate(rows[:_MAX_SLOTS])
         )
-        head += f". What you were given: {described}"
+        head += ". " + agent_text.message("result-shape.absent-given", described=described)
     return head[:_DETAIL_CHARS]

@@ -39,7 +39,7 @@ jest.mock("reactflow", () => ({
   // Render a stand-in carrying the same data attributes the real Handle puts
   // in the DOM, which is all React Flow measures ports from, with the side and
   // the place it is given.
-  Handle: ({ id, type, position, style, title, children }: any) => (
+  Handle: ({ id, type, position, style, "data-tooltip": tooltip, children }: any) => (
     <div
       className="react-flow__handle"
       data-handleid={id}
@@ -47,7 +47,7 @@ jest.mock("reactflow", () => ({
       data-position={position}
       data-top={style?.top === undefined ? "" : String(style.top)}
       data-bottom={style?.bottom === undefined ? "" : String(style.bottom)}
-      title={title}
+      data-tooltip={tooltip}
     >
       {children}
     </div>
@@ -300,7 +300,7 @@ describe("UnresolvedNode for a type its installed package no longer has (#1048)"
       `This dataflow asks for ${MERGE_FLOW}, which Builtin no longer has. ` +
         "It may come from an older version of Builtin.",
     );
-    expect(card).toHaveAttribute("title", `No installed package provides ${MERGE_FLOW}`);
+    expect(card).toHaveAttribute("data-tooltip", `No installed package provides ${MERGE_FLOW}`);
     expect(screen.queryByRole("button")).toBeNull();
     expect(screen.queryByText("Missing node package")).toBeNull();
     expect(screen.queryByTestId("unresolved-node")).toBeNull();
@@ -418,7 +418,7 @@ describe("UnresolvedNode in the notebook view", () => {
       <UnresolvedNode nodeId="n1" nodeType={SEGMENTATION} registryReady />,
     );
     expect(container.querySelector('[data-handleid="in"]')).toHaveTextContent("0");
-    expect(container.querySelector('[data-handleid="in"]')).toHaveAttribute("title", "input_0 · Load roads");
-    expect(container.querySelector('[data-handleid="out"]')).toHaveAttribute("title", "output");
+    expect(container.querySelector('[data-handleid="in"]')).toHaveAttribute("data-tooltip", "input_0 · Load roads");
+    expect(container.querySelector('[data-handleid="out"]')).toHaveAttribute("data-tooltip", "output");
   });
 });

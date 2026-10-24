@@ -125,7 +125,7 @@ describe("AgentChatPanel", () => {
     renderPanel();
     expect(screen.queryByText(/session s1234567/)).toBeNull();
     expect(screen.getByText(/attached to canvas/i)).toHaveAttribute(
-      "title",
+      "data-tooltip",
       expect.stringContaining("session s1234567890") as unknown as string,
     );
   });
@@ -1407,8 +1407,8 @@ describe("AgentChatPanel — dev/116 the per-node Solve row's remedy", () => {
   });
 
   it("a failed outcome names what stopped the loop, in the words the server uses", async () => {
-    const { STOPPED_BY_PHRASES } = require("../../generated/solveStopReasons") as {
-      STOPPED_BY_PHRASES: Readonly<Record<string, string>>;
+    const { phrases: STOPPED_BY_PHRASES } = require("../../contracts/solveStopReasons.json") as {
+      phrases: Readonly<Record<string, string>>;
     };
     const onSolveNode = jest.fn().mockResolvedValue({ verdict: "fail", rounds: 2, stoppedBy: "budget" });
     renderPanel({
@@ -1420,6 +1420,23 @@ describe("AgentChatPanel — dev/116 the per-node Solve row's remedy", () => {
     fireEvent.click(within(row).getByRole("button", { name: "Solve this node" }));
     expect(await within(row).findByRole("status")).toHaveTextContent(
       `Not fixed after 2 attempts (${STOPPED_BY_PHRASES.budget}): every attempt is below`,
+    );
+  });
+
+  it("says one attempt in the singular", async () => {
+    const { phrases: STOPPED_BY_PHRASES } = require("../../contracts/solveStopReasons.json") as {
+      phrases: Readonly<Record<string, string>>;
+    };
+    const onSolveNode = jest.fn().mockResolvedValue({ verdict: "fail", rounds: 1, stoppedBy: "budget" });
+    renderPanel({
+      attachment: { ...attachment, coord: "agent.curio.node-builder@1", name: "Node Builder", target: { kind: "node" as const, targetId: "n1" } },
+      targetName: "Data Loading",
+      onSolveNode,
+    });
+    const row = screen.getByRole("group", { name: "Solve this node" });
+    fireEvent.click(within(row).getByRole("button", { name: "Solve this node" }));
+    expect(await within(row).findByRole("status")).toHaveTextContent(
+      `Not fixed after 1 attempt (${STOPPED_BY_PHRASES.budget}): every attempt is below`,
     );
   });
 
@@ -1747,7 +1764,7 @@ describe("AgentChatPanel names the agent a label opens or hands work to", () => 
     const open = await within(row).findByRole("button", { name: "Open My Finder for this node" });
     expect(open).toHaveTextContent(/^Open My Finder$/);
     expect(open).toHaveAttribute(
-      "title",
+      "data-tooltip",
       "Opens this node's My Finder chat, where the candidates await your selection. Confirm one, then Solve again.",
     );
     expect(within(row).getByRole("status")).toHaveTextContent(

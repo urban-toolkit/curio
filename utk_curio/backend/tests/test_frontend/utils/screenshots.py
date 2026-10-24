@@ -123,10 +123,11 @@ REMINT_FORCE: tuple = ()
 
 
 #: The GPU models CI's test-gpu job draws on: the arcade runners
-#: (arcade-gpu-01..04) share an H100, and utk-gpu has an RTX PRO 6000. A frame
-#: the two draw differently (example 07's plot close-up) keeps a baseline per
-#: GPU kind, ``<name>.<kind>.png``, beside its default one.
-GPU_KINDS = ("arcade-gpu", "utk-gpu")
+#: (arcade-gpu-01..04) share an H100, utk-gpu has an RTX PRO 6000, and
+#: utk-desktop-01 an RTX 3070. A frame they draw differently (example 07's plot
+#: close-up) keeps a baseline per GPU kind, ``<name>.<kind>.png``, beside its
+#: default one.
+GPU_KINDS = ("arcade-gpu", "utk-gpu", "utk-desktop")
 
 #: Names the run's GPU kind, one of GPU_KINDS. CI's test-gpu job sets it from
 #: its runner's name. A run without it (a local run, a CPU runner) compares
@@ -134,7 +135,7 @@ GPU_KINDS = ("arcade-gpu", "utk-gpu")
 GPU_KIND_ENV = "CURIO_E2E_GPU_KIND"
 
 #: The ``gpu_pool`` dispatch input that sends test-gpu to each GPU kind.
-_GPU_POOL = {"arcade-gpu": "arcade", "utk-gpu": "utk"}
+_GPU_POOL = {"arcade-gpu": "arcade", "utk-gpu": "utk", "utk-desktop": "desktop"}
 
 #: Frames a re-mint writes as baselines of the run's GPU kind, named by parts
 #: of their baseline names (``--remint-gpu-kind <kind>:<part>,...``). Such a
@@ -292,20 +293,27 @@ _VOLATILE_BOXES_PAGE_JS = (
 _VOLATILE_BOXES_ELEMENT_JS = "(root, patterns) => {" + _VOLATILE_BOXES_BODY + "}"
 
 
-def _volatile_boxes(page, clip_selector: str | None) -> list:
-    """Pixel boxes of the volatile text in what is about to be captured.
+def _volatile_boxes(page, clip: str | dict | None) -> list:
+    """Pixel boxes of the volatile text in what is about to be captured: the
+    page (*clip* None), an element (a selector) or a box of the page
+    (``{x, y, width, height}``).
 
     Never raises: with no boxes a re-mint just counts every difference.
     """
     try:
-        if clip_selector is None:
+        if clip is None or isinstance(clip, dict):
             found = page.evaluate(_VOLATILE_BOXES_PAGE_JS, list(VOLATILE_TEXT))
         else:
             # A missing element is the capture's failure to report, not this one's.
-            found = page.locator(clip_selector).first.evaluate(
+            found = page.locator(clip).first.evaluate(
                 _VOLATILE_BOXES_ELEMENT_JS, list(VOLATILE_TEXT), timeout=5000)
         scale = float(found.get("scale") or 1)
-        return [tuple(v * scale for v in box) for box in found.get("boxes") or []]
+        # In a box of the page, from the box's top-left corner.
+        left, top = (clip["x"], clip["y"]) if isinstance(clip, dict) else (0, 0)
+        return [
+            ((x0 - left) * scale, (y0 - top) * scale, (x1 - left) * scale, (y1 - top) * scale)
+            for x0, y0, x1, y1 in found.get("boxes") or []
+        ]
     except Exception:  # noqa: BLE001 - best effort, like the webfont wait
         return []
 
@@ -362,7 +370,8 @@ MAX_DIFF_RATIO = 0.10
 
 
 def _remint(page, expected_path, capture, *, clip_selector, pixel_threshold,
-            max_diff_ratio, record_args, forced=False, target=None, kind="") -> str:
+            max_diff_ratio, record_args, forced=False, target=None, kind="",
+            clip_rect=None) -> str:
     """Write a fresh capture over its baseline when the screen changed.
 
     Changed means more than REMINT_MIN_RATIO of the pixels differ outside the
@@ -396,7 +405,7 @@ def _remint(page, expected_path, capture, *, clip_selector, pixel_threshold,
             os.remove(target)  # a new baseline of a GPU kind: there was none
 
     old_img = Image.open(BytesIO(old_bytes)).convert("RGB")
-    boxes = _volatile_boxes(page, clip_selector)
+    boxes = _volatile_boxes(page, clip_selector if clip_selector is not None else clip_rect)
     try:
         new_img = capture()
     except Exception as exc:
@@ -475,6 +484,8 @@ def save_workflow_test_screenshot(
     max_diff_ratio: float = MAX_DIFF_RATIO,
     fit_reactflow: bool = True,
     clip_selector: str | None = None,
+    clip_rect: dict | None = None,
+    keep_tooltip: bool = False,
     sweep_toasts: bool = False,
     allow_running: bool = False,
     closeup: bool = False,
@@ -517,7 +528,13 @@ def save_workflow_test_screenshot(
     Pass *clip_selector* when the subject of the baseline is one element rather
     than the page. The capture is then that element's box, so every pixel is
     about the thing under test and the diff budget is spent on it instead of on
-    surrounding chrome.
+    surrounding chrome. Pass *clip_rect* instead, a box of the page as
+    ``{x, y, width, height}`` in CSS pixels, when no one element holds the
+    subject: a tooltip and the control it names.
+
+    An open Curio tooltip is hidden while the capture is taken: the pointer a
+    test leaves resting on a control would otherwise put its tooltip in the
+    frame. Pass *keep_tooltip* when the tooltip is the subject.
 
     Pass *sweep_toasts* instead of calling :func:`dismiss_toasts` yourself
     beforehand - and never as well as, each sweep costs its own quiet window.
@@ -547,6 +564,8 @@ def save_workflow_test_screenshot(
             f"max_diff_ratio={max_diff_ratio} is above the {MAX_DIFF_RATIO:.0%} "
             "ceiling (MAX_DIFF_RATIO): a comparison may be tighter, never looser"
         )
+    if clip_selector is not None and clip_rect is not None:
+        raise ValueError("pass clip_selector or clip_rect, not both: a capture has one subject")
     from PIL import Image, ImageEnhance
 
     stem = os.path.splitext(os.path.basename(workflow_filepath))[0]
@@ -577,16 +596,27 @@ def save_workflow_test_screenshot(
 
     _wait_for_webfont(page)
 
+    # Options only when asked for: a plain capture is the call it always was.
+    options = {"keep_tooltip": True} if keep_tooltip else {}
+
     def _capture():
         if clip_selector is not None:
-            return _capture_element(page, clip_selector)
-        return _capture_full_page(page)
+            return _capture_element(page, clip_selector, **options)
+        if clip_rect is not None:
+            return _capture_full_page(page, clip=clip_rect, **options)
+        return _capture_full_page(page, **options)
 
+    if clip_selector is not None:
+        capture = f"element {clip_selector}"
+    elif clip_rect is not None:
+        capture = "box {x:g},{y:g} {width:g}x{height:g}".format(**clip_rect)
+    else:
+        capture = "full page"
     record_args = dict(
         baseline=expected_path,
         pixel_threshold=pixel_threshold,
         max_diff_ratio=max_diff_ratio,
-        capture=f"element {clip_selector}" if clip_selector is not None else "full page",
+        capture=capture,
         closeup=closeup,
         interaction=interaction,
     )
@@ -609,7 +639,7 @@ def save_workflow_test_screenshot(
         minted_now = True
     elif remint:
         return _remint(
-            page, expected_path, _capture, clip_selector=clip_selector,
+            page, expected_path, _capture, clip_selector=clip_selector, clip_rect=clip_rect,
             pixel_threshold=pixel_threshold, max_diff_ratio=max_diff_ratio,
             record_args=record_args,
             forced=any(p in n for p in REMINT_FORCE for n in names),

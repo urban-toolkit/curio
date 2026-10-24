@@ -1,6 +1,5 @@
 import { getToken } from "../utils/authApi";
 import { backendUrl } from "../utils/backendUrl";
-import type { EMPTY_RENDER_KIND } from "../generated/renderCauses";
 
 /**
  * Report a node's own execution outcome to the runtime journal (memo dev/135).
@@ -43,8 +42,10 @@ export interface NodeRuntimeReport {
    * ``empty-render`` is the one that matters: a render that failed is not the
    * same problem as a render that drew nothing, and the corrections differ —
    * so the harness must not have to match prose to tell them apart.
+   * `emptyRenderKind` in utils/renderOutcome writes it, from
+   * contracts/renderCauses.json.
    */
-  kind?: typeof EMPTY_RENDER_KIND | string;
+  kind?: string;
 }
 
 const MESSAGE_CHARS = 2000;

@@ -47,13 +47,14 @@ export const DiscoverySourceIcon: React.FC<DiscoverySourceIconProps> = ({
   const [decodeFailed, setDecodeFailed] = useState(false);
 
   if (!url || fetchFailed || decodeFailed) {
-    return <CatalogKindIcon kind="source" size={size} title={name} />;
+    // Decorative as the mark is: the source's name is always beside it.
+    return <CatalogKindIcon kind="source" size={size} title={name} decorative />;
   }
 
   return (
     <span
       className={[styles.frame, styles[`size_${size}`]].filter(Boolean).join(" ")}
-      title={name}
+      data-tooltip={name}
     >
       <img
         className={styles.image}

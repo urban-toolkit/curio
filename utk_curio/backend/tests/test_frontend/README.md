@@ -49,9 +49,9 @@ CI splits the suite between a self-hosted GPU runner, the only kind with
 hardware WebGPU, and a matrix of CPU runners
 ([`runner_split.py`](runner_split.py)). The run chooses
 each job's runner: GitHub-hosted `ubuntu-latest` while the organization's
-hosted runners have room and the self-hosted arcade runners (`[self-hosted,
-cpu]`) after that, and for the GPU
-share an arcade GPU runner (`arcade-gpu-01` to `arcade-gpu-04`) while one is free and `utk-gpu` otherwise. The GPU share is
+hosted runners have room, the self-hosted arcade runners (`[self-hosted,
+cpu]`) after that, and the `utk-desktop` runners when arcade is full too; for the GPU
+share an arcade GPU runner (`arcade-gpu-01` to `arcade-gpu-04`) while one is free, then `utk-gpu`, then `utk-desktop-01`. The GPU share is
 still called `utk`, after the first GPU runner. A test runs on `utk` when its
 browser runs WebGPU: a `test_workflows.py` case whose dataflow has an Autark node, a
 walkthrough scene whose example or script drives Autark or the GPU, and any
@@ -208,7 +208,7 @@ The DB stub is strictly additive - Strategy A still works against the same test 
 |---|---|
 | `api_json(url, token, *, method="GET", payload=None, timeout=10.0, raw=False)` | Authenticated JSON request, stdlib only. The escape hatch for asserting backend state from a browser test: a seeding or persistence problem then fails in about a second with the offending payload, instead of as a 15-second locator timeout that says nothing about which side broke. `raw=True` returns bytes, for binary endpoints such as a `.curio.zip`. |
 | `require_owner_view(page, *, timeout=4000)` | **Fails** when the dataflow opened read-only as the shared guest. A guest cannot see another user's installed packages, datasets or agents, so every catalog fetch comes back empty and the test asserts nothing. That is a setup bug: boot the stack with `--deploy`. |
-| `open_tools_palette(page, kind)` | Opens one left-rail palette, `"builtin"`, `"packages"`, `"datasets"`, `"agents"` or `"models"`, and returns its panel locator. Re-callable: it matches either the `Open …` or the `Close …` title and clicks only when the panel is not already showing, so a test that needs two palettes can come back to the first one. They are mutually exclusive (`ToolsMenu` keeps a single `activePalette`), so opening one closes the other. `close_tools_palette(page, kind)` closes one, and `tools_palette_is_open(page, kind)` says whether it shows. |
+| `open_tools_palette(page, kind)` | Opens one left-rail palette, `"builtin"`, `"packages"`, `"datasets"`, `"agents"` or `"models"`, and returns its panel locator. Re-callable: it matches either the `Open …` or the `Close …` tooltip (`data-tooltip`) and clicks only when the panel is not already showing, so a test that needs two palettes can come back to the first one. They are mutually exclusive (`ToolsMenu` keeps a single `activePalette`), so opening one closes the other. `close_tools_palette(page, kind)` closes one, and `tools_palette_is_open(page, kind)` says whether it shows. |
 
 ### Canvas authoring helpers
 
@@ -260,6 +260,14 @@ Node-header icons need `activate_header_icon` rather than `click()`: they activa
 on `pointerdown` + `pointerup` and swallow the native click (so press-and-drag
 still moves the node), and app chrome overlaps the header band at the top of the
 canvas, which means a real click at the button's centre lands on the overlay.
+
+A control's words are in its `data-tooltip`: Curio writes no `title` (Tooltips in
+`docs/ARCHITECTURE.md`), so select `[data-tooltip="Delete node"]`, never
+`[title=...]`. Playwright's `get_by_title` matched part of the title in any case;
+`[data-tooltip*="..." i]` does the same. The tooltip itself is the one
+`[role="tooltip"]`, in a portal on `document.body`, shown 400 ms after the pointer
+rests on its control (move the pointer with `page.mouse`: a locator's `hover`
+fails its actionability check under React Flow's pane).
 
 ### Browser-test conventions
 
@@ -339,6 +347,12 @@ finished: the dataset install-save is debounced 500 ms past it and answers
 seconds later, so any toast it raises lands well after the status flips. The
 helper sweeps, waits for a quiet window, and sweeps again, right before the
 shutter.
+
+An open Curio tooltip is hidden in every capture, so a pointer left resting on a
+control does not put its tooltip in the frame. Pass `keep_tooltip=True` when the
+tooltip is the subject, and `clip_rect`, a box of the page as
+`{x, y, width, height}`, to capture that box alone: `test_tooltips_e2e.py`
+frames each tooltip with its control and a margin, compared like a node close-up.
 
 A *"couldn't be generated"* warning is a **bug**, not routine noise (#180):
 `test_computed_json_output_e2e.py` fails on it. Sweeping is for the ordinary
@@ -421,11 +435,11 @@ python scripts/ci_report.py --junit "End-to-end tests=.curio/e2e.xml" \
 
 ### Baselines per GPU kind
 
-The GPU job runs on one of two GPU models: an arcade runner (arcade-gpu-01 to
-04 share an H100) or utk-gpu (an RTX PRO 6000). Nearly every frame draws the
-same on both. A frame that does not, like example 07's plot close-up, whose
+The GPU job runs on one of three GPU models: an arcade runner (arcade-gpu-01 to
+04 share an H100), utk-gpu (an RTX PRO 6000) or utk-desktop-01 (an RTX 3070,
+kind `utk-desktop`). Nearly every frame draws the same on all three. A frame that does not, like example 07's plot close-up, whose
 GPU-computed histogram draws 6% apart, may also keep a baseline of one GPU kind
-beside its default one: `<name>.utk-gpu.png` or `<name>.arcade-gpu.png`.
+beside its default one: `<name>.utk-gpu.png`, `<name>.arcade-gpu.png` or `<name>.utk-desktop.png`.
 
 - The test-gpu job sets `CURIO_E2E_GPU_KIND` from its runner's name. A frame
   with a baseline of that kind is compared with it. Every other frame, and every
@@ -503,11 +517,12 @@ test_frontend/
     sandbox.py                # direct sandbox calls, execute_workflow_programmatically
     vega_svg.py               # Vega-Lite SVG helpers
     capture_waits.py          # viewport fit, dismiss_toasts, webfont and running-node waits
-    images.py                 # captures, _compare_images
+    images.py                 # captures (a Curio tooltip hidden unless kept), _compare_images
     dialogs.py                # accept_confirm_dialog, wait_for_drawer_closed, leave_agent_badge
     screenshots.py            # save_workflow_test_screenshot, mint and re-mint, frame_nodes
     closeups.py               # save_node_closeup, close-up budgets, viewport hints
     interactions.py           # interaction frames, brush and mark probes
+    tooltips.py               # the Curio tooltip: hovers, the one on screen, its close-up box
     servers.py                # ports, e2e_existing_servers
     auth.py                   # signup helpers, require_owner_view
     db_stubs.py               # stub_* helpers, api_json
@@ -1008,7 +1023,7 @@ the autouse `e2e_clean_db` must not truncate between them.
 | `CURIO_SANDBOX_TOKEN` | The sandbox's shared secret for `/exec`, `/execJs`, `/get`, `/artifact-meta` and `/monitor` (`sandbox/app/auth.py`). The self-managed path mints one and publishes it to this process; **with `CURIO_E2E_USE_EXISTING=1` you must set it yourself, to the same value the running stack was started with**: `curio.py start` mints a random one otherwise, and nothing can recover it. A mismatch fails with that sentence. |
 | `CURIO_E2E_FRONTEND_PORT` | Frontend port for existing servers (default: `8080`) |
 | `CURIO_E2E_COMPARE_DIR` | Record every screenshot comparison, passing or not, into this directory: one folder each with the expected, created and difference images and `record.json`, which `scripts/ci_report.py` turns into one HTML page. Unset, nothing is recorded. |
-| `CURIO_E2E_GPU_KIND` | The run's GPU kind, `arcade-gpu` or `utk-gpu`: a frame with a baseline of that kind is compared with it (see *Baselines per GPU kind*). CI's test-gpu job sets it from its runner's name. Unset, every frame is compared with its default baseline. |
+| `CURIO_E2E_GPU_KIND` | The run's GPU kind, `arcade-gpu`, `utk-gpu` or `utk-desktop`: a frame with a baseline of that kind is compared with it (see *Baselines per GPU kind*). CI's test-gpu job sets it from its runner's name. Unset, every frame is compared with its default baseline. |
 | `CURIO_TESTING` | Two jobs: switches the backend to test-only DB paths under `.curio/test/`, **and** is the second factor the `/api/testing/*` blueprint and the scripted LLM provider require. Exported by `../conftest.py`; externally-booted servers (compose stacks included) must be given it explicitly. |
 | `DATABASE_URL_TEST` | SQLAlchemy URL for the test DB (defaults to `sqlite:///…/.curio/test/urban_workflow_test.db`). |
 | `CURIO_TEST_WORKSPACE` | Persist the per-session test workspace here instead of a temp dir (debugging). |

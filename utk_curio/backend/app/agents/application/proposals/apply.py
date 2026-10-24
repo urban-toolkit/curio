@@ -24,7 +24,10 @@ from utk_curio.backend.app.agents.application.proposals import mint as agents_mi
 from utk_curio.backend.app.agents.application.proposals import plans as agents_plans
 from utk_curio.backend.app.agents.application.proposals import store as agents_store
 from utk_curio.backend.app.agents.application.turns import roster as agents_roster
+from utk_curio.backend.app.agents.domain import node_settings
+from utk_curio.backend.app.agents.domain import widget_grammar
 from utk_curio.backend.app.agents.infrastructure import testing_provider
+from utk_curio.backend.app.execution.code_references import normalize_widgets
 from utk_curio.backend.app.projects import storage as projects_storage
 
 
@@ -36,7 +39,8 @@ def apply_proposal(
 
     Explicit, authenticated, revision-safe (`REQ-REVIEW-001`/`DEC-006`): the
     pinned revision basis is re-checked against current state (content digest
-    for ``node.content.write``; template availability for ``node.create``);
+    for ``node.content.write``; what it touches of the node for
+    ``node.settings.write``; template availability for ``node.create``);
     drift marks the proposal ``stale`` and returns 409 instead of applying.
     Success executes the domain-owned write under the project's spec write
     path, logs a result-card turn (docs/08 — results are logged as chat
@@ -68,6 +72,10 @@ def apply_proposal(
         )
     if tool == "node.content.write":
         return _apply_node_content_write(
+            user_key, project_id, attachment_id, proposal_id, spec, proposal, session_id
+        )
+    if tool == "node.settings.write":
+        return _apply_node_settings_write(
             user_key, project_id, attachment_id, proposal_id, spec, proposal, session_id
         )
     if tool == "project.install":
@@ -156,6 +164,12 @@ def _apply_node_content_write(
         "Applied: node content updated",
         [node_name, f"proposal {proposal_id[:8]}"],
     )
+    applied = {"nodeId": node_id, "content": proposal.get("content", "")}
+    # The agent that wrote it: the change is an entry of the node's history
+    # named after it.
+    writer = _writer_name(user_key, spec, attachment_id)
+    if writer:
+        applied["agent"] = writer
     return {
         "attachmentId": attachment_id,
         "proposalId": proposal_id,
@@ -163,7 +177,81 @@ def _apply_node_content_write(
         "mutationApplied": True,
         # The frontend canvas bridge (dev/48 §3.3) applies this to the LIVE
         # node too, so the next canvas save can't clobber the mutation.
-        "appliedContent": {"nodeId": node_id, "content": proposal.get("content", "")},
+        "appliedContent": applied,
+    }
+
+
+def _writer_name(user_key: str, spec: dict, attachment_id: str) -> str | None:
+    """The name of the agent that wrote what an apply applies, as its manifest
+    names it, or None. The canvas names the change's entry in the node's
+    history after it."""
+    return agents_spec_reads._agent_name(
+        user_key, str((attachments.get_attachment(spec, attachment_id) or {}).get("coord") or ""),
+    )
+
+
+def _created_for_canvas(created: dict, writer: str | None) -> dict:
+    """A node an apply created, as the canvas bridge takes it: a copy, naming
+    the agent that wrote it, whose history the canvas starts named after it.
+    The spec's node carries no name."""
+    return {**created, "agent": writer} if writer else dict(created)
+
+
+def _apply_node_settings_write(
+    user_key: str,
+    project_id: str,
+    attachment_id: str,
+    proposal_id: str,
+    spec: dict,
+    proposal: dict,
+    session_id: object,
+) -> dict:
+    """A change of one existing node's settings, checked against what the
+    review pinned (``mint._settings_basis``): the settings it names, as the
+    node reads them, and the widgets it gives values to. Each is written into
+    the saved node as the node stores it once picked; the canvas makes the
+    same change through the node's own setters (``appliedSettings``)."""
+    node_id = proposal.get("nodeId")
+    change = proposal.get("settings") or {}
+    nodes = (spec.get("dataflow") or {}).get("nodes") or []
+    node = next((n for n in nodes if isinstance(n, dict) and n.get("id") == node_id), None)
+    if node is None or agents_mint._settings_basis(node, change) != proposal.get("settingsSha256"):
+        raise agents_store._mark_stale(
+            user_key, project_id, proposal_id, spec, proposal, session_id,
+            "the node's settings changed since this was proposed; ask the agent to propose again",
+        )
+    # The domain-owned mutation: the settings it names, nothing else.
+    metadata = node.get("metadata") if isinstance(node.get("metadata"), dict) else {}
+    node_settings.write(metadata, change)
+    if "widgets" in change:
+        metadata["widgets"] = widget_grammar.with_values(normalize_widgets(metadata.get("widgets")), change["widgets"])
+    if metadata:
+        node["metadata"] = metadata
+    else:
+        node.pop("metadata", None)
+    proposal["status"] = "applied"
+    projects_storage.write_spec(user_key, project_id, spec)
+    node_name = proposal.get("nodeName") or f"node {node_id}"
+    agents_store._log_applied_turn(
+        user_key, project_id, session_id, attachment_id, proposal_id,
+        f"Applied: {node_name} settings changed.",
+        "Applied: node settings changed",
+        [node_name, *(proposal.get("settingLines") or []), f"proposal {proposal_id[:8]}"],
+    )
+    applied = {"nodeId": node_id, "settings": change}
+    # The agent that proposed it, as its manifest names it.
+    writer = _writer_name(user_key, spec, attachment_id)
+    if writer:
+        applied["agent"] = writer
+    return {
+        "attachmentId": attachment_id,
+        "proposalId": proposal_id,
+        "status": "applied",
+        "mutationApplied": True,
+        # The canvas bridge hands each setting to the live node's own setter,
+        # so the node makes the change as a pick in it does, and the next
+        # canvas save writes what the spec holds now.
+        "appliedSettings": applied,
     }
 
 
@@ -531,6 +619,7 @@ def _apply_package_draft(
         "Applied: package draft installed",
         [name, target, f"proposal {proposal_id[:8]}"],
     )
+    writer = _writer_name(user_key, spec, attachment_id)
     return {
         "attachmentId": attachment_id,
         "proposalId": proposal_id,
@@ -540,7 +629,7 @@ def _apply_package_draft(
                              "replaced": bool(journal.get("backupHeld"))},
         # Consumed by the frontend canvas bridge — registry refresh happens
         # BEFORE these nodes are painted (dev/89 registry-before-canvas).
-        "createdNodes": created_nodes,
+        "createdNodes": [_created_for_canvas(node, writer) for node in created_nodes],
         "requiresRegistryRefresh": True,
         **({"restartRecommended": restart} if isinstance(restart, dict)
            and restart.get("libs") else {}),
@@ -607,6 +696,7 @@ def _insert_node(
     appearance: dict | None = None,
     title: str | None = None,
     widgets: list | None = None,
+    settings: dict | None = None,
 ) -> dict:
     """Append one server-minted node to the spec's dataflow (dev/48): fresh
     uuid id (collision-impossible, never from any param; a test run may
@@ -617,7 +707,9 @@ def _insert_node(
     node-appearance utility and persists at the canonical
     ``metadata.appearance.backgroundColor`` shape; callers that omit it stay
     byte-for-byte identical. ``widgets`` (#662), checked at mint, persist at
-    ``metadata.widgets`` the same way.
+    ``metadata.widgets`` the same way, and the node's ``settings``, by key
+    (``node_settings``: a Spatial Join's operation and output, a Data Pool's
+    modes, a Simple View's image column), each at ``metadata.<key>``.
     """
     dataflow = spec.setdefault("dataflow", {})
     nodes = dataflow.setdefault("nodes", [])
@@ -643,6 +735,8 @@ def _insert_node(
         created["metadata"] = {"appearance": dict(appearance)}
     if widgets:
         created.setdefault("metadata", {})["widgets"] = [dict(w) for w in widgets]
+    for key, setting in (settings or {}).items():
+        created.setdefault("metadata", {})[key] = dict(setting)
     nodes.append(created)
     return created
 
@@ -674,6 +768,7 @@ def _apply_node_create(
         appearance=proposal.get("appearance"),  # dev/89: typed round-trip
         title=proposal.get("title"),  # dev/105 A2: the header the note renders
         widgets=proposal.get("widgets"),  # #662: what its code's references name
+        settings=node_settings.of(proposal),  # a join's operation, a pool's modes, a view's image column
     )
     proposal["status"] = "applied"
     projects_storage.write_spec(user_key, project_id, spec)
@@ -690,7 +785,7 @@ def _apply_node_create(
         "mutationApplied": True,
         # Consumed by the frontend canvas bridge (dev/48 §3.3) — the apply
         # response is the only carrier of the created node.
-        "createdNode": dict(created),
+        "createdNode": _created_for_canvas(created, _writer_name(user_key, spec, attachment_id)),
     }
 
 

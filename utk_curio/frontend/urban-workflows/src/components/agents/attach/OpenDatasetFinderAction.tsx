@@ -31,7 +31,7 @@ export const OpenDatasetFinderAction: React.FC<{
       type="button"
       className={`${styles.button}${className ? ` ${className}` : ""}`}
       aria-label={`Open ${opens} for ${label || "this node"}`}
-      title={
+      data-tooltip={
         name
           ? `Opens this node's ${name} chat, where the candidates await your selection. Confirm one, then Solve again.`
           : "Opens the chat where this node's candidates await your selection. Confirm one, then Solve again."

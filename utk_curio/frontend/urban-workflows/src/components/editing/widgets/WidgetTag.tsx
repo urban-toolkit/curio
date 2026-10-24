@@ -1,5 +1,8 @@
-import React, { useEffect } from "react";
+import React, { useContext, useEffect } from "react";
 import styles from "./WidgetTags.module.css";
+import { useTooltipContent } from "../../tooltip/useTooltipContent";
+import { ChipPreviewTip } from "./ChipPreview";
+import { ChipPreviewContext, type ChipPreviewSource } from "./chipPreviewSource";
 import {
   INPUT_REF_MIME,
   SCENARIO_REF_MIME,
@@ -120,7 +123,8 @@ export function uniqueSharedNames(shared: WidgetDef[]): string[] {
 
 /** A tag that drags (or, clicked, inserts) the reference to *inner*. *label*
  * names it for a screen reader when its text runs words together, as a name
- * beside a swatch does. */
+ * beside a swatch does. In a header with a preview source, its hover is the
+ * chip's preview, the same as the chip's in the editor (ChipPreviewTip). */
 function ReferenceTag({
   className,
   mime,
@@ -143,6 +147,10 @@ function ReferenceTag({
   disabled?: boolean;
 }) {
   const how = onInsert ? "Drag into the code, or click to insert it at the cursor" : "Drag into the code";
+  const previews = useContext(ChipPreviewContext);
+  const preview = useTooltipContent(
+    previews ? <ChipPreviewTip source={previews} inner={inner} tag={!!onInsert} /> : null,
+  );
   return (
     <span
       className={className}
@@ -150,7 +158,8 @@ function ReferenceTag({
       role={onInsert ? "button" : undefined}
       tabIndex={onInsert ? 0 : undefined}
       aria-label={label}
-      title={title ? `${title}. ${how}` : how}
+      data-tooltip={title ? `${title}. ${how}` : how}
+      {...preview}
       {...dataAttributes}
       onDragStart={(event) => {
         event.dataTransfer.setData(mime, inner);
@@ -444,13 +453,13 @@ function InputLine({
         className={styles.expand}
         aria-expanded={open}
         aria-label={name}
-        title={name}
+        data-tooltip={name}
         onClick={onToggle}
       >
         <Chevron points={open ? "down" : "right"} />
       </button>
       {tag}
-      <span className={styles.inputAbout} title={about} data-input-about="true">
+      <span className={styles.inputAbout} data-tooltip={about} data-input-about="true">
         {about}
       </span>
     </div>
@@ -733,7 +742,8 @@ const CATEGORY_NAME_ATTRIBUTES: Partial<Record<StripCategory, string>> = {
  * - Widgets, Selections and Shared: the node's widgets, its selection tags and
  *   the dataflow's shared tags.
  *
- * Code shows no Scenarios and no `inputs` tag.
+ * Code shows no Scenarios and no `inputs` tag. With a preview source
+ * (*previews*), each tag's hover previews what its chip holds (ChipPreview).
  */
 export function ReferenceStrip({
   nodeId,
@@ -745,6 +755,7 @@ export function ReferenceStrip({
   grammar,
   onInsert,
   onLoadColumns,
+  previews = null,
   disabled = false,
 }: {
   /** The node whose header this is, which keeps its open categories and lists. */
@@ -759,6 +770,8 @@ export function ReferenceStrip({
   grammar?: string | null;
   onInsert: (inner: string) => void;
   onLoadColumns?: (slot: number) => void;
+  /** What the node's chip previews read (chipPreviewSource). */
+  previews?: ChipPreviewSource | null;
   disabled?: boolean;
 }) {
   const [open, toggle] = useOpenCategories(nodeId);
@@ -807,7 +820,7 @@ export function ReferenceStrip({
     }
   };
 
-  return (
+  const strip = (
     <div className={styles.strip} aria-label="Reference tags" data-widget-strip="true">
       <div className={styles.categories}>
         {shown.map((category) => {
@@ -820,7 +833,7 @@ export function ReferenceStrip({
               className={styles.category}
               aria-expanded={isOpen}
               aria-label={`${CATEGORY_NAMES[category]} ${counts[category]}`}
-              title={`${isOpen ? "Hide" : "Show"} the ${CATEGORY_NAMES[category]} chips`}
+              data-tooltip={`${isOpen ? "Hide" : "Show"} the ${CATEGORY_NAMES[category]} chips`}
               data-strip-category={category}
               onClick={() => toggle(category)}
             >
@@ -856,6 +869,8 @@ export function ReferenceStrip({
       ) : null}
     </div>
   );
+  // Its tags read what their chips' previews show from here.
+  return <ChipPreviewContext.Provider value={previews}>{strip}</ChipPreviewContext.Provider>;
 }
 
 export default WidgetTag;

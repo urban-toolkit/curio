@@ -213,7 +213,7 @@ def _expand_package(anchor) -> None:
         # action buttons sit (View details, Export, ...), and a forced click
         # there opens one of them instead of the accordion. Unforced, so
         # Playwright checks the title is what receives it.
-        anchor.locator("summary").first.locator("span[title]").first.click()
+        anchor.locator("summary").first.locator("span[data-tooltip]").first.click()
     expect(details).to_have_attribute("open", "", timeout=10000)
 
 

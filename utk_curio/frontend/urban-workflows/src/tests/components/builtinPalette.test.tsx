@@ -41,7 +41,6 @@ jest.mock("../../components/menus/nodes/toolsMenuPackagePalette", () => ({
     PackagesPaletteDropdown: paletteStub("packages"),
     groupPalettePackages: () => [],
     paletteDescriptorBootstrapKey: () => "",
-    OVERLAY_TRIGGER_DELAY_PROPS: {},
 }));
 
 /** Built-in templates as packages/curio.builtin@1/manifest.json has them, in
@@ -119,7 +118,7 @@ describe("the Built-in palette in the tool rail", () => {
         render(<ToolsMenu />);
         const trigger = builtinTrigger();
         expect(trigger).toHaveAttribute("aria-expanded", "false");
-        expect(trigger).toHaveAttribute("title", "Open built-in palette");
+        expect(trigger).toHaveAttribute("data-tooltip", "Open built-in palette");
         // It counts its nodes, as the catalog triggers count theirs.
         expect(trigger).toHaveTextContent(String(mockBuiltin.length));
         expect(builtinPanel()).toBeNull();
@@ -131,7 +130,7 @@ describe("the Built-in palette in the tool rail", () => {
         fireEvent.click(builtinTrigger());
 
         expect(builtinTrigger()).toHaveAttribute("aria-expanded", "true");
-        expect(builtinTrigger()).toHaveAttribute("title", "Close built-in palette");
+        expect(builtinTrigger()).toHaveAttribute("data-tooltip", "Close built-in palette");
         const panel = builtinPanel();
         expect(panel).not.toBeNull();
         // Every tile is in the panel, under its own id and its manifest label.

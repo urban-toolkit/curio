@@ -103,7 +103,7 @@ export function DataCatalogGeoPreview({ dataset }: { dataset: DatasetCatalogItem
             <thead>
               <tr>
                 {columns.map((column) => (
-                  <th key={column} title={column}>
+                  <th key={column} data-tooltip={column}>
                     {column}
                   </th>
                 ))}
@@ -113,7 +113,7 @@ export function DataCatalogGeoPreview({ dataset }: { dataset: DatasetCatalogItem
               {rows.slice(0, ROW_LIMIT).map((row, rowIndex) => (
                 <tr key={`${dataset.id}-${rowIndex}`}>
                   {columns.map((column) => (
-                    <td key={column} title={formatCell(row[column])}>
+                    <td key={column} data-tooltip={formatCell(row[column])}>
                       {formatCell(row[column])}
                     </td>
                   ))}

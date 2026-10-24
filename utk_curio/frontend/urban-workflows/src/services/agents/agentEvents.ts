@@ -12,7 +12,14 @@
  * attach/detach so the palette and the dock re-read without a page reload.
  */
 
-import type { AgentAppliedScenario, AgentPlanWidget } from "./types/proposal";
+import type {
+  AgentAppliedScenario,
+  AgentDataPoolSetting,
+  AgentNodeSettings,
+  AgentPlanWidget,
+  AgentSimpleVisSetting,
+  AgentSpatialJoinSetting,
+} from "./types/proposal";
 
 export type AgentCreatedNode = {
   id: string;
@@ -24,16 +31,44 @@ export type AgentCreatedNode = {
   y: number;
   /** dev/89: optional display title the apply persisted on the spec node. */
   title?: string;
+  /** The name of the agent that wrote the node, which a node it adds with
+   * code starts its Provenance history named after. Never saved on the node. */
+  agent?: string;
   /** dev/89: canonical persisted appearance (normalized by the backend's
    * shared node-appearance utility) — carried into live ``data.appearance``
    * so the next canvas save round-trips it. #662: the same for the node's
-   * widgets and, on a copy, its lineage (``data.widgets``, ``data.copiedFrom``). */
-  metadata?: { appearance?: { backgroundColor?: string }; widgets?: AgentPlanWidget[]; copiedFrom?: string[] };
+   * widgets and, on a copy, its lineage (``data.widgets``, ``data.copiedFrom``),
+   * for a Spatial Join its operation and output (``data.spatialJoin``), for a
+   * Data Pool its modes (``data.dataPool``) and for a Simple View its image
+   * column (``data.simpleVis``). */
+  metadata?: {
+    appearance?: { backgroundColor?: string };
+    widgets?: AgentPlanWidget[];
+    copiedFrom?: string[];
+    spatialJoin?: AgentSpatialJoinSetting;
+    dataPool?: AgentDataPoolSetting;
+    simpleVis?: AgentSimpleVisSetting;
+  };
 };
 
 export type AgentCanvasMutation =
   | { kind: "node-created"; node: AgentCreatedNode }
-  | { kind: "node-content-applied"; nodeId: string; content: string }
+  | {
+      kind: "node-content-applied";
+      nodeId: string;
+      content: string;
+      /** The name of the agent that wrote the content, which a node that
+       * keeps a history of its changes names the entry after. */
+      agent?: string;
+    }
+  | {
+      /** An applied change of an existing node's settings: the live node
+       * takes each through its own setter, as a pick in it would
+       * (`utils/nodeSettingsWriters`). */
+      kind: "node-settings-applied";
+      nodeId: string;
+      settings: AgentNodeSettings;
+    }
   | {
       /** dev/52: a whole applied plan graph — bulk nodes + edges, then a
        * fit. dev/59: removals apply FIRST (the live graph drops victims
@@ -60,6 +95,15 @@ export type AgentCanvasMutation =
       /** #662: scenarios a per-node apply completed; idempotent per id. */
       kind: "scenarios-created";
       scenarios: AgentAppliedScenario[];
+    }
+  | {
+      /** What a plan removes, once the row or the Connect all that completes
+       * it lands: the nodes and connections leave through the reviewed path,
+       * as a whole applied plan's do. Idempotent per plan id. */
+      kind: "plan-removals";
+      planId: string;
+      removedNodeIds: string[];
+      removedEdgeIds: string[];
     }
   | {
       /** dev/67-8: connection-stage edges — inserted quietly (no fit, no
@@ -106,8 +150,10 @@ export function subscribeAgentCanvasMutations(
       detail &&
       (detail.kind === "node-created" ||
         detail.kind === "node-content-applied" ||
+        detail.kind === "node-settings-applied" ||
         detail.kind === "graph-created" ||
         detail.kind === "scenarios-created" ||
+        detail.kind === "plan-removals" ||
         detail.kind === "edges-created" ||
         detail.kind === "package-nodes-created")
     ) {

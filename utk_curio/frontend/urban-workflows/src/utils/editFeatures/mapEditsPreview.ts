@@ -13,7 +13,7 @@
  * as the map reads the output the run stores, so the map's tables keep their
  * names whether it draws the edits made now or those the last run made.
  */
-import { inputTableName } from "../../generated/autkGrammar";
+import { inputTableName } from "../../contracts/autkGrammar";
 import { autkSourcesFrom } from "../autkInput";
 import { framesFromPayload, type GrammarFrame, type GrammarInput } from "../grammarInput";
 import { inputSlotOf, wiredInputSlots } from "../inputSlots";

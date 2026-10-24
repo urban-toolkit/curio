@@ -31,6 +31,7 @@ from utk_curio.backend.app.agents.infrastructure.providers import ChatTurn
 from utk_curio.backend.app.agents.infrastructure.providers import NativeToolsRefused
 from utk_curio.backend.app.agents.infrastructure.providers import ToolCall
 from utk_curio.backend.app.agents.repositories import ledger
+from utk_curio.backend.app.agents.application import dataflow_block as agents_dataflow_block
 from utk_curio.backend.app.agents.application import tool_rounds as agents_tool_rounds
 from utk_curio.backend.app.agents.application.turns import delegates as agents_delegates
 from utk_curio.backend.app.agents.application.turns import grounding as agents_grounding
@@ -254,8 +255,19 @@ class AttachmentTurn:
         self._answered()
         reply = turn.text
         visible, parts = content.extract_content(reply)
-        agents_grounding._verify_candidate_parts(parts, self.loop_ctx)  # dev/67-4: no unverified laundering
+        self._check_candidates(parts)
         return {"reply": reply, "visible": visible, "parts": parts, "turn": turn}
+
+    def _check_candidates(self, parts: list) -> None:
+        """dev/67-4: no unverified laundering. A candidates card the reply
+        holds is checked before anyone sees it, as a delegated card is: its
+        catalog rows against the Data Catalog listing, its external rows by
+        the runtime's probe."""
+        agents_grounding._ground_catalog_lanes(
+            parts,
+            lambda: agents_grounding._catalog_rows_for_discovery(self.user_key, self.project_id),
+        )
+        agents_grounding._verify_candidate_parts(parts, self.loop_ctx)
 
     @staticmethod
     def _hold_split(buf: str) -> tuple[str, str]:
@@ -324,7 +336,7 @@ class AttachmentTurn:
                     yield ("delta", emit)
         reply = "".join(chunks)
         visible, parts = content.extract_content(reply)
-        agents_grounding._verify_candidate_parts(parts, self.loop_ctx)  # dev/67-4: no unverified laundering
+        self._check_candidates(parts)
         result = {"reply": reply, "visible": visible, "parts": parts,
                   "turn": ChatTurn(text=reply, tool_calls=tuple(calls))}
         if withheld is not None and not parts:
@@ -396,26 +408,45 @@ class AttachmentTurn:
         loop_ctx = self.loop_ctx
         inputs = req.get("inputs") or {}
         # dev/73: node-scoped content generation homes its trace AND its
-        # minted review at the node's own agent.
+        # minted review at the node's own agent. Content for a new node (a
+        # nodeType and no nodeId) has no node: it returns to this run, for
+        # its node.create.
         gen_node_id = (
             agents_delegates._delegate_target_node_id(loop_ctx, inputs)
             if req["capability"] == "node.content.generate"
             else None
+        )
+        # Discovery: the runtime lists the Data Catalog once. The child is
+        # shown it and its candidates are checked against it, whatever
+        # catalog the request carried.
+        catalog_rows = (
+            agents_grounding._catalog_rows_for_discovery(self.user_key, self.project_id)
+            if req["capability"] == "dataset.discover"
+            else None
+        )
+        enriched = agents_delegates._enriched_delegate_inputs(
+            self.user_key, self.project_id, loop_ctx, req["capability"], inputs,
+            catalog_rows=catalog_rows,
         )
         status, text, child, home_att = agents_delegates._run_delegate_traced(
             self.user_key,
             self.project_id,
             resolution.coord,
             req["capability"],
-            agents_delegates._enriched_delegate_inputs(
-                self.user_key, self.project_id, loop_ctx, req["capability"], inputs,
-            ),
+            enriched,
             self.config,
             parent_execution_id=self.execution_id,
             parent_coord=loop_ctx["coord"],
             attachment_id=loop_ctx.get("attachment_id"),
             parent_name=getattr(loop_ctx.get("manifest"), "name", None),
             node_id=gen_node_id,
+            # What the dataflow can use, for a child that writes code: the
+            # runtime's, never a value the model put in the inputs, with the
+            # datasets this turn read already.
+            dataflow_block=agents_dataflow_block.for_delegated_run(
+                self.user_key, self.project_id, req["capability"], enriched,
+                datasets=loop_ctx.get("dataflow_datasets"),
+            ),
         )
         self.delegations.append(child)
         delegate_summary = text
@@ -466,9 +497,7 @@ class AttachmentTurn:
             # on this turn — runtime-minted (catalog rows tool-grounded,
             # external rows probed), never the model's claim.
             cand_part, text, cand_outcome = agents_delegates._mint_candidates_from_delegate(
-                loop_ctx, text,
-                (inputs.get("catalog") or {}).get("rows")
-                or agents_delegates._dataset_discover_inputs(self.user_key, self.project_id, {})["catalog"]["rows"],
+                loop_ctx, text, catalog_rows,
                 name=getattr(resolution.manifest, "name", None),
             )
             delegate_summary = text

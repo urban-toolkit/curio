@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 import { useReactFlow } from "reactflow";
 import { useCode } from "../../../hook/useCode";
 import { useFlowContext } from "../../../providers/FlowProvider";
+import { useProvenanceContext } from "../../../providers/ProvenanceProvider";
 import { useNotebookViewContext } from "../../../providers/flow/notebookViewContext";
 import { fitViewWithMenuOffset } from "../../../utils/fitViewWithMenuOffset";
 import {
@@ -16,6 +17,7 @@ import {
 } from "../../../registry/projectPackagesStore";
 import { EdgeType } from "../../../constants";
 import { normalizeWidgets } from "../../../utils/widgets/widgetModel";
+import { dataPoolFromSpec } from "../../../utils/dataPoolSpec";
 import { lineageFromSpec } from "../../../utils/scenarios/duplicateSelection";
 import { joinScenarios } from "../../../utils/scenarios/scenarioEdits";
 import type { Scenario } from "../../../utils/scenarios/scenarioModel";
@@ -35,10 +37,16 @@ const CENTER_ANIMATION_MS = 400;
  *   callbacks as a palette drop) with the SERVER-minted id, then **center the
  *   viewport on it** — the backend places new nodes right of the whole graph
  *   extent, which is usually off-screen (dev/51 defect 1: the node existed
- *   but out of view, and only the load-time fitView made it visible).
+ *   but out of view, and only the load-time fitView made it visible). A node
+ *   the apply names its agent on, added with code, starts its Provenance
+ *   history with an edit named after that agent.
  * - ``node-content-applied`` → `FlowProvider.applyNodeContent` (provider
  *   state — dev/51 defect 2: direct RF-store writes are clobbered by the
- *   controlled re-sync and never reached the serializer or editor).
+ *   controlled re-sync and never reached the serializer or editor), with the
+ *   name of the agent that wrote it, which a node keeping a history of its
+ *   changes names the entry after.
+ * - ``node-settings-applied`` → `FlowProvider.applyNodeSettings`, which hands
+ *   each setting to the node's own setter (`utils/nodeSettingsWriters`).
  *
  * Idempotent per node id at two levels (dev/51 defect 3): a processed-ids ref
  * catches re-fired events before the store has synced, and the live-graph
@@ -75,7 +83,9 @@ function appliedEdgeToCanvasEdge(edge: {
 
 export function useAgentCanvasMutations(): void {
   const { createCodeNode } = useCode();
-  const { applyNodeContent, onEdgesChange, applyReviewedRemovals, scenarios, setScenarios } = useFlowContext();
+  const { applyNodeContent, applyNodeSettings, onEdgesChange, applyReviewedRemovals, scenarios, setScenarios } =
+    useFlowContext();
+  const { nodeEditProv } = useProvenanceContext();
   const { reveal } = useNotebookViewContext();
   const reactFlow = useReactFlow();
   const { getNodes, setCenter, getZoom } = reactFlow;
@@ -90,6 +100,11 @@ export function useAgentCanvasMutations(): void {
     // what the spec does and the next save writes them back.
     const widgets = normalizeWidgets(node.metadata?.widgets);
     const copiedFrom = lineageFromSpec(node.metadata?.copiedFrom);
+    const spatialJoin = node.metadata?.spatialJoin;
+    // A Data Pool's modes, the ones that name a mode, and a Simple View's
+    // image column, as loadTrill reads them.
+    const dataPool = dataPoolFromSpec(node.metadata?.dataPool);
+    const simpleVis = node.metadata?.simpleVis;
     createCodeNode(node.type, {
       nodeId: node.id,
       code: node.content,
@@ -101,7 +116,18 @@ export function useAgentCanvasMutations(): void {
       title: node.title,
       ...(widgets.length ? { widgets } : {}),
       ...(copiedFrom.length ? { copiedFrom } : {}),
+      ...(spatialJoin ? { spatialJoin } : {}),
+      ...(dataPool ? { dataPool } : {}),
+      ...(simpleVis ? { simpleVis } : {}),
     });
+    // Code an agent wrote starts the node's history, an edit named after the
+    // agent, as its applied change to a node's code is named. Only a node.create
+    // or package draft apply names the agent: a plan's node gets no entry, even
+    // when its template's starter is its code, and the code later written into
+    // it is its first edit.
+    if (node.agent && typeof node.content === "string" && node.content.trim()) {
+      nodeEditProv(node.id, node.content, node.agent);
+    }
   };
 
   // #662: scenarios the apply saved join the canvas's, which a save writes.
@@ -109,13 +135,44 @@ export function useAgentCanvasMutations(): void {
     if (saved?.length) setScenarios(joinScenarios(scenarios, saved));
   };
 
+  // What an applied plan removes, through the REVIEWED path (dev/62): the
+  // user authorized every victim by name on the review card, and the edge
+  // cascade travels in the same event, so victims and their edges leave in
+  // one operation with manual-delete bookkeeping, without the manual "remove
+  // the edges first" guard (which reads the not-yet-committed edge state and
+  // would refuse every connected victim). Already-absent elements (user
+  // deleted them live) are a no-op.
+  const removeReviewed = (live: Set<string>, nodeIds: string[] | undefined, edgeIds: string[] | undefined) => {
+    const removedNodeIds = (nodeIds ?? []).filter((id) => live.has(id));
+    const removedEdgeIds = edgeIds ?? [];
+    if (removedNodeIds.length || removedEdgeIds.length) {
+      applyReviewedRemovals(removedNodeIds, removedEdgeIds);
+    }
+  };
+
   handlerRef.current = (mutation: AgentCanvasMutation) => {
     if (mutation.kind === "node-content-applied") {
-      applyNodeContent(mutation.nodeId, mutation.content);
+      // The agent that wrote it, which the node's change is named after.
+      if (mutation.agent) applyNodeContent(mutation.nodeId, mutation.content, mutation.agent);
+      else applyNodeContent(mutation.nodeId, mutation.content);
+      return;
+    }
+    if (mutation.kind === "node-settings-applied") {
+      applyNodeSettings(mutation.nodeId, mutation.settings);
       return;
     }
     if (mutation.kind === "scenarios-created") {
       joinSaved(mutation.scenarios);
+      return;
+    }
+    if (mutation.kind === "plan-removals") {
+      // A plan applied a row at a time, or by Connect all, removes what it
+      // names when it completes, as a whole applied plan does. Its rows
+      // already placed its nodes: nothing to insert, no fit.
+      const key = `removals:${mutation.planId}`;
+      if (processedRef.current.has(key)) return;
+      processedRef.current.add(key);
+      removeReviewed(new Set(getNodes().map((n) => n.id)), mutation.removedNodeIds, mutation.removedEdgeIds);
       return;
     }
     if (mutation.kind === "edges-created") {
@@ -139,18 +196,8 @@ export function useAgentCanvasMutations(): void {
       if (processedRef.current.has(mutation.planId)) return;
       processedRef.current.add(mutation.planId);
       const live = new Set(getNodes().map((n) => n.id));
-      // Removals FIRST (dev/59), through the REVIEWED path (dev/62): the
-      // user authorized every victim by name on the review card, and the
-      // edge cascade travels in the same event — so victims and their edges
-      // leave in one operation with manual-delete bookkeeping, without the
-      // manual "remove the edges first" guard (which reads the not-yet-
-      // committed edge state and would refuse every connected victim).
-      // Already-absent elements (user deleted them live) are a no-op.
-      const removedNodeIds = (mutation.removedNodeIds ?? []).filter((id) => live.has(id));
-      const removedEdgeIds = mutation.removedEdgeIds ?? [];
-      if (removedNodeIds.length || removedEdgeIds.length) {
-        applyReviewedRemovals(removedNodeIds, removedEdgeIds);
-      }
+      // Removals FIRST (dev/59), through the reviewed path.
+      removeReviewed(live, mutation.removedNodeIds, mutation.removedEdgeIds);
       for (const node of mutation.nodes) {
         if (!live.has(node.id)) insertNode(node);
       }

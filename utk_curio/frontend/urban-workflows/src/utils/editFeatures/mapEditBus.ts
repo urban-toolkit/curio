@@ -11,7 +11,9 @@
  *   its features as the log leaves them, the mode of the action, the shape
  *   being drawn, and what a shape drawn or reshaped on the map becomes;
  * - the Autark node registers each map it draws (`registerEditMap`), whose
- *   camera and origin the overlay on it (`MapEditOverlay`) reads.
+ *   camera and origin the overlay on it (`MapEditOverlay`) reads, and where
+ *   it draws a feature, which its layer skips while the drawing tools, layers
+ *   of the map itself (`mapEditLayers`), draw it reshaped or moved.
  *
  * Picks are not here: a pick on the map is the map's selection, which the
  * interaction edge carries to the Map Edits node, as a selection crosses
@@ -46,13 +48,28 @@ export interface MapEditActive {
   key?: string;
 }
 
+/**
+ * One row of the picked feature, as the session's features hold it, and the
+ * shape the map's tools gave it. A feature of several rows, as an OSM
+ * building of several parts is, changes part by part (`featureParts`).
+ */
+export interface ReshapedPart {
+  row: EditedFeature;
+  geometry: Geometry;
+}
+
 export interface MapEditSession {
   interactionId: string;
   /** Show only this layer: the table the map keeps drawing, hiding its others. */
   solo?: string | null;
   active: MapEditActive | null;
-  onDrawn: (geometry: Geometry) => void;
-  onReshape: (id: SelectionId, geometry: Geometry) => void;
+  /**
+   * A shape drawn on the map, with the row the click that picked the feature
+   * landed on, if any: the part a new part of it joins.
+   */
+  onDrawn: (geometry: Geometry, pickedRow?: EditedFeature | null) => void;
+  /** New shapes for rows of the picked feature, made in one gesture: one change. */
+  onReshape: (parts: ReshapedPart[]) => void;
   /** Turns the shape mode (reshape, move) off again: the map's Done. */
   onShapeDone?: () => void;
 }
@@ -61,6 +78,7 @@ export interface MapEditSession {
 const sessions = new Map<string, Map<string, MapEditSession>>();
 const maps = new Map<string, any>();
 const layerIds = new Map<string, (table: string) => string>();
+const featurePositions = new Map<string, (table: string, key: string, id: SelectionId) => Promise<number[]>>();
 const listeners = new Map<string, Set<() => void>>();
 
 function notify(mapId: string) {
@@ -93,12 +111,24 @@ export function mapSession(mapId: string): MapEditSession | undefined {
   return mine ? [...mine.values()].at(-1) : undefined;
 }
 
-/** The autk map *mapId* drew last, for the overlay on it. */
-export function registerEditMap(mapId: string, map: any, layerIdOf?: (table: string) => string): void {
+/**
+ * The autk map *mapId* drew last, for the overlay on it: with the id it gives
+ * the layer that draws a table (*layerIdOf*), and where in that layer it
+ * draws the rows of a feature, by its id column (*positionsOf*, once the map
+ * has read back the rows it drew).
+ */
+export function registerEditMap(
+  mapId: string,
+  map: any,
+  layerIdOf?: (table: string) => string,
+  positionsOf?: (table: string, key: string, id: SelectionId) => Promise<number[]>,
+): void {
   if (map) maps.set(mapId, map);
   else maps.delete(mapId);
   if (map && layerIdOf) layerIds.set(mapId, layerIdOf);
   else layerIds.delete(mapId);
+  if (map && positionsOf) featurePositions.set(mapId, positionsOf);
+  else featurePositions.delete(mapId);
   notify(mapId);
 }
 
@@ -109,6 +139,14 @@ export function editMap(mapId: string): any {
 /** The id *mapId*'s map gives the layer that draws *table* (a titled layer goes by its title). */
 export function editMapLayerId(mapId: string, table: string): string {
   return layerIds.get(mapId)?.(table) ?? table;
+}
+
+/**
+ * Where *mapId*'s map draws the rows of *table* whose column *key* holds *id*:
+ * their positions in the layer that draws it, none when the map does not say.
+ */
+export function editMapPositions(mapId: string, table: string, key: string, id: SelectionId): Promise<number[]> {
+  return featurePositions.get(mapId)?.(table, key, id) ?? Promise.resolve([]);
 }
 
 function subscribe(mapId: string, listener: () => void): () => void {

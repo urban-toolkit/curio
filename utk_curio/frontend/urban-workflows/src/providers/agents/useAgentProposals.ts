@@ -95,6 +95,9 @@ export function useAgentProposals(opts: {
       if (!pid) throw new Error("no project");
       try {
         const result = await agentsApi.applyPlanNode(pid, attachmentId, proposalId, ref);
+        // The last row removes what the plan removes, first, as a whole
+        // applied plan's removals go.
+        bridgePlanRemovals(proposalId, result);
         // The created node reaches the LIVE canvas through the same bridge
         // path as node.create applies (dev/48 §3.3).
         if (result.createdNode) {
@@ -125,6 +128,7 @@ export function useAgentProposals(opts: {
       if (!pid) throw new Error("no project");
       try {
         const result = await agentsApi.applyPlanEdges(pid, attachmentId, proposalId, indices);
+        bridgePlanRemovals(proposalId, result);
         if (result.createdEdges.length) {
           notifyAgentCanvasMutation({
             kind: "edges-created",
@@ -184,6 +188,20 @@ export function useAgentProposals(opts: {
   );
 }
 
+/** What the plan removes, when the row or the Connect all that completes it
+ * lands: the saved spec lost it, so the live canvas loses it too, or its next
+ * save would put it back. */
+export function bridgePlanRemovals(
+  proposalId: string,
+  result: { removedNodeIds?: string[]; removedEdgeIds?: string[] },
+): void {
+  const removedNodeIds = result.removedNodeIds ?? [];
+  const removedEdgeIds = result.removedEdgeIds ?? [];
+  if (removedNodeIds.length || removedEdgeIds.length) {
+    notifyAgentCanvasMutation({ kind: "plan-removals", planId: proposalId, removedNodeIds, removedEdgeIds });
+  }
+}
+
 /** The apply→canvas bridge (dev/48 §3.3): the saved spec was mutated; carry
  * the same mutation to the LIVE canvas in this user action so the next save
  * can't clobber it. */
@@ -204,6 +222,15 @@ function bridgeApplyResult(proposalId: string, result: AgentApplyResult): void {
       kind: "node-content-applied",
       nodeId: result.appliedContent.nodeId,
       content: result.appliedContent.content,
+      ...(result.appliedContent.agent ? { agent: result.appliedContent.agent } : {}),
+    });
+  } else if (result.appliedSettings) {
+    // An existing node's settings: the live node takes them through its own
+    // setters, and files no Provenance entry, which holds code.
+    notifyAgentCanvasMutation({
+      kind: "node-settings-applied",
+      nodeId: result.appliedSettings.nodeId,
+      settings: result.appliedSettings.settings,
     });
   } else if (result.appliedGraph) {
     // dev/52: a whole applied plan — bulk insert + edges + fit; dev/59:

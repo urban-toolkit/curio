@@ -93,7 +93,7 @@ export const AgentsPaletteDropdown = memo(function AgentsPaletteDropdown({
           onClick={() => setOpen(!open)}
           aria-expanded={open}
           aria-haspopup="true"
-          title={open ? "Close agent palette" : "Open agent palette"}
+          data-tooltip={open ? "Close agent palette" : "Open agent palette"}
         >
           <span className={styles.triggerTop}>
             <FontAwesomeIcon icon={faRobot} className={styles.triggerIcon} />

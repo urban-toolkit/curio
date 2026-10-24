@@ -32,9 +32,15 @@ from __future__ import annotations
 import json
 import re
 
+from utk_curio.backend.app.agents.domain import agent_text
+from utk_curio.backend.app.agents.domain.contracts import MAX_NOTES
+
 TAIL_FENCE = "```curio.v1"
 TAIL_MAX_BYTES = 4096
 MAX_PARTS = 8
+#: What one note may take of a request (at most ``MAX_NOTES`` of them): a
+#: finding in a few sentences, with its title and its color.
+_NOTE_MAX_BYTES = 2048
 
 _PROMPT_MAX_CHARS = 200
 _MAX_ALTERNATIVES = 3
@@ -76,6 +82,9 @@ STRUCTURED_CAPABILITIES = frozenset({
 SOLVE_CAPABILITIES = ("node.content.generate", "dataset.discover")
 #: What an agent that plans a dataflow and runs Solve over its plan declares.
 ORCHESTRATE_CAPABILITY = "dataflow.orchestrate"
+#: What an agent that composes notes declares: its chat's node.create places
+#: notes, not code (``turns/delegates._notes_agent_run`` keys on it too).
+NOTES_CAPABILITY = "research.notes.compose"
 #: What an agent that builds nodes on the canvas declares. An agent that does
 #: not hands a source to build a node from to the one its delegatesTo names.
 NODE_BUILD_CAPABILITY = "node.build"
@@ -131,8 +140,8 @@ _CANDIDATE_NAME_MAX_CHARS = 120
 _CANDIDATE_TEXT_MAX_CHARS = 160
 _CANDIDATE_URL_MAX_CHARS = 300
 
-# The tail budget for a candidates block (#356). CANDIDATES_INSTRUCTION invites
-# 8 rows per lane, but datasetCandidates was on neither allowance list in
+# The tail budget for a candidates block (#356). The block protocol.md teaches
+# invites 8 rows per lane, but datasetCandidates was on neither allowance list in
 # parse_parts, so a block that followed the documented schema exactly blew the
 # 4096-byte classic cap and fell out to visible text - #269's symptom, reached
 # by obeying the instructions. Measured on realistic rows: 6+6 already leaked.
@@ -154,23 +163,6 @@ _CANDIDATE_ROW_MAX_BYTES = (
 )
 CANDIDATES_TAIL_MAX_BYTES = (
     2 * _CANDIDATES_MAX_ROWS_PER_LANE * _CANDIDATE_ROW_MAX_BYTES + 256
-)
-
-# The runtime-owned instruction appended to every attachment run's system turn
-# (after the preamble + intent composition, dev/38 — so an edited intent can
-# neither strip nor spoof it). Deliberately optional in tone, and it invites
-# only suggestedPrompts: the card contract exists (above) but nothing should
-# prompt the model to fabricate result cards before a real producer exists.
-TAIL_INSTRUCTION = (
-    "When one or more follow-up prompts would help the user continue, you may "
-    "end your reply with exactly one fenced block of this form:\n"
-    "```curio.v1\n"
-    '{"suggestedPrompts": {"primary": "<the single most useful next prompt>", '
-    '"alternatives": ["<up to 3 short alternative prompts>"]}}\n'
-    "```\n"
-    "The block must be the very last thing in the reply, the JSON must be "
-    "valid, and each prompt must stay under 200 characters. Omit the block "
-    "entirely when no follow-up is useful."
 )
 
 
@@ -279,8 +271,15 @@ _CONTENT_PARAM_PATHS = {
 # appearance, widgets) keeps a classic-tail budget, never the plan budget.
 _CONTENT_PARAM_REST_MAX_BYTES = TAIL_MAX_BYTES
 
+#: The tools whose params carry notes, ``params.notes``: the findings a
+#: package.install enlists a notes package for, which become notes once it is
+#: applied. The list gets a budget of its own, sized for MAX_NOTES notes, as a
+#: node's content does; the params beside it keep the classic cap.
+_NOTES_PARAM_TOOLS = frozenset({"package.install"})
+_NOTES_PARAM_MAX_BYTES = MAX_NOTES * _NOTE_MAX_BYTES
+
 #: The tools whose TAIL may exceed TAIL_MAX_BYTES (both gates in parse_parts).
-_BIG_TAIL_TOOLS = frozenset(_TOOL_PARAM_BUDGETS) | frozenset(_CONTENT_PARAM_PATHS)
+_BIG_TAIL_TOOLS = frozenset(_TOOL_PARAM_BUDGETS) | frozenset(_CONTENT_PARAM_PATHS) | _NOTES_PARAM_TOOLS
 
 
 def _pop_content_field(params: dict, path: tuple[str, ...]) -> tuple[str | None, dict]:
@@ -318,13 +317,13 @@ def parse_tool_request_verbose(raw: object) -> tuple[dict | None, list[str]]:
     each one must name the real field path and the real number.
     """
     if not isinstance(raw, dict):
-        return None, ["toolRequest must be an object"]
+        return None, [agent_text.message("request.not-object")]
     tool = raw.get("tool")
     if not (isinstance(tool, str) and _TOOL_ID_RE.match(tool)):
-        return None, ["toolRequest.tool must be a tool id like node.create"]
+        return None, [agent_text.message("request.tool-not-an-id")]
     params = raw.get("params", {})
     if not isinstance(params, dict):
-        return None, ["toolRequest.params must be an object"]
+        return None, [agent_text.message("request.params-not-object")]
     errors: list[str] = []
     path = _CONTENT_PARAM_PATHS.get(tool)
     if path is not None:
@@ -332,27 +331,48 @@ def parse_tool_request_verbose(raw: object) -> tuple[dict | None, list[str]]:
         content_text, rest = _pop_content_field(params, path)
         if content_text is not None and len(content_text) > PROPOSAL_CONTENT_MAX_CHARS:
             errors.append(
-                f"{where} is {len(content_text)} chars "
-                f"(max {PROPOSAL_CONTENT_MAX_CHARS})"
+                agent_text.message(
+                    "request.content-too-long", where=where, count=len(content_text),
+                    proposal_content_max_chars=PROPOSAL_CONTENT_MAX_CHARS,
+                )
             )
         try:
             rest_bytes = len(json.dumps(rest).encode("utf-8"))
         except (TypeError, ValueError) as exc:
-            return None, [f"toolRequest.params is not JSON-serializable: {exc}"]
+            return None, [agent_text.message("request.params-not-json", exc=exc)]
         if rest_bytes > _CONTENT_PARAM_REST_MAX_BYTES:
             errors.append(
-                f"the params other than {where} are {rest_bytes} bytes "
-                f"(max {_CONTENT_PARAM_REST_MAX_BYTES}) — put the code in "
-                f"{where}, not in other fields"
+                agent_text.message(
+                    "request.params-rest-too-big", where=where, rest_bytes=rest_bytes,
+                    max_bytes=_CONTENT_PARAM_REST_MAX_BYTES,
+                )
             )
+    elif tool in _NOTES_PARAM_TOOLS and isinstance(params.get("notes"), list):
+        # The notes are lifted only when they are a list, so a wrong-typed one
+        # stays in the rest, as a content field does.
+        rest = {key: value for key, value in params.items() if key != "notes"}
+        try:
+            notes_bytes = len(json.dumps(params["notes"]).encode("utf-8"))
+            rest_bytes = len(json.dumps(rest).encode("utf-8"))
+        except (TypeError, ValueError) as exc:
+            return None, [agent_text.message("request.params-not-json", exc=exc)]
+        if notes_bytes > _NOTES_PARAM_MAX_BYTES:
+            errors.append(agent_text.message(
+                "request.notes-too-big", notes_bytes=notes_bytes, max_bytes=_NOTES_PARAM_MAX_BYTES,
+                max_notes=MAX_NOTES,
+            ))
+        if rest_bytes > _TOOL_PARAMS_MAX_BYTES:
+            errors.append(agent_text.message(
+                "request.params-beside-notes-too-big", rest_bytes=rest_bytes, max_bytes=_TOOL_PARAMS_MAX_BYTES,
+            ))
     else:
         budget = _TOOL_PARAM_BUDGETS.get(tool, _TOOL_PARAMS_MAX_BYTES)
         try:
             params_bytes = len(json.dumps(params).encode("utf-8"))
         except (TypeError, ValueError) as exc:
-            return None, [f"toolRequest.params is not JSON-serializable: {exc}"]
+            return None, [agent_text.message("request.params-not-json", exc=exc)]
         if params_bytes > budget:
-            errors.append(f"toolRequest.params is {params_bytes} bytes (max {budget})")
+            errors.append(agent_text.message("request.params-too-big", params_bytes=params_bytes, budget=budget))
     if errors:
         return None, errors
     return {"type": "toolRequest", "tool": tool, "params": params}, []
@@ -468,12 +488,12 @@ def _parse_dataset_candidates(raw: object) -> dict | None:
 def _field_error(where: str, value: object, max_chars: int) -> str | None:
     """A precise, model-correctable description of what is wrong, or None."""
     if not isinstance(value, str):
-        return f"{where} must be a string"
+        return agent_text.message("plan.field-not-string", where=where)
     text = value.strip()
     if not text:
-        return f"{where} must not be empty"
+        return agent_text.message("plan.field-empty", where=where)
     if len(text) > max_chars:
-        return f"{where} is {len(text)} chars (max {max_chars})"
+        return agent_text.message("plan.field-too-long", where=where, count=len(text), max_chars=max_chars)
     return None
 
 
@@ -485,10 +505,10 @@ def _parse_removal_list(
     if raw is None:
         return []
     if not isinstance(raw, list):
-        errors.append(f"{key} must be a list of ids")
+        errors.append(agent_text.message("plan.removal-not-list", key=key))
         return []
     if len(raw) > max_entries:
-        errors.append(f"{key} has {len(raw)} entries (max {max_entries})")
+        errors.append(agent_text.message("plan.removal-too-many", key=key, count=len(raw), max_entries=max_entries))
         return []
     out: list[str] = []
     seen: set[str] = set()
@@ -499,7 +519,7 @@ def _parse_removal_list(
             continue
         entry = str(value).strip()
         if entry in seen:
-            errors.append(f"{key}[{i}] duplicates {entry!r}")
+            errors.append(agent_text.message("plan.removal-duplicate", key=key, i=i, entry=repr(entry)))
             continue
         seen.add(entry)
         out.append(entry)
@@ -519,7 +539,7 @@ def _parse_dataflow_plan_verbose(raw: object) -> tuple[dict | None, list[str]]:
 
     errors: list[str] = []
     if not isinstance(raw, dict):
-        return None, ["dataflowPlan must be an object"]
+        return None, [agent_text.message("plan.not-object")]
     err = _field_error("goal", raw.get("goal"), _PLAN_GOAL_MAX_CHARS)
     if err:
         errors.append(err)
@@ -549,19 +569,18 @@ def _parse_dataflow_plan_verbose(raw: object) -> tuple[dict | None, list[str]]:
         # them. Refusing edge-only plans taught the model to invent filler
         # nodes "to make the plan valid".
         errors.append(
-            "the plan changes nothing — add nodes, add edges (existing node ids "
-            "allowed), make scenarios, or remove nodes/edges"
+            agent_text.message("plan.changes-nothing")
         )
         nodes_raw = []
     elif len(nodes_raw) > _PLAN_MAX_NODES:
-        errors.append(f"nodes has {len(nodes_raw)} entries (max {_PLAN_MAX_NODES})")
+        errors.append(agent_text.message("plan.too-many-nodes", count=len(nodes_raw), max_nodes=_PLAN_MAX_NODES))
         nodes_raw = []
     nodes: list[dict] = []
     refs: set[str] = set()
     for i, node_raw in enumerate(nodes_raw):
         where = f"nodes[{i}]"
         if not isinstance(node_raw, dict):
-            errors.append(f"{where} must be an object")
+            errors.append(agent_text.message("plan.node-not-object", where=where))
             continue
         node_errors = [
             e
@@ -578,7 +597,7 @@ def _parse_dataflow_plan_verbose(raw: object) -> tuple[dict | None, list[str]]:
             continue
         ref = str(node_raw["ref"]).strip()
         if ref in refs:
-            errors.append(f"{where}.ref {ref!r} is used by an earlier node — refs must be unique")
+            errors.append(agent_text.message("plan.ref-reused", where=where, ref=repr(ref)))
             continue
         refs.add(ref)
         node = {
@@ -601,10 +620,13 @@ def _parse_dataflow_plan_verbose(raw: object) -> tuple[dict | None, list[str]]:
         node_content = node_raw.get("content")
         if node_content is not None:
             if not isinstance(node_content, str):
-                errors.append(f"{where}.content must be a string")
+                errors.append(agent_text.message("plan.node-content-not-string", where=where))
             elif len(node_content) > PROPOSAL_CONTENT_MAX_CHARS:
                 errors.append(
-                    f"{where}.content is {len(node_content)} chars (max {PROPOSAL_CONTENT_MAX_CHARS})"
+                    agent_text.message(
+                        "plan.node-content-too-long", where=where, count=len(node_content),
+                        proposal_content_max_chars=PROPOSAL_CONTENT_MAX_CHARS,
+                    )
                 )
             else:
                 node["content"] = node_content
@@ -619,14 +641,18 @@ def _parse_dataflow_plan_verbose(raw: object) -> tuple[dict | None, list[str]]:
         if widget_errors:
             errors.extend(widget_errors)
             continue
+        setting_errors = _plan_node_settings(node, node_raw, where)
+        if setting_errors:
+            errors.extend(setting_errors)
+            continue
         nodes.append(node)
     plan["nodes"] = nodes
     edges_raw = raw.get("edges", [])
     if not isinstance(edges_raw, list):
-        errors.append("edges must be a list")
+        errors.append(agent_text.message("plan.edges-not-list"))
         edges_raw = []
     elif len(edges_raw) > _PLAN_MAX_EDGES:
-        errors.append(f"edges has {len(edges_raw)} entries (max {_PLAN_MAX_EDGES})")
+        errors.append(agent_text.message("plan.too-many-edges", count=len(edges_raw), max_edges=_PLAN_MAX_EDGES))
         edges_raw = []
     edges: list[dict] = []
     seen_edges: set[tuple[str, str, str, str]] = set()
@@ -634,7 +660,7 @@ def _parse_dataflow_plan_verbose(raw: object) -> tuple[dict | None, list[str]]:
     for i, edge_raw in enumerate(edges_raw):
         where = f"edges[{i}]"
         if not isinstance(edge_raw, dict):
-            errors.append(f"{where} must be an object")
+            errors.append(agent_text.message("plan.edge-not-object", where=where))
             continue
         src, dst = edge_raw.get("from"), edge_raw.get("to")
         endpoint_errors = []
@@ -647,7 +673,7 @@ def _parse_dataflow_plan_verbose(raw: object) -> tuple[dict | None, list[str]]:
                 endpoint_errors.append(err)
             elif str(value).strip() in removed:
                 endpoint_errors.append(
-                    f"{where}.{label} references {value!r}, which this plan removes"
+                    agent_text.message("plan.edge-endpoint-removed", where=where, label=label, value=repr(value))
                 )
         if endpoint_errors:
             errors.extend(endpoint_errors)
@@ -666,19 +692,21 @@ def _parse_dataflow_plan_verbose(raw: object) -> tuple[dict | None, list[str]]:
             kind_norm = str(kind_raw).strip().lower()
             if kind_norm not in PLAN_EDGE_KINDS:
                 errors.append(
-                    f"{where}.kind {kind_raw!r} is not one of "
-                    + ", ".join(repr(k) for k in PLAN_EDGE_KINDS)
+                    agent_text.message(
+                        "plan.edge-kind-unknown", where=where, kind_raw=repr(kind_raw),
+                        plan_edge_kinds=", ".join(repr(k) for k in PLAN_EDGE_KINDS),
+                    )
                 )
                 continue
             kind = kind_norm
         if kind == "interaction" and to_handle:
             errors.append(
-                f"{where}: an interaction edge has no input circle: drop toHandle"
+                agent_text.message("plan.interaction-edge-to-handle", where=where)
             )
             continue
         src, dst = str(src).strip(), str(dst).strip()
         if src == dst:
-            errors.append(f"{where} connects {src!r} to itself")
+            errors.append(agent_text.message("plan.edge-to-itself", where=where, src=repr(src)))
             continue
         # dev/125: the duplicate key includes the KIND. dev/112 §6 decided a
         # (from,to) pair was a duplicate whatever its kind; the shipped corpus
@@ -695,8 +723,10 @@ def _parse_dataflow_plan_verbose(raw: object) -> tuple[dict | None, list[str]]:
         edge_key = (src, dst, kind, to_handle or "")
         if edge_key in seen_edges:
             errors.append(
-                f"{where} duplicates an earlier {src!r}→{dst!r} {kind} edge"
-                + (f" on {to_handle!r}" if to_handle else "")
+                agent_text.message(
+                    "plan.edge-duplicate", where=where, src=repr(src), dst=repr(dst), kind=kind,
+                    on_handle=f" on {to_handle!r}" if to_handle else "",
+                )
             )
             continue
         seen_edges.add(edge_key)
@@ -716,8 +746,10 @@ def _parse_dataflow_plan_verbose(raw: object) -> tuple[dict | None, list[str]]:
         ))
         if len(plan["nodes"]) > _PLAN_MAX_NODES or len(plan["edges"]) > _PLAN_MAX_EDGES:
             errors.append(
-                f"with its copies the plan has {len(plan['nodes'])} nodes and "
-                f"{len(plan['edges'])} edges (max {_PLAN_MAX_NODES} and {_PLAN_MAX_EDGES})"
+                agent_text.message(
+                    "plan.too-big-with-copies", nodes=len(plan['nodes']), edges=len(plan['edges']),
+                    max_nodes=_PLAN_MAX_NODES, max_edges=_PLAN_MAX_EDGES,
+                )
             )
     # dev/59: keys present only when used — additive plans stay byte-identical.
     if remove_nodes:
@@ -740,10 +772,22 @@ def _plan_node_widgets(node: dict, raw: object, where: str) -> list[str]:
     if problems:
         return problems
     if node["nodeType"].split("@", 1)[0] == PARAMETER_TYPE and len(widgets) != 1:
-        return [f"{where} is a Parameter node, which holds exactly one widget: give it in widgets"]
+        return [agent_text.message("plan.parameter-one-widget", where=where)]
     if widgets:
         node["widgets"] = widgets
     return []
+
+
+def _plan_node_settings(node: dict, node_raw: dict, where: str) -> list[str]:
+    """A planned node's settings, set on *node* (each absent when it sets
+    none), or the errors: a Spatial Join's operation and output, a Data Pool's
+    conflict modes, a Simple View's image column (``node_settings``). Which
+    template takes one is the mint's question: the grammar knows no roster."""
+    from utk_curio.backend.app.agents.domain import node_settings
+
+    settings, problems = node_settings.parse(node_raw, where)
+    node.update(settings)
+    return problems
 
 
 def _parse_dataflow_plan(raw: object) -> dict | None:
@@ -833,7 +877,7 @@ def plan_tail_diagnosis(tail_body: str | None) -> list[str] | None:
     try:
         payload = json.loads(tail_body)
     except (ValueError, TypeError) as exc:
-        return [f"the block is not valid JSON: {exc}"]
+        return [agent_text.message("plan.block-not-json", exc=exc)]
     if not isinstance(payload, dict) or "dataflowPlan" not in payload:
         return None
     _, errors = _parse_dataflow_plan_verbose(payload["dataflowPlan"])
@@ -854,7 +898,7 @@ def tool_tail_diagnosis(tail_body: str | None) -> list[str] | None:
     try:
         payload = json.loads(tail_body)
     except (ValueError, TypeError) as exc:
-        return [f"the block is not valid JSON: {exc}"]
+        return [agent_text.message("request.block-not-json", exc=exc)]
     if not isinstance(payload, dict) or "toolRequest" not in payload:
         return None
     _, errors = parse_tool_request_verbose(payload["toolRequest"])
@@ -909,13 +953,13 @@ def parse_delegate_request_verbose(raw: object) -> tuple[dict | None, list[str]]
     sibling :func:`parse_tool_request_verbose` has for tools. A native
     ``delegate`` call reads the errors back; a fenced block fails open."""
     if not isinstance(raw, dict):
-        return None, ["the delegate request must be an object"]
+        return None, [agent_text.message("request.delegate-not-object")]
     capability = raw.get("capability")
     if not (isinstance(capability, str) and _TOOL_ID_RE.match(capability)):
-        return None, ["capability must be a capability id like node.content.generate"]
+        return None, [agent_text.message("request.delegate-capability-not-an-id")]
     inputs = raw.get("inputs", {})
     if not isinstance(inputs, dict):
-        return None, ["inputs must be an object"]
+        return None, [agent_text.message("request.delegate-inputs-not-object")]
     budget = (
         PLAN_TAIL_MAX_BYTES  # dev/90 A6: authoring inputs = a look spec + findings
         if capability in PACKAGE_AUTHORING_CAPABILITIES
@@ -924,9 +968,9 @@ def parse_delegate_request_verbose(raw: object) -> tuple[dict | None, list[str]]
     try:
         size = len(json.dumps(inputs).encode("utf-8"))
     except (TypeError, ValueError) as exc:
-        return None, [f"inputs is not JSON-serializable: {exc}"]
+        return None, [agent_text.message("request.delegate-inputs-not-json", exc=exc)]
     if size > budget:
-        return None, [f"inputs is {size} bytes (max {budget})"]
+        return None, [agent_text.message("request.delegate-inputs-too-big", size=size, budget=budget)]
     return {"type": "delegateRequest", "capability": capability, "inputs": inputs}, []
 
 
@@ -1277,141 +1321,78 @@ _CANDIDATES_TOOL = "catalog.search"
 _DISCOVERY_CANDIDATES_TOOL = "discovery.search"
 _CANDIDATES_TOOLS = (_CANDIDATES_TOOL, _DISCOVERY_CANDIDATES_TOOL)
 
-#: Appended only for a run holding ``discovery.search``. Kept separate so the
-#: base instruction stays byte-identical for every run that cannot use it.
-CANDIDATES_DISCOVERY_ADDENDUM = (
-    "An external row for a dataset you found with discovery.search may also "
-    'carry "sourceId" and "resourceId", copied exactly from that result. '
-    "Include both or neither. A row with both can be downloaded into the Data "
-    "Catalog for the user; a row without them is handed to Node Builder "
-    "instead. Never invent either value - a pair that does not match a real "
-    "source is dropped."
-)
 
-# The datasetCandidates schema, shown to agents that can actually produce one.
+# --- The reply protocol ---------------------------------------------------------
 #
-# The Dataset Finder's intent tells it to "propose candidates as ONE
-# datasetCandidates block with two lanes", but until this existed nothing ever
-# showed it the shape — the tail taught only suggestedPrompts and toolRequest.
-# Asked by name for a structured block whose syntax it had never seen, the model
-# invented one, usually XML. That is not a terminal ``curio.v1`` fence, so the
-# parser never saw it and the documented fail-open folded the raw markup into the
-# visible transcript, losing the whole candidates card along with it (#269).
-#
-# It lives here rather than in the prompt file for the same reason the rest of
-# the tail does (dev/38): an edited intent can neither strip nor spoof it.
-CANDIDATES_INSTRUCTION = (
-    "When you have dataset candidates to propose, end your reply with exactly "
-    "one fenced block of this form instead:\n"
-    "```curio.v1\n"
-    '{"datasetCandidates": {"lanes": {'
-    '"external": [{"name": "<dataset name>", '
-    '"sourceType": "api|endpoint|portal|catalog|document|database", '
-    '"url": "https://...", "provider": "<who publishes it>", '
-    '"format": "<e.g. GeoJSON>", "coverage": "<area and years>", '
-    '"requirement": "<key or licence needed, if any>", '
-    '"fit": {"score": 0, "rationale": "<why it fits>"}}], '
-    '"catalog": [{"name": "<dataset name>", '
-    '"datasetId": "<id from catalog.search>", "sourceType": "catalog", '
-    '"installed": false, '
-    '"fit": {"score": 0, "rationale": "<why it fits>"}}]}}}\n'
-    "```\n"
-    "Both lanes are optional but at least one row is required, at most 8 rows "
-    "each. Every catalog row needs the datasetId catalog.search returned; only "
-    "http(s) URLs are accepted; fit.score is 0-100. Names stay under 120 "
-    "characters and the other text fields under 160. Do not invent any other "
-    "markup for candidates: a block that does not match this shape reaches the "
-    "user as plain text, with no card to select from."
-)
+# What a run is told of how it replies is the base entry's protocol.md, one
+# section per text. The runtime composes a run's tail from the sections (after
+# the preamble and instruction, dev/38, so an edited intent can neither strip
+# nor spoof it), and puts the run's own lists, its granted tools and its
+# delegates, after the sections that end in a colon.
 
 
-#: What a run on native tools is told in place of the tool list and the
-#: ``toolRequest`` syntax, which the native tools themselves carry.
-NATIVE_TOOLS_INSTRUCTION = (
-    "Your tools are offered to you as native tools. Call at most one per "
-    "reply; you will receive its result and can then continue. A tool's name "
-    "is its id with each dot written as two underscores: dataflow.read is "
-    "called dataflow__read."
-)
+def _protocol(name: str) -> str:
+    """The section *name* of the base entry's ``protocol.md``, as an agent reads it."""
+    from utk_curio.backend.app.agents.domain import agent_text, builtin
+
+    return agent_text.section(builtin.PROTOCOL_FILE, name)
 
 
 def tail_instruction(
     grants: list[tuple[str, str]] | None = None, *, native_tools: bool = False
 ) -> str:
-    """The system-turn tail instruction for one run (memo dev/41).
+    """The system-turn tail instruction for one run (memo dev/41), from the
+    base entry's ``protocol.md``.
 
-    Grant-less runs get :data:`TAIL_INSTRUCTION` byte-identical (regression-
-    pinned); runs with granted tools get an appended paragraph enumerating
-    exactly the granted ids with their registry descriptions and the
-    ``toolRequest`` syntax. The list is server-resolved grants — never the
-    manifest's raw declarations.
+    A grant-less run gets its ``suggested-prompts`` section alone. A run
+    with granted tools gets a paragraph after
+    it: the ``tools`` section, exactly the granted ids with their registry
+    descriptions, and the ``tool-request`` section's ``toolRequest`` syntax.
+    The list is server-resolved grants, never the manifest's raw
+    declarations.
 
-    A run offered its tools natively (*native_tools*) gets
-    :data:`NATIVE_TOOLS_INSTRUCTION` instead of that paragraph: only the tool
-    list and the call syntax differ.
+    A run offered its tools natively (*native_tools*) gets the
+    ``native-tools`` section instead of that paragraph: only the tool list and
+    the call syntax differ.
 
-    A run that can search the catalog also gets the ``datasetCandidates`` schema
-    (#269): those agents are asked for that block by name, so they have to be
-    told what it looks like.
+    A run that can search the catalog also gets the ``datasetCandidates``
+    schema (#269, the ``dataset-candidates`` section): those agents are asked
+    for that block by name, so they have to be told what it looks like.
     """
+    tail = _protocol("suggested-prompts")
     if native_tools:
-        instruction = f"{TAIL_INSTRUCTION}\n\n{NATIVE_TOOLS_INSTRUCTION}"
+        instruction = f"{tail}\n\n{_protocol('native-tools')}"
     elif not grants:
-        return TAIL_INSTRUCTION
+        return tail
     else:
         lines = "\n".join(f"- {tool_id}: {description}" for tool_id, description in grants)
-        instruction = (
-            f"{TAIL_INSTRUCTION}\n\n"
-            "You may also use these tools, granted for this conversation:\n"
-            f"{lines}\n"
-            "To use one, end your reply with exactly one fenced block of this form "
-            "instead (one tool per reply; you will receive the result and can then "
-            "answer):\n"
-            "```curio.v1\n"
-            '{"toolRequest": {"tool": "<tool id>", "params": {}}}\n'
-            "```"
-        )
+        instruction = f"{tail}\n\n{_protocol('tools')}\n{lines}\n{_protocol('tool-request')}"
     granted_ids = {tool_id for tool_id, _ in grants or ()}
     if granted_ids & set(_CANDIDATES_TOOLS):
-        instruction = f"{instruction}\n\n{CANDIDATES_INSTRUCTION}"
+        instruction = f"{instruction}\n\n{_protocol('dataset-candidates')}"
         # Only described to a run that can actually produce them. A run without
         # the discovery tools cannot obtain a sourceId, so telling it about the
-        # fields would invite it to invent a pair the runtime then rejects -
+        # fields would invite it to invent a pair the runtime then rejects,
         # and would change the prompt for every existing agent for nothing.
         if _DISCOVERY_CANDIDATES_TOOL in granted_ids:
-            instruction = f"{instruction}\n{CANDIDATES_DISCOVERY_ADDENDUM}"
+            instruction = f"{instruction}\n{_protocol('dataset-candidates-from-portals')}"
     return instruction
 
 
 def delegation_instruction(entries: list[tuple[str, str]], *, native_tools: bool = False) -> str:
-    """The delegation paragraph for one run's system tail (memo dev/48).
+    """The delegation paragraph for one run's system tail (memo dev/48), from
+    the base entry's ``protocol.md``: its ``delegation`` section, one line per
+    entry, then the ``delegate-tool`` or ``delegate-request`` section.
 
     Composed only when the agent's manifest names delegates that resolve to
-    visible definitions — the entries are ``(capability_id, delegate name)``
+    visible definitions: the entries are ``(capability_id, delegate name)``
     pairs the runtime resolved server-side, never the manifest's raw list.
     With *native_tools* the run delegates through the ``delegate`` tool, so the
     paragraph names it instead of the ``delegateRequest`` syntax.
     """
     lines = "\n".join(f"- {cap} — handled by {name}" for cap, name in entries)
-    lead = (
-        "You may also delegate these specialized capabilities, granted for "
-        "this conversation:\n"
-        f"{lines}\n"
-    )
-    if native_tools:
-        return lead + (
-            "To delegate, call the delegate tool with the capability and the "
-            "inputs it needs (one request per reply; you will receive the "
-            "delegate's result and can then continue)."
-        )
-    return lead + (
-        "To delegate, end your reply with exactly one fenced block of this "
-        "form instead (one request per reply; you will receive the delegate's "
-        "result and can then continue):\n"
-        "```curio.v1\n"
-        '{"delegateRequest": {"capability": "<capability id>", "inputs": {}}}\n'
-        "```"
-    )
+    ending = _protocol("delegate-tool" if native_tools else "delegate-request")
+    return f"{_protocol('delegation')}\n{lines}\n{ending}"
 
 
 # Node-content extraction (dev/57): plausible single-field JSON wrappers a

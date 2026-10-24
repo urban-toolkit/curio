@@ -13,8 +13,10 @@
  * assert what actually rendered.
  */
 import React from 'react';
-import { render, screen, act } from '@testing-library/react';
+import { render, screen, act, fireEvent } from '@testing-library/react';
 import { useSimpleVisBehavior, resolveImageColumnChoice, ALL_IMAGE_COLUMNS } from '../../../adapters/node/simpleVisBehavior';
+import nodeSettings from '../../../contracts/nodeSettings.json';
+import { writeNodeSettings } from '../../../utils/nodeSettingsWriters';
 
 const mockUpdateDataNode = jest.fn();
 
@@ -199,6 +201,68 @@ describe('Simple View with nothing to show', () => {
     });
     expect(document.querySelector('[data-curio-node-empty]')).toBeInTheDocument();
     expect(screen.queryByText('""')).not.toBeInTheDocument();
+  });
+});
+
+describe('the image column, picked in the node or by an agent', () => {
+  /** One row whose photo and overlay are both images. */
+  const photoAndOverlay = () =>
+    geoFrame([
+      {
+        image_url: 'https://example.test/a?size=640',
+        overlay_url: 'https://example.test/a-overlay.png',
+        image_id: 'CAoSL1',
+      },
+    ]);
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    (global as any).fetch = jest
+      .fn()
+      .mockResolvedValue({ ok: true, blob: () => Promise.resolve(new Blob()) });
+    (global as any).URL.createObjectURL = jest.fn(() => 'blob:stub');
+    (global as any).URL.revokeObjectURL = jest.fn();
+  });
+
+  it('picking all clears the setting, so the node shows every image column as one that never picked a column', async () => {
+    await act(async () => {
+      render(<Harness data={nodeData(photoAndOverlay(), { simpleVis: { imageColumn: 'overlay_url' } })} />);
+    });
+    const picker = screen.getByLabelText('Image column') as HTMLSelectElement;
+    // The select words every column as the shared contract does, which the
+    // card of an agent's change reads too.
+    expect(picker.options[0].value).toBe(ALL_IMAGE_COLUMNS);
+    expect(picker.options[0].textContent).toBe(nodeSettings.simpleVis.all);
+    fireEvent.change(picker, { target: { value: ALL_IMAGE_COLUMNS } });
+    expect(mockUpdateDataNode).toHaveBeenCalledTimes(1);
+    const [nodeId, saved] = mockUpdateDataNode.mock.calls[0];
+    expect(nodeId).toBe('sv-1');
+    expect(saved.simpleVis?.imageColumn).toBeUndefined();
+  });
+
+  it('a saved all from an older dataflow still shows every image column', async () => {
+    await act(async () => {
+      render(<Harness data={nodeData(photoAndOverlay(), { simpleVis: { imageColumn: 'all' } })} />);
+    });
+    expect(screen.getAllByRole('img')).toHaveLength(2);
+  });
+
+  it("an agent's applied change picks a column as the picker does, and every column clears it", async () => {
+    await act(async () => {
+      render(<Harness data={nodeData(photoAndOverlay())} />);
+    });
+    const fallback = jest.fn();
+    const flow = { nodes: () => [{ id: 'sv-1', data: {} }], updateDataNode: fallback };
+    act(() => writeNodeSettings(flow, 'sv-1', { simpleVis: { imageColumn: 'overlay_url' } }));
+    expect(mockUpdateDataNode).toHaveBeenLastCalledWith(
+      'sv-1',
+      expect.objectContaining({ simpleVis: { imageColumn: 'overlay_url' } }),
+    );
+    act(() => writeNodeSettings(flow, 'sv-1', { simpleVis: {} }));
+    expect(mockUpdateDataNode).toHaveBeenCalledTimes(2);
+    expect(mockUpdateDataNode.mock.calls[1][1].simpleVis?.imageColumn).toBeUndefined();
+    // The node's own picker took both; nothing went around it.
+    expect(fallback).not.toHaveBeenCalled();
   });
 });
 

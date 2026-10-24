@@ -20,6 +20,7 @@ from utk_curio.backend.app.packages.infrastructure.pip_runner import (
 from utk_curio.backend.app.packages.application.agent_reads import (
     agent_catalog_overview,
     agent_resolve_report,
+    template_for_writing,
     template_landscape,
 )
 from utk_curio.backend.app.packages.application.defaults_install import (
@@ -45,7 +46,7 @@ from utk_curio.backend.app.packages.application.libraries import (
     user_library_import_failure,
 )
 from utk_curio.backend.app.packages.application.prune import prune_unreferenced_packages
-from utk_curio.backend.app.packages.application.python_modules import modules_for_node
+from utk_curio.backend.app.packages.application.python_modules import module_index, modules_for_node
 from utk_curio.backend.app.packages.application.seeding import (
     seed_dev_packages,
     ensure_user_packages_initialized,
@@ -70,10 +71,12 @@ from utk_curio.backend.app.packages.application.templates import (
     resolve_templates,
     roster_templates,
     TEMPLATE_FLAGS,
+    catalog_template_behaviors,
     template_content_kind,
     template_flags,
     template_is_executable,
 )
+from utk_curio.backend.app.packages.application.node_templates import installed_template, template_behavior
 from utk_curio.backend.app.packages.builder.factory import FactoryError
 
 from utk_curio.backend.app.packages.application.store_install import (
@@ -174,6 +177,7 @@ __all__ = [
     "export_package_archive",
     "agent_catalog_overview",
     "agent_resolve_report",
+    "template_for_writing",
     "template_landscape",
     "install_to_defaults",
     "uninstall_from_defaults",
@@ -186,6 +190,7 @@ __all__ = [
     "provision_declared_deps",
     "provision_python_deps",
     "prune_unreferenced_packages",
+    "module_index",
     "modules_for_node",
     "ResolverError",
     "ensure_user_packages_initialized",
@@ -207,6 +212,9 @@ __all__ = [
     "resolve_templates",
     "roster_templates",
     "TEMPLATE_FLAGS",
+    "catalog_template_behaviors",
+    "installed_template",
+    "template_behavior",
     "template_content_kind",
     "template_flags",
     "template_is_executable",

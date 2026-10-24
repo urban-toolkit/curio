@@ -10,7 +10,7 @@
  * reports it (`useSelectionTags`), so a tag added later starts from it.
  */
 import type { SelectDetail, SelectionRows } from "../selectionMatch";
-import { selectedIds, selectionLayer, type SelectionState } from "./selectionTags";
+import { rowsHeldBy, selectedIds, selectionLayer, type SelectionState, type SelectionTag } from "./selectionTags";
 
 /** A view's rows: how to read them, and the columns they have. */
 export interface ViewRows {
@@ -36,15 +36,22 @@ export function provideViewRows(nodeId: string, provider: ViewRowsProvider): () 
   };
 }
 
-/** The rows the view *nodeId* holds, or null when it holds none. */
-export async function viewRowsOf(nodeId: string, layer?: string): Promise<ViewRows | null> {
+/** The rows the view *nodeId* holds: null when it holds none, and
+ * `{ failed: true }` when it failed to hand them over. */
+async function readViewRows(nodeId: string, layer?: string): Promise<ViewRows | null | { failed: true }> {
   const provider = providers.get(nodeId);
   if (!provider) return null;
   try {
     return (await provider(layer)) ?? null;
   } catch {
-    return null;
+    return { failed: true };
   }
+}
+
+/** The rows the view *nodeId* holds, or null when it holds none. */
+export async function viewRowsOf(nodeId: string, layer?: string): Promise<ViewRows | null> {
+  const held = await readViewRows(nodeId, layer);
+  return held && "failed" in held ? null : held;
 }
 
 /** Record the selection the view *nodeId* made last. */
@@ -76,6 +83,25 @@ export async function selectionStateOf(
   const held = await viewRowsOf(nodeId, selectionLayer(details));
   if (!held) return null;
   return selectedIds(details, held.rows, column);
+}
+
+/**
+ * The rows the ids *tag* holds pick in its view, the first *limit* of them in
+ * the view's row order, with the view's columns: what a selection chip's hover
+ * shows. Null while the view holds no rows, before its first draw, and
+ * `{ unreadable: true }` when the view failed to hand them over.
+ */
+export async function readSelectionRows(
+  tag: SelectionTag,
+  limit = 3,
+): Promise<{ columns: string[]; rows: Record<string, unknown>[] } | { unreadable: true } | null> {
+  const held = await readViewRows(tag.node, selectionLayer(latestViewSelection(tag.node)));
+  if (!held) return null;
+  if ("failed" in held) return { unreadable: true };
+  const rows = rowsHeldBy([tag], held.rows)
+    .slice(0, limit)
+    .map((index) => Object.fromEntries(held.columns.map((column) => [column, held.rows.value(index, column)])));
+  return { columns: held.columns, rows };
 }
 
 /** The columns of a view's rows that are its own: everything but what the

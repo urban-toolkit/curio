@@ -236,6 +236,8 @@ A package can name the packages it needs in `dependencies.packages`, each as `<p
 
 A node of the package can import the Python modules those packages ship in their `sources/`. Adding the package adds them too, and the packages they name in turn: **Add to project**, **Add to all projects**, a card dropped on the canvas, and opening a dataflow whose lockfile names the package. Each one comes from the shared catalog at the highest version its entry allows, unless your account holds a copy the entry allows, which stays as it is. They go in the dataflow's lockfile beside the package, and the review before an add lists them under **Dependencies**. When a package it needs is in neither your account nor the catalog at a version its entry allows, the add is refused and nothing is added: the message names the missing package and the package that needs it. A copy in your account that the entry does not allow is not replaced: when the catalog's copy is one it allows, the message says to update it first.
 
+Agents read a template the way its manifest and its sources describe it. An agent that writes the code of a node of the template reads its whole `description`, its `source` file, the starter a new node opens with, and the functions the node's code can import: every public function of the package's modules and of the modules of the packages in `dependencies.packages`, by its signature and the first paragraph of its docstring. An agent that checks a package before adding it reads the same functions. So the description, the starter and the docstrings are what an agent knows of the template.
+
 A package you save or import lands in your package store:
 
 ```

@@ -175,7 +175,7 @@ function DataCatalogBrowseDrawerContent({
             className={styles.destructiveBtn}
             type="button"
             disabled={defaultsBusy}
-            title={`Detach ${datasetDisplayTitle(dataset)} from every project. The dataset stays in your catalog.`}
+            data-tooltip={`Detach ${datasetDisplayTitle(dataset)} from every project. The dataset stays in your catalog.`}
             onClick={() => onRemoveFromAllProjects(dataset)}
           >
             {defaultsBusy ? "Removing…" : "Remove from all projects"}
@@ -185,7 +185,7 @@ function DataCatalogBrowseDrawerContent({
             className={styles.addToPaletteBtn}
             type="button"
             disabled={defaultsBusy}
-            title={`Add ${datasetDisplayTitle(dataset)} to every project you have, and to new ones`}
+            data-tooltip={`Add ${datasetDisplayTitle(dataset)} to every project you have, and to new ones`}
             onClick={() => onAddToAllProjects(dataset)}
           >
             {defaultsBusy ? "Adding…" : "Add to all projects"}

@@ -21,13 +21,7 @@ from utk_curio.backend.app.agents.infrastructure.providers import ProviderConfig
 from utk_curio.backend.app.agents.infrastructure.providers import ToolCall
 from utk_curio.backend.app.agents.application.proposals import mint as agents_mint
 from utk_curio.backend.app.agents.application.proposals import plans as agents_plans
-
-
-#: The correction for a plan found outside a terminal curio.v1 block.
-_PLAN_FENCE_GUIDANCE = (
-    "put the plan in a ```curio.v1 fenced block as the VERY LAST thing in "
-    "your reply (not ```json)"
-)
+from utk_curio.backend.app.agents.domain import agent_text
 
 
 def _plan_correction_message(errors: list[str], *, native: bool = False) -> dict:
@@ -35,25 +29,18 @@ def _plan_correction_message(errors: list[str], *, native: bool = False) -> dict
     and explicit that the invalid block never reached the user. A run on
     native tools is asked for the plan as a call instead of a block."""
     if native:
-        listed = "\n".join(f"- {e}" for e in [e for e in errors if e != _PLAN_FENCE_GUIDANCE][:10])
+        fence = agent_text.message("tool-round.plan-fence")
+        listed = "\n".join(f"- {e}" for e in [e for e in errors if e != fence][:10])
         return {
             "role": "user",
-            "content": (
-                "[plan validation] Your dataflowPlan was invalid and was NOT shown "
-                "to the user. Fix exactly these problems and call "
-                f"{tools.wire_name('dataflow.plan.write')} with the COMPLETE "
-                "corrected plan (all nodes and edges):\n" + listed
+            "content": agent_text.message(
+                "tool-round.plan-invalid-native", plan_tool=tools.wire_name('dataflow.plan.write'), listed=listed,
             ),
         }
     listed = "\n".join(f"- {e}" for e in errors[:10])
     return {
         "role": "user",
-        "content": (
-            "[plan validation] Your dataflowPlan block was invalid and was NOT "
-            "shown to the user. Fix exactly these problems and resend the "
-            "COMPLETE corrected block (all nodes and edges, same fence syntax):\n"
-            + listed
-        ),
+        "content": agent_text.message("tool-round.plan-invalid", listed=listed),
     }
 
 
@@ -78,7 +65,7 @@ def _handle_plan_reply(
     never silently."""
     if "dataflow.plan.write" not in loop_ctx.get("granted", []):
         return "none", parts, None
-    fence_guidance = _PLAN_FENCE_GUIDANCE
+    fence_guidance = agent_text.message("tool-round.plan-fence")
     plan_part = next((p for p in parts if p.get("type") == "dataflowPlan"), None)
     if plan_part is not None:
         status, error_text, part = agents_plans._mint_dataflow_plan(user_key, project_id, loop_ctx, plan_part)
@@ -122,36 +109,22 @@ def _handle_plan_reply(
     return "cap", [p for p in parts if p.get("type") != "dataflowPlan"] + [card], None
 
 
-#: The correction for a tool request found outside a terminal curio.v1 block.
-_TOOL_FENCE_GUIDANCE = (
-    "put the tool request in a ```curio.v1 fenced block as the VERY LAST "
-    "thing in your reply (not ```json, and with no text after it)"
-)
-
-
 def _tool_correction_message(errors: list[str], *, native: bool = False) -> dict:
     """The corrective round's feedback for a tool request (#245) — the
     ``_plan_correction_message`` twin: precise, model-actionable, and explicit
     that the invalid block never reached the user. A run on native tools is
     asked for a call instead of a block."""
     if native:
-        listed = "\n".join(f"- {e}" for e in [e for e in errors if e != _TOOL_FENCE_GUIDANCE][:10])
+        fence = agent_text.message("tool-round.tool-fence")
+        listed = "\n".join(f"- {e}" for e in [e for e in errors if e != fence][:10])
         return {
             "role": "user",
-            "content": (
-                "[tool validation] Your tool request was invalid and was NOT "
-                "shown to the user. Fix exactly these problems and call the "
-                "tool with the COMPLETE corrected arguments:\n" + listed
-            ),
+            "content": agent_text.message("tool-round.tool-invalid-native", listed=listed),
         }
     listed = "\n".join(f"- {e}" for e in errors[:10])
     return {
         "role": "user",
-        "content": (
-            "[tool validation] Your tool request block was invalid and was NOT "
-            "shown to the user. Fix exactly these problems and resend the "
-            "COMPLETE corrected block (same fence syntax):\n" + listed
-        ),
+        "content": agent_text.message("tool-round.tool-invalid", listed=listed),
     }
 
 
@@ -217,7 +190,7 @@ def _handle_tool_reply(
         return tool is not None and tool in granted
 
     visible_override: str | None = None
-    fence_guidance = _TOOL_FENCE_GUIDANCE
+    fence_guidance = agent_text.message("tool-round.tool-fence")
 
     _, tail_body = content.split_tail(reply)
     errors = content.tool_tail_diagnosis(tail_body)
@@ -306,6 +279,7 @@ def _refuse_params(text: str) -> tuple[str, str, None]:
 # error card, never silently dropped under the reply's confident prose.
 MUTATE_PROPOSAL_TOOLS = frozenset({
     "node.content.write",
+    "node.settings.write",
     "node.create",
     "dataset.install",
     "discovery.acquire",
@@ -357,14 +331,11 @@ def _execute_tool_request(
     started = time.monotonic()
     granted = tool_id in loop_ctx["granted"]
     if not granted:
-        status, text = "refused", f"tool {tool_id!r} is not granted for this run"
+        status, text = "refused", agent_text.message("tool-round.not-granted", tool=repr(tool_id))
     elif tool_id in _EGRESS_TOOLS and loop_ctx.get("egressCalls", 0) >= egress.MAX_CALLS_PER_RUN:
         # dev/67-4 (DEC-053): the per-run egress budget — verification, never
         # crawling. The refusal is data the model must surface honestly.
-        status, text = "error", (
-            f"the egress budget is exhausted ({egress.MAX_CALLS_PER_RUN} web "
-            "calls per run) — report what you verified so far"
-        )
+        status, text = "error", agent_text.message("tool-round.egress-spent", calls=egress.MAX_CALLS_PER_RUN)
     else:
         if tool_id in _EGRESS_TOOLS:
             # Charged by the number of requests the call will ACTUALLY make,
@@ -378,7 +349,7 @@ def _execute_tool_request(
             )
         contract = tools.REGISTRY.get(tool_id)
         if contract is None:
-            status, text = "refused", f"tool {tool_id!r} is not available"
+            status, text = "refused", agent_text.message("tool-round.not-available", tool=repr(tool_id))
         elif contract.effect == "mutate":
             status, text, part = agents_mint._mint_proposal(user_key, project_id, loop_ctx, req)
             if part is not None:
@@ -403,13 +374,9 @@ def _execute_tool_request(
     return status, text
 
 
-#: Appended to the result of the last round a run may spend on a tool.
-_FINAL_ROUND_NOTE = "\nNo further tool calls are available this turn — answer with what you have."
-
-
 def _tool_result_message(tool_id: str, status: str, text: str, *, final: bool) -> dict:
     """The tool result fed back as provider context (untrusted data, framed)."""
-    suffix = _FINAL_ROUND_NOTE if final else ""
+    suffix = "\n" + agent_text.message("tool-round.final-round") if final else ""
     return {"role": "user", "content": f"[tool result] {tool_id}: {status}\n{text}{suffix}"}
 
 
@@ -419,7 +386,7 @@ def _delegate_result_message(
     """The delegate's result fed back as provider context (untrusted data,
     framed — memo dev/48 §3.4)."""
     who = f"{coord} ({capability})" if coord else capability
-    suffix = _FINAL_ROUND_NOTE if final else ""
+    suffix = "\n" + agent_text.message("tool-round.final-round") if final else ""
     return {"role": "user", "content": f"[delegate result] {who}: {status}\n{text}{suffix}"}
 
 
@@ -460,16 +427,9 @@ def _failure_fields(status: str, text: object) -> dict:
     if reason is None:
         return {}
     fields: dict = {"reason": reason}
-    if str(text).startswith(tools.EGRESS_REFUSED):
+    if str(text).startswith(agent_text.message("tools.egress-refused")):
         fields["egress"] = True
     return fields
-
-
-#: The answer to every call of a reply after its first, which is the one run.
-_NATIVE_NOT_RUN = (
-    "not run: one tool call per reply, and this reply's first call was the "
-    "one run. Call this one again on its own if you still need it."
-)
 
 
 def _native_request(call: ToolCall) -> tuple[dict | None, list[str]]:
@@ -481,7 +441,7 @@ def _native_request(call: ToolCall) -> tuple[dict | None, list[str]]:
         return content.parse_delegate_request_verbose(call.arguments)
     tool_id = tools.tool_id_of(call.name)
     if tool_id is None:
-        return None, [f"there is no tool named {call.name!r}"]
+        return None, [agent_text.message("tool-round.no-such-tool", name=repr(call.name))]
     return content.parse_tool_request_verbose({"tool": tool_id, "params": call.arguments})
 
 
@@ -489,7 +449,7 @@ def _native_result_text(status: str, text: str, *, final: bool) -> str:
     body = text if status in _NATIVE_OK_STATUSES and text else (
         f"{status}: {text}" if text else status
     )
-    return body + (_FINAL_ROUND_NOTE if final else "")
+    return body + ("\n" + agent_text.message("tool-round.final-round") if final else "")
 
 
 def _fenced_request_reply(text: str, req: dict) -> str:
@@ -606,8 +566,10 @@ class _RunConversation:
         listed = "\n".join(f"- {e}" for e in errors[:10])
         self._answer_calls(
             turn,
-            "invalid call, not run. Fix exactly these problems and call it again:\n"
-            + listed + (_FINAL_ROUND_NOTE if final else ""),
+            agent_text.message(
+                "tool-round.invalid-call", listed=listed,
+                final_note="\n" + agent_text.message("tool-round.final-round") if final else "",
+            ),
             is_error=True,
         )
 
@@ -627,4 +589,4 @@ class _RunConversation:
                              "content": first_result, "is_error": is_error})
         for call in rest:
             self._native.append({"role": "tool", "tool_call_id": call.id, "name": call.name,
-                                 "content": _NATIVE_NOT_RUN, "is_error": True})
+                                 "content": agent_text.message("tool-round.not-run"), "is_error": True})

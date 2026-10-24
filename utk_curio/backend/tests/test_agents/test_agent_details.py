@@ -35,15 +35,16 @@ _TOOLS = {
         "Propose a package draft",
     ],
     "agent.curio.node-builder": [
-        "Read the dataflow", "Read a node", "Read a node's last run",
+        "Read the dataflow", "Read a node", "Read a node's last run", "Read a node's history",
         "Search the Data Catalog", "Search the Model Catalog", "Search the Node Catalog",
         "Check a package's dependencies and permissions", "Propose a node",
-        "Propose a content change", "Propose a package install",
+        "Propose a content change", "Propose a settings change", "Propose a package install",
         "Propose a package draft",
     ],
     "agent.curio.dataflow-builder": [
-        "Read the dataflow", "Read a node's last run", "Read worked examples",
-        "Propose a plan", "Propose a node", "Propose a package draft",
+        "Read the dataflow", "Read a node's last run", "Read a node's history", "Read worked examples",
+        "Search the Scenario Catalog", "Propose a plan", "Propose a node", "Propose a settings change",
+        "Propose a package draft",
     ],
     "agent.curio.dataset-finder": [
         "Search the Data Catalog", "List the data portals", "Search the data portals",
@@ -112,13 +113,13 @@ _PROMPT_RUNS = {
 #: for them, and nothing asks for the keywords to be extracted.
 _PLANNER_MODES = [
     ("Plan a dataflow's tasks", ["workflow.plan.create"],
-     "prompts/new_subtasks_prompt.md", ["Dataflow Builder"]),
+     "prompts/new_subtasks_prompt.md", []),
     ("Plan a follow-up from a node's run", ["execution.followup.plan"],
-     "prompts/new_subtask_from_exec_prompt.md", ["Node Builder", "Dataflow Builder"]),
+     "prompts/new_subtask_from_exec_prompt.md", ["Node Builder"]),
     ("Refresh a dataflow's tasks", ["workflow.plan.refresh"],
-     "prompts/task_refresh_prompt.md", ["Dataflow Builder"]),
+     "prompts/task_refresh_prompt.md", []),
     ("Check a plan's coherence", ["workflow.coherence.validate"],
-     "prompts/evaluate_coherence_subtasks_prompt.md", ["Dataflow Builder"]),
+     "prompts/evaluate_coherence_subtasks_prompt.md", []),
     ("Bind the keywords of a description", ["workflow.keyword.bind"],
      "prompts/keywords_binding_prompt.md", ["Dataset Finder"]),
     ("Extract the keywords of a description", ["workflow.keywords.extract"],
@@ -167,8 +168,8 @@ class TestTools:
         _, token = user_and_token
         tools = _cards(client, token)["agent.curio.dataflow-builder"]["tools"]
         assert [t["id"] for t in tools] == [
-            "dataflow.read", "node.runtime.read", "examples.read", "dataflow.plan.write", "node.create",
-            "package.draft.apply",
+            "dataflow.read", "node.runtime.read", "node.history.read", "examples.read", "scenarios.search",
+            "dataflow.plan.write", "node.create", "node.settings.write", "package.draft.apply",
         ]
 
     def test_every_tool_contract_has_one_label_and_a_proposal_says_so(self):

@@ -253,7 +253,7 @@ class TestAfterTheImportSolvingContinues:
         frames: list[str] = []
 
         def _reply(config, messages, **kwargs):
-            if messages and messages[0].get("content") == titles.TITLE_PROMPT:
+            if messages and messages[0].get("content") == titles.title_prompt():
                 return "Title"
             frames.append(messages[-1].get("content") or "")
             return loader
@@ -347,11 +347,21 @@ ROSTER = {CHICAGO: {"dirName": CHICAGO, "provider": "socrata",
 
 
 class _FakeDiscovery:
-    """``DiscoveryService`` as the confirmation sees it."""
+    """``DiscoveryService`` as the confirmation sees it: the portal describes
+    the two resources :data:`DISCOVERY_CANDIDATES` names, and no other."""
+
+    DESCRIBED = {(CHICAGO, "cauq-8yn6"), (CHICAGO, "sp34-6z76")}
 
     def __init__(self, started=None, job=None, error=None):
         self.started, self.job, self.error = started, job, error
         self.calls: list = []
+
+    def describe_resource(self, source_id, resource_id):
+        from utk_curio.backend.app.discovery.domain.errors import DiscoveryError
+
+        if (source_id, resource_id) not in self.DESCRIBED:
+            raise DiscoveryError(f"{resource_id} is not on {source_id}")
+        return {"resourceId": resource_id, "name": resource_id, "formats": ["csv", "geojson"]}
 
     def start_acquire(self, source_id, resource_id, fmt=None):
         from utk_curio.backend.app.discovery.domain.errors import DiscoveryError
@@ -401,7 +411,7 @@ class TestAnAcquirableRowIsDownloaded:
         monkeypatch.setattr(
             'utk_curio.backend.app.agents.infrastructure.providers.run_chat_turn',
             lambda config, messages, **k: (
-                "Title" if messages[0].get("content") == titles.TITLE_PROMPT else loader
+                "Title" if messages[0].get("content") == titles.title_prompt() else loader
             ),
         )
         monkeypatch.setattr(
@@ -442,7 +452,7 @@ class TestAnAcquirableRowIsDownloaded:
         monkeypatch.setattr(
             'utk_curio.backend.app.agents.infrastructure.providers.run_chat_turn',
             lambda config, messages, **k: (
-                "Title" if messages[0].get("content") == titles.TITLE_PROMPT else loader
+                "Title" if messages[0].get("content") == titles.title_prompt() else loader
             ),
         )
         monkeypatch.setattr(

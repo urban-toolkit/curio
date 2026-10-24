@@ -1,6 +1,7 @@
 """Worked examples: shipped dataflows chosen per run, for the run's runtime slot.
 
-``llm-prompts/examples.md`` indexes every dataflow Curio ships, one line each,
+``examples.md``, a page of the base entry in ``agents/`` (``agent_text``),
+indexes every dataflow Curio ships, one line each,
 under "Used" or "Not used". A line links its file and says what the dataflow
 shows; the file itself holds the task, categories, node types and datasets,
 so a line never repeats them.
@@ -27,6 +28,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from utk_curio import shipped
+from utk_curio.backend.app.agents.domain import agent_text
 from utk_curio.backend.app.agents.domain import builtin
 from utk_curio.backend.app.agents.domain import contracts
 from utk_curio.backend.app.datasets.domain.code_refs import dataset_ids_in_code
@@ -34,7 +36,7 @@ from utk_curio.backend.app.projects import services as projects_services
 
 log = logging.getLogger(__name__)
 
-#: The index, beside the prompts in ``llm-prompts/``.
+#: The index: a page of the base entry, by its path there.
 INDEX_FILE = "examples.md"
 #: The index's two sections: the dataflows a run may be given, and the rest.
 USED = "Used"
@@ -69,14 +71,6 @@ STOP_WORDS = frozenset({
     "docs", "example", "examples", "json", "node", "nodes",
 })
 
-#: What opens the block.
-HEADING = (
-    "Worked examples: shipped Curio dataflows close to this task, chosen for this "
-    "run. Learn from how their nodes, code and specs fit together. The datasets "
-    "and node types this task uses come from this project, not from these "
-    "examples: a dataset is loaded by its Data Catalog id, never a guessed filename."
-)
-
 #: How long a code line must be to count as part of an evaluation's answer: an
 #: example that shares one with the scored dataflow is not shown to its runs.
 SHARED_LINE_CHARS = 25
@@ -110,7 +104,7 @@ class IndexEntry:
 
     section: str
     title: str
-    #: The link as written, relative to ``llm-prompts/`` so it works on GitHub.
+    #: The link as written, relative to the base entry's folder so it works on GitHub.
     target: str
     text: str
 
@@ -118,12 +112,14 @@ class IndexEntry:
     def path(self) -> Path:
         """The linked file on this machine: the link names a repository path
         (``docs/examples/...``), found through ``utk_curio/shipped.py``."""
-        linked = posixpath.normpath(f"{contracts.PROMPTS_DIR}/{self.target}")
+        base = agent_text.base_dir()
+        folder = f"{agent_text.AGENTS_DIR}/{base.name}" if base is not None else agent_text.AGENTS_DIR
+        linked = posixpath.normpath(f"{folder}/{self.target}")
         try:
             return shipped.path(linked).resolve()
         except ValueError:
             # Not a file Curio ships, so no shipped dataflow has this path.
-            return (builtin.PROMPT_SOURCE_DIR / self.target).resolve()
+            return (shipped.path(folder) / self.target).resolve()
 
     @property
     def line(self) -> str:
@@ -170,8 +166,8 @@ def parse_index(text: str) -> list[IndexEntry]:
 
 
 def read_index() -> list[IndexEntry]:
-    """The index as it is on disk now, read on every call like the prompts; empty when missing."""
-    text = builtin.read_prompt_file(INDEX_FILE, wanted_by="the worked examples")
+    """The index as an agent reads it, like the prompts (``agent_text.read``); empty when missing."""
+    text = builtin.read_page(INDEX_FILE, wanted_by="the worked examples")
     return parse_index(text) if text else []
 
 
@@ -313,19 +309,26 @@ def select(query: str, *, node_type: object = None, dataset_ids=(), exclude=(),
     return [example for _score, _position, example in ranked[:TOP_K]]
 
 
+def heading() -> str:
+    """What opens the block: the section ``worked-examples`` of the base
+    entry's ``frames.md``."""
+    return agent_text.section(builtin.FRAMES_FILE, "worked-examples")
+
+
 def render(chosen: list[Example], *, cap: int = MAX_BLOCK_CHARS) -> str | None:
     """The block for *chosen*, in order: the heading, then each example's line
     and its Trill. An example that would take the block past *cap* is left out;
     None when none fits."""
+    head = heading()
     pieces: list[str] = []
-    size = len(HEADING)
+    size = len(head)
     for example in chosen:
         piece = shown(example)
         if size + len(_SEP) + len(piece) > cap:
             continue
         pieces.append(piece)
         size += len(_SEP) + len(piece)
-    return _SEP.join([HEADING, *pieces]) if pieces else None
+    return _SEP.join([head, *pieces]) if pieces else None
 
 
 def shown(example: Example) -> str:
@@ -352,12 +355,11 @@ def find(key: str, *, exclude=()) -> Example:
     example = next((e for e in used_examples() if e.is_named_by(key)), None)
     if example is None:
         raise LookupError(
-            f"no worked example has the key {key!r}; call examples.read with no key to list the keys"
+            agent_text.message("turn.example-unknown-key", key=repr(key))
         )
     if any(example.is_named_by(item) for item in exclude):
         raise LookupError(
-            f"the worked example {key!r} is not available in this project; "
-            "call examples.read with no key to list the ones that are"
+            agent_text.message("turn.example-excluded", key=repr(key))
         )
     return example
 

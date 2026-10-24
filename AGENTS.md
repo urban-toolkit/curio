@@ -8,11 +8,10 @@ Curio is a framework for urban visual analytics built on dataflows: a React canv
 - `utk_curio/backend/`: Flask API. `app/` has one package per feature, `migrations/` the Alembic migrations, `tests/` the pytest suites.
 - `utk_curio/frontend/urban-workflows/`: React and TypeScript canvas, built with webpack. Frontend paths below start at its `src/`.
 - `utk_curio/sandbox/`: Flask service that runs node Python and JavaScript and stores results as DuckDB artifacts.
-- `utk_curio/llm-prompts/`: the prompts the agents share: the preamble (named `curio:default_preamble.md` in a manifest), every prompt template and the fragments they include, `package_contract.md`, and `examples.md`, the index of shipped dataflows that runs get as worked examples (`agents/application/turns/examples.py`).
-- `utk_curio/common/`: code shared by backend, sandbox and the page server (`redaction.py`, `backend_address.py`).
+- `utk_curio/common/`: code shared by backend, sandbox and the page server (`redaction.py`, `backend_address.py`), and `shared_constants.py`, which reads the constants the frontend shares (`src/contracts/*.json`).
 - `utk_curio/shipped.py`: where `agents/`, `packages/`, `datasets/`, `discovery/`, `scripts/`, `vendor/` and the parts of `docs/` Curio reads are: beside `utk_curio/` in a clone, `utk_curio/_shipped/` in a pip install. Every reader of them asks it.
 - `utk_curio/tools/`: operator tools outside the Flask app (`agent_eval.py`, `preview_runner.py`).
-- `agents/`: shipped Agent Catalog, one directory per agent (`<agentId>@<major>/`: `manifest.json`, `prompts/`), read by `agents/domain/builtin.py` as an imported agent is; its manifest's `catalog` says card or helper and the roster's order.
+- `agents/`: everything the agents read. The shipped Agent Catalog, one directory per agent (`<agentId>@<major>/`: `manifest.json`, `prompts/`), read by `agents/domain/builtin.py` as an imported agent is; its manifest's `catalog` says card or helper and the roster's order. Beside them the base entry, `agent.curio.builtin@1/` (kind `base`, no agent), with the pages they share, which its manifest lists: the preamble (named `curio:default_preamble.md` in a manifest), which includes `knowledge/` (one page per feature of Curio; `knowledge/node-functions.md` lists every function node code calls, in the fixed line shapes `agents/domain/node_functions.py` reads, and `knowledge/map-edits.md` is the Map Edits node's call and edits, which `test_agents/test_map_edits_page.py` compares with the node's reader), `examples.md` (the index of shipped dataflows that runs get as worked examples, `agents/application/turns/examples.py`), the text the runtime composes a run's turns from (`tools.md`, `protocol.md`, `frames.md`, `delegate-contracts.md`, `conversation-title.md`, `dataflow-block.md`, each read by its `## <name>` sections, `agent_text.section`; `dataflow-block.md` holds the words of the block a run that writes code gets of its dataflow, its datasets, models and key names and the template being written, `agents/application/dataflow_block.py`), `keyword-types.md` (the keyword types Curio ships), `messages.md` (what a check tells a model when it refuses or corrects what the model wrote, each section a message read by its id, `agent_text.message`; errors people see stay with their feature) and `rules/`. Every file is a source the backend renders when it starts (`agents/domain/agent_text.py`).
 - `packages/`: shipped Node and Model Catalogs, one directory per package (`manifest.json`, `sources/`, `integrity.json`); a model package (kind `model`) also holds its weights under `models/`.
 - `datasets/`: shipped Data Catalog, one directory per dataset (`manifest.json`, `data/`).
 - `discovery/`: Discovery Catalog sources, one `manifest.json` per source.
@@ -69,7 +68,7 @@ Under `utk_curio/backend/app/`:
 - `src/adapters/node/`: one behavior hook per built-in node kind (`codeNodeBehavior.tsx`, `vegaBehavior.ts`, `autkGrammarBehavior.tsx`, `dataPoolBehavior.tsx`, ...), exported from `index.ts`.
 - `src/components/UniversalNode.tsx`: the component that renders every node.
 - `src/registry/`: node descriptors and behaviors, built from installed package manifests.
-- `src/generated/`: contracts written by `scripts/generate_contracts.py` from `utk_curio/backend/app/agents/domain/contracts.py`; never edited by hand.
+- `src/contracts/`: the constants the frontend shares with the backend, one JSON file each (`renderCauses`, `solveStopReasons`, `agentCategories`, `noteColors`, `autkGrammar`, `visDefaults`, `nodeSettings`), imported here and read by the backend through `utk_curio/common/shared_constants.py`; `autkGrammar.ts` holds `inputTableName` and `autkOneViewProblem`, with the cases both sides run in `autkGrammar.cases.json`.
 - `src/api/`: REST clients (projects, connection keys, LLM configurations, monitor).
 
 ## Tests
@@ -87,6 +86,7 @@ Every suite runs on GitHub CI, through `.github/workflows/docker-compose.yml`.
   - `closeups.py`: `save_node_closeup`, the close-up budgets, viewport hints. `dialogs.py`: `accept_confirm_dialog`, `wait_for_drawer_closed`, `leave_agent_badge`.
   - `scenario_drawer.py`: the open dataflow's scenarios in the Scenario Catalog drawer's In project tab: `open_in_project_tab`, `in_project_card`, `scenario_card_button`, `open_scenario_details`, `scenario_part`, `close_scenario_drawer`.
   - `interactions.py`: interaction frames, brush and mark probes.
+  - `tooltips.py`: the one Curio tooltip as a test reads it: `rest_pointer_on`, and `hover_until_tooltip_says` and `hover_chip_until_tooltip_says` (a fresh hover of an element or of a chip in an editor, its box read once no tooltip shows and the pointer checked to rest on it; a failed one says whether a tooltip showed and hid, and what the editor and the page did after the pointer moved), `one_tooltip`, `tooltip_saying`, `no_tooltip`, `editor_chip_box` (a chip's box in an editor), and `tooltip_close_up`, the clip of a tooltip's frame.
   - `servers.py`: ports, `e2e_existing_servers`, `serve_built_frontend` (the production page server on the built bundle, host-side).
   - `auth.py`: UI signup, the projects page, `require_owner_view`.
   - `db_stubs.py`: `stub_db_user`, `stub_db_login`, `stub_login_and_enter_workflow`, `api_json`.
@@ -131,7 +131,6 @@ Other workflows: `autk-schema.yml` (weekly check of the vendored Autark schema),
 - `scripts/test.sh`: boots and runs each suite; CI calls it and `curio test` wraps it.
 - `scripts/clean.sh`: removes build artifacts and runtime data. `scripts/kill-curio.sh`: kills leftover Curio server processes.
 - `scripts/new_package.py`: scaffolds a node package. `scripts/regen_integrity.py`: rewrites a package's `integrity.json`.
-- `scripts/generate_contracts.py`: writes `src/generated/` and the prompt rendered from each `utk_curio/llm-prompts/X.template.md`, into the folder in `agents/` whose manifest names `prompts/X.md`, else beside the template; `--check` lists stale outputs.
 - `scripts/ci_requirements.py`: writes `scripts/ci-requirements.txt`, the libraries `curio.py setup --with-examples` installs from the manifests, which CI's image installs before its source; rerun it after changing a manifest's Python dependencies or the packages an example declares (`test_ci_requirements.py` fails on a stale list).
 - `scripts/sync_autk_schema.py`: vendors the Autark grammar schema; `--check` compares it with the release.
 - `scripts/validate_trill.py`: validates dataflow JSON against `docs/schemas/trill.v1.json`.
@@ -154,5 +153,4 @@ Generated, vendored or data files:
 - `*.geojson`, `datasets/*/data/`, `packages/*/models/`, `vendor/`.
 - `utk_curio/backend/tests/test_discovery/fixtures/` (recorded portal responses).
 - `docs/examples/dataflows/expected_outputs/` (screenshot baselines).
-- A prompt `X.md` when `utk_curio/llm-prompts/` holds an `X.template.md` (the preamble and `package_contract.md` there, most agent instructions in `agents/*/prompts/`): generated; edit the template or `contracts.py`, then run `scripts/generate_contracts.py`.
 - `test_feature_tour_video.py`, `test_stress_tour_video.py`, `test_user_stress_video.py` in `test_frontend/`, unless working on the video tours.

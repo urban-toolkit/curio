@@ -85,7 +85,7 @@ export const PaletteForkFamily = memo(function PaletteForkFamily({
                     <div className={packageStyles.packageForkFamilyTitleRow}>
                         <span
                             className={packageStyles.packageForkFamilyTitle}
-                            title={
+                            data-tooltip={
                                 selectedGroup.label !== familyTitle
                                     ? `${familyTitle} — ${selectedGroup.label}`
                                     : familyTitle
@@ -104,7 +104,7 @@ export const PaletteForkFamily = memo(function PaletteForkFamily({
                             />
                         ) : null}
                     </div>
-                    <span className={packageStyles.packageForkFamilySubtitle} title={rootKey}>
+                    <span className={packageStyles.packageForkFamilySubtitle} data-tooltip={rootKey}>
                         Family root {rootKey} · {members.length} forks
                     </span>
                 </div>

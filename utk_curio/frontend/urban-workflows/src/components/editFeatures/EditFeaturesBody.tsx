@@ -447,7 +447,7 @@ export function EditFeaturesBody({
               className={`nodrag nopan ${styles.primary}`}
               data-testid="interaction-update"
               disabled={running}
-              title={`Runs this node and the ${below} node${below === 1 ? "" : "s"} below it with the edits`}
+              data-tooltip={`Runs this node and the ${below} node${below === 1 ? "" : "s"} below it with the edits`}
               onClick={() => flow?.runDownstream?.([nodeId])}
             >
               {running ? "Running…" : "Commit edits"}
@@ -471,11 +471,11 @@ export function EditFeaturesBody({
         ) : null}
         {editable ? (
           <span className={styles.history}>
-            <button type="button" className={`nodrag nopan ${styles.button}`} data-testid="interaction-undo" disabled={!undoTo} title={`Undo (${MOD_KEY_LABEL}+Z)`} onClick={() => go(undoTo)}>
+            <button type="button" className={`nodrag nopan ${styles.button}`} data-testid="interaction-undo" disabled={!undoTo} data-tooltip={`Undo (${MOD_KEY_LABEL}+Z)`} onClick={() => go(undoTo)}>
               <FontAwesomeIcon icon={faRotateLeft} aria-hidden />
               Undo
             </button>
-            <button type="button" className={`nodrag nopan ${styles.button}`} data-testid="interaction-redo" disabled={!redoTo} title={`Redo (Shift+${MOD_KEY_LABEL}+Z)`} onClick={() => go(redoTo)}>
+            <button type="button" className={`nodrag nopan ${styles.button}`} data-testid="interaction-redo" disabled={!redoTo} data-tooltip={`Redo (Shift+${MOD_KEY_LABEL}+Z)`} onClick={() => go(redoTo)}>
               <FontAwesomeIcon icon={faRotateRight} aria-hidden />
               Redo
             </button>
@@ -517,7 +517,7 @@ export function EditFeaturesBody({
                         type="button"
                         className={`nodrag nopan ${styles.iconButton}`}
                         aria-label={`Delete edit ${index + 1}`}
-                        title="Delete this edit"
+                        data-tooltip="Delete this edit"
                         onClick={() => writeSettings(withoutEdit(settings, index), `Delete: ${describeEdit(edit, keyOf(edit))}`)}
                       >
                         <FontAwesomeIcon icon={faXmark} aria-hidden />

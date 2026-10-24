@@ -8,6 +8,7 @@ and import order between siblings cannot matter.
 
 from __future__ import annotations
 
+import ast
 import logging
 import hashlib
 import io
@@ -18,11 +19,14 @@ import tokenize
 from utk_curio.backend.app.agents.application import source_grounding
 from utk_curio.backend.app.agents.domain import content
 from utk_curio.backend.app.agents.domain import contracts
+from utk_curio.backend.app.agents.domain import dashboards
 from utk_curio.backend.app.agents.domain import failure_text
+from utk_curio.backend.app.agents.domain import map_edits
 from utk_curio.backend.app.agents.infrastructure.providers import ProviderConfig
 from utk_curio.backend.app.agents.application import spec_reads as agents_spec_reads
 from utk_curio.backend.app.agents.application.solve import budgets as agents_budgets
 from utk_curio.backend.app.agents.application.solve import verified_loop
+from utk_curio.backend.app.agents.domain import agent_text
 
 log = logging.getLogger(__name__)
 
@@ -47,7 +51,7 @@ def _attempt_code_field(candidate: object, *, prose: bool = False) -> dict:
         return {}
     field: dict = {}
     if len(text) > agents_budgets._ATTEMPT_CODE_CHARS:
-        field["code"] = text[:agents_budgets._ATTEMPT_CODE_CHARS] + agents_budgets._CODE_TRUNCATION_MARKER
+        field["code"] = text[:agents_budgets._ATTEMPT_CODE_CHARS] + ("\n" + agent_text.message("solve.attempt-code-truncated"))
         field["codeTruncated"] = True
     else:
         field["code"] = text
@@ -63,10 +67,17 @@ def _content_sha(text: str) -> str:
     return hashlib.sha256((text or "").encode("utf-8")).hexdigest()
 
 
+#: The kind of a round whose candidate is the content builder's one-line answer
+#: on a node that loads no data: why the node cannot be done, such as two
+#: inputs that cannot be joined, in the builder's own words.
+ONE_LINE_ANSWER_KIND = "one-line-answer"
+
 #: Attempt kinds whose detail is read from the HEAD (a refusal names the
 #: literal, a decline names the missing input); a traceback reads from its tail.
 _HEAD_FIRST_KINDS = (
-    "ungrounded-source", "source-missing", "repeated-attempt",
+    "ungrounded-source", "source-missing", ONE_LINE_ANSWER_KIND, "repeated-attempt",
+    # The gate's refusal of the code's own calls and imports names them first.
+    source_grounding.CODE_KIND,
     # dev/128: the shape refusal's first line IS the answer.
     "input-contract",
     # dev/129/133/134: these details are composed prose, not tracebacks — the
@@ -74,6 +85,10 @@ _HEAD_FIRST_KINDS = (
     "document-invalid", "empty-result",
     # dev/136: and the render that drew nothing.
     contracts.EMPTY_RENDER_KIND,
+    # Map Edits' refusals: what it cannot read, or the ids no feature has.
+    map_edits.KIND,
+    # A pinned tile's spec that loads its own data, and the remedy.
+    dashboards.KIND,
 )
 
 
@@ -88,7 +103,9 @@ def _last_attempt_code(trail: dict) -> str | None:
 #: parked on one of these has no new input to carry — attempting it again would
 #: ask the same question of the same model, so the session WAITS and rechecks.
 #: Everything else (an execution error, a refusal, a decline) IS a new input.
-_USER_ACTION_REMEDIES = ("dataset-selection", "connection-key")
+#: A pinned tile whose spec loads its own data waits for a node upstream, or
+#: for the user to unpin it (``dashboards.remedy``).
+_USER_ACTION_REMEDIES = ("dataset-selection", "connection-key", dashboards.KIND)
 
 
 def _awaits_user_action(result: dict | None) -> bool:
@@ -254,12 +271,46 @@ _CODE_MARKERS = ("import ", "return ", " = ", "(", "def ", "{")
 
 
 def _is_prose_decline(candidate: str) -> bool:
-    """A short, single-line reply with no code shape — the content builder's
-    sanctioned "what source is missing" line rather than content."""
+    """A short, single-line reply with no code shape: the content builder's
+    sanctioned one-line answer rather than content."""
     text = (candidate or "").strip()
     if not text or "\n" in text or len(text) > agents_budgets._PROSE_DECLINE_MAX_CHARS:
         return False
     return not any(marker in text for marker in _CODE_MARKERS)
+
+
+def _one_line_answer(candidate: str, *, data_loading: bool) -> tuple[str, str] | None:
+    """The kind and the detail of a *candidate* that is the content builder's
+    one-line answer in place of code, or None.
+
+    The line has no code shape (:func:`_is_prose_decline`) and Python cannot
+    read it as code either, so a bare expression such as ``input_0[0]`` stays
+    code that a round corrects. A data-loading node's answer declines, naming
+    what its source needs (``source-missing``); any other node's says why the
+    node cannot be done (:data:`ONE_LINE_ANSWER_KIND`)."""
+    if not _is_prose_decline(candidate):
+        return None
+    line = candidate.strip()
+    try:
+        ast.parse(line)
+    except Exception:  # noqa: BLE001 - a line Python cannot read is no code
+        pass
+    else:
+        return None
+    if data_loading:
+        return "source-missing", agent_text.message("solve.builder-declined", decline=line)
+    return ONE_LINE_ANSWER_KIND, agent_text.message("solve.builder-answered", answer=line)
+
+
+#: The stops on the content builder's one-line answer: the loop's last
+#: candidate is that line, which is no content to review or apply.
+_ANSWER_STOPS = ("answer", "decline")
+
+
+def _ended_on_an_answer(outcome: dict | None) -> bool:
+    """Whether the verified loop stopped on the builder's one-line answer, or
+    on a loader's decline, so that its candidate is the builder's line."""
+    return str((outcome or {}).get("stoppedBy") or "") in _ANSWER_STOPS
 
 
 def _correction_url_evidence(candidate: str, error_text: str, ctx) -> list[dict]:
@@ -313,7 +364,7 @@ def _correction_url_evidence(candidate: str, error_text: str, ctx) -> list[dict]
             known.pop(url, None)
         entry = {"url": url, "verification": verdict}
         if how == "composed":
-            entry["request"] = "the URL composed from the code's url + params"
+            entry["request"] = agent_text.message("solve.url-evidence-composed")
         note = _endpoint_note(verdict)
         if note:
             entry["note"] = note
@@ -338,7 +389,7 @@ def _placeholder_probe(url: str, ctx) -> dict | None:
     names = sorted(set(secret_params.values()))
     entry: dict = {
         "url": shown,
-        "request": "the URL composed from the code's url + params; the saved key was sent in place of curio_secret(...)",
+        "request": agent_text.message("solve.url-evidence-placeholder"),
         "keyed": ", ".join(names),
     }
     resolver = getattr(ctx, "secret_values", None)
@@ -352,7 +403,7 @@ def _placeholder_probe(url: str, ctx) -> dict | None:
     if missing:
         entry["verification"] = {
             "status": "unverified",
-            "detail": f"no connection key named {', '.join(repr(m) for m in missing)} is saved — not probed",
+            "detail": agent_text.message("solve.key-not-saved", names=', '.join(repr(m) for m in missing)),
         }
         return entry
     params = {param: values[name] for param, name in secret_params.items()}
@@ -382,10 +433,9 @@ def _keyed_probe(candidate: str, url: str, how: str, ctx) -> dict | None:
     result: dict = {"keyed": saved.name, "keyedDelivery": saved.delivery}
     in_code = saved.name in source_grounding.secret_names(candidate)
     if not saved.delivery.startswith(("query:", "header:")):
-        result["keyedNote"] = (
-            f"a connection key {saved.name!r} is saved for this host"
-            + ("" if in_code else f" — the code does not use it yet: {saved.use_line}")
-            + "; the code decides how the API receives it"
+        result["keyedNote"] = agent_text.message(
+            "solve.keyed-note-code-delivery", name=repr(saved.name),
+            not_used="" if in_code else " " + agent_text.message("solve.keyed-note-not-used", use_line=saved.use_line),
         )
         return result
     resolver = getattr(ctx, "secret_values", None)
@@ -415,21 +465,19 @@ def _keyed_probe(candidate: str, url: str, how: str, ctx) -> dict | None:
     content_type = str(outcome.get("contentType") or "").lower()
     sent = f"as {kind} {target!r}"
     if status == "verified" and content_type and "json" not in content_type:
-        result["keyedNote"] = (
-            f"even with the saved key {saved.name!r} sent {sent}, the request answered "
-            f"{content_type.split(';')[0]}{' (' + str(outcome.get('pageTitle')) + ')' if outcome.get('pageTitle') else ''}"
-            " — the key or the way it is sent is wrong; say so instead of guessing parameters"
+        result["keyedNote"] = agent_text.message(
+            "solve.keyed-note-not-data", name=repr(saved.name), sent=sent, content_type=content_type.split(';')[0],
+            title=' (' + str(outcome.get('pageTitle')) + ')' if outcome.get('pageTitle') else '',
         )
     elif status == "verified":
-        result["keyedNote"] = (
-            f"with the saved key {saved.name!r} sent {sent} the request answers data — "
-            f"the code must send it the same way: {saved.use_line}"
-            + ("" if in_code else " (the code does not use it yet)")
+        result["keyedNote"] = agent_text.message(
+            "solve.keyed-note-answers-data", name=repr(saved.name), sent=sent, use_line=saved.use_line,
+            not_used="" if in_code else " " + agent_text.message("solve.keyed-note-not-used-yet"),
         )
     else:
-        result["keyedNote"] = (
-            f"with the saved key {saved.name!r} sent {sent}: {status}"
-            + (f" {outcome.get('httpStatus')}" if outcome.get("httpStatus") else "")
+        result["keyedNote"] = agent_text.message(
+            "solve.keyed-note-outcome", name=repr(saved.name), sent=sent, status=status,
+            http_status=f" {outcome.get('httpStatus')}" if outcome.get("httpStatus") else "",
         )
     return result
 
@@ -476,16 +524,13 @@ def _endpoint_note(verdict: dict) -> str:
     final_url = verdict.get("finalUrl")
     title = verdict.get("pageTitle")
     sample = verdict.get("bodySample")
-    where = f" after redirecting to {final_url}" if final_url else ""
+    where = " " + agent_text.message("solve.after-redirect", final_url=final_url) if final_url else ""
     if status == "verified" and content_type and "json" not in content_type.lower():
-        what = f'an HTML page titled "{title}"' if title else f"{content_type.split(';')[0]} content"
-        return (
-            f"answered {what}{where} — not data. Read the page title: a key or "
-            "sign-in requirement cannot be fixed by changing parameters; say what is missing."
-        )
+        what = agent_text.message("solve.html-page-titled", title=title) if title else f"{content_type.split(';')[0]} content"
+        return agent_text.message("solve.endpoint-not-data", what=what, where=where)
     if status == "unreachable" and verdict.get("httpStatus"):
         said = f': "{sample}"' if sample else (f' ("{title}")' if title else "")
-        return f"the request itself answered {verdict['httpStatus']}{where}{said}"
+        return agent_text.message("solve.endpoint-status", http_status=verdict['httpStatus'], where=where, said=said)
     return ""
 
 

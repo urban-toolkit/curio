@@ -186,7 +186,7 @@ export const DataflowCategoryInput: React.FC<DataflowCategoryInputProps> = ({
         <span
           key={chip.key}
           className={clsx(styles.chip, chip.section ? styles.chipHand : styles.chipAuto)}
-          title={`${chip.kind}: ${chip.value}`}
+          data-tooltip={`${chip.kind}: ${chip.value}`}
           data-curio-category-chip={chip.section ?? "auto"}
         >
           <span>{chip.value}</span>

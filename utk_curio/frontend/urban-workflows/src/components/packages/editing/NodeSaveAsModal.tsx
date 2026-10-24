@@ -314,7 +314,7 @@ export function NodeSaveAsModal({
             type="button"
             className={styles.ghostBtn}
             disabled={busy}
-            title="Download this node as a .curio.zip package without installing it"
+            data-tooltip="Download this node as a .curio.zip package without installing it"
             onClick={() => void onExport()}
           >
             {busyKind === "export" ? "Exporting…" : "Export"}

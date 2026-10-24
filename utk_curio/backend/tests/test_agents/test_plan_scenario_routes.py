@@ -154,6 +154,29 @@ class TestTheReview:
         # The corrected plan minted, and takes the color the dataflow's own scenario does not wear.
         assert proposal["plan"]["scenarios"][0]["color"] == "#e86a3c"
 
+    def test_a_scenario_named_like_one_the_dataflow_has_is_refused_and_the_model_told_why(
+        self, client, user_and_token, tmp_curio, alice_project, monkeypatch
+    ):
+        """Scenario chips color and order a dataflow's scenarios by name, so a
+        plan saves no second scenario under a name the dataflow gives one."""
+        user, token = user_and_token
+
+        def named():
+            spec = _spec(user, alice_project)
+            spec["dataflow"]["scenarios"] = [{"id": "s0", "name": "Real heights", "color": "#3567c7", "nodes": ["n1"]}]
+            _write_spec(user, alice_project, spec)
+
+        renamed = _plan()
+        renamed["scenarios"][0]["name"] = "Mapped heights"
+        renamed["scenarios"][1]["duplicateOf"] = "Mapped heights"
+        _, proposal, calls = _mint(
+            client, user, token, alice_project, monkeypatch,
+            replies=[_reply(_plan()), _reply(renamed)], before_run=named,
+        )
+        assert len(calls) == 2, "a plan naming a scenario as the dataflow already does was minted"
+        assert "the dataflow already has a scenario named 'Real heights'" in calls[1][-1]["content"]
+        assert [s["name"] for s in proposal["plan"]["scenarios"]] == ["Mapped heights", "Twice as tall"]
+
     def test_widgets_on_a_node_that_holds_no_code_are_refused(
         self, client, user_and_token, tmp_curio, alice_project, monkeypatch
     ):
@@ -253,6 +276,23 @@ class TestThePlanApply:
         assert "scenarios" not in body["appliedGraph"]
         assert [s["name"] for s in _spec(user, alice_project)["dataflow"]["scenarios"]] == ["Theirs"]
 
+    def test_a_scenario_whose_name_was_taken_since_the_mint_is_not_saved(
+        self, client, user_and_token, tmp_curio, alice_project, monkeypatch
+    ):
+        """The user named a scenario as the plan does between the mint and the
+        apply: the apply checks names again, as it checks nodes, and the plan's
+        scenario is refused, never saved beside the user's under one name."""
+        user, token = user_and_token
+        mine = _plan(scenarios=None)
+        mine["scenarios"] = [{"name": "Mine", "nodes": ["shadows"]}]
+        att_id, proposal, _ = _mint(client, user, token, alice_project, monkeypatch, mine)
+        spec = _spec(user, alice_project)
+        spec["dataflow"]["scenarios"] = [{"id": "s0", "name": "Mine", "color": "#3567c7", "nodes": ["n1"]}]
+        _write_spec(user, alice_project, spec)
+        body = _apply(client, token, alice_project, att_id, proposal["proposalId"]).get_json()
+        assert "scenarios" not in body["appliedGraph"]
+        assert [s["id"] for s in _spec(user, alice_project)["dataflow"]["scenarios"]] == ["s0"]
+
 
 class TestTheNodeByNodeApply:
     def test_a_copy_waits_for_its_original_and_each_scenario_is_saved_with_its_last_node(
@@ -323,3 +363,70 @@ class TestNodeCreateWidgets:
         r = helper._run(client, token, alice_project, att_id)
         assert all(p["type"] != "proposal" for p in r.get_json()["content"])
         assert "params.widgets[0] ('f'): A slider needs a minimum and a maximum." in calls[1][-1]["content"]
+
+    #: The Parameter as curio.builtin@1 declares it: no code, a look of its own
+    #: (``behavior``), and a widget, the value every node's code can name.
+    PARAMETER_TEMPLATE = {**TEMPLATES[2], "behavior": "parameter"}
+    SEASON = {"name": "season", "type": "text", "label": "Season", "default": "summer"}
+
+    def _create_parameter(self, client, user, token, project_id, monkeypatch, widgets, *, taken=None):
+        """A node.create of a Parameter node holding *widgets*, the Node
+        Builder's reply when its first is refused, and *taken*, a widget a
+        Parameter node of the dataflow already holds."""
+        from utk_curio.backend.app.projects.services import _user_dir_key
+
+        helper = routes.TestNodeCreate()
+        params = {"nodeType": PARAMETER, "title": "Season"}
+        if widgets is not None:
+            params["widgets"] = widgets
+        att_id, calls = helper._setup(
+            client, user=user, token=token, project_id=project_id, monkeypatch=monkeypatch,
+            replies=[helper._create_tail_json(**params), "Proposed: review it above."],
+        )
+        helper._write_builtin_package(_user_dir_key(user), templates=[TEMPLATES[0], self.PARAMETER_TEMPLATE])
+        if taken is not None:
+            spec = _spec(user, project_id)
+            spec["dataflow"]["nodes"].append({
+                "id": "p0", "type": PARAMETER, "x": 0, "y": 400, "content": "", "metadata": {"widgets": [taken]},
+            })
+            _write_spec(user, project_id, spec)
+        body = helper._run(client, token, project_id, att_id).get_json()
+        return att_id, body, calls
+
+    def test_a_parameter_node_is_created_with_its_one_widget(
+        self, client, user_and_token, tmp_curio, alice_project, monkeypatch
+    ):
+        user, token = user_and_token
+        att_id, body, _ = self._create_parameter(client, user, token, alice_project, monkeypatch, [dict(self.SEASON)])
+        (proposal,) = [p for p in body["content"] if p["type"] == "proposal"]
+        assert proposal["summary"] == "Create a new Parameter node · Season · widgets season"
+        resp = client.post(
+            f"/api/agents/projects/{alice_project}/attachments/{att_id}/proposals/{proposal['proposalId']}/apply",
+            headers=_auth(token),
+        )
+        assert resp.status_code == 200, resp.get_json()
+        created = resp.get_json()["createdNode"]
+        assert created["type"] == PARAMETER and created["metadata"] == {"widgets": [self.SEASON]}
+        stored = next(n for n in _spec(user, alice_project)["dataflow"]["nodes"] if n["id"] == created["id"])
+        assert stored["metadata"]["widgets"] == [self.SEASON]
+
+    def test_a_parameter_without_exactly_one_widget_is_refused_as_a_plan_refuses_it(
+        self, client, user_and_token, tmp_curio, alice_project, monkeypatch
+    ):
+        user, token = user_and_token
+        two = [dict(self.SEASON), {"name": "year", "type": "number", "default": 2020}]
+        for widgets in (None, [], two):
+            _, body, calls = self._create_parameter(client, user, token, alice_project, monkeypatch, widgets)
+            assert all(p["type"] != "proposal" for p in body["content"]), widgets
+            assert "is a Parameter node, which holds exactly one widget: give it in widgets" in calls[1][-1]["content"]
+
+    def test_a_parameter_named_like_another_is_refused_as_a_plan_refuses_it(
+        self, client, user_and_token, tmp_curio, alice_project, monkeypatch
+    ):
+        user, token = user_and_token
+        _, body, calls = self._create_parameter(
+            client, user, token, alice_project, monkeypatch, [dict(self.SEASON)],
+            taken={"name": "season", "type": "text", "default": "winter"},
+        )
+        assert all(p["type"] != "proposal" for p in body["content"])
+        assert "params.widgets[0] ('season'): Another Parameter node is named season." in calls[1][-1]["content"]

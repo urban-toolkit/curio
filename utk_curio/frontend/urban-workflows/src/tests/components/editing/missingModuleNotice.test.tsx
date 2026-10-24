@@ -71,7 +71,7 @@ describe("MissingModuleNotice", () => {
   it("says the environment is shared, because it is", () => {
     renderNotice();
     const button = screen.getByRole("button", { name: "Install scikit-learn" });
-    expect(button.getAttribute("title")).toMatch(/shared by everyone/i);
+    expect(button.getAttribute("data-tooltip")).toMatch(/shared by everyone/i);
   });
 
   it("disables the button while pip is running", () => {

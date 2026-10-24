@@ -229,7 +229,7 @@ function WidgetsEditor({
                                 key={name}
                                 className={styles.row}
                                 data-shared-row={name}
-                                title="Set in its Parameter node"
+                                data-tooltip="Set in its Parameter node"
                             >
                                 <span className={styles.rowLabel}>{widget.label || name}</span>
                                 <SharedTag name={name} disabled={disableWidgets} />

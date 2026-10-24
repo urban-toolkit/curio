@@ -1,15 +1,15 @@
 """Every shipped agent's prompt files exist and are packaged.
 
-The agents Curio ships read their prompts from files: each agent's own in its
-folder, ``agents/<id>@<major>/prompts/``, and the preamble they share from
-``utk_curio/llm-prompts/``. ``read_prompt_text`` returns ``None`` for a
-missing file, so a rename or a packaging gap costs an agent its entire system
-and task prompt with no symptom except worse answers and a logged error.
+The agents Curio ships read their prompts from files in ``agents/``: each
+agent's own in its folder, ``agents/<id>@<major>/prompts/``, and the pages
+they share from the base entry, ``agents/agent.curio.builtin@1/``.
+``read_prompt_text`` returns ``None`` for a missing file, so a rename or a
+packaging gap costs an agent its entire system and task prompt with no
+symptom except worse answers and a logged error.
 
-That is not hypothetical: ``llm-prompts`` is not a Python package (the hyphen
-makes it unimportable, so ``packages.find`` cannot see it) and was absent from
-``MANIFEST.in``, which meant an sdist or wheel shipped all 21 agents promptless
-while the repo checkout worked perfectly.
+That is not hypothetical: an sdist once shipped every agent promptless, its
+shared prompts left out of ``MANIFEST.in``, while the repo checkout worked
+perfectly.
 """
 
 from __future__ import annotations
@@ -20,8 +20,8 @@ from pathlib import Path
 
 import pytest
 
-from utk_curio.backend.app.agents.domain import builtin
-from utk_curio.backend.tests._support.prompt_files import prompt_files, prompt_path
+from utk_curio.backend.app.agents.domain import agent_text, builtin
+from utk_curio.backend.tests._support.prompt_files import prompt_files, prompt_path, prompt_text
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
 
@@ -31,7 +31,7 @@ class TestPromptFilesResolve:
     def test_every_declared_prompt_file_exists(self, m):
         for asset in m.prompts.values():
             path = (
-                builtin.PROMPT_SOURCE_DIR / asset.shared if asset.shared
+                agent_text.page_file(asset.shared) if asset.shared
                 else builtin.agents_dir() / m.dir_name / asset.path
             )
             assert path.is_file(), f"{m.agent_id} names {asset.path!r}, which is not at {path}"
@@ -71,7 +71,8 @@ _KEY = "5151"
 
 
 def _file(filename: str) -> str:
-    return prompt_path(filename).read_text(encoding="utf-8")
+    """The page or prompt *filename*, rendered from its source now."""
+    return agent_text.render(prompt_path(filename))
 
 
 class TestWhichPromptRuns:
@@ -104,24 +105,22 @@ class TestWhichPromptRuns:
 
 class TestTheResearchersCheckingRules:
     def test_they_are_written_once_and_ride_both_researcher_prompts(self):
-        from utk_curio.backend.app.agents.domain import contracts
         from utk_curio.backend.app.common.egress_policy import MAX_CALLS_PER_RUN
 
-        stem = contracts.RESEARCH_VERIFY_RULES
-        fragment = builtin.PROMPT_SOURCE_DIR / f"{stem}.template.md"
+        fragment = prompt_path("research_verify_rules.md")
         lines = [line for line in fragment.read_text(encoding="utf-8").splitlines() if line.strip()]
         assert len(lines) == 4, "verify first, a failure is a finding, the labels, the budget"
-        # One template holds them: no other template repeats a line of them,
-        # and each Researcher template includes them by their field, once.
-        for path in sorted(builtin.PROMPT_SOURCE_DIR.glob("*.template.md")):
+        # One page holds them: no other page or prompt repeats a line of them,
+        # and each Researcher prompt includes the page, once.
+        for path in prompt_files("*.md"):
             if path != fragment:
                 text = path.read_text(encoding="utf-8")
                 assert not [line for line in lines if line in text], path.name
-        for template in ("research_instruction", "researcher_instruction"):
-            text = (builtin.PROMPT_SOURCE_DIR / f"{template}.template.md").read_text(encoding="utf-8")
-            assert text.count("{{research.verify_rules}}") == 1, template
-        # Both rendered prompts carry them whole: the chat and the mode.
-        rules = contracts.render_prompt(stem).rstrip("\n")
+        for prompt in ("research_instruction.md", "researcher_instruction.md"):
+            text = prompt_path(prompt).read_text(encoding="utf-8")
+            assert text.count("{{include:rules/research_verify_rules.md}}") == 1, prompt
+        # Both prompts carry them whole, as read: the chat and the mode.
+        rules = prompt_text("research_verify_rules.md").rstrip("\n")
         coord = builtin.builtin_coord("agent.curio.researcher")
         chat = builtin.read_prompt_text(coord, "instruction")
         mode = builtin.read_prompt_text(coord, "research.verify")
@@ -146,26 +145,24 @@ class TestTheResearchersNotesRules:
     def test_they_are_written_once_and_ride_both_notes_prompts(self):
         """The notes format, written once: the chat that answers a web
         question with notes and the mode that composes notes from search
-        results include the same fragment, ``{{research.notes_rules}}``."""
-        from utk_curio.backend.app.agents.domain import contracts
-
-        stem = contracts.RESEARCH_NOTES_RULES
-        fragment = builtin.PROMPT_SOURCE_DIR / f"{stem}.template.md"
+        results include the same page,
+        ``{{include:rules/research_notes_rules.md}}``."""
+        fragment = prompt_path("research_notes_rules.md")
         lines = [line for line in fragment.read_text(encoding="utf-8").splitlines() if line.strip()]
         assert len(lines) == 5, (
             "the pattern, the question note, the answer notes, the markdown, one note per finding"
         )
-        # One template holds them: no other template repeats a line of them,
-        # and each notes template includes them by their field, once.
-        for path in sorted(builtin.PROMPT_SOURCE_DIR.glob("*.template.md")):
+        # One page holds them: no other page or prompt repeats a line of them,
+        # and each notes prompt includes the page, once.
+        for path in prompt_files("*.md"):
             if path != fragment:
                 text = path.read_text(encoding="utf-8")
                 assert not [line for line in lines if line in text], path.name
-        for template in ("researcher_instruction", "researcher_notes_instruction"):
-            text = (builtin.PROMPT_SOURCE_DIR / f"{template}.template.md").read_text(encoding="utf-8")
-            assert text.count("{{research.notes_rules}}") == 1, template
-        # Both rendered prompts carry them whole.
-        rules = contracts.render_prompt(stem).rstrip("\n")
+        for prompt in ("researcher_instruction.md", "researcher_notes_instruction.md"):
+            text = prompt_path(prompt).read_text(encoding="utf-8")
+            assert text.count("{{include:rules/research_notes_rules.md}}") == 1, prompt
+        # Both prompts carry them whole, as read.
+        rules = prompt_text("research_notes_rules.md").rstrip("\n")
         coord = builtin.builtin_coord("agent.curio.researcher")
         chat = builtin.read_prompt_text(coord, "instruction")
         mode = builtin.read_prompt_text(coord, "research.notes.compose")
@@ -225,49 +222,67 @@ class TestUserOwnedValuesStayOutOfPrompts:
     the Agent Catalog never reach."""
 
     def test_no_prompt_file_carries_a_keyword_type(self):
-        from utk_curio.backend.app.agents.domain import contracts
+        """The keyword types Curio ships are one page, the setting's default
+        as its one json block; no other page or prompt carries one, neither
+        as the configuration slot renders it nor by its description."""
+        from utk_curio.backend.app.agents.domain import agent_text, contracts
 
-        lines = set(contracts.KEYWORD_TYPES.render(contracts.KEYWORD_TYPES.default).splitlines())
-        for path in prompt_files("*.md"):
-            found = lines & set(path.read_text(encoding="utf-8").splitlines())
-            assert not found, f"{path.name} carries keyword types: {sorted(found)[:2]}"
+        default = contracts.KEYWORD_TYPES.default
+        lines = set(contracts.KEYWORD_TYPES.render(default).splitlines())
+        descriptions = [entry["description"] for entry in default]
+        home = prompt_path(contracts.KEYWORD_TYPES_PAGE)
+        assert agent_text.json_block(prompt_text(home.name), home.name) == default
+        files = prompt_files("*.md")
+        assert home in files
+        for path in files:
+            for how, text in (("as written", path.read_text(encoding="utf-8")), ("as read", prompt_text(path.name))):
+                found = lines & set(text.splitlines())
+                assert not found, f"{path.name}, {how}, carries keyword types: {sorted(found)[:2]}"
+                carried = [description for description in descriptions if description in text]
+                assert path == home or not carried, f"{path.name}, {how}, carries keyword types: {carried[:2]}"
 
 
 class TestPromptsArePackaged:
-    """The declarations that carry ``llm-prompts/`` into a built distribution.
+    """The declarations that carry ``agents/``, every page and prompt the
+    agents read, its nested folders included, into a built distribution.
 
-    Asserted against the packaging config rather than by building an sdist,
-    which keeps this in the unit suite. The plan's end-to-end check (build an
-    sdist and a wheel, confirm the .md files are inside both) stays a manual
-    release step.
+    Asserted against the packaging config, which keeps this quick;
+    ``test_scripts/test_pip_wheel_layout.py`` builds the sdist and the wheel
+    and reads every page and prompt from an install.
     """
 
     def test_manifest_in_includes_the_prompts(self):
         manifest = (REPO_ROOT / "MANIFEST.in").read_text(encoding="utf-8")
-        assert re.search(
-            r"^recursive-include\s+utk_curio/llm-prompts\s+\*\.md\s*$", manifest, re.MULTILINE
-        ), "MANIFEST.in must carry utk_curio/llm-prompts into the sdist"
+        assert re.search(r"^recursive-include\s+agents\s+\*\s*$", manifest, re.MULTILINE), (
+            "MANIFEST.in must carry agents/, every file in every folder of it, into the sdist"
+        )
 
-    def test_pyproject_ships_them_in_the_wheel(self):
+    def test_the_wheel_carries_them(self):
+        setup = (REPO_ROOT / "setup.py").read_text(encoding="utf-8")
+        assert re.search(r"^SHIPPED_FOLDERS = \([^)]*\"agents\"", setup, re.MULTILINE), (
+            "setup.py must put agents/ in the wheel, or it ships without it even when the sdist has it"
+        )
         pyproject = (REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8")
-        assert "llm-prompts/*.md" in pyproject, (
-            "pyproject must declare llm-prompts as package-data, or the wheel "
-            "ships without it even when the sdist has it"
+        assert re.search(r"^include-package-data\s*=\s*true\s*$", pyproject, re.MULTILINE), (
+            "the wheel takes agents/'s files from the sdist as package data"
         )
 
 
 class TestMissingPromptIsLoud:
     def test_a_missing_file_is_logged_rather_than_silently_none(self, caplog, monkeypatch, tmp_path):
         coord = builtin.list_builtin_manifests()[0].dir_name
-        # The preamble every agent shares, from llm-prompts/.
-        monkeypatch.setattr(builtin, "PROMPT_SOURCE_DIR", Path("/nonexistent-prompts"))
+        # The preamble every agent shares, a page of the base entry: its
+        # manifest lists it, and its file is gone.
+        base = tmp_path / "base"
+        shutil.copytree(agent_text.base_dir(), base, ignore=shutil.ignore_patterns("*.md"))
+        monkeypatch.setattr(agent_text, "base_dir", lambda: base)
 
         with caplog.at_level("ERROR"):
             assert builtin.read_prompt_text(coord, "system") is None
 
-        assert any("llm-prompts" in r.getMessage() for r in caplog.records), (
-            "a missing prompt file must say so; silence is how this shipped"
-        )
+        assert any(
+            "curio:default_preamble.md" in r.getMessage() and "agents/" in r.getMessage() for r in caplog.records
+        ), "a missing prompt file must say so; silence is how this shipped"
         # The agent's own instruction, from its folder in agents/.
         caplog.clear()
         shutil.copytree(builtin.agents_dir(), tmp_path / "agents", ignore=shutil.ignore_patterns("*.md"))

@@ -102,6 +102,22 @@ class FunctionSignature:
         return {"name": self.name, "doc": self.doc, "problem": self.problem,
                 "parameters": [p.to_json() for p in self.parameters]}
 
+    @property
+    def call(self) -> str:
+        """Its signature as Python writes one, without annotations:
+        ``raster_calculate(operation, rasters, codes=None, absolute=False)``,
+        with ``/`` after the positional-only parameters and ``*`` before the
+        keyword-only ones."""
+        parts: list[str] = []
+        for index, param in enumerate(self.parameters):
+            if param.kind == KEYWORD_ONLY and (index == 0 or self.parameters[index - 1].kind != KEYWORD_ONLY):
+                parts.append("*")
+            parts.append(f"{param.name}={param.default_text}" if param.has_default else param.name)
+            following = self.parameters[index + 1].kind if index + 1 < len(self.parameters) else None
+            if param.kind == POSITIONAL_ONLY and following != POSITIONAL_ONLY:
+                parts.append("/")
+        return f"{self.name}({', '.join(parts)})"
+
 
 def _parameter(node_arg: ast.arg, kind: str, default: ast.expr | None) -> Parameter:
     annotation = ast.unparse(node_arg.annotation) if node_arg.annotation is not None else None

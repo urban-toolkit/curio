@@ -19,8 +19,10 @@ from utk_curio.backend.app.agents.infrastructure import chat_capabilities
 from utk_curio.backend.app.agents.infrastructure import provider_config
 from utk_curio.backend.app.agents.infrastructure.providers import ProviderConfig
 from utk_curio.backend.app.agents.repositories import catalog_settings
+from utk_curio.backend.app.agents.repositories import project_agents
 from utk_curio.backend.app.agents.repositories import sessions
 from utk_curio.backend.app.agents.application import catalog as agents_catalog
+from utk_curio.backend.app.agents.application import dataflow_block as agents_dataflow_block
 from utk_curio.backend.app.agents.application import lifecycle as agents_lifecycle
 from utk_curio.backend.app.agents.application import spec_reads as agents_spec_reads
 from utk_curio.backend.app.agents.application.turns import examples as agents_examples
@@ -90,10 +92,13 @@ def _prepare_run(
     runtime_blocks.append(agents_examples.attached_block(coord, spec, record.get("target"), message))
     # Delegation (dev/48, DEC-046): offered only when the manifest names
     # delegates that resolve to visible definitions — server-resolved, never
-    # the manifest's raw list.
+    # the manifest's raw list. Each capability is offered under the name of
+    # the agent this dataflow would run for it.
     entries: list = []
     if manifest is not None and manifest.delegates_to:
-        entries = delegation.visible_capability_entries(user_key, manifest)
+        entries = delegation.offered_capability_entries(
+            user_key, set(project_agents.project_agents(spec)), manifest,
+        )
     native_tools = _native_tools_for(config, user_key, granted, entries)
 
     fenced_system = _system_content(preamble, instruction, configuration, granted, runtime_blocks, entries, native=False)
@@ -105,7 +110,17 @@ def _prepare_run(
     if not isinstance(session_id, str):
         session_id = None
     prior = sessions.read_turns(user_key, project_id, session_id) if session_id else []
-    messages = _messages(system, prior, run_context, message)
+    # What the dataflow can use, for a run that can write a node's code: data
+    # the run reads beside the canvas context, never a runtime-owned slot. Its
+    # datasets are read once a turn, and the turn's delegated runs reuse them.
+    dataflow_datasets = (
+        agents_dataflow_block.read_datasets(project_id)
+        if agents_dataflow_block.writes_code(granted, manifest) else None
+    )
+    dataflow_block = agents_dataflow_block.for_chat_run(
+        user_key, project_id, spec, record.get("target"), granted, manifest=manifest, datasets=dataflow_datasets,
+    )
+    messages = _messages(system, prior, run_context, message, dataflow_block)
     wants_title = (
         not record.get("title")
         and not record.get("titleEdited")
@@ -129,6 +144,9 @@ def _prepare_run(
         "fenced_system": fenced_system,
         # #867: a follow-up such as "go ahead" acts on what this message asked.
         "previous_message": _previous_user_text(prior),
+        # The dataflow's datasets the block was composed with, which the
+        # dataflow blocks of this turn's delegated runs reuse (None: not read).
+        "dataflow_datasets": dataflow_datasets,
     }
     return coord, session_id, messages, run_policy, wants_title, pins, loop_ctx
 
@@ -227,17 +245,21 @@ def _system_content(preamble, instruction, configuration, granted: list, runtime
     ))
 
 
-def _messages(system: dict, prior: list, run_context: str | None, message: str) -> list[dict]:
-    """The provider messages: the system turn, the bounded session context, the ephemeral grounded
-    context (memo dev/44 — the client-composed live-canvas inputs ride ONE provider message per
-    send, recomputed fresh each time, never persisted, never replayed; absent → byte-identical to
+def _messages(system: dict, prior: list, run_context: str | None, message: str,
+              dataflow_block: str | None = None) -> list[dict]:
+    """The provider messages: the system turn, the bounded session context, the dataflow block
+    when the run has one (``application/dataflow_block.py``: what this dataflow can use, composed
+    fresh for each send and never persisted, like the canvas context), the ephemeral grounded
+    context (memo dev/44: the client-composed live-canvas inputs ride ONE provider message per
+    send, recomputed fresh each time, never persisted, never replayed; absent, the turn is as
     before), and the message."""
     context_block = agents_policy._bounded_context(run_context)
     return [
         system,
         *sessions.context_messages(prior),
+        *([agents_dataflow_block.message(dataflow_block)] if dataflow_block else []),
         *(
-            [{"role": "user", "content": f"{agents_policy._CONTEXT_FRAME}{context_block}"}]
+            [{"role": "user", "content": f"{agents_policy.context_frame()}\n{context_block}"}]
             if context_block
             else []
         ),

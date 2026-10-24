@@ -1,7 +1,7 @@
 """Worked examples: which shipped dataflows a run gets, and where they land.
 
-``turns/examples.py`` picks the "Used" dataflows of ``llm-prompts/examples.md``
-closest to what a run knows and renders them as one runtime block, bounded in
+``turns/examples.py`` picks the "Used" dataflows of the base entry's
+``examples.md`` closest to what a run knows and renders them as one runtime block, bounded in
 size. These tests pin the choice for fixed questions, the bound, the
 exclusion, the missing-folder case, the agents that opt in, and that the block
 reaches an attached run's system turn and a delegated run's.
@@ -102,7 +102,7 @@ class TestTheBlock:
     def test_the_block_is_the_heading_then_each_line_and_its_trill(self):
         sixteen = _pool()[SIXTEEN]
         block = examples.render([sixteen])
-        assert block.startswith(examples.HEADING)
+        assert block.startswith(examples.heading())
         assert f"{sixteen.entry.line}\n```json\n" in block
         # The line is shown without its link.
         assert "](" not in block.split("```json")[0]
@@ -246,12 +246,20 @@ class TestWhoTakesThem:
     def test_a_manifest_holds_only_the_worked_examples_flag(self):
         """Whether a run takes worked examples is a flag in the agent's
         shipped manifest, the agent's and a mode's, never example text; and
-        the flags are the takers above."""
+        the flags are the takers above. The base entry beside the agents
+        holds the pages they share and is no agent: its manifest holds no
+        flag and no example text either."""
         from pathlib import Path
 
         agents = Path(__file__).resolve().parents[4] / "agents"
-        folders = sorted(path.parent for path in agents.glob("*/manifest.json"))
+        # The agents as the roster lists them, so the base entry never counts as one.
+        folders = sorted(agents / m.dir_name for m in builtin.list_builtin_manifests())
         assert len(folders) == 7, folders
+        base = agents / "agent.curio.builtin@1"
+        assert sorted(path.parent for path in agents.glob("*/manifest.json")) == sorted([*folders, base])
+        raw = json.loads((base / "manifest.json").read_text(encoding="utf-8"))
+        assert raw["kind"] == "base"
+        assert "worked" not in json.dumps(raw).lower(), base.name
         flagged = set()
         for folder in folders:
             raw = json.loads((folder / "manifest.json").read_text(encoding="utf-8"))
@@ -349,13 +357,13 @@ class TestTheBlockReachesRuns:
         assert r.status_code == 200, r.get_data(as_text=True)
         system = calls[0][0]
         runtime = [s["text"] for s in system["slots"] if s["kind"] == "runtime"]
-        block = next((text for text in runtime if text.startswith(examples.HEADING)), None)
+        block = next((text for text in runtime if text.startswith(examples.heading())), None)
         assert block is not None, [text[:60] for text in runtime]
         assert "Simple View: tables and images: " in block
         assert block in system["content"]
         # The cached preamble stays fixed: the block is never in it.
         assert system["slots"][0]["kind"] == "preamble"
-        assert examples.HEADING not in system["slots"][0]["text"]
+        assert examples.heading() not in system["slots"][0]["text"]
 
     def test_an_agent_that_does_not_take_them_gets_none(
         self, client, user_and_token, tmp_curio, alice_project, monkeypatch
@@ -367,7 +375,7 @@ class TestTheBlockReachesRuns:
             replies=["chatting"], coord="agent.curio.researcher@1",
         )
         helper._run(client, token, alice_project, att_id, message=IMAGES)
-        assert examples.HEADING not in calls[0][0]["content"]
+        assert examples.heading() not in calls[0][0]["content"]
 
     def _delegate(self, client, token, user, monkeypatch, coord, capability, inputs) -> dict:
         from utk_curio.backend.app.agents.infrastructure.providers import ProviderConfig
@@ -399,7 +407,7 @@ class TestTheBlockReachesRuns:
                                 "node.content.generate", {"subtask": IMAGES})
         kinds = [slot["kind"] for slot in system["slots"]]
         assert kinds[-1] == "runtime" and "tool-protocol" not in kinds
-        assert system["slots"][-1]["text"].startswith(examples.HEADING)
+        assert system["slots"][-1]["text"].startswith(examples.heading())
         assert "Simple View: tables and images: " in system["content"]
 
     def test_a_delegated_mode_takes_them_only_when_it_opts_in(
@@ -411,6 +419,6 @@ class TestTheBlockReachesRuns:
                                  {"workflowGoal": IMAGES})
         explain = self._delegate(client, token, user, monkeypatch, reader, "dataflow.explain",
                                  {"workflowGoal": IMAGES})
-        assert examples.HEADING in suggest["content"]
-        assert examples.HEADING not in explain["content"]
+        assert examples.heading() in suggest["content"]
+        assert examples.heading() not in explain["content"]
         assert "runtime" not in [slot["kind"] for slot in explain["slots"]]

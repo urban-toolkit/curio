@@ -349,7 +349,7 @@ def test_the_header_delete_removes_a_wired_node(
     connect_nodes(page, first, second)
     dismiss_toasts(page)
 
-    node_locator(page, second).get_by_title("Delete node").first.click()
+    node_locator(page, second).locator('[data-tooltip*="Delete node" i]').first.click()
     _wait_gone(page, second)
 
     assert _node_ids(page) == {first}

@@ -21,6 +21,7 @@ from utk_curio.backend.app.agents.application import spec_reads as agents_spec_r
 from utk_curio.backend.app.agents.application.proposals import acquire as agents_acquire
 from utk_curio.backend.app.agents.application.proposals import mint as agents_mint
 from utk_curio.backend.app.agents.application.solve import budgets as agents_budgets
+from utk_curio.backend.app.agents.application.solve import node_solve as agents_node_solve
 from utk_curio.backend.app.agents.application.solve import rounds as agents_rounds
 from utk_curio.backend.app.agents.application.solve import session as agents_session
 from utk_curio.backend.app.agents.application.turns import delegates as agents_delegates
@@ -169,7 +170,12 @@ def _validate_events(
             "nodeId": node_id,
             "attempts": outcome["attempts"],
         }
-        if done["verdict"] in ("pass", "fail", "not-executable") and candidate:
+        if agents_rounds._ended_on_an_answer(outcome):
+            # The builder's one-line answer is no content: no review is minted
+            # for Apply anyway to write into the node.
+            _say_the_answer(user_key, project_id, attachment_id, session_id,
+                            home_attachment_id, home_session_id, spec, node, label, outcome)
+        elif done["verdict"] in ("pass", "fail", "not-executable") and candidate:
             _mint_validated_review(user_key, project_id, attachment_id, session_id,
                                    home_attachment_id, home_session_id,
                                    node_id, label, candidate, done, rounds_used, rounds_trace,
@@ -196,6 +202,34 @@ def _announce_delegated_solve(user_key, project_id, home_attachment_id, home_ses
             )
         except Exception:
             pass
+
+
+def _say_the_answer(user_key, project_id, attachment_id, session_id, home_attachment_id, home_session_id,
+                    spec, node, label, outcome: dict) -> None:
+    """The builder answered in one line instead of writing code, or a loader's
+    builder declined. That line is no content, so nothing is minted for Apply
+    anyway to write into the node. The node's agent says it the way Solve this
+    node does, with every attempt below it, and the agent the Solve was asked
+    of says it too."""
+    text = agents_node_solve._not_fixed(label, outcome, {})
+    trail = agents_rounds._solve_attempts_part(
+        spec, node.get("id"), str(node.get("goal") or node.get("id"))[:120],
+        {"attempts": outcome["attempts"], "rounds": outcome["rounds"],
+         "verdict": outcome["verdict"], "stoppedBy": outcome.get("stoppedBy")},
+        user_key=user_key,
+    )
+    home_attachment = home_attachment_id or attachment_id
+    home_session = home_session_id or session_id
+    if isinstance(home_session, str):
+        sessions.append_turns(
+            user_key, project_id, home_session, home_attachment,
+            [sessions.make_turn("agent", text, error=True, content=[trail] if trail is not None else [])],
+        )
+    if home_attachment != attachment_id and isinstance(session_id, str):
+        sessions.append_turns(
+            user_key, project_id, session_id, attachment_id,
+            [sessions.make_turn("agent", text, error=True)],
+        )
 
 
 def _mint_validated_review(user_key, project_id, attachment_id, session_id, home_attachment_id, home_session_id,

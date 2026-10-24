@@ -1,0 +1,87 @@
+{
+  "vegaSchemaUrl": "https://vega.github.io/schema/vega-lite/v6.json",
+  "columnRoles": ["geometry", "temporal", "quantitative", "nominal"],
+  "dtypeRoles": [
+    { "role": "geometry", "names": ["geometry"], "prefixes": [] },
+    { "role": "temporal", "names": [], "prefixes": ["datetime", "period", "timedelta"] },
+    { "role": "quantitative", "names": [], "prefixes": ["int", "uint", "float"] },
+    { "role": "nominal", "names": ["bool", "object", "str", "string", "category"], "prefixes": [] }
+  ],
+  "vegaStarterLadder": [
+    {
+      "id": "geometry+quantitative",
+      "columns": { "geometry": { "least": 1 }, "quantitative": { "least": 1 } },
+      "produces": "geoshape",
+      "description": "a choropleth colored by the first quantitative column"
+    },
+    {
+      "id": "geometry",
+      "columns": { "geometry": { "least": 1 } },
+      "produces": "geoshape",
+      "description": "the shapes alone, with no color"
+    },
+    {
+      "id": "temporal+quantitative",
+      "columns": { "temporal": { "least": 1 }, "quantitative": { "least": 1 } },
+      "produces": "line",
+      "description": "the first temporal column on x and the first quantitative column on y"
+    },
+    {
+      "id": "nominal+quantitative",
+      "columns": { "nominal": { "least": 1 }, "quantitative": { "least": 1 } },
+      "produces": "bar",
+      "description": "the first nominal column on x, with an EXPLICIT \"aggregate\": \"mean\" on y"
+    },
+    {
+      "id": "two-quantitative",
+      "columns": { "quantitative": { "least": 2 } },
+      "produces": "point",
+      "description": "a scatter of the first two"
+    },
+    {
+      "id": "one-quantitative",
+      "columns": { "quantitative": { "least": 1, "most": 1 } },
+      "produces": "bar",
+      "description": "a histogram, binned x and \"aggregate\": \"count\" on y"
+    },
+    {
+      "id": "one-nominal",
+      "columns": { "nominal": { "least": 1 } },
+      "produces": "bar",
+      "description": "the row count per value of the first nominal column"
+    }
+  ],
+  "autkStarterLadder": [
+    {
+      "id": "layers",
+      "layers": { "least": 2 },
+      "columns": {},
+      "produces": "map",
+      "description": "one layerRef per table, each named by its table"
+    },
+    {
+      "id": "geometry+quantitative",
+      "layers": { "least": 1, "most": 1 },
+      "columns": { "quantitative": { "least": 1 } },
+      "produces": "map",
+      "description": "a layer colored by the first quantitative column, with \"title\" and \"getFnv\": that column, \"getFnvType\": \"quantitative\" and \"colorMapInterpolator\": \"interpolateViridis\""
+    },
+    {
+      "id": "geometry+nominal",
+      "layers": { "least": 1, "most": 1 },
+      "columns": { "nominal": { "least": 1 } },
+      "produces": "map",
+      "description": "a layer colored by the first nominal column, with \"title\" and \"getFnv\": that column, \"getFnvType\": \"categorical\" and \"colorMapInterpolator\": \"schemeTableau10\""
+    },
+    {
+      "id": "geometry",
+      "layers": { "least": 1, "most": 1 },
+      "columns": {},
+      "produces": "map",
+      "description": "a plain layer"
+    }
+  ],
+  "imageColumns": ["image_content", "image_url", "image", "thumbnail", "overlay_url"],
+  "imageExtensions": ["png", "jpg", "jpeg", "gif", "webp", "svg", "bmp", "avif"],
+  "imageMatchThreshold": 0.6
+}

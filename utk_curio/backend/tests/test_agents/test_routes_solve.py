@@ -286,7 +286,7 @@ class TestSolve:
             from utk_curio.backend.app.agents.application.turns import titles
             from utk_curio.backend.app.agents.infrastructure import providers
 
-            if messages and messages[0].get("content") == titles.TITLE_PROMPT:
+            if messages and messages[0].get("content") == titles.title_prompt():
                 return "Title"
             state["n"] += 1
             if state["n"] == 2:
@@ -507,7 +507,7 @@ class TestStreamedSolve:
         gate = threading.Event()
 
         def _fake_run(config, messages, **kwargs):
-            if messages and messages[0].get("content") == titles.TITLE_PROMPT:
+            if messages and messages[0].get("content") == titles.title_prompt():
                 return "Title"
             gate.wait(timeout=10)  # children hold until the cancel lands
             return "generated"
@@ -656,7 +656,7 @@ class TestGeneratedContentExtraction:
             from utk_curio.backend.app.agents.application.turns import titles
             from utk_curio.backend.app.agents.infrastructure import providers
 
-            if messages and messages[0].get("content") == titles.TITLE_PROMPT:
+            if messages and messages[0].get("content") == titles.title_prompt():
                 return "Title"
             state["n"] += 1
             return wrapped
@@ -1076,6 +1076,81 @@ class TestSimulationDriver:
         ).get_json()["attachments"]
         active = next(c for c in cards if c["attachmentId"] == att_id)["activeProposal"]
         assert active["status"] == "applied"
+
+    def _replan(self, client, user, token, project_id, monkeypatch):
+        """TestDestructiveReplan's canvas and its plan (API Fetch replaces
+        Load CSV and feeds Clean), with the Node Builder to write content."""
+        from utk_curio.backend.tests.test_agents.test_routes_proposals import TestDestructiveReplan
+
+        base = TestDestructiveReplan()
+        att_id, _ = base._setup(
+            client, user, token, project_id, monkeypatch,
+            replies=["Revising.\n" + base._revision_tail(
+                nodes=[base._new_node()], edges=[{"from": "a", "to": "cleaner"}],
+            ), "print('generated')"],
+        )
+        client.post(
+            f"/api/agents/projects/{project_id}/install",
+            json={"coord": "agent.curio.node-builder@1"}, headers=_auth(token),
+        )
+        proposal = base._proposal(base._run(client, token, project_id, att_id))
+        return att_id, proposal
+
+    def _turns(self, client, token, project_id, att_id):
+        return client.get(
+            f"/api/agents/projects/{project_id}/attachments/{att_id}/session", headers=_auth(token)
+        ).get_json()["turns"]
+
+    def test_auto_removes_what_the_plan_removes_and_the_stream_carries_it(
+        self, client, user_and_token, tmp_curio, alice_project, monkeypatch
+    ):
+        """Simulation Mode applies a plan with Apply's row functions, so the
+        call that completes it removes what the plan removes, and the stream
+        hands the canvas the removed ids, which its next save would otherwise
+        write back."""
+        user, token = user_and_token
+        self._fake_exec(monkeypatch)
+        att_id, proposal = self._replan(client, user, token, alice_project, monkeypatch)
+        events = self._simulate(client, token, alice_project, att_id, "auto")
+        assert events[-1][1]["status"] == "completed", events[-1]
+        removals = [payload for kind, payload in events if kind == "plan_removals"]
+        assert removals == [{
+            "proposalId": proposal["proposalId"],
+            "removedNodeIds": ["old-loader"], "removedEdgeIds": ["edge-1"],
+        }]
+        spec = self._spec(user, alice_project)
+        assert "old-loader" not in {n["id"] for n in spec["dataflow"]["nodes"]}
+        assert [e["target"] for e in spec["dataflow"]["edges"]] == ["cleaner"]
+        texts = [t.get("text") or "" for t in self._turns(client, token, alice_project, att_id)]
+        assert "Applied: plan added 1 node and 1 connection, removed 1 node and 1 connection. Topology: acyclic." in texts
+        part = next(
+            p for t in self._turns(client, token, alice_project, att_id) for p in (t.get("content") or [])
+            if p.get("type") == "proposal" and p.get("proposalId") == proposal["proposalId"]
+        )
+        assert part["status"] == "applied"
+
+    def test_a_victim_edited_since_the_review_pauses_the_run_and_removes_nothing(
+        self, client, user_and_token, tmp_curio, alice_project, monkeypatch
+    ):
+        from utk_curio.backend.app.projects import storage as projects_storage
+        from utk_curio.backend.app.projects.services import _user_dir_key
+
+        user, token = user_and_token
+        self._fake_exec(monkeypatch)
+        att_id, _ = self._replan(client, user, token, alice_project, monkeypatch)
+        key = _user_dir_key(user)
+        spec = projects_storage.read_spec(key, alice_project)
+        next(n for n in spec["dataflow"]["nodes"] if n["id"] == "old-loader")["content"] = "precious_new_work()"
+        projects_storage.write_spec(key, alice_project, spec)
+        events = self._simulate(client, token, alice_project, att_id, "auto")
+        done = events[-1][1]
+        assert done["status"] == "paused", done
+        assert done["reason"]["kind"] == "apply-refused"
+        assert "about to remove changed" in done["reason"]["message"]
+        assert not any(kind in ("node_created", "plan_removals") for kind, _ in events)
+        spec = self._spec(user, alice_project)
+        assert sorted(n["id"] for n in spec["dataflow"]["nodes"]) == ["cleaner", "old-loader"]
+        assert [e["id"] for e in spec["dataflow"]["edges"]] == ["edge-1"]
 
     def test_step_performs_exactly_one_action(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
         user, token = user_and_token

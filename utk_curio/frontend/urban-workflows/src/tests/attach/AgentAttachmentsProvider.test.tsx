@@ -619,6 +619,44 @@ describe("AgentAttachmentsProvider apply→canvas bridge (memo dev/48 §3.3)", (
     ]);
   });
 
+  it("an appliedContent apply response names the agent that wrote it, and the canvas gets that name", async () => {
+    const appliedContent = { nodeId: "n1", content: "print(2)", agent: "Node Builder" };
+    api.applyProposal.mockResolvedValue({
+      attachmentId: "a1",
+      proposalId: "p1",
+      status: "applied",
+      mutationApplied: true,
+      appliedContent,
+    });
+    renderProvider();
+    fireEvent.click(screen.getByText("open"));
+    await waitFor(() => expect(screen.getByTestId("turns")).toHaveTextContent("old-q"));
+    await act(async () => {
+      fireEvent.click(screen.getByText("apply"));
+    });
+    expect(events).toEqual([
+      { kind: "node-content-applied", nodeId: "n1", content: "print(2)", agent: "Node Builder" },
+    ]);
+  });
+
+  it("an appliedSettings apply response dispatches node-settings-applied with the node and its settings", async () => {
+    const settings = { dataPool: { betweenCharts: "MERGE_AND" }, widgets: { combine: "max" } };
+    api.applyProposal.mockResolvedValue({
+      attachmentId: "a1",
+      proposalId: "p1",
+      status: "applied",
+      mutationApplied: true,
+      appliedSettings: { nodeId: "pool", settings, agent: "Node Builder" },
+    });
+    renderProvider();
+    fireEvent.click(screen.getByText("open"));
+    await waitFor(() => expect(screen.getByTestId("turns")).toHaveTextContent("old-q"));
+    await act(async () => {
+      fireEvent.click(screen.getByText("apply"));
+    });
+    expect(events).toEqual([{ kind: "node-settings-applied", nodeId: "pool", settings }]);
+  });
+
   it("a project.install apply repaints the AGENTS palette (dev/106)", async () => {
     api.applyProposal.mockResolvedValue({
       attachmentId: "a1",
@@ -963,10 +1001,10 @@ describe("AgentAttachmentsProvider streamed solve (dev/63)", () => {
       emit("node_result", { nodeId: "n1", status: "failed",
         error: "not fixed after 15 attempts: execution-error: SyntaxError: invalid syntax" });
       emit("node_result", { nodeId: "n2", status: "pending",
-        reason: "waiting: upstream node 'n1' has no content yet; solve or fill it first" });
+        reason: "upstream node 'n1' has no content yet; solve or fill it first" });
     });
     expect(screen.getByTestId("solve-errors")).toHaveTextContent("n1:not fixed after 15 attempts");
-    expect(screen.getByTestId("solve-notices")).toHaveTextContent("n2:pending");
+    expect(screen.getByTestId("solve-notices")).toHaveTextContent("n2:pending: upstream node 'n1' has no content yet");
     // Pass 2 attempts them again: the previous pass's lines go FIRST.
     act(() => {
       emit("solve_pass", { pass: 2, targets: ["n1", "n2"], waiting: [] });
@@ -986,7 +1024,7 @@ describe("AgentAttachmentsProvider streamed solve (dev/63)", () => {
         results: { n1: { status: "solved" }, n2: { status: "solved" } },
         appliedContents: [], builderSession: { phase: "ready" },
         endedBy: "complete",
-        waiting: [{ nodeId: "n2", kind: "upstream", reason: "waiting: upstream" }],
+        waiting: [{ nodeId: "n2", kind: "upstream", reason: "upstream node 'n1' has no content yet" }],
       } as never);
     });
     // A session that finished everything waits for nothing — the other half of
@@ -1093,6 +1131,26 @@ describe("AgentAttachmentsProvider streamed solve (dev/63)", () => {
     expect(events).toHaveLength(1); // no double-apply from the done payload
   });
 
+  it("solved content reaches the canvas with the name of the agent that wrote it", async () => {
+    let emit: (name: string, payload: Record<string, unknown>) => void = () => undefined;
+    api.solveAttachmentStream.mockImplementation(
+      (_p: string, _a: string, onEvent: (n: string, pl: Record<string, unknown>) => void) => {
+        emit = onEvent;
+        return new Promise(() => undefined) as ReturnType<typeof api.solveAttachmentStream>;
+      },
+    );
+    renderProvider();
+    fireEvent.click(screen.getByText("solve"));
+    await waitFor(() => expect(api.solveAttachmentStream).toHaveBeenCalled());
+    act(() => {
+      emit("node_started", { nodeId: "n1" });
+      emit("node_result", { nodeId: "n1", status: "solved", content: "print(9)", agent: "Node Builder" });
+    });
+    expect(events).toEqual([
+      { kind: "node-content-applied", nodeId: "n1", content: "print(9)", agent: "Node Builder" },
+    ]);
+  });
+
 
 
   it("runSimulation maps driver stream events onto the canvas bridge (dev/67-9)", async () => {
@@ -1111,6 +1169,38 @@ describe("AgentAttachmentsProvider streamed solve (dev/63)", () => {
     expect(events.map((e: any) => e.kind)).toEqual([
       "node-created", "node-content-applied", "edges-created",
     ]);
+  });
+
+  it("runSimulation hands the canvas what the plan it completes removes", async () => {
+    api.simulate.mockImplementation(
+      async (_p: string, _a: string, _m: string, onEvent: (n: string, pl: Record<string, unknown>) => void) => {
+        onEvent("plan_removals", { proposalId: "p1", removedNodeIds: ["old-loader"], removedEdgeIds: ["edge-1"] });
+        return { status: "completed", mode: "auto" };
+      },
+    );
+    renderProvider();
+    await act(async () => {
+      fireEvent.click(screen.getByText("run-simulation"));
+    });
+    expect(events).toContainEqual(
+      expect.objectContaining({ removedNodeIds: ["old-loader"], removedEdgeIds: ["edge-1"] }),
+    );
+  });
+
+  it("applyPlanEdges hands the canvas what the plan it completes removes", async () => {
+    // A plan of connections that also removes one: Connect all completes it.
+    const completing = {
+      attachmentId: "a1", proposalId: "p1", status: "applied",
+      results: {}, edgeStates: { "0": "applied" },
+      createdEdges: [{ id: "ce1", source: "vis", target: "pool", sourceHandle: "in/out", targetHandle: "in/out", type: "Interaction" }],
+      removedNodeIds: [], removedEdgeIds: ["e5"],
+    };
+    api.applyPlanEdges.mockResolvedValue(completing as never);
+    renderProvider();
+    await act(async () => {
+      fireEvent.click(screen.getByText("apply-plan-edges"));
+    });
+    expect(events).toContainEqual(expect.objectContaining({ removedNodeIds: [], removedEdgeIds: ["e5"] }));
   });
 
   it("applyPlanEdges dispatches edges-created for the applied edges (dev/67-8)", async () => {
@@ -1170,6 +1260,29 @@ describe("AgentAttachmentsProvider per-node plan apply (dev/67-5)", () => {
     });
     expect(events.map((e: any) => e.kind)).toEqual(["node-created", "edges-created"]);
     expect((events[1] as any).edges[0]).toMatchObject({ id: "pe1", targetHandle: "in" });
+  });
+
+  it("applyPlanNode hands the canvas what the plan it completes removes, before the node", async () => {
+    // The last row of a plan that replaces Load CSV: the call that completes
+    // it removes Load CSV and its connection, as a whole applied plan does.
+    const completing = {
+      attachmentId: "a1", proposalId: "p1", status: "applied", ref: "ra",
+      createdNode: { id: "nid-1", type: "t", content: "", goal: "g", x: 1, y: 2 },
+      createdEdges: [{ id: "pe1", source: "nid-1", target: "cleaner", sourceHandle: "out", targetHandle: "in" }],
+      appliedRefs: ["ra"],
+      removedNodeIds: ["old-loader"], removedEdgeIds: ["edge-1"],
+    };
+    api.applyPlanNode.mockResolvedValue(completing as never);
+    renderProvider();
+    await act(async () => {
+      fireEvent.click(screen.getByText("apply-plan-node"));
+    });
+    const removal = events.findIndex((e: any) => Array.isArray(e.removedNodeIds));
+    expect(events[removal]).toMatchObject({ removedNodeIds: ["old-loader"], removedEdgeIds: ["edge-1"] });
+    // First, as a whole applied plan's removals are: the new feed then lands
+    // on the circle the removed one leaves.
+    expect(removal).toBe(0);
+    expect(events.slice(1).map((e: any) => e.kind)).toEqual(["node-created", "edges-created"]);
   });
 
   it("applyPlanNode dispatches node-created for the created node", async () => {

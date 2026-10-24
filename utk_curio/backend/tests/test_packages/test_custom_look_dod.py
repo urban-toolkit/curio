@@ -31,7 +31,7 @@ from utk_curio.backend.app.packages.builder.extension import installed_package_d
 from utk_curio.backend.app.packages.builder.models import parse_build_request
 from utk_curio.backend.app.packages.builder.pipeline import run_build
 from utk_curio.backend.app.packages.builder.preview import PREVIEW_STATES
-from utk_curio.backend.app.packages.domain.node_appearance import NAMED_COLORS
+from utk_curio.backend.app.packages.application.note_palette import NOTE_PALETTE
 from utk_curio.backend.tests.test_packages.test_build_compiler import _FAKE_ESBUILD
 from utk_curio.backend.tests.test_packages.test_build_preview import _FAKE_RUNNER
 
@@ -184,7 +184,7 @@ class TestScenarioDrafts:
         assert template["inputPorts"] == [] and template["outputPorts"] == []
         assert request.manifest["dependencies"] == {"packages": {}, "python": {}, "js": {}}
         colors = [n.appearance["backgroundColor"] for n in request.nodes]
-        assert colors == [NAMED_COLORS["pink"], NAMED_COLORS["lavender"], "#336699"]
+        assert colors == [NOTE_PALETTE.colors["pink"], NOTE_PALETTE.colors["lavender"], "#336699"]
 
     def test_invalid_note_color_refuses(self):
         from utk_curio.backend.app.packages.builder.models import BuildRequestError
@@ -301,7 +301,7 @@ class TestDodThroughTheResearcher:
         def _fake_run(config, messages, **kwargs):
             from utk_curio.backend.app.agents.application.turns import titles as services_mod
 
-            if messages and messages[0].get("content") == services_mod.TITLE_PROMPT:
+            if messages and messages[0].get("content") == services_mod.title_prompt():
                 return "Title"
             calls.append(messages)
             return replies[min(len(calls) - 1, len(replies) - 1)]
@@ -330,14 +330,14 @@ class TestDodThroughTheResearcher:
         assert body["requiresRegistryRefresh"] is True
         created = body["createdNodes"]
         assert [n["metadata"]["appearance"]["backgroundColor"] for n in created] == [
-            NAMED_COLORS["pink"], NAMED_COLORS["lavender"], "#336699"]
+            NOTE_PALETTE.colors["pink"], NOTE_PALETTE.colors["lavender"], "#336699"]
 
         with client.application.app_context():
             user_key = _user_dir_key(user)
         spec = projects_storage.read_spec(user_key, pid)
         nodes = {n["title"]: n for n in spec["dataflow"]["nodes"]}
         assert nodes["Transit findings"]["metadata"]["appearance"] == {
-            "backgroundColor": NAMED_COLORS["pink"]}
+            "backgroundColor": NOTE_PALETTE.colors["pink"]}
         assert nodes["Custom color"]["metadata"]["appearance"] == {
             "backgroundColor": "#336699"}
 
@@ -420,7 +420,7 @@ class TestCoolRoofsScenario:
         def _fake_run(config, messages, **kwargs):
             from utk_curio.backend.app.agents.application.turns import titles as services_mod
 
-            if messages and messages[0].get("content") == services_mod.TITLE_PROMPT:
+            if messages and messages[0].get("content") == services_mod.title_prompt():
                 return "Title"
             calls.append(messages)
             return replies[min(len(calls) - 1, len(replies) - 1)]
@@ -467,11 +467,11 @@ class TestCoolRoofsScenario:
         # markdown-composed answer note carrying the finding + source link.
         question = nodes["Question"]
         assert question["content"] == "How much do cool roofs lower summer surface temperatures in Chicago?"
-        assert question["metadata"]["appearance"]["backgroundColor"] == NAMED_COLORS["yellow"]
+        assert question["metadata"]["appearance"]["backgroundColor"] == NOTE_PALETTE.colors["yellow"]
         answer = nodes["Cool roofs in Chicago"]
         assert "**Finding:**" in answer["content"]  # markdown-composed, not prose
         assert "- [source](https://heat.test/cool-roofs)" in answer["content"]
-        assert answer["metadata"]["appearance"]["backgroundColor"] == NAMED_COLORS["green"]
+        assert answer["metadata"]["appearance"]["backgroundColor"] == NOTE_PALETTE.colors["green"]
         ordered = [n.get("title") for n in spec["dataflow"]["nodes"]
                    if n.get("title") in ("Question", "Cool roofs in Chicago")]
         assert ordered == ["Question", "Cool roofs in Chicago"]  # question FIRST
@@ -549,7 +549,7 @@ class TestCurioNotesRetry:
         def _fake_run(config, messages, **kwargs):
             from utk_curio.backend.app.agents.application.turns import titles as services_mod
 
-            if messages and messages[0].get("content") == services_mod.TITLE_PROMPT:
+            if messages and messages[0].get("content") == services_mod.title_prompt():
                 return "Title"
             calls.append(messages)
             return replies[min(len(calls) - 1, len(replies) - 1)]
@@ -579,7 +579,7 @@ class TestCurioNotesRetry:
         spec = projects_storage.read_spec(user_key, pid)
         note = next(n for n in spec["dataflow"]["nodes"] if n.get("title") == "Docs note")
         assert note["type"] == "curio.notes/note@1"
-        assert note["metadata"]["appearance"]["backgroundColor"] == NAMED_COLORS["blue"]
+        assert note["metadata"]["appearance"]["backgroundColor"] == NOTE_PALETTE.colors["blue"]
 
 
 class TestReuseFirstNoteCreation:
@@ -635,7 +635,7 @@ class TestReuseFirstNoteCreation:
         def _fake_run(config, messages, **kwargs):
             from utk_curio.backend.app.agents.application.turns import titles as services_mod
 
-            if messages and messages[0].get("content") == services_mod.TITLE_PROMPT:
+            if messages and messages[0].get("content") == services_mod.title_prompt():
                 return "Title"
             reply = script["replies"][min(script["calls"],
                                           len(script["replies"]) - 1)]

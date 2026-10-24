@@ -39,7 +39,7 @@ if TYPE_CHECKING:
 #: the one the bug made unusable.
 SHORT_VIEWPORT = {"width": 1280, "height": 660}
 
-RUN_ALL = '#tools-menu button[title="Run all nodes"]'
+RUN_ALL = '#tools-menu button[data-tooltip="Run all nodes"]'
 
 #: The built-in tile block: the part of the open Built-in palette's panel that
 #: holds the tiles, found through a tile rather than by class name: CSS-Modules
@@ -234,7 +234,7 @@ PALETTES = (
 TRIGGER_METRICS_JS = """(sel) => {
     const root = document.querySelector(sel);
     if (!root) return null;
-    const trigger = root.querySelector('button[title*="palette"]');
+    const trigger = root.querySelector('button[data-tooltip*="palette"]');
     if (!trigger) return null;
     const cs = getComputedStyle(trigger);
     const box = trigger.getBoundingClientRect();

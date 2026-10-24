@@ -338,6 +338,8 @@ return accumulated_shadow(input_0, season=[!! season !!], model=model, output_fi
 
 `deep_umbra` imports `tile_bounds` from `scout_rasters`, the module of the Scout package, which Deep Umbra names in `dependencies.packages`. Adding Deep Umbra adds Scout too (§3.8, "Packages a package needs").
 
+Agents read the same files. A run that writes an Accumulated Shadow node's code gets the template's whole `description`, this starter, and the public functions of `deep_umbra` and of `scout_rasters`, each by its signature and the first paragraph of its docstring, the functions the starter imports first. They are read from the sources with `ast`, never imported (`read_functions` in [`packages/domain/function_nodes.py`](../utk_curio/backend/app/packages/domain/function_nodes.py)), from the modules the sandbox makes importable for the node (`modules_for_node`), in the run's dataflow block ([ARCHITECTURE.md, Agent Prompt Composition](ARCHITECTURE.md#agent-prompt-composition)). `packages.resolve` gives an agent a package's functions and its `dependencies.packages` too. The preamble names no package's templates or functions, so a package documents its functions in their docstrings and shows their use in its starters: that is what an agent knows of them.
+
 A model package's template may ship no `source`: DDRNet23-Slim's Image Segmentation ([`packages/model.curio.ddrnet23-slim@1`](../packages/model.curio.ddrnet23-slim@1/manifest.json)) opens with the cell the backend writes for its model's type (`model_default_cell` in [`packages/application/model_packages.py`](../utk_curio/backend/app/packages/application/model_packages.py), served with the starters):
 
 ```python
@@ -347,10 +349,10 @@ classes = None  # every class the model names
 return curio_segment(input_0, model, classes)
 ```
 
-These helpers are in the sandbox's namespace for every Python node:
+These helpers are in the sandbox's namespace for every Python node, with the other functions node code calls, each given with its arguments in [`node-functions.md`](../agents/agent.curio.builtin@1/knowledge/node-functions.md):
 
 - `curio_load_model("<model id>")` ([`sandbox/util/catalog_helpers.py`](../utk_curio/sandbox/util/catalog_helpers.py)) loads a model package's model: its `folder`, its `manifest`, its `labels`, the `runner` that labels an image's pixels, opened on first use, and `run`, which feeds an ONNX graph the arrays a node prepared. Before the run the backend resolves every id a node's code names to the folder of a model package in the account's store (`resolve_models` in [`execution/node_exec.py`](../utk_curio/backend/app/execution/node_exec.py), over `packages.service.resolve_model_dirs`); a model the store does not hold gets none, and the call says to add it. Models ship as model packages under [`packages/`](../packages/), or are added from the Discovery Catalog's Hugging Face models source (§3).
-- `curio_segment(images, model, classes)` ([`sandbox/util/vision.py`](../utk_curio/sandbox/util/vision.py)) runs a loaded segmentation model the way its manifest describes (a `runtime` of `onnx` on onnxruntime, `transformers` on Transformers) over every row's `path`, and returns the rows with `dominant_class`, `dominant_pct`, a `<class>_pct` per class, `overlay_url` and `segment_error` first. Each overlay is written with `curio_derived_file` (kind `"image"`, [`sandbox/util/collections.py`](../utk_curio/sandbox/util/collections.py)) and served back by the media route (§3.6).
+- `curio_segment(images, model, classes=None, *, overlays=True)` ([`sandbox/util/vision.py`](../utk_curio/sandbox/util/vision.py)) runs a loaded segmentation model the way its manifest describes (a `runtime` of `onnx` on onnxruntime, `transformers` on Transformers) over every row's `path`, and returns the rows with `dominant_class`, `dominant_pct`, a `<class>_pct` per class, `overlay_url` and `segment_error` first. With `overlays`, each overlay is written with `curio_derived_file` (kind `"image"`, [`sandbox/util/collections.py`](../utk_curio/sandbox/util/collections.py)) and served back by the media route (§3.6).
 
 ### 4.3 A built-in template in [`packages/curio.builtin@1/manifest.json`](../packages/curio.builtin@1/manifest.json)
 
@@ -368,7 +370,9 @@ A generic Spatial Join that pairs the rows of two inputs whose shapes meet, by a
 
 This one belongs in `curio.builtin@1`, not in a model package, because it's reusable for any spatial workflow. Generally: if a capability is reusable outside the package's narrow theme, factor it out into builtin.
 
-The agents' prompts describe every `curio.builtin@1` template from this manifest: the shared preamble gives its label, description, control, port types, how many connections its inputs accept, and interaction support, and other prompts name templates by label. After adding or changing a built-in template, run `python scripts/generate_contracts.py` and commit the regenerated prompts with the manifest: the shared preamble in `utk_curio/llm-prompts/` and the instructions in the agents' folders in [`agents/`](../agents/). The backend suite fails until you do (see [CONTRIBUTING.md, Generated Files](CONTRIBUTING.md#generated-files)).
+The agents' prompts describe every `curio.builtin@1` template from this manifest: the shared preamble gives its label, description, control, port types, how many connections its inputs accept, and interaction support, and other prompts name templates by label. The backend reads them from the manifest when it starts, so those lists follow a built-in template you add or change with no other edit (see [CONTRIBUTING.md, Agent Text](CONTRIBUTING.md#agent-text)).
+
+A new feature of Curio, a built-in template among them, also gets its page in the base entry of the agents, [`agents/agent.curio.builtin@1/knowledge/`](../agents/agent.curio.builtin@1/knowledge/), in the same change: what the feature does, written for the agents, in a page the preamble includes. A built-in template is on a page when a page names it as `{{template.label:curio.builtin/<id>}}`, a kind of chip when a page shows one through its marker, and a function node code calls when [`node-functions.md`](../agents/agent.curio.builtin@1/knowledge/node-functions.md) gives it, in that page's fixed line shapes (`agents/domain/node_functions.py` reads them). `test_knowledge_pages.py` fails while one is on no page, and `test_node_functions_sandbox.py` while the functions page and what node code gets in each engine differ.
 
 ### 4.4 Behavior hooks
 

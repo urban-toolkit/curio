@@ -60,6 +60,8 @@ The weather GNN, SCOUT's weather graph network, is about 52 KB. Its package, `mo
 
 A node runs a model whose package is in your store: one you added, one a dataflow that names it brought, or one installed for the examples. A model whose package your store does not hold stops the node, with a message saying to add it.
 
+An agent writes only models your store holds into a node, and asks you to add any other.
+
 ---
 
 ## 2. Surfaces and workflows
@@ -125,7 +127,7 @@ A new Image Segmentation node opens with `classes = None`, every class the model
 | `overlay_url` | The image tinted by class, which **Simple View** shows beside the image. |
 | `segment_error` | Empty, or why the row was skipped: *the image is not on this machine* when the row's file is missing, *the image could not be read* when the file is not an image Curio can open or is cut short. |
 
-Every input column follows. A class the model does not label stops the node, with a message naming the labels it has.
+Every input column follows. A class the model does not label stops the node, with a message naming the labels it has. `curio_load_model`, `curio_segment` and their arguments are in [Functions node code calls](../agents/agent.curio.builtin@1/knowledge/node-functions.md).
 
 Dragging a model onto a node rewrites the id in its first `curio_load_model(...)` call and nothing else, so `classes` stays as you set it. The model must be of the type the node runs, the type of the model its code names: a segmentation model takes another segmentation model's place. The dataflow saves the node's code, so it reopens with the same model.
 

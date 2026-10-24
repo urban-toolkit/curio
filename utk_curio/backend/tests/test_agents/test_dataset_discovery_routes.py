@@ -74,7 +74,7 @@ class _Harness:
         dl_script = list(dl_replies or ['import pandas as pd\nreturn pd.read_csv("areas.csv")'])
 
         def _fake_run(config, messages, **kwargs):
-            if messages and messages[0].get("content") == services_mod.TITLE_PROMPT:
+            if messages and messages[0].get("content") == services_mod.title_prompt():
                 return "Title"
             frame = messages[-1].get("content") or ""
             if "[delegated task" not in frame:

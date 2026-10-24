@@ -47,8 +47,11 @@ skipped; ``label`` names an edit for people and changes nothing.
 Features are matched by the value of ``key``, never by their position. Every
 feature that holds an id is edited: Autark's buildings repeat ``building_id``
 on every part of a building, so an edit by ``building_id`` edits the whole
-building. An id no feature holds is reported, and the run goes on. With no
-edits, the input is handed on as it came.
+building. The node's map tools change one part at a time: their edit names
+the part by ``where``, its ``building_id`` and its own ``osm_id``
+(``building_id == 29623484 and osm_id == 236608503``). An id no feature holds
+is reported, and the run goes on. With no edits, the input is handed on as it
+came.
 
 What the input may be, and what the step hands on:
 
@@ -372,6 +375,12 @@ def _written(edit, properties):
 
 def _where_holds(edit, properties) -> bool:
     return edit_expr.truthy(edit_expr.evaluate(edit["_where"], properties))
+
+
+#: The line ``_report_unknown`` prints for ids no feature has. An agent that
+#: writes a Map Edits node's code is held to it: a run that prints one names
+#: features the data does not hold.
+UNKNOWN_IDS_LINE = re.compile(rf"{_NAME}: .+ has no feature with .+; the \w+ skips (?:it|them)\.")
 
 
 def _report_unknown(label, key, op, ids, known):

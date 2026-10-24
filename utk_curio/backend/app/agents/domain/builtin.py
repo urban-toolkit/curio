@@ -7,14 +7,15 @@ of an agent a user uploads, read by the same loader
 Curio's own agents use: ``catalog`` (a card, or a helper that runs only as
 other agents' delegate, and the roster's order), ``workedExamples``, a
 capability's ``label`` and a prompt's ``runs``. Each names the preamble every
-agent shares as ``curio:default_preamble.md``: one file, generated into
-``utk_curio/llm-prompts/`` with the shared fragments the generator includes
-and the files read at run time (``package_contract.md``, ``examples.md``).
+agent shares as ``curio:default_preamble.md``: a page of the base entry, the
+folder in ``agents/`` whose manifest says ``kind: base``, which holds the
+pages the agents share (``agent_text``). The base entry is no agent, so the
+roster leaves it out.
 
 This module is the loader: the roster, a shipped agent's manifest and prompt
 text, which agents are helpers, and the shape an export or an install of one
-carries. ``scripts/generate_contracts.py`` writes each rendered prompt into the
-folder of the agent whose manifest names it.
+carries. A prompt's text is its render (``agent_text.read``): every file is a
+hand-written source whose markers the backend fills when it starts.
 
 User-facing overview: ``docs/AGENT-CATALOG.md``.
 """
@@ -27,11 +28,10 @@ from functools import lru_cache
 from pathlib import Path
 
 from utk_curio import shipped
-from utk_curio.backend.app.agents.domain.contracts import PACKAGE_CONTRACT
+from utk_curio.backend.app.agents.domain import agent_text
 from utk_curio.backend.app.agents.domain.manifest import (
     SHARED_PROMPT_FOLDER,
     SHARED_PROMPT_PREFIX,
-    SHARED_PROMPTS,
     AgentManifest,
     AgentManifestError,
     PromptAsset,
@@ -43,18 +43,24 @@ log = logging.getLogger(__name__)
 
 #: The agents Curio ships, one folder each, by their repository path
 #: (``utk_curio/shipped.py`` finds it).
-AGENTS_DIR = "agents"
-#: The prompts Curio shares (``curio:<file>``), with the fragments and the
-#: templates the generator reads and the files read at run time.
-#: domain/builtin.py -> domain -> agents -> app -> backend -> utk_curio/llm-prompts
-PROMPT_SOURCE_DIR = Path(__file__).resolve().parents[4] / "llm-prompts"
-#: The one preamble every agent Curio ships composes before its instruction,
-#: generated from its template (``contracts.render_prompt``).
+AGENTS_DIR = agent_text.AGENTS_DIR
+#: The page of the base entry every agent Curio ships composes before its
+#: instruction, its preamble (``curio:default_preamble.md``).
 PREAMBLE_FILE = "default_preamble.md"
-# The package backend contract: the Node Builder's package-writing prompt
-# includes the text, and a delegated call of that mode receives this file as
-# an input.
-PACKAGE_CONTRACT_FILE = f"{PACKAGE_CONTRACT}.md"
+#: The page of the package backend contract: the Node Builder's
+#: package-writing prompt includes it, and a delegated call of that mode
+#: receives it as an input.
+PACKAGE_CONTRACT_FILE = "rules/package_contract.md"
+#: The pages of the base entry the runtime composes a run's turns from, each
+#: read by its sections (``agent_text.section``): what a run is told of each
+#: tool, how it replies, and the lines that frame what it is given.
+TOOLS_FILE = "tools.md"
+PROTOCOL_FILE = "protocol.md"
+FRAMES_FILE = "frames.md"
+#: The page of the reply contracts a delegated run receives in its inputs.
+DELEGATE_CONTRACTS_FILE = "delegate-contracts.md"
+#: The page of the title call's system prompt.
+TITLE_FILE = "conversation-title.md"
 #: What only the agents Curio ships carry: an export or an install's copy of
 #: one leaves these out, at the top and on each capability and prompt.
 _SHIPPED_ONLY = ("catalog", "workedExamples")
@@ -70,7 +76,8 @@ def agents_dir() -> Path:
 @lru_cache(maxsize=8)
 def _read_folders(root: Path) -> tuple[tuple[Path, str], ...]:
     """Each agent folder in *root* and its manifest's text, in the roster's
-    order (``catalog.order``). Every folder is read and checked once: as a
+    order (``catalog.order``), leaving out the base entry, which is no agent
+    (``agent_text.is_base``). Every folder is read and checked once: as a
     user's agent is (its name is its id and version), plus what an agent Curio
     ships declares: built-in trust and a place in the catalog, no two in the
     same place."""
@@ -82,7 +89,7 @@ def _read_folders(root: Path) -> tuple[tuple[Path, str], ...]:
         return ()
     found: list[tuple[int, Path, str]] = []
     for folder in sorted(root.iterdir()):
-        if not folder.is_dir() or folder.name.startswith("."):
+        if not folder.is_dir() or folder.name.startswith(".") or agent_text.is_base(folder):
             continue
         manifest = load_agent_manifest(folder)
         if manifest.provenance.trust != "built-in":
@@ -183,14 +190,15 @@ def read_prompt_text(coord: str, name: str) -> str | None:
 
 
 def read_asset_text(folder: Path, asset: PromptAsset, *, wanted_by: str) -> str | None:
-    """The text of *asset*, a prompt of the agent whose folder is *folder*:
-    a shared prompt from Curio's prompts, any other from the folder. A missing
-    file is logged and reads None."""
+    """The text an agent reads of *asset*, a prompt of the agent Curio ships
+    whose folder is *folder*, rendered (``agent_text.read``): a page of the
+    base entry when the manifest names it as ``curio:<path>``, else the
+    agent's own file. A missing file is logged and reads None."""
     if asset.shared is not None:
-        return read_prompt_file(asset.shared, wanted_by=wanted_by)
+        return read_page(asset.shared, wanted_by=wanted_by)
     path = folder / asset.path
     if path.is_file():
-        return path.read_text(encoding="utf-8")
+        return agent_text.read(path)
     log.error(
         "%s reads %s but %s is missing, so it runs without it. If this is an installed "
         "Curio, the package is missing its agents/ folder (see MANIFEST.in).",
@@ -199,21 +207,27 @@ def read_asset_text(folder: Path, asset: PromptAsset, *, wanted_by: str) -> str 
     return None
 
 
-def read_prompt_file(filename: str, *, wanted_by: str) -> str | None:
-    """Read one file from ``llm-prompts/``, or None when it is missing.
+def read_page(page: str, *, wanted_by: str) -> str | None:
+    """A page of the base entry, by its path there (``curio:<page>`` names
+    it), rendered (``agent_text.read``), or None when it is missing or no
+    page.
 
-    A missing file is logged: returning None silently would ship an agent
+    A missing page is logged: returning None silently would ship an agent
     with no system or task prompt and no symptom beyond worse answers, which
-    is precisely what an sdist without ``utk_curio/llm-prompts/`` used to do.
+    is precisely what an sdist without its prompts once did.
     """
-    path = PROMPT_SOURCE_DIR / filename
+    try:
+        path = agent_text.page_file(page)
+    except agent_text.AgentTextError as exc:
+        log.error("%s reads %s%s, which it cannot, so it runs without it: %s",
+                  wanted_by, SHARED_PROMPT_PREFIX, page, exc)
+        return None
     if path.is_file():
-        return path.read_text(encoding="utf-8")
+        return agent_text.read(path)
     log.error(
-        "%s reads %s but %s is missing, so it runs without it. If this is an "
-        "installed Curio, the package is missing utk_curio/llm-prompts/ (see "
-        "MANIFEST.in).",
-        wanted_by, filename, path,
+        "%s reads %s%s but %s is missing, so it runs without it. If this is an "
+        "installed Curio, the package is missing its agents/ folder (see MANIFEST.in).",
+        wanted_by, SHARED_PROMPT_PREFIX, page, path,
     )
     return None
 
@@ -245,9 +259,10 @@ def exported_manifest(raw: dict) -> dict:
 
 def carry_shared_prompts(manifest: dict, prompts: dict[str, str]) -> dict:
     """The bundle ``{manifest, prompts}`` of a definition whose *manifest*
-    may name shared prompts (``curio:<file>``), carrying each as a file of its
-    own, as an export carries every prompt: the manifest names the file, and
-    the prompts hold its text. Leaves *manifest* and *prompts* unchanged."""
+    may name pages of the base entry (``curio:<path>``), carrying each as a
+    file of its own, its rendered text, as an export carries every prompt: the
+    manifest names the file, and the prompts hold its text. Leaves *manifest*
+    and *prompts* unchanged."""
     entries = manifest.get("prompts")
     if not isinstance(entries, dict):
         return {"manifest": manifest, "prompts": prompts}
@@ -255,7 +270,7 @@ def carry_shared_prompts(manifest: dict, prompts: dict[str, str]) -> dict:
     for key, asset in entries.items():
         path = asset.get("path") if isinstance(asset, dict) else None
         shared = _shared_name(path)
-        text = read_prompt_file(shared, wanted_by=f"an export, prompt {key!r},") if shared else None
+        text = read_page(shared, wanted_by=f"an export, prompt {key!r},") if shared else None
         if text is None:
             carried[key] = asset
             continue
@@ -265,9 +280,10 @@ def carry_shared_prompts(manifest: dict, prompts: dict[str, str]) -> dict:
 
 
 def _shared_name(path: object) -> str | None:
+    """The page of the base entry *path* names (``curio:<page>``), else None."""
     if isinstance(path, str) and path.startswith(SHARED_PROMPT_PREFIX):
         name = path[len(SHARED_PROMPT_PREFIX):]
-        return name if name in SHARED_PROMPTS else None
+        return name if name in agent_text.pages() else None
     return None
 
 

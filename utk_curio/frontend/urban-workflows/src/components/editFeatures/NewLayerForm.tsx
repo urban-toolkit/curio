@@ -96,7 +96,7 @@ export default function NewLayerForm({ taken, onCreate, onCancel }: { taken: str
                 <TextInput label={`Property ${i + 1} default`} placeholder="default" value={p.def} onChange={(text) => update(i, { def: text })} />
               )}
               <CheckboxInput label={`Property ${i + 1} required`} checked={p.required} onChange={(checked) => update(i, { required: checked })} />
-              <button type="button" className={`nodrag nopan ${styles.iconButton}`} aria-label={`Remove property ${i + 1}`} title="Remove this property" onClick={() => setProps(props.filter((_, j) => j !== i))}>
+              <button type="button" className={`nodrag nopan ${styles.iconButton}`} aria-label={`Remove property ${i + 1}`} data-tooltip="Remove this property" onClick={() => setProps(props.filter((_, j) => j !== i))}>
                 <FontAwesomeIcon icon={faXmark} aria-hidden />
               </button>
             </React.Fragment>

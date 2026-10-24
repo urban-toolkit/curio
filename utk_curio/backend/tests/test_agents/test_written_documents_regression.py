@@ -129,7 +129,7 @@ class _Harness:
         def _fake_run(config, messages, **kwargs):
             from utk_curio.backend.app.agents.application.turns import titles as services_mod
 
-            if messages and messages[0].get("content") == services_mod.TITLE_PROMPT:
+            if messages and messages[0].get("content") == services_mod.title_prompt():
                 return "Title"
             frame = messages[-1].get("content") or ""
             if "[delegated task" not in frame:

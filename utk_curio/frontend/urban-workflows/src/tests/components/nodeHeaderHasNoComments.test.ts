@@ -35,8 +35,11 @@ function code(file: string): string {
 
 const relative = (file: string) => path.relative(SRC, file).split(path.sep).join("/");
 
-/** A control titled Comments, written as `title="Comments"` or `title={"Comments"}`. */
-const COMMENTS_TITLE = /title=\{?\s*["'`]Comments["'`]/;
+/**
+ * A control titled Comments, written as `title="Comments"` or `title={"Comments"}`,
+ * or with its tooltip, `data-tooltip="Comments"`.
+ */
+const COMMENTS_TITLE = /(?:title|data-tooltip)=\{?\s*["'`]Comments["'`]/;
 
 describe("node comments", () => {
   test("no node header has a Comments button", () => {

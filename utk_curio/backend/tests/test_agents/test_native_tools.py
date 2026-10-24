@@ -18,7 +18,7 @@ import json
 import pytest
 
 from utk_curio.backend.app.agents.infrastructure import chat_capabilities
-from utk_curio.backend.app.agents.domain import content
+from utk_curio.backend.app.agents.domain import agent_text, builtin, content
 from utk_curio.backend.app.agents.repositories import model_catalog
 from utk_curio.backend.app.agents.application import tool_rounds
 from utk_curio.backend.app.agents.application.turns import titles
@@ -35,6 +35,11 @@ from utk_curio.backend.tests.test_agents import test_routes_proposals as routes_
 #: An agent that only chats and reads: the three read tools, no delegates.
 #: No card is one, so a made-up one stands in (``_support.agent_routes``).
 CHAT = READER
+
+
+def _protocol(name: str) -> str:
+    """A section of the base entry's ``protocol.md``, as a run reads it."""
+    return agent_text.section(builtin.PROTOCOL_FILE, name)
 NB = "agent.curio.node-builder@1"
 DFB = "agent.curio.dataflow-builder@1"
 DF = "agent.curio.dataset-finder@1"
@@ -124,13 +129,13 @@ def _run_calls() -> list[list]:
     """The captured message lists of the run's own calls, the title call left out."""
     return [
         messages for messages in testing_provider.captured()
-        if not (messages and messages[0].get("content") == titles.TITLE_PROMPT)
+        if not (messages and messages[0].get("content") == titles.title_prompt())
     ]
 
 
 def _offered() -> list[dict]:
     return [o for o, messages in zip(testing_provider.offered(), testing_provider.captured())
-            if not (messages and messages[0].get("content") == titles.TITLE_PROMPT)]
+            if not (messages and messages[0].get("content") == titles.title_prompt())]
 
 
 def _call(name, arguments=None, call_id=None) -> dict:
@@ -189,12 +194,12 @@ class TestTheSystemTurn:
         grants = tools.grant_descriptions(["catalog.search", "discovery.search"])
         native = content.tail_instruction(grants, native_tools=True)
         fenced = content.tail_instruction(grants)
-        assert native.startswith(content.TAIL_INSTRUCTION)
-        assert content.NATIVE_TOOLS_INSTRUCTION in native
+        assert native.startswith(content.tail_instruction())
+        assert _protocol("native-tools") in native
         assert '"toolRequest"' in fenced and '"toolRequest"' not in native
         assert "- catalog.search:" in fenced and "- catalog.search:" not in native
         # The candidates block is no tool call, so both protocols keep its schema.
-        assert content.CANDIDATES_INSTRUCTION in native and content.CANDIDATES_DISCOVERY_ADDENDUM in native
+        assert _protocol("dataset-candidates") in native and _protocol("dataset-candidates-from-portals") in native
 
     def test_the_native_delegation_paragraph_names_the_delegate_tool(self):
         entries = [("node.content.generate", "Node Builder")]
@@ -208,7 +213,7 @@ class TestTheSystemTurn:
         testing_provider.push_reply("Hello.")
         _run(client, headers, project, att)
         (system, *_), = _run_calls()
-        assert content.NATIVE_TOOLS_INSTRUCTION in system["content"]
+        assert _protocol("native-tools") in system["content"]
         assert '"toolRequest"' not in system["content"]
         assert [s["kind"] for s in system["slots"]][:2] == ["preamble", "instruction"]
         assert _offered()[0] == {
@@ -235,7 +240,7 @@ class TestTheSystemTurn:
         _run(client, headers, project, att)
         (system, *_), = _run_calls()
         assert '"toolRequest"' in system["content"]
-        assert content.NATIVE_TOOLS_INSTRUCTION not in system["content"]
+        assert _protocol("native-tools") not in system["content"]
         assert _offered()[0] == {"tools": [], "toolChoice": None, "replySchema": None}
         pins = _last_turn(client, headers, project, att)["execution"]["pins"]
         assert pins["toolProtocol"] == "fenced"
@@ -313,7 +318,7 @@ class TestANativeCall:
         assert body["reply"] == "Enough."
         assert [o["toolChoice"] for o in _offered()] == ["auto"] * tool_rounds.MAX_TOOL_ROUNDS + ["none"]
         last_result = _run_calls()[-1][-1]
-        assert last_result["content"].endswith(tool_rounds._FINAL_ROUND_NOTE)
+        assert last_result["content"].endswith("\n" + agent_text.message("tool-round.final-round"))
 
     def test_a_fenced_block_in_a_native_run_is_answered_in_kind(self, client, headers, project):
         att = _attach(client, headers, project, CHAT)
@@ -412,7 +417,7 @@ class TestTheFallback:
         offered = _offered()
         assert offered[0]["tools"] and offered[1] == {"tools": [], "toolChoice": None, "replySchema": None}
         retry_system = _run_calls()[1][0]["content"]
-        assert '"toolRequest"' in retry_system and content.NATIVE_TOOLS_INSTRUCTION not in retry_system
+        assert '"toolRequest"' in retry_system and _protocol("native-tools") not in retry_system
         pins = _last_turn(client, headers, project, att)["execution"]["pins"]
         assert (pins["toolProtocol"], pins["nativeToolsRefused"]) == ("fenced", True)
 
@@ -456,7 +461,7 @@ class TestTheFallback:
         offered = []
 
         def _fake(config, messages, max_output_tokens=None, usage_out=None, **kwargs):
-            if messages[0].get("content") == titles.TITLE_PROMPT:
+            if messages[0].get("content") == titles.title_prompt():
                 return "Title"
             offered.append(bool(kwargs.get("tools")))
             if kwargs.get("tools"):

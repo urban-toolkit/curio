@@ -58,7 +58,7 @@ export const AgentDock: React.FC<{
             placeholder={GOAL_PLACEHOLDER}
             // The half the placeholder had to drop to fit. It is the answer to
             // "who sees this?", which is worth keeping somewhere.
-            title="The dataflow's goal, shared with every agent that reads it"
+            data-tooltip="The dataflow's goal, shared with every agent that reads it"
             aria-label="Dataflow goal"
           />
         </span>

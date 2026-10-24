@@ -412,7 +412,7 @@ class TestBaselinesPerGpuKind:
         default = "/x/screenshot_agent-run_agent.curio.dataflow-builder.png"
         assert e2e_utils.kind_baseline(default, "utk-gpu") == (
             "/x/screenshot_agent-run_agent.curio.dataflow-builder.utk-gpu.png")
-        assert e2e_utils.GPU_KINDS == ("arcade-gpu", "utk-gpu")
+        assert e2e_utils.GPU_KINDS == ("arcade-gpu", "utk-gpu", "utk-desktop")
 
     def test_a_run_of_a_kind_compares_with_its_kinds_baseline(self, expected_dir, monkeypatch):
         _, utk = self._baselines(expected_dir)

@@ -53,10 +53,19 @@
       "id": "node.runtime.read"
     },
     {
+      "id": "node.history.read"
+    },
+    {
       "id": "node.create"
     },
     {
+      "id": "node.settings.write"
+    },
+    {
       "id": "examples.read"
+    },
+    {
+      "id": "scenarios.search"
     },
     {
       "id": "package.draft.apply"
@@ -79,15 +88,6 @@
   "delegatesTo": [
     "agent.curio.dataset-finder",
     "agent.curio.node-builder",
-    {
-      "id": "agent.curio.dataflow-planner",
-      "capabilities": [
-        "workflow.plan.create",
-        "execution.followup.plan",
-        "workflow.plan.refresh",
-        "workflow.coherence.validate"
-      ]
-    },
     {
       "id": "agent.curio.dataflow-reader",
       "capabilities": [

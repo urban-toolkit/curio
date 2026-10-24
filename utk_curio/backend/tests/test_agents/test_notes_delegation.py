@@ -13,9 +13,9 @@ from pathlib import Path
 from utk_curio.backend.app.agents.application import tools as agent_tools
 from utk_curio.backend.app.common.user_storage import users_base
 from utk_curio.backend.app.agents.application.turns.delegates import (
-    _NOTES_REPLY_CONTRACT,
     _delegated_search_results,
     _enriched_delegate_inputs,
+    _notes_reply_contract,
 )
 
 
@@ -69,7 +69,7 @@ class TestNotesComposeEnrichment:
             "guest", "p1", {}, "research.notes.compose",
             {"question": "how much do cool roofs lower summer surface temperatures in Chicago?"})
         assert enriched["searchResults"]["results"][0]["title"] == "T"
-        assert enriched["notesReplyContract"] is _NOTES_REPLY_CONTRACT
+        assert enriched["notesReplyContract"] is _notes_reply_contract()
         assert isinstance(enriched["notesTemplates"], list)
         assert enriched["question"] == "how much do cool roofs lower summer surface temperatures in Chicago?"
 
@@ -86,7 +86,7 @@ class TestNotesComposeEnrichment:
         assert enriched == supplied
 
     def test_contract_teaches_the_a13_row_and_the_honesty_rule(self):
-        text = json.dumps(_NOTES_REPLY_CONTRACT)
+        text = json.dumps(_notes_reply_contract())
         for marker in ("inputs.searchResults", "NEVER invent findings",
                        "title 'Question', color yellow", "notesTemplates",
                        "empty notes list is valid"):
@@ -312,7 +312,7 @@ class TestDataflowBuilderNotesLane:
         def _fake_run(config, messages, **kwargs):
             from utk_curio.backend.app.agents.application.turns import titles as services_mod
 
-            if messages and messages[0].get("content") == services_mod.TITLE_PROMPT:
+            if messages and messages[0].get("content") == services_mod.title_prompt():
                 return "Title"
             calls.append(messages)
             return replies[min(len(calls) - 1, len(replies) - 1)]
@@ -441,7 +441,7 @@ class TestNotesLandOnTheBuiltInNote:
         def _fake_run(config, messages, **kwargs):
             from utk_curio.backend.app.agents.application.turns import titles as services_mod
 
-            if messages and messages[0].get("content") == services_mod.TITLE_PROMPT:
+            if messages and messages[0].get("content") == services_mod.title_prompt():
                 return "Title"
             calls.append(messages)
             return replies[min(len(calls) - 1, len(replies) - 1)]
@@ -471,7 +471,7 @@ class TestNotesLandOnTheBuiltInNote:
 
     def test_the_notes_mode_places_the_findings_on_the_built_in_note(
             self, client, user_and_token, tmp_curio, monkeypatch):
-        from utk_curio.backend.app.packages.domain.node_appearance import NAMED_COLORS
+        from utk_curio.backend.app.packages.application.note_palette import NOTE_PALETTE
 
         user, token = user_and_token
         delegate = ('```curio.v1\n{"delegateRequest": {"capability": '
@@ -500,14 +500,14 @@ class TestNotesLandOnTheBuiltInNote:
         notes = self._notes(user_key, pid)
         assert notes["Question"]["type"] == NOTE
         assert notes["Question"]["content"] == self.QUESTION
-        assert notes["Question"]["metadata"]["appearance"] == {"backgroundColor": NAMED_COLORS["yellow"]}
+        assert notes["Question"]["metadata"]["appearance"] == {"backgroundColor": NOTE_PALETTE.colors["yellow"]}
         assert notes["Cool roofs in Chicago"]["type"] == NOTE
         assert notes["Cool roofs in Chicago"]["content"] == self.ANSWER
-        assert notes["Cool roofs in Chicago"]["metadata"]["appearance"] == {"backgroundColor": NAMED_COLORS["green"]}
+        assert notes["Cool roofs in Chicago"]["metadata"]["appearance"] == {"backgroundColor": NOTE_PALETTE.colors["green"]}
 
     def test_the_researchers_chat_places_its_notes_on_the_built_in_note(
             self, client, user_and_token, tmp_curio, monkeypatch):
-        from utk_curio.backend.app.packages.domain.node_appearance import NAMED_COLORS
+        from utk_curio.backend.app.packages.application.note_palette import NOTE_PALETTE
 
         def create(title, content):
             return "```curio.v1\n" + json.dumps({"toolRequest": {"tool": "node.create", "params": {
@@ -534,10 +534,10 @@ class TestNotesLandOnTheBuiltInNote:
         notes = self._notes(user_key, pid)
         # No color was asked for: the question is yellow and the answer green.
         assert notes["Question"]["type"] == NOTE
-        assert notes["Question"]["metadata"]["appearance"] == {"backgroundColor": NAMED_COLORS["yellow"]}
+        assert notes["Question"]["metadata"]["appearance"] == {"backgroundColor": NOTE_PALETTE.colors["yellow"]}
         assert notes["Cool roofs in Chicago"]["type"] == NOTE
         assert notes["Cool roofs in Chicago"]["content"] == self.ANSWER
-        assert notes["Cool roofs in Chicago"]["metadata"]["appearance"] == {"backgroundColor": NAMED_COLORS["green"]}
+        assert notes["Cool roofs in Chicago"]["metadata"]["appearance"] == {"backgroundColor": NOTE_PALETTE.colors["green"]}
 
 
 # ── the prompts carry the contract (commit 3) ────────────────────────────────

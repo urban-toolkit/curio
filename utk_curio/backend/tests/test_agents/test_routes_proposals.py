@@ -54,7 +54,7 @@ class TestReviewProposals:
             from utk_curio.backend.app.agents.application.turns import titles
             from utk_curio.backend.app.agents.infrastructure import providers
 
-            if messages and messages[0].get("content") == titles.TITLE_PROMPT:
+            if messages and messages[0].get("content") == titles.title_prompt():
                 return "Title"
             calls.append(messages)
             return script[min(len(calls) - 1, len(script) - 1)]
@@ -397,7 +397,7 @@ class TestNodeCreate:
             from utk_curio.backend.app.agents.application.turns import titles
             from utk_curio.backend.app.agents.infrastructure import providers
 
-            if messages and messages[0].get("content") == titles.TITLE_PROMPT:
+            if messages and messages[0].get("content") == titles.title_prompt():
                 return "Title"
             calls.append(messages)
             return script[min(len(calls) - 1, len(script) - 1)]
@@ -484,6 +484,25 @@ class TestNodeCreate:
         assert inserted["content"] == "print('new')"
         # Apply is deterministic — no quota consumed.
         assert ledger.aggregates(_user_dir_key(user))["runs"] == runs_before
+
+    def test_the_created_node_names_the_agent_that_proposed_it(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        """The canvas starts the node's history with an entry named after the
+        agent, as it names an applied change to a node's code: the apply names
+        the agent on the node it hands the canvas, never on the saved node."""
+        from utk_curio.backend.app.agents.domain import builtin
+
+        user, token = user_and_token
+        att_id, _ = self._setup(client, token=token, user=user, project_id=alice_project, monkeypatch=monkeypatch)
+        proposal = self._proposal_from_run(self._run(client, token, alice_project, att_id))
+        resp = client.post(
+            f"/api/agents/projects/{alice_project}/attachments/{att_id}/proposals/{proposal['proposalId']}/apply",
+            headers=_auth(token),
+        )
+        assert resp.status_code == 200, resp.get_data(as_text=True)
+        created = resp.get_json()["createdNode"]
+        assert created["agent"] == builtin.get_builtin_manifest(self.COORD).name
+        saved = next(n for n in self._spec_nodes(user, alice_project) if n["id"] == created["id"])
+        assert "agent" not in saved
 
     def test_large_content_node_create_mints_and_applies(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
         """Issue #245 — the reported bug, end to end.
@@ -735,7 +754,7 @@ class TestDataflowPlanMint:
             from utk_curio.backend.app.agents.application.turns import titles
             from utk_curio.backend.app.agents.infrastructure import providers
 
-            if messages and messages[0].get("content") == titles.TITLE_PROMPT:
+            if messages and messages[0].get("content") == titles.title_prompt():
                 return "Title"
             calls.append(messages)
             return script[min(len(calls) - 1, len(script) - 1)]
@@ -1380,7 +1399,7 @@ class TestDestructiveReplan:
             from utk_curio.backend.app.agents.application.turns import titles
             from utk_curio.backend.app.agents.infrastructure import providers
 
-            if messages and messages[0].get("content") == titles.TITLE_PROMPT:
+            if messages and messages[0].get("content") == titles.title_prompt():
                 return "Title"
             calls.append(messages)
             return replies[min(len(calls) - 1, len(replies) - 1)]
@@ -2119,6 +2138,241 @@ class TestPlanEdgeApply:
         assert body["status"] == "pending"  # a refused edge never completes
 
 
+class TestPlansAppliedRowByRow:
+    """A plan applied a row at a time, or by Connect all, ends as Apply plan
+    ends it. The call that completes it removes what the plan removes, checked
+    as Apply plan checks it, returns the removed ids for the live canvas, ends
+    the chat's result with the Topology verdict and marks the card applied. A
+    plan with no nodes completes on its connections."""
+
+    def _replan(self, client, user, token, project_id, monkeypatch, runs=None, **setup):
+        """TestDestructiveReplan's canvas (Load CSV feeds Clean over edge-1)
+        and its plan: API Fetch replaces Load CSV and feeds Clean. *runs* are
+        the builder session's node runs before the plan."""
+        from utk_curio.backend.app.agents.application import attachments as attachments_mod
+        from utk_curio.backend.app.projects import storage as projects_storage
+
+        base = TestDestructiveReplan()
+        att_id, _ = base._setup(
+            client, user, token, project_id, monkeypatch,
+            replies=["Revising.\n" + base._revision_tail(
+                nodes=[base._new_node()], edges=[{"from": "a", "to": "cleaner"}],
+            )],
+            **setup,
+        )
+        if runs is not None:
+            key = _user_dir_key(user)
+            spec = projects_storage.read_spec(key, project_id)
+            attachments_mod.get_attachment(spec, att_id)["builderSession"] = {
+                "phase": "applied", "appliedPlanId": "prev", "nodeRuns": dict(runs),
+            }
+            projects_storage.write_spec(key, project_id, spec)
+        proposal = base._proposal(base._run(client, token, project_id, att_id))
+        assert proposal["status"] == "pending", proposal
+        return att_id, proposal
+
+    def _apply_node(self, client, token, project_id, att_id, proposal_id, ref):
+        return client.post(
+            f"/api/agents/projects/{project_id}/attachments/{att_id}/proposals/{proposal_id}/apply-node",
+            json={"ref": ref}, headers=_auth(token),
+        )
+
+    def _apply_edges(self, client, token, project_id, att_id, proposal_id):
+        return client.post(
+            f"/api/agents/projects/{project_id}/attachments/{att_id}/proposals/{proposal_id}/apply-edges",
+            json={}, headers=_auth(token),
+        )
+
+    def _spec(self, user, project_id):
+        return TestDestructiveReplan()._spec(user, project_id)
+
+    def _turns(self, client, token, project_id, att_id):
+        return client.get(
+            f"/api/agents/projects/{project_id}/attachments/{att_id}/session", headers=_auth(token)
+        ).get_json()["turns"]
+
+    def _plan_note(self, client, token, project_id, att_id):
+        """The text of the chat's result for the whole plan."""
+        texts = [t.get("text") or "" for t in self._turns(client, token, project_id, att_id)]
+        notes = [t for t in texts if t.startswith("Applied: plan added")]
+        assert len(notes) == 1, texts
+        return notes[0]
+
+    def _card_status(self, client, token, project_id, att_id, proposal_id):
+        """The plan card's status as the chat shows it: its part in the transcript."""
+        parts = [
+            p for t in self._turns(client, token, project_id, att_id)
+            for p in (t.get("content") or [])
+            if p.get("type") == "proposal" and p.get("proposalId") == proposal_id
+        ]
+        assert len(parts) == 1, parts
+        return parts[0]["status"]
+
+    def test_the_last_row_removes_what_the_plan_removes_and_ends_with_the_topology(
+        self, client, user_and_token, tmp_curio, alice_project, monkeypatch
+    ):
+        user, token = user_and_token
+        att_id, proposal = self._replan(
+            client, user, token, alice_project, monkeypatch,
+            runs={"old-loader": "pending", "cleaner": "solved"},
+        )
+        pid = proposal["proposalId"]
+        r = self._apply_node(client, token, alice_project, att_id, pid, "a")
+        assert r.status_code == 200, r.get_json()
+        body = r.get_json()
+        assert body["status"] == "applied"
+        # The live canvas is handed what left the saved one.
+        assert body["removedNodeIds"] == ["old-loader"]
+        assert body["removedEdgeIds"] == ["edge-1"]
+        spec = self._spec(user, alice_project)
+        ids = {n["id"] for n in spec["dataflow"]["nodes"]}
+        assert "old-loader" not in ids and "cleaner" in ids
+        cleaner = next(n for n in spec["dataflow"]["nodes"] if n["id"] == "cleaner")
+        assert cleaner["content"] == "clean()" and cleaner["x"] == 430
+        # The graph Apply plan makes: the new node feeds Clean on its first circle.
+        (edge,) = spec["dataflow"]["edges"]
+        assert (edge["source"], edge["target"], edge["targetHandle"]) == (
+            body["createdNode"]["id"], "cleaner", "in",
+        )
+        assert self._plan_note(client, token, alice_project, att_id) == (
+            "Applied: plan added 1 node and 1 connection, removed 1 node and 1 connection. Topology: acyclic."
+        )
+        assert self._card_status(client, token, alice_project, att_id, pid) == "applied"
+        # The removed node leaves the runs, the kept one keeps its state, and
+        # the new one awaits Solve, as Apply plan leaves them.
+        runs = body["builderSession"]["nodeRuns"]
+        assert runs == {"cleaner": "solved", body["createdNode"]["id"]: "pending"}
+        assert body["builderSession"]["phase"] == "applied"
+
+    def test_a_node_that_takes_one_input_takes_the_feed_of_the_node_it_loses(
+        self, client, user_and_token, tmp_curio, alice_project, monkeypatch
+    ):
+        """Clean takes one input, which Load CSV fills until the plan removes
+        it. The mint counted the dataflow the plan leaves, and so does each
+        row: the new feed is not refused for the edge that goes with Load CSV."""
+        user, token = user_and_token
+        att_id, proposal = self._replan(
+            client, user, token, alice_project, monkeypatch, cleaner_type="curio.builtin/data-summary",
+        )
+        body = self._apply_node(client, token, alice_project, att_id, proposal["proposalId"], "a").get_json()
+        assert body["edgeResults"]["0"]["status"] == "applied", body["edgeResults"]
+        assert body["status"] == "applied"
+        assert body["removedEdgeIds"] == ["edge-1"]
+        (edge,) = self._spec(user, alice_project)["dataflow"]["edges"]
+        assert (edge["source"], edge["target"]) == (body["createdNode"]["id"], "cleaner")
+
+    def test_connect_all_completes_a_plan_of_connections_and_removes_what_it_names(
+        self, client, user_and_token, tmp_curio, alice_project, monkeypatch
+    ):
+        """TestPlanTopologyApply's repair, through Connect all: the result
+        Apply plan writes for it, word for word."""
+        user, token = user_and_token
+        base = TestPlanTopologyMint()
+        plan = {"goal": "convert", "edges": [{"from": "vis", "to": "pool", "kind": "interaction"}], "removeEdges": ["e5"]}
+        att_id, _ = base._setup(client, user, token, alice_project, monkeypatch,
+                                replies=["Fix.\n" + base._tail(plan)], edges=TestPlanTopologyApply()._cyclic_edges())
+        proposal = base._proposal(base._run(client, token, alice_project, att_id).get_json())
+        pid = proposal["proposalId"]
+        body = self._apply_edges(client, token, alice_project, att_id, pid).get_json()
+        assert body["status"] == "applied"
+        assert (body["removedNodeIds"], body["removedEdgeIds"]) == ([], ["e5"])
+        edges = self._spec(user, alice_project)["dataflow"]["edges"]
+        assert all(e["id"] != "e5" for e in edges)
+        assert any(e.get("type") == "Interaction" and e["source"] == "vis" and e["target"] == "pool" for e in edges)
+        assert self._plan_note(client, token, alice_project, att_id) == (
+            "Applied: plan added 0 nodes and 1 connection, removed 1 connection. Topology: acyclic."
+        )
+        assert self._card_status(client, token, alice_project, att_id, pid) == "applied"
+
+    def test_a_plan_of_connections_only_completes_on_connect_all(
+        self, client, user_and_token, tmp_curio, alice_project, monkeypatch
+    ):
+        user, token = user_and_token
+        base = TestPlanTopologyMint()
+        plan = {"goal": "link", "edges": [{"from": "vis", "to": "pool", "kind": "interaction"}]}
+        att_id, _ = base._setup(client, user, token, alice_project, monkeypatch, replies=["Link.\n" + base._tail(plan)])
+        proposal = base._proposal(base._run(client, token, alice_project, att_id).get_json())
+        pid = proposal["proposalId"]
+        body = self._apply_edges(client, token, alice_project, att_id, pid).get_json()
+        assert body["results"]["0"]["status"] == "applied"
+        assert body["status"] == "applied"
+        assert (body["removedNodeIds"], body["removedEdgeIds"]) == ([], [])
+        assert self._plan_note(client, token, alice_project, att_id) == (
+            "Applied: plan added 0 nodes and 1 connection. Topology: acyclic."
+        )
+        assert self._card_status(client, token, alice_project, att_id, pid) == "applied"
+
+    def test_a_victim_edited_since_the_review_refuses_the_last_row(
+        self, client, user_and_token, tmp_curio, alice_project, monkeypatch
+    ):
+        from utk_curio.backend.app.projects import storage as projects_storage
+
+        user, token = user_and_token
+        att_id, proposal = self._replan(client, user, token, alice_project, monkeypatch)
+        pid = proposal["proposalId"]
+        key = _user_dir_key(user)
+        spec = projects_storage.read_spec(key, alice_project)
+        next(n for n in spec["dataflow"]["nodes"] if n["id"] == "old-loader")["content"] = "precious_new_work()"
+        projects_storage.write_spec(key, alice_project, spec)
+        r = self._apply_node(client, token, alice_project, att_id, pid, "a")
+        assert r.status_code == 409
+        assert "about to remove changed" in r.get_json()["error"]
+        # Nothing of the refused row landed, and nothing died.
+        spec = self._spec(user, alice_project)
+        assert sorted(n["id"] for n in spec["dataflow"]["nodes"]) == ["cleaner", "old-loader"]
+        assert [e["id"] for e in spec["dataflow"]["edges"]] == ["edge-1"]
+        assert self._card_status(client, token, alice_project, att_id, pid) == "stale"
+
+    def test_apply_plan_after_some_rows_creates_only_what_they_did_not(
+        self, client, user_and_token, tmp_curio, alice_project, monkeypatch
+    ):
+        """Two of three rows applied, then the card's Apply: the rows' nodes
+        and connections are in the dataflow already, so the apply creates
+        only the rest. No connection is drawn twice, and Clean and Check,
+        which take one input each, keep one feed."""
+        user, token = user_and_token
+        base = TestDestructiveReplan()
+        summary = "curio.builtin/data-summary"
+        nodes = [
+            base._new_node(),  # a: API Fetch, which replaces Load CSV and feeds Clean
+            {"ref": "b", "nodeType": summary, "title": "Check", "intent": "summarize the cleaned rows"},
+            {"ref": "c", "nodeType": "curio.builtin/computation-analysis", "title": "Report",
+             "intent": "report the summary"},
+        ]
+        edges = [{"from": "a", "to": "cleaner"}, {"from": "cleaner", "to": "b"}, {"from": "b", "to": "c"}]
+        att_id, _ = base._setup(
+            client, user, token, alice_project, monkeypatch,
+            replies=["Revising.\n" + base._revision_tail(nodes=nodes, edges=edges)],
+            cleaner_type=summary,
+        )
+        proposal = base._proposal(base._run(client, token, alice_project, att_id))
+        pid = proposal["proposalId"]
+        for ref in ("a", "b"):
+            r = self._apply_node(client, token, alice_project, att_id, pid, ref)
+            assert r.status_code == 200, r.get_json()
+            assert r.get_json()["status"] == "pending"  # Report is still to come
+        r = base._apply(client, token, alice_project, att_id, pid)
+        assert r.status_code == 200, r.get_json()
+        body = r.get_json()
+        spec = self._spec(user, alice_project)
+
+        def ids_titled(title):
+            return [n["id"] for n in spec["dataflow"]["nodes"] if str(n.get("goal") or "").startswith(f"{title} ")]
+
+        # Each planned node once, and Load CSV gone.
+        assert [len(ids_titled(t)) for t in ("API Fetch", "Check", "Report")] == [1, 1, 1]
+        assert "old-loader" not in {n["id"] for n in spec["dataflow"]["nodes"]}
+        fetch, check, report = (ids_titled(t)[0] for t in ("API Fetch", "Check", "Report"))
+        pairs = [(e["source"], e["target"]) for e in spec["dataflow"]["edges"]]
+        assert len(pairs) == len(set(pairs)), f"a connection was drawn twice: {pairs}"
+        assert sorted(pairs) == sorted([(fetch, "cleaner"), ("cleaner", check), (check, report)])
+        targets = [target for _, target in pairs]
+        assert (targets.count("cleaner"), targets.count(check)) == (1, 1)
+        # The apply drew only the connection the rows had not.
+        assert [(e["source"], e["target"]) for e in body["appliedGraph"]["edges"]] == [(check, report)]
+        assert [n["id"] for n in body["appliedGraph"]["nodes"]] == [report]
+
+
 #: Why a test draft's node type is new. A draft that adds a template carries
 #: one: the closest existing templates and why each is inadequate.
 DRAFT_JUSTIFICATION = (
@@ -2201,7 +2455,7 @@ class TestPackageBuilderTools:
             from utk_curio.backend.app.agents.application.turns import titles
             from utk_curio.backend.app.agents.infrastructure import providers
 
-            if messages and messages[0].get("content") == titles.TITLE_PROMPT:
+            if messages and messages[0].get("content") == titles.title_prompt():
                 return "Title"
             calls.append(messages)
             return replies[min(len(calls) - 1, len(replies) - 1)]
@@ -2270,6 +2524,38 @@ class TestPackageBuilderTools:
         spec = projects_storage.read_spec(user_key, alice_project)
         node = next(n for n in spec["dataflow"]["nodes"] if n["id"] == created["id"])
         assert node["metadata"]["appearance"]["backgroundColor"] == "#fbd3e0"
+
+    def test_the_created_nodes_name_the_agent_that_drafted_them(self, client, user_and_token, tmp_curio,
+                                                                 alice_project, monkeypatch):
+        """Each node the draft adds starts its history on the canvas with an
+        entry named after the agent, as a node.create apply's does; the saved
+        nodes carry no name."""
+        from utk_curio.backend.app.agents.domain import builtin
+        from utk_curio.backend.app.projects import storage as projects_storage
+        from utk_curio.backend.app.projects.services import _user_dir_key
+
+        user, token = user_and_token
+        att_id, _ = self._setup(
+            client, token, alice_project, monkeypatch,
+            replies=[self._draft_tail(self._draft_params()), "Proposed for your review."],
+        )
+        run = self._run(client, token, alice_project, att_id)
+        assert run.status_code == 200, run.get_data(as_text=True)
+        proposal = next(p for p in run.get_json()["content"] if p["type"] == "proposal")
+        resp = client.post(
+            f"/api/agents/projects/{alice_project}/attachments/{att_id}"
+            f"/proposals/{proposal['proposalId']}/apply",
+            headers=_auth(token),
+        )
+        assert resp.status_code == 200, resp.get_data(as_text=True)
+        created = resp.get_json()["createdNodes"]
+        name = builtin.get_builtin_manifest(self.COORD).name
+        assert created and [node["agent"] for node in created] == [name] * len(created)
+        with client.application.app_context():
+            user_key = _user_dir_key(user)
+        ids = {node["id"] for node in created}
+        saved = [n for n in projects_storage.read_spec(user_key, alice_project)["dataflow"]["nodes"] if n["id"] in ids]
+        assert len(saved) == len(created) and all("agent" not in n for n in saved)
 
     def test_invalid_draft_refuses_at_mint(self, client, user_and_token, tmp_curio,
                                            alice_project, monkeypatch):
@@ -2967,7 +3253,7 @@ class TestPlanTopologyMint:
             from utk_curio.backend.app.agents.application import spec_reads
             from utk_curio.backend.app.agents.application.turns import titles
             from utk_curio.backend.app.agents.infrastructure import providers
-            if messages and messages[0].get("content") == titles.TITLE_PROMPT:
+            if messages and messages[0].get("content") == titles.title_prompt():
                 return "Title"
             calls.append(messages)
             return replies[min(len(calls) - 1, len(replies) - 1)]

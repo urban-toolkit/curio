@@ -3,16 +3,20 @@ import type {
   AgentSolveAttemptRow,
   AgentSolveAttemptsPart,
 } from "../../../services/agents";
-import { STOPPED_BY_PHRASES, type StopReason } from "../../../generated/solveStopReasons";
+import solveStopReasons from "../../../contracts/solveStopReasons.json";
 import { AgentCodeBlock } from "./AgentCodeBlock";
 import styles from "./AgentSolveAttemptsCard.module.css";
 
+/** What each reason a repair loop stops for reads as, by its `stoppedBy`. */
+const STOPPED_BY_PHRASES: Readonly<Record<string, string>> = solveStopReasons.phrases;
+
 /** dev/127: the bound that ended the loop, in the words the server's failure
- *  sentences use: both read the generated table. "" for an unknown reason. */
+ *  sentences use: both read contracts/solveStopReasons.json. "" for an unknown
+ *  reason. */
 export function stoppedByPhrase(stoppedBy?: string): string {
   const reason = stoppedBy ?? "";
   return Object.prototype.hasOwnProperty.call(STOPPED_BY_PHRASES, reason)
-    ? STOPPED_BY_PHRASES[reason as StopReason]
+    ? STOPPED_BY_PHRASES[reason]
     : "";
 }
 
@@ -113,7 +117,7 @@ export const AgentSolveAttemptsCard: React.FC<{
             type="button"
             className={styles.open}
             aria-label={`Open the ${name || "node's agent"} for ${label}`}
-            title="Opens this node's own agent, where the generated replies live and where you can ask for a different approach."
+            data-tooltip="Opens this node's own agent, where the generated replies live and where you can ask for a different approach."
             onClick={() => onOpenChat(part.attachmentId as string)}
           >
             {name ? `Open ${name}` : "Open the node's agent"}

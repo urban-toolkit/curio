@@ -36,7 +36,7 @@ import { parseDataframe, parseGeoDataframeWithGeometry } from "./parsing";
 import type { NodeEmptyReason } from "./nodeEmptyState";
 import { normalizeGeoSpec, specNeedsGeometry } from "./vegaGeoSpec";
 import { INPUTS_DATASET, namesDataset, readsInputs, usesNamedDatasets } from "./vegaDatasets";
-import { inputTableName } from "../generated/autkGrammar";
+import { inputTableName } from "../contracts/autkGrammar";
 import type { ScenarioLabel } from "./scenarios/scenarioColors";
 import { inputRows, isFrameEnvelope, stackInputs, type StackEntry } from "./scenarios/stackedInputs";
 

@@ -13,6 +13,7 @@ import { ThemeProvider } from "@mui/material/styles";
 import styles from "./WidgetTags.module.css";
 import { LocationControl } from "./LocationControl";
 import { widgetTheme } from "./widgetTheme";
+import { tooltipStore } from "../../tooltip/tooltipStore";
 import {
   FILE_WIDGET_MAX_CHARS,
   checkWidgetValue,
@@ -57,6 +58,26 @@ export function WidgetControl({ widget, value, onChange, disabled = false, ariaL
   );
   const [problem, setProblem] = useState<string | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
+  const sliderRef = useRef<HTMLSpanElement | null>(null);
+  // A slider's value while its thumb is dragged: the press closed the hover
+  // tooltip, so this one shows at the thumb until the drag ends.
+  const dragTooltipKey = useId();
+  const showDraggedValue = (text: string) => {
+    const thumb = sliderRef.current?.querySelector(".MuiSlider-thumb") ?? null;
+    if (!thumb) return;
+    tooltipStore.show(
+      {
+        key: dragTooltipKey,
+        target: null,
+        anchor: () => (thumb.isConnected ? thumb.getBoundingClientRect() : null),
+        anchorElement: thumb,
+        side: "top",
+        pointer: null,
+        content: { kind: "text", text },
+      },
+      "pointer",
+    );
+  };
 
   // A value set from outside (a load, another control) replaces the draft. A
   // draft that already says the value is kept, so "1." is not cut to "1"
@@ -123,9 +144,11 @@ export function WidgetControl({ widget, value, onChange, disabled = false, ariaL
       const min = options.min ?? 0;
       const max = options.max ?? 100;
       const current = typeof value === "number" ? value : min;
+      const valueText = (n: number) => `${n}${options.units ? ` ${options.units}` : ""}`;
       control = (
         <span className={styles.inline} style={{ gap: 12, paddingLeft: 6 }}>
           <Slider
+            ref={sliderRef}
             aria-label={label}
             min={min}
             max={max}
@@ -133,12 +156,22 @@ export function WidgetControl({ widget, value, onChange, disabled = false, ariaL
             step={options.step ?? (max - min) / 100}
             value={current}
             disabled={disabled}
-            valueLabelDisplay="auto"
+            // The value shows in the Curio tooltip on the thumb, not in
+            // Material UI's bubble, which grew with the canvas's zoom: while
+            // the thumb is hovered or focused (its data-tooltip), and while
+            // it is dragged.
+            valueLabelDisplay="off"
+            slotProps={{ thumb: { "data-tooltip": valueText(current) } as any }}
             marks={[
               { value: min, label: String(min) },
               { value: max, label: String(max) },
             ]}
-            onChange={(_event, next) => commit(Array.isArray(next) ? next[0] : next)}
+            onChange={(event, next) => {
+              const n = Array.isArray(next) ? next[0] : next;
+              commit(n);
+              if (/^(mouse|pointer|touch)/.test(event.type)) showDraggedValue(valueText(n));
+            }}
+            onChangeCommitted={() => tooltipStore.leave(dragTooltipKey)}
           />
           <output className={styles.units} style={{ whiteSpace: "nowrap" }}>
             {current}

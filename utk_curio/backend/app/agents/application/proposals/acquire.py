@@ -18,6 +18,7 @@ from utk_curio.backend.app.agents.application import dataset_resolution as agent
 from utk_curio.backend.app.agents.application import spec_reads as agents_spec_reads
 from utk_curio.backend.app.agents.application.proposals import store as agents_store
 from utk_curio.backend.app.projects import storage as projects_storage
+from utk_curio.backend.app.agents.domain import agent_text
 
 log = logging.getLogger(__name__)
 
@@ -182,7 +183,7 @@ def _mint_discovery_acquire(
     resource_id = str(params.get("resourceId") or "").strip()
     fmt = str(params.get("format") or "").strip().lower() or None
     if not source_id or not resource_id:
-        return "refused", "a download needs both a sourceId and a resourceId", None
+        return "refused", agent_text.message("acquire.source-and-resource-required"), None
 
     service = _discovery_service()
     try:
@@ -194,30 +195,29 @@ def _mint_discovery_acquire(
         ]
         return (
             "refused",
-            f"there is no Discovery Catalog source {source_id!r} here; this deployment "
-            f"connects to {', '.join(str(k) for k in known) or 'none'}",
+            agent_text.message(
+                "acquire.unknown-source", source_id=repr(source_id), known=', '.join(str(k) for k in known) or 'none',
+            ),
             None,
         )
     if not manifest.capabilities.download:
-        return "refused", f"{manifest.name} does not offer downloads", None
+        return "refused", agent_text.message("acquire.source-offers-no-downloads", name=manifest.name), None
     if manifest.is_storage:
         return (
             "refused",
-            f"{manifest.name} is a storage source; add its resources from its "
-            "page in the Discovery Catalog",
+            agent_text.message("acquire.storage-source-not-offered", name=manifest.name),
             None,
         )
     if manifest.is_service:
         return (
             "refused",
-            f"{manifest.name} downloads for an area set on its page in the "
-            "Discovery Catalog",
+            agent_text.message("acquire.service-source-not-offered", name=manifest.name),
             None,
         )
     if manifest.is_model:
         return (
             "refused",
-            f"{manifest.name} adds models to the Model Catalog, not datasets",
+            agent_text.message("acquire.model-source-not-datasets", name=manifest.name),
             None,
         )
 
@@ -225,8 +225,7 @@ def _mint_discovery_acquire(
     if held is not None:
         return (
             "refused",
-            f"{held.get('title')!r} is already in the user's Data Catalog from "
-            "this resource - tell them instead of proposing a second copy",
+            agent_text.message("acquire.already-held", title=repr(held.get('title'))),
             None,
         )
 
@@ -236,26 +235,31 @@ def _mint_discovery_acquire(
         help_url = manifest.auth.help_url
         return (
             "refused",
-            f"{exc} - ask the user to add the {manifest.auth.secret_id} token in "
-            f"API Settings{f' ({help_url})' if help_url else ''}. Never ask them "
-            "to paste it to you.",
+            agent_text.message(
+                "acquire.credential-required", exc=exc, secret_id=manifest.auth.secret_id,
+                help=f' ({help_url})' if help_url else '',
+            ),
             None,
         )
     except DiscoveryError as exc:
-        return "refused", f"{manifest.name} could not describe {resource_id!r}: {exc}", None
+        return "refused", agent_text.message(
+            "acquire.describe-failed", name=manifest.name, resource_id=repr(resource_id), exc=exc,
+        ), None
 
     offered = [str(f) for f in (detail.get("formats") or [])]
     if fmt and fmt not in offered:
         return (
             "refused",
-            f"that resource is not offered as {fmt!r}; it offers "
-            f"{', '.join(offered) or 'nothing this catalog can ingest'}",
+            agent_text.message(
+                "acquire.format-not-offered", fmt=repr(fmt),
+                offered=', '.join(offered) or agent_text.message("acquire.format-not-offered-none"),
+            ),
             None,
         )
 
     spec = projects_storage.read_spec(user_key, project_id)
     if spec is None:
-        return "refused", "no saved project spec is available", None
+        return "refused", agent_text.message("mint.no-saved-spec"), None
 
     name = str(detail.get("name") or resource_id)
     chosen = fmt or (offered[0] if offered else None)
@@ -291,9 +295,7 @@ def _mint_discovery_acquire(
     )
     return (
         "proposed",
-        f"proposal {proposal_id} created to download {name!r} from "
-        f"{manifest.name}; it awaits the user's explicit review - do NOT assume "
-        "it was downloaded",
+        agent_text.message("acquire.proposed", proposal_id=proposal_id, name=repr(name), source=manifest.name),
         part,
     )
 
@@ -379,19 +381,24 @@ def _await_discovery_job(service, job_id: str | None, *, deadline: float | None 
     return None
 
 
-def _mint_row_acquirable(row: dict, roster: "_LazyRoster") -> None:
+def _mint_row_acquirable(row: dict, roster: "_LazyRoster", budget=None) -> None:
     """Whether Curio can download this row into the Data Catalog: the one answer.
 
     The model may name a source; it may not claim the source can be acted on,
     so a model-supplied ``acquirable`` never survives. The answer reads the
-    roster and the probe, never the run's grants: a person confirming the row
-    uses the download route, which needs only their sign-in, and an agent's
-    own ``discovery.acquire`` proposal is checked against its grant where it is
-    minted.
+    roster, the source and the probe, never the run's grants: a person
+    confirming the row uses the download route, which needs only their
+    sign-in, and an agent's own ``discovery.acquire`` proposal is checked
+    against its grant where it is minted.
 
     - A connector source (anything but ``direct``) is acquirable when the
-      roster has it and it downloads. The connector knows how to fetch the
-      resource, so the probe of a landing page does not decide it.
+      roster has it, it downloads, and it describes the resource: the
+      Discovery Catalog confirms the resource id, as for a
+      ``discovery.acquire`` proposal, spending one call of *budget*, the
+      run's web budget, when one is given. The connector knows how to fetch
+      the resource, so the probe of a landing page does not decide it. Once
+      the budget is spent the source is not asked: the row keeps its
+      coordinate, unconfirmed, and is not acquirable (:func:`_unconfirmed`).
     - A ``direct`` source downloads the URL itself, so the probe decides: an
       https URL the probe read as data, whose content type maps to a format the
       source accepts or which is a zip or a gzip the download unpacks, and
@@ -400,26 +407,55 @@ def _mint_row_acquirable(row: dict, roster: "_LazyRoster") -> None:
 
     A row with a plain link and no coordinate is tried as a ``direct`` row: the
     coordinate is minted here, after parsing, so it is never model-supplied and
-    never meets the parser's length cap. It stays only when the row qualifies.
+    never meets the parser's length cap. A coordinate, minted or the model's,
+    stays only when the row qualifies or the source was not asked, so one the
+    source refused never reaches a download, a builder or a file's provenance.
     A downloadable row offers that and nothing else, so it carries no portal
     steps.
     """
     row.pop("acquirable", None)
-    minted = False
     if not (row.get("sourceId") and row.get("resourceId")) and str(row.get("url") or "").startswith("https://"):
         direct = roster.direct()
         if direct:
             row["sourceId"], row["resourceId"] = direct, row["url"]
-            minted = True
-    if _acquirable(row, roster):
+    verdict = _acquirable(row, roster, budget)
+    if verdict:
         row["acquirable"] = True
         row.pop("downloadSteps", None)
-    elif minted:
+    elif verdict is not None:
         row.pop("sourceId", None)
         row.pop("resourceId", None)
 
 
-def _acquirable(row: dict, roster: "_LazyRoster") -> bool:
+def _unconfirmed(rows: list) -> int:
+    """How many of *rows* keep a Discovery coordinate the source was not asked
+    to confirm, the run's web budget being spent: after
+    :func:`_mint_row_acquirable`, every row with a coordinate that is not
+    acquirable."""
+    return sum(
+        1 for row in rows or []
+        if isinstance(row, dict) and row.get("sourceId") and row.get("resourceId")
+        and not row.get("acquirable")
+    )
+
+
+def _source_describes(dir_name: str, resource_id: str) -> bool:
+    """Whether the Discovery Catalog describes *resource_id* of the source
+    *dir_name*, through the acting user's service: the call a
+    ``discovery.acquire`` proposal is grounded in. A describe that fails, for
+    a resource the source does not have or for any other reason, is a no."""
+    try:
+        _discovery_service().describe_resource(dir_name, resource_id)
+    except Exception as exc:  # noqa: BLE001 - an unconfirmed resource is not offered, never a run error
+        log.info("%s did not describe %s (%s): the row is not offered for download",
+                 dir_name, resource_id, exc)
+        return False
+    return True
+
+
+def _acquirable(row: dict, roster: "_LazyRoster", budget=None) -> bool | None:
+    """Whether Curio can download *row*: True or False, or None for a
+    connector row whose source was not asked, the budget being spent."""
     source = roster.get(row.get("sourceId")) if row.get("resourceId") else None
     # A storage source (a folder, a bucket, a dataset repository) is added from
     # the Discovery Catalog page, and a service downloads for an area set there:
@@ -430,7 +466,7 @@ def _acquirable(row: dict, roster: "_LazyRoster") -> bool:
     if not capabilities.get("download"):
         return False
     if source.get("provider") != "direct":
-        return True
+        return roster.describes(row["sourceId"], row["resourceId"], _source_describes, budget=budget)
     url = str(row.get("url") or "")
     if not url.startswith("https://") or row.get("resourceId") != url:
         return False

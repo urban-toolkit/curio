@@ -48,7 +48,7 @@ export const CredentialHint: React.FC<{
               type="button"
               className={styles.button}
               aria-label="Save this key in API Settings"
-              title="Opens API Settings. Paste the key there; it never appears in your dataflow, proposals or chat."
+              data-tooltip="Opens API Settings. Paste the key there; it never appears in your dataflow, proposals or chat."
               onClick={() =>
                 requestConnectionKeys(host ? { host, suggestedName: suggestName(host) } : {})
               }

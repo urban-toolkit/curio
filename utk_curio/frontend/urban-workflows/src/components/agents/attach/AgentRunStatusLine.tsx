@@ -84,7 +84,7 @@ export const AgentRunStatusLine: React.FC<{
     <span className={`${styles.line} ${styles.done}`} role="status" aria-live="polite">
       <span className={styles.srOnly}>Run finished</span>
       <FontAwesomeIcon icon={faCheck} className={styles.icon} aria-hidden="true" />
-      <span className={styles.text} aria-hidden="true" title={breakdown}>
+      <span className={styles.text} aria-hidden="true" data-tooltip={breakdown}>
         {text}
       </span>
       {display.pendingReview ? (

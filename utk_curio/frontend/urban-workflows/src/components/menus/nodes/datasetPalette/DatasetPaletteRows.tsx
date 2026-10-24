@@ -1,7 +1,6 @@
 import React, { memo, useCallback, useMemo, useState } from "react";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faDatabase, faChevronDown, faChevronUp } from "@fortawesome/free-solid-svg-icons";
-import { Tooltip, OverlayTrigger } from "react-bootstrap";
 import {
   beginDatasetDrag,
   beginDatasetDragWith,
@@ -21,7 +20,6 @@ import {
   relativeTimeOrEmpty as relativeTime,
 } from "../../../datasets/catalog/datasetDetailHelpers";
 import packageStyles from "../toolsMenuPackagePalette/ToolsMenuPackagePalette.module.css";
-import { OVERLAY_TRIGGER_DELAY_PROPS, type ToolsMenuTooltipSide } from "../toolsMenuPackagePalette";
 import rowStyles from "./DatasetPaletteRows.module.css";
 
 import { DatasetConnectionBadge } from "../../../datasets/catalog/DatasetConnectionBadge";
@@ -51,10 +49,8 @@ export function breakableId(text: string | null | undefined): React.ReactNode {
 
 export const DatasetRow = memo(function DatasetRow({
   dataset,
-  tooltipPlacement = "right",
 }: {
   dataset: DatasetCatalogItem;
-  tooltipPlacement?: ToolsMenuTooltipSide;
 }) {
   const count = datasetCount(dataset);
   const time = relativeTime(dataset.updatedAt);
@@ -87,58 +83,60 @@ export const DatasetRow = memo(function DatasetRow({
   );
 
   return (
-    <OverlayTrigger
-      placement={tooltipPlacement}
-      delay={OVERLAY_TRIGGER_DELAY_PROPS}
-      overlay={<Tooltip>{tooltipParts.join(" · ")}</Tooltip>}
+    // Its tooltip opens to the right, as every tool rail palette row's does.
+    <div
+      className={packageStyles.packageKindRow}
+      data-dataset-id={dataset.id}
+      data-tooltip={tooltipParts.join(" · ")}
+      data-tooltip-side="right"
     >
-      <div className={packageStyles.packageKindRow} data-dataset-id={dataset.id}>
-        <div
-          className={`${packageStyles.packageKindRowDrag} ${rowStyles.datasetRowDrag}`}
-          draggable
-          onDragStart={(event) => {
-            writeDatasetDragData(event.dataTransfer, beginDatasetDrag(dataset));
-          }}
-          onDragEnd={() => endDatasetDrag()}
-        >
-          <FontAwesomeIcon
-            icon={faDatabase}
-            className={`${packageStyles.packageKindDragIcon} ${rowStyles.datasetDragIcon}`}
-          />
-          <span className={`${rowStyles.iconBadge} ${formatChipClass}`}>
-            {DATASET_FORMAT_LABEL[dataset.format]}
-          </span>
-        </div>
-        <button type="button" className={packageStyles.packageKindRowMeta} onClick={selectOnCanvas}>
-          <span className={rowStyles.datasetRowTitle}>{datasetDisplayTitle(dataset)}</span>
-          <span className={rowStyles.datasetRowId}>{breakableId(datasetSubtitle(dataset))}</span>
-
-          <div className={rowStyles.rowMeta}>
-            <span className={packageStyles.packageKindCategoryChip}>
-              {datasetProvenanceLabel(dataset.origin, dataset.format)}
-            </span>
-
-            {metaParts ? <span className={rowStyles.rowMetaText}>{metaParts}</span> : null}
-            <DatasetConnectionBadge dataset={dataset} className={rowStyles.connBadge} />
-          </div>
-        </button>
-        {/* The rail sits beside the code editor, so this is where someone
-            writing a node needs the reference. It is outside the meta button
-            because that button selects the dataset's nodes on the canvas
-            (#206). */}
-        <CopyButton
-          value={datasetReferenceCode(dataset)}
-          label="Copy dataset reference"
-          className={rowStyles.copyButton}
+      <div
+        className={`${packageStyles.packageKindRowDrag} ${rowStyles.datasetRowDrag}`}
+        draggable
+        // An icon and a format chip: the drag handle is named for what it does.
+        aria-label={`Drag ${datasetDisplayTitle(dataset)} onto the canvas`}
+        onDragStart={(event) => {
+          writeDatasetDragData(event.dataTransfer, beginDatasetDrag(dataset));
+        }}
+        onDragEnd={() => endDatasetDrag()}
+      >
+        <FontAwesomeIcon
+          icon={faDatabase}
+          className={`${packageStyles.packageKindDragIcon} ${rowStyles.datasetDragIcon}`}
         />
-        {/* The way into the dataset's details, as every catalog card offers. */}
-        <DetailsButton
-          label={`View ${datasetDisplayTitle(dataset)} details`}
-          className={rowStyles.detailsButton}
-          onClick={() => openDatasetDetails(dataset.id, { fallbackDataset: dataset })}
-        />
+        <span className={`${rowStyles.iconBadge} ${formatChipClass}`}>
+          {DATASET_FORMAT_LABEL[dataset.format]}
+        </span>
       </div>
-    </OverlayTrigger>
+      <button type="button" className={packageStyles.packageKindRowMeta} onClick={selectOnCanvas}>
+        <span className={rowStyles.datasetRowTitle}>{datasetDisplayTitle(dataset)}</span>
+        <span className={rowStyles.datasetRowId}>{breakableId(datasetSubtitle(dataset))}</span>
+
+        <div className={rowStyles.rowMeta}>
+          <span className={packageStyles.packageKindCategoryChip}>
+            {datasetProvenanceLabel(dataset.origin, dataset.format)}
+          </span>
+
+          {metaParts ? <span className={rowStyles.rowMetaText}>{metaParts}</span> : null}
+          <DatasetConnectionBadge dataset={dataset} className={rowStyles.connBadge} />
+        </div>
+      </button>
+      {/* The rail sits beside the code editor, so this is where someone
+          writing a node needs the reference. It is outside the meta button
+          because that button selects the dataset's nodes on the canvas
+          (#206). */}
+      <CopyButton
+        value={datasetReferenceCode(dataset)}
+        label="Copy dataset reference"
+        className={rowStyles.copyButton}
+      />
+      {/* The way into the dataset's details, as every catalog card offers. */}
+      <DetailsButton
+        label={`View ${datasetDisplayTitle(dataset)} details`}
+        className={rowStyles.detailsButton}
+        onClick={() => openDatasetDetails(dataset.id, { fallbackDataset: dataset })}
+      />
+    </div>
   );
 });
 
@@ -150,10 +148,8 @@ export const DatasetRow = memo(function DatasetRow({
  */
 export const DatasetGroupRow = memo(function DatasetGroupRow({
   group,
-  tooltipPlacement = "right",
 }: {
   group: DatasetPaletteGroup;
-  tooltipPlacement?: ToolsMenuTooltipSide;
 }) {
   const [open, setOpen] = useState(false);
   const layerCount = group.members.length;
@@ -193,67 +189,65 @@ export const DatasetGroupRow = memo(function DatasetGroupRow({
 
   return (
     <div className={rowStyles.groupBlock} data-osm-group-id={group.groupId}>
-      {/* Tooltip is scoped to the header so hovering an expanded member shows the
-          member's own tooltip, not the group's. */}
-      <OverlayTrigger
-        placement={tooltipPlacement}
-        delay={OVERLAY_TRIGGER_DELAY_PROPS}
-        overlay={
-          <Tooltip>{`${group.title} · ${formatLabel} · ${layerCount} layer${layerCount === 1 ? "" : "s"}`}</Tooltip>
-        }
+      {/* The tooltip is the header's, so an expanded member shows its own, and
+          the drag handle, the nearer target, says what dragging it does. */}
+      <div
+        className={rowStyles.groupHeader}
+        data-dataset-id={group.groupId}
+        data-tooltip={`${group.title} · ${formatLabel} · ${layerCount} layer${layerCount === 1 ? "" : "s"}`}
+        data-tooltip-side="right"
       >
-        <div className={rowStyles.groupHeader} data-dataset-id={group.groupId}>
-          <div
-            className={`${packageStyles.packageKindRowDrag} ${rowStyles.datasetRowDrag} ${rowStyles.groupIconBox}`}
-            draggable
-            onDragStart={(event) => {
-              writeDatasetDragData(event.dataTransfer, beginDatasetDragWith(dragPayload));
-            }}
-            onDragEnd={() => endDatasetDrag()}
-            title={`Drag to add all ${layerCount} layer${layerCount === 1 ? "" : "s"} as one dataset`}
-          >
-            <FontAwesomeIcon
-              icon={faDatabase}
-              className={`${packageStyles.packageKindDragIcon} ${rowStyles.datasetDragIcon}`}
-            />
-            <span className={`${rowStyles.iconBadge} ${formatChipClass}`}>
-              {formatLabel}
-            </span>
-          </div>
-          {/* Meta area highlights linked nodes (like a single row); the caret
-              button owns expand/collapse so the two actions don't conflict. */}
-          <button
-            type="button"
-            className={rowStyles.groupMetaButton}
-            onClick={selectOnCanvas}
-          >
-            <span className={packageStyles.packageKindRowLabel}>{group.title}</span>
-            <div className={rowStyles.rowMeta}>
-              <span className={packageStyles.packageKindCategoryChip}>Imported</span>
-              {time ? <span className={rowStyles.rowMetaText}>{time}</span> : null}
-            </div>
-          </button>
-          <button
-            type="button"
-            className={rowStyles.groupCaretButton}
-            onClick={() => setOpen((value) => !value)}
-            aria-expanded={open}
-            aria-label={`${open ? "Collapse" : "Expand"} ${group.title}: ${formatLabel} import with ${layerCount} layer${layerCount === 1 ? "" : "s"}`}
-          >
-            <FontAwesomeIcon
-              icon={open ? faChevronUp : faChevronDown}
-              className={rowStyles.groupCaret}
-            />
-          </button>
+        <div
+          className={`${packageStyles.packageKindRowDrag} ${rowStyles.datasetRowDrag} ${rowStyles.groupIconBox}`}
+          draggable
+          onDragStart={(event) => {
+            writeDatasetDragData(event.dataTransfer, beginDatasetDragWith(dragPayload));
+          }}
+          onDragEnd={() => endDatasetDrag()}
+          aria-label={`Drag to add all ${layerCount} layer${layerCount === 1 ? "" : "s"} as one dataset`}
+          data-tooltip={`Drag to add all ${layerCount} layer${layerCount === 1 ? "" : "s"} as one dataset`}
+          data-tooltip-side="right"
+        >
+          <FontAwesomeIcon
+            icon={faDatabase}
+            className={`${packageStyles.packageKindDragIcon} ${rowStyles.datasetDragIcon}`}
+          />
+          <span className={`${rowStyles.iconBadge} ${formatChipClass}`}>
+            {formatLabel}
+          </span>
         </div>
-      </OverlayTrigger>
+        {/* Meta area highlights linked nodes (like a single row); the caret
+            button owns expand/collapse so the two actions don't conflict. */}
+        <button
+          type="button"
+          className={rowStyles.groupMetaButton}
+          onClick={selectOnCanvas}
+        >
+          <span className={packageStyles.packageKindRowLabel}>{group.title}</span>
+          <div className={rowStyles.rowMeta}>
+            <span className={packageStyles.packageKindCategoryChip}>Imported</span>
+            {time ? <span className={rowStyles.rowMetaText}>{time}</span> : null}
+          </div>
+        </button>
+        <button
+          type="button"
+          className={rowStyles.groupCaretButton}
+          onClick={() => setOpen((value) => !value)}
+          aria-expanded={open}
+          aria-label={`${open ? "Collapse" : "Expand"} ${group.title}: ${formatLabel} import with ${layerCount} layer${layerCount === 1 ? "" : "s"}`}
+        >
+          <FontAwesomeIcon
+            icon={open ? faChevronUp : faChevronDown}
+            className={rowStyles.groupCaret}
+          />
+        </button>
+      </div>
       {open ? (
         <div className={rowStyles.groupMembers} role="group" aria-label={`${group.title} layers`}>
           {group.members.map((member) => (
             <DatasetRow
               key={`${member.origin}:${member.id}`}
               dataset={member}
-              tooltipPlacement={tooltipPlacement}
             />
           ))}
         </div>

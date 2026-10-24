@@ -12,6 +12,8 @@ The node now accepts both encodings. This file pins the one Curio actually
 sends, so a change here fails loudly instead of silently emptying every
 custom-UI node that consumes a DataFrame.
 """
+import json
+
 import pandas as pd
 import pytest
 
@@ -61,6 +63,23 @@ def test_an_empty_dataframe_still_names_its_columns():
     assert out["dataType"] == "dataframe"
     assert set(out["data"]) == {"population", "name"}
     assert out["data"]["population"] == []
+
+
+def test_the_columns_keep_the_frames_own_order_through_json():
+    # Example 26's Summarize returns its means as [sensor, pm25_mean]. The
+    # schema and the data are JSON objects, whose keys the sandbox's jsonify
+    # sorts, so pm25_mean came first in every preview. The frame's columns ride
+    # along as a list, which keeps its order.
+    from flask import Flask
+
+    means = pd.DataFrame({"sensor": ["sensor_A", "sensor_B"], "pm25_mean": [8.041667, 10.041667]})
+    out = parseOutput(means)
+    assert out["columns"] == ["sensor", "pm25_mean"]
+
+    # As /get-preview answers it: a tuple of two frames, through Flask's JSON.
+    peaks = pd.DataFrame({"sensor": ["sensor_A", "sensor_B"], "pm25_peak": [11.0, 13.0]})
+    sent = json.loads(Flask(__name__).json.dumps(parseOutput((means, peaks))))
+    assert [part["columns"] for part in sent["data"]] == [["sensor", "pm25_mean"], ["sensor", "pm25_peak"]]
 
 
 @pytest.mark.parametrize(

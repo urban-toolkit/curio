@@ -1,7 +1,7 @@
 /**
  * A shape's corners as rings of points (#662): what the Map Edits node's
- * map overlay (`MapEditOverlay`) picks, reshapes and moves, and how to make
- * the shape again from them.
+ * map overlay (`MapEditOverlay`) picks, reshapes and moves, how to make the
+ * shape again from them, and the handles a drag takes them by.
  */
 import type { Geometry } from "./editFeatures";
 
@@ -54,4 +54,27 @@ export function toRings(geometry: Geometry): Rings {
     default:
       return { rings: [], closed: [], rebuild: () => geometry };
   }
+}
+
+/** A handle of a shape: a corner to drag, or a midpoint between two corners, which adds one. */
+export interface Handle {
+  ring: number;
+  /** The corner's index in its ring; a midpoint's is the corner's before it. */
+  index: number;
+  at: XY;
+}
+
+/** The handles of a shape's *rings*: each corner, and each midpoint, none after an open ring's last corner. */
+export function handlesOf({ rings, closed }: Pick<Rings, "rings" | "closed">): { corners: Handle[]; midpoints: Handle[] } {
+  const corners: Handle[] = [];
+  const midpoints: Handle[] = [];
+  rings.forEach((ring, r) => {
+    ring.forEach((at, index) => corners.push({ ring: r, index, at }));
+    const count = ring.length < 2 ? 0 : closed[r] ? ring.length : ring.length - 1;
+    for (let index = 0; index < count; index += 1) {
+      const [a, b] = [ring[index], ring[(index + 1) % ring.length]];
+      midpoints.push({ ring: r, index, at: [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2] });
+    }
+  });
+  return { corners, midpoints };
 }

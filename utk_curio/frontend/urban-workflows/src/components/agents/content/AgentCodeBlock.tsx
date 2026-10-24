@@ -90,7 +90,7 @@ export const AgentCodeBlock: React.FC<{ children?: React.ReactNode }> = ({
             .filter(Boolean)
             .join(" ")}
           aria-label={name}
-          title="Copy code"
+          data-tooltip="Copy code"
           onClick={copy}
         >
           <FontAwesomeIcon

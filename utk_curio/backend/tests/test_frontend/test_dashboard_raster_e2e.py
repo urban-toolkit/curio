@@ -90,8 +90,8 @@ def _spec() -> dict:
 
 def _pin(page, node_id: str) -> None:
     node = node_locator(page, node_id)
-    activate_header_icon(node.locator('[title="Pin to dashboard"]').first)
-    expect(node.locator('[title="Unpin from dashboard"]')).to_have_count(1, timeout=10000)
+    activate_header_icon(node.locator('[data-tooltip="Pin to dashboard"]').first)
+    expect(node.locator('[data-tooltip="Unpin from dashboard"]')).to_have_count(1, timeout=10000)
 
 
 def _save(page) -> None:

@@ -34,7 +34,7 @@ export const Composer: React.FC<{
       type="button"
       className={styles.send}
       aria-label="Send"
-      title="Send"
+      data-tooltip="Send"
       disabled={busy || !value.trim()}
       onClick={onSend}
     >

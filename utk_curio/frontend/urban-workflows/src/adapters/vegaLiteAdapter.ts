@@ -7,8 +7,9 @@
  */
 
 import { GrammarAdapter, registerGrammarAdapter } from '../registry/grammarAdapter';
-import { VEGA_SCHEMA_URL } from '../generated/visDefaults';
+import visDefaults from '../contracts/visDefaults.json';
 import { prepareVegaInput } from '../utils/vegaInput';
+import { vegaTooltipHandler } from '../components/tooltip/vegaTooltip';
 
 const vega = require('vega');
 const lite = require('vega-lite');
@@ -35,6 +36,8 @@ export const vegaLiteAdapter: GrammarAdapter = {
     const view = new vega.View(vega.parse(vegaSpec))
       .logLevel(vega.Warn)
       .renderer('svg')
+      // A mark's tooltip in the Curio tooltip, as the node's charts show it.
+      .tooltip(vegaTooltipHandler)
       .initialize(container)
       .hover();
 
@@ -44,7 +47,7 @@ export const vegaLiteAdapter: GrammarAdapter = {
 
   getDefaultSpec(): unknown {
     return {
-      $schema: VEGA_SCHEMA_URL,
+      $schema: visDefaults.vegaSchemaUrl,
       mark: 'point',
       encoding: {
         x: { field: 'x', type: 'quantitative' },

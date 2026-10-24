@@ -1,6 +1,7 @@
 import React, { useEffect, useRef } from "react";
 import type { DurationBucket, SizeBucket } from "../../api/monitorApi";
 import { formatBytes } from "../../utils/diagnosticsBundle";
+import { vegaTooltipHandler } from "../../components/tooltip/vegaTooltip";
 
 const vega = require("vega");
 const lite = require("vega-lite");
@@ -85,6 +86,8 @@ const VegaChart: React.FC<{ spec: any; height: number; label: string }> = ({
         renderer: "svg",
         container: element,
         hover: true,
+        // A bar's tooltip in the Curio tooltip, not the browser's title.
+        tooltip: vegaTooltipHandler,
       });
       void view.runAsync();
     } catch {

@@ -16,6 +16,7 @@ jest.mock("../../services/packages/packagesApi", () => ({
 
 import LibraryManagerWindow from "../../components/menus/libraries/LibraryManagerWindow";
 import { packagesApi } from "../../services/packages/packagesApi";
+import { findByTooltip, getByTooltip, queryByTooltip } from "../_support/tooltips";
 
 /**
  * The Installed-libraries modal had no test at all.
@@ -89,7 +90,7 @@ describe("LibraryManagerWindow - rendering", () => {
     mockList.mockResolvedValue(listing({ python: ["numpy"] }));
     open();
     expect(await screen.findByText("numpy")).toBeTruthy();
-    expect(screen.getByTitle("Remove from your library list")).toBeTruthy();
+    expect(getByTooltip(document.body, "Remove from your library list")).toBeTruthy();
   });
 
   it("offers no Remove for a package-declared library", async () => {
@@ -102,7 +103,7 @@ describe("LibraryManagerWindow - rendering", () => {
     );
     open();
     expect(await screen.findByText("rasterio")).toBeTruthy();
-    expect(screen.queryByTitle("Remove from your library list")).toBeNull();
+    expect(queryByTooltip(document.body, "Remove from your library list")).toBeNull();
   });
 
   it("flags a declared library that is not actually importable", async () => {
@@ -216,7 +217,7 @@ describe("LibraryManagerWindow - adding", () => {
     ).toBeTruthy();
     expect(screen.getByText(/not yet supported/)).toBeTruthy();
     // The optimistic row is dropped, not left behind as if it had worked.
-    expect(screen.queryByTitle("Remove from your library list")).toBeNull();
+    expect(queryByTooltip(document.body, "Remove from your library list")).toBeNull();
   });
 });
 
@@ -225,7 +226,7 @@ describe("LibraryManagerWindow - removing", () => {
     mockList.mockResolvedValue(listing({ python: ["numpy"] }));
     open();
     await screen.findByText("numpy");
-    fireEvent.click(screen.getByTitle("Remove from your library list"));
+    fireEvent.click(getByTooltip(document.body, "Remove from your library list"));
     await waitFor(() => expect(mockRemove).toHaveBeenCalledWith("python", "numpy"));
   });
 });
@@ -253,7 +254,7 @@ describe("LibraryManagerWindow - a broken library's controls", () => {
   it("names Remove, apart from the dismiss", async () => {
     await addBroken();
     const remove = screen.getByRole("button", { name: "Remove" });
-    expect(remove).toHaveAttribute("title", "Remove from your library list");
+    expect(remove).toHaveAttribute("data-tooltip", "Remove from your library list");
     fireEvent.click(remove);
     await waitFor(() => expect(mockRemove).toHaveBeenCalledWith("python", "brokenlib"));
   });
@@ -364,7 +365,7 @@ describe("LibraryManagerWindow - when the caller may not install (#309)", () => 
     mockList.mockResolvedValue(offListing());
     open();
     expect(await screen.findByText("numpy")).toBeTruthy();
-    expect(screen.queryByTitle("Remove from your library list")).toBeNull();
+    expect(queryByTooltip(document.body, "Remove from your library list")).toBeNull();
   });
 
   it("still lists what is installed", async () => {
@@ -380,7 +381,7 @@ describe("LibraryManagerWindow - when the caller may not install (#309)", () => 
       installDisabledReason: null,
     });
     open();
-    expect(await screen.findByTitle("Remove from your library list")).toBeTruthy();
+    expect(await findByTooltip(document.body, "Remove from your library list")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Add" })).toBeTruthy();
   });
 });

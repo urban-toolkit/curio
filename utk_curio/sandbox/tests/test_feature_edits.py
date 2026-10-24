@@ -151,6 +151,26 @@ class TestUnknownIds:
         assert "the input has no feature with osm_id 12; the set skips it." in capsys.readouterr().out
         assert out["osm_id"].tolist() == [10, 11]
 
+    def test_the_report_of_ids_no_feature_has_is_the_line_agents_are_held_to(self, capsys):
+        """``UNKNOWN_IDS_LINE``, which Solve reads a run's made-up ids by,
+        matches each line the step prints for ids no feature has, and no other
+        line: an add of a feature the layer has already is not one."""
+        from utk_curio.sandbox.util.feature_edits import UNKNOWN_IDS_LINE
+
+        point = {"type": "Point", "coordinates": [0, 0]}
+        _edit(_records(), [
+            {"op": "remove", "ids": [1, 999, "w7"]},
+            {"op": "set", "ids": [998], "column": "height", "value": 3},
+            {"op": "add", "id": 2, "geometry": point},
+        ], **BUILDINGS)
+        printed = [line for line in capsys.readouterr().out.split("\n") if line]
+        reported = [line for line in printed if UNKNOWN_IDS_LINE.fullmatch(line)]
+        assert reported == [
+            "Map Edits: layer table_osm_buildings has no feature with building_id 999, w7; the remove skips them.",
+            "Map Edits: layer table_osm_buildings has no feature with building_id 998; the set skips it.",
+        ], printed
+        assert any("already has a feature with building_id 2" in line for line in printed), printed
+
 
 class TestSetValue:
     def test_a_column_is_set_on_the_matched_features_only(self):
@@ -498,42 +518,39 @@ def test_the_code_the_node_writes_runs_its_edits(case):
     assert _ids(fc) == case["kept"]
 
 
-def _call_of(code):
-    """The positional arguments and the keywords of the one
-    ``curio_edit_features(...)`` call *code* returns, as Python reads them."""
-    import ast
-
-    (statement,) = ast.parse(code).body
-    assert isinstance(statement, ast.Return), code
-    call = statement.value
-    assert isinstance(call, ast.Call) and isinstance(call.func, ast.Name) and call.func.id == "curio_edit_features", code
-    return call.args, {keyword.arg: ast.literal_eval(keyword.value) for keyword in call.keywords}
-
-
 @pytest.mark.parametrize("case", _code_cases() + _code_cases("read"), ids=lambda c: c["name"])
-def test_python_reads_the_code_as_the_settings_the_node_reads(case):
-    """Each code the node writes, and each other code its reader takes, is a
-    call of the step as its signature has it, whose arguments hold, as Python
-    reads them, the settings the node reads from it: its inputs, its edits and
-    each keyword."""
-    import ast
+def test_python_calls_the_step_with_what_the_node_reads(case):
+    """Each code the node writes, and each other code its reader takes, run as
+    a Python node's code runs, calls the step once, as its signature has it,
+    with what the node reads from the code, which the sandbox's reader
+    (``feature_edits_code``) reads too: its inputs, one per circle in order,
+    its edits and each keyword."""
     import inspect
 
     from utk_curio.sandbox.util.feature_edits import edit_features
+    from utk_curio.sandbox.util.feature_edits_code import read_edit_features_code
+    from utk_curio.sandbox.util.input_names import call_as_node
 
     assert case["code"] is not None, case["name"]
-    args, keywords = _call_of(case["code"])
-    params = inspect.signature(edit_features).parameters
-    assert set(keywords) <= set(params) - {"value", "edits"}, keywords
-    first, edits = args
-    circles = case.get("circles", 1)
-    if circles > 1:
-        assert isinstance(first, ast.List) and [ast.unparse(item) for item in first.elts] == [f"input_{k}" for k in range(circles)]
-        assert keywords.get("by_input") is True
-    else:
-        assert ast.unparse(first) == "input_0" and not keywords.get("by_input")
-    settings = case["settings"] or {}
-    assert ast.literal_eval(edits) == settings.get("edits", [])
+    read = read_edit_features_code(case["code"])
+    assert "problem" not in read, read
+    calls = []
+
+    def step(value, edits, **keywords):
+        calls.append({"value": value, "edits": edits, "keywords": keywords})
+        return value
+
+    circles = read["circles"]
+    inputs = [f"input-{k}" for k in range(circles)]
+    value = inputs if circles > 1 else inputs[0]
+    call_as_node(textwrap.indent(case["code"], "    "), {"curio_edit_features": step}, value, list(range(circles)))
+    [call] = calls
+    keywords = call["keywords"]
+    assert set(keywords) <= set(inspect.signature(edit_features).parameters) - {"value", "edits"}, keywords
+    assert call["value"] == value
+    assert bool(keywords.get("by_input")) == (circles > 1)
+    settings = read["settings"] or {}
+    assert call["edits"] == settings.get("edits", [])
     assert keywords.get("key") == settings.get("key")
     assert keywords.get("layer") == settings.get("layer")
     assert (keywords.get("keys") or None) == settings.get("keys")

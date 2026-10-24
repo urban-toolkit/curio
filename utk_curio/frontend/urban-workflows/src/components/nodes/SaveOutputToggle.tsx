@@ -24,7 +24,7 @@ export const SaveOutputToggle = memo(function SaveOutputToggle({
   return (
     <label
       className={`${styles.root} ${styles[variant]} ${checked ? styles.rootOn : ""} ${disabled ? styles.rootDisabled : ""}`}
-      title={checked ? "Save tabular output to Data Catalog on run" : "Run without saving to Data Catalog"}
+      data-tooltip={checked ? "Save tabular output to Data Catalog on run" : "Run without saving to Data Catalog"}
       aria-label={checked ? "Save output to Data Catalog enabled" : "Save output to Data Catalog disabled"}
     >
       <input

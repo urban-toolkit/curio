@@ -166,7 +166,7 @@ describe("New node from a Python function", () => {
     expect(scale).not.toBeDisabled();
     const spread = within(choice).getByRole("option", { name: "fn_scale.ops.spread()" });
     expect(spread).toBeDisabled();
-    expect(spread).toHaveAttribute("title", expect.stringContaining("takes *values"));
+    expect(spread).toHaveAttribute("data-tooltip", expect.stringContaining("takes *values"));
     expect(within(choice).getByRole("option", { name: /^fn_broken: fn_broken does not parse/ })).toBeDisabled();
     // Grouped under the package that ships the module.
     expect(scale.closest("optgroup")).toHaveAttribute("label", "Function source");

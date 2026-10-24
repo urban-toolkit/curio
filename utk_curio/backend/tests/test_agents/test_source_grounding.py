@@ -471,7 +471,7 @@ class TestRefusalText:
         ctx = _ctx(is_data_loading=True, hints=["a `path` from a catalog.search row"])
         verdict = sg.check_grounding(ISSUE_298, "python", ctx)
         text = sg.refusal_text(verdict, ctx)
-        assert text.startswith("source grounding refused — 1 ungrounded source:")
+        assert text.startswith("source grounding refused: 1 ungrounded source:")
         assert "'bras_ibge_data.csv' (line 2)" in text
         assert "a path the user typed" in text
         assert "catalog.search" in text

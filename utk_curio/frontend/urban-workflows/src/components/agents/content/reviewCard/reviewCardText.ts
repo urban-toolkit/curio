@@ -6,6 +6,7 @@
  */
 import type { AgentProposalPart, AgentSourceRef } from "../../../../services/agents";
 import { tryGetNodeDescriptor } from "../../../../registry/nodeRegistry";
+import nodeSettings from "../../../../contracts/nodeSettings.json";
 
 /** dev/114 (DEC-072): the Source block's kind headline — how the runtime
  * grounded what the proposed code opens or fetches. */
@@ -91,6 +92,8 @@ export function nodeKindExecutable(pins: AgentProposalPart["pins"] | undefined):
 
 export const EFFECT_LINE: Record<string, string> = {
   "node.create": "Applying adds this node to the canvas.",
+  "node.settings.write":
+    "Applying makes only these changes, as picking them in the node does; its code is untouched.",
   "project.install":
     "Applying installs only this project template: nothing is imported, attached, run, or published.",
   "dataset.install":
@@ -130,7 +133,8 @@ function planChangeLine(part: AgentProposalPart): string | null {
   if (removed) {
     return (
       `Applying adds ${n} node${n === 1 ? "" : "s"} and removes ${removed}. ` +
-      "Removal deletes their content and cannot be undone."
+      "Removal deletes their content and cannot be undone." +
+      tilesLeavingLine(part.plan.removals ?? [])
     );
   }
   if (removedEdges) {
@@ -146,6 +150,16 @@ function planChangeLine(part: AgentProposalPart): string | null {
     return `Applying adds ${e} connection${e === 1 ? "" : "s"}; existing work is untouched.`;
   }
   return `Applying adds these ${n} connected node${n === 1 ? "" : "s"} to the canvas; existing work is untouched.`;
+}
+
+/** How many of a plan's removals are dashboard tiles, which leave the
+ * dashboard, as the effect line's last sentence; empty when none is. */
+function tilesLeavingLine(removals: Array<{ pinned?: boolean }>): string {
+  const tiles = removals.filter((victim) => victim.pinned).length;
+  if (!tiles) return "";
+  return tiles === 1
+    ? " 1 of them is a dashboard tile, which leaves the dashboard."
+    : ` ${tiles} of them are dashboard tiles, which leave the dashboard.`;
 }
 
 /** A plan node's readiness for its row (dev/71): dependencies by name, its
@@ -192,7 +206,30 @@ function widgetText(widget: { name: string; type: string; default?: unknown; val
   return `${widget.name} (${widget.type}${value !== undefined ? `, ${JSON.stringify(value)}` : ""})`;
 }
 
-/** #662: a planned node's widgets, its scenario, and the node a copy copies. */
+/** A Spatial Join's operation and output, as its row reads them. */
+function spatialJoinText(setting: { predicate?: string; output?: string }): string {
+  const parts: string[] = [];
+  if (setting.predicate !== undefined) parts.push(`operation ${setting.predicate}`);
+  if (setting.output !== undefined) parts.push(`output ${setting.output}`);
+  return parts.join(", ");
+}
+
+/** A setting as its node's own control words it, `<label>: <value>`, each
+ * set one in the node's order, joined as the backend's preview joins them. */
+function settingText(
+  setting: Record<string, string | undefined>,
+  labels: Record<string, string>,
+  values: Record<string, string> = {},
+): string {
+  return Object.keys(labels)
+    .filter((key) => setting[key] !== undefined)
+    .map((key) => `${labels[key]}: ${values[setting[key]!] ?? setting[key]}`)
+    .join("; ");
+}
+
+/** #662: a planned node's widgets, its scenario, and the node a copy copies;
+ * a Spatial Join's operation and output; a Data Pool's modes and a Simple
+ * View's image column, in the pool's and the view's own words. */
 export function planNodeExtras(part: AgentProposalPart, node: { ref: string }): string[] {
   const row = part.plan!.nodes.find((n) => n.ref === node.ref);
   if (!row) return [];
@@ -202,6 +239,11 @@ export function planNodeExtras(part: AgentProposalPart, node: { ref: string }): 
     lines.push(`in ${row.scenario}` + (original ? ` · a copy of ${original.title}` : ""));
   }
   if (row.widgets?.length) lines.push(`widgets: ${row.widgets.map(widgetText).join(", ")}`);
+  if (row.spatialJoin) lines.push(spatialJoinText(row.spatialJoin));
+  if (row.dataPool) {
+    lines.push(settingText({ ...row.dataPool }, nodeSettings.dataPool.settings, nodeSettings.dataPool.modes));
+  }
+  if (row.simpleVis) lines.push(settingText({ ...row.simpleVis }, nodeSettings.simpleVis.settings));
   return lines;
 }
 

@@ -2,17 +2,30 @@
  * A Note's colors: its background, the ink of its text and the color of its
  * links, by the backend's node-appearance rule
  * (`backend/app/packages/domain/node_appearance.py`), through which an agent's
- * note is saved. The palette and the inks come from it (`generated/noteColors`);
- * a value the rule would refuse (not a palette name or a six-digit hex, or a
- * color no ink can be read on) draws as the default yellow, as there.
+ * note is saved. The palette, the inks, the links and the contrast are
+ * `contracts/noteColors.json`, which that rule reads too; a value the rule
+ * would refuse (not a palette name or a six-digit hex, or a color no ink can
+ * be read on) draws as the default yellow, as there.
  */
-import {
-  DEFAULT_NOTE_COLOR,
-  NOTE_COLORS,
-  NOTE_INKS,
-  NOTE_LINKS,
-  NOTE_MIN_CONTRAST,
-} from "../generated/noteColors";
+import noteColorsFile from "../contracts/noteColors.json";
+
+/** The colors a note's appearance can name, and the color each stands for. */
+export const NOTE_COLORS = noteColorsFile.colors;
+
+/** A palette color's name. */
+export type NoteColorName = keyof typeof NOTE_COLORS;
+
+/** The color of a note that names none, or names one that cannot be read. */
+const DEFAULT_NOTE_COLOR = NOTE_COLORS[noteColorsFile.defaultColor as NoteColorName];
+
+/** A note's text takes the ink that reads better on its color. */
+const NOTE_INKS = noteColorsFile.inks;
+
+/** A link's color under dark ink and under light ink, when it reads; else the ink. */
+const NOTE_LINKS = noteColorsFile.links;
+
+/** The contrast an ink must reach on a note's color; no ink reaching it refuses the color. */
+const NOTE_MIN_CONTRAST = noteColorsFile.minContrast;
 
 export interface NoteColors {
   background: string;
@@ -48,7 +61,7 @@ export function noteBackground(value: unknown): string | null {
   if (typeof value !== "string" || !value || /\s/.test(value)) return null;
   const name = value.toLowerCase();
   if (Object.prototype.hasOwnProperty.call(NOTE_COLORS, name)) {
-    return NOTE_COLORS[name as keyof typeof NOTE_COLORS];
+    return NOTE_COLORS[name as NoteColorName];
   }
   if (!HEX.test(value)) return null;
   return bestInk(name)[1] >= NOTE_MIN_CONTRAST ? name : null;

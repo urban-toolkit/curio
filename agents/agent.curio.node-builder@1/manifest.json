@@ -156,7 +156,13 @@
       "id": "node.runtime.read"
     },
     {
+      "id": "node.history.read"
+    },
+    {
       "id": "node.content.write"
+    },
+    {
+      "id": "node.settings.write"
     },
     {
       "id": "catalog.search"

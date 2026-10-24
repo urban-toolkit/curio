@@ -17,7 +17,7 @@ which rules used to match.
 
 It reads Python, JavaScript and TypeScript, JSON and shell files, without
 their comments and docstrings: naming an artifact in words is fine. Markdown,
-such as the agents' prompt templates, is not code, and tests are not app code.
+such as a README, is not code, and tests are not app code.
 
 ``NOT_SCANNED`` lists the scripts that build shipped data or record fixtures
 from a named source: naming what they build is what they are for.
@@ -379,7 +379,7 @@ def test_the_scan_finds_ids_planted_in_app_code(tmp_path):
     plant("utk_curio/frontend/urban-workflows/src/tests/rules.test.ts", f'const s = "{source}";\n')
     plant("utk_curio/backend/tests/test_rules.py", f'NAME = "{dataset}"\n')
     plant("scripts/scout/export_deep_umbra.py", f'NAME = "{dataset}"\n')
-    plant("utk_curio/llm-prompts/prompt.template.md", f"Ask the {agent}.\n")
+    plant("utk_curio/backend/app/feature/README.md", f"Ask the {agent}.\n")
 
     hits, _ = scan(tmp_path, ids)
     app = "utk_curio/backend/app/feature/rules.py"

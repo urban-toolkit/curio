@@ -74,7 +74,7 @@ export function NodeHandles({
               position={Position.Right}
               isConnectable={connectable}
               style={{ ...(style ?? {}), ...notebookPlaces.get(h.id) }}
-              title={notebookDotTitle(h, nodeId, edges, nodes)}
+              data-tooltip={notebookDotTitle(h, nodeId, edges, nodes)}
               className="curio-notebook-dot"
             >
               {label.length > 0 && label.length <= 2 ? (

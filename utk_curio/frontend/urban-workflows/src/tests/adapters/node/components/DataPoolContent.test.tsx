@@ -1,6 +1,9 @@
+import * as fs from 'fs';
+import * as path from 'path';
 import React from 'react';
 import { render, screen, waitFor, act } from '@testing-library/react';
 import DataPoolContent from '../../../../adapters/node/components/DataPoolContent';
+import { ResolutionType } from '../../../../constants';
 import { fetchPreviewData } from '../../../../services/api';
 
 jest.mock('../../../../utils/parsing', () => ({
@@ -254,5 +257,25 @@ describe('DataPoolContent', () => {
   test('a table that fits says nothing about rows', () => {
     render(<DataPoolContent {...defaultProps} />);
     expect(screen.queryByTestId('tabular-preview-row-notice')).toBeNull();
+  });
+
+  test("each select is labelled, and each mode worded, as contracts/nodeSettings.json says", () => {
+    // The words an agent's review card and the backend say a pool's modes in;
+    // read when the test runs, so a checkout without the file fails here alone.
+    const words = JSON.parse(
+      fs.readFileSync(path.join(__dirname, '../../../../contracts/nodeSettings.json'), 'utf8'),
+    ).dataPool;
+    expect(Object.keys(words.modes)).toEqual(Object.values(ResolutionType));
+    render(<DataPoolContent {...defaultProps} />);
+    const testIds: Record<string, string> = {
+      insideChart: 'data-pool-mode-inside',
+      betweenCharts: 'data-pool-mode-between',
+    };
+    expect(Object.keys(words.settings)).toEqual(Object.keys(testIds));
+    for (const [key, label] of Object.entries(words.settings) as [string, string][]) {
+      const select = screen.getByLabelText(label) as HTMLSelectElement;
+      expect(select).toHaveAttribute('data-testid', testIds[key]);
+      expect(Array.from(select.options).map((o) => [o.value, o.textContent])).toEqual(Object.entries(words.modes));
+    }
   });
 });

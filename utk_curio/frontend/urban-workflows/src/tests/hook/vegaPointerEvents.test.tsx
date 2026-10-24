@@ -24,6 +24,7 @@ jest.mock("vega", () => {
       page.querySelector(selector)?.appendChild(page.createElement("canvas"));
       return this;
     }
+    tooltip() { return this; }
     hover() { return this; }
     width() { return this; }
     height() { return this; }

@@ -8,6 +8,8 @@ import { registerRunNodeAction } from "./runNodeMonacoAction";
 import { describeError } from "../../adapters/node/autkRunSettlement";
 import { ReferenceStrip } from "./widgets/WidgetTag";
 import { insertReference, useCodeReferences } from "./widgets/monacoCodeReferences";
+import { useEditorTooltip } from "./useEditorTooltip";
+import type { ChipPreviewSource } from "./widgets/chipPreviewSource";
 import type { CodeLanguage, InputScope, ReferenceScope } from "../../utils/references/codeReferences";
 import { NOTEBOOK_SPEC_EDITOR_MAX, useNotebookEditorHeight } from "./useNotebookEditorHeight";
 import { nodeEditorLook } from "./nodeEditorLook";
@@ -38,6 +40,8 @@ type GrammarEditorProps = {
     /** The spec's grammar where its chips write a field escaped (`VEGA_LITE`),
      * which also gives the header the `inputs` tag and the scenarios' scales. */
     referenceGrammar?: string;
+    /** What its chips' and tags' hovers preview (chipPreviewSource). */
+    chipPreviews?: ChipPreviewSource | null;
     /** A run's spec put back from the provenance drawer; each new one is
      *  written in, even when it is the spec the editor loaded with. */
     restoredCode?: { code: string; nonce: number } | null;
@@ -59,6 +63,7 @@ export default function GrammarEditor({
     onLoadColumns,
     widgetLanguage = "json",
     referenceGrammar,
+    chipPreviews = null,
     restoredCode = null,
 }: GrammarEditorProps) {
     const [grammar, _setGrammar] = useState("{}");
@@ -68,6 +73,8 @@ export default function GrammarEditor({
     useCodeReferences(widgetEditor?.editor, widgetEditor?.monaco, references, widgetLanguage, {
         hideJsonMarkers: true,
     });
+    // Its hovers, Monaco's own being off, in the Curio tooltip.
+    useEditorTooltip(widgetEditor?.editor, widgetEditor?.monaco, references, widgetLanguage, chipPreviews);
     // In a notebook cell the spec is as tall as its lines, over its output.
     const editorHeight = useNotebookEditorHeight(NOTEBOOK_SPEC_EDITOR_MAX);
     const grammarRef = useRef(grammar);
@@ -289,6 +296,7 @@ export default function GrammarEditor({
                 disabled={readOnly}
                 onInsert={(inner) => insertReference(widgetEditor?.editor, inner)}
                 onLoadColumns={onLoadColumns}
+                previews={chipPreviews}
             />
             <div className={look.wrapperClassName} style={{ flex: 1, minHeight: 0, ...editorHeight.wrapperStyle }}>
                 {/* Uncontrolled on purpose: a per-keystroke `value` round-trip
@@ -317,6 +325,8 @@ export default function GrammarEditor({
                         ...NODE_EDITOR_SCROLLING,
                         // A plain input box, but on a dashboard tile.
                         ...look.editorOptions,
+                        // As in CodeEditor: the Curio tooltip shows the hovers.
+                        hover: { enabled: false },
                     }}
                 />
             </div>

@@ -22,6 +22,7 @@ import {
 } from "../../utils/widgets/widgetModel";
 import { nodesUsingShared, sharedWidgetsOf, withSharedRenamed } from "../../utils/references/sharedParameters";
 import { codeEditRevision, subscribeToCodeEdits } from "../../utils/references/codeEdits";
+import { registerNodeSettingWriter } from "../../utils/nodeSettingsWriters";
 import { resolveNodeDisplayLabel } from "../../utils/palettePackageFactoryDraft";
 
 /** How long a value waits for the next keystroke or slider step before it
@@ -69,20 +70,40 @@ function ParameterBody({ data }: { data: any }) {
     for (const node of nodesUsingShared(all, name)) markNodeStale?.(node.id);
   };
 
-  const flush = () => {
-    window.clearTimeout(timer.current);
-    const change = pending.current;
-    pending.current = null;
-    if (!change || !widget) return;
-    if (JSON.stringify(change.value) === committedKey) return;
-    write([{ ...widget, value: change.value }, ...held.slice(1)]);
+  /** The widget's new value reaches the dataflow: the nodes that use it are
+   * out of date, and with auto-run on they run. */
+  const commit = (value: WidgetValue) => {
+    if (!widget) return;
+    if (JSON.stringify(value) === committedKey) return;
+    write([{ ...widget, value }, ...held.slice(1)]);
     markUsersStale(widget.name);
     // #845: with auto-run on, the nodes that use it run on their own.
     requestAutoRun?.(nodesUsingShared(all, widget.name).map((node) => node.id));
   };
+
+  const flush = () => {
+    window.clearTimeout(timer.current);
+    const change = pending.current;
+    pending.current = null;
+    if (change) commit(change.value);
+  };
   const flushRef = useRef(flush);
   flushRef.current = flush;
   useEffect(() => () => flushRef.current(), []);
+
+  // An agent's applied change gives the widget a new value as its control
+  // does (utils/nodeSettingsWriters), in place of one still settling.
+  const takeValueRef = useRef<(values: Record<string, unknown>) => void>(() => undefined);
+  takeValueRef.current = (values) => {
+    if (!widget || !Object.prototype.hasOwnProperty.call(values, widget.name)) return;
+    window.clearTimeout(timer.current);
+    pending.current = null;
+    commit(values[widget.name] as WidgetValue);
+  };
+  useEffect(
+    () => registerNodeSettingWriter(data.nodeId, "widgets", (values) => takeValueRef.current(values)),
+    [data.nodeId],
+  );
 
   const setValue = (value: WidgetValue) => {
     setShown(value);

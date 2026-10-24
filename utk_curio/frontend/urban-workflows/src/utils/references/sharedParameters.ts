@@ -48,6 +48,17 @@ export function nodesUsingShared<N extends FlowNodeLike>(nodes: readonly N[], na
   return nodes.filter((node) => !isParameterNode(node) && sharedNamesIn(nodeCode(node)).includes(name));
 }
 
+/** What a shared tag's hover says of its Parameter node: the node's title, and
+ * how many nodes read it. Null when no Parameter node holds *name*. */
+export function parameterPreviewOf(nodes: readonly FlowNodeLike[], name: string): { node: string; readers: number } | null {
+  const holder = nodes.find(
+    (node) => isParameterNode(node) && normalizeShared(node.data?.widgets).some((widget) => widget.name === name),
+  );
+  if (!holder) return null;
+  const title = typeof holder.data?.title === "string" ? holder.data.title.trim() : "";
+  return { node: title || "Parameter", readers: nodesUsingShared(nodes, name).length };
+}
+
 /**
  * What a run of a node depends on: `nodeRunKey` (its code and its widgets'
  * values), the values of the shared tags its code names, and what the node's

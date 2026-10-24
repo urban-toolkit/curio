@@ -125,8 +125,8 @@ def read_definition_bundle_from_dir(target: Path, *, carry_shared: bool = True) 
 
     Factored out of :func:`read_definition_bundle` so the shared published
     catalog can be read the same way (#275); the user store is one location a
-    definition may be in, not the only one. A prompt the manifest names as
-    Curio's (``curio:<file>``) travels as a file of its own
+    definition may be in, not the only one. A page the manifest names as
+    Curio's (``curio:<path>``) travels as a file of its own, its rendered text
     (``builtin.carry_shared_prompts``), as every other prompt does, unless
     *carry_shared* is false: a copy that stays in this Curio keeps the name.
     """

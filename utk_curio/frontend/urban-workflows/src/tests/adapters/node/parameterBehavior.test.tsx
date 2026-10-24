@@ -30,6 +30,7 @@ jest.mock("../../../utils/palettePackageFactoryDraft", () => ({
 }));
 
 import { useParameterBehavior } from "../../../adapters/node/parameterBehavior";
+import { writeNodeSettings } from "../../../utils/nodeSettingsWriters";
 
 const PARAM = "curio.builtin/parameter@1";
 const CODE = "curio.builtin/computation-analysis@1";
@@ -119,6 +120,20 @@ describe("a Parameter node with its widget", () => {
       expect.objectContaining({ widgets: [{ ...factor, value: 5 }] }),
     );
     expect(mockMarkNodeStale.mock.calls.map((c) => c[0]).sort()).toEqual(["a", "b"]);
+  });
+
+  test("an agent's applied value reaches the node as one set in its control: the nodes that use it go stale and run", () => {
+    const self = node("p1", PARAM, { widgets: [factor] });
+    mockNodes = [self, ...users()];
+    render(<Harness data={self.data} />);
+    const fallback = jest.fn();
+    act(() => writeNodeSettings({ nodes: () => mockNodes, updateDataNode: fallback }, "p1", { widgets: { factor: 3 } }));
+    expect(fallback).not.toHaveBeenCalled();
+    expect(mockUpdateDataNode).toHaveBeenCalledWith("p1", expect.objectContaining({ widgets: [{ ...factor, value: 3 }] }));
+    expect(mockMarkDirty).toHaveBeenCalled();
+    expect(mockMarkNodeStale.mock.calls.map((c) => c[0]).sort()).toEqual(["a", "b"]);
+    expect(mockRequestAutoRun).toHaveBeenCalledTimes(1);
+    expect([...mockRequestAutoRun.mock.calls[0][0]].sort()).toEqual(["a", "b"]);
   });
 
   test("a new value asks once for an auto-run of the nodes that use it (#845)", () => {

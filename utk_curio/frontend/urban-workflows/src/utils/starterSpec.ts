@@ -8,23 +8,44 @@
  * a string, or a zip code from a measurement, is exactly where sniffing goes
  * wrong, and a wrong default locked into the buffer is worse than none.
  *
- * The roles, the dtype table and each ladder's rules are generated from the
- * backend's `contracts.py` into `src/generated/visDefaults.ts`, which is also
- * what the agents' shared preamble states, so the node and the agents cannot
- * disagree.
+ * The roles, the dtype table and each ladder's rules are
+ * `contracts/visDefaults.json`, which the backend reads too and the agents'
+ * shared preamble states, so the node and the agents cannot disagree.
  *
  * Pure, with no grammar import, so it is testable under jest.
  */
 
-import {
-  COLUMN_ROLES,
-  DTYPE_ROLES,
-  type ColumnRole,
-  type CountRange,
-  type RoleCounts,
-} from "../generated/visDefaults";
+import visDefaults from "../contracts/visDefaults.json";
 
-export type { ColumnRole } from "../generated/visDefaults";
+/**
+ * A role a column can have: one of visDefaults.json's `columnRoles`, to which
+ * a test holds the groups `groupColumns` makes, in their order.
+ */
+export type ColumnRole = "geometry" | "temporal" | "quantitative" | "nominal";
+
+/** At least `least`, and at most `most` when it is set. */
+export interface CountRange {
+  readonly least: number;
+  readonly most?: number;
+}
+
+/** How many columns of each role a starter rule needs. */
+export type RoleCounts = Readonly<Partial<Record<ColumnRole, CountRange>>>;
+
+/** The roles, in the order a ladder groups them. */
+const COLUMN_ROLES = visDefaults.columnRoles as readonly ColumnRole[];
+
+/**
+ * The pandas dtypes that give a column one role, matched in lower case: the
+ * dtypes named whole and those that start with a prefix. A dtype's role is
+ * the first entry's that matches it, in this order, and a dtype no entry
+ * matches gives its column no role.
+ */
+const DTYPE_ROLES = visDefaults.dtypeRoles as readonly {
+  readonly role: ColumnRole;
+  readonly names: readonly string[];
+  readonly prefixes: readonly string[];
+}[];
 
 export interface ClassifiedColumn {
   name: string;

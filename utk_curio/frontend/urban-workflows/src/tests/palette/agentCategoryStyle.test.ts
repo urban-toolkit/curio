@@ -9,7 +9,7 @@ import {
   agentCategoryIcon,
   agentCategoryKey,
 } from "../../components/menus/nodes/agentsPalette/agentCategoryStyle";
-import { AGENT_CATEGORIES } from "../../generated/agentCategories";
+import agentCategories from "../../contracts/agentCategories.json";
 
 /**
  * How an agent is drawn by category: one colour and one glyph each.
@@ -52,7 +52,7 @@ const AGENT_CATEGORY_SURFACES = [
 ];
 
 /** The manifest's category vocabulary, which is now also the palette's. */
-const MANIFEST_CATEGORIES: readonly string[] = AGENT_CATEGORIES;
+const MANIFEST_CATEGORIES: readonly string[] = agentCategories.categories;
 
 describe("agentCategoryKey", () => {
   it("keeps every manifest category distinct", () => {
@@ -67,6 +67,8 @@ describe("agentCategoryKey", () => {
 
   it("declares exactly the manifest vocabulary, no more", () => {
     expect([...AGENT_CATEGORY_KEYS].sort()).toEqual([...MANIFEST_CATEGORIES].sort());
+    // The glyph table's keys are the AgentCategory type.
+    expect(Object.keys(AGENT_CATEGORY_ICON).sort()).toEqual([...MANIFEST_CATEGORIES].sort());
   });
 
   it("is case-insensitive", () => {

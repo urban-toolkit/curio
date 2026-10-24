@@ -18,6 +18,8 @@ from utk_curio.backend.app.agents.application import delegation
 from utk_curio.backend.app.agents.application.errors import AgentServiceError
 from utk_curio.backend.app.agents.domain import builtin
 from utk_curio.backend.app.agents.domain import content
+from utk_curio.backend.app.agents.domain import dashboards
+from utk_curio.backend.app.agents.domain import node_settings
 from utk_curio.backend.app.agents.domain import plan_topology
 from utk_curio.backend.app.agents.domain.counts import count_label
 from utk_curio.backend.app.agents.repositories import project_agents
@@ -27,6 +29,7 @@ from utk_curio.backend.app.execution.workflow_spec import slot_handle_id
 from utk_curio.backend.app.agents.application.proposals import plan_scenarios
 from utk_curio.backend.app.agents.application.proposals import store as agents_store
 from utk_curio.backend.app.projects import storage as projects_storage
+from utk_curio.backend.app.agents.domain import agent_text
 
 log = logging.getLogger(__name__)
 
@@ -164,27 +167,29 @@ def _validate_plan_fanin(
             continue
         src_list = ", ".join(repr(s) for s in sources[:4])
         existing_note = (
-            f" (plus {existing_count} existing connection"
-            f"{'s' if existing_count != 1 else ''})"
+            " " + agent_text.message(
+                "plan.fanin-existing-note", existing_count=existing_count, s='s' if existing_count != 1 else '',
+            )
             if existing_count
             else ""
         )
         if max_in == 0:
             errors.append(
-                f"target {label!r} ({node_type}) accepts no inputs — remove the "
-                f"edge(s) from {src_list}"
+                agent_text.message("plan.fanin-no-inputs", label=repr(label), node_type=node_type, src_list=src_list)
             )
         elif max_in == 1:
             errors.append(
-                f"target {label!r} ({node_type}) accepts 1 input but the plan wires "
-                f"{total}{existing_note}: wire {src_list} into one node that takes "
-                "several inputs (a code step that combines them), and connect that "
-                "node to the target"
+                agent_text.message(
+                    "plan.fanin-single-input", label=repr(label), node_type=node_type, total=total,
+                    existing_note=existing_note, src_list=src_list,
+                )
             )
         else:
             errors.append(
-                f"target {label!r} ({node_type}) accepts at most {max_in} inputs "
-                f"but the plan wires {total}{existing_note}: reduce the fan-in"
+                agent_text.message(
+                    "plan.fanin-too-many-inputs", label=repr(label), node_type=node_type, max_inputs=max_in,
+                    total=total, existing_note=existing_note,
+                )
             )
     for i, edge in enumerate(plan.get("edges", [])):
         handle = edge.get("toHandle")
@@ -204,7 +209,7 @@ def _validate_plan_fanin(
         index = _circle_index(handle)
         if index < 0 or (max_in is not None and index >= max_in):
             errors.append(
-                f"edges[{i}].toHandle {handle!r}: this node's inputs are {_circle_names(max_in)}"
+                agent_text.message("plan.handle-invalid", i=i, handle=repr(handle), circles=_circle_names(max_in))
             )
     return errors
 
@@ -263,7 +268,7 @@ def _mint_dataflow_plan(
 
     session_id = loop_ctx.get("session_id")
     if not isinstance(session_id, str):
-        return "refused", "proposals need a persistent conversation", None
+        return "refused", agent_text.message("plan.no-conversation"), None
     # dev/67-5: plans describe intent — generated code never rides a plan.
     # There is no "trivial code" shortcut (67-0): every node's content is
     # produced and validated per node after creation. Supersedes dev/52's
@@ -272,15 +277,13 @@ def _mint_dataflow_plan(
     if content_refs:
         return (
             "refused",
-            "plan nodes must not carry content — plans describe intent; node "
-            "content is generated and validated per node after creation. "
-            f"Remove the content from: {', '.join(repr(r) for r in content_refs)}",
+            agent_text.message("plan.nodes-carry-content", content_refs=', '.join(repr(r) for r in content_refs)),
             None,
         )
     try:
         available = {t["id"]: t for t in packages_services.available_templates(user_key, project_id)}
     except Exception as exc:
-        return "refused", f"the node template registry is unavailable: {exc}", None
+        return "refused", agent_text.message("mint.template-registry-unavailable", exc=exc), None
     # dev/93 D3: the ONE availability gate, shared with node.create — a plan
     # may name any available template (a plan places a typed PLACEHOLDER whose
     # content arrives later from Solve), hence require_authorable=False. The
@@ -300,10 +303,16 @@ def _mint_dataflow_plan(
     )
     for node, (entry, err) in zip(plan["nodes"], outcomes):
         if entry is None:
-            return "refused", f"plan node {node['ref']!r}: {err}", None
+            return "refused", agent_text.message("plan.node-problem", ref=repr(node['ref']), problem=err), None
+    setting_errors = node_settings.plan_problems(
+        plan["nodes"], [entry for entry, _err in outcomes],
+        lambda node_type: packages_services.template_behavior(user_key, project_id, node_type),
+    )
+    if setting_errors:
+        return "refused", "\n- ".join([agent_text.message("plan.node-settings-invalid")] + setting_errors), None
     spec = projects_storage.read_spec(user_key, project_id)
     if spec is None:
-        return "refused", "no saved project spec is available", None
+        return "refused", agent_text.message("mint.no-saved-spec"), None
     # Revision validation against the saved spec (dev/59): removal targets and
     # existing-id edge endpoints must be real; the grammar could only check
     # shape. Errors feed the same correction rounds as every plan failure.
@@ -317,14 +326,14 @@ def _mint_dataflow_plan(
     remove_edges = plan.get("removeEdges", [])
     revision_errors = _plan_revision_errors(plan, existing_nodes, existing_edges)
     if revision_errors:
-        return "refused", "\n- ".join(["the plan's revision targets are invalid:"] + revision_errors), None
+        return "refused", "\n- ".join([agent_text.message("plan.revision-targets-invalid")] + revision_errors), None
     remove_node_set = set(remove_nodes)
     # #662: widgets and scenarios against the saved dataflow; each scenario
     # takes its color here, so the review card shows it.
     scenarios = plan_scenarios.existing_scenarios(spec)
     scenario_errors = plan_scenarios.mint_errors(plan, available, existing_nodes, scenarios, remove_node_set)
     if scenario_errors:
-        return "refused", "\n- ".join(["the plan's widgets or scenarios are invalid:"] + scenario_errors), None
+        return "refused", "\n- ".join([agent_text.message("plan.widgets-scenarios-invalid")] + scenario_errors), None
     plan_scenarios.assign_colors(plan, scenarios)
     # dev/67-3 (DEC-051): fan-in validates BEFORE anything materializes — an
     # invalid multi-input topology is unmintable, and the corrective error
@@ -334,7 +343,7 @@ def _mint_dataflow_plan(
         remove_node_set, set(remove_edges),
     )
     if fanin_errors:
-        return "refused", "\n- ".join(["the plan wires invalid fan-in:"] + fanin_errors), None
+        return "refused", "\n- ".join([agent_text.message("plan.fanin-invalid")] + fanin_errors), None
     refusal = _plan_topology_refusal(plan, existing_nodes, existing_edges, available, remove_node_set, remove_edges)
     if refusal:
         return "refused", refusal, None
@@ -386,13 +395,12 @@ def _plan_revision_errors(plan: dict, existing_nodes: dict, existing_edges: list
     for node_id in remove_nodes:
         if node_id not in existing_nodes:
             revision_errors.append(
-                f"removeNodes: {node_id!r} is not a node in the saved dataflow — "
-                "use real node ids (dataflow.read shows them)"
+                agent_text.message("plan.remove-node-unknown", node_id=repr(node_id))
             )
     for edge_id in remove_edges:
         if edge_id not in existing_edge_ids:
             revision_errors.append(
-                f"removeEdges: {edge_id!r} is not an edge in the saved dataflow"
+                agent_text.message("plan.remove-edge-unknown", edge_id=repr(edge_id))
             )
     plan_refs = {n["ref"] for n in plan["nodes"]}
     for i, edge in enumerate(plan["edges"]):
@@ -400,8 +408,7 @@ def _plan_revision_errors(plan: dict, existing_nodes: dict, existing_edges: list
             endpoint = edge[label]
             if endpoint not in plan_refs and endpoint not in existing_nodes:
                 revision_errors.append(
-                    f"edges[{i}].{label} {endpoint!r} is neither a plan ref nor an "
-                    "existing node id"
+                    agent_text.message("plan.edge-endpoint-unknown", i=i, label=label, endpoint=repr(endpoint))
                 )
     return revision_errors
 
@@ -434,22 +441,23 @@ def _plan_topology_refusal(plan: dict, existing_nodes: dict, existing_edges: lis
     # A Map Edits node's link is to a map it feeds once the plan applies.
     kind_errors = plan_topology.interaction_edge_errors(plan, _type_of_endpoint, available, net_pairs)
     if kind_errors:
-        return "\n- ".join(["the plan wires invalid interaction edges:"] + kind_errors)
+        return "\n- ".join([agent_text.message("plan.interaction-edges-invalid")] + kind_errors)
     closing = plan_topology.closing_plan_edges(net_pairs, plan)
     if closing:
         def _label(node_id: str) -> str:
             return _plan_endpoint_label(node_id, plan, existing_nodes)
         cycle_errors = [
-            f"edge {_label(u)!r} → {_label(v)!r} closes a cycle: "
-            + plan_topology.format_cycle(path, _label)
+            agent_text.message(
+                "plan.edge-closes-cycle", source=repr(_label(u)), target=repr(_label(v)),
+                cycle=plan_topology.format_cycle(path, _label),
+            )
             for u, v, path in closing[:5]
         ]
         return "\n- ".join(
-                ["the plan creates a cycle in the dataflow (data edges must form a DAG):"]
+                [agent_text.message("plan.creates-cycle")]
                 + cycle_errors
                 + [
-                    "remove one data edge of the loop, or, where it should carry selections "
-                    "between two views, make that edge \"kind\": \"interaction\""
+                    agent_text.message("plan.cycle-remedy")
                 ]
         )
     return None
@@ -532,11 +540,19 @@ def _plan_review_part(proposal_id: str, plan: dict, existing_nodes: dict, existi
     preview_lines = [
         f"{node['title']} · {node['nodeType']} — {node['intent']}" for node in plan["nodes"]
     ]
+    # A node's settings, each in its node's words, on its own line's end: a
+    # Spatial Join's operation and output, a Data Pool's modes, a Simple
+    # View's image column.
+    for index, node in enumerate(plan["nodes"]):
+        for words in node_settings.describe(node):
+            preview_lines[index] += f" · {words}"
     preview_lines += plan_scenarios.preview_lines(plan)
     for node_id in remove_nodes:
         victim = existing_nodes[node_id]
         label = (victim.get("goal") or node_id)[:80]
-        preview_lines.append(f"− Remove: {label} · {victim.get('type') or 'untyped'}")
+        # A pinned victim is a dashboard tile, which its removal takes off the dashboard.
+        tile = " · a dashboard tile, which leaves the dashboard" if dashboards.is_pinned(victim) else ""
+        preview_lines.append(f"− Remove: {label} · {victim.get('type') or 'untyped'}{tile}")
     part = content.make_proposal_part(
         proposal_id=proposal_id,
         tool="dataflow.plan.write",
@@ -585,6 +601,8 @@ def _plan_review_part(proposal_id: str, plan: dict, existing_nodes: dict, existi
                 "label": (existing_nodes[node_id].get("goal") or node_id)[:80],
                 "nodeType": existing_nodes[node_id].get("type"),
                 "contentChars": len(existing_nodes[node_id].get("content") or ""),
+                # Only on a dashboard tile, which leaves the dashboard.
+                **({"pinned": True} if dashboards.is_pinned(existing_nodes[node_id]) else {}),
             }
             for node_id in remove_nodes
         ]
@@ -852,7 +870,10 @@ def apply_plan_node(
     pending (a stale/dismissed one refuses at the status gate) + the template
     still available. Creation uses the mint-time position and the (possibly
     edited) goal; the created node joins ``nodeRuns`` as ``pending`` so Solve
-    and the 67-6/67-7 stages pick it up."""
+    and the 67-6/67-7 stages pick it up. The apply that completes the plan
+    removes what the plan removes, checked first as Apply plan checks it
+    (``_check_plan_completion``), and its result ends with the Topology
+    verdict (``_complete_plan_if_done``, ``_log_plan_completed``)."""
     from utk_curio.backend.app.packages import service as packages_services
 
     spec = agents_spec_reads._read_spec_or_404(user_key, project_id)
@@ -896,6 +917,11 @@ def apply_plan_node(
     blocked = plan_scenarios.copy_blocker(plan, plan_node, applied_ids)
     if blocked:
         raise AgentServiceError(blocked, 409)
+    # The last row of a plan that removes: checked as Apply plan checks one,
+    # before this row writes anything.
+    _check_plan_completion(
+        user_key, project_id, proposal_id, spec, proposal, session_id, plan, {*applied_refs, ref},
+    )
     dataflow = spec.setdefault("dataflow", {})
     starters = _content_starters(user_key, project_id, [plan_node])
     created = _created_plan_node(proposal, plan_node, ref, dataflow.setdefault("nodes", []), starters.get(ref))
@@ -946,13 +972,17 @@ def apply_plan_node(
     if _awaits_solve(created):
         runs[node_id] = "pending"
     session["edgeStates"] = dict(ctx["edge_states"])
-    # The last apply may complete the STRUCTURE (all refs + edges applied) —
-    # content keeps its own lifecycle (dev/71).
-    _complete_plan_if_done(record, proposal, session)
+    # The last apply may complete the STRUCTURE (all refs + edges applied),
+    # and then removes what the plan removes; content keeps its own lifecycle
+    # (dev/71).
+    removals = _complete_plan_if_done(spec, proposal, session)
     projects_storage.write_spec(user_key, project_id, spec)
     if isinstance(session_id, str):
         _log_plan_node_applied(user_key, project_id, session_id, attachment_id, proposal_id,
                                plan, plan_node, node_id, applied_refs, attached)
+        if removals is not None:
+            _log_plan_completed(user_key, project_id, session_id, attachment_id, proposal_id,
+                                spec, proposal, session, removals)
     return {
         "attachmentId": attachment_id,
         "proposalId": proposal_id,
@@ -974,6 +1004,9 @@ def apply_plan_node(
         "attachedAgents": attached["attached"],
         "skippedAgents": attached["skipped"],
         "builderSession": session,
+        # What left the dataflow when this apply completed the plan, for the
+        # live canvas.
+        **(removals or {}),
     }
 
 
@@ -1066,10 +1099,17 @@ def _plan_edge_context(
         for n in nodes
         if isinstance(n, dict)
     }
+    # The edges the plan removes, its own and those of the nodes it removes:
+    # they leave when the plan completes, so its edges are checked against
+    # the dataflow the plan leaves, as its mint checked them. A feed that
+    # replaces a removed one takes its circle, and is not refused for it.
+    doomed = plan_topology.removal_cascade(
+        edges, set(plan.get("removeNodes", [])), set(plan.get("removeEdges", [])),
+    )
     circles_taken: dict[str, set[str]] = {}
     incoming_count: dict[str, int] = {}
     for e in edges:
-        if not isinstance(e, dict):
+        if not isinstance(e, dict) or str(e.get("id")) in doomed:
             continue
         target = e.get("target")
         if str(e.get("type") or "") == "Interaction":
@@ -1085,11 +1125,44 @@ def _plan_edge_context(
         "applied_ids": proposal.get("appliedNodeIds") or {},
         "nodes_by_id": {n.get("id"): n for n in nodes if isinstance(n, dict)},
         "edges": edges,
+        "doomed": doomed,
         "available": available,
         "types_by_id": types_by_id,
         "circles_taken": circles_taken,
         "incoming_count": incoming_count,
     }
+
+
+def _existing_plan_edge(edges: list, plan_edges: list, index: int, source: str, target: str,
+                        doomed: frozenset | set = frozenset()) -> dict | None:
+    """The dataflow's connection that plan edge *index*, from *source* to
+    *target*, already is, or None: one a row drew, or the user. It is one of
+    the same two ends, kind and input circle. An edge that names its circle
+    (``toHandle``) is on that circle; one that names none is on a circle no
+    other plan edge between the same two ends names, so a node fed twice by
+    one node (a Spatial Join of a layer with itself) keeps both feeds. An edge
+    the plan removes (*doomed*) does not count. A row applies such an edge as
+    a no-op, and Apply plan creates none for it."""
+    plan_edge = plan_edges[index]
+    interaction = plan_topology.is_interaction_edge(plan_edge)
+    named = plan_edge.get("toHandle")
+    taken = {
+        other.get("toHandle") for i, other in enumerate(plan_edges)
+        if i != index and other.get("toHandle")
+        and other["from"] == plan_edge["from"] and other["to"] == plan_edge["to"]
+        and not plan_topology.is_interaction_edge(other)
+    }
+    for e in edges:
+        if not isinstance(e, dict) or str(e.get("id")) in doomed:
+            continue
+        if e.get("source") != source or e.get("target") != target:
+            continue
+        if plan_topology.is_interaction_edge(e) != interaction:
+            continue
+        circle = e.get("targetHandle") or "in"
+        if interaction or (circle == named if named else circle not in taken):
+            return e
+    return None
 
 
 def _apply_one_plan_edge(ctx: dict, index: int, *, record_missing: bool = True):
@@ -1135,15 +1208,8 @@ def _apply_one_plan_edge(ctx: dict, index: int, *, record_missing: bool = True):
         edge_states[key] = "refused"
         return {**row, "status": "refused", "reason": reason}, None
     wants_interaction = plan_topology.is_interaction_edge(plan_edge)
-    already = next(
-        (
-            e for e in ctx["edges"]
-            if isinstance(e, dict)
-            and e.get("source") == source and e.get("target") == target
-            and plan_topology.is_interaction_edge(e) == wants_interaction
-        ),
-        None,
-    )
+    doomed = ctx["doomed"]
+    already = _existing_plan_edge(ctx["edges"], ctx["plan_edges"], index, source, target, doomed)
     if already is not None:
         edge_states[key] = "applied"
         return {
@@ -1162,7 +1228,7 @@ def _apply_one_plan_edge(ctx: dict, index: int, *, record_missing: bool = True):
     current_pairs = [
         (str(e.get("source")), str(e.get("target")))
         for e in ctx["edges"]
-        if isinstance(e, dict) and not plan_topology.is_interaction_edge(e)
+        if isinstance(e, dict) and not plan_topology.is_interaction_edge(e) and str(e.get("id")) not in doomed
     ]
     closing = plan_topology.closing_plan_edges(current_pairs, {"edges": [{"from": source, "to": target}]})
     if closing:
@@ -1207,30 +1273,84 @@ def _apply_one_plan_edge(ctx: dict, index: int, *, record_missing: bool = True):
     }, edge
 
 
-def _complete_plan_if_done(record: dict, proposal: dict, session: dict) -> bool:
-    """The plan proposal completes when every ref AND every edge is applied —
-    the reviewed STRUCTURE is fully materialized (content has its own
-    lifecycle: nodeStates/nodeRuns keep tracking Solve). dev/71: the parked
-    plan is KEPT after completion — the progressive lifecycle (per-row
-    Solve/Run, the driver's validate/approve actions) still reads it; a new
-    plan mint replaces it."""
+def _plan_structure_done(proposal: dict) -> bool:
+    """Whether every ref, every edge and every scenario of the plan exists: the
+    reviewed STRUCTURE is materialized (content has its own lifecycle). A plan
+    with no nodes is done once its connections are."""
     plan = proposal.get("plan") or {}
     plan_refs = {n["ref"] for n in plan.get("nodes", [])}
     edge_states = proposal.get("edgeStates") or {}
-    all_refs_applied = plan_refs and plan_refs == set(proposal.get("appliedRefs") or [])
-    all_edges_applied = all(
-        edge_states.get(str(i)) == "applied"
-        for i in range(len(plan.get("edges", [])))
+    return (
+        plan_refs == set(proposal.get("appliedRefs") or [])
+        and all(edge_states.get(str(i)) == "applied" for i in range(len(plan.get("edges", []))))
+        # #662: and every scenario the plan saves.
+        and plan_scenarios.all_saved(proposal)
     )
-    # #662: and every scenario the plan saves.
-    if not (all_refs_applied and all_edges_applied and plan_scenarios.all_saved(proposal)):
-        return False
+
+
+def _plan_removes(plan: dict) -> bool:
+    return bool(plan.get("removeNodes") or plan.get("removeEdges"))
+
+
+def _check_plan_completion(user_key, project_id, proposal_id, spec: dict, proposal: dict, session_id,
+                           plan: dict, refs_after: set) -> None:
+    """The checks of Apply plan that a plan applied a row at a time keeps, run
+    before the row or Connect all that can complete it writes anything: each
+    victim as it was reviewed, and no cycle closed through edges drawn since.
+    Not the shape digest, which the plan's own rows changed. Only for a plan
+    that removes, and only when *refs_after*, the refs applied once this call
+    lands, are all of the plan's."""
+    if not _plan_removes(plan) or {n["ref"] for n in plan.get("nodes", [])} != refs_after:
+        return
+    _check_plan_victims(user_key, project_id, proposal_id, spec, proposal, session_id, plan)
+    _check_plan_cycles(user_key, project_id, proposal_id, spec, proposal, session_id, plan)
+
+
+def _complete_plan_if_done(spec: dict, proposal: dict, session: dict) -> dict | None:
+    """The plan proposal completes when its structure is (``_plan_structure_done``),
+    and the call that completes it removes what the plan removes, as Apply plan
+    does (``_remove_plan_victims``): the victims leave the runs, and the
+    session's phase follows what stays. Answers the removed ids, for the live
+    canvas, or None when the plan is not complete yet. dev/71: the parked plan
+    is KEPT after completion, since the progressive lifecycle (per-row
+    Solve/Run, the driver's validate/approve actions) still reads it; a new
+    plan mint replaces it."""
+    if not _plan_structure_done(proposal):
+        return None
+    plan = proposal.get("plan") or {}
+    dataflow = spec.setdefault("dataflow", {})
+    remove_node_set = set(plan.get("removeNodes", []))
+    removed_edge_ids = _remove_plan_victims(
+        spec, dataflow.setdefault("nodes", []), dataflow.setdefault("edges", []),
+        remove_node_set, plan.get("removeEdges", []),
+    )
+    runs = {
+        node_id: status
+        for node_id, status in (session.get("nodeRuns") or {}).items()
+        if node_id not in remove_node_set
+    }
+    session["nodeRuns"] = runs
     proposal["status"] = "applied"
-    runs = session.get("nodeRuns") or {}
     unresolved = any(s in ("pending", "failed") for s in runs.values())
     session["phase"] = "applied" if unresolved else "ready"
     session["appliedPlanId"] = proposal.get("proposalId")
-    return True
+    return {"removedNodeIds": sorted(remove_node_set), "removedEdgeIds": sorted(removed_edge_ids)}
+
+
+def _log_plan_completed(user_key, project_id, session_id, attachment_id, proposal_id, spec: dict,
+                        proposal: dict, session: dict, removals: dict) -> None:
+    """The result of a plan whose last row or Connect all completed it: Apply
+    plan's (``_log_plan_applied``), for the whole plan, so it ends with the
+    Topology verdict and marks the card applied."""
+    plan = proposal.get("plan") or {}
+    saved = set((proposal.get("appliedScenarioIds") or {}).values())
+    _log_plan_applied(
+        user_key, project_id, session_id, attachment_id, proposal_id, spec,
+        list((proposal.get("appliedNodeIds") or {}).values()), plan.get("edges", []),
+        set(removals["removedNodeIds"]), set(removals["removedEdgeIds"]),
+        session.get("nodeRuns") or {}, [],
+        [s for s in plan_scenarios.existing_scenarios(spec) if s["id"] in saved],
+    )
 
 
 def apply_plan_edges(
@@ -1248,7 +1368,10 @@ def apply_plan_edges(
     the pinned plan's order). Each edge validates against the CURRENT spec at
     apply time; refusals are PER EDGE and named — partial success is normal
     and honest. An edge the user already drew manually applies as a no-op.
-    When every ref and every edge is applied, the proposal completes."""
+    When every ref and every edge is applied, the proposal completes, as with
+    a plan of connections only: the apply that completes it removes what the
+    plan removes, checked first as Apply plan checks it, and its result ends
+    with the Topology verdict."""
     spec = agents_spec_reads._read_spec_or_404(user_key, project_id)
     record = agents_spec_reads._record_or_404(spec, attachment_id)
     proposal = agents_store._pending_plan_proposal(spec, attachment_id, proposal_id)
@@ -1258,6 +1381,13 @@ def apply_plan_edges(
         bad = [i for i in indices if not isinstance(i, int) or not (0 <= i < len(plan_edges))]
         if bad:
             raise AgentServiceError(f"edge indices out of range: {bad}", 422)
+    session_id = record.get("sessionId")
+    # Connections are what is left of a plan whose nodes all exist: checked
+    # as Apply plan checks one that removes, before any of them is written.
+    _check_plan_completion(
+        user_key, project_id, proposal_id, spec, proposal, session_id, plan,
+        set(proposal.get("appliedRefs") or []),
+    )
     ctx = _plan_edge_context(user_key, project_id, spec, proposal)
     edge_states = ctx["edge_states"]
     wanted = indices if indices is not None else [
@@ -1275,25 +1405,16 @@ def apply_plan_edges(
     proposal["baseGraphDigest"] = agents_spec_reads._graph_shape_digest(spec)
     session = record.setdefault("builderSession", {})
     session["edgeStates"] = dict(edge_states)
-    session_id = record.get("sessionId")
-    completed = _complete_plan_if_done(record, proposal, session)
+    removals = _complete_plan_if_done(spec, proposal, session)
+    projects_storage.write_spec(user_key, project_id, spec)
     applied_now = sum(1 for r in results.values() if r["status"] == "applied")
     refused_now = sum(1 for r in results.values() if r["status"] == "refused")
-    if isinstance(session_id, str) and (applied_now or refused_now):
-        if completed:
-            agents_store._log_applied_turn(
-                user_key, project_id, session_id, attachment_id, proposal_id,
-                f"Applied: {applied_now} connection{'s' if applied_now != 1 else ''} — "
-                "the plan is fully applied.",
-                "Applied: plan connections",
-                [
-                    f"+{count_label(applied_now, 'connection')}"
-                    + (f" · {refused_now} refused" if refused_now else ""),
-                    "plan complete",
-                    f"proposal {proposal_id[:8]}",
-                ],
-            )
-        else:
+    if isinstance(session_id, str):
+        if removals is not None:
+            # The result Apply plan writes, for the whole plan.
+            _log_plan_completed(user_key, project_id, session_id, attachment_id, proposal_id,
+                                spec, proposal, session, removals)
+        elif applied_now or refused_now:
             sessions.append_turns(
                 user_key, project_id, session_id, attachment_id,
                 [sessions.make_turn(
@@ -1321,6 +1442,8 @@ def apply_plan_edges(
         # The bridge inserts these into the LIVE canvas (dev/67-8).
         "createdEdges": created_edges,
         "builderSession": session,
+        # What left the dataflow when this apply completed the plan.
+        **(removals or {}),
     }
 
 
@@ -1465,26 +1588,9 @@ def _check_plan_apply_preconditions(user_key, project_id, proposal_id, spec: dic
             user_key, project_id, proposal_id, spec, proposal, session_id,
             "the canvas changed since this plan was proposed — ask the agent to replan",
         )
-    # DEC-049.1: per-victim content digests.
-    remove_nodes = plan.get("removeNodes", [])
-    victim_pins = proposal.get("removeContentSha256") or {}
-    spec_nodes_by_id = {
-        n.get("id"): n
-        for n in (spec.get("dataflow") or {}).get("nodes") or []
-        if isinstance(n, dict)
-    }
-    for node_id in remove_nodes:
-        victim = spec_nodes_by_id.get(node_id)
-        current = hashlib.sha256(
-            ((victim or {}).get("content") or "").encode("utf-8")
-        ).hexdigest()
-        if victim is None or current != victim_pins.get(node_id):
-            label = ((victim or {}).get("goal") or node_id)[:60]
-            raise agents_store._mark_stale(
-                user_key, project_id, proposal_id, spec, proposal, session_id,
-                f"the node you were about to remove changed ({label}) — "
-                "ask the agent to replan",
-            )
+    spec_nodes_by_id, remove_nodes = _check_plan_victims(
+        user_key, project_id, proposal_id, spec, proposal, session_id, plan,
+    )
     try:
         available = {t["id"] for t in packages_services.available_templates(user_key, project_id)}
     except Exception as exc:
@@ -1504,6 +1610,43 @@ def _check_plan_apply_preconditions(user_key, project_id, proposal_id, spec: dic
             f"plan node type(s) no longer available: {', '.join(sorted(set(missing)))} — "
             "ask the agent to replan",
         )
+    _check_plan_cycles(user_key, project_id, proposal_id, spec, proposal, session_id, plan)
+    return spec_nodes_by_id, remove_nodes
+
+
+def _check_plan_victims(user_key, project_id, proposal_id, spec: dict, proposal: dict, session_id,
+                        plan: dict) -> tuple[dict, list]:
+    """DEC-049.1: every removal victim pinned by its content at mint. One
+    edited since, or gone, makes the plan stale (409) before anything mutates.
+    Answers the spec's nodes by id and the removal list."""
+    remove_nodes = plan.get("removeNodes", [])
+    victim_pins = proposal.get("removeContentSha256") or {}
+    spec_nodes_by_id = {
+        n.get("id"): n
+        for n in (spec.get("dataflow") or {}).get("nodes") or []
+        if isinstance(n, dict)
+    }
+    for node_id in remove_nodes:
+        victim = spec_nodes_by_id.get(node_id)
+        current = hashlib.sha256(
+            ((victim or {}).get("content") or "").encode("utf-8")
+        ).hexdigest()
+        if victim is None or current != victim_pins.get(node_id):
+            label = ((victim or {}).get("goal") or node_id)[:60]
+            raise agents_store._mark_stale(
+                user_key, project_id, proposal_id, spec, proposal, session_id,
+                f"the node you were about to remove changed ({label}): "
+                "ask the agent to replan",
+            )
+    return spec_nodes_by_id, remove_nodes
+
+
+def _check_plan_cycles(user_key, project_id, proposal_id, spec: dict, proposal: dict, session_id,
+                       plan: dict) -> None:
+    """dev/112 (DEC-070): the plan's data edges against the CURRENT spec, net
+    of its removals, with the refs applied so far at their nodes. One that
+    would close a cycle through edges drawn since the review makes the plan
+    stale (409) before anything mutates."""
     nodes = (spec.get("dataflow") or {}).get("nodes") or []
     edges = (spec.get("dataflow") or {}).get("edges") or []
     # dev/112 (DEC-070): topology re-checked against the CURRENT spec BEFORE
@@ -1530,7 +1673,6 @@ def _check_plan_apply_preconditions(user_key, project_id, proposal_id, spec: dic
             "the canvas changed since this plan was proposed — applying it would now "
             f"close a cycle ({plan_topology.format_cycle(path, _lbl)}) — ask the agent to replan",
         )
-    return spec_nodes_by_id, remove_nodes
 
 
 def _remove_plan_victims(spec: dict, nodes: list, edges: list, remove_node_set: set, remove_edges: list) -> set:
@@ -1555,30 +1697,32 @@ def _remove_plan_victims(spec: dict, nodes: list, edges: list, remove_node_set: 
 def _create_plan_nodes(user_key, spec: dict, nodes: list, plan: dict, proposal: dict,
                        starters: dict, *, agents: list[dict] | None = None,
                        templates: dict | None = None) -> tuple[list, list, dict]:
-    """The plan's new nodes at the mint-time layout (+ review-stage overlays); refs already applied
-    per-node are REAL nodes — skipped, their ids seed the edge resolution. Each created node gets its
-    agents (*agents*, ``_plan_node_agents``) in THIS apply's single spec write (dev/126). A ref in
-    *starters* starts with its template's starter and widgets (``_content_starters``)."""
+    """The plan's new nodes at the mint-time layout (+ review-stage overlays). A ref a row applied
+    is a node of the dataflow already: it is not created again, and its id seeds the edge
+    resolution, as a connection already there is not drawn again (``_create_plan_edges``). Each
+    created node gets its agents (*agents*, ``_plan_node_agents``) in THIS apply's single spec
+    write (dev/126). A ref in *starters* starts with its template's starter and widgets
+    (``_content_starters``)."""
     right = _right_edge(nodes)
     ys = [n.get("y") for n in nodes if isinstance(n, dict) and isinstance(n.get("y"), (int, float))]
     base_x = (right + _NODE_H_GUTTER) if right is not None else 80.0
     base_y = min(ys) if ys else 80.0
     depths = _plan_depths(plan.get("nodes", []), plan.get("edges", []))
     rows: dict[int, int] = {}
-    # dev/67-5: the mint-time layout + review-stage overlays; refs already
-    # applied per-node are REAL nodes — skipped here, their ids seed the edge
+    # dev/67-5: the mint-time layout + review-stage overlays; the refs rows
+    # applied are REAL nodes, skipped here, whose ids seed the edge
     # resolution so mixed per-node/whole-plan flows wire correctly.
     positions = proposal.get("positions") or {}
     edited_goals = proposal.get("editedGoals") or {}
-    already_applied = set(proposal.get("appliedRefs") or [])
     ref_to_id: dict[str, str] = dict(proposal.get("appliedNodeIds") or {})
+    in_dataflow = {n.get("id") for n in nodes if isinstance(n, dict) and n.get("id")}
     created_nodes: list[dict] = []
     attached_results: list[dict] = []
     for plan_node in plan.get("nodes", []):
         depth = depths.get(plan_node["ref"], 0)
         row = rows.get(depth, 0)
         rows[depth] = row + 1
-        if plan_node["ref"] in already_applied:
+        if ref_to_id.get(plan_node["ref"]) in in_dataflow:
             continue
         node_id = str(uuid.uuid4())
         ref_to_id[plan_node["ref"]] = node_id
@@ -1615,7 +1759,8 @@ def _create_plan_edges(user_key, project_id, proposal_id, spec: dict, proposal: 
                        nodes: list, edges: list, ref_to_id: dict, spec_nodes_by_id: dict) -> list:
     """The plan's edges: endpoints resolve through the ref map ∪ existing ids (dev/59); handles are
     explicit end-to-end (DEC-051): an edge into a node with several inputs gets a deterministic
-    free circle; an interaction edge (dev/112) takes no port and no circle."""
+    free circle; an interaction edge (dev/112) takes no port and no circle. An edge a row applied,
+    or one already in the dataflow on its circle (``_existing_plan_edge``), is not drawn again."""
     # dev/67-3 (DEC-051): handles are explicit end-to-end. An edge into a
     # growing node gets a deterministic free circle (a named free toHandle
     # wins; occupied or unnamed falls to the lowest free); the bridge passes
@@ -1642,10 +1787,21 @@ def _create_plan_edges(user_key, project_id, proposal_id, spec: dict, proposal: 
         if str(e.get("type") or "") != "Interaction" and _takes_circles(available.get(types_by_id.get(e.get("target")))):
             circles_taken.setdefault(e.get("target"), set()).add(e.get("targetHandle") or "in")
     created_edges: list[dict] = []
-    for plan_edge in plan.get("edges", []):
+    # A connection a row applied, or one the dataflow held before this apply
+    # (a row drew it, or the user did), is not drawn again: no node is fed
+    # twice by one plan edge. What this apply draws never stands in for
+    # another plan edge, so a node fed twice by one node keeps both feeds.
+    edge_states = proposal.get("edgeStates") or {}
+    before = list(edges)
+    plan_edges = plan.get("edges", [])
+    for index, plan_edge in enumerate(plan_edges):
         # dev/59: endpoints resolve through the ref map ∪ existing ids.
         source = ref_to_id.get(plan_edge["from"], plan_edge["from"])
         target = ref_to_id.get(plan_edge["to"], plan_edge["to"])
+        if edge_states.get(str(index)) == "applied" or _existing_plan_edge(
+            before, plan_edges, index, source, target,
+        ) is not None:
+            continue
         if plan_topology.is_interaction_edge(plan_edge):
             # dev/112: the Trill's feedback edge — in/out handles both ends,
             # type Interaction (what loadTrill/TrillGenerator round-trip); no

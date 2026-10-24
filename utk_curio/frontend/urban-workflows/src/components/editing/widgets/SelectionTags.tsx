@@ -194,7 +194,7 @@ export function SelectionSection({
             <span
               className={exists && !isOverCap(tag) ? styles.sharedValue : styles.selectionProblem}
               data-selection-state={tag.name}
-              title={status}
+              data-tooltip={status}
             >
               {status}
             </span>

@@ -9,21 +9,29 @@ and import order between siblings cannot matter.
 from __future__ import annotations
 
 import hashlib
+import json
 import uuid
 
 from utk_curio.backend.app.agents.application import source_grounding
 from utk_curio.backend.app.agents.application import verify
 from utk_curio.backend.app.agents.domain import content
+from utk_curio.backend.app.agents.domain import dashboards
+from utk_curio.backend.app.agents.domain import map_edits
+from utk_curio.backend.app.agents.domain import node_settings
 from utk_curio.backend.app.agents.domain import widget_grammar
 from utk_curio.backend.app.agents.application import tool_rounds as agents_tool_rounds
 from utk_curio.backend.app.agents.application.proposals import acquire as agents_acquire
 from utk_curio.backend.app.agents.application.proposals import cards as agents_cards
+from utk_curio.backend.app.agents.application.proposals import plan_scenarios as agents_plan_scenarios
 from utk_curio.backend.app.agents.application.proposals import plans as agents_plans
 from utk_curio.backend.app.agents.application.proposals import store as agents_store
 from utk_curio.backend.app.agents.application.turns import delegates as agents_delegates
 from utk_curio.backend.app.agents.application.turns import grounding as agents_grounding
 from utk_curio.backend.app.agents.application.turns import roster as agents_roster
+from utk_curio.backend.app.execution.code_references import check_widget_def, normalize_widgets
+from utk_curio.backend.app.execution.workflow_spec import CONTENT_KIND_NONE, PARAMETER_TYPE
 from utk_curio.backend.app.projects import storage as projects_storage
+from utk_curio.backend.app.agents.domain import agent_text
 
 
 def _resolve_catalog_dataset(project_id: str, dataset_id: object) -> tuple[dict | None, str]:
@@ -39,18 +47,15 @@ def _resolve_catalog_dataset(project_id: str, dataset_id: object) -> tuple[dict 
     from utk_curio.backend.app.datasets.domain.errors import DatasetCatalogError
 
     if not isinstance(dataset_id, str) or not dataset_id.strip():
-        return None, "params.datasetId must be a non-empty dataset id string"
+        return None, agent_text.message("mint.dataset-id-required")
     try:
         item = DatasetCatalogService(getattr(g, "user", None)).get_dataset(
             dataset_id.strip(), dataflow_id=project_id
         )
     except DatasetCatalogError:
-        return None, (
-            f"dataset {dataset_id!r} is not in this project's Data Catalog — "
-            "propose only ids from catalog.search results"
-        )
+        return None, agent_text.message("mint.dataset-not-in-catalog", dataset_id=repr(dataset_id))
     except Exception as exc:  # a broken catalog is data, not a run error
-        return None, f"the Data Catalog is unavailable: {exc}"
+        return None, agent_text.message("mint.data-catalog-unavailable", exc=exc)
     return item, ""
 
 
@@ -68,13 +73,12 @@ def _mint_dataset_install(
     if item.get("installed"):
         return (
             "refused",
-            f"dataset {item.get('title')!r} is already installed in this project — "
-            "tell the user instead of proposing",
+            agent_text.message("mint.dataset-already-installed", title=repr(item.get('title'))),
             None,
         )
     spec = projects_storage.read_spec(user_key, project_id)
     if spec is None:
-        return "refused", "no saved project spec is available", None
+        return "refused", agent_text.message("mint.no-saved-spec"), None
     dataset_id = str(params.get("datasetId")).strip()
     name = str(item.get("title") or dataset_id)
     proposal_id = uuid.uuid4().hex
@@ -108,8 +112,7 @@ def _mint_dataset_install(
     )
     return (
         "proposed",
-        f"proposal {proposal_id} created to install dataset {name!r}; it awaits the "
-        "user's explicit review — do NOT assume it was installed",
+        agent_text.message("mint.dataset-install-proposed", proposal_id=proposal_id, name=repr(name)),
         part,
     )
 
@@ -159,12 +162,9 @@ def _package_install_miss_hint(granted) -> str:
     (DEC-063: an instruction must be executable on the path it is given).
     The enlist roster is composed for every run holding package.install, so
     it is always nameable; packages.catalog only when granted."""
-    hint = (
-        "use the dirName shown in parentheses after '(package …)' in the "
-        "'Installed but NOT enlisted in this project' list"
-    )
+    hint = agent_text.message("mint.package-miss-hint")
     if "packages.catalog" in (granted or []):
-        hint += ", or a dirName from packages.catalog results"
+        hint += ", " + agent_text.message("mint.package-miss-hint-catalog")
     return hint
 
 
@@ -180,7 +180,7 @@ def _mint_package_install(
     params = req.get("params") or {}
     dir_name = params.get("dirName")
     if not isinstance(dir_name, str) or not dir_name.strip():
-        return agents_tool_rounds._refuse_params("params.dirName must be a non-empty package dirName string")
+        return agents_tool_rounds._refuse_params(agent_text.message("mint.dir-name-required"))
     dir_name = dir_name.strip()
     try:
         rows = {
@@ -188,32 +188,33 @@ def _mint_package_install(
             for r in packages_services.agent_catalog_overview(user_key, project_id)
         }
     except Exception as exc:  # a broken catalog is data, not a run error
-        return "refused", f"the Nodes Catalog is unavailable: {exc}", None
+        return "refused", agent_text.message("mint.nodes-catalog-unavailable", exc=exc), None
     row, candidates = _resolve_catalog_dir_name(dir_name, rows)
     if row is None and candidates:
         return agents_tool_rounds._refuse_params(
-            f"package {dir_name!r} names more than one major in the Nodes Catalog — "
-            f"propose exactly one of: {', '.join(candidates)}"
+            agent_text.message(
+                "mint.package-ambiguous-major", dir_name=repr(dir_name), candidates=', '.join(candidates),
+            )
         )
     if row is None:
         return agents_tool_rounds._refuse_params(
-            f"package {dir_name!r} is not in the Nodes Catalog — "
-            f"{_package_install_miss_hint(loop_ctx.get('granted'))}"
+            agent_text.message(
+                "mint.package-not-in-catalog", dir_name=repr(dir_name),
+                hint=_package_install_miss_hint(loop_ctx.get('granted')),
+            )
         )
     dir_name = row["dirName"]  # the canonical dirName is what gets pinned
     if row["builtin"]:
         return agents_tool_rounds._refuse_params(
-            f"package {row['name']!r} is built-in — always present, never proposed; "
-            "tell the user it is already available"
+            agent_text.message("mint.package-built-in", name=repr(row['name']))
         )
     if row["installed"]:
         return agents_tool_rounds._refuse_params(
-            f"package {row['name']!r} is already installed in this project — "
-            "tell the user instead of proposing"
+            agent_text.message("mint.package-already-installed", name=repr(row['name']))
         )
     spec = projects_storage.read_spec(user_key, project_id)
     if spec is None:
-        return "refused", "no saved project spec is available", None
+        return "refused", agent_text.message("mint.no-saved-spec"), None
     reason = params.get("reason")
     reason = reason.strip()[:_PACKAGE_REASON_MAX_CHARS] if isinstance(reason, str) else ""
     # dev/105 A3: the findings ride the ENLIST request as the A12 rows the
@@ -253,9 +254,7 @@ def _mint_package_install(
     agents_store._store_proposal(user_key, project_id, spec, loop_ctx, proposal, part)
     return (
         "proposed",
-        f"proposal {proposal_id} created to install package {row['name']!r}; it awaits "
-        "the user's explicit review through the package install dialog — do NOT "
-        "assume it was installed",
+        agent_text.message("mint.package-install-proposed", proposal_id=proposal_id, name=repr(row['name'])),
         part,
     )
 
@@ -321,7 +320,7 @@ def _new_template_code(request, template: dict) -> list[tuple[str, str, str]]:
     source = request.files.get(parsed.source or "")
     if source is not None:
         try:
-            pieces.append((f"its source file {parsed.source}", source.decode("utf-8"), parsed.engine))
+            pieces.append((agent_text.message("mint.new-template-where-source", source=parsed.source), source.decode("utf-8"), parsed.engine))
         except UnicodeDecodeError:
             pass
     for index, node in enumerate(request.nodes):
@@ -351,30 +350,26 @@ def _new_template_checks(
     reason = justification.strip() if isinstance(justification, str) else ""
     if not reason:
         return agents_tool_rounds._refuse_params(
-            f"the review needs your reasoning: this draft adds the new node "
-            f"type{'s' if len(added) > 1 else ''} {names}, so the build request needs a "
-            '"justification" beside "mode" that names the closest existing templates '
-            "you considered and why each is inadequate"
+            agent_text.message("mint.draft-justification-required", s='s' if len(added) > 1 else '', names=names)
         ), "", None
     if len(reason) > _JUSTIFICATION_MAX_CHARS:
         return agents_tool_rounds._refuse_params(
-            f"the justification is {len(reason)} characters and the review card shows "
-            f"at most {_JUSTIFICATION_MAX_CHARS}: name the closest existing templates and "
-            "why each is inadequate, briefly"
+            agent_text.message(
+                "mint.draft-justification-too-long", length=len(reason), max_chars=_JUSTIFICATION_MAX_CHARS,
+            )
         ), "", None
     try:
         existing = packages_services.available_templates(user_key, project_id)
     except Exception as exc:  # noqa: BLE001: a broken registry is data, not a run error
-        return ("refused", f"the node template registry is unavailable: {exc}", None), "", None
+        return ("refused", agent_text.message("mint.template-registry-unavailable", exc=exc), None), "", None
     for template in added:
         twin = _reuse_twin(template, existing)
         if twin is not None:
             return agents_tool_rounds._refuse_params(
-                f"the new template {template['id']!r} matches the existing template "
-                f"{twin['id']} ({twin['label']!r}): that is reuse territory. Use "
-                f"{twin['id']} instead of a new node type; when it cannot do the job, give "
-                "the new template a label no existing template has, and say in the "
-                f"justification why {twin['id']} is inadequate"
+                agent_text.message(
+                    "mint.draft-template-duplicates", template_id=repr(template['id']), twin_id=twin['id'],
+                    twin_label=repr(twin['label']),
+                )
             ), "", None
     refs: list[dict] = []
     for template in added:
@@ -388,7 +383,9 @@ def _new_template_checks(
             )
             if refusal:
                 return agents_tool_rounds._refuse_params(
-                    f"the new template {template['id']!r}, {where}: {refusal}"
+                    agent_text.message(
+                        "mint.new-template-ungrounded", template_id=repr(template['id']), where=where, refusal=refusal,
+                    )
                 ), "", None
             if verdict.source:
                 refs.extend(verdict.source.get("refs") or [])
@@ -425,7 +422,7 @@ def _mint_package_draft_apply(
     try:
         request = build_models.parse_build_request(params)
     except (build_models.BuildRequestError, ValueError) as exc:
-        return "refused", f"invalid build request: {exc}", None
+        return "refused", agent_text.message("mint.draft-request-invalid", exc=exc), None
     refusal, justification, source = _new_template_checks(
         user_key, project_id, loop_ctx, request, justification,
     )
@@ -433,11 +430,11 @@ def _mint_package_draft_apply(
         return refusal
     spec = projects_storage.read_spec(user_key, project_id)
     if spec is None:
-        return "refused", "no saved project spec is available", None
+        return "refused", agent_text.message("mint.no-saved-spec"), None
     try:
         job = build_pipeline.run_build(user_key, request)
     except Exception as exc:  # noqa: BLE001 — a broken build service is data
-        return "refused", f"the package build service failed to start: {exc}", None
+        return "refused", agent_text.message("mint.draft-build-unavailable", exc=exc), None
     if job.phase != "ready":
         result = job.result
         details = ""
@@ -445,10 +442,7 @@ def _mint_package_draft_apply(
             details = "; ".join(list(result.warnings)[:2] + list(result.policy_findings)[:3])
         if not details:
             details = "; ".join(e["message"] for e in job.events[-2:])
-        return "refused", (
-            f"the package build did not complete (phase {job.phase}): {details} "
-            "— revise the draft and request package.draft.apply again"
-        ), None
+        return "refused", agent_text.message("mint.draft-build-incomplete", phase=job.phase, details=details), None
 
     result = job.result
     manifest_name = str(request.manifest.get("name") or request.target)
@@ -524,10 +518,9 @@ def _mint_package_draft_apply(
     agents_store._store_proposal(user_key, project_id, spec, loop_ctx, proposal, part)
     return (
         "proposed",
-        f"proposal {proposal_id} created: {summary.lower()} (artifact "
-        f"{result.artifact_digest[:12]}…). It awaits the user's explicit review "
-        "of the diff, dependencies, and preview — do NOT claim the package or "
-        "its nodes exist until the user applies it",
+        agent_text.message(
+            "mint.draft-proposed", proposal_id=proposal_id, summary=summary.lower(), digest=result.artifact_digest[:12],
+        ),
         part,
     )
 
@@ -546,10 +539,12 @@ def _mint_proposal(
     Returns ``(status, text_for_model, proposal_part | None)``."""
     session_id = loop_ctx.get("session_id")
     if not isinstance(session_id, str):
-        return "refused", "proposals need a persistent conversation; this attachment has none", None
+        return "refused", agent_text.message("mint.no-conversation"), None
     tool = req.get("tool")
     if tool == "node.content.write":
         return _mint_node_content_write(user_key, project_id, loop_ctx, req)
+    if tool == "node.settings.write":
+        return _mint_node_settings_write(user_key, project_id, loop_ctx, req)
     if tool == "node.create":
         return _mint_node_create(user_key, project_id, loop_ctx, req)
     if tool == "dataset.install":
@@ -562,7 +557,7 @@ def _mint_proposal(
         return _mint_package_draft_apply(user_key, project_id, loop_ctx, req)
     if tool == "dataflow.plan.write":
         return _mint_plan_from_params(user_key, project_id, loop_ctx, req)
-    return "refused", f"no proposal flow exists for tool {tool!r}", None
+    return "refused", agent_text.message("mint.no-proposal-flow", tool=repr(tool)), None
 
 
 def _mint_plan_from_params(
@@ -581,8 +576,7 @@ def _mint_plan_from_params(
         listed = "\n".join(f"- {e}" for e in errors[:10])
         return (
             "refused",
-            "your dataflowPlan was invalid — fix exactly these problems and "
-            f"resend the complete corrected request:\n{listed}",
+            agent_text.message("mint.plan-params-invalid", listed=listed),
             None,
         )
     return agents_plans._mint_dataflow_plan(user_key, project_id, loop_ctx, plan)
@@ -597,34 +591,37 @@ def _node_display_name(node: dict, entry: dict | None) -> str:
     return name + (f" · {title}" if isinstance(title, str) and title.strip() else "")
 
 
+def _target_node_id(loop_ctx: dict, params: dict) -> str | None:
+    """The node a request names in ``nodeId``, else the node the agent is
+    attached to, else None."""
+    node_id = params.get("nodeId")
+    if isinstance(node_id, str) and node_id:
+        return node_id
+    target = loop_ctx.get("target")
+    return target.get("targetId") if isinstance(target, dict) and target.get("kind") == "node" else None
+
+
 def _mint_node_content_write(
     user_key: str, project_id: str, loop_ctx: dict, req: dict
 ) -> tuple[str, str, dict | None]:
     """The dev/41 mutation: replace one existing node's content, digest-pinned."""
 
     params = req.get("params") or {}
-    node_id = params.get("nodeId")
-    if not isinstance(node_id, str) or not node_id:
-        target = loop_ctx.get("target")
-        node_id = (
-            target.get("targetId")
-            if isinstance(target, dict) and target.get("kind") == "node"
-            else None
-        )
+    node_id = _target_node_id(loop_ctx, params)
     if not node_id:
-        return "refused", "no nodeId given and this agent is not attached to a node", None
+        return "refused", agent_text.message("tools.no-node-id"), None
     proposed = content.extract_node_content(params.get("content"))
     if not proposed:
-        return "refused", "params.content must be a non-empty string", None
+        return "refused", agent_text.message("mint.content-required"), None
     if len(proposed) > content.PROPOSAL_CONTENT_MAX_CHARS:
-        return "refused", "params.content exceeds the proposal size bound", None
+        return "refused", agent_text.message("mint.content-too-large"), None
     spec = projects_storage.read_spec(user_key, project_id)
     if spec is None:
-        return "refused", "no saved project spec is available", None
+        return "refused", agent_text.message("mint.no-saved-spec"), None
     nodes = (spec.get("dataflow") or {}).get("nodes") or []
     node = next((n for n in nodes if isinstance(n, dict) and n.get("id") == node_id), None)
     if node is None:
-        return "refused", f"node {node_id!r} not found in the saved spec", None
+        return "refused", agent_text.message("tools.node-not-in-spec", node_id=repr(node_id)), None
     # dev/114 (DEC-072): the gate, keyed on the EXISTING node's type — the
     # dev/73 runtime review mint inherits it (a refusal is its honest text).
     from utk_curio.backend.app.packages import service as packages_services
@@ -632,12 +629,22 @@ def _mint_node_content_write(
     entry, _err = packages_services.resolve_template(user_key, project_id, node.get("type"))
     verdict, refusal = agents_grounding._gate_generated_content(
         user_key, project_id, loop_ctx,
-        code=proposed, engine=(entry or {}).get("engine"),
+        code=proposed, engine=source_grounding.code_engine(entry),
         node_type=node.get("type"), params=params,
-        base=loop_ctx.get("_grounding_base"),
+        base=loop_ctx.get("_grounding_base"), chips=agents_grounding._chip_context(spec, node_id),
+        node_id=node_id,
     )
     if refusal:
         return agents_tool_rounds._refuse_params(refusal)
+    # A Map Edits node's code is held to what the node reads; the code it
+    # holds already is the user's own.
+    unreadable = map_edits.refusal(user_key, project_id, node.get("type"), proposed, current=node.get("content") or "")
+    if unreadable:
+        return agents_tool_rounds._refuse_params(unreadable)
+    # A pinned tile's spec is held to what its dashboard publishes.
+    unpublishable = dashboards.refusal(user_key, project_id, node, proposed)
+    if unpublishable:
+        return agents_tool_rounds._refuse_params(unpublishable)
     basis = hashlib.sha256((node.get("content") or "").encode("utf-8")).hexdigest()
     proposal_id = uuid.uuid4().hex
     # The node as the user knows it, the way node.create names one: its kind,
@@ -667,22 +674,168 @@ def _mint_node_content_write(
     agents_store._store_proposal(user_key, project_id, spec, loop_ctx, proposal, part)
     return (
         "proposed",
-        f"proposal {proposal_id} created for node {node_id!r}; it awaits the user's "
-        "explicit review — do NOT assume it was applied",
+        agent_text.message("mint.content-write-proposed", proposal_id=proposal_id, node_id=repr(node_id)),
         part,
     )
 
 
-def _node_create_widgets(entry: dict, raw: object) -> tuple[list, list[str]]:
+#: What node.settings.write changes, in the order its schema lists them: the
+#: settings ``node_settings`` walks, then the node's widget values.
+_SETTING_PARAMS = ("dataPool", "simpleVis", "spatialJoin", "widgets")
+
+
+def _settings_basis(node: dict, change: dict) -> str:
+    """The digest of what *change* touches on *node*, as the node reads it:
+    its type, each setting the change names as the node does it
+    (``node_settings.saved``) and each widget it gives a value to. The apply
+    takes it again, so a setting changed since the review stales the card and
+    one the change does not touch leaves it as it is."""
+    metadata = node.get("metadata") if isinstance(node.get("metadata"), dict) else {}
+    values = change.get("widgets") or {}
+    touched = {
+        "type": node.get("type"),
+        "settings": {key: setting for key, setting in node_settings.saved(metadata).items() if key in change},
+        "widgets": [widget for widget in normalize_widgets(metadata.get("widgets")) if widget["name"] in values],
+    }
+    return hashlib.sha256(json.dumps(touched, sort_keys=True, ensure_ascii=False).encode("utf-8")).hexdigest()
+
+
+def _mint_node_settings_write(
+    user_key: str, project_id: str, loop_ctx: dict, req: dict
+) -> tuple[str, str, dict | None]:
+    """A change of one existing node's settings: a Data Pool's modes, a Simple
+    View's image column, a Spatial Join's operation and output, and the values
+    of its widgets, each judged by its node's own rule on a node whose
+    template keeps it, worded for the card as the node words it, and pinned to
+    what it touches (``_settings_basis``)."""
+    params = req.get("params") or {}
+    taken = ("nodeId", *_SETTING_PARAMS)
+    unknown = sorted(str(key) for key in set(params) - set(taken))
+    if unknown:
+        return agents_tool_rounds._refuse_params(agent_text.message(
+            "node-settings.unknown-params", unknown=", ".join(unknown), keys=", ".join(taken),
+        ))
+    if all(params.get(key) is None for key in _SETTING_PARAMS):
+        return agents_tool_rounds._refuse_params(agent_text.message(
+            "node-settings.nothing-given", keys=", ".join(_SETTING_PARAMS[:-1]) + " or " + _SETTING_PARAMS[-1],
+        ))
+    node_id = _target_node_id(loop_ctx, params)
+    if not node_id:
+        return "refused", agent_text.message("tools.no-node-id"), None
+    spec = projects_storage.read_spec(user_key, project_id)
+    if spec is None:
+        return "refused", agent_text.message("mint.no-saved-spec"), None
+    nodes = (spec.get("dataflow") or {}).get("nodes") or []
+    node = next((n for n in nodes if isinstance(n, dict) and n.get("id") == node_id), None)
+    if node is None:
+        return "refused", agent_text.message("tools.node-not-in-spec", node_id=repr(node_id)), None
+    from utk_curio.backend.app.packages import service as packages_services
+
+    entry, _err = packages_services.resolve_template(user_key, project_id, node.get("type"))
+    label = (entry or {}).get("label") or node.get("type")
+    metadata = node.get("metadata") if isinstance(node.get("metadata"), dict) else {}
+    # Each setting by its node's rule, on a node whose template keeps it.
+    change, problems = node_settings.parse_change(params, "params")
+    if change:
+        behavior = packages_services.template_behavior(user_key, project_id, node.get("type"))
+        problems += node_settings.template_problems(change, behavior, label, lambda key: f"params.{key}")
+    # Each value by its widget's rule, as the Widgets tab takes it.
+    widgets = normalize_widgets(metadata.get("widgets"))
+    values, widget_problems = widget_grammar.parse_values(params.get("widgets"), widgets, "params.widgets", label)
+    problems += widget_problems
+    if problems:
+        return agents_tool_rounds._refuse_params("; ".join(problems))
+    by_name = {widget["name"]: widget for widget in widgets}
+    lines = node_settings.describe_change(change) + [
+        widget_grammar.describe_value(by_name[name], value) for name, value in (values or {}).items()
+    ]
+    if not node_settings.changes_anything(metadata, change) and not widget_grammar.changes_anything(widgets, values or {}):
+        return agents_tool_rounds._refuse_params(agent_text.message(
+            "node-settings.changes-nothing", label=label, settings="; ".join(lines),
+        ))
+    if values is not None:
+        change["widgets"] = values
+    basis = _settings_basis(node, change)
+    proposal_id = uuid.uuid4().hex
+    node_name = _node_display_name(node, entry)
+    summary = f"Change the settings of the {node_name}"
+    part = content.make_proposal_part(
+        proposal_id=proposal_id,
+        tool="node.settings.write",
+        summary=summary,
+        preview="\n".join(lines),
+        pins={"nodeId": node_id, "settingsSha256": basis},
+    )
+    # The card's lines, each change in its node's own words.
+    part["settingLines"] = lines
+    proposal = {
+        "proposalId": proposal_id,
+        "tool": "node.settings.write",
+        "nodeId": node_id,
+        "nodeName": node_name,
+        "settings": change,
+        "settingLines": lines,
+        "settingsSha256": basis,
+        "summary": summary,
+        "status": "pending",
+    }
+    agents_store._store_proposal(user_key, project_id, spec, loop_ctx, proposal, part)
+    return (
+        "proposed",
+        agent_text.message("mint.settings-write-proposed", proposal_id=proposal_id, node_id=repr(node_id)),
+        part,
+    )
+
+
+def _node_create_widgets(entry: dict, raw: object, nodes: list) -> tuple[list, list[str]]:
     """#662: the widgets a created node declares, or why they are refused: a
-    widget is placed by a node's code or spec, so only such a node holds one."""
+    widget is placed by a node's code or spec, so only such a node holds one.
+    A Parameter node holds exactly one, which no other Parameter node of the
+    dataflow (*nodes*) names: a plan's Parameter node's rule
+    (``plan_scenarios.mint_errors``), in its words."""
     widgets, problems = widget_grammar.parse_widgets(raw, "params.widgets")
     if problems:
         return [], problems
+    if str(entry.get("id") or "").split("@", 1)[0] == PARAMETER_TYPE:
+        if len(widgets) != 1:
+            return [], [agent_text.message("plan.parameter-one-widget", where="the node you create")]
+        taken = agents_plan_scenarios._parameter_widgets(nodes, set())
+        problem = check_widget_def(widgets[0], taken, parameter=True)
+        if problem:
+            return [], [f"params.widgets[0] ({widgets[0]['name']!r}): {problem}"]
+        return widgets, []
     if widgets and entry.get("contentKind") not in ("code", "grammar"):
-        return [], [f"params.widgets: a {entry.get('label') or entry.get('id')} node cannot hold widgets; "
-                    "a widget is placed in a node's code or spec"]
+        return [], [agent_text.message("mint.widgets-not-placeable", label=entry.get('label') or entry.get('id'))]
     return widgets, []
+
+
+def _node_create_settings(
+    user_key: str, project_id: str, entry: dict, params: dict,
+) -> tuple[dict, list[str]]:
+    """A created node's settings, by key (a Spatial Join's operation and
+    output, a Data Pool's conflict modes, a Simple View's image column), or
+    why they are refused: each node's own rule, on a node whose template
+    keeps the setting."""
+    from utk_curio.backend.app.packages import service as packages_services
+
+    settings, problems = node_settings.parse(params, "params")
+    if problems or not settings:
+        return {}, problems
+    behavior = packages_services.template_behavior(user_key, project_id, entry["id"])
+    problems = node_settings.template_problems(
+        settings, behavior, entry.get("label") or entry["id"], lambda key: f"params.{key}",
+    )
+    return ({}, problems) if problems else (settings, [])
+
+
+def _node_create_starter(user_key: str, project_id: str, entry: dict) -> dict | None:
+    """What a created node starts with when its template's starter is its
+    whole content (``starterIsContent``): the starter and the template's
+    widgets, as a planned node of it starts (``plans._content_starters``), or
+    None for any other template, whose content the request gives."""
+    from utk_curio.backend.app.packages import service as packages_services
+
+    return packages_services.content_starters(user_key, project_id, [entry["id"]]).get(entry["id"])
 
 
 def _mint_node_create(
@@ -698,21 +851,60 @@ def _mint_node_create(
     if entry is None:
         return agents_tool_rounds._refuse_params(err)
     proposed = content.extract_node_content(params.get("content"))
-    if not proposed:
-        return agents_tool_rounds._refuse_params("params.content must be a non-empty string")
+    # A template whose starter is its whole content, such as each Scout
+    # chart, gives the node that starter, as a plan does: the request gives
+    # no content, and sets the template's widgets by name.
+    starter = _node_create_starter(user_key, project_id, entry)
+    if starter is not None and proposed:
+        return agents_tool_rounds._refuse_params(agent_text.message(
+            "mint.starter-is-content", label=entry.get("label") or entry["id"],
+            widgets=", ".join(w["name"] for w in starter["widgets"]),
+        ))
+    if starter is not None:
+        proposed = starter["content"]
+    # A node that holds no content, such as a Spatial Join, is proposed without it.
+    if not proposed and entry.get("contentKind") != CONTENT_KIND_NONE:
+        return agents_tool_rounds._refuse_params(agent_text.message("mint.content-required"))
     if len(proposed) > content.PROPOSAL_CONTENT_MAX_CHARS:
-        return agents_tool_rounds._refuse_params("params.content exceeds the proposal size bound")
+        return agents_tool_rounds._refuse_params(agent_text.message("mint.content-too-large"))
+    settings, setting_errors = _node_create_settings(user_key, project_id, entry, params)
+    if setting_errors:
+        return agents_tool_rounds._refuse_params("; ".join(setting_errors))
+    # The dataflow the widgets are checked in: a Parameter node's widget is
+    # named as no other Parameter node's is.
+    saved = projects_storage.read_spec(user_key, project_id)
+    if saved is None:
+        return "refused", agent_text.message("mint.no-saved-spec"), None
+    # Read before the gate: a chart's or a map's document is checked with the
+    # widgets the node declares.
+    widgets, widget_errors = _node_create_widgets(
+        entry, params.get("widgets"),
+        [n for n in (saved.get("dataflow") or {}).get("nodes") or [] if isinstance(n, dict)],
+    )
+    if widget_errors:
+        return agents_tool_rounds._refuse_params("; ".join(widget_errors))
+    if starter is not None:
+        # The template's widgets, each the request names set as it says, at
+        # mint, so the card shows what Apply writes.
+        widgets = agents_plan_scenarios._set_over(starter["widgets"], widgets)
     # dev/114 (DEC-072): the source-grounding gate — BEFORE any store write.
     # A same-run node.create after the runtime minted dataset candidates is
     # refused too: the user reviews and confirms a source first (DEC-006).
     if loop_ctx.get("_candidates_pending_review"):
-        return agents_tool_rounds._refuse_params(agents_grounding._CANDIDATES_PENDING_TEXT)
-    verdict, refusal = agents_grounding._gate_generated_content(
+        return agents_tool_rounds._refuse_params(agent_text.message("grounding.candidates-pending"))
+    # A starter is the template's own content, which a plan does not gate
+    # either; any other content passes the gate.
+    verdict, refusal = (None, None) if starter is not None else agents_grounding._gate_generated_content(
         user_key, project_id, loop_ctx,
-        code=proposed, engine=entry.get("engine"), node_type=entry["id"], params=params,
+        code=proposed, engine=source_grounding.code_engine(entry), node_type=entry["id"], params=params,
+        chips=agents_grounding._chip_context(saved, widgets=widgets),
+        widgets=widgets,
     )
     if refusal:
         return agents_tool_rounds._refuse_params(refusal)
+    unreadable = None if starter is not None else map_edits.refusal(user_key, project_id, entry["id"], proposed)
+    if unreadable:
+        return agents_tool_rounds._refuse_params(unreadable)
     goal = params.get("goal")
     goal = goal.strip() if isinstance(goal, str) and goal.strip() else None
     # dev/105 A2 (additive): the node's HEADER. The note behavior renders
@@ -723,6 +915,7 @@ def _mint_node_create(
     title = title.strip()[:agents_delegates._NODE_TITLE_MAX_CHARS] if isinstance(title, str) and title.strip() else None
     # dev/89 (additive): optional appearance, normalized by the ONE shared
     # utility — an invalid or inaccessible color refuses at mint, loudly.
+    from utk_curio.backend.app.packages.application.note_palette import NOTE_PALETTE
     from utk_curio.backend.app.packages.domain import node_appearance
 
     raw_appearance = params.get("appearance")
@@ -735,19 +928,18 @@ def _mint_node_create(
         k = loop_ctx.get("_note_creates", 0)
         raw_appearance = {"backgroundColor": agents_delegates._NOTES_DEFAULT_COLORS[min(k, 1)]}
     try:
-        appearance = node_appearance.normalize_appearance(raw_appearance)
+        appearance = node_appearance.normalize_appearance(raw_appearance, NOTE_PALETTE)
     except node_appearance.AppearanceError as exc:
-        return agents_tool_rounds._refuse_params(f"params.appearance: {exc}")
-    widgets, widget_errors = _node_create_widgets(entry, params.get("widgets"))
-    if widget_errors:
-        return agents_tool_rounds._refuse_params("; ".join(widget_errors))
+        return agents_tool_rounds._refuse_params(agent_text.message("mint.appearance-invalid", exc=exc))
     spec = projects_storage.read_spec(user_key, project_id)
     if spec is None:
-        return "refused", "no saved project spec is available", None
+        return "refused", agent_text.message("mint.no-saved-spec"), None
     proposal_id = uuid.uuid4().hex
     summary = f"Create a new {entry['label']} node" + (f" · {title}" if title else "")
     if widgets:
         summary += " · widgets " + ", ".join(w["name"] for w in widgets)
+    for words in node_settings.describe(settings):
+        summary += " · " + words
     part = content.make_proposal_part(
         proposal_id=proposal_id,
         tool="node.create",
@@ -766,7 +958,7 @@ def _mint_node_create(
         "summary": summary,
         "status": "pending",
     }
-    if verdict.source:
+    if verdict is not None and verdict.source:
         # dev/114: what the code opens/fetches and how it was grounded — the
         # card's Source block; display + provenance, never a pin.
         part["source"] = verdict.source
@@ -779,12 +971,12 @@ def _mint_node_create(
         proposal["appearance"] = appearance
     if widgets:
         proposal["widgets"] = widgets
+    proposal.update(settings)
     agents_store._store_proposal(user_key, project_id, spec, loop_ctx, proposal, part)
     loop_ctx["_note_creates"] = loop_ctx.get("_note_creates", 0) + 1  # A13 index
     return (
         "proposed",
-        f"proposal {proposal_id} created for a new {entry['label']} node; it awaits "
-        "the user's explicit review — do NOT assume it was applied",
+        agent_text.message("mint.node-create-proposed", proposal_id=proposal_id, label=entry['label']),
         part,
     )
 
@@ -819,13 +1011,12 @@ def _mint_project_install(
     if not isinstance(session_id, str):
         return (
             "refused",
-            f"specialist {coord} is not installed and this attachment has no "
-            "conversation to carry an install proposal — ask the user to install it",
+            agent_text.message("mint.specialist-no-conversation", coord=coord),
             None,
         )
     spec = projects_storage.read_spec(user_key, project_id)
     if spec is None:
-        return "refused", "no saved project spec is available", None
+        return "refused", agent_text.message("mint.no-saved-spec"), None
     proposal_id = uuid.uuid4().hex
     summary = f"Install {name} in this project"
     preview = (
@@ -856,8 +1047,6 @@ def _mint_project_install(
     )
     return (
         "proposed",
-        f"specialist {coord} is not installed in this project; an Install proposal "
-        f"({proposal_id}) awaits the user's explicit review — do NOT assume it was "
-        "installed or that the delegate ran",
+        agent_text.message("mint.specialist-install-proposed", coord=coord, proposal_id=proposal_id),
         part,
     )

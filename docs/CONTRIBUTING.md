@@ -25,7 +25,8 @@ This guide is for students getting their first taste of open-source work and for
   * [Frontend Unit Tests](#frontend-unit-tests)
   * [Frontend E2E Tests](#frontend-e2e-tests)
   * [Database Migrations](#database-migrations)
-  * [Generated Files](#generated-files)
+  * [Agent Text](#agent-text)
+  * [Shared Constants](#shared-constants)
   * [Vendored Autark Schema](#vendored-autark-schema)
 * [Organizing Contributions](#organizing-contributions)
   * [Defining the Scope of a Pull Request](#defining-the-scope-of-a-pull-request)
@@ -62,28 +63,27 @@ The codebase follows a modular structure under the `utk_curio/` directory. This 
 curio/
 ├── utk_curio/
 │   ├── backend/                            # Manages database access and user authentication
-│   │   ├── app/agents/domain/contracts.py  # The single source of every generated contract (see Generated Files)
+│   │   ├── app/agents/domain/contracts.py  # The contracts the code and the agents agree on, and the prompt fields (see Agent Text)
 │   │   ├── app/agents/schemas/             # The vendored Autark grammar schema (see Vendored Autark Schema)
 │   │   ├── app/discovery/                  # The Discovery Catalog: portal, storage, service and model sources
 │   │   ├── app/packages/                   # The Node and Model Catalogs: node packages, and model packages with their weights
 │   │   ├── migrations/                     # Alembic migrations
 │   │   └── tests/                          # pytest files for backend (+ test_frontend/ for Playwright E2E)
-│   ├── llm-prompts/                        # The agents' shared prompts and every prompt template; an X.md rendered from X.template.md is generated
 │   ├── sandbox/                            # Executes user Python code in a secure environment
 │   │   └── tests/                          # unittest files for sandbox
 │   └── frontend/                           # All frontend logic
 │       └── urban-workflows/                # Main Curio interface for dataflow editing
 │           └── src/
 │               ├── components/             # React components and CSS
-│               ├── generated/              # Written by scripts/generate_contracts.py; never edited by hand
+│               ├── contracts/              # Constants shared with the backend, one JSON file each (see Shared Constants)
 │               └── tests/                  # Jest unit tests
 │
 ├── curio.py                        # CLI entry point for running and managing all services
-├── agents/                         # The agents Curio ships: one directory per agent, a manifest.json and its prompts/
+├── agents/                         # Everything the agents read: one directory per agent, a manifest.json and its prompts/, and the base entry agent.curio.builtin@1 with the pages they share
 ├── packages/                       # The shared node catalog: one directory per node package
 ├── datasets/                       # The shared Data Catalog: datasets published on this install
 ├── discovery/                      # The Discovery Catalog: one manifest per portal or storage source this install can reach
-├── scripts/                        # test.sh, clean.sh, new_package.py, regen_integrity.py, generate_contracts.py, sync_autk_schema.py
+├── scripts/                        # test.sh, clean.sh, new_package.py, regen_integrity.py, sync_autk_schema.py
 ├── docs/                           # Documentation, usage guides, and examples
 │   └── examples/dataflows/         # Dataflow JSONs used by the E2E suite
 └── requirements.txt                # Curio framework dependencies (data-ops libs live in each package's manifest.dependencies.python)
@@ -135,7 +135,7 @@ Refer to [USAGE.md](USAGE.md) for Docker instructions and frontend build steps.
 * Contribute to the `examples/` directory
 
 A new dataflow in `docs/examples/` or `docs/examples/dataflows/` ships, so list it in
-[`utk_curio/llm-prompts/examples.md`](../utk_curio/llm-prompts/examples.md): under
+[`agents/agent.curio.builtin@1/examples.md`](../agents/agent.curio.builtin@1/examples.md): under
 "Used" with one line on what it shows when agents should learn from it, or under
 "Not used" with the reason. The line leaves out the city, topic, node types and
 datasets: they are read from the file. `test_prompt_references.py` fails until the
@@ -427,48 +427,60 @@ FLASK_APP=server.py flask db migrate -m "Migration Name"
 FLASK_APP=server.py flask db upgrade
 ```
 
-### Generated Files
+### Agent Text
 
-Some files are generated from a single source and committed: everything under
-`utk_curio/frontend/urban-workflows/src/generated/`, and every prompt rendered
-from a `<name>.template.md` in `utk_curio/llm-prompts/` (the shared preamble,
-most agent instructions, and `package_contract.md`), all rendered from
-`utk_curio/backend/app/agents/domain/contracts.py`. A rendered prompt is
-written into the folder of the agent in `agents/` whose manifest names
-`prompts/<name>.md`, and beside its template when no agent's manifest names it:
-the shared preamble, which manifests name `curio:default_preamble.md`, and the
-fragments other prompts include. Each generated code file starts with a header
-naming its generator and source. A prompt has no header, because the model
-reads it verbatim; its hand-written text lives in its template, and the
-`{{...}}` markers in the template are the generated parts: agent names,
-template labels, the Trill block and other facts the code owns (the full list
-is in `contracts.PROMPT_FIELDS`). Those facts are read from
-`docs/schemas/trill.v1.json`, `packages/curio.builtin@1/manifest.json`, the
-manifests in `agents/` and the backend modules each field names, so a change
-to any of them needs a regeneration too. Do not edit an output by hand: edit
-the template or the source, then regenerate and commit both. A prompt with no
-template is edited in its agent's folder.
+Everything the agents read is hand-written Markdown in `agents/`: each agent's
+prompts in its folder, and the pages they share in the base entry,
+[`agents/agent.curio.builtin@1/`](../agents/agent.curio.builtin@1/): the
+preamble and the knowledge pages it includes, one per feature of Curio, the
+worked examples' index and the rules prompts include. A new feature, such as a
+built-in template, a function node code calls or a kind of chip, gets its
+lines on a knowledge page in the same change: `test_knowledge_pages.py` fails
+while one is on no page. Where a
+page or prompt states a fact the code owns (an agent's name, a template's
+label, the Trill block), it holds a marker, `{{field}}`, which the backend
+fills from `contracts.PROMPT_FIELDS` when it starts; `{{include:<path>}}` puts
+another page in its place. To change agent text, edit its file and restart the
+backend, or run `python curio.py start --dev`, which renders a file again on
+every read. The base entry's README walks through it. The backend suite
+renders every file (`test_agent_text.py`) and fails on a marker no field
+defines. See [ARCHITECTURE.md, Agent text](ARCHITECTURE.md#agent-text).
 
-Some frontend behaviour is defined in `contracts.py` too, because the preamble
-describes it: the Vega-Lite and Autark starter ladders, the pandas dtype each
-column role comes from, the Vega-Lite `$schema` URL, and the names, extensions
-and share behind Simple View's image columns. The frontend reads them from
-`src/generated/visDefaults.ts`. To add, remove or reorder a starter rule, edit
-its table in `contracts.py`, regenerate, and add or remove its builder in
-`vegaDefaultSpec.ts` or `autkDefaultSpec.ts`, keyed by the rule's id.
+What a check tells a model when it refuses or corrects what the model wrote
+is a message of the base entry's `messages.md`, one section per message, which
+the check reads by its id: `agent_text.message("tool-round.not-granted", tool=name)`. A
+new refusal is a new section and the call that says it, and a value only the
+run knows, such as a node's id or the problems found, is a `{name}` place the
+call fills. A message is text a check addresses to the model about what the
+model wrote: a refusal, a correction, or the notes its next attempt is given,
+even when a card shows it too. A feature's own record or data is no message,
+even when a run reads it later: an error on Play, the run journal's reason, a
+probe's verdict and a candidate's download steps, the reason an Apply or a
+card gives, an HTTP error, a chat record, the command line's and the logs'
+text stay with their feature, in Python. `test_messages.py` checks every call
+against the page, and `test_prose_guard.py` fails on a string in
+`utk_curio/`'s Python whose words run past 200 characters unless it is a
+message to users or code; a new one of those goes in the test's `USERS` or
+`CODE` list, with who reads it.
 
-```bash
-# rewrite every generated file
-python scripts/generate_contracts.py
+### Shared Constants
 
-# write nothing; exit non-zero and list the stale files
-python scripts/generate_contracts.py --check
-```
+The vocabularies and tables the frontend and the backend both read are JSON
+files in `utk_curio/frontend/urban-workflows/src/contracts/`: why a render drew
+nothing, why a repair loop stopped, the agent categories, a note's colors, the
+Autark facts a grammar node uses, and the starter ladders, dtype roles, Vega-Lite
+`$schema` URL and image column rule of the visualization nodes. The frontend
+imports each file and the backend reads it
+(`utk_curio/common/shared_constants.py`), so a change is one edit to the file,
+with nothing to run. An object that names one key twice is refused.
 
-The backend suite runs the same check
-(`utk_curio/backend/tests/test_agents/test_generated_contracts.py`), so a stale
-or hand-edited output fails CI. See
-[ARCHITECTURE.md, Generated Contracts](ARCHITECTURE.md#generated-contracts).
+To add, remove or reorder a starter rule, edit its ladder in `visDefaults.json`
+and add or remove its builder in `vegaDefaultSpec.ts` or `autkDefaultSpec.ts`,
+keyed by the rule's id. `inputTableName` and `autkOneViewProblem` are code over
+`autkGrammar.json` on both sides, in `contracts/autkGrammar.ts` and
+`contracts.py`; a change to either goes into both, with a case for it in
+`autkGrammar.cases.json`, which Jest and the backend suite both run. See
+[ARCHITECTURE.md, Shared Constants](ARCHITECTURE.md#shared-constants).
 
 ### Vendored Autark Schema
 
@@ -480,15 +492,16 @@ records its version and digest. To move to a new release:
 ```bash
 # vendor the schema from the release on npm
 python scripts/sync_autk_schema.py --version <version>
-
-# re-render the preamble and the TypeScript that read it
-python scripts/generate_contracts.py
 ```
 
 `--from PATH` vendors a local build of that version instead.
 `test_autk_schema_vendored.py` checks the copy against its record in the
 backend suite, and the weekly `autk-schema` workflow runs
-`python scripts/sync_autk_schema.py --check` against npm.
+`python scripts/sync_autk_schema.py --check` against npm. A release that adds
+or drops a top-level family needs it in `families` of
+`src/contracts/autkGrammar.json` too: `test_shared_constants.py` fails until
+the file lists the schema's families, and Jest until `FAMILY_KIND` in
+`utils/autkSpecKind.ts` routes each one.
 
 ## Organizing Contributions
 

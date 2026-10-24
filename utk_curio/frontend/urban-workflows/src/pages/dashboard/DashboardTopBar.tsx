@@ -133,7 +133,7 @@ export function DashboardTopBar({ id, onArranged }: { id: string; onArranged?: (
   return (
     <>
       <GlobalPageHeader className={clsx(styles.bar, "nowheel", "nodrag")} onLeave={(go) => leave(go)}>
-        <h1 className={styles.title} title={projectName || workflowName}>
+        <h1 className={styles.title} data-tooltip={projectName || workflowName}>
           {projectName || workflowName}
         </h1>
 

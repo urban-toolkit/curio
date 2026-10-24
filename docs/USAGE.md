@@ -331,6 +331,9 @@ Then write, in the node's code:
 api_key = curio_secret("census")
 ```
 
+`curio_secret` is one of the functions Curio gives node code, listed with their
+arguments in [Functions node code calls](../agents/agent.curio.builtin@1/knowledge/node-functions.md).
+
 Curio resolves the name when the node runs, on Play and when an agent's Solve
 runs it, and hands the value to the sandbox for that run only. The key never
 appears in your saved dataflow, in proposals, in the chat or in the run log, and
@@ -407,7 +410,10 @@ one to list its chips under the row, and click it again to close it. Several
 can be open, and a category stays open on that node while the dataflow is
 open. On the canvas the header takes at most half of the node's editor, and the
 open chips scroll inside it. Drag a chip's tag into the code or spec, or click
-it to insert the chip at the cursor.
+it to insert the chip at the cursor. Hover a tag, or its chip in the code or
+spec, to preview what it holds: an input's source, size and first rows, a
+column's first values and its range or distinct count, a widget's value, a
+scenario box's color. An input whose node has not run says which node to run.
 
 - **Inputs**: a line for each input, with its tag and what it holds, whose
   chevron lists its columns under the line (see [Several inputs](#several-inputs)),
@@ -504,6 +510,13 @@ drawer, with the same folds. Each run reads what it took in and gave back
 run to open it: when it ran, for how long, and its code. **Put this code back in
 the node** puts that code in the node's editor without running it, and the
 node's next run branches from that run.
+
+A change an agent made to the node's code that you applied is an entry too,
+named after the agent, such as **Node Builder**, and a node an agent proposed
+with its code starts with one. Open it to see when it was made and the code it left, and
+put that code back as you would a run's. The Node Builder and the Dataflow
+Builder read these histories as the dataflow was last saved, so you can ask
+either what changed in a node since a run.
 
 ## Widgets
 
@@ -678,7 +691,9 @@ When the node runs:
   [Input names](#input-names)).
 - In Python and JavaScript, a layer chip becomes that layer of the input:
   `roads = [!! input_0:table_osm_roads !!]` runs as
-  `roads = curio_layer(input_0, "table_osm_roads", 0)`, which gives a GeoDataFrame
+  `roads = curio_layer(input_0, "table_osm_roads", 0)`
+  ([Functions node code calls](../agents/agent.curio.builtin@1/knowledge/node-functions.md)),
+  which gives a GeoDataFrame
   in Python and a GeoJSON FeatureCollection in JavaScript. An input that is one
   frame with no layer name, such as a GeoDataFrame a Python node returns, is
   that layer. An input with several frames needs one of that name; if it has
@@ -822,7 +837,11 @@ Each edit is an entry in the node's list and in its Provenance drawer: switch it
 off, delete it, or **Undo** and **Redo** it (Ctrl+Z and Shift+Ctrl+Z, Cmd on a
 Mac). Edits find features by a column whose values differ in every feature, such
 as `osm_id` or `building_id`, and an edit by `building_id` changes every part of
-a building.
+a building. On the map, a building's shape changes one part at a time: moving a
+corner or adding a part changes that part alone, named by its own `osm_id`, and
+moving the building moves every part. A building whose parts have no `osm_id` of
+their own keeps its shape there. Agents read these edits, and the edits an agent
+makes show as entries named after it.
 
 A rule or an expression reads a feature's columns by name (`height`, or
 `` `Mean Acc shadow` `` in backticks). It takes numbers, quoted texts, `true`,

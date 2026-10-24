@@ -8,7 +8,9 @@ helpers that run only as other agents' delegates. Their manifests also carry
 what only Curio's own agents use: ``catalog`` (a card or a helper, and the
 roster's order), ``workedExamples``, a capability's ``label`` and a prompt's
 ``runs``. Every one names the preamble all agents share as
-``curio:default_preamble.md``, one file in ``utk_curio/llm-prompts/``.
+``curio:default_preamble.md``, a page of the base entry,
+``agents/agent.curio.builtin@1/``, which sits beside them and is no agent.
+Each prompt and page is a hand-written source the backend renders.
 
 ``catalog`` counts only for a folder in ``agents/``: a copy of one in a user's
 store is the user's own agent, and an upload cannot set it.
@@ -29,7 +31,8 @@ import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
 AGENTS = REPO_ROOT / "agents"
-PROMPTS = REPO_ROOT / "utk_curio" / "llm-prompts"
+#: The base entry: the pages the agents share. It is no agent.
+BASE = AGENTS / "agent.curio.builtin@1"
 SCHEMA = REPO_ROOT / "docs" / "schemas" / "agent-package.v1.json"
 
 #: Every agent Curio ships, in the roster's order: who asks for a mode is
@@ -55,8 +58,14 @@ PREAMBLE_FILE = "prompts/default_preamble.md"
 UKEY = "7"
 
 
-def _folders() -> list[Path]:
+def _entries() -> list[Path]:
+    """Every folder in ``agents/``: the agents and the base entry."""
     return sorted(path for path in AGENTS.iterdir() if path.is_dir() and not path.name.startswith("."))
+
+
+def _folders() -> list[Path]:
+    """The agents' folders: every entry but the base."""
+    return [path for path in _entries() if path != BASE]
 
 
 def _raw(folder: Path) -> dict:
@@ -64,7 +73,10 @@ def _raw(folder: Path) -> dict:
 
 
 def _preamble() -> str:
-    return (PROMPTS / "default_preamble.md").read_text(encoding="utf-8")
+    """The preamble, its page in the base entry rendered from its source now."""
+    from utk_curio.backend.app.agents.domain import agent_text
+
+    return agent_text.render(BASE / "default_preamble.md")
 
 
 def _copy_into_store(shipped: str, coord: str) -> Path:
@@ -105,10 +117,16 @@ def _upload_payload(**manifest_over) -> tuple[dict, dict]:
 
 class TestTheFolders:
     def test_seven_agents_ship_each_in_a_folder_of_its_own(self):
+        # Beside them, the base entry, which holds the pages they share.
+        assert [entry.name for entry in _entries()] == sorted([
+            *(f"{agent_id}@{MAJOR}" for agent_id in ROSTER), BASE.name,
+        ])
         assert [folder.name for folder in _folders()] == sorted(f"{agent_id}@{MAJOR}" for agent_id in ROSTER)
         for folder in _folders():
             assert (folder / "manifest.json").is_file(), folder.name
             assert (folder / "prompts").is_dir(), folder.name
+        assert _raw(BASE)["kind"] == "base"
+        assert not (BASE / "prompts").exists()
 
     def test_each_loads_as_a_users_agent_does(self):
         from utk_curio.backend.app.agents.domain.manifest import load_agent_manifest
@@ -143,13 +161,16 @@ class TestTheFolders:
         from jsonschema import Draft202012Validator
 
         validator = Draft202012Validator(json.loads(SCHEMA.read_text(encoding="utf-8")))
-        for folder in _folders():
+        # Each agent's, and the base entry's.
+        for folder in _entries():
             errors = [error.message for error in validator.iter_errors(_raw(folder))]
             assert not errors, (folder.name, errors[:3])
 
     def test_every_prompt_file_is_named_and_every_name_is_a_file(self):
         """An export carries every file of a folder, and an upload refuses a
-        file its manifest does not name: a folder holds exactly its prompts."""
+        file its manifest does not name: a folder holds exactly its prompts.
+        The base entry holds exactly the pages its manifest lists, and its
+        README."""
         from utk_curio.backend.app.agents.domain.manifest import load_agent_manifest
 
         for folder in _folders():
@@ -162,6 +183,14 @@ class TestTheFolders:
             }
             assert held == named, folder.name
             assert all(path.startswith("prompts/") and path.endswith(".md") for path in named), folder.name
+        pages = _raw(BASE)["pages"]
+        held = {
+            path.relative_to(BASE).as_posix()
+            for path in BASE.rglob("*")
+            if path.is_file() and path not in (BASE / "manifest.json", BASE / "README.md")
+        }
+        assert held == set(pages) and len(pages) == len(set(pages))
+        assert all(page.endswith(".md") for page in pages)
 
 
 class TestTheSharedPreamble:
@@ -420,41 +449,60 @@ class TestTheFieldsOnlyCuriosAgentsUse:
             parse_agent_manifest(manifest)
 
 
-class TestTheGenerator:
-    def test_each_rendered_prompt_is_written_into_the_folder_that_names_it(self):
+class TestTheSources:
+    """Each prompt is a hand-written source in the folder of the agent that
+    names it, and the pages they share are the base entry's. The backend
+    renders them; nothing writes them."""
+
+    def test_each_prompt_is_a_source_in_the_folder_that_names_it(self):
         from utk_curio.backend.app.agents.domain import contracts
         from utk_curio.backend.app.agents.domain.manifest import load_agent_manifest
 
-        outputs = set(contracts.GENERATED_OUTPUTS)
-        owned = set()
+        assert not hasattr(contracts, "GENERATED_OUTPUTS"), "contracts.py registers files to write"
+        marked = set()
         for folder in _folders():
             for asset in load_agent_manifest(folder).prompts.values():
-                stem = Path(asset.path).name.removesuffix(".md")
-                if asset.path.startswith("curio:") or stem not in contracts.PROMPT_TEMPLATES:
+                if asset.path.startswith("curio:"):
                     continue
-                owned.add(stem)
-                assert f"agents/{folder.name}/{asset.path}" in outputs, (folder.name, asset.path)
-                assert f"{contracts.PROMPTS_DIR}/{stem}.md" not in outputs, stem
-        assert len(owned) == 11, sorted(owned)
-        # The shared preamble and the fragments other prompts include stay
-        # beside their templates.
-        for stem in set(contracts.PROMPT_TEMPLATES) - owned:
-            assert f"{contracts.PROMPTS_DIR}/{stem}.md" in outputs, stem
-        assert f"{contracts.PROMPTS_DIR}/default_preamble.md" in outputs
-        # Every template stays in llm-prompts/, and no agent folder holds one.
+                source = folder / asset.path
+                assert source.is_file(), (folder.name, asset.path)
+                if "{{" in source.read_text(encoding="utf-8"):
+                    marked.add(source.name)
+        # Eleven state facts the code owns, each through a marker.
+        assert len(marked) == 11, sorted(marked)
+        # The shared preamble, the knowledge pages it includes, one per
+        # feature, the rules other prompts include, the text the runtime
+        # composes a run's turns from, the words of the dataflow block, the
+        # words of the preamble's Autark section and the messages the checks
+        # send are the pages of the base entry, each listed once and each a
+        # file there: a page added or forgotten fails here.
+        pages = _raw(BASE)["pages"]
+        assert len(pages) == len(set(pages)), pages
+        assert set(pages) == {
+            "default_preamble.md", "examples.md", "dataflow-block.md", "rules/package_contract.md",
+            "rules/research_notes_rules.md", "rules/research_verify_rules.md",
+            "tools.md", "rules/plan-rules.md", "protocol.md", "frames.md",
+            "delegate-contracts.md", "conversation-title.md", "keyword-types.md", "messages.md",
+            "autark-grammar.md",
+            *(f"knowledge/{name}.md" for name in (
+                "nodes", "node-control", "node-functions", "catalogs", "widgets", "selection-chips", "autark",
+                "compatibility", "vega-lite-starter", "autark-starter", "vega-lite-maps", "interaction-edges",
+                "map-edits", "scenarios", "dashboards", "provenance",
+            )),
+        }
+        assert {path.relative_to(BASE).as_posix() for path in BASE.rglob("*.md")} - {"README.md"} == set(pages)
+        # No template anywhere: a source is the file the backend renders.
         assert not list(AGENTS.rglob("*.template.md"))
-        assert len(list(PROMPTS.glob("*.template.md"))) == len(contracts.PROMPT_TEMPLATES)
 
-    def test_a_prompt_with_no_template_lives_only_in_its_agents_folder(self):
-        from utk_curio.backend.app.agents.domain import contracts
-
+    def test_a_prompt_with_no_marker_lives_only_in_its_agents_folder(self):
         held = [path for path in AGENTS.glob("*/prompts/*.md")]
-        handwritten = [path.name for path in held if path.stem not in contracts.PROMPT_TEMPLATES]
+        handwritten = [path.name for path in held if "{{" not in path.read_text(encoding="utf-8")]
         assert len(handwritten) == 8, handwritten
+        pages = [path for path in BASE.rglob("*.md") if path != BASE / "README.md"]
         for name in handwritten:
-            assert not (PROMPTS / name).exists(), name
+            assert name not in {page.name for page in pages}, name
         # A file name is one prompt's, wherever it is.
-        names = [path.name for path in held] + [path.name for path in PROMPTS.glob("*.md")]
+        names = [path.name for path in held] + [path.name for path in pages]
         assert len(names) == len(set(names)), sorted(n for n in names if names.count(n) > 1)
 
 

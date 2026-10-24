@@ -18,17 +18,23 @@ is its only state.
 2. A rule lights up what it matches on the map, then removes it at once; the
    removal switched off stays in the list and is skipped, and an expression by
    a rule halves the tall part. Commit edits hands the total on.
-3. On a zoomed map, a height set on a building keeps the map's view, and
+3. The map lights a pick, both parts of a building, with its own highlight and
+   nothing drawn over it; a plain click on another building replaces the pick,
+   and the map played draws again with nothing picked.
+4. On a zoomed map, a height set on a building keeps the map's view, and
    Commit edits hands the new height on through the map.
-4. Each change is an entry in the node's Provenance drawer before any run, and
+5. Each change is an entry in the node's Provenance drawer before any run, and
    putting the first entry's code back restores the map, the panel and the
    list.
-5. On a map the node feeds but is not linked to, the edits show, and a click
+6. On a map the node feeds but is not linked to, the edits show, and a click
    selects nothing in the node.
 
 Then the shipped Chicago Loop layers (``chicago-loop-layers.json``): a point
 added to the trees, a road reshaped and a property added to the parks, each on
-the map; Commit edits runs the node, and its output holds all three.
+the map; Commit edits runs the node, and its output holds all three. And one
+of its buildings of several parts, each part with its own ``osm_id``, reshaped
+part by part: Move points shows every part's corners, a dragged corner changes
+its own part alone, and the building's other parts keep their shapes.
 
 Interaction frames take both nodes of a gesture before and after it, and every
 Autark map gets a close-up. They run Autark maps, which need WebGPU: without an
@@ -76,6 +82,7 @@ from .utils import (
     mark_point,
     node_locator,
     park_pointer,
+    play_node,
     read_node_code,
     read_node_error_text,
     require_owner_view,
@@ -91,9 +98,11 @@ from .utils import (
     stub_login_and_enter_workflow,
     wait_for_drawer_closed,
     wait_for_node_capture,
+    wait_for_node_run_to_end,
     wait_for_node_settled,
     wait_for_node_still,
     wait_for_run_guard_released,
+    watch_node_run,
 )
 from .utils.node_drawings import _AUTK_MAP_PIXELS_IN_FRAME_JS
 from .walkthroughs.steps import PROVENANCE_DRAWER, PROVENANCE_PANEL, await_drawer_at_rest
@@ -174,6 +183,10 @@ REMOVE_TWO = NOTE + (
 
 #: Where a click is tried on a map, as fractions of the part of it in view.
 PICK_SPOTS = ((0.4, 0.5), (0.6, 0.5), (0.45, 0.55), (0.7, 0.5), (0.3, 0.5), (0.5, 0.5), (0.2, 0.6), (0.8, 0.6))
+#: Where a click is tried on building 1, the left half of the layer the map
+#: frames, and on building 2, its right half.
+LEFT_SPOTS = ((0.25, 0.5), (0.3, 0.5), (0.2, 0.55), (0.35, 0.45))
+RIGHT_SPOTS = ((0.75, 0.5), (0.7, 0.5), (0.8, 0.55), (0.65, 0.45))
 #: How a test zooms a map in: wheel steps over its middle, at most.
 ZOOM_STEPS = 12
 ZOOM_DELTA = 240
@@ -182,8 +195,19 @@ ZOOM_DELTA = 240
 REMOVED_MIN_SHARE = 0.02
 #: The map's background, the colour where it draws nothing (autk-map's style).
 MAP_BACKGROUND = (232, 239, 242)
+#: autk-map's highlight, #5dade2: the colour the map draws a Map Edits node's
+#: tools in, its corners and the shape being drawn or changed.
+MAP_HIGHLIGHT = (93, 173, 226)
 #: How long a run of the dataflow, or of a node and the nodes below it, may take.
 RUN_MS = 300000
+#: The Chicago Loop layers' OSM buildings, as the map and the node name them,
+#: and the column that tells a building's parts apart: each part's own OSM id.
+BUILDINGS = "table_osm_buildings"
+PART_KEY = "osm_id"
+#: How much room, in page pixels, the map is zoomed in to give a corner to be
+#: dragged, and the least a corner needs for a press to take it alone.
+CORNER_ROOM = 16
+PRESS_ROOM = 6
 
 
 def _spec(last_code: str = COUNT_CODE, last_title: str = "Count", *, linked: bool = True) -> dict:
@@ -468,9 +492,64 @@ def _rule(page, edit_id: str, test: str, value: str, column: str = "height") -> 
     row.get_by_test_id("interaction-rule-value-0").fill(value)
 
 
-def _dashed_outlines(page, map_id: str) -> int:
-    """How many features the overlay outlines dashed: what a rule matches."""
-    return _overlay(page, map_id).locator("path[stroke-dasharray]").count()
+#: What would be drawn over a map for a pick or a rule's matches: none, Autark
+#: lights them itself.
+OUTLINES = "svg path, svg circle"
+
+# What an Autark node's map shows, as autk-map and autk-db hold it: for each
+# table its document draws, whether its layer is the one that picks and the
+# features that layer lights (window.__curio_mapState).
+_MAP_STATE_JS = "(id) => (window.__curio_mapState ? window.__curio_mapState(id) : null)"
+
+
+def _lit(page, map_id: str, table: str = LAYER, key: str = KEY) -> list | None:
+    """The *key* of each row Autark lights on *table* of the map *map_id*,
+    sorted: none when *table*'s layer is not the one that picks, where autk-map
+    draws no highlight. None when the map reports no such table."""
+    state = page.evaluate(_MAP_STATE_JS, map_id)
+    if not state or table not in state:
+        return None
+    layer = state[table]
+    return sorted(_ids(layer.get("lit"), key)) if layer.get("pick") else []
+
+
+def _wait_for_lit(page, map_id: str, expected, what: str, table: str = LAYER, key: str = KEY) -> None:
+    """Wait until the map lights exactly the rows *expected* names, a *key*
+    per row, on *table*; with *expected* a set, every row holding one of those
+    keys and no other, however many rows each has. autk-map holds what it
+    lights before it draws it, so no frame is waited for."""
+    def matches(got) -> bool:
+        if got is None:
+            return False
+        if isinstance(expected, set):
+            return set(got) == expected and (len(got) > 0) == (len(expected) > 0)
+        return got == sorted(expected)
+
+    got = None
+    deadline = time.time() + 15
+    while time.time() < deadline:
+        got = _lit(page, map_id, table, key)
+        if matches(got):
+            return
+        page.wait_for_timeout(250)
+    shown = sorted(expected) if not isinstance(expected, set) else sorted(expected, key=str)
+    # What every table's layer shows, so a failure says whether the layer picks
+    # at all, and the selections the map was brought, which it lights.
+    state = page.evaluate(_MAP_STATE_JS, map_id) or {}
+    layers = {
+        name: (layer.get("pick"), _ids(layer.get("lit"), key), layer.get("positions"), layer.get("drawn"), layer.get("rows"))
+        for name, layer in state.items()
+    }
+    brought = [
+        (entry.get("nodeId"), ((entry.get("details") or {}).get("autk_selection") or {}).get("layerRef"),
+         ((entry.get("details") or {}).get("autk_selection") or {}).get("data"))
+        for entry in page.evaluate(_INTERACTIONS_JS, map_id) or []
+    ]
+    raise AssertionError(
+        f"{what}: the map {map_id} lights the {key} {got} on {table}, not {shown}; "
+        f"each table as (picks, lit {key}, positions lit, features drawn, rows read back): {layers}; "
+        f"selections brought as (from, layer, rows): {brought}"
+    )
 
 
 _SHOWN_JS = """([selector, x, y]) => document.elementFromPoint(x, y) === document.querySelector(selector)"""
@@ -663,7 +742,7 @@ def test_a_building_picked_on_the_linked_map_is_removed_at_once_and_committed_an
 ):
     """Each Map Edits node names the map it is linked to and lists its layer.
     In One removed's Remove, a building clicked on the linked map is picked in
-    the node, which sends the pick back for the map to outline. Remove writes
+    the node, which sends the pick back for the map to light up. Remove writes
     the edit into the node's code by building_id, lists it, and the map draws
     without the building at once; the dataflow reads Unsaved, and the count
     below keeps what it had. Commit edits runs the node, the map and the
@@ -700,7 +779,8 @@ def test_a_building_picked_on_the_linked_map_is_removed_at_once_and_committed_an
 
     # A building clicked on the map: the map's selection, which the
     # interaction edge carries to the node, picks it there, and the node's
-    # pick goes back to the map, which outlines it.
+    # pick goes back to the map, which lights every part of it with its own
+    # highlight. Nothing is drawn over the map.
     with canvas_painted_at_shown_zoom(page):
         frame_nodes(page, [EDIT_2, MAP_2])
         target_before = wait_for_node_still(page, EDIT_2)
@@ -710,8 +790,8 @@ def test_a_building_picked_on_the_linked_map_is_removed_at_once_and_committed_an
         expect(remove).to_have_text("Remove 1 area")
         expect(remove).to_be_enabled()
         _wait_for_selection(page, MAP_2, EDIT_2, {picked}, "the node's pick")
-        expect(_overlay(page, MAP_2).locator("svg path").first).to_be_attached(timeout=10000)
-        assert _dashed_outlines(page, MAP_2) == 0, "a pick by a click is outlined as a rule's match"
+        _wait_for_lit(page, MAP_2, [picked] * PARTS[picked], f"a pick of building {picked}")
+        expect(_overlay(page, MAP_2).locator(OUTLINES)).to_have_count(0)
         _, reached = wait_for_node_capture(
             page, EDIT_2, lambda capture: changed_pixels(target_before, capture) > INTERACTION_MIN_CHANGED_PIXELS,
             timeout_ms=INTERACTION_SHOWN_TIMEOUT_MS,
@@ -780,7 +860,7 @@ def test_a_rule_lights_its_matches_on_the_map_removes_them_and_a_switched_off_en
     app_frontend: "FrontendPage", current_server: str, page,
 ):
     """A rule, ``height < 40``, matches building 1's two parts: the map lights
-    them up as it is written, dashed, and Remove takes them off the map at
+    them up as it is written, and Remove takes them off the map at
     once. Switched off, the removal stays in the list and the map draws them
     again. An expression by a rule halves the tall part, ``height > 40``.
     Commit edits runs the node and every node below it: the total drops by
@@ -805,7 +885,8 @@ def test_a_rule_lights_its_matches_on_the_map_removes_them_and_a_switched_off_en
     matching = edit.get_by_test_id("interaction-matching")
 
     # The rule, written: what it matches lights up on the map, by the
-    # selection the node sends over the interaction edge, outlined dashed.
+    # selection the node sends over the interaction edge, every part of
+    # building 1 and nothing of building 2. Nothing is drawn over the map.
     with canvas_painted_at_shown_zoom(page):
         frame_nodes(page, [EDIT_2, MAP_2])
         dismiss_toasts(page)
@@ -815,12 +896,8 @@ def test_a_rule_lights_its_matches_on_the_map_removes_them_and_a_switched_off_en
         _rule(page, EDIT_2, "<", "40")
         expect(matching).to_have_text("Matches 2 areas of 3")
         _wait_for_selection(page, MAP_2, EDIT_2, {1}, "the rule height < 40")
-        deadline = time.time() + 10
-        while time.time() < deadline and _dashed_outlines(page, MAP_2) != PARTS[1]:
-            page.wait_for_timeout(250)
-        assert _dashed_outlines(page, MAP_2) == PARTS[1], (
-            f"the map outlines {_dashed_outlines(page, MAP_2)} features as the rule's matches, not building 1's {PARTS[1]} parts"
-        )
+        _wait_for_lit(page, MAP_2, [1] * PARTS[1], "the rule height < 40")
+        expect(_overlay(page, MAP_2).locator(OUTLINES)).to_have_count(0)
         after, reached = wait_for_node_capture(
             page, MAP_2, lambda capture: changed_pixels(before, capture) > INTERACTION_MIN_CHANGED_PIXELS,
             timeout_ms=INTERACTION_SHOWN_TIMEOUT_MS,
@@ -886,6 +963,62 @@ def test_a_rule_lights_its_matches_on_the_map_removes_them_and_a_switched_off_en
     assert saved[EDIT_2]["content"] == code, saved[EDIT_2]["content"]
     assert _edits_of(saved[EDIT_2]["content"])[0] == [removal_off, halve]
     assert saved[EDIT]["content"] == NO_EDITS
+
+
+def test_a_building_of_two_parts_is_lit_by_the_map_a_plain_click_replaces_it_and_a_play_drops_it(
+    app_frontend: "FrontendPage", current_server: str, page,
+):
+    """In Remove, building 1, of two parts, clicked on the map: the map lights
+    both parts with its own highlight, and nothing is drawn over it. A plain
+    click on building 2 replaces the pick, and the map lights building 2
+    alone. The map played: it draws again with nothing picked and nothing lit.
+    What is wrong at each step is kept, and the test fails at the end with all
+    of it."""
+    _enter(page, app_frontend, current_server, _spec(), "map_edits_replace_e2e")
+    _run_all(page)
+    edit = node_locator(page, EDIT_2)
+    frame_nodes(page, [EDIT_2, MAP_2])
+    _open_tab(page, EDIT_2, "output")
+    _assert_linked(page, EDIT_2, MAP_2)
+    _assert_framed(page, MAP_2)
+    _open(page, EDIT_2, "remove")
+    remove = edit.get_by_test_id("interaction-remove-picked")
+    picked = edit.get_by_text("1 area picked.")
+    outlines = _overlay(page, MAP_2).locator(OUTLINES)
+    wrong: list[str] = []
+
+    def check(step: str, assertion) -> None:
+        try:
+            assertion()
+        except AssertionError as error:
+            wrong.append(f"{step}: {error}")
+
+    # Building 1, of two parts, clicked.
+    _click_a_building(page, EDIT_2, MAP_2, picked, spots=LEFT_SPOTS)
+    first = _picked_on_the_map(page, EDIT_2, MAP_2)
+    assert first == 1, f"a click on the left half of the map picked building {first}"
+    check("building 1 clicked", lambda: _wait_for_lit(page, MAP_2, [1] * PARTS[1], "building 1 clicked"))
+    check("building 1 clicked", lambda: expect(outlines).to_have_count(0))
+
+    # A plain click on building 2 replaces the pick.
+    _click_a_building(page, EDIT_2, MAP_2, picked, spots=RIGHT_SPOTS)
+    check("building 2 clicked", lambda: _wait_for_selection(page, EDIT_2, MAP_2, {2}, "building 2 clicked"))
+    check("building 2 clicked", lambda: expect(remove).to_have_text("Remove 1 area"))
+    check("building 2 clicked", lambda: _wait_for_lit(page, MAP_2, [2] * PARTS[2], "building 2 clicked"))
+    check("building 2 clicked", lambda: expect(outlines).to_have_count(0))
+
+    # The map played: drawn again, with nothing picked and nothing lit.
+    frame_nodes(page, [MAP_2])
+    keep_drawing(page, _map(MAP_2))
+    watch_node_run(page, MAP_2)
+    play_node(page, MAP_2)
+    status = wait_for_node_run_to_end(page, MAP_2, node_type=MAP_TYPE)
+    assert status == "done", f"the map's play ended {status}: {read_node_error_text(node_locator(page, MAP_2))}"
+    _wait_for_redraw(page, MAP_2, "a play of the map")
+    check("the map played", lambda: _wait_for_lit(page, MAP_2, [], "the map played"))
+    check("the map played", lambda: expect(remove).to_be_disabled())
+    check("the map played", lambda: expect(outlines).to_have_count(0))
+    assert not wrong, "\n".join(wrong)
 
 
 def test_a_height_set_on_a_zoomed_map_keeps_the_view_and_commit_edits_hands_it_on(
@@ -1220,6 +1353,9 @@ def test_the_chicago_loop_layers_take_a_point_a_reshaped_road_and_a_property_on_
     assert (keywords.get("layer"), keywords.get("key"), keywords.get("by_input")) == ("input_3", "osm_id", True), keywords
     expect(edit.locator('[data-edit-op="add"]')).to_contain_text(f"Add a point ({tree['id']})")
     _wait_for_redraw(page, map_id, "the tree's add")
+    # The tree just added is lit by the map itself: the trees are the layer
+    # the action works on, the one that picks.
+    _wait_for_lit(page, map_id, [tree["id"]], "the tree's add", table="input_3", key="osm_id")
 
     # 2. A road: Edit, only the roads shown, one picked with a click, and one
     # of its corners dragged with Move points.
@@ -1239,6 +1375,8 @@ def test_the_chicago_loop_layers_take_a_point_a_reshaped_road_and_a_property_on_
     rows, layer = _selection(page, edit_id, map_id)
     assert layer == "table_osm_roads", (rows, layer)
     (road_id,) = set(_ids(rows, "osm_id"))
+    # The picked road is lit by the map itself, every piece of it.
+    _wait_for_lit(page, map_id, {road_id}, "a road picked", table="table_osm_roads", key="osm_id")
     reshape = edit.get_by_test_id("interaction-reshape")
     reshape.click()
     expect(reshape).to_have_attribute("aria-checked", "true")
@@ -1249,7 +1387,7 @@ def test_the_chicago_loop_layers_take_a_point_a_reshaped_road_and_a_property_on_
         frame_nodes(page, [edit_id, map_id])
         dismiss_toasts(page)
         wait_for_node_still(page, map_id)
-        handle = page.evaluate(_HANDLE_JS, map_id)
+        handle = _corner_to_drag(page, map_id)
         assert handle, "Move points shows no corner of the road on the map to drag"
         drop = assert_in_view(page, handle["x"] + 24, handle["y"] + 16, "where the road's corner is dropped")
         _frame(page, "reshape-road", "drag", "before", map_id, edit_id, stem=CHICAGO_STEM)
@@ -1275,7 +1413,8 @@ def test_the_chicago_loop_layers_take_a_point_a_reshaped_road_and_a_property_on_
     pan.click()
     expect(pan).to_have_attribute("aria-checked", "true")
     expect(reshape).to_have_attribute("aria-checked", "false")
-    expect(_overlay(page, map_id).locator('circle[data-handle="corner"]')).to_have_count(0)
+    expect(_overlay(page, map_id)).to_have_attribute("data-corners", "[]")
+    expect(_overlay(page, map_id).locator("svg")).to_have_count(0)
     edit.get_by_test_id("interaction-solo").uncheck()
 
     # 3. A property on every park.
@@ -1311,6 +1450,415 @@ def test_the_chicago_loop_layers_take_a_point_a_reshaped_road_and_a_property_on_
     )
     save_node_closeup(page, CHICAGO_STEM, edit_id, test_name=f"{test_name}_closeup_{edit_id}",
                       sweep_toasts=True)
+
+
+def test_a_chicago_building_of_several_parts_is_reshaped_one_part_at_a_time(
+    app_frontend: "FrontendPage", current_server: str, page,
+):
+    """The shipped Chicago Loop layers: OSM's buildings come one row per part,
+    each part with its building's ``building_id`` and an ``osm_id`` of its
+    own, and autk-db's crop keeps buildings the map draws two or more parts of.
+    Such a building near the middle of the map, whose parts have corners with
+    room around them, picked on it in the node's Edit, the map zoomed in on it:
+
+    1. Move points shows the corners of every part;
+    2. a corner of one part, dragged, is one edit that names that part alone,
+       ``where building_id == <building> and osm_id == <part>``, and the map
+       shows the building's other parts where they were;
+    3. Commit edits runs the node, which hands that part on reshaped and the
+       building's other parts as they came.
+
+    What is wrong at each step is kept, and the test fails with all of it
+    before its first capture."""
+    test_name = "test_a_chicago_building_of_several_parts_is_reshaped_one_part_at_a_time"
+    path = Path(REPO_ROOT) / "docs" / "examples" / "dataflows" / "chicago-loop-layers.json"
+    spec = json.loads(path.read_text(encoding="utf-8"))
+    nodes = {node["id"]: node for node in spec["dataflow"]["nodes"]}
+    (edit_id,) = [n for n, node in nodes.items() if node["type"] == EDIT_TYPE]
+    (map_id,) = [n for n, node in nodes.items() if node["type"] == MAP_TYPE and '"map"' in node["content"]]
+    title = nodes[map_id]["metadata"]["packageTemplateLabel"]
+    _enter(page, app_frontend, current_server, spec, "map_edits_parts_e2e", name=spec["dataflow"]["name"])
+    run_all_and_wait(page, timeout_ms=RUN_MS)
+    for node_id, node in nodes.items():
+        _done(page, node_id, node["type"])
+    wait_for_run_guard_released(page, timeout_ms=RUN_MS)
+
+    # The buildings as the node hands them on before any edit, each one's
+    # rows in the layer's order, and the parts of each that the map draws
+    # after autk-db's crop.
+    handed = _handed_layers(load_artifact_as_dict(page.evaluate(_OUTPUT_ARTIFACT_JS, edit_id)))
+    rows_of: dict = {}
+    for feature in handed[BUILDINGS]["features"]:
+        rows_of.setdefault((feature.get("properties") or {}).get(KEY), []).append(feature)
+    drawn = page.evaluate(_DRAWN_PARTS_JS, {"id": map_id, "table": BUILDINGS, "key": KEY, "part": PART_KEY})
+    assert drawn, f"the map {map_id} reports no rows of {BUILDINGS} that it draws"
+    drawn_parts: dict = {}
+    for building, part in drawn:
+        if building is not None and part is not None:
+            drawn_parts.setdefault(building, set()).add(part)
+    parted = [
+        building for building, rows in rows_of.items()
+        if building is not None and _told_apart(rows) and len(drawn_parts.get(building, ())) >= 2
+    ]
+    assert parted, (
+        f"autk-db's crop keeps no building the map draws two or more parts of, each part with an {PART_KEY}: "
+        f"it draws {len(drawn)} rows of {len(drawn_parts)} buildings, "
+        f"{sum(len(parts) >= 2 for parts in drawn_parts.values())} of them in two or more parts"
+    )
+    # First the buildings whose first part, and whose other parts, each have a
+    # corner with the most room around it: a press takes that corner alone.
+    parted.sort(key=lambda building: -_drag_room(rows_of[building]))
+
+    edit = node_locator(page, edit_id)
+    frame_nodes(page, [edit_id, map_id])
+    _open_tab(page, edit_id, "output")
+    _assert_linked(page, edit_id, map_id, title)
+    expect(edit.get_by_test_id(f"interaction-layer-{BUILDINGS}")).to_be_attached(timeout=30000)
+    _open(page, edit_id, "edit", BUILDINGS)
+    box = page.locator(_map(map_id)).bounding_box()
+    assert box, "the map has no layout box"
+    reshape = edit.get_by_test_id("interaction-reshape")
+
+    # Each building in turn picked on the map, as the map's own pick is sent,
+    # with Move points on, until one sits near the middle of the map.
+    building, corners, tried = None, [], []
+    for candidate in parted[:8]:
+        page.evaluate(_SEND_JS, [map_id, _map_pick(candidate)])
+        _wait_for_lit(page, map_id, {candidate}, f"building {candidate} picked", table=BUILDINGS)
+        if reshape.get_attribute("aria-checked") != "true":
+            reshape.click()
+            expect(reshape).to_have_attribute("aria-checked", "true")
+        # The corners of this building, not of the one picked before.
+        seen = [(c["x"], c["y"]) for c in corners]
+        shown = _wait_for_corners(
+            page, map_id, lambda now: bool(now) and [(c["x"], c["y"]) for c in now] != seen, f"building {candidate} picked",
+        )
+        x, y = _middle(shown)
+        tried.append((candidate, round(x), round(y)))
+        corners = shown
+        if box["x"] + 0.2 * box["width"] < x < box["x"] + 0.8 * box["width"] and \
+                box["y"] + 0.2 * box["height"] < y < box["y"] + 0.8 * box["height"]:
+            building = candidate
+            break
+    assert building is not None, f"no building of several parts lies near the middle of the map: {tried}"
+    rows = rows_of[building]
+    wrong: list[str] = []
+
+    # 1. Move points shows the corners of every part.
+    expected_corners = sum(_corner_count(row.get("geometry")) for row in rows)
+    if len(corners) != expected_corners or {corner["part"] for corner in corners} != set(range(len(rows))):
+        wrong.append(
+            f"Move points shows {len(corners)} corners of the parts {sorted({str(c['part']) for c in corners})} of "
+            f"building {building}, not the {expected_corners} corners of its {len(rows)} parts"
+        )
+
+    # Zoomed in on it with the wheel, at its middle, in half steps, until a
+    # corner to drag has CORNER_ROOM pixels around it, the whole building kept
+    # well inside the map.
+    page.mouse.move(*_middle(corners))
+    delta = -ZOOM_DELTA // 2
+    for step in range(2 * ZOOM_STEPS):
+        if _best_room(corners) >= CORNER_ROOM:
+            break
+        page.mouse.wheel(0, delta)
+        page.wait_for_timeout(500)
+        now = _wait_for_corners(page, map_id, bool, "a zoom of the map")
+        if step == 0 and _spread(now) < _spread(corners):
+            # This wheel zooms out the other way round.
+            delta = -delta
+        elif not _within(now, box, 40):
+            # Zoomed past the map's edges: a step back, and no further.
+            page.mouse.wheel(0, -delta)
+            page.wait_for_timeout(500)
+            corners = _wait_for_corners(page, map_id, bool, "a zoom back")
+            break
+        corners = now
+
+    # 2. A corner of a part other than the first, with no other corner near
+    # it, dragged with Move points: one a press reaches, inside the map with
+    # nothing over it, drawn in the map's highlight when one such is. A press
+    # takes the corner nearest it, wherever the map draws its buildings over.
+    # It is dropped a little out from its neighbours' middle, or in toward
+    # it, where no side of its part crosses another: autk-db refuses a
+    # building whose shape crosses itself, and then draws none of the layer.
+    dismiss_toasts(page)
+    corners = _wait_for_corners(page, map_id, bool, "the zoom")
+    roomy = [c for c in _to_drag(corners) if c["inside"] and c["onTop"] and _room(c, corners) >= PRESS_ROOM]
+    roomy.sort(key=lambda c: (c["lit"], _room(c, corners)), reverse=True)
+    corner, drop = next(((c, d) for c in roomy for d in [_drop_keeping_shape(c, corners)] if d), (None, None))
+    assert corner and drop, (
+        f"Move points shows no corner of building {building} to drag with {PRESS_ROOM} pixels around it and its "
+        f"part's sides kept apart (the most room a corner has is {_best_room(corners):.1f}): {corners}"
+    )
+    part = corner["part"] or 0
+    part_id = (rows[part].get("properties") or {}).get(PART_KEY)
+    where = f"{KEY} == {_literal(building)} and {PART_KEY} == {_literal(part_id)}"
+    drop = assert_in_view(page, drop[0], drop[1], "where the part's corner is dropped")
+    keep_drawing(page, _map(map_id))
+    page.mouse.move(corner["x"], corner["y"])
+    page.mouse.down()
+    page.mouse.move(*drop, steps=8)
+    page.mouse.up()
+    code, keywords = _wait_for_count_of_edits(page, edit_id, 1, f"a corner of building {building}'s part {part_id} dragged")
+    (redraw,) = _edits_of(code)[0]
+    if redraw.get("op") != "geometry" or "ids" in redraw or redraw.get("where") != where:
+        wrong.append(
+            f"a corner of building {building}'s part {part_id} dragged wrote {_shown_edit(redraw)}, not a redraw "
+            f"where {where}: an edit by {KEY} {building} gives every one of its {len(rows)} parts that one shape"
+        )
+    if (keywords.get("layer"), keywords.get("key")) != (BUILDINGS, KEY):
+        wrong.append(f"the node's code names the layer {keywords.get('layer')} and the key {keywords.get('key')}")
+    try:
+        expect(edit.locator('[data-edit-op="geometry"]')).to_contain_text(f"Redraw where {where}", timeout=5000)
+    except AssertionError as error:
+        wrong.append(f"the list does not name the part: {error}")
+
+    # The map draws the edit, and shows the building's other parts where they
+    # were. The node's first edit names its layer and key in its code, which
+    # starts its pick anew: the building is picked again, as before.
+    _wait_for_redraw(page, map_id, "the part's corner dragged")
+    shown = _picked_with_corners(page, map_id, building, f"building {building} picked after the drag")
+    after = {(c["part"], c["ring"], c["index"]): c for c in shown}
+    for before in corners:
+        now = after.get((before["part"], before["ring"], before["index"]))
+        dragged = (before["part"], before["ring"], before["index"]) == (corner["part"], corner["ring"], corner["index"])
+        target = drop if dragged else (before["x"], before["y"])
+        if now is None or math.hypot(now["x"] - target[0], now["y"] - target[1]) > (4 if dragged else 1.5):
+            wrong.append(
+                f"after the drag, the corner {before['ring']}.{before['index']} of part {before['part']} is shown at "
+                f"{now and (round(now['x'], 1), round(now['y'], 1))}, not at {tuple(round(v, 1) for v in target)}"
+            )
+
+    # 3. Commit edits: the node hands that part on reshaped, and the
+    # building's other parts as they came.
+    _commit(page, edit_id, [edit_id], [map_id], below=1)
+    out = _handed_layers(load_artifact_as_dict(page.evaluate(_OUTPUT_ARTIFACT_JS, edit_id)))[BUILDINGS]["features"]
+    committed = [row for row in out if (row.get("properties") or {}).get(KEY) == building]
+    if len(committed) != len(rows):
+        wrong.append(f"Commit edits handed on {len(committed)} rows of building {building}, not its {len(rows)} parts")
+    for row, kept in zip(rows, committed):
+        osm = (row.get("properties") or {}).get(PART_KEY)
+        shape = redraw.get("geometry") if osm == part_id else row.get("geometry")
+        try:
+            _assert_same_shape(kept.get("geometry") or {}, shape or {}, f"building {building}'s part {osm}")
+        except AssertionError as error:
+            wrong.append(f"after Commit edits, part {osm} of building {building}: {error}")
+    assert not wrong, "\n".join(wrong)
+
+    # The building picked again, as the map shows it with Move points on,
+    # and the node with the edit in its list.
+    _picked_with_corners(page, map_id, building, f"building {building} picked after Commit edits")
+    save_node_closeup(page, CHICAGO_STEM, map_id, test_name=f"{test_name}_closeup_{map_id}", sweep_toasts=True)
+    save_node_closeup(page, CHICAGO_STEM, edit_id, test_name=f"{test_name}_closeup_{edit_id}", sweep_toasts=True)
+
+
+# The value of *key* and of *part* of each row the map draws of the table
+# *table*, in the order it draws them (window.__curio_mapFeatureAt).
+_DRAWN_PARTS_JS = """async ({ id, table, key, part }) => {
+    const state = window.__curio_mapState ? await window.__curio_mapState(id) : null;
+    const layer = state && state[table];
+    if (!layer) return null;
+    const out = [];
+    for (let position = 0; position < layer.drawn; position++) {
+        const feature = await window.__curio_mapFeatureAt(id, table, position);
+        out.push(feature ? [feature[key] ?? null, feature[part] ?? null] : [null, null]);
+    }
+    return out;
+}"""
+
+# A selection sent as the node *id*'s own, through its node's
+# interactionsCallback, which the interaction edges carry: a map's pick.
+_SEND_JS = """([id, selection]) => {
+    const node = window.__curio_reactFlow.getNodes().find((n) => n.id === id);
+    node.data.interactionsCallback(selection, id);
+}"""
+
+
+def _map_pick(building) -> dict:
+    """The selection a pick of *building* on the Chicago map is sent as."""
+    return {"autk_selection": {
+        "type": "POINT", "data": [{KEY: building}], "priority": 1, "source": MAP_TYPE, "layerRef": BUILDINGS,
+    }}
+
+
+def _told_apart(rows: list[dict]) -> bool:
+    """Whether a building's rows are two parts or more, each with a shape and
+    an ``osm_id`` of its own."""
+    ids = [(row.get("properties") or {}).get(PART_KEY) for row in rows]
+    return len(rows) >= 2 and all(row.get("geometry") for row in rows) and None not in ids and len(set(ids)) == len(ids)
+
+
+def _rings_of(geometry: dict | None) -> list[list[tuple[float, float]]]:
+    """A shape's corners, ring by ring, as Move points shows them: an area's
+    rings without the corner that closes each."""
+    kind, coordinates = (geometry or {}).get("type"), (geometry or {}).get("coordinates") or []
+    rings = {
+        "Point": [[coordinates]], "MultiPoint": [[point] for point in coordinates],
+        "LineString": [coordinates], "MultiLineString": coordinates,
+        "Polygon": coordinates, "MultiPolygon": [ring for polygon in coordinates for ring in polygon],
+    }.get(kind, [])
+    out = []
+    for ring in rings:
+        points = [(float(point[0]), float(point[1])) for point in ring]
+        if kind in ("Polygon", "MultiPolygon") and len(points) > 1 and points[0] == points[-1]:
+            points = points[:-1]
+        out.append(points)
+    return out
+
+
+def _corner_count(geometry: dict | None) -> int:
+    """How many corners Move points shows for a shape."""
+    return sum(len(ring) for ring in _rings_of(geometry))
+
+
+def _drag_room(rows: list[dict]) -> float:
+    """How much room, in its layer's units, a building gives a corner to drag:
+    the most a corner of its first part has from every other corner of the
+    building, and the most a corner of its other parts has, whichever is less."""
+    corners = [(part, point) for part, row in enumerate(rows) for ring in _rings_of(row.get("geometry")) for point in ring]
+
+    def room(i: int) -> float:
+        x, y = corners[i][1]
+        return min((math.hypot(x - ox, y - oy) for j, (_, (ox, oy)) in enumerate(corners) if j != i), default=math.inf)
+
+    first = max((room(i) for i, (part, _) in enumerate(corners) if part == 0), default=0.0)
+    others = max((room(i) for i, (part, _) in enumerate(corners) if part > 0), default=0.0)
+    return min(first, others)
+
+
+def _to_drag(corners: list[dict]) -> list[dict]:
+    """The corners a test drags: those of the parts after the first, when the
+    overlay names their parts, else every one."""
+    parts = {corner["part"] for corner in corners}
+    return [corner for corner in corners if len(parts) < 2 or corner["part"] != 0]
+
+
+def _best_room(corners: list[dict]) -> float:
+    """The most room, in page pixels, a corner to drag has from every other corner."""
+    return max((_room(corner, corners) for corner in _to_drag(corners)), default=0.0)
+
+
+def _picked_with_corners(page, map_id: str, building, what: str) -> list[dict]:
+    """Pick *building* on the map *map_id*, as the map's own pick is sent, and
+    wait until Move points shows its corners. The pick is sent again when a
+    change of the node's code started its pick anew meanwhile."""
+    for _ in range(3):
+        page.evaluate(_SEND_JS, [map_id, _map_pick(building)])
+        _wait_for_lit(page, map_id, {building}, what, table=BUILDINGS)
+        deadline = time.time() + 5
+        while time.time() < deadline:
+            corners = _corners(page, map_id)
+            if corners:
+                return corners
+            page.wait_for_timeout(250)
+    raise AssertionError(f"after {what}, Move points shows no corner of building {building} on the map {map_id}")
+
+
+def _crosses(a, b, c, d) -> bool:
+    """Whether the segments *a* to *b* and *c* to *d* cross or touch."""
+    def turn(p, q, r):
+        return (q[0] - p[0]) * (r[1] - p[1]) - (q[1] - p[1]) * (r[0] - p[0])
+
+    def on(p, q, r):
+        return min(p[0], q[0]) - 1e-9 <= r[0] <= max(p[0], q[0]) + 1e-9 and min(p[1], q[1]) - 1e-9 <= r[1] <= max(p[1], q[1]) + 1e-9
+
+    t1, t2, t3, t4 = turn(c, d, a), turn(c, d, b), turn(a, b, c), turn(a, b, d)
+    if ((t1 > 0) != (t2 > 0)) and ((t3 > 0) != (t4 > 0)) and t1 and t2 and t3 and t4:
+        return True
+    return any(t == 0 and on(p, q, r) for t, p, q, r in ((t1, c, d, a), (t2, c, d, b), (t3, a, b, c), (t4, a, b, d)))
+
+
+def _drop_keeping_shape(corner: dict, corners: list[dict]) -> tuple[float, float] | None:
+    """Where to drag *corner*, in page coordinates, so that no side of its part
+    crosses another (autk-db checks each part with ``ST_IsValid``): a little
+    out from the middle of its two neighbours in its ring, else in toward it,
+    at least 5 pixels from where it is; None when neither keeps the sides
+    apart."""
+    rings: dict = {}
+    indexes: dict = {}
+    for c in sorted(corners, key=lambda c: c["index"]):
+        if c["part"] == corner["part"]:
+            rings.setdefault(c["ring"], []).append((c["x"], c["y"]))
+            indexes.setdefault(c["ring"], []).append(c["index"])
+    ring = rings.get(corner["ring"], [])
+    if len(ring) < 3:
+        return None
+    at = indexes[corner["ring"]].index(corner["index"])
+    before, after = ring[at - 1], ring[(at + 1) % len(ring)]
+    middle = ((before[0] + after[0]) / 2, (before[1] + after[1]) / 2)
+    away = (corner["x"] - middle[0], corner["y"] - middle[1])
+    # Every side of the part but the two the corner ends, which move with it.
+    sides = [
+        (points[i], points[(i + 1) % len(points)], key, i)
+        for key, points in rings.items() for i in range(len(points))
+        if not (key == corner["ring"] and i in (at, (at - 1) % len(ring)))
+    ]
+    for share in (0.6, -0.5):
+        drop = (corner["x"] + share * away[0], corner["y"] + share * away[1])
+        if math.hypot(drop[0] - corner["x"], drop[1] - corner["y"]) < 5:
+            continue
+        moved = [(before, drop), (drop, after)]
+        if not any(
+            _crosses(a, b, p, q) for a, b in moved for p, q, key, i in sides
+            # A moved side meets its neighbouring sides at their shared corner.
+            if not (key == corner["ring"] and (i == (at - 2) % len(ring) and a == before or i == (at + 1) % len(ring) and b == after))
+        ):
+            return drop
+    return None
+
+
+def _within(corners: list[dict], box: dict, margin: float) -> bool:
+    """Whether every one of *corners* lies *margin* pixels inside *box*."""
+    return all(
+        box["x"] + margin < c["x"] < box["x"] + box["width"] - margin
+        and box["y"] + margin < c["y"] < box["y"] + box["height"] - margin
+        for c in corners
+    )
+
+
+def _wait_for_corners(page, map_id: str, ready, what: str) -> list[dict]:
+    """The corners Move points shows on the map *map_id*, once *ready* holds for them."""
+    corners: list[dict] = []
+    deadline = time.time() + 15
+    while time.time() < deadline:
+        corners = _corners(page, map_id)
+        if ready(corners):
+            return corners
+        page.wait_for_timeout(250)
+    raise AssertionError(f"after {what}, Move points shows the corners {corners} on the map {map_id}")
+
+
+def _middle(corners: list[dict]) -> tuple[float, float]:
+    """The middle of the box around *corners*, in page coordinates."""
+    xs, ys = [c["x"] for c in corners], [c["y"] for c in corners]
+    return (min(xs) + max(xs)) / 2, (min(ys) + max(ys)) / 2
+
+
+def _spread(corners: list[dict]) -> float:
+    """The longer side of the box around *corners*, in page pixels."""
+    xs, ys = [c["x"] for c in corners], [c["y"] for c in corners]
+    return max(max(xs) - min(xs), max(ys) - min(ys)) if xs else 0.0
+
+
+def _room(corner: dict, corners: list[dict]) -> float:
+    """How far, in page pixels, the nearest other corner lies from *corner*."""
+    return min((math.hypot(c["x"] - corner["x"], c["y"] - corner["y"]) for c in corners if c is not corner), default=math.inf)
+
+
+def _literal(value) -> str:
+    """*value* as a node's condition writes it: a number as JavaScript writes it, a text in quotes."""
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, float) and value.is_integer():
+        return str(int(value))
+    if isinstance(value, str):
+        return '"' + value.replace("\\", "\\\\").replace('"', '\\"') + '"'
+    return str(value)
+
+
+def _shown_edit(edit: dict) -> dict:
+    """An edit as a failure shows it: its shape left out."""
+    return {name: value for name, value in edit.items() if name != "geometry"}
 
 
 def _wait_for_count_of_edits(page, node_id: str, count: int, what: str) -> tuple[str, dict]:
@@ -1401,34 +1949,84 @@ _DRAWN_POINT_JS = """async ({ id, at, background }) => {
     return null;
 }"""
 
-# A corner handle Move points draws over the map, in page coordinates: the
-# first whose middle is well inside the map's canvas, room left for the drag,
-# and on top there.
-_HANDLE_JS = """(id) => {
+# Each corner Move points shows, in page coordinates, as the map's overlay
+# lists them (data-corners, in the map's own pixels, which its box scales to
+# the page): its part (the row of the feature it is a corner of, null when
+# the overlay names none), its ring and index in that part, whether its
+# middle is well inside the map's canvas, room left for the drag (inside),
+# with the map on top there (onTop) and drawing it in its highlight (lit),
+# and all three (usable).
+_CORNERS_JS = """async ({ id, highlight }) => {
     const node = document.querySelector(`.react-flow__node[data-id="${id}"]`);
     const canvas = document.getElementById('autk-grammar-map-' + id);
-    if (!node || !canvas) return null;
+    const overlay = node && node.querySelector('[data-testid="map-edit-overlay"]');
+    if (!overlay || !canvas) return null;
+    await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+    if (window.__curio_renderMapsForReading) await window.__curio_renderMapsForReading();
+    const img = new Image();
+    img.src = canvas.toDataURL('image/png');
+    await img.decode();
+    const scratch = document.createElement('canvas');
+    scratch.width = img.width;
+    scratch.height = img.height;
+    const ctx = scratch.getContext('2d');
+    ctx.drawImage(img, 0, 0);
+    const px = ctx.getImageData(0, 0, img.width, img.height).data;
     const area = canvas.getBoundingClientRect();
-    for (const circle of node.querySelectorAll('[data-testid="map-edit-overlay"] circle[data-handle="corner"]')) {
-        const box = circle.getBoundingClientRect();
-        const x = box.left + box.width / 2, y = box.top + box.height / 2;
+    const box = overlay.getBoundingClientRect();
+    const sx = box.width / Number(overlay.getAttribute('data-map-width'));
+    const sy = box.height / Number(overlay.getAttribute('data-map-height'));
+    const lit = (x, y) => {
+        const cx = Math.floor((x - area.left) * img.width / area.width);
+        const cy = Math.floor((y - area.top) * img.height / area.height);
+        if (cx < 0 || cy < 0 || cx >= img.width || cy >= img.height) return false;
+        const i = (cy * img.width + cx) * 4;
+        return px[i + 3] >= 250 && Math.max(Math.abs(px[i] - highlight[0]), Math.abs(px[i + 1] - highlight[1]),
+            Math.abs(px[i + 2] - highlight[2])) <= 16;
+    };
+    return JSON.parse(overlay.getAttribute('data-corners') || '[]').map((corner) => {
+        const x = box.left + corner.x * sx, y = box.top + corner.y * sy;
         const inside = x > area.left + 30 && x < area.right - 30 && y > area.top + 30 && y < area.bottom - 30;
-        if (inside && document.elementFromPoint(x, y) === circle) {
-            return { x, y, ring: circle.getAttribute('data-ring'), index: circle.getAttribute('data-index') };
-        }
-    }
-    return null;
+        const onTop = document.elementFromPoint(x, y) === canvas;
+        const shown = lit(x, y);
+        return {
+            part: corner.part === undefined ? null : corner.part, ring: corner.ring, index: corner.index, x, y,
+            inside, onTop, lit: shown, usable: inside && onTop && shown,
+        };
+    });
 }"""
 
-# Where the corner handle *ring*, *index* is drawn now, in page coordinates.
-_HANDLE_AT_JS = """({ id, ring, index }) => {
+# Where the corner *ring*, *index* is shown now, in page coordinates: of the
+# part *part*, when it is given.
+_HANDLE_AT_JS = """({ id, ring, index, part }) => {
     const node = document.querySelector(`.react-flow__node[data-id="${id}"]`);
-    const circle = node && node.querySelector(
-        `[data-testid="map-edit-overlay"] circle[data-handle="corner"][data-ring="${ring}"][data-index="${index}"]`);
-    if (!circle) return null;
-    const box = circle.getBoundingClientRect();
-    return { x: box.left + box.width / 2, y: box.top + box.height / 2 };
+    const overlay = node && node.querySelector('[data-testid="map-edit-overlay"]');
+    if (!overlay) return null;
+    const corner = JSON.parse(overlay.getAttribute('data-corners') || '[]')
+        .find((c) => c.ring === ring && c.index === index && (part === undefined || part === null || c.part === part));
+    if (!corner) return null;
+    const box = overlay.getBoundingClientRect();
+    return {
+        x: box.left + corner.x * box.width / Number(overlay.getAttribute('data-map-width')),
+        y: box.top + corner.y * box.height / Number(overlay.getAttribute('data-map-height')),
+    };
 }"""
+
+
+def _corners(page, map_id: str) -> list[dict]:
+    """Every corner Move points shows on the map *map_id* now (``_CORNERS_JS``)."""
+    return page.evaluate(_CORNERS_JS, {"id": map_id, "highlight": list(MAP_HIGHLIGHT)}) or []
+
+
+def _corner_to_drag(page, map_id: str) -> dict | None:
+    """A corner of the feature Move points shows on the map *map_id* to drag:
+    the first a press can take, once the map draws one, or None after 10 s."""
+    deadline = time.time() + 10
+    while True:
+        handle = next((corner for corner in _corners(page, map_id) if corner["usable"]), None)
+        if handle or time.time() >= deadline:
+            return handle
+        page.wait_for_timeout(250)
 
 
 def _handed_layers(stored: dict) -> dict:

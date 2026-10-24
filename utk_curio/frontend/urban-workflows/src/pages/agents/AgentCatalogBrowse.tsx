@@ -195,7 +195,7 @@ export const AgentCatalogBrowse: React.FC = () => {
           <button
             type="button"
             className={browseStyles.publishButton}
-            title="Values your agents read when they run"
+            data-tooltip="Values your agents read when they run"
             onClick={() => setSettingsOpen(true)}
           >
             Settings

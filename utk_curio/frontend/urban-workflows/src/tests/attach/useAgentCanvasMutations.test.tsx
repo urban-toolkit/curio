@@ -7,6 +7,7 @@ jest.mock("../../hook/useCode", () => ({
 }));
 
 const mockApplyNodeContent = jest.fn();
+const mockApplyNodeSettings = jest.fn();
 const mockOnEdgesChange = jest.fn();
 const mockApplyReviewedRemovals = jest.fn();
 // #662: the canvas's scenarios, which an applied plan's join.
@@ -15,6 +16,7 @@ const mockScenarios = { current: [] as Array<{ id: string; name: string; color: 
 jest.mock("../../providers/FlowProvider", () => ({
   useFlowContext: () => ({
     applyNodeContent: mockApplyNodeContent,
+    applyNodeSettings: mockApplyNodeSettings,
     onEdgesChange: mockOnEdgesChange,
     applyReviewedRemovals: mockApplyReviewedRemovals,
     scenarios: mockScenarios.current,
@@ -56,6 +58,7 @@ jest.mock("../../registry/projectPackagesStore", () => ({
 
 import { useAgentCanvasMutations } from "../../components/agents/attach/useAgentCanvasMutations";
 import {
+  type AgentCanvasMutation,
   notifyAgentCanvasMutation,
   subscribeAgentCanvasMutations,
 } from "../../services/agents";
@@ -160,6 +163,24 @@ describe("useAgentCanvasMutations (the apply→canvas bridge, dev/48 §3.3 + dev
       }),
     );
     expect(mockApplyNodeContent).toHaveBeenCalledWith("n1", "print(2)");
+  });
+
+  it("node-content-applied hands on the name of the agent that wrote the content, which the node's entry is named after", () => {
+    render(<Host />);
+    const applied = { kind: "node-content-applied" as const, nodeId: "n1", content: "print(2)", agent: "Node Builder" };
+    act(() => notifyAgentCanvasMutation(applied));
+    expect(mockApplyNodeContent).toHaveBeenCalledWith("n1", "print(2)", "Node Builder");
+  });
+
+  it("node-settings-applied routes through FlowProvider.applyNodeSettings, which hands each to the node's own setter", () => {
+    render(<Host />);
+    const settings = { dataPool: { betweenCharts: "MERGE_AND" }, widgets: { combine: "max" } };
+    act(() => notifyAgentCanvasMutation({ kind: "node-settings-applied", nodeId: "pool", settings }));
+    expect(mockApplyNodeSettings).toHaveBeenCalledTimes(1);
+    expect(mockApplyNodeSettings).toHaveBeenCalledWith("pool", settings);
+    // A settings change is no content change, and inserts no node.
+    expect(mockApplyNodeContent).not.toHaveBeenCalled();
+    expect(mockCreateCodeNode).not.toHaveBeenCalled();
   });
 });
 
@@ -326,6 +347,68 @@ describe("#662: a plan's widgets, copies and scenarios reach the live canvas", (
     expect("copiedFrom" in options).toBe(false);
   });
 
+  it("a created Spatial Join carries its operation and output into the factory, as a load reads them", () => {
+    const join = {
+      id: "join-id", type: "curio.builtin/spatial-join", content: "", goal: "Labels per neighborhood",
+      x: 500, y: 60, metadata: { spatialJoin: { predicate: "within", output: "counts" } },
+    };
+    render(<Host />);
+    act(() => notifyAgentCanvasMutation({ kind: "node-created", node: join as never }));
+    expect(mockCreateCodeNode).toHaveBeenCalledWith(
+      "curio.builtin/spatial-join",
+      expect.objectContaining({ nodeId: "join-id", spatialJoin: { predicate: "within", output: "counts" } }),
+    );
+    // A node that sets none gets none, so the node keeps its own defaults.
+    act(() => notifyAgentCanvasMutation({ kind: "node-created", node: NODE }));
+    expect("spatialJoin" in mockCreateCodeNode.mock.calls[1][1]).toBe(false);
+  });
+
+  // A created Data Pool and Simple View. A member that names no mode is
+  // dropped, as loadTrill drops it (dataPoolFromSpec).
+  const POOL = {
+    id: "pool-id", type: "curio.builtin/data-pool", content: "", goal: "Picked photos", x: 500, y: 60,
+    metadata: { dataPool: { insideChart: "MERGE_(AND)", betweenCharts: "MERGE_AND" } },
+  };
+  const VIEW = {
+    id: "view-id", type: "curio.builtin/vis-simple", content: "", goal: "Overlays", x: 920, y: 60,
+    metadata: { simpleVis: { imageColumn: "overlay_url" } },
+  };
+
+  function expectPoolAndViewSettings() {
+    expect(mockCreateCodeNode).toHaveBeenCalledWith(
+      "curio.builtin/data-pool",
+      expect.objectContaining({ nodeId: "pool-id", dataPool: { betweenCharts: "MERGE_AND" } }),
+    );
+    expect(mockCreateCodeNode).toHaveBeenCalledWith(
+      "curio.builtin/vis-simple",
+      expect.objectContaining({ nodeId: "view-id", simpleVis: { imageColumn: "overlay_url" } }),
+    );
+  }
+
+  it("a created Data Pool carries its modes, and a Simple View its image column, into the factory as a load reads them", () => {
+    render(<Host />);
+    act(() => notifyAgentCanvasMutation({ kind: "node-created", node: POOL as never }));
+    act(() => notifyAgentCanvasMutation({ kind: "node-created", node: VIEW as never }));
+    expectPoolAndViewSettings();
+    // A node that sets neither gets neither: the pool starts at Overwrite and
+    // the view shows every image column.
+    act(() => notifyAgentCanvasMutation({ kind: "node-created", node: NODE }));
+    const options = mockCreateCodeNode.mock.calls[2][1];
+    expect("dataPool" in options).toBe(false);
+    expect("simpleVis" in options).toBe(false);
+  });
+
+  it("a whole applied plan's Data Pool and Simple View carry them too", () => {
+    render(<Host />);
+    act(() =>
+      notifyAgentCanvasMutation({
+        kind: "graph-created", planId: "plan-settings", nodes: [POOL, VIEW] as never, edges: [],
+      }),
+    );
+    expect(mockCreateCodeNode).toHaveBeenCalledTimes(2);
+    expectPoolAndViewSettings();
+  });
+
   it("graph-created joins the plan's saved scenarios after the canvas's own", () => {
     const own = { id: "s-own", name: "Baseline", color: "#2f8f4a", nodes: ["n0"] };
     mockScenarios.current = [own];
@@ -398,6 +481,33 @@ describe("graph-created removals (dev/59)", () => {
       }),
     );
     expect(mockApplyReviewedRemovals).not.toHaveBeenCalled();
+  });
+});
+
+describe("plan-removals (a plan completed a row at a time, or by Connect all)", () => {
+  const removals = (planId: string): AgentCanvasMutation => ({
+    kind: "plan-removals",
+    planId,
+    removedNodeIds: ["old-loader"],
+    removedEdgeIds: ["edge-1"],
+  });
+
+  it("removes what the plan removes through the reviewed path, as graph-created does", () => {
+    mockGetNodes.mockReturnValue([{ id: "old-loader" }, { id: "cleaner" }]);
+    render(<Host />);
+    act(() => notifyAgentCanvasMutation(removals("rows-1")));
+    expect(mockApplyReviewedRemovals).toHaveBeenCalledWith(["old-loader"], ["edge-1"]);
+    // The rows already placed the plan's nodes: nothing is inserted.
+    expect(mockCreateCodeNode).not.toHaveBeenCalled();
+  });
+
+  it("leaves out a node already gone, and removes once per plan", () => {
+    mockGetNodes.mockReturnValue([{ id: "cleaner" }]); // the user deleted it live
+    render(<Host />);
+    act(() => notifyAgentCanvasMutation(removals("rows-2")));
+    act(() => notifyAgentCanvasMutation(removals("rows-2")));
+    expect(mockApplyReviewedRemovals).toHaveBeenCalledTimes(1);
+    expect(mockApplyReviewedRemovals).toHaveBeenCalledWith([], ["edge-1"]);
   });
 });
 

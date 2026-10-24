@@ -19,6 +19,7 @@ Verdicts:
 from __future__ import annotations
 
 from utk_curio.backend.app.execution import runner
+from utk_curio.backend.app.agents.domain import agent_text
 
 # Sandbox runtime dataType → template port type vocabulary. Unmapped types
 # skip the compatibility check (fail-open — honesty over false alarms).
@@ -75,19 +76,14 @@ def _consumer_type_mismatch(
             continue
         if absent:
             label = (consumer.get("goal") or edge.get("target") or "?")
-            return (
-                "the code returned no output (None), which downstream node "
-                f"{str(label)[:60]!r} cannot accept (it declares "
-                f"{', '.join(sorted(declared))}) — return the data this node "
-                "produces, or, if it cannot be produced from these inputs, say "
-                "so in one line instead of returning code"
+            return agent_text.message(
+                "result-shape.consumer-no-output", label=repr(str(label)[:60]), declared=', '.join(sorted(declared)),
             )
         if port_type not in declared:
             label = (consumer.get("goal") or edge.get("target") or "?")
-            return (
-                f"the output type {output_data_type!r} is not accepted by "
-                f"downstream node {str(label)[:60]!r} (declares "
-                f"{', '.join(sorted(declared))})"
+            return agent_text.message(
+                "result-shape.consumer-type-mismatch", output_data_type=repr(output_data_type),
+                label=repr(str(label)[:60]), declared=', '.join(sorted(declared)),
             )
     return None
 
@@ -109,6 +105,7 @@ def validate_candidate(
     prior_outputs: dict | None = None,
     templates: dict | None = None,
     acting_user=None,
+    keep_stdout: bool = False,
 ) -> dict:
     """Run the dataflow through *node_id* with the candidate overlaid and
     return ``{"verdict", "evidence"}`` (see module docstring). dev/115:
@@ -116,7 +113,9 @@ def validate_candidate(
     Data Catalog's ``curio_data_path("<id>")`` loaders resolve exactly as
     on Play. ``acting_user`` (#485) is the account's ``User`` row, captured in
     the request: validation runs on a thread of its own, where the account's
-    collections and added models cannot be found without it."""
+    collections and added models cannot be found without it. With
+    *keep_stdout*, a pass also holds ``stdout``, the target's whole output,
+    for a check that reads what the run printed."""
     from utk_curio.backend.app.discovery.application.exec_collections import (
         resolve_spec_collections,
     )
@@ -134,6 +133,7 @@ def validate_candidate(
         strict_upstream=True,  # dev/118: an empty upstream is a blocker, never None downstream
         templates=templates,  # dev/119: the roster classifies executability
         acting_user=acting_user,
+        keep_stdout=keep_stdout,
     )
     executed = [nid for nid, rec in report["nodes"].items() if rec.get("executed")]
     reused = [nid for nid, rec in report["nodes"].items() if rec.get("status") == "reused"]
@@ -208,4 +208,7 @@ def validate_candidate(
         evidence.update({"kind": "type-mismatch", "detail": mismatch})
         return {"verdict": "fail", "evidence": evidence}
     evidence["kind"] = "executed"
-    return {"verdict": "pass", "evidence": evidence}
+    passed = {"verdict": "pass", "evidence": evidence}
+    if keep_stdout:
+        passed["stdout"] = report.get("targetStdout") or ""
+    return passed

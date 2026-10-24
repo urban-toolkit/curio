@@ -159,11 +159,14 @@ const StripThumb: React.FC<{ datasetId: string; fileId: string; name: string }> 
     `/api/datasets/${encodeURIComponent(datasetId)}/media/${encodeURIComponent(fileId)}?variant=thumb`,
   );
   return url ? (
-    <img className={stripStyles.thumb} src={url} alt={name} title={name} />
+    <img className={stripStyles.thumb} src={url} alt={name} data-tooltip={name} />
   ) : (
+    // An empty thumbnail stands in for the image, named as its tooltip says.
     <span
       className={`${stripStyles.thumb} ${failed ? stripStyles.thumbFailed : ""}`}
-      title={failed ? `${name} has no preview` : name}
+      role="img"
+      aria-label={failed ? `${name} has no preview` : name}
+      data-tooltip={failed ? `${name} has no preview` : name}
     />
   );
 };

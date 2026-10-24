@@ -31,7 +31,6 @@ jest.mock("../../components/menus/nodes/toolsMenuPackagePalette", () => ({
     PackagesPaletteDropdown: paletteStub("packages"),
     groupPalettePackages: () => [],
     paletteDescriptorBootstrapKey: () => "",
-    OVERLAY_TRIGGER_DELAY_PROPS: {},
 }));
 jest.mock("../../registry", () => ({
     getPaletteNodeTypes: () => [],
@@ -78,7 +77,7 @@ describe("ToolsMenu Run All button (#271)", () => {
         expect(screen.queryByRole("button", { name: /run all nodes/i })).toBeNull();
         const button = screen.getByRole("button", { name: /cancel run/i });
         expect(button).toHaveAttribute("data-run-active", "true");
-        expect(button).toHaveAttribute("title", expect.stringMatching(/cancel/i));
+        expect(button).toHaveAttribute("data-tooltip", expect.stringMatching(/cancel/i));
 
         fireEvent.click(button);
 

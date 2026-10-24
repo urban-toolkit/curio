@@ -409,7 +409,7 @@ describe("AgentReviewCard: #662 a plan's widgets and scenarios", () => {
     expect(screen.getByRole("button", { name: "Create node Shadows (Real heights)" })).toBeEnabled();
     const copy = screen.getByRole("button", { name: "Create node Shadows (Twice as tall)" });
     expect(copy).toBeDisabled();
-    expect(copy).toHaveAttribute("title", "create 'Shadows' first");
+    expect(copy).toHaveAttribute("data-tooltip", "create 'Shadows' first");
   });
 
   it("once its original exists the copy can be created, and a saved scenario says so", () => {
@@ -432,6 +432,133 @@ describe("AgentReviewCard: #662 a plan's widgets and scenarios", () => {
     render(<AgentReviewCard part={part} onApply={jest.fn()} />);
     expect(screen.queryByRole("group", { name: "Scenarios this plan saves" })).toBeNull();
     expect(screen.queryByText(/It saves/)).toBeNull();
+  });
+});
+
+describe("AgentReviewCard: a planned Spatial Join says how it joins", () => {
+  const joinPart = () =>
+    ({
+      type: "proposal",
+      proposalId: "p-join",
+      tool: "dataflow.plan.write",
+      summary: "Apply plan · 3 nodes, 2 edges",
+      preview: "",
+      pins: { baseGraphDigest: "abc" },
+      status: "pending",
+      plan: {
+        goal: "count sidewalk labels per neighborhood",
+        nodes: [
+          { ref: "labels", nodeType: "curio.builtin/data-loading", title: "Labels", intent: "label points" },
+          { ref: "hoods", nodeType: "curio.builtin/data-loading", title: "Neighborhoods", intent: "polygons" },
+          {
+            ref: "join", nodeType: "curio.builtin/spatial-join", title: "Labels per neighborhood",
+            intent: "count the labels within each neighborhood",
+            spatialJoin: { predicate: "within", output: "counts" },
+          },
+        ],
+        edgeCount: 2,
+      },
+    }) as AgentProposalPart;
+
+  it("its row names the operation and the output the plan sets, and no other row names one", () => {
+    render(
+      <AgentReviewCard
+        part={joinPart()}
+        onApplyPlanNode={jest.fn()}
+        onSavePlanGoal={jest.fn()}
+        planNodeState={{ appliedRefs: [], editedGoals: {} }}
+      />,
+    );
+    expect(screen.getByText("operation within, output counts")).toBeInTheDocument();
+    expect(screen.getAllByText(/^operation /)).toHaveLength(1);
+  });
+});
+
+describe("AgentReviewCard: a planned Data Pool and Simple View say their settings in their own words", () => {
+  const settingsPart = () =>
+    ({
+      type: "proposal",
+      proposalId: "p-settings",
+      tool: "dataflow.plan.write",
+      summary: "Apply plan · 4 nodes, 3 edges",
+      preview: "",
+      pins: { baseGraphDigest: "abc" },
+      status: "pending",
+      plan: {
+        goal: "show the overlays of the photos picked in both charts",
+        nodes: [
+          { ref: "photos", nodeType: "curio.builtin/data-loading", title: "Photos", intent: "street photos" },
+          {
+            ref: "pool", nodeType: "curio.builtin/data-pool", title: "Picked photos",
+            intent: "the photos picked in both charts", dataPool: { betweenCharts: "MERGE_AND" },
+          },
+          {
+            ref: "either", nodeType: "curio.builtin/data-pool", title: "Either chart",
+            intent: "the photos picked in either chart",
+            dataPool: { insideChart: "MERGE_OR", betweenCharts: "MERGE_OR" },
+          },
+          {
+            ref: "view", nodeType: "curio.builtin/vis-simple", title: "Overlays",
+            intent: "the overlay of each picked photo", simpleVis: { imageColumn: "overlay_url" },
+          },
+        ],
+        edgeCount: 3,
+      },
+    }) as unknown as AgentProposalPart;
+
+  it("a pool's row names its modes as its selects do, a view's its image column, and no other row names one", () => {
+    render(
+      <AgentReviewCard
+        part={settingsPart()}
+        onApplyPlanNode={jest.fn()}
+        onSavePlanGoal={jest.fn()}
+        planNodeState={{ appliedRefs: [], editedGoals: {} }}
+      />,
+    );
+    expect(screen.getByText("Conflict between visualizations: Merge (AND)")).toBeInTheDocument();
+    expect(
+      screen.getByText("Conflict inside visualization: Merge (OR); Conflict between visualizations: Merge (OR)"),
+    ).toBeInTheDocument();
+    expect(screen.getAllByText(/^Conflict /)).toHaveLength(2);
+    expect(screen.getByText("Image column: overlay_url")).toBeInTheDocument();
+    expect(screen.getAllByText(/^Image column: /)).toHaveLength(1);
+  });
+});
+
+describe("AgentReviewCard: a settings change names the node and says each change in the node's own words", () => {
+  // The lines are the backend's (agents/domain/node_settings.describe_change
+  // and widget_grammar.describe_value), each in its node's words.
+  const settingsPart = (settingLines: string[]) =>
+    ({
+      type: "proposal",
+      proposalId: "p-change",
+      tool: "node.settings.write",
+      summary: "Change the settings of the Data Pool node · Picked photos",
+      preview: settingLines.join("\n"),
+      pins: { nodeId: "pool", settingsSha256: "abc" },
+      status: "pending",
+      settingLines,
+    }) as unknown as AgentProposalPart;
+
+  it("the header names the node, each change is a line of its own, and the card says what Apply does", () => {
+    const lines = ["Conflict inside visualization: Overwrite", "Conflict between visualizations: Merge (AND)"];
+    render(<AgentReviewCard part={settingsPart(lines)} onApply={jest.fn()} onDismiss={jest.fn()} />);
+    expect(screen.getByText("Change the settings of the Data Pool node · Picked photos")).toBeInTheDocument();
+    for (const line of lines) expect(screen.getAllByText(line)).toHaveLength(1);
+    expect(
+      screen.getByText("Applying makes only these changes, as picking them in the node does; its code is untouched."),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Apply" })).toBeInTheDocument();
+  });
+
+  it.each([
+    ["a view's image column", "Image column: overlay_url"],
+    ["every image column", "Image column: all"],
+    ["a join's operation", "operation within"],
+    ["a widget's value, by its label", "Combine: max"],
+  ])("%s reads as its node says it, once", (_what, line) => {
+    render(<AgentReviewCard part={settingsPart([line])} onApply={jest.fn()} />);
+    expect(screen.getAllByText(line)).toHaveLength(1);
   });
 });
 
@@ -517,11 +644,11 @@ describe("AgentReviewCard — dev/67-8 connection review stage", () => {
       />,
     );
     // The whole pair shows on hover too, handle included (#511).
-    expect(screen.getByText("Load → Merge [in_0]")).toHaveAttribute("title", "Load → Merge [in_0]");
+    expect(screen.getByText("Load → Merge [in_0]")).toHaveAttribute("data-tooltip", "Load → Merge [in_0]");
     // Edge 0: target ref "b" not created yet → disabled with the reason.
     const first = screen.getByRole("button", { name: "Connect Load to Merge" });
     expect(first).toBeDisabled();
-    expect(first).toHaveAttribute("title", "create 'Merge' first");
+    expect(first).toHaveAttribute("data-tooltip", "create 'Merge' first");
     // Edge 1: source ref "b" not created either → disabled; existing-id
     // endpoints alone never block.
     expect(screen.getByRole("button", { name: "Connect Merge to Old Analyze" })).toBeDisabled();
@@ -610,7 +737,7 @@ describe("AgentReviewCard — dev/71 progressive lifecycle rows", () => {
     });
     const solveB = screen.getByRole("button", { name: "Solve node Analyze" });
     expect(solveB).toBeDisabled();
-    expect(solveB).toHaveAttribute("title", "needs 'Load' connected first");
+    expect(solveB).toHaveAttribute("data-tooltip", "needs 'Load' connected first");
   });
 
   it("Solve enables when the edge is applied and upstream is approved", async () => {

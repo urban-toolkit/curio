@@ -122,6 +122,10 @@ def create_app(config_class=config_class):
 
     from utk_curio.backend.app.agents.routes.common import agents_bp
     app.register_blueprint(agents_bp)
+    # Every page and prompt the agents read, rendered once, so text with a
+    # marker no field defines stops the start, not a run.
+    from utk_curio.backend.app.agents.domain import agent_text
+    agent_text.render_at_start()
 
     from utk_curio.backend.app.monitor.routes import monitor_bp
     app.register_blueprint(monitor_bp)

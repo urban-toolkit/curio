@@ -1,12 +1,10 @@
 import React, { Fragment, memo, useSyncExternalStore } from "react";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faChevronLeft, faChevronRight, faShapes } from "@fortawesome/free-solid-svg-icons";
-import { Tooltip, OverlayTrigger } from "react-bootstrap";
 import { NodeCategory, NodeDescriptor, NodeTemplateId } from "../../../../registry/types";
 import { isRegistryReady, subscribeToRegistryReady } from "../../../../registry/registryReadiness";
 import { PaletteDragHint } from "../PaletteDragHint";
 import { TOOLS_PALETTE_DROPDOWN_ATTR, TOOLS_PALETTE_PANEL_ATTR } from "../toolsPaletteDismiss";
-import { OVERLAY_TRIGGER_DELAY_PROPS, type ToolsMenuTooltipSide } from "../toolsMenuPackagePalette/uiConstants";
 import styles from "./BuiltinPalette.module.css";
 
 /** The DOM id of a built-in palette tile: `curio.builtin/data-loading@1` is `tile-data-loading`. */
@@ -19,41 +17,31 @@ const DraggableTool = memo(function DraggableTool({
     icon,
     tooltip,
     badge,
-    tooltipPlacement = "right",
 }: {
     nodeType: NodeTemplateId;
     icon: any;
     tooltip: string;
     badge?: string;
-    tooltipPlacement?: ToolsMenuTooltipSide;
 }) {
     return (
-        <OverlayTrigger
-            placement={tooltipPlacement}
-            delay={OVERLAY_TRIGGER_DELAY_PROPS}
-            overlay={<Tooltip>{tooltip}</Tooltip>}
+        <div
+            id={paletteTileId(nodeType)}
+            // The tile is an icon and a drag source: nothing in it is text, so
+            // the aria-label is its name, the same words as its tooltip, which
+            // opens to the right as every tool rail palette row's does.
+            aria-label={tooltip}
+            data-tooltip={tooltip}
+            data-tooltip-side="right"
+            className={styles.optionStyle}
+            draggable
+            onDragStart={(event) => {
+                event.dataTransfer.setData("application/reactflow", nodeType);
+                event.dataTransfer.effectAllowed = "move";
+            }}
         >
-            <div
-                id={paletteTileId(nodeType)}
-                // The tile is an icon and a drag source: nothing in it was text,
-                // so it had no accessible name at all and the hover tooltip was
-                // its only label. `title` matches how the dataset and agent drag
-                // handles are named (DatasetPaletteRows, AgentPaletteRow); the
-                // explicit aria-label wins the accname computation and keeps the
-                // name stable if the tooltip copy ever diverges.
-                aria-label={tooltip}
-                title={tooltip}
-                className={styles.optionStyle}
-                draggable
-                onDragStart={(event) => {
-                    event.dataTransfer.setData("application/reactflow", nodeType);
-                    event.dataTransfer.effectAllowed = "move";
-                }}
-            >
-                <FontAwesomeIcon icon={icon} className={styles.iconStyle} />
-                {badge && <span className={styles.iconBadge}>{badge}</span>}
-            </div>
-        </OverlayTrigger>
+            <FontAwesomeIcon icon={icon} className={styles.iconStyle} />
+            {badge && <span className={styles.iconBadge}>{badge}</span>}
+        </div>
     );
 });
 
@@ -71,7 +59,7 @@ function groupPaletteTypes(descriptors: NodeDescriptor[]): NodeDescriptor[][] {
     );
 }
 
-function renderGroup(group: NodeDescriptor[], key: string, tooltipPlacement: ToolsMenuTooltipSide = "right") {
+function renderGroup(group: NodeDescriptor[], key: string) {
     return (
         <div key={key} className={styles.containerStyle}>
             {group.map((desc) => (
@@ -81,7 +69,6 @@ function renderGroup(group: NodeDescriptor[], key: string, tooltipPlacement: Too
                     icon={desc.icon}
                     tooltip={desc.label}
                     badge={desc.badge}
-                    tooltipPlacement={tooltipPlacement}
                 />
             ))}
         </div>
@@ -133,7 +120,7 @@ export const BuiltinPaletteDropdown = memo(function BuiltinPaletteDropdown({
                     onClick={() => setOpen(!open)}
                     aria-expanded={open}
                     aria-haspopup="true"
-                    title={open ? "Close built-in palette" : "Open built-in palette"}
+                    data-tooltip={open ? "Close built-in palette" : "Open built-in palette"}
                 >
                     <span className={styles.triggerTop}>
                         <FontAwesomeIcon icon={faShapes} className={styles.triggerIcon} />
