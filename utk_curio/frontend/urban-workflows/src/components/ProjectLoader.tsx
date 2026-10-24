@@ -301,7 +301,8 @@ export const ProjectLoader: React.FC<{
         setLoadState("loaded");
         // The outputs its last run on the server made that the saved ones do
         // not hold, and that run itself if it is still going. Canvas only: a
-        // dashboard draws from what was saved.
+        // dashboard draws from what was saved and from its viewers' runs
+        // (useDashboardRun).
         if (!presentation) void attachLatestRunRef.current(id, restored);
       } catch (err) {
         // 404 from the owner-scoped endpoint means either the project doesn't

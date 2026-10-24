@@ -20,6 +20,7 @@ import {
   type WidgetDef,
   type WidgetValue,
 } from "../../utils/widgets/widgetModel";
+import { changeableOnDashboard } from "../../utils/widgets/dashboardControls";
 import { nodesUsingShared, sharedWidgetsOf, withSharedRenamed } from "../../utils/references/sharedParameters";
 import { codeEditRevision, subscribeToCodeEdits } from "../../utils/references/codeEdits";
 import { registerNodeSettingWriter } from "../../utils/nodeSettingsWriters";
@@ -63,7 +64,8 @@ function ParameterBody({ data }: { data: any }) {
 
   const write = (next: WidgetDef[]) => {
     updateDataNode(data.nodeId, { ...data, widgets: next });
-    markDirty?.();
+    // A value tried on a dashboard is never saved (#1117).
+    if (!dashboardOn) markDirty?.();
   };
 
   const markUsersStale = (name: string) => {
@@ -71,7 +73,8 @@ function ParameterBody({ data }: { data: any }) {
   };
 
   /** The widget's new value reaches the dataflow: the nodes that use it are
-   * out of date, and with auto-run on they run. */
+   * out of date, and with auto-run on they run, as they do on a dashboard,
+   * where the run is a viewer's (#1117). */
   const commit = (value: WidgetValue) => {
     if (!widget) return;
     if (JSON.stringify(value) === committedKey) return;
@@ -170,7 +173,13 @@ function ParameterBody({ data }: { data: any }) {
         <span className={styles.rowLabel}>{widget.label || widget.name}</span>
         <SharedTag name={widget.name} disabled={dashboardOn} />
         <span className={styles.rowControl}>
-          <WidgetControl widget={widget} value={shown} disabled={dashboardOn} onChange={setValue} />
+          {/* A viewer changes a pinned control, except a read-only kind (#1117). */}
+          <WidgetControl
+            widget={widget}
+            value={shown}
+            disabled={dashboardOn && !changeableOnDashboard(widget)}
+            onChange={setValue}
+          />
         </span>
         {!dashboardOn ? (
           <span className={styles.rowActions}>

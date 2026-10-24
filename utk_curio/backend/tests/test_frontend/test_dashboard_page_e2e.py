@@ -15,8 +15,11 @@ What replaced it, and what each test below pins:
 * the sandbox ``/get`` serves a saved output by name when the session-tagged
   store cannot, which is what makes a visitor's view, or the owner's next
   sign-in, work at all;
-* the page is read-only for everyone but the owner, cannot delete anything, and
+* the page's layout is the owner's alone, the page cannot delete anything, and
   its one write (Save layout) leaves the dataflow's recorded outputs alone;
+* a visitor changes a pinned control and the tiles show a run of that value on
+  the server, which saves nothing; the next visitor who picks the same value
+  gets the output kept from that run, and nothing runs again (#1117);
 * a dataflow's scenarios each get a column of tiles under a header in their
   color, and Arrange by scenario puts the tiles back in them (#662).
 
@@ -34,7 +37,7 @@ import json
 import re
 import uuid
 from typing import TYPE_CHECKING
-from urllib.parse import urlsplit
+from urllib.parse import parse_qs, urlsplit
 
 import pytest
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError, expect
@@ -48,11 +51,13 @@ from .utils import (
     dismiss_toasts,
     empty_pane_point,
     node_locator,
+    park_pointer,
     play_node,
     require_owner_view,
     require_project_page,
     require_user_auth,
     require_webgpu,
+    save_workflow_test_screenshot,
     serve_built_frontend,
     stub_db_login,
     stub_login_and_enter_workflow,
@@ -128,16 +133,18 @@ def _spec() -> dict:
 # Steps shared by the scenarios
 # ---------------------------------------------------------------------------
 
-def _enter(page, app_frontend, current_server, *, prefix: str) -> dict:
-    """Sign in as a fresh owner, on the canvas of a fresh copy of the dataflow."""
+def _enter(page, app_frontend, current_server, *, prefix: str, spec: dict | None = None) -> dict:
+    """Sign in as a fresh owner, on the canvas of a fresh copy of the dataflow
+    (*spec*, by default the chart's)."""
+    spec = spec or _spec()
     session = stub_login_and_enter_workflow(
         page,
         frontend_url=app_frontend.base_url,
         backend_url=current_server,
         name="Dashboard Owner",
         username=f"{prefix}_{uuid.uuid4().hex[:8]}",
-        project_name="Dashboard e2e",
-        project_spec=_spec(),
+        project_name=spec["dataflow"]["name"],
+        project_spec=spec,
     )
     require_owner_view(page)
     page.wait_for_selector(".react-flow__node", timeout=45000)
@@ -169,9 +176,9 @@ def _save(page) -> None:
     )
 
 
-def _pinned_and_saved(page, app_frontend, current_server, *, prefix: str) -> dict:
+def _pinned_and_saved(page, app_frontend, current_server, *, prefix: str, spec: dict | None = None) -> dict:
     """The common starting point: the chart ran, is pinned, and is saved."""
-    session = _enter(page, app_frontend, current_server, prefix=prefix)
+    session = _enter(page, app_frontend, current_server, prefix=prefix, spec=spec)
     _run_the_chart(page)
     _pin(page, CHART)
     _save(page)
@@ -186,6 +193,18 @@ def _chart_drew(page, *, timeout: float = 90000) -> None:
 def _open_dashboard(page, base: str, project_id: str) -> None:
     page.goto(f"{base}/dashboard/{project_id}")
     page.get_by_test_id("open-dataflow-link").wait_for(state="visible", timeout=45000)
+
+
+def _starts_a_run(request) -> bool:
+    """A viewer's run started (``POST /api/projects/<id>/dashboard/runs``)."""
+    return request.method == "POST" and urlsplit(request.url).path.endswith("/dashboard/runs")
+
+
+def _runs_started_on(page) -> list[str]:
+    """Every viewer's run *page* starts from now on."""
+    started: list[str] = []
+    page.on("request", lambda request: started.append(request.url) if _starts_a_run(request) else None)
+    return started
 
 
 def _project(current_server: str, token: str, project_id: str) -> dict:
@@ -227,9 +246,12 @@ def test_the_owner_opens_a_dashboard_that_draws_without_a_run(
         "durable would be left to draw from once the scratch cache is cleared"
     )
 
-    # A full load of the page: nothing from the canvas session comes along.
+    # A full load of the page: nothing from the canvas session comes along,
+    # and nothing runs, since the tile has its saved output.
+    started = _runs_started_on(page)
     _open_dashboard(page, app_frontend.base_url, project_id)
     _chart_drew(page)
+    assert started == [], f"opening the dashboard started a run: {started!r}"
 
     # A page, not the canvas.
     assert page.locator("#tools-menu").count() == 0, "the editor's palette is on the dashboard"
@@ -495,6 +517,395 @@ def test_another_user_reloading_the_dataflow_sees_its_data(
         assert_vega_canvas_rendered(other, CHART, timeout=90000)
     finally:
         other_ctx.close()
+
+
+# ---------------------------------------------------------------------------
+# A visitor's own values (#1117)
+# ---------------------------------------------------------------------------
+
+ROWS = "dash-rows"
+SCALE = "dash-scale"
+SHAPER = "dash-shaper"
+VIEWER_RUN_STEM = "dashboard-viewer-run"
+
+#: How many rows the producer makes, by the pinned Rows choice: the three the
+#: owner saved, or five.
+ROWS_PRODUCER_CODE = (
+    "import pandas as pd\n\n"
+    "rows = [!! @rows !!]\n"
+    "counts = {'three': [3, 7, 5], 'five': [3, 7, 5, 9, 4]}[rows]\n"
+    "return pd.DataFrame({'category': list('abcde')[:len(counts)], 'count': counts})\n"
+)
+
+#: The producer's rows scaled by the pinned Scale choice: a second Python step,
+#: which reads what the first one made.
+SHAPER_CODE = (
+    "scale = [!! @scale !!]\n"
+    "factor = {'one': 1, 'ten': 10}[scale]\n"
+    "return input_0.assign(count=input_0['count'] * factor)\n"
+)
+
+#: What a dashboard asks of the backend for a viewer's run: the run, its
+#: stream, and what it made.
+_VIEWER_ROUTE_RE = re.compile(
+    r"^(POST /api/projects/[^/?]+/dashboard/runs"
+    r"|GET /api/projects/[^/?]+/dashboard/runs/[^/?]+/stream"
+    r"|GET /api/projects/[^/?]+/dashboard/outputs/(get|get-preview|raster)\?.*)$"
+)
+
+_CHART_PIXELS_JS = """(id) => {
+    const canvas = document.querySelector('#vega' + id + ' canvas');
+    return canvas ? canvas.toDataURL('image/png') : null;
+}"""
+
+
+def _choice(node_id: str, name: str, label: str, choices: list, x: int) -> dict:
+    """A pinned Parameter node holding one choice, shown as radio buttons."""
+    node = {**_node(node_id, "curio.builtin/parameter", x), "y": 700, "dashboardPinned": True}
+    node["metadata"]["widgets"] = [{
+        "name": name, "type": "choice", "label": label, "default": choices[0],
+        "options": {"choices": choices, "display": "radio"},
+    }]
+    return node
+
+
+def _controls_spec() -> dict:
+    """Two Python steps, the second reading what the first made, then a Data
+    Pool and the chart; a pinned choice read by each step. The pool is pinned
+    too: its table shows the rows a value made."""
+    def edge(source: str, target: str) -> dict:
+        return {"id": f"reactflow__edge-{source}out-{target}in", "source": source, "target": target}
+
+    return {
+        "dataflow": {
+            "name": "Dashboard controls e2e",
+            "task": "",
+            "description": "",
+            "packages": [],
+            "datasets": [],
+            "nodes": [
+                _node(PRODUCER, "curio.builtin/data-loading", 0, ROWS_PRODUCER_CODE),
+                _node(SHAPER, "curio.builtin/computation-analysis", 700, SHAPER_CODE),
+                {**_node(POOL, "curio.builtin/data-pool", 1400), "dashboardPinned": True},
+                _node(CHART, "curio.builtin/vis-vega", 2100, CHART_SPEC),
+                _choice(ROWS, "rows", "Rows", ["three", "five"], 0),
+                _choice(SCALE, "scale", "Scale", ["one", "ten"], 700),
+            ],
+            "edges": [edge(PRODUCER, SHAPER), edge(SHAPER, POOL), edge(POOL, CHART)],
+        },
+    }
+
+
+def _runs_started(asked: list[str]) -> list[str]:
+    return [line for line in asked if line.startswith("POST ") and line.endswith("/dashboard/runs")]
+
+
+def _files_read(asked: list[str]) -> set[str]:
+    """The artifacts the page read on the dashboard's output routes."""
+    names: set[str] = set()
+    for line in asked:
+        target = urlsplit(line.partition(" ")[2])
+        if "/dashboard/outputs/" in target.path:
+            names.update(parse_qs(target.query).get("fileName", []))
+    return names
+
+
+def _not_a_viewer_route(asked: list[str]) -> list[str]:
+    return [line for line in asked if not _VIEWER_ROUTE_RE.match(line)]
+
+
+class _Visitor:
+    """A browser of its own, with no session, on a dashboard as the hosted
+    stacks serve it: the page server, with the dashboard's data inside it.
+
+    What the page asks of the backend goes through :meth:`_to_backend`, which
+    notes what the page asked, what it was answered and what it logged, for a
+    failure to report. The harness points every page at this worker's backend
+    (``window.__CURIO_BACKEND_URL__``, conftest.py), so a request reaches it as
+    the page addressed it. A page that asks ``/api`` on its own host, as a
+    hosted stack's pages do, is passed on the way that stack's proxy passes it,
+    with ``/api`` taken off. A run's stream reaches the page whole, once the
+    run is over. A CORS preflight is passed on and not counted as asked.
+    """
+
+    def __init__(self, browser, current_server: str):
+        self.backend = current_server.rstrip("/")
+        backend = urlsplit(self.backend)
+        self.backend_origin = f"{backend.scheme}://{backend.netloc}"
+        self.ctx = browser.new_context()
+        self.page = self.ctx.new_page()
+        self.asked: list[str] = []
+        self.answered: list[str] = []
+        self.console: list[str] = []
+        self.page.on("console", lambda message: self.console.append(f"[{message.type}] {message.text}"))
+        self.page.on("pageerror", lambda error: self.console.append(f"[pageerror] {error}"))
+        self.page.route(f"{self.backend_origin}/**", self._to_backend)
+        self.page.route("**/api/api/**", self._to_backend)
+
+    def _to_backend(self, route, request) -> None:
+        parts = urlsplit(request.url)
+        query = f"?{parts.query}" if parts.query else ""
+        on_backend = f"{parts.scheme}://{parts.netloc}" == self.backend_origin
+        path = parts.path if on_backend else parts.path[len("/api"):]
+        line = f"{request.method} {path}{query}"
+        if request.method != "OPTIONS":
+            self.asked.append(line)
+        target = request.url if on_backend else f"{self.backend}{path}{query}"
+        try:
+            response = route.fetch(url=target, timeout=180000)
+        except Exception as exc:  # noqa: BLE001 - the page gets an answer, and the failure says why
+            self.answered.append(f"{line} -> the backend did not answer: {exc}")
+            route.fulfill(status=502, body=str(exc))
+            return
+        kind = response.headers.get("content-type", "")
+        said = response.text()[:3000] if ("json" in kind or "event-stream" in kind) else f"{len(response.body())} bytes"
+        self.answered.append(f"{line} -> {response.status} {said}")
+        route.fulfill(response=response)
+
+    def opens(self, hosted: str, project_id: str) -> None:
+        self.page.goto(f"{hosted}/dashboard/{project_id}", wait_until="domcontentloaded")
+        assert self.page.locator("script#curio-dashboard-payload").count() == 1, (
+            "the page server served the dashboard without its data"
+        )
+        self.page.get_by_test_id("open-dataflow-link").wait_for(state="visible", timeout=45000)
+
+    def story(self) -> str:
+        """What the page asked and was answered, and what it logged last."""
+        return (
+            "\nAsked and answered:\n  " + "\n  ".join(self.answered or ["nothing"])
+            + "\nThe page's last messages:\n  " + "\n  ".join(self.console[-30:] or ["none"])
+        )
+
+    def waits_for(self, what: str, check) -> None:
+        """*check*, which waits for *what*; a failure tells the visitor's story."""
+        try:
+            check()
+        except (AssertionError, PlaywrightTimeoutError) as exc:
+            raise AssertionError(f"{what}: {exc}{self.story()}") from None
+
+    def runs_ended(self) -> int:
+        """How many viewer's runs started here are over: each one's stream
+        answered, or its start answered with no run to follow."""
+        ended = 0
+        for line in self.answered:
+            asked, _, answer = line.partition(" -> ")
+            method, _, path = asked.partition(" ")
+            if method == "GET" and urlsplit(path).path.endswith("/stream"):
+                ended += 1
+            elif method == "POST" and path.endswith("/dashboard/runs"):
+                status, _, body = answer.partition(" ")
+                try:
+                    run_id = json.loads(body).get("runId") if status == "200" else None
+                except ValueError:
+                    run_id = None
+                if not run_id:
+                    ended += 1
+        return ended
+
+    def waits_for_runs(self, count: int) -> None:
+        """Until *count* viewer's runs started here are over, so a count of
+        the runs started is not taken while one is still to come."""
+        waited = 0
+        while self.runs_ended() < count:
+            if waited >= 90000:
+                raise AssertionError(f"waited 90000 ms for {count} viewer's runs to end{self.story()}")
+            self.page.wait_for_timeout(250)
+            waited += 250
+
+    def close(self) -> None:
+        self.ctx.close()
+
+
+def _pool_shows(page, rows: int, *, timeout: float = 90000) -> None:
+    """The pinned Data Pool's table holds *rows* rows."""
+    table = node_locator(page, POOL).locator("table").first
+    expect(table.locator("tbody tr")).to_have_count(rows, timeout=timeout)
+
+
+def _first_row_has_cell(page, text: str, *, timeout: float = 90000) -> None:
+    """The pinned Data Pool's first row has a cell that reads *text*, whole."""
+    row = node_locator(page, POOL).locator("table").first.locator("tbody tr").first
+    expect(row.locator("td").filter(has_text=re.compile(rf"^\s*{re.escape(text)}\s*$"))).to_have_count(
+        1, timeout=timeout,
+    )
+
+
+def _saved_tiles_drew(page) -> None:
+    """The chart and the pool show the three rows the owner saved."""
+    _chart_drew(page)
+    _pool_shows(page, 3)
+
+
+def _pick(page, node_id: str, choice: str):
+    """The radio button of *choice* on the pinned Parameter node *node_id*."""
+    return node_locator(page, node_id).get_by_role("radio", name=choice)
+
+
+def _chart_redrew(page, saved_pixels: str) -> None:
+    """The chart drew again, and not what it drew before."""
+    page.wait_for_function(
+        "([id, saved]) => {"
+        " const canvas = document.querySelector('#vega' + id + ' canvas');"
+        " return !!canvas && canvas.toDataURL('image/png') !== saved; }",
+        arg=[CHART, saved_pixels],
+        timeout=90000,
+        polling=500,
+    )
+    _chart_drew(page)
+
+
+def _catalog_ids(current_server: str, token: str, project_id: str) -> list[str]:
+    catalog = api_json(f"{current_server}/api/datasets/catalog?dataflowId={project_id}", token)
+    items = catalog.get("items", catalog) if isinstance(catalog, dict) else catalog
+    return sorted(str(item.get("id")) for item in items)
+
+
+def test_a_visitor_changes_a_pinned_control_and_the_next_one_gets_the_kept_output(
+    app_frontend: "FrontendPage", current_server, page, browser, monkeypatch,
+):
+    """A visitor with no account picks another value and the tiles redraw.
+
+    The page is served as the hosted stacks serve it, with its data, to
+    browsers with no session. On open the tiles show the saved outputs and
+    nothing runs. Picking another Rows runs both Python steps on the server,
+    the second reading what the first made, through the dashboard's own
+    routes. The next visitor who picks the same value gets the outputs kept
+    from that run, so nothing runs again; another Scale then runs only the
+    second step, on the first step's kept output. The owner's dataflow, its
+    recorded outputs and the Data Catalog stay as they were.
+    """
+    require_project_page()
+    require_user_auth()
+    session = _pinned_and_saved(
+        page, app_frontend, current_server, prefix="dash_ctrl", spec=_controls_spec(),
+    )
+    project_id = session["project"]["id"]
+    # Off the canvas first: it can still save on its way out.
+    page.goto("about:blank")
+    before = _project(current_server, session["token"], project_id)
+    catalog_before = _catalog_ids(current_server, session["token"], project_id)
+    hosted = _serve_hosted(app_frontend, current_server, monkeypatch)
+
+    first = _Visitor(browser, current_server)
+    try:
+        first.opens(hosted, project_id)
+        first.waits_for("the saved tiles", lambda: _saved_tiles_drew(first.page))
+        five = _pick(first.page, ROWS, "five")
+        expect(five).to_be_enabled(timeout=10000)
+        expect(first.page.get_by_test_id("shared-view-banner")).to_contain_text(
+            "changes are not saved", timeout=20000,
+        )
+        assert _runs_started(first.asked) == [], (
+            "opening the dashboard started a run, though every tile has its saved output" + first.story()
+        )
+        park_pointer(first.page)
+        save_workflow_test_screenshot(first.page, VIEWER_RUN_STEM, test_name="opened", sweep_toasts=True)
+        saved_pixels = first.page.evaluate(_CHART_PIXELS_JS, CHART)
+
+        five.check()
+        first.waits_for("the pool's five rows", lambda: _pool_shows(first.page, 5))
+        first.waits_for("the chart of five rows", lambda: _chart_redrew(first.page, saved_pixels))
+        # Off the control the click left it on.
+        park_pointer(first.page)
+        save_workflow_test_screenshot(first.page, VIEWER_RUN_STEM, test_name="changed", sweep_toasts=True)
+
+        first.waits_for_runs(1)
+        started = _runs_started(first.asked)
+        assert len(started) == 1, f"one change started {len(started)} runs" + first.story()
+        made = _files_read(first.asked)
+        assert made, "the tiles show the visitor's value without reading what its run made" + first.story()
+        assert _not_a_viewer_route(first.asked) == [], (
+            "the dashboard asked the server for more than a viewer's run" + first.story()
+        )
+    finally:
+        first.close()
+
+    second = _Visitor(browser, current_server)
+    try:
+        second.opens(hosted, project_id)
+        second.waits_for("the saved tiles", lambda: _saved_tiles_drew(second.page))
+        saved_pixels = second.page.evaluate(_CHART_PIXELS_JS, CHART)
+        _pick(second.page, ROWS, "five").check()
+        second.waits_for("the pool's five rows", lambda: _pool_shows(second.page, 5))
+        second.waits_for("the chart of five rows", lambda: _chart_redrew(second.page, saved_pixels))
+        second.waits_for_runs(1)
+        # A run of its own would have made artifacts of its own.
+        assert _files_read(second.asked) == made, (
+            f"the second visitor read {sorted(_files_read(second.asked))!r}, not the outputs "
+            f"kept from the first visitor's run of the same value {sorted(made)!r}" + second.story()
+        )
+
+        # Only the second step reads Scale: the first step's output is the kept one.
+        _pick(second.page, SCALE, "ten").check()
+        second.waits_for("the rows scaled ten times", lambda: _first_row_has_cell(second.page, "30"))
+        second.waits_for_runs(2)
+        assert len(_runs_started(second.asked)) == 2, "two changes, two runs" + second.story()
+        assert _files_read(second.asked) - made, (
+            "the tiles show the new Scale without reading what its run made" + second.story()
+        )
+        assert _not_a_viewer_route(second.asked) == [], (
+            "the dashboard asked the server for more than a viewer's run" + second.story()
+        )
+    finally:
+        second.close()
+
+    after = _project(current_server, session["token"], project_id)
+    assert after["spec"] == before["spec"], "a visitor's run changed the owner's dataflow"
+    assert after["outputs"] == before["outputs"], "a visitor's run changed the dataflow's recorded outputs"
+    assert _catalog_ids(current_server, session["token"], project_id) == catalog_before, (
+        "a visitor's run added to the Data Catalog"
+    )
+
+
+def _chart_drew_from_nothing(page) -> None:
+    """The chart, which had nothing to draw, drew."""
+    node_locator(page, CHART).locator(f"#vega{CHART} canvas").first.wait_for(
+        state="visible", timeout=180000,
+    )
+    _chart_drew(page)
+
+
+def test_a_tile_with_no_saved_output_runs_the_nodes_before_it_when_the_page_opens(
+    app_frontend: "FrontendPage", current_server, page, browser, monkeypatch,
+):
+    """A tile whose nodes never ran gets its data from a run on open.
+
+    The chart is pinned and the dataflow saved without a run, so nothing is
+    saved for it. A visitor with no session opens the dashboard as the hosted
+    stacks serve it: the page starts one viewer's run with the saved values,
+    and the chart draws what it made. The dataflow stays as it was.
+    """
+    require_project_page()
+    require_user_auth()
+    session = _enter(page, app_frontend, current_server, prefix="dash_unrun")
+    project_id = session["project"]["id"]
+    node_locator(page, CHART).wait_for(state="visible", timeout=45000)
+    _pin(page, CHART)
+    _save(page)
+    page.goto("about:blank")
+    before = _project(current_server, session["token"], project_id)
+    assert before["outputs"] == [], f"the dataflow saved outputs it never ran: {before['outputs']!r}"
+    hosted = _serve_hosted(app_frontend, current_server, monkeypatch)
+
+    visitor = _Visitor(browser, current_server)
+    try:
+        visitor.opens(hosted, project_id)
+        visitor.waits_for("the chart from the run on open", lambda: _chart_drew_from_nothing(visitor.page))
+        visitor.waits_for_runs(1)
+        started = _runs_started(visitor.asked)
+        assert len(started) == 1, f"opening the dashboard started {len(started)} runs" + visitor.story()
+        assert _files_read(visitor.asked), (
+            "the chart drew without reading what the run made" + visitor.story()
+        )
+        assert _not_a_viewer_route(visitor.asked) == [], (
+            "the dashboard asked the server for more than a viewer's run" + visitor.story()
+        )
+    finally:
+        visitor.close()
+
+    after = _project(current_server, session["token"], project_id)
+    assert after["spec"] == before["spec"], "the run on open changed the owner's dataflow"
+    assert after["outputs"] == [], "the run on open saved outputs to the dataflow"
 
 
 # ---------------------------------------------------------------------------
@@ -892,12 +1303,14 @@ def _autark_tile_pinned_and_saved(page, app_frontend: "FrontendPage", current_se
 
 
 def _the_tile_draws_without_a_run(page, base: str, project_id: str) -> None:
-    """Open the dashboard: the map draws, and no node code goes to the sandbox."""
+    """Open the dashboard: the map draws, and no node code goes to the sandbox,
+    from the page or from a viewer's run."""
     executions: list[str] = []
     page.on(
         "request",
         lambda request: executions.append(request.url)
         if "/processJavaScriptCode" in request.url or "/processPythonCode" in request.url
+        or _starts_a_run(request)
         else None,
     )
     _open_dashboard(page, base, project_id)
@@ -905,8 +1318,8 @@ def _the_tile_draws_without_a_run(page, base: str, project_id: str) -> None:
     canvas.wait_for(state="visible", timeout=120000)
     assert canvas.evaluate("c => c.width > 0 && c.height > 0"), "the map tile has no drawing surface"
     assert executions == [], (
-        f"opening the dashboard executed node code in the sandbox: {executions!r}; "
-        f"the map's layers should have come from the Data Catalog"
+        f"opening the dashboard executed node code in the sandbox or started a run: "
+        f"{executions!r}; the map's layers should have come from the Data Catalog"
     )
 
 

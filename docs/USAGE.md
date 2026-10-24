@@ -489,7 +489,8 @@ bolt while it is on.
 - Code you type, a new connection, and a selection in a chart do not start a
   run: the nodes they change wait for **Run** or **Run All**.
 - It is offered where a run goes on the server: not to guests, viewers of a
-  shared dataflow, a Curio started with `--no-project`, or a dashboard.
+  shared dataflow, a Curio started with `--no-project`, or a dashboard, which
+  runs a changed control on its own ([Dashboards](#dashboards)).
 
 ## Provenance
 
@@ -596,7 +597,8 @@ Changing its value marks those nodes as needing a new run, or runs them when
 the dataflow runs stale nodes automatically. **Edit** renames it,
 and their code follows the new name. A reference to a name no Parameter node
 has, or that two Parameter nodes have, stops the run with a message naming it.
-Pinned to the dashboard, a Parameter node shows its value.
+Pinned to the dashboard, a Parameter node shows its control, and anyone viewing
+the dashboard can change its value ([Dashboards](#dashboards)).
 
 ### Selection tags
 
@@ -1504,8 +1506,9 @@ page scrolls.
 ## Dashboards
 
 A dataflow's dashboard is a page of its own at `/dashboard/<dataflow id>`: the nodes you
-pinned, and nothing else. Anyone with the link can open it, and the tiles draw without
-running anything.
+pinned, and nothing else. Anyone with the link can open it. The tiles draw the outputs
+saved with the dataflow, and a tile with none runs the nodes before it on the server when
+the page opens.
 
 - **Pin** the nodes to show, with the pin control in each node's header. Pinning saves
   the dataflow, and saves the outputs feeding those nodes to your Data Catalog, which is
@@ -1514,6 +1517,16 @@ running anything.
   copies either link.
 - **Save the dataflow** after changing anything else the page shows, such as a chart's
   spec: the page shows what is on disk.
+- **Controls**: anyone viewing the page can change a pinned Parameter node's value, and
+  the widgets of a pinned node that shows them. A change runs the nodes it reaches on the
+  server, with your datasets, models and packages and none of your keys, and the tiles
+  below show the result. Nothing is saved: the dataflow, its outputs and your Data
+  Catalog stay as they are, and putting the value back shows the saved outputs. Text,
+  text list and file widgets keep their saved value, and a node that reads a connection
+  key stops with a message.
+- **What a run makes**, on opening the page or after a change, is kept for 7 days and
+  shown to every later viewer with the same values, without running again. After 7 days
+  it is deleted, and the next viewer who needs it runs the nodes again.
 - **Edit layout** (the owner, signed in on this browser) unlocks the tiles to drag by
   their title band and resize, and **Save layout** records where they sit, without
   touching the canvas positions.
@@ -1523,8 +1536,9 @@ running anything.
   without a saved place are laid out this way when the page opens; while editing the
   layout, **Arrange by scenario** puts every tile back in its column.
 - **Sharing**: the page is served with its data inside it, whether `--backend-url` is an
-  address or a path such as `/api`, so a viewer needs no account and the dashboard keeps
-  working if the server is unreachable. It is read-only for everyone but its owner.
+  address or a path such as `/api`, so a viewer needs no account and the saved tiles draw
+  even when the server is unreachable; a change to a control needs the server. Only its
+  owner edits its layout.
 
 Two dashboards cannot be served this way: one whose data is too large to travel with the
 page (25 MB), and one with a pinned Autark tile that loads its own data. Opening either
@@ -1533,7 +1547,7 @@ shows why, naming the nodes to change, and draws nothing. For the second, move t
 
 An Autark map tile draws in the viewer's browser, so it needs WebGPU there. A map over a
 raster draws too: the raster travels with the page, and its size counts toward the 25 MB.
-A code node's console output is not restored: no saved dataset carries it.
+A code node's console output does not show on a dashboard.
 
 ## Finding a dataflow
 

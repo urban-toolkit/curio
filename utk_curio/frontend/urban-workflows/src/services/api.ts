@@ -1,6 +1,7 @@
 import { getToken } from "../utils/authApi";
 import { backendUrl } from "../utils/backendUrl";
 import { embeddedArtifact, EmbeddedEnvelope, embeddedRaster, EmbeddedRaster } from "../standalone/dashboardPayload";
+import { dashboardRunRead } from "./runs/dashboardRunFiles";
 
 export const ARROW_IPC_MIME = "application/vnd.apache.arrow.stream";
 
@@ -14,9 +15,14 @@ export const ARROW_IPC_MIME = "application/vnd.apache.arrow.stream";
  * comes back 415 -- so JSON stays the path for those and for any response
  * that is not a clean Arrow 200.
  */
-async function fetchArtifactAsArrow(url: string, token: string | null | undefined) {
+async function fetchArtifactAsArrow(
+    url: string,
+    token: string | null | undefined,
+    extraHeaders: Record<string, string> = {},
+) {
     const response = await fetch(url, {
         headers: {
+            ...extraHeaders,
             Accept: ARROW_IPC_MIME,
             // Geometry arrives as WKB on this path, so the sandbox refuses a
             // geodataframe unless the client says it can decode it (utils/wkb).
@@ -121,12 +127,15 @@ export async function fetchData(fileName: string) {
         return { ...embedded, filename: fileName };
     }
     try {
-        const url = `${backendUrl()}/get?fileName=${encodeURIComponent(fileName)}`;
+        // An artifact a dashboard viewer's run made is read on its dashboard's route.
+        const dashboard = dashboardRunRead(fileName, "get", new URLSearchParams({ fileName }));
+        const url = dashboard?.url ?? `${backendUrl()}/get?fileName=${encodeURIComponent(fileName)}`;
+        const extraHeaders = dashboard?.headers ?? {};
         console.log(`Fetching ${url}`);
         const _token = getToken();
 
         try {
-            const viaArrow = await fetchArtifactAsArrow(url, _token);
+            const viaArrow = await fetchArtifactAsArrow(url, _token, extraHeaders);
             if (viaArrow) {
                 return viaArrow;
             }
@@ -141,6 +150,7 @@ export async function fetchData(fileName: string) {
 
         const response = await fetch(url, {
             headers: {
+                ...extraHeaders,
                 'Content-Type': 'application/json',
                 ...(_token ? { 'Authorization': `Bearer ${_token}` } : {}),
             },
@@ -179,11 +189,13 @@ export async function fetchPreviewData(fileName: string) {
     try {
         // Use the correct backend URL
         const base = backendUrl() || 'http://localhost:5002';
-        const url = `${base}/get-preview?fileName=${encodeURIComponent(fileName)}`;
+        const dashboard = dashboardRunRead(fileName, "get-preview", new URLSearchParams({ fileName }));
+        const url = dashboard?.url ?? `${base}/get-preview?fileName=${encodeURIComponent(fileName)}`;
         console.log(`[fetchPreviewData] Fetching preview from ${url}`);
         const _token = getToken();
         const response = await fetch(url, {
             headers: {
+                ...(dashboard?.headers ?? {}),
                 'Content-Type': 'application/json',
                 ...(_token ? { 'Authorization': `Bearer ${_token}` } : {}),
             },
@@ -249,8 +261,12 @@ export async function fetchRaster(
     });
     if (opts.part != null) params.set("part", String(opts.part));
     const token = getToken();
-    const response = await fetch(`${backendUrl()}/raster?${params.toString()}`, {
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
+    const dashboard = dashboardRunRead(fileName, "raster", params);
+    const response = await fetch(dashboard?.url ?? `${backendUrl()}/raster?${params.toString()}`, {
+        headers: {
+            ...(dashboard?.headers ?? {}),
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
     });
     if (!response.ok) {
         let body: any = null;

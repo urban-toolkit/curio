@@ -9,6 +9,7 @@ import { WidgetControl } from "./widgets/WidgetControl";
 import { WidgetForm } from "./widgets/WidgetForm";
 import { SelectionSection } from "./widgets/SelectionTags";
 import { checkWidgetValue, effectiveValue, type WidgetDef } from "../../utils/widgets/widgetModel";
+import { changeableOnDashboard } from "../../utils/widgets/dashboardControls";
 import type { SelectionTag } from "../../utils/references/selectionTags";
 import type { SelectionView } from "../../hook/useSelectionViews";
 import {
@@ -61,6 +62,9 @@ type WidgetsEditorProps = {
     customWidgetsCallback?: any;
     data?: any;
     disableWidgets?: boolean; // freeze the widget controls instead of hiding them
+    /** On a dashboard's tile (#1117): a viewer changes the values, except a
+     * read-only kind's, and nothing else (no tags to drag, no edits). */
+    valuesOnly?: boolean;
 };
 
 type Editing = { mode: "add" } | { mode: "edit"; name: string } | null;
@@ -91,7 +95,10 @@ function WidgetsEditor({
     nodeIds = NO_NODE_IDS,
     customWidgetsCallback,
     disableWidgets,
+    valuesOnly = false,
 }: WidgetsEditorProps) {
+    // Tags, edits and selections are the dataflow's author's, never a viewer's.
+    const frozen = disableWidgets || valuesOnly;
     const markersDirtyBypass = useRef(false);
     const [editing, setEditing] = useState<Editing>(null);
     const scope = useMemo(
@@ -160,39 +167,41 @@ function WidgetsEditor({
                 ) : (
                     <div key={widget.name} className={styles.row} data-widget-row={widget.name}>
                         <span className={styles.rowLabel}>{widget.label || widget.name}</span>
-                        <WidgetTag name={widget.name} disabled={disableWidgets} />
+                        <WidgetTag name={widget.name} disabled={frozen} />
                         <span className={styles.rowControl}>
                             <WidgetControl
                                 widget={widget}
                                 value={effectiveValue(widget)}
-                                disabled={disableWidgets}
+                                disabled={disableWidgets || (valuesOnly && !changeableOnDashboard(widget))}
                                 onChange={(value) => setValue(widget.name, value)}
                             />
                         </span>
-                        <span className={styles.rowActions}>
-                            <button
-                                type="button"
-                                className={styles.button}
-                                aria-label={`Edit widget ${widget.name}`}
-                                disabled={disableWidgets || editing !== null}
-                                onClick={() => setEditing({ mode: "edit", name: widget.name })}
-                            >
-                                Edit
-                            </button>
-                            <button
-                                type="button"
-                                className={styles.danger}
-                                aria-label={`Delete widget ${widget.name}`}
-                                disabled={disableWidgets || editing !== null}
-                                onClick={() => onWidgetsChange(widgets.filter((w) => w.name !== widget.name))}
-                            >
-                                Delete
-                            </button>
-                        </span>
+                        {!valuesOnly ? (
+                            <span className={styles.rowActions}>
+                                <button
+                                    type="button"
+                                    className={styles.button}
+                                    aria-label={`Edit widget ${widget.name}`}
+                                    disabled={disableWidgets || editing !== null}
+                                    onClick={() => setEditing({ mode: "edit", name: widget.name })}
+                                >
+                                    Edit
+                                </button>
+                                <button
+                                    type="button"
+                                    className={styles.danger}
+                                    aria-label={`Delete widget ${widget.name}`}
+                                    disabled={disableWidgets || editing !== null}
+                                    onClick={() => onWidgetsChange(widgets.filter((w) => w.name !== widget.name))}
+                                >
+                                    Delete
+                                </button>
+                            </span>
+                        ) : null}
                     </div>
                 ),
             )}
-            {editing?.mode === "add" ? (
+            {valuesOnly ? null : editing?.mode === "add" ? (
                 <WidgetForm
                     others={widgets}
                     onSave={(def) => {
@@ -216,7 +225,7 @@ function WidgetsEditor({
                 onSelectionsChange={onSelectionsChange}
                 views={views}
                 allNodeIds={nodeIds}
-                disabled={disableWidgets}
+                disabled={frozen}
                 locked={editing !== null}
             />
             {sharedNames.length > 0 ? (
@@ -232,7 +241,7 @@ function WidgetsEditor({
                                 data-tooltip="Set in its Parameter node"
                             >
                                 <span className={styles.rowLabel}>{widget.label || name}</span>
-                                <SharedTag name={name} disabled={disableWidgets} />
+                                <SharedTag name={name} disabled={frozen} />
                                 <span className={styles.sharedValue}>
                                     {widgetLiteral(effectiveValue(widget), language)}
                                 </span>
