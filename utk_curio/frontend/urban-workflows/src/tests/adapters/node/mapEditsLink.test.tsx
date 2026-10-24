@@ -24,11 +24,11 @@
  * on the map, as autk-grammar reports one.
  *
  * The form of a building of several parts is for all of them: a property
- * they differ in is empty and lists their values, osm_id cannot be changed,
- * and a value typed goes to every part; its parts menu chooses one part
- * instead, whose values the form shows and whose own value Apply sets. A
- * building whose parts no column tells apart gets the form for all of them
- * only.
+ * they differ in is empty, or its menu on no choice, with their values
+ * listed under its field, osm_id cannot be changed, and a value typed or
+ * chosen goes to every part; its parts menu chooses one part instead, whose
+ * values the form shows and whose own value Apply sets. A building whose
+ * parts no column tells apart gets the form for all of them only.
  */
 import React from "react";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
@@ -1114,7 +1114,7 @@ const optionTexts = (select: HTMLSelectElement) => Array.from(select.options).ma
 /** Picks the option of the menu *select* that reads *label*, as a person picks one. */
 function choose(select: HTMLSelectElement, label: string) {
   const option = Array.from(select.options).find((o) => o.textContent === label);
-  must(option, `The parts menu offers no option that reads ${JSON.stringify(label)}: it offers ${JSON.stringify(optionTexts(select))}.`);
+  must(option, `The menu offers no option that reads ${JSON.stringify(label)}: it offers ${JSON.stringify(optionTexts(select))}.`);
   fireEvent.change(select, { target: { value: option.value } });
 }
 
@@ -1123,6 +1123,13 @@ const partsMenu = () => screen.queryByTestId("interaction-parts-menu") as HTMLSe
 
 /** The form's field of the property *name*. */
 const fieldOf = (name: string) => screen.getByTestId(`interaction-field-${name}`) as HTMLInputElement;
+
+/** The form's cell of the property *name*: its field's row in the value column. */
+function cellOf(name: string): HTMLElement {
+  const cell = fieldOf(name).closest<HTMLElement>("[data-field]");
+  must(cell, `The field of ${name} sits in no cell of the form.`);
+  return cell;
+}
 
 /** The properties of each row of building *id* the map drew last, in the layer's order. */
 const drawnRowsOf = (id: number): Record<string, unknown>[] =>
@@ -1235,6 +1242,76 @@ test("a value typed in the form of all the parts of a building goes to its own p
   expect(optionTexts(after)).toEqual(["All 2 parts", "osm_id 136, levels 3", "osm_id 1361, levels 4"]);
 });
 
+/**
+ * OSM_PARTED with each row's name and kind: building 136's parts are named
+ * apart, a tower and a podium, and kinds repeat, so the form offers them in a
+ * menu.
+ */
+const OSM_PARTED_KINDS = {
+  ...OSM_PARTED,
+  features: OSM_PARTED.features.map((feature, i) => ({
+    ...feature,
+    properties: {
+      ...feature.properties,
+      name: ["Garden Court", "Presidential Towers T1", "Presidential Towers T4", "Union Station"][i],
+      kind: ["house", "tower", "podium", "house"][i],
+    },
+  })),
+};
+
+test("on all the parts of a building, a menu they differ in shows no choice, each note sits under its field, which keeps a field's whole width, and a choice goes to every part", async () => {
+  nodeInput.current = OSM_PARTED_KINDS;
+  const canvas = mountCanvas();
+  await canvas.playMap();
+  await openAction("edit");
+  pickOnMap([1]);
+  await screen.findByTestId("interaction-field-height");
+
+  // kind, a menu: building 136's parts are a tower and a podium, so it shows
+  // no choice, and "(empty)" stays the choice of no kind.
+  const kind = screen.getByTestId("interaction-field-kind") as HTMLSelectElement;
+  must(
+    kind.selectedOptions[0]?.textContent === "",
+    `The kind menu of building 136, whose parts are a tower and a podium, shows ${JSON.stringify(kind.selectedOptions[0]?.textContent ?? null)} as if that were its kind: it should show no choice.`,
+  );
+  expect(optionTexts(kind)).toEqual(["", "(empty)", "house", "tower", "podium"]);
+  expect(screen.getByTestId("interaction-mixed-kind")).toHaveTextContent(/^2 values: tower, podium$/);
+  expect(screen.getByTestId("interaction-mixed-name")).toHaveTextContent(/^2 values: Presidential Towers T1, Presidential Towers T4$/);
+
+  // Each note sits under its field, a long one too: the field's cell holds
+  // the field alone, as wide as a field with no note.
+  for (const name of ["height", "name", "kind"]) {
+    const note = screen.getByTestId(`interaction-mixed-${name}`);
+    must(
+      !cellOf(name).contains(note),
+      `The note of ${name}, "${note.textContent}", sits beside its field, which a long note squeezes to nothing: it belongs under it.`,
+    );
+    expect(cellOf(name).nextElementSibling).toBe(note);
+    expect(note).toHaveClass("fieldNote");
+  }
+
+  // "(empty)" is a choice: kind, which every row fills, then asks for one.
+  // No choice again asks for nothing, and Apply has nothing to write.
+  choose(kind, "(empty)");
+  expect(screen.getByText(/kind is required/)).toBeInTheDocument();
+  expect(screen.getByTestId("interaction-form-submit")).toBeDisabled();
+  choose(kind, "");
+  expect(screen.queryByText(/is required/)).toBeNull();
+  expect(screen.getByTestId("interaction-form-submit")).toBeDisabled();
+
+  // A kind chosen goes to both parts, and nothing else is written.
+  choose(kind, "house");
+  expect(kind.selectedOptions[0]?.textContent).toBe("house");
+  fireEvent.click(screen.getByTestId("interaction-form-submit"));
+  expect(canvas.settings()?.edits).toEqual([{ op: "set", ids: [136], column: "kind", value: "house" }]);
+  await waitFor(() =>
+    expect(drawnRowsOf(136).map((row) => [row.kind, row.name])).toEqual([
+      ["house", "Presidential Towers T1"],
+      ["house", "Presidential Towers T4"],
+    ]),
+  );
+});
+
 test("the parts menu chooses one part of a building of two: the form shows that part's values, the map still lights the whole building, and Apply sets the value typed on that part alone, named by its osm_id", async () => {
   nodeInput.current = OSM_PARTED;
   const canvas = mountCanvas();
@@ -1259,9 +1336,14 @@ test("the parts menu chooses one part of a building of two: the form shows that 
   // The map lights the whole building still.
   await waitFor(() => expect(litUp()).toEqual([1, 2]));
 
-  // A height typed: one edit, of that part alone, named by the building's id
-  // and the part's own osm_id, in the list as such.
+  // A height typed: what it was shows under the field, which keeps its whole
+  // width. Apply writes one edit, of that part alone, named by the
+  // building's id and the part's own osm_id, in the list as such.
   fireEvent.change(height, { target: { value: "45" } });
+  const was = screen.getByText("was 30");
+  expect(was).toHaveClass("fieldNote");
+  expect(cellOf("height")).not.toContainElement(was);
+  expect(cellOf("height").nextElementSibling).toBe(was);
   fireEvent.click(screen.getByTestId("interaction-form-submit"));
   const edits = canvas.settings()?.edits ?? [];
   must(

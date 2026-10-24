@@ -14,6 +14,9 @@ import { SelectInput, TextInput } from "./fields";
 import { onTheMap, type Nouns } from "./workbenchParts";
 import styles from "./EditFeatures.module.css";
 
+/** The value of a menu's blank choice: no value chosen, in a field its parts differ in. */
+const NO_CHOICE = "\u0000";
+
 /** The parts menu of a feature of several parts. */
 export interface PartsChoice {
   count: number;
@@ -52,7 +55,7 @@ export default function EditFeatureForm({
   defs: PropertyDef[];
   /** What the form shows of its properties: their values, and those its parts differ in or that cannot be changed. */
   shown: Pick<PartsForm, "values" | "mixed" | "fixed">;
-  /** The values its fields show, as text. */
+  /** The values its fields show, as text; none for a field its parts differ in that nothing was typed or chosen in. */
   texts: Record<string, string>;
   setTexts: (texts: Record<string, string>) => void;
   /** The properties whose field differs from what the form shows of them. */
@@ -72,8 +75,8 @@ export default function EditFeatureForm({
     );
   }
   // A property that cannot be changed asks for nothing, nor does one the
-  // parts differ in until a value is typed in it.
-  const asked = defs.filter((def) => !(def.name in shown.fixed) && !(def.name in shown.mixed && (texts[def.name] ?? "").trim() === ""));
+  // parts differ in until a value is typed or chosen in it.
+  const asked = defs.filter((def) => !(def.name in shown.fixed) && !(def.name in shown.mixed && texts[def.name] === undefined));
   const problems = formProblems(asked, texts);
   const capital = nouns.one[0].toUpperCase() + nouns.one.slice(1);
   const partsId = `edit-${nodeId}-parts`;
@@ -143,15 +146,25 @@ export default function EditFeatureForm({
             const id = `edit-${nodeId}-${def.name}`;
             const choices = def.type === "choice" ? def.choices ?? [] : def.type === "boolean" ? ["true", "false"] : null;
             const text = texts[def.name] ?? "";
-            const change = (next: string) => setTexts({ ...texts, [def.name]: next });
+            // A field the parts differ in changes none of them while it is
+            // left blank, or its menu on no choice; "(empty)" is a choice.
+            const change = (next: string) => {
+              const rest = { ...texts };
+              if (mixed !== undefined && (choices ? next === NO_CHOICE : next.trim() === "")) delete rest[def.name];
+              else rest[def.name] = next;
+              setTexts(rest);
+            };
+            const unchosen = mixed !== undefined && texts[def.name] === undefined;
+            const note = mixed ?? (isDirty ? `was ${before === null || before === undefined || before === "" ? "empty" : String(before)}` : null);
             return (
               <React.Fragment key={def.name}>
                 <label htmlFor={id} data-tooltip={def.name} className={styles.gridLabel}>
                   {def.name}
                 </label>
-                <span className={styles.gridValue}>
+                <span className={styles.gridValue} data-field={def.name}>
                   {choices ? (
-                    <SelectInput id={id} label={def.name} className={isDirty ? styles.dirty : undefined} testId={`interaction-field-${def.name}`} value={text} onChange={change}>
+                    <SelectInput id={id} label={def.name} className={isDirty ? styles.dirty : undefined} testId={`interaction-field-${def.name}`} value={unchosen ? NO_CHOICE : text} onChange={change}>
+                      {mixed !== undefined ? <option value={NO_CHOICE}></option> : null}
                       <option value="">(empty)</option>
                       {[...choices, ...(text && !choices.includes(text) ? [text] : [])].map((c) => (
                         <option key={c} value={c}>
@@ -162,14 +175,13 @@ export default function EditFeatureForm({
                   ) : (
                     <TextInput id={id} label={def.name} className={isDirty ? styles.dirty : undefined} testId={`interaction-field-${def.name}`} value={text} onChange={change} />
                   )}
-                  {mixed !== undefined ? (
-                    <span className={styles.was} data-testid={`interaction-mixed-${def.name}`}>
-                      {mixed}
-                    </span>
-                  ) : isDirty ? (
-                    <span className={styles.was}>was {before === null || before === undefined || before === "" ? "empty" : String(before)}</span>
-                  ) : null}
                 </span>
+                {note !== null ? (
+                  // Under the field, which keeps its whole width.
+                  <span className={styles.fieldNote} data-testid={mixed !== undefined ? `interaction-mixed-${def.name}` : undefined}>
+                    {note}
+                  </span>
+                ) : null}
               </React.Fragment>
             );
           })}

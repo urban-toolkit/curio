@@ -216,8 +216,11 @@ export default function LayerWorkbench({
     () => partsForm(pickedRows, defs.map((def) => def.name), chosenAt >= 0 ? pickedRows[chosenAt] : null),
     [pickedRows, defs, chosenAt],
   );
+  // Its fields start on the values the form shows; one the parts differ in
+  // starts on none, until something is typed or chosen in it.
   useEffect(() => {
-    setEditTexts(pickedOne ? Object.fromEntries(defs.map((def) => [def.name, valueText(form.values[def.name])])) : {});
+    const shownDefs = defs.filter((def) => !(def.name in form.mixed));
+    setEditTexts(pickedOne ? Object.fromEntries(shownDefs.map((def) => [def.name, valueText(form.values[def.name])])) : {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pickedOne?.id, defs, chosenAt]);
   useEffect(() => {
@@ -388,13 +391,14 @@ export default function LayerWorkbench({
     setTexts(formDefaults(defs));
   };
   // The properties whose field differs from what the form shows of them; one
-  // the parts differ in, while it is on all of them, once a value is typed.
+  // the parts differ in, while it is on all of them, once a value is typed or
+  // chosen in it.
   const dirty = pickedOne
     ? defs.filter((def) =>
         def.name in form.fixed
           ? false
           : def.name in form.mixed
-            ? (editTexts[def.name] ?? "").trim() !== ""
+            ? editTexts[def.name] !== undefined
             : valueText(form.values[def.name]) !== String(formValues([def], editTexts)[def.name] ?? ""),
       )
     : [];
