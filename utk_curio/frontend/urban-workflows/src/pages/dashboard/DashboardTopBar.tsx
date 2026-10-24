@@ -52,9 +52,10 @@ export function useDashboardLeaveGuard() {
  * the same product. What it puts in the bar is deliberately almost nothing,
  * because the page is the content: a way back to the dataflow, the share
  * links, and, for the owner, the controls that move tiles around. None of
- * the editor's menus are here. There is no palette to drop nodes from, nothing
- * to run, no catalogs, and no save status, because a dashboard is not edited
- * except by explicitly saving a layout.
+ * the editor's menus are here. There is no palette to drop nodes from, no Run
+ * button (a change to a tile's control runs by itself, as a viewer's run that
+ * saves nothing, #1117), no catalogs, and no save status, because a dashboard
+ * is not edited except by explicitly saving a layout.
  *
  * *onArranged* is told when Arrange by scenario has moved the tiles, so the
  * page can frame them again.
@@ -76,6 +77,7 @@ export function DashboardTopBar({ id, onArranged }: { id: string; onArranged?: (
     onNodesChange,
     updateDataNode,
     markDirty,
+    dashboardSavedWidgets,
   } = useFlowContext();
   const canEditLayout = useCanEditLayout();
   // A page the server refused to build carries nothing to open the dataflow
@@ -117,10 +119,11 @@ export function DashboardTopBar({ id, onArranged }: { id: string; onArranged?: (
     setSaving(true);
     try {
       // ``omitOutputs``: this page writes where the tiles sit. Which outputs the
-      // dataflow has is the canvas's business, and nothing here ran.
+      // dataflow has is the canvas's business, and a run here is a viewer's.
+      // ``savedWidgets``: every control as saved, never a value tried here.
       // Directly, not through the save queue the canvas uses: nothing else
       // saves on this page, and this button is disabled while it saves.
-      await saveCurrentProject(undefined, { omitOutputs: true });
+      await saveCurrentProject(undefined, { omitOutputs: true, savedWidgets: dashboardSavedWidgets?.() });
       setDashboardLocked(true);
       showToast("Dashboard layout saved.", "success");
     } catch (err) {

@@ -10,6 +10,7 @@ import type { WidgetDef } from "../../../utils/widgets/widgetModel";
 import { noteCodeEdit } from "../../../utils/references/codeEdits";
 
 let mockNodes: any[] = [];
+let mockDashboardOn = false;
 const mockUpdateDataNode = jest.fn();
 const mockMarkNodeStale = jest.fn();
 const mockMarkDirty = jest.fn();
@@ -21,7 +22,7 @@ jest.mock("../../../providers/FlowProvider", () => ({
     markNodeStale: mockMarkNodeStale,
     markDirty: mockMarkDirty,
     requestAutoRun: mockRequestAutoRun,
-    dashboardOn: false,
+    dashboardOn: mockDashboardOn,
   }),
 }));
 
@@ -49,10 +50,52 @@ function Harness({ data }: { data: any }) {
 const factor: WidgetDef = { name: "factor", type: "number", label: "Factor", default: 2 };
 
 beforeEach(() => {
+  mockDashboardOn = false;
   mockUpdateDataNode.mockReset();
   mockMarkNodeStale.mockReset();
   mockMarkDirty.mockReset();
   mockRequestAutoRun.mockReset();
+});
+
+describe("a Parameter node pinned to a dashboard (#1117)", () => {
+  const user = () => node("a", CODE, { title: "Shadows A", code: "h = [!! @factor !!] * height" });
+
+  test("a viewer changes its value, which runs as a viewer's run and is never marked to save", () => {
+    mockDashboardOn = true;
+    const self = node("p1", PARAM, { widgets: [factor], dashboardPinned: true });
+    mockNodes = [self, user()];
+    render(<Harness data={self.data} />);
+    const control = screen.getByLabelText("Factor", { selector: "input" }) as HTMLInputElement;
+    expect(control.disabled).toBe(false);
+
+    fireEvent.change(control, { target: { value: "5" } });
+    fireEvent.blur(control);
+
+    expect(mockUpdateDataNode).toHaveBeenCalledWith("p1", expect.objectContaining({ widgets: [{ ...factor, value: 5 }] }));
+    expect(mockRequestAutoRun).toHaveBeenCalledWith(["a"]);
+    expect(mockMarkDirty).not.toHaveBeenCalled();
+    // Its definition is the dataflow's author's: no Edit on a dashboard.
+    expect(screen.queryByRole("button", { name: "Edit parameter factor" })).toBeNull();
+  });
+
+  test("a text widget stays read-only, as the dashboard's contract says", () => {
+    mockDashboardOn = true;
+    const note: WidgetDef = { name: "note", type: "text", label: "Note", default: "" };
+    const self = node("p1", PARAM, { widgets: [note], dashboardPinned: true });
+    mockNodes = [self];
+    render(<Harness data={self.data} />);
+    expect((screen.getByLabelText("Note", { selector: "input" }) as HTMLInputElement).disabled).toBe(true);
+  });
+
+  test("on the canvas a change is unsaved work, as before", () => {
+    const self = node("p1", PARAM, { widgets: [factor] });
+    mockNodes = [self, user()];
+    render(<Harness data={self.data} />);
+    const control = screen.getByLabelText("Factor", { selector: "input" });
+    fireEvent.change(control, { target: { value: "5" } });
+    fireEvent.blur(control);
+    expect(mockMarkDirty).toHaveBeenCalled();
+  });
 });
 
 describe("a new Parameter node", () => {

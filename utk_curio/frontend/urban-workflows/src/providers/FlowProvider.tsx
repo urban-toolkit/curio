@@ -25,6 +25,8 @@ import { useSelectionTags } from "./flow/useSelectionTags";
 import { useCollaborationSync } from "./flow/useCollaborationSync";
 import { useInstallSave } from "./flow/useInstallSave";
 import { useServerRun } from "./flow/useServerRun";
+import { useStepOutcomes } from "./flow/useStepOutcomes";
+import { useDashboardRun } from "./flow/useDashboardRun";
 import { autoRunTargets, useAutoRun } from "./flow/useAutoRun";
 import { CanvasViewAddress, useNotebookView } from "./flow/useNotebookView";
 import { NotebookViewContext } from "./flow/notebookViewContext";
@@ -423,6 +425,12 @@ const FlowProvider = ({
         user != null &&
         !hostedGuest &&
         workflowOps.viewerMode === "owner";
+    // What a step of a run on the server does to its node: one set for the
+    // canvas's runs and a dashboard viewer's.
+    const stepOutcomes = useStepOutcomes({
+        reactFlow, setNodes, applyNewOutput, setOutputs, hydrateRestoredOutputs,
+        markNodeErroredRef, workflowNameRef, nodeExecProv,
+    });
     const serverRun = useServerRun({
         reactFlow, setNodes, showToast,
         requestProjectSave: workflowOps.requestProjectSave,
@@ -430,14 +438,24 @@ const FlowProvider = ({
         playNodes, playAllStateRef, emittedForInputRef, outputsRef, workflowNameRef,
         nodeExecProv, flushInstallSyncRef,
         surfaceInstallWarnings: workflowOps.surfaceInstallWarnings,
+        outcomes: stepOutcomes,
+    });
+    // #1117: on a dashboard, a change to a control a pinned tile shows reruns
+    // the dataflow on the server as a viewer's run, which saves nothing.
+    const dashboardRun = useDashboardRun({
+        enabled: dashboardOn, reactFlow, outcomes: stepOutcomes, outputsRef, showToast,
     });
     // #845: where Run All runs on the server, a widget or Parameter change can
     // run the nodes it touched through the same start, once the changes settle.
+    // On a dashboard every change does, with no toggle, as a viewer's run (#1117).
     const autoRunner = useAutoRun({
-        enabled: runsOnServer && !!workflowOps.autoRun,
-        runActive: isRunActive || serverRun.serverRunActive,
+        enabled: dashboardOn || (runsOnServer && !!workflowOps.autoRun),
+        runActive: isRunActive || serverRun.serverRunActive || dashboardRun.active,
         reactFlow,
-        start: (targets) => { void serverRun.startRun(targets); },
+        start: (targets) => {
+            if (dashboardOn) void dashboardRun.start();
+            else void serverRun.startRun(targets);
+        },
     });
     // The Map Editor node's Commit edits: the nodes it names and every node
     // below them, as an automatic run takes them, run now through the same
@@ -537,12 +555,14 @@ const FlowProvider = ({
                     : playNodesUpTo,
                 signalNodeExecDone,
                 isRunActive,
-                serverRunActive: serverRun.serverRunActive,
+                serverRunActive: serverRun.serverRunActive || dashboardRun.active,
                 cancelRun: stopRuns,
                 attachLatestRun: runsOnServer ? serverRun.attachLatestRun : async () => {},
                 autoRunAvailable: runsOnServer,
                 requestAutoRun: autoRunner.requestAutoRun,
                 runDownstream,
+                dashboardOpened: dashboardOn ? dashboardRun.opened : undefined,
+                dashboardSavedWidgets: dashboardRun.savedWidgets,
 
                 // NEW CODE
                 dashboardPins,

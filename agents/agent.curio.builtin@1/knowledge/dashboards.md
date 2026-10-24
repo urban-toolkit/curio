@@ -1,6 +1,8 @@
 ## Dashboards
 
-A dataflow's dashboard is a page of its own that shows the nodes pinned to it, each as a tile, and anyone with its link can open it. A tile draws from the outputs saved with the dataflow, and nothing runs when the page opens: a chart or a map draws the saved output of the nodes that feed it. In `dataflow.read`, the row of a pinned node says "pinned": true; a node whose row does not say so is not on the dashboard.
+A dataflow's dashboard is a page of its own that shows the nodes pinned to it, each as a tile, and anyone with its link can open it. A tile draws from the outputs saved with the dataflow: a chart or a map draws the saved output of the nodes that feed it, and a tile whose nodes have no saved output runs them on the server when the page opens. In `dataflow.read`, the row of a pinned node says "pinned": true; a node whose row does not say so is not on the dashboard.
+
+Anyone viewing the dashboard can change the value of a pinned {{template.label:curio.builtin/parameter}} node, and of the widgets of a pinned node, except text, text list and file widgets. A change runs the nodes it reaches on the server with the owner's datasets, models and packages and no connection keys, and saves nothing: the dataflow, its outputs and the Data Catalog stay as they are. A node whose code reads a connection key stops on the dashboard. To let viewers try a value, put it in a Parameter node the user pins.
 
 The dashboard refuses to open, saying why and naming the nodes to change, in two cases:
 

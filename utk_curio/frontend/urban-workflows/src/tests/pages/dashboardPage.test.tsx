@@ -75,6 +75,7 @@ jest.mock("../../providers/UserProvider", () => ({
 }));
 
 import DashboardPage, {
+  CONTROLS_NOTICE,
   LOAD_FAILED_BODY,
   LOAD_FAILED_TITLE,
   NOTHING_PINNED_TITLE,
@@ -169,13 +170,15 @@ describe("editing the layout", () => {
     expect(mockFlow.setDashboardLocked).toHaveBeenCalledWith(false);
   });
 
-  test("saving writes the layout and leaves the outputs alone", async () => {
-    mockFlow = flow({ dashboardLocked: false });
+  test("saving writes the layout, leaves the outputs alone and writes every control as saved", async () => {
+    // The widgets the page opened with (#1117): never a value tried on it.
+    const saved = new Map([["param", [{ name: "period", type: "choice", default: "Date" }]]]);
+    mockFlow = flow({ dashboardLocked: false, dashboardSavedWidgets: () => saved });
     await renderPage();
 
     await act(async () => { fireEvent.click(screen.getByTestId("save-layout-btn")); });
 
-    expect(mockFlow.saveCurrentProject).toHaveBeenCalledWith(undefined, { omitOutputs: true });
+    expect(mockFlow.saveCurrentProject).toHaveBeenCalledWith(undefined, { omitOutputs: true, savedWidgets: saved });
     expect(mockFlow.setDashboardLocked).toHaveBeenCalledWith(true);
     expect(mockShowToast).toHaveBeenCalledWith("Dashboard layout saved.", "success");
   });
@@ -202,6 +205,37 @@ describe("editing the layout", () => {
     expect(screen.getByTestId("shared-view-banner").textContent).toContain("read-only");
   });
 
+  test("a visitor on a dashboard whose tiles show a control is told its changes are not saved", async () => {
+    mockFlow = flow({
+      viewerMode: "shared",
+      projectId: null,
+      nodes: [
+        { id: "chart", position: { x: 0, y: 0 }, data: {} },
+        {
+          id: "param", position: { x: 0, y: 0 },
+          data: { dashboardPinned: true, widgets: [{ name: "period", type: "choice", default: "Date", options: { choices: ["Date", "Month"] } }] },
+        },
+      ],
+    });
+    await renderPage();
+
+    const banner = screen.getByTestId("shared-view-banner").textContent ?? "";
+    expect(banner).toBe(CONTROLS_NOTICE);
+    expect(banner).toContain("changes are not saved");
+    expect(banner).not.toContain("read-only");
+  });
+
+  test("a pinned text widget is no control a visitor changes, so the page stays read-only", async () => {
+    mockFlow = flow({
+      viewerMode: "shared",
+      projectId: null,
+      nodes: [{ id: "note", position: { x: 0, y: 0 }, data: { dashboardPinned: true, widgets: [{ name: "note", type: "text", default: "" }] } }],
+    });
+    await renderPage();
+
+    expect(screen.getByTestId("shared-view-banner").textContent).toContain("read-only");
+  });
+
   test("a guest under auth gets no edit controls", async () => {
     mockUser = { user: { name: "Guest", is_guest: true }, enableUserAuth: true };
     await renderPage();
@@ -215,6 +249,33 @@ describe("editing the layout", () => {
     await renderPage();
 
     expect(screen.getByTestId("edit-layout-btn")).toBeTruthy();
+  });
+});
+
+describe("a viewer's runs", () => {
+  test("the page hands its id to them once it has loaded, and once only", async () => {
+    const dashboardOpened = jest.fn();
+    mockFlow = flow({ dashboardOpened });
+    const { rerender } = await renderPage();
+    rerender(
+      <MemoryRouter initialEntries={[`/dashboard/${ID}`]}>
+        <Routes>
+          <Route path="/dashboard/:id" element={<DashboardPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    expect(dashboardOpened).toHaveBeenCalledTimes(1);
+    expect(dashboardOpened).toHaveBeenCalledWith(ID);
+  });
+
+  test("a page still loading hands nothing", async () => {
+    const dashboardOpened = jest.fn();
+    mockLoadState = "loading";
+    mockFlow = flow({ dashboardOpened });
+    await renderPage();
+
+    expect(dashboardOpened).not.toHaveBeenCalled();
   });
 });
 

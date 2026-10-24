@@ -20,10 +20,12 @@ export async function postSseStream(
   onFrame: (event: string, payload: Record<string, unknown>) => void,
   signal?: AbortSignal,
   /** dev/115: a re-attach stream (an agent job, a run) is a GET (no body). */
-  method: "POST" | "GET" = "POST"
+  method: "POST" | "GET" = "POST",
+  /** Sent as well: a dashboard viewer's run is followed with its token (#1117). */
+  extraHeaders: Record<string, string> = {}
 ): Promise<void> {
   const token = getToken();
-  const headers: Record<string, string> = {};
+  const headers: Record<string, string> = { ...extraHeaders };
   if (method === "POST") headers["Content-Type"] = "application/json";
   if (token) headers["Authorization"] = `Bearer ${token}`;
   const res = await fetch(`${BACKEND_URL}${path}`, {

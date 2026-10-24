@@ -145,7 +145,8 @@ function NodeEditor({
         data.widgets = next;
         setWidgets(next);
         markNodeStale?.(data.nodeId);
-        markDirty?.();
+        // A value tried on a dashboard is never saved (#1117).
+        if (!dashboardOn) markDirty?.();
     };
     // An agent's applied change gives widgets new values as the Widgets tab
     // gives one (utils/nodeSettingsWriters): the node is out of date, the
@@ -648,6 +649,7 @@ function NodeEditor({
                                             nodeId={data.nodeId}
                                             data={{...data, nodeType}}
                                             disableWidgets={disableWidgets}
+                                            valuesOnly={dashboardOn}
                                             widgets={widgets}
                                             onWidgetsChange={updateWidgets}
                                             onValueChange={() => requestAutoRun?.([data.nodeId])}
