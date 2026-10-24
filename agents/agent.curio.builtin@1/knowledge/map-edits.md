@@ -36,7 +36,7 @@ Every edit may also hold `layer`, `label` and `enabled`.
 
 - `set` writes a value: a text, a number, True, False or None. `scale` multiplies a number by `value`, `offset` adds `value` to it, and `expr` writes what an expression of the feature's properties makes (`min(height, 60)`).
 - `geometry` and `add` take a GeoJSON geometry, and `add` an `id` and its `values`.
-- The map's tools change a building's shape one part at a time, each part named by its own id, `where` its `building_id` and its `osm_id` both hold: `{"op": "geometry", "where": "building_id == 29623484 and osm_id == 236608503", "geometry": ...}`. The building's other parts keep their shapes.
+- The map's tools change a building's shape one part at a time, each part named by its own id, `where` its `building_id` and its `osm_id` both hold: `{"op": "geometry", "where": "building_id == 29623484 and osm_id == 236608503", "geometry": ...}`. The building's other parts keep their shapes. The node's form sets a value on one part the same way, `{"op": "set", "where": "building_id == 29623484 and osm_id == 236608503", "column": "height", "value": 60}`, and on all of them by `ids`.
 - `add_column` adds a property, with `value`, to every feature that has none.
 
 ### The rule

@@ -842,6 +842,11 @@ moving the building moves every part. A building whose parts have no `osm_id` of
 their own keeps its shape there. Agents read these edits, and the edits an agent
 makes show as entries named after it.
 
+In **Edit**, the form of a building of several parts is for all of them: a
+property its parts differ in is empty, with their values beside it, and a value
+typed there goes to every part. Its **Parts** menu picks one part, by its
+`osm_id`, and the form then shows and changes that part's values alone.
+
 A rule or an expression reads a feature's columns by name (`height`, or
 `` `Mean Acc shadow` `` in backticks). It takes numbers, quoted texts, `true`,
 `false`, `null`, `+ - * / %`, `== != < <= > >=`, `and`, `or`, `not`,

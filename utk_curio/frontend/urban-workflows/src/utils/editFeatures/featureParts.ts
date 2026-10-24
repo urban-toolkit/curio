@@ -11,6 +11,9 @@
  * A feature of one row is named by its id, as every other edit names it. A
  * feature whose rows no `osm_id` tells apart keeps its shape: the tools are
  * off for it.
+ *
+ * The node's form edits a feature's values on all its rows at once, or on one
+ * chosen in its parts menu, named the same way (`partsForm`, #1110).
  */
 import type { SelectionId } from "../references/selectionTags";
 import { idKey } from "./applyEdits";
@@ -105,4 +108,60 @@ export function partRedraw(features: readonly Row[], row: Row, key: string | und
   const conditions = key === undefined ? null : partConditions(rows, key);
   const at = rows.findIndex((other) => samePart(other, row));
   return conditions && at >= 0 ? { op: "geometry", where: conditions[at], geometry } : null;
+}
+
+/** A value as a form's field holds it: its text, empty for none. */
+export function valueText(value: unknown): string {
+  return value === null || value === undefined ? "" : String(value);
+}
+
+/** A value as a note or a part's name says it: its text, or "empty". */
+const said = (value: unknown) => valueText(value) || "empty";
+
+/** At most this many values a note lists, before it says how many more there are. */
+const LISTED = 3;
+
+/** The note beside a property a feature's parts differ in, *texts* their values each once: "2 values: 20, 30". */
+function valuesNote(texts: readonly string[]): string {
+  const more = texts.length > LISTED ? `, and ${texts.length - LISTED} more` : "";
+  return `${texts.length} values: ${texts.slice(0, LISTED).map(said).join(", ")}${more}`;
+}
+
+/** What the form of a feature of several rows shows of its properties. */
+export interface PartsForm {
+  /** Each property's value the form starts from: the chosen part's, else the one all the parts hold. */
+  values: Record<string, unknown>;
+  /** For each property the parts differ in, while the form is on all of them, the note that lists their values. */
+  mixed: Record<string, string>;
+  /** For each property that cannot be changed, what the form shows of it: osm_id, which tells the parts apart. */
+  fixed: Record<string, string>;
+  /** Each part's name in the parts menu, in the rows' order: its osm_id, then the values it differs in. */
+  labels: string[];
+}
+
+/**
+ * The form of a feature of *rows*, of the properties *names*, on all its
+ * parts or on the one *chosen*. On all of them, a property they share shows
+ * its value and one they differ in shows none, but a note that lists them.
+ * osm_id, which tells the parts apart, cannot be changed. A feature of one row
+ * is that row.
+ */
+export function partsForm(rows: readonly Row[], names: readonly string[], chosen: Row | null = null): PartsForm {
+  const first = rows[0]?.properties ?? {};
+  if (rows.length <= 1) return { values: { ...first }, mixed: {}, fixed: {}, labels: [] };
+  const textsOf = (name: string) => [...new Set(rows.map((row) => valueText(row.properties[name])))];
+  const values: Record<string, unknown> = {};
+  const mixed: Record<string, string> = {};
+  const fixed: Record<string, string> = {};
+  for (const name of names) {
+    const texts = textsOf(name);
+    if (name === PART_COLUMN) {
+      fixed[name] = `${chosen ? said(chosen.properties[name]) : texts.length > 1 ? `${texts.length} values` : said(first[name])}, cannot be changed`;
+    } else if (chosen) values[name] = chosen.properties[name];
+    else if (texts.length > 1) mixed[name] = valuesNote(texts);
+    else values[name] = first[name];
+  }
+  const differ = names.filter((name) => name !== PART_COLUMN && textsOf(name).length > 1);
+  const labels = rows.map((row) => [PART_COLUMN, ...differ].map((name) => `${name} ${said(row.properties[name])}`).join(", "));
+  return { values, mixed, fixed, labels };
 }

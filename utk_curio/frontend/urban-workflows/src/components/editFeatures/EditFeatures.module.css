@@ -380,11 +380,15 @@
   border-color: var(--curio-warning-text);
 }
 
-.was {
-  flex: none;
+/* A note on a field: what it was, or the values a building's parts hold. It
+   sits under the field, in the value column, so the field keeps the column's
+   whole width, as a field without a note does, and a long note wraps. */
+.fieldNote {
+  grid-column: 2;
   font-size: var(--curio-font-size-xs);
+  line-height: 1.4;
   color: var(--curio-text-secondary);
-  white-space: nowrap;
+  overflow-wrap: anywhere;
 }
 
 /* A rule's conditions, then what it changes. */
