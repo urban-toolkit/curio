@@ -1,0 +1,33 @@
+{
+  "version": 1,
+  "parts": [
+    {
+      "index": 0,
+      "label": "Buildings with their roof heights in metres (NYC Building Footprints)",
+      "kind": "geodataframe",
+      "format": "parquet",
+      "file": "data/buildings.parquet"
+    },
+    {
+      "index": 1,
+      "label": "Block 1259, across Eastern Parkway from the site (NYC MapPLUTO)",
+      "kind": "geodataframe",
+      "format": "geojson",
+      "file": "data/block-1259.geojson"
+    },
+    {
+      "index": 2,
+      "label": "The site, 1550 Bedford Avenue, Block 1266 Lot 36 (NYC MapPLUTO)",
+      "kind": "geodataframe",
+      "format": "geojson",
+      "file": "data/site.geojson"
+    },
+    {
+      "index": 3,
+      "label": "Street centerlines with their names (NYC Centerline, CSCL)",
+      "kind": "geodataframe",
+      "format": "geojson",
+      "file": "data/streets.geojson"
+    }
+  ]
+}

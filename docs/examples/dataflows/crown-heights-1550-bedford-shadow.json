@@ -1,0 +1,478 @@
+{
+  "dataflow": {
+    "categories": {
+      "complexity": [
+        "Intermediate"
+      ]
+    },
+    "nodes": [
+      {
+        "id": "e6bf2bc2-e88b-570d-8b5c-b121a93e5f42",
+        "type": "curio.builtin/data-loading",
+        "x": 0,
+        "y": 0,
+        "content": "# NYC's building footprints about 600 by 550 m around 1550 Bedford Avenue,\n# each with its roof height in metres (height) and DoITT's id (building_id).\n# The site is vacant, so no building stands on it.\nbuildings = curio_load_data(\"data.nyc.crown-heights-1550-bedford\", part=\"buildings.parquet\")\n# What the shadow map colors the buildings by: every building here stands today.\nbuildings[\"status\"] = \"Existing\"\n# Mark the frame as buildings, so an Autark map extrudes each footprint to its height.\nbuildings.metadata = {\"layerType\": \"buildings\"}\nreturn buildings\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Load NYC's building footprints around 1550 Bedford Avenue with their roof heights in metres.",
+        "metadata": {
+          "keywords": [],
+          "packageTemplateLabel": "Load existing buildings"
+        },
+        "title": "Load existing buildings"
+      },
+      {
+        "id": "f621df4f-9471-5b08-b29f-cd7fd34b22fa",
+        "type": "curio.builtin/data-loading",
+        "x": 0,
+        "y": 450,
+        "content": "# Block 1259, across Eastern Parkway from the site, Franklin Avenue to\n# Bedford Avenue: its lots, dissolved into one outline.\nreturn curio_load_data(\"data.nyc.crown-heights-1550-bedford\", part=\"block-1259.geojson\")\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Load Block 1259, across Eastern Parkway from the site, Franklin Avenue to Bedford Avenue.",
+        "metadata": {
+          "keywords": [],
+          "packageTemplateLabel": "Load Block 1259 outline"
+        },
+        "title": "Load Block 1259 outline"
+      },
+      {
+        "id": "6f07cb25-d7cc-5fe5-abf4-cfadafdffb59",
+        "type": "curio.builtin/data-loading",
+        "x": 0,
+        "y": 900,
+        "content": "# NYC's street centerlines around the site, each segment with its street's\n# name (street) and its roadway's width, curb to curb, in feet (width_ft),\n# drawn as wide as that: each centerline becomes a strip of its width, in\n# metres in the streets' UTM zone. Square ends close the corners where\n# segments meet. A segment with no width, such as a footbridge, gets 10 ft.\nstreets = curio_load_data(\"data.nyc.crown-heights-1550-bedford\", part=\"streets.geojson\")\nutm = streets.estimate_utm_crs()\nhalf = streets[\"width_ft\"].fillna(10) * 0.3048 / 2\nstreets = streets.set_geometry(streets.to_crs(utm).buffer(half, cap_style=\"square\").to_crs(streets.crs))\n# Tell the Autark map these are areas, so it fills them.\nstreets.metadata = {\"layerType\": \"polygons\"}\nreturn streets\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Load NYC's street centerlines around the site, each drawn as wide as its roadway.",
+        "metadata": {
+          "keywords": [],
+          "packageTemplateLabel": "Load streets"
+        },
+        "title": "Load streets"
+      },
+      {
+        "id": "a4c2e1bb-5ed8-59d4-b9b1-9ad0b26eddeb",
+        "type": "curio.builtin/parameter",
+        "x": 645,
+        "y": 510,
+        "content": "",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Accumulate the shadow over one date, one month or the whole year.",
+        "metadata": {
+          "keywords": [],
+          "widgets": [
+            {
+              "name": "period",
+              "type": "choice",
+              "label": "Accumulate over",
+              "default": "Date",
+              "options": {
+                "choices": [
+                  "Date",
+                  "Month",
+                  "Year"
+                ],
+                "display": "radio"
+              }
+            }
+          ],
+          "packageTemplateLabel": "Choose period: Date, Month or Year"
+        },
+        "title": "Choose period: Date, Month or Year",
+        "dashboardPinned": true,
+        "dashboardX": -217,
+        "dashboardY": 38,
+        "dashboardWidth": 384,
+        "dashboardHeight": 163
+      },
+      {
+        "id": "bf22e3c5-08ec-5174-b112-41dd0955331e",
+        "type": "curio.builtin/parameter",
+        "x": 645,
+        "y": 748,
+        "content": "",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "The date the shadow is accumulated over when Period is Date.",
+        "metadata": {
+          "keywords": [],
+          "widgets": [
+            {
+              "name": "date",
+              "type": "date",
+              "label": "Date (when Period is Date)",
+              "default": "2027-12-21"
+            }
+          ],
+          "packageTemplateLabel": "Pick a date (for Date)"
+        },
+        "title": "Pick a date (for Date)",
+        "dashboardPinned": true,
+        "dashboardX": -216,
+        "dashboardY": 218,
+        "dashboardWidth": 382,
+        "dashboardHeight": 166
+      },
+      {
+        "id": "cf406fab-ad41-5197-a647-7a7730d7f6f2",
+        "type": "curio.builtin/parameter",
+        "x": 645,
+        "y": 986,
+        "content": "",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "The month the shadow is accumulated over when Period is Month.",
+        "metadata": {
+          "keywords": [],
+          "widgets": [
+            {
+              "name": "month",
+              "type": "choice",
+              "label": "Month (when Period is Month)",
+              "default": "Dec",
+              "options": {
+                "choices": [
+                  "Jan",
+                  "Feb",
+                  "Mar",
+                  "Apr",
+                  "May",
+                  "Jun",
+                  "Jul",
+                  "Aug",
+                  "Sep",
+                  "Oct",
+                  "Nov",
+                  "Dec"
+                ],
+                "display": "dropdown"
+              }
+            }
+          ],
+          "packageTemplateLabel": "Pick a month (for Month)"
+        },
+        "title": "Pick a month (for Month)",
+        "dashboardPinned": true,
+        "dashboardX": -215,
+        "dashboardY": 404,
+        "dashboardWidth": 382,
+        "dashboardHeight": 172
+      },
+      {
+        "id": "cc3e211a-6d1f-5b77-8afa-0918a1378fc0",
+        "type": "curio.builtin/edit-features",
+        "x": 620,
+        "y": -109,
+        "content": "# Map Edits writes this code from its edit list: each edit, in the\n# order it was made, on the features whose key is one of its ids. It is\n# written again when the list changes.\nreturn curio_edit_features(input_0, [\n    {\"op\": \"add\", \"id\": 900000001, \"geometry\": {\"type\": \"Polygon\", \"coordinates\": [[[-73.9560346, 40.6694543], [-73.9557217, 40.6693888], [-73.9555914, 40.6697498], [-73.9559044, 40.6698147], [-73.9558949, 40.6698412], [-73.9555471, 40.669769], [-73.9557013, 40.6693418], [-73.9560489, 40.6694146], [-73.9560346, 40.6694543]]]}, \"crs\": \"EPSG:4326\", \"values\": {\"height\": 41.1, \"status\": \"Proposed: 1550 Bedford Ave\"}, \"label\": \"Base to 135 ft, 30 ft back from Eastern Parkway\"},\n    {\"op\": \"add\", \"id\": 900000002, \"geometry\": {\"type\": \"Polygon\", \"coordinates\": [[[-73.9555914, 40.6697498], [-73.9557217, 40.6693888], [-73.9560346, 40.6694543], [-73.9559946, 40.6695649], [-73.9559044, 40.6698147], [-73.9555914, 40.6697498]]]}, \"crs\": \"EPSG:4326\", \"values\": {\"height\": 56.4, \"status\": \"Proposed: 1550 Bedford Ave\"}, \"label\": \"Upper floors to 185 ft, set back above the base\"},\n], key=\"building_id\")\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Add the proposed building on the vacant site, in two parts: its base to 135 ft, 30 ft back from Eastern Parkway, and its upper floors to 185 ft, set back above the base. Redraw or raise a part here before Commit edits.",
+        "metadata": {
+          "keywords": [],
+          "packageTemplateLabel": "Add proposed tower (1550 Bedford Ave)"
+        },
+        "title": "Add proposed tower (1550 Bedford Ave)",
+        "dashboardPinned": true,
+        "dashboardX": 186,
+        "dashboardY": 38,
+        "dashboardWidth": 448,
+        "dashboardHeight": 541
+      },
+      {
+        "id": "72b34012-476a-50d2-abf3-f6c271a50f54",
+        "type": "curio.builtin/computation-analysis",
+        "x": 1290,
+        "y": 0,
+        "content": "import geopandas as gpd\nimport shapely\nfrom shapely.geometry import box\n\n# The proposed building as the GPU shader reads it, one feature for the\n# whole building: corners, every part's outline in metres from the\n# building's centre (x east, y north), counter-clockwise and not closed, one\n# part after another; and parts, a row per part: its first corner, its\n# number of corners and its height in metres. A part is drawn as its convex\n# outline, which casts the shadow a U-shaped base does once the taller part\n# inside it is there too. input_0 is the buildings with the proposed one.\nbuildings = input_0\nutm = buildings.estimate_utm_crs()\nproposed = buildings[buildings[\"status\"] != \"Existing\"].to_crs(utm)\norigin = proposed.union_all().centroid\ncorners, parts = [], []\nfor outline, height in zip(proposed.geometry, proposed[\"height\"]):\n    hull = shapely.geometry.polygon.orient(outline.convex_hull, sign=1.0)\n    ring = [(x - origin.x, y - origin.y) for x, y in list(hull.exterior.coords)[:-1]]\n    parts.append([len(corners), len(ring), float(height)])\n    corners.extend([list(corner) for corner in ring])\ntower = gpd.GeoDataFrame(\n    {\"corners\": [corners], \"parts\": [parts], \"height_m\": [float(proposed[\"height\"].max())]},\n    geometry=[proposed.union_all()], crs=utm,\n).to_crs(buildings.crs)\ntower.metadata = {\"layerType\": \"polygons\"}\nreturn tower\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Hand the proposed building's parts to the shader: their corners in metres and their heights.",
+        "metadata": {
+          "keywords": [],
+          "packageTemplateLabel": "Prepare tower for the GPU"
+        },
+        "title": "Prepare tower for the GPU"
+      },
+      {
+        "id": "e891762d-1198-5a8c-b43a-b41b22582249",
+        "type": "curio.builtin/computation-analysis",
+        "x": 1290,
+        "y": 450,
+        "content": "import calendar\nimport datetime\n\nimport geopandas as gpd\nimport numpy as np\nimport shapely\n\n# The ground the proposed building's shadow is accumulated on: square cells of\n# CELL metres over the area around the buildings. For the GPU shader, each\n# cell holds its centre in metres from the proposed building's centre (x east,\n# y north) and the days of the year the selection covers (first_day,\n# last_day). on_block says whether the cell lies on Block 1259, input_1;\n# input_0 is the buildings with the proposed one added.\nCELL = 3\nYEAR = 2027\nbuildings, block = input_0, input_1\nperiod, date, month = [!! @period !!], [!! @date !!], [!! @month !!]\n\n# The days the selection covers: one date, a month, or the whole year.\nif period == \"Date\":\n    day = datetime.date.fromisoformat(str(date)[:10]).replace(year=YEAR)\n    first = last = day.timetuple().tm_yday\n    label = day.strftime(\"%b %d\")\nelif period == \"Month\":\n    number = list(calendar.month_abbr).index(month)\n    first = datetime.date(YEAR, number, 1).timetuple().tm_yday\n    last = first + calendar.monthrange(YEAR, number)[1] - 1\n    label = calendar.month_name[number]\nelse:\n    first, last, label = 1, 365, \"The whole year\"\n\n# Metres, in the buildings' UTM zone, centred on the proposed building.\nutm = buildings.estimate_utm_crs()\nproposed = buildings[buildings[\"status\"] != \"Existing\"].to_crs(utm)\norigin = proposed.union_all().centroid\nwest, south, east, north = buildings.to_crs(utm).total_bounds\nxs, ys = np.meshgrid(np.arange(west, east, CELL), np.arange(south, north, CELL))\nxs, ys = xs.ravel(), ys.ravel()\ncells = gpd.GeoDataFrame(\n    {\"x\": xs + CELL / 2 - origin.x, \"y\": ys + CELL / 2 - origin.y},\n    geometry=shapely.box(xs, ys, xs + CELL, ys + CELL), crs=utm,\n)\ncentres = cells.geometry.centroid\ncells[\"on_block\"] = centres.within(block.to_crs(utm).union_all()).astype(int)\n# Under the proposed building itself, where its shadow does not count.\ncells[\"under_building\"] = centres.within(proposed.union_all()).astype(int)\ncells[\"first_day\"], cells[\"last_day\"], cells[\"selection\"] = first, last, label\ncells[\"cell_m2\"] = CELL * CELL\ncells = cells.to_crs(buildings.crs)\n# Tell the Autark map these are areas, so it fills them.\ncells.metadata = {\"layerType\": \"polygons\"}\nreturn cells\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Cover the area with 3 m ground cells and give them the days the selection covers.",
+        "metadata": {
+          "keywords": [],
+          "packageTemplateLabel": "Make ground grid and selected days"
+        },
+        "title": "Make ground grid and selected days"
+      },
+      {
+        "id": "905ccc99-694a-519b-93b4-5f22778d5c32",
+        "type": "curio.builtin/autk-grammar",
+        "x": 1957,
+        "y": 167,
+        "content": "{\n  \"compute\": [\n    {\n      \"dataRef\": \"[!! input_0 !!]\",\n      \"attributes\": {\n        \"x\": \"properties.x\",\n        \"y\": \"properties.y\",\n        \"first_day\": \"properties.first_day\",\n        \"last_day\": \"properties.last_day\"\n      },\n      \"uniforms\": {\n        \"latitude\": 40.6696\n      },\n      \"uniformMatrices\": {\n        \"corners\": {\n          \"fromFeature\": {\n            \"layer\": \"[!! input_1 !!]\",\n            \"path\": \"properties.corners\"\n          },\n          \"cols\": 2\n        },\n        \"parts\": {\n          \"fromFeature\": {\n            \"layer\": \"[!! input_1 !!]\",\n            \"path\": \"properties.parts\"\n          },\n          \"cols\": 3\n        }\n      },\n      \"outputColumnName\": \"shadow_min\",\n      \"wglsFunction\": [\n        \"// Minutes the proposed building shades this cell over first_day..last_day:\",\n        \"// the sun every 10 minutes of solar time, the cell in shadow when the\",\n        \"// ray from it toward the sun passes through a part below the part's height.\",\n        \"let pi = 3.14159265;\",\n        \"let lat = radians(latitude);\",\n        \"var total: f32 = 0.0;\",\n        \"for (var d = u32(first_day); d <= u32(last_day); d++) {\",\n        \"    // The sun's declination (Cooper's formula).\",\n        \"    let dec = radians(23.44) * sin(2.0 * pi * (284.0 + f32(d)) / 365.0);\",\n        \"    for (var k = 0u; k < 144u; k++) {\",\n        \"        let hour = radians((f32(k) * 10.0 + 5.0 - 720.0) / 4.0);\",\n        \"        let up = sin(lat) * sin(dec) + cos(lat) * cos(dec) * cos(hour);\",\n        \"        if (up <= 0.0) { continue; }\",\n        \"        let toward_e = -cos(dec) * sin(hour);\",\n        \"        let toward_n = cos(lat) * sin(dec) - sin(lat) * cos(dec) * cos(hour);\",\n        \"        let level = sqrt(toward_e * toward_e + toward_n * toward_n);\",\n        \"        let sx = toward_e / level;\",\n        \"        let sy = toward_n / level;\",\n        \"        var shaded = false;\",\n        \"        for (var p = 0u; p < parts_rows; p++) {\",\n        \"            let start = u32(parts[p * 3u]);\",\n        \"            let count = u32(parts[p * 3u + 1u]);\",\n        \"            // How far toward the sun the part can still block it.\",\n        \"            let reach = parts[p * 3u + 2u] * level / up;\",\n        \"            var lo: f32 = 0.0;\",\n        \"            var hi: f32 = reach;\",\n        \"            var crosses = true;\",\n        \"            for (var i = 0u; i < count; i++) {\",\n        \"                let a = start + i;\",\n        \"                let b = start + (i + 1u) % count;\",\n        \"                let ax = corners[a * 2u];\",\n        \"                let ay = corners[a * 2u + 1u];\",\n        \"                let nx = corners[b * 2u + 1u] - ay;\",\n        \"                let ny = ax - corners[b * 2u];\",\n        \"                let num = nx * (ax - x) + ny * (ay - y);\",\n        \"                let den = nx * sx + ny * sy;\",\n        \"                if (abs(den) < 1e-9) {\",\n        \"                    if (num < 0.0) { crosses = false; break; }\",\n        \"                } else if (den > 0.0) {\",\n        \"                    hi = min(hi, num / den);\",\n        \"                } else {\",\n        \"                    lo = max(lo, num / den);\",\n        \"                }\",\n        \"            }\",\n        \"            if (crosses && lo <= hi) { shaded = true; break; }\",\n        \"        }\",\n        \"        if (shaded) { total += 10.0; }\",\n        \"    }\",\n        \"}\",\n        \"return total;\"\n      ]\n    }\n  ]\n}\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "On the GPU, every 10 minutes of every selected day, find the ground cells the proposed building blocks the sun from, and accumulate their minutes of shadow.",
+        "metadata": {
+          "keywords": [],
+          "packageTemplateLabel": "Cast sun rays on the GPU"
+        },
+        "title": "Cast sun rays on the GPU"
+      },
+      {
+        "id": "9439839c-cf4e-5d3f-b3a5-3977577f7e76",
+        "type": "curio.builtin/computation-analysis",
+        "x": 2580,
+        "y": 225,
+        "content": "import pandas as pd\n\n# The ground cells with the minutes the GPU step found the proposed building\n# shades each over the selection (shadow_min) and the same in hours\n# (shadow_h). The step hands on the cells, input_0's first layer, with its\n# result under compute; the cells under the building are left out.\ncells = [!! input_0:input_0 !!]\n# The GPU step hands its layers on as GeoJSON, in longitude and latitude.\nif cells.crs is None:\n    cells = cells.set_crs(4326)\nif \"shadow_min\" not in cells.columns:\n    cells[\"shadow_min\"] = [row.get(\"shadow_min\") if isinstance(row, dict) else None for row in cells[\"compute\"]]\ncells = cells[cells[\"under_building\"] == 0].copy()\ncells[\"shadow_min\"] = pd.to_numeric(cells[\"shadow_min\"]).fillna(0.0)\ncells[\"shadow_h\"] = cells[\"shadow_min\"] / 60\ncells = cells[[\"x\", \"y\", \"on_block\", \"selection\", \"cell_m2\", \"shadow_min\", \"shadow_h\", \"geometry\"]]\ncells.metadata = {\"layerType\": \"polygons\"}\nreturn cells\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Keep each ground cell's accumulated shadow, in minutes and hours.",
+        "metadata": {
+          "keywords": [],
+          "packageTemplateLabel": "Read shadow per cell"
+        },
+        "title": "Read shadow per cell"
+      },
+      {
+        "id": "d89f7440-724b-578f-b68f-896974b76ade",
+        "type": "curio.builtin/computation-analysis",
+        "x": 3220,
+        "y": 230,
+        "content": "import math\n\nimport geopandas as gpd\nimport pandas as pd\nfrom shapely.geometry import box\n\n# What the map colors: the cells the proposed building shades at all, by\n# hours of shadow, the scale topped at the 90th percentile of them so the\n# far reach of the shadow stays visible beside the cells next to the building,\n# which it shades almost all day. input_0 is the shadow per cell, input_1 the\n# buildings with the proposed one.\nshaded = input_0[input_0[\"shadow_h\"] > 0].copy()\nif len(shaded):\n    top = float(shaded[\"shadow_h\"].quantile(0.9))\n    shaded[\"shadow_shown\"] = shaded[\"shadow_h\"].clip(upper=top)\n    # Autark's legend runs from the layer's lowest value to its highest, so\n    # two small cells hidden under the proposed building hold the whole hours\n    # below and above them: the legend reads from the floor to the ceiling.\n    low, high = math.floor(shaded[\"shadow_shown\"].min()), math.ceil(shaded[\"shadow_shown\"].max())\n    tower = input_1[input_1[\"status\"] != \"Existing\"].to_crs(shaded.crs).union_all().centroid\n    side = 1e-6\n    anchors = gpd.GeoDataFrame(\n        {\"shadow_shown\": [float(low), float(high)]},\n        geometry=[box(tower.x - side, tower.y - side, tower.x, tower.y),\n                  box(tower.x, tower.y, tower.x + side, tower.y + side)],\n        crs=shaded.crs,\n    )\n    shaded = pd.concat([shaded, anchors], ignore_index=True)\nshaded.metadata = {\"layerType\": \"polygons\"}\nreturn shaded\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Keep the cells the building shades and set the map's color scale.",
+        "metadata": {
+          "keywords": [],
+          "packageTemplateLabel": "Keep shaded cells for the map"
+        },
+        "title": "Keep shaded cells for the map"
+      },
+      {
+        "id": "2be9fdd4-c902-5a3e-af89-e0ad66f45a2c",
+        "type": "curio.builtin/computation-analysis",
+        "x": 3215,
+        "y": -181,
+        "content": "import geopandas as gpd\nfrom shapely.geometry import box\n\n# The area the map shows, one box around every building. The map loads it\n# first and does not draw it: Autark clips every layer it loads after the\n# first to the first one's outline, so with this box first every layer stays\n# whole.\nreturn gpd.GeoDataFrame({\"area\": [\"map\"]}, geometry=[box(*input_0.total_bounds)], crs=input_0.crs)\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Make the box around every building that the map loads first, so Autark keeps its layers whole.",
+        "metadata": {
+          "keywords": [],
+          "packageTemplateLabel": "Map extent (keeps layers whole)"
+        },
+        "title": "Map extent (keeps layers whole)"
+      },
+      {
+        "id": "c244e3a8-9f0a-5d6d-9309-a5938cc22427",
+        "type": "curio.builtin/computation-analysis",
+        "x": 3225,
+        "y": 675,
+        "content": "import pandas as pd\n\n# The selection's answer: the proposed building's shade on a spot of Block\n# 1259, on average over the whole block (a spot the shadow never reaches\n# counts as 0). It is also the sunlight that spot loses.\ncells = input_0\nminutes = float(cells.loc[cells[\"on_block\"] == 1, \"shadow_min\"].mean())\nreturn pd.DataFrame([{\n    \"Selection\": cells[\"selection\"].iloc[0],\n    \"Shade added on Block 1259\": f\"{minutes:.0f} min\" if minutes < 90 else f\"{minutes / 60:,.1f} h\",\n}])\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Average the proposed building's shade over Block 1259's spots.",
+        "metadata": {
+          "keywords": [],
+          "packageTemplateLabel": "Average shade on Block 1259"
+        },
+        "title": "Average shade on Block 1259"
+      },
+      {
+        "id": "6cb649f2-b091-5fcc-8214-1e76ee7b94e4",
+        "type": "curio.builtin/autk-grammar",
+        "x": 3862,
+        "y": 12,
+        "content": "{\n  \"map\": {\n    \"layerRefs\": [\n      {\n        \"dataRef\": \"[!! input_0 !!]\",\n        \"isSkip\": true\n      },\n      {\n        \"dataRef\": \"[!! input_4 !!]\",\n        \"color\": \"#d5d9df\",\n        \"stroke\": false,\n        \"title\": \"Streets\"\n      },\n      {\n        \"dataRef\": \"[!! input_2 !!]\",\n        \"selectFields\": [\n          \"building_id\"\n        ],\n        \"getFnv\": \"status\",\n        \"getFnvType\": \"categorical\",\n        \"colorMapInterpolator\": \"schemeTableau10\",\n        \"title\": \"Building\"\n      },\n      {\n        \"dataRef\": \"[!! input_1 !!]\",\n        \"isPick\": true,\n        \"getFnv\": \"shadow_shown\",\n        \"getFnvType\": \"quantitative\",\n        \"isColorMap\": true,\n        \"colorMapInterpolator\": \"interpolateRdPu\",\n        \"stroke\": false,\n        \"opacity\": 0.9,\n        \"title\": \"Accumulated shadow (hours)\"\n      },\n      {\n        \"dataRef\": \"[!! input_3 !!]\",\n        \"color\": \"#ffd166\",\n        \"stroke\": \"#e09f00\",\n        \"opacity\": 0.4,\n        \"title\": \"Block 1259\"\n      }\n    ]\n  }\n}\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Map the proposed building's accumulated shadow for the selection, with Block 1259 highlighted, the proposed building in its own color and the other buildings and streets around it.",
+        "metadata": {
+          "keywords": [],
+          "packageTemplateLabel": "Map: tower's accumulated shadow"
+        },
+        "title": "Map: tower's accumulated shadow",
+        "width": 980,
+        "height": 700,
+        "dashboardPinned": true,
+        "dashboardX": 641,
+        "dashboardY": 38,
+        "dashboardWidth": 526,
+        "dashboardHeight": 374
+      },
+      {
+        "id": "cc1be78d-9348-5650-9a91-d98f08959fcd",
+        "type": "curio.builtin/vis-simple",
+        "x": 3862,
+        "y": 774,
+        "content": "",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Show the shade the proposed building adds on Block 1259 for the selection.",
+        "metadata": {
+          "keywords": [],
+          "packageTemplateLabel": "Table: shade added on Block 1259"
+        },
+        "title": "Table: shade added on Block 1259",
+        "width": 979,
+        "height": 162,
+        "dashboardPinned": true,
+        "dashboardX": 641,
+        "dashboardY": 418,
+        "dashboardWidth": 526,
+        "dashboardHeight": 159
+      }
+    ],
+    "edges": [
+      {
+        "id": "reactflow__edge-e6bf2bc2-e88b-570d-8b5c-b121a93e5f42out-cc3e211a-6d1f-5b77-8afa-0918a1378fc0in",
+        "source": "e6bf2bc2-e88b-570d-8b5c-b121a93e5f42",
+        "target": "cc3e211a-6d1f-5b77-8afa-0918a1378fc0",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-cc3e211a-6d1f-5b77-8afa-0918a1378fc0out-72b34012-476a-50d2-abf3-f6c271a50f54in",
+        "source": "cc3e211a-6d1f-5b77-8afa-0918a1378fc0",
+        "target": "72b34012-476a-50d2-abf3-f6c271a50f54",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-cc3e211a-6d1f-5b77-8afa-0918a1378fc0out-e891762d-1198-5a8c-b43a-b41b22582249in",
+        "source": "cc3e211a-6d1f-5b77-8afa-0918a1378fc0",
+        "target": "e891762d-1198-5a8c-b43a-b41b22582249",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-f621df4f-9471-5b08-b29f-cd7fd34b22faout-e891762d-1198-5a8c-b43a-b41b22582249in_1",
+        "source": "f621df4f-9471-5b08-b29f-cd7fd34b22fa",
+        "target": "e891762d-1198-5a8c-b43a-b41b22582249",
+        "sourceHandle": "out",
+        "targetHandle": "in_1"
+      },
+      {
+        "id": "reactflow__edge-e891762d-1198-5a8c-b43a-b41b22582249out-905ccc99-694a-519b-93b4-5f22778d5c32in",
+        "source": "e891762d-1198-5a8c-b43a-b41b22582249",
+        "target": "905ccc99-694a-519b-93b4-5f22778d5c32",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-72b34012-476a-50d2-abf3-f6c271a50f54out-905ccc99-694a-519b-93b4-5f22778d5c32in_1",
+        "source": "72b34012-476a-50d2-abf3-f6c271a50f54",
+        "target": "905ccc99-694a-519b-93b4-5f22778d5c32",
+        "sourceHandle": "out",
+        "targetHandle": "in_1"
+      },
+      {
+        "id": "reactflow__edge-905ccc99-694a-519b-93b4-5f22778d5c32out-9439839c-cf4e-5d3f-b3a5-3977577f7e76in",
+        "source": "905ccc99-694a-519b-93b4-5f22778d5c32",
+        "target": "9439839c-cf4e-5d3f-b3a5-3977577f7e76",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-9439839c-cf4e-5d3f-b3a5-3977577f7e76out-d89f7440-724b-578f-b68f-896974b76adein",
+        "source": "9439839c-cf4e-5d3f-b3a5-3977577f7e76",
+        "target": "d89f7440-724b-578f-b68f-896974b76ade",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-cc3e211a-6d1f-5b77-8afa-0918a1378fc0out-d89f7440-724b-578f-b68f-896974b76adein_1",
+        "source": "cc3e211a-6d1f-5b77-8afa-0918a1378fc0",
+        "target": "d89f7440-724b-578f-b68f-896974b76ade",
+        "sourceHandle": "out",
+        "targetHandle": "in_1"
+      },
+      {
+        "id": "reactflow__edge-e6bf2bc2-e88b-570d-8b5c-b121a93e5f42out-2be9fdd4-c902-5a3e-af89-e0ad66f45a2cin",
+        "source": "e6bf2bc2-e88b-570d-8b5c-b121a93e5f42",
+        "target": "2be9fdd4-c902-5a3e-af89-e0ad66f45a2c",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-2be9fdd4-c902-5a3e-af89-e0ad66f45a2cout-6cb649f2-b091-5fcc-8214-1e76ee7b94e4in",
+        "source": "2be9fdd4-c902-5a3e-af89-e0ad66f45a2c",
+        "target": "6cb649f2-b091-5fcc-8214-1e76ee7b94e4",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-d89f7440-724b-578f-b68f-896974b76adeout-6cb649f2-b091-5fcc-8214-1e76ee7b94e4in_1",
+        "source": "d89f7440-724b-578f-b68f-896974b76ade",
+        "target": "6cb649f2-b091-5fcc-8214-1e76ee7b94e4",
+        "sourceHandle": "out",
+        "targetHandle": "in_1"
+      },
+      {
+        "id": "reactflow__edge-cc3e211a-6d1f-5b77-8afa-0918a1378fc0out-6cb649f2-b091-5fcc-8214-1e76ee7b94e4in_2",
+        "source": "cc3e211a-6d1f-5b77-8afa-0918a1378fc0",
+        "target": "6cb649f2-b091-5fcc-8214-1e76ee7b94e4",
+        "sourceHandle": "out",
+        "targetHandle": "in_2"
+      },
+      {
+        "id": "reactflow__edge-f621df4f-9471-5b08-b29f-cd7fd34b22faout-6cb649f2-b091-5fcc-8214-1e76ee7b94e4in_3",
+        "source": "f621df4f-9471-5b08-b29f-cd7fd34b22fa",
+        "target": "6cb649f2-b091-5fcc-8214-1e76ee7b94e4",
+        "sourceHandle": "out",
+        "targetHandle": "in_3"
+      },
+      {
+        "id": "reactflow__edge-6f07cb25-d7cc-5fe5-abf4-cfadafdffb59out-6cb649f2-b091-5fcc-8214-1e76ee7b94e4in_4",
+        "source": "6f07cb25-d7cc-5fe5-abf4-cfadafdffb59",
+        "target": "6cb649f2-b091-5fcc-8214-1e76ee7b94e4",
+        "sourceHandle": "out",
+        "targetHandle": "in_4"
+      },
+      {
+        "id": "reactflow__edge-cc3e211a-6d1f-5b77-8afa-0918a1378fc0in/out-6cb649f2-b091-5fcc-8214-1e76ee7b94e4in/out",
+        "source": "cc3e211a-6d1f-5b77-8afa-0918a1378fc0",
+        "target": "6cb649f2-b091-5fcc-8214-1e76ee7b94e4",
+        "sourceHandle": "in/out",
+        "targetHandle": "in/out",
+        "type": "Interaction"
+      },
+      {
+        "id": "reactflow__edge-9439839c-cf4e-5d3f-b3a5-3977577f7e76out-c244e3a8-9f0a-5d6d-9309-a5938cc22427in",
+        "source": "9439839c-cf4e-5d3f-b3a5-3977577f7e76",
+        "target": "c244e3a8-9f0a-5d6d-9309-a5938cc22427",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-c244e3a8-9f0a-5d6d-9309-a5938cc22427out-cc1be78d-9348-5650-9a91-d98f08959fcdin",
+        "source": "c244e3a8-9f0a-5d6d-9309-a5938cc22427",
+        "target": "cc1be78d-9348-5650-9a91-d98f08959fcd",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      }
+    ],
+    "packages": [],
+    "datasets": [
+      {
+        "datasetId": "data.nyc.crown-heights-1550-bedford",
+        "dirName": "data.nyc.crown-heights-1550-bedford@1",
+        "origin": "imported",
+        "producerNodeId": null,
+        "consumerNodeIds": [],
+        "installedAt": "2026-10-22T00:00:00Z"
+      }
+    ],
+    "name": "Crown Heights shade from 1550 Bedford Avenue",
+    "task": "",
+    "timestamp": 1792627200000,
+    "provenance_id": "Crown Heights shade from 1550 Bedford Avenue"
+  }
+}
