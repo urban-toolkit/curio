@@ -1,5 +1,5 @@
 /**
- * The Map Edits node (`curio.builtin/edit-features`) and the Autark map it
+ * The Map Editor node (`curio.builtin/edit-features`) and the Autark map it
  * edits on, wired as the node's guide wires them: a loader feeds the node on a
  * data edge, the node feeds the map on a data edge, and an interaction edge
  * joins the node and the map. Each node is the behavior the canvas registers
@@ -109,7 +109,7 @@ const EDGES = [
 const mockOutputCallback = jest.fn();
 
 /**
- * The Map Edits node as UniversalNode mounts it: its state, its behavior,
+ * The Map Editor node as UniversalNode mounts it: its state, its behavior,
  * and, with *editor*, its editor, whose output pane holds the body.
  */
 function InteractionNode({ editor }: { editor: boolean }) {
@@ -229,7 +229,7 @@ function mountCanvas({
 }
 
 /**
- * Whether the Map Edits node's panel says building *id* is removed: an
+ * Whether the Map Editor node's panel says building *id* is removed: an
  * element whose own text names it after "Remove", whatever the markup.
  */
 function saysRemoved(id: number): boolean {

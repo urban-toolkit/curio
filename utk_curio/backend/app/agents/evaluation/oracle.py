@@ -145,10 +145,10 @@ def plan_for(
     ``[!! name !!]`` references, which resolve against the node's widgets.
 
     ``edit_goals`` (``{ref: goal}``, :func:`edit_goals_for`) are the edits a
-    planned Map Edits node is to hold, said as its example's goal says them:
-    Solve makes edits in an empty Map Edits node only when its goal names
+    planned Map Editor node is to hold, said as its example's goal says them:
+    Solve makes edits in an empty Map Editor node only when its goal names
     them, so a plan names them in the node's intent, as the knowledge page on
-    Map Edits asks of a planner.
+    Map Editor asks of a planner.
 
     Raises :class:`Unrepresentable` for an edge kind the grammar cannot carry.
     """
@@ -239,13 +239,13 @@ def content_replies(
 
 
 def edit_goals_for(expected: Mapping, *, example: Mapping, origins: Iterable) -> dict:
-    """``{ref: goal}``: the goal of each example Map Edits node whose code
+    """``{ref: goal}``: the goal of each example Map Editor node whose code
     holds edits, for the planned node that rebuilds it (:func:`plan_for`).
 
-    Solve makes edits in an empty Map Edits node only when its goal names
+    Solve makes edits in an empty Map Editor node only when its goal names
     them (``map_edits.goal_names_edits``), and a planned node's goal is its
     intent; ``test_example_reconstruction.py`` checks that each goal carried
-    names them. A node is a Map Edits node by its template's behavior, as
+    names them. A node is a Map Editor node by its template's behavior, as
     Solve tells one."""
     inner = example.get("dataflow")
     dataflow = inner if isinstance(inner, Mapping) else example

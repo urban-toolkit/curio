@@ -1,7 +1,7 @@
 """Values as JavaScript writes them, for the texts the browser and the sandbox
 both say.
 
-A Map Edits node reads its code in the browser (``utils/editFeatures``), and
+A Map Editor node reads its code in the browser (``utils/editFeatures``), and
 the sandbox reads the same code with a port of that reader
 (``feature_edits_code.py``), so the two say the same words when they refuse
 it. Where a reason shows a value, the browser shows it as JavaScript writes

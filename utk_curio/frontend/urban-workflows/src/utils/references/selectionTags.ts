@@ -25,7 +25,7 @@ import { isActiveSelect, matchSelections, type SelectDetail, type SelectionRows 
 export const SELECTION_ID_CAP = 10000;
 
 /** The columns that identify rows wherever Curio's OpenStreetMap layers go,
- * first the one a new tag or Map Edits node starts on: a building's
+ * first the one a new tag or Map Editor node starts on: a building's
  * `building_id`, which names every part of it, then the feature's `osm_id`. */
 export const STABLE_ID_COLUMNS = ["building_id", "osm_id"] as const;
 

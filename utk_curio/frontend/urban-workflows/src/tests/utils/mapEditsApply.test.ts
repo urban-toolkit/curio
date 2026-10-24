@@ -1,5 +1,5 @@
 /**
- * The Map Edits node's edit log applied in the browser, the one way it is
+ * The Map Editor node's edit log applied in the browser, the one way it is
  * applied there: `applyFeatureEdits` (utils/editFeatures/applyEdits), which
  * the map the node feeds draws before Commit edits (`mapEditsPreview`), the
  * node's tools read (`layerModel.editedFeatures`) and its table and condition

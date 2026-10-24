@@ -544,7 +544,7 @@ def oracle_attempt(
             widgets=oracle.widgets_for(
                 fixture.expected, example=example, origins=expected_graph.origins
             ),
-            # A planned Map Edits node names the edits it is to hold.
+            # A planned Map Editor node names the edits it is to hold.
             edit_goals=oracle.edit_goals_for(
                 fixture.expected, example=example, origins=expected_graph.origins
             ),

@@ -8,7 +8,7 @@ Accumulated Shadow, the node of the model package ``model.scout.deep-umbra@1``,
 runs SCOUT's Deep Umbra model on it, in the season both scenarios share, an
 Autark map draws the shadow, and a Raster Calculator (``curio.scout@1`` too)
 takes the shadow's statistics over the ground, the heights as its mask.
-"Towers removed" first reads the buildings through a Map Edits node, its
+"Towers removed" first reads the buildings through a Map Editor node, its
 lever, whose code removes the 15 buildings SCOUT's second scenario removes,
 matched on building_id, and which feeds a map of the remaining buildings it
 is linked to. Outside the scenarios, Scout's Bars charts
@@ -120,7 +120,7 @@ ROW_COLUMNS = ["count", "max", "mean", "median", "min", "scenario", "scenario_na
 SHADOW_RANGE = (0, 720)
 
 LEVER_TEST_NAME = "test_an_edit_in_the_towers_lever_reaches_the_shadow_with_commit_edits"
-#: The Map Edits node (#958; its type id is still the Edit Features node's).
+#: The Map Editor node (#958; its type id is still the Edit Features node's).
 LEVER_TYPE = "curio.builtin/edit-features"
 LOADER_TYPE = "curio.builtin/data-loading"
 #: The buildings Towers removed's lever removes as shipped, by building_id:
@@ -429,7 +429,7 @@ def test_an_edit_in_the_towers_lever_reaches_the_shadow_with_commit_edits(
     page,
     record_property,
 ):
-    """Towers removed's Map Edits node is the scenario's lever: its code holds
+    """Towers removed's Map Editor node is the scenario's lever: its code holds
     SCOUT's 15 removed buildings, one removal by building_id under a label, and
     it feeds a map of the remaining buildings, linked to it. An edit made
     there, then Commit edits, runs the scenario again with it:
@@ -459,7 +459,7 @@ def test_an_edit_in_the_towers_lever_reaches_the_shadow_with_commit_edits(
     scenario_of = {node_id: scenario["id"] for scenario in dataflow["scenarios"] for node_id in scenario["nodes"]}
     levers = [n for n, node in nodes.items() if node["type"] == LEVER_TYPE]
     assert [scenario_of.get(n) for n in levers] == ["towers-removed"], (
-        f"Towers removed reads the buildings through no Map Edits node: the Map Edits nodes are {levers}, "
+        f"Towers removed reads the buildings through no Map Editor node: the Map Editor nodes are {levers}, "
         f"in the scenarios {[scenario_of.get(n) for n in levers]}"
     )
     (lever,) = levers

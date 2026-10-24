@@ -1,4 +1,4 @@
-"""The sandbox's reader of a Map Edits node's code
+"""The sandbox's reader of a Map Editor node's code
 (``utk_curio/sandbox/util/feature_edits_code.py``), which holds what agents
 write for the node to what the node itself reads.
 
@@ -24,7 +24,7 @@ CASES = REPO_ROOT / "utk_curio/frontend/urban-workflows/src/utils/editFeatures/e
 READER = REPO_ROOT / "utk_curio/sandbox/util/feature_edits_code.py"
 #: The comment lines a new node's code starts with (``EDIT_CODE_NOTE``).
 NOTE = [
-    "# Map Edits writes this code from its edit list: each edit, in the",
+    "# Map Editor writes this code from its edit list: each edit, in the",
     "# order it was made, on the features whose key is one of its ids. It is",
     "# written again when the list changes.",
 ]
@@ -74,7 +74,7 @@ def test_code_the_node_refuses_is_refused_with_the_same_words(case):
 def test_a_new_nodes_code_is_the_code_the_node_writes_for_itself():
     """``new_node_code`` writes what the node writes when it is dropped
     (``editFeaturesCode(undefined, circles)``), which Solve gives a blank Map
-    Edits node whose goal names no edits: every written case with no
+    Editor node whose goal names no edits: every written case with no
     settings and no comment lines of its own, on one circle and on two."""
     from utk_curio.sandbox.util.feature_edits_code import EDIT_CODE_NOTE, new_node_code
 

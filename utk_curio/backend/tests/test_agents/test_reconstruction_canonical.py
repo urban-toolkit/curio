@@ -390,7 +390,7 @@ class TestTheShippedCorpus:
 
     def test_the_examples_that_need_interaction_edges_are_exactly_these(self):
         """The examples whose graphs carry an interaction edge: views linked
-        to each other or to a pool, and Map Edits nodes linked to the Autark
+        to each other or to a pool, and Map Editor nodes linked to the Autark
         maps they feed and edit on (06's, chicago-loop-shadow-towers' and
         lower-manhattan-park-shade's levers among them)."""
         with_interaction = set()

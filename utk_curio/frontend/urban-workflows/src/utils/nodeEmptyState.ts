@@ -34,7 +34,7 @@ export type NodeEmptyReason =
   | "geometry-unresolved"
   /** Several geometry columns and no way to tell which one is meant. */
   | "geometry-ambiguous"
-  /** A node that works on a map (Map Edits) is linked to no map it feeds. */
+  /** A node that works on a map (Map Editor) is linked to no map it feeds. */
   | "unlinked"
   /** A node that writes its own code holds code of another shape, which it cannot read. */
   | "code-unreadable";
@@ -101,7 +101,7 @@ export const NODE_EMPTY_COPY: Record<NodeEmptyReason, NodeEmptyCopy> = {
     title: "Several geometry columns",
     hint: 'Add "shape": {"field": "<name>", "type": "geojson"} to pick one.',
   },
-  // The Map Edits node's own states: it edits on the map it feeds and is
+  // The Map Editor node's own states: it edits on the map it feeds and is
   // linked to, and reads the code it writes.
   unlinked: {
     title: "Not linked to a map",

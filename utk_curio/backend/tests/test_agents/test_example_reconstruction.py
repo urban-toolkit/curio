@@ -93,10 +93,10 @@ class TestReachability:
         assert result.scored.comparison.exact
 
     def test_a_planned_map_edits_node_names_the_edits_its_example_holds(self):
-        """Solve makes edits in an empty Map Edits node only when its goal
+        """Solve makes edits in an empty Map Editor node only when its goal
         names them, and a planned node's goal is its intent, so the oracle's
-        plan names the edits each example Map Edits node holds, as the
-        knowledge page on Map Edits asks a planner to. Without that, the
+        plan names the edits each example Map Editor node holds, as the
+        knowledge page on Map Editor asks a planner to. Without that, the
         reachability above would rebuild such a node as its call with no
         edits and still find content there."""
         from utk_curio.backend.app.agents.domain import map_edits

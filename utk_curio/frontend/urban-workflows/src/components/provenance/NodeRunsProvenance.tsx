@@ -25,7 +25,7 @@ export interface NodeRunsProvenanceProps {
 
 /**
  * A node's runs in the provenance drawer, and its edits: those made in its
- * body (a Map Edits node's actions, and the entries of its list switched off
+ * body (a Map Editor node's actions, and the entries of its list switched off
  * or deleted), each listed by what it changed, and an agent's changes the
  * user applied, each named after the agent.
  * An opened run shows what it read and returned, when it ran and for how long,

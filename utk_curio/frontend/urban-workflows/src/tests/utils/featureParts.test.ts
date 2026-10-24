@@ -1,5 +1,5 @@
 /**
- * How the Map Edits node's map tools name one row of a feature of several
+ * How the Map Editor node's map tools name one row of a feature of several
  * (utils/editFeatures/featureParts, #1092): an OSM building of several parts
  * is a row for each, holding its building's building_id and an osm_id of its
  * own. An edit of one part names it by both, through `where`; a feature of one

@@ -1,5 +1,5 @@
 /**
- * A shape's corners as rings of points (#662): what the Map Edits node's
+ * A shape's corners as rings of points (#662): what the Map Editor node's
  * map overlay (`MapEditOverlay`) picks, reshapes and moves, how to make the
  * shape again from them, and the handles a drag takes them by.
  */

@@ -95,7 +95,7 @@ describe('ProvenanceProvider', () => {
     });
 });
 
-// A Map Edits node files each change made in its body as an entry of its own.
+// A Map Editor node files each change made in its body as an entry of its own.
 describe('an edit in node provenance', () => {
     it('is filed at once with the code it left and its label, reading and returning nothing', () => {
         const { result } = renderHook(() => useProvenanceContext(), { wrapper });

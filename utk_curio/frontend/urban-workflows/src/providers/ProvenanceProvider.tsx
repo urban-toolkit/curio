@@ -3,7 +3,7 @@ import { formatDate } from "../utils/formatters";
 
 /**
  * One entry of a node's history: a run, or an edit, which ran nothing: one
- * made in the node's body (a Map Edits node's action, or an entry of its list
+ * made in the node's body (a Map Editor node's action, or an entry of its list
  * switched off or deleted), or an agent's change the user applied. Each holds
  * the node's code as it left it, and descends from the entry the node's next
  * one branches from (`selectedParentExecRef`), so the history is a tree.

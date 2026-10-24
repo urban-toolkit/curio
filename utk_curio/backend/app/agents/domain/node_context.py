@@ -12,7 +12,7 @@ Honesty rules: a neighbor that never executed says ``never-executed`` —
 nothing here fabricates schemas or results; ``outputSchema`` joins when the
 runtime journal starts capturing column metadata (recorded 67-2 follow-up).
 
-A Map Edits neighbour's row carries its call (``mapEditsCall``), cut at a
+A Map Editor neighbour's row carries its call (``mapEditsCall``), cut at a
 bound: the what-if a node is written beside is part of its context.
 
 dev/135: the status WORD was all this composer forwarded, so a child asked to
@@ -183,7 +183,7 @@ def compose_node_context(
             "runtime": _runtime_block(nid),
         }
         if content_text.strip() and map_edits.is_map_edits(user_key, project_id, neighbor.get("type")):
-            # A Map Edits neighbour's edits, in its own call: what a node
+            # A Map Editor neighbour's edits, in its own call: what a node
             # written beside a what-if is told the what-if changed.
             row["mapEditsCall"] = map_edits.context_call(content_text)
         return row

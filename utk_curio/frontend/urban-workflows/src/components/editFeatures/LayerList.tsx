@@ -1,5 +1,5 @@
 /**
- * The layers the Map Edits node is fed (#662), as cards grouped by the
+ * The layers the Map Editor node is fed (#662), as cards grouped by the
  * geometry their features have (points, lines, areas): the name, where it
  * came from and how many features it holds, and its properties. + New data
  * layer starts a layer of the node's own.

@@ -3,7 +3,7 @@
  * Provenance drawer, named after the agent, on every node.
  *
  * A Python node has no writer of its own (utils/nodeCodeWriters), so the
- * canvas writes the code and files the change as a Map Edits node files its
+ * canvas writes the code and files the change as a Map Editor node files its
  * own: an edit holding the code it left and the code it replaced
  * (`useGraphEdits.applyNodeContent`), with the dataflow left Unsaved, so the
  * next save keeps the entry where an agent reads it. A node an agent adds
@@ -200,7 +200,7 @@ describe("an agent's applied change is an entry of the node's history", () => {
     mockMarkDirty.mockClear();
     await dispatch({ kind: 'node-content-applied', nodeId: PYTHON.id, content: AFTER, agent: AGENT });
     expect(code(PYTHON.id)).toBe(AFTER);
-    // The dataflow reads Unsaved, as after an edit made in a Map Edits node,
+    // The dataflow reads Unsaved, as after an edit made in a Map Editor node,
     // so the next save keeps the entry.
     expect(mockMarkDirty).toHaveBeenCalled();
     expect(entries(PYTHON.id)).toHaveLength(1);
@@ -228,7 +228,7 @@ describe("an agent's applied change is an entry of the node's history", () => {
     expect(mockMarkDirty).not.toHaveBeenCalled();
   });
 
-  it("a change applied without the agent's name is named Agent, as a Map Edits node names it", async () => {
+  it("a change applied without the agent's name is named Agent, as a Map Editor node names it", async () => {
     renderCanvas();
     await flush();
     await dispatch({ kind: 'node-created', node: PYTHON });

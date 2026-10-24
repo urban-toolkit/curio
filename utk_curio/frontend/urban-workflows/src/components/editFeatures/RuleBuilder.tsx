@@ -1,5 +1,5 @@
 /**
- * A rule of the Map Edits node (#662): the conditions it is made of, one
+ * A rule of the Map Editor node (#662): the conditions it is made of, one
  * `where` the log keeps (`ruleText`), and how many features match it now.
  * Remove and Edit pick by one.
  */

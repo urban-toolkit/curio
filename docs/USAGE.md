@@ -764,7 +764,7 @@ boundary splits the dataflow into three parts:
   common context.
 - **Levers:** the nodes in the scenario, which is what an alternative changes: its
   data loaders, widget values, code and specs, and the features it removes or
-  changes by hand (see [The Map Edits node](#the-map-edits-node)).
+  changes by hand (see [The Map Editor node](#the-map-editor-node)).
 - **Outcomes:** the outputs of the scenario's last nodes, which is what gets
   compared.
 
@@ -816,16 +816,16 @@ chart or a Data Pool saves nothing itself: the node feeding it does. Scenarios,
 their colors, descriptions, collapsed state and box positions are saved with the
 dataflow. Deleting a node removes it from its scenario.
 
-### The Map Edits node
+### The Map Editor node
 
-The **Map Edits** node edits a map's layers on the map. It removes features,
+The **Map Editor** node edits a map's layers on the map. It removes features,
 changes their values, reshapes or moves them, draws new ones, and adds
 properties and layers.
 
-1. Connect the nodes that load your layers to Map Edits, and Map Edits to an
+1. Connect the nodes that load your layers to Map Editor, and Map Editor to an
    Autark map.
-2. Link them with an interaction edge, from the dot on top of Map Edits to the
-   dot on top of the map, so a feature picked on the map is picked in Map Edits.
+2. Link them with an interaction edge, from the dot on top of Map Editor to the
+   dot on top of the map, so a feature picked on the map is picked in Map Editor.
 3. Pick a layer, then **Add**, **Edit**, **Remove** or **Add a property**. Pick
    features on the map with a click (shift-click adds more), or by a rule such
    as `height > 100`.
@@ -854,7 +854,7 @@ A rule or an expression reads a feature's columns by name (`height`, or
 `false`, `null`, `+ - * / %`, `== != < <= > >=`, `and`, `or`, `not`,
 parentheses, `abs`, `round`, `min` and `max`.
 
-In a scenario, a Map Edits node is a lever.
+In a scenario, a Map Editor node is a lever.
 
 ### Comparing scenarios
 
@@ -1198,7 +1198,7 @@ The chosen modes are saved with the dataflow.
 
 An Autark map takes part the same way: a selection highlights its features, and a pick on the map, or a selection in an Autark plot, is a selection the others receive.
 
-A Map Edits node and the map it edits on are linked the same way, by an interaction edge that carries selections both ways: a feature picked on the map is picked in the node, and what the node picks lights up on the map.
+A Map Editor node and the map it edits on are linked the same way, by an interaction edge that carries selections both ways: a feature picked on the map is picked in the node, and what the node picks lights up on the map.
 
 An Autark view names the columns that identify its rows with `selectFields`, on the pickable map layer or on the plot. A pick or a brush on it then sends their values, as a point selection over fields does, and a feature that holds none selects nothing. Without `selectFields`, it matches rows by position.
 

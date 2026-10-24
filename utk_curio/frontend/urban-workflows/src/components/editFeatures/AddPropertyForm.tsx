@@ -1,5 +1,5 @@
 /**
- * Add a property in the Map Edits node's workbench (#662): a new column on
+ * Add a property in the Map Editor node's workbench (#662): a new column on
  * every feature of the layer, with a default value. On a new layer, its next
  * features are asked for it too.
  */

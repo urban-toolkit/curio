@@ -170,7 +170,7 @@
         "x": 1290,
         "y": 2428,
         "title": "Two towers removed",
-        "content": "# Map Edits writes this code from its edit list: each edit, in the\n# order it was made, on the features whose key is one of its ids. It is\n# written again when the list changes.\nreturn curio_edit_features(input_0, [\n    {\"op\": \"remove\", \"ids\": [29623484, 29628154]},\n], key=\"building_id\", layer=\"table_osm_buildings\")\n",
+        "content": "# Map Editor writes this code from its edit list: each edit, in the\n# order it was made, on the features whose key is one of its ids. It is\n# written again when the list changes.\nreturn curio_edit_features(input_0, [\n    {\"op\": \"remove\", \"ids\": [29623484, 29628154]},\n], key=\"building_id\", layer=\"table_osm_buildings\")\n",
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "Remove two towers, 200 Clarendon, Back Bay's tallest, and Raffles, from the buildings the shadow step reads: every part of each, matched on its building_id.",
@@ -189,7 +189,7 @@
         "content": "{\n  \"map\": {\n    \"layerRefs\": [\n      {\n        \"dataRef\": \"table_osm_buildings\",\n        \"isPick\": true,\n        \"selectFields\": [\n          \"building_id\"\n        ],\n        \"isColorMap\": true,\n        \"getFnv\": \"height\",\n        \"getFnvType\": \"quantitative\",\n        \"colorMapInterpolator\": \"interpolateViridis\",\n        \"colorMapRange\": [\n          0,\n          250\n        ],\n        \"title\": \"Building height (m)\"\n      }\n    ]\n  }\n}",
         "out": "DEFAULT",
         "in": "DEFAULT",
-        "goal": "Draw the buildings Two towers removed's Map Edits node hands on, coloured by height. The two are linked, so a building picked on this map is picked in the Map Edits node.",
+        "goal": "Draw the buildings Two towers removed's Map Editor node hands on, coloured by height. The two are linked, so a building picked on this map is picked in the Map Editor node.",
         "metadata": {
           "keywords": []
         }

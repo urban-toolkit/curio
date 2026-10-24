@@ -82,7 +82,7 @@ Gives the value of a key saved for node code, which never appears in the code, t
 
 Engines: python.
 
-Hands on its input with edits applied to the features of its layers: a Map Edits node's code is one such call, which the node writes from its edits.
+Hands on its input with edits applied to the features of its layers: a Map Editor node's code is one such call, which the node writes from its edits.
 
 - `value`: the input: an Autark node's layers, a table, or several tables.
 - `edits`: the edits, in the order they were made, each a dict with an `op`, the features it applies to and, for an op that writes, a `column` and a `value`.

@@ -1,5 +1,5 @@
 /**
- * The controls of the Map Edits node's forms (#662): a widget's, as its
+ * The controls of the Map Editor node's forms (#662): a widget's, as its
  * Widgets tab draws them (`WidgetControl`): Material UI's text field, its
  * native select, its radio group and its checkbox, compact on the widget
  * theme. The node's body wraps them in that theme (`FieldTheme`).

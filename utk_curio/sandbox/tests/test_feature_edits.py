@@ -1,4 +1,4 @@
-"""The Map Edits node's step (#662; its type is still
+"""The Map Editor node's step (#662; its type is still
 ``curio.builtin/edit-features``), ``curio_edit_features``.
 
 The node keeps a log of edits made on features picked on the map it feeds or
@@ -166,8 +166,8 @@ class TestUnknownIds:
         printed = [line for line in capsys.readouterr().out.split("\n") if line]
         reported = [line for line in printed if UNKNOWN_IDS_LINE.fullmatch(line)]
         assert reported == [
-            "Map Edits: layer table_osm_buildings has no feature with building_id 999, w7; the remove skips them.",
-            "Map Edits: layer table_osm_buildings has no feature with building_id 998; the set skips it.",
+            "Map Editor: layer table_osm_buildings has no feature with building_id 999, w7; the remove skips them.",
+            "Map Editor: layer table_osm_buildings has no feature with building_id 998; the set skips it.",
         ], printed
         assert any("already has a feature with building_id 2" in line for line in printed), printed
 
@@ -270,23 +270,23 @@ class TestRefusals:
         {"op": "expr", "ids": [1], "value": "height * 2"},
     ])
     def test_an_edit_the_node_does_not_make_is_refused(self, edit):
-        with pytest.raises(ValueError, match=r"Map Edits: edit 0 "):
+        with pytest.raises(ValueError, match=r"Map Editor: edit 0 "):
             _edit(_records(), [edit], **BUILDINGS)
 
     def test_no_input_says_so(self):
-        with pytest.raises(ValueError, match=r"Map Edits has no input"):
+        with pytest.raises(ValueError, match=r"Map Editor has no input"):
             _edit(None, REMOVE_1, **BUILDINGS)
 
     def test_a_condition_or_an_expression_that_is_not_one_is_refused_before_anything_runs(self):
-        with pytest.raises(ValueError, match=r"Map Edits: edit 0: "):
+        with pytest.raises(ValueError, match=r"Map Editor: edit 0: "):
             _edit(_records(), [{"op": "remove", "where": "height >"}], **BUILDINGS)
-        with pytest.raises(ValueError, match=r"Map Edits: edit 1: "):
+        with pytest.raises(ValueError, match=r"Map Editor: edit 1: "):
             _edit(_records(), [REMOVE_1[0], {"op": "expr", "ids": [1], "column": "h", "value": "open('x')"}], **BUILDINGS)
 
     @pytest.mark.parametrize("value", ["x", None, True, float("nan")])
     def test_a_scale_or_an_offset_by_what_is_not_a_number_is_refused(self, value):
         for op in ("scale", "offset"):
-            with pytest.raises(ValueError, match=r"Map Edits: edit 0 .*not a number"):
+            with pytest.raises(ValueError, match=r"Map Editor: edit 0 .*not a number"):
                 _edit(_records(), [{"op": op, "ids": [1], "column": "height", "value": value}], **BUILDINGS)
 
     def test_an_entry_switched_off_is_never_checked_or_applied(self, capsys):
@@ -363,7 +363,7 @@ class TestByInput:
         roads, _ = self._tables()
         out = _edit([None, roads], [], by_input=True)
         assert [item["layerName"] for item in out["data"]] == ["input_1"]
-        with pytest.raises(ValueError, match="Map Edits has no input"):
+        with pytest.raises(ValueError, match="Map Editor has no input"):
             _edit([None, None], [], by_input=True)
 
 
@@ -477,7 +477,7 @@ class TestDrawnOnTheMap:
         {"op": "add_column", "value": 1},
     ])
     def test_a_drawn_edit_that_is_not_whole_is_refused(self, edit):
-        with pytest.raises(ValueError, match="Map Edits: edit 0"):
+        with pytest.raises(ValueError, match="Map Editor: edit 0"):
             _edit(_records(), [edit], **BUILDINGS)
 
 

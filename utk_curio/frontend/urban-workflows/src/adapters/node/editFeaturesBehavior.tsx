@@ -1,5 +1,5 @@
 /**
- * The Map Edits node (#662; its type id is still
+ * The Map Editor node (#662; its type id is still
  * `curio.builtin/edit-features`): features of a layer picked on the Autark
  * map it feeds, or by a condition, removed, restored or given new values.
  *

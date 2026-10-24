@@ -1,5 +1,5 @@
 /**
- * What the Map Edits node reads off a layer to offer the right tools (#662):
+ * What the Map Editor node reads off a layer to offer the right tools (#662):
  * the kind of geometry its features have, the properties a new feature of it
  * is asked for, the next id an added feature takes, and the layer's features,
  * shapes included, as the edit log leaves them (`applyEdits`).

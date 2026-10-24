@@ -86,7 +86,7 @@ def test_the_chicago_loop_layers_light_the_features_autk_db_drew(
     app_frontend: "FrontendPage", current_server: str, page,
 ):
     """The shipped Chicago Loop layers, run: a selection of a building and of a
-    park, each named by its id as the Map Edits node names what it picks, lights
+    park, each named by its id as the Map Editor node names what it picks, lights
     that feature on the map; and every layer reads back the input row of each
     feature it draws, its points where autk-db has them."""
     path = Path(REPO_ROOT) / "docs" / "examples" / "dataflows" / "chicago-loop-layers.json"
@@ -105,7 +105,7 @@ def test_the_chicago_loop_layers_light_the_features_autk_db_drew(
     findings: list[str] = []
 
     # 1. The last building the map draws, then the first park, each selected
-    # by its id from the Map Edits node linked to the map.
+    # by its id from the Map Editor node linked to the map.
     for table, position in (("table_osm_buildings", -1), ("table_osm_parks", 0)):
         feature = page.evaluate(_FEATURE_AT_JS, [map_id, table, position]) or {}
         named = _named(feature)

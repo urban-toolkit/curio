@@ -1,5 +1,5 @@
 /**
- * Edit by a rule in the Map Edits node's workbench (#662): the features a
+ * Edit by a rule in the Map Editor node's workbench (#662): the features a
  * rule matches given a value, or, in a number column, the result of an
  * expression. The rule is kept, so features that match it later change too.
  */

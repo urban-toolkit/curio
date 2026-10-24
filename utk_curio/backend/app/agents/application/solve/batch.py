@@ -374,7 +374,7 @@ class SolveBatch:
         return {"nodeId": node_id, "status": "solved", **result}
 
     def _new_map_edits_code(self, node_id: str, node: dict) -> str | None:
-        """The code a blank Map Edits node gets when its goal names no edits:
+        """The code a blank Map Editor node gets when its goal names no edits:
         the code the node writes for itself when it is dropped, its call with
         no edits over its circles. None for a node of another kind and for one
         that holds code already, whose call stays as the user left it."""
@@ -600,7 +600,7 @@ class SolveBatch:
             failed = {"status": "failed", "error": unpublishable[:300], "remedy": dashboards.remedy(node_id)}
             self.results[node_id] = failed
             return {"nodeId": node_id, **failed}
-        # A Map Edits node's code is held to what the node reads, unrun too.
+        # A Map Editor node's code is held to what the node reads, unrun too.
         unreadable = map_edits.refusal(
             self.user_key, self.project_id, node.get("type"), text_out, current=str(node.get("content") or ""),
         )
@@ -671,7 +671,7 @@ class SolveBatch:
 
     def holds_content(self, node: dict) -> bool:
         """Whether *node* holds content Solve keeps rather than writes: any
-        but blank, and for a Map Edits node, any but its call with no edits,
+        but blank, and for a Map Editor node, any but its call with no edits,
         which the node writes for itself."""
         text = str((node or {}).get("content") or "")
         if not text.strip():
@@ -1306,7 +1306,7 @@ class SolveBatch:
                 map_edits.is_map_edits(self.user_key, self.project_id, node.get("type"))
                 and not map_edits.goal_names_edits(node.get("goal"))
             ):
-                # An empty Map Edits node gets edits only when its goal names
+                # An empty Map Editor node gets edits only when its goal names
                 # the edits to make: an agent never makes them up. Blank, it
                 # gets its call with no edits (``_record_no_content``).
                 queue.put((node_id, "no-content", map_edits.no_edits_reason(), None))

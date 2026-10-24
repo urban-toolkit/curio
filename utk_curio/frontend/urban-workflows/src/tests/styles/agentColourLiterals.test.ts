@@ -129,7 +129,7 @@ describe("agent stylesheets carry no colour literals", () => {
 });
 
 /**
- * The Map Edits node's body and the overlay it draws on a map follow the same
+ * The Map Editor node's body and the overlay it draws on a map follow the same
  * rule, in their stylesheets and in their components too: the overlay draws
  * its outlines and handles in SVG, where a colour can be written straight
  * into the markup, and the node's own blue palette did exactly that.
@@ -149,7 +149,7 @@ function sourceFiles(rel: string): string[] {
   return out;
 }
 
-describe("the Map Edits node's stylesheets and components carry no colour literals", () => {
+describe("the Map Editor node's stylesheets and components carry no colour literals", () => {
   const files = sourceFiles(MAP_EDITS_DIR);
 
   it("found the files it is guarding", () => {

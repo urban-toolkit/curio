@@ -1,5 +1,5 @@
 /**
- * Edit one feature in the Map Edits node's workbench (#662): picked on the
+ * Edit one feature in the Map Editor node's workbench (#662): picked on the
  * map, it is reshaped or moved there (`GeometryTools`) and its values are
  * changed here. Nothing picked yet, the form says how to pick.
  *

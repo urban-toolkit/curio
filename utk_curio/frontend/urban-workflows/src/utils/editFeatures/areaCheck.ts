@@ -1,5 +1,5 @@
 /**
- * Whether autk-db would load an area a Map Edits gesture makes (#1112).
+ * Whether autk-db would load an area a Map Editor gesture makes (#1112).
  *
  * autk-db checks each building it loads with GEOS's `ST_IsValid`, on the
  * coordinates the map hands it, and refuses the whole layer for one shape that

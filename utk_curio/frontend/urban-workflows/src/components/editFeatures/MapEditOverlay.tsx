@@ -1,9 +1,9 @@
 /**
- * What a Map Edits node does on an Autark map it feeds and is linked to
+ * What a Map Editor node does on an Autark map it feeds and is linked to
  * (#662): it hears the pointer on the map, read through the map's own
  * camera, where the layer the node works on is picked, drawn into and
  * reshaped (`utils/editFeatures/mapEditBus`), and holds the tip with its
- * buttons. It is mounted only on a map a Map Edits node feeds.
+ * buttons. It is mounted only on a map a Map Editor node feeds.
  *
  * The map keeps its own gestures: a drag pans it and the wheel zooms it, in
  * every mode. A click is the node's:

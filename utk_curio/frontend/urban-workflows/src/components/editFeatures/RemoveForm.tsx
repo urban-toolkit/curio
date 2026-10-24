@@ -1,5 +1,5 @@
 /**
- * Remove in the Map Edits node's workbench (#662): the features picked on
+ * Remove in the Map Editor node's workbench (#662): the features picked on
  * the map, or those a rule matches, which the rule keeps matching later.
  */
 import React from "react";

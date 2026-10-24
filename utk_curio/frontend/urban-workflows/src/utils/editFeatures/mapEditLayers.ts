@@ -1,5 +1,5 @@
 /**
- * The drawing tools of a Map Edits node, drawn by the Autark map it edits on
+ * The drawing tools of a Map Editor node, drawn by the Autark map it edits on
  * (#662): the shape being drawn and its corners, a shape waiting to be added,
  * and a feature being reshaped or moved, with its corners and midpoints. They
  * are layers of the map itself, loaded through autk-map's own
@@ -33,10 +33,10 @@ export interface MapEditTools {
 
 // The tool layers, bottom to top, by the names autk-map's layer menu lists
 // them under while they are drawn.
-const AREA = "Map Edits: area";
-const SHAPE = "Map Edits: shape";
-const MIDPOINTS = "Map Edits: midpoints";
-const CORNERS = "Map Edits: corners";
+const AREA = "Map Editor: area";
+const SHAPE = "Map Editor: shape";
+const MIDPOINTS = "Map Editor: midpoints";
+const CORNERS = "Map Editor: corners";
 const TOOL_LAYERS = [AREA, SHAPE, MIDPOINTS, CORNERS];
 
 /** Whether the map layer *id* is one of the tools, never kept, hidden or picked on as the document's layers are. */

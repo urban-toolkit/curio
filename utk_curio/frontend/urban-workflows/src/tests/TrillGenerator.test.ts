@@ -464,7 +464,7 @@ describe("TrillGenerator Spatial Join settings (#576)", () => {
   });
 });
 
-describe("TrillGenerator Map Edits node", () => {
+describe("TrillGenerator Map Editor node", () => {
   beforeEach(() => {
     TrillGenerator.reset();
   });
@@ -479,7 +479,7 @@ describe("TrillGenerator Map Edits node", () => {
           nodeId: "edited",
           nodeType: "curio.builtin/edit-features@1",
           code,
-          // What a Map Edits node held before its code was its state: never written again.
+          // What a Map Editor node held before its code was its state: never written again.
           editFeatures: { key: "building_id", edits: [{ op: "remove", ids: [119] }] },
         },
       }],

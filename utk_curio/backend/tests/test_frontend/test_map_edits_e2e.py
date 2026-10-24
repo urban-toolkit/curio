@@ -1,15 +1,15 @@
-"""Playwright E2E: the Map Edits node (#662; its type id is still
+"""Playwright E2E: the Map Editor node (#662; its type id is still
 ``curio.builtin/edit-features``).
 
 A small dataflow first. One layer of three building parts, two of them one
 building's, so they share its ``building_id``, as Autark's buildings do, feeds
-two scenarios: "Every building", whose Map Edits node has no edits, and "One
-removed", a copy of it. In each, the loader feeds Map Edits, Map Edits feeds an
+two scenarios: "Every building", whose Map Editor node has no edits, and "One
+removed", a copy of it. In each, the loader feeds Map Editor, Map Editor feeds an
 Autark map, the map feeds the node that counts the parts (or sums their
-heights), and an interaction edge links Map Edits and its map. The node's code
+heights), and an interaction edge links Map Editor and its map. The node's code
 is its only state.
 
-1. A building clicked on the linked map is selected in Map Edits, which sends
+1. A building clicked on the linked map is selected in Map Editor, which sends
    it back for the map to light up. Remove takes it off the map at once, the
    dataflow reads Unsaved and the nodes below keep what they had. Commit edits
    runs them, and the count drops by every part of the building. Saved and
@@ -180,9 +180,9 @@ MAP_SPEC = json.dumps({"map": {"layerRefs": [{
     "title": "Building height (m)",
 }]}}, indent=2)
 
-#: The comment lines a new Map Edits node's code starts with.
+#: The comment lines a new Map Editor node's code starts with.
 NOTE = (
-    "# Map Edits writes this code from its edit list: each edit, in the\n"
+    "# Map Editor writes this code from its edit list: each edit, in the\n"
     "# order it was made, on the features whose key is one of its ids. It is\n"
     "# written again when the list changes.\n"
 )
@@ -209,7 +209,7 @@ ZOOM_DELTA = 240
 REMOVED_MIN_SHARE = 0.02
 #: The map's background, the colour where it draws nothing (autk-map's style).
 MAP_BACKGROUND = (232, 239, 242)
-#: autk-map's highlight, #5dade2: the colour the map draws a Map Edits node's
+#: autk-map's highlight, #5dade2: the colour the map draws a Map Editor node's
 #: tools in, its corners and the shape being drawn or changed.
 MAP_HIGHLIGHT = (93, 173, 226)
 #: How long a run of the dataflow, or of a node and the nodes below it, may take.
@@ -235,7 +235,7 @@ CROSSED_DRAG = "That would make the outline cross itself, so the corner went bac
 
 def _spec(last_code: str = COUNT_CODE, last_title: str = "Count", *, linked: bool = True) -> dict:
     """The small dataflow, its last nodes running *last_code*; with *linked*
-    False, One removed's Map Edits node feeds its map but is not linked to it."""
+    False, One removed's Map Editor node feeds its map but is not linked to it."""
     def node(node_id, node_type, x, y, content, title, metadata=None):
         return {
             "id": node_id, "type": node_type, "x": x, "y": y, "content": content, "title": title,
@@ -250,7 +250,7 @@ def _spec(last_code: str = COUNT_CODE, last_title: str = "Count", *, linked: boo
         return {"id": f"i-{source}-{target}", "source": source, "target": target,
                 "sourceHandle": "in/out", "targetHandle": "in/out", "type": "Interaction"}
 
-    # Map Edits nodes are 560 wide and 460 tall, the others 525 by 350.
+    # Map Editor nodes are 560 wide and 460 tall, the others 525 by 350.
     edges = [
         edge(LOAD, EDIT), edge(EDIT, MAP), edge(MAP, COUNT), link(EDIT, MAP),
         edge(LOAD, EDIT_2), edge(EDIT_2, MAP_2), edge(MAP_2, COUNT_2),
@@ -259,16 +259,16 @@ def _spec(last_code: str = COUNT_CODE, last_title: str = "Count", *, linked: boo
         edges.append(link(EDIT_2, MAP_2))
     return {
         "dataflow": {
-            "name": "Map Edits",
+            "name": "Map Editor",
             "task": "",
             "timestamp": 1789193389280,
-            "provenance_id": "Map Edits",
+            "provenance_id": "Map Editor",
             "nodes": [
                 node(LOAD, "curio.builtin/data-loading", 0, 300, LOAD_CODE, "Buildings"),
-                node(EDIT, EDIT_TYPE, 700, 0, NO_EDITS, "Map Edits"),
+                node(EDIT, EDIT_TYPE, 700, 0, NO_EDITS, "Map Editor"),
                 node(MAP, MAP_TYPE, 1400, 0, MAP_SPEC, MAP_TITLE),
                 node(COUNT, "curio.builtin/computation-analysis", 2050, 0, last_code, last_title),
-                node(EDIT_2, EDIT_TYPE, 700, 700, NO_EDITS, "Map Edits", {"copiedFrom": [EDIT]}),
+                node(EDIT_2, EDIT_TYPE, 700, 700, NO_EDITS, "Map Editor", {"copiedFrom": [EDIT]}),
                 node(MAP_2, MAP_TYPE, 1400, 700, MAP_SPEC, MAP_TITLE, {"copiedFrom": [MAP]}),
                 node(COUNT_2, "curio.builtin/computation-analysis", 2050, 700, last_code, last_title,
                      {"copiedFrom": [COUNT]}),
@@ -282,9 +282,9 @@ def _spec(last_code: str = COUNT_CODE, last_title: str = "Count", *, linked: boo
     }
 
 
-def _enter(page, app_frontend, current_server, spec: dict, username: str, *, name: str = "Map Edits") -> dict:
+def _enter(page, app_frontend, current_server, spec: dict, username: str, *, name: str = "Map Editor") -> dict:
     """Sign in, open *spec* as one's own dataflow, and wait for its nodes, in a
-    page with room to frame a Map Edits node beside its map."""
+    page with room to frame a Map Editor node beside its map."""
     require_project_page()
     require_user_auth()
     page.emulate_media(reduced_motion="reduce")
@@ -397,7 +397,7 @@ def _map(node_id: str) -> str:
 
 
 def _overlay(page, map_id: str):
-    """What a Map Edits node draws over the map *map_id* while an action is open."""
+    """What a Map Editor node draws over the map *map_id* while an action is open."""
     return node_locator(page, map_id).get_by_test_id("map-edit-overlay")
 
 
@@ -763,7 +763,7 @@ def _entries(panel) -> list[tuple[str, str]]:
 def test_a_building_picked_on_the_linked_map_is_removed_at_once_and_committed_and_kept(
     app_frontend: "FrontendPage", current_server: str, page,
 ):
-    """Each Map Edits node names the map it is linked to and lists its layer.
+    """Each Map Editor node names the map it is linked to and lists its layer.
     In One removed's Remove, a building clicked on the linked map is picked in
     the node, which sends the pick back for the map to light up. Remove writes
     the edit into the node's code by building_id, lists it, and the map draws
@@ -778,7 +778,7 @@ def test_a_building_picked_on_the_linked_map_is_removed_at_once_and_committed_an
     _run_all(page)
     assert (_value(page, COUNT), _value(page, COUNT_2)) == (3, 3), "with no edits every part is counted"
 
-    # Each Map Edits node edits on the map it feeds and is linked to, and
+    # Each Map Editor node edits on the map it feeds and is linked to, and
     # lists the layer it is fed, which has an id column.
     for edit_id, map_id in ((EDIT, MAP), (EDIT_2, MAP_2)):
         _open_tab(page, edit_id, "output")
@@ -819,7 +819,7 @@ def test_a_building_picked_on_the_linked_map_is_removed_at_once_and_committed_an
             page, EDIT_2, lambda capture: changed_pixels(target_before, capture) > INTERACTION_MIN_CHANGED_PIXELS,
             timeout_ms=INTERACTION_SHOWN_TIMEOUT_MS,
         )
-        assert reached, "the pick on the map left the Map Edits node as it was"
+        assert reached, "the pick on the map left the Map Editor node as it was"
         wait_for_node_still(page, EDIT_2)
         _frame(page, "map-pick", "pick", "after", MAP_2, EDIT_2)
 
@@ -1252,7 +1252,7 @@ def test_each_change_is_an_entry_in_the_node_provenance_and_putting_one_back_res
 def test_a_map_fed_but_not_linked_shows_the_edits_and_a_click_there_selects_nothing(
     app_frontend: "FrontendPage", current_server: str, page,
 ):
-    """One removed's Map Edits node feeds its map, and no interaction edge
+    """One removed's Map Editor node feeds its map, and no interaction edge
     links the two: the node says it is not linked to a map, offers no layer to
     work on, and keeps its list. Edits written into its code show on the map at
     once. A double-click on that map selects nothing in the node, while the
@@ -1324,7 +1324,7 @@ def test_a_map_fed_but_not_linked_shows_the_edits_and_a_click_there_selects_noth
 def test_the_chicago_loop_layers_take_a_point_a_reshaped_road_and_a_property_on_the_map(
     app_frontend: "FrontendPage", current_server: str, page,
 ):
-    """The shipped Chicago Loop layers: every layer through one Map Edits node
+    """The shipped Chicago Loop layers: every layer through one Map Editor node
     to one Autark map, the two linked. On the map, as a person does:
 
     1. a point added to the trees, its properties filled in the node;
@@ -2742,7 +2742,7 @@ def _wait_for_field(field, value, timeout_s: float = 5) -> str:
         field.page.wait_for_timeout(250)
 
 
-# Scrolls the body of the Map Edits node *id* until the properties of the
+# Scrolls the body of the Map Editor node *id* until the properties of the
 # feature its form edits are at the body's top, so a capture of the body
 # starts with them; false when the body shows none.
 _PROPERTIES_ON_TOP_JS = """(id) => {

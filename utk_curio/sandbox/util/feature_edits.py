@@ -1,4 +1,4 @@
-"""The Map Edits node's step (#662; its type is still
+"""The Map Editor node's step (#662; its type is still
 ``curio.builtin/edit-features``).
 
 The node keeps a log of edits, each made on features picked on the map it
@@ -104,7 +104,7 @@ _GEOMETRY_TYPES = ("Point", "MultiPoint", "LineString", "MultiLineString", "Poly
 #: Kept in sync with ``VIEW_COLUMNS`` in ``utils/references/selectionTags.ts``.
 _VIEW_COLUMNS = frozenset({"__row_index__", "__input__", "_vgsid_", "interacted", "linked"})
 
-_NAME = "Map Edits"
+_NAME = "Map Editor"
 #: What the node's map calls an unnamed layer: input_<circle>, then
 #: input_<circle>_<n> for the n-th more on that circle.
 _INPUT_PLACE = re.compile(r"input_(\d+)(?:_(\d+))?")
@@ -378,7 +378,7 @@ def _where_holds(edit, properties) -> bool:
 
 
 #: The line ``_report_unknown`` prints for ids no feature has. An agent that
-#: writes a Map Edits node's code is held to it: a run that prints one names
+#: writes a Map Editor node's code is held to it: a run that prints one names
 #: features the data does not hold.
 UNKNOWN_IDS_LINE = re.compile(rf"{_NAME}: .+ has no feature with .+; the \w+ skips (?:it|them)\.")
 

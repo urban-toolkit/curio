@@ -68,7 +68,7 @@ function pickingMap(ids: string[], picking: string) {
   return { map, grammar: { maps: [map] }, shown };
 }
 
-describe("the map as a Map Edits node feeding it asks", () => {
+describe("the map as a Map Editor node feeding it asks", () => {
   test("an action makes its layer the one that picks, and ending it puts the document's back", () => {
     const { map, grammar, shown } = pickingMap(["buildings", "parks"], "parks");
     const before = snapshotBeforeSolo(grammar);

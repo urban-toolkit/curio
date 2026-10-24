@@ -636,7 +636,7 @@ def _mint_node_content_write(
     )
     if refusal:
         return agents_tool_rounds._refuse_params(refusal)
-    # A Map Edits node's code is held to what the node reads; the code it
+    # A Map Editor node's code is held to what the node reads; the code it
     # holds already is the user's own.
     unreadable = map_edits.refusal(user_key, project_id, node.get("type"), proposed, current=node.get("content") or "")
     if unreadable:

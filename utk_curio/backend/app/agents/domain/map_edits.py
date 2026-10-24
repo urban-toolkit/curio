@@ -1,6 +1,6 @@
-"""Map Edits, as agents meet it.
+"""Map Editor, as agents meet it.
 
-A Map Edits node keeps its edits in its code: one call of
+A Map Editor node keeps its edits in its code: one call of
 ``curio_edit_features``, which the node writes from its edit list and reads
 back. An agent writes that code too, so what it writes is held to what the
 node reads (``utk_curio/sandbox/util/feature_edits_code.py``, a port of the
@@ -23,11 +23,11 @@ from utk_curio.backend.app.execution import workflow_spec
 from utk_curio.backend.app.packages import service as packages_services
 from utk_curio.backend.app.agents.domain import agent_text
 
-#: The behavior a Map Edits template names.
+#: The behavior a Map Editor template names.
 BEHAVIOR = "edit-features"
 #: The kind of a Solve attempt these checks fail.
 KIND = "map-edits"
-#: The most of a neighbour's Map Edits call a node's context carries.
+#: The most of a neighbour's Map Editor call a node's context carries.
 CALL_MAX_CHARS = 2000
 #: The most made-up-id lines a refusal quotes.
 _MAX_QUOTED = 10
@@ -49,7 +49,7 @@ _EDIT_WORD = re.compile(r"(?:" + "|".join(re.escape(word) for word in EDIT_WORDS
 
 def is_map_edits(user_key, project_id, node_type) -> bool:
     """Whether a node of *node_type* in *user_key*'s dataflow *project_id* is
-    a Map Edits node: its template names the Map Edits behavior, its copy in
+    a Map Editor node: its template names the Map Editor behavior, its copy in
     the account read as a run finds it, else the catalog's."""
     return packages_services.template_behavior(user_key, project_id, node_type) == BEHAVIOR
 
@@ -62,7 +62,7 @@ def read(code) -> dict:
 
 
 def holds_no_edits(code) -> bool:
-    """Whether *code* is a Map Edits node's code with nothing in it: blank, or
+    """Whether *code* is a Map Editor node's code with nothing in it: blank, or
     a call the node reads with no edits and no new layers."""
     reading = read(code)
     if "problem" in reading:
@@ -73,7 +73,7 @@ def holds_no_edits(code) -> bool:
 
 def refusal(user_key, project_id, node_type, code, *, current: str | None = None) -> str | None:
     """Why *code*, written by an agent for a node of *node_type* in *user_key*'s
-    dataflow *project_id*, is refused: Map Edits cannot read it, in the node's
+    dataflow *project_id*, is refused: Map Editor cannot read it, in the node's
     own words. None for a node of another kind, for code the node reads, and
     for the code the node holds already (*current*), which is the user's own:
     compared as an agent's code is written into a node (``extract_node_content``)."""
@@ -86,7 +86,7 @@ def refusal(user_key, project_id, node_type, code, *, current: str | None = None
 
 
 def made_up_ids(stdout) -> list[str]:
-    """The lines of a run's output in which the Map Edits step says an edit
+    """The lines of a run's output in which the Map Editor step says an edit
     names ids no feature has, each once, in their order. *stdout* is the run's
     whole output, its text or its lines."""
     from utk_curio.sandbox.util.feature_edits import UNKNOWN_IDS_LINE
@@ -112,7 +112,7 @@ def made_up_ids_refusal(lines: list[str]) -> str:
 
 
 def goal_names_edits(goal) -> bool:
-    """Whether a Map Edits node's goal names the edits to make: one of its
+    """Whether a Map Editor node's goal names the edits to make: one of its
     sentences or clauses starts with what an edit does ("Remove the towers
     ...", "Cut the parts ... down to ..."). A goal that says what the node is
     for ("Read the map's layers and edit them on the map") names none."""
@@ -121,8 +121,8 @@ def goal_names_edits(goal) -> bool:
 
 
 def no_edits_reason() -> str:
-    """Why Solve leaves an empty Map Edits node without edits."""
-    return "Map Edits: its goal names no edits, so its call holds none; make them on its map"
+    """Why Solve leaves an empty Map Editor node without edits."""
+    return "Map Editor: its goal names no edits, so its call holds none; make them on its map"
 
 
 def circles_into(node_id, edges) -> int:
@@ -142,7 +142,7 @@ def circles_into(node_id, edges) -> int:
 
 
 def new_node_code(node_id, edges) -> str:
-    """The code of a Map Edits node *node_id* whose edits are left to the
+    """The code of a Map Editor node *node_id* whose edits are left to the
     user: the code the node writes for itself when it is dropped, its call
     with no edits, over the circles that feed it."""
     from utk_curio.sandbox.util.feature_edits_code import new_node_code as written
@@ -151,7 +151,7 @@ def new_node_code(node_id, edges) -> str:
 
 
 def context_call(code) -> str:
-    """A Map Edits node's code as a neighbour's context carries it: its call,
+    """A Map Editor node's code as a neighbour's context carries it: its call,
     cut at ``CALL_MAX_CHARS`` and marked when cut."""
     text = str(code or "")
     if len(text) <= CALL_MAX_CHARS:

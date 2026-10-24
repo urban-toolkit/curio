@@ -4,10 +4,10 @@
   "version": 1,
   "source": {
     "path": "docs/examples/dataflows/chicago-loop-layers.json",
-    "sha256": "3fc6ea649cc57d4da025dc04beceaa75d57d62a4eac901d64decfc9a0bac1ebe",
+    "sha256": "4949b265dd314d38182524039d13e39fed8b69cd6febe8242c3c02c5d96739dc",
     "walkthrough": null
   },
-  "prompt": "Make one Autark map of downtown Chicago that has a layer of every kind an Autark map draws. From the Data Catalog's Chicago Loop layers, load the census tracts, colored by CDC/ATSDR's Social Vulnerability Index, the CTA 'L' lines and stations, and OpenStreetMap's trees, each layer on its own, tracts first. Load OpenStreetMap's parks, water, roads and buildings, the buildings colored by height, from the OpenStreetMap extract of downtown Chicago that the examples ship, in the box the extract is cut at. Send every layer through a Map Edits node on its way to the map, and link the Map Edits node to the map with an interaction edge, so I can add, reshape, move, change or remove the features of any layer on the map.",
+  "prompt": "Make one Autark map of downtown Chicago that has a layer of every kind an Autark map draws. From the Data Catalog's Chicago Loop layers, load the census tracts, colored by CDC/ATSDR's Social Vulnerability Index, the CTA 'L' lines and stations, and OpenStreetMap's trees, each layer on its own, tracts first. Load OpenStreetMap's parks, water, roads and buildings, the buildings colored by height, from the OpenStreetMap extract of downtown Chicago that the examples ship, in the box the extract is cut at. Send every layer through a Map Editor node on its way to the map, and link the Map Editor node to the map with an interaction edge, so I can add, reshape, move, change or remove the features of any layer on the map.",
   "context": null,
   "required": {
     "datasets": [
@@ -146,7 +146,7 @@
   "split": "train",
   "review": {
     "status": "pending-owner-review",
-    "draftedBy": "the rebuild of PR #1055's example (OpenStreetMap's layers from an Autark node, every layer through the Map Edits node), from the example JSON and scripts/build_example_chicago_loop_layers.py, 2026-10-21",
+    "draftedBy": "the rebuild of PR #1055's example (OpenStreetMap's layers from an Autark node, every layer through the Map Editor node), from the example JSON and scripts/build_example_chicago_loop_layers.py, 2026-10-21",
     "reviewedBy": null,
     "reviewedAt": null
   },
@@ -161,5 +161,5 @@
     ],
     "notes": "The prompt, the expected graph and the plan target are authored in this repository; the datasets appear only as ids."
   },
-  "notes": "The Map Edits node's test dataflow: one layer of every kind Autark draws, through the node to the map, for editing on the map."
+  "notes": "The Map Editor node's test dataflow: one layer of every kind Autark draws, through the node to the map, for editing on the map."
 }

@@ -142,7 +142,7 @@ _AUTK_GRAMMAR = shared_constants.read("autkGrammar")
 AUTK_SCHEMA_PATH = Path(__file__).resolve().parent.parent / "schemas" / "autk-grammar.v1.json"
 #: The template whose content is an Autark document.
 AUTK_TEMPLATE = "curio.builtin/autk-grammar"
-#: The Map Edits node's template (its id is still Edit Features'): it edits
+#: The Map Editor node's template (its id is still Edit Features'): it edits
 #: on an Autark map it feeds, linked to it by an interaction edge.
 EDIT_FEATURES_TEMPLATE = "curio.builtin/edit-features"
 #: What a Vega-Lite or Autark node calls its inputs: ``input_0``, ``input_1``,
