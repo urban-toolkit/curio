@@ -618,15 +618,20 @@ class _Visitor:
     """A browser of its own, with no session, on a dashboard as the hosted
     stacks serve it: the page server, with the dashboard's data inside it.
 
-    The page server serves the page alone. On a hosted stack the proxy in front
-    of it takes ``/api`` off a request's path and passes the rest to the
-    backend, which :meth:`_to_backend` does here. It notes what the page asked,
-    what it was answered and what it logged, for a failure to report. A run's
-    stream reaches the page whole, once the run is over.
+    What the page asks of the backend goes through :meth:`_to_backend`, which
+    notes what the page asked, what it was answered and what it logged, for a
+    failure to report. The harness points every page at this worker's backend
+    (``window.__CURIO_BACKEND_URL__``, conftest.py), so a request reaches it as
+    the page addressed it. A page that asks ``/api`` on its own host, as a
+    hosted stack's pages do, is passed on the way that stack's proxy passes it,
+    with ``/api`` taken off. A run's stream reaches the page whole, once the
+    run is over. A CORS preflight is passed on and not counted as asked.
     """
 
     def __init__(self, browser, current_server: str):
         self.backend = current_server.rstrip("/")
+        backend = urlsplit(self.backend)
+        self.backend_origin = f"{backend.scheme}://{backend.netloc}"
         self.ctx = browser.new_context()
         self.page = self.ctx.new_page()
         self.asked: list[str] = []
@@ -634,22 +639,20 @@ class _Visitor:
         self.console: list[str] = []
         self.page.on("console", lambda message: self.console.append(f"[{message.type}] {message.text}"))
         self.page.on("pageerror", lambda error: self.console.append(f"[pageerror] {error}"))
-        self.page.route("**/api/**", self._to_backend)
+        self.page.route(f"{self.backend_origin}/**", self._to_backend)
+        self.page.route("**/api/api/**", self._to_backend)
 
     def _to_backend(self, route, request) -> None:
         parts = urlsplit(request.url)
         query = f"?{parts.query}" if parts.query else ""
-        if not parts.path.startswith("/api/api/"):
-            line = f"{request.method} {parts.path}{query}"
-            self.asked.append(line)
-            self.answered.append(f"{line} -> refused here")
-            route.abort()
-            return
-        path = parts.path[len("/api"):]
+        on_backend = f"{parts.scheme}://{parts.netloc}" == self.backend_origin
+        path = parts.path if on_backend else parts.path[len("/api"):]
         line = f"{request.method} {path}{query}"
-        self.asked.append(line)
+        if request.method != "OPTIONS":
+            self.asked.append(line)
+        target = request.url if on_backend else f"{self.backend}{path}{query}"
         try:
-            response = route.fetch(url=f"{self.backend}{path}{query}", timeout=180000)
+            response = route.fetch(url=target, timeout=180000)
         except Exception as exc:  # noqa: BLE001 - the page gets an answer, and the failure says why
             self.answered.append(f"{line} -> the backend did not answer: {exc}")
             route.fulfill(status=502, body=str(exc))
