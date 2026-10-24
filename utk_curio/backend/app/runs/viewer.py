@@ -10,20 +10,19 @@ file, whose free value could name another of the owner's datasets or files.
 Each value is checked as the Widgets tab checks it (``check_widget_value``).
 
 What runs: the saved dataflow with the values laid over it in memory, planned
-as a server run plans one (``run_engine.plan_run``). Opening the page runs it
-with the saved values, for anyone, signed in or not: its targets are every
-node whose output the tiles read (``dashboard_source_node_ids``), with the
-nodes they need. The owner's saved output stands in only for a node a viewer's
-run cannot run (:func:`_stand_ins`). Each step runs in the owner's store as
+as a server run plans one (``run_engine.plan_run``). Its targets are the nodes
+whose outputs the tiles read (``dashboard_source_node_ids``) that the change
+reaches, or that have no saved output; the owner's saved outputs stand in for
+every node the change does not reach. Each step runs in the owner's store as
 Play runs it there (``node_exec``), with no connection key: a node whose code
 reads one stops and says so. Nothing it makes is installed, recorded or
 journaled, and the saved spec is never written.
 
 What is kept: each step's output, for :data:`KEPT_DAYS` after it was made,
-under a key of what made it (:func:`step_key`), so anyone who opens the page
-or picks values someone picked before gets the outputs at once, and a request
-for a run already going joins it. Past that time the output goes, and the next
-visit makes it again. A dashboard keeps at most
+under a key of what made it (:func:`step_key`), so a visitor who opens the
+page or picks values someone ran before gets the outputs at once, and a
+request for a run already going joins it. Past that time the output goes, and
+the next visit that needs it makes it again. A dashboard keeps at most
 :data:`MAX_KEPT_BYTES_PER_DASHBOARD`; past it the least recently used go. An
 output goes with its artifacts: the sandbox forgets the session that made them
 (``common/dashboard_sessions.py``). The sweep runs every
@@ -67,7 +66,8 @@ from utk_curio.common.exec_pool import exec_parallelism
 log = logging.getLogger(__name__)
 
 #: How long a kept output serves the visitors who open the page or pick the
-#: same values, from when it was made; then it goes, and a visit makes it again.
+#: same values, from when it was made; then it goes, and the next visit that
+#: needs it makes it again.
 KEPT_DAYS = 7
 #: How often the kept outputs past their time are swept, with no run to sweep them.
 PRUNE_INTERVAL_HOURS = 6
@@ -211,7 +211,7 @@ def _control_values(controls: dict) -> dict:
 
 
 # ---------------------------------------------------------------------------
-# What a viewer's run cannot run
+# What the change reaches
 # ---------------------------------------------------------------------------
 
 def _resolved_code(parsed, node) -> Optional[str]:
@@ -231,27 +231,28 @@ def _resolved_code(parsed, node) -> Optional[str]:
         return None
 
 
-def _stand_ins(parsed, spec: dict, saved_by_node: dict, templates, packages) -> dict:
-    """``{nodeId: output}``: the owner's saved output of each node a viewer's
-    run cannot run, which stands in for it there: one whose code reads a
-    connection key (a viewer's run uses none), or one whose package is not
-    installed. Such a node with no saved output runs, and says why it cannot."""
-    from utk_curio.backend.app.execution.run_plan import node_role
-    from utk_curio.backend.app.users.connection_keys import secret_names
-
-    raw = {
-        node.get("id"): node
-        for node in (spec.get("dataflow") or {}).get("nodes") or [] if isinstance(node, dict)
-    }
-    outputs = {}
-    for node in parsed.nodes:
-        ref = saved_by_node.get(node.id)
-        if ref is None:
+def _reached(saved_parsed, overlaid_parsed) -> set:
+    """The nodes the values change: those whose code a run sends differs, and
+    every node below them."""
+    saved_nodes = {node.id: node for node in saved_parsed.nodes}
+    changed = set()
+    for node in overlaid_parsed.nodes:
+        before = saved_nodes.get(node.id)
+        if before is None:
             continue
-        code = _resolved_code(parsed, node) if node.category == "code" and node.engine != "javascript" else None
-        if (code and secret_names(code)) or node_role(raw.get(node.id) or {}, templates, packages) == "missing":
-            outputs[node.id] = {"path": ref.filename, "dataType": ref.data_type or ""}
-    return outputs
+        if _resolved_code(overlaid_parsed, node) != _resolved_code(saved_parsed, before):
+            changed.add(node.id)
+    below: dict = {}
+    for node in overlaid_parsed.nodes:
+        for upstream in overlaid_parsed.upstream_nodes(node.id):
+            below.setdefault(upstream, set()).add(node.id)
+    reached, frontier = set(changed), list(changed)
+    while frontier:
+        for child in below.get(frontier.pop(), ()):
+            if child not in reached:
+                reached.add(child)
+                frontier.append(child)
+    return reached
 
 
 # ---------------------------------------------------------------------------
@@ -562,16 +563,16 @@ def start_viewer_run(project_id: str, values, *, address: str) -> dict:
     value}}``) laid over its saved controls, or join the run of the same
     values already going.
 
-    Every visit runs the dashboard: the targets are every node the tiles read
-    and the nodes they need, and the step-key cache answers what ran before.
-    The owner's saved output stands in only for a node a viewer's run cannot
-    run (:func:`_stand_ins`). Opening the page, with the saved values, costs
-    the visitor's address nothing: only the values a visitor tries count
-    against its budget, and a start that joins a run costs nothing either.
+    A saved result answers whoever made it: the owner's saved output stands in
+    for every node the values do not reach, and an output kept from an earlier
+    run (:func:`step_key`) for every step someone ran before; only what neither
+    holds runs. Opening the page, with the saved values, costs the visitor's
+    address nothing: only the values a visitor tries count against its
+    budget, and a start that joins a run costs nothing either.
 
     Answers ``{"runId", "token", "joined", "nodeIds"}``, the token being what
-    the tab follows the run with; ``runId`` is None when nothing runs: the
-    tiles read no node, or only nodes the owner's saved outputs stand in for."""
+    the tab follows the run with; ``runId`` is None when nothing needs to run
+    (the values are the saved ones and every tile has its saved output)."""
     from flask import current_app
 
     from utk_curio.backend.app.execution.node_names import template_labels
@@ -604,14 +605,21 @@ def start_viewer_run(project_id: str, values, *, address: str) -> dict:
     templates = roster_templates(user_key, project_id)
     labels = template_labels(user_key, project_id)
     packages = TemplateGrammars.for_account(user_key)
-    reuse = _stand_ins(
-        parse_workflow_dict(overlaid, templates=templates, labels=labels), overlaid,
-        {ref.node_id: ref for ref in saved}, templates, packages,
+    reached = _reached(
+        parse_workflow_dict(spec, templates=templates, labels=labels),
+        parse_workflow_dict(overlaid, templates=templates, labels=labels),
     )
-    # A target always runs (plan_run): one the saved output stands in for is no target.
-    targets = sorted(node_id for node_id in dashboard_source_node_ids(overlaid, packages) if node_id not in reuse)
+    saved_by_node = {ref.node_id: ref for ref in saved}
+    targets = sorted(
+        node_id for node_id in dashboard_source_node_ids(overlaid, packages)
+        if node_id in reached or node_id not in saved_by_node
+    )
     if not targets:
         return {"runId": None, "token": None, "joined": False, "nodeIds": []}
+    reuse = {
+        node_id: {"path": ref.filename, "dataType": ref.data_type or ""}
+        for node_id, ref in saved_by_node.items() if node_id not in reached
+    }
     try:
         plan = plan_run(
             overlaid, target_node_ids=targets, reuse=reuse,
@@ -619,9 +627,6 @@ def start_viewer_run(project_id: str, values, *, address: str) -> dict:
         )
     except PlanError as exc:
         raise RunError(str(exc), 422) from exc
-    if not plan.steps:
-        # Every node the tiles read stands on the owner's saved output.
-        return {"runId": None, "token": None, "joined": False, "nodeIds": []}
 
     _forget_finished_runs()
     dashboard = f"dashboard:{project_id}"
