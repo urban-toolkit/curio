@@ -677,6 +677,58 @@ class TestKeptOutputsGo:
         assert left == {fresh[0], tab_fresh[0]}
         assert sorted(sandbox.forgotten) == sorted([old[1], old_used_today[1], tab_old[1]])
 
+    def test_a_visit_within_seven_days_gets_what_was_kept_and_one_after_them_runs_and_keeps_it_anew(
+        self, client, user_and_token, sandbox, saved, monkeypatch,
+    ):
+        """What a run kept answers the same values until 7 days after it was
+        made, and no longer, whether or not a sweep has run: at day 6 nothing
+        runs and the kept output comes back; at day 8 the same values run
+        again, and what that run makes is kept in its place."""
+        from utk_curio.backend.app.runs import viewer
+        from utk_curio.backend.app.runs.models import DashboardStepOutput
+
+        _, token = user_and_token
+        pid = _create(client, token)
+        _month(client, pid)
+        made = DashboardStepOutput.query.filter_by(project_id=pid).one()
+        made_at, made_session = made.created_at, made.session_id
+
+        def visit(days: int) -> list:
+            """The same values *days* days after the output was made: what each step answered."""
+            monkeypatch.setattr(viewer, "naive_utc_now", lambda: made_at + timedelta(days=days))
+            body = _month(client, pid)
+            return [
+                (payload["nodeId"], payload["output"]["path"])
+                for kind, payload in _events(client, pid, body["runId"], body["token"]) if kind == "step_finished"
+            ]
+
+        assert visit(6) == [("grid", "art-grid-1")]
+        assert len(sandbox.runs) == 1, "a visit within the 7 days ran the step again"
+        assert sandbox.forgotten == []
+
+        assert visit(8) == [("grid", "art-grid-2")]
+        assert len(sandbox.runs) == 2, "a visit past the 7 days did not run the step again"
+        left = [row.output_path for row in DashboardStepOutput.query.filter_by(project_id=pid).all()]
+        assert left == ["art-grid-2"], f"what is kept now: {left!r}"
+        assert sandbox.forgotten == [made_session]
+
+    def test_a_tabs_own_output_serves_its_tab_for_an_hour_whether_or_not_a_sweep_ran(
+        self, client, user_and_token, sandbox,
+    ):
+        from utk_curio.backend.app.runs import viewer
+
+        _, token = user_and_token
+        pid = _create(client, token)
+        stale = self._entry(pid, private=True, hours=2)
+
+        # Two hours old and not swept yet: its tab no longer gets it.
+        assert viewer._kept_output(pid, "k" * 64, "t" * 64) is None
+        self._entry(pid, private=True)
+        assert viewer._kept_output(pid, "k" * 64, "t" * 64) is not None
+        # The sweep takes the stale one only.
+        assert viewer.prune() == 1
+        assert sandbox.forgotten == [stale[1]]
+
     def test_the_sweep_runs_a_minute_after_start_then_every_six_hours_and_never_under_testing(self, app, monkeypatch):
         """With no visit at all, what is past its time still goes on time."""
         from utk_curio.backend import config

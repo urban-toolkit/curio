@@ -1873,6 +1873,128 @@ def test_a_chicago_building_corner_dragged_across_its_far_side_is_refused_and_th
     save_node_closeup(page, CHICAGO_STEM, map_id, test_name=f"{test_name}_closeup_{map_id}", sweep_toasts=True)
 
 
+#: The text a node shows of its last run: the lines it printed, then where it
+#: saved its output (``executionResultOutput``); null before a run.
+_OUTPUT_TEXT_JS = """(id) => {
+    const node = window.__curio_reactFlow.getNodes().find((n) => n.id === id);
+    const content = node && node.data && node.data.output && node.data.output.content;
+    return typeof content === "string" ? content : null;
+}"""
+
+
+def _drawn_wrong(page, map_id: str, building, log: list[dict], when: str, what: str) -> list[str]:
+    """What is wrong with the Chicago map *when*, after *what*: it draws
+    nothing, a layer failed to load, or it draws no row of *building* among the
+    buildings. The canvas is read in the frame that renders it, as captures
+    read it: Chrome can read an idle WebGPU canvas back as transparent."""
+    wrong = []
+    try:
+        _wait_for_map_drawn(page, map_id, what)
+    except AssertionError as error:
+        wrong.append(f"{when}, the map draws nothing: {error}")
+    failed = _failed_loads(log)
+    if failed:
+        wrong.append(f"{when}, autk-db refused a layer, so the map draws none of it: {failed[0]}")
+    drawn = page.evaluate(_DRAWN_PARTS_JS, {"id": map_id, "table": BUILDINGS, "key": KEY, "part": PART_KEY})
+    if drawn is None:
+        wrong.append(f"{when}, the map draws no {BUILDINGS} at all")
+    elif not any(key == building for key, _part in drawn):
+        wrong.append(f"{when}, the map draws {len(drawn)} rows of {BUILDINGS}, none of building {building}")
+    return wrong
+
+
+def test_a_chicago_building_redrawn_as_a_bow_tie_in_the_nodes_code_is_skipped_and_the_layer_keeps_drawing(
+    app_frontend: "FrontendPage", current_server: str, page,
+):
+    """The steps of #1121, on the shipped Chicago Loop layers, run whole: a
+    redraw of a building of one part as a bow tie, an outline that crosses
+    itself, in the building's own coordinates, typed into the Map Editor
+    node's code, as an agent writes one or Provenance puts one back. autk-db
+    would refuse it, and with it the whole buildings layer.
+
+    1. The map draws the node's code at once, before Commit edits: the
+       buildings, that one among them, and the browser log holds no layer
+       that failed to load.
+    2. Commit edits runs the node: its output says it skips the redraw,
+       naming the building, and it hands the building on with its own shape.
+    3. The map draws on, the buildings with it, and the browser log holds no
+       layer that failed to load.
+
+    What is wrong at each step is kept, and the test fails with all of it."""
+    test_name = "test_a_chicago_building_redrawn_as_a_bow_tie_in_the_nodes_code_is_skipped_and_the_layer_keeps_drawing"
+    log = _browser_log(page)
+    path = Path(REPO_ROOT) / "docs" / "examples" / "dataflows" / "chicago-loop-layers.json"
+    spec = json.loads(path.read_text(encoding="utf-8"))
+    nodes = {node["id"]: node for node in spec["dataflow"]["nodes"]}
+    (edit_id,) = [n for n, node in nodes.items() if node["type"] == EDIT_TYPE]
+    (map_id,) = [n for n, node in nodes.items() if node["type"] == MAP_TYPE and '"map"' in node["content"]]
+    _enter(page, app_frontend, current_server, spec, "map_edits_typed_bow_tie_e2e", name=spec["dataflow"]["name"])
+    run_all_and_wait(page, timeout_ms=RUN_MS)
+    for node_id, node in nodes.items():
+        _done(page, node_id, node["type"])
+    wait_for_run_guard_released(page, timeout_ms=RUN_MS)
+
+    # A building of one part the map draws, its outline one ring, and a bow
+    # tie across the box around it, in the building's own coordinates.
+    handed = _handed_layers(load_artifact_as_dict(page.evaluate(_OUTPUT_ARTIFACT_JS, edit_id)))
+    rows_of: dict = {}
+    for feature in handed[BUILDINGS]["features"]:
+        rows_of.setdefault((feature.get("properties") or {}).get(KEY), []).append(feature)
+    drawn = page.evaluate(_DRAWN_PARTS_JS, {"id": map_id, "table": BUILDINGS, "key": KEY, "part": PART_KEY}) or []
+    shown = [building for building, _part in drawn if building is not None]
+    building = next((b for b in shown if _one_outline(rows_of.get(b, [])) is not None), None)
+    assert building is not None, f"the map draws no building of one part whose outline is one ring, of {len(set(shown))}"
+    (row,) = rows_of[building]
+    x0, y0, x1, y1 = _extent(_one_outline([row]))
+    bow_tie = {"type": "Polygon", "coordinates": [[[x0, y0], [x1, y1], [x1, y0], [x0, y1], [x0, y0]]]}
+    redraw = {"op": "geometry", "ids": [building], "geometry": bow_tie}
+    code = read_node_code(page, edit_id)
+    typed = code.replace(
+        "], [], by_input=True)",
+        f"], [\n    {json.dumps(redraw)},\n], key={json.dumps(KEY)}, layer={json.dumps(BUILDINGS)}, by_input=True)",
+    )
+    assert typed != code, f"the Map Editor node's code is not the call with no edits the example ships: {code!r}"
+
+    # 1. The bow tie typed into the node's code: the map draws it at once.
+    frame_nodes(page, [edit_id, map_id])
+    start = len(log)
+    keep_drawing(page, _map(map_id))
+    set_node_code(page, edit_id, typed)
+    wrong: list[str] = []
+    try:
+        _wait_for_redraw(page, map_id, "the bow tie typed into the node's code")
+    except AssertionError as error:
+        wrong.append(str(error))
+    wrong += _drawn_wrong(
+        page, map_id, building, log[start:], "before Commit edits", "the bow tie typed into the node's code",
+    )
+
+    # 2. Commit edits, at the foot of the node's list, on its Output tab (the
+    # code was typed on its Code tab): the run skips the redraw and says so.
+    _open_tab(page, edit_id, "output")
+    try:
+        _commit(page, edit_id, [edit_id], [map_id], below=1)
+    except (AssertionError, PlaywrightTimeoutError) as error:
+        wrong.append(f"Commit edits did not run the node and the map: {error}")
+    said = page.evaluate(_OUTPUT_TEXT_JS, edit_id) or ""
+    line = (
+        f"Map Editor: layer {BUILDINGS}: the geometry would make the outline of {KEY} {building} cross itself, "
+        "an area the map cannot draw; the geometry skips it."
+    )
+    if line not in said:
+        wrong.append(f"the node's run does not say it skips the redraw ({line!r}); it says: {said[-1500:]!r}")
+    out = _handed_layers(load_artifact_as_dict(page.evaluate(_OUTPUT_ARTIFACT_JS, edit_id)))[BUILDINGS]["features"]
+    kept = [feature.get("geometry") for feature in out if (feature.get("properties") or {}).get(KEY) == building]
+    if kept != [row.get("geometry")]:
+        wrong.append(f"after Commit edits, the node hands building {building} on as {kept}, not with its own shape")
+
+    # 3. The map draws on, the buildings with it.
+    wrong += _drawn_wrong(page, map_id, building, log[start:], "after Commit edits", "Commit edits")
+    if wrong:
+        dump_browser_log(CHICAGO_STEM, test_name, log)
+    assert not wrong, "\n".join(wrong)
+
+
 # The value of *key* and of *part* of each row the map draws of the table
 # *table*, in the order it draws them (window.__curio_mapFeatureAt).
 _DRAWN_PARTS_JS = """async ({ id, table, key, part }) => {
@@ -2489,6 +2611,9 @@ def _assert_same_shape(handed: dict, drawn: dict, what: str) -> None:
 #: A building of the Chicago Loop layers in seven parts, each with an
 #: ``osm_id`` of its own, near the middle of the map.
 PARTED_BUILDING = 20449794
+#: The column Autark tags each OSM feature with, naming the layer it came
+#: from: no property of the feature, so the node's form leaves it out (#1122).
+AUTARK_LAYER = "__autk_layer"
 
 
 def test_a_chicago_building_of_several_parts_takes_a_height_on_one_part_chosen_in_its_form(
@@ -2590,6 +2715,18 @@ def test_a_chicago_building_of_several_parts_takes_a_height_on_one_part_chosen_i
     fixed = text_of(f"interaction-fixed-{PART_KEY}")
     if fixed != f"{len(rows)} values, cannot be changed":
         wrong.append(f"beside {PART_KEY}, the form reads {fixed!r}, not '{len(rows)} values, cannot be changed'")
+    # Autark's own column, naming the layer each OSM feature came from, is no
+    # property of the building: the form has no row for it (#1122).
+    autark_rows = [
+        kind for kind in ("field", "fixed", "mixed") if edit.get_by_test_id(f"interaction-{kind}-{AUTARK_LAYER}").count()
+    ]
+    if autark_rows:
+        carried = any(AUTARK_LAYER in (row.get("properties") or {}) for row in rows)
+        where_from = ", which the building's parts carry" if carried else ""
+        wrong.append(
+            f"the form of building {building} has a row for {AUTARK_LAYER} (its {', '.join(autark_rows)}), the column "
+            f"Autark names each feature's layer by{where_from}"
+        )
 
     # 2. The parts menu, on all the parts; one part chosen in it.
     if not menu.count():

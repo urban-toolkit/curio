@@ -140,10 +140,11 @@ export function editedOutput(read: GrammarInput, feed: Pick<EditFeed, "settings"
   const crs = geojsonCrs(settings.crs) ?? (sources.find((source) => (source.geojsonObject as any)?.crs)?.geojsonObject as any)?.crs;
   for (const def of newLayers) {
     const mine = edits.filter((edit) => targetOf(edit, settings, only) === def.name);
-    const fc = editedCollection({ type: "FeatureCollection", features: [] as any[] }, mine, NEW_LAYER_KEY);
+    // In the CRS the run gives a new layer, which its shapes are checked in.
+    const fc = editedCollection({ type: "FeatureCollection", features: [] as any[], ...(crs ? { crs } : {}) }, mine, NEW_LAYER_KEY);
     envelopes.push({
       dataType: "geodataframe",
-      data: { ...fc, ...(crs ? { crs } : {}) },
+      data: fc,
       layerName: def.name,
       layerType: NEW_LAYER_TYPES[def.geometry],
     });

@@ -4,7 +4,11 @@
  * autk-db checks each building it loads with GEOS's `ST_IsValid`, on the
  * coordinates the map hands it, and refuses the whole layer for one shape that
  * fails: the map then draws none of it. So the map's tools refuse such a shape
- * before it is written (`LayerWorkbench`), and the map's tip says why.
+ * before it is written (`LayerWorkbench`), and the map's tip says why. An
+ * edit that gives one some other way (typed into the node's code, written by
+ * an agent, put back from Provenance) is skipped: by the map's preview
+ * (`applyFeatureEdits`) and by a run, through this module's twin,
+ * `utk_curio/sandbox/util/area_check.py`. Both read `areaCheck.cases.json`.
  *
  * A shape is checked as autk-db gets it: in its layer's own coordinates,
  * rounded by the map's own grid (`snapSourceToGrid`), each test exact on the
@@ -83,9 +87,25 @@ export function shapeProblem(geometry: Geometry | null | undefined): AreaProblem
  * of it: read from the layer's features, or from the shape while the layer
  * has none.
  */
-export function layerFormat(fc: { features?: any[]; crs?: unknown } | undefined, geometry: Geometry): string {
+export function layerFormat(fc: { features?: readonly any[]; crs?: unknown } | undefined, geometry: Geometry): string {
   const features = fc?.features && fc.features.length > 0 ? fc.features : [{ type: "Feature", properties: {}, geometry }];
   return detectCoordinateFormat({ ...(fc ?? {}), features });
+}
+
+/**
+ * The problem *after*, a shape of the layer *fc*, would bring that *before*,
+ * the shape it replaces (none for a feature added), does not have; null when
+ * it brings none. A shape its layer already holds with a problem, which a
+ * layer autk-db does not check can, still takes every change. The rule the
+ * map's tools refuse a gesture by, and a run skips an edit by (`made_problem`).
+ */
+export function madeProblem(
+  fc: { features?: readonly any[]; crs?: unknown } | undefined,
+  before: Geometry | null | undefined,
+  after: Geometry | null | undefined,
+): AreaProblem | null {
+  const problem = after ? areaProblem(after, layerFormat(fc, after)) : null;
+  return problem && !(before && areaProblem(before, layerFormat(fc, before))) ? problem : null;
 }
 
 /** What a refusal says the shape would do, after "That would". */
@@ -384,6 +404,8 @@ function holeProblem(part: Part, first: number, met: Map<string, Meeting>): bool
 function overlap(p: Part, firstP: number, q: Part, firstQ: number, met: Map<string, Meeting>): boolean {
   for (let i = 0; i < p.length; i++) for (let j = 0; j < q.length; j++) if (meetingOf(met, firstP + i, firstQ + j) === "cross") return true;
   const inArea = (ring: Ring, r: number, area: Part, firstArea: number) => {
+    // A part with no rings (an empty polygon among others) has no area.
+    if (area.length === 0) return false;
     const cuts = distinct(area.flatMap((_, k) => touchesOf(met, r, firstArea + k)));
     return stretchesOf(ring, cuts).some((x) => placeInPart(x, area) === "in");
   };
