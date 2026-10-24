@@ -46,21 +46,14 @@ import {
   type GeometryKind,
 } from "../../utils/editFeatures/layerModel";
 import { evaluate, exprProblem, parseExpr, truthy } from "../../utils/editFeatures/editExpr";
-import { idKey } from "../../utils/editFeatures/applyEdits";
-import {
-  PART_COLUMN,
-  partConditions,
-  partRedraw,
-  partsForm,
-  partsRefusal,
-  rowsOf,
-  samePart,
-  valueText,
-} from "../../utils/editFeatures/featureParts";
+import { partRedraw, partsRefusal, rowsOf, samePart } from "../../utils/editFeatures/featureParts";
 import { publishMapSession, type MapEditMode, type ReshapedPart } from "../../utils/editFeatures/mapEditBus";
 import { editSelection, sameIds, selectedIdsIn } from "../../utils/editFeatures/mapEditSelection";
 import { mapTableName } from "../../utils/editFeatures/mapEditsPreview";
 import { withPart } from "../../utils/editFeatures/geometryParts";
+// The form of a feature of several parts (#1110).
+import { idKey } from "../../utils/editFeatures/applyEdits";
+import { PART_COLUMN, partConditions, partsForm, valueText } from "../../utils/editFeatures/featureParts";
 import { NodeType } from "../../constants";
 import LayerList from "./LayerList";
 import NewLayerForm from "./NewLayerForm";
