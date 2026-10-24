@@ -1340,6 +1340,49 @@ test("Add a part drawn inside the part it joins, which would make two of its par
   }
 });
 
+/**
+ * Building 136 already shaped as a bow tie, as a layer autk-db does not check
+ * can hold one: its sides cross at (1.5, 0.5).
+ */
+const BOW_TIE = {
+  type: "FeatureCollection",
+  features: [
+    {
+      type: "Feature",
+      geometry: { type: "Polygon", coordinates: [[[1, 0], [2, 1], [2, 0], [1, 1], [1, 0]]] },
+      properties: { building_id: 136, height: 20 },
+    },
+  ],
+};
+
+test("a shape whose outline already crossed itself as its layer holds it still takes a reshape: only a problem a gesture makes is refused", async () => {
+  const putBack = layOutCanvases();
+  try {
+    nodeInput.current = BOW_TIE;
+    drawnMaps.make = projectingMap;
+    const canvas = mountCanvas();
+    await canvas.playMap();
+    await openAction("edit");
+    // A click inside its west lobe picks it.
+    clickMap([1.2, 0.5]);
+    fireEvent.click(await screen.findByTestId("interaction-reshape"));
+    const overlay = () => screen.getByTestId("map-edit-overlay");
+    await waitFor(() => expect(JSON.parse(overlay().getAttribute("data-corners") ?? "[]")).toHaveLength(4));
+
+    // Its corner at (2, 1) dragged a little: the outline still crosses itself, as before.
+    const listed = JSON.parse(overlay().getAttribute("data-corners") ?? "[]");
+    const from: [number, number] = [Math.round(listed[1].x), Math.round(listed[1].y)];
+    const to: [number, number] = [from[0] + 20, from[1] - 15];
+    pointerOnMap("pointerdown", from, true);
+    pointerOnMap("pointermove", to, true);
+    pointerOnMap("pointerup", to, false);
+    expect(canvas.settings()?.edits ?? []).toEqual([expect.objectContaining({ op: "geometry", ids: [136] })]);
+    expect(screen.getByTestId("map-edit-tip")).not.toHaveTextContent("That would");
+  } finally {
+    putBack();
+  }
+});
+
 // autk-db can keep a layer's rows in an order of its own; the map names them
 // by the rows read back from what autk-db exported.
 test("on a layer autk-db keeps in another order, a pick lights the building where the map drew it, and Move points skips it there", async () => {

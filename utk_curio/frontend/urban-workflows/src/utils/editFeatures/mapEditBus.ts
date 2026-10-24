@@ -67,15 +67,15 @@ export interface MapEditSession {
   /**
    * A shape drawn on the map, with the row the click that picked the feature
    * landed on, if any: the part a new part of it joins. Returns why it is
-   * refused, the words the map's tip says, when autk-db would refuse the
-   * area it makes (`areaCheck`); then nothing is added. Null otherwise.
+   * refused, the words the map's tip says, when it makes an area autk-db
+   * would refuse (`areaCheck`); then nothing is added. Null otherwise.
    */
   onDrawn: (geometry: Geometry, pickedRow?: EditedFeature | null) => string | null;
   /**
    * New shapes for rows of the picked feature, made in one gesture (*how*):
    * one change. Returns why they are refused, the words the map's tip says,
-   * when autk-db would refuse one of them (`areaCheck`); then nothing is
-   * written. Null otherwise.
+   * when the gesture makes one autk-db would refuse, which it was not before
+   * (`areaCheck`); then nothing is written. Null otherwise.
    */
   onReshape: (parts: ReshapedPart[], how?: ReshapeGesture) => string | null;
   /** Turns the shape mode (reshape, move) off again: the map's Done. */

@@ -223,14 +223,22 @@ export default function LayerWorkbench({
   // Why autk-db would refuse an area of the layer worked on, as the map hands
   // it over: with it, the whole layer, which the map then draws none of.
   const problemOf = (geometry: Geometry) => (active ? areaProblem(geometry, layerFormat(active.fc, geometry)) : null);
+  // A problem a gesture makes: one the shape *after* has and the shape
+  // *before* it did not. A shape its layer already holds with one, which a
+  // layer autk-db does not check can, still takes every gesture.
+  const madeProblem = (before: Geometry | null | undefined, after: Geometry) => {
+    const problem = problemOf(after);
+    return problem && !(before && problemOf(before)) ? problem : null;
+  };
   // A part drawn is added to the feature being added, or to the picked one:
   // to the part the click that picked it landed on, else its first; its
-  // other parts keep their shapes. An area autk-db would refuse is not added:
-  // the words the map's tip says why come back.
+  // other parts keep their shapes. An area drawn that autk-db would refuse,
+  // or a part that makes one, is not added: the words the map's tip says why
+  // come back.
   const onDrawn = (geometry: Geometry, pickedRow?: EditedFeature | null): string | null => {
     if (partFor === "draft" && drawn) {
       const merged = withPart(drawn, geometry) ?? drawn;
-      const problem = problemOf(merged);
+      const problem = madeProblem(drawn, merged);
       if (problem) return drawnRefusal(problem, "part");
       setDrawn(merged);
       setPartFor(null);
@@ -239,7 +247,7 @@ export default function LayerWorkbench({
     if (partFor === "picked" && active && pickedRows.length > 0) {
       const row = pickedRows.find((r) => samePart(r, pickedRow)) ?? pickedRows[0];
       const merged = row.geometry ? withPart(row.geometry, geometry) : null;
-      const problem = merged ? problemOf(merged) : null;
+      const problem = merged ? madeProblem(row.geometry, merged) : null;
       if (problem) return drawnRefusal(problem, "part");
       const edit = merged ? partRedraw(features, row, layerKey, merged) : null;
       if (edit && row.id !== null) {
@@ -256,11 +264,12 @@ export default function LayerWorkbench({
   };
   // New shapes for parts of the picked feature, made in one gesture (*how*):
   // one change, an edit for each part, each named alone. None is written when
-  // autk-db would refuse one: the words the map's tip says why come back.
+  // the gesture makes one autk-db would refuse: the words the map's tip says
+  // why come back.
   const onReshape = (parts: ReshapedPart[], how?: ReshapeGesture): string | null => {
     if (!active || parts.length === 0) return null;
-    for (const { geometry } of parts) {
-      const problem = problemOf(geometry);
+    for (const { row, geometry } of parts) {
+      const problem = madeProblem(row.geometry, geometry);
       if (problem) return reshapeRefusal(problem, how);
     }
     const edits = parts.flatMap(({ row, geometry }) => {
