@@ -4,8 +4,10 @@ A Map Editor node keeps its edits in its code: one call of
 ``curio_edit_features``, which the node writes from its edit list and reads
 back. An agent writes that code too, so what it writes is held to what the
 node reads (``utk_curio/sandbox/util/feature_edits_code.py``, a port of the
-node's reader), and a run's report of ids no feature has tells an edit that
-names features the data does not hold (``feature_edits.UNKNOWN_IDS_LINE``).
+node's reader), a run's report of ids no feature has tells an edit that
+names features the data does not hold (``feature_edits.UNKNOWN_IDS_LINE``),
+and its report of an area the map cannot draw tells an edit the run skipped
+for it (``feature_edits.REFUSED_AREA_LINE``).
 
 The checks are keyed by the template's ``behavior`` (``edit-features``),
 never by its id, read from the account's copy of the template as a run finds
@@ -85,30 +87,53 @@ def refusal(user_key, project_id, node_type, code, *, current: str | None = None
     return agent_text.message("map-edits.unreadable", problem=problem) if problem else None
 
 
+def _lines_matching(stdout, pattern) -> list[str]:
+    """The lines of a run's output that *pattern* matches whole, each once, in
+    their order. *stdout* is the run's whole output, its text or its lines."""
+    lines = stdout.splitlines() if isinstance(stdout, str) else [str(line) for line in stdout or ()]
+    found: list[str] = []
+    for line in lines:
+        text = line.strip()
+        if pattern.fullmatch(text) and text not in found:
+            found.append(text)
+    return found
+
+
+def _quoted(lines: list[str]) -> tuple[str, str]:
+    """What a refusal quotes of the run's *lines*: at most ``_MAX_QUOTED`` of
+    them, and a line saying how many more there are, if any."""
+    quoted = lines[:_MAX_QUOTED]
+    more = len(lines) - len(quoted)
+    return "\n".join(quoted), ("\n" + agent_text.message("map-edits.and-more", more=more) if more else "")
+
+
 def made_up_ids(stdout) -> list[str]:
     """The lines of a run's output in which the Map Editor step says an edit
     names ids no feature has, each once, in their order. *stdout* is the run's
     whole output, its text or its lines."""
     from utk_curio.sandbox.util.feature_edits import UNKNOWN_IDS_LINE
 
-    lines = stdout.splitlines() if isinstance(stdout, str) else [str(line) for line in stdout or ()]
-    found: list[str] = []
-    for line in lines:
-        text = line.strip()
-        if UNKNOWN_IDS_LINE.fullmatch(text) and text not in found:
-            found.append(text)
-    return found
+    return _lines_matching(stdout, UNKNOWN_IDS_LINE)
 
 
 def made_up_ids_refusal(lines: list[str]) -> str:
     """The round's refusal for the run's lines that name ids no feature has."""
-    quoted = lines[:_MAX_QUOTED]
-    more = len(lines) - len(quoted)
-    return agent_text.message(
-        "map-edits.made-up-ids", lines="\n".join(quoted), more="\n" + agent_text.message(
-            "map-edits.and-more", more=more,
-        ) if more else "",
-    )
+    quoted, more = _quoted(lines)
+    return agent_text.message("map-edits.made-up-ids", lines=quoted, more=more)
+
+
+def refused_areas(stdout) -> list[str]:
+    """The lines of a run's output in which the Map Editor step says it skips
+    an edit whose area the map cannot draw, each once, in their order."""
+    from utk_curio.sandbox.util.feature_edits import REFUSED_AREA_LINE
+
+    return _lines_matching(stdout, REFUSED_AREA_LINE)
+
+
+def refused_areas_refusal(lines: list[str]) -> str:
+    """The round's refusal for the run's lines that name areas it skipped."""
+    quoted, more = _quoted(lines)
+    return agent_text.message("map-edits.refused-areas", lines=quoted, more=more)
 
 
 def goal_names_edits(goal) -> bool:

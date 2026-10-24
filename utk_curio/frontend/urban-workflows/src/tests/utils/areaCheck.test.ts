@@ -10,6 +10,7 @@ import {
   areaProblem,
   drawnRefusal,
   layerFormat,
+  madeProblem,
   reshapeRefusal,
   shapeProblem,
   type AreaProblem,
@@ -40,6 +41,25 @@ describe("an area as autk-db would get it", () => {
     expect(areaProblem({ type: "MultiLineString", coordinates: [[[0, 0], [2, 2]], [[2, 0], [0, 2]]] })).toBeNull();
     expect(areaProblem({ type: "MultiPoint", coordinates: [[0, 0], [0, 0]] })).toBeNull();
     expect(areaProblem({ type: "Point", coordinates: [0, 0] })).toBeNull();
+  });
+
+  test("a part with no rings, an empty polygon among others, has no area and overlaps nothing", () => {
+    const square = [[[0, 0], [1, 0], [1, 1], [0, 1], [0, 0]]];
+    expect(areaProblem({ type: "MultiPolygon", coordinates: [[], square] })).toBeNull();
+    expect(areaProblem({ type: "MultiPolygon", coordinates: [square, []] })).toBeNull();
+  });
+});
+
+describe("a change is refused only for a problem it brings (madeProblem)", () => {
+  const bowTie: Geometry = { type: "Polygon", coordinates: [[[0, 0], [2, 2], [2, 0], [0, 2], [0, 0]]] };
+  const square: Geometry = { type: "Polygon", coordinates: [[[0, 0], [2, 0], [2, 2], [0, 2], [0, 0]]] };
+
+  test("a shape that crosses itself is refused in place of one that does not and for a feature added, and taken in place of one that crosses itself already", () => {
+    expect(madeProblem(undefined, square, bowTie)).toBe("crosses");
+    expect(madeProblem(undefined, null, bowTie)).toBe("crosses");
+    expect(madeProblem(undefined, bowTie, bowTie)).toBeNull();
+    expect(madeProblem(undefined, bowTie, square)).toBeNull();
+    expect(madeProblem(undefined, square, square)).toBeNull();
   });
 });
 
