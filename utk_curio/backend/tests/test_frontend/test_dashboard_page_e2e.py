@@ -195,6 +195,18 @@ def _open_dashboard(page, base: str, project_id: str) -> None:
     page.get_by_test_id("open-dataflow-link").wait_for(state="visible", timeout=45000)
 
 
+def _starts_a_run(request) -> bool:
+    """A viewer's run started (``POST /api/projects/<id>/dashboard/runs``)."""
+    return request.method == "POST" and urlsplit(request.url).path.endswith("/dashboard/runs")
+
+
+def _runs_started_on(page) -> list[str]:
+    """Every viewer's run *page* starts from now on."""
+    started: list[str] = []
+    page.on("request", lambda request: started.append(request.url) if _starts_a_run(request) else None)
+    return started
+
+
 def _project(current_server: str, token: str, project_id: str) -> dict:
     return api_json(f"{current_server}/api/projects/{project_id}", token)
 
@@ -234,9 +246,12 @@ def test_the_owner_opens_a_dashboard_that_draws_without_a_run(
         "durable would be left to draw from once the scratch cache is cleared"
     )
 
-    # A full load of the page: nothing from the canvas session comes along.
+    # A full load of the page: nothing from the canvas session comes along,
+    # and nothing runs, since the tile has its saved output.
+    started = _runs_started_on(page)
     _open_dashboard(page, app_frontend.base_url, project_id)
     _chart_drew(page)
+    assert started == [], f"opening the dashboard started a run: {started!r}"
 
     # A page, not the canvas.
     assert page.locator("#tools-menu").count() == 0, "the editor's palette is on the dashboard"
@@ -668,14 +683,16 @@ def test_a_visitor_changes_a_pinned_control_and_the_next_one_gets_the_kept_outpu
         page, app_frontend, current_server, prefix="dash_ctrl", spec=_controls_spec(),
     )
     project_id = session["project"]["id"]
+    # Off the canvas first: it can still save on its way out.
+    page.goto("about:blank")
     before = _project(current_server, session["token"], project_id)
     catalog_before = _catalog_ids(current_server, session["token"], project_id)
-    # Off the canvas: it can still save on its way out.
-    page.goto("about:blank")
     hosted = _serve_hosted(app_frontend, current_server, monkeypatch)
 
     first_ctx, first, first_asked = _a_visitor_opens(browser, hosted, project_id, current_server)
     try:
+        five = _five(first)
+        expect(five).to_be_enabled(timeout=10000)
         expect(first.get_by_test_id("shared-view-banner")).to_contain_text(
             "changes are not saved", timeout=20000,
         )
@@ -683,8 +700,6 @@ def test_a_visitor_changes_a_pinned_control_and_the_next_one_gets_the_kept_outpu
             "opening the dashboard started a run, though every tile has its saved "
             "output: " + ", ".join(first_asked)
         )
-        five = _five(first)
-        expect(five).to_be_enabled(timeout=10000)
         save_workflow_test_screenshot(first, VIEWER_RUN_STEM, test_name="opened", sweep_toasts=True)
         saved_pixels = first.evaluate(_CHART_PIXELS_JS, CHART)
 
@@ -732,6 +747,60 @@ def test_a_visitor_changes_a_pinned_control_and_the_next_one_gets_the_kept_outpu
     assert _catalog_ids(current_server, session["token"], project_id) == catalog_before, (
         "a visitor's run added to the Data Catalog"
     )
+
+
+def test_a_tile_with_no_saved_output_runs_the_nodes_before_it_when_the_page_opens(
+    app_frontend: "FrontendPage", current_server, page, browser, monkeypatch,
+):
+    """A tile whose nodes never ran gets its data from a run on open.
+
+    The chart is pinned and the dataflow saved without a run, so nothing is
+    saved for it. A visitor with no session opens the dashboard as the hosted
+    stacks serve it: the page starts one viewer's run with the saved values,
+    and the chart draws what it made. The dataflow stays as it was.
+    """
+    require_project_page()
+    require_user_auth()
+    session = _enter(page, app_frontend, current_server, prefix="dash_unrun")
+    project_id = session["project"]["id"]
+    node_locator(page, CHART).wait_for(state="visible", timeout=45000)
+    _pin(page, CHART)
+    _save(page)
+    page.goto("about:blank")
+    before = _project(current_server, session["token"], project_id)
+    assert before["outputs"] == [], f"the dataflow saved outputs it never ran: {before['outputs']!r}"
+    hosted = _serve_hosted(app_frontend, current_server, monkeypatch)
+
+    ctx = browser.new_context()
+    try:
+        visitor = ctx.new_page()
+        asked = _through_the_proxy(visitor, current_server)
+        visitor.goto(f"{hosted}/dashboard/{project_id}", wait_until="domcontentloaded")
+        assert visitor.locator("script#curio-dashboard-payload").count() == 1, (
+            "the page server served the dashboard of a dataflow that never ran without its data"
+        )
+        visitor.get_by_test_id("open-dataflow-link").wait_for(state="visible", timeout=45000)
+        # The chart has nothing to draw until the run's output reaches it.
+        node_locator(visitor, CHART).locator(f"#vega{CHART} canvas").first.wait_for(
+            state="visible", timeout=180000,
+        )
+        _chart_drew(visitor)
+        started = _runs_started(asked)
+        assert len(started) == 1, f"opening the dashboard started {len(started)} runs: {asked!r}"
+        assert _files_read(asked), (
+            "the chart drew without reading what the run made on the dashboard's "
+            "routes: " + ", ".join(asked)
+        )
+        assert _not_a_viewer_route(asked) == [], (
+            "the dashboard asked the server for more than a viewer's run: "
+            + ", ".join(_not_a_viewer_route(asked))
+        )
+    finally:
+        ctx.close()
+
+    after = _project(current_server, session["token"], project_id)
+    assert after["spec"] == before["spec"], "the run on open changed the owner's dataflow"
+    assert after["outputs"] == [], "the run on open saved outputs to the dataflow"
 
 
 # ---------------------------------------------------------------------------
@@ -1129,12 +1198,14 @@ def _autark_tile_pinned_and_saved(page, app_frontend: "FrontendPage", current_se
 
 
 def _the_tile_draws_without_a_run(page, base: str, project_id: str) -> None:
-    """Open the dashboard: the map draws, and no node code goes to the sandbox."""
+    """Open the dashboard: the map draws, and no node code goes to the sandbox,
+    from the page or from a viewer's run."""
     executions: list[str] = []
     page.on(
         "request",
         lambda request: executions.append(request.url)
         if "/processJavaScriptCode" in request.url or "/processPythonCode" in request.url
+        or _starts_a_run(request)
         else None,
     )
     _open_dashboard(page, base, project_id)
@@ -1142,8 +1213,8 @@ def _the_tile_draws_without_a_run(page, base: str, project_id: str) -> None:
     canvas.wait_for(state="visible", timeout=120000)
     assert canvas.evaluate("c => c.width > 0 && c.height > 0"), "the map tile has no drawing surface"
     assert executions == [], (
-        f"opening the dashboard executed node code in the sandbox: {executions!r}; "
-        f"the map's layers should have come from the Data Catalog"
+        f"opening the dashboard executed node code in the sandbox or started a run: "
+        f"{executions!r}; the map's layers should have come from the Data Catalog"
     )
 
 
