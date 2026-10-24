@@ -16,7 +16,12 @@
  * building being reshaped is drawn by them instead of its own layer. A
  * building of several parts, each with an osm_id of its own, is reshaped,
  * moved and added to part by part, each edit naming the part it changes; one
- * whose parts no column tells apart keeps its shape.
+ * whose parts no column tells apart keeps its shape. The form of a building
+ * of several parts is for all of them: a property they differ in is empty
+ * and lists their values, osm_id cannot be changed, and a value typed goes
+ * to every part; its parts menu chooses one part instead, whose values the
+ * form shows and whose own value Apply sets. A building whose parts no column
+ * tells apart gets the form for all of them only.
  *
  * Each node is the behavior the canvas registers for its type, with the
  * node's own state (hook/useNodeState) for the Map Edits node; the map draws
@@ -1135,6 +1140,227 @@ test("a building whose parts no column tells apart keeps its shape: Move points,
   } finally {
     putBack();
   }
+});
+
+/**
+ * Fails with *message* unless *ok*: a plain sentence of what is wrong, where
+ * an expect would show only the values it compared.
+ */
+function must(ok: unknown, message: string): asserts ok {
+  if (!ok) throw new Error(message);
+}
+
+/** The words of each option of the menu *select*, in its order. */
+const optionTexts = (select: HTMLSelectElement) => Array.from(select.options).map((option) => option.textContent);
+
+/** Picks the option of the menu *select* that reads *label*, as a person picks one. */
+function choose(select: HTMLSelectElement, label: string) {
+  const option = Array.from(select.options).find((o) => o.textContent === label);
+  must(option, `The parts menu offers no option that reads ${JSON.stringify(label)}: it offers ${JSON.stringify(optionTexts(select))}.`);
+  fireEvent.change(select, { target: { value: option.value } });
+}
+
+/** The form's parts menu, or null when it has none. */
+const partsMenu = () => screen.queryByTestId("interaction-parts-menu") as HTMLSelectElement | null;
+
+/** The form's field of the property *name*. */
+const fieldOf = (name: string) => screen.getByTestId(`interaction-field-${name}`) as HTMLInputElement;
+
+/** The properties of each row of building *id* the map drew last, in the layer's order. */
+const drawnRowsOf = (id: number): Record<string, unknown>[] =>
+  (grammarRuns[grammarRuns.length - 1]?.spec?.data ?? [])
+    .flatMap((source: any) => source?.geojsonObject?.features ?? [])
+    .filter((feature: any) => feature?.properties?.building_id === id)
+    .map((feature: any) => feature.properties);
+
+test("a building of two parts, each with its own osm_id, opens on all its parts: a property they differ in is empty and lists their values, osm_id cannot be changed, and a value typed goes to both parts", async () => {
+  nodeInput.current = OSM_PARTED;
+  const canvas = mountCanvas();
+  await canvas.playMap();
+  await openAction("edit");
+
+  // Building 136 picked on the map: its parts are 20 and 30 m tall, so its
+  // height is empty, and a note beside it lists both.
+  pickOnMap([1]);
+  const height = (await screen.findByTestId("interaction-field-height")) as HTMLInputElement;
+  must(
+    height.value === "",
+    `The form shows the height of building 136's first part, ${JSON.stringify(height.value)}, as the building's: its two parts are 20 and 30 m tall.`,
+  );
+  const listed = screen.queryByTestId("interaction-mixed-height");
+  must(
+    listed?.textContent === "2 values: 20, 30",
+    `No note beside the empty height lists the two parts' heights as "2 values: 20, 30": the note reads ${JSON.stringify(listed?.textContent ?? null)}.`,
+  );
+
+  // The parts menu, on all of them; then each part, named by its osm_id and
+  // the values it differs in.
+  const menu = partsMenu();
+  must(menu, "There is no parts menu: the form of building 136, of two parts, works on its first part alone.");
+  expect(menu).toHaveAccessibleName("Parts");
+  expect(optionTexts(menu)).toEqual(["All 2 parts", "osm_id 136, height 20", "osm_id 1361, height 30"]);
+  expect(menu.selectedOptions[0]?.textContent).toBe("All 2 parts");
+
+  // osm_id, which tells the parts apart, is shown, and nothing takes a value for it.
+  must(
+    screen.queryByTestId("interaction-field-osm_id") === null,
+    "osm_id, which tells building 136's parts apart, is a field a value can be typed into, showing its first part's.",
+  );
+  expect(screen.getByTestId("interaction-fixed-osm_id")).toHaveTextContent(/^2 values, cannot be changed$/);
+
+  // Nothing typed: no property is asked for, Apply is off, and a click on it
+  // writes nothing.
+  expect(screen.queryByText(/is required/)).toBeNull();
+  expect(screen.getByTestId("interaction-form-submit")).toBeDisabled();
+  fireEvent.click(screen.getByTestId("interaction-form-submit"));
+  expect(canvas.settings()?.edits ?? []).toEqual([]);
+
+  // A height typed goes to both parts: one edit, by the building's id.
+  fireEvent.change(height, { target: { value: "25" } });
+  expect(screen.queryByText(/is required/)).toBeNull();
+  fireEvent.click(screen.getByTestId("interaction-form-submit"));
+  expect(canvas.settings()?.edits).toEqual([{ op: "set", ids: [136], column: "height", value: 25 }]);
+  await waitFor(() => expect(drawnRowsOf(136).map((row) => [row.osm_id, row.height])).toEqual([[136, 25], [1361, 25]]));
+
+  // The parts are as tall now: the field shows their height, no note lists
+  // it, and the menu names each part by its osm_id alone.
+  await waitFor(() => expect(fieldOf("height").value).toBe("25"));
+  expect(screen.queryByTestId("interaction-mixed-height")).toBeNull();
+  const after = partsMenu();
+  must(after, "The parts menu left the form after an Apply on all the parts of building 136.");
+  expect(optionTexts(after)).toEqual(["All 2 parts", "osm_id 136", "osm_id 1361"]);
+});
+
+/** OSM_PARTED with each row's levels too: 2, then 3 and 4 for building 136's parts, then 5. */
+const OSM_PARTED_LEVELS = {
+  ...OSM_PARTED,
+  features: OSM_PARTED.features.map((feature, i) => ({ ...feature, properties: { ...feature.properties, levels: i + 2 } })),
+};
+
+test("a value typed in the form of all the parts of a building goes to its own property alone: another they differ in stays empty, asks for nothing, and keeps each part's value", async () => {
+  nodeInput.current = OSM_PARTED_LEVELS;
+  const canvas = mountCanvas();
+  await canvas.playMap();
+  await openAction("edit");
+
+  // Building 136 picked on the map: its parts differ in height, 20 and 30,
+  // and in levels, 3 and 4, which every row fills.
+  pickOnMap([1]);
+  await screen.findByTestId("interaction-field-height");
+  const levels = fieldOf("levels");
+  must(
+    levels.value === "",
+    `The form shows the levels of building 136's first part, ${JSON.stringify(levels.value)}, as the building's: its two parts have 3 and 4 levels.`,
+  );
+  expect(screen.getByTestId("interaction-mixed-levels")).toHaveTextContent(/^2 values: 3, 4$/);
+  expect(fieldOf("height").value).toBe("");
+  expect(screen.getByTestId("interaction-mixed-height")).toHaveTextContent(/^2 values: 20, 30$/);
+  const menu = partsMenu();
+  must(menu, "There is no parts menu: the form of building 136, of two parts, works on its first part alone.");
+  expect(optionTexts(menu)).toEqual(["All 2 parts", "osm_id 136, height 20, levels 3", "osm_id 1361, height 30, levels 4"]);
+
+  // Only a height typed: levels, left empty, asks for nothing and is not
+  // written, so each part keeps its own.
+  fireEvent.change(fieldOf("height"), { target: { value: "25" } });
+  expect(screen.queryByText(/is required/)).toBeNull();
+  expect(screen.getByTestId("interaction-form-submit")).toBeEnabled();
+  fireEvent.click(screen.getByTestId("interaction-form-submit"));
+  expect(canvas.settings()?.edits).toEqual([{ op: "set", ids: [136], column: "height", value: 25 }]);
+  await waitFor(() => expect(drawnRowsOf(136).map((row) => [row.height, row.levels])).toEqual([[25, 3], [25, 4]]));
+
+  // The parts differ in levels still: that field stays empty with both listed.
+  await waitFor(() => expect(fieldOf("height").value).toBe("25"));
+  expect(fieldOf("levels").value).toBe("");
+  expect(screen.getByTestId("interaction-mixed-levels")).toHaveTextContent(/^2 values: 3, 4$/);
+  const after = partsMenu();
+  must(after, "The parts menu left the form after an Apply on all the parts of building 136.");
+  expect(optionTexts(after)).toEqual(["All 2 parts", "osm_id 136, levels 3", "osm_id 1361, levels 4"]);
+});
+
+test("the parts menu chooses one part of a building of two: the form shows that part's values, the map still lights the whole building, and Apply sets the value typed on that part alone, named by its osm_id", async () => {
+  nodeInput.current = OSM_PARTED;
+  const canvas = mountCanvas();
+  await canvas.playMap();
+  await openAction("edit");
+  pickOnMap([1]);
+  await screen.findByTestId("interaction-field-height");
+  const menu = partsMenu();
+  must(
+    menu,
+    "There is no parts menu: the form of building 136, of two parts, works on its first part alone, and a value typed in it goes to both parts.",
+  );
+  await waitFor(() => expect(litUp()).toEqual([1, 2]));
+
+  // Its second part chosen: its height, and its osm_id, which cannot be changed.
+  choose(menu, "osm_id 1361, height 30");
+  const height = fieldOf("height");
+  must(height.value === "30", `With part 1361 chosen in the parts menu, the height field shows ${JSON.stringify(height.value)}, not that part's 30.`);
+  expect(screen.queryByTestId("interaction-mixed-height")).toBeNull();
+  expect(screen.queryByTestId("interaction-field-osm_id")).toBeNull();
+  expect(screen.getByTestId("interaction-fixed-osm_id")).toHaveTextContent(/^1361, cannot be changed$/);
+  // The map lights the whole building still.
+  await waitFor(() => expect(litUp()).toEqual([1, 2]));
+
+  // A height typed: one edit, of that part alone, named by the building's id
+  // and the part's own osm_id, in the list as such.
+  fireEvent.change(height, { target: { value: "45" } });
+  fireEvent.click(screen.getByTestId("interaction-form-submit"));
+  const edits = canvas.settings()?.edits ?? [];
+  must(
+    !edits.some((edit) => "ids" in edit),
+    `Apply on part 1361 wrote ${JSON.stringify(edits)}: an edit by building_id 136 gives both its parts the height typed for one of them.`,
+  );
+  expect(edits).toEqual([{ op: "set", where: "building_id == 136 and osm_id == 1361", column: "height", value: 45 }]);
+  expect(document.querySelector('[data-edit-op="set"]')).toHaveTextContent("Set height to 45 where building_id == 136 and osm_id == 1361");
+  // The map draws it: the first part keeps its 20 m, and the building is lit whole.
+  await waitFor(() => expect(drawnRowsOf(136).map((row) => [row.osm_id, row.height])).toEqual([[136, 20], [1361, 45]]));
+  await waitFor(() => expect(litUp()).toEqual([1, 2]));
+
+  // Building 119, of one part, picked: no parts menu, and its osm_id is a
+  // field like any other.
+  pickOnMap([0]);
+  await waitFor(() => expect(fieldOf("height").value).toBe("10"));
+  expect(partsMenu()).toBeNull();
+  expect(fieldOf("osm_id").value).toBe("119");
+  expect(screen.queryByTestId("interaction-fixed-osm_id")).toBeNull();
+  expect(screen.queryByTestId("interaction-mixed-height")).toBeNull();
+});
+
+test("a building of two parts that no column tells apart gets one form for both: no parts menu, a property they differ in empty with their values listed, and a value typed goes to both parts", async () => {
+  nodeInput.current = PARTED;
+  const canvas = mountCanvas();
+  await canvas.playMap();
+  await openAction("edit");
+
+  // Building 136 picked on the map: its two parts hold its building_id and
+  // no osm_id of their own, and are 20 and 30 m tall.
+  pickOnMap([1]);
+  const height = (await screen.findByTestId("interaction-field-height")) as HTMLInputElement;
+  must(
+    height.value === "",
+    `The form shows the height of building 136's first part, ${JSON.stringify(height.value)}, as the building's: its two parts are 20 and 30 m tall.`,
+  );
+  const listed = screen.queryByTestId("interaction-mixed-height");
+  must(
+    listed?.textContent === "2 values: 20, 30",
+    `No note beside the empty height lists the two parts' heights as "2 values: 20, 30": the note reads ${JSON.stringify(listed?.textContent ?? null)}.`,
+  );
+
+  // One form for both parts: no menu, since nothing tells them apart, as the
+  // tip of its shape tools says.
+  expect(partsMenu()).toBeNull();
+  expect(screen.getByTestId("interaction-parts-all")).toHaveTextContent(/^All 2 parts$/);
+  expect(screen.getByTestId("interaction-parts-untold")).toHaveTextContent("Its 2 parts have no osm_id of their own to tell them apart");
+
+  // Nothing typed: no property is asked for, and Apply is off.
+  expect(screen.queryByText(/is required/)).toBeNull();
+  expect(screen.getByTestId("interaction-form-submit")).toBeDisabled();
+
+  // A height typed goes to both parts: one edit, by the building's id.
+  fireEvent.change(height, { target: { value: "25" } });
+  fireEvent.click(screen.getByTestId("interaction-form-submit"));
+  expect(canvas.settings()?.edits).toEqual([{ op: "set", ids: [136], column: "height", value: 25 }]);
+  await waitFor(() => expect(drawnRowsOf(136).map((row) => row.height)).toEqual([25, 25]));
 });
 
 // autk-db can keep a layer's rows in an order of its own; the map names them

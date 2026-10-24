@@ -21,8 +21,10 @@ is its only state.
 3. The map lights a pick, both parts of a building, with its own highlight and
    nothing drawn over it; a plain click on another building replaces the pick,
    and the map played draws again with nothing picked.
-4. On a zoomed map, a height set on a building keeps the map's view, and
-   Commit edits hands the new height on through the map.
+4. On a zoomed map, building 1 picked: its form is for both its parts, so its
+   height is empty and lists both heights. A height set there goes to both
+   parts and keeps the map's view, and Commit edits hands it on through the
+   map.
 5. Each change is an entry in the node's Provenance drawer before any run, and
    putting the first entry's code back restores the map, the panel and the
    list.
@@ -34,7 +36,10 @@ added to the trees, a road reshaped and a property added to the parks, each on
 the map; Commit edits runs the node, and its output holds all three. And one
 of its buildings of several parts, each part with its own ``osm_id``, reshaped
 part by part: Move points shows every part's corners, a dragged corner changes
-its own part alone, and the building's other parts keep their shapes.
+its own part alone, and the building's other parts keep their shapes. And
+building 20449794, of seven such parts, whose form is for all of them: one
+part chosen in its parts menu takes a height, which Commit edits hands on for
+that part alone.
 
 Interaction frames take both nodes of a gesture before and after it, and every
 Autark map gets a close-up. They run Autark maps, which need WebGPU: without an
@@ -65,6 +70,8 @@ from .test_scenario_drop_e2e import _saved_spec
 from .test_widget_tags_e2e import _open_tab
 from .utils import (
     _OUTPUT_ARTIFACT_JS,
+    CLOSEUP_MAX_DIFF_RATIO,
+    CLOSEUP_PIXEL_THRESHOLD,
     INTERACTION_MIN_CHANGED_PIXELS,
     INTERACTION_SHOWN_TIMEOUT_MS,
     INTERACTION_VIEWPORT,
@@ -94,6 +101,7 @@ from .utils import (
     save_dataflow_and_settle_header,
     save_interaction_frame,
     save_node_closeup,
+    save_workflow_test_screenshot,
     set_node_code,
     stub_login_and_enter_workflow,
     wait_for_drawer_closed,
@@ -204,6 +212,9 @@ RUN_MS = 300000
 #: and the column that tells a building's parts apart: each part's own OSM id.
 BUILDINGS = "table_osm_buildings"
 PART_KEY = "osm_id"
+#: A building of the Chicago Loop layers in seven parts, each with an
+#: ``osm_id`` of its own, near the middle of the map.
+PARTED_BUILDING = 20449794
 #: How much room, in page pixels, the map is zoomed in to give a corner to be
 #: dragged, and the least a corner needs for a press to take it alone.
 CORNER_ROOM = 16
@@ -1025,12 +1036,14 @@ def test_a_height_set_on_a_zoomed_map_keeps_the_view_and_commit_edits_hands_it_o
     app_frontend: "FrontendPage", current_server: str, page,
 ):
     """The map frames its layers when it first draws. Zoomed in with the
-    wheel, a building picked on it and its height set in the node, Apply
-    changes writes the height into the node's code for every part of the
+    wheel, building 1, of two parts 20 and 35 m tall, picked on it: the
+    node's form is for both parts, so its height is empty with both heights
+    listed beside it, and the name they share shows. A height set there,
+    Apply changes writes it into the node's code for every part of the
     building, and the map draws again in the view it was zoomed to: not framed
     on its layers again, and nearer the zoomed view than the framed one.
     Commit edits runs the node, the map and the total below the map, which
-    holds the new height: the map hands it on."""
+    holds the new height for both parts: the map hands it on."""
     test_name = "test_a_height_set_on_a_zoomed_map_keeps_the_view_and_commit_edits_hands_it_on"
     _enter(page, app_frontend, current_server, _spec(TOTAL_CODE, "Total height"), "map_edits_zoom_e2e")
     _run_all(page)
@@ -1062,14 +1075,26 @@ def test_a_height_set_on_a_zoomed_map_keeps_the_view_and_commit_edits_hands_it_o
     assert zoomed is not None, f"{ZOOM_STEPS} wheel steps over the map did not zoom it in past its layers"
     zoom = _layout_changed(framed, zoomed)
 
-    # A building picked on the map, in the node's Edit, its height set there.
+    # Building 1, of two parts, picked on the map in the node's Edit: its
+    # form is for both parts. They share a name, which shows once the form
+    # holds the building's values; they differ in height, so that field is
+    # empty and a note lists both heights.
     edit = node_locator(page, EDIT_2)
     frame_nodes(page, [EDIT_2, MAP_2])
     _open(page, EDIT_2, "edit")
-    _click_a_building(page, EDIT_2, MAP_2, edit.get_by_test_id("interaction-selection"))
+    _click_a_building(page, EDIT_2, MAP_2, edit.get_by_test_id("interaction-selection"), spots=LEFT_SPOTS)
     picked = _picked_on_the_map(page, EDIT_2, MAP_2)
+    assert picked == 1, f"a click on the left half of the zoomed map picked building {picked}"
+    expect(edit.get_by_test_id("interaction-field-name")).to_have_value(NAMES[1])
     field = edit.get_by_test_id("interaction-field-height")
-    assert float(field.input_value()) in HEIGHTS[picked], (field.input_value(), HEIGHTS[picked])
+    shown = field.input_value()
+    assert shown == "", (
+        f"the form of building 1 shows the height {shown}, its first part's, as the building's: "
+        f"its {PARTS[1]} parts are {' and '.join(_literal(height) for height in HEIGHTS[1])} m tall"
+    )
+    expect(edit.get_by_test_id("interaction-mixed-height")).to_have_text("2 values: 20, 35")
+
+    # A height typed there goes to both parts.
     keep_drawing(page, _map(MAP_2))
     field.fill(str(NEW_HEIGHT))
     submit = edit.get_by_test_id("interaction-form-submit")
@@ -1652,6 +1677,223 @@ def test_a_chicago_building_of_several_parts_is_reshaped_one_part_at_a_time(
     save_node_closeup(page, CHICAGO_STEM, edit_id, test_name=f"{test_name}_closeup_{edit_id}", sweep_toasts=True)
 
 
+def test_a_chicago_building_of_several_parts_takes_a_height_on_one_part_chosen_in_its_form(
+    app_frontend: "FrontendPage", current_server: str, page,
+):
+    """The shipped Chicago Loop layers: building 20449794, of seven parts,
+    each with an ``osm_id`` of its own, picked on the map in the node's Edit.
+
+    1. Its form is for all its parts: a height they differ in is empty, with
+       a note that lists their heights, and osm_id cannot be changed.
+    2. Its parts menu offers all the parts, then each part by its osm_id. A
+       part after the first, of another height, chosen there: the field shows
+       that part's height, the map still lights the whole building, and a
+       height typed and applied is one edit that names that part alone,
+       ``where building_id == <building> and osm_id == <part>``.
+    3. Commit edits runs the node, which hands that part on with the new
+       height and the building's other parts with their own.
+
+    What is wrong at each step is kept, and the test fails with all of it
+    before its capture: the node's body, without its header, scrolled to the
+    building's properties, its parts menu on all of them."""
+    test_name = "test_a_chicago_building_of_several_parts_takes_a_height_on_one_part_chosen_in_its_form"
+    path = Path(REPO_ROOT) / "docs" / "examples" / "dataflows" / "chicago-loop-layers.json"
+    spec = json.loads(path.read_text(encoding="utf-8"))
+    nodes = {node["id"]: node for node in spec["dataflow"]["nodes"]}
+    (edit_id,) = [n for n, node in nodes.items() if node["type"] == EDIT_TYPE]
+    (map_id,) = [n for n, node in nodes.items() if node["type"] == MAP_TYPE and '"map"' in node["content"]]
+    title = nodes[map_id]["metadata"]["packageTemplateLabel"]
+    _enter(page, app_frontend, current_server, spec, "map_edits_parts_form_e2e", name=spec["dataflow"]["name"])
+    run_all_and_wait(page, timeout_ms=RUN_MS)
+    for node_id, node in nodes.items():
+        _done(page, node_id, node["type"])
+    wait_for_run_guard_released(page, timeout_ms=RUN_MS)
+
+    # The building's parts as the node hands them on before any edit, in the
+    # layer's order, and the rows of it the map draws, which it lights.
+    building = PARTED_BUILDING
+    handed = _handed_layers(load_artifact_as_dict(page.evaluate(_OUTPUT_ARTIFACT_JS, edit_id)))
+    rows = [row for row in handed[BUILDINGS]["features"] if (row.get("properties") or {}).get(KEY) == building]
+    assert _told_apart(rows), (
+        f"the node hands on {len(rows)} rows of building {building}, not two parts or more, each with a shape and "
+        f"an {PART_KEY} of its own"
+    )
+    parts = [(row.get("properties") or {}).get(PART_KEY) for row in rows]
+    heights = [(row.get("properties") or {}).get("height") for row in rows]
+    drawn = page.evaluate(_DRAWN_PARTS_JS, {"id": map_id, "table": BUILDINGS, "key": KEY, "part": PART_KEY}) or []
+    lit_rows = [building] * sum(1 for key, _part in drawn if key == building)
+    assert len(lit_rows) >= 2, f"the map draws {len(lit_rows)} rows of building {building}, not two parts or more"
+    # The part chosen: the first after the first part whose height differs
+    # from the first part's, else the last; the height it is given, none of
+    # its parts' heights.
+    chosen = next((i for i in range(1, len(rows)) if not _same_number(heights[i], heights[0])), len(rows) - 1)
+    part_id = parts[chosen]
+    part = _as_text(part_id)
+    where = f"{KEY} == {_literal(building)} and {PART_KEY} == {_literal(part_id)}"
+    new_height = NEW_HEIGHT
+    while any(_same_number(new_height, height) for height in heights):
+        new_height += 1
+    every = f"All {len(rows)} parts"
+
+    edit = node_locator(page, edit_id)
+    frame_nodes(page, [edit_id, map_id])
+    _open_tab(page, edit_id, "output")
+    _assert_linked(page, edit_id, map_id, title)
+    expect(edit.get_by_test_id(f"interaction-layer-{BUILDINGS}")).to_be_attached(timeout=30000)
+    _open(page, edit_id, "edit", BUILDINGS)
+    page.evaluate(_SEND_JS, [map_id, _map_pick(building)])
+    _wait_for_lit(page, map_id, {building}, f"building {building} picked", table=BUILDINGS)
+    field = edit.get_by_test_id("interaction-field-height")
+    expect(field).to_be_attached(timeout=10000)
+    wait_for_node_still(page, edit_id)
+    menu = edit.get_by_test_id("interaction-parts-menu")
+    wrong: list[str] = []
+
+    def text_of(test_id: str) -> str | None:
+        """The words of the node's element *test_id*, or None when it shows none."""
+        found = edit.get_by_test_id(test_id)
+        return (found.first.text_content() or "").strip() if found.count() else None
+
+    # 1. The form is for all its parts: a height they differ in is empty, with
+    # a note that lists their heights, and osm_id cannot be changed.
+    if len(set(heights)) > 1:
+        shown = field.input_value()
+        if shown != "":
+            wrong.append(
+                f"the form shows the height {shown}, building {building}'s first part's, as the building's: its "
+                f"{len(rows)} parts are {', '.join(_as_text(height) for height in heights)} m tall"
+            )
+        listed = text_of("interaction-mixed-height")
+        if not re.match(rf"{len(set(heights))} values: ", listed or ""):
+            wrong.append(
+                f"no note beside the height lists the {len(set(heights))} heights of building {building}'s parts: "
+                f"it reads {listed!r}"
+            )
+    if edit.get_by_test_id(f"interaction-field-{PART_KEY}").count():
+        wrong.append(
+            f"{PART_KEY}, which tells the parts apart, is a field a value can be typed into, showing the first part's"
+        )
+    fixed = text_of(f"interaction-fixed-{PART_KEY}")
+    if fixed != f"{len(rows)} values, cannot be changed":
+        wrong.append(f"beside {PART_KEY}, the form reads {fixed!r}, not '{len(rows)} values, cannot be changed'")
+
+    # 2. The parts menu, on all the parts; one part chosen in it.
+    if not menu.count():
+        wrong.append(
+            f"there is no parts menu: the form of building {building}, of {len(rows)} parts, works on its first "
+            f"part, {PART_KEY} {_as_text(parts[0])}, alone, and a value typed in it goes to every part"
+        )
+    else:
+        labels = menu.locator("option").evaluate_all("(options) => options.map((o) => o.textContent)")
+        named = [re.compile(rf"^{PART_KEY} {re.escape(_as_text(osm))}(,|$)") for osm in parts]
+        if labels[:1] != [every] or len(labels) != len(rows) + 1 or not all(
+            pattern.match(label or "") for pattern, label in zip(named, labels[1:])
+        ):
+            wrong.append(f"the parts menu offers {labels}, not {every!r} and then each part by its {PART_KEY}: {parts}")
+        selected = menu.evaluate("(menu) => (menu.selectedOptions[0] ? menu.selectedOptions[0].textContent : null)")
+        if selected != every:
+            wrong.append(f"the parts menu opens on {selected!r}, not {every!r}")
+        label = next((label for label in labels if named[chosen].match(label or "")), None)
+        if label is None:
+            wrong.append(f"the parts menu offers no option for part {part}: {labels}")
+        else:
+            menu.select_option(label=label)
+            shown = _wait_for_field(field, heights[chosen])
+            if not _shows(shown, heights[chosen]):
+                wrong.append(
+                    f"with part {part} chosen in the parts menu, the height field shows {shown!r}, not that part's "
+                    f"{_as_text(heights[chosen])}"
+                )
+            fixed = text_of(f"interaction-fixed-{PART_KEY}")
+            if fixed != f"{part}, cannot be changed":
+                wrong.append(
+                    f"with part {part} chosen, the form reads {fixed!r} beside {PART_KEY}, not '{part}, cannot be changed'"
+                )
+            try:
+                _wait_for_lit(page, map_id, lit_rows, f"part {part} of building {building} chosen", table=BUILDINGS)
+            except AssertionError as error:
+                wrong.append(f"with one part chosen, the map no longer lights the whole building: {error}")
+
+    # A height typed and applied: one edit, of that part alone.
+    keep_drawing(page, _map(map_id))
+    field.fill(str(new_height))
+    submit = edit.get_by_test_id("interaction-form-submit")
+    expect(submit).to_be_enabled()
+    submit.click()
+    code, keywords = _wait_for_count_of_edits(
+        page, edit_id, 1, f"a height of {new_height} applied to building {building}",
+    )
+    (applied,) = _edits_of(code)[0]
+    expected = {"op": "set", "ids": None, "where": where, "column": "height", "value": new_height}
+    if {name: applied.get(name) for name in expected} != expected:
+        why = f": a set by {KEY} {building} goes to every one of its {len(rows)} parts" if applied.get("ids") else ""
+        wrong.append(f"Apply wrote {applied}, not a set of the height where {where}{why}")
+    if (keywords.get("layer"), keywords.get("key")) != (BUILDINGS, KEY):
+        wrong.append(f"the node's code names the layer {keywords.get('layer')} and the key {keywords.get('key')}")
+    try:
+        expect(edit.locator('[data-edit-op="set"]')).to_contain_text(
+            f"Set height to {new_height} where {where}", timeout=5000,
+        )
+    except AssertionError as error:
+        wrong.append(f"the list does not name the part: {error}")
+    _wait_for_redraw(page, map_id, "the Apply")
+
+    # 3. Commit edits: the node hands that part on with the new height, and
+    # the building's other parts with their own.
+    _commit(page, edit_id, [edit_id], [map_id], below=1)
+    out = _handed_layers(load_artifact_as_dict(page.evaluate(_OUTPUT_ARTIFACT_JS, edit_id)))[BUILDINGS]["features"]
+    now = {
+        (row.get("properties") or {}).get(PART_KEY): (row.get("properties") or {}).get("height")
+        for row in out if (row.get("properties") or {}).get(KEY) == building
+    }
+    if sorted(map(str, now)) != sorted(map(str, parts)):
+        wrong.append(f"Commit edits handed on the parts {sorted(map(str, now))} of building {building}, not {parts}")
+    if not _same_number(now.get(part_id), new_height):
+        wrong.append(
+            f"after Commit edits, part {part} of building {building} is {now.get(part_id)} m tall, not the "
+            f"{new_height} typed for it"
+        )
+    others = [
+        f"part {_as_text(osm)} is {_as_text(now.get(osm))} m tall, not its own {_as_text(height)}"
+        for osm, height in zip(parts, heights)
+        if osm != part_id and osm in now and not _same_number(now.get(osm), height)
+    ]
+    if others:
+        wrong.append(
+            f"after Commit edits, the height typed for part {part} went to other parts of building {building} "
+            f"too: {'; '.join(others)}"
+        )
+    assert not wrong, "\n".join(wrong)
+
+    # The building picked again, since the map's run dropped the pick, and its
+    # form on all its parts, as the node's body shows it without the node's
+    # header, scrolled to the building's properties.
+    for _ in range(3):
+        page.evaluate(_SEND_JS, [map_id, _map_pick(building)])
+        _wait_for_lit(page, map_id, {building}, f"building {building} picked after Commit edits", table=BUILDINGS)
+        try:
+            expect(menu).to_be_visible(timeout=5000)
+            break
+        except AssertionError:
+            continue
+    expect(menu).to_be_visible(timeout=5000)
+    menu.select_option(label=every)
+    # The part given a height of its own, the parts differ in height.
+    expect(field).to_have_value("")
+    wait_for_node_still(page, edit_id)
+    with canvas_painted_at_shown_zoom(page):
+        frame_nodes(page, [edit_id])
+        assert page.evaluate(_PROPERTIES_ON_TOP_JS, edit_id), (
+            f"the node {edit_id} shows no properties of building {building}"
+        )
+        park_pointer(page)
+        save_workflow_test_screenshot(
+            page, CHICAGO_STEM, test_name=f"{test_name}_closeup_{edit_id}",
+            pixel_threshold=CLOSEUP_PIXEL_THRESHOLD, max_diff_ratio=CLOSEUP_MAX_DIFF_RATIO,
+            clip_selector=f'[data-edit-body="{edit_id}"]', fit_reactflow=False, sweep_toasts=True, closeup=True,
+        )
+
+
 # The value of *key* and of *part* of each row the map draws of the table
 # *table*, in the order it draws them (window.__curio_mapFeatureAt).
 _DRAWN_PARTS_JS = """async ({ id, table, key, part }) => {
@@ -1671,6 +1913,19 @@ _DRAWN_PARTS_JS = """async ({ id, table, key, part }) => {
 _SEND_JS = """([id, selection]) => {
     const node = window.__curio_reactFlow.getNodes().find((n) => n.id === id);
     node.data.interactionsCallback(selection, id);
+}"""
+
+# Scrolls the body of the Map Edits node *id* until the properties of the
+# feature its form edits are at the body's top, so a capture of the body
+# starts with them; false when the body shows none.
+_PROPERTIES_ON_TOP_JS = """(id) => {
+    const body = document.querySelector(`[data-edit-body="${id}"]`);
+    const properties = body && body.querySelector('[data-testid="interaction-properties"]');
+    if (!properties) return false;
+    const box = body.getBoundingClientRect();
+    const scale = body.offsetHeight > 0 ? box.height / body.offsetHeight : 1;
+    body.scrollTop += (properties.getBoundingClientRect().top - box.top) / scale;
+    return true;
 }"""
 
 
@@ -1854,6 +2109,40 @@ def _literal(value) -> str:
     if isinstance(value, str):
         return '"' + value.replace("\\", "\\\\").replace('"', '\\"') + '"'
     return str(value)
+
+
+def _as_text(value) -> str:
+    """*value* as a form shows it: a number as JavaScript writes it, a text as it is."""
+    return value if isinstance(value, str) else _literal(value)
+
+
+def _same_number(a, b) -> bool:
+    """Whether *a* and *b* are one value: both none, or the same number."""
+    if a is None or b is None:
+        return a is None and b is None
+    try:
+        return math.isclose(float(a), float(b), rel_tol=1e-9, abs_tol=1e-9)
+    except (TypeError, ValueError):
+        return a == b
+
+
+def _shows(text: str, value) -> bool:
+    """Whether a field's *text* shows *value*: empty for none, else the same number or text."""
+    if value is None or text == "":
+        return value is None and text == ""
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        return _same_number(text, value)
+    return text == _as_text(value)
+
+
+def _wait_for_field(field, value, timeout_s: float = 5) -> str:
+    """What the field *field* shows, once it shows *value*, or after *timeout_s* seconds."""
+    deadline = time.time() + timeout_s
+    while True:
+        text = field.input_value()
+        if _shows(text, value) or time.time() >= deadline:
+            return text
+        field.page.wait_for_timeout(250)
 
 
 def _shown_edit(edit: dict) -> dict:
