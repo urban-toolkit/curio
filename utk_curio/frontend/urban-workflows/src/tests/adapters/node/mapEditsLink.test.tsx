@@ -16,7 +16,9 @@
  * building being reshaped is drawn by them instead of its own layer. A
  * building of several parts, each with an osm_id of its own, is reshaped,
  * moved and added to part by part, each edit naming the part it changes; one
- * whose parts no column tells apart keeps its shape.
+ * whose parts no column tells apart keeps its shape. A corner dragged, or an
+ * area drawn, that would make an outline cross itself is refused: nothing is
+ * written, and the map's tip says why.
  *
  * Each node is the behavior the canvas registers for its type, with the
  * node's own state (hook/useNodeState) for the Map Edits node; the map draws
@@ -1132,6 +1134,101 @@ test("a building whose parts no column tells apart keeps its shape: Move points,
     expect(canvas.settings()?.edits ?? []).toEqual([]);
     expect(overlay()).toHaveAttribute("data-edit-mode", "select");
     expect(screen.getByTestId("interaction-parts-untold")).toBeInTheDocument();
+  } finally {
+    putBack();
+  }
+});
+
+/**
+ * What the map's tip says when a drag would make an outline cross itself, and
+ * when an area drawn has an outline that does: autk-db refuses such a shape,
+ * and with it the whole layer (#1112).
+ */
+const CROSSED_DRAG = "That would make the outline cross itself, so the corner went back.";
+const CROSSED_AREA = "That outline crosses itself, so the area was not added.";
+
+/** Runs *check*, an expectation; when it fails, its failure says *bug* first: what went wrong on the map. */
+function checkFor(bug: string, check: () => void): void {
+  try {
+    check();
+  } catch (error) {
+    throw new Error(`${bug}\n\n${error instanceof Error ? error.message : String(error)}`);
+  }
+}
+
+test("a building's corner dragged across its far side, which would make its outline cross itself, writes no edit, the map's tip says why, and the corner goes back", async () => {
+  const putBack = layOutCanvases();
+  try {
+    drawnMaps.make = projectingMap;
+    const canvas = mountCanvas();
+    await canvas.playMap();
+    await openAction("edit");
+    clickMap(MIDDLE_136);
+    fireEvent.click(await screen.findByTestId("interaction-reshape"));
+    const map = lastMap();
+    const overlay = () => screen.getByTestId("map-edit-overlay");
+    await waitFor(() => expect(overlay()).toHaveAttribute("data-edit-mode", "reshape"));
+
+    // Building 136's outline, which the map's tools draw, and its corners
+    // where the map shows them.
+    const outlines = () => linesOn(map).map((line) => line.map(km));
+    const ring = inKm(closedRing([[1, 0], [2, 0], [2, 1], [1, 1]]));
+    await waitFor(() => expect(outlines()).toContainEqual(ring));
+    const corners = overlay().getAttribute("data-corners");
+    const listed = JSON.parse(corners ?? "[]");
+
+    // Its corner at (2, 1) dragged west across its far side, x = 1, to
+    // (0.5, 0.5): the side from (2, 0) to it crosses that side at (1, 1/3).
+    // While the drag lasts, the map draws the outline crossed.
+    const from: [number, number] = [Math.round(listed[2].x), Math.round(listed[2].y)];
+    const to = onScreen([0.5, 0.5]);
+    const crossed = [...ring];
+    crossed[2] = [to[0], SIZE - to[1]];
+    pointerOnMap("pointerdown", from, true);
+    pointerOnMap("pointermove", to, true);
+    await waitFor(() => expect(outlines()).toContainEqual(crossed));
+
+    // Let go: nothing is written, the tip says why, and the corner and the
+    // outline are back where they were.
+    pointerOnMap("pointerup", to, false);
+    checkFor("the self-crossing reshape was written as an edit", () => expect(canvas.settings()?.edits ?? []).toEqual([]));
+    checkFor("the map's tip does not say why the reshape was refused", () =>
+      expect(screen.getByTestId("map-edit-tip")).toHaveTextContent(CROSSED_DRAG),
+    );
+    checkFor("the dragged corner did not go back where it was", () => expect(overlay()).toHaveAttribute("data-corners", corners));
+    await waitFor(() => checkFor("the map does not draw the building's outline as it was", () => expect(outlines()).toContainEqual(ring)));
+    checkFor("the map still draws the crossed outline", () => expect(outlines()).not.toContainEqual(crossed));
+  } finally {
+    putBack();
+  }
+});
+
+test("an area drawn as a bow tie, its outline crossing itself, is not taken to be added when finished: no properties are asked for, nothing is written, and the map's tip says why", async () => {
+  const putBack = layOutCanvases();
+  try {
+    drawnMaps.make = projectingMap;
+    const canvas = mountCanvas();
+    await canvas.playMap();
+    const map = lastMap();
+    await openAction("add");
+    const overlay = () => screen.getByTestId("map-edit-overlay");
+    await waitFor(() => expect(overlay()).toHaveAttribute("data-edit-mode", "draw"));
+
+    // Four corners whose first and third sides cross, at (1, 2): a bow tie.
+    // The map draws the four.
+    const bowTie: [number, number][] = [[0.5, 1.5], [1.5, 2.5], [1.5, 1.5], [0.5, 2.5]];
+    for (const corner of bowTie) clickMap(corner);
+    await waitFor(() => expect(pointsOn(map).map(km).sort(byPlace)).toEqual(inKm(bowTie).sort(byPlace)));
+
+    // Finish: the area is refused. The node asks for none of its properties,
+    // and the map stays in its drawing mode.
+    fireEvent.click(screen.getByTestId("map-edit-finish"));
+    checkFor("the self-crossing area was taken to be added", () => expect(screen.queryByTestId("interaction-property-form")).toBeNull());
+    checkFor("the self-crossing area waits on the map to be added", () => expect(overlay()).toHaveAttribute("data-edit-mode", "draw"));
+    checkFor("the map's tip does not say why the area was refused", () =>
+      expect(screen.getByTestId("map-edit-tip")).toHaveTextContent(CROSSED_AREA),
+    );
+    checkFor("the self-crossing area was written as an edit", () => expect(canvas.settings()?.edits ?? []).toEqual([]));
   } finally {
     putBack();
   }
