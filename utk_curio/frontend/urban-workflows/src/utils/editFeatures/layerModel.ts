@@ -195,7 +195,7 @@ export function editedFeatures(
   nodeLayer: string | null,
 ): EditedFeature[] {
   const mine = key ? edits.filter((edit) => editsLayer(edit, layerName, nodeLayer)) : [];
-  const { state, status } = applyFeatureEdits(fc?.features ?? [], mine, key ?? "");
+  const { state, status } = applyFeatureEdits(fc?.features ?? [], mine, key ?? "", fc ?? undefined);
   const out: EditedFeature[] = [];
   state.forEach((feature, i) => {
     if (feature === null) return;

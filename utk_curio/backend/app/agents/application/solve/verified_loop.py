@@ -6,7 +6,7 @@ DEC-073 → dev/118 → dev/126 → dev/127 → dev/129 → dev/131 → dev/133 
 loop every Solve path runs. Nothing about WHAT a round does changed; what
 changed is that each stage has a name — :meth:`_generation_inputs`,
 :meth:`_one_line_answer`, :meth:`_source_gate`, :meth:`_input_contract_gate`, :meth:`_map_edits_gate`,
-:meth:`_repeat_check`, :meth:`_validate`, :meth:`_made_up_ids_check`,
+:meth:`_repeat_check`, :meth:`_validate`, :meth:`_skipped_edits_check`,
 :meth:`_document_check`, :meth:`_absent_output_check`,
 :meth:`_empty_result_check`, :meth:`_record_round` — and :meth:`run` reads
 as the loop it is.
@@ -316,7 +316,7 @@ class VerifiedRounds:
                 self._dashboard_gate,
                 self._repeat_check,
                 self._validate,
-                self._made_up_ids_check,
+                self._skipped_edits_check,
                 self._document_check,
                 self._absent_output_check,
                 self._empty_result_check,
@@ -654,10 +654,11 @@ class VerifiedRounds:
         self.round_stdout = self.verdict_result.pop("stdout", None)
         return None
 
-    def _made_up_ids_check(self):
-        """The Map Editor step reports ids no feature has, and its run goes on,
-        so a node an agent filled with made-up ids passes the sandbox. The
-        round fails on the step's own lines, read from the run's whole output,
+    def _skipped_edits_check(self):
+        """The Map Editor step skips an edit that names ids no feature has, or
+        whose area the map cannot draw, says so, and its run goes on, so a
+        node an agent filled with such edits passes the sandbox. The round
+        fails on the step's own lines, read from the run's whole output,
         however much comes after them. The code on the node is the user's own
         and is never refused."""
         stdout, self.round_stdout = self.round_stdout, None
@@ -665,10 +666,16 @@ class VerifiedRounds:
             return None
         if not map_edits.is_map_edits(self.user_key, self.project_id, self.node_type):
             return None
-        lines = map_edits.made_up_ids(stdout)
-        if not lines:
+        refusals = []
+        made_up = map_edits.made_up_ids(stdout)
+        if made_up:
+            refusals.append(map_edits.made_up_ids_refusal(made_up))
+        refused = map_edits.refused_areas(stdout)
+        if refused:
+            refusals.append(map_edits.refused_areas_refusal(refused))
+        if not refusals:
             return None
-        refusal = map_edits.made_up_ids_refusal(lines)
+        refusal = "\n\n".join(refusals)
         yield from self._record_failed_round(map_edits.KIND, refusal)
         self._carry(refusal)
         return CONTINUE
