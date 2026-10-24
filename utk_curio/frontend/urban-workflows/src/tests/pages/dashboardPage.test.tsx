@@ -359,6 +359,16 @@ describe("the canvas", () => {
     expect(mockReactFlowProps.nodesConnectable).toBe(false);
   });
 
+  test("locked, its tiles still take the pointer, so a visitor can change a control (#1117)", async () => {
+    await renderPage();
+
+    // React Flow gives a node no pointer events when it can be neither
+    // selected nor dragged and the flow has no handler for it.
+    expect(mockReactFlowProps.elementsSelectable).toBe(false);
+    expect(mockReactFlowProps.nodesDraggable).toBe(false);
+    expect(typeof mockReactFlowProps.onNodeClick).toBe("function");
+  });
+
   test("never enlarges a tile past its authored size", async () => {
     await renderPage();
 

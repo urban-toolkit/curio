@@ -51,6 +51,7 @@ from .utils import (
     dismiss_toasts,
     empty_pane_point,
     node_locator,
+    park_pointer,
     play_node,
     require_owner_view,
     require_project_page,
@@ -699,12 +700,15 @@ def test_a_visitor_changes_a_pinned_control_and_the_next_one_gets_the_kept_outpu
             "opening the dashboard started a run, though every tile has its saved "
             "output: " + ", ".join(first_asked)
         )
+        park_pointer(first)
         save_workflow_test_screenshot(first, VIEWER_RUN_STEM, test_name="opened", sweep_toasts=True)
         saved_pixels = first.evaluate(_CHART_PIXELS_JS, CHART)
 
         five.check()
         _pool_shows(first, 5)
         _chart_redrew(first, saved_pixels)
+        # Off the control the click left it on.
+        park_pointer(first)
         save_workflow_test_screenshot(first, VIEWER_RUN_STEM, test_name="changed", sweep_toasts=True)
 
         started = _runs_started(first_asked)

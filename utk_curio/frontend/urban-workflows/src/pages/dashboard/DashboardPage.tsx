@@ -41,6 +41,9 @@ export const LOAD_FAILED_TITLE = "This dashboard could not be opened.";
 export const LOAD_FAILED_BODY =
   "It may have been deleted, or the link may not be shared with you.";
 
+/** A click on a tile does nothing of its own; its content takes the pointer. */
+const tilesTakeThePointer = () => undefined;
+
 /**
  * A dataflow's pinned nodes, as a page of their own.
  *
@@ -195,6 +198,10 @@ export const DashboardPage: React.FC = () => {
           nodesDraggable={!dashboardLocked}
           nodesConnectable={false}
           elementsSelectable={!dashboardLocked}
+          // React Flow leaves a node no pointer events when it can be neither
+          // selected nor dragged and the flow has no handler for it, which
+          // would keep a locked page's controls and charts from the pointer.
+          onNodeClick={tilesTakeThePointer}
           panOnDrag={!dashboardLocked}
           zoomOnScroll={!dashboardLocked}
           zoomOnPinch={!dashboardLocked}
