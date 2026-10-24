@@ -125,6 +125,14 @@ def _signed_in_instance(monkeypatch, proxy_hops):
 
 
 @pytest.fixture()
+def app(_signed_in_instance, app):
+    """test_runs' app, built once the instance above is set. pytest-flask's
+    own autouse fixture asks for the app before this module's run, and
+    ``create_app`` reads the proxies when it builds the app."""
+    return app
+
+
+@pytest.fixture()
 def sandbox(monkeypatch):
     from utk_curio.backend import config
     from utk_curio.backend.app.runs import jobs, viewer
