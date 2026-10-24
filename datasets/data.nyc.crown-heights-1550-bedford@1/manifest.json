@@ -1,0 +1,37 @@
+{
+ "id": "data.nyc.crown-heights-1550-bedford",
+ "name": "Crown Heights buildings around 1550 Bedford Avenue",
+ "version": "1.0.0",
+ "format": "bundle",
+ "description": "Crown Heights, Brooklyn, about 600 by 550 m around 1550 Bedford Avenue, the site of the 18-story building ZAP project 2026K0123 proposes: NYC's building footprints with their roof heights in metres (building_id is DoITT's id), Block 1259 across Eastern Parkway from the site (Franklin Avenue to Bedford Avenue, its lots dissolved) and the site's lot, Block 1266 Lot 36, from MapPLUTO. The site is vacant: the footprint NYC has for it, a planned building never built, is left out.",
+ "publisher": "NYC Office of Technology and Innovation; NYC Department of City Planning",
+ "license": "NYC Open Data Terms of Use",
+ "tags": [
+  "new-york",
+  "brooklyn",
+  "crown-heights",
+  "buildings",
+  "streets",
+  "shadow",
+  "bundle"
+ ],
+ "dataFile": "data/bundle.json",
+ "compatibility": {
+  "major": 1
+ },
+ "sourceLabel": "NYC Open Data (Building Footprints, Centerline), NYC DCP (MapPLUTO)",
+ "rowCount": null,
+ "featureCount": null,
+ "schema": null,
+ "createdAt": "2026-10-22T00:00:00Z",
+ "updatedAt": "2026-10-22T00:00:00Z",
+ "sourceUpdatedAt": null,
+ "sourceEncoding": null,
+ "groupId": null,
+ "layerName": null,
+ "producerNodeId": null,
+ "producerNodeType": null,
+ "producerDataflowId": null,
+ "producerDataflowName": null,
+ "upstreamInputs": null
+}

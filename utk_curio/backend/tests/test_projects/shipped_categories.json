@@ -535,5 +535,17 @@
       "Geometries",
       "OpenStreetMap"
     ]
+  },
+  "dataflows/crown-heights-1550-bedford-shadow": {
+    "tags": [
+      "Autark",
+      "GeoPandas",
+      "Pandas",
+      "GPU compute"
+    ],
+    "data_type": [
+      "Tables",
+      "Geometries"
+    ]
   }
 }

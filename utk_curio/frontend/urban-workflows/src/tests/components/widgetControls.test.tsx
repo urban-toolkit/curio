@@ -174,6 +174,26 @@ describe("date and time", () => {
   });
 });
 
+describe("date", () => {
+  const day: WidgetDef = { name: "day", type: "date", label: "Day", default: "2026-06-21" };
+
+  test("a date field with no time records the day picked", () => {
+    const { onChange } = renderControl(day);
+    const input = screen.getByLabelText("Day") as HTMLInputElement;
+    expect(input.type).toBe("date");
+    expect(input.value).toBe("2026-06-21");
+    fireEvent.change(input, { target: { value: "2026-12-21" } });
+    expect(onChange).toHaveBeenCalledWith("2026-12-21");
+  });
+
+  test("a cleared field is not recorded", () => {
+    const { onChange } = renderControl(day);
+    fireEvent.change(screen.getByLabelText("Day"), { target: { value: "" } });
+    expect(onChange).not.toHaveBeenCalled();
+    expect(screen.getByText("Enter a date.")).toBeTruthy();
+  });
+});
+
 describe("location", () => {
   const origin: WidgetDef = { name: "origin", type: "location", label: "Origin", default: { lat: 0, lon: 0 } };
 
@@ -321,6 +341,14 @@ describe("declaring the new widgets", () => {
     fireEvent.click(screen.getByRole("button", { name: "Add widget" }));
     const [saved] = (props.onWidgetsChange as jest.Mock).mock.calls[0][0];
     expect(saved).toEqual({ name: "when", type: "datetime", default: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:00$/) });
+  });
+
+  test("a date widget starts at a valid day, with no time", () => {
+    const { props } = renderEditor();
+    openForm("day", "date");
+    fireEvent.click(screen.getByRole("button", { name: "Add widget" }));
+    const [saved] = (props.onWidgetsChange as jest.Mock).mock.calls[0][0];
+    expect(saved).toEqual({ name: "day", type: "date", default: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/) });
   });
 
   test("a location widget is added with the coordinates typed as its default", () => {

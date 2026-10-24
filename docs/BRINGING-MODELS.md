@@ -371,15 +371,15 @@ Each widget has:
 - `name`: letters, digits and underscores, not starting with a digit, and
   unique among the template's widgets. Not `input_0`, `input_1` and so on, nor
   `inputs`: those names read the node's inputs.
-- `type`: one of 13 kinds: `number`, `slider`, `text`, `choice`, `checkbox`,
-  `checkbox-group`, `multi-select`, `datetime`, `location`, `number-list`,
-  `text-list`, `range` and `file`. [USAGE.md, Widgets](USAGE.md#widgets) shows
+- `type`: one of 14 kinds: `number`, `slider`, `text`, `choice`, `checkbox`,
+  `checkbox-group`, `multi-select`, `datetime`, `date`, `location`,
+  `number-list`, `text-list`, `range` and `file`. [USAGE.md, Widgets](USAGE.md#widgets) shows
   the control each kind draws and the value the code gets.
 - `label`: what the Widgets tab calls it.
 - `default`: the value a dropped node starts with. Without one, it is the
   first choice of a `choice`, the `min` of a `number` or a `slider` (else 0),
   false for a `checkbox`, `[0, 1]` for a `range`, `1970-01-01T00:00:00` for a
-  `datetime`, latitude and longitude 0 for a `location`, and an empty text or
+  `datetime`, `1970-01-01` for a `date`, latitude and longitude 0 for a `location`, and an empty text or
   list for the other kinds.
 - `options`: `choices` for a `choice`, `checkbox-group` or `multi-select`, and
   for a `choice` its `display`, `dropdown` or `radio`; `min`, `max`, `step` and

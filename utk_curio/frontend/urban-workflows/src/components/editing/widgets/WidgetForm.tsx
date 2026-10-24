@@ -119,6 +119,8 @@ export function WidgetForm({
               setDef(0);
             } else if (next === "datetime") {
               setDef(dateTimeValue(new Date()));
+            } else if (next === "date") {
+              setDef(dateTimeValue(new Date()).slice(0, 10));
             } else {
               setDef(defaultValueFor(next, optionsFor(next)));
             }

@@ -1,0 +1,9 @@
+{
+"type": "FeatureCollection",
+"name": "site",
+"crs": { "type": "name", "properties": { "name": "urn:ogc:def:crs:OGC:1.3:CRS84" } },
+"xy_coordinate_resolution": 1e-07,
+"features": [
+{ "type": "Feature", "properties": { "bbl": 3012660036, "address": "1548 BEDFORD AVENUE" }, "geometry": { "type": "Polygon", "coordinates": [ [ [ -73.9557013, 40.6693418 ], [ -73.9560489, 40.6694146 ], [ -73.9559946, 40.6695649 ], [ -73.9558662, 40.6699206 ], [ -73.9555184, 40.6698484 ], [ -73.9557013, 40.6693418 ] ] ] } }
+]
+}

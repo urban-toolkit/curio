@@ -131,7 +131,7 @@ A package that ships Python modules in its `sources/` folder ([Modules beside yo
 1. Open the Node Catalog drawer and click **New node from a Python function** in its footer.
 2. Pick the function. The list holds every public function of every module your installed packages ship, as `module.function(parameters)`. A function that takes `*args` or `**kwargs`, or is `async`, is listed but cannot be picked, and says why; so is a module that does not parse.
 3. For each parameter, choose what it is given:
-   - **A widget**: a tag in the node's **Widgets** tab ([Widgets](USAGE.md#widgets)). Curio suggests its type from the parameter's annotation or default: `bool` is a checkbox, `int` and `float` a number, `str` a text, `Literal["a", "b"]` a choice, a list of texts or numbers a list, `datetime` a date and time. **Edit widget** changes its type, label, default and options.
+   - **A widget**: a tag in the node's **Widgets** tab ([Widgets](USAGE.md#widgets)). Curio suggests its type from the parameter's annotation or default: `bool` is a checkbox, `int` and `float` a number, `str` a text, `Literal["a", "b"]` a choice, a list of texts or numbers a list, `datetime` a date and time, `date` a date. **Edit widget** changes its type, label, default and options.
    - **A fixed value**, written as Python writes it: `2`, `'winter'`, `[1, 2]`.
    - **An input**: the node gets one input per parameter given one, in parameter order.
    - **Its default**, when the parameter has one: the call leaves it out.

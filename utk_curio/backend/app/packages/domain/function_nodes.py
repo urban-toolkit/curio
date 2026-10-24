@@ -38,7 +38,7 @@ MAX_DESCRIPTION = 600
 #: fit it: the kind's own value (``default_value_for``).
 _FALLBACK = {
     "checkbox": False, "number": 0, "text": "", "number-list": [], "text-list": [],
-    "datetime": "1970-01-01T00:00:00",
+    "datetime": "1970-01-01T00:00:00", "date": "1970-01-01",
 }
 _TYPING_PREFIXES = ("typing.", "typing_extensions.", "t.")
 _SCALAR_KINDS = {
@@ -48,6 +48,8 @@ _SCALAR_KINDS = {
     "str": ("text", {}),
     "datetime": ("datetime", {}),
     "datetime.datetime": ("datetime", {}),
+    "date": ("date", {}),
+    "datetime.date": ("date", {}),
 }
 _SEQUENCES = {"list", "List", "Sequence", "tuple", "Tuple", "Iterable", "Collection"}
 _LIST_KINDS = {"text": "text-list", "number": "number-list"}
@@ -309,7 +311,7 @@ def suggest_widget(param: Parameter) -> dict | None:
     """The widget *param* suggests, in a node's ``metadata.widgets`` shape, or
     None when nothing fits: an annotation names its kind (``bool``, ``int``,
     ``float``, ``str``, ``Literal[...]``, a list of texts or numbers,
-    ``datetime``, each also inside ``Optional``), else an unannotated
+    ``datetime``, ``date``, each also inside ``Optional``), else an unannotated
     parameter's literal default does. Its default is the parameter's, when it
     fits."""
     if not WIDGET_NAME_RE.match(param.name):
