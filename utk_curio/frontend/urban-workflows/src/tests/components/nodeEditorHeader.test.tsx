@@ -52,14 +52,7 @@ jest.mock("../../components/editing/WidgetsEditor", () => ({
 
 import NodeEditor from "../../components/editing/NodeEditor";
 import { clearVegaLiteTemplate, registerVegaLiteTemplate } from "../_support/vegaLiteTemplate";
-import {
-  chipsOf,
-  draggedText,
-  headerRow,
-  openCategory,
-  openEveryCategory,
-  type StripCategory,
-} from "../_support/stripCategories";
+import { chipsOf, draggedText, eachCategory, headerRow, openCategory } from "../_support/stripCategories";
 
 const SCOUT_BARS = "curio.scout/bars@1";
 const WIDGETS = [
@@ -113,15 +106,13 @@ function chartEditor(nodeId: string, nodeType: string) {
 /** The header as a user meets it: its row, then each category's tags with what each drags. */
 function headerOf(container: HTMLElement) {
   const row = headerRow(container).map((entry) => `${entry.label}${entry.open ? " open" : ""}`);
-  openEveryCategory(container);
   const chips: Record<string, string[]> = {};
-  for (const entry of headerRow(container)) {
-    const group = container.querySelector(`[data-widget-strip] [data-strip-chips="${entry.category as StripCategory}"]`)!;
-    chips[entry.category as string] = Array.from(group.querySelectorAll("[draggable]")).map((tag) => {
+  eachCategory(container, (category, group) => {
+    chips[category] = Array.from(group.querySelectorAll("[draggable]")).map((tag) => {
       const color = tag.getAttribute("data-color");
       return `${tag.textContent} -> ${draggedText(tag)}${color ? ` ${color}` : ""}`;
     });
-  }
+  });
   return { row, chips };
 }
 

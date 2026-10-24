@@ -2,11 +2,12 @@
  * Which categories of a node's header are open, and which lists under its
  * Inputs (#662). The header above a node's code or spec lists the chips the
  * node can use in one row of categories, all closed until one is clicked, and
- * Inputs holds a line per input, each opening to its list. A category or a
- * list opened stays open for its node while the dataflow is open, so a tab
- * switch, the notebook view or the node's editor mounting again keeps it;
- * opening another dataflow closes them all (`closeEveryCategory`, called by
- * ProjectLoader).
+ * one open at a time: opening a category closes the one open. Inputs holds a
+ * line per input, each opening to its list, and several lists can be open. A
+ * category or a list opened stays open for its node while the dataflow is
+ * open, so a tab switch, the notebook view or the node's editor mounting again
+ * keeps it; opening another dataflow closes them all (`closeEveryCategory`,
+ * called by ProjectLoader).
  *
  * Kept outside React, by node id, since a node's editor mounts again on its
  * own. A header with no node id keeps its categories and lists as long as it
@@ -46,14 +47,19 @@ function toggled<T>(open: ReadonlySet<T>, item: T): ReadonlySet<T> {
   return next;
 }
 
+/** *item* alone open, or nothing when *item* was: one category of a header at a time. */
+function alone<T>(open: ReadonlySet<T>, item: T): ReadonlySet<T> {
+  return open.has(item) ? new Set() : new Set([item]);
+}
+
 /** The categories open in node *nodeId*'s header. */
 export function openCategoriesOf(nodeId: string): ReadonlySet<StripCategory> {
   return opened.get(nodeId) ?? NONE;
 }
 
-/** Opens *category* in node *nodeId*'s header, or closes it when it is open. */
+/** Opens *category* in node *nodeId*'s header, closing the one open there, or closes it when it is open. */
 export function toggleCategory(nodeId: string, category: StripCategory): void {
-  opened = new Map(opened).set(nodeId, toggled(openCategoriesOf(nodeId), category));
+  opened = new Map(opened).set(nodeId, alone(openCategoriesOf(nodeId), category));
   notify();
 }
 
@@ -77,12 +83,14 @@ export function closeEveryCategory(): void {
 }
 
 /** What is open in node *nodeId*'s header, read by *read*, and a toggle for
- * one of them; *none* when nothing is. With no node id, kept while mounted. */
+ * one of them; *none* when nothing is. With no node id, kept while mounted,
+ * where *change* says what a toggle leaves open, as *toggle* does by node. */
 function useOpenIn<T>(
   nodeId: string | null | undefined,
   read: (nodeId: string) => ReadonlySet<T>,
   toggle: (nodeId: string, item: T) => void,
   none: ReadonlySet<T>,
+  change: (open: ReadonlySet<T>, item: T) => ReadonlySet<T>,
 ): [ReadonlySet<T>, (item: T) => void] {
   const [own, setOwn] = useState<ReadonlySet<T>>(none);
   const kept = useSyncExternalStore(
@@ -93,21 +101,21 @@ function useOpenIn<T>(
   const flip = useCallback(
     (item: T) => {
       if (nodeId) toggle(nodeId, item);
-      else setOwn((open) => toggled(open, item));
+      else setOwn((open) => change(open, item));
     },
     [nodeId],
   );
   return [nodeId ? kept : own, flip];
 }
 
-/** The categories open in node *nodeId*'s header, and a toggle for one. */
+/** The category open in node *nodeId*'s header, if any, and a toggle for one. */
 export function useOpenCategories(
   nodeId?: string | null,
 ): [ReadonlySet<StripCategory>, (category: StripCategory) => void] {
-  return useOpenIn(nodeId, openCategoriesOf, toggleCategory, NONE);
+  return useOpenIn(nodeId, openCategoriesOf, toggleCategory, NONE, alone);
 }
 
 /** The lists open under Inputs in node *nodeId*'s header, and a toggle for one. */
 export function useOpenLists(nodeId?: string | null): [ReadonlySet<string>, (list: string) => void] {
-  return useOpenIn(nodeId, openListsOf, toggleList, NO_LISTS);
+  return useOpenIn(nodeId, openListsOf, toggleList, NO_LISTS, toggled);
 }

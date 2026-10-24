@@ -48,9 +48,18 @@ export function openCategory(container: ParentNode, category: StripCategory): HT
   return chips;
 }
 
-/** Opens every category the header has. */
-export function openEveryCategory(container: ParentNode): void {
-  for (const entry of headerRow(container)) openCategory(container, entry.category as StripCategory);
+/**
+ * Opens each category the header has, in its row's order, and hands *visit*
+ * its chips while it is the one open: opening a category closes the one open.
+ */
+export function eachCategory(
+  container: ParentNode,
+  visit: (category: StripCategory, chips: HTMLElement) => void,
+): void {
+  for (const entry of headerRow(container)) {
+    const category = entry.category as StripCategory;
+    visit(category, openCategory(container, category));
+  }
 }
 
 /** What dragging *tag* carries as text: the chip it writes. */
