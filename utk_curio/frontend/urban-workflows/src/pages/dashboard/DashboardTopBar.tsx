@@ -54,7 +54,7 @@ export function useDashboardLeaveGuard() {
  * links, and, for the owner, the controls that move tiles around. None of
  * the editor's menus are here. There is no palette to drop nodes from, no Run
  * button (a change to a tile's control runs by itself, as a viewer's run that
- * saves nothing, #1117), no catalogs, and no save status, because a dashboard
+ * never changes the dataflow, #1117), no catalogs, and no save status, because a dashboard
  * is not edited except by explicitly saving a layout.
  *
  * *onArranged* is told when Arrange by scenario has moved the tiles, so the

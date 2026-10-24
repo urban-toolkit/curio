@@ -441,7 +441,7 @@ const FlowProvider = ({
         outcomes: stepOutcomes,
     });
     // #1117: on a dashboard, a change to a control a pinned tile shows reruns
-    // the dataflow on the server as a viewer's run, which saves nothing.
+    // the dataflow on the server as a viewer's run, which never changes it.
     const dashboardRun = useDashboardRun({
         enabled: dashboardOn, reactFlow, outcomes: stepOutcomes, outputsRef, showToast, playNodes,
     });

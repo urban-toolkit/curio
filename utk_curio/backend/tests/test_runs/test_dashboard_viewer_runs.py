@@ -1,5 +1,5 @@
 """A dashboard viewer changes a pinned control and the dataflow runs again on
-the server (komar41's #1117), with nothing saved to the dataflow or its
+the server (komar41's #1117), which never changes the dataflow or its
 owner's Data Catalog.
 
 The dashboard here pins a Parameter node, Period, and a chart fed by a Python
@@ -457,7 +457,7 @@ class TestLimits:
 
         _, token = user_and_token
         pid = _create(client, token)
-        # Nothing saved, so each open starts a run.
+        # No saved output, so each open starts a run.
         saved.clear()
         monkeypatch.setattr(viewer, "_LIMITER", AddressLimiter(1, 100))
 

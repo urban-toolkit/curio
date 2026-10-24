@@ -64,7 +64,7 @@ function ParameterBody({ data }: { data: any }) {
 
   const write = (next: WidgetDef[]) => {
     updateDataNode(data.nodeId, { ...data, widgets: next });
-    // A value tried on a dashboard is never saved (#1117).
+    // A value tried on a dashboard never changes the dataflow (#1117).
     if (!dashboardOn) markDirty?.();
   };
 

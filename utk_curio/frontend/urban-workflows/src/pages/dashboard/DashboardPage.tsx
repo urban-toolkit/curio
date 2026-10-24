@@ -57,7 +57,7 @@ const tilesTakeThePointer = () => undefined;
  * Tiles draw from the outputs a run already saved, restored by
  * ``ProjectLoader``; a chart compiles its spec against them (``UniversalNode``'s
  * auto-render effect). A change to a control a tile shows reruns the dataflow
- * on the server as a viewer's run, which saves nothing, and a tile with no
+ * on the server as a viewer's run, which never changes the dataflow, and a tile with no
  * saved output runs the nodes before it once the page opens
  * (``useDashboardRun``, #1117).
  */

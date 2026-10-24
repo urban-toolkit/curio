@@ -92,7 +92,7 @@ export function useStepOutcomes({
             applyNewOutput({ nodeId, output: artifact });
             return;
         }
-        // As a load restores an output: passed downstream, nothing saved.
+        // As a load restores an output: passed downstream, the dataflow unchanged.
         const restored = { nodeId, output: artifact };
         setOutputs((prev) => [...prev.filter((o) => o.nodeId !== nodeId), restored]);
         hydrateRestoredOutputs([restored]);

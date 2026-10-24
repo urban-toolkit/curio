@@ -1,6 +1,6 @@
 // A dashboard viewer's runs (#1117). A change to a control a pinned tile shows
 // reruns the dataflow on the server once the changes settle (useAutoRun, with
-// FlowProvider's start), with nothing saved; on open, a tile with no saved
+// FlowProvider's start), which never changes the dataflow; on open, a tile with no saved
 // output runs the nodes before it with the saved values. There is no Run,
 // Reset or auto-run button.
 //
@@ -111,7 +111,7 @@ export function useDashboardRun({ enabled, reactFlow, outcomes, outputsRef, show
         if (run.applied.has(nodeId)) return;
         run.applied.add(nodeId);
         if (change.kind === "result") {
-            // As a load restores an output: passed downstream, nothing saved.
+            // As a load restores an output: passed downstream, the dataflow unchanged.
             outcomes.showResult(nodeId, change, { live: false });
             changedRef.current.add(nodeId);
         } else if (change.kind === "skipped") {

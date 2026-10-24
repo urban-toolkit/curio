@@ -145,7 +145,7 @@ function NodeEditor({
         data.widgets = next;
         setWidgets(next);
         markNodeStale?.(data.nodeId);
-        // A value tried on a dashboard is never saved (#1117).
+        // A value tried on a dashboard never changes the dataflow (#1117).
         if (!dashboardOn) markDirty?.();
     };
     // An agent's applied change gives widgets new values as the Widgets tab

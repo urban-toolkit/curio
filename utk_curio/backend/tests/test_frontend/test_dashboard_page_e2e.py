@@ -18,7 +18,7 @@ What replaced it, and what each test below pins:
 * the page's layout is the owner's alone, the page cannot delete anything, and
   its one write (Save layout) leaves the dataflow's recorded outputs alone;
 * a visitor changes a pinned control and the tiles show a run of that value on
-  the server, which saves nothing; the next visitor who picks the same value
+  the server, which never changes the dataflow; the next visitor who picks the same value
   gets the output kept from that run, and nothing runs again (#1117);
 * a step only a browser runs (a GPU step) is run by each visitor's page, and
   what a page sends, and what is made from it, is kept for that page alone

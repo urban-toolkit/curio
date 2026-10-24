@@ -126,7 +126,7 @@ describe("a change", () => {
             output: { path: "art-1", dataType: "outputs" }, artifactIds: ["art-1", "art-1-part"],
         });
 
-        // Restored as a load restores an output: passed on, nothing saved.
+        // Restored as a load restores an output: passed on, the dataflow unchanged.
         expect(outcomes.showResult).toHaveBeenCalledWith(
             "grid",
             expect.objectContaining({ kind: "result", reply: expect.objectContaining({ output: { path: "art-1", dataType: "outputs" } }) }),

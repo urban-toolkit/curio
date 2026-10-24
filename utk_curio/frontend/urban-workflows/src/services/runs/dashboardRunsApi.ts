@@ -1,7 +1,7 @@
 /**
  * A dashboard viewer's runs (#1117; backend `runs/viewer_routes.py`): a
  * viewer changes a pinned control and the dataflow runs again on the server,
- * with nothing saved to it. None of these routes needs a sign-in.
+ * which never changes it. None of these routes needs a sign-in.
  */
 import dashboardRuns from "../../contracts/dashboardRuns.json";
 import { apiFetch } from "../../utils/authApi";

@@ -1,6 +1,6 @@
 """A dashboard viewer's runs: a visitor changes a pinned control and the
-dataflow runs again on the server, with nothing saved to the dataflow or to
-its owner's Data Catalog.
+dataflow runs again on the server, which never changes the dataflow or its
+owner's Data Catalog.
 
 Anyone who can open the dashboard starts one: the page needs no sign-in. What
 a viewer may change is what the pins put on the page (:func:`dashboard_controls`):

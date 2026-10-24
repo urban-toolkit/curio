@@ -4,7 +4,7 @@
  * touched nodes through that same start. Where it does not (a hosted guest),
  * auto-run is not offered and runs nothing. On a dashboard the toggle is not
  * offered either, and every change reruns the dashboard as a viewer's run,
- * which saves nothing (#1117). A brush that rewrites
+ * which never changes the dataflow (#1117). A brush that rewrites
  * a selection tag marks its node stale, as before, and runs nothing: brushing
  * never re-runs a Python node. Built like hostedGuestRuns.test.tsx.
  */
@@ -338,7 +338,7 @@ describe('a dashboard', () => {
     await settle();
 
     // Neither the canvas's run on the server nor a run in the browser: the
-    // dashboard's own, which saves nothing.
+    // dashboard's own, which never changes the dataflow.
     expect(mockStartRun).not.toHaveBeenCalled();
     expect(mockDashboardStart).toHaveBeenCalledTimes(1);
     expect(mockDashboardStart).toHaveBeenCalledWith('dash-1', {});
