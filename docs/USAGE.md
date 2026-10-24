@@ -406,8 +406,8 @@ Code and specs sit in a gray box, and a code node's output is below its code.
 Above the code or spec, one row lists every chip the node can use, by category:
 **Inputs**, **Scenarios**, **Widgets**, **Selections** and **Shared**, each with
 its count, and each only when it has chips. The categories start closed. Click
-one to list its chips under the row, and click it again to close it. Several
-can be open, and a category stays open on that node while the dataflow is
+one to list its chips under the row, which closes the one open, and click it
+again to close it. A category stays open on that node while the dataflow is
 open. On the canvas the header takes at most half of the node's editor, and the
 open chips scroll inside it. Drag a chip's tag into the code or spec, or click
 it to insert the chip at the cursor. Hover a tag, or its chip in the code or

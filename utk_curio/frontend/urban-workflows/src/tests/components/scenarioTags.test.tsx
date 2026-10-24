@@ -24,7 +24,7 @@ import { fireEvent, render, screen, within } from "@testing-library/react";
 import { ReferenceStrip } from "../../components/editing/widgets/WidgetTag";
 import { INPUT_REF_MIME, SCENARIO_REF_MIME } from "../../components/editing/widgets/monacoCodeReferences";
 import { resolveReferences, type InputScope } from "../../utils/references/codeReferences";
-import { chipsOf, draggedText, headerRow, openCategory, openEveryCategory } from "../_support/stripCategories";
+import { chipsOf, draggedText, eachCategory, headerRow, openCategory } from "../_support/stripCategories";
 
 function dragData() {
   const store = new Map<string, string>();
@@ -202,9 +202,12 @@ describe("a node fed from no box", () => {
     expect(headerRow(chart.container).map((entry) => entry.label)).toEqual(["Inputs 3"]);
     const map = render(<ReferenceStrip widgets={[]} inputs={wired} language="json" onInsert={jest.fn()} />);
     expect(headerRow(map.container).map((entry) => entry.label)).toEqual(["Inputs 2"]);
-    // With every category open, no scenario chip shows anywhere.
-    openEveryCategory(chart.container);
-    openEveryCategory(map.container);
+    // Each category opened in turn, no scenario chip shows in any.
+    for (const view of [chart, map]) {
+      eachCategory(view.container, (_category, chips) => {
+        expect(chips.querySelector("[data-scenario-swatches], [data-scenario-input], [data-scenario-chip]")).toBeNull();
+      });
+    }
     expect(chipsOf(chart.container, "inputs")).not.toBeNull();
     expect(chipsOf(map.container, "inputs")).not.toBeNull();
     expect(document.querySelector("[data-scenario-swatches], [data-scenario-input], [data-scenario-chip]")).toBeNull();

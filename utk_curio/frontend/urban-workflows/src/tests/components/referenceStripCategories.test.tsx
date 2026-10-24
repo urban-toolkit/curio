@@ -2,9 +2,10 @@
  * The header above a node's code or spec (#662): one row of the categories of
  * chips the node can use, Inputs, Scenarios, Widgets, Selections and Shared,
  * each with its count and only when it has chips, all closed. A click opens a
- * category's chips under the row, and several can be open at once. A category
- * stays open for its node while the dataflow is open, so the node's editor
- * mounting again keeps it; another node's header starts closed.
+ * category's chips under the row and closes the one open, so one category shows
+ * its chips at a time. A category stays open for its node while the dataflow is
+ * open, so the node's editor mounting again keeps it; another node's header
+ * starts closed.
  *
  * The header reads the editor's language and grammar and the node's inputs,
  * never its code: code shows no Scenarios and no `inputs` tag.
@@ -94,20 +95,46 @@ describe("the header's row", () => {
     expect(view.container.querySelector("[data-widget-tag]")).toBeNull();
   });
 
-  test("several categories open at once, their chips in the row's order", () => {
+  test("opening a category closes the one open, either way round, and only its chips show", () => {
     const view = render(chart(newNode()));
-    openCategory(view.container, "shared");
+    const open = () => headerRow(view.container).filter((entry) => entry.open).map((entry) => entry.category);
+    const shown = () =>
+      Array.from(view.container.querySelectorAll("[data-strip-chips]")).map((group) => group.getAttribute("data-strip-chips"));
+
     openCategory(view.container, "inputs");
-    openCategory(view.container, "selections");
-    const open = Array.from(view.container.querySelectorAll("[data-strip-chips]")).map((group) =>
-      group.getAttribute("data-strip-chips"),
-    );
-    expect(open).toEqual(["inputs", "selections", "shared"]);
-    expect(headerRow(view.container).map((entry) => entry.open)).toEqual([true, false, false, true, true]);
-    expect(chipsOf(view.container, "shared")!.querySelector('[data-shared-tag="season"]')!.textContent).toBe("@season");
-    expect(chipsOf(view.container, "selections")!.querySelector('[data-selection-tag="picked"]')!.textContent).toBe(
+    openCategory(view.container, "widgets");
+    expect(open()).toEqual(["widgets"]);
+    expect(shown()).toEqual(["widgets"]);
+    expect(view.container.querySelector("[data-input-tag]")).toBeNull();
+    openCategory(view.container, "inputs");
+    expect(open()).toEqual(["inputs"]);
+    expect(shown()).toEqual(["inputs"]);
+    expect(view.container.querySelector("[data-widget-tag]")).toBeNull();
+
+    // Every other category the same way, each with its own chips.
+    expect(openCategory(view.container, "shared").querySelector('[data-shared-tag="season"]')!.textContent).toBe("@season");
+    expect(open()).toEqual(["shared"]);
+    expect(openCategory(view.container, "selections").querySelector('[data-selection-tag="picked"]')!.textContent).toBe(
       "selection picked",
     );
+    expect(open()).toEqual(["selections"]);
+    expect(openCategory(view.container, "scenarios").querySelector("[data-scenario-swatches]")).not.toBeNull();
+    expect(open()).toEqual(["scenarios"]);
+    expect(shown()).toEqual(["scenarios"]);
+  });
+
+  test("a header with no node id, which keeps its own categories, opens one at a time too", () => {
+    const view = render(
+      <ReferenceStrip widgets={widgets} inputs={inputs} shared={shared} language="python" onInsert={jest.fn()} />,
+    );
+    const open = () => headerRow(view.container).filter((entry) => entry.open).map((entry) => entry.category);
+    openCategory(view.container, "inputs");
+    openCategory(view.container, "widgets");
+    expect(open()).toEqual(["widgets"]);
+    expect(view.container.querySelector("[data-input-tag]")).toBeNull();
+    openCategory(view.container, "inputs");
+    expect(open()).toEqual(["inputs"]);
+    expect(view.container.querySelector("[data-widget-tag]")).toBeNull();
   });
 
   test("a category shows only when it has chips", () => {
@@ -128,15 +155,16 @@ describe("a category stays open for its node", () => {
   test("when the node's editor mounts again, as after a tab switch or the notebook view", () => {
     const node = newNode();
     const first = render(chart(node));
-    openCategory(first.container, "scenarios");
     openCategory(first.container, "widgets");
+    openCategory(first.container, "scenarios");
     first.unmount();
 
     const again = render(chart(node));
     expect(headerRow(again.container).filter((entry) => entry.open).map((entry) => entry.category)).toEqual([
-      "scenarios", "widgets",
+      "scenarios",
     ]);
     expect(chipsOf(again.container, "scenarios")!.querySelector("[data-scenario-swatches]")).not.toBeNull();
+    expect(chipsOf(again.container, "widgets")).toBeNull();
   });
 
   test("and another node's header starts closed", () => {
