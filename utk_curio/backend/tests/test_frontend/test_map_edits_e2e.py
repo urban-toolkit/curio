@@ -1965,10 +1965,12 @@ def test_a_chicago_building_redrawn_as_a_bow_tie_in_the_nodes_code_is_skipped_an
         wrong.append(str(error))
     wrong += _drawn_wrong(page, map_id, building, log[start:], "before Commit edits")
 
-    # 2. Commit edits: the run skips the redraw and says so.
+    # 2. Commit edits, at the foot of the node's list, on its Output tab (the
+    # code was typed on its Code tab): the run skips the redraw and says so.
+    _open_tab(page, edit_id, "output")
     try:
         _commit(page, edit_id, [edit_id], [map_id], below=1)
-    except AssertionError as error:
+    except (AssertionError, PlaywrightTimeoutError) as error:
         wrong.append(f"Commit edits did not run the node and the map: {error}")
     said = page.evaluate(_OUTPUT_TEXT_JS, edit_id) or ""
     line = (
