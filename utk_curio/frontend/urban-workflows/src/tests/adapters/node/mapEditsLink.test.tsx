@@ -16,17 +16,19 @@
  * building being reshaped is drawn by them instead of its own layer. A
  * building of several parts, each with an osm_id of its own, is reshaped,
  * moved and added to part by part, each edit naming the part it changes; one
- * whose parts no column tells apart keeps its shape. The form of a building
- * of several parts is for all of them: a property they differ in is empty
- * and lists their values, osm_id cannot be changed, and a value typed goes
- * to every part; its parts menu chooses one part instead, whose values the
- * form shows and whose own value Apply sets. A building whose parts no column
- * tells apart gets the form for all of them only.
+ * whose parts no column tells apart keeps its shape.
  *
  * Each node is the behavior the canvas registers for its type, with the
  * node's own state (hook/useNodeState) for the Map Edits node; the map draws
  * with the stand-in grammar of _support/autkNodeMocks, whose pick is a pick
  * on the map, as autk-grammar reports one.
+ *
+ * The form of a building of several parts is for all of them: a property
+ * they differ in is empty and lists their values, osm_id cannot be changed,
+ * and a value typed goes to every part; its parts menu chooses one part
+ * instead, whose values the form shows and whose own value Apply sets. A
+ * building whose parts no column tells apart gets the form for all of them
+ * only.
  */
 import React from "react";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
@@ -1098,50 +1100,6 @@ test("Add a part on a building of two parts joins the part the building was pick
   }
 });
 
-test("a building whose parts no column tells apart keeps its shape: Move points, Move whole area and Add a part are off for it, a tip says why, and nothing is written", async () => {
-  const putBack = layOutCanvases();
-  try {
-    nodeInput.current = PARTED;
-    drawnMaps.make = projectingMap;
-    const canvas = mountCanvas();
-    await canvas.playMap();
-    await openAction("edit");
-    const overlay = () => screen.getByTestId("map-edit-overlay");
-
-    // Building 119, of one part: Move points shows its corners.
-    clickMap(MIDDLE_ONE_PART);
-    fireEvent.click(await screen.findByTestId("interaction-reshape"));
-    await waitFor(() => expect(overlay()).toHaveAttribute("data-edit-mode", "reshape"));
-    expect(JSON.parse(overlay().getAttribute("data-corners") ?? "[]")).toHaveLength(4);
-
-    // A click on building 136, whose two parts hold its building_id and no
-    // osm_id of their own: it is picked, its shape tools are off, a tip says
-    // why, and the map shows none of its corners.
-    clickMap(MIDDLE_FIRST_PART);
-    const tip = await screen.findByTestId("interaction-parts-untold");
-    expect(tip).toHaveTextContent("2 parts");
-    expect(tip).toHaveTextContent("osm_id");
-    const tools = ["interaction-reshape", "interaction-move", "interaction-add-part"];
-    for (const tool of tools) expect(screen.getByTestId(tool)).toBeDisabled();
-    await waitFor(() => expect(overlay()).toHaveAttribute("data-edit-mode", "select"));
-    expect(overlay()).toHaveAttribute("data-corners", "[]");
-    await waitFor(() => expect(loadedLayers(lastMap())).toEqual([]));
-
-    // Clicks on the tools, and a drag from one of its corners, write nothing.
-    for (const tool of tools) fireEvent.click(screen.getByTestId(tool));
-    const from = onScreen([1.5, 1]);
-    const to: [number, number] = [from[0] + 20, from[1] - 15];
-    pointerOnMap("pointerdown", from, true);
-    pointerOnMap("pointermove", to, true);
-    pointerOnMap("pointerup", to, false);
-    expect(canvas.settings()?.edits ?? []).toEqual([]);
-    expect(overlay()).toHaveAttribute("data-edit-mode", "select");
-    expect(screen.getByTestId("interaction-parts-untold")).toBeInTheDocument();
-  } finally {
-    putBack();
-  }
-});
-
 /**
  * Fails with *message* unless *ok*: a plain sentence of what is wrong, where
  * an expect would show only the values it compared.
@@ -1361,6 +1319,50 @@ test("a building of two parts that no column tells apart gets one form for both:
   fireEvent.click(screen.getByTestId("interaction-form-submit"));
   expect(canvas.settings()?.edits).toEqual([{ op: "set", ids: [136], column: "height", value: 25 }]);
   await waitFor(() => expect(drawnRowsOf(136).map((row) => row.height)).toEqual([25, 25]));
+});
+
+test("a building whose parts no column tells apart keeps its shape: Move points, Move whole area and Add a part are off for it, a tip says why, and nothing is written", async () => {
+  const putBack = layOutCanvases();
+  try {
+    nodeInput.current = PARTED;
+    drawnMaps.make = projectingMap;
+    const canvas = mountCanvas();
+    await canvas.playMap();
+    await openAction("edit");
+    const overlay = () => screen.getByTestId("map-edit-overlay");
+
+    // Building 119, of one part: Move points shows its corners.
+    clickMap(MIDDLE_ONE_PART);
+    fireEvent.click(await screen.findByTestId("interaction-reshape"));
+    await waitFor(() => expect(overlay()).toHaveAttribute("data-edit-mode", "reshape"));
+    expect(JSON.parse(overlay().getAttribute("data-corners") ?? "[]")).toHaveLength(4);
+
+    // A click on building 136, whose two parts hold its building_id and no
+    // osm_id of their own: it is picked, its shape tools are off, a tip says
+    // why, and the map shows none of its corners.
+    clickMap(MIDDLE_FIRST_PART);
+    const tip = await screen.findByTestId("interaction-parts-untold");
+    expect(tip).toHaveTextContent("2 parts");
+    expect(tip).toHaveTextContent("osm_id");
+    const tools = ["interaction-reshape", "interaction-move", "interaction-add-part"];
+    for (const tool of tools) expect(screen.getByTestId(tool)).toBeDisabled();
+    await waitFor(() => expect(overlay()).toHaveAttribute("data-edit-mode", "select"));
+    expect(overlay()).toHaveAttribute("data-corners", "[]");
+    await waitFor(() => expect(loadedLayers(lastMap())).toEqual([]));
+
+    // Clicks on the tools, and a drag from one of its corners, write nothing.
+    for (const tool of tools) fireEvent.click(screen.getByTestId(tool));
+    const from = onScreen([1.5, 1]);
+    const to: [number, number] = [from[0] + 20, from[1] - 15];
+    pointerOnMap("pointerdown", from, true);
+    pointerOnMap("pointermove", to, true);
+    pointerOnMap("pointerup", to, false);
+    expect(canvas.settings()?.edits ?? []).toEqual([]);
+    expect(overlay()).toHaveAttribute("data-edit-mode", "select");
+    expect(screen.getByTestId("interaction-parts-untold")).toBeInTheDocument();
+  } finally {
+    putBack();
+  }
 });
 
 // autk-db can keep a layer's rows in an order of its own; the map names them

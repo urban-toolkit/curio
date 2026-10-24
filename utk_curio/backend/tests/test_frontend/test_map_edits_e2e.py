@@ -36,15 +36,16 @@ added to the trees, a road reshaped and a property added to the parks, each on
 the map; Commit edits runs the node, and its output holds all three. And one
 of its buildings of several parts, each part with its own ``osm_id``, reshaped
 part by part: Move points shows every part's corners, a dragged corner changes
-its own part alone, and the building's other parts keep their shapes. And
-building 20449794, of seven such parts, whose form is for all of them: one
-part chosen in its parts menu takes a height, which Commit edits hands on for
-that part alone.
+its own part alone, and the building's other parts keep their shapes.
 
 Interaction frames take both nodes of a gesture before and after it, and every
 Autark map gets a close-up. They run Autark maps, which need WebGPU: without an
 adapter they skip, unless ``CURIO_REQUIRE_HARDWARE_WEBGPU=1`` (CI's GPU job),
 where they fail.
+
+Last, building 20449794 of the Chicago Loop layers, of seven parts, each with
+its own ``osm_id``: its form is for all its parts, and one part chosen in its
+parts menu takes a height, which Commit edits hands on for that part alone.
 
 Run::
 
@@ -212,9 +213,6 @@ RUN_MS = 300000
 #: and the column that tells a building's parts apart: each part's own OSM id.
 BUILDINGS = "table_osm_buildings"
 PART_KEY = "osm_id"
-#: A building of the Chicago Loop layers in seven parts, each with an
-#: ``osm_id`` of its own, near the middle of the map.
-PARTED_BUILDING = 20449794
 #: How much room, in page pixels, the map is zoomed in to give a corner to be
 #: dragged, and the least a corner needs for a press to take it alone.
 CORNER_ROOM = 16
@@ -1677,6 +1675,430 @@ def test_a_chicago_building_of_several_parts_is_reshaped_one_part_at_a_time(
     save_node_closeup(page, CHICAGO_STEM, edit_id, test_name=f"{test_name}_closeup_{edit_id}", sweep_toasts=True)
 
 
+# The value of *key* and of *part* of each row the map draws of the table
+# *table*, in the order it draws them (window.__curio_mapFeatureAt).
+_DRAWN_PARTS_JS = """async ({ id, table, key, part }) => {
+    const state = window.__curio_mapState ? await window.__curio_mapState(id) : null;
+    const layer = state && state[table];
+    if (!layer) return null;
+    const out = [];
+    for (let position = 0; position < layer.drawn; position++) {
+        const feature = await window.__curio_mapFeatureAt(id, table, position);
+        out.push(feature ? [feature[key] ?? null, feature[part] ?? null] : [null, null]);
+    }
+    return out;
+}"""
+
+# A selection sent as the node *id*'s own, through its node's
+# interactionsCallback, which the interaction edges carry: a map's pick.
+_SEND_JS = """([id, selection]) => {
+    const node = window.__curio_reactFlow.getNodes().find((n) => n.id === id);
+    node.data.interactionsCallback(selection, id);
+}"""
+
+
+def _map_pick(building) -> dict:
+    """The selection a pick of *building* on the Chicago map is sent as."""
+    return {"autk_selection": {
+        "type": "POINT", "data": [{KEY: building}], "priority": 1, "source": MAP_TYPE, "layerRef": BUILDINGS,
+    }}
+
+
+def _told_apart(rows: list[dict]) -> bool:
+    """Whether a building's rows are two parts or more, each with a shape and
+    an ``osm_id`` of its own."""
+    ids = [(row.get("properties") or {}).get(PART_KEY) for row in rows]
+    return len(rows) >= 2 and all(row.get("geometry") for row in rows) and None not in ids and len(set(ids)) == len(ids)
+
+
+def _rings_of(geometry: dict | None) -> list[list[tuple[float, float]]]:
+    """A shape's corners, ring by ring, as Move points shows them: an area's
+    rings without the corner that closes each."""
+    kind, coordinates = (geometry or {}).get("type"), (geometry or {}).get("coordinates") or []
+    rings = {
+        "Point": [[coordinates]], "MultiPoint": [[point] for point in coordinates],
+        "LineString": [coordinates], "MultiLineString": coordinates,
+        "Polygon": coordinates, "MultiPolygon": [ring for polygon in coordinates for ring in polygon],
+    }.get(kind, [])
+    out = []
+    for ring in rings:
+        points = [(float(point[0]), float(point[1])) for point in ring]
+        if kind in ("Polygon", "MultiPolygon") and len(points) > 1 and points[0] == points[-1]:
+            points = points[:-1]
+        out.append(points)
+    return out
+
+
+def _corner_count(geometry: dict | None) -> int:
+    """How many corners Move points shows for a shape."""
+    return sum(len(ring) for ring in _rings_of(geometry))
+
+
+def _drag_room(rows: list[dict]) -> float:
+    """How much room, in its layer's units, a building gives a corner to drag:
+    the most a corner of its first part has from every other corner of the
+    building, and the most a corner of its other parts has, whichever is less."""
+    corners = [(part, point) for part, row in enumerate(rows) for ring in _rings_of(row.get("geometry")) for point in ring]
+
+    def room(i: int) -> float:
+        x, y = corners[i][1]
+        return min((math.hypot(x - ox, y - oy) for j, (_, (ox, oy)) in enumerate(corners) if j != i), default=math.inf)
+
+    first = max((room(i) for i, (part, _) in enumerate(corners) if part == 0), default=0.0)
+    others = max((room(i) for i, (part, _) in enumerate(corners) if part > 0), default=0.0)
+    return min(first, others)
+
+
+def _to_drag(corners: list[dict]) -> list[dict]:
+    """The corners a test drags: those of the parts after the first, when the
+    overlay names their parts, else every one."""
+    parts = {corner["part"] for corner in corners}
+    return [corner for corner in corners if len(parts) < 2 or corner["part"] != 0]
+
+
+def _best_room(corners: list[dict]) -> float:
+    """The most room, in page pixels, a corner to drag has from every other corner."""
+    return max((_room(corner, corners) for corner in _to_drag(corners)), default=0.0)
+
+
+def _picked_with_corners(page, map_id: str, building, what: str) -> list[dict]:
+    """Pick *building* on the map *map_id*, as the map's own pick is sent, and
+    wait until Move points shows its corners. The pick is sent again when a
+    change of the node's code started its pick anew meanwhile."""
+    for _ in range(3):
+        page.evaluate(_SEND_JS, [map_id, _map_pick(building)])
+        _wait_for_lit(page, map_id, {building}, what, table=BUILDINGS)
+        deadline = time.time() + 5
+        while time.time() < deadline:
+            corners = _corners(page, map_id)
+            if corners:
+                return corners
+            page.wait_for_timeout(250)
+    raise AssertionError(f"after {what}, Move points shows no corner of building {building} on the map {map_id}")
+
+
+def _crosses(a, b, c, d) -> bool:
+    """Whether the segments *a* to *b* and *c* to *d* cross or touch."""
+    def turn(p, q, r):
+        return (q[0] - p[0]) * (r[1] - p[1]) - (q[1] - p[1]) * (r[0] - p[0])
+
+    def on(p, q, r):
+        return min(p[0], q[0]) - 1e-9 <= r[0] <= max(p[0], q[0]) + 1e-9 and min(p[1], q[1]) - 1e-9 <= r[1] <= max(p[1], q[1]) + 1e-9
+
+    t1, t2, t3, t4 = turn(c, d, a), turn(c, d, b), turn(a, b, c), turn(a, b, d)
+    if ((t1 > 0) != (t2 > 0)) and ((t3 > 0) != (t4 > 0)) and t1 and t2 and t3 and t4:
+        return True
+    return any(t == 0 and on(p, q, r) for t, p, q, r in ((t1, c, d, a), (t2, c, d, b), (t3, a, b, c), (t4, a, b, d)))
+
+
+def _drop_keeping_shape(corner: dict, corners: list[dict]) -> tuple[float, float] | None:
+    """Where to drag *corner*, in page coordinates, so that no side of its part
+    crosses another (autk-db checks each part with ``ST_IsValid``): a little
+    out from the middle of its two neighbours in its ring, else in toward it,
+    at least 5 pixels from where it is; None when neither keeps the sides
+    apart."""
+    rings: dict = {}
+    indexes: dict = {}
+    for c in sorted(corners, key=lambda c: c["index"]):
+        if c["part"] == corner["part"]:
+            rings.setdefault(c["ring"], []).append((c["x"], c["y"]))
+            indexes.setdefault(c["ring"], []).append(c["index"])
+    ring = rings.get(corner["ring"], [])
+    if len(ring) < 3:
+        return None
+    at = indexes[corner["ring"]].index(corner["index"])
+    before, after = ring[at - 1], ring[(at + 1) % len(ring)]
+    middle = ((before[0] + after[0]) / 2, (before[1] + after[1]) / 2)
+    away = (corner["x"] - middle[0], corner["y"] - middle[1])
+    # Every side of the part but the two the corner ends, which move with it.
+    sides = [
+        (points[i], points[(i + 1) % len(points)], key, i)
+        for key, points in rings.items() for i in range(len(points))
+        if not (key == corner["ring"] and i in (at, (at - 1) % len(ring)))
+    ]
+    for share in (0.6, -0.5):
+        drop = (corner["x"] + share * away[0], corner["y"] + share * away[1])
+        if math.hypot(drop[0] - corner["x"], drop[1] - corner["y"]) < 5:
+            continue
+        moved = [(before, drop), (drop, after)]
+        if not any(
+            _crosses(a, b, p, q) for a, b in moved for p, q, key, i in sides
+            # A moved side meets its neighbouring sides at their shared corner.
+            if not (key == corner["ring"] and (i == (at - 2) % len(ring) and a == before or i == (at + 1) % len(ring) and b == after))
+        ):
+            return drop
+    return None
+
+
+def _within(corners: list[dict], box: dict, margin: float) -> bool:
+    """Whether every one of *corners* lies *margin* pixels inside *box*."""
+    return all(
+        box["x"] + margin < c["x"] < box["x"] + box["width"] - margin
+        and box["y"] + margin < c["y"] < box["y"] + box["height"] - margin
+        for c in corners
+    )
+
+
+def _wait_for_corners(page, map_id: str, ready, what: str) -> list[dict]:
+    """The corners Move points shows on the map *map_id*, once *ready* holds for them."""
+    corners: list[dict] = []
+    deadline = time.time() + 15
+    while time.time() < deadline:
+        corners = _corners(page, map_id)
+        if ready(corners):
+            return corners
+        page.wait_for_timeout(250)
+    raise AssertionError(f"after {what}, Move points shows the corners {corners} on the map {map_id}")
+
+
+def _middle(corners: list[dict]) -> tuple[float, float]:
+    """The middle of the box around *corners*, in page coordinates."""
+    xs, ys = [c["x"] for c in corners], [c["y"] for c in corners]
+    return (min(xs) + max(xs)) / 2, (min(ys) + max(ys)) / 2
+
+
+def _spread(corners: list[dict]) -> float:
+    """The longer side of the box around *corners*, in page pixels."""
+    xs, ys = [c["x"] for c in corners], [c["y"] for c in corners]
+    return max(max(xs) - min(xs), max(ys) - min(ys)) if xs else 0.0
+
+
+def _room(corner: dict, corners: list[dict]) -> float:
+    """How far, in page pixels, the nearest other corner lies from *corner*."""
+    return min((math.hypot(c["x"] - corner["x"], c["y"] - corner["y"]) for c in corners if c is not corner), default=math.inf)
+
+
+def _literal(value) -> str:
+    """*value* as a node's condition writes it: a number as JavaScript writes it, a text in quotes."""
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, float) and value.is_integer():
+        return str(int(value))
+    if isinstance(value, str):
+        return '"' + value.replace("\\", "\\\\").replace('"', '\\"') + '"'
+    return str(value)
+
+
+def _shown_edit(edit: dict) -> dict:
+    """An edit as a failure shows it: its shape left out."""
+    return {name: value for name, value in edit.items() if name != "geometry"}
+
+
+def _wait_for_count_of_edits(page, node_id: str, count: int, what: str) -> tuple[str, dict]:
+    """Wait until the node's code holds *count* edits; returns the code and its keywords."""
+    code, edits = "", None
+    deadline = time.time() + 15
+    while time.time() < deadline:
+        code = read_node_code(page, node_id)
+        try:
+            edits, keywords = _edits_of(code)
+        except (AssertionError, SyntaxError, ValueError):
+            edits = None
+        if edits is not None and len(edits) == count:
+            return code, keywords
+        page.wait_for_timeout(250)
+    raise AssertionError(f"after {what}, the node's code holds the edits {edits}, not {count}:\n{code}")
+
+
+def _fill_every_field(form) -> None:
+    """Give each field of a new feature's form a value, so every required one
+    is filled: a list's first choice, a group's first non-empty one, or a text."""
+    fields = form.locator('[data-testid^="interaction-field-"]')
+    for i in range(fields.count()):
+        field = fields.nth(i)
+        tag = field.evaluate("(el) => el.tagName.toLowerCase()")
+        if tag == "select":
+            values = field.locator("option").evaluate_all("(options) => options.map((o) => o.value)")
+            choice = next((value for value in values if value and value != "__other__"), None)
+            if choice is not None:
+                field.select_option(choice)
+        elif tag == "input":
+            kind, mode = field.get_attribute("type"), field.get_attribute("inputmode")
+            field.fill("2026-01-01" if kind == "date" else "1" if mode == "decimal" else "Test")
+        else:
+            radios = field.locator('input[type="radio"]')
+            values = radios.evaluate_all("(inputs) => inputs.map((r) => r.value)")
+            index = next((k for k, value in enumerate(values) if value), None)
+            if index is not None:
+                radios.nth(index).check()
+
+
+# A pixel of an Autark node's map canvas where it draws something, in page
+# coordinates: more than 20 off the map's background in some channel, with its
+# eight neighbours drawn too when such a pixel exists, nearest *at* of the
+# canvas, and shown there (nothing lies over it).
+_DRAWN_POINT_JS = """async ({ id, at, background }) => {
+    const canvas = document.getElementById('autk-grammar-map-' + id);
+    if (!canvas) return null;
+    await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+    if (window.__curio_renderMapsForReading) await window.__curio_renderMapsForReading();
+    const img = new Image();
+    img.src = canvas.toDataURL('image/png');
+    await img.decode();
+    const w = img.width, h = img.height;
+    const scratch = document.createElement('canvas');
+    scratch.width = w;
+    scratch.height = h;
+    const ctx = scratch.getContext('2d');
+    ctx.drawImage(img, 0, 0);
+    const px = ctx.getImageData(0, 0, w, h).data;
+    const box = canvas.getBoundingClientRect();
+    const sx = box.width / w, sy = box.height / h;
+    const drawn = (x, y) => {
+        if (x < 0 || y < 0 || x >= w || y >= h) return false;
+        const i = (y * w + x) * 4;
+        return px[i + 3] >= 250 && Math.max(Math.abs(px[i] - background[0]), Math.abs(px[i + 1] - background[1]),
+            Math.abs(px[i + 2] - background[2])) > 20;
+    };
+    const solid = (x, y) => {
+        for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) if (!drawn(x + dx, y + dy)) return false;
+        return true;
+    };
+    const cx = at[0] * w, cy = at[1] * h;
+    for (const inside of [solid, drawn]) {
+        let best = null;
+        for (let y = 0; y < h; y++) {
+            for (let x = 0; x < w; x++) {
+                if (!inside(x, y)) continue;
+                const d = (x - cx) ** 2 + (y - cy) ** 2;
+                if (best && d >= best.d) continue;
+                const pageX = box.left + (x + 0.5) * sx, pageY = box.top + (y + 0.5) * sy;
+                if (document.elementFromPoint(pageX, pageY) !== canvas) continue;
+                best = { d, x: pageX, y: pageY };
+            }
+        }
+        if (best) return { x: best.x, y: best.y };
+    }
+    return null;
+}"""
+
+# Each corner Move points shows, in page coordinates, as the map's overlay
+# lists them (data-corners, in the map's own pixels, which its box scales to
+# the page): its part (the row of the feature it is a corner of, null when
+# the overlay names none), its ring and index in that part, whether its
+# middle is well inside the map's canvas, room left for the drag (inside),
+# with the map on top there (onTop) and drawing it in its highlight (lit),
+# and all three (usable).
+_CORNERS_JS = """async ({ id, highlight }) => {
+    const node = document.querySelector(`.react-flow__node[data-id="${id}"]`);
+    const canvas = document.getElementById('autk-grammar-map-' + id);
+    const overlay = node && node.querySelector('[data-testid="map-edit-overlay"]');
+    if (!overlay || !canvas) return null;
+    await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+    if (window.__curio_renderMapsForReading) await window.__curio_renderMapsForReading();
+    const img = new Image();
+    img.src = canvas.toDataURL('image/png');
+    await img.decode();
+    const scratch = document.createElement('canvas');
+    scratch.width = img.width;
+    scratch.height = img.height;
+    const ctx = scratch.getContext('2d');
+    ctx.drawImage(img, 0, 0);
+    const px = ctx.getImageData(0, 0, img.width, img.height).data;
+    const area = canvas.getBoundingClientRect();
+    const box = overlay.getBoundingClientRect();
+    const sx = box.width / Number(overlay.getAttribute('data-map-width'));
+    const sy = box.height / Number(overlay.getAttribute('data-map-height'));
+    const lit = (x, y) => {
+        const cx = Math.floor((x - area.left) * img.width / area.width);
+        const cy = Math.floor((y - area.top) * img.height / area.height);
+        if (cx < 0 || cy < 0 || cx >= img.width || cy >= img.height) return false;
+        const i = (cy * img.width + cx) * 4;
+        return px[i + 3] >= 250 && Math.max(Math.abs(px[i] - highlight[0]), Math.abs(px[i + 1] - highlight[1]),
+            Math.abs(px[i + 2] - highlight[2])) <= 16;
+    };
+    return JSON.parse(overlay.getAttribute('data-corners') || '[]').map((corner) => {
+        const x = box.left + corner.x * sx, y = box.top + corner.y * sy;
+        const inside = x > area.left + 30 && x < area.right - 30 && y > area.top + 30 && y < area.bottom - 30;
+        const onTop = document.elementFromPoint(x, y) === canvas;
+        const shown = lit(x, y);
+        return {
+            part: corner.part === undefined ? null : corner.part, ring: corner.ring, index: corner.index, x, y,
+            inside, onTop, lit: shown, usable: inside && onTop && shown,
+        };
+    });
+}"""
+
+# Where the corner *ring*, *index* is shown now, in page coordinates: of the
+# part *part*, when it is given.
+_HANDLE_AT_JS = """({ id, ring, index, part }) => {
+    const node = document.querySelector(`.react-flow__node[data-id="${id}"]`);
+    const overlay = node && node.querySelector('[data-testid="map-edit-overlay"]');
+    if (!overlay) return null;
+    const corner = JSON.parse(overlay.getAttribute('data-corners') || '[]')
+        .find((c) => c.ring === ring && c.index === index && (part === undefined || part === null || c.part === part));
+    if (!corner) return null;
+    const box = overlay.getBoundingClientRect();
+    return {
+        x: box.left + corner.x * box.width / Number(overlay.getAttribute('data-map-width')),
+        y: box.top + corner.y * box.height / Number(overlay.getAttribute('data-map-height')),
+    };
+}"""
+
+
+def _corners(page, map_id: str) -> list[dict]:
+    """Every corner Move points shows on the map *map_id* now (``_CORNERS_JS``)."""
+    return page.evaluate(_CORNERS_JS, {"id": map_id, "highlight": list(MAP_HIGHLIGHT)}) or []
+
+
+def _corner_to_drag(page, map_id: str) -> dict | None:
+    """A corner of the feature Move points shows on the map *map_id* to drag:
+    the first a press can take, once the map draws one, or None after 10 s."""
+    deadline = time.time() + 10
+    while True:
+        handle = next((corner for corner in _corners(page, map_id) if corner["usable"]), None)
+        if handle or time.time() >= deadline:
+            return handle
+        page.wait_for_timeout(250)
+
+
+def _handed_layers(stored: dict) -> dict:
+    """The layers a node's output holds, by name: each a FeatureCollection."""
+    payload = stored
+    while isinstance(payload, dict) and payload.get("dataType") != "outputs" and isinstance(payload.get("data"), dict):
+        payload = payload["data"]
+    assert isinstance(payload, dict) and payload.get("dataType") == "outputs", f"not a node's layers: {str(stored)[:300]}"
+    out = {}
+    for item in payload["data"]:
+        data = item.get("data")
+        if isinstance(data, str):
+            data = json.loads(data)
+        out[item.get("layerName")] = data
+    return out
+
+
+def _coordinates(geometry: dict) -> list[float]:
+    """Every number of a GeoJSON geometry's coordinates, in order."""
+    flat: list[float] = []
+
+    def walk(value):
+        if isinstance(value, (int, float)):
+            flat.append(float(value))
+        else:
+            for item in value:
+                walk(item)
+
+    walk(geometry.get("coordinates") or [])
+    return flat
+
+
+def _assert_same_shape(handed: dict, drawn: dict, what: str) -> None:
+    """*handed*, a shape a run handed on, is *drawn*, the shape the node's code holds."""
+    a, b = _coordinates(handed), _coordinates(drawn)
+    assert handed.get("type", "").replace("Multi", "") == drawn.get("type", "").replace("Multi", ""), (handed, drawn)
+    assert len(a) == len(b) and all(math.isfinite(v) for v in a), (
+        f"the run handed {what} on as {handed}, not as drawn on the map: {drawn}"
+    )
+    assert all(math.isclose(x, y, rel_tol=1e-9, abs_tol=1e-6) for x, y in zip(a, b)), (
+        f"the run handed {what} on at {a[:4]}..., not where it was drawn on the map: {b[:4]}..."
+    )
+
+
+#: A building of the Chicago Loop layers in seven parts, each with an
+#: ``osm_id`` of its own, near the middle of the map.
+PARTED_BUILDING = 20449794
+
+
 def test_a_chicago_building_of_several_parts_takes_a_height_on_one_part_chosen_in_its_form(
     app_frontend: "FrontendPage", current_server: str, page,
 ):
@@ -1894,223 +2316,6 @@ def test_a_chicago_building_of_several_parts_takes_a_height_on_one_part_chosen_i
         )
 
 
-# The value of *key* and of *part* of each row the map draws of the table
-# *table*, in the order it draws them (window.__curio_mapFeatureAt).
-_DRAWN_PARTS_JS = """async ({ id, table, key, part }) => {
-    const state = window.__curio_mapState ? await window.__curio_mapState(id) : null;
-    const layer = state && state[table];
-    if (!layer) return null;
-    const out = [];
-    for (let position = 0; position < layer.drawn; position++) {
-        const feature = await window.__curio_mapFeatureAt(id, table, position);
-        out.push(feature ? [feature[key] ?? null, feature[part] ?? null] : [null, null]);
-    }
-    return out;
-}"""
-
-# A selection sent as the node *id*'s own, through its node's
-# interactionsCallback, which the interaction edges carry: a map's pick.
-_SEND_JS = """([id, selection]) => {
-    const node = window.__curio_reactFlow.getNodes().find((n) => n.id === id);
-    node.data.interactionsCallback(selection, id);
-}"""
-
-# Scrolls the body of the Map Edits node *id* until the properties of the
-# feature its form edits are at the body's top, so a capture of the body
-# starts with them; false when the body shows none.
-_PROPERTIES_ON_TOP_JS = """(id) => {
-    const body = document.querySelector(`[data-edit-body="${id}"]`);
-    const properties = body && body.querySelector('[data-testid="interaction-properties"]');
-    if (!properties) return false;
-    const box = body.getBoundingClientRect();
-    const scale = body.offsetHeight > 0 ? box.height / body.offsetHeight : 1;
-    body.scrollTop += (properties.getBoundingClientRect().top - box.top) / scale;
-    return true;
-}"""
-
-
-def _map_pick(building) -> dict:
-    """The selection a pick of *building* on the Chicago map is sent as."""
-    return {"autk_selection": {
-        "type": "POINT", "data": [{KEY: building}], "priority": 1, "source": MAP_TYPE, "layerRef": BUILDINGS,
-    }}
-
-
-def _told_apart(rows: list[dict]) -> bool:
-    """Whether a building's rows are two parts or more, each with a shape and
-    an ``osm_id`` of its own."""
-    ids = [(row.get("properties") or {}).get(PART_KEY) for row in rows]
-    return len(rows) >= 2 and all(row.get("geometry") for row in rows) and None not in ids and len(set(ids)) == len(ids)
-
-
-def _rings_of(geometry: dict | None) -> list[list[tuple[float, float]]]:
-    """A shape's corners, ring by ring, as Move points shows them: an area's
-    rings without the corner that closes each."""
-    kind, coordinates = (geometry or {}).get("type"), (geometry or {}).get("coordinates") or []
-    rings = {
-        "Point": [[coordinates]], "MultiPoint": [[point] for point in coordinates],
-        "LineString": [coordinates], "MultiLineString": coordinates,
-        "Polygon": coordinates, "MultiPolygon": [ring for polygon in coordinates for ring in polygon],
-    }.get(kind, [])
-    out = []
-    for ring in rings:
-        points = [(float(point[0]), float(point[1])) for point in ring]
-        if kind in ("Polygon", "MultiPolygon") and len(points) > 1 and points[0] == points[-1]:
-            points = points[:-1]
-        out.append(points)
-    return out
-
-
-def _corner_count(geometry: dict | None) -> int:
-    """How many corners Move points shows for a shape."""
-    return sum(len(ring) for ring in _rings_of(geometry))
-
-
-def _drag_room(rows: list[dict]) -> float:
-    """How much room, in its layer's units, a building gives a corner to drag:
-    the most a corner of its first part has from every other corner of the
-    building, and the most a corner of its other parts has, whichever is less."""
-    corners = [(part, point) for part, row in enumerate(rows) for ring in _rings_of(row.get("geometry")) for point in ring]
-
-    def room(i: int) -> float:
-        x, y = corners[i][1]
-        return min((math.hypot(x - ox, y - oy) for j, (_, (ox, oy)) in enumerate(corners) if j != i), default=math.inf)
-
-    first = max((room(i) for i, (part, _) in enumerate(corners) if part == 0), default=0.0)
-    others = max((room(i) for i, (part, _) in enumerate(corners) if part > 0), default=0.0)
-    return min(first, others)
-
-
-def _to_drag(corners: list[dict]) -> list[dict]:
-    """The corners a test drags: those of the parts after the first, when the
-    overlay names their parts, else every one."""
-    parts = {corner["part"] for corner in corners}
-    return [corner for corner in corners if len(parts) < 2 or corner["part"] != 0]
-
-
-def _best_room(corners: list[dict]) -> float:
-    """The most room, in page pixels, a corner to drag has from every other corner."""
-    return max((_room(corner, corners) for corner in _to_drag(corners)), default=0.0)
-
-
-def _picked_with_corners(page, map_id: str, building, what: str) -> list[dict]:
-    """Pick *building* on the map *map_id*, as the map's own pick is sent, and
-    wait until Move points shows its corners. The pick is sent again when a
-    change of the node's code started its pick anew meanwhile."""
-    for _ in range(3):
-        page.evaluate(_SEND_JS, [map_id, _map_pick(building)])
-        _wait_for_lit(page, map_id, {building}, what, table=BUILDINGS)
-        deadline = time.time() + 5
-        while time.time() < deadline:
-            corners = _corners(page, map_id)
-            if corners:
-                return corners
-            page.wait_for_timeout(250)
-    raise AssertionError(f"after {what}, Move points shows no corner of building {building} on the map {map_id}")
-
-
-def _crosses(a, b, c, d) -> bool:
-    """Whether the segments *a* to *b* and *c* to *d* cross or touch."""
-    def turn(p, q, r):
-        return (q[0] - p[0]) * (r[1] - p[1]) - (q[1] - p[1]) * (r[0] - p[0])
-
-    def on(p, q, r):
-        return min(p[0], q[0]) - 1e-9 <= r[0] <= max(p[0], q[0]) + 1e-9 and min(p[1], q[1]) - 1e-9 <= r[1] <= max(p[1], q[1]) + 1e-9
-
-    t1, t2, t3, t4 = turn(c, d, a), turn(c, d, b), turn(a, b, c), turn(a, b, d)
-    if ((t1 > 0) != (t2 > 0)) and ((t3 > 0) != (t4 > 0)) and t1 and t2 and t3 and t4:
-        return True
-    return any(t == 0 and on(p, q, r) for t, p, q, r in ((t1, c, d, a), (t2, c, d, b), (t3, a, b, c), (t4, a, b, d)))
-
-
-def _drop_keeping_shape(corner: dict, corners: list[dict]) -> tuple[float, float] | None:
-    """Where to drag *corner*, in page coordinates, so that no side of its part
-    crosses another (autk-db checks each part with ``ST_IsValid``): a little
-    out from the middle of its two neighbours in its ring, else in toward it,
-    at least 5 pixels from where it is; None when neither keeps the sides
-    apart."""
-    rings: dict = {}
-    indexes: dict = {}
-    for c in sorted(corners, key=lambda c: c["index"]):
-        if c["part"] == corner["part"]:
-            rings.setdefault(c["ring"], []).append((c["x"], c["y"]))
-            indexes.setdefault(c["ring"], []).append(c["index"])
-    ring = rings.get(corner["ring"], [])
-    if len(ring) < 3:
-        return None
-    at = indexes[corner["ring"]].index(corner["index"])
-    before, after = ring[at - 1], ring[(at + 1) % len(ring)]
-    middle = ((before[0] + after[0]) / 2, (before[1] + after[1]) / 2)
-    away = (corner["x"] - middle[0], corner["y"] - middle[1])
-    # Every side of the part but the two the corner ends, which move with it.
-    sides = [
-        (points[i], points[(i + 1) % len(points)], key, i)
-        for key, points in rings.items() for i in range(len(points))
-        if not (key == corner["ring"] and i in (at, (at - 1) % len(ring)))
-    ]
-    for share in (0.6, -0.5):
-        drop = (corner["x"] + share * away[0], corner["y"] + share * away[1])
-        if math.hypot(drop[0] - corner["x"], drop[1] - corner["y"]) < 5:
-            continue
-        moved = [(before, drop), (drop, after)]
-        if not any(
-            _crosses(a, b, p, q) for a, b in moved for p, q, key, i in sides
-            # A moved side meets its neighbouring sides at their shared corner.
-            if not (key == corner["ring"] and (i == (at - 2) % len(ring) and a == before or i == (at + 1) % len(ring) and b == after))
-        ):
-            return drop
-    return None
-
-
-def _within(corners: list[dict], box: dict, margin: float) -> bool:
-    """Whether every one of *corners* lies *margin* pixels inside *box*."""
-    return all(
-        box["x"] + margin < c["x"] < box["x"] + box["width"] - margin
-        and box["y"] + margin < c["y"] < box["y"] + box["height"] - margin
-        for c in corners
-    )
-
-
-def _wait_for_corners(page, map_id: str, ready, what: str) -> list[dict]:
-    """The corners Move points shows on the map *map_id*, once *ready* holds for them."""
-    corners: list[dict] = []
-    deadline = time.time() + 15
-    while time.time() < deadline:
-        corners = _corners(page, map_id)
-        if ready(corners):
-            return corners
-        page.wait_for_timeout(250)
-    raise AssertionError(f"after {what}, Move points shows the corners {corners} on the map {map_id}")
-
-
-def _middle(corners: list[dict]) -> tuple[float, float]:
-    """The middle of the box around *corners*, in page coordinates."""
-    xs, ys = [c["x"] for c in corners], [c["y"] for c in corners]
-    return (min(xs) + max(xs)) / 2, (min(ys) + max(ys)) / 2
-
-
-def _spread(corners: list[dict]) -> float:
-    """The longer side of the box around *corners*, in page pixels."""
-    xs, ys = [c["x"] for c in corners], [c["y"] for c in corners]
-    return max(max(xs) - min(xs), max(ys) - min(ys)) if xs else 0.0
-
-
-def _room(corner: dict, corners: list[dict]) -> float:
-    """How far, in page pixels, the nearest other corner lies from *corner*."""
-    return min((math.hypot(c["x"] - corner["x"], c["y"] - corner["y"]) for c in corners if c is not corner), default=math.inf)
-
-
-def _literal(value) -> str:
-    """*value* as a node's condition writes it: a number as JavaScript writes it, a text in quotes."""
-    if isinstance(value, bool):
-        return "true" if value else "false"
-    if isinstance(value, float) and value.is_integer():
-        return str(int(value))
-    if isinstance(value, str):
-        return '"' + value.replace("\\", "\\\\").replace('"', '\\"') + '"'
-    return str(value)
-
-
 def _as_text(value) -> str:
     """*value* as a form shows it: a number as JavaScript writes it, a text as it is."""
     return value if isinstance(value, str) else _literal(value)
@@ -2145,216 +2350,15 @@ def _wait_for_field(field, value, timeout_s: float = 5) -> str:
         field.page.wait_for_timeout(250)
 
 
-def _shown_edit(edit: dict) -> dict:
-    """An edit as a failure shows it: its shape left out."""
-    return {name: value for name, value in edit.items() if name != "geometry"}
-
-
-def _wait_for_count_of_edits(page, node_id: str, count: int, what: str) -> tuple[str, dict]:
-    """Wait until the node's code holds *count* edits; returns the code and its keywords."""
-    code, edits = "", None
-    deadline = time.time() + 15
-    while time.time() < deadline:
-        code = read_node_code(page, node_id)
-        try:
-            edits, keywords = _edits_of(code)
-        except (AssertionError, SyntaxError, ValueError):
-            edits = None
-        if edits is not None and len(edits) == count:
-            return code, keywords
-        page.wait_for_timeout(250)
-    raise AssertionError(f"after {what}, the node's code holds the edits {edits}, not {count}:\n{code}")
-
-
-def _fill_every_field(form) -> None:
-    """Give each field of a new feature's form a value, so every required one
-    is filled: a list's first choice, a group's first non-empty one, or a text."""
-    fields = form.locator('[data-testid^="interaction-field-"]')
-    for i in range(fields.count()):
-        field = fields.nth(i)
-        tag = field.evaluate("(el) => el.tagName.toLowerCase()")
-        if tag == "select":
-            values = field.locator("option").evaluate_all("(options) => options.map((o) => o.value)")
-            choice = next((value for value in values if value and value != "__other__"), None)
-            if choice is not None:
-                field.select_option(choice)
-        elif tag == "input":
-            kind, mode = field.get_attribute("type"), field.get_attribute("inputmode")
-            field.fill("2026-01-01" if kind == "date" else "1" if mode == "decimal" else "Test")
-        else:
-            radios = field.locator('input[type="radio"]')
-            values = radios.evaluate_all("(inputs) => inputs.map((r) => r.value)")
-            index = next((k for k, value in enumerate(values) if value), None)
-            if index is not None:
-                radios.nth(index).check()
-
-
-# A pixel of an Autark node's map canvas where it draws something, in page
-# coordinates: more than 20 off the map's background in some channel, with its
-# eight neighbours drawn too when such a pixel exists, nearest *at* of the
-# canvas, and shown there (nothing lies over it).
-_DRAWN_POINT_JS = """async ({ id, at, background }) => {
-    const canvas = document.getElementById('autk-grammar-map-' + id);
-    if (!canvas) return null;
-    await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
-    if (window.__curio_renderMapsForReading) await window.__curio_renderMapsForReading();
-    const img = new Image();
-    img.src = canvas.toDataURL('image/png');
-    await img.decode();
-    const w = img.width, h = img.height;
-    const scratch = document.createElement('canvas');
-    scratch.width = w;
-    scratch.height = h;
-    const ctx = scratch.getContext('2d');
-    ctx.drawImage(img, 0, 0);
-    const px = ctx.getImageData(0, 0, w, h).data;
-    const box = canvas.getBoundingClientRect();
-    const sx = box.width / w, sy = box.height / h;
-    const drawn = (x, y) => {
-        if (x < 0 || y < 0 || x >= w || y >= h) return false;
-        const i = (y * w + x) * 4;
-        return px[i + 3] >= 250 && Math.max(Math.abs(px[i] - background[0]), Math.abs(px[i + 1] - background[1]),
-            Math.abs(px[i + 2] - background[2])) > 20;
-    };
-    const solid = (x, y) => {
-        for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) if (!drawn(x + dx, y + dy)) return false;
-        return true;
-    };
-    const cx = at[0] * w, cy = at[1] * h;
-    for (const inside of [solid, drawn]) {
-        let best = null;
-        for (let y = 0; y < h; y++) {
-            for (let x = 0; x < w; x++) {
-                if (!inside(x, y)) continue;
-                const d = (x - cx) ** 2 + (y - cy) ** 2;
-                if (best && d >= best.d) continue;
-                const pageX = box.left + (x + 0.5) * sx, pageY = box.top + (y + 0.5) * sy;
-                if (document.elementFromPoint(pageX, pageY) !== canvas) continue;
-                best = { d, x: pageX, y: pageY };
-            }
-        }
-        if (best) return { x: best.x, y: best.y };
-    }
-    return null;
+# Scrolls the body of the Map Edits node *id* until the properties of the
+# feature its form edits are at the body's top, so a capture of the body
+# starts with them; false when the body shows none.
+_PROPERTIES_ON_TOP_JS = """(id) => {
+    const body = document.querySelector(`[data-edit-body="${id}"]`);
+    const properties = body && body.querySelector('[data-testid="interaction-properties"]');
+    if (!properties) return false;
+    const box = body.getBoundingClientRect();
+    const scale = body.offsetHeight > 0 ? box.height / body.offsetHeight : 1;
+    body.scrollTop += (properties.getBoundingClientRect().top - box.top) / scale;
+    return true;
 }"""
-
-# Each corner Move points shows, in page coordinates, as the map's overlay
-# lists them (data-corners, in the map's own pixels, which its box scales to
-# the page): its part (the row of the feature it is a corner of, null when
-# the overlay names none), its ring and index in that part, whether its
-# middle is well inside the map's canvas, room left for the drag (inside),
-# with the map on top there (onTop) and drawing it in its highlight (lit),
-# and all three (usable).
-_CORNERS_JS = """async ({ id, highlight }) => {
-    const node = document.querySelector(`.react-flow__node[data-id="${id}"]`);
-    const canvas = document.getElementById('autk-grammar-map-' + id);
-    const overlay = node && node.querySelector('[data-testid="map-edit-overlay"]');
-    if (!overlay || !canvas) return null;
-    await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
-    if (window.__curio_renderMapsForReading) await window.__curio_renderMapsForReading();
-    const img = new Image();
-    img.src = canvas.toDataURL('image/png');
-    await img.decode();
-    const scratch = document.createElement('canvas');
-    scratch.width = img.width;
-    scratch.height = img.height;
-    const ctx = scratch.getContext('2d');
-    ctx.drawImage(img, 0, 0);
-    const px = ctx.getImageData(0, 0, img.width, img.height).data;
-    const area = canvas.getBoundingClientRect();
-    const box = overlay.getBoundingClientRect();
-    const sx = box.width / Number(overlay.getAttribute('data-map-width'));
-    const sy = box.height / Number(overlay.getAttribute('data-map-height'));
-    const lit = (x, y) => {
-        const cx = Math.floor((x - area.left) * img.width / area.width);
-        const cy = Math.floor((y - area.top) * img.height / area.height);
-        if (cx < 0 || cy < 0 || cx >= img.width || cy >= img.height) return false;
-        const i = (cy * img.width + cx) * 4;
-        return px[i + 3] >= 250 && Math.max(Math.abs(px[i] - highlight[0]), Math.abs(px[i + 1] - highlight[1]),
-            Math.abs(px[i + 2] - highlight[2])) <= 16;
-    };
-    return JSON.parse(overlay.getAttribute('data-corners') || '[]').map((corner) => {
-        const x = box.left + corner.x * sx, y = box.top + corner.y * sy;
-        const inside = x > area.left + 30 && x < area.right - 30 && y > area.top + 30 && y < area.bottom - 30;
-        const onTop = document.elementFromPoint(x, y) === canvas;
-        const shown = lit(x, y);
-        return {
-            part: corner.part === undefined ? null : corner.part, ring: corner.ring, index: corner.index, x, y,
-            inside, onTop, lit: shown, usable: inside && onTop && shown,
-        };
-    });
-}"""
-
-# Where the corner *ring*, *index* is shown now, in page coordinates: of the
-# part *part*, when it is given.
-_HANDLE_AT_JS = """({ id, ring, index, part }) => {
-    const node = document.querySelector(`.react-flow__node[data-id="${id}"]`);
-    const overlay = node && node.querySelector('[data-testid="map-edit-overlay"]');
-    if (!overlay) return null;
-    const corner = JSON.parse(overlay.getAttribute('data-corners') || '[]')
-        .find((c) => c.ring === ring && c.index === index && (part === undefined || part === null || c.part === part));
-    if (!corner) return null;
-    const box = overlay.getBoundingClientRect();
-    return {
-        x: box.left + corner.x * box.width / Number(overlay.getAttribute('data-map-width')),
-        y: box.top + corner.y * box.height / Number(overlay.getAttribute('data-map-height')),
-    };
-}"""
-
-
-def _corners(page, map_id: str) -> list[dict]:
-    """Every corner Move points shows on the map *map_id* now (``_CORNERS_JS``)."""
-    return page.evaluate(_CORNERS_JS, {"id": map_id, "highlight": list(MAP_HIGHLIGHT)}) or []
-
-
-def _corner_to_drag(page, map_id: str) -> dict | None:
-    """A corner of the feature Move points shows on the map *map_id* to drag:
-    the first a press can take, once the map draws one, or None after 10 s."""
-    deadline = time.time() + 10
-    while True:
-        handle = next((corner for corner in _corners(page, map_id) if corner["usable"]), None)
-        if handle or time.time() >= deadline:
-            return handle
-        page.wait_for_timeout(250)
-
-
-def _handed_layers(stored: dict) -> dict:
-    """The layers a node's output holds, by name: each a FeatureCollection."""
-    payload = stored
-    while isinstance(payload, dict) and payload.get("dataType") != "outputs" and isinstance(payload.get("data"), dict):
-        payload = payload["data"]
-    assert isinstance(payload, dict) and payload.get("dataType") == "outputs", f"not a node's layers: {str(stored)[:300]}"
-    out = {}
-    for item in payload["data"]:
-        data = item.get("data")
-        if isinstance(data, str):
-            data = json.loads(data)
-        out[item.get("layerName")] = data
-    return out
-
-
-def _coordinates(geometry: dict) -> list[float]:
-    """Every number of a GeoJSON geometry's coordinates, in order."""
-    flat: list[float] = []
-
-    def walk(value):
-        if isinstance(value, (int, float)):
-            flat.append(float(value))
-        else:
-            for item in value:
-                walk(item)
-
-    walk(geometry.get("coordinates") or [])
-    return flat
-
-
-def _assert_same_shape(handed: dict, drawn: dict, what: str) -> None:
-    """*handed*, a shape a run handed on, is *drawn*, the shape the node's code holds."""
-    a, b = _coordinates(handed), _coordinates(drawn)
-    assert handed.get("type", "").replace("Multi", "") == drawn.get("type", "").replace("Multi", ""), (handed, drawn)
-    assert len(a) == len(b) and all(math.isfinite(v) for v in a), (
-        f"the run handed {what} on as {handed}, not as drawn on the map: {drawn}"
-    )
-    assert all(math.isclose(x, y, rel_tol=1e-9, abs_tol=1e-6) for x, y in zip(a, b)), (
-        f"the run handed {what} on at {a[:4]}..., not where it was drawn on the map: {b[:4]}..."
-    )
