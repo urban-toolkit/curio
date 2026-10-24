@@ -601,12 +601,14 @@ function clickMap(lonLat: [number, number], shift = false) {
 /**
  * One step of a drag on the map: a press, a move or a release on the map's
  * canvas at *xy*, in the map's own pixels, the main button held while *held*,
- * and shift with *shift*.
+ * shift with *shift* and alt with *alt*.
  */
-function pointerOnMap(type: "pointerdown" | "pointermove" | "pointerup", [x, y]: [number, number], held: boolean, shift = false) {
+function pointerOnMap(type: "pointerdown" | "pointermove" | "pointerup", [x, y]: [number, number], held: boolean, shift = false, alt = false) {
   const canvas = document.getElementById(`autk-grammar-map-${MAP}`) as HTMLCanvasElement;
   act(() => {
-    canvas.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, button: 0, buttons: held ? 1 : 0, shiftKey: shift, clientX: x, clientY: y }));
+    canvas.dispatchEvent(
+      new MouseEvent(type, { bubbles: true, cancelable: true, button: 0, buttons: held ? 1 : 0, shiftKey: shift, altKey: alt, clientX: x, clientY: y }),
+    );
   });
 }
 
@@ -1229,6 +1231,110 @@ test("an area drawn as a bow tie, its outline crossing itself, is not taken to b
       expect(screen.getByTestId("map-edit-tip")).toHaveTextContent(CROSSED_AREA),
     );
     checkFor("the self-crossing area was written as an edit", () => expect(canvas.settings()?.edits ?? []).toEqual([]));
+  } finally {
+    putBack();
+  }
+});
+
+test("a building's midpoint dragged across its far side, which would make its outline cross itself, writes no edit, the map's tip says why, and the outline is as it was", async () => {
+  const putBack = layOutCanvases();
+  try {
+    drawnMaps.make = projectingMap;
+    const canvas = mountCanvas();
+    await canvas.playMap();
+    await openAction("edit");
+    clickMap(MIDDLE_136);
+    fireEvent.click(await screen.findByTestId("interaction-reshape"));
+    const map = lastMap();
+    const overlay = () => screen.getByTestId("map-edit-overlay");
+    await waitFor(() => expect(overlay()).toHaveAttribute("data-edit-mode", "reshape"));
+    const outlines = () => linesOn(map).map((line) => line.map(km));
+    const ring = inKm(closedRing([[1, 0], [2, 0], [2, 1], [1, 1]]));
+    await waitFor(() => expect(outlines()).toContainEqual(ring));
+    const corners = overlay().getAttribute("data-corners");
+
+    // The midpoint of its east side, at (2, 0.5), dragged west across its far
+    // side, x = 1, to (0.5, 0.5): the new corner's sides cross that side.
+    const to = onScreen([0.5, 0.5]);
+    const crossed = [...ring.slice(0, 2), [to[0], SIZE - to[1]], ...ring.slice(2)];
+    pointerOnMap("pointerdown", onScreen([2, 0.5]), true);
+    pointerOnMap("pointermove", to, true);
+    await waitFor(() => expect(outlines()).toContainEqual(crossed));
+
+    pointerOnMap("pointerup", to, false);
+    checkFor("the self-crossing reshape was written as an edit", () => expect(canvas.settings()?.edits ?? []).toEqual([]));
+    checkFor("the map's tip does not say why the reshape was refused", () =>
+      expect(screen.getByTestId("map-edit-tip")).toHaveTextContent(CROSSED_DRAG),
+    );
+    checkFor("the midpoint's new corner stayed", () => expect(overlay()).toHaveAttribute("data-corners", corners));
+    await waitFor(() => checkFor("the map does not draw the building's outline as it was", () => expect(outlines()).toContainEqual(ring)));
+  } finally {
+    putBack();
+  }
+});
+
+/** Building 136 as a triangle with a corner on its base, at (1.5, 0): without its top corner it has no area. */
+const BASE_CORNER = {
+  type: "FeatureCollection",
+  features: [
+    {
+      type: "Feature",
+      geometry: { type: "Polygon", coordinates: [[[1, 0], [1.5, 0], [2, 0], [1.5, 1], [1, 0]]] },
+      properties: { building_id: 136, height: 20 },
+    },
+  ],
+};
+
+test("an alt-click on the top corner of a building whose other corners lie on one line, which would leave it no area, writes no edit, the map's tip says why, and the corner stays", async () => {
+  const putBack = layOutCanvases();
+  try {
+    nodeInput.current = BASE_CORNER;
+    drawnMaps.make = projectingMap;
+    const canvas = mountCanvas();
+    await canvas.playMap();
+    await openAction("edit");
+    clickMap([1.5, 0.3]);
+    fireEvent.click(await screen.findByTestId("interaction-reshape"));
+    const overlay = () => screen.getByTestId("map-edit-overlay");
+    await waitFor(() => expect(JSON.parse(overlay().getAttribute("data-corners") ?? "[]")).toHaveLength(4));
+    const corners = overlay().getAttribute("data-corners");
+
+    const top = onScreen([1.5, 1]);
+    pointerOnMap("pointerdown", top, true, false, true);
+    pointerOnMap("pointerup", top, false, false, true);
+    checkFor("the corner whose loss leaves no area was deleted in an edit", () => expect(canvas.settings()?.edits ?? []).toEqual([]));
+    checkFor("the map's tip does not say why the corner stayed", () =>
+      expect(screen.getByTestId("map-edit-tip")).toHaveTextContent("That would leave the outline with no area, so the corner stayed."),
+    );
+    checkFor("the corner was taken off the map", () => expect(overlay()).toHaveAttribute("data-corners", corners));
+  } finally {
+    putBack();
+  }
+});
+
+test("Add a part drawn inside the part it joins, which would make two of its parts overlap, writes no edit, the map's tip says why, and the part can be drawn again", async () => {
+  const putBack = layOutCanvases();
+  try {
+    nodeInput.current = OSM_PARTED;
+    drawnMaps.make = projectingMap;
+    const canvas = mountCanvas();
+    await canvas.playMap();
+    await openAction("edit");
+    // Building 136 picked by a click on its second part.
+    clickMap(MIDDLE_PART_TWO);
+    fireEvent.click(await screen.findByTestId("interaction-add-part"));
+    const overlay = () => screen.getByTestId("map-edit-overlay");
+    await waitFor(() => expect(overlay()).toHaveAttribute("data-edit-mode", "draw"));
+
+    // A triangle inside that part, ended with Enter.
+    for (const corner of [[1.7, 0.2], [1.9, 0.2], [1.8, 0.8]] as [number, number][]) clickMap(corner);
+    fireEvent.keyDown(document.body, { key: "Enter" });
+    checkFor("the overlapping part was written as an edit", () => expect(canvas.settings()?.edits ?? []).toEqual([]));
+    checkFor("the map's tip does not say why the part was refused", () =>
+      expect(screen.getByTestId("map-edit-tip")).toHaveTextContent("It overlaps another part, so the part was not added."),
+    );
+    checkFor("the map stopped drawing the part", () => expect(overlay()).toHaveAttribute("data-edit-mode", "draw"));
+    expect(screen.getByTestId("interaction-cancel-part")).toBeInTheDocument();
   } finally {
     putBack();
   }

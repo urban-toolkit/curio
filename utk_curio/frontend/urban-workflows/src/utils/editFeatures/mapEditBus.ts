@@ -23,6 +23,7 @@
  */
 import { useSyncExternalStore } from "react";
 import type { SelectionId } from "../references/selectionTags";
+import type { ReshapeGesture } from "./areaCheck";
 import type { Geometry } from "./editFeatures";
 import type { EditedFeature, GeometryKind } from "./layerModel";
 
@@ -65,11 +66,18 @@ export interface MapEditSession {
   active: MapEditActive | null;
   /**
    * A shape drawn on the map, with the row the click that picked the feature
-   * landed on, if any: the part a new part of it joins.
+   * landed on, if any: the part a new part of it joins. Returns why it is
+   * refused, the words the map's tip says, when autk-db would refuse the
+   * area it makes (`areaCheck`); then nothing is added. Null otherwise.
    */
-  onDrawn: (geometry: Geometry, pickedRow?: EditedFeature | null) => void;
-  /** New shapes for rows of the picked feature, made in one gesture: one change. */
-  onReshape: (parts: ReshapedPart[]) => void;
+  onDrawn: (geometry: Geometry, pickedRow?: EditedFeature | null) => string | null;
+  /**
+   * New shapes for rows of the picked feature, made in one gesture (*how*):
+   * one change. Returns why they are refused, the words the map's tip says,
+   * when autk-db would refuse one of them (`areaCheck`); then nothing is
+   * written. Null otherwise.
+   */
+  onReshape: (parts: ReshapedPart[], how?: ReshapeGesture) => string | null;
   /** Turns the shape mode (reshape, move) off again: the map's Done. */
   onShapeDone?: () => void;
 }
