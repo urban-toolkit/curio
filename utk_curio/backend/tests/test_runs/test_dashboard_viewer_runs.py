@@ -198,6 +198,10 @@ class TestAViewerRunsTheDashboard:
         finished = [p for k, p in _events(client, pid, body["runId"], body["token"]) if k == "step_finished"]
         assert [(p["nodeId"], p["status"]) for p in finished] == [("grid", "ok")]
         assert finished[0]["output"]["path"] == "art-grid-1"
+        # Every artifact the output holds, which the page reads through the
+        # dashboard's output routes; no reply and no printed text.
+        assert finished[0]["artifactIds"] == ["art-grid-1"]
+        assert "reply" not in finished[0] and "stdoutTail" not in finished[0]
 
     def test_the_same_values_again_come_from_the_kept_output_with_no_run(self, client, user_and_token, sandbox, saved):
         _, token = user_and_token
@@ -208,10 +212,10 @@ class TestAViewerRunsTheDashboard:
 
         assert len(sandbox.runs) == 1, "the second viewer's values ran again"
         outputs = [
-            p["output"]["path"] for k, p in _events(client, pid, second["runId"], second["token"])
+            (p["output"]["path"], p["artifactIds"]) for k, p in _events(client, pid, second["runId"], second["token"])
             if k == "step_finished"
         ]
-        assert outputs == ["art-grid-1"]
+        assert outputs == [("art-grid-1", ["art-grid-1"])]
         assert first["runId"] != second["runId"]
 
     def test_the_saved_values_with_every_tile_saved_need_no_run(self, client, user_and_token, sandbox, saved):

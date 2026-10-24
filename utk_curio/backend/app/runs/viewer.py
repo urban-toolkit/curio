@@ -167,7 +167,7 @@ def _check_values(controls: dict, values) -> list[str]:
     problems = []
     for node_id, by_name in values.items():
         if not isinstance(by_name, dict):
-            problems.append(f"The values of {node_id} must map widget names to values.")
+            problems.append(f"The values of {node_id} must name each widget and its value.")
             continue
         for name, value in by_name.items():
             widget = controls.get((node_id, name))
@@ -362,9 +362,10 @@ def _forget_sessions(session_ids) -> None:
         log.warning("could not forget %d dashboard sessions in the sandbox", len(session_ids))
 
 
-def _kept_output(project_id: str, key: str, private_to: Optional[str] = None) -> Optional[dict]:
-    """The output kept under *key* that this run may read: a shared one, or
-    one private to *private_to*. Touches it, so it is the last to go."""
+def _kept_output(project_id: str, key: str, private_to: Optional[str] = None) -> Optional[tuple[dict, list]]:
+    """The output kept under *key* that this run may read, a shared one or
+    one private to *private_to*, with its artifact ids. Touches it, so it is
+    the last to go."""
     now = naive_utc_now()
     readable = DashboardStepOutput.private_to.is_(None)
     if private_to is not None:
@@ -385,11 +386,12 @@ def _kept_output(project_id: str, key: str, private_to: Optional[str] = None) ->
         db.session.query(DashboardStepOutput).filter_by(id=entry_id).update({"used_at": now})
 
     commit_with_retry(_touch)
-    return json.loads(entry.output)
+    return json.loads(entry.output), json.loads(entry.artifact_ids or "[]")
 
 
-def _keep(project_id: str, node_id: str, key: str, session_id: str, output: dict, private_to: Optional[str] = None) -> None:
-    """Keep a step's output under *key*, with what its session made."""
+def _keep(project_id: str, node_id: str, key: str, session_id: str, output: dict, private_to: Optional[str] = None) -> list:
+    """Keep a step's output under *key*, with what its session made; its
+    artifact ids."""
     try:
         described = _describe_session(session_id)
     except Exception:  # noqa: BLE001 - the output is kept with what is known of it
@@ -405,6 +407,7 @@ def _keep(project_id: str, node_id: str, key: str, session_id: str, output: dict
         ))
 
     commit_with_retry(_apply)
+    return ids
 
 
 def prune(now=None) -> int:
@@ -506,9 +509,14 @@ def _saved_state(user_key: str, project_id: str):
 
 
 def _public(payload: dict) -> dict:
-    """An event as a viewer receives it: no reply, no printed text (the
-    dashboard shows no node's print)."""
-    return {key: value for key, value in (payload or {}).items() if key not in ("reply", "stdoutTail")}
+    """An event as a viewer receives it: no reply and no printed text (the
+    dashboard shows no node's print), but the artifact ids its output holds,
+    which the page reads through the dashboard's output routes."""
+    public = {key: value for key, value in (payload or {}).items() if key not in ("reply", "stdoutTail")}
+    ids = ((payload or {}).get("reply") or {}).get("artifactIds")
+    if ids:
+        public["artifactIds"] = list(ids)
+    return public
 
 
 def start_viewer_run(project_id: str, values, *, address: str) -> dict:
@@ -648,7 +656,8 @@ def _run_events(app, project_id: str, owner_id: int, plan, user_key: str) -> Ite
         )
         kept = _kept_output(project_id, key)
         if kept is not None:
-            return {"stdout": [], "stderr": "", "output": kept}
+            output, ids = kept
+            return {"stdout": [], "stderr": "", "output": output, "artifactIds": ids}
         session_id = new_session_id()
         node_run = node_exec.NodeRun(
             code=sent, node_type=step.node_type,
@@ -662,9 +671,8 @@ def _run_events(app, project_id: str, owner_id: int, plan, user_key: str) -> Ite
             reply, _status = run_node(owner, session_id, node_run)
         output = reply.get("output") if isinstance(reply.get("output"), dict) else {}
         if output.get("path"):
-            _keep(project_id, step.node_id, key, session_id, output)
-        else:
-            _forget_sessions([session_id])
+            return {**reply, "artifactIds": _keep(project_id, step.node_id, key, session_id, output)}
+        _forget_sessions([session_id])
         return reply
 
     def wrap(fn):
