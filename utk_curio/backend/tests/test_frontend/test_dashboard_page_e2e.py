@@ -938,20 +938,24 @@ GPU_COMPUTE_SPEC = json.dumps({"compute": [{
     "wglsFunction": ["return v * 2.0;"],
 }]}, indent=2)
 
-#: What the GPU made, read back in Python as the table shows it.
+#: What the GPU made, read back in Python as the table shows it. An Autark
+#: node hands its layer on as ``{dataType, data}``, the data a FeatureCollection,
+#: on the canvas and on a dashboard alike.
 GPU_AFTER_CODE = (
+    "import geopandas as gpd\n"
     "import pandas as pd\n\n"
+    "frame = gpd.GeoDataFrame.from_features(input_0['data']['features'])\n"
     "return pd.DataFrame({\n"
-    "    'count': [int(v) for v in input_0['count']],\n"
-    "    'doubled': [int(round(float(v))) for v in input_0['doubled']],\n"
+    "    'count': [int(v) for v in frame['count']],\n"
+    "    'doubled': [int(round(float(v))) for v in frame['doubled']],\n"
     "})\n"
 )
 
 
 def _gpu_spec() -> dict:
     """Python, then an Autark compute only a browser runs, then Python, then
-    the table, a pinned Data Pool. The pinned Rows choice is read by the first
-    step, so another Rows runs all three."""
+    the table, a Data Pool the test pins. The pinned Rows choice is read by
+    the first step, so another Rows runs all three."""
     def edge(source: str, target: str) -> dict:
         return {"id": f"reactflow__edge-{source}out-{target}in", "source": source, "target": target}
 
@@ -966,7 +970,7 @@ def _gpu_spec() -> dict:
                 _node(GPU_LOAD, "curio.builtin/data-loading", 0, GPU_LOAD_CODE),
                 _node(GPU_STEP, "curio.builtin/autk-grammar", 700, GPU_COMPUTE_SPEC),
                 _node(GPU_AFTER, "curio.builtin/computation-analysis", 1400, GPU_AFTER_CODE),
-                {**_node(POOL, "curio.builtin/data-pool", 2100), "dashboardPinned": True},
+                _node(POOL, "curio.builtin/data-pool", 2100),
                 _choice(ROWS, "rows", "Rows", ["three", "five"], 0),
             ],
             "edges": [edge(GPU_LOAD, GPU_STEP), edge(GPU_STEP, GPU_AFTER), edge(GPU_AFTER, POOL)],
@@ -974,12 +978,18 @@ def _gpu_spec() -> dict:
     }
 
 
+def _a_cell_reads(page, text: str, *, timeout: float = 120000) -> None:
+    """A cell of the Data Pool's table reads *text*, whole."""
+    table = node_locator(page, POOL).locator("table").first
+    cell = table.locator("td").filter(has_text=re.compile(rf"^\s*{re.escape(text)}\s*$"))
+    expect(cell.first).to_be_visible(timeout=timeout)
+
+
 def _five_doubled_rows(page, *, timeout: float = 120000) -> None:
     """The table holds the five rows Rows "five" makes, each count doubled on
     the GPU: 9 doubled is 18, a cell only those five rows have."""
     _pool_shows(page, 5, timeout=timeout)
-    cell = node_locator(page, POOL).locator("table").first.locator("td").filter(has_text=re.compile(r"^\s*18\s*$"))
-    expect(cell.first).to_be_visible(timeout=timeout)
+    _a_cell_reads(page, "18", timeout=timeout)
 
 
 def _steps_sent(asked: list[str]) -> list[str]:
@@ -1021,6 +1031,12 @@ def test_a_step_only_a_browser_runs_is_run_by_each_visitors_page_for_it_alone(
     session = _enter(page, app_frontend, current_server, prefix="dash_gpu", spec=_gpu_spec())
     require_webgpu(page)
     run_all_and_wait(page, timeout_ms=300000)
+    # The canvas ran the chain: its table shows the three counts doubled on
+    # the GPU (7 doubled is 14).
+    _pool_shows(page, 3, timeout=120000)
+    _a_cell_reads(page, "14")
+    # Pinning is what saves the output the table reads.
+    _pin(page, POOL)
     _save(page)
     project_id = session["project"]["id"]
     # Off the canvas first: it can still save on its way out.
