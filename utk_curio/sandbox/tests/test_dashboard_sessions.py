@@ -9,7 +9,10 @@ while, then asks the sandbox to forget the session:
 - ``/artifact-sessions/forget`` deletes their rows and those files, and
   nothing of any other session;
 - both refuse a session that is not a dashboard's, so no call reaches a
-  sign-in's artifacts.
+  sign-in's artifacts;
+- a viewer's step reads what other viewer steps made, which the backend hands
+  it (its run's earlier steps, the outputs kept from earlier runs), and no
+  sign-in's artifacts, which never read theirs either.
 """
 
 import os
@@ -95,6 +98,37 @@ class DashboardSessionsTestCase(unittest.TestCase):
         with self.assertRaises(KeyError):
             parsers.load_from_duckdb(frame)
         self.assertEqual(parsers.load_from_duckdb(kept, session_id=kept_session)["b"].tolist(), [1])
+
+    def test_a_viewer_step_reads_what_another_viewer_step_made(self):
+        """Each step of a viewer's run has a session of its own, and reads its
+        run's earlier steps and the outputs kept from earlier runs: in process,
+        as a preview, and staged for an isolated child."""
+        from utk_curio.sandbox.util import staging
+
+        made = parsers.save_to_duckdb(pd.DataFrame({"count": [3, 7, 5]}), session_id=new_session_id())
+        step = new_session_id()
+
+        self.assertEqual(parsers.load_artifact(made, session_id=step)["count"].tolist(), [3, 7, 5])
+        _preview, total = parsers.load_tabular_preview_from_duckdb(made, 2, session_id=step)
+        self.assertEqual(total, 3)
+        with TemporaryDirectory() as scratch:
+            staged = staging.stage_input(made, scratch, session_id=step)
+            self.assertEqual(staged["kind"], "dataframe")
+            self.assertTrue((Path(scratch) / staged["file"]).exists())
+
+    def test_a_viewer_step_and_a_sign_in_never_read_each_others_artifacts(self):
+        from utk_curio.sandbox.util import staging
+
+        viewer_made = parsers.save_to_duckdb(pd.DataFrame({"a": [1]}), session_id=new_session_id())
+        signed_in_made = parsers.save_to_duckdb(pd.DataFrame({"b": [2]}), session_id="a-sign-in-token")
+
+        for art_id, session in ((viewer_made, "a-sign-in-token"), (signed_in_made, new_session_id())):
+            with self.assertRaises(KeyError):
+                parsers.load_artifact(art_id, session_id=session)
+            with self.assertRaises(KeyError):
+                parsers.load_tabular_preview_from_duckdb(art_id, 2, session_id=session)
+            with TemporaryDirectory() as scratch, self.assertRaises(KeyError):
+                staging.stage_input(art_id, scratch, session_id=session)
 
     def test_a_session_that_is_not_a_dashboards_is_refused(self):
         signed_in = parsers.save_to_duckdb(pd.DataFrame({"a": [1]}), session_id="a-sign-in-token")

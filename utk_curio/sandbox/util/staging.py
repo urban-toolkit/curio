@@ -34,6 +34,7 @@ from utk_curio.sandbox.util import codec
 from utk_curio.sandbox.util.parsers import (
     load_shared_output_file,
     save_to_duckdb,
+    session_may_read,
     _make_id,
     _read_json_artifact,
     _resolve_stored_artifact_path,
@@ -79,12 +80,7 @@ def _read_row(art_id, session_id):
         ).fetchone()
         if row is None:
             raise KeyError(f"No artifact with id {art_id}")
-        stored_session = row[6]
-        if (
-            session_id is not None
-            and stored_session is not None
-            and stored_session != session_id
-        ):
+        if not session_may_read(row[6], session_id):
             raise KeyError(f"No artifact with id {art_id}")
         return row[:6]
     finally:
