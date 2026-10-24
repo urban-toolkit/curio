@@ -752,7 +752,9 @@ def open_strip_category(page, node_id: str, category: str, *, timeout: float = 1
 
     The header lists the chips a node can use in one row of categories, all
     closed until one is clicked, so a test that drags a tag opens its category
-    first. The click is dispatched, as the editor's tabs are, so the node's
+    first; opening one closes the one open in that header, so the locator of
+    an earlier category's chips finds nothing after it. The click is
+    dispatched, as the editor's tabs are, so the node's
     place on the canvas does not matter. Fails when the header has no such
     category.
     """

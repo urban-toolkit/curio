@@ -722,8 +722,9 @@ const CATEGORY_NAME_ATTRIBUTES: Partial<Record<StripCategory, string>> = {
  * use, whatever its code or spec uses, in one row of categories, each with its
  * count and shown only when it has chips: Inputs, Scenarios, Widgets,
  * Selections and Shared. Every category starts closed; a click opens its chips
- * under the row, and another closes them. Several can be open, and one stays
- * open for its node (*nodeId*) while the dataflow is open (`stripCategories`).
+ * under the row, closing the category open, and a second click closes them.
+ * The one open stays open for its node (*nodeId*) while the dataflow is open
+ * (`stripCategories`).
  * On the canvas the header takes at most half its editor's height, and the
  * open chips scroll inside it. Nothing when the node can use no chip.
  *
@@ -849,7 +850,7 @@ export function ReferenceStrip({
         })}
       </div>
       {opened.length > 0 ? (
-        // The open categories' chips, which scroll when the header is as tall
+        // The open category's chips, which scroll when the header is as tall
         // as it gets.
         <div className={styles.stripOpen}>
           {opened.map((category) => (
