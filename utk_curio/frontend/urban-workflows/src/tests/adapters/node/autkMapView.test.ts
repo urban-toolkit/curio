@@ -191,7 +191,7 @@ describe("frameMaps", () => {
   });
 });
 
-// A map drawn again after an edit (the Map Edits node's) keeps its view.
+// A map drawn again after an edit (the Map Editor node's) keeps its view.
 describe("mapViews and keepMapViews", () => {
   /** A map whose camera stands at *view*, its layers drawn relative to *origin*. */
   function viewedMap(view: { eye: number[]; lookAt: number[]; up: number[] }, origin: number[] | null) {

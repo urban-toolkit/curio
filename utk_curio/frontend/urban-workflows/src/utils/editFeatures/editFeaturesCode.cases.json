@@ -1,5 +1,5 @@
 {
-  "description": "The code a Map Edits node writes from its edit list and reads back (#662, utils/editFeatures/editFeatures.ts). `ops`: the edits the node makes, in order, as editFeatures.ts (EDIT_OPS) and curio_edit_features (OPS) list them. Jest checks editFeaturesCode writes each case's `code` from its `settings`, `circles` (1 when absent) and `comments` (the node's own lines when absent), that readEditFeaturesCode reads it back as those and that the code it then writes is the same, reads each `read` code as its `settings`, `circles` and `comments`, and refuses each `refused` code with `problem`, the whole text it says. utk_curio/sandbox/tests/test_feature_edits_code.py checks the sandbox's reader (utk_curio/sandbox/util/feature_edits_code.py) reads every code the same way, word for word, and writes each case with no `settings` and no `comments` as a new node's code (new_node_code), and utk_curio/sandbox/tests/test_feature_edits.py runs each `cases` code with curio_edit_features, checking the buildings left (`kept`).",
+  "description": "The code a Map Editor node writes from its edit list and reads back (#662, utils/editFeatures/editFeatures.ts). `ops`: the edits the node makes, in order, as editFeatures.ts (EDIT_OPS) and curio_edit_features (OPS) list them. Jest checks editFeaturesCode writes each case's `code` from its `settings`, `circles` (1 when absent) and `comments` (the node's own lines when absent), that readEditFeaturesCode reads it back as those and that the code it then writes is the same, reads each `read` code as its `settings`, `circles` and `comments`, and refuses each `refused` code with `problem`, the whole text it says. utk_curio/sandbox/tests/test_feature_edits_code.py checks the sandbox's reader (utk_curio/sandbox/util/feature_edits_code.py) reads every code the same way, word for word, and writes each case with no `settings` and no `comments` as a new node's code (new_node_code), and utk_curio/sandbox/tests/test_feature_edits.py runs each `cases` code with curio_edit_features, checking the buildings left (`kept`).",
   "ops": [
     "remove",
     "set",
@@ -15,7 +15,7 @@
     {
       "name": "a new node: no edits, so the input is handed on as it came",
       "settings": null,
-      "code": "# Map Edits writes this code from its edit list: each edit, in the\n# order it was made, on the features whose key is one of its ids. It is\n# written again when the list changes.\nreturn curio_edit_features(input_0, [])\n",
+      "code": "# Map Editor writes this code from its edit list: each edit, in the\n# order it was made, on the features whose key is one of its ids. It is\n# written again when the list changes.\nreturn curio_edit_features(input_0, [])\n",
       "kept": [
         1,
         1,
@@ -38,7 +38,7 @@
           }
         ]
       },
-      "code": "# Map Edits writes this code from its edit list: each edit, in the\n# order it was made, on the features whose key is one of its ids. It is\n# written again when the list changes.\nreturn curio_edit_features(input_0, [\n    {\"op\": \"remove\", \"ids\": [1, 3]},\n], key=\"building_id\", layer=\"table_osm_buildings\")\n",
+      "code": "# Map Editor writes this code from its edit list: each edit, in the\n# order it was made, on the features whose key is one of its ids. It is\n# written again when the list changes.\nreturn curio_edit_features(input_0, [\n    {\"op\": \"remove\", \"ids\": [1, 3]},\n], key=\"building_id\", layer=\"table_osm_buildings\")\n",
       "kept": [
         2
       ]
@@ -79,7 +79,7 @@
           }
         ]
       },
-      "code": "# Map Edits writes this code from its edit list: each edit, in the\n# order it was made, on the features whose key is one of its ids. It is\n# written again when the list changes.\nreturn curio_edit_features(input_0, [\n    {\"op\": \"set\", \"ids\": [2], \"column\": \"name\", \"value\": \"Tower \\\"B\\\"\"},\n    {\"op\": \"remove\", \"ids\": [3]},\n    {\"op\": \"restore\", \"ids\": [3]},\n    {\"op\": \"set\", \"ids\": [1], \"column\": \"height\", \"value\": None},\n], key=\"building_id\", layer=\"table_osm_buildings\")\n",
+      "code": "# Map Editor writes this code from its edit list: each edit, in the\n# order it was made, on the features whose key is one of its ids. It is\n# written again when the list changes.\nreturn curio_edit_features(input_0, [\n    {\"op\": \"set\", \"ids\": [2], \"column\": \"name\", \"value\": \"Tower \\\"B\\\"\"},\n    {\"op\": \"remove\", \"ids\": [3]},\n    {\"op\": \"restore\", \"ids\": [3]},\n    {\"op\": \"set\", \"ids\": [1], \"column\": \"height\", \"value\": None},\n], key=\"building_id\", layer=\"table_osm_buildings\")\n",
       "kept": [
         1,
         1,
@@ -88,7 +88,7 @@
       ]
     },
     {
-      "name": "a Map Edits log: a raise, a removal switched off and a removal by condition",
+      "name": "a Map Editor log: a raise, a removal switched off and a removal by condition",
       "settings": {
         "key": "building_id",
         "layer": "table_osm_buildings",
@@ -116,7 +116,7 @@
           }
         ]
       },
-      "code": "# Map Edits writes this code from its edit list: each edit, in the\n# order it was made, on the features whose key is one of its ids. It is\n# written again when the list changes.\nreturn curio_edit_features(input_0, [\n    {\"op\": \"offset\", \"ids\": [2], \"column\": \"height\", \"value\": 3, \"label\": \"Raise the tower\"},\n    {\"op\": \"remove\", \"ids\": [1], \"label\": \"First building\", \"enabled\": False},\n    {\"op\": \"remove\", \"where\": \"building_id >= 3\"},\n], key=\"building_id\", layer=\"table_osm_buildings\")\n",
+      "code": "# Map Editor writes this code from its edit list: each edit, in the\n# order it was made, on the features whose key is one of its ids. It is\n# written again when the list changes.\nreturn curio_edit_features(input_0, [\n    {\"op\": \"offset\", \"ids\": [2], \"column\": \"height\", \"value\": 3, \"label\": \"Raise the tower\"},\n    {\"op\": \"remove\", \"ids\": [1], \"label\": \"First building\", \"enabled\": False},\n    {\"op\": \"remove\", \"where\": \"building_id >= 3\"},\n], key=\"building_id\", layer=\"table_osm_buildings\")\n",
       "kept": [
         1,
         1,
@@ -145,7 +145,7 @@
           }
         ]
       },
-      "code": "# Map Edits writes this code from its edit list: each edit, in the\n# order it was made, on the features whose key is one of its ids. It is\n# written again when the list changes.\nreturn curio_edit_features(input_0, [\n    {\"op\": \"scale\", \"where\": \"height > 11\", \"column\": \"height\", \"value\": 0.5},\n    {\"op\": \"expr\", \"ids\": [3], \"column\": \"height\", \"value\": \"10 * 2\"},\n], key=\"building_id\", layer=\"table_osm_buildings\")\n",
+      "code": "# Map Editor writes this code from its edit list: each edit, in the\n# order it was made, on the features whose key is one of its ids. It is\n# written again when the list changes.\nreturn curio_edit_features(input_0, [\n    {\"op\": \"scale\", \"where\": \"height > 11\", \"column\": \"height\", \"value\": 0.5},\n    {\"op\": \"expr\", \"ids\": [3], \"column\": \"height\", \"value\": \"10 * 2\"},\n], key=\"building_id\", layer=\"table_osm_buildings\")\n",
       "kept": [
         1,
         1,
@@ -196,7 +196,7 @@
           }
         ]
       },
-      "code": "# Map Edits writes this code from its edit list: each edit, in the\n# order it was made, on the features whose key is one of its ids. It is\n# written again when the list changes.\nreturn curio_edit_features(input_0, [\n    {\"op\": \"add\", \"id\": 4, \"geometry\": {\"type\": \"Polygon\", \"coordinates\": [[[9, 0], [10, 0], [10, 1], [9, 1], [9, 0]]]}, \"values\": {\"height\": 20}},\n], key=\"building_id\", layer=\"table_osm_buildings\", crs=\"EPSG:3395\")\n",
+      "code": "# Map Editor writes this code from its edit list: each edit, in the\n# order it was made, on the features whose key is one of its ids. It is\n# written again when the list changes.\nreturn curio_edit_features(input_0, [\n    {\"op\": \"add\", \"id\": 4, \"geometry\": {\"type\": \"Polygon\", \"coordinates\": [[[9, 0], [10, 0], [10, 1], [9, 1], [9, 0]]]}, \"values\": {\"height\": 20}},\n], key=\"building_id\", layer=\"table_osm_buildings\", crs=\"EPSG:3395\")\n",
       "kept": [
         1,
         1,
@@ -252,7 +252,7 @@
           }
         ]
       },
-      "code": "# Map Edits writes this code from its edit list: each edit, in the\n# order it was made, on the features whose key is one of its ids. It is\n# written again when the list changes.\nreturn curio_edit_features(input_0, [\n    {\"op\": \"geometry\", \"ids\": [2], \"geometry\": {\"type\": \"Polygon\", \"coordinates\": [[[9, 0], [10, 0], [10, 1], [9, 1], [9, 0]]]}},\n    {\"op\": \"add_column\", \"column\": \"kind\", \"value\": \"office\"},\n], key=\"building_id\", layer=\"table_osm_buildings\", crs=\"EPSG:3395\")\n",
+      "code": "# Map Editor writes this code from its edit list: each edit, in the\n# order it was made, on the features whose key is one of its ids. It is\n# written again when the list changes.\nreturn curio_edit_features(input_0, [\n    {\"op\": \"geometry\", \"ids\": [2], \"geometry\": {\"type\": \"Polygon\", \"coordinates\": [[[9, 0], [10, 0], [10, 1], [9, 1], [9, 0]]]}},\n    {\"op\": \"add_column\", \"column\": \"kind\", \"value\": \"office\"},\n], key=\"building_id\", layer=\"table_osm_buildings\", crs=\"EPSG:3395\")\n",
       "kept": [
         1,
         1,
@@ -282,7 +282,7 @@
           }
         ]
       },
-      "code": "# Map Edits writes this code from its edit list: each edit, in the\n# order it was made, on the features whose key is one of its ids. It is\n# written again when the list changes.\nreturn curio_edit_features(input_0, [\n    {\"op\": \"geometry\", \"ids\": [2], \"geometry\": {\"type\": \"Polygon\", \"coordinates\": [[[9, 0], [10, 0], [10, 1], [9, 1], [9, 0]]]}, \"crs\": \"EPSG:3395\"},\n    {\"op\": \"add\", \"id\": 4, \"geometry\": {\"type\": \"Polygon\", \"coordinates\": [[[11, 0], [12, 0], [12, 1], [11, 1], [11, 0]]]}, \"crs\": \"EPSG:3395\", \"values\": {\"height\": 20}},\n], key=\"building_id\", layer=\"table_osm_buildings\", crs=\"EPSG:3395\")\n",
+      "code": "# Map Editor writes this code from its edit list: each edit, in the\n# order it was made, on the features whose key is one of its ids. It is\n# written again when the list changes.\nreturn curio_edit_features(input_0, [\n    {\"op\": \"geometry\", \"ids\": [2], \"geometry\": {\"type\": \"Polygon\", \"coordinates\": [[[9, 0], [10, 0], [10, 1], [9, 1], [9, 0]]]}, \"crs\": \"EPSG:3395\"},\n    {\"op\": \"add\", \"id\": 4, \"geometry\": {\"type\": \"Polygon\", \"coordinates\": [[[11, 0], [12, 0], [12, 1], [11, 1], [11, 0]]]}, \"crs\": \"EPSG:3395\", \"values\": {\"height\": 20}},\n], key=\"building_id\", layer=\"table_osm_buildings\", crs=\"EPSG:3395\")\n",
       "kept": [
         1,
         1,
@@ -334,7 +334,7 @@
           }
         ]
       },
-      "code": "# Map Edits writes this code from its edit list: each edit, in the\n# order it was made, on the features whose key is one of its ids. It is\n# written again when the list changes.\nreturn curio_edit_features(input_0, [\n    {\"op\": \"add\", \"layer\": \"cooling_centers\", \"id\": \"new-1\", \"geometry\": {\"type\": \"Point\", \"coordinates\": [3, 3]}, \"values\": {\"name\": \"Library\"}},\n    {\"op\": \"remove\", \"ids\": [3]},\n], key=\"building_id\", layer=\"table_osm_buildings\", new_layers=[{\"name\": \"cooling_centers\", \"geometry\": \"Point\", \"properties\": [{\"name\": \"name\", \"type\": \"text\", \"required\": True}]}], crs=\"EPSG:3395\")\n",
+      "code": "# Map Editor writes this code from its edit list: each edit, in the\n# order it was made, on the features whose key is one of its ids. It is\n# written again when the list changes.\nreturn curio_edit_features(input_0, [\n    {\"op\": \"add\", \"layer\": \"cooling_centers\", \"id\": \"new-1\", \"geometry\": {\"type\": \"Point\", \"coordinates\": [3, 3]}, \"values\": {\"name\": \"Library\"}},\n    {\"op\": \"remove\", \"ids\": [3]},\n], key=\"building_id\", layer=\"table_osm_buildings\", new_layers=[{\"name\": \"cooling_centers\", \"geometry\": \"Point\", \"properties\": [{\"name\": \"name\", \"type\": \"text\", \"required\": True}]}], crs=\"EPSG:3395\")\n",
       "kept": [
         1,
         1,
@@ -362,7 +362,7 @@
         2,
         3
       ],
-      "code": "# Map Edits writes this code from its edit list: each edit, in the\n# order it was made, on the features whose key is one of its ids. It is\n# written again when the list changes.\nreturn curio_edit_features([input_0, input_1], [\n    {\"op\": \"remove\", \"layer\": \"table_osm_buildings\", \"ids\": [1]},\n], keys={\"table_osm_buildings\": \"building_id\"}, by_input=True)\n"
+      "code": "# Map Editor writes this code from its edit list: each edit, in the\n# order it was made, on the features whose key is one of its ids. It is\n# written again when the list changes.\nreturn curio_edit_features([input_0, input_1], [\n    {\"op\": \"remove\", \"layer\": \"table_osm_buildings\", \"ids\": [1]},\n], keys={\"table_osm_buildings\": \"building_id\"}, by_input=True)\n"
     },
     {
       "name": "a comment line the user added stays, with a blank one, over the node's edits",
@@ -435,12 +435,12 @@
         2,
         3
       ],
-      "code": "# Map Edits writes this code from its edit list: each edit, in the\n# order it was made, on the features whose key is one of its ids. It is\n# written again when the list changes.\nreturn curio_edit_features(input_0, [\n    {\"op\": \"set\", \"ids\": [2], \"column\": \"name\", \"value\": \"Tower \\\"B\\\" \\\\ 'C', São Paulo 東京, a\\u2028b, [\\x21! selection towers !!]\", \"label\": \"Rename \\\"B\\\"\"},\n], key=\"building_id\", layer=\"table_osm_buildings\")\n"
+      "code": "# Map Editor writes this code from its edit list: each edit, in the\n# order it was made, on the features whose key is one of its ids. It is\n# written again when the list changes.\nreturn curio_edit_features(input_0, [\n    {\"op\": \"set\", \"ids\": [2], \"column\": \"name\", \"value\": \"Tower \\\"B\\\" \\\\ 'C', São Paulo 東京, a\\u2028b, [\\x21! selection towers !!]\", \"label\": \"Rename \\\"B\\\"\"},\n], key=\"building_id\", layer=\"table_osm_buildings\")\n"
     },
     {
       "name": "a new node fed by two circles: no edits, so every input is handed on as it came",
       "settings": null,
-      "code": "# Map Edits writes this code from its edit list: each edit, in the\n# order it was made, on the features whose key is one of its ids. It is\n# written again when the list changes.\nreturn curio_edit_features([input_0, input_1], [], by_input=True)\n",
+      "code": "# Map Editor writes this code from its edit list: each edit, in the\n# order it was made, on the features whose key is one of its ids. It is\n# written again when the list changes.\nreturn curio_edit_features([input_0, input_1], [], by_input=True)\n",
       "circles": 2,
       "kept": [
         1,

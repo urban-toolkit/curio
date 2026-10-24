@@ -62,7 +62,7 @@ export function useGraphEdits({
     // update — ``defaultCode`` drives the Monaco editor's value and ``code``
     // is what TrillGenerator serializes on save. The change is an entry of
     // the node's Provenance drawer named after *author*, the agent that wrote
-    // the code. A node whose code is its state (a Map Edits node) takes it
+    // the code. A node whose code is its state (a Map Editor node) takes it
     // through its own writer, as its own changes are made; any other node
     // takes the code as it is, and the change is filed as that writer files
     // it: an edit holding the code it left and the code it replaced, with the

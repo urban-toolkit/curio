@@ -1,7 +1,7 @@
 /**
  * An Autark node hands on every OpenStreetMap feature with its OSM id in an
  * `osm_id` column, as the Discovery Catalog's OpenStreetMap downloads name a
- * row, so a Map Edits node or a selection can name an OSM road, park or
+ * row, so a Map Editor node or a selection can name an OSM road, park or
  * water by it (#1055). autk-db 4 gives a road's, a park's or a water's OSM id
  * as the feature's GeoJSON `id`, which a table leaves out, and a building
  * part's as that part's `id` in `properties.parts`. Both loaders hand the same

@@ -1,4 +1,4 @@
-/* What a Map Edits node puts over the Autark map it edits on (#662): only a
+/* What a Map Editor node puts over the Autark map it edits on (#662): only a
    tip with its buttons, on the dark of Curio's menus
    (components/menus/darkMenu.module.css); the map draws the tools itself.
    Buttons are the Widgets tab's (WidgetTags.module.css). */

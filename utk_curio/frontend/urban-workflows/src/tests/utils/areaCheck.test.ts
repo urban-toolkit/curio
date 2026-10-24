@@ -1,5 +1,5 @@
 /**
- * The check of an area a Map Edits gesture makes (`utils/editFeatures/areaCheck`),
+ * The check of an area a Map Editor gesture makes (`utils/editFeatures/areaCheck`),
  * on the cases `areaCheck.cases.json` holds: autk-db refuses a shape that
  * GEOS's ST_IsValid refuses once the map's grid has rounded it, and with it
  * the whole layer (#1112). Each case's problem is the one `areaProblem` finds,

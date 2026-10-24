@@ -502,7 +502,7 @@ class VerifiedRounds:
         return CONTINUE
 
     def _map_edits_gate(self):
-        """A Map Edits node's code is held to what the node reads, before the
+        """A Map Editor node's code is held to what the node reads, before the
         sandbox runs it: code the node cannot read fails the round, in the
         node's own words, which the correction gets. The code on the node,
         which round 0 may run, is the user's own and is never refused."""
@@ -655,7 +655,7 @@ class VerifiedRounds:
         return None
 
     def _made_up_ids_check(self):
-        """The Map Edits step reports ids no feature has, and its run goes on,
+        """The Map Editor step reports ids no feature has, and its run goes on,
         so a node an agent filled with made-up ids passes the sandbox. The
         round fails on the step's own lines, read from the run's whole output,
         however much comes after them. The code on the node is the user's own

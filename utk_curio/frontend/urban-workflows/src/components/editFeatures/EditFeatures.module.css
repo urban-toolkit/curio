@@ -1,4 +1,4 @@
-/* The Map Edits node's body (#662): the layers it is fed and the forms that
+/* The Map Editor node's body (#662): the layers it is fed and the forms that
    edit them (LayerWorkbench), and its list of edits. Colours, type and radii
    are the tokens in styles/curioTokens.css; buttons and 22px controls are the
    Widgets tab's (WidgetTags.module.css); tags take the scenario rows' status

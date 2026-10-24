@@ -1,5 +1,5 @@
 /**
- * What the Map Edits node reads off a layer (#662, `layerModel.ts`): the
+ * What the Map Editor node reads off a layer (#662, `layerModel.ts`): the
  * geometry its features have, the properties a new feature is asked for, the
  * id it takes, the forms' values, and the features as the log leaves them,
  * shapes included; and the corners the edit map handles (`toRings`).

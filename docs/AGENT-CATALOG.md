@@ -311,9 +311,9 @@ An agent that reads the dataflow sees each scenario with its fixed context, leve
 
 The **Dataflow Builder** finds the scenarios in your [Scenario Catalog](SCENARIO-CATALOG.md). Asked for a scenario of another project, such as *Towers removed* from *Loop shadow*, it names the scenario and its project and tells you to drag it in from **Scenario**, **Browse all**, where it arrives with its saved results, rather than rebuilding it.
 
-### Map Edits
+### Map Editor
 
-An agent writes a Map Edits node's code as the node writes it: one call that holds the node's edits, which the node lists and shows on its map. Code the node cannot read is refused, and the agent is told why in the node's own words. An edit names its features by ids their layer holds, or by a condition; when a run says an edit names ids no feature has, Solve corrects it. Solve makes edits in an empty Map Edits node only when its goal names them, such as *Remove the two tallest towers*; otherwise the node gets its call with no edits, as when you drop it, and you make the edits on the map. An agent writing a node beside a Map Edits node reads its edits. Once you apply a change an agent made to a Map Edits node, it is an entry named after the agent in the node's Provenance drawer, as on any node, and the nodes below it are out of date until they run again, as when you edit the node yourself.
+An agent writes a Map Editor node's code as the node writes it: one call that holds the node's edits, which the node lists and shows on its map. Code the node cannot read is refused, and the agent is told why in the node's own words. An edit names its features by ids their layer holds, or by a condition; when a run says an edit names ids no feature has, Solve corrects it. Solve makes edits in an empty Map Editor node only when its goal names them, such as *Remove the two tallest towers*; otherwise the node gets its call with no edits, as when you drop it, and you make the edits on the map. An agent writing a node beside a Map Editor node reads its edits. Once you apply a change an agent made to a Map Editor node, it is an entry named after the agent in the node's Provenance drawer, as on any node, and the nodes below it are out of date until they run again, as when you edit the node yourself.
 
 ### Dashboards
 

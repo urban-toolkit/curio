@@ -1,6 +1,6 @@
 /**
  * Python literals, written and read, for the code a node writes for itself
- * and reads back (the Map Edits node's `curio_edit_features` call,
+ * and reads back (the Map Editor node's `curio_edit_features` call,
  * `editFeatures.ts`): texts in single or double quotes with Python's escapes,
  * numbers, True, False, None, lists and dicts.
  *

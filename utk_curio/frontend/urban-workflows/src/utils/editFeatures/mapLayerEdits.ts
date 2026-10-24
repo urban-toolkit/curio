@@ -1,5 +1,5 @@
 /**
- * A Map Edits node and the Autark map it edits on (#662): the data goes
+ * A Map Editor node and the Autark map it edits on (#662): the data goes
  * Data → Interaction → map on data edges, and an interaction edge (the in/out
  * dots, as two Autark views are linked) joins the node and the map, for
  * selections both ways. The edits reach the map on the data edge only.
@@ -20,7 +20,7 @@ export function circleOf(handle: unknown): number {
 }
 
 export const isAutkMap = (node: any) => !!node && getUnversionedFlowNodeType(node) === NodeType.AUTK_GRAMMAR;
-/** Whether *node* is a Map Edits node (its type id is still Edit Features'). */
+/** Whether *node* is a Map Editor node (its type id is still Edit Features'). */
 export const isInteraction = (node: any) => !!node && getUnversionedFlowNodeType(node) === NodeType.EDIT_FEATURES;
 
 /** Whether *edge* is an interaction edge: the in/out link, not a data edge. */
@@ -33,7 +33,7 @@ export function nodeCode(data: any): string {
   return typeof data?.code === "string" && data.code !== "" ? data.code : String(data?.defaultCode ?? "");
 }
 
-/** The edits a Map Edits node's code holds, or undefined when the node cannot read its code. */
+/** The edits a Map Editor node's code holds, or undefined when the node cannot read its code. */
 export function nodeSettings(node: any): EditFeaturesSettings | undefined {
   const read = readEditFeaturesCode(nodeCode(node?.data));
   return "problem" in read ? undefined : read.settings;
@@ -55,7 +55,7 @@ export function feeds(source: string, target: string, edges: readonly any[]): bo
 }
 
 /**
- * The Autark map the Map Edits node *nodeId* picks and draws on: one it
+ * The Autark map the Map Editor node *nodeId* picks and draws on: one it
  * feeds on a data edge and is linked to by an interaction edge, the first
  * such link when there are several. Null when there is none: a map linked but
  * not fed is not one.

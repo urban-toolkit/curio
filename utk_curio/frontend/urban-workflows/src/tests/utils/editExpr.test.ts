@@ -1,5 +1,5 @@
 /**
- * The Map Edits node's expressions (`utils/editFeatures/editExpr`) and its
+ * The Map Editor node's expressions (`utils/editFeatures/editExpr`) and its
  * edit log applied in the browser (`utils/editFeatures/applyEdits`), on the
  * cases `editExpr.cases.json` holds. `utk_curio/sandbox/tests/test_feature_edits.py`
  * runs the same cases through `edit_expr.py` and `curio_edit_features`, so the

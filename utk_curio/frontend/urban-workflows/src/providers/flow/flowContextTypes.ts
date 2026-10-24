@@ -164,7 +164,7 @@ export interface FlowContextProps {
      * the nodes below them run once the changes settle (#845). */
     requestAutoRun: (nodeIds: readonly string[]) => void;
     /** Run *nodeIds* and every node below them now, the nodes an automatic run takes
-     * (`autoRunTargets`), whether auto-run is on or not: the Map Edits node's Commit edits. */
+     * (`autoRunTargets`), whether auto-run is on or not: the Map Editor node's Commit edits. */
     runDownstream?: (nodeIds: readonly string[]) => void;
     defaultSaveOutputDataset: boolean;
     setDefaultSaveOutputDataset: (value: boolean) => void;

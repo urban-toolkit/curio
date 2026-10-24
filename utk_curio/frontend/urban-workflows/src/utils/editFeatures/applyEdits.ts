@@ -1,5 +1,5 @@
 /**
- * The Map Edits node's edit log applied in the browser, the one way it is
+ * The Map Editor node's edit log applied in the browser, the one way it is
  * applied there: to a layer's features, shapes and properties, as a run
  * applies it. What the node's table and its condition count read
  * (`applyEdits`), what its tools read (`layerModel.editedFeatures`) and what

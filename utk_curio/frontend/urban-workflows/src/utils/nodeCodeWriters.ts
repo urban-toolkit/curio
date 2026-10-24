@@ -1,7 +1,7 @@
 /**
  * The writers of nodes whose code is their state, by node id.
  *
- * A node whose behavior keeps its state in its code (a Map Edits node, whose
+ * A node whose behavior keeps its state in its code (a Map Editor node, whose
  * code is its edit list) makes each change to that code its own way: the
  * entry in its Provenance drawer, the stale marks on the nodes below it, the
  * dataflow left Unsaved. It registers that writer here while it is on the

@@ -1,5 +1,5 @@
 /**
- * An agent's applied change to a Map Edits node goes through the node's own
+ * An agent's applied change to a Map Editor node goes through the node's own
  * writer, as an edit made in the node does: its code lands in the node, the
  * dataflow reads Unsaved, the node and every node below it that ran are out
  * of date, and the change is an entry of the node's Provenance drawer, named
@@ -76,7 +76,7 @@ function mount() {
     const [data, setData] = React.useState<Record<string, any>>(live.current);
     live.current = data;
     const nodes = [{ id: NODE, type: "curio.builtin/edit-features", data }, ...MORE];
-    // The canvas's node list, as setNodes writes it: only the Map Edits node changes here.
+    // The canvas's node list, as setNodes writes it: only the Map Editor node changes here.
     const setNodes = ((update: Node[] | ((nds: Node[]) => Node[])) => {
       const next = typeof update === "function" ? update(nodes as unknown as Node[]) : update;
       const node = next.find((n) => n.id === NODE);

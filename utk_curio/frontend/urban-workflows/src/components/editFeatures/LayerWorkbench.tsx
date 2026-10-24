@@ -1,5 +1,5 @@
 /**
- * The Map Edits node's layer workbench (#662): the layers the node is fed,
+ * The Map Editor node's layer workbench (#662): the layers the node is fed,
  * and what can be done with each layer, one step at a time.
  *
  * 1. The layers (`LayerList`), as cards grouped by the geometry their

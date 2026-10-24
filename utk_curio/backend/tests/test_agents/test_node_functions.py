@@ -135,7 +135,7 @@ def test_the_page_curio_ships_reads_and_the_preamble_includes_it():
 
 
 def test_map_edits_call_is_the_one_its_step_defines():
-    """A Map Edits node's code is one call of ``curio_edit_features``, and the
+    """A Map Editor node's code is one call of ``curio_edit_features``, and the
     page gives it as ``feature_edits.edit_features`` defines it."""
     from utk_curio.backend.app.agents.domain import node_functions
     from utk_curio.sandbox.util.feature_edits import edit_features

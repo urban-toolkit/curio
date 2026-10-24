@@ -1,6 +1,6 @@
 /**
  * What an edit by a rule, or of several picked features, does in the Map
- * Edits node (#662): in which column, how, by what (ops of
+ * Editor node (#662): in which column, how, by what (ops of
  * `curio_edit_features`): set a value, or, in a number column, the result of
  * an expression.
  */

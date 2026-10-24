@@ -130,7 +130,7 @@ export function loadableFeatures(features: any[]): { features: any[]; order: num
 
 // A layer's features as an Autark node hands them on: each OpenStreetMap
 // feature with its OSM id in an `osm_id` property, as the Discovery Catalog's
-// OpenStreetMap downloads name a row, so a Map Edits node or a selection can
+// OpenStreetMap downloads name a row, so a Map Editor node or a selection can
 // name it. autk-db gives a road's, a park's or a water's OSM id as the feature's
 // GeoJSON `id`, which a table leaves out. A building's `id` is its
 // `building_id`, and each of its parts' OSM id is that part's `id` in

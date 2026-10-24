@@ -1360,11 +1360,11 @@ the arguments must be an object
 
 ## map-edits.unreadable
 
-Map Edits cannot read this code: {problem}
+Map Editor cannot read this code: {problem}
 
 ## map-edits.made-up-ids
 
-Map Edits: the run says these edits name ids no feature has, so they change nothing:
+Map Editor: the run says these edits name ids no feature has, so they change nothing:
 {lines}{more}
 Name features the input holds, by their ids or by a where condition.
 

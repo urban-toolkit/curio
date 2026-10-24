@@ -144,7 +144,7 @@ def pbf_trees(work: Path) -> Path:
     trees = points[tags.map(lambda t: t.get("natural") == "tree")].copy()
     for key in TREE_TAGS:
         trees[key] = tags[trees.index].map(lambda t, k=key: t.get(k))
-    # Its id, a number, identifies a tree, so a Map Edits node can edit it.
+    # Its id, a number, identifies a tree, so a Map Editor node can edit it.
     trees["osm_id"] = pd.to_numeric(trees["osm_id"], errors="coerce").astype("Int64")
     path = work / "trees.pbf.geojson"
     trees[["osm_id", *TREE_TAGS, "geometry"]].to_file(path, driver="GeoJSON")

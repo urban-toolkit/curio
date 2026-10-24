@@ -211,7 +211,7 @@ class TestNodesTheServerDoesNotRun:
     MAP_SPEC = json.dumps({"map": {"layerRefs": [{"dataRef": "[!! input_0 !!]"}, {"dataRef": "[!! input_1 !!]"}]}})
 
     TEMPLATES = {
-        # As the store's roster has it: the Map Edits node runs its code.
+        # As the store's roster has it: the Map Editor node runs its code.
         "curio.builtin/edit-features": {"executable": True, "engine": "python"},
         "curio.builtin/computation-analysis": {"executable": True, "engine": "python"},
     }

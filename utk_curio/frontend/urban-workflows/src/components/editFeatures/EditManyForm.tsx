@@ -1,5 +1,5 @@
 /**
- * Edit several features picked on the map, in the Map Edits node's workbench
+ * Edit several features picked on the map, in the Map Editor node's workbench
  * (#662): one value of them all.
  */
 import React from "react";

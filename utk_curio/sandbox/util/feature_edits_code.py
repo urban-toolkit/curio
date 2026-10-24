@@ -1,6 +1,6 @@
-"""The Map Edits node's code, read as the node reads it.
+"""The Map Editor node's code, read as the node reads it.
 
-A Map Edits node (its type is still ``curio.builtin/edit-features``) keeps
+A Map Editor node (its type is still ``curio.builtin/edit-features``) keeps
 its edits in its code, one call of ``curio_edit_features``, which the node
 writes from its edit list and reads back (``readEditFeaturesCode`` in
 ``utils/editFeatures/editFeatures.ts``). Code of any other shape still runs,
@@ -63,7 +63,7 @@ PROPERTY_FIELDS = ("name", "type", "required", "choices", "default")
 
 #: The comment lines the node writes above its call (``EDIT_CODE_NOTE``).
 EDIT_CODE_NOTE = (
-    "# Map Edits writes this code from its edit list: each edit, in the",
+    "# Map Editor writes this code from its edit list: each edit, in the",
     "# order it was made, on the features whose key is one of its ids. It is",
     "# written again when the list changes.",
 )

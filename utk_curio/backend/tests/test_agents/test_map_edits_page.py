@@ -1,4 +1,4 @@
-"""The knowledge page on Map Edits, ``knowledge/map-edits.md`` in the base
+"""The knowledge page on Map Editor, ``knowledge/map-edits.md`` in the base
 entry, states the call, the edits and their fields as the node's reader takes
 them, and the words a goal names edits by, and every agent Curio ships reads
 it in its preamble.

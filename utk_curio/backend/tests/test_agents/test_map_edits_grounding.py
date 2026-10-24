@@ -1,13 +1,13 @@
-"""Map Edits grounds the agents.
+"""Map Editor grounds the agents.
 
-A Map Edits node (its type id is still ``curio.builtin/edit-features``) keeps
+A Map Editor node (its type id is still ``curio.builtin/edit-features``) keeps
 its edits in its code: one ``curio_edit_features(...)`` call, which the node
 writes and reads back. Code the node cannot read is refused wherever an agent
 writes a node's code: at the mint of ``node.create`` and of
 ``node.content.write``, and in Solve, verified or not, before the sandbox
 runs it. A run's report of ids no feature has is a made-up id, read from the
 run's whole output, past the tail a record keeps too. And Solve's context
-gives a node the Map Edits calls of its neighbours.
+gives a node the Map Editor calls of its neighbours.
 
 Every test imports what it tests inside itself, so a checkout without it
 fails test by test rather than at collection.
@@ -37,7 +37,7 @@ CA = "curio.builtin/computation-analysis"
 EDIT = "curio.builtin/edit-features"
 
 NOTE = (
-    "# Map Edits writes this code from its edit list: each edit, in the\n"
+    "# Map Editor writes this code from its edit list: each edit, in the\n"
     "# order it was made, on the features whose key is one of its ids. It is\n"
     "# written again when the list changes.\n"
 )
@@ -57,7 +57,7 @@ LOADER = "return 1\n"
 
 def _seed_builtin(user_key: str) -> None:
     """The shipped built-in package in *user_key*'s store, so the project's
-    templates are Curio's own, Map Edits among them."""
+    templates are Curio's own, Map Editor among them."""
     from utk_curio import shipped
     from utk_curio.backend.app.packages.repositories.store import user_packages_dir
 
@@ -102,10 +102,10 @@ class TestTheMintsHoldAnAgentsCodeToTheNodesReader:
         _install(client, token, project, NB)
         att = _attach(client, token, project, NB)
         calls = _script(monkeypatch, [_create_tail(UNREADABLE, node_type=EDIT), "I could not write it."])
-        body = _run(client, token, project, att, "add a Map Edits node that removes building 2")
-        assert not _proposals(body), "code the Map Edits node cannot read was proposed"
+        body = _run(client, token, project, att, "add a Map Editor node that removes building 2")
+        assert not _proposals(body), "code the Map Editor node cannot read was proposed"
         [refusal] = _refusals(calls, "node.create")
-        assert "Map Edits" in refusal and PROBLEM in refusal, refusal
+        assert "Map Editor" in refusal and PROBLEM in refusal, refusal
 
     def test_node_content_write_refuses_map_edits_code_the_node_cannot_read(
         self, client, user_and_token, tmp_curio, monkeypatch,
@@ -119,9 +119,9 @@ class TestTheMintsHoldAnAgentsCodeToTheNodesReader:
         att = _attach(client, token, project, NB, target={"kind": "node", "targetId": "edit"})
         calls = _script(monkeypatch, [_write_tail("edit", UNREADABLE), "I could not write it."])
         body = _run(client, token, project, att, "remove building 2")
-        assert not _proposals(body), "code the Map Edits node cannot read was proposed"
+        assert not _proposals(body), "code the Map Editor node cannot read was proposed"
         [refusal] = _refusals(calls, "node.content.write")
-        assert "Map Edits" in refusal and PROBLEM in refusal, refusal
+        assert "Map Editor" in refusal and PROBLEM in refusal, refusal
 
     def _edit_project(self, client, user, token, content):
         return _project(client, user, token, [
@@ -160,7 +160,7 @@ class TestTheMintsHoldAnAgentsCodeToTheNodesReader:
         assert _proposals(_run(client, token, project, att, "keep it")), _tool_results(calls[-1], "node.content.write")
 
 
-#: The two buildings a Map Edits node edits in the Solve tests.
+#: The two buildings a Map Editor node edits in the Solve tests.
 BUILDINGS = {"type": "FeatureCollection", "features": [
     {"type": "Feature", "geometry": {"type": "Point", "coordinates": [0, 0]}, "properties": {"building_id": 1}},
     {"type": "Feature", "geometry": {"type": "Point", "coordinates": [1, 1]}, "properties": {"building_id": 2}},
@@ -190,7 +190,7 @@ REMOVE_TWO_MARK = '{"op": "remove", "ids": [2]}'
 
 
 class _Sandbox:
-    """A fake sandbox: the loader passes, and a Map Edits node's run prints
+    """A fake sandbox: the loader passes, and a Map Editor node's run prints
     what the step prints for the edits its code holds (*printed*, by a mark
     of the code)."""
 
@@ -234,13 +234,13 @@ class TestSolveHoldsAnAgentsCodeToTheNodesReader:
         # The code the node cannot read never ran.
         assert not any('"delete"' in call["code"] for call in sandbox.calls), sandbox.calls
         # The correction was told why, in the node's own words.
-        assert "Map Edits" in inputs[1]["validationError"] and PROBLEM in inputs[1]["validationError"]
+        assert "Map Editor" in inputs[1]["validationError"] and PROBLEM in inputs[1]["validationError"]
 
     def test_an_unverified_solve_never_writes_code_the_node_cannot_read(
         self, client, user_and_token, tmp_curio, monkeypatch,
     ):
         """``verify: false`` writes content without running it, and holds a
-        Map Edits node's code to the node's reader as a verified Solve does."""
+        Map Editor node's code to the node's reader as a verified Solve does."""
         from utk_curio.backend.app.projects import storage as projects_storage
         from utk_curio.backend.app.projects.services import _user_dir_key
 
@@ -279,14 +279,14 @@ class TestSolveHoldsAnAgentsCodeToTheNodesReader:
         ).get_json()
         result = body["results"][edit]
         assert result["status"] == "failed", result
-        assert "Map Edits" in result["error"], result
+        assert "Map Editor" in result["error"], result
         spec = projects_storage.read_spec(_user_dir_key(user), project)
         assert next(n for n in spec["dataflow"]["nodes"] if n["id"] == edit)["content"] == ""
 
 
 class TestSolveReadsMadeUpIdsFromTheWholeRun:
     """The sandbox's step reports an id no feature has, and the run goes on: a
-    Map Edits node an agent filled with made-up ids passes the sandbox. Solve
+    Map Editor node an agent filled with made-up ids passes the sandbox. Solve
     reads the report and the round fails, with the step's own line."""
 
     def test_an_id_no_feature_has_fails_the_round_with_the_steps_own_line(self, app, tmp_curio):
@@ -324,7 +324,7 @@ class TestSolveReadsMadeUpIdsFromTheWholeRun:
 
 
 class TestSolveContextGivesTheNeighboursCalls:
-    """A node's context names its Map Edits neighbours' calls, so what an
+    """A node's context names its Map Editor neighbours' calls, so what an
     agent writes below a what-if knows what it changed."""
 
     def _spec(self, edit_code):
@@ -347,7 +347,7 @@ class TestSolveContextGivesTheNeighboursCalls:
         context = node_context.compose_node_context("4242", "p-context", self._spec(REMOVE_TWO), "shade")
         [row] = [row for row in context["upstream"] if row["id"] == "edit"]
         assert row.get("mapEditsCall") == REMOVE_TWO, row
-        # The loader is no Map Edits node: its row is as before.
+        # The loader is no Map Editor node: its row is as before.
         [loader] = [row for row in context["upstream"] if row["id"] == "load"]
         assert "mapEditsCall" not in loader
 
@@ -381,8 +381,8 @@ class TestTheUsersOwnCodeIsNeverRefused:
 
 def _applied_what_if(client, user, token, monkeypatch, *, edit_intent, edit_code, loaders=1):
     """A Dataflow Builder plan of *loaders* loaders, each on a circle of a Map
-    Edits node, applied; the Node Builder writes each node's code when asked,
-    *edit_code* for the Map Edits node. Returns the project, the builder's
+    Editor node, applied; the Node Builder writes each node's code when asked,
+    *edit_code* for the Map Editor node. Returns the project, the builder's
     attachment, the node ids by plan ref and the calls the model got."""
     project = _project(client, user, token, [])
     loads = [f"load{k}" if k else "load" for k in range(loaders)]
@@ -391,7 +391,7 @@ def _applied_what_if(client, user, token, monkeypatch, *, edit_intent, edit_code
         "nodes": [
             *({"ref": ref, "nodeType": DL, "title": f"Buildings {ref}",
                "intent": "synthetic sample buildings, by building_id"} for ref in loads),
-            {"ref": "edit", "nodeType": EDIT, "title": "Map Edits", "intent": edit_intent},
+            {"ref": "edit", "nodeType": EDIT, "title": "Map Editor", "intent": edit_intent},
         ],
         "edges": [
             {"from": ref, "to": "edit", **({"toHandle": f"in_{k}"} if k else {})} for k, ref in enumerate(loads)
@@ -422,10 +422,10 @@ def _applied_what_if(client, user, token, monkeypatch, *, edit_intent, edit_code
     return project, att, ids, calls
 
 
-#: The code a Map Edits node fed by two circles writes for itself when it is
+#: The code a Map Editor node fed by two circles writes for itself when it is
 #: dropped (``editFeaturesCode(undefined, 2)``).
 NEW_NODE_OF_TWO = (
-    "# Map Edits writes this code from its edit list: each edit, in the\n"
+    "# Map Editor writes this code from its edit list: each edit, in the\n"
     "# order it was made, on the features whose key is one of its ids. It is\n"
     "# written again when the list changes.\n"
     "return curio_edit_features([input_0, input_1], [], by_input=True)\n"
@@ -433,7 +433,7 @@ NEW_NODE_OF_TWO = (
 
 
 def _edit_requests(calls) -> list:
-    """The requests an agent got for the Map Edits node's code."""
+    """The requests an agent got for the Map Editor node's code."""
     return [
         call[-1]["content"] for call in calls
         if "[delegated task" in call[-1]["content"] and f'"nodeType": "{EDIT}"' in call[-1]["content"]
@@ -465,7 +465,7 @@ class TestAnEmptyMapEditsNodeIsFilledOnlyWhenItsGoalNamesEdits:
         assert result["status"] == "solved", result
         assert result["verification"] == {
             "status": "no-content",
-            "reason": "Map Edits: its goal names no edits, so its call holds none; make them on its map",
+            "reason": "Map Editor: its goal names no edits, so its call holds none; make them on its map",
         }
         assert not _edit_requests(calls), "an agent was asked for the edits of a node whose goal names none"
         spec = projects_storage.read_spec(_user_dir_key(user), project)
@@ -524,7 +524,7 @@ class TestAnEmptyMapEditsNodeIsFilledOnlyWhenItsGoalNamesEdits:
         assert edit.get("agent") == "Node Builder", edit
 
     def test_the_shipped_examples_goals_name_edits_where_their_code_holds_some(self):
-        """The rule, on every Map Edits node the shipped dataflows hold: a
+        """The rule, on every Map Editor node the shipped dataflows hold: a
         goal names edits where its code holds some, and names none where the
         node's edits are left to the map."""
         import glob
@@ -547,7 +547,7 @@ class TestAnEmptyMapEditsNodeIsFilledOnlyWhenItsGoalNamesEdits:
         assert {holds for _id, _names, holds in seen} == {True, False}, seen
 
     def test_the_words_a_goal_names_edits_by(self):
-        """The words the rule reads, which the knowledge page on Map Edits names
+        """The words the rule reads, which the knowledge page on Map Editor names
         for agents: what each of the node's edits does, as its list says it,
         and the plain words for the same."""
         from utk_curio.backend.app.agents.domain import map_edits
@@ -559,7 +559,7 @@ class TestAnEmptyMapEditsNodeIsFilledOnlyWhenItsGoalNamesEdits:
         )
 
 
-#: A package the user made, whose template names the Map Edits behavior.
+#: A package the user made, whose template names the Map Editor behavior.
 USER_PACKAGE = "user.whatif@1"
 USER_EDITS = "user.whatif/edits"
 
@@ -609,7 +609,7 @@ class TestTheBehaviorIsReadAsARunFindsTheNodesPackage:
         att = _attach(client, token, project, NB)
         calls = _script(monkeypatch, [_create_tail(UNREADABLE, node_type=USER_EDITS), "I could not write it."])
         body = _run(client, token, project, att, "add a what-if node that removes building 2")
-        assert not _proposals(body), "code the user's Map Edits template cannot read was proposed"
+        assert not _proposals(body), "code the user's Map Editor template cannot read was proposed"
         [refusal] = _refusals(calls, "node.create")
-        assert "Map Edits" in refusal and PROBLEM in refusal, refusal
+        assert "Map Editor" in refusal and PROBLEM in refusal, refusal
 

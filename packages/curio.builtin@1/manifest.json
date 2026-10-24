@@ -462,7 +462,7 @@
           "types": ["GEODATAFRAME", "DATAFRAME", "LIST", "JSON"]
         }
       ],
-      "label": "Map Edits",
+      "label": "Map Editor",
       "behavior": "edit-features",
       "outputPorts": [
         {

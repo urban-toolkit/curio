@@ -657,7 +657,7 @@
     },
     "nodeExecRecord": {
       "type": "object",
-      "description": "One entry of one node's history, recorded browser-side by ProvenanceProvider so the user can replay how a node evolved: an execution, or (with 'kind' edit) a change that ran nothing, made in the node's body, such as a Map Edits node's Remove, or an entry of its list switched off or deleted, or an agent's change the user applied. After a dataflow loads, the node's next entry descends from its newest entry whose 'code' is the node's content, else from its newest entry.",
+      "description": "One entry of one node's history, recorded browser-side by ProvenanceProvider so the user can replay how a node evolved: an execution, or (with 'kind' edit) a change that ran nothing, made in the node's body, such as a Map Editor node's Remove, or an entry of its list switched off or deleted, or an agent's change the user applied. After a dataflow loads, the node's next entry descends from its newest entry whose 'code' is the node's content, else from its newest entry.",
       "required": ["id", "parentId", "code", "inputs", "outputs", "startTime", "endTime"],
       "additionalProperties": true,
       "properties": {

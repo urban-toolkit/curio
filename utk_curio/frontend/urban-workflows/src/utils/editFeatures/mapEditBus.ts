@@ -1,12 +1,12 @@
 /**
- * The drawing tools a Map Edits node lends the Autark maps it feeds and is
+ * The drawing tools a Map Editor node lends the Autark maps it feeds and is
  * linked to (#662).
  *
- * The Map Edits node is the panel: its layers, the action, the forms and
+ * The Map Editor node is the panel: its layers, the action, the forms and
  * the edit log. A map is where features are drawn and reshaped. They meet
- * here, by the map's node id and the Map Edits node's:
+ * here, by the map's node id and the Map Editor node's:
  *
- * - the Map Edits node publishes a session (`publishMapSession`) while an
+ * - the Map Editor node publishes a session (`publishMapSession`) while an
  *   action is under way: the layer being worked on, as the map names it, and
  *   its features as the log leaves them, the mode of the action, the shape
  *   being drawn, and what a shape drawn or reshaped on the map becomes;
@@ -16,7 +16,7 @@
  *   of the map itself (`mapEditLayers`), draw it reshaped or moved.
  *
  * Picks are not here: a pick on the map is the map's selection, which the
- * interaction edge carries to the Map Edits node, as a selection crosses
+ * interaction edge carries to the Map Editor node, as a selection crosses
  * between two views, and what the node picks, or a rule matches, comes back
  * the same way (`providers/flow/useInteractions`). The edits reach the map on
  * the data edge (`mapEditsPreview`).
@@ -82,7 +82,7 @@ export interface MapEditSession {
   onShapeDone?: () => void;
 }
 
-/** Each map's sessions, by the Map Edits node that published each, the latest last. */
+/** Each map's sessions, by the Map Editor node that published each, the latest last. */
 const sessions = new Map<string, Map<string, MapEditSession>>();
 const maps = new Map<string, any>();
 const layerIds = new Map<string, (table: string) => string>();
@@ -94,7 +94,7 @@ function notify(mapId: string) {
 }
 
 /**
- * Publish, or with null take back, the session the Map Edits node
+ * Publish, or with null take back, the session the Map Editor node
  * *nodeId* edits *mapId* with. A node takes back its own session only: a map
  * two nodes feed keeps the other's.
  */
@@ -113,7 +113,7 @@ export function publishMapSession(mapId: string, nodeId: string, session: MapEdi
   notify(mapId);
 }
 
-/** The session *mapId* is edited with now: the latest a Map Edits node published. */
+/** The session *mapId* is edited with now: the latest a Map Editor node published. */
 export function mapSession(mapId: string): MapEditSession | undefined {
   const mine = sessions.get(mapId);
   return mine ? [...mine.values()].at(-1) : undefined;

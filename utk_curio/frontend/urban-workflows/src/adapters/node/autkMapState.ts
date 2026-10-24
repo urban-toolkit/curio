@@ -1,13 +1,13 @@
 /**
  * What a person set on an Autark map, kept across a redraw (#662).
  *
- * An edit made in the Map Edits node linked to the map draws the map
+ * An edit made in the Map Editor node linked to the map draws the map
  * again (a new grammar, a new map). The camera is kept already; this keeps
  * what was set on each layer through the map's own menu: hidden or shown,
  * its opacity, colors and color map, borders, point and line sizes. A layer
  * is matched by its id, the table it draws, so a new layer starts as the
  * document draws it, and a layer gone is forgotten. The drawing tools a Map
- * Edits node puts on the map as layers (`mapEditLayers`) are none of the
+ * Editor node puts on the map as layers (`mapEditLayers`) are none of the
  * document's: never kept, hidden or picked on.
  */
 import { grammarMaps } from './autkMapDrawing';
@@ -67,7 +67,7 @@ export function mapLayerOf(grammar: any, table: string): any | null {
 /**
  * The table of the layer that picks on the map of *grammar* that draws
  * *table*: autk-map has one, the last a document marks `isPick`, or the one
- * picked in its layer menu or shown alone by a Map Edits node. Null when the
+ * picked in its layer menu or shown alone by a Map Editor node. Null when the
  * map has none or it draws a table *spec* does not name.
  */
 export function pickingTableOf(grammar: any, spec: any, table: string | undefined): string | null {
@@ -300,11 +300,11 @@ export function soloMapLayer(
     map.requestRender?.();
 }
 
-/** What a Map Edits node feeding a map asks of it: the layer shown alone, and the layer an action works on. */
+/** What a Map Editor node feeding a map asks of it: the layer shown alone, and the layer an action works on. */
 export type EditsView = { solo: string | null; picking: string | null };
 
 /**
- * *map* as the Map Edits node feeding it asks now (*now*), after what it asked
+ * *map* as the Map Editor node feeding it asks now (*now*), after what it asked
  * before (*was*): its *solo* layer shown alone, and its *picking* layer, the
  * one an action works on, the layer that picks. autk-map lights a pick on its
  * picking layer only, so the node's pick and a rule's matches show there. When

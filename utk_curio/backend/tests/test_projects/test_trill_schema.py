@@ -421,7 +421,7 @@ REJECTED = {
     "selection tag named as a reference": lambda d: _node(d)["metadata"].update(
         selections=[{"name": "selection picked", "node": "n2", "column": "osm_id", "ids": []}]
     ),
-    # A node's history holds runs and edits (a Map Edits node's actions,
+    # A node's history holds runs and edits (a Map Editor node's actions,
     # entries switched off and entries deleted), and nothing else.
     "node history entry of a kind it does not have": lambda d: d.update(
         nodeProvenance={"n1": [_history_entry(kind="undo", label="undo")]}
@@ -474,13 +474,13 @@ ACCEPTED = {
         {"name": "nothing_yet", "node": "n2", "column": "building_id", "ids": []},
         {"name": "many", "node": "n2", "column": "osm_id", "count": 25000},
     ]),
-    # A Map Edits node's edit log, saved before its code was its only
+    # A Map Editor node's edit log, saved before its code was its only
     # state: node metadata takes extra keys, so the save loads, with the log
     # ignored.
     "an old save's edit log": lambda d: _node(d)["metadata"].update(
         editFeatures={"key": "building_id", "edits": [{"op": "remove", "ids": [119, 443]}]}
     ),
-    # A Map Edits node's history: a run, then an edit made in its body.
+    # A Map Editor node's history: a run, then an edit made in its body.
     "a node history with an edit": lambda d: d.update(nodeProvenance={"n1": [
         _history_entry(),
         _history_entry(id=2, parentId=1, kind="edit", label="Remove building_id 34"),

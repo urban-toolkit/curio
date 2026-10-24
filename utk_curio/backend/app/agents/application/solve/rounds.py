@@ -85,7 +85,7 @@ _HEAD_FIRST_KINDS = (
     "document-invalid", "empty-result",
     # dev/136: and the render that drew nothing.
     contracts.EMPTY_RENDER_KIND,
-    # Map Edits' refusals: what it cannot read, or the ids no feature has.
+    # Map Editor's refusals: what it cannot read, or the ids no feature has.
     map_edits.KIND,
     # A pinned tile's spec that loads its own data, and the remedy.
     dashboards.KIND,

@@ -1,5 +1,5 @@
 /**
- * One property's field in a form of the Map Edits node's workbench (#662):
+ * One property's field in a form of the Map Editor node's workbench (#662):
  * its name, whether it is required, a hint read off the values the layer
  * holds, and a widget's control for its type (`fields`): a few choices as a
  * radio group, more as a list, else a text field.
