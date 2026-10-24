@@ -20,6 +20,9 @@ What replaced it, and what each test below pins:
 * a visitor changes a pinned control and the tiles show a run of that value on
   the server, which saves nothing; the next visitor who picks the same value
   gets the output kept from that run, and nothing runs again (#1117);
+* a step only a browser runs (a GPU step) is run by each visitor's page, and
+  what a page sends, and what is made from it, is kept for that page alone
+  (#1117);
 * a dataflow's scenarios each get a column of tiles under a header in their
   color, and Arrange by scenario puts the tiles back in them (#662).
 
@@ -546,10 +549,11 @@ SHAPER_CODE = (
 )
 
 #: What a dashboard asks of the backend for a viewer's run: the run, its
-#: stream, and what it made.
+#: stream, what the page made of a step the run left to it, and what it made.
 _VIEWER_ROUTE_RE = re.compile(
     r"^(POST /api/projects/[^/?]+/dashboard/runs"
     r"|GET /api/projects/[^/?]+/dashboard/runs/[^/?]+/stream"
+    r"|POST /api/projects/[^/?]+/dashboard/runs/[^/?]+/steps/[^/?]+"
     r"|GET /api/projects/[^/?]+/dashboard/outputs/(get|get-preview|raster)\?.*)$"
 )
 
@@ -906,6 +910,180 @@ def test_a_tile_with_no_saved_output_runs_the_nodes_before_it_when_the_page_open
     after = _project(current_server, session["token"], project_id)
     assert after["spec"] == before["spec"], "the run on open changed the owner's dataflow"
     assert after["outputs"] == [], "the run on open saved outputs to the dataflow"
+
+
+# ---------------------------------------------------------------------------
+# A step only a browser runs (#1117)
+# ---------------------------------------------------------------------------
+
+GPU_LOAD = "dash-gpu-load"
+GPU_STEP = "dash-gpu-step"
+GPU_AFTER = "dash-gpu-after"
+
+#: As many points as the pinned Rows choice says, each with a count.
+GPU_LOAD_CODE = (
+    "import geopandas as gpd\n"
+    "from shapely.geometry import Point\n\n"
+    "rows = [!! @rows !!]\n"
+    "counts = {'three': [3, 7, 5], 'five': [3, 7, 5, 9, 4]}[rows]\n"
+    "points = [Point(-87.63 + 0.001 * i, 41.88) for i in range(len(counts))]\n"
+    "return gpd.GeoDataFrame({'count': counts}, geometry=points, crs='EPSG:4326')\n"
+)
+
+#: Each point's count doubled on the GPU: a step only a browser runs.
+GPU_COMPUTE_SPEC = json.dumps({"compute": [{
+    "dataRef": "input_0",
+    "attributes": {"v": "properties.count"},
+    "outputColumnName": "doubled",
+    "wglsFunction": ["return v * 2.0;"],
+}]}, indent=2)
+
+#: What the GPU made, read back in Python as the table shows it.
+GPU_AFTER_CODE = (
+    "import pandas as pd\n\n"
+    "return pd.DataFrame({\n"
+    "    'count': [int(v) for v in input_0['count']],\n"
+    "    'doubled': [int(round(float(v))) for v in input_0['doubled']],\n"
+    "})\n"
+)
+
+
+def _gpu_spec() -> dict:
+    """Python, then an Autark compute only a browser runs, then Python, then
+    the table, a pinned Data Pool. The pinned Rows choice is read by the first
+    step, so another Rows runs all three."""
+    def edge(source: str, target: str) -> dict:
+        return {"id": f"reactflow__edge-{source}out-{target}in", "source": source, "target": target}
+
+    return {
+        "dataflow": {
+            "name": "Dashboard browser step e2e",
+            "task": "",
+            "description": "",
+            "packages": [],
+            "datasets": [],
+            "nodes": [
+                _node(GPU_LOAD, "curio.builtin/data-loading", 0, GPU_LOAD_CODE),
+                _node(GPU_STEP, "curio.builtin/autk-grammar", 700, GPU_COMPUTE_SPEC),
+                _node(GPU_AFTER, "curio.builtin/computation-analysis", 1400, GPU_AFTER_CODE),
+                {**_node(POOL, "curio.builtin/data-pool", 2100), "dashboardPinned": True},
+                _choice(ROWS, "rows", "Rows", ["three", "five"], 0),
+            ],
+            "edges": [edge(GPU_LOAD, GPU_STEP), edge(GPU_STEP, GPU_AFTER), edge(GPU_AFTER, POOL)],
+        },
+    }
+
+
+def _five_doubled_rows(page, *, timeout: float = 120000) -> None:
+    """The table holds the five rows Rows "five" makes, each count doubled on
+    the GPU: 9 doubled is 18, a cell only those five rows have."""
+    _pool_shows(page, 5, timeout=timeout)
+    cell = node_locator(page, POOL).locator("table").first.locator("td").filter(has_text=re.compile(r"^\s*18\s*$"))
+    expect(cell.first).to_be_visible(timeout=timeout)
+
+
+def _steps_sent(asked: list[str]) -> list[str]:
+    """What the page sent of the steps a run left to it (``POST .../steps/<nodeId>``)."""
+    return [line for line in asked if line.startswith("POST ") and "/steps/" in line]
+
+
+def _sent_results(visitor: "_Visitor") -> set[str]:
+    """The artifacts the server kept of what *visitor*'s page sent, from its answers."""
+    names: set[str] = set()
+    for line in visitor.answered:
+        asked, _, answer = line.partition(" -> ")
+        status, _, body = answer.partition(" ")
+        if not (asked.startswith("POST ") and "/steps/" in asked) or status != "200":
+            continue
+        kept = json.loads(body)
+        names.add(kept["output"]["path"])
+        names.update(kept.get("artifactIds") or [])
+    return names
+
+
+def test_a_step_only_a_browser_runs_is_run_by_each_visitors_page_for_it_alone(
+    app_frontend: "FrontendPage", current_server, page, browser, monkeypatch,
+):
+    """A GPU step in a viewer's run is the visitor's page's to run.
+
+    Picking another Rows runs the first Python step on the server. The run
+    leaves the Autark compute to the page, which doubles the counts on its own
+    GPU and sends what it made, and its next start runs the Python after it on
+    that. The next visitor who picks the same Rows gets the first step kept,
+    but runs the GPU step in its own page: what the first page sent, and what
+    was made from it, are that page's alone. The owner's dataflow, its
+    recorded outputs and the Data Catalog stay as they were.
+    """
+    require_project_page()
+    require_user_auth()
+    from .utils import run_all_and_wait
+
+    session = _enter(page, app_frontend, current_server, prefix="dash_gpu", spec=_gpu_spec())
+    require_webgpu(page)
+    run_all_and_wait(page, timeout_ms=300000)
+    _save(page)
+    project_id = session["project"]["id"]
+    # Off the canvas first: it can still save on its way out.
+    page.goto("about:blank")
+    before = _project(current_server, session["token"], project_id)
+    recorded = [o["node_id"] for o in before["outputs"]]
+    assert GPU_AFTER in recorded, f"the save recorded {recorded!r}, not the output the pinned table reads"
+    catalog_before = _catalog_ids(current_server, session["token"], project_id)
+    hosted = _serve_hosted(app_frontend, current_server, monkeypatch)
+
+    first = _Visitor(browser, current_server)
+    try:
+        first.opens(hosted, project_id)
+        first.waits_for("the saved table", lambda: _pool_shows(first.page, 3))
+        assert _runs_started(first.asked) == [], (
+            "opening the dashboard started a run, though its tile has its saved output" + first.story()
+        )
+        _pick(first.page, ROWS, "five").check()
+        first.waits_for("the five rows doubled on this page's GPU", lambda: _five_doubled_rows(first.page))
+        first.waits_for_runs(2)
+        started = _runs_started(first.asked)
+        assert len(started) == 2, (
+            f"the change started {len(started)} runs, not the run and the start going on "
+            f"from the step it left to the page" + first.story()
+        )
+        assert len(_steps_sent(first.asked)) == 1, "the page did not send what it made of the GPU step" + first.story()
+        first_sent = _sent_results(first)
+        assert first_sent, "the server kept nothing of what the page sent" + first.story()
+        first_read = _files_read(first.asked)
+        assert _not_a_viewer_route(first.asked) == [], (
+            "the dashboard asked the server for more than a viewer's run" + first.story()
+        )
+    finally:
+        first.close()
+
+    second = _Visitor(browser, current_server)
+    try:
+        second.opens(hosted, project_id)
+        second.waits_for("the saved table", lambda: _pool_shows(second.page, 3))
+        _pick(second.page, ROWS, "five").check()
+        second.waits_for("the five rows doubled on this page's GPU", lambda: _five_doubled_rows(second.page))
+        second.waits_for_runs(2)
+        # Its own page ran the GPU step: the first page's result was not handed to it.
+        assert len(_steps_sent(second.asked)) == 1, "the second page did not run the GPU step itself" + second.story()
+        second_read = _files_read(second.asked)
+        assert not second_read & first_sent, (
+            f"the second page read {sorted(second_read & first_sent)!r}, what the first page sent" + second.story()
+        )
+        assert second_read - first_read, (
+            "the second page's table shows nothing made from its own GPU step" + second.story()
+        )
+        assert _not_a_viewer_route(second.asked) == [], (
+            "the dashboard asked the server for more than a viewer's run" + second.story()
+        )
+    finally:
+        second.close()
+
+    after = _project(current_server, session["token"], project_id)
+    assert after["spec"] == before["spec"], "a visitor's run changed the owner's dataflow"
+    assert after["outputs"] == before["outputs"], "a visitor's run changed the dataflow's recorded outputs"
+    assert _catalog_ids(current_server, session["token"], project_id) == catalog_before, (
+        "a visitor's run added to the Data Catalog"
+    )
 
 
 # ---------------------------------------------------------------------------
