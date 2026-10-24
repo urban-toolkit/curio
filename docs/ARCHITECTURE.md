@@ -582,6 +582,14 @@ whose code is its only state: one call of `curio_edit_features`
 - Rules (`where`) and `expr` edits are one expression language written twice,
   `edit_expr.py` for runs and `editExpr.ts` for the body, neither through
   `eval`; both read `editExpr.cases.json`.
+- autk-db refuses a whole layer for one building that fails GEOS's `ST_IsValid`,
+  so an area is checked as the map hands it over, on the map's own grid:
+  `areaCheck.ts` for the map's tools and preview, and its twin `area_check.py`
+  for runs. Both read `areaCheck.cases.json`, and pytest also asks GEOS of each
+  case. One rule (`madeProblem`) refuses a gesture and skips an edit, in the
+  preview (`applyFeatureEdits`) and in a run: only a problem the change brings,
+  so a shape that has one already still takes changes. A run prints each skip
+  (`REFUSED_AREA_LINE`).
 - `edit_features` matches features by their id column, never by position, edits
   an Autark node's GeoJSON layers in place and a table as a table, and hands on
   every other feature, property and layer as it came. In-process, an Autark
@@ -600,8 +608,9 @@ whose code is its only state: one call of `curio_edit_features`
   template as a run finds the node's package (`packages/application/node_templates.py`),
   else from the catalog's. The `node.create` and `node.content.write` mints refuse
   code it refuses. Solve's verified loop fails a round on it before the sandbox
-  (`_map_edits_gate`), and on the lines of a run that name ids no feature has
-  (`_made_up_ids_check`, `feature_edits.UNKNOWN_IDS_LINE`), read from the
+  (`_map_edits_gate`), and on the lines of a run that name ids no feature has or
+  areas the map cannot draw (`_skipped_edits_check`, `feature_edits.UNKNOWN_IDS_LINE`
+  and `REFUSED_AREA_LINE`), read from the
   target's whole output (`run_through_node(keep_stdout=True)`, kept out of the
   streamed `nodes`). The unverified Solve refuses it too. Code the node holds
   already is the user's and is never refused. Solve makes edits in an empty

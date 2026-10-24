@@ -845,8 +845,10 @@ corner or adding a part changes that part alone, named by its own `osm_id`, and
 moving the building moves every part. A building whose parts have no `osm_id` of
 their own keeps its shape there. A change on the map that would make a shape's
 outline cross itself, or its parts overlap, is refused: the shape goes back as
-it was, and the tip on the map says why. Agents read these edits, and the edits
-an agent makes show as entries named after it.
+it was, and the tip on the map says why. An edit in the node's code that would
+do the same is skipped: the map keeps the shape as it was, and the run's output
+says why. Agents read these edits, and the edits an agent makes show as entries
+named after it.
 
 In **Edit**, the form of a building of several parts is for all of them: a
 property its parts differ in is empty, with their values beside it, and a value

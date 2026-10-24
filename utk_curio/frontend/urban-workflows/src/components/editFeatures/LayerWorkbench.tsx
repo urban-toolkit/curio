@@ -46,7 +46,14 @@ import {
   type GeometryKind,
 } from "../../utils/editFeatures/layerModel";
 import { evaluate, exprProblem, parseExpr, truthy } from "../../utils/editFeatures/editExpr";
-import { areaProblem, drawnRefusal, layerFormat, reshapeRefusal, type ReshapeGesture } from "../../utils/editFeatures/areaCheck";
+import {
+  areaProblem,
+  drawnRefusal,
+  layerFormat,
+  madeProblem as madeAreaProblem,
+  reshapeRefusal,
+  type ReshapeGesture,
+} from "../../utils/editFeatures/areaCheck";
 import { partRedraw, partsRefusal, rowsOf, samePart } from "../../utils/editFeatures/featureParts";
 import { publishMapSession, type MapEditMode, type ReshapedPart } from "../../utils/editFeatures/mapEditBus";
 import { editSelection, sameIds, selectedIdsIn } from "../../utils/editFeatures/mapEditSelection";
@@ -255,11 +262,9 @@ export default function LayerWorkbench({
   const problemOf = (geometry: Geometry) => (active ? areaProblem(geometry, layerFormat(active.fc, geometry)) : null);
   // A problem a gesture makes: one the shape *after* has and the shape
   // *before* it did not. A shape its layer already holds with one, which a
-  // layer autk-db does not check can, still takes every gesture.
-  const madeProblem = (before: Geometry | null | undefined, after: Geometry) => {
-    const problem = problemOf(after);
-    return problem && !(before && problemOf(before)) ? problem : null;
-  };
+  // layer autk-db does not check can, still takes every gesture. The rule a
+  // run, and the map's preview, skip an edit by (`madeAreaProblem`).
+  const madeProblem = (before: Geometry | null | undefined, after: Geometry) => (active ? madeAreaProblem(active.fc, before, after) : null);
   // A part drawn is added to the feature being added, or to the picked one:
   // to the part the click that picked it landed on, else its first; its
   // other parts keep their shapes. An area drawn that autk-db would refuse,
