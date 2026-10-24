@@ -1463,8 +1463,10 @@ def test_a_chicago_building_of_several_parts_is_reshaped_one_part_at_a_time(
 
     1. Move points shows the corners of every part;
     2. a corner of one part, dragged, is one edit that names that part alone,
-       ``where building_id == <building> and osm_id == <part>``, and the map
-       shows the building's other parts where they were;
+       ``where building_id == <building> and osm_id == <part>``; the building
+       stays picked across it, the node's first edit, which names its layer
+       and key in its code (#1111), and the map shows its other parts where
+       they were;
     3. Commit edits runs the node, which hands that part on reshaped and the
        building's other parts as they came.
 
@@ -1614,10 +1616,19 @@ def test_a_chicago_building_of_several_parts_is_reshaped_one_part_at_a_time(
         wrong.append(f"the list does not name the part: {error}")
 
     # The map draws the edit, and shows the building's other parts where they
-    # were. The node's first edit names its layer and key in its code, which
-    # starts its pick anew: the building is picked again, as before.
+    # were. The drag is the node's first edit, which names its layer and key
+    # in its code, and the building stays picked across it: with no pick sent
+    # again, Move points shows its corners and the map lights it (#1111).
     _wait_for_redraw(page, map_id, "the part's corner dragged")
-    shown = _picked_with_corners(page, map_id, building, f"building {building} picked after the drag")
+    try:
+        shown = _wait_for_corners(page, map_id, bool, "the drag")
+    except AssertionError as error:
+        raise AssertionError("\n".join([*wrong, (
+            f"after the drag, building {building} is no longer picked: the node's first edit, which names the layer "
+            f"{BUILDINGS} and the key {KEY} in its code, dropped the pick, and with no pick sent again Move points "
+            f"shows none of its corners (#1111): {error}"
+        )])) from None
+    _wait_for_lit(page, map_id, {building}, f"building {building} kept picked across the drag", table=BUILDINGS)
     after = {(c["part"], c["ring"], c["index"]): c for c in shown}
     for before in corners:
         now = after.get((before["part"], before["ring"], before["index"]))
@@ -1740,18 +1751,10 @@ def _best_room(corners: list[dict]) -> float:
 
 def _picked_with_corners(page, map_id: str, building, what: str) -> list[dict]:
     """Pick *building* on the map *map_id*, as the map's own pick is sent, and
-    wait until Move points shows its corners. The pick is sent again when a
-    change of the node's code started its pick anew meanwhile."""
-    for _ in range(3):
-        page.evaluate(_SEND_JS, [map_id, _map_pick(building)])
-        _wait_for_lit(page, map_id, {building}, what, table=BUILDINGS)
-        deadline = time.time() + 5
-        while time.time() < deadline:
-            corners = _corners(page, map_id)
-            if corners:
-                return corners
-            page.wait_for_timeout(250)
-    raise AssertionError(f"after {what}, Move points shows no corner of building {building} on the map {map_id}")
+    wait until Move points shows its corners."""
+    page.evaluate(_SEND_JS, [map_id, _map_pick(building)])
+    _wait_for_lit(page, map_id, {building}, what, table=BUILDINGS)
+    return _wait_for_corners(page, map_id, bool, what)
 
 
 def _crosses(a, b, c, d) -> bool:

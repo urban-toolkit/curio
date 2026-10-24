@@ -173,6 +173,18 @@ export default function LayerWorkbench({
     setPartFor(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeName, action]);
+  // A pick names features of the layer worked on, by its id column, on the
+  // maps linked: it starts anew when the layer, its id column or those maps
+  // change, and ends with the workbench (the node unlinked, its code
+  // unreadable, or its layers read again). An edit that writes into the
+  // node's code the layer and the id column the pick was made by changes
+  // neither, and keeps it.
+  const mapIds = surfaces.map((surface) => surface.mapId).join(" ");
+  useEffect(() => {
+    setPicked([]);
+    return () => setPicked([]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [active?.name, active?.key, mapIds]);
 
   const kind: GeometryKind | null = active ? (active.newLayer ? GEOMETRY_KIND[active.newLayer.geometry] : mainKind(active.fc)) : null;
   // A feature is called by its geometry ("point", "line", "area"), never by a
