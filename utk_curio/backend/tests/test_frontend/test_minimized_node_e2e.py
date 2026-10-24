@@ -89,8 +89,8 @@ def _spec() -> dict:
 
 
 #: What the canvas draws for each node: its open card, or only its chip (the
-#: card hidden, and the node the chip's size at the canvas's zoom, within the
-#: pixel the zoom's rounding takes).
+#: card hidden, and the node exactly the chip's size at the canvas's zoom, as
+#: main's 70 x 40 chip measured on CI).
 _DRAWN_JS = """([ids, chip]) => {
     const flow = window.__curio_reactFlow;
     if (!flow) return Object.fromEntries(ids.map((id) => [id, "no canvas"]));
@@ -104,7 +104,7 @@ _DRAWN_JS = """([ids, chip]) => {
         const height = Math.round(box.height / zoom);
         const open = getComputedStyle(card).display !== "none";
         if (open && width >= 200) return [id, "card"];
-        if (!open && Math.abs(width - chip[0]) <= 1 && Math.abs(height - chip[1]) <= 1) return [id, "chip"];
+        if (!open && width === chip[0] && height === chip[1]) return [id, "chip"];
         return [id, `${open ? "card shown" : "card hidden"}, ${width} x ${height} px`];
     }));
 }"""
