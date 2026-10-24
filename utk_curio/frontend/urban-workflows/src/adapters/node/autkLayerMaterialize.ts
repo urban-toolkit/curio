@@ -5,6 +5,7 @@
 
 import type { FeatureCollection } from 'geojson';
 import { fetchData } from '../../services/api';
+import { askedOfPage, keepPageResult } from '../../services/runs/dashboardRunSteps';
 import { NodeType } from '../../constants';
 import type { JavaScriptInterpreter } from '../../JavaScriptInterpreter';
 import { detectCoordinateFormat } from '../../utils/geoCrs';
@@ -345,13 +346,16 @@ function persistLayersToBackend(
 // `{path, dataType}` ref — same shape `ia-data` emits, so the Data Pool's normal
 // fetch path handles it without a special case. Falls back to the inline
 // wrapper when no JS interpreter is available or the persist call fails, and
-// to null when there are no layers to wrap.
+// to null when there are no layers to wrap. A step a dashboard viewer's run
+// left to this page goes to that run instead, which keeps it for this page
+// (#1117): a viewer has no session to persist it with.
 export async function toPoolOutput(
     layers: Array<{ name: string; type?: string; geojson: FeatureCollection }>,
     jsInterpreter: JavaScriptInterpreter | undefined,
     nodeId: string,
 ): Promise<any> {
     const wrapper = layersToPoolWrapper(layers);
+    if (wrapper && askedOfPage(nodeId)) return keepPageResult(nodeId, wrapper);
     if (wrapper && jsInterpreter) {
         try {
             return await persistLayersToBackend(jsInterpreter, wrapper, nodeId);

@@ -4,6 +4,7 @@ import { NodeBehaviorHook, HandleDef } from '../../registry/types';
 import { useFlowContext } from '../../providers/FlowProvider';
 import { useToastContext } from '../../providers/ToastProvider';
 import { fetchData } from '../../services/api';
+import { askedOfPage } from '../../services/runs/dashboardRunSteps';
 import { backendUrl } from '../../utils/backendUrl';
 import { inputSlotOf, isDataEdge, slotHandleId } from '../../utils/inputSlots';
 import { registerNodeSettingWriter } from '../../utils/nodeSettingsWriters';
@@ -195,13 +196,12 @@ export const useSpatialJoinBehavior: NodeBehaviorHook = (data, nodeState) => {
     const right = unwrap(slotsRef.current[1]);
     if (!left || !right) return;
     const { data: node, predicate: operation, outputMode: mode, dashboardOn: onDashboard, showToast: toast } = latestRef.current;
-    // Never from a dashboard (#609). Restoring a saved dataflow fills both
-    // slots with no user action, so this would post a join to the server
-    // because somebody opened a page to look at it: a computation nobody asked
-    // for, on a page that is supposed to need no server at all, and one that
-    // throws for a visitor holding a link. A dashboard shows what was saved or
-    // it shows the node's empty state; it never computes.
-    if (onDashboard) return;
+    // Never from a dashboard on its own (#609). Restoring a saved dataflow
+    // fills both slots with no user action, so this would post a join to the
+    // server because somebody opened a page to look at it: a computation
+    // nobody asked for. A dashboard shows what was saved, or the node's empty
+    // state, until a viewer's run leaves the join to the page (#1117).
+    if (onDashboard && !askedOfPage(node.nodeId)) return;
     controllerRef.current?.abort();
     const controller = new AbortController();
     controllerRef.current = controller;
@@ -324,6 +324,11 @@ export const useSpatialJoinBehavior: NodeBehaviorHook = (data, nodeState) => {
     // Inputs still being fetched start the join when they land.
     while (pendingInputsRef.current.size > 0) {
       await Promise.allSettled(Array.from(pendingInputsRef.current));
+    }
+    // A viewer's run left the join to the page: join the inputs it handed in,
+    // which arrived while the dashboard joined nothing (#1117).
+    if (!inflightRef.current && latestRef.current.dashboardOn && askedOfPage(latestRef.current.data.nodeId)) {
+      startJoin();
     }
     if (inflightRef.current) {
       await inflightRef.current;

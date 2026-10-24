@@ -28,18 +28,39 @@ def _token():
 
 @dashboard_runs_bp.route("/api/projects/<project_id>/dashboard/runs", methods=["POST"])
 def start(project_id: str):
-    """``{values: {nodeId: {widget: value}}}``: run the dashboard with those
-    values, or join the run of them already going. 202 with the run and its
-    token, or 200 with no run when nothing needs to run."""
+    """``{values: {nodeId: {widget: value}}, browserOutputs?}``: run the
+    dashboard with those values, or join the run of them already going. 202
+    with the run and its token, or 200 with no run when nothing needs to run.
+    ``browserOutputs`` (``{nodeId: path}``) are the page's results of the
+    steps a run left to it, under that run's token."""
     body = request.get_json(silent=True) or {}
     values = body.get("values", {})
     if not isinstance(values, dict):
         return jsonify({"error": "'values' must map node ids to their widgets' values"}), 400
     try:
-        started = viewer.start_viewer_run(project_id, values, address=request.remote_addr or "unknown")
+        started = viewer.start_viewer_run(
+            project_id, values, address=request.remote_addr or "unknown",
+            token=_token(), browser_outputs=body.get("browserOutputs"),
+        )
     except RunError as exc:
         return _error(exc)
     return jsonify(started), 202 if started["runId"] else 200
+
+
+@dashboard_runs_bp.route("/api/projects/<project_id>/dashboard/runs/<run_id>/steps/<node_id>", methods=["POST"])
+def keep_step(project_id: str, run_id: str, node_id: str):
+    """``{value}``: what the page made of *node_id*, a step the run left to
+    it. Kept for that page alone; 200 with ``{output, artifactIds}``, 413 past
+    ``MAX_TAB_RESULT_BYTES``."""
+    if (request.content_length or 0) > viewer.MAX_TAB_RESULT_BYTES:
+        mib = viewer.MAX_TAB_RESULT_BYTES // (1024 * 1024)
+        return jsonify({"error": f"A page's result of a step may hold at most {mib} MB."}), 413
+    body = request.get_json(silent=True) or {}
+    try:
+        kept = viewer.keep_tab_result(project_id, run_id, node_id, _token(), body.get("value"))
+    except RunError as exc:
+        return _error(exc)
+    return jsonify(kept)
 
 
 @dashboard_runs_bp.route("/api/projects/<project_id>/dashboard/runs/<run_id>/stream", methods=["GET"])

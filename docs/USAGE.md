@@ -1527,6 +1527,9 @@ the page opens.
 - **What a run makes**, on opening the page or after a change, is kept for 7 days and
   shown to every later viewer with the same values, without running again. After 7 days
   it is deleted, and the next viewer who needs it runs the nodes again.
+- **A node only a browser runs**, such as an Autark compute on the GPU, runs in each
+  viewer's own browser, which needs WebGPU for it. What it makes there, and what the
+  nodes below make from it, serve that viewer's page alone, for an hour.
 - **Edit layout** (the owner, signed in on this browser) unlocks the tiles to drag by
   their title band and resize, and **Save layout** records where they sit, without
   touching the canvas positions.

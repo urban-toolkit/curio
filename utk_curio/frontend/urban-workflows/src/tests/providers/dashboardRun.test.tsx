@@ -10,22 +10,28 @@
  *   dashboard's own routes with the run's token;
  * - a node a later run does not reach, and every node when nothing needs to
  *   run, shows its saved output again;
- * - Save layout gets the widgets as the page opened with them, never a tried value.
+ * - Save layout gets the widgets as the page opened with them, never a tried value;
+ * - a step only a browser runs is the page's: it runs the node, sends what it
+ *   made, and starts the run again on that with the same values and token; a
+ *   node it cannot run leaves the nodes below saying so.
  */
-import { act, renderHook } from "@testing-library/react";
+import { act, renderHook, waitFor } from "@testing-library/react";
 
 import { dashboardRunRead, forgetDashboardRunFiles } from "../../services/runs/dashboardRunFiles";
+import { askedOfPage } from "../../services/runs/dashboardRunSteps";
 import { useDashboardRun } from "../../providers/flow/useDashboardRun";
 import { dashboardValues } from "../../utils/widgets/dashboardControls";
 
 const mockStart = jest.fn();
 const mockFollow = jest.fn();
+const mockKeepStep = jest.fn();
 
 jest.mock("../../services/runs/dashboardRunsApi", () => ({
     ...jest.requireActual("../../services/runs/dashboardRunsApi"),
     dashboardRunsApi: {
         start: (...args: unknown[]) => mockStart(...args),
         follow: (...args: unknown[]) => mockFollow(...args),
+        keepStep: (...args: unknown[]) => mockKeepStep(...args),
     },
 }));
 
@@ -46,16 +52,20 @@ function makeNodes(): any[] {
 const EDGES = [{ id: "grid-chart", source: "grid", target: "chart" }];
 const SAVED_GRID = { nodeId: "grid", output: { path: "saved-grid", dataType: "str" } };
 
-function setUp({ saved = [SAVED_GRID] }: { saved?: any[] } = {}) {
+function setUp({ saved = [SAVED_GRID], playNodes = jest.fn(() => true) }: { saved?: any[]; playNodes?: jest.Mock } = {}) {
     const nodes = makeNodes();
     const outcomes = { showOnNode: jest.fn(), showResult: jest.fn(), showSkipped: jest.fn() };
     const showToast = jest.fn();
-    const reactFlow: any = { getNodes: () => nodes, getEdges: () => EDGES };
-    const outputsRef = { current: [...saved] };
+    const reactFlow: any = {
+        getNodes: () => nodes,
+        getEdges: () => EDGES,
+        getNode: (id: string) => nodes.find((node) => node.id === id),
+    };
+    const outputsRef: { current: any[] } = { current: [...saved] };
     const hook = renderHook(() => useDashboardRun({
-        enabled: true, reactFlow, outcomes, outputsRef, showToast,
+        enabled: true, reactFlow, outcomes, outputsRef, showToast, playNodes,
     }));
-    return { nodes, outcomes, showToast, hook };
+    return { nodes, outcomes, showToast, hook, outputsRef, playNodes };
 }
 
 /** The stream of the run the last start answered, held open until the test ends it. */
@@ -68,6 +78,7 @@ function followed() {
 beforeEach(() => {
     mockStart.mockReset();
     mockFollow.mockReset().mockImplementation(() => new Promise(() => {}));
+    mockKeepStep.mockReset();
     forgetDashboardRunFiles();
 });
 
@@ -172,5 +183,126 @@ describe("Save layout", () => {
         const saved = hook.result.current.savedWidgets();
         expect(saved?.get("param")).toEqual([period]);
         expect(saved?.has("grid")).toBe(false);
+    });
+});
+
+describe("a step only a browser runs", () => {
+    const finished = (status: string) => ({ kind: "run_finished", status, ok: 1, failed: 0, skipped: 0, waiting: 2 });
+
+    /**
+     * A change whose run leaves "gpu" to the page, with "after" waiting below
+     * it. *runsGpu* plays the node: what playNodes would make of it.
+     */
+    async function aRunLeavingTheGpuStep(runsGpu: (outputs: any[], hooks: any) => void) {
+        const box: { outputs: any[] } = { outputs: [] };
+        const playNodes = jest.fn((_nodeIds: string[], hooks: any) => {
+            runsGpu(box.outputs, hooks);
+            return true;
+        });
+        const setup = setUp({ playNodes });
+        box.outputs = setup.outputsRef.current;
+        mockStart.mockResolvedValueOnce({ runId: "r1", token: "t1", joined: false, nodeIds: ["grid", "gpu", "after"] });
+        await act(async () => { setup.hook.result.current.opened("dash-1"); });
+        setup.nodes[0].data.widgets = [{ ...period, value: "Month" }] as any;
+        await act(async () => { await setup.hook.result.current.start(); });
+        const run = followed();
+        run.emit({ kind: "step_finished", nodeId: "grid", status: "ok", output: { path: "art-grid", dataType: "str" } });
+        run.emit({ kind: "step_finished", nodeId: "gpu", status: "browser" });
+        run.emit({ kind: "step_finished", nodeId: "after", status: "waiting", skipReason: "Waits for the canvas" });
+        return { ...setup, run };
+    }
+
+    test("the page runs it, and the run starts again on what it made, with the same values and token", async () => {
+        let askedWhilePlaying = false;
+        const { hook, playNodes, run, outcomes } = await aRunLeavingTheGpuStep((outputs, hooks) => {
+            askedWhilePlaying = askedOfPage("gpu");
+            // The node sent its layers to the run itself, as an Autark node does.
+            outputs.push({ nodeId: "gpu", output: { path: "page-1", dataType: "dict" } });
+            hooks.onNodeDone("gpu", { failed: false });
+            hooks.onFinish();
+        });
+        mockStart.mockResolvedValueOnce({ runId: "r2", token: "t1", joined: false, nodeIds: ["after"] });
+
+        await act(async () => { run.emit(finished("needs_canvas")); });
+        await waitFor(() => expect(mockStart).toHaveBeenCalledTimes(2));
+
+        expect(playNodes).toHaveBeenCalledWith(["gpu"], expect.anything());
+        expect(askedWhilePlaying).toBe(true);
+        expect(askedOfPage("gpu")).toBe(false);
+        expect(mockStart).toHaveBeenLastCalledWith(
+            "dash-1", { param: { period: "Month" } }, { token: "t1", browserOutputs: { gpu: "page-1" } },
+        );
+        // Waiting nodes keep what they show until the next run's steps land.
+        expect(outcomes.showSkipped).not.toHaveBeenCalled();
+        const next = followed();
+        expect(next).toMatchObject({ projectId: "dash-1", runId: "r2", token: "t1" });
+        expect(hook.result.current.active).toBe(true);
+
+        next.emit({ kind: "step_finished", nodeId: "after", status: "ok", output: { path: "art-after", dataType: "str" } });
+        next.emit(finished("succeeded"));
+        expect(outcomes.showResult).toHaveBeenCalledWith("after", expect.objectContaining({ kind: "result" }), { live: false });
+        expect(hook.result.current.active).toBe(false);
+    });
+
+    test("the page runs it once the results before it have reached its input, which they do a tick after they land", async () => {
+        let reached = false;
+        let reachedWhenPlayed: boolean | null = null;
+        const playNodes = jest.fn((_nodeIds: string[], hooks: any) => {
+            reachedWhenPlayed = reached;
+            hooks.onFinish();
+            return true;
+        });
+        const setup = setUp({ playNodes });
+        // As useStepOutcomes hands a run's result down: a load's way, a tick later.
+        setup.outcomes.showResult.mockImplementation(() => { setTimeout(() => { reached = true; }, 0); });
+        mockStart.mockResolvedValueOnce({ runId: "r1", token: "t1", joined: false, nodeIds: ["grid", "gpu", "after"] });
+        await act(async () => { setup.hook.result.current.opened("dash-1"); });
+        setup.nodes[0].data.widgets = [{ ...period, value: "Month" }] as any;
+        await act(async () => { await setup.hook.result.current.start(); });
+        const run = followed();
+        // The whole stream at once, as a run that ended before the page read it.
+        run.emit({ kind: "step_finished", nodeId: "grid", status: "ok", output: { path: "art-grid", dataType: "str" } });
+        run.emit({ kind: "step_finished", nodeId: "gpu", status: "browser" });
+        run.emit({ kind: "step_finished", nodeId: "after", status: "waiting", skipReason: "Waits for the canvas" });
+        await act(async () => { run.emit(finished("needs_canvas")); });
+
+        await waitFor(() => expect(playNodes).toHaveBeenCalledTimes(1));
+        expect(reachedWhenPlayed).toBe(true);
+    });
+
+    test("rows the node holds on the page are sent to the run, and read back with the run's token", async () => {
+        const rows = { dataType: "geodataframe", data: { type: "FeatureCollection", features: [] } };
+        mockKeepStep.mockResolvedValue({ output: { path: "page-7", dataType: "dict" }, artifactIds: ["page-7"] });
+        const { run } = await aRunLeavingTheGpuStep((outputs, hooks) => {
+            // A Spatial Join hands its rows on as they are.
+            outputs.push({ nodeId: "gpu", output: rows });
+            hooks.onNodeDone("gpu", { failed: false });
+            hooks.onFinish();
+        });
+        mockStart.mockResolvedValueOnce({ runId: "r2", token: "t1", joined: false, nodeIds: ["after"] });
+
+        await act(async () => { run.emit(finished("needs_canvas")); });
+        await waitFor(() => expect(mockStart).toHaveBeenCalledTimes(2));
+
+        expect(mockKeepStep).toHaveBeenCalledWith("dash-1", "r1", "t1", "gpu", rows);
+        expect(mockStart.mock.calls[1][2]).toEqual({ token: "t1", browserOutputs: { gpu: "page-7" } });
+        const read = dashboardRunRead("page-7", "get", new URLSearchParams({ fileName: "page-7" }));
+        expect(read?.headers).toEqual({ "X-Curio-Run-Token": "t1" });
+    });
+
+    test("a step the page cannot run leaves the nodes below saying so, and nothing runs again", async () => {
+        const { hook, run, outcomes, showToast } = await aRunLeavingTheGpuStep((_outputs, hooks) => {
+            hooks.onNodeDone("gpu", { failed: true, message: "WebGPU is not available in this browser." });
+            hooks.onFinish();
+        });
+
+        await act(async () => { run.emit(finished("needs_canvas")); });
+        await waitFor(() => expect(hook.result.current.active).toBe(false));
+
+        expect(outcomes.showSkipped).toHaveBeenCalledWith("after", expect.stringContaining("could not run in this browser"));
+        expect(mockStart).toHaveBeenCalledTimes(1);
+        expect(mockKeepStep).not.toHaveBeenCalled();
+        expect(showToast).not.toHaveBeenCalled();
+        expect(askedOfPage("gpu")).toBe(false);
     });
 });

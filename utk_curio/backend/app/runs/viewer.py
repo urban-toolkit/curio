@@ -29,11 +29,20 @@ output goes with its artifacts: the sandbox forgets the session that made them
 :data:`PRUNE_INTERVAL_HOURS` (:func:`start_prune_scheduler`), at the end of
 each run, and at the first start after a restart.
 
+A step only a browser runs (an Autark compute node, a Spatial Join) is the
+page's. The run ends asking for it (``needs_canvas``), as a canvas's run on
+the server does; the page runs the node and sends what it made
+(:func:`keep_tab_result`), and its next start, with the same token, runs the
+steps below on that (``browserOutputs``). The server cannot check what a
+browser sends, so that output and every one made from it are kept for that
+page alone, for :data:`TAB_OWN_HOURS`.
+
 Limits, constants as a server run's are: a budget per visitor address and
 overall (``common/address_limiter.py``) of the runs of values a visitor tries
-(opening the page costs nothing), a few live runs per dashboard, and at most
-half the sandbox's isolated pool running a viewer's node at once, so viewers
-never take every slot from signed-in users.
+(opening the page costs nothing, nor does the one start that goes on from the
+steps a run left to its page), a few live runs per dashboard, and at most half
+the sandbox's isolated pool running a viewer's node at once, so viewers never
+take every slot from signed-in users.
 """
 from __future__ import annotations
 
@@ -87,6 +96,11 @@ MAX_EVENTS_PER_RUN = 5000
 SANDBOX_SESSIONS_TIMEOUT = 30
 #: The most sessions one call to the sandbox names (its ``MAX_SESSIONS_PER_CALL``).
 SESSIONS_PER_CALL = 500
+#: The most a page's result of a step only a browser runs may weigh.
+MAX_TAB_RESULT_BYTES = 64 * 1024 ** 2
+#: The shapes that result comes in, as an Autark node hands on its layers: one
+#: layer (``geodataframe``), or several (``outputs``).
+TAB_RESULT_KINDS = frozenset({"geodataframe", "outputs"})
 
 NO_KEYS_MESSAGE = (
     "This node reads an API key (curio_secret), and a run a dashboard's viewer "
@@ -120,7 +134,8 @@ STEP_SLOTS = max(1, exec_parallelism() // 2)
 _SLOTS = threading.BoundedSemaphore(STEP_SLOTS)
 
 _RUNS_LOCK = threading.Lock()
-#: ``{run id: {"projectId", "token"}}`` of the runs this process holds.
+#: ``{run id: {"projectId", "token", "browserSteps"}}`` of the runs this
+#: process holds: the steps a run leaves to the page are its browser steps.
 _RUNS: dict[str, dict] = {}
 _pruned_since_start = threading.Event()
 
@@ -571,7 +586,10 @@ def _public(payload: dict) -> dict:
     return public
 
 
-def start_viewer_run(project_id: str, values, *, address: str) -> dict:
+def start_viewer_run(
+    project_id: str, values, *, address: str,
+    token: Optional[str] = None, browser_outputs: Optional[dict] = None,
+) -> dict:
     """Run *project_id*'s dashboard with *values* (``{nodeId: {widget:
     value}}``) laid over its saved controls, or join the run of the same
     values already going.
@@ -582,6 +600,13 @@ def start_viewer_run(project_id: str, values, *, address: str) -> dict:
     holds runs. Opening the page, with the saved values, costs the visitor's
     address nothing: only the values a visitor tries count against its
     budget, and a start that joins a run costs nothing either.
+
+    *browser_outputs* (``{nodeId: path}``) are what the page made of the
+    steps a run of these values left to it (:func:`keep_tab_result`), under
+    that run's *token*: they stand in for those steps, the steps below them
+    run on them, and what those make is kept for that page alone. The run
+    is followed with the same token. The first such start after a run costs
+    nothing, that run having been counted (:func:`_continues_a_run`).
 
     Answers ``{"runId", "token", "joined", "nodeIds"}``, the token being what
     the tab follows the run with; ``runId`` is None when nothing needs to run
@@ -614,6 +639,7 @@ def start_viewer_run(project_id: str, values, *, address: str) -> dict:
     if problems:
         raise RunError(" ".join(problems), 422, problems=problems)
     overlaid = _with_values(spec, values or {})
+    tab = _tab_outputs(project_id, browser_outputs, token) if browser_outputs else {}
 
     templates = roster_templates(user_key, project_id)
     labels = template_labels(user_key, project_id)
@@ -633,6 +659,7 @@ def start_viewer_run(project_id: str, values, *, address: str) -> dict:
         node_id: {"path": ref.filename, "dataType": ref.data_type or ""}
         for node_id, ref in saved_by_node.items() if node_id not in reached
     }
+    reuse.update(tab)
     try:
         plan = plan_run(
             overlaid, target_node_ids=targets, reuse=reuse,
@@ -647,6 +674,7 @@ def start_viewer_run(project_id: str, values, *, address: str) -> dict:
         "revision": storage.spec_revision(user_key, project_id),
         "values": _control_values(dashboard_controls(overlaid)),
         "targets": targets,
+        "tab": sorted((node_id, output.get("path")) for node_id, output in tab.items()),
     }).encode("utf-8")).hexdigest()
     live = REGISTRY.live_job(dashboard, run_key)
     if live is not None:
@@ -655,7 +683,9 @@ def start_viewer_run(project_id: str, values, *, address: str) -> dict:
         if known is not None:
             return {"runId": live.job_id, "token": known["token"], "joined": True, "nodeIds": list(plan.steps)}
     tried = _control_values(dashboard_controls(overlaid)) != _control_values(controls)
-    if tried and not _LIMITER.allow(address or "unknown", time.monotonic()):
+    # Going on from the steps a run left to its page: that run was counted.
+    paid = bool(tab) and _continues_a_run(token)
+    if tried and not paid and not _LIMITER.allow(address or "unknown", time.monotonic()):
         raise RunError("Too many runs from here at once; wait a minute and change the control again.", 429)
     try:
         REGISTRY.check_can_start(dashboard, run_key)
@@ -663,11 +693,16 @@ def start_viewer_run(project_id: str, values, *, address: str) -> dict:
         raise RunError(str(exc), exc.status, runId=exc.job_id) from exc
 
     run_id = str(uuid.uuid4())
-    token = secrets.token_urlsafe(32)
+    # The page's results are read with the token they were kept under.
+    token = token if tab else secrets.token_urlsafe(32)
     app = current_app._get_current_object()
-    events = _run_events(app, project_id, project.user_id, plan, user_key)
+    events = _run_events(
+        app, project_id, project.user_id, plan, user_key,
+        private_to=_digest(token) if tab else None, tainted=_below(plan, tab),
+    )
+    browser_steps = [node_id for node_id, step in plan.steps.items() if step.role == "browser"]
     with _RUNS_LOCK:
-        _RUNS[run_id] = {"projectId": project_id, "token": token}
+        _RUNS[run_id] = {"projectId": project_id, "token": token, "browserSteps": browser_steps}
     try:
         REGISTRY.start(
             user_key=dashboard, project_id=project_id, key=run_key,
@@ -680,6 +715,18 @@ def start_viewer_run(project_id: str, values, *, address: str) -> dict:
     return {"runId": run_id, "token": token, "joined": False, "nodeIds": list(plan.steps)}
 
 
+def _continues_a_run(token: Optional[str]) -> bool:
+    """Whether *token* is that of a run which left steps to its page and was
+    not gone on from yet; from now on it has been, so a page that sends its
+    results again pays for the start that follows."""
+    with _RUNS_LOCK:
+        for known in _RUNS.values():
+            if known.get("token") == token and known.get("browserSteps") and not known.get("continued"):
+                known["continued"] = True
+                return True
+    return False
+
+
 def _forget_finished_runs() -> None:
     """Drop the tokens of runs the registry no longer holds."""
     REGISTRY.sweep_finished()
@@ -688,9 +735,14 @@ def _forget_finished_runs() -> None:
             _RUNS.pop(run_id, None)
 
 
-def _run_events(app, project_id: str, owner_id: int, plan, user_key: str) -> Iterator[tuple[str, dict]]:
+def _run_events(
+    app, project_id: str, owner_id: int, plan, user_key: str,
+    *, private_to: Optional[str] = None, tainted: frozenset = frozenset(),
+) -> Iterator[tuple[str, dict]]:
     """The run's thread: drive the engine with :func:`execute`, keep what
-    each step makes, pass each event on as a viewer receives it."""
+    each step makes, pass each event on as a viewer receives it. A step in
+    *tainted* is built on what a page sent: what it makes is kept for that
+    page alone (*private_to*)."""
     from utk_curio.backend.app.execution import node_exec
     from utk_curio.backend.app.execution.run_engine import run_events
     from utk_curio.backend.app.users.connection_keys import secret_names
@@ -714,7 +766,8 @@ def _run_events(app, project_id: str, owner_id: int, plan, user_key: str) -> Ite
             input_ref=node_input, input_slots=slots,
             datasets=_datasets_read(sent, project_id, owner),
         )
-        kept = _kept_output(project_id, key)
+        private = private_to if step.node_id in tainted else None
+        kept = _kept_output(project_id, key, private)
         if kept is not None:
             output, ids = kept
             return {"stdout": [], "stderr": "", "output": output, "artifactIds": ids}
@@ -731,7 +784,7 @@ def _run_events(app, project_id: str, owner_id: int, plan, user_key: str) -> Ite
             reply, _status = run_node(owner, session_id, node_run)
         output = reply.get("output") if isinstance(reply.get("output"), dict) else {}
         if output.get("path"):
-            return {**reply, "artifactIds": _keep(project_id, step.node_id, key, session_id, output)}
+            return {**reply, "artifactIds": _keep(project_id, step.node_id, key, session_id, output, private)}
         _forget_sessions([session_id])
         return reply
 
@@ -794,3 +847,81 @@ def readable_output(project_id: str, file_name: str, token: Optional[str]) -> Da
         if entry.private_to is None or (digest is not None and secrets.compare_digest(entry.private_to, digest)):
             return entry
     raise RunError("No such output on this dashboard.", 404)
+
+
+# ---------------------------------------------------------------------------
+# The steps a run leaves to the page
+# ---------------------------------------------------------------------------
+
+def _tab_result_problem(value) -> Optional[str]:
+    """What is wrong with a page's result of a browser step, or None: it is
+    one layer or several, as an Autark node hands its layers on."""
+    if not isinstance(value, dict) or value.get("dataType") not in TAB_RESULT_KINDS:
+        kinds = " or ".join(sorted(TAB_RESULT_KINDS))
+        return f"A page's result of a step must be an object whose dataType is {kinds}."
+    if not isinstance(value.get("data"), (dict, list)):
+        return "A page's result of a step must carry its data."
+    return None
+
+
+def keep_tab_result(project_id: str, run_id: str, node_id: str, token: Optional[str], value) -> dict:
+    """Keep *value*, what the page following *run_id* made of *node_id*, one
+    of the steps that run left to it, for that page alone: the server cannot
+    check what a browser sends. It is written to the sandbox as it came, never
+    run. Answers ``{"output", "artifactIds"}``; the page's next start names
+    the output as that step's (``browserOutputs``)."""
+    known = _known_run(project_id, run_id, token)
+    if node_id not in known.get("browserSteps", ()):
+        raise RunError("That step is not one this run left to the page.", 409)
+    problem = _tab_result_problem(value)
+    if problem:
+        raise RunError(problem, 422)
+    session_id = new_session_id()
+    response = sandbox_request(
+        "post", "/artifact-sessions/store",
+        label="/artifact-sessions/store", timeout=SANDBOX_SESSIONS_TIMEOUT,
+        data=json.dumps({"sessionId": session_id, "value": value, "nodeType": "dashboard-tab"}),
+        headers={"Content-Type": "application/json"},
+    )
+    try:
+        output = (response.json() or {}).get("output") or {}
+    except ValueError:
+        output = {}
+    if not output.get("path"):
+        _forget_sessions([session_id])
+        raise RunError("The page's result could not be kept; change the control to run again.", 502)
+    private_to = _digest(str(token))
+    key = hashlib.sha256(_canonical({
+        "page": private_to, "run": run_id, "node": node_id, "path": output["path"],
+    }).encode("utf-8")).hexdigest()
+    return {"output": output, "artifactIds": _keep(project_id, node_id, key, session_id, output, private_to)}
+
+
+def _tab_outputs(project_id: str, browser_outputs, token: Optional[str]) -> dict:
+    """``{nodeId: output}`` of the page's results a start names, each one the
+    page holding *token* sent for that node (:func:`keep_tab_result`)."""
+    if not isinstance(browser_outputs, dict) or not all(
+        isinstance(node_id, str) and isinstance(path, str) for node_id, path in browser_outputs.items()
+    ):
+        raise RunError("'browserOutputs' must map node ids to the outputs the page sent.", 422)
+    if not token:
+        raise RunError("A start that names the page's results needs the token they were kept under.", 403)
+    outputs = {}
+    for node_id, path in browser_outputs.items():
+        entry = readable_output(project_id, path, token)
+        if entry.node_id != node_id or entry.private_to is None:
+            raise RunError(f"{path} is not a result this page sent for {node_id}.", 403)
+        outputs[node_id] = json.loads(entry.output)
+    return outputs
+
+
+def _below(plan, nodes) -> frozenset:
+    """The steps of *plan* that read, directly or not, one of *nodes*."""
+    reached = set(nodes)
+    below = set()
+    for level in plan.levels:
+        for node_id in level:
+            if any(upstream in reached for upstream in plan.spec.upstream_nodes(node_id)):
+                reached.add(node_id)
+                below.add(node_id)
+    return frozenset(below)

@@ -130,6 +130,30 @@ class DashboardSessionsTestCase(unittest.TestCase):
             with TemporaryDirectory() as scratch, self.assertRaises(KeyError):
                 staging.stage_input(art_id, scratch, session_id=session)
 
+    def test_store_keeps_a_pages_result_in_a_dashboard_session(self):
+        """What a viewer's page made of a step only a browser runs is written
+        as it came, an artifact of the dashboard session named."""
+        session = new_session_id()
+        layer = {"dataType": "geodataframe", "data": {"type": "FeatureCollection", "features": []}, "layerName": "a"}
+
+        response = self.client.post("/artifact-sessions/store", json={"sessionId": session, "value": layer})
+
+        self.assertEqual(response.status_code, 200, response.data)
+        output = response.get_json()["output"]
+        self.assertEqual(output["dataType"], "dict")
+        self.assertEqual(parsers.load_artifact(output["path"], session_id=session), layer)
+        described = self.client.post("/artifact-sessions/describe", json={"sessionIds": [session]})
+        self.assertEqual(described.get_json()["sessions"][session]["ids"], [output["path"]])
+
+    def test_store_refuses_a_sign_in_and_a_value_that_is_not_an_object(self):
+        for body in (
+            {"sessionId": "a-sign-in-token", "value": {"dataType": "geodataframe", "data": {}}},
+            {"sessionId": new_session_id(), "value": [1, 2]},
+            {},
+        ):
+            response = self.client.post("/artifact-sessions/store", json=body)
+            self.assertEqual(response.status_code, 400, (body, response.data))
+
     def test_a_session_that_is_not_a_dashboards_is_refused(self):
         signed_in = parsers.save_to_duckdb(pd.DataFrame({"a": [1]}), session_id="a-sign-in-token")
         for route in ("/artifact-sessions/describe", "/artifact-sessions/forget"):
