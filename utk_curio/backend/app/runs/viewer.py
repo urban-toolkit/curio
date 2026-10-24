@@ -371,6 +371,22 @@ def _forget_sessions(session_ids) -> None:
         log.warning("could not forget %d dashboard sessions in the sandbox", len(session_ids))
 
 
+def _alive(now):
+    """The kept outputs still within their time, whether or not a sweep has
+    run since: a shared one for :data:`KEPT_DAYS` after it was made, a tab's
+    own for :data:`TAB_OWN_HOURS`."""
+    return db.or_(
+        db.and_(
+            DashboardStepOutput.private_to.is_(None),
+            DashboardStepOutput.created_at >= now - timedelta(days=KEPT_DAYS),
+        ),
+        db.and_(
+            DashboardStepOutput.private_to.isnot(None),
+            DashboardStepOutput.created_at >= now - timedelta(hours=TAB_OWN_HOURS),
+        ),
+    )
+
+
 def _kept_output(project_id: str, key: str, private_to: Optional[str] = None) -> Optional[tuple[dict, list]]:
     """The output kept under *key* that this run may read, a shared one or
     one private to *private_to*, with its artifact ids. Touches it, so it is
@@ -383,7 +399,7 @@ def _kept_output(project_id: str, key: str, private_to: Optional[str] = None) ->
         DashboardStepOutput.query
         .filter_by(project_id=project_id, step_key=key)
         .filter(readable)
-        .filter(DashboardStepOutput.created_at >= now - timedelta(days=KEPT_DAYS))
+        .filter(_alive(now))
         .order_by(DashboardStepOutput.created_at.desc())
         .first()
     )
@@ -407,12 +423,15 @@ def _keep(project_id: str, node_id: str, key: str, session_id: str, output: dict
         described = {}
     path = str(output.get("path") or "")
     ids = [str(i) for i in described.get("ids") or []] or [path]
+    # Dated by the clock its lookup and its sweep read.
+    now = naive_utc_now()
 
     def _apply():
         db.session.add(DashboardStepOutput(
             project_id=project_id, node_id=node_id, step_key=key, session_id=session_id,
             output=json.dumps(output), output_path=path, artifact_ids=json.dumps(ids),
             size_bytes=int(described.get("bytes") or 0), private_to=private_to,
+            created_at=now, used_at=now,
         ))
 
     commit_with_retry(_apply)
@@ -425,13 +444,7 @@ def prune(now=None) -> int:
     :data:`MAX_KEPT_BYTES_PER_DASHBOARD`, the least recently used until it is
     under. Their artifacts go with them. Returns how many went."""
     now = now or naive_utc_now()
-    expired = DashboardStepOutput.query.filter(db.or_(
-        DashboardStepOutput.created_at < now - timedelta(days=KEPT_DAYS),
-        db.and_(
-            DashboardStepOutput.private_to.isnot(None),
-            DashboardStepOutput.created_at < now - timedelta(hours=TAB_OWN_HOURS),
-        ),
-    )).all()
+    expired = DashboardStepOutput.query.filter(db.not_(_alive(now))).all()
     going = {entry.id: entry for entry in expired}
     totals = (
         db.session.query(DashboardStepOutput.project_id, db.func.sum(DashboardStepOutput.size_bytes))
@@ -770,7 +783,7 @@ def readable_output(project_id: str, file_name: str, token: Optional[str]) -> Da
             DashboardStepOutput.output_path == file_name,
             DashboardStepOutput.artifact_ids.contains(json.dumps(file_name)),
         ))
-        .filter(DashboardStepOutput.created_at >= now - timedelta(days=KEPT_DAYS))
+        .filter(_alive(now))
         .order_by(DashboardStepOutput.created_at.desc())
         .all()
     )
