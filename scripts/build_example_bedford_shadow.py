@@ -558,7 +558,7 @@ def build() -> dict:
     for entry in nodes:
         entry.update(LAYOUT.get(entry.get("title"), {}))
     return {"dataflow": {
-        "categories": {"complexity": ["Intermediate"]},
+        "categories": {"complexity": ["Beginner"]},
         "nodes": nodes,
         "edges": edges,
         "packages": [],
