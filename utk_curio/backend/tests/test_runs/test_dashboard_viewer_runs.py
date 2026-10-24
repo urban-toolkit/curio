@@ -234,26 +234,15 @@ class TestAViewerRunsTheDashboard:
         assert outputs == [("art-grid-1", ["art-grid-1"])]
         assert first["runId"] != second["runId"]
 
-    def test_opening_the_page_runs_it_with_the_saved_values_and_a_later_visit_gets_it_kept(
-        self, client, user_and_token, sandbox, saved,
-    ):
-        """Every visit runs the dashboard, the owner's saved outputs or not;
-        what the first made answers the next, with nothing run again."""
+    def test_the_saved_values_with_every_tile_saved_need_no_run(self, client, user_and_token, sandbox, saved):
         _, token = user_and_token
         pid = _create(client, token)
 
         for values in ({}, {"param": {"period": "Date"}}):
             resp = _run(client, pid, values)
-            assert resp.status_code == 202, resp.get_data(as_text=True)
-            started = resp.get_json()
-            assert started["nodeIds"] == ["grid"]
-            _wait(started["runId"])
-
-        assert [node for node, _ in sandbox.runs] == ["grid"]
-        assert '"Date"' in sandbox.runs[0][1]["code"]
-        finished = [p for k, p in _events(client, pid, started["runId"], started["token"]) if k == "step_finished"]
-        # Not the owner's saved output: the one the first visit made.
-        assert [(p["nodeId"], p["output"]["path"]) for p in finished] == [("grid", "art-grid-1")]
+            assert resp.status_code == 200, resp.get_data(as_text=True)
+            assert resp.get_json() == {"runId": None, "token": None, "joined": False, "nodeIds": []}
+        assert sandbox.runs == []
 
     def test_a_dashboard_whose_tiles_read_no_node_runs_nothing(self, client, user_and_token, sandbox, saved):
         _, token = user_and_token
@@ -278,9 +267,27 @@ class TestAViewerRunsTheDashboard:
         assert [node for node, _ in sandbox.runs] == ["grid"]
         assert '"Date"' in sandbox.runs[0][1]["code"]
 
-    def test_a_node_the_change_does_not_reach_runs_too_and_comes_back_kept(self, client, user_and_token, sandbox, saved):
-        """The owner's saved outputs stand in for nothing a viewer's run can
-        run: a node above the change runs once, and is kept for the next."""
+    def test_what_a_visit_made_for_a_tile_with_no_saved_output_answers_the_next_visit(
+        self, client, user_and_token, sandbox, saved,
+    ):
+        """With no saved output, the first visit runs the nodes and keeps what
+        they made; the next visitor's page gets it with nothing run again."""
+        _, token = user_and_token
+        pid = _create(client, token)
+        saved.clear()
+
+        for _ in range(2):
+            resp = _run(client, pid, {})
+            assert resp.status_code == 202, resp.get_data(as_text=True)
+            started = resp.get_json()
+            assert started["nodeIds"] == ["grid"]
+            _wait(started["runId"])
+
+        assert [node for node, _ in sandbox.runs] == ["grid"]
+        finished = [p for k, p in _events(client, pid, started["runId"], started["token"]) if k == "step_finished"]
+        assert [(p["nodeId"], p["output"]["path"]) for p in finished] == [("grid", "art-grid-1")]
+
+    def test_a_node_the_change_does_not_reach_keeps_its_saved_output(self, client, user_and_token, sandbox, saved):
         from utk_curio.backend.app.projects.schemas import OutputRef
 
         _, token = user_and_token
@@ -291,17 +298,15 @@ class TestAViewerRunsTheDashboard:
         saved.append(OutputRef(node_id="load", filename="saved-load", data_type="str"))
 
         _month(client, pid)
-        year = _run(client, pid, {"param": {"period": "Year"}})
-        assert year.status_code == 202, year.get_data(as_text=True)
-        _wait(year.get_json()["runId"])
 
-        assert [node for node, _ in sandbox.runs] == ["load", "grid", "grid"]
-        assert sandbox.runs[1][1]["file_path"] == "art-load-1"
-        assert sandbox.runs[2][1]["file_path"] == "art-load-1"
+        assert [node for node, _ in sandbox.runs] == ["grid"]
+        assert sandbox.runs[0][1]["file_path"] == "saved-load"
 
-    def test_a_node_a_viewers_run_cannot_run_stands_on_the_owners_saved_output(self, client, user_and_token, sandbox, saved):
-        """One that reads a connection key: a viewer's run uses none, so the
-        owner's saved output stands in, and the nodes below run on it."""
+    def test_a_node_that_reads_a_key_keeps_its_saved_output_when_the_change_does_not_reach_it(
+        self, client, user_and_token, sandbox, saved,
+    ):
+        """A viewer's run uses no key, and needs none here: the owner's saved
+        output answers for the node, and the nodes below run on it."""
         from utk_curio.backend.app.projects.schemas import OutputRef
 
         _, token = user_and_token
@@ -316,16 +321,6 @@ class TestAViewerRunsTheDashboard:
         assert body["nodeIds"] == ["grid"]
         assert [node for node, _ in sandbox.runs] == ["grid"]
         assert sandbox.runs[0][1]["file_path"] == "saved-load"
-
-    def test_a_tile_that_only_reads_a_node_standing_in_needs_no_run(self, client, user_and_token, sandbox, saved):
-        _, token = user_and_token
-        pid = _create(client, token, _nodes(grid_code='key = curio_secret("weather")\nreturn [!! @period !!]'))
-
-        resp = _run(client, pid, {})
-
-        assert resp.status_code == 200, resp.get_data(as_text=True)
-        assert resp.get_json() == {"runId": None, "token": None, "joined": False, "nodeIds": []}
-        assert sandbox.runs == []
 
 
 class TestRefusedValues:
@@ -367,13 +362,11 @@ class TestRefusedValues:
         ]}}
         assert set(viewer.dashboard_controls(spec)) == {("p", "slider")}
 
-    def test_a_node_that_reads_a_key_with_no_saved_output_stops_with_the_message(self, client, user_and_token, sandbox, saved):
+    def test_a_node_that_reads_a_key_stops_with_the_message(self, client, user_and_token, sandbox, saved):
         from utk_curio.backend.app.runs import viewer
 
         _, token = user_and_token
         pid = _create(client, token, _nodes(grid_code='key = curio_secret("weather")\nreturn [!! @period !!]'))
-        # No saved output to stand in for it.
-        saved.clear()
 
         body = _month(client, pid)
 
@@ -448,13 +441,16 @@ class TestLimits:
         assert other == 202
 
     def test_opening_the_page_costs_the_address_nothing(self, client, user_and_token, sandbox, saved, monkeypatch):
-        """Every visit runs the dashboard with the saved values: only the
+        """A tile with no saved output runs with the saved values at each
+        visit, the first making it and the rest getting it kept: only the
         values a visitor tries count against its address's budget."""
         from utk_curio.backend.app.common.address_limiter import AddressLimiter
         from utk_curio.backend.app.runs import viewer
 
         _, token = user_and_token
         pid = _create(client, token)
+        # Nothing saved, so each open starts a run.
+        saved.clear()
         monkeypatch.setattr(viewer, "_LIMITER", AddressLimiter(1, 100))
 
         opens = [_tried(client, pid, "Date", "10.0.0.1") for _ in range(4)]
