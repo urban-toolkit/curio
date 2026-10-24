@@ -35,6 +35,11 @@ export const MENU_BAR_ATTR = "data-curio-menu-bar";
  *  category chips hang below it, so the fit keeps the top node clear of both. */
 export const CANVAS_TITLE_ATTR = "data-curio-canvas-title";
 
+/** The attribute a notice laid over the top of the pane wears, as a
+ *  dashboard's notice to its visitors does: a tile under it could not be
+ *  reached, so the fit keeps the top node below it too. */
+export const TOP_NOTICE_ATTR = "data-curio-top-notice";
+
 /** The lowest bottom edge of the overlays fixed along the top of the pane.
  *  The notebook view starts its column below the same edge. */
 export function topOverlayBottom(): number | null {
@@ -43,6 +48,7 @@ export function topOverlayBottom(): number | null {
         ...document.querySelectorAll<HTMLElement>(
             `[${CANVAS_TITLE_ATTR}], [${CANVAS_TITLE_ATTR}] [data-curio-category-chips]`,
         ),
+        ...document.querySelectorAll<HTMLElement>(`[${TOP_NOTICE_ATTR}]`),
     ];
     if (overlays.length === 0) return null;
     return Math.max(...overlays.map((el) => el.getBoundingClientRect().bottom));
