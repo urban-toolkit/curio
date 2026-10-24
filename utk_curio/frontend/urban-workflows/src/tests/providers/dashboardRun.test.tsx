@@ -244,6 +244,32 @@ describe("a step only a browser runs", () => {
         expect(hook.result.current.active).toBe(false);
     });
 
+    test("the page runs it once the results before it have reached its input, which they do a tick after they land", async () => {
+        let reached = false;
+        let reachedWhenPlayed: boolean | null = null;
+        const playNodes = jest.fn((_nodeIds: string[], hooks: any) => {
+            reachedWhenPlayed = reached;
+            hooks.onFinish();
+            return true;
+        });
+        const setup = setUp({ playNodes });
+        // As useStepOutcomes hands a run's result down: a load's way, a tick later.
+        setup.outcomes.showResult.mockImplementation(() => { setTimeout(() => { reached = true; }, 0); });
+        mockStart.mockResolvedValueOnce({ runId: "r1", token: "t1", joined: false, nodeIds: ["grid", "gpu", "after"] });
+        await act(async () => { setup.hook.result.current.opened("dash-1"); });
+        setup.nodes[0].data.widgets = [{ ...period, value: "Month" }] as any;
+        await act(async () => { await setup.hook.result.current.start(); });
+        const run = followed();
+        // The whole stream at once, as a run that ended before the page read it.
+        run.emit({ kind: "step_finished", nodeId: "grid", status: "ok", output: { path: "art-grid", dataType: "str" } });
+        run.emit({ kind: "step_finished", nodeId: "gpu", status: "browser" });
+        run.emit({ kind: "step_finished", nodeId: "after", status: "waiting", skipReason: "Waits for the canvas" });
+        await act(async () => { run.emit(finished("needs_canvas")); });
+
+        await waitFor(() => expect(playNodes).toHaveBeenCalledTimes(1));
+        expect(reachedWhenPlayed).toBe(true);
+    });
+
     test("rows the node holds on the page are sent to the run, and read back with the run's token", async () => {
         const rows = { dataType: "geodataframe", data: { type: "FeatureCollection", features: [] } };
         mockKeepStep.mockResolvedValue({ output: { path: "page-7", dataType: "dict" }, artifactIds: ["page-7"] });

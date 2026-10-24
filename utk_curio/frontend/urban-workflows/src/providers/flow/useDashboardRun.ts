@@ -161,6 +161,12 @@ export function useDashboardRun({ enabled, reactFlow, outcomes, outputsRef, show
         }
         askPage(projectId, run.runId, run.token, run.browserSteps);
         try {
+            // The results before these steps reach them a tick after they land,
+            // as a load's do (useApplyOutput's hydrateRestoredOutputs), and a
+            // run's whole stream can land at once: the steps run once their
+            // inputs are in, not on the inputs they held before.
+            await new Promise<void>((resolve) => setTimeout(resolve, 0));
+            if (followedRef.current !== run) return;
             const made = new Map<string, Promise<string | null>>();
             const failed: string[] = [];
             await new Promise<void>((resolve) => {
