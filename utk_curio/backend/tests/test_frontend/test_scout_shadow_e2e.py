@@ -81,6 +81,7 @@ from .utils import (
     api_json,
     assert_autark_map_drawn,
     assert_vega_canvas_rendered,
+    assert_vega_charts_fit,
     frame_nodes,
     load_artifact_as_dict,
     load_raster_cells,
@@ -329,6 +330,8 @@ def test_two_building_sets_are_shadowed_charted_and_mapped(
         assert [row["count"]] == table["count"], (row["scenario"], row["count"], table["count"])
     frame_nodes(page, [chart])
     _assert_chart_drew(page, chart, colors)
+    # The chart shows whole in its node, its axes and legend included (#1097).
+    assert_vega_charts_fit(page, DATAFLOW.name, [chart], every=False)
 
     # 2. Towers removed minus existing, on the mosaics' grid, mapped: the
     # Raster Calculator's raster, and the Autark map after it draws it.

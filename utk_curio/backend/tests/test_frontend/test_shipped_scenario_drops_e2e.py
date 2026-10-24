@@ -57,6 +57,7 @@ from .utils import (
     api_json,
     assert_autark_map_drawn,
     assert_vega_canvas_rendered,
+    assert_vega_charts_fit,
     frame_nodes,
     node_locator,
     read_node_error_text,
@@ -291,6 +292,11 @@ def test_a_shipped_scenario_drops_from_a_project_never_run_and_runs(
             assert output and output["code"] == "success" and "Saved to file:" in output["content"], (
                 f"{outcome['label']} ({node_id}) shows no output: {output}"
             )
+    # Each Vega-Lite outcome drawn above shows whole in its node, axes and
+    # legends included (#1097).
+    charts = [node_id for node_id, outcome in outcomes if types[outcome["nodeId"]].startswith(VEGA)]
+    if charts:
+        assert_vega_charts_fit(page, f"{Path(dataflow).name}, {name}", charts, every=False)
     # A Map Edits lever edits on the map it feeds and is linked to, an
     # outcome drawn above, and lists the layers it is fed, before the whole
     # dataflow is framed.

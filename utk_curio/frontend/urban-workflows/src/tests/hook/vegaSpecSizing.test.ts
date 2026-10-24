@@ -91,6 +91,55 @@ describe("applyContainerSizing on a spec that sized itself", () => {
   });
 });
 
+/**
+ * #1097: a size the author set is the plot's size. `fit` on such a size fitted
+ * the whole chart into it, so the axes and the legend squeezed the plot, and
+ * `resize: true` laid it out again on every hover. `autosize` now fits only
+ * the sizes that are "container" once filled, whether the author left them
+ * out or wrote "container"; with none, Vega-Lite's own `pad` lays the axes,
+ * title and legend out around the plot.
+ */
+describe("applyContainerSizing fits only the sizes left to the node (#1097)", () => {
+  test("an author's width leaves only the height to fit", () => {
+    const spec: Record<string, unknown> = { mark: "bar", width: 800 };
+    applyContainerSizing(spec);
+    expect(spec.autosize).toEqual({ type: "fit-y", contains: "padding", resize: true });
+  });
+
+  test("an author's height leaves only the width to fit", () => {
+    const spec: Record<string, unknown> = { mark: "bar", height: 300 };
+    applyContainerSizing(spec);
+    expect(spec.autosize).toEqual({ type: "fit-x", contains: "padding", resize: true });
+  });
+
+  test("an author's width and height get no autosize, so the plot keeps them", () => {
+    const spec: Record<string, unknown> = { mark: "bar", width: 420, height: 220 };
+    applyContainerSizing(spec);
+    expect(spec.width).toBe(420);
+    expect(spec.height).toBe(220);
+    expect(spec.autosize).toBeUndefined();
+  });
+
+  test("a height in steps counts as set, so only the width fits", () => {
+    const spec: Record<string, unknown> = { mark: "bar", height: { step: 14 } };
+    applyContainerSizing(spec);
+    expect(spec.autosize).toEqual({ type: "fit-x", contains: "padding", resize: true });
+  });
+
+  test("a width and a height in steps get no autosize", () => {
+    // Scout's "dots with a range" template: 300 wide, a step per row.
+    const spec: Record<string, unknown> = { layer: [{ mark: "point" }], width: 300, height: { step: 13 } };
+    applyContainerSizing(spec);
+    expect(spec.autosize).toBeUndefined();
+  });
+
+  test("an author's own \"container\" width fits, as a width left out does", () => {
+    const spec: Record<string, unknown> = { mark: "bar", width: "container", height: 300 };
+    applyContainerSizing(spec);
+    expect(spec.autosize).toEqual({ type: "fit-x", contains: "padding", resize: true });
+  });
+});
+
 describe("applyContainerSizing on a multi-view spec", () => {
   test("injects nothing — vega-lite would discard it, and the pane scrolls", () => {
     // The reported repro: docs/examples/05-vega-lite-multi-view-drilldown.json

@@ -78,6 +78,7 @@ from .utils import (
     api_json,
     assert_autark_map_drawn,
     assert_vega_canvas_rendered,
+    assert_vega_charts_fit,
     frame_nodes,
     load_artifact_as_dict,
     load_raster_cells,
@@ -569,5 +570,7 @@ def test_two_flood_scenarios_are_mapped_and_charted(
     frame_nodes(page, [period_chart])
     _assert_chart_drew(page, period_chart)
     save_node_closeup(page, "scout-flood-depth-by-period", period_chart, test_name=TEST_NAME, sweep_toasts=True)
+    # The three charts show whole in their nodes, axes and legends included (#1097).
+    assert_vega_charts_fit(page, DATAFLOW.name, [median_chart, scatter, period_chart], every=False)
 
     assert outside == [], f"the page asked hosts outside the stack: {sorted(set(outside))[:10]}"

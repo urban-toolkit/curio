@@ -34,9 +34,19 @@ export function isMultiViewSpec(spec: Record<string, unknown> | null | undefined
  * Applies container sizing in place and returns the same object.
  *
  * - multi-view: untouched.
- * - unit/layer: `width`/`height` become `"container"` **only** if the author
- *   did not declare them, and `autosize` is set to fit-with-resize so the view
- *   actually follows the container it is now sized against.
+ * - unit/layer: a `width` or `height` the author left out becomes
+ *   `"container"`, so the chart fills its node there.
+ * - A spec with no `autosize` gets one that fits only the sizes that are
+ *   `"container"` now, left out or written so by the author: both (`fit`),
+ *   the width (`fit-x`) or the height (`fit-y`), with `resize` so the view
+ *   follows its node when the node is resized.
+ * - A size the author set, a number or a `{step}`, is the plot's own. Vega-Lite's
+ *   default (`pad`) lays the axes, title and legend out around it, and the
+ *   node's pane scrolls when the chart is larger than the node. A `fit` on such
+ *   a size fitted the whole chart into it instead, so the axes and the legend
+ *   took their room from the plot, and `resize: true` laid it out again on
+ *   every hover (#1097).
+ * - An `autosize` the author set is kept.
  */
 export function applyContainerSizing<T extends Record<string, unknown>>(spec: T): T {
   if (!spec || typeof spec !== "object") return spec;
@@ -48,16 +58,25 @@ export function applyContainerSizing<T extends Record<string, unknown>>(spec: T)
   if (spec.height === undefined) {
     (spec as Record<string, unknown>).height = "container";
   }
-  // Only meaningful once at least one dimension is "container"; harmless
-  // otherwise, and it is what makes the ResizeObserver's re-render take effect.
   if (spec.autosize === undefined) {
-    (spec as Record<string, unknown>).autosize = {
-      type: "fit",
-      contains: "padding",
-      resize: true,
-    };
+    const type = fitType(spec.width === "container", spec.height === "container");
+    if (type) {
+      (spec as Record<string, unknown>).autosize = {
+        type,
+        contains: "padding",
+        resize: true,
+      };
+    }
   }
   return spec;
+}
+
+/** The autosize type that fits the sizes the node gives: both, one, or none. */
+function fitType(width: boolean, height: boolean): "fit" | "fit-x" | "fit-y" | undefined {
+  if (width && height) return "fit";
+  if (width) return "fit-x";
+  if (height) return "fit-y";
+  return undefined;
 }
 
 /**

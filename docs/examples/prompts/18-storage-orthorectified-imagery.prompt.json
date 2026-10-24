@@ -4,7 +4,7 @@
   "version": 1,
   "source": {
     "path": "docs/examples/18-storage-orthorectified-imagery.json",
-    "sha256": "1e439c4f755c516348eb4048fe2b26450776c369470adf36885b2476653c239b",
+    "sha256": "6a15448c05d619e28affe5f046ccfd3b2866c8d86a97b83341510167b2004ea4",
     "walkthrough": "docs/examples/18-storage-orthorectified-imagery.md"
   },
   "prompt": "Load the Example drone orthoimagery collection from the Data Catalog: drone GeoTIFF tiles over the Chicago Loop, organized by year. Map every tile's footprint coloured by year with Vega-Lite. Then keep only the 2024 tiles, mosaic them into one raster, compute the mean of each band of that mosaic, and show the summary as a table.",

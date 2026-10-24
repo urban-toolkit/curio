@@ -368,6 +368,65 @@ def assert_autark_drawing_fits(page, node_id: str, *, timeout: float = 5000) -> 
     )
 
 
+# Every Vega-Lite chart on the canvas: the pane its node shows it in (the output
+# mount, which scrolls), what the pane holds (the chart, and any controls bound
+# under it), and the chart's canvas, in layout pixels, which the canvas zoom does
+# not scale.
+_VEGA_PANES_JS = """() => [...document.querySelectorAll('.react-flow__node .curio-vega-mount')].map((pane) => {
+    const canvas = pane.querySelector('canvas');
+    return {
+        node: pane.id.replace(/^vega/, ''),
+        pane: [pane.clientWidth, pane.clientHeight],
+        content: [pane.scrollWidth, pane.scrollHeight],
+        canvas: canvas ? [canvas.offsetWidth, canvas.offsetHeight] : null,
+    };
+})"""
+
+
+def _past_the_pane(pane: dict) -> str:
+    (pw, ph), (cw, ch) = pane["pane"], pane["content"]
+    edges = [f"{cw - pw} px past the right edge" if cw > pw else "",
+             f"{ch - ph} px past the bottom" if ch > ph else ""]
+    return (
+        f"node {pane['node']}: {cw}x{ch} px of chart (canvas {pane['canvas']}) in a {pw}x{ph} px pane, "
+        + " and ".join(e for e in edges if e)
+    )
+
+
+def assert_vega_charts_fit(page, where: str, node_ids, *, every: bool = True, timeout: float = 5000) -> None:
+    """Assert every Vega-Lite chart on the canvas shows whole in its node: the
+    pane it is drawn in scrolls neither way, so nothing runs past the node's
+    right or bottom edge.
+
+    A chart whose spec sets its own size keeps it, with its axes, title and
+    legend around it (#1097), so its node must be big enough for all of them.
+    *node_ids* are the dataflow's Vega-Lite nodes: each must have a pane that is
+    shown, so a chart that never showed cannot pass. With ``every=False`` only
+    they are checked, for a test that adds charts of its own beside a shipped
+    dataflow's. *where* names the dataflow in the message, which names each
+    chart that runs past its node and by how much.
+    """
+    deadline = time.monotonic() + timeout / 1000
+    while True:
+        panes = {pane["node"]: pane for pane in page.evaluate(_VEGA_PANES_JS)
+                 if every or pane["node"] in node_ids}
+        past = [pane for pane in panes.values()
+                if pane["content"][0] > pane["pane"][0] or pane["content"][1] > pane["pane"][1]]
+        if not past or time.monotonic() >= deadline:
+            break
+        page.wait_for_timeout(250)
+    missing = [node for node in node_ids if node not in panes]
+    hidden = [node for node in node_ids if node in panes and min(panes[node]["pane"]) <= 0]
+    problems = [_past_the_pane(pane) for pane in past]
+    if missing:
+        problems.append(f"no chart pane for the Vega-Lite nodes {missing}")
+    if hidden:
+        problems.append(f"the chart pane of {hidden} is not shown")
+    assert not problems, (
+        f"{where}: {len(past)} of {len(panes)} Vega-Lite charts run past their node. " + "; ".join(problems)
+    )
+
+
 # Each shown node's editor panes (NodeEditor's Tab.Content, the first one in the
 # node; an output can hold its own) and its port markers, on screen.
 _EDITOR_PANES_JS = """() => [...document.querySelectorAll('.react-flow__node')].map((node) => {
