@@ -234,14 +234,36 @@ class TestAViewerRunsTheDashboard:
         assert outputs == [("art-grid-1", ["art-grid-1"])]
         assert first["runId"] != second["runId"]
 
-    def test_the_saved_values_with_every_tile_saved_need_no_run(self, client, user_and_token, sandbox, saved):
+    def test_opening_the_page_runs_it_with_the_saved_values_and_a_later_visit_gets_it_kept(
+        self, client, user_and_token, sandbox, saved,
+    ):
+        """Every visit runs the dashboard, the owner's saved outputs or not;
+        what the first made answers the next, with nothing run again."""
         _, token = user_and_token
         pid = _create(client, token)
 
         for values in ({}, {"param": {"period": "Date"}}):
             resp = _run(client, pid, values)
-            assert resp.status_code == 200, resp.get_data(as_text=True)
-            assert resp.get_json() == {"runId": None, "token": None, "joined": False, "nodeIds": []}
+            assert resp.status_code == 202, resp.get_data(as_text=True)
+            started = resp.get_json()
+            assert started["nodeIds"] == ["grid"]
+            _wait(started["runId"])
+
+        assert [node for node, _ in sandbox.runs] == ["grid"]
+        assert '"Date"' in sandbox.runs[0][1]["code"]
+        finished = [p for k, p in _events(client, pid, started["runId"], started["token"]) if k == "step_finished"]
+        # Not the owner's saved output: the one the first visit made.
+        assert [(p["nodeId"], p["output"]["path"]) for p in finished] == [("grid", "art-grid-1")]
+
+    def test_a_dashboard_whose_tiles_read_no_node_runs_nothing(self, client, user_and_token, sandbox, saved):
+        _, token = user_and_token
+        nodes = [node for node in _nodes() if node["id"] == "param"]
+        pid = _create(client, token, nodes, edges=[])
+
+        resp = _run(client, pid, {})
+
+        assert resp.status_code == 200, resp.get_data(as_text=True)
+        assert resp.get_json() == {"runId": None, "token": None, "joined": False, "nodeIds": []}
         assert sandbox.runs == []
 
     def test_a_tile_with_no_saved_output_runs_the_nodes_before_it_on_open(self, client, user_and_token, sandbox, saved):
@@ -256,7 +278,9 @@ class TestAViewerRunsTheDashboard:
         assert [node for node, _ in sandbox.runs] == ["grid"]
         assert '"Date"' in sandbox.runs[0][1]["code"]
 
-    def test_a_node_the_change_does_not_reach_keeps_its_saved_output(self, client, user_and_token, sandbox, saved):
+    def test_a_node_the_change_does_not_reach_runs_too_and_comes_back_kept(self, client, user_and_token, sandbox, saved):
+        """The owner's saved outputs stand in for nothing a viewer's run can
+        run: a node above the change runs once, and is kept for the next."""
         from utk_curio.backend.app.projects.schemas import OutputRef
 
         _, token = user_and_token
@@ -267,9 +291,41 @@ class TestAViewerRunsTheDashboard:
         saved.append(OutputRef(node_id="load", filename="saved-load", data_type="str"))
 
         _month(client, pid)
+        year = _run(client, pid, {"param": {"period": "Year"}})
+        assert year.status_code == 202, year.get_data(as_text=True)
+        _wait(year.get_json()["runId"])
 
+        assert [node for node, _ in sandbox.runs] == ["load", "grid", "grid"]
+        assert sandbox.runs[1][1]["file_path"] == "art-load-1"
+        assert sandbox.runs[2][1]["file_path"] == "art-load-1"
+
+    def test_a_node_a_viewers_run_cannot_run_stands_on_the_owners_saved_output(self, client, user_and_token, sandbox, saved):
+        """One that reads a connection key: a viewer's run uses none, so the
+        owner's saved output stands in, and the nodes below run on it."""
+        from utk_curio.backend.app.projects.schemas import OutputRef
+
+        _, token = user_and_token
+        nodes = _nodes(grid_code="return input_0 + [!! @period !!]", extra=[
+            {"id": "load", "type": CODE, "content": "# node load\nkey = curio_secret('weather')\nreturn 'rows'"},
+        ])
+        pid = _create(client, token, nodes, EDGES + [{"id": "load-grid", "source": "load", "target": "grid"}])
+        saved.append(OutputRef(node_id="load", filename="saved-load", data_type="str"))
+
+        body = _month(client, pid)
+
+        assert body["nodeIds"] == ["grid"]
         assert [node for node, _ in sandbox.runs] == ["grid"]
         assert sandbox.runs[0][1]["file_path"] == "saved-load"
+
+    def test_a_tile_that_only_reads_a_node_standing_in_needs_no_run(self, client, user_and_token, sandbox, saved):
+        _, token = user_and_token
+        pid = _create(client, token, _nodes(grid_code='key = curio_secret("weather")\nreturn [!! @period !!]'))
+
+        resp = _run(client, pid, {})
+
+        assert resp.status_code == 200, resp.get_data(as_text=True)
+        assert resp.get_json() == {"runId": None, "token": None, "joined": False, "nodeIds": []}
+        assert sandbox.runs == []
 
 
 class TestRefusedValues:
@@ -311,11 +367,13 @@ class TestRefusedValues:
         ]}}
         assert set(viewer.dashboard_controls(spec)) == {("p", "slider")}
 
-    def test_a_node_that_reads_a_key_stops_with_the_message(self, client, user_and_token, sandbox, saved):
+    def test_a_node_that_reads_a_key_with_no_saved_output_stops_with_the_message(self, client, user_and_token, sandbox, saved):
         from utk_curio.backend.app.runs import viewer
 
         _, token = user_and_token
         pid = _create(client, token, _nodes(grid_code='key = curio_secret("weather")\nreturn [!! @period !!]'))
+        # No saved output to stand in for it.
+        saved.clear()
 
         body = _month(client, pid)
 
@@ -366,8 +424,16 @@ class TestNothingIsSaved:
         assert "art-grid-1" not in payload.get_data(as_text=True)
 
 
+def _tried(client, project_id, period, address):
+    """A visitor's try of *period*, run to its end; its start's status."""
+    resp = _run(client, project_id, {"param": {"period": period}}, address=address)
+    if resp.status_code == 202:
+        _wait(resp.get_json()["runId"])
+    return resp.status_code
+
+
 class TestLimits:
-    def test_the_limiter_counts_each_forwarded_address_on_its_own(self, client, user_and_token, sandbox, saved, monkeypatch):
+    def test_the_limiter_counts_each_forwarded_addresses_tries_on_its_own(self, client, user_and_token, sandbox, saved, monkeypatch):
         from utk_curio.backend.app.common.address_limiter import AddressLimiter
         from utk_curio.backend.app.runs import viewer
 
@@ -375,11 +441,27 @@ class TestLimits:
         pid = _create(client, token)
         monkeypatch.setattr(viewer, "_LIMITER", AddressLimiter(2, 100))
 
-        statuses = [_run(client, pid, address="10.0.0.1").status_code for _ in range(3)]
-        other = _run(client, pid, address="10.0.0.2").status_code
+        statuses = [_tried(client, pid, period, "10.0.0.1") for period in ("Month", "Year", "Month")]
+        other = _tried(client, pid, "Year", "10.0.0.2")
 
-        assert statuses == [200, 200, 429]
-        assert other == 200
+        assert statuses == [202, 202, 429]
+        assert other == 202
+
+    def test_opening_the_page_costs_the_address_nothing(self, client, user_and_token, sandbox, saved, monkeypatch):
+        """Every visit runs the dashboard with the saved values: only the
+        values a visitor tries count against its address's budget."""
+        from utk_curio.backend.app.common.address_limiter import AddressLimiter
+        from utk_curio.backend.app.runs import viewer
+
+        _, token = user_and_token
+        pid = _create(client, token)
+        monkeypatch.setattr(viewer, "_LIMITER", AddressLimiter(1, 100))
+
+        opens = [_tried(client, pid, "Date", "10.0.0.1") for _ in range(4)]
+        tries = [_tried(client, pid, period, "10.0.0.1") for period in ("Month", "Year")]
+
+        assert opens == [202, 202, 202, 202]
+        assert tries == [202, 429]
 
     @pytest.mark.parametrize("proxy_hops", [0])
     def test_with_no_proxy_named_a_forwarded_address_is_not_believed(self, client, user_and_token, sandbox, saved, monkeypatch):
@@ -392,9 +474,11 @@ class TestLimits:
         pid = _create(client, token)
         monkeypatch.setattr(viewer, "_LIMITER", AddressLimiter(2, 100))
 
-        statuses = [_run(client, pid, address=f"10.0.0.{n}").status_code for n in range(1, 4)]
+        statuses = [
+            _tried(client, pid, period, f"10.0.0.{n}") for n, period in enumerate(("Month", "Year", "Month"), start=1)
+        ]
 
-        assert statuses == [200, 200, 429]
+        assert statuses == [202, 202, 429]
 
     def test_a_dashboard_runs_at_most_two_at_once(self, client, user_and_token, sandbox, saved):
         _, token = user_and_token
@@ -577,22 +661,48 @@ class TestKeptOutputsGo:
         db.session.commit()
         return entry.id, entry.session_id
 
-    def test_an_output_goes_after_thirty_days_and_a_tabs_own_after_an_hour(self, client, user_and_token, sandbox):
+    def test_an_output_goes_seven_days_after_it_was_made_and_a_tabs_own_after_an_hour(self, client, user_and_token, sandbox):
         from utk_curio.backend.app.runs import viewer
         from utk_curio.backend.app.runs.models import DashboardStepOutput
 
         _, token = user_and_token
         pid = _create(client, token)
-        fresh = self._entry(pid, days=29)
-        old = self._entry(pid, days=31)
+        assert viewer.KEPT_DAYS == 7
+        fresh = self._entry(pid, days=6)
+        old = self._entry(pid, days=8)
+        # Counted from when it was made: a visit since does not keep it longer.
+        old_used_today = self._entry(pid, days=8, used_days=0)
         tab_fresh = self._entry(pid, private=True)
         tab_old = self._entry(pid, private=True, hours=2)
 
-        assert viewer.prune() == 2
+        assert viewer.prune() == 3
 
         left = {row.id for row in DashboardStepOutput.query.all()}
         assert left == {fresh[0], tab_fresh[0]}
-        assert sorted(sandbox.forgotten) == sorted([old[1], tab_old[1]])
+        assert sorted(sandbox.forgotten) == sorted([old[1], old_used_today[1], tab_old[1]])
+
+    def test_the_sweep_runs_a_minute_after_start_then_every_six_hours_and_never_under_testing(self, app, monkeypatch):
+        """With no visit at all, what is past its time still goes on time."""
+        from utk_curio.backend import config
+        from utk_curio.backend.app.runs import viewer
+
+        monkeypatch.setattr(viewer, "_prune_timer", None)
+        viewer.start_prune_scheduler(app)
+        assert viewer._prune_timer is None, "a sweep was scheduled under --testing"
+
+        swept = []
+        monkeypatch.setattr(viewer, "prune", lambda now=None: swept.append(now) or 0)
+        monkeypatch.setattr(config, "_is_testing", lambda: False)
+        viewer.start_prune_scheduler(app)
+        first = viewer._prune_timer
+        try:
+            assert first is not None and first.daemon and first.interval == 60
+            first.cancel()
+            first.function()
+            assert swept == [None]
+            assert viewer._prune_timer.interval == viewer.PRUNE_INTERVAL_HOURS * 3600 == 6 * 3600
+        finally:
+            viewer._prune_timer.cancel()
 
     def test_a_dashboard_past_its_size_drops_the_least_recently_used(self, client, user_and_token, sandbox, monkeypatch):
         from utk_curio.backend.app.runs import viewer
