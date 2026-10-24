@@ -103,13 +103,14 @@ describe("resolveNodeBoxSize", () => {
         registerNode(descriptor("curio.builtin/chip@1", { noContent: true }));
 
         expect(resolveNodeBoxSize(node("curio.builtin/chip@1"))).toEqual({
-            width: 70,
+            width: 250,
             height: 40,
         });
     });
 
-    // A node saved minimized opens as its chip, so the load's layout pass
-    // measures the chip: chips laid out close together stay where they were.
+    // A node saved minimized opens as its chip, its icon and title, so the
+    // load's layout pass measures the chip: chips laid out close together stay
+    // where they were, and chips the chip's width makes overlap are moved apart.
     test("a node saved minimized measures as its chip, whatever size it opens back to", () => {
         registerNode(descriptor("curio.builtin/vis-vega@1", {}));
 
@@ -117,7 +118,7 @@ describe("resolveNodeBoxSize", () => {
             resolveNodeBoxSize(
                 node("curio.builtin/vis-vega@1", { nodeWidth: 640, nodeHeight: 480, minimized: true }),
             ),
-        ).toEqual({ width: 70, height: 40 });
+        ).toEqual({ width: 250, height: 40 });
     });
 
     test("the node's own size overrides the template's", () => {

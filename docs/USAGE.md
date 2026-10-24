@@ -426,8 +426,9 @@ scenario box's color. An input whose node has not run says which node to run.
   tags and the Parameter nodes' values ([Widgets](#widgets)).
 
 Drag a node's bottom-right corner to resize it. For viewers of a shared dataflow,
-nodes keep their size and have no delete. A minimized node is a small chip, and a
-save keeps it one; click it to open the node again. Double-click a node where you
+nodes keep their size and have no delete. A minimized node is a small chip with
+its icon and title, cut short when long; hover the title to read it whole. A save
+keeps it a chip; click it to open the node again. Double-click a node where you
 would drag it, such as its header, to zoom the view onto it.
 
 ## Notes

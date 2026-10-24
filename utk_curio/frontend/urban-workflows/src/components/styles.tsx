@@ -836,6 +836,7 @@ export const NodeContainer = ({
 
             {shownMinimized ? (
                 <div
+                    className="curio-node-chip"
                     onMouseEnter={() => setChipHovered(true)}
                     onMouseLeave={() => setChipHovered(false)}
                     style={{
@@ -849,12 +850,18 @@ export const NodeContainer = ({
                             backgroundColor: "#ffffff",
                             border: "1px solid var(--curio-border)",
                             borderRadius: "8px",
-                            padding: "5px",
-                            justifyContent: "center",
+                            // A folded node shows its icon and its title from
+                            // the left; an icon-only node, its icon centered.
+                            padding: noContent ? "5px" : "0 12px 0 14px",
+                            justifyContent: noContent ? "center" : "flex-start",
+                            gap: "10px",
                             display: "flex",
                             alignItems: "center",
                             position: "relative",
                             boxShadow: NODE_CARD_SHADOW,
+                            // Dark, as the open card is, so the highlighted
+                            // icon and title read.
+                            ...(data.keywordHighlighted ? {backgroundColor: "#1E1F23"} : {}),
                         },
                         ...((data.suggestionType != "none" && data.suggestionType != undefined) ? {pointerEvents: "none"} : {})
                     }}
@@ -878,12 +885,27 @@ export const NodeContainer = ({
                 >
                     <FontAwesomeIcon
                         icon={nodeIconTranslation(data.nodeType)}
-                        style={{ 
-                            ...iconStyle, 
-                            fontSize: "23px",
+                        style={{
+                            ...iconStyle,
+                            fontSize: noContent ? "23px" : "18px",
+                            flexShrink: 0,
                             ...(data.keywordHighlighted ? {color: "rgb(251, 252, 246)"} : {color: "#888787"})
                         }}
                     />
+                    {/* The node's title, as its header shows it: one line,
+                        cut with an ellipsis, the whole title on hover. A
+                        click on it opens the node, as on the rest of the chip. */}
+                    {!noContent ? (
+                        <EditableNodeHeaderLabel
+                            displayLabel={headerKindLabel}
+                            editable={false}
+                            showConfig={false}
+                            executed={nodeExecStatus[nodeId] === "executed"}
+                            keywordHighlighted={!!data.keywordHighlighted}
+                            onLabelCommit={() => {}}
+                            onConfigure={() => {}}
+                        />
+                    ) : null}
                     {/* A noContent node is the one
                         shape that never renders the header band, and it can
                         never be expanded to reach one - so without this it has
