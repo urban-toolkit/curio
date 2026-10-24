@@ -46,7 +46,17 @@ import {
   type GeometryKind,
 } from "../../utils/editFeatures/layerModel";
 import { evaluate, exprProblem, parseExpr, truthy } from "../../utils/editFeatures/editExpr";
-import { partRedraw, partsRefusal, rowsOf, samePart } from "../../utils/editFeatures/featureParts";
+import { idKey } from "../../utils/editFeatures/applyEdits";
+import {
+  PART_COLUMN,
+  partConditions,
+  partRedraw,
+  partsForm,
+  partsRefusal,
+  rowsOf,
+  samePart,
+  valueText,
+} from "../../utils/editFeatures/featureParts";
 import { publishMapSession, type MapEditMode, type ReshapedPart } from "../../utils/editFeatures/mapEditBus";
 import { editSelection, sameIds, selectedIdsIn } from "../../utils/editFeatures/mapEditSelection";
 import { mapTableName } from "../../utils/editFeatures/mapEditsPreview";
@@ -201,12 +211,24 @@ export default function LayerWorkbench({
   // own osm_id; a feature whose rows nothing tells apart keeps its shape.
   const pickedRows = useMemo(() => (pickedOne ? rowsOf(features, pickedOne.id) : []), [features, pickedOne]);
   const shapeRefusal = partsRefusal(pickedRows, layerKey);
-  const textsOf = (f: EditedFeature) =>
-    Object.fromEntries(defs.map((d) => [d.name, f.properties[d.name] === null || f.properties[d.name] === undefined ? "" : String(f.properties[d.name])]));
+  // Its form is on all its parts, or on the one chosen in its parts menu, by
+  // its osm_id; a pick starts on all of them. Only parts each named by a
+  // condition of their own can be chosen.
+  const [partChoice, setPartChoice] = useState<string | null>(null);
+  useEffect(() => setPartChoice(null), [pickedOne?.id]);
+  const partWheres = useMemo(() => (layerKey && pickedRows.length > 1 ? partConditions(pickedRows, layerKey) : null), [pickedRows, layerKey]);
+  const partKeys = pickedRows.map((row) => idKey(row.properties[PART_COLUMN]) ?? "");
+  const chosenAt = partWheres && partChoice !== null ? partKeys.indexOf(partChoice) : -1;
+  const form = useMemo(
+    () => partsForm(pickedRows, defs.map((def) => def.name), chosenAt >= 0 ? pickedRows[chosenAt] : null),
+    [pickedRows, defs, chosenAt],
+  );
   useEffect(() => {
-    setEditTexts(pickedOne ? textsOf(pickedOne) : {});
-    setPartFor((current) => (current === "picked" ? null : current));
+    setEditTexts(pickedOne ? Object.fromEntries(defs.map((def) => [def.name, valueText(form.values[def.name])])) : {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pickedOne?.id, defs, chosenAt]);
+  useEffect(() => {
+    setPartFor((current) => (current === "picked" ? null : current));
   }, [pickedOne?.id, defs]);
 
   // What a rule picks now, among the features as the log leaves them.
@@ -372,11 +394,24 @@ export default function LayerWorkbench({
     setDrawn(null);
     setTexts(formDefaults(defs));
   };
-  const dirty = pickedOne ? defs.filter((def) => String(pickedOne.properties[def.name] ?? "") !== String(formValues([def], editTexts)[def.name] ?? "")) : [];
+  // The properties whose field differs from what the form shows of them; one
+  // the parts differ in, while it is on all of them, once a value is typed.
+  const dirty = pickedOne
+    ? defs.filter((def) =>
+        def.name in form.fixed
+          ? false
+          : def.name in form.mixed
+            ? (editTexts[def.name] ?? "").trim() !== ""
+            : valueText(form.values[def.name]) !== String(formValues([def], editTexts)[def.name] ?? ""),
+      )
+    : [];
   const applyValues = () => {
     if (!active || !pickedOne || pickedOne.id === null) return;
     const values = formValues(defs, editTexts);
-    const changed: FeatureEdit[] = dirty.map((def) => ({ op: "set", ids: [pickedOne.id as SelectionId], column: def.name, value: (values[def.name] ?? null) as EditValue }));
+    // On all the parts, by the feature's id; on the one chosen, by its own
+    // condition, and the other parts keep their values.
+    const named = partWheres && chosenAt >= 0 ? { where: partWheres[chosenAt] } : { ids: [pickedOne.id as SelectionId] };
+    const changed: FeatureEdit[] = dirty.map((def) => ({ op: "set", ...named, column: def.name, value: (values[def.name] ?? null) as EditValue }));
     if (changed.length > 0) {
       onEdits(changed, active);
       setRecent([pickedOne.id as SelectionId]);
@@ -539,7 +574,18 @@ export default function LayerWorkbench({
             />
           ) : null
         }
+        parts={
+          pickedRows.length > 1
+            ? {
+                count: pickedRows.length,
+                options: partWheres ? partKeys.map((value, i) => ({ value, label: form.labels[i] })) : null,
+                choice: chosenAt >= 0 ? partKeys[chosenAt] : "",
+                onChoose: (value) => setPartChoice(value === "" ? null : value),
+              }
+            : null
+        }
         defs={defs}
+        shown={form}
         texts={editTexts}
         setTexts={setEditTexts}
         dirty={dirty}
