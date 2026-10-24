@@ -107,13 +107,21 @@ class FakeSandbox:
                       "output": {"path": path_out, "dataType": "str"}})
 
 
+@pytest.fixture()
+def proxy_hops():
+    """The proxies in front of the backend: one, as the hosted stacks run
+    (``--proxy-hops 1``). A test parametrized on it runs behind that many."""
+    return 1
+
+
 @pytest.fixture(autouse=True)
-def _signed_in_instance(monkeypatch):
-    """An instance with sign-in, as ``--deploy`` runs: the backend reads a
-    visitor's address from the proxy's X-Forwarded-For."""
+def _signed_in_instance(monkeypatch, proxy_hops):
+    """An instance with sign-in (``--deploy``) behind *proxy_hops* proxies:
+    the backend reads a visitor's address from the X-Forwarded-For they add."""
     from utk_curio.backend import config
 
     monkeypatch.setattr(config, "CURIO_NO_AUTH", False)
+    monkeypatch.setattr(config, "CURIO_PROXY_HOPS", proxy_hops)
 
 
 @pytest.fixture()
@@ -364,6 +372,21 @@ class TestLimits:
 
         assert statuses == [200, 200, 429]
         assert other == 200
+
+    @pytest.mark.parametrize("proxy_hops", [0])
+    def test_with_no_proxy_named_a_forwarded_address_is_not_believed(self, client, user_and_token, sandbox, saved, monkeypatch):
+        """Without ``--proxy-hops`` anyone reaching the backend could write
+        X-Forwarded-For, so a new address there is no new budget."""
+        from utk_curio.backend.app.common.address_limiter import AddressLimiter
+        from utk_curio.backend.app.runs import viewer
+
+        _, token = user_and_token
+        pid = _create(client, token)
+        monkeypatch.setattr(viewer, "_LIMITER", AddressLimiter(2, 100))
+
+        statuses = [_run(client, pid, address=f"10.0.0.{n}").status_code for n in range(1, 4)]
+
+        assert statuses == [200, 200, 429]
 
     def test_a_dashboard_runs_at_most_two_at_once(self, client, user_and_token, sandbox, saved):
         _, token = user_and_token

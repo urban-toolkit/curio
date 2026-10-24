@@ -877,7 +877,8 @@ def test_a_preset_testing_env_var_still_counts(monkeypatch):
 # Each is a curio.py argument now, written the way #614's are: only when the
 # flag is passed, so a value already in the environment is still read.
 
-#: Every variable these flags write: #615's table, and CURIO_PACKAGES_ROOT.
+#: Every variable these flags write: #615's table, CURIO_PACKAGES_ROOT and
+#: CURIO_PROXY_HOPS.
 OPERATOR_KEYS = (
     "GUEST_LLM_API_TYPE",
     "GUEST_LLM_BASE_URL",
@@ -886,6 +887,7 @@ OPERATOR_KEYS = (
     "CURIO_DB_POOL_SIZE",
     "CURIO_DB_POOL_OVERFLOW",
     "CURIO_DB_POOL_TIMEOUT",
+    "CURIO_PROXY_HOPS",
     "CURIO_PACKAGE_WORKERS",
     "CURIO_JS_PARALLELISM",
     "CURIO_JS_REGISTRY_URL",
@@ -908,6 +910,7 @@ OPERATOR_FLAG_NAMES = (
     "--db-pool-size",
     "--db-pool-overflow",
     "--db-pool-timeout",
+    "--proxy-hops",
     "--package-workers",
     "--js-parallelism",
     "--js-registry-url",
@@ -1008,6 +1011,8 @@ OPERATOR_FLAGS = [
                  _backend(f"{_POOL}['max_overflow']"), 0, id="db-pool-overflow"),
     pytest.param("db_pool_timeout", 5, "CURIO_DB_POOL_TIMEOUT", "5",
                  _backend(f"{_POOL}['pool_timeout']"), 5, id="db-pool-timeout"),
+    pytest.param("proxy_hops", 1, "CURIO_PROXY_HOPS", "1",
+                 _backend("m.CURIO_PROXY_HOPS"), 1, id="proxy-hops"),
     pytest.param("package_workers", 3, "CURIO_PACKAGE_WORKERS", "3",
                  _package_workers, 3, id="package-workers"),
     pytest.param("js_parallelism", 5, "CURIO_JS_PARALLELISM", "5",
