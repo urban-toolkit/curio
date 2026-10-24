@@ -618,15 +618,20 @@ class _Visitor:
     """A browser of its own, with no session, on a dashboard as the hosted
     stacks serve it: the page server, with the dashboard's data inside it.
 
-    The page server serves the page alone. On a hosted stack the proxy in front
-    of it takes ``/api`` off a request's path and passes the rest to the
-    backend, which :meth:`_to_backend` does here. It notes what the page asked,
-    what it was answered and what it logged, for a failure to report. A run's
-    stream reaches the page whole, once the run is over.
+    What the page asks of the backend goes through :meth:`_to_backend`, which
+    notes what the page asked, what it was answered and what it logged, for a
+    failure to report. The harness points every page at this worker's backend
+    (``window.__CURIO_BACKEND_URL__``, conftest.py), so a request reaches it as
+    the page addressed it. A page that asks ``/api`` on its own host, as a
+    hosted stack's pages do, is passed on the way that stack's proxy passes it,
+    with ``/api`` taken off. A run's stream reaches the page whole, once the
+    run is over. A CORS preflight is passed on and not counted as asked.
     """
 
     def __init__(self, browser, current_server: str):
         self.backend = current_server.rstrip("/")
+        backend = urlsplit(self.backend)
+        self.backend_origin = f"{backend.scheme}://{backend.netloc}"
         self.ctx = browser.new_context()
         self.page = self.ctx.new_page()
         self.asked: list[str] = []
@@ -634,22 +639,20 @@ class _Visitor:
         self.console: list[str] = []
         self.page.on("console", lambda message: self.console.append(f"[{message.type}] {message.text}"))
         self.page.on("pageerror", lambda error: self.console.append(f"[pageerror] {error}"))
-        self.page.route("**/api/**", self._to_backend)
+        self.page.route(f"{self.backend_origin}/**", self._to_backend)
+        self.page.route("**/api/api/**", self._to_backend)
 
     def _to_backend(self, route, request) -> None:
         parts = urlsplit(request.url)
         query = f"?{parts.query}" if parts.query else ""
-        if not parts.path.startswith("/api/api/"):
-            line = f"{request.method} {parts.path}{query}"
-            self.asked.append(line)
-            self.answered.append(f"{line} -> refused here")
-            route.abort()
-            return
-        path = parts.path[len("/api"):]
+        on_backend = f"{parts.scheme}://{parts.netloc}" == self.backend_origin
+        path = parts.path if on_backend else parts.path[len("/api"):]
         line = f"{request.method} {path}{query}"
-        self.asked.append(line)
+        if request.method != "OPTIONS":
+            self.asked.append(line)
+        target = request.url if on_backend else f"{self.backend}{path}{query}"
         try:
-            response = route.fetch(url=f"{self.backend}{path}{query}", timeout=180000)
+            response = route.fetch(url=target, timeout=180000)
         except Exception as exc:  # noqa: BLE001 - the page gets an answer, and the failure says why
             self.answered.append(f"{line} -> the backend did not answer: {exc}")
             route.fulfill(status=502, body=str(exc))
@@ -680,6 +683,35 @@ class _Visitor:
         except (AssertionError, PlaywrightTimeoutError) as exc:
             raise AssertionError(f"{what}: {exc}{self.story()}") from None
 
+    def runs_ended(self) -> int:
+        """How many viewer's runs started here are over: each one's stream
+        answered, or its start answered with no run to follow."""
+        ended = 0
+        for line in self.answered:
+            asked, _, answer = line.partition(" -> ")
+            method, _, path = asked.partition(" ")
+            if method == "GET" and urlsplit(path).path.endswith("/stream"):
+                ended += 1
+            elif method == "POST" and path.endswith("/dashboard/runs"):
+                status, _, body = answer.partition(" ")
+                try:
+                    run_id = json.loads(body).get("runId") if status == "200" else None
+                except ValueError:
+                    run_id = None
+                if not run_id:
+                    ended += 1
+        return ended
+
+    def waits_for_runs(self, count: int) -> None:
+        """Until *count* viewer's runs started here are over, so a count of
+        the runs started is not taken while one is still to come."""
+        waited = 0
+        while self.runs_ended() < count:
+            if waited >= 90000:
+                raise AssertionError(f"waited 90000 ms for {count} viewer's runs to end{self.story()}")
+            self.page.wait_for_timeout(250)
+            waited += 250
+
     def close(self) -> None:
         self.ctx.close()
 
@@ -690,10 +722,12 @@ def _pool_shows(page, rows: int, *, timeout: float = 90000) -> None:
     expect(table.locator("tbody tr")).to_have_count(rows, timeout=timeout)
 
 
-def _first_row_says(page, text: str, *, timeout: float = 90000) -> None:
-    """The pinned Data Pool's first row reads *text*."""
-    table = node_locator(page, POOL).locator("table").first
-    expect(table.locator("tbody tr").first).to_contain_text(text, timeout=timeout)
+def _first_row_has_cell(page, text: str, *, timeout: float = 90000) -> None:
+    """The pinned Data Pool's first row has a cell that reads *text*, whole."""
+    row = node_locator(page, POOL).locator("table").first.locator("tbody tr").first
+    expect(row.locator("td").filter(has_text=re.compile(rf"^\s*{re.escape(text)}\s*$"))).to_have_count(
+        1, timeout=timeout,
+    )
 
 
 def _saved_tiles_drew(page) -> None:
@@ -775,6 +809,7 @@ def test_a_visitor_changes_a_pinned_control_and_the_next_one_gets_the_kept_outpu
         park_pointer(first.page)
         save_workflow_test_screenshot(first.page, VIEWER_RUN_STEM, test_name="changed", sweep_toasts=True)
 
+        first.waits_for_runs(1)
         started = _runs_started(first.asked)
         assert len(started) == 1, f"one change started {len(started)} runs" + first.story()
         made = _files_read(first.asked)
@@ -793,6 +828,7 @@ def test_a_visitor_changes_a_pinned_control_and_the_next_one_gets_the_kept_outpu
         _pick(second.page, ROWS, "five").check()
         second.waits_for("the pool's five rows", lambda: _pool_shows(second.page, 5))
         second.waits_for("the chart of five rows", lambda: _chart_redrew(second.page, saved_pixels))
+        second.waits_for_runs(1)
         # A run of its own would have made artifacts of its own.
         assert _files_read(second.asked) == made, (
             f"the second visitor read {sorted(_files_read(second.asked))!r}, not the outputs "
@@ -801,7 +837,8 @@ def test_a_visitor_changes_a_pinned_control_and_the_next_one_gets_the_kept_outpu
 
         # Only the second step reads Scale: the first step's output is the kept one.
         _pick(second.page, SCALE, "ten").check()
-        second.waits_for("the rows scaled ten times", lambda: _first_row_says(second.page, "30"))
+        second.waits_for("the rows scaled ten times", lambda: _first_row_has_cell(second.page, "30"))
+        second.waits_for_runs(2)
         assert len(_runs_started(second.asked)) == 2, "two changes, two runs" + second.story()
         assert _files_read(second.asked) - made, (
             "the tiles show the new Scale without reading what its run made" + second.story()
@@ -854,6 +891,7 @@ def test_a_tile_with_no_saved_output_runs_the_nodes_before_it_when_the_page_open
     try:
         visitor.opens(hosted, project_id)
         visitor.waits_for("the chart from the run on open", lambda: _chart_drew_from_nothing(visitor.page))
+        visitor.waits_for_runs(1)
         started = _runs_started(visitor.asked)
         assert len(started) == 1, f"opening the dashboard started {len(started)} runs" + visitor.story()
         assert _files_read(visitor.asked), (

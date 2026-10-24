@@ -18,7 +18,7 @@ import { useProjectLoadState } from "../../components/ProjectLoader";
 import { DashboardScenarioLayers, FRAME_HEADER_ROOM } from "../../components/scenarios/ScenarioLayers";
 import { useFlowContext } from "../../providers/FlowProvider";
 import { dashboardRefusal } from "../../standalone/dashboardPayload";
-import { fitViewWithMenuOffsetNow } from "../../utils/fitViewWithMenuOffset";
+import { fitViewWithMenuOffsetNow, TOP_NOTICE_ATTR } from "../../utils/fitViewWithMenuOffset";
 import { scenarioDashboard } from "../../utils/scenarios/scenarioDashboard";
 import { dashboardValues } from "../../utils/widgets/dashboardControls";
 import { dataflowPath } from "../../utils/shareLinks";
@@ -107,7 +107,10 @@ export const DashboardPage: React.FC = () => {
   const headroom = frames.length > 0 ? FRAME_HEADER_ROOM : 0;
   const [arranged, setArranged] = useState(0);
   const onArranged = useCallback(() => setArranged((count) => count + 1), []);
-  useDashboardFit(pinnedIds, canvasRef, { headroom, refitKey: arranged });
+  // A visitor's notice covers the top of the pane, and the fit keeps the
+  // tiles below it: the page frames them again when it shows or goes.
+  const showsNotice = loadState === "loaded" && !canEditLayout;
+  useDashboardFit(pinnedIds, canvasRef, { headroom, refitKey: arranged * 2 + (showsNotice ? 1 : 0) });
 
   const nodeTypes = useMemo(() => ({ [CURIO_UNIVERSAL_NODE_TYPE]: UniversalNode }), []);
   const edgeTypes = useMemo(() => ({
@@ -181,7 +184,9 @@ export const DashboardPage: React.FC = () => {
         // The notice the canvas gives a visitor, for the same reason: the page
         // looks editable (tiles, a Share menu) and is not, save its controls,
         // whose changes are never saved.
-        <div className={styles.banner} data-testid="shared-view-banner">
+        // The fit frames the tiles below it (TOP_NOTICE_ATTR): a control under
+        // it could not be reached.
+        <div className={styles.banner} data-testid="shared-view-banner" {...{ [TOP_NOTICE_ATTR]: "true" }}>
           {hasControls ? CONTROLS_NOTICE : READ_ONLY_NOTICE}
         </div>
       ) : null}

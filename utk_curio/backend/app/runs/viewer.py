@@ -18,12 +18,16 @@ Play runs it there (``node_exec``), with no connection key: a node whose code
 reads one stops and says so. Nothing it makes is installed, recorded or
 journaled, and the saved spec is never written.
 
-What is kept: each step's output, for :data:`KEPT_DAYS`, under a key of what
-made it (:func:`step_key`), so a viewer who picks values someone picked
-before gets the outputs at once, and a request for a run already going joins
-it. A dashboard keeps at most :data:`MAX_KEPT_BYTES_PER_DASHBOARD`; past it
-the least recently used go. An output goes with its artifacts: the sandbox
-forgets the session that made them (``common/dashboard_sessions.py``).
+What is kept: each step's output, for :data:`KEPT_DAYS` after it was made,
+under a key of what made it (:func:`step_key`), so a visitor who opens the
+page or picks values someone ran before gets the outputs at once, and a
+request for a run already going joins it. Past that time the output goes, and
+the next visit that needs it makes it again. A dashboard keeps at most
+:data:`MAX_KEPT_BYTES_PER_DASHBOARD`; past it the least recently used go. An
+output goes with its artifacts: the sandbox forgets the session that made them
+(``common/dashboard_sessions.py``). The sweep runs every
+:data:`PRUNE_INTERVAL_HOURS` (:func:`start_prune_scheduler`), at the end of
+each run, and at the first start after a restart.
 
 A step only a browser runs (an Autark compute node, a Spatial Join) is the
 page's. The run ends asking for it (``needs_canvas``), as a canvas's run on
@@ -33,10 +37,12 @@ steps below on that (``browserOutputs``). The server cannot check what a
 browser sends, so that output and every one made from it are kept for that
 page alone, for :data:`TAB_OWN_HOURS`.
 
-Limits, constants as a server run's are: a budget of runs per visitor address
-and overall (``common/address_limiter.py``), a few live runs per dashboard,
-and at most half the sandbox's isolated pool running a viewer's node at once,
-so viewers never take every slot from signed-in users.
+Limits, constants as a server run's are: a budget per visitor address and
+overall (``common/address_limiter.py``) of the runs of values a visitor tries
+(opening the page costs nothing, nor does the one start that goes on from the
+steps a run left to its page), a few live runs per dashboard, and at most half
+the sandbox's isolated pool running a viewer's node at once, so viewers never
+take every slot from signed-in users.
 """
 from __future__ import annotations
 
@@ -68,8 +74,12 @@ from utk_curio.common.exec_pool import exec_parallelism
 
 log = logging.getLogger(__name__)
 
-#: How long a kept output serves the viewers who pick the same values.
-KEPT_DAYS = 30
+#: How long a kept output serves the visitors who open the page or pick the
+#: same values, from when it was made; then it goes, and the next visit that
+#: needs it makes it again.
+KEPT_DAYS = 7
+#: How often the kept outputs past their time are swept, with no run to sweep them.
+PRUNE_INTERVAL_HOURS = 6
 #: How long an output built on what one tab's browser sent serves that tab.
 TAB_OWN_HOURS = 1
 #: The most a dashboard's kept outputs may hold; past it the least recently used go.
@@ -476,6 +486,36 @@ def _prune_quietly() -> None:
         log.exception("could not prune the dashboards' kept outputs")
 
 
+_prune_timer: Optional[threading.Timer] = None
+
+
+def start_prune_scheduler(app) -> None:
+    """Sweep the kept outputs every :data:`PRUNE_INTERVAL_HOURS`, the first
+    time a minute after the backend starts, so an output goes once its time is
+    up whether or not anyone opens a dashboard. Off under ``--testing``, whose
+    tests call :func:`prune` themselves."""
+    from utk_curio.backend.config import _is_testing
+
+    global _prune_timer
+    if _is_testing() or _prune_timer is not None:
+        return
+
+    def _sweep():
+        try:
+            with app.app_context():
+                _prune_quietly()
+        finally:
+            _schedule(PRUNE_INTERVAL_HOURS * 3600)
+
+    def _schedule(seconds: float):
+        global _prune_timer
+        _prune_timer = threading.Timer(seconds, _sweep)
+        _prune_timer.daemon = True
+        _prune_timer.start()
+
+    _schedule(60)
+
+
 #: Where a session notes the sandbox sessions of the entries it deleted.
 _FORGET_ON_COMMIT = "curio_forget_dashboard_sessions"
 
@@ -541,11 +581,19 @@ def start_viewer_run(
     value}}``) laid over its saved controls, or join the run of the same
     values already going.
 
+    A saved result answers whoever made it: the owner's saved output stands in
+    for every node the values do not reach, and an output kept from an earlier
+    run (:func:`step_key`) for every step someone ran before; only what neither
+    holds runs. Opening the page, with the saved values, costs the visitor's
+    address nothing: only the values a visitor tries count against its
+    budget, and a start that joins a run costs nothing either.
+
     *browser_outputs* (``{nodeId: path}``) are what the page made of the
     steps a run of these values left to it (:func:`keep_tab_result`), under
     that run's *token*: they stand in for those steps, the steps below them
     run on them, and what those make is kept for that page alone. The run
-    is followed with the same token.
+    is followed with the same token. The first such start after a run costs
+    nothing, that run having been counted (:func:`_continues_a_run`).
 
     Answers ``{"runId", "token", "joined", "nodeIds"}``, the token being what
     the tab follows the run with; ``runId`` is None when nothing needs to run
@@ -565,8 +613,6 @@ def start_viewer_run(
     if not _pruned_since_start.is_set():
         _pruned_since_start.set()
         _prune_quietly()
-    if not _LIMITER.allow(address or "unknown", time.monotonic()):
-        raise RunError("Too many runs from here at once; wait a minute and change the control again.", 429)
     project = db.session.get(Project, project_id)
     if project is None:
         raise RunError("Dashboard not found.", 404)
@@ -623,6 +669,11 @@ def start_viewer_run(
             known = _RUNS.get(live.job_id)
         if known is not None:
             return {"runId": live.job_id, "token": known["token"], "joined": True, "nodeIds": list(plan.steps)}
+    tried = _control_values(dashboard_controls(overlaid)) != _control_values(controls)
+    # Going on from the steps a run left to its page: that run was counted.
+    paid = bool(tab) and _continues_a_run(token)
+    if tried and not paid and not _LIMITER.allow(address or "unknown", time.monotonic()):
+        raise RunError("Too many runs from here at once; wait a minute and change the control again.", 429)
     try:
         REGISTRY.check_can_start(dashboard, run_key)
     except JobRefused as exc:
@@ -649,6 +700,18 @@ def start_viewer_run(
             _RUNS.pop(run_id, None)
         raise RunError(str(exc), exc.status, runId=exc.job_id) from exc
     return {"runId": run_id, "token": token, "joined": False, "nodeIds": list(plan.steps)}
+
+
+def _continues_a_run(token: Optional[str]) -> bool:
+    """Whether *token* is that of a run which left steps to its page and was
+    not gone on from yet; from now on it has been, so a page that sends its
+    results again pays for the start that follows."""
+    with _RUNS_LOCK:
+        for known in _RUNS.values():
+            if known.get("token") == token and known.get("browserSteps") and not known.get("continued"):
+                known["continued"] = True
+                return True
+    return False
 
 
 def _forget_finished_runs() -> None:

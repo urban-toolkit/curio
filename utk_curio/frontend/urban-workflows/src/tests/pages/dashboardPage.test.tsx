@@ -60,6 +60,7 @@ jest.mock("../../components/ProjectLoader", () => ({
   useProjectLoadState: () => mockLoadState,
 }));
 jest.mock("../../utils/fitViewWithMenuOffset", () => ({
+  ...jest.requireActual("../../utils/fitViewWithMenuOffset"),
   fitViewWithMenuOffset: () => true,
   fitViewWithMenuOffsetNow: () => ({ x: 0, y: 0, zoom: 1 }),
 }));
@@ -74,6 +75,7 @@ jest.mock("../../providers/UserProvider", () => ({
   useUserContext: () => mockUser,
 }));
 
+import { TOP_NOTICE_ATTR } from "../../utils/fitViewWithMenuOffset";
 import DashboardPage, {
   CONTROLS_NOTICE,
   LOAD_FAILED_BODY,
@@ -223,6 +225,9 @@ describe("editing the layout", () => {
     expect(banner).toBe(CONTROLS_NOTICE);
     expect(banner).toContain("changes are not saved");
     expect(banner).not.toContain("read-only");
+    // Laid over the top of the page, it is one of the overlays the fit frames
+    // the tiles below: a control under it could not be reached.
+    expect(screen.getByTestId("shared-view-banner").getAttribute(TOP_NOTICE_ATTR)).toBe("true");
   });
 
   test("a pinned text widget is no control a visitor changes, so the page stays read-only", async () => {

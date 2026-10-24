@@ -1519,10 +1519,12 @@ the page opens.
   the widgets of a pinned node that shows them. A change runs the nodes it reaches on the
   server, with your datasets, models and packages and none of your keys, and the tiles
   below show the result. Nothing is saved: the dataflow, its outputs and your Data
-  Catalog stay as they are, and putting the value back shows the saved outputs. What a
-  change ran is kept for 30 days and shown to the next viewer who picks the same values,
-  without running again. Text, text list and file widgets keep their saved value, and a
-  node that reads a connection key stops with a message.
+  Catalog stay as they are, and putting the value back shows the saved outputs. Text,
+  text list and file widgets keep their saved value, and a node that reads a connection
+  key stops with a message.
+- **What a run makes**, on opening the page or after a change, is kept for 7 days and
+  shown to every later viewer with the same values, without running again. After 7 days
+  it is deleted, and the next viewer who needs it runs the nodes again.
 - **Edit layout** (the owner, signed in on this browser) unlocks the tiles to drag by
   their title band and resize, and **Save layout** records where they sit, without
   touching the canvas positions.
