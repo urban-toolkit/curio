@@ -151,7 +151,7 @@ class VerifiedRounds:
         self.reuse_retried = False
         self.dataset_paths = None
         self.secrets = None
-        # The whole output of the round's run, which only the made-up ids
+        # The whole output of the round's run, which only the skipped edits
         # check reads: never part of a verdict, an attempt or an event.
         self.round_stdout: str | None = None
         self._seed_from_recorded_failure()
