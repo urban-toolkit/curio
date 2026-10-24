@@ -839,8 +839,10 @@ as `osm_id` or `building_id`, and an edit by `building_id` changes every part of
 a building. On the map, a building's shape changes one part at a time: moving a
 corner or adding a part changes that part alone, named by its own `osm_id`, and
 moving the building moves every part. A building whose parts have no `osm_id` of
-their own keeps its shape there. Agents read these edits, and the edits an agent
-makes show as entries named after it.
+their own keeps its shape there. A change on the map that would make a shape's
+outline cross itself, or its parts overlap, is refused: the shape goes back as
+it was, and the tip on the map says why. Agents read these edits, and the edits
+an agent makes show as entries named after it.
 
 A rule or an expression reads a feature's columns by name (`height`, or
 `` `Mean Acc shadow` `` in backticks). It takes numbers, quoted texts, `true`,
