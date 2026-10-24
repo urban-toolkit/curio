@@ -1882,12 +1882,14 @@ _OUTPUT_TEXT_JS = """(id) => {
 }"""
 
 
-def _drawn_wrong(page, map_id: str, building, log: list[dict], when: str) -> list[str]:
-    """What is wrong with the Chicago map *when*: it draws nothing, a layer
-    failed to load, or it draws no row of *building* among the buildings."""
+def _drawn_wrong(page, map_id: str, building, log: list[dict], when: str, what: str) -> list[str]:
+    """What is wrong with the Chicago map *when*, after *what*: it draws
+    nothing, a layer failed to load, or it draws no row of *building* among the
+    buildings. The canvas is read in the frame that renders it, as captures
+    read it: Chrome can read an idle WebGPU canvas back as transparent."""
     wrong = []
     try:
-        assert_autark_map_drawn(page, map_id)
+        _wait_for_map_drawn(page, map_id, what)
     except AssertionError as error:
         wrong.append(f"{when}, the map draws nothing: {error}")
     failed = _failed_loads(log)
@@ -1963,7 +1965,9 @@ def test_a_chicago_building_redrawn_as_a_bow_tie_in_the_nodes_code_is_skipped_an
         _wait_for_redraw(page, map_id, "the bow tie typed into the node's code")
     except AssertionError as error:
         wrong.append(str(error))
-    wrong += _drawn_wrong(page, map_id, building, log[start:], "before Commit edits")
+    wrong += _drawn_wrong(
+        page, map_id, building, log[start:], "before Commit edits", "the bow tie typed into the node's code",
+    )
 
     # 2. Commit edits, at the foot of the node's list, on its Output tab (the
     # code was typed on its Code tab): the run skips the redraw and says so.
@@ -1985,7 +1989,7 @@ def test_a_chicago_building_redrawn_as_a_bow_tie_in_the_nodes_code_is_skipped_an
         wrong.append(f"after Commit edits, the node hands building {building} on as {kept}, not with its own shape")
 
     # 3. The map draws on, the buildings with it.
-    wrong += _drawn_wrong(page, map_id, building, log[start:], "after Commit edits")
+    wrong += _drawn_wrong(page, map_id, building, log[start:], "after Commit edits", "Commit edits")
     if wrong:
         dump_browser_log(CHICAGO_STEM, test_name, log)
     assert not wrong, "\n".join(wrong)
