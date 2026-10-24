@@ -443,7 +443,7 @@ const FlowProvider = ({
     // #1117: on a dashboard, a change to a control a pinned tile shows reruns
     // the dataflow on the server as a viewer's run, which saves nothing.
     const dashboardRun = useDashboardRun({
-        enabled: dashboardOn, reactFlow, outcomes: stepOutcomes, outputsRef, showToast,
+        enabled: dashboardOn, reactFlow, outcomes: stepOutcomes, outputsRef, showToast, playNodes,
     });
     // #845: where Run All runs on the server, a widget or Parameter change can
     // run the nodes it touched through the same start, once the changes settle.

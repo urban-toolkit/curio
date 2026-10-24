@@ -587,6 +587,30 @@ def artifact_sessions_forget():
     return jsonify({'forgotten': forget_session_artifacts(_dashboard_sessions_from_body())})
 
 
+@app.route('/artifact-sessions/store', methods=['POST'])
+@require_sandbox_token
+@holds_duckdb
+def artifact_sessions_store():
+    """Keep ``value``, what a viewer's page made of a step only a browser
+    runs, as an artifact of the dashboard session ``sessionId``: the one
+    store the value is written to as it came, never run as code. Answers the
+    ``output`` a step's run answers, ``{path, dataType}``."""
+    from utk_curio.common.dashboard_sessions import is_dashboard_session
+    from utk_curio.sandbox.util.codec import detect_kind
+    from utk_curio.sandbox.util.parsers import save_to_duckdb
+
+    body = request.get_json(silent=True) or {}
+    session_id = body.get('sessionId')
+    if not is_dashboard_session(session_id):
+        abort(400, "only a dashboard viewer's sessions can be named")
+    value = body.get('value')
+    if not isinstance(value, dict):
+        abort(400, "value must be an object")
+    node_type = body.get('nodeType') if isinstance(body.get('nodeType'), str) else None
+    path = save_to_duckdb(value, node_id=node_type, session_id=session_id)
+    return jsonify({'output': {'path': path, 'dataType': detect_kind(value)}})
+
+
 @app.route('/raster', methods=['GET'])
 @require_sandbox_token
 @holds_duckdb

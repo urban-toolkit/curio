@@ -69,13 +69,15 @@ class Reply:
 
 class FakeSandbox:
     """Runs a node as an artifact named after it; describes and forgets the
-    sessions it is asked about. *hold* keeps the named nodes running."""
+    sessions it is asked about, and stores a page's result as ``page-<n>``.
+    *hold* keeps the named nodes running."""
 
     def __init__(self):
         self.lock = threading.Lock()
         self.runs = []
         self.made = {}
         self.forgotten = []
+        self.stored = []
         self.hold = set()
         self.gate = threading.Event()
         self.started = threading.Event()
@@ -95,6 +97,12 @@ class FakeSandbox:
             with self.lock:
                 self.forgotten.extend(body["sessionIds"])
             return Reply({"forgotten": len(body["sessionIds"])})
+        if path == "/artifact-sessions/store":
+            with self.lock:
+                self.stored.append(body)
+                path_out = f"page-{len(self.stored)}"
+                self.made[body["sessionId"]] = path_out
+            return Reply({"output": {"path": path_out, "dataType": "dict"}})
         node_id = body["code"].split("# node ", 1)[1].split("\n", 1)[0]
         self.started.set()
         if node_id in self.hold:
@@ -621,4 +629,149 @@ class TestKeptOutputsGo:
 
         assert resp.status_code in (200, 204), resp.get_data(as_text=True)
         assert DashboardStepOutput.query.filter_by(project_id=pid).count() == 0
+
+
+#: An Autark node that computes over its input: a step only a browser runs.
+AUTARK = "curio.builtin/autk-grammar"
+COMPUTE = json.dumps({"compute": [{
+    "dataRef": "input_0", "attributes": {"v": "properties.count"},
+    "outputColumnName": "doubled", "wglsFunction": ["return v * 2.0;"],
+}]})
+#: What a page sends of that node: one layer, as Autark hands it on.
+LAYER = {"dataType": "geodataframe", "data": {"type": "FeatureCollection", "features": []}, "layerName": "grid"}
+
+
+def _gpu_nodes():
+    """Grid, then the GPU step the page runs, then After, which the chart reads."""
+    return [
+        {"id": "param", "type": PARAMETER, "content": "", "dashboardPinned": True,
+         "metadata": {"widgets": [_period()]}},
+        {"id": "grid", "type": CODE, "content": "# node grid\nreturn [!! @period !!]"},
+        {"id": "gpu", "type": AUTARK, "content": COMPUTE},
+        {"id": "after", "type": CODE, "content": "# node after\nreturn input_0"},
+        {"id": "chart", "type": CHART, "content": "{}", "dashboardPinned": True},
+    ]
+
+
+GPU_EDGES = [
+    {"id": "grid-gpu", "source": "grid", "target": "gpu"},
+    {"id": "gpu-after", "source": "gpu", "target": "after"},
+    {"id": "after-chart", "source": "after", "target": "chart"},
+]
+
+
+def _keep_step(client, project_id, run_id, token, node_id="gpu", value=None):
+    return client.post(
+        f"/api/projects/{project_id}/dashboard/runs/{run_id}/steps/{node_id}",
+        data=json.dumps({"value": LAYER if value is None else value}),
+        headers={"Content-Type": "application/json", TOKEN_HEADER: token},
+    )
+
+
+def _on_the_page(client, project_id, browser_outputs, token, values=None):
+    headers = {"Content-Type": "application/json", "X-Forwarded-For": "10.0.0.1"}
+    if token:
+        headers[TOKEN_HEADER] = token
+    return client.post(
+        f"/api/projects/{project_id}/dashboard/runs",
+        data=json.dumps({"values": values or {"param": {"period": "Month"}}, "browserOutputs": browser_outputs}),
+        headers=headers,
+    )
+
+
+class TestTheStepsLeftToThePage:
+    """A step only a browser runs is the page's: the run ends asking for it,
+    the page sends what it made, and its next start runs the steps below on
+    that, all of it kept for that page alone."""
+
+    @pytest.fixture()
+    def gpu(self, client, user_and_token, sandbox, saved):
+        from utk_curio.backend.app.projects.schemas import OutputRef
+
+        _, token = user_and_token
+        saved[:] = [OutputRef(node_id="after", filename="saved-after", data_type="str")]
+        return _create(client, token, nodes=_gpu_nodes(), edges=GPU_EDGES)
+
+    def test_the_run_ends_asking_the_page_for_its_step(self, client, gpu, sandbox):
+        from utk_curio.backend.app.runs import viewer
+
+        started = _month(client, gpu)
+        events = _events(client, gpu, started["runId"], started["token"])
+
+        steps = {payload["nodeId"]: payload["status"] for kind, payload in events if kind == "step_finished"}
+        assert steps == {"grid": "ok", "gpu": "browser", "after": "waiting"}
+        assert events[-1][0] == "run_finished" and events[-1][1]["status"] == "needs_canvas"
+        assert [node for node, _body in sandbox.runs] == ["grid"]
+        assert viewer._RUNS[started["runId"]]["browserSteps"] == ["gpu"]
+
+    def test_what_the_page_sends_is_kept_for_it_alone(self, client, gpu, sandbox):
+        from utk_curio.backend.app.runs import viewer
+        from utk_curio.backend.app.runs.models import DashboardStepOutput
+
+        started = _month(client, gpu)
+        kept = _keep_step(client, gpu, started["runId"], started["token"])
+
+        assert kept.status_code == 200, kept.get_data(as_text=True)
+        output = kept.get_json()["output"]
+        assert output == {"path": "page-1", "dataType": "dict"}
+        # Written to the sandbox as it came, in a dashboard session of its own.
+        assert sandbox.stored[0]["value"] == LAYER
+        entry = DashboardStepOutput.query.filter_by(project_id=gpu, output_path="page-1").one()
+        assert entry.node_id == "gpu"
+        assert entry.private_to == viewer._digest(started["token"])
+        # Read with no token, as another page would, it is not found.
+        assert client.get(f"/api/projects/{gpu}/dashboard/outputs/get?fileName=page-1").status_code == 404
+
+    def test_a_page_sends_only_what_its_run_left_to_it(self, client, gpu, sandbox, monkeypatch):
+        from utk_curio.backend.app.runs import viewer
+
+        started = _month(client, gpu)
+        run_id, token = started["runId"], started["token"]
+
+        assert _keep_step(client, gpu, run_id, "another-token").status_code == 403
+        assert _keep_step(client, gpu, run_id, token, node_id="grid").status_code == 409
+        for wrong in ({"dataType": "str", "data": "x"}, {"dataType": "geodataframe"}, ["not", "an", "object"]):
+            assert _keep_step(client, gpu, run_id, token, value=wrong).status_code == 422, wrong
+        monkeypatch.setattr(viewer, "MAX_TAB_RESULT_BYTES", 10)
+        assert _keep_step(client, gpu, run_id, token).status_code == 413
+        assert sandbox.stored == []
+
+    def test_the_next_start_runs_the_steps_below_on_what_the_page_sent(self, client, gpu, sandbox):
+        from utk_curio.backend.app.runs import viewer
+        from utk_curio.backend.app.runs.models import DashboardStepOutput
+
+        first = _month(client, gpu)
+        page = _keep_step(client, gpu, first["runId"], first["token"]).get_json()["output"]["path"]
+
+        resp = _on_the_page(client, gpu, {"gpu": page}, first["token"])
+        assert resp.status_code == 202, resp.get_data(as_text=True)
+        second = resp.get_json()
+        _wait(second["runId"])
+
+        assert second["token"] == first["token"]
+        events = _events(client, gpu, second["runId"], second["token"])
+        steps = {payload["nodeId"]: payload["status"] for kind, payload in events if kind == "step_finished"}
+        # The page's result stands in for the GPU step, which no longer runs.
+        assert steps["after"] == "ok" and "gpu" not in steps
+        assert steps.get("grid", "ok") == "ok"
+        assert events[-1][1]["status"] == "succeeded"
+        # Grid ran in the first run only; After ran on the page's result.
+        assert [node for node, _body in sandbox.runs] == ["grid", "after"]
+        assert page in json.dumps(sandbox.runs[1][1])
+        after = DashboardStepOutput.query.filter_by(project_id=gpu, node_id="after").one()
+        assert after.private_to == viewer._digest(first["token"])
+
+    def test_another_page_runs_its_own_step_and_cannot_name_the_first_ones(self, client, gpu, sandbox):
+        first = _month(client, gpu)
+        page = _keep_step(client, gpu, first["runId"], first["token"]).get_json()["output"]["path"]
+        second = _month(client, gpu)
+
+        # The shared step came back kept; the browser's step is the new page's to run.
+        assert second["token"] != first["token"]
+        events = _events(client, gpu, second["runId"], second["token"])
+        steps = {payload["nodeId"]: payload["status"] for kind, payload in events if kind == "step_finished"}
+        assert steps == {"grid": "ok", "gpu": "browser", "after": "waiting"}
+        assert [node for node, _body in sandbox.runs] == ["grid"]
+        assert _on_the_page(client, gpu, {"gpu": page}, second["token"]).status_code == 404
+        assert _on_the_page(client, gpu, {"gpu": page}, None).status_code == 403
         assert sandbox.forgotten == [session]

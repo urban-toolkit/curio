@@ -10,13 +10,22 @@
 // and its artifacts are read through the dashboard's own routes
 // (dashboardRunFiles). A node a later change no longer reaches gets its saved
 // output back, and so does every node when the values are the saved ones.
+//
+// A step only a browser runs (an Autark compute node, a Spatial Join) is the
+// page's. The run ends asking for it (`needs_canvas`); the page runs the node
+// as a canvas's run on the server walks its browser part
+// (usePlayAll.playNodes), sends what it made to the run (dashboardRunSteps),
+// and starts the run again with the same values and token, which runs the
+// steps below on that. A node that cannot run here, as without WebGPU, shows
+// why, and the nodes below say the node feeding them failed.
 import React, { useEffect, useRef, useState } from "react";
 import type { ReactFlowInstance } from "reactflow";
 import type { useToastContext } from "../ToastProvider";
 import { dashboardRunsApi, type DashboardRunEvent } from "../../services/runs/dashboardRunsApi";
 import { forgetDashboardRunFiles, rememberDashboardRunFiles } from "../../services/runs/dashboardRunFiles";
+import { askPage, forgetPageSteps, keepPageResult } from "../../services/runs/dashboardRunSteps";
 import { dashboardSourceNodeIds } from "../../utils/dashboardLayout";
-import { dashboardValues } from "../../utils/widgets/dashboardControls";
+import { dashboardValues, type DashboardValues } from "../../utils/widgets/dashboardControls";
 import type { WidgetDef } from "../../utils/widgets/widgetModel";
 import type { IOutput } from "./flowTypes";
 import { STOPPED_MESSAGE, nodeChangeFor, type NodeChange } from "./serverRunSteps";
@@ -30,6 +39,16 @@ interface FollowedDashboardRun {
     applied: Set<string>;
     /** Nodes this run showed as running. */
     started: Set<string>;
+    /** The values the run was started with: the page's part runs on them too. */
+    values: DashboardValues;
+    /** What the page made of the steps earlier runs of these values left to it. */
+    pageOutputs: Record<string, string>;
+    /** The steps only a browser runs, which this run left to the page. */
+    browserSteps: string[];
+    /** The steps below them, which wait for what the page makes. */
+    waiting: string[];
+    /** The run ended asking for the page's part, which carries it on. */
+    handedToPage: boolean;
     done: boolean;
 }
 
@@ -40,12 +59,22 @@ interface Saved {
     widgets: Map<string, WidgetDef[]>;
 }
 
-export function useDashboardRun({ enabled, reactFlow, outcomes, outputsRef, showToast }: {
+/** usePlayAll's playNodes: run nodes as Run All would, each reported when done. */
+type PlayNodes = (
+    nodeIds: string[],
+    hooks?: {
+        onNodeDone?: (nodeId: string, outcome: { failed: boolean; skipReason?: string; message?: string }) => void;
+        onFinish?: () => void;
+    },
+) => boolean;
+
+export function useDashboardRun({ enabled, reactFlow, outcomes, outputsRef, showToast, playNodes }: {
     enabled: boolean;
     reactFlow: ReactFlowInstance;
     outcomes: StepOutcomes;
     outputsRef: React.MutableRefObject<IOutput[]>;
     showToast: ReturnType<typeof useToastContext>["showToast"];
+    playNodes: PlayNodes;
 }) {
     // From the change's start until the run's end: the tiles below wait to
     // draw (UniversalNode reads it as serverRunActive), and a change made
@@ -100,13 +129,102 @@ export function useDashboardRun({ enabled, reactFlow, outcomes, outputsRef, show
         setActive(false);
     };
 
-    const onEvent = (run: FollowedDashboardRun, event: DashboardRunEvent) => {
-        if (followedRef.current !== run) return;
-        if (event.kind === "run_finished") {
+    /**
+     * What the page made of *nodeId*, which it just ran for a run: the output
+     * the node sent the run itself (an Autark node does), or its output held
+     * on the page, sent to the run now (a Spatial Join's rows).
+     */
+    const pageResultOf = async (nodeId: string): Promise<string | null> => {
+        const output: any = outputsRef.current.find((o) => o.nodeId === nodeId)?.output;
+        if (!output || typeof output !== "object") return null;
+        if (typeof output.path === "string" && output.path) return output.path;
+        if (output.data == null) return null;
+        return (await keepPageResult(nodeId, output)).path;
+    };
+
+    /** The nodes below a step the page could not run say so, as a run says it of a failed node. */
+    const showWaitingSkipped = (run: FollowedDashboardRun, failed: string[]) => {
+        const name = (nodeId: string) => String(reactFlow.getNode(nodeId)?.data?.title || nodeId);
+        const reason = `No data yet: "${name(failed[0])}" could not run in this browser.`;
+        for (const nodeId of run.waiting) outcomes.showSkipped(nodeId, reason);
+    };
+
+    /**
+     * Run the steps *run* left to the page, send what they made, and start
+     * the run again on that, with the same values and token.
+     */
+    const finishInPage = async (run: FollowedDashboardRun) => {
+        const projectId = projectIdRef.current;
+        if (!projectId) {
             end(run);
             return;
         }
+        askPage(projectId, run.runId, run.token, run.browserSteps);
+        try {
+            const made = new Map<string, Promise<string | null>>();
+            const failed: string[] = [];
+            await new Promise<void>((resolve) => {
+                const playing = playNodes([...run.browserSteps], {
+                    onNodeDone: (nodeId, outcome) => {
+                        if (outcome.failed) failed.push(nodeId);
+                        else made.set(nodeId, pageResultOf(nodeId));
+                    },
+                    onFinish: () => resolve(),
+                });
+                if (!playing) resolve();
+            });
+            const pageOutputs = { ...run.pageOutputs };
+            for (const [nodeId, result] of made) {
+                const path = await result.catch(() => null);
+                if (path) pageOutputs[nodeId] = path;
+                else failed.push(nodeId);
+            }
+            if (followedRef.current !== run) return;
+            if (failed.length > 0 || run.browserSteps.some((nodeId) => !pageOutputs[nodeId])) {
+                showWaitingSkipped(run, failed.length > 0 ? failed : run.browserSteps);
+                end(run);
+                return;
+            }
+            const next = await dashboardRunsApi.start(projectId, run.values, {
+                token: run.token, browserOutputs: pageOutputs,
+            });
+            if (followedRef.current !== run) return;
+            if (!next.runId || !next.token) {
+                end(run);
+                return;
+            }
+            // The run carries on as the next one: the tiles keep waiting.
+            run.done = true;
+            run.controller.abort();
+            follow(projectId, next.runId, next.token, run.values, pageOutputs);
+        } catch (err: any) {
+            showToast(err?.message || "This dashboard could not finish its run.", "error");
+            end(run);
+        } finally {
+            forgetPageSteps();
+        }
+    };
+
+    const onEvent = (run: FollowedDashboardRun, event: DashboardRunEvent) => {
+        if (followedRef.current !== run) return;
+        if (event.kind === "run_finished") {
+            if (event.status === "needs_canvas" && run.browserSteps.length > 0) {
+                run.handedToPage = true;
+                void finishInPage(run);
+            } else {
+                end(run);
+            }
+            return;
+        }
         if (event.kind !== "step_started" && event.kind !== "step_finished") return;
+        if (event.kind === "step_finished" && event.status === "browser") {
+            run.browserSteps.push(event.nodeId);
+            return;
+        }
+        if (event.kind === "step_finished" && event.status === "waiting") {
+            run.waiting.push(event.nodeId);
+            return;
+        }
         const projectId = projectIdRef.current;
         if (event.kind === "step_finished" && projectId) {
             // Read on the dashboard's own routes, before the node asks for them.
@@ -115,14 +233,19 @@ export function useDashboardRun({ enabled, reactFlow, outcomes, outputsRef, show
         apply(run, event.nodeId, nodeChangeFor(event, undefined, { started: run.started.has(event.nodeId) }));
     };
 
-    const follow = (projectId: string, runId: string, token: string) => {
+    const follow = (
+        projectId: string, runId: string, token: string,
+        values: DashboardValues, pageOutputs: Record<string, string> = {},
+    ) => {
         const run: FollowedDashboardRun = {
-            runId, token, controller: new AbortController(), applied: new Set(), started: new Set(), done: false,
+            runId, token, controller: new AbortController(), applied: new Set(), started: new Set(),
+            values, pageOutputs, browserSteps: [], waiting: [], handedToPage: false, done: false,
         };
         followedRef.current = run;
         dashboardRunsApi
             .follow(projectId, runId, token, (event) => onEvent(run, event), run.controller.signal)
-            .then(() => end(run), () => {
+            .then(() => { if (!run.handedToPage) end(run); }, () => {
+                if (run.handedToPage) return;
                 if (!run.done) showToast("Lost track of this dashboard's run. Change a control to run it again.", "warning");
                 end(run);
             });
@@ -138,9 +261,10 @@ export function useDashboardRun({ enabled, reactFlow, outcomes, outputsRef, show
         if (!enabled || !projectId || followedRef.current || startingRef.current) return;
         startingRef.current = true;
         setActive(true);
+        const values = dashboardValues(reactFlow.getNodes());
         let started;
         try {
-            started = await dashboardRunsApi.start(projectId, dashboardValues(reactFlow.getNodes()));
+            started = await dashboardRunsApi.start(projectId, values);
         } catch (err: any) {
             setActive(false);
             showToast(err?.message || "This dashboard could not run.", err?.status === 429 ? "warning" : "error");
@@ -155,7 +279,7 @@ export function useDashboardRun({ enabled, reactFlow, outcomes, outputsRef, show
             setActive(false);
             return;
         }
-        follow(projectId, started.runId, started.token);
+        follow(projectId, started.runId, started.token, values);
     };
 
     /**
@@ -186,6 +310,7 @@ export function useDashboardRun({ enabled, reactFlow, outcomes, outputsRef, show
         const run = followedRef.current;
         if (run) { run.done = true; run.controller.abort(); }
         forgetDashboardRunFiles();
+        forgetPageSteps();
     }, []);
 
     return { active, start, opened, savedWidgets };

@@ -25,15 +25,41 @@ export interface DashboardRunStart {
 /** One step's outcome, as a viewer's stream sends it: no reply, the artifacts its output holds. */
 export type DashboardRunEvent = RunEvent & { artifactIds?: string[] };
 
+/** What the page made of the steps a run left to it, under that run's token. */
+export interface PageResults {
+  token: string;
+  /** Each step's output, as `keepStep` answered it. */
+  browserOutputs: Record<string, string>;
+}
+
+/** What the run keeps of a step the page ran: its output and the artifacts it holds. */
+export interface KeptStep {
+  output: { path: string; dataType: string };
+  artifactIds: string[];
+}
+
 const dashboardPath = (projectId: string) => `/api/projects/${encodeURIComponent(projectId)}/dashboard`;
 
 export const dashboardRunsApi = {
-  /** Run the dashboard with *values*, or join the run of them already going. */
-  start(projectId: string, values: DashboardValues): Promise<DashboardRunStart> {
+  /**
+   * Run the dashboard with *values*, or join the run of them already going.
+   * With *page*, the steps a run left to this page stand on what the page made
+   * of them, and the run is followed with the same token.
+   */
+  start(projectId: string, values: DashboardValues, page?: PageResults): Promise<DashboardRunStart> {
     return apiFetch<DashboardRunStart>(`${dashboardPath(projectId)}/runs`, {
       method: "POST",
-      body: JSON.stringify({ values }),
+      headers: page ? { [RUN_TOKEN_HEADER]: page.token } : {},
+      body: JSON.stringify(page ? { values, browserOutputs: page.browserOutputs } : { values }),
     });
+  },
+
+  /** Send what the page made of *nodeId*, a step the run left to it, for the run to keep. */
+  keepStep(projectId: string, runId: string, token: string, nodeId: string, value: unknown): Promise<KeptStep> {
+    return apiFetch<KeptStep>(
+      `${dashboardPath(projectId)}/runs/${encodeURIComponent(runId)}/steps/${encodeURIComponent(nodeId)}`,
+      { method: "POST", headers: { [RUN_TOKEN_HEADER]: token }, body: JSON.stringify({ value }) },
+    );
   },
 
   /** Follow a run: its events, replayed and then live. Resolves when the stream ends. */
