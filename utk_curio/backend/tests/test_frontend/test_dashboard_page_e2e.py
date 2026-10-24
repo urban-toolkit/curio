@@ -557,6 +557,23 @@ _VIEWER_ROUTE_RE = re.compile(
     r"|GET /api/projects/[^/?]+/dashboard/outputs/(get|get-preview|raster)\?.*)$"
 )
 
+#: Each node's run status (``data-curio-node-status``), how often a run
+#: triggered it and whether an input reached it, then every toast on the page.
+_NODES_STANDING_JS = """() => {
+    const rows = [];
+    const flow = window.__curio_reactFlow;
+    for (const node of flow ? flow.getNodes() : []) {
+        const marked = document.querySelector('.react-flow__node[data-id="' + node.id + '"] [data-curio-node-status]');
+        const status = marked ? marked.getAttribute('data-curio-node-status') : 'no status';
+        rows.push(node.id + ': ' + status + ', triggered ' + (node.data?.triggerExec ?? 0)
+            + ', input ' + (node.data?.input ? 'yes' : 'no'));
+    }
+    for (const toast of document.querySelectorAll('.toast')) {
+        rows.push('toast: ' + toast.textContent.trim().slice(0, 240));
+    }
+    return rows;
+}"""
+
 _CHART_PIXELS_JS = """(id) => {
     const canvas = document.querySelector('#vega' + id + ' canvas');
     return canvas ? canvas.toDataURL('image/png') : null;
@@ -674,10 +691,16 @@ class _Visitor:
         self.page.get_by_test_id("open-dataflow-link").wait_for(state="visible", timeout=45000)
 
     def story(self) -> str:
-        """What the page asked and was answered, and what it logged last."""
+        """What the page asked and was answered, where each node stands and
+        what the page says, and what it logged last."""
+        try:
+            standing = self.page.evaluate(_NODES_STANDING_JS)
+        except Exception as exc:  # noqa: BLE001 - the story is told with what can be read
+            standing = [f"could not be read: {exc}"]
         return (
             "\nAsked and answered:\n  " + "\n  ".join(self.answered or ["nothing"])
-            + "\nThe page's last messages:\n  " + "\n  ".join(self.console[-30:] or ["none"])
+            + "\nThe page's nodes and notices:\n  " + "\n  ".join(standing or ["none"])
+            + "\nThe page's last messages:\n  " + "\n  ".join(self.console[-60:] or ["none"])
         )
 
     def waits_for(self, what: str, check) -> None:
