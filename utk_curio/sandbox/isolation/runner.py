@@ -340,21 +340,11 @@ def execute_isolated(
 
 
 def _default_parallelism() -> int:
-    """How many isolated nodes may run at once when nobody says otherwise.
+    """How many isolated nodes may run at once when nobody says otherwise:
+    ``common/exec_pool.py``, which the backend reads too."""
+    from utk_curio.common.exec_pool import default_exec_parallelism
 
-    Two was a single-user default and it is what a multi-user instance queues
-    behind: at fifty simultaneous users the stress tiers measured a p95 of
-    161s for a node that takes under a second on an idle stack, almost all of
-    it spent waiting for a slot. Sizing to the host instead means a machine
-    with cores to spare uses them.
-
-    Capped at 8 because the real ceiling is memory, not CPU: peak usage is
-    roughly this times ``CURIO_EXEC_MEMORY_MB`` (4096 by default), so an
-    uncapped count on a 64-core box would promise far more memory than it has.
-    An operator who knows their workload raises it with --exec-parallelism.
-    """
-    cores = os.cpu_count() or 2
-    return max(2, min(cores // 2, 8))
+    return default_exec_parallelism()
 
 
 class IsolationConfig:

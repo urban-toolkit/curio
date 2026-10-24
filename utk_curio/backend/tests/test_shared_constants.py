@@ -25,6 +25,7 @@ CONTRACTS = REPO_ROOT / "utk_curio" / "frontend" / "urban-workflows" / "src" / "
 #: Each shared file, by its name without ``.json``.
 FILES = (
     "renderCauses", "solveStopReasons", "agentCategories", "noteColors", "autkGrammar", "visDefaults", "nodeSettings",
+    "dashboardRuns",
 )
 
 
@@ -149,6 +150,15 @@ def test_what_a_visualization_node_does_by_itself_is_the_files():
     assert contracts.IMAGE_COLUMNS == tuple(data["imageColumns"])
     assert contracts.IMAGE_EXTENSIONS == tuple(data["imageExtensions"])
     assert contracts.IMAGE_MATCH_THRESHOLD == data["imageMatchThreshold"]
+
+
+def test_what_a_dashboard_viewer_never_changes_and_the_run_token_header_are_the_files():
+    from utk_curio.backend.app import RUN_TOKEN_HEADER
+    from utk_curio.backend.app.runs import viewer
+
+    data = _file("dashboardRuns")
+    assert viewer.READ_ONLY_WIDGET_KINDS == set(data["readOnlyWidgetKinds"])
+    assert viewer.RUN_TOKEN_HEADER == RUN_TOKEN_HEADER == data["runTokenHeader"]
 
 
 def test_the_starter_tables_are_well_formed():

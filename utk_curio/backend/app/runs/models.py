@@ -1,4 +1,5 @@
-"""A dataflow run and its per-node steps.
+"""A dataflow run and its per-node steps, and the outputs a dashboard
+viewer's runs keep (:class:`DashboardStepOutput`).
 
 A run is one press of Run All (no target), of a node's play button
 (``target_node_id`` set), or an automatic run after a widget or Parameter
@@ -37,6 +38,12 @@ def _uuid() -> str:
 
 def _now():
     return datetime.now(timezone.utc)
+
+
+def naive_utc_now():
+    """Now, as naive UTC: what a DateTime column hands back, so a cutoff
+    compared in SQL means the same on SQLite and Postgres."""
+    return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
 class DataflowRun(db.Model):
@@ -127,3 +134,50 @@ class DataflowRunStep(db.Model):
 
     def __repr__(self):
         return f"<DataflowRunStep {self.run_id!r} {self.node_id!r} {self.status!r}>"
+
+
+class DashboardStepOutput(db.Model):
+    """One output a dashboard viewer's run made (``runs/viewer.py``), kept so
+    that the next viewer who picks the same values gets it with no run.
+
+    *step_key* hashes what made it: the step's code with the values written
+    in, its inputs, the owner's packages and the datasets the code reads, and
+    Curio's version. Its artifacts carry a session of their own
+    (``common/dashboard_sessions.py``), which the sandbox forgets when the
+    entry goes. An entry built on a result a viewer's browser sent is
+    *private_to* that run: only its tab reads it. Deleting the project deletes
+    its entries.
+    """
+
+    __tablename__ = "dashboard_step_output"
+
+    id = db.Column(db.String(36), primary_key=True, default=_uuid)
+    project_id = db.Column(db.String(36), db.ForeignKey("project.id"), nullable=False)
+    node_id = db.Column(db.String(255), nullable=False)
+    step_key = db.Column(db.String(64), nullable=False)
+    session_id = db.Column(db.String(64), nullable=False)
+    # The output as the sandbox answered it (JSON), and its artifact id.
+    output = db.Column(db.Text, nullable=False)
+    output_path = db.Column(db.String(255), nullable=False)
+    # Every artifact its session made (JSON): the output's own and, for a
+    # node that hands on several values, theirs. A read names one of these.
+    artifact_ids = db.Column(db.Text, nullable=False, default="[]")
+    size_bytes = db.Column(db.BigInteger, nullable=False, default=0)
+    # A digest of the run token of the one tab that may read it.
+    private_to = db.Column(db.String(64), nullable=True)
+    created_at = db.Column(db.DateTime, nullable=False, default=naive_utc_now)
+    used_at = db.Column(db.DateTime, nullable=False, default=naive_utc_now)
+
+    project = db.relationship(
+        "Project",
+        backref=db.backref("dashboard_outputs", cascade="all, delete-orphan"),
+    )
+
+    __table_args__ = (
+        db.Index("ix_dashboard_step_output_key", "project_id", "step_key"),
+        db.Index("ix_dashboard_step_output_path", "project_id", "output_path"),
+        db.Index("ix_dashboard_step_output_created", "created_at"),
+    )
+
+    def __repr__(self):
+        return f"<DashboardStepOutput {self.project_id!r} {self.node_id!r} {self.step_key[:8]!r}>"

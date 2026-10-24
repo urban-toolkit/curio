@@ -1044,6 +1044,88 @@ def load_artifact(art_id, session_id=None):
             raise store_error
 
 
+#: The kinds whose ``value_str`` names the file this store wrote the value to,
+#: under ``artifacts/``. Any other kind keeps its value in the row, or, for a
+#: raster, names a file the node's own code wrote, which is never deleted here.
+_STORED_FILE_KINDS = ("dataframe", "geodataframe", "list", "dict")
+
+
+def _stored_file(kind, value_str):
+    """The file an artifact row's value lives in, or None when the row holds it."""
+    if kind not in _STORED_FILE_KINDS or not isinstance(value_str, str):
+        return None
+    if not value_str.startswith("artifacts/"):
+        return None
+    try:
+        return _resolve_stored_artifact_path(value_str)
+    except PermissionError:
+        return None
+
+
+def _session_rows(con, session_ids):
+    placeholders = ",".join("?" for _ in session_ids)
+    return con.execute(
+        "SELECT id, session_id, kind, value_str, octet_length(blob), "
+        "strlen(CAST(value_json AS VARCHAR)) "
+        f"FROM artifacts WHERE session_id IN ({placeholders})",
+        list(session_ids),
+    ).fetchall()
+
+
+def describe_session_artifacts(session_ids) -> dict:
+    """``{session id: {"bytes", "ids"}}``: the artifacts each session made, by
+    id, and how many bytes they hold, the files they were written to and the
+    values their rows keep."""
+    session_ids = list(session_ids)
+    described = {session_id: {"bytes": 0, "ids": []} for session_id in session_ids}
+    if not session_ids:
+        return described
+    init_db()
+    con = get_connection()
+    try:
+        rows = _session_rows(con, session_ids)
+    finally:
+        con.close()
+    for art_id, session_id, kind, value_str, blob_bytes, json_bytes in rows:
+        size = (blob_bytes or 0) + (json_bytes or 0)
+        path = _stored_file(kind, value_str)
+        if path is not None:
+            try:
+                size += path.stat().st_size
+            except OSError:
+                pass
+        elif isinstance(value_str, str):
+            size += len(value_str.encode("utf-8"))
+        entry = described.setdefault(session_id, {"bytes": 0, "ids": []})
+        entry["bytes"] += size
+        entry["ids"].append(art_id)
+    return described
+
+
+def forget_session_artifacts(session_ids) -> int:
+    """Delete every artifact the sessions made: its row and the file the store
+    wrote its value to. Returns how many rows went."""
+    session_ids = list(session_ids)
+    if not session_ids:
+        return 0
+    init_db()
+    con = get_connection()
+    try:
+        rows = _session_rows(con, session_ids)
+        placeholders = ",".join("?" for _ in session_ids)
+        con.execute(f"DELETE FROM artifacts WHERE session_id IN ({placeholders})", session_ids)
+    finally:
+        con.close()
+    for _id, _session_id, kind, value_str, _blob, _json in rows:
+        path = _stored_file(kind, value_str)
+        if path is not None:
+            try:
+                path.unlink()
+            except FileNotFoundError:
+                pass
+    return len(rows)
+
+
 def save_dataset_parquet(output, kind):
     """Save a DataFrame or GeoDataFrame as a named Parquet file in the shared data
     directory (top-level, not inside ``artifacts/``).

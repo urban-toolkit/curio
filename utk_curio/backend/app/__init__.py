@@ -8,6 +8,10 @@ from logging.handlers import RotatingFileHandler
 from utk_curio.backend.config import Config as config_class
 from utk_curio.backend.config import _is_dev
 from utk_curio.backend.extensions import db, migrate
+from utk_curio.common import shared_constants
+
+#: The header a dashboard viewer's tab sends its run's token in.
+RUN_TOKEN_HEADER = shared_constants.read("dashboardRuns")["runTokenHeader"]
 
 
 CORS_HEADERS = {
@@ -19,10 +23,12 @@ CORS_HEADERS = {
     # rejected, the fetch throws, and the canvas falls back to JSON. That
     # failure is invisible from the outside -- the data still arrives -- which
     # is exactly how it shipped green until an e2e test watched the wire.
+    # RUN_TOKEN_HEADER is what a dashboard viewer's tab follows its run with.
     "Access-Control-Allow-Headers": ",".join((
         "Content-Type",
         "Authorization",
         "X-Curio-Accept-Geometry",
+        RUN_TOKEN_HEADER,
     )),
     "Access-Control-Allow-Methods": "GET,PUT,POST,PATCH,DELETE,OPTIONS",
     # Expose Content-Disposition so cross-origin clients (e.g. dataset export)
@@ -66,6 +72,16 @@ def create_app(config_class=config_class):
     app = Flask(__name__)
     app.config.from_object(config_class)
 
+    # An instance with sign-in (--deploy) sits behind the site's proxy, which
+    # adds the visitor's address to X-Forwarded-For: every limit per address
+    # (sign-in attempts, the monitor's error reports, a dashboard's runs)
+    # reads it as request.remote_addr. One hop, the proxy's own; a request
+    # that reaches the backend directly carries none and keeps its address.
+    from utk_curio.backend import config as _config
+    if not _config.CURIO_NO_AUTH:
+        from werkzeug.middleware.proxy_fix import ProxyFix
+        app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1)
+
     db.init_app(app)
     migrate.init_app(app, db)
 
@@ -94,6 +110,9 @@ def create_app(config_class=config_class):
     from utk_curio.backend.app.runs import models as _run_models  # noqa: F401
     from utk_curio.backend.app.runs.routes import runs_bp
     app.register_blueprint(runs_bp)
+    # A dashboard viewer's runs, which need no sign-in.
+    from utk_curio.backend.app.runs.viewer_routes import dashboard_runs_bp
+    app.register_blueprint(dashboard_runs_bp)
 
     from utk_curio.backend.app.notebooks import notebooks_bp
     app.register_blueprint(notebooks_bp)

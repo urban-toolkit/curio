@@ -2449,6 +2449,25 @@ A run executes the saved dataflow on a thread of the backend, so it goes on whet
 | `/api/runs/<id>/rerun` | POST | Run the same thing again |
 | `/api/runs/<id>/steps/<nodeId>` | POST | A tab reports a node the browser ran: `{status: ok\|error, message?}` |
 
+#### A dashboard viewer's runs
+
+A viewer of a dashboard changes a pinned control and the dataflow runs again on the server, with nothing saved to the dataflow or its owner's Data Catalog ([`runs/viewer.py`](../utk_curio/backend/app/runs/viewer.py), routes in `runs/viewer_routes.py`). No sign-in is needed, as for the dashboard payload.
+
+- **Controls.** `dashboard_controls` gives what a viewer may change: every widget of a pinned node, a pinned Parameter node's one included, but the kinds `contracts/dashboardRuns.json` keeps read-only (`text`, `text-list`, `file`), whose free value could name another of the owner's datasets or files. Each value is checked with `check_widget_value`, the Widgets tab's check.
+- **Plan.** The saved spec, read with its saved outputs hydrated (`services._saved_outputs`), gets the values laid over it in memory, and is never written. A node the values change is one whose code, as a run sends it, differs; it and every node below it are reached. The targets are the nodes the tiles read (`dashboard_source_node_ids`) that are reached or have no saved output; `plan_run` reuses the saved outputs of every node not reached. With no target the start answers no run, and the page keeps the saved outputs.
+- **Steps.** Each runs as Play does in the owner's store (`node_exec`, with the owner's datasets, models and packages), with no node id, so nothing is installed or journaled, and `save_dataset` off. A Python step whose code reads a connection key (`curio_secret`) fails at once with `NO_KEYS_MESSAGE`: a viewer's run uses no key.
+- **Kept outputs.** Each step's output is kept in `dashboard_step_output` (alembic revision `d2e3f4a5b6c7`) under `step_key`, a digest of the step's code as sent, its inputs (saved outputs or kept ones, each its own artifact), a fingerprint of the owner's package store, the files of the datasets its code reads, and Curio's version. A step whose key is kept answers with the kept output and runs nothing. Each step's artifacts carry a session of their own (`common/dashboard_sessions.py`); `/artifact-sessions/describe` gives the entry its artifact ids and size. Entries go 30 days after their run, swept by `prune` at the end of each run and on the first start after a restart; past 2 GiB on a dashboard the least recently used go first. The sandbox forgets the sessions of the entries that go (`/artifact-sessions/forget`, which names only sessions of the dashboard shape), and a deleted dataflow's entries go with it (an `after_delete` on the entry, forgotten after the commit).
+- **Limits.** `common/address_limiter.py`: 10 starts a minute per visitor address, 120 overall; under `--deploy` the backend reads the address from the proxy's `X-Forwarded-For` (`ProxyFix`, one hop), as every per-address limit does. Two live runs per dashboard, in a registry of their own (so an owner's runs never wait on them), and a start whose values already run joins that run. Half the sandbox's isolated pool (`common/exec_pool.py`) is the most nodes viewers' runs execute at once.
+- **Following.** A start answers a run id and a token; the stream and a private output's read take the token in `RUN_TOKEN_HEADER` (`X-Curio-Run-Token`, in the CORS Allow-Headers). Events carry no reply and no printed text.
+
+| Route | Method | Purpose |
+|---|---|---|
+| `/api/projects/<id>/dashboard/runs` | POST | `{values: {nodeId: {widget: value}}}`: run the dashboard with those values, or join the run of them going. 202 with `{runId, token, joined, nodeIds}`; 200 with no run when nothing needs to run; 422 for a value that is not a control's or does not suit it; 429 over a limit |
+| `/api/projects/<id>/dashboard/runs/<runId>/stream` | GET | SSE: `run_started`, `step_started`, `step_finished` and `run_finished`, replayed and then followed; 403 without the run's token |
+| `/api/projects/<id>/dashboard/outputs/get` | GET | `/get` for an artifact a kept output of this dashboard holds, read in its own session; 404 for anything else |
+| `/api/projects/<id>/dashboard/outputs/get-preview` | GET | `/get-preview` likewise |
+| `/api/projects/<id>/dashboard/outputs/raster` | GET | `/raster` likewise |
+
 ### Dataset Routes
 
 Defined in `backend/app/datasets/routes.py`; all require authentication. See [DATA-CATALOG.md](DATA-CATALOG.md) for the user-facing model.
