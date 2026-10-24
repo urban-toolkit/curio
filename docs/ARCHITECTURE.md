@@ -436,9 +436,9 @@ are what its scenario chips write.
   built-in and package nodes of one grammar get the same header. It is one row of
   categories, Inputs, Scenarios, Widgets, Selections and Shared, each with its count and
   only when it has chips. They start closed, a click opens a category's chips under the
-  row, and `stripCategories.ts` keeps the open ones per node id outside React, so a tab
-  switch or a remount keeps them; `ProjectLoader` closes them all when another dataflow
-  opens (`closeEveryCategory`). On the canvas the header takes at most half of its
+  row and closes the one open, and `stripCategories.ts` keeps the open one per node id
+  outside React, so a tab switch or a remount keeps it; `ProjectLoader` closes them all
+  when another dataflow opens (`closeEveryCategory`). On the canvas the header takes at most half of its
   editor's height (`.strip` in `WidgetTags.module.css`), and the open chips scroll inside
   it with the shared thin scrollbar; in a notebook cell it is as tall as its chips.
   Inputs, `InputsChips`, is a line per input in circle order, and in a Vega-Lite spec
