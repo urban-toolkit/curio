@@ -53,6 +53,10 @@ services:
       # login page and must NOT seed, so seeding is asked for explicitly now.
       - --with-examples
       - --no-allow-publish
+      # The site's proxy (Caddy) adds the visitor's address to
+      # X-Forwarded-For, which the limits per address read.
+      - --proxy-hops
+      - "1"
       - --backend-host
       - 0.0.0.0
       - --backend-port

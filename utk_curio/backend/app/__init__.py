@@ -72,15 +72,16 @@ def create_app(config_class=config_class):
     app = Flask(__name__)
     app.config.from_object(config_class)
 
-    # An instance with sign-in (--deploy) sits behind the site's proxy, which
-    # adds the visitor's address to X-Forwarded-For: every limit per address
-    # (sign-in attempts, the monitor's error reports, a dashboard's runs)
-    # reads it as request.remote_addr. One hop, the proxy's own; a request
-    # that reaches the backend directly carries none and keeps its address.
+    # Behind the site's proxies (--proxy-hops), each of which adds the address
+    # it was reached from to X-Forwarded-For, every limit per address (sign-in
+    # attempts, the monitor's error reports, a dashboard's runs) reads the
+    # visitor's as request.remote_addr: the one the outermost of those proxies
+    # added. With no proxy named the header is not read, since anyone reaching
+    # the backend directly could write it.
     from utk_curio.backend import config as _config
-    if not _config.CURIO_NO_AUTH:
+    if _config.CURIO_PROXY_HOPS > 0:
         from werkzeug.middleware.proxy_fix import ProxyFix
-        app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1)
+        app.wsgi_app = ProxyFix(app.wsgi_app, x_for=_config.CURIO_PROXY_HOPS)
 
     db.init_app(app)
     migrate.init_app(app, db)

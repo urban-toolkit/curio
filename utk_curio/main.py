@@ -260,6 +260,16 @@ def main():
         ),
     )
     parser.add_argument(
+        "--proxy-hops", type=int, default=None, metavar="N",
+        help=(
+            "How many reverse proxies in front of the backend add the visitor's "
+            "address to X-Forwarded-For; the limits per address (sign-in "
+            "attempts, error reports, a dashboard's runs) then read it there "
+            "(sets CURIO_PROXY_HOPS, default 0: each request's own address). "
+            "Give no more than the proxies that add it."
+        ),
+    )
+    parser.add_argument(
         "--state-dir", default=None, metavar="PATH",
         help=(
             "Directory for the .curio state: every user's store, the caches "
@@ -531,6 +541,7 @@ def main():
         db_pool_size=args.db_pool_size,
         db_pool_overflow=args.db_pool_overflow,
         db_pool_timeout=args.db_pool_timeout,
+        proxy_hops=args.proxy_hops,
         package_workers=args.package_workers,
         js_parallelism=args.js_parallelism,
         js_registry_url=args.js_registry_url,
