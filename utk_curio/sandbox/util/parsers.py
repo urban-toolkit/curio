@@ -15,6 +15,7 @@ from pathlib import Path
 #DuckDB imports:
 import io
 import duckdb
+from utk_curio.common.dashboard_sessions import is_dashboard_session
 from utk_curio.sandbox.util.db import get_connection, get_read_connection, init_db
 # Value <-> bytes conversion lives in codec.py, which deliberately has no access
 # to the artifact store. Re-exported here so existing imports of these names
@@ -560,6 +561,21 @@ def save_to_duckdb(value, node_id=None, session_id=None):
         con.close()
 
 
+def session_may_read(stored_session, session_id) -> bool:
+    """Whether *session_id* may read an artifact row tagged *stored_session*:
+    its own, or a row from before rows carried a session.
+
+    A dashboard viewer's step (``common/dashboard_sessions.py``) also reads
+    what the dashboard's other steps made. The backend runs each step in a
+    session of its own and hands it only outputs of that dashboard: its run's
+    earlier steps and the outputs kept from earlier runs. No session of another
+    shape reads theirs, and they read no other session's.
+    """
+    if session_id is None or stored_session is None or stored_session == session_id:
+        return True
+    return is_dashboard_session(session_id) and is_dashboard_session(stored_session)
+
+
 def load_from_duckdb(art_id, session_id=None):
     """
     Load an artifact by id.
@@ -589,7 +605,7 @@ def load_from_duckdb(art_id, session_id=None):
                 "SELECT session_id FROM artifacts WHERE id = ?", [art_id]
             ).fetchone()
             stored_sid = sid_row[0] if sid_row else None
-            if stored_sid is not None and stored_sid != session_id:
+            if not session_may_read(stored_sid, session_id):
                 raise KeyError(f"No artifact with id {art_id}")
 
         kind, v_int, v_float, v_str, v_json, blob = row
@@ -780,7 +796,7 @@ def open_tabular_arrow_from_duckdb(art_id, session_id=None, *, allow_geometry=Fa
         if row is None:
             raise KeyError(f"No artifact with id {art_id}")
         kind, v_json, blob, v_str, stored_sid = row
-        if session_id is not None and stored_sid is not None and stored_sid != session_id:
+        if not session_may_read(stored_sid, session_id):
             raise KeyError(f"No artifact with id {art_id}")
         if kind not in ('dataframe', 'geodataframe'):
             raise ValueError(
@@ -827,7 +843,7 @@ def load_tabular_preview_from_duckdb(art_id, max_rows, session_id=None):
         if row is None:
             raise KeyError(f"No artifact with id {art_id}")
         kind, v_json, blob, v_str, stored_sid = row
-        if session_id is not None and stored_sid is not None and stored_sid != session_id:
+        if not session_may_read(stored_sid, session_id):
             raise KeyError(f"No artifact with id {art_id}")
         if kind != 'dataframe':
             return None
@@ -1042,6 +1058,88 @@ def load_artifact(art_id, session_id=None):
             return load_shared_output_file(art_id)
         except KeyError:
             raise store_error
+
+
+#: The kinds whose ``value_str`` names the file this store wrote the value to,
+#: under ``artifacts/``. Any other kind keeps its value in the row, or, for a
+#: raster, names a file the node's own code wrote, which is never deleted here.
+_STORED_FILE_KINDS = ("dataframe", "geodataframe", "list", "dict")
+
+
+def _stored_file(kind, value_str):
+    """The file an artifact row's value lives in, or None when the row holds it."""
+    if kind not in _STORED_FILE_KINDS or not isinstance(value_str, str):
+        return None
+    if not value_str.startswith("artifacts/"):
+        return None
+    try:
+        return _resolve_stored_artifact_path(value_str)
+    except PermissionError:
+        return None
+
+
+def _session_rows(con, session_ids):
+    placeholders = ",".join("?" for _ in session_ids)
+    return con.execute(
+        "SELECT id, session_id, kind, value_str, octet_length(blob), "
+        "strlen(CAST(value_json AS VARCHAR)) "
+        f"FROM artifacts WHERE session_id IN ({placeholders})",
+        list(session_ids),
+    ).fetchall()
+
+
+def describe_session_artifacts(session_ids) -> dict:
+    """``{session id: {"bytes", "ids"}}``: the artifacts each session made, by
+    id, and how many bytes they hold, the files they were written to and the
+    values their rows keep."""
+    session_ids = list(session_ids)
+    described = {session_id: {"bytes": 0, "ids": []} for session_id in session_ids}
+    if not session_ids:
+        return described
+    init_db()
+    con = get_connection()
+    try:
+        rows = _session_rows(con, session_ids)
+    finally:
+        con.close()
+    for art_id, session_id, kind, value_str, blob_bytes, json_bytes in rows:
+        size = (blob_bytes or 0) + (json_bytes or 0)
+        path = _stored_file(kind, value_str)
+        if path is not None:
+            try:
+                size += path.stat().st_size
+            except OSError:
+                pass
+        elif isinstance(value_str, str):
+            size += len(value_str.encode("utf-8"))
+        entry = described.setdefault(session_id, {"bytes": 0, "ids": []})
+        entry["bytes"] += size
+        entry["ids"].append(art_id)
+    return described
+
+
+def forget_session_artifacts(session_ids) -> int:
+    """Delete every artifact the sessions made: its row and the file the store
+    wrote its value to. Returns how many rows went."""
+    session_ids = list(session_ids)
+    if not session_ids:
+        return 0
+    init_db()
+    con = get_connection()
+    try:
+        rows = _session_rows(con, session_ids)
+        placeholders = ",".join("?" for _ in session_ids)
+        con.execute(f"DELETE FROM artifacts WHERE session_id IN ({placeholders})", session_ids)
+    finally:
+        con.close()
+    for _id, _session_id, kind, value_str, _blob, _json in rows:
+        path = _stored_file(kind, value_str)
+        if path is not None:
+            try:
+                path.unlink()
+            except FileNotFoundError:
+                pass
+    return len(rows)
 
 
 def save_dataset_parquet(output, kind):

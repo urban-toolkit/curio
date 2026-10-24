@@ -45,6 +45,8 @@ def holds_duckdb(view):
 from utk_curio.sandbox.util.codec import PARQUET_ROW_GROUP_ROWS
 from utk_curio.sandbox.util.parsers import (
     arrow_frame_schema,
+    describe_session_artifacts,
+    forget_session_artifacts,
     load_artifact,
     load_tabular_preview_from_duckdb,
     open_tabular_arrow_from_duckdb,
@@ -548,6 +550,41 @@ def artifact_meta():
         'value_str': value_str,
         'value_json': value_json,
     })
+
+
+#: The most sessions one call to the routes below names.
+MAX_SESSIONS_PER_CALL = 500
+
+
+def _dashboard_sessions_from_body():
+    """The ``sessionIds`` a call names: each a session a dashboard viewer's
+    run made (``common/dashboard_sessions.py``). Any other id is refused, so
+    nothing here can reach a sign-in's artifacts."""
+    from utk_curio.common.dashboard_sessions import is_dashboard_session
+
+    body = request.get_json(silent=True) or {}
+    session_ids = body.get('sessionIds')
+    if not isinstance(session_ids, list) or len(session_ids) > MAX_SESSIONS_PER_CALL:
+        abort(400, f"sessionIds must list at most {MAX_SESSIONS_PER_CALL} sessions")
+    if not all(is_dashboard_session(session_id) for session_id in session_ids):
+        abort(400, "only a dashboard viewer's sessions can be named")
+    return session_ids
+
+
+@app.route('/artifact-sessions/describe', methods=['POST'])
+@require_sandbox_token
+@holds_duckdb
+def artifact_sessions_describe():
+    """The artifacts of each named session, by id, and the bytes they hold."""
+    return jsonify({'sessions': describe_session_artifacts(_dashboard_sessions_from_body())})
+
+
+@app.route('/artifact-sessions/forget', methods=['POST'])
+@require_sandbox_token
+@holds_duckdb
+def artifact_sessions_forget():
+    """Delete the artifacts of the named sessions, their rows and files."""
+    return jsonify({'forgotten': forget_session_artifacts(_dashboard_sessions_from_body())})
 
 
 @app.route('/raster', methods=['GET'])

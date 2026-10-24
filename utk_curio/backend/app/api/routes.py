@@ -274,10 +274,16 @@ def get_file():
 
     if not file_name:
         return 'No artifact id specified', 400
+    return relay_artifact(file_name, get_current_token())
 
+
+def relay_artifact(file_name, session_id):
+    """``/get``: the artifact *file_name*, read by the sandbox under
+    *session_id*, as JSON or, when the client asks for it, Arrow. A dashboard
+    viewer's read (``runs/viewer_routes.py``) names the session its kept
+    output was made in."""
     wants_arrow = request.accept_mimetypes.best == ARROW_IPC_MIME
 
-    session_id = get_current_token()
     t0 = time.perf_counter()
     sandbox_kwargs = {
         'params': {"fileName": file_name, "sessionId": session_id},
@@ -319,9 +325,12 @@ def get_file_preview():
 
     if not file_name:
         return 'No artifact id specified', 400
+    return relay_preview(file_name, get_current_token())
 
+
+def relay_preview(file_name, session_id):
+    """``/get-preview``: the first rows of *file_name*, read under *session_id*."""
     max_rows = 100
-    session_id = get_current_token()
     t0 = time.perf_counter()
     resp = _sandbox_call(
         'get', '/get',
@@ -349,8 +358,13 @@ def get_raster():
 
     if not file_name:
         return 'No artifact id specified', 400
+    return relay_raster(file_name, get_current_token())
 
-    params = {"fileName": file_name, "sessionId": get_current_token()}
+
+def relay_raster(file_name, session_id):
+    """``/raster``: the raster *file_name* as GeoTIFF bytes, read under
+    *session_id*, with the part and size bounds the request asks for."""
+    params = {"fileName": file_name, "sessionId": session_id}
     for key in ('part', 'maxCells', 'maxSide'):
         value = request.args.get(key)
         if value is not None:

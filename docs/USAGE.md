@@ -109,6 +109,7 @@ Curio needs Node.js 26 and refuses to start on an earlier version, naming the on
 | `--js-registry-url URL` | none | The npm registry a package build fetches JavaScript dependencies from. Without one, a build that needs a JavaScript dependency is refused |
 | `--js-block-unpinned` / `--no-js-block-unpinned` | off | Whether a package build refuses a JavaScript dependency without a pinned version, rather than warning |
 | `--db-pool-size N` / `--db-pool-overflow N` / `--db-pool-timeout SECONDS` | 64 / 128 / 30 | The backend's database connections: how many it keeps open, how many more it may open while those are all in use, and how long a request waits for one |
+| `--proxy-hops N` | 0 | How many reverse proxies in front of the backend add the visitor's address to `X-Forwarded-For`. The limits per address (sign-in attempts, error reports, a dashboard's runs) then read it there. See [DEPLOYMENT.md](DEPLOYMENT.md#security-checklist) |
 | `--shared-guest-name NAME` / `--shared-guest-username NAME` | `Shared Guest` / `guest_shared` | The shared guest, the one account every guest sign-in uses. A new username gives guests a new, empty account |
 | `--log-to-stdout` / `--no-log-to-stdout` | on | Whether the backend and sandbox write their logs to their output, which the launcher keeps in its own log, or to `utk_curio/logs/` |
 

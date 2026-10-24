@@ -8,8 +8,10 @@ table both sides must agree on: why a render drew nothing
 (``agentCategories.json``), a note's palette and inks (``noteColors.json``),
 what a grammar node calls its inputs and the one view an Autark node draws
 (``autkGrammar.json``), what a visualization node does with its input by
-itself (``visDefaults.json``), and the words of a Data Pool's modes and a
-Simple View's image column (``nodeSettings.json``). The frontend imports each file; the backend
+itself (``visDefaults.json``), the words of a Data Pool's modes and a
+Simple View's image column (``nodeSettings.json``), and the widgets a dashboard's
+viewer never changes and the header a viewer's run is followed with
+(``dashboardRuns.json``). The frontend imports each file; the backend
 reads it here. The folder sits in the frontend's source, so the Docker image's
 frontend build and the Jest suite, which have no Python, read it where it is;
 a clone, the Docker image and a pip install, whose package carries the
