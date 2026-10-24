@@ -558,15 +558,23 @@ _VIEWER_ROUTE_RE = re.compile(
 )
 
 #: Each node's run status (``data-curio-node-status``), how often a run
-#: triggered it and whether an input reached it, then every toast on the page.
+#: triggered it and whether an input reached it, and for a node in error what
+#: it says (its text, the code editors left out), then every toast on the page.
 _NODES_STANDING_JS = """() => {
     const rows = [];
     const flow = window.__curio_reactFlow;
+    const says = (element) => {
+        const copy = element.cloneNode(true);
+        copy.querySelectorAll('.monaco-editor, script, style').forEach((part) => part.remove());
+        return copy.textContent.replace(/\\s+/g, ' ').trim().slice(0, 400);
+    };
     for (const node of flow ? flow.getNodes() : []) {
-        const marked = document.querySelector('.react-flow__node[data-id="' + node.id + '"] [data-curio-node-status]');
+        const element = document.querySelector('.react-flow__node[data-id="' + node.id + '"]');
+        const marked = element && element.querySelector('[data-curio-node-status]');
         const status = marked ? marked.getAttribute('data-curio-node-status') : 'no status';
         rows.push(node.id + ': ' + status + ', triggered ' + (node.data?.triggerExec ?? 0)
-            + ', input ' + (node.data?.input ? 'yes' : 'no'));
+            + ', input ' + (node.data?.input ? 'yes' : 'no')
+            + (status === 'error' && element ? ', says: ' + says(element) : ''));
     }
     for (const toast of document.querySelectorAll('.toast')) {
         rows.push('toast: ' + toast.textContent.trim().slice(0, 240));
