@@ -1520,8 +1520,8 @@ the page opens.
 - **Controls**: anyone viewing the page can change a pinned Parameter node's value, and
   the widgets of a pinned node that shows them. A change runs the nodes it reaches on the
   server, with your datasets, models and packages and none of your keys, and the tiles
-  below show the result. Nothing is saved: the dataflow, its outputs and your Data
-  Catalog stay as they are, and putting the value back shows the saved outputs. Text,
+  below show the result. A viewer never changes the dataflow, its saved outputs or your
+  Data Catalog, and putting the value back shows the saved outputs. Text,
   text list and file widgets keep their saved value, and a node that reads a connection
   key stops with a message.
 - **What a run makes**, on opening the page or after a change, is kept for 7 days and
