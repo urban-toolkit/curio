@@ -36,7 +36,10 @@ added to the trees, a road reshaped and a property added to the parks, each on
 the map; Commit edits runs the node, and its output holds all three. And one
 of its buildings of several parts, each part with its own ``osm_id``, reshaped
 part by part: Move points shows every part's corners, a dragged corner changes
-its own part alone, and the building's other parts keep their shapes.
+its own part alone, and the building's other parts keep their shapes. And a
+corner of a compact building dragged across a far side of its outline, which
+would make the outline cross itself, is refused: no edit is written, the map's
+tip says why, and the map keeps drawing the buildings.
 
 Interaction frames take both nodes of a gesture before and after it, and every
 Autark map gets a close-up. They run Autark maps, which need WebGPU: without an
@@ -78,12 +81,14 @@ from .utils import (
     INTERACTION_VIEWPORT,
     REPO_ROOT,
     _compare_images,
+    assert_autark_map_drawn,
     assert_in_view,
     autark_map_framing,
     canvas_painted_at_shown_zoom,
     changed_pixels,
     dismiss_toasts,
     drawing_kept,
+    dump_browser_log,
     frame_nodes,
     keep_drawing,
     load_artifact_as_dict,
@@ -217,6 +222,15 @@ PART_KEY = "osm_id"
 #: dragged, and the least a corner needs for a press to take it alone.
 CORNER_ROOM = 16
 PRESS_ROOM = 6
+#: How much of the map a building framed for its close-up spans, its box's
+#: longer side to the map's: about a third, so the building and its corners
+#: are plain in the frame, with room around it for a corner dragged past its
+#: far side, clear of the tip at the top left and the legend at the bottom
+#: right.
+FRAME_FILL = (0.3, 0.42)
+#: What the map's tip says when a corner dragged would make its outline cross
+#: itself: autk-db refuses such a shape, and with it the whole layer (#1112).
+CROSSED_DRAG = "That would make the outline cross itself, so the corner went back."
 
 
 def _spec(last_code: str = COUNT_CODE, last_title: str = "Count", *, linked: bool = True) -> dict:
@@ -1604,8 +1618,9 @@ def test_a_chicago_building_of_several_parts_is_reshaped_one_part_at_a_time(
     # nothing over it, drawn in the map's highlight when one such is. A press
     # takes the corner nearest it, wherever the map draws its buildings over.
     # It is dropped a little out from its neighbours' middle, or in toward
-    # it, where no side of its part crosses another: autk-db refuses a
-    # building whose shape crosses itself, and then draws none of the layer.
+    # it, where no side of its part crosses another: a drag that would make
+    # an outline cross itself is refused and writes no edit (#1112), since
+    # autk-db refuses such a shape, and with it the whole layer.
     dismiss_toasts(page)
     corners = _wait_for_corners(page, map_id, bool, "the zoom")
     roomy = [c for c in _to_drag(corners) if c["inside"] and c["onTop"] and _room(c, corners) >= PRESS_ROOM]
@@ -1684,6 +1699,178 @@ def test_a_chicago_building_of_several_parts_is_reshaped_one_part_at_a_time(
     _picked_with_corners(page, map_id, building, f"building {building} picked after Commit edits")
     save_node_closeup(page, CHICAGO_STEM, map_id, test_name=f"{test_name}_closeup_{map_id}", sweep_toasts=True)
     save_node_closeup(page, CHICAGO_STEM, edit_id, test_name=f"{test_name}_closeup_{edit_id}", sweep_toasts=True)
+
+
+def test_a_chicago_building_corner_dragged_across_its_far_side_is_refused_and_the_layer_keeps_drawing(
+    app_frontend: "FrontendPage", current_server: str, page,
+):
+    """The shipped Chicago Loop layers: a compact building of one part, its
+    outline one ring of four to eight corners, near the middle of the map,
+    picked on it in the node's Edit, Move points on, the map zoomed in on it
+    and panned until it sits in the middle, about a third of the map across.
+    One of its corners dragged across a side of the outline that it does not
+    end would make the outline cross itself, which autk-db refuses, and with
+    it the whole buildings layer (#1112). Let go, the drag is refused:
+
+    1. the node's code gains no edit;
+    2. the map's tip says why, and the corner is back where it was;
+    3. the map draws on, the buildings with it, and the browser log holds no
+       layer that failed to load.
+
+    What is wrong is kept, and the test fails with all of it before its
+    capture: a close-up of the map, its tip saying why."""
+    test_name = "test_a_chicago_building_corner_dragged_across_its_far_side_is_refused_and_the_layer_keeps_drawing"
+    log = _browser_log(page)
+    path = Path(REPO_ROOT) / "docs" / "examples" / "dataflows" / "chicago-loop-layers.json"
+    spec = json.loads(path.read_text(encoding="utf-8"))
+    nodes = {node["id"]: node for node in spec["dataflow"]["nodes"]}
+    (edit_id,) = [n for n, node in nodes.items() if node["type"] == EDIT_TYPE]
+    (map_id,) = [n for n, node in nodes.items() if node["type"] == MAP_TYPE and '"map"' in node["content"]]
+    title = nodes[map_id]["metadata"]["packageTemplateLabel"]
+    _enter(page, app_frontend, current_server, spec, "map_edits_crossing_e2e", name=spec["dataflow"]["name"])
+    run_all_and_wait(page, timeout_ms=RUN_MS)
+    for node_id, node in nodes.items():
+        _done(page, node_id, node["type"])
+    wait_for_run_guard_released(page, timeout_ms=RUN_MS)
+
+    # The compact buildings of one part the map draws: each outline one ring
+    # of four to eight corners, its box on the ground at most twice as long as
+    # it is wide. The larger half of them, which the map zooms in on least,
+    # nearest the middle of all of them first.
+    handed = _handed_layers(load_artifact_as_dict(page.evaluate(_OUTPUT_ARTIFACT_JS, edit_id)))
+    rows_of: dict = {}
+    for feature in handed[BUILDINGS]["features"]:
+        rows_of.setdefault((feature.get("properties") or {}).get(KEY), []).append(feature)
+    drawn = page.evaluate(_DRAWN_PARTS_JS, {"id": map_id, "table": BUILDINGS, "key": KEY, "part": PART_KEY})
+    assert drawn, f"the map {map_id} reports no rows of {BUILDINGS} that it draws"
+    shown = {building for building, _part in drawn if building is not None}
+    outlines = {
+        building: ring for building, rows in rows_of.items() if building in shown
+        for ring in [_one_outline(rows)] if ring and _compact(ring)
+    }
+    assert outlines, (
+        f"the map draws no compact building of one part, its outline one ring of 4 to 8 corners, "
+        f"of the {len(shown)} it draws"
+    )
+    boxes = {building: _extent(ring) for building, ring in outlines.items()}
+    x0, y0, x1, y1 = _extent([point for ring in outlines.values() for point in ring])
+    sizes = {building: max(b[2] - b[0], b[3] - b[1]) for building, b in boxes.items()}
+    median = sorted(sizes.values())[len(sizes) // 2]
+    compact = sorted(
+        (building for building in outlines if sizes[building] >= median),
+        key=lambda building: math.hypot(
+            (boxes[building][0] + boxes[building][2] - x0 - x1) / 2, (boxes[building][1] + boxes[building][3] - y0 - y1) / 2,
+        ),
+    )
+
+    edit = node_locator(page, edit_id)
+    frame_nodes(page, [edit_id, map_id])
+    _open_tab(page, edit_id, "output")
+    _assert_linked(page, edit_id, map_id, title)
+    expect(edit.get_by_test_id(f"interaction-layer-{BUILDINGS}")).to_be_attached(timeout=30000)
+    _open(page, edit_id, "edit", BUILDINGS)
+    box = page.locator(_map(map_id)).bounding_box()
+    assert box, "the map has no layout box"
+    reshape = edit.get_by_test_id("interaction-reshape")
+
+    # Each in turn picked on the map, as the map's own pick is sent, with Move
+    # points on, until one sits near the middle of the map. The map is then
+    # zoomed in on it and panned until it sits in the middle, about a third of
+    # the map across: plain, with its corners, in the close-up.
+    building, corners, tried = _pick_near_the_middle(page, map_id, reshape, compact, box)
+    assert building is not None, f"no compact building of one part lies near the middle of the map: {tried}"
+    corners = _framed(page, map_id, corners, box)
+
+    # A corner a press takes alone, inside the map with nothing over it, and
+    # a drop past the middle of a side of its outline that it does not end,
+    # on the map too: a side the corner ends then crosses another.
+    dismiss_toasts(page)
+    corners = _wait_for_corners(page, map_id, bool, "the zoom")
+    roomy = [c for c in _to_drag(corners) if c["inside"] and c["onTop"] and _room(c, corners) >= PRESS_ROOM]
+    roomy.sort(key=lambda c: (c["lit"], _room(c, corners)), reverse=True)
+    corner, drop = next(
+        ((c, d) for c in roomy for d in _drops_crossing_shape(c, corners) if _on_the_map(page, map_id, d, box)),
+        (None, None),
+    )
+    assert corner and drop, (
+        f"Move points shows no corner of building {building} with {PRESS_ROOM} pixels around it that a drag can take "
+        f"across a far side of its outline, inside the map (the most room a corner has is {_best_room(corners):.1f}): "
+        f"{corners}"
+    )
+    drop = assert_in_view(page, drop[0], drop[1], "where the corner is dropped")
+    handle = {"id": map_id, "ring": corner["ring"], "index": corner["index"], "part": corner["part"]}
+
+    # The drag, the map's drawing kept first to tell whether it draws again.
+    # While the drag lasts, Move points shows the corner under the pointer:
+    # the press took it.
+    start = len(log)
+    keep_drawing(page, _map(map_id))
+    page.mouse.move(corner["x"], corner["y"])
+    page.mouse.down()
+    page.mouse.move(*drop, steps=8)
+    held, deadline = None, time.time() + 3
+    while time.time() < deadline:
+        held = page.evaluate(_HANDLE_AT_JS, handle)
+        if held and math.hypot(held["x"] - drop[0], held["y"] - drop[1]) < 4:
+            break
+        page.wait_for_timeout(100)
+    page.mouse.up()
+    assert held and math.hypot(held["x"] - drop[0], held["y"] - drop[1]) < 4, (
+        f"the press on the corner {corner['ring']}.{corner['index']} of building {building} at "
+        f"{(round(corner['x'], 1), round(corner['y'], 1))} did not take it: dragged to "
+        f"{tuple(round(v, 1) for v in drop)}, it is shown at {held}"
+    )
+    wrong: list[str] = []
+
+    # 1. The node's code gains no edit; a drag's edit is written as it ends.
+    edits, deadline = [], time.time() + 5
+    while time.time() < deadline and not edits:
+        page.wait_for_timeout(250)
+        try:
+            edits = _edits_of(read_node_code(page, edit_id))[0]
+        except (AssertionError, SyntaxError, ValueError):
+            edits = []
+    if edits:
+        wrong.append(f"the self-crossing reshape was written as an edit: {[_shown_edit(e) for e in edits]}")
+
+    # 2. The map's tip says why, and the corner is back where it was.
+    tip = _overlay(page, map_id).get_by_test_id("map-edit-tip")
+    try:
+        expect(tip).to_contain_text(CROSSED_DRAG, timeout=5000)
+    except AssertionError:
+        wrong.append(f"the map's tip does not say why the reshape was refused: it reads {tip.all_inner_texts()}")
+    back = page.evaluate(_HANDLE_AT_JS, handle)
+    if not back or math.hypot(back["x"] - corner["x"], back["y"] - corner["y"]) > 1.5:
+        wrong.append(
+            f"after the refused drag, the corner {corner['ring']}.{corner['index']} of building {building} is shown at "
+            f"{back and (round(back['x'], 1), round(back['y'], 1))}, not back at "
+            f"{(round(corner['x'], 1), round(corner['y'], 1))}"
+        )
+
+    # 3. The map draws on, the buildings with it. Nothing changed, so it is
+    # not drawn again; a draw that comes, as an edit's does, is waited for to
+    # its end: the map drawn whole, or a layer that failed to load.
+    if not drawing_kept(page, _map(map_id)):
+        deadline = time.time() + INTERACTION_SHOWN_TIMEOUT_MS / 1000
+        while time.time() < deadline and not _failed_loads(log[start:]):
+            try:
+                assert_autark_map_drawn(page, map_id, timeout=1000)
+                break
+            except AssertionError:
+                page.wait_for_timeout(500)
+    try:
+        assert_autark_map_drawn(page, map_id)
+    except AssertionError as error:
+        wrong.append(f"the map draws nothing after the drag: {error}")
+    failed = _failed_loads(log[start:])
+    if failed:
+        wrong.append(f"autk-db refused a layer after the drag, so the map draws none of it: {failed[0]}")
+    if wrong:
+        dump_browser_log(CHICAGO_STEM, test_name, log)
+    assert not wrong, "\n".join(wrong)
+
+    # The map, its tip saying why the corner went back.
+    save_node_closeup(page, CHICAGO_STEM, map_id, test_name=f"{test_name}_closeup_{map_id}", sweep_toasts=True)
 
 
 # The value of *key* and of *part* of each row the map draws of the table
@@ -1831,6 +2018,208 @@ def _drop_keeping_shape(corner: dict, corners: list[dict]) -> tuple[float, float
         ):
             return drop
     return None
+
+
+def _drops_crossing_shape(corner: dict, corners: list[dict]) -> list[tuple[float, float]]:
+    """Where to drag *corner*, in page coordinates, so that a side it ends
+    crosses another side of its part, as no drop of ``_drop_keeping_shape``
+    does: past the middle of each side of its ring that it does not end, by
+    half the way there from the corner, each drop kept when ``_crosses`` finds
+    a moved side crossing another. No drop for a ring of fewer than four
+    corners, where a corner dragged anywhere crosses no side."""
+    rings: dict = {}
+    indexes: dict = {}
+    for c in sorted(corners, key=lambda c: c["index"]):
+        if c["part"] == corner["part"]:
+            rings.setdefault(c["ring"], []).append((c["x"], c["y"]))
+            indexes.setdefault(c["ring"], []).append(c["index"])
+    ring = rings.get(corner["ring"], [])
+    if len(ring) < 4:
+        return []
+    at = indexes[corner["ring"]].index(corner["index"])
+    before, after = ring[at - 1], ring[(at + 1) % len(ring)]
+    # Every side of the part but the two the corner ends, which move with it.
+    sides = [
+        (points[i], points[(i + 1) % len(points)], key, i)
+        for key, points in rings.items() for i in range(len(points))
+        if not (key == corner["ring"] and i in (at, (at - 1) % len(ring)))
+    ]
+    drops = []
+    for p, q, key, _i in sides:
+        if key != corner["ring"]:
+            continue
+        middle = ((p[0] + q[0]) / 2, (p[1] + q[1]) / 2)
+        drop = (middle[0] + (middle[0] - corner["x"]) / 2, middle[1] + (middle[1] - corner["y"]) / 2)
+        moved = [(before, drop), (drop, after)]
+        if any(
+            _crosses(a, b, s, t) for a, b in moved for s, t, k, j in sides
+            # A moved side meets its neighbouring sides at their shared corner.
+            if not (k == corner["ring"] and (j == (at - 2) % len(ring) and a == before or j == (at + 1) % len(ring) and b == after))
+        ):
+            drops.append(drop)
+    return drops
+
+
+def _on_the_map(page, map_id: str, point, box: dict, margin: float = 30) -> bool:
+    """Whether *point*, in page coordinates, lies *margin* pixels inside the
+    canvas of the map *map_id*, laid out at *box*, with nothing over the map
+    there: neither its tip nor a button."""
+    x, y = point
+    inside = box["x"] + margin < x < box["x"] + box["width"] - margin and \
+        box["y"] + margin < y < box["y"] + box["height"] - margin
+    return inside and bool(page.evaluate(_SHOWN_JS, [_map(map_id), x, y]))
+
+
+def _one_outline(rows: list[dict]) -> list[tuple[float, float]] | None:
+    """The outline of a building of one row whose shape is one ring of four to
+    eight corners, as Move points shows them, in its layer's units; None for
+    any other building."""
+    geometry = rows[0].get("geometry") if len(rows) == 1 else None
+    if (geometry or {}).get("type") not in ("Polygon", "MultiPolygon"):
+        return None
+    rings = _rings_of(geometry)
+    return rings[0] if len(rings) == 1 and 4 <= len(rings[0]) <= 8 else None
+
+
+def _extent(points) -> tuple[float, float, float, float]:
+    """The box around *points*: its least x and y, then its most."""
+    xs, ys = [x for x, _ in points], [y for _, y in points]
+    return min(xs), min(ys), max(xs), max(ys)
+
+
+def _pick_near_the_middle(page, map_id: str, reshape, candidates: list, box: dict) -> tuple:
+    """Pick each of the first eight *candidates*, buildings, on the map
+    *map_id* in turn, as the map's own pick is sent, with Move points
+    (*reshape*) on, until one sits near the middle of the map (*box*), in its
+    middle three fifths both ways. Returns that building, or None, the corners
+    Move points shows of the last one picked, and where each one tried sat."""
+    corners: list[dict] = []
+    tried = []
+    for candidate in candidates[:8]:
+        page.evaluate(_SEND_JS, [map_id, _map_pick(candidate)])
+        _wait_for_lit(page, map_id, {candidate}, f"building {candidate} picked", table=BUILDINGS)
+        if reshape.get_attribute("aria-checked") != "true":
+            reshape.click()
+            expect(reshape).to_have_attribute("aria-checked", "true")
+        # The corners of this building, not of the one picked before.
+        seen = [(c["x"], c["y"]) for c in corners]
+        corners = _wait_for_corners(
+            page, map_id, lambda now: bool(now) and [(c["x"], c["y"]) for c in now] != seen, f"building {candidate} picked",
+        )
+        x, y = _middle(corners)
+        tried.append((candidate, round(x), round(y)))
+        if box["x"] + 0.2 * box["width"] < x < box["x"] + 0.8 * box["width"] and \
+                box["y"] + 0.2 * box["height"] < y < box["y"] + 0.8 * box["height"]:
+            return candidate, corners, tried
+    return None, corners, tried
+
+
+def _compact(ring: list[tuple[float, float]]) -> bool:
+    """Whether an outline, in its layer's units, is compact: its box on the
+    ground at most twice as long as it is wide. A degree of longitude is
+    shorter on the ground than one of latitude, by the cosine of the latitude."""
+    x0, y0, x1, y1 = _extent(ring)
+    degrees = all(abs(x) <= 180 and abs(y) <= 90 for x, y in ring)
+    across = (x1 - x0) * (math.cos(math.radians((y0 + y1) / 2)) if degrees else 1.0)
+    up = y1 - y0
+    return min(across, up) > 0 and max(across, up) <= 2 * min(across, up)
+
+
+def _fill(corners: list[dict], box: dict) -> float:
+    """How much of the map, laid out at *box*, the box around *corners* spans:
+    the larger of its width's share and its height's."""
+    xs, ys = [c["x"] for c in corners], [c["y"] for c in corners]
+    return max((max(xs) - min(xs)) / box["width"], (max(ys) - min(ys)) / box["height"])
+
+
+def _handles_of(corners: list[dict]) -> list[tuple[float, float]]:
+    """Where Move points shows a handle a press takes, in page coordinates:
+    each corner, and the middle of each side between two corners of a ring."""
+    rings: dict = {}
+    for c in sorted(corners, key=lambda c: c["index"]):
+        rings.setdefault((c["part"], c["ring"]), []).append((c["x"], c["y"]))
+    points = [(c["x"], c["y"]) for c in corners]
+    for ring in rings.values():
+        points += [((a[0] + b[0]) / 2, (a[1] + b[1]) / 2) for a, b in zip(ring, ring[1:] + ring[:1])]
+    return points
+
+
+def _pan_start(page, map_id: str, corners: list[dict], box: dict, by: tuple[float, float]) -> tuple[float, float] | None:
+    """Where a drag that pans the map *map_id* by *by* can start and end: on
+    the map with nothing over it, the start at least 40 pixels from every
+    handle Move points shows (*corners*), so the press takes none of them.
+    The feature's own middle first, then the point of the map nearest its
+    middle; None when no such point is."""
+    clear = 40
+    handles = _handles_of(corners)
+    middle = (box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
+    grid = [(box["x"] + fx / 10 * box["width"], box["y"] + fy / 10 * box["height"]) for fx in range(2, 9) for fy in range(2, 9)]
+    for start in [_middle(corners)] + sorted(grid, key=lambda p: math.hypot(p[0] - middle[0], p[1] - middle[1])):
+        end = (start[0] + by[0], start[1] + by[1])
+        if all(math.hypot(start[0] - hx, start[1] - hy) >= clear for hx, hy in handles) and \
+                _on_the_map(page, map_id, start, box, clear) and _on_the_map(page, map_id, end, box, clear):
+            return start
+    return None
+
+
+def _framed(page, map_id: str, corners: list[dict], box: dict) -> list[dict]:
+    """Frame the feature whose corners Move points shows on the map *map_id*
+    (*corners*) for its close-up: the map zoomed with the wheel at the
+    feature's middle, in half steps, until the feature spans FRAME_FILL of the
+    map (*box*), then panned, by drags clear of its handles, until its middle
+    is near the map's. Returns its corners then."""
+    low, high = FRAME_FILL
+    # +1 while a negative wheel delta zooms in, as autk-map's does.
+    sign = 1
+    for step in range(4 * ZOOM_STEPS):
+        fill = _fill(corners, box)
+        if low <= fill <= high:
+            break
+        closer = fill < low
+        page.mouse.move(*_middle(corners))
+        page.mouse.wheel(0, sign * (-(ZOOM_DELTA // 2) if closer else ZOOM_DELTA // 2))
+        page.wait_for_timeout(500)
+        now = _wait_for_corners(page, map_id, bool, "a zoom of the map")
+        if step == 0 and (_fill(now, box) > fill) != closer:
+            # This wheel zooms the other way round.
+            sign = -sign
+        corners = now
+    # A drag pans the map with the pointer, about: from a point clear of the
+    # handles by the way from the feature's middle to the map's, again until
+    # the two are near.
+    middle = (box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
+    for _ in range(4):
+        x, y = _middle(corners)
+        by = (middle[0] - x, middle[1] - y)
+        if abs(by[0]) <= 0.04 * box["width"] and abs(by[1]) <= 0.04 * box["height"]:
+            break
+        start = _pan_start(page, map_id, corners, box, by)
+        if start is None:
+            break
+        page.mouse.move(*start)
+        page.mouse.down()
+        page.mouse.move(start[0] + by[0], start[1] + by[1], steps=12)
+        page.mouse.up()
+        page.wait_for_timeout(500)
+        corners = _wait_for_corners(page, map_id, bool, "a pan of the map")
+    return corners
+
+
+def _browser_log(page) -> list[dict]:
+    """Every console message and page error of *page* from now on, as the
+    class pages of the workflow tests keep them, for ``dump_browser_log``."""
+    log: list[dict] = []
+    page.on("console", lambda message: log.append({"kind": "console", "type": message.type, "text": message.text}))
+    page.on("pageerror", lambda error: log.append({"kind": "pageerror", "message": str(error)}))
+    return log
+
+
+def _failed_loads(log: list[dict]) -> list[str]:
+    """What *log*, a browser log, says of layers that failed to load: the words
+    autk-grammar logs when autk-db refuses a layer, as it refuses one with a
+    shape that crosses itself."""
+    texts = [entry.get("text") or entry.get("message") or "" for entry in log]
+    return [text for text in texts if "Failed to load GeoJSON layer" in text]
 
 
 def _within(corners: list[dict], box: dict, margin: float) -> bool:

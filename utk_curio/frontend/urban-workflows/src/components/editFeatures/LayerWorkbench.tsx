@@ -46,6 +46,7 @@ import {
   type GeometryKind,
 } from "../../utils/editFeatures/layerModel";
 import { evaluate, exprProblem, parseExpr, truthy } from "../../utils/editFeatures/editExpr";
+import { areaProblem, drawnRefusal, layerFormat, reshapeRefusal, type ReshapeGesture } from "../../utils/editFeatures/areaCheck";
 import { partRedraw, partsRefusal, rowsOf, samePart } from "../../utils/editFeatures/featureParts";
 import { publishMapSession, type MapEditMode, type ReshapedPart } from "../../utils/editFeatures/mapEditBus";
 import { editSelection, sameIds, selectedIdsIn } from "../../utils/editFeatures/mapEditSelection";
@@ -249,40 +250,67 @@ export default function LayerWorkbench({
     return features.filter((f) => f.id !== null && truthy(evaluate(condition, f.properties as any))).map((f) => f.id as SelectionId);
   }, [rule, ruleProblem, features]);
 
+  // Why autk-db would refuse an area of the layer worked on, as the map hands
+  // it over: with it, the whole layer, which the map then draws none of.
+  const problemOf = (geometry: Geometry) => (active ? areaProblem(geometry, layerFormat(active.fc, geometry)) : null);
+  // A problem a gesture makes: one the shape *after* has and the shape
+  // *before* it did not. A shape its layer already holds with one, which a
+  // layer autk-db does not check can, still takes every gesture.
+  const madeProblem = (before: Geometry | null | undefined, after: Geometry) => {
+    const problem = problemOf(after);
+    return problem && !(before && problemOf(before)) ? problem : null;
+  };
   // A part drawn is added to the feature being added, or to the picked one:
   // to the part the click that picked it landed on, else its first; its
-  // other parts keep their shapes.
-  const onDrawn = (geometry: Geometry, pickedRow?: EditedFeature | null) => {
+  // other parts keep their shapes. An area drawn that autk-db would refuse,
+  // or a part that makes one, is not added: the words the map's tip says why
+  // come back.
+  const onDrawn = (geometry: Geometry, pickedRow?: EditedFeature | null): string | null => {
     if (partFor === "draft" && drawn) {
-      setDrawn(withPart(drawn, geometry) ?? drawn);
+      const merged = withPart(drawn, geometry) ?? drawn;
+      const problem = madeProblem(drawn, merged);
+      if (problem) return drawnRefusal(problem, "part");
+      setDrawn(merged);
       setPartFor(null);
-      return;
+      return null;
     }
     if (partFor === "picked" && active && pickedRows.length > 0) {
       const row = pickedRows.find((r) => samePart(r, pickedRow)) ?? pickedRows[0];
       const merged = row.geometry ? withPart(row.geometry, geometry) : null;
+      const problem = merged ? madeProblem(row.geometry, merged) : null;
+      if (problem) return drawnRefusal(problem, "part");
       const edit = merged ? partRedraw(features, row, layerKey, merged) : null;
       if (edit && row.id !== null) {
         onEdit(edit, active);
         setRecent([row.id]);
       }
       setPartFor(null);
-      return;
+      return null;
     }
+    const problem = problemOf(geometry);
+    if (problem) return drawnRefusal(problem, "area");
     setDrawn(geometry);
+    return null;
   };
-  // New shapes for parts of the picked feature, made in one gesture: one
-  // change, an edit for each part, each named alone.
-  const onReshape = (parts: ReshapedPart[]) => {
-    if (!active || parts.length === 0) return;
+  // New shapes for parts of the picked feature, made in one gesture (*how*):
+  // one change, an edit for each part, each named alone. None is written when
+  // the gesture makes one autk-db would refuse: the words the map's tip says
+  // why come back.
+  const onReshape = (parts: ReshapedPart[], how?: ReshapeGesture): string | null => {
+    if (!active || parts.length === 0) return null;
+    for (const { row, geometry } of parts) {
+      const problem = madeProblem(row.geometry, geometry);
+      if (problem) return reshapeRefusal(problem, how);
+    }
     const edits = parts.flatMap(({ row, geometry }) => {
       const edit = partRedraw(features, row, layerKey, geometry);
       return edit ? [edit] : [];
     });
-    if (edits.length !== parts.length) return;
+    if (edits.length !== parts.length) return null;
     if (edits.length === 1) onEdit(edits[0], active);
     else onEdits(edits, active);
     if (parts[0].row.id !== null) setRecent([parts[0].row.id]);
+    return null;
   };
 
   // What a click on the map does now: nothing until an action that draws.
@@ -373,7 +401,7 @@ export default function LayerWorkbench({
           key: layerKey,
         },
         onDrawn: (geometry, pickedRow) => handlers.current.onDrawn(geometry, pickedRow),
-        onReshape: (parts) => handlers.current.onReshape(parts),
+        onReshape: (parts, how) => handlers.current.onReshape(parts, how),
         onShapeDone: () => setShapeMode(null),
       });
     }

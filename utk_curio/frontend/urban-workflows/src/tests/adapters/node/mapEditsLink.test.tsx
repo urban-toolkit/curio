@@ -16,7 +16,9 @@
  * building being reshaped is drawn by them instead of its own layer. A
  * building of several parts, each with an osm_id of its own, is reshaped,
  * moved and added to part by part, each edit naming the part it changes; one
- * whose parts no column tells apart keeps its shape.
+ * whose parts no column tells apart keeps its shape. A corner dragged, or an
+ * area drawn, that would make an outline cross itself is refused: nothing is
+ * written, and the map's tip says why.
  *
  * Each node is the behavior the canvas registers for its type, with the
  * node's own state (hook/useNodeState) for the Map Edits node; the map draws
@@ -606,12 +608,14 @@ function clickMap(lonLat: [number, number], shift = false) {
 /**
  * One step of a drag on the map: a press, a move or a release on the map's
  * canvas at *xy*, in the map's own pixels, the main button held while *held*,
- * and shift with *shift*.
+ * shift with *shift* and alt with *alt*.
  */
-function pointerOnMap(type: "pointerdown" | "pointermove" | "pointerup", [x, y]: [number, number], held: boolean, shift = false) {
+function pointerOnMap(type: "pointerdown" | "pointermove" | "pointerup", [x, y]: [number, number], held: boolean, shift = false, alt = false) {
   const canvas = document.getElementById(`autk-grammar-map-${MAP}`) as HTMLCanvasElement;
   act(() => {
-    canvas.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, button: 0, buttons: held ? 1 : 0, shiftKey: shift, clientX: x, clientY: y }));
+    canvas.dispatchEvent(
+      new MouseEvent(type, { bubbles: true, cancelable: true, button: 0, buttons: held ? 1 : 0, shiftKey: shift, altKey: alt, clientX: x, clientY: y }),
+    );
   });
 }
 
@@ -1442,6 +1446,248 @@ test("a building whose parts no column tells apart keeps its shape: Move points,
     expect(canvas.settings()?.edits ?? []).toEqual([]);
     expect(overlay()).toHaveAttribute("data-edit-mode", "select");
     expect(screen.getByTestId("interaction-parts-untold")).toBeInTheDocument();
+  } finally {
+    putBack();
+  }
+});
+
+/**
+ * What the map's tip says when a drag would make an outline cross itself, and
+ * when an area drawn has an outline that does: autk-db refuses such a shape,
+ * and with it the whole layer (#1112).
+ */
+const CROSSED_DRAG = "That would make the outline cross itself, so the corner went back.";
+const CROSSED_AREA = "That outline crosses itself, so the area was not added.";
+
+/** Runs *check*, an expectation; when it fails, its failure says *bug* first: what went wrong on the map. */
+function checkFor(bug: string, check: () => void): void {
+  try {
+    check();
+  } catch (error) {
+    throw new Error(`${bug}\n\n${error instanceof Error ? error.message : String(error)}`);
+  }
+}
+
+test("a building's corner dragged across its far side, which would make its outline cross itself, writes no edit, the map's tip says why, and the corner goes back", async () => {
+  const putBack = layOutCanvases();
+  try {
+    drawnMaps.make = projectingMap;
+    const canvas = mountCanvas();
+    await canvas.playMap();
+    await openAction("edit");
+    clickMap(MIDDLE_136);
+    fireEvent.click(await screen.findByTestId("interaction-reshape"));
+    const map = lastMap();
+    const overlay = () => screen.getByTestId("map-edit-overlay");
+    await waitFor(() => expect(overlay()).toHaveAttribute("data-edit-mode", "reshape"));
+
+    // Building 136's outline, which the map's tools draw, and its corners
+    // where the map shows them.
+    const outlines = () => linesOn(map).map((line) => line.map(km));
+    const ring = inKm(closedRing([[1, 0], [2, 0], [2, 1], [1, 1]]));
+    await waitFor(() => expect(outlines()).toContainEqual(ring));
+    const corners = overlay().getAttribute("data-corners");
+    const listed = JSON.parse(corners ?? "[]");
+
+    // Its corner at (2, 1) dragged west across its far side, x = 1, to
+    // (0.5, 0.5): the side from (2, 0) to it crosses that side at (1, 1/3).
+    // While the drag lasts, the map draws the outline crossed.
+    const from: [number, number] = [Math.round(listed[2].x), Math.round(listed[2].y)];
+    const to = onScreen([0.5, 0.5]);
+    const crossed = [...ring];
+    crossed[2] = [to[0], SIZE - to[1]];
+    pointerOnMap("pointerdown", from, true);
+    pointerOnMap("pointermove", to, true);
+    await waitFor(() => expect(outlines()).toContainEqual(crossed));
+
+    // Let go: nothing is written, the tip says why, and the corner and the
+    // outline are back where they were.
+    pointerOnMap("pointerup", to, false);
+    checkFor("the self-crossing reshape was written as an edit", () => expect(canvas.settings()?.edits ?? []).toEqual([]));
+    checkFor("the map's tip does not say why the reshape was refused", () =>
+      expect(screen.getByTestId("map-edit-tip")).toHaveTextContent(CROSSED_DRAG),
+    );
+    checkFor("the dragged corner did not go back where it was", () => expect(overlay()).toHaveAttribute("data-corners", corners));
+    await waitFor(() => checkFor("the map does not draw the building's outline as it was", () => expect(outlines()).toContainEqual(ring)));
+    checkFor("the map still draws the crossed outline", () => expect(outlines()).not.toContainEqual(crossed));
+  } finally {
+    putBack();
+  }
+});
+
+test("an area drawn as a bow tie, its outline crossing itself, is not taken to be added when finished: no properties are asked for, nothing is written, and the map's tip says why", async () => {
+  const putBack = layOutCanvases();
+  try {
+    drawnMaps.make = projectingMap;
+    const canvas = mountCanvas();
+    await canvas.playMap();
+    const map = lastMap();
+    await openAction("add");
+    const overlay = () => screen.getByTestId("map-edit-overlay");
+    await waitFor(() => expect(overlay()).toHaveAttribute("data-edit-mode", "draw"));
+
+    // Four corners whose first and third sides cross, at (1, 2): a bow tie.
+    // The map draws the four.
+    const bowTie: [number, number][] = [[0.5, 1.5], [1.5, 2.5], [1.5, 1.5], [0.5, 2.5]];
+    for (const corner of bowTie) clickMap(corner);
+    await waitFor(() => expect(pointsOn(map).map(km).sort(byPlace)).toEqual(inKm(bowTie).sort(byPlace)));
+
+    // Finish: the area is refused. The node asks for none of its properties,
+    // and the map stays in its drawing mode.
+    fireEvent.click(screen.getByTestId("map-edit-finish"));
+    checkFor("the self-crossing area was taken to be added", () => expect(screen.queryByTestId("interaction-property-form")).toBeNull());
+    checkFor("the self-crossing area waits on the map to be added", () => expect(overlay()).toHaveAttribute("data-edit-mode", "draw"));
+    checkFor("the map's tip does not say why the area was refused", () =>
+      expect(screen.getByTestId("map-edit-tip")).toHaveTextContent(CROSSED_AREA),
+    );
+    checkFor("the self-crossing area was written as an edit", () => expect(canvas.settings()?.edits ?? []).toEqual([]));
+  } finally {
+    putBack();
+  }
+});
+
+test("a building's midpoint dragged across its far side, which would make its outline cross itself, writes no edit, the map's tip says why, and the outline is as it was", async () => {
+  const putBack = layOutCanvases();
+  try {
+    drawnMaps.make = projectingMap;
+    const canvas = mountCanvas();
+    await canvas.playMap();
+    await openAction("edit");
+    clickMap(MIDDLE_136);
+    fireEvent.click(await screen.findByTestId("interaction-reshape"));
+    const map = lastMap();
+    const overlay = () => screen.getByTestId("map-edit-overlay");
+    await waitFor(() => expect(overlay()).toHaveAttribute("data-edit-mode", "reshape"));
+    const outlines = () => linesOn(map).map((line) => line.map(km));
+    const ring = inKm(closedRing([[1, 0], [2, 0], [2, 1], [1, 1]]));
+    await waitFor(() => expect(outlines()).toContainEqual(ring));
+    const corners = overlay().getAttribute("data-corners");
+
+    // The midpoint of its east side, at (2, 0.5), dragged west across its far
+    // side, x = 1, to (0.5, 0.5): the new corner's sides cross that side.
+    const to = onScreen([0.5, 0.5]);
+    const crossed = [...ring.slice(0, 2), [to[0], SIZE - to[1]], ...ring.slice(2)];
+    pointerOnMap("pointerdown", onScreen([2, 0.5]), true);
+    pointerOnMap("pointermove", to, true);
+    await waitFor(() => expect(outlines()).toContainEqual(crossed));
+
+    pointerOnMap("pointerup", to, false);
+    checkFor("the self-crossing reshape was written as an edit", () => expect(canvas.settings()?.edits ?? []).toEqual([]));
+    checkFor("the map's tip does not say why the reshape was refused", () =>
+      expect(screen.getByTestId("map-edit-tip")).toHaveTextContent(CROSSED_DRAG),
+    );
+    checkFor("the midpoint's new corner stayed", () => expect(overlay()).toHaveAttribute("data-corners", corners));
+    await waitFor(() => checkFor("the map does not draw the building's outline as it was", () => expect(outlines()).toContainEqual(ring)));
+  } finally {
+    putBack();
+  }
+});
+
+/** Building 136 as a triangle with a corner on its base, at (1.5, 0): without its top corner it has no area. */
+const BASE_CORNER = {
+  type: "FeatureCollection",
+  features: [
+    {
+      type: "Feature",
+      geometry: { type: "Polygon", coordinates: [[[1, 0], [1.5, 0], [2, 0], [1.5, 1], [1, 0]]] },
+      properties: { building_id: 136, height: 20 },
+    },
+  ],
+};
+
+test("an alt-click on the top corner of a building whose other corners lie on one line, which would leave it no area, writes no edit, the map's tip says why, and the corner stays", async () => {
+  const putBack = layOutCanvases();
+  try {
+    nodeInput.current = BASE_CORNER;
+    drawnMaps.make = projectingMap;
+    const canvas = mountCanvas();
+    await canvas.playMap();
+    await openAction("edit");
+    clickMap([1.5, 0.3]);
+    fireEvent.click(await screen.findByTestId("interaction-reshape"));
+    const overlay = () => screen.getByTestId("map-edit-overlay");
+    await waitFor(() => expect(JSON.parse(overlay().getAttribute("data-corners") ?? "[]")).toHaveLength(4));
+    const corners = overlay().getAttribute("data-corners");
+
+    const top = onScreen([1.5, 1]);
+    pointerOnMap("pointerdown", top, true, false, true);
+    pointerOnMap("pointerup", top, false, false, true);
+    checkFor("the corner whose loss leaves no area was deleted in an edit", () => expect(canvas.settings()?.edits ?? []).toEqual([]));
+    checkFor("the map's tip does not say why the corner stayed", () =>
+      expect(screen.getByTestId("map-edit-tip")).toHaveTextContent("That would leave the outline with no area, so the corner stayed."),
+    );
+    checkFor("the corner was taken off the map", () => expect(overlay()).toHaveAttribute("data-corners", corners));
+  } finally {
+    putBack();
+  }
+});
+
+test("Add a part drawn inside the part it joins, which would make two of its parts overlap, writes no edit, the map's tip says why, and the part can be drawn again", async () => {
+  const putBack = layOutCanvases();
+  try {
+    nodeInput.current = OSM_PARTED;
+    drawnMaps.make = projectingMap;
+    const canvas = mountCanvas();
+    await canvas.playMap();
+    await openAction("edit");
+    // Building 136 picked by a click on its second part.
+    clickMap(MIDDLE_PART_TWO);
+    fireEvent.click(await screen.findByTestId("interaction-add-part"));
+    const overlay = () => screen.getByTestId("map-edit-overlay");
+    await waitFor(() => expect(overlay()).toHaveAttribute("data-edit-mode", "draw"));
+
+    // A triangle inside that part, ended with Enter.
+    for (const corner of [[1.7, 0.2], [1.9, 0.2], [1.8, 0.8]] as [number, number][]) clickMap(corner);
+    fireEvent.keyDown(document.body, { key: "Enter" });
+    checkFor("the overlapping part was written as an edit", () => expect(canvas.settings()?.edits ?? []).toEqual([]));
+    checkFor("the map's tip does not say why the part was refused", () =>
+      expect(screen.getByTestId("map-edit-tip")).toHaveTextContent("It overlaps another part, so the part was not added."),
+    );
+    checkFor("the map stopped drawing the part", () => expect(overlay()).toHaveAttribute("data-edit-mode", "draw"));
+    expect(screen.getByTestId("interaction-cancel-part")).toBeInTheDocument();
+  } finally {
+    putBack();
+  }
+});
+
+/**
+ * Building 136 already shaped as a bow tie, as a layer autk-db does not check
+ * can hold one: its sides cross at (1.5, 0.5).
+ */
+const BOW_TIE = {
+  type: "FeatureCollection",
+  features: [
+    {
+      type: "Feature",
+      geometry: { type: "Polygon", coordinates: [[[1, 0], [2, 1], [2, 0], [1, 1], [1, 0]]] },
+      properties: { building_id: 136, height: 20 },
+    },
+  ],
+};
+
+test("a shape whose outline already crossed itself as its layer holds it still takes a reshape: only a problem a gesture makes is refused", async () => {
+  const putBack = layOutCanvases();
+  try {
+    nodeInput.current = BOW_TIE;
+    drawnMaps.make = projectingMap;
+    const canvas = mountCanvas();
+    await canvas.playMap();
+    await openAction("edit");
+    // A click inside its west lobe picks it.
+    clickMap([1.2, 0.5]);
+    fireEvent.click(await screen.findByTestId("interaction-reshape"));
+    const overlay = () => screen.getByTestId("map-edit-overlay");
+    await waitFor(() => expect(JSON.parse(overlay().getAttribute("data-corners") ?? "[]")).toHaveLength(4));
+
+    // Its corner at (2, 1) dragged a little: the outline still crosses itself, as before.
+    const listed = JSON.parse(overlay().getAttribute("data-corners") ?? "[]");
+    const from: [number, number] = [Math.round(listed[1].x), Math.round(listed[1].y)];
+    const to: [number, number] = [from[0] + 20, from[1] - 15];
+    pointerOnMap("pointerdown", from, true);
+    pointerOnMap("pointermove", to, true);
+    pointerOnMap("pointerup", to, false);
+    expect(canvas.settings()?.edits ?? []).toEqual([expect.objectContaining({ op: "geometry", ids: [136] })]);
+    expect(screen.getByTestId("map-edit-tip")).not.toHaveTextContent("That would");
   } finally {
     putBack();
   }
