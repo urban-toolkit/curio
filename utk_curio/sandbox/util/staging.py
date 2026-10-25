@@ -337,6 +337,41 @@ def read_outputs_wrapper(art_id, *, session_id=None):
     return None
 
 
+def outputs_wrapper_names(art_id, saved_path=None):
+    """The outputs a persisted ``outputs`` wrapper stored as *art_id* names,
+    which a run whose input it is reads too (``worker._expand_outputs_wrapper``,
+    ``isolation/runner._build_input_spec``); [] for any other artifact, or
+    none. With no row, the saved output's own file the backend names
+    (*saved_path*), which a run reads in its place (``parsers.load_artifact``).
+    For the backend, which asks before it decides the run's session."""
+    try:
+        refs = read_outputs_wrapper(art_id, session_id=None)
+    except KeyError:
+        refs = _saved_wrapper_refs(art_id, saved_path) if saved_path else None
+    names = []
+    for ref in refs or []:
+        name = ref.get("path") if isinstance(ref, dict) else ref
+        if isinstance(name, str) and name and name not in names:
+            names.append(name)
+    return names
+
+
+def _saved_wrapper_refs(art_id, saved_path):
+    """The refs of the wrapper the saved output file *saved_path* holds, read
+    as a run reads it (``parsers.load_saved_output``), or None."""
+    from utk_curio.sandbox.util.parsers import load_saved_output
+
+    try:
+        value = load_saved_output(saved_path, art_id)
+    except KeyError:
+        return None
+    if (isinstance(value, dict)
+            and value.get("dataType") == "outputs"
+            and isinstance(value.get("data"), list)):
+        return value["data"]
+    return None
+
+
 def _stage_with_companions(source: Path, folder: Path) -> None:
     """Link *source* into *folder* with the files read beside it
     (``catalog_helpers.files_read_beside``: a parquet's ``.decode.json``, a

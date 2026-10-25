@@ -180,6 +180,45 @@ def readable(reads: dict) -> set[str]:
     return found & set(asked)
 
 
+def wrapped_names(art_id: str, saved_path: str | None = None) -> list[str] | None:
+    """The outputs *art_id* names when it holds a persisted ``outputs``
+    wrapper, which the sandbox reads for a run whose input it is
+    (``sandbox/util/staging.outputs_wrapper_names``); [] for any other
+    artifact, or none; None when the sandbox does not answer. With no row,
+    the saved output's file *saved_path*, which a run reads in its place."""
+    if not art_id:
+        return []
+    try:
+        from utk_curio.sandbox.util import db as sandbox_db
+
+        local = bool(sandbox_db._writer_process)
+    except Exception:  # noqa: BLE001 - asked of the sandbox instead
+        local = False
+    if local:
+        from utk_curio.sandbox.util.staging import outputs_wrapper_names
+
+        try:
+            return outputs_wrapper_names(art_id, saved_path)
+        except Exception:  # noqa: BLE001 - an unreadable row says nothing
+            return None
+    params = {"fileName": art_id}
+    if saved_path:
+        params["savedPath"] = saved_path
+    try:
+        response = _session.get(
+            _sandbox_url("/artifacts/wraps"), params=params, headers=_headers(), timeout=_TIMEOUT_S,
+        )
+    except requests.RequestException:
+        return None
+    if not response.ok:
+        return None
+    try:
+        wraps = (response.json() or {}).get("wraps")
+    except ValueError:
+        return None
+    return [str(name) for name in wraps if name] if isinstance(wraps, list) else None
+
+
 def made_by_a_kept_run(art_id: str) -> bool:
     """Whether the store's artifact *art_id* was made by a kept run, any
     dataflow's and any maker's (``common/kept_sessions.py``). True as well

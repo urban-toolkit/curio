@@ -6,7 +6,8 @@ viewer's run of the same step computes (``runs/kept.py``). The owner reads it
 through the dataflow's routes from any sign-in; no one else reads it there. A
 run whose input is not the dataflow's own runs in the caller's session, as
 before, since a kept session reads any kept output; the dataflow's kept
-outputs among its inputs are read under the sessions that made them. So are
+outputs among its inputs are read under the sessions that made them. What a
+wrapper among its inputs names counts as one of its inputs. So are
 the owner's reads on the routes that name no dataflow, which a package's node
 uses. What the owner's keys made, and anything made from it, is the owner's
 alone, for its full days.
@@ -281,6 +282,154 @@ def test_a_collaborators_run_is_granted_none_of_the_owners_kept_outputs(client, 
 
     assert sandbox["runs"]["b"]["session_id"] == other_token
     assert "saved_paths" not in sandbox["runs"]["b"]
+
+
+def _wrapper(session, *names):
+    """A persisted ``outputs`` wrapper naming *names*, as a node that hands
+    its inputs on stores one, made in *session*: its id."""
+    from utk_curio.sandbox.util.parsers import save_to_duckdb
+
+    return save_to_duckdb(
+        {"dataType": "outputs", "data": [{"path": name, "dataType": "dataframe"} for name in names]},
+        node_id="w", session_id=session,
+    )
+
+
+def _kept_wrapper(db, project_id, *names):
+    """A wrapper naming *names* that the owner's runs of *project_id* kept,
+    as the play of a node returning one keeps it: its id."""
+    session = new_session_id()
+    wrapper = _wrapper(session, *names)
+    now = naive_utc_now()
+    db.session.add(KeptStepOutput(
+        project_id=project_id, node_id="w", step_key="w" * 64, session_id=session,
+        output=json.dumps({"path": wrapper, "dataType": "dict"}), output_path=wrapper,
+        artifact_ids=json.dumps([wrapper]), made_by=kept.MADE_BY_OWNER, created_at=now, used_at=now,
+    ))
+    db.session.commit()
+    return wrapper
+
+
+def _play_on(client, token, project_id, node, input_ref):
+    """A play of *node* whose one input is *input_ref*."""
+    response = client.post("/processPythonCode", data=json.dumps({
+        "code": f"    # node {node}\n    return input_0\n",
+        "nodeType": "PYTHON_COMPUTATION", "nodeId": node, "dataflowId": project_id,
+        "input": input_ref, "saveOutputDataset": False,
+    }), headers=auth_headers(token))
+    assert response.status_code == 200, response.get_data(as_text=True)
+
+
+def test_a_run_that_is_not_kept_is_granted_the_kept_outputs_a_wrapper_it_reads_names(
+    client, user_and_token, sandbox,
+):
+    """The sandbox reads what a wrapper names for the run whose input it is
+    (``worker._expand_outputs_wrapper``). A wrapper the tab stored under its
+    sign-in, naming an output the owner's run kept, gets that output's kept
+    session named, as an input does."""
+    user, token = user_and_token
+    project_id = create_project(client, token, name="A wrapper below the browser")
+    _play(client, token, project_id, "a")
+    kept_session = sandbox["runs"]["a"]["session_id"]
+    wrapper = _wrapper(token, "art-a", "layers-the-tab-stored")
+
+    _play_on(client, token, project_id, "c", {"path": wrapper, "dataType": "dict"})
+
+    run = sandbox["runs"]["c"]
+    assert run["session_id"] == token
+    assert run.get("saved_paths") == {"art-a": {"session": kept_session}}
+
+
+@pytest.mark.parametrize("declared", ["dict", "dataframe"])
+def test_a_run_reading_a_wrapper_that_names_another_runs_output_is_not_kept(
+    client, db, user_and_token, sandbox, declared,
+):
+    """A node's code can write a wrapper naming any output, and a kept
+    session reads what any kept run made. A wrapper the owner's runs kept
+    makes the run that reads it a kept one only if what it names is the
+    dataflow's own too, whatever kind the request calls the input."""
+    import pandas as pd
+
+    from utk_curio.sandbox.util.parsers import save_to_duckdb
+
+    user, token = user_and_token
+    project_id = create_project(client, token, name="A crafted wrapper")
+    theirs = save_to_duckdb(pd.DataFrame({"n": [1]}), node_id="n", session_id=new_session_id())
+    wrapper = _kept_wrapper(db, project_id, theirs)
+
+    _play_on(client, token, project_id, "c", {"path": wrapper, "dataType": declared})
+
+    run = sandbox["runs"]["c"]
+    assert run["session_id"] == token
+    assert theirs not in (run.get("saved_paths") or {})
+
+
+def _saved_wrapper(user, project_id, *names):
+    """A wrapper naming *names*, saved as node ``n1``'s output, with no row
+    left in the store, as seven days after it was made: its name. A run
+    reads it from its saved file (``parsers.load_artifact``)."""
+    from utk_curio.backend.app.datasets.install.installer import install_computed_file_for_node
+    from utk_curio.backend.app.projects import storage
+    from utk_curio.backend.app.projects.services import _user_dir_key
+
+    name = "1700000000000_5a7ed0ff"
+    user_key = _user_dir_key(user)
+    body = {"dataType": "outputs", "data": [{"path": n, "dataType": "dataframe"} for n in names]}
+    install_computed_file_for_node(
+        user_key, json.dumps(body).encode("utf-8"), f"{name}.json", "json", node_id="n1", dataflow_id=project_id,
+    )
+    storage.record_outputs(user_key, project_id, [{"node_id": "n1", "filename": name, "data_type": "dict"}])
+    return name
+
+
+def test_a_saved_wrapper_with_no_row_left_counts_what_its_file_names(client, user_and_token, sandbox):
+    """What the run reads, read where the run will read it: a saved wrapper
+    whose row is gone names, in its file, an output of another kept run."""
+    import pandas as pd
+
+    from utk_curio.sandbox.util.parsers import save_to_duckdb
+
+    user, token = user_and_token
+    project_id = create_project(client, token, name="A saved wrapper")
+    theirs = save_to_duckdb(pd.DataFrame({"n": [1]}), node_id="n", session_id=new_session_id())
+    wrapper = _saved_wrapper(user, project_id, theirs)
+
+    _play_on(client, token, project_id, "c", {"path": wrapper, "dataType": "dict"})
+
+    run = sandbox["runs"]["c"]
+    assert run["session_id"] == token
+    assert theirs not in (run.get("saved_paths") or {})
+
+
+def test_a_saved_wrapper_with_no_row_left_gets_its_kept_outputs_named(client, user_and_token, sandbox):
+    import pandas as pd
+
+    from utk_curio.sandbox.util.parsers import save_to_duckdb
+
+    user, token = user_and_token
+    project_id = create_project(client, token, name="A saved wrapper below the browser")
+    _play(client, token, project_id, "a")
+    kept_session = sandbox["runs"]["a"]["session_id"]
+    layers = save_to_duckdb(pd.DataFrame({"n": [1]}), node_id="layers", session_id=token)
+    wrapper = _saved_wrapper(user, project_id, "art-a", layers)
+
+    _play_on(client, token, project_id, "c", {"path": wrapper, "dataType": "dict"})
+
+    run = sandbox["runs"]["c"]
+    assert run["session_id"] == token
+    assert run["saved_paths"]["art-a"] == {"session": kept_session}
+    assert run["saved_paths"][wrapper]["path"]
+
+
+def test_a_run_reading_a_wrapper_of_the_dataflows_own_outputs_is_kept(client, db, user_and_token, sandbox):
+    user, token = user_and_token
+    project_id = create_project(client, token, name="A wrapper of its own")
+    _play(client, token, project_id, "a")
+    wrapper = _kept_wrapper(db, project_id, "art-a")
+
+    _play_on(client, token, project_id, "c", {"path": wrapper, "dataType": "dict"})
+
+    assert is_kept_session(sandbox["runs"]["c"]["session_id"])
 
 
 @pytest.mark.parametrize("route", ["/get", "/get-preview", "/raster"])

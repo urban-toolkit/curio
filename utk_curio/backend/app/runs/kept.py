@@ -272,13 +272,14 @@ def _alive(now):
     )
 
 
-def _newest_holding(query, name: str) -> Optional[KeptStepOutput]:
-    """The newest live entry of *query* that the owner's runs kept and that
-    holds the artifact *name*, or None."""
+def _newest_holding(query, name: str, made_by: Optional[str] = MADE_BY_OWNER) -> Optional[KeptStepOutput]:
+    """The newest live entry of *query* that *made_by* kept, anyone for None,
+    and that holds the artifact *name*, or None."""
     now = naive_utc_now()
+    if made_by is not None:
+        query = query.filter(KeptStepOutput.made_by == made_by)
     for entry in (
-        query.filter(KeptStepOutput.made_by == MADE_BY_OWNER)
-        .filter(db.or_(
+        query.filter(db.or_(
             KeptStepOutput.output_path == name,
             KeptStepOutput.artifact_ids.contains(json.dumps(name)),
         ))
@@ -298,6 +299,17 @@ def owner_entry(project_id: str, name: str) -> Optional[KeptStepOutput]:
     if not name:
         return None
     return _newest_holding(KeptStepOutput.query.filter(KeptStepOutput.project_id == project_id), name)
+
+
+def project_entry(project_id: str, name: str) -> Optional[KeptStepOutput]:
+    """The live output any run of *project_id* kept, its owner's or a
+    viewer's, that holds the artifact *name*, the newest, or None: whether
+    *name* is one of that dataflow's kept outputs."""
+    if not name:
+        return None
+    return _newest_holding(
+        KeptStepOutput.query.filter(KeptStepOutput.project_id == project_id), name, made_by=None,
+    )
 
 
 def owner_outputs_by_key(project_id: str) -> dict:

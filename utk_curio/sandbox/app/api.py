@@ -567,6 +567,24 @@ def artifact_meta():
     })
 
 
+@app.route('/artifacts/wraps', methods=['GET'])
+@require_sandbox_token
+@holds_duckdb
+def artifacts_wraps():
+    """``{"wraps": [names]}``: the outputs ``fileName`` names when it holds a
+    persisted ``outputs`` wrapper, which a run whose input it is reads too;
+    empty for any other artifact, or none. With no row, the saved output's
+    own file ``savedPath`` names, which a run reads in its place
+    (``staging.outputs_wrapper_names``). The backend asks before it decides
+    a run's session and the sessions it names for the run's inputs."""
+    from utk_curio.sandbox.util.staging import outputs_wrapper_names
+
+    art_id = request.args.get('fileName')
+    if not art_id:
+        abort(400, "fileName is required")
+    return jsonify({'wraps': outputs_wrapper_names(art_id, request.args.get('savedPath') or None)})
+
+
 #: The most sessions one call to the routes below names.
 MAX_SESSIONS_PER_CALL = 500
 
