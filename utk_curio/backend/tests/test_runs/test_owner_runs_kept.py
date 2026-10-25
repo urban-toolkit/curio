@@ -302,6 +302,21 @@ def test_the_owners_sign_in_reads_a_kept_output_on_the_routes_that_name_no_dataf
 
 
 @pytest.mark.parametrize("route", ["/get", "/get-preview", "/raster"])
+def test_a_read_whose_kept_lookup_fails_reads_under_the_sign_in(client, user_and_token, sandbox, monkeypatch, route):
+    user, token = user_and_token
+
+    def broken(_user_id, _name):
+        raise RuntimeError("the kept outputs cannot be read")
+
+    monkeypatch.setattr(kept, "owner_session", broken)
+
+    response = client.get(route, query_string={"fileName": "art-a"}, headers=auth_headers(token))
+
+    assert response.status_code == 200, response.get_data(as_text=True)
+    assert sandbox["reads"][-1]["sessionId"] == token
+
+
+@pytest.mark.parametrize("route", ["/get", "/get-preview", "/raster"])
 def test_another_account_reads_under_its_own_session_on_those_routes(client, db, user_and_token, sandbox, route):
     user, token = user_and_token
     project_id = create_project(client, token, name="Package reads")
