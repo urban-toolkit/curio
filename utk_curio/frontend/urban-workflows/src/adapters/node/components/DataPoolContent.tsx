@@ -62,6 +62,10 @@ interface DataPoolContentProps {
    * as "no known failure" rather than blaming an upstream node at random.
    */
   upstreamErrored?: boolean;
+  /** On a dashboard, is a viewer's run making the pool's rows? */
+  upstreamRunning?: boolean;
+  /** On a dashboard, why the viewer's run stopped before the pool, if it did. */
+  upstreamStopped?: string | null;
   /** How the selects of one chart combine (a ResolutionType). */
   insideChartMode?: string;
   /** How the latest selections of the linked charts combine (a ResolutionType). */
@@ -161,6 +165,7 @@ const ContentComponent = ({
 
 export default function DataPoolContent({
   activeTab, onSelectTab, tabData, tableData, data = { nodeId: '', input: '' }, connected = false, upstreamErrored = false,
+  upstreamRunning = false, upstreamStopped = null,
   insideChartMode = ResolutionType.OVERWRITE, betweenChartsMode = ResolutionType.OVERWRITE,
   onInsideChartModeChange, onBetweenChartsModeChange,
 }: DataPoolContentProps) {
@@ -256,25 +261,31 @@ export default function DataPoolContent({
           // and not the cause, so an unconnected pool and one whose upstream had
           // not run said the same thing (#224). The fake "No Data" TAB above it
           // is gone for the same reason — it looked like a tab you could open.
-          <NodeEmptyState
-            reason={
-              resolveNodeEmptyReason({
-                connected,
-                upstreamErrored,
-                hasInput: data?.input != null && data.input !== '',
-                // Asked of the PAYLOAD, not of tabData (#347). The premise this
-                // used to state - that a zero-row dataframe still yields a tab
-                // and so never reaches here - is not true: processDataAsync
-                // filters dataframe/geodataframe layers with no rows out before
-                // tabData is set (autk-db cannot load an empty layer). So a
-                // node that ran and returned an empty table landed here and was
-                // told "This input is not tabular data", which is wrong and
-                // unactionable. The declared dataType still knows better.
-                tabular: isTabularPayload(data?.input),
-                rowCount: 0,
-              }) ?? 'no-rows'
-            }
-          />
+          (() => {
+            const reason = resolveNodeEmptyReason({
+              connected,
+              upstreamErrored,
+              upstreamRunning,
+              upstreamStopped,
+              hasInput: data?.input != null && data.input !== '',
+              // Asked of the PAYLOAD, not of tabData (#347). The premise this
+              // used to state - that a zero-row dataframe still yields a tab
+              // and so never reaches here - is not true: processDataAsync
+              // filters dataframe/geodataframe layers with no rows out before
+              // tabData is set (autk-db cannot load an empty layer). So a
+              // node that ran and returned an empty table landed here and was
+              // told "This input is not tabular data", which is wrong and
+              // unactionable. The declared dataType still knows better.
+              tabular: isTabularPayload(data?.input),
+              rowCount: 0,
+            }) ?? 'no-rows';
+            return (
+              <NodeEmptyState
+                reason={reason}
+                hint={reason === 'upstream-stopped' ? upstreamStopped ?? undefined : undefined}
+              />
+            );
+          })()
         )}
       </div>
     </div>

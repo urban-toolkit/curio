@@ -75,9 +75,7 @@ jest.mock("../../providers/UserProvider", () => ({
   useUserContext: () => mockUser,
 }));
 
-import { TOP_NOTICE_ATTR } from "../../utils/fitViewWithMenuOffset";
 import DashboardPage, {
-  CONTROLS_NOTICE,
   LOAD_FAILED_BODY,
   LOAD_FAILED_TITLE,
   NOTHING_PINNED_TITLE,
@@ -198,61 +196,39 @@ describe("editing the layout", () => {
     expect(mockFlow.setDashboardLocked).not.toHaveBeenCalled();
   });
 
-  test("a visitor on a share link gets no edit controls, and is told why", async () => {
+  test("a visitor on a share link gets no edit controls", async () => {
     mockFlow = flow({ viewerMode: "shared", projectId: null });
     await renderPage();
 
     expect(screen.queryByTestId("edit-layout-btn")).toBeNull();
-    // The page looks editable and is not, so it says so, the way the canvas does.
-    expect(screen.getByTestId("shared-view-banner").textContent).toContain("read-only");
   });
 
-  test("a visitor on a dashboard whose tiles show a control is told its changes are not saved", async () => {
+  // A visitor is not told that the page is shared, read-only or never saved:
+  // nothing lies over the tiles, whatever controls they show.
+  test.each([
+    ["no control", null],
+    ["a choice the visitor changes", {
+      id: "param", position: { x: 0, y: 0 },
+      data: { dashboardPinned: true, widgets: [{ name: "period", type: "choice", default: "Date", options: { choices: ["Date", "Month"] } }] },
+    }],
+    ["a date the visitor changes", {
+      id: "day", position: { x: 0, y: 0 },
+      data: { dashboardPinned: true, widgets: [{ name: "day", type: "date", label: "Day", default: "2027-12-21" }] },
+    }],
+    ["a text widget that stays read-only", {
+      id: "note", position: { x: 0, y: 0 },
+      data: { dashboardPinned: true, widgets: [{ name: "note", type: "text", default: "" }] },
+    }],
+  ])("a visitor on a dashboard with %s sees no notice over its tiles", async (_what, tile) => {
     mockFlow = flow({
       viewerMode: "shared",
       projectId: null,
-      nodes: [
-        { id: "chart", position: { x: 0, y: 0 }, data: {} },
-        {
-          id: "param", position: { x: 0, y: 0 },
-          data: { dashboardPinned: true, widgets: [{ name: "period", type: "choice", default: "Date", options: { choices: ["Date", "Month"] } }] },
-        },
-      ],
+      ...(tile ? { nodes: [{ id: "chart", position: { x: 0, y: 0 }, data: {} }, tile] } : {}),
     });
     await renderPage();
 
-    const banner = screen.getByTestId("shared-view-banner").textContent ?? "";
-    expect(banner).toBe(CONTROLS_NOTICE);
-    expect(banner).toContain("changes are not saved");
-    expect(banner).not.toContain("read-only");
-    // Laid over the top of the page, it is one of the overlays the fit frames
-    // the tiles below: a control under it could not be reached.
-    expect(screen.getByTestId("shared-view-banner").getAttribute(TOP_NOTICE_ATTR)).toBe("true");
-  });
-
-  test("a pinned text widget is no control a visitor changes, so the page stays read-only", async () => {
-    mockFlow = flow({
-      viewerMode: "shared",
-      projectId: null,
-      nodes: [{ id: "note", position: { x: 0, y: 0 }, data: { dashboardPinned: true, widgets: [{ name: "note", type: "text", default: "" }] } }],
-    });
-    await renderPage();
-
-    expect(screen.getByTestId("shared-view-banner").textContent).toContain("read-only");
-  });
-
-  test("a pinned date is a control a visitor changes, so the visitor is told its changes are not saved", async () => {
-    mockFlow = flow({
-      viewerMode: "shared",
-      projectId: null,
-      nodes: [{
-        id: "day", position: { x: 0, y: 0 },
-        data: { dashboardPinned: true, widgets: [{ name: "day", type: "date", label: "Day", default: "2027-12-21" }] },
-      }],
-    });
-    await renderPage();
-
-    expect(screen.getByTestId("shared-view-banner").textContent).toBe(CONTROLS_NOTICE);
+    expect(screen.queryByTestId("shared-view-banner")).toBeNull();
+    expect(document.body.textContent).not.toMatch(/shared dashboard|read-only|not saved/i);
   });
 
   test("a guest under auth gets no edit controls", async () => {

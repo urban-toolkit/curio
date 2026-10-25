@@ -27,6 +27,8 @@ let mockNodeExecStatus: Record<string, string> = {};
 const mockSignalNodeExecDone = jest.fn();
 const mockPlayNodesUpTo = jest.fn();
 let mockIsRunActive = false;
+// A dashboard's page: a viewer's run going (serverRunActive), or why it stopped.
+let mockDashboard: { dashboardOn?: boolean; serverRunActive?: boolean; dashboardStopped?: string | null } = {};
 jest.mock('../../../providers/FlowProvider', () => ({
   useFlowContext: () => ({
     workflowNameRef: { current: 'test-workflow' },
@@ -35,6 +37,7 @@ jest.mock('../../../providers/FlowProvider', () => ({
     signalNodeExecDone: mockSignalNodeExecDone,
     playNodesUpTo: mockPlayNodesUpTo,
     isRunActive: mockIsRunActive,
+    ...mockDashboard,
   }),
 }));
 
@@ -576,6 +579,41 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
       const text = container.textContent ?? '';
       expect(text).toContain('[\n  2,\n  4,\n  6\n]');
       expect(text).not.toContain('dataType');
+    });
+
+    describe('on a dashboard, with nothing in yet', () => {
+      afterEach(() => {
+        mockEdges = [];
+        mockDashboard = {};
+      });
+      const WIRED = [{ id: 'e1', source: 'average', target: 'node-1' }];
+
+      test('says it is computing while a viewer\'s run makes its rows, not which node to run', async () => {
+        mockEdges = WIRED;
+        mockDashboard = { dashboardOn: true, serverRunActive: true };
+        const result = await callBehavior(useSimpleVisBehavior, { input: '' } as any);
+        const { container } = render(<>{result.current.contentComponent}</>);
+        expect(container.querySelector('[data-curio-node-empty]')?.getAttribute('data-curio-node-empty')).toBe('upstream-running');
+        expect(container.textContent).toContain('Computing');
+        expect(container.textContent).not.toContain('Run the node');
+      });
+
+      test('says why the run stopped before it, as the page tells it', async () => {
+        mockEdges = WIRED;
+        mockDashboard = { dashboardOn: true, dashboardStopped: '"Cast sun rays on the GPU" could not run in this browser.' };
+        const result = await callBehavior(useSimpleVisBehavior, { input: '' } as any);
+        const { container } = render(<>{result.current.contentComponent}</>);
+        expect(container.querySelector('[data-curio-node-empty]')?.getAttribute('data-curio-node-empty')).toBe('upstream-stopped');
+        expect(container.textContent).toContain('"Cast sun rays on the GPU" could not run in this browser.');
+      });
+
+      test('on the canvas a run going on changes nothing: it still says to run the node feeding it', async () => {
+        mockEdges = WIRED;
+        mockDashboard = { dashboardOn: false, serverRunActive: true };
+        const result = await callBehavior(useSimpleVisBehavior, { input: '' } as any);
+        const { container } = render(<>{result.current.contentComponent}</>);
+        expect(container.querySelector('[data-curio-node-empty]')?.getAttribute('data-curio-node-empty')).toBe('upstream-not-run');
+      });
     });
   });
 

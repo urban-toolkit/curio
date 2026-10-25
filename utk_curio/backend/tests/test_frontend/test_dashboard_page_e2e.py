@@ -424,9 +424,11 @@ def test_the_owner_of_a_dashboard_served_with_its_data_edits_its_layout(
             viewer.route(pattern, only_the_check)
 
         viewer.goto(f"{hosted}/dashboard/{project_id}", wait_until="domcontentloaded")
-        viewer.get_by_test_id("shared-view-banner").wait_for(timeout=45000)
+        viewer.get_by_test_id("open-dataflow-link").wait_for(state="visible", timeout=45000)
         assert_vega_canvas_rendered(viewer, CHART, timeout=90000)
         assert viewer.get_by_test_id("edit-layout-btn").count() == 0
+        # Nor is a visitor told the page is read-only: nothing lies over the tiles.
+        assert viewer.get_by_test_id("shared-view-banner").count() == 0
         # The session asked once, was told no, and asked nothing else.
         assert len(checked) == 1, f"the viewer's page asked whether it may edit {len(checked)} times"
         assert asked == [], "the viewer's page asked the server for more: " + ", ".join(asked)
@@ -487,11 +489,11 @@ def test_a_visitor_with_no_account_sees_the_dashboard_read_only(
     try:
         visitor = visitor_ctx.new_page()
         visitor.goto(f"{app_frontend.base_url}/dashboard/{project_id}")
-        banner = visitor.get_by_test_id("shared-view-banner")
-        banner.wait_for(timeout=45000)
-        assert "read-only" in (banner.inner_text() or "").lower()
+        visitor.get_by_test_id("open-dataflow-link").wait_for(state="visible", timeout=45000)
         assert_vega_canvas_rendered(visitor, CHART, timeout=90000)
         assert visitor.get_by_test_id("edit-layout-btn").count() == 0
+        # A visitor is not told the page is shared or read-only: nothing lies over the tiles.
+        assert visitor.get_by_test_id("shared-view-banner").count() == 0
     finally:
         visitor_ctx.close()
 
@@ -839,9 +841,8 @@ def test_a_visitor_changes_a_pinned_control_and_the_next_one_gets_the_kept_outpu
         first.waits_for("the saved tiles", lambda: _saved_tiles_drew(first.page))
         five = _pick(first.page, ROWS, "five")
         expect(five).to_be_enabled(timeout=10000)
-        expect(first.page.get_by_test_id("shared-view-banner")).to_contain_text(
-            "changes are not saved", timeout=20000,
-        )
+        # The visitor changes the controls with no notice that the changes are not saved.
+        expect(first.page.get_by_test_id("shared-view-banner")).to_have_count(0)
         assert _runs_started(first.asked) == [], (
             "opening the dashboard started a run, though every tile has its saved output" + first.story()
         )

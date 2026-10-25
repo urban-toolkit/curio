@@ -17,9 +17,12 @@ import { render, act, waitFor, fireEvent } from '@testing-library/react';
 
 const mockShowToast = jest.fn();
 // The node reads its input edge from the flow context (hook/useGrammarInputState);
-// the real provider would load the whole node registry, vega included.
+// the real provider would load the whole node registry, vega included. The
+// canvas's, unless a test puts the node on a dashboard.
+const CANVAS_FLOW = { edges: [], nodeExecStatus: {} };
+let mockFlow: Record<string, unknown> = CANVAS_FLOW;
 jest.mock('../../../providers/FlowProvider', () => ({
-  useFlowContext: () => ({ edges: [], nodeExecStatus: {} }),
+  useFlowContext: () => mockFlow,
 }));
 jest.mock('../../../providers/ToastProvider', () => ({
   useToastContext: () => ({ showToast: mockShowToast }),
@@ -110,6 +113,7 @@ function withoutGpu() {
 
 beforeEach(() => {
   jest.clearAllMocks();
+  mockFlow = CANVAS_FLOW;
   __resetWebGpuSupportCache();
   // The subject here is the fallback panel and the node's output, not the
   // retry policy - which has its own suite (webgpuSupport.test.ts) and its own
@@ -303,6 +307,53 @@ describe('"Check again" on the fallback panel (#272)', () => {
     await waitFor(() => expect(mockShowToast).toHaveBeenCalledTimes(2));
     expect(document.body.querySelector('[role="alert"]')).not.toBeNull();
     expect(mockAutkGrammar).not.toHaveBeenCalled();
+  });
+});
+
+describe('an Autark node on a dashboard without WebGPU', () => {
+  const checkAgainButton = () =>
+    document.body.querySelector('button[aria-label="Check WebGPU again"]') as HTMLButtonElement | null;
+
+  beforeEach(() => {
+    mockFlow = { ...CANVAS_FLOW, dashboardOn: true };
+  });
+
+  test('says so in its tile and raises no toast, which would name a node the visitor may not see', async () => {
+    const h = renderBehavior();
+    await act(async () => {
+      await h.apply(MAP_SPEC);
+    });
+
+    await waitFor(() => expect(checkAgainButton()).not.toBeNull());
+    expect(document.body.querySelector('[role="alert"]')!.textContent).toMatch(/WebGPU is not available/i);
+    expect(h.outputs.filter((o) => o.code === 'error')).toHaveLength(1);
+    expect(mockShowToast).not.toHaveBeenCalled();
+  });
+
+  test('a step the page runs for a viewer fails with no toast, so the tiles below say which step it was', async () => {
+    const h = renderBehavior();
+    await act(async () => {
+      await h.apply(COMPUTE_SPEC);
+    });
+
+    expect(h.outputs.some((o) => o.code === 'error')).toBe(true);
+    expect(mockShowToast).not.toHaveBeenCalled();
+  });
+
+  test('"Check again" while WebGPU is still missing keeps the panel and raises no toast', async () => {
+    const h = renderBehavior();
+    await act(async () => {
+      await h.apply(MAP_SPEC);
+    });
+    await waitFor(() => expect(checkAgainButton()).not.toBeNull());
+
+    await act(async () => {
+      fireEvent.click(checkAgainButton()!);
+    });
+
+    await waitFor(() => expect(checkAgainButton()!.disabled).toBe(false));
+    expect(document.body.querySelector('[role="alert"]')).not.toBeNull();
+    expect(mockShowToast).not.toHaveBeenCalled();
   });
 });
 
