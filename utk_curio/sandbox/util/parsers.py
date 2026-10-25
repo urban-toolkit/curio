@@ -581,12 +581,25 @@ def session_may_read(stored_session, session_id) -> bool:
     return is_kept_session(session_id) and is_kept_session(stored_session)
 
 
-def readable_artifacts(reads) -> list:
-    """The artifact ids among *reads*, ``{id: the session it is read under}``,
-    whose rows that session may read (:func:`session_may_read`). An id read
-    under no session is not among them, though a read under none reads any
-    row, and neither is an id with no row."""
-    asked = {art_id: session for art_id, session in reads.items() if art_id and session}
+def readable_artifacts(reads, sessions=()) -> list:
+    """The artifact ids among *reads*, ``{id: the session it is read under,
+    or a list of sessions}``, whose rows one of its sessions or of *sessions*,
+    which every id is read under, may read (:func:`session_may_read`).
+
+    An id read under no session (None) is not among them, though a read under
+    none reads any row. One read under a list reads a row that carries no
+    session whatever the list holds, so an empty list reads only such a row.
+    An id with no row is never among them. A kept run's session among
+    *sessions* reads nothing: it would read what every kept run made, so it
+    reads only the ids it is named for."""
+    shared = [session for session in sessions or () if session and not is_kept_session(session)]
+    asked = {}
+    for art_id, own in reads.items():
+        if isinstance(own, str):
+            own = [own] if own else None
+        if not art_id or own is None:
+            continue
+        asked[art_id] = [session for session in own if session] + shared
     if not asked:
         return []
     placeholders = ",".join("?" for _ in asked)
@@ -597,7 +610,10 @@ def readable_artifacts(reads) -> list:
         ).fetchall()
     finally:
         con.close()
-    return [art_id for art_id, stored in rows if session_may_read(stored, asked[art_id])]
+    return [
+        art_id for art_id, stored in rows
+        if stored is None or any(session_may_read(stored, session) for session in asked[art_id])
+    ]
 
 
 def load_from_duckdb(art_id, session_id=None):

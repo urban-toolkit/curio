@@ -278,19 +278,21 @@ def test_install_adds_a_live_output_only_for_a_caller_who_may_read_it(client, us
 
 
 def test_a_dataset_ref_a_new_dataflow_carries_reads_no_output_its_creator_may_not(client, user_and_token, theirs):
-    """A new dataflow keeps the dataset refs its spec sends (Save a copy, a
-    file's import), and a ref may name a live output by its URI."""
-    _, token = user_and_token
-    resp = client.post("/api/projects", data=json.dumps({
-        "name": "Carries a ref",
-        "spec": {"dataflow": {"name": "Carries a ref", "nodes": [], "edges": [], "datasets": [{
-            "id": "computed.carried", "origin": "computed", "format": "parquet",
-            "title": "Carried", "uri": f"curio://outputs/{theirs}",
-        }]}},
-        "outputs": [],
-    }), headers=auth_headers(token))
-    assert resp.status_code == 201, resp.get_data(as_text=True)
-    project_id = resp.get_json()["id"]
+    """A new dataflow kept the dataset refs its spec sent (Save a copy, a
+    file's import), and a ref may name a live output by its URI. A new one
+    keeps no such ref now (``test_carried_output_refs.py``), so the ref is put
+    in the spec on disk, as one written before."""
+    from utk_curio.backend.app.projects import services, storage
+
+    user, token = user_and_token
+    project_id = create_project(client, token, name="Carries a ref")
+    user_key = services._user_dir_key(user)
+    spec = storage.read_spec(user_key, project_id)
+    spec["dataflow"]["datasets"] = [{
+        "id": "computed.carried", "origin": "computed", "format": "parquet",
+        "title": "Carried", "uri": f"curio://outputs/{theirs}",
+    }]
+    storage.write_spec(user_key, project_id, spec)
 
     listing = client.get(f"/api/datasets/catalog?includeHub=false&dataflowId={project_id}", headers=auth_headers(token))
     download = client.get(f"/api/datasets/computed.carried/download?dataflowId={project_id}", headers=auth_headers(token))
