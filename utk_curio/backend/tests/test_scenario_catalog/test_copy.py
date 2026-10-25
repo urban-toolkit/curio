@@ -198,6 +198,35 @@ def test_the_copy_is_the_targets_own_and_a_reload_restores_it(client, user_and_t
     assert not (_shared() / saved["load"]).exists()
 
 
+def test_a_drops_copy_links_its_data_rather_than_copying_it(client, user_and_token):
+    """The copy is the target's own dataset, with its own manifest, but its
+    data is the source's file under a second name, so a drop adds no bytes.
+    A later run of the source writes a new file and leaves the copy's as it
+    was."""
+    user, token = user_and_token
+    source, target = _source_and_target(client, token)
+    _save_outputs(client, token, source, {"load": "id,height\n1,10\n"})
+
+    resp = _copy(client, token, source, target, [{"source": "load", "node": "loader-1"}])
+
+    assert resp.status_code == 200, resp.get_data(as_text=True)
+    ukey = _user_dir_key_of(user)
+    original = dataset_dir(ukey, f"{computed_dataset_id('load', source)}@1")
+    copy = dataset_dir(ukey, f"{computed_dataset_id('loader-1', target)}@1")
+    original_data = original / load_dataset_manifest(original).data_file
+    copied_data = copy / load_dataset_manifest(copy).data_file
+    assert os.stat(copied_data).st_ino == os.stat(original_data).st_ino, "the drop copied the data's bytes"
+    assert os.stat(copy / "manifest.json").st_ino != os.stat(original / "manifest.json").st_ino, (
+        "the copy's manifest is the source's file: writing one would change the other"
+    )
+    assert load_dataset_manifest(original).producer_dataflow_id == source
+
+    _save_outputs(client, token, source, {"load": "id,height\n1,99\n"}, run=2)
+
+    assert _copied_data(ukey, "load", source) == "id,height\n1,99\n"
+    assert _copied_data(ukey, "loader-1", target) == "id,height\n1,10\n"
+
+
 def test_a_drops_outputs_are_read_in_place_before_any_save(client, user_and_token):
     """The drop records each copy as its node's saved output in the target, so
     the target's canvas reads it where the target's Data Catalog keeps it
