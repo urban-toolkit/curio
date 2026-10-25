@@ -892,10 +892,10 @@ class TestTheStepsLeftToThePage:
         from utk_curio.backend.app.runs.models import KeptStepOutput
 
         started = _month(client, gpu)
-        kept = _keep_step(client, gpu, started["runId"], started["token"])
+        sent = _keep_step(client, gpu, started["runId"], started["token"])
 
-        assert kept.status_code == 200, kept.get_data(as_text=True)
-        output = kept.get_json()["output"]
+        assert sent.status_code == 200, sent.get_data(as_text=True)
+        output = sent.get_json()["output"]
         assert output == {"path": "page-1", "dataType": "dict"}
         # Written to the sandbox as it came, in a dashboard session of its own.
         assert sandbox.stored[0]["value"] == LAYER
