@@ -28,6 +28,8 @@ import { act, render } from "@testing-library/react";
 const mockSendCode = jest.fn();
 const mockSetOutput = jest.fn();
 let mockDashboardOn = false;
+// Why the dashboard's last run stopped short of the tiles (useDashboardRun).
+let mockDashboardStopped: string | null = null;
 let mockFlowEdges: any[] = [];
 let mockIsRunActive = false;
 let mockServerRunActive = false;
@@ -122,6 +124,7 @@ jest.mock("../../providers/FlowProvider", () => ({
   useFlowContext: () => ({
     signalNodeExecDone: () => {},
     dashboardOn: mockDashboardOn,
+    dashboardStopped: mockDashboardStopped,
     edges: mockFlowEdges,
     isRunActive: mockIsRunActive,
     serverRunActive: mockServerRunActive,
@@ -166,6 +169,7 @@ async function rerenderWith(utils: ReturnType<typeof render>, nodeData: any) {
 beforeEach(() => {
   jest.clearAllMocks();
   mockDashboardOn = false;
+  mockDashboardStopped = null;
   mockFlowEdges = [];
   mockIsRunActive = false;
   mockServerRunActive = false;
@@ -418,6 +422,31 @@ describe("only an Autark node", () => {
     mockWebGpuSupported = false;
 
     await mount(data(AUTARK, { code: MAP_SPEC, input: INPUT_A }));
+    await settle();
+
+    expect(mockSendCode).not.toHaveBeenCalled();
+  });
+
+  test("but a dashboard's map runs without it, so its tile says why it cannot draw", async () => {
+    // A visitor has no Play to press: "not drawn yet" would wait for nothing.
+    // The run says so in the map's body, with no toast (autkGrammarBehavior).
+    mockWebGpuSupported = false;
+    mockDashboardOn = true;
+    mockFlowEdges = [{ id: "e", source: "up", target: "n1" }];
+
+    await mount(data(AUTARK, { code: MAP_SPEC, input: INPUT_A, dashboardPinned: true }));
+    await settle();
+
+    expect(mockSendCode).toHaveBeenCalledTimes(1);
+  });
+
+  test("not after the dashboard's run stopped short of the map: its tile names that step", async () => {
+    mockWebGpuSupported = false;
+    mockDashboardOn = true;
+    mockDashboardStopped = '"Cast sun rays on the GPU" could not run in this browser.';
+    mockFlowEdges = [{ id: "e", source: "up", target: "n1" }];
+
+    await mount(data(AUTARK, { code: MAP_SPEC, input: INPUT_A, dashboardPinned: true }));
     await settle();
 
     expect(mockSendCode).not.toHaveBeenCalled();

@@ -60,6 +60,8 @@ from .utils import (
     assert_vega_node_empty_state,
     load_artifact_as_dict,
     execute_workflow_programmatically,
+    snapshot_artifact,
+    artifact_differences,
     dump_browser_log,
     node_execution_timeout_ms,
     play_node,
@@ -987,9 +989,10 @@ class TestWorkflowCanvas:
 
         Before touching the browser, the workflow is executed
         programmatically (in-process, seeded) to produce expected DuckDB
-        artifacts.  After the browser run, artifact content is compared via
-        ``load_artifact_as_dict``; VIS_VEGA nodes are verified via SVG
-        structural comparison.
+        artifacts.  After the browser run, artifact content is compared as
+        stored (``snapshot_artifact``: tables over Arrow, lists and dicts by
+        their stored JSON, never the JSON envelope, which took example 09 to
+        14 GiB); VIS_VEGA nodes are verified via SVG structural comparison.
         """
         expected_map = execute_workflow_programmatically(
             self.spec, seed=42, username=getattr(self, "username", None)
@@ -1072,17 +1075,14 @@ class TestWorkflowCanvas:
                         }"""
                     )
                     if artifact_id is not None:
-                        actual = load_artifact_as_dict(artifact_id)
-                        expected_data = expected_map[node.id]
-                        if actual != expected_data:
-                            diff_keys = [
-                                k for k in set(actual) | set(expected_data)
-                                if actual.get(k) != expected_data.get(k)
-                            ]
+                        differences = artifact_differences(
+                            snapshot_artifact(artifact_id), expected_map[node.id]
+                        )
+                        if differences:
                             raise AssertionError(
                                 f"Node {node.id} ({node.type}) data content "
-                                f"does not match programmatic execution. "
-                                f"Differing top-level keys: {diff_keys}"
+                                f"does not match programmatic execution: "
+                                + "; ".join(differences[:10])
                             )
 
             elif node.category == "grammar":

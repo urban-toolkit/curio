@@ -376,6 +376,66 @@ def readable_by(user_id, sign_in: Optional[str], names) -> set:
     })
 
 
+#: The most sign-ins of one account that vouch for its outputs
+#: (:func:`account_sign_ins`).
+ACCOUNT_SIGN_INS = 5_000
+
+
+def account_sign_ins(user_id) -> list[str]:
+    """The sign-ins of the account *user_id* that can have made an output the
+    store still holds, signed out or not: those seen in its last
+    :data:`KEPT_DAYS` days and one, or never stamped, the newest first, at
+    most :data:`ACCOUNT_SIGN_INS`. A request stamps its sign-in as it is
+    served (``users/dependencies.get_current_user``), and the store forgets
+    what it made :data:`KEPT_DAYS` days ago (:func:`sweep_store`)."""
+    from utk_curio.backend.app.users.models import UserSession
+
+    if user_id is None:
+        return []
+    seen_since = naive_utc_now() - timedelta(days=KEPT_DAYS + 1)
+    rows = (
+        UserSession.query.with_entities(UserSession.token)
+        .filter(UserSession.user_id == user_id)
+        .filter(db.or_(UserSession.last_seen_at.is_(None), UserSession.last_seen_at >= seen_since))
+        .order_by(UserSession.id.desc())
+        .limit(ACCOUNT_SIGN_INS)
+        .all()
+    )
+    return [token for (token,) in rows if token]
+
+
+def readable_by_account(user_id, names) -> set:
+    """The artifacts among *names* that the account *user_id* vouches for,
+    where no sign-in names them: a dataset ref a dataflow of the account
+    carries, as node code, the agents, the Scenario Catalog and discovery read
+    it. Each is read under every sign-in of the account
+    (:func:`account_sign_ins`) and, when the runs of a dataflow the account
+    owns kept it, under the kept session that made it, for that artifact
+    alone (:func:`read_session`), since a kept run's session reads what every
+    kept run made. A row that carries no session is read, as every session
+    reads one. One another account made is not among them, nor one nothing
+    vouches for."""
+    from utk_curio.backend.app.datasets.infrastructure import sandbox_artifacts
+
+    names = list(dict.fromkeys(str(name) for name in names if name))
+    if not names:
+        return set()
+    reads = {}
+    for name in names:
+        kept_session = read_session(user_id, name, None) if user_id is not None else None
+        reads[name] = [kept_session] if kept_session else []
+    try:
+        sign_ins = account_sign_ins(user_id)
+    except Exception:  # noqa: BLE001 - the account's rows alone then
+        log.warning("could not read the sign-ins of account %s", user_id)
+        try:
+            db.session.rollback()
+        except Exception:  # noqa: BLE001 - no database to roll back
+            pass
+        sign_ins = []
+    return sandbox_artifacts.readable(reads, sessions=sign_ins)
+
+
 def kept_output(project_id: str, key: str, private_to: Optional[str] = None) -> Optional[tuple[dict, list]]:
     """The output kept under *key* that this run may read, a shared one or
     one private to *private_to*, with its artifact ids. Touches it, so it is
@@ -428,6 +488,20 @@ def keep(
 
     commit_with_retry(_apply)
     return ids
+
+
+def forget_node(project_id: str, node_id: str) -> int:
+    """Drop every output kept for *node_id* of *project_id*, whoever made it,
+    as deleting the node's saved output asks; their artifacts go once the
+    delete commits (:func:`_note_deleted_entry`). Returns how many went."""
+
+    def _apply():
+        entries = KeptStepOutput.query.filter_by(project_id=project_id, node_id=node_id).all()
+        for entry in entries:
+            db.session.delete(entry)
+        return len(entries)
+
+    return commit_with_retry(_apply)
 
 
 def readable_output(project_id: str, file_name: str, token: Optional[str]) -> KeptStepOutput:

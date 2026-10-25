@@ -104,7 +104,7 @@ There are three places you work with datasets, and they are **not** interchangea
 | **Import dataset** | Drawer footer, or the `/catalog/data` header | Your store | The file is registered in your catalog. It is **not** added to the open dataflow; add it afterwards. |
 | **Publish** | `/catalog/data`, in the right-hand drawer | The shared catalog | Every user on this install can browse the dataset. |
 | **Unpublish** | `/catalog/data`, in the right-hand drawer | The shared catalog | The listing goes away. Copies already added to dataflows are untouched. |
-| **Delete** | Drawer, on computed datasets and your own imports | Your store, and refs in every project | The dataset is **permanently** removed from your account, and every dataflow's reference to it is stripped. |
+| **Delete** | Drawer, on computed datasets and your own imports | Your store, refs in every project, and a computed dataset's node result | The dataset is **permanently** removed from your account, and every dataflow's reference to it is stripped. The node that saved it opens with no result until it runs again. |
 
 ### Workflows
 
@@ -203,6 +203,8 @@ A collection's details have a **Collection** section: its kind, **Indexed from**
 ### The save-output toggle
 
 A runnable node that produces a dataset has a small database-icon toggle among the buttons in its header, which show while the pointer is over the node. It is **off by default**, so saving is chosen per node. When it is on, running the node saves its output into your store as `computed.<dataflowId>.<nodeId>@1`, titled with the name in the node's header: the name you gave the node, or else its kind, such as **Python Computation**.
+
+A copy of a dataflow brings its saved outputs into your store as the copy's own: **Duplicate** on one of your dataflows, or **File → Save dataflow** on one someone shared with you. They stay when the original's are deleted.
 
 A `GeoDataFrame` output is stored as **GeoParquet** and reloads as a `GeoDataFrame`. Its CRS survives, and so does *every* geometry column, not only the active one: a frame with both a `geometry` and a `centroid` column comes back with both still typed as geometry. So a node's map output is a reusable input. (A `GeoDataFrame` with no active geometry column is stored as a plain table; GeoParquet cannot represent one.)
 
@@ -338,7 +340,7 @@ For a bundle, **Publish** copies the whole `data/` tree, not just the index.
 
 **Unpublish** removes the shared listing only. Copies already added to dataflows keep working, and the confirmation says so.
 
-**Delete** removes a dataset from your account: it deletes the stored copy and strips its references from every one of your dataflows. It is offered on computed datasets and on your own imports, never on a dataset from the shared catalog. Deleting a collection deletes its index, thumbnails and cached files, never the files in its source.
+**Delete** removes a dataset from your account: it deletes the stored copy and strips its references from every one of your dataflows. It is offered on computed datasets and on your own imports, never on a dataset from the shared catalog. Deleting a node's saved output deletes that node's result in its dataflow too: the node opens with no result until it runs again. Deleting a collection deletes its index, thumbnails and cached files, never the files in its source.
 
 A collection cannot be published: its files are in its source, not in the Data Catalog.
 

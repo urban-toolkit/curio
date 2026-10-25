@@ -194,6 +194,65 @@ describe("a change", () => {
         await act(async () => { await hook.result.current.start(); });
         expect(showToast).toHaveBeenCalledWith("Too many runs from here at once", "warning");
         expect(hook.result.current.active).toBe(false);
+        // A tile left with nothing says so, where "Computing..." would wait for nothing.
+        expect(hook.result.current.stopped).toBe("Too many runs from here at once");
+    });
+
+    test("a run the page loses track of leaves the tiles saying so, not computing", async () => {
+        let lose: (err: Error) => void = () => {};
+        mockFollow.mockImplementation(() => new Promise((_resolve, reject) => { lose = reject; }));
+        mockStart.mockResolvedValue({ runId: "r1", token: "t1", joined: false, nodeIds: ["grid", "chart"] });
+        const { showToast, hook } = setUp();
+        await act(async () => { hook.result.current.opened("dash-1"); });
+        await act(async () => { await hook.result.current.start(); });
+
+        await act(async () => { lose(new Error("stream closed")); });
+
+        const lost = "Lost track of this dashboard's run. Change a control to run it again.";
+        expect(showToast).toHaveBeenCalledWith(lost, "warning");
+        expect(hook.result.current.stopped).toBe(lost);
+        expect(hook.result.current.active).toBe(false);
+    });
+
+    test("a step that fails on the server leaves the tiles naming it, with no node to open (owner, 10-25)", async () => {
+        mockStart.mockResolvedValue({ runId: "r1", token: "t1", joined: false, nodeIds: ["grid", "chart"] });
+        const { hook } = setUp();
+        await act(async () => { hook.result.current.opened("dash-1"); });
+        await act(async () => { await hook.result.current.start(); });
+        const run = followed();
+
+        run.emit({
+            kind: "step_finished", nodeId: "grid", status: "error",
+            output: { path: "", dataType: "str" }, stderrTail: "KeyError: 'count'",
+        });
+        expect(hook.result.current.stopped).toBeNull();
+        run.emit({ kind: "run_finished", status: "failed", ok: 0, failed: 1, skipped: 1, waiting: 0 });
+
+        expect(hook.result.current.stopped).toBe('"grid" failed.');
+        expect(hook.result.current.active).toBe(false);
+    });
+
+    test("a run the server stopped leaves the tiles saying so, not computing", async () => {
+        mockStart.mockResolvedValue({ runId: "r1", token: "t1", joined: false, nodeIds: ["grid", "chart"] });
+        const { hook } = setUp();
+        await act(async () => { hook.result.current.opened("dash-1"); });
+        await act(async () => { await hook.result.current.start(); });
+
+        followed().emit({ kind: "run_finished", status: "interrupted", ok: 0, failed: 0, skipped: 0, waiting: 0 });
+
+        expect(hook.result.current.stopped).toBe("This dashboard's run was interrupted. Change a control to run it again.");
+        expect(hook.result.current.active).toBe(false);
+    });
+
+    test("a run that succeeds sets no reason", async () => {
+        mockStart.mockResolvedValue({ runId: "r1", token: "t1", joined: false, nodeIds: ["grid", "chart"] });
+        const { hook } = setUp();
+        await act(async () => { hook.result.current.opened("dash-1"); });
+        await act(async () => { await hook.result.current.start(); });
+
+        followed().emit({ kind: "run_finished", status: "succeeded", ok: 1, failed: 0, skipped: 0, waiting: 0 });
+
+        expect(hook.result.current.stopped).toBeNull();
     });
 });
 
@@ -363,5 +422,20 @@ describe("a step only a browser runs", () => {
 
         expect(hook.result.current.stopped).toBeNull();
         expect(hook.result.current.active).toBe(true);
+    });
+
+    test("a run that cannot go on from the page's step leaves the tiles saying why, not computing", async () => {
+        const { hook, run, showToast } = await aRunLeavingTheGpuStep((outputs, hooks) => {
+            outputs.push({ nodeId: "gpu", output: { path: "page-1", dataType: "dict" } });
+            hooks.onNodeDone("gpu", { failed: false });
+            hooks.onFinish();
+        });
+        mockStart.mockRejectedValueOnce(new Error("This run's token has expired."));
+
+        await act(async () => { run.emit(finished("needs_canvas")); });
+        await waitFor(() => expect(hook.result.current.active).toBe(false));
+
+        expect(showToast).toHaveBeenCalledWith("This run's token has expired.", "error");
+        expect(hook.result.current.stopped).toBe("This run's token has expired.");
     });
 });

@@ -1392,7 +1392,9 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
         return () => window.clearInterval(id);
     }, [projectId, projectDirty, requestAutosave, blockGuestSaves, viewerMode, presentation]);
 
-    const saveAsNewProject = useCallback(async (name: string) => {
+    // ``copyOf``: the dataflow the copy is made from, whose saved outputs the
+    // copy gets for each node still showing one.
+    const saveAsNewProject = useCallback(async (name: string, copyOf?: string | null) => {
         if (blockGuestSaves) {
             throw new Error("Guest users cannot save projects");
         }
@@ -1413,6 +1415,7 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
             name,
             spec,
             outputs: outputRefs,
+            ...(copyOf ? { copy_of: copyOf } : {}),
         });
         syncDatasetsFromSavedSpec(detail.spec);
         setServerCategories(detail.categories ?? {});

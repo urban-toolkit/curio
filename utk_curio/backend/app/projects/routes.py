@@ -39,6 +39,7 @@ def create_project():
             ],
             description=body.get("description"),
             thumbnail_accent=body.get("thumbnail_accent", "peach"),
+            copy_of=body.get("copy_of"),
         )
     except (ValueError, TypeError) as exc:
         return _error(str(exc))

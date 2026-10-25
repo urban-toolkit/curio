@@ -89,6 +89,7 @@ export const useVega = ({
   upstreamErrored = false,
   upstreamRunning = false,
   upstreamStopped = null,
+  onDashboard = false,
   hasSpec = true,
   onRedraw,
   inputLabels,
@@ -103,6 +104,8 @@ export const useVega = ({
   upstreamRunning?: boolean;
   /** On a dashboard, why the viewer's run stopped before this chart, if it did. */
   upstreamStopped?: string | null;
+  /** A dashboard's tile: it draws by itself, with no play for a visitor to press. */
+  onDashboard?: boolean;
   /** Does the editor hold a spec to compile? */
   hasSpec?: boolean;
   /**
@@ -417,13 +420,14 @@ export const useVega = ({
       upstreamErrored,
       upstreamRunning,
       upstreamStopped,
+      onDashboard,
       hasInput: data.input != null && data.input !== "",
       hasSpec,
       hasRun: hasRunRef.current,
       inputProblem: emptyReason,
     });
     if (reason != null) renderEmptyState(reason, reason === "upstream-stopped" ? upstreamStopped : emptyDetail);
-  }, [connected, upstreamErrored, upstreamRunning, upstreamStopped, hasSpec, data.input, emptyReason, emptyDetail]);
+  }, [connected, upstreamErrored, upstreamRunning, upstreamStopped, onDashboard, hasSpec, data.input, emptyReason, emptyDetail]);
 
   useEffect(() => {
     const el = document.getElementById("vega" + data.nodeId);

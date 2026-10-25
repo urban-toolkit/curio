@@ -48,6 +48,8 @@ interface FollowedDashboardRun {
     browserSteps: string[];
     /** The steps below them, which wait for what the page makes. */
     waiting: string[];
+    /** The steps that failed on the server: the run ends there. */
+    failed: string[];
     /** The run ended asking for the page's part, which carries it on. */
     handedToPage: boolean;
     done: boolean;
@@ -82,9 +84,10 @@ export function useDashboardRun({ enabled, reactFlow, outcomes, outputsRef, show
     // computing (useGrammarInputState), and a change made meanwhile runs once
     // it ends (useAutoRun).
     const [active, setActive] = useState(false);
-    // Why the last run stopped before the tiles, at a step this browser could
-    // not run: what a tile left with nothing says (useGrammarInputState). The
-    // next start clears it.
+    // Why the last run stopped before the tiles: at a step this browser could
+    // not run, or a run refused, lost or left unfinished. It is what a tile
+    // left with nothing says (useGrammarInputState), where "Computing..."
+    // would wait for nothing. The next start clears it.
     const [stopped, setStopped] = useState<string | null>(null);
     const projectIdRef = useRef<string | null>(null);
     // Between a start and its answer.
@@ -148,16 +151,29 @@ export function useDashboardRun({ enabled, reactFlow, outcomes, outputsRef, show
         return (await keepPageResult(nodeId, output)).path;
     };
 
+    /** A step as its header names it, and as Run All names a failed node (usePlayAll). */
+    const stepName = (nodeId: string) => {
+        const data = reactFlow.getNode(nodeId)?.data;
+        return (data && resolveNodeDisplayLabel(data)) || nodeId;
+    };
+
     /** The nodes below a step the page could not run say so, as a run says it of a failed node. */
     const showWaitingSkipped = (run: FollowedDashboardRun, failed: string[]) => {
-        // As its header names it, and as Run All names a failed node (usePlayAll).
-        const name = (nodeId: string) => {
-            const data = reactFlow.getNode(nodeId)?.data;
-            return (data && resolveNodeDisplayLabel(data)) || nodeId;
-        };
-        const why = `"${name(failed[0])}" could not run in this browser.`;
+        const why = `"${stepName(failed[0])}" could not run in this browser.`;
         for (const nodeId of run.waiting) outcomes.showSkipped(nodeId, `No data yet: ${why}`);
         setStopped(why);
+    };
+
+    /**
+     * A run that ended short of the tiles: a step failed on the server, or the
+     * run was stopped. What a tile left with nothing says, naming the step and
+     * no node to open, where "Computing..." would wait for nothing.
+     */
+    const showEndedShort = (run: FollowedDashboardRun, status: string) => {
+        if (run.failed.length > 0) setStopped(`"${stepName(run.failed[0])}" failed.`);
+        else if (status === "cancelled" || status === "interrupted") {
+            setStopped("This dashboard's run was interrupted. Change a control to run it again.");
+        }
     };
 
     /**
@@ -215,7 +231,9 @@ export function useDashboardRun({ enabled, reactFlow, outcomes, outputsRef, show
             run.controller.abort();
             follow(projectId, next.runId, next.token, run.values, pageOutputs);
         } catch (err: any) {
-            showToast(err?.message || "This dashboard could not finish its run.", "error");
+            const unfinished = err?.message || "This dashboard could not finish its run.";
+            showToast(unfinished, "error");
+            setStopped(unfinished);
             end(run);
         } finally {
             forgetPageSteps();
@@ -229,10 +247,12 @@ export function useDashboardRun({ enabled, reactFlow, outcomes, outputsRef, show
                 run.handedToPage = true;
                 void finishInPage(run);
             } else {
+                showEndedShort(run, event.status);
                 end(run);
             }
             return;
         }
+        if (event.kind === "step_finished" && event.status === "error") run.failed.push(event.nodeId);
         if (event.kind !== "step_started" && event.kind !== "step_finished") return;
         if (event.kind === "step_finished" && event.status === "browser") {
             run.browserSteps.push(event.nodeId);
@@ -256,14 +276,18 @@ export function useDashboardRun({ enabled, reactFlow, outcomes, outputsRef, show
     ) => {
         const run: FollowedDashboardRun = {
             runId, token, controller: new AbortController(), applied: new Set(), started: new Set(),
-            values, pageOutputs, browserSteps: [], waiting: [], handedToPage: false, done: false,
+            values, pageOutputs, browserSteps: [], waiting: [], failed: [], handedToPage: false, done: false,
         };
         followedRef.current = run;
         dashboardRunsApi
             .follow(projectId, runId, token, (event) => onEvent(run, event), run.controller.signal)
             .then(() => { if (!run.handedToPage) end(run); }, () => {
                 if (run.handedToPage) return;
-                if (!run.done) showToast("Lost track of this dashboard's run. Change a control to run it again.", "warning");
+                if (!run.done) {
+                    const lost = "Lost track of this dashboard's run. Change a control to run it again.";
+                    showToast(lost, "warning");
+                    setStopped(lost);
+                }
                 end(run);
             });
     };
@@ -284,8 +308,10 @@ export function useDashboardRun({ enabled, reactFlow, outcomes, outputsRef, show
         try {
             started = await dashboardRunsApi.start(projectId, values);
         } catch (err: any) {
+            const refused = err?.message || "This dashboard could not run.";
             setActive(false);
-            showToast(err?.message || "This dashboard could not run.", err?.status === 429 ? "warning" : "error");
+            setStopped(refused);
+            showToast(refused, err?.status === 429 ? "warning" : "error");
             return;
         } finally {
             startingRef.current = false;

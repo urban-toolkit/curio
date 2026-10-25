@@ -83,6 +83,10 @@ export interface SaveBody {
   outputs: OutputRef[];
   description?: string;
   thumbnail_accent?: string;
+  /** The dataflow this one copies (Save a copy): a node whose output is the
+   *  one that dataflow saved gets that saved output, whichever account owns
+   *  it, copied from its owner's Data Catalog. */
+  copy_of?: string;
 }
 
 export interface UpdateBody {

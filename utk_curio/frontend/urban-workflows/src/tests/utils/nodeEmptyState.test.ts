@@ -200,6 +200,56 @@ describe("a table reading the rows of an input that just arrived", () => {
   });
 });
 
+describe("a dashboard's tile, which has no node to run and no play to press", () => {
+  // On dev (10-25) a visitor saw "No data yet. Run the node feeding this one."
+  // for 170 ms as the page opened, and "Not drawn yet. Press play to draw
+  // this spec." on the map between the run's end and its draw: the tile was
+  // still being made, by the page.
+  const NOTHING = { connected: true, hasInput: false, tabular: false, rowCount: 0 };
+  const CHART = { connected: true, hasInput: true, hasSpec: true, hasRun: false };
+
+  test("a table with nothing in yet is computing, with no run going too", () => {
+    expect(resolveNodeEmptyReason({ ...NOTHING, onDashboard: true })).toBe("upstream-running");
+    expect(resolveNodeEmptyReason({ ...NOTHING })).toBe("upstream-not-run");
+  });
+
+  test("a map or chart is computing until its first draw, with no play to press", () => {
+    expect(resolveGrammarEmptyReason({ ...CHART, onDashboard: true })).toBe("upstream-running");
+    expect(resolveGrammarEmptyReason({ ...CHART, hasInput: false, onDashboard: true })).toBe("upstream-running");
+    expect(resolveGrammarEmptyReason({ ...CHART })).toBe("not-run");
+    expect(resolveGrammarEmptyReason({ ...CHART, hasInput: false })).toBe("upstream-not-run");
+    // A document that loads its own data draws by itself on a dashboard too.
+    expect(resolveGrammarEmptyReason({ ...CHART, needsInput: false, onDashboard: true })).toBe("upstream-running");
+  });
+
+  test("why a run stopped, or that a step failed, still comes first", () => {
+    expect(resolveNodeEmptyReason({ ...NOTHING, onDashboard: true, upstreamStopped: "Too many runs." })).toBe(
+      "upstream-stopped",
+    );
+    expect(resolveGrammarEmptyReason({ ...CHART, onDashboard: true, upstreamStopped: "Too many runs." })).toBe(
+      "upstream-stopped",
+    );
+  });
+
+  test("a step that failed stops the tile there, with no node for the visitor to open (owner, 10-25)", () => {
+    // On the canvas it says to open the failed node; a visitor cannot.
+    expect(resolveNodeEmptyReason({ ...NOTHING, onDashboard: true, upstreamErrored: true })).toBe("upstream-stopped");
+    expect(resolveGrammarEmptyReason({ ...CHART, onDashboard: true, upstreamErrored: true })).toBe("upstream-stopped");
+    expect(NODE_EMPTY_COPY["upstream-stopped"]).toEqual({ title: "No results", hint: "A step before this one failed." });
+    expect(resolveNodeEmptyReason({ ...NOTHING, upstreamErrored: true })).toBe("upstream-errored");
+    expect(resolveGrammarEmptyReason({ ...CHART, upstreamErrored: true })).toBe("upstream-errored");
+  });
+
+  test("what it has, it shows, and what it read says what it is", () => {
+    expect(resolveNodeEmptyReason({ ...READY, onDashboard: true })).toBeNull();
+    expect(resolveNodeEmptyReason({ ...READY, tabular: false, onDashboard: true })).toBe("not-tabular");
+    expect(resolveGrammarEmptyReason({ ...CHART, hasRun: true, onDashboard: true })).toBeNull();
+    expect(resolveGrammarEmptyReason({ ...CHART, hasRun: true, renderedEmpty: true, onDashboard: true })).toBe(
+      "rendered-empty",
+    );
+  });
+});
+
 describe("incomingSourceIds", () => {
   test("names the nodes feeding this one", () => {
     const edges = [

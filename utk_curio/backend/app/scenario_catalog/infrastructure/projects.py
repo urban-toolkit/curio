@@ -180,7 +180,8 @@ def copy_outputs(
                     dataset_ids[node] = saved["datasetId"]
                     continue
                 staged.append((source, node, dataset_copy.stage_computed_copy(
-                    ukey, saved["dirName"], node_id=node, dataflow_id=target_id, dataflow_name=target_name,
+                    ukey, saved["dirName"], target_key=ukey,
+                    node_id=node, dataflow_id=target_id, dataflow_name=target_name,
                 )))
                 ref = restorable.get(source)
                 if ref is not None:
