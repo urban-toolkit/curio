@@ -271,10 +271,20 @@ def _read_session(file_name):
     """The session the caller reads *file_name* under on a route that names
     no dataflow: the kept session that made it, when the runs of a dataflow
     the caller owns kept it (``runs/kept.owner_session``), else the caller's
-    sign-in."""
+    sign-in, as when that lookup fails."""
     from utk_curio.backend.app.runs import kept
+    from utk_curio.backend.extensions import db
 
-    return kept.owner_session(getattr(g.user, "id", None), file_name) or get_current_token()
+    try:
+        session = kept.owner_session(getattr(g.user, "id", None), file_name)
+    except Exception:  # noqa: BLE001 - a read never fails on this lookup
+        print(f"[/get] could not look up the kept output {file_name}", flush=True)
+        try:
+            db.session.rollback()
+        except Exception:  # noqa: BLE001 - no database to roll back
+            pass
+        session = None
+    return session or get_current_token()
 
 
 @bp.route('/get', methods=['GET'])
