@@ -226,11 +226,18 @@ describe("a dashboard's tile, which has no node to run and no play to press", ()
     expect(resolveNodeEmptyReason({ ...NOTHING, onDashboard: true, upstreamStopped: "Too many runs." })).toBe(
       "upstream-stopped",
     );
-    expect(resolveNodeEmptyReason({ ...NOTHING, onDashboard: true, upstreamErrored: true })).toBe("upstream-errored");
     expect(resolveGrammarEmptyReason({ ...CHART, onDashboard: true, upstreamStopped: "Too many runs." })).toBe(
       "upstream-stopped",
     );
-    expect(resolveGrammarEmptyReason({ ...CHART, onDashboard: true, upstreamErrored: true })).toBe("upstream-errored");
+  });
+
+  test("a step that failed stops the tile there, with no node for the visitor to open (owner, 10-25)", () => {
+    // On the canvas it says to open the failed node; a visitor cannot.
+    expect(resolveNodeEmptyReason({ ...NOTHING, onDashboard: true, upstreamErrored: true })).toBe("upstream-stopped");
+    expect(resolveGrammarEmptyReason({ ...CHART, onDashboard: true, upstreamErrored: true })).toBe("upstream-stopped");
+    expect(NODE_EMPTY_COPY["upstream-stopped"]).toEqual({ title: "No results", hint: "A step before this one failed." });
+    expect(resolveNodeEmptyReason({ ...NOTHING, upstreamErrored: true })).toBe("upstream-errored");
+    expect(resolveGrammarEmptyReason({ ...CHART, upstreamErrored: true })).toBe("upstream-errored");
   });
 
   test("what it has, it shows, and what it read says what it is", () => {

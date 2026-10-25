@@ -55,6 +55,7 @@ from .test_dashboard_page_e2e import (
     _runs_started,
     _sent_results,
     _serve_hosted,
+    _step_outputs,
     _steps_sent,
 )
 from .test_map_edits_e2e import _changed, _map_pixels, _wait_for_map_drawn, _wait_for_redraw
@@ -182,24 +183,6 @@ def _pick_date(page, date_id: str, day: str) -> None:
 
 def _map_canvas(map_id: str) -> str:
     return f"#autk-grammar-map-{map_id}"
-
-
-def _step_outputs(visitor: "_Visitor") -> list[dict[str, str]]:
-    """Each run the visitor's page followed, in order: the output of every
-    step it finished, by node id. A step whose output was kept from an earlier
-    run hands on that run's output again."""
-    runs = []
-    for stream in visitor.streams:
-        outputs = {}
-        for block in stream.strip().split("\n\n"):
-            kind = block.split("\n", 1)[0].removeprefix("event: ")
-            if kind != "step_finished" or "data: " not in block:
-                continue
-            payload = json.loads(block.split("data: ", 1)[1])
-            if payload.get("status") == "ok":
-                outputs[payload["nodeId"]] = (payload.get("output") or {}).get("path")
-        runs.append(outputs)
-    return runs
 
 
 def _start_answers(visitor: "_Visitor") -> list[tuple[int, str | None]]:

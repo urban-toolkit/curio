@@ -2495,6 +2495,8 @@ A viewer of a dashboard changes a pinned control and the dataflow runs again on 
   - A run that ends `needs_canvas` is finished in the page (`finishInPage`): `usePlayAll.playNodes` runs the steps left to it, an Autark node's result reaches the run through `services/runs/dashboardRunSteps.ts` (`askPage`, `keepPageResult`) rather than the canvas's own save, and the start that follows names what each one made. Without WebGPU the node says so in its body, as on the canvas, but raises no toast; a tile below it that already shows an output keeps it, and one with nothing names the step that could not run (`stopped`, `upstream-stopped`) until the next start.
   - A tile with nothing to show says it is computing (`upstream-running`) until it shows what it made or why it cannot (`onDashboard` in `nodeEmptyState`). That covers its run (`active`), its input still on its way, the rows of a new input being read, and a map or chart before its first draw. It never names a node to run or a play to press.
     - A refused start, a lost stream and a page step's unfinished run set `stopped` with their message too.
+    - So does a run that ends at a step that failed on the server (`"<step>" failed.`), or that the server interrupted.
+    - On a dashboard a failed upstream reads as `upstream-stopped` ("No results"), with no node to open.
     - Without WebGPU a wired map still runs, so its body says why it cannot draw. The exception is after a stop, when its tile names the step.
     - These states reach the tiles through `useGrammarInputState`.
   - A node the start does not plan shows its saved output again, so the saved values bring back the saved outputs. Save layout writes each pinned node's widgets as the page opened with them (`savedWidgets`).

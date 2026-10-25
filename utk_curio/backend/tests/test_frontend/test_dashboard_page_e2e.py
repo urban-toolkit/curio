@@ -765,6 +765,24 @@ class _Visitor:
         self.ctx.close()
 
 
+def _step_outputs(visitor: "_Visitor") -> list[dict[str, str]]:
+    """Each run the visitor's page followed, in order: the output of every
+    step it finished, by node id. A step whose output was kept from an earlier
+    run hands on that run's output again."""
+    runs = []
+    for stream in visitor.streams:
+        outputs = {}
+        for block in stream.strip().split("\n\n"):
+            kind = block.split("\n", 1)[0].removeprefix("event: ")
+            if kind != "step_finished" or "data: " not in block:
+                continue
+            payload = json.loads(block.split("data: ", 1)[1])
+            if payload.get("status") == "ok":
+                outputs[payload["nodeId"]] = (payload.get("output") or {}).get("path")
+        runs.append(outputs)
+    return runs
+
+
 def _pool_shows(page, rows: int, *, timeout: float = 90000) -> None:
     """The pinned Data Pool's table holds *rows* rows."""
     table = node_locator(page, POOL).locator("table").first
@@ -916,12 +934,15 @@ def _chart_drew_from_nothing(page) -> None:
 def test_a_tile_with_no_saved_output_runs_the_nodes_before_it_when_the_page_opens(
     app_frontend: "FrontendPage", current_server, page, browser, monkeypatch,
 ):
-    """A tile whose nodes never ran gets its data from a run on open.
+    """A tile whose nodes never ran gets its data from a run on open, and the
+    next visitor gets what that run kept.
 
     The chart is pinned and the dataflow saved without a run, so nothing is
     saved for it. A visitor with no session opens the dashboard as the hosted
     stacks serve it: the page starts one viewer's run with the saved values,
-    and the chart draws what it made. The dataflow stays as it was.
+    and the chart draws what it made. A second visitor's page gets the same
+    outputs, kept for 7 days, with nothing run again (owner, 10-25). The
+    dataflow stays as it was.
     """
     require_project_page()
     require_user_auth()
@@ -948,12 +969,76 @@ def test_a_tile_with_no_saved_output_runs_the_nodes_before_it_when_the_page_open
         assert _not_a_viewer_route(visitor.asked) == [], (
             "the dashboard asked the server for more than a viewer's run" + visitor.story()
         )
+        made = _step_outputs(visitor)
+        assert made and made[0], f"the run on open handed on no output: {made!r}" + visitor.story()
     finally:
         visitor.close()
+
+    # The next visitor: the same outputs, kept, with nothing run again. A step
+    # run again would make an artifact of its own.
+    second = _Visitor(browser, current_server)
+    try:
+        second.opens(hosted, project_id)
+        second.waits_for("the chart from what the first visit kept", lambda: _chart_drew_from_nothing(second.page))
+        second.waits_for_runs(1)
+        assert len(_runs_started(second.asked)) == 1, "the second visit started other than one run" + second.story()
+        again = _step_outputs(second)
+        assert again[:1] == made[:1], (
+            f"the second visit's run handed on {again!r}, not what the first one kept {made!r}" + second.story()
+        )
+    finally:
+        second.close()
 
     after = _project(current_server, session["token"], project_id)
     assert after["spec"] == before["spec"], "the run on open changed the owner's dataflow"
     assert after["outputs"] == [], "the run on open saved outputs to the dataflow"
+
+
+#: A producer whose run fails on the server.
+FAILING_PRODUCER_CODE = "raise ValueError('The table this step reads is gone.')\n"
+
+
+def test_tiles_below_a_step_that_fails_name_it_with_no_node_to_open(
+    app_frontend: "FrontendPage", current_server, page, browser, monkeypatch,
+):
+    """A viewer's run that fails at a server step leaves the tiles below it
+    saying which step failed (owner, 10-25).
+
+    The producer raises; the pool and the chart below it are pinned and the
+    dataflow saved without a run. A visitor's page runs them on open, and the
+    run ends at the producer. Each tile says "No results" and names the step:
+    not "Open it to see the error", as a visitor opens no node, and not
+    "Computing...", as the run is over.
+    """
+    require_project_page()
+    require_user_auth()
+    spec = _spec()
+    spec["dataflow"]["nodes"][0]["content"] = FAILING_PRODUCER_CODE
+    session = _enter(page, app_frontend, current_server, prefix="dash_failing", spec=spec)
+    project_id = session["project"]["id"]
+    node_locator(page, CHART).wait_for(state="visible", timeout=45000)
+    _pin(page, POOL)
+    _pin(page, CHART)
+    _save(page)
+    page.goto("about:blank")
+    hosted = _serve_hosted(app_frontend, current_server, monkeypatch)
+
+    visitor = _Visitor(browser, current_server)
+    try:
+        visitor.opens(hosted, project_id)
+        visitor.waits_for_runs(1)
+        for tile in (POOL, CHART):
+            stopped = node_locator(visitor.page, tile).locator('[data-curio-node-empty="upstream-stopped"]')
+            visitor.waits_for(
+                f"{tile} naming the step that failed",
+                lambda stopped=stopped: expect(stopped).to_contain_text(
+                    re.compile(r'No results\s*"[^"]+" failed\.'), timeout=60000,
+                ),
+            )
+            expect(node_locator(visitor.page, tile)).not_to_contain_text("Open it")
+        assert len(_runs_started(visitor.asked)) == 1, "the failed run started again" + visitor.story()
+    finally:
+        visitor.close()
 
 
 # ---------------------------------------------------------------------------

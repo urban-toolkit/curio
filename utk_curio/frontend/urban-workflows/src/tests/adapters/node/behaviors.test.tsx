@@ -627,6 +627,19 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
         expect(container.textContent).toContain('Computing...');
         expect(container.textContent).not.toContain('Run the node');
       });
+
+      test('when the run ended at a step that failed, it names the step, with no node to open', async () => {
+        // The run's stop says which step failed (useDashboardRun): Simple View
+        // reads no upstream failure of its own.
+        mockEdges = WIRED;
+        mockDashboard = { dashboardOn: true, dashboardStopped: '"Load parcels" failed.' };
+        const result = await callBehavior(useSimpleVisBehavior, { input: '' } as any);
+        const { container } = render(<>{result.current.contentComponent}</>);
+        expect(container.querySelector('[data-curio-node-empty]')?.getAttribute('data-curio-node-empty')).toBe('upstream-stopped');
+        expect(container.textContent).toContain('No results');
+        expect(container.textContent).toContain('"Load parcels" failed.');
+        expect(container.textContent).not.toContain('Open it');
+      });
     });
 
     describe('while it reads the rows of an input that just arrived', () => {
