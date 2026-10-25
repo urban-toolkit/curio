@@ -8,11 +8,11 @@ Covers the user-visible side of recent fixes:
 
 Flow (mirrors a real session): log in as the owner and **save a project first**,
 then generate/install the computed dataset *into that saved project*, then check
-the palette. Generating a dataset by running a node needs the live sandbox +
-WebGPU, so we materialize ``computed.<node>@1/`` directly — the e2e process
-shares the backend's filesystem (same ``CURIO_LAUNCH_CWD``), so the production
-installer writes exactly the on-disk state a toggle-on node run leaves behind —
-and reference it from the project's persisted spec.
+the palette. The dataset is made as a toggle-on node run makes it: a Python
+node runs through the backend's ``/processPythonCode`` with its Save toggle on,
+the sandbox stores its table as an artifact, and the backend saves that
+artifact into the owner's store as ``computed.<dataflow>.<node>@1/``. The
+project's persisted spec then references it.
 
 The owner must be a real authenticated session (``stub_login_and_enter_workflow``),
 not the read-only shared-guest fallback — otherwise the palette's catalog fetch
@@ -24,14 +24,12 @@ Run with the e2e harness, e.g.::
 """
 from __future__ import annotations
 
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 from playwright.sync_api import expect
 
 from .utils import (
     api_json,
-    get_shared_data_dir,
     open_tools_palette,
     require_project_page,
     require_owner_view,
@@ -63,23 +61,31 @@ def _dataset_ref(node_id: str, dataflow_id: str) -> tuple[str, dict]:
     return dataset_id, ref
 
 
-def _install_dataset_on_disk(user_id: int, node_id: str, dataflow_id: str) -> None:
-    """Materialize the computed dataset dir in the owner's store - the on-disk
-    state a toggle-on node run leaves behind."""
-    from utk_curio.backend.app.datasets.install.bundle import install_node_output
-
-    # Bytes need not be valid parquet — the installer copies them and the palette
-    # only renders manifest metadata.
-    parquet_name = "1718000000222_cafe0002_output.parquet"
-    (Path(get_shared_data_dir()) / parquet_name).write_bytes(b"PAR1")
-    result = install_node_output(
-        str(user_id),
-        node_id=node_id,
-        path_ref=parquet_name,
-        data_type="dataframe",
-        dataflow_id=dataflow_id,
+def _save_a_node_output(backend_url: str, token: str, node_id: str, dataflow_id: str, dataset_id: str) -> None:
+    """Run a Python node through the backend with its Save toggle on, as Play
+    does: the sandbox stores the table it returns as an artifact, and the
+    backend saves that artifact into the owner's store as the computed dataset
+    *dataset_id*, the on-disk state a toggle-on node run leaves behind."""
+    reply = api_json(
+        f"{backend_url}/processPythonCode",
+        token,
+        method="POST",
+        payload={
+            # A body, indented, as the sandbox runs a node's code.
+            "code": "    import pandas as pd\n    return pd.DataFrame({'n': [1, 2, 3]})\n",
+            "nodeType": "curio.builtin/computation-analysis",
+            "nodeId": node_id,
+            "dataflowId": dataflow_id,
+            "input": {"path": "", "dataType": ""},
+            "saveOutputDataset": True,
+        },
+        timeout=120,
     )
-    assert result is not None, "installer should materialize the computed dataset dir"
+    installed = reply.get("installedDataset") or {}
+    assert installed.get("id") == dataset_id, (
+        f"the node's run saved no computed dataset {dataset_id}: "
+        f"{reply.get('datasetDiagnostic')}; stderr: {reply.get('stderr')!r}"
+    )
 
 
 def _spec_with_dataset(ref: dict) -> dict:
@@ -121,7 +127,6 @@ def test_saved_computed_dataset_shows_in_palette_and_persists(
         username="palette_user",
         project_name="Palette Persistence",
     )
-    user_id = result["user"]["id"]
     token = result["token"]
     project_id = result["project"]["id"]
 
@@ -130,11 +135,11 @@ def test_saved_computed_dataset_shows_in_palette_and_persists(
     require_owner_view(page)
 
     # 2. Now generate/install the computed dataset INTO the saved project:
-    #    materialize the dataset dir on disk and reference it from the spec.
-    #    The id is only knowable once the project exists - it is namespaced by
-    #    the producing dataflow.
+    #    run a node with its Save toggle on, which saves the dataset dir, and
+    #    reference it from the spec. The id is only knowable once the project
+    #    exists - it is namespaced by the producing dataflow.
     dataset_id, ref = _dataset_ref(node_id, project_id)
-    _install_dataset_on_disk(user_id, node_id, project_id)
+    _save_a_node_output(current_server, token, node_id, project_id, dataset_id)
     api_json(
         f"{current_server}/api/projects/{project_id}",
         token,

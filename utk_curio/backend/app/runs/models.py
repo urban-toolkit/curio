@@ -1,5 +1,5 @@
-"""A dataflow run and its per-node steps, and the outputs a dashboard
-viewer's runs keep (:class:`DashboardStepOutput`).
+"""A dataflow run and its per-node steps, and the outputs kept runs keep
+(:class:`KeptStepOutput`), a dashboard viewer's among them.
 
 A run is one press of Run All (no target), of a node's play button
 (``target_node_id`` set), or an automatic run after a widget or Parameter
@@ -136,20 +136,22 @@ class DataflowRunStep(db.Model):
         return f"<DataflowRunStep {self.run_id!r} {self.node_id!r} {self.status!r}>"
 
 
-class DashboardStepOutput(db.Model):
-    """One output a dashboard viewer's run made (``runs/viewer.py``), kept so
-    that the next viewer who picks the same values gets it with no run.
+class KeptStepOutput(db.Model):
+    """One output a kept run made (``runs/kept.py``), a dashboard viewer's
+    among them (``runs/viewer.py``), kept so that the next run that needs it
+    gets it with no run.
 
     *step_key* hashes what made it: the step's code with the values written
     in, its inputs, the owner's packages and the datasets the code reads, and
     Curio's version. Its artifacts carry a session of their own
-    (``common/dashboard_sessions.py``), which the sandbox forgets when the
-    entry goes. An entry built on a result a viewer's browser sent is
-    *private_to* that run: only its tab reads it. Deleting the project deletes
-    its entries.
+    (``common/kept_sessions.py``), which the sandbox forgets when the entry
+    goes. *made_by* says whose run made it, the dataflow's owner's or a
+    viewer's; each keeps a budget of its own. An entry built on a result a
+    viewer's browser sent is *private_to* that run: only its tab reads it.
+    Deleting the project deletes its entries.
     """
 
-    __tablename__ = "dashboard_step_output"
+    __tablename__ = "kept_step_output"
 
     id = db.Column(db.String(36), primary_key=True, default=_uuid)
     project_id = db.Column(db.String(36), db.ForeignKey("project.id"), nullable=False)
@@ -165,19 +167,21 @@ class DashboardStepOutput(db.Model):
     size_bytes = db.Column(db.BigInteger, nullable=False, default=0)
     # A digest of the run token of the one tab that may read it.
     private_to = db.Column(db.String(64), nullable=True)
+    # Whose run made it: "owner" or "viewer" (``kept.MADE_BY_*``).
+    made_by = db.Column(db.String(16), nullable=False, default="viewer")
     created_at = db.Column(db.DateTime, nullable=False, default=naive_utc_now)
     used_at = db.Column(db.DateTime, nullable=False, default=naive_utc_now)
 
     project = db.relationship(
         "Project",
-        backref=db.backref("dashboard_outputs", cascade="all, delete-orphan"),
+        backref=db.backref("kept_outputs", cascade="all, delete-orphan"),
     )
 
     __table_args__ = (
-        db.Index("ix_dashboard_step_output_key", "project_id", "step_key"),
-        db.Index("ix_dashboard_step_output_path", "project_id", "output_path"),
-        db.Index("ix_dashboard_step_output_created", "created_at"),
+        db.Index("ix_kept_step_output_key", "project_id", "step_key"),
+        db.Index("ix_kept_step_output_path", "project_id", "output_path"),
+        db.Index("ix_kept_step_output_created", "created_at"),
     )
 
     def __repr__(self):
-        return f"<DashboardStepOutput {self.project_id!r} {self.node_id!r} {self.step_key[:8]!r}>"
+        return f"<KeptStepOutput {self.project_id!r} {self.node_id!r} {self.step_key[:8]!r}>"

@@ -227,7 +227,7 @@ def create_app(config_class=config_class):
 
     from utk_curio.backend.app.projects.tasks import start_cleanup_scheduler
     start_cleanup_scheduler(app)
-    from utk_curio.backend.app.runs.viewer import start_prune_scheduler
+    from utk_curio.backend.app.runs.kept import start_prune_scheduler
     start_prune_scheduler(app)
 
     # A run an earlier backend process left going was cut off when it stopped.

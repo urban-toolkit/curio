@@ -115,10 +115,9 @@ def test_a_bundle_lists_each_parts_layer(app):
 
 
 def test_a_single_frame_reloads_with_its_name_and_layer_type(app):
-    from utk_curio.sandbox.util.parsers import save_dataset_parquet
-
-    filename = save_dataset_parquet(_frame("parcels", "surface", 0), "geodataframe")
-    result = _install(filename, "geodataframe")
+    # The frame's metadata rides in the store's row of its artifact, and comes
+    # back through the saved file's ``.decode.json``.
+    result = _install(store_sandbox_artifact(_frame("parcels", "surface", 0)), "geodataframe")
 
     assert result.manifest.format == "parquet"
     assert _reload(result).metadata == {"name": "parcels", "layerType": "surface"}
@@ -128,10 +127,8 @@ def test_a_discovery_layer_type_is_kept_beside_the_frames_own_name(app):
     """A Discovery download names its layer type when it is loaded; that
     joins the name the frame was saved with instead of replacing it."""
     from utk_curio.sandbox.util.catalog_helpers import read_dataset
-    from utk_curio.sandbox.util.parsers import save_dataset_parquet
 
-    filename = save_dataset_parquet(_frame("parcels", "surface", 0), "geodataframe")
-    result = _install(filename, "geodataframe")
+    result = _install(store_sandbox_artifact(_frame("parcels", "surface", 0)), "geodataframe")
     dest = dataset_dir(USER, result.manifest.dir_name)
 
     frame = read_dataset(str(dest / result.manifest.data_file), "parquet", layer_type="buildings")

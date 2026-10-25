@@ -1,9 +1,11 @@
 """Regression tests for issue #146(b) — JS nodes must persist a named dataset.
 
-The Python exec path emits ``output['dataset']`` (a saved parquet filename) so the
-backend can auto-install it; the JS path historically never did. These tests cover
-the conversion of a JS node's plain-JSON result into a saveable frame, and the
-round-trip through ``save_dataset_parquet``.
+A JS node's value is JSON in the store. With Save on, a table it returns is
+stored once more as a frame artifact of its own, which ``output['dataset']``
+names so the backend can install its Parquet, as it installs a Python node's
+artifact; the JS path historically never saved one. These tests cover the
+conversion of a JS node's plain-JSON result into a saveable frame, and the
+round-trip through the store.
 """
 from __future__ import annotations
 
@@ -39,16 +41,14 @@ def test_non_tabular_values_are_not_datasets(value):
     assert _js_value_to_saveable_frame(value) == (None, None)
 
 
-def test_js_records_round_trip_through_save_dataset_parquet(tmp_path, monkeypatch):
-    monkeypatch.setattr(parsers, "_shared_data_dir", lambda: tmp_path)
-
+def test_js_records_round_trip_through_the_store_as_a_frame(app):
     kind, frame = _js_value_to_saveable_frame(
         [{"name": "A", "tags": {"k": "v"}}, {"name": "B", "tags": ["x", "y"]}]
     )
-    filename = parsers.save_dataset_parquet(frame, kind)
-    assert filename is not None
-    assert (tmp_path / filename).is_file()
+    assert kind == "dataframe"
+    art_id = parsers.save_to_duckdb(frame, node_id="js-node")
+    assert (parsers._shared_data_dir() / "artifacts" / f"{art_id}.parquet").is_file()
 
-    restored = parsers.load_dataset_parquet(tmp_path / filename)
+    restored = parsers.load_from_duckdb(art_id)
     assert restored["tags"].tolist()[0] == {"k": "v"}
     assert restored["tags"].tolist()[1] == ["x", "y"]

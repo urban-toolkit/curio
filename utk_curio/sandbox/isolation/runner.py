@@ -73,8 +73,11 @@ def _failure(stderr):
     return {"stdout": [], "stderr": stderr, "output": {"path": "", "dataType": "str"}}
 
 
-def _persist_output(descriptor, *, node_type, session_id, save_dataset):
-    """File the child's output away. Returns (artifact id, dataset file).
+def _persist_output(descriptor, *, node_type, session_id, exec_uid=None):
+    """File the child's output away. Returns its artifact id, whose file the
+    Data Catalog links when the output is saved, as in process. With an
+    execution account (*exec_uid*), each file the child wrote becomes the
+    sandbox's own (``staging.persist_output``).
 
     The write handle is no longer dropped here. It used to be, because the
     backend opened the DuckDB file read-only for the catalog, auto-install and
@@ -93,14 +96,9 @@ def _persist_output(descriptor, *, node_type, session_id, save_dataset):
     from utk_curio.sandbox.util import staging
 
     with _exec_lock.hold("isolated_persist"):
-        # Before persist_output, which moves the file out of scratch.
-        dataset_file = (
-            staging.copy_output_dataset(descriptor) if save_dataset else None
+        return staging.persist_output(
+            descriptor, node_id=node_type, session_id=session_id, exec_uid=exec_uid
         )
-        art_id = staging.persist_output(
-            descriptor, node_id=node_type, session_id=session_id
-        )
-    return art_id, dataset_file
 
 
 def _parse_outputs_refs(file_path):
@@ -194,7 +192,9 @@ def execute_isolated(
 
     *launch_dir* is the fallback working directory, matching the in-process
     path's ``cwd``. Positional and third-from-last so this signature lines up
-    with ``worker.execute_code``, which the caller picks between.
+    with ``worker.execute_code``, which the caller picks between. So is
+    *save_dataset*, which changes nothing here: a saved output is its
+    artifact's own file, which the Data Catalog links.
 
     *user_key* also selects that user's node-library overlay (#332), which the
     child puts on ``sys.path``: a library one user installed is importable by
@@ -318,18 +318,14 @@ def execute_isolated(
         _remember_imports(session_id, manifest["imports"])
 
         descriptor = manifest["output"]
-        art_id, dataset_file = _persist_output(
+        art_id = _persist_output(
             descriptor, node_type=node_type, session_id=session_id,
-            save_dataset=save_dataset,
+            exec_uid=config.exec_uid,
         )
-
-        output = {"path": art_id, "dataType": descriptor["kind"]}
-        if dataset_file:
-            output["dataset"] = dataset_file
         return {
             "stdout": manifest["stdout"],
             "stderr": manifest["stderr"],
-            "output": output,
+            "output": {"path": art_id, "dataType": descriptor["kind"]},
         }
 
     except ProtocolError as exc:

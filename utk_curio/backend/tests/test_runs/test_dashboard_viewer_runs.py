@@ -149,7 +149,7 @@ def app(_signed_in_instance, app):
 @pytest.fixture()
 def sandbox(monkeypatch):
     from utk_curio.backend import config
-    from utk_curio.backend.app.runs import jobs, viewer
+    from utk_curio.backend.app.runs import jobs, kept, viewer
 
     monkeypatch.setattr(config, "CURIO_DEFAULT_SAVE_NODE_OUTPUT", False)
     jobs.REGISTRY.reset()
@@ -157,6 +157,7 @@ def sandbox(monkeypatch):
     fake = FakeSandbox()
     monkeypatch.setattr("utk_curio.backend.app.execution.node_exec.sandbox_request", fake)
     monkeypatch.setattr("utk_curio.backend.app.runs.viewer.sandbox_request", fake)
+    monkeypatch.setattr("utk_curio.backend.app.runs.kept.sandbox_request", fake)
     yield fake
     fake.release()
 
@@ -167,7 +168,7 @@ def saved(monkeypatch):
     Grid's, unless a test empties the list."""
     from utk_curio.backend.app.projects import storage
     from utk_curio.backend.app.projects.schemas import OutputRef
-    from utk_curio.backend.app.runs import viewer
+    from utk_curio.backend.app.runs import kept, viewer
 
     refs = [OutputRef(node_id="grid", filename="saved-grid", data_type="str")]
     monkeypatch.setattr(
@@ -186,7 +187,7 @@ def _run(client, project_id, values=None, *, address="10.0.0.1"):
 
 
 def _wait(run_id):
-    from utk_curio.backend.app.runs import viewer
+    from utk_curio.backend.app.runs import kept, viewer
     from utk_curio.backend.extensions import db
 
     job = viewer.REGISTRY.get_job(run_id)
@@ -383,7 +384,7 @@ class TestRefusedValues:
         assert sandbox.runs == []
 
     def test_text_text_lists_and_files_are_read_only_as_the_contract_says(self):
-        from utk_curio.backend.app.runs import viewer
+        from utk_curio.backend.app.runs import kept, viewer
         from utk_curio.common import shared_constants
 
         assert viewer.READ_ONLY_WIDGET_KINDS == {"text", "text-list", "file"}
@@ -397,7 +398,7 @@ class TestRefusedValues:
         assert set(viewer.dashboard_controls(spec)) == {("p", "slider"), ("p", "date")}
 
     def test_a_node_that_reads_a_key_stops_with_the_message(self, client, user_and_token, sandbox, saved):
-        from utk_curio.backend.app.runs import viewer
+        from utk_curio.backend.app.runs import kept, viewer
 
         _, token = user_and_token
         pid = _create(client, token, _nodes(grid_code='key = curio_secret("weather")\nreturn [!! @period !!]'))
@@ -462,7 +463,7 @@ def _tried(client, project_id, period, address):
 class TestLimits:
     def test_the_limiter_counts_each_forwarded_addresses_tries_on_its_own(self, client, user_and_token, sandbox, saved, monkeypatch):
         from utk_curio.backend.app.common.address_limiter import AddressLimiter
-        from utk_curio.backend.app.runs import viewer
+        from utk_curio.backend.app.runs import kept, viewer
 
         _, token = user_and_token
         pid = _create(client, token)
@@ -479,7 +480,7 @@ class TestLimits:
         visit, the first making it and the rest getting it kept: only the
         values a visitor tries count against its address's budget."""
         from utk_curio.backend.app.common.address_limiter import AddressLimiter
-        from utk_curio.backend.app.runs import viewer
+        from utk_curio.backend.app.runs import kept, viewer
 
         _, token = user_and_token
         pid = _create(client, token)
@@ -498,7 +499,7 @@ class TestLimits:
         """Without ``--proxy-hops`` anyone reaching the backend could write
         X-Forwarded-For, so a new address there is no new budget."""
         from utk_curio.backend.app.common.address_limiter import AddressLimiter
-        from utk_curio.backend.app.runs import viewer
+        from utk_curio.backend.app.runs import kept, viewer
 
         _, token = user_and_token
         pid = _create(client, token)
@@ -563,7 +564,7 @@ class TestLimits:
 
         assert exec_parallelism({"CURIO_EXEC_PARALLELISM": "8"}) == 8
         assert exec_parallelism({"CURIO_EXEC_PARALLELISM": "nonsense"}) >= 2
-        from utk_curio.backend.app.runs import viewer
+        from utk_curio.backend.app.runs import kept, viewer
 
         assert 1 <= viewer.STEP_SLOTS <= max(1, exec_parallelism() // 2)
 
@@ -585,12 +586,12 @@ class TestFollowingAndReading:
 
     def test_an_output_is_read_in_its_own_session_and_only_on_its_dashboard(self, client, user_and_token, sandbox, saved, monkeypatch):
         from utk_curio.backend.app.api import routes as api_routes
-        from utk_curio.backend.app.runs.models import DashboardStepOutput
+        from utk_curio.backend.app.runs.models import KeptStepOutput
 
         _, token = user_and_token
         pid = _create(client, token)
         _month(client, pid)
-        entry = DashboardStepOutput.query.filter_by(project_id=pid).one()
+        entry = KeptStepOutput.query.filter_by(project_id=pid).one()
         asked = []
 
         class Stream:
@@ -616,7 +617,7 @@ class TestFollowingAndReading:
 
         assert read.status_code == 200 and read.get_json()["data"] == "Month"
         assert asked == [{"fileName": entry.output_path, "sessionId": entry.session_id}]
-        assert entry.session_id.startswith("dashboard-") and entry.session_id != token
+        assert entry.session_id.startswith("kept-") and entry.session_id != token
         assert (elsewhere.status_code, unknown.status_code) == (404, 404)
 
     def test_the_run_token_may_be_sent_cross_origin(self, client, user_and_token):
@@ -638,16 +639,16 @@ class TestFollowingAndReading:
 class TestKeys:
     def test_a_new_curio_version_or_package_or_dataset_changes_the_key(self, tmp_path, monkeypatch):
         import utk_curio
-        from utk_curio.backend.app.runs import viewer
+        from utk_curio.backend.app.runs import kept, viewer
 
         dataset = tmp_path / "trees.csv"
         dataset.write_text("a\n1\n")
 
         def key(**changes):
             fields = dict(packages="p1", node_type=CODE, engine="python", code="return 1", input_ref=None,
-                          input_slots=None, datasets={"trees": viewer._file_identity(str(dataset))})
+                          input_slots=None, datasets={"trees": kept._file_identity(str(dataset))})
             fields.update(changes)
-            return viewer.step_key(**fields)
+            return kept.step_key(**fields)
 
         base = key()
         assert key() == base
@@ -674,16 +675,16 @@ class TestKeys:
 
 
 class TestKeptOutputsGo:
-    def _entry(self, pid, *, days=0, hours=0, size=100, private=False, used_days=None):
-        from utk_curio.backend.app.runs.models import DashboardStepOutput, naive_utc_now
+    def _entry(self, pid, *, days=0, hours=0, size=100, private=False, used_days=None, made_by="viewer"):
+        from utk_curio.backend.app.runs.models import KeptStepOutput, naive_utc_now
         from utk_curio.backend.extensions import db
-        from utk_curio.common.dashboard_sessions import new_session_id
+        from utk_curio.common.kept_sessions import new_session_id
 
         now = naive_utc_now()
-        entry = DashboardStepOutput(
+        entry = KeptStepOutput(
             project_id=pid, node_id="grid", step_key="k" * 64, session_id=new_session_id(),
             output=json.dumps({"path": "p", "dataType": "str"}), output_path="p",
-            artifact_ids='["p"]', size_bytes=size, private_to="t" * 64 if private else None,
+            artifact_ids='["p"]', size_bytes=size, private_to="t" * 64 if private else None, made_by=made_by,
             created_at=now - timedelta(days=days, hours=hours),
             used_at=now - timedelta(days=used_days if used_days is not None else days, hours=hours),
         )
@@ -692,12 +693,12 @@ class TestKeptOutputsGo:
         return entry.id, entry.session_id
 
     def test_an_output_goes_seven_days_after_it_was_made_and_a_tabs_own_after_an_hour(self, client, user_and_token, sandbox):
-        from utk_curio.backend.app.runs import viewer
-        from utk_curio.backend.app.runs.models import DashboardStepOutput
+        from utk_curio.backend.app.runs import kept, viewer
+        from utk_curio.backend.app.runs.models import KeptStepOutput
 
         _, token = user_and_token
         pid = _create(client, token)
-        assert viewer.KEPT_DAYS == 7
+        assert kept.KEPT_DAYS == 7
         fresh = self._entry(pid, days=6)
         old = self._entry(pid, days=8)
         # Counted from when it was made: a visit since does not keep it longer.
@@ -705,9 +706,9 @@ class TestKeptOutputsGo:
         tab_fresh = self._entry(pid, private=True)
         tab_old = self._entry(pid, private=True, hours=2)
 
-        assert viewer.prune() == 3
+        assert kept.prune() == 3
 
-        left = {row.id for row in DashboardStepOutput.query.all()}
+        left = {row.id for row in KeptStepOutput.query.all()}
         assert left == {fresh[0], tab_fresh[0]}
         assert sorted(sandbox.forgotten) == sorted([old[1], old_used_today[1], tab_old[1]])
 
@@ -718,18 +719,18 @@ class TestKeptOutputsGo:
         made, and no longer, whether or not a sweep has run: at day 6 nothing
         runs and the kept output comes back; at day 8 the same values run
         again, and what that run makes is kept in its place."""
-        from utk_curio.backend.app.runs import viewer
-        from utk_curio.backend.app.runs.models import DashboardStepOutput
+        from utk_curio.backend.app.runs import kept, viewer
+        from utk_curio.backend.app.runs.models import KeptStepOutput
 
         _, token = user_and_token
         pid = _create(client, token)
         _month(client, pid)
-        made = DashboardStepOutput.query.filter_by(project_id=pid).one()
+        made = KeptStepOutput.query.filter_by(project_id=pid).one()
         made_at, made_session = made.created_at, made.session_id
 
         def visit(days: int) -> list:
             """The same values *days* days after the output was made: what each step answered."""
-            monkeypatch.setattr(viewer, "naive_utc_now", lambda: made_at + timedelta(days=days))
+            monkeypatch.setattr(kept, "naive_utc_now", lambda: made_at + timedelta(days=days))
             body = _month(client, pid)
             return [
                 (payload["nodeId"], payload["output"]["path"])
@@ -742,68 +743,91 @@ class TestKeptOutputsGo:
 
         assert visit(8) == [("grid", "art-grid-2")]
         assert len(sandbox.runs) == 2, "a visit past the 7 days did not run the step again"
-        left = [row.output_path for row in DashboardStepOutput.query.filter_by(project_id=pid).all()]
+        left = [row.output_path for row in KeptStepOutput.query.filter_by(project_id=pid).all()]
         assert left == ["art-grid-2"], f"what is kept now: {left!r}"
         assert sandbox.forgotten == [made_session]
 
     def test_a_tabs_own_output_serves_its_tab_for_an_hour_whether_or_not_a_sweep_ran(
         self, client, user_and_token, sandbox,
     ):
-        from utk_curio.backend.app.runs import viewer
+        from utk_curio.backend.app.runs import kept, viewer
 
         _, token = user_and_token
         pid = _create(client, token)
         stale = self._entry(pid, private=True, hours=2)
 
         # Two hours old and not swept yet: its tab no longer gets it.
-        assert viewer._kept_output(pid, "k" * 64, "t" * 64) is None
+        assert kept.kept_output(pid, "k" * 64, "t" * 64) is None
         self._entry(pid, private=True)
-        assert viewer._kept_output(pid, "k" * 64, "t" * 64) is not None
+        assert kept.kept_output(pid, "k" * 64, "t" * 64) is not None
         # The sweep takes the stale one only.
-        assert viewer.prune() == 1
+        assert kept.prune() == 1
         assert sandbox.forgotten == [stale[1]]
 
     def test_the_sweep_runs_a_minute_after_start_then_every_six_hours_and_never_under_testing(self, app, monkeypatch):
         """With no visit at all, what is past its time still goes on time."""
         from utk_curio.backend import config
-        from utk_curio.backend.app.runs import viewer
+        from utk_curio.backend.app.runs import kept, viewer
 
-        monkeypatch.setattr(viewer, "_prune_timer", None)
-        viewer.start_prune_scheduler(app)
-        assert viewer._prune_timer is None, "a sweep was scheduled under --testing"
+        monkeypatch.setattr(kept, "_prune_timer", None)
+        kept.start_prune_scheduler(app)
+        assert kept._prune_timer is None, "a sweep was scheduled under --testing"
 
         swept = []
-        monkeypatch.setattr(viewer, "prune", lambda now=None: swept.append(now) or 0)
+        monkeypatch.setattr(kept, "prune", lambda now=None: swept.append(now) or 0)
         monkeypatch.setattr(config, "_is_testing", lambda: False)
-        viewer.start_prune_scheduler(app)
-        first = viewer._prune_timer
+        kept.start_prune_scheduler(app)
+        first = kept._prune_timer
         try:
             assert first is not None and first.daemon and first.interval == 60
             first.cancel()
             first.function()
             assert swept == [None]
-            assert viewer._prune_timer.interval == viewer.PRUNE_INTERVAL_HOURS * 3600 == 6 * 3600
+            assert kept._prune_timer.interval == kept.PRUNE_INTERVAL_HOURS * 3600 == 6 * 3600
         finally:
-            viewer._prune_timer.cancel()
+            kept._prune_timer.cancel()
 
     def test_a_dashboard_past_its_size_drops_the_least_recently_used(self, client, user_and_token, sandbox, monkeypatch):
-        from utk_curio.backend.app.runs import viewer
-        from utk_curio.backend.app.runs.models import DashboardStepOutput
+        from utk_curio.backend.app.runs import kept, viewer
+        from utk_curio.backend.app.runs.models import KeptStepOutput
 
         _, token = user_and_token
         pid = _create(client, token)
-        monkeypatch.setattr(viewer, "MAX_KEPT_BYTES_PER_DASHBOARD", 250)
+        monkeypatch.setattr(kept, "MAX_KEPT_BYTES", 250)
         stale = self._entry(pid, size=100, used_days=3)
         recent = self._entry(pid, size=100, used_days=1)
         newest = self._entry(pid, size=100, used_days=0)
 
-        viewer.prune()
+        kept.prune()
 
-        assert {row.id for row in DashboardStepOutput.query.all()} == {recent[0], newest[0]}
+        assert {row.id for row in KeptStepOutput.query.all()} == {recent[0], newest[0]}
+        assert sandbox.forgotten == [stale[1]]
+
+    def test_the_owners_outputs_and_the_viewers_each_have_a_budget_of_their_own(
+        self, client, user_and_token, sandbox, monkeypatch,
+    ):
+        """Visitors trying values never evict what the owner's runs kept: the
+        viewers' outputs past their budget drop their least recently used, and
+        the owner's, though older still, stay within theirs."""
+        from utk_curio.backend.app.runs import kept
+        from utk_curio.backend.app.runs.models import KeptStepOutput
+
+        _, token = user_and_token
+        pid = _create(client, token)
+        monkeypatch.setattr(kept, "MAX_KEPT_BYTES", 250)
+        owners = [self._entry(pid, size=100, used_days=5, made_by=kept.MADE_BY_OWNER) for _ in range(2)]
+        stale = self._entry(pid, size=100, used_days=3)
+        recent = self._entry(pid, size=100, used_days=1)
+        newest = self._entry(pid, size=100, used_days=0)
+
+        assert kept.prune() == 1
+
+        left = {row.id for row in KeptStepOutput.query.all()}
+        assert left == {owners[0][0], owners[1][0], recent[0], newest[0]}
         assert sandbox.forgotten == [stale[1]]
 
     def test_deleting_the_dataflow_forgets_its_outputs(self, client, user_and_token, sandbox):
-        from utk_curio.backend.app.runs.models import DashboardStepOutput
+        from utk_curio.backend.app.runs.models import KeptStepOutput
 
         _, token = user_and_token
         pid = _create(client, token)
@@ -812,7 +836,7 @@ class TestKeptOutputsGo:
         resp = client.delete(f"/api/projects/{pid}", headers=_auth(token))
 
         assert resp.status_code in (200, 204), resp.get_data(as_text=True)
-        assert DashboardStepOutput.query.filter_by(project_id=pid).count() == 0
+        assert KeptStepOutput.query.filter_by(project_id=pid).count() == 0
         assert sandbox.forgotten == [session]
 
 
@@ -878,7 +902,7 @@ class TestTheStepsLeftToThePage:
         return _create(client, token, nodes=_gpu_nodes(), edges=GPU_EDGES)
 
     def test_the_run_ends_asking_the_page_for_its_step(self, client, gpu, sandbox):
-        from utk_curio.backend.app.runs import viewer
+        from utk_curio.backend.app.runs import kept, viewer
 
         started = _month(client, gpu)
         events = _events(client, gpu, started["runId"], started["token"])
@@ -890,25 +914,25 @@ class TestTheStepsLeftToThePage:
         assert viewer._RUNS[started["runId"]]["browserSteps"] == ["gpu"]
 
     def test_what_the_page_sends_is_kept_for_it_alone(self, client, gpu, sandbox):
-        from utk_curio.backend.app.runs import viewer
-        from utk_curio.backend.app.runs.models import DashboardStepOutput
+        from utk_curio.backend.app.runs import kept, viewer
+        from utk_curio.backend.app.runs.models import KeptStepOutput
 
         started = _month(client, gpu)
-        kept = _keep_step(client, gpu, started["runId"], started["token"])
+        sent = _keep_step(client, gpu, started["runId"], started["token"])
 
-        assert kept.status_code == 200, kept.get_data(as_text=True)
-        output = kept.get_json()["output"]
+        assert sent.status_code == 200, sent.get_data(as_text=True)
+        output = sent.get_json()["output"]
         assert output == {"path": "page-1", "dataType": "dict"}
         # Written to the sandbox as it came, in a dashboard session of its own.
         assert sandbox.stored[0]["value"] == LAYER
-        entry = DashboardStepOutput.query.filter_by(project_id=gpu, output_path="page-1").one()
+        entry = KeptStepOutput.query.filter_by(project_id=gpu, output_path="page-1").one()
         assert entry.node_id == "gpu"
-        assert entry.private_to == viewer._digest(started["token"])
+        assert entry.private_to == kept.digest(started["token"])
         # Read with no token, as another page would, it is not found.
         assert client.get(f"/api/projects/{gpu}/dashboard/outputs/get?fileName=page-1").status_code == 404
 
     def test_a_page_sends_only_what_its_run_left_to_it(self, client, gpu, sandbox, monkeypatch):
-        from utk_curio.backend.app.runs import viewer
+        from utk_curio.backend.app.runs import kept, viewer
 
         started = _month(client, gpu)
         run_id, token = started["runId"], started["token"]
@@ -922,8 +946,8 @@ class TestTheStepsLeftToThePage:
         assert sandbox.stored == []
 
     def test_the_next_start_runs_the_steps_below_on_what_the_page_sent(self, client, gpu, sandbox):
-        from utk_curio.backend.app.runs import viewer
-        from utk_curio.backend.app.runs.models import DashboardStepOutput
+        from utk_curio.backend.app.runs import kept, viewer
+        from utk_curio.backend.app.runs.models import KeptStepOutput
 
         first = _month(client, gpu)
         page = _keep_step(client, gpu, first["runId"], first["token"]).get_json()["output"]["path"]
@@ -943,8 +967,8 @@ class TestTheStepsLeftToThePage:
         # Grid ran in the first run only; After ran on the page's result.
         assert [node for node, _body in sandbox.runs] == ["grid", "after"]
         assert page in json.dumps(sandbox.runs[1][1])
-        after = DashboardStepOutput.query.filter_by(project_id=gpu, node_id="after").one()
-        assert after.private_to == viewer._digest(first["token"])
+        after = KeptStepOutput.query.filter_by(project_id=gpu, node_id="after").one()
+        assert after.private_to == kept.digest(first["token"])
 
     def test_another_page_runs_its_own_step_and_cannot_name_the_first_ones(self, client, gpu, sandbox):
         first = _month(client, gpu)
@@ -965,7 +989,7 @@ class TestTheStepsLeftToThePage:
         page makes with its result is not, but a page that sends results again
         pays for each start that follows."""
         from utk_curio.backend.app.common.address_limiter import AddressLimiter
-        from utk_curio.backend.app.runs import viewer
+        from utk_curio.backend.app.runs import kept, viewer
 
         monkeypatch.setattr(viewer, "_LIMITER", AddressLimiter(1, 100))
         first = _month(client, gpu)

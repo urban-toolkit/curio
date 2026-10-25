@@ -8,8 +8,6 @@ the raw generated filename — so a "Play All" rerun produces friendly titles.
 from __future__ import annotations
 
 import json
-import os
-from pathlib import Path
 
 from utk_curio.backend.app.datasets.install.installer import computed_dataset_id
 from utk_curio.backend.app.projects.services import (
@@ -20,6 +18,7 @@ from utk_curio.backend.app.projects.schemas import OutputRef
 from utk_curio.backend.tests.test_datasets.computed_test_helpers import (
     auth_headers,
     create_project,
+    store_sandbox_artifact,
 )
 
 
@@ -49,9 +48,7 @@ def test_save_titles_computed_output_by_node_name(client, user_and_token):
     computed dataset title on save — not the generated filename."""
     _, token = user_and_token
     project_id = create_project(client, token, name="Play All node-name title")
-    shared = Path(os.environ["CURIO_SHARED_DATA"])
-    filename = "1782757759504_31640bba.json"
-    (shared / filename).write_text(json.dumps({"a": 1}), encoding="utf-8")
+    filename = store_sandbox_artifact({"a": 1})
 
     node_id = "whatif-data"
     resp = client.put(
@@ -79,9 +76,7 @@ def test_save_falls_back_to_the_node_header_name_without_node_name(client, user_
     ``curio.builtin/autk-grammar`` (#775), never the raw filename."""
     _, token = user_and_token
     project_id = create_project(client, token, name="Play All type fallback")
-    shared = Path(os.environ["CURIO_SHARED_DATA"])
-    filename = "1782757838569_7121d215.json"
-    (shared / filename).write_text(json.dumps({"a": 1}), encoding="utf-8")
+    filename = store_sandbox_artifact({"a": 1})
 
     node_id = "whatif-baseline-compute"
     resp = client.put(
@@ -97,6 +92,8 @@ def test_save_falls_back_to_the_node_header_name_without_node_name(client, user_
     dataset_id = computed_dataset_id(node_id, project_id)
     title = _computed_title(client, token, project_id, dataset_id)
     assert title == "Autark"  # curio.builtin/autk-grammar's label in its manifest
+    # Neither the output's name nor the file it saves as (``<id>.json``).
+    assert filename not in title
     assert ".json" not in title.lower()
 
 

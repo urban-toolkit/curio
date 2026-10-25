@@ -36,7 +36,6 @@ from utk_curio.sandbox.util.parsers import (
     _make_id,
     _read_json_artifact,
     _resolve_stored_artifact_path,
-    _shared_data_dir,
     _stored_artifact_rel_path,
     _write_json_artifact,
 )
@@ -52,8 +51,10 @@ def _link_or_copy(source: Path, destination: Path) -> None:
     A hardlink is effectively free and avoids duplicating a multi-gigabyte
     raster or parquet for every node run. It is safe despite sharing an inode
     with the stored artifact: the child's uid has no write permission on the
-    file, so it can read the contents and nothing more. Falls back to a copy
-    across filesystems, or where the platform refuses to link.
+    file, so it can read the contents and nothing more. A file an earlier
+    child wrote is no exception, since :func:`persist_output` takes it from
+    that child. Falls back to a copy across filesystems, or where the
+    platform refuses to link.
     """
     try:
         os.link(source, destination)
@@ -497,7 +498,7 @@ def _insert_row(con, art_id, kind, *, node_id=None, session_id=None,
     )
 
 
-def persist_output(descriptor, *, node_id=None, session_id=None):
+def persist_output(descriptor, *, node_id=None, session_id=None, exec_uid=None):
     """Write a validated child output descriptor into the artifact store.
 
     *descriptor* must already have been through
@@ -506,20 +507,51 @@ def persist_output(descriptor, *, node_id=None, session_id=None):
 
     File-backed payloads are **moved**, not parsed. The parent never reads a
     parquet a child wrote; it only relocates the bytes and records where they
-    went.
+    went. With an execution account (*exec_uid*), each moved file is then
+    taken from the child (:func:`_take_from_child`).
     """
     init_db()
     con = get_connection()
-    return _persist(con, descriptor, node_id=node_id, session_id=session_id)
+    return _persist(con, descriptor, node_id=node_id, session_id=session_id, exec_uid=exec_uid)
 
 
-def _persist(con, descriptor, *, node_id, session_id):
+#: A file a child wrote, once the store holds it: the sandbox's own, readable
+#: by every child it is staged for and writable by none.
+STORED_FILE_MODE = 0o644
+
+
+def _take_from_child(path):
+    """Make *path*, a file a child wrote that the store now holds, the
+    sandbox's own, at :data:`STORED_FILE_MODE`.
+
+    A move keeps the file's owner, the execution account every child runs as.
+    Staged for a later run, as a hardlink sharing its inode, it would let that
+    run's node code change an output that other runs and readers take as it
+    was made. Only the sandbox running as root can take it, and only then does
+    a child run as another account. A file that cannot be taken fails the
+    persist rather than stay writable, and is removed: no row names it yet.
+    """
+    if os.geteuid() != 0:
+        return
+    try:
+        descriptor = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+        try:
+            os.fchown(descriptor, os.geteuid(), os.getegid())
+            os.fchmod(descriptor, STORED_FILE_MODE)
+        finally:
+            os.close(descriptor)
+    except OSError as exc:
+        Path(path).unlink(missing_ok=True)
+        raise StagingError(f"could not take {Path(path).name} from the child: {exc}") from exc
+
+
+def _persist(con, descriptor, *, node_id, session_id, exec_uid=None):
     kind = descriptor["kind"]
     art_id = _make_id()
 
     if kind == "outputs":
         child_ids = [
-            _persist(con, item, node_id=node_id, session_id=session_id)
+            _persist(con, item, node_id=node_id, session_id=session_id, exec_uid=exec_uid)
             for item in descriptor["items"]
         ]
         _insert_row(con, art_id, "outputs", node_id=node_id, session_id=session_id,
@@ -564,6 +596,8 @@ def _persist(con, descriptor, *, node_id, session_id):
         rel_path = _stored_artifact_rel_path(art_id)
         target = _resolve_stored_artifact_path(rel_path, create_parent=True)
         shutil.move(source, target)
+        if exec_uid is not None:
+            _take_from_child(target)
         meta = descriptor.get("meta") or {}
         value_json = codec._serialize_parquet_meta(
             meta.get("frame_metadata"), meta.get("encoded_object_columns"),
@@ -577,6 +611,8 @@ def _persist(con, descriptor, *, node_id, session_id):
         rel_path = _stored_artifact_rel_path(art_id, suffix=suffix)
         target = _resolve_stored_artifact_path(rel_path, create_parent=True)
         shutil.move(source, target)
+        if exec_uid is not None:
+            _take_from_child(target)
         # Rasters are stored by path rather than by payload, and load_from_duckdb
         # reopens that path with rasterio. Store it absolute: the in-process path
         # stores whatever the user opened (often relative to the launch dir),
@@ -587,30 +623,3 @@ def _persist(con, descriptor, *, node_id, session_id):
         return art_id
 
     raise StagingError(f"cannot persist output of kind {kind!r}")
-
-
-def copy_output_dataset(descriptor):
-    """Mirror a tabular child output into the Data Catalog's dataset directory.
-
-    The in-process path does this with ``save_dataset_parquet``. Here the child
-    already wrote parquet, so this is a copy rather than an encode. Returns the
-    dataset filename, or None when the output is not tabular.
-
-    **Call this before :func:`persist_output`**, which moves the scratch file
-    into the store and leaves nothing at ``descriptor['path']``.
-
-    Best-effort by design, matching ``save_dataset_parquet``: a failure to
-    publish a convenience copy must never fail the node.
-    """
-    if descriptor.get("kind") not in ("dataframe", "geodataframe"):
-        return None
-    source = descriptor.get("path")
-    if not source or not os.path.exists(source):
-        return None
-    try:
-        name = f"{_make_id()}_output.parquet"
-        shutil.copy2(source, _shared_data_dir() / name)
-        return name
-    except Exception as exc:  # noqa: BLE001 - convenience copy, never fatal
-        print(f"[staging] could not publish dataset copy: {exc}", flush=True)
-        return None

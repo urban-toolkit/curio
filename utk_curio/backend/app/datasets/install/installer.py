@@ -295,11 +295,13 @@ def _link_or_copy(src: Path, dest: Path) -> None:
 def copy_decode_sidecar(source: Path, dest: Path, *, copy=shutil.copy2) -> None:
     """Put *source*'s parquet decode sidecar, if it has one, beside *dest*.
 
-    ``<file>.decode.json`` (written by ``parsers.save_dataset_parquet``) names
-    the JSON-encoded object columns of a parquet file, so a copy of the file
-    without it loads its list and dict columns as JSON strings. Every path that
-    copies a dataset's data file to a new place copies it with this. Distinct
-    from file_meta's ``.meta.json`` counts sidecar.
+    ``<file>.decode.json`` (written beside a saved frame from its artifact's
+    row, :func:`install_computed_file_for_node`, or by
+    ``parsers.save_dataset_parquet``) names the JSON-encoded object columns of
+    a parquet file, so a copy of the file without it loads its list and dict
+    columns as JSON strings. Every path that copies a dataset's data file to a
+    new place copies it with this. Distinct from file_meta's ``.meta.json``
+    counts sidecar.
     """
     from utk_curio.sandbox.util.codec import PARQUET_DECODE_SIDECAR_SUFFIX
 
@@ -391,22 +393,43 @@ def _same_file(a: Path, b: Path) -> bool:
         return False
 
 
-def _holds_data(
-    dest: Path, data_file: str, *, source_path: Path | None, file_bytes: bytes | None,
-) -> bool:
-    """Whether the dataset folder *dest* already holds this data file, byte for
-    byte, with the same parquet decode sidecar (:func:`copy_decode_sidecar`)."""
+def _decode_sidecar_path(data_path: Path) -> Path:
     from utk_curio.sandbox.util.codec import PARQUET_DECODE_SIDECAR_SUFFIX
 
+    return data_path.with_name(data_path.name + PARQUET_DECODE_SIDECAR_SUFFIX)
+
+
+def decode_sidecar_beside(data_path: Path) -> str | None:
+    """The text of *data_path*'s parquet decode sidecar
+    (:func:`copy_decode_sidecar`), or None when it has none."""
+    sidecar = _decode_sidecar_path(data_path)
+    try:
+        return sidecar.read_text(encoding="utf-8") if sidecar.is_file() else None
+    except OSError:
+        return None
+
+
+def write_decode_sidecar(data_path: Path, text: str | None) -> None:
+    """Make *text* *data_path*'s parquet decode sidecar, or, when *text* is
+    None, remove the one it has."""
+    sidecar = _decode_sidecar_path(data_path)
+    if text is None:
+        sidecar.unlink(missing_ok=True)
+    else:
+        write_whole(sidecar, lambda partial: partial.write_text(text, encoding="utf-8"))
+
+
+def _holds_data(
+    dest: Path, data_file: str, *, source_path: Path | None, file_bytes: bytes | None,
+    decode_sidecar: str | None = None,
+) -> bool:
+    """Whether the dataset folder *dest* already holds this data file, byte for
+    byte, with *decode_sidecar* as its parquet decode sidecar, or none."""
     data_path = dest / data_file
+    if decode_sidecar_beside(data_path) != decode_sidecar:
+        return False
     if source_path is not None:
-        if not _same_file(source_path, data_path):
-            return False
-        sidecar = source_path.with_name(source_path.name + PARQUET_DECODE_SIDECAR_SUFFIX)
-        held_sidecar = data_path.with_name(data_path.name + PARQUET_DECODE_SIDECAR_SUFFIX)
-        if sidecar.is_file() or held_sidecar.is_file():
-            return _same_file(sidecar, held_sidecar)
-        return True
+        return _same_file(source_path, data_path)
     if file_bytes is not None:
         try:
             return data_path.read_bytes() == file_bytes
@@ -523,6 +546,7 @@ def install_computed_file_for_node(
     upstream_inputs: list[dict] | None = None,
     title: str | None = None,
     source_path: Path | None = None,
+    decode_sidecar: str | None = None,
 ) -> InstallResult:
     """Save a node-computed output into the user's dataset store keyed by *node_id*.
 
@@ -543,7 +567,10 @@ def install_computed_file_for_node(
 
     Provide *source_path* to materialize the data file by hard-linking the
     on-disk artifact (no full-file copy / no read into memory); *file_bytes* is
-    used otherwise. Exactly one must be supplied.
+    used otherwise. Exactly one must be supplied. A saved frame is the store's
+    own file, linked: the store keeps its decode in the artifact's row, so
+    *decode_sidecar* is the text the data file's ``.decode.json`` holds. Left
+    out, it is the one beside *source_path*, if that file has one.
 
     A *dataflow_id* is required: persisting without one would mint the legacy
     un-namespaced ``computed.<node>`` id, which permanently duplicates the
@@ -554,6 +581,8 @@ def install_computed_file_for_node(
             "Computed dataset install requires a dataflow id; "
             "refusing to mint a legacy un-namespaced dataset dir."
         )
+    if decode_sidecar is None and source_path is not None:
+        decode_sidecar = decode_sidecar_beside(source_path)
     dataset_id = computed_dataset_id(node_id, dataflow_id)
     dir_name = f"{dataset_id}@1"
 
@@ -564,7 +593,10 @@ def install_computed_file_for_node(
     holds_data = (
         held is not None
         and held.data_file == data_file
-        and _holds_data(dest, data_file, source_path=source_path, file_bytes=file_bytes)
+        and _holds_data(
+            dest, data_file, source_path=source_path, file_bytes=file_bytes,
+            decode_sidecar=decode_sidecar,
+        )
     )
     created_at, updated_at = _computed_dates(
         held,
@@ -612,13 +644,10 @@ def install_computed_file_for_node(
     with output_install_lock(dest):
         data_path = dest / data_file
         if source_path is not None:
-            def link(source: Path, target: Path) -> None:
-                write_whole(target, lambda partial: _link_or_copy(source, partial))
-
-            link(source_path, data_path)
-            copy_decode_sidecar(source_path, data_path, copy=link)
+            write_whole(data_path, lambda partial: _link_or_copy(source_path, partial))
         else:
             write_whole(data_path, lambda partial: partial.write_bytes(file_bytes))
+        write_decode_sidecar(data_path, decode_sidecar)
 
         replace_manifest(manifest_obj, dest)
         try:

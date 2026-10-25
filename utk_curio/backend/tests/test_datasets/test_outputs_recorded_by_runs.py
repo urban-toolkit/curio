@@ -15,12 +15,12 @@ fails each test on its own instead of failing the whole collection.
 from __future__ import annotations
 
 import json
-import os
-import uuid
 from datetime import datetime, timezone
-from pathlib import Path
 
-from utk_curio.backend.tests.test_datasets.computed_test_helpers import auth_headers
+from utk_curio.backend.tests.test_datasets.computed_test_helpers import (
+    auth_headers,
+    store_sandbox_artifact_at,
+)
 
 NODE_TYPE = "curio.builtin/computation-analysis"
 
@@ -57,10 +57,9 @@ def _create(client, token, name="Run outputs", spec=None) -> str:
 
 
 def _artifact(ms: int, payload) -> str:
-    """A JSON artifact as the sandbox names it: ``<ms>_<8 hex>.json``."""
-    name = f"{ms}_{uuid.uuid4().hex[:8]}.json"
-    (Path(os.environ["CURIO_SHARED_DATA"]) / name).write_text(json.dumps(payload), encoding="utf-8")
-    return name
+    """A JSON artifact as a node run stores it, its id ``<ms>_<8 hex>`` made
+    at *ms*."""
+    return store_sandbox_artifact_at(payload, ms)
 
 
 def _save(client, token, project_id, outputs, **body):
