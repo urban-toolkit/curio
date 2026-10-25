@@ -1029,25 +1029,36 @@ MAX_SAVED_PATHS = 64
 
 
 def shape_saved_paths(raw):
-    """``{name: {"path", "dataType"}}`` from a request: the saved outputs of
-    the run's dataflow that its inputs name, each with the file its owner's
-    store holds, as the backend resolved them (``execution/node_exec``).
-    Anything else is dropped."""
+    """``{name: {"path" or "session", "dataType"}}`` from a request: the
+    inputs of the run's dataflow that the backend resolved for it
+    (``execution/node_exec``). A saved output names the file its owner's store
+    holds (``path``). An output the owner's runs kept, named as the input of a
+    run that is not kept, names the kept session that made it (``session``),
+    which the run's own session cannot read (``common/kept_sessions.py``).
+    Anything else is dropped, a session that is not a kept one among them."""
+    from utk_curio.common.kept_sessions import is_kept_session
+
     if not isinstance(raw, dict):
         return {}
     shaped = {}
     for name, saved in list(raw.items())[:MAX_SAVED_PATHS]:
-        path = saved.get("path") if isinstance(saved, dict) else None
-        if isinstance(name, str) and name and isinstance(path, str) and path:
-            data_type = saved.get("dataType")
-            shaped[name] = {"path": path, "dataType": data_type if isinstance(data_type, str) else ""}
+        if not (isinstance(name, str) and name and isinstance(saved, dict)):
+            continue
+        data_type = saved.get("dataType")
+        data_type = data_type if isinstance(data_type, str) else ""
+        path, session = saved.get("path"), saved.get("session")
+        if isinstance(path, str) and path:
+            shaped[name] = {"path": path, "dataType": data_type}
+        elif isinstance(session, str) and is_kept_session(session):
+            shaped[name] = {"session": session, "dataType": data_type}
     return shaped
 
 
 def load_artifact(art_id, session_id=None, saved_paths=None):
     """An artifact by id: the store first, then, for a saved output of the
-    run's dataflow, the file its owner's store holds (*saved_paths*, see
-    :func:`shape_saved_paths`).
+    run's dataflow, the file its owner's store holds, or, for an output the
+    owner's runs kept, the store under the kept session that made it
+    (*saved_paths*, see :func:`shape_saved_paths`).
 
     The one rule every reader of a saved output follows, ``/get`` and node
     inputs alike (#407, #408). The store is session-tagged, so after a reopen
@@ -1064,6 +1075,8 @@ def load_artifact(art_id, session_id=None, saved_paths=None):
         saved = (saved_paths or {}).get(art_id)
         if saved:
             try:
+                if saved.get("session"):
+                    return load_from_duckdb(art_id, session_id=saved["session"])
                 return load_saved_output(saved["path"], art_id)
             except KeyError:
                 pass

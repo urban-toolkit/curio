@@ -150,6 +150,35 @@ def resolve_saved_inputs(input_ref: dict, dataflow_id: str | None) -> dict:
         return {}
 
 
+def resolve_kept_inputs(user, input_ref: dict, dataflow_id: str | None, saved_inputs: dict) -> dict:
+    """``{name: {"session"}}`` for each input of a run that is not kept
+    (:func:`_kept_run`) that the runs of its dataflow's owner kept, when the
+    caller is that owner: the kept session that made it, which the caller's
+    own session cannot read. A tab's run below a step only the browser makes
+    is such a run, its input from that step being the tab's own, and it may
+    read what the owner's run on the server kept. A name *saved_inputs*
+    resolves is left to its saved file. Fail-open, as saved inputs are."""
+    if user is None or not dataflow_id:
+        return {}
+    try:
+        from utk_curio.backend.app.projects.models import Project
+        from utk_curio.backend.app.runs import kept
+        from utk_curio.backend.extensions import db
+
+        project = db.session.get(Project, dataflow_id)
+        if project is None or project.user_id != getattr(user, "id", None):
+            return {}
+        granted = {}
+        for name in input_names(input_ref)[:MAX_SAVED_INPUTS]:
+            entry = None if name in saved_inputs else kept.owner_entry(dataflow_id, name)
+            if entry is not None:
+                granted[name] = {"session": entry.session_id}
+        return granted
+    except Exception as e:  # noqa: BLE001 - resolution must never fail the execution
+        print(f"[node_exec] kept input resolution failed: {e.__class__.__name__}", flush=True)
+        return {}
+
+
 def resolve_dataset_paths(code: str, dataflow_id: str | None, user, formats: dict | None = None) -> dict:
     """Resolve the dataset ids referenced by *code* to absolute file paths.
 
@@ -308,7 +337,9 @@ def _kept_run(user, run: NodeRun, input_ref: dict, saved_inputs: dict) -> _KeptR
 
     Anything else runs in the caller's own session, as before: a
     collaborator's play, an unsaved canvas, and a run whose input is not the
-    dataflow's, such as one made before its first save. The sandbox lets a
+    dataflow's, such as one made before its first save, which reads the
+    dataflow's kept outputs among its inputs under the sessions that made
+    them (:func:`resolve_kept_inputs`). The sandbox lets a
     kept session read any kept output, so only this dataflow's names may
     reach one. A saved output is read from the store first, so a name its
     manifest records that a kept run made, and the owner's runs did not
@@ -386,6 +417,10 @@ def _execute(user, session_token, run: NodeRun, *, language: str) -> tuple[dict,
     input_ref = parse_input_ref(run.input)
     saved_inputs = resolve_saved_inputs(input_ref, run.dataflow_id)
     kept_run = _kept_run(user, run, input_ref, saved_inputs)
+    if kept_run is None:
+        saved_inputs = {
+            **saved_inputs, **resolve_kept_inputs(user, input_ref, run.dataflow_id, saved_inputs),
+        }
 
     body = {
         "code": run.code,

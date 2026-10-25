@@ -784,9 +784,11 @@ def exec():
     # templates, from the user's package store (#468). Both paths stage them
     # into a folder of the run's own and make them importable for the run.
     package_modules = package_modules_util.shape(request.json.get('package_modules'))
-    # {name: {path, dataType}}: the inputs that are saved outputs of the run's
-    # dataflow, with the file its owner's store holds, resolved by the backend
-    # like dataset_paths. Read in place when the store has no row for them.
+    # {name: {path or session, dataType}}: the inputs that are saved outputs of
+    # the run's dataflow, with the file its owner's store holds, or outputs its
+    # owner's runs kept, with the kept session that made them, resolved by the
+    # backend like dataset_paths. Read so when the store has no row for them
+    # that this session may read.
     saved_paths = shape_saved_paths(request.json.get('saved_paths'))
     launch_dir = os.environ.get('CURIO_LAUNCH_CWD', os.getcwd())
 
@@ -836,7 +838,8 @@ def exec_js():
     save_dataset = request.json.get('save_dataset', True)
     if isinstance(save_dataset, str):
         save_dataset = save_dataset.strip().lower() not in ('0', 'false', 'no', 'off')
-    # As /exec takes them: the inputs that are saved outputs of the run's dataflow.
+    # As /exec takes them: the inputs that are saved or kept outputs of the
+    # run's dataflow.
     saved_paths = shape_saved_paths(request.json.get('saved_paths'))
     launch_dir = os.environ.get('CURIO_LAUNCH_CWD', os.getcwd())
 

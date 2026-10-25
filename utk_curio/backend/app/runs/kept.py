@@ -229,15 +229,12 @@ def _alive(now):
     )
 
 
-def owner_entry(project_id: str, name: str) -> Optional[KeptStepOutput]:
-    """The live output the owner's runs of *project_id* kept that holds the
-    artifact *name*, the newest, or None. Only the owner reads it: through
-    the dataflow's routes, and as the input of their next run."""
-    if not name:
-        return None
+def _newest_holding(query, name: str) -> Optional[KeptStepOutput]:
+    """The newest live entry of *query* that the owner's runs kept and that
+    holds the artifact *name*, or None."""
     now = naive_utc_now()
     for entry in (
-        KeptStepOutput.query.filter_by(project_id=project_id, made_by=MADE_BY_OWNER)
+        query.filter(KeptStepOutput.made_by == MADE_BY_OWNER)
         .filter(db.or_(
             KeptStepOutput.output_path == name,
             KeptStepOutput.artifact_ids.contains(json.dumps(name)),
@@ -249,6 +246,32 @@ def owner_entry(project_id: str, name: str) -> Optional[KeptStepOutput]:
         if name == entry.output_path or name in json.loads(entry.artifact_ids or "[]"):
             return entry
     return None
+
+
+def owner_entry(project_id: str, name: str) -> Optional[KeptStepOutput]:
+    """The live output the owner's runs of *project_id* kept that holds the
+    artifact *name*, the newest, or None. Only the owner reads it: through
+    the dataflow's routes, and as the input of their next run."""
+    if not name:
+        return None
+    return _newest_holding(KeptStepOutput.query.filter(KeptStepOutput.project_id == project_id), name)
+
+
+def owner_session(user_id, name: str) -> Optional[str]:
+    """The kept session that made the artifact *name*, when the runs of a
+    dataflow *user_id* owns kept it, else None: what the owner's sign-in
+    reads it under on the routes that name no dataflow (``/get``,
+    ``/get-preview``, ``/raster``), as a package's node reads its input."""
+    from utk_curio.backend.app.projects.models import Project
+
+    if not name or user_id is None:
+        return None
+    entry = _newest_holding(
+        KeptStepOutput.query.join(Project, Project.id == KeptStepOutput.project_id)
+        .filter(Project.user_id == user_id),
+        name,
+    )
+    return entry.session_id if entry is not None else None
 
 
 def kept_output(project_id: str, key: str, private_to: Optional[str] = None) -> Optional[tuple[dict, list]]:
