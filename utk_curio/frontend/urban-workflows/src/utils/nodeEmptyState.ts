@@ -18,8 +18,9 @@ export type NodeEmptyReason =
   | "upstream-not-run"
   /** Wired, and the node feeding it ran and failed. */
   | "upstream-errored"
-  /** What it shows is still being made: by a viewer's run on a dashboard, or
-   *  as the node reads the rows of an input that just arrived. */
+  /** What it shows is still being made: by a viewer's run on a dashboard, as
+   *  the node reads the rows of an input that just arrived, or on a dashboard
+   *  before its input is in or its first draw is done. */
   | "upstream-running"
   /** A dashboard's tile whose viewer's run stopped before it, at a step this browser could not run. */
   | "upstream-stopped"
@@ -203,6 +204,11 @@ export interface NodeEmptyInputs {
   upstreamRunning?: boolean;
   /** A dashboard's tile: why the viewer's run stopped before it, if it did. */
   upstreamStopped?: string | null;
+  /**
+   * A dashboard's tile. Nothing on it is the visitor's to run, so an input
+   * not in yet is on its way: the page's data, or a run the page starts.
+   */
+  onDashboard?: boolean;
   /** True once an input payload has actually arrived. */
   hasInput: boolean;
   /** True while the node reads the rows of the input that just arrived. */
@@ -232,7 +238,8 @@ export function resolveNodeEmptyReason(inputs: NodeEmptyInputs): NodeEmptyReason
   // user just watched fail (#347). Above it also covers the rarer case where a
   // stale input from an earlier successful run is still sitting there.
   if (inputs.upstreamErrored) return "upstream-errored";
-  if (!inputs.hasInput) return "upstream-not-run";
+  // On a dashboard there is no node to run: the input is on its way.
+  if (!inputs.hasInput) return inputs.onDashboard ? "upstream-running" : "upstream-not-run";
   // An input that just arrived, its rows still being read: with nothing to show
   // yet, what the node shows is still being made, not a payload it cannot show
   // nor an empty table. Rows already shown stay until the new ones replace them.
@@ -253,6 +260,11 @@ export interface GrammarEmptyInputs {
   upstreamRunning?: boolean;
   /** A dashboard's tile: why the viewer's run stopped before it, if it did. */
   upstreamStopped?: string | null;
+  /**
+   * A dashboard's tile. It draws by itself once its inputs are in, with no
+   * play for the visitor to press, and an input not in yet is on its way.
+   */
+  onDashboard?: boolean;
   /** True once an input payload has actually arrived. */
   hasInput: boolean;
   /** True when the editor holds something to compile. */
@@ -297,11 +309,13 @@ export function resolveGrammarEmptyReason(
     if (inputs.upstreamRunning) return "upstream-running";
     if (inputs.upstreamStopped) return "upstream-stopped";
     if (inputs.upstreamErrored) return "upstream-errored";  // see the note above
-    if (!inputs.hasInput) return "upstream-not-run";
+    if (!inputs.hasInput) return inputs.onDashboard ? "upstream-running" : "upstream-not-run";
     if (inputs.inputProblem) return inputs.inputProblem;
   }
   if (!inputs.hasSpec) return "no-spec";
-  if (!inputs.hasRun) return "not-run";
+  // A dashboard's tile draws by itself as soon as it can: until then it is
+  // still being made, with no play for the visitor to press.
+  if (!inputs.hasRun) return inputs.onDashboard ? "upstream-running" : "not-run";
   if (inputs.renderedEmpty) return "rendered-empty";
   return null;
 }

@@ -644,24 +644,51 @@ def artifact_sessions_store():
     return jsonify({'output': {'path': path, 'dataType': detect_kind(value)}})
 
 
+#: The most sessions one call to ``/artifacts/readable`` names, its ``reads``'
+#: and its ``sessions`` together: an account's sign-ins fit.
+MAX_READ_SESSIONS_PER_CALL = 10_000
+
+
+def _named_sessions(value) -> list | None:
+    """The sessions a call names for one read: a session, or a list of them,
+    possibly empty. None when *value* is neither."""
+    if isinstance(value, str):
+        return [value] if value else None
+    if isinstance(value, list) and all(isinstance(session, str) and session for session in value):
+        return value
+    return None
+
+
 @app.route('/artifacts/readable', methods=['POST'])
 @require_sandbox_token
 @holds_duckdb
 def artifacts_readable():
     """Which of the artifacts a call names each may be read: ``reads`` maps
-    an artifact id to the session it is read under, and the answer lists
-    the ids that session may read (``parsers.readable_artifacts``). The
-    backend asks before it reads or installs an output a request names."""
+    an artifact id to the session it is read under, or to a list of
+    sessions, and ``sessions``, when given, lists sessions every id is read
+    under; the answer lists the ids one of them may read
+    (``parsers.readable_artifacts``). The backend asks before it reads or
+    installs an output a request names, and, for a reader with no sign-in,
+    an output its account vouches for. A kept run's session reads what every
+    kept run made, so it reads only the ids it is named for."""
+    from utk_curio.common.kept_sessions import is_kept_session
     from utk_curio.sandbox.util.parsers import readable_artifacts
 
     body = request.get_json(silent=True) or {}
     reads = body.get('reads')
     if not isinstance(reads, dict) or len(reads) > MAX_SESSIONS_PER_CALL:
         abort(400, f"reads must map at most {MAX_SESSIONS_PER_CALL} artifacts to sessions")
-    if not all(isinstance(art_id, str) and art_id and isinstance(session, str) and session
-               for art_id, session in reads.items()):
-        abort(400, "each read names an artifact and a session")
-    return jsonify({'readable': readable_artifacts(reads)})
+    named = {art_id: _named_sessions(sessions) for art_id, sessions in reads.items()}
+    if not all(isinstance(art_id, str) and art_id and sessions is not None for art_id, sessions in named.items()):
+        abort(400, "each read names an artifact and its sessions")
+    shared = body.get('sessions', [])
+    if _named_sessions(shared) is None or isinstance(shared, str):
+        abort(400, "sessions must list sessions")
+    if any(is_kept_session(session) for session in shared):
+        abort(400, "a kept run's session reads only the artifacts it is named for")
+    if sum(len(sessions) for sessions in named.values()) + len(shared) > MAX_READ_SESSIONS_PER_CALL:
+        abort(400, f"a call names at most {MAX_READ_SESSIONS_PER_CALL} sessions")
+    return jsonify({'readable': readable_artifacts(named, shared)})
 
 
 #: The most recent time a sweep may name: what the store made in the last day

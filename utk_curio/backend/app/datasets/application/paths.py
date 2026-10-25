@@ -38,19 +38,25 @@ class PathResolver:
         self._readable: dict[str, bool] = {}
 
     def readable_outputs(self, names) -> set[str]:
-        """The outputs among *names* this catalog's caller may read.
+        """The outputs among *names* this catalog's caller may read, asked
+        once per name and catalog.
 
         A catalog serving a request (*sign_in*) reads only what that account
-        may (``runs/kept.readable_by``), asked once per name and request; one
-        the backend uses for itself reads any, as it names outputs it made."""
+        may (``runs/kept.readable_by``). One built with no sign-in, as node
+        code's ``curio_load_data``, the agents, the Scenario Catalog and
+        discovery build it, reads only what its account vouches for
+        (``kept.readable_by_account``): the names it meets are those a
+        dataflow's dataset refs carry, which a client may have written."""
         names = list(dict.fromkeys(str(name) for name in names if name))
-        if self.sign_in is None:
-            return set(names)
         unknown = [name for name in names if name not in self._readable]
         if unknown:
             from utk_curio.backend.app.runs import kept
 
-            readable = kept.readable_by(getattr(self.user, "id", None), self.sign_in, unknown)
+            user_id = getattr(self.user, "id", None)
+            if self.sign_in is None:
+                readable = kept.readable_by_account(user_id, unknown)
+            else:
+                readable = kept.readable_by(user_id, self.sign_in, unknown)
             self._readable.update({name: name in readable for name in unknown})
         return {name for name in names if self._readable[name]}
 
@@ -97,14 +103,14 @@ class PathResolver:
         from utk_curio.backend.app.datasets.repositories.local import data_root_dirs
         from utk_curio.backend.app.datasets.infrastructure.left_out_files import fetched_dir
         from utk_curio.backend.app.datasets.infrastructure.storage import catalog_root, user_datasets_dir
-        from utk_curio.backend.app.projects.storage import _shared_data_dir
 
         # fetched_dir(): where a pip install places the shipped data files its
-        # package leaves out, once it has downloaded them. Of the shared data
-        # directory only the store's artifacts: its top level also holds the
-        # store's database, which a computed item resolves by name instead
-        # (``_resolve_computed_output_path``).
-        roots = [_shared_data_dir() / "artifacts", catalog_root(), fetched_dir(), *data_root_dirs()]
+        # package leaves out, once it has downloaded them. None of the shared
+        # data directory: its store holds every account's outputs, and its top
+        # level the store's database. A store file is reached only as an
+        # output the caller may read (``_resolve_computed_output_path``), never
+        # by the path an item, or a dataset ref a dataflow carries, names.
+        roots = [catalog_root(), fetched_dir(), *data_root_dirs()]
         if self.user is not None:
             # Installed/published datasets live in the *current* user's store.
             roots.append(user_datasets_dir(self._user_key()))

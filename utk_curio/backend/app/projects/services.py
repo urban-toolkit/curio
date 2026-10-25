@@ -199,6 +199,37 @@ def _prune_sink_node_dataset_refs(spec: Optional[dict], user_key: Optional[str] 
     return new_spec
 
 
+def _drop_live_output_refs(spec: Optional[dict]) -> None:
+    """Drop the ``dataflow.datasets`` refs of a new dataflow's *spec* that name
+    a live output: by its URI (``curio://outputs/<id>``), or by a ``path`` in
+    the store's folder. A create keeps the refs its client sent, and such a
+    ref would read the output it names whichever account made it. Nothing in
+    Curio writes one: a node's output joins a dataflow as a dataset of the
+    account's Data Catalog."""
+    from utk_curio.backend.app.common.safe_paths import is_within
+
+    dataflow = spec.get("dataflow") if isinstance(spec, dict) else None
+    refs = dataflow.get("datasets") if isinstance(dataflow, dict) else None
+    if not isinstance(refs, list):
+        return
+    store = storage._shared_data_dir()
+
+    def names_a_live_output(ref) -> bool:
+        if not isinstance(ref, dict):
+            return False
+        if str(ref.get("uri") or "").startswith("curio://outputs/"):
+            return True
+        path = ref.get("path")
+        if not isinstance(path, str) or not path:
+            return False
+        try:
+            return is_within(Path(path), store)
+        except (OSError, ValueError):  # no file to read either
+            return True
+
+    dataflow["datasets"] = [ref for ref in refs if not names_a_live_output(ref)]
+
+
 def _is_shared_guest(user) -> bool:
     return bool(user and user.is_guest and user.username == CURIO_SHARED_GUEST_USERNAME)
 
@@ -918,6 +949,7 @@ def save_project(user, data: ProjectCreate, *, sign_in: Optional[str] = None) ->
     _ensure_dataflow_identity(data.spec, data.name)
     _normalize_spec_categories(data.spec)
     scenarios.normalize_spec_scenarios(data.spec)
+    _drop_live_output_refs(data.spec)
 
     storage.write_spec(ukey, project_id, data.spec)
     # The new row is committed once its spec is on disk (a listing drops a row

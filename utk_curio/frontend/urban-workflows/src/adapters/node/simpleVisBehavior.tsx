@@ -96,7 +96,7 @@ export const useSimpleVisBehavior: NodeBehaviorHook = (data, nodeState) => {
   const edges = useEdges();
   const connected = hasIncomingEdge(edges, data.nodeId);
   // On a dashboard: a viewer's run making the rows, or why it stopped before them.
-  const { upstreamRunning, upstreamStopped } = useGrammarInputState(data.nodeId);
+  const { upstreamRunning, upstreamStopped, onDashboard } = useGrammarInputState(data.nodeId);
   // Lazy init: if input is already present on mount (e.g. in tests) seed the
   // view so the first render already produces a contentComponent. The effect
   // will overwrite this once it fetches any path reference.
@@ -110,9 +110,12 @@ export const useSimpleVisBehavior: NodeBehaviorHook = (data, nodeState) => {
   const dataInputBypass = useRef(false);
   // While the rows of the input that just arrived are read (a fetch of its
   // path): the body says what it shows is coming, not that the input is not a
-  // table. Cleared by the read of the latest input only.
-  const [reading, setReading] = useState(false);
-  const readingRef = useRef<unknown>(null);
+  // table. Told in the render that brings the input, not an effect after it:
+  // an input is read once the read of it, the latest, has ended. The one the
+  // node mounted with is its first view above.
+  const [readInput, setReadInput] = useState<unknown>(data.input);
+  const latestInputRef = useRef<unknown>(data.input);
+  const reading = data.input != null && data.input !== '' && data.input !== readInput;
 
   const setInteractions = (newData: any) => {
     interactionsRef.current = newData;
@@ -131,8 +134,7 @@ export const useSimpleVisBehavior: NodeBehaviorHook = (data, nodeState) => {
       if (data.input == null || data.input === '') return;
 
       const input = data.input;
-      readingRef.current = input;
-      setReading(true);
+      latestInputRef.current = input;
       try {
         const startTime = formatDate(new Date());
         const typesInput = input.dataType ? [input.dataType] : [];
@@ -162,7 +164,8 @@ export const useSimpleVisBehavior: NodeBehaviorHook = (data, nodeState) => {
         }
         nodeState.setOutput({ code: 'success', content: parsedInput });
       } finally {
-        if (readingRef.current === input) setReading(false);
+        // A failed read ends it too: the body then says what it has.
+        if (latestInputRef.current === input) setReadInput(input);
       }
     };
 
@@ -318,6 +321,7 @@ export const useSimpleVisBehavior: NodeBehaviorHook = (data, nodeState) => {
       upstreamStopped,
       hasInput: data.input != null && data.input !== '',
       reading,
+      onDashboard,
       // 'text' is the fallback mode for anything that is not a frame,
       // so a text mode with no content is a payload we cannot show.
       tabular: currentMode !== 'text',
@@ -329,7 +333,7 @@ export const useSimpleVisBehavior: NodeBehaviorHook = (data, nodeState) => {
         hint={reason === 'upstream-stopped' ? upstreamStopped ?? undefined : undefined}
       />
     );
-  }, [currentMode, rows, imageColumns, shownImageColumns, choice, interacted, textContent, data.nodeId, data.input, connected, upstreamRunning, upstreamStopped, reading, clickRow, pickColumn]);
+  }, [currentMode, rows, imageColumns, shownImageColumns, choice, interacted, textContent, data.nodeId, data.input, connected, upstreamRunning, upstreamStopped, reading, onDashboard, clickRow, pickColumn]);
 
   return {
     contentComponent,

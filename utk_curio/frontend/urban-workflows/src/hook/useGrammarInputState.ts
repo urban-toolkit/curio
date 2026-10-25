@@ -10,8 +10,9 @@ import { hasIncomingEdge, incomingSourceIds } from "../utils/nodeEmptyState";
  *
  * On a dashboard it also says whether a viewer's run is making what the tiles
  * show (``upstreamRunning``) and why the last one stopped short of them, at a
- * step this browser could not run (``upstreamStopped``, useDashboardRun): a
- * visitor runs no node and opens none, so a tile says that instead.
+ * step this browser could not run or with the run refused (``upstreamStopped``,
+ * useDashboardRun): a visitor runs no node and opens none, so a tile says that
+ * instead, and what is not in yet is on its way (``onDashboard``).
  */
 export function useGrammarInputState(nodeId: string): {
   connected: boolean;
@@ -19,6 +20,7 @@ export function useGrammarInputState(nodeId: string): {
   erroredSourceIds: string[];
   upstreamRunning: boolean;
   upstreamStopped: string | null;
+  onDashboard: boolean;
 } {
   const { edges, nodeExecStatus, dashboardOn, serverRunActive, dashboardStopped } = useFlowContext() as {
     edges?: Array<{ source?: unknown; target?: unknown }>;
@@ -37,5 +39,6 @@ export function useGrammarInputState(nodeId: string): {
     erroredSourceIds,
     upstreamRunning: !!dashboardOn && !!serverRunActive,
     upstreamStopped: dashboardOn ? dashboardStopped ?? null : null,
+    onDashboard: !!dashboardOn,
   };
 }

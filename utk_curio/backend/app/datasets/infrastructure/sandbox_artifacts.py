@@ -129,9 +129,12 @@ def _local_session(art_id: str) -> tuple[bool, str | None]:
 #: The most artifacts one call to the sandbox's ``/artifacts/readable`` names
 #: (its ``MAX_SESSIONS_PER_CALL``).
 _READS_PER_CALL = 500
+#: The most sessions one such call names, its reads' and those every read is
+#: read under together (its ``MAX_READ_SESSIONS_PER_CALL``).
+_SESSIONS_PER_CALL = 10_000
 
 
-def _local_readable(asked: dict) -> set[str] | None:
+def _local_readable(asked: dict, shared: list) -> set[str] | None:
     """:func:`readable` read directly, in a process that owns the database
     (:func:`_local_row`), or None in one that does not."""
     try:
@@ -144,39 +147,65 @@ def _local_readable(asked: dict) -> set[str] | None:
     from utk_curio.sandbox.util.parsers import readable_artifacts
 
     try:
-        return set(readable_artifacts(asked))
+        return set(readable_artifacts(asked, shared))
     except Exception:  # noqa: BLE001 - absent table or DB reads as nothing readable
         return set()
 
 
-def readable(reads: dict) -> set[str]:
-    """The artifact ids among *reads*, ``{id: the session it is read under}``,
-    whose rows that session may read (``sandbox/util/parsers.session_may_read``).
+def _calls(asked: dict, shared: list) -> list[dict]:
+    """*asked* in as few calls to ``/artifacts/readable`` as its bounds allow:
+    one, unless a request names more than :data:`_READS_PER_CALL` outputs."""
+    calls: list[tuple[dict, int]] = []
+    room = _SESSIONS_PER_CALL - len(shared)
+    for art_id, own in asked.items():
+        named = len(own) if isinstance(own, list) else 1
+        if not calls or len(calls[-1][0]) >= _READS_PER_CALL or calls[-1][1] + named > room:
+            calls.append(({}, 0))
+        call, count = calls[-1]
+        call[art_id] = own
+        calls[-1] = (call, count + named)
+    return [call for call, _count in calls]
 
-    For a caller vouching for a request: an id read under no session is not
-    among them, though a read under none reads any row; nor is an id with no
-    row, nor any the sandbox does not answer for."""
-    asked = {str(art_id): session for art_id, session in reads.items() if art_id and session}
+
+def readable(reads: dict, sessions=()) -> set[str]:
+    """The artifact ids among *reads*, ``{id: the session it is read under,
+    or a list of sessions}``, whose rows one of its sessions or of
+    *sessions*, which every id is read under, may read
+    (``sandbox/util/parsers.session_may_read``).
+
+    For a caller vouching for a request: an id read under no session (None)
+    is not among them, though a read under none reads any row. One read under
+    a list reads a row that carries no session, so an empty list reads only
+    such a row. Nor is an id with no row, nor any the sandbox does not answer
+    for. A kept run's session goes only in a read's own list: it reads what
+    every kept run made."""
+    asked: dict = {}
+    for art_id, own in reads.items():
+        if isinstance(own, str):
+            own = own or None
+        elif own is not None:
+            own = [str(session) for session in own if session]
+        if art_id and own is not None:
+            asked[str(art_id)] = own
+    shared = [str(session) for session in dict.fromkeys(sessions or ()) if session]
     if not asked:
         return set()
-    local = _local_readable(asked)
+    local = _local_readable(asked, shared)
     if local is not None:
         return local
     found: set[str] = set()
-    items = list(asked.items())
-    for start in range(0, len(items), _READS_PER_CALL):
+    for call in _calls(asked, shared):
         try:
             response = _session.post(
                 _sandbox_url("/artifacts/readable"),
-                json={"reads": dict(items[start:start + _READS_PER_CALL])},
+                json={"reads": call, **({"sessions": shared} if shared else {})},
                 headers=_headers(),
                 timeout=_TIMEOUT_S,
             )
             response.raise_for_status()
             found.update(str(art_id) for art_id in (response.json() or {}).get("readable") or [])
         except (requests.RequestException, ValueError) as exc:
-            log.warning("could not ask the sandbox which of %d outputs are readable: %s",
-                        len(items[start:start + _READS_PER_CALL]), exc)
+            log.warning("could not ask the sandbox which of %d outputs are readable: %s", len(call), exc)
     return found & set(asked)
 
 

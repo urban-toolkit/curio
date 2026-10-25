@@ -53,6 +53,13 @@ describe('DataPoolContent', () => {
     expect(screen.getByText('Run the node feeding this one.')).toBeInTheDocument();
   });
 
+  test('as a dashboard tile with nothing in yet, it says its rows are coming, not which node to run', () => {
+    // A visitor runs no node: the page's data or its run is on its way.
+    render(<DataPoolContent {...defaultProps} tabData={[]} connected onDashboard />);
+    expect(screen.getByText('Computing...')).toBeInTheDocument();
+    expect(screen.queryByText('Run the node feeding this one.')).toBeNull();
+  });
+
   test('says the input is not tabular when the upstream ran but made no table', () => {
     // The empty branch passed `tabular: true`, so a connected pool handed a
     // payload it cannot tabulate reported "The input ran, but came back empty" —

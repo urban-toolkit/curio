@@ -1597,6 +1597,7 @@ export const useAutkGrammarBehavior = (
             upstreamErrored,
             upstreamRunning,
             upstreamStopped,
+            onDashboard: !!dashboardOn,
             hasInput,
             hasSpec,
             needsInput,
@@ -1609,7 +1610,7 @@ export const useAutkGrammarBehavior = (
             : { reason, words: emptyStateWords(reason, liveKind, detail) };
         writeNotice();
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [connected, upstreamErrored, upstreamRunning, upstreamStopped, hasInput, hasSpec, needsInput, liveKind, gpuBlocked, nodeState.output?.code, runSummary]);
+    }, [connected, upstreamErrored, upstreamRunning, upstreamStopped, dashboardOn, hasInput, hasSpec, needsInput, liveKind, gpuBlocked, nodeState.output?.code, runSummary]);
 
     // Forward parent container resizes to AutkMap via a synthetic window.resize.
     // AutkMap binds only to window.resize (and exposes no per-instance resize API),

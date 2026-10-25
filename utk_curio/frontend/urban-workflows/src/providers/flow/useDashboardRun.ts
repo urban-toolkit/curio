@@ -82,9 +82,10 @@ export function useDashboardRun({ enabled, reactFlow, outcomes, outputsRef, show
     // computing (useGrammarInputState), and a change made meanwhile runs once
     // it ends (useAutoRun).
     const [active, setActive] = useState(false);
-    // Why the last run stopped before the tiles, at a step this browser could
-    // not run: what a tile left with nothing says (useGrammarInputState). The
-    // next start clears it.
+    // Why the last run stopped before the tiles: at a step this browser could
+    // not run, or a run refused, lost or left unfinished. It is what a tile
+    // left with nothing says (useGrammarInputState), where "Computing..."
+    // would wait for nothing. The next start clears it.
     const [stopped, setStopped] = useState<string | null>(null);
     const projectIdRef = useRef<string | null>(null);
     // Between a start and its answer.
@@ -215,7 +216,9 @@ export function useDashboardRun({ enabled, reactFlow, outcomes, outputsRef, show
             run.controller.abort();
             follow(projectId, next.runId, next.token, run.values, pageOutputs);
         } catch (err: any) {
-            showToast(err?.message || "This dashboard could not finish its run.", "error");
+            const unfinished = err?.message || "This dashboard could not finish its run.";
+            showToast(unfinished, "error");
+            setStopped(unfinished);
             end(run);
         } finally {
             forgetPageSteps();
@@ -263,7 +266,11 @@ export function useDashboardRun({ enabled, reactFlow, outcomes, outputsRef, show
             .follow(projectId, runId, token, (event) => onEvent(run, event), run.controller.signal)
             .then(() => { if (!run.handedToPage) end(run); }, () => {
                 if (run.handedToPage) return;
-                if (!run.done) showToast("Lost track of this dashboard's run. Change a control to run it again.", "warning");
+                if (!run.done) {
+                    const lost = "Lost track of this dashboard's run. Change a control to run it again.";
+                    showToast(lost, "warning");
+                    setStopped(lost);
+                }
                 end(run);
             });
     };
@@ -284,8 +291,10 @@ export function useDashboardRun({ enabled, reactFlow, outcomes, outputsRef, show
         try {
             started = await dashboardRunsApi.start(projectId, values);
         } catch (err: any) {
+            const refused = err?.message || "This dashboard could not run.";
             setActive(false);
-            showToast(err?.message || "This dashboard could not run.", err?.status === 429 ? "warning" : "error");
+            setStopped(refused);
+            showToast(refused, err?.status === 429 ? "warning" : "error");
             return;
         } finally {
             startingRef.current = false;
