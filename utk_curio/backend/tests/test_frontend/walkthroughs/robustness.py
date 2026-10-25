@@ -98,7 +98,7 @@ def dataflow_id_from_url(page) -> str:
         "src/tests/components/universalNodeAutoRender.test.tsx",
         "src/tests/utils/dashboardLayout.test.ts",
         "src/tests/providers/dashboardPresentation.test.tsx",
-        "utk_curio/sandbox/tests/test_get_shared_file_fallback.py",
+        "utk_curio/sandbox/tests/test_get_saved_output_in_place.py",
     ],
 )
 def dashboard_page_renders_pinned_charts(ctx: Ctx) -> None:

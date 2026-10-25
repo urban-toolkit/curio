@@ -202,6 +202,28 @@ def test_the_old_output_files_go_once_the_new_one_is_named(app, first, second):
     assert all(any(folder.iterdir()) for folder in dest.rglob("*") if folder.is_dir())
 
 
+def test_a_keep_decided_before_a_newer_output_went_in_writes_nothing_over_it(app):
+    """A save that found the folder holding its output only rewrites the
+    manifest, and a play can install a newer output in between. The keep
+    reads the folder again under the install lock and leaves the newer output
+    as it is, rather than naming the files that install removed."""
+    import dataclasses
+
+    from utk_curio.backend.app.datasets.install.installer import keep_installed_output
+
+    _install(_table(2), "dataframe")
+    dest = _dest()
+    as_the_save_saw_it = manifest_domain.load_dataset_manifest(dest)
+    _install(_table(3), "dataframe")
+    newer = _whole_output(dest)
+    assert newer is not None
+
+    keep_installed_output(USER, dest, dataclasses.replace(as_the_save_saw_it, name="Renamed by a save"))
+
+    assert _whole_output(dest) == newer
+    assert manifest_domain.load_dataset_manifest(dest).name != "Renamed by a save"
+
+
 def test_the_same_output_again_keeps_its_files(app):
     art = _pair(1)
     _install(art, "outputs")

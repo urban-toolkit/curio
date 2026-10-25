@@ -471,7 +471,7 @@ def test_a_visitor_with_no_account_sees_the_dashboard_read_only(
 
     The visitor is signed in as the shared guest with a NEW session, so the
     owner's artifact rows are not theirs to read: every byte they see came
-    through the sandbox's by-name fallback to the hydrated file.
+    from the saved outputs' own files, read in place on the dataflow's route.
     """
     require_project_page()
     # The owner half of this needs a real account: `_pinned_and_saved` runs and

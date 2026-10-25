@@ -399,12 +399,12 @@ class ARasterOutputAfterAReopenTest(StoreTestCase):
     """A saved raster output, read again after a reopen under a new sign-in.
 
     The store's row carries the session that wrote it, so the next sign-in's
-    reads are refused there and fall back to the copy a project load hydrated
-    into the shared data directory under the artifact's id
-    (``projects/storage.hydrate_outputs``). For a raster that copy is the
-    raster's own file, a GeoTIFF or the VRT Mosaic Rasters writes, with no
-    extension. The fallback read parquet and JSON only, so ``/raster`` answered
-    404 and a Python node downstream failed with "No artifact with id".
+    reads are refused there and read the saved output in place, from the file
+    its owner's Data Catalog keeps, which the backend names
+    (``projects/storage.saved_output_file``). For a raster that file is the
+    raster's own, a GeoTIFF or the VRT Mosaic Rasters writes, possibly with no
+    extension. A reader of parquet and JSON only would answer 404 on
+    ``/raster`` and fail a Python node downstream with "No artifact with id".
     """
 
     def setUp(self):
@@ -413,11 +413,14 @@ class ARasterOutputAfterAReopenTest(StoreTestCase):
 
         self.client = app.test_client()
         self.data_dir = self.root / ".curio" / "data"
+        self.dataset = self.root / ".curio" / "users" / "1" / "datasets" / "computed.df.r@1" / "data"
+        self.dataset.mkdir(parents=True)
 
-    def hydrated(self, raster_bytes, suffix=".tif"):
-        """A raster an earlier sign-in returned, and the copy a project load
-        hydrated for it. The file the store's row names is gone, as the scratch
-        copy of an output is, so the hydrated copy is the only one."""
+    def saved(self, raster_bytes, suffix=".tif"):
+        """A raster an earlier sign-in returned, and the file its dataflow
+        saved for it, named after the artifact. The file the store's row names
+        is gone, as the scratch copy of an output is, so the saved file is the
+        only one. Returns the artifact's id and that file."""
         import rasterio
 
         from utk_curio.sandbox.util.parsers import save_to_duckdb
@@ -426,9 +429,13 @@ class ARasterOutputAfterAReopenTest(StoreTestCase):
         written.write_bytes(raster_bytes)
         with rasterio.open(written) as dataset:
             art_id = save_to_duckdb(dataset, "python-node", session_id="earlier-sign-in")
-        (self.data_dir / art_id).write_bytes(raster_bytes)
+        (self.dataset / art_id).write_bytes(raster_bytes)
         written.unlink()
-        return art_id
+        return art_id, self.dataset / art_id
+
+    @staticmethod
+    def saved_paths(art_id, saved):
+        return {art_id: {"path": str(saved), "dataType": "raster"}}
 
     def assert_the_fixture(self, dataset):
         import rasterio
@@ -439,30 +446,40 @@ class ARasterOutputAfterAReopenTest(StoreTestCase):
             self.assertEqual(tuple(dataset.transform), tuple(source.transform))
             self.assertEqual(dataset.read(1).tolist(), source.read(1).tolist())
 
-    def test_load_artifact_opens_the_hydrated_geotiff(self):
+    def test_load_artifact_opens_the_saved_geotiff(self):
         import rasterio
 
         from utk_curio.sandbox.util.parsers import load_artifact
 
-        art_id = self.hydrated(FIXTURE.read_bytes())
-        dataset = load_artifact(art_id, session_id="new-sign-in")
+        art_id, saved = self.saved(FIXTURE.read_bytes())
+        dataset = load_artifact(art_id, session_id="new-sign-in", saved_paths=self.saved_paths(art_id, saved))
         self.addCleanup(getattr(dataset, "close", lambda: None))
         self.assertIsInstance(dataset, rasterio.io.DatasetReader)
         self.assert_the_fixture(dataset)
 
-    def test_the_raster_route_serves_the_hydrated_geotiff(self):
+    def test_the_raster_route_serves_the_saved_geotiff(self):
         from rasterio.io import MemoryFile
 
-        art_id = self.hydrated(FIXTURE.read_bytes())
-        response = self.client.get("/raster", query_string={"fileName": art_id, "sessionId": "new-sign-in"})
+        art_id, saved = self.saved(FIXTURE.read_bytes())
+        response = self.client.get("/raster", query_string={
+            "fileName": art_id, "sessionId": "new-sign-in", "savedPath": str(saved),
+        })
         self.assertEqual(response.status_code, 200, why(response))
         meta = json.loads(response.headers["X-Curio-Raster"])
         self.assertEqual((meta["width"], meta["height"], meta["crs"]), (40, 30, "EPSG:32616"))
         with MemoryFile(response.get_data()) as memory, memory.open() as served:
             self.assert_the_fixture(served)
 
-    def test_the_raster_route_serves_a_hydrated_virtual_raster(self):
-        """Mosaic Rasters returns a VRT; its hydrated copy is the VRT's XML."""
+    def test_a_copy_in_the_shared_data_directory_is_not_served(self):
+        """What a project load once copied there under the artifact's id. With
+        no file named by the backend, the raster is missing."""
+        art_id, _saved = self.saved(FIXTURE.read_bytes())
+        (self.data_dir / art_id).write_bytes(FIXTURE.read_bytes())
+        response = self.client.get("/raster", query_string={"fileName": art_id, "sessionId": "new-sign-in"})
+        self.assertEqual(response.status_code, 404, why(response))
+
+    def test_the_raster_route_serves_a_saved_virtual_raster(self):
+        """Mosaic Rasters returns a VRT; its saved file is the VRT's XML."""
         from rasterio.io import MemoryFile
 
         vrt = (
@@ -478,8 +495,10 @@ class ARasterOutputAfterAReopenTest(StoreTestCase):
             "  </VRTRasterBand>\n"
             "</VRTDataset>\n"
         )
-        art_id = self.hydrated(vrt.encode("utf-8"), suffix=".vrt")
-        response = self.client.get("/raster", query_string={"fileName": art_id, "sessionId": "new-sign-in"})
+        art_id, saved = self.saved(vrt.encode("utf-8"), suffix=".vrt")
+        response = self.client.get("/raster", query_string={
+            "fileName": art_id, "sessionId": "new-sign-in", "savedPath": str(saved),
+        })
         self.assertEqual(response.status_code, 200, why(response))
         with MemoryFile(response.get_data()) as memory, memory.open() as served:
             self.assertEqual(served.driver, "GTiff")
@@ -492,10 +511,10 @@ class ARasterOutputAfterAReopenTest(StoreTestCase):
         from utk_curio.sandbox.util.parsers import load_from_duckdb
 
         _worker_init()
-        art_id = self.hydrated(FIXTURE.read_bytes())
+        art_id, saved = self.saved(FIXTURE.read_bytes())
         result = execute_code(
             APythonNodeReceivesTheRasterTest.CHECK, art_id, "curio.builtin/computation-analysis", "raster",
-            session_id="new-sign-in", save_dataset=False,
+            session_id="new-sign-in", save_dataset=False, saved_paths=self.saved_paths(art_id, saved),
         )
         self.assertEqual(result["stderr"], "")
         with rasterio.open(FIXTURE) as source:
@@ -510,10 +529,12 @@ class ARasterOutputAfterAReopenTest(StoreTestCase):
 
         from utk_curio.sandbox.util import staging
 
-        art_id = self.hydrated(FIXTURE.read_bytes())
+        art_id, saved = self.saved(FIXTURE.read_bytes())
         scratch = self.root / "scratch"
         scratch.mkdir()
-        spec = staging.stage_input(art_id, scratch, session_id="new-sign-in")
+        spec = staging.stage_input(
+            art_id, scratch, session_id="new-sign-in", saved_paths=self.saved_paths(art_id, saved),
+        )
         self.assertEqual(spec["kind"], "raster")
         with rasterio.open(scratch / spec["file"]) as staged:
             self.assert_the_fixture(staged)
@@ -521,8 +542,10 @@ class ARasterOutputAfterAReopenTest(StoreTestCase):
     def test_bytes_that_only_start_like_a_tiff_are_still_missing(self):
         """A file GDAL cannot read is no raster: a 404, as any missing one."""
         art_id = "1700000000006_beef0006"
-        (self.data_dir / art_id).write_bytes(b"II*\x00" + b"\x00" * 60)
-        response = self.client.get("/raster", query_string={"fileName": art_id, "sessionId": "new-sign-in"})
+        (self.dataset / art_id).write_bytes(b"II*\x00" + b"\x00" * 60)
+        response = self.client.get("/raster", query_string={
+            "fileName": art_id, "sessionId": "new-sign-in", "savedPath": str(self.dataset / art_id),
+        })
         self.assertEqual(response.status_code, 404, why(response))
 
 

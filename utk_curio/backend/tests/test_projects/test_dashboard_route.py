@@ -125,7 +125,7 @@ def test_a_dashboard_too_large_to_embed_is_refused(
 
     monkeypatch.setattr(dashboard_payload, "DEFAULT_PAYLOAD_LIMIT_BYTES", 512)
 
-    def fat_reader():
+    def fat_reader(_saved_path_of):
         def read(filename):
             return {"dataType": "dataframe", "data": {"a": list(range(500))}, "schema": {}}
 
@@ -158,7 +158,7 @@ def test_only_what_a_tile_reads_is_embedded(client, user_and_token, tmp_curio, m
     _, token = user_and_token
     pid = _create(client, token)
 
-    def reader():
+    def reader(_saved_path_of):
         return lambda filename: {"dataType": "dataframe", "data": {"a": [1]}, "schema": {}}
 
     monkeypatch.setattr(services, "_dashboard_envelope_reader", reader)
@@ -282,11 +282,40 @@ def test_a_raster_behind_a_pinned_map_travels_as_its_geotiff(
     assert raster["meta"] == RASTER_META
     assert base64.b64decode(raster["geotiff"]) == geotiff
     # Asked as the editor's map asks: by name, for no more than a map loads.
-    # No session: the sandbox reads the copy the shared load hydrated.
+    # No session: the sandbox reads the saved output's own file, which the
+    # backend names when the dataflow records one (see the test below).
     [params] = [params for path, params in asked if path == "/raster"]
     assert params["fileName"] == "r_output"
     assert int(params["maxCells"]) == 4096 * 4096 and int(params["maxSide"]) == 8192
     assert "part" not in params and "sessionId" not in params
+
+
+def test_each_saved_output_is_read_from_the_file_its_owners_store_holds(
+    client, user_and_token, tmp_curio, monkeypatch, tmp_path,
+):
+    # Nothing copies a saved output where a read with no session would find it
+    # by name, so the page's builder names the sandbox the file the dataflow's
+    # owner's Data Catalog keeps, for the envelope and for the raster alike.
+    from utk_curio.backend.app.projects.storage import SavedOutputFile
+
+    _, token = user_and_token
+    pid = _create(client, token, spec=_spec_with_pinned_raster_map())
+    asked = _sandbox_serving_a_raster(monkeypatch, _SandboxReply(
+        200, content=b"II*\x00", headers={"X-Curio-Raster": json.dumps(RASTER_META)},
+    ))
+    held = tmp_path / "computed.df.py@1" / "data" / "r.tif"
+    monkeypatch.setattr(
+        services, "saved_output_of",
+        lambda project_id, name: SavedOutputFile(held, "raster") if (project_id, name) == (pid, "r_output") else None,
+    )
+
+    resp = client.get(f"/api/projects/{pid}/dashboard")
+
+    assert resp.status_code == 200, resp.get_data(as_text=True)
+    assert [(path, params.get("savedPath")) for path, params in asked] == [
+        ("/get", str(held)), ("/raster", str(held)),
+    ]
+    assert all("sessionId" not in params for _path, params in asked)
 
 
 def test_a_raster_too_large_for_a_map_travels_as_the_editors_refusal(
@@ -384,7 +413,7 @@ def test_a_dashboard_too_large_to_embed_is_refused_by_its_dataflows_name(
     monkeypatch.setattr(
         services,
         "_dashboard_envelope_reader",
-        lambda: lambda filename: {"dataType": "dataframe", "data": {"a": list(range(500))}, "schema": {}},
+        lambda _saved_path_of: lambda filename: {"dataType": "dataframe", "data": {"a": list(range(500))}, "schema": {}},
     )
     monkeypatch.setattr(
         services,
@@ -412,7 +441,7 @@ def test_a_dashboard_whose_saved_output_cannot_be_read_says_try_again(
     _, token = user_and_token
     pid = _create(client, token)
 
-    def unreadable():
+    def unreadable(_saved_path_of):
         def read(filename):
             raise KeyError(filename)
 

@@ -153,27 +153,33 @@ def _removals_of(monkeypatch, folder: Path) -> list:
     return removed
 
 
-def _sandbox_get(filename: str) -> dict:
+def _sandbox_get(owner_id: int, project_id: str):
     """The sandbox's ``/get`` as a dashboard asks it, with no session id: it
-    reads a saved output only from the shared data folder, where the load put
-    it."""
-    if not _shared(filename).is_file():
-        raise KeyError(filename)
-    return HEAVY_ENVELOPE
+    reads a saved output only from the file its owner's store holds, which
+    the backend names (``storage.saved_output_file``)."""
+    from utk_curio.backend.app.projects import storage
+
+    def get(filename: str) -> dict:
+        saved = storage.saved_output_file(str(owner_id), project_id, filename)
+        if saved is None or not saved.path.is_file():
+            raise KeyError(filename)
+        return HEAVY_ENVELOPE
+
+    return get
 
 
 def _no_raster(filename, part):
     return {"status": 404, "meta": None, "message": "no raster here"}
 
 
-def _dashboard(application, project_id: str) -> dict:
+def _dashboard(application, owner_id: int, project_id: str) -> dict:
     """``GET /api/projects/<id>/dashboard`` with a small page limit."""
     from utk_curio.backend.app.projects.services import build_standalone_dashboard
 
     with application.app_context():
         return build_standalone_dashboard(
             project_id, limit_bytes=LIMIT_BYTES,
-            fetch_envelope=_sandbox_get, fetch_raster=_no_raster, registry={},
+            fetch_envelope=_sandbox_get(owner_id, project_id), fetch_raster=_no_raster, registry={},
         )
 
 
@@ -236,7 +242,7 @@ def test_a_dashboard_asked_for_during_a_save_waits_for_the_save(file_db_app, own
 
     run = _read_during_a_save(
         file_db_app, owner_id, monkeypatch,
-        lambda project_id: _dashboard(file_db_app, project_id),
+        lambda project_id: _dashboard(file_db_app, owner_id, project_id),
     )
     reader = run["reader"]
 
@@ -273,7 +279,12 @@ def test_a_load_during_a_save_waits_for_the_save(file_db_app, owner_id, monkeypa
     assert restored == [run["second"]], (
         f"the load restored {restored} for the producer; the save recorded {run['second']}"
     )
-    assert _shared(run["second"]).is_file()
+    # Read where the save installed it: its file in the account's Data Catalog.
+    from utk_curio.backend.app.projects import storage
+
+    saved = storage.saved_output_file(str(owner_id), run["project_id"], run["second"])
+    assert saved is not None
+    assert json.loads(saved.path.read_text(encoding="utf-8")) == {"rows": 2}
 
 
 def _output(data_type: str) -> str:
@@ -317,6 +328,27 @@ def test_an_output_sent_again_unchanged_is_not_installed_again(file_db_app, owne
     assert _index_row_matches(owner_id, folder), "the dataset index does not match the renamed dataset"
 
 
+def test_an_output_on_record_is_kept_when_its_source_is_gone(file_db_app, owner_id):
+    """Nothing copies a saved output back where it was made, so a save after
+    the run's own file is gone (a reopen under a new sign-in, a cleared data
+    directory) finds no source for an output it already has on record. The
+    dataset holds it, so the save keeps it and warns about nothing, and a new
+    name for its node still renames the dataset."""
+    project_id = _create_project(file_db_app)
+    output = _artifact(1790000000000, {"rows": 1})
+    _save(file_db_app, project_id, output)
+    _shared(output).unlink()
+
+    # ``_save`` asserts the save warned about nothing.
+    _save(file_db_app, project_id, output, node_name="Rows, renamed")
+
+    folder = _producer_folder(owner_id, project_id)
+    manifest = load_dataset_manifest(folder)
+    assert manifest.name == "Rows, renamed"
+    assert json.loads((folder / manifest.data_file).read_text(encoding="utf-8")) == {"rows": 1}
+    assert _index_row_matches(owner_id, folder)
+
+
 def test_a_changed_output_is_installed_again(file_db_app, owner_id):
     """A new output of the producer replaces the saved one."""
     project_id = _create_project(file_db_app)
@@ -350,7 +382,7 @@ def test_a_dashboard_whose_saved_output_cannot_be_read_says_try_again(file_db_ap
     shutil.rmtree(_producer_folder(owner_id, project_id))
 
     with pytest.raises(DashboardOutputUnreadableError) as refused:
-        _dashboard(file_db_app, project_id)
+        _dashboard(file_db_app, owner_id, project_id)
 
     assert refused.value.offenders == [PRODUCER]
     assert refused.value.name == "Reads under lock"

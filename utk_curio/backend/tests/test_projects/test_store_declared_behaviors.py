@@ -120,7 +120,7 @@ def test_the_dashboard_walks_through_a_pool_saved_in_the_owners_store(client, db
 
     monkeypatch.setattr(
         services, "_dashboard_envelope_reader",
-        lambda: (lambda filename: {"dataType": "dataframe", "data": {"a": [1]}, "schema": {}}),
+        lambda _saved_path_of: (lambda filename: {"dataType": "dataframe", "data": {"a": [1]}, "schema": {}}),
     )
     monkeypatch.setattr(
         services,
