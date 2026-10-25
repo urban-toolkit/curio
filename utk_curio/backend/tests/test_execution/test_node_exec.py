@@ -19,8 +19,6 @@ import os
 import socket
 import threading
 import time
-import uuid
-from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
@@ -32,6 +30,7 @@ from urllib3.response import HTTPResponse
 from utk_curio.backend.tests.test_datasets.computed_test_helpers import (
     auth_headers,
     create_project,
+    store_sandbox_artifact,
 )
 
 
@@ -57,9 +56,8 @@ def _fake_sandbox(monkeypatch, output, sent):
 
 
 def _json_artifact(payload) -> str:
-    name = f"1790000000100_{uuid.uuid4().hex[:8]}.json"
-    (Path(os.environ["CURIO_SHARED_DATA"]) / name).write_text(json.dumps(payload), encoding="utf-8")
-    return name
+    """*payload* stored as a node run stores a JSON value: its artifact id."""
+    return store_sandbox_artifact(payload)
 
 
 def _start_on_thread(app, fn):
