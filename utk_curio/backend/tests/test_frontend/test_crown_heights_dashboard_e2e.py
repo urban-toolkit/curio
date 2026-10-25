@@ -189,6 +189,23 @@ def _step_outputs(visitor: "_Visitor") -> list[dict[str, str]]:
     return runs
 
 
+def _start_answers(visitor: "_Visitor") -> list[tuple[int, str | None]]:
+    """How each start of a viewer's run was answered: its status, and the id of
+    the run to follow (none when the values need no run)."""
+    answers = []
+    for line in visitor.answered:
+        asked, _, answer = line.partition(" -> ")
+        if not (asked.startswith("POST ") and asked.endswith("/dashboard/runs")):
+            continue
+        status, _, body = answer.partition(" ")
+        try:
+            run_id = json.loads(body).get("runId")
+        except ValueError:
+            run_id = None
+        answers.append((int(status) if status.isdigit() else 0, run_id))
+    return answers
+
+
 def _beyond_viewer_runs(visitor: "_Visitor") -> list[str]:
     """What the visitor's page asked beyond a viewer's run and DuckDB's extensions."""
     return [line for line in _not_a_viewer_route(visitor.asked) if not _EXTENSIONS_RE.match(line)]
@@ -358,7 +375,14 @@ def test_the_owner_shares_the_crown_heights_dashboard_and_each_visitor_tries_a_d
         assert _table_reads(second.page, ids["table"], "Dec 21") == "40 min"
         back = _changed(opened_map, _map_pixels(second.page, ids["map"]))
         assert back <= 0.01, f"the saved date's map differs from the one the page opened with in {back:.2%}"
-        assert len(_runs_started(second.asked)) == 2, "the saved date ran again" + second.story()
+        # The page asks, and the server answers that the saved values need no
+        # run: the page follows no run and runs no GPU step.
+        second.waits_for_runs(3, timeout_ms=RUN_TIMEOUT_MS)
+        assert _start_answers(second)[2:] == [(200, None)], (
+            f"the saved date was answered {_start_answers(second)[2:]!r}, not with no run" + second.story()
+        )
+        assert len(second.streams) == 2, "the saved date ran again" + second.story()
+        assert len(_steps_sent(second.asked)) == 1, "the saved date ran the GPU step again" + second.story()
         assert _beyond_viewer_runs(second) == [], (
             "the dashboard asked the server for more than a viewer's run" + second.story()
         )
