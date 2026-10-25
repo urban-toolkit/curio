@@ -158,6 +158,37 @@ def wrapped_input_names(user, run: "NodeRun", input_ref: dict, saved_inputs: dic
     return wrapped_names(path, (saved_inputs.get(path) or {}).get("path"))
 
 
+#: What a run in a kept session that is not the owner's, a dashboard viewer's
+#: step, answers when a wrapper among its inputs names an output that is not
+#: its dataflow's (:func:`_foreign_wrapped`).
+FOREIGN_WRAPPER_MESSAGE = (
+    "This step's input names an output that is not its dataflow's, so it does not run."
+)
+
+
+def _foreign_wrapped(dataflow_id: str | None, wrapped: list[str] | None, saved_inputs: dict) -> bool:
+    """Whether a run in a kept session of its own, a dashboard viewer's step
+    (``runs/viewer.py``), would read an output that is not its dataflow's
+    through a wrapper among its inputs: one *wrapped* names that is neither
+    a saved output of the dataflow nor held by any of its kept outputs
+    (``kept.project_entry``). Such a session reads what any kept run made,
+    and has no other session to run in. A wrapper the sandbox could not
+    describe (*wrapped* None) is not held against the step: the dataflow's
+    owner wrote the code, and cannot make the sandbox leave a question
+    unanswered."""
+    if not wrapped:
+        return False
+    from utk_curio.backend.app.runs import kept
+
+    try:
+        return any(
+            name not in saved_inputs and kept.project_entry(dataflow_id, name) is None
+            for name in wrapped
+        )
+    except Exception:  # noqa: BLE001 - an unanswered lookup refuses
+        return True
+
+
 def resolve_saved_inputs(names: list[str], dataflow_id: str | None) -> dict:
     """``{name: {"path", "dataType"}}`` for each of *names*, the outputs a
     run reads, that is a saved output of its dataflow: the file its owner's
@@ -479,6 +510,13 @@ def _execute(user, session_token, run: NodeRun, *, language: str) -> tuple[dict,
         saved_inputs = {
             **saved_inputs, **resolve_kept_inputs(user, names, run.dataflow_id, saved_inputs),
         }
+        from utk_curio.common.kept_sessions import is_kept_session
+
+        if is_kept_session(session_token) and _foreign_wrapped(run.dataflow_id, wrapped, saved_inputs):
+            return {
+                'stdout': [], 'stderr': FOREIGN_WRAPPER_MESSAGE, 'input': input_ref,
+                'output': {'path': '', 'dataType': 'str'},
+            }, 200
 
     body = {
         "code": run.code,
