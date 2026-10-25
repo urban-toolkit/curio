@@ -16,7 +16,7 @@ from utk_curio.backend.app.datasets.service import DatasetCatalogError, DatasetC
 from utk_curio.backend.app.packages.routes import common as packages_routes_common
 from utk_curio.backend.app.projects.repositories import NotFoundError
 from utk_curio.backend.app.projects.services import ProjectError
-from utk_curio.backend.app.users.dependencies import require_auth
+from utk_curio.backend.app.users.dependencies import get_current_token, require_auth
 
 
 datasets_bp = Blueprint("datasets_api", __name__, url_prefix="/api")
@@ -47,7 +47,9 @@ def _map_catalog_errors(fn):
 
 
 def _service() -> DatasetCatalogService:
-    return DatasetCatalogService(getattr(g, "user", None))
+    """The catalog as this request's caller sees it: an output the request
+    names is read only if the caller may (``PathResolver.readable_outputs``)."""
+    return DatasetCatalogService(getattr(g, "user", None), sign_in=get_current_token())
 
 
 def _dataflow_id_from_request() -> str | None:
@@ -65,8 +67,9 @@ def list_dataset_catalog():
     # Live outputs (base64 JSON) are the current execution outputs the frontend
     # holds before the manifest is saved, so computed datasets appear immediately
     # after node execution.
-    live_outputs = parse_live_outputs(request.args.get("liveOutputs"))
-    payload = _service().list_catalog(
+    service = _service()
+    live_outputs = service.readable_live_outputs(parse_live_outputs(request.args.get("liveOutputs")))
+    payload = service.list_catalog(
         dataflow_id=_dataflow_id_from_request(),
         q=request.args.get("q") or None,
         fmt=request.args.get("format") or None,
@@ -83,10 +86,11 @@ def list_dataset_catalog():
 @require_auth
 @_map_catalog_errors
 def get_dataset(dataset_id: str):
-    payload = _service().get_dataset(
+    service = _service()
+    payload = service.get_dataset(
         dataset_id,
         dataflow_id=_dataflow_id_from_request(),
-        live_outputs=parse_live_outputs(request.args.get("liveOutputs")),
+        live_outputs=service.readable_live_outputs(parse_live_outputs(request.args.get("liveOutputs"))),
         resolve_producer=True,
     )
     return jsonify(payload), 200
@@ -108,10 +112,11 @@ def preview_dataset(dataset_id: str):
     except ValueError:
         return _error("rowLimit, offset and part must be integers")
 
-    payload = _service().preview(
+    service = _service()
+    payload = service.preview(
         dataset_id,
         dataflow_id=_dataflow_id_from_request(),
-        live_outputs=parse_live_outputs(request.args.get("liveOutputs")),
+        live_outputs=service.readable_live_outputs(parse_live_outputs(request.args.get("liveOutputs"))),
         row_limit=row_limit,
         offset=offset,
         part_index=part_index,
@@ -141,10 +146,11 @@ def dataset_usage(dataset_id: str):
 @require_auth
 @_map_catalog_errors
 def download_dataset(dataset_id: str):
-    target = _service().download_target(
+    service = _service()
+    target = service.download_target(
         dataset_id,
         dataflow_id=_dataflow_id_from_request(),
-        live_outputs=parse_live_outputs(request.args.get("liveOutputs")),
+        live_outputs=service.readable_live_outputs(parse_live_outputs(request.args.get("liveOutputs"))),
     )
 
     data = target.get("data")
@@ -226,11 +232,12 @@ def publish_dataset():
     dataset_id = body.get("datasetId")
     if not dataset_id:
         return _error("datasetId is required")
-    payload = _service().publish_dataset(
+    service = _service()
+    payload = service.publish_dataset(
         dataset_id,
         body,
         dataflow_id=body.get("dataflowId") or body.get("projectId"),
-        live_outputs=normalize_live_outputs_list(body.get("liveOutputs")),
+        live_outputs=service.readable_live_outputs(normalize_live_outputs_list(body.get("liveOutputs"))),
     )
     return jsonify(payload), 201
 

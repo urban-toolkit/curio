@@ -295,6 +295,7 @@ def _auto_install_computed_outputs(
     dataflow_name: Optional[str] = None,
     labels: Optional[dict] = None,
     on_record: frozenset = frozenset(),
+    readable: Optional[frozenset] = None,
 ) -> Optional[dict]:
     """Save each newly computed output to the account-level user store as
     ``computed.<dataflowId>.<nodeId>@1/`` with its producer/upstream lineage,
@@ -305,6 +306,10 @@ def _auto_install_computed_outputs(
     (:func:`_on_record`), the one its dataset holds: that dataset is kept,
     retitled when its title or lineage changed
     (``installer.keep_recorded_output``), with no source to find again.
+
+    Any other output is installed from the store, when it is in *readable*
+    (:func:`_readable_sent_outputs`) or *readable* is None; one that is not
+    fails as one that is gone does.
 
     Computed outputs are account-level assets by default: this NO LONGER
     installs them into the project (no ``dataflow.datasets`` ref is written).
@@ -382,7 +387,7 @@ def _auto_install_computed_outputs(
                 dataflow_name=dataflow_name,
                 upstream_inputs=upstream_inputs,
             ) if node_id in on_record else None
-            if result is None:
+            if result is None and (readable is None or filename in readable):
                 result = install_node_output(
                     user_key,
                     node_id=node_id,
@@ -418,6 +423,21 @@ def _auto_install_computed_outputs(
         # project only by an explicit user action.
 
     return spec
+
+
+def _readable_sent_outputs(user, refs, sign_in: Optional[str]) -> Optional[frozenset]:
+    """The outputs among *refs* the saving account may read
+    (``runs/kept.readable_by``), for a save a request sent: *sign_in* is its
+    caller's. The request names them, so one another account's run made is
+    not installed. None, any output, for a save the backend makes itself.
+
+    Asked before the save takes its spec lock or writes its row, since it
+    waits on the sandbox."""
+    if sign_in is None or not refs:
+        return None
+    from utk_curio.backend.app.runs import kept
+
+    return frozenset(kept.readable_by(getattr(user, "id", None), sign_in, [ref.filename for ref in refs]))
 
 
 def _extract_graph_preview(spec: Optional[dict], lookup) -> Optional[dict]:
@@ -810,13 +830,16 @@ def _seed_dataset_defaults(user, ukey: str, project_id: str, spec: dict) -> dict
     return storage.read_spec(ukey, project_id) or spec
 
 
-def save_project(user, data: ProjectCreate) -> ProjectDetail:
+def save_project(user, data: ProjectCreate, *, sign_in: Optional[str] = None) -> ProjectDetail:
+    """Create a dataflow from *data*. *sign_in*: the caller's, for a save a
+    request sent (:func:`_readable_sent_outputs`)."""
     from utk_curio.backend.app.packages.service import (
         ensure_user_packages_initialized,
         seed_spec_with_defaults,
     )
 
     _assert_guest_can_save(user)
+    readable = _readable_sent_outputs(user, data.outputs, sign_in)
 
     project_id = str(uuid4())
     ukey = _user_dir_key(user)
@@ -856,6 +879,7 @@ def save_project(user, data: ProjectCreate) -> ProjectDetail:
         ukey, output_refs, data.spec, install_warnings,
         dataflow_id=project_id, dataflow_name=data.name,
         labels=_labels_for_unnamed(ukey, project_id, output_refs),
+        readable=readable,
     ) or data.spec
     # Drop dataset refs keyed on visualization/sink nodes (passthrough duplicates).
     effective_spec = _prune_sink_node_dataset_refs(effective_spec, ukey)
@@ -942,9 +966,14 @@ def _refuse_an_older_save(ukey: str, project_id: str, data: ProjectUpdate) -> No
         raise ProjectError(OLDER_SAVE_REFUSAL, 409)
 
 
-def update_project(user, project_id: str, data: ProjectUpdate) -> ProjectDetail:
+def update_project(
+    user, project_id: str, data: ProjectUpdate, *, sign_in: Optional[str] = None,
+) -> ProjectDetail:
+    """Save *data* over *project_id*. *sign_in*: the caller's, for a save a
+    request sent (:func:`_readable_sent_outputs`)."""
     project = _project_to_save(user, project_id)
     ukey = _user_dir_key(user)
+    readable = _readable_sent_outputs(user, data.outputs, sign_in)
 
     # Serialize the spec read-modify-write so a concurrent dataset mutation
     # (replace_dataflow_datasets) or Play-All can't clobber freshly-installed
@@ -1035,6 +1064,7 @@ def update_project(user, project_id: str, data: ProjectUpdate) -> ProjectDetail:
                 ukey, refs_to_install, effective_spec, install_warnings,
                 dataflow_id=project_id, dataflow_name=(data.name or project.name),
                 labels=labels, on_record=_on_record(refs_to_install, existing_manifest),
+                readable=readable,
             )
             if updated_spec is not None and updated_spec is not effective_spec:
                 effective_spec = updated_spec

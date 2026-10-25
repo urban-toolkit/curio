@@ -268,6 +268,14 @@ class CatalogListing:
         # Also covers legacy "fat refs" stored in old project specs: those refs
         # carry a ``curio://outputs/`` URI but may have ``origin == "imported"``
         # (or no origin at all) because they predate the ``origin`` field.
+        #
+        # Which of the outputs they name the caller may read is asked once,
+        # for all of them, before any is resolved.
+        self._paths.readable_outputs(
+            str(item.get("uri"))[len("curio://outputs/"):]
+            for item in items
+            if str(item.get("uri") or "").startswith("curio://outputs/")
+        )
         for item in items:
             uri = item.get("uri") or ""
             is_outputs_uri = uri.startswith("curio://outputs/")

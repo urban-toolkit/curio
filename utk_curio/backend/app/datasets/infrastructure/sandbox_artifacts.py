@@ -126,6 +126,60 @@ def _local_session(art_id: str) -> tuple[bool, str | None]:
         return False, None
 
 
+#: The most artifacts one call to the sandbox's ``/artifacts/readable`` names
+#: (its ``MAX_SESSIONS_PER_CALL``).
+_READS_PER_CALL = 500
+
+
+def _local_readable(asked: dict) -> set[str] | None:
+    """:func:`readable` read directly, in a process that owns the database
+    (:func:`_local_row`), or None in one that does not."""
+    try:
+        from utk_curio.sandbox.util import db as sandbox_db
+
+        if not sandbox_db._writer_process:
+            return None
+    except Exception:  # noqa: BLE001 - asked of the sandbox instead
+        return None
+    from utk_curio.sandbox.util.parsers import readable_artifacts
+
+    try:
+        return set(readable_artifacts(asked))
+    except Exception:  # noqa: BLE001 - absent table or DB reads as nothing readable
+        return set()
+
+
+def readable(reads: dict) -> set[str]:
+    """The artifact ids among *reads*, ``{id: the session it is read under}``,
+    whose rows that session may read (``sandbox/util/parsers.session_may_read``).
+
+    For a caller vouching for a request: an id read under no session is not
+    among them, though a read under none reads any row; nor is an id with no
+    row, nor any the sandbox does not answer for."""
+    asked = {str(art_id): session for art_id, session in reads.items() if art_id and session}
+    if not asked:
+        return set()
+    local = _local_readable(asked)
+    if local is not None:
+        return local
+    found: set[str] = set()
+    items = list(asked.items())
+    for start in range(0, len(items), _READS_PER_CALL):
+        try:
+            response = _session.post(
+                _sandbox_url("/artifacts/readable"),
+                json={"reads": dict(items[start:start + _READS_PER_CALL])},
+                headers=_headers(),
+                timeout=_TIMEOUT_S,
+            )
+            response.raise_for_status()
+            found.update(str(art_id) for art_id in (response.json() or {}).get("readable") or [])
+        except (requests.RequestException, ValueError) as exc:
+            log.warning("could not ask the sandbox which of %d outputs are readable: %s",
+                        len(items[start:start + _READS_PER_CALL]), exc)
+    return found & set(asked)
+
+
 def made_by_a_kept_run(art_id: str) -> bool:
     """Whether the store's artifact *art_id* was made by a kept run, any
     dataflow's and any maker's (``common/kept_sessions.py``). True as well
