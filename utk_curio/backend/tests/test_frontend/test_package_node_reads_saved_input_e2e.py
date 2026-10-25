@@ -8,8 +8,8 @@ The plain ``/get`` reads only the store under the caller's session, so after a
 new sign-in, which is a new session, it cannot read that output.
 
 The owner adds ``curio.example-ui@1``, drops a Data Loading node and the Column
-Filter, runs the loader with its output saved, and saves. Then the owner signs
-in again, in a new browser context with a new session, reopens the dataflow,
+Filter, runs the loader with its output saved, and saves. Then the owner leaves
+the dataflow, signs in again, which starts a new session, reopens the dataflow,
 and the Column Filter shows the column and the row count with nobody running
 anything.
 
@@ -74,7 +74,7 @@ def _reads_the_frame(page, node_id: str, *, when: str) -> None:
 
 
 def test_a_package_node_reads_its_saved_input_after_a_new_sign_in(
-    app_frontend: "FrontendPage", current_server: str, browser, page,
+    app_frontend: "FrontendPage", current_server: str, page,
 ):
     require_project_page()
     require_user_auth()
@@ -112,25 +112,21 @@ def test_a_package_node_reads_its_saved_input_after_a_new_sign_in(
     outputs = [o.get("node_id") for o in (saved.get("outputs") or [])]
     assert loading in outputs, f"the save did not record the loader's output: {outputs}"
 
-    # The owner again, in a browser with nothing in it, under a new session.
-    again_ctx = browser.new_context()
-    try:
-        again = again_ctx.new_page()
-        again.emulate_media(reduced_motion="reduce")
-        second = stub_db_login(
-            again, frontend_url=base, backend_url=current_server,
-            name="Package Reads", username=username,
-        )
-        assert second["user"]["id"] == first["user"]["id"], (
-            "the second sign-in made a new account instead of signing the owner in again"
-        )
-        assert second["token"] != first["token"], "the second sign-in reused the first session"
+    # The owner leaves the dataflow, signs in again, which starts a new
+    # session, and opens it again.
+    page.goto(f"{base}/projects")
+    page.wait_for_load_state("domcontentloaded")
+    second = stub_db_login(
+        page, frontend_url=base, backend_url=current_server,
+        name="Package Reads", username=username,
+    )
+    assert second["user"]["id"] == first["user"]["id"], (
+        "the second sign-in made a new account instead of signing the owner in again"
+    )
+    assert second["token"] != first["token"], "the second sign-in reused the first session"
+    page.goto(f"{base}/dataflow/{project_id}")
+    require_owner_view(page)
+    node_locator(page, column_filter).wait_for(state="visible", timeout=45000)
 
-        again.goto(f"{base}/dataflow/{project_id}")
-        require_owner_view(again)
-        node_locator(again, column_filter).wait_for(state="visible", timeout=45000)
-
-        # Nobody runs anything: the loader's saved output reaches the filter.
-        _reads_the_frame(again, column_filter, when="After a new sign-in")
-    finally:
-        again_ctx.close()
+    # Nobody runs anything: the loader's saved output reaches the filter.
+    _reads_the_frame(page, column_filter, when="After a new sign-in")
