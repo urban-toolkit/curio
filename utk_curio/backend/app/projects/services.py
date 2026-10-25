@@ -1807,28 +1807,91 @@ def reconcile_guest_projects(user) -> int:
 # ---------------------------------------------------------------------------
 
 def duplicate_project(user, project_id: str) -> ProjectDetail:
+    """A copy of *project_id* under a new id, with every saved output its
+    source can still read (:func:`_copy_saved_outputs`)."""
+    import dataclasses
+
     src = repo.get_for_user(project_id, user.id)
     ukey = _user_dir_key(user)
     spec = storage.read_spec(ukey, project_id)
-    manifest = storage.read_manifest(ukey, project_id)
-
-    output_refs: List[OutputRef] = []
-    if manifest and "outputs" in manifest:
-        output_refs = [
-            OutputRef(
-                node_id=o["node_id"],
-                filename=o["filename"],
-                data_type=o.get("data_type"),
-            )
-            for o in manifest["outputs"]
-        ]
 
     new_name = f"{src.name} (copy)"
     create_data = ProjectCreate(
         name=new_name,
         spec=spec or {},
-        outputs=output_refs,
+        outputs=[],
         description=src.description,
         thumbnail_accent=src.thumbnail_accent or "peach",
     )
-    return save_project(user, create_data)
+    created = save_project(user, create_data)
+    copied = _copy_saved_outputs(ukey, project_id, target_id=created.id, target_name=new_name)
+    return dataclasses.replace(created, outputs=copied)
+
+
+def _copy_saved_outputs(
+    user_key: str, source_id: str, *, target_id: str, target_name: str,
+) -> List[OutputRef]:
+    """Give *target_id*, a copy of *source_id*'s dataflow, the saved outputs
+    *source_id* records, and return those recorded.
+
+    A node's computed dataset is copied as a scenario drop copies one: its
+    folder with its files linked, its manifest naming the copy's node and
+    dataflow (``datasets/install/copy.py``). An output read from an installed
+    dataset is the copy's too, since its spec names the same dataset. Neither
+    is installed again from the sandbox's artifacts, which may be gone, and an
+    output with no file left stays out. Each project is read or written under
+    its own spec lock, one at a time (#941).
+    """
+    from utk_curio.backend.app.datasets.infrastructure.storage import dataset_dir
+    from utk_curio.backend.app.datasets.install import copy as dataset_copy
+    from utk_curio.backend.app.datasets.install.installer import (
+        InstallerError,
+        computed_dataset_id,
+    )
+
+    staged = []
+    entries: Dict[str, dict] = {}
+    try:
+        with storage.spec_write_lock(user_key, source_id):
+            spec = storage.read_spec(user_key, source_id)
+            manifest = storage.read_manifest(user_key, source_id) or {}
+            refs = _output_refs_from_manifest(manifest)
+            for ref in storage.readable_saved_outputs(user_key, source_id, refs, spec=spec):
+                computed = f"{computed_dataset_id(ref.node_id, source_id)}@1"
+                if (dataset_dir(user_key, computed) / "manifest.json").is_file():
+                    try:
+                        staged.append(dataset_copy.stage_computed_copy(
+                            user_key, computed, node_id=ref.node_id,
+                            dataflow_id=target_id, dataflow_name=target_name,
+                        ))
+                    except InstallerError as exc:
+                        logger.warning(
+                            "Saved output %s of node %s in %s could not be copied into %s: %s",
+                            ref.filename, ref.node_id, source_id, target_id, exc,
+                        )
+                        continue
+                entries[ref.node_id] = next(
+                    entry for entry in manifest.get("outputs") or []
+                    if isinstance(entry, dict) and entry.get("node_id") == ref.node_id
+                )
+        if not entries:
+            return []
+        with storage.spec_write_lock(user_key, target_id):
+            while staged:
+                copy = staged.pop(0)
+                try:
+                    dataset_copy.place_staged_copy(user_key, copy)
+                except InstallerError as exc:
+                    logger.warning("A copied output could not be put in place in %s: %s", target_id, exc)
+            refs = [
+                OutputRef(node_id=node, filename=entry["filename"], data_type=entry.get("data_type"))
+                for node, entry in entries.items()
+            ]
+            restored = storage.readable_saved_outputs(
+                user_key, target_id, refs, spec=storage.read_spec(user_key, target_id),
+            )
+            storage.record_outputs(user_key, target_id, [entries[ref.node_id] for ref in restored])
+    finally:
+        for copy in staged:
+            dataset_copy.discard_staged_copy(copy)
+    return restored

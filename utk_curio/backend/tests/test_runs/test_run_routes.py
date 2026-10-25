@@ -588,6 +588,31 @@ class TestACanvasOpenedLater:
         assert steps["a"]["codeCurrent"] is True
         assert steps["b"]["codeCurrent"] is False
 
+    def test_a_step_past_the_stores_days_names_no_output(self, client, user_and_token, sandbox):
+        """The store keeps an output 7 days (``kept.sweep_store``), the run's
+        record longer, so a canvas opened later shows no output that is gone."""
+        from datetime import timedelta
+
+        from utk_curio.backend.app.runs.kept import KEPT_DAYS
+        from utk_curio.backend.app.runs.models import DataflowRunStep, naive_utc_now
+        from utk_curio.backend.extensions import db
+
+        user, token = user_and_token
+        project_id, _ = _create(client, token, [_node("a"), _node("b")], [_edge("a", "b")])
+        run_id = _start(client, token, project_id).get_json()["id"]
+        _wait(run_id)
+        fresh = {s["nodeId"]: s for s in _get(client, token, run_id)["steps"]}
+        assert fresh["a"]["outputPath"] and fresh["b"]["outputPath"]
+
+        DataflowRunStep.query.filter_by(run_id=run_id, node_id="a").update(
+            {"finished_at": naive_utc_now() - timedelta(days=KEPT_DAYS, hours=1)})
+        db.session.commit()
+
+        steps = {s["nodeId"]: s for s in _get(client, token, run_id)["steps"]}
+        assert steps["a"]["outputPath"] is None
+        assert steps["b"]["outputPath"] == fresh["b"]["outputPath"]
+        assert steps["a"]["status"] == "ok" and steps["a"]["codeCurrent"] is True
+
     def test_a_step_keeps_the_library_its_code_could_not_import(self, client, user_and_token, sandbox):
         # The reply's missingModule, so a canvas opened later offers the
         # install the canvas that ran it offered (#299).

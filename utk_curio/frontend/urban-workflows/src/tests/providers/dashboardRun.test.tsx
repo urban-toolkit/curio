@@ -216,13 +216,13 @@ describe("a step only a browser runs", () => {
      * A change whose run leaves "gpu" to the page, with "after" waiting below
      * it. *runsGpu* plays the node: what playNodes would make of it.
      */
-    async function aRunLeavingTheGpuStep(runsGpu: (outputs: any[], hooks: any) => void) {
+    async function aRunLeavingTheGpuStep(runsGpu: (outputs: any[], hooks: any) => void, extra: any[] = []) {
         const box: { outputs: any[] } = { outputs: [] };
         const playNodes = jest.fn((_nodeIds: string[], hooks: any) => {
             runsGpu(box.outputs, hooks);
             return true;
         });
-        const setup = setUp({ playNodes });
+        const setup = setUp({ playNodes, extra });
         box.outputs = setup.outputsRef.current;
         mockStart.mockResolvedValueOnce({ runId: "r1", token: "t1", joined: false, nodeIds: ["grid", "gpu", "after"] });
         await act(async () => { setup.hook.result.current.opened("dash-1"); });
@@ -327,5 +327,41 @@ describe("a step only a browser runs", () => {
         expect(mockKeepStep).not.toHaveBeenCalled();
         expect(showToast).not.toHaveBeenCalled();
         expect(askedOfPage("gpu")).toBe(false);
+        // What a tile left with nothing says, in place of a node to run or open.
+        expect(hook.result.current.stopped).toBe('"gpu" could not run in this browser.');
+    });
+
+    test("the step that could not run is named as its header names it", async () => {
+        const gpu = {
+            id: "gpu",
+            data: { nodeId: "gpu", nodeType: "curio.builtin/autk-grammar@1", packageTemplateLabel: "Cast sun rays on the GPU" },
+        };
+        const { hook, run, outcomes } = await aRunLeavingTheGpuStep((_outputs, hooks) => {
+            hooks.onNodeDone("gpu", { failed: true, message: "WebGPU is not available in this browser." });
+            hooks.onFinish();
+        }, [gpu]);
+
+        await act(async () => { run.emit(finished("needs_canvas")); });
+        await waitFor(() => expect(hook.result.current.stopped).not.toBeNull());
+
+        expect(hook.result.current.stopped).toBe('"Cast sun rays on the GPU" could not run in this browser.');
+        expect(outcomes.showSkipped).toHaveBeenCalledWith(
+            "after", 'No data yet: "Cast sun rays on the GPU" could not run in this browser.',
+        );
+    });
+
+    test("the next start clears why the last run stopped", async () => {
+        const { hook, run } = await aRunLeavingTheGpuStep((_outputs, hooks) => {
+            hooks.onNodeDone("gpu", { failed: true, message: "WebGPU is not available in this browser." });
+            hooks.onFinish();
+        });
+        await act(async () => { run.emit(finished("needs_canvas")); });
+        await waitFor(() => expect(hook.result.current.stopped).not.toBeNull());
+
+        mockStart.mockResolvedValueOnce({ runId: "r2", token: "t2", joined: false, nodeIds: ["grid"] });
+        await act(async () => { await hook.result.current.start(); });
+
+        expect(hook.result.current.stopped).toBeNull();
+        expect(hook.result.current.active).toBe(true);
     });
 });

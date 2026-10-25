@@ -16,6 +16,7 @@ from utk_curio.backend.app.datasets.install.installer import computed_dataset_id
 from utk_curio.backend.tests.test_datasets.computed_test_helpers import (
     auth_headers,
     create_project,
+    store_sandbox_artifact,
 )
 
 
@@ -48,9 +49,7 @@ def test_json_dict_output_installs_on_execution(client, user_and_token, monkeypa
     dataset on execution and reports an ``installed`` diagnostic."""
     _, token = user_and_token
     project_id = create_project(client, token, name="JSON output install")
-    shared = Path(os.environ["CURIO_SHARED_DATA"])
-    artifact = "1790000000000_deadbeef.json"
-    (shared / artifact).write_text(json.dumps({"hello": "world"}), encoding="utf-8")
+    artifact = store_sandbox_artifact({"hello": "world"})
 
     node_id = "grammar-node"
     _mock_sandbox(monkeypatch, {"path": artifact, "dataType": "dict"})
@@ -135,9 +134,7 @@ def test_exec_time_save_persists_dataflow_name(app, client, user_and_token, monk
     user, token = user_and_token
     project_name = "Named producer flow"
     project_id = create_project(client, token, name=project_name)
-    shared = Path(os.environ["CURIO_SHARED_DATA"])
-    artifact = "1790000000005_deadf00d.json"
-    (shared / artifact).write_text(json.dumps({"n": 1}), encoding="utf-8")
+    artifact = store_sandbox_artifact({"n": 1})
 
     node_id = "named-node"
     _mock_sandbox(monkeypatch, {"path": artifact, "dataType": "dict"})
@@ -190,21 +187,39 @@ def test_exec_without_dataflow_id_skips_persistence(client, user_and_token, monk
 
 
 def test_dataframe_output_still_installs_via_dataset_key(client, user_and_token, monkeypatch):
-    """Regression: a (geo)dataframe that saved a parquet still installs via the
-    'dataset' key (the pre-existing path), unchanged."""
+    """Regression: a table still installs via the 'dataset' key. A JavaScript
+    node's value is JSON in the store (its 'path'); with Save on, a table it
+    returns is stored once more as a frame artifact of its own, which its
+    reply names as 'dataset'. The install is that frame's parquet."""
+    import pandas as pd
+
     _, token = user_and_token
     project_id = create_project(client, token, name="DF regression")
-    shared = Path(os.environ["CURIO_SHARED_DATA"])
-    parquet = "1790000000002_feed0001_output.parquet"
-    (shared / parquet).write_bytes(b"PAR1")
+    rows = [{"a": 1}, {"a": 2}]
+    value = store_sandbox_artifact(rows)
+    frame = store_sandbox_artifact(pd.DataFrame(rows))
 
     node_id = "df-node"
-    _mock_sandbox(monkeypatch, {"path": "art-x", "dataType": "dataframe", "dataset": parquet})
-    resp = _exec(client, token, node_id=node_id, node_type="PYTHON_COMPUTATION", project_id=project_id)
+    _mock_sandbox(monkeypatch, {"path": value, "dataType": "list", "dataset": frame})
+    resp = client.post(
+        "/processJavaScriptCode",
+        data=json.dumps({
+            "code": "return rows;",
+            "nodeType": "curio.builtin/js-computation",
+            "nodeId": node_id,
+            "dataflowId": project_id,
+            "input": {"path": "", "dataType": "str"},
+            "saveOutputDataset": True,
+        }),
+        headers=auth_headers(token),
+    )
     assert resp.status_code == 200, resp.get_data(as_text=True)
     inst = resp.get_json().get("installedDataset")
     assert inst is not None
     assert inst["id"] == computed_dataset_id(node_id, project_id)
+    # The frame 'dataset' names, not the JSON value 'path' names.
+    assert inst["format"] == "parquet"
+    assert inst["path"].endswith(f"/data/{frame}.parquet")
 
 
 def test_scalar_output_installs_on_execution(client, user_and_token, monkeypatch):

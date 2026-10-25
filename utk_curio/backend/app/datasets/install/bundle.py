@@ -620,7 +620,9 @@ def install_node_output(
             # None so the save warning fires - here re-running DOES help.
             return None
         kind = str(row[0] or "").strip().lower()
-        if kind in ID_CONTAINER_KINDS:
+        if kind in BUNDLE_CONTAINERS:
+            # A tuple too, by its row's kind, for a caller that names no
+            # data type (a live output installed from the Data Catalog).
             parts = resolve_output_bundle_parts(art_id)
             if not parts:
                 return None  # children pruned - a genuine failure

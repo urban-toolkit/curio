@@ -19,6 +19,10 @@ An output built on what one tab's browser sent is kept for that tab alone
 (``private_to``, the digest of its run's token), for :data:`TAB_OWN_HOURS`.
 One the owner's keys made, or one made from it, is the owner's alone
 (:data:`OWNER_ONLY`), for its full days.
+
+The same sweep empties the sandbox's store of what it made more than
+:data:`KEPT_DAYS` ago that no kept output holds (:func:`sweep_store`), so the
+shared data directory holds at most that many days of results.
 """
 from __future__ import annotations
 
@@ -29,7 +33,7 @@ import os
 import secrets
 import threading
 from dataclasses import dataclass
-from datetime import timedelta
+from datetime import datetime, timedelta
 from typing import Optional
 
 from sqlalchemy import event
@@ -63,6 +67,8 @@ OWNER_ONLY = "owner"
 SANDBOX_SESSIONS_TIMEOUT = 30
 #: The most sessions one call to the sandbox names (its ``MAX_SESSIONS_PER_CALL``).
 SESSIONS_PER_CALL = 500
+#: The backend's deadline for a sweep of the sandbox's store, which reads every row.
+STORE_SWEEP_TIMEOUT = 300
 
 
 def digest(token: str) -> str:
@@ -482,6 +488,32 @@ def prune_quietly() -> None:
         log.exception("could not prune the kept outputs")
 
 
+def sweep_store(now=None) -> int:
+    """Have the sandbox delete what its store made more than :data:`KEPT_DAYS`
+    ago that no kept output holds (``/artifacts/sweep``), and return how many
+    artifacts went. Every run's output is kept that long, saved or not; a saved
+    output is the Data Catalog's file, which keeps it after the store's goes."""
+    now = now or naive_utc_now()
+    made_before = int((now - timedelta(days=KEPT_DAYS) - datetime(1970, 1, 1)).total_seconds() * 1000)
+    response = sandbox_request(
+        "post", "/artifacts/sweep", label="/artifacts/sweep", timeout=STORE_SWEEP_TIMEOUT,
+        data=json.dumps({"madeBefore": made_before}),
+        headers={"Content-Type": "application/json"},
+    )
+    try:
+        return int((response.json() or {}).get("forgotten") or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def sweep_store_quietly() -> None:
+    """:func:`sweep_store`, logging a failure rather than raising it."""
+    try:
+        sweep_store()
+    except Exception:  # noqa: BLE001 - the next sweep tries again
+        log.exception("could not sweep the store's artifacts")
+
+
 _prune_timer: Optional[threading.Timer] = None
 
 
@@ -500,6 +532,7 @@ def start_prune_scheduler(app) -> None:
         try:
             with app.app_context():
                 prune_quietly()
+                sweep_store_quietly()
         finally:
             _schedule(PRUNE_INTERVAL_HOURS * 3600)
 

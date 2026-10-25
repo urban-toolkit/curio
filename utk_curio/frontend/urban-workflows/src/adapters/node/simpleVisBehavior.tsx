@@ -3,6 +3,7 @@ import { useEdges } from 'reactflow';
 import { NodeBehaviorHook } from '../../registry/types';
 import { NodeEmptyState } from '../../components/nodes/NodeEmptyState';
 import { hasIncomingEdge, resolveNodeEmptyReason } from '../../utils/nodeEmptyState';
+import { useGrammarInputState } from '../../hook/useGrammarInputState';
 import { NodeType, VisInteractionType } from '../../constants';
 import { useProvenanceContext } from '../../providers/ProvenanceProvider';
 import { useFlowContext } from '../../providers/FlowProvider';
@@ -94,6 +95,8 @@ export const useSimpleVisBehavior: NodeBehaviorHook = (data, nodeState) => {
   // which only the graph knows.
   const edges = useEdges();
   const connected = hasIncomingEdge(edges, data.nodeId);
+  // On a dashboard: a viewer's run making the rows, or why it stopped before them.
+  const { upstreamRunning, upstreamStopped } = useGrammarInputState(data.nodeId);
   // Lazy init: if input is already present on mount (e.g. in tests) seed the
   // view so the first render already produces a contentComponent. The effect
   // will overwrite this once it fetches any path reference.
@@ -297,21 +300,23 @@ export const useSimpleVisBehavior: NodeBehaviorHook = (data, nodeState) => {
     // UniversalNode rendered nothing at all (#224). `ContentTable` with an
     // empty array was the same defect wearing a table: it drew an empty
     // <Table> and looked like a node that had failed.
+    const reason = resolveNodeEmptyReason({
+      connected,
+      upstreamRunning,
+      upstreamStopped,
+      hasInput: data.input != null && data.input !== '',
+      // 'text' is the fallback mode for anything that is not a frame,
+      // so a text mode with no content is a payload we cannot show.
+      tabular: currentMode !== 'text',
+      rowCount: rows.length,
+    }) ?? 'not-tabular';
     return (
       <NodeEmptyState
-        reason={
-          resolveNodeEmptyReason({
-            connected,
-            hasInput: data.input != null && data.input !== '',
-            // 'text' is the fallback mode for anything that is not a frame,
-            // so a text mode with no content is a payload we cannot show.
-            tabular: currentMode !== 'text',
-            rowCount: rows.length,
-          }) ?? 'not-tabular'
-        }
+        reason={reason}
+        hint={reason === 'upstream-stopped' ? upstreamStopped ?? undefined : undefined}
       />
     );
-  }, [currentMode, rows, imageColumns, shownImageColumns, choice, interacted, textContent, data.nodeId, data.input, connected, clickRow, pickColumn]);
+  }, [currentMode, rows, imageColumns, shownImageColumns, choice, interacted, textContent, data.nodeId, data.input, connected, upstreamRunning, upstreamStopped, clickRow, pickColumn]);
 
   return {
     contentComponent,

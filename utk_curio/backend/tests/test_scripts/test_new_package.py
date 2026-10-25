@@ -83,6 +83,22 @@ def test_with_ui_emits_a_behavior_bundle_entry(tmp_path):
     assert list(root.glob("sources/*Behavior.tsx")), "expected a behavior hook source"
 
 
+def test_with_ui_reads_its_input_with_the_canvas_reader(tmp_path):
+    """A node made with ``--with-ui`` reads an output with
+    ``window.curio.fetchData``, as the canvas and the example package do, and
+    fetches ``/get`` itself only on a host without it: ``/get`` reads under
+    the sign-in's session alone, so after a new sign-in a saved input reads
+    only on the dataflow's route."""
+    assert new_package.main(["me.heatmap", "--with-ui", "--dest", str(tmp_path)]) == 0
+    source = next((tmp_path / "me.heatmap@1" / "sources").glob("*Behavior.tsx")).read_text(encoding="utf-8")
+    resolve = source[source.index("async function resolveInput"):]
+    resolve = resolve[: resolve.index("\n}\n")]
+
+    assert "(window as any).curio?.fetchData" in source
+    assert "return unwrap(await fetchData(ref.trim()))" in resolve
+    assert resolve.index("hostFetchData()") < resolve.index("/get?fileName=")
+
+
 def test_major_and_template_id_overrides(tmp_path):
     rc = new_package.main(
         ["me.thing", "--major", "2", "--template-id", "my-thing", "--dest", str(tmp_path)]
