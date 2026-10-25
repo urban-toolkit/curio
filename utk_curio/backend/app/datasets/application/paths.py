@@ -29,10 +29,30 @@ class PathResolver:
         user: Any | None,
         registry: DatasetRegistryRepository,
         installed: InstalledDatasetRepository,
+        sign_in: str | None = None,
     ):
         self.user = user
         self.registry = registry
         self.installed = installed
+        self.sign_in = sign_in
+        self._readable: dict[str, bool] = {}
+
+    def readable_outputs(self, names) -> set[str]:
+        """The outputs among *names* this catalog's caller may read.
+
+        A catalog serving a request (*sign_in*) reads only what that account
+        may (``runs/kept.readable_by``), asked once per name and request; one
+        the backend uses for itself reads any, as it names outputs it made."""
+        names = list(dict.fromkeys(str(name) for name in names if name))
+        if self.sign_in is None:
+            return set(names)
+        unknown = [name for name in names if name not in self._readable]
+        if unknown:
+            from utk_curio.backend.app.runs import kept
+
+            readable = kept.readable_by(getattr(self.user, "id", None), self.sign_in, unknown)
+            self._readable.update({name: name in readable for name in unknown})
+        return {name for name in names if self._readable[name]}
 
     def _user_key(self) -> str:
         if self.user is None:
@@ -47,13 +67,14 @@ class PathResolver:
         A live output is named by its artifact id, and its file is the store's
         (``resolve_shared_output_path``). This helper maps the virtual URI to
         that file so that preview and install can both work without any
-        special-casing at call sites.
+        special-casing at call sites. One the caller may not read
+        (:meth:`readable_outputs`) resolves as one that is gone.
         """
         uri = item.get("uri") or ""
         if not uri.startswith("curio://outputs/"):
             return None
         filename = uri[len("curio://outputs/"):]
-        if not filename:
+        if not filename or filename not in self.readable_outputs([filename]):
             return None
         from utk_curio.backend.app.datasets.infrastructure.output_paths import resolve_shared_output_path
 

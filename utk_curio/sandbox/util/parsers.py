@@ -581,6 +581,25 @@ def session_may_read(stored_session, session_id) -> bool:
     return is_kept_session(session_id) and is_kept_session(stored_session)
 
 
+def readable_artifacts(reads) -> list:
+    """The artifact ids among *reads*, ``{id: the session it is read under}``,
+    whose rows that session may read (:func:`session_may_read`). An id read
+    under no session is not among them, though a read under none reads any
+    row, and neither is an id with no row."""
+    asked = {art_id: session for art_id, session in reads.items() if art_id and session}
+    if not asked:
+        return []
+    placeholders = ",".join("?" for _ in asked)
+    con = get_read_connection()
+    try:
+        rows = con.execute(
+            f"SELECT id, session_id FROM artifacts WHERE id IN ({placeholders})", list(asked),
+        ).fetchall()
+    finally:
+        con.close()
+    return [art_id for art_id, stored in rows if session_may_read(stored, asked[art_id])]
+
+
 def load_from_duckdb(art_id, session_id=None):
     """
     Load an artifact by id.

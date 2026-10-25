@@ -23,7 +23,10 @@ from utk_curio.backend.app.datasets.repositories.user_store import UserDatasetRe
 
 
 class DatasetCatalogService:
-    def __init__(self, user: Any | None = None):
+    def __init__(self, user: Any | None = None, *, sign_in: str | None = None):
+        """*sign_in*, for a catalog serving a request: the caller's, so the
+        outputs the request names are read only if the caller may
+        (``PathResolver.readable_outputs``)."""
         self.user = user
         self.registry = DatasetRegistryRepository()
         self.local = LocalDatasetRepository()
@@ -33,7 +36,7 @@ class DatasetCatalogService:
         self.preview_service = DatasetPreviewService()
 
         self._paths = PathResolver(
-            user=user, registry=self.registry, installed=self.installed
+            user=user, registry=self.registry, installed=self.installed, sign_in=sign_in,
         )
         self._listing = CatalogListing(
             user=user,
@@ -77,6 +80,15 @@ class DatasetCatalogService:
 
     def dataset_usage(self, *args: Any, **kwargs: Any) -> Any:
         return self._listing.dataset_usage(*args, **kwargs)
+
+    def readable_live_outputs(self, live_outputs: list[dict[str, Any]] | None) -> list[dict[str, Any]] | None:
+        """The live outputs a request sent that its caller may read, all in
+        one question; one the caller may not read is left out, as one that
+        is gone is."""
+        if not live_outputs:
+            return live_outputs
+        readable = self._paths.readable_outputs(entry["filename"] for entry in live_outputs)
+        return [entry for entry in live_outputs if entry["filename"] in readable] or None
 
     def list_dataflow_outputs(self, dataflow_id: str) -> list[dict[str, Any]]:
         """The outputs *dataflow_id* saved to this account's store, matched by

@@ -626,6 +626,26 @@ def artifact_sessions_store():
     return jsonify({'output': {'path': path, 'dataType': detect_kind(value)}})
 
 
+@app.route('/artifacts/readable', methods=['POST'])
+@require_sandbox_token
+@holds_duckdb
+def artifacts_readable():
+    """Which of the artifacts a call names each may be read: ``reads`` maps
+    an artifact id to the session it is read under, and the answer lists
+    the ids that session may read (``parsers.readable_artifacts``). The
+    backend asks before it reads or installs an output a request names."""
+    from utk_curio.sandbox.util.parsers import readable_artifacts
+
+    body = request.get_json(silent=True) or {}
+    reads = body.get('reads')
+    if not isinstance(reads, dict) or len(reads) > MAX_SESSIONS_PER_CALL:
+        abort(400, f"reads must map at most {MAX_SESSIONS_PER_CALL} artifacts to sessions")
+    if not all(isinstance(art_id, str) and art_id and isinstance(session, str) and session
+               for art_id, session in reads.items()):
+        abort(400, "each read names an artifact and a session")
+    return jsonify({'readable': readable_artifacts(reads)})
+
+
 #: The most recent time a sweep may name: what the store made in the last day
 #: is never swept, whatever a caller asks.
 MIN_SWEEP_AGE_MS = 24 * 3600 * 1000
