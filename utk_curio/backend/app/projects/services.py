@@ -285,6 +285,10 @@ def _computed_node_type(ref: OutputRef, dataflow: Optional[dict]) -> Optional[st
     return None
 
 
+#: What a save tells of an output it sent that it could not keep.
+OUTPUT_NOT_FOUND = "output artifact not found at save time"
+
+
 def _auto_install_computed_outputs(
     user_key: str,
     output_refs: List[OutputRef],
@@ -415,7 +419,7 @@ def _auto_install_computed_outputs(
             # The producing node ran, but its output artifact wasn't found in
             # shared storage at save time (or the bundle was empty) — the most
             # common "Play All didn't generate all datasets" cause. Surface it.
-            _record_failure(node_id, filename, "output artifact not found at save time")
+            _record_failure(node_id, filename, OUTPUT_NOT_FOUND)
             continue
 
         # Saved to the account store only. Intentionally NO project-ref write:
@@ -830,16 +834,64 @@ def _seed_dataset_defaults(user, ukey: str, project_id: str, spec: dict) -> dict
     return storage.read_spec(ukey, project_id) or spec
 
 
+def _saved_outputs_to_copy(data: ProjectCreate) -> tuple:
+    """``(the copied dataflow's id and its owner's key, {node id: output
+    name})``: the outputs the dataflow *data* copies (``copy_of``) saved,
+    which *data* sends for the same nodes of its spec; ``(None, {})`` when it
+    copies none, or one that is gone.
+
+    Anyone who may open a dataflow may read its saved outputs, as
+    :func:`load_shared_project` hands them to any caller, so it may be any
+    account's. A name it did not save for that node is not one of them: it is
+    installed as any save installs a name, if its caller may read it. Which
+    outputs are copied is settled again under the copied dataflow's spec lock
+    (:func:`_copy_saved_outputs`)."""
+    if not data.copy_of or not data.outputs:
+        return None, {}
+    from utk_curio.backend.app.projects.models import Project
+
+    project = db.session.get(Project, data.copy_of)
+    if project is None:
+        return None, {}
+    owner_key = _owner_user_dir_key(project)
+    # Read before any spec lock, which would make a folder for a project that
+    # has none.
+    if storage.read_spec(owner_key, project.id) is None:
+        return None, {}
+    saved = {
+        entry["node_id"]: entry["filename"]
+        for entry in (storage.read_manifest(owner_key, project.id) or {}).get("outputs") or []
+        if isinstance(entry, dict) and entry.get("node_id") and entry.get("filename")
+    }
+    dataflow = data.spec.get("dataflow") if isinstance(data.spec, dict) else None
+    nodes = {
+        node.get("id") for node in (dataflow.get("nodes") if isinstance(dataflow, dict) else None) or []
+        if isinstance(node, dict)
+    }
+    to_copy = {
+        ref.node_id: ref.filename for ref in data.outputs
+        if ref.node_id in nodes and saved.get(ref.node_id) == ref.filename
+    }
+    return ((project.id, owner_key) if to_copy else None), to_copy
+
+
 def save_project(user, data: ProjectCreate, *, sign_in: Optional[str] = None) -> ProjectDetail:
     """Create a dataflow from *data*. *sign_in*: the caller's, for a save a
-    request sent (:func:`_readable_sent_outputs`)."""
+    request sent (:func:`_readable_sent_outputs`).
+
+    A node whose output is the one the dataflow *data* copies saved gets that
+    saved output, copied from its owner's Data Catalog
+    (:func:`_saved_outputs_to_copy`, :func:`_copy_saved_outputs`); any other
+    output is installed as a save installs one."""
     from utk_curio.backend.app.packages.service import (
         ensure_user_packages_initialized,
         seed_spec_with_defaults,
     )
 
     _assert_guest_can_save(user)
-    readable = _readable_sent_outputs(user, data.outputs, sign_in)
+    copied_from, to_copy = _saved_outputs_to_copy(data)
+    sent = [ref for ref in data.outputs if to_copy.get(ref.node_id) != ref.filename]
+    readable = _readable_sent_outputs(user, sent, sign_in)
 
     project_id = str(uuid4())
     ukey = _user_dir_key(user)
@@ -873,7 +925,7 @@ def save_project(user, data: ProjectCreate, *, sign_in: Optional[str] = None) ->
     # the account's default datasets installs them under one, and no thread
     # may wait for it holding an uncommitted write (#909, ``spec_write_lock``).
     db.session.commit()
-    output_refs = list(data.outputs)
+    output_refs = sent
     install_warnings: list = []
     effective_spec = _auto_install_computed_outputs(
         ukey, output_refs, data.spec, install_warnings,
@@ -916,7 +968,23 @@ def save_project(user, data: ProjectCreate, *, sign_in: Optional[str] = None) ->
     )
 
     db.session.commit()
-    return _to_detail(project, spec=effective_spec, outputs=persisted_refs,
+    # Copied once the new dataflow is committed: a copy waits for the copied
+    # dataflow's spec lock, and none is waited for holding a write (#909).
+    copied: List[OutputRef] = []
+    if copied_from is not None:
+        source_id, source_key = copied_from
+        try:
+            copied = _copy_saved_outputs(
+                source_key, source_id, target_key=ukey, target_id=project_id, target_name=data.name, only=to_copy,
+            )
+        except Exception:  # noqa: BLE001 - as an install, a copy never blocks the create
+            logger.exception("The saved outputs of %s could not be copied into %s", source_id, project_id)
+        brought = {ref.node_id for ref in copied}
+        install_warnings.extend(
+            {"node_id": node_id, "filename": filename, "reason": OUTPUT_NOT_FOUND}
+            for node_id, filename in to_copy.items() if node_id not in brought
+        )
+    return _to_detail(project, spec=effective_spec, outputs=persisted_refs + copied,
                       dataset_install_warnings=install_warnings,
                       spec_revision=storage.spec_revision(ukey, project_id),
                       categories=_categories(user, project_id, effective_spec))
@@ -1854,23 +1922,29 @@ def duplicate_project(user, project_id: str) -> ProjectDetail:
         thumbnail_accent=src.thumbnail_accent or "peach",
     )
     created = save_project(user, create_data)
-    copied = _copy_saved_outputs(ukey, project_id, target_id=created.id, target_name=new_name)
+    copied = _copy_saved_outputs(ukey, project_id, target_key=ukey, target_id=created.id, target_name=new_name)
     return dataclasses.replace(created, outputs=copied)
 
 
 def _copy_saved_outputs(
-    user_key: str, source_id: str, *, target_id: str, target_name: str,
+    source_key: str, source_id: str, *, target_key: str, target_id: str, target_name: str,
+    only: Optional[Dict[str, str]] = None,
 ) -> List[OutputRef]:
-    """Give *target_id*, a copy of *source_id*'s dataflow, the saved outputs
-    *source_id* records, and return those recorded.
+    """Give *target_id*, the account *target_key*'s copy of *source_id*'s
+    dataflow, which the account *source_key* owns (the same account or
+    another), the saved outputs *source_id* records, and return those
+    recorded. *only*, ``{node id: output name}``, keeps those of its nodes
+    whose saved output is still that one.
 
     A node's computed dataset is copied as a scenario drop copies one: its
-    folder with its files linked, its manifest naming the copy's node and
-    dataflow (``datasets/install/copy.py``). An output read from an installed
-    dataset is the copy's too, since its spec names the same dataset. Neither
-    is installed again from the sandbox's artifacts, which may be gone, and an
-    output with no file left stays out. Each project is read or written under
-    its own spec lock, one at a time (#941).
+    folder, from the source account's store into the target's, with its files
+    linked, its manifest naming the copy's node and dataflow
+    (``datasets/install/copy.py``). An output read from an installed dataset
+    is the copy's too when the copy's account holds that dataset, since the
+    copy's spec names it. Neither is installed again from the sandbox's
+    artifacts, which may be gone, and an output with no file left stays out.
+    Each project is read or written under its own spec lock, one at a time
+    (#941).
     """
     from utk_curio.backend.app.datasets.infrastructure.storage import dataset_dir
     from utk_curio.backend.app.datasets.install import copy as dataset_copy
@@ -1882,16 +1956,18 @@ def _copy_saved_outputs(
     staged = []
     entries: Dict[str, dict] = {}
     try:
-        with storage.spec_write_lock(user_key, source_id):
-            spec = storage.read_spec(user_key, source_id)
-            manifest = storage.read_manifest(user_key, source_id) or {}
+        with storage.spec_write_lock(source_key, source_id):
+            spec = storage.read_spec(source_key, source_id)
+            manifest = storage.read_manifest(source_key, source_id) or {}
             refs = _output_refs_from_manifest(manifest)
-            for ref in storage.readable_saved_outputs(user_key, source_id, refs, spec=spec):
+            if only is not None:
+                refs = [ref for ref in refs if only.get(ref.node_id) == ref.filename]
+            for ref in storage.readable_saved_outputs(source_key, source_id, refs, spec=spec):
                 computed = f"{computed_dataset_id(ref.node_id, source_id)}@1"
-                if (dataset_dir(user_key, computed) / "manifest.json").is_file():
+                if (dataset_dir(source_key, computed) / "manifest.json").is_file():
                     try:
                         staged.append(dataset_copy.stage_computed_copy(
-                            user_key, computed, node_id=ref.node_id,
+                            source_key, computed, target_key=target_key, node_id=ref.node_id,
                             dataflow_id=target_id, dataflow_name=target_name,
                         ))
                     except InstallerError as exc:
@@ -1906,11 +1982,11 @@ def _copy_saved_outputs(
                 )
         if not entries:
             return []
-        with storage.spec_write_lock(user_key, target_id):
+        with storage.spec_write_lock(target_key, target_id):
             while staged:
                 copy = staged.pop(0)
                 try:
-                    dataset_copy.place_staged_copy(user_key, copy)
+                    dataset_copy.place_staged_copy(target_key, copy)
                 except InstallerError as exc:
                     logger.warning("A copied output could not be put in place in %s: %s", target_id, exc)
             refs = [
@@ -1918,9 +1994,9 @@ def _copy_saved_outputs(
                 for node, entry in entries.items()
             ]
             restored = storage.readable_saved_outputs(
-                user_key, target_id, refs, spec=storage.read_spec(user_key, target_id),
+                target_key, target_id, refs, spec=storage.read_spec(target_key, target_id),
             )
-            storage.record_outputs(user_key, target_id, [entries[ref.node_id] for ref in restored])
+            storage.record_outputs(target_key, target_id, [entries[ref.node_id] for ref in restored])
     finally:
         for copy in staged:
             dataset_copy.discard_staged_copy(copy)

@@ -204,6 +204,8 @@ A collection's details have a **Collection** section: its kind, **Indexed from**
 
 A runnable node that produces a dataset has a small database-icon toggle among the buttons in its header, which show while the pointer is over the node. It is **off by default**, so saving is chosen per node. When it is on, running the node saves its output into your store as `computed.<dataflowId>.<nodeId>@1`, titled with the name in the node's header: the name you gave the node, or else its kind, such as **Python Computation**.
 
+A copy of a dataflow brings its saved outputs into your store as the copy's own: **Duplicate** on one of your dataflows, or **File → Save dataflow** on one someone shared with you. They stay when the original's are deleted.
+
 A `GeoDataFrame` output is stored as **GeoParquet** and reloads as a `GeoDataFrame`. Its CRS survives, and so does *every* geometry column, not only the active one: a frame with both a `geometry` and a `centroid` column comes back with both still typed as geometry. So a node's map output is a reusable input. (A `GeoDataFrame` with no active geometry column is stored as a plain table; GeoParquet cannot represent one.)
 
 In the catalog's preview of a saved output, a geometry column is shown as WKT (`POINT (0.67 0.33)`).

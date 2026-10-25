@@ -45,6 +45,10 @@ class ProjectCreate:
     outputs: List[OutputRef] = field(default_factory=list)
     description: Optional[str] = None
     thumbnail_accent: str = "peach"
+    #: The dataflow this one copies (Save a copy): a node whose output is the
+    #: one that dataflow saved gets that saved output, whichever account owns
+    #: it (``services._saved_outputs_to_copy``).
+    copy_of: Optional[str] = None
 
     def __post_init__(self):
         if not self.name or not self.name.strip():
@@ -55,6 +59,8 @@ class ProjectCreate:
         self.outputs = [
             OutputRef(**o) if isinstance(o, dict) else o for o in self.outputs
         ]
+        if not isinstance(self.copy_of, str) or not self.copy_of:
+            self.copy_of = None
 
 
 @dataclass
