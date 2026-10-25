@@ -262,9 +262,11 @@ def test_scalar_bundle_part_and_single_output_agree_on_the_value(app):
     single = _install(store_sandbox_artifact(1), node_id="scalar", data_type="int")
 
     bundle_dir = dataset_dir(USER, bundle.manifest.dir_name)
-    part = json.loads(
-        (bundle_dir / "data" / "parts" / "00_int.json").read_text(encoding="utf-8")
-    )
+    # The part as a reader finds it: through the bundle.json that lists it.
+    spec = json.loads((bundle_dir / "data" / "bundle.json").read_text(encoding="utf-8"))
+    entry = spec["parts"][0]
+    assert Path(entry["file"]).name == "00_int.json"
+    part = json.loads((bundle_dir / entry["file"]).read_text(encoding="utf-8"))
     assert part == {"value": 1}
     assert _installed_json("scalar") == 1
     assert part["value"] == _installed_json("scalar")

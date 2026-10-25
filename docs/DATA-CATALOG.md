@@ -246,7 +246,7 @@ When a node returns several values (a Python tuple, say), there is no single fil
 computed.<dataflowId>.<nodeId>@1/
   manifest.json          # format: "bundle", dataFile: "data/bundle.json"
   data/bundle.json       # {version, parentArtifactId, container, parts: [...]}
-  data/parts/00_dataframe.parquet, 01_json.json, ...
+  data/parts/<artifactId>/00_dataframe.parquet, 01_json.json, ...
 ```
 
 Scalar parts (numbers, strings, booleans) are stored as `{"value": ...}`. `bundle.json` records the producing node's container as `container`: `tuple`, `list`, or `dict`, with each part of a dict under its `key`. The generated loader reads `bundle.json`, rebuilds each part, and returns the parts in that container, a dict with its keys in their order, so a downstream node sees exactly the shape the producing node returned. A `bundle.json` that records no `container` loads as a tuple. A table part keeps its `metadata`, the name and Autark layer type the producing node gave it (`gdf.metadata = {"name": "roads", "layerType": "roads"}`), and `bundle.json` lists them as each part's `layerName` and `layerType`. A single saved table keeps its `metadata` the same way.

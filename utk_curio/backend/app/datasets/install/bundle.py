@@ -3,7 +3,9 @@ list or dict holding frames (``list_of_ids``, ``dict_of_ids``)."""
 
 from __future__ import annotations
 
+import hashlib
 import json
+import re
 import shutil
 from dataclasses import dataclass
 from pathlib import Path
@@ -15,13 +17,16 @@ from utk_curio.backend.app.datasets.install.installer import (
     _held_manifest,
     _names_one_output,
     computed_dataset_id,
+    drop_other_files,
     install_computed_file_for_node,
+    output_install_lock,
+    write_whole,
 )  # install_computed_file_for_node used in install_node_output
 from utk_curio.backend.app.datasets.domain.manifest import (
     DatasetManifest,
     ManifestError,
     load_dataset_manifest,
-    write_manifest,
+    replace_manifest,
 )
 from utk_curio.backend.app.datasets.domain.constants import (
     FORMAT_TO_EXTENSION,
@@ -74,7 +79,10 @@ def _write_frame_sidecar(data_file: Path, meta_json: Any) -> None:
     frame_metadata, encoded = _frame_meta(meta_json)
     payload = _serialize_parquet_meta(frame_metadata=frame_metadata, encoded_object_columns=encoded)
     if payload:
-        data_file.with_name(data_file.name + PARQUET_DECODE_SIDECAR_SUFFIX).write_text(payload, encoding="utf-8")
+        write_whole(
+            data_file.with_name(data_file.name + PARQUET_DECODE_SIDECAR_SUFFIX),
+            lambda partial: partial.write_text(payload, encoding="utf-8"),
+        )
 
 
 def _layer_of(meta_json: Any) -> dict[str, str]:
@@ -328,6 +336,19 @@ def _bundle_parent(dest: Path) -> str | None:
     return parent if isinstance(parent, str) and parent else None
 
 
+_ARTIFACT_ID = re.compile(r"\d{13}_[0-9a-f]{8}")
+
+
+def _parts_folder(parent_artifact_id: str) -> str:
+    """The folder under ``data/parts/`` a bundle's parts go in: the artifact
+    it was written from, so a new output's parts go in beside the old one's
+    under the names they always had, or a digest of a name that is not an
+    artifact id, so the folder is always one safe name."""
+    if _ARTIFACT_ID.fullmatch(parent_artifact_id):
+        return parent_artifact_id
+    return hashlib.sha256(parent_artifact_id.encode("utf-8")).hexdigest()[:16]
+
+
 def _holds_bundle(dest: Path, bundle_spec: dict[str, Any]) -> bool:
     """Whether *dest* holds this bundle: the ``bundle.json`` it would be
     written with, and every part that lists. An artifact id names one output
@@ -390,6 +411,7 @@ def install_computed_bundle_for_node(
         "container": container,
         "parts": [],
     }
+    parts_folder = _parts_folder(parent_artifact_id)
     part_files: list[tuple[BundlePart, str]] = []
     for part in parts:
         suffix = FORMAT_TO_EXTENSION.get(part.format, ".json")
@@ -403,7 +425,7 @@ def install_computed_bundle_for_node(
             "kind": part.kind,
             "format": part.format,
             "artifactId": part.artifact_id,
-            "file": f"data/parts/{filename}",
+            "file": f"data/parts/{parts_folder}/{filename}",
             **_layer_of(part.meta_json),
         })
 
@@ -449,51 +471,58 @@ def install_computed_bundle_for_node(
     if same_output and held is not None and _holds_bundle(dest, bundle_spec):
         return keep_installed_output(user_key, dest, manifest_obj)
 
-    if dest.exists():
-        shutil.rmtree(dest, ignore_errors=True)
-    parts_dir = dest / "data" / "parts"
-    parts_dir.mkdir(parents=True, exist_ok=True)
+    from utk_curio.sandbox.util.catalog_helpers import files_read_beside, listed_bundle_parts
 
-    for part, filename in part_files:
-        dest_file = parts_dir / filename
+    # As a single output (``installer.install_computed_file_for_node``): the
+    # new bundle goes in beside the one the folder holds, its parts in a
+    # folder of their own, then its bundle.json and the manifest name it, and
+    # only then do the old output's files go.
+    with output_install_lock(dest):
+        parts_dir = dest / "data" / "parts" / parts_folder
+        for part, filename in part_files:
+            dest_file = parts_dir / filename
+            source = part.source_path
 
-        if part.source_path is not None and part.source_path.is_file():
-            if part.source_path.name.endswith(".json.zlib"):
-                # list/dict artifacts are stored zlib-compressed, but the bundle
-                # part is declared as plain .json: decompress into the part file
-                # so preview/loader json.load gets real JSON, not compressed bytes.
-                import zlib
+            if source is not None and source.is_file():
+                if source.name.endswith(".json.zlib"):
+                    # list/dict artifacts are stored zlib-compressed, but the bundle
+                    # part is declared as plain .json: decompress into the part file
+                    # so preview/loader json.load gets real JSON, not compressed bytes.
+                    import zlib
 
-                dest_file.write_bytes(zlib.decompress(part.source_path.read_bytes()))
+                    write_whole(dest_file, lambda f: f.write_bytes(zlib.decompress(source.read_bytes())))
+                else:
+                    write_whole(dest_file, lambda f: shutil.copy2(source, f))
+                    if part.kind in FRAME_KINDS:
+                        _write_frame_sidecar(dest_file, part.meta_json)
+            elif part.kind in {"int", "float", "bool", "str", "null"}:
+                write_whole(dest_file, lambda f: _serialize_scalar_part(f, part.kind, part.artifact_id))
             else:
-                shutil.copy2(part.source_path, dest_file)
-                if part.kind in FRAME_KINDS:
-                    _write_frame_sidecar(dest_file, part.meta_json)
-        elif part.kind in {"int", "float", "bool", "str", "null"}:
-            _serialize_scalar_part(dest_file, part.kind, part.artifact_id)
-        else:
-            # Best-effort: write placeholder pointing at artifact id.
-            dest_file.write_text(
-                json.dumps(
+                # Best-effort: write placeholder pointing at artifact id.
+                placeholder = json.dumps(
                     {
                         "artifactId": part.artifact_id,
                         "kind": part.kind,
                         "note": "Source file was not available at install time.",
                     },
                     indent=2,
-                ),
-                encoding="utf-8",
-            )
+                )
+                write_whole(dest_file, lambda f: f.write_text(placeholder, encoding="utf-8"))
 
-    bundle_path = dest / "data" / "bundle.json"
-    bundle_path.write_text(json.dumps(bundle_spec, indent=2), encoding="utf-8")
+        bundle_path = dest / "data" / "bundle.json"
+        bundle_text = json.dumps(bundle_spec, indent=2)
+        write_whole(bundle_path, lambda f: f.write_text(bundle_text, encoding="utf-8"))
 
-    write_manifest(manifest_obj, dest)
-    try:
-        manifest = load_dataset_manifest(dest)
-    except ManifestError as exc:
-        shutil.rmtree(dest, ignore_errors=True)
-        raise InstallerError(f"Failed to create bundle manifest: {exc}") from exc
+        replace_manifest(manifest_obj, dest)
+        try:
+            manifest = load_dataset_manifest(dest)
+        except ManifestError as exc:
+            shutil.rmtree(dest, ignore_errors=True)
+            raise InstallerError(f"Failed to create bundle manifest: {exc}") from exc
+        keep = [bundle_path, *files_read_beside(bundle_path)]
+        for _entry, file in listed_bundle_parts(bundle_path):
+            keep += [file, *files_read_beside(file)]
+        drop_other_files(dest, keep)
 
     from utk_curio.backend.app.datasets.install.installer import _index
 
