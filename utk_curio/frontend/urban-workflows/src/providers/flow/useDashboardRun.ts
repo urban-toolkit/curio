@@ -48,6 +48,8 @@ interface FollowedDashboardRun {
     browserSteps: string[];
     /** The steps below them, which wait for what the page makes. */
     waiting: string[];
+    /** The steps that failed on the server: the run ends there. */
+    failed: string[];
     /** The run ended asking for the page's part, which carries it on. */
     handedToPage: boolean;
     done: boolean;
@@ -149,16 +151,29 @@ export function useDashboardRun({ enabled, reactFlow, outcomes, outputsRef, show
         return (await keepPageResult(nodeId, output)).path;
     };
 
+    /** A step as its header names it, and as Run All names a failed node (usePlayAll). */
+    const stepName = (nodeId: string) => {
+        const data = reactFlow.getNode(nodeId)?.data;
+        return (data && resolveNodeDisplayLabel(data)) || nodeId;
+    };
+
     /** The nodes below a step the page could not run say so, as a run says it of a failed node. */
     const showWaitingSkipped = (run: FollowedDashboardRun, failed: string[]) => {
-        // As its header names it, and as Run All names a failed node (usePlayAll).
-        const name = (nodeId: string) => {
-            const data = reactFlow.getNode(nodeId)?.data;
-            return (data && resolveNodeDisplayLabel(data)) || nodeId;
-        };
-        const why = `"${name(failed[0])}" could not run in this browser.`;
+        const why = `"${stepName(failed[0])}" could not run in this browser.`;
         for (const nodeId of run.waiting) outcomes.showSkipped(nodeId, `No data yet: ${why}`);
         setStopped(why);
+    };
+
+    /**
+     * A run that ended short of the tiles: a step failed on the server, or the
+     * run was stopped. What a tile left with nothing says, naming the step and
+     * no node to open, where "Computing..." would wait for nothing.
+     */
+    const showEndedShort = (run: FollowedDashboardRun, status: string) => {
+        if (run.failed.length > 0) setStopped(`"${stepName(run.failed[0])}" failed.`);
+        else if (status === "cancelled" || status === "interrupted") {
+            setStopped("This dashboard's run was interrupted. Change a control to run it again.");
+        }
     };
 
     /**
@@ -232,10 +247,12 @@ export function useDashboardRun({ enabled, reactFlow, outcomes, outputsRef, show
                 run.handedToPage = true;
                 void finishInPage(run);
             } else {
+                showEndedShort(run, event.status);
                 end(run);
             }
             return;
         }
+        if (event.kind === "step_finished" && event.status === "error") run.failed.push(event.nodeId);
         if (event.kind !== "step_started" && event.kind !== "step_finished") return;
         if (event.kind === "step_finished" && event.status === "browser") {
             run.browserSteps.push(event.nodeId);
@@ -259,7 +276,7 @@ export function useDashboardRun({ enabled, reactFlow, outcomes, outputsRef, show
     ) => {
         const run: FollowedDashboardRun = {
             runId, token, controller: new AbortController(), applied: new Set(), started: new Set(),
-            values, pageOutputs, browserSteps: [], waiting: [], handedToPage: false, done: false,
+            values, pageOutputs, browserSteps: [], waiting: [], failed: [], handedToPage: false, done: false,
         };
         followedRef.current = run;
         dashboardRunsApi

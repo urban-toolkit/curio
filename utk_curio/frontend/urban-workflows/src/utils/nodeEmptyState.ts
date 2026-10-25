@@ -22,7 +22,8 @@ export type NodeEmptyReason =
    *  the node reads the rows of an input that just arrived, or on a dashboard
    *  before its input is in or its first draw is done. */
   | "upstream-running"
-  /** A dashboard's tile whose viewer's run stopped before it, at a step this browser could not run. */
+  /** A dashboard's tile whose viewer's run stopped before it: at a step this
+   *  browser could not run, a step that failed, or a run refused or lost. */
   | "upstream-stopped"
   /** Ran and produced a table with no rows in it. */
   | "no-rows"
@@ -71,10 +72,11 @@ export const NODE_EMPTY_COPY: Record<NodeEmptyReason, NodeEmptyCopy> = {
     title: "Computing...",
     hint: "Results will be shown here once they are ready.",
   },
-  // The tile gives the step and the reason (useDashboardRun's stop) as its hint.
+  // The tile gives the step and the reason (useDashboardRun's stop) as its hint;
+  // this one is for a step that failed with no stop to name it.
   "upstream-stopped": {
     title: "No results",
-    hint: "A step before this one could not run in this browser.",
+    hint: "A step before this one failed.",
   },
   // Without this, a failed upstream node read as "upstream-not-run" - telling
   // the user to run the node they had just run and watched fail (#347).
@@ -236,8 +238,9 @@ export function resolveNodeEmptyReason(inputs: NodeEmptyInputs): NodeEmptyReason
   // Above hasInput on purpose: a failed upstream never calls outputCallback, so
   // hasInput stays false and the node would otherwise advise running a node the
   // user just watched fail (#347). Above it also covers the rarer case where a
-  // stale input from an earlier successful run is still sitting there.
-  if (inputs.upstreamErrored) return "upstream-errored";
+  // stale input from an earlier successful run is still sitting there. On a
+  // dashboard there is no node to open: the run stopped short of the tile.
+  if (inputs.upstreamErrored) return inputs.onDashboard ? "upstream-stopped" : "upstream-errored";
   // On a dashboard there is no node to run: the input is on its way.
   if (!inputs.hasInput) return inputs.onDashboard ? "upstream-running" : "upstream-not-run";
   // An input that just arrived, its rows still being read: with nothing to show
@@ -308,7 +311,8 @@ export function resolveGrammarEmptyReason(
     // so the run's state comes first even with some of them in.
     if (inputs.upstreamRunning) return "upstream-running";
     if (inputs.upstreamStopped) return "upstream-stopped";
-    if (inputs.upstreamErrored) return "upstream-errored";  // see the note above
+    // See the note above, and on a dashboard, no node to open.
+    if (inputs.upstreamErrored) return inputs.onDashboard ? "upstream-stopped" : "upstream-errored";
     if (!inputs.hasInput) return inputs.onDashboard ? "upstream-running" : "upstream-not-run";
     if (inputs.inputProblem) return inputs.inputProblem;
   }

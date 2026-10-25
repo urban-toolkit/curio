@@ -766,6 +766,46 @@ class TestKeptOutputsGo:
         assert left == ["art-grid-2"], f"what is kept now: {left!r}"
         assert sandbox.forgotten == [made_session]
 
+    def test_what_a_first_visit_ran_for_a_tile_with_no_saved_output_serves_visits_for_seven_days(
+        self, client, user_and_token, sandbox, saved, monkeypatch,
+    ):
+        """A tile with no saved output: the first visit runs its nodes and keeps
+        what they made. A visit 6 days later gets that with nothing run; one 8
+        days later runs them again and keeps the new output in its place
+        (owner, 10-25)."""
+        from utk_curio.backend.app.runs import kept
+        from utk_curio.backend.app.runs.models import KeptStepOutput
+
+        _, token = user_and_token
+        pid = _create(client, token)
+        saved.clear()
+
+        def visit() -> list:
+            """A visit with the saved values: what each step answered."""
+            resp = _run(client, pid, {})
+            assert resp.status_code == 202, resp.get_data(as_text=True)
+            body = resp.get_json()
+            _wait(body["runId"])
+            return [
+                (payload["nodeId"], payload["output"]["path"])
+                for kind, payload in _events(client, pid, body["runId"], body["token"]) if kind == "step_finished"
+            ]
+
+        assert visit() == [("grid", "art-grid-1")]
+        made = KeptStepOutput.query.filter_by(project_id=pid).one()
+        made_at, made_session = made.created_at, made.session_id
+
+        monkeypatch.setattr(kept, "naive_utc_now", lambda: made_at + timedelta(days=6))
+        assert visit() == [("grid", "art-grid-1")]
+        assert len(sandbox.runs) == 1, "a visit within the 7 days ran the step again"
+
+        monkeypatch.setattr(kept, "naive_utc_now", lambda: made_at + timedelta(days=8))
+        assert visit() == [("grid", "art-grid-2")]
+        assert len(sandbox.runs) == 2, "a visit past the 7 days did not run the step again"
+        left = [row.output_path for row in KeptStepOutput.query.filter_by(project_id=pid).all()]
+        assert left == ["art-grid-2"], f"what is kept now: {left!r}"
+        assert sandbox.forgotten == [made_session]
+
     def test_a_tabs_own_output_serves_its_tab_for_an_hour_whether_or_not_a_sweep_ran(
         self, client, user_and_token, sandbox,
     ):

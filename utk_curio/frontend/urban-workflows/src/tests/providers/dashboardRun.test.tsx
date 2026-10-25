@@ -213,6 +213,47 @@ describe("a change", () => {
         expect(hook.result.current.stopped).toBe(lost);
         expect(hook.result.current.active).toBe(false);
     });
+
+    test("a step that fails on the server leaves the tiles naming it, with no node to open (owner, 10-25)", async () => {
+        mockStart.mockResolvedValue({ runId: "r1", token: "t1", joined: false, nodeIds: ["grid", "chart"] });
+        const { hook } = setUp();
+        await act(async () => { hook.result.current.opened("dash-1"); });
+        await act(async () => { await hook.result.current.start(); });
+        const run = followed();
+
+        run.emit({
+            kind: "step_finished", nodeId: "grid", status: "error",
+            output: { path: "", dataType: "str" }, stderrTail: "KeyError: 'count'",
+        });
+        expect(hook.result.current.stopped).toBeNull();
+        run.emit({ kind: "run_finished", status: "failed", ok: 0, failed: 1, skipped: 1, waiting: 0 });
+
+        expect(hook.result.current.stopped).toBe('"grid" failed.');
+        expect(hook.result.current.active).toBe(false);
+    });
+
+    test("a run the server stopped leaves the tiles saying so, not computing", async () => {
+        mockStart.mockResolvedValue({ runId: "r1", token: "t1", joined: false, nodeIds: ["grid", "chart"] });
+        const { hook } = setUp();
+        await act(async () => { hook.result.current.opened("dash-1"); });
+        await act(async () => { await hook.result.current.start(); });
+
+        followed().emit({ kind: "run_finished", status: "interrupted", ok: 0, failed: 0, skipped: 0, waiting: 0 });
+
+        expect(hook.result.current.stopped).toBe("This dashboard's run was interrupted. Change a control to run it again.");
+        expect(hook.result.current.active).toBe(false);
+    });
+
+    test("a run that succeeds sets no reason", async () => {
+        mockStart.mockResolvedValue({ runId: "r1", token: "t1", joined: false, nodeIds: ["grid", "chart"] });
+        const { hook } = setUp();
+        await act(async () => { hook.result.current.opened("dash-1"); });
+        await act(async () => { await hook.result.current.start(); });
+
+        followed().emit({ kind: "run_finished", status: "succeeded", ok: 1, failed: 0, skipped: 0, waiting: 0 });
+
+        expect(hook.result.current.stopped).toBeNull();
+    });
 });
 
 describe("Save layout", () => {
