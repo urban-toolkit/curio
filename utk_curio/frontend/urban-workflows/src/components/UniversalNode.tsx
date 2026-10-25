@@ -174,7 +174,7 @@ const UniversalNodeBody = React.memo(function UniversalNodeBody({ data, isConnec
   const showLoading = behavior.showLoading ?? false;
   const disablePlay = behavior.disablePlay ?? adapter.container.disablePlay ?? false;
 
-  const { signalNodeExecDone, dashboardOn, projectId, edges: flowEdges, isRunActive, serverRunActive, nodes: flowNodes } = useFlowContext();
+  const { signalNodeExecDone, dashboardOn, dashboardStopped, projectId, edges: flowEdges, isRunActive, serverRunActive, nodes: flowNodes } = useFlowContext();
   // In the notebook view the node is a cell: the page's width and as tall as
   // its content, its dots on the right edge where the bar draws its
   // connections, no cardinality markers.
@@ -292,6 +292,10 @@ const UniversalNodeBody = React.memo(function UniversalNodeBody({ data, isConnec
   const runInFlight = !!isRunActive || !!serverRunActive;
   const runInFlightRef = useRef(runInFlight);
   runInFlightRef.current = runInFlight;
+  // Why the dashboard's last run stopped short of the tiles, read when WebGPU
+  // answers (below).
+  const dashboardStoppedRef = useRef(dashboardStopped);
+  dashboardStoppedRef.current = dashboardStopped;
   // The grammar nodes that draw from their input on their own, by one rule: a
   // Vega chart (a package's too, registry/vegaLiteNodes), and an Autark
   // document that renders (a map or a plot). An Autark data or compute step
@@ -337,7 +341,10 @@ const UniversalNodeBody = React.memo(function UniversalNodeBody({ data, isConnec
     // An Autark map needs WebGPU. Without it, opening a project must not raise
     // one error per map: the node keeps its "not drawn yet" body, and a Play
     // shows the in-node explanation. The probe is async, so the run state is
-    // read again once it answers.
+    // read again once it answers. A dashboard's map has no Play for its
+    // visitor: it runs anyway, and its body says why it cannot draw, with no
+    // toast (autkGrammarBehavior). Not after a run stopped short of it: the
+    // tile names the step that could not run instead (useDashboardRun).
     //
     // Only the newest input draws. A Data Pool hands its rows on with every
     // fetch that lands, so a second input can arrive while the probe is out,
@@ -346,7 +353,7 @@ const UniversalNodeBody = React.memo(function UniversalNodeBody({ data, isConnec
     // would never run, and would sit at "exec".
     const input = data.input;
     void detectWebGpuSupport().then((support) => {
-      if (!support.supported) return;
+      if (!support.supported && !(dashboardOn && !dashboardStoppedRef.current)) return;
       if (lastRenderedInputRef.current !== input) return;
       if (runInFlightRef.current || outputCodeRef.current === "exec") return;
       setOutputCallback({ code: "exec", content: "" });

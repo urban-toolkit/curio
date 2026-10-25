@@ -615,6 +615,18 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
         const { container } = render(<>{result.current.contentComponent}</>);
         expect(container.querySelector('[data-curio-node-empty]')?.getAttribute('data-curio-node-empty')).toBe('upstream-not-run');
       });
+
+      test('with no run going yet and nothing in, it says computing, not which node to run', async () => {
+        // As the page opens, before its run starts or its saved rows land: on
+        // dev (10-25) a visitor read "Run the node feeding this one" for 170 ms.
+        mockEdges = WIRED;
+        mockDashboard = { dashboardOn: true };
+        const result = await callBehavior(useSimpleVisBehavior, { input: '' } as any);
+        const { container } = render(<>{result.current.contentComponent}</>);
+        expect(container.querySelector('[data-curio-node-empty]')?.getAttribute('data-curio-node-empty')).toBe('upstream-running');
+        expect(container.textContent).toContain('Computing...');
+        expect(container.textContent).not.toContain('Run the node');
+      });
     });
 
     describe('while it reads the rows of an input that just arrived', () => {
@@ -651,6 +663,44 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
         const read = render(<>{result.current.contentComponent}</>);
         expect(read.container.querySelector('[data-curio-node-empty]')).toBeNull();
         expect(read.container.textContent).toContain('40 min');
+      });
+
+      test('the very render that brings the input already says it is computing', async () => {
+        // Told by an effect after the render, the input's first render still
+        // read "Nothing to display": 38 ms on dev (10-25).
+        mockEdges = [{ id: 'e1', source: 'average', target: 'node-1' }];
+        const api = jest.requireMock('../../../services/api') as { fetchData: jest.Mock };
+        let deliver: (value: unknown) => void = () => {};
+        api.fetchData.mockImplementationOnce(() => new Promise((resolve) => { deliver = resolve; }));
+        const nodeState = makeMockNodeState();
+        const bodies: React.ReactNode[] = [];
+        const { rerender } = renderHook(
+          ({ data }) => {
+            const behavior = useSimpleVisBehavior(data, nodeState);
+            bodies.push(behavior.contentComponent);
+            return behavior;
+          },
+          { initialProps: { data: makeMockData({ input: '' }) } },
+        );
+        const before = bodies.length;
+
+        await act(async () => {
+          rerender({ data: makeMockData({ input: { path: 'average-7', dataType: 'dataframe' } as any }) });
+        });
+        await act(async () => {
+          deliver({ dataType: 'dataframe', data: { Selection: { 0: 'Dec 21' }, Shade: { 0: '40 min' } } });
+        });
+
+        // What each render from the input's arrival to its rows said.
+        const said = bodies.slice(before).map((body) => {
+          const shown = render(<>{body}</>);
+          const reason = shown.container.querySelector('[data-curio-node-empty]')?.getAttribute('data-curio-node-empty') ?? null;
+          shown.unmount();
+          return reason;
+        });
+        expect(said[0]).toBe('upstream-running');
+        expect(said).not.toContain('not-tabular');
+        expect(said[said.length - 1]).toBeNull();
       });
     });
   });

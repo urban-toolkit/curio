@@ -20,7 +20,7 @@ import { readsInputs } from '../../utils/vegaDatasets';
 
 export const useVegaBehavior: NodeBehaviorHook = (data, nodeState) => {
   const { showToast } = useToastContext();
-  const { connected, upstreamErrored, upstreamRunning, upstreamStopped } = useGrammarInputState(data.nodeId);
+  const { connected, upstreamErrored, upstreamRunning, upstreamStopped, onDashboard } = useGrammarInputState(data.nodeId);
   const flow = useFlowContext() as {
     // A failed chart says so to the nodes it feeds, as a failed code node does.
     markNodeErrored?: (nodeId: string) => void;
@@ -95,6 +95,7 @@ export const useVegaBehavior: NodeBehaviorHook = (data, nodeState) => {
     upstreamErrored,
     upstreamRunning,
     upstreamStopped,
+    onDashboard,
     // What the editor holds now, typing included.
     hasSpec: !isEmptySpecBuffer(nodeState.code) || generatedSpec !== undefined,
     // A chart first drawn over zero rows said so; when its rows arrive and it

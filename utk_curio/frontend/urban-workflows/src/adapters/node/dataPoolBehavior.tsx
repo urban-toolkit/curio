@@ -39,7 +39,7 @@ export const useDataPoolBehavior: NodeBehaviorHook = (data) => {
     (sourceId) => nodeExecStatus?.[sourceId] === "errored",
   );
   // On a dashboard: a viewer's run making the rows, or why it stopped before them.
-  const { upstreamRunning, upstreamStopped } = useGrammarInputState(data.nodeId);
+  const { upstreamRunning, upstreamStopped, onDashboard } = useGrammarInputState(data.nodeId);
   const [output, setOutput] = useState<ICodeData>({ code: '', content: '' });
 
   // How the selections that reach the pool combine: the selects of one chart,
@@ -88,9 +88,11 @@ export const useDataPoolBehavior: NodeBehaviorHook = (data) => {
   // downstream code nodes crash on `input_0=None`.
   const inflightRef = useRef<Promise<any> | null>(null);
   // While the rows of the input that just arrived are read: the pool says what
-  // it shows is coming, not that the input came back empty. The read of the
-  // latest input clears it.
-  const [reading, setReading] = useState(false);
+  // it shows is coming, not that the input came back empty. Told in the render
+  // that brings the input, not an effect after it: an input is read once the
+  // read of it, the latest, has settled. Nothing is read before the first.
+  const [readInput, setReadInput] = useState<unknown>(null);
+  const reading = data.input != null && data.input !== '' && data.input !== readInput;
   // True once any feature has been marked interacted="1" so that a subsequent
   // "clear brush" (UNDETERMINED signal) still resets features to "0".
   const anyInteractedRef = useRef(false);
@@ -134,7 +136,8 @@ export const useDataPoolBehavior: NodeBehaviorHook = (data) => {
 
     if (!hasInput) {
       setOutput({ code: "", content: "" });
-      setReading(false);
+      // Nothing in it to read.
+      setReadInput(data.input);
       return;
     }
 
@@ -145,9 +148,9 @@ export const useDataPoolBehavior: NodeBehaviorHook = (data) => {
     lastRunRef.current = { input: data.input, propagation: data.newPropagation };
 
     let cancelled = false;
+    const input = data.input;
     const p = processDataAsync({ selectionEcho });
     inflightRef.current = p;
-    setReading(true);
     (async () => {
       try {
         const result = await p;
@@ -155,7 +158,8 @@ export const useDataPoolBehavior: NodeBehaviorHook = (data) => {
       } finally {
         if (inflightRef.current === p) {
           inflightRef.current = null;
-          setReading(false);
+          // A failed read ends it too: the pool then says what it has.
+          setReadInput(input);
         }
       }
     })();
@@ -475,6 +479,7 @@ export const useDataPoolBehavior: NodeBehaviorHook = (data) => {
         upstreamRunning={upstreamRunning}
         upstreamStopped={upstreamStopped}
         reading={reading}
+        onDashboard={onDashboard}
         insideChartMode={insideChartMode}
         betweenChartsMode={betweenChartsMode}
         onInsideChartModeChange={onInsideChartModeChange}
@@ -483,7 +488,7 @@ export const useDataPoolBehavior: NodeBehaviorHook = (data) => {
     ),
     [
       activeTab, setActiveTab, tabData, tableData, data, connected, upstreamErrored, upstreamRunning, upstreamStopped,
-      reading, insideChartMode, betweenChartsMode, onInsideChartModeChange, onBetweenChartsModeChange,
+      reading, onDashboard, insideChartMode, betweenChartsMode, onInsideChartModeChange, onBetweenChartsModeChange,
     ],
   );
 
