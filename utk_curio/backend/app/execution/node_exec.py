@@ -123,15 +123,24 @@ def resolve_saved_inputs(input_ref: dict, dataflow_id: str | None) -> dict:
     reopen under a new sign-in.
 
     Fail-open like dataset paths: a name that does not resolve reads as the
-    store answers it.
+    store answers it. Nothing else holds a saved output, so a resolution that
+    fails, or inputs past ``MAX_SAVED_INPUTS``, are said in the log, where the
+    node's "No artifact with id" can be traced to them.
     """
     if not dataflow_id:
         return {}
     try:
         from utk_curio.backend.app.projects.services import saved_output_of
 
+        names = input_names(input_ref)
+        if len(names) > MAX_SAVED_INPUTS:
+            print(
+                f"[node_exec] a run names {len(names)} inputs; only the first "
+                f"{MAX_SAVED_INPUTS} are read from their saved files",
+                flush=True,
+            )
         resolved = {}
-        for name in input_names(input_ref)[:MAX_SAVED_INPUTS]:
+        for name in names[:MAX_SAVED_INPUTS]:
             saved = saved_output_of(dataflow_id, name)
             if saved is not None:
                 resolved[name] = {"path": str(saved.path), "dataType": saved.data_type or ""}

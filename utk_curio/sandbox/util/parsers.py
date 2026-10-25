@@ -874,73 +874,25 @@ _TIFF_SIGNATURES = (b"II*\x00", b"MM\x00*", b"II+\x00", b"MM\x00+")
 _VRT_START = b"<VRTDataset"
 
 
-def load_shared_output_file(file_name):
-    """Load a project output hydrated into the shared data directory.
-
-    The DuckDB artifact store is the primary source and the caller tries it
-    first; this is the fallback for a name it does not know. That is the normal
-    state for a saved output read outside the session that produced it: the
-    artifact row is session-tagged (see :func:`load_from_duckdb`) and may have
-    been pruned entirely, while the hydrated file is the durable copy the
-    project owns. It is what a project load writes here for every output the
-    manifest records (``backend/app/projects/storage.hydrate_outputs``).
-
-    No session check, deliberately. The file is in this directory only because
-    a project load put it there, so the authorization already happened at
-    ``GET /api/projects/<id>`` (owner) or ``GET /api/projects/<id>/shared``
-    (link). Holding the project is what grants its outputs.
-
-    The name alone does not say what the bytes are - a dataset parquet keeps
-    its generated ``<ms>_<hex>_output.parquet`` name, while a computed dataset
-    installed from a JSON, parquet or raster artifact lands under the bare
-    artifact id - so the content is sniffed. A raster's copy is its own file, a
-    GeoTIFF or a VRT, and is opened as the store opens a raster artifact: a
-    rasterio dataset.
-
-    An output whose dataset is a bundle, a tuple or a list or dict of frames,
-    is hydrated with its parts in a folder of its own
-    (``catalog_helpers.hydrated_bundle``), which is read first and comes back
-    as that tuple, list or dict (:func:`_load_bundle`). The bundle's
-    ``bundle.json``, which the load also copies under the output's name,
-    describes the output and is never handed out as its value.
-
-    Raises ``KeyError`` for an unsafe name, a missing file, or bytes this
-    cannot decode, so callers can treat it exactly like a missing artifact.
-    """
-    from utk_curio.sandbox.util.catalog_helpers import hydrated_bundle
-
-    missing = KeyError(f"No artifact with id {file_name}")
-
-    name = str(file_name or "").strip()
-    # One safe path component, mirroring the backend's ``validate_component``:
-    # a separator or a dot entry would address something other than a hydrated
-    # output. The containment check below is the second line of defence.
-    if not name or name in (".", "..") or "/" in name or "\\" in name or "\x00" in name:
-        raise missing
-
-    data_dir = _shared_data_dir()
-    bundle = hydrated_bundle(data_dir, name)
-    if bundle.is_file():
-        return _load_bundle(bundle, data_dir, missing)
-    try:
-        path = (data_dir / name).resolve()
-        path.relative_to(data_dir)
-    except (OSError, ValueError):
-        raise missing
-    if not path.is_file():
-        raise missing
-    return _decode_output_file(path, name, missing)
-
-
 def load_saved_output(path, name):
     """A dataflow's saved output *name*, read in place from *path*, the file
     its owner's store holds for it, which the backend resolved
     (``projects/storage.saved_output_file``) and the only caller may send.
+    Nothing is copied.
 
-    The file is read as :func:`load_shared_output_file` reads its copy, with
-    nothing copied: a frame with its ``.decode.json``, a raster, a JSON
-    value, or a bundle's ``bundle.json``, which reads as the tuple, list or
-    dict its parts make, from the dataset's own folder (two levels up).
+    That is the normal state for a saved output read outside the session that
+    produced it: the artifact row is session-tagged (see
+    :func:`load_from_duckdb`) and may have been pruned entirely, while this
+    file is what the dataflow saved.
+
+    The name alone does not say what the bytes are - a dataset parquet keeps
+    its generated ``<ms>_<hex>_output.parquet`` name, while a computed dataset
+    installed from a JSON, parquet or raster artifact is named after the
+    artifact - so the content is sniffed: a frame with its ``.decode.json``,
+    a raster (a GeoTIFF or a VRT, opened as the store opens a raster
+    artifact: a rasterio dataset), a JSON value, or a bundle's
+    ``bundle.json``, which reads as the tuple, list or dict its parts make,
+    from the dataset's own folder (two levels up, :func:`_load_bundle`).
 
     Raises ``KeyError`` when the file is not there or cannot be read, so
     callers treat it exactly like a missing artifact.
@@ -994,7 +946,7 @@ def _decode_output_file(path, name, missing):
     except Exception:
         raise missing
     if _is_bundle_description(value, name):
-        # A bundle's bundle.json with no parts hydrated beside it.
+        # A bundle's bundle.json describes the output and is never its value.
         raise missing
     return value
 
@@ -1023,9 +975,9 @@ def _is_install_placeholder(value, part) -> bool:
 
 
 def _load_bundle(bundle, data_dir, missing):
-    """The value a bundle holds, as the store gives it: the copy a project
-    load hydrated, or a saved output's own dataset folder, *data_dir* being
-    the folder it must lie in. Its parts go in the container its
+    """The value a bundle holds, as the store gives it, read from a saved
+    output's own dataset folder, *data_dir* being the folder it must lie in.
+    Its parts go in the container its
     ``bundle.json`` records (``catalog_helpers.bundle_container``), a tuple,
     a list, or a dict with its keys in their order, and a tuple when it
     records none.
@@ -1094,17 +1046,16 @@ def shape_saved_paths(raw):
 def load_artifact(art_id, session_id=None, saved_paths=None):
     """An artifact by id: the store first, then, for a saved output of the
     run's dataflow, the file its owner's store holds (*saved_paths*, see
-    :func:`shape_saved_paths`), then the copy a project load hydrated.
+    :func:`shape_saved_paths`).
 
     The one rule every reader of a saved output follows, ``/get`` and node
     inputs alike (#407, #408). The store is session-tagged, so after a reopen
     under a new sign-in it cannot serve an output the canvas is showing as done
     - nor when the row was pruned or the database is momentarily locked. The
-    saved output's own file can (:func:`load_saved_output`), read in place,
-    and so can the hydrated file in the shared data directory
-    (:func:`load_shared_output_file`). When none has it, the store's error is
-    the one raised: for a missing artifact that is the familiar "No artifact
-    with id", and for a locked database it keeps the real diagnostic.
+    saved output's own file can (:func:`load_saved_output`), read in place.
+    When neither has it, the store's error is the one raised: for a missing
+    artifact that is the familiar "No artifact with id", and for a locked
+    database it keeps the real diagnostic.
     """
     try:
         return load_from_duckdb(art_id, session_id=session_id)
@@ -1115,10 +1066,7 @@ def load_artifact(art_id, session_id=None, saved_paths=None):
                 return load_saved_output(saved["path"], art_id)
             except KeyError:
                 pass
-        try:
-            return load_shared_output_file(art_id)
-        except KeyError:
-            raise store_error
+        raise store_error
 
 
 #: The kinds whose ``value_str`` names the file this store wrote the value to,

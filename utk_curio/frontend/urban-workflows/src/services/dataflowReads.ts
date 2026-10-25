@@ -1,15 +1,15 @@
 /**
- * Where the canvas reads an output while a dataflow is open on it: that
+ * Where a page reads an output while a dataflow is open on it: that
  * dataflow's output routes (`projects/routes.py`), which read the store under
  * the caller's session and, for an output the dataflow saved, the file its
  * owner's Data Catalog keeps, in place, with nothing copied.
  *
- * `ProjectLoader` sets the open dataflow on the canvas: the one the route
- * opened, the owner's or a shared one, or the id a new dataflow gets on its
- * first save. A canvas with none reads `/get` and `/raster` as before. The
- * dashboard page never sets one: it reads what it carries, and its viewers'
- * kept files (`runs/dashboardRunFiles.ts`), which `fetchData`,
- * `fetchPreviewData` and `fetchRaster` (`services/api.ts`) ask about first.
+ * `ProjectLoader` sets the open dataflow: the one the route opened, the
+ * owner's or a shared one, or the id a new dataflow gets on its first save.
+ * A canvas with none reads `/get` and `/raster` as before. A dashboard page
+ * reads what it carries, and its viewers' kept files
+ * (`runs/dashboardRunFiles.ts`), first: `fetchData`, `fetchPreviewData` and
+ * `fetchRaster` (`services/api.ts`) ask about those before this.
  */
 import { backendUrl } from "../utils/backendUrl";
 import type { DashboardRead } from "./runs/dashboardRunFiles";

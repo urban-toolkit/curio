@@ -650,7 +650,7 @@ def execute_code(code, file_path, node_type, data_type, launch_dir=None, session
                     ]
                 elif file_path:
                     # The store, or a saved output of the dataflow, read in
-                    # place or from the copy a project load hydrated (#407).
+                    # place (#407).
                     input_data = load_artifact(file_path, session_id=session_id, saved_paths=saved_paths)
                 input_data = _expand_outputs_wrapper(input_data, session_id=session_id, saved_paths=saved_paths)
                 # A raster an Autark node handed on arrives as a rasterio

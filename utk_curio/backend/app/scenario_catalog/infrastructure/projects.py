@@ -140,19 +140,19 @@ def copy_outputs(
     user, source_id: str, spec: dict, pairs: list[tuple[str, str]], *, target_id: str, target_name: str,
 ) -> CopiedOutputs:
     """Copy the saved output of each ``(source, node)`` pair's *source* in
-    *source_id*, whose spec is *spec*, to *node* in *target_id*, and put the
-    copies where a canvas reads outputs from, as opening the project does.
+    *source_id*, whose spec is *spec*, to *node* in *target_id*, and record
+    each copy as its node's saved output in *target_id*, so the target's
+    canvas reads it in place before any save (``storage.saved_output_file``).
 
-    A save installs each output it sends again under its project's spec lock,
-    and installing one replaces its folder. So each project is read or written
-    under its own lock, one lock at a time (#941):
+    A save writes the outputs it sends under its project's spec lock. So each
+    project is read or written under its own lock, one lock at a time (#941):
 
     1. Under the source's lock: the refs its manifest restores, each pair's
        saved output, and a whole copy of each computed one in a staging folder
        (``copy.stage_computed_copy``). Nothing is written to the database.
     2. Under the target's lock: each staged copy takes its place and is indexed
-       (``copy.place_staged_copy``), then the copies' refs are restored
-       (``storage.hydrate_outputs``).
+       (``copy.place_staged_copy``), then the target's manifest records the
+       copies that are readable (``storage.record_outputs``).
 
     The source may be the target, and two drops each way between two projects
     never wait for each other. The caller holds no spec lock and no uncommitted
@@ -189,7 +189,8 @@ def copy_outputs(
             while staged:
                 source, node, copy = staged.pop(0)
                 dataset_ids[node] = dataset_copy.place_staged_copy(ukey, copy).manifest.id
-            restored = storage.hydrate_outputs(ukey, target_id, refs)
+            restored = storage.readable_saved_outputs(ukey, target_id, refs)
+            storage.record_outputs(ukey, target_id, [_manifest_entry(ref) for ref in restored])
     except InstallerError as exc:
         logger.warning(
             "Could not copy the saved output of %s in %s into %s: %s", source, source_id, target_id, exc,
@@ -205,6 +206,17 @@ def output_ref(node_id: str, filename: str, data_type: str | None):
     from utk_curio.backend.app.projects.schemas import OutputRef
 
     return OutputRef(node_id=node_id, filename=filename, data_type=data_type)
+
+
+def _manifest_entry(ref) -> dict:
+    """The manifest's record of a copied output, stamped as a save stamps the
+    output it sends (``services._produced_at``)."""
+    from utk_curio.backend.app.projects.services import _produced_at
+
+    entry = {"node_id": ref.node_id, "filename": ref.filename, "produced_at": _produced_at(ref.filename)}
+    if ref.data_type:
+        entry["data_type"] = ref.data_type
+    return entry
 
 
 def dataset_items(user, project_id: str, ids: set[str]) -> dict[str, dict]:

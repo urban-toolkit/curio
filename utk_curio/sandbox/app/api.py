@@ -282,20 +282,19 @@ def get_artifact():
                     )
                 except Exception:
                     # The full load below reports why, and knows where else
-                    # to look: a project's saved outputs are hydrated into the
-                    # shared data directory, which the store cannot see.
+                    # to look: a dataflow's saved output, in the file its
+                    # owner's store holds, which the store cannot see.
                     preview = None
                 if preview is not None:
                     raw, total_rows = preview
             if raw is None:
                 # The store, or a project's saved output, read in place from
-                # the file its owner's store holds, or its copy hydrated into
-                # the shared data directory: a row this session may not read
-                # (rows are session-tagged), no row at all, or no readable
-                # database - the file is created on first write and can be
-                # locked by a concurrent /exec. Those files carry no session
-                # tag, which is what lets a dashboard - or any second viewer -
-                # read an output the producing session no longer owns.
+                # the file its owner's store holds: for a row this session may
+                # not read (rows are session-tagged), no row at all, or no
+                # readable database - the file is created on first write and
+                # can be locked by a concurrent /exec. That file carries no
+                # session tag, which is what lets a dashboard - or any second
+                # viewer - read an output the producing session no longer owns.
                 raw = load_artifact(
                     art_id, session_id=session_id, saved_paths=_saved_paths_of_read(art_id),
                 )

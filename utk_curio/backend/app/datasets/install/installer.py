@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import dataclasses
 import filecmp
 import hashlib
+import json
 import logging
 import os
 import re
@@ -422,16 +424,75 @@ def keep_installed_output(user_key: str, dest: Path, manifest: DatasetManifest) 
     reader that does not take the project's spec lock would find no output
     (#941). The folder stays; its manifest is replaced only when it changed,
     a renamed node for one.
+
+    The manifest is written under the folder's install lock
+    (:func:`output_install_lock`), after reading the folder again: a play
+    that installed a newer output since the caller looked keeps it, and this
+    manifest is not written over it, naming files that install removed.
     """
-    try:
-        held_text = (dest / "manifest.json").read_text(encoding="utf-8")
-    except OSError:
-        held_text = None
-    if held_text != manifest_text(manifest):
-        replace_manifest(manifest, dest)
+    with output_install_lock(dest):
+        held = _held_manifest(dest)
+        if held is not None and held.data_file == manifest.data_file:
+            try:
+                held_text = (dest / "manifest.json").read_text(encoding="utf-8")
+            except OSError:
+                held_text = None
+            if held_text != manifest_text(manifest):
+                replace_manifest(manifest, dest)
     return _index(
         user_key, InstallResult(manifest=load_dataset_manifest(dest), dest=dest, replaced=False),
     )
+
+
+def _holds_whole_output(dest: Path, held: DatasetManifest) -> bool:
+    """Whether the dataset folder *dest* holds the whole output *held* names:
+    its data file, and for a bundle every part its ``bundle.json`` lists."""
+    from utk_curio.sandbox.util.catalog_helpers import listed_bundle_parts
+
+    data = dest / held.data_file
+    if not data.is_file():
+        return False
+    if data.name != "bundle.json":
+        return True
+    try:
+        named = json.loads(data.read_text(encoding="utf-8")).get("parts")
+    except (OSError, ValueError, AttributeError):
+        return False
+    return isinstance(named, list) and bool(named) and len(listed_bundle_parts(data)) == len(named)
+
+
+def keep_recorded_output(
+    user_key: str,
+    *,
+    node_id: str,
+    dataflow_id: str,
+    title: str | None = None,
+    node_type: str | None = None,
+    dataflow_name: str | None = None,
+    upstream_inputs: list[dict] | None = None,
+) -> InstallResult | None:
+    """Keep the output a node's computed dataset holds, under the title and
+    lineage a save gives it now.
+
+    A save sends the output of every node the canvas keeps. One its dataflow
+    already records for the node, under the same name, is the output this
+    dataset holds: every reader reads it here, in place, and nothing copies
+    it back where it was made, so the save needs no source to find it again.
+    Only a changed title or lineage is written, as
+    :func:`keep_installed_output` writes it. None when the folder holds no
+    whole output; the caller installs it then.
+    """
+    dest = dataset_dir(user_key, f"{computed_dataset_id(node_id, dataflow_id)}@1")
+    held = _held_manifest(dest)
+    if held is None or not _holds_whole_output(dest, held):
+        return None
+    return keep_installed_output(user_key, dest, dataclasses.replace(
+        held,
+        name=title or held.name,
+        producer_node_type=node_type,
+        producer_dataflow_name=dataflow_name,
+        upstream_inputs=list(upstream_inputs) if upstream_inputs else None,
+    ))
 
 
 def _computed_dates(held: DatasetManifest | None, *, same_output: bool) -> tuple[str, str]:

@@ -300,41 +300,8 @@ def spec_write_lock(user_key: str, project_id: str):
 
 
 # ---------------------------------------------------------------------------
-# Output copy / hydration
+# Saved outputs: where each one is read
 # ---------------------------------------------------------------------------
-
-def copy_outputs(
-    user_key: str,
-    project_id: str,
-    refs: List[OutputRef],
-) -> List[OutputRef]:
-    """Copy output files from shared cache into ``project/data/`` (legacy).
-
-    Project save no longer uses this — computed outputs are installed under
-    ``users/<user>/datasets/`` and registered in ``spec.trill.json`` instead.
-    Kept for tests and one-off migration tooling.
-
-    Returns only the refs that were successfully copied (missing source files
-    are skipped so partial saves stay self-consistent).
-    """
-    from utk_curio.backend.app.datasets.infrastructure.output_paths import resolve_shared_output_path
-
-    d = ensure_project_dir(user_key, project_id)
-    copied: List[OutputRef] = []
-    for ref in refs:
-        validate_component(ref.filename, field="output filename")
-        src = resolve_shared_output_path(
-            ref.filename,
-            data_type=getattr(ref, "data_type", None),
-        )
-        if src is None:
-            continue
-        dst = safe_join(d / "data", ref.filename, validate=False, field="output filename")
-        dst.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(str(src), str(dst))
-        copied.append(ref)
-    return copied
-
 
 def _installed_file_for_node(
     user_key: str,
@@ -434,27 +401,23 @@ def _durable_source_for(
     """Resolve *ref* to a DURABLE on-disk source a reload can restore from.
 
     A source is durable when it survives independently of the shared scratch
-    cache: a legacy ``project/data/`` copy, the node's computed output in the
-    account store (``computed.<dataflowId>.<nodeId>@1`` — the default home for a
-    generated output, no project ref required), or a dataset explicitly
-    installed into this dataflow (*spec* ``dataflow.datasets``). The shared cache
-    is a global, by-filename dir that gets cleared, so it is intentionally NOT a
-    durable source — it's only a hydrate fast-path.
+    cache: the node's computed output in the account store
+    (``computed.<dataflowId>.<nodeId>@1`` — the default home for a generated
+    output, no project ref required), or a dataset explicitly installed into
+    this dataflow (*spec* ``dataflow.datasets``). The shared cache is a
+    global, by-filename dir that gets cleared, so it is intentionally NOT a
+    durable source.
 
-    This is the single definition of "durable" shared by :func:`hydrate_outputs`
-    (which copies the source into the cache) and :func:`persisted_output_refs`
-    (which keeps a ref iff a durable source exists). Keeping one resolver stops
-    the persist filter and the hydrate path from drifting apart — e.g. a future
-    durable source added to one but not the other would otherwise let save drop
-    an output reload could restore, or record one it can't.
+    This is the single definition of "durable" shared by every reader of a
+    saved output, which reads this file in place (:func:`saved_output_file`),
+    and by :func:`persisted_output_refs`, which keeps a ref iff a durable
+    source exists. Keeping one resolver stops the two from drifting apart —
+    e.g. a future durable source added to one but not the other would
+    otherwise let save drop an output reload could restore, or record one it
+    can't.
 
-    Assumes ``ref.filename`` has already been validated by the caller (it is
-    joined with ``validate=False``). Returns the source ``Path`` or ``None``.
+    Returns the source ``Path`` or ``None``.
     """
-    d = project_dir(user_key, project_id)
-    legacy = safe_join(d / "data", ref.filename, validate=False, field="output filename")
-    if legacy.is_file():
-        return legacy
     account = _account_store_computed_file(user_key, project_id, ref.node_id)
     if account is not None and account.is_file():
         return account
@@ -464,93 +427,45 @@ def _durable_source_for(
     return None
 
 
-def _hydrate_bundle(source: Path, bundle: Path) -> None:
-    """Copy the bundle whose ``bundle.json`` is *source* to *bundle*, laid out
-    as staging lays out a bundle for an isolated node: each part the
-    ``bundle.json`` lists (``catalog_helpers.listed_bundle_parts``) with the
-    files read beside it, at its path under the dataset's folder, then the
-    ``bundle.json``, last, so a reader that finds it finds its parts. Only
-    what is not there yet is copied, each file whole or not at all, and the
-    ``bundle.json`` again whenever it differs from the dataset's, which a
-    later save rewrites when it installs the output again.
-
-    A file that cannot be copied leaves the bundle without its
-    ``bundle.json``, and the output reads as missing, as one with no durable
-    source does; the rest of the project load goes on.
-    """
-    from utk_curio.backend.app.datasets.install.installer import _place_copy
-    from utk_curio.sandbox.util.catalog_helpers import files_read_beside, listed_bundle_parts
-
-    folder = bundle.parent.parent
-    try:
-        base = source.parent.parent.resolve()
-        copies = [
-            (file, folder / file.relative_to(base))
-            for _entry, part in listed_bundle_parts(source)
-            for file in (part, *files_read_beside(part))
-        ]
-        copies += [(file, bundle.parent / file.name) for file in files_read_beside(source)]
-        for file, target in copies:
-            if not target.is_file():
-                _place_copy(file, target)
-        if not bundle.is_file() or bundle.read_bytes() != source.read_bytes():
-            _place_copy(source, bundle)
-    except (OSError, ValueError) as exc:
-        logger.warning("Could not hydrate the parts of %s: %s", source, exc)
-
-
-def hydrate_outputs(
+def readable_saved_outputs(
     user_key: str,
     project_id: str,
     refs: List[OutputRef],
     *,
     spec: Optional[dict] = None,
 ) -> List[OutputRef]:
-    """Copy persisted outputs into the shared cache so sandbox ``/get`` works.
+    """The *refs* a reader can read: those whose node's durable source is
+    there (:func:`_durable_source_for`), which every reader reads in place
+    (:func:`saved_output_file`). Nothing is copied. An output with no source
+    left is left out, with a warning in the log.
 
-    Sources (first match wins):
-    1. Already present in shared data (current session).
-    2. A durable source (legacy ``project/data/`` copy or installed dataset) —
-       see :func:`_durable_source_for`.
-
-    A durable source that is a bundle (``bundle.json``, such as a tuple's) is
-    also hydrated with its parts, in a folder of its own
-    (``catalog_helpers.hydrated_bundle``, see :func:`_hydrate_bundle`), which
-    the sandbox reads back as the tuple, list or dict the node returned
-    (``parsers.load_shared_output_file``).
-    That folder is checked on every load, whether or not the output's own
-    copy is already here.
-
-    An output found in neither place is left out, with a warning in the log.
-    Every caller holds the project's spec lock: a project load, and a scenario
-    drop restoring the outputs it copied. So this never meets an output a save
-    is installing again (#941).
+    Every caller holds the project's spec lock, a project load among them, so
+    this never meets the manifest halfway through a save (#941).
     """
-    from utk_curio.sandbox.util.catalog_helpers import hydrated_bundle
-
-    shared = _shared_data_dir()
-    shared.mkdir(parents=True, exist_ok=True)
-    hydrated: List[OutputRef] = []
+    readable = persisted_output_refs(user_key, project_id, refs, spec=spec)
     for ref in refs:
-        validate_component(ref.filename, field="output filename")
-        dst = safe_join(shared, ref.filename, validate=False, field="output filename")
-        source = _durable_source_for(user_key, project_id, ref, spec=spec)
-        if source is not None and source.name == "bundle.json":
-            _hydrate_bundle(source, hydrated_bundle(shared, ref.filename))
-        if dst.is_file():
-            hydrated.append(ref)
-            continue
+        if ref not in readable:
+            logger.warning(
+                "Saved output %s of node %s in project %s has no file left to read; "
+                "it is left out",
+                ref.filename, ref.node_id, project_id,
+            )
+    return readable
 
-        if source is not None:
-            shutil.copy2(str(source), str(dst))
-            hydrated.append(ref)
-            continue
-        logger.warning(
-            "Saved output %s of node %s in project %s has no copy left to load; "
-            "it is left out",
-            ref.filename, ref.node_id, project_id,
-        )
-    return hydrated
+
+def record_outputs(user_key: str, project_id: str, entries: List[Dict]) -> None:
+    """Add *entries* (``{node_id, filename, data_type?, produced_at?}``) to the
+    outputs the manifest records, each taking its node's place, and keep the
+    rest of the manifest as it is. The caller holds the project's spec lock."""
+    path = ensure_project_dir(user_key, project_id) / "manifest.json"
+    manifest = read_manifest(user_key, project_id) or {"project_id": project_id, "user_id": user_key}
+    nodes = {entry["node_id"] for entry in entries}
+    kept = [
+        entry for entry in manifest.get("outputs") or []
+        if isinstance(entry, dict) and entry.get("node_id") not in nodes
+    ]
+    manifest["outputs"] = kept + [dict(entry) for entry in entries]
+    _write_json_atomically(path, manifest)
 
 
 def persisted_output_refs(
@@ -562,17 +477,17 @@ def persisted_output_refs(
 ) -> List[OutputRef]:
     """Subset of *refs* that a later reload can restore from a DURABLE source.
 
-    ``hydrate_outputs`` resolves an output from one of three places: the shared
-    scratch cache, a legacy ``project/data`` copy, or an installed dataset in the
-    user store (via *spec* ``dataflow.datasets``). The shared cache is a global,
-    by-filename scratch dir that gets cleared and is not a per-project guarantee,
-    so it is intentionally *excluded* here: an output backed only by the cache
-    silently vanishes once it's evicted.
+    A reload reads an output from its node's dataset in the user store: its
+    computed dataset, or a dataset installed into the dataflow (via *spec*
+    ``dataflow.datasets``), see :func:`_durable_source_for`. The shared cache
+    is a global, by-filename scratch dir that gets cleared and is not a
+    per-project guarantee, so it is intentionally *excluded* here: an output
+    backed only by the cache silently vanishes once it's evicted.
 
-    The manifest must therefore record only outputs backed by a legacy copy or an
-    installed dataset. Recording the raw client list instead lets a swallowed
-    auto-install error (or a pruned sink-node dataset) leave a phantom entry the
-    manifest claims exists but reload can never restore (issue #144).
+    The manifest must therefore record only outputs backed by a dataset.
+    Recording the raw client list instead lets a swallowed auto-install error
+    (or a pruned sink-node dataset) leave a phantom entry the manifest claims
+    exists but reload can never restore (issue #144).
     """
     kept: List[OutputRef] = []
     for ref in refs:
