@@ -2,6 +2,7 @@ import { getToken } from "../utils/authApi";
 import { backendUrl } from "../utils/backendUrl";
 import { embeddedArtifact, EmbeddedEnvelope, embeddedRaster, EmbeddedRaster } from "../standalone/dashboardPayload";
 import { dashboardRunRead } from "./runs/dashboardRunFiles";
+import { dataflowRead } from "./dataflowReads";
 
 export const ARROW_IPC_MIME = "application/vnd.apache.arrow.stream";
 
@@ -127,9 +128,13 @@ export async function fetchData(fileName: string) {
         return { ...embedded, filename: fileName };
     }
     try {
-        // An artifact a dashboard viewer's run made is read on its dashboard's route.
+        // An artifact a dashboard viewer's run made is read on its dashboard's
+        // route; on a canvas, the open dataflow's route reads a saved output
+        // where its Data Catalog keeps it (services/dataflowReads.ts).
         const dashboard = dashboardRunRead(fileName, "get", new URLSearchParams({ fileName }));
-        const url = dashboard?.url ?? `${backendUrl()}/get?fileName=${encodeURIComponent(fileName)}`;
+        const url = dashboard?.url
+            ?? dataflowRead("get", new URLSearchParams({ fileName }))
+            ?? `${backendUrl()}/get?fileName=${encodeURIComponent(fileName)}`;
         const extraHeaders = dashboard?.headers ?? {};
         console.log(`Fetching ${url}`);
         const _token = getToken();
@@ -190,7 +195,9 @@ export async function fetchPreviewData(fileName: string) {
         // Use the correct backend URL
         const base = backendUrl() || 'http://localhost:5002';
         const dashboard = dashboardRunRead(fileName, "get-preview", new URLSearchParams({ fileName }));
-        const url = dashboard?.url ?? `${base}/get-preview?fileName=${encodeURIComponent(fileName)}`;
+        const url = dashboard?.url
+            ?? dataflowRead("get-preview", new URLSearchParams({ fileName }))
+            ?? `${base}/get-preview?fileName=${encodeURIComponent(fileName)}`;
         console.log(`[fetchPreviewData] Fetching preview from ${url}`);
         const _token = getToken();
         const response = await fetch(url, {
@@ -262,7 +269,8 @@ export async function fetchRaster(
     if (opts.part != null) params.set("part", String(opts.part));
     const token = getToken();
     const dashboard = dashboardRunRead(fileName, "raster", params);
-    const response = await fetch(dashboard?.url ?? `${backendUrl()}/raster?${params.toString()}`, {
+    const url = dashboard?.url ?? dataflowRead("raster", params) ?? `${backendUrl()}/raster?${params.toString()}`;
+    const response = await fetch(url, {
         headers: {
             ...(dashboard?.headers ?? {}),
             ...(token ? { Authorization: `Bearer ${token}` } : {}),
