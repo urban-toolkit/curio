@@ -661,6 +661,21 @@ class TestKeys:
         monkeypatch.setattr(utk_curio, "__version__", "99.0.0")
         assert key() != reimported, "a new Curio version kept the old key"
 
+    def test_a_step_keys_the_same_whichever_spelling_its_type_came_in(self):
+        """The canvas posts a node's type with its version
+        (``curio.builtin/computation-analysis@1``), and a saved dataflow may
+        hold it without one, as the shipped examples do, or by its old name:
+        an owner's play keys its step as a viewer's run of the step does."""
+        from utk_curio.backend.app.runs import kept
+
+        def key(node_type):
+            return kept.step_key(packages="p1", node_type=node_type, engine="python", code="return 1",
+                                 input_ref=None, input_slots=None, datasets={})
+
+        assert key("curio.builtin/computation-analysis@1") == key("curio.builtin/computation-analysis")
+        assert key("COMPUTATION_ANALYSIS") == key("curio.builtin/computation-analysis")
+        assert key("curio.builtin/data-loading") != key("curio.builtin/computation-analysis")
+
     def test_an_owners_upgrade_runs_the_step_again(self, client, user_and_token, sandbox, saved, monkeypatch):
         import utk_curio
 
