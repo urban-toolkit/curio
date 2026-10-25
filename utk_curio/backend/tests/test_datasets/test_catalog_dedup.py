@@ -9,9 +9,6 @@ Covers the behavior-preserving refactors:
 """
 from __future__ import annotations
 
-import os
-from pathlib import Path
-
 from utk_curio.backend.app.datasets.infrastructure.catalog_utils import title_from_filename
 from utk_curio.backend.app.datasets.domain.constants import (
     FORMAT_TO_EXTENSION,
@@ -48,12 +45,17 @@ def test_sandbox_datatype_map_covers_bundle_and_geo():
 # ── #2: install hard-links the shared artifact instead of copying ───────────
 
 def test_install_node_output_hardlinks_shared_artifact(app):
-    from utk_curio.backend.app.datasets.install.bundle import install_node_output
+    import pandas as pd
 
-    shared = Path(os.environ["CURIO_SHARED_DATA"])
-    name = "1718000000333_beef0003_output.parquet"
-    src = shared / name
-    src.write_bytes(b"PARQUET-BYTES")
+    from utk_curio.backend.app.datasets.install.bundle import install_node_output
+    from utk_curio.backend.tests.test_datasets.computed_test_helpers import (
+        store_sandbox_artifact,
+        stored_artifact_file,
+    )
+
+    name = store_sandbox_artifact(pd.DataFrame({"a": [1, 2]}))
+    src = stored_artifact_file(name)
+    stored_bytes = src.read_bytes()
 
     result = install_node_output(
         "1", node_id="node-link", path_ref=name, data_type="dataframe",
@@ -63,8 +65,9 @@ def test_install_node_output_hardlinks_shared_artifact(app):
 
     installed = result.dest / result.manifest.data_file
     assert installed.is_file()
-    assert installed.read_bytes() == b"PARQUET-BYTES"
-    # Hard-link on the same filesystem → same inode, no full-file copy.
+    assert installed.read_bytes() == stored_bytes
+    # Hard-link on the same filesystem, so the same inode as the store's file:
+    # no full-file copy.
     assert installed.stat().st_ino == src.stat().st_ino
 
 

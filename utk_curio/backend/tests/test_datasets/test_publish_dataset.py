@@ -102,18 +102,21 @@ def test_a_published_list_column_installs_as_lists(client, db, user_and_token, t
         auth_headers,
         create_project,
         save_project_with_output,
+        store_sandbox_artifact,
+        stored_artifact_file,
     )
     from utk_curio.sandbox.util.catalog_helpers import read_dataset
-    from utk_curio.sandbox.util.parsers import save_dataset_parquet
 
     monkeypatch.setenv("CURIO_CATALOG_ROOT", str(tmp_path / "catalog"))
     _alice, token = user_and_token
 
-    # Saved as a node run saves it: the lists encoded, the sidecar beside them.
-    filename = save_dataset_parquet(
-        pd.DataFrame({"stop": ["Clark", "State"], "routes": [["22", "36"], ["2"]]}), "dataframe"
+    # Stored as a node run stores it: the lists encoded in its parquet, and the
+    # columns to decode in the artifact's row, which the save writes beside the
+    # saved file.
+    filename = store_sandbox_artifact(
+        pd.DataFrame({"stop": ["Clark", "State"], "routes": [["22", "36"], ["2"]]})
     )
-    assert filename, "the sandbox writer saved no Parquet file"
+    assert stored_artifact_file(filename).suffix == ".parquet", "the sandbox writer saved no Parquet file"
     project_id = create_project(client, token, name="Routes per stop")
     save_project_with_output(client, token, project_id, filename, node_id="node-routes")
 

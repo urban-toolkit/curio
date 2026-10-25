@@ -9,8 +9,6 @@ generated-filename detector / merge keep title and fileName consistent.
 from __future__ import annotations
 
 import json
-import os
-from pathlib import Path
 
 from utk_curio.backend.app.datasets.domain.dedup import merge_catalog_items
 from utk_curio.backend.app.datasets.infrastructure.catalog_utils import looks_like_generated_filename
@@ -23,13 +21,14 @@ from utk_curio.backend.app.projects.services import _user_dir_key
 from utk_curio.backend.tests.test_datasets.computed_test_helpers import (
     auth_headers,
     create_project,
+    store_sandbox_artifact,
 )
 
 
-def _install_computed(client, token, project_id, *, node_id, filename, node_title=None):
-    """Install a computed dataset from a shared output file and return its id."""
-    shared = Path(os.environ["CURIO_SHARED_DATA"])
-    (shared / filename).write_text('{"a": 1}', encoding="utf-8")
+def _install_computed(client, token, project_id, *, node_id, node_title=None):
+    """Install a computed dataset from a node's live output, the artifact the
+    store holds for it, and return its id."""
+    filename = store_sandbox_artifact({"a": 1})
     # The installed store id is namespaced by the installing dataflow; build the
     # sourceItem id to match so promote/install/publish key on one id.
     dataset_id = computed_dataset_id(node_id, project_id)
@@ -162,8 +161,7 @@ def test_publish_titles_computed_with_friendly_node_name(client, user_and_token,
     project_id = create_project(client, token, name="Publish friendly title")
     dataset_id = _install_computed(
         client, token, project_id,
-        node_id="whatif-data", filename="1782757759504_31640bba.json",
-        node_title="Knowledge Graph",
+        node_id="whatif-data", node_title="Knowledge Graph",
     )
 
     resp = client.post(
@@ -183,8 +181,7 @@ def test_publish_never_titles_computed_with_a_generated_filename(client, user_an
     project_id = create_project(client, token, name="Publish guards filename")
     dataset_id = _install_computed(
         client, token, project_id,
-        node_id="whatif-data", filename="1782757759504_31640bba.json",
-        node_title="Knowledge Graph",
+        node_id="whatif-data", node_title="Knowledge Graph",
     )
 
     resp = client.post(

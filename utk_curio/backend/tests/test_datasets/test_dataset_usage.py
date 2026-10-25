@@ -8,6 +8,7 @@ from utk_curio.backend.app.datasets.install.installer import computed_dataset_id
 from utk_curio.backend.tests.test_datasets.computed_test_helpers import (
     auth_headers,
     save_project_with_output,
+    store_sandbox_artifact,
 )
 
 
@@ -173,12 +174,10 @@ def _consumed_project_spec(consumer_ids):
 
 def _install_producer_output(client, token, project_id):
     """Give ``n1`` a real computed output so it lists as a catalog dataset."""
-    import os
-    from pathlib import Path
+    import pandas as pd
 
-    shared = Path(os.environ["CURIO_SHARED_DATA"])
-    (shared / "n1_out.csv").write_text("city,count\nChicago,10\n", encoding="utf-8")
-    save_project_with_output(client, token, project_id, "n1_out.csv", node_id="n1")
+    n1_out = store_sandbox_artifact(pd.DataFrame({"city": ["Chicago"], "count": [10]}))
+    save_project_with_output(client, token, project_id, n1_out, node_id="n1")
     return computed_dataset_id("n1", project_id)
 
 

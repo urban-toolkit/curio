@@ -1,22 +1,26 @@
 """Unit tests for computed output path resolution and catalog dedupe."""
 from __future__ import annotations
 
-def test_resolve_computed_output_path_present(app):
-    """A file present in the shared-data dir should be resolved correctly."""
-    import os
-    from pathlib import Path
+from utk_curio.backend.tests.test_datasets.computed_test_helpers import (
+    store_sandbox_artifact,
+    stored_artifact_file,
+)
 
-    shared = Path(os.environ["CURIO_SHARED_DATA"])
-    output_file = shared / "my_output.csv"
-    output_file.write_text("a,b\n1,2\n", encoding="utf-8")
+
+def test_resolve_computed_output_path_present(app):
+    """An output the store holds resolves to the store's file of it."""
+    import pandas as pd
+
+    my_output = store_sandbox_artifact(pd.DataFrame({"a": [1], "b": [2]}))
+    output_file = stored_artifact_file(my_output)
 
     from utk_curio.backend.app.datasets.service import DatasetCatalogService
 
     svc = DatasetCatalogService()
     item = {
         "origin": "computed",
-        "uri": "curio://outputs/my_output.csv",
-        "path": "my_output.csv",
+        "uri": f"curio://outputs/{my_output}",
+        "path": my_output,
     }
     resolved = svc._paths._resolve_computed_output_path(item)
     # _resolve_computed_output_path returns as_posix() by contract; str(Path)
@@ -39,23 +43,21 @@ def test_resolve_computed_output_path_missing(app):
 
 def test_resolve_item_path_delegates_for_computed(app):
     """_resolve_item_path routes curio://outputs/ URIs through the computed resolver."""
-    import os
-    from pathlib import Path
+    import pandas as pd
 
-    shared = Path(os.environ["CURIO_SHARED_DATA"])
-    (shared / "scores.csv").write_text("id,score\n1,99\n", encoding="utf-8")
+    scores = store_sandbox_artifact(pd.DataFrame({"id": [1], "score": [99]}))
 
     from utk_curio.backend.app.datasets.service import DatasetCatalogService
 
     svc = DatasetCatalogService()
     item = {
         "origin": "computed",
-        "uri": "curio://outputs/scores.csv",
-        "path": "curio://outputs/scores.csv",
+        "uri": f"curio://outputs/{scores}",
+        "path": f"curio://outputs/{scores}",
     }
     result = svc._paths._resolve_item_path(item)
     assert result is not None
-    assert result.endswith("scores.csv")
+    assert result == stored_artifact_file(scores).as_posix()
 
 
 def test_resolve_item_path_installed_computed_uses_absolute_path(app):
