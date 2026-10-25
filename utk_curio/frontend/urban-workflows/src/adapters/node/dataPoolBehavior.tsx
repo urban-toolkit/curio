@@ -6,6 +6,7 @@ import { ICodeData, ICodeDataContent } from '../../types';
 import { IPropagation, useFlowContext } from '../../providers/FlowProvider';
 import DataPoolContent from './components/DataPoolContent';
 import { hasIncomingEdge, incomingSourceIds, NODE_EMPTY_COPY, resolveNodeEmptyReason } from '../../utils/nodeEmptyState';
+import { useGrammarInputState } from '../../hook/useGrammarInputState';
 import { reportNodeRuntime } from '../../services/nodeRuntimeReport';
 import { ResolutionType } from '../../constants';
 import { isSelectionEcho } from '../../utils/selectionEcho';
@@ -37,6 +38,8 @@ export const useDataPoolBehavior: NodeBehaviorHook = (data) => {
   const upstreamErrored = incomingSourceIds(poolEdges, data.nodeId).some(
     (sourceId) => nodeExecStatus?.[sourceId] === "errored",
   );
+  // On a dashboard: a viewer's run making the rows, or why it stopped before them.
+  const { upstreamRunning, upstreamStopped } = useGrammarInputState(data.nodeId);
   const [output, setOutput] = useState<ICodeData>({ code: '', content: '' });
 
   // How the selections that reach the pool combine: the selects of one chart,
@@ -460,6 +463,8 @@ export const useDataPoolBehavior: NodeBehaviorHook = (data) => {
         data={data}
         connected={connected}
         upstreamErrored={upstreamErrored}
+        upstreamRunning={upstreamRunning}
+        upstreamStopped={upstreamStopped}
         insideChartMode={insideChartMode}
         betweenChartsMode={betweenChartsMode}
         onInsideChartModeChange={onInsideChartModeChange}
@@ -467,7 +472,7 @@ export const useDataPoolBehavior: NodeBehaviorHook = (data) => {
       />
     ),
     [
-      activeTab, setActiveTab, tabData, tableData, data, connected, upstreamErrored,
+      activeTab, setActiveTab, tabData, tableData, data, connected, upstreamErrored, upstreamRunning, upstreamStopped,
       insideChartMode, betweenChartsMode, onInsideChartModeChange, onBetweenChartsModeChange,
     ],
   );

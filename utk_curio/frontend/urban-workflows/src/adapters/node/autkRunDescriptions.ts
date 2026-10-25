@@ -50,7 +50,8 @@ export function emptyStateWords(
     if (reason === 'not-run' && kind === 'compute') {
         return { title: 'Not run yet', hint: 'This step computes on upstream layers; run it to pass results downstream.' };
     }
-    if (detail && (reason === 'input-type-rejected' || reason === 'geometry-unresolved' || reason === 'geometry-ambiguous')) {
+    if (detail && (reason === 'input-type-rejected' || reason === 'geometry-unresolved' || reason === 'geometry-ambiguous'
+        || reason === 'upstream-stopped')) {
         return { hint: detail };
     }
     return {};
