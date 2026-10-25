@@ -100,15 +100,16 @@ def close_datasets(value) -> None:
             item.close()
 
 
-def raster_artifact(art_id, *, session_id=None, part=None):
+def raster_artifact(art_id, *, session_id=None, part=None, saved_paths=None):
     """The rasterio dataset an artifact holds, by the one reader rule.
 
-    ``part`` picks one item of a Python tuple. The store first, then a
-    project's hydrated copy (``parsers.load_artifact``), as ``/get`` reads.
+    ``part`` picks one item of a Python tuple. The store first, then a saved
+    output's own file (*saved_paths*) or a project's hydrated copy
+    (``parsers.load_artifact``), as ``/get`` reads.
     """
     from utk_curio.sandbox.util.parsers import load_artifact
 
-    value = load_artifact(art_id, session_id=session_id)
+    value = load_artifact(art_id, session_id=session_id, saved_paths=saved_paths)
     if part is not None:
         if not isinstance(value, (list, tuple)) or not 0 <= part < len(value):
             close_datasets(value)
@@ -134,9 +135,10 @@ def geotiff_bytes(dataset) -> bytes:
             return handle.read()
 
 
-def serve_raster(art_id, *, session_id=None, part=None, max_cells=None, max_side=None):
+def serve_raster(art_id, *, session_id=None, part=None, max_cells=None, max_side=None,
+                 saved_paths=None):
     """``(bytes, meta)`` for the raster route, or :class:`RasterRefused`."""
-    dataset = raster_artifact(art_id, session_id=session_id, part=part)
+    dataset = raster_artifact(art_id, session_id=session_id, part=part, saved_paths=saved_paths)
     try:
         meta = raster_meta(dataset)
         width, height = meta["width"], meta["height"]
