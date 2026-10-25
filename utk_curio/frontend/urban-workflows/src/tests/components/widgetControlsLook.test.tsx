@@ -56,6 +56,10 @@ test("each widget control is Material UI's component, in the widget theme's smal
       { name: "when", type: "datetime", label: "When", default: "2026-06-21T12:00:00" },
       ".MuiInputBase-sizeSmall input[type='datetime-local']",
     ),
+    date: draws(
+      { name: "day", type: "date", label: "Day", default: "2026-06-21" },
+      ".MuiInputBase-sizeSmall input[type='date']",
+    ),
     checkbox: draws(
       { name: "wet", type: "checkbox", label: "Wet", default: true },
       ".MuiCheckbox-sizeSmall input[type='checkbox']",
@@ -82,6 +86,7 @@ test("each widget control is Material UI's component, in the widget theme's smal
     checkboxGroup: true,
     multiSelect: true,
     datetime: true,
+    date: true,
     checkbox: true,
     numberList: true,
     range: true,

@@ -1,0 +1,338 @@
+{
+  "$schema": "https://curio.dev/schemas/example-prompt-fixture.v1.json",
+  "fixtureId": "crown-heights-1550-bedford-shadow",
+  "version": 1,
+  "source": {
+    "path": "docs/examples/dataflows/crown-heights-1550-bedford-shadow.json",
+    "sha256": "eb81466c10f131a05d82c032d378b6fb3654e68e574de042959526a7de347a22",
+    "walkthrough": null
+  },
+  "prompt": "How much shade would the 18-story building proposed at 1550 Bedford Avenue in Crown Heights, Brooklyn add to the block across Eastern Parkway from it, between Franklin Avenue and Bedford Avenue? Use the Crown Heights dataset in the catalog: NYC's building footprints with their roof heights in metres, that block's outline and the site's lot, and the street centerlines with their roadway widths. Add the proposed building to the buildings as an edit a user can change on a map: its base to 135 feet on the lot, set back 30 feet from Eastern Parkway, and its upper floors to 185 feet, set back above the base, 10 feet from Eastern Parkway and Bedford Avenue and 15 feet from Union Street. Let the user choose to accumulate the shadow over one date, one month or the whole year, with a date picker and a month list. Cover the area with 3 metre ground cells and, on the GPU, cast sun rays from every cell every 10 minutes of every selected day, counting the minutes only the proposed building blocks the sun. Map the accumulated shadow in hours with the block highlighted, the proposed building in its own color and the other buildings and the streets around it, and show in a table the selection and the shade added on the block, the mean over its cells.",
+  "context": null,
+  "required": {
+    "datasets": [
+      "data.nyc.crown-heights-1550-bedford"
+    ],
+    "packages": []
+  },
+  "expected": {
+    "nodes": [
+      {
+        "ref": "visualization1",
+        "type": "curio.builtin/autk-grammar",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": true
+      },
+      {
+        "ref": "visualization2",
+        "type": "curio.builtin/autk-grammar",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis1",
+        "type": "curio.builtin/computation-analysis",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis2",
+        "type": "curio.builtin/computation-analysis",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis3",
+        "type": "curio.builtin/computation-analysis",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis4",
+        "type": "curio.builtin/computation-analysis",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis5",
+        "type": "curio.builtin/computation-analysis",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis6",
+        "type": "curio.builtin/computation-analysis",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "loader1",
+        "type": "curio.builtin/data-loading",
+        "role": "loader",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "loader2",
+        "type": "curio.builtin/data-loading",
+        "role": "loader",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "loader3",
+        "type": "curio.builtin/data-loading",
+        "role": "loader",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "transform1",
+        "type": "curio.builtin/edit-features",
+        "role": "transform",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "endpoint1",
+        "type": "curio.builtin/parameter",
+        "role": "endpoint",
+        "executable": false,
+        "hasContent": false
+      },
+      {
+        "ref": "endpoint2",
+        "type": "curio.builtin/parameter",
+        "role": "endpoint",
+        "executable": false,
+        "hasContent": false
+      },
+      {
+        "ref": "endpoint3",
+        "type": "curio.builtin/parameter",
+        "role": "endpoint",
+        "executable": false,
+        "hasContent": false
+      },
+      {
+        "ref": "visualization3",
+        "type": "curio.builtin/vis-simple",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": false
+      }
+    ],
+    "edges": [
+      {
+        "from": "visualization1",
+        "to": "analysis1",
+        "kind": "data"
+      },
+      {
+        "from": "analysis1",
+        "to": "analysis2",
+        "kind": "data"
+      },
+      {
+        "from": "analysis1",
+        "to": "analysis3",
+        "kind": "data"
+      },
+      {
+        "from": "analysis2",
+        "to": "visualization3",
+        "kind": "data"
+      },
+      {
+        "from": "analysis3",
+        "to": "visualization2",
+        "kind": "data",
+        "slot": 1
+      },
+      {
+        "from": "analysis4",
+        "to": "visualization2",
+        "kind": "data"
+      },
+      {
+        "from": "analysis5",
+        "to": "visualization1",
+        "kind": "data"
+      },
+      {
+        "from": "analysis6",
+        "to": "visualization1",
+        "kind": "data",
+        "slot": 1
+      },
+      {
+        "from": "loader1",
+        "to": "visualization2",
+        "kind": "data",
+        "slot": 4
+      },
+      {
+        "from": "loader2",
+        "to": "visualization2",
+        "kind": "data",
+        "slot": 3
+      },
+      {
+        "from": "loader2",
+        "to": "analysis5",
+        "kind": "data",
+        "slot": 1
+      },
+      {
+        "from": "loader3",
+        "to": "analysis4",
+        "kind": "data"
+      },
+      {
+        "from": "loader3",
+        "to": "transform1",
+        "kind": "data"
+      },
+      {
+        "from": "transform1",
+        "to": "visualization2",
+        "kind": "data",
+        "slot": 2
+      },
+      {
+        "from": "transform1",
+        "to": "visualization2",
+        "kind": "interaction"
+      },
+      {
+        "from": "transform1",
+        "to": "analysis3",
+        "kind": "data",
+        "slot": 1
+      },
+      {
+        "from": "transform1",
+        "to": "analysis5",
+        "kind": "data"
+      },
+      {
+        "from": "transform1",
+        "to": "analysis6",
+        "kind": "data"
+      }
+    ],
+    "sources": {
+      "datasetIds": [
+        "data.nyc.crown-heights-1550-bedford"
+      ],
+      "paths": [],
+      "urls": []
+    }
+  },
+  "intents": [
+    {
+      "ref": "loader3",
+      "mustMention": [
+        "building"
+      ],
+      "outputKind": "geodataframe"
+    },
+    {
+      "ref": "transform1",
+      "mustMention": [
+        "building"
+      ],
+      "outputKind": "geodataframe"
+    },
+    {
+      "ref": "analysis5",
+      "mustMention": [
+        "cell"
+      ],
+      "outputKind": "geodataframe"
+    },
+    {
+      "ref": "analysis6",
+      "mustMention": [
+        "height"
+      ],
+      "outputKind": "geodataframe"
+    },
+    {
+      "ref": "analysis1",
+      "mustMention": [
+        "shadow"
+      ],
+      "outputKind": "geodataframe"
+    },
+    {
+      "ref": "analysis3",
+      "mustMention": [
+        "shadow"
+      ],
+      "outputKind": "geodataframe"
+    },
+    {
+      "ref": "analysis2",
+      "mustMention": [
+        "Block 1259"
+      ],
+      "outputKind": "dataframe"
+    }
+  ],
+  "execution": {
+    "mode": "browser",
+    "browserOnlyKinds": [
+      "curio.builtin/autk-grammar",
+      "curio.builtin/edit-features"
+    ],
+    "notes": null
+  },
+  "capability": {
+    "tier": "T3",
+    "needs": [
+      "browser-only-execution",
+      "gpu"
+    ],
+    "skip": [
+      {
+        "when": "gpu",
+        "reason": "The Autark GPU compute stage that casts the sun rays needs hardware WebGPU; the plan and apply half of this fixture still runs offline.",
+        "scope": "execution"
+      }
+    ]
+  },
+  "thresholds": {
+    "pass": 0.9,
+    "templates": 1.0,
+    "topology": 0.9,
+    "dependencies": 1.0
+  },
+  "split": "train",
+  "review": {
+    "status": "pending-owner-review",
+    "draftedBy": "the Crown Heights 1550 Bedford Avenue shadow example, from the example JSON, 2026-10-23",
+    "reviewedBy": null,
+    "reviewedAt": null
+  },
+  "consent": {
+    "dataContent": "identifiers-only",
+    "licence": "MIT (this repository)",
+    "sourceLicences": [
+      {
+        "datasetId": "data.nyc.crown-heights-1550-bedford",
+        "licence": "NYC Open Data Terms of Use"
+      }
+    ],
+    "notes": "The prompt, the expected graph and the plan target are authored in this repository; the export carries the dataset's identifier only. The dataset is NYC Open Data's Building Footprints and Centerline and the Department of City Planning's MapPLUTO, free to use under the NYC Open Data Terms of Use."
+  },
+  "notes": "Three data loaders (buildings, Block 1259 and streets) and three Parameter nodes (the period, a date and a month). A Map Editor node adds the proposed building in two parts and feeds the map it is linked to by an interaction edge. Python nodes make the ground cells with the selection's days and hand the building's parts to an Autark compute step, a WGSL shader that accumulates each cell's minutes of the building's shadow; Python nodes then read the shadow per cell, keep the shaded cells for the map with its legend's whole-hour ends, make the map's extent and average the shade on Block 1259, which a Simple View shows. The Autark map draws the streets, the buildings, the shadow and the block."
+}

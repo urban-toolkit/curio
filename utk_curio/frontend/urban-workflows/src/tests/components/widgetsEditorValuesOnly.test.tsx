@@ -12,17 +12,21 @@ import type { WidgetDef } from "../../utils/widgets/widgetModel";
 
 const factor: WidgetDef = { name: "factor", type: "number", label: "Factor", default: 2 };
 const note: WidgetDef = { name: "note", type: "text", label: "Note", default: "" };
+const day: WidgetDef = { name: "day", type: "date", label: "Day", default: "2027-12-21" };
 
-function renderTab(valuesOnly: boolean) {
+function renderTab(
+    valuesOnly: boolean,
+    { widgets = [factor, note], userCode = "return [!! factor !!]" }: { widgets?: WidgetDef[]; userCode?: string } = {},
+) {
     const onWidgetsChange = jest.fn();
     const onValueChange = jest.fn();
     render(
         <WidgetsEditor
-            userCode="return [!! factor !!]"
+            userCode={userCode}
             sendReplacedCode={jest.fn()}
             nodeId="n1"
             markersDirty={false}
-            widgets={[factor, note]}
+            widgets={widgets}
             onWidgetsChange={onWidgetsChange}
             onValueChange={onValueChange}
             language="python"
@@ -43,6 +47,21 @@ describe("on a dashboard's tile", () => {
         fireEvent.blur(control);
 
         expect(onWidgetsChange).toHaveBeenCalledWith([{ ...factor, value: 5 }, note]);
+        expect(onValueChange).toHaveBeenCalled();
+    });
+
+    test("a viewer picks a date, and the change asks for a run", () => {
+        const { onWidgetsChange, onValueChange } = renderTab(true, {
+            widgets: [factor, day], userCode: "return [!! factor !!], [!! day !!]",
+        });
+        const control = screen.getByLabelText("Day", { selector: "input" }) as HTMLInputElement;
+        expect(control.type).toBe("date");
+        expect(control.disabled).toBe(false);
+
+        fireEvent.change(control, { target: { value: "2027-06-21" } });
+        fireEvent.blur(control);
+
+        expect(onWidgetsChange).toHaveBeenCalledWith([factor, { ...day, value: "2027-06-21" }]);
         expect(onValueChange).toHaveBeenCalled();
     });
 

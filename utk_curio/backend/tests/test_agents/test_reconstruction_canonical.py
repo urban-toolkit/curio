@@ -357,12 +357,12 @@ class TestDependencies:
 class TestTheShippedCorpus:
     """The properties the harness relies on, asserted over the real examples."""
 
-    def test_the_corpus_is_the_thirty_seven_examples(self):
+    def test_the_corpus_is_the_thirty_eight_examples(self):
         paths = example_paths()
         curated = [p for p in paths if p.parent.name == "examples"]
         legacy = [p for p in paths if p.parent.name == "dataflows"]
         assert len(curated) == 26, [p.name for p in curated]
-        assert len(legacy) == 29, [p.name for p in legacy]
+        assert len(legacy) == 30, [p.name for p in legacy]
 
     @pytest.mark.parametrize("path", example_paths(), ids=lambda p: p.stem)
     def test_every_example_canonicalizes_with_known_templates(self, path):
@@ -407,6 +407,7 @@ class TestTheShippedCorpus:
             "17-autark-geodataframe-maps",
             "chicago-loop-layers",
             "chicago-loop-shadow-towers",
+            "crown-heights-1550-bedford-shadow",
             "interaction-autark",
             "interaction-vega",
             "interaction-vega-autark",

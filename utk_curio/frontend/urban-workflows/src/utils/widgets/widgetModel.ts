@@ -20,6 +20,7 @@ export const WIDGET_KINDS = [
   "checkbox-group",
   "multi-select",
   "datetime",
+  "date",
   "location",
   "number-list",
   "text-list",
@@ -68,6 +69,7 @@ export const WIDGET_KIND_LABELS: Record<WidgetKind, string> = {
   "checkbox-group": "Checkbox group",
   "multi-select": "Multi-select",
   datetime: "Date and time",
+  date: "Date",
   location: "Location",
   "number-list": "List of numbers",
   "text-list": "List of texts",
@@ -104,6 +106,9 @@ export function effectiveValue(widget: WidgetDef): WidgetValue {
 /** A date-time widget's value when its widget gives none. Kept in sync with
  * `DATETIME_FALLBACK` in `code_references.py`. */
 export const DATETIME_FALLBACK = "1970-01-01T00:00:00";
+/** A date widget's value when its widget gives none. Kept in sync with
+ * `DATE_FALLBACK` in `code_references.py`. */
+export const DATE_FALLBACK = "1970-01-01";
 
 /**
  * A kind's value when a widget gives no default. Kept in sync with
@@ -128,6 +133,8 @@ export function defaultValueFor(kind: WidgetKind, options?: WidgetOptions): Widg
       return [0, 1];
     case "datetime":
       return DATETIME_FALLBACK;
+    case "date":
+      return DATE_FALLBACK;
     case "location":
       return { lat: 0, lon: 0 };
     default:
@@ -157,6 +164,18 @@ export function normalizeDateTime(text: string): string | null {
     t.getUTCMinutes() === mi &&
     t.getUTCSeconds() === s;
   return real ? `${m[1]}-${m[2]}-${m[3]}T${m[4]}:${m[5]}:${m[6] ?? "00"}` : null;
+}
+
+const DATE_RE = /^(\d{4})-(\d{2})-(\d{2})$/;
+
+/** *text* as a date widget's value, `YYYY-MM-DD`, or null when it is not a real date. */
+export function normalizeDate(text: string): string | null {
+  const m = DATE_RE.exec(text);
+  if (!m) return null;
+  const [y, mo, d] = [m[1], m[2], m[3]].map(Number);
+  const t = new Date(Date.UTC(y, mo - 1, d));
+  const real = t.getUTCFullYear() === y && t.getUTCMonth() === mo - 1 && t.getUTCDate() === d;
+  return real ? text : null;
 }
 
 /** *date*'s local time to the minute, as a date-time widget's value. */
@@ -215,6 +234,8 @@ export function checkWidgetValue(
       return typeof value === "string" && normalizeDateTime(value) === value
         ? null
         : "Enter a date and time.";
+    case "date":
+      return typeof value === "string" && normalizeDate(value) === value ? null : "Enter a date.";
     case "location": {
       const v = value as Partial<LocationValue> | null;
       return v !== null &&

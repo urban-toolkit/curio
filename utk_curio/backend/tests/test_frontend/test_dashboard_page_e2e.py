@@ -654,7 +654,8 @@ class _Visitor:
     the page addressed it. A page that asks ``/api`` on its own host, as a
     hosted stack's pages do, is passed on the way that stack's proxy passes it,
     with ``/api`` taken off. A run's stream reaches the page whole, once the
-    run is over. A CORS preflight is passed on and not counted as asked.
+    run is over, and is kept whole in :attr:`streams`. A CORS preflight is
+    passed on and not counted as asked.
     """
 
     def __init__(self, browser, current_server: str):
@@ -665,6 +666,10 @@ class _Visitor:
         self.page = self.ctx.new_page()
         self.asked: list[str] = []
         self.answered: list[str] = []
+        #: Each run's stream, whole, in the order the runs ended.
+        self.streams: list[str] = []
+        #: What the page sent of each step a run left to it, and its size.
+        self.sent: list[str] = []
         self.console: list[str] = []
         self.page.on("console", lambda message: self.console.append(f"[{message.type}] {message.text}"))
         self.page.on("pageerror", lambda error: self.console.append(f"[pageerror] {error}"))
@@ -679,6 +684,8 @@ class _Visitor:
         line = f"{request.method} {path}{query}"
         if request.method != "OPTIONS":
             self.asked.append(line)
+        if request.method == "POST" and "/steps/" in path:
+            self.sent.append(f"{line}: {len(request.post_data_buffer or b'')} bytes")
         target = request.url if on_backend else f"{self.backend}{path}{query}"
         try:
             response = route.fetch(url=target, timeout=180000)
@@ -688,6 +695,8 @@ class _Visitor:
             return
         kind = response.headers.get("content-type", "")
         said = response.text()[:3000] if ("json" in kind or "event-stream" in kind) else f"{len(response.body())} bytes"
+        if "event-stream" in kind:
+            self.streams.append(response.text())
         self.answered.append(f"{line} -> {response.status} {said}")
         route.fulfill(response=response)
 
@@ -707,6 +716,7 @@ class _Visitor:
             standing = [f"could not be read: {exc}"]
         return (
             "\nAsked and answered:\n  " + "\n  ".join(self.answered or ["nothing"])
+            + "\nWhat the page sent of the steps left to it:\n  " + "\n  ".join(self.sent or ["nothing"])
             + "\nThe page's nodes and notices:\n  " + "\n  ".join(standing or ["none"])
             + "\nThe page's last messages:\n  " + "\n  ".join(self.console[-60:] or ["none"])
         )
@@ -728,22 +738,24 @@ class _Visitor:
             if method == "GET" and urlsplit(path).path.endswith("/stream"):
                 ended += 1
             elif method == "POST" and path.endswith("/dashboard/runs"):
+                # A run to follow answers 202 with its id; one that needs no
+                # run answers 200 with none, and a refusal names none either.
                 status, _, body = answer.partition(" ")
                 try:
-                    run_id = json.loads(body).get("runId") if status == "200" else None
+                    run_id = json.loads(body).get("runId") if status in ("200", "202") else None
                 except ValueError:
                     run_id = None
                 if not run_id:
                     ended += 1
         return ended
 
-    def waits_for_runs(self, count: int) -> None:
+    def waits_for_runs(self, count: int, *, timeout_ms: int = 90000) -> None:
         """Until *count* viewer's runs started here are over, so a count of
         the runs started is not taken while one is still to come."""
         waited = 0
         while self.runs_ended() < count:
-            if waited >= 90000:
-                raise AssertionError(f"waited 90000 ms for {count} viewer's runs to end{self.story()}")
+            if waited >= timeout_ms:
+                raise AssertionError(f"waited {timeout_ms} ms for {count} viewer's runs to end{self.story()}")
             self.page.wait_for_timeout(250)
             waited += 250
 

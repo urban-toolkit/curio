@@ -282,7 +282,7 @@
           "not": { "pattern": "^(?:input_\\d+|inputs)$" },
           "description": "Letters, digits and underscores, not starting with a digit. Not input_0, input_1 and so on, nor inputs: those names read the node's inputs."
         },
-        "type": { "type": "string", "enum": ["number", "slider", "text", "choice", "checkbox", "checkbox-group", "multi-select", "datetime", "location", "number-list", "text-list", "range", "file"] },
+        "type": { "type": "string", "enum": ["number", "slider", "text", "choice", "checkbox", "checkbox-group", "multi-select", "datetime", "date", "location", "number-list", "text-list", "range", "file"] },
         "label": { "type": "string" },
         "default": {},
         "value": {},

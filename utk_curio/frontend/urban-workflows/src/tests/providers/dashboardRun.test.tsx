@@ -40,6 +40,8 @@ const period = {
     options: { choices: ["Date", "Month", "Year"], display: "radio" },
 };
 const note = { name: "note", type: "text", default: "" };
+const day = { name: "day", type: "date", label: "Day", default: "2027-12-21" };
+const dayTile = () => ({ id: "day", data: { nodeId: "day", dashboardPinned: true, widgets: [{ ...day }] } });
 
 function makeNodes(): any[] {
     return [
@@ -52,8 +54,10 @@ function makeNodes(): any[] {
 const EDGES = [{ id: "grid-chart", source: "grid", target: "chart" }];
 const SAVED_GRID = { nodeId: "grid", output: { path: "saved-grid", dataType: "str" } };
 
-function setUp({ saved = [SAVED_GRID], playNodes = jest.fn(() => true) }: { saved?: any[]; playNodes?: jest.Mock } = {}) {
-    const nodes = makeNodes();
+function setUp(
+    { saved = [SAVED_GRID], playNodes = jest.fn(() => true), extra = [] }: { saved?: any[]; playNodes?: jest.Mock; extra?: any[] } = {},
+) {
+    const nodes = [...makeNodes(), ...extra];
     const outcomes = { showOnNode: jest.fn(), showResult: jest.fn(), showSkipped: jest.fn() };
     const showToast = jest.fn();
     const reactFlow: any = {
@@ -89,6 +93,13 @@ describe("the values a viewer's run takes", () => {
         expect(dashboardValues(nodes)).toEqual({ param: { period: "Date" } });
         nodes[0].data.widgets[0] = { ...period, value: "Month" } as any;
         expect(dashboardValues(nodes)).toEqual({ param: { period: "Month" } });
+    });
+
+    test("hold a pinned date as its text, the saved one until a viewer picks another", () => {
+        const nodes = [...makeNodes(), dayTile()];
+        expect(dashboardValues(nodes)).toEqual({ param: { period: "Date" }, day: { day: "2027-12-21" } });
+        nodes[4].data.widgets = [{ ...day, value: "2027-06-21" }];
+        expect(dashboardValues(nodes)).toEqual({ param: { period: "Date" }, day: { day: "2027-06-21" } });
     });
 });
 
@@ -140,6 +151,18 @@ describe("a change", () => {
 
         run.emit({ kind: "run_finished", status: "succeeded", ok: 1, failed: 0, skipped: 0, waiting: 0 });
         expect(hook.result.current.active).toBe(false);
+    });
+
+    test("a picked date reruns the dashboard with that date as its text", async () => {
+        mockStart.mockResolvedValue({ runId: "r1", token: "t1", joined: false, nodeIds: ["grid", "chart"] });
+        const { nodes, hook } = setUp({ extra: [dayTile()] });
+        await act(async () => { hook.result.current.opened("dash-1"); });
+        expect(mockStart).not.toHaveBeenCalled();
+        nodes[4].data.widgets = [{ ...day, value: "2027-06-21" }];
+
+        await act(async () => { await hook.result.current.start(); });
+        expect(mockStart).toHaveBeenCalledWith("dash-1", { param: { period: "Date" }, day: { day: "2027-06-21" } });
+        expect(followed()).toMatchObject({ projectId: "dash-1", runId: "r1", token: "t1" });
     });
 
     test("back to the saved values, every node a run changed shows its saved output again", async () => {

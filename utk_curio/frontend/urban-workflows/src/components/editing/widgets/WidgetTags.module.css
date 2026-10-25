@@ -332,6 +332,7 @@
 .panel input[type="number"]:not(:global(.MuiInputBase-input)),
 .panel input[type="search"]:not(:global(.MuiInputBase-input)),
 .panel input[type="datetime-local"]:not(:global(.MuiInputBase-input)),
+.panel input[type="date"]:not(:global(.MuiInputBase-input)),
 .panel select:not(:global(.MuiInputBase-input)) {
   box-sizing: border-box;
   height: var(--widget-h);
@@ -460,6 +461,7 @@
 .control > input[type="text"],
 .control > input[type="number"],
 .control > input[type="datetime-local"],
+.control > input[type="date"],
 .control > select {
   width: 100%;
 }

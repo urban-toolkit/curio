@@ -17,6 +17,7 @@ import { tooltipStore } from "../../tooltip/tooltipStore";
 import {
   FILE_WIDGET_MAX_CHARS,
   checkWidgetValue,
+  normalizeDate,
   normalizeDateTime,
   type WidgetDef,
   type WidgetValue,
@@ -35,7 +36,7 @@ const listText = (value: WidgetValue | undefined) => (Array.isArray(value) ? JSO
 
 const initialDraft = (type: WidgetDef["type"], value: WidgetValue | undefined): string => {
   if (type === "number") return String(value ?? "");
-  if (type === "datetime") return typeof value === "string" ? value : "";
+  if (type === "datetime" || type === "date") return typeof value === "string" ? value : "";
   return listText(value);
 };
 
@@ -102,6 +103,8 @@ export function WidgetControl({ widget, value, onChange, disabled = false, ariaL
       );
     } else if (widget.type === "datetime") {
       setDraft((d) => (normalizeDateTime(d) === value ? d : typeof value === "string" ? value : ""));
+    } else if (widget.type === "date") {
+      setDraft((d) => (normalizeDate(d) === value ? d : typeof value === "string" ? value : ""));
     }
     setProblem(null);
   }, [valueKey, widget.type]);
@@ -310,6 +313,21 @@ export function WidgetControl({ widget, value, onChange, disabled = false, ariaL
           onChange={(e) => {
             setDraft(e.target.value);
             commit(normalizeDateTime(e.target.value) ?? e.target.value);
+          }}
+        />
+      );
+      break;
+    case "date":
+      control = (
+        <TextField
+          type="date"
+          fullWidth
+          value={draft}
+          disabled={disabled}
+          inputProps={{ "aria-label": label }}
+          onChange={(e) => {
+            setDraft(e.target.value);
+            commit(normalizeDate(e.target.value) ?? e.target.value);
           }}
         />
       );

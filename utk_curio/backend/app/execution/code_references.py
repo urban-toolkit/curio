@@ -195,6 +195,7 @@ WIDGET_KINDS = (
     "checkbox-group",
     "multi-select",
     "datetime",
+    "date",
     "location",
     "number-list",
     "text-list",
@@ -993,6 +994,9 @@ def reference_problem(
 #: A date-time widget's value when its widget gives none. Kept in sync with
 #: ``DATETIME_FALLBACK`` in ``widgetModel.ts``.
 DATETIME_FALLBACK = "1970-01-01T00:00:00"
+#: A date widget's value when its widget gives none. Kept in sync with
+#: ``DATE_FALLBACK`` in ``widgetModel.ts``.
+DATE_FALLBACK = "1970-01-01"
 
 
 def _finite(x) -> bool:
@@ -1031,6 +1035,8 @@ def default_value_for(kind, options) -> object:
         return [0, 1]
     if kind == "datetime":
         return DATETIME_FALLBACK
+    if kind == "date":
+        return DATE_FALLBACK
     if kind == "location":
         return {"lat": 0, "lon": 0}
     return ""
@@ -1063,6 +1069,28 @@ def normalize_datetime(text: str) -> str | None:
     except ValueError:
         return None
     return f"{m.group(1)}-{m.group(2)}-{m.group(3)}T{m.group(4)}:{m.group(5)}:{seconds}"
+
+
+_DATE_RE = re.compile(r"(\d{4})-(\d{2})-(\d{2})")
+
+
+def normalize_date(text: str) -> str | None:
+    """*text* as a date widget's value, ``YYYY-MM-DD``, or None when it is not
+    a real date; ``normalizeDate`` in ``widgetModel.ts``, whose ``Date.UTC``
+    reads a year below 100 as 19xx."""
+    import datetime as _dt
+
+    m = _DATE_RE.fullmatch(text) if isinstance(text, str) else None
+    if not m:
+        return None
+    y, mo, d = (int(v) for v in m.groups())
+    if y < 100:
+        return None
+    try:
+        _dt.date(y, mo, d)
+    except ValueError:
+        return None
+    return text
 
 
 def _bounds_problem(value, options: dict) -> str | None:
@@ -1108,6 +1136,8 @@ def check_widget_value(widget: dict, value) -> str | None:
         return None if fine else "Pick among the choices, each at most once."
     if kind == "datetime":
         return None if isinstance(value, str) and normalize_datetime(value) == value else "Enter a date and time."
+    if kind == "date":
+        return None if isinstance(value, str) and normalize_date(value) == value else "Enter a date."
     if kind == "location":
         fine = (
             isinstance(value, dict) and len(value) == 2
