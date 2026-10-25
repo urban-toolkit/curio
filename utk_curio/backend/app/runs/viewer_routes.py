@@ -12,7 +12,7 @@ import json
 
 from flask import Blueprint, Response, jsonify, request, stream_with_context
 
-from utk_curio.backend.app.runs import viewer
+from utk_curio.backend.app.runs import kept, viewer
 from utk_curio.backend.app.runs.service import RunError
 
 dashboard_runs_bp = Blueprint("dashboard_runs_api", __name__)
@@ -57,10 +57,10 @@ def keep_step(project_id: str, run_id: str, node_id: str):
         return jsonify({"error": f"A page's result of a step may hold at most {mib} MB."}), 413
     body = request.get_json(silent=True) or {}
     try:
-        kept = viewer.keep_tab_result(project_id, run_id, node_id, _token(), body.get("value"))
+        result = viewer.keep_tab_result(project_id, run_id, node_id, _token(), body.get("value"))
     except RunError as exc:
         return _error(exc)
-    return jsonify(kept)
+    return jsonify(result)
 
 
 @dashboard_runs_bp.route("/api/projects/<project_id>/dashboard/runs/<run_id>/stream", methods=["GET"])
@@ -85,7 +85,7 @@ def stream(project_id: str, run_id: str):
 def _kept(project_id: str):
     """The kept output a read names, or the error to answer."""
     try:
-        return viewer.readable_output(project_id, request.args.get("fileName") or "", _token()), None
+        return kept.readable_output(project_id, request.args.get("fileName") or "", _token()), None
     except RunError as exc:
         return None, _error(exc)
 

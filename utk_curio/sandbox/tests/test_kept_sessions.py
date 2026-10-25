@@ -1,17 +1,18 @@
-"""What a dashboard viewer's run makes is described and forgotten by session.
+"""What a kept run makes is described and forgotten by session.
 
-A run a dashboard's viewer starts tags each step's artifacts with a session of
-its own (``common/dashboard_sessions.py``). The backend keeps the output for a
-while, then asks the sandbox to forget the session:
+A run whose outputs are kept, a dashboard viewer's among them, tags each
+step's artifacts with a session of its own (``common/kept_sessions.py``). The
+backend keeps the output for a while, then asks the sandbox to forget the
+session:
 
 - ``/artifact-sessions/describe`` names each artifact the session made and
   counts the bytes they hold, the files the store wrote them to included;
 - ``/artifact-sessions/forget`` deletes their rows and those files, and
   nothing of any other session;
-- both refuse a session that is not a dashboard's, so no call reaches a
+- both refuse a session that is not a kept run's, so no call reaches a
   sign-in's artifacts;
-- a viewer's step reads what other viewer steps made, which the backend hands
-  it (its run's earlier steps, the outputs kept from earlier runs), and no
+- a kept step reads what other kept steps made, which the backend hands it
+  (its run's earlier steps, the outputs kept from earlier runs), and no
   sign-in's artifacts, which never read theirs either.
 """
 
@@ -30,12 +31,12 @@ from utk_curio.sandbox.util.db import init_db, release_connection
 
 def new_session_id():
     # Imported here, so a checkout without the module fails each test on its own.
-    from utk_curio.common.dashboard_sessions import new_session_id as make
+    from utk_curio.common.kept_sessions import new_session_id as make
 
     return make()
 
 
-class DashboardSessionsTestCase(unittest.TestCase):
+class KeptSessionsTestCase(unittest.TestCase):
     def setUp(self):
         self.client = app.test_client()
         self._tmp = TemporaryDirectory()
@@ -55,14 +56,15 @@ class DashboardSessionsTestCase(unittest.TestCase):
     def _parquet(self, art_id):
         return self.data_dir / "artifacts" / f"{art_id}.parquet"
 
-    def test_a_session_id_has_the_dashboard_shape(self):
-        from utk_curio.common.dashboard_sessions import is_dashboard_session
+    def test_a_session_id_has_the_kept_shape(self):
+        from utk_curio.common.kept_sessions import is_kept_session
 
         session = new_session_id()
-        self.assertTrue(is_dashboard_session(session))
+        self.assertTrue(is_kept_session(session))
         self.assertNotEqual(session, new_session_id())
-        for other in ("dashboard-", "dashboard-xyz", "Bearer-token", None, 7, f"{session}x"):
-            self.assertFalse(is_dashboard_session(other), other)
+        old_shape = "dashboard-" + session[len("kept-"):]
+        for other in ("kept-", "kept-xyz", old_shape, "Bearer-token", None, 7, f"{session}x"):
+            self.assertFalse(is_kept_session(other), other)
 
     def test_describe_names_each_artifact_and_counts_its_file(self):
         session = new_session_id()
@@ -99,8 +101,8 @@ class DashboardSessionsTestCase(unittest.TestCase):
             parsers.load_from_duckdb(frame)
         self.assertEqual(parsers.load_from_duckdb(kept, session_id=kept_session)["b"].tolist(), [1])
 
-    def test_a_viewer_step_reads_what_another_viewer_step_made(self):
-        """Each step of a viewer's run has a session of its own, and reads its
+    def test_a_kept_step_reads_what_another_kept_step_made(self):
+        """Each step of a kept run has a session of its own, and reads its
         run's earlier steps and the outputs kept from earlier runs: in process,
         as a preview, and staged for an isolated child."""
         from utk_curio.sandbox.util import staging
@@ -116,13 +118,13 @@ class DashboardSessionsTestCase(unittest.TestCase):
             self.assertEqual(staged["kind"], "dataframe")
             self.assertTrue((Path(scratch) / staged["file"]).exists())
 
-    def test_a_viewer_step_and_a_sign_in_never_read_each_others_artifacts(self):
+    def test_a_kept_step_and_a_sign_in_never_read_each_others_artifacts(self):
         from utk_curio.sandbox.util import staging
 
-        viewer_made = parsers.save_to_duckdb(pd.DataFrame({"a": [1]}), session_id=new_session_id())
+        kept_made = parsers.save_to_duckdb(pd.DataFrame({"a": [1]}), session_id=new_session_id())
         signed_in_made = parsers.save_to_duckdb(pd.DataFrame({"b": [2]}), session_id="a-sign-in-token")
 
-        for art_id, session in ((viewer_made, "a-sign-in-token"), (signed_in_made, new_session_id())):
+        for art_id, session in ((kept_made, "a-sign-in-token"), (signed_in_made, new_session_id())):
             with self.assertRaises(KeyError):
                 parsers.load_artifact(art_id, session_id=session)
             with self.assertRaises(KeyError):
@@ -130,9 +132,9 @@ class DashboardSessionsTestCase(unittest.TestCase):
             with TemporaryDirectory() as scratch, self.assertRaises(KeyError):
                 staging.stage_input(art_id, scratch, session_id=session)
 
-    def test_store_keeps_a_pages_result_in_a_dashboard_session(self):
+    def test_store_keeps_a_pages_result_in_a_kept_session(self):
         """What a viewer's page made of a step only a browser runs is written
-        as it came, an artifact of the dashboard session named."""
+        as it came, an artifact of the kept session named."""
         session = new_session_id()
         layer = {"dataType": "geodataframe", "data": {"type": "FeatureCollection", "features": []}, "layerName": "a"}
 
@@ -154,10 +156,10 @@ class DashboardSessionsTestCase(unittest.TestCase):
             response = self.client.post("/artifact-sessions/store", json=body)
             self.assertEqual(response.status_code, 400, (body, response.data))
 
-    def test_a_session_that_is_not_a_dashboards_is_refused(self):
+    def test_a_session_that_is_not_a_kept_runs_is_refused(self):
         signed_in = parsers.save_to_duckdb(pd.DataFrame({"a": [1]}), session_id="a-sign-in-token")
         for route in ("/artifact-sessions/describe", "/artifact-sessions/forget"):
-            for body in ({"sessionIds": ["a-sign-in-token"]}, {"sessionIds": "dashboard-x"}, {}):
+            for body in ({"sessionIds": ["a-sign-in-token"]}, {"sessionIds": "kept-x"}, {}):
                 response = self.client.post(route, json=body)
                 self.assertEqual(response.status_code, 400, (route, body, response.data))
         self.assertEqual(parsers.load_from_duckdb(signed_in, session_id="a-sign-in-token")["a"].tolist(), [1])
