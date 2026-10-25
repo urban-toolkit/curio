@@ -117,6 +117,10 @@ RUN_TIMEOUT_MS = 240000
 #: A shade as the table writes it: minutes, or hours past 90 minutes.
 SHADE_RE = re.compile(r"^\d[\d,.]* (min|h)$")
 
+#: What an Autark map's database asks of the backend on any page it draws on:
+#: DuckDB's extensions, which Curio serves itself.
+_EXTENSIONS_RE = re.compile(r"^GET /file/vendor/duckdb-extensions/")
+
 #: The cells of the first row of the table node *id* draws, or null.
 _TABLE_ROW_JS = """(id) => {
     const node = document.querySelector('.react-flow__node[data-id="' + id + '"]');
@@ -183,6 +187,11 @@ def _step_outputs(visitor: "_Visitor") -> list[dict[str, str]]:
                 outputs[payload["nodeId"]] = (payload.get("output") or {}).get("path")
         runs.append(outputs)
     return runs
+
+
+def _beyond_viewer_runs(visitor: "_Visitor") -> list[str]:
+    """What the visitor's page asked beyond a viewer's run and DuckDB's extensions."""
+    return [line for line in _not_a_viewer_route(visitor.asked) if not _EXTENSIONS_RE.match(line)]
 
 
 def _ran_since(visitor: "_Visitor", earlier: int) -> list[dict[str, str]]:
@@ -296,7 +305,7 @@ def test_the_owner_shares_the_crown_heights_dashboard_and_each_visitor_tries_a_d
         assert not reran, f"a date ran {sorted(reran)!r} again, which it does not reach" + first.story()
         first_sent = _sent_results(first)
         first_read = _files_read(first.asked)
-        assert _not_a_viewer_route(first.asked) == [], (
+        assert _beyond_viewer_runs(first) == [], (
             "the dashboard asked the server for more than a viewer's run" + first.story()
         )
     finally:
@@ -350,7 +359,7 @@ def test_the_owner_shares_the_crown_heights_dashboard_and_each_visitor_tries_a_d
         back = _changed(opened_map, _map_pixels(second.page, ids["map"]))
         assert back <= 0.01, f"the saved date's map differs from the one the page opened with in {back:.2%}"
         assert len(_runs_started(second.asked)) == 2, "the saved date ran again" + second.story()
-        assert _not_a_viewer_route(second.asked) == [], (
+        assert _beyond_viewer_runs(second) == [], (
             "the dashboard asked the server for more than a viewer's run" + second.story()
         )
     finally:
@@ -445,7 +454,7 @@ def test_the_crown_heights_dashboard_link_dev_shares_works_on_this_deployment_to
             assert changed.get(ids[name]) in (None, opened[0][ids[name]]), (
                 f"{LABELS[name]} ran again for Jun 21, which it does not read" + visitor.story()
             )
-        assert _not_a_viewer_route(visitor.asked) == [], (
+        assert _beyond_viewer_runs(visitor) == [], (
             "the dashboard asked the server for more than a viewer's run" + visitor.story()
         )
     finally:
