@@ -53,7 +53,7 @@ async function renderNode(payload: unknown): Promise<Rendered> {
     const behavior = useColumnFilterBehavior(
       {
         nodeId: 'cf-1',
-        // Passed inline rather than as a {path} ref, so no fetch is involved.
+        // The rows inline, or a {path} ref to an output the node reads.
         input: payload,
         outputCallback,
       },
@@ -145,6 +145,57 @@ describe('Column Filter with the legacy row-map shape', () => {
     const [, payload] = outputCallback.mock.calls[0];
     expect(Array.isArray(payload.data.population)).toBe(false);
     expect(payload.data.population).toEqual({ '0': 2746, '1': 8804 });
+  });
+});
+
+/*
+ * A Python or JS node hands the filter a reference to its output, not the rows.
+ * The filter reads it with `window.curio.fetchData`, the reader the canvas
+ * reads outputs with, which the main bundle publishes for packages: while a
+ * dataflow is open it reads on that dataflow's route, where a saved output is
+ * read under any sign-in. Only a host without it gets the filter's own `/get`.
+ */
+describe('Column Filter given a reference to an output', () => {
+  const REF = { path: 'art-12', dataType: 'dataframe' };
+  const originalFetch = global.fetch;
+
+  beforeEach(() => {
+    delete (window as any).curio;
+    global.fetch = jest.fn(async () => ({
+      ok: true,
+      status: 200,
+      json: async () => SANDBOX_FRAME,
+    })) as unknown as typeof fetch;
+  });
+
+  afterEach(() => {
+    global.fetch = originalFetch;
+    delete (window as any).curio;
+  });
+
+  test('reads it through the host fetchData, published after the bundle loaded', async () => {
+    const fetchData = jest.fn(async () => SANDBOX_FRAME);
+    (window as any).curio = { fetchData };
+
+    await renderNode(REF);
+
+    await waitFor(() => {
+      expect(screen.getByText(/3 of 3 rows match/i)).toBeInTheDocument();
+    });
+    expect(fetchData).toHaveBeenCalledWith('art-12');
+    // No request of its own: the host's reader chose the route.
+    expect(global.fetch).not.toHaveBeenCalled();
+  });
+
+  test('on a host without fetchData, fetches /get itself', async () => {
+    await renderNode(REF);
+
+    await waitFor(() => {
+      expect(screen.getByText(/3 of 3 rows match/i)).toBeInTheDocument();
+    });
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+    const [url] = (global.fetch as unknown as jest.Mock).mock.calls[0];
+    expect(String(url)).toContain('/get?fileName=art-12');
   });
 });
 

@@ -28,7 +28,23 @@ import { NodeBehaviorHook } from '../../../utk_curio/frontend/urban-workflows/sr
  */
 
 /*
- * Read the host's backend URL at runtime.
+ * Read an output with `window.curio.fetchData`, the function Curio's canvas
+ * reads outputs with, which its main bundle publishes for packages. It reads
+ * the output wherever the canvas would: while a dataflow is open, on that
+ * dataflow's route, which also reads the outputs the dataflow saved, after a
+ * new sign-in too.
+ *
+ * Look it up on every read, not once when the bundle loads: a package bundle
+ * can load before Curio's main bundle publishes it.
+ */
+function hostFetchData(): ((fileName: string) => Promise<any>) | null {
+  const read = typeof window !== 'undefined' ? (window as any).curio?.fetchData : undefined;
+  return typeof read === 'function' ? read : null;
+}
+
+/*
+ * For a host that does not publish `window.curio.fetchData`: read `/get`
+ * directly, on the host's backend URL, with the session token.
  *
  * Do NOT use `process.env.BACKEND_URL` in a package bundle: webpack would
  * inline whatever URL your machine had at build time, and the bundle would
@@ -38,7 +54,7 @@ import { NodeBehaviorHook } from '../../../utk_curio/frontend/urban-workflows/sr
 const BACKEND_URL: string =
   (typeof window !== 'undefined' && (window as any).curio?.backendUrl) || '';
 
-/** The session token lives in a cookie; the artifact endpoint requires it. */
+/** The session token lives in a cookie; `/get` requires it. */
 function sessionToken(): string {
   if (typeof document === 'undefined') return '';
   const hit = document.cookie.match(/(?:^|;\s*)session_token=([^;]*)/);
@@ -70,7 +86,8 @@ function unwrap(value: any): any {
  *
  *   { path: 'art-12', dataType: 'dataframe' }  a sandbox artifact reference,
  *                                              which is what every Python or
- *                                              JS node produces -> fetch it
+ *                                              JS node produces -> read it
+ *                                              with `window.curio.fetchData`
  *   { data: {...},    dataType: 'dataframe' }  an inline payload, which is what
  *                                              another custom-UI node produces
  *                                              -> use it as-is
@@ -83,6 +100,8 @@ async function resolveInput(input: any): Promise<any> {
   if (input == null || input === '') return null;
   const ref = typeof input === 'string' ? input : input.path ?? input.dataset;
   if (typeof ref === 'string' && ref.trim()) {
+    const fetchData = hostFetchData();
+    if (fetchData) return unwrap(await fetchData(ref.trim()));
     const token = sessionToken();
     const res = await fetch(
       `${BACKEND_URL}/get?fileName=${encodeURIComponent(ref.trim())}`,

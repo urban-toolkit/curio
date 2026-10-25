@@ -2713,7 +2713,7 @@ content.
 | `src/registry/nodeRegistry.ts` | Singleton store of all `NodeDescriptor`s; subscribed by the palette + canvas |
 | `src/registry/packageRegistryBootstrap.ts` | Boot-time orchestration: load installed packages, inject behavior bundles, build descriptors |
 | `src/registry/registryReadiness.ts` | Whether the registry has finished a load: a placeholder node waits on it, and the canvas's load fit waits on it while a node has no descriptor |
-| `src/registry/index.ts` | Exposes `window.curio.registerBehavior` + `window.curio.backendUrl` for package bundles |
+| `src/registry/index.ts` | Exposes `window.curio.registerBehavior`, `window.curio.backendUrl`, `window.curio.getAuthToken` and `window.curio.fetchData` (the canvas's reader of an output) for package bundles |
 | `src/registry/types.ts` | TypeScript interfaces for descriptors, adapters, behavior hooks |
 | `src/constants.ts` | `SupportedType` and `EdgeType` enums, and `NodeType`, the built-in template ids (node types live in package manifests) |
 | `src/adapters/node/` | Built-in behavior hook implementations (code, vega, autk family, …) |
