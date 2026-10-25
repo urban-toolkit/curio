@@ -34,6 +34,9 @@ from .sandbox import (  # noqa: F401
     load_artifact_as_dict,
     load_raster_cells,
     execute_workflow_programmatically,
+    artifact_meta,
+    snapshot_artifact,
+    artifact_differences,
 )
 from .vega_svg import (  # noqa: F401
     PLAYWRIGHT_EXPECTED_DIR,
