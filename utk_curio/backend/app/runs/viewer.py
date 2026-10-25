@@ -520,12 +520,20 @@ def follow(project_id: str, run_id: str, token: Optional[str]) -> Iterator[tuple
 
 def _tab_result_problem(value) -> Optional[str]:
     """What is wrong with a page's result of a browser step, or None: it is
-    one layer or several, as an Autark node hands its layers on."""
+    one layer or several, as an Autark node hands its layers on, each the
+    layer itself. A layer named by an output's id is refused: the steps below
+    read the result in a kept session, which reads what any kept run made,
+    and the sandbox reads each output such a result names
+    (``worker._expand_outputs_wrapper``)."""
     if not isinstance(value, dict) or value.get("dataType") not in TAB_RESULT_KINDS:
         kinds = " or ".join(sorted(TAB_RESULT_KINDS))
         return f"A page's result of a step must be an object whose dataType is {kinds}."
     if not isinstance(value.get("data"), (dict, list)):
         return "A page's result of a step must carry its data."
+    if value.get("dataType") == "outputs" and isinstance(value["data"], list) and not all(
+        isinstance(layer, dict) and "path" not in layer for layer in value["data"]
+    ):
+        return "A page's result of a step must hold its layers, not name outputs."
     return None
 
 

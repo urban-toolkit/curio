@@ -115,24 +115,66 @@ def input_names(input_ref: dict) -> list[str]:
     return names
 
 
-def resolve_saved_inputs(input_ref: dict, dataflow_id: str | None) -> dict:
-    """``{name: {"path", "dataType"}}`` for each input this run reads that is
-    a saved output of its dataflow: the file its owner's store holds
-    (``projects/services.saved_output_of``). The sandbox reads it in place
-    when its store has no row of that name for the run's session, as after a
-    reopen under a new sign-in.
+#: What the sandbox calls an output a persisted ``outputs`` wrapper can be
+#: stored as (``codec.detect_kind``); empty when nothing says.
+WRAPPER_KINDS = frozenset({"dict", "list", "outputs", ""})
+
+
+def _kept_as_a_wrapper(dataflow_id: str, name: str) -> bool:
+    """Whether the runs of *dataflow_id*'s owner kept *name* as an output the
+    sandbox called a kind a wrapper is stored as."""
+    from utk_curio.backend.app.runs import kept
+
+    entry = kept.owner_entry(dataflow_id, name)
+    if entry is None:
+        return False
+    try:
+        kind = (json.loads(entry.output or "{}") or {}).get("dataType")
+    except (TypeError, ValueError):
+        return True
+    return str(kind or "") in WRAPPER_KINDS
+
+
+def wrapped_input_names(user, run: "NodeRun", input_ref: dict, saved_inputs: dict) -> list[str] | None:
+    """The outputs a run's one input names when that input is a persisted
+    ``outputs`` wrapper, which the sandbox reads for the run as well
+    (``worker._expand_outputs_wrapper``): from its row, or from its saved file
+    once the row is gone, as the run reads it. [] for any other input; None
+    when the sandbox cannot say. Asked of the sandbox only for an input that
+    can be one: one the request calls a wrapper's kind, a saved output, whose
+    kind a save names, or one the owner's runs kept as such a kind."""
+    path = (input_ref or {}).get('path')
+    if user is None or not run.dataflow_id or not isinstance(path, str) or not path:
+        return []
+    declared = str((run.input or {}).get('dataType') or '') if isinstance(run.input, dict) else ''
+    try:
+        if (declared not in WRAPPER_KINDS and path not in saved_inputs
+                and not _kept_as_a_wrapper(run.dataflow_id, path)):
+            return []
+    except Exception:  # noqa: BLE001 - asked of the sandbox instead
+        pass
+    from utk_curio.backend.app.datasets.infrastructure.sandbox_artifacts import wrapped_names
+
+    return wrapped_names(path, (saved_inputs.get(path) or {}).get("path"))
+
+
+def resolve_saved_inputs(names: list[str], dataflow_id: str | None) -> dict:
+    """``{name: {"path", "dataType"}}`` for each of *names*, the outputs a
+    run reads, that is a saved output of its dataflow: the file its owner's
+    store holds (``projects/services.saved_output_of``). The sandbox reads it
+    in place when its store has no row of that name for the run's session,
+    as after a reopen under a new sign-in.
 
     Fail-open like dataset paths: a name that does not resolve reads as the
     store answers it. Nothing else holds a saved output, so a resolution that
     fails, or inputs past ``MAX_SAVED_INPUTS``, are said in the log, where the
     node's "No artifact with id" can be traced to them.
     """
-    if not dataflow_id:
+    if not dataflow_id or not names:
         return {}
     try:
         from utk_curio.backend.app.projects.services import saved_output_of
 
-        names = input_names(input_ref)
         if len(names) > MAX_SAVED_INPUTS:
             print(
                 f"[node_exec] a run names {len(names)} inputs; only the first "
@@ -150,14 +192,15 @@ def resolve_saved_inputs(input_ref: dict, dataflow_id: str | None) -> dict:
         return {}
 
 
-def resolve_kept_inputs(user, input_ref: dict, dataflow_id: str | None, saved_inputs: dict) -> dict:
-    """``{name: {"session"}}`` for each input of a run that is not kept
-    (:func:`_kept_run`) that the runs of its dataflow's owner kept, when the
-    caller is that owner: the kept session that made it, which the caller's
-    own session cannot read. A tab's run below a step only the browser makes
-    is such a run, its input from that step being the tab's own, and it may
-    read what the owner's run on the server kept. A name *saved_inputs*
-    resolves is left to its saved file. Fail-open, as saved inputs are."""
+def resolve_kept_inputs(user, names: list[str], dataflow_id: str | None, saved_inputs: dict) -> dict:
+    """``{name: {"session"}}`` for each of *names*, the outputs a run that is
+    not kept (:func:`_kept_run`) reads, that the runs of its dataflow's owner
+    kept, when the caller is that owner: the kept session that made it, which
+    the caller's own session cannot read. A tab's run below a step only the
+    browser makes is such a run, its input from that step being the tab's
+    own, and it may read what the owner's run on the server kept, an output a
+    wrapper among its inputs names too. A name *saved_inputs* resolves is
+    left to its saved file. Fail-open, as saved inputs are."""
     if user is None or not dataflow_id:
         return {}
     try:
@@ -169,7 +212,7 @@ def resolve_kept_inputs(user, input_ref: dict, dataflow_id: str | None, saved_in
         if project is None or project.user_id != getattr(user, "id", None):
             return {}
         granted = {}
-        for name in input_names(input_ref)[:MAX_SAVED_INPUTS]:
+        for name in names[:MAX_SAVED_INPUTS]:
             entry = None if name in saved_inputs else kept.owner_entry(dataflow_id, name)
             if entry is not None:
                 granted[name] = {"session": entry.session_id}
@@ -328,12 +371,15 @@ class _KeptRun:
     private: bool
 
 
-def _kept_run(user, run: NodeRun, input_ref: dict, saved_inputs: dict) -> _KeptRun | None:
+def _kept_run(user, run: NodeRun, names: list[str], saved_inputs: dict) -> _KeptRun | None:
     """A kept session for this run (``common/kept_sessions.py``) when it is
     the owner's run of a saved dataflow that reads only that dataflow's
-    outputs: those the owner's runs kept, and those it saved. Its output is
-    then kept too (``runs/kept.py``), and the owner reads it through the
-    dataflow's routes, under any sign-in, for as long as it is kept.
+    outputs: those the owner's runs kept, and those it saved. *names* are
+    what it reads: its inputs, and what a wrapper among them names
+    (:func:`wrapped_input_names`), which a node's code may have written to
+    name any output. Its output is then kept too (``runs/kept.py``), and the
+    owner reads it through the dataflow's routes, under any sign-in, for as
+    long as it is kept.
 
     Anything else runs in the caller's own session, as before: a
     collaborator's play, an unsaved canvas, and a run whose input is not the
@@ -360,7 +406,6 @@ def _kept_run(user, run: NodeRun, input_ref: dict, saved_inputs: dict) -> _KeptR
         return None
     if project is None or project.user_id != getattr(user, "id", None):
         return None
-    names = input_names(input_ref)
     if len(names) > MAX_SAVED_INPUTS:
         return None
     private = False
@@ -415,11 +460,19 @@ def _execute(user, session_token, run: NodeRun, *, language: str) -> tuple[dict,
     label = _LABELS[language]
     tag = label.lstrip('/')
     input_ref = parse_input_ref(run.input)
-    saved_inputs = resolve_saved_inputs(input_ref, run.dataflow_id)
-    kept_run = _kept_run(user, run, input_ref, saved_inputs)
+    names = input_names(input_ref)
+    saved_inputs = resolve_saved_inputs(names, run.dataflow_id)
+    # What a wrapper among the inputs names is read for the run too, so it is
+    # resolved and checked as the inputs are. A run whose wrapper the sandbox
+    # cannot describe is not kept.
+    wrapped = wrapped_input_names(user, run, input_ref, saved_inputs)
+    names += [name for name in wrapped or [] if name not in names]
+    if wrapped:
+        saved_inputs = {**resolve_saved_inputs(wrapped, run.dataflow_id), **saved_inputs}
+    kept_run = None if wrapped is None else _kept_run(user, run, names, saved_inputs)
     if kept_run is None:
         saved_inputs = {
-            **saved_inputs, **resolve_kept_inputs(user, input_ref, run.dataflow_id, saved_inputs),
+            **saved_inputs, **resolve_kept_inputs(user, names, run.dataflow_id, saved_inputs),
         }
 
     body = {
