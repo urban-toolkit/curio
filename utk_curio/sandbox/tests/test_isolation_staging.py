@@ -283,6 +283,85 @@ def test_persist_refuses_a_descriptor_naming_a_missing_file(workspace, scratch):
         )
 
 
+def _child_file(scratch, kind, *, mode=0o666):
+    """The descriptor of a file a child left for *kind*, at *mode*: 0o666 is
+    what a child's file is under ``umask 000``."""
+    if kind == "raster":
+        path = scratch / "out.tif"
+        path.write_bytes(b"II*\x00")
+        descriptor = {"kind": "raster", "file": path.name, "path": str(path)}
+    else:
+        path = scratch / "out.parquet"
+        pd.DataFrame({"a": [1]}).to_parquet(path)
+        descriptor = {"kind": "dataframe", "file": path.name, "path": str(path), "meta": {}}
+    os.chmod(path, mode)
+    return descriptor
+
+
+def _stored_files(workspace):
+    return sorted(path for path in (workspace / "data" / "artifacts").rglob("*") if path.is_file())
+
+
+@pytest.mark.parametrize("kind", ["dataframe", "raster", "outputs"])
+def test_a_file_a_child_wrote_becomes_the_sandboxes_own(workspace, scratch, monkeypatch, kind):
+    """A move keeps a file's owner, the execution account every child runs
+    as, and a later run's staged input is a hardlink to the stored file. So
+    with an execution account each file the store takes from a child, a
+    bundle's parts too, becomes the sandbox's own, readable by every child and
+    writable by none."""
+    import stat
+
+    taken = []
+    monkeypatch.setattr(staging.os, "geteuid", lambda: 0)
+    monkeypatch.setattr(staging.os, "fchown",
+                        lambda fd, uid, gid: taken.append((os.fstat(fd).st_ino, uid, gid)))
+    descriptor = _child_file(scratch, "raster" if kind == "raster" else "dataframe")
+    if kind == "outputs":
+        descriptor = {"kind": "outputs", "items": [descriptor]}
+
+    staging.persist_output(descriptor, exec_uid=1000)
+
+    stored = _stored_files(workspace)
+    assert len(stored) == 1
+    assert taken == [(stored[0].stat().st_ino, 0, os.getegid())]
+    assert stat.S_IMODE(stored[0].stat().st_mode) == staging.STORED_FILE_MODE == 0o644
+
+
+def test_without_an_execution_account_a_childs_file_is_left_as_it_was(workspace, scratch, monkeypatch):
+    """Without one, a child runs as the sandbox's own account, or as root, so
+    there is no one to take the file from, and the CI stacks that widen the
+    creation mask keep their files as made."""
+    import stat
+
+    taken = []
+    monkeypatch.setattr(staging.os, "fchown", lambda *args: taken.append(args))
+
+    staging.persist_output(_child_file(scratch, "dataframe"))
+
+    stored = _stored_files(workspace)
+    assert len(stored) == 1
+    assert taken == []
+    assert stat.S_IMODE(stored[0].stat().st_mode) == 0o666
+
+
+def test_a_file_that_cannot_be_taken_fails_the_persist_and_goes(workspace, scratch, monkeypatch):
+    """Rather than stay where a later child could write it: no row names it,
+    and the store does not keep it."""
+    from utk_curio.sandbox.util.db import get_connection
+
+    def refuse(*_args):
+        raise PermissionError(1, "Operation not permitted")
+
+    monkeypatch.setattr(staging.os, "geteuid", lambda: 0)
+    monkeypatch.setattr(staging.os, "fchown", refuse)
+
+    with pytest.raises(staging.StagingError, match="could not take .* from the child"):
+        staging.persist_output(_child_file(scratch, "dataframe"), exec_uid=1000)
+
+    assert _stored_files(workspace) == []
+    assert get_connection().execute("SELECT count(*) FROM artifacts").fetchone() == (0,)
+
+
 def test_the_dataset_copy_must_happen_before_the_move(workspace, scratch):
     """persist_output moves the file, so the order in the supervisor matters."""
     manifest_descriptor = {"kind": "dataframe", "file": "out.parquet"}
