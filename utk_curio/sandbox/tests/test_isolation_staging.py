@@ -362,18 +362,21 @@ def test_a_file_that_cannot_be_taken_fails_the_persist_and_goes(workspace, scrat
     assert get_connection().execute("SELECT count(*) FROM artifacts").fetchone() == (0,)
 
 
-def test_the_dataset_copy_must_happen_before_the_move(workspace, scratch):
-    """persist_output moves the file, so the order in the supervisor matters."""
-    manifest_descriptor = {"kind": "dataframe", "file": "out.parquet"}
+def test_persist_moves_the_childs_file_and_copies_nothing(workspace, scratch):
+    """The store's file is the very file the child wrote, which the Data
+    Catalog then links as a saved output: no copy is made anywhere."""
+    manifest_descriptor = {"kind": "dataframe", "file": "out.parquet", "meta": {}}
     pd.DataFrame({"a": [1]}).to_parquet(scratch / "out.parquet")
     manifest_descriptor["path"] = str(scratch / "out.parquet")
-
-    name = staging.copy_output_dataset(manifest_descriptor)
-    assert name and name.endswith("_output.parquet")
+    written = os.stat(scratch / "out.parquet").st_ino
 
     staging.persist_output(manifest_descriptor)
-    # The scratch file is gone now, so a second copy attempt finds nothing.
-    assert staging.copy_output_dataset(manifest_descriptor) is None
+
+    assert not (scratch / "out.parquet").exists()
+    stored = _stored_files(workspace)
+    assert [path.stat().st_ino for path in stored] == [written]
+    assert [path.name for path in (workspace / "data").iterdir() if path.is_file()
+            and not path.name.startswith("curio_data.duckdb")] == []
 
 
 def test_staging_a_dataset_path_links_it_into_scratch(workspace, scratch):
@@ -536,9 +539,7 @@ def test_persisting_keeps_the_duckdb_write_handle(workspace, scratch):
         "meta": {},
     }
 
-    art_id, _dataset = runner._persist_output(
-        descriptor, node_type="n", session_id=None, save_dataset=False
-    )
+    art_id = runner._persist_output(descriptor, node_type="n", session_id=None)
 
     assert art_id
     assert db._connection is not None, (
@@ -557,15 +558,16 @@ def test_a_failed_persist_leaves_the_connection_usable(workspace, scratch):
         runner._persist_output(
             {"kind": "dataframe", "file": "missing.parquet",
              "path": str(scratch / "missing.parquet")},
-            node_type="n", session_id=None, save_dataset=False,
+            node_type="n", session_id=None,
         )
 
     con = db.get_connection()
     assert con.execute("SELECT 1").fetchone() == (1,)
 
 
-def test_the_dataset_copy_still_happens_before_the_move(workspace, scratch):
-    """Ordering inside _persist_output, which the helper now owns."""
+def test_the_runner_files_the_output_once(workspace, scratch):
+    """``_persist_output`` hands back the artifact, the one file a saved
+    output is, and writes no other: a run with Save on is no different."""
     from utk_curio.sandbox.isolation import runner
 
     pd.DataFrame({"a": [1]}).to_parquet(scratch / "out.parquet")
@@ -575,7 +577,9 @@ def test_the_dataset_copy_still_happens_before_the_move(workspace, scratch):
         "path": str(scratch / "out.parquet"),
         "meta": {},
     }
-    _art_id, dataset_file = runner._persist_output(
-        descriptor, node_type="n", session_id=None, save_dataset=True
-    )
-    assert dataset_file, "the dataset copy was skipped or ran after the move"
+    art_id = runner._persist_output(descriptor, node_type="n", session_id=None)
+
+    pd.testing.assert_frame_equal(load_from_duckdb(art_id), pd.DataFrame({"a": [1]}))
+    assert [path.name for path in _stored_files(workspace)] == [f"{art_id}.parquet"]
+    assert [path.name for path in (workspace / "data").iterdir() if path.is_file()
+            and not path.name.startswith("curio_data.duckdb")] == []

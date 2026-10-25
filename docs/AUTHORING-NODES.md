@@ -344,14 +344,18 @@ is meant to be forked.
 ```
 
 Python and JS nodes store their output in the sandbox and hand you an id. To get
-the actual rows, fetch it:
+the actual rows, read it with `window.curio.fetchData`, the function Curio's
+canvas reads outputs with:
 
 ```ts
-const res = await fetch(
-  `${BACKEND_URL}/get?fileName=${encodeURIComponent(ref)}`,
-  { headers: { Authorization: `Bearer ${token}` } },
-);
+const output = await (window as any).curio.fetchData(ref);
+// { data: {...}, dataType: 'dataframe' }
 ```
+
+It reads the output wherever the canvas does: on the open dataflow's route,
+which also reads the outputs the dataflow saved after a new sign-in. Look it up
+when you read, not when your bundle loads, because your bundle can load before
+Curio publishes it.
 
 A node that only handles the inline shape appears to work when you wire it to
 another custom-UI node, then does nothing at all behind a Data Loading node.
@@ -360,13 +364,10 @@ another custom-UI node, then does nothing at all behind a Data Loading node.
 handles both shapes plus the generic envelopes the sandbox sometimes wraps
 around an artifact; copy it.
 
-Two details in that code that are easy to get wrong:
-
-- **`BACKEND_URL` comes from `window.curio.backendUrl`, not
-  `process.env.BACKEND_URL`.** The env var is inlined at *your* build time, so a
-  bundle built that way points at your machine for everyone who installs it.
-- **The session token is in the `session_token` cookie.** The artifact endpoint
-  requires it.
+When your node calls the backend itself, read its address from
+`window.curio.backendUrl`, not `process.env.BACKEND_URL`. The env var is
+inlined at *your* build time, so a bundle built that way points at your machine
+for everyone who installs it.
 
 A `dataframe` payload is column-oriented. Curio's sandbox serialises with
 `DataFrame.to_dict(orient='list')`, so **each column is an array** and the row

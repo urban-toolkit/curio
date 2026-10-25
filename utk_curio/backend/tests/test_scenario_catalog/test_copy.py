@@ -17,16 +17,22 @@ Run::
 """
 from __future__ import annotations
 
+import io
 import json
 import os
 from pathlib import Path
 
+import pandas as pd
 import pytest
 
 from utk_curio.backend.app.datasets.domain.manifest import load_dataset_manifest
 from utk_curio.backend.app.datasets.infrastructure.storage import dataset_dir
 from utk_curio.backend.app.datasets.install.installer import computed_dataset_id
 from utk_curio.backend.app.projects import storage
+from utk_curio.backend.tests.test_datasets.computed_test_helpers import (
+    store_sandbox_artifact,
+    stored_artifact_file,
+)
 
 BASELINE = {"id": "s1", "name": "Baseline", "color": "#2a9d8f", "nodes": ["a", "chart"]}
 
@@ -72,17 +78,28 @@ def _shared() -> Path:
     return Path(os.environ["CURIO_SHARED_DATA"])
 
 
-def _save_outputs(client, token, project_id, files: dict[str, str], run: int = 1):
+def _save_outputs(client, token, project_id, files: dict[str, str]):
     """Save *files* (``{node: csv text}``) as the project's outputs, as a run
-    and a save do. Each run writes new files, as the sandbox does."""
+    and a save do: each table stored as a node's run stores its output, a new
+    artifact each time, as the sandbox makes one."""
     outputs = []
     for node_id, text in files.items():
-        filename = f"{project_id[:8]}_{node_id}_run{run}.csv"
-        (_shared() / filename).write_text(text, encoding="utf-8")
+        filename = store_sandbox_artifact(pd.read_csv(io.StringIO(text)), node_id=node_id)
         outputs.append({"node_id": node_id, "filename": filename})
     resp = client.put(f"/api/projects/{project_id}", data=json.dumps({"outputs": outputs}), headers=_headers(token))
     assert resp.status_code == 200, resp.get_data(as_text=True)
     return {o["node_id"]: o["filename"] for o in outputs}
+
+
+def _table_text(path: Path) -> str:
+    """The table a saved output's file holds, as the CSV text it was saved from."""
+    return pd.read_parquet(path).to_csv(index=False)
+
+
+def _copies_in_shared_data(name: str) -> list[Path]:
+    """Every file of the shared data directory named for the output *name*:
+    the store's file of its artifact, or a copy put beside the store."""
+    return sorted(path for path in _shared().rglob(f"{name}*") if path.is_file())
 
 
 def _source_and_target(client, token, spec=None):
@@ -111,7 +128,7 @@ def _user_dir_key_of(user) -> str:
 
 def _copied_data(user_key: str, node_id: str, project_id: str) -> str:
     dest = dataset_dir(user_key, f"{computed_dataset_id(node_id, project_id)}@1")
-    return (dest / load_dataset_manifest(dest).data_file).read_text(encoding="utf-8")
+    return _table_text(dest / load_dataset_manifest(dest).data_file)
 
 
 def test_the_plan_names_the_levers_the_context_and_the_outcomes_saved_outputs(client, user_and_token):
@@ -182,20 +199,21 @@ def test_the_copy_is_the_targets_own_and_a_reload_restores_it(client, user_and_t
     assert resp.status_code == 200, resp.get_data(as_text=True)
 
     # The source runs again: its own saved output changes, not the copy.
-    _save_outputs(client, token, source, {"load": "id,height\n1,99\n"}, run=2)
+    _save_outputs(client, token, source, {"load": "id,height\n1,99\n"})
     assert _copied_data(_user_dir_key_of(user), "load", source) == "id,height\n1,99\n"
     assert _copied_data(_user_dir_key_of(user), "loader-1", target) == "id,height\n1,10\n"
 
-    # With the scratch cache emptied, opening the target restores the copy,
-    # read where the target's Data Catalog keeps it, with nothing copied back.
-    (_shared() / saved["load"]).unlink()
+    # With the store's file of the run emptied, opening the target restores
+    # the copy, read where the target's Data Catalog keeps it, with nothing
+    # copied back.
+    stored_artifact_file(saved["load"]).unlink()
     resp = client.get(f"/api/projects/{target}", headers=_headers(token))
     assert resp.status_code == 200, resp.get_data(as_text=True)
     assert {o["node_id"] for o in resp.get_json()["outputs"]} == {"loader-1"}
     held = storage.saved_output_file(_user_dir_key_of(user), target, saved["load"])
     assert held is not None, "opening the target names no file for the copy"
-    assert held.path.read_text(encoding="utf-8") == "id,height\n1,10\n"
-    assert not (_shared() / saved["load"]).exists()
+    assert _table_text(held.path) == "id,height\n1,10\n"
+    assert _copies_in_shared_data(saved["load"]) == []
 
 
 def test_a_drops_copy_links_its_data_rather_than_copying_it(client, user_and_token):
@@ -221,7 +239,7 @@ def test_a_drops_copy_links_its_data_rather_than_copying_it(client, user_and_tok
     )
     assert load_dataset_manifest(original).producer_dataflow_id == source
 
-    _save_outputs(client, token, source, {"load": "id,height\n1,99\n"}, run=2)
+    _save_outputs(client, token, source, {"load": "id,height\n1,99\n"})
 
     assert _copied_data(ukey, "load", source) == "id,height\n1,99\n"
     assert _copied_data(ukey, "loader-1", target) == "id,height\n1,10\n"
@@ -237,7 +255,7 @@ def test_a_drops_outputs_are_read_in_place_before_any_save(client, user_and_toke
     saved = _save_outputs(client, token, source, {"load": "id,height\n1,10\n", "a": "id,sunlight\n1,0.5\n"})
     # Only the saved outputs in the Data Catalog are left to copy.
     for name in saved.values():
-        (_shared() / name).unlink()
+        stored_artifact_file(name).unlink()
 
     resp = _copy(client, token, source, target, [
         {"source": "load", "node": "loader-1"},
@@ -253,8 +271,10 @@ def test_a_drops_outputs_are_read_in_place_before_any_save(client, user_and_toke
         assert held is not None, f"the target names no file for {node}'s copy"
         copy = dataset_dir(ukey, f"{computed_dataset_id(node, target)}@1")
         assert held.path.resolve() == (copy / load_dataset_manifest(copy).data_file).resolve()
-        assert held.path.read_text(encoding="utf-8") == text
-        assert not (_shared() / saved[source_node]).exists(), "the drop copied an output into the shared data directory"
+        assert _table_text(held.path) == text
+        assert _copies_in_shared_data(saved[source_node]) == [], (
+            "the drop copied an output into the shared data directory"
+        )
 
 
 def test_a_context_without_a_saved_output_is_listed_to_run_first(client, user_and_token):
@@ -356,8 +376,8 @@ def test_with_no_project_page_a_missing_output_stays_a_problem(client, user_and_
 
 
 class _Sandbox:
-    """Answers a run's ``/exec`` as the sandbox does, with an output file in
-    the shared data folder: ``id,height`` rows named after the node."""
+    """Answers a run's ``/exec`` as the sandbox does, with its output stored
+    as an artifact of the node in the store: ``id,height`` rows."""
 
     def __init__(self):
         self.ran: list[str] = []
@@ -366,8 +386,7 @@ class _Sandbox:
         body = json.loads(kwargs["data"])
         node_id = body["code"].split("# node ", 1)[1].split("\n", 1)[0]
         self.ran.append(node_id)
-        filename = f"run_{node_id}.csv"
-        (_shared() / filename).write_text("id,height\n1,10\n", encoding="utf-8")
+        filename = store_sandbox_artifact(pd.DataFrame({"id": [1], "height": [10]}), node_id=node_id)
 
         class Reply:
             status_code = 200

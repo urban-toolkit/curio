@@ -227,10 +227,10 @@ def enable_save_output(page, node_id: str) -> None:
 
     The database-icon switch beside the play button, and it is **off by
     default** (``CURIO_DEFAULT_SAVE_NODE_OUTPUT``, documented in
-    ``docs/DATA-CATALOG.md``). With it off a run writes a parquet under
-    ``.curio/data/`` and stops there: ``routes.py`` gates the auto-install on
-    ``save_output_dataset``, so no ``computed.<dataflow>.<node>@1`` is ever
-    installed into the account store.
+    ``docs/DATA-CATALOG.md``). With it off a run's output stays in the store
+    under ``.curio/data/artifacts/`` and goes no further: ``node_exec.py`` gates
+    the auto-install on ``save_output_dataset``, so no
+    ``computed.<dataflow>.<node>@1`` is ever installed into the account store.
 
     A test that runs a producing node and then looks for its dataset in a
     catalog therefore has to flip this first. Three catalog tests did not, and
