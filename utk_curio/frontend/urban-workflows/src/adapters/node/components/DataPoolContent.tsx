@@ -68,6 +68,8 @@ interface DataPoolContentProps {
   upstreamStopped?: string | null;
   /** Are the rows of the input that just arrived still being read? */
   reading?: boolean;
+  /** A dashboard's tile: an input not in yet is on its way, with no node to run. */
+  onDashboard?: boolean;
   /** How the selects of one chart combine (a ResolutionType). */
   insideChartMode?: string;
   /** How the latest selections of the linked charts combine (a ResolutionType). */
@@ -167,7 +169,7 @@ const ContentComponent = ({
 
 export default function DataPoolContent({
   activeTab, onSelectTab, tabData, tableData, data = { nodeId: '', input: '' }, connected = false, upstreamErrored = false,
-  upstreamRunning = false, upstreamStopped = null, reading = false,
+  upstreamRunning = false, upstreamStopped = null, reading = false, onDashboard = false,
   insideChartMode = ResolutionType.OVERWRITE, betweenChartsMode = ResolutionType.OVERWRITE,
   onInsideChartModeChange, onBetweenChartsModeChange,
 }: DataPoolContentProps) {
@@ -271,6 +273,7 @@ export default function DataPoolContent({
               upstreamStopped,
               hasInput: data?.input != null && data.input !== '',
               reading,
+              onDashboard,
               // Asked of the PAYLOAD, not of tabData (#347). The premise this
               // used to state - that a zero-row dataframe still yields a tab
               // and so never reaches here - is not true: processDataAsync
