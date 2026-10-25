@@ -66,15 +66,17 @@ def test_resolve_item_path_installed_computed_uses_absolute_path(app):
     still locate the file (regression for the 404-on-export bug).
 
     The store path lives under an allowed read root in production (the user's
-    dataset store); the shared-data dir is used here as a stand-in root so the
-    containment check (#143) still passes.
+    dataset store); the store's ``artifacts/`` in the shared-data dir is used
+    here as a stand-in root so the containment check (#143) still passes. The
+    top of the shared-data dir is not one: it holds the store's database.
     """
     import os
     from pathlib import Path
 
     from utk_curio.backend.app.datasets.service import DatasetCatalogService
 
-    data_file = Path(os.environ["CURIO_SHARED_DATA"]) / "computed_output.parquet"
+    data_file = Path(os.environ["CURIO_SHARED_DATA"]) / "artifacts" / "computed_output.parquet"
+    data_file.parent.mkdir(parents=True, exist_ok=True)
     data_file.write_bytes(b"PAR1")
 
     svc = DatasetCatalogService()

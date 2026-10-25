@@ -9,6 +9,8 @@ malicious & malformed input.
 (f) arbitrary file read via an absolute ``liveOutputs`` filename that bypasses
     ``resolve_shared_output_path`` and reaches the ``_resolve_item_path``
     fallback / preview path directly (#143 follow-up).
+(g) the store's own database read through an output named after it: a live
+    output, a save, a manual install or a publish.
 """
 from __future__ import annotations
 
@@ -195,7 +197,9 @@ def test_resolve_item_path_rejects_out_of_root_absolute_path(app, user_and_token
 
 
 def test_preview_does_not_leak_file_from_live_outputs(client, user_and_token):
-    _, token = user_and_token
+    from utk_curio.backend.app.datasets.service import DatasetCatalogService
+
+    user, token = user_and_token
     secret = _secret_outside_roots("secret_preview.txt")
 
     resp = client.get(
@@ -203,11 +207,18 @@ def test_preview_does_not_leak_file_from_live_outputs(client, user_and_token):
         f"?liveOutputs={_live_outputs_param('atk', secret.as_posix())}",
         headers=auth_headers(token),
     )
-    assert resp.status_code == 200, resp.get_data(as_text=True)
-    body = resp.get_json()
+    # A path is no output's name: the request's live output is dropped.
+    assert resp.status_code == 404, resp.get_data(as_text=True)
+    assert _SECRET not in resp.get_data(as_text=True)
+
+    # Handed to the service past that check, the path is still not read.
+    body = DatasetCatalogService(user).preview(
+        "computed.atk",
+        live_outputs=[{"node_id": "atk", "filename": secret.as_posix(), "data_type": "csv"}],
+    )
     assert body.get("rows") == []
     assert body.get("unsupported") is True
-    assert _SECRET not in resp.get_data(as_text=True)
+    assert _SECRET not in json.dumps(body, default=str)
 
 
 def test_download_does_not_stream_file_from_live_outputs(client, user_and_token):
@@ -258,7 +269,9 @@ def test_listing_does_not_disclose_out_of_root_path_from_live_outputs(client, us
 
 def test_detail_does_not_disclose_out_of_root_path_from_live_outputs(client, user_and_token):
     """Same protection on the single-item ``GET /api/datasets/<id>`` route."""
-    _, token = user_and_token
+    from utk_curio.backend.app.datasets.service import DatasetCatalogService
+
+    user, token = user_and_token
     secret = _secret_outside_roots("secret_detail.txt")
     abs_path = secret.as_posix()
 
@@ -267,8 +280,135 @@ def test_detail_does_not_disclose_out_of_root_path_from_live_outputs(client, use
         f"?liveOutputs={_live_outputs_param('atk4', abs_path)}",
         headers=auth_headers(token),
     )
-    assert resp.status_code == 200, resp.get_data(as_text=True)
+    # A path is no output's name: the request's live output is dropped.
+    assert resp.status_code == 404, resp.get_data(as_text=True)
     body_text = resp.get_data(as_text=True)
     assert abs_path not in body_text
     assert _SECRET not in body_text
-    assert resp.get_json().get("path") is None
+
+    # Handed to the service past that check, the item still carries no path.
+    item = DatasetCatalogService(user).get_dataset(
+        "computed.atk4",
+        live_outputs=[{"node_id": "atk4", "filename": abs_path, "data_type": "csv"}],
+    )
+    assert item.get("path") is None
+    item_text = json.dumps(item, default=str)
+    assert abs_path not in item_text
+    assert _SECRET not in item_text
+
+
+# ── (g) the store's database through an output named after it ───────────────
+#
+# The shared data directory also holds the sandbox's store, whose rows name
+# the session that made each one. No node run names an output after it, so
+# neither a live output, nor a save, nor a manual install, nor a publish may
+# reach it. The stand-ins below hold a marker instead of a real database.
+
+_STORE_SECRET = "SESSION-TOKEN-KEPT-IN-THE-STORE"
+_STORE_NAMES = ("curio_data.duckdb", "curio_data.duckdb.wal")
+
+
+def _plant_store_files() -> list[Path]:
+    """Stand-ins for the store's database and its write-ahead log, in this
+    test's own shared data directory, plus a file no node run made."""
+    shared = Path(os.environ["CURIO_SHARED_DATA"])
+    files = [shared / name for name in (*_STORE_NAMES, "notes.txt")]
+    for file in files:
+        file.write_text(_STORE_SECRET, encoding="utf-8")
+    return files
+
+
+def _copies_of_the_secret(planted: list[Path]) -> list[str]:
+    """Every file of this test's workspace, other than the stand-ins, that
+    holds the marker: a copy the request made."""
+    workspace = Path(os.environ["CURIO_LAUNCH_CWD"])
+    planted_set = {p.resolve() for p in planted}
+    return [
+        str(path) for path in workspace.rglob("*")
+        if path.is_file() and path.resolve() not in planted_set
+        and _STORE_SECRET.encode() in path.read_bytes()
+    ]
+
+
+def test_resolve_shared_output_path_never_answers_the_store_database(app):
+    from utk_curio.backend.app.datasets.infrastructure.output_paths import resolve_shared_output_path
+
+    _plant_store_files()
+    for name in _STORE_NAMES:
+        assert resolve_shared_output_path(name) is None, name
+
+
+@pytest.mark.parametrize("name", [*_STORE_NAMES, "notes.txt", "absolute path to the store"])
+def test_a_live_output_named_after_any_other_file_is_not_served(client, user_and_token, name):
+    _, token = user_and_token
+    planted = _plant_store_files()
+    filename = planted[0].as_posix() if name == "absolute path to the store" else name
+    live = _live_outputs_param("crafted", filename)
+
+    listing = client.get(f"/api/datasets/catalog?includeHub=true&liveOutputs={live}",
+                         headers=auth_headers(token))
+    assert listing.status_code == 200, listing.get_data(as_text=True)
+    assert "computed.crafted" not in [item["id"] for item in listing.get_json()["items"]]
+    assert filename not in listing.get_data(as_text=True)
+    for route in ("preview", "download"):
+        resp = client.get(f"/api/datasets/computed.crafted/{route}?liveOutputs={live}",
+                          headers=auth_headers(token))
+        assert resp.status_code == 404, (route, resp.status_code, resp.get_data(as_text=True)[:200])
+        assert _STORE_SECRET not in resp.get_data(as_text=True), route
+
+
+@pytest.mark.parametrize("name", _STORE_NAMES)
+def test_a_saved_output_named_after_the_store_database_is_not_installed(client, user_and_token, name):
+    from utk_curio.backend.app.datasets.install.installer import computed_dataset_id
+    from utk_curio.backend.tests.test_datasets.computed_test_helpers import save_project_with_output
+
+    _, token = user_and_token
+    planted = _plant_store_files()
+    project_id = create_project(client, token, name="Crafted save")
+    save_project_with_output(client, token, project_id, name, node_id="crafted")
+
+    assert _copies_of_the_secret(planted) == []
+    resp = client.get(
+        f"/api/datasets/{computed_dataset_id('crafted', project_id)}/download?dataflowId={project_id}",
+        headers=auth_headers(token),
+    )
+    assert resp.status_code == 404, resp.get_data(as_text=True)[:200]
+    assert _STORE_SECRET not in resp.get_data(as_text=True)
+
+
+@pytest.mark.parametrize("name", _STORE_NAMES)
+def test_a_computed_item_named_after_the_store_database_is_not_installed(client, user_and_token, name):
+    _, token = user_and_token
+    planted = _plant_store_files()
+    project_id = create_project(client, token, name="Crafted install")
+
+    resp = client.post(
+        f"/api/dataflows/{project_id}/datasets/install",
+        data=json.dumps({"datasetId": "computed.crafted", "sourceItem": {
+            "id": "computed.crafted", "origin": "computed",
+            "uri": f"curio://outputs/{name}", "producerNodeId": "crafted",
+        }}),
+        headers=auth_headers(token),
+    )
+    assert resp.status_code == 404, resp.get_data(as_text=True)[:200]
+    assert _copies_of_the_secret(planted) == []
+
+
+@pytest.mark.parametrize("name", _STORE_NAMES)
+def test_a_live_output_named_after_the_store_database_is_not_published(
+    client, user_and_token, tmp_path, monkeypatch, name,
+):
+    monkeypatch.setenv("CURIO_CATALOG_ROOT", str(tmp_path / "catalog"))
+    _, token = user_and_token
+    planted = _plant_store_files()
+
+    resp = client.post(
+        "/api/datasets/publish",
+        data=json.dumps({
+            "datasetId": "computed.crafted",
+            "liveOutputs": [{"node_id": "crafted", "filename": name}],
+        }),
+        headers=auth_headers(token),
+    )
+    assert resp.status_code == 404, resp.get_data(as_text=True)[:200]
+    assert _copies_of_the_secret(planted) == []

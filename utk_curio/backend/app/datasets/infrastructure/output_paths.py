@@ -87,6 +87,13 @@ def resolve_shared_output_path(
     if "/" in name or "\\" in name or "\x00" in name or name in (".", ".."):
         return None
 
+    # The store's database shares this directory, and its rows name every
+    # session that ran a node: no output is ever called that.
+    from utk_curio.sandbox.util.db import is_store_file
+
+    if is_store_file(name):
+        return None
+
     shared = _shared_data_dir()
 
     direct = shared / name

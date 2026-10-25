@@ -2497,6 +2497,8 @@ A viewer of a dashboard changes a pinned control and the dataflow runs again on 
 
 Defined in `backend/app/datasets/routes.py`; all require authentication. See [DATA-CATALOG.md](DATA-CATALOG.md) for the user-facing model.
 
+A request's `liveOutputs` (base64 JSON on a GET, a list in the publish body) keeps only the entries named as a node run names its output, a store id or `<id>_output.parquet` (`domain/output_names.py`); any other name, a path or another file of the shared data directory, is dropped (`schemas/requests.py`). `resolve_shared_output_path` never answers the store's own database or the files DuckDB keeps beside it (`sandbox/util/db.py::is_store_file`), and of the shared data directory only `artifacts/` is an allowed read root (`application/paths.py::_allowed_read_roots`).
+
 | Endpoint | Method | Purpose |
 |---|---|---|
 | `/api/datasets/catalog` | GET | List catalog items (`q`, `format`, `origin`, `sort`, `includeHub`, `groupOsm`, `dataflowId`, `liveOutputs`) |

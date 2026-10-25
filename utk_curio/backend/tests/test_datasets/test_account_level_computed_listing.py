@@ -176,11 +176,16 @@ def test_stale_legacy_dir_does_not_clobber_namespaced_row(app, client, user_and_
 def test_needs_reinstall_flagged_on_id_match_when_output_changed(app, client, user_and_token):
     """#168 (latent fix): a re-executed node's newer live output flags
     needsReinstall on the id-matched installed dataset."""
+    import pandas as pd
+
     user, token = user_and_token
     df = create_project(client, token, name="Reinstall flow")
     shared = Path(os.environ["CURIO_SHARED_DATA"])
-    (shared / "ri_out.csv").write_text("a\n1\n", encoding="utf-8")
-    save_project_with_output(client, token, df, "ri_out.csv", node_id="ri-node")
+    # Named as a node run names its outputs: a live output of any other name
+    # is dropped from the request.
+    first, rerun = "1790000000001_0000aaaa_output.parquet", "1790000000002_0000bbbb_output.parquet"
+    pd.DataFrame({"a": [1]}).to_parquet(shared / first)
+    save_project_with_output(client, token, df, first, node_id="ri-node")
 
     dataset_id = computed_dataset_id("ri-node", df)
     _write_refs(app, user, df, [{
@@ -190,12 +195,12 @@ def test_needs_reinstall_flagged_on_id_match_when_output_changed(app, client, us
 
     # Same filename → no reinstall prompt.
     items = _catalog(client, token, dataflow_id=df,
-                     live_outputs=[{"node_id": "ri-node", "filename": "ri_out.csv"}])
+                     live_outputs=[{"node_id": "ri-node", "filename": first}])
     item = next(i for i in items if i["id"] == dataset_id)
     assert item.get("needsReinstall") is not True
 
     # The node re-ran and produced a new artifact → reinstall prompt.
     items = _catalog(client, token, dataflow_id=df,
-                     live_outputs=[{"node_id": "ri-node", "filename": "ri_out2.csv"}])
+                     live_outputs=[{"node_id": "ri-node", "filename": rerun}])
     item = next(i for i in items if i["id"] == dataset_id)
     assert item.get("needsReinstall") is True
