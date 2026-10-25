@@ -568,18 +568,18 @@ def artifact_meta():
 MAX_SESSIONS_PER_CALL = 500
 
 
-def _dashboard_sessions_from_body():
-    """The ``sessionIds`` a call names: each a session a dashboard viewer's
-    run made (``common/dashboard_sessions.py``). Any other id is refused, so
-    nothing here can reach a sign-in's artifacts."""
-    from utk_curio.common.dashboard_sessions import is_dashboard_session
+def _kept_sessions_from_body():
+    """The ``sessionIds`` a call names: each a session a kept run made
+    (``common/kept_sessions.py``). Any other id is refused, so nothing here
+    can reach a sign-in's artifacts."""
+    from utk_curio.common.kept_sessions import is_kept_session
 
     body = request.get_json(silent=True) or {}
     session_ids = body.get('sessionIds')
     if not isinstance(session_ids, list) or len(session_ids) > MAX_SESSIONS_PER_CALL:
         abort(400, f"sessionIds must list at most {MAX_SESSIONS_PER_CALL} sessions")
-    if not all(is_dashboard_session(session_id) for session_id in session_ids):
-        abort(400, "only a dashboard viewer's sessions can be named")
+    if not all(is_kept_session(session_id) for session_id in session_ids):
+        abort(400, "only a kept run's sessions can be named")
     return session_ids
 
 
@@ -588,7 +588,7 @@ def _dashboard_sessions_from_body():
 @holds_duckdb
 def artifact_sessions_describe():
     """The artifacts of each named session, by id, and the bytes they hold."""
-    return jsonify({'sessions': describe_session_artifacts(_dashboard_sessions_from_body())})
+    return jsonify({'sessions': describe_session_artifacts(_kept_sessions_from_body())})
 
 
 @app.route('/artifact-sessions/forget', methods=['POST'])
@@ -596,7 +596,7 @@ def artifact_sessions_describe():
 @holds_duckdb
 def artifact_sessions_forget():
     """Delete the artifacts of the named sessions, their rows and files."""
-    return jsonify({'forgotten': forget_session_artifacts(_dashboard_sessions_from_body())})
+    return jsonify({'forgotten': forget_session_artifacts(_kept_sessions_from_body())})
 
 
 @app.route('/artifact-sessions/store', methods=['POST'])
@@ -604,17 +604,17 @@ def artifact_sessions_forget():
 @holds_duckdb
 def artifact_sessions_store():
     """Keep ``value``, what a viewer's page made of a step only a browser
-    runs, as an artifact of the dashboard session ``sessionId``: the one
-    store the value is written to as it came, never run as code. Answers the
+    runs, as an artifact of the kept session ``sessionId``: the one store
+    the value is written to as it came, never run as code. Answers the
     ``output`` a step's run answers, ``{path, dataType}``."""
-    from utk_curio.common.dashboard_sessions import is_dashboard_session
+    from utk_curio.common.kept_sessions import is_kept_session
     from utk_curio.sandbox.util.codec import detect_kind
     from utk_curio.sandbox.util.parsers import save_to_duckdb
 
     body = request.get_json(silent=True) or {}
     session_id = body.get('sessionId')
-    if not is_dashboard_session(session_id):
-        abort(400, "only a dashboard viewer's sessions can be named")
+    if not is_kept_session(session_id):
+        abort(400, "only a kept run's sessions can be named")
     value = body.get('value')
     if not isinstance(value, dict):
         abort(400, "value must be an object")

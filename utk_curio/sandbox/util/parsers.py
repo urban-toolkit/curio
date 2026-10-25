@@ -15,7 +15,7 @@ from pathlib import Path
 #DuckDB imports:
 import io
 import duckdb
-from utk_curio.common.dashboard_sessions import is_dashboard_session
+from utk_curio.common.kept_sessions import is_kept_session
 from utk_curio.sandbox.util.db import get_connection, get_read_connection, init_db
 # Value <-> bytes conversion lives in codec.py, which deliberately has no access
 # to the artifact store. Re-exported here so existing imports of these names
@@ -565,15 +565,16 @@ def session_may_read(stored_session, session_id) -> bool:
     """Whether *session_id* may read an artifact row tagged *stored_session*:
     its own, or a row from before rows carried a session.
 
-    A dashboard viewer's step (``common/dashboard_sessions.py``) also reads
-    what the dashboard's other steps made. The backend runs each step in a
-    session of its own and hands it only outputs of that dashboard: its run's
-    earlier steps and the outputs kept from earlier runs. No session of another
-    shape reads theirs, and they read no other session's.
+    A kept run's step (``common/kept_sessions.py``), a dashboard viewer's
+    among them, also reads what that dataflow's other kept steps made. The
+    backend runs each step in a session of its own and hands it only outputs
+    of that dataflow: its run's earlier steps and the outputs kept from
+    earlier runs. No session of another shape reads theirs, and they read no
+    other session's.
     """
     if session_id is None or stored_session is None or stored_session == session_id:
         return True
-    return is_dashboard_session(session_id) and is_dashboard_session(stored_session)
+    return is_kept_session(session_id) and is_kept_session(stored_session)
 
 
 def load_from_duckdb(art_id, session_id=None):
