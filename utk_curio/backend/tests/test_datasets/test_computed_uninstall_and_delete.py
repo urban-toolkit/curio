@@ -3,8 +3,9 @@ Delete permanently removes it (cascading unpublish + ref removal)."""
 from __future__ import annotations
 
 import json
-import os
 from pathlib import Path
+
+import pandas as pd
 
 from utk_curio.backend.app.common.user_storage import users_base
 from utk_curio.backend.app.datasets.install.installer import computed_dataset_id
@@ -12,6 +13,7 @@ from utk_curio.backend.tests.test_datasets.computed_test_helpers import (
     auth_headers,
     create_project,
     save_project_with_output,
+    store_sandbox_artifact,
 )
 
 
@@ -40,9 +42,8 @@ def test_uninstall_computed_keeps_account_dir(client, user_and_token):
     _, token = user_and_token
     project_id = create_project(client, token, name="Uninstall keeps asset")
     node_id = "keep-node"
-    shared = Path(os.environ["CURIO_SHARED_DATA"])
-    (shared / "keep.csv").write_text("a\n1\n", encoding="utf-8")
-    save_project_with_output(client, token, project_id, "keep.csv", node_id=node_id)
+    keep = store_sandbox_artifact(pd.DataFrame({"a": [1]}))
+    save_project_with_output(client, token, project_id, keep, node_id=node_id)
 
     dataset_id = computed_dataset_id(node_id, project_id)
     account_dir = _account_dir(node_id, project_id)
@@ -67,9 +68,8 @@ def test_delete_computed_removes_account_dir_and_refs(client, user_and_token):
     _, token = user_and_token
     project_id = create_project(client, token, name="Delete asset")
     node_id = "del-node"
-    shared = Path(os.environ["CURIO_SHARED_DATA"])
-    (shared / "del.csv").write_text("a\n1\n", encoding="utf-8")
-    save_project_with_output(client, token, project_id, "del.csv", node_id=node_id)
+    deleted = store_sandbox_artifact(pd.DataFrame({"a": [1]}))
+    save_project_with_output(client, token, project_id, deleted, node_id=node_id)
 
     dataset_id = computed_dataset_id(node_id, project_id)
     account_dir = _account_dir(node_id, project_id)
@@ -113,9 +113,8 @@ def test_delete_reports_leftover_dirs(client, user_and_token, monkeypatch):
     _, token = user_and_token
     project_id = create_project(client, token, name="Locked delete")
     node_id = "locked-node"
-    shared = Path(os.environ["CURIO_SHARED_DATA"])
-    (shared / "locked.csv").write_text("a\n1\n", encoding="utf-8")
-    save_project_with_output(client, token, project_id, "locked.csv", node_id=node_id)
+    locked = store_sandbox_artifact(pd.DataFrame({"a": [1]}))
+    save_project_with_output(client, token, project_id, locked, node_id=node_id)
 
     dataset_id = computed_dataset_id(node_id, project_id)
     account_dir = _account_dir(node_id, project_id)

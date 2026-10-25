@@ -14,12 +14,10 @@ well. The sandbox is a fake that answers with a real JSON artifact.
 from __future__ import annotations
 
 import json
-import os
-import time
-import uuid
-from pathlib import Path
 
 import pytest
+
+from utk_curio.backend.tests.test_datasets.computed_test_helpers import store_sandbox_artifact
 
 #: (node type as a palette drop saves it, renamed header, the name its header shows)
 NODES = [
@@ -36,10 +34,8 @@ def _auth(token):
 
 
 def _artifact(payload) -> str:
-    """A JSON artifact in shared storage, named as the sandbox names one."""
-    name = f"{int(time.time() * 1000)}_{uuid.uuid4().hex[:8]}.json"
-    (Path(os.environ["CURIO_SHARED_DATA"]) / name).write_text(json.dumps(payload), encoding="utf-8")
-    return name
+    """A JSON artifact in the store, as a node run stores one: its id."""
+    return store_sandbox_artifact(payload)
 
 
 @pytest.fixture()

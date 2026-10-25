@@ -8,14 +8,15 @@ from __future__ import annotations
 
 import base64
 import json
-import os
-from pathlib import Path
+
+import pandas as pd
 
 from utk_curio.backend.app.datasets.install.installer import computed_dataset_id
 from utk_curio.backend.tests.test_datasets.computed_test_helpers import (
     auth_headers,
     create_project,
     save_project_with_output,
+    store_sandbox_artifact,
     write_legacy_computed_dir,
 )
 
@@ -47,9 +48,8 @@ def _write_refs(app, user, project_id, refs):
 def test_saved_computed_dataset_is_browsable_account_level(client, user_and_token):
     _, token = user_and_token
     project_id = create_project(client, token, name="Producer flow")
-    shared = Path(os.environ["CURIO_SHARED_DATA"])
-    (shared / "acct_out.csv").write_text("city,count\nChicago,10\n", encoding="utf-8")
-    save_project_with_output(client, token, project_id, "acct_out.csv", node_id="prod-node")
+    acct_out = store_sandbox_artifact(pd.DataFrame({"city": ["Chicago"], "count": [10]}))
+    save_project_with_output(client, token, project_id, acct_out, node_id="prod-node")
 
     expected_id = computed_dataset_id("prod-node", project_id)
 
@@ -69,9 +69,8 @@ def test_computed_dataset_shows_available_in_another_dataflow(client, user_and_t
     _, token = user_and_token
     producer = create_project(client, token, name="Producer")
     other = create_project(client, token, name="Other flow")
-    shared = Path(os.environ["CURIO_SHARED_DATA"])
-    (shared / "cross_out.csv").write_text("a,b\n1,2\n", encoding="utf-8")
-    save_project_with_output(client, token, producer, "cross_out.csv", node_id="x-node")
+    cross_out = store_sandbox_artifact(pd.DataFrame({"a": [1], "b": [2]}))
+    save_project_with_output(client, token, producer, cross_out, node_id="x-node")
 
     expected_id = computed_dataset_id("x-node", producer)
 
@@ -95,11 +94,10 @@ def test_reused_node_id_does_not_cross_mark_installed(app, client, user_and_toke
     user, token = user_and_token
     a = create_project(client, token, name="Original")
     b = create_project(client, token, name="Original (copy)")
-    shared = Path(os.environ["CURIO_SHARED_DATA"])
-    (shared / "dup_out_a.csv").write_text("a,b\n1,2\n", encoding="utf-8")
-    save_project_with_output(client, token, a, "dup_out_a.csv", node_id="shared-n")
-    (shared / "dup_out_b.csv").write_text("a,b\n3,4\n", encoding="utf-8")
-    save_project_with_output(client, token, b, "dup_out_b.csv", node_id="shared-n")
+    dup_out_a = store_sandbox_artifact(pd.DataFrame({"a": [1], "b": [2]}))
+    save_project_with_output(client, token, a, dup_out_a, node_id="shared-n")
+    dup_out_b = store_sandbox_artifact(pd.DataFrame({"a": [3], "b": [4]}))
+    save_project_with_output(client, token, b, dup_out_b, node_id="shared-n")
 
     id_a = computed_dataset_id("shared-n", a)
     id_b = computed_dataset_id("shared-n", b)
@@ -126,9 +124,8 @@ def test_unmigrated_legacy_ref_marks_open_dataflows_dataset_installed(app, clien
     user, token = user_and_token
     df = create_project(client, token, name="Legacy ref flow")
     other = create_project(client, token, name="Bystander flow")
-    shared = Path(os.environ["CURIO_SHARED_DATA"])
-    (shared / "legacy_out.csv").write_text("a\n1\n", encoding="utf-8")
-    save_project_with_output(client, token, df, "legacy_out.csv", node_id="leg-node")
+    legacy_out = store_sandbox_artifact(pd.DataFrame({"a": [1]}))
+    save_project_with_output(client, token, df, legacy_out, node_id="leg-node")
 
     namespaced = computed_dataset_id("leg-node", df)
     legacy_ref = {
@@ -156,9 +153,8 @@ def test_stale_legacy_dir_does_not_clobber_namespaced_row(app, client, user_and_
     probe did exactly that, cross-wiring the row to the stale copy)."""
     user, token = user_and_token
     df = create_project(client, token, name="Stale legacy flow")
-    shared = Path(os.environ["CURIO_SHARED_DATA"])
-    (shared / "stale_out.csv").write_text("a\n1\n", encoding="utf-8")
-    save_project_with_output(client, token, df, "stale_out.csv", node_id="stale-node")
+    stale_out = store_sandbox_artifact(pd.DataFrame({"a": [1]}))
+    save_project_with_output(client, token, df, stale_out, node_id="stale-node")
 
     from utk_curio.backend.app.projects.services import _user_dir_key
     with app.app_context():
@@ -176,15 +172,11 @@ def test_stale_legacy_dir_does_not_clobber_namespaced_row(app, client, user_and_
 def test_needs_reinstall_flagged_on_id_match_when_output_changed(app, client, user_and_token):
     """#168 (latent fix): a re-executed node's newer live output flags
     needsReinstall on the id-matched installed dataset."""
-    import pandas as pd
-
     user, token = user_and_token
     df = create_project(client, token, name="Reinstall flow")
-    shared = Path(os.environ["CURIO_SHARED_DATA"])
-    # Named as a node run names its outputs: a live output of any other name
-    # is dropped from the request.
-    first, rerun = "1790000000001_0000aaaa_output.parquet", "1790000000002_0000bbbb_output.parquet"
-    pd.DataFrame({"a": [1]}).to_parquet(shared / first)
+    # Named as a node run names its outputs, by the store's artifact id: a live
+    # output of any other name is dropped from the request.
+    first = store_sandbox_artifact(pd.DataFrame({"a": [1]}))
     save_project_with_output(client, token, df, first, node_id="ri-node")
 
     dataset_id = computed_dataset_id("ri-node", df)
@@ -200,6 +192,7 @@ def test_needs_reinstall_flagged_on_id_match_when_output_changed(app, client, us
     assert item.get("needsReinstall") is not True
 
     # The node re-ran and produced a new artifact → reinstall prompt.
+    rerun = store_sandbox_artifact(pd.DataFrame({"a": [2]}))
     items = _catalog(client, token, dataflow_id=df,
                      live_outputs=[{"node_id": "ri-node", "filename": rerun}])
     item = next(i for i in items if i["id"] == dataset_id)

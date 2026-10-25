@@ -8,9 +8,7 @@ through ``packages.routes.common``, so one patch reaches every gate.
 """
 from __future__ import annotations
 
-import os
-from pathlib import Path
-
+import pandas as pd
 import pytest
 
 from utk_curio.backend.app.datasets.infrastructure import storage as ds_storage
@@ -20,6 +18,7 @@ from utk_curio.backend.tests.test_datasets.computed_test_helpers import (
     auth_headers,
     create_project,
     save_project_with_output,
+    store_sandbox_artifact,
 )
 from utk_curio.backend.tests.test_datasets.test_guest_catalog_writes import (
     _make_user,
@@ -75,9 +74,8 @@ def test_deleting_a_dataset_still_works_with_publishing_off(client, user_and_tok
     flag does not strand a user's own dataset."""
     _, token = user_and_token
     project_id = create_project(client, token, name="Delete with publishing off")
-    shared = Path(os.environ["CURIO_SHARED_DATA"])
-    (shared / "off.csv").write_text("a\n1\n", encoding="utf-8")
-    save_project_with_output(client, token, project_id, "off.csv", node_id="off-node")
+    off = store_sandbox_artifact(pd.DataFrame({"a": [1]}))
+    save_project_with_output(client, token, project_id, off, node_id="off-node")
 
     resp = client.delete(
         f"/api/datasets/{computed_dataset_id('off-node', project_id)}",

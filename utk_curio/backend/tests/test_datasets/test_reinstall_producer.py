@@ -27,6 +27,7 @@ from utk_curio.backend.tests.test_datasets.computed_test_helpers import (
     auth_headers,
     create_project,
     save_project_with_output,
+    store_sandbox_artifact,
 )
 
 
@@ -46,13 +47,14 @@ def test_producer_segment_recovery_uses_node_segment():
 def test_reinstall_preserves_producer_node_id(client, user_and_token):
     """Reinstalling with a producer-less ``sourceItem`` recovers producerNodeId
     from the computed id and restores the computed origin."""
+    import pandas as pd
+
     _, token = user_and_token
     project_id = create_project(client, token, name="Reinstall producer")
-    shared = Path(os.environ["CURIO_SHARED_DATA"])
-    (shared / "result.csv").write_text("id,value\n1,42\n", encoding="utf-8")
+    result = store_sandbox_artifact(pd.DataFrame({"id": [1], "value": [42]}))
 
     # Auto-install a computed dataset for node "map-node" (gets producerNodeId).
-    save_project_with_output(client, token, project_id, "result.csv", node_id="map-node")
+    save_project_with_output(client, token, project_id, result, node_id="map-node")
     catalog = client.get(
         f"/api/datasets/catalog?includeHub=false&dataflowId={project_id}",
         headers=auth_headers(token),

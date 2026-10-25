@@ -115,3 +115,37 @@ def store_sandbox_artifact(value, node_id: str = "test-node") -> str:
     from utk_curio.sandbox.util.parsers import save_to_duckdb
 
     return save_to_duckdb(value, node_id=node_id)
+
+
+def store_sandbox_artifact_at(value, ms: int, node_id: str = "test-node") -> str:
+    """:func:`store_sandbox_artifact`, with the id stamped *ms*.
+
+    The store's id begins with the sandbox's clock in milliseconds
+    (``<ms>_<8 hex>``, ``parsers._make_id``), and a dataflow orders a node's
+    outputs by it (``projects/services._produced_at``). The writer is the real
+    one; only the clock its id reads is fixed, so a test can say which output
+    is the older one and what time it was made.
+    """
+    import uuid
+    from unittest import mock
+
+    from utk_curio.sandbox.util import parsers
+
+    with mock.patch.object(parsers, "_make_id", lambda: f"{ms}_{uuid.uuid4().hex[:8]}"):
+        return store_sandbox_artifact(value, node_id=node_id)
+
+
+def stored_artifact_file(art_id: str) -> Path:
+    """The file the store wrote for the artifact *art_id*, where the writer
+    puts it: ``artifacts/<id>.parquet`` for a table, ``artifacts/<id>.json.zlib``
+    for a JSON value. Fails the test unless there is exactly one."""
+    from utk_curio.sandbox.util import parsers
+
+    shared = parsers._shared_data_dir()
+    files = [
+        shared / rel
+        for rel in (parsers._stored_artifact_rel_path(art_id), parsers._json_artifact_rel_path(art_id))
+        if (shared / rel).is_file()
+    ]
+    assert len(files) == 1, f"the store holds {files} for the artifact {art_id}"
+    return files[0]
