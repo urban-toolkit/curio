@@ -19,6 +19,31 @@ describe('flowOutputRefFromRaw', () => {
     });
   });
 
+  test("a Python node's saved table is named by its artifact", () => {
+    // A run writes no other file: the reply names the artifact alone.
+    expect(flowOutputRefFromRaw('py-node', {
+      path: '1782498496720_ef610da8',
+      dataType: 'dataframe',
+    })).toEqual({
+      node_id: 'py-node',
+      filename: '1782498496720_ef610da8',
+      data_type: 'dataframe',
+    });
+  });
+
+  test("a JavaScript node's saved table is named by the frame artifact it stores", () => {
+    // Its value is JSON in the store; `dataset` is the table stored once more as a frame.
+    expect(flowOutputRefFromRaw('js-node', {
+      path: '1782498496720_ef610da8',
+      dataType: 'list',
+      dataset: '1782498496721_0a1b2c3d',
+    })).toEqual({
+      node_id: 'js-node',
+      filename: '1782498496721_0a1b2c3d',
+      data_type: 'list',
+    });
+  });
+
   test('includes tuple outputs bundle with dataType', () => {
     expect(flowOutputRefFromRaw('utci-node', {
       path: '1780604607968_abc',

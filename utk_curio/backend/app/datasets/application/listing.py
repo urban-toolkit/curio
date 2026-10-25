@@ -73,6 +73,13 @@ def _legacy_installed_alias(
     return legacy_id if legacy_id in installed_ids else None
 
 
+def _output_named(path: str) -> str:
+    """The output *path* names: its file name before any extension. A live
+    output is its store id, and its install the store's file of it,
+    ``<id>.parquet`` or ``<id>.json``; a store id has no dot."""
+    return Path(path).name.split(".", 1)[0] if path else ""
+
+
 def _sort_catalog_items(items: list[dict[str, Any]], sort: str) -> None:
     """Order a listing for the catalog's sort menu, the same way every time.
 
@@ -175,18 +182,17 @@ class CatalogListing:
         inst_items = self.installed.list_items(dataflow_id)
         installed_ids = {item["id"] for item in inst_items if item.get("id")}
 
-        # Map installed dataset id → installed output basename for computed
-        # datasets. Keyed on the FULL (namespaced) id - never the bare
+        # Map installed dataset id → the output its install was made from, for
+        # computed datasets. Keyed on the FULL (namespaced) id - never the bare
         # producerNodeId: node ids recur across dataflows (Duplicate Project,
         # trill re-import), and a bare-node match falsely marks another
-        # dataflow's dataset as installed here (#168). The basename comparison
+        # dataflow's dataset as installed here (#168). Comparing outputs
         # detects that the node re-ran since the last install ("Reinstall").
         installed_computed_filenames: dict[str, str] = {}
         for inst_item in inst_items:
             iid = inst_item.get("id")
             if iid and inst_item.get("origin") == "computed":
-                inst_path = inst_item.get("path") or ""
-                installed_computed_filenames[iid] = Path(inst_path).name if inst_path else ""
+                installed_computed_filenames[iid] = _output_named(inst_item.get("path") or "")
 
         for item in items:
             item_id = item.get("id")
@@ -203,7 +209,7 @@ class CatalogListing:
                 # file after the last install (filenames differ).  If the
                 # filename is unchanged the node has not been re-executed and
                 # the "Reinstall" button should not appear.
-                current_filename = Path(item.get("path") or "").name
+                current_filename = _output_named(item.get("path") or "")
                 installed_filename = installed_computed_filenames.get(matched_id) or ""
                 if current_filename and installed_filename and current_filename != installed_filename:
                     item["needsReinstall"] = True

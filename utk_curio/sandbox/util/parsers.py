@@ -153,7 +153,9 @@ def _read_parquet_sidecar_meta(path):
 
 def restore_parquet_sidecar(frame, path, *, geometry_col=None):
     """Decode JSON-encoded object columns recorded in a parquet file's
-    ``<file>.decode.json`` sidecar (written by :func:`save_dataset_parquet`).
+    ``<file>.decode.json`` sidecar (written beside a saved table from its
+    artifact's row by the Data Catalog's install, or by
+    :func:`save_dataset_parquet`).
 
     No-op when the sidecar is absent or records no encoded columns — so it never
     touches columns that weren't encoded. Used by the preview and export paths
@@ -886,10 +888,11 @@ def load_saved_output(path, name):
     :func:`load_from_duckdb`) and may have been pruned entirely, while this
     file is what the dataflow saved.
 
-    The name alone does not say what the bytes are - a dataset parquet keeps
-    its generated ``<ms>_<hex>_output.parquet`` name, while a computed dataset
-    installed from a JSON, parquet or raster artifact is named after the
-    artifact - so the content is sniffed: a frame with its ``.decode.json``,
+    The name alone does not say what the bytes are - a computed dataset is
+    named after the JSON, parquet or raster artifact it was installed from,
+    and a table saved before that keeps its generated
+    ``<ms>_<hex>_output.parquet`` name - so the content is sniffed: a frame
+    with its ``.decode.json``,
     a raster (a GeoTIFF or a VRT, opened as the store opens a raster
     artifact: a rasterio dataset), a JSON value, or a bundle's
     ``bundle.json``, which reads as the tuple, list or dict its parts make,
@@ -1156,8 +1159,9 @@ def save_dataset_parquet(output, kind):
     """Save a DataFrame or GeoDataFrame as a named Parquet file in the shared data
     directory (top-level, not inside ``artifacts/``).
 
-    This file is tracked as a *dataset* by the catalog (via liveOutputs / copy_outputs)
-    so it appears immediately after node execution and is persisted on project save.
+    In-process node code can call it. A node's run does not: a saved output is
+    its artifact's own file, which the Data Catalog links with the decode the
+    artifact's row keeps (``backend/app/datasets/install/bundle.install_node_output``).
 
     Args:
         output: the raw Python object (DataFrame or GeoDataFrame).

@@ -13,7 +13,8 @@ import '../adapters/autkGrammarAdapter';
 // `const React = window.React` (etc.) replaces resolve at runtime,
 // distinct bundles share Curio's React instance (essential for
 // rules-of-hooks), and the bundle's side-effect can register against
-// the same behavior registry the built-ins use.
+// the same behavior registry the built-ins use. A package's node reads an
+// output with `window.curio.fetchData`, the reader the canvas uses.
 //
 // Pending registrations: if a package's <script> loads before this
 // module runs (race during first paint), it pushes a callback into
@@ -22,6 +23,7 @@ import '../adapters/autkGrammarAdapter';
 import * as ReactNS from 'react';
 import { getToken } from '../utils/authApi';
 import * as ReactFlowNS from 'reactflow';
+import { fetchData } from '../services/api';
 import { registerBehavior } from './behaviorRegistry';
 
 if (typeof window !== 'undefined') {
@@ -46,6 +48,11 @@ if (typeof window !== 'undefined') {
     // whose backend needs to know WHO is calling (for the caller's own keys)
     // send this as a Bearer header.
     getAuthToken: () => getToken(),
+    // The canvas's own reader of an output, so a package's node reads one as
+    // a built-in node does: from what a dashboard page carries or a viewer's
+    // run made, else on the open dataflow's route (services/dataflowReads.ts),
+    // which reads an output the dataflow saved under any sign-in, else `/get`.
+    fetchData,
   };
   const pending: Array<(c: { registerBehavior: typeof registerBehavior }) => void> =
     Array.isArray(w.__curioPendingPackages__) ? w.__curioPendingPackages__ : [];

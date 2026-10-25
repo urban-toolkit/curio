@@ -122,6 +122,9 @@ export const usePackageNodeBehavior: NodeBehaviorHook = (data, nodeState) => {
   return override !== undefined ? { defaultValueOverride: override } : {};
 };
 
+/** The hook {@link withPackageStarter} composed for each inner hook. */
+const packageStarterHooks = new WeakMap<NodeBehaviorHook, NodeBehaviorHook>();
+
 /**
  * Wrap *inner* so a package template that ships a `source` starter still gets
  * its code injected on a fresh drop.
@@ -137,9 +140,17 @@ export const usePackageNodeBehavior: NodeBehaviorHook = (data, nodeState) => {
  * the starter injection only fills in `defaultValueOverride` when *inner*
  * does not provide one of its own. Both hooks are called unconditionally and
  * in a fixed order, so the rules of hooks hold.
+ *
+ * One *inner* gets one composed hook, the same function on every call. Every
+ * registry refresh builds every descriptor again and calls this again, and
+ * `UniversalNode` remounts a node's body when its hook changes, so a new
+ * function on each call would remount every node of such a template, and lose
+ * what it holds, on every refresh.
  */
 export function withPackageStarter(inner: NodeBehaviorHook): NodeBehaviorHook {
-  return (data, nodeState) => {
+  const known = packageStarterHooks.get(inner);
+  if (known) return known;
+  const composed: NodeBehaviorHook = (data, nodeState) => {
     const starter = usePackageNodeBehavior(data, nodeState);
     const base = inner(data, nodeState);
     if (base.defaultValueOverride !== undefined) return base;
@@ -147,4 +158,6 @@ export function withPackageStarter(inner: NodeBehaviorHook): NodeBehaviorHook {
       ? { ...base, defaultValueOverride: starter.defaultValueOverride }
       : base;
   };
+  packageStarterHooks.set(inner, composed);
+  return composed;
 }

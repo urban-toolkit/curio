@@ -6,6 +6,7 @@ import pytest
 from utk_curio.backend.app.projects import services, storage
 from utk_curio.backend.app.projects.schemas import ProjectCreate, OutputRef, ProjectUpdate
 from utk_curio.backend.app.projects.repositories import NotFoundError
+from utk_curio.backend.tests.test_datasets.computed_test_helpers import store_sandbox_artifact
 
 
 def _make_spec(name="test"):
@@ -48,14 +49,12 @@ def test_metadata_only_update_preserves_spec_and_outputs(
     app, db, user_and_token, tmp_curio
 ):
     user, _ = user_and_token
-    shared = storage._shared_data_dir()
-    shared.mkdir(parents=True, exist_ok=True)
-    (shared / "kept.data").write_bytes(b"payload")
+    kept = store_sandbox_artifact({"payload": "kept"})
 
     original = ProjectCreate(
         name="Original",
         spec=_make_spec("keep-me"),
-        outputs=[OutputRef(node_id="n1", filename="kept.data")],
+        outputs=[OutputRef(node_id="n1", filename=kept)],
     )
     detail = services.save_project(user, original)
     # save_project auto-installs outputs and adds lean dataset refs to the spec.
@@ -73,19 +72,17 @@ def test_metadata_only_update_preserves_spec_and_outputs(
     expected_spec = copy.deepcopy(saved_spec)
     expected_spec["dataflow"]["name"] = "Renamed"
     assert loaded["spec"] == expected_spec
-    assert loaded["outputs"] == [{"node_id": "n1", "filename": "kept.data"}]
+    assert loaded["outputs"] == [{"node_id": "n1", "filename": kept}]
 
 
 def test_load_project(app, db, user_and_token, tmp_curio):
     user, _ = user_and_token
-    shared = storage._shared_data_dir()
-    shared.mkdir(parents=True, exist_ok=True)
-    (shared / "data1.data").write_bytes(b"payload")
+    data1 = store_sandbox_artifact({"payload": "data1"})
 
     data = ProjectCreate(
         name="Load Test",
         spec=_make_spec(),
-        outputs=[OutputRef(node_id="n1", filename="data1.data")],
+        outputs=[OutputRef(node_id="n1", filename=data1)],
     )
     detail = services.save_project(user, data)
 
@@ -183,14 +180,14 @@ def test_auto_install_computed_outputs_saves_account_level_no_ref(app, tmp_curio
     """Computed outputs are saved to the account store with NO project ref, and a
     non-dict entry in client-supplied dataflow.datasets is left untouched (never
     iterated), so it can't 500 the save (review finding B3)."""
+    import pandas as pd
+
     from utk_curio.backend.app.datasets.infrastructure.storage import dataset_dir
 
-    shared = storage._shared_data_dir()
-    shared.mkdir(parents=True, exist_ok=True)
-    (shared / "b3_out.csv").write_text("a,b\n1,2\n", encoding="utf-8")
+    b3_out = store_sandbox_artifact(pd.DataFrame({"a": [1], "b": [2]}))
 
     spec = {"dataflow": {"datasets": ["junk", None, 123]}}
-    refs = [OutputRef(node_id="b3node", filename="b3_out.csv")]
+    refs = [OutputRef(node_id="b3node", filename=b3_out)]
 
     result = services._auto_install_computed_outputs("1", refs, spec, dataflow_id="df-b3")
 
@@ -278,12 +275,12 @@ def test_prune_sink_node_dataset_refs_noop_without_sink(app, tmp_curio):
 def test_auto_install_skips_sink_node_outputs(app, tmp_curio):
     """#174 prevention: a sink node's passthrough output is never persisted, so
     no duplicate dir exists for the ref prune to worry about."""
+    import pandas as pd
+
     from utk_curio.backend.app.datasets.infrastructure.storage import list_user_datasets
 
-    shared = storage._shared_data_dir()
-    shared.mkdir(parents=True, exist_ok=True)
-    (shared / "sink_out.csv").write_text("a,b\n1,2\n", encoding="utf-8")
-    (shared / "prod_out.csv").write_text("a,b\n1,2\n", encoding="utf-8")
+    sink_out = store_sandbox_artifact(pd.DataFrame({"a": [1], "b": [2]}))
+    prod_out = store_sandbox_artifact(pd.DataFrame({"a": [1], "b": [2]}))
 
     spec = {"dataflow": {
         "nodes": [
@@ -293,8 +290,8 @@ def test_auto_install_skips_sink_node_outputs(app, tmp_curio):
         "datasets": [],
     }}
     refs = [
-        OutputRef(node_id="prod-n", filename="prod_out.csv"),
-        OutputRef(node_id="sink-n", filename="sink_out.csv"),
+        OutputRef(node_id="prod-n", filename=prod_out),
+        OutputRef(node_id="sink-n", filename=sink_out),
     ]
     failures: list = []
     services._auto_install_computed_outputs("1", refs, spec, failures, dataflow_id="df-sink")
@@ -358,17 +355,17 @@ def test_save_drops_non_persisted_output_from_manifest(
     """#144: an output whose source can't be installed must not be recorded as a
     phantom in the manifest (it would silently vanish on reload)."""
     user, _ = user_and_token
-    shared = storage._shared_data_dir()
-    shared.mkdir(parents=True, exist_ok=True)
-    (shared / "good.data").write_bytes(b"payload")
-    # "ghost.data" is intentionally absent -> install_node_output returns None.
+    good = store_sandbox_artifact({"payload": "good"})
+    # Named as a node run names its output, but the store holds no such
+    # artifact -> install_node_output returns None.
+    ghost = "1700000000000_0badf00d"
 
     data = ProjectCreate(
         name="Phantom",
         spec=_make_spec(),
         outputs=[
-            OutputRef(node_id="n1", filename="good.data"),
-            OutputRef(node_id="n2", filename="ghost.data"),
+            OutputRef(node_id="n1", filename=good),
+            OutputRef(node_id="n2", filename=ghost),
         ],
     )
     detail = services.save_project(user, data)
@@ -376,11 +373,11 @@ def test_save_drops_non_persisted_output_from_manifest(
     ukey = services._user_dir_key(user)
     manifest = storage.read_manifest(ukey, detail.id)
     names = {o["filename"] for o in manifest["outputs"]}
-    assert names == {"good.data"}, "ghost output must not be persisted as a phantom"
+    assert names == {good}, "ghost output must not be persisted as a phantom"
 
     # The save response and a fresh load both reflect only the durable output.
     assert {o["filename"] for o in (services.load_project(user, detail.id)["outputs"])} == {
-        "good.data"
+        good
     }
 
 

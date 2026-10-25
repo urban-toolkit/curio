@@ -38,6 +38,7 @@ from utk_curio.backend.app.datasets.install import copy as dataset_copy
 from utk_curio.backend.app.datasets.install.installer import computed_dataset_id
 from utk_curio.backend.app.projects import storage
 from utk_curio.backend.app.scenario_catalog.service import ScenarioCatalogService
+from utk_curio.backend.tests.test_datasets.computed_test_helpers import stored_artifact_file
 from utk_curio.backend.tests.test_datasets.test_reads_under_spec_lock import (  # noqa: F401
     TOKEN,
     WAIT_SECONDS,
@@ -56,9 +57,9 @@ from utk_curio.backend.tests.test_scenario_catalog.test_copy import (
     _copy,
     _create,
     _save_outputs,
-    _shared,
     _source_and_target,
     _spec,
+    _table_text,
 )
 
 #: What the source saved first, and what a later save of it installs.
@@ -160,7 +161,7 @@ def test_a_drop_during_a_save_of_its_target_restores_once_the_save_is_done(
     saved = _save_outputs(client, TOKEN, source, {"load": "id,height\n1,10\n", "a": "id,sunlight\n1,0.5\n"})
     _save_outputs(client, TOKEN, target, {"mine": "id\n2\n"})
     # Only the copy in the target is left to restore the loader's output from.
-    (_shared() / saved["load"]).unlink()
+    stored_artifact_file(saved["load"]).unlink()
     mine = dataset_dir(str(owner_id), f"{computed_dataset_id('mine', target)}@1")
     reached, release = _pause_after_install(monkeypatch, "save", mine)
     asked = _signal_at_lock_of(monkeypatch, "drop", target)
@@ -169,7 +170,7 @@ def test_a_drop_during_a_save_of_its_target_restores_once_the_save_is_done(
     waited = False
     try:
         save = _start(threads, "save", lambda: _save_outputs(
-            file_db_app.test_client(), TOKEN, target, {"mine": "id\n3\n"}, run=2,
+            file_db_app.test_client(), TOKEN, target, {"mine": "id\n3\n"},
         ))
         assert reached.wait(STEP_SECONDS), "the save never installed the new output"
         drop = _start(threads, "drop", lambda: _copy(
@@ -193,7 +194,7 @@ def test_a_drop_during_a_save_of_its_target_restores_once_the_save_is_done(
     restored = [(o["node_id"], o["filename"]) for o in resp.get_json()["outputs"]]
     assert restored == [("loader-1", saved["load"])], restored
     held = storage.saved_output_file(str(owner_id), target, saved["load"])
-    assert held is not None and held.path.read_text(encoding="utf-8") == "id,height\n1,10\n"
+    assert held is not None and _table_text(held.path) == "id,height\n1,10\n"
 
 
 def test_a_drop_during_a_save_of_its_source_copies_what_the_save_installed(
@@ -214,7 +215,7 @@ def test_a_drop_during_a_save_of_its_source_copies_what_the_save_installed(
     waited = False
     try:
         save = _start(threads, "save", lambda: _save_outputs(
-            file_db_app.test_client(), TOKEN, source, SECOND_RUN, run=2,
+            file_db_app.test_client(), TOKEN, source, SECOND_RUN,
         ))
         assert reached.wait(STEP_SECONDS), "the save never installed the loader's new output"
         drop = _start(threads, "drop", lambda: _copy(file_db_app.test_client(), TOKEN, source, target, BOTH))
@@ -251,7 +252,7 @@ def test_a_save_of_the_source_between_the_plan_and_the_copy_is_waited_for(
         drop = _start(threads, "drop", lambda: _copy(file_db_app.test_client(), TOKEN, source, target, BOTH))
         assert planned.wait(STEP_SECONDS), "the drop never had its plan; " + _answer(drop)
         save = _start(threads, "save", lambda: _save_outputs(
-            file_db_app.test_client(), TOKEN, source, SECOND_RUN, run=2,
+            file_db_app.test_client(), TOKEN, source, SECOND_RUN,
         ))
         assert reached.wait(STEP_SECONDS), "the save never installed the loader's new output"
         # Only what the drop asks for from here on counts: the copy's reads.

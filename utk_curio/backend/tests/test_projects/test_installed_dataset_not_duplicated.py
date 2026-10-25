@@ -73,18 +73,20 @@ def test_the_resolver_finds_the_dataset_a_node_reads(tmp_curio):
 
 
 def test_the_save_installer_skips_the_loader_and_still_installs_a_producer(tmp_curio):
+    import pandas as pd
+
+    from utk_curio.backend.tests.test_datasets.computed_test_helpers import store_sandbox_artifact
+
     spec = _install_a_dataset_the_loader_reads()
-    # The producer's artifact, where the installer looks for it.
-    shared = storage._shared_data_dir()
-    shared.mkdir(parents=True, exist_ok=True)
-    (shared / "producer_out.csv").write_bytes(b"a,b\n1,2\n")
+    # The producer's artifact, where the installer looks for it: in the store.
+    producer_out = store_sandbox_artifact(pd.DataFrame({"a": [1], "b": [2]}))
 
     failures: list[dict] = []
     services._auto_install_computed_outputs(
         USER_KEY,
         [
             OutputRef(node_id=LOADER, filename="upstream_out.csv", data_type="dataframe"),
-            OutputRef(node_id=PRODUCER, filename="producer_out.csv", data_type="dataframe"),
+            OutputRef(node_id=PRODUCER, filename=producer_out, data_type="dataframe"),
         ],
         spec,
         failures,

@@ -29,7 +29,7 @@ import {
   DASHBOARD_TILE_DEFAULT_WIDTH,
 } from '../utils/dashboardLayout';
 import { NodeType } from '../constants';
-import { TIconCardinality } from '../registry/types';
+import { NodeBehaviorHook, TIconCardinality } from '../registry/types';
 import { useFlowContext } from '../providers/FlowProvider';
 import { NodeAgentBadges } from './agents/attach/NodeAgentBadges';
 import { useCollab } from '../providers/CollaborationProvider';
@@ -38,12 +38,18 @@ import { NodeOutcomeStrip } from './nodes/NodeOutcomeStrip';
 import './Node.css';
 import 'bootstrap/dist/css/bootstrap.min.css';
 
-// When the canvas node's `data.nodeType` changes (e.g. after Save-As rebinds
-// the node to a new package kind), the descriptor's `useNodeBehavior` hook function
-// can change. Calling a *different* hook at the same call site violates
-// React's rules of hooks and corrupts the state slots ("baseQueue is undefined").
-// Keying the inner body by `data.nodeType` forces an unmount/remount so the
-// new hook chain starts fresh.
+// The body calls its descriptor's `useNodeBehavior`. Calling a *different* hook
+// at the same call site violates React's rules of hooks and corrupts the state
+// slots ("baseQueue is undefined", "Should have a queue"). The hook changes when
+// `data.nodeType` does (Save-As rebinds the node to a new package kind), and it
+// can change while the type stays. A full load, by a dataflow's link or a
+// reload, builds the descriptors before the bundle of a package that ships its
+// own behavior has run, so a node of that package (the Column Filter of
+// `curio.example-ui@1`) mounts with the generic package hook, and the rebuild
+// that follows the bundle's registration hands the same type the package's
+// hook. Keying the inner body by its type and by the hook it calls
+// (`behaviorHookId`) remounts it in both cases, so the new hook chain starts
+// fresh. A rebuild that keeps the hook keeps the body and what it holds.
 //
 // The outer wrapper also gates on descriptor presence: a node imported from a
 // saved dataflow can mount before its package's descriptor has finished
@@ -93,8 +99,25 @@ const UniversalNode = React.memo(function UniversalNode({ data, isConnectable }:
       </>
     );
   }
-  return <UniversalNodeBody key={data.nodeType} data={data} isConnectable={isConnectable} />;
+  const bodyKey = `${data.nodeType}#${behaviorHookId(descriptor.adapter.useNodeBehavior)}`;
+  return <UniversalNodeBody key={bodyKey} data={data} isConnectable={isConnectable} />;
 });
+
+// A number for each behavior hook a node's body has called, so the body's key
+// can name its hook. Weak, so a hook nothing holds any more can go.
+const behaviorHookIds = new WeakMap<NodeBehaviorHook, number>();
+let lastBehaviorHookId = 0;
+
+/** The number of *hook*: the same hook always gets the same number. */
+function behaviorHookId(hook: NodeBehaviorHook): number {
+  let id = behaviorHookIds.get(hook);
+  if (id === undefined) {
+    lastBehaviorHookId += 1;
+    id = lastBehaviorHookId;
+    behaviorHookIds.set(hook, id);
+  }
+  return id;
+}
 
 /**
  * What a node with no descriptor answers a run that triggers it: a failed run,
