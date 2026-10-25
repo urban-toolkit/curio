@@ -4,7 +4,8 @@ The dashboard needs an output ref for every node feeding a pinned tile, so a
 reload can hand the tile its data. That now includes a Data Catalog palette
 node, whose "output" is the installed dataset it loaded. Recording the ref is
 right: ``storage._installed_file_for_node`` resolves it, so
-``persisted_output_refs`` keeps it and ``hydrate_outputs`` restores it.
+``persisted_output_refs`` keeps it and every reader reads that dataset's file
+in place (``storage.saved_output_file``).
 
 Installing it would not be. The bytes are already in the account's dataset
 store under the dataset's own id; a second copy titled after the reading node
@@ -110,10 +111,12 @@ def test_the_skipped_loaders_ref_is_still_restorable(tmp_curio):
     assert [r.node_id for r in kept] == [LOADER], (
         "the manifest would drop the ref, so a reload could not feed the tile"
     )
-    hydrated = storage.hydrate_outputs(USER_KEY, DATAFLOW_ID, refs, spec=spec)
-    assert [r.node_id for r in hydrated] == [LOADER]
-    assert (storage._shared_data_dir() / "upstream_out.csv").is_file(), (
-        "the output was not hydrated into the shared dir, so /get cannot serve it"
+    readable = storage.readable_saved_outputs(USER_KEY, DATAFLOW_ID, refs, spec=spec)
+    assert [r.node_id for r in readable] == [LOADER]
+    storage.write_manifest(USER_KEY, DATAFLOW_ID, 1, refs, name="Palette")
+    saved = storage.saved_output_file(USER_KEY, DATAFLOW_ID, "upstream_out.csv")
+    assert saved is not None and saved.path == storage.installed_dataset_file_for_node(USER_KEY, spec, LOADER), (
+        "a reader is not named the dataset the loader reads, so /get cannot serve its output"
     )
 
 

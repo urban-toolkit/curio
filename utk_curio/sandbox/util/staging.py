@@ -32,8 +32,6 @@ from pathlib import Path
 from utk_curio.sandbox.util.db import get_connection, get_read_connection, init_db
 from utk_curio.sandbox.util import codec
 from utk_curio.sandbox.util.parsers import (
-    load_shared_output_file,
-    save_to_duckdb,
     session_may_read,
     _make_id,
     _read_json_artifact,
@@ -202,29 +200,16 @@ def stage_input(art_id, scratch_dir, *, session_id=None, slot="in", saved_paths=
     try:
         kind, v_int, v_float, v_str, v_json, blob = _read_row(art_id, session_id)
     except Exception as store_error:
+        # The rule parsers.load_artifact applies in-process (#407): a saved
+        # output the store cannot serve to this session is read from its own
+        # file, staged as it is, with no store row added.
         saved = (saved_paths or {}).get(art_id)
         if saved:
             try:
                 return stage_saved_output(saved, scratch_dir, name=art_id, slot=slot)
             except (KeyError, OSError, ValueError):
                 pass
-        # The rule parsers.load_artifact applies in-process (#407): a project
-        # output the store cannot serve to this session is read from the copy
-        # the project load hydrated. Staging works from a store row, so that
-        # value is stored for this session and staged like any other.
-        try:
-            value = load_shared_output_file(art_id)
-        except KeyError:
-            raise store_error
-        from utk_curio.sandbox.util.rasters import close_datasets
-
-        try:
-            adopted = save_to_duckdb(value, node_id="hydrated", session_id=session_id)
-        finally:
-            # A raster, alone or in a tuple, a list or a dict, is stored by its
-            # file's path, so the dataset opened to read it is done with.
-            close_datasets(value)
-        return stage_input(adopted, scratch_dir, session_id=session_id, slot=slot)
+        raise store_error
 
     if kind == "null":
         return {"kind": "null"}

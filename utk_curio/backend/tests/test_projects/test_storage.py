@@ -77,67 +77,57 @@ def test_an_unreadable_or_absent_counter_reads_as_zero(tmp_curio):
     assert storage.spec_revision("1", "proj-junk") == 0
 
 
-def test_copy_outputs_happy(tmp_curio):
+def _files_in_shared_data() -> set:
     shared = storage._shared_data_dir()
-    shared.mkdir(parents=True, exist_ok=True)
-    (shared / "file1.data").write_bytes(b"hello")
-
-    refs = [OutputRef(node_id="n1", filename="file1.data")]
-    copied = storage.copy_outputs("1", "proj-ccc", refs)
-    assert len(copied) == 1
-
-    proj_data = storage.project_dir("1", "proj-ccc") / "data" / "file1.data"
-    assert proj_data.read_bytes() == b"hello"
+    return {path for path in shared.rglob("*") if path.is_file()} if shared.is_dir() else set()
 
 
-def test_copy_outputs_missing_source(tmp_curio):
-    refs = [OutputRef(node_id="n1", filename="missing.data")]
-    copied = storage.copy_outputs("1", "proj-ddd", refs)
-    assert len(copied) == 0
+def _manifest_with(user_key: str, project_id: str, *refs: OutputRef) -> None:
+    storage.write_manifest(user_key, project_id, 1, list(refs), name="Saved outputs")
 
 
-def test_hydrate_outputs(tmp_curio):
+def test_a_legacy_project_data_copy_is_not_a_saved_output(tmp_curio):
+    """``projects/<id>/data/`` held copies of saved outputs long ago. Nothing
+    writes there and nothing reads there: an output only that folder holds
+    is not restorable, and no reader is named its file."""
     proj_dir = storage.ensure_project_dir("1", "proj-eee")
     (proj_dir / "data" / "out.data").write_bytes(b"world")
+    ref = OutputRef(node_id="n1", filename="out.data")
+    _manifest_with("1", "proj-eee", ref)
 
-    refs = [OutputRef(node_id="n1", filename="out.data")]
-    hydrated = storage.hydrate_outputs("1", "proj-eee", refs)
-    assert len(hydrated) == 1
-
-    shared = storage._shared_data_dir()
-    assert (shared / "out.data").read_bytes() == b"world"
+    assert storage.persisted_output_refs("1", "proj-eee", [ref], spec={"dataflow": {}}) == []
+    assert storage.readable_saved_outputs("1", "proj-eee", [ref], spec={"dataflow": {}}) == []
+    assert storage.saved_output_file("1", "proj-eee", "out.data") is None
 
 
-def test_hydrate_outputs_from_user_dataset_store(tmp_curio):
+def test_an_output_its_computed_dataset_holds_is_read_in_place(tmp_curio):
+    """A reload restores an output from the node's computed dataset, and every
+    reader reads that file where it is: nothing is copied into the shared data
+    directory."""
     from utk_curio.backend.app.datasets.install.installer import install_computed_file_for_node
 
     user_key = "1"
-    node_id = "node-hydrate"
-    install_computed_file_for_node(
+    node_id = "node-saved"
+    result = install_computed_file_for_node(
         user_key,
         b"city,count\nChicago,10\n",
-        "hydrate_out.csv",
+        "saved_out.csv",
         "csv",
         node_id=node_id,
-        dataflow_id="proj-hydrate",
+        dataflow_id="proj-saved",
     )
+    ref = OutputRef(node_id=node_id, filename="saved_out.csv")
+    _manifest_with(user_key, "proj-saved", ref)
+    before = _files_in_shared_data()
 
-    spec = {
-        "dataflow": {
-            "datasets": [{
-                "datasetId": "computed.proj-hydrate.node-hydrate",
-                "dirName": "computed.proj-hydrate.node-hydrate@1",
-                "origin": "computed",
-                "producerNodeId": node_id,
-            }],
-        },
-    }
-    refs = [OutputRef(node_id=node_id, filename="hydrate_out.csv")]
-    hydrated = storage.hydrate_outputs("1", "proj-hydrate", refs, spec=spec)
-    assert len(hydrated) == 1
+    readable = storage.readable_saved_outputs(user_key, "proj-saved", [ref], spec={"dataflow": {}})
+    saved = storage.saved_output_file(user_key, "proj-saved", "saved_out.csv")
 
-    shared = storage._shared_data_dir()
-    assert (shared / "hydrate_out.csv").read_text(encoding="utf-8").startswith("city,count")
+    assert readable == [ref]
+    assert saved is not None
+    assert saved.path.resolve() == (result.dest / result.manifest.data_file).resolve()
+    assert saved.path.read_text(encoding="utf-8").startswith("city,count")
+    assert _files_in_shared_data() == before, "reading a saved output wrote into the shared data directory"
 
 
 def test_path_traversal_blocked(tmp_curio):
@@ -298,30 +288,20 @@ def test_persisted_output_refs_excludes_shared_cache_only(tmp_curio):
     assert kept == []
 
 
-def test_persisted_output_refs_keeps_legacy_copy(tmp_curio):
-    """An output with a legacy project/data copy survives a reload -> kept."""
-    shared = storage._shared_data_dir()
-    shared.mkdir(parents=True, exist_ok=True)
-    (shared / "leg.data").write_bytes(b"x")
-    refs = [OutputRef(node_id="n1", filename="leg.data")]
-    storage.copy_outputs("1", "proj-legacy", refs)  # writes project/data/leg.data
-
-    kept = storage.persisted_output_refs("1", "proj-legacy", refs, spec={"dataflow": {}})
-    assert [r.filename for r in kept] == ["leg.data"]
-
-
 def test_persisted_output_refs_drops_unsafe_filename_without_raising(tmp_curio):
     """An output filename with a char outside the safe set must be dropped, not
     raise PathTraversalError (a PermissionError the save routes don't catch and
     would surface as a 500)."""
+    from utk_curio.backend.app.datasets.install.installer import install_computed_file_for_node
+
     safe_ref = OutputRef(node_id="ok", filename="good.data")
     # Space is outside [A-Za-z0-9._-] -> validate_component raises; CJK/emoji etc.
     # would trigger the same path.
     unsafe_ref = OutputRef(node_id="bad", filename="bad name.data")
-    shared = storage._shared_data_dir()
-    shared.mkdir(parents=True, exist_ok=True)
-    (shared / "good.data").write_bytes(b"x")
-    storage.copy_outputs("1", "proj-unsafe", [safe_ref])  # durable legacy copy
+    # The safe output's durable source: its node's computed dataset.
+    install_computed_file_for_node(
+        "1", b"x", "good.data", "json", node_id="ok", dataflow_id="proj-unsafe",
+    )
 
     kept = storage.persisted_output_refs(
         "1", "proj-unsafe", [safe_ref, unsafe_ref], spec={"dataflow": {}}

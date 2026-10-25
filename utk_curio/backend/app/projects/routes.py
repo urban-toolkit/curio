@@ -139,7 +139,7 @@ def list_projects():
 
 
 # ---------------------------------------------------------------------------
-# GET /api/projects/:id - detail + hydration
+# GET /api/projects/:id - detail and saved outputs
 # ---------------------------------------------------------------------------
 @projects_bp.route("/<project_id>", methods=["GET"])
 @require_auth

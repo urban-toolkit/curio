@@ -26,6 +26,7 @@ import pytest
 from utk_curio.backend.app.datasets.domain.manifest import load_dataset_manifest
 from utk_curio.backend.app.datasets.infrastructure.storage import dataset_dir
 from utk_curio.backend.app.datasets.install.installer import computed_dataset_id
+from utk_curio.backend.app.projects import storage
 
 BASELINE = {"id": "s1", "name": "Baseline", "color": "#2a9d8f", "nodes": ["a", "chart"]}
 
@@ -185,12 +186,46 @@ def test_the_copy_is_the_targets_own_and_a_reload_restores_it(client, user_and_t
     assert _copied_data(_user_dir_key_of(user), "load", source) == "id,height\n1,99\n"
     assert _copied_data(_user_dir_key_of(user), "loader-1", target) == "id,height\n1,10\n"
 
-    # With the scratch cache emptied, opening the target restores the copy.
+    # With the scratch cache emptied, opening the target restores the copy,
+    # read where the target's Data Catalog keeps it, with nothing copied back.
     (_shared() / saved["load"]).unlink()
     resp = client.get(f"/api/projects/{target}", headers=_headers(token))
     assert resp.status_code == 200, resp.get_data(as_text=True)
     assert {o["node_id"] for o in resp.get_json()["outputs"]} == {"loader-1"}
-    assert (_shared() / saved["load"]).read_text(encoding="utf-8") == "id,height\n1,10\n"
+    held = storage.saved_output_file(_user_dir_key_of(user), target, saved["load"])
+    assert held is not None, "opening the target names no file for the copy"
+    assert held.path.read_text(encoding="utf-8") == "id,height\n1,10\n"
+    assert not (_shared() / saved["load"]).exists()
+
+
+def test_a_drops_outputs_are_read_in_place_before_any_save(client, user_and_token):
+    """The drop records each copy as its node's saved output in the target, so
+    the target's canvas reads it where the target's Data Catalog keeps it
+    before the canvas saves anything, and nothing is copied into the shared
+    data directory."""
+    user, token = user_and_token
+    source, target = _source_and_target(client, token)
+    saved = _save_outputs(client, token, source, {"load": "id,height\n1,10\n", "a": "id,sunlight\n1,0.5\n"})
+    # Only the saved outputs in the Data Catalog are left to copy.
+    for name in saved.values():
+        (_shared() / name).unlink()
+
+    resp = _copy(client, token, source, target, [
+        {"source": "load", "node": "loader-1"},
+        {"source": "a", "node": "a-copy"},
+    ])
+
+    assert resp.status_code == 200, resp.get_data(as_text=True)
+    ukey = _user_dir_key_of(user)
+    for node, source_node, text in (
+        ("loader-1", "load", "id,height\n1,10\n"), ("a-copy", "a", "id,sunlight\n1,0.5\n"),
+    ):
+        held = storage.saved_output_file(ukey, target, saved[source_node])
+        assert held is not None, f"the target names no file for {node}'s copy"
+        copy = dataset_dir(ukey, f"{computed_dataset_id(node, target)}@1")
+        assert held.path.resolve() == (copy / load_dataset_manifest(copy).data_file).resolve()
+        assert held.path.read_text(encoding="utf-8") == text
+        assert not (_shared() / saved[source_node]).exists(), "the drop copied an output into the shared data directory"
 
 
 def test_a_context_without_a_saved_output_is_listed_to_run_first(client, user_and_token):

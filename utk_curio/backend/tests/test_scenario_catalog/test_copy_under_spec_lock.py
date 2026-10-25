@@ -192,7 +192,8 @@ def test_a_drop_during_a_save_of_its_target_restores_once_the_save_is_done(
     assert resp.status_code == 200, resp.get_data(as_text=True)
     restored = [(o["node_id"], o["filename"]) for o in resp.get_json()["outputs"]]
     assert restored == [("loader-1", saved["load"])], restored
-    assert (_shared() / saved["load"]).read_text(encoding="utf-8") == "id,height\n1,10\n"
+    held = storage.saved_output_file(str(owner_id), target, saved["load"])
+    assert held is not None and held.path.read_text(encoding="utf-8") == "id,height\n1,10\n"
 
 
 def test_a_drop_during_a_save_of_its_source_copies_what_the_save_installed(

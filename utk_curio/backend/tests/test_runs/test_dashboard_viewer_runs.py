@@ -163,8 +163,8 @@ def sandbox(monkeypatch):
 
 @pytest.fixture()
 def saved(monkeypatch):
-    """The dashboard's saved outputs, as a load hydrates them: Grid's, unless a
-    test empties the list."""
+    """The dashboard's saved outputs, as a load lists those it can read:
+    Grid's, unless a test empties the list."""
     from utk_curio.backend.app.projects import storage
     from utk_curio.backend.app.projects.schemas import OutputRef
     from utk_curio.backend.app.runs import viewer

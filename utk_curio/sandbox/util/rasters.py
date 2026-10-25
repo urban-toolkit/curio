@@ -104,8 +104,8 @@ def raster_artifact(art_id, *, session_id=None, part=None, saved_paths=None):
     """The rasterio dataset an artifact holds, by the one reader rule.
 
     ``part`` picks one item of a Python tuple. The store first, then a saved
-    output's own file (*saved_paths*) or a project's hydrated copy
-    (``parsers.load_artifact``), as ``/get`` reads.
+    output's own file (*saved_paths*, ``parsers.load_artifact``), as ``/get``
+    reads.
     """
     from utk_curio.sandbox.util.parsers import load_artifact
 

@@ -5,13 +5,14 @@ indexes it (``packages/curio.weather@1``). A Python node's tuple is stored as
 one ``outputs`` row naming a row per value, each tagged with the session that
 wrote it (``sandbox/util/parsers.save_to_duckdb``). A project save installs
 the output as a bundle: ``data/bundle.json`` and a file per value under
-``data/parts/`` (``datasets/install/bundle.py``). A project load hydrates each
-saved output into the shared data directory (``projects/storage.hydrate_outputs``),
-and a reader the session-tagged store refuses reads that copy instead
-(``parsers.load_artifact``): ``/get``, a Python node's inputs in process, the
-staging of an isolated node's input (``staging.stage_input``) and ``/raster``.
+``data/parts/`` (``datasets/install/bundle.py``). A reader the session-tagged
+store refuses reads the saved output in place, from the file the backend names
+for it (``projects/storage.saved_output_file``, handed over as ``savedPath``
+or ``saved_paths``): ``/get``, a Python node's inputs in process, the staging
+of an isolated node's input (``staging.stage_input``) and ``/raster``. Nothing
+is copied into the shared data directory, and nothing reads a copy there.
 
-For a tuple that copy was the bundle's ``bundle.json`` alone, so after a
+A copy of a tuple once held the bundle's ``bundle.json`` alone, so after a
 reopen under a new sign-in each of them read the bundle's description, a dict,
 where the tuple had been. Here an output is written in one session, saved and
 loaded through the project routes the canvas calls, and read with another
@@ -89,18 +90,52 @@ def _save(client, token, *outputs) -> str:
     return project_id
 
 
+def _files_in_shared_data() -> set:
+    """The shared data directory's files, the store's database aside."""
+    return {
+        path for path in _shared().rglob("*")
+        if path.is_file() and not path.name.startswith("curio_data.duckdb")
+    }
+
+
 def _reopen(client, token, project_id: str, *outputs) -> None:
-    """Open the dataflow again: the load hydrates each saved output."""
+    """Open the dataflow again: the load lists each saved output, and copies
+    none of them into the shared data directory."""
+    shared_before = _files_in_shared_data()
     loaded = client.get(f"/api/projects/{project_id}", headers=auth_headers(token))
     assert loaded.status_code == 200, loaded.get_data(as_text=True)
     restored = {entry["filename"] for entry in loaded.get_json()["outputs"]}
     assert {entry["filename"] for entry in outputs} <= restored, restored
+    assert _files_in_shared_data() == shared_before, (
+        "opening the dataflow copied a saved output into the shared data directory"
+    )
 
 
 def _save_and_reopen(client, token, *outputs) -> str:
     project_id = _save(client, token, *outputs)
     _reopen(client, token, project_id, *outputs)
     return project_id
+
+
+def _saved(user, project_id: str, *art_ids: str) -> dict:
+    """``{name: {path, dataType}}``: each saved output's own file, as the
+    backend names it to the sandbox for a read on the dataflow."""
+    from utk_curio.backend.app.projects import storage
+
+    saved = {}
+    for art_id in art_ids:
+        held = storage.saved_output_file(str(user.id), project_id, art_id)
+        assert held is not None, f"the dataflow names no file for {art_id}"
+        saved[art_id] = {"path": str(held.path), "dataType": held.data_type or ""}
+    return saved
+
+
+def _bundle_json(user, project_id: str, node_id: str) -> Path:
+    """The ``bundle.json`` of *node_id*'s saved output, in its dataset."""
+    from utk_curio.backend.app.datasets.infrastructure.storage import dataset_dir
+    from utk_curio.backend.app.datasets.install.installer import computed_dataset_id
+
+    return dataset_dir(str(user.id), f"{computed_dataset_id(node_id, project_id)}@1") / "data" / "bundle.json"
 
 
 def _write_utci():
@@ -183,22 +218,27 @@ def _every_kind_of_part(tmp_path: Path):
 def test_load_artifact_gives_the_tuple_after_a_reopen(client, user_and_token):
     from utk_curio.sandbox.util.parsers import load_artifact
 
+    user, token = user_and_token
     art_id, stored = _write_utci()
-    _save_and_reopen(client, user_and_token[1], _output(UTCI_NODE, art_id, "outputs"))
+    project_id = _save_and_reopen(client, token, _output(UTCI_NODE, art_id, "outputs"))
 
-    value = load_artifact(art_id, session_id=LATER)
+    value = load_artifact(art_id, session_id=LATER, saved_paths=_saved(user, project_id, art_id))
 
     assert isinstance(value, tuple), f"read a {type(value).__name__}: {value!r}"
     assert value == stored
 
 
 def test_get_serves_the_tuple_after_a_reopen(client, user_and_token):
+    user, token = user_and_token
     art_id, _stored = _write_utci()
     before = _sandbox().get("/get", query_string={"fileName": art_id, "sessionId": EARLIER})
     assert before.status_code == 200, before.get_data(as_text=True)
-    _save_and_reopen(client, user_and_token[1], _output(UTCI_NODE, art_id, "outputs"))
+    project_id = _save_and_reopen(client, token, _output(UTCI_NODE, art_id, "outputs"))
 
-    after = _sandbox().get("/get", query_string={"fileName": art_id, "sessionId": LATER})
+    after = _sandbox().get("/get", query_string={
+        "fileName": art_id, "sessionId": LATER,
+        "savedPath": _saved(user, project_id, art_id)[art_id]["path"],
+    })
 
     assert after.status_code == 200, after.get_data(as_text=True)
     body = after.get_json()
@@ -216,12 +256,13 @@ def test_a_python_node_downstream_indexes_the_tuple(client, user_and_token):
     from utk_curio.sandbox.util.parsers import load_from_duckdb, save_to_duckdb
 
     _worker_init()
+    user, token = user_and_token
     utci_id, _stored = _write_utci()
     zones_id = save_to_duckdb(
         pd.DataFrame({"zone": ["Brera", "Duomo", "Navigli"]}), node_id=ZONES_NODE, session_id=EARLIER,
     )
-    _save_and_reopen(
-        client, user_and_token[1],
+    project_id = _save_and_reopen(
+        client, token,
         _output(ZONES_NODE, zones_id, "dataframe"),
         _output(UTCI_NODE, utci_id, "outputs"),
     )
@@ -238,6 +279,7 @@ def test_a_python_node_downstream_indexes_the_tuple(client, user_and_token):
     result = execute_code(
         code, str(inputs), "curio.builtin/computation-analysis", "outputs",
         session_id=LATER, save_dataset=False, input_slots=[0, 1],
+        saved_paths=_saved(user, project_id, zones_id, utci_id),
     )
 
     assert result["stderr"] == "", result["stderr"]
@@ -247,12 +289,13 @@ def test_a_python_node_downstream_indexes_the_tuple(client, user_and_token):
 def test_an_isolated_node_has_the_tuple_staged(client, user_and_token, tmp_path):
     from utk_curio.sandbox.util import staging
 
+    user, token = user_and_token
     art_id, stored = _write_utci()
-    _save_and_reopen(client, user_and_token[1], _output(UTCI_NODE, art_id, "outputs"))
+    project_id = _save_and_reopen(client, token, _output(UTCI_NODE, art_id, "outputs"))
     scratch = tmp_path / "scratch"
     scratch.mkdir()
 
-    spec = staging.stage_input(art_id, scratch, session_id=LATER)
+    spec = staging.stage_input(art_id, scratch, session_id=LATER, saved_paths=_saved(user, project_id, art_id))
 
     assert (spec.get("kind"), spec.get("container")) == ("sequence", "tuple"), spec
     staged = tuple(
@@ -261,60 +304,62 @@ def test_an_isolated_node_has_the_tuple_staged(client, user_and_token, tmp_path)
     assert staged == stored
 
 
-def test_a_copy_hydrated_without_its_parts_is_healed_by_the_next_load(client, user_and_token):
-    """A server that hydrated the output before the parts were hydrated holds
-    the bundle's ``bundle.json`` alone under the output's name. The next load
-    hydrates the parts all the same, and the tuple comes back."""
-    from utk_curio.backend.app.datasets.infrastructure.storage import dataset_dir
-    from utk_curio.backend.app.datasets.install.installer import computed_dataset_id
+def test_a_copy_left_in_the_shared_data_directory_is_not_read(client, user_and_token):
+    """A server before this one copied each saved output into the shared data
+    directory, a tuple sometimes as its ``bundle.json`` alone, under the
+    output's name. Nothing reads such a copy now: the tuple comes from its
+    dataset, and a read the backend names no file for finds no output."""
     from utk_curio.sandbox.util.parsers import load_artifact
 
     user, token = user_and_token
     art_id, stored = _write_utci()
     output = _output(UTCI_NODE, art_id, "outputs")
     project_id = _save(client, token, output)
-    installed = dataset_dir(str(user.id), f"{computed_dataset_id(UTCI_NODE, project_id)}@1")
-    shutil.copyfile(installed / "data" / "bundle.json", _shared() / art_id)
+    shutil.copyfile(_bundle_json(user, project_id, UTCI_NODE), _shared() / art_id)
     _reopen(client, token, project_id, output)
 
-    assert load_artifact(art_id, session_id=LATER) == stored
+    assert load_artifact(art_id, session_id=LATER, saved_paths=_saved(user, project_id, art_id)) == stored
+    with pytest.raises(KeyError, match="No artifact with id"):
+        load_artifact(art_id, session_id=LATER)
 
 
-def test_a_part_missing_from_the_hydrated_copy_is_a_missing_artifact(client, user_and_token):
+def test_a_part_missing_from_the_saved_dataset_is_a_missing_artifact(client, user_and_token):
     """A tuple short of a part is not the tuple: the read fails with the
     store's own error, as for an output that is nowhere."""
     from utk_curio.sandbox.util.parsers import load_artifact
 
+    user, token = user_and_token
     art_id, _stored = _write_utci()
-    _save_and_reopen(client, user_and_token[1], _output(UTCI_NODE, art_id, "outputs"))
-    hydrated = sorted(_shared().rglob("01_list.json"))
-    assert hydrated, "the project load hydrated no part of the tuple"
-    for part in hydrated:
+    project_id = _save_and_reopen(client, token, _output(UTCI_NODE, art_id, "outputs"))
+    saved = _saved(user, project_id, art_id)
+    parts = sorted(_bundle_json(user, project_id, UTCI_NODE).parent.rglob("01_list.json"))
+    assert parts, "the saved dataset holds no second part of the tuple"
+    for part in parts:
         part.unlink()
 
     with pytest.raises(KeyError, match="No artifact with id"):
-        load_artifact(art_id, session_id=LATER)
+        load_artifact(art_id, session_id=LATER, saved_paths=saved)
 
 
-def test_a_part_named_outside_the_hydrated_copy_is_not_read(client, user_and_token):
-    """The copy is read with no session check, so it is read only from its
-    own files: a ``bundle.json`` naming a part elsewhere in the shared data
-    directory is refused, not followed."""
+def test_a_part_named_outside_the_saved_dataset_is_not_read(client, user_and_token):
+    """The saved file is read with no session check, so a bundle is read only
+    from its own dataset's files: a ``bundle.json`` naming a part elsewhere,
+    here in the shared data directory, is refused, not followed."""
     from utk_curio.sandbox.util.parsers import load_artifact
 
+    user, token = user_and_token
     art_id, _stored = _write_utci()
-    _save_and_reopen(client, user_and_token[1], _output(UTCI_NODE, art_id, "outputs"))
+    project_id = _save_and_reopen(client, token, _output(UTCI_NODE, art_id, "outputs"))
+    saved = _saved(user, project_id, art_id)
     elsewhere = _shared() / "not-this-tuple.json"
     elsewhere.write_text(json.dumps(["not", "this", "tuple"]), encoding="utf-8")
-    copies = sorted(_shared().rglob("bundle.json"))
-    assert copies, "the project load hydrated no bundle for the tuple"
-    for copy in copies:
-        spec = json.loads(copy.read_text(encoding="utf-8"))
-        spec["parts"][0]["file"] = os.path.relpath(elsewhere, copy.parent.parent)
-        copy.write_text(json.dumps(spec), encoding="utf-8")
+    bundle = _bundle_json(user, project_id, UTCI_NODE)
+    spec = json.loads(bundle.read_text(encoding="utf-8"))
+    spec["parts"][0]["file"] = os.path.relpath(elsewhere, bundle.parent.parent)
+    bundle.write_text(json.dumps(spec), encoding="utf-8")
 
     with pytest.raises(KeyError, match="No artifact with id"):
-        load_artifact(art_id, session_id=LATER)
+        load_artifact(art_id, session_id=LATER, saved_paths=saved)
 
 
 # -- every kind of part ------------------------------------------------------
@@ -328,13 +373,14 @@ def test_every_part_comes_back_as_the_kind_it_was_saved_as(client, user_and_toke
 
     from utk_curio.sandbox.util.parsers import load_artifact
 
+    user, token = user_and_token
     art_id, expected, returned = _every_kind_of_part(tmp_path)
-    _save_and_reopen(client, user_and_token[1], _output(PARTS_NODE, art_id, "outputs"))
+    project_id = _save_and_reopen(client, token, _output(PARTS_NODE, art_id, "outputs"))
     # The file the node returned the raster from is a scratch copy: only
     # the saved output still has it.
     returned.unlink()
 
-    value = load_artifact(art_id, session_id=LATER)
+    value = load_artifact(art_id, session_id=LATER, saved_paths=_saved(user, project_id, art_id))
     assert isinstance(value, tuple), f"read a {type(value).__name__}: {value!r}"
     try:
         assert len(value) == len(expected)
@@ -352,12 +398,16 @@ def test_every_part_comes_back_as_the_kind_it_was_saved_as(client, user_and_toke
 def test_the_raster_route_serves_a_raster_part_after_a_reopen(client, user_and_token, tmp_path):
     from rasterio.io import MemoryFile
 
+    user, token = user_and_token
     art_id, expected, returned = _every_kind_of_part(tmp_path)
-    _save_and_reopen(client, user_and_token[1], _output(PARTS_NODE, art_id, "outputs"))
+    project_id = _save_and_reopen(client, token, _output(PARTS_NODE, art_id, "outputs"))
     returned.unlink()
 
     response = _sandbox().get(
-        "/raster", query_string={"fileName": art_id, "part": RASTER_PART, "sessionId": LATER},
+        "/raster", query_string={
+            "fileName": art_id, "part": RASTER_PART, "sessionId": LATER,
+            "savedPath": _saved(user, project_id, art_id)[art_id]["path"],
+        },
     )
 
     assert response.status_code == 200, response.get_data(as_text=True)
@@ -424,10 +474,11 @@ CONTAINERS = pytest.mark.parametrize("container", [list, dict], ids=["list", "di
 def test_load_artifact_gives_the_list_or_the_dict_after_a_reopen(client, user_and_token, container):
     from utk_curio.sandbox.util.parsers import load_artifact
 
+    user, token = user_and_token
     art_id, stored = _write_frames(container)
-    _save_and_reopen(client, user_and_token[1], _output(FRAMES_NODE, art_id, container.__name__))
+    project_id = _save_and_reopen(client, token, _output(FRAMES_NODE, art_id, container.__name__))
 
-    value = load_artifact(art_id, session_id=LATER)
+    value = load_artifact(art_id, session_id=LATER, saved_paths=_saved(user, project_id, art_id))
 
     assert type(value) is container, f"read a {type(value).__name__}"
     _assert_same_frames(value, stored)
@@ -435,12 +486,16 @@ def test_load_artifact_gives_the_list_or_the_dict_after_a_reopen(client, user_an
 
 def test_get_serves_the_list_after_a_reopen(client, user_and_token):
     """``/get`` answers what it answered before the reopen."""
+    user, token = user_and_token
     art_id, _stored = _write_frames(list)
     before = _sandbox().get("/get", query_string={"fileName": art_id, "sessionId": EARLIER})
     assert before.status_code == 200, before.get_data(as_text=True)
-    _save_and_reopen(client, user_and_token[1], _output(FRAMES_NODE, art_id, "list"))
+    project_id = _save_and_reopen(client, token, _output(FRAMES_NODE, art_id, "list"))
 
-    after = _sandbox().get("/get", query_string={"fileName": art_id, "sessionId": LATER})
+    after = _sandbox().get("/get", query_string={
+        "fileName": art_id, "sessionId": LATER,
+        "savedPath": _saved(user, project_id, art_id)[art_id]["path"],
+    })
 
     assert after.status_code == 200, after.get_data(as_text=True)
     body = after.get_json()
@@ -471,14 +526,18 @@ def test_get_serves_a_dict_of_frames_under_its_keys(client, user_and_token, reop
     them, each frame as the envelope it has alone, under its key: JSON cannot
     carry the frames themselves. The same in the session that wrote the dict
     and after a reopen under a new sign-in."""
+    user, token = user_and_token
     art_id, stored = _write_frames(dict)
     expected = _answered_under_its_keys(stored)
-    session = EARLIER
+    query = {"fileName": art_id, "sessionId": EARLIER}
     if reopened:
-        _save_and_reopen(client, user_and_token[1], _output(FRAMES_NODE, art_id, "dict"))
-        session = LATER
+        project_id = _save_and_reopen(client, token, _output(FRAMES_NODE, art_id, "dict"))
+        query = {
+            "fileName": art_id, "sessionId": LATER,
+            "savedPath": _saved(user, project_id, art_id)[art_id]["path"],
+        }
 
-    response = _sandbox().get("/get", query_string={"fileName": art_id, "sessionId": session})
+    response = _sandbox().get("/get", query_string=query)
 
     assert response.status_code == 200, response.get_data(as_text=True)[:300]
     body = response.get_json()
@@ -511,13 +570,14 @@ def test_a_python_node_downstream_uses_the_list_or_the_dict(client, user_and_tok
     from utk_curio.sandbox.util.parsers import load_from_duckdb
 
     _worker_init()
+    user, token = user_and_token
     art_id, _stored = _write_frames(container)
-    _save_and_reopen(client, user_and_token[1], _output(FRAMES_NODE, art_id, container.__name__))
+    project_id = _save_and_reopen(client, token, _output(FRAMES_NODE, art_id, container.__name__))
     code, returned = USED_AS[container]
 
     result = execute_code(
         textwrap.indent(code, "    "), art_id, "curio.builtin/computation-analysis", container.__name__,
-        session_id=LATER, save_dataset=False,
+        session_id=LATER, save_dataset=False, saved_paths=_saved(user, project_id, art_id),
     )
 
     assert result["stderr"] == "", result["stderr"]
@@ -530,64 +590,64 @@ def test_an_isolated_node_gets_the_list_or_the_dict(client, user_and_token, tmp_
     from utk_curio.sandbox.isolation.child import rebuild_input
     from utk_curio.sandbox.util import staging
 
+    user, token = user_and_token
     art_id, stored = _write_frames(container)
-    _save_and_reopen(client, user_and_token[1], _output(FRAMES_NODE, art_id, container.__name__))
+    project_id = _save_and_reopen(client, token, _output(FRAMES_NODE, art_id, container.__name__))
     scratch = tmp_path / "scratch"
     scratch.mkdir()
 
-    spec = staging.stage_input(art_id, scratch, session_id=LATER)
+    spec = staging.stage_input(art_id, scratch, session_id=LATER, saved_paths=_saved(user, project_id, art_id))
     value = rebuild_input(spec, str(scratch))
 
     assert type(value) is container, f"staged as {spec.get('kind')} {spec.get('container', '')}"
     _assert_same_frames(value, stored)
 
 
-def test_a_bundle_hydrated_before_it_recorded_its_container_is_refreshed_by_the_next_load(
-    client, user_and_token,
-):
-    """A server that hydrated the output before bundles recorded their
-    container holds a ``bundle.json`` with none, which reads as a tuple. The
-    next load copies the dataset's ``bundle.json`` over it, and the list comes
-    back."""
+def test_a_saved_bundle_reads_as_its_dataset_holds_it_now(client, user_and_token):
+    """A ``bundle.json`` written before bundles recorded their container has
+    none, which reads as a tuple. Each read reads the dataset's own
+    ``bundle.json``, so once a save writes it again with its container, the
+    list comes back at the next read, with no copy to bring up to date."""
     from utk_curio.sandbox.util.parsers import load_artifact
 
-    token = user_and_token[1]
+    user, token = user_and_token
     art_id, stored = _write_frames(list)
     output = _output(FRAMES_NODE, art_id, "list")
     project_id = _save_and_reopen(client, token, output)
-    copies = sorted(_shared().rglob("bundle.json"))
-    assert copies, "the project load hydrated no bundle for the list"
-    for copy in copies:
-        _strip_the_container(copy)
-    assert type(load_artifact(art_id, session_id=LATER)) is tuple
-    _reopen(client, token, project_id, output)
+    saved = _saved(user, project_id, art_id)
+    bundle = _bundle_json(user, project_id, FRAMES_NODE)
+    as_installed = bundle.read_text(encoding="utf-8")
+    _strip_the_container(bundle)
+    assert type(load_artifact(art_id, session_id=LATER, saved_paths=saved)) is tuple
+    bundle.write_text(as_installed, encoding="utf-8")
 
-    value = load_artifact(art_id, session_id=LATER)
+    value = load_artifact(art_id, session_id=LATER, saved_paths=saved)
 
     assert type(value) is list, f"read a {type(value).__name__}"
     _assert_same_frames(value, stored)
 
 
 @pytest.mark.parametrize("damage", ["container", "key"], ids=["no-such-container", "a-part-without-its-key"])
-def test_a_hydrated_bundle_that_names_no_container_it_can_be_is_a_missing_artifact(
+def test_a_saved_bundle_that_names_no_container_it_can_be_is_a_missing_artifact(
     client, user_and_token, damage,
 ):
-    """The copy is read with no session check, so a ``bundle.json`` that
-    records a container a bundle cannot be, or a dict part without its key,
-    reads as missing, as for an output that is nowhere, never as a tuple."""
+    """The saved file is read with no session check, so a ``bundle.json``
+    that records a container a bundle cannot be, or a dict part without its
+    key, reads as missing, as for an output that is nowhere, never as a
+    tuple."""
     from utk_curio.sandbox.util.parsers import load_artifact
 
+    user, token = user_and_token
     art_id, _stored = _write_frames(dict)
-    _save_and_reopen(client, user_and_token[1], _output(FRAMES_NODE, art_id, "dict"))
-    copies = sorted(_shared().rglob("bundle.json"))
-    assert copies, "the project load hydrated no bundle for the dict"
-    for copy in copies:
-        spec = json.loads(copy.read_text(encoding="utf-8"))
-        if damage == "container":
-            spec["container"] = "set"
-        else:
-            spec["parts"][0].pop("key", None)
-        copy.write_text(json.dumps(spec), encoding="utf-8")
+    project_id = _save_and_reopen(client, token, _output(FRAMES_NODE, art_id, "dict"))
+    saved = _saved(user, project_id, art_id)
+    bundle = _bundle_json(user, project_id, FRAMES_NODE)
+    spec = json.loads(bundle.read_text(encoding="utf-8"))
+    if damage == "container":
+        spec["container"] = "set"
+    else:
+        spec["parts"][0].pop("key", None)
+    bundle.write_text(json.dumps(spec), encoding="utf-8")
 
     with pytest.raises(KeyError, match="No artifact with id"):
-        load_artifact(art_id, session_id=LATER)
+        load_artifact(art_id, session_id=LATER, saved_paths=saved)

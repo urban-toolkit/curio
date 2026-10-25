@@ -285,8 +285,8 @@ def safe_join(
         When ``True`` (default), validate every segment in *parts* with
         :func:`validate_component`. Set to ``False`` **only** when either:
 
-        - the segments have already been validated by the caller (avoid
-          double work — see ``storage.copy_outputs`` for an example), or
+        - the segments have already been validated by the caller (to avoid
+          double work), or
         - the endpoint historically accepted nested relative paths and
           tightening to single-segment validation would break clients
           (see the ``/get`` and ``/get-preview`` handlers in

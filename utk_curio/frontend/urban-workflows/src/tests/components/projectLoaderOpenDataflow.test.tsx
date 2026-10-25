@@ -6,7 +6,7 @@
  * It is the dataflow the route names, the owner's or a shared one, which a
  * visitor never holds, and the route's even while the canvas still holds the
  * dataflow before it. On /dataflow/new it is the id a new dataflow gets on its
- * first save. The dashboard page sets none: it reads what it carries.
+ * first save. The dashboard page sets it too, behind what it carries.
  */
 import React from "react";
 import { render, waitFor } from "@testing-library/react";
@@ -130,11 +130,14 @@ describe("the dataflow a canvas reads its outputs on", () => {
     expect(openDataflowId()).toBeNull();
   });
 
-  it("is none on the dashboard page, which reads what it carries", async () => {
+  it("is the route's on the dashboard page too, which reads what it carries first", async () => {
+    // A page served without its data fetches its tiles' outputs, and a saved
+    // one is read only on its dataflow's route: nothing copies it anywhere
+    // a plain `/get` would find it.
     renderLoader(true);
 
     await waitFor(() => expect(mockLoadTrill).toHaveBeenCalled());
-    expect(openDataflowId()).toBeNull();
+    expect(openDataflowId()).toBe(ROUTE_ID);
   });
 
   it("is none once the canvas closes", async () => {

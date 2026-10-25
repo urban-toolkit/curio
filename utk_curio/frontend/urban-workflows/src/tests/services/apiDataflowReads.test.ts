@@ -6,8 +6,7 @@
  * owner's Data Catalog in place, so a reopened dataflow needs no copy of it.
  *
  * The dashboard page keeps its own order: what the page carries, then what a
- * viewer's run made, and only then the open dataflow's route, which the
- * dashboard page never sets.
+ * viewer's run made, and only then the open dataflow's route.
  */
 import { fetchData, fetchPreviewData, fetchRaster } from "../../services/api";
 import { setOpenDataflow } from "../../services/dataflowReads";

@@ -207,26 +207,13 @@ def files_read_beside(path) -> list[Path]:
     """The files read beside the file at *path*: those named after it
     (``labels.parquet.decode.json``, a raster's ``.aux.xml``) or after its
     stem (a shapefile's ``.shx``, ``.dbf`` and ``.prj``). Only regular files,
-    not links. Staging stages them with the file, and a project load hydrates
-    them with each part of a bundle."""
+    not links. Staging stages them with the file, and an install keeps them
+    with its output's files."""
     path = Path(path)
     return [
         other for other in sorted(path.parent.glob(glob.escape(path.stem) + ".*"))
         if other.name != path.name and other.is_file() and not other.is_symlink()
     ]
-
-
-#: Where a project load hydrates a saved output whose dataset is a bundle (a
-#: tuple, or a list or dict of frames) in the shared data directory:
-#: ``bundles/<output name>/``, laid out as staging lays out a bundle,
-#: ``data/bundle.json`` and each part it lists at its path under the
-#: dataset's folder.
-HYDRATED_BUNDLES = "bundles"
-
-
-def hydrated_bundle(data_dir, name: str) -> Path:
-    """The ``bundle.json`` a project load hydrated for the output *name*."""
-    return Path(data_dir) / HYDRATED_BUNDLES / name / "data" / "bundle.json"
 
 
 def _read_onnx(path: str):

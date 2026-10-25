@@ -294,11 +294,17 @@ def _auto_install_computed_outputs(
     dataflow_id: Optional[str] = None,
     dataflow_name: Optional[str] = None,
     labels: Optional[dict] = None,
+    on_record: frozenset = frozenset(),
 ) -> Optional[dict]:
     """Save each newly computed output to the account-level user store as
     ``computed.<dataflowId>.<nodeId>@1/`` with its producer/upstream lineage,
     titled by :func:`_computed_output_title` (*labels* are the project's
     template labels, :func:`_labels_for_unnamed`).
+
+    A node in *on_record* has the output it sends already on record
+    (:func:`_on_record`), the one its dataset holds: that dataset is kept,
+    retitled when its title or lineage changed
+    (``installer.keep_recorded_output``), with no source to find again.
 
     Computed outputs are account-level assets by default: this NO LONGER
     installs them into the project (no ``dataflow.datasets`` ref is written).
@@ -329,6 +335,7 @@ def _auto_install_computed_outputs(
         return spec
 
     from utk_curio.backend.app.datasets.install.bundle import install_node_output
+    from utk_curio.backend.app.datasets.install.installer import keep_recorded_output
     from utk_curio.backend.app.datasets.application.export import resolve_upstream_inputs
     from utk_curio.backend.app.projects.template_grammars import TemplateGrammars
 
@@ -363,17 +370,30 @@ def _auto_install_computed_outputs(
             continue
 
         try:
-            result = install_node_output(
+            title = _computed_output_title(ref, dataflow, labels)
+            node_type = _computed_node_type(ref, dataflow)
+            upstream_inputs = resolve_upstream_inputs(spec, node_id)
+            result = keep_recorded_output(
                 user_key,
                 node_id=node_id,
-                path_ref=filename,
-                data_type=data_type,
-                node_name=_computed_output_title(ref, dataflow, labels),
                 dataflow_id=dataflow_id,
-                node_type=_computed_node_type(ref, dataflow),
+                title=title,
+                node_type=node_type,
                 dataflow_name=dataflow_name,
-                upstream_inputs=resolve_upstream_inputs(spec, node_id),
-            )
+                upstream_inputs=upstream_inputs,
+            ) if node_id in on_record else None
+            if result is None:
+                result = install_node_output(
+                    user_key,
+                    node_id=node_id,
+                    path_ref=filename,
+                    data_type=data_type,
+                    node_name=title,
+                    dataflow_id=dataflow_id,
+                    node_type=node_type,
+                    dataflow_name=dataflow_name,
+                    upstream_inputs=upstream_inputs,
+                )
         except Exception as exc:  # noqa: BLE001 – best-effort; don't block save
             # Swallowed so one bad output never blocks the whole save, but log it
             # AND record it so a silently-dropped dataset is surfaced to the user
@@ -677,6 +697,17 @@ def _kept_when_unsent(
         return records_output_on_save(node, None, sources, packages)
 
     return kept
+
+
+def _on_record(refs: List[OutputRef], manifest: Optional[dict]) -> frozenset:
+    """The nodes among *refs* whose output the manifest already records under
+    the same name: the output their computed dataset holds
+    (``_auto_install_computed_outputs`` keeps it)."""
+    entries = _manifest_entries(manifest)
+    return frozenset(
+        ref.node_id for ref in refs
+        if (entries.get(ref.node_id) or {}).get("filename") == ref.filename
+    )
 
 
 def _merge_outputs(
@@ -1000,11 +1031,10 @@ def update_project(user, project_id: str, data: ProjectUpdate) -> ProjectDetail:
                 keep_unsent=_kept_when_unsent(existing_spec, effective_spec, ukey),
             )
             # Install into users/<user>/datasets/ and register lean refs in the spec.
-            # Do not copy artifacts into project/data/ — that folder is legacy-only.
             updated_spec = _auto_install_computed_outputs(
                 ukey, refs_to_install, effective_spec, install_warnings,
                 dataflow_id=project_id, dataflow_name=(data.name or project.name),
-                labels=labels,
+                labels=labels, on_record=_on_record(refs_to_install, existing_manifest),
             )
             if updated_spec is not None and updated_spec is not effective_spec:
                 effective_spec = updated_spec
@@ -1121,6 +1151,7 @@ def record_node_outputs(
         _auto_install_computed_outputs(
             ukey, refs_to_install, spec, install_warnings,
             dataflow_id=project_id, dataflow_name=project.name, labels=labels,
+            on_record=_on_record(refs_to_install, manifest),
         )
         persisted_refs = _persisted_output_refs(ukey, project_id, output_refs, spec)
         storage.write_manifest(ukey, project_id, project.spec_revision, persisted_refs,
@@ -1172,7 +1203,7 @@ def replace_dataflow_datasets(user, project_id: str, refs: list) -> Optional[dic
 
 
 # ---------------------------------------------------------------------------
-# Load (hydration)
+# Load
 # ---------------------------------------------------------------------------
 
 def _with_effective_packages(spec, ukey: str, project_id: str):
@@ -1206,22 +1237,24 @@ def _with_effective_packages(spec, ukey: str, project_id: str):
 def _saved_outputs(
     ukey: str, project_id: str,
 ) -> tuple[Optional[dict], List[OutputRef], List[OutputRef]]:
-    """The spec, the saved outputs put where the sandbox reads them
-    (``storage.hydrate_outputs``), and those the manifest lists that could not
-    be, all read under the project's spec lock.
+    """The spec, the saved outputs a reader can read in place
+    (``storage.readable_saved_outputs``), and those the manifest lists that
+    have no file left, all read under the project's spec lock. Nothing is
+    copied: every reader reads a saved output from its owner's store
+    (``storage.saved_output_file``).
 
     A save writes the spec, the manifest and each new output it installs under
-    that lock, and installing an output replaces its folder. A load that read
-    the manifest without the lock could meet an output mid-rewrite, find no
-    copy of it, and drop it (#941). The lock comes before any database write
-    (#909), and nothing here writes to the database.
+    that lock. A load that read the manifest without the lock could meet a
+    save halfway, the spec of one and the outputs of another (#941). The lock
+    comes before any database write (#909), and nothing here writes to the
+    database.
     """
     with storage.spec_write_lock(ukey, project_id):
         spec = storage.read_spec(ukey, project_id)
         listed = _output_refs_from_manifest(storage.read_manifest(ukey, project_id))
-        hydrated = storage.hydrate_outputs(ukey, project_id, listed, spec=spec)
-    missing = [ref for ref in listed if ref not in hydrated]
-    return spec, hydrated, missing
+        readable = storage.readable_saved_outputs(ukey, project_id, listed, spec=spec)
+    missing = [ref for ref in listed if ref not in readable]
+    return spec, readable, missing
 
 
 def load_project(user, project_id: str) -> dict:
@@ -1244,7 +1277,7 @@ def load_project(user, project_id: str) -> dict:
     # Before the outputs are restored: one a node reads from such a dataset is
     # restored from it.
     ensure_dataflow_datasets_installed(ukey, storage.read_spec(ukey, project_id))
-    spec, hydrated, _missing = _saved_outputs(ukey, project_id)
+    spec, readable, _missing = _saved_outputs(ukey, project_id)
     spec = _with_effective_packages(spec, ukey, project_id)
 
     # After the spec lock: a thread holding a database write may not wait for
@@ -1253,12 +1286,12 @@ def load_project(user, project_id: str) -> dict:
     db.session.commit()
     return {
         "project": _to_detail(
-            project, spec=spec, outputs=hydrated,
+            project, spec=spec, outputs=readable,
             spec_revision=storage.spec_revision(ukey, project_id),
             categories=_categories(user, project_id, spec),
         ),
         "spec": spec,
-        "outputs": [_output_ref_dict(r) for r in hydrated],
+        "outputs": [_output_ref_dict(r) for r in readable],
     }
 
 
@@ -1267,14 +1300,14 @@ def load_project(user, project_id: str) -> dict:
 # ---------------------------------------------------------------------------
 
 def load_shared_project(project_id: str) -> dict:
-    """Hydrate a project for any caller, regardless of ownership.
+    """Load a project for any caller, regardless of ownership.
 
     Used by the unauthenticated ``GET /api/projects/<id>/shared`` route to
     power link-based sharing. A deleted project 404s because its row is gone
     — deletion is a hard delete since Archive was removed (#261).
 
-    ``missing_outputs`` are the saved outputs the manifest lists that no copy
-    was left to load (``_saved_outputs``): a dashboard that needs one says to
+    ``missing_outputs`` are the saved outputs the manifest lists that have no
+    file left to read (``_saved_outputs``): a dashboard that needs one says to
     try again rather than draw its tile empty.
     """
     from utk_curio.backend.app.projects.models import Project
@@ -1288,7 +1321,7 @@ def load_shared_project(project_id: str) -> dict:
     # that has none.
     if storage.read_spec(ukey, project_id) is None:
         raise repo.NotFoundError(f"Project {project_id} not found")
-    spec, hydrated, missing = _saved_outputs(ukey, project_id)
+    spec, readable, missing = _saved_outputs(ukey, project_id)
     if spec is None:
         raise repo.NotFoundError(f"Project {project_id} not found")
 
@@ -1301,7 +1334,7 @@ def load_shared_project(project_id: str) -> dict:
     spec = _with_effective_packages(spec, ukey, project_id)
 
     detail = _to_detail(
-        project, spec=spec, outputs=hydrated,
+        project, spec=spec, outputs=readable,
         spec_revision=storage.spec_revision(ukey, project_id),
         categories=_categories(project.owner, project_id, spec),
     )
@@ -1311,7 +1344,7 @@ def load_shared_project(project_id: str) -> dict:
     return {
         "project": detail,
         "spec": spec,
-        "outputs": [_output_ref_dict(r) for r in hydrated],
+        "outputs": [_output_ref_dict(r) for r in readable],
         "missing_outputs": [_output_ref_dict(r) for r in missing],
     }
 
@@ -1336,7 +1369,22 @@ def saved_output_of(project_id: str, name: str) -> Optional[storage.SavedOutputF
 # Standalone dashboard
 # ---------------------------------------------------------------------------
 
-def _dashboard_envelope_reader():
+def _saved_output_params(filename: str, saved_path_of) -> dict:
+    """What a dashboard's reader asks the sandbox by: *filename*, and the file
+    the dataflow's owner's store holds for it, when *saved_path_of* names one.
+    No session id: see :func:`_dashboard_envelope_reader`."""
+    params = {"fileName": filename}
+    saved = saved_path_of(filename)
+    if saved is not None:
+        params["savedPath"] = str(saved)
+    return params
+
+
+def _no_saved_path(filename: str) -> None:
+    return None
+
+
+def _dashboard_envelope_reader(saved_path_of=_no_saved_path):
     """Read one saved output as the wire envelope ``/get`` would return.
 
     Goes to the sandbox rather than parsing the file here, so an embedded page
@@ -1346,10 +1394,10 @@ def _dashboard_envelope_reader():
 
     No session id is sent, deliberately. The artifact store is keyed to the
     session that produced a row, which the owner's browser had and this call
-    never will; ``load_shared_project`` has just hydrated every saved output
-    into the shared data dir, and the sandbox falls back to reading it by name
-    from there. That fallback is the only reason a dashboard can be assembled
-    for anyone other than the person who ran the dataflow.
+    never will. *saved_path_of* names the file the dataflow's owner's store
+    holds for a saved output (:func:`saved_output_of`), and the sandbox reads
+    that file in place, with nothing copied. That is what lets a dashboard be
+    assembled for anyone other than the person who ran the dataflow.
     """
     from utk_curio.backend.app.api.routes import _sandbox_call, SANDBOX_GET_TIMEOUT
 
@@ -1357,7 +1405,7 @@ def _dashboard_envelope_reader():
         resp = _sandbox_call(
             "get", "/get",
             label="/get (dashboard)", timeout=SANDBOX_GET_TIMEOUT,
-            params={"fileName": filename},
+            params=_saved_output_params(filename, saved_path_of),
         )
         if isinstance(resp, tuple):  # transport failure, already a Flask tuple
             raise KeyError(filename)
@@ -1367,13 +1415,14 @@ def _dashboard_envelope_reader():
     return read
 
 
-def _dashboard_raster_reader():
+def _dashboard_raster_reader(saved_path_of=_no_saved_path):
     """Ask the sandbox for one raster the way the editor's Autark map asks
     ``GET /raster``: by name, ``part`` for its place in a tuple, for no more
     than a map loads (``RASTER_MAX_CELLS``, ``RASTER_MAX_SIDE``), so a larger
     raster is the 413 with its size the editor gets and is never written out.
 
-    No session id, as in :func:`_dashboard_envelope_reader`. Returns what the
+    No session id, and the saved output's own file, as in
+    :func:`_dashboard_envelope_reader`. Returns what the
     sandbox answered: ``{"status": 200, "meta", "geotiff"}`` with the
     ``X-Curio-Raster`` description, or ``{"status", "meta", "message"}`` for a
     refusal. A sandbox that cannot be asked raises ``KeyError``.
@@ -1385,7 +1434,11 @@ def _dashboard_raster_reader():
     from utk_curio.sandbox.util.rasters import RASTER_META_HEADER
 
     def read(filename: str, part: Optional[int]) -> dict:
-        params = {"fileName": filename, "maxCells": RASTER_MAX_CELLS, "maxSide": RASTER_MAX_SIDE}
+        params = {
+            **_saved_output_params(filename, saved_path_of),
+            "maxCells": RASTER_MAX_CELLS,
+            "maxSide": RASTER_MAX_SIDE,
+        }
         if part is not None:
             params["part"] = part
         resp = _sandbox_call(
@@ -1493,8 +1546,11 @@ def build_standalone_dashboard(
     GeoTIFFs of the rasters an Autark map reads, would not fit in a page; the
     caller turns that into a message naming the heavy tiles. Raises
     :class:`DashboardOutputUnreadableError` when a tile needs a saved output
-    that could not be read, one the load found no copy of included, or a
+    that could not be read, one the load found no file of included, or a
     raster of one the sandbox could not be asked for.
+
+    Each saved output is read in place, from the file its owner's store
+    holds, named just before the read (:func:`saved_output_of`).
     """
     from utk_curio.backend.app.projects.dashboard_payload import (
         DEFAULT_PAYLOAD_LIMIT_BYTES,
@@ -1508,12 +1564,17 @@ def build_standalone_dashboard(
     # The dataflow's nodes are what the owner's packages declare.
     project = db.session.get(Project, project_id)
     owner_key = _owner_user_dir_key(project) if project is not None else None
+
+    def saved_path_of(filename: str):
+        saved = saved_output_of(project_id, filename)
+        return saved.path if saved is not None else None
+
     payload = build_dashboard_payload(
         spec=loaded["spec"],
         output_refs=loaded["outputs"],
         missing_refs=loaded.get("missing_outputs", ()),
-        fetch_envelope=fetch_envelope or _dashboard_envelope_reader(),
-        fetch_raster=fetch_raster or _dashboard_raster_reader(),
+        fetch_envelope=fetch_envelope or _dashboard_envelope_reader(saved_path_of),
+        fetch_raster=fetch_raster or _dashboard_raster_reader(saved_path_of),
         meta={
             "projectId": project_id,
             "name": getattr(detail, "name", None),

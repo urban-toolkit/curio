@@ -566,13 +566,14 @@ _listen_for_deletes()
 # ---------------------------------------------------------------------------
 
 def _saved_state(user_key: str, project_id: str):
-    """The saved spec and its saved outputs, put where the sandbox reads them
-    by name (``services._saved_outputs``), so a step reads the owner's output
-    as its input whatever session it runs in."""
+    """The saved spec and its saved outputs that can be read
+    (``services._saved_outputs``). A step reads the owner's output as its
+    input whatever session it runs in, from the file the owner's store holds
+    (``node_exec.resolve_saved_inputs``)."""
     from utk_curio.backend.app.projects.services import _saved_outputs
 
-    spec, hydrated, _missing = _saved_outputs(user_key, project_id)
-    return spec, hydrated
+    spec, readable, _missing = _saved_outputs(user_key, project_id)
+    return spec, readable
 
 
 def _public(payload: dict) -> dict:
