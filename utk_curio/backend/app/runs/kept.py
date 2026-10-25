@@ -149,13 +149,16 @@ def step_key(*, packages: str, node_type: str, engine: str, code: str, input_ref
     """The key a step's output is kept under: everything that made it. Its
     code as sent, the values written in; its inputs, which are saved outputs
     or other kept outputs, each its own artifact; the owner's packages; the
-    datasets its code reads; and Curio's version, whose helpers it calls."""
+    datasets its code reads; and Curio's version, whose helpers it calls.
+    Its type is keyed in its one canonical spelling: a play posts it with its
+    version, and a saved dataflow may hold it without one."""
     from utk_curio import __version__
+    from utk_curio.backend.app.packages.service import canonical_template_id
 
     return hashlib.sha256(canonical({
         "curio": __version__,
         "packages": packages,
-        "type": node_type,
+        "type": canonical_template_id(node_type),
         "engine": engine,
         "code": code,
         "input": input_ref,
