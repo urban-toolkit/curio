@@ -162,6 +162,291 @@ def load_artifact_as_dict(artifact_id: str) -> dict:
     return result
 
 
+# ---------------------------------------------------------------------------
+# Two runs' outputs, compared without their JSON envelopes
+# ---------------------------------------------------------------------------
+
+#: Kinds whose value is a parquet table, which /get's Arrow route streams a
+#: batch at a time.
+_TABLE_KINDS = ("dataframe", "geodataframe")
+#: Kinds stored as zlib-compressed JSON in a file ``value_str`` names, or as
+#: JSON in ``value_json`` in older rows.
+_JSON_KINDS = ("list", "dict")
+#: Kinds that only name other artifacts, in ``value_json``: a tuple's values,
+#: or a list or dict whose values are frames.
+_PARENT_KINDS = ("outputs", "list_of_ids", "dict_of_ids")
+#: Kinds whose whole value is one column of the stored row.
+_ROW_COLUMNS = {
+    "null": None,
+    "bool": "value_int",
+    "int": "value_int",
+    "float": "value_float",
+    "str": "value_str",
+    "raster": "value_str",
+}
+#: The Arrow route's headers that say what a table is. X-Curio-Filename is
+#: left out: it names the artifact, so it differs between any two.
+_TABLE_HEADERS = (
+    "X-Curio-Kind",
+    "X-Curio-Rows",
+    "X-Curio-Schema",
+    "X-Curio-Encoded-Object-Columns",
+    "X-Curio-Frame-Metadata",
+)
+_ARROW_STREAM = "application/vnd.apache.arrow.stream"
+
+
+def artifact_meta(artifact_id: str) -> dict:
+    """The sandbox's stored row for an artifact (``/artifact-meta``): its kind,
+    and where its value is, without reading the value."""
+    import requests as _req
+    resp = _req.get(
+        f'{sandbox_base_url()}/artifact-meta',
+        params={'fileName': artifact_id},
+        headers=sandbox_auth_header(),
+        timeout=(SANDBOX_CONNECT_TIMEOUT_S, SANDBOX_GET_TIMEOUT_S),
+    )
+    _explain_sandbox_auth_failure(resp, f'/artifact-meta fileName={artifact_id}')
+    if not resp.ok:
+        raise AssertionError(
+            f"sandbox /artifact-meta fileName={artifact_id} -> {resp.status_code}\n"
+            f"{resp.text[:2000]}"
+        )
+    return resp.json()
+
+
+def _artifact_table(artifact_id: str):
+    """A table artifact as /get's Arrow route streams it, with its headers."""
+    import pyarrow as pa
+    import requests as _req
+    resp = _req.get(
+        f'{sandbox_base_url()}/get',
+        params={'fileName': artifact_id},
+        headers={
+            **sandbox_auth_header(),
+            'Accept': _ARROW_STREAM,
+            # A GeoDataFrame's geometry comes as WKB, which is only sent on request.
+            'X-Curio-Accept-Geometry': 'wkb',
+        },
+        timeout=(SANDBOX_CONNECT_TIMEOUT_S, SANDBOX_GET_TIMEOUT_S),
+    )
+    _explain_sandbox_auth_failure(resp, f'/get (Arrow) fileName={artifact_id}')
+    if not resp.ok:
+        raise AssertionError(
+            f"sandbox /get (Arrow) fileName={artifact_id} -> {resp.status_code}\n"
+            f"{resp.text[:2000]}"
+        )
+    table = pa.ipc.open_stream(resp.content).read_all()
+    headers = {name: resp.headers.get(name) for name in _TABLE_HEADERS}
+    # A stream cut short still decodes, to fewer rows.
+    if str(table.num_rows) != headers["X-Curio-Rows"]:
+        raise AssertionError(
+            f"sandbox /get (Arrow) fileName={artifact_id} streamed {table.num_rows} "
+            f"rows of {headers['X-Curio-Rows']}"
+        )
+    return table, headers
+
+
+def _stored_json(meta: dict) -> dict | None:
+    """A list or dict artifact's stored JSON, by the digest of its bytes.
+
+    The file is the sandbox's own, in the shared data directory this process
+    sees too (``get_shared_data_dir``: the stack's ``.curio``). None when it is
+    not there, as for a stack on another machine.
+    """
+    import hashlib
+    if meta.get("value_str"):
+        path = Path(get_shared_data_dir()) / meta["value_str"]
+        if not path.is_file():
+            return None
+        digest = hashlib.sha256()
+        with path.open("rb") as fh:
+            for chunk in iter(lambda: fh.read(1 << 20), b""):
+                digest.update(chunk)
+        return {"digest": digest.hexdigest(), "path": str(path)}
+    text = meta.get("value_json") or ""
+    return {"digest": hashlib.sha256(text.encode("utf-8")).hexdigest(), "inline": text}
+
+
+def snapshot_artifact(artifact_id: str) -> dict:
+    """What an artifact holds, read so two runs' outputs compare without its
+    JSON envelope.
+
+    ``load_artifact_as_dict`` asks ``/get`` for the envelope the canvas reads,
+    where a list becomes one ``{"data", "dataType"}`` object per element, built
+    in the sandbox and parsed again here. Example 09's grid of UTCI values took
+    7.3 GiB in the sandbox and 8.5 GiB in pytest that way (#1154's runs). This
+    reads the stored row (``/artifact-meta``) and then, by its kind:
+
+    * a table: the Arrow route, which streams the stored parquet a batch at a
+      time, kept as a pyarrow Table with the headers that describe it;
+    * a list or dict: the digest of its stored JSON;
+    * a tuple, or a list or dict of frames: each value it names, the same way;
+    * anything else in the row: the row's value.
+
+    A kind this does not know, or a JSON file this process cannot see, is read
+    as the envelope, as before.
+    """
+    meta = artifact_meta(artifact_id)
+    kind = meta.get("kind")
+    if kind in _ROW_COLUMNS:
+        column = _ROW_COLUMNS[kind]
+        return {"kind": kind, "value": meta.get(column) if column else None}
+    if kind in _TABLE_KINDS:
+        table, headers = _artifact_table(artifact_id)
+        return {"kind": kind, "table": table, "headers": headers}
+    if kind in _PARENT_KINDS:
+        named = json.loads(meta.get("value_json") or "[]")
+        if isinstance(named, dict):
+            return {"kind": kind, "parts": {key: snapshot_artifact(part) for key, part in named.items()}}
+        return {"kind": kind, "parts": [snapshot_artifact(part) for part in named]}
+    if kind in _JSON_KINDS:
+        stored = _stored_json(meta)
+        if stored is not None:
+            return {"kind": kind, **stored}
+    return {"kind": kind, "envelope": load_artifact_as_dict(artifact_id)}
+
+
+def _same_value(a, b) -> bool:
+    """Equal, with NaN equal to NaN, through nested lists and dicts."""
+    if isinstance(a, float) and isinstance(b, float):
+        return a == b or (a != a and b != b)
+    if isinstance(a, dict) and isinstance(b, dict):
+        return a.keys() == b.keys() and all(_same_value(a[key], b[key]) for key in a)
+    if isinstance(a, (list, tuple)) and isinstance(b, (list, tuple)):
+        return len(a) == len(b) and all(_same_value(x, y) for x, y in zip(a, b))
+    return a == b
+
+
+def _same_column(a, b) -> bool:
+    """Two Arrow columns hold the same values, NaN equal to NaN, however chunked.
+
+    pyarrow's own ``equals`` calls two NaNs different, where the JSON envelope
+    sent both as null, so a float column with NaN in it is compared value by
+    value instead.
+    """
+    import pyarrow as pa
+    import pyarrow.compute as pc
+    if a.equals(b):
+        return True
+    if a.type != b.type or len(a) != len(b):
+        return False
+    if pa.types.is_floating(a.type):
+        if not pc.all(pc.equal(pc.is_null(a), pc.is_null(b))).as_py():
+            return False
+        # Null where either is null, and those places already match.
+        same = pc.or_kleene(pc.equal(a, b), pc.and_kleene(pc.is_nan(a), pc.is_nan(b)))
+        return pc.all(pc.fill_null(same, True)).as_py()
+    # A nested type can carry floats too.
+    return _same_value(a.to_pylist(), b.to_pylist())
+
+
+def _parsed(raw):
+    """A header or metadata value, as JSON when it is JSON."""
+    if raw is None:
+        return None
+    try:
+        return json.loads(raw)
+    except ValueError:
+        return raw
+
+
+def _schema_metadata(table) -> dict:
+    return {
+        key.decode(): _parsed(value.decode())
+        for key, value in (table.schema.metadata or {}).items()
+    }
+
+
+def _table_differences(actual: dict, expected: dict, where: str) -> list[str]:
+    out = []
+    for name in _TABLE_HEADERS:
+        if _parsed(actual["headers"].get(name)) != _parsed(expected["headers"].get(name)):
+            out.append(f"{where}: {name} is {actual['headers'].get(name)!r}, "
+                       f"expected {expected['headers'].get(name)!r}")
+    a, e = actual["table"], expected["table"]
+    if a.schema.names != e.schema.names:
+        return out + [f"{where} has the columns {a.schema.names}, expected {e.schema.names}"]
+    if not a.schema.equals(e.schema):
+        out.append(f"{where}: the column types differ ({a.schema} against {e.schema})")
+        return out
+    if not _same_value(_schema_metadata(a), _schema_metadata(e)):
+        out.append(f"{where}: the table's metadata (pandas, GeoParquet) differs")
+    if a.num_rows != e.num_rows:
+        return out + [f"{where} has {a.num_rows} rows, expected {e.num_rows}"]
+    differing = [name for name in a.schema.names if not _same_column(a.column(name), e.column(name))]
+    if differing:
+        out.append(f"{where}: the values differ in the columns {differing}")
+    return out
+
+
+_UNREADABLE = object()
+
+
+def _json_value(snapshot: dict):
+    """The value a list or dict snapshot's JSON holds, or _UNREADABLE."""
+    import zlib
+    if "inline" in snapshot:
+        return json.loads(snapshot["inline"] or "null")
+    try:
+        return json.loads(zlib.decompress(Path(snapshot["path"]).read_bytes()).decode("utf-8"))
+    except (OSError, zlib.error, ValueError):
+        return _UNREADABLE
+
+
+def _short(value) -> str:
+    text = repr(value)
+    return text if len(text) <= 200 else text[:200] + "..."
+
+
+def artifact_differences(actual: dict, expected: dict, where: str = "the output") -> list[str]:
+    """How two ``snapshot_artifact`` results differ, one line per place;
+    empty when they hold the same value.
+
+    As strict as comparing the JSON envelopes was, and stricter where the
+    envelope lost something: a table's values are compared as stored, its
+    metadata and column types included. A list or dict whose stored bytes
+    differ is read back and compared as values, so the same values written in
+    another key order still match.
+    """
+    kind = expected.get("kind")
+    if actual.get("kind") != kind:
+        return [f"{where} is a {actual.get('kind')}, expected a {kind}"]
+    if "envelope" in actual or "envelope" in expected:
+        if "envelope" not in actual or "envelope" not in expected:
+            return [f"{where}: one run's {kind} was read as stored, the other's as JSON"]
+        a, e = actual["envelope"], expected["envelope"]
+        if a == e:
+            return []
+        keys = sorted(k for k in set(a) | set(e) if a.get(k) != e.get(k))
+        return [f"{where}: the JSON differs in its top-level keys {keys}"]
+    if "value" in expected:
+        if _same_value(actual["value"], expected["value"]):
+            return []
+        return [f"{where} is {_short(actual['value'])}, expected {_short(expected['value'])}"]
+    if "parts" in expected:
+        a, e = actual["parts"], expected["parts"]
+        if isinstance(e, dict):
+            if not isinstance(a, dict) or a.keys() != e.keys():
+                return [f"{where} has the keys {sorted(a)}, expected {sorted(e)}"]
+            return [line for key in e for line in artifact_differences(a[key], e[key], f"{where}[{key!r}]")]
+        if len(a) != len(e):
+            return [f"{where} has {len(a)} values, expected {len(e)}"]
+        return [line for i, (x, y) in enumerate(zip(a, e))
+                for line in artifact_differences(x, y, f"{where}[{i}]")]
+    if "table" in expected:
+        return _table_differences(actual, expected, where)
+    if actual.get("digest") == expected.get("digest"):
+        return []
+    a, e = _json_value(actual), _json_value(expected)
+    if a is _UNREADABLE or e is _UNREADABLE:
+        return [f"{where}: the stored {kind} differs (sha256 {actual.get('digest')} "
+                f"against {expected.get('digest')}), and one of them can no longer be read"]
+    if _same_value(a, e):
+        return []
+    return [f"{where}: the {kind} differs from the expected one"]
+
+
 def load_raster_cells(artifact_id: str):
     """A raster artifact as the sandbox serves it to an Autark map (``/raster``,
     GeoTIFF bytes): ``(grid, bands)``. *grid* is its grid as an envelope names
@@ -279,16 +564,17 @@ def _catalog_resolution(code: str, username: str | None = None, node_type: str |
 
 def execute_workflow_programmatically(
     spec, seed: int = 42, username: str | None = None
-) -> dict[str, str]:
-    """Execute every code node via the sandbox HTTP API and return {node_id: artifact_id}.
+) -> dict[str, dict]:
+    """Execute every code node via the sandbox HTTP API and return
+    {node_id: ``snapshot_artifact`` of its output}.
 
     *username* is the account the browser run signs in as, so datasets and the
     files nodes derive from them resolve the same way in both runs.
 
     Routes all execution through the sandbox's /exec endpoint so the sandbox's
     persistent DuckDB connection remains the sole writer throughout the test.
-    The returned artifact IDs are used by Playwright tests to compare
-    sandbox-produced outputs with browser-produced ones.
+    The returned snapshots are what Playwright tests compare browser-produced
+    outputs with (``artifact_differences``).
     """
     import requests as _req
 
@@ -301,7 +587,7 @@ def execute_workflow_programmatically(
     )
 
     outputs: dict[str, dict] = {}   # node_id → {"path": artifact_id, "dataType": ...}
-    expected: dict[str, dict] = {}  # node_id → eager-loaded artifact dict (see fix below)
+    expected: dict[str, dict] = {}  # node_id → snapshot of its output, taken at once (see below)
     # Nodes that give this runner no output: one only the browser runs (an
     # Autark data or compute step) and every Python node below one.
     browser_only: set[str] = set()
@@ -390,11 +676,13 @@ def execute_workflow_programmatically(
             )
 
         outputs[node.id] = {"path": out['path'], "dataType": out['dataType']}
-        # Load the artifact contents *now* and stash them — the artifact may be
-        # invisible later when the browser run uses a different session_id, or
-        # may have been overwritten/evicted from DuckDB by then. Every node that
-        # reaches here is a PY_CODE_TYPES node (the only ones Python-exec'd), and
-        # those are exactly the ones that get inline data-content comparison.
-        expected[node.id] = load_artifact_as_dict(out['path'])
+        # Snapshot the artifact *now* - it may be invisible later when the
+        # browser run uses a different session_id, or may have been
+        # overwritten/evicted from DuckDB by then. A snapshot holds a table as
+        # Arrow and a list or dict by its digest, never the JSON envelope. Every
+        # node that reaches here is a PY_CODE_TYPES node (the only ones
+        # Python-exec'd), and those are exactly the ones that get inline
+        # data-content comparison.
+        expected[node.id] = snapshot_artifact(out['path'])
 
     return expected
