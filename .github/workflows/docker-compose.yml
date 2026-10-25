@@ -155,7 +155,7 @@ on:
         options: [auto, hosted, arcade, desktop]
         default: auto
       gpu_pool:
-        description: 'test-gpu: auto (arcade GPU runners first, then utk, then utk-desktop-01), arcade, utk, or desktop'
+        description: 'test-gpu: auto (arcade GPU runners first, then utk, then the utk-desktop runners), arcade, utk, or desktop'
         type: choice
         options: [auto, arcade, utk, desktop]
         default: auto
@@ -191,7 +191,8 @@ env:
 #     and -02, [self-hosted, desktop]) when arcade is full too.
 #   * test-gpu: an arcade GPU runner (arcade-gpu-01..04, [self-hosted, gpu,
 #     h100]) while one is free, then utk-gpu ([self-hosted, gpu, curio]), and
-#     utk-desktop-01 ([self-hosted, gpu, desktop]) when utk-gpu is busy too.
+#     a utk-desktop runner ([self-hosted, gpu, desktop], either one) when
+#     utk-gpu is busy too, with as many workers as the desktop holds.
 #   * test-desktop-stress, unit (sandbox) and preview-runner: always
 #     ubuntu-latest. The first two measure a 4-core, 16 GB laptop.
 #   * test-gpu-stress: always utk-gpu.
@@ -214,7 +215,7 @@ env:
 # while CPU jobs each get a runner of their own. Keyed per ref, not repo-wide:
 # GitHub keeps only ONE job pending per group, so a repo-wide group let each
 # newly queued job evict the previously pending one. test-gpu's group also
-# names its GPU pool, so runs on arcade, utk-gpu and utk-desktop-01 never wait
+# names its GPU pool, so runs on arcade, utk-gpu and the desktops never wait
 # for or evict each other. `cancel-in-progress: false` means eviction only ever kills
 # a job that has not started, which holds no containers, ports or GPU to leak.
 # test-gpu-stress and a re-mint's test-gpu have groups of their own.
@@ -433,7 +434,7 @@ jobs:
     runs-on: ${{ fromJSON(needs.pick-runners.outputs.runners)['test-gpu'] }}
     timeout-minutes: ${{ inputs.repeat > 1 && 350 || 90 }}
     # One queue per ref and GPU pool (h100 is arcade's, curio is utk-gpu,
-    # desktop is utk-desktop-01), so a run on one pool never waits for, or
+    # desktop is the utk-desktop runners), so a run on one pool never waits for, or
     # evicts, a run on another.
     concurrency:
       group: gpu-ci-${{ github.ref }}-${{ fromJSON(needs.pick-runners.outputs.runners || '{"test-gpu":["","","none"]}')['test-gpu'][2] }}${{ inputs.remint && '-remint' || '' }}
@@ -804,9 +805,11 @@ jobs:
           PYTEST_ADDOPTS: --junitxml=${{ github.workspace }}/ci-report/e2e{run}.xml
           # This runner's GPU model, for the frames that keep a baseline per
           # GPU kind (GPU_KINDS in utils/screenshots.py): the arcade runners
-          # share an H100, utk-gpu has an RTX PRO 6000, utk-desktop-01 an RTX
-          # 3070. Any other runner gets none, so its frames compare with their
-          # default baselines.
+          # share an H100, utk-gpu has an RTX PRO 6000, and the utk-desktop
+          # runners share frames: utk-desktop-02's RTX 4070 drew 07's plot
+          # close-up minted on utk-desktop-01's RTX 3070 exactly (10-25). Any
+          # other runner gets none, so its frames compare with their default
+          # baselines.
           CURIO_E2E_GPU_KIND: ${{ startsWith(runner.name, 'arcade-gpu-') && 'arcade-gpu' || (runner.name == 'utk-gpu' && 'utk-gpu' || (startsWith(runner.name, 'utk-desktop-') && 'utk-desktop' || '')) }}
         shell: bash
         run: |

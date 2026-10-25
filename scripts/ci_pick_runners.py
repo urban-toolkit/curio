@@ -6,10 +6,10 @@ cpu]``) after that, and on the utk-desktop runners (utk-desktop-01 and -02,
 ``[self-hosted, desktop]``) when arcade is full too. The GPU job (test-gpu)
 runs on the arcade GPU pool (arcade-gpu-01..04, ``[self-hosted, gpu, h100]``)
 while it has a free runner, then on utk-gpu (``[self-hosted, gpu, curio]``),
-and on utk-desktop-01 (``[self-hosted, gpu, desktop]``) when utk-gpu is busy
-too. utk-desktop-02 has no ``gpu`` label: its 12 GB do not hold test-gpu's
-shards. A desktop runs one job of either kind, so the desktops' room counts
-the jobs of both.
+and on a utk-desktop runner (``[self-hosted, gpu, desktop]``, either one) when
+utk-gpu is busy too, where it runs as many workers as the desktop holds
+(scripts/ci_memory_budget.py). A desktop runs one job of either kind, so the
+desktops' room counts the jobs of both.
 GitHub cannot express "this runner, or that one if busy": ``runs-on`` has no
 "or", and it sends ``ubuntu-latest`` jobs only to its own runners. So a run
 picks twice: the pick-runners job, for the jobs that start at once, and
@@ -76,9 +76,10 @@ GPU_RUNNERS = 4
 UTK_RUNNERS = 1
 #: The utk-desktop runners (utk-desktop-01 and -02), each one job at a time.
 DESKTOP_RUNNERS = 2
-#: Those of them that also take the GPU job (30 GB, RTX 3070; the only ones
-#: labelled gpu).
-GPU_DESKTOPS = ("utk-desktop-01",)
+#: Those of them that also take the GPU job: both carry the gpu label (owner,
+#: 10-25), utk-desktop-01 with 30 GB and an RTX 3070, utk-desktop-02 with
+#: 12 GB and an RTX 4070.
+GPU_DESKTOPS = ("utk-desktop-01", "utk-desktop-02")
 DESKTOP_GPU_RUNNERS = len(GPU_DESKTOPS)
 #: Concurrent GitHub-hosted jobs the organization's plan allows.
 HOSTED_SLOTS = 20
@@ -143,7 +144,7 @@ def busy(jobs: list[dict], now: datetime) -> dict:
     counts["arcade_stuck"] = oldest_queued["arcade"] > STUCK_AFTER_S and running["arcade"] < CPU_RUNNERS
     counts["arcade_gpu_stuck"] = oldest_queued["arcade-gpu"] > STUCK_AFTER_S and running["arcade-gpu"] < GPU_RUNNERS
     counts["hosted_full"] = oldest_queued["hosted"] > HOSTED_FULL_AFTER_S
-    # A CPU job can take either desktop and the GPU job only utk-desktop-01, so
+    # A CPU job can take any desktop and the GPU job those in GPU_DESKTOPS, so
     # each kind waits too long only while a desktop it can take runs nothing.
     counts["desktop_stuck"] = (
         (oldest_queued["desktop"] > STUCK_AFTER_S
@@ -156,10 +157,11 @@ def busy(jobs: list[dict], now: datetime) -> dict:
 def desktop_room(counts: dict) -> tuple[int, int]:
     """Free desktops for CPU jobs, and for the GPU job.
 
-    A CPU job can take any desktop, the GPU job only utk-desktop-01. A running
+    A CPU job can take any desktop, the GPU job only those in GPU_DESKTOPS (today
+    both, so each desktop job of either kind holds one GPU desktop). A running
     CPU job's runner says which desktop it holds; a queued one's does not, so
     CPU jobs are also taken to fill the desktops without a GPU first, and the
-    rest to hold utk-desktop-01, whichever holds more.
+    rest to hold GPU desktops, whichever holds more.
     """
     if counts["desktop_stuck"]:
         return 0, 0
@@ -301,9 +303,9 @@ def pick(cpu_keys: list[str], gpu_keys: list[str], pool: str, gpu_pool: str, fet
                 how.append(f"GPU jobs skip arcade: an arcade GPU job has waited over {STUCK_AFTER_S} s")
             how.append(f"GPU jobs: arcade first, {gpu_free} of {GPU_RUNNERS} arcade GPU runners free, "
                        f"then utk, {utk_free} of {UTK_RUNNERS} free, "
-                       f"then utk-desktop-01, {desktop_gpu_free} of {DESKTOP_GPU_RUNNERS} free")
+                       f"then the desktops, {desktop_gpu_free} of {DESKTOP_GPU_RUNNERS} free")
     gpu_chosen = assign_gpu(gpu_keys, gpu_free, gpu_pool, utk_free, desktop_gpu_free)
-    # A GPU job sent to utk-desktop-01 holds a desktop a CPU job could have had.
+    # A GPU job sent to a desktop holds a desktop a CPU job could have had.
     desktop_free = max(desktop_free - list(gpu_chosen.values()).count("desktop-gpu"), 0)
     return {**assign_cpu(cpu_keys, free, pool, arcade_free, desktop_free), **gpu_chosen}, how
 
