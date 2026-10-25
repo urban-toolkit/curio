@@ -346,14 +346,24 @@ def test_download_hub_dataset_streams_data_file(client, user_and_token, tmp_path
     assert len(resp.get_data()) > 0
 
 
+def _in_store_artifacts(shared, name):
+    """*name* in the store's artifacts under the shared-data dir *shared*, an
+    allowed read root; the top of that dir holds the store's database and is
+    not one."""
+    folder = shared / "artifacts"
+    folder.mkdir(parents=True, exist_ok=True)
+    return folder / name
+
+
 def test_download_name_falls_back_to_format_extension(tmp_path, monkeypatch):
     """A resolved file without an extension still gets the format's extension."""
     from utk_curio.backend.app.datasets.service import DatasetCatalogService
 
     # The resolved path must sit under an allowed read root (#143): point the
-    # shared-data dir at tmp_path so this synthetic artifact passes containment.
+    # shared-data dir at tmp_path so this synthetic artifact, in the store's
+    # artifacts, passes containment.
     monkeypatch.setenv("CURIO_SHARED_DATA", str(tmp_path))
-    artifact = tmp_path / "abc123_artifact"  # no suffix, like a computed output id
+    artifact = _in_store_artifacts(tmp_path, "abc123_artifact")  # no suffix, like a computed output id
     artifact.write_text("a,b\n1,2\n")
 
     service = DatasetCatalogService(user=None)
@@ -398,7 +408,7 @@ def test_download_tabular_parquet_exports_as_csv(tmp_path, monkeypatch):
     from utk_curio.backend.app.datasets.service import DatasetCatalogService
 
     monkeypatch.setenv("CURIO_SHARED_DATA", str(tmp_path))  # allowed read root (#143)
-    artifact = tmp_path / "abc123_artifact"  # no suffix, like a computed output id
+    artifact = _in_store_artifacts(tmp_path, "abc123_artifact")  # no suffix, like a computed output id
     frame = pd.DataFrame({"a": [1, 2, 3], "b": ["x", "y", "z"]})
     frame.to_parquet(artifact)
 
@@ -428,7 +438,7 @@ def test_download_geo_parquet_exports_as_geojson(tmp_path, monkeypatch):
     from utk_curio.backend.app.datasets.service import DatasetCatalogService
 
     monkeypatch.setenv("CURIO_SHARED_DATA", str(tmp_path))  # allowed read root (#143)
-    artifact = tmp_path / "geo_artifact"  # no suffix
+    artifact = _in_store_artifacts(tmp_path, "geo_artifact")  # no suffix
     gdf = gpd.GeoDataFrame(
         {"name": ["a", "b"]},
         geometry=[Point(0, 0), Point(1, 1)],
@@ -470,7 +480,7 @@ def test_download_geo_parquet_with_timestamp_exports_as_geojson(tmp_path, monkey
     from utk_curio.backend.app.datasets.service import DatasetCatalogService
 
     monkeypatch.setenv("CURIO_SHARED_DATA", str(tmp_path))  # allowed read root (#143)
-    artifact = tmp_path / "geo_ts_artifact"  # no suffix
+    artifact = _in_store_artifacts(tmp_path, "geo_ts_artifact")  # no suffix
     gdf = gpd.GeoDataFrame(
         {
             "name": ["a", "b"],

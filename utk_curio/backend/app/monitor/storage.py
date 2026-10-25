@@ -103,8 +103,12 @@ def _walk_everything() -> dict:
     breakdown = []
 
     roots = _roots()
+    # One file can have several names: a saved output is the store's file
+    # linked into its owner's Data Catalog. It counts once, in the first area
+    # walked that holds it, users first.
+    seen: set = set()
     for area in AREAS:
-        total, files, hit_cap = _measure(roots[area], budget)
+        total, files, hit_cap = _measure(roots[area], budget, seen)
         truncated = truncated or hit_cap
         breakdown.append({"area": area, "bytes": total, "files": files})
 
@@ -121,8 +125,14 @@ def _walk_everything() -> dict:
     }
 
 
-def _measure(path: Path, budget: list) -> tuple:
-    """(bytes, files, hit_cap) for one tree. An unreadable dir is skipped."""
+def _measure(path: Path, budget: list, seen: set | None = None) -> tuple:
+    """(bytes, files, hit_cap) for one tree. An unreadable dir is skipped.
+
+    A file with more than one name (a hard link) counts once: *seen* holds the
+    ``(device, inode)`` of each such file already counted, here or in a tree
+    walked before with the same set.
+    """
+    seen = set() if seen is None else seen
     total = 0
     files = 0
     hit_cap = False
@@ -141,7 +151,13 @@ def _measure(path: Path, budget: list) -> tuple:
                         elif entry.is_file(follow_symlinks=False):
                             # follow_symlinks=False so a link into a shared
                             # tree is not counted as a copy of it.
-                            total += entry.stat(follow_symlinks=False).st_size
+                            stat = entry.stat(follow_symlinks=False)
+                            if stat.st_nlink > 1:
+                                name = (stat.st_dev, stat.st_ino)
+                                if name in seen:
+                                    continue
+                                seen.add(name)
+                            total += stat.st_size
                             files += 1
                     except OSError:
                         continue
@@ -161,7 +177,8 @@ def _user_store_sizes(users_root: Path, budget: list) -> tuple:
             for entry in entries:
                 if not entry.is_dir(follow_symlinks=False):
                     continue
-                total, _files, hit_cap = _measure(Path(entry.path), budget)
+                # Each store counts each of its own files once.
+                total, _files, hit_cap = _measure(Path(entry.path), budget, set())
                 truncated = truncated or hit_cap
                 sizes.append(total)
     except (OSError, ValueError):

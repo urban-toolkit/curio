@@ -83,8 +83,11 @@ class PathResolver:
         from utk_curio.backend.app.projects.storage import _shared_data_dir
 
         # fetched_dir(): where a pip install places the shipped data files its
-        # package leaves out, once it has downloaded them.
-        roots = [_shared_data_dir(), catalog_root(), fetched_dir(), *data_root_dirs()]
+        # package leaves out, once it has downloaded them. Of the shared data
+        # directory only the store's artifacts: its top level also holds the
+        # store's database, which a computed item resolves by name instead
+        # (``_resolve_computed_output_path``).
+        roots = [_shared_data_dir() / "artifacts", catalog_root(), fetched_dir(), *data_root_dirs()]
         if self.user is not None:
             # Installed/published datasets live in the *current* user's store.
             roots.append(user_datasets_dir(self._user_key()))
