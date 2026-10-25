@@ -165,17 +165,25 @@ class TestARunGoesOnWithNoBrowser:
         assert sandbox.bodies["d"]["input_slots"] == [2]
         assert "input_slots" not in sandbox.bodies["a"]
 
-    def test_its_artifacts_carry_the_starting_session_and_nothing_stores_it(self, client, db, user_and_token, sandbox):
+    def test_its_steps_run_in_kept_sessions_and_nothing_stores_the_starting_one(self, client, db, user_and_token, sandbox):
+        """The owner's run keeps each step's output (``runs/kept.py``) in a
+        session of its own; the starting session is the one its imports are
+        remembered under, and it is stored nowhere."""
         from utk_curio.backend.app.runs import jobs
-        from utk_curio.backend.app.runs.models import DataflowRun, DataflowRunStep
+        from utk_curio.backend.app.runs.models import DataflowRun, DataflowRunStep, KeptStepOutput
+        from utk_curio.common.kept_sessions import is_kept_session
 
         user, token = user_and_token
         project_id, _ = _create(client, token, [_node("a")])
         run_id = _start(client, token, project_id).get_json()["id"]
         job = _wait(run_id)
 
-        assert sandbox.bodies["a"]["session_id"] == token
-        rows = db.session.query(DataflowRun).all() + db.session.query(DataflowRunStep).all()
+        assert is_kept_session(sandbox.bodies["a"]["session_id"])
+        assert sandbox.bodies["a"]["imports_session"] == token
+        kept = KeptStepOutput.query.filter_by(project_id=project_id, node_id="a").one()
+        assert kept.session_id == sandbox.bodies["a"]["session_id"] and kept.made_by == "owner"
+        rows = (db.session.query(DataflowRun).all() + db.session.query(DataflowRunStep).all()
+                + db.session.query(KeptStepOutput).all())
         stored = repr([{c.name: getattr(r, c.name) for c in r.__table__.columns} for r in rows])
         assert token not in stored
         assert token not in json.dumps(list(job.events), default=str)

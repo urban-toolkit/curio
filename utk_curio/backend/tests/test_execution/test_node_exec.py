@@ -33,6 +33,7 @@ from utk_curio.backend.tests.test_datasets.computed_test_helpers import (
     auth_headers,
     create_project,
 )
+from utk_curio.common.kept_sessions import is_kept_session
 
 
 class _Reply:
@@ -285,11 +286,14 @@ def test_a_python_node_on_a_thread_runs_as_play_does(app, client, user_and_token
     assert reply["datasetDiagnostic"]["status"] == "installed"
     assert reply["installedDataset"]["id"] == computed_dataset_id("thread-node", project_id)
 
-    # One sandbox request each, identical, as the same account and session.
+    # One sandbox request each, identical as the same account, but for the
+    # kept session each run of its owner's saved dataflow gets of its own.
     (route_path, route_sent), (thread_path, thread_sent) = sent
     assert route_path == thread_path == "/exec"
-    assert thread_sent == route_sent
-    assert thread_sent["session_id"] == token
+    assert {**thread_sent, "session_id": None} == {**route_sent, "session_id": None}
+    assert is_kept_session(thread_sent["session_id"]) and is_kept_session(route_sent["session_id"])
+    assert thread_sent["session_id"] != route_sent["session_id"]
+    assert thread_sent["imports_session"] == token
     assert thread_sent["user_key"] == user_key
 
     record = runtime_journal.read_record(user_key, project_id, "thread-node")
@@ -323,7 +327,8 @@ def test_a_javascript_node_on_a_thread_runs_as_play_does(app, client, user_and_t
     assert "missingModule" not in reply  # the libraries route cannot install JavaScript
     ((path, body),) = sent
     assert path == "/execJs"
-    assert body["session_id"] == token and body["code"] == "return 42;"
+    assert is_kept_session(body["session_id"]) and body["imports_session"] == token
+    assert body["code"] == "return 42;"
     assert runtime_journal.read_record(user_key, project_id, "js-node")["status"] == "ok"
     assert after["javascript"] - before["javascript"] == 1
 

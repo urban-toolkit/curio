@@ -483,8 +483,14 @@ class VirtualUser:
         that make it expensive.
         """
         ref = self.result.outputs[node.id]
+        # Read as the canvas reads: on the dataflow's route, where an output
+        # its owner's run kept is served (runs/kept.py), from any sign-in.
+        path, path_url = "/get", None
+        if self.project_id:
+            path = "/api/projects/:id/outputs/get"
+            path_url = f"/api/projects/{self.project_id}/outputs/get"
         response = self._call(
-            "GET", "/get", params={"fileName": ref["path"]},
+            "GET", path, params={"fileName": ref["path"]}, path_url=path_url,
             node_id=node.id, timeout=ARTIFACT_TIMEOUT_S,
             accept=ARROW_IPC_MIME, raw=True,
             extra_headers=ARROW_GEOMETRY_HEADERS,
@@ -495,7 +501,7 @@ class VirtualUser:
         self.result.hashes[node.id] = digest
         expected = self.compare_to.get(node.id)
         if expected is not None and expected != digest:
-            self._fail("/get", node.id,
+            self._fail(path, node.id,
                        f"output differs from the single-user baseline "
                        f"(baseline {expected[:12]}, got {digest[:12]})",
                        "mismatch")
