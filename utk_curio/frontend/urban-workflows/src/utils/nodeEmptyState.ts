@@ -18,6 +18,10 @@ export type NodeEmptyReason =
   | "upstream-not-run"
   /** Wired, and the node feeding it ran and failed. */
   | "upstream-errored"
+  /** A dashboard's tile while a viewer's run makes what it shows. */
+  | "upstream-running"
+  /** A dashboard's tile whose viewer's run stopped before it, at a step this browser could not run. */
+  | "upstream-stopped"
   /** Ran and produced a table with no rows in it. */
   | "no-rows"
   /** Ran and produced something this node cannot render as a table. */
@@ -58,6 +62,17 @@ export const NODE_EMPTY_COPY: Record<NodeEmptyReason, NodeEmptyCopy> = {
   "upstream-not-run": {
     title: "No data yet",
     hint: "Run the node feeding this one.",
+  },
+  // A dashboard's visitor runs no node and opens none, so a tile says what the
+  // page is doing rather than what to do: computing, or why it could not.
+  "upstream-running": {
+    title: "Computing",
+    hint: "The results show here once they are ready.",
+  },
+  // The tile gives the step and the reason (useDashboardRun's stop) as its hint.
+  "upstream-stopped": {
+    title: "No results",
+    hint: "A step before this one could not run in this browser.",
   },
   // Without this, a failed upstream node read as "upstream-not-run" - telling
   // the user to run the node they had just run and watched fail (#347).
@@ -183,6 +198,10 @@ export interface NodeEmptyInputs {
   connected: boolean;
   /** True when a node feeding this one ran and failed. */
   upstreamErrored?: boolean;
+  /** A dashboard's tile, while a viewer's run makes what it shows (useGrammarInputState). */
+  upstreamRunning?: boolean;
+  /** A dashboard's tile: why the viewer's run stopped before it, if it did. */
+  upstreamStopped?: string | null;
   /** True once an input payload has actually arrived. */
   hasInput: boolean;
   /** True when the payload is a kind this node can tabulate. */
@@ -200,6 +219,11 @@ export interface NodeEmptyInputs {
  */
 export function resolveNodeEmptyReason(inputs: NodeEmptyInputs): NodeEmptyReason | null {
   if (!inputs.connected) return "disconnected";
+  // A dashboard's tile with nothing in yet: a viewer's run is making it, or
+  // stopped before it. Above the upstream failure, which on a dashboard is that
+  // stop, or an earlier run's.
+  if (!inputs.hasInput && inputs.upstreamRunning) return "upstream-running";
+  if (!inputs.hasInput && inputs.upstreamStopped) return "upstream-stopped";
   // Above hasInput on purpose: a failed upstream never calls outputCallback, so
   // hasInput stays false and the node would otherwise advise running a node the
   // user just watched fail (#347). Above it also covers the rarer case where a
@@ -218,6 +242,10 @@ export interface GrammarEmptyInputs {
   connected: boolean;
   /** True when a node feeding this one ran and failed. */
   upstreamErrored?: boolean;
+  /** A dashboard's tile, while a viewer's run makes its inputs (useGrammarInputState). */
+  upstreamRunning?: boolean;
+  /** A dashboard's tile: why the viewer's run stopped before it, if it did. */
+  upstreamStopped?: string | null;
   /** True once an input payload has actually arrived. */
   hasInput: boolean;
   /** True when the editor holds something to compile. */
@@ -256,6 +284,11 @@ export function resolveGrammarEmptyReason(
 ): NodeEmptyReason | null {
   if (inputs.needsInput !== false) {
     if (!inputs.connected) return "disconnected";
+    // A grammar node is asked only while it shows nothing, and a dashboard's
+    // map or chart draws nothing until a viewer's run has made all its inputs,
+    // so the run's state comes first even with some of them in.
+    if (inputs.upstreamRunning) return "upstream-running";
+    if (inputs.upstreamStopped) return "upstream-stopped";
     if (inputs.upstreamErrored) return "upstream-errored";  // see the note above
     if (!inputs.hasInput) return "upstream-not-run";
     if (inputs.inputProblem) return inputs.inputProblem;

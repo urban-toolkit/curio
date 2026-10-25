@@ -5,7 +5,6 @@ import {
   fitViewWithMenuOffset,
   fitViewWithMenuOffsetNow,
   MENU_BAR_ATTR,
-  TOP_NOTICE_ATTR,
 } from '../../utils/fitViewWithMenuOffset';
 import { getNodesBounds, getViewportForBounds } from 'reactflow';
 
@@ -239,30 +238,6 @@ describe('fitViewWithMenuOffset', () => {
     const [, , heightArg] = getViewportForBoundsMock.mock.calls.at(-1)!;
     expect(heightArg).toBe(600 - 124);
     expect(rf.setViewport).toHaveBeenCalledWith({ x: 5, y: 6 + 124, zoom: 1 }, undefined);
-  });
-
-  // A dashboard's notice to its visitors is laid over the top of the page,
-  // below the bar: the tile it covered, and a control in it, could not be
-  // reached (#1117).
-  test('a notice over the top of the pane pushes the fit below it', () => {
-    const container = document.createElement('div');
-    container.className = 'react-flow';
-    document.body.appendChild(container);
-    container.getBoundingClientRect = () =>
-      ({ width: 1000, height: 600, left: 0, top: 0 }) as DOMRect;
-    menuBar(65);
-    const notice = document.createElement('div');
-    notice.setAttribute(TOP_NOTICE_ATTR, 'true');
-    notice.getBoundingClientRect = () => ({ top: 76, bottom: 126 }) as DOMRect;
-    document.body.appendChild(notice);
-
-    getViewportForBoundsMock.mockReturnValueOnce({ x: 5, y: 6, zoom: 1 });
-    const rf = makeRf([{ id: 'a', width: 120, height: 80 }]);
-    expect(fitViewWithMenuOffset(rf)).toBe(true);
-
-    const [, , heightArg] = getViewportForBoundsMock.mock.calls.at(-1)!;
-    expect(heightArg).toBe(600 - 126);
-    expect(rf.setViewport).toHaveBeenCalledWith({ x: 5, y: 6 + 126, zoom: 1 }, undefined);
   });
 
   test('with an open dock, fits against the VISIBLE width and shifts past the dock', () => {

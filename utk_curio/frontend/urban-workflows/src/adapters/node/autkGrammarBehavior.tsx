@@ -296,7 +296,7 @@ export const useAutkGrammarBehavior = (
 
     // What the node knows about its input edge, asked the way the Vega-Lite
     // node asks (hook/useGrammarInputState).
-    const { connected, upstreamErrored } = useGrammarInputState(data.nodeId);
+    const { connected, upstreamErrored, upstreamRunning, upstreamStopped } = useGrammarInputState(data.nodeId);
     // A failed node says so to the nodes it feeds, as a failed code node does.
     const { markNodeErrored, workflowNameRef, nodes: flowNodes, edges: flowEdges } = useFlowContext() as {
         markNodeErrored?: (nodeId: string) => void;
@@ -1588,18 +1588,21 @@ export const useAutkGrammarBehavior = (
         const reason = resolveGrammarEmptyReason({
             connected,
             upstreamErrored,
+            upstreamRunning,
+            upstreamStopped,
             hasInput,
             hasSpec,
             needsInput,
             hasRun: hasRunRef.current,
             inputProblem: problem?.reason ?? null,
         });
+        const detail = reason === 'upstream-stopped' ? upstreamStopped ?? undefined : problem?.detail;
         noticeRef.current = reason == null
             ? null
-            : { reason, words: emptyStateWords(reason, liveKind, problem?.detail) };
+            : { reason, words: emptyStateWords(reason, liveKind, detail) };
         writeNotice();
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [connected, upstreamErrored, hasInput, hasSpec, needsInput, liveKind, gpuBlocked, nodeState.output?.code, runSummary]);
+    }, [connected, upstreamErrored, upstreamRunning, upstreamStopped, hasInput, hasSpec, needsInput, liveKind, gpuBlocked, nodeState.output?.code, runSummary]);
 
     // Forward parent container resizes to AutkMap via a synthetic window.resize.
     // AutkMap binds only to window.resize (and exposes no per-instance resize API),
