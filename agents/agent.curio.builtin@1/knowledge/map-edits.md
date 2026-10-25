@@ -36,12 +36,13 @@ Every edit may also hold `layer`, `label` and `enabled`.
 
 - `set` writes a value: a text, a number, True, False or None. `scale` multiplies a number by `value`, `offset` adds `value` to it, and `expr` writes what an expression of the feature's properties makes (`min(height, 60)`).
 - `geometry` and `add` take a GeoJSON geometry, and `add` an `id` and its `values`.
-- The map's tools change a building's shape one part at a time, each part named by its own id, `where` its `building_id` and its `osm_id` both hold: `{"op": "geometry", "where": "building_id == 29623484 and osm_id == 236608503", "geometry": ...}`. The building's other parts keep their shapes.
+- The map's tools change a building's shape one part at a time, each part named by its own id, `where` its `building_id` and its `osm_id` both hold: `{"op": "geometry", "where": "building_id == 29623484 and osm_id == 236608503", "geometry": ...}`. The building's other parts keep their shapes. The node's form sets a value on one part the same way, `{"op": "set", "where": "building_id == 29623484 and osm_id == 236608503", "column": "height", "value": 60}`, and on all of them by `ids`.
 - `add_column` adds a property, with `value`, to every feature that has none.
 
 ### The rule
 
 - What-if changes go in {{template.label:curio.builtin/edit-features}}: a building removed, a height capped, a park drawn. An analysis filter, such as the parks over a size or the roads of one kind, stays in the node that computes it.
 - An id is a value its layer's key column holds. A run prints each id no feature has, and Solve's round fails on that line.
+- An area a `geometry` or `add` edit gives is one the map can draw: an outline that encloses some area and does not cross or touch itself, holes inside their outline and apart from each other, and parts that do not overlap. A run skips an edit that would give a feature any other area and prints why, and Solve's round fails on that line.
 - Solve makes edits in an empty {{template.label:curio.builtin/edit-features}} node only when its goal names edits; otherwise it gives the node its call with no edits, as the node writes it when dropped, and the user makes the edits on the map. A goal names edits when one of its sentences or lines, or a clause after a colon, a semicolon or a dash between spaces, starts with one of these words: remove, delete, drop, restore, put back, set, change, scale, multiply, raise, lower, increase, decrease, cut, cap, compute, redraw, reshape, move, add, draw.
 - So a plan's {{template.label:curio.builtin/edit-features}} node names its edits in its intent, a sentence each: "Remove the two tallest towers by their building_id", "Cut the parts around the parks down to 60 m". A goal that says what the node is for ("Read the map's layers and edit them on the map") names none.

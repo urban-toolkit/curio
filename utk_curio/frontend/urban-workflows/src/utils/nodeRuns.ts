@@ -2,7 +2,7 @@
  * A node's runs, as `ProvenanceProvider` files them, turned into the items its
  * provenance history shows: each tagged with its number and named by the
  * kinds of data it read and returned. An edit made in the node's body (a Map
- * Edits node's action, or an entry of its list switched off or deleted) is
+ * Editor node's action, or an entry of its list switched off or deleted) is
  * named by what it changed. Undo and Redo walk the same tree (`undoStep`,
  * `redoStep`).
  */

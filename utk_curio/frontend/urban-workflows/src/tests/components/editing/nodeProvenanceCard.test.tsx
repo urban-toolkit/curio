@@ -78,7 +78,7 @@ test("opened, a run shows its kinds again with the code that ran", () => {
   expect(run.textContent?.match(/In:\s+DATAFRAME\s+\|\s+Out:\s+GEODATAFRAME/g)).toHaveLength(2);
 });
 
-// A Map Edits node's Apply, Remove or put back is an entry of its own.
+// A Map Editor node's Apply, Remove or put back is an entry of its own.
 describe("an edit in the drawer", () => {
   const EDIT_CODE = 'return curio_map_edits(\n    input_0,\n    key="building_id",\n    remove=[12],\n    change={},\n)\n';
 

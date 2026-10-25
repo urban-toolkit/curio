@@ -1,5 +1,5 @@
 /**
- * The Map Edits node's edit log applied in the browser, the one way it is
+ * The Map Editor node's edit log applied in the browser, the one way it is
  * applied there: to a layer's features, shapes and properties, as a run
  * applies it. What the node's table and its condition count read
  * (`applyEdits`), what its tools read (`layerModel.editedFeatures`) and what
@@ -9,9 +9,13 @@
  * `editFeaturesApply.cases.json` and the edit logs in `editExpr.cases.json`.
  *
  * Features are matched by their key, never by their place. A feature no edit
- * touches stays the same object, and the input is never changed.
+ * touches stays the same object, and the input is never changed. An add or a
+ * redraw whose area autk-db would refuse, with its whole layer, is skipped,
+ * as a run skips it (`madeProblem`, the rule the map's tools refuse a gesture
+ * by): the map draws the feature as it was.
  */
 import type { SelectionId } from "../references/selectionTags";
+import { madeProblem } from "./areaCheck";
 import { evaluate, exprNumber, exprResult, parseExpr, truthy, type Expr, type ExprValue } from "./editExpr";
 import type { FeatureEdit, Geometry } from "./editFeatures";
 
@@ -67,14 +71,16 @@ function addedFeature(edit: FeatureEdit, key: string): EditableFeature {
 /**
  * *edits* over *features*, matched on *key*: the features after them, null
  * for a removed one and the input's own object for one no edit touched, what
- * each became, and what changed. An entry switched off is skipped. A
- * condition or an expression that is not one throws an `ExprError`, as a run
- * refuses it.
+ * each became, and what changed. An entry switched off is skipped, and so is
+ * an area autk-db would refuse, read in the coordinates of *layer* (the layer
+ * the features are of: its `crs`, else its features'). A condition or an
+ * expression that is not one throws an `ExprError`, as a run refuses it.
  */
 export function applyFeatureEdits<F extends EditableFeature>(
   features: readonly F[],
   edits: readonly FeatureEdit[],
   key: string,
+  layer: { features?: readonly any[]; crs?: unknown } = { features },
 ): { state: (F | EditableFeature | null)[]; status: EditStatus[]; counts: EditCounts } {
   // The input's features, then a null per added one: restoring an added
   // feature puts back what the input has, which is nothing.
@@ -93,6 +99,7 @@ export function applyFeatureEdits<F extends EditableFeature>(
     if (edit.op === "add") {
       const id = idKey(edit.id);
       if (id === null || known.has(id)) continue;
+      if (madeProblem(layer, null, edit.geometry)) continue;
       base.push(null);
       state.push(addedFeature(edit, key));
       status.push("added");
@@ -123,6 +130,8 @@ export function applyFeatureEdits<F extends EditableFeature>(
       targets = ids.flatMap((id, i) => (id !== null && wanted.has(id) ? [i] : []));
     }
     const formula = edit.op === "expr" ? parseExpr(String(edit.value ?? "")) : null;
+    // The problem a redraw's area would bring a feature whose own shape has none.
+    const redraw = edit.op === "geometry" ? madeProblem(layer, null, edit.geometry) : null;
     for (const i of targets) {
       const current = state[i];
       if (edit.op === "remove") {
@@ -142,6 +151,7 @@ export function applyFeatureEdits<F extends EditableFeature>(
         }
       } else if (edit.op === "geometry") {
         if (current === null) continue;
+        if (redraw && madeProblem(layer, current.geometry, edit.geometry)) continue;
         state[i] = { ...current, geometry: edit.geometry ?? null };
         if (status[i] !== "added") status[i] = "redrawn";
         redrawn.add(i);
@@ -168,7 +178,8 @@ export function applyFeatureEdits<F extends EditableFeature>(
  * one no edit touched, and what changed (`applyFeatureEdits`).
  */
 export function applyEdits(rows: readonly Row[], edits: readonly FeatureEdit[], key: string): { state: (Row | null)[]; counts: EditCounts } {
-  const { state, counts } = applyFeatureEdits(rows.map((row) => ({ properties: row })), edits, key);
+  // Rows carry no shapes, so a shape an edit gives is read in its own coordinates.
+  const { state, counts } = applyFeatureEdits(rows.map((row) => ({ properties: row })), edits, key, { features: [] });
   return { state: state.map((feature) => (feature === null ? null : propertiesOf(feature))), counts };
 }
 
@@ -178,6 +189,6 @@ export function applyEdits(rows: readonly Row[], edits: readonly FeatureEdit[], 
  * the edits keep, in their order.
  */
 export function editedCollection<C extends { features?: readonly any[] }>(fc: C, edits: readonly FeatureEdit[], key: string): C {
-  const { state } = applyFeatureEdits(fc.features ?? [], edits, key);
+  const { state } = applyFeatureEdits(fc.features ?? [], edits, key, fc);
   return { ...fc, features: state.filter((feature) => feature !== null) };
 }

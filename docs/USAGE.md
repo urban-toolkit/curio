@@ -109,6 +109,7 @@ Curio needs Node.js 26 and refuses to start on an earlier version, naming the on
 | `--js-registry-url URL` | none | The npm registry a package build fetches JavaScript dependencies from. Without one, a build that needs a JavaScript dependency is refused |
 | `--js-block-unpinned` / `--no-js-block-unpinned` | off | Whether a package build refuses a JavaScript dependency without a pinned version, rather than warning |
 | `--db-pool-size N` / `--db-pool-overflow N` / `--db-pool-timeout SECONDS` | 64 / 128 / 30 | The backend's database connections: how many it keeps open, how many more it may open while those are all in use, and how long a request waits for one |
+| `--proxy-hops N` | 0 | How many reverse proxies in front of the backend add the visitor's address to `X-Forwarded-For`. The limits per address (sign-in attempts, error reports, a dashboard's runs) then read it there. See [DEPLOYMENT.md](DEPLOYMENT.md#security-checklist) |
 | `--shared-guest-name NAME` / `--shared-guest-username NAME` | `Shared Guest` / `guest_shared` | The shared guest, the one account every guest sign-in uses. A new username gives guests a new, empty account |
 | `--log-to-stdout` / `--no-log-to-stdout` | on | Whether the backend and sandbox write their logs to their output, which the launcher keeps in its own log, or to `utk_curio/logs/` |
 
@@ -406,8 +407,8 @@ Code and specs sit in a gray box, and a code node's output is below its code.
 Above the code or spec, one row lists every chip the node can use, by category:
 **Inputs**, **Scenarios**, **Widgets**, **Selections** and **Shared**, each with
 its count, and each only when it has chips. The categories start closed. Click
-one to list its chips under the row, and click it again to close it. Several
-can be open, and a category stays open on that node while the dataflow is
+one to list its chips under the row, which closes the one open, and click it
+again to close it. A category stays open on that node while the dataflow is
 open. On the canvas the header takes at most half of the node's editor, and the
 open chips scroll inside it. Drag a chip's tag into the code or spec, or click
 it to insert the chip at the cursor. Hover a tag, or its chip in the code or
@@ -426,8 +427,9 @@ scenario box's color. An input whose node has not run says which node to run.
   tags and the Parameter nodes' values ([Widgets](#widgets)).
 
 Drag a node's bottom-right corner to resize it. For viewers of a shared dataflow,
-nodes keep their size and have no delete. A minimized node is a small chip, and a
-save keeps it one; click it to open the node again. Double-click a node where you
+nodes keep their size and have no delete. A minimized node is a small chip with
+its icon and title, cut short when long; hover the title to read it whole. A save
+keeps it a chip; click it to open the node again. Double-click a node where you
 would drag it, such as its header, to zoom the view onto it.
 
 ## Notes
@@ -487,7 +489,8 @@ bolt while it is on.
 - Code you type, a new connection, and a selection in a chart do not start a
   run: the nodes they change wait for **Run** or **Run All**.
 - It is offered where a run goes on the server: not to guests, viewers of a
-  shared dataflow, a Curio started with `--no-project`, or a dashboard.
+  shared dataflow, a Curio started with `--no-project`, or a dashboard, which
+  runs a changed control on its own ([Dashboards](#dashboards)).
 
 ## Provenance
 
@@ -595,7 +598,8 @@ Changing its value marks those nodes as needing a new run, or runs them when
 the dataflow runs stale nodes automatically. **Edit** renames it,
 and their code follows the new name. A reference to a name no Parameter node
 has, or that two Parameter nodes have, stops the run with a message naming it.
-Pinned to the dashboard, a Parameter node shows its value.
+Pinned to the dashboard, a Parameter node shows its control, and anyone viewing
+the dashboard can change its value ([Dashboards](#dashboards)).
 
 ### Selection tags
 
@@ -765,7 +769,7 @@ boundary splits the dataflow into three parts:
   common context.
 - **Levers:** the nodes in the scenario, which is what an alternative changes: its
   data loaders, widget values, code and specs, and the features it removes or
-  changes by hand (see [The Map Edits node](#the-map-edits-node)).
+  changes by hand (see [The Map Editor node](#the-map-editor-node)).
 - **Outcomes:** the outputs of the scenario's last nodes, which is what gets
   compared.
 
@@ -817,16 +821,16 @@ chart or a Data Pool saves nothing itself: the node feeding it does. Scenarios,
 their colors, descriptions, collapsed state and box positions are saved with the
 dataflow. Deleting a node removes it from its scenario.
 
-### The Map Edits node
+### The Map Editor node
 
-The **Map Edits** node edits a map's layers on the map. It removes features,
+The **Map Editor** node edits a map's layers on the map. It removes features,
 changes their values, reshapes or moves them, draws new ones, and adds
 properties and layers.
 
-1. Connect the nodes that load your layers to Map Edits, and Map Edits to an
+1. Connect the nodes that load your layers to Map Editor, and Map Editor to an
    Autark map.
-2. Link them with an interaction edge, from the dot on top of Map Edits to the
-   dot on top of the map, so a feature picked on the map is picked in Map Edits.
+2. Link them with an interaction edge, from the dot on top of Map Editor to the
+   dot on top of the map, so a feature picked on the map is picked in Map Editor.
 3. Pick a layer, then **Add**, **Edit**, **Remove** or **Add a property**. Pick
    features on the map with a click (shift-click adds more), or by a rule such
    as `height > 100`.
@@ -840,15 +844,24 @@ as `osm_id` or `building_id`, and an edit by `building_id` changes every part of
 a building. On the map, a building's shape changes one part at a time: moving a
 corner or adding a part changes that part alone, named by its own `osm_id`, and
 moving the building moves every part. A building whose parts have no `osm_id` of
-their own keeps its shape there. Agents read these edits, and the edits an agent
-makes show as entries named after it.
+their own keeps its shape there. A change on the map that would make a shape's
+outline cross itself, or its parts overlap, is refused: the shape goes back as
+it was, and the tip on the map says why. An edit in the node's code that would
+do the same is skipped: the map keeps the shape as it was, and the run's output
+says why. Agents read these edits, and the edits an agent makes show as entries
+named after it.
+
+In **Edit**, the form of a building of several parts is for all of them: a
+property its parts differ in is empty, with their values beside it, and a value
+typed there goes to every part. Its **Parts** menu picks one part, by its
+`osm_id`, and the form then shows and changes that part's values alone.
 
 A rule or an expression reads a feature's columns by name (`height`, or
 `` `Mean Acc shadow` `` in backticks). It takes numbers, quoted texts, `true`,
 `false`, `null`, `+ - * / %`, `== != < <= > >=`, `and`, `or`, `not`,
 parentheses, `abs`, `round`, `min` and `max`.
 
-In a scenario, a Map Edits node is a lever.
+In a scenario, a Map Editor node is a lever.
 
 ### Comparing scenarios
 
@@ -1192,7 +1205,7 @@ The chosen modes are saved with the dataflow.
 
 An Autark map takes part the same way: a selection highlights its features, and a pick on the map, or a selection in an Autark plot, is a selection the others receive.
 
-A Map Edits node and the map it edits on are linked the same way, by an interaction edge that carries selections both ways: a feature picked on the map is picked in the node, and what the node picks lights up on the map.
+A Map Editor node and the map it edits on are linked the same way, by an interaction edge that carries selections both ways: a feature picked on the map is picked in the node, and what the node picks lights up on the map.
 
 An Autark view names the columns that identify its rows with `selectFields`, on the pickable map layer or on the plot. A pick or a brush on it then sends their values, as a point selection over fields does, and a feature that holds none selects nothing. Without `selectFields`, it matches rows by position.
 
@@ -1494,8 +1507,9 @@ page scrolls.
 ## Dashboards
 
 A dataflow's dashboard is a page of its own at `/dashboard/<dataflow id>`: the nodes you
-pinned, and nothing else. Anyone with the link can open it, and the tiles draw without
-running anything.
+pinned, and nothing else. Anyone with the link can open it. The tiles draw the outputs
+saved with the dataflow, and a tile with none runs the nodes before it on the server when
+the page opens.
 
 - **Pin** the nodes to show, with the pin control in each node's header. Pinning saves
   the dataflow, and saves the outputs feeding those nodes to your Data Catalog, which is
@@ -1504,6 +1518,19 @@ running anything.
   copies either link.
 - **Save the dataflow** after changing anything else the page shows, such as a chart's
   spec: the page shows what is on disk.
+- **Controls**: anyone viewing the page can change a pinned Parameter node's value, and
+  the widgets of a pinned node that shows them. A change runs the nodes it reaches on the
+  server, with your datasets, models and packages and none of your keys, and the tiles
+  below show the result. A viewer never changes the dataflow, its saved outputs or your
+  Data Catalog, and putting the value back shows the saved outputs. Text,
+  text list and file widgets keep their saved value, and a node that reads a connection
+  key stops with a message.
+- **What a run makes**, on opening the page or after a change, is kept for 7 days and
+  shown to every later viewer with the same values, without running again. After 7 days
+  it is deleted, and the next viewer who needs it runs the nodes again.
+- **A node only a browser runs**, such as an Autark compute on the GPU, runs in each
+  viewer's own browser, which needs WebGPU for it. What it makes there, and what the
+  nodes below make from it, serve that viewer's page alone, for an hour.
 - **Edit layout** (the owner, signed in on this browser) unlocks the tiles to drag by
   their title band and resize, and **Save layout** records where they sit, without
   touching the canvas positions.
@@ -1513,8 +1540,9 @@ running anything.
   without a saved place are laid out this way when the page opens; while editing the
   layout, **Arrange by scenario** puts every tile back in its column.
 - **Sharing**: the page is served with its data inside it, whether `--backend-url` is an
-  address or a path such as `/api`, so a viewer needs no account and the dashboard keeps
-  working if the server is unreachable. It is read-only for everyone but its owner.
+  address or a path such as `/api`, so a viewer needs no account and the saved tiles draw
+  even when the server is unreachable; a change to a control needs the server. Only its
+  owner edits its layout.
 
 Two dashboards cannot be served this way: one whose data is too large to travel with the
 page (25 MB), and one with a pinned Autark tile that loads its own data. Opening either
@@ -1523,7 +1551,7 @@ shows why, naming the nodes to change, and draws nothing. For the second, move t
 
 An Autark map tile draws in the viewer's browser, so it needs WebGPU there. A map over a
 raster draws too: the raster travels with the page, and its size counts toward the 25 MB.
-A code node's console output is not restored: no saved dataset carries it.
+A code node's console output does not show on a dashboard.
 
 ## Finding a dataflow
 

@@ -57,6 +57,7 @@ from .utils import (
     _OUTPUT_ARTIFACT_JS,
     api_json,
     assert_vega_canvas_rendered,
+    assert_vega_charts_fit,
     close_scenario_details,
     close_scenario_drawer,
     frame_nodes,
@@ -390,6 +391,9 @@ def test_the_nine_charts_draw_their_scenarios_with_no_network(
     frame_nodes(page, [DOTS])
     assert_vega_canvas_rendered(page, DOTS, timeout=30000)
     _assert_colors_drawn(page, DOTS, [RULE_GREY, *[label["color"] for label in plan_labels]], "Dots with a range")
+    # The nine charts show whole in their nodes, axes and legends included
+    # (#1097). The dots, which this test adds, are not the dataflow's.
+    assert_vega_charts_fit(page, DATAFLOW.name, [chart["id"] for _dataset_id, chart in rows], every=False)
 
     # 4. One scenario of each chart recolored: each chart draws the new color
     # through its chips, and draws it with no run. The stacked bars and the

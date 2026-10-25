@@ -9,7 +9,7 @@ extract's edge, from ``lower_mnt.osm.pbf``, which the backend serves, so the
 run needs no network. Building heights, Open-air parks and Buildings around
 parks are the context, with the Season, Distance from a park and Tall
 building height Parameters. In
-Existing, Towers removed and Height cap (whose Map Edits nodes remove or cut
+Existing, Towers removed and Height cap (whose Map Editor nodes remove or cut
 down the building parts Buildings around parks marks, each linked to the map
 of the buildings it feeds), Rasterize Buildings
 (``curio.scout@1``) and Accumulated Shadow
@@ -38,7 +38,7 @@ Run All in the browser runs the whole dataflow:
    shade, column for column the what-if's Shade per park minus Existing's,
    matched by the park's name, takes shadow away in every park. The Autark map
    after each change draws it.
-4. Each scenario's buildings and shadow draw, and each what-if's Map Edits
+4. Each scenario's buildings and shadow draw, and each what-if's Map Editor
    node edits on the map of its buildings.
 
 Every map's legend is titled as its layer is, and labels the color range it
@@ -72,6 +72,7 @@ from .utils import (
     api_json,
     assert_autark_map_drawn,
     assert_vega_canvas_rendered,
+    assert_vega_charts_fit,
     frame_nodes,
     load_artifact_as_dict,
     load_raster_cells,
@@ -305,6 +306,8 @@ def test_three_scenarios_of_lower_manhattans_park_shade_are_charted_and_mapped(
         assert means["towers-removed"][park] < means["height-cap"][park] < existing, (where, park)
     frame_nodes(page, [CHART])
     _assert_chart_drew(page, CHART, colors)
+    # The chart shows whole in its node, its axes and legend included (#1097).
+    assert_vega_charts_fit(page, DATAFLOW.name, [CHART])
 
     # 3. Each what-if's change, in shadow and in each park, mapped after it:
     # the Raster Calculator's raster and the Python node's parks.
@@ -380,7 +383,7 @@ def test_three_scenarios_of_lower_manhattans_park_shade_are_charted_and_mapped(
                           sweep_toasts=True)
 
     # 4. Each scenario's buildings and shadow. A what-if's buildings map is
-    # the one its Map Edits lever feeds and is linked to: the lever names it
+    # the one its Map Editor lever feeds and is linked to: the lever names it
     # and lists the layer it edits there.
     for scenario, _name, key in SCENARIOS:
         for what in ("buildings-map", "shadow-map"):
@@ -398,4 +401,4 @@ def test_three_scenarios_of_lower_manhattans_park_shade_are_charted_and_mapped(
             save_node_closeup(page, f"park-shade-{what}-{scenario}", map_id, test_name=TEST_NAME, sweep_toasts=True)
     assert sorted(n for n, node in nodes.items() if node["type"] == MAP_EDITS_TYPE) == [
         "park-shade-capped-lever", "park-shade-removed-lever",
-    ], "the what-ifs' levers are not the dataflow's Map Edits nodes"
+    ], "the what-ifs' levers are not the dataflow's Map Editor nodes"

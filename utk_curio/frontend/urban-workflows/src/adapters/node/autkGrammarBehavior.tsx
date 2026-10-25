@@ -62,7 +62,7 @@ import { drawnInput, editFeedsOf, fedByInteraction, feedsVersion, newLayerTables
 import { codeEditRevision, subscribeToCodeEdits } from '../../utils/references/codeEdits';
 import MapEditOverlay from '../../components/editFeatures/MapEditOverlay';
 
-/** What a map no Map Edits node feeds listens to for code edits: nothing. */
+/** What a map no Map Editor node feeds listens to for code edits: nothing. */
 const NO_CODE_EDITS = () => () => {};
 const NO_REVISION = () => 0;
 
@@ -98,14 +98,14 @@ function selectionLayerOf(spec: any): string | undefined {
 export type AutkBehaviorOptions = {
     /**
      * Whether a failed run marks the node errored, as an Autark node's does, so
-     * the nodes it feeds say so. A Map Edits node draws its input through this
+     * the nodes it feeds say so. A Map Editor node draws its input through this
      * map: a map that cannot draw says so in its body, and the node's run
      * stands as it ran.
      */
     marksNodeErrored?: boolean;
     /**
      * Whether each run is listed among the node's runs in the provenance drawer, as every node
-     * lists its own (#860). The Map Edits node's map draws under that node's
+     * lists its own (#860). The Map Editor node's map draws under that node's
      * id, and a draw of it is not a run of that node, as a chart's redraw for a
      * recolored scenario box is not (useVega's `recordsProvenance`).
      */
@@ -114,7 +114,7 @@ export type AutkBehaviorOptions = {
      * Whether a draw keeps the view of the maps the last draw made. Only the
      * first draw frames the layers (`frameMaps`); each later one puts back
      * the camera the person zoomed and panned to (`keepMapViews`). A map a
-     * Map Edits node feeds always does, so an edit, and the Commit after
+     * Map Editor node feeds always does, so an edit, and the Commit after
      * it, leave the map where it was.
      */
     keepsView?: boolean;
@@ -204,7 +204,7 @@ export const useAutkGrammarBehavior = (
     const dataRef = useRef(data);
     useEffect(() => { dataRef.current = data; });
     // The map's own selection, sent as the map's: a pick or a brush of
-    // autk-map's, or a pick a Map Edits node's overlay makes on the map. The
+    // autk-map's, or a pick a Map Editor node's overlay makes on the map. The
     // layer it names is kept until it is emptied, so a draw that is not an
     // edit's says that selection is gone (below).
     const sendOwnSelection = useCallback((selection: SentSelection) => {
@@ -240,7 +240,7 @@ export const useAutkGrammarBehavior = (
         }
         return inputReadRef.current!.read;
     };
-    // The inputs of the Map Edits nodes that feed the map, each read once
+    // The inputs of the Map Editor nodes that feed the map, each read once
     // per input object, as the map's own is.
     const fedReadsRef = useRef(new Map<unknown, Promise<GrammarInput>>());
     const readFed = (input: unknown): Promise<GrammarInput> => {
@@ -304,7 +304,7 @@ export const useAutkGrammarBehavior = (
         nodes?: any[];
         edges?: any[];
     };
-    // The Map Edits nodes that feed this map on data edges (#662), each with
+    // The Map Editor nodes that feed this map on data edges (#662), each with
     // the edits its code holds: the map draws each one's input with its edits,
     // before Commit edits as after (utils/editFeatures/mapEditsPreview), and
     // keeps its view when it draws again. Only a map one feeds listens for
@@ -337,7 +337,7 @@ export const useAutkGrammarBehavior = (
     };
     // What was set on each layer through the map's menu, kept across that draw too.
     const savedLayersRef = useRef<MapLayerState | null>(null);
-    // What the Map Edits node feeding the map asks of it: the table shown
+    // What the Map Editor node feeding the map asks of it: the table shown
     // alone, and the table an action works on; and each layer's own state
     // before it asked.
     const soloRef = useRef<(EditsView & { before: MapLayerState | null }) | null>(null);
@@ -428,7 +428,7 @@ export const useAutkGrammarBehavior = (
     const runGrammar = async (
         specString: string,
         emit: (o: { code: string; content: string }) => void,
-        // A draw of the map again, for an edit a Map Edits node feeding it
+        // A draw of the map again, for an edit a Map Editor node feeding it
         // made: it draws, and hands nothing on.
         preview = false,
     ) => {
@@ -548,11 +548,11 @@ export const useAutkGrammarBehavior = (
         const readsInput = hasMaps || hasPlot || specDataSources.length === 0;
         if (data.input && readsInput) {
             try {
-                // A map draws each circle a Map Edits node feeds from that
+                // A map draws each circle a Map Editor node feeds from that
                 // node's input with its edits (mapEditsPreview); a compute
                 // step, which draws nothing, reads what it was fed.
                 let prepared = autkSourcesFrom(await ((hasMaps || hasPlot) ? readDrawnInput(data.input) : readInput(data.input)), spec);
-                // The new layers a Map Edits node feeding the map makes are
+                // The new layers a Map Editor node feeding the map makes are
                 // drawn on top, once they have features.
                 const made = newLayerTables(feedsRef.current).filter((table) =>
                     prepared.sources.some((source) => source.outputTableName === table && hasFeatures(source.geojsonObject)));
@@ -965,7 +965,7 @@ export const useAutkGrammarBehavior = (
                 else frameMaps(grammar);
                 if (editFedRef.current) {
                     // What was set on each layer through the map's menu, the
-                    // layer a Map Edits node shows alone and the layer its
+                    // layer a Map Editor node shows alone and the layer its
                     // action works on, kept across the draw; the overlay on the
                     // map reads its camera, and where this draw put a
                     // feature's rows, read back from what autk-db exported,
@@ -1078,7 +1078,7 @@ export const useAutkGrammarBehavior = (
                 // The map or plot drawn again shows none of the pick or brush
                 // this node sent before: it says so, as a Vega chart does when
                 // it compiles (hook/useVega.ts), so the views linked to it stop
-                // showing that selection too. A draw for a Map Edits node's
+                // showing that selection too. A draw for a Map Editor node's
                 // edit keeps it: the pick stays to edit again, and lights up
                 // on the new map below.
                 const lost = preview ? null : ownSelectionRef.current;
@@ -1096,7 +1096,7 @@ export const useAutkGrammarBehavior = (
                     }, d.nodeId);
                 }
 
-                // What the map was fed, as it came: the edits a Map Edits
+                // What the map was fed, as it came: the edits a Map Editor
                 // node feeding it made, as its last run made them.
                 handOnRun(data.input ?? null);
                 // A selection still active from before this draw lights up
@@ -1284,7 +1284,7 @@ export const useAutkGrammarBehavior = (
      * ways its inner try/catch never sees. So the terminal output is
      * guaranteed here, in a finally, rather than hoped for in the body.
      *
-     * With *preview*, the map is drawn again for an edit a Map Edits node
+     * With *preview*, the map is drawn again for an edit a Map Editor node
      * feeding it made: a draw and nothing else. No run is filed, the node's
      * state stays as its last run left it, and nothing is handed on.
      */
@@ -1349,7 +1349,7 @@ export const useAutkGrammarBehavior = (
     const drawGrammarRef = useRef(drawGrammar);
     drawGrammarRef.current = drawGrammar;
 
-    // An edit made in a Map Edits node feeding this map, or an edit's code
+    // An edit made in a Map Editor node feeding this map, or an edit's code
     // put back: the map, once drawn, draws again once the edits stop coming,
     // keeping its view and what was set on its layers. A redraw only: no run.
     const editVersion = feedsVersion(feeds);
@@ -1369,7 +1369,7 @@ export const useAutkGrammarBehavior = (
         if (editFedRef.current) registerEditMap(data.nodeId, null);
     }, [data.nodeId]);
 
-    // As the Map Edits node feeding the map asks: Show only this layer hides
+    // As the Map Editor node feeding the map asks: Show only this layer hides
     // the map's other layers, and the layer an action works on, or the one
     // shown alone, is the one that picks, so the map lights the node's pick
     // and a rule's matches there. Each layer is back as it was when the node
@@ -1426,7 +1426,7 @@ export const useAutkGrammarBehavior = (
         const current = dataRef.current;
         if (!grammar || !spec || !current.input) return;
 
-        // The layers as the map drew them, a Map Edits node's edits made. A
+        // The layers as the map drew them, a Map Editor node's edits made. A
         // map drawn again meanwhile lights them itself.
         const layers = autkSourcesFrom(await readDrawnInput(current.input), spec).sources;
         if (layers.length === 0 || grammarRef.current !== grammar) return;
@@ -1736,7 +1736,7 @@ export const useAutkGrammarBehavior = (
                     className="nodrag nopan nowheel"
                     style={{
                         display: 'flex', flexDirection: 'column', width: '100%', height: '100%',
-                        // The overlay of a Map Edits node feeding the map lies over it.
+                        // The overlay of a Map Editor node feeding the map lies over it.
                         ...(editFed ? { position: 'relative' as const } : {}),
                     }}
                 >
@@ -1774,7 +1774,7 @@ export const useAutkGrammarBehavior = (
                             overflow: 'hidden',
                         }}
                     />
-                    {/* What a Map Edits node feeding the map does on it (#662). */}
+                    {/* What a Map Editor node feeding the map does on it (#662). */}
                     {editFed ? <MapEditOverlay mapId={data.nodeId} sendSelection={sendOwnSelection} /> : null}
                 </div>
             ),

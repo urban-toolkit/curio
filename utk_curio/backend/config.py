@@ -31,6 +31,12 @@ CURIO_NO_AUTH = _env_flag("CURIO_NO_AUTH", False) or CURIO_NO_PROJECT
 
 ALLOW_GUEST_LOGIN = _env_flag("ALLOW_GUEST_LOGIN", CURIO_ENV != "prod")
 
+# How many reverse proxies in front of the backend add the visitor's address
+# to X-Forwarded-For (--proxy-hops). The limits per address read it there
+# (ProxyFix, app/__init__.py). With none, each request's own address counts:
+# a visitor could write the header themselves.
+CURIO_PROXY_HOPS = max(0, int(os.environ.get("CURIO_PROXY_HOPS", "0") or "0"))
+
 GUEST_PROJECT_CLEANUP = _env_flag("GUEST_PROJECT_CLEANUP", False)
 
 CURIO_SHARED_GUEST_USERNAME = os.environ.get(

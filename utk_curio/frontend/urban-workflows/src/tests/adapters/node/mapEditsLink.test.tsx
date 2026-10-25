@@ -1,5 +1,5 @@
 /**
- * The Map Edits node (`curio.builtin/edit-features`) and the Autark map it
+ * The Map Editor node (`curio.builtin/edit-features`) and the Autark map it
  * feeds, joined by an interaction edge, with the flow's own routing of
  * selections (providers/flow/useInteractions): a pick on the map is the map's
  * selection, which the edge carries to the node, as a selection crosses
@@ -16,12 +16,21 @@
  * building being reshaped is drawn by them instead of its own layer. A
  * building of several parts, each with an osm_id of its own, is reshaped,
  * moved and added to part by part, each edit naming the part it changes; one
- * whose parts no column tells apart keeps its shape.
+ * whose parts no column tells apart keeps its shape. A corner dragged, or an
+ * area drawn, that would make an outline cross itself is refused: nothing is
+ * written, and the map's tip says why.
  *
  * Each node is the behavior the canvas registers for its type, with the
- * node's own state (hook/useNodeState) for the Map Edits node; the map draws
+ * node's own state (hook/useNodeState) for the Map Editor node; the map draws
  * with the stand-in grammar of _support/autkNodeMocks, whose pick is a pick
  * on the map, as autk-grammar reports one.
+ *
+ * The form of a building of several parts is for all of them: a property
+ * they differ in is empty, or its menu on no choice, with their values
+ * listed under its field, osm_id cannot be changed, and a value typed or
+ * chosen goes to every part; its parts menu chooses one part instead, whose
+ * values the form shows and whose own value Apply sets. A building whose
+ * parts no column tells apart gets the form for all of them only.
  */
 import React from "react";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
@@ -243,7 +252,7 @@ afterEach(() => {
   unstubWebGpu();
 });
 
-test("a pick on the linked map selects that feature in the Map Edits node, and Remove removes it", async () => {
+test("a pick on the linked map selects that feature in the Map Editor node, and Remove removes it", async () => {
   const canvas = mountCanvas();
   await canvas.playMap();
   await openAction("remove");
@@ -290,7 +299,7 @@ test("the selection the map's overlay sends names features by the layer's id col
   expect(canvas.settings()?.edits).toEqual([{ op: "remove", ids: [119, 136] }]);
 });
 
-test("what the Map Edits node picks, or a rule matches, lights up on the map, by the selection it sends back", async () => {
+test("what the Map Editor node picks, or a rule matches, lights up on the map, by the selection it sends back", async () => {
   const canvas = mountCanvas();
   await canvas.playMap();
   await openAction("remove");
@@ -584,7 +593,7 @@ const MIDDLE_200: [number, number] = [2.5, 0.5];
 /**
  * A click on the map where it draws *lonLat*, with *shift* a shift-click: a
  * press and a release in place on the map's canvas, as a person makes one,
- * which the overlay a linked Map Edits node lends the map hears.
+ * which the overlay a linked Map Editor node lends the map hears.
  */
 function clickMap(lonLat: [number, number], shift = false) {
   const canvas = document.getElementById(`autk-grammar-map-${MAP}`) as HTMLCanvasElement;
@@ -599,12 +608,14 @@ function clickMap(lonLat: [number, number], shift = false) {
 /**
  * One step of a drag on the map: a press, a move or a release on the map's
  * canvas at *xy*, in the map's own pixels, the main button held while *held*,
- * and shift with *shift*.
+ * shift with *shift* and alt with *alt*.
  */
-function pointerOnMap(type: "pointerdown" | "pointermove" | "pointerup", [x, y]: [number, number], held: boolean, shift = false) {
+function pointerOnMap(type: "pointerdown" | "pointermove" | "pointerup", [x, y]: [number, number], held: boolean, shift = false, alt = false) {
   const canvas = document.getElementById(`autk-grammar-map-${MAP}`) as HTMLCanvasElement;
   act(() => {
-    canvas.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, button: 0, buttons: held ? 1 : 0, shiftKey: shift, clientX: x, clientY: y }));
+    canvas.dispatchEvent(
+      new MouseEvent(type, { bubbles: true, cancelable: true, button: 0, buttons: held ? 1 : 0, shiftKey: shift, altKey: alt, clientX: x, clientY: y }),
+    );
   });
 }
 
@@ -1093,6 +1104,309 @@ test("Add a part on a building of two parts joins the part the building was pick
   }
 });
 
+/**
+ * Fails with *message* unless *ok*: a plain sentence of what is wrong, where
+ * an expect would show only the values it compared.
+ */
+function must(ok: unknown, message: string): asserts ok {
+  if (!ok) throw new Error(message);
+}
+
+/** The words of each option of the menu *select*, in its order. */
+const optionTexts = (select: HTMLSelectElement) => Array.from(select.options).map((option) => option.textContent);
+
+/** Picks the option of the menu *select* that reads *label*, as a person picks one. */
+function choose(select: HTMLSelectElement, label: string) {
+  const option = Array.from(select.options).find((o) => o.textContent === label);
+  must(option, `The menu offers no option that reads ${JSON.stringify(label)}: it offers ${JSON.stringify(optionTexts(select))}.`);
+  fireEvent.change(select, { target: { value: option.value } });
+}
+
+/** The form's parts menu, or null when it has none. */
+const partsMenu = () => screen.queryByTestId("interaction-parts-menu") as HTMLSelectElement | null;
+
+/** The form's field of the property *name*. */
+const fieldOf = (name: string) => screen.getByTestId(`interaction-field-${name}`) as HTMLInputElement;
+
+/** The form's cell of the property *name*: its field's row in the value column. */
+function cellOf(name: string): HTMLElement {
+  const cell = fieldOf(name).closest<HTMLElement>("[data-field]");
+  must(cell, `The field of ${name} sits in no cell of the form.`);
+  return cell;
+}
+
+/** The properties of each row of building *id* the map drew last, in the layer's order. */
+const drawnRowsOf = (id: number): Record<string, unknown>[] =>
+  (grammarRuns[grammarRuns.length - 1]?.spec?.data ?? [])
+    .flatMap((source: any) => source?.geojsonObject?.features ?? [])
+    .filter((feature: any) => feature?.properties?.building_id === id)
+    .map((feature: any) => feature.properties);
+
+test("a building of two parts, each with its own osm_id, opens on all its parts: a property they differ in is empty and lists their values, osm_id cannot be changed, and a value typed goes to both parts", async () => {
+  nodeInput.current = OSM_PARTED;
+  const canvas = mountCanvas();
+  await canvas.playMap();
+  await openAction("edit");
+
+  // Building 136 picked on the map: its parts are 20 and 30 m tall, so its
+  // height is empty, and a note beside it lists both.
+  pickOnMap([1]);
+  const height = (await screen.findByTestId("interaction-field-height")) as HTMLInputElement;
+  must(
+    height.value === "",
+    `The form shows the height of building 136's first part, ${JSON.stringify(height.value)}, as the building's: its two parts are 20 and 30 m tall.`,
+  );
+  const listed = screen.queryByTestId("interaction-mixed-height");
+  must(
+    listed?.textContent === "2 values: 20, 30",
+    `No note beside the empty height lists the two parts' heights as "2 values: 20, 30": the note reads ${JSON.stringify(listed?.textContent ?? null)}.`,
+  );
+
+  // The parts menu, on all of them; then each part, named by its osm_id and
+  // the values it differs in.
+  const menu = partsMenu();
+  must(menu, "There is no parts menu: the form of building 136, of two parts, works on its first part alone.");
+  expect(menu).toHaveAccessibleName("Parts");
+  expect(optionTexts(menu)).toEqual(["All 2 parts", "osm_id 136, height 20", "osm_id 1361, height 30"]);
+  expect(menu.selectedOptions[0]?.textContent).toBe("All 2 parts");
+
+  // osm_id, which tells the parts apart, is shown, and nothing takes a value for it.
+  must(
+    screen.queryByTestId("interaction-field-osm_id") === null,
+    "osm_id, which tells building 136's parts apart, is a field a value can be typed into, showing its first part's.",
+  );
+  expect(screen.getByTestId("interaction-fixed-osm_id")).toHaveTextContent(/^2 values, cannot be changed$/);
+
+  // Nothing typed: no property is asked for, Apply is off, and a click on it
+  // writes nothing.
+  expect(screen.queryByText(/is required/)).toBeNull();
+  expect(screen.getByTestId("interaction-form-submit")).toBeDisabled();
+  fireEvent.click(screen.getByTestId("interaction-form-submit"));
+  expect(canvas.settings()?.edits ?? []).toEqual([]);
+
+  // A height typed goes to both parts: one edit, by the building's id.
+  fireEvent.change(height, { target: { value: "25" } });
+  expect(screen.queryByText(/is required/)).toBeNull();
+  fireEvent.click(screen.getByTestId("interaction-form-submit"));
+  expect(canvas.settings()?.edits).toEqual([{ op: "set", ids: [136], column: "height", value: 25 }]);
+  await waitFor(() => expect(drawnRowsOf(136).map((row) => [row.osm_id, row.height])).toEqual([[136, 25], [1361, 25]]));
+
+  // The parts are as tall now: the field shows their height, no note lists
+  // it, and the menu names each part by its osm_id alone.
+  await waitFor(() => expect(fieldOf("height").value).toBe("25"));
+  expect(screen.queryByTestId("interaction-mixed-height")).toBeNull();
+  const after = partsMenu();
+  must(after, "The parts menu left the form after an Apply on all the parts of building 136.");
+  expect(optionTexts(after)).toEqual(["All 2 parts", "osm_id 136", "osm_id 1361"]);
+});
+
+/** OSM_PARTED with each row's levels too: 2, then 3 and 4 for building 136's parts, then 5. */
+const OSM_PARTED_LEVELS = {
+  ...OSM_PARTED,
+  features: OSM_PARTED.features.map((feature, i) => ({ ...feature, properties: { ...feature.properties, levels: i + 2 } })),
+};
+
+test("a value typed in the form of all the parts of a building goes to its own property alone: another they differ in stays empty, asks for nothing, and keeps each part's value", async () => {
+  nodeInput.current = OSM_PARTED_LEVELS;
+  const canvas = mountCanvas();
+  await canvas.playMap();
+  await openAction("edit");
+
+  // Building 136 picked on the map: its parts differ in height, 20 and 30,
+  // and in levels, 3 and 4, which every row fills.
+  pickOnMap([1]);
+  await screen.findByTestId("interaction-field-height");
+  const levels = fieldOf("levels");
+  must(
+    levels.value === "",
+    `The form shows the levels of building 136's first part, ${JSON.stringify(levels.value)}, as the building's: its two parts have 3 and 4 levels.`,
+  );
+  expect(screen.getByTestId("interaction-mixed-levels")).toHaveTextContent(/^2 values: 3, 4$/);
+  expect(fieldOf("height").value).toBe("");
+  expect(screen.getByTestId("interaction-mixed-height")).toHaveTextContent(/^2 values: 20, 30$/);
+  const menu = partsMenu();
+  must(menu, "There is no parts menu: the form of building 136, of two parts, works on its first part alone.");
+  expect(optionTexts(menu)).toEqual(["All 2 parts", "osm_id 136, height 20, levels 3", "osm_id 1361, height 30, levels 4"]);
+
+  // Only a height typed: levels, left empty, asks for nothing and is not
+  // written, so each part keeps its own.
+  fireEvent.change(fieldOf("height"), { target: { value: "25" } });
+  expect(screen.queryByText(/is required/)).toBeNull();
+  expect(screen.getByTestId("interaction-form-submit")).toBeEnabled();
+  fireEvent.click(screen.getByTestId("interaction-form-submit"));
+  expect(canvas.settings()?.edits).toEqual([{ op: "set", ids: [136], column: "height", value: 25 }]);
+  await waitFor(() => expect(drawnRowsOf(136).map((row) => [row.height, row.levels])).toEqual([[25, 3], [25, 4]]));
+
+  // The parts differ in levels still: that field stays empty with both listed.
+  await waitFor(() => expect(fieldOf("height").value).toBe("25"));
+  expect(fieldOf("levels").value).toBe("");
+  expect(screen.getByTestId("interaction-mixed-levels")).toHaveTextContent(/^2 values: 3, 4$/);
+  const after = partsMenu();
+  must(after, "The parts menu left the form after an Apply on all the parts of building 136.");
+  expect(optionTexts(after)).toEqual(["All 2 parts", "osm_id 136, levels 3", "osm_id 1361, levels 4"]);
+});
+
+/**
+ * OSM_PARTED with each row's name and kind: building 136's parts are named
+ * apart, a tower and a podium, and kinds repeat, so the form offers them in a
+ * menu.
+ */
+const OSM_PARTED_KINDS = {
+  ...OSM_PARTED,
+  features: OSM_PARTED.features.map((feature, i) => ({
+    ...feature,
+    properties: {
+      ...feature.properties,
+      name: ["Garden Court", "Presidential Towers T1", "Presidential Towers T4", "Union Station"][i],
+      kind: ["house", "tower", "podium", "house"][i],
+    },
+  })),
+};
+
+test("on all the parts of a building, a menu they differ in shows no choice, each note sits under its field, which keeps a field's whole width, and a choice goes to every part", async () => {
+  nodeInput.current = OSM_PARTED_KINDS;
+  const canvas = mountCanvas();
+  await canvas.playMap();
+  await openAction("edit");
+  pickOnMap([1]);
+  await screen.findByTestId("interaction-field-height");
+
+  // kind, a menu: building 136's parts are a tower and a podium, so it shows
+  // no choice, and "(empty)" stays the choice of no kind.
+  const kind = screen.getByTestId("interaction-field-kind") as HTMLSelectElement;
+  must(
+    kind.selectedOptions[0]?.textContent === "",
+    `The kind menu of building 136, whose parts are a tower and a podium, shows ${JSON.stringify(kind.selectedOptions[0]?.textContent ?? null)} as if that were its kind: it should show no choice.`,
+  );
+  expect(optionTexts(kind)).toEqual(["", "(empty)", "house", "tower", "podium"]);
+  expect(screen.getByTestId("interaction-mixed-kind")).toHaveTextContent(/^2 values: tower, podium$/);
+  expect(screen.getByTestId("interaction-mixed-name")).toHaveTextContent(/^2 values: Presidential Towers T1, Presidential Towers T4$/);
+
+  // Each note sits under its field, a long one too: the field's cell holds
+  // the field alone, as wide as a field with no note.
+  for (const name of ["height", "name", "kind"]) {
+    const note = screen.getByTestId(`interaction-mixed-${name}`);
+    must(
+      !cellOf(name).contains(note),
+      `The note of ${name}, "${note.textContent}", sits beside its field, which a long note squeezes to nothing: it belongs under it.`,
+    );
+    expect(cellOf(name).nextElementSibling).toBe(note);
+    expect(note).toHaveClass("fieldNote");
+  }
+
+  // "(empty)" is a choice: kind, which every row fills, then asks for one.
+  // No choice again asks for nothing, and Apply has nothing to write.
+  choose(kind, "(empty)");
+  expect(screen.getByText(/kind is required/)).toBeInTheDocument();
+  expect(screen.getByTestId("interaction-form-submit")).toBeDisabled();
+  choose(kind, "");
+  expect(screen.queryByText(/is required/)).toBeNull();
+  expect(screen.getByTestId("interaction-form-submit")).toBeDisabled();
+
+  // A kind chosen goes to both parts, and nothing else is written.
+  choose(kind, "house");
+  expect(kind.selectedOptions[0]?.textContent).toBe("house");
+  fireEvent.click(screen.getByTestId("interaction-form-submit"));
+  expect(canvas.settings()?.edits).toEqual([{ op: "set", ids: [136], column: "kind", value: "house" }]);
+  await waitFor(() =>
+    expect(drawnRowsOf(136).map((row) => [row.kind, row.name])).toEqual([
+      ["house", "Presidential Towers T1"],
+      ["house", "Presidential Towers T4"],
+    ]),
+  );
+});
+
+test("the parts menu chooses one part of a building of two: the form shows that part's values, the map still lights the whole building, and Apply sets the value typed on that part alone, named by its osm_id", async () => {
+  nodeInput.current = OSM_PARTED;
+  const canvas = mountCanvas();
+  await canvas.playMap();
+  await openAction("edit");
+  pickOnMap([1]);
+  await screen.findByTestId("interaction-field-height");
+  const menu = partsMenu();
+  must(
+    menu,
+    "There is no parts menu: the form of building 136, of two parts, works on its first part alone, and a value typed in it goes to both parts.",
+  );
+  await waitFor(() => expect(litUp()).toEqual([1, 2]));
+
+  // Its second part chosen: its height, and its osm_id, which cannot be changed.
+  choose(menu, "osm_id 1361, height 30");
+  const height = fieldOf("height");
+  must(height.value === "30", `With part 1361 chosen in the parts menu, the height field shows ${JSON.stringify(height.value)}, not that part's 30.`);
+  expect(screen.queryByTestId("interaction-mixed-height")).toBeNull();
+  expect(screen.queryByTestId("interaction-field-osm_id")).toBeNull();
+  expect(screen.getByTestId("interaction-fixed-osm_id")).toHaveTextContent(/^1361, cannot be changed$/);
+  // The map lights the whole building still.
+  await waitFor(() => expect(litUp()).toEqual([1, 2]));
+
+  // A height typed: what it was shows under the field, which keeps its whole
+  // width. Apply writes one edit, of that part alone, named by the
+  // building's id and the part's own osm_id, in the list as such.
+  fireEvent.change(height, { target: { value: "45" } });
+  const was = screen.getByText("was 30");
+  expect(was).toHaveClass("fieldNote");
+  expect(cellOf("height")).not.toContainElement(was);
+  expect(cellOf("height").nextElementSibling).toBe(was);
+  fireEvent.click(screen.getByTestId("interaction-form-submit"));
+  const edits = canvas.settings()?.edits ?? [];
+  must(
+    !edits.some((edit) => "ids" in edit),
+    `Apply on part 1361 wrote ${JSON.stringify(edits)}: an edit by building_id 136 gives both its parts the height typed for one of them.`,
+  );
+  expect(edits).toEqual([{ op: "set", where: "building_id == 136 and osm_id == 1361", column: "height", value: 45 }]);
+  expect(document.querySelector('[data-edit-op="set"]')).toHaveTextContent("Set height to 45 where building_id == 136 and osm_id == 1361");
+  // The map draws it: the first part keeps its 20 m, and the building is lit whole.
+  await waitFor(() => expect(drawnRowsOf(136).map((row) => [row.osm_id, row.height])).toEqual([[136, 20], [1361, 45]]));
+  await waitFor(() => expect(litUp()).toEqual([1, 2]));
+
+  // Building 119, of one part, picked: no parts menu, and its osm_id is a
+  // field like any other.
+  pickOnMap([0]);
+  await waitFor(() => expect(fieldOf("height").value).toBe("10"));
+  expect(partsMenu()).toBeNull();
+  expect(fieldOf("osm_id").value).toBe("119");
+  expect(screen.queryByTestId("interaction-fixed-osm_id")).toBeNull();
+  expect(screen.queryByTestId("interaction-mixed-height")).toBeNull();
+});
+
+test("a building of two parts that no column tells apart gets one form for both: no parts menu, a property they differ in empty with their values listed, and a value typed goes to both parts", async () => {
+  nodeInput.current = PARTED;
+  const canvas = mountCanvas();
+  await canvas.playMap();
+  await openAction("edit");
+
+  // Building 136 picked on the map: its two parts hold its building_id and
+  // no osm_id of their own, and are 20 and 30 m tall.
+  pickOnMap([1]);
+  const height = (await screen.findByTestId("interaction-field-height")) as HTMLInputElement;
+  must(
+    height.value === "",
+    `The form shows the height of building 136's first part, ${JSON.stringify(height.value)}, as the building's: its two parts are 20 and 30 m tall.`,
+  );
+  const listed = screen.queryByTestId("interaction-mixed-height");
+  must(
+    listed?.textContent === "2 values: 20, 30",
+    `No note beside the empty height lists the two parts' heights as "2 values: 20, 30": the note reads ${JSON.stringify(listed?.textContent ?? null)}.`,
+  );
+
+  // One form for both parts: no menu, since nothing tells them apart, as the
+  // tip of its shape tools says.
+  expect(partsMenu()).toBeNull();
+  expect(screen.getByTestId("interaction-parts-all")).toHaveTextContent(/^All 2 parts$/);
+  expect(screen.getByTestId("interaction-parts-untold")).toHaveTextContent("Its 2 parts have no osm_id of their own to tell them apart");
+
+  // Nothing typed: no property is asked for, and Apply is off.
+  expect(screen.queryByText(/is required/)).toBeNull();
+  expect(screen.getByTestId("interaction-form-submit")).toBeDisabled();
+
+  // A height typed goes to both parts: one edit, by the building's id.
+  fireEvent.change(height, { target: { value: "25" } });
+  fireEvent.click(screen.getByTestId("interaction-form-submit"));
+  expect(canvas.settings()?.edits).toEqual([{ op: "set", ids: [136], column: "height", value: 25 }]);
+  await waitFor(() => expect(drawnRowsOf(136).map((row) => row.height)).toEqual([25, 25]));
+});
+
 test("a building whose parts no column tells apart keeps its shape: Move points, Move whole area and Add a part are off for it, a tip says why, and nothing is written", async () => {
   const putBack = layOutCanvases();
   try {
@@ -1132,6 +1446,248 @@ test("a building whose parts no column tells apart keeps its shape: Move points,
     expect(canvas.settings()?.edits ?? []).toEqual([]);
     expect(overlay()).toHaveAttribute("data-edit-mode", "select");
     expect(screen.getByTestId("interaction-parts-untold")).toBeInTheDocument();
+  } finally {
+    putBack();
+  }
+});
+
+/**
+ * What the map's tip says when a drag would make an outline cross itself, and
+ * when an area drawn has an outline that does: autk-db refuses such a shape,
+ * and with it the whole layer (#1112).
+ */
+const CROSSED_DRAG = "That would make the outline cross itself, so the corner went back.";
+const CROSSED_AREA = "That outline crosses itself, so the area was not added.";
+
+/** Runs *check*, an expectation; when it fails, its failure says *bug* first: what went wrong on the map. */
+function checkFor(bug: string, check: () => void): void {
+  try {
+    check();
+  } catch (error) {
+    throw new Error(`${bug}\n\n${error instanceof Error ? error.message : String(error)}`);
+  }
+}
+
+test("a building's corner dragged across its far side, which would make its outline cross itself, writes no edit, the map's tip says why, and the corner goes back", async () => {
+  const putBack = layOutCanvases();
+  try {
+    drawnMaps.make = projectingMap;
+    const canvas = mountCanvas();
+    await canvas.playMap();
+    await openAction("edit");
+    clickMap(MIDDLE_136);
+    fireEvent.click(await screen.findByTestId("interaction-reshape"));
+    const map = lastMap();
+    const overlay = () => screen.getByTestId("map-edit-overlay");
+    await waitFor(() => expect(overlay()).toHaveAttribute("data-edit-mode", "reshape"));
+
+    // Building 136's outline, which the map's tools draw, and its corners
+    // where the map shows them.
+    const outlines = () => linesOn(map).map((line) => line.map(km));
+    const ring = inKm(closedRing([[1, 0], [2, 0], [2, 1], [1, 1]]));
+    await waitFor(() => expect(outlines()).toContainEqual(ring));
+    const corners = overlay().getAttribute("data-corners");
+    const listed = JSON.parse(corners ?? "[]");
+
+    // Its corner at (2, 1) dragged west across its far side, x = 1, to
+    // (0.5, 0.5): the side from (2, 0) to it crosses that side at (1, 1/3).
+    // While the drag lasts, the map draws the outline crossed.
+    const from: [number, number] = [Math.round(listed[2].x), Math.round(listed[2].y)];
+    const to = onScreen([0.5, 0.5]);
+    const crossed = [...ring];
+    crossed[2] = [to[0], SIZE - to[1]];
+    pointerOnMap("pointerdown", from, true);
+    pointerOnMap("pointermove", to, true);
+    await waitFor(() => expect(outlines()).toContainEqual(crossed));
+
+    // Let go: nothing is written, the tip says why, and the corner and the
+    // outline are back where they were.
+    pointerOnMap("pointerup", to, false);
+    checkFor("the self-crossing reshape was written as an edit", () => expect(canvas.settings()?.edits ?? []).toEqual([]));
+    checkFor("the map's tip does not say why the reshape was refused", () =>
+      expect(screen.getByTestId("map-edit-tip")).toHaveTextContent(CROSSED_DRAG),
+    );
+    checkFor("the dragged corner did not go back where it was", () => expect(overlay()).toHaveAttribute("data-corners", corners));
+    await waitFor(() => checkFor("the map does not draw the building's outline as it was", () => expect(outlines()).toContainEqual(ring)));
+    checkFor("the map still draws the crossed outline", () => expect(outlines()).not.toContainEqual(crossed));
+  } finally {
+    putBack();
+  }
+});
+
+test("an area drawn as a bow tie, its outline crossing itself, is not taken to be added when finished: no properties are asked for, nothing is written, and the map's tip says why", async () => {
+  const putBack = layOutCanvases();
+  try {
+    drawnMaps.make = projectingMap;
+    const canvas = mountCanvas();
+    await canvas.playMap();
+    const map = lastMap();
+    await openAction("add");
+    const overlay = () => screen.getByTestId("map-edit-overlay");
+    await waitFor(() => expect(overlay()).toHaveAttribute("data-edit-mode", "draw"));
+
+    // Four corners whose first and third sides cross, at (1, 2): a bow tie.
+    // The map draws the four.
+    const bowTie: [number, number][] = [[0.5, 1.5], [1.5, 2.5], [1.5, 1.5], [0.5, 2.5]];
+    for (const corner of bowTie) clickMap(corner);
+    await waitFor(() => expect(pointsOn(map).map(km).sort(byPlace)).toEqual(inKm(bowTie).sort(byPlace)));
+
+    // Finish: the area is refused. The node asks for none of its properties,
+    // and the map stays in its drawing mode.
+    fireEvent.click(screen.getByTestId("map-edit-finish"));
+    checkFor("the self-crossing area was taken to be added", () => expect(screen.queryByTestId("interaction-property-form")).toBeNull());
+    checkFor("the self-crossing area waits on the map to be added", () => expect(overlay()).toHaveAttribute("data-edit-mode", "draw"));
+    checkFor("the map's tip does not say why the area was refused", () =>
+      expect(screen.getByTestId("map-edit-tip")).toHaveTextContent(CROSSED_AREA),
+    );
+    checkFor("the self-crossing area was written as an edit", () => expect(canvas.settings()?.edits ?? []).toEqual([]));
+  } finally {
+    putBack();
+  }
+});
+
+test("a building's midpoint dragged across its far side, which would make its outline cross itself, writes no edit, the map's tip says why, and the outline is as it was", async () => {
+  const putBack = layOutCanvases();
+  try {
+    drawnMaps.make = projectingMap;
+    const canvas = mountCanvas();
+    await canvas.playMap();
+    await openAction("edit");
+    clickMap(MIDDLE_136);
+    fireEvent.click(await screen.findByTestId("interaction-reshape"));
+    const map = lastMap();
+    const overlay = () => screen.getByTestId("map-edit-overlay");
+    await waitFor(() => expect(overlay()).toHaveAttribute("data-edit-mode", "reshape"));
+    const outlines = () => linesOn(map).map((line) => line.map(km));
+    const ring = inKm(closedRing([[1, 0], [2, 0], [2, 1], [1, 1]]));
+    await waitFor(() => expect(outlines()).toContainEqual(ring));
+    const corners = overlay().getAttribute("data-corners");
+
+    // The midpoint of its east side, at (2, 0.5), dragged west across its far
+    // side, x = 1, to (0.5, 0.5): the new corner's sides cross that side.
+    const to = onScreen([0.5, 0.5]);
+    const crossed = [...ring.slice(0, 2), [to[0], SIZE - to[1]], ...ring.slice(2)];
+    pointerOnMap("pointerdown", onScreen([2, 0.5]), true);
+    pointerOnMap("pointermove", to, true);
+    await waitFor(() => expect(outlines()).toContainEqual(crossed));
+
+    pointerOnMap("pointerup", to, false);
+    checkFor("the self-crossing reshape was written as an edit", () => expect(canvas.settings()?.edits ?? []).toEqual([]));
+    checkFor("the map's tip does not say why the reshape was refused", () =>
+      expect(screen.getByTestId("map-edit-tip")).toHaveTextContent(CROSSED_DRAG),
+    );
+    checkFor("the midpoint's new corner stayed", () => expect(overlay()).toHaveAttribute("data-corners", corners));
+    await waitFor(() => checkFor("the map does not draw the building's outline as it was", () => expect(outlines()).toContainEqual(ring)));
+  } finally {
+    putBack();
+  }
+});
+
+/** Building 136 as a triangle with a corner on its base, at (1.5, 0): without its top corner it has no area. */
+const BASE_CORNER = {
+  type: "FeatureCollection",
+  features: [
+    {
+      type: "Feature",
+      geometry: { type: "Polygon", coordinates: [[[1, 0], [1.5, 0], [2, 0], [1.5, 1], [1, 0]]] },
+      properties: { building_id: 136, height: 20 },
+    },
+  ],
+};
+
+test("an alt-click on the top corner of a building whose other corners lie on one line, which would leave it no area, writes no edit, the map's tip says why, and the corner stays", async () => {
+  const putBack = layOutCanvases();
+  try {
+    nodeInput.current = BASE_CORNER;
+    drawnMaps.make = projectingMap;
+    const canvas = mountCanvas();
+    await canvas.playMap();
+    await openAction("edit");
+    clickMap([1.5, 0.3]);
+    fireEvent.click(await screen.findByTestId("interaction-reshape"));
+    const overlay = () => screen.getByTestId("map-edit-overlay");
+    await waitFor(() => expect(JSON.parse(overlay().getAttribute("data-corners") ?? "[]")).toHaveLength(4));
+    const corners = overlay().getAttribute("data-corners");
+
+    const top = onScreen([1.5, 1]);
+    pointerOnMap("pointerdown", top, true, false, true);
+    pointerOnMap("pointerup", top, false, false, true);
+    checkFor("the corner whose loss leaves no area was deleted in an edit", () => expect(canvas.settings()?.edits ?? []).toEqual([]));
+    checkFor("the map's tip does not say why the corner stayed", () =>
+      expect(screen.getByTestId("map-edit-tip")).toHaveTextContent("That would leave the outline with no area, so the corner stayed."),
+    );
+    checkFor("the corner was taken off the map", () => expect(overlay()).toHaveAttribute("data-corners", corners));
+  } finally {
+    putBack();
+  }
+});
+
+test("Add a part drawn inside the part it joins, which would make two of its parts overlap, writes no edit, the map's tip says why, and the part can be drawn again", async () => {
+  const putBack = layOutCanvases();
+  try {
+    nodeInput.current = OSM_PARTED;
+    drawnMaps.make = projectingMap;
+    const canvas = mountCanvas();
+    await canvas.playMap();
+    await openAction("edit");
+    // Building 136 picked by a click on its second part.
+    clickMap(MIDDLE_PART_TWO);
+    fireEvent.click(await screen.findByTestId("interaction-add-part"));
+    const overlay = () => screen.getByTestId("map-edit-overlay");
+    await waitFor(() => expect(overlay()).toHaveAttribute("data-edit-mode", "draw"));
+
+    // A triangle inside that part, ended with Enter.
+    for (const corner of [[1.7, 0.2], [1.9, 0.2], [1.8, 0.8]] as [number, number][]) clickMap(corner);
+    fireEvent.keyDown(document.body, { key: "Enter" });
+    checkFor("the overlapping part was written as an edit", () => expect(canvas.settings()?.edits ?? []).toEqual([]));
+    checkFor("the map's tip does not say why the part was refused", () =>
+      expect(screen.getByTestId("map-edit-tip")).toHaveTextContent("It overlaps another part, so the part was not added."),
+    );
+    checkFor("the map stopped drawing the part", () => expect(overlay()).toHaveAttribute("data-edit-mode", "draw"));
+    expect(screen.getByTestId("interaction-cancel-part")).toBeInTheDocument();
+  } finally {
+    putBack();
+  }
+});
+
+/**
+ * Building 136 already shaped as a bow tie, as a layer autk-db does not check
+ * can hold one: its sides cross at (1.5, 0.5).
+ */
+const BOW_TIE = {
+  type: "FeatureCollection",
+  features: [
+    {
+      type: "Feature",
+      geometry: { type: "Polygon", coordinates: [[[1, 0], [2, 1], [2, 0], [1, 1], [1, 0]]] },
+      properties: { building_id: 136, height: 20 },
+    },
+  ],
+};
+
+test("a shape whose outline already crossed itself as its layer holds it still takes a reshape: only a problem a gesture makes is refused", async () => {
+  const putBack = layOutCanvases();
+  try {
+    nodeInput.current = BOW_TIE;
+    drawnMaps.make = projectingMap;
+    const canvas = mountCanvas();
+    await canvas.playMap();
+    await openAction("edit");
+    // A click inside its west lobe picks it.
+    clickMap([1.2, 0.5]);
+    fireEvent.click(await screen.findByTestId("interaction-reshape"));
+    const overlay = () => screen.getByTestId("map-edit-overlay");
+    await waitFor(() => expect(JSON.parse(overlay().getAttribute("data-corners") ?? "[]")).toHaveLength(4));
+
+    // Its corner at (2, 1) dragged a little: the outline still crosses itself, as before.
+    const listed = JSON.parse(overlay().getAttribute("data-corners") ?? "[]");
+    const from: [number, number] = [Math.round(listed[1].x), Math.round(listed[1].y)];
+    const to: [number, number] = [from[0] + 20, from[1] - 15];
+    pointerOnMap("pointerdown", from, true);
+    pointerOnMap("pointermove", to, true);
+    pointerOnMap("pointerup", to, false);
+    expect(canvas.settings()?.edits ?? []).toEqual([expect.objectContaining({ op: "geometry", ids: [136] })]);
+    expect(screen.getByTestId("map-edit-tip")).not.toHaveTextContent("That would");
   } finally {
     putBack();
   }

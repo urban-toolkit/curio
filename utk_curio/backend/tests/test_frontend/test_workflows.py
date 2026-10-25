@@ -56,6 +56,7 @@ from .utils import (
     save_dataflow_and_settle_header,
     save_workflow_test_screenshot,
     assert_vega_canvas_rendered,
+    assert_vega_charts_fit,
     assert_vega_node_empty_state,
     load_artifact_as_dict,
     execute_workflow_programmatically,
@@ -187,7 +188,7 @@ EXAMPLE_08_MAP = "niteroi-map"
 EXAMPLE_11_HISTOGRAM = "pbf-plot"
 EXAMPLE_11_MAP = "pbf-map"
 
-#: Map Edits (#662) runs the code its edits are written in behind its own play
+#: Map Editor (#662) runs the code its edits are written in behind its own play
 #: button, but ``NodeSpec.has_play_button`` is False for it, so the canvas
 #: tests play it by its type: example 06's is played and must end Done like
 #: any other.
@@ -200,7 +201,7 @@ def _plays(node: NodeSpec) -> bool:
 
 
 def _linked_maps(spec, node_id: str) -> list[str]:
-    """The Autark maps the Map Edits node *node_id* feeds on a data edge and is
+    """The Autark maps the Map Editor node *node_id* feeds on a data edge and is
     linked to by an Interaction edge: the ones it edits on."""
     types = {n.id: n.type for n in spec.nodes}
     fed = {e["target"] for e in spec.edges if e["source"] == node_id and e.get("type") != "Interaction"}
@@ -212,11 +213,11 @@ def _linked_maps(spec, node_id: str) -> list[str]:
 
 
 def _assert_lever_map_drew(page, spec, node_id: str) -> None:
-    """A Map Edits node that ran edits on the Autark map it feeds and is linked
+    """A Map Editor node that ran edits on the Autark map it feeds and is linked
     to: its body names that map and lists the layers it is fed, with no notice
     in their place, and the map drew, before any frame is taken of them."""
     maps = _linked_maps(spec, node_id)
-    assert len(maps) == 1, f"Map Edits node {node_id} feeds and is linked to the maps {maps}, not one"
+    assert len(maps) == 1, f"Map Editor node {node_id} feeds and is linked to the maps {maps}, not one"
     (map_id,) = maps
     body = page.locator(f'.react-flow__node[data-id="{node_id}"] [data-edit-body="{node_id}"]')
     try:
@@ -225,9 +226,9 @@ def _assert_lever_map_drew(page, spec, node_id: str) -> None:
         pass
     linked_to = body.get_attribute("data-edit-map") if body.count() else None
     notices = body.locator("[data-curio-node-empty]").all_inner_texts()
-    assert linked_to == map_id, f"Map Edits node {node_id} edits on {linked_to!r}, not the map it is linked to, {map_id}"
+    assert linked_to == map_id, f"Map Editor node {node_id} edits on {linked_to!r}, not the map it is linked to, {map_id}"
     assert body.locator('[data-testid="interaction-layers"]').count() == 1 and not notices, (
-        f"Map Edits node {node_id} lists no layers to edit: {notices}"
+        f"Map Editor node {node_id} lists no layers to edit: {notices}"
     )
     assert_autark_map_drawn(page, map_id, timeout=60000, attach_as=f"the map {node_id} edits on")
 
@@ -1244,7 +1245,7 @@ class TestWorkflowCanvas:
                 )
             # text mode: no output tab → nothing further to assert.
 
-        # A Map Edits node lists its layers, linked to the map it edits on,
+        # A Map Editor node lists its layers, linked to the map it edits on,
         # which drew.
         for node in self.spec.nodes:
             if node.type == EDIT_FEATURES:
@@ -1263,6 +1264,16 @@ class TestWorkflowCanvas:
                 assert_autark_plot_drawn(self.page, node.id)
         self._save_screenshot(request)
 
+        # Each Vega-Lite chart shows whole in its node, nothing past the node's
+        # right or bottom edge. A chart whose spec sets its own size keeps it,
+        # with its axes, title and legend around it (#1097), so the example
+        # gives its node the room.
+        assert_vega_charts_fit(
+            self.page,
+            os.path.basename(self.spec.filepath),
+            [node.id for node in self.spec.nodes if node.type == "VIS_VEGA"],
+        )
+
         # A map or plot that drew nothing leaves a blank node, which in the
         # full-page frame above can stay under the budget. Each one is also
         # compared on its own, up close, after checking it fills its node.
@@ -1278,7 +1289,7 @@ class TestWorkflowCanvas:
 
         # Each map opens framed on the layers it draws (#773): not a speck in
         # the middle of the map, nor a crop past its edges. That is every
-        # Autark map, the one a Map Edits node edits on among them. Checked
+        # Autark map, the one a Map Editor node edits on among them. Checked
         # once every close-up is taken, and for every map before failing on
         # one.
         maps = [
@@ -1288,7 +1299,7 @@ class TestWorkflowCanvas:
         for node in self.spec.nodes:
             if node.type == EDIT_FEATURES:
                 assert set(_linked_maps(self.spec, node.id)) <= set(maps), (
-                    f"the map Map Edits node {node.id} edits on is not among the maps checked: {maps}"
+                    f"the map Map Editor node {node.id} edits on is not among the maps checked: {maps}"
                 )
         unframed = [
             problem for problem in (

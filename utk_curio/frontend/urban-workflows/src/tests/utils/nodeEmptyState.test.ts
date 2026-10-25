@@ -249,7 +249,7 @@ describe("the grammar states", () => {
   });
 });
 
-describe("the Map Edits states", () => {
+describe("the Map Editor states", () => {
   // The node edits on a map it feeds and is linked to, and reads the code it
   // writes: each state is a reason of the shared table, not a title of its own.
   const MAP_EDITS_REASONS: NodeEmptyReason[] = ["unlinked", "code-unreadable"];

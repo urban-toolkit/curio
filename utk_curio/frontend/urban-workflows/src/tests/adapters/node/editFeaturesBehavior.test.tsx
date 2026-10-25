@@ -1,5 +1,5 @@
 /**
- * The Map Edits node (#662; its type is still `curio.builtin/edit-features`)
+ * The Map Editor node (#662; its type is still `curio.builtin/edit-features`)
  * on the canvas, its code its only state. Linked to no Autark map it feeds, it
  * says how to link one and keeps its list. Feeding a map and linked to it by
  * an interaction edge, it lists its log: each entry, switched off, deleted,

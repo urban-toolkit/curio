@@ -7,6 +7,7 @@ import type { DataflowCategories, HandCategories } from "../../utils/dataflowCat
 import type { NotebookPane } from "../../utils/notebookLayout";
 import type { NodeSettings } from "../../utils/nodeSettingsWriters";
 import type { Scenario } from "../../utils/scenarios/scenarioModel";
+import type { WidgetDef } from "../../utils/widgets/widgetModel";
 import type { IInteraction, IOutput, IPropagation, NodeExecOutcome } from "./flowTypes";
 import type { CanvasView } from "./useNotebookView";
 
@@ -123,7 +124,10 @@ export interface FlowContextProps {
     setAutoRun: (on: boolean) => void;
     /** Save now, whatever else is saving. Only the save queue and the dashboard's
      * Save layout call it; everything else uses `requestProjectSave`. */
-    saveCurrentProject: (nameOverride?: string, options?: { omitOutputs?: boolean }) => Promise<any>;
+    saveCurrentProject: (
+        nameOverride?: string,
+        options?: { omitOutputs?: boolean; savedWidgets?: ReadonlyMap<string, WidgetDef[]> },
+    ) => Promise<any>;
     /** Save once every save already requested has answered, so no two saves of
      * the open dataflow go out at once (#909, #941). Resolves to the save's
      * answer, or rejects with its error. */
@@ -164,8 +168,14 @@ export interface FlowContextProps {
      * the nodes below them run once the changes settle (#845). */
     requestAutoRun: (nodeIds: readonly string[]) => void;
     /** Run *nodeIds* and every node below them now, the nodes an automatic run takes
-     * (`autoRunTargets`), whether auto-run is on or not: the Map Edits node's Commit edits. */
+     * (`autoRunTargets`), whether auto-run is on or not: the Map Editor node's Commit edits. */
     runDownstream?: (nodeIds: readonly string[]) => void;
+    /** A dashboard opened (#1117): what its nodes are saved with is kept, and a tile with
+     * no saved output runs the nodes before it. Only on a dashboard. */
+    dashboardOpened?: (projectId: string) => void;
+    /** The widgets each pinned node is saved with, which Save layout writes in place of
+     * the values a dashboard's viewer tried (#1117). */
+    dashboardSavedWidgets?: () => ReadonlyMap<string, WidgetDef[]> | undefined;
     defaultSaveOutputDataset: boolean;
     setDefaultSaveOutputDataset: (value: boolean) => void;
 

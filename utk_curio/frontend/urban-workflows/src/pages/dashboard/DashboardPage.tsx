@@ -18,8 +18,9 @@ import { useProjectLoadState } from "../../components/ProjectLoader";
 import { DashboardScenarioLayers, FRAME_HEADER_ROOM } from "../../components/scenarios/ScenarioLayers";
 import { useFlowContext } from "../../providers/FlowProvider";
 import { dashboardRefusal } from "../../standalone/dashboardPayload";
-import { fitViewWithMenuOffsetNow } from "../../utils/fitViewWithMenuOffset";
+import { fitViewWithMenuOffsetNow, TOP_NOTICE_ATTR } from "../../utils/fitViewWithMenuOffset";
 import { scenarioDashboard } from "../../utils/scenarios/scenarioDashboard";
+import { dashboardValues } from "../../utils/widgets/dashboardControls";
 import { dataflowPath } from "../../utils/shareLinks";
 import { useViewportMotionHint } from "../../hook/useViewportMotionHint";
 import DashboardTopBar, { useCanEditLayout, useDashboardLeaveGuard } from "./DashboardTopBar";
@@ -33,9 +34,15 @@ export const NOTHING_PINNED_BODY =
   "Open the dataflow and use Pin to dashboard on the nodes you want to show here.";
 export const READ_ONLY_NOTICE =
   "Viewing a shared dashboard (read-only). Open the dataflow to make a copy.";
+/** The notice of a dashboard whose tiles show controls a visitor changes (#1117). */
+export const CONTROLS_NOTICE =
+  "Viewing a shared dashboard. Change a control to see its results; changes are not saved. Open the dataflow to make a copy.";
 export const LOAD_FAILED_TITLE = "This dashboard could not be opened.";
 export const LOAD_FAILED_BODY =
   "It may have been deleted, or the link may not be shared with you.";
+
+/** A click on a tile does nothing of its own; its content takes the pointer. */
+const tilesTakeThePointer = () => undefined;
 
 /**
  * A dataflow's pinned nodes, as a page of their own.
@@ -47,9 +54,12 @@ export const LOAD_FAILED_BODY =
  * ones are laid out invisibly by ``prepareDashboardNodes``, which is also what
  * decides where the tiles sit.
  *
- * Nothing on this page runs a dataflow. Tiles draw from the outputs a run
- * already saved, restored by ``ProjectLoader``; a chart compiles its spec
- * against them (``UniversalNode``'s auto-render effect).
+ * Tiles draw from the outputs a run already saved, restored by
+ * ``ProjectLoader``; a chart compiles its spec against them (``UniversalNode``'s
+ * auto-render effect). A change to a control a tile shows reruns the dataflow
+ * on the server as a viewer's run, which never changes the dataflow, and a tile with no
+ * saved output runs the nodes before it once the page opens
+ * (``useDashboardRun``, #1117).
  */
 export const DashboardPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -63,8 +73,18 @@ export const DashboardPage: React.FC = () => {
     updateDataNode,
     markDirty,
     scenarios,
+    dashboardOpened,
   } = useFlowContext();
   const loadState = useProjectLoadState();
+  // Once loaded, what the tiles are saved with is kept, and a tile with no
+  // saved output runs the nodes before it.
+  const openedFor = useRef<string | null>(null);
+  useEffect(() => {
+    if (loadState !== "loaded" || !id || openedFor.current === id) return;
+    openedFor.current = id;
+    dashboardOpened?.(id);
+  }, [loadState, id, dashboardOpened]);
+  const hasControls = useMemo(() => Object.keys(dashboardValues(nodes)).length > 0, [nodes]);
   // Why the backend would not build this dashboard as a page of its own, when
   // the page was served with that instead of its data.
   const refusal = dashboardRefusal();
@@ -87,7 +107,10 @@ export const DashboardPage: React.FC = () => {
   const headroom = frames.length > 0 ? FRAME_HEADER_ROOM : 0;
   const [arranged, setArranged] = useState(0);
   const onArranged = useCallback(() => setArranged((count) => count + 1), []);
-  useDashboardFit(pinnedIds, canvasRef, { headroom, refitKey: arranged });
+  // A visitor's notice covers the top of the pane, and the fit keeps the
+  // tiles below it: the page frames them again when it shows or goes.
+  const showsNotice = loadState === "loaded" && !canEditLayout;
+  useDashboardFit(pinnedIds, canvasRef, { headroom, refitKey: arranged * 2 + (showsNotice ? 1 : 0) });
 
   const nodeTypes = useMemo(() => ({ [CURIO_UNIVERSAL_NODE_TYPE]: UniversalNode }), []);
   const edgeTypes = useMemo(() => ({
@@ -159,9 +182,12 @@ export const DashboardPage: React.FC = () => {
       {id ? <DashboardTopBar id={id} onArranged={onArranged} /> : null}
       {loadState === "loaded" && !canEditLayout ? (
         // The notice the canvas gives a visitor, for the same reason: the page
-        // looks editable (tiles, a Share menu) and is not.
-        <div className={styles.banner} data-testid="shared-view-banner">
-          {READ_ONLY_NOTICE}
+        // looks editable (tiles, a Share menu) and is not, save its controls,
+        // whose changes are never saved.
+        // The fit frames the tiles below it (TOP_NOTICE_ATTR): a control under
+        // it could not be reached.
+        <div className={styles.banner} data-testid="shared-view-banner" {...{ [TOP_NOTICE_ATTR]: "true" }}>
+          {hasControls ? CONTROLS_NOTICE : READ_ONLY_NOTICE}
         </div>
       ) : null}
       <div className={styles.canvas} ref={canvasRef}>
@@ -177,6 +203,10 @@ export const DashboardPage: React.FC = () => {
           nodesDraggable={!dashboardLocked}
           nodesConnectable={false}
           elementsSelectable={!dashboardLocked}
+          // React Flow leaves a node no pointer events when it can be neither
+          // selected nor dragged and the flow has no handler for it, which
+          // would keep a locked page's controls and charts from the pointer.
+          onNodeClick={tilesTakeThePointer}
           panOnDrag={!dashboardLocked}
           zoomOnScroll={!dashboardLocked}
           zoomOnPinch={!dashboardLocked}

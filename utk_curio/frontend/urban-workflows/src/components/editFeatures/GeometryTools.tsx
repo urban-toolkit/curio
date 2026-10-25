@@ -1,5 +1,5 @@
 /**
- * The geometry tools of a feature picked in the Map Edits node's Edit (#662):
+ * The geometry tools of a feature picked in the Map Editor node's Edit (#662):
  * one way at a time of what a drag on the map does, panning it, moving the
  * feature's points or moving it whole, and a part added to it. A feature of
  * several parts that no osm_id tells apart keeps its shape: the tools are

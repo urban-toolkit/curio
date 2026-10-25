@@ -19,7 +19,7 @@
  * on demand (`autkMapDrawing`). Every map the grammar drew is framed
  * (`grammarMaps`).
  *
- * A node whose map is drawn again after each edit (Map Edits) keeps the view
+ * A node whose map is drawn again after each edit (Map Editor) keeps the view
  * instead: `mapViews` takes each map's camera before the redraw, and
  * `keepMapViews` puts it back on the new maps.
  */

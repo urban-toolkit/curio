@@ -1,5 +1,5 @@
 /**
- * The Map Edits node's body (#662; its type id is still
+ * The Map Editor node's body (#662; its type id is still
  * `curio.builtin/edit-features`): the layers it is fed, what can be done with
  * each (`LayerWorkbench`), on the Autark map it feeds and is linked to, and
  * its edit log:
@@ -249,14 +249,13 @@ export function EditFeaturesBody({
   const layer = layers ? chosenLayer(layers, settings) : undefined;
   const keys = useMemo(() => (layer ? keyColumns(layer.fc) : []), [layer]);
   const key = settings?.key && keys.includes(settings.key) ? settings.key : defaultKey(keys) ?? keys[0];
+  // The features picked in the layer the Edit view works on: the workbench
+  // starts the pick anew when that layer, its id column or the linked maps
+  // change (LayerWorkbench).
   const [picked, setPicked] = useState<SelectionId[]>([]);
   const bodyRef = useRef<HTMLDivElement>(null);
   // Removes the picked features of the layer the Edit view works on (Delete).
   const removePickedRef = useRef<(() => boolean) | null>(null);
-
-  // A pick names features of one layer by one key: a new choice starts anew,
-  // and so does a map linked or unlinked, whose picks it was.
-  useEffect(() => setPicked([]), [layer?.table, key, linkedKey]);
 
   // What the node selects, sent once for each change: the interaction edges
   // carry it to the maps, which light it up.

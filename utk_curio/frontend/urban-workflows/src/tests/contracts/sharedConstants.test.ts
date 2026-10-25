@@ -33,6 +33,7 @@ const FILES = [
   "autkGrammar",
   "visDefaults",
   "nodeSettings",
+  "dashboardRuns",
 ];
 
 /** A shared file, read when a test runs, so a checkout without it fails each test on its own. */

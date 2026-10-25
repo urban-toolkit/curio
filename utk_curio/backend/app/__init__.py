@@ -8,6 +8,10 @@ from logging.handlers import RotatingFileHandler
 from utk_curio.backend.config import Config as config_class
 from utk_curio.backend.config import _is_dev
 from utk_curio.backend.extensions import db, migrate
+from utk_curio.common import shared_constants
+
+#: The header a dashboard viewer's tab sends its run's token in.
+RUN_TOKEN_HEADER = shared_constants.read("dashboardRuns")["runTokenHeader"]
 
 
 CORS_HEADERS = {
@@ -19,10 +23,12 @@ CORS_HEADERS = {
     # rejected, the fetch throws, and the canvas falls back to JSON. That
     # failure is invisible from the outside -- the data still arrives -- which
     # is exactly how it shipped green until an e2e test watched the wire.
+    # RUN_TOKEN_HEADER is what a dashboard viewer's tab follows its run with.
     "Access-Control-Allow-Headers": ",".join((
         "Content-Type",
         "Authorization",
         "X-Curio-Accept-Geometry",
+        RUN_TOKEN_HEADER,
     )),
     "Access-Control-Allow-Methods": "GET,PUT,POST,PATCH,DELETE,OPTIONS",
     # Expose Content-Disposition so cross-origin clients (e.g. dataset export)
@@ -66,6 +72,17 @@ def create_app(config_class=config_class):
     app = Flask(__name__)
     app.config.from_object(config_class)
 
+    # Behind the site's proxies (--proxy-hops), each of which adds the address
+    # it was reached from to X-Forwarded-For, every limit per address (sign-in
+    # attempts, the monitor's error reports, a dashboard's runs) reads the
+    # visitor's as request.remote_addr: the one the outermost of those proxies
+    # added. With no proxy named the header is not read, since anyone reaching
+    # the backend directly could write it.
+    from utk_curio.backend import config as _config
+    if _config.CURIO_PROXY_HOPS > 0:
+        from werkzeug.middleware.proxy_fix import ProxyFix
+        app.wsgi_app = ProxyFix(app.wsgi_app, x_for=_config.CURIO_PROXY_HOPS)
+
     db.init_app(app)
     migrate.init_app(app, db)
 
@@ -94,6 +111,9 @@ def create_app(config_class=config_class):
     from utk_curio.backend.app.runs import models as _run_models  # noqa: F401
     from utk_curio.backend.app.runs.routes import runs_bp
     app.register_blueprint(runs_bp)
+    # A dashboard viewer's runs, which need no sign-in.
+    from utk_curio.backend.app.runs.viewer_routes import dashboard_runs_bp
+    app.register_blueprint(dashboard_runs_bp)
 
     from utk_curio.backend.app.notebooks import notebooks_bp
     app.register_blueprint(notebooks_bp)
@@ -207,6 +227,8 @@ def create_app(config_class=config_class):
 
     from utk_curio.backend.app.projects.tasks import start_cleanup_scheduler
     start_cleanup_scheduler(app)
+    from utk_curio.backend.app.runs.viewer import start_prune_scheduler
+    start_prune_scheduler(app)
 
     # A run an earlier backend process left going was cut off when it stopped.
     with app.app_context():

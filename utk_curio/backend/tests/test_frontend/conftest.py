@@ -106,7 +106,7 @@ WORKFLOW_FILES = [
     "docs/examples/dataflows/netcdf-hourly-rain.json",
 
     # Downtown Chicago's layers, one of every kind an Autark map draws, through
-    # a Map Edits node to the map it is linked to.
+    # a Map Editor node to the map it is linked to.
     "docs/examples/dataflows/chicago-loop-layers.json",
 
     # Curated examples shown in docs/README.md. These are the showcase

@@ -79,12 +79,12 @@ def test_builtin_package_every_template_has_behavior_and_icon(builtin_package_di
 
 
 def test_the_edit_features_template_is_the_map_edits_node(builtin_package_dir: Path):
-    """The node is called Map Edits, with a hand icon; its template id and
+    """The node is called Map Editor, with a hand icon; its template id and
     behavior stay ``edit-features``, so saved dataflows load as they are. No
     template keeps its earlier names, Edit Features and Interaction."""
     manifest = load_package_manifest(builtin_package_dir)
     (template,) = [t for t in manifest.templates if t.template_id == "edit-features"]
-    assert template.label == "Map Edits"
+    assert template.label == "Map Editor"
     assert template.icon_ref == "fa-solid:hand-pointer"
     assert template.behavior == "edit-features"
     assert not any(t.label in ("Edit Features", "Interaction") for t in manifest.templates)
@@ -146,7 +146,7 @@ def test_no_shipped_package_names_compare_scenarios():
 
 
 def test_map_edits_names_no_what_differs(builtin_package_dir: Path):
-    """What differs went with Compare Scenarios: the Map Edits node's
+    """What differs went with Compare Scenarios: the Map Editor node's
     description, which its tile, the Node Catalog and the agents' preamble
     show, names neither."""
     manifest = load_package_manifest(builtin_package_dir)
@@ -158,7 +158,7 @@ def test_map_edits_names_no_what_differs(builtin_package_dir: Path):
     preamble = agent_text.render(REAL_CATALOG.parent / "agents" / "agent.curio.builtin@1" / "default_preamble.md")
     # The node's lines in each of the preamble's lists, as agents read it:
     # its description, its controls, its input and output types and its circles.
-    lines = [line for line in preamble.splitlines() if line.startswith("- Map Edits:")]
+    lines = [line for line in preamble.splitlines() if line.startswith("- Map Editor:")]
     assert any("Edits an Autark map's layers on the map" in line for line in lines), lines
     for line in lines:
         for word in ("What differs", "Compare Scenarios"):

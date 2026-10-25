@@ -243,7 +243,9 @@ const UniversalNodeBody = React.memo(function UniversalNodeBody({ data, isConnec
   //
   // What is deliberately NOT here: code nodes. Their pane shows the run's stdout,
   // which no saved dataset can restore, so running one would execute the user's
-  // code because they opened a page.
+  // code because they opened a page. A dashboard tile whose nodes have no saved
+  // output gets one from a viewer's run on the server (useDashboardRun), not
+  // from here.
   const kind = unversionedNodeType(String(data.nodeType ?? ""));
   const connected = hasIncomingEdge(flowEdges ?? edges, data.nodeId);
   const hasInput = data.input != null && data.input !== "";

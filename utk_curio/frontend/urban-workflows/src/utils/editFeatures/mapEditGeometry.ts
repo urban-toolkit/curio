@@ -1,5 +1,5 @@
 /**
- * How a Map Edits node's overlay sees the Autark map it edits on (#662,
+ * How a Map Editor node's overlay sees the Autark map it edits on (#662,
  * `components/editFeatures/MapEditOverlay`): a data coordinate on the screen
  * and back, through the map's camera and its origin; the view from straight
  * above that every action is worked in, and the tilt put back after it; the

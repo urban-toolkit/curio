@@ -1,8 +1,10 @@
 /**
  * Auto-run through the real FlowProvider (#845). Where Run All runs on the
  * server (a signed-in owner's dataflow), a widget or Parameter change runs the
- * touched nodes through that same start. Where it does not (a hosted guest, a
- * dashboard), auto-run is not offered and runs nothing. A brush that rewrites
+ * touched nodes through that same start. Where it does not (a hosted guest),
+ * auto-run is not offered and runs nothing. On a dashboard the toggle is not
+ * offered either, and every change reruns the dashboard as a viewer's run,
+ * which never changes the dataflow (#1117). A brush that rewrites
  * a selection tag marks its node stale, as before, and runs nothing: brushing
  * never re-runs a Python node. Built like hostedGuestRuns.test.tsx.
  */
@@ -22,6 +24,13 @@ if (!(global as any).DOMMatrixReadOnly) {
 
 const mockStartRun = jest.fn().mockResolvedValue(undefined);
 const mockMarkNodeStale = jest.fn();
+// A dashboard viewer's run (#1117): nothing to run, so nothing is followed.
+const mockDashboardStart = jest.fn().mockResolvedValue({ runId: null, token: null, joined: false, nodeIds: [] });
+
+jest.mock('../../services/runs/dashboardRunsApi', () => ({
+  ...jest.requireActual('../../services/runs/dashboardRunsApi'),
+  dashboardRunsApi: { start: (...args: unknown[]) => mockDashboardStart(...args), follow: jest.fn() },
+}));
 
 jest.mock('../../providers/flow/useServerRun', () => ({
   ...jest.requireActual('../../providers/flow/useServerRun'),
@@ -270,7 +279,7 @@ describe("a signed-in owner's dataflow", () => {
   });
 });
 
-describe("the Map Edits node's Commit edits (runDownstream)", () => {
+describe("the Map Editor node's Commit edits (runDownstream)", () => {
   it("runs the nodes and every node below them now, through the start Run All uses, with no wait to settle", async () => {
     await renderFlow(userContext(SIGNED_IN, true));
 
@@ -298,12 +307,9 @@ describe("the Map Edits node's Commit edits (runDownstream)", () => {
   });
 });
 
-describe.each([
-  ['a hosted guest', userContext(GUEST, true), false],
-  ['a dashboard', userContext(SIGNED_IN, true), true],
-])('%s', (_where, value, dashboardOn) => {
+describe('a hosted guest', () => {
   it('is not offered auto-run, and a change runs nothing (#845)', async () => {
-    await renderFlow(value, { dashboardOn });
+    await renderFlow(userContext(GUEST, true), { dashboardOn: false });
     expect(api.autoRunAvailable).toBe(false);
 
     await act(async () => {
@@ -312,6 +318,30 @@ describe.each([
     await settle();
 
     expect(mockStartRun).not.toHaveBeenCalled();
+    expect(mockDashboardStart).not.toHaveBeenCalled();
+    const counter: any = api.nodes.find((n: any) => n.id === 'counter');
+    expect(counter?.data?.triggerExec ?? 0).toBe(0);
+  });
+});
+
+describe('a dashboard', () => {
+  it('is not offered the toggle, and a change reruns the dashboard as a viewer\'s run (#1117)', async () => {
+    await renderFlow(userContext(SIGNED_IN, true), { dashboardOn: true });
+    expect(api.autoRunAvailable).toBe(false);
+    await act(async () => {
+      api.dashboardOpened?.('dash-1');
+    });
+
+    await act(async () => {
+      api.requestAutoRun(['counter']);
+    });
+    await settle();
+
+    // Neither the canvas's run on the server nor a run in the browser: the
+    // dashboard's own, which never changes the dataflow.
+    expect(mockStartRun).not.toHaveBeenCalled();
+    expect(mockDashboardStart).toHaveBeenCalledTimes(1);
+    expect(mockDashboardStart).toHaveBeenCalledWith('dash-1', {});
     const counter: any = api.nodes.find((n: any) => n.id === 'counter');
     expect(counter?.data?.triggerExec ?? 0).toBe(0);
   });

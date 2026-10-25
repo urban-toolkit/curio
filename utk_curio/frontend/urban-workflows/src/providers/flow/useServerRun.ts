@@ -15,10 +15,9 @@ import { ACTIVE_RUN_STATUSES, runsApi } from "../../services/runs/runsApi";
 import type { Run, RunEvent, RunStatus } from "../../services/runs/runsApi";
 import type { NodeOutput } from "../../hook/useNodeState";
 import type { DatasetInstallWarning } from "../../api/projectsApi";
-import { executionResultOutput, recordExecProvenance } from "../../utils/executionResult";
-import { runKeyWithShared, sharedWidgetsOf } from "../../utils/references/sharedParameters";
 import type { IOutput } from "./flowTypes";
 import type { PlayAllState } from "./usePlayAll";
+import { useStepOutcomes, type StepOutcomes } from "./useStepOutcomes";
 import {
     STOPPED_MESSAGE,
     browserWalk,
@@ -74,7 +73,7 @@ export function useServerRun({
     reactFlow, setNodes, showToast, requestProjectSave, applyNewOutput, setOutputs,
     hydrateRestoredOutputs, markNodeErroredRef, playNodes, playAllStateRef,
     emittedForInputRef, outputsRef, workflowNameRef, nodeExecProv, flushInstallSyncRef,
-    surfaceInstallWarnings,
+    surfaceInstallWarnings, outcomes,
 }: {
     reactFlow: ReactFlowInstance;
     setNodes: React.Dispatch<React.SetStateAction<Node[]>>;
@@ -96,6 +95,8 @@ export function useServerRun({
         detail: { dataset_install_warnings?: DatasetInstallWarning[] } | undefined,
         scopeNodeIds?: readonly string[],
     ) => void;
+    /** What a step does to its node, shared with a dashboard's runs (useStepOutcomes). */
+    outcomes?: StepOutcomes;
 }) {
     // True from the click until the server's part ends. UniversalNode reads it
     // with isRunActive: a map or chart draws in the run's browser part, or from
@@ -108,90 +109,16 @@ export function useServerRun({
     const endedRunRef = useRef<string | null>(null);
     // Between the click and the run's answer: the save, then the start.
     const startingRef = useRef<{ stopped: boolean } | null>(null);
-    const outputSeqRef = useRef(0);
 
     // ── What reaches a node ──────────────────────────────────────────────
 
-    /**
-     * Show *output* on the node, through the same setter its own run uses
-     * (UniversalNode). With *onlyIfRunning*, the node shows it only while its
-     * own output still reads running: the node holds its current output, which
-     * `data.output` mirrors only after it renders.
-     *
-     * Otherwise the output, and a result's run key, also go on the node's new
-     * data, as the node mirrors them once it shows the output (useNodeState):
-     * the flow copies a node's data whenever it changes a field, and a copy
-     * made before the node renders (a Data Pool handing on an input as the
-     * step lands) would keep the outcome from before.
-     */
-    const showOnNode = (nodeId: string, output: NodeOutput, { onlyIfRunning = false } = {}) => {
-        const seq = ++outputSeqRef.current;
-        setNodes((nds) => nds.map((node) => {
-            if (node.id !== nodeId) return node;
-            const data = { ...node.data, serverOutput: { seq, output, onlyIfRunning } };
-            if (!onlyIfRunning) {
-                data.output = output;
-                if (output.code === "success") {
-                    data.executedCode = runKeyWithShared(
-                        String(data.code ?? ""), data.widgets, sharedWidgetsOf(nds), data.selections,
-                    );
-                }
-            }
-            return { ...node, data };
-        }));
-    };
-
-    /**
-     * A step's outcome on its node: shown and passed downstream. *live* is a
-     * run this tab started: it also records the provenance, with the step's
-     * own times, and its outputs pass on as a run's do. Otherwise the output
-     * is restored as a load restores one.
-     */
-    const showResult = (
-        nodeId: string,
-        change: Extract<NodeChange, { kind: "result" }>,
-        { live }: { live: boolean },
-    ) => {
-        const node = reactFlow.getNode(nodeId);
-        if (!node) return;
-        const { shown, artifact } = executionResultOutput(change.reply);
-        if (live) {
-            const at = (seconds?: number) => (seconds != null ? new Date(seconds * 1000) : new Date());
-            recordExecProvenance(nodeExecProv, {
-                startedAt: at(change.startedAt),
-                finishedAt: at(change.finishedAt),
-                workflowName: workflowNameRef.current,
-                nodeId,
-                input: change.reply?.input ?? "",
-                reply: change.reply,
-                code: node.data?.code ?? "",
-            });
-        }
-        showOnNode(nodeId, shown);
-        if (!artifact) {
-            // Nothing passes downstream; the nodes below read "upstream errored" (#347).
-            markNodeErroredRef.current(nodeId);
-            return;
-        }
-        if (live) {
-            applyNewOutput({ nodeId, output: artifact });
-            return;
-        }
-        // As a load restores an output: passed downstream, nothing saved.
-        const restored = { nodeId, output: artifact };
-        setOutputs((prev) => [...prev.filter((o) => o.nodeId !== nodeId), restored]);
-        hydrateRestoredOutputs([restored]);
-    };
-
-    /** A node the run did not run because the node feeding it failed, shown as Run All shows it (#603). */
-    const showSkipped = (nodeId: string, reason: string) => {
-        markNodeErroredRef.current(nodeId);
-        setNodes((nds) => nds.map((node) =>
-            node.id === nodeId
-                ? { ...node, data: { ...node.data, skipExec: (node.data.skipExec ?? 0) + 1, skipReason: reason } }
-                : node,
-        ));
-    };
+    // FlowProvider shares one set with a dashboard's runs; a caller that
+    // passes none (a test) gets this hook's own.
+    const own = useStepOutcomes({
+        reactFlow, setNodes, applyNewOutput, setOutputs, hydrateRestoredOutputs,
+        markNodeErroredRef, workflowNameRef, nodeExecProv,
+    });
+    const { showOnNode, showResult, showSkipped } = outcomes ?? own;
 
     const applyChange = (run: FollowedRun, nodeId: string, change: NodeChange | null) => {
         if (!change) return;

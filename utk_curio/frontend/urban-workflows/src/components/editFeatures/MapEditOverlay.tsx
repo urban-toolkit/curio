@@ -1,9 +1,9 @@
 /**
- * What a Map Edits node does on an Autark map it feeds and is linked to
+ * What a Map Editor node does on an Autark map it feeds and is linked to
  * (#662): it hears the pointer on the map, read through the map's own
  * camera, where the layer the node works on is picked, drawn into and
  * reshaped (`utils/editFeatures/mapEditBus`), and holds the tip with its
- * buttons. It is mounted only on a map a Map Edits node feeds.
+ * buttons. It is mounted only on a map a Map Editor node feeds.
  *
  * The map keeps its own gestures: a drag pans it and the wheel zooms it, in
  * every mode. A click is the node's:
@@ -22,6 +22,12 @@
  * the corners of every part. A drag changes the part it is on alone, and a
  * move moves every part, each keeping its shape: the edits name each part
  * by its own row (`featureParts`), and the other parts keep their shapes.
+ *
+ * A gesture that would make an area autk-db refuses, and with it the whole
+ * layer (`areaCheck`), is refused when it ends: nothing is written, a shape
+ * dragged goes back as it was, a shape drawn keeps its corners, and the tip
+ * says why until the next press on the map, Backspace or Escape while
+ * drawing, or a change of mode.
  *
  * Nothing is drawn over the map. What the node selects (its pick, or the
  * features a rule matches), which comes back on the interaction edge, the map
@@ -92,6 +98,9 @@ export default function MapEditOverlay({
   const [, setTick] = useState(0);
   const [draft, setDraft] = useState<XY[]>([]);
   const [hover, setHover] = useState<XY | null>(null);
+  // Why the last gesture was refused, which the tip says until the next press
+  // on the map, Backspace or Escape while drawing, or a change of mode.
+  const [refusal, setRefusal] = useState<string | null>(null);
   // The shapes a drag gives rows of the picked feature, by each row's place among the features.
   const [dragShapes, setDragShapes] = useState<Record<number, Geometry> | null>(null);
   const gesture = useRef<Gesture | null>(null);
@@ -127,7 +136,10 @@ export default function MapEditOverlay({
 
   const mode = active?.mode ?? "select";
   const kind = active?.kind ?? "points";
-  useEffect(() => setDraft([]), [mode, kind, active?.table]);
+  useEffect(() => {
+    setDraft([]);
+    setRefusal(null);
+  }, [mode, kind, active?.table]);
 
   const projection = active && map ? projectionOf(map, active.geographic) : null;
   const features = active?.features ?? [];
@@ -255,10 +267,13 @@ export default function MapEditOverlay({
 
   const finishDraft = useCallback(() => {
     if (!session) return;
-    if (kind === "lines" && draft.length >= 2) session.onDrawn({ type: "LineString", coordinates: draft }, pickedRow.current);
-    else if (kind === "areas" && draft.length >= 3) session.onDrawn({ type: "Polygon", coordinates: [[...draft, draft[0]]] }, pickedRow.current);
+    let refused: string | null;
+    if (kind === "lines" && draft.length >= 2) refused = session.onDrawn({ type: "LineString", coordinates: draft }, pickedRow.current);
+    else if (kind === "areas" && draft.length >= 3) refused = session.onDrawn({ type: "Polygon", coordinates: [[...draft, draft[0]]] }, pickedRow.current);
     else return;
-    setDraft([]);
+    setRefusal(refused ?? null);
+    // A shape refused keeps its corners, to take one back with Backspace or give up with Esc.
+    if (!refused) setDraft([]);
   }, [session, kind, draft]);
 
   // The latest of everything the listeners read, so they are added once.
@@ -290,6 +305,8 @@ export default function MapEditOverlay({
       if (!p || event.button !== 0 || !host.contains(event.target as Node)) return;
       // The overlay's own buttons are buttons.
       if ((event.target as Element).closest?.("[data-map-edit-ui]")) return;
+      // A new press: the tip no longer says why the last gesture was refused.
+      setRefusal(null);
       const s = local(event);
       // A press on a corner or a midpoint, where the map shows it: a corner
       // of one part of the picked feature.
@@ -303,7 +320,7 @@ export default function MapEditOverlay({
           const min = own.closed[handle.ring] ? 3 : kindOf(shape) === "points" ? 1 : 2;
           if (rings[handle.ring].length > min) {
             rings[handle.ring].splice(handle.index, 1);
-            live.current.session?.onReshape([{ row: rows[handle.row], geometry: own.rebuild(rings) }]);
+            setRefusal(live.current.session?.onReshape([{ row: rows[handle.row], geometry: own.rebuild(rings) }], "delete") ?? null);
           }
           return;
         }
@@ -320,7 +337,7 @@ export default function MapEditOverlay({
         const rest = hit >= 0 ? withoutPart(own, hit) : null;
         if (row !== undefined && rest) {
           stop(event);
-          live.current.session?.onReshape([{ row: rows[row], geometry: rest }]);
+          setRefusal(live.current.session?.onReshape([{ row: rows[row], geometry: rest }], "remove") ?? null);
           return;
         }
       }
@@ -395,22 +412,23 @@ export default function MapEditOverlay({
           const rings = base.rings.map((rr) => [...rr]);
           const a = rings[g.ring][g.index], b = rings[g.ring][(g.index + 1) % rings[g.ring].length];
           rings[g.ring].splice(g.index + 1, 0, [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2]);
-          s.onReshape([{ row: rows[g.row], geometry: base.rebuild(rings) }]);
+          setRefusal(s.onReshape([{ row: rows[g.row], geometry: base.rebuild(rings) }], "drag") ?? null);
         }
         setDragShapes(null);
         return;
       }
       if (g.kind !== "click") {
-        // The parts the drag changed, in the layer's order: one change.
+        // The parts the drag changed, in the layer's order: one change. A
+        // change refused leaves them as they were, the drag's shapes dropped.
         const changed = Object.entries(dragged ?? {}).flatMap(([row, geometry]) => (rows[Number(row)] ? [{ row: rows[Number(row)], geometry }] : []));
-        if (changed.length > 0) s.onReshape(changed);
+        if (changed.length > 0) setRefusal(s.onReshape(changed, g.kind === "move" ? "move" : "drag") ?? null);
         setDragShapes(null);
         return;
       }
       if (g.moved) return;
       const at = p.toData(g.start[0], g.start[1]);
       if (m === "draw") {
-        if (k === "points") s.onDrawn({ type: "Point", coordinates: at }, pickedRow.current);
+        if (k === "points") setRefusal(s.onDrawn({ type: "Point", coordinates: at }, pickedRow.current) ?? null);
         else setDraft((current) => [...current, at]);
         return;
       }
@@ -439,9 +457,13 @@ export default function MapEditOverlay({
       if (live.current.mode !== "draw" || isTypingTarget(event.target)) return;
       let handled = true;
       if (event.key === "Enter") live.current.finishDraft();
-      else if (event.key === "Escape") setDraft([]);
-      else if (event.key === "Backspace" && live.current.draft.length > 0) setDraft((current) => current.slice(0, -1));
-      else handled = false;
+      else if (event.key === "Escape") {
+        setDraft([]);
+        setRefusal(null);
+      } else if (event.key === "Backspace" && live.current.draft.length > 0) {
+        setDraft((current) => current.slice(0, -1));
+        setRefusal(null);
+      } else handled = false;
       if (handled) stop(event);
     };
     window.addEventListener("pointerdown", onDown, true);
@@ -477,9 +499,10 @@ export default function MapEditOverlay({
   const pieces = pickedRows.some((row) => partsOf(shown[row]?.geometry).length > 1);
   // The shape being drawn: what it is and how many points it has, then how to go on.
   const progress = mode === "draw" && draft.length > 0 ? `New ${noun} · ${draft.length} point${draft.length === 1 ? "" : "s"}. ` : "";
+  // Why the last gesture was refused, in place of how to go on, until the next press.
   const tip =
     progress +
-    (mode === "draw"
+    (refusal ?? (mode === "draw"
       ? kind === "points"
         ? `Click the map to place a ${noun}. Drag to pan.`
         : "Click the map to add points. Double-click or press Enter to finish, or Esc to cancel."
@@ -489,7 +512,7 @@ export default function MapEditOverlay({
           : `Drag a corner to move it. Click or drag a midpoint to add one, and alt-click a corner to delete it.${pieces ? " Alt-click inside a part to remove it." : ""}`
         : mode === "move"
           ? `Shift-drag the ${noun} to move it. Drag to pan.`
-          : `Click ${withArticle(noun)} to pick it, and shift-click to add one. Drag to pan.`);
+          : `Click ${withArticle(noun)} to pick it, and shift-click to add one. Drag to pan.`));
   // Changing a shape, Done goes back to panning.
   const shaping = mode === "reshape" || mode === "move";
 

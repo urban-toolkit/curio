@@ -1,5 +1,5 @@
 /**
- * + New data layer in the Map Edits node's workbench (#662): the builder of a
+ * + New data layer in the Map Editor node's workbench (#662): the builder of a
  * new layer, its name, its geometry and the properties its features carry.
  */
 import React, { useId, useState } from "react";

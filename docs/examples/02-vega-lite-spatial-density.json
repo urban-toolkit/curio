@@ -99,6 +99,8 @@
         "type": "curio.builtin/vis-vega",
         "x": 1935,
         "y": 430,
+        "width": 590,
+        "height": 350,
         "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v6.json\",\n  \"description\": \"Top 10 largest zip codes by green roof area\",\n  \"width\": 400,\n  \"height\": 200,\n  \"mark\": {\n    \"type\": \"bar\",\n    \"stroke\": \"black\",\n    \"color\": \"green\"\n  },\n  \"encoding\": {\n    \"x\": {\n      \"field\": \"VEGETATED_SQFT\",\n      \"type\": \"quantitative\",\n      \"axis\": {\n        \"title\": \"Total Vegetated Roof Size (sqft)\",\n        \"values\": [\n          100000,\n          250000,\n          500000,\n          1000000\n        ],\n        \"format\": \",d\"\n      }\n    },\n    \"y\": {\n      \"field\": \"zip\",\n      \"type\": \"nominal\",\n      \"sort\": \"-x\",\n      \"axis\": {\n        \"title\": \"Zip Code\"\n      }\n    },\n    \"color\": {\n      \"field\": \"zip\",\n      \"type\": \"nominal\",\n      \"scale\": {\n        \"scheme\": \"category20\"\n      }\n    },\n    \"opacity\": {\n      \"condition\": {\n        \"param\": \"zip_select\",\n        \"value\": 1\n      },\n      \"value\": 0.3\n    },\n    \"tooltip\": [\n      {\n        \"field\": \"zip\",\n        \"type\": \"nominal\"\n      },\n      {\n        \"field\": \"VEGETATED_SQFT\",\n        \"type\": \"quantitative\"\n      }\n    ]\n  },\n  \"params\": [\n    {\n      \"name\": \"zip_select\",\n      \"select\": {\n        \"type\": \"point\",\n        \"fields\": [\n          \"zip\"\n        ],\n        \"toggle\": \"event.shiftKey\"\n      }\n    }\n  ]\n}",
         "out": "DEFAULT",
         "in": "DEFAULT",

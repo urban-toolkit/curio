@@ -34,7 +34,7 @@ from utk_curio.backend.app.agents.domain.contracts import AUTK_TEMPLATE, EDIT_FE
 from utk_curio.backend.app.agents.domain import agent_text
 
 INTERACTION_EDGE_TYPE = "Interaction"
-#: The Map Edits node, linked by an interaction edge to an Autark map it
+#: The Map Editor node, linked by an interaction edge to an Autark map it
 #: feeds on a data edge and to no other node (``interaction_edge_errors``).
 EDITOR_TEMPLATE = EDIT_FEATURES_TEMPLATE
 MAP_TEMPLATE = AUTK_TEMPLATE
@@ -45,7 +45,7 @@ def interaction_roles(templates: dict) -> tuple[frozenset[str], frozenset[str]]:
     """``(pools, visualizations)``: the template ids an interaction edge may
     join, read from the roster. A template that declares ``bidirectional`` has
     the interaction handle; it is a visualization when its category is one
-    (``vis_*``) and a pool otherwise. The Map Edits node has the handle too,
+    (``vis_*``) and a pool otherwise. The Map Editor node has the handle too,
     and is neither: it links to its map alone."""
     capable = {
         tid for tid, row in templates.items()
@@ -222,7 +222,7 @@ def interaction_edge_errors(plan: dict, type_of_endpoint, templates: dict, data_
     """Corrective errors for plan edges of kind ``interaction`` that do not link
     two visualizations of which one highlights (``interaction_highlighters``),
     a visualization and a pool, or two pools (``interaction_roles``, from the
-    *templates* roster), or the Map Edits node and an Autark map it feeds.
+    *templates* roster), or the Map Editor node and an Autark map it feeds.
     ``type_of_endpoint(endpoint) -> str | None`` returns the (possibly
     versioned) template id of a plan ref or existing node id; an unknown
     template fails open: no fabricated refusal.  *data_pairs* are the

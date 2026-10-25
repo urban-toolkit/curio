@@ -1,15 +1,15 @@
-"""Playwright E2E: the Map Edits node (#662; its type id is still
+"""Playwright E2E: the Map Editor node (#662; its type id is still
 ``curio.builtin/edit-features``).
 
 A small dataflow first. One layer of three building parts, two of them one
 building's, so they share its ``building_id``, as Autark's buildings do, feeds
-two scenarios: "Every building", whose Map Edits node has no edits, and "One
-removed", a copy of it. In each, the loader feeds Map Edits, Map Edits feeds an
+two scenarios: "Every building", whose Map Editor node has no edits, and "One
+removed", a copy of it. In each, the loader feeds Map Editor, Map Editor feeds an
 Autark map, the map feeds the node that counts the parts (or sums their
-heights), and an interaction edge links Map Edits and its map. The node's code
+heights), and an interaction edge links Map Editor and its map. The node's code
 is its only state.
 
-1. A building clicked on the linked map is selected in Map Edits, which sends
+1. A building clicked on the linked map is selected in Map Editor, which sends
    it back for the map to light up. Remove takes it off the map at once, the
    dataflow reads Unsaved and the nodes below keep what they had. Commit edits
    runs them, and the count drops by every part of the building. Saved and
@@ -21,8 +21,10 @@ is its only state.
 3. The map lights a pick, both parts of a building, with its own highlight and
    nothing drawn over it; a plain click on another building replaces the pick,
    and the map played draws again with nothing picked.
-4. On a zoomed map, a height set on a building keeps the map's view, and
-   Commit edits hands the new height on through the map.
+4. On a zoomed map, building 1 picked: its form is for both its parts, so its
+   height is empty and lists both heights. A height set there goes to both
+   parts and keeps the map's view, and Commit edits hands it on through the
+   map.
 5. Each change is an entry in the node's Provenance drawer before any run, and
    putting the first entry's code back restores the map, the panel and the
    list.
@@ -34,12 +36,19 @@ added to the trees, a road reshaped and a property added to the parks, each on
 the map; Commit edits runs the node, and its output holds all three. And one
 of its buildings of several parts, each part with its own ``osm_id``, reshaped
 part by part: Move points shows every part's corners, a dragged corner changes
-its own part alone, and the building's other parts keep their shapes.
+its own part alone, and the building's other parts keep their shapes. And a
+corner of a compact building dragged across a far side of its outline, which
+would make the outline cross itself, is refused: no edit is written, the map's
+tip says why, and the map keeps drawing the buildings.
 
 Interaction frames take both nodes of a gesture before and after it, and every
 Autark map gets a close-up. They run Autark maps, which need WebGPU: without an
 adapter they skip, unless ``CURIO_REQUIRE_HARDWARE_WEBGPU=1`` (CI's GPU job),
 where they fail.
+
+Last, building 20449794 of the Chicago Loop layers, of seven parts, each with
+its own ``osm_id``: its form is for all its parts, and one part chosen in its
+parts menu takes a height, which Commit edits hands on for that part alone.
 
 Run::
 
@@ -65,17 +74,21 @@ from .test_scenario_drop_e2e import _saved_spec
 from .test_widget_tags_e2e import _open_tab
 from .utils import (
     _OUTPUT_ARTIFACT_JS,
+    CLOSEUP_MAX_DIFF_RATIO,
+    CLOSEUP_PIXEL_THRESHOLD,
     INTERACTION_MIN_CHANGED_PIXELS,
     INTERACTION_SHOWN_TIMEOUT_MS,
     INTERACTION_VIEWPORT,
     REPO_ROOT,
     _compare_images,
+    assert_autark_map_drawn,
     assert_in_view,
     autark_map_framing,
     canvas_painted_at_shown_zoom,
     changed_pixels,
     dismiss_toasts,
     drawing_kept,
+    dump_browser_log,
     frame_nodes,
     keep_drawing,
     load_artifact_as_dict,
@@ -94,6 +107,7 @@ from .utils import (
     save_dataflow_and_settle_header,
     save_interaction_frame,
     save_node_closeup,
+    save_workflow_test_screenshot,
     set_node_code,
     stub_login_and_enter_workflow,
     wait_for_drawer_closed,
@@ -166,9 +180,9 @@ MAP_SPEC = json.dumps({"map": {"layerRefs": [{
     "title": "Building height (m)",
 }]}}, indent=2)
 
-#: The comment lines a new Map Edits node's code starts with.
+#: The comment lines a new Map Editor node's code starts with.
 NOTE = (
-    "# Map Edits writes this code from its edit list: each edit, in the\n"
+    "# Map Editor writes this code from its edit list: each edit, in the\n"
     "# order it was made, on the features whose key is one of its ids. It is\n"
     "# written again when the list changes.\n"
 )
@@ -195,7 +209,7 @@ ZOOM_DELTA = 240
 REMOVED_MIN_SHARE = 0.02
 #: The map's background, the colour where it draws nothing (autk-map's style).
 MAP_BACKGROUND = (232, 239, 242)
-#: autk-map's highlight, #5dade2: the colour the map draws a Map Edits node's
+#: autk-map's highlight, #5dade2: the colour the map draws a Map Editor node's
 #: tools in, its corners and the shape being drawn or changed.
 MAP_HIGHLIGHT = (93, 173, 226)
 #: How long a run of the dataflow, or of a node and the nodes below it, may take.
@@ -208,11 +222,20 @@ PART_KEY = "osm_id"
 #: dragged, and the least a corner needs for a press to take it alone.
 CORNER_ROOM = 16
 PRESS_ROOM = 6
+#: How much of the map a building framed for its close-up spans, its box's
+#: longer side to the map's: about a third, so the building and its corners
+#: are plain in the frame, with room around it for a corner dragged past its
+#: far side, clear of the tip at the top left and the legend at the bottom
+#: right.
+FRAME_FILL = (0.3, 0.42)
+#: What the map's tip says when a corner dragged would make its outline cross
+#: itself: autk-db refuses such a shape, and with it the whole layer (#1112).
+CROSSED_DRAG = "That would make the outline cross itself, so the corner went back."
 
 
 def _spec(last_code: str = COUNT_CODE, last_title: str = "Count", *, linked: bool = True) -> dict:
     """The small dataflow, its last nodes running *last_code*; with *linked*
-    False, One removed's Map Edits node feeds its map but is not linked to it."""
+    False, One removed's Map Editor node feeds its map but is not linked to it."""
     def node(node_id, node_type, x, y, content, title, metadata=None):
         return {
             "id": node_id, "type": node_type, "x": x, "y": y, "content": content, "title": title,
@@ -227,7 +250,7 @@ def _spec(last_code: str = COUNT_CODE, last_title: str = "Count", *, linked: boo
         return {"id": f"i-{source}-{target}", "source": source, "target": target,
                 "sourceHandle": "in/out", "targetHandle": "in/out", "type": "Interaction"}
 
-    # Map Edits nodes are 560 wide and 460 tall, the others 525 by 350.
+    # Map Editor nodes are 560 wide and 460 tall, the others 525 by 350.
     edges = [
         edge(LOAD, EDIT), edge(EDIT, MAP), edge(MAP, COUNT), link(EDIT, MAP),
         edge(LOAD, EDIT_2), edge(EDIT_2, MAP_2), edge(MAP_2, COUNT_2),
@@ -236,16 +259,16 @@ def _spec(last_code: str = COUNT_CODE, last_title: str = "Count", *, linked: boo
         edges.append(link(EDIT_2, MAP_2))
     return {
         "dataflow": {
-            "name": "Map Edits",
+            "name": "Map Editor",
             "task": "",
             "timestamp": 1789193389280,
-            "provenance_id": "Map Edits",
+            "provenance_id": "Map Editor",
             "nodes": [
                 node(LOAD, "curio.builtin/data-loading", 0, 300, LOAD_CODE, "Buildings"),
-                node(EDIT, EDIT_TYPE, 700, 0, NO_EDITS, "Map Edits"),
+                node(EDIT, EDIT_TYPE, 700, 0, NO_EDITS, "Map Editor"),
                 node(MAP, MAP_TYPE, 1400, 0, MAP_SPEC, MAP_TITLE),
                 node(COUNT, "curio.builtin/computation-analysis", 2050, 0, last_code, last_title),
-                node(EDIT_2, EDIT_TYPE, 700, 700, NO_EDITS, "Map Edits", {"copiedFrom": [EDIT]}),
+                node(EDIT_2, EDIT_TYPE, 700, 700, NO_EDITS, "Map Editor", {"copiedFrom": [EDIT]}),
                 node(MAP_2, MAP_TYPE, 1400, 700, MAP_SPEC, MAP_TITLE, {"copiedFrom": [MAP]}),
                 node(COUNT_2, "curio.builtin/computation-analysis", 2050, 700, last_code, last_title,
                      {"copiedFrom": [COUNT]}),
@@ -259,9 +282,9 @@ def _spec(last_code: str = COUNT_CODE, last_title: str = "Count", *, linked: boo
     }
 
 
-def _enter(page, app_frontend, current_server, spec: dict, username: str, *, name: str = "Map Edits") -> dict:
+def _enter(page, app_frontend, current_server, spec: dict, username: str, *, name: str = "Map Editor") -> dict:
     """Sign in, open *spec* as one's own dataflow, and wait for its nodes, in a
-    page with room to frame a Map Edits node beside its map."""
+    page with room to frame a Map Editor node beside its map."""
     require_project_page()
     require_user_auth()
     page.emulate_media(reduced_motion="reduce")
@@ -374,7 +397,7 @@ def _map(node_id: str) -> str:
 
 
 def _overlay(page, map_id: str):
-    """What a Map Edits node draws over the map *map_id* while an action is open."""
+    """What a Map Editor node draws over the map *map_id* while an action is open."""
     return node_locator(page, map_id).get_by_test_id("map-edit-overlay")
 
 
@@ -740,7 +763,7 @@ def _entries(panel) -> list[tuple[str, str]]:
 def test_a_building_picked_on_the_linked_map_is_removed_at_once_and_committed_and_kept(
     app_frontend: "FrontendPage", current_server: str, page,
 ):
-    """Each Map Edits node names the map it is linked to and lists its layer.
+    """Each Map Editor node names the map it is linked to and lists its layer.
     In One removed's Remove, a building clicked on the linked map is picked in
     the node, which sends the pick back for the map to light up. Remove writes
     the edit into the node's code by building_id, lists it, and the map draws
@@ -755,7 +778,7 @@ def test_a_building_picked_on_the_linked_map_is_removed_at_once_and_committed_an
     _run_all(page)
     assert (_value(page, COUNT), _value(page, COUNT_2)) == (3, 3), "with no edits every part is counted"
 
-    # Each Map Edits node edits on the map it feeds and is linked to, and
+    # Each Map Editor node edits on the map it feeds and is linked to, and
     # lists the layer it is fed, which has an id column.
     for edit_id, map_id in ((EDIT, MAP), (EDIT_2, MAP_2)):
         _open_tab(page, edit_id, "output")
@@ -796,7 +819,7 @@ def test_a_building_picked_on_the_linked_map_is_removed_at_once_and_committed_an
             page, EDIT_2, lambda capture: changed_pixels(target_before, capture) > INTERACTION_MIN_CHANGED_PIXELS,
             timeout_ms=INTERACTION_SHOWN_TIMEOUT_MS,
         )
-        assert reached, "the pick on the map left the Map Edits node as it was"
+        assert reached, "the pick on the map left the Map Editor node as it was"
         wait_for_node_still(page, EDIT_2)
         _frame(page, "map-pick", "pick", "after", MAP_2, EDIT_2)
 
@@ -1025,12 +1048,14 @@ def test_a_height_set_on_a_zoomed_map_keeps_the_view_and_commit_edits_hands_it_o
     app_frontend: "FrontendPage", current_server: str, page,
 ):
     """The map frames its layers when it first draws. Zoomed in with the
-    wheel, a building picked on it and its height set in the node, Apply
-    changes writes the height into the node's code for every part of the
+    wheel, building 1, of two parts 20 and 35 m tall, picked on it: the
+    node's form is for both parts, so its height is empty with both heights
+    listed beside it, and the name they share shows. A height set there,
+    Apply changes writes it into the node's code for every part of the
     building, and the map draws again in the view it was zoomed to: not framed
     on its layers again, and nearer the zoomed view than the framed one.
     Commit edits runs the node, the map and the total below the map, which
-    holds the new height: the map hands it on."""
+    holds the new height for both parts: the map hands it on."""
     test_name = "test_a_height_set_on_a_zoomed_map_keeps_the_view_and_commit_edits_hands_it_on"
     _enter(page, app_frontend, current_server, _spec(TOTAL_CODE, "Total height"), "map_edits_zoom_e2e")
     _run_all(page)
@@ -1062,14 +1087,26 @@ def test_a_height_set_on_a_zoomed_map_keeps_the_view_and_commit_edits_hands_it_o
     assert zoomed is not None, f"{ZOOM_STEPS} wheel steps over the map did not zoom it in past its layers"
     zoom = _layout_changed(framed, zoomed)
 
-    # A building picked on the map, in the node's Edit, its height set there.
+    # Building 1, of two parts, picked on the map in the node's Edit: its
+    # form is for both parts. They share a name, which shows once the form
+    # holds the building's values; they differ in height, so that field is
+    # empty and a note lists both heights.
     edit = node_locator(page, EDIT_2)
     frame_nodes(page, [EDIT_2, MAP_2])
     _open(page, EDIT_2, "edit")
-    _click_a_building(page, EDIT_2, MAP_2, edit.get_by_test_id("interaction-selection"))
+    _click_a_building(page, EDIT_2, MAP_2, edit.get_by_test_id("interaction-selection"), spots=LEFT_SPOTS)
     picked = _picked_on_the_map(page, EDIT_2, MAP_2)
+    assert picked == 1, f"a click on the left half of the zoomed map picked building {picked}"
+    expect(edit.get_by_test_id("interaction-field-name")).to_have_value(NAMES[1])
     field = edit.get_by_test_id("interaction-field-height")
-    assert float(field.input_value()) in HEIGHTS[picked], (field.input_value(), HEIGHTS[picked])
+    shown = field.input_value()
+    assert shown == "", (
+        f"the form of building 1 shows the height {shown}, its first part's, as the building's: "
+        f"its {PARTS[1]} parts are {' and '.join(_literal(height) for height in HEIGHTS[1])} m tall"
+    )
+    expect(edit.get_by_test_id("interaction-mixed-height")).to_have_text("2 values: 20, 35")
+
+    # A height typed there goes to both parts.
     keep_drawing(page, _map(MAP_2))
     field.fill(str(NEW_HEIGHT))
     submit = edit.get_by_test_id("interaction-form-submit")
@@ -1215,7 +1252,7 @@ def test_each_change_is_an_entry_in_the_node_provenance_and_putting_one_back_res
 def test_a_map_fed_but_not_linked_shows_the_edits_and_a_click_there_selects_nothing(
     app_frontend: "FrontendPage", current_server: str, page,
 ):
-    """One removed's Map Edits node feeds its map, and no interaction edge
+    """One removed's Map Editor node feeds its map, and no interaction edge
     links the two: the node says it is not linked to a map, offers no layer to
     work on, and keeps its list. Edits written into its code show on the map at
     once. A double-click on that map selects nothing in the node, while the
@@ -1287,7 +1324,7 @@ def test_a_map_fed_but_not_linked_shows_the_edits_and_a_click_there_selects_noth
 def test_the_chicago_loop_layers_take_a_point_a_reshaped_road_and_a_property_on_the_map(
     app_frontend: "FrontendPage", current_server: str, page,
 ):
-    """The shipped Chicago Loop layers: every layer through one Map Edits node
+    """The shipped Chicago Loop layers: every layer through one Map Editor node
     to one Autark map, the two linked. On the map, as a person does:
 
     1. a point added to the trees, its properties filled in the node;
@@ -1463,8 +1500,10 @@ def test_a_chicago_building_of_several_parts_is_reshaped_one_part_at_a_time(
 
     1. Move points shows the corners of every part;
     2. a corner of one part, dragged, is one edit that names that part alone,
-       ``where building_id == <building> and osm_id == <part>``, and the map
-       shows the building's other parts where they were;
+       ``where building_id == <building> and osm_id == <part>``; the building
+       stays picked across it, the node's first edit, which names its layer
+       and key in its code (#1111), and the map shows its other parts where
+       they were;
     3. Commit edits runs the node, which hands that part on reshaped and the
        building's other parts as they came.
 
@@ -1579,8 +1618,9 @@ def test_a_chicago_building_of_several_parts_is_reshaped_one_part_at_a_time(
     # nothing over it, drawn in the map's highlight when one such is. A press
     # takes the corner nearest it, wherever the map draws its buildings over.
     # It is dropped a little out from its neighbours' middle, or in toward
-    # it, where no side of its part crosses another: autk-db refuses a
-    # building whose shape crosses itself, and then draws none of the layer.
+    # it, where no side of its part crosses another: a drag that would make
+    # an outline cross itself is refused and writes no edit (#1112), since
+    # autk-db refuses such a shape, and with it the whole layer.
     dismiss_toasts(page)
     corners = _wait_for_corners(page, map_id, bool, "the zoom")
     roomy = [c for c in _to_drag(corners) if c["inside"] and c["onTop"] and _room(c, corners) >= PRESS_ROOM]
@@ -1614,10 +1654,19 @@ def test_a_chicago_building_of_several_parts_is_reshaped_one_part_at_a_time(
         wrong.append(f"the list does not name the part: {error}")
 
     # The map draws the edit, and shows the building's other parts where they
-    # were. The node's first edit names its layer and key in its code, which
-    # starts its pick anew: the building is picked again, as before.
+    # were. The drag is the node's first edit, which names its layer and key
+    # in its code, and the building stays picked across it: with no pick sent
+    # again, Move points shows its corners and the map lights it (#1111).
     _wait_for_redraw(page, map_id, "the part's corner dragged")
-    shown = _picked_with_corners(page, map_id, building, f"building {building} picked after the drag")
+    try:
+        shown = _wait_for_corners(page, map_id, bool, "the drag")
+    except AssertionError as error:
+        raise AssertionError("\n".join([*wrong, (
+            f"after the drag, building {building} is no longer picked: the node's first edit, which names the layer "
+            f"{BUILDINGS} and the key {KEY} in its code, dropped the pick, and with no pick sent again Move points "
+            f"shows none of its corners (#1111): {error}"
+        )])) from None
+    _wait_for_lit(page, map_id, {building}, f"building {building} kept picked across the drag", table=BUILDINGS)
     after = {(c["part"], c["ring"], c["index"]): c for c in shown}
     for before in corners:
         now = after.get((before["part"], before["ring"], before["index"]))
@@ -1650,6 +1699,300 @@ def test_a_chicago_building_of_several_parts_is_reshaped_one_part_at_a_time(
     _picked_with_corners(page, map_id, building, f"building {building} picked after Commit edits")
     save_node_closeup(page, CHICAGO_STEM, map_id, test_name=f"{test_name}_closeup_{map_id}", sweep_toasts=True)
     save_node_closeup(page, CHICAGO_STEM, edit_id, test_name=f"{test_name}_closeup_{edit_id}", sweep_toasts=True)
+
+
+def test_a_chicago_building_corner_dragged_across_its_far_side_is_refused_and_the_layer_keeps_drawing(
+    app_frontend: "FrontendPage", current_server: str, page,
+):
+    """The shipped Chicago Loop layers: a compact building of one part, its
+    outline one ring of four to eight corners, near the middle of the map,
+    picked on it in the node's Edit, Move points on, the map zoomed in on it
+    and panned until it sits in the middle, about a third of the map across.
+    One of its corners dragged across a side of the outline that it does not
+    end would make the outline cross itself, which autk-db refuses, and with
+    it the whole buildings layer (#1112). Let go, the drag is refused:
+
+    1. the node's code gains no edit;
+    2. the map's tip says why, and the corner is back where it was;
+    3. the map draws on, the buildings with it, and the browser log holds no
+       layer that failed to load.
+
+    What is wrong is kept, and the test fails with all of it before its
+    capture: a close-up of the map, its tip saying why."""
+    test_name = "test_a_chicago_building_corner_dragged_across_its_far_side_is_refused_and_the_layer_keeps_drawing"
+    log = _browser_log(page)
+    path = Path(REPO_ROOT) / "docs" / "examples" / "dataflows" / "chicago-loop-layers.json"
+    spec = json.loads(path.read_text(encoding="utf-8"))
+    nodes = {node["id"]: node for node in spec["dataflow"]["nodes"]}
+    (edit_id,) = [n for n, node in nodes.items() if node["type"] == EDIT_TYPE]
+    (map_id,) = [n for n, node in nodes.items() if node["type"] == MAP_TYPE and '"map"' in node["content"]]
+    title = nodes[map_id]["metadata"]["packageTemplateLabel"]
+    _enter(page, app_frontend, current_server, spec, "map_edits_crossing_e2e", name=spec["dataflow"]["name"])
+    run_all_and_wait(page, timeout_ms=RUN_MS)
+    for node_id, node in nodes.items():
+        _done(page, node_id, node["type"])
+    wait_for_run_guard_released(page, timeout_ms=RUN_MS)
+
+    # The compact buildings of one part the map draws: each outline one ring
+    # of four to eight corners, its box on the ground at most twice as long as
+    # it is wide. The larger half of them, which the map zooms in on least,
+    # nearest the middle of all of them first.
+    handed = _handed_layers(load_artifact_as_dict(page.evaluate(_OUTPUT_ARTIFACT_JS, edit_id)))
+    rows_of: dict = {}
+    for feature in handed[BUILDINGS]["features"]:
+        rows_of.setdefault((feature.get("properties") or {}).get(KEY), []).append(feature)
+    drawn = page.evaluate(_DRAWN_PARTS_JS, {"id": map_id, "table": BUILDINGS, "key": KEY, "part": PART_KEY})
+    assert drawn, f"the map {map_id} reports no rows of {BUILDINGS} that it draws"
+    shown = {building for building, _part in drawn if building is not None}
+    outlines = {
+        building: ring for building, rows in rows_of.items() if building in shown
+        for ring in [_one_outline(rows)] if ring and _compact(ring)
+    }
+    assert outlines, (
+        f"the map draws no compact building of one part, its outline one ring of 4 to 8 corners, "
+        f"of the {len(shown)} it draws"
+    )
+    boxes = {building: _extent(ring) for building, ring in outlines.items()}
+    x0, y0, x1, y1 = _extent([point for ring in outlines.values() for point in ring])
+    sizes = {building: max(b[2] - b[0], b[3] - b[1]) for building, b in boxes.items()}
+    median = sorted(sizes.values())[len(sizes) // 2]
+    compact = sorted(
+        (building for building in outlines if sizes[building] >= median),
+        key=lambda building: math.hypot(
+            (boxes[building][0] + boxes[building][2] - x0 - x1) / 2, (boxes[building][1] + boxes[building][3] - y0 - y1) / 2,
+        ),
+    )
+
+    edit = node_locator(page, edit_id)
+    frame_nodes(page, [edit_id, map_id])
+    _open_tab(page, edit_id, "output")
+    _assert_linked(page, edit_id, map_id, title)
+    expect(edit.get_by_test_id(f"interaction-layer-{BUILDINGS}")).to_be_attached(timeout=30000)
+    _open(page, edit_id, "edit", BUILDINGS)
+    box = page.locator(_map(map_id)).bounding_box()
+    assert box, "the map has no layout box"
+    reshape = edit.get_by_test_id("interaction-reshape")
+
+    # Each in turn picked on the map, as the map's own pick is sent, with Move
+    # points on, until one sits near the middle of the map. The map is then
+    # zoomed in on it and panned until it sits in the middle, about a third of
+    # the map across: plain, with its corners, in the close-up.
+    building, corners, tried = _pick_near_the_middle(page, map_id, reshape, compact, box)
+    assert building is not None, f"no compact building of one part lies near the middle of the map: {tried}"
+    corners = _framed(page, map_id, corners, box)
+
+    # A corner a press takes alone, inside the map with nothing over it, and
+    # a drop past the middle of a side of its outline that it does not end,
+    # on the map too: a side the corner ends then crosses another.
+    dismiss_toasts(page)
+    corners = _wait_for_corners(page, map_id, bool, "the zoom")
+    roomy = [c for c in _to_drag(corners) if c["inside"] and c["onTop"] and _room(c, corners) >= PRESS_ROOM]
+    roomy.sort(key=lambda c: (c["lit"], _room(c, corners)), reverse=True)
+    corner, drop = next(
+        ((c, d) for c in roomy for d in _drops_crossing_shape(c, corners) if _on_the_map(page, map_id, d, box)),
+        (None, None),
+    )
+    assert corner and drop, (
+        f"Move points shows no corner of building {building} with {PRESS_ROOM} pixels around it that a drag can take "
+        f"across a far side of its outline, inside the map (the most room a corner has is {_best_room(corners):.1f}): "
+        f"{corners}"
+    )
+    drop = assert_in_view(page, drop[0], drop[1], "where the corner is dropped")
+    handle = {"id": map_id, "ring": corner["ring"], "index": corner["index"], "part": corner["part"]}
+
+    # The drag, the map's drawing kept first to tell whether it draws again.
+    # While the drag lasts, Move points shows the corner under the pointer:
+    # the press took it.
+    start = len(log)
+    keep_drawing(page, _map(map_id))
+    page.mouse.move(corner["x"], corner["y"])
+    page.mouse.down()
+    page.mouse.move(*drop, steps=8)
+    held, deadline = None, time.time() + 3
+    while time.time() < deadline:
+        held = page.evaluate(_HANDLE_AT_JS, handle)
+        if held and math.hypot(held["x"] - drop[0], held["y"] - drop[1]) < 4:
+            break
+        page.wait_for_timeout(100)
+    page.mouse.up()
+    assert held and math.hypot(held["x"] - drop[0], held["y"] - drop[1]) < 4, (
+        f"the press on the corner {corner['ring']}.{corner['index']} of building {building} at "
+        f"{(round(corner['x'], 1), round(corner['y'], 1))} did not take it: dragged to "
+        f"{tuple(round(v, 1) for v in drop)}, it is shown at {held}"
+    )
+    wrong: list[str] = []
+
+    # 1. The node's code gains no edit; a drag's edit is written as it ends.
+    edits, deadline = [], time.time() + 5
+    while time.time() < deadline and not edits:
+        page.wait_for_timeout(250)
+        try:
+            edits = _edits_of(read_node_code(page, edit_id))[0]
+        except (AssertionError, SyntaxError, ValueError):
+            edits = []
+    if edits:
+        wrong.append(f"the self-crossing reshape was written as an edit: {[_shown_edit(e) for e in edits]}")
+
+    # 2. The map's tip says why, and the corner is back where it was.
+    tip = _overlay(page, map_id).get_by_test_id("map-edit-tip")
+    try:
+        expect(tip).to_contain_text(CROSSED_DRAG, timeout=5000)
+    except AssertionError:
+        wrong.append(f"the map's tip does not say why the reshape was refused: it reads {tip.all_inner_texts()}")
+    back = page.evaluate(_HANDLE_AT_JS, handle)
+    if not back or math.hypot(back["x"] - corner["x"], back["y"] - corner["y"]) > 1.5:
+        wrong.append(
+            f"after the refused drag, the corner {corner['ring']}.{corner['index']} of building {building} is shown at "
+            f"{back and (round(back['x'], 1), round(back['y'], 1))}, not back at "
+            f"{(round(corner['x'], 1), round(corner['y'], 1))}"
+        )
+
+    # 3. The map draws on, the buildings with it. Nothing changed, so it is
+    # not drawn again; a draw that comes, as an edit's does, is waited for to
+    # its end: the map drawn whole, or a layer that failed to load.
+    if not drawing_kept(page, _map(map_id)):
+        deadline = time.time() + INTERACTION_SHOWN_TIMEOUT_MS / 1000
+        while time.time() < deadline and not _failed_loads(log[start:]):
+            try:
+                assert_autark_map_drawn(page, map_id, timeout=1000)
+                break
+            except AssertionError:
+                page.wait_for_timeout(500)
+    try:
+        assert_autark_map_drawn(page, map_id)
+    except AssertionError as error:
+        wrong.append(f"the map draws nothing after the drag: {error}")
+    failed = _failed_loads(log[start:])
+    if failed:
+        wrong.append(f"autk-db refused a layer after the drag, so the map draws none of it: {failed[0]}")
+    if wrong:
+        dump_browser_log(CHICAGO_STEM, test_name, log)
+    assert not wrong, "\n".join(wrong)
+
+    # The map, its tip saying why the corner went back.
+    save_node_closeup(page, CHICAGO_STEM, map_id, test_name=f"{test_name}_closeup_{map_id}", sweep_toasts=True)
+
+
+#: The text a node shows of its last run: the lines it printed, then where it
+#: saved its output (``executionResultOutput``); null before a run.
+_OUTPUT_TEXT_JS = """(id) => {
+    const node = window.__curio_reactFlow.getNodes().find((n) => n.id === id);
+    const content = node && node.data && node.data.output && node.data.output.content;
+    return typeof content === "string" ? content : null;
+}"""
+
+
+def _drawn_wrong(page, map_id: str, building, log: list[dict], when: str, what: str) -> list[str]:
+    """What is wrong with the Chicago map *when*, after *what*: it draws
+    nothing, a layer failed to load, or it draws no row of *building* among the
+    buildings. The canvas is read in the frame that renders it, as captures
+    read it: Chrome can read an idle WebGPU canvas back as transparent."""
+    wrong = []
+    try:
+        _wait_for_map_drawn(page, map_id, what)
+    except AssertionError as error:
+        wrong.append(f"{when}, the map draws nothing: {error}")
+    failed = _failed_loads(log)
+    if failed:
+        wrong.append(f"{when}, autk-db refused a layer, so the map draws none of it: {failed[0]}")
+    drawn = page.evaluate(_DRAWN_PARTS_JS, {"id": map_id, "table": BUILDINGS, "key": KEY, "part": PART_KEY})
+    if drawn is None:
+        wrong.append(f"{when}, the map draws no {BUILDINGS} at all")
+    elif not any(key == building for key, _part in drawn):
+        wrong.append(f"{when}, the map draws {len(drawn)} rows of {BUILDINGS}, none of building {building}")
+    return wrong
+
+
+def test_a_chicago_building_redrawn_as_a_bow_tie_in_the_nodes_code_is_skipped_and_the_layer_keeps_drawing(
+    app_frontend: "FrontendPage", current_server: str, page,
+):
+    """The steps of #1121, on the shipped Chicago Loop layers, run whole: a
+    redraw of a building of one part as a bow tie, an outline that crosses
+    itself, in the building's own coordinates, typed into the Map Editor
+    node's code, as an agent writes one or Provenance puts one back. autk-db
+    would refuse it, and with it the whole buildings layer.
+
+    1. The map draws the node's code at once, before Commit edits: the
+       buildings, that one among them, and the browser log holds no layer
+       that failed to load.
+    2. Commit edits runs the node: its output says it skips the redraw,
+       naming the building, and it hands the building on with its own shape.
+    3. The map draws on, the buildings with it, and the browser log holds no
+       layer that failed to load.
+
+    What is wrong at each step is kept, and the test fails with all of it."""
+    test_name = "test_a_chicago_building_redrawn_as_a_bow_tie_in_the_nodes_code_is_skipped_and_the_layer_keeps_drawing"
+    log = _browser_log(page)
+    path = Path(REPO_ROOT) / "docs" / "examples" / "dataflows" / "chicago-loop-layers.json"
+    spec = json.loads(path.read_text(encoding="utf-8"))
+    nodes = {node["id"]: node for node in spec["dataflow"]["nodes"]}
+    (edit_id,) = [n for n, node in nodes.items() if node["type"] == EDIT_TYPE]
+    (map_id,) = [n for n, node in nodes.items() if node["type"] == MAP_TYPE and '"map"' in node["content"]]
+    _enter(page, app_frontend, current_server, spec, "map_edits_typed_bow_tie_e2e", name=spec["dataflow"]["name"])
+    run_all_and_wait(page, timeout_ms=RUN_MS)
+    for node_id, node in nodes.items():
+        _done(page, node_id, node["type"])
+    wait_for_run_guard_released(page, timeout_ms=RUN_MS)
+
+    # A building of one part the map draws, its outline one ring, and a bow
+    # tie across the box around it, in the building's own coordinates.
+    handed = _handed_layers(load_artifact_as_dict(page.evaluate(_OUTPUT_ARTIFACT_JS, edit_id)))
+    rows_of: dict = {}
+    for feature in handed[BUILDINGS]["features"]:
+        rows_of.setdefault((feature.get("properties") or {}).get(KEY), []).append(feature)
+    drawn = page.evaluate(_DRAWN_PARTS_JS, {"id": map_id, "table": BUILDINGS, "key": KEY, "part": PART_KEY}) or []
+    shown = [building for building, _part in drawn if building is not None]
+    building = next((b for b in shown if _one_outline(rows_of.get(b, [])) is not None), None)
+    assert building is not None, f"the map draws no building of one part whose outline is one ring, of {len(set(shown))}"
+    (row,) = rows_of[building]
+    x0, y0, x1, y1 = _extent(_one_outline([row]))
+    bow_tie = {"type": "Polygon", "coordinates": [[[x0, y0], [x1, y1], [x1, y0], [x0, y1], [x0, y0]]]}
+    redraw = {"op": "geometry", "ids": [building], "geometry": bow_tie}
+    code = read_node_code(page, edit_id)
+    typed = code.replace(
+        "], [], by_input=True)",
+        f"], [\n    {json.dumps(redraw)},\n], key={json.dumps(KEY)}, layer={json.dumps(BUILDINGS)}, by_input=True)",
+    )
+    assert typed != code, f"the Map Editor node's code is not the call with no edits the example ships: {code!r}"
+
+    # 1. The bow tie typed into the node's code: the map draws it at once.
+    frame_nodes(page, [edit_id, map_id])
+    start = len(log)
+    keep_drawing(page, _map(map_id))
+    set_node_code(page, edit_id, typed)
+    wrong: list[str] = []
+    try:
+        _wait_for_redraw(page, map_id, "the bow tie typed into the node's code")
+    except AssertionError as error:
+        wrong.append(str(error))
+    wrong += _drawn_wrong(
+        page, map_id, building, log[start:], "before Commit edits", "the bow tie typed into the node's code",
+    )
+
+    # 2. Commit edits, at the foot of the node's list, on its Output tab (the
+    # code was typed on its Code tab): the run skips the redraw and says so.
+    _open_tab(page, edit_id, "output")
+    try:
+        _commit(page, edit_id, [edit_id], [map_id], below=1)
+    except (AssertionError, PlaywrightTimeoutError) as error:
+        wrong.append(f"Commit edits did not run the node and the map: {error}")
+    said = page.evaluate(_OUTPUT_TEXT_JS, edit_id) or ""
+    line = (
+        f"Map Editor: layer {BUILDINGS}: the geometry would make the outline of {KEY} {building} cross itself, "
+        "an area the map cannot draw; the geometry skips it."
+    )
+    if line not in said:
+        wrong.append(f"the node's run does not say it skips the redraw ({line!r}); it says: {said[-1500:]!r}")
+    out = _handed_layers(load_artifact_as_dict(page.evaluate(_OUTPUT_ARTIFACT_JS, edit_id)))[BUILDINGS]["features"]
+    kept = [feature.get("geometry") for feature in out if (feature.get("properties") or {}).get(KEY) == building]
+    if kept != [row.get("geometry")]:
+        wrong.append(f"after Commit edits, the node hands building {building} on as {kept}, not with its own shape")
+
+    # 3. The map draws on, the buildings with it.
+    wrong += _drawn_wrong(page, map_id, building, log[start:], "after Commit edits", "Commit edits")
+    if wrong:
+        dump_browser_log(CHICAGO_STEM, test_name, log)
+    assert not wrong, "\n".join(wrong)
 
 
 # The value of *key* and of *part* of each row the map draws of the table
@@ -1740,18 +2083,10 @@ def _best_room(corners: list[dict]) -> float:
 
 def _picked_with_corners(page, map_id: str, building, what: str) -> list[dict]:
     """Pick *building* on the map *map_id*, as the map's own pick is sent, and
-    wait until Move points shows its corners. The pick is sent again when a
-    change of the node's code started its pick anew meanwhile."""
-    for _ in range(3):
-        page.evaluate(_SEND_JS, [map_id, _map_pick(building)])
-        _wait_for_lit(page, map_id, {building}, what, table=BUILDINGS)
-        deadline = time.time() + 5
-        while time.time() < deadline:
-            corners = _corners(page, map_id)
-            if corners:
-                return corners
-            page.wait_for_timeout(250)
-    raise AssertionError(f"after {what}, Move points shows no corner of building {building} on the map {map_id}")
+    wait until Move points shows its corners."""
+    page.evaluate(_SEND_JS, [map_id, _map_pick(building)])
+    _wait_for_lit(page, map_id, {building}, what, table=BUILDINGS)
+    return _wait_for_corners(page, map_id, bool, what)
 
 
 def _crosses(a, b, c, d) -> bool:
@@ -1805,6 +2140,208 @@ def _drop_keeping_shape(corner: dict, corners: list[dict]) -> tuple[float, float
         ):
             return drop
     return None
+
+
+def _drops_crossing_shape(corner: dict, corners: list[dict]) -> list[tuple[float, float]]:
+    """Where to drag *corner*, in page coordinates, so that a side it ends
+    crosses another side of its part, as no drop of ``_drop_keeping_shape``
+    does: past the middle of each side of its ring that it does not end, by
+    half the way there from the corner, each drop kept when ``_crosses`` finds
+    a moved side crossing another. No drop for a ring of fewer than four
+    corners, where a corner dragged anywhere crosses no side."""
+    rings: dict = {}
+    indexes: dict = {}
+    for c in sorted(corners, key=lambda c: c["index"]):
+        if c["part"] == corner["part"]:
+            rings.setdefault(c["ring"], []).append((c["x"], c["y"]))
+            indexes.setdefault(c["ring"], []).append(c["index"])
+    ring = rings.get(corner["ring"], [])
+    if len(ring) < 4:
+        return []
+    at = indexes[corner["ring"]].index(corner["index"])
+    before, after = ring[at - 1], ring[(at + 1) % len(ring)]
+    # Every side of the part but the two the corner ends, which move with it.
+    sides = [
+        (points[i], points[(i + 1) % len(points)], key, i)
+        for key, points in rings.items() for i in range(len(points))
+        if not (key == corner["ring"] and i in (at, (at - 1) % len(ring)))
+    ]
+    drops = []
+    for p, q, key, _i in sides:
+        if key != corner["ring"]:
+            continue
+        middle = ((p[0] + q[0]) / 2, (p[1] + q[1]) / 2)
+        drop = (middle[0] + (middle[0] - corner["x"]) / 2, middle[1] + (middle[1] - corner["y"]) / 2)
+        moved = [(before, drop), (drop, after)]
+        if any(
+            _crosses(a, b, s, t) for a, b in moved for s, t, k, j in sides
+            # A moved side meets its neighbouring sides at their shared corner.
+            if not (k == corner["ring"] and (j == (at - 2) % len(ring) and a == before or j == (at + 1) % len(ring) and b == after))
+        ):
+            drops.append(drop)
+    return drops
+
+
+def _on_the_map(page, map_id: str, point, box: dict, margin: float = 30) -> bool:
+    """Whether *point*, in page coordinates, lies *margin* pixels inside the
+    canvas of the map *map_id*, laid out at *box*, with nothing over the map
+    there: neither its tip nor a button."""
+    x, y = point
+    inside = box["x"] + margin < x < box["x"] + box["width"] - margin and \
+        box["y"] + margin < y < box["y"] + box["height"] - margin
+    return inside and bool(page.evaluate(_SHOWN_JS, [_map(map_id), x, y]))
+
+
+def _one_outline(rows: list[dict]) -> list[tuple[float, float]] | None:
+    """The outline of a building of one row whose shape is one ring of four to
+    eight corners, as Move points shows them, in its layer's units; None for
+    any other building."""
+    geometry = rows[0].get("geometry") if len(rows) == 1 else None
+    if (geometry or {}).get("type") not in ("Polygon", "MultiPolygon"):
+        return None
+    rings = _rings_of(geometry)
+    return rings[0] if len(rings) == 1 and 4 <= len(rings[0]) <= 8 else None
+
+
+def _extent(points) -> tuple[float, float, float, float]:
+    """The box around *points*: its least x and y, then its most."""
+    xs, ys = [x for x, _ in points], [y for _, y in points]
+    return min(xs), min(ys), max(xs), max(ys)
+
+
+def _pick_near_the_middle(page, map_id: str, reshape, candidates: list, box: dict) -> tuple:
+    """Pick each of the first eight *candidates*, buildings, on the map
+    *map_id* in turn, as the map's own pick is sent, with Move points
+    (*reshape*) on, until one sits near the middle of the map (*box*), in its
+    middle three fifths both ways. Returns that building, or None, the corners
+    Move points shows of the last one picked, and where each one tried sat."""
+    corners: list[dict] = []
+    tried = []
+    for candidate in candidates[:8]:
+        page.evaluate(_SEND_JS, [map_id, _map_pick(candidate)])
+        _wait_for_lit(page, map_id, {candidate}, f"building {candidate} picked", table=BUILDINGS)
+        if reshape.get_attribute("aria-checked") != "true":
+            reshape.click()
+            expect(reshape).to_have_attribute("aria-checked", "true")
+        # The corners of this building, not of the one picked before.
+        seen = [(c["x"], c["y"]) for c in corners]
+        corners = _wait_for_corners(
+            page, map_id, lambda now: bool(now) and [(c["x"], c["y"]) for c in now] != seen, f"building {candidate} picked",
+        )
+        x, y = _middle(corners)
+        tried.append((candidate, round(x), round(y)))
+        if box["x"] + 0.2 * box["width"] < x < box["x"] + 0.8 * box["width"] and \
+                box["y"] + 0.2 * box["height"] < y < box["y"] + 0.8 * box["height"]:
+            return candidate, corners, tried
+    return None, corners, tried
+
+
+def _compact(ring: list[tuple[float, float]]) -> bool:
+    """Whether an outline, in its layer's units, is compact: its box on the
+    ground at most twice as long as it is wide. A degree of longitude is
+    shorter on the ground than one of latitude, by the cosine of the latitude."""
+    x0, y0, x1, y1 = _extent(ring)
+    degrees = all(abs(x) <= 180 and abs(y) <= 90 for x, y in ring)
+    across = (x1 - x0) * (math.cos(math.radians((y0 + y1) / 2)) if degrees else 1.0)
+    up = y1 - y0
+    return min(across, up) > 0 and max(across, up) <= 2 * min(across, up)
+
+
+def _fill(corners: list[dict], box: dict) -> float:
+    """How much of the map, laid out at *box*, the box around *corners* spans:
+    the larger of its width's share and its height's."""
+    xs, ys = [c["x"] for c in corners], [c["y"] for c in corners]
+    return max((max(xs) - min(xs)) / box["width"], (max(ys) - min(ys)) / box["height"])
+
+
+def _handles_of(corners: list[dict]) -> list[tuple[float, float]]:
+    """Where Move points shows a handle a press takes, in page coordinates:
+    each corner, and the middle of each side between two corners of a ring."""
+    rings: dict = {}
+    for c in sorted(corners, key=lambda c: c["index"]):
+        rings.setdefault((c["part"], c["ring"]), []).append((c["x"], c["y"]))
+    points = [(c["x"], c["y"]) for c in corners]
+    for ring in rings.values():
+        points += [((a[0] + b[0]) / 2, (a[1] + b[1]) / 2) for a, b in zip(ring, ring[1:] + ring[:1])]
+    return points
+
+
+def _pan_start(page, map_id: str, corners: list[dict], box: dict, by: tuple[float, float]) -> tuple[float, float] | None:
+    """Where a drag that pans the map *map_id* by *by* can start and end: on
+    the map with nothing over it, the start at least 40 pixels from every
+    handle Move points shows (*corners*), so the press takes none of them.
+    The feature's own middle first, then the point of the map nearest its
+    middle; None when no such point is."""
+    clear = 40
+    handles = _handles_of(corners)
+    middle = (box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
+    grid = [(box["x"] + fx / 10 * box["width"], box["y"] + fy / 10 * box["height"]) for fx in range(2, 9) for fy in range(2, 9)]
+    for start in [_middle(corners)] + sorted(grid, key=lambda p: math.hypot(p[0] - middle[0], p[1] - middle[1])):
+        end = (start[0] + by[0], start[1] + by[1])
+        if all(math.hypot(start[0] - hx, start[1] - hy) >= clear for hx, hy in handles) and \
+                _on_the_map(page, map_id, start, box, clear) and _on_the_map(page, map_id, end, box, clear):
+            return start
+    return None
+
+
+def _framed(page, map_id: str, corners: list[dict], box: dict) -> list[dict]:
+    """Frame the feature whose corners Move points shows on the map *map_id*
+    (*corners*) for its close-up: the map zoomed with the wheel at the
+    feature's middle, in half steps, until the feature spans FRAME_FILL of the
+    map (*box*), then panned, by drags clear of its handles, until its middle
+    is near the map's. Returns its corners then."""
+    low, high = FRAME_FILL
+    # +1 while a negative wheel delta zooms in, as autk-map's does.
+    sign = 1
+    for step in range(4 * ZOOM_STEPS):
+        fill = _fill(corners, box)
+        if low <= fill <= high:
+            break
+        closer = fill < low
+        page.mouse.move(*_middle(corners))
+        page.mouse.wheel(0, sign * (-(ZOOM_DELTA // 2) if closer else ZOOM_DELTA // 2))
+        page.wait_for_timeout(500)
+        now = _wait_for_corners(page, map_id, bool, "a zoom of the map")
+        if step == 0 and (_fill(now, box) > fill) != closer:
+            # This wheel zooms the other way round.
+            sign = -sign
+        corners = now
+    # A drag pans the map with the pointer, about: from a point clear of the
+    # handles by the way from the feature's middle to the map's, again until
+    # the two are near.
+    middle = (box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
+    for _ in range(4):
+        x, y = _middle(corners)
+        by = (middle[0] - x, middle[1] - y)
+        if abs(by[0]) <= 0.04 * box["width"] and abs(by[1]) <= 0.04 * box["height"]:
+            break
+        start = _pan_start(page, map_id, corners, box, by)
+        if start is None:
+            break
+        page.mouse.move(*start)
+        page.mouse.down()
+        page.mouse.move(start[0] + by[0], start[1] + by[1], steps=12)
+        page.mouse.up()
+        page.wait_for_timeout(500)
+        corners = _wait_for_corners(page, map_id, bool, "a pan of the map")
+    return corners
+
+
+def _browser_log(page) -> list[dict]:
+    """Every console message and page error of *page* from now on, as the
+    class pages of the workflow tests keep them, for ``dump_browser_log``."""
+    log: list[dict] = []
+    page.on("console", lambda message: log.append({"kind": "console", "type": message.type, "text": message.text}))
+    page.on("pageerror", lambda error: log.append({"kind": "pageerror", "message": str(error)}))
+    return log
+
+
+def _failed_loads(log: list[dict]) -> list[str]:
+    """What *log*, a browser log, says of layers that failed to load: the words
+    autk-grammar logs when autk-db refuses a layer, as it refuses one with a
+    shape that crosses itself."""
+    texts = [entry.get("text") or entry.get("message") or "" for entry in log]
+    return [text for text in texts if "Failed to load GeoJSON layer" in text]
 
 
 def _within(corners: list[dict], box: dict, margin: float) -> bool:
@@ -2069,3 +2606,288 @@ def _assert_same_shape(handed: dict, drawn: dict, what: str) -> None:
     assert all(math.isclose(x, y, rel_tol=1e-9, abs_tol=1e-6) for x, y in zip(a, b)), (
         f"the run handed {what} on at {a[:4]}..., not where it was drawn on the map: {b[:4]}..."
     )
+
+
+#: A building of the Chicago Loop layers in seven parts, each with an
+#: ``osm_id`` of its own, near the middle of the map.
+PARTED_BUILDING = 20449794
+#: The column Autark tags each OSM feature with, naming the layer it came
+#: from: no property of the feature, so the node's form leaves it out (#1122).
+AUTARK_LAYER = "__autk_layer"
+
+
+def test_a_chicago_building_of_several_parts_takes_a_height_on_one_part_chosen_in_its_form(
+    app_frontend: "FrontendPage", current_server: str, page,
+):
+    """The shipped Chicago Loop layers: building 20449794, of seven parts,
+    each with an ``osm_id`` of its own, picked on the map in the node's Edit.
+
+    1. Its form is for all its parts: a height they differ in is empty, with
+       a note that lists their heights, and osm_id cannot be changed.
+    2. Its parts menu offers all the parts, then each part by its osm_id. A
+       part after the first, of another height, chosen there: the field shows
+       that part's height, the map still lights the whole building, and a
+       height typed and applied is one edit that names that part alone,
+       ``where building_id == <building> and osm_id == <part>``.
+    3. Commit edits runs the node, which hands that part on with the new
+       height and the building's other parts with their own.
+
+    What is wrong at each step is kept, and the test fails with all of it
+    before its capture: the node's body, without its header, scrolled to the
+    building's properties, its parts menu on all of them."""
+    test_name = "test_a_chicago_building_of_several_parts_takes_a_height_on_one_part_chosen_in_its_form"
+    path = Path(REPO_ROOT) / "docs" / "examples" / "dataflows" / "chicago-loop-layers.json"
+    spec = json.loads(path.read_text(encoding="utf-8"))
+    nodes = {node["id"]: node for node in spec["dataflow"]["nodes"]}
+    (edit_id,) = [n for n, node in nodes.items() if node["type"] == EDIT_TYPE]
+    (map_id,) = [n for n, node in nodes.items() if node["type"] == MAP_TYPE and '"map"' in node["content"]]
+    title = nodes[map_id]["metadata"]["packageTemplateLabel"]
+    _enter(page, app_frontend, current_server, spec, "map_edits_parts_form_e2e", name=spec["dataflow"]["name"])
+    run_all_and_wait(page, timeout_ms=RUN_MS)
+    for node_id, node in nodes.items():
+        _done(page, node_id, node["type"])
+    wait_for_run_guard_released(page, timeout_ms=RUN_MS)
+
+    # The building's parts as the node hands them on before any edit, in the
+    # layer's order, and the rows of it the map draws, which it lights.
+    building = PARTED_BUILDING
+    handed = _handed_layers(load_artifact_as_dict(page.evaluate(_OUTPUT_ARTIFACT_JS, edit_id)))
+    rows = [row for row in handed[BUILDINGS]["features"] if (row.get("properties") or {}).get(KEY) == building]
+    assert _told_apart(rows), (
+        f"the node hands on {len(rows)} rows of building {building}, not two parts or more, each with a shape and "
+        f"an {PART_KEY} of its own"
+    )
+    parts = [(row.get("properties") or {}).get(PART_KEY) for row in rows]
+    heights = [(row.get("properties") or {}).get("height") for row in rows]
+    drawn = page.evaluate(_DRAWN_PARTS_JS, {"id": map_id, "table": BUILDINGS, "key": KEY, "part": PART_KEY}) or []
+    lit_rows = [building] * sum(1 for key, _part in drawn if key == building)
+    assert len(lit_rows) >= 2, f"the map draws {len(lit_rows)} rows of building {building}, not two parts or more"
+    # The part chosen: the first after the first part whose height differs
+    # from the first part's, else the last; the height it is given, none of
+    # its parts' heights.
+    chosen = next((i for i in range(1, len(rows)) if not _same_number(heights[i], heights[0])), len(rows) - 1)
+    part_id = parts[chosen]
+    part = _as_text(part_id)
+    where = f"{KEY} == {_literal(building)} and {PART_KEY} == {_literal(part_id)}"
+    new_height = NEW_HEIGHT
+    while any(_same_number(new_height, height) for height in heights):
+        new_height += 1
+    every = f"All {len(rows)} parts"
+
+    edit = node_locator(page, edit_id)
+    frame_nodes(page, [edit_id, map_id])
+    _open_tab(page, edit_id, "output")
+    _assert_linked(page, edit_id, map_id, title)
+    expect(edit.get_by_test_id(f"interaction-layer-{BUILDINGS}")).to_be_attached(timeout=30000)
+    _open(page, edit_id, "edit", BUILDINGS)
+    page.evaluate(_SEND_JS, [map_id, _map_pick(building)])
+    _wait_for_lit(page, map_id, {building}, f"building {building} picked", table=BUILDINGS)
+    field = edit.get_by_test_id("interaction-field-height")
+    expect(field).to_be_attached(timeout=10000)
+    wait_for_node_still(page, edit_id)
+    menu = edit.get_by_test_id("interaction-parts-menu")
+    wrong: list[str] = []
+
+    def text_of(test_id: str) -> str | None:
+        """The words of the node's element *test_id*, or None when it shows none."""
+        found = edit.get_by_test_id(test_id)
+        return (found.first.text_content() or "").strip() if found.count() else None
+
+    # 1. The form is for all its parts: a height they differ in is empty, with
+    # a note that lists their heights, and osm_id cannot be changed.
+    if len(set(heights)) > 1:
+        shown = field.input_value()
+        if shown != "":
+            wrong.append(
+                f"the form shows the height {shown}, building {building}'s first part's, as the building's: its "
+                f"{len(rows)} parts are {', '.join(_as_text(height) for height in heights)} m tall"
+            )
+        listed = text_of("interaction-mixed-height")
+        if not re.match(rf"{len(set(heights))} values: ", listed or ""):
+            wrong.append(
+                f"no note beside the height lists the {len(set(heights))} heights of building {building}'s parts: "
+                f"it reads {listed!r}"
+            )
+    if edit.get_by_test_id(f"interaction-field-{PART_KEY}").count():
+        wrong.append(
+            f"{PART_KEY}, which tells the parts apart, is a field a value can be typed into, showing the first part's"
+        )
+    fixed = text_of(f"interaction-fixed-{PART_KEY}")
+    if fixed != f"{len(rows)} values, cannot be changed":
+        wrong.append(f"beside {PART_KEY}, the form reads {fixed!r}, not '{len(rows)} values, cannot be changed'")
+    # Autark's own column, naming the layer each OSM feature came from, is no
+    # property of the building: the form has no row for it (#1122).
+    autark_rows = [
+        kind for kind in ("field", "fixed", "mixed") if edit.get_by_test_id(f"interaction-{kind}-{AUTARK_LAYER}").count()
+    ]
+    if autark_rows:
+        carried = any(AUTARK_LAYER in (row.get("properties") or {}) for row in rows)
+        where_from = ", which the building's parts carry" if carried else ""
+        wrong.append(
+            f"the form of building {building} has a row for {AUTARK_LAYER} (its {', '.join(autark_rows)}), the column "
+            f"Autark names each feature's layer by{where_from}"
+        )
+
+    # 2. The parts menu, on all the parts; one part chosen in it.
+    if not menu.count():
+        wrong.append(
+            f"there is no parts menu: the form of building {building}, of {len(rows)} parts, works on its first "
+            f"part, {PART_KEY} {_as_text(parts[0])}, alone, and a value typed in it goes to every part"
+        )
+    else:
+        labels = menu.locator("option").evaluate_all("(options) => options.map((o) => o.textContent)")
+        named = [re.compile(rf"^{PART_KEY} {re.escape(_as_text(osm))}(,|$)") for osm in parts]
+        if labels[:1] != [every] or len(labels) != len(rows) + 1 or not all(
+            pattern.match(label or "") for pattern, label in zip(named, labels[1:])
+        ):
+            wrong.append(f"the parts menu offers {labels}, not {every!r} and then each part by its {PART_KEY}: {parts}")
+        selected = menu.evaluate("(menu) => (menu.selectedOptions[0] ? menu.selectedOptions[0].textContent : null)")
+        if selected != every:
+            wrong.append(f"the parts menu opens on {selected!r}, not {every!r}")
+        label = next((label for label in labels if named[chosen].match(label or "")), None)
+        if label is None:
+            wrong.append(f"the parts menu offers no option for part {part}: {labels}")
+        else:
+            menu.select_option(label=label)
+            shown = _wait_for_field(field, heights[chosen])
+            if not _shows(shown, heights[chosen]):
+                wrong.append(
+                    f"with part {part} chosen in the parts menu, the height field shows {shown!r}, not that part's "
+                    f"{_as_text(heights[chosen])}"
+                )
+            fixed = text_of(f"interaction-fixed-{PART_KEY}")
+            if fixed != f"{part}, cannot be changed":
+                wrong.append(
+                    f"with part {part} chosen, the form reads {fixed!r} beside {PART_KEY}, not '{part}, cannot be changed'"
+                )
+            try:
+                _wait_for_lit(page, map_id, lit_rows, f"part {part} of building {building} chosen", table=BUILDINGS)
+            except AssertionError as error:
+                wrong.append(f"with one part chosen, the map no longer lights the whole building: {error}")
+
+    # A height typed and applied: one edit, of that part alone.
+    keep_drawing(page, _map(map_id))
+    field.fill(str(new_height))
+    submit = edit.get_by_test_id("interaction-form-submit")
+    expect(submit).to_be_enabled()
+    submit.click()
+    code, keywords = _wait_for_count_of_edits(
+        page, edit_id, 1, f"a height of {new_height} applied to building {building}",
+    )
+    (applied,) = _edits_of(code)[0]
+    expected = {"op": "set", "ids": None, "where": where, "column": "height", "value": new_height}
+    if {name: applied.get(name) for name in expected} != expected:
+        why = f": a set by {KEY} {building} goes to every one of its {len(rows)} parts" if applied.get("ids") else ""
+        wrong.append(f"Apply wrote {applied}, not a set of the height where {where}{why}")
+    if (keywords.get("layer"), keywords.get("key")) != (BUILDINGS, KEY):
+        wrong.append(f"the node's code names the layer {keywords.get('layer')} and the key {keywords.get('key')}")
+    try:
+        expect(edit.locator('[data-edit-op="set"]')).to_contain_text(
+            f"Set height to {new_height} where {where}", timeout=5000,
+        )
+    except AssertionError as error:
+        wrong.append(f"the list does not name the part: {error}")
+    _wait_for_redraw(page, map_id, "the Apply")
+
+    # 3. Commit edits: the node hands that part on with the new height, and
+    # the building's other parts with their own.
+    _commit(page, edit_id, [edit_id], [map_id], below=1)
+    out = _handed_layers(load_artifact_as_dict(page.evaluate(_OUTPUT_ARTIFACT_JS, edit_id)))[BUILDINGS]["features"]
+    now = {
+        (row.get("properties") or {}).get(PART_KEY): (row.get("properties") or {}).get("height")
+        for row in out if (row.get("properties") or {}).get(KEY) == building
+    }
+    if sorted(map(str, now)) != sorted(map(str, parts)):
+        wrong.append(f"Commit edits handed on the parts {sorted(map(str, now))} of building {building}, not {parts}")
+    if not _same_number(now.get(part_id), new_height):
+        wrong.append(
+            f"after Commit edits, part {part} of building {building} is {now.get(part_id)} m tall, not the "
+            f"{new_height} typed for it"
+        )
+    others = [
+        f"part {_as_text(osm)} is {_as_text(now.get(osm))} m tall, not its own {_as_text(height)}"
+        for osm, height in zip(parts, heights)
+        if osm != part_id and osm in now and not _same_number(now.get(osm), height)
+    ]
+    if others:
+        wrong.append(
+            f"after Commit edits, the height typed for part {part} went to other parts of building {building} "
+            f"too: {'; '.join(others)}"
+        )
+    assert not wrong, "\n".join(wrong)
+
+    # The building picked again, since the map's run dropped the pick, and its
+    # form on all its parts, as the node's body shows it without the node's
+    # header, scrolled to the building's properties.
+    for _ in range(3):
+        page.evaluate(_SEND_JS, [map_id, _map_pick(building)])
+        _wait_for_lit(page, map_id, {building}, f"building {building} picked after Commit edits", table=BUILDINGS)
+        try:
+            expect(menu).to_be_visible(timeout=5000)
+            break
+        except AssertionError:
+            continue
+    expect(menu).to_be_visible(timeout=5000)
+    menu.select_option(label=every)
+    # The part given a height of its own, the parts differ in height.
+    expect(field).to_have_value("")
+    wait_for_node_still(page, edit_id)
+    with canvas_painted_at_shown_zoom(page):
+        frame_nodes(page, [edit_id])
+        assert page.evaluate(_PROPERTIES_ON_TOP_JS, edit_id), (
+            f"the node {edit_id} shows no properties of building {building}"
+        )
+        park_pointer(page)
+        save_workflow_test_screenshot(
+            page, CHICAGO_STEM, test_name=f"{test_name}_closeup_{edit_id}",
+            pixel_threshold=CLOSEUP_PIXEL_THRESHOLD, max_diff_ratio=CLOSEUP_MAX_DIFF_RATIO,
+            clip_selector=f'[data-edit-body="{edit_id}"]', fit_reactflow=False, sweep_toasts=True, closeup=True,
+        )
+
+
+def _as_text(value) -> str:
+    """*value* as a form shows it: a number as JavaScript writes it, a text as it is."""
+    return value if isinstance(value, str) else _literal(value)
+
+
+def _same_number(a, b) -> bool:
+    """Whether *a* and *b* are one value: both none, or the same number."""
+    if a is None or b is None:
+        return a is None and b is None
+    try:
+        return math.isclose(float(a), float(b), rel_tol=1e-9, abs_tol=1e-9)
+    except (TypeError, ValueError):
+        return a == b
+
+
+def _shows(text: str, value) -> bool:
+    """Whether a field's *text* shows *value*: empty for none, else the same number or text."""
+    if value is None or text == "":
+        return value is None and text == ""
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        return _same_number(text, value)
+    return text == _as_text(value)
+
+
+def _wait_for_field(field, value, timeout_s: float = 5) -> str:
+    """What the field *field* shows, once it shows *value*, or after *timeout_s* seconds."""
+    deadline = time.time() + timeout_s
+    while True:
+        text = field.input_value()
+        if _shows(text, value) or time.time() >= deadline:
+            return text
+        field.page.wait_for_timeout(250)
+
+
+# Scrolls the body of the Map Editor node *id* until the properties of the
+# feature its form edits are at the body's top, so a capture of the body
+# starts with them; false when the body shows none.
+_PROPERTIES_ON_TOP_JS = """(id) => {
+    const body = document.querySelector(`[data-edit-body="${id}"]`);
+    const properties = body && body.querySelector('[data-testid="interaction-properties"]');
+    if (!properties) return false;
+    const box = body.getBoundingClientRect();
+    const scale = body.offsetHeight > 0 ? box.height / body.offsetHeight : 1;
+    body.scrollTop += (properties.getBoundingClientRect().top - box.top) / scale;
+    return true;
+}"""

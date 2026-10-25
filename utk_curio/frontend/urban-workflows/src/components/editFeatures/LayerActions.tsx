@@ -1,5 +1,5 @@
 /**
- * A layer picked in the Map Edits node's workbench (#662): what to do with
+ * A layer picked in the Map Editor node's workbench (#662): what to do with
  * it, four cards. Add (draw on the map, then fill in the layer's own
  * properties), Edit (pick a feature on the map, reshape or move it, change
  * its values), Remove (pick features on the map, or by a rule) and Add a

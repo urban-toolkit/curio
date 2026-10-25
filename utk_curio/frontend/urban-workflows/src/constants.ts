@@ -76,5 +76,8 @@ export const DEFAULT_NODE_WIDTH = 525;
 export const DEFAULT_NODE_HEIGHT = 350;
 export const MIN_NODE_WIDTH = 200;
 export const MIN_NODE_HEIGHT = 150;
-export const MINIMIZED_NODE_WIDTH = 70;
+// A minimized node's chip: its icon and its title, cut with an ellipsis. The
+// width is fixed, not sized to the title, so `utils/nodeBoxSize.ts` can mirror
+// it without measuring text.
+export const MINIMIZED_NODE_WIDTH = 250;
 export const MINIMIZED_NODE_HEIGHT = 40;

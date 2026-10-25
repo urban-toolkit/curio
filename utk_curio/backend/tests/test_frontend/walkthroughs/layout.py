@@ -15,6 +15,38 @@ from .agent_catalog import TAG_ROW_FIRST_CARD
 
 MULTI_VIEW_EXAMPLE = "05-vega-lite-multi-view-drilldown.json"
 
+#: The node's box in the stacked-views scene: the default, smaller than the
+#: chart, which the example's own box now fits whole (#1097).
+NARROWED_NODE = (525, 350)
+
+# A drag of node *id*'s corner handle to the size given, through the handle's
+# own mouse listeners: a press on the handle, a move and a release on the
+# window. Returns the box's size after the release.
+_RESIZE_NODE_JS = """([id, width, height]) => {
+    const handle = document.getElementById(id + 'resizer');
+    const box = document.getElementById(id + 'resizable');
+    if (!handle || !box) return null;
+    const r = handle.getBoundingClientRect();
+    const x = r.left + r.width / 2, y = r.top + r.height / 2;
+    const to = {bubbles: true, clientX: x + width - box.offsetWidth, clientY: y + height - box.offsetHeight};
+    handle.dispatchEvent(new MouseEvent('mousedown', {bubbles: true, clientX: x, clientY: y}));
+    window.dispatchEvent(new MouseEvent('mousemove', to));
+    window.dispatchEvent(new MouseEvent('mouseup', to));
+    return [box.offsetWidth, box.offsetHeight];
+}"""
+
+# Whether React Flow's store holds node *id* at about the size given. It
+# measures a node again only on a later frame, and `frame_node` centres on the
+# size the store holds.
+_STORE_HOLDS_SIZE_JS = """([id, width, height]) => {
+    const rf = window.__curio_reactFlow;
+    const node = rf && rf.getNodes().find((n) => n.id === id);
+    if (!node) return false;
+    const w = node.width || (node.measured && node.measured.width);
+    const h = node.height || (node.measured && node.measured.height);
+    return Math.abs(w - width) <= 8 && Math.abs(h - height) <= 8;
+}"""
+
 #: A Data Pool without Autark alongside it, so the scene needs no WebGPU.
 DATA_POOL_EXAMPLE = "02-vega-lite-spatial-density.json"
 
@@ -165,6 +197,18 @@ def multi_view_vega_chart_is_reachable(ctx: Ctx) -> None:
         arg=f"vega{node_id}",
         timeout=180000,
     )
+    # The example gives the node the room its chart takes (#1097), so the node
+    # is narrowed first, as a person would drag its corner: the chart keeps its
+    # size, and the pane has to scroll to it.
+    ctx.say("Make the node smaller than its chart",
+            "Back to the default 525x350, a pane shorter than the stacked views.")
+    size = page.evaluate(_RESIZE_NODE_JS, [node_id, *NARROWED_NODE])
+    assert size and all(abs(got - want) <= 4 for got, want in zip(size, NARROWED_NODE)), (
+        f"the node's corner did not size it to {NARROWED_NODE}: {size}"
+    )
+    # Framed only once React Flow has measured the narrowed node: centred on
+    # the size it held before, the node sat above the view, under the header.
+    page.wait_for_function(_STORE_HOLDS_SIZE_JS, arg=[node_id, *NARROWED_NODE], polling=100, timeout=15000)
     # Frame the node before capturing. The subject is a chart inside a 525x350
     # node; at the harness's fit zoom this example's 28 nodes make it a ~90x60
     # thumbnail, and both captures came out as the same canvas wallpaper.

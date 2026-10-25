@@ -36,7 +36,7 @@ EXAMPLE_INVARIANTS = [
      {"curio.builtin/data-loading": 5, "curio.builtin/vis-vega": 2}, False),
     # Its comparisons are Scout's Bars over a Roads node per scenario and a
     # Python node that takes the sunlight change (no Compare Scenarios node).
-    # Its Map Edits node feeds a map of the buildings and is linked to it.
+    # Its Map Editor node feeds a map of the buildings and is linked to it.
     ("06-back-bay-road-sunlight.json", 16, 19,
      {"curio.builtin/autk-grammar": 9, "curio.builtin/data-pool": 1,
       "curio.builtin/computation-analysis": 4, "curio.builtin/edit-features": 1,

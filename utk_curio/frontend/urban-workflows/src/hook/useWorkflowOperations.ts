@@ -47,6 +47,7 @@ import {
 } from "../registry/projectPackagesStore";
 import { tryGetNodeDescriptor } from "../registry/nodeRegistry";
 import { isRegistryReady } from "../registry/registryReadiness";
+import type { WidgetDef } from "../utils/widgets/widgetModel";
 
 /** How long the load fit waits for the package registry to give every node
  *  its descriptor. Without a session the registry never loads, so the wait
@@ -959,11 +960,13 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
      * ``omitOutputs`` leaves the outputs out of the request, so the manifest the
      * backend holds is untouched. The dashboard's Save layout uses it: that page
      * writes tile geometry, and it has no business re-recording which outputs a
-     * dataflow has - its own nodes never ran.
+     * dataflow has - what its viewers' runs make is never the dataflow's.
+     * ``savedWidgets``, which Save layout passes too, are the widgets each node
+     * is saved with, written in place of a value a viewer tried (#1117).
      */
     const saveCurrentProject = useCallback(async (
         nameOverride?: string,
-        options?: { omitOutputs?: boolean },
+        options?: { omitOutputs?: boolean; savedWidgets?: ReadonlyMap<string, WidgetDef[]> },
     ) => {
         if (viewerMode === "shared") {
             throw new Error("Shared dataflows are read-only; use Save a copy");
@@ -984,7 +987,14 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
         // persist the empty pre-load canvas over the stored dataflow.
         const routedLoad = settleRoutedLoad();
         if (routedLoad) await routedLoad;
-        const currentNodes = reactFlow.getNodes();
+        const savedWidgets = options?.savedWidgets;
+        const currentNodes = savedWidgets
+            ? reactFlow.getNodes().map((node) => (
+                savedWidgets.has(node.id)
+                    ? { ...node, data: { ...node.data, widgets: savedWidgets.get(node.id) } }
+                    : node
+            ))
+            : reactFlow.getNodes();
         const currentEdges = reactFlow.getEdges();
         // Read packages directly from the store (always up-to-date) rather than
         // from the React state snapshot, which may lag behind the store when a

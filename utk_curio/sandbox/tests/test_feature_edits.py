@@ -1,4 +1,4 @@
-"""The Map Edits node's step (#662; its type is still
+"""The Map Editor node's step (#662; its type is still
 ``curio.builtin/edit-features``), ``curio_edit_features``.
 
 The node keeps a log of edits made on features picked on the map it feeds or
@@ -166,10 +166,112 @@ class TestUnknownIds:
         printed = [line for line in capsys.readouterr().out.split("\n") if line]
         reported = [line for line in printed if UNKNOWN_IDS_LINE.fullmatch(line)]
         assert reported == [
-            "Map Edits: layer table_osm_buildings has no feature with building_id 999, w7; the remove skips them.",
-            "Map Edits: layer table_osm_buildings has no feature with building_id 998; the set skips it.",
+            "Map Editor: layer table_osm_buildings has no feature with building_id 999, w7; the remove skips them.",
+            "Map Editor: layer table_osm_buildings has no feature with building_id 998; the set skips it.",
         ], printed
         assert any("already has a feature with building_id 2" in line for line in printed), printed
+
+
+#: An outline that crosses itself, a bow tie, where building 2 stands, and one
+#: where no building stands yet.
+BOW_TIE = {"type": "Polygon", "coordinates": [[[2, 0], [3, 1], [3, 0], [2, 1], [2, 0]]]}
+BOW_TIE_9 = {"type": "Polygon", "coordinates": [[[9, 0], [10, 1], [10, 0], [9, 1], [9, 0]]]}
+
+
+class TestRefusedAreas:
+    """An add or a redraw whose area autk-db would refuse, and with it the whole
+    layer, is skipped and reported, and the run goes on (#1121), as the node's
+    map tools refuse such a gesture."""
+
+    def test_a_redraw_whose_outline_would_cross_itself_is_skipped_and_the_building_keeps_its_shape(self, capsys):
+        records = _records()
+        out = _edit(records, [
+            {"op": "geometry", "ids": [2], "geometry": BOW_TIE},
+            {"op": "set", "ids": [2], "column": "height", "value": 31},
+        ], **BUILDINGS)
+        tower = next(f for f in out["data"][1]["data"]["features"] if f["properties"]["building_id"] == 2)
+        assert tower["geometry"] == records[1]["geojson"]["features"][2]["geometry"]
+        assert tower["properties"]["height"] == 31
+        printed = capsys.readouterr().out
+        assert (
+            "Map Editor: layer table_osm_buildings: the geometry would make the outline of building_id 2 cross itself, "
+            "an area the map cannot draw; the geometry skips it."
+        ) in printed
+        assert "features matched on building_id: 1 changed." in printed
+
+    def test_an_add_whose_outline_would_cross_itself_is_not_added(self, capsys):
+        out = _edit(_records(), [{"op": "add", "id": 9, "geometry": BOW_TIE_9}], **BUILDINGS)
+        assert _ids(out["data"][1]["data"]) == [1, 1, 2, 3]
+        assert (
+            "the add would make the outline of building_id 9 cross itself, an area the map cannot draw; the add skips it."
+        ) in capsys.readouterr().out
+
+    @pytest.mark.parametrize("shape, would", [
+        ({"type": "Polygon", "coordinates": [[[3, 0], [4, 0], [5, 0], [3, 0]]]}, "leave the outline of building_id 3 with no area"),
+        (
+            {"type": "Polygon", "coordinates": [[[3, 0], [5, 0], [5, 2], [3, 2], [3, 0]], [[6, 0], [7, 0], [7, 1], [6, 1], [6, 0]]]},
+            "make a hole of building_id 3 cross or leave its outline",
+        ),
+        (
+            {"type": "MultiPolygon", "coordinates": [[[[3, 0], [5, 0], [5, 2], [3, 2], [3, 0]]], [[[4, 1], [6, 1], [6, 3], [4, 3], [4, 1]]]]},
+            "make two parts of building_id 3 overlap",
+        ),
+    ], ids=["no area", "a hole out of its outline", "parts that overlap"])
+    def test_the_line_says_what_the_area_would_do(self, shape, would, capsys):
+        records = _records()
+        out = _edit(records, [{"op": "geometry", "ids": [3], "geometry": shape}], **BUILDINGS)
+        assert out["data"][1]["data"]["features"][3]["geometry"] == records[1]["geojson"]["features"][3]["geometry"]
+        assert f"the geometry would {would}, an area the map cannot draw; the geometry skips it." in capsys.readouterr().out
+
+    def test_a_building_whose_outline_crosses_itself_already_still_takes_a_redraw(self, capsys):
+        """As the map's tools let a gesture change it, so a run takes the
+        redraw of a shape that has the problem already."""
+        records = _records()
+        records[1]["geojson"]["features"][2]["geometry"] = BOW_TIE
+        again = {"type": "Polygon", "coordinates": [[[2, 0], [3, 2], [3, 0], [2, 2], [2, 0]]]}
+        out = _edit(records, [{"op": "geometry", "ids": [2], "geometry": again}], **BUILDINGS)
+        assert out["data"][1]["data"]["features"][2]["geometry"] == again
+        assert "skips" not in capsys.readouterr().out
+
+    def test_the_report_is_the_line_agents_are_held_to(self, capsys):
+        """``REFUSED_AREA_LINE``, which Solve reads a run's skipped areas by,
+        matches each line the step prints for one, and no other line; nor does
+        ``UNKNOWN_IDS_LINE`` match it."""
+        from utk_curio.sandbox.util.feature_edits import REFUSED_AREA_LINE, UNKNOWN_IDS_LINE
+
+        _edit(_records(), [
+            {"op": "geometry", "ids": [2, 3], "geometry": BOW_TIE},
+            {"op": "add", "id": 9, "geometry": BOW_TIE_9},
+            {"op": "remove", "ids": [999]},
+        ], **BUILDINGS)
+        printed = [line for line in capsys.readouterr().out.split("\n") if line]
+        assert [line for line in printed if REFUSED_AREA_LINE.fullmatch(line)] == [
+            "Map Editor: layer table_osm_buildings: the geometry would make the outline of building_id 2, 3 cross "
+            "itself, an area the map cannot draw; the geometry skips them.",
+            "Map Editor: layer table_osm_buildings: the add would make the outline of building_id 9 cross itself, "
+            "an area the map cannot draw; the add skips it.",
+        ], printed
+        assert [line for line in printed if UNKNOWN_IDS_LINE.fullmatch(line)] == [
+            "Map Editor: layer table_osm_buildings has no feature with building_id 999; the remove skips it.",
+        ], printed
+
+    def test_a_table_skips_them_too_and_a_ring_too_short_for_a_shape_is_no_error(self, capsys):
+        frame = gpd.GeoDataFrame({"osm_id": [10, 11]}, geometry=[box(0, 0, 1, 1), box(2, 0, 3, 1)], crs=3395)
+        out = _edit(frame, [
+            {"op": "geometry", "ids": [10], "geometry": {"type": "Polygon", "coordinates": [[[0, 0], [1, 1], [1, 0], [0, 1], [0, 0]]]}},
+            {"op": "add", "id": 12, "geometry": {"type": "Polygon", "coordinates": [[[5, 0], [6, 0], [5, 0]]]}},
+        ], key="osm_id")
+        assert out["osm_id"].tolist() == [10, 11]
+        assert out.geometry.iloc[0].equals(box(0, 0, 1, 1))
+        printed = capsys.readouterr().out
+        assert (
+            "Map Editor: the input: the geometry would make the outline of osm_id 10 cross itself, "
+            "an area the map cannot draw; the geometry skips it."
+        ) in printed
+        assert (
+            "Map Editor: the input: the add would leave the outline of osm_id 12 with no area, "
+            "an area the map cannot draw; the add skips it."
+        ) in printed
 
 
 class TestSetValue:
@@ -270,23 +372,23 @@ class TestRefusals:
         {"op": "expr", "ids": [1], "value": "height * 2"},
     ])
     def test_an_edit_the_node_does_not_make_is_refused(self, edit):
-        with pytest.raises(ValueError, match=r"Map Edits: edit 0 "):
+        with pytest.raises(ValueError, match=r"Map Editor: edit 0 "):
             _edit(_records(), [edit], **BUILDINGS)
 
     def test_no_input_says_so(self):
-        with pytest.raises(ValueError, match=r"Map Edits has no input"):
+        with pytest.raises(ValueError, match=r"Map Editor has no input"):
             _edit(None, REMOVE_1, **BUILDINGS)
 
     def test_a_condition_or_an_expression_that_is_not_one_is_refused_before_anything_runs(self):
-        with pytest.raises(ValueError, match=r"Map Edits: edit 0: "):
+        with pytest.raises(ValueError, match=r"Map Editor: edit 0: "):
             _edit(_records(), [{"op": "remove", "where": "height >"}], **BUILDINGS)
-        with pytest.raises(ValueError, match=r"Map Edits: edit 1: "):
+        with pytest.raises(ValueError, match=r"Map Editor: edit 1: "):
             _edit(_records(), [REMOVE_1[0], {"op": "expr", "ids": [1], "column": "h", "value": "open('x')"}], **BUILDINGS)
 
     @pytest.mark.parametrize("value", ["x", None, True, float("nan")])
     def test_a_scale_or_an_offset_by_what_is_not_a_number_is_refused(self, value):
         for op in ("scale", "offset"):
-            with pytest.raises(ValueError, match=r"Map Edits: edit 0 .*not a number"):
+            with pytest.raises(ValueError, match=r"Map Editor: edit 0 .*not a number"):
                 _edit(_records(), [{"op": op, "ids": [1], "column": "height", "value": value}], **BUILDINGS)
 
     def test_an_entry_switched_off_is_never_checked_or_applied(self, capsys):
@@ -363,7 +465,7 @@ class TestByInput:
         roads, _ = self._tables()
         out = _edit([None, roads], [], by_input=True)
         assert [item["layerName"] for item in out["data"]] == ["input_1"]
-        with pytest.raises(ValueError, match="Map Edits has no input"):
+        with pytest.raises(ValueError, match="Map Editor has no input"):
             _edit([None, None], [], by_input=True)
 
 
@@ -477,7 +579,7 @@ class TestDrawnOnTheMap:
         {"op": "add_column", "value": 1},
     ])
     def test_a_drawn_edit_that_is_not_whole_is_refused(self, edit):
-        with pytest.raises(ValueError, match="Map Edits: edit 0"):
+        with pytest.raises(ValueError, match="Map Editor: edit 0"):
             _edit(_records(), [edit], **BUILDINGS)
 
 

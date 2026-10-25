@@ -58,7 +58,7 @@ const mockBuiltin = [
     { id: "curio.builtin/js-computation@1", label: "JS Computation", category: "computation" },
     { id: "curio.builtin/parameter@1", label: "Parameter", category: "flow" },
     { id: "curio.builtin/data-pool@1", label: "Data Pool", category: "data" },
-    { id: "curio.builtin/edit-features@1", label: "Map Edits", category: "data" },
+    { id: "curio.builtin/edit-features@1", label: "Map Editor", category: "data" },
     { id: "curio.builtin/note@1", label: "Note", category: "flow" },
 ];
 /** What the registry holds; a test empties it to stand for one not loaded yet. */

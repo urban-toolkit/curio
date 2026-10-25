@@ -1,5 +1,5 @@
 /**
- * What the Map Edits node reads off a layer to offer the right tools (#662):
+ * What the Map Editor node reads off a layer to offer the right tools (#662):
  * the kind of geometry its features have, the properties a new feature of it
  * is asked for, the next id an added feature takes, and the layer's features,
  * shapes included, as the edit log leaves them (`applyEdits`).
@@ -8,6 +8,7 @@
  * for a number, a yes/no column for yes or no, a text column with a few
  * values that repeat offers them as choices, and a column no feature leaves
  * empty is required. The id column is never asked for: the node writes it.
+ * Nor is a column a view or Autark adds to the features.
  */
 import type { SelectionId } from "../references/selectionTags";
 import { applyFeatureEdits, type EditStatus } from "./applyEdits";
@@ -59,6 +60,8 @@ export function mainKind(fc: { features?: any[] } | null | undefined): GeometryK
 const MAX_CHOICES = 15;
 /** Columns a view adds, never asked for. */
 const SKIP = new Set(["interacted", "linked", "__row_index__", "__input__", "_vgsid_"]);
+/** Columns Autark adds, never asked for: `__autk_layer` names the OSM layer a feature came from. */
+const AUTARK_COLUMNS = new Set(["__autk_layer"]);
 
 /** The properties a new feature of *fc* is asked for, read from the values it holds. */
 export function inferProperties(fc: { features?: any[] } | null | undefined, key: string | undefined): PropertyDef[] {
@@ -69,7 +72,7 @@ export function inferProperties(fc: { features?: any[] } | null | undefined, key
   }
   const out: PropertyDef[] = [];
   for (const column of columns) {
-    if (column === key || SKIP.has(column)) continue;
+    if (column === key || SKIP.has(column) || AUTARK_COLUMNS.has(column)) continue;
     const values = features.map((f) => f?.properties?.[column]);
     const present = values.filter((v) => v !== null && v !== undefined && v !== "");
     const required = features.length > 0 && present.length === features.length;
@@ -195,7 +198,7 @@ export function editedFeatures(
   nodeLayer: string | null,
 ): EditedFeature[] {
   const mine = key ? edits.filter((edit) => editsLayer(edit, layerName, nodeLayer)) : [];
-  const { state, status } = applyFeatureEdits(fc?.features ?? [], mine, key ?? "");
+  const { state, status } = applyFeatureEdits(fc?.features ?? [], mine, key ?? "", fc ?? undefined);
   const out: EditedFeature[] = [];
   state.forEach((feature, i) => {
     if (feature === null) return;

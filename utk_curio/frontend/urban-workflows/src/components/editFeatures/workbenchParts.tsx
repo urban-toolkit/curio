@@ -1,5 +1,5 @@
 /**
- * The pieces every form of the Map Edits node's workbench shares (#662): what
+ * The pieces every form of the Map Editor node's workbench shares (#662): what
  * a feature and a property's type are called, the icon of a kind of
  * geometry, the way back with Show only this layer beside it, and a choice of
  * one (picking by a click or by a rule, how a shape is changed), as the

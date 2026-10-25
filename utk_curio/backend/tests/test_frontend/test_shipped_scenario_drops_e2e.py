@@ -15,7 +15,7 @@ fixed context has no saved output. Then, in an empty dataflow:
    output that run saved.
 2. Run scenario ends with every outcome done.
 3. Expanded, every outcome shows its output: a map drawn, a chart drawn, or
-   the result of a code node. Each map gets a close-up. A Map Edits node
+   the result of a code node. Each map gets a close-up. A Map Editor node
    among the levers edits on a map it feeds and is linked to, one of the
    outcomes, and lists the layers it is fed there. A frame of the whole
    dataflow is taken.
@@ -57,6 +57,7 @@ from .utils import (
     api_json,
     assert_autark_map_drawn,
     assert_vega_canvas_rendered,
+    assert_vega_charts_fit,
     frame_nodes,
     node_locator,
     read_node_error_text,
@@ -92,7 +93,7 @@ SHIPPED = (
 DRAWER = '[data-curio-scenario-catalog-drawer="true"]'
 AUTARK = "curio.builtin/autk-grammar"
 VEGA = "curio.builtin/vis-vega"
-#: The Map Edits node, a lever linked to the map of its edits it feeds.
+#: The Map Editor node, a lever linked to the map of its edits it feeds.
 MAP_EDITS = "curio.builtin/edit-features"
 TEST_NAME = "test_a_shipped_scenario_drops_from_a_project_never_run_and_runs"
 
@@ -128,7 +129,7 @@ def _cases():
 
 def _linked_maps(dataflow: dict, lever: str) -> list[str]:
     """The Autark maps *lever* feeds on a data edge and is linked to by an
-    interaction edge, in *dataflow*: the ones a Map Edits node edits on."""
+    interaction edge, in *dataflow*: the ones a Map Editor node edits on."""
     types = {node["id"]: node["type"] for node in dataflow["nodes"]}
     fed = {edge["target"] for edge in dataflow["edges"] if edge["source"] == lever and edge.get("type") != "Interaction"}
     linked = {
@@ -291,7 +292,12 @@ def test_a_shipped_scenario_drops_from_a_project_never_run_and_runs(
             assert output and output["code"] == "success" and "Saved to file:" in output["content"], (
                 f"{outcome['label']} ({node_id}) shows no output: {output}"
             )
-    # A Map Edits lever edits on the map it feeds and is linked to, an
+    # Each Vega-Lite outcome drawn above shows whole in its node, axes and
+    # legends included (#1097).
+    charts = [node_id for node_id, outcome in outcomes if types[outcome["nodeId"]].startswith(VEGA)]
+    if charts:
+        assert_vega_charts_fit(page, f"{Path(dataflow).name}, {name}", charts, every=False)
+    # A Map Editor lever edits on the map it feeds and is linked to, an
     # outcome drawn above, and lists the layers it is fed, before the whole
     # dataflow is framed.
     outcome_ids = {outcome["nodeId"] for outcome in plan["outcomes"]}
@@ -299,14 +305,14 @@ def test_a_shipped_scenario_drops_from_a_project_never_run_and_runs(
         if types[lever].startswith(MAP_EDITS):
             linked = _linked_maps(plan["dataflow"], lever)
             assert len(linked) == 1 and linked[0] in outcome_ids, (
-                f"{name}: the Map Edits node {lever} feeds and is linked to {linked}, not one map among the outcomes"
+                f"{name}: the Map Editor node {lever} feeds and is linked to {linked}, not one map among the outcomes"
             )
             _open_tab(page, copies[lever], "output")
             body = node_locator(page, copies[lever]).locator(f'[data-edit-body="{copies[lever]}"]')
             expect(body).to_have_attribute("data-edit-map", copies[linked[0]], timeout=30000)
             body.get_by_test_id("interaction-layers").wait_for(state="visible", timeout=90000)
             notices = body.locator("[data-curio-node-empty]").all_inner_texts()
-            assert not notices, f"{name}: the Map Edits node {copies[lever]} lists no layers: {notices}"
+            assert not notices, f"{name}: the Map Editor node {copies[lever]} lists no layers: {notices}"
     # Saved first, so the header shows the save whatever the autosave reached (#584).
     save_dataflow_and_settle_header(page)
     save_workflow_test_screenshot(

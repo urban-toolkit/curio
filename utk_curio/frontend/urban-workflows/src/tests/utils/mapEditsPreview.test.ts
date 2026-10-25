@@ -1,9 +1,9 @@
 /**
- * What an Autark map draws when Map Edits nodes feed it (#662,
- * `utils/editFeatures/mapEditsPreview`): each circle a Map Edits node feeds
+ * What an Autark map draws when Map Editor nodes feed it (#662,
+ * `utils/editFeatures/mapEditsPreview`): each circle a Map Editor node feeds
  * is drawn from that node's input with the edits its code holds, as the
  * node's run hands it on, under the names the map reads the run's output by;
- * every other circle draws as it came. A map fed by two Map Edits nodes
+ * every other circle draws as it came. A map fed by two Map Editor nodes
  * takes each one's edits on the circle it feeds.
  */
 import { autkSourcesFrom } from "../../utils/autkInput";
@@ -26,7 +26,7 @@ const BUILDINGS_IN = { path: "art-buildings", dataType: "geodataframe" };
 const TREES_IN = { path: "art-trees", dataType: "geodataframe" };
 const readOf = (map: Map<unknown, GrammarInput>) => async (input: unknown) => map.get(input) ?? { frames: [] };
 
-/** A map fed on three circles: a Map Edits node on buildings, a loader, a Map Edits node on trees. */
+/** A map fed on three circles: a Map Editor node on buildings, a loader, a Map Editor node on trees. */
 function canvas(codeA: string, codeB: string) {
   const nodes = [
     { id: "a", type: "curio.builtin/edit-features", data: { input: BUILDINGS_IN, code: codeA } },
@@ -46,14 +46,14 @@ function canvas(codeA: string, codeB: string) {
 const REMOVE_1 = editFeaturesCode({ key: "building_id", layer: "input_0", edits: [{ op: "remove", ids: [1] }] });
 const REMOVE_7 = editFeaturesCode({ key: "tree_id", layer: "input_0", edits: [{ op: "remove", ids: [7] }] });
 
-test("the circles Map Edits nodes feed, each with the edits its code holds; a node whose code it cannot read draws as it came", () => {
+test("the circles Map Editor nodes feed, each with the edits its code holds; a node whose code it cannot read draws as it came", () => {
   const { nodes, edges } = canvas(REMOVE_1, REMOVE_7);
   expect(fedByInteraction("map", nodes, edges)).toBe(true);
   expect(fedByInteraction("loader", nodes, edges)).toBe(false);
   const feeds = editFeedsOf("map", nodes, edges);
   expect(feeds.map((feed) => [feed.nodeId, feed.position, feed.several, feed.circles])).toEqual([["a", 0, true, 1], ["b", 2, true, 1]]);
   expect(feeds[0].settings?.edits).toEqual([{ op: "remove", ids: [1] }]);
-  // Code of another shape: still fed by a Map Edits node, but drawn as fed.
+  // Code of another shape: still fed by a Map Editor node, but drawn as fed.
   const hand = canvas("return input_0\n", REMOVE_7);
   expect(fedByInteraction("map", hand.nodes, hand.edges)).toBe(true);
   expect(editFeedsOf("map", hand.nodes, hand.edges).map((feed) => feed.nodeId)).toEqual(["b"]);
@@ -62,7 +62,7 @@ test("the circles Map Edits nodes feed, each with the edits its code holds; a no
   expect(feedsVersion(editFeedsOf("map", edited.nodes, edited.edges))).not.toBe(feedsVersion(feeds));
 });
 
-test("a map fed by two Map Edits nodes takes each one's edits on the circle it feeds, the loader's as it came", async () => {
+test("a map fed by two Map Editor nodes takes each one's edits on the circle it feeds, the loader's as it came", async () => {
   const { nodes, edges } = canvas(REMOVE_1, REMOVE_7);
   const feeds = editFeedsOf("map", nodes, edges);
   // The map's own input: the outputs the two nodes' last runs made, and the loader's.

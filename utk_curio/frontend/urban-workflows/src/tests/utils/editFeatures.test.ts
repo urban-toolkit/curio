@@ -1,5 +1,5 @@
 /**
- * The Map Edits node's edit log (#662; its type is still
+ * The Map Editor node's edit log (#662; its type is still
  * `curio.builtin/edit-features`): what it keeps, the code it writes from it,
  * the ids a pick on its map names, and the layers it refuses.
  *
@@ -105,7 +105,7 @@ describe("readEditFeaturesCode", () => {
   });
 
   test("reads the code the shipped examples hold", () => {
-    const shipped = '# Map Edits writes this code from its edit list: each edit, in the\n# order it was made, on the features whose key is one of its ids. It is\n# written again when the list changes.\nreturn curio_edit_features(input_0, [\n    {"op": "remove", "where": "around_park", "label": "Tall parts around a park"},\n], key="building_id")\n';
+    const shipped = '# Map Editor writes this code from its edit list: each edit, in the\n# order it was made, on the features whose key is one of its ids. It is\n# written again when the list changes.\nreturn curio_edit_features(input_0, [\n    {"op": "remove", "where": "around_park", "label": "Tall parts around a park"},\n], key="building_id")\n';
     expect(asCase(readEditFeaturesCode(shipped)).settings).toEqual({
       key: "building_id",
       edits: [{ op: "remove", where: "around_park", label: "Tall parts around a park" }],
@@ -220,11 +220,11 @@ describe("which column identifies a feature", () => {
     const refusal = keyRefusal(keyColumns(placesOnly), "parcels");
     expect(refusal).toMatch(/^parcels has no column that identifies its features/);
     expect(refusal).toMatch(/never by their place in the layer/);
-    expect(refusal).toMatch(/The Map Edits node matches features by such a column/);
+    expect(refusal).toMatch(/The Map Editor node matches features by such a column/);
   });
 });
 
-describe("the Map Edits log", () => {
+describe("the Map Editor log", () => {
   test("an entry names its features by ids or by a condition, never both", () => {
     expect(normalizeEdit({ op: "remove", ids: [1], where: "a > 1" })).toBeNull();
     expect(normalizeEdit({ op: "remove" })).toBeNull();

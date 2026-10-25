@@ -59,6 +59,7 @@ from .utils import (
     api_json,
     assert_autark_map_drawn,
     assert_vega_canvas_rendered,
+    assert_vega_charts_fit,
     close_scenario_details,
     close_scenario_drawer,
     frame_nodes,
@@ -376,6 +377,8 @@ def test_two_routing_scenarios_are_mapped_and_charted(
         _assert_chart_drew(page, charts[column], list(colors.values()))
         _assert_bars_filled(page, charts[column], colors)
         _assert_chart_rows(page, charts[column])
+    # The four charts show whole in their nodes, axes and legends included (#1097).
+    assert_vega_charts_fit(page, DATAFLOW.name, [charts[column] for column in EXAMPLE_CHARTS], every=False)
 
     frame_nodes(page, [map_id])
     assert_autark_map_drawn(page, map_id, timeout=30000)

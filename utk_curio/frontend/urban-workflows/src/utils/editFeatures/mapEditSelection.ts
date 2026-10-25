@@ -1,5 +1,5 @@
 /**
- * Picks between a Map Edits node and the Autark maps it feeds and is
+ * Picks between a Map Editor node and the Autark maps it feeds and is
  * linked to (#662), carried as a selection crosses between two views: a pick
  * on a map is that map's selection, which the interaction edge carries to the
  * node (`providers/flow/useInteractions`), and what the node picks, or a rule
@@ -13,7 +13,7 @@ import { featureRows, matchSelections, type IncomingSelection, type SelectDetail
 import { selectionLayer, type SelectionId } from "../references/selectionTags";
 import { idKey } from "./applyEdits";
 
-/** The detail a map's pick, and the Map Edits node's own, is sent as: the one an Autark map's pick is. */
+/** The detail a map's pick, and the Map Editor node's own, is sent as: the one an Autark map's pick is. */
 export const EDIT_SELECTION = "autk_selection";
 
 /** A selection as a view sends it: by its detail, which names the node type it came from and its layer. */

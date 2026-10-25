@@ -1,5 +1,5 @@
 /**
- * Add in the Map Edits node's workbench (#662): a feature drawn on the map,
+ * Add in the Map Editor node's workbench (#662): a feature drawn on the map,
  * part by part, then the layer's own properties filled in, the values it
  * holds offered as choices.
  */

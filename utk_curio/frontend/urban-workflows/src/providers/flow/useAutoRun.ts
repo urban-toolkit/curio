@@ -1,8 +1,9 @@
 // Auto-run (#845): with the dataflow's "Run stale nodes automatically" on, a
 // widget or Parameter value change runs the nodes it touched and every node
-// below them, once the changes settle, through the run Run All starts. Only
-// those value changes ask for it: code typed into a node, a new edge, and a
-// brush that rewrites a selection tag mark nodes stale and run nothing.
+// below them, once the changes settle, through the run Run All starts. On a
+// dashboard it is always on and starts a viewer's run (useDashboardRun, #1117).
+// Only those value changes ask for it: code typed into a node, a new edge, and
+// a brush that rewrites a selection tag mark nodes stale and run nothing.
 import { useCallback, useEffect, useRef } from "react";
 import type { Edge, ReactFlowInstance } from "reactflow";
 import { directedEdgesOf } from "./runLevels";

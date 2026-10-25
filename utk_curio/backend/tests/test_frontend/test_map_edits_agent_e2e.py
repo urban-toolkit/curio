@@ -1,4 +1,4 @@
-"""Playwright E2E: an agent's change to a Map Edits node (its type id is still
+"""Playwright E2E: an agent's change to a Map Editor node (its type id is still
 ``curio.builtin/edit-features``) is an entry of the node's Provenance drawer,
 named after the agent, and a reload keeps it.
 
@@ -53,9 +53,9 @@ CHAT_PANEL = '[role="dialog"][aria-label^="Chat with"]'
 
 #: Two buildings, by their building_id.
 LOAD_CODE = 'import pandas as pd\nreturn pd.DataFrame({"building_id": [1, 2], "height": [20.0, 50.0]})\n'
-#: The comment lines a Map Edits node's code starts with.
+#: The comment lines a Map Editor node's code starts with.
 NOTE = (
-    "# Map Edits writes this code from its edit list: each edit, in the\n"
+    "# Map Editor writes this code from its edit list: each edit, in the\n"
     "# order it was made, on the features whose key is one of its ids. It is\n"
     "# written again when the list changes.\n"
 )
@@ -81,13 +81,13 @@ def _spec() -> dict:
 
     return {
         "dataflow": {
-            "name": "Map Edits by an agent",
+            "name": "Map Editor by an agent",
             "task": "",
             "timestamp": 1789193389280,
-            "provenance_id": "Map Edits by an agent",
+            "provenance_id": "Map Editor by an agent",
             "nodes": [
                 node(LOAD, "curio.builtin/data-loading", 0, LOAD_CODE, "Buildings"),
-                node(EDIT, EDIT_TYPE, 700, NO_EDITS, "Map Edits", goal="Remove building 2 by its building_id"),
+                node(EDIT, EDIT_TYPE, 700, NO_EDITS, "Map Editor", goal="Remove building 2 by its building_id"),
             ],
             "edges": [
                 {"id": f"e-{LOAD}-{EDIT}", "source": LOAD, "target": EDIT, "sourceHandle": "out", "targetHandle": "in"},
@@ -97,7 +97,7 @@ def _spec() -> dict:
 
 
 def _write_reply() -> str:
-    """The Node Builder's reply: a content replacement for the Map Edits node."""
+    """The Node Builder's reply: a content replacement for the Map Editor node."""
     request = {"toolRequest": {"tool": "node.content.write", "params": {"nodeId": EDIT, "content": AGENT_CODE}}}
     return "I will remove building 2.\n\n```curio.v1\n" + json.dumps(request) + "\n```"
 
@@ -129,7 +129,7 @@ def _wait_for_code(page, node_id: str, code: str, *, timeout: float = 30.0) -> N
 def test_an_agents_change_to_map_edits_is_an_entry_named_after_it_that_a_reload_keeps(
     page, frontend_server, current_server,
 ):
-    """The Node Builder, attached to the Map Edits node, proposes a removal and
+    """The Node Builder, attached to the Map Editor node, proposes a removal and
     the user applies it. The node holds the agent's code, and the saved
     dataflow keeps an entry of the node's history named after the agent with
     that code. Opened again, the node's Provenance drawer lists it."""
@@ -137,13 +137,13 @@ def test_an_agents_change_to_map_edits_is_an_entry_named_after_it_that_a_reload_
     require_user_auth()
     agent = next(m for m in builtin.list_builtin_manifests() if m.agent_id == "agent.curio.node-builder")
     page.emulate_media(reduced_motion="reduce")
-    login = stub_db_user(current_server, username=USERNAME, name="Map Edits Agent User")
+    login = stub_db_user(current_server, username=USERNAME, name="Map Editor Agent User")
     token = login["token"]
     install_session_cookie(page, frontend_server, token)
     use_scripted_llm(current_server, token)
     project_id = api_json(
         f"{current_server}/api/testing/stub-project", token, method="POST",
-        payload={"username": USERNAME, "name": "Map Edits by an agent", "spec": _spec()},
+        payload={"username": USERNAME, "name": "Map Editor by an agent", "spec": _spec()},
     )["id"]
     base = f"{current_server}/api/agents/projects/{project_id}"
     api_json(f"{base}/install", token, method="POST", payload={"coord": agent.dir_name})
@@ -181,7 +181,7 @@ def test_an_agents_change_to_map_edits_is_an_entry_named_after_it_that_a_reload_
     saved = api_json(f"{current_server}/api/projects/{project_id}", token)["spec"]
     history = (saved.get("nodeProvenance") or {}).get(EDIT) or []
     named = [entry for entry in history if entry.get("label") == agent.name]
-    assert named, f"the saved history of the Map Edits node has no entry named {agent.name!r}: {history}"
+    assert named, f"the saved history of the Map Editor node has no entry named {agent.name!r}: {history}"
     assert str(named[-1].get("code") or "").strip() == AGENT_CODE.strip(), named[-1]
     assert named[-1].get("kind") == "edit", named[-1]
 
@@ -194,7 +194,7 @@ def test_an_agents_change_to_map_edits_is_an_entry_named_after_it_that_a_reload_
     drawer = _open_provenance(page, EDIT)
     texts = [text for _entry, text in _entries(drawer)]
     assert any(agent.name in text for text in texts), (
-        f"the Map Edits node's Provenance drawer lists {texts}, and no entry named {agent.name!r}"
+        f"the Map Editor node's Provenance drawer lists {texts}, and no entry named {agent.name!r}"
     )
     dismiss_toasts(page)
     park_pointer_off_drawer(page)

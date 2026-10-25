@@ -1,12 +1,12 @@
 /**
- * The drawing tools a Map Edits node lends the Autark maps it feeds and is
+ * The drawing tools a Map Editor node lends the Autark maps it feeds and is
  * linked to (#662).
  *
- * The Map Edits node is the panel: its layers, the action, the forms and
+ * The Map Editor node is the panel: its layers, the action, the forms and
  * the edit log. A map is where features are drawn and reshaped. They meet
- * here, by the map's node id and the Map Edits node's:
+ * here, by the map's node id and the Map Editor node's:
  *
- * - the Map Edits node publishes a session (`publishMapSession`) while an
+ * - the Map Editor node publishes a session (`publishMapSession`) while an
  *   action is under way: the layer being worked on, as the map names it, and
  *   its features as the log leaves them, the mode of the action, the shape
  *   being drawn, and what a shape drawn or reshaped on the map becomes;
@@ -16,13 +16,14 @@
  *   of the map itself (`mapEditLayers`), draw it reshaped or moved.
  *
  * Picks are not here: a pick on the map is the map's selection, which the
- * interaction edge carries to the Map Edits node, as a selection crosses
+ * interaction edge carries to the Map Editor node, as a selection crosses
  * between two views, and what the node picks, or a rule matches, comes back
  * the same way (`providers/flow/useInteractions`). The edits reach the map on
  * the data edge (`mapEditsPreview`).
  */
 import { useSyncExternalStore } from "react";
 import type { SelectionId } from "../references/selectionTags";
+import type { ReshapeGesture } from "./areaCheck";
 import type { Geometry } from "./editFeatures";
 import type { EditedFeature, GeometryKind } from "./layerModel";
 
@@ -65,16 +66,23 @@ export interface MapEditSession {
   active: MapEditActive | null;
   /**
    * A shape drawn on the map, with the row the click that picked the feature
-   * landed on, if any: the part a new part of it joins.
+   * landed on, if any: the part a new part of it joins. Returns why it is
+   * refused, the words the map's tip says, when it makes an area autk-db
+   * would refuse (`areaCheck`); then nothing is added. Null otherwise.
    */
-  onDrawn: (geometry: Geometry, pickedRow?: EditedFeature | null) => void;
-  /** New shapes for rows of the picked feature, made in one gesture: one change. */
-  onReshape: (parts: ReshapedPart[]) => void;
+  onDrawn: (geometry: Geometry, pickedRow?: EditedFeature | null) => string | null;
+  /**
+   * New shapes for rows of the picked feature, made in one gesture (*how*):
+   * one change. Returns why they are refused, the words the map's tip says,
+   * when the gesture makes one autk-db would refuse, which it was not before
+   * (`areaCheck`); then nothing is written. Null otherwise.
+   */
+  onReshape: (parts: ReshapedPart[], how?: ReshapeGesture) => string | null;
   /** Turns the shape mode (reshape, move) off again: the map's Done. */
   onShapeDone?: () => void;
 }
 
-/** Each map's sessions, by the Map Edits node that published each, the latest last. */
+/** Each map's sessions, by the Map Editor node that published each, the latest last. */
 const sessions = new Map<string, Map<string, MapEditSession>>();
 const maps = new Map<string, any>();
 const layerIds = new Map<string, (table: string) => string>();
@@ -86,7 +94,7 @@ function notify(mapId: string) {
 }
 
 /**
- * Publish, or with null take back, the session the Map Edits node
+ * Publish, or with null take back, the session the Map Editor node
  * *nodeId* edits *mapId* with. A node takes back its own session only: a map
  * two nodes feed keeps the other's.
  */
@@ -105,7 +113,7 @@ export function publishMapSession(mapId: string, nodeId: string, session: MapEdi
   notify(mapId);
 }
 
-/** The session *mapId* is edited with now: the latest a Map Edits node published. */
+/** The session *mapId* is edited with now: the latest a Map Editor node published. */
 export function mapSession(mapId: string): MapEditSession | undefined {
   const mine = sessions.get(mapId);
   return mine ? [...mine.values()].at(-1) : undefined;

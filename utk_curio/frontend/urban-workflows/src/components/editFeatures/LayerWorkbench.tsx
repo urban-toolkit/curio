@@ -1,5 +1,5 @@
 /**
- * The Map Edits node's layer workbench (#662): the layers the node is fed,
+ * The Map Editor node's layer workbench (#662): the layers the node is fed,
  * and what can be done with each layer, one step at a time.
  *
  * 1. The layers (`LayerList`), as cards grouped by the geometry their
@@ -46,11 +46,22 @@ import {
   type GeometryKind,
 } from "../../utils/editFeatures/layerModel";
 import { evaluate, exprProblem, parseExpr, truthy } from "../../utils/editFeatures/editExpr";
+import {
+  areaProblem,
+  drawnRefusal,
+  layerFormat,
+  madeProblem as madeAreaProblem,
+  reshapeRefusal,
+  type ReshapeGesture,
+} from "../../utils/editFeatures/areaCheck";
 import { partRedraw, partsRefusal, rowsOf, samePart } from "../../utils/editFeatures/featureParts";
 import { publishMapSession, type MapEditMode, type ReshapedPart } from "../../utils/editFeatures/mapEditBus";
 import { editSelection, sameIds, selectedIdsIn } from "../../utils/editFeatures/mapEditSelection";
 import { mapTableName } from "../../utils/editFeatures/mapEditsPreview";
 import { withPart } from "../../utils/editFeatures/geometryParts";
+// The form of a feature of several parts (#1110).
+import { idKey } from "../../utils/editFeatures/applyEdits";
+import { PART_COLUMN, partConditions, partsForm, valueText } from "../../utils/editFeatures/featureParts";
 import { NodeType } from "../../constants";
 import LayerList from "./LayerList";
 import NewLayerForm from "./NewLayerForm";
@@ -173,6 +184,18 @@ export default function LayerWorkbench({
     setPartFor(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeName, action]);
+  // A pick names features of the layer worked on, by its id column, on the
+  // maps linked: it starts anew when the layer, its id column or those maps
+  // change, and ends with the workbench (the node unlinked, its code
+  // unreadable, or its layers read again). An edit that writes into the
+  // node's code the layer and the id column the pick was made by changes
+  // neither, and keeps it.
+  const mapIds = surfaces.map((surface) => surface.mapId).join(" ");
+  useEffect(() => {
+    setPicked([]);
+    return () => setPicked([]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [active?.name, active?.key, mapIds]);
 
   const kind: GeometryKind | null = active ? (active.newLayer ? GEOMETRY_KIND[active.newLayer.geometry] : mainKind(active.fc)) : null;
   // A feature is called by its geometry ("point", "line", "area"), never by a
@@ -201,12 +224,27 @@ export default function LayerWorkbench({
   // own osm_id; a feature whose rows nothing tells apart keeps its shape.
   const pickedRows = useMemo(() => (pickedOne ? rowsOf(features, pickedOne.id) : []), [features, pickedOne]);
   const shapeRefusal = partsRefusal(pickedRows, layerKey);
-  const textsOf = (f: EditedFeature) =>
-    Object.fromEntries(defs.map((d) => [d.name, f.properties[d.name] === null || f.properties[d.name] === undefined ? "" : String(f.properties[d.name])]));
+  // Its form is on all its parts, or on the one chosen in its parts menu, by
+  // its osm_id; a pick starts on all of them. Only parts each named by a
+  // condition of their own can be chosen.
+  const [partChoice, setPartChoice] = useState<string | null>(null);
+  useEffect(() => setPartChoice(null), [pickedOne?.id]);
+  const partWheres = useMemo(() => (layerKey && pickedRows.length > 1 ? partConditions(pickedRows, layerKey) : null), [pickedRows, layerKey]);
+  const partKeys = pickedRows.map((row) => idKey(row.properties[PART_COLUMN]) ?? "");
+  const chosenAt = partWheres && partChoice !== null ? partKeys.indexOf(partChoice) : -1;
+  const form = useMemo(
+    () => partsForm(pickedRows, defs.map((def) => def.name), chosenAt >= 0 ? pickedRows[chosenAt] : null),
+    [pickedRows, defs, chosenAt],
+  );
+  // Its fields start on the values the form shows; one the parts differ in
+  // starts on none, until something is typed or chosen in it.
   useEffect(() => {
-    setEditTexts(pickedOne ? textsOf(pickedOne) : {});
-    setPartFor((current) => (current === "picked" ? null : current));
+    const shownDefs = defs.filter((def) => !(def.name in form.mixed));
+    setEditTexts(pickedOne ? Object.fromEntries(shownDefs.map((def) => [def.name, valueText(form.values[def.name])])) : {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pickedOne?.id, defs, chosenAt]);
+  useEffect(() => {
+    setPartFor((current) => (current === "picked" ? null : current));
   }, [pickedOne?.id, defs]);
 
   // What a rule picks now, among the features as the log leaves them.
@@ -219,40 +257,65 @@ export default function LayerWorkbench({
     return features.filter((f) => f.id !== null && truthy(evaluate(condition, f.properties as any))).map((f) => f.id as SelectionId);
   }, [rule, ruleProblem, features]);
 
+  // Why autk-db would refuse an area of the layer worked on, as the map hands
+  // it over: with it, the whole layer, which the map then draws none of.
+  const problemOf = (geometry: Geometry) => (active ? areaProblem(geometry, layerFormat(active.fc, geometry)) : null);
+  // A problem a gesture makes: one the shape *after* has and the shape
+  // *before* it did not. A shape its layer already holds with one, which a
+  // layer autk-db does not check can, still takes every gesture. The rule a
+  // run, and the map's preview, skip an edit by (`madeAreaProblem`).
+  const madeProblem = (before: Geometry | null | undefined, after: Geometry) => (active ? madeAreaProblem(active.fc, before, after) : null);
   // A part drawn is added to the feature being added, or to the picked one:
   // to the part the click that picked it landed on, else its first; its
-  // other parts keep their shapes.
-  const onDrawn = (geometry: Geometry, pickedRow?: EditedFeature | null) => {
+  // other parts keep their shapes. An area drawn that autk-db would refuse,
+  // or a part that makes one, is not added: the words the map's tip says why
+  // come back.
+  const onDrawn = (geometry: Geometry, pickedRow?: EditedFeature | null): string | null => {
     if (partFor === "draft" && drawn) {
-      setDrawn(withPart(drawn, geometry) ?? drawn);
+      const merged = withPart(drawn, geometry) ?? drawn;
+      const problem = madeProblem(drawn, merged);
+      if (problem) return drawnRefusal(problem, "part");
+      setDrawn(merged);
       setPartFor(null);
-      return;
+      return null;
     }
     if (partFor === "picked" && active && pickedRows.length > 0) {
       const row = pickedRows.find((r) => samePart(r, pickedRow)) ?? pickedRows[0];
       const merged = row.geometry ? withPart(row.geometry, geometry) : null;
+      const problem = merged ? madeProblem(row.geometry, merged) : null;
+      if (problem) return drawnRefusal(problem, "part");
       const edit = merged ? partRedraw(features, row, layerKey, merged) : null;
       if (edit && row.id !== null) {
         onEdit(edit, active);
         setRecent([row.id]);
       }
       setPartFor(null);
-      return;
+      return null;
     }
+    const problem = problemOf(geometry);
+    if (problem) return drawnRefusal(problem, "area");
     setDrawn(geometry);
+    return null;
   };
-  // New shapes for parts of the picked feature, made in one gesture: one
-  // change, an edit for each part, each named alone.
-  const onReshape = (parts: ReshapedPart[]) => {
-    if (!active || parts.length === 0) return;
+  // New shapes for parts of the picked feature, made in one gesture (*how*):
+  // one change, an edit for each part, each named alone. None is written when
+  // the gesture makes one autk-db would refuse: the words the map's tip says
+  // why come back.
+  const onReshape = (parts: ReshapedPart[], how?: ReshapeGesture): string | null => {
+    if (!active || parts.length === 0) return null;
+    for (const { row, geometry } of parts) {
+      const problem = madeProblem(row.geometry, geometry);
+      if (problem) return reshapeRefusal(problem, how);
+    }
     const edits = parts.flatMap(({ row, geometry }) => {
       const edit = partRedraw(features, row, layerKey, geometry);
       return edit ? [edit] : [];
     });
-    if (edits.length !== parts.length) return;
+    if (edits.length !== parts.length) return null;
     if (edits.length === 1) onEdit(edits[0], active);
     else onEdits(edits, active);
     if (parts[0].row.id !== null) setRecent([parts[0].row.id]);
+    return null;
   };
 
   // What a click on the map does now: nothing until an action that draws.
@@ -343,7 +406,7 @@ export default function LayerWorkbench({
           key: layerKey,
         },
         onDrawn: (geometry, pickedRow) => handlers.current.onDrawn(geometry, pickedRow),
-        onReshape: (parts) => handlers.current.onReshape(parts),
+        onReshape: (parts, how) => handlers.current.onReshape(parts, how),
         onShapeDone: () => setShapeMode(null),
       });
     }
@@ -372,11 +435,25 @@ export default function LayerWorkbench({
     setDrawn(null);
     setTexts(formDefaults(defs));
   };
-  const dirty = pickedOne ? defs.filter((def) => String(pickedOne.properties[def.name] ?? "") !== String(formValues([def], editTexts)[def.name] ?? "")) : [];
+  // The properties whose field differs from what the form shows of them; one
+  // the parts differ in, while it is on all of them, once a value is typed or
+  // chosen in it.
+  const dirty = pickedOne
+    ? defs.filter((def) =>
+        def.name in form.fixed
+          ? false
+          : def.name in form.mixed
+            ? editTexts[def.name] !== undefined
+            : valueText(form.values[def.name]) !== String(formValues([def], editTexts)[def.name] ?? ""),
+      )
+    : [];
   const applyValues = () => {
     if (!active || !pickedOne || pickedOne.id === null) return;
     const values = formValues(defs, editTexts);
-    const changed: FeatureEdit[] = dirty.map((def) => ({ op: "set", ids: [pickedOne.id as SelectionId], column: def.name, value: (values[def.name] ?? null) as EditValue }));
+    // On all the parts, by the feature's id; on the one chosen, by its own
+    // condition, and the other parts keep their values.
+    const named = partWheres && chosenAt >= 0 ? { where: partWheres[chosenAt] } : { ids: [pickedOne.id as SelectionId] };
+    const changed: FeatureEdit[] = dirty.map((def) => ({ op: "set", ...named, column: def.name, value: (values[def.name] ?? null) as EditValue }));
     if (changed.length > 0) {
       onEdits(changed, active);
       setRecent([pickedOne.id as SelectionId]);
@@ -539,7 +616,18 @@ export default function LayerWorkbench({
             />
           ) : null
         }
+        parts={
+          pickedRows.length > 1
+            ? {
+                count: pickedRows.length,
+                options: partWheres ? partKeys.map((value, i) => ({ value, label: form.labels[i] })) : null,
+                choice: chosenAt >= 0 ? partKeys[chosenAt] : "",
+                onChoose: (value) => setPartChoice(value === "" ? null : value),
+              }
+            : null
+        }
         defs={defs}
+        shown={form}
         texts={editTexts}
         setTexts={setEditTexts}
         dirty={dirty}

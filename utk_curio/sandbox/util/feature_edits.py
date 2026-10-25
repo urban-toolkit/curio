@@ -1,4 +1,4 @@
-"""The Map Edits node's step (#662; its type is still
+"""The Map Editor node's step (#662; its type is still
 ``curio.builtin/edit-features``).
 
 The node keeps a log of edits, each made on features picked on the map it
@@ -28,6 +28,13 @@ that write, a ``column`` and a ``value``:
   on the map, in its own ``crs`` as an add's is;
 - ``add_column`` adds ``column`` to every feature with ``value`` as its value,
   leaving a feature that already holds one as it is; it names no features.
+
+An ``add`` or a ``geometry`` that would give a feature an area autk-db refuses,
+and with it the whole layer, is skipped and reported, and the run goes on: a
+ring whose sides cross or touch, a ring with no area, a hole that crosses or
+leaves its outline, or two parts that overlap (``area_check``), as the node's
+map tools refuse such a gesture. A feature whose own shape has such a problem
+already still takes a redraw, as the tools let it.
 
 An edit may name the ``layer`` it applies to; one that names none applies to
 *layer*. *keys* names the column that identifies the features of each layer,
@@ -76,7 +83,7 @@ from __future__ import annotations
 import math
 import re
 
-from utk_curio.sandbox.util import edit_expr
+from utk_curio.sandbox.util import area_check, edit_expr
 
 REMOVE = "remove"
 SET = "set"
@@ -104,7 +111,7 @@ _GEOMETRY_TYPES = ("Point", "MultiPoint", "LineString", "MultiLineString", "Poly
 #: Kept in sync with ``VIEW_COLUMNS`` in ``utils/references/selectionTags.ts``.
 _VIEW_COLUMNS = frozenset({"__row_index__", "__input__", "_vgsid_", "interacted", "linked"})
 
-_NAME = "Map Edits"
+_NAME = "Map Editor"
 #: What the node's map calls an unnamed layer: input_<circle>, then
 #: input_<circle>_<n> for the n-th more on that circle.
 _INPUT_PLACE = re.compile(r"input_(\d+)(?:_(\d+))?")
@@ -378,7 +385,7 @@ def _where_holds(edit, properties) -> bool:
 
 
 #: The line ``_report_unknown`` prints for ids no feature has. An agent that
-#: writes a Map Edits node's code is held to it: a run that prints one names
+#: writes a Map Editor node's code is held to it: a run that prints one names
 #: features the data does not hold.
 UNKNOWN_IDS_LINE = re.compile(rf"{_NAME}: .+ has no feature with .+; the \w+ skips (?:it|them)\.")
 
@@ -390,6 +397,38 @@ def _report_unknown(label, key, op, ids, known):
         print(f"{_NAME}: {label} has no feature with {key} {_shown(unknown)}; the {op} skips {'it' if len(unknown) == 1 else 'them'}.")
         return len(unknown), noun
     return 0, None
+
+
+#: What an edit's area would do to the features it names, each of which it
+#: skips (the map tip's words in ``utils/editFeatures/areaCheck.ts``).
+_WOULD = {
+    area_check.CROSSES: "make the outline of {what} cross itself",
+    area_check.FLAT: "leave the outline of {what} with no area",
+    area_check.HOLE: "make a hole of {what} cross or leave its outline",
+    area_check.OVERLAP: "make two parts of {what} overlap",
+}
+
+#: The line ``_report_refused`` prints for an add or a redraw whose area the
+#: map cannot draw. An agent that writes a Map Editor node's code is held to it,
+#: as to ``UNKNOWN_IDS_LINE``: a run that prints one skipped an edit.
+REFUSED_AREA_LINE = re.compile(
+    rf"{_NAME}: .+: the \w+ would .+, an area the map cannot draw; the \w+ skips (?:it|them)\."
+)
+
+
+def _report_refused(label, key, op, ids, problem):
+    """Say that the *op* skips the features *ids* names, for the *problem* its
+    area would bring them."""
+    shown, seen = [], set()
+    for value in ids:
+        if _id_key(value) not in seen:
+            seen.add(_id_key(value))
+            shown.append(value)
+    would = _WOULD[problem].format(what=f"{key} {_shown(shown)}")
+    print(
+        f"{_NAME}: {label}: the {op} would {would}, an area the map cannot draw; "
+        f"the {op} skips {'it' if len(shown) == 1 else 'them'}."
+    )
 
 
 def _properties(feature) -> dict:
@@ -414,6 +453,10 @@ def _edit_fc(layer: _Layer, edits, key):
             if feature_id in known:
                 print(f"{_NAME}: {layer.label} already has a feature with {key} {edit['id']}; the add skips it.")
                 continue
+            problem = area_check.made_problem(layer.fc, None, edit["geometry"])
+            if problem:
+                _report_refused(layer.label, key, op, [edit["id"]], problem)
+                continue
             features.append(None)
             state.append(_added_feature(edit, key))
             ids.append(feature_id)
@@ -437,6 +480,10 @@ def _edit_fc(layer: _Layer, edits, key):
             wanted = {_id_key(i) for i in edit["ids"]}
             _report_unknown(layer.label, key, op, edit["ids"], known)
             targets = [i for i, feature_id in enumerate(ids) if feature_id in wanted]
+        # The problem a redraw's area would bring a feature whose own shape has
+        # none, and the features it is skipped for.
+        redraw = area_check.made_problem(layer.fc, None, edit["geometry"]) if op == GEOMETRY else None
+        refused = []
         for index in targets:
             if op == REMOVE:
                 if state[index] is not None:
@@ -454,6 +501,9 @@ def _edit_fc(layer: _Layer, edits, key):
                 current = state[index]
                 if current is None:
                     continue
+                if redraw and area_check.made_problem(layer.fc, current.get("geometry"), edit["geometry"]):
+                    refused.append(_properties(current).get(key))
+                    continue
                 state[index] = {**current, "geometry": edit["geometry"]}
                 counts[GEOMETRY].add(index)
             else:
@@ -467,6 +517,8 @@ def _edit_fc(layer: _Layer, edits, key):
                 properties[edit["column"]] = value
                 state[index] = {**current, "properties": properties}
                 counts[SET].add(index)
+        if refused:
+            _report_refused(layer.label, key, op, refused, redraw)
     fc = {**layer.fc, "features": [feature for feature in state if feature is not None]}
     return fc, {op: rows if isinstance(rows, int) else len(rows) for op, rows in counts.items()}
 
@@ -507,6 +559,32 @@ def _shape(geometry, frame, crs):
     if frame.crs is not None and drawn.crs is not None and drawn.crs != frame.crs:
         drawn = drawn.to_crs(frame.crs)
     return drawn.iloc[0]
+
+
+def _crs_layer(crs):
+    """A layer with no features in *crs*: a shape of it is read in that CRS, or
+    by its own coordinates when *crs* names no EPSG code (``area_check``)."""
+    named = _geojson_crs(crs)
+    return {"type": "FeatureCollection", "features": [], **({"crs": named} if named is not None else {})}
+
+
+def _drawn_problem(edit, crs, frame):
+    """Why the map would refuse the area *edit* gives a feature of the table
+    *frame*, read as it was drawn: in its own CRS (``_drawn_in``, else the
+    table's), as the map's preview reads it. None when it would load, or is
+    not an area."""
+    return area_check.made_problem(_crs_layer(_drawn_in(edit, crs) or getattr(frame, "crs", None)), None, edit["geometry"])
+
+
+def _frame_problem(value, frame):
+    """Why the map would refuse *value*, a shape of the table *frame*, in the
+    table's own CRS; None when it would load, is not an area, or is missing."""
+    if value is None or getattr(value, "is_empty", True):
+        return None
+    from shapely.geometry import mapping
+
+    shape = mapping(value)
+    return area_check.area_problem(shape, area_check.layer_format(_crs_layer(getattr(frame, "crs", None)), shape))
 
 
 def _edit_frame(layer: _Layer, edits, key, crs=None):
@@ -556,6 +634,10 @@ def _edit_frame(layer: _Layer, edits, key, crs=None):
             if feature_id in known:
                 print(f"{_NAME}: {layer.label} already has a feature with {key} {edit['id']}; the add skips it.")
                 continue
+            problem = _drawn_problem(edit, crs, frame) if geometry else None
+            if problem:
+                _report_refused(layer.label, key, op, [edit["id"]], problem)
+                continue
             label = _new_label(out.index)
             row = {column: None for column in out.columns}
             row.update({k: v for k, v in (edit.get("values") or {}).items()})
@@ -600,6 +682,19 @@ def _edit_frame(layer: _Layer, edits, key, crs=None):
             if not geometry:
                 raise ValueError(f"{_NAME}: {layer.label} is a table with no geometry; a shape cannot be redrawn in it.")
             target = mask & kept
+            problem = _drawn_problem(edit, crs, frame) if target.any() else None
+            if problem:
+                # Skipped for each row whose own shape has no problem, which
+                # the area would bring it.
+                flags = target.to_numpy().copy()
+                refused = []
+                for position in flags.nonzero()[0]:
+                    if _frame_problem(out[geometry].iloc[position], frame) is None:
+                        flags[position] = False
+                        refused.append(out[key].iloc[position])
+                if refused:
+                    _report_refused(layer.label, key, op, refused, problem)
+                target = pd.Series(flags, index=target.index)
             if target.any():
                 drawn = _shape(edit["geometry"], frame, _drawn_in(edit, crs))
                 out[geometry] = out[geometry].where(~target, drawn)

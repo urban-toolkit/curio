@@ -1360,13 +1360,19 @@ the arguments must be an object
 
 ## map-edits.unreadable
 
-Map Edits cannot read this code: {problem}
+Map Editor cannot read this code: {problem}
 
 ## map-edits.made-up-ids
 
-Map Edits: the run says these edits name ids no feature has, so they change nothing:
+Map Editor: the run says these edits name ids no feature has, so they change nothing:
 {lines}{more}
 Name features the input holds, by their ids or by a where condition.
+
+## map-edits.refused-areas
+
+Map Editor: the run skips these edits, since the map cannot draw the areas they give:
+{lines}{more}
+Give each area an outline that encloses some area and does not cross or touch itself, holes that lie inside their outline apart from each other, and parts that do not overlap.
 
 ## map-edits.and-more
 
