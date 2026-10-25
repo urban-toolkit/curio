@@ -12,7 +12,7 @@ writes both to ``$GITHUB_ENV``:
   run 40157161068), and filled its 8 GB of video memory until maps came back
   blank (``VK_ERROR_OUT_OF_DEVICE_MEMORY``, run 40201256122's second
   attempt). So the count is what free memory and free video memory hold, at
-  most the maximum.
+  most the maximum and at least ``MIN_WORKERS``.
 * ``CURIO_CI_MEM_LIMIT``, the CI container's memory limit, which the CI
   overlays set as both ``mem_limit`` and ``memswap_limit``. When the stack
   outgrows it, the kernel kills a process inside the container and the job
@@ -47,18 +47,21 @@ from pathlib import Path
 GIB = 1024 ** 3
 MIB = 1024 ** 2
 
-#: Memory one test-gpu worker takes on a busy test, inside the container and
-#: out: its backend and sandbox pair with the Node runs of its Autark loads,
-#: its Chrome drawing maps, and its pytest worker. Measured as the drop in free
-#: memory (#1154's runs, 10-25): 12.3 GiB at the median and 22.6 at most for
-#: six workers on arcade-gpu-02.
-WORKER_GIB = 3.5
-#: The worker that runs the heaviest test takes this instead.
-#: test_node_execution of example 09 (heterogeneous data, linked views) took
-#: 13.9 GiB by itself on one worker (utk-desktop-01): 7.3 GiB in the sandbox
-#: computing the outputs, then 8.5 GiB in pytest reading them back to compare.
-#: A runner with less free than this and the reserve fails that test.
-HEAVIEST_WORKER_GIB = 14.0
+#: The fewest e2e workers test-gpu runs with. test_shard_isolation_e2e checks
+#: that every other shard refuses a token from this one, so it needs a second
+#: shard: with one worker it ran in no job, and ci-report failed the run
+#: (run 40219074996 on utk-desktop-02, 10-25).
+MIN_WORKERS = 2
+#: The first test-gpu worker, inside the container and out: its backend and
+#: sandbox pair with the Node runs of its Autark loads, its Chrome drawing maps,
+#: and its pytest worker. Measured as the drop in free memory: one worker
+#: running the whole suite on utk-desktop-02 took 7.7 GiB at most, its Chrome
+#: growing to 4.6 GiB and its stack to 4.3 (run 40219074996, with #1159, which
+#: took example 09's own 14 GiB out of its comparison).
+FIRST_WORKER_GIB = 8.0
+#: Each worker past the first: four on utk-desktop-01 took 13.3 GiB together
+#: (run 40219077478), about 2 GiB past the first one's each.
+WORKER_GIB = 2.5
 #: What one worker usually holds outside the container (Chrome, pytest), which
 #: the container's limit leaves free. Chrome's 90th percentile was 1.2 GiB a
 #: worker on arcade-gpu-02 and 1.5 on utk-desktop-02.
@@ -175,20 +178,21 @@ def budget(free: int | None, vram: int | None, workers_max: int | None) -> dict:
         return {"workers": workers_max, "limit": None}
     workers = None
     if workers_max is not None:
-        # One worker may be on the heaviest test while the others are busy.
-        spare = free - (RESERVE_GIB + HEAVIEST_WORKER_GIB) * GIB
-        workers = 1 + max(int(spare // (WORKER_GIB * GIB)), 0)
-        if vram is not None:
-            workers = min(workers, int(vram // (WORKER_VRAM_GIB * GIB)))
-        workers = max(1, min(workers_max, workers))
+        held = workers_held(free, vram)
+        workers = max(min(MIN_WORKERS, workers_max), min(workers_max, held))
     outside = (workers or 1) * WORKER_OUTSIDE_GIB * GIB
     limit = max(int(free - RESERVE_GIB * GIB - outside), int(MIN_LIMIT_GIB * GIB))
     return {"workers": workers, "limit": limit}
 
 
-def holds_the_heaviest_test(free: int | None) -> bool:
-    """Whether this much free memory holds the heaviest test's worker."""
-    return free is None or free >= (RESERVE_GIB + HEAVIEST_WORKER_GIB) * GIB
+def workers_held(free: int, vram: int | None) -> int:
+    """How many test-gpu workers this much free memory and video memory hold:
+    the first, then one more for each further worker's share."""
+    spare = free - (RESERVE_GIB + FIRST_WORKER_GIB) * GIB
+    held = 0 if spare < 0 else 1 + int(spare // (WORKER_GIB * GIB))
+    if vram is not None:
+        held = min(held, int(vram // (WORKER_VRAM_GIB * GIB)))
+    return held
 
 
 def _gib(value: int | None) -> str:
@@ -211,10 +215,10 @@ def size(args) -> int:
     if chosen["workers"] is not None:
         env["CURIO_E2E_PARALLEL"] = str(chosen["workers"])
         lines.append(f"e2e workers: {chosen['workers']} of at most {args.workers_max}")
-        if not holds_the_heaviest_test(free):
-            print(f"::warning::{_gib(free)} free holds less than the heaviest e2e test needs "
-                  f"({HEAVIEST_WORKER_GIB:.0f} GiB and a {RESERVE_GIB:.0f} GiB reserve): "
-                  "expect it to fail, and the tests after it on its worker")
+        if free is not None and workers_held(free, vram) < chosen["workers"]:
+            print(f"::warning::{_gib(free)} free and {_gib(vram)} of video memory hold "
+                  f"{workers_held(free, vram)} e2e worker(s); running {chosen['workers']}, the "
+                  "fewest the suite runs with (test_shard_isolation_e2e needs a second shard)")
     if chosen["limit"] is not None:
         mib = chosen["limit"] // MIB
         env["CURIO_CI_MEM_LIMIT"] = f"{mib}m"
