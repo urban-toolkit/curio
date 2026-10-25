@@ -11,9 +11,9 @@ source's lock and write the target under the target's, one lock at a time: the
 source may be the target, and two drops each way between two projects at once
 must both finish.
 
-A test that races a save pauses it right after it removes the folder of an
-output it installs again, holding its project's spec lock; the drop starts
-then, and the pause ends once the drop has waited on that lock for a moment.
+A test that races a save pauses it right after it installs an output again,
+still holding its project's spec lock; the drop starts then, and the pause
+ends once the drop has waited on that lock for a moment.
 The database is a file, as on a server, so each thread has its own connection
 (``file_db_app``).
 
@@ -41,7 +41,7 @@ from utk_curio.backend.app.scenario_catalog.service import ScenarioCatalogServic
 from utk_curio.backend.tests.test_datasets.test_reads_under_spec_lock import (  # noqa: F401
     TOKEN,
     WAIT_SECONDS,
-    _pause_after_rmtree,
+    _pause_after_install,
     owner_id,
 )
 from utk_curio.backend.tests.test_datasets.test_save_lock_order import (
@@ -162,7 +162,7 @@ def test_a_drop_during_a_save_of_its_target_restores_once_the_save_is_done(
     # Only the copy in the target is left to restore the loader's output from.
     (_shared() / saved["load"]).unlink()
     mine = dataset_dir(str(owner_id), f"{computed_dataset_id('mine', target)}@1")
-    reached, release = _pause_after_rmtree(monkeypatch, "save", mine)
+    reached, release = _pause_after_install(monkeypatch, "save", mine)
     asked = _signal_at_lock_of(monkeypatch, "drop", target)
 
     threads: list = []
@@ -171,7 +171,7 @@ def test_a_drop_during_a_save_of_its_target_restores_once_the_save_is_done(
         save = _start(threads, "save", lambda: _save_outputs(
             file_db_app.test_client(), TOKEN, target, {"mine": "id\n3\n"}, run=2,
         ))
-        assert reached.wait(STEP_SECONDS), "the save never removed the saved output it installs again"
+        assert reached.wait(STEP_SECONDS), "the save never installed the new output"
         drop = _start(threads, "drop", lambda: _copy(
             file_db_app.test_client(), TOKEN, source, target, [{"source": "load", "node": "loader-1"}],
         ))
@@ -198,15 +198,15 @@ def test_a_drop_during_a_save_of_its_target_restores_once_the_save_is_done(
 def test_a_drop_during_a_save_of_its_source_copies_what_the_save_installed(
     file_db_app, owner_id, monkeypatch,  # noqa: F811
 ):
-    """A save of the source holds the source's spec lock and has removed the
-    loader's saved output to install it again when the drop asks what it
-    copies. The drop waits for the save, then copies the outputs it installed,
-    whole, rather than finding no saved output to copy."""
+    """A save of the source holds the source's spec lock and has just
+    installed the loader's new output, before it records the outputs, when
+    the drop asks what it copies. The drop waits for the save, then copies the
+    outputs it installed and recorded, whole."""
     client = file_db_app.test_client()
     source, target = _source_and_target(client, TOKEN)
     _save_outputs(client, TOKEN, source, FIRST_RUN)
     load = dataset_dir(str(owner_id), f"{computed_dataset_id('load', source)}@1")
-    reached, release = _pause_after_rmtree(monkeypatch, "save", load)
+    reached, release = _pause_after_install(monkeypatch, "save", load)
     asked = _signal_at_lock_of(monkeypatch, "drop", source)
 
     threads: list = []
@@ -215,7 +215,7 @@ def test_a_drop_during_a_save_of_its_source_copies_what_the_save_installed(
         save = _start(threads, "save", lambda: _save_outputs(
             file_db_app.test_client(), TOKEN, source, SECOND_RUN, run=2,
         ))
-        assert reached.wait(STEP_SECONDS), "the save never removed the saved output it installs again"
+        assert reached.wait(STEP_SECONDS), "the save never installed the loader's new output"
         drop = _start(threads, "drop", lambda: _copy(file_db_app.test_client(), TOKEN, source, target, BOTH))
         waited = asked.wait(STEP_SECONDS)
         if waited:
@@ -235,14 +235,14 @@ def test_a_save_of_the_source_between_the_plan_and_the_copy_is_waited_for(
     file_db_app, owner_id, monkeypatch,  # noqa: F811
 ):
     """The drop has its plan when a save of the source starts installing its
-    outputs again and removes the loader's. The copy waits for that save, then
-    copies what it installed, rather than the folder the save is rewriting."""
+    outputs again and installs the loader's. The copy waits for that save,
+    then copies what it installed, rather than the outputs of two runs."""
     client = file_db_app.test_client()
     source, target = _source_and_target(client, TOKEN)
     _save_outputs(client, TOKEN, source, FIRST_RUN)
     load = dataset_dir(str(owner_id), f"{computed_dataset_id('load', source)}@1")
     planned, go = _hold_after_plan(monkeypatch, "drop")
-    reached, release = _pause_after_rmtree(monkeypatch, "save", load)
+    reached, release = _pause_after_install(monkeypatch, "save", load)
 
     threads: list = []
     waited = False
@@ -252,7 +252,7 @@ def test_a_save_of_the_source_between_the_plan_and_the_copy_is_waited_for(
         save = _start(threads, "save", lambda: _save_outputs(
             file_db_app.test_client(), TOKEN, source, SECOND_RUN, run=2,
         ))
-        assert reached.wait(STEP_SECONDS), "the save never removed the saved output it installs again"
+        assert reached.wait(STEP_SECONDS), "the save never installed the loader's new output"
         # Only what the drop asks for from here on counts: the copy's reads.
         asked = _signal_at_lock_of(monkeypatch, "drop", source)
         go.set()
