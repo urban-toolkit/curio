@@ -7,7 +7,7 @@ Avenue to Bedford Avenue).
 
 The buildings, the block, the streets and the site come from the bundle
 ``data.nyc.crown-heights-1550-bedford`` (``scripts/build_bedford_shadow_dataset.py``).
-A Map Edits node adds the proposed building to the buildings in two parts
+A Map Editor node adds the proposed building to the buildings in two parts
 drawn from the site's lot as the project's description gives its envelope:
 
 - a base up to 135 ft (the maximum base height) on the lot, set back 30 ft
@@ -53,7 +53,6 @@ FEET = 0.3048
 BASE_FT, TOP_FT, GRADE_SETBACK_FT = 135, 185, 30
 TOP_SETBACK_FT = {"eastern_parkway": 10, "bedford": 10, "union": 15}
 PROPOSED = "Proposed: 1550 Bedford Ave"
-EXISTING_COLOR, PROPOSED_COLOR = "#2a9d8f", "#e76f51"
 COLUMN = 645
 ROW = 450
 
@@ -65,7 +64,7 @@ def nid(key: str) -> str:
 # -- The proposed building ----------------------------------------------------
 
 def massing() -> list[dict]:
-    """The two parts the Map Edits node adds, as GeoJSON in EPSG:4326, from
+    """The two parts the Map Editor node adds, as GeoJSON in EPSG:4326, from
     the site's lot: its edges told apart by where they lie, in New York's
     state plane (feet), Eastern Parkway's to the north, Bedford Avenue's to the
     east and Union Street's to the south."""
@@ -112,13 +111,13 @@ def massing() -> list[dict]:
 
 
 def py(value) -> str:
-    """*value* as the Python literal Map Edits writes (``pyLiteral.ts``)."""
+    """*value* as the Python literal Map Editor writes (``pyLiteral.ts``)."""
     return json.dumps(value, ensure_ascii=False).replace("true", "True").replace("false", "False").replace("null", "None")
 
 
 def edit_code(edits: list[dict]) -> str:
     lines = [
-        "# Map Edits writes this code from its edit list: each edit, in the",
+        "# Map Editor writes this code from its edit list: each edit, in the",
         "# order it was made, on the features whose key is one of its ids. It is",
         "# written again when the list changes.",
         "return curio_edit_features(input_0, [",
@@ -439,7 +438,7 @@ def shadow_map() -> str:
     """The accumulated shadow over the ground, with the streets under it,
     Block 1259 over it and the buildings in 3D, the proposed one in its own
     color: input_0 is the map's area (loaded, not drawn), input_1 the shaded
-    cells, input_2 the buildings Map Edits hands on, input_3 the block and
+    cells, input_2 the buildings Map Editor hands on, input_3 the block and
     input_4 the streets."""
     return grammar({"map": {"layerRefs": [
         {"dataRef": "[!! input_0 !!]", "isSkip": True},
@@ -448,7 +447,7 @@ def shadow_map() -> str:
          "getFnv": "status", "getFnvType": "categorical", "colorMapInterpolator": "schemeTableau10",
          "title": "Building"},
         # The last color-mapped layer, which Autark gives the map's only legend,
-        # and the one pickable layer (Map Edits picks on the buildings itself
+        # and the one pickable layer (Map Editor picks on the buildings itself
         # while editing).
         {"dataRef": "[!! input_1 !!]", "isPick": True, "getFnv": "shadow_shown", "getFnvType": "quantitative",
          "isColorMap": True, "colorMapInterpolator": "interpolateRdPu", "stroke": False, "opacity": 0.9,
