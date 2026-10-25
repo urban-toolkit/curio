@@ -20,7 +20,6 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import shutil
 import threading
 import time
@@ -35,6 +34,7 @@ from utk_curio.backend.extensions import db
 from utk_curio.backend.tests.test_datasets.computed_test_helpers import (
     auth_headers,
     store_sandbox_artifact,
+    stored_artifact_file,
 )
 from utk_curio.backend.tests.test_datasets.test_save_lock_order import (
     HOLD_SECONDS,
@@ -106,9 +106,11 @@ def _save(application, project_id: str, filename: str, *, data_type: str = "dict
     return response
 
 
-def _shared(filename: str) -> Path:
-    """Where the canvas's copy of an output is, and where a load puts it."""
-    return Path(os.environ["CURIO_SHARED_DATA"]) / filename
+def _lose_the_runs_file(art_id: str) -> None:
+    """Remove the file the run stored the output in, the store's file of its
+    artifact, as a reopen under a new sign-in or a cleared data directory
+    leaves it."""
+    stored_artifact_file(art_id).unlink()
 
 
 def _producer_folder(owner_id: int, project_id: str) -> Path:
@@ -204,7 +206,7 @@ def _read_during_a_save(application, owner_id, monkeypatch, read) -> dict:
     _save(application, project_id, first)
     # Only the saved copy in the Data Catalog is left to load the output from,
     # as for a visitor holding a dashboard link, or after a restart.
-    _shared(first).unlink()
+    _lose_the_runs_file(first)
     second = _artifact(1790000000100, {"rows": 2})
     reached, release = _pause_after_install(monkeypatch, "save", _producer_folder(owner_id, project_id))
     asked = _signal_at_spec_lock(monkeypatch, "reader")
@@ -337,7 +339,7 @@ def test_an_output_on_record_is_kept_when_its_source_is_gone(file_db_app, owner_
     project_id = _create_project(file_db_app)
     output = _artifact(1790000000000, {"rows": 1})
     _save(file_db_app, project_id, output)
-    _shared(output).unlink()
+    _lose_the_runs_file(output)
 
     # ``_save`` asserts the save warned about nothing.
     _save(file_db_app, project_id, output, node_name="Rows, renamed")
@@ -362,7 +364,8 @@ def test_a_changed_output_is_installed_again(file_db_app, owner_id):
 
     assert not kept.exists()
     manifest = load_dataset_manifest(folder)
-    assert manifest.data_file == f"data/{newer}"
+    # The JSON value the store keeps compressed installs as ``<id>.json``.
+    assert manifest.data_file == f"data/{newer}.json"
     assert json.loads((folder / manifest.data_file).read_text(encoding="utf-8")) == {"rows": 2}
     assert _index_row_matches(owner_id, folder)
 
@@ -378,7 +381,7 @@ def test_a_dashboard_whose_saved_output_cannot_be_read_says_try_again(file_db_ap
     project_id = _create_project(file_db_app)
     output = _artifact(1790000000000, {"rows": 1})
     _save(file_db_app, project_id, output)
-    _shared(output).unlink()
+    _lose_the_runs_file(output)
     shutil.rmtree(_producer_folder(owner_id, project_id))
 
     with pytest.raises(DashboardOutputUnreadableError) as refused:

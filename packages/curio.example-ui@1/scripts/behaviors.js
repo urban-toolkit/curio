@@ -24,7 +24,7 @@ __webpack_require__.r(__webpack_exports__);
 /* harmony export */ });
 /* harmony import */ var react__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(/*! react */ "react");
 /* harmony import */ var react__WEBPACK_IMPORTED_MODULE_0___default = /*#__PURE__*/__webpack_require__.n(react__WEBPACK_IMPORTED_MODULE_0__);
-var _curio;
+var _curio2;
 function _regenerator() { /*! regenerator-runtime -- Copyright (c) 2014-present, Facebook, Inc. -- license (MIT): https://github.com/babel/babel/blob/main/packages/babel-helpers/LICENSE */ var e, t, r = "function" == typeof Symbol ? Symbol : {}, n = r.iterator || "@@iterator", o = r.toStringTag || "@@toStringTag"; function i(r, n, o, i) { var c = n && n.prototype instanceof Generator ? n : Generator, u = Object.create(c.prototype); return _regeneratorDefine2(u, "_invoke", function (r, n, o) { var i, c, u, f = 0, p = o || [], y = !1, G = { p: 0, n: 0, v: e, a: d, f: d.bind(e, 4), d: function d(t, r) { return i = t, c = 0, u = e, G.n = r, a; } }; function d(r, n) { for (c = r, u = n, t = 0; !y && f && !o && t < p.length; t++) { var o, i = p[t], d = G.p, l = i[2]; r > 3 ? (o = l === n) && (u = i[(c = i[4]) ? 5 : (c = 3, 3)], i[4] = i[5] = e) : i[0] <= d && ((o = r < 2 && d < i[1]) ? (c = 0, G.v = n, G.n = i[1]) : d < l && (o = r < 3 || i[0] > n || n > l) && (i[4] = r, i[5] = n, G.n = l, c = 0)); } if (o || r > 1) return a; throw y = !0, n; } return function (o, p, l) { if (f > 1) throw TypeError("Generator is already running"); for (y && 1 === p && d(p, l), c = p, u = l; (t = c < 2 ? e : u) || !y;) { i || (c ? c < 3 ? (c > 1 && (G.n = -1), d(c, u)) : G.n = u : G.v = u); try { if (f = 2, i) { if (c || (o = "next"), t = i[o]) { if (!(t = t.call(i, u))) throw TypeError("iterator result is not an object"); if (!t.done) return t; u = t.value, c < 2 && (c = 0); } else 1 === c && (t = i["return"]) && t.call(i), c < 2 && (u = TypeError("The iterator does not provide a '" + o + "' method"), c = 1); i = e; } else if ((t = (y = G.n < 0) ? u : r.call(n, G)) !== a) break; } catch (t) { i = e, c = 1, u = t; } finally { f = 1; } } return { value: t, done: y }; }; }(r, o, i), !0), u; } var a = {}; function Generator() {} function GeneratorFunction() {} function GeneratorFunctionPrototype() {} t = Object.getPrototypeOf; var c = [][n] ? t(t([][n]())) : (_regeneratorDefine2(t = {}, n, function () { return this; }), t), u = GeneratorFunctionPrototype.prototype = Generator.prototype = Object.create(c); function f(e) { return Object.setPrototypeOf ? Object.setPrototypeOf(e, GeneratorFunctionPrototype) : (e.__proto__ = GeneratorFunctionPrototype, _regeneratorDefine2(e, o, "GeneratorFunction")), e.prototype = Object.create(u), e; } return GeneratorFunction.prototype = GeneratorFunctionPrototype, _regeneratorDefine2(u, "constructor", GeneratorFunctionPrototype), _regeneratorDefine2(GeneratorFunctionPrototype, "constructor", GeneratorFunction), GeneratorFunction.displayName = "GeneratorFunction", _regeneratorDefine2(GeneratorFunctionPrototype, o, "GeneratorFunction"), _regeneratorDefine2(u), _regeneratorDefine2(u, o, "Generator"), _regeneratorDefine2(u, n, function () { return this; }), _regeneratorDefine2(u, "toString", function () { return "[object Generator]"; }), (_regenerator = function _regenerator() { return { w: i, m: f }; })(); }
 function _regeneratorDefine2(e, r, n, t) { var i = Object.defineProperty; try { i({}, "", {}); } catch (e) { i = 0; } _regeneratorDefine2 = function _regeneratorDefine(e, r, n, t) { function o(r, n) { _regeneratorDefine2(e, r, function (e) { return this._invoke(r, n, e); }); } r ? i ? i(e, r, { value: n, enumerable: !t, configurable: !t, writable: !t }) : e[r] = n : (o("next", 0), o("throw", 1), o("return", 2)); }, _regeneratorDefine2(e, r, n, t); }
 function ownKeys(e, r) { var t = Object.keys(e); if (Object.getOwnPropertySymbols) { var o = Object.getOwnPropertySymbols(e); r && (o = o.filter(function (r) { return Object.getOwnPropertyDescriptor(e, r).enumerable; })), t.push.apply(t, o); } return t; }
@@ -70,16 +70,33 @@ function _typeof(o) { "@babel/helpers - typeof"; return _typeof = "function" == 
  */
 
 /*
- * Read the host's backend URL at runtime.
+ * Read an output with `window.curio.fetchData`, the function Curio's canvas
+ * reads outputs with, which its main bundle publishes for packages. It reads
+ * the output wherever the canvas would: while a dataflow is open, on that
+ * dataflow's route, which also reads the outputs the dataflow saved, after a
+ * new sign-in too.
+ *
+ * Look it up on every read, not once when the bundle loads: a package bundle
+ * can load before Curio's main bundle publishes it.
+ */
+function hostFetchData() {
+  var _curio;
+  var read = typeof window !== 'undefined' ? (_curio = window.curio) === null || _curio === void 0 ? void 0 : _curio.fetchData : undefined;
+  return typeof read === 'function' ? read : null;
+}
+
+/*
+ * For a host that does not publish `window.curio.fetchData`: read `/get`
+ * directly, on the host's backend URL, with the session token.
  *
  * Do NOT use `process.env.BACKEND_URL` in a package bundle: webpack would
  * inline whatever URL your machine had at build time, and the bundle would
  * then point at your laptop for everyone who installs it. Curio's main bundle
  * publishes the live value on `window.curio.backendUrl` for exactly this.
  */
-var BACKEND_URL = typeof window !== 'undefined' && ((_curio = window.curio) === null || _curio === void 0 ? void 0 : _curio.backendUrl) || '';
+var BACKEND_URL = typeof window !== 'undefined' && ((_curio2 = window.curio) === null || _curio2 === void 0 ? void 0 : _curio2.backendUrl) || '';
 
-/** The session token lives in a cookie; the artifact endpoint requires it. */
+/** The session token lives in a cookie; `/get` requires it. */
 function sessionToken() {
   if (typeof document === 'undefined') return '';
   var hit = document.cookie.match(/(?:^|;\s*)session_token=([^;]*)/);
@@ -105,7 +122,8 @@ function unwrap(value) {
  *
  *   { path: 'art-12', dataType: 'dataframe' }  a sandbox artifact reference,
  *                                              which is what every Python or
- *                                              JS node produces -> fetch it
+ *                                              JS node produces -> read it
+ *                                              with `window.curio.fetchData`
  *   { data: {...},    dataType: 'dataframe' }  an inline payload, which is what
  *                                              another custom-UI node produces
  *                                              -> use it as-is
@@ -135,7 +153,7 @@ function resolveInput(_x) {
 function _resolveInput() {
   _resolveInput = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee(input) {
     var _input$path;
-    var ref, token, res, _t;
+    var ref, fetchData, token, res, _t, _t2;
     return _regenerator().w(function (_context) {
       while (1) switch (_context.n) {
         case 0:
@@ -147,30 +165,41 @@ function _resolveInput() {
         case 1:
           ref = typeof input === 'string' ? input : (_input$path = input.path) !== null && _input$path !== void 0 ? _input$path : input.dataset;
           if (!(typeof ref === 'string' && ref.trim())) {
-            _context.n = 5;
+            _context.n = 7;
             break;
           }
-          token = sessionToken();
+          fetchData = hostFetchData();
+          if (!fetchData) {
+            _context.n = 3;
+            break;
+          }
+          _t = unwrap;
           _context.n = 2;
+          return fetchData(ref.trim());
+        case 2:
+          return _context.a(2, _t(_context.v));
+        case 3:
+          token = sessionToken();
+          _context.n = 4;
           return fetch("".concat(BACKEND_URL, "/get?fileName=").concat(encodeURIComponent(ref.trim())), {
             headers: token ? {
               Authorization: "Bearer ".concat(token)
             } : {}
           });
-        case 2:
+        case 4:
           res = _context.v;
           if (res.ok) {
-            _context.n = 3;
+            _context.n = 5;
             break;
           }
           throw new Error("Could not read upstream data (HTTP ".concat(res.status, ")"));
-        case 3:
-          _t = unwrap;
-          _context.n = 4;
-          return res.json();
-        case 4:
-          return _context.a(2, _t(_context.v));
         case 5:
+          _t2 = unwrap;
+          _context.n = 6;
+          return res.json();
+        case 6:
+          return _context.a(2, _t2(_context.v));
+        case 7:
           return _context.a(2, unwrap(input));
       }
     }, _callee);

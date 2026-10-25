@@ -11,13 +11,18 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Iterator, Optional
 
 from utk_curio.backend.extensions import commit_with_retry, db
 from utk_curio.backend.app.runs import jobs
 from utk_curio.backend.app.runs import repositories as runs_repo
-from utk_curio.backend.app.runs.models import ACTIVE_RUN_STATUSES, DataflowRun, DataflowRunStep
+from utk_curio.backend.app.runs.models import (
+    ACTIVE_RUN_STATUSES,
+    DataflowRun,
+    DataflowRunStep,
+    naive_utc_now,
+)
 
 log = logging.getLogger(__name__)
 
@@ -65,7 +70,14 @@ def current_code_hashes(user, project_id: str) -> dict:
 def step_payload(step: DataflowRunStep, current: Optional[dict] = None) -> dict:
     """*current* (:func:`current_code_hashes`) adds ``codeCurrent``: whether the
     node still holds the code this step ran, so a canvas opened later can show
-    the step's output as the node's own."""
+    the step's output as the node's own.
+
+    A run's record stays longer than its outputs: the store keeps an output
+    ``kept.KEPT_DAYS`` (``kept.sweep_store``), so a step that finished before
+    that names no ``outputPath``, and no canvas shows an output that is gone."""
+    from utk_curio.backend.app.runs.kept import KEPT_DAYS
+
+    kept = step.finished_at is None or step.finished_at >= naive_utc_now() - timedelta(days=KEPT_DAYS)
     payload = {
         "nodeId": step.node_id,
         "label": step.label,
@@ -76,7 +88,7 @@ def step_payload(step: DataflowRunStep, current: Optional[dict] = None) -> dict:
         "startedAt": _iso(step.started_at),
         "finishedAt": _iso(step.finished_at),
         "durationMs": step.duration_ms,
-        "outputPath": step.output_path,
+        "outputPath": step.output_path if kept else None,
         "outputType": step.output_type,
         "installedDatasetId": step.installed_dataset_id,
         "codeSha256": step.code_sha256,

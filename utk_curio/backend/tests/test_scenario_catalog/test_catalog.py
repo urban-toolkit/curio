@@ -18,10 +18,9 @@ Run::
 from __future__ import annotations
 
 import json
-import os
-from pathlib import Path
 
 from utk_curio.backend.app.datasets.install.installer import computed_dataset_id
+from utk_curio.backend.tests.test_datasets.computed_test_helpers import store_sandbox_artifact
 
 BASELINE = {"id": "s1", "name": "Baseline", "color": "#2a9d8f", "description": "Today's heights", "nodes": ["a", "chart"]}
 TALL = {"id": "s2", "name": "Twice as tall", "color": "#e76f51", "nodes": ["b"]}
@@ -167,16 +166,17 @@ def test_an_unknown_scenario_is_not_found(client, user_and_token):
 
 
 def test_the_details_name_context_levers_and_outcomes_with_their_saved_outputs(client, user_and_token):
+    import pandas as pd
+
     _, token = user_and_token
     project_id = _create(client, token, "Shadows", [BASELINE])
-    shared = Path(os.environ["CURIO_SHARED_DATA"])
-    (shared / "load_out.csv").write_text("id,height\n1,10\n", encoding="utf-8")
-    (shared / "a_out.csv").write_text("id,sunlight\n1,0.5\n", encoding="utf-8")
+    load_out = store_sandbox_artifact(pd.DataFrame({"id": [1], "height": [10]}))
+    a_out = store_sandbox_artifact(pd.DataFrame({"id": [1], "sunlight": [0.5]}))
     resp = client.put(
         f"/api/projects/{project_id}",
         data=json.dumps({"outputs": [
-            {"node_id": "load", "filename": "load_out.csv"},
-            {"node_id": "a", "filename": "a_out.csv"},
+            {"node_id": "load", "filename": load_out},
+            {"node_id": "a", "filename": a_out},
         ]}),
         headers=_headers(token),
     )

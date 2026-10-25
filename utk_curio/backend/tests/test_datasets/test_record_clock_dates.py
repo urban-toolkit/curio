@@ -8,16 +8,16 @@ as made after the page's own "now", beside the shipped datasets.
 from __future__ import annotations
 
 import io
-import os
 from datetime import datetime, timedelta, timezone
-from pathlib import Path
 
+import pandas as pd
 import pytest
 
 from utk_curio.backend.tests.test_datasets.computed_test_helpers import (
     auth_headers,
     create_project,
     save_project_with_output,
+    store_sandbox_artifact,
 )
 
 CALENDAR = datetime(2026, 10, 7, 6, 0, tzinfo=timezone.utc)
@@ -57,9 +57,8 @@ def test_an_import_is_dated_by_the_record_clock(
 def test_a_saved_output_is_dated_by_the_record_clock(client, user_and_token, on_the_calendar):
     _, token = user_and_token
     project_id = create_project(client, token)
-    shared = Path(os.environ["CURIO_SHARED_DATA"])
-    (shared / "dated_output.csv").write_text("x,y\n1,2\n", encoding="utf-8")
-    save_project_with_output(client, token, project_id, "dated_output.csv", node_id="node-dated")
+    dated_output = store_sandbox_artifact(pd.DataFrame({"x": [1], "y": [2]}))
+    save_project_with_output(client, token, project_id, dated_output, node_id="node-dated")
 
     listing = client.get(
         f"/api/datasets/catalog?includeHub=false&dataflowId={project_id}",

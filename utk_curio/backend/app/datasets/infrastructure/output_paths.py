@@ -1,4 +1,4 @@
-"""Resolve node output filenames to files on disk (shared data + DuckDB artifacts)."""
+"""Resolve node output names, which are artifact ids, to the store's files."""
 
 from __future__ import annotations
 
@@ -79,6 +79,11 @@ def resolve_shared_output_path(
     ``../../../../etc/passwd``) can't be resolved to a file outside the shared
     output dir and streamed back to the client. Containment is also asserted on
     the resolved path as a second line of defence.
+
+    Only an artifact id names an output: the store's file, or the file its
+    row names. Nothing at the top of the shared data directory is one. A run
+    writes no file there, and a saved output is the store's file linked into
+    the Data Catalog.
     """
     if not filename or not str(filename).strip():
         return None
@@ -91,24 +96,18 @@ def resolve_shared_output_path(
     # session that ran a node: no output is ever called that.
     from utk_curio.sandbox.util.db import is_store_file
 
-    if is_store_file(name):
+    if is_store_file(name) or "." in name:
         return None
 
     shared = _shared_data_dir()
+    artifact_parquet = shared / "artifacts" / f"{name}.parquet"
+    if artifact_parquet.is_file() and is_within(artifact_parquet, shared):
+        return artifact_parquet
 
-    direct = shared / name
-    if direct.is_file() and is_within(direct, shared):
-        return direct
-
-    if "." not in Path(name).name:
-        artifact_parquet = shared / "artifacts" / f"{name}.parquet"
-        if artifact_parquet.is_file() and is_within(artifact_parquet, shared):
-            return artifact_parquet
-
-        duckdb_path = _resolve_duckdb_artifact_path(name)
-        if duckdb_path is not None and (
-            is_within(duckdb_path, shared) or is_within(duckdb_path, _launch_dir())
-        ):
-            return duckdb_path
+    duckdb_path = _resolve_duckdb_artifact_path(name)
+    if duckdb_path is not None and (
+        is_within(duckdb_path, shared) or is_within(duckdb_path, _launch_dir())
+    ):
+        return duckdb_path
 
     return None

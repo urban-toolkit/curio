@@ -24,12 +24,16 @@ import pytest
 from utk_curio.backend.tests.test_datasets.computed_test_helpers import (
     auth_headers,
     create_project,
+    store_sandbox_artifact,
+    stored_artifact_file,
 )
 
 
 # ── (b) arbitrary file READ via output-ref filename ─────────────────────────
 
 def test_resolve_shared_output_path_rejects_traversal(app):
+    import pandas as pd
+
     from utk_curio.backend.app.datasets.infrastructure.output_paths import (
         _shared_data_dir,
         resolve_shared_output_path,
@@ -37,8 +41,12 @@ def test_resolve_shared_output_path_rejects_traversal(app):
 
     shared = _shared_data_dir()
     (shared / "ok.csv").write_text("a,b\n1,2\n", encoding="utf-8")
-    # A legitimate flat filename in the shared dir still resolves.
-    assert resolve_shared_output_path("ok.csv") == shared / "ok.csv"
+    # A flat filename at the top of the shared dir names no output: nothing
+    # there is one.
+    assert resolve_shared_output_path("ok.csv") is None
+    # An artifact id does, and resolves to the store's file of it.
+    ok = store_sandbox_artifact(pd.DataFrame({"a": [1], "b": [2]}))
+    assert resolve_shared_output_path(ok) == stored_artifact_file(ok)
 
     # A real file outside the shared dir must NOT be reachable via traversal.
     secret = Path(os.environ["CURIO_LAUNCH_CWD"]) / "secret.txt"
