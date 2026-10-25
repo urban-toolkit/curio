@@ -241,6 +241,20 @@ describe("editing the layout", () => {
     expect(screen.getByTestId("shared-view-banner").textContent).toContain("read-only");
   });
 
+  test("a pinned date is a control a visitor changes, so the visitor is told its changes are not saved", async () => {
+    mockFlow = flow({
+      viewerMode: "shared",
+      projectId: null,
+      nodes: [{
+        id: "day", position: { x: 0, y: 0 },
+        data: { dashboardPinned: true, widgets: [{ name: "day", type: "date", label: "Day", default: "2027-12-21" }] },
+      }],
+    });
+    await renderPage();
+
+    expect(screen.getByTestId("shared-view-banner").textContent).toBe(CONTROLS_NOTICE);
+  });
+
   test("a guest under auth gets no edit controls", async () => {
     mockUser = { user: { name: "Guest", is_guest: true }, enableUserAuth: true };
     await renderPage();

@@ -201,6 +201,20 @@
       "expected": "t = \"2026-06-21T12:00:00\"\nlabel = f\"at 2026-06-21T12:00:00\""
     },
     {
+      "name": "a date's value on its own and inside an f-string",
+      "language": "python",
+      "code": "day = [!! day !!]\nlabel = f\"on [!! day !!]\"",
+      "widgets": [{"name": "day", "type": "date", "default": "2027-12-21", "value": "2027-06-21"}],
+      "expected": "day = \"2027-06-21\"\nlabel = f\"on 2027-06-21\""
+    },
+    {
+      "name": "a date without a default takes its kind's",
+      "language": "python",
+      "code": "day = [!! day !!]",
+      "widgets": [{"name": "day", "type": "date"}],
+      "expected": "day = \"1970-01-01\""
+    },
+    {
       "name": "a location is a dict in Python",
       "language": "python",
       "code": "origin = [!! origin !!]",

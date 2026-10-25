@@ -34,6 +34,12 @@ def _period(**fields):
     }
 
 
+def _day_node():
+    """A pinned Parameter node holding a date, Day, saved at Dec 21."""
+    return {"id": "day", "type": PARAMETER, "content": "", "dashboardPinned": True,
+            "metadata": {"widgets": [{"name": "day", "type": "date", "label": "Day", "default": "2027-12-21"}]}}
+
+
 def _nodes(*, grid_code="return [!! @period !!]", extra=()):
     return [
         {"id": "param", "type": PARAMETER, "content": "", "dashboardPinned": True,
@@ -227,6 +233,22 @@ class TestAViewerRunsTheDashboard:
         assert finished[0]["artifactIds"] == ["art-grid-1"]
         assert "reply" not in finished[0] and "stdoutTail" not in finished[0]
 
+    def test_a_changed_date_runs_the_node_that_reads_it_with_the_date_written_as_the_canvas_writes_it(
+        self, client, user_and_token, sandbox, saved,
+    ):
+        _, token = user_and_token
+        pid = _create(client, token, _nodes(grid_code="return [!! @day !!]", extra=[_day_node()]))
+
+        started = _run(client, pid, {"day": {"day": "2027-06-21"}})
+
+        assert started.status_code == 202, started.get_data(as_text=True)
+        _wait(started.get_json()["runId"])
+        assert [node for node, _ in sandbox.runs] == ["grid"]
+        # A text literal, as the canvas writes a date (codeReferences.cases.json).
+        code = sandbox.runs[0][1]["code"]
+        assert 'return "2027-06-21"' in code, code
+        assert "2027-12-21" not in code, code
+
     def test_the_same_values_again_come_from_the_kept_output_with_no_run(self, client, user_and_token, sandbox, saved):
         _, token = user_and_token
         pid = _create(client, token)
@@ -338,6 +360,10 @@ class TestRefusedValues:
         ({"grid": {"period": "Month"}}, "not a control"),
         ({"note": {"note": "x"}}, "not a control"),
         ("Month", "must map"),
+        # A date the month does not have, a date with a time, and a number.
+        ({"day": {"day": "2027-02-30"}}, "Day: Enter a date."),
+        ({"day": {"day": "2027-06-21T12:00:00"}}, "Day: Enter a date."),
+        ({"day": {"day": 20270621}}, "Day: Enter a date."),
     ])
     def test_a_value_that_is_not_a_controls_or_does_not_suit_it_is_refused(
         self, client, user_and_token, sandbox, saved, values, words,
@@ -345,7 +371,7 @@ class TestRefusedValues:
         _, token = user_and_token
         note = {"id": "note", "type": PARAMETER, "content": "", "dashboardPinned": True,
                 "metadata": {"widgets": [{"name": "note", "type": "text", "default": ""}]}}
-        pid = _create(client, token, _nodes(extra=[note]))
+        pid = _create(client, token, _nodes(extra=[note, _day_node()]))
 
         resp = client.post(
             f"/api/projects/{pid}/dashboard/runs", data=json.dumps({"values": values}),
@@ -364,11 +390,11 @@ class TestRefusedValues:
         assert viewer.READ_ONLY_WIDGET_KINDS == set(shared_constants.read("dashboardRuns")["readOnlyWidgetKinds"])
         spec = {"dataflow": {"nodes": [
             {"id": "p", "dashboardPinned": True, "metadata": {"widgets": [
-                {"name": kind.replace("-", "_"), "type": kind} for kind in ("text", "text-list", "file", "slider")
+                {"name": kind.replace("-", "_"), "type": kind} for kind in ("text", "text-list", "file", "slider", "date")
             ]}},
             {"id": "q", "metadata": {"widgets": [{"name": "k", "type": "slider"}]}},
         ]}}
-        assert set(viewer.dashboard_controls(spec)) == {("p", "slider")}
+        assert set(viewer.dashboard_controls(spec)) == {("p", "slider"), ("p", "date")}
 
     def test_a_node_that_reads_a_key_stops_with_the_message(self, client, user_and_token, sandbox, saved):
         from utk_curio.backend.app.runs import viewer

@@ -78,6 +78,24 @@ describe("a Parameter node pinned to a dashboard (#1117)", () => {
     expect(screen.queryByRole("button", { name: "Edit parameter factor" })).toBeNull();
   });
 
+  test("a viewer picks a date, which runs as a viewer's run with the date as its text", () => {
+    mockDashboardOn = true;
+    const day: WidgetDef = { name: "day", type: "date", label: "Day", default: "2027-12-21" };
+    const self = node("p1", PARAM, { widgets: [day], dashboardPinned: true });
+    mockNodes = [self, node("a", CODE, { title: "Ground grid", code: "d = [!! @day !!]" })];
+    render(<Harness data={self.data} />);
+    const control = screen.getByLabelText("Day", { selector: "input" }) as HTMLInputElement;
+    expect(control.type).toBe("date");
+    expect(control.disabled).toBe(false);
+
+    fireEvent.change(control, { target: { value: "2027-06-21" } });
+    fireEvent.blur(control);
+
+    expect(mockUpdateDataNode).toHaveBeenCalledWith("p1", expect.objectContaining({ widgets: [{ ...day, value: "2027-06-21" }] }));
+    expect(mockRequestAutoRun).toHaveBeenCalledWith(["a"]);
+    expect(mockMarkDirty).not.toHaveBeenCalled();
+  });
+
   test("a text widget stays read-only, as the dashboard's contract says", () => {
     mockDashboardOn = true;
     const note: WidgetDef = { name: "note", type: "text", label: "Note", default: "" };
