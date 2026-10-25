@@ -17,7 +17,7 @@
 // (usePlayAll.playNodes), sends what it made to the run (dashboardRunSteps),
 // and starts the run again with the same values and token, which runs the
 // steps below on that. A node that cannot run here, as without WebGPU, shows
-// why, and the nodes below say the node feeding them failed.
+// why, and the nodes and tiles below say which step could not run (`stopped`).
 import React, { useEffect, useRef, useState } from "react";
 import type { ReactFlowInstance } from "reactflow";
 import type { useToastContext } from "../ToastProvider";
@@ -25,6 +25,7 @@ import { dashboardRunsApi, type DashboardRunEvent } from "../../services/runs/da
 import { forgetDashboardRunFiles, rememberDashboardRunFiles } from "../../services/runs/dashboardRunFiles";
 import { askPage, forgetPageSteps, keepPageResult } from "../../services/runs/dashboardRunSteps";
 import { dashboardSourceNodeIds } from "../../utils/dashboardLayout";
+import { resolveNodeDisplayLabel } from "../../utils/palettePackageFactoryDraft";
 import { dashboardValues, type DashboardValues } from "../../utils/widgets/dashboardControls";
 import type { WidgetDef } from "../../utils/widgets/widgetModel";
 import type { IOutput } from "./flowTypes";
@@ -77,9 +78,14 @@ export function useDashboardRun({ enabled, reactFlow, outcomes, outputsRef, show
     playNodes: PlayNodes;
 }) {
     // From the change's start until the run's end: the tiles below wait to
-    // draw (UniversalNode reads it as serverRunActive), and a change made
-    // meanwhile runs once it ends (useAutoRun).
+    // draw (UniversalNode reads it as serverRunActive) and say they are
+    // computing (useGrammarInputState), and a change made meanwhile runs once
+    // it ends (useAutoRun).
     const [active, setActive] = useState(false);
+    // Why the last run stopped before the tiles, at a step this browser could
+    // not run: what a tile left with nothing says (useGrammarInputState). The
+    // next start clears it.
+    const [stopped, setStopped] = useState<string | null>(null);
     const projectIdRef = useRef<string | null>(null);
     // Between a start and its answer.
     const startingRef = useRef(false);
@@ -144,9 +150,14 @@ export function useDashboardRun({ enabled, reactFlow, outcomes, outputsRef, show
 
     /** The nodes below a step the page could not run say so, as a run says it of a failed node. */
     const showWaitingSkipped = (run: FollowedDashboardRun, failed: string[]) => {
-        const name = (nodeId: string) => String(reactFlow.getNode(nodeId)?.data?.title || nodeId);
-        const reason = `No data yet: "${name(failed[0])}" could not run in this browser.`;
-        for (const nodeId of run.waiting) outcomes.showSkipped(nodeId, reason);
+        // As its header names it, and as Run All names a failed node (usePlayAll).
+        const name = (nodeId: string) => {
+            const data = reactFlow.getNode(nodeId)?.data;
+            return (data && resolveNodeDisplayLabel(data)) || nodeId;
+        };
+        const why = `"${name(failed[0])}" could not run in this browser.`;
+        for (const nodeId of run.waiting) outcomes.showSkipped(nodeId, `No data yet: ${why}`);
+        setStopped(why);
     };
 
     /**
@@ -267,6 +278,7 @@ export function useDashboardRun({ enabled, reactFlow, outcomes, outputsRef, show
         if (!enabled || !projectId || followedRef.current || startingRef.current) return;
         startingRef.current = true;
         setActive(true);
+        setStopped(null);
         const values = dashboardValues(reactFlow.getNodes());
         let started;
         try {
@@ -319,5 +331,5 @@ export function useDashboardRun({ enabled, reactFlow, outcomes, outputsRef, show
         forgetPageSteps();
     }, []);
 
-    return { active, start, opened, savedWidgets };
+    return { active, stopped, start, opened, savedWidgets };
 }

@@ -158,6 +158,11 @@ export interface FlowContextProps {
      * is going" reads both.
      */
     serverRunActive: boolean;
+    /**
+     * On a dashboard, why the last viewer's run stopped before the tiles: a
+     * step this browser could not run (useDashboardRun). Null otherwise.
+     */
+    dashboardStopped: string | null;
     /** Stop the run in flight: clears the guard so the next play is accepted. */
     cancelRun: () => void;
     /** Show the outputs of a just-opened dataflow's last run on the server, and follow it if it goes. */
