@@ -2,8 +2,8 @@
 
 ``scripts/ci_memory_budget.py`` runs at the start of test-gpu and of every
 self-hosted stack. It picks test-gpu's e2e workers from free memory and video
-memory, and the CI container's memory limit. Six workers lost utk-desktop-02's
-runner (12 GB) and blanked utk-desktop-01's maps (8 GB of video memory) on
+memory, and the CI container's memory limit. Six workers stalled
+utk-desktop-01 (30 GB) and blanked its maps (8 GB of video memory) on
 2026-10-25, while the arcade and utk-gpu runners must keep all six. A crash
 here would stop the job, so every reading that fails must leave the defaults.
 """
@@ -36,11 +36,13 @@ def _gib(n: float) -> int:
     return int(n * GIB)
 
 
-# Free memory and video memory as each runner has them when a job starts.
-ARCADE_GPU = dict(free=_gib(55), vram=_gib(70))
+# Free memory and video memory as each runner had them when a job started
+# (#1154's runs, 10-25).
+ARCADE_GPU = dict(free=_gib(60.4), vram=_gib(77))
 UTK_GPU = dict(free=_gib(300), vram=_gib(94))
-DESKTOP_01 = dict(free=_gib(25), vram=_gib(7.2))
-DESKTOP_02 = dict(free=_gib(9.5), vram=_gib(11))
+# Something outside CI held 6.5 of its card's 8 GiB.
+DESKTOP_01 = dict(free=_gib(24.8), vram=_gib(1.2))
+DESKTOP_02 = dict(free=_gib(11.1), vram=_gib(11.3))
 
 
 def test_the_arcade_and_utk_gpu_runners_keep_all_six_workers():
@@ -48,16 +50,23 @@ def test_the_arcade_and_utk_gpu_runners_keep_all_six_workers():
     assert budget.budget(workers_max=6, **UTK_GPU)["workers"] == 6
 
 
-def test_a_12_gb_desktop_runs_as_many_workers_as_its_memory_holds():
-    assert budget.budget(workers_max=6, **DESKTOP_02)["workers"] == 2
+def test_a_30_gb_desktop_runs_the_heaviest_test_beside_two_busy_workers():
+    # 24.8 GiB: 2 reserved, 14 for the heaviest test's worker, 3.5 for each other.
+    assert budget.budget(free=_gib(24.8), vram=_gib(7.2), workers_max=6)["workers"] == 3
 
 
-def test_an_8_gb_card_runs_as_many_workers_as_its_video_memory_holds():
-    assert budget.budget(workers_max=6, **DESKTOP_01)["workers"] == 4
+def test_a_card_with_little_free_video_memory_runs_fewer_workers():
+    assert budget.budget(workers_max=6, **DESKTOP_01)["workers"] == 1
+
+
+def test_a_desktop_that_cannot_hold_the_heaviest_test_runs_one_worker():
+    assert budget.budget(workers_max=6, **DESKTOP_02)["workers"] == 1
+    assert not budget.holds_the_heaviest_test(DESKTOP_02["free"])
+    assert budget.holds_the_heaviest_test(DESKTOP_01["free"])
 
 
 def test_a_runner_without_nvidia_smi_is_sized_by_memory_alone():
-    assert budget.budget(free=_gib(25), vram=None, workers_max=6)["workers"] == 6
+    assert budget.budget(free=_gib(40), vram=None, workers_max=6)["workers"] == 6
 
 
 def test_a_runner_with_almost_nothing_free_still_runs_one_worker():
@@ -68,8 +77,8 @@ def test_a_runner_with_almost_nothing_free_still_runs_one_worker():
 
 def test_the_limit_leaves_the_reserve_and_what_each_worker_needs_outside():
     chosen = budget.budget(workers_max=6, **ARCADE_GPU)
-    outside = 6 * budget.WORKER_OUTSIDE_GIB
-    assert chosen["limit"] == _gib(55 - budget.RESERVE_GIB - outside)
+    outside = 6 * _gib(budget.WORKER_OUTSIDE_GIB)
+    assert chosen["limit"] == _gib(60.4) - _gib(budget.RESERVE_GIB) - outside
 
 
 def test_a_stack_with_no_workers_to_size_gets_only_a_limit():
@@ -173,11 +182,18 @@ def _size(monkeypatch, tmp_path, workers_max=6, free=None, vram=None, fail=None)
     return dict(line.split("=", 1) for line in lines), summary.read_text()
 
 
-def test_the_job_gets_its_workers_and_limit_through_github_env(monkeypatch, tmp_path):
-    env, summary = _size(monkeypatch, tmp_path, **DESKTOP_02)
-    limit_mib = (_gib(9.5) - _gib(budget.RESERVE_GIB) - 2 * _gib(budget.WORKER_OUTSIDE_GIB)) // budget.MIB
-    assert env == {"CURIO_E2E_PARALLEL": "2", "CURIO_CI_MEM_LIMIT": f"{limit_mib}m"}
-    assert "e2e workers: 2 of at most 6" in summary
+def test_the_job_gets_its_workers_and_limit_through_github_env(monkeypatch, tmp_path, capsys):
+    env, summary = _size(monkeypatch, tmp_path, free=_gib(24.8), vram=_gib(7.2))
+    limit_mib = (_gib(24.8) - _gib(budget.RESERVE_GIB) - 3 * _gib(budget.WORKER_OUTSIDE_GIB)) // budget.MIB
+    assert env == {"CURIO_E2E_PARALLEL": "3", "CURIO_CI_MEM_LIMIT": f"{limit_mib}m"}
+    assert "e2e workers: 3 of at most 6" in summary
+    assert "::warning::" not in capsys.readouterr().out
+
+
+def test_a_runner_too_small_for_the_heaviest_test_says_so(monkeypatch, tmp_path, capsys):
+    env, _ = _size(monkeypatch, tmp_path, **DESKTOP_02)
+    assert env["CURIO_E2E_PARALLEL"] == "1"
+    assert "::warning::11.1 GiB free holds less than the heaviest e2e test needs" in capsys.readouterr().out
 
 
 def test_a_stack_step_writes_only_the_limit(monkeypatch, tmp_path):

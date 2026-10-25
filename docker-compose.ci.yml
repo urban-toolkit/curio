@@ -60,10 +60,9 @@ services:
     pids_limit: 4096
     # A memory limit sized to the runner, on self-hosted runners only
     # (scripts/ci_memory_budget.py writes CURIO_CI_MEM_LIMIT; unset, 0 is no
-    # limit). Without one, a stack that outgrew a 12 GB desktop swapped the
-    # machine until its runner stopped answering GitHub and the job was lost.
-    # With it, the kernel kills a process in this container and the job
-    # fails saying so. memswap_limit is the same value, so the container
+    # limit). Without one, test-gpu on a desktop stalled the whole machine
+    # for 20 minutes until a worker died (utk-desktop-01, 10-25). With it, the
+    # kernel kills a process in this container and the job fails saying so. memswap_limit is the same value, so the container
     # cannot swap: a fixed 12g limit without it (an earlier try) let the
     # container swap, and test_node_execution[06-back-bay-road-sunlight],
     # which parses city-scale PBFs, timed out on the slowdown. The limit is
