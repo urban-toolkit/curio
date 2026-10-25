@@ -900,7 +900,7 @@ def load_shared_output_file(file_name):
     An output whose dataset is a bundle, a tuple or a list or dict of frames,
     is hydrated with its parts in a folder of its own
     (``catalog_helpers.hydrated_bundle``), which is read first and comes back
-    as that tuple, list or dict (:func:`_load_hydrated_bundle`). The bundle's
+    as that tuple, list or dict (:func:`_load_bundle`). The bundle's
     ``bundle.json``, which the load also copies under the output's name,
     describes the output and is never handed out as its value.
 
@@ -921,7 +921,7 @@ def load_shared_output_file(file_name):
     data_dir = _shared_data_dir()
     bundle = hydrated_bundle(data_dir, name)
     if bundle.is_file():
-        return _load_hydrated_bundle(bundle, data_dir, missing)
+        return _load_bundle(bundle, data_dir, missing)
     try:
         path = (data_dir / name).resolve()
         path.relative_to(data_dir)
@@ -929,14 +929,44 @@ def load_shared_output_file(file_name):
         raise missing
     if not path.is_file():
         raise missing
+    return _decode_output_file(path, name, missing)
 
+
+def load_saved_output(path, name):
+    """A dataflow's saved output *name*, read in place from *path*, the file
+    its owner's store holds for it, which the backend resolved
+    (``projects/storage.saved_output_file``) and the only caller may send.
+
+    The file is read as :func:`load_shared_output_file` reads its copy, with
+    nothing copied: a frame with its ``.decode.json``, a raster, a JSON
+    value, or a bundle's ``bundle.json``, which reads as the tuple, list or
+    dict its parts make, from the dataset's own folder (two levels up).
+
+    Raises ``KeyError`` when the file is not there or cannot be read, so
+    callers treat it exactly like a missing artifact.
+    """
+    missing = KeyError(f"No artifact with id {name}")
+    try:
+        path = Path(path).resolve()
+    except (OSError, TypeError, ValueError):
+        raise missing
+    if not path.is_file():
+        raise missing
+    if path.name == "bundle.json":
+        return _load_bundle(path, path.parent.parent, missing)
+    return _decode_output_file(path, name, missing)
+
+
+def _decode_output_file(path, name, missing):
+    """The value the output file at *path* holds, the output being called
+    *name*; ``missing`` raised for bytes this cannot decode."""
     with open(path, "rb") as handle:
         header = handle.read(64)
 
     # Parquet, by magic or by name. ``load_dataset_parquet`` reads GeoParquet as
     # a GeoDataFrame and restores the ``.decode.json`` sidecar, so object columns
     # come back as objects rather than JSON strings.
-    if header[:4] == b"PAR1" or name.endswith(".parquet"):
+    if header[:4] == b"PAR1" or path.name.endswith(".parquet"):
         try:
             return load_dataset_parquet(path)
         except Exception:
@@ -954,7 +984,7 @@ def load_shared_output_file(file_name):
     payload = path.read_bytes()
     # dict/list artifacts are stored zlib-compressed (see _write_json_artifact);
     # an installed copy of one keeps those bytes.
-    if name.endswith(".json.zlib") or header[:1] == b"\x78":
+    if path.name.endswith(".json.zlib") or header[:1] == b"\x78":
         try:
             return json.loads(zlib.decompress(payload).decode("utf-8"))
         except Exception:
@@ -992,11 +1022,13 @@ def _is_install_placeholder(value, part) -> bool:
     )
 
 
-def _load_hydrated_bundle(bundle, data_dir, missing):
-    """The value a hydrated bundle holds, as the store gives it: its parts in
-    the container its ``bundle.json`` records (``catalog_helpers.bundle_container``),
-    a tuple, a list, or a dict with its keys in their order, and a tuple when
-    it records none.
+def _load_bundle(bundle, data_dir, missing):
+    """The value a bundle holds, as the store gives it: the copy a project
+    load hydrated, or a saved output's own dataset folder, *data_dir* being
+    the folder it must lie in. Its parts go in the container its
+    ``bundle.json`` records (``catalog_helpers.bundle_container``), a tuple,
+    a list, or a dict with its keys in their order, and a tuple when it
+    records none.
 
     Each part is read as ``curio_load_data`` reads one
     (``catalog_helpers.read_bundle_part``): a frame with its ``.decode.json``,
@@ -1039,21 +1071,50 @@ def _load_hydrated_bundle(bundle, data_dir, missing):
         raise missing
 
 
-def load_artifact(art_id, session_id=None):
-    """An artifact by id: the store first, then the copy a project load hydrated.
+#: The most saved outputs one request names (``shape_saved_paths``).
+MAX_SAVED_PATHS = 64
+
+
+def shape_saved_paths(raw):
+    """``{name: {"path", "dataType"}}`` from a request: the saved outputs of
+    the run's dataflow that its inputs name, each with the file its owner's
+    store holds, as the backend resolved them (``execution/node_exec``).
+    Anything else is dropped."""
+    if not isinstance(raw, dict):
+        return {}
+    shaped = {}
+    for name, saved in list(raw.items())[:MAX_SAVED_PATHS]:
+        path = saved.get("path") if isinstance(saved, dict) else None
+        if isinstance(name, str) and name and isinstance(path, str) and path:
+            data_type = saved.get("dataType")
+            shaped[name] = {"path": path, "dataType": data_type if isinstance(data_type, str) else ""}
+    return shaped
+
+
+def load_artifact(art_id, session_id=None, saved_paths=None):
+    """An artifact by id: the store first, then, for a saved output of the
+    run's dataflow, the file its owner's store holds (*saved_paths*, see
+    :func:`shape_saved_paths`), then the copy a project load hydrated.
 
     The one rule every reader of a saved output follows, ``/get`` and node
     inputs alike (#407, #408). The store is session-tagged, so after a reopen
     under a new sign-in it cannot serve an output the canvas is showing as done
     - nor when the row was pruned or the database is momentarily locked. The
-    hydrated file in the shared data directory can (see
-    :func:`load_shared_output_file`). When neither has it, the store's error is
+    saved output's own file can (:func:`load_saved_output`), read in place,
+    and so can the hydrated file in the shared data directory
+    (:func:`load_shared_output_file`). When none has it, the store's error is
     the one raised: for a missing artifact that is the familiar "No artifact
     with id", and for a locked database it keeps the real diagnostic.
     """
     try:
         return load_from_duckdb(art_id, session_id=session_id)
     except Exception as store_error:
+        saved = (saved_paths or {}).get(art_id)
+        if saved:
+            try:
+                return load_saved_output(saved["path"], art_id)
+            except KeyError:
+                pass
         try:
             return load_shared_output_file(art_id)
         except KeyError:

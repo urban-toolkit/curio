@@ -1316,6 +1316,22 @@ def load_shared_project(project_id: str) -> dict:
     }
 
 
+def saved_output_of(project_id: str, name: str) -> Optional[storage.SavedOutputFile]:
+    """Where the saved output *name* of *project_id* is read: the file its
+    owner's store holds (``storage.saved_output_file``). None for a project
+    that is gone or a name it has not saved.
+
+    Anyone who may open the project may read its saved outputs, as
+    ``load_shared_project`` hands them to any caller.
+    """
+    from utk_curio.backend.app.projects.models import Project
+
+    project = db.session.get(Project, project_id)
+    if project is None:
+        return None
+    return storage.saved_output_file(_owner_user_dir_key(project), project_id, name)
+
+
 # ---------------------------------------------------------------------------
 # Standalone dashboard
 # ---------------------------------------------------------------------------

@@ -129,31 +129,39 @@ def _parse_outputs_refs(file_path):
     return refs if isinstance(refs, list) else None
 
 
-def _build_input_spec(file_path, data_type, scratch_dir, session_id):
-    """Stage whatever this node's input references, returning its spec."""
+def _build_input_spec(file_path, data_type, scratch_dir, session_id, saved_paths=None):
+    """Stage whatever this node's input references, returning its spec. An
+    input that is a saved output of the run's dataflow (*saved_paths*) is
+    staged from its own file when the store has no row for it."""
     from utk_curio.sandbox.util import staging
 
     if data_type == "outputs":
         refs = _parse_outputs_refs(file_path)
         if refs is not None:
             return staging.stage_outputs_list(
-                refs, scratch_dir, session_id=session_id
+                refs, scratch_dir, session_id=session_id, saved_paths=saved_paths
             )
         # The reloaded shape. What is stored under this id is the whole
         # ``{'dataType': 'outputs', 'data': [refs]}`` wrapper, so expand it to
         # the per-slot list user code expects -- staging it as a plain artifact
         # would hand the node the wrapper dict and break destructuring, which is
         # the same bug ``_expand_outputs_wrapper`` exists to prevent in-process.
-        wrapper = staging.read_outputs_wrapper(file_path, session_id=session_id)
+        try:
+            wrapper = staging.read_outputs_wrapper(file_path, session_id=session_id)
+        except KeyError:
+            # No row this session may read: a saved output, staged below from
+            # its own file, as ``parsers.load_artifact`` reads one in process.
+            wrapper = None
         if wrapper is not None:
             return staging.stage_outputs_list(
-                wrapper, scratch_dir, session_id=session_id
+                wrapper, scratch_dir, session_id=session_id, saved_paths=saved_paths
             )
         # Tagged 'outputs' but holding something else. Stage it as it is rather
         # than failing: the in-process path is equally permissive here.
     if file_path:
         return staging.stage_input(
-            file_path, scratch_dir, session_id=session_id, slot="in_0"
+            file_path, scratch_dir, session_id=session_id, slot="in_0",
+            saved_paths=saved_paths,
         )
     return dict(protocol.INPUT_NONE)
 
@@ -177,6 +185,7 @@ def execute_isolated(
     dataset_formats=None,
     package_modules=None,
     input_slots=None,
+    saved_paths=None,
 ):
     """Run one node in an isolated child. Returns the standard response dict.
 
@@ -199,6 +208,10 @@ def execute_isolated(
 
     *input_slots* are the wired circles, in circle order: the value on circle k
     is the code's ``input_k``, as in process.
+
+    *saved_paths* are the inputs that are saved outputs of the run's dataflow,
+    each staged from the file its owner's store holds when the store has no
+    row for it (``staging.stage_saved_output``).
 
     *user_key* switches the child into that user's own work directory instead:
     persistent, writable, owned by the execution user, and the one place an
@@ -235,7 +248,7 @@ def execute_isolated(
     try:
         try:
             input_spec = _build_input_spec(
-                file_path, data_type, scratch_dir, session_id
+                file_path, data_type, scratch_dir, session_id, saved_paths
             )
         except KeyError as exc:
             # Matches load_from_duckdb: a missing or foreign artifact.

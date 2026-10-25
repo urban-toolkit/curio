@@ -2340,9 +2340,9 @@ The backend is a Flask application in `utk_curio/backend/`. Routes are split acr
 | `/version` | GET | Installed `utk_curio` version, as JSON |
 | `/processPythonCode` | POST | Execute Python node code (proxies to sandbox `/exec`) |
 | `/processJavaScriptCode` | POST | Execute JS node code via Node.js subprocess (proxies to sandbox `/execJs`) |
-| `/get` | GET | Download an artifact by id (Arrow IPC when the client asks for it). A name the session-tagged store cannot serve falls back to the shared data directory, where a project load hydrates that project's saved outputs, so they are readable by anyone who can load the project |
+| `/get` | GET | Download an artifact by id (Arrow IPC when the client asks for it). A name the session-tagged store cannot serve is read from `savedPath`, the file the owner's store holds for a dataflow's saved output, which only the backend sends; else it falls back to the shared data directory, where a project load hydrates that project's saved outputs, so they are readable by anyone who can load the project |
 | `/get-preview` | GET | First N rows + metadata of an artifact, for DataPool display |
-| `/raster` | GET | A raster artifact (or one `part` of a tuple) as GeoTIFF bytes for an Autark node, described in the `X-Curio-Raster` header; 413 with its size over `maxCells` or `maxSide`. A raster output the session-tagged store cannot serve falls back to its hydrated copy, as `/get` does |
+| `/raster` | GET | A raster artifact (or one `part` of a tuple) as GeoTIFF bytes for an Autark node, described in the `X-Curio-Raster` header; 413 with its size over `maxCells` or `maxSide`. A raster output the session-tagged store cannot serve is read from `savedPath`, else from its hydrated copy, as `/get` does |
 | `/file/<path>` | GET | Serve a file relative to `CURIO_LAUNCH_CWD` so browser-side nodes can fetch binary assets (PBF, GeoTIFF) by the same relative path Python nodes use. Unauthenticated, so it refuses hidden paths and Curio's own state: the instance folder, the `.curio` state root, the shared data directory, the dataset hub and the SQLite database. `vendor/duckdb-extensions/` and `docs/examples/data/` come from the folders Curio ships instead ([Where the shipped folders are](#where-the-shipped-folders-are)) |
 | `/starters` | GET | Per-template starter source bodies from every installed package |
 | `/spatial_join` | POST | Spatial join of two GeoJSON inputs by an operation, on geopandas `sjoin` (see `common/spatial.py`) |
@@ -2412,6 +2412,14 @@ A dataflow's saved outputs are the `outputs` list of its `manifest.json`: one en
 - An output the computed dataset already holds, the same data file byte for byte or a bundle of the same parent artifact with every part in place, is not installed again (`installer.keep_installed_output`): the folder stays, and only a changed manifest is replaced, atomically. A new output replaces the folder.
 
 A project load copies each saved output's durable file into the shared data directory under its `filename` (`projects/storage.py::hydrate_outputs`), and a reader the session-tagged store refuses, after a reopen under a new sign-in, reads that copy (`parsers.load_artifact`). An output with no durable file left is left out, with a warning in the log. A dashboard whose tile needs such an output, one the sandbox cannot read, or a raster of one the sandbox cannot be asked for, is refused with a 503 that says to try again (`dashboard_payload.DashboardOutputUnreadableError`), which the page server carries as it carries the 409 and 413 refusals. An output saved as a bundle, a tuple or a list or dict of frames, is also hydrated with its parts in `bundles/<filename>/`, laid out as staging lays out a bundle: `data/bundle.json`, and each part it lists with the files read beside it, at its path under the dataset's folder. Each load copies the parts that are missing, and the `bundle.json` whenever the dataset's differs. `load_shared_output_file` reads that folder back as the value the store gives: the parts in the container `bundle.json` records (`catalog_helpers.bundle_container`: a tuple, a list, or a dict with its keys in their order; a tuple when it records none), each part as `curio_load_data` reads it and only from the files `listed_bundle_parts` gives. It never hands out a `bundle.json` as the output's value, and a `bundle.json` that records any other container reads as missing.
+
+A saved output is also read in place, from the file its owner's store holds. `storage.saved_output_file` names that file for a filename the project's manifest records: the node's durable source (`_durable_source_for`), its computed dataset or the installed dataset it reads. The canvas reads outputs through its dataflow's routes below, which relay to the sandbox with the caller's session and, for a name the dataflow saved, that file as `savedPath`; a node run's inputs carry the same as `saved_paths` (`node_exec.resolve_saved_inputs`), for a play, a run on the server and a dashboard viewer's run alike. The sandbox reads the store first, then that file where it is (`parsers.load_saved_output`, a bundle from its dataset's own folder), then the hydrated copy. An isolated child's staging links the file into its scratch and adds no store row (`staging.stage_saved_output`): a frame's kind is the data type the manifest records and its decode metadata the `.decode.json` beside it, so the parent parses no table.
+
+| Route | Method | Purpose |
+|---|---|---|
+| `/api/projects/<id>/outputs/get` | GET | `/get` on this dataflow's canvas, signed in: the caller's own session first, then, for a name the dataflow saved, the file its owner's store holds. 404 for a dataflow that is gone |
+| `/api/projects/<id>/outputs/get-preview` | GET | `/get-preview` likewise |
+| `/api/projects/<id>/outputs/raster` | GET | `/raster` likewise |
 
 [`execution/save_policy.py`](../utk_curio/backend/app/execution/save_policy.py) decides which outputs a run on the server installs and records, as `utils/saveOutputDataset.ts` decides it on the canvas. `utils/saveOutputDataset.cases.json` holds the cases both sides run.
 
@@ -2488,6 +2496,8 @@ A viewer of a dashboard changes a pinned control and the dataflow runs again on 
 ### Dataset Routes
 
 Defined in `backend/app/datasets/routes.py`; all require authentication. See [DATA-CATALOG.md](DATA-CATALOG.md) for the user-facing model.
+
+A request's `liveOutputs` (base64 JSON on a GET, a list in the publish body) keeps only the entries named as a node run names its output, a store id or `<id>_output.parquet` (`domain/output_names.py`); any other name, a path or another file of the shared data directory, is dropped (`schemas/requests.py`). `resolve_shared_output_path` never answers the store's own database or the files DuckDB keeps beside it (`sandbox/util/db.py::is_store_file`), and of the shared data directory only `artifacts/` is an allowed read root (`application/paths.py::_allowed_read_roots`).
 
 | Endpoint | Method | Purpose |
 |---|---|---|

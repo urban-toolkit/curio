@@ -51,7 +51,16 @@ from utk_curio.sandbox.util.parsers import (
     load_tabular_preview_from_duckdb,
     open_tabular_arrow_from_duckdb,
     parseOutput,
+    shape_saved_paths,
 )
+
+
+def _saved_paths_of_read(art_id):
+    """The saved output a read names, as :func:`load_artifact` takes it: the
+    file its owner's store holds (``savedPath``), which only the backend
+    sends, after checking the name is that dataflow's saved output."""
+    saved_path = request.args.get('savedPath') or None
+    return {art_id: {"path": saved_path}} if saved_path else None
 
 ARROW_IPC_MIME = "application/vnd.apache.arrow.stream"
 
@@ -279,14 +288,17 @@ def get_artifact():
                 if preview is not None:
                     raw, total_rows = preview
             if raw is None:
-                # The store, or a project output hydrated into the shared
-                # data directory: a row this session may not read (rows are
-                # session-tagged), no row at all, or no readable database -
-                # the file is created on first write and can be locked by a
-                # concurrent /exec. That file carries no session tag, which is
-                # what lets a dashboard - or any second viewer - read an
-                # output the producing session no longer owns.
-                raw = load_artifact(art_id, session_id=session_id)
+                # The store, or a project's saved output, read in place from
+                # the file its owner's store holds, or its copy hydrated into
+                # the shared data directory: a row this session may not read
+                # (rows are session-tagged), no row at all, or no readable
+                # database - the file is created on first write and can be
+                # locked by a concurrent /exec. Those files carry no session
+                # tag, which is what lets a dashboard - or any second viewer -
+                # read an output the producing session no longer owns.
+                raw = load_artifact(
+                    art_id, session_id=session_id, saved_paths=_saved_paths_of_read(art_id),
+                )
                 if max_rows is not None and isinstance(raw, _pd.DataFrame):
                     total_rows = len(raw)
                     raw = raw.head(max_rows)
@@ -646,6 +658,7 @@ def get_raster():
             payload, meta = serve_raster(
                 art_id, session_id=session_id, part=part,
                 max_cells=max_cells, max_side=max_side,
+                saved_paths=_saved_paths_of_read(art_id),
             )
     except RasterRefused as refused:
         return jsonify({
@@ -762,6 +775,10 @@ def exec():
     # templates, from the user's package store (#468). Both paths stage them
     # into a folder of the run's own and make them importable for the run.
     package_modules = package_modules_util.shape(request.json.get('package_modules'))
+    # {name: {path, dataType}}: the inputs that are saved outputs of the run's
+    # dataflow, with the file its owner's store holds, resolved by the backend
+    # like dataset_paths. Read in place when the store has no row for them.
+    saved_paths = shape_saved_paths(request.json.get('saved_paths'))
     launch_dir = os.environ.get('CURIO_LAUNCH_CWD', os.getcwd())
 
     print(f"[sandbox /exec] received  node={node_type}", file=sys.__stderr__, flush=True)
@@ -780,14 +797,14 @@ def exec():
                 dataset_paths=dataset_paths, user_key=user_key, config=config,
                 secrets=secrets, collections=collections, media_dir=media_dir, models=models,
                 dataset_formats=dataset_formats, package_modules=package_modules,
-                input_slots=input_slots,
+                input_slots=input_slots, saved_paths=saved_paths,
             )
         return execute_code(
             code, str(file_path), str(node_type), str(data_type), launch_dir,
             session_id=session_id, save_dataset=bool(save_dataset),
             dataset_paths=dataset_paths, secrets=secrets, collections=collections, media_dir=media_dir,
             models=models, dataset_formats=dataset_formats, package_modules=package_modules,
-            input_slots=input_slots,
+            input_slots=input_slots, saved_paths=saved_paths,
         )
 
     return _reply_when_run('/exec', node_type, run)
@@ -810,6 +827,8 @@ def exec_js():
     save_dataset = request.json.get('save_dataset', True)
     if isinstance(save_dataset, str):
         save_dataset = save_dataset.strip().lower() not in ('0', 'false', 'no', 'off')
+    # As /exec takes them: the inputs that are saved outputs of the run's dataflow.
+    saved_paths = shape_saved_paths(request.json.get('saved_paths'))
     launch_dir = os.environ.get('CURIO_LAUNCH_CWD', os.getcwd())
 
     print(f"[sandbox /execJs] received  node={node_type}", file=sys.__stderr__, flush=True)
@@ -820,6 +839,7 @@ def exec_js():
         return execute_js_code(
             code, str(file_path), str(node_type), str(data_type), launch_dir,
             session_id=session_id, save_dataset=bool(save_dataset), input_slots=input_slots,
+            saved_paths=saved_paths,
         )
 
     return _reply_when_run('/execJs', node_type, run)
