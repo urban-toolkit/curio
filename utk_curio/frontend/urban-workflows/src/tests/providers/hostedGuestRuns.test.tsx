@@ -231,7 +231,7 @@ describe('a hosted guest', () => {
     await renderFlowAs(HOSTED_GUEST);
 
     await act(async () => {
-      await api.attachLatestRun('proj-1', new Set());
+      await api.attachLatestRun('proj-1');
     });
 
     expect(mockAttachLatestRun).not.toHaveBeenCalled();
@@ -254,12 +254,11 @@ describe.each([
 
   it('attaches to the run going on the server', async () => {
     await renderFlowAs(value);
-    const restored = new Set<string>();
 
     await act(async () => {
-      await api.attachLatestRun('proj-1', restored);
+      await api.attachLatestRun('proj-1');
     });
 
-    expect(mockAttachLatestRun).toHaveBeenCalledWith('proj-1', restored);
+    expect(mockAttachLatestRun).toHaveBeenCalledWith('proj-1');
   });
 });

@@ -670,10 +670,10 @@ def test_a_reload_restores_the_output_each_run_recorded(
     outputs it holds. That save read them before the node's new output had
     reached them, so it named every output but the one just made, and a save's
     outputs replace the dataflow's (``_merge_outputs``): the output went back
-    out. Read off the load's own response: the owner's canvas also shows the
-    last run's outputs from the run itself (``attachLatestRun``), which hid it
-    there, but a shared link, a duplicate and the dashboard read only the saved
-    outputs.
+    out. Read off the saved outputs the load's own response lists for the
+    dataflow (``project.outputs``): the owner's canvas also shows each node's
+    last kept result (``?results=last``), which hid it there, but a shared
+    link, a duplicate and the dashboard read only the saved outputs.
     """
     require_project_page()
     require_user_auth()
@@ -715,7 +715,7 @@ def test_a_reload_restores_the_output_each_run_recorded(
         timeout=120000,
     ) as load_info:
         page.reload()
-    restored = sorted(o["node_id"] for o in (load_info.value.json().get("outputs") or []))
+    restored = sorted(o["node_id"] for o in (load_info.value.json()["project"].get("outputs") or []))
     assert restored == both, (
         "the reloaded dataflow restores the saved outputs of {}, not of both nodes; "
         "the save each run ended with named {}".format(restored, named_at_end)

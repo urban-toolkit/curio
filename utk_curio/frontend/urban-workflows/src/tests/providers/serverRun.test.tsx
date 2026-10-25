@@ -35,7 +35,6 @@ import {
   STOPPED_MESSAGE,
   browserWalk,
   nodeChangeFor,
-  stepsToRestore,
 } from "../../providers/flow/serverRunSteps";
 import { runKeyWithShared } from "../../utils/references/sharedParameters";
 
@@ -479,29 +478,24 @@ describe("a run started on the canvas", () => {
 });
 
 describe("a canvas opened after a run", () => {
-  it("shows only the outputs whose code it still holds and that were not restored, saving nothing", async () => {
+  it("leaves a finished run's outputs to the load, which shows each node's newest kept result, saving nothing", async () => {
     api.listForProject.mockResolvedValue([run("r1", [], { status: "succeeded" })]);
     api.get.mockResolvedValue(run("r1", [
-      step("saved", { status: "ok", outputPath: "art-saved", codeCurrent: true }),
-      step("edited", { status: "ok", outputPath: "art-edited", codeCurrent: false }),
       step("kept", { status: "ok", outputPath: "art-kept", outputType: "dataframe", codeCurrent: true, stdoutTail: "rows: 3" }),
       step("failed", { status: "error", codeCurrent: true }),
     ], { status: "succeeded" }));
-    const { hook, deps, shown } = harness([{ id: "saved" }, { id: "edited" }, { id: "kept" }, { id: "failed" }]);
+    const { hook, deps, shown } = harness([{ id: "kept" }, { id: "failed" }]);
 
-    await act(async () => { await hook.result.current.attachLatestRun("p1", new Set(["saved"])); });
+    await act(async () => { await hook.result.current.attachLatestRun("p1"); });
 
-    expect(shown("kept")).toEqual({ code: "success", content: "stdout:\nrows: 3\nSaved to file: art-kept" });
-    expect(shown("saved")).toBeUndefined();
-    expect(shown("edited")).toBeUndefined();
+    expect(shown("kept")).toBeUndefined();
     expect(shown("failed")).toBeUndefined();
-    expect(deps.hydrateRestoredOutputs).toHaveBeenCalledWith([
-      { nodeId: "kept", output: { path: "art-kept", dataType: "dataframe" } },
-    ]);
+    expect(deps.hydrateRestoredOutputs).not.toHaveBeenCalled();
     // Opening a page saves nothing and records no run of its own.
     expect(deps.applyNewOutput).not.toHaveBeenCalled();
     expect(deps.nodeExecProv).not.toHaveBeenCalled();
     expect(api.follow).not.toHaveBeenCalled();
+    expect(deps.showToast).not.toHaveBeenCalled();
   });
 
   it("follows a run that is still going", async () => {
@@ -510,7 +504,7 @@ describe("a canvas opened after a run", () => {
     api.get.mockResolvedValue(run("r1", [step("a")], { status: "running" }));
     const { hook } = harness([{ id: "a" }]);
 
-    await act(async () => { await hook.result.current.attachLatestRun("p1", new Set()); });
+    await act(async () => { await hook.result.current.attachLatestRun("p1"); });
 
     expect(live.runIds).toEqual(["r1"]);
     expect(hook.result.current.serverRunActive).toBe(true);
@@ -525,7 +519,7 @@ describe("a canvas opened after a run", () => {
     api.get.mockResolvedValue(waiting);
     const { hook, deps } = harness([{ id: "osm" }, { id: "count" }], [{ source: "osm", target: "count" }]);
 
-    await act(async () => { await hook.result.current.attachLatestRun("p1", new Set()); });
+    await act(async () => { await hook.result.current.attachLatestRun("p1"); });
 
     expect(deps.playNodes).not.toHaveBeenCalled();
     const [, variant, options] = deps.showToast.mock.calls[0];
@@ -537,14 +531,5 @@ describe("a canvas opened after a run", () => {
     expect(new Set(deps.playNodes.mock.calls[0][0])).toEqual(new Set(["osm", "count"]));
     deps.playNodes.mock.calls[0][1].onNodeDone("count", { failed: false });
     expect(api.reportStep).toHaveBeenCalledWith("r1", "count", { status: "ok" });
-  });
-
-  it("picks the steps to show by the same rule as the hook", () => {
-    const steps = [
-      step("a", { status: "ok", outputPath: "x", codeCurrent: true }),
-      step("b", { status: "ok", outputPath: "y", codeCurrent: true, role: "browser" }),
-      step("c", { status: "ok", outputPath: null, codeCurrent: true }),
-    ];
-    expect(stepsToRestore(steps, new Set()).map((s) => s.nodeId)).toEqual(["a"]);
   });
 });

@@ -1,0 +1,54 @@
+{
+  "about": "What a play posts, against what a run on the server sends: an owner's kept output is found again by a key of both (runs/kept.py step_key), so they must agree. The code is indented as PythonInterpreter.ts posts it (playIndent) and as run_engine.play_indent indents it. The input is what executionInputRef posts of what the canvas holds, and kept.input_identity reduces it, and the reference the run engine hands a node, to the same names and data type. Read by src/tests/providers/playCode.test.ts and by utk_curio/backend/tests/test_runs/test_play_code_cases.py.",
+  "code": [
+    {"name": "one line", "code": "return 1", "posted": "    return 1\n"},
+    {"name": "several lines with a blank one", "code": "x = 1\n\nreturn x", "posted": "    x = 1\n    \n    return x\n"},
+    {"name": "lines already indented", "code": "if x:\n    return 1\nreturn 2", "posted": "    if x:\n        return 1\n    return 2\n"},
+    {"name": "a trailing newline", "code": "return 1\n", "posted": "    return 1\n    \n"},
+    {"name": "no code", "code": "", "posted": "    \n"}
+  ],
+  "inputs": [
+    {
+      "name": "no input",
+      "canvas": "",
+      "posted": "",
+      "engine": null,
+      "identity": {"path": "", "dataType": ""}
+    },
+    {
+      "name": "one output",
+      "canvas": {"path": "1700000000000_deadbeef", "dataType": "dataframe"},
+      "posted": {"path": "1700000000000_deadbeef", "dataType": "dataframe"},
+      "engine": {"path": "1700000000000_deadbeef", "dataType": "dataframe"},
+      "identity": {"path": "1700000000000_deadbeef", "dataType": "dataframe"}
+    },
+    {
+      "name": "one output whose rows the canvas holds",
+      "canvas": {"path": "1700000000000_deadbeef", "dataType": "dataframe", "data": {"n": [1, 2]}},
+      "posted": {"path": "1700000000000_deadbeef", "dataType": "dataframe"},
+      "engine": {"path": "1700000000000_deadbeef", "dataType": "dataframe"},
+      "identity": {"path": "1700000000000_deadbeef", "dataType": "dataframe"}
+    },
+    {
+      "name": "a layer named by its file",
+      "canvas": {"filename": "1700000000000_deadbeef", "dataType": "geodataframe", "data": {"features": []}},
+      "posted": {"filename": "1700000000000_deadbeef", "dataType": "geodataframe"},
+      "engine": {"filename": "1700000000000_deadbeef", "dataType": "geodataframe"},
+      "identity": {"path": "1700000000000_deadbeef", "dataType": "geodataframe"}
+    },
+    {
+      "name": "a file name beside a path names the input",
+      "canvas": {"path": "1700000000000_deadbeef", "filename": "1700000000001_feedf00d", "dataType": "dataframe", "data": {"n": [1]}},
+      "posted": {"path": "1700000000000_deadbeef", "filename": "1700000000001_feedf00d", "dataType": "dataframe"},
+      "engine": {"path": "1700000000000_deadbeef", "filename": "1700000000001_feedf00d", "dataType": "dataframe"},
+      "identity": {"path": "1700000000001_feedf00d", "dataType": "dataframe"}
+    },
+    {
+      "name": "several inputs, in circle order",
+      "canvas": {"dataType": "outputs", "data": [{"path": "1700000000000_deadbeef", "dataType": "dataframe"}, {"path": "1700000000001_feedf00d", "dataType": "geodataframe"}]},
+      "posted": {"dataType": "outputs", "data": [{"path": "1700000000000_deadbeef", "dataType": "dataframe"}, {"path": "1700000000001_feedf00d", "dataType": "geodataframe"}]},
+      "engine": {"dataType": "outputs", "data": [{"path": "1700000000000_deadbeef", "dataType": "dataframe"}, {"path": "1700000000001_feedf00d", "dataType": "geodataframe"}]},
+      "identity": {"path": ["1700000000000_deadbeef", "1700000000001_feedf00d"], "dataType": "outputs"}
+    }
+  ]
+}
