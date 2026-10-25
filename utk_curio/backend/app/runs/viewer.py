@@ -62,6 +62,7 @@ from utk_curio.backend.app.runs.kept import (
     datasets_read,
     digest,
     forget_sessions,
+    input_identity,
     keep,
     kept_output,
     packages_fingerprint,
@@ -454,7 +455,7 @@ def _run_events(
             return {"stdout": [], "stderr": NO_KEYS_MESSAGE, "output": {"path": "", "dataType": "str"}}
         key = step_key(
             packages=packages, node_type=step.node_type, engine=engine, code=sent,
-            input_ref=node_input, input_slots=slots,
+            input_ref=input_identity(node_input), input_slots=slots,
             datasets=datasets_read(sent, project_id, owner),
         )
         private = private_to if step.node_id in tainted else None

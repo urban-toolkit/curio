@@ -184,11 +184,16 @@ def execute_isolated(
     package_modules=None,
     input_slots=None,
     saved_paths=None,
+    imports_session=None,
 ):
     """Run one node in an isolated child. Returns the standard response dict.
 
     *config* is an :class:`IsolationConfig`, carrying the socket path, limits
     and execution uid resolved once at startup.
+
+    *imports_session* is the session the code's top-level imports are
+    remembered under for the nodes after it (#158), *session_id* when not
+    given, as in process.
 
     *launch_dir* is the fallback working directory, matching the in-process
     path's ``cwd``. Positional and third-from-last so this signature lines up
@@ -276,7 +281,7 @@ def execute_isolated(
             dataset_formats=dataset_formats,
             collections=collections,
             media_dir=media_dir,
-            session_imports=_imports_for(session_id),
+            session_imports=_imports_for(imports_session if imports_session is not None else session_id),
             limits=config.limits,
             wall_timeout=config.wall_timeout,
             secrets=secrets,
@@ -315,7 +320,7 @@ def execute_isolated(
                 "output": {"path": "", "dataType": "str"},
             }
 
-        _remember_imports(session_id, manifest["imports"])
+        _remember_imports(imports_session if imports_session is not None else session_id, manifest["imports"])
 
         descriptor = manifest["output"]
         art_id = _persist_output(

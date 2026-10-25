@@ -267,6 +267,26 @@ def _is_private_path(parts, resolved) -> bool:
         return True
     return any(real == f.resolve() for f in _database_files() if f.exists())
 
+def _read_session(file_name):
+    """The session the caller reads *file_name* under on a route that names
+    no dataflow: the kept session that made it, when the runs of a dataflow
+    the caller owns kept it (``runs/kept.owner_session``), else the caller's
+    sign-in, as when that lookup fails."""
+    from utk_curio.backend.app.runs import kept
+    from utk_curio.backend.extensions import db
+
+    try:
+        session = kept.owner_session(getattr(g.user, "id", None), file_name)
+    except Exception:  # noqa: BLE001 - a read never fails on this lookup
+        print(f"[/get] could not look up the kept output {file_name}", flush=True)
+        try:
+            db.session.rollback()
+        except Exception:  # noqa: BLE001 - no database to roll back
+            pass
+        session = None
+    return session or get_current_token()
+
+
 @bp.route('/get', methods=['GET'])
 @require_auth
 def get_file():
@@ -274,7 +294,7 @@ def get_file():
 
     if not file_name:
         return 'No artifact id specified', 400
-    return relay_artifact(file_name, get_current_token())
+    return relay_artifact(file_name, _read_session(file_name))
 
 
 def _sandbox_read_params(file_name, session_id, saved_path):
@@ -336,7 +356,7 @@ def get_file_preview():
 
     if not file_name:
         return 'No artifact id specified', 400
-    return relay_preview(file_name, get_current_token())
+    return relay_preview(file_name, _read_session(file_name))
 
 
 def relay_preview(file_name, session_id, saved_path=None):
@@ -361,7 +381,7 @@ def get_raster():
     """A raster artifact as GeoTIFF bytes, for an Autark node to load.
 
     Asked by artifact id, never by path, and read by the sandbox under the
-    caller's session as ``/get`` is. The description rides in the
+    session ``/get`` reads under (``_read_session``). The description rides in the
     ``X-Curio-Raster`` header; a raster larger than ``maxCells`` or ``maxSide``
     is a 413 with its size. Statuses and bodies pass through as the sandbox
     gives them, so the node can say why a raster was not drawn.
@@ -370,7 +390,7 @@ def get_raster():
 
     if not file_name:
         return 'No artifact id specified', 400
-    return relay_raster(file_name, get_current_token())
+    return relay_raster(file_name, _read_session(file_name))
 
 
 def relay_raster(file_name, session_id, saved_path=None):

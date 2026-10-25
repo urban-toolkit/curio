@@ -195,7 +195,8 @@ def stage_input(art_id, scratch_dir, *, session_id=None, slot="in", saved_paths=
     not collide. Recurses for container kinds, extending the prefix as it goes.
     An artifact this session's store cannot serve that is a saved output of
     the run's dataflow (*saved_paths*) is staged from its own file
-    (:func:`stage_saved_output`).
+    (:func:`stage_saved_output`); one the owner's runs kept is staged from the
+    store under the kept session that made it, its parts too.
     """
     scratch_dir = Path(scratch_dir)
     try:
@@ -203,10 +204,13 @@ def stage_input(art_id, scratch_dir, *, session_id=None, slot="in", saved_paths=
     except Exception as store_error:
         # The rule parsers.load_artifact applies in-process (#407): a saved
         # output the store cannot serve to this session is read from its own
-        # file, staged as it is, with no store row added.
+        # file, staged as it is, with no store row added; a kept output, from
+        # the store under the session the backend names.
         saved = (saved_paths or {}).get(art_id)
         if saved:
             try:
+                if saved.get("session"):
+                    return stage_input(art_id, scratch_dir, session_id=saved["session"], slot=slot)
                 return stage_saved_output(saved, scratch_dir, name=art_id, slot=slot)
             except (KeyError, OSError, ValueError):
                 pass
