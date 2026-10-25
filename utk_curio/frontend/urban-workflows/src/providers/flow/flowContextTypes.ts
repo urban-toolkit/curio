@@ -132,7 +132,7 @@ export interface FlowContextProps {
      * the open dataflow go out at once (#909, #941). Resolves to the save's
      * answer, or rejects with its error. */
     requestProjectSave: () => Promise<any>;
-    saveAsNewProject: (name: string) => Promise<any>;
+    saveAsNewProject: (name: string, copyOf?: string | null) => Promise<any>;
     ensureProjectId: () => Promise<string | null>;
     persistDataflowForInstall: (nodeIds?: readonly string[]) => Promise<InstallSyncOutcome>;
     /** Open the owner's dataflow; with `lastResults`, with the results its canvas was left with. */

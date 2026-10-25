@@ -2,11 +2,13 @@
 
 A scenario dragged into another project brings outputs its source saved: its
 fixed context, which a Data Loading node reads there, and its outcomes, so they
-show without a run. Each is copied under the computed id of the node that holds
-it in the target dataflow, and its manifest names that node and dataflow as its
+show without a run. A copy of a dataflow brings them too: Duplicate, and Save a
+copy, whichever account owns the dataflow it copies. Each is copied under the
+computed id of the node that holds it in the target dataflow, into the store of
+the target's account, and its manifest names that node and dataflow as its
 producer, so a reload of the target restores it as that node's output. The copy
 is the target's own: a later run of the source rewrites the source's dataset,
-never this one.
+never this one, and the source's account deleting its dataset leaves the copy.
 
 The folder is copied as it is, sidecars and bundle parts included, rather than
 installed again from the sandbox's artifacts, which the run that made it may no
@@ -20,8 +22,8 @@ installing one replaces its folder (#941). So a copy is made in two steps, each
 under one project's lock:
 
 * :func:`stage_computed_copy` copies the source's folder, whole, to a staging
-  folder of its own in the account's store, under the source project's lock.
-  Nothing in the store changes, and nothing is written to the database.
+  folder of its own in the target account's store, under the source project's
+  lock. Nothing in the store changes, and nothing is written to the database.
 * :func:`place_staged_copy` swaps the staged copy in for the copy's folder and
   indexes it, under the target project's lock.
 
@@ -81,31 +83,35 @@ class StagedCopy:
 
 
 def stage_computed_copy(
-    user_key: str,
+    source_key: str,
     source_dir_name: str,
     *,
+    target_key: str,
     node_id: str,
     dataflow_id: str,
     dataflow_name: str | None = None,
 ) -> StagedCopy:
-    """Copy the dataset at *source_dir_name* to a staging folder, as
-    ``computed.<dataflow>.<node>@1``, its manifest naming that node and
-    dataflow as its producer, and its files linked (:func:`_link_written_once`).
-    The caller holds the source project's spec lock, so the folder is never
-    read while a save rewrites it."""
+    """Copy the dataset at *source_dir_name* in the store of the account
+    *source_key* to a staging folder in the store of the account *target_key*,
+    the same or another, as ``computed.<dataflow>.<node>@1``, its manifest
+    naming that node and dataflow as its producer, and its files linked
+    (:func:`_link_written_once`). The caller holds the source project's spec
+    lock, so the folder is never read while a save rewrites it."""
     if not dataflow_id or not node_id:
         raise InstallerError("A copied output needs the node and the dataflow that hold it.")
-    source = dataset_dir(user_key, source_dir_name)
+    source = dataset_dir(source_key, source_dir_name)
     try:
         manifest = load_dataset_manifest(source)
     except ManifestError as exc:
         raise InstallerError(f"{source_dir_name} cannot be read: {exc}") from exc
 
     dataset_id = computed_dataset_id(node_id, dataflow_id)
-    dest = dataset_dir(user_key, f"{dataset_id}@1")
+    dest = dataset_dir(target_key, f"{dataset_id}@1")
     if dest == source:
         raise InstallerError(f"{source_dir_name} would be copied onto itself.")
     try:
+        # A fresh account has no store yet.
+        dest.parent.mkdir(parents=True, exist_ok=True)
         staging = Path(tempfile.mkdtemp(prefix=_STAGING_PREFIX, dir=dest.parent))
     except OSError as exc:
         raise InstallerError(f"{source_dir_name} could not be copied: {exc}") from exc
@@ -140,7 +146,8 @@ def stage_computed_copy(
 
 
 def place_staged_copy(user_key: str, staged: StagedCopy) -> InstallResult:
-    """Put *staged* where its dataset goes, replacing the copy there, and index
+    """Put *staged* where its dataset goes in the store of the account
+    *user_key*, the one it was staged in, replacing the copy there, and index
     it. The caller holds the target project's spec lock, under which a save of
     the target installs its outputs."""
     dest = dataset_dir(user_key, staged.folder.name)

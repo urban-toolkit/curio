@@ -242,7 +242,10 @@ export default function UpMenu() {
         const sourceName = projectName || workflowNameRef.current || "Untitled";
         setSaving(true);
         try {
-            const detail = await saveAsNewProject(`${sourceName} (copy)`);
+            // Named by the dataflow it copies, so the copy gets its saved
+            // outputs. A shared view holds no project id: ``shareId`` is the
+            // route's then.
+            const detail = await saveAsNewProject(`${sourceName} (copy)`, shareId);
             showToast("Saved a copy to your workspace", "info");
             navigate(`/dataflow/${detail.id}`);
         } catch (err: any) {
