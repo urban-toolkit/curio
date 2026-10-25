@@ -5,8 +5,11 @@ A play or a run on the server by the dataflow's owner runs in a kept session
 viewer's run of the same step computes (``runs/kept.py``). The owner reads it
 through the dataflow's routes from any sign-in; no one else reads it there. A
 run whose input is not the dataflow's own runs in the caller's session, as
-before, since a kept session reads any kept output. What the owner's keys
-made, and anything made from it, is the owner's alone, for its full days.
+before, since a kept session reads any kept output; the dataflow's kept
+outputs among its inputs are read under the sessions that made them. So are
+the owner's reads on the routes that name no dataflow, which a package's node
+uses. What the owner's keys made, and anything made from it, is the owner's
+alone, for its full days.
 """
 from __future__ import annotations
 
@@ -223,6 +226,92 @@ def test_a_collaborators_play_stays_in_their_own_session(client, db, user_and_to
 
     assert sandbox["runs"]["a"]["session_id"] == other_token
     assert KeptStepOutput.query.filter_by(project_id=project_id).count() == 0
+
+
+def _play_reading(client, token, project_id, node, names):
+    """A play of *node* whose input circles hold *names*, as the canvas sends
+    a node with several inputs."""
+    response = client.post("/processPythonCode", data=json.dumps({
+        "code": f"    # node {node}\n    return input_0\n",
+        "nodeType": "PYTHON_COMPUTATION", "nodeId": node, "dataflowId": project_id,
+        "input": {"dataType": "outputs", "data": [{"path": name, "dataType": "dataframe"} for name in names]},
+        "saveOutputDataset": False,
+    }), headers=auth_headers(token))
+    assert response.status_code == 200, response.get_data(as_text=True)
+    return response.get_json()
+
+
+def test_a_run_that_is_not_kept_reads_the_dataflows_kept_input_under_its_session(client, user_and_token, sandbox):
+    """A node below a step only the browser makes reads that step's layers,
+    which the tab stored under its sign-in, beside an output the owner's run
+    kept. The run is not kept, and its session cannot read a kept artifact,
+    so the backend names the kept session for that input."""
+    user, token = user_and_token
+    project_id = create_project(client, token, name="Below the browser")
+    _play(client, token, project_id, "a")
+    kept_session = sandbox["runs"]["a"]["session_id"]
+
+    _play_reading(client, token, project_id, "c", ["art-a", "layers-the-tab-stored"])
+
+    run = sandbox["runs"]["c"]
+    assert run["session_id"] == token
+    assert run["saved_paths"] == {"art-a": {"session": kept_session}}
+    assert KeptStepOutput.query.filter_by(project_id=project_id, node_id="c").count() == 0
+
+
+def test_no_run_is_granted_what_another_dataflow_kept(client, user_and_token, sandbox):
+    user, token = user_and_token
+    first = create_project(client, token, name="First")
+    second = create_project(client, token, name="Second")
+    _play(client, token, first, "a")
+
+    _play_reading(client, token, second, "c", ["art-a", "layers-the-tab-stored"])
+
+    assert sandbox["runs"]["c"]["session_id"] == token
+    assert "saved_paths" not in sandbox["runs"]["c"]
+
+
+def test_a_collaborators_run_is_granted_none_of_the_owners_kept_outputs(client, db, user_and_token, sandbox):
+    user, token = user_and_token
+    project_id = create_project(client, token, name="Shared")
+    _play(client, token, project_id, "a")
+    _other, other_token = _other_account(db)
+
+    _play(client, other_token, project_id, "b", input_path="art-a")
+
+    assert sandbox["runs"]["b"]["session_id"] == other_token
+    assert "saved_paths" not in sandbox["runs"]["b"]
+
+
+@pytest.mark.parametrize("route", ["/get", "/get-preview", "/raster"])
+def test_the_owners_sign_in_reads_a_kept_output_on_the_routes_that_name_no_dataflow(
+    client, db, user_and_token, sandbox, route,
+):
+    """A package's node reads its input on ``/get``, as ``curio.example-ui``'s
+    Column Filter does: the owner's sign-in, a later one too, reads what
+    their runs kept under the session that made it."""
+    user, token = user_and_token
+    project_id = create_project(client, token, name="Package reads")
+    _play(client, token, project_id, "a")
+    later = _sign_in(db, user, "alice-token-later")
+
+    response = client.get(route, query_string={"fileName": "art-a"}, headers=auth_headers(later))
+
+    assert response.status_code == 200, response.get_data(as_text=True)
+    assert sandbox["reads"][-1]["sessionId"] == sandbox["runs"]["a"]["session_id"]
+
+
+@pytest.mark.parametrize("route", ["/get", "/get-preview", "/raster"])
+def test_another_account_reads_under_its_own_session_on_those_routes(client, db, user_and_token, sandbox, route):
+    user, token = user_and_token
+    project_id = create_project(client, token, name="Package reads")
+    _play(client, token, project_id, "a")
+    _other, other_token = _other_account(db)
+
+    response = client.get(route, query_string={"fileName": "art-a"}, headers=auth_headers(other_token))
+
+    assert response.status_code == 200, response.get_data(as_text=True)
+    assert sandbox["reads"][-1]["sessionId"] == other_token
 
 
 def test_what_the_owners_keys_made_and_what_was_made_from_it_are_the_owners_alone(
