@@ -5,7 +5,7 @@ import re
 from dataclasses import asdict
 from flask import Blueprint, g, jsonify, request
 
-from utk_curio.backend.app.users.dependencies import require_auth
+from utk_curio.backend.app.users.dependencies import get_current_token, require_auth
 from utk_curio.backend.app.projects import services
 from utk_curio.backend.app.projects.repositories import NotFoundError
 from utk_curio.backend.app.projects.schemas import (
@@ -44,7 +44,7 @@ def create_project():
         return _error(str(exc))
 
     try:
-        detail = services.save_project(g.user, data)
+        detail = services.save_project(g.user, data, sign_in=get_current_token())
     except ProjectError as exc:
         return _error(str(exc), exc.status)
 
@@ -110,7 +110,7 @@ def update_project(project_id: str):
         return _error(str(exc))
 
     try:
-        detail = services.update_project(g.user, project_id, data)
+        detail = services.update_project(g.user, project_id, data, sign_in=get_current_token())
     except NotFoundError:
         return _error("Project not found", 404)
     except ProjectError as exc:
@@ -192,7 +192,6 @@ def _output_read(project_id: str):
     here."""
     from utk_curio.backend.app.projects.models import Project
     from utk_curio.backend.app.runs import kept
-    from utk_curio.backend.app.users.dependencies import get_current_token
     from utk_curio.backend.extensions import db
 
     file_name = request.args.get("fileName")

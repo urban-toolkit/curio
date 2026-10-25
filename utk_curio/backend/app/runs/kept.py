@@ -283,6 +283,38 @@ def owner_session(user_id, name: str) -> Optional[str]:
     return entry.session_id if entry is not None else None
 
 
+def read_session(user_id, name: str, sign_in: Optional[str]) -> Optional[str]:
+    """The session the account *user_id*, signed in as *sign_in*, reads the
+    artifact *name* under where no dataflow is named: the kept session that
+    made it, when the runs of a dataflow the account owns kept it
+    (:func:`owner_session`), else the sign-in, as when that lookup fails."""
+    try:
+        session = owner_session(user_id, name)
+    except Exception:  # noqa: BLE001 - a read never fails on this lookup
+        log.warning("could not look up the kept output %s", name)
+        try:
+            db.session.rollback()
+        except Exception:  # noqa: BLE001 - no database to roll back
+            pass
+        session = None
+    return session or sign_in
+
+
+def readable_by(user_id, sign_in: Optional[str], names) -> set:
+    """The artifacts among *names*, which a request named, that the account
+    *user_id* signed in as *sign_in* may read: each under its
+    :func:`read_session`, as the sandbox's rule has it
+    (``datasets/infrastructure/sandbox_artifacts.readable``). One another
+    account's run made is not among them, nor one no session of the account
+    can read."""
+    from utk_curio.backend.app.datasets.infrastructure import sandbox_artifacts
+
+    return sandbox_artifacts.readable({
+        name: read_session(user_id, name, sign_in)
+        for name in dict.fromkeys(str(name) for name in names if name)
+    })
+
+
 def kept_output(project_id: str, key: str, private_to: Optional[str] = None) -> Optional[tuple[dict, list]]:
     """The output kept under *key* that this run may read, a shared one or
     one private to *private_to*, with its artifact ids. Touches it, so it is
