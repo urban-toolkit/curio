@@ -9,9 +9,9 @@ new sign-in, which is a new session, it cannot read that output.
 
 The owner adds ``curio.example-ui@1``, drops a Data Loading node and the Column
 Filter, runs the loader with its output saved, and saves. Then the owner leaves
-the dataflow, signs in again, which starts a new session, reopens the dataflow,
-and the Column Filter shows the column and the row count with nobody running
-anything.
+the dataflow, signs in again, which starts a new session, opens the dataflow
+from the projects page, and the Column Filter shows the column and the row
+count with nobody running anything.
 
 The same reads, without a browser: ``curioGlobalFetchData.test.ts`` and
 ``exampleUiColumnFilter.test.tsx``.
@@ -30,6 +30,7 @@ from playwright.sync_api import expect
 
 from .test_package_refresh_e2e import _install_from_the_node_catalog
 from .utils import (
+    api_json,
     close_tools_palette,
     connect_nodes,
     drag_builtin_to_canvas,
@@ -37,6 +38,7 @@ from .utils import (
     enable_save_output,
     node_locator,
     open_tools_palette,
+    project_card,
     require_owner_view,
     require_project_page,
     require_user_auth,
@@ -45,6 +47,7 @@ from .utils import (
     set_node_code,
     stub_db_login,
     stub_login_and_enter_workflow,
+    wait_for_projects_page,
 )
 from .walkthroughs.column_filter import COLUMN_FILTER_CODE, EXAMPLE_UI_PKG
 
@@ -54,6 +57,34 @@ if TYPE_CHECKING:
 #: What the Column Filter says once it has read the loader's three rows: its
 #: threshold starts at 0 with ">", so every row matches.
 ALL_ROWS_MATCH = "3 of 3 rows match"
+
+#: The global the example package's bundle sets once it has run, which is when
+#: it registers the Column Filter's behavior (its UMD name, from
+#: ``webpack.packages.config.js``).
+BUNDLE_GLOBAL = "curio_example-ui_1"
+
+
+def _open_from_the_projects_page(page, base: str, name: str, project_id: str) -> None:
+    """Open the dataflow as a user who has just signed in does: select its card
+    on the projects page, then Open dataflow (as ``_open_from_projects`` in
+    ``test_loaded_dataflow_saves_e2e.py`` does).
+
+    The projects page loads the bundle of every installed package. The card is
+    opened once the example package's bundle has run, so the dataflow's Column
+    Filter is built with the behavior the bundle registers.
+    """
+    page.goto(f"{base}/projects")
+    wait_for_projects_page(page, timeout=30000)
+    page.wait_for_function(f"() => window[{BUNDLE_GLOBAL!r}] !== undefined", timeout=30000)
+    card = project_card(page, name).first
+    card.wait_for(state="visible", timeout=30000)
+    assert card.get_attribute("data-project-id") == project_id, (
+        f"the projects page's card named {name!r} is not the dataflow this test saved"
+    )
+    card.click()
+    expect(page.locator("h2", has_text=name).first).to_be_visible(timeout=15000)
+    page.get_by_role("button", name="Open dataflow", exact=True).click()
+    page.wait_for_url(f"**/dataflow/{project_id}", timeout=30000)
 
 
 def _node_text(page, node_id: str) -> str:
@@ -124,7 +155,8 @@ def test_a_package_node_reads_its_saved_input_after_a_new_sign_in(
         "the second sign-in made a new account instead of signing the owner in again"
     )
     assert second["token"] != first["token"], "the second sign-in reused the first session"
-    page.goto(f"{base}/dataflow/{project_id}")
+    name = api_json(f"{current_server}/api/projects/{project_id}", second["token"])["project"]["name"]
+    _open_from_the_projects_page(page, base, name, project_id)
     require_owner_view(page)
     node_locator(page, column_filter).wait_for(state="visible", timeout=45000)
 
