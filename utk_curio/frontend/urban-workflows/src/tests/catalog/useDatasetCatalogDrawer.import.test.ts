@@ -372,6 +372,35 @@ describe("useDatasetCatalogDrawer.onDelete confirm dialog (#177)", () => {
     deleteSpy.mockRestore();
   });
 
+  it("says a node's saved output is the dataflow's result, which goes with it", async () => {
+    const usageSpy = jest.spyOn(datasetCatalogApi, "datasetUsage").mockResolvedValue([] as never);
+    const { result } = renderHook(() => useDatasetCatalogDrawer(true));
+    await act(async () => {
+      await result.current.onDelete({ ...dataset, producerDataflowName: "Trips by hour" } as never);
+    });
+
+    expect(String(result.current.confirmAction?.body ?? "")).toContain(
+      "It holds the saved result of Knowledge Graph in Trips by hour; " +
+        "that node opens with no result until it runs again.",
+    );
+
+    usageSpy.mockRestore();
+  });
+
+  it("says nothing of a node's result for a dataset no node made", async () => {
+    const usageSpy = jest.spyOn(datasetCatalogApi, "datasetUsage").mockResolvedValue([] as never);
+    const { result } = renderHook(() => useDatasetCatalogDrawer(true));
+    await act(async () => {
+      await result.current.onDelete({
+        ...dataset, id: "user.trees", origin: "user", producerNodeId: undefined, dirName: "user.trees@1",
+      } as never);
+    });
+
+    expect(String(result.current.confirmAction?.body ?? "")).not.toContain("saved result");
+
+    usageSpy.mockRestore();
+  });
+
   it("falls back to the node-count wording when the usage lookup fails", async () => {
     const usageSpy = jest
       .spyOn(datasetCatalogApi, "datasetUsage")

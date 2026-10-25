@@ -468,6 +468,23 @@ def record_outputs(user_key: str, project_id: str, entries: List[Dict]) -> None:
     _write_json_atomically(path, manifest)
 
 
+def drop_outputs(user_key: str, project_id: str, node_ids) -> bool:
+    """Remove the outputs of *node_ids* from those the manifest records, and
+    keep the rest of the manifest as it is; whether any went. The caller holds
+    the project's spec lock."""
+    manifest = read_manifest(user_key, project_id)
+    if not manifest:
+        return False
+    nodes = set(node_ids)
+    outputs = manifest.get("outputs") or []
+    left = [entry for entry in outputs if not (isinstance(entry, dict) and entry.get("node_id") in nodes)]
+    if len(left) == len(outputs):
+        return False
+    manifest["outputs"] = left
+    _write_json_atomically(project_dir(user_key, project_id) / "manifest.json", manifest)
+    return True
+
+
 def persisted_output_refs(
     user_key: str,
     project_id: str,
