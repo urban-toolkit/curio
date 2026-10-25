@@ -60,6 +60,39 @@ def test_a_duplicate_keeps_a_saved_output_whose_artifact_is_gone(app, db, user_a
     assert os.path.samefile(copied.path, source_file.path)
 
 
+def test_a_duplicate_keeps_an_output_read_from_an_installed_dataset(app, db, user_and_token, tmp_curio):
+    """A node that loads an installed dataset has that dataset as its saved
+    output. The copy's spec names the same dataset, so the copy records the
+    output as it is and reads the same file."""
+    from utk_curio.backend.app.datasets.install.installer import install_computed_file_for_node
+
+    user, _ = user_and_token
+    user_key = services._user_dir_key(user)
+    install_computed_file_for_node(
+        user_key, b"city,count\nChicago,10\n", "upstream_out.csv", "csv",
+        node_id="other-node", dataflow_id="elsewhere",
+    )
+    source = services.save_project(user, ProjectCreate(name="Loader", spec=_spec("Loader")))
+    spec = storage.read_spec(user_key, source.id)
+    spec["dataflow"]["nodes"].append({"id": "loader", "type": "curio.builtin/data-loading"})
+    spec["dataflow"]["datasets"] = [{
+        "datasetId": "computed.elsewhere.other-node",
+        "dirName": "computed.elsewhere.other-node@1",
+        "origin": "computed",
+        "producerNodeId": "loader",
+    }]
+    storage.write_spec(user_key, source.id, spec)
+    storage.record_outputs(user_key, source.id, [{"node_id": "loader", "filename": "upstream_out.csv"}])
+    source_file = storage.saved_output_file(user_key, source.id, "upstream_out.csv")
+    assert source_file is not None
+
+    copy = services.duplicate_project(user, source.id)
+
+    assert [(ref.node_id, ref.filename) for ref in copy.outputs] == [("loader", "upstream_out.csv")]
+    copied = storage.saved_output_file(user_key, copy.id, "upstream_out.csv")
+    assert copied is not None and copied.path == source_file.path
+
+
 def test_the_copied_output_is_the_duplicates_own(app, db, user_and_token, tmp_curio):
     """Its dataset is the copy's node's in the copy's dataflow, so a later run
     of the source installs into the source's dataset and never this one."""

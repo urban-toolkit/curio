@@ -1853,7 +1853,9 @@ def _copy_saved_outputs(
                 OutputRef(node_id=node, filename=entry["filename"], data_type=entry.get("data_type"))
                 for node, entry in entries.items()
             ]
-            restored = storage.readable_saved_outputs(user_key, target_id, refs)
+            restored = storage.readable_saved_outputs(
+                user_key, target_id, refs, spec=storage.read_spec(user_key, target_id),
+            )
             storage.record_outputs(user_key, target_id, [entries[ref.node_id] for ref in restored])
     finally:
         for copy in staged:
