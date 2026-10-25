@@ -78,13 +78,27 @@ def _output(node_id: str, art_id: str, data_type: str) -> dict:
     }
 
 
+def _earlier_sign_in(token) -> str:
+    """:data:`EARLIER`, a sign-in of the account *token* signs in to."""
+    from utk_curio.backend.app.users.models import UserSession
+    from utk_curio.backend.extensions import db
+
+    if UserSession.query.filter_by(token=EARLIER).first() is None:
+        user_id = UserSession.query.filter_by(token=token).one().user_id
+        db.session.add(UserSession(user_id=user_id, token=EARLIER))
+        db.session.commit()
+    return EARLIER
+
+
 def _save(client, token, *outputs) -> str:
-    """A dataflow saved with *outputs*: the save installs each one."""
+    """A dataflow saved with *outputs*: the save installs each one. The
+    canvas sends it in the sign-in that ran the nodes, the only one of the
+    account that may read what they made."""
     project_id = create_project(client, token, name="Tuple after a reopen")
     saved = client.put(
         f"/api/projects/{project_id}",
         data=json.dumps({"outputs": list(outputs)}),
-        headers=auth_headers(token),
+        headers=auth_headers(_earlier_sign_in(token)),
     )
     assert saved.status_code == 200, saved.get_data(as_text=True)
     return project_id
