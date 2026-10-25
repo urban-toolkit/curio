@@ -377,7 +377,8 @@ It shows:
 - **Accounts and content** - account, session, sign-in, project and dataset
   counts.
 - **Storage** - disk usage across the `.curio` tree, as a distribution over
-  user stores plus a per-area breakdown.
+  user stores plus a per-area breakdown. A file with several names counts
+  once, in the first area that holds it (users, then data).
 - **Recent errors** - the last failures from node executions, the sandbox, the
   backend, and the browser.
 
