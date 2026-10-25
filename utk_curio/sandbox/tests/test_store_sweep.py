@@ -114,6 +114,17 @@ class TheStoreSweepTestCase(unittest.TestCase):
         self.assertEqual(self.ids(), {kept})
         self.assertTrue(self.stored(kept).is_file())
 
+    def test_a_kept_runs_output_goes_a_day_after_any_entry_would_have(self):
+        """No entry outlives the cutoff, so a kept row a day older still is
+        one whose entry was never written, or whose forget failed."""
+        orphaned = self.store(self.frame, OLD - DAY_MS, session_id=new_session_id())
+        kept = self.store(self.frame, OLD, session_id=new_session_id())
+
+        self.assertEqual(parsers.forget_made_before(CUTOFF), 1)
+
+        self.assertEqual(self.ids(), {kept})
+        self.assertFalse(self.stored(orphaned).exists())
+
     def test_a_tuple_goes_whole_by_its_own_age(self):
         """Its id is minted before its parts'."""
         recent = self.store((self.frame, self.frame), NEW, OLD)

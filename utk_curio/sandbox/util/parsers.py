@@ -1167,6 +1167,10 @@ _LEFTOVER_FILE = re.compile(r"\d{13}_[0-9a-f]{8}(?:_output\.parquet)?(?:\.[A-Za-
 _LEFTOVER_BUNDLES = "bundles"
 #: How many rows one ``DELETE`` names.
 _DELETE_BATCH = 500
+#: How much longer than the rest a kept run's rows are left to their entries,
+#: which go when their days are up and take the rows with them; a row whose
+#: entry was never written, or whose forget failed, goes this much later.
+_KEPT_MARGIN_MS = 24 * 3600 * 1000
 
 
 def _made_before(art_id, cutoff_ms) -> bool:
@@ -1210,9 +1214,10 @@ def _older_than(path: Path, cutoff_ms) -> bool:
 
 
 def forget_made_before(cutoff_ms) -> int:
-    """Delete what the store holds that was made before *cutoff_ms* and no
-    kept run holds (``common/kept_sessions.py``, whose outputs go with their
-    entries). Returns how many rows went.
+    """Delete what the store holds that was made before *cutoff_ms*. A kept
+    run's artifacts (``common/kept_sessions.py``) go with their entries, so
+    they are left a day longer (:data:`_KEPT_MARGIN_MS`), and then go too:
+    no entry outlives that. Returns how many rows went.
 
     - An artifact goes with its row: by the time in its id, and a part of a
       tuple, list or dict output by its whole output's, so a bundle goes whole.
@@ -1253,8 +1258,8 @@ def forget_made_before(cutoff_ms) -> int:
         for art_id, *_rest in rows:
             art_id = str(art_id)
             top = whole(art_id)
-            if not is_kept_session(sessions.get(top)) and not is_kept_session(sessions.get(art_id)) \
-                    and _made_before(top, cutoff_ms):
+            kept = is_kept_session(sessions.get(top)) or is_kept_session(sessions.get(art_id))
+            if _made_before(top, cutoff_ms - _KEPT_MARGIN_MS if kept else cutoff_ms):
                 going.add(art_id)
         ordered = sorted(going)
         for start in range(0, len(ordered), _DELETE_BATCH):
