@@ -6,7 +6,8 @@
 # (started with `docker compose exec -d`, see the workflow), on container ports
 # 5002+k / 2000+k. `docker compose exec` cannot publish ports, so they are
 # declared here at create time -- declaring more than a run uses costs nothing, so seven pairs
-# (up to 8 workers) are declared; raise CURIO_E2E_PARALLEL, not this file.
+# (up to 8 workers) are declared; raise test-gpu's CURIO_E2E_MAX_PARALLEL, not
+# this file.
 # Compose APPENDS these to docker-compose.ci.yml's `ports`.
 #
 # Loopback only, for the same reason docker-compose.ci.yml gives for the base

@@ -155,7 +155,7 @@ on:
         options: [auto, hosted, arcade, desktop]
         default: auto
       gpu_pool:
-        description: 'test-gpu: auto (arcade GPU runners first, then utk, then utk-desktop-01), arcade, utk, or desktop'
+        description: 'test-gpu: auto (arcade GPU runners first, then utk, then the utk-desktop runners), arcade, utk, or desktop'
         type: choice
         options: [auto, arcade, utk, desktop]
         default: auto
@@ -191,7 +191,8 @@ env:
 #     and -02, [self-hosted, desktop]) when arcade is full too.
 #   * test-gpu: an arcade GPU runner (arcade-gpu-01..04, [self-hosted, gpu,
 #     h100]) while one is free, then utk-gpu ([self-hosted, gpu, curio]), and
-#     utk-desktop-01 ([self-hosted, gpu, desktop]) when utk-gpu is busy too.
+#     a utk-desktop runner ([self-hosted, gpu, desktop], either one) when
+#     utk-gpu is busy too, with as many workers as the desktop holds.
 #   * test-desktop-stress, unit (sandbox) and preview-runner: always
 #     ubuntu-latest. The first two measure a 4-core, 16 GB laptop.
 #   * test-gpu-stress: always utk-gpu.
@@ -214,7 +215,7 @@ env:
 # while CPU jobs each get a runner of their own. Keyed per ref, not repo-wide:
 # GitHub keeps only ONE job pending per group, so a repo-wide group let each
 # newly queued job evict the previously pending one. test-gpu's group also
-# names its GPU pool, so runs on arcade, utk-gpu and utk-desktop-01 never wait
+# names its GPU pool, so runs on arcade, utk-gpu and the desktops never wait
 # for or evict each other. `cancel-in-progress: false` means eviction only ever kills
 # a job that has not started, which holds no containers, ports or GPU to leak.
 # test-gpu-stress and a re-mint's test-gpu have groups of their own.
@@ -433,7 +434,7 @@ jobs:
     runs-on: ${{ fromJSON(needs.pick-runners.outputs.runners)['test-gpu'] }}
     timeout-minutes: ${{ inputs.repeat > 1 && 350 || 90 }}
     # One queue per ref and GPU pool (h100 is arcade's, curio is utk-gpu,
-    # desktop is utk-desktop-01), so a run on one pool never waits for, or
+    # desktop is the utk-desktop runners), so a run on one pool never waits for, or
     # evicts, a run on another.
     concurrency:
       group: gpu-ci-${{ github.ref }}-${{ fromJSON(needs.pick-runners.outputs.runners || '{"test-gpu":["","","none"]}')['test-gpu'][2] }}${{ inputs.remint && '-remint' || '' }}
@@ -497,14 +498,18 @@ jobs:
       # to 8 workers): shard k's backend is container 5002+k on host 5022+k,
       # its sandbox container 2000+k on host 2020+k -- the arithmetic
       # backend/tests/shards.py does from CURIO_E2E_BACKEND_PORT /
-      # CURIO_E2E_SANDBOX_PORT below. Each worker is a Chromium + backend +
-      # sandbox (~3 GiB) inside the one container, on a host that also runs
-      # the prod stacks, and no N beats the longest group: groups are atomic
-      # under --dist loadgroup. This job holds about 42 minutes of test time
-      # (main's run 39185249274, 10-19), about 7 minutes a worker, and its
-      # longest group (test_shipped_scenario_drops_e2e) takes 5.8 minutes, so
-      # more workers would save a minute at most, at 3 GiB each.
-      CURIO_E2E_PARALLEL: "6"
+      # CURIO_E2E_SANDBOX_PORT below. Each worker is a Chrome on the runner
+      # plus a backend and sandbox pair in the one container (~3 GiB), on a
+      # host that also runs the prod stacks, and no N beats the longest
+      # group: groups are atomic under --dist loadgroup. This job holds about
+      # 42 minutes of test time (main's run 39185249274, 10-19), about 7
+      # minutes a worker, and its longest group
+      # (test_shipped_scenario_drops_e2e) takes 5.8 minutes, so more workers
+      # would save a minute at most, at 3 GiB each. This is the most; the
+      # job runs as many as the runner's free memory and video memory hold
+      # (scripts/ci_memory_budget.py writes CURIO_E2E_PARALLEL), fewer on a
+      # desktop.
+      CURIO_E2E_MAX_PARALLEL: "6"
       CURIO_E2E_BACKEND_URL: "http://localhost:5022"
       # Host-side Playwright targets the remapped ports (e2e_existing_servers
       # in utils/servers.py and _backend_base_url_for_config in
@@ -542,6 +547,14 @@ jobs:
       # would fail.
       - name: 📁 Create the CI report folder
         run: mkdir -p ci-report
+
+      # Six workers fill a desktop's memory and an RTX 3070's video memory,
+      # and the container's limit has to be set before it starts. Read once,
+      # before the build, while nothing of this job holds memory yet.
+      - name: 📏 Size this job to the runner's free memory
+        run: |
+          python3 scripts/ci_memory_budget.py --github-env --workers-max "$CURIO_E2E_MAX_PARALLEL" \
+            || echo "CURIO_E2E_PARALLEL=$CURIO_E2E_MAX_PARALLEL" >> "$GITHUB_ENV"
 
       # The Node.js major is written in five places (NODE_MAJOR, .nvmrc,
       # .node-version, two package.json "engines", the Dockerfile). The test
@@ -724,6 +737,15 @@ jobs:
             utk_curio/frontend/urban-workflows/dist
           test -f utk_curio/frontend/urban-workflows/dist/index.html
 
+      # What the workers take, for sizing them (WORKER_* in
+      # scripts/ci_memory_budget.py): the containers, Chrome and pytest on the
+      # runner, and video memory, every 5 s. It stops by itself after 95
+      # minutes, and the runner ends it with the job.
+      - name: 📈 Record memory use while the tests run
+        run: |
+          nohup python3 scripts/ci_memory_budget.py sample --out ci-report/memory.tsv > /dev/null 2>&1 &
+          echo $! > "$RUNNER_TEMP/memory-sampler.pid"
+
       - name: 🧩 Start the extra e2e shards inside the CI container
         shell: bash
         run: |
@@ -783,9 +805,11 @@ jobs:
           PYTEST_ADDOPTS: --junitxml=${{ github.workspace }}/ci-report/e2e{run}.xml
           # This runner's GPU model, for the frames that keep a baseline per
           # GPU kind (GPU_KINDS in utils/screenshots.py): the arcade runners
-          # share an H100, utk-gpu has an RTX PRO 6000, utk-desktop-01 an RTX
-          # 3070. Any other runner gets none, so its frames compare with their
-          # default baselines.
+          # share an H100, utk-gpu has an RTX PRO 6000, and the utk-desktop
+          # runners share frames: utk-desktop-02's RTX 4070 drew 07's plot
+          # close-up minted on utk-desktop-01's RTX 3070 exactly (10-25). Any
+          # other runner gets none, so its frames compare with their default
+          # baselines.
           CURIO_E2E_GPU_KIND: ${{ startsWith(runner.name, 'arcade-gpu-') && 'arcade-gpu' || (runner.name == 'utk-gpu' && 'utk-gpu' || (startsWith(runner.name, 'utk-desktop-') && 'utk-desktop' || '')) }}
         shell: bash
         run: |
@@ -859,9 +883,17 @@ jobs:
             'for f in .curio/shards/*/messages-*.log .curio/shards/*/launch-*.out; do [ -f "$f" ] && { echo "=== $f ==="; cat "$f"; echo; }; done' \
             > "$GITHUB_WORKSPACE/shard-logs.txt" 2>&1 || true
 
+      # The peaks go to the job's summary, the samples to the CI report inputs.
+      - name: 📈 Memory this job used
+        if: always()
+        shell: bash
+        run: |
+          kill "$(cat "$RUNNER_TEMP/memory-sampler.pid" 2>/dev/null)" 2>/dev/null || true
+          python3 scripts/ci_memory_budget.py report --samples ci-report/memory.tsv
+
       # Everything the ci-report job builds the run's page from: this job's
-      # JUnit, screenshot comparisons, failure diagnostics and,
-      # on a re-mint, the baselines it wrote.
+      # JUnit, screenshot comparisons, failure diagnostics, the memory samples
+      # and, on a re-mint, the baselines it wrote.
       - name: 📤 Upload the results for the CI report
         if: always()
         uses: actions/upload-artifact@v6

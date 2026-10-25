@@ -51,6 +51,9 @@ services:
     # provoke process exhaustion and this host also runs the live stacks.
     # RLIMIT_NPROC bounds each child, but the sandbox parent is root here.
     pids_limit: 4096
+    # The runner-sized memory limit, as in docker-compose.ci.yml.
+    mem_limit: ${CURIO_CI_MEM_LIMIT:-0}
+    memswap_limit: ${CURIO_CI_MEM_LIMIT:-0}
     # A deployment's .env where a deployment keeps it, planted by the job's
     # seed step, so the boundary suite can show a node cannot read it.
     volumes:
