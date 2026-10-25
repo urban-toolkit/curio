@@ -53,6 +53,14 @@ describe('DataPoolContent', () => {
     expect(screen.getByText('Run the node feeding this one.')).toBeInTheDocument();
   });
 
+  test('as a dashboard tile whose feeding step failed, it says so, with no node for the visitor to open', () => {
+    // On the canvas it says to open the failed node (#347); a visitor cannot.
+    render(<DataPoolContent {...defaultProps} tabData={[]} connected upstreamErrored onDashboard />);
+    expect(screen.getByText('No results')).toBeInTheDocument();
+    expect(screen.getByText('A step before this one failed.')).toBeInTheDocument();
+    expect(screen.queryByText('The node feeding this one failed. Open it to see the error.')).toBeNull();
+  });
+
   test('as a dashboard tile with nothing in yet, it says its rows are coming, not which node to run', () => {
     // A visitor runs no node: the page's data or its run is on its way.
     render(<DataPoolContent {...defaultProps} tabData={[]} connected onDashboard />);
