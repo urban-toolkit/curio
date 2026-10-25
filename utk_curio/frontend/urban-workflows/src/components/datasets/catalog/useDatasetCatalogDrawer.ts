@@ -545,6 +545,13 @@ The dataset stays in your Data Catalog and in any other dataflow using it.`) +
           usageNote = `\n\nIt is referenced by ${usageCount} node${usageCount === 1 ? "" : "s"} across your projects; those references will be removed.`;
         }
       }
+      // A node's saved output: deleting it deletes the dataflow's result too
+      // (`projects/services.forget_saved_output` on the server).
+      const resultNote =
+        dataset.origin === "computed" && dataset.producerNodeId
+          ? `\n\nIt holds the saved result of ${title} in ${dataset.producerDataflowName || "its dataflow"}; ` +
+            `that node opens with no result until it runs again.`
+          : "";
       // The prefetch above runs *before* the dialog opens, so the body is
       // complete the moment it appears rather than filling in under the user.
       setConfirmAction({
@@ -563,6 +570,7 @@ The dataset stays in your Data Catalog and in any other dataflow using it.`) +
           `This deletes the dataset itself, and removes it from every dataflow ` +
           `that uses it, not just this one.` +
           usageNote +
+          resultNote +
           // The live-store scope and the operator's backup posture, in the one
           // sentence every permanent-deletion confirmation carries. The title
           // now claims permanence, so the body has to qualify it exactly as

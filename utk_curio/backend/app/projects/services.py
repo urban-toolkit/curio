@@ -1163,6 +1163,28 @@ def record_node_outputs(
     return persisted_refs
 
 
+def forget_saved_output(user, project_id: str, node_id: str) -> bool:
+    """Drop *node_id*'s saved output from the manifest of *user*'s dataflow
+    *project_id*, and forget what the runs of that node kept
+    (``runs/kept.forget_node``): deleting the output's dataset from the Data
+    Catalog deletes the dataflow's result, so the node opens with none until it
+    runs again. Whether the manifest named one; a dataflow *user* does not own
+    is left as it is."""
+    from utk_curio.backend.app.projects.models import Project
+    from utk_curio.backend.app.runs import kept
+
+    project = db.session.get(Project, project_id)
+    if project is None or project.user_id != getattr(user, "id", None):
+        return False
+    ukey = _user_dir_key(user)
+    with storage.spec_write_lock(ukey, project_id):
+        dropped = storage.drop_outputs(ukey, project_id, [node_id])
+    # After the spec lock: a thread holding a database write may not wait for
+    # it (#909).
+    kept.forget_node(project_id, node_id)
+    return dropped
+
+
 def mutate_dataflow_datasets(user, project_id: str, mutate) -> Optional[dict]:
     """The dataset endpoints' writer for ``spec.dataflow.datasets`` (dev/81/82).
 

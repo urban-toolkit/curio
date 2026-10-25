@@ -380,6 +380,20 @@ def keep(
     return ids
 
 
+def forget_node(project_id: str, node_id: str) -> int:
+    """Drop every output kept for *node_id* of *project_id*, whoever made it,
+    as deleting the node's saved output asks; their artifacts go once the
+    delete commits (:func:`_note_deleted_entry`). Returns how many went."""
+
+    def _apply():
+        entries = KeptStepOutput.query.filter_by(project_id=project_id, node_id=node_id).all()
+        for entry in entries:
+            db.session.delete(entry)
+        return len(entries)
+
+    return commit_with_retry(_apply)
+
+
 def readable_output(project_id: str, file_name: str, token: Optional[str]) -> KeptStepOutput:
     """The kept output of *project_id* that holds the artifact *file_name*,
     if the caller may read it: a shared one, or one private to the run whose

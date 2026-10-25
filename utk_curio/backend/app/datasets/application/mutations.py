@@ -75,6 +75,25 @@ def remote_provenance(raw: object, file_bytes: bytes) -> dict[str, Any] | None:
     }
 
 
+def _computed_producers(user_key: str, dataset_id: str) -> list[tuple[str, str]]:
+    """``(dataflow id, node id)`` of each node whose saved output the account's
+    dataset *dataset_id* holds, as its manifests record them."""
+    from utk_curio.backend.app.datasets.domain.manifest import ManifestError, load_dataset_manifest
+    from utk_curio.backend.app.datasets.infrastructure.storage import list_user_datasets
+
+    found: list[tuple[str, str]] = []
+    for dataset_root in list_user_datasets(user_key):
+        if dataset_root.name.split("@")[0] != dataset_id and dataset_root.name != dataset_id:
+            continue
+        try:
+            manifest = load_dataset_manifest(dataset_root)
+        except (ManifestError, OSError, ValueError):
+            continue
+        if manifest.producer_dataflow_id and manifest.producer_node_id:
+            found.append((manifest.producer_dataflow_id, manifest.producer_node_id))
+    return found
+
+
 class CatalogMutations:
     """Write-side catalog operations: import, publish, install, uninstall.
 
@@ -1374,6 +1393,8 @@ class CatalogMutations:
         )
 
         user_key = self._paths._user_key()
+        # The nodes whose saved output it holds, read before its folder goes.
+        producers = _computed_producers(user_key, dataset_id)
 
         # 1. Unpublish from the hub if a committed catalog copy exists. Best-effort:
         # unpublish restores the manifest into the store, which step 3 then removes.
@@ -1451,6 +1472,19 @@ class CatalogMutations:
                 forget_media(user_key, dataset_id)
             except Exception:  # noqa: BLE001 - the dataset itself is gone
                 logger.warning("Could not remove media made from %s", dataset_id, exc_info=True)
+            # A node's saved output goes with the dataflow's record of it and
+            # what its runs kept, so the node opens with no result until it
+            # runs again (``projects/services.forget_saved_output``).
+            from utk_curio.backend.app.projects.services import forget_saved_output
+
+            for dataflow_id, node_id in producers:
+                try:
+                    forget_saved_output(self.user, dataflow_id, node_id)
+                except Exception:  # noqa: BLE001 - the dataset itself is gone
+                    logger.warning(
+                        "Could not forget the result of node %s in dataflow %s",
+                        node_id, dataflow_id, exc_info=True,
+                    )
 
         if not deleted_any and not failed_dirs and not removed_from:
             raise DatasetCatalogError(
