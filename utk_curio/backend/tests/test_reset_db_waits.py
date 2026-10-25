@@ -11,6 +11,9 @@ A listing is held here inside ``list_projects`` with events, after it has
 loaded its user, while a reset arrives. The database is a file, so each thread
 has its own connection, as on the server. Nothing opens a socket: every
 request goes through Flask's test client.
+
+A test can also leave an agent job running: a Solve session keeps making
+passes until its deadline. The reset stops it and waits for it the same way.
 """
 from __future__ import annotations
 
@@ -23,6 +26,8 @@ import pytest
 from sqlalchemy import event, text
 
 from utk_curio.backend.app import create_app
+from utk_curio.backend.app.agents.application.solve import session as solve_session
+from utk_curio.backend.app.agents.infrastructure import agent_jobs
 from utk_curio.backend.app.projects import seed
 from utk_curio.backend.app.projects import services as project_services
 from utk_curio.backend.app.testing import routes as testing_routes
@@ -136,11 +141,11 @@ def _hold_the_listing(monkeypatch, thread_name: str):
 
 
 @contextlib.contextmanager
-def _watch_user_delete(deleted: threading.Event):
-    """Set *deleted* when anything deletes the ``user`` table's rows."""
+def _watch_user_delete(on_delete):
+    """Call *on_delete* when anything deletes the ``user`` table's rows."""
     def observe(_conn, _cursor, statement, _parameters, _context, _executemany):
         if statement.strip().upper() == 'DELETE FROM "USER"':
-            deleted.set()
+            on_delete()
 
     engine = _db.engine
     event.listen(engine, "before_cursor_execute", observe)
@@ -167,7 +172,7 @@ def test_a_reset_waits_for_a_request_in_flight(app, user_id, signals, monkeypatc
     deleted = threading.Event()
 
     threads: list = []
-    with _watch_user_delete(deleted):
+    with _watch_user_delete(deleted.set):
         try:
             listing = _start(threads, "listing", lambda: _list(app))
             assert reached.wait(STEP_SECONDS), "the listing never reached list_projects"
@@ -276,6 +281,99 @@ def test_a_reset_with_nothing_in_flight_does_not_wait(app, user_id, monkeypatch)
     assert response.status_code == 200, response.get_data(as_text=True)
     assert took < 2.0, f"a reset with nothing in flight took {took:.1f} s"
     assert response.get_json().get("waited_for", []) == []
+    assert _users() == 0
+
+
+@pytest.fixture()
+def fresh_agent_jobs():
+    """No agent job from another test, and none left for the next one."""
+    agent_jobs.reset_registry()
+    yield
+    agent_jobs.reset_registry()
+
+
+def _left_running(monkeypatch, execution_id: str):
+    """A Solve session the last test left running, as a batch runs one: an
+    agent job that makes passes until its stop event is set (dev/131).
+    Returns the job and that event."""
+    stop = threading.Event()
+    monkeypatch.setitem(solve_session._SOLVE_CANCEL_EVENTS, execution_id, stop)
+
+    def passes():
+        stop.wait(timeout=HOLD_SECONDS)
+        yield "done", {}
+
+    job = agent_jobs.start_job(
+        user_key="rita", project_id="p1", attachment_id="a1",
+        kind="solve-batch", job_id=execution_id, events=passes(),
+    )
+    return job, stop
+
+
+def test_a_reset_stops_a_solve_the_last_test_left_running(
+    app, user_id, monkeypatch, fresh_agent_jobs,
+):
+    """A Solve session keeps making passes until its deadline (dev/131), so the
+    test that starts one can end with it still running. Its later calls took
+    the replies the next test scripted for the model: the Map Editor agent e2e
+    failed 3 of 10 repeats, each time right after the Solve e2e. A reset stops
+    it as the user's Stop does, waits for it to end, and only then deletes the
+    users whose files it writes."""
+    job, stop = _left_running(monkeypatch, "left-running")
+    live_at_delete: list = []
+
+    try:
+        with _watch_user_delete(lambda: live_at_delete.append(job.live)):
+            response = _reset(app)
+        stopped_by_the_reset, live_after = stop.is_set(), job.live
+    finally:
+        stop.set()
+        job.thread.join(timeout=STEP_SECONDS)
+
+    assert response.status_code == 200, response.get_data(as_text=True)
+    assert stopped_by_the_reset, "the reset left the Solve running"
+    assert not live_after, "the reset answered with the Solve still running"
+    assert live_at_delete == [False], (
+        f"whether the Solve was running when the users were deleted: {live_at_delete}"
+    )
+    answer = response.get_json()
+    assert answer.get("agent_jobs") == ["solve-batch left-running"], answer
+    assert answer.get("agent_jobs_still_running") == [], answer
+    assert _users() == 0
+
+
+def test_an_agent_job_past_the_bound_is_named_and_the_reset_goes_ahead(
+    app, user_id, monkeypatch, fresh_agent_jobs,
+):
+    """A per-node Solve has no stop: it ends after its rounds. One that outlasts
+    the bound holds a reset for the bound only, as a request does: the reset
+    then names it and goes ahead."""
+    bound = 0.5
+    # raising=False: the bound is part of what this pins.
+    monkeypatch.setattr(testing_routes, "RESET_WAIT_SECONDS", bound, raising=False)
+    release = threading.Event()
+
+    def rounds():
+        release.wait(timeout=HOLD_SECONDS)
+        yield "done", {}
+
+    job = agent_jobs.start_job(
+        user_key="rita", project_id="p1", attachment_id="a2",
+        kind="solve-node", job_id="node-rounds", events=rounds(),
+    )
+    try:
+        started = time.monotonic()
+        response = _reset(app)
+        took = time.monotonic() - started
+    finally:
+        release.set()
+        job.thread.join(timeout=STEP_SECONDS)
+
+    assert response.status_code == 200, response.get_data(as_text=True)
+    answer = response.get_json()
+    assert answer.get("agent_jobs") == ["solve-node node-rounds"], answer
+    assert answer.get("agent_jobs_still_running") == ["solve-node node-rounds"], answer
+    assert bound * 0.9 <= took < STEP_SECONDS, f"the reset took {took:.2f} s"
     assert _users() == 0
 
 
