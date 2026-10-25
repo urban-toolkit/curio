@@ -199,6 +199,39 @@ def test_the_copy_reads_its_outputs_once_the_store_and_their_owner_let_go(client
     assert _outputs(reopened.get_json()) == sorted(NODES)
 
 
+def _saved_files(user, project_id) -> dict:
+    """Every file of *project_id*'s two saved datasets in *user*'s store, by
+    path, with its bytes."""
+    from utk_curio.backend.app.datasets.infrastructure.storage import dataset_dir
+    from utk_curio.backend.app.datasets.install.installer import computed_dataset_id
+
+    files = {}
+    for node in NODES:
+        folder = dataset_dir(str(user.id), f"{computed_dataset_id(node, project_id)}@1")
+        files.update({path: path.read_bytes() for path in folder.rglob("*") if path.is_file()})
+    return files
+
+
+def test_saving_the_copy_leaves_the_owners_files_as_they_were(client, user_and_token, bobs):
+    """The copy's files are the owner's, linked: renaming the copy and saving
+    it with the same outputs rewrites no file of the owner's datasets."""
+    _, token = user_and_token
+    copy = _save_a_copy(client, token, bobs.id, _shared_outputs(client, bobs.id))
+    assert _outputs(copy) == sorted(NODES), copy
+    before = _saved_files(bobs.user, bobs.id)
+
+    resaved = client.put(
+        f"/api/projects/{copy['id']}",
+        data=json.dumps({"name": "Alice's own copy", "outputs": copy["outputs"]}),
+        headers=auth_headers(token),
+    )
+
+    assert resaved.status_code == 200, resaved.get_data(as_text=True)
+    assert _warnings(resaved.get_json()) == {}
+    assert _saved_files(bobs.user, bobs.id) == before
+    _reads_both(client, token, copy["id"])
+
+
 def test_a_copy_brings_no_result_the_owners_runs_kept(client, db, user_and_token, bobs):
     """A newer result kept for a node that saved one, and one kept for a node
     that saved none, are the owner's alone."""
