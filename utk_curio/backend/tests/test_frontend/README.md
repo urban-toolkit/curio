@@ -856,7 +856,11 @@ plus `.curio/test/agents-catalog/` between tests, over
 `/api/testing/reset-db` when it is talking to a separately-started backend and
 on the files otherwise (#308). That matters because `user.id` is a bare sqlite
 rowid alias, so ids recycle from 1: a store left behind is handed to the next
-account a test creates.
+account a test creates. Before it deletes anything, the reset stops the agent
+jobs still running, as the user's Stop does, and waits for them as it waits
+for the requests in flight: a Solve session keeps making passes until its
+deadline, and its calls to the scripted model would take the replies the next
+test scripts.
 
 What that clean does NOT undo is anything a test leaves outside those trees:
 libraries pip-installed into the interpreter, the shared Data Catalog, files

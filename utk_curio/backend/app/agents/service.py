@@ -78,6 +78,7 @@ from utk_curio.backend.app.agents.application.solve.session import (
     request_solve_cancel,
     solve_attachment,
     solve_attachment_stream,
+    stop_agent_jobs,
 )
 from utk_curio.backend.app.agents.application.solve.simulation import (
     request_simulate_cancel,
@@ -163,6 +164,7 @@ __all__ = [
     "request_solve_cancel",
     "solve_attachment",
     "solve_attachment_stream",
+    "stop_agent_jobs",
     "request_simulate_cancel",
     "simulate_stream",
     "validate_node_stream",

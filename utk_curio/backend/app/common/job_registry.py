@@ -140,6 +140,11 @@ class JobRegistry:
         with self._lock:
             return self._jobs.get(job_id)
 
+    def live_jobs(self) -> list[Job]:
+        """Every job still running, whoever started it."""
+        with self._lock:
+            return [job for job in self._jobs.values() if job.live]
+
     def _active_count(self, user_key: str) -> int:
         return sum(1 for job in self._jobs.values() if job.user_key == user_key and job.live)
 

@@ -82,6 +82,11 @@ def get_job(job_id: str) -> Job | None:
     return _REGISTRY.get_job(job_id)
 
 
+def live_jobs() -> list[Job]:
+    """Every agent job this process still runs, whoever started it."""
+    return _REGISTRY.live_jobs()
+
+
 def check_can_start(user_key: str, attachment_id: str) -> None:
     """Raise :class:`JobRefused` when a job may not start — called BEFORE the
     caller persists any in-flight state, so a refusal leaves nothing behind."""

@@ -41,6 +41,7 @@ from flask import Blueprint, current_app, jsonify, request
 from utk_curio.backend.app.common import record_clock
 from utk_curio.backend import config
 from utk_curio.backend.config import _is_dev, _is_testing
+from utk_curio.backend.app.agents import service as agents_service
 from utk_curio.backend.app.agents.infrastructure import testing_provider
 from utk_curio.backend.extensions import db
 from utk_curio.backend.app.testing.in_flight import RESET_WAIT_SECONDS, InFlightRequests
@@ -341,6 +342,21 @@ def _clear_test_user_stores() -> list[str]:
     return clear_test_stores()
 
 
+def _job_name(job) -> str:
+    """An agent job as a reset names it: its kind and execution id."""
+    return f"{job.kind} {job.job_id}"
+
+
+def _wait_for_jobs(jobs: list, timeout: float) -> list[str]:
+    """Wait up to *timeout* seconds for *jobs* to end, and name those still
+    running."""
+    deadline = time.monotonic() + timeout
+    for job in jobs:
+        if job.thread is not None:
+            job.thread.join(max(deadline - time.monotonic(), 0.0))
+    return sorted(_job_name(job) for job in jobs if job.live)
+
+
 @testing_bp.route("/reset-db", methods=["POST"])
 def reset_db():
     """Truncate mutable tables so the next test starts with a clean slate.
@@ -365,9 +381,16 @@ def reset_db():
     outlives its user (``in_flight.py``). One still running after that is
     named in ``still_running`` and in the log, and the reset goes ahead.
 
+    The agent jobs still running are stopped first, as the user's Stop does,
+    and waited for within the same bound: a Solve session keeps making passes
+    until its deadline, so the test that started one can end with it running,
+    and its calls would take the replies the next test scripts. One still
+    running after the wait is named in ``agent_jobs_still_running``.
+
     Response: ``{"truncated": [...], "stores_cleared": [...], "waited_for":
-    [...], "waited_seconds": n, "still_running": [...]}``, each request named
-    by its method and path.
+    [...], "waited_seconds": n, "still_running": [...], "agent_jobs": [...],
+    "agent_jobs_still_running": [...]}``, each request named by its method and
+    path, each agent job by its kind and execution id.
     """
     body = request.get_json(silent=True) or {}
     requested = body.get("tables")
@@ -395,17 +418,29 @@ def reset_db():
         # A hold a failed test left standing would stop the next test's runs,
         # and a held run's stream would hold this reset for the whole wait.
         run_jobs.set_hold(False)
+        # Stopped before the wait: a page's stream of a job is a request in
+        # flight until the job ends.
+        stopped_jobs = agents_service.stop_agent_jobs()
         if waited_for:
             log.info("reset-db waits for %d request(s) in flight: %s",
                      len(waited_for), ", ".join(waited_for))
+        if stopped_jobs:
+            log.info("reset-db stops %d agent job(s): %s",
+                     len(stopped_jobs), ", ".join(map(_job_name, stopped_jobs)))
         started = time.monotonic()
         still_running = in_flight.drain(RESET_WAIT_SECONDS)
+        jobs_still_running = _wait_for_jobs(
+            stopped_jobs, RESET_WAIT_SECONDS - (time.monotonic() - started),
+        )
         waited_seconds = round(time.monotonic() - started, 3)
         if still_running:
             log.warning("reset-db waited %.1f s and resets under %d request(s) still running: %s",
                         waited_seconds, len(still_running), ", ".join(still_running))
         elif waited_for:
             log.info("reset-db waited %.2f s for %s", waited_seconds, ", ".join(waited_for))
+        if jobs_still_running:
+            log.warning("reset-db waited %.1f s and resets under %d agent job(s) still running: %s",
+                        waited_seconds, len(jobs_still_running), ", ".join(jobs_still_running))
 
         truncated = []
         for table in tables:
@@ -429,6 +464,8 @@ def reset_db():
         "waited_for": waited_for,
         "waited_seconds": waited_seconds,
         "still_running": still_running,
+        "agent_jobs": sorted(map(_job_name, stopped_jobs)),
+        "agent_jobs_still_running": jobs_still_running,
     }), 200
 
 

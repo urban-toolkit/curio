@@ -168,10 +168,31 @@ def request_solve_cancel(user_key: str, project_id: str, attachment_id: str) -> 
         raise AgentServiceError("no solve is running for this attachment", 409)
     session["cancelRequested"] = True
     projects_storage.write_spec(user_key, project_id, spec)
-    event = _SOLVE_CANCEL_EVENTS.get(str(session.get("solveExecutionId") or ""))
-    if event is not None:
-        event.set()  # type: ignore[attr-defined]
+    stop_solve_execution(session.get("solveExecutionId"))
     return {"attachmentId": attachment_id, "cancelRequested": True}
+
+
+def stop_solve_execution(execution_id: object) -> bool:
+    """Set the in-process stop event of the Solve running as *execution_id*:
+    it dispatches no more nodes, and the nodes in flight finish. False when no
+    Solve with that id runs in this process."""
+    event = _SOLVE_CANCEL_EVENTS.get(str(execution_id or ""))
+    if event is None:
+        return False
+    event.set()  # type: ignore[attr-defined]
+    return True
+
+
+def stop_agent_jobs() -> list:
+    """Stop every agent job this process runs, as the user's Stop does, and
+    return them; for a test rig's reset (``testing/routes.py``), which then
+    waits for them. A Solve session keeps making passes until its deadline,
+    so the test that started one can end with it running. A per-node Solve
+    has no stop: it ends after its rounds."""
+    jobs = agent_jobs.live_jobs()
+    for job in jobs:
+        stop_solve_execution(job.job_id)
+    return jobs
 
 
 def solve_attachment_stream(
