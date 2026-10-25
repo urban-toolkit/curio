@@ -106,6 +106,31 @@ class TestRegistry:
         assert agent_jobs.live_job("u", "a0") is None
         assert agent_jobs.latest_job("u", "a0") is jobs[0]  # replayable within the TTL
 
+    def test_live_jobs_are_the_running_ones_of_every_user(self):
+        """What a test rig's reset stops: every job still running, whoever
+        started it; a finished one is only replayed."""
+        gates = [threading.Event(), threading.Event()]
+        running = [
+            agent_jobs.start_job(
+                user_key=user, project_id="p", attachment_id="a", kind="solve-batch",
+                job_id=f"running-{user}", events=_gen([("a", {}), ("done", {})], gate=gate),
+            )
+            for user, gate in zip(("u", "v"), gates)
+        ]
+        finished = agent_jobs.start_job(
+            user_key="u", project_id="p", attachment_id="b", kind="solve-node",
+            job_id="finished", events=_gen([("done", {})]),
+        )
+        finished.thread.join(timeout=5)
+        try:
+            assert sorted(job.job_id for job in agent_jobs.live_jobs()) == ["running-u", "running-v"]
+        finally:
+            for gate in gates:
+                gate.set()
+            for job in running:
+                job.thread.join(timeout=5)
+        assert agent_jobs.live_jobs() == []
+
     def test_bad_kind_refused(self):
         with pytest.raises(ValueError):
             agent_jobs.start_job(user_key="u", project_id="p", attachment_id="a",
