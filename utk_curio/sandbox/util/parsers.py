@@ -1,7 +1,9 @@
 import geopandas as gpd
 import pandas as pd
+import contextlib
 import json
 import math
+import re
 import zlib
 import os
 import sys
@@ -1150,6 +1152,160 @@ def forget_session_artifacts(session_ids) -> int:
             except FileNotFoundError:
                 pass
     return len(rows)
+
+
+#: An artifact id: the millisecond it was made, then a random part (``_make_id``).
+_ARTIFACT_ID_MS = re.compile(r"(\d{13})_[0-9a-f]{8}")
+#: The kinds whose row lists the artifacts it holds (``save_to_duckdb``).
+_CONTAINER_KINDS = ("outputs", "list_of_ids", "dict_of_ids")
+#: What a run or a load wrote at the top of the shared data directory before a
+#: saved output was the store's own file: a run's second encode of a table,
+#: ``<id>_output.parquet`` with its decode and counts sidecars, and a load's
+#: copy of a saved output, named after its artifact.
+_LEFTOVER_FILE = re.compile(r"\d{13}_[0-9a-f]{8}(?:_output\.parquet)?(?:\.[A-Za-z0-9.]+)?")
+#: Where a load put the parts of a saved bundle it copied.
+_LEFTOVER_BUNDLES = "bundles"
+#: How many rows one ``DELETE`` names.
+_DELETE_BATCH = 500
+
+
+def _made_before(art_id, cutoff_ms) -> bool:
+    match = _ARTIFACT_ID_MS.fullmatch(str(art_id))
+    return match is not None and int(match.group(1)) < cutoff_ms
+
+
+def _parts_of(value_json) -> list:
+    """The artifact ids a container row holds."""
+    try:
+        parts = json.loads(value_json) if isinstance(value_json, str) else value_json
+    except (TypeError, ValueError):
+        return []
+    if isinstance(parts, dict):
+        parts = list(parts.values())
+    return [str(part) for part in parts or [] if part] if isinstance(parts, list) else []
+
+
+def _file_under(folder: Path, value_str):
+    """The file *value_str* names, when it is inside *folder*; else None."""
+    if not isinstance(value_str, str) or not value_str:
+        return None
+    try:
+        path = Path(value_str)
+        path = (path if path.is_absolute() else _shared_data_dir() / path).resolve()
+        path.relative_to(folder)
+    except (OSError, ValueError):
+        return None
+    return path
+
+
+def _older_than(path: Path, cutoff_ms) -> bool:
+    """Whether *path* was last written, and last moved or linked, before
+    *cutoff_ms*. A file's own time can be set by whoever wrote it; the change
+    of its entry, which a move into the store makes, cannot."""
+    try:
+        status = path.lstat()
+    except OSError:
+        return False
+    return max(status.st_mtime, status.st_ctime) * 1000 < cutoff_ms
+
+
+def forget_made_before(cutoff_ms) -> int:
+    """Delete what the store holds that was made before *cutoff_ms* and no
+    kept run holds (``common/kept_sessions.py``, whose outputs go with their
+    entries). Returns how many rows went.
+
+    - An artifact goes with its row: by the time in its id, and a part of a
+      tuple, list or dict output by its whole output's, so a bundle goes whole.
+      A part belongs to one output: every writer of such a row stores its
+      parts anew (``save_to_duckdb``, ``staging.persist_output``).
+    - Only files under ``artifacts/`` are removed: the files the store wrote
+      the values to, a raster's own file when it is there, and any file there
+      that nothing has used since the cutoff. A file a remaining row names
+      stays, and a file the Data Catalog linked keeps its other name.
+    - So do the files earlier versions wrote at the top of the shared data
+      directory (:data:`_LEFTOVER_FILE`, :data:`_LEFTOVER_BUNDLES`), once
+      their time is past the cutoff.
+    """
+    import shutil
+
+    init_db()
+    con = get_connection()
+    artifacts = (_shared_data_dir() / "artifacts").resolve()
+    try:
+        rows = con.execute(
+            "SELECT id, session_id, kind, value_str, value_json FROM artifacts"
+        ).fetchall()
+        holder = {}
+        for art_id, _session, kind, _value_str, value_json in rows:
+            if kind in _CONTAINER_KINDS:
+                for part in _parts_of(value_json):
+                    holder.setdefault(part, str(art_id))
+        sessions = {str(art_id): session for art_id, session, *_rest in rows}
+
+        def whole(art_id):
+            seen = set()
+            while art_id in holder and art_id not in seen:
+                seen.add(art_id)
+                art_id = holder[art_id]
+            return art_id
+
+        going = set()
+        for art_id, *_rest in rows:
+            art_id = str(art_id)
+            top = whole(art_id)
+            if not is_kept_session(sessions.get(top)) and not is_kept_session(sessions.get(art_id)) \
+                    and _made_before(top, cutoff_ms):
+                going.add(art_id)
+        ordered = sorted(going)
+        for start in range(0, len(ordered), _DELETE_BATCH):
+            batch = ordered[start:start + _DELETE_BATCH]
+            con.execute(
+                f"DELETE FROM artifacts WHERE id IN ({','.join('?' for _ in batch)})", batch,
+            )
+    finally:
+        con.close()
+
+    def row_file(kind, value_str):
+        if kind in _STORED_FILE_KINDS:
+            return _stored_file(kind, value_str)
+        return _file_under(artifacts, value_str) if kind == "raster" else None
+
+    # Two passes: a raster an in-process run rebuilt is one file, named by
+    # every row that returned it, so a row that goes removes its file only
+    # when no remaining row, a kept run's among them, names it too.
+    staying_ids, staying_files = set(), set()
+    for art_id, _session, kind, value_str, _value_json in rows:
+        if str(art_id) not in going:
+            staying_ids.add(str(art_id))
+            path = row_file(kind, value_str)
+            if path is not None:
+                staying_files.add(path)
+    for art_id, _session, kind, value_str, _value_json in rows:
+        path = row_file(kind, value_str) if str(art_id) in going else None
+        if path is not None and path not in staying_files:
+            with contextlib.suppress(OSError):
+                path.unlink()
+    if artifacts.is_dir():
+        for path in artifacts.iterdir():
+            if not path.is_file() or path.name.split(".")[0] in staying_ids:
+                continue
+            if path.resolve() not in staying_files and _older_than(path, cutoff_ms):
+                with contextlib.suppress(OSError):
+                    path.unlink()
+
+    shared = _shared_data_dir()
+    for path in shared.iterdir() if shared.is_dir() else ():
+        if path.is_file() and _LEFTOVER_FILE.fullmatch(path.name) and _older_than(path, cutoff_ms):
+            with contextlib.suppress(OSError):
+                path.unlink()
+    bundles = shared / _LEFTOVER_BUNDLES
+    if bundles.is_dir() and not bundles.is_symlink():
+        for folder in bundles.iterdir():
+            if folder.is_dir() and not folder.is_symlink() and _older_than(folder, cutoff_ms):
+                shutil.rmtree(folder, ignore_errors=True)
+        with contextlib.suppress(OSError):
+            bundles.rmdir()
+    return len(going)
 
 
 def save_dataset_parquet(output, kind):

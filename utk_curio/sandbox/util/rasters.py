@@ -232,6 +232,13 @@ def raster_from_envelope(envelope, directory):
             for index, band in enumerate(ids, start=1):
                 target.set_band_description(index, band)
         os.replace(partial, path)
+    else:
+        # In use again: the store's sweep removes a file under ``artifacts/``
+        # only once nothing has used it for days (``parsers.forget_made_before``).
+        try:
+            os.utime(path)
+        except OSError:
+            pass
     return rasterio.open(path)
 
 
