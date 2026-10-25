@@ -622,6 +622,30 @@ def artifact_sessions_store():
     return jsonify({'output': {'path': path, 'dataType': detect_kind(value)}})
 
 
+#: The most recent time a sweep may name: what the store made in the last day
+#: is never swept, whatever a caller asks.
+MIN_SWEEP_AGE_MS = 24 * 3600 * 1000
+
+
+@app.route('/artifacts/sweep', methods=['POST'])
+@require_sandbox_token
+@holds_duckdb
+def artifacts_sweep():
+    """Delete what the store holds that was made before ``madeBefore``, epoch
+    milliseconds, and no kept run holds (``parsers.forget_made_before``)."""
+    import time
+
+    from utk_curio.sandbox.util.parsers import forget_made_before
+
+    body = request.get_json(silent=True) or {}
+    made_before = body.get('madeBefore')
+    if isinstance(made_before, bool) or not isinstance(made_before, int) or made_before < 0:
+        abort(400, "madeBefore must be a time in epoch milliseconds")
+    if made_before > int(time.time() * 1000) - MIN_SWEEP_AGE_MS:
+        abort(400, "the store keeps what it made in the last day")
+    return jsonify({'forgotten': forget_made_before(made_before)})
+
+
 @app.route('/raster', methods=['GET'])
 @require_sandbox_token
 @holds_duckdb
