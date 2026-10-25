@@ -43,6 +43,7 @@ import { closeEveryCategory } from "./editing/widgets/stripCategories";
 import { SHARE_UUID_RE as UUID_RE } from "../utils/shareLinks";
 import { dashboardRefusal, getEmbeddedDashboard } from "../standalone/dashboardPayload";
 import { mayEditServedDashboard } from "../standalone/servedDashboardAccess";
+import { setOpenDataflow } from "../services/dataflowReads";
 
 /** How far the load has got, for a page that has to say which state it is in. */
 export type ProjectLoadState = "idle" | "loading" | "loaded" | "failed";
@@ -129,6 +130,16 @@ export const ProjectLoader: React.FC<{
       navigate(`/dataflow/${projectId}`, { replace: true });
     }
   }, [id, projectId, navigate]);
+
+  // The dataflow whose outputs this canvas reads (services/dataflowReads.ts):
+  // the one the route names, the owner's or a shared one, even while the
+  // canvas still holds the dataflow before it; on /dataflow/new, the id a new
+  // dataflow gets on its first save. The dashboard page reads what it carries.
+  useEffect(() => {
+    if (presentation) return;
+    setOpenDataflow(id && UUID_RE.test(id) ? id : projectId);
+    return () => setOpenDataflow(null);
+  }, [presentation, projectId, id]);
 
   useEffect(() => {
     // ``/dataflow`` with no id at all reaches the same canvas as
