@@ -247,17 +247,34 @@ def _artifact_table(artifact_id: str):
     return table, headers
 
 
+def _stored_file(rel_path: str) -> Path | None:
+    """Where a file the sandbox stored as ``rel_path`` is, seen from here.
+
+    In the shared data directory this process is given (``get_shared_data_dir``:
+    a shard's own, or the one a stack these tests start uses), else in the one
+    a stack started without ``CURIO_SHARED_DATA`` uses: ``.curio/data`` under
+    the repo, which CI's container bind-mounts for its first stack while this
+    process's conftest points at ``.curio/test/data``. An artifact's file name
+    is its id, so a file found in either is that artifact's. None when neither
+    has it, as for a stack on another machine.
+    """
+    for root in (Path(get_shared_data_dir()), Path(REPO_ROOT) / ".curio" / "data"):
+        path = root / rel_path
+        if path.is_file():
+            return path
+    return None
+
+
 def _stored_json(meta: dict) -> dict | None:
     """A list or dict artifact's stored JSON, by the digest of its bytes.
 
-    The file is the sandbox's own, in the shared data directory this process
-    sees too (``get_shared_data_dir``: the stack's ``.curio``). None when it is
-    not there, as for a stack on another machine.
+    The file is the sandbox's own, which this process sees through the stack's
+    ``.curio`` (``_stored_file``). None when it is not there.
     """
     import hashlib
     if meta.get("value_str"):
-        path = Path(get_shared_data_dir()) / meta["value_str"]
-        if not path.is_file():
+        path = _stored_file(meta["value_str"])
+        if path is None:
             return None
         digest = hashlib.sha256()
         with path.open("rb") as fh:
@@ -304,6 +321,14 @@ def snapshot_artifact(artifact_id: str) -> dict:
         stored = _stored_json(meta)
         if stored is not None:
             return {"kind": kind, **stored}
+        # Said, not silent: the envelope of a large list is what this replaces
+        # (14 GiB for example 09).
+        import warnings
+        warnings.warn(
+            f"artifact {artifact_id}'s stored JSON ({meta.get('value_str')}) is in neither "
+            f"{get_shared_data_dir()} nor {Path(REPO_ROOT) / '.curio' / 'data'}; "
+            "reading its JSON envelope instead"
+        )
     return {"kind": kind, "envelope": load_artifact_as_dict(artifact_id)}
 
 

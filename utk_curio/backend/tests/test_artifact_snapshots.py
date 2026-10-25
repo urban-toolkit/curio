@@ -26,6 +26,7 @@ import pytest
 from requests.structures import CaseInsensitiveDict
 
 from utk_curio.backend.tests.test_frontend.utils import artifact_differences, snapshot_artifact
+from utk_curio.backend.tests.test_frontend.utils import sandbox as sandbox_utils
 
 NAN = float("nan")
 ARROW = "application/vnd.apache.arrow.stream"
@@ -269,8 +270,29 @@ def test_a_kind_it_does_not_know_and_an_unseen_json_file_fall_back_to_the_envelo
     monkeypatch.setattr("requests.get", sandbox.get)
 
     assert snapshot_artifact("odd") == {"kind": "something-new", "envelope": {"data": 1, "dataType": "x"}}
-    assert snapshot_artifact("far") == {"kind": "list", "envelope": {"data": [], "dataType": "list"}}
+    # A list read as JSON again is what this replaces, so it is said, not silent.
+    with pytest.warns(UserWarning, match="reading its JSON envelope instead"):
+        assert snapshot_artifact("far") == {"kind": "list", "envelope": {"data": [], "dataType": "list"}}
     assert sandbox.json_gets == ["odd", "far"]
+
+
+def test_a_json_file_in_the_stacks_default_data_directory_is_found(tmp_path, monkeypatch):
+    # CI's container runs its first stack without CURIO_SHARED_DATA, so it
+    # writes under <repo>/.curio/data, while this process's conftest points
+    # CURIO_SHARED_DATA at .curio/test/data (run 40215329366 on utk-desktop-02:
+    # every list fell back to its envelope and example 09 lost its sandbox).
+    repo = tmp_path / "repo"
+    (repo / ".curio" / "data" / "artifacts").mkdir(parents=True)
+    (repo / ".curio" / "data" / "artifacts" / "grid.json.zlib").write_bytes(zlib.compress(b"[1, 2]"))
+    monkeypatch.setattr(sandbox_utils, "REPO_ROOT", str(repo))
+    monkeypatch.setenv("CURIO_SHARED_DATA", str(tmp_path / "conftest-data"))
+    sandbox = _Sandbox(rows={"grid": {"kind": "list", "value_str": "artifacts/grid.json.zlib"}})
+    monkeypatch.setattr("requests.get", sandbox.get)
+
+    snapshot = snapshot_artifact("grid")
+
+    assert snapshot["path"] == str(repo / ".curio" / "data" / "artifacts" / "grid.json.zlib")
+    assert sandbox.json_gets == []
 
 
 def test_a_stream_cut_short_fails(shared_data, monkeypatch):
