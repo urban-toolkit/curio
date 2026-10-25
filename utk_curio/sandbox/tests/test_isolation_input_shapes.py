@@ -72,7 +72,28 @@ class TestBuildInputSpec(unittest.TestCase):
         runner._build_input_spec(LIVE, "outputs", "/scratch", "s1")
 
         self.staging.stage_outputs_list.assert_called_once_with(
-            [{"path": "a1"}, {"path": "b2"}], "/scratch", session_id="s1"
+            [{"path": "a1"}, {"path": "b2"}], "/scratch", session_id="s1", saved_paths=None
+        )
+
+    def test_the_saved_outputs_a_run_names_reach_staging(self):
+        saved = {"a1": {"path": "/store/a1.parquet", "dataType": "dataframe"}}
+
+        runner._build_input_spec(LIVE, "outputs", "/scratch", "s1", saved)
+
+        self.staging.stage_outputs_list.assert_called_once_with(
+            [{"path": "a1"}, {"path": "b2"}], "/scratch", session_id="s1", saved_paths=saved
+        )
+
+    def test_a_reloaded_ref_with_no_row_for_this_session_is_staged_as_a_saved_output(self):
+        """After a reopen under a new sign-in the store has no row this session
+        may read: the ref is a saved output, staged from its own file."""
+        self.staging.read_outputs_wrapper.side_effect = KeyError(RELOADED)
+        saved = {RELOADED: {"path": "/store/data/bundle.json", "dataType": "outputs"}}
+
+        runner._build_input_spec(RELOADED, "outputs", "/scratch", "s1", saved)
+
+        self.staging.stage_input.assert_called_once_with(
+            RELOADED, "/scratch", session_id="s1", slot="in_0", saved_paths=saved
         )
 
     def test_the_reloaded_shape_is_expanded_then_staged(self):
@@ -90,7 +111,7 @@ class TestBuildInputSpec(unittest.TestCase):
             RELOADED, session_id="s1"
         )
         self.staging.stage_outputs_list.assert_called_once_with(
-            [{"path": "a1"}], "/scratch", session_id="s1"
+            [{"path": "a1"}], "/scratch", session_id="s1", saved_paths=None
         )
         self.staging.stage_input.assert_not_called()
 
@@ -101,14 +122,14 @@ class TestBuildInputSpec(unittest.TestCase):
         runner._build_input_spec(RELOADED, "outputs", "/scratch", "s1")
 
         self.staging.stage_input.assert_called_once_with(
-            RELOADED, "/scratch", session_id="s1", slot="in_0"
+            RELOADED, "/scratch", session_id="s1", slot="in_0", saved_paths=None
         )
 
     def test_a_plain_input_is_unaffected(self):
         runner._build_input_spec("art-9", "dataframe", "/scratch", "s1")
 
         self.staging.stage_input.assert_called_once_with(
-            "art-9", "/scratch", session_id="s1", slot="in_0"
+            "art-9", "/scratch", session_id="s1", slot="in_0", saved_paths=None
         )
         self.staging.stage_outputs_list.assert_not_called()
 
