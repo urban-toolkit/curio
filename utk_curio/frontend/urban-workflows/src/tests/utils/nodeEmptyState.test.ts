@@ -164,7 +164,11 @@ describe("a dashboard's tile while a viewer's run makes what it shows, or after 
       const { title, hint } = NODE_EMPTY_COPY[reason];
       expect(`${title} ${hint}`).not.toMatch(/\b(run|open|press)\b.*\bnode\b/i);
     }
-    expect(NODE_EMPTY_COPY["upstream-running"].title).toBe("Computing");
+    // The owner's words (10-25).
+    expect(NODE_EMPTY_COPY["upstream-running"]).toEqual({
+      title: "Computing...",
+      hint: "Results will be shown here once they are ready.",
+    });
   });
 });
 

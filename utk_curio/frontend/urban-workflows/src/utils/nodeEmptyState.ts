@@ -66,8 +66,8 @@ export const NODE_EMPTY_COPY: Record<NodeEmptyReason, NodeEmptyCopy> = {
   // A dashboard's visitor runs no node and opens none, so a tile says what the
   // page is doing rather than what to do: computing, or why it could not.
   "upstream-running": {
-    title: "Computing",
-    hint: "The results show here once they are ready.",
+    title: "Computing...",
+    hint: "Results will be shown here once they are ready.",
   },
   // The tile gives the step and the reason (useDashboardRun's stop) as its hint.
   "upstream-stopped": {
