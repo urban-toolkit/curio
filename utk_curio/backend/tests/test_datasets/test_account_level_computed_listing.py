@@ -204,3 +204,35 @@ def test_needs_reinstall_flagged_on_id_match_when_output_changed(app, client, us
                      live_outputs=[{"node_id": "ri-node", "filename": rerun}])
     item = next(i for i in items if i["id"] == dataset_id)
     assert item.get("needsReinstall") is True
+
+
+def test_a_saved_store_output_asks_for_reinstall_only_once_its_node_ran_again(app, client, user_and_token):
+    """A node run names its output by the store's artifact id, and its save
+    installs the store's file of it, ``<id>.parquet``: the same output is not
+    a new one, so the Data Catalog asks for no Reinstall until the node runs
+    again."""
+    import pandas as pd
+
+    from utk_curio.backend.tests.test_datasets.computed_test_helpers import store_sandbox_artifact
+
+    user, token = user_and_token
+    df = create_project(client, token, name="Reinstall by id")
+    first = store_sandbox_artifact(pd.DataFrame({"a": [1]}))
+    save_project_with_output(client, token, df, first, node_id="id-node")
+
+    dataset_id = computed_dataset_id("id-node", df)
+    _write_refs(app, user, df, [{
+        "datasetId": dataset_id, "dirName": f"{dataset_id}@1",
+        "origin": "computed", "producerNodeId": "id-node",
+    }])
+
+    items = _catalog(client, token, dataflow_id=df,
+                     live_outputs=[{"node_id": "id-node", "filename": first}])
+    item = next(i for i in items if i["id"] == dataset_id)
+    assert item.get("needsReinstall") is not True
+
+    rerun = store_sandbox_artifact(pd.DataFrame({"a": [2]}))
+    items = _catalog(client, token, dataflow_id=df,
+                     live_outputs=[{"node_id": "id-node", "filename": rerun}])
+    item = next(i for i in items if i["id"] == dataset_id)
+    assert item.get("needsReinstall") is True

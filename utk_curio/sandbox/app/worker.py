@@ -539,10 +539,16 @@ def execute_code(code, file_path, node_type, data_type, launch_dir=None, session
                 given. A kept run's artifacts carry a session of their own, its
                 imports the caller's.
 
-    saved_paths: {name: {"path", "dataType"}} for the inputs that are saved
-                outputs of the run's dataflow, each read in place from the file
-                its owner's store holds when the store has no row for it
-                (``parsers.load_artifact``).
+    save_dataset: changes nothing for a Python node, whose saved output is its
+                artifact's own file, linked by the Data Catalog. Kept so this
+                and ``runner.execute_isolated``, which the caller picks
+                between, take the same arguments.
+
+    saved_paths: {name: {"path" or "session", "dataType"}} for the inputs the
+                backend resolved for the run's dataflow, each read, when the
+                store has no row for it this session may read, in place from
+                the file its owner's store holds, or from the store under the
+                kept session that made it (``parsers.load_artifact``).
 
     dataset_paths: {datasetId: absolutePath} for the code's
                 curio_load_data / curio_data_path / curio_load_collection
@@ -583,7 +589,6 @@ def execute_code(code, file_path, node_type, data_type, launch_dir=None, session
     from utk_curio.sandbox.util.user_code import compile_user_code
     save_to_duckdb   = _globals_cache['save_to_duckdb']
     detect_kind      = _globals_cache['detect_kind']
-    save_dataset_parquet = _globals_cache['save_dataset_parquet']
 
     # _exec_lock serializes sys.stdout mutation and os.chdir.
     with _exec_lock.hold("exec_in_process"):
@@ -689,16 +694,13 @@ def execute_code(code, file_path, node_type, data_type, launch_dir=None, session
                 # Classify output (dev/120: classified, never refused by node name).
                 out_kind = detect_kind(output)
 
-                # Save output to DuckDB, tagged with the session that produced it.
+                # Save output to DuckDB, tagged with the session that produced
+                # it. A saved output is this artifact's own file, which the
+                # Data Catalog links (``bundle.install_node_output``), so a
+                # run with Save on writes nothing else.
                 result_path = save_to_duckdb(output, node_id=node_type, session_id=session_id)
 
-                dataset_file = None
-                if save_dataset:
-                    dataset_file = save_dataset_parquet(output, out_kind)
-
                 result = {'path': result_path, 'dataType': out_kind}
-                if dataset_file:
-                    result['dataset'] = dataset_file
                 t_save = time.perf_counter()
 
         except BaseException:
@@ -772,7 +774,7 @@ def _to_js_value(obj):
 
 def _js_value_to_saveable_frame(value):
     """Best-effort convert a JS node's JSON result into a ``(kind, frame)`` pair
-    for :func:`save_dataset_parquet`, or ``(None, None)`` when it isn't tabular.
+    to store as a frame artifact, or ``(None, None)`` when it isn't tabular.
 
     JS nodes return plain JSON, so - mirroring how ``parseInput`` reconstructs
     tabular inputs - a GeoJSON ``FeatureCollection`` becomes a GeoDataFrame and a
@@ -1089,7 +1091,7 @@ def execute_js_code(code, file_path, node_type, data_type, launch_dir=None, sess
     import traceback
 
     from utk_curio.sandbox.util.parsers import (
-        load_artifact, save_to_duckdb, detect_kind, save_dataset_parquet,
+        load_artifact, save_to_duckdb, detect_kind,
     )
 
     t0 = time.perf_counter()
@@ -1150,16 +1152,15 @@ def execute_js_code(code, file_path, node_type, data_type, launch_dir=None, sess
 
         output = {'path': result_artifact, 'dataType': out_kind}
 
-        # Persist a named dataset (catalog parquet + auto-install) when the JS
-        # node opted in and produced tabular/geo data - parity with the Python
-        # path, which emits output['dataset'] for the backend to auto-install.
+        # A JS node's value is JSON in the store. When the node saves its
+        # output and the value is a table, the table is stored once more as a
+        # frame artifact of its own, whose parquet the Data Catalog links as a
+        # Python node's is: output['dataset'] names it.
         if save_dataset:
             try:
-                ds_kind, frame = _js_value_to_saveable_frame(raw_value)
+                _kind, frame = _js_value_to_saveable_frame(raw_value)
                 if frame is not None:
-                    dataset_file = save_dataset_parquet(frame, ds_kind)
-                    if dataset_file:
-                        output['dataset'] = dataset_file
+                    output['dataset'] = save_to_duckdb(frame, node_id=node_type, session_id=session_id)
             except Exception:  # noqa: BLE001 - dataset save is best-effort
                 print(f"[execJs] save_dataset failed for node={node_type}",
                       file=_sys.__stderr__, flush=True)

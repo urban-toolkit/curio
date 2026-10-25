@@ -838,6 +838,18 @@ class CatalogMutations:
                 # removed on uninstall), so we prefer the client-resolved node label
                 # and on-disk fallbacks instead of ``item["title"]``.
                 resolved_title = _resolve_computed_install_title(item, node_title, user_key)
+                # The installed file carries the decode sidecar of the file it
+                # comes from: for a store artifact, which keeps a frame's
+                # decode in its row, the row's.
+                from utk_curio.backend.app.datasets.install.bundle import decode_sidecar_of
+                from utk_curio.backend.app.datasets.install.installer import (
+                    decode_sidecar_beside,
+                    write_decode_sidecar,
+                )
+
+                decode_sidecar = (
+                    decode_sidecar_of(data_path.stem) if suffix == ".parquet" else None
+                ) or decode_sidecar_beside(data_path)
 
                 if producer_node_id:
                     from utk_curio.backend.app.datasets.install.installer import (
@@ -856,6 +868,7 @@ class CatalogMutations:
                             dataflow_id=dataflow_id,
                             node_type=item.get("producerNodeType"),
                             title=resolved_title,
+                            decode_sidecar=decode_sidecar,
                         )
                     except InstallerError as exc:
                         raise DatasetCatalogError(str(exc)) from exc
@@ -878,11 +891,10 @@ class CatalogMutations:
 
                 inst_data_path = resolve_installed_data_path(user_key, result.manifest)
 
-                # The file_bytes install branch copies no decode sidecar, so a
-                # manual install carries it here, where both branches converge.
-                from utk_curio.backend.app.datasets.install.installer import copy_decode_sidecar
-
-                copy_decode_sidecar(data_path, inst_data_path)
+                # The install without a producer writes no decode sidecar, so a
+                # manual install writes it here, where both branches converge.
+                if decode_sidecar is not None:
+                    write_decode_sidecar(inst_data_path, decode_sidecar)
 
                 # Compute row/feature counts and patch the sidecar.
                 row_count, feature_count = count_file(inst_data_path, fmt)
