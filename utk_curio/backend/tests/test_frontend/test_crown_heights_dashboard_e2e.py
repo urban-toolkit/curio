@@ -236,6 +236,31 @@ def _tile_says(page, node_id: str, reason: str, *words: str, timeout_ms: int) ->
         expect(notice).to_contain_text(said, timeout=timeout_ms)
 
 
+#: The reason the tile of node *id* gives for showing nothing, or null.
+_TILE_EMPTY_JS = """(id) => {
+    const node = document.querySelector('.react-flow__node[data-id="' + id + '"]');
+    const empty = node && node.querySelector('[data-curio-node-empty]');
+    return empty ? empty.getAttribute('data-curio-node-empty') : null;
+}"""
+
+
+def _reasons_until_read(page, table_id: str, selection: str, *, timeout_ms: int = RUN_TIMEOUT_MS) -> set[str]:
+    """Every reason the table gives for showing nothing until its row is
+    *selection*'s, read every 100 ms."""
+    seen: set[str] = set()
+    deadline = time.time() + timeout_ms / 1000
+    while True:
+        reason = page.evaluate(_TILE_EMPTY_JS, table_id)
+        if reason:
+            seen.add(reason)
+        row = page.evaluate(_TABLE_ROW_JS, table_id)
+        if row and selection in row and any(SHADE_RE.match(cell) for cell in row):
+            return seen
+        if time.time() >= deadline:
+            raise AssertionError(f"the table never read {selection}: it said {sorted(seen)!r}, its first row {row!r}")
+        page.wait_for_timeout(100)
+
+
 def _until_held(backend: str, visitor: "_Visitor") -> None:
     """Until a step of a run on *backend* waits for the hold to end."""
     deadline = time.time() + 60
@@ -486,6 +511,15 @@ def test_the_crown_heights_dashboard_link_dev_shares_works_on_this_deployment_to
         finally:
             # A hold left standing would stop every later run on this backend.
             hold_server_runs(current_server, False)
+        # Until its rows are in, the table says it is computing: not that its
+        # input is not a table, nor an empty one, while it reads the rows.
+        said: list[set[str]] = []
+        visitor.waits_for(
+            "the table's rows", lambda: said.append(_reasons_until_read(visitor.page, ids["table"], "Dec 21")),
+        )
+        assert said[0] <= {"upstream-running"}, (
+            f"before its rows the table said {sorted(said[0])!r}, not only that it was computing" + visitor.story()
+        )
         shade: list[str] = []
         visitor.waits_for(
             "the table the run made", lambda: shade.append(_table_reads(visitor.page, ids["table"], "Dec 21")),

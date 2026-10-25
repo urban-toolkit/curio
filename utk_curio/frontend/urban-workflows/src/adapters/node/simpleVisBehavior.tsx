@@ -108,6 +108,11 @@ export const useSimpleVisBehavior: NodeBehaviorHook = (data, nodeState) => {
   const [interactions, _setInteractions] = useState<any>({});
   const interactionsRef = useRef(interactions);
   const dataInputBypass = useRef(false);
+  // While the rows of the input that just arrived are read (a fetch of its
+  // path): the body says what it shows is coming, not that the input is not a
+  // table. Cleared by the read of the latest input only.
+  const [reading, setReading] = useState(false);
+  const readingRef = useRef<unknown>(null);
 
   const setInteractions = (newData: any) => {
     interactionsRef.current = newData;
@@ -125,33 +130,40 @@ export const useSimpleVisBehavior: NodeBehaviorHook = (data, nodeState) => {
       if (!shouldProcess) return;
       if (data.input == null || data.input === '') return;
 
-      const startTime = formatDate(new Date());
-      const typesInput = data.input.dataType ? [data.input.dataType] : [];
+      const input = data.input;
+      readingRef.current = input;
+      setReading(true);
+      try {
+        const startTime = formatDate(new Date());
+        const typesInput = input.dataType ? [input.dataType] : [];
 
-      let parsedInput = data.input;
-      if (parsedInput.path) {
-        try {
-          parsedInput = await fetchData(parsedInput.path);
-        } catch (err) {
-          showToast('Error fetching data. Please try again.', 'error');
-          return;
+        let parsedInput = input;
+        if (parsedInput.path) {
+          try {
+            parsedInput = await fetchData(parsedInput.path);
+          } catch (err) {
+            showToast('Error fetching data. Please try again.', 'error');
+            return;
+          }
         }
+
+        nodeExecProv(startTime, startTime, workflowNameRef.current, data.nodeId, mapTypes(typesInput), mapTypes(typesInput), '');
+
+        const view = deriveView(parsedInput);
+        setCurrentMode(view.mode);
+        setRows(view.rows);
+        setImageColumns(view.imageColumns);
+        setTextContent(view.textContent);
+
+        // Downstream first, then the outcome: the outcome is what tells a Run All
+        // this node is done, and the nodes it feeds must have the rows by then.
+        if (typeof data.outputCallback === 'function') {
+          data.outputCallback(data.nodeId, input);
+        }
+        nodeState.setOutput({ code: 'success', content: parsedInput });
+      } finally {
+        if (readingRef.current === input) setReading(false);
       }
-
-      nodeExecProv(startTime, startTime, workflowNameRef.current, data.nodeId, mapTypes(typesInput), mapTypes(typesInput), '');
-
-      const view = deriveView(parsedInput);
-      setCurrentMode(view.mode);
-      setRows(view.rows);
-      setImageColumns(view.imageColumns);
-      setTextContent(view.textContent);
-
-      // Downstream first, then the outcome: the outcome is what tells a Run All
-      // this node is done, and the nodes it feeds must have the rows by then.
-      if (typeof data.outputCallback === 'function') {
-        data.outputCallback(data.nodeId, data.input);
-      }
-      nodeState.setOutput({ code: 'success', content: parsedInput });
     };
 
     handleInput();
@@ -305,6 +317,7 @@ export const useSimpleVisBehavior: NodeBehaviorHook = (data, nodeState) => {
       upstreamRunning,
       upstreamStopped,
       hasInput: data.input != null && data.input !== '',
+      reading,
       // 'text' is the fallback mode for anything that is not a frame,
       // so a text mode with no content is a payload we cannot show.
       tabular: currentMode !== 'text',
@@ -316,7 +329,7 @@ export const useSimpleVisBehavior: NodeBehaviorHook = (data, nodeState) => {
         hint={reason === 'upstream-stopped' ? upstreamStopped ?? undefined : undefined}
       />
     );
-  }, [currentMode, rows, imageColumns, shownImageColumns, choice, interacted, textContent, data.nodeId, data.input, connected, upstreamRunning, upstreamStopped, clickRow, pickColumn]);
+  }, [currentMode, rows, imageColumns, shownImageColumns, choice, interacted, textContent, data.nodeId, data.input, connected, upstreamRunning, upstreamStopped, reading, clickRow, pickColumn]);
 
   return {
     contentComponent,

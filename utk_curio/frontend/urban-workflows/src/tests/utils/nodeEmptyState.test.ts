@@ -172,6 +172,34 @@ describe("a dashboard's tile while a viewer's run makes what it shows, or after 
   });
 });
 
+describe("a table reading the rows of an input that just arrived", () => {
+  // The input names its artifact a moment before its rows are read. Until
+  // then the node has an input and no table: on a dashboard that read
+  // "Nothing to display" for about a second between "Computing..." and the
+  // rows (10-25).
+  const ARRIVED = { connected: true, hasInput: true, tabular: false, rowCount: 0 };
+
+  test("is still computing, not a payload it cannot show nor an empty table", () => {
+    expect(resolveNodeEmptyReason({ ...ARRIVED, reading: true })).toBe("upstream-running");
+    expect(resolveNodeEmptyReason({ ...ARRIVED, tabular: true, reading: true })).toBe("upstream-running");
+  });
+
+  test("a failed upstream still comes first, as it does over any input (#347)", () => {
+    expect(resolveNodeEmptyReason({ ...ARRIVED, reading: true, upstreamErrored: true })).toBe("upstream-errored");
+  });
+
+  test("says what it read once the read is done", () => {
+    expect(resolveNodeEmptyReason({ ...ARRIVED, reading: false })).toBe("not-tabular");
+    expect(resolveNodeEmptyReason({ ...ARRIVED, tabular: true, reading: false })).toBe("no-rows");
+  });
+
+  test("reading means nothing before an input arrives, or once the rows are shown", () => {
+    expect(resolveNodeEmptyReason({ ...ARRIVED, hasInput: false, reading: true })).toBe("upstream-not-run");
+    expect(resolveNodeEmptyReason({ ...READY, reading: true })).toBeNull();
+    expect(resolveNodeEmptyReason({ ...ARRIVED, connected: false, reading: true })).toBe("disconnected");
+  });
+});
+
 describe("incomingSourceIds", () => {
   test("names the nodes feeding this one", () => {
     const edges = [

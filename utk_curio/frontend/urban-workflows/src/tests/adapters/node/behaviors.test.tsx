@@ -616,6 +616,43 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
         expect(container.querySelector('[data-curio-node-empty]')?.getAttribute('data-curio-node-empty')).toBe('upstream-not-run');
       });
     });
+
+    describe('while it reads the rows of an input that just arrived', () => {
+      afterEach(() => {
+        mockEdges = [];
+      });
+
+      test('says it is computing until the rows are in, then shows them, never that the input is not a table', async () => {
+        // On a dashboard the table read "Nothing to display" for about a second
+        // between "Computing..." and its rows (10-25): the input names its
+        // artifact before its rows are read.
+        mockEdges = [{ id: 'e1', source: 'average', target: 'node-1' }];
+        const api = jest.requireMock('../../../services/api') as { fetchData: jest.Mock };
+        let deliver: (value: unknown) => void = () => {};
+        api.fetchData.mockImplementationOnce(() => new Promise((resolve) => { deliver = resolve; }));
+        const nodeState = makeMockNodeState();
+        const { result, rerender } = renderHook(
+          ({ data }) => useSimpleVisBehavior(data, nodeState),
+          { initialProps: { data: makeMockData({ input: '' }) } },
+        );
+
+        await act(async () => {
+          rerender({ data: makeMockData({ input: { path: 'average-7', dataType: 'dataframe' } as any }) });
+        });
+        const reading = render(<>{result.current.contentComponent}</>);
+        expect(reading.container.querySelector('[data-curio-node-empty]')?.getAttribute('data-curio-node-empty')).toBe('upstream-running');
+        expect(reading.container.textContent).toContain('Computing...');
+        expect(reading.container.textContent).not.toContain('Nothing to display');
+        reading.unmount();
+
+        await act(async () => {
+          deliver({ dataType: 'dataframe', data: { Selection: { 0: 'Dec 21' }, Shade: { 0: '40 min' } } });
+        });
+        const read = render(<>{result.current.contentComponent}</>);
+        expect(read.container.querySelector('[data-curio-node-empty]')).toBeNull();
+        expect(read.container.textContent).toContain('40 min');
+      });
+    });
   });
 
   // A node whose one input port takes several edges grows a circle per edge
