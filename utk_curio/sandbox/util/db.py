@@ -169,8 +169,20 @@ def _ensure_data_dir() -> Path:
     return db_dir
 
 
+#: The store's database file in the shared data directory. DuckDB writes its
+#: companions beside it under the same name (``.wal``, ``.tmp``), and none of
+#: them is ever a node's output.
+STORE_FILE = "curio_data.duckdb"
+
+
+def is_store_file(name: str) -> bool:
+    """Whether *name*, one entry of the shared data directory, is the store's
+    database or one of the files DuckDB keeps beside it."""
+    return name == STORE_FILE or name.startswith(STORE_FILE + ".")
+
+
 def get_db_path() -> str:
-    return str(_ensure_data_dir() / "curio_data.duckdb")
+    return str(_ensure_data_dir() / STORE_FILE)
 
 
 def _thread_cursor(master: '_NonClosingConn') -> '_NonClosingConn':

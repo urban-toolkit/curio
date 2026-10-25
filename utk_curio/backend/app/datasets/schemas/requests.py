@@ -12,11 +12,16 @@ from __future__ import annotations
 import base64
 import json
 
+from utk_curio.backend.app.datasets.domain.output_names import is_output_name
+
 
 def normalize_live_output_entry(raw: dict) -> dict | None:
+    """One live output, or None. Its filename comes from the request, so an
+    entry whose filename is not a name a node run gives its output (a path,
+    or another file of the shared data directory) is dropped."""
     node_id = raw.get("node_id") or raw.get("nodeId")
     filename = raw.get("filename")
-    if not node_id or not filename:
+    if not node_id or not is_output_name(filename):
         return None
     entry: dict = {"node_id": str(node_id), "filename": str(filename)}
     data_type = raw.get("data_type") or raw.get("dataType")
