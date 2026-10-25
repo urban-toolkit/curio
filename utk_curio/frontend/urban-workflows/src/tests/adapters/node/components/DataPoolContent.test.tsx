@@ -92,6 +92,24 @@ describe('DataPoolContent', () => {
     expect(screen.queryByText('This input is not tabular data.')).toBeNull();
   });
 
+  test('while it reads the rows of an input that just arrived, it says they are coming, not that they came back empty', () => {
+    // The input names its artifact a moment before its rows are read: an
+    // empty table in that moment is the rows on their way, not a result.
+    const { container } = render(
+      <DataPoolContent
+        {...defaultProps}
+        tabData={[]}
+        connected
+        reading
+        data={{ nodeId: 'test-node', input: { path: 'artifact-7', dataType: 'dataframe' } }}
+      />
+    );
+    expect(container.querySelector('[data-curio-node-empty]')?.getAttribute('data-curio-node-empty')).toBe('upstream-running');
+    expect(screen.getByText('Computing...')).toBeInTheDocument();
+    expect(screen.getByText('Results will be shown here once they are ready.')).toBeInTheDocument();
+    expect(screen.queryByText('No rows to show')).toBeNull();
+  });
+
   test('reads an empty geodataframe the same way', () => {
     render(
       <DataPoolContent

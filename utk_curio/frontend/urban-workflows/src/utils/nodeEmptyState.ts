@@ -18,7 +18,8 @@ export type NodeEmptyReason =
   | "upstream-not-run"
   /** Wired, and the node feeding it ran and failed. */
   | "upstream-errored"
-  /** A dashboard's tile while a viewer's run makes what it shows. */
+  /** What it shows is still being made: by a viewer's run on a dashboard, or
+   *  as the node reads the rows of an input that just arrived. */
   | "upstream-running"
   /** A dashboard's tile whose viewer's run stopped before it, at a step this browser could not run. */
   | "upstream-stopped"
@@ -204,6 +205,8 @@ export interface NodeEmptyInputs {
   upstreamStopped?: string | null;
   /** True once an input payload has actually arrived. */
   hasInput: boolean;
+  /** True while the node reads the rows of the input that just arrived. */
+  reading?: boolean;
   /** True when the payload is a kind this node can tabulate. */
   tabular: boolean;
   /** Row count of the rendered table, when there is one. */
@@ -230,6 +233,10 @@ export function resolveNodeEmptyReason(inputs: NodeEmptyInputs): NodeEmptyReason
   // stale input from an earlier successful run is still sitting there.
   if (inputs.upstreamErrored) return "upstream-errored";
   if (!inputs.hasInput) return "upstream-not-run";
+  // An input that just arrived, its rows still being read: with nothing to show
+  // yet, what the node shows is still being made, not a payload it cannot show
+  // nor an empty table. Rows already shown stay until the new ones replace them.
+  if (inputs.reading && (!inputs.tabular || inputs.rowCount <= 0)) return "upstream-running";
   if (!inputs.tabular) return "not-tabular";
   if (inputs.rowCount <= 0) return "no-rows";
   return null;

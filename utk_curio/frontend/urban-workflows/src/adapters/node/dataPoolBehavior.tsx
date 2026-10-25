@@ -87,6 +87,10 @@ export const useDataPoolBehavior: NodeBehaviorHook = (data) => {
   // before the pool's async fetch has propagated output to its children, and
   // downstream code nodes crash on `input_0=None`.
   const inflightRef = useRef<Promise<any> | null>(null);
+  // While the rows of the input that just arrived are read: the pool says what
+  // it shows is coming, not that the input came back empty. The read of the
+  // latest input clears it.
+  const [reading, setReading] = useState(false);
   // True once any feature has been marked interacted="1" so that a subsequent
   // "clear brush" (UNDETERMINED signal) still resets features to "0".
   const anyInteractedRef = useRef(false);
@@ -130,6 +134,7 @@ export const useDataPoolBehavior: NodeBehaviorHook = (data) => {
 
     if (!hasInput) {
       setOutput({ code: "", content: "" });
+      setReading(false);
       return;
     }
 
@@ -142,12 +147,16 @@ export const useDataPoolBehavior: NodeBehaviorHook = (data) => {
     let cancelled = false;
     const p = processDataAsync({ selectionEcho });
     inflightRef.current = p;
+    setReading(true);
     (async () => {
       try {
         const result = await p;
         if (!cancelled) setOutput(result as ICodeData);
       } finally {
-        if (inflightRef.current === p) inflightRef.current = null;
+        if (inflightRef.current === p) {
+          inflightRef.current = null;
+          setReading(false);
+        }
       }
     })();
     return () => { cancelled = true; };
@@ -465,6 +474,7 @@ export const useDataPoolBehavior: NodeBehaviorHook = (data) => {
         upstreamErrored={upstreamErrored}
         upstreamRunning={upstreamRunning}
         upstreamStopped={upstreamStopped}
+        reading={reading}
         insideChartMode={insideChartMode}
         betweenChartsMode={betweenChartsMode}
         onInsideChartModeChange={onInsideChartModeChange}
@@ -473,7 +483,7 @@ export const useDataPoolBehavior: NodeBehaviorHook = (data) => {
     ),
     [
       activeTab, setActiveTab, tabData, tableData, data, connected, upstreamErrored, upstreamRunning, upstreamStopped,
-      insideChartMode, betweenChartsMode, onInsideChartModeChange, onBetweenChartsModeChange,
+      reading, insideChartMode, betweenChartsMode, onInsideChartModeChange, onBetweenChartsModeChange,
     ],
   );
 
