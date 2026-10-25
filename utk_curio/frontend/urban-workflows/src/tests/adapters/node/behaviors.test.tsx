@@ -627,6 +627,24 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
         expect(container.textContent).toContain('Computing...');
         expect(container.textContent).not.toContain('Run the node');
       });
+
+      test('when the step feeding it failed, it says so, with no node for the visitor to open', async () => {
+        mockEdges = WIRED;
+        mockFlowEdges = WIRED;
+        mockNodeExecStatus = { average: 'errored' };
+        mockDashboard = { dashboardOn: true };
+        try {
+          const result = await callBehavior(useSimpleVisBehavior, { input: '' } as any);
+          const { container } = render(<>{result.current.contentComponent}</>);
+          expect(container.querySelector('[data-curio-node-empty]')?.getAttribute('data-curio-node-empty')).toBe('upstream-stopped');
+          expect(container.textContent).toContain('No results');
+          expect(container.textContent).toContain('A step before this one failed.');
+          expect(container.textContent).not.toContain('Open it');
+        } finally {
+          mockFlowEdges = [];
+          mockNodeExecStatus = {};
+        }
+      });
     });
 
     describe('while it reads the rows of an input that just arrived', () => {
