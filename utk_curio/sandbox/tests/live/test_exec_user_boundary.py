@@ -206,6 +206,53 @@ def test_a_staged_dataframe_input_reaches_the_child():
     assert (int(rows), int(total)) == (4, 10)
 
 
+def test_a_staged_input_cannot_be_written_by_the_child():
+    """A staged input is the stored file under a second name, so a child that
+    could write it would change that output for every later run and reader.
+    A file a child returned used to keep the child's account as its owner,
+    the account every child runs as. Now the child neither owns its staged
+    input nor can write it or change its mode, and the output reads whole."""
+    produced = assert_ran(run_node("""
+        import pandas as pd
+        return pd.DataFrame({"n": [1, 2, 3, 4]})
+    """, save_dataset=True), "producing the upstream dataframe")
+    artifact_id = produced["output"]["path"]
+    data_type = produced["output"]["dataType"]
+
+    attempt = assert_ran(run_node("""
+        import glob, os
+        scratch = os.path.dirname(os.environ["NUMBA_CACHE_DIR"])
+        staged = [path for path in glob.glob(os.path.join(scratch, "*.parquet"))
+                  if os.stat(path).st_nlink > 1]
+        print(len(staged))
+        for path in staged:
+            print(os.stat(path).st_uid == os.getuid())
+            try:
+                open(path, "r+b").close()
+            except PermissionError:
+                print("write denied")
+            else:
+                print("WRITTEN")
+            try:
+                os.chmod(path, 0o666)
+            except PermissionError:
+                print("chmod denied")
+            else:
+                print("CHMODDED")
+    """, file_path=artifact_id, data_type=data_type), "trying to write the staged input")
+    lines = printed(attempt).splitlines()
+    assert lines[:1] == ["1"], "the input was not staged as a link to the stored file: %r" % lines
+    assert lines[1:] == ["False", "write denied", "chmod denied"], (
+        "the child owns, or could change, its staged input, which is the stored output: %r"
+        % lines[1:]
+    )
+
+    consumed = assert_ran(run_node("""
+        print(int(input_0["n"].sum()))
+    """, file_path=artifact_id, data_type=data_type), "reading the output again")
+    assert printed(consumed).strip() == "10"
+
+
 def test_the_work_directory_is_writable_and_owned_by_the_exec_user():
     """The one place an isolated node may write, and it must actually own it.
 
