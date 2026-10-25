@@ -296,13 +296,20 @@ export const useAutkGrammarBehavior = (
 
     // What the node knows about its input edge, asked the way the Vega-Lite
     // node asks (hook/useGrammarInputState).
-    const { connected, upstreamErrored } = useGrammarInputState(data.nodeId);
+    const { connected, upstreamErrored, upstreamRunning, upstreamStopped } = useGrammarInputState(data.nodeId);
     // A failed node says so to the nodes it feeds, as a failed code node does.
-    const { markNodeErrored, workflowNameRef, nodes: flowNodes, edges: flowEdges } = useFlowContext() as {
+    const { markNodeErrored, workflowNameRef, nodes: flowNodes, edges: flowEdges, dashboardOn } = useFlowContext() as {
         markNodeErrored?: (nodeId: string) => void;
         workflowNameRef?: React.MutableRefObject<string>;
         nodes?: any[];
         edges?: any[];
+        dashboardOn?: boolean;
+    };
+    // Without WebGPU a dashboard raises no toast: a pinned map's tile says so
+    // in its panel, and the tiles below a step the visitor cannot see name
+    // that step (useDashboardRun). The canvas toasts, as the node is there.
+    const showGpuToast = (message: string) => {
+        if (!dashboardOn) showToast(message, 'error');
     };
     // The Map Editor nodes that feed this map on data edges (#662), each with
     // the edits its code holds: the map draws each one's input with its edits,
@@ -480,7 +487,7 @@ export const useAutkGrammarBehavior = (
                     'Autark nodes need WebGPU, which this browser does not provide.';
                 setGpuBlocked(message);
                 emit({ code: 'error', content: message });
-                showToast(message, 'error');
+                showGpuToast(message);
                 return;
             }
         }
@@ -1402,7 +1409,7 @@ export const useAutkGrammarBehavior = (
             } else {
                 const message = support.reason ?? 'Autark nodes need WebGPU, which this browser does not provide.';
                 setGpuBlocked(message);
-                showToast(message, 'error');
+                showGpuToast(message);
             }
         } finally {
             setGpuChecking(false);
@@ -1588,18 +1595,21 @@ export const useAutkGrammarBehavior = (
         const reason = resolveGrammarEmptyReason({
             connected,
             upstreamErrored,
+            upstreamRunning,
+            upstreamStopped,
             hasInput,
             hasSpec,
             needsInput,
             hasRun: hasRunRef.current,
             inputProblem: problem?.reason ?? null,
         });
+        const detail = reason === 'upstream-stopped' ? upstreamStopped ?? undefined : problem?.detail;
         noticeRef.current = reason == null
             ? null
-            : { reason, words: emptyStateWords(reason, liveKind, problem?.detail) };
+            : { reason, words: emptyStateWords(reason, liveKind, detail) };
         writeNotice();
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [connected, upstreamErrored, hasInput, hasSpec, needsInput, liveKind, gpuBlocked, nodeState.output?.code, runSummary]);
+    }, [connected, upstreamErrored, upstreamRunning, upstreamStopped, hasInput, hasSpec, needsInput, liveKind, gpuBlocked, nodeState.output?.code, runSummary]);
 
     // Forward parent container resizes to AutkMap via a synthetic window.resize.
     // AutkMap binds only to window.resize (and exposes no per-instance resize API),

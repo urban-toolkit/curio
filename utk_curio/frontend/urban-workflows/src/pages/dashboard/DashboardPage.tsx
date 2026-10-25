@@ -18,12 +18,11 @@ import { useProjectLoadState } from "../../components/ProjectLoader";
 import { DashboardScenarioLayers, FRAME_HEADER_ROOM } from "../../components/scenarios/ScenarioLayers";
 import { useFlowContext } from "../../providers/FlowProvider";
 import { dashboardRefusal } from "../../standalone/dashboardPayload";
-import { fitViewWithMenuOffsetNow, TOP_NOTICE_ATTR } from "../../utils/fitViewWithMenuOffset";
+import { fitViewWithMenuOffsetNow } from "../../utils/fitViewWithMenuOffset";
 import { scenarioDashboard } from "../../utils/scenarios/scenarioDashboard";
-import { dashboardValues } from "../../utils/widgets/dashboardControls";
 import { dataflowPath } from "../../utils/shareLinks";
 import { useViewportMotionHint } from "../../hook/useViewportMotionHint";
-import DashboardTopBar, { useCanEditLayout, useDashboardLeaveGuard } from "./DashboardTopBar";
+import DashboardTopBar, { useDashboardLeaveGuard } from "./DashboardTopBar";
 import { DASHBOARD_FIT_OPTIONS, useDashboardFit } from "./useDashboardFit";
 import styles from "./DashboardPage.module.css";
 import "reactflow/dist/style.css";
@@ -32,11 +31,6 @@ import "../../components/MainCanvas.css";
 export const NOTHING_PINNED_TITLE = "Nothing is pinned to this dashboard yet.";
 export const NOTHING_PINNED_BODY =
   "Open the dataflow and use Pin to dashboard on the nodes you want to show here.";
-export const READ_ONLY_NOTICE =
-  "Viewing a shared dashboard (read-only). Open the dataflow to make a copy.";
-/** The notice of a dashboard whose tiles show controls a visitor changes (#1117). */
-export const CONTROLS_NOTICE =
-  "Viewing a shared dashboard. Change a control to see its results; changes are not saved. Open the dataflow to make a copy.";
 export const LOAD_FAILED_TITLE = "This dashboard could not be opened.";
 export const LOAD_FAILED_BODY =
   "It may have been deleted, or the link may not be shared with you.";
@@ -84,11 +78,9 @@ export const DashboardPage: React.FC = () => {
     openedFor.current = id;
     dashboardOpened?.(id);
   }, [loadState, id, dashboardOpened]);
-  const hasControls = useMemo(() => Object.keys(dashboardValues(nodes)).length > 0, [nodes]);
   // Why the backend would not build this dashboard as a page of its own, when
   // the page was served with that instead of its data.
   const refusal = dashboardRefusal();
-  const canEditLayout = useCanEditLayout();
   const reactFlow = useReactFlow();
   const flowStore = useStoreApi();
   const viewportMotionHint = useViewportMotionHint();
@@ -107,10 +99,7 @@ export const DashboardPage: React.FC = () => {
   const headroom = frames.length > 0 ? FRAME_HEADER_ROOM : 0;
   const [arranged, setArranged] = useState(0);
   const onArranged = useCallback(() => setArranged((count) => count + 1), []);
-  // A visitor's notice covers the top of the pane, and the fit keeps the
-  // tiles below it: the page frames them again when it shows or goes.
-  const showsNotice = loadState === "loaded" && !canEditLayout;
-  useDashboardFit(pinnedIds, canvasRef, { headroom, refitKey: arranged * 2 + (showsNotice ? 1 : 0) });
+  useDashboardFit(pinnedIds, canvasRef, { headroom, refitKey: arranged });
 
   const nodeTypes = useMemo(() => ({ [CURIO_UNIVERSAL_NODE_TYPE]: UniversalNode }), []);
   const edgeTypes = useMemo(() => ({
@@ -180,16 +169,6 @@ export const DashboardPage: React.FC = () => {
   return (
     <div className={styles.page}>
       {id ? <DashboardTopBar id={id} onArranged={onArranged} /> : null}
-      {loadState === "loaded" && !canEditLayout ? (
-        // The notice the canvas gives a visitor, for the same reason: the page
-        // looks editable (tiles, a Share menu) and is not, save its controls,
-        // whose changes are never saved.
-        // The fit frames the tiles below it (TOP_NOTICE_ATTR): a control under
-        // it could not be reached.
-        <div className={styles.banner} data-testid="shared-view-banner" {...{ [TOP_NOTICE_ATTR]: "true" }}>
-          {hasControls ? CONTROLS_NOTICE : READ_ONLY_NOTICE}
-        </div>
-      ) : null}
       <div className={styles.canvas} ref={canvasRef}>
         <ReactFlow
           nodes={nodes}

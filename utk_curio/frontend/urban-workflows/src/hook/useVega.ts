@@ -87,6 +87,8 @@ export const useVega = ({
   code,
   connected = true,
   upstreamErrored = false,
+  upstreamRunning = false,
+  upstreamStopped = null,
   hasSpec = true,
   onRedraw,
   inputLabels,
@@ -97,6 +99,10 @@ export const useVega = ({
   connected?: boolean;
   /** Did the node feeding this one run and fail? */
   upstreamErrored?: boolean;
+  /** On a dashboard, is a viewer's run making this chart's rows? */
+  upstreamRunning?: boolean;
+  /** On a dashboard, why the viewer's run stopped before this chart, if it did. */
+  upstreamStopped?: string | null;
   /** Does the editor hold a spec to compile? */
   hasSpec?: boolean;
   /**
@@ -409,13 +415,15 @@ export const useVega = ({
     const reason = resolveGrammarEmptyReason({
       connected,
       upstreamErrored,
+      upstreamRunning,
+      upstreamStopped,
       hasInput: data.input != null && data.input !== "",
       hasSpec,
       hasRun: hasRunRef.current,
       inputProblem: emptyReason,
     });
-    if (reason != null) renderEmptyState(reason, emptyDetail);
-  }, [connected, upstreamErrored, hasSpec, data.input, emptyReason, emptyDetail]);
+    if (reason != null) renderEmptyState(reason, reason === "upstream-stopped" ? upstreamStopped : emptyDetail);
+  }, [connected, upstreamErrored, upstreamRunning, upstreamStopped, hasSpec, data.input, emptyReason, emptyDetail]);
 
   useEffect(() => {
     const el = document.getElementById("vega" + data.nodeId);

@@ -194,29 +194,26 @@ export const ProjectLoader: React.FC<{
     // flow state as "never saved" and creating a second dataflow (#340).
     beginProjectLoad(id);
 
-    /** Apply a loaded project; returns the nodes whose saved output it restored. */
+    /** Apply a loaded project. */
     const applyResult = (
       result: {
         spec: unknown;
         outputs?: Array<{ node_id: string; filename: string; data_type?: string }>;
       },
       { trusted }: { trusted: boolean }
-    ): Set<string> => {
+    ): void => {
       const { spec, outputs } = result;
 
       let loaded: { nodes: any[]; edges: any[] } | null = null;
-      const restoredIds = new Set<string>();
       if (spec) {
         if (!hasLoadableDataflow(spec)) {
           throw new Error(
             "Project spec is missing a valid dataflow payload. It may have been saved incorrectly."
           );
         }
-        // The outputs the manifest restored, by node: those nodes are built as
+        // The outputs the load restored, by node: those nodes are built as
         // having run, so a downstream play reuses them (#407).
-        const restored = restoredByNode(outputs);
-        for (const nodeId of Object.keys(restored)) restoredIds.add(nodeId);
-        loaded = loadTrill(spec, undefined, undefined, restored);
+        loaded = loadTrill(spec, undefined, undefined, restoredByNode(outputs));
         // Auto-install missing deps only for the owner's own project — never
         // for a foreign shared spec (see ensureWorkflowDeps' SECURITY note), and
         // never for a dashboard: opening a page to look at it must not install
@@ -239,7 +236,6 @@ export const ProjectLoader: React.FC<{
         // dashboard tile draws from, and it has no Play to fall back on.
         hydrateRestoredOutputs(newOutputs, loaded?.edges);
       }
-      return restoredIds;
     };
 
     setLoadState("loading");
@@ -307,14 +303,15 @@ export const ProjectLoader: React.FC<{
       }
 
       try {
-        const result = await loadProject(id);
-        const restored = applyResult(result, { trusted: true });
+        // A canvas opens with the results it was left with, each node its
+        // owner's runs ran showing its newest kept result; a dashboard with
+        // what was saved, and its viewers' runs (useDashboardRun).
+        const result = await loadProject(id, { lastResults: !presentation });
+        applyResult(result, { trusted: true });
         setLoadState("loaded");
-        // The outputs its last run on the server made that the saved ones do
-        // not hold, and that run itself if it is still going. Canvas only: a
-        // dashboard draws from what was saved and from its viewers' runs
-        // (useDashboardRun).
-        if (!presentation) void attachLatestRunRef.current(id, restored);
+        // The dataflow's last run on the server, if it is still going or
+        // waits for a tab. Canvas only.
+        if (!presentation) void attachLatestRunRef.current(id);
       } catch (err) {
         // 404 from the owner-scoped endpoint means either the project doesn't
         // exist or the current user isn't its owner. Try the shared (link-based)

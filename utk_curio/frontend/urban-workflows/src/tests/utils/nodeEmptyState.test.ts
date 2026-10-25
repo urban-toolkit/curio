@@ -110,6 +110,68 @@ describe("an errored upstream is not an unrun one (#347)", () => {
   });
 });
 
+describe("a dashboard's tile while a viewer's run makes what it shows, or after it stopped", () => {
+  // A visitor runs no node and opens none: "Run the node feeding this one" and
+  // "Open it to see the error" told a visitor to do what the page does not let
+  // them, while the page was computing, or after a step it could not run.
+  const EMPTY = { connected: true, hasInput: false, tabular: false, rowCount: 0 };
+
+  test("a table with nothing in yet is computing while the run goes, even after an earlier failure", () => {
+    expect(resolveNodeEmptyReason({ ...EMPTY, upstreamRunning: true })).toBe("upstream-running");
+    expect(resolveNodeEmptyReason({ ...EMPTY, upstreamRunning: true, upstreamErrored: true })).toBe("upstream-running");
+  });
+
+  test("a table with nothing in says why the run stopped, rather than which node to open", () => {
+    expect(resolveNodeEmptyReason({ ...EMPTY, upstreamStopped: '"Rays" could not run in this browser.' })).toBe(
+      "upstream-stopped",
+    );
+    expect(
+      resolveNodeEmptyReason({ ...EMPTY, upstreamErrored: true, upstreamStopped: '"Rays" could not run in this browser.' }),
+    ).toBe("upstream-stopped");
+  });
+
+  test("a table that has rows keeps showing them while a run goes", () => {
+    expect(resolveNodeEmptyReason({ ...READY, upstreamRunning: true })).toBeNull();
+    expect(resolveNodeEmptyReason({ ...READY, upstreamStopped: "stopped" })).toBeNull();
+  });
+
+  test("being disconnected still comes first", () => {
+    expect(resolveNodeEmptyReason({ ...EMPTY, connected: false, upstreamRunning: true })).toBe("disconnected");
+    expect(
+      resolveGrammarEmptyReason({ connected: false, hasInput: false, hasSpec: true, hasRun: false, upstreamRunning: true }),
+    ).toBe("disconnected");
+  });
+
+  test("a map or chart that drew nothing is computing while the run goes, even with some inputs in", () => {
+    // A grammar node is asked only while it shows nothing; with some of its
+    // inputs in it would otherwise say "Press play to draw this spec".
+    const partial = { connected: true, hasInput: true, hasSpec: true, hasRun: false };
+    expect(resolveGrammarEmptyReason({ ...partial, upstreamRunning: true })).toBe("upstream-running");
+    expect(resolveGrammarEmptyReason({ ...partial, upstreamStopped: "stopped" })).toBe("upstream-stopped");
+    expect(resolveGrammarEmptyReason({ ...partial, upstreamErrored: true, upstreamStopped: "stopped" })).toBe(
+      "upstream-stopped",
+    );
+  });
+
+  test("a document that reads no input says nothing about the run", () => {
+    expect(
+      resolveGrammarEmptyReason({ connected: false, hasInput: false, hasSpec: true, hasRun: false, needsInput: false, upstreamRunning: true }),
+    ).toBe("not-run");
+  });
+
+  test("the words name no node to run or open", () => {
+    for (const reason of ["upstream-running", "upstream-stopped"] as NodeEmptyReason[]) {
+      const { title, hint } = NODE_EMPTY_COPY[reason];
+      expect(`${title} ${hint}`).not.toMatch(/\b(run|open|press)\b.*\bnode\b/i);
+    }
+    // The owner's words (10-25).
+    expect(NODE_EMPTY_COPY["upstream-running"]).toEqual({
+      title: "Computing...",
+      hint: "Results will be shown here once they are ready.",
+    });
+  });
+});
+
 describe("incomingSourceIds", () => {
   test("names the nodes feeding this one", () => {
     const edges = [

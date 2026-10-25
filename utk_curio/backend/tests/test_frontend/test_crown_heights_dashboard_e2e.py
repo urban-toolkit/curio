@@ -12,9 +12,10 @@ it, after the server has run the Python before it, once for everyone (#1117).
 * The owner runs the example, saves it and shares it. The Share menu copies
   the dashboard's link and the dataflow's, and opens the dashboard for the
   owner to lay out. A visitor with no session opens the link and sees the
-  owner's results, with nothing run. A new date runs the Python before the GPU
-  step on the server, the GPU step in the visitor's page and the Python after
-  it on the server, and the map and the table draw it. A second visitor who
+  owner's results, with nothing run and no notice over them. A new date runs
+  the Python before the GPU step on the server, the GPU step in the visitor's
+  page and the Python after it on the server, and the map and the table draw
+  it. A second visitor who
   picks the same date gets the steps before the GPU step as the first
   visitor's run kept them, runs the GPU step in its own page, and reads what
   the first one read. The saved date brings the saved results back with no
@@ -24,6 +25,8 @@ it, after the server has run the Python before it, once for everyone (#1117).
   a shipped dataflow (``projects/seed.py``) has an id made from the example's
   file name, the same on every deployment. Opened at that link, a dashboard no
   one ran fills its tiles through a run, and a new date draws them again.
+  While the run goes, the table and the map say they are computing. In a
+  browser with no WebGPU, they say which step could not run.
 
 Run::
 
@@ -60,6 +63,8 @@ from .utils import (
     CLOSEUP_PIXEL_THRESHOLD,
     REPO_ROOT,
     api_json,
+    held_server_nodes,
+    hold_server_runs,
     keep_drawing,
     node_locator,
     park_pointer,
@@ -120,6 +125,14 @@ SHADE_RE = re.compile(r"^\d[\d,.]* (min|h)$")
 #: What an Autark map's database asks of the backend on any page it draws on:
 #: DuckDB's extensions, which Curio serves itself.
 _EXTENSIONS_RE = re.compile(r"^GET /file/vendor/duckdb-extensions/")
+
+#: What a tile with nothing yet says while a viewer's run makes it, title and
+#: hint (``NODE_EMPTY_COPY["upstream-running"]``).
+COMPUTING = ("Computing...", "Results will be shown here once they are ready.")
+
+#: Before the page's own scripts: a browser with no WebGPU, as the
+#: walkthroughs make one.
+_NO_WEBGPU_JS = "Object.defineProperty(navigator, 'gpu', { configurable: true, value: undefined });"
 
 #: The cells of the first row of the table node *id* draws, or null.
 _TABLE_ROW_JS = """(id) => {
@@ -216,6 +229,22 @@ def _ran_since(visitor: "_Visitor", earlier: int) -> list[dict[str, str]]:
     return _step_outputs(visitor)[earlier:]
 
 
+def _tile_says(page, node_id: str, reason: str, *words: str, timeout_ms: int) -> None:
+    """The tile of *node_id* shows only its notice for *reason*, which reads each of *words*."""
+    notice = node_locator(page, node_id).locator(f'[data-curio-node-empty="{reason}"]')
+    for said in words:
+        expect(notice).to_contain_text(said, timeout=timeout_ms)
+
+
+def _until_held(backend: str, visitor: "_Visitor") -> None:
+    """Until a step of a run on *backend* waits for the hold to end."""
+    deadline = time.time() + 60
+    while held_server_nodes(backend) < 1:
+        if time.time() >= deadline:
+            raise AssertionError("the run on open never reached a step on the server" + visitor.story())
+        visitor.page.wait_for_timeout(250)
+
+
 @pytest.mark.xdist_group("crown-heights-sharing")
 def test_the_owner_shares_the_crown_heights_dashboard_and_each_visitor_tries_a_date(
     app_frontend: "FrontendPage", current_server, page, browser, monkeypatch,
@@ -277,7 +306,11 @@ def test_the_owner_shares_the_crown_heights_dashboard_and_each_visitor_tries_a_d
         assert _runs_started(first.asked) == [] and _files_read(first.asked) == set(), (
             "the dashboard ran or read outputs to show the owner's results, which the page carries" + first.story()
         )
-        expect(first.page.get_by_test_id("shared-view-banner")).to_contain_text("changes are not saved", timeout=20000)
+        # The tiles alone: no notice over them about what a visitor may do.
+        expect(first.page.get_by_test_id("shared-view-banner")).to_have_count(0)
+        assert not re.search(r"shared dashboard|not saved", first.page.locator("body").inner_text(), re.I), (
+            "the dashboard tells a visitor what its changes do" + first.story()
+        )
         assert first.page.get_by_test_id("edit-layout-btn").count() == 0, "a visitor may lay out the owner's dashboard"
         tower = node_locator(first.page, ids["tower"])
         expect(tower.locator('li[data-edit-op="add"]')).to_have_count(2, timeout=30000)
@@ -434,10 +467,25 @@ def test_the_crown_heights_dashboard_link_dev_shares_works_on_this_deployment_to
 
     visitor = _Visitor(browser, current_server)
     try:
-        visitor.opens(hosted, LINK_ID)
-        require_webgpu(visitor.page)
         # No one ran it, so its tiles fill through a run: the server, the
-        # page's GPU step, then the server again.
+        # page's GPU step, then the server again. Held at its first step, the
+        # run leaves the table and the map saying they are computing, not
+        # that a node is left to run.
+        hold_server_runs(current_server, True)
+        try:
+            visitor.opens(hosted, LINK_ID)
+            require_webgpu(visitor.page)
+            _until_held(current_server, visitor)
+            for name in ("table", "map"):
+                visitor.waits_for(
+                    f"{LABELS[name]} computing",
+                    lambda name=name: _tile_says(
+                        visitor.page, ids[name], "upstream-running", *COMPUTING, timeout_ms=60000,
+                    ),
+                )
+        finally:
+            # A hold left standing would stop every later run on this backend.
+            hold_server_runs(current_server, False)
         shade: list[str] = []
         visitor.waits_for(
             "the table the run made", lambda: shade.append(_table_reads(visitor.page, ids["table"], "Dec 21")),
@@ -483,6 +531,31 @@ def test_the_crown_heights_dashboard_link_dev_shares_works_on_this_deployment_to
         )
     finally:
         visitor.close()
+
+    # A browser with no WebGPU: the run on open stops at the GPU step, and the
+    # table and the map say which step could not run, with nothing to press.
+    blind = _Visitor(browser, current_server)
+    try:
+        blind.ctx.add_init_script(_NO_WEBGPU_JS)
+        blind.opens(hosted, LINK_ID)
+        stopped = f'"{LABELS["rays"]}" could not run in this browser.'
+        for name in ("table", "map"):
+            blind.waits_for(
+                f"{LABELS[name]} saying why it has nothing",
+                lambda name=name: _tile_says(
+                    blind.page, ids[name], "upstream-stopped", stopped, timeout_ms=RUN_TIMEOUT_MS,
+                ),
+            )
+        blind.waits_for_runs(1, timeout_ms=RUN_TIMEOUT_MS)
+        assert len(_runs_started(blind.asked)) == 1, (
+            "the run started again past a step the page could not run" + blind.story()
+        )
+        assert _steps_sent(blind.asked) == [], "the page sent a GPU step it could not run" + blind.story()
+        assert _beyond_viewer_runs(blind) == [], (
+            "the dashboard asked the server for more than a viewer's run" + blind.story()
+        )
+    finally:
+        blind.close()
 
     after = api_json(f"{current_server}/api/projects/{LINK_ID}", guest)
     assert after["spec"] == copy["spec"], "a visitor's run changed the shipped copy"

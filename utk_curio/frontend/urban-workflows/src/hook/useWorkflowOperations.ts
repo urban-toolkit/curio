@@ -1432,8 +1432,8 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
         return detail;
     }, [workflowNameRef, reactFlow, deps.outputsRef, blockGuestSaves, syncDatasetsFromSavedSpec, defaultSaveOutputDataset]);
 
-    const loadProject = useCallback(async (id: string) => {
-        const result = await projectsApi.get(id);
+    const loadProject = useCallback(async (id: string, options?: { lastResults?: boolean }) => {
+        const result = await projectsApi.get(id, options);
         const { project, outputs } = result;
 
         // Pin the ref here rather than letting the next render carry it over,
