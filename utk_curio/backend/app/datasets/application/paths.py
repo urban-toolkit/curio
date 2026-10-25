@@ -44,14 +44,10 @@ class PathResolver:
     def _resolve_computed_output_path(self, item: dict[str, Any]) -> str | None:
         """Resolve a ``curio://outputs/{filename}`` URI to an absolute filesystem path.
 
-        Computed datasets live in the shared-data directory written by node
-        execution.  This helper maps the virtual URI to the real file so that
-        preview and install can both work without any special-casing at call
-        sites.
-
-        Falls back to checking the ``artifacts/`` subdirectory for legacy
-        DuckDB artifact IDs (bare name, no extension) that were stored in
-        project specs before the named-parquet dataset system was introduced.
+        A live output is named by its artifact id, and its file is the store's
+        (``resolve_shared_output_path``). This helper maps the virtual URI to
+        that file so that preview and install can both work without any
+        special-casing at call sites.
         """
         uri = item.get("uri") or ""
         if not uri.startswith("curio://outputs/"):
