@@ -42,6 +42,9 @@ services:
     # process exhaustion, root inside the container bypasses RLIMIT_NPROC, and
     # this host also runs the live stacks.
     pids_limit: 4096
+    # The runner-sized memory limit, as in docker-compose.ci.yml.
+    mem_limit: ${CURIO_CI_MEM_LIMIT:-0}
+    memswap_limit: ${CURIO_CI_MEM_LIMIT:-0}
     environment:
       - CURIO_SANDBOX_TOKEN=${CURIO_SANDBOX_TOKEN:?CURIO_SANDBOX_TOKEN must be set for the CI overlay}
       - CURIO_SKIP_DEP_INSTALL=1

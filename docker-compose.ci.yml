@@ -57,15 +57,20 @@ services:
     # This runner shares a host with the live curio and curio-dev stacks,
     # so bound the container rather than trusting the code under test.
     #
-    # Deliberately NO mem_limit. Setting one (12g) coincided with
-    # test_node_execution[06-back-bay-road-sunlight] timing out at
-    # 120s waiting for its data pool to render, a test that passes on
-    # main. That example parses city-scale PBFs and drives WebGPU, and a
-    # mem_limit without memswap_limit lets the container swap instead of
-    # allocating, which shows up as exactly that kind of slowdown. The
-    # risk a memory cap guarded is already covered: RLIMIT_AS bounds each
-    # child (child._apply_rlimits) and no test forks without bound.
     pids_limit: 4096
+    # A memory limit sized to the runner, on self-hosted runners only
+    # (scripts/ci_memory_budget.py writes CURIO_CI_MEM_LIMIT; unset, 0 is no
+    # limit). Without one, a stack that outgrew a 12 GB desktop swapped the
+    # machine until its runner stopped answering GitHub and the job was lost.
+    # With it, the kernel kills a process in this container and the job
+    # fails saying so. memswap_limit is the same value, so the container
+    # cannot swap: a fixed 12g limit without it (an earlier try) let the
+    # container swap, and test_node_execution[06-back-bay-road-sunlight],
+    # which parses city-scale PBFs, timed out on the slowdown. The limit is
+    # everything the runner has free less a reserve, so it does not squeeze
+    # the stack; on a small runner test-gpu runs fewer workers instead.
+    mem_limit: ${CURIO_CI_MEM_LIMIT:-0}
+    memswap_limit: ${CURIO_CI_MEM_LIMIT:-0}
     environment:
       - CURIO_SANDBOX_TOKEN=${CURIO_SANDBOX_TOKEN:?CURIO_SANDBOX_TOKEN must be set for the CI overlay}
       # This is the UNISOLATED baseline stack, which only --testing on the
