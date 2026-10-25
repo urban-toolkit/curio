@@ -36,6 +36,7 @@ import json
 import re
 import time
 import uuid
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 import pytest
@@ -74,7 +75,7 @@ from .utils import (
 if TYPE_CHECKING:
     from .utils import FrontendPage
 
-EXAMPLE = REPO_ROOT / "docs" / "examples" / "dataflows" / "crown-heights-1550-bedford-shadow.json"
+EXAMPLE = Path(REPO_ROOT, "docs", "examples", "dataflows", "crown-heights-1550-bedford-shadow.json")
 NAME = "Crown Heights shade from 1550 Bedford Avenue"
 STEM = "crown-heights-dashboard"
 
