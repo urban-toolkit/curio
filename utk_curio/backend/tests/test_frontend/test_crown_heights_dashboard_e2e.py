@@ -126,6 +126,10 @@ SHADE_RE = re.compile(r"^\d[\d,.]* (min|h)$")
 #: DuckDB's extensions, which Curio serves itself.
 _EXTENSIONS_RE = re.compile(r"^GET /file/vendor/duckdb-extensions/")
 
+#: What a tile with nothing yet says while a viewer's run makes it, title and
+#: hint (``NODE_EMPTY_COPY["upstream-running"]``).
+COMPUTING = ("Computing...", "Results will be shown here once they are ready.")
+
 #: Before the page's own scripts: a browser with no WebGPU, as the
 #: walkthroughs make one.
 _NO_WEBGPU_JS = "Object.defineProperty(navigator, 'gpu', { configurable: true, value: undefined });"
@@ -225,10 +229,11 @@ def _ran_since(visitor: "_Visitor", earlier: int) -> list[dict[str, str]]:
     return _step_outputs(visitor)[earlier:]
 
 
-def _tile_says(page, node_id: str, reason: str, words: str, *, timeout_ms: int) -> None:
-    """The tile of *node_id* shows only its notice for *reason*, which reads *words*."""
+def _tile_says(page, node_id: str, reason: str, *words: str, timeout_ms: int) -> None:
+    """The tile of *node_id* shows only its notice for *reason*, which reads each of *words*."""
     notice = node_locator(page, node_id).locator(f'[data-curio-node-empty="{reason}"]')
-    expect(notice).to_contain_text(words, timeout=timeout_ms)
+    for said in words:
+        expect(notice).to_contain_text(said, timeout=timeout_ms)
 
 
 def _until_held(backend: str, visitor: "_Visitor") -> None:
@@ -475,7 +480,7 @@ def test_the_crown_heights_dashboard_link_dev_shares_works_on_this_deployment_to
                 visitor.waits_for(
                     f"{LABELS[name]} computing",
                     lambda name=name: _tile_says(
-                        visitor.page, ids[name], "upstream-running", "Computing", timeout_ms=60000,
+                        visitor.page, ids[name], "upstream-running", *COMPUTING, timeout_ms=60000,
                     ),
                 )
         finally:

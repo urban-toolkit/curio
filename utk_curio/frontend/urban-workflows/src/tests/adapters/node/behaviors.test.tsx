@@ -594,7 +594,8 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
         const result = await callBehavior(useSimpleVisBehavior, { input: '' } as any);
         const { container } = render(<>{result.current.contentComponent}</>);
         expect(container.querySelector('[data-curio-node-empty]')?.getAttribute('data-curio-node-empty')).toBe('upstream-running');
-        expect(container.textContent).toContain('Computing');
+        expect(container.textContent).toContain('Computing...');
+        expect(container.textContent).toContain('Results will be shown here once they are ready.');
         expect(container.textContent).not.toContain('Run the node');
       });
 
