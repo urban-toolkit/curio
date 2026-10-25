@@ -126,6 +126,41 @@ class TestResilience:
         assert body["truncated"] is True
 
 
+class TestLinkedFiles:
+    """A saved output is the store's file linked into its owner's Data
+    Catalog: one file with two names, whose bytes are on disk once."""
+
+    def test_a_file_named_in_two_areas_counts_once_under_users(self, client, state_root,
+                                                              monkeypatch):
+        data = state_root / "data"
+        monkeypatch.setenv("CURIO_SHARED_DATA", str(data))
+        saved = state_root / "users" / "alice" / "datasets" / "computed.df.node@1" / "data" / "out.parquet"
+        saved.parent.mkdir(parents=True)
+        saved.write_bytes(b"x" * 4096)
+        (data / "artifacts").mkdir(parents=True)
+        os.link(saved, data / "artifacts" / "out.parquet")
+        (data / "artifacts" / "unsaved.parquet").write_bytes(b"y" * 100)
+        storage.reset()
+
+        body = client.get("/api/monitor/storage").get_json()
+        rows = {row["area"]: row for row in body["breakdown"]}
+        assert (rows["users"]["bytes"], rows["users"]["files"]) == (4096, 1)
+        assert (rows["data"]["bytes"], rows["data"]["files"]) == (100, 1)
+        assert body["userStores"]["totalBytes"] == 4096
+
+    def test_two_names_in_one_store_count_once(self, client, state_root):
+        store = state_root / "users" / "alice" / "datasets"
+        store.mkdir(parents=True)
+        (store / "a.parquet").write_bytes(b"x" * 4096)
+        os.link(store / "a.parquet", store / "b.parquet")
+        storage.reset()
+
+        body = client.get("/api/monitor/storage").get_json()
+        rows = {row["area"]: row for row in body["breakdown"]}
+        assert (rows["users"]["bytes"], rows["users"]["files"]) == (4096, 1)
+        assert body["userStores"]["totalBytes"] == 4096
+
+
 def _fake_walk():
     return {
         "computedAt": "2026-09-22T00:00:00Z",
