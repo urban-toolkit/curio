@@ -8,10 +8,13 @@ the folder found no saved copy and dropped the output without a word: the
 dashboard showed an empty tile, or one over the size limit was built instead
 of refused.
 
-The save is paused right after it removes the folder; the reader starts then,
-and the pause ends once the reader has waited on the spec lock for a moment.
-The database is a file, as on a server, so each thread has its own
-connection (``file_db_app``).
+A new output now goes in beside the old one, so the folder is never empty,
+but a reader must still wait for the save: the outputs it records are written
+after they are installed. The save is paused right after it installs the new
+output, still holding the spec lock; the reader starts then, and the pause
+ends once the reader has waited on the spec lock for a moment. The database
+is a file, as on a server, so each thread has its own connection
+(``file_db_app``).
 """
 from __future__ import annotations
 
@@ -115,20 +118,24 @@ def _producer_folder(owner_id: int, project_id: str) -> Path:
     return dataset_dir(str(owner_id), f"{computed_dataset_id(PRODUCER, project_id)}@1")
 
 
-def _pause_after_rmtree(monkeypatch, thread_name: str, folder: Path):
-    """Hold *thread_name* right after it removes *folder*, the first time.
-    Returns the (reached, release) events."""
-    reached, release = threading.Event(), threading.Event()
-    real = shutil.rmtree
+def _pause_after_install(monkeypatch, thread_name: str, folder: Path):
+    """Hold *thread_name* right after it installs an output into *folder*, the
+    first time, before its save records it. Returns the (reached, release)
+    events."""
+    from utk_curio.backend.app.datasets.install import installer
 
-    def rmtree(path, *args, **kwargs):
-        real(path, *args, **kwargs)
-        if (threading.current_thread().name == thread_name and Path(path).name == folder.name
+    reached, release = threading.Event(), threading.Event()
+    real = installer._index
+
+    def index(user_key, result):
+        indexed = real(user_key, result)
+        if (threading.current_thread().name == thread_name and result.dest.name == folder.name
                 and not reached.is_set()):
             reached.set()
             release.wait(timeout=HOLD_SECONDS)
+        return indexed
 
-    monkeypatch.setattr(shutil, "rmtree", rmtree)
+    monkeypatch.setattr(installer, "_index", index)
     return reached, release
 
 
@@ -181,7 +188,7 @@ def _load(application, owner_id: int, project_id: str) -> dict:
 
 def _read_during_a_save(application, owner_id, monkeypatch, read) -> dict:
     """Save the producer's output, lose the canvas's copy of it, then save a new
-    output and run *read* while that save has just removed the saved copy.
+    output and run *read* while that save has just installed it.
 
     Returns the outcomes: the save's, the reader's, whether the reader asked
     for the spec lock during the pause, and when the pause ended.
@@ -193,14 +200,14 @@ def _read_during_a_save(application, owner_id, monkeypatch, read) -> dict:
     # as for a visitor holding a dashboard link, or after a restart.
     _shared(first).unlink()
     second = _artifact(1790000000100, {"rows": 2})
-    reached, release = _pause_after_rmtree(monkeypatch, "save", _producer_folder(owner_id, project_id))
+    reached, release = _pause_after_install(monkeypatch, "save", _producer_folder(owner_id, project_id))
     asked = _signal_at_spec_lock(monkeypatch, "reader")
 
     threads: list = []
     waited = False
     try:
         save = _start(threads, "save", lambda: _save(application, project_id, second))
-        assert reached.wait(STEP_SECONDS), "the save never removed the saved output it installs again"
+        assert reached.wait(STEP_SECONDS), "the save never installed the new output"
         reader = _start(threads, "reader", lambda: read(project_id))
         waited = asked.wait(STEP_SECONDS)
         if waited:
