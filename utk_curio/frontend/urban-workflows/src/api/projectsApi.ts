@@ -156,8 +156,13 @@ export const projectsApi = {
     );
   },
 
-  get(id: string): Promise<LoadResponse> {
-    return apiFetch<LoadResponse>(`/api/projects/${id}`);
+  /**
+   * The dataflow, its spec and its outputs: the saved ones, or with
+   * `lastResults` the results its canvas was left with, each node its
+   * owner's runs ran showing its newest kept result where one matches.
+   */
+  get(id: string, options?: { lastResults?: boolean }): Promise<LoadResponse> {
+    return apiFetch<LoadResponse>(`/api/projects/${id}${options?.lastResults ? "?results=last" : ""}`);
   },
 
   getShared(id: string): Promise<LoadResponse> {

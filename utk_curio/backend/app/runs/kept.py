@@ -28,6 +28,7 @@ import logging
 import os
 import secrets
 import threading
+from dataclasses import dataclass
 from datetime import timedelta
 from typing import Optional
 
@@ -167,6 +168,39 @@ def step_key(*, packages: str, node_type: str, engine: str, code: str, input_ref
     }).encode("utf-8")).hexdigest()
 
 
+@dataclass(frozen=True)
+class StepCall:
+    """What a run of one step sends the sandbox: its code, the engine that
+    runs it, its input and its wired circles."""
+
+    code: str
+    engine: str
+    input: object
+    slots: Optional[tuple]
+
+
+def step_call(plan, step, code: str, input_ref) -> StepCall:
+    """What a run of *step* sends, given its *code* as the engine sends it
+    (``run_engine.sent_code``) and its *input_ref*. An Autark node whose
+    document only loads data runs as the JavaScript it compiles to, on no
+    input, as the browser's run of it does (``autkLayerMaterialize.ts``)."""
+    if step.autk_data:
+        from utk_curio.common.autk_data_compiler import compile_data_spec
+
+        return StepCall(compile_data_spec(code), "javascript", None, None)
+    return StepCall(code, step.engine, input_ref, tuple(plan.spec.input_slots(step.node_id)) or None)
+
+
+def call_key(call: StepCall, *, packages: str, node_type: str, datasets: dict) -> str:
+    """The key the output of *call* is kept under (:func:`step_key`), with
+    *datasets* the identities of the datasets its code reads
+    (:func:`datasets_read`)."""
+    return step_key(
+        packages=packages, node_type=node_type, engine=call.engine, code=call.code,
+        input_ref=input_identity(call.input), input_slots=call.slots, datasets=datasets,
+    )
+
+
 # ---------------------------------------------------------------------------
 # The sessions that tag what a kept run makes
 # ---------------------------------------------------------------------------
@@ -258,6 +292,21 @@ def owner_entry(project_id: str, name: str) -> Optional[KeptStepOutput]:
     if not name:
         return None
     return _newest_holding(KeptStepOutput.query.filter(KeptStepOutput.project_id == project_id), name)
+
+
+def owner_outputs_by_key(project_id: str) -> dict:
+    """``{step key: entry}``: the newest live output the owner's runs of
+    *project_id* kept under each key. Read only: nothing is touched, since an
+    owner's outputs are bounded by their days alone."""
+    newest: dict = {}
+    for entry in (
+        KeptStepOutput.query.filter_by(project_id=project_id, made_by=MADE_BY_OWNER)
+        .filter(_alive(naive_utc_now()))
+        .order_by(KeptStepOutput.created_at.desc())
+        .all()
+    ):
+        newest.setdefault(entry.step_key, entry)
+    return newest
 
 
 def owner_session(user_id, name: str) -> Optional[str]:

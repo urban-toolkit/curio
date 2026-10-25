@@ -469,9 +469,14 @@ saved under its title by its first run.
 - While a run goes, **Run All** stops it. The run ends before its next node
   starts; a node already running finishes, and its result is not kept.
 
-A dataflow opened while it runs shows the run going on. Opened afterwards in the
-same browser, every node shows its output; in another browser, or after signing
-in again, the nodes whose **Save output dataset** toggle is on do.
+A dataflow opened while it runs shows the run going on. Opened afterwards, in
+any browser and after signing in again, each code node shows the last result you
+ran it to, for 7 days, as long as its code, its inputs, your packages and the
+datasets it reads are unchanged; charts and maps below it draw from it. A node
+with no such result shows its saved output, if its **Save output dataset**
+toggle is on. Nodes below an Autark compute node or a Spatial Join wait for a
+run. After Curio is upgraded, only saved outputs come back. A dashboard shows
+its saved outputs.
 
 Guests, viewers of a shared dataflow, and a Curio started with `--no-project`
 run dataflows in the browser, and a run stops when its tab closes.

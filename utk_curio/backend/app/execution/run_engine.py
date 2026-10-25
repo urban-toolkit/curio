@@ -107,6 +107,25 @@ def play_indent(code: str) -> str:
     return "".join("    " + line + "\n" for line in code.split("\n"))
 
 
+def passed_on(output: dict) -> dict:
+    """What a node hands the nodes below it of its *output*: its reference."""
+    return {k: v for k, v in output.items() if k in _INPUT_KEYS}
+
+
+def sent_code(plan: "Plan", step: "Step") -> str:
+    """*step*'s code as a run sends it: its widgets, its wired circles and the
+    dataflow's shared tags written in, as the canvas and the headless runner
+    resolve them. Python is indented as ``PythonInterpreter.ts`` posts it;
+    JavaScript goes as written, as ``JavaScriptInterpreter.ts`` posts it (an
+    indented ``import`` is no longer a module's own), and so does an Autark
+    document, whose references resolve as a spec's do. Raises
+    ``CodeReferenceError`` for a reference that names nothing."""
+    language = "json" if step.autk_data else "javascript" if step.engine == "javascript" else "python"
+    node = next(n for n in plan.spec.nodes if n.id == step.node_id)
+    code = plan.spec.node_code(node, language, step.content)
+    return play_indent(code) if language == "python" else code
+
+
 def _is_ref(value) -> bool:
     return isinstance(value, dict) and bool(value.get("path") or value.get("data"))
 
@@ -145,7 +164,7 @@ def plan_run(
                 raise PlanError(f"node {node_id!r} is not in the dataflow")
         wanted = set().union(*(ancestors(node_id, spec.edges) for node_id in targets))
         kept_reuse = {
-            node_id: {k: v for k, v in ref.items() if k in _INPUT_KEYS}
+            node_id: passed_on(ref)
             for node_id, ref in (reuse or {}).items()
             if node_id in wanted and node_id not in targets and _is_ref(ref)
         }
@@ -224,20 +243,11 @@ class _Outcome:
 
 def _execute_step(plan: Plan, step: Step, input_ref, execute) -> _Outcome:
     started = time.time()
-    # An Autark document's references resolve as a spec's do.
-    language = "json" if step.autk_data else "javascript" if step.engine == "javascript" else "python"
     try:
-        # Its widgets, its wired circles and the dataflow's shared tags, as the
-        # canvas and the headless runner resolve them.
-        node = next(n for n in plan.spec.nodes if n.id == step.node_id)
-        code = plan.spec.node_code(node, language, step.content)
+        sent = sent_code(plan, step)
     except CodeReferenceError as exc:
         # The node's own failure, reported without asking the sandbox.
         return _Outcome("error", {}, stderr=str(exc), started_at=started, finished_at=time.time())
-    # Python is indented as PythonInterpreter.ts posts it; JavaScript goes as
-    # written, as JavaScriptInterpreter.ts posts it (an indented `import` is
-    # no longer a module's own), and so does an Autark document.
-    sent = play_indent(code) if language == "python" else code
     attempts = AUTK_DATA_ATTEMPTS if step.autk_data else 1
     for _attempt in range(attempts):
         outcome = _attempt_step(step, sent, input_ref, execute, started)
@@ -380,9 +390,7 @@ def run_events(
                     yield settle(step, "cancelled", **timing)
                     continue
                 if outcome.status == "ok":
-                    outputs[step.node_id] = {
-                        k: v for k, v in outcome.output.items() if k in _INPUT_KEYS
-                    }
+                    outputs[step.node_id] = passed_on(outcome.output)
                 # The reply Play would have had, its stdout and stderr cut to
                 # the same tails: the event log is kept in memory.
                 reply = (

@@ -135,7 +135,8 @@ export interface FlowContextProps {
     saveAsNewProject: (name: string) => Promise<any>;
     ensureProjectId: () => Promise<string | null>;
     persistDataflowForInstall: (nodeIds?: readonly string[]) => Promise<InstallSyncOutcome>;
-    loadProject: (id: string) => Promise<any>;
+    /** Open the owner's dataflow; with `lastResults`, with the results its canvas was left with. */
+    loadProject: (id: string, options?: { lastResults?: boolean }) => Promise<any>;
     loadSharedProject: (id: string) => Promise<any>;
     discardProject: () => void;
     markDirty: () => void;
@@ -160,8 +161,8 @@ export interface FlowContextProps {
     serverRunActive: boolean;
     /** Stop the run in flight: clears the guard so the next play is accepted. */
     cancelRun: () => void;
-    /** Show the outputs of a just-opened dataflow's last run on the server, and follow it if it goes. */
-    attachLatestRun: (projectId: string, restored: ReadonlySet<string>) => Promise<void>;
+    /** Follow a just-opened dataflow's last run on the server if it goes, and offer to finish one that waits for a tab. */
+    attachLatestRun: (projectId: string) => Promise<void>;
     /** Auto-run is offered: Run All runs on the server here (#845). */
     autoRunAvailable: boolean;
     /** A widget or Parameter value changed what *nodeIds* compute: with auto-run on, they and

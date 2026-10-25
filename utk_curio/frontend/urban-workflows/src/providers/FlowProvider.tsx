@@ -580,7 +580,10 @@ const FlowProvider = ({
                 // A project switch must not inherit a run in flight: the guard
                 // is provider state, and the provider outlives the dataflow
                 // when the user loads another one in place (#271).
-                loadProject: async (id: string) => { leaveRuns(); return workflowOps.loadProject(id); },
+                loadProject: async (id: string, options?: { lastResults?: boolean }) => {
+                    leaveRuns();
+                    return workflowOps.loadProject(id, options);
+                },
                 loadSharedProject: async (id: string) => { leaveRuns(); return workflowOps.loadSharedProject(id); },
                 cleanCanvas: () => { leaveRuns(); workflowOps.cleanCanvas(); },
                 discardProject: () => { leaveRuns(); workflowOps.discardProject(); },

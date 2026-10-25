@@ -3,6 +3,19 @@ import { recordExecProvenance } from "./utils/executionResult";
 import { executionInputRef } from "./utils/flowOutputRef";
 import { runNodeOnBackend } from "./utils/nodeRunRequest";
 
+/**
+ * A node's code as Play posts it: each line indented by four spaces and ended
+ * with a newline. A run on the server sends it so too (`run_engine.play_indent`),
+ * and the cases both sides read are in `providers/flow/playCode.cases.json`.
+ */
+export function playIndent(code: string): string {
+    let posted = "";
+    for (const line of code.split("\n")) {
+        posted += "    " + line + "\n";
+    }
+    return posted;
+}
+
 export class PythonInterpreter {
     public interpretCode(
         unresolvedUserCode: string,
@@ -27,12 +40,7 @@ export class PythonInterpreter {
             });
         };
 
-        let lines = userCode.split("\n");
-
-        let unifiedLines = "";
-        for (const line of lines) {
-            unifiedLines += "    " + line + "\n";
-        }
+        const unifiedLines = playIndent(userCode);
 
         const startedAt = new Date();
 

@@ -26,7 +26,6 @@ import {
     reportsToRun,
     reuseFor,
     settledStatus,
-    stepsToRestore,
     type NodeChange,
     type TrackedStep,
 } from "./serverRunSteps";
@@ -454,11 +453,12 @@ export function useServerRun({
     };
 
     /**
-     * A canvas just opened *projectId*: show the outputs of its last run that
-     * the saved ones did not restore, follow it if it still goes, and offer to
-     * finish it if it waits for a tab.
+     * A canvas just opened *projectId*: follow its last run if it still goes,
+     * and offer to finish it if it waits for a tab. What a finished run made
+     * came with the load, which shows each node's newest kept result
+     * (`GET /api/projects/<id>?results=last`).
      */
-    const attachLatestRun = async (projectId: string, restored: ReadonlySet<string>) => {
+    const attachLatestRun = async (projectId: string) => {
         if (followedRef.current || startingRef.current) return;
         let record: Run;
         try {
@@ -472,18 +472,6 @@ export function useServerRun({
         if (ACTIVE_RUN_STATUSES.has(record.status)) {
             attach(record, { startedHere: false });
             return;
-        }
-        const run: FollowedRun = {
-            runId: record.id, steps: new Map(), applied: new Set(), started: new Set(), settled: new Set(),
-            startedHere: false, played: null, targets: null, controller: new AbortController(), done: true, refollows: 0,
-        };
-        for (const step of stepsToRestore(record.steps ?? [], restored)) {
-            applyChange(run, step.nodeId, {
-                kind: "result",
-                reply: replyFromRecord(step),
-                startedAt: step.startedAt ? Date.parse(step.startedAt) / 1000 : undefined,
-                finishedAt: step.finishedAt ? Date.parse(step.finishedAt) / 1000 : undefined,
-            });
         }
         if (record.status === "needs_canvas") offerFinish(record.id);
     };
