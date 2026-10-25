@@ -95,8 +95,10 @@ export const useSimpleVisBehavior: NodeBehaviorHook = (data, nodeState) => {
   // which only the graph knows.
   const edges = useEdges();
   const connected = hasIncomingEdge(edges, data.nodeId);
-  // On a dashboard: a viewer's run making the rows, or why it stopped before them.
-  const { upstreamRunning, upstreamStopped, onDashboard } = useGrammarInputState(data.nodeId);
+  // Whether the node feeding it ran and failed, asked as the Data Pool asks it
+  // (#347); on a dashboard, a viewer's run making the rows, or why it stopped
+  // before them.
+  const { upstreamErrored, upstreamRunning, upstreamStopped, onDashboard } = useGrammarInputState(data.nodeId);
   // Lazy init: if input is already present on mount (e.g. in tests) seed the
   // view so the first render already produces a contentComponent. The effect
   // will overwrite this once it fetches any path reference.
@@ -317,6 +319,7 @@ export const useSimpleVisBehavior: NodeBehaviorHook = (data, nodeState) => {
     // <Table> and looked like a node that had failed.
     const reason = resolveNodeEmptyReason({
       connected,
+      upstreamErrored,
       upstreamRunning,
       upstreamStopped,
       hasInput: data.input != null && data.input !== '',
@@ -333,7 +336,7 @@ export const useSimpleVisBehavior: NodeBehaviorHook = (data, nodeState) => {
         hint={reason === 'upstream-stopped' ? upstreamStopped ?? undefined : undefined}
       />
     );
-  }, [currentMode, rows, imageColumns, shownImageColumns, choice, interacted, textContent, data.nodeId, data.input, connected, upstreamRunning, upstreamStopped, reading, onDashboard, clickRow, pickColumn]);
+  }, [currentMode, rows, imageColumns, shownImageColumns, choice, interacted, textContent, data.nodeId, data.input, connected, upstreamErrored, upstreamRunning, upstreamStopped, reading, onDashboard, clickRow, pickColumn]);
 
   return {
     contentComponent,

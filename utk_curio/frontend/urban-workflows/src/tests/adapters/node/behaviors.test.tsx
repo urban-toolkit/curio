@@ -616,6 +616,42 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
         expect(container.querySelector('[data-curio-node-empty]')?.getAttribute('data-curio-node-empty')).toBe('upstream-not-run');
       });
 
+      test('on the canvas, when the node feeding it failed, it says so, as the Data Pool does (#347)', async () => {
+        // It said "Run the node feeding this one": the node the user just
+        // watched fail (owner, 10-25).
+        mockEdges = WIRED;
+        mockFlowEdges = WIRED;
+        mockNodeExecStatus = { average: 'errored' };
+        try {
+          const result = await callBehavior(useSimpleVisBehavior, { input: '' } as any);
+          const { container } = render(<>{result.current.contentComponent}</>);
+          expect(container.querySelector('[data-curio-node-empty]')?.getAttribute('data-curio-node-empty')).toBe('upstream-errored');
+          expect(container.textContent).toContain('The node feeding this one failed. Open it to see the error.');
+          expect(container.textContent).not.toContain('Run the node feeding this one');
+        } finally {
+          mockFlowEdges = [];
+          mockNodeExecStatus = {};
+        }
+      });
+
+      test('on a dashboard, when the node feeding it failed, it says a step failed, with no node to open', async () => {
+        mockEdges = WIRED;
+        mockFlowEdges = WIRED;
+        mockNodeExecStatus = { average: 'errored' };
+        mockDashboard = { dashboardOn: true };
+        try {
+          const result = await callBehavior(useSimpleVisBehavior, { input: '' } as any);
+          const { container } = render(<>{result.current.contentComponent}</>);
+          expect(container.querySelector('[data-curio-node-empty]')?.getAttribute('data-curio-node-empty')).toBe('upstream-stopped');
+          expect(container.textContent).toContain('No results');
+          expect(container.textContent).toContain('A step before this one failed.');
+          expect(container.textContent).not.toContain('Open it');
+        } finally {
+          mockFlowEdges = [];
+          mockNodeExecStatus = {};
+        }
+      });
+
       test('with no run going yet and nothing in, it says computing, not which node to run', async () => {
         // As the page opens, before its run starts or its saved rows land: on
         // dev (10-25) a visitor read "Run the node feeding this one" for 170 ms.
