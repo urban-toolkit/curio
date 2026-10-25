@@ -9,9 +9,12 @@ import os
 import re
 import shutil
 import uuid
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Callable, Iterable, Iterator
 
+from utk_curio.backend.app.common.file_locks import exclusive_lock
 from utk_curio.backend.app.datasets.domain.manifest import (
     DatasetManifest,
     ManifestError,
@@ -94,10 +97,17 @@ def _left_out_data_file(dir_name: str, manifest: DatasetManifest, src: Path) -> 
 def _place_copy(source: Path, target: Path) -> None:
     """Copy *source* to *target* whole or not at all: the install counts as
     complete once its data file is there."""
+    write_whole(target, lambda partial: shutil.copyfile(source, partial))
+
+
+def write_whole(target: Path, write: Callable[[Path], object]) -> None:
+    """Have *write* make the file at *target* under a temporary name in the
+    same folder, then move it into place, so a reader that finds *target*
+    finds all of it, and a write that fails leaves *target* as it was."""
     target.parent.mkdir(parents=True, exist_ok=True)
     partial = target.with_name(f".{target.name}.{uuid.uuid4().hex}.part")
     try:
-        shutil.copyfile(source, partial)
+        write(partial)
         os.replace(partial, target)
     finally:
         partial.unlink(missing_ok=True)
@@ -296,6 +306,50 @@ def copy_decode_sidecar(source: Path, dest: Path, *, copy=shutil.copy2) -> None:
         copy(sidecar, dest.with_name(dest.name + PARQUET_DECODE_SIDECAR_SUFFIX))
 
 
+_INSTALL_LOCK_NAMESPACE = "computed-output-install"
+
+
+@contextmanager
+def output_install_lock(dest: Path) -> Iterator[None]:
+    """One install at a time into the computed dataset folder *dest*.
+
+    Each install removes what the output before it left
+    (:func:`drop_other_files`), so two at once could remove each other's
+    files. A play installs without the project's spec lock, so this is the
+    lock two installs of one node share. Its file sits beside the folder,
+    where the store's listings skip it.
+    """
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    with exclusive_lock(
+        dest.parent / f".{dest.name}.install.lock",
+        namespace=_INSTALL_LOCK_NAMESPACE,
+        key=str(dest),
+    ):
+        yield
+
+
+def drop_other_files(dest: Path, keep: Iterable[Path]) -> None:
+    """Remove every file in the dataset folder *dest* but its manifest and
+    *keep*, then the folders that leaves empty: what the output it held
+    before left, once its manifest names the new one. A file that cannot be
+    removed stays, with a warning; the output the manifest names is whole
+    either way."""
+    root = dest.resolve()
+    if not root.is_dir():
+        return
+    kept = {Path(path).resolve() for path in (dest / "manifest.json", *keep)}
+    # Deepest first, so a folder is emptied before it is looked at.
+    for path in sorted(root.rglob("*"), key=lambda p: len(p.parts), reverse=True):
+        try:
+            if path.is_dir() and not path.is_symlink():
+                if not any(path.iterdir()):
+                    path.rmdir()
+            elif path not in kept:
+                path.unlink()
+        except OSError as exc:
+            logger.warning("Could not remove %s, left by an earlier output: %s", path, exc)
+
+
 # A sandbox artifact id, and the dataset file a node run writes beside it: the
 # millisecond it was made and a random part. Neither is ever written again, so
 # a data file named after one holds one output for good.
@@ -415,8 +469,10 @@ def install_computed_file_for_node(
     the producing dataflow so the same node id in two dataflows stays distinct)
     so re-executing the same node always replaces the same dataset folder,
     keeping a stable dataset identity across multiple executions. A new
-    output replaces the folder, so the latest execution's file is always
-    reflected. The output the folder already holds, the same data file byte
+    output takes the place of the one the folder holds, so the latest
+    execution's file is always reflected; it goes in beside the old one,
+    which goes only once the manifest names the new one. The output the
+    folder already holds, the same data file byte
     for byte, is not written again (:func:`keep_installed_output`), and
     writing it again keeps the dataset's dates (:func:`_computed_dates`).
 
@@ -483,29 +539,33 @@ def install_computed_file_for_node(
     )
     if holds_data:
         return keep_installed_output(user_key, dest, manifest_obj)
-
-    # A new output replaces the folder, so it reflects the latest execution.
-    if dest.exists():
-        shutil.rmtree(dest, ignore_errors=True)
-    dest.mkdir(parents=True, exist_ok=True)
-    (dest / "data").mkdir(exist_ok=True)
-
-    data_path = dest / data_file
-    if source_path is not None:
-        _link_or_copy(source_path, data_path)
-        copy_decode_sidecar(source_path, data_path, copy=_link_or_copy)
-    elif file_bytes is not None:
-        data_path.write_bytes(file_bytes)
-    else:
+    if source_path is None and file_bytes is None:
         raise InstallerError("install_computed_file_for_node requires file_bytes or source_path")
 
-    write_manifest(manifest_obj, dest)
+    from utk_curio.sandbox.util.catalog_helpers import files_read_beside
 
-    try:
-        manifest = load_dataset_manifest(dest)
-    except ManifestError as exc:
-        shutil.rmtree(dest, ignore_errors=True)
-        raise InstallerError(f"Failed to create computed dataset manifest: {exc}") from exc
+    # A new output goes in beside the one the folder holds, the manifest then
+    # names it, and only then do the old output's files go. A reader, which
+    # takes no lock, finds the whole old output or the whole new one, and an
+    # install that fails leaves the old one as it was.
+    with output_install_lock(dest):
+        data_path = dest / data_file
+        if source_path is not None:
+            def link(source: Path, target: Path) -> None:
+                write_whole(target, lambda partial: _link_or_copy(source, partial))
+
+            link(source_path, data_path)
+            copy_decode_sidecar(source_path, data_path, copy=link)
+        else:
+            write_whole(data_path, lambda partial: partial.write_bytes(file_bytes))
+
+        replace_manifest(manifest_obj, dest)
+        try:
+            manifest = load_dataset_manifest(dest)
+        except ManifestError as exc:
+            shutil.rmtree(dest, ignore_errors=True)
+            raise InstallerError(f"Failed to create computed dataset manifest: {exc}") from exc
+        drop_other_files(dest, [data_path, *files_read_beside(data_path)])
 
     return _index(user_key, InstallResult(manifest=manifest, dest=dest, replaced=True))
 
