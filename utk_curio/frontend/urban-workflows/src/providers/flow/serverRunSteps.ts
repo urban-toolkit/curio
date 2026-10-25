@@ -147,22 +147,6 @@ export function reportsToRun(step: TrackedStep | undefined): boolean {
 }
 
 /**
- * The steps whose output a canvas opened after the run shows as its nodes'
- * own: executed, succeeded, with an output, on code the node still holds, and
- * for a node the saved outputs did not already restore.
- */
-export function stepsToRestore(steps: RunStep[], restored: ReadonlySet<string>): RunStep[] {
-  return steps.filter(
-    (step) =>
-      step.role === "run" &&
-      step.status === "ok" &&
-      !!step.outputPath &&
-      step.codeCurrent === true &&
-      !restored.has(step.nodeId),
-  );
-}
-
-/**
  * The ancestor outputs a play of *target* reuses (one node, or the several of
  * an automatic run): those of the ancestors the in-browser walk would not run
  * again, as the canvas holds them.

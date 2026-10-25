@@ -144,8 +144,13 @@ def list_projects():
 @projects_bp.route("/<project_id>", methods=["GET"])
 @require_auth
 def get_project(project_id: str):
+    """The dataflow, its spec and its outputs: the saved ones, or, with
+    ``?results=last``, the results its canvas was left with, as a canvas
+    opens it (``services.load_project``)."""
     try:
-        result = services.load_project(g.user, project_id)
+        result = services.load_project(
+            g.user, project_id, last_results=request.args.get("results") == "last",
+        )
     except NotFoundError:
         return _error("Project not found", 404)
     except ProjectError as exc:

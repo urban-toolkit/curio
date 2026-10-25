@@ -58,17 +58,17 @@ from utk_curio.backend.app.execution.sandbox_client import sandbox_request
 from utk_curio.backend.app.runs import jobs
 from utk_curio.backend.app.runs.kept import (
     SANDBOX_SESSIONS_TIMEOUT,
+    call_key,
     canonical,
     datasets_read,
     digest,
     forget_sessions,
-    input_identity,
     keep,
     kept_output,
     packages_fingerprint,
     prune_quietly,
     readable_output,
-    step_key,
+    step_call,
 )
 from utk_curio.backend.app.runs.service import RunError
 from utk_curio.backend.extensions import db
@@ -439,24 +439,18 @@ def _run_events(
     from utk_curio.backend.app.execution.run_engine import run_events
     from utk_curio.backend.app.users.connection_keys import secret_names
     from utk_curio.backend.app.users.models import User
-    from utk_curio.common.autk_data_compiler import compile_data_spec
 
     packages = packages_fingerprint(user_key)
 
     def execute(step, code, input_ref):
         jobs.hold_point()
         owner = db.session.get(User, owner_id)
-        if step.autk_data:
-            sent, engine, node_input, slots = compile_data_spec(code), "javascript", None, None
-        else:
-            sent, engine, node_input = code, step.engine, input_ref
-            slots = tuple(plan.spec.input_slots(step.node_id)) or None
-        if engine == "python" and secret_names(sent):
+        call = step_call(plan, step, code, input_ref)
+        if call.engine == "python" and secret_names(call.code):
             return {"stdout": [], "stderr": NO_KEYS_MESSAGE, "output": {"path": "", "dataType": "str"}}
-        key = step_key(
-            packages=packages, node_type=step.node_type, engine=engine, code=sent,
-            input_ref=input_identity(node_input), input_slots=slots,
-            datasets=datasets_read(sent, project_id, owner),
+        key = call_key(
+            call, packages=packages, node_type=step.node_type,
+            datasets=datasets_read(call.code, project_id, owner),
         )
         private = private_to if step.node_id in tainted else None
         kept = kept_output(project_id, key, private)
@@ -465,13 +459,13 @@ def _run_events(
             return {"stdout": [], "stderr": "", "output": output, "artifactIds": ids}
         session_id = new_session_id()
         node_run = node_exec.NodeRun(
-            code=sent, node_type=step.node_type,
+            code=call.code, node_type=step.node_type,
             # No node id: a viewer's run writes nothing to the owner's runtime
             # journal (``record_runtime_outcome``) and installs nothing.
-            node_id=None, input=node_input, dataflow_id=project_id, node_name=step.label,
-            save_output_dataset=False, input_slots=slots,
+            node_id=None, input=call.input, dataflow_id=project_id, node_name=step.label,
+            save_output_dataset=False, input_slots=call.slots,
         )
-        run_node = node_exec.execute_js_node if engine == "javascript" else node_exec.execute_python_node
+        run_node = node_exec.execute_js_node if call.engine == "javascript" else node_exec.execute_python_node
         with _SLOTS:
             reply, _status = run_node(owner, session_id, node_run)
         output = reply.get("output") if isinstance(reply.get("output"), dict) else {}

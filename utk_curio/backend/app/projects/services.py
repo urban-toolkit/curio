@@ -1257,7 +1257,11 @@ def _saved_outputs(
     return spec, readable, missing
 
 
-def load_project(user, project_id: str) -> dict:
+def load_project(user, project_id: str, *, last_results: bool = False) -> dict:
+    """The owner's dataflow, its spec and the outputs it opens with: its saved
+    outputs, or, with *last_results*, as its canvas left them, each node its
+    runs ran showing its newest kept result where one matches the saved
+    dataflow (``runs/reopen.py``)."""
     from utk_curio.backend.app.datasets.seed import (
         ensure_dataflow_datasets_installed,
     )
@@ -1284,6 +1288,14 @@ def load_project(user, project_id: str) -> dict:
     # it (#909).
     repo.touch_last_opened(project_id, user.id)
     db.session.commit()
+    shown = readable
+    if last_results:
+        from utk_curio.backend.app.runs.reopen import last_results as kept_results
+
+        try:
+            shown = kept_results(user, ukey, project_id, spec, readable)
+        except Exception:  # noqa: BLE001 - a dataflow always opens, with its saved outputs at least
+            logger.exception("could not find the kept results of dataflow %s", project_id)
     return {
         "project": _to_detail(
             project, spec=spec, outputs=readable,
@@ -1291,7 +1303,7 @@ def load_project(user, project_id: str) -> dict:
             categories=_categories(user, project_id, spec),
         ),
         "spec": spec,
-        "outputs": [_output_ref_dict(r) for r in readable],
+        "outputs": [_output_ref_dict(r) for r in shown],
     }
 
 

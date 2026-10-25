@@ -188,7 +188,12 @@ def resolve_dataset_paths(code: str, dataflow_id: str | None, user, formats: dic
     found; a dynamically built id simply won't be in the mapping. *formats*, when
     given, is filled with how ``curio_load_data`` reads each resolved id.
     """
-    ids = dataset_ids_in_code(code, limit=MAX_EXEC_DATASET_IDS)
+    return resolve_dataset_ids(dataset_ids_in_code(code, limit=MAX_EXEC_DATASET_IDS), dataflow_id, user, formats)
+
+
+def resolve_dataset_ids(ids: list, dataflow_id: str | None, user, formats: dict | None = None) -> dict:
+    """:func:`resolve_dataset_paths` for the dataset *ids* a code names,
+    already found: one pass for every id, fail-open alike."""
     if not ids:
         return {}
     try:
