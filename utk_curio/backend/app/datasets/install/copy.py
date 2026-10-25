@@ -10,7 +10,10 @@ never this one.
 
 The folder is copied as it is, sidecars and bundle parts included, rather than
 installed again from the sandbox's artifacts, which the run that made it may no
-longer have.
+longer have. Its files are linked, not copied: an output's files are written
+once, so the copy holds the source's data under a second name and a drop adds
+no bytes. Only the manifest, written anew, and the counts sidecar, which a read
+rewrites in place, are the copy's own.
 
 A save installs each output it sends again under its project's spec lock, and
 installing one replaces its folder (#941). So a copy is made in two steps, each
@@ -41,17 +44,30 @@ from utk_curio.backend.app.datasets.domain.manifest import (
     load_dataset_manifest,
     write_manifest,
 )
+from utk_curio.backend.app.datasets.infrastructure.file_meta import META_SIDECAR_SUFFIX
 from utk_curio.backend.app.datasets.infrastructure.storage import dataset_dir
 from utk_curio.backend.app.datasets.install.installer import (
     InstallerError,
     InstallResult,
     _index,
+    _link_or_copy,
     computed_dataset_id,
 )
 
 #: The name a staging folder starts with: hidden, and never a dataset's
 #: ``<id>@<major>``, so no listing of the store takes it for a dataset.
 _STAGING_PREFIX = ".copy-"
+
+
+def _link_written_once(source: str, target: str) -> str:
+    """Put *source* at *target* for a copied dataset: linked when no one
+    writes it again (``installer._link_or_copy``), copied when a read rewrites
+    it in place, as ``file_meta`` does its counts sidecar, so the copy's write
+    never changes the source's file."""
+    if source.endswith(META_SIDECAR_SUFFIX):
+        return shutil.copy2(source, target)
+    _link_or_copy(Path(source), Path(target))
+    return target
 
 
 @dataclasses.dataclass(frozen=True)
@@ -74,8 +90,9 @@ def stage_computed_copy(
 ) -> StagedCopy:
     """Copy the dataset at *source_dir_name* to a staging folder, as
     ``computed.<dataflow>.<node>@1``, its manifest naming that node and
-    dataflow as its producer. The caller holds the source project's spec lock,
-    so the folder is never read while a save rewrites it."""
+    dataflow as its producer, and its files linked (:func:`_link_written_once`).
+    The caller holds the source project's spec lock, so the folder is never
+    read while a save rewrites it."""
     if not dataflow_id or not node_id:
         raise InstallerError("A copied output needs the node and the dataflow that hold it.")
     source = dataset_dir(user_key, source_dir_name)
@@ -95,7 +112,13 @@ def stage_computed_copy(
     folder = staging / dest.name
     now = utc_now().strftime("%Y-%m-%dT%H:%M:%SZ")
     try:
-        shutil.copytree(source, folder)
+        # The manifest is left out and written anew: a link to the source's
+        # would be the source's, and writing one would rewrite both.
+        shutil.copytree(
+            source, folder,
+            ignore=lambda folder_path, names: ["manifest.json"] if Path(folder_path) == source else [],
+            copy_function=_link_written_once,
+        )
         write_manifest(
             dataclasses.replace(
                 manifest,
