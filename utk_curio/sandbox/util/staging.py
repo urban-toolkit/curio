@@ -90,16 +90,124 @@ def _read_row(art_id, session_id):
             pass
 
 
-def stage_input(art_id, scratch_dir, *, session_id=None, slot="in"):
+#: Saved outputs whose file a child reads as it reads the store's own.
+_SAVED_FRAME_KINDS = ("dataframe", "geodataframe")
+_SAVED_JSON_KINDS = ("dict", "list")
+_SAVED_SCALAR_KINDS = ("int", "float", "bool", "str", "null")
+_RASTER_SUFFIXES = (".tif", ".tiff", ".vrt")
+
+
+def stage_saved_output(saved, scratch_dir, *, name, slot="in"):
+    """Stage the saved output *name* of the run's dataflow from the file its
+    owner's store holds (*saved*, ``{"path", "dataType"}``, as
+    ``parsers.shape_saved_paths`` gives it), as its store row would be
+    staged, with nothing re-encoded and no row added: a frame, a raster or a
+    JSON value is linked, a scalar given by value, and a bundle staged part
+    by part from its dataset's folder.
+
+    The parent parses no table here: a frame's kind is the data type the
+    manifest records, and its decode metadata the ``.decode.json`` beside it,
+    which holds what a row's ``value_json`` holds. Raises ``KeyError`` for a
+    file that is not there, or that this cannot stage, so the caller falls
+    back as it does for a missing artifact.
+    """
+    scratch_dir = Path(scratch_dir)
+    path = Path(saved["path"])
+    if not path.is_file():
+        raise KeyError(f"No artifact with id {name}")
+    if path.name == "bundle.json":
+        return _stage_saved_bundle(path, scratch_dir, name=name, slot=slot)
+    kind = str(saved.get("dataType") or "").strip().lower()
+    return _stage_saved_file(path, kind, scratch_dir, name=name, slot=slot)
+
+
+def _stage_saved_file(path, kind, scratch_dir, *, name, slot, in_bundle=False):
+    """The input spec of one saved file of kind *kind*: the file itself, or a
+    bundle's part (*in_bundle*), whose scalar is kept as ``{"value": ...}``."""
+    if kind in _SAVED_FRAME_KINDS and path.suffix == ".parquet":
+        target = scratch_dir / f"{slot}.parquet"
+        _link_or_copy(path, target)
+        sidecar = path.with_name(path.name + codec.PARQUET_DECODE_SIDECAR_SUFFIX)
+        meta_json = sidecar.read_text(encoding="utf-8") if sidecar.is_file() else None
+        frame_metadata, encoded_object_columns = codec._parse_parquet_meta(meta_json)
+        spec = {
+            "kind": kind,
+            "file": target.name,
+            "encoded_object_columns": encoded_object_columns or [],
+        }
+        if kind == "geodataframe" and frame_metadata:
+            spec["frame_metadata"] = frame_metadata
+        return spec
+    if kind == "raster" or path.suffix.lower() in _RASTER_SUFFIXES:
+        target = scratch_dir / f"{slot}{path.suffix or '.tif'}"
+        _link_or_copy(path, target)
+        return {"kind": "raster", "file": target.name}
+    if kind in _SAVED_JSON_KINDS and path.suffix == ".json":
+        target = scratch_dir / f"{slot}.json"
+        _link_or_copy(path, target)
+        return {"kind": "json", "file": target.name}
+    if kind in _SAVED_SCALAR_KINDS and path.suffix == ".json":
+        value = json.loads(path.read_text(encoding="utf-8"))
+        if in_bundle:
+            if not isinstance(value, dict) or "value" not in value:
+                raise KeyError(f"No artifact with id {name}")
+            value = value["value"]
+        if kind == "null" or value is None:
+            return {"kind": "null"}
+        return {"kind": kind, "value": bool(value) if kind == "bool" else value}
+    raise KeyError(f"No artifact with id {name}")
+
+
+def _stage_saved_bundle(bundle, scratch_dir, *, name, slot):
+    """A saved bundle's input spec: each part its ``bundle.json`` lists, from
+    its dataset's folder (``catalog_helpers.listed_bundle_parts``), in the
+    container it records. A part that is not there, or that holds the
+    install's placeholder for a value it could not find, makes the whole
+    output missing, as ``parsers.load_saved_output`` reads it."""
+    from utk_curio.sandbox.util.catalog_helpers import bundle_container, listed_bundle_parts
+
+    try:
+        spec = json.loads(bundle.read_text(encoding="utf-8"))
+        named = spec["parts"]
+        listed = listed_bundle_parts(bundle)
+        if not isinstance(named, list) or not named or len(listed) != len(named):
+            raise KeyError(f"No artifact with id {name}")
+        listed.sort(key=lambda item: item[0].get("index", 0))
+        bundle_container(spec, [part for part, _file in listed])
+    except (OSError, TypeError, ValueError):
+        raise KeyError(f"No artifact with id {name}")
+    items = [
+        _stage_saved_file(
+            file, str(part.get("kind") or "").strip().lower(), scratch_dir,
+            name=name, slot=f"{slot}_{index}", in_bundle=True,
+        )
+        for index, (part, file) in enumerate(listed)
+    ]
+    container = spec.get("container") or "tuple"
+    if container == "dict":
+        return {"kind": "mapping", "items": {part["key"]: item for (part, _f), item in zip(listed, items)}}
+    return {"kind": "sequence", "container": container, "items": items}
+
+
+def stage_input(art_id, scratch_dir, *, session_id=None, slot="in", saved_paths=None):
     """Stage the artifact *art_id* into *scratch_dir* and return its input spec.
 
     *slot* prefixes the staged filenames so a node's several inputs do
     not collide. Recurses for container kinds, extending the prefix as it goes.
+    An artifact this session's store cannot serve that is a saved output of
+    the run's dataflow (*saved_paths*) is staged from its own file
+    (:func:`stage_saved_output`).
     """
     scratch_dir = Path(scratch_dir)
     try:
         kind, v_int, v_float, v_str, v_json, blob = _read_row(art_id, session_id)
     except Exception as store_error:
+        saved = (saved_paths or {}).get(art_id)
+        if saved:
+            try:
+                return stage_saved_output(saved, scratch_dir, name=art_id, slot=slot)
+            except (KeyError, OSError, ValueError):
+                pass
         # The rule parsers.load_artifact applies in-process (#407): a project
         # output the store cannot serve to this session is read from the copy
         # the project load hydrated. Staging works from a store row, so that
@@ -197,7 +305,7 @@ def stage_input(art_id, scratch_dir, *, session_id=None, slot="in"):
     raise StagingError(f"cannot stage artifact of unknown kind {kind!r}")
 
 
-def stage_outputs_list(refs, scratch_dir, *, session_id=None):
+def stage_outputs_list(refs, scratch_dir, *, session_id=None, saved_paths=None):
     """Stage the list of upstream references of a node with several inputs.
 
     ``/exec`` receives ``dataType == 'outputs'`` with a list of ``{'path': id}``
@@ -207,7 +315,8 @@ def stage_outputs_list(refs, scratch_dir, *, session_id=None):
     for index, ref in enumerate(refs):
         art_id = ref.get("path") if isinstance(ref, dict) else ref
         items.append(
-            stage_input(art_id, scratch_dir, session_id=session_id, slot=f"in_{index}")
+            stage_input(art_id, scratch_dir, session_id=session_id, slot=f"in_{index}",
+                        saved_paths=saved_paths)
         )
     return {"kind": "sequence", "container": "tuple", "items": items}
 

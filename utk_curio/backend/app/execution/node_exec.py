@@ -97,6 +97,50 @@ def parse_input_ref(req_input: dict | None) -> dict:
     return result
 
 
+#: The most of a run's inputs whose saved outputs are resolved for it.
+MAX_SAVED_INPUTS = 64
+
+
+def input_names(input_ref: dict) -> list[str]:
+    """The output names a run's input ref reads: its one name, or, for a node
+    with several inputs (``outputs``), each element's."""
+    path = (input_ref or {}).get('path')
+    if isinstance(path, str):
+        return [path] if path else []
+    names = []
+    for elem in path if isinstance(path, (list, tuple)) else []:
+        name = elem.get('path') if isinstance(elem, dict) else elem
+        if isinstance(name, str) and name and name not in names:
+            names.append(name)
+    return names
+
+
+def resolve_saved_inputs(input_ref: dict, dataflow_id: str | None) -> dict:
+    """``{name: {"path", "dataType"}}`` for each input this run reads that is
+    a saved output of its dataflow: the file its owner's store holds
+    (``projects/services.saved_output_of``). The sandbox reads it in place
+    when its store has no row of that name for the run's session, as after a
+    reopen under a new sign-in.
+
+    Fail-open like dataset paths: a name that does not resolve reads as the
+    store answers it.
+    """
+    if not dataflow_id:
+        return {}
+    try:
+        from utk_curio.backend.app.projects.services import saved_output_of
+
+        resolved = {}
+        for name in input_names(input_ref)[:MAX_SAVED_INPUTS]:
+            saved = saved_output_of(dataflow_id, name)
+            if saved is not None:
+                resolved[name] = {"path": str(saved.path), "dataType": saved.data_type or ""}
+        return resolved
+    except Exception as e:  # noqa: BLE001 - resolution must never fail the execution
+        print(f"[node_exec] saved input resolution failed: {e.__class__.__name__}", flush=True)
+        return {}
+
+
 def resolve_dataset_paths(code: str, dataflow_id: str | None, user, formats: dict | None = None) -> dict:
     """Resolve the dataset ids referenced by *code* to absolute file paths.
 
@@ -253,6 +297,9 @@ def _execute(user, session_token, run: NodeRun, *, language: str) -> tuple[dict,
     }
     if run.input_slots:
         body["input_slots"] = list(run.input_slots)
+    saved_inputs = resolve_saved_inputs(input_ref, run.dataflow_id)
+    if saved_inputs:
+        body["saved_paths"] = saved_inputs
     if language == "python":
         from utk_curio.backend.app.datasets.infrastructure import left_out_files
 

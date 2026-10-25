@@ -277,16 +277,27 @@ def get_file():
     return relay_artifact(file_name, get_current_token())
 
 
-def relay_artifact(file_name, session_id):
+def _sandbox_read_params(file_name, session_id, saved_path):
+    """What the sandbox reads *file_name* by: the store under *session_id*,
+    then, when the name is a dataflow's saved output, the file *saved_path*
+    its owner's store holds (``projects/services.saved_output_of``)."""
+    params = {"fileName": file_name, "sessionId": session_id}
+    if saved_path:
+        params["savedPath"] = str(saved_path)
+    return params
+
+
+def relay_artifact(file_name, session_id, saved_path=None):
     """``/get``: the artifact *file_name*, read by the sandbox under
     *session_id*, as JSON or, when the client asks for it, Arrow. A dashboard
     viewer's read (``runs/viewer_routes.py``) names the session its kept
-    output was made in."""
+    output was made in; a dataflow's output route (``projects/routes.py``)
+    names the file a saved output is read from."""
     wants_arrow = request.accept_mimetypes.best == ARROW_IPC_MIME
 
     t0 = time.perf_counter()
     sandbox_kwargs = {
-        'params': {"fileName": file_name, "sessionId": session_id},
+        'params': _sandbox_read_params(file_name, session_id, saved_path),
     }
     if wants_arrow:
         sandbox_kwargs['headers'] = {"Accept": ARROW_IPC_MIME}
@@ -328,14 +339,15 @@ def get_file_preview():
     return relay_preview(file_name, get_current_token())
 
 
-def relay_preview(file_name, session_id):
-    """``/get-preview``: the first rows of *file_name*, read under *session_id*."""
+def relay_preview(file_name, session_id, saved_path=None):
+    """``/get-preview``: the first rows of *file_name*, read under *session_id*
+    or from *saved_path*, as ``relay_artifact`` reads."""
     max_rows = 100
     t0 = time.perf_counter()
     resp = _sandbox_call(
         'get', '/get',
         label='/get-preview', timeout=SANDBOX_PREVIEW_TIMEOUT, stream=True,
-        params={"fileName": file_name, "maxRows": max_rows, "sessionId": session_id},
+        params={**_sandbox_read_params(file_name, session_id, saved_path), "maxRows": max_rows},
     )
     if isinstance(resp, tuple):
         return resp
@@ -361,10 +373,11 @@ def get_raster():
     return relay_raster(file_name, get_current_token())
 
 
-def relay_raster(file_name, session_id):
+def relay_raster(file_name, session_id, saved_path=None):
     """``/raster``: the raster *file_name* as GeoTIFF bytes, read under
-    *session_id*, with the part and size bounds the request asks for."""
-    params = {"fileName": file_name, "sessionId": session_id}
+    *session_id* or from *saved_path*, as ``relay_artifact`` reads, with the
+    part and size bounds the request asks for."""
+    params = _sandbox_read_params(file_name, session_id, saved_path)
     for key in ('part', 'maxCells', 'maxSide'):
         value = request.args.get(key)
         if value is not None:

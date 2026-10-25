@@ -178,6 +178,59 @@ def get_shared_project(project_id: str):
 
 
 # ---------------------------------------------------------------------------
+# GET /api/projects/:id/outputs/{get,get-preview,raster} - a canvas's reads
+# ---------------------------------------------------------------------------
+def _output_read(project_id: str):
+    """``(fileName, saved path or None)`` for a read on this dataflow's
+    canvas, or the error to answer. The sandbox reads the name from the
+    store under the caller's session first; a name the dataflow saved is
+    then read from the file its owner's store holds, in place."""
+    from utk_curio.backend.app.projects.models import Project
+    from utk_curio.backend.extensions import db
+
+    file_name = request.args.get("fileName")
+    if not file_name:
+        return None, None, ("No artifact id specified", 400)
+    if db.session.get(Project, project_id) is None:
+        return None, None, _error("Project not found", 404)
+    saved = services.saved_output_of(project_id, file_name)
+    return file_name, (saved.path if saved is not None else None), None
+
+
+@projects_bp.route("/<project_id>/outputs/get", methods=["GET"])
+@require_auth
+def get_output(project_id: str):
+    """``/get`` for an output on this dataflow's canvas."""
+    from utk_curio.backend.app.api.routes import relay_artifact
+    from utk_curio.backend.app.users.dependencies import get_current_token
+
+    file_name, saved_path, error = _output_read(project_id)
+    return error or relay_artifact(file_name, get_current_token(), saved_path=saved_path)
+
+
+@projects_bp.route("/<project_id>/outputs/get-preview", methods=["GET"])
+@require_auth
+def get_output_preview(project_id: str):
+    """``/get-preview`` for an output on this dataflow's canvas."""
+    from utk_curio.backend.app.api.routes import relay_preview
+    from utk_curio.backend.app.users.dependencies import get_current_token
+
+    file_name, saved_path, error = _output_read(project_id)
+    return error or relay_preview(file_name, get_current_token(), saved_path=saved_path)
+
+
+@projects_bp.route("/<project_id>/outputs/raster", methods=["GET"])
+@require_auth
+def get_output_raster(project_id: str):
+    """``/raster`` for a raster on this dataflow's canvas."""
+    from utk_curio.backend.app.api.routes import relay_raster
+    from utk_curio.backend.app.users.dependencies import get_current_token
+
+    file_name, saved_path, error = _output_read(project_id)
+    return error or relay_raster(file_name, get_current_token(), saved_path=saved_path)
+
+
+# ---------------------------------------------------------------------------
 # GET /api/projects/:id/dashboard - everything a standalone dashboard carries
 # ---------------------------------------------------------------------------
 @projects_bp.route("/<project_id>/dashboard", methods=["GET"])

@@ -399,7 +399,7 @@ def _worker_init():
     }
 
 
-def _resolve_outputs_elem(elem, session_id=None):
+def _resolve_outputs_elem(elem, session_id=None, saved_paths=None):
     """Resolve one element of an 'outputs' bundle to its concrete Python value.
 
     An 'outputs' input - from a node's several input circles, or a Data Pool's
@@ -412,14 +412,16 @@ def _resolve_outputs_elem(elem, session_id=None):
         wired straight into a code node - reconstructed with `parseInput`;
       * any other already-concrete value, used as-is.
     Distinguishing on the keys keeps refs loading while letting inline values flow
-    through instead of raising KeyError('path').
+    through instead of raising KeyError('path'). A ref that is a saved output
+    of the run's dataflow is read in place from *saved_paths* when the store
+    has no row for it (``parsers.load_artifact``).
     """
     from utk_curio.sandbox.util.parsers import load_artifact, parseInput
     if isinstance(elem, str):
-        return load_artifact(elem, session_id=session_id)
+        return load_artifact(elem, session_id=session_id, saved_paths=saved_paths)
     if isinstance(elem, dict):
         if 'path' in elem:
-            return load_artifact(elem['path'], session_id=session_id)
+            return load_artifact(elem['path'], session_id=session_id, saved_paths=saved_paths)
         if 'dataType' in elem and 'data' in elem:
             return _keep_layer_identity(parseInput(elem), elem)
     return elem
@@ -449,7 +451,7 @@ def _keep_layer_identity(value, envelope):
     return value
 
 
-def _expand_outputs_wrapper(input_data, session_id=None):
+def _expand_outputs_wrapper(input_data, session_id=None, saved_paths=None):
     """Resolve a bundled ('outputs') input to the per-circle list user code expects.
 
     A bundle reaches a code node in one of two shapes:
@@ -466,7 +468,10 @@ def _expand_outputs_wrapper(input_data, session_id=None):
     if (isinstance(input_data, dict)
             and input_data.get('dataType') == 'outputs'
             and isinstance(input_data.get('data'), list)):
-        return [_resolve_outputs_elem(elem, session_id=session_id) for elem in input_data['data']]
+        return [
+            _resolve_outputs_elem(elem, session_id=session_id, saved_paths=saved_paths)
+            for elem in input_data['data']
+        ]
     return input_data
 
 
@@ -520,13 +525,18 @@ def _stage_package_modules(package_modules):
 
 def execute_code(code, file_path, node_type, data_type, launch_dir=None, session_id=None, save_dataset=True,
                  dataset_paths=None, secrets=None, collections=None, media_dir=None, models=None,
-                 dataset_formats=None, package_modules=None, input_slots=None):
+                 dataset_formats=None, package_modules=None, input_slots=None, saved_paths=None):
     """
     Execute user code in-process using pre-loaded library globals.
 
     session_id: Bearer token of the requesting session. Artifacts are stored and
                 loaded scoped to this session so concurrent sessions never share
                 execution state - even if they share the same user account.
+
+    saved_paths: {name: {"path", "dataType"}} for the inputs that are saved
+                outputs of the run's dataflow, each read in place from the file
+                its owner's store holds when the store has no row for it
+                (``parsers.load_artifact``).
 
     dataset_paths: {datasetId: absolutePath} for the code's
                 curio_load_data / curio_data_path / curio_load_collection
@@ -634,11 +644,15 @@ def execute_code(code, file_path, node_type, data_type, launch_dir=None, session
                 input_data = ''
                 if data_type == 'outputs':
                     file_path_list = eval(file_path, {'__builtins__': {}})
-                    input_data = [_resolve_outputs_elem(elem, session_id=session_id) for elem in file_path_list]
+                    input_data = [
+                        _resolve_outputs_elem(elem, session_id=session_id, saved_paths=saved_paths)
+                        for elem in file_path_list
+                    ]
                 elif file_path:
-                    # The store, or the output a project load hydrated (#407).
-                    input_data = load_artifact(file_path, session_id=session_id)
-                input_data = _expand_outputs_wrapper(input_data, session_id=session_id)
+                    # The store, or a saved output of the dataflow, read in
+                    # place or from the copy a project load hydrated (#407).
+                    input_data = load_artifact(file_path, session_id=session_id, saved_paths=saved_paths)
+                input_data = _expand_outputs_wrapper(input_data, session_id=session_id, saved_paths=saved_paths)
                 # A raster an Autark node handed on arrives as a rasterio
                 # dataset, as a Python node's raster does.
                 from utk_curio.sandbox.util.rasters import python_raster_dir, rasters_for_python
@@ -1043,12 +1057,15 @@ def run_js_script(code, inputs, *, cwd, node_type, t0=None, node_modules=None):
 
 
 def execute_js_code(code, file_path, node_type, data_type, launch_dir=None, session_id=None, save_dataset=True,
-                    input_slots=None):
+                    input_slots=None, saved_paths=None):
     """
     Execute user JavaScript code in an isolated Node.js subprocess.
 
     input_slots: the wired circles, in circle order: the value on circle k is
     the code's ``input_k``, as in :func:`execute_code`.
+
+    saved_paths: the inputs that are saved outputs of the run's dataflow, read
+    in place as :func:`execute_code` reads them.
 
     Input is loaded from Python DuckDB, serialized to JSON, and embedded directly
     in the script piped to `node --input-type=module` via stdin - no temp files.
@@ -1081,11 +1098,11 @@ def execute_js_code(code, file_path, node_type, data_type, launch_dir=None, sess
         input_data = None
         if data_type == 'outputs' and file_path:
             file_path_list = eval(file_path, {'__builtins__': {}})
-            input_data = [_resolve_outputs_elem(elem, session_id=session_id)
+            input_data = [_resolve_outputs_elem(elem, session_id=session_id, saved_paths=saved_paths)
                           for elem in file_path_list]
         elif file_path:
-            input_data = load_artifact(file_path, session_id=session_id)
-        input_data = _expand_outputs_wrapper(input_data, session_id=session_id)
+            input_data = load_artifact(file_path, session_id=session_id, saved_paths=saved_paths)
+        input_data = _expand_outputs_wrapper(input_data, session_id=session_id, saved_paths=saved_paths)
 
         # Each wired circle k is the code's input_k (util/input_names.py), as
         # in a Python node; old names and old chips are told the new ones.

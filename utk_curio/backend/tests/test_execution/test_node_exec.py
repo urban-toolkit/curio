@@ -353,6 +353,73 @@ def test_the_wired_circles_ride_to_the_sandbox_as_input_slots(app, client, user_
     ]
 
 
+def _saved_upstream(client, user, token):
+    """A dataflow whose upstream node saved its output: the computed dataset
+    and the manifest entry naming it. Returns the project, the saved name
+    and the dataset's file."""
+    from utk_curio.backend.app.datasets.install.installer import install_computed_file_for_node
+    from utk_curio.backend.app.projects import storage
+    from utk_curio.backend.app.projects.schemas import OutputRef
+    from utk_curio.backend.app.projects.services import _user_dir_key
+
+    project_id = create_project(client, token, name="Saved inputs")
+    saved = "1700000000030_beef0030_output.parquet"
+    result = install_computed_file_for_node(
+        _user_dir_key(user), b"PAR1 a table", saved, "parquet",
+        node_id="upstream", dataflow_id=project_id,
+    )
+    storage.write_manifest(
+        _user_dir_key(user), project_id, 1,
+        [OutputRef(node_id="upstream", filename=saved, data_type="dataframe")],
+    )
+    return project_id, saved, str(result.dest / result.manifest.data_file)
+
+
+def test_a_play_names_the_file_its_saved_inputs_are_read_from(app, client, user_and_token, monkeypatch):
+    """After a reopen under a new sign-in the store has no row of a saved
+    input for the play's session. The play names the file the owner's store
+    holds for it, which the sandbox reads in place: one input, several, and
+    for a JavaScript node too."""
+    user, token = user_and_token
+    project_id, saved, held = _saved_upstream(client, user, token)
+    sent = []
+    _fake_sandbox(monkeypatch, {"path": "art-saved", "dataType": "int"}, sent)
+    unsaved = "1700000000031_beef0031"
+
+    for route, code, given in (
+        ("/processPythonCode", "    return 1\n", {"filename": saved, "dataType": "dataframe"}),
+        ("/processPythonCode", "    return 1\n",
+         {"dataType": "outputs", "data": [{"path": saved}, {"path": unsaved}]}),
+        ("/processJavaScriptCode", "return 1;", {"filename": saved, "dataType": "dataframe"}),
+    ):
+        body = _play_body("downstream", project_id, code=code, input=given, saveOutputDataset=False)
+        reply = client.post(route, data=json.dumps(body), headers=auth_headers(token))
+        assert reply.status_code == 200, reply.get_data(as_text=True)
+
+    expected = {saved: {"path": held, "dataType": "dataframe"}}
+    assert [(path, body.get("saved_paths")) for path, body in sent] == [
+        ("/exec", expected), ("/exec", expected), ("/execJs", expected),
+    ]
+
+
+def test_a_play_names_no_file_for_an_input_its_dataflow_did_not_save(app, client, user_and_token, monkeypatch):
+    user, token = user_and_token
+    project_id, _saved, _held = _saved_upstream(client, user, token)
+    other = create_project(client, token, name="Another dataflow")
+    sent = []
+    _fake_sandbox(monkeypatch, {"path": "art-live", "dataType": "int"}, sent)
+
+    for dataflow, given in (
+        (project_id, {"filename": "1700000000032_beef0032", "dataType": "dataframe"}),
+        (other, {"filename": _saved, "dataType": "dataframe"}),
+    ):
+        body = _play_body("downstream", dataflow, input=given, saveOutputDataset=False)
+        reply = client.post("/processPythonCode", data=json.dumps(body), headers=auth_headers(token))
+        assert reply.status_code == 200, reply.get_data(as_text=True)
+
+    assert [body.get("saved_paths") for _path, body in sent] == [None, None]
+
+
 def test_a_sandbox_that_does_not_answer_raises_the_routes_error(app, user_and_token, monkeypatch):
     from utk_curio.backend.app.execution import node_exec, sandbox_client
     from utk_curio.backend.app.projects.services import _user_dir_key

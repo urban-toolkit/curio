@@ -22,6 +22,7 @@ import logging
 import os
 import shutil
 from contextlib import contextmanager
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Optional
@@ -587,6 +588,47 @@ def persisted_output_refs(
         if _durable_source_for(user_key, project_id, ref, spec=spec) is not None:
             kept.append(ref)
     return kept
+
+
+@dataclass(frozen=True)
+class SavedOutputFile:
+    """Where a dataflow's saved output is read: the file its owner's store
+    holds for it, and the data type the manifest records."""
+
+    path: Path
+    data_type: Optional[str]
+
+
+def saved_output_file(
+    user_key: str,
+    project_id: str,
+    name: str,
+    *,
+    spec: Optional[dict] = None,
+) -> Optional[SavedOutputFile]:
+    """The file that holds the saved output *name* of *project_id*, read in
+    place from its owner's store, or None.
+
+    *name* must be a filename the project's manifest records. Its node's
+    durable source is the file (:func:`_durable_source_for`): the node's
+    computed dataset, or the installed dataset the node reads. Nothing is
+    copied, so every reader of a saved output reads the one file the Data
+    Catalog keeps.
+    """
+    try:
+        validate_component(name, field="output filename")
+    except PathTraversalError:
+        return None
+    manifest = read_manifest(user_key, project_id) or {}
+    for entry in manifest.get("outputs") or []:
+        if not isinstance(entry, dict) or entry.get("filename") != name or not entry.get("node_id"):
+            continue
+        ref = OutputRef(node_id=entry["node_id"], filename=name, data_type=entry.get("data_type"))
+        if spec is None:
+            spec = read_spec(user_key, project_id)
+        source = _durable_source_for(user_key, project_id, ref, spec=spec)
+        return SavedOutputFile(source, ref.data_type) if source is not None else None
+    return None
 
 
 # ---------------------------------------------------------------------------
