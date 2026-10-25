@@ -125,10 +125,10 @@ def auto_install_node_output(
 
     #   * a bundle (``dataType == "outputs"``) is keyed by the parent artifact
     #     id in ``output['path']``.
-    #   * otherwise prefer ``output['dataset']`` - the parquet a (geo)dataframe
-    #     deliberately saved (save_dataset_parquet) - and fall back to the node's
-    #     own output artifact (``output['path']``) so JSON outputs (dict/list/
-    #     scalar), which have no ``dataset`` parquet, are still persisted. Keyed
+    #   * otherwise prefer ``output['dataset']`` - the frame artifact a
+    #     JavaScript node stores for a table it returns - and fall back to the
+    #     node's own output artifact (``output['path']``), which is every Python
+    #     node's saved output, and every JSON output (dict/list/scalar). Keyed
     #     on ``node_id`` (``computed.<node>@1``), so two nodes sharing a data file
     #     stay distinct datasets - the catalog no longer collapses by basename.
     is_bundle = str(data_type or "").strip().lower() == "outputs"

@@ -36,7 +36,6 @@ from utk_curio.sandbox.util.parsers import (
     _make_id,
     _read_json_artifact,
     _resolve_stored_artifact_path,
-    _shared_data_dir,
     _stored_artifact_rel_path,
     _write_json_artifact,
 )
@@ -624,30 +623,3 @@ def _persist(con, descriptor, *, node_id, session_id, exec_uid=None):
         return art_id
 
     raise StagingError(f"cannot persist output of kind {kind!r}")
-
-
-def copy_output_dataset(descriptor):
-    """Mirror a tabular child output into the Data Catalog's dataset directory.
-
-    The in-process path does this with ``save_dataset_parquet``. Here the child
-    already wrote parquet, so this is a copy rather than an encode. Returns the
-    dataset filename, or None when the output is not tabular.
-
-    **Call this before :func:`persist_output`**, which moves the scratch file
-    into the store and leaves nothing at ``descriptor['path']``.
-
-    Best-effort by design, matching ``save_dataset_parquet``: a failure to
-    publish a convenience copy must never fail the node.
-    """
-    if descriptor.get("kind") not in ("dataframe", "geodataframe"):
-        return None
-    source = descriptor.get("path")
-    if not source or not os.path.exists(source):
-        return None
-    try:
-        name = f"{_make_id()}_output.parquet"
-        shutil.copy2(source, _shared_data_dir() / name)
-        return name
-    except Exception as exc:  # noqa: BLE001 - convenience copy, never fatal
-        print(f"[staging] could not publish dataset copy: {exc}", flush=True)
-        return None
