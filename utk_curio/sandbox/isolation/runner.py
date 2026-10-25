@@ -73,8 +73,10 @@ def _failure(stderr):
     return {"stdout": [], "stderr": stderr, "output": {"path": "", "dataType": "str"}}
 
 
-def _persist_output(descriptor, *, node_type, session_id, save_dataset):
+def _persist_output(descriptor, *, node_type, session_id, save_dataset, exec_uid=None):
     """File the child's output away. Returns (artifact id, dataset file).
+    With an execution account (*exec_uid*), each file the child wrote becomes
+    the sandbox's own (``staging.persist_output``).
 
     The write handle is no longer dropped here. It used to be, because the
     backend opened the DuckDB file read-only for the catalog, auto-install and
@@ -98,7 +100,7 @@ def _persist_output(descriptor, *, node_type, session_id, save_dataset):
             staging.copy_output_dataset(descriptor) if save_dataset else None
         )
         art_id = staging.persist_output(
-            descriptor, node_id=node_type, session_id=session_id
+            descriptor, node_id=node_type, session_id=session_id, exec_uid=exec_uid
         )
     return art_id, dataset_file
 
@@ -320,7 +322,7 @@ def execute_isolated(
         descriptor = manifest["output"]
         art_id, dataset_file = _persist_output(
             descriptor, node_type=node_type, session_id=session_id,
-            save_dataset=save_dataset,
+            save_dataset=save_dataset, exec_uid=config.exec_uid,
         )
 
         output = {"path": art_id, "dataType": descriptor["kind"]}

@@ -1308,7 +1308,10 @@ Five design points worth knowing:
   DuckDB connection, resolves artifacts, and enforces session scoping. The child
   sees only a scratch directory of staged files. Frames are already stored as
   parquet files, so staging an input is a hardlink and persisting an output is a
-  rename: the parent never parses bytes a child produced.
+  rename: the parent never parses bytes a child produced. A renamed file keeps
+  its owner, the execution account, so with one `persist_output` then gives
+  the file to the sandbox's own account at `0644`: a later child it is staged
+  for reads it, and cannot write it or change its mode.
 - **One execution account, not one per Curio user.** `CURIO_EXEC_USER` names a
   single OS account that every user's nodes run as. The boundary this buys is
   therefore *node code against the host*, not *user A against user B*. What
@@ -1377,7 +1380,8 @@ default.
 >   (`tests/live/test_exec_user_boundary.py`). This is the only job whose
 >   children are unprivileged: everywhere else they run as root, and root reads
 >   through any mode bit. It pins that node code really is `curio-exec` and not
->   uid 0, that a hardlinked input still reaches the child, that the work
+>   uid 0, that a hardlinked input still reaches the child and that the child
+>   can neither write it nor change its mode, that the work
 >   directory is `0700` and owned by the execution account, and that
 >   `instance/`, `.curio/data`, `.curio/users`, `datasets/` and another user's
 >   file named by absolute path are all denied.
