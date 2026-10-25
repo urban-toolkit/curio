@@ -2,19 +2,23 @@
 
 A dashboard viewer's runs (``runs/viewer.py``) keep each step's output, so a
 visitor who opens the page or picks values someone ran before gets the outputs
-at once, and a request for a run already going joins it. Each output is kept
-for :data:`KEPT_DAYS` after it was made, under a key of what made it
-(:func:`step_key`); past that time it goes, and the next run that needs it
-makes it again. Each dataflow keeps at most :data:`MAX_KEPT_BYTES` of what
-each maker made (``made_by``: its owner's runs, or its viewers'), so visitors
-trying values never evict the owner's results; past it the least recently
-used go. An output goes with its artifacts: the sandbox forgets the session
-that made them (``common/kept_sessions.py``). The sweep runs every
-:data:`PRUNE_INTERVAL_HOURS` (:func:`start_prune_scheduler`), at the end of
-each run, and at the first start after a restart.
+at once, and a request for a run already going joins it. So do the owner's own
+runs of a saved dataflow, a play or a run on the server
+(``execution/node_exec.py``), whose outputs the owner reads through the
+dataflow's routes. Each output is kept for :data:`KEPT_DAYS` after it was
+made, under a key of what made it (:func:`step_key`); past that time it goes,
+and the next run that needs it makes it again. Each dataflow keeps at most
+:data:`MAX_KEPT_BYTES` of what its viewers made; past it the least recently
+used go. What the owner's runs made (``made_by``) is bounded by its days
+alone: the owner's open canvas shows it. An output goes with its artifacts:
+the sandbox forgets the session that made them (``common/kept_sessions.py``).
+The sweep runs every :data:`PRUNE_INTERVAL_HOURS` (:func:`start_prune_scheduler`),
+at the end of each run, and at the first start after a restart.
 
 An output built on what one tab's browser sent is kept for that tab alone
 (``private_to``, the digest of its run's token), for :data:`TAB_OWN_HOURS`.
+One the owner's keys made, or one made from it, is the owner's alone
+(:data:`OWNER_ONLY`), for its full days.
 """
 from __future__ import annotations
 
@@ -50,6 +54,10 @@ MAX_KEPT_BYTES = 2 * 1024 ** 3
 #: Who made a kept output: the dataflow's owner, or a viewer of its dashboard.
 MADE_BY_OWNER = "owner"
 MADE_BY_VIEWER = "viewer"
+#: The ``private_to`` of an output the owner's keys made, or one made from
+#: such an output: never a digest, so no run token, and so no viewer, reads
+#: or reuses it.
+OWNER_ONLY = "owner"
 #: The backend's deadline for asking the sandbox about sessions.
 SANDBOX_SESSIONS_TIMEOUT = 30
 #: The most sessions one call to the sandbox names (its ``MAX_SESSIONS_PER_CALL``).
@@ -111,13 +119,30 @@ def _file_identity(path: str) -> list:
         return ["missing"]
 
 
-def datasets_read(code: str, project_id: str, owner) -> dict:
+def datasets_read(code: str, project_id: str, owner, *, paths: Optional[dict] = None) -> dict:
     """``{dataset id: identity}`` of the datasets *code* reads: re-importing a
-    dataset under the same id changes its identity."""
+    dataset under the same id changes its identity. *paths*, when the run
+    already resolved them (``node_exec.resolve_dataset_paths``), saves
+    resolving them again."""
     from utk_curio.backend.app.execution import node_exec
 
-    paths = node_exec.resolve_dataset_paths(code, project_id, owner) or {}
+    if paths is None:
+        paths = node_exec.resolve_dataset_paths(code, project_id, owner) or {}
     return {dataset_id: _file_identity(str(path)) for dataset_id, path in sorted(paths.items())}
+
+
+def input_identity(raw) -> dict:
+    """What a step's key holds of its input: the names it reads and its data
+    type, as the run reads them (``node_exec.parse_input_ref``), whichever
+    shape the input came in. A play sends the canvas's reference, a run on
+    the server the engine's; the same input keys the same."""
+    from utk_curio.backend.app.execution import node_exec
+
+    ref = node_exec.parse_input_ref(raw)
+    path = ref["path"]
+    if not isinstance(path, str):
+        path = node_exec.input_names(ref)
+    return {"path": path, "dataType": ref["dataType"]}
 
 
 def step_key(*, packages: str, node_type: str, engine: str, code: str, input_ref, input_slots, datasets) -> str:
@@ -188,18 +213,42 @@ def forget_sessions(session_ids) -> None:
 
 def _alive(now):
     """The kept outputs still within their time, whether or not a sweep has
-    run since: a shared one for :data:`KEPT_DAYS` after it was made, a tab's
-    own for :data:`TAB_OWN_HOURS`."""
+    run since: a shared one, and every one the owner's runs made, for
+    :data:`KEPT_DAYS` after it was made; a tab's own for :data:`TAB_OWN_HOURS`."""
+    owners = KeptStepOutput.made_by == MADE_BY_OWNER
     return db.or_(
         db.and_(
-            KeptStepOutput.private_to.is_(None),
+            db.or_(KeptStepOutput.private_to.is_(None), owners),
             KeptStepOutput.created_at >= now - timedelta(days=KEPT_DAYS),
         ),
         db.and_(
             KeptStepOutput.private_to.isnot(None),
+            db.not_(owners),
             KeptStepOutput.created_at >= now - timedelta(hours=TAB_OWN_HOURS),
         ),
     )
+
+
+def owner_entry(project_id: str, name: str) -> Optional[KeptStepOutput]:
+    """The live output the owner's runs of *project_id* kept that holds the
+    artifact *name*, the newest, or None. Only the owner reads it: through
+    the dataflow's routes, and as the input of their next run."""
+    if not name:
+        return None
+    now = naive_utc_now()
+    for entry in (
+        KeptStepOutput.query.filter_by(project_id=project_id, made_by=MADE_BY_OWNER)
+        .filter(db.or_(
+            KeptStepOutput.output_path == name,
+            KeptStepOutput.artifact_ids.contains(json.dumps(name)),
+        ))
+        .filter(_alive(now))
+        .order_by(KeptStepOutput.created_at.desc())
+        .all()
+    ):
+        if name == entry.output_path or name in json.loads(entry.artifact_ids or "[]"):
+            return entry
+    return None
 
 
 def kept_output(project_id: str, key: str, private_to: Optional[str] = None) -> Optional[tuple[dict, list]]:
@@ -305,6 +354,9 @@ def prune(now=None) -> int:
         .group_by(KeptStepOutput.project_id, KeptStepOutput.made_by).all()
     )
     for project_id, made_by, total in totals:
+        if made_by == MADE_BY_OWNER:
+            # Bounded by its days alone: the owner's open canvas shows it.
+            continue
         total = int(total or 0) - sum(
             e.size_bytes for e in going.values() if e.project_id == project_id and e.made_by == made_by
         )

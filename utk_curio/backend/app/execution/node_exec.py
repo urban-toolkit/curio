@@ -290,25 +290,121 @@ def execute_js_node(user, session_token: str | None, run: NodeRun) -> tuple[dict
     return _execute(user, session_token, run, language="javascript")
 
 
+@dataclass(frozen=True)
+class _KeptRun:
+    """The kept session an owner's run of a saved dataflow runs in, and
+    whether what it reads is the owner's alone (``kept.OWNER_ONLY``)."""
+
+    session_id: str
+    private: bool
+
+
+def _kept_run(user, run: NodeRun, input_ref: dict, saved_inputs: dict) -> _KeptRun | None:
+    """A kept session for this run (``common/kept_sessions.py``) when it is
+    the owner's run of a saved dataflow that reads only that dataflow's
+    outputs: those the owner's runs kept, and those it saved. Its output is
+    then kept too (``runs/kept.py``), and the owner reads it through the
+    dataflow's routes, under any sign-in, for as long as it is kept.
+
+    Anything else runs in the caller's own session, as before: a
+    collaborator's play, an unsaved canvas, and a run whose input is not the
+    dataflow's, such as one made before its first save. The sandbox lets a
+    kept session read any kept output, so only this dataflow's names may
+    reach one. A saved output is read from the store first, so a name its
+    manifest records that a kept run made, and the owner's runs did not
+    keep, is not one: the sandbox would read that run's artifact, whoever's
+    it is.
+    """
+    if user is None or not run.dataflow_id or not run.node_id:
+        return None
+    from utk_curio.backend.app.datasets.infrastructure.sandbox_artifacts import made_by_a_kept_run
+    from utk_curio.backend.app.projects.models import Project
+    from utk_curio.backend.app.runs import kept
+    from utk_curio.backend.extensions import db
+    from utk_curio.common.kept_sessions import new_session_id
+
+    try:
+        project = db.session.get(Project, run.dataflow_id)
+    except Exception:  # noqa: BLE001 - a run never fails on this lookup
+        return None
+    if project is None or project.user_id != getattr(user, "id", None):
+        return None
+    names = input_names(input_ref)
+    if len(names) > MAX_SAVED_INPUTS:
+        return None
+    private = False
+    for name in names:
+        entry = kept.owner_entry(run.dataflow_id, name)
+        if entry is not None:
+            private = private or entry.private_to is not None
+        elif name not in saved_inputs or made_by_a_kept_run(name):
+            return None
+    return _KeptRun(session_id=new_session_id(), private=private)
+
+
+def _forget_kept_run(kept_run: _KeptRun | None) -> None:
+    """Forget what a kept run that failed made, if it made anything."""
+    if kept_run is not None:
+        from utk_curio.backend.app.runs import kept
+
+        kept.forget_sessions([kept_run.session_id])
+
+
+def _keep_owner_output(user, run: NodeRun, kept_run: _KeptRun, output, *,
+                       language: str, used_keys: bool, dataset_paths: dict | None) -> None:
+    """Keep the output of an owner's run (:func:`_kept_run`) under the key a
+    viewer's run of the same step computes (``runs/viewer.py``), or forget
+    its session when it made none. Private when the owner's keys made it, or
+    anything it read."""
+    from utk_curio.backend.app.projects.services import _user_dir_key
+    from utk_curio.backend.app.runs import kept
+
+    if not (isinstance(output, dict) and output.get("path")):
+        _forget_kept_run(kept_run)
+        return
+    try:
+        key = kept.step_key(
+            packages=kept.packages_fingerprint(_user_dir_key(user)),
+            node_type=run.node_type, engine=language, code=run.code,
+            input_ref=kept.input_identity(run.input), input_slots=run.input_slots,
+            datasets=kept.datasets_read(run.code, run.dataflow_id, user, paths=dataset_paths),
+        )
+        kept.keep(
+            run.dataflow_id, run.node_id, key, kept_run.session_id, output,
+            private_to=kept.OWNER_ONLY if (kept_run.private or used_keys) else None,
+            made_by=kept.MADE_BY_OWNER,
+        )
+    except Exception as e:  # noqa: BLE001 - the run's reply goes out either way
+        print(f"[node_exec] could not keep the output of node {run.node_id}: "
+              f"{e.__class__.__name__}: {e}", flush=True)
+
+
 def _execute(user, session_token, run: NodeRun, *, language: str) -> tuple[dict, int]:
     t0 = time.perf_counter()
     label = _LABELS[language]
     tag = label.lstrip('/')
     input_ref = parse_input_ref(run.input)
+    saved_inputs = resolve_saved_inputs(input_ref, run.dataflow_id)
+    kept_run = _kept_run(user, run, input_ref, saved_inputs)
 
     body = {
         "code": run.code,
         "file_path": input_ref['path'],
         "nodeType": run.node_type,
         "dataType": input_ref['dataType'],
-        "session_id": session_token,
+        "session_id": kept_run.session_id if kept_run else session_token,
+        # The imports a node's code ran stay the caller's, so an upstream
+        # node's `import numpy as np` reaches a downstream one (#158), kept
+        # session or not.
+        "imports_session": session_token,
         "save_dataset": run.save_output_dataset,
     }
     if run.input_slots:
         body["input_slots"] = list(run.input_slots)
-    saved_inputs = resolve_saved_inputs(input_ref, run.dataflow_id)
     if saved_inputs:
         body["saved_paths"] = saved_inputs
+    dataset_paths = None
+    exec_secrets = None
     if language == "python":
         from utk_curio.backend.app.datasets.infrastructure import left_out_files
 
@@ -369,6 +465,7 @@ def _execute(user, session_token, run: NodeRun, *, language: str) -> tuple[dict,
         print(f"[{tag}] sandbox {endpoint} returned non-JSON: "
               f"status={response.status_code} "
               f"body={response.text[:500]!r}", flush=True)
+        _forget_kept_run(kept_run)
         return {
             'stdout': '',
             'stderr': f'Sandbox error: {e}',
@@ -379,6 +476,7 @@ def _execute(user, session_token, run: NodeRun, *, language: str) -> tuple[dict,
         # The sandbox failed the run itself, after its status had gone out (#889).
         print(f"[{tag}] sandbox {endpoint} failed: "
               f"{response_json['error']}: {response_json.get('message')}", flush=True)
+        _forget_kept_run(kept_run)
         return {
             'stdout': '',
             'stderr': f"Sandbox error: {response_json['error']}: {response_json.get('message')}",
@@ -389,6 +487,11 @@ def _execute(user, session_token, run: NodeRun, *, language: str) -> tuple[dict,
     stdout = response_json['stdout']
     stderr = response_json['stderr']
     output = response_json['output']
+    if kept_run is not None:
+        _keep_owner_output(
+            user, run, kept_run, output, language=language,
+            used_keys=bool(exec_secrets), dataset_paths=dataset_paths,
+        )
 
     t3 = time.perf_counter()
     print(

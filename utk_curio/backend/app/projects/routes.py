@@ -181,20 +181,33 @@ def get_shared_project(project_id: str):
 # GET /api/projects/:id/outputs/{get,get-preview,raster} - a canvas's reads
 # ---------------------------------------------------------------------------
 def _output_read(project_id: str):
-    """``(fileName, saved path or None)`` for a read on this dataflow's
-    canvas, or the error to answer. The sandbox reads the name from the
-    store under the caller's session first; a name the dataflow saved is
-    then read from the file its owner's store holds, in place."""
+    """``(fileName, session, saved path or None)`` for a read on this
+    dataflow's canvas, or the error to answer. The sandbox reads the name from
+    the store under that session first; a name the dataflow saved is then
+    read from the file its owner's store holds, in place.
+
+    The session is the caller's, but for the owner's read of an output their
+    runs of this dataflow kept (``runs/kept.py``), which is read under the
+    session that made it, from any sign-in. No one else reads a kept output
+    here."""
     from utk_curio.backend.app.projects.models import Project
+    from utk_curio.backend.app.runs import kept
+    from utk_curio.backend.app.users.dependencies import get_current_token
     from utk_curio.backend.extensions import db
 
     file_name = request.args.get("fileName")
     if not file_name:
-        return None, None, ("No artifact id specified", 400)
-    if db.session.get(Project, project_id) is None:
-        return None, None, _error("Project not found", 404)
+        return None, None, None, ("No artifact id specified", 400)
+    project = db.session.get(Project, project_id)
+    if project is None:
+        return None, None, None, _error("Project not found", 404)
     saved = services.saved_output_of(project_id, file_name)
-    return file_name, (saved.path if saved is not None else None), None
+    saved_path = saved.path if saved is not None else None
+    if project.user_id == getattr(g.user, "id", None):
+        entry = kept.owner_entry(project_id, file_name)
+        if entry is not None:
+            return file_name, entry.session_id, saved_path, None
+    return file_name, get_current_token(), saved_path, None
 
 
 @projects_bp.route("/<project_id>/outputs/get", methods=["GET"])
@@ -202,10 +215,9 @@ def _output_read(project_id: str):
 def get_output(project_id: str):
     """``/get`` for an output on this dataflow's canvas."""
     from utk_curio.backend.app.api.routes import relay_artifact
-    from utk_curio.backend.app.users.dependencies import get_current_token
 
-    file_name, saved_path, error = _output_read(project_id)
-    return error or relay_artifact(file_name, get_current_token(), saved_path=saved_path)
+    file_name, session, saved_path, error = _output_read(project_id)
+    return error or relay_artifact(file_name, session, saved_path=saved_path)
 
 
 @projects_bp.route("/<project_id>/outputs/get-preview", methods=["GET"])
@@ -213,10 +225,9 @@ def get_output(project_id: str):
 def get_output_preview(project_id: str):
     """``/get-preview`` for an output on this dataflow's canvas."""
     from utk_curio.backend.app.api.routes import relay_preview
-    from utk_curio.backend.app.users.dependencies import get_current_token
 
-    file_name, saved_path, error = _output_read(project_id)
-    return error or relay_preview(file_name, get_current_token(), saved_path=saved_path)
+    file_name, session, saved_path, error = _output_read(project_id)
+    return error or relay_preview(file_name, session, saved_path=saved_path)
 
 
 @projects_bp.route("/<project_id>/outputs/raster", methods=["GET"])
@@ -224,10 +235,9 @@ def get_output_preview(project_id: str):
 def get_output_raster(project_id: str):
     """``/raster`` for a raster on this dataflow's canvas."""
     from utk_curio.backend.app.api.routes import relay_raster
-    from utk_curio.backend.app.users.dependencies import get_current_token
 
-    file_name, saved_path, error = _output_read(project_id)
-    return error or relay_raster(file_name, get_current_token(), saved_path=saved_path)
+    file_name, session, saved_path, error = _output_read(project_id)
+    return error or relay_raster(file_name, session, saved_path=saved_path)
 
 
 # ---------------------------------------------------------------------------

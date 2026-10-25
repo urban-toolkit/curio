@@ -536,30 +536,34 @@ def artifact_meta():
 
     Returns the same columns the backend used to SELECT for itself; a missing
     artifact is a 404 rather than an error, because "not there" is an ordinary
-    answer for a caller resolving an id it merely hopes is an artifact.
+    answer for a caller resolving an id it merely hopes is an artifact. Also
+    ``keptRun``: whether a kept run made it (``common/kept_sessions.py``),
+    never the session itself.
     """
     art_id = request.args.get('fileName')
     if not art_id:
         abort(400, "fileName is required")
 
+    from utk_curio.common.kept_sessions import is_kept_session
     from utk_curio.sandbox.util.db import get_read_connection
 
     con = get_read_connection()
     row = con.execute(
-        "SELECT kind, value_int, value_float, value_str, value_json "
+        "SELECT kind, value_int, value_float, value_str, value_json, session_id "
         "FROM artifacts WHERE id = ?",
         [art_id],
     ).fetchone()
     if row is None:
         return jsonify({'error': 'not found', 'fileName': art_id}), 404
 
-    kind, value_int, value_float, value_str, value_json = row
+    kind, value_int, value_float, value_str, value_json, session_id = row
     return jsonify({
         'kind': kind,
         'value_int': value_int,
         'value_float': value_float,
         'value_str': value_str,
         'value_json': value_json,
+        'keptRun': is_kept_session(session_id),
     })
 
 
@@ -716,6 +720,12 @@ def exec():
     node_type  = request.json['nodeType']
     data_type  = request.json['dataType']
     session_id = request.json.get('session_id') or None
+    # The session a node's top-level imports are remembered under, for the
+    # nodes after it (#158): the caller's, while its artifacts may be tagged
+    # with a kept run's session of their own.
+    imports_session = request.json.get('imports_session')
+    if not isinstance(imports_session, str) or not imports_session:
+        imports_session = session_id
     # The wired circles, in circle order: which input_k each value is.
     input_slots = parse_slots(request.json.get('input_slots'))
     save_dataset = request.json.get('save_dataset', True)
@@ -796,14 +806,14 @@ def exec():
                 dataset_paths=dataset_paths, user_key=user_key, config=config,
                 secrets=secrets, collections=collections, media_dir=media_dir, models=models,
                 dataset_formats=dataset_formats, package_modules=package_modules,
-                input_slots=input_slots, saved_paths=saved_paths,
+                input_slots=input_slots, saved_paths=saved_paths, imports_session=imports_session,
             )
         return execute_code(
             code, str(file_path), str(node_type), str(data_type), launch_dir,
             session_id=session_id, save_dataset=bool(save_dataset),
             dataset_paths=dataset_paths, secrets=secrets, collections=collections, media_dir=media_dir,
             models=models, dataset_formats=dataset_formats, package_modules=package_modules,
-            input_slots=input_slots, saved_paths=saved_paths,
+            input_slots=input_slots, saved_paths=saved_paths, imports_session=imports_session,
         )
 
     return _reply_when_run('/exec', node_type, run)

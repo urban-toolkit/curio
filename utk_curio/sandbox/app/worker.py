@@ -525,13 +525,19 @@ def _stage_package_modules(package_modules):
 
 def execute_code(code, file_path, node_type, data_type, launch_dir=None, session_id=None, save_dataset=True,
                  dataset_paths=None, secrets=None, collections=None, media_dir=None, models=None,
-                 dataset_formats=None, package_modules=None, input_slots=None, saved_paths=None):
+                 dataset_formats=None, package_modules=None, input_slots=None, saved_paths=None,
+                 imports_session=None):
     """
     Execute user code in-process using pre-loaded library globals.
 
     session_id: Bearer token of the requesting session. Artifacts are stored and
                 loaded scoped to this session so concurrent sessions never share
                 execution state - even if they share the same user account.
+
+    imports_session: the session the code's top-level imports are remembered
+                under for the nodes after it (#158); *session_id* when not
+                given. A kept run's artifacts carry a session of their own, its
+                imports the caller's.
 
     saved_paths: {name: {"path", "dataType"}} for the inputs that are saved
                 outputs of the run's dataflow, each read in place from the file
@@ -611,7 +617,8 @@ def execute_code(code, file_path, node_type, data_type, launch_dir=None, session
                 # accumulated import bindings are layered in so an upstream node's
                 # `import numpy as np` reaches downstream nodes (#158).
                 ns = dict(_globals_cache)
-                ns.update(_import_bindings_for(session_id))
+                imports_key = imports_session if imports_session is not None else session_id
+                ns.update(_import_bindings_for(imports_key))
                 # dev/116: connection keys, reachable only through this callable.
                 ns['curio_secret'] = make_curio_secret(secrets)
 
@@ -635,7 +642,7 @@ def execute_code(code, file_path, node_type, data_type, launch_dir=None, session
                 # so they are recorded for later nodes in the same session. The
                 # statements stay in the function body too - re-importing is a
                 # sys.modules hit, and it keeps a standalone run of this node working.
-                _hoist_user_imports(code, ns, session_id, skip=modules[1])
+                _hoist_user_imports(code, ns, imports_key, skip=modules[1])
                 # A relative path in docs/ that this folder does not hold reads
                 # the file Curio ships (util/user_code.py).
                 exec(compile_user_code(code, os.getcwd()), ns)

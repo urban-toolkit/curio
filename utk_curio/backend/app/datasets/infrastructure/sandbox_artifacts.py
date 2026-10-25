@@ -107,3 +107,52 @@ def artifact_row(art_id: str) -> tuple | None:
         body.get("value_str"),
         body.get("value_json"),
     )
+
+
+def _local_session(art_id: str) -> tuple[bool, str | None]:
+    """``(True, the row's session or None)`` read directly in a process that
+    owns the database (:func:`_local_row`), or ``(False, None)`` in one that
+    does not."""
+    try:
+        from utk_curio.sandbox.util import db as sandbox_db
+
+        if not sandbox_db._writer_process:
+            return False, None
+        row = sandbox_db.get_read_connection().execute(
+            "SELECT session_id FROM artifacts WHERE id = ?", [art_id],
+        ).fetchone()
+        return True, (row[0] if row else None)
+    except Exception:  # noqa: BLE001 - asked of the sandbox instead
+        return False, None
+
+
+def made_by_a_kept_run(art_id: str) -> bool:
+    """Whether the store's artifact *art_id* was made by a kept run, any
+    dataflow's and any maker's (``common/kept_sessions.py``). True as well
+    when the sandbox cannot say: a caller deciding whether a name may reach
+    a kept session, which reads every kept run's artifacts, takes an unknown
+    for one."""
+    if not art_id:
+        return False
+    from utk_curio.common.kept_sessions import is_kept_session
+
+    owned, session = _local_session(art_id)
+    if owned:
+        return is_kept_session(session)
+    try:
+        response = _session.get(
+            _sandbox_url("/artifact-meta"),
+            params={"fileName": art_id},
+            headers=_headers(),
+            timeout=_TIMEOUT_S,
+        )
+    except requests.RequestException:
+        return True
+    if response.status_code == 404:
+        return False
+    if not response.ok:
+        return True
+    try:
+        return bool((response.json() or {}).get("keptRun"))
+    except ValueError:
+        return True
