@@ -961,6 +961,22 @@ class TestTheStepsLeftToThePage:
         assert _keep_step(client, gpu, run_id, token).status_code == 413
         assert sandbox.stored == []
 
+    def test_a_page_hands_on_its_layers_and_never_names_an_output(self, client, gpu, sandbox):
+        """The steps below read the page's result in a kept session, which
+        reads what any kept run made, and the sandbox reads each output a
+        result of several names (``worker._expand_outputs_wrapper``)."""
+        started = _month(client, gpu)
+        run_id, token = started["runId"], started["token"]
+        layers = {"dataType": "outputs", "data": [LAYER, {**LAYER, "layerName": "roads"}]}
+
+        assert _keep_step(client, gpu, run_id, token, value=layers).status_code == 200
+        for named in (
+            {"dataType": "outputs", "data": [LAYER, {"path": "1700000000000_deadbeef", "dataType": "dataframe"}]},
+            {"dataType": "outputs", "data": ["1700000000000_deadbeef"]},
+        ):
+            assert _keep_step(client, gpu, run_id, token, value=named).status_code == 422, named
+        assert [stored["value"] for stored in sandbox.stored] == [layers]
+
     def test_the_next_start_runs_the_steps_below_on_what_the_page_sent(self, client, gpu, sandbox):
         from utk_curio.backend.app.runs import kept, viewer
         from utk_curio.backend.app.runs.models import KeptStepOutput
