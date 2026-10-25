@@ -15,6 +15,7 @@ from utk_curio.backend.app.datasets.install.installer import (
     InstallerError,
     _computed_dates,
     _held_manifest,
+    _link_or_copy,
     _names_one_output,
     computed_dataset_id,
     drop_other_files,
@@ -70,14 +71,34 @@ def _frame_meta(meta_json: Any) -> tuple[dict | None, list]:
     return (frame_metadata if isinstance(frame_metadata, dict) else None), list(encoded or [])
 
 
+def _decode_sidecar_text(meta_json: Any) -> str | None:
+    """The ``.decode.json`` a saved frame's file carries, from its artifact
+    row's ``value_json``: the frame's ``metadata`` and its object columns
+    encoded for parquet, or None when it has neither."""
+    from utk_curio.sandbox.util.codec import _serialize_parquet_meta
+
+    frame_metadata, encoded = _frame_meta(meta_json)
+    return _serialize_parquet_meta(frame_metadata=frame_metadata, encoded_object_columns=encoded)
+
+
+def decode_sidecar_of(path_ref: str) -> str | None:
+    """The ``.decode.json`` the file of the frame artifact *path_ref* carries
+    once saved, from its row (:func:`_decode_sidecar_text`). None for any
+    other name, or a frame with nothing to decode."""
+    art_id = _bare_artifact_id(path_ref)
+    row = _artifact_value_row(art_id) if art_id else None
+    if row is None or row[0] not in FRAME_KINDS:
+        return None
+    return _decode_sidecar_text(row[4])
+
+
 def _write_frame_sidecar(data_file: Path, meta_json: Any) -> None:
     """Write a frame part's ``.decode.json`` sidecar, the one a single saved
     frame carries beside its file, so the part reloads with its metadata and
     its object columns decoded."""
-    from utk_curio.sandbox.util.codec import PARQUET_DECODE_SIDECAR_SUFFIX, _serialize_parquet_meta
+    from utk_curio.sandbox.util.codec import PARQUET_DECODE_SIDECAR_SUFFIX
 
-    frame_metadata, encoded = _frame_meta(meta_json)
-    payload = _serialize_parquet_meta(frame_metadata=frame_metadata, encoded_object_columns=encoded)
+    payload = _decode_sidecar_text(meta_json)
     if payload:
         write_whole(
             data_file.with_name(data_file.name + PARQUET_DECODE_SIDECAR_SUFFIX),
@@ -492,7 +513,9 @@ def install_computed_bundle_for_node(
 
                     write_whole(dest_file, lambda f: f.write_bytes(zlib.decompress(source.read_bytes())))
                 else:
-                    write_whole(dest_file, lambda f: shutil.copy2(source, f))
+                    # The store's own file under a second name, as a single
+                    # output's is (installer.install_computed_file_for_node).
+                    write_whole(dest_file, lambda f: _link_or_copy(source, f))
                     if part.kind in FRAME_KINDS:
                         _write_frame_sidecar(dest_file, part.meta_json)
             elif part.kind in {"int", "float", "bool", "str", "null"}:
@@ -574,6 +597,7 @@ def install_node_output(
 
     file_bytes: bytes | None = None
     source_path: Path | None = None
+    decode_sidecar: str | None = None
 
     if src is None:
         # No artifact FILE is not the same as no artifact. Only (geo)dataframe,
@@ -634,10 +658,18 @@ def install_node_output(
     else:
         # Hard-link the shared artifact into the dataset store instead of reading
         # it into memory and re-writing it on the synchronous
-        # /processPythonCode path.
+        # /processPythonCode path. A frame's decode is in its row, not beside
+        # its file: the saved file carries it as its sidecar.
         source_path = src
         fmt = computed_output_format(src.name, data_type)
         store_name = src.name if src.suffix else path_ref
+        art_id = _bare_artifact_id(path_ref)
+        if src.suffix == ".parquet" and art_id:
+            row = _artifact_value_row(art_id)
+            if row is None:
+                return None  # the row is gone with what decodes the file
+            if row[0] in FRAME_KINDS:
+                decode_sidecar = _decode_sidecar_text(row[4])
 
     return install_computed_file_for_node(
         user_key,
@@ -651,4 +683,5 @@ def install_node_output(
         upstream_inputs=upstream_inputs,
         title=node_name,
         source_path=source_path,
+        decode_sidecar=decode_sidecar,
     )
