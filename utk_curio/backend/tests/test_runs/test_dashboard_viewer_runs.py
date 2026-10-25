@@ -76,7 +76,8 @@ class Reply:
 class FakeSandbox:
     """Runs a node as an artifact named after it; describes and forgets the
     sessions it is asked about, and stores a page's result as ``page-<n>``.
-    *hold* keeps the named nodes running."""
+    *hold* keeps the named nodes running; *outputs* gives a node's output
+    instead, ``(path, dataType)`` from a callable."""
 
     def __init__(self):
         self.lock = threading.Lock()
@@ -85,6 +86,7 @@ class FakeSandbox:
         self.forgotten = []
         self.stored = []
         self.hold = set()
+        self.outputs = {}
         self.gate = threading.Event()
         self.started = threading.Event()
 
@@ -115,10 +117,12 @@ class FakeSandbox:
             assert self.gate.wait(timeout=30), "the test never released the gate"
         with self.lock:
             self.runs.append((node_id, body))
-            path_out = f"art-{node_id}-{len(self.runs)}"
+            path_out, kind = (
+                self.outputs[node_id]() if node_id in self.outputs else (f"art-{node_id}-{len(self.runs)}", "str")
+            )
             self.made[body["session_id"]] = path_out
         return Reply({"stdout": [f"ran {node_id}"], "stderr": "",
-                      "output": {"path": path_out, "dataType": "str"}})
+                      "output": {"path": path_out, "dataType": kind}})
 
 
 @pytest.fixture()
@@ -1036,3 +1040,74 @@ class TestTheStepsLeftToThePage:
         assert again.status_code == 200, again.get_data(as_text=True)
         resp = _on_the_page(client, gpu, {"gpu": again.get_json()["output"]["path"]}, token)
         assert resp.status_code == 429, resp.get_data(as_text=True)
+
+
+class TestAWrapperAStepReads:
+    """A viewer's step runs in a kept session of its own, which reads what any
+    kept run made, and the sandbox reads each output a wrapper among its
+    inputs names (``worker._expand_outputs_wrapper``). Node code can write a
+    wrapper naming any output, so a step reads one only when what it names is
+    its dataflow's."""
+
+    def _below_a_wrapper(self, client, token, sandbox, name_of):
+        """A dashboard whose Grid answers a wrapper naming what *name_of*
+        gives for the dataflow, and whose After reads Grid."""
+        from utk_curio.common.kept_sessions import new_session_id
+        from utk_curio.sandbox.util.parsers import save_to_duckdb
+
+        after = {"id": "after", "type": CODE, "content": "# node after\nreturn input_0"}
+        pid = _create(client, token, nodes=_nodes(extra=[after]), edges=[
+            {"id": "grid-after", "source": "grid", "target": "after"},
+            {"id": "after-chart", "source": "after", "target": "chart"},
+        ])
+        wrapper = save_to_duckdb(
+            {"dataType": "outputs", "data": [{"path": name_of(pid), "dataType": "dataframe"}]},
+            node_id="grid", session_id=new_session_id(),
+        )
+        sandbox.outputs["grid"] = lambda: (wrapper, "dict")
+        return pid
+
+    @staticmethod
+    def _table(session):
+        import pandas as pd
+
+        from utk_curio.sandbox.util.parsers import save_to_duckdb
+
+        return save_to_duckdb(pd.DataFrame({"n": [1]}), node_id="n", session_id=session)
+
+    def test_a_step_does_not_read_what_another_dataflow_kept(self, client, user_and_token, sandbox, saved):
+        from utk_curio.common.kept_sessions import new_session_id
+
+        _, token = user_and_token
+        theirs = self._table(new_session_id())
+        pid = self._below_a_wrapper(client, token, sandbox, lambda _pid: theirs)
+
+        _month(client, pid)
+
+        assert [node for node, _ in sandbox.runs] == ["grid"]
+
+    def test_a_step_reads_what_its_dataflow_kept(self, client, user_and_token, sandbox, saved):
+        from utk_curio.backend.app.runs import kept
+        from utk_curio.backend.app.runs.models import KeptStepOutput, naive_utc_now
+        from utk_curio.backend.extensions import db
+        from utk_curio.common.kept_sessions import new_session_id
+
+        _, token = user_and_token
+
+        def kept_for(pid):
+            session = new_session_id()
+            mine = self._table(session)
+            now = naive_utc_now()
+            db.session.add(KeptStepOutput(
+                project_id=pid, node_id="earlier", step_key="e" * 64, session_id=session,
+                output=json.dumps({"path": mine, "dataType": "dataframe"}), output_path=mine,
+                artifact_ids=json.dumps([mine]), made_by=kept.MADE_BY_OWNER, created_at=now, used_at=now,
+            ))
+            db.session.commit()
+            return mine
+
+        pid = self._below_a_wrapper(client, token, sandbox, kept_for)
+
+        _month(client, pid)
+
+        assert [node for node, _ in sandbox.runs] == ["grid", "after"]
