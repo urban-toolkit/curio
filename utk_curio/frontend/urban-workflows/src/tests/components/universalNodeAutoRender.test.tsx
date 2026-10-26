@@ -579,6 +579,26 @@ describe("only an Autark node", () => {
     expect(mockSendCode).toHaveBeenCalledWith(MAP_SPEC);
   });
 
+  test("a draw WebGPU's answer turns back leaves its input to be drawn once the run ends", async () => {
+    // The probe can answer after a run started, and the draw it was asked for
+    // then does not go. It used to count its input as drawn all the same, so
+    // the end of the run drew nothing, and the map kept what it showed.
+    let answer!: (support: { supported: boolean }) => void;
+    mockWebGpuAnswer = new Promise((resolve) => { answer = resolve; });
+    const utils = await mount(data(AUTARK, { code: MAP_SPEC, input: INPUT_A }));
+    mockServerRunActive = true;
+    await rerenderWith(utils, data(AUTARK, { code: MAP_SPEC, input: INPUT_A }));
+    await act(async () => { answer({ supported: true }); });
+    expect(mockSendCode).not.toHaveBeenCalled();
+
+    mockServerRunActive = false;
+    await rerenderWith(utils, data(AUTARK, { code: MAP_SPEC, input: INPUT_A }));
+    await settle();
+
+    expect(mockSendCode).toHaveBeenCalledTimes(1);
+    expect(mockSendCode).toHaveBeenCalledWith(MAP_SPEC);
+  });
+
   test("a data or compute step is never run by an input or a page", async () => {
     // Those make layers. On the dashboard the layers come from the Data Catalog,
     // so running this would re-execute the data load for no reason.

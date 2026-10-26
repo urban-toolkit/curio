@@ -337,21 +337,28 @@ const UniversalNodeBody = React.memo(function UniversalNodeBody({ data, isConnec
    * would sit at "exec".
    */
   const draw = () => {
-    lastRenderedInputRef.current = data.input;
-    drawnValuesRef.current = widgetValues;
     const seq = ++drawSeqRef.current;
     const code = nodeState.code;
-    if (!autarkRender) {
+    // The input and values a draw goes with count as drawn once it goes. One
+    // the probe's answer turns back (a run started, or the node is drawing)
+    // leaves them to the next draw, which the end of that run or draw asks for.
+    const input = data.input;
+    const values = widgetValues;
+    const send = () => {
+      lastRenderedInputRef.current = input;
+      drawnValuesRef.current = values;
       setOutputCallback({ code: "exec", content: "" });
       sendCode(code);
+    };
+    if (!autarkRender) {
+      send();
       return;
     }
     void detectWebGpuSupport().then((support) => {
       if (!support.supported && !(dashboardOn && !dashboardStoppedRef.current)) return;
       if (drawSeqRef.current !== seq) return;
       if (runInFlightRef.current || outputCodeRef.current === "exec") return;
-      setOutputCallback({ code: "exec", content: "" });
-      sendCode(code);
+      send();
     });
   };
   useEffect(() => {
