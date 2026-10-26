@@ -36,6 +36,7 @@ import {
   browserWalk,
   nodeChangeFor,
 } from "../../providers/flow/serverRunSteps";
+import { nodesToRunUpTo } from "../../providers/flow/runLevels";
 import { runKeyWithShared } from "../../utils/references/sharedParameters";
 
 const api = runsApi as jest.Mocked<typeof runsApi>;
@@ -205,7 +206,11 @@ describe("a run started on the canvas", () => {
       kind: "step_finished", nodeId: "a", status: "ok", startedAt: 1700000000, finishedAt: 1700000002,
       reply: { stdout: ["ran a"], stderr: "", input: null, output: { path: "art-a", dataType: "dataframe" } },
     });
-    expect(shown("a")).toEqual({ code: "success", content: "stdout:\nran a\nSaved to file: art-a" });
+    expect(shown("a")).toEqual({
+      code: "success",
+      content: "stdout:\nran a\nSaved to file: art-a",
+      runKey: runKeyWithShared("return 1", undefined, [], undefined),
+    });
     expect(deps.applyNewOutput).toHaveBeenCalledWith({ nodeId: "a", output: { path: "art-a", dataType: "dataframe" } });
     expect(deps.nodeExecProv).toHaveBeenCalledTimes(1);
     expect(deps.nodeExecProv.mock.calls[0][3]).toBe("a");
@@ -242,12 +247,49 @@ describe("a run started on the canvas", () => {
       reply: { stdout: ["7 removed."], stderr: "", input: null, output: { path: "art-edit", dataType: "outputs" } },
     });
     const copy = { ...node("edit")!.data, input: { path: "art-layers", dataType: "list" } };
-    expect(copy.output).toEqual({ code: "success", content: "stdout:\n7 removed.\nSaved to file: art-edit" });
+    expect(copy.output).toEqual({
+      code: "success",
+      content: "stdout:\n7 removed.\nSaved to file: art-edit",
+      runKey: runKeyWithShared("return input_0", undefined, [], undefined),
+    });
     expect(copy.executedCode).toBe(runKeyWithShared("return input_0", undefined, [], undefined));
 
     live.emit({ kind: "step_finished", nodeId: "count", status: "error", stderrTail: "Traceback: boom" });
     expect(node("count")!.data.output).toMatchObject({ code: "error", content: "Traceback: boom" });
     expect(node("count")!.data.executedCode).toBeUndefined();
+  });
+
+  it("stamps a result with the selection its run started with, so a tag emptied meanwhile leaves the node stale", async () => {
+    // The selection tags e2e after a reopen: Run All runs the counting node on
+    // the ids the save wrote, the chart is drawn anew meanwhile and empties the
+    // tag, and the node's result lands after that. Stamped with the empty tag,
+    // the node read as current, and a play below reused the five rows it
+    // counted (`<<R 5>>`, not `<<R 0>>`).
+    const picked = (ids: number[]) => [{ name: "picked", node: "scatter", column: "osm_id", ids }];
+    const sent = picked([1001, 1002, 1003, 1004, 1005]);
+    const code = "ids = [!! selection picked !!]\nreturn input_0[input_0['osm_id'].isin(ids)]";
+    const edges = [{ id: "count->reader", source: "count", target: "reader" }];
+    const live = stream();
+    api.start.mockResolvedValue(run("r1", [step("count"), step("reader", { level: 1 })]));
+    const { hook, node } = harness(
+      [{ id: "count", data: { code, selections: sent } }, { id: "reader", data: { code: "return input_0" } }],
+      edges,
+    );
+    await act(async () => { await hook.result.current.startRun(); });
+
+    node("count")!.data.selections = picked([]);
+    live.emit({
+      kind: "step_finished", nodeId: "count", status: "ok", startedAt: 1700000000, finishedAt: 1700000002,
+      reply: { stdout: ["<<N 5>>"], stderr: "", input: null, output: { path: "art-count", dataType: "dataframe" } },
+    });
+
+    const ranWith = runKeyWithShared(code, undefined, [], sent);
+    expect(node("count")!.data.serverOutput.output.runKey).toBe(ranWith);
+    expect(node("count")!.data.executedCode).toBe(ranWith);
+    const { willRun } = nodesToRunUpTo(
+      "reader", [node("count"), node("reader")] as any, edges as any, new Map(),
+    );
+    expect(willRun.has("count")).toBe(true);
   });
 
   it("ends as its last step lands, starting the browser's part in that tick, and reports each node", async () => {

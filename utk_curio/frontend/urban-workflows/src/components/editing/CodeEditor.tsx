@@ -15,6 +15,7 @@ import Editor, { Monaco } from "@monaco-editor/react";
 import { useFlowContext } from "../../providers/FlowProvider";
 import { shouldSaveOutputOnRun } from "../../utils/saveOutputDataset";
 import { executionResultOutput } from "../../utils/executionResult";
+import { runKeyWithShared, sharedWidgetsOf } from "../../utils/references/sharedParameters";
 import { registerRunNodeAction } from "./runNodeMonacoAction";
 import { MissingModuleNotice, type InstallState } from "./MissingModuleNotice";
 import { MIN_PROGRESS_MS, readInstallResponse } from "../../utils/libraryInstall";
@@ -381,10 +382,11 @@ function CodeEditor({
         }
     }, [output.code]);
 
-    const processExecutionResult = (result: any) => {
+    /** A run's reply on the node; a success carries *runKey*, the key the run was sent with. */
+    const processExecutionResult = (result: any, runKey: string) => {
         // The same rule a step of a run on the server goes through (useServerRun).
         const { shown, artifact } = executionResultOutput(result);
-        setOutputCallback(shown);
+        setOutputCallback(shown.code === "success" ? { ...shown, runKey } : shown);
         if (artifact) {
             // outputCallback → applyNewOutput, which centrally auto-installs +
             // surfaces the produced dataset (no manual disk-icon save needed).
@@ -426,13 +428,17 @@ function CodeEditor({
             failRun(upstreamErroredMessage(failedUpstreamName()));
             return;
         }
+        // What the run is sent with. Its result is stamped with this key, so a
+        // selection, widget value or code changed while it runs leaves the
+        // node stale.
+        const runKey = runKeyWithShared(code, data.widgets, sharedWidgetsOf(nodes ?? []), data.selections);
         if (backendRun) {
             // dev/91: a backendHandler template Runs through the package
             // backend sandbox — registry-driven dispatch, never another
             // hardcoded template-id literal.
             void backendRun({ content: replacedCode, input: data.input }).then((outcome) => {
                 if (outcome.ok) {
-                    setOutputCallback({ code: "success", content: outcome.content });
+                    setOutputCallback({ code: "success", content: outcome.content, runKey });
                     markNodeExecuted(data.nodeId);
                 } else {
                     failRun(outcome.content);
@@ -449,7 +455,7 @@ function CodeEditor({
             replacedCode,
             data.input,
             data.inputTypes,
-            processExecutionResult,
+            (result: any) => processExecutionResult(result, runKey),
             nodeType,
             data.nodeId,
             workflowNameRef.current,

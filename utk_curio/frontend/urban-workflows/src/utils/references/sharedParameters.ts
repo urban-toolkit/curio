@@ -85,6 +85,21 @@ export function runKeyWithShared(code: string, widgets: unknown, shared: WidgetD
   return key;
 }
 
+/** A canvas node's run key as its *data* holds it: its code, widgets and selection tags. */
+export function runKeyOfData(data: any, shared: WidgetDef[]): string {
+  return runKeyWithShared(String(data?.code ?? ""), data?.widgets, shared, data?.selections);
+}
+
+/**
+ * Every canvas node's run key now. A run on the server reads them just before
+ * the save it runs (useServerRun), so a step's result is stamped with the key
+ * its run started with, not one a value changed meanwhile gives.
+ */
+export function runKeysOf(nodes: readonly FlowNodeLike[]): Map<string, string> {
+  const shared = sharedWidgetsOf(nodes);
+  return new Map(nodes.map((node) => [node.id, runKeyOfData(node.data, shared)]));
+}
+
 /**
  * *nodes* after the Parameter node named *from* was renamed *to*: each node
  * whose code names it gets the code rewritten, in `data.code` and in

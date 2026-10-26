@@ -6,7 +6,7 @@ import React, { useRef } from "react";
 import type { Node, ReactFlowInstance } from "reactflow";
 import type { NodeOutput } from "../../hook/useNodeState";
 import { executionResultOutput, recordExecProvenance } from "../../utils/executionResult";
-import { runKeyWithShared, sharedWidgetsOf } from "../../utils/references/sharedParameters";
+import { runKeyOfData, sharedWidgetsOf } from "../../utils/references/sharedParameters";
 import type { IOutput } from "./flowTypes";
 import type { NodeChange } from "./serverRunSteps";
 
@@ -37,7 +37,8 @@ export function useStepOutcomes({
      * data, as the node mirrors them once it shows the output (useNodeState):
      * the flow copies a node's data whenever it changes a field, and a copy
      * made before the node renders (a Data Pool handing on an input as the
-     * step lands) would keep the outcome from before.
+     * step lands) would keep the outcome from before. The run key is the one
+     * the output carries, the key its run started with, when it has one.
      */
     const showOnNode = (nodeId: string, output: NodeOutput, { onlyIfRunning = false } = {}) => {
         const seq = ++outputSeqRef.current;
@@ -47,9 +48,7 @@ export function useStepOutcomes({
             if (!onlyIfRunning) {
                 data.output = output;
                 if (output.code === "success") {
-                    data.executedCode = runKeyWithShared(
-                        String(data.code ?? ""), data.widgets, sharedWidgetsOf(nds), data.selections,
-                    );
+                    data.executedCode = output.runKey ?? runKeyOfData(data, sharedWidgetsOf(nds));
                 }
             }
             return { ...node, data };
@@ -60,16 +59,21 @@ export function useStepOutcomes({
      * A step's outcome on its node: shown and passed downstream. *live* is a
      * run this tab started: it also records the provenance, with the step's
      * own times, and its outputs pass on as a run's do. Otherwise the output
-     * is restored as a load restores one.
+     * is restored as a load restores one. *runKey* is the node's key when the
+     * run started, which a success carries (useServerRun).
      */
     const showResult = (
         nodeId: string,
         change: Extract<NodeChange, { kind: "result" }>,
-        { live }: { live: boolean },
+        { live, runKey }: { live: boolean; runKey?: string },
     ) => {
         const node = reactFlow.getNode(nodeId);
         if (!node) return;
-        const { shown, artifact } = executionResultOutput(change.reply);
+        const result = executionResultOutput(change.reply);
+        const { artifact } = result;
+        const shown = runKey !== undefined && result.shown.code === "success"
+            ? { ...result.shown, runKey }
+            : result.shown;
         if (live) {
             const at = (seconds?: number) => (seconds != null ? new Date(seconds * 1000) : new Date());
             recordExecProvenance(nodeExecProv, {

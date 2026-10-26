@@ -14,6 +14,12 @@ export interface NodeOutput {
   outputType?: string;
   /** Set only on a failed run that ended in a ModuleNotFoundError (#299). */
   missingModule?: MissingModuleNotice | null;
+  /**
+   * On a run's success: the run key (`runKeyWithShared`) the run started with,
+   * which the node is stamped with. A value changed while it ran then leaves
+   * the node stale.
+   */
+  runKey?: string;
 }
 
 export function useNodeState(data: any, nodeType: NodeTemplateId) {
@@ -51,9 +57,11 @@ export function useNodeState(data: any, nodeType: NodeTemplateId) {
     data.output = output;
     // #662: the key includes the node's widget values, the shared tags it
     // names and the ids its selection tags hold, so a new value or a new
-    // selection re-runs it.
+    // selection re-runs it. A run's result carries the key it started with:
+    // one taken now would hide a value changed while it ran.
     if (output?.code === 'success') {
-      data.executedCode = runKeyWithShared(code, data.widgets, sharedWidgetsOf(nodes ?? []), data.selections);
+      data.executedCode = output.runKey
+        ?? runKeyWithShared(code, data.widgets, sharedWidgetsOf(nodes ?? []), data.selections);
     }
     // dev/135: the node instance already held its own outcome here — and only
     // here, in memory, so an agent asked about a node that had just failed in
