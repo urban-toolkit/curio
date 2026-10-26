@@ -124,6 +124,29 @@ class TestVerifiedRounds:
         assert outcome["attempts"][0]["verdict"] == "pass"
         assert [k for k, _ in events] == ["generation_round", "node_executed", "round_verdict"]
 
+    def test_a_rounds_dataset_formats_reach_the_sandbox_with_its_paths(self, app, tmp_curio):
+        """A round's run sends how each dataset is read beside its path, as
+        Play does: a layer group's entry names the layers that
+        ``curio_load_data("<group id>")`` reads by their own paths."""
+        node = {"id": "n1", "type": CA, "goal": "stats", "content": "return 1"}
+        exec_fn = _Exec()
+        group = {"format": "layer-group", "layers": [["roads", "imported.xroads"]]}
+
+        def paths_and_formats(codes, formats):
+            formats.update({"gpkg.x1a2b3c4": group, "imported.xroads": {"format": "parquet"}})
+            return {"imported.xroads": "/store/roads.parquet"}
+
+        _events, outcome, _inputs = _rounds(
+            app, node, replies=[], exec_fn=exec_fn, start_from_current=True,
+            dataset_paths_fn=paths_and_formats,
+        )
+        assert outcome["verdict"] == "pass", outcome
+        payload = exec_fn.calls[0]
+        assert payload.get("dataset_paths") == {"imported.xroads": "/store/roads.parquet"}
+        assert payload.get("dataset_formats") == {
+            "gpkg.x1a2b3c4": group, "imported.xroads": {"format": "parquet"},
+        }
+
     def test_start_from_current_failing_content_is_corrected_and_the_trail_says_so(self, app, tmp_curio):
         node = {"id": "n1", "type": CA, "goal": "stats", "content": "bad_current()\nreturn 1"}
         exec_fn = _Exec(fail_markers=("bad_current",))
