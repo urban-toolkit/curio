@@ -245,10 +245,10 @@
         },
         "title": "Add proposed tower (1550 Bedford Ave)",
         "dashboardPinned": true,
-        "dashboardX": 260,
+        "dashboardX": 430,
         "dashboardY": 390,
-        "dashboardWidth": 340,
-        "dashboardHeight": 330
+        "dashboardWidth": 420,
+        "dashboardHeight": 380
       },
       {
         "id": "72b34012-476a-50d2-abf3-f6c271a50f54",
@@ -468,7 +468,7 @@
         "height": 150,
         "dashboardPinned": true,
         "dashboardX": 0,
-        "dashboardY": 730,
+        "dashboardY": 780,
         "dashboardWidth": 1280,
         "dashboardHeight": 140
       },
@@ -477,7 +477,7 @@
         "type": "curio.builtin/vis-vega",
         "x": 5560,
         "y": 1125,
-        "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v5.json\",\n  \"data\": {\n    \"name\": \"[!! inputs !!]\"\n  },\n  \"mark\": {\n    \"type\": \"line\",\n    \"point\": true\n  },\n  \"encoding\": {\n    \"x\": {\n      \"field\": \"time\",\n      \"type\": \"temporal\",\n      \"scale\": {\n        \"type\": \"utc\"\n      },\n      \"axis\": {\n        \"format\": \"%-I %p\"\n      },\n      \"title\": \"Time (New York)\"\n    },\n    \"y\": {\n      \"field\": \"share\",\n      \"type\": \"quantitative\",\n      \"scale\": {\n        \"domain\": [\n          0,\n          100\n        ]\n      },\n      \"title\": \"Block 1259's open ground in shadow (%)\"\n    },\n    \"color\": {\n      \"field\": \"scenario_name\",\n      \"type\": \"nominal\",\n      \"title\": \"Scenario\",\n      \"scale\": [!! scenario colors !!],\n      \"sort\": [!! scenario order !!]\n    },\n    \"tooltip\": [\n      {\n        \"field\": \"scenario_name\",\n        \"type\": \"nominal\",\n        \"title\": \"Scenario\"\n      },\n      {\n        \"field\": \"clock\",\n        \"type\": \"nominal\",\n        \"title\": \"Time\"\n      },\n      {\n        \"field\": \"share\",\n        \"type\": \"quantitative\",\n        \"title\": \"In shadow (%)\",\n        \"format\": \".0f\"\n      }\n    ]\n  }\n}\n",
+        "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v5.json\",\n  \"data\": {\n    \"name\": \"[!! inputs !!]\"\n  },\n  \"mark\": {\n    \"type\": \"line\",\n    \"point\": true\n  },\n  \"encoding\": {\n    \"x\": {\n      \"field\": \"time\",\n      \"type\": \"temporal\",\n      \"scale\": {\n        \"type\": \"utc\"\n      },\n      \"axis\": {\n        \"format\": \"%-I %p\",\n        \"tickCount\": {\n          \"interval\": \"hour\",\n          \"step\": 1\n        }\n      },\n      \"title\": \"Time (New York)\"\n    },\n    \"y\": {\n      \"field\": \"share\",\n      \"type\": \"quantitative\",\n      \"scale\": {\n        \"domain\": [\n          0,\n          100\n        ]\n      },\n      \"title\": \"Block 1259's open ground in shadow (%)\"\n    },\n    \"color\": {\n      \"field\": \"scenario_name\",\n      \"type\": \"nominal\",\n      \"title\": \"Scenario\",\n      \"scale\": [!! scenario colors !!],\n      \"sort\": [!! scenario order !!],\n      \"legend\": {\n        \"orient\": \"bottom\",\n        \"direction\": \"vertical\"\n      }\n    },\n    \"strokeWidth\": {\n      \"field\": \"scenario_name\",\n      \"type\": \"nominal\",\n      \"sort\": [!! scenario order !!],\n      \"scale\": {\n        \"range\": [\n          5,\n          2\n        ]\n      },\n      \"legend\": null\n    },\n    \"size\": {\n      \"field\": \"scenario_name\",\n      \"type\": \"nominal\",\n      \"sort\": [!! scenario order !!],\n      \"scale\": {\n        \"range\": [\n          60,\n          15\n        ]\n      },\n      \"legend\": null\n    },\n    \"tooltip\": [\n      {\n        \"field\": \"scenario_name\",\n        \"type\": \"nominal\",\n        \"title\": \"Scenario\"\n      },\n      {\n        \"field\": \"clock\",\n        \"type\": \"nominal\",\n        \"title\": \"Time\"\n      },\n      {\n        \"field\": \"share\",\n        \"type\": \"quantitative\",\n        \"title\": \"In shadow (%)\",\n        \"format\": \".0f\"\n      }\n    ]\n  }\n}\n",
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "Plot the share of Block 1259's open ground in shadow through the day, a line per scenario.",
@@ -489,10 +489,10 @@
         "width": 980,
         "height": 500,
         "dashboardPinned": true,
-        "dashboardX": 610,
+        "dashboardX": 860,
         "dashboardY": 390,
-        "dashboardWidth": 670,
-        "dashboardHeight": 330
+        "dashboardWidth": 420,
+        "dashboardHeight": 380
       }
     ],
     "edges": [
