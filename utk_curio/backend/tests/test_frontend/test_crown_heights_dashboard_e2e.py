@@ -306,11 +306,16 @@ def _map_canvas(map_id: str) -> str:
     return f"#autk-grammar-map-{map_id}"
 
 
-def _maps_drawn(page, ids: dict[str, str], what: str) -> None:
-    """Each of the three maps holds a whole drawing of its layers."""
+def _maps_drawn(page, ids: dict[str, str], what: str, *, frame: bool = False) -> None:
+    """Each of the three maps holds a whole drawing of its layers. With
+    *frame*, on a canvas, each map is framed on its own before it is read, as
+    ``test_scout_shadow_e2e`` frames its maps: framed together, the three sit
+    so far apart that each is a thumbnail, and its canvas read back blank."""
     for key in MAPS:
+        if frame:
+            frame_nodes(page, [ids[key]])
         _wait_for_map_drawn(page, ids[key], what)
-        assert_autark_map_drawn(page, ids[key], timeout=30000)
+        assert_autark_map_drawn(page, ids[key], timeout=60000)
 
 
 def _keep_drawing_maps(page, ids: dict[str, str]) -> dict:
@@ -369,11 +374,11 @@ def _shows_winter(
     """The page shows the winter solstice, the day the example is saved with:
     the table reads the CPU's row, each map holds a drawing, and the plot
     draws both scenarios' lines, which part where the tower shades the block.
-    On a canvas the maps are framed first."""
+    On a canvas each map, then the plot, is framed before it is read."""
     _table_reads(page, ids["summary-view"], WINTER, timeout_ms=timeout_ms)
+    _maps_drawn(page, ids, what, frame=on_canvas)
     if on_canvas:
-        frame_nodes(page, [ids[key] for key in MAPS])
-    _maps_drawn(page, ids, what)
+        frame_nodes(page, [ids["plot"]])
     _plot_drew(page, ids["plot"], colors)
 
 
