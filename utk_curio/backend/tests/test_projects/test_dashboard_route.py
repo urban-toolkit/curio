@@ -183,36 +183,63 @@ def test_only_what_a_tile_reads_is_embedded(client, user_and_token, tmp_curio, m
     assert set(body["outputs"]) == {"py.parquet"}
 
 
-def test_a_tables_columns_reach_the_page_in_the_order_its_node_wrote_them(
-    client, user_and_token, tmp_curio, monkeypatch
-):
-    # A shared dashboard's table showed its columns alphabetically: the route
-    # answered through jsonify, which sorts every key, the columns of each
-    # embedded table among them. The page reads the columns in the order the
-    # JSON lists them.
-    _, token = user_and_token
+#: A frame's columns in its own order, which its JSON objects lose.
+FRAME_COLUMNS = ["Day", "From", "To", "Time counted", "Added"]
+
+
+def _embedded(client, token, monkeypatch, envelope):
+    """What the page receives of *envelope*, saved for the pinned chart."""
     pid = _create(client, token)
-    columns = ["Day", "From", "To", "Time counted", "Added"]
-
-    def reader(_saved_path_of):
-        return lambda filename: {"dataType": "dataframe", "data": {c: [c] for c in columns}, "schema": {}}
-
-    monkeypatch.setattr(services, "_dashboard_envelope_reader", reader)
+    monkeypatch.setattr(services, "_dashboard_envelope_reader", lambda _saved_path_of: lambda filename: envelope)
     monkeypatch.setattr(
         services,
         "load_shared_project",
         lambda project_id: {
             "project": type("D", (), {"name": "Dashboard"})(),
             "spec": _spec_with_pinned_chart(),
-            "outputs": [{"node_id": "py", "filename": "py.parquet", "data_type": "dataframe"}],
+            "outputs": [{"node_id": "py", "filename": "py.parquet", "data_type": envelope["dataType"]}],
         },
     )
-
     resp = client.get(f"/api/projects/{pid}/dashboard")
-
     assert resp.status_code == 200
-    body = json.loads(resp.get_data(as_text=True))
-    assert list(body["outputs"]["py.parquet"]["data"]) == columns
+    return json.loads(resp.get_data(as_text=True))["outputs"]["py.parquet"]
+
+
+def test_a_tables_columns_reach_the_page_in_the_frames_order(client, user_and_token, tmp_curio, monkeypatch):
+    # #1166: a shared dashboard's table showed its columns alphabetically. The
+    # sandbox answers through jsonify, which sorts the keys of a dataframe's
+    # columns, and the page lists a table's columns in the order its JSON
+    # gives them. The envelope's own `columns` list keeps the frame's order.
+    _, token = user_and_token
+    envelope = {
+        "dataType": "dataframe",
+        "data": {name: [name] for name in sorted(FRAME_COLUMNS)},
+        "columns": FRAME_COLUMNS,
+        "schema": {},
+    }
+
+    embedded = _embedded(client, token, monkeypatch, envelope)
+
+    assert list(embedded["data"]) == FRAME_COLUMNS
+
+
+def test_a_features_properties_reach_the_page_in_the_frames_order(client, user_and_token, tmp_curio, monkeypatch):
+    _, token = user_and_token
+    feature = {
+        "type": "Feature",
+        "properties": {name: name for name in sorted(FRAME_COLUMNS)},
+        "geometry": {"type": "Point", "coordinates": [0, 0]},
+    }
+    envelope = {
+        "dataType": "geodataframe",
+        "data": {"type": "FeatureCollection", "features": [feature]},
+        "columns": [*FRAME_COLUMNS, "geometry"],
+        "schema": {},
+    }
+
+    embedded = _embedded(client, token, monkeypatch, envelope)
+
+    assert list(embedded["data"]["features"][0]["properties"]) == FRAME_COLUMNS
 
 
 # ---------------------------------------------------------------------------
