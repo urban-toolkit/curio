@@ -72,6 +72,29 @@ _DROP_FILE_JS = r"""({ selector, name, text, type }) => {
 }"""
 
 
+# Whether the node *nodeId*'s editor holds *code*: what its Monaco model says,
+# as read_node_code reads it.
+_EDITOR_HOLDS_JS = r"""({ nodeId, code }) => {
+    const nodeEl = document.querySelector(`.react-flow__node[data-id="${nodeId}"]`);
+    const editorEl = nodeEl && nodeEl.querySelector(".monaco-editor");
+    if (!editorEl) return false;
+    const editors = (window.monaco && window.monaco.editor.getEditors()) || [];
+    const match = editors.find((e) => editorEl.contains(e.getDomNode()));
+    return !!match && match.getValue() === code;
+}"""
+
+
+def _opens_with_the_starter(page, node_id: str) -> None:
+    """The node's editor holds the starter, which reaches a fresh node from the
+    starters the canvas loaded, so it may come a moment after the node."""
+    try:
+        page.wait_for_function(_EDITOR_HOLDS_JS, arg={"nodeId": node_id, "code": STARTER}, timeout=30000)
+    except Exception as exc:
+        raise AssertionError(
+            f"the node's code is not Data Loading's starter: {read_node_code(page, node_id)!r}"
+        ) from exc
+
+
 def _enter(page, base: str, server: str, name: str) -> dict:
     page.emulate_media(reduced_motion="reduce")
     entered = stub_login_and_enter_workflow(
@@ -130,7 +153,7 @@ def test_a_fresh_data_loading_node_shows_its_data_widget_above_its_starter(
     # The widget sits above the code, in the code's own pane.
     column = node_locator(page, loader).locator("[data-controls-with-code]")
     expect(column.locator("[data-widget-controls]")).to_have_count(1)
-    assert read_node_code(page, loader) == STARTER
+    _opens_with_the_starter(page, loader)
     save_node_closeup(page, STEM, loader, test_name=f"{STEM}_fresh_node")
 
 
@@ -141,11 +164,14 @@ def test_a_csv_dropped_on_the_node_is_imported_and_loaded(
     _enter(page, app_frontend.base_url, current_server, "Data Loading drop")
     loader = drag_builtin_to_canvas(page, "#tile-data-loading", at=(170, 200))
     _data_widget(page, loader).wait_for(state="visible", timeout=30000)
+    # A drop sets the widget the code reads: the starter has to be there.
+    _opens_with_the_starter(page, loader)
 
     _drop_file(page, f'.react-flow__node[data-id="{loader}"] [data-dataset-drop]', "trees.csv", TREES)
 
     _holds(page, loader, "Trees")
-    assert read_node_code(page, loader) == STARTER
+    # The code stays the starter: the widget is what changed.
+    _opens_with_the_starter(page, loader)
     save_node_closeup(page, STEM, loader, test_name=f"{STEM}_after_a_drop")
     _rows_reach_the_next_node(page, loader, 3)
 
@@ -158,6 +184,7 @@ def test_choose_file_loads_the_file_picked_in_its_dialog(
     loader = drag_builtin_to_canvas(page, "#tile-data-loading", at=(170, 200))
     widget = _data_widget(page, loader)
     widget.wait_for(state="visible", timeout=30000)
+    _opens_with_the_starter(page, loader)
 
     with page.expect_file_chooser(timeout=15000) as chooser:
         widget.get_by_text("Choose file", exact=True).click()
@@ -181,7 +208,7 @@ def test_a_file_dropped_on_the_empty_canvas_makes_a_data_loading_node(
     )
     [loader] = [node["id"] for node in canvas_nodes(page) if node["id"] not in before]
     _holds(page, loader, "Trees")
-    assert read_node_code(page, loader) == STARTER
+    _opens_with_the_starter(page, loader)
     _rows_reach_the_next_node(page, loader, 3)
 
 
