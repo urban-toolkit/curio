@@ -2,7 +2,9 @@
  * A Data Loading node takes inputs: the canvas draws an input circle on it,
  * and an edge from a node that returns a value, such as the area several
  * loaders read, lands there, through the REAL FlowProvider (onConnect in
- * providers/flow/useConnect.ts, ConnectionValidator.ts).
+ * providers/flow/useConnect.ts, ConnectionValidator.ts). So do the readers of
+ * a shared value in the Scout packages: an Accumulated Shadow node takes a
+ * season on its second circle, and a Raster Calculator a region on its third.
  *
  * The templates are registered as the app registers them at boot: the shipped
  * manifests, as GET /api/packages lists them, through registerPackageTemplates
@@ -83,6 +85,9 @@ import { clearPackageNodes, tryGetNodeDescriptor } from '../../registry/nodeRegi
 
 const LOADER = 'curio.builtin/data-loading@1';
 const PYTHON = 'curio.builtin/computation-analysis@1';
+const RASTERIZE = 'curio.scout/rasterize-buildings@1';
+const CALCULATOR = 'curio.scout/raster-calculator@1';
+const SHADOW = 'model.scout.deep-umbra/accumulated-shadow@1';
 
 const PACKAGES_ROOT = path.resolve(__dirname, '../../../../../../packages');
 
@@ -134,7 +139,11 @@ function listedPackage(dirName: string): any {
 }
 
 beforeAll(() => {
-  registerPackageTemplates([listedPackage('curio.builtin@1')]);
+  registerPackageTemplates([
+    listedPackage('curio.builtin@1'),
+    listedPackage('curio.scout@1'),
+    listedPackage('model.scout.deep-umbra@1'),
+  ]);
 });
 
 afterAll(() => {
@@ -254,5 +263,56 @@ describe('a Data Loading node takes inputs', () => {
 
     expect(drawn()).toEqual([['load', 'use', 'in']]);
     expect(mockShowToast).toHaveBeenCalledWith('Cycles are not allowed in the dataflow', 'warning');
+  });
+});
+
+describe('the readers of a shared value take it on a circle of their own', () => {
+  test("an Accumulated Shadow node takes a season on its second circle, and no third input", async () => {
+    const shadow = tryGetNodeDescriptor(SHADOW as any);
+    expect(shadow!.inputPorts).toEqual([{ types: ['RASTER', 'VALUE'], cardinality: '[1,2]' }]);
+    await renderFlow();
+    await addNodes(makeNode('heights', RASTERIZE), makeNode('season', PYTHON), makeNode('shadow', SHADOW));
+    await draw('heights', 'shadow');
+
+    // Dropped on the taken circle 0: the season takes the free circle below it.
+    await draw('season', 'shadow');
+
+    expect(drawn()).toEqual([['heights', 'shadow', 'in'], ['season', 'shadow', 'in_1']]);
+    expect(mockShowToast).not.toHaveBeenCalled();
+
+    await addNodes(makeNode('more', PYTHON));
+    await draw('more', 'shadow');
+    expect(drawn()).toHaveLength(2);
+    expect(mockShowToast).toHaveBeenCalledWith('This node takes at most 2 inputs.', 'warning');
+  });
+
+  test("a scenario drop's copy of the season, a Data Loading node, feeds a shadow node's second circle", async () => {
+    await renderFlow();
+    await addNodes(makeNode('heights', RASTERIZE), makeNode('season-copy', LOADER), makeNode('shadow', SHADOW));
+    await draw('heights', 'shadow');
+
+    await draw('season-copy', 'shadow');
+
+    expect(drawn()).toEqual([['heights', 'shadow', 'in'], ['season-copy', 'shadow', 'in_1']]);
+    expect(mockShowToast).not.toHaveBeenCalled();
+  });
+
+  test('a Raster Calculator takes a region on its third circle, after two layers', async () => {
+    const calculator = tryGetNodeDescriptor(CALCULATOR as any);
+    expect(calculator!.inputPorts).toEqual([{ types: ['RASTER', 'GEODATAFRAME', 'JSON'], cardinality: '[1,3]' }]);
+    await renderFlow();
+    await addNodes(
+      makeNode('tracts', LOADER), makeNode('water', LOADER), makeNode('region', PYTHON),
+      makeNode('average', CALCULATOR),
+    );
+    await draw('tracts', 'average');
+    await draw('water', 'average', 'in_1');
+
+    await draw('region', 'average', 'in_2');
+
+    expect(drawn()).toEqual([
+      ['tracts', 'average', 'in'], ['water', 'average', 'in_1'], ['region', 'average', 'in_2'],
+    ]);
+    expect(mockShowToast).not.toHaveBeenCalled();
   });
 });

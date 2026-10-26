@@ -761,7 +761,9 @@ def test_the_package_is_a_model_package_whose_code_and_weights_have_their_own_li
 # ---------------------------------------------------------------------------
 
 def test_the_template_reads_the_season_and_loads_the_model_by_its_id():
-    """A raster in, a raster out; the season is SCOUT's three choices, drawn as
+    """A raster in, a raster out, and a second circle for a value, such as a
+    season a node wired into it returns, which a node's code reads as input_1
+    in place of its widget; the season is SCOUT's three choices, drawn as
     radio buttons; the cell is three lines: the module's call, the model named
     by its id in a literal ``curio_load_model`` call the backend resolves before
     the run, and the call on the input with the Season widget."""
@@ -769,7 +771,7 @@ def test_the_template_reads_the_season_and_loads_the_model_by_its_id():
 
     assert _source() == CELL
     template = _template()
-    assert template["inputPorts"] == [{"cardinality": "1", "types": ["RASTER"]}]
+    assert template["inputPorts"] == [{"cardinality": "[1,2]", "types": ["RASTER", "VALUE"]}]
     assert template["outputPorts"] == [{"cardinality": "1", "types": ["RASTER"]}]
     assert template["hasWidgets"] is True
     assert template["widgets"] == [{
