@@ -51,6 +51,7 @@ from playwright.sync_api import TimeoutError as PlaywrightTimeoutError, expect
 
 from .utils import (
     VIEWPORT_SETTLE_WAIT_MS,
+    _wait_for_no_node_running,
     activate_header_icon,
     allow_guest_login_env,
     api_json,
@@ -1216,6 +1217,103 @@ def test_a_pinned_charts_own_slider_draws_it_again_with_no_run(
 
     after = _project(current_server, session["token"], project_id)
     assert after["spec"] == before["spec"], "a visitor's value changed the owner's dataflow"
+
+
+# ---------------------------------------------------------------------------
+# A chart laid out for the axis labels it draws
+# ---------------------------------------------------------------------------
+
+# Before the app's scripts: every Vega view the page builds, kept where a test
+# finds it. useVega.ts sets the app's vega module on the page as
+# ``window.__curio_vega`` when it loads, which this traps.
+_KEEP_VEGA_VIEWS_JS = """(() => {
+    window.__curioTestVegaViews = [];
+    let vega;
+    Object.defineProperty(window, '__curio_vega', {
+        configurable: true,
+        get() { return vega; },
+        set(value) {
+            vega = value;
+            const initialize = value.View.prototype.initialize;
+            value.View.prototype.initialize = function (...args) {
+                window.__curioTestVegaViews.push(this);
+                return initialize.apply(this, args);
+            };
+        },
+    });
+})();"""
+
+# The chart's view as the page drew it, then after one more of Vega's own fit
+# passes, which lays the plot out for the axis labels the view holds now. A
+# layout that fits the labels it draws does not move. Null when the chart holds
+# no view on the page.
+_FIT_AGAIN_JS = """async (id) => {
+    const mount = document.getElementById('vega' + id);
+    const live = (window.__curioTestVegaViews || []).filter((view) => view.container() === mount
+        && view._renderer && view._renderer.canvas() && view._renderer.canvas().isConnected);
+    const view = live[live.length - 1];
+    if (!view) return null;
+    const layout = () => ({ width: view.width(), height: view.height(), origin: view.origin() });
+    const drawn = layout();
+    await view.resize().runAsync();
+    return { views: live.length, drawn, again: layout() };
+}"""
+
+
+def _assert_chart_fits_its_labels(page, when: str) -> None:
+    """The chart's plot is laid out for the axis labels it draws: one more fit
+    pass of Vega's leaves it where it is."""
+    fit = page.evaluate(_FIT_AGAIN_JS, CHART)
+    assert fit, f"{when}: the chart holds no Vega view on the page, so its layout cannot be read"
+    drawn, again = fit["drawn"], fit["again"]
+    assert drawn == again, (
+        f"{when}: the chart is laid out for other axis labels than the ones it draws. One more "
+        f"of Vega's fit passes moves its plot from x {drawn['origin'][0]}, {drawn['width']} px wide, "
+        f"to x {again['origin'][0]}, {again['width']} px wide (drawn {drawn}, fitted again {again})"
+    )
+
+
+def test_a_tile_chart_drawn_from_saved_rows_is_laid_out_for_the_labels_it_draws(
+    app_frontend: "FrontendPage", current_server, page, browser, monkeypatch,
+):
+    """A chart the page draws fresh fills its tile, its plot laid out for the
+    axis labels it shows.
+
+    Vega fits a chart's plot to its tile in one pass, from the axis labels it
+    makes at the tile's full height, then draws the labels the plot's own,
+    shorter height makes. The y axis asks for about a tick per 40 px, so for
+    these five rows (up to 9) the full tile gets a tick every 0.5, "0.0" to
+    "9.0", and the plot one every 1, "0" to "9": the plot kept the room of the
+    wider labels, an empty band beside the narrower ones. A chart that gets
+    new rows in place starts from its plot's height and fits. So after a pick
+    on the producer's tile the chart ended in one layout or the other, by
+    which of its two redraws came last, and the code node's changed frame read
+    0.83% against its baseline about every other run.
+
+    The producer is saved at five rows, so the visitor's page draws the chart
+    fresh from them every time.
+    """
+    require_project_page()
+    require_user_auth()
+    spec = _own_rows_spec()
+    spec["dataflow"]["nodes"][0]["metadata"]["widgets"][0]["default"] = "five"
+    session = _pinned_and_saved(page, app_frontend, current_server, prefix="dash_fit", spec=spec)
+    project_id = session["project"]["id"]
+    page.goto("about:blank")
+    hosted = _serve_hosted(app_frontend, current_server, monkeypatch)
+
+    visitor = _Visitor(browser, current_server)
+    visitor.page.add_init_script(_KEEP_VEGA_VIEWS_JS)
+    try:
+        visitor.opens(hosted, project_id)
+        visitor.waits_for("the saved chart", lambda: _chart_drew(visitor.page))
+        _wait_for_no_node_running(visitor.page)
+        assert _runs_started(visitor.asked) == [], (
+            "opening the dashboard started a run, though every tile has its saved output" + visitor.story()
+        )
+        _assert_chart_fits_its_labels(visitor.page, "the chart of the five saved rows")
+    finally:
+        visitor.close()
 
 
 # ---------------------------------------------------------------------------
