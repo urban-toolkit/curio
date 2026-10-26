@@ -12,6 +12,9 @@
  * The other cases pin the failure report itself. A run that fails marks the
  * node errored (so the nodes it feeds can tell) and tells the runner it failed
  * (so the runner stops below it). Two branches did only part of that.
+ *
+ * A run that succeeds hands on the run key it was sent with (code, widget
+ * values, selection ids): a value changed while it ran leaves the node stale.
  */
 import React from "react";
 import { render, act } from "@testing-library/react";
@@ -83,6 +86,7 @@ jest.mock("../../../hook/usePackageBackendRun", () => ({
 }));
 
 import CodeEditor from "../../../components/editing/CodeEditor";
+import { runKeyWithShared } from "../../../utils/references/sharedParameters";
 
 const PYTHON = "curio.builtin/computation-analysis";
 const CODE = "sp = input_0['sp_units']\nreturn sp";
@@ -96,19 +100,25 @@ function upstreamFailed() {
     };
 }
 
-/** Mount, then deliver the resolved code the way a play does. */
-function play({ replacedCode = CODE, result }: { replacedCode?: string; result?: any } = {}) {
+/**
+ * Mount, then deliver the resolved code the way a play does. With no *result*,
+ * the sandbox answers when the test calls `answer`.
+ */
+function play(
+    { replacedCode = CODE, result, selections }: { replacedCode?: string; result?: any; selections?: any } = {},
+) {
     const setOutputCallback = jest.fn();
     const interpretCode = jest.fn((...args: any[]) => {
         if (result) args[4](result);
     });
-    const data = {
+    const data: any = {
         nodeId: "n1",
         nodeType: PYTHON,
         input: "",
         inputTypes: [],
         outputCallback: jest.fn(),
         pythonInterpreter: { interpretCode },
+        ...(selections ? { selections } : {}),
     };
     const props = (dirty: boolean) => ({
         setOutputCallback,
@@ -126,7 +136,8 @@ function play({ replacedCode = CODE, result }: { replacedCode?: string; result?:
     act(() => {
         view.rerender(<CodeEditor {...props(true)} />);
     });
-    return { setOutputCallback, interpretCode };
+    const answer = (reply: any) => act(() => { interpretCode.mock.calls[0][4](reply); });
+    return { setOutputCallback, interpretCode, data, answer };
 }
 
 beforeEach(() => {
@@ -210,5 +221,42 @@ describe("every failed run is reported the same way", () => {
         expect(setOutputCallback).toHaveBeenCalledWith({ code: "error", content: "HandlerError: boom" });
         expect(mockMarkNodeErrored).toHaveBeenCalledWith("n1");
         expect(mockSignalNodeExecDone).toHaveBeenCalledWith("n1", { failed: true });
+    });
+});
+
+describe("a run's result carries the key it was sent with", () => {
+    const picked = (ids: number[]) => [{ name: "picked", node: "scatter", column: "osm_id", ids }];
+    const SELECTED = picked([1001, 1002]);
+
+    test("a selection changed while the sandbox ran is not what the result is stamped with", () => {
+        // A chart drawn anew empties its tag; a run sent before that came
+        // back with the rows of the ids it was sent with.
+        const { setOutputCallback, interpretCode, data, answer } = play({ selections: SELECTED });
+        expect(interpretCode).toHaveBeenCalledTimes(1);
+        const sentCode = interpretCode.mock.calls[0][0];
+
+        data.selections = picked([]);
+        answer({ stdout: [], stderr: "", output: { path: "art-n1", dataType: "dataframe" } });
+
+        expect(setOutputCallback).toHaveBeenLastCalledWith({
+            code: "success",
+            content: "Saved to file: art-n1",
+            runKey: runKeyWithShared(sentCode, undefined, [], SELECTED),
+        });
+    });
+
+    test("so does a package backend's result", async () => {
+        mockBackendRun = jest.fn().mockResolvedValue({ ok: true, content: "done" });
+        const { setOutputCallback, data } = play({ selections: SELECTED });
+        data.selections = picked([]);
+        await act(async () => {
+            await Promise.resolve();
+            await Promise.resolve();
+        });
+        expect(setOutputCallback).toHaveBeenLastCalledWith({
+            code: "success",
+            content: "done",
+            runKey: runKeyWithShared(CODE, undefined, [], SELECTED),
+        });
     });
 });
