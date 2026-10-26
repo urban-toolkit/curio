@@ -359,6 +359,53 @@ def assert_header_shows_save(page) -> None:
     )
 
 
+# Node *nodeId*'s element on the canvas, leaving out any dialog's own flow.
+_CANVAS_NODE_JS = """(nodeId) => Array.from(document.querySelectorAll('.react-flow__node'))
+    .filter((el) => !el.closest('[data-curio-modal-shell="true"]'))
+    .find((el) => el.getAttribute('data-id') === nodeId)"""
+
+# The centre of node *nodeId* in flow units, or null when React Flow does not
+# hold the node: its position in React Flow's store plus half its box as the
+# page lays it out, ``offsetWidth`` and ``offsetHeight``, which is how React
+# Flow measures a node. While the canvas draws no box for it, the size React
+# Flow holds, then the default box, stand in.
+_NODE_CENTRE_JS = """(nodeId) => {
+    const rf = window.__curio_reactFlow;
+    const node = rf ? rf.getNodes().find((n) => n.id === nodeId) : null;
+    if (!node) return null;
+    const box = (""" + _CANVAS_NODE_JS + """)(nodeId);
+    const laidOut = !!box && box.offsetWidth > 0 && box.offsetHeight > 0;
+    const w = laidOut ? box.offsetWidth : (node.width || node.measured?.width || 525);
+    const h = laidOut ? box.offsetHeight : (node.height || node.measured?.height || 350);
+    return { x: node.position.x + w / 2, y: node.position.y + h / 2 };
+}"""
+
+# A pan of *duration* ms that centres the canvas on flow point (*x*, *y*).
+_PAN_TO_JS = """({ x, y, zoom, duration }) => {
+    const rf = window.__curio_reactFlow;
+    if (rf) rf.setCenter(x, y, { zoom, duration });
+}"""
+
+# The same view set again with no duration, unless React Flow already holds it.
+# ``setCenter`` puts the point in the middle of the pane it measured, the flow's
+# ``.react-flow__renderer``.
+_LAND_THE_PAN_JS = """({ nodeId, x, y, zoom }) => {
+    const rf = window.__curio_reactFlow;
+    if (!rf) return;
+    const box = (""" + _CANVAS_NODE_JS + """)(nodeId);
+    const flow = box ? box.closest('.react-flow') : null;
+    const pane = flow ? flow.querySelector('.react-flow__renderer') : null;
+    if (pane) {
+        const at = rf.getViewport();
+        const there = Math.abs(at.zoom - zoom) < 1e-6
+            && Math.abs(at.x - (pane.offsetWidth / 2 - x * zoom)) < 0.5
+            && Math.abs(at.y - (pane.offsetHeight / 2 - y * zoom)) < 0.5;
+        if (there) return;
+    }
+    rf.setCenter(x, y, { zoom, duration: 0 });
+}"""
+
+
 def frame_node(page, node_id: str, *, zoom: float = 0.9,
                settle_ms: float = 1000) -> None:
     """Pan and zoom the canvas so one node fills the frame.
@@ -375,23 +422,29 @@ def frame_node(page, node_id: str, *, zoom: float = 0.9,
 
     ``window.__curio_reactFlow`` is the instance ``MainCanvas.tsx`` exposes for
     exactly this; ``setCenter`` takes flow coordinates, hence the node's own
-    position plus half its measured size.
+    position plus half its size.
+
+    The size is the node's box as the page lays it out, which is what React
+    Flow measures. React Flow's store holds the size it measured last, and it
+    measures a node again only in its ResizeObserver callback, which the
+    browser runs only when it draws a frame. The stacked-views scene narrows
+    its chart node and then frames it; on CI the store still held the old size
+    more than 15 s later (#1167), and a centre on that size puts the node above
+    the view.
+
+    The pan is a d3 transition, which moves only on animation frames, and d3
+    stops its clock while no frame comes, so the first frame after a stretch
+    without any can draw the pan partway. So once the pan has had its time, a
+    view React Flow does not hold yet is set again with no duration, which
+    lands whole on the next frame the page draws.
     """
-    page.evaluate(
-        """({ nodeId, zoom }) => {
-            const rf = window.__curio_reactFlow;
-            if (!rf) return;
-            const node = rf.getNodes().find((n) => n.id === nodeId);
-            if (!node) return;
-            const w = node.width || node.measured?.width || 525;
-            const h = node.height || node.measured?.height || 350;
-            rf.setCenter(node.position.x + w / 2, node.position.y + h / 2, {
-                zoom, duration: 700,
-            });
-        }""",
-        {"nodeId": node_id, "zoom": zoom},
-    )
+    centre = page.evaluate(_NODE_CENTRE_JS, node_id)
+    if centre is None:
+        return
+    view = {"nodeId": node_id, "x": centre["x"], "y": centre["y"], "zoom": zoom}
+    page.evaluate(_PAN_TO_JS, {**view, "duration": 700})
     page.wait_for_timeout(settle_ms)
+    page.evaluate(_LAND_THE_PAN_JS, view)
 
 
 def drag_to_canvas(page, source, *, at: tuple[float, float] | None = None,
