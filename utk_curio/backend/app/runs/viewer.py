@@ -28,9 +28,10 @@ a run sweeps at its end, and at the first start after a restart.
 
 A step only a browser runs (an Autark compute node, a Spatial Join) is the
 page's. The run ends asking for it (``needs_canvas``), as a canvas's run on
-the server does; the page runs the node and sends what it made
-(:func:`keep_tab_result`), and its next start, with the same token, runs the
-steps below on that (``browserOutputs``). The server cannot check what a
+the server does, or ends ``succeeded`` when only a tile reads it; either way
+the page runs the node and sends what it made (:func:`keep_tab_result`), and
+its next start, with the same token, runs the steps below on that
+(``browserOutputs``), or nothing, when the step was a tile's own. The server cannot check what a
 browser sends, so that output and every one made from it are kept for that
 page alone, for ``kept.TAB_OWN_HOURS``.
 
@@ -343,9 +344,10 @@ def start_viewer_run(
         parse_workflow_dict(overlaid, templates=templates, labels=labels),
     )
     saved_by_node = {ref.node_id: ref for ref in saved}
+    # A tile's own step that the page made and sent is done: the page shows it.
     targets = sorted(
         node_id for node_id in dashboard_source_node_ids(overlaid, packages)
-        if node_id in reached or node_id not in saved_by_node
+        if (node_id in reached or node_id not in saved_by_node) and node_id not in tab
     )
     if not targets:
         return {"runId": None, "token": None, "joined": False, "nodeIds": []}

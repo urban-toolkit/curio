@@ -12,8 +12,9 @@
  *   run, shows its saved output again;
  * - Save layout gets the widgets as the page opened with them, never a tried value;
  * - a step only a browser runs is the page's: it runs the node, sends what it
- *   made, and starts the run again on that with the same values and token; a
- *   node it cannot run leaves the nodes below saying so;
+ *   made, and starts the run again on that with the same values and token,
+ *   also when only a tile reads it and the run ends succeeded; a node it
+ *   cannot run leaves the nodes below saying so;
  * - several such steps, as two scenarios of two GPU steps leave four, are
  *   played together, each one's result is sent, and the run starts again once,
  *   after the last; one the page cannot run leaves the nodes below naming it.
@@ -425,6 +426,40 @@ describe("a step only a browser runs", () => {
 
         expect(hook.result.current.stopped).toBeNull();
         expect(hook.result.current.active).toBe(true);
+    });
+
+    test("a step only a tile reads is played though the run ends succeeded, and its start runs nothing more", async () => {
+        const box: { outputs: any[] } = { outputs: [] };
+        const playNodes = jest.fn((_nodeIds: string[], hooks: any) => {
+            box.outputs.push({ nodeId: "gpu", output: { path: "page-1", dataType: "dict" } });
+            hooks.onNodeDone("gpu", { failed: false });
+            hooks.onFinish();
+            return true;
+        });
+        const setup = setUp({ playNodes });
+        box.outputs = setup.outputsRef.current;
+        mockStart.mockResolvedValueOnce({ runId: "r1", token: "t1", joined: false, nodeIds: ["grid", "gpu"] });
+        await act(async () => { setup.hook.result.current.opened("dash-1"); });
+        setup.nodes[0].data.widgets = [{ ...period, value: "Month" }] as any;
+        await act(async () => { await setup.hook.result.current.start(); });
+        const run = followed();
+        run.emit({ kind: "step_finished", nodeId: "grid", status: "ok", output: { path: "art-grid", dataType: "str" } });
+        run.emit({ kind: "step_finished", nodeId: "gpu", status: "browser" });
+        // The page's result is the tile's: the server has nothing more to run.
+        mockStart.mockResolvedValueOnce({ runId: null, token: null, joined: false, nodeIds: [] });
+
+        // Nothing on the server waits on the step, so the run ends succeeded.
+        await act(async () => {
+            run.emit({ kind: "run_finished", status: "succeeded", ok: 1, failed: 0, skipped: 0, waiting: 0 });
+        });
+        await waitFor(() => expect(mockStart).toHaveBeenCalledTimes(2));
+
+        expect(playNodes).toHaveBeenCalledWith(["gpu"], expect.anything());
+        expect(mockStart).toHaveBeenLastCalledWith(
+            "dash-1", { param: { period: "Month" } }, { token: "t1", browserOutputs: { gpu: "page-1" } },
+        );
+        await waitFor(() => expect(setup.hook.result.current.active).toBe(false));
+        expect(setup.hook.result.current.stopped).toBeNull();
     });
 
     test("a run that cannot go on from the page's step leaves the tiles saying why, not computing", async () => {

@@ -1291,6 +1291,61 @@ class TestFourStepsLeftToThePage:
         assert [node for node, _body in sandbox.runs] == ["grid", "after-a"]
 
 
+def _tile_on_gpu_nodes():
+    """Grid, then the GPU step the page runs, which a pinned chart reads
+    directly: nothing on the server comes after it."""
+    return [
+        {"id": "param", "type": PARAMETER, "content": "", "dashboardPinned": True,
+         "metadata": {"widgets": [_period()]}},
+        {"id": "grid", "type": CODE, "content": "# node grid\nreturn [!! @period !!]"},
+        {"id": "gpu", "type": AUTARK, "content": COMPUTE},
+        {"id": "chart", "type": CHART, "content": "{}", "dashboardPinned": True},
+    ]
+
+
+TILE_ON_GPU_EDGES = [
+    {"id": "grid-gpu", "source": "grid", "target": "gpu"},
+    {"id": "gpu-chart", "source": "gpu", "target": "chart"},
+]
+
+
+class TestATilesOwnStepLeftToThePage:
+    """A tile reads a step only a browser runs directly: the run leaves the
+    step to the page with nothing on the server after it, so it ends
+    ``succeeded``; the start that names what the page made of it runs
+    nothing more, and the tile shows the page's result."""
+
+    @pytest.fixture()
+    def tile(self, client, user_and_token, sandbox, saved):
+        from utk_curio.backend.app.projects.schemas import OutputRef
+
+        saved[:] = [OutputRef(node_id="gpu", filename="saved-gpu", data_type="dict")]
+        return _create(client, user_and_token[1], nodes=_tile_on_gpu_nodes(), edges=TILE_ON_GPU_EDGES)
+
+    def test_the_run_leaves_the_tiles_step_to_the_page_with_nothing_after_it(self, client, tile, sandbox):
+        from utk_curio.backend.app.runs import viewer
+
+        started = _month(client, tile)
+        events = _events(client, tile, started["runId"], started["token"])
+
+        steps = {payload["nodeId"]: payload["status"] for kind, payload in events if kind == "step_finished"}
+        assert steps == {"grid": "ok", "gpu": "browser"}
+        assert events[-1][0] == "run_finished" and events[-1][1]["status"] == "succeeded"
+        assert viewer._RUNS[started["runId"]]["browserSteps"] == ["gpu"]
+
+    def test_the_start_naming_what_the_page_made_of_it_runs_nothing_more(self, client, tile, sandbox):
+        first = _month(client, tile)
+        page = _keep_step(client, tile, first["runId"], first["token"]).get_json()["output"]["path"]
+
+        resp = _on_the_page(client, tile, {"gpu": page}, first["token"])
+
+        # Planned again, the step would go back to the page, and the page
+        # would send it again, without end.
+        assert resp.status_code == 200, resp.get_data(as_text=True)
+        assert resp.get_json() == {"runId": None, "token": None, "joined": False, "nodeIds": []}
+        assert [node for node, _body in sandbox.runs] == ["grid"]
+
+
 POOL = "curio.builtin/data-pool"
 
 
