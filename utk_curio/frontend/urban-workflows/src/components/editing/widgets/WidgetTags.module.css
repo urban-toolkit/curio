@@ -322,6 +322,14 @@
 /* WidgetsEditor.css gives every label a right margin. Not a label Material UI
    draws in a widget's own control (WidgetControl): a choice's label, whose
    margins the widget theme sets, and the file button. */
+/* A tile's controls above its chart or map: their own height, at most half
+   the tile, so the output below keeps the rest. */
+.panelAboveOutput {
+  flex: none;
+  height: auto;
+  max-height: 50%;
+}
+
 .panel label:not(:global(.MuiFormControlLabel-root)):not(:global(.MuiButton-root)) {
   margin: 0;
 }
@@ -387,6 +395,14 @@
   align-items: start;
   padding: 6px 0;
   border-bottom: 1px solid var(--curio-border);
+}
+
+/* A dashboard tile's control: its label above it, with no tag and no buttons. */
+.plainRow {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-areas:
+    "label"
+    "control";
 }
 
 .row > .tag {
