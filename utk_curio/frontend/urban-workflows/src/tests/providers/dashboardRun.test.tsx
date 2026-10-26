@@ -13,12 +13,15 @@
  * - Save layout gets the widgets as the page opened with them, never a tried value;
  * - a step only a browser runs is the page's: it runs the node, sends what it
  *   made, and starts the run again on that with the same values and token; a
- *   node it cannot run leaves the nodes below saying so.
+ *   node it cannot run leaves the nodes below saying so;
+ * - several such steps, as two scenarios of two GPU steps leave four, are
+ *   played together, each one's result is sent, and the run starts again once,
+ *   after the last; one the page cannot run leaves the nodes below naming it.
  */
 import { act, renderHook, waitFor } from "@testing-library/react";
 
 import { dashboardRunRead, forgetDashboardRunFiles } from "../../services/runs/dashboardRunFiles";
-import { askedOfPage } from "../../services/runs/dashboardRunSteps";
+import { askedOfPage, keepPageResult } from "../../services/runs/dashboardRunSteps";
 import { useDashboardRun } from "../../providers/flow/useDashboardRun";
 import { dashboardValues } from "../../utils/widgets/dashboardControls";
 
@@ -437,5 +440,132 @@ describe("a step only a browser runs", () => {
 
         expect(showToast).toHaveBeenCalledWith("This run's token has expired.", "error");
         expect(hook.result.current.stopped).toBe("This run's token has expired.");
+    });
+});
+
+describe("four steps only a browser runs, two to a scenario", () => {
+    // As two scenarios of two GPU steps leave them, none below another; each
+    // scenario's step below them waits for its own two.
+    const GPU_STEPS = ["gpu-a1", "gpu-a2", "gpu-b1", "gpu-b2"];
+    const BELOW = ["after-a", "after-b"];
+    const LAYERS = { dataType: "outputs", data: [{ type: "FeatureCollection", features: [] }] };
+
+    /**
+     * A change whose run leaves the four GPU steps to the page, with the steps
+     * below them waiting. The page plays them, and the test finishes each one
+     * when it likes: *sends* as an Autark node a run asked the page for does,
+     * handing its layers to the run (toPoolOutput), and *cannotRun* as one in
+     * a browser without WebGPU does.
+     */
+    async function aRunLeavingFourGpuSteps() {
+        let hooks: any = null;
+        const playNodes = jest.fn((_nodeIds: string[], given: any) => {
+            hooks = given;
+            return true;
+        });
+        mockKeepStep.mockImplementation(async (_projectId: string, _runId: string, _token: string, nodeId: string) => ({
+            output: { path: `page-${nodeId}`, dataType: "dict" }, artifactIds: [`page-${nodeId}`],
+        }));
+        const setup = setUp({ playNodes });
+        mockStart.mockResolvedValueOnce({ runId: "r1", token: "t1", joined: false, nodeIds: ["grid", ...GPU_STEPS, ...BELOW] });
+        await act(async () => { setup.hook.result.current.opened("dash-1"); });
+        setup.nodes[0].data.widgets = [{ ...period, value: "Month" }] as any;
+        await act(async () => { await setup.hook.result.current.start(); });
+        const run = followed();
+        run.emit({ kind: "step_finished", nodeId: "grid", status: "ok", output: { path: "art-grid", dataType: "str" } });
+        for (const nodeId of GPU_STEPS) run.emit({ kind: "step_finished", nodeId, status: "browser" });
+        for (const nodeId of BELOW) {
+            run.emit({ kind: "step_finished", nodeId, status: "waiting", skipReason: "Waits for the canvas" });
+        }
+        await act(async () => {
+            run.emit({ kind: "run_finished", status: "needs_canvas", ok: 1, failed: 0, skipped: 0, waiting: BELOW.length });
+        });
+        // The page plays them a tick after the run hands them over.
+        await waitFor(() => expect(playNodes).toHaveBeenCalledTimes(1));
+
+        const sends = async (nodeId: string) => {
+            const kept = await keepPageResult(nodeId, LAYERS);
+            setup.outputsRef.current.push({ nodeId, output: kept });
+            hooks.onNodeDone(nodeId, { failed: false });
+        };
+        const cannotRun = (nodeId: string) => {
+            hooks.onNodeDone(nodeId, { failed: true, message: "WebGPU is not available in this browser." });
+        };
+        const finishPlaying = () => hooks.onFinish();
+        return { ...setup, run, sends, cannotRun, finishPlaying };
+    }
+
+    test("the page plays all four, sends each one's result, and starts the run again once, after the last", async () => {
+        const { hook, playNodes, outcomes, sends, finishPlaying } = await aRunLeavingFourGpuSteps();
+        mockStart.mockResolvedValueOnce({ runId: "r2", token: "t1", joined: false, nodeIds: BELOW });
+
+        expect(playNodes).toHaveBeenCalledWith(GPU_STEPS, expect.anything());
+        expect(GPU_STEPS.every((nodeId) => askedOfPage(nodeId))).toBe(true);
+        // They finish in any order: the run waits for the last, and the tiles below with it.
+        for (const nodeId of ["gpu-b2", "gpu-a1", "gpu-b1"]) {
+            await act(async () => { await sends(nodeId); });
+            expect(mockStart).toHaveBeenCalledTimes(1);
+            expect(hook.result.current.active).toBe(true);
+            expect(hook.result.current.stopped).toBeNull();
+        }
+        await act(async () => {
+            await sends("gpu-a2");
+            finishPlaying();
+        });
+        await waitFor(() => expect(mockFollow).toHaveBeenCalledTimes(2));
+
+        expect(mockKeepStep.mock.calls).toEqual(
+            ["gpu-b2", "gpu-a1", "gpu-b1", "gpu-a2"].map((nodeId) => ["dash-1", "r1", "t1", nodeId, LAYERS]),
+        );
+        expect(mockStart).toHaveBeenCalledTimes(2);
+        expect(mockStart).toHaveBeenLastCalledWith("dash-1", { param: { period: "Month" } }, {
+            token: "t1",
+            browserOutputs: {
+                "gpu-a1": "page-gpu-a1", "gpu-a2": "page-gpu-a2", "gpu-b1": "page-gpu-b1", "gpu-b2": "page-gpu-b2",
+            },
+        });
+        expect(GPU_STEPS.some((nodeId) => askedOfPage(nodeId))).toBe(false);
+        // Nothing reached the steps below: they wait for the next run's steps.
+        expect(outcomes.showSkipped).not.toHaveBeenCalled();
+        expect(outcomes.showResult.mock.calls.filter((call) => BELOW.includes(call[0]))).toEqual([]);
+        const next = followed();
+        expect(next).toMatchObject({ projectId: "dash-1", runId: "r2", token: "t1" });
+        expect(hook.result.current.active).toBe(true);
+
+        for (const nodeId of BELOW) {
+            next.emit({ kind: "step_finished", nodeId, status: "ok", output: { path: `art-${nodeId}`, dataType: "str" } });
+        }
+        next.emit({ kind: "run_finished", status: "succeeded", ok: BELOW.length, failed: 0, skipped: 0, waiting: 0 });
+        for (const nodeId of BELOW) {
+            expect(outcomes.showResult).toHaveBeenCalledWith(nodeId, expect.objectContaining({ kind: "result" }), { live: false });
+        }
+        expect(hook.result.current.active).toBe(false);
+        expect(mockStart).toHaveBeenCalledTimes(2);
+        expect(playNodes).toHaveBeenCalledTimes(1);
+    });
+
+    test.each<[string, string[]]>([
+        ["one of the four", ["gpu-b1"]],
+        ["all four, as in a browser without WebGPU", GPU_STEPS],
+    ])("a GPU step that cannot run here (%s) leaves the nodes below naming it, and nothing runs again", async (_case, cannot) => {
+        const { hook, outcomes, showToast, sends, cannotRun, finishPlaying } = await aRunLeavingFourGpuSteps();
+
+        await act(async () => {
+            for (const nodeId of GPU_STEPS) {
+                if (cannot.includes(nodeId)) cannotRun(nodeId);
+                else await sends(nodeId);
+            }
+            finishPlaying();
+        });
+        await waitFor(() => expect(hook.result.current.active).toBe(false));
+
+        // The first step that reported it could not run, by name.
+        const why = `"${cannot[0]}" could not run in this browser.`;
+        expect(hook.result.current.stopped).toBe(why);
+        for (const nodeId of BELOW) expect(outcomes.showSkipped).toHaveBeenCalledWith(nodeId, `No data yet: ${why}`);
+        expect(mockStart).toHaveBeenCalledTimes(1);
+        expect(mockFollow).toHaveBeenCalledTimes(1);
+        expect(showToast).not.toHaveBeenCalled();
+        expect(GPU_STEPS.some((nodeId) => askedOfPage(nodeId))).toBe(false);
     });
 });
