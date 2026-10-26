@@ -6,39 +6,46 @@ the shadow on Block 1259's open ground without and with the tower proposed at
 1550 Bedford Avenue. Its dashboard pins the node that lists the day's sun
 steps, whose Day radio is a visitor's control, the Map Editor node that adds
 the tower, a map of each scenario's shadow and one of the shade the tower
-adds, the plot of the block's shadow through the day, a line per scenario in
-its color, and the table of the day's window and each scenario's time in
-shadow. Each scenario casts its sun rays in two Autark compute steps, which
-only a browser runs: on a dashboard each visitor's own page runs the four,
-after the server has run the Python before them, once for everyone (#1117).
+adds that day, the plot of the block's shadow through the day under the day's
+window, the plot of the block's time in shadow each day of 2027, a line per
+scenario in its color on both, and the table of the shade the tower adds a
+day, month by month. Each scenario casts its sun rays in three Autark compute
+steps, which only a browser runs: two read the day, the third the year. On a
+dashboard each visitor's own page runs those a run leaves it, after the
+server has run the Python before them, once for everyone (#1117); a day
+reaches the day's two, never the year's.
 
 * The owner runs the example, saves it and shares it. The Share menu copies
   the dashboard's link and the dataflow's, and opens the dashboard for the
   owner to lay out. A visitor with no session opens the link and sees the
   owner's results, with nothing run and no notice over them. Another day
-  makes the day's sun steps again on the server, runs the four GPU steps in
-  the visitor's page and the Python after them on the server, and the maps,
-  the plot and the table draw it. A second visitor who picks the same day
-  gets the steps before the GPU steps as the first visitor's run kept them,
-  runs the GPU steps in its own page, and reads what the first one read. The
-  saved day brings the saved results back with no run. Another account opens
-  the dataflow's link and sees the owner's results, read-only.
+  makes the day's sun steps again on the server, runs the day's four GPU
+  steps in the visitor's page and the Python after them on the server, and
+  the maps and the day's plot draw it; the year's plot and the table stay as
+  they were. A second visitor who picks the same day gets the steps before
+  the GPU steps as the first visitor's run kept them, runs the GPU steps in
+  its own page, and reads what the first one read. The saved day brings the
+  saved results back with no run. Another account opens the dataflow's link
+  and sees the owner's results, read-only.
 * The link dev serves works on this deployment too. The shared guest's copy of
   a shipped dataflow (``projects/seed.py``) has an id made from the example's
   file name, the same on every deployment. Opened at that link, a dashboard no
-  one ran fills its tiles through a run, and another day draws them again,
-  making again only the sun steps among the steps before the GPU steps. While
-  the run goes, the maps, the plot and the table say they are computing. In a
-  browser with no WebGPU, they say which step could not run.
+  one ran fills its tiles through a run, the year's GPU steps among them, and
+  another day draws the maps and the day's plot again, making again only the
+  day's sun steps among the steps before the GPU steps. While the run goes,
+  the maps, the plots and the table say they are computing. In a browser with
+  no WebGPU, they say which step could not run.
 * A visitor in a private window goes through the four days. The page is served
   as dev serves it, DuckDB's module compressed on the fly with no length, and
   the browser's cache is the in-memory one a private window has: the three
-  maps share one download of the module, and each day's table, maps and plot
-  draw it, with no error in the page.
+  maps share one download of the module, each day's maps and plot draw it,
+  the year's plot and the table stay as they were, and the page logs no
+  error.
 
-The table's rows are the CPU reference's (``tests/_support/crown_heights.py``,
-which ``test_scripts/test_bedford_shadow_example.py`` pins): what the GPU
-draws here is what the CPU computes.
+The numbers are the CPU reference's (``tests/_support/crown_heights.py``,
+which ``test_scripts/test_bedford_shadow_example.py`` pins): the table's
+months as the page shows them, and each day's minutes in shadow as the runs'
+saved tables hold them. What the GPU draws here is what the CPU computes.
 
 Run::
 
@@ -65,10 +72,13 @@ from playwright.sync_api import expect
 from utk_curio.backend.tests._support.crown_heights import (
     DURATIONS,
     FOUR_DAYS,
+    MONTH_HEADER,
+    MONTH_TOLERANCE_MIN,
+    MONTHS,
     SUMMER,
     TOLERANCE_MIN,
     WINTER,
-    minutes,
+    average_and_sd,
 )
 
 from .test_dashboard_page_e2e import (
@@ -96,6 +106,7 @@ from .utils import (
     held_server_nodes,
     hold_server_runs,
     keep_drawing,
+    load_artifact_as_dict,
     node_locator,
     park_pointer,
     require_project_page,
@@ -135,14 +146,17 @@ LABELS = {
     "block": "Load Block 1259 outline",
     "streets": "Load streets",
     "steps": "List the day's sun steps",
+    "year-steps": "List the year's sun steps",
     "ground": "Make open-ground grid",
     "map-area": "Map extent (keeps layers whole)",
     # Scenario 1, without the proposed building.
     "base-tower": "Prepare buildings for the GPU",
     "base-sun-rays": "Cast sun rays on the GPU",
     "base-block-rays": "Cast sun rays on Block 1259",
+    "base-year-rays": "Cast sun rays on Block 1259 through the year",
     "base-shadow-cells": "Read shadow per cell",
     "base-block-steps": "Read shadow on the block per step",
+    "base-block-days": "Read shadow on the block per day",
     "base-shadow-shown": "Keep shaded cells for the map",
     "base-shadow-map": "Map: without the proposed building",
     # Scenario 2, with it: the Map Editor node, then copies of scenario 1's chain.
@@ -150,47 +164,57 @@ LABELS = {
     "tower": "Prepare buildings for the GPU",
     "sun-rays": "Cast sun rays on the GPU",
     "block-rays": "Cast sun rays on Block 1259",
+    "year-rays": "Cast sun rays on Block 1259 through the year",
     "shadow-cells": "Read shadow per cell",
     "block-steps": "Read shadow on the block per step",
+    "block-days": "Read shadow on the block per day",
     "shadow-shown": "Keep shaded cells for the map",
     "shadow-map": "Map: with the proposed building",
     # The comparison.
     "plot": "Plot: shadow on Block 1259 through the day",
-    "compare": "Compare the scenarios on Block 1259",
-    "summary-view": "Table: shadow on Block 1259",
+    "year-plot": "Plot: shadow on Block 1259 each day of 2027",
+    "compare": "Compare the scenarios by month",
+    "summary-view": "Table: shade added on Block 1259 by month",
     "added": "Shade the tower adds",
     "added-shown": "Keep added shade for the map",
     "added-map": "Map: shade the tower adds",
 }
-#: The steps only a browser runs, each scenario's two Autark compute steps on
-#: WebGPU. They read only what the server makes before them, so a run of a day
-#: leaves all four to the page at once, and the start going on from them
-#: makes the rest.
+#: The steps only a browser runs that read the day: each scenario's Autark
+#: compute steps on WebGPU for its map and for the day's plot. They read only
+#: what the server makes before them, so a run of a day leaves all four to the
+#: page at once, and the start going on from them makes the rest.
 PAGE_STEPS = ("base-sun-rays", "base-block-rays", "sun-rays", "block-rays")
+#: Each scenario's compute step over the year's steps, which no day reaches: a
+#: run makes it only when nothing saved or kept stands for it, as when the
+#: shipped copy opens.
+YEAR_STEPS = ("base-year-rays", "year-rays")
 #: What the server makes before the page's steps that the day does not reach:
-#: the loads, the Map Editor's edits, the maps' extent, the open-ground grid
-#: and each scenario's buildings for the GPU. Of the steps before the page's,
-#: only the day's sun steps (``steps``) read the day.
-DAY_BLIND = ("buildings", "block", "streets", "add-building", "map-area", "ground", "base-tower", "tower")
-#: Of those, what the page's steps read: the open-ground grid and each
+#: the loads, the Map Editor's edits, the maps' extent, the open-ground grid,
+#: the year's sun steps and each scenario's buildings for the GPU. Of the
+#: steps before the page's, only the day's sun steps (``steps``) read the day.
+DAY_BLIND = ("buildings", "block", "streets", "add-building", "map-area", "ground", "year-steps", "base-tower",
+             "tower")
+#: Of those, what the day's page steps read: the open-ground grid and each
 #: scenario's buildings for the GPU. No tile reads them, so the page holds no
 #: saved copy, and a run of a day hands them on, kept or made again.
 PAGE_INPUTS = ("ground", "base-tower", "tower")
-#: What the server makes after the page's steps, from what the page made.
+#: What the server makes after the day's page steps, from what the page made.
 AFTER_PAGE = (
     "base-shadow-cells", "base-block-steps", "base-shadow-shown",
-    "shadow-cells", "block-steps", "shadow-shown", "added", "added-shown", "compare",
+    "shadow-cells", "block-steps", "shadow-shown", "added", "added-shown",
 )
+#: What it makes after the year's: each scenario's days and the table's months.
+AFTER_YEAR = ("base-block-days", "block-days", "compare")
 #: The three maps: each scenario's shadow, and the shade the tower adds.
 MAPS = ("base-shadow-map", "shadow-map", "added-map")
-#: The tiles a run fills: the maps, the plot and the table.
-TILES = (*MAPS, "plot", "summary-view")
+#: The tiles a run fills: the maps, the plots and the table.
+TILES = (*MAPS, "plot", "year-plot", "summary-view")
 #: The dashboard's pins: those tiles, the sun steps node, whose Day radio is a
 #: visitor's control, and the Map Editor node that adds the tower.
 PINNED = ("steps", "add-building", *TILES)
 
 #: How long a run of the chain may take: the Python before the GPU steps, the
-#: page's four GPU steps, then the Python after them, on a busy GPU runner.
+#: page's GPU steps, then the Python after them, on a busy GPU runner.
 RUN_TIMEOUT_MS = 240000
 
 #: What an Autark map's database asks of the backend on any page it draws on:
@@ -261,53 +285,85 @@ def _read_by_tiles(ids: dict[str, str]) -> set[str]:
     }
 
 
-def _table_row(page, table_id: str, day: str, *, timeout_ms: int) -> dict[str, str]:
-    """Wait until the table shows *day*, and return its one row by header."""
+def _months_read(page, table_id: str, *, timeout_ms: int = RUN_TIMEOUT_MS) -> list[list[str]]:
+    """Wait until the table shows its twelve months, and return its rows,
+    which are the CPU reference's: the same headers, the months in order, and
+    each month's average and standard deviation the whole minutes of a figure
+    within ``MONTH_TOLERANCE_MIN`` of the CPU's. Where the CPU finds no shade
+    added all month, the table reads "0 ± 0 min"."""
     deadline = time.time() + timeout_ms / 1000
     while True:
         shown = page.evaluate(_TABLE_JS, table_id)
         rows = (shown or {}).get("rows") or []
-        if rows and dict(zip(shown["headers"], rows[0])).get("Day") == day:
+        if len(rows) == len(MONTHS):
             break
         if time.time() >= deadline:
-            raise AssertionError(f"the table never read {day}: it shows {shown!r}")
+            raise AssertionError(f"the table never showed the twelve months: it shows {shown!r}")
         page.wait_for_timeout(500)
-    assert len(rows) == 1 and len(rows[0]) == len(shown["headers"]), (
-        f"the table shows {rows!r} under {shown['headers']!r}, not one row"
-    )
-    return dict(zip(shown["headers"], rows[0]))
+    assert shown["headers"] == ["Month", MONTH_HEADER], f"the table's headers are {shown['headers']!r}"
+    assert [row[0] for row in rows] == [month["Month"] for month in MONTHS], f"the table's rows are {rows!r}"
+    # The table rounds to whole minutes, half a minute at most, on top of what
+    # the GPU's figure may differ by.
+    allowed = MONTH_TOLERANCE_MIN + 0.5
+    off = []
+    for (name, cell), month in zip(rows, MONTHS):
+        average, sd = average_and_sd(cell)
+        if abs(average - month["average"]) > allowed or abs(sd - month["sd"]) > allowed:
+            off.append(f"{name}: {cell}, the CPU's {month['average']} ± {month['sd']} min")
+        if month["average"] == 0 and cell != "0 ± 0 min":
+            off.append(f"{name}: {cell}, where the CPU finds no shade added")
+    assert not off, f"the table's months sit more than {allowed} min from the CPU's: {off!r}"
+    return rows
 
 
-def _table_reads(page, table_id: str, expected: dict, *, timeout_ms: int = RUN_TIMEOUT_MS) -> dict[str, str]:
-    """Wait until the table shows *expected*'s day, and return its row, which
-    is the CPU reference's: the same headers in the same order, the window as
-    the CPU writes it, and each duration within ``TOLERANCE_MIN`` of the CPU's
-    minutes once the table's rounding to whole minutes is allowed for, Added
-    being what With adds to Without. Where the CPU finds no
-    shade, the table reads "0 min"."""
-    row = _table_row(page, table_id, expected["Day"], timeout_ms=timeout_ms)
-    assert list(row) == list(expected), f"the table's headers are {list(row)!r}, not {list(expected)!r}"
-    window = {header: row[header] for header in expected if header not in DURATIONS}
-    assert window == {header: expected[header] for header in window}, (
-        f"the table reads {row!r}, not {expected['Day']}'s window as the CPU writes it: {expected!r}"
-    )
-    shown = {header: minutes(row[header]) for header in DURATIONS}
-    # The table shows whole minutes, so a duration reads up to half a minute
-    # off the GPU's own minutes, on top of what the GPU may differ by.
-    allowed = TOLERANCE_MIN + 0.5
+def _stored_table(path: str) -> dict[str, list]:
+    """A run's saved table, by column, as the sandbox holds it."""
+    stored = load_artifact_as_dict(path)
+    assert stored["dataType"] == "dataframe", f"{path} holds a {stored['dataType']}, not a table"
+    return stored["data"]
+
+
+def _day_reads(outputs: dict[str, str], ids: dict[str, str], row: dict) -> dict[str, list]:
+    """What a run made of *row*'s day from what the page's GPU steps sent: each
+    scenario's table of the share of the block in shadow at each step, which
+    the day's plot draws. It names the day and its window as the CPU does, and
+    adds up to each scenario's minutes in shadow within ``TOLERANCE_MIN`` of
+    the CPU's, Added being what With adds to Without. Returns each table's
+    shares, by key."""
+    got, shares = {}, {}
+    for header, key in zip(DURATIONS, ("base-block-steps", "block-steps")):
+        table = _stored_table(outputs[ids[key]])
+        window = {(day, start, end) for day, start, end in zip(table["day"], table["window_from"], table["window_to"])}
+        assert window == {(row["Day"], row["From"], row["To"])}, (
+            f"{LABELS[key]} ({key}) names {window!r}, not {row['Day']} counted from {row['From']} to {row['To']}"
+        )
+        got[header] = sum(share / 100 * minutes for share, minutes in zip(table["share"], table["minutes"]))
+        shares[key] = table["share"]
+    got["Added"] = got[DURATIONS[1]] - got[DURATIONS[0]]
     off = {
-        header: f"{row[header]}, the CPU's {expected[header]} min"
-        for header in DURATIONS if abs(shown[header] - expected[header]) > allowed
+        header: f"{got[header]:.2f} min, the CPU's {row[header]}"
+        for header in DURATIONS if abs(got[header] - row[header]) > TOLERANCE_MIN
     }
-    assert not off, f"the table's durations sit more than {allowed} min from the CPU's: {off!r}"
-    # DURATIONS is in the table's order: Without, With, Added.
-    without, with_building, added = (shown[header] for header in DURATIONS)
-    assert abs(added - (with_building - without)) <= 2 * TOLERANCE_MIN, (
-        f"the table's Added, {row['Added']}, is not what With adds to Without: {row!r}"
-    )
-    none = {header: row[header] for header in DURATIONS if expected[header] == 0 and row[header] != "0 min"}
-    assert not none, f"the table reads {none!r} where the CPU finds no shade"
-    return row
+    assert not off, f"{row['Day']} on the GPU sits more than {TOLERANCE_MIN} min from the CPU's: {off!r}"
+    return shares
+
+
+def _year_reads(outputs: dict[str, str], ids: dict[str, str]) -> None:
+    """What a run made of the year from what the page's GPU steps sent: each
+    scenario's table of its days, which the year's plot draws, a row for each
+    of 2027's 365 days. On each of the four days its minutes in shadow are the
+    CPU's within ``TOLERANCE_MIN``."""
+    for header, key in zip(DURATIONS, ("base-block-days", "block-days")):
+        table = _stored_table(outputs[ids[key]])
+        assert len(table["date"]) == 365 and table["date"][0] == "2027-01-01", (
+            f"{LABELS[key]} ({key}) holds {len(table['date'])} days from {table['date'][:1]!r}"
+        )
+        by_date = dict(zip(table["date"], table["shadow_min"]))
+        off = {
+            row["Day"]: f"{by_date[row['Date']]:.2f} min, the CPU's {row[header]}"
+            for row in FOUR_DAYS if abs(by_date[row["Date"]] - row[header]) > TOLERANCE_MIN
+        }
+        assert not off, f"{LABELS[key]} ({key}) sits more than {TOLERANCE_MIN} min from the CPU's: {off!r}"
 
 
 def _day(page, steps_id: str, day: str):
@@ -394,15 +450,17 @@ def _shows_winter(
     page, ids: dict[str, str], colors: list[str], what: str, *,
     on_canvas: bool = False, timeout_ms: int = RUN_TIMEOUT_MS,
 ) -> None:
-    """The page shows the winter solstice, the day the example is saved with:
-    the table reads the CPU's row, each map holds a drawing, and the plot
-    draws both scenarios' lines, which part where the tower shades the block.
-    On a canvas each map, then the plot, is framed before it is read."""
-    _table_reads(page, ids["summary-view"], WINTER, timeout_ms=timeout_ms)
+    """The page shows the winter solstice, the day the example is saved with,
+    and the year: the table reads the CPU's months, each map holds a drawing,
+    and each plot draws both scenarios' lines, which part where the tower
+    shades the block. On a canvas each map, then each plot, is framed before
+    it is read."""
+    _months_read(page, ids["summary-view"], timeout_ms=timeout_ms)
     _maps_drawn(page, ids, what, frame=on_canvas)
-    if on_canvas:
-        frame_nodes(page, [ids["plot"]])
-    _plot_drew(page, ids["plot"], colors)
+    for key in ("plot", "year-plot"):
+        if on_canvas:
+            frame_nodes(page, [ids[key]])
+        _plot_drew(page, ids[key], colors)
 
 
 def _page_steps(asked: list[str]) -> list[str]:
@@ -560,12 +618,9 @@ def test_the_owner_shares_the_crown_heights_dashboard_and_each_visitor_tries_a_d
 
         winter_maps = _keep_drawing_maps(first.page, ids)
         winter_plot = first.page.evaluate(_PLOT_PIXELS_JS, ids["plot"])
+        year_plot = first.page.evaluate(_PLOT_PIXELS_JS, ids["year-plot"])
+        months = _months_read(first.page, ids["summary-view"])
         _pick_day(first.page, ids["steps"], SUMMER["Day"])
-        summer: list[dict[str, str]] = []
-        first.waits_for(
-            "the table for the summer solstice",
-            lambda: summer.append(_table_reads(first.page, ids["summary-view"], SUMMER)),
-        )
         summer_maps: dict = {}
         first.waits_for(
             "the maps for the summer solstice",
@@ -632,6 +687,16 @@ def test_the_owner_shares_the_crown_heights_dashboard_and_each_visitor_tries_a_d
         assert not unmade, (
             f"the run after the GPU steps did not make {unmade!r}: it ran {after_gpu!r}" + first.story()
         )
+        # The day is the CPU's, and the year no day reaches stays as it was:
+        # its GPU steps, its days and months are not made again, and its plot
+        # and the table show what they showed.
+        summer_shares = _day_reads(after_gpu, ids, SUMMER)
+        yearly = [key for key in (*YEAR_STEPS, *AFTER_YEAR) if ids[key] in before_gpu or ids[key] in after_gpu]
+        assert not yearly, f"a day ran {yearly!r} again, which read the year" + first.story()
+        assert first.page.evaluate(_PLOT_PIXELS_JS, ids["year-plot"]) == year_plot, (
+            "the year's plot drew again for a day" + first.story()
+        )
+        assert _months_read(first.page, ids["summary-view"]) == months, "the table changed with the day" + first.story()
         first_sent = _sent_results(first)
         first_read = _files_read(first.asked)
         assert _beyond_viewer_runs(first) == [], (
@@ -650,11 +715,6 @@ def test_the_owner_shares_the_crown_heights_dashboard_and_each_visitor_tries_a_d
         opened_maps = _keep_drawing_maps(second.page, ids)
         opened_plot = second.page.evaluate(_PLOT_PIXELS_JS, ids["plot"])
         _pick_day(second.page, ids["steps"], SUMMER["Day"])
-        second.waits_for(
-            "the table for the summer solstice",
-            lambda: summer.append(_table_reads(second.page, ids["summary-view"], SUMMER)),
-        )
-        assert summer[1] == summer[0], f"two visitors' summer solstice read {summer!r}" + second.story()
         second.waits_for("the maps for the summer solstice", lambda: _maps_redrew(second.page, ids, "the day changed"))
         second.waits_for(
             "the plot for the summer solstice", lambda: _plot_redrew(second.page, ids["plot"], opened_plot),
@@ -665,6 +725,9 @@ def test_the_owner_shares_the_crown_heights_dashboard_and_each_visitor_tries_a_d
             "the second page did not run the four GPU steps itself" + second.story()
         )
         before_gpu_2, after_gpu_2 = _step_outputs(second)
+        assert _day_reads(after_gpu_2, ids, SUMMER) == summer_shares, (
+            "two visitors' pages made the summer solstice otherwise" + second.story()
+        )
         # The steps before the GPU steps run once for everyone: the second
         # visitor's run hands on what the first one's kept, and runs none of
         # what the owner saved.
@@ -689,10 +752,6 @@ def test_the_owner_shares_the_crown_heights_dashboard_and_each_visitor_tries_a_d
         for key in MAPS:
             keep_drawing(second.page, _map_canvas(ids[key]))
         _pick_day(second.page, ids["steps"], WINTER["Day"])
-        second.waits_for(
-            "the table for the winter solstice again",
-            lambda: _table_reads(second.page, ids["summary-view"], WINTER, timeout_ms=90000),
-        )
         back_maps: dict = {}
         second.waits_for(
             "the saved maps again", lambda: back_maps.update(_maps_redrew(second.page, ids, "the day went back")),
@@ -706,6 +765,7 @@ def test_the_owner_shares_the_crown_heights_dashboard_and_each_visitor_tries_a_d
         second.waits_for(
             "the saved plot again", lambda: _plot_redrew(second.page, ids["plot"], summer_plot, colors),
         )
+        assert _months_read(second.page, ids["summary-view"]) == months, "the table changed with the day" + second.story()
         # The page asks, and the server answers that the saved values need no
         # run: the page follows no run and runs no GPU step.
         second.waits_for_runs(3, timeout_ms=RUN_TIMEOUT_MS)
@@ -756,6 +816,8 @@ def test_the_crown_heights_dashboard_link_dev_shares_works_on_this_deployment_to
     ids = _ids()
     colors = _colors()
     page_steps = sorted(ids[key] for key in PAGE_STEPS)
+    # No one ran the shipped copy, so its run on open makes the year too.
+    open_steps = sorted(ids[key] for key in (*PAGE_STEPS, *YEAR_STEPS))
 
     # The shared guest's copy, seeded as dev seeds it: by the first listing
     # since the start (here, since the last test emptied the database).
@@ -801,21 +863,23 @@ def test_the_crown_heights_dashboard_link_dev_shares_works_on_this_deployment_to
         assert len(_runs_started(visitor.asked)) == 2, (
             "opening the link started other than one run and its sequel" + visitor.story()
         )
-        assert _page_steps(visitor.asked) == page_steps, (
-            "the page did not run each of the four GPU steps, once" + visitor.story()
+        assert _page_steps(visitor.asked) == open_steps, (
+            "the page did not run each of the six GPU steps, once" + visitor.story()
         )
         opened = _step_outputs(visitor)
         unmade = [key for key in ("steps", *DAY_BLIND) if ids[key] not in opened[0]]
         assert not unmade, f"the run on open did not make {unmade!r} before the GPU steps: it ran {opened[0]!r}"
-        unmade = [key for key in AFTER_PAGE if ids[key] not in opened[1]]
+        unmade = [key for key in (*AFTER_PAGE, *AFTER_YEAR) if ids[key] not in opened[1]]
         assert not unmade, f"the run on open did not make {unmade!r} after the GPU steps: it ran {opened[1]!r}"
+        # What the page's GPU steps made of the day and of the year is the CPU's.
+        _day_reads(opened[1], ids, WINTER)
+        _year_reads(opened[1], ids)
 
         opened_maps = _keep_drawing_maps(visitor.page, ids)
         opened_plot = visitor.page.evaluate(_PLOT_PIXELS_JS, ids["plot"])
+        year_plot = visitor.page.evaluate(_PLOT_PIXELS_JS, ids["year-plot"])
+        months = _months_read(visitor.page, ids["summary-view"])
         _pick_day(visitor.page, ids["steps"], SUMMER["Day"])
-        visitor.waits_for(
-            "the table for the summer solstice", lambda: _table_reads(visitor.page, ids["summary-view"], SUMMER),
-        )
         summer_maps: dict = {}
         visitor.waits_for(
             "the maps for the summer solstice",
@@ -834,12 +898,12 @@ def test_the_crown_heights_dashboard_link_dev_shares_works_on_this_deployment_to
         assert len(_runs_started(visitor.asked)) == 4, (
             "a day started other than one run and its sequel" + visitor.story()
         )
-        assert _page_steps(visitor.asked) == sorted(page_steps * 2), (
-            "the page did not run each of the four GPU steps once for the day" + visitor.story()
+        assert _page_steps(visitor.asked) == sorted(open_steps + page_steps), (
+            "the page did not run each of the day's four GPU steps once for the day" + visitor.story()
         )
         # Only the sun steps read the day: everything else before the GPU
         # steps is what the run on open kept, handed on again or not asked for.
-        changed = _ran_since(visitor, 2)[0]
+        changed, after_day = _ran_since(visitor, 2)
         assert changed.get(ids["steps"]) not in (None, opened[0][ids["steps"]]), (
             "the day's sun steps were not made again for the summer solstice" + visitor.story()
         )
@@ -847,6 +911,14 @@ def test_the_crown_heights_dashboard_link_dev_shares_works_on_this_deployment_to
             assert changed.get(ids[key]) in (None, opened[0][ids[key]]), (
                 f"{LABELS[key]} ({key}) ran again for the summer solstice, which it does not read" + visitor.story()
             )
+        # The day is the CPU's, and the year no day reaches stays as it was.
+        _day_reads(after_day, ids, SUMMER)
+        yearly = [key for key in (*YEAR_STEPS, *AFTER_YEAR) if ids[key] in changed or ids[key] in after_day]
+        assert not yearly, f"a day ran {yearly!r} again, which read the year" + visitor.story()
+        assert visitor.page.evaluate(_PLOT_PIXELS_JS, ids["year-plot"]) == year_plot, (
+            "the year's plot drew again for a day" + visitor.story()
+        )
+        assert _months_read(visitor.page, ids["summary-view"]) == months, "the table changed with the day" + visitor.story()
         assert _beyond_viewer_runs(visitor) == [], (
             "the dashboard asked the server for more than a viewer's run" + visitor.story()
         )
@@ -858,11 +930,11 @@ def test_the_crown_heights_dashboard_link_dev_shares_works_on_this_deployment_to
         visitor.close()
 
     # A browser with no WebGPU: the run on open stops at the GPU steps, and
-    # the maps, the plot and the table say which step could not run, with
-    # nothing to press. Which of the four the page names is the first it
+    # the maps, the plots and the table say which step could not run, with
+    # nothing to press. Which of the six the page names is the first it
     # tried, so any of their titles will do.
     stopped = re.compile("|".join(
-        sorted({re.escape(f'"{LABELS[key]}" could not run in this browser.') for key in PAGE_STEPS})
+        sorted({re.escape(f'"{LABELS[key]}" could not run in this browser.') for key in (*PAGE_STEPS, *YEAR_STEPS)})
     ))
     blind = _Visitor(browser, current_server)
     try:
@@ -973,8 +1045,8 @@ def test_a_visitor_in_a_private_window_goes_through_the_four_days(
     off). It opens on the winter solstice with its three maps drawn, which
     takes one download of DuckDB's module for them all. Then each day in the
     order the Day radio lists them, ending on the winter solstice again: the
-    table reads the CPU's row for that day, the three maps and the plot draw
-    it, and the page logs no error."""
+    three maps and the day's plot draw it, the year's plot and the table of
+    the CPU's months stay as they were, and the page logs no error."""
     require_project_page()
     require_user_auth()
     ids = _ids()
@@ -996,10 +1068,11 @@ def test_a_visitor_in_a_private_window_goes_through_the_four_days(
             _shows_winter(page, ids, colors, "the link opened in a private window")
             opened = _keep_drawing_maps(page, ids)
             plot = page.evaluate(_PLOT_PIXELS_JS, ids["plot"])
+            year_plot = page.evaluate(_PLOT_PIXELS_JS, ids["year-plot"])
+            months = _months_read(page, ids["summary-view"])
             for row in FOUR_DAYS:
                 day = row["Day"]
                 _pick_day(page, ids["steps"], day)
-                _table_reads(page, ids["summary-view"], row)
                 drawn = _maps_redrew(page, ids, f"the {day.lower()} picked")
                 for key in MAPS:
                     apart = _changed(opened[key], drawn[key])
@@ -1014,6 +1087,10 @@ def test_a_visitor_in_a_private_window_goes_through_the_four_days(
                             f"{apart:.2%} of its pixels"
                         )
                 _plot_redrew(page, ids["plot"], plot, colors)
+                assert page.evaluate(_PLOT_PIXELS_JS, ids["year-plot"]) == year_plot, (
+                    f"the year's plot drew again for the {day.lower()}"
+                )
+                assert _months_read(page, ids["summary-view"]) == months, f"the table changed for the {day.lower()}"
                 _keep_drawing_maps(page, ids)
                 plot = page.evaluate(_PLOT_PIXELS_JS, ids["plot"])
             assert not errors, f"the page logged errors while the days changed: {errors!r}"
