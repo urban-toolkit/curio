@@ -606,8 +606,8 @@ def shadow_map(value: str, title: str, scale: dict) -> str:
 def plot() -> str:
     """Both scenarios' share of Block 1259's open ground in shadow through the
     day: the scenarios' per-step tables stacked by Curio as ``inputs``, a
-    line each in its scenario's color. The first scenario's line and points
-    are the widest, so where the building adds no shade both still show."""
+    line each in its scenario's color. The first scenario's line is the
+    widest, so where the building adds no shade both still show."""
     spec = {
         "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
         "data": {"name": "[!! inputs !!]"},
@@ -618,14 +618,12 @@ def plot() -> str:
             "x": {"field": "time", "type": "temporal", "scale": {"type": "utc"},
                   "axis": {"format": "%-I %p", "tickMinStep": 3600000}, "title": "Time (New York)"},
             "y": {"field": "share", "type": "quantitative", "scale": {"domain": [0, 100]},
-                  "title": "Block 1259's open ground in shadow (%)"},
+                  "title": "Open ground in shadow (%)"},
             "color": {"field": "scenario_name", "type": "nominal", "title": "Scenario",
                       "scale": "SCENARIO_COLORS", "sort": "SCENARIO_ORDER",
-                      "legend": {"orient": "bottom", "direction": "vertical"}},
+                      "legend": {"orient": "bottom", "direction": "vertical", "title": None}},
             "strokeWidth": {"field": "scenario_name", "type": "nominal", "sort": "SCENARIO_ORDER",
                             "scale": {"range": [5, 2]}, "legend": None},
-            "size": {"field": "scenario_name", "type": "nominal", "sort": "SCENARIO_ORDER",
-                     "scale": {"range": [60, 15]}, "legend": None},
             "tooltip": [
                 {"field": "scenario_name", "type": "nominal", "title": "Scenario"},
                 {"field": "clock", "type": "nominal", "title": "Time"},
@@ -681,9 +679,9 @@ LAYOUT = {
     "shadow-map": {"dashboardPinned": True, "dashboardX": 430, "dashboardY": 0, "dashboardWidth": 420, "dashboardHeight": 380},
     "added-map": {"dashboardPinned": True, "dashboardX": 860, "dashboardY": 0, "dashboardWidth": 420, "dashboardHeight": 380},
     "steps": {"dashboardPinned": True, "dashboardX": 0, "dashboardY": 390, "dashboardWidth": 250, "dashboardHeight": 230},
-    "add-building": {"dashboardPinned": True, "dashboardX": 430, "dashboardY": 390, "dashboardWidth": 420, "dashboardHeight": 380},
-    "plot": {"dashboardPinned": True, "dashboardX": 860, "dashboardY": 390, "dashboardWidth": 420, "dashboardHeight": 380},
-    "summary-view": {"dashboardPinned": True, "dashboardX": 0, "dashboardY": 780, "dashboardWidth": 1280, "dashboardHeight": 140},
+    "add-building": {"dashboardPinned": True, "dashboardX": 430, "dashboardY": 390, "dashboardWidth": 420, "dashboardHeight": 460},
+    "plot": {"dashboardPinned": True, "dashboardX": 860, "dashboardY": 390, "dashboardWidth": 420, "dashboardHeight": 460},
+    "summary-view": {"dashboardPinned": True, "dashboardX": 0, "dashboardY": 860, "dashboardWidth": 1280, "dashboardHeight": 140},
 }
 
 
