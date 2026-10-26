@@ -1,32 +1,39 @@
-"""Playwright E2E: komar41's Crown Heights example exercises the dashboard's
-sharing features.
+"""Playwright E2E: komar41's Crown Heights example, two scenarios on an
+equinox or a solstice, exercises the dashboard's sharing features.
 
-``docs/examples/dataflows/crown-heights-1550-bedford-shadow.json`` accumulates
-the shadow of a tower proposed at 1550 Bedford Avenue. Its dashboard pins three
-Parameter tiles (Period, a Date widget and Month), the Map Editor node that
-adds the tower, the Autark map of the shadow and the table of the shade the
-tower adds on Block 1259. Its "Cast sun rays on the GPU" node is an Autark
-compute, which only a browser runs: on a dashboard each visitor's own page runs
-it, after the server has run the Python before it, once for everyone (#1117).
+``docs/examples/dataflows/crown-heights-1550-bedford-shadow.json`` compares
+the shadow on Block 1259's open ground without and with the tower proposed at
+1550 Bedford Avenue. Its dashboard pins the node that lists the day's sun
+steps, whose Day radio is a visitor's control, the Map Editor node that adds
+the tower, a map of each scenario's shadow and one of the shade the tower
+adds, the plot of the block's shadow through the day, a line per scenario in
+its color, and the table of the day's window and each scenario's time in
+shadow. Each scenario casts its sun rays in two Autark compute steps, which
+only a browser runs: on a dashboard each visitor's own page runs the four,
+after the server has run the Python before them, once for everyone (#1117).
 
 * The owner runs the example, saves it and shares it. The Share menu copies
   the dashboard's link and the dataflow's, and opens the dashboard for the
   owner to lay out. A visitor with no session opens the link and sees the
-  owner's results, with nothing run and no notice over them. A new date runs
-  the Python before the GPU step on the server, the GPU step in the visitor's
-  page and the Python after it on the server, and the map and the table draw
-  it. A second visitor who
-  picks the same date gets the steps before the GPU step as the first
-  visitor's run kept them, runs the GPU step in its own page, and reads what
-  the first one read. The saved date brings the saved results back with no
-  run. Another account opens the dataflow's link and sees the owner's results,
-  read-only.
+  owner's results, with nothing run and no notice over them. Another day
+  makes the day's sun steps again on the server, runs the four GPU steps in
+  the visitor's page and the Python after them on the server, and the maps,
+  the plot and the table draw it. A second visitor who picks the same day
+  gets the steps before the GPU steps as the first visitor's run kept them,
+  runs the GPU steps in its own page, and reads what the first one read. The
+  saved day brings the saved results back with no run. Another account opens
+  the dataflow's link and sees the owner's results, read-only.
 * The link dev serves works on this deployment too. The shared guest's copy of
   a shipped dataflow (``projects/seed.py``) has an id made from the example's
   file name, the same on every deployment. Opened at that link, a dashboard no
-  one ran fills its tiles through a run, and a new date draws them again.
-  While the run goes, the table and the map say they are computing. In a
+  one ran fills its tiles through a run, and another day draws them again,
+  making again only the sun steps among the steps before the GPU steps. While
+  the run goes, the maps, the plot and the table say they are computing. In a
   browser with no WebGPU, they say which step could not run.
+
+The table's rows are the CPU reference's (``tests/_support/crown_heights.py``,
+which ``test_scripts/test_bedford_shadow_example.py`` pins): what the GPU
+draws here is what the CPU computes.
 
 Run::
 
@@ -45,6 +52,8 @@ from typing import TYPE_CHECKING
 import pytest
 from playwright.sync_api import expect
 
+from utk_curio.backend.tests._support.crown_heights import DURATIONS, SUMMER, TOLERANCE_MIN, WINTER, minutes
+
 from .test_dashboard_page_e2e import (
     _Visitor,
     _catalog_ids,
@@ -60,10 +69,14 @@ from .test_dashboard_page_e2e import (
 )
 from .test_map_edits_e2e import _changed, _map_pixels, _wait_for_map_drawn, _wait_for_redraw
 from .utils import (
+    _COLOR_PIXELS_JS,
     CLOSEUP_MAX_DIFF_RATIO,
     CLOSEUP_PIXEL_THRESHOLD,
     REPO_ROOT,
     api_json,
+    assert_autark_map_drawn,
+    assert_vega_canvas_rendered,
+    frame_nodes,
     held_server_nodes,
     hold_server_runs,
     keep_drawing,
@@ -84,6 +97,11 @@ if TYPE_CHECKING:
 EXAMPLE = Path(REPO_ROOT, "docs", "examples", "dataflows", "crown-heights-1550-bedford-shadow.json")
 NAME = "Crown Heights shade from 1550 Bedford Avenue"
 STEM = "crown-heights-dashboard"
+#: The namespace the example's builder makes its node ids in
+#: (``scripts/build_example_bedford_shadow.py``): a node's id is its key's
+#: uuid5. The test finds each node by its key, since the two scenarios' copies
+#: share their titles.
+NAMESPACE = uuid.uuid5(uuid.NAMESPACE_URL, f"https://curio.dev/examples/{NAME}")
 
 #: The namespace of the ids the shared guest's copies of the shipped dataflows
 #: get (``_EXAMPLES_NAMESPACE`` in ``projects/seed.py``), written out here: a
@@ -94,34 +112,66 @@ SHIPPED_IDS = uuid.UUID("a3f1c0d4-1111-4b8e-9a6e-c0ff33ee5eed")
 #: any other deployment and here.
 LINK_ID = str(uuid.uuid5(SHIPPED_IDS, "dataflows/crown-heights-1550-bedford-shadow"))
 
-#: The example's nodes, by the title each one's header shows.
+#: The example's nodes, by builder key, with the title each one's header shows.
 LABELS = {
+    # The fixed context both scenarios read.
     "buildings": "Load existing buildings",
     "block": "Load Block 1259 outline",
     "streets": "Load streets",
-    "date": "Pick a date (for Date)",
-    "tower": "Add proposed tower (1550 Bedford Ave)",
-    "prepare": "Prepare tower for the GPU",
-    "grid": "Make ground grid and selected days",
-    "rays": "Cast sun rays on the GPU",
-    "shadow": "Read shadow per cell",
-    "shaded": "Keep shaded cells for the map",
-    "extent": "Map extent (keeps layers whole)",
-    "average": "Average shade on Block 1259",
-    "map": "Map: tower's accumulated shadow",
-    "table": "Table: shade added on Block 1259",
+    "steps": "List the day's sun steps",
+    "ground": "Make open-ground grid",
+    "map-area": "Map extent (keeps layers whole)",
+    # Scenario 1, without the proposed building.
+    "base-tower": "Prepare buildings for the GPU",
+    "base-sun-rays": "Cast sun rays on the GPU",
+    "base-block-rays": "Cast sun rays on Block 1259",
+    "base-shadow-cells": "Read shadow per cell",
+    "base-block-steps": "Read shadow on the block per step",
+    "base-shadow-shown": "Keep shaded cells for the map",
+    "base-shadow-map": "Map: without the proposed building",
+    # Scenario 2, with it: the Map Editor node, then copies of scenario 1's chain.
+    "add-building": "Add proposed tower (1550 Bedford Ave)",
+    "tower": "Prepare buildings for the GPU",
+    "sun-rays": "Cast sun rays on the GPU",
+    "block-rays": "Cast sun rays on Block 1259",
+    "shadow-cells": "Read shadow per cell",
+    "block-steps": "Read shadow on the block per step",
+    "shadow-shown": "Keep shaded cells for the map",
+    "shadow-map": "Map: with the proposed building",
+    # The comparison.
+    "plot": "Plot: shadow on Block 1259 through the day",
+    "compare": "Compare the scenarios on Block 1259",
+    "summary-view": "Table: shadow on Block 1259",
+    "added": "Shade the tower adds",
+    "added-shown": "Keep added shade for the map",
+    "added-map": "Map: shade the tower adds",
 }
-#: What the Date tile's field is called.
-DATE_LABEL = "Date (when Period is Date)"
-#: The nodes before the map and the table that a date does not reach.
-NOT_REACHED = ("buildings", "block", "streets", "tower", "extent")
+#: The steps only a browser runs, each scenario's two Autark compute steps on
+#: WebGPU. They read only what the server makes before them, so a run of a day
+#: leaves all four to the page at once, and the start going on from them
+#: makes the rest.
+PAGE_STEPS = ("base-sun-rays", "base-block-rays", "sun-rays", "block-rays")
+#: What the server makes before the page's steps that the day does not reach:
+#: the loads, the Map Editor's edits, the maps' extent, the open-ground grid
+#: and each scenario's buildings for the GPU. Of the steps before the page's,
+#: only the day's sun steps (``steps``) read the day.
+DAY_BLIND = ("buildings", "block", "streets", "add-building", "map-area", "ground", "base-tower", "tower")
+#: What the server makes after the page's steps, from what the page made.
+AFTER_PAGE = (
+    "base-shadow-cells", "base-block-steps", "base-shadow-shown",
+    "shadow-cells", "block-steps", "shadow-shown", "added", "added-shown", "compare",
+)
+#: The three maps: each scenario's shadow, and the shade the tower adds.
+MAPS = ("base-shadow-map", "shadow-map", "added-map")
+#: The tiles a run fills: the maps, the plot and the table.
+TILES = (*MAPS, "plot", "summary-view")
+#: The dashboard's pins: those tiles, the sun steps node, whose Day radio is a
+#: visitor's control, and the Map Editor node that adds the tower.
+PINNED = ("steps", "add-building", *TILES)
 
-#: How long a run of the chain may take: the Python before the GPU step, the
-#: page's GPU step, then the Python after it, on a busy GPU runner.
+#: How long a run of the chain may take: the Python before the GPU steps, the
+#: page's four GPU steps, then the Python after them, on a busy GPU runner.
 RUN_TIMEOUT_MS = 240000
-
-#: A shade as the table writes it: minutes, or hours past 90 minutes.
-SHADE_RE = re.compile(r"^\d[\d,.]* (min|h)$")
 
 #: What an Autark map's database asks of the backend on any page it draws on:
 #: DuckDB's extensions, which Curio serves itself.
@@ -135,11 +185,23 @@ COMPUTING = ("Computing...", "Results will be shown here once they are ready.")
 #: walkthroughs make one.
 _NO_WEBGPU_JS = "Object.defineProperty(navigator, 'gpu', { configurable: true, value: undefined });"
 
-#: The cells of the first row of the table node *id* draws, or null.
-_TABLE_ROW_JS = """(id) => {
+#: The table node *id* draws, as text: its headers and each row's cells, or null.
+_TABLE_JS = """(id) => {
     const node = document.querySelector('.react-flow__node[data-id="' + id + '"]');
-    const row = node && node.querySelector('table tbody tr');
-    return row ? Array.from(row.querySelectorAll('td')).map((cell) => cell.textContent.trim()) : null;
+    const table = node && node.querySelector('table');
+    if (!table) return null;
+    const text = (cell) => cell.textContent.trim();
+    return {
+        headers: Array.from(table.querySelectorAll('thead th')).map(text),
+        rows: Array.from(table.querySelectorAll('tbody tr')).map(
+            (row) => Array.from(row.querySelectorAll('td')).map(text)),
+    };
+}"""
+
+#: The canvas the Vega-Lite node *id* draws on, as a PNG, or null.
+_PLOT_PIXELS_JS = """(id) => {
+    const canvas = document.querySelector('#vega' + id + ' canvas');
+    return canvas ? canvas.toDataURL('image/png') : null;
 }"""
 
 
@@ -148,41 +210,172 @@ def _spec() -> dict:
 
 
 def _ids() -> dict[str, str]:
-    """The example's node ids, by the names in :data:`LABELS`."""
-    by_label = {
-        (node.get("metadata") or {}).get("packageTemplateLabel"): node["id"]
-        for node in _spec()["dataflow"]["nodes"]
+    """The example's node ids, by the keys in :data:`LABELS`: each key's id is
+    in the example, its header shows the key's title, and the dashboard pins
+    :data:`PINNED`."""
+    nodes = {node["id"]: node for node in _spec()["dataflow"]["nodes"]}
+    ids = {key: str(uuid.uuid5(NAMESPACE, key)) for key in LABELS}
+    missing = sorted(key for key, node_id in ids.items() if node_id not in nodes)
+    assert not missing, f"the example has no node of the keys {missing!r}"
+    titles = {key: (nodes[node_id].get("metadata") or {}).get("packageTemplateLabel") for key, node_id in ids.items()}
+    retitled = {key: title for key, title in titles.items() if title != LABELS[key]}
+    assert not retitled, f"the example titles these nodes otherwise: {retitled!r}"
+    pinned = sorted(key for key, node_id in ids.items() if nodes[node_id].get("dashboardPinned"))
+    assert pinned == sorted(PINNED), f"the example pins {pinned!r}, not {sorted(PINNED)!r}"
+    return ids
+
+
+def _colors() -> list[str]:
+    """The scenarios' colors, in their order: each one draws its line on the plot."""
+    colors = [scenario["color"] for scenario in _spec()["dataflow"].get("scenarios") or []]
+    assert len(colors) == 2, f"the example has {len(colors)} scenarios, not two: {colors!r}"
+    return colors
+
+
+def _read_by_tiles(ids: dict[str, str]) -> set[str]:
+    """What the pinned tiles read: every node a pinned node takes a data edge from."""
+    pinned = {ids[key] for key in PINNED}
+    return {
+        edge["source"] for edge in _spec()["dataflow"]["edges"]
+        if edge["target"] in pinned and edge.get("type") != "Interaction"
     }
-    missing = [label for label in LABELS.values() if label not in by_label]
-    assert not missing, f"the example has no node titled {missing!r}"
-    return {name: by_label[label] for name, label in LABELS.items()}
 
 
-def _table_reads(page, table_id: str, selection: str, *, timeout_ms: int = RUN_TIMEOUT_MS) -> str:
-    """Wait until the table's row is *selection*'s, and return its shade,
-    such as ``40 min``."""
+def _table_row(page, table_id: str, day: str, *, timeout_ms: int) -> dict[str, str]:
+    """Wait until the table shows *day*, and return its one row by header."""
     deadline = time.time() + timeout_ms / 1000
-    row = None
     while True:
-        row = page.evaluate(_TABLE_ROW_JS, table_id)
-        shades = [cell for cell in row or [] if SHADE_RE.match(cell)]
-        if row and selection in row and shades:
-            return shades[0]
+        shown = page.evaluate(_TABLE_JS, table_id)
+        rows = (shown or {}).get("rows") or []
+        if rows and dict(zip(shown["headers"], rows[0])).get("Day") == day:
+            break
         if time.time() >= deadline:
-            raise AssertionError(f"the table never read {selection}: its first row is {row!r}")
+            raise AssertionError(f"the table never read {day}: it shows {shown!r}")
         page.wait_for_timeout(500)
+    assert len(rows) == 1 and len(rows[0]) == len(shown["headers"]), (
+        f"the table shows {rows!r} under {shown['headers']!r}, not one row"
+    )
+    return dict(zip(shown["headers"], rows[0]))
 
 
-def _pick_date(page, date_id: str, day: str) -> None:
-    """Set the Date tile to *day*, ``YYYY-MM-DD``; leaving the field commits it."""
-    field = node_locator(page, date_id).get_by_label(DATE_LABEL, exact=True)
-    expect(field).to_be_enabled(timeout=20000)
-    field.fill(day)
-    field.blur()
+def _table_reads(page, table_id: str, expected: dict, *, timeout_ms: int = RUN_TIMEOUT_MS) -> dict[str, str]:
+    """Wait until the table shows *expected*'s day, and return its row, which
+    is the CPU reference's: the same headers in the same order, the window as
+    the CPU writes it, and each duration within ``TOLERANCE_MIN`` of the CPU's
+    minutes, Added being what With adds to Without. Where the CPU finds no
+    shade, the table reads "0 min"."""
+    row = _table_row(page, table_id, expected["Day"], timeout_ms=timeout_ms)
+    assert list(row) == list(expected), f"the table's headers are {list(row)!r}, not {list(expected)!r}"
+    window = {header: row[header] for header in expected if header not in DURATIONS}
+    assert window == {header: expected[header] for header in window}, (
+        f"the table reads {row!r}, not {expected['Day']}'s window as the CPU writes it: {expected!r}"
+    )
+    shown = {header: minutes(row[header]) for header in DURATIONS}
+    off = {
+        header: f"{row[header]}, the CPU's {expected[header]} min"
+        for header in DURATIONS if abs(shown[header] - expected[header]) > TOLERANCE_MIN
+    }
+    assert not off, f"the table's durations sit more than {TOLERANCE_MIN} min from the CPU's: {off!r}"
+    # DURATIONS is in the table's order: Without, With, Added.
+    without, with_building, added = (shown[header] for header in DURATIONS)
+    assert abs(added - (with_building - without)) <= 2 * TOLERANCE_MIN, (
+        f"the table's Added, {row['Added']}, is not what With adds to Without: {row!r}"
+    )
+    none = {header: row[header] for header in DURATIONS if expected[header] == 0 and row[header] != "0 min"}
+    assert not none, f"the table reads {none!r} where the CPU finds no shade"
+    return row
+
+
+def _day(page, steps_id: str, day: str):
+    """The radio button of *day* on the sun steps node's tile: its Day widget,
+    which the dashboard shows as a visitor's control."""
+    return node_locator(page, steps_id).get_by_role("radio", name=day, exact=True)
+
+
+def _pick_day(page, steps_id: str, day: str) -> None:
+    radio = _day(page, steps_id, day)
+    expect(radio).to_be_enabled(timeout=20000)
+    radio.check()
 
 
 def _map_canvas(map_id: str) -> str:
     return f"#autk-grammar-map-{map_id}"
+
+
+def _maps_drawn(page, ids: dict[str, str], what: str) -> None:
+    """Each of the three maps holds a whole drawing of its layers."""
+    for key in MAPS:
+        _wait_for_map_drawn(page, ids[key], what)
+        assert_autark_map_drawn(page, ids[key], timeout=30000)
+
+
+def _keep_drawing_maps(page, ids: dict[str, str]) -> dict:
+    """Each map as it draws now, its canvas kept so that a redraw is told by a
+    new one (``_wait_for_redraw``)."""
+    drawn = {}
+    for key in MAPS:
+        drawn[key] = _map_pixels(page, ids[key])
+        keep_drawing(page, _map_canvas(ids[key]))
+    return drawn
+
+
+def _maps_redrew(page, ids: dict[str, str], what: str) -> dict:
+    """Each map once it drew again after *what*, as it draws now."""
+    drawn = {}
+    for key in MAPS:
+        _wait_for_redraw(page, ids[key], what)
+        drawn[key] = _map_pixels(page, ids[key])
+    return drawn
+
+
+def _plot_drew(page, plot_id: str, colors: list[str]) -> None:
+    """The plot drew, its canvas holding each of *colors*, a scenario's line."""
+    assert_vega_canvas_rendered(page, plot_id, timeout=60000)
+    counts = None
+    deadline = time.time() + 15
+    while time.time() < deadline:
+        counts = page.evaluate(_COLOR_PIXELS_JS, [plot_id, colors])
+        if counts and all(count >= 30 for count in counts):
+            return
+        page.wait_for_timeout(250)
+    raise AssertionError(f"the plot does not draw each scenario's color {colors}: pixels {counts}")
+
+
+def _plot_redrew(page, plot_id: str, before: str | None, colors: list[str] | None = None) -> None:
+    """The plot drew again, not what it drew *before*; with *colors*, a line
+    in each scenario's color."""
+    page.wait_for_function(
+        "([id, before]) => {"
+        " const canvas = document.querySelector('#vega' + id + ' canvas');"
+        " return !!canvas && canvas.toDataURL('image/png') !== before; }",
+        arg=[plot_id, before],
+        timeout=90000,
+        polling=500,
+    )
+    if colors:
+        _plot_drew(page, plot_id, colors)
+    else:
+        assert_vega_canvas_rendered(page, plot_id, timeout=60000)
+
+
+def _shows_winter(
+    page, ids: dict[str, str], colors: list[str], what: str, *,
+    on_canvas: bool = False, timeout_ms: int = RUN_TIMEOUT_MS,
+) -> None:
+    """The page shows the winter solstice, the day the example is saved with:
+    the table reads the CPU's row, each map holds a drawing, and the plot
+    draws both scenarios' lines, which part where the tower shades the block.
+    On a canvas the maps are framed first."""
+    _table_reads(page, ids["summary-view"], WINTER, timeout_ms=timeout_ms)
+    if on_canvas:
+        frame_nodes(page, [ids[key] for key in MAPS])
+    _maps_drawn(page, ids, what)
+    _plot_drew(page, ids["plot"], colors)
+
+
+def _page_steps(asked: list[str]) -> list[str]:
+    """The node of each step the page sent what it made of, sorted."""
+    return sorted(line.rsplit("/steps/", 1)[1].split("?", 1)[0] for line in _steps_sent(asked))
 
 
 def _start_answers(visitor: "_Visitor") -> list[tuple[int, str | None]]:
@@ -212,7 +405,7 @@ def _ran_since(visitor: "_Visitor", earlier: int) -> list[dict[str, str]]:
     return _step_outputs(visitor)[earlier:]
 
 
-def _tile_says(page, node_id: str, reason: str, *words: str, timeout_ms: int) -> None:
+def _tile_says(page, node_id: str, reason: str, *words: str | re.Pattern, timeout_ms: int) -> None:
     """The tile of *node_id* shows only its notice for *reason*, which reads each of *words*."""
     notice = node_locator(page, node_id).locator(f'[data-curio-node-empty="{reason}"]')
     for said in words:
@@ -259,12 +452,14 @@ def _until_held(backend: str, visitor: "_Visitor") -> None:
 
 
 @pytest.mark.xdist_group("crown-heights-sharing")
-def test_the_owner_shares_the_crown_heights_dashboard_and_each_visitor_tries_a_date(
+def test_the_owner_shares_the_crown_heights_dashboard_and_each_visitor_tries_a_day(
     app_frontend: "FrontendPage", current_server, page, browser, monkeypatch,
 ):
     require_project_page()
     require_user_auth()
     ids = _ids()
+    colors = _colors()
+    page_steps = sorted(ids[key] for key in PAGE_STEPS)
 
     # The owner runs the example on the canvas and saves it, which saves the
     # outputs the pinned tiles read.
@@ -272,12 +467,11 @@ def test_the_owner_shares_the_crown_heights_dashboard_and_each_visitor_tries_a_d
     require_webgpu(page)
     project_id = session["project"]["id"]
     run_all_and_wait(page, timeout_ms=300000)
-    # komar41's figure for Dec 21, the saved date.
-    assert _table_reads(page, ids["table"], "Dec 21") == "40 min"
-    _wait_for_map_drawn(page, ids["map"], "the owner's Run All")
+    # The winter solstice, the saved day, as the CPU reference computes it.
+    _shows_winter(page, ids, colors, "the owner's Run All", on_canvas=True)
     save_dataflow(page)
     recorded = {output["node_id"] for output in _project(current_server, session["token"], project_id)["outputs"]}
-    read_by_tiles = {ids[name] for name in ("buildings", "block", "streets", "tower", "extent", "shaded", "average")}
+    read_by_tiles = _read_by_tiles(ids)
     assert read_by_tiles <= recorded, (
         f"the save recorded {sorted(recorded)!r}, not every output the pinned tiles read {sorted(read_by_tiles)!r}"
     )
@@ -299,8 +493,7 @@ def test_the_owner_shares_the_crown_heights_dashboard_and_each_visitor_tries_a_d
     owners_tab = popup.value
     owners_tab.wait_for_url(re.compile(rf"/dashboard/{project_id}$"), timeout=30000)
     owners_tab.get_by_test_id("edit-layout-btn").wait_for(state="visible", timeout=45000)
-    assert _table_reads(owners_tab, ids["table"], "Dec 21") == "40 min"
-    _wait_for_map_drawn(owners_tab, ids["map"], "the owner opened the dashboard")
+    _shows_winter(owners_tab, ids, colors, "the owner opened the dashboard")
     owners_tab.close()
     # Off the canvas first: it can still save on its way out.
     page.goto("about:blank")
@@ -313,59 +506,90 @@ def test_the_owner_shares_the_crown_heights_dashboard_and_each_visitor_tries_a_d
         # The copied link, on the page server as the hosted stacks serve it.
         first.opens(hosted, project_id)
         first.waits_for(
-            "the owner's table", lambda: _table_reads(first.page, ids["table"], "Dec 21", timeout_ms=90000),
+            "the owner's results",
+            lambda: _shows_winter(first.page, ids, colors, "the link opened", timeout_ms=90000),
         )
-        first.waits_for("the owner's map", lambda: _wait_for_map_drawn(first.page, ids["map"], "the link opened"))
         assert _runs_started(first.asked) == [] and _files_read(first.asked) == set(), (
             "the dashboard ran or read outputs to show the owner's results, which the page carries" + first.story()
         )
+        expect(_day(first.page, ids["steps"], WINTER["Day"])).to_be_checked(timeout=30000)
         # The tiles alone: no notice over them about what a visitor may do.
         expect(first.page.get_by_test_id("shared-view-banner")).to_have_count(0)
         assert not re.search(r"shared dashboard|not saved", first.page.locator("body").inner_text(), re.I), (
             "the dashboard tells a visitor what its changes do" + first.story()
         )
         assert first.page.get_by_test_id("edit-layout-btn").count() == 0, "a visitor may lay out the owner's dashboard"
-        tower = node_locator(first.page, ids["tower"])
+        tower = node_locator(first.page, ids["add-building"])
         expect(tower.locator('li[data-edit-op="add"]')).to_have_count(2, timeout=30000)
         expect(tower.get_by_role("button", name=re.compile(r"^Delete edit"))).to_have_count(0)
         expect(tower.get_by_test_id("interaction-commit")).to_have_count(0)
         park_pointer(first.page)
         save_workflow_test_screenshot(first.page, STEM, test_name="shared", sweep_toasts=True)
 
-        saved_map = _map_pixels(first.page, ids["map"])
-        keep_drawing(first.page, _map_canvas(ids["map"]))
-        _pick_date(first.page, ids["date"], "2027-06-21")
-        june: list[str] = []
-        first.waits_for("the table for Jun 21", lambda: june.append(_table_reads(first.page, ids["table"], "Jun 21")))
-        first.waits_for("the map for Jun 21", lambda: _wait_for_redraw(first.page, ids["map"], "the date changed"))
-        moved = _changed(saved_map, _map_pixels(first.page, ids["map"]))
-        assert moved > 0.005, f"the map for Jun 21 differs from Dec 21's in {moved:.2%} of its pixels" + first.story()
+        winter_maps = _keep_drawing_maps(first.page, ids)
+        winter_plot = first.page.evaluate(_PLOT_PIXELS_JS, ids["plot"])
+        _pick_day(first.page, ids["steps"], SUMMER["Day"])
+        summer: list[dict[str, str]] = []
+        first.waits_for(
+            "the table for the summer solstice",
+            lambda: summer.append(_table_reads(first.page, ids["summary-view"], SUMMER)),
+        )
+        summer_maps: dict = {}
+        first.waits_for(
+            "the maps for the summer solstice",
+            lambda: summer_maps.update(_maps_redrew(first.page, ids, "the day changed")),
+        )
+        for key in MAPS:
+            moved = _changed(winter_maps[key], summer_maps[key])
+            assert moved > 0.005, (
+                f"{LABELS[key]} for the summer solstice differs from the winter solstice's in {moved:.2%} of its "
+                "pixels" + first.story()
+            )
+        # In summer the tower's shadow never reaches the block, so the two
+        # lines are one and the one drawn last hides the other: the plot's
+        # colors are checked on the winter solstice.
+        first.waits_for(
+            "the plot for the summer solstice", lambda: _plot_redrew(first.page, ids["plot"], winter_plot),
+        )
         park_pointer(first.page)
-        save_workflow_test_screenshot(first.page, STEM, test_name="jun-21", sweep_toasts=True)
+        save_workflow_test_screenshot(first.page, STEM, test_name="summer", sweep_toasts=True)
         save_workflow_test_screenshot(
             first.page,
             STEM,
-            test_name="jun-21-map",
+            test_name="summer-change-map",
             pixel_threshold=CLOSEUP_PIXEL_THRESHOLD,
             max_diff_ratio=CLOSEUP_MAX_DIFF_RATIO,
-            clip_selector=f'.react-flow__node[data-id="{ids["map"]}"]',
+            clip_selector=f'.react-flow__node[data-id="{ids["added-map"]}"]',
             sweep_toasts=True,
             closeup=True,
         )
 
         first.waits_for_runs(2, timeout_ms=RUN_TIMEOUT_MS)
         assert len(_runs_started(first.asked)) == 2, (
-            "a date started other than a run and the start going on from the GPU step it left to the page"
+            "a day started other than a run and the start going on from the GPU steps it left to the page"
             + first.story()
         )
-        assert len(_steps_sent(first.asked)) == 1, "the page did not send what it made of the GPU step" + first.story()
-        before_gpu, after_gpu = _step_outputs(first)
-        assert {ids["grid"], ids["prepare"]} <= set(before_gpu), f"the run before the GPU step ran {before_gpu!r}"
-        assert {ids["shadow"], ids["shaded"], ids["average"]} <= set(after_gpu), (
-            f"the run after the GPU step ran {after_gpu!r}"
+        assert _page_steps(first.asked) == page_steps, (
+            "the page did not send what it made of each of the four GPU steps, once" + first.story()
         )
-        reran = (set(before_gpu) | set(after_gpu)) & {ids[name] for name in NOT_REACHED}
-        assert not reran, f"a date ran {sorted(reran)!r} again, which it does not reach" + first.story()
+        before_gpu, after_gpu = _step_outputs(first)
+        assert ids["steps"] in before_gpu, (
+            f"the run before the GPU steps did not make the day's sun steps: it ran {before_gpu!r}" + first.story()
+        )
+        # What the day does not reach runs only if the owner's save did not
+        # keep it: here, each scenario's buildings for the GPU.
+        saved = [key for key in DAY_BLIND if ids[key] in recorded]
+        reran = [key for key in saved if ids[key] in before_gpu or ids[key] in after_gpu]
+        assert not reran, f"a day ran {reran!r} again, which it does not reach" + first.story()
+        unsaved = [key for key in DAY_BLIND if key not in saved and ids[key] not in before_gpu]
+        assert not unsaved, (
+            f"the run before the GPU steps did not make {unsaved!r}, which the owner's save did not keep: "
+            f"it ran {before_gpu!r}" + first.story()
+        )
+        unmade = [key for key in AFTER_PAGE if ids[key] not in after_gpu]
+        assert not unmade, (
+            f"the run after the GPU steps did not make {unmade!r}: it ran {after_gpu!r}" + first.story()
+        )
         first_sent = _sent_results(first)
         first_read = _files_read(first.asked)
         assert _beyond_viewer_runs(first) == [], (
@@ -378,30 +602,38 @@ def test_the_owner_shares_the_crown_heights_dashboard_and_each_visitor_tries_a_d
     try:
         second.opens(hosted, project_id)
         second.waits_for(
-            "the owner's table", lambda: _table_reads(second.page, ids["table"], "Dec 21", timeout_ms=90000),
+            "the owner's results",
+            lambda: _shows_winter(second.page, ids, colors, "the link opened", timeout_ms=90000),
         )
-        second.waits_for("the owner's map", lambda: _wait_for_map_drawn(second.page, ids["map"], "the link opened"))
-        opened_map = _map_pixels(second.page, ids["map"])
-        keep_drawing(second.page, _map_canvas(ids["map"]))
-        _pick_date(second.page, ids["date"], "2027-06-21")
+        opened_maps = _keep_drawing_maps(second.page, ids)
+        opened_plot = second.page.evaluate(_PLOT_PIXELS_JS, ids["plot"])
+        _pick_day(second.page, ids["steps"], SUMMER["Day"])
         second.waits_for(
-            "the table for Jun 21",
-            lambda: june.append(_table_reads(second.page, ids["table"], "Jun 21")),
+            "the table for the summer solstice",
+            lambda: summer.append(_table_reads(second.page, ids["summary-view"], SUMMER)),
         )
-        assert june[1] == june[0], f"two visitors' Jun 21 read {june!r}" + second.story()
-        second.waits_for("the map for Jun 21", lambda: _wait_for_redraw(second.page, ids["map"], "the date changed"))
+        assert summer[1] == summer[0], f"two visitors' summer solstice read {summer!r}" + second.story()
+        second.waits_for("the maps for the summer solstice", lambda: _maps_redrew(second.page, ids, "the day changed"))
+        second.waits_for(
+            "the plot for the summer solstice", lambda: _plot_redrew(second.page, ids["plot"], opened_plot),
+        )
+        summer_plot = second.page.evaluate(_PLOT_PIXELS_JS, ids["plot"])
         second.waits_for_runs(2, timeout_ms=RUN_TIMEOUT_MS)
-        assert len(_steps_sent(second.asked)) == 1, "the second page did not run the GPU step itself" + second.story()
+        assert _page_steps(second.asked) == page_steps, (
+            "the second page did not run the four GPU steps itself" + second.story()
+        )
         before_gpu_2, after_gpu_2 = _step_outputs(second)
-        for name in ("grid", "prepare"):
-            assert before_gpu_2.get(ids[name]) == before_gpu[ids[name]], (
-                f"{LABELS[name]} ran again for the second visitor's Jun 21 instead of handing on what the "
-                f"first visitor's run kept: {before_gpu_2.get(ids[name])!r}, not {before_gpu[ids[name]]!r}"
-                + second.story()
+        # The steps before the GPU steps run once for everyone: the second
+        # visitor's run hands on what the first one's kept, and runs none of
+        # what the owner saved.
+        for key in ("steps", *DAY_BLIND):
+            assert before_gpu_2.get(ids[key]) == before_gpu.get(ids[key]), (
+                f"{LABELS[key]} ({key}) gave the second visitor's summer solstice {before_gpu_2.get(ids[key])!r}, "
+                f"not what the first visitor's run kept, {before_gpu.get(ids[key])!r}" + second.story()
             )
-        for name in ("shadow", "shaded", "average"):
-            assert after_gpu_2.get(ids[name]) not in (None, after_gpu[ids[name]]), (
-                f"{LABELS[name]} handed the second visitor what the first visitor's page made" + second.story()
+        for key in AFTER_PAGE:
+            assert after_gpu_2.get(ids[key]) not in (None, after_gpu[ids[key]]), (
+                f"{LABELS[key]} ({key}) handed the second visitor what the first visitor's page made" + second.story()
             )
         second_read = _files_read(second.asked)
         assert not second_read & first_sent, (
@@ -411,24 +643,35 @@ def test_the_owner_shares_the_crown_heights_dashboard_and_each_visitor_tries_a_d
             "the second page read none of the outputs kept from the first visitor's run" + second.story()
         )
 
-        # The saved date brings the owner's results back, with no run.
-        keep_drawing(second.page, _map_canvas(ids["map"]))
-        _pick_date(second.page, ids["date"], "2027-12-21")
+        # The saved day brings the owner's results back, with no run.
+        for key in MAPS:
+            keep_drawing(second.page, _map_canvas(ids[key]))
+        _pick_day(second.page, ids["steps"], WINTER["Day"])
         second.waits_for(
-            "the table for Dec 21 again", lambda: _table_reads(second.page, ids["table"], "Dec 21", timeout_ms=90000),
+            "the table for the winter solstice again",
+            lambda: _table_reads(second.page, ids["summary-view"], WINTER, timeout_ms=90000),
         )
-        second.waits_for("the saved map again", lambda: _wait_for_redraw(second.page, ids["map"], "the date went back"))
-        assert _table_reads(second.page, ids["table"], "Dec 21") == "40 min"
-        back = _changed(opened_map, _map_pixels(second.page, ids["map"]))
-        assert back <= 0.01, f"the saved date's map differs from the one the page opened with in {back:.2%}"
+        back_maps: dict = {}
+        second.waits_for(
+            "the saved maps again", lambda: back_maps.update(_maps_redrew(second.page, ids, "the day went back")),
+        )
+        for key in MAPS:
+            back = _changed(opened_maps[key], back_maps[key])
+            assert back <= 0.01, (
+                f"{LABELS[key]} for the saved day differs from the one the page opened with in {back:.2%}"
+                + second.story()
+            )
+        second.waits_for(
+            "the saved plot again", lambda: _plot_redrew(second.page, ids["plot"], summer_plot, colors),
+        )
         # The page asks, and the server answers that the saved values need no
         # run: the page follows no run and runs no GPU step.
         second.waits_for_runs(3, timeout_ms=RUN_TIMEOUT_MS)
         assert _start_answers(second)[2:] == [(200, None)], (
-            f"the saved date was answered {_start_answers(second)[2:]!r}, not with no run" + second.story()
+            f"the saved day was answered {_start_answers(second)[2:]!r}, not with no run" + second.story()
         )
-        assert len(second.streams) == 2, "the saved date ran again" + second.story()
-        assert len(_steps_sent(second.asked)) == 1, "the saved date ran the GPU step again" + second.story()
+        assert len(second.streams) == 2, "the saved day ran again" + second.story()
+        assert _page_steps(second.asked) == page_steps, "the saved day ran the GPU steps again" + second.story()
         assert _beyond_viewer_runs(second) == [], (
             "the dashboard asked the server for more than a viewer's run" + second.story()
         )
@@ -448,8 +691,9 @@ def test_the_owner_shares_the_crown_heights_dashboard_and_each_visitor_tries_a_d
         )
         other.goto(dataflow_link)
         other.get_by_test_id("shared-view-banner").wait_for(timeout=45000)
-        assert _table_reads(other, ids["table"], "Dec 21", timeout_ms=90000) == "40 min"
-        _wait_for_map_drawn(other, ids["map"], "another account opened the dataflow's link")
+        _shows_winter(
+            other, ids, colors, "another account opened the dataflow's link", on_canvas=True, timeout_ms=90000,
+        )
     finally:
         other_ctx.close()
 
@@ -468,6 +712,8 @@ def test_the_crown_heights_dashboard_link_dev_shares_works_on_this_deployment_to
     require_project_page()
     require_user_auth()
     ids = _ids()
+    colors = _colors()
+    page_steps = sorted(ids[key] for key in PAGE_STEPS)
 
     # The shared guest's copy, seeded as dev seeds it: by the first listing
     # since the start (here, since the last test emptied the database).
@@ -482,105 +728,120 @@ def test_the_crown_heights_dashboard_link_dev_shares_works_on_this_deployment_to
     try:
         visitor.ctx.add_init_script(_EMPTY_STATES_JS)
         # No one ran it, so its tiles fill through a run: the server, the
-        # page's GPU step, then the server again. Held at its first step, the
-        # run leaves the table and the map saying they are computing, not
-        # that a node is left to run.
+        # page's four GPU steps, then the server again. Held at its first
+        # step, the run leaves the maps, the plot and the table saying they
+        # are computing, not that a node is left to run.
         hold_server_runs(current_server, True)
         try:
             visitor.opens(hosted, LINK_ID)
             require_webgpu(visitor.page)
             _until_held(current_server, visitor)
-            for name in ("table", "map"):
+            for key in TILES:
                 visitor.waits_for(
-                    f"{LABELS[name]} computing",
-                    lambda name=name: _tile_says(
-                        visitor.page, ids[name], "upstream-running", *COMPUTING, timeout_ms=60000,
+                    f"{LABELS[key]} computing",
+                    lambda key=key: _tile_says(
+                        visitor.page, ids[key], "upstream-running", *COMPUTING, timeout_ms=60000,
                     ),
                 )
         finally:
             # A hold left standing would stop every later run on this backend.
             hold_server_runs(current_server, False)
-        shade: list[str] = []
-        visitor.waits_for(
-            "the table the run made", lambda: shade.append(_table_reads(visitor.page, ids["table"], "Dec 21")),
-        )
-        assert shade == ["40 min"], f"the run on open gave Dec 21 {shade!r}, not komar41's 40 min" + visitor.story()
-        visitor.waits_for(
-            "the map the run made", lambda: _wait_for_map_drawn(visitor.page, ids["map"], "the link opened"),
-        )
-        # From the page's opening to what the run made, the table and the map
-        # said only that they were computing: never a node to run, a play to
-        # press, nor what an input just arrived is not.
-        for name in ("table", "map"):
-            said = _tile_said(visitor.page, ids[name])
+        visitor.waits_for("what the run made", lambda: _shows_winter(visitor.page, ids, colors, "the link opened"))
+        # From the page's opening to what the run made, the maps, the plot and
+        # the table said only that they were computing: never a node to run, a
+        # play to press, nor what an input just arrived is not.
+        for key in TILES:
+            said = _tile_said(visitor.page, ids[key])
             assert set(said) <= {"upstream-running", None}, (
-                f"{LABELS[name]} said {said!r} before what the run made" + visitor.story()
+                f"{LABELS[key]} said {said!r} before what the run made" + visitor.story()
             )
         visitor.waits_for_runs(2, timeout_ms=RUN_TIMEOUT_MS)
         assert len(_runs_started(visitor.asked)) == 2, (
             "opening the link started other than one run and its sequel" + visitor.story()
         )
-        assert len(_steps_sent(visitor.asked)) == 1, "the page did not run the GPU step" + visitor.story()
-        opened = _step_outputs(visitor)
-        assert {ids[name] for name in NOT_REACHED + ("grid", "prepare")} <= set(opened[0]), (
-            f"the run on open ran {opened[0]!r}"
+        assert _page_steps(visitor.asked) == page_steps, (
+            "the page did not run each of the four GPU steps, once" + visitor.story()
         )
+        opened = _step_outputs(visitor)
+        unmade = [key for key in ("steps", *DAY_BLIND) if ids[key] not in opened[0]]
+        assert not unmade, f"the run on open did not make {unmade!r} before the GPU steps: it ran {opened[0]!r}"
+        unmade = [key for key in AFTER_PAGE if ids[key] not in opened[1]]
+        assert not unmade, f"the run on open did not make {unmade!r} after the GPU steps: it ran {opened[1]!r}"
 
-        opened_map = _map_pixels(visitor.page, ids["map"])
-        keep_drawing(visitor.page, _map_canvas(ids["map"]))
-        _pick_date(visitor.page, ids["date"], "2027-06-21")
-        visitor.waits_for("the table for Jun 21", lambda: _table_reads(visitor.page, ids["table"], "Jun 21"))
-        visitor.waits_for("the map for Jun 21", lambda: _wait_for_redraw(visitor.page, ids["map"], "the date changed"))
-        moved = _changed(opened_map, _map_pixels(visitor.page, ids["map"]))
-        assert moved > 0.005, f"the map for Jun 21 differs from Dec 21's in {moved:.2%} of its pixels" + visitor.story()
+        opened_maps = _keep_drawing_maps(visitor.page, ids)
+        opened_plot = visitor.page.evaluate(_PLOT_PIXELS_JS, ids["plot"])
+        _pick_day(visitor.page, ids["steps"], SUMMER["Day"])
+        visitor.waits_for(
+            "the table for the summer solstice", lambda: _table_reads(visitor.page, ids["summary-view"], SUMMER),
+        )
+        summer_maps: dict = {}
+        visitor.waits_for(
+            "the maps for the summer solstice",
+            lambda: summer_maps.update(_maps_redrew(visitor.page, ids, "the day changed")),
+        )
+        for key in MAPS:
+            moved = _changed(opened_maps[key], summer_maps[key])
+            assert moved > 0.005, (
+                f"{LABELS[key]} for the summer solstice differs from the winter solstice's in {moved:.2%} of its "
+                "pixels" + visitor.story()
+            )
+        visitor.waits_for(
+            "the plot for the summer solstice", lambda: _plot_redrew(visitor.page, ids["plot"], opened_plot),
+        )
         visitor.waits_for_runs(4, timeout_ms=RUN_TIMEOUT_MS)
         assert len(_runs_started(visitor.asked)) == 4, (
-            "a date started other than one run and its sequel" + visitor.story()
+            "a day started other than one run and its sequel" + visitor.story()
         )
-        assert len(_steps_sent(visitor.asked)) == 2, "the page did not run the GPU step for the date" + visitor.story()
-        # Only the ground grid reads the date: everything else before the GPU
-        # step is what the run on open kept, handed on again or not asked for.
+        assert _page_steps(visitor.asked) == sorted(page_steps * 2), (
+            "the page did not run each of the four GPU steps once for the day" + visitor.story()
+        )
+        # Only the sun steps read the day: everything else before the GPU
+        # steps is what the run on open kept, handed on again or not asked for.
         changed = _ran_since(visitor, 2)[0]
-        assert changed.get(ids["grid"]) not in (None, opened[0][ids["grid"]]), (
-            "the ground grid was not made again for Jun 21" + visitor.story()
+        assert changed.get(ids["steps"]) not in (None, opened[0][ids["steps"]]), (
+            "the day's sun steps were not made again for the summer solstice" + visitor.story()
         )
-        for name in NOT_REACHED + ("prepare",):
-            assert changed.get(ids[name]) in (None, opened[0][ids[name]]), (
-                f"{LABELS[name]} ran again for Jun 21, which it does not read" + visitor.story()
+        for key in DAY_BLIND:
+            assert changed.get(ids[key]) in (None, opened[0][ids[key]]), (
+                f"{LABELS[key]} ({key}) ran again for the summer solstice, which it does not read" + visitor.story()
             )
         assert _beyond_viewer_runs(visitor) == [], (
             "the dashboard asked the server for more than a viewer's run" + visitor.story()
         )
-        # Through the date's run too, the tiles kept what they showed.
-        for name in ("table", "map"):
-            said = _tile_said(visitor.page, ids[name])
-            assert set(said) <= {"upstream-running", None}, f"{LABELS[name]} said {said!r}" + visitor.story()
+        # Through the day's run too, the tiles kept what they showed.
+        for key in TILES:
+            said = _tile_said(visitor.page, ids[key])
+            assert set(said) <= {"upstream-running", None}, f"{LABELS[key]} said {said!r}" + visitor.story()
     finally:
         visitor.close()
 
-    # A browser with no WebGPU: the run on open stops at the GPU step, and the
-    # table and the map say which step could not run, with nothing to press.
+    # A browser with no WebGPU: the run on open stops at the GPU steps, and
+    # the maps, the plot and the table say which step could not run, with
+    # nothing to press. Which of the four the page names is the first it
+    # tried, so any of their titles will do.
+    stopped = re.compile("|".join(
+        sorted({re.escape(f'"{LABELS[key]}" could not run in this browser.') for key in PAGE_STEPS})
+    ))
     blind = _Visitor(browser, current_server)
     try:
         blind.ctx.add_init_script(_NO_WEBGPU_JS)
         blind.ctx.add_init_script(_EMPTY_STATES_JS)
         blind.opens(hosted, LINK_ID)
-        stopped = f'"{LABELS["rays"]}" could not run in this browser.'
-        for name in ("table", "map"):
+        for key in TILES:
             blind.waits_for(
-                f"{LABELS[name]} saying why it has nothing",
-                lambda name=name: _tile_says(
-                    blind.page, ids[name], "upstream-stopped", stopped, timeout_ms=RUN_TIMEOUT_MS,
+                f"{LABELS[key]} saying why it has nothing",
+                lambda key=key: _tile_says(
+                    blind.page, ids[key], "upstream-stopped", stopped, timeout_ms=RUN_TIMEOUT_MS,
                 ),
             )
         blind.waits_for_runs(1, timeout_ms=RUN_TIMEOUT_MS)
-        # Computing, then why: the map no more tries to draw than the page
-        # ran its GPU step, and neither tile said a node was left to run.
+        # Computing, then why: no map or plot more tries to draw than the page
+        # ran its GPU steps, and no tile said a node was left to run.
         blind.page.wait_for_timeout(2000)
-        for name in ("table", "map"):
-            said = _tile_said(blind.page, ids[name])
+        for key in TILES:
+            said = _tile_said(blind.page, ids[key])
             assert set(said) <= {"upstream-running", "upstream-stopped", None} and said[-1] == "upstream-stopped", (
-                f"{LABELS[name]} said {said!r}" + blind.story()
+                f"{LABELS[key]} said {said!r}" + blind.story()
             )
         assert len(_runs_started(blind.asked)) == 1, (
             "the run started again past a step the page could not run" + blind.story()
