@@ -355,3 +355,23 @@ def detect_kind(obj):
     if 'rasterio' in sys.modules and isinstance(obj, sys.modules['rasterio'].io.DatasetReader): return 'raster'
     if isinstance(obj, tuple): return 'outputs'
     return 'unknown'
+
+
+#: What a node can hand on to the nodes after it, as a node that returned
+#: anything else is told.
+NODE_CAN_RETURN = (
+    "a table (a DataFrame or GeoDataFrame), a raster (an open rasterio dataset), "
+    "a number, text, true or false, a list, a dict or a tuple made from it"
+)
+
+
+def cannot_hand_on(value) -> TypeError:
+    """The error a node fails with when it returned *value*, which Curio
+    cannot store (``detect_kind`` says ``unknown``), or a list, dict or tuple
+    holding it: what *value* is, by its library and class, and what a node
+    can return. In process and in the isolated child alike."""
+    kind = type(value)
+    library = (getattr(kind, "__module__", None) or "").split(".")[0]
+    name = kind.__name__ if library in ("", "builtins") or library.startswith("_") else f"{library} {kind.__name__}"
+    article = "an" if name[:1].lower() in "aeiox" else "a"
+    return TypeError(f"A node cannot hand on {article} {name}. Return {NODE_CAN_RETURN}.")

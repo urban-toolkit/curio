@@ -280,6 +280,32 @@ class TestOutputsBundles(unittest.TestCase):
             protocol.validate_payload(payload)
 
 
+class TestListsAndDictsOfItems(unittest.TestCase):
+    """A list or dict holding frames or rasters, which JSON cannot carry,
+    names each of its items as an output of its own: a dict by its keys, a
+    list in order. Anything else of that shape is refused."""
+
+    def test_each_item_is_an_output_of_its_own_and_nothing_else_is_taken(self):
+        frame = {"kind": "dataframe", "file": "out_0.parquet"}
+        layers = protocol.validate_payload({"kind": "dict", "items": {"roads": frame, "count": {"kind": "int", "value": 2}}})
+        self.assertEqual(layers, {"kind": "dict", "items": {"roads": frame, "count": {"kind": "int", "value": 2}}})
+        frames = protocol.validate_payload({"kind": "list", "items": [frame]})
+        self.assertEqual(frames, {"kind": "list", "items": [frame]})
+        too_many = [{"kind": "int", "value": 1}] * (protocol.MAX_OUTPUTS_ITEMS + 1)
+        for refused in (
+            {"kind": "dict"},
+            {"kind": "dict", "items": [frame]},
+            {"kind": "list", "items": {"roads": frame}},
+            {"kind": "dict", "items": {1: frame}},
+            {"kind": "dict", "items": {"roads": {"kind": "dataframe", "file": "../../etc/passwd"}}},
+            {"kind": "list", "items": too_many},
+            {"kind": "dict", "file": "out.json", "items": {"roads": frame}},
+        ):
+            with self.subTest(refused=str(refused)[:80]):
+                with self.assertRaises(ProtocolError):
+                    protocol.validate_payload(refused)
+
+
 class TestImportReplay(unittest.TestCase):
     """Reported imports are replayed as code in a later child's prologue."""
 
