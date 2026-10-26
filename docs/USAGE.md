@@ -403,6 +403,9 @@ selected: the editor's tabs (code, widgets, spec, output), **Provenance** (the
 node's runs, see [Provenance](#provenance)), the **Save output dataset** toggle,
 settings, about, pin, **Minimize** and delete.
 Code and specs sit in a gray box, and a code node's output is below its code.
+A Data Loading node shows its **Data** widget above its code: drop a file or a
+Data Catalog dataset on the node, or click **Choose file** to pick a file, and
+its code loads it ([Data Catalog](#data-catalog)).
 
 Above the code or spec, one row lists every chip the node can use, by category:
 **Inputs**, **Scenarios**, **Widgets**, **Selections** and **Shared**, each with
@@ -559,6 +562,7 @@ nodes have them.
 | List of texts | a field, such as `["a", "b"]` | a list of texts |
 | Range | two numbers, the first not larger than the second | `[0, 5]` |
 | Text file | a file you pick (up to 1,000,000 characters) | the file's text |
+| Dataset | a box you drop a file or a Data Catalog dataset on, with **Choose file** | the dataset's id, such as `"data.utk.trees"`, which `curio_load_data` loads |
 
 A checkbox group and a multi-select list their choices in the order the choices
 are given. A location's place search finds a place by name, on Enter or
@@ -1595,7 +1599,9 @@ Datasets have their own catalog, built on the same model as the Node Catalog: a 
 Three surfaces manage datasets:
 
 - The **Data Catalog drawer** inside the canvas. Open it from the **Data Catalog** button in the top bar, or from the **Data Catalog** dropdown in the left Tools panel via **Browse Data Catalog +**. Add datasets to the open dataflow, import files from your machine, or delete.
-- The **Data Catalog** dropdown in the Tools panel, listing the datasets added to the open dataflow and, under **Saved outputs**, the outputs its nodes saved. Drag one onto the canvas to create (or extend) a node with generated loader code.
+- The **Data Catalog** dropdown in the Tools panel, listing the datasets added to the open dataflow and, under **Saved outputs**, the outputs its nodes saved. Drag one onto the canvas to create a Data Loading node that loads it, or onto a node to load it there.
+
+A file from your computer, dropped on the canvas or on a Data Loading node, or picked with a Data Loading node's **Choose file**, is imported into your account and added to the open dataflow, then loaded as a dataset dragged there is.
 - The **`/catalog/data`** page, the library view for your whole account, reached from `/projects` and the **Data Catalog** tab. **Add to all projects** there adds a dataset to every dataflow you have.
 
 A node can also save its output as a **computed dataset** in your account (the database toggle among the buttons in its header), so its result can be reused as an input elsewhere.

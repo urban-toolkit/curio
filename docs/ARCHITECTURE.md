@@ -2668,11 +2668,18 @@ completion's output cap is the deployment constant
 | `/starters` | GET | Per-template starter source bodies from every installed package, keyed on `<packageId>/<templateId>@<major>` |
 
 Starters come from each installed package's optional per-template `source` file.
-`curio.builtin@1` ships no sources, so dragging a built-in node onto the canvas
-yields an empty editor; third-party packages may ship a starter per template.
-When a template declares both `behavior: "code"` and a `source`, the frontend
-composes `withPackageStarter` over the behavior hook so the starter is injected
-on a fresh drop (see [Behavior Hooks](#behavior-hooks)).
+In `curio.builtin@1` only Data Loading ships one (`sources/data-loading.py`),
+so its other nodes open with an empty editor; third-party packages may ship a
+starter per template. When a template declares both `behavior: "code"` and a
+`source`, the frontend composes `withPackageStarter` over the behavior hook so
+the starter, and the template's `widgets` beside it, are injected on a fresh drop
+(see [Behavior Hooks](#behavior-hooks)).
+
+A template's `widgets` reach a node an agent creates too, whatever writes its
+content: both plan applies and `node.create` read them with `declared_widgets`
+(`packages/application/starters.py`) and set the plan's or the request's widgets
+over them (`plan_scenarios.created_node_metadata`, `plan_scenarios._set_over`),
+as the roster names them to the agents (`templates._template_entry`).
 
 A template that declares `starterIsContent` gives its starter to a node an
 agent's plan or `node.create` creates too. Both plan applies, the whole plan and one node
@@ -2683,7 +2690,7 @@ widgets are the template's with each one the plan declares set over the one of
 its name (`plan_scenarios.created_node_metadata`). It never joins `nodeRuns` as
 pending, so Solve does not write it, and its ref is `approved`, so the
 Simulation Mode driver does not validate it either. Every other planned node is
-created empty for Solve to write.
+created with its template's declared widgets and no content, for Solve to write.
 
 A `node.create` of such a template gives no content, and any other content is
 refused (`mint.starter-is-content`, which names the template's widgets). The
@@ -2693,6 +2700,30 @@ the spec and the widgets Apply writes. Neither the source-grounding gate nor
 the document check reads the starter, as neither reads a plan's. A template
 whose starter is not its whole content keeps its rule: the request gives the
 content.
+
+### Dataset widgets and drops
+
+A widget of type `dataset` holds a Data Catalog id, and its reference writes
+the id as a string, so Data Loading's starter, `data = curio_load_data([!! data !!])`,
+loads whatever it holds; `code_references.reference_problem` and its twin
+`referenceProblem` refuse code that reads an empty one. A template that declares
+`widgetsWithCode` has `NodeEditor` draw its widgets' controls
+(`WidgetValueControls`) above its code. The node takes drops on its whole card,
+in `NodeContainer`'s capture listeners (`components/styles.tsx`), since Monaco
+stops drop events before they reach a control: a Data Catalog card, or a file
+from the computer that `useDataFileImport` first imports
+(`datasetCatalogApi.importDataset`) and adds to the dataflow
+(`addDatasetToDataflow`, the drawer's Add to project), sets the first dataset
+widget the node's code reads (`datasetWidgetReadBy`), and on any other node the
+loader is merged into the code (`mergeDatasetLoaderCode`). The dataset control's
+**Choose file** hands its files to the same path through
+`DatasetWidgetContext`. Setting the widget trades the bindings it made before
+for the new dataset's (`applyDatasetToWidget`: `datasetRefs`, `appliedDatasets`,
+a layer group's members), recorded per widget in `datasetWidgets`, which the
+save writes at `metadata.datasetWidgets`; `nodeBoundDatasetIds` also reads the
+widgets' values. On the empty canvas, `MainCanvas` makes the Data Loading node a
+drop on a fresh one would make (`buildDatasetWidgetNodeOptions`). The kind is
+read-only on a dashboard tile (`contracts/dashboardRuns.json`).
 
 ### Auth Routes
 

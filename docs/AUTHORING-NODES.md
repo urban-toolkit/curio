@@ -138,17 +138,32 @@ place each one in the source as `[!! name !!]`:
 return input_0.rolling([!! window !!]).agg([!! method !!])
 ```
 
-A node dropped from the palette starts with these widgets and their defaults.
-**Save as package node…** writes the node's widgets into the template, with the
-values it had as the defaults. The shape of each entry is the `widget`
-definition in [docs/schemas/node-package.v4.json](schemas/node-package.v4.json).
+A node dropped from the palette starts with these widgets and their defaults,
+and so does a node an agent creates from the template. **Save as package
+node…** writes the node's widgets into the template, with the values it had as
+the defaults. The shape of each entry is the `widget` definition in
+[docs/schemas/node-package.v4.json](schemas/node-package.v4.json).
+
+A `dataset` widget holds a Data Catalog dataset: a file or a dataset dropped on
+the node, or a file picked with its **Choose file**, sets it, and its reference
+is the dataset's id. Data Loading's starter reads one:
+
+```python
+data = curio_load_data([!! data !!])
+return data
+```
+
+To show the widgets above the code, where the user sets what the code reads,
+add `"widgetsWithCode": true`, as Data Loading does. The **Widgets** tab still
+adds and edits them.
 
 When the starter is the node's whole content and only its widgets change from
 one use to the next, add `"starterIsContent": true` beside `source`. A node the
 **Dataflow Builder**'s plan creates from the template then starts with the
 starter and the template's widgets, each widget the plan declares set over the
 one of its name, and **Solve** leaves its content as it is. Without it, a planned
-node is created empty and Solve writes its content.
+node is created with the template's widgets and no content, and Solve writes its
+content.
 
 A starter that each use edits leaves the flag out, as Scout's Raster
 Calculator does: its starter,

@@ -64,7 +64,7 @@ Only a mode other than `OVERWRITE` is written; an absent member, or an absent
 entry is `{name, type, label?, default, value?, options?}`, where `type` is one
 of `number`, `slider`, `text`, `choice`, `checkbox`, `checkbox-group`,
 `multi-select`, `datetime`, `date`, `location`, `number-list`, `text-list`,
-`range` and `file`. `options.choices` lists the options of a choice, checkbox group or
+`range`, `file` and `dataset`. `options.choices` lists the options of a choice, checkbox group or
 multi-select widget, and `options.display` is `radio` for a choice drawn as
 radio buttons. A number or slider widget takes `options.min`, `max`, `step` and
 `units`; a slider needs `min` and `max`. A checkbox group or multi-select holds a
@@ -84,6 +84,13 @@ backslash before each `.`, `[` and `]` (`rain.mm` as `rain\.mm`), and a name
 that already holds a backslash as it is. An old
 `[!! name$TYPE$default !!]` marker, or a name the node has no widget for, fails
 the run with a message naming it.
+
+A `dataset` widget holds the id of a Data Catalog dataset, layer group or
+collection, or `""` until one is dropped on its node; code that reads an empty
+one fails the run. `metadata.datasetWidgets` records, by widget name, what a drop
+set each one to: `{id, title, format, refs}`, where `refs` are the ids the drop
+added to `metadata.datasetRefs` (a layer group's member layers), which the next
+drop on that widget replaces.
 
 A `curio.builtin/parameter` node holds one widget in `metadata.widgets` and has
 no edges. Any node's `content` places it as `[!! @name !!]`, written and

@@ -174,20 +174,27 @@ def copy_blocker(plan: dict, plan_node: dict, created_ids: dict) -> str | None:
     return f"create {title!r} first: a copy records the node it was copied from"
 
 
-def created_node_metadata(plan_node: dict, created_ids: dict, nodes: list, starter: dict | None = None) -> dict:
+def created_node_metadata(
+    plan_node: dict,
+    created_ids: dict,
+    nodes: list,
+    starter: dict | None = None,
+    declared: list | None = None,
+) -> dict:
     """The ``metadata`` a planned node is created with: its widgets, its
     settings (a Spatial Join's operation and output, a Data Pool's modes, a
     Simple View's image column, each at its own key), and for a copy the ids
     it descends from, the original's own lineage then the original (as
     Duplicate selection writes it). Empty when it has none of them.
 
-    A node that starts with its template's starter (*starter*, from the
-    packages' ``content_starters``) holds the template's widgets, which the
-    starter places, each one the plan declares set over the one of its name,
-    then the plan's others."""
+    A node holds the widgets its template declares (*declared*, from the
+    packages' ``declared_widgets``; for a node that starts with its
+    template's starter, *starter*'s, which the starter places), each one the
+    plan declares set over the one of its name, then the plan's others."""
     metadata: dict = {}
     planned = [dict(w) for w in plan_node.get("widgets") or []]
-    widgets = _set_over(starter["widgets"], planned) if starter else planned
+    template_widgets = starter["widgets"] if starter else (declared or [])
+    widgets = _set_over(template_widgets, planned) if template_widgets else planned
     if widgets:
         metadata["widgets"] = widgets
     metadata.update(node_settings.of(plan_node))

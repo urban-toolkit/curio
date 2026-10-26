@@ -105,6 +105,24 @@ def _content_starters(user_key: str, project_id: str, plan_nodes: list) -> dict[
     }
 
 
+def _declared_widgets(user_key: str, project_id: str, plan_nodes: list) -> dict[str, list]:
+    """The widgets each planned node's template declares, by plan ref (the
+    packages' ``declared_widgets``): the ones the roster names for it, which
+    a node of it starts with on the canvas too. A ref whose template declares
+    none is left out."""
+    from utk_curio.backend.app.packages import service as packages_services
+
+    by_template = packages_services.declared_widgets(
+        user_key, project_id, [n["nodeType"] for n in plan_nodes]
+    )
+    canonical = packages_services.canonical_template_id
+    return {
+        n["ref"]: by_template[canonical(n["nodeType"])]
+        for n in plan_nodes
+        if canonical(n["nodeType"]) in by_template
+    }
+
+
 def _awaits_solve(node: dict) -> bool:
     """Whether Solve writes a created node's content: a planned node starts
     empty unless its template's starter is its whole content."""
@@ -924,7 +942,10 @@ def apply_plan_node(
     )
     dataflow = spec.setdefault("dataflow", {})
     starters = _content_starters(user_key, project_id, [plan_node])
-    created = _created_plan_node(proposal, plan_node, ref, dataflow.setdefault("nodes", []), starters.get(ref))
+    declared = _declared_widgets(user_key, project_id, [plan_node])
+    created = _created_plan_node(
+        proposal, plan_node, ref, dataflow.setdefault("nodes", []), starters.get(ref), declared.get(ref),
+    )
     node_id = created["id"]
     dataflow["nodes"].append(created)
     applied_refs.append(ref)
@@ -1011,11 +1032,12 @@ def apply_plan_node(
 
 
 def _created_plan_node(proposal: dict, plan_node: dict, ref: str, nodes: list,
-                       starter: dict | None = None) -> dict:
+                       starter: dict | None = None, declared: list | None = None) -> dict:
     """The canvas node one plan ref becomes: the mint-time position and the (possibly edited) goal,
-    and #662's widgets and lineage (``plan_scenarios.created_node_metadata``, as the whole-plan
-    apply writes them). Empty, for Solve to write, unless its template's starter is its whole
-    content (*starter*), which it starts with."""
+    and #662's widgets, its template's declared ones (*declared*) among them, and lineage
+    (``plan_scenarios.created_node_metadata``, as the whole-plan apply writes them). Empty, for
+    Solve to write, unless its template's starter is its whole content (*starter*), which it
+    starts with."""
     pos = (proposal.get("positions") or {}).get(ref) or {}
     goal_text = (proposal.get("editedGoals") or {}).get(ref) or (
         f"{plan_node['title']} — {plan_node['intent']}"
@@ -1029,7 +1051,7 @@ def _created_plan_node(proposal: dict, plan_node: dict, ref: str, nodes: list,
         "y": float(pos.get("y", 80.0)),
     }
     metadata = plan_scenarios.created_node_metadata(
-        plan_node, proposal.get("appliedNodeIds") or {}, nodes, starter,
+        plan_node, proposal.get("appliedNodeIds") or {}, nodes, starter, declared,
     )
     if metadata:
         created["metadata"] = metadata
@@ -1531,6 +1553,7 @@ def _apply_dataflow_plan(
     remove_node_set = set(remove_nodes)
     removed_edge_ids = _remove_plan_victims(spec, nodes, edges, remove_node_set, plan.get("removeEdges", []))
     starters = _content_starters(user_key, project_id, plan.get("nodes", []))
+    declared = _declared_widgets(user_key, project_id, plan.get("nodes", []))
     # The agents every created node may carry, resolved once against the
     # planning agent's own delegations (dev/126).
     planner = attachments.get_attachment(spec, attachment_id) or {}
@@ -1539,7 +1562,7 @@ def _apply_dataflow_plan(
     )
     created_nodes, attached_results, ref_to_id = _create_plan_nodes(
         user_key, spec, nodes, plan, proposal, starters,
-        agents=plan_agents, templates=_roster_templates(user_key, project_id),
+        agents=plan_agents, templates=_roster_templates(user_key, project_id), declared=declared,
     )
     created_edges = _create_plan_edges(
         user_key, project_id, proposal_id, spec, proposal, session_id, plan, nodes, edges, ref_to_id, spec_nodes_by_id,
@@ -1696,13 +1719,15 @@ def _remove_plan_victims(spec: dict, nodes: list, edges: list, remove_node_set: 
 
 def _create_plan_nodes(user_key, spec: dict, nodes: list, plan: dict, proposal: dict,
                        starters: dict, *, agents: list[dict] | None = None,
-                       templates: dict | None = None) -> tuple[list, list, dict]:
+                       templates: dict | None = None,
+                       declared: dict | None = None) -> tuple[list, list, dict]:
     """The plan's new nodes at the mint-time layout (+ review-stage overlays). A ref a row applied
     is a node of the dataflow already: it is not created again, and its id seeds the edge
     resolution, as a connection already there is not drawn again (``_create_plan_edges``). Each
     created node gets its agents (*agents*, ``_plan_node_agents``) in THIS apply's single spec
     write (dev/126). A ref in *starters* starts with its template's starter and widgets
-    (``_content_starters``)."""
+    (``_content_starters``); every other ref with its template's declared widgets (*declared*,
+    ``_declared_widgets``)."""
     right = _right_edge(nodes)
     ys = [n.get("y") for n in nodes if isinstance(n, dict) and isinstance(n.get("y"), (int, float))]
     base_x = (right + _NODE_H_GUTTER) if right is not None else 80.0
@@ -1739,7 +1764,9 @@ def _create_plan_nodes(user_key, spec: dict, nodes: list, plan: dict, proposal: 
         }
         # #662: its widgets, and for a copy its lineage; a copy follows the
         # node it copies in the plan, so that node is already created.
-        metadata = plan_scenarios.created_node_metadata(plan_node, ref_to_id, nodes, starter)
+        metadata = plan_scenarios.created_node_metadata(
+            plan_node, ref_to_id, nodes, starter, (declared or {}).get(plan_node["ref"]),
+        )
         if metadata:
             created["metadata"] = metadata
         nodes.append(created)

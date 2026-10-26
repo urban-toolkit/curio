@@ -9,11 +9,13 @@ template id ``<packageId>/<templateId>@<major>``, named for the file.
 
 A model package's template without ``source`` opens with the cell Curio
 writes for the package's model type (``model_packages.model_default_cell``),
-named for the template's id. Other templates without ``source`` (e.g.
-structural built-ins) contribute no starter, and the editor opens empty.
+named for the template's id. Other templates without ``source`` (e.g. the
+Data Pool or Spatial Join built-ins) contribute no starter, and the editor
+opens empty.
 
 A template whose starter is a node's whole content (``starterIsContent``)
 gives it to a node an agent's plan creates too: :func:`content_starters`.
+Every template's declared widgets go to such a node: :func:`declared_widgets`.
 """
 
 from __future__ import annotations
@@ -189,4 +191,36 @@ def content_starters(user_key: str, project_id: str, node_types: Iterable[object
                         "content": read[1],
                         "widgets": [dict(w) for w in normalize_widgets(template.widgets)],
                     }
+    return out
+
+
+def declared_widgets(user_key: str, project_id: str, node_types: Iterable[object]) -> dict[str, list[dict]]:
+    """The widgets a node of each of *node_types* starts with, by canonical
+    template id: those its template declares (``widgets``), as a freshly
+    dropped node gets them on the canvas. The roster tells agents these names
+    (``templates._template_entry``), so a node an agent creates holds them too,
+    whatever writes its content. A template that declares none is left out.
+
+    A template resolves as :func:`content_starters` resolves it, under the
+    same per-user seed lock.
+    """
+    wanted = {packages_templates.canonical_template_id(t) for t in node_types} - {""}
+    if not wanted:
+        return {}
+    scope = packages_project_packages._lockfile_or_empty(user_key, project_id)  # project-spec I/O: outside
+    out: dict[str, list[dict]] = {}
+    seen: set[str] = set()
+    with package_seed_lock(user_key):
+        store = packages_store_reads._store_index(user_key)
+        for _dir_name, manifest in packages_templates._in_scope(scope, store):
+            if isinstance(manifest, Exception):
+                continue
+            for template in manifest.templates:
+                canonical = f"{manifest.package_id}/{template.template_id}"
+                if canonical in seen:
+                    continue
+                seen.add(canonical)
+                widgets = [dict(w) for w in normalize_widgets(template.widgets)]
+                if canonical in wanted and widgets:
+                    out[canonical] = widgets
     return out
