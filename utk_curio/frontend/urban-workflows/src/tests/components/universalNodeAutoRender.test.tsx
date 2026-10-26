@@ -16,6 +16,10 @@
  *    input. A selection, coming back through a Data Pool or across a direct
  *    interaction edge, is not a new input: the node highlights the matched
  *    rows in the view it has.
+ *  - On a dashboard a tile also draws again with new values of its own
+ *    widgets, a viewer's controls (#1117): once per new set of values, never
+ *    twice in one tick, and a value set while it draws or while a run goes is
+ *    drawn after.
  *  - Only an Autark node: it needs WebGPU; a data or compute step never draws
  *    on its own (on the dashboard their layers come from the Data Catalog);
  *    a pinned tile with no input draws once on the dashboard.
@@ -147,6 +151,8 @@ const MAP_SPEC = JSON.stringify({ map: { layerRefs: [] } });
 const DATA_SPEC = JSON.stringify({ data: [{ type: "osm" }] });
 const INPUT_A = { path: "art_a", dataType: "dataframe" };
 const INPUT_B = { path: "art_b", dataType: "dataframe" };
+/** A widget of the node's own, which its dashboard tile shows as a control. */
+const OPACITY = { name: "opacity", type: "slider", label: "Opacity", default: 1, options: { min: 0.1, max: 1, step: 0.1 } };
 
 function data(nodeType: string, extra: Record<string, unknown> = {}) {
   return { nodeId: "n1", nodeType, input: "", ...extra };
@@ -413,6 +419,81 @@ describe.each([
 
     expect(mockSendCode).toHaveBeenCalledTimes(1);
   });
+
+  // A tile's own widgets are a viewer's controls on a dashboard (#1117). The
+  // server never runs a pinned node, so the page draws it with the new value.
+  describe("its own widget's new value on a dashboard tile", () => {
+    const tile = (value: number, extra: Record<string, unknown> = {}) =>
+      node({ input: INPUT_A, dashboardPinned: true, widgets: [{ ...OPACITY, value }], ...extra });
+    beforeEach(() => {
+      mockDashboardOn = true;
+      wire();
+    });
+
+    test("draws it again", async () => {
+      const utils = await open(tile(1));
+      expect(mockSendCode).toHaveBeenCalledTimes(1);
+
+      await next(utils, tile(0.5));
+
+      expect(mockSendCode).toHaveBeenCalledTimes(2);
+      expect(mockSendCode).toHaveBeenLastCalledWith(spec);
+    });
+
+    test("the same values in a new list draw nothing", async () => {
+      const utils = await open(tile(1));
+
+      await next(utils, tile(1));
+
+      expect(mockSendCode).toHaveBeenCalledTimes(1);
+    });
+
+    test("a new value and a new input in one render draw it once", async () => {
+      // Two `sendCode` calls in one tick cancel each other in the widgets
+      // pass: the tile would sit at "exec".
+      const utils = await open(tile(1));
+
+      await next(utils, tile(0.5, { input: INPUT_B }));
+
+      expect(mockSendCode).toHaveBeenCalledTimes(2);
+    });
+
+    test("a value set while it draws is drawn once that draw ends", async () => {
+      const utils = await open(tile(1));
+
+      await next(utils, tile(0.5, { output: { code: "exec" } }));
+      expect(mockSendCode).toHaveBeenCalledTimes(1);
+
+      await next(utils, tile(0.5, { output: { code: "success", content: "" } }));
+
+      expect(mockSendCode).toHaveBeenCalledTimes(2);
+    });
+
+    test("a value set while a viewer's run goes is drawn once the run ends", async () => {
+      // The run's start re-renders the tile: NodeEditor writes the value into
+      // the node's data in place, and the page's run flag is what comes next.
+      const nodeData = tile(1);
+      const utils = await open(nodeData);
+      (nodeData as any).widgets[0] = { ...OPACITY, value: 0.5 };
+      mockServerRunActive = true;
+      await next(utils, { ...nodeData });
+      expect(mockSendCode).toHaveBeenCalledTimes(1);
+
+      mockServerRunActive = false;
+      await next(utils, { ...nodeData });
+
+      expect(mockSendCode).toHaveBeenCalledTimes(2);
+    });
+
+    test("on the canvas a new value draws nothing: the run it asks for does", async () => {
+      mockDashboardOn = false;
+      const utils = await open(tile(1));
+
+      await next(utils, tile(0.5));
+
+      expect(mockSendCode).toHaveBeenCalledTimes(1);
+    });
+  });
 });
 
 describe("only an Autark node", () => {
@@ -501,6 +582,44 @@ describe("only an Autark node", () => {
     await mount(data(AUTARK, { code: MAP_SPEC, dashboardPinned: true }));
 
     expect(mockSendCode).not.toHaveBeenCalled();
+  });
+
+  test("an unwired pinned tile draws again with its own widget's new value (#1117)", async () => {
+    mockDashboardOn = true;
+    const tile = (value: number) =>
+      data(AUTARK, { code: MAP_SPEC, dashboardPinned: true, widgets: [{ ...OPACITY, value }] });
+    const utils = await mount(tile(1));
+    await settle();
+    expect(mockSendCode).toHaveBeenCalledTimes(1);
+
+    await rerenderWith(utils, tile(0.5));
+    await settle();
+
+    expect(mockSendCode).toHaveBeenCalledTimes(2);
+    expect(mockSendCode).toHaveBeenLastCalledWith(MAP_SPEC);
+  });
+
+  test("two new values of a tile's own widget before WebGPU answers draw it once", async () => {
+    // Each value asks for a draw, and both wait on the one probe: two
+    // `sendCode` calls in one tick would cancel each other, and the map would
+    // sit at "exec".
+    mockDashboardOn = true;
+    mockFlowEdges = [{ id: "e", source: "up", target: "n1" }];
+    const tile = (value: number) =>
+      data(AUTARK, { code: MAP_SPEC, input: INPUT_A, dashboardPinned: true, widgets: [{ ...OPACITY, value }] });
+    const utils = await mount(tile(1));
+    await settle();
+    expect(mockSendCode).toHaveBeenCalledTimes(1);
+
+    let answer!: (support: { supported: boolean }) => void;
+    mockWebGpuAnswer = new Promise((resolve) => { answer = resolve; });
+    await rerenderWith(utils, tile(0.5));
+    await rerenderWith(utils, tile(0.2));
+    expect(mockSendCode).toHaveBeenCalledTimes(1);
+
+    await act(async () => { answer({ supported: true }); });
+
+    expect(mockSendCode).toHaveBeenCalledTimes(2);
   });
 });
 

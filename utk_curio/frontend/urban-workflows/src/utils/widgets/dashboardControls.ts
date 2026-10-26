@@ -1,6 +1,7 @@
 /**
  * The controls a dashboard's viewer changes (#1117): the pin decides. Every
- * widget a pinned tile shows, a pinned Parameter node's included, except the
+ * widget a pinned tile shows (NodeEditor shows a node's widgets as its tile's
+ * controls), a pinned Parameter node's included, except the
  * kinds `contracts/dashboardRuns.json` keeps read-only, whose free value could
  * name another of the owner's datasets or files. The backend holds a viewer's
  * values to the same rule (`runs/viewer.py::dashboard_controls`).
@@ -17,6 +18,12 @@ export type DashboardValues = Record<string, Record<string, unknown>>;
 /** Whether a viewer may change *widget* on a pinned tile: every kind but the read-only ones. */
 export function changeableOnDashboard(widget: Pick<WidgetDef, "type">): boolean {
     return !READ_ONLY_WIDGET_KINDS.includes(widget.type);
+}
+
+/** A text of *widgets*' values, which changes when one of them does: what a
+ * tile last drew with (UniversalNode). */
+export function widgetValuesKey(widgets: unknown): string {
+    return JSON.stringify(normalizeWidgets(widgets).map((widget) => [widget.name, effectiveValue(widget)]));
 }
 
 /** Every control the pinned tiles show, with its value as it stands, as a viewer's run takes them. */
