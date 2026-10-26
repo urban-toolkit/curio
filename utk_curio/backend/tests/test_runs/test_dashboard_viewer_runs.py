@@ -444,15 +444,16 @@ class TestRefusedValues:
         assert words in resp.get_json()["error"]
         assert sandbox.runs == []
 
-    def test_text_text_lists_and_files_are_read_only_as_the_contract_says(self):
+    def test_text_text_lists_files_and_datasets_are_read_only_as_the_contract_says(self):
         from utk_curio.backend.app.runs import kept, viewer
         from utk_curio.common import shared_constants
 
-        assert viewer.READ_ONLY_WIDGET_KINDS == {"text", "text-list", "file"}
+        assert viewer.READ_ONLY_WIDGET_KINDS == {"text", "text-list", "file", "dataset"}
         assert viewer.READ_ONLY_WIDGET_KINDS == set(shared_constants.read("dashboardRuns")["readOnlyWidgetKinds"])
         spec = {"dataflow": {"nodes": [
             {"id": "p", "dashboardPinned": True, "metadata": {"widgets": [
-                {"name": kind.replace("-", "_"), "type": kind} for kind in ("text", "text-list", "file", "slider", "date")
+                {"name": kind.replace("-", "_"), "type": kind}
+                for kind in ("text", "text-list", "file", "dataset", "slider", "date")
             ]}},
             {"id": "q", "metadata": {"widgets": [{"name": "k", "type": "slider"}]}},
         ]}}
