@@ -362,6 +362,32 @@ describe.each([
     expect(mockSendCode).not.toHaveBeenCalled();
   });
 
+  test("an input that lands while it draws is drawn once that draw ends", async () => {
+    // New rows can land while the node still draws the last ones: a dashboard
+    // map drawing one day when the next day's rows arrive. They wait for that
+    // draw, as a widget's new value does (below), and are drawn once it ends.
+    // Before, nothing drew them, and the node kept the rows it had drawn.
+    const utils = await open(node({ input: INPUT_A }));
+    expect(mockSendCode).toHaveBeenCalledTimes(1);
+
+    await next(utils, { ...node({ input: INPUT_B }), output: { code: "exec" } });
+    expect(mockSendCode).toHaveBeenCalledTimes(1);
+
+    await next(utils, { ...node({ input: INPUT_B }), output: { code: "success", content: "" } });
+
+    expect(mockSendCode).toHaveBeenCalledTimes(2);
+    expect(mockSendCode).toHaveBeenLastCalledWith(spec);
+  });
+
+  test("but a draw that ends on the input it drew is not drawn again", async () => {
+    const utils = await open(node({ input: INPUT_A }));
+    await next(utils, { ...node({ input: INPUT_A }), output: { code: "exec" } });
+
+    await next(utils, { ...node({ input: INPUT_A }), output: { code: "success", content: "" } });
+
+    expect(mockSendCode).toHaveBeenCalledTimes(1);
+  });
+
   test("once the run ends, a restored input still draws", async () => {
     mockIsRunActive = true;
     const utils = await open(node({ input: INPUT_A }));

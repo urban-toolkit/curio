@@ -314,6 +314,9 @@ const UniversalNodeBody = React.memo(function UniversalNodeBody({ data, isConnec
   const vegaChart = isVegaLiteNodeType(kind);
   const autarkRender = kind === NodeType.AUTK_GRAMMAR && classifyAutkSpecString(nodeState.code) === "render";
   const drawsFromInput = vegaChart || autarkRender;
+  // What lands while the node draws, a new input or a new value of its own
+  // widgets, is drawn once that draw ends (below).
+  const drawing = output?.code === "exec";
   /**
    * Draw the node as a Play does, from its input and its widgets' values as
    * they stand.
@@ -371,7 +374,9 @@ const UniversalNodeBody = React.memo(function UniversalNodeBody({ data, isConnec
     // say whether it renders: the starter it is about to receive does.
     if (!drawsFromInput) return;
     if (!sendCode || disablePlay || specIsEmpty) return;
-    if (runInFlight || output?.code === "exec") return;
+    // Drawing: an input that lands meanwhile waits for that draw to end, which
+    // runs this again and draws it.
+    if (runInFlight || drawing) return;
     if (!hasInput) return;
     // A selection coming back through a Data Pool: the same rows with new
     // `interacted` flags, which useVega's hot reload sets on the rows the view
@@ -380,7 +385,7 @@ const UniversalNodeBody = React.memo(function UniversalNodeBody({ data, isConnec
     if (starterFillInputRef.current === data.input) return;
     if (lastRenderedInputRef.current === data.input) return;
     draw();
-  }, [kind, drawsFromInput, autarkRender, sendCode, disablePlay, specIsEmpty, writtenSpecIsEmpty, hasInput, data.input, runInFlight, dashboardOn]);
+  }, [kind, drawsFromInput, autarkRender, sendCode, disablePlay, specIsEmpty, writtenSpecIsEmpty, hasInput, data.input, runInFlight, drawing, dashboardOn]);
 
   // A wired Autark render tile draws by the rule above when its input lands. An
   // unwired one never receives an input, so it is drawn once here, on the
@@ -410,7 +415,6 @@ const UniversalNodeBody = React.memo(function UniversalNodeBody({ data, isConnec
   // from its document. After the two effects above, and every draw records
   // the values it drew with, so a render draws once. A value set while the
   // tile draws is drawn once that draw ends.
-  const drawing = output?.code === "exec";
   useEffect(() => {
     if (!dashboardOn || !drawsFromInput) return;
     if (drawnValuesRef.current === widgetValues) return;
