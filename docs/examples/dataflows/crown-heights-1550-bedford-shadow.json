@@ -52,11 +52,26 @@
         "title": "Load streets"
       },
       {
+        "id": "3c72fe30-65b0-5a65-a3a6-3ee0d55ca00b",
+        "type": "curio.builtin/computation-analysis",
+        "x": 645,
+        "y": -450,
+        "content": "import datetime\nimport math\nfrom zoneinfo import ZoneInfo\n\nimport geopandas as gpd\nimport pyproj\nfrom astral import Observer\nfrom astral.sun import azimuth, elevation\nfrom shapely.geometry import Point\nfrom suntime import Sun\n\n# Every day of 2027 cut into the steps the GPU step walks. A day counts from\n# 1.5 hours after its sunrise to 1.5 hours before its sunset (suntime), in New\n# York time, in steps of 10 minutes, the last one shorter. At the middle\n# of each step astral gives the sun's azimuth and its elevation, with\n# refraction. One point per day, at the site: its date, its window\n# (window_from, window_to) and the minutes it counts (window_min), and where\n# its steps start among the year's (first_step) and how many there are\n# (step_count).\nYEAR = 2027\nLATITUDE, LONGITUDE = 40.6696, -73.9558  # the site, 1550 Bedford Avenue\nNEW_YORK = ZoneInfo(\"America/New_York\")\nSTEP = datetime.timedelta(minutes=10)\nMARGIN = datetime.timedelta(hours=1.5)\n\n# The ground cells are in metres in the site's UTM zone, whose north is not\n# quite true north: turn the sun's azimuth by the angle between the two.\nutm = gpd.GeoSeries([Point(LONGITUDE, LATITUDE)], crs=4326).estimate_utm_crs()\nto_grid = pyproj.Transformer.from_crs(4326, utm, always_xy=True)\nx0, y0 = to_grid.transform(LONGITUDE, LATITUDE)\nx1, y1 = to_grid.transform(LONGITUDE, LATITUDE + 0.01)\nturn = math.degrees(math.atan2(x1 - x0, y1 - y0))\n\n\ndef clock(moment):\n    \"\"\"*moment* as a New York clock reads it, to the minute: 8:46 AM EST.\"\"\"\n    moment = (moment + datetime.timedelta(seconds=30)).replace(second=0, microsecond=0)\n    noon = \"AM\" if moment.hour < 12 else \"PM\"\n    return f\"{moment.hour % 12 or 12}:{moment.minute:02d} {noon} {moment.tzname()}\"\n\n\nsun = Sun(LATITUDE, LONGITUDE)\nobserver = Observer(latitude=LATITUDE, longitude=LONGITUDE)\ndays, steps, day = [], [], datetime.date(YEAR, 1, 1)\nwhile day.year == YEAR:\n    start = sun.get_sunrise_time(day, NEW_YORK) + MARGIN\n    end = sun.get_sunset_time(day, NEW_YORK) - MARGIN\n    # suntime works in UTC, where a summer sunset in New York falls on the next\n    # day: a window that does not run forward is a wrong day, not an empty one.\n    if not start < end:\n        raise ValueError(f\"suntime gave {day} no window: {start} to {end}\")\n    first, moment = len(steps), start\n    while moment < end:\n        length = min(STEP, end - moment)\n        middle = moment + length / 2\n        toward = math.radians(azimuth(observer, middle) + turn)\n        steps.append([\n            math.sin(toward),  # toward east\n            math.cos(toward),  # toward north\n            1 / math.tan(math.radians(elevation(observer, middle))),\n            length.total_seconds() / 60,\n        ])\n        moment += length\n    days.append({\n        \"date\": day.isoformat(),\n        \"window_from\": clock(start),\n        \"window_to\": clock(end),\n        \"window_min\": (end - start).total_seconds() / 60,\n        \"first_step\": first,\n        \"step_count\": len(steps) - first,\n    })\n    day += datetime.timedelta(days=1)\nyear = gpd.GeoDataFrame(days, geometry=[Point(LONGITUDE, LATITUDE)] * len(days), crs=4326)\n# Every step of the year on the first point (toward east, toward north, cot of\n# the elevation, minutes), for the GPU step that walks each day's.\nyear[\"steps\"] = [steps] + [None] * (len(year) - 1)\nyear.metadata = {\"layerType\": \"points\"}\nreturn year\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "For every day of 2027, count from 1.5 hours after sunrise to 1.5 hours before sunset in New York time, in 10-minute steps, with the sun's direction and height at each.",
+        "metadata": {
+          "keywords": [],
+          "packageTemplateLabel": "List the year's sun steps"
+        },
+        "title": "List the year's sun steps"
+      },
+      {
         "id": "8f8b8c77-6778-56b8-a500-39601670fee7",
         "type": "curio.builtin/computation-analysis",
         "x": 645,
         "y": 0,
-        "content": "import datetime\nimport math\nfrom zoneinfo import ZoneInfo\n\nimport geopandas as gpd\nimport pyproj\nfrom astral import Observer\nfrom astral.sun import azimuth, elevation\nfrom shapely.geometry import Point\nfrom suntime import Sun\n\n# The day the maps, the table and the plot show, one of 2027's equinoxes and\n# solstices (the Day widget), cut into the steps the GPU steps walk. The day\n# counts from 1.5 hours after its sunrise to 1.5 hours before its sunset\n# (suntime), in New York time, in steps of 10 minutes, the last one\n# shorter. At the middle of each step astral gives the sun's azimuth and its\n# elevation, with refraction. One point per step, at the site.\nDAYS = {\"Spring equinox\": \"2027-03-20\", \"Summer solstice\": \"2027-06-21\", \"Fall equinox\": \"2027-09-23\", \"Winter solstice\": \"2027-12-21\"}\nLATITUDE, LONGITUDE = 40.6696, -73.9558  # the site, 1550 Bedford Avenue\nNEW_YORK = ZoneInfo(\"America/New_York\")\nSTEP = datetime.timedelta(minutes=10)\nMARGIN = datetime.timedelta(hours=1.5)\n\nlabel = [!! day !!]\nday = datetime.date.fromisoformat(DAYS[label])\nsun = Sun(LATITUDE, LONGITUDE)\nstart = sun.get_sunrise_time(day, NEW_YORK) + MARGIN\nend = sun.get_sunset_time(day, NEW_YORK) - MARGIN\n# suntime works in UTC, where a summer sunset in New York falls on the next\n# day: a window that does not run forward is a wrong day, not an empty one.\nif not start < end:\n    raise ValueError(f\"suntime gave {label} ({day}) no window: {start} to {end}\")\n\n# The ground cells are in metres in the site's UTM zone, whose north is not\n# quite true north: turn the sun's azimuth by the angle between the two.\nutm = gpd.GeoSeries([Point(LONGITUDE, LATITUDE)], crs=4326).estimate_utm_crs()\nto_grid = pyproj.Transformer.from_crs(4326, utm, always_xy=True)\nx0, y0 = to_grid.transform(LONGITUDE, LATITUDE)\nx1, y1 = to_grid.transform(LONGITUDE, LATITUDE + 0.01)\nturn = math.degrees(math.atan2(x1 - x0, y1 - y0))\n\n\ndef clock(moment):\n    \"\"\"*moment* as a New York clock reads it, to the minute: 8:46 AM EST.\"\"\"\n    moment = (moment + datetime.timedelta(seconds=30)).replace(second=0, microsecond=0)\n    noon = \"AM\" if moment.hour < 12 else \"PM\"\n    return f\"{moment.hour % 12 or 12}:{moment.minute:02d} {noon} {moment.tzname()}\"\n\n\nobserver = Observer(latitude=LATITUDE, longitude=LONGITUDE)\nrows, moment = [], start\nwhile moment < end:\n    length = min(STEP, end - moment)\n    middle = moment + length / 2\n    toward = math.radians(azimuth(observer, middle) + turn)\n    rows.append({\n        \"east\": math.sin(toward),\n        \"north\": math.cos(toward),\n        \"cot\": 1 / math.tan(math.radians(elevation(observer, middle))),\n        \"minutes\": length.total_seconds() / 60,\n        # The New York clock time written as if it were UTC, so a plot draws\n        # the same hours in a browser anywhere.\n        \"time\": middle.replace(tzinfo=None).isoformat(timespec=\"seconds\") + \"Z\",\n        \"clock\": clock(middle),\n    })\n    moment += length\nsteps = gpd.GeoDataFrame(rows, geometry=[Point(LONGITUDE, LATITUDE)] * len(rows), crs=4326)\nsteps[\"day\"], steps[\"window_from\"], steps[\"window_to\"] = label, clock(start), clock(end)\n# Every step on the first point, for the GPU step that walks the whole day\n# from each ground cell.\nsteps[\"steps\"] = [steps[[\"east\", \"north\", \"cot\", \"minutes\"]].to_numpy().tolist()] + [None] * (len(steps) - 1)\nsteps.metadata = {\"layerType\": \"points\"}\nreturn steps\n",
+        "content": "import datetime\nimport math\nfrom zoneinfo import ZoneInfo\n\nimport geopandas as gpd\nimport pyproj\nfrom astral import Observer\nfrom astral.sun import azimuth, elevation\nfrom shapely.geometry import Point\nfrom suntime import Sun\n\n# The day the maps and the day's plot show, one of 2027's equinoxes and\n# solstices (the Day widget), cut into the steps the GPU steps walk. The day\n# counts from 1.5 hours after its sunrise to 1.5 hours before its sunset\n# (suntime), in New York time, in steps of 10 minutes, the last one\n# shorter. At the middle of each step astral gives the sun's azimuth and its\n# elevation, with refraction. One point per step, at the site.\nDAYS = {\"Spring equinox\": \"2027-03-20\", \"Summer solstice\": \"2027-06-21\", \"Fall equinox\": \"2027-09-23\", \"Winter solstice\": \"2027-12-21\"}\nLATITUDE, LONGITUDE = 40.6696, -73.9558  # the site, 1550 Bedford Avenue\nNEW_YORK = ZoneInfo(\"America/New_York\")\nSTEP = datetime.timedelta(minutes=10)\nMARGIN = datetime.timedelta(hours=1.5)\n\nlabel = [!! day !!]\nday = datetime.date.fromisoformat(DAYS[label])\nsun = Sun(LATITUDE, LONGITUDE)\nstart = sun.get_sunrise_time(day, NEW_YORK) + MARGIN\nend = sun.get_sunset_time(day, NEW_YORK) - MARGIN\n# suntime works in UTC, where a summer sunset in New York falls on the next\n# day: a window that does not run forward is a wrong day, not an empty one.\nif not start < end:\n    raise ValueError(f\"suntime gave {label} ({day}) no window: {start} to {end}\")\n\n# The ground cells are in metres in the site's UTM zone, whose north is not\n# quite true north: turn the sun's azimuth by the angle between the two.\nutm = gpd.GeoSeries([Point(LONGITUDE, LATITUDE)], crs=4326).estimate_utm_crs()\nto_grid = pyproj.Transformer.from_crs(4326, utm, always_xy=True)\nx0, y0 = to_grid.transform(LONGITUDE, LATITUDE)\nx1, y1 = to_grid.transform(LONGITUDE, LATITUDE + 0.01)\nturn = math.degrees(math.atan2(x1 - x0, y1 - y0))\n\n\ndef clock(moment):\n    \"\"\"*moment* as a New York clock reads it, to the minute: 8:46 AM EST.\"\"\"\n    moment = (moment + datetime.timedelta(seconds=30)).replace(second=0, microsecond=0)\n    noon = \"AM\" if moment.hour < 12 else \"PM\"\n    return f\"{moment.hour % 12 or 12}:{moment.minute:02d} {noon} {moment.tzname()}\"\n\n\nobserver = Observer(latitude=LATITUDE, longitude=LONGITUDE)\nrows, moment = [], start\nwhile moment < end:\n    length = min(STEP, end - moment)\n    middle = moment + length / 2\n    toward = math.radians(azimuth(observer, middle) + turn)\n    rows.append({\n        \"east\": math.sin(toward),\n        \"north\": math.cos(toward),\n        \"cot\": 1 / math.tan(math.radians(elevation(observer, middle))),\n        \"minutes\": length.total_seconds() / 60,\n        # The New York clock time written as if it were UTC, so a plot draws\n        # the same hours in a browser anywhere.\n        \"time\": middle.replace(tzinfo=None).isoformat(timespec=\"seconds\") + \"Z\",\n        \"clock\": clock(middle),\n    })\n    moment += length\nsteps = gpd.GeoDataFrame(rows, geometry=[Point(LONGITUDE, LATITUDE)] * len(rows), crs=4326)\nsteps[\"day\"], steps[\"window_from\"], steps[\"window_to\"] = label, clock(start), clock(end)\n# Every step on the first point, for the GPU step that walks the whole day\n# from each ground cell.\nsteps[\"steps\"] = [steps[[\"east\", \"north\", \"cot\", \"minutes\"]].to_numpy().tolist()] + [None] * (len(steps) - 1)\nsteps.metadata = {\"layerType\": \"points\"}\nreturn steps\n",
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "For the day picked, an equinox or a solstice of 2027, count from 1.5 hours after sunrise to 1.5 hours before sunset in New York time, in 10-minute steps, with the sun's direction and height at each.",
@@ -164,6 +179,21 @@
         "title": "Cast sun rays on Block 1259"
       },
       {
+        "id": "d01c6cc7-690f-5186-9730-0b3821fe7c85",
+        "type": "curio.builtin/autk-grammar",
+        "x": 1935,
+        "y": 0,
+        "content": "{\n  \"compute\": [\n    {\n      \"dataRef\": \"[!! input_0 !!]\",\n      \"attributes\": {\n        \"first_step\": \"properties.first_step\",\n        \"step_count\": \"properties.step_count\"\n      },\n      \"uniforms\": {\n        \"tallest\": {\n          \"fromFeature\": {\n            \"layer\": \"[!! input_1 !!]\",\n            \"path\": \"properties.tallest\"\n          }\n        }\n      },\n      \"uniformMatrices\": {\n        \"heights\": {\n          \"fromFeature\": {\n            \"layer\": \"[!! input_1 !!]\",\n            \"path\": \"properties.heights\"\n          }\n        },\n        \"spots\": {\n          \"fromFeature\": {\n            \"layer\": \"[!! input_1 !!]\",\n            \"path\": \"properties.spots\"\n          },\n          \"cols\": 2\n        },\n        \"steps\": {\n          \"fromFeature\": {\n            \"layer\": \"[!! input_0 !!]\",\n            \"path\": \"properties.steps\"\n          },\n          \"cols\": 4\n        }\n      },\n      \"outputColumnName\": \"shadow_min\",\n      \"wglsFunction\": [\n        \"// The minutes Block 1259's open ground spends in shadow this day, on\",\n        \"// average: at each of the day's steps (steps: toward east, toward north,\",\n        \"// cot of the elevation, minutes; the day's run from first_step, step_count\",\n        \"// of them), the share of its spots (spots: x, y) a roof keeps from the\",\n        \"// sun, the ray marched across the heights grid as on the map, times the\",\n        \"// step's minutes.\",\n        \"var dark: f32 = 0.0;\",\n        \"for (var i = 0u; i < u32(step_count); i++) {\",\n        \"    let s = u32(first_step) + i;\",\n        \"    let sx = steps[s * 4u];\",\n        \"    let sy = steps[s * 4u + 1u];\",\n        \"    let cot = steps[s * 4u + 2u];\",\n        \"    var shaded_spots: f32 = 0.0;\",\n        \"    for (var p = 0u; p < spots_rows; p++) {\",\n        \"        let px = spots[p * 2u];\",\n        \"        let py = spots[p * 2u + 1u];\",\n        \"        var shaded = false;\",\n        \"        for (var t: f32 = 1.5; t <= tallest * cot; t += 1.5) {\",\n        \"            let col = i32(floor((px + sx * t) / 3.0));\",\n        \"            let row = i32(floor((py + sy * t) / 3.0));\",\n        \"            if (col < 0 || row < 0 || col >= i32(heights_cols) || row >= i32(heights_rows)) { break; }\",\n        \"            if (heights[u32(row) * heights_cols + u32(col)] * cot > t) { shaded = true; break; }\",\n        \"        }\",\n        \"        if (shaded) { shaded_spots += 1.0; }\",\n        \"    }\",\n        \"    dark += steps[s * 4u + 3u] * shaded_spots / f32(max(spots_rows, 1u));\",\n        \"}\",\n        \"return dark;\"\n      ]\n    }\n  ]\n}\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "On the GPU, for every day of 2027, find the minutes a roof keeps the sun from Block 1259's open ground over the day's window, on average.",
+        "metadata": {
+          "keywords": [],
+          "packageTemplateLabel": "Cast sun rays on Block 1259 through the year"
+        },
+        "title": "Cast sun rays on Block 1259 through the year"
+      },
+      {
         "id": "755fbc3c-68d1-50cf-ae8e-f72f9dac8413",
         "type": "curio.builtin/computation-analysis",
         "x": 2580,
@@ -183,7 +213,7 @@
         "type": "curio.builtin/computation-analysis",
         "x": 2580,
         "y": -450,
-        "content": "import pandas as pd\n\n# The share of Block 1259's open ground in shadow at each step of the day\n# (share, in %), with the step's time and minutes and the day's window, as a\n# table the comparison reads. The GPU step hands on the steps, input_0's\n# first layer, with its result under compute.\nsteps = [!! input_0:input_0 !!]\nif \"share\" not in steps.columns:\n    steps[\"share\"] = [row.get(\"share\") if isinstance(row, dict) else None for row in steps[\"compute\"]]\nreturn pd.DataFrame({\n    \"time\": steps[\"time\"],\n    \"clock\": steps[\"clock\"],\n    \"share\": pd.to_numeric(steps[\"share\"]),\n    \"minutes\": pd.to_numeric(steps[\"minutes\"]),\n    \"day\": steps[\"day\"],\n    \"window_from\": steps[\"window_from\"],\n    \"window_to\": steps[\"window_to\"],\n})\n",
+        "content": "import pandas as pd\n\n# The share of Block 1259's open ground in shadow at each step of the day\n# (share, in %), with the step's time and minutes and the day's window, as a\n# table the day's plot reads. The GPU step hands on the steps, input_0's\n# first layer, with its result under compute.\nsteps = [!! input_0:input_0 !!]\nif \"share\" not in steps.columns:\n    steps[\"share\"] = [row.get(\"share\") if isinstance(row, dict) else None for row in steps[\"compute\"]]\nreturn pd.DataFrame({\n    \"time\": steps[\"time\"],\n    \"clock\": steps[\"clock\"],\n    \"share\": pd.to_numeric(steps[\"share\"]),\n    \"minutes\": pd.to_numeric(steps[\"minutes\"]),\n    \"day\": steps[\"day\"],\n    \"window_from\": steps[\"window_from\"],\n    \"window_to\": steps[\"window_to\"],\n})\n",
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "Keep the share of Block 1259's open ground in shadow at each step, with its time.",
@@ -192,6 +222,21 @@
           "packageTemplateLabel": "Read shadow on the block per step"
         },
         "title": "Read shadow on the block per step"
+      },
+      {
+        "id": "95b43de1-57a0-507a-8770-4c476dd1f4ec",
+        "type": "curio.builtin/computation-analysis",
+        "x": 2580,
+        "y": 0,
+        "content": "import pandas as pd\n\n# Each day of the year on Block 1259's open ground: the minutes it spends in\n# shadow over the day's window, on average (shadow_min), the same as text\n# (in_shadow), and the window, a row per day. The GPU step hands on the days,\n# input_0's first layer, with its result under compute.\ndef duration(minutes):\n    hours, rest = divmod(round(minutes), 60)\n    if not hours:\n        return f\"{rest} min\"\n    return f\"{hours} h {rest} min\" if rest else f\"{hours} h\"\n\n\ndays = [!! input_0:input_0 !!]\nif \"shadow_min\" not in days.columns:\n    days[\"shadow_min\"] = [row.get(\"shadow_min\") if isinstance(row, dict) else None for row in days[\"compute\"]]\ndays = pd.DataFrame({\n    \"date\": days[\"date\"],\n    \"shadow_min\": pd.to_numeric(days[\"shadow_min\"]),\n    \"window_from\": days[\"window_from\"],\n    \"window_to\": days[\"window_to\"],\n    \"window_min\": pd.to_numeric(days[\"window_min\"]),\n})\ndays[\"in_shadow\"] = [duration(minutes) for minutes in days[\"shadow_min\"]]\n# Each day's noon written as UTC, so a plot draws the same date in a browser\n# anywhere.\ndays[\"time\"] = days[\"date\"] + \"T12:00:00Z\"\nreturn days\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Add up each day's time in shadow on Block 1259's open ground, a row per day of the year.",
+        "metadata": {
+          "keywords": [],
+          "packageTemplateLabel": "Read shadow on the block per day"
+        },
+        "title": "Read shadow on the block per day"
       },
       {
         "id": "6336c9a7-c75a-527f-9b35-254eb952b512",
@@ -248,7 +293,7 @@
         "dashboardX": 430,
         "dashboardY": 390,
         "dashboardWidth": 420,
-        "dashboardHeight": 460
+        "dashboardHeight": 230
       },
       {
         "id": "72b34012-476a-50d2-abf3-f6c271a50f54",
@@ -305,6 +350,24 @@
         "title": "Cast sun rays on Block 1259"
       },
       {
+        "id": "69d11a2b-ff38-5c9f-901e-173c7d9102ae",
+        "type": "curio.builtin/autk-grammar",
+        "x": 1935,
+        "y": 2250,
+        "content": "{\n  \"compute\": [\n    {\n      \"dataRef\": \"[!! input_0 !!]\",\n      \"attributes\": {\n        \"first_step\": \"properties.first_step\",\n        \"step_count\": \"properties.step_count\"\n      },\n      \"uniforms\": {\n        \"tallest\": {\n          \"fromFeature\": {\n            \"layer\": \"[!! input_1 !!]\",\n            \"path\": \"properties.tallest\"\n          }\n        }\n      },\n      \"uniformMatrices\": {\n        \"heights\": {\n          \"fromFeature\": {\n            \"layer\": \"[!! input_1 !!]\",\n            \"path\": \"properties.heights\"\n          }\n        },\n        \"spots\": {\n          \"fromFeature\": {\n            \"layer\": \"[!! input_1 !!]\",\n            \"path\": \"properties.spots\"\n          },\n          \"cols\": 2\n        },\n        \"steps\": {\n          \"fromFeature\": {\n            \"layer\": \"[!! input_0 !!]\",\n            \"path\": \"properties.steps\"\n          },\n          \"cols\": 4\n        }\n      },\n      \"outputColumnName\": \"shadow_min\",\n      \"wglsFunction\": [\n        \"// The minutes Block 1259's open ground spends in shadow this day, on\",\n        \"// average: at each of the day's steps (steps: toward east, toward north,\",\n        \"// cot of the elevation, minutes; the day's run from first_step, step_count\",\n        \"// of them), the share of its spots (spots: x, y) a roof keeps from the\",\n        \"// sun, the ray marched across the heights grid as on the map, times the\",\n        \"// step's minutes.\",\n        \"var dark: f32 = 0.0;\",\n        \"for (var i = 0u; i < u32(step_count); i++) {\",\n        \"    let s = u32(first_step) + i;\",\n        \"    let sx = steps[s * 4u];\",\n        \"    let sy = steps[s * 4u + 1u];\",\n        \"    let cot = steps[s * 4u + 2u];\",\n        \"    var shaded_spots: f32 = 0.0;\",\n        \"    for (var p = 0u; p < spots_rows; p++) {\",\n        \"        let px = spots[p * 2u];\",\n        \"        let py = spots[p * 2u + 1u];\",\n        \"        var shaded = false;\",\n        \"        for (var t: f32 = 1.5; t <= tallest * cot; t += 1.5) {\",\n        \"            let col = i32(floor((px + sx * t) / 3.0));\",\n        \"            let row = i32(floor((py + sy * t) / 3.0));\",\n        \"            if (col < 0 || row < 0 || col >= i32(heights_cols) || row >= i32(heights_rows)) { break; }\",\n        \"            if (heights[u32(row) * heights_cols + u32(col)] * cot > t) { shaded = true; break; }\",\n        \"        }\",\n        \"        if (shaded) { shaded_spots += 1.0; }\",\n        \"    }\",\n        \"    dark += steps[s * 4u + 3u] * shaded_spots / f32(max(spots_rows, 1u));\",\n        \"}\",\n        \"return dark;\"\n      ]\n    }\n  ]\n}\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "On the GPU, for every day of 2027, find the minutes a roof keeps the sun from Block 1259's open ground over the day's window, on average.",
+        "metadata": {
+          "keywords": [],
+          "copiedFrom": [
+            "d01c6cc7-690f-5186-9730-0b3821fe7c85"
+          ],
+          "packageTemplateLabel": "Cast sun rays on Block 1259 through the year"
+        },
+        "title": "Cast sun rays on Block 1259 through the year"
+      },
+      {
         "id": "9439839c-cf4e-5d3f-b3a5-3977577f7e76",
         "type": "curio.builtin/computation-analysis",
         "x": 2580,
@@ -327,7 +390,7 @@
         "type": "curio.builtin/computation-analysis",
         "x": 2580,
         "y": 1800,
-        "content": "import pandas as pd\n\n# The share of Block 1259's open ground in shadow at each step of the day\n# (share, in %), with the step's time and minutes and the day's window, as a\n# table the comparison reads. The GPU step hands on the steps, input_0's\n# first layer, with its result under compute.\nsteps = [!! input_0:input_0 !!]\nif \"share\" not in steps.columns:\n    steps[\"share\"] = [row.get(\"share\") if isinstance(row, dict) else None for row in steps[\"compute\"]]\nreturn pd.DataFrame({\n    \"time\": steps[\"time\"],\n    \"clock\": steps[\"clock\"],\n    \"share\": pd.to_numeric(steps[\"share\"]),\n    \"minutes\": pd.to_numeric(steps[\"minutes\"]),\n    \"day\": steps[\"day\"],\n    \"window_from\": steps[\"window_from\"],\n    \"window_to\": steps[\"window_to\"],\n})\n",
+        "content": "import pandas as pd\n\n# The share of Block 1259's open ground in shadow at each step of the day\n# (share, in %), with the step's time and minutes and the day's window, as a\n# table the day's plot reads. The GPU step hands on the steps, input_0's\n# first layer, with its result under compute.\nsteps = [!! input_0:input_0 !!]\nif \"share\" not in steps.columns:\n    steps[\"share\"] = [row.get(\"share\") if isinstance(row, dict) else None for row in steps[\"compute\"]]\nreturn pd.DataFrame({\n    \"time\": steps[\"time\"],\n    \"clock\": steps[\"clock\"],\n    \"share\": pd.to_numeric(steps[\"share\"]),\n    \"minutes\": pd.to_numeric(steps[\"minutes\"]),\n    \"day\": steps[\"day\"],\n    \"window_from\": steps[\"window_from\"],\n    \"window_to\": steps[\"window_to\"],\n})\n",
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "Keep the share of Block 1259's open ground in shadow at each step, with its time.",
@@ -339,6 +402,24 @@
           "packageTemplateLabel": "Read shadow on the block per step"
         },
         "title": "Read shadow on the block per step"
+      },
+      {
+        "id": "cb9f7863-af5c-5ace-a1f3-52027f8bf6f4",
+        "type": "curio.builtin/computation-analysis",
+        "x": 2580,
+        "y": 2250,
+        "content": "import pandas as pd\n\n# Each day of the year on Block 1259's open ground: the minutes it spends in\n# shadow over the day's window, on average (shadow_min), the same as text\n# (in_shadow), and the window, a row per day. The GPU step hands on the days,\n# input_0's first layer, with its result under compute.\ndef duration(minutes):\n    hours, rest = divmod(round(minutes), 60)\n    if not hours:\n        return f\"{rest} min\"\n    return f\"{hours} h {rest} min\" if rest else f\"{hours} h\"\n\n\ndays = [!! input_0:input_0 !!]\nif \"shadow_min\" not in days.columns:\n    days[\"shadow_min\"] = [row.get(\"shadow_min\") if isinstance(row, dict) else None for row in days[\"compute\"]]\ndays = pd.DataFrame({\n    \"date\": days[\"date\"],\n    \"shadow_min\": pd.to_numeric(days[\"shadow_min\"]),\n    \"window_from\": days[\"window_from\"],\n    \"window_to\": days[\"window_to\"],\n    \"window_min\": pd.to_numeric(days[\"window_min\"]),\n})\ndays[\"in_shadow\"] = [duration(minutes) for minutes in days[\"shadow_min\"]]\n# Each day's noon written as UTC, so a plot draws the same date in a browser\n# anywhere.\ndays[\"time\"] = days[\"date\"] + \"T12:00:00Z\"\nreturn days\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Add up each day's time in shadow on Block 1259's open ground, a row per day of the year.",
+        "metadata": {
+          "keywords": [],
+          "copiedFrom": [
+            "95b43de1-57a0-507a-8770-4c476dd1f4ec"
+          ],
+          "packageTemplateLabel": "Read shadow on the block per day"
+        },
+        "title": "Read shadow on the block per day"
       },
       {
         "id": "d89f7440-724b-578f-b68f-896974b76ade",
@@ -436,51 +517,14 @@
         "dashboardHeight": 380
       },
       {
-        "id": "6920455d-0912-512e-8c3e-97d0ed207152",
-        "type": "curio.builtin/computation-analysis",
-        "x": 4915,
-        "y": 675,
-        "content": "import pandas as pd\n\n# The day on Block 1259's open ground in both scenarios: each one's average\n# time in shadow over the day's window (the share in shadow at each step,\n# times the step's minutes, summed), and what the proposed building adds.\n# input_0 is the scenario without the proposed building, input_1 the one\n# with it.\ndef duration(minutes):\n    hours, rest = divmod(round(minutes), 60)\n    if not hours:\n        return f\"{rest} min\"\n    return f\"{hours} h {rest} min\" if rest else f\"{hours} h\"\n\n\nwithout, with_building = input_0, input_1\ndark_without = float((without[\"share\"] / 100 * without[\"minutes\"]).sum())\ndark_with = float((with_building[\"share\"] / 100 * with_building[\"minutes\"]).sum())\nday = with_building.iloc[0]\nreturn pd.DataFrame([{\n    \"Day\": day[\"day\"],\n    \"From\": day[\"window_from\"],\n    \"To\": day[\"window_to\"],\n    \"Time counted\": duration(float(with_building[\"minutes\"].sum())),\n    \"Without the proposed building\": duration(dark_without),\n    \"With the proposed building\": duration(dark_with),\n    \"Added\": duration(dark_with - dark_without),\n}])\n",
-        "out": "DEFAULT",
-        "in": "DEFAULT",
-        "goal": "Compare the day on Block 1259's open ground without and with the proposed building, and what it adds.",
-        "metadata": {
-          "keywords": [],
-          "packageTemplateLabel": "Compare the scenarios on Block 1259"
-        },
-        "title": "Compare the scenarios on Block 1259"
-      },
-      {
-        "id": "cc1be78d-9348-5650-9a91-d98f08959fcd",
-        "type": "curio.builtin/vis-simple",
-        "x": 5560,
-        "y": 675,
-        "content": "",
-        "out": "DEFAULT",
-        "in": "DEFAULT",
-        "goal": "Show the day on Block 1259's open ground in both scenarios and the shade the proposed building adds.",
-        "metadata": {
-          "keywords": [],
-          "packageTemplateLabel": "Table: shadow on Block 1259"
-        },
-        "title": "Table: shadow on Block 1259",
-        "width": 980,
-        "height": 150,
-        "dashboardPinned": true,
-        "dashboardX": 0,
-        "dashboardY": 860,
-        "dashboardWidth": 1280,
-        "dashboardHeight": 140
-      },
-      {
         "id": "2b37c095-3ed8-5653-847f-28f3850733ee",
         "type": "curio.builtin/vis-vega",
         "x": 5560,
-        "y": 1125,
-        "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v5.json\",\n  \"data\": {\n    \"name\": \"[!! inputs !!]\"\n  },\n  \"mark\": {\n    \"type\": \"line\",\n    \"point\": true\n  },\n  \"encoding\": {\n    \"x\": {\n      \"field\": \"time\",\n      \"type\": \"temporal\",\n      \"scale\": {\n        \"type\": \"utc\"\n      },\n      \"axis\": {\n        \"format\": \"%-I %p\",\n        \"tickMinStep\": 3600000\n      },\n      \"title\": \"Time (New York)\"\n    },\n    \"y\": {\n      \"field\": \"share\",\n      \"type\": \"quantitative\",\n      \"scale\": {\n        \"domain\": [\n          0,\n          100\n        ]\n      },\n      \"title\": \"Open ground in shadow (%)\"\n    },\n    \"color\": {\n      \"field\": \"scenario_name\",\n      \"type\": \"nominal\",\n      \"title\": \"Scenario\",\n      \"scale\": [!! scenario colors !!],\n      \"sort\": [!! scenario order !!],\n      \"legend\": {\n        \"orient\": \"bottom\",\n        \"direction\": \"vertical\",\n        \"title\": null\n      }\n    },\n    \"strokeWidth\": {\n      \"field\": \"scenario_name\",\n      \"type\": \"nominal\",\n      \"sort\": [!! scenario order !!],\n      \"scale\": {\n        \"range\": [\n          5,\n          2\n        ]\n      },\n      \"legend\": null\n    },\n    \"tooltip\": [\n      {\n        \"field\": \"scenario_name\",\n        \"type\": \"nominal\",\n        \"title\": \"Scenario\"\n      },\n      {\n        \"field\": \"clock\",\n        \"type\": \"nominal\",\n        \"title\": \"Time\"\n      },\n      {\n        \"field\": \"share\",\n        \"type\": \"quantitative\",\n        \"title\": \"In shadow (%)\",\n        \"format\": \".0f\"\n      }\n    ]\n  }\n}\n",
+        "y": 450,
+        "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v5.json\",\n  \"data\": {\n    \"name\": \"[!! inputs !!]\"\n  },\n  \"layer\": [\n    {\n      \"mark\": {\n        \"type\": \"line\",\n        \"point\": true\n      },\n      \"encoding\": {\n        \"x\": {\n          \"field\": \"time\",\n          \"type\": \"temporal\",\n          \"scale\": {\n            \"type\": \"utc\"\n          },\n          \"axis\": {\n            \"format\": \"%-I %p\",\n            \"tickMinStep\": 3600000\n          },\n          \"title\": null\n        },\n        \"y\": {\n          \"field\": \"share\",\n          \"type\": \"quantitative\",\n          \"scale\": {\n            \"domain\": [\n              0,\n              100\n            ]\n          },\n          \"title\": \"In shadow (%)\"\n        },\n        \"color\": {\n          \"field\": \"scenario_name\",\n          \"type\": \"nominal\",\n          \"title\": \"Scenario\",\n          \"scale\": [!! scenario colors !!],\n          \"sort\": [!! scenario order !!],\n          \"legend\": {\n            \"orient\": \"top\",\n            \"direction\": \"vertical\",\n            \"title\": null,\n            \"labelLimit\": 0\n          }\n        },\n        \"strokeWidth\": {\n          \"field\": \"scenario_name\",\n          \"type\": \"nominal\",\n          \"sort\": [!! scenario order !!],\n          \"scale\": {\n            \"range\": [\n              5,\n              2\n            ]\n          },\n          \"legend\": null\n        },\n        \"tooltip\": [\n          {\n            \"field\": \"scenario_name\",\n            \"type\": \"nominal\",\n            \"title\": \"Scenario\"\n          },\n          {\n            \"field\": \"clock\",\n            \"type\": \"nominal\",\n            \"title\": \"Time\"\n          },\n          {\n            \"field\": \"share\",\n            \"type\": \"quantitative\",\n            \"title\": \"In shadow (%)\",\n            \"format\": \".0f\"\n          }\n        ]\n      }\n    },\n    {\n      \"transform\": [\n        {\n          \"window\": [\n            {\n              \"op\": \"row_number\",\n              \"as\": \"row\"\n            }\n          ]\n        },\n        {\n          \"filter\": \"datum.row == 1\"\n        },\n        {\n          \"calculate\": \"'Counted from ' + datum.window_from + ' to ' + datum.window_to\",\n          \"as\": \"window\"\n        }\n      ],\n      \"mark\": {\n        \"type\": \"text\",\n        \"baseline\": \"top\",\n        \"fontSize\": 11,\n        \"fontWeight\": \"bold\",\n        \"color\": \"#333\"\n      },\n      \"encoding\": {\n        \"x\": {\n          \"value\": {\n            \"expr\": \"width / 2\"\n          }\n        },\n        \"y\": {\n          \"value\": {\n            \"expr\": \"height + 22\"\n          }\n        },\n        \"text\": {\n          \"field\": \"window\",\n          \"type\": \"nominal\"\n        }\n      }\n    }\n  ]\n}\n",
         "out": "DEFAULT",
         "in": "DEFAULT",
-        "goal": "Plot the share of Block 1259's open ground in shadow through the day, a line per scenario.",
+        "goal": "Plot the share of Block 1259's open ground in shadow through the day picked, a line per scenario, with the day's window.",
         "metadata": {
           "keywords": [],
           "packageTemplateLabel": "Plot: shadow on Block 1259 through the day"
@@ -492,7 +536,66 @@
         "dashboardX": 860,
         "dashboardY": 390,
         "dashboardWidth": 420,
-        "dashboardHeight": 460
+        "dashboardHeight": 230
+      },
+      {
+        "id": "756ef4b8-cbed-5c42-abc5-f3bac5ee294b",
+        "type": "curio.builtin/vis-vega",
+        "x": 5560,
+        "y": 1125,
+        "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v5.json\",\n  \"data\": {\n    \"name\": \"[!! inputs !!]\"\n  },\n  \"transform\": [\n    {\n      \"calculate\": \"datum.shadow_min / 60\",\n      \"as\": \"hours\"\n    }\n  ],\n  \"mark\": {\n    \"type\": \"line\"\n  },\n  \"encoding\": {\n    \"x\": {\n      \"field\": \"time\",\n      \"type\": \"temporal\",\n      \"scale\": {\n        \"type\": \"utc\",\n        \"domain\": [\n          {\n            \"year\": 2027,\n            \"month\": 1,\n            \"date\": 1,\n            \"utc\": true\n          },\n          {\n            \"year\": 2027,\n            \"month\": 12,\n            \"date\": 31,\n            \"hours\": 23,\n            \"minutes\": 59,\n            \"utc\": true\n          }\n        ]\n      },\n      \"axis\": {\n        \"format\": \"%b\",\n        \"tickMinStep\": 2419200000\n      },\n      \"title\": \"Day (2027)\"\n    },\n    \"y\": {\n      \"field\": \"hours\",\n      \"type\": \"quantitative\",\n      \"scale\": {\n        \"zero\": false\n      },\n      \"title\": \"In shadow (h)\"\n    },\n    \"color\": {\n      \"field\": \"scenario_name\",\n      \"type\": \"nominal\",\n      \"title\": \"Scenario\",\n      \"scale\": [!! scenario colors !!],\n      \"sort\": [!! scenario order !!],\n      \"legend\": {\n        \"orient\": \"top\",\n        \"direction\": \"horizontal\",\n        \"title\": null,\n        \"labelLimit\": 0\n      }\n    },\n    \"strokeWidth\": {\n      \"field\": \"scenario_name\",\n      \"type\": \"nominal\",\n      \"sort\": [!! scenario order !!],\n      \"scale\": {\n        \"range\": [\n          4,\n          1.5\n        ]\n      },\n      \"legend\": null\n    },\n    \"tooltip\": [\n      {\n        \"field\": \"scenario_name\",\n        \"type\": \"nominal\",\n        \"title\": \"Scenario\"\n      },\n      {\n        \"field\": \"date\",\n        \"type\": \"nominal\",\n        \"title\": \"Day\"\n      },\n      {\n        \"field\": \"in_shadow\",\n        \"type\": \"nominal\",\n        \"title\": \"In shadow\"\n      },\n      {\n        \"field\": \"window_from\",\n        \"type\": \"nominal\",\n        \"title\": \"Counted from\"\n      },\n      {\n        \"field\": \"window_to\",\n        \"type\": \"nominal\",\n        \"title\": \"To\"\n      }\n    ]\n  }\n}\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Plot Block 1259's open ground's time in shadow on each day of 2027, a line per scenario.",
+        "metadata": {
+          "keywords": [],
+          "packageTemplateLabel": "Plot: shadow on Block 1259 each day of 2027"
+        },
+        "title": "Plot: shadow on Block 1259 each day of 2027",
+        "width": 980,
+        "height": 500,
+        "dashboardPinned": true,
+        "dashboardX": 0,
+        "dashboardY": 630,
+        "dashboardWidth": 1280,
+        "dashboardHeight": 230
+      },
+      {
+        "id": "6920455d-0912-512e-8c3e-97d0ed207152",
+        "type": "curio.builtin/computation-analysis",
+        "x": 4915,
+        "y": 1800,
+        "content": "import calendar\n\nimport numpy as np\nimport pandas as pd\n\n# The shade the proposed building adds on Block 1259's open ground a day (its\n# time in shadow with the building less its time without it, day by day),\n# month by month: the average over the month's days and their standard\n# deviation, in whole minutes. input_0 is the scenario without the proposed\n# building, input_1 the one with it, a row per day each.\nwithout, with_building = input_0, input_1\ndays = without[[\"date\", \"shadow_min\"]].merge(\n    with_building[[\"date\", \"shadow_min\"]], on=\"date\", suffixes=(\"_without\", \"_with\"))\nadded = days[\"shadow_min_with\"] - days[\"shadow_min_without\"]\nrows = []\nfor month, minutes in added.groupby(pd.to_datetime(days[\"date\"]).dt.month):\n    rows.append({\n        \"Month\": calendar.month_name[month],\n        # The spread of the month's own days, all of them (ddof 0).\n        \"Shade added per day (average ± standard deviation)\":\n            f\"{round(float(minutes.mean()))} ± {round(float(np.std(minutes)))} min\",\n    })\nreturn pd.DataFrame(rows)\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Average the shade the proposed building adds to Block 1259's open ground a day over each month, with the standard deviation.",
+        "metadata": {
+          "keywords": [],
+          "packageTemplateLabel": "Compare the scenarios by month"
+        },
+        "title": "Compare the scenarios by month"
+      },
+      {
+        "id": "cc1be78d-9348-5650-9a91-d98f08959fcd",
+        "type": "curio.builtin/vis-simple",
+        "x": 5560,
+        "y": 1800,
+        "content": "",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Show, for each month, the shade the proposed building adds to Block 1259's open ground a day.",
+        "metadata": {
+          "keywords": [],
+          "packageTemplateLabel": "Table: shade added on Block 1259 by month"
+        },
+        "title": "Table: shade added on Block 1259 by month",
+        "width": 980,
+        "height": 720,
+        "dashboardPinned": true,
+        "dashboardX": 0,
+        "dashboardY": 870,
+        "dashboardWidth": 1280,
+        "dashboardHeight": 230
       }
     ],
     "edges": [
@@ -574,6 +677,20 @@
         "targetHandle": "in_1"
       },
       {
+        "id": "reactflow__edge-3c72fe30-65b0-5a65-a3a6-3ee0d55ca00bout-d01c6cc7-690f-5186-9730-0b3821fe7c85in",
+        "source": "3c72fe30-65b0-5a65-a3a6-3ee0d55ca00b",
+        "target": "d01c6cc7-690f-5186-9730-0b3821fe7c85",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-6eaa947f-44ae-52e9-9c1d-ab93da3bf2d1out-d01c6cc7-690f-5186-9730-0b3821fe7c85in_1",
+        "source": "6eaa947f-44ae-52e9-9c1d-ab93da3bf2d1",
+        "target": "d01c6cc7-690f-5186-9730-0b3821fe7c85",
+        "sourceHandle": "out",
+        "targetHandle": "in_1"
+      },
+      {
         "id": "reactflow__edge-7e4abb6d-a6df-538b-ba78-eff580600cbdout-755fbc3c-68d1-50cf-ae8e-f72f9dac8413in",
         "source": "7e4abb6d-a6df-538b-ba78-eff580600cbd",
         "target": "755fbc3c-68d1-50cf-ae8e-f72f9dac8413",
@@ -584,6 +701,13 @@
         "id": "reactflow__edge-50a5d9e8-a6f1-5386-b26a-4ad8e5076c17out-ca233f8e-302e-5e89-977a-c93dd5f2abbain",
         "source": "50a5d9e8-a6f1-5386-b26a-4ad8e5076c17",
         "target": "ca233f8e-302e-5e89-977a-c93dd5f2abba",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-d01c6cc7-690f-5186-9730-0b3821fe7c85out-95b43de1-57a0-507a-8770-4c476dd1f4ecin",
+        "source": "d01c6cc7-690f-5186-9730-0b3821fe7c85",
+        "target": "95b43de1-57a0-507a-8770-4c476dd1f4ec",
         "sourceHandle": "out",
         "targetHandle": "in"
       },
@@ -679,6 +803,20 @@
         "targetHandle": "in_1"
       },
       {
+        "id": "reactflow__edge-3c72fe30-65b0-5a65-a3a6-3ee0d55ca00bout-69d11a2b-ff38-5c9f-901e-173c7d9102aein",
+        "source": "3c72fe30-65b0-5a65-a3a6-3ee0d55ca00b",
+        "target": "69d11a2b-ff38-5c9f-901e-173c7d9102ae",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-72b34012-476a-50d2-abf3-f6c271a50f54out-69d11a2b-ff38-5c9f-901e-173c7d9102aein_1",
+        "source": "72b34012-476a-50d2-abf3-f6c271a50f54",
+        "target": "69d11a2b-ff38-5c9f-901e-173c7d9102ae",
+        "sourceHandle": "out",
+        "targetHandle": "in_1"
+      },
+      {
         "id": "reactflow__edge-905ccc99-694a-519b-93b4-5f22778d5c32out-9439839c-cf4e-5d3f-b3a5-3977577f7e76in",
         "source": "905ccc99-694a-519b-93b4-5f22778d5c32",
         "target": "9439839c-cf4e-5d3f-b3a5-3977577f7e76",
@@ -689,6 +827,13 @@
         "id": "reactflow__edge-85ff60ea-93e6-551d-aae1-eeac331a801cout-da085a5c-60a6-5023-80b0-1f5a1dfc0e06in",
         "source": "85ff60ea-93e6-551d-aae1-eeac331a801c",
         "target": "da085a5c-60a6-5023-80b0-1f5a1dfc0e06",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-69d11a2b-ff38-5c9f-901e-173c7d9102aeout-cb9f7863-af5c-5ace-a1f3-52027f8bf6f4in",
+        "source": "69d11a2b-ff38-5c9f-901e-173c7d9102ae",
+        "target": "cb9f7863-af5c-5ace-a1f3-52027f8bf6f4",
         "sourceHandle": "out",
         "targetHandle": "in"
       },
@@ -820,15 +965,29 @@
         "targetHandle": "in_1"
       },
       {
-        "id": "reactflow__edge-ca233f8e-302e-5e89-977a-c93dd5f2abbaout-6920455d-0912-512e-8c3e-97d0ed207152in",
-        "source": "ca233f8e-302e-5e89-977a-c93dd5f2abba",
+        "id": "reactflow__edge-95b43de1-57a0-507a-8770-4c476dd1f4ecout-756ef4b8-cbed-5c42-abc5-f3bac5ee294bin",
+        "source": "95b43de1-57a0-507a-8770-4c476dd1f4ec",
+        "target": "756ef4b8-cbed-5c42-abc5-f3bac5ee294b",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-cb9f7863-af5c-5ace-a1f3-52027f8bf6f4out-756ef4b8-cbed-5c42-abc5-f3bac5ee294bin_1",
+        "source": "cb9f7863-af5c-5ace-a1f3-52027f8bf6f4",
+        "target": "756ef4b8-cbed-5c42-abc5-f3bac5ee294b",
+        "sourceHandle": "out",
+        "targetHandle": "in_1"
+      },
+      {
+        "id": "reactflow__edge-95b43de1-57a0-507a-8770-4c476dd1f4ecout-6920455d-0912-512e-8c3e-97d0ed207152in",
+        "source": "95b43de1-57a0-507a-8770-4c476dd1f4ec",
         "target": "6920455d-0912-512e-8c3e-97d0ed207152",
         "sourceHandle": "out",
         "targetHandle": "in"
       },
       {
-        "id": "reactflow__edge-da085a5c-60a6-5023-80b0-1f5a1dfc0e06out-6920455d-0912-512e-8c3e-97d0ed207152in_1",
-        "source": "da085a5c-60a6-5023-80b0-1f5a1dfc0e06",
+        "id": "reactflow__edge-cb9f7863-af5c-5ace-a1f3-52027f8bf6f4out-6920455d-0912-512e-8c3e-97d0ed207152in_1",
+        "source": "cb9f7863-af5c-5ace-a1f3-52027f8bf6f4",
         "target": "6920455d-0912-512e-8c3e-97d0ed207152",
         "sourceHandle": "out",
         "targetHandle": "in_1"
@@ -862,8 +1021,10 @@
           "6eaa947f-44ae-52e9-9c1d-ab93da3bf2d1",
           "7e4abb6d-a6df-538b-ba78-eff580600cbd",
           "50a5d9e8-a6f1-5386-b26a-4ad8e5076c17",
+          "d01c6cc7-690f-5186-9730-0b3821fe7c85",
           "755fbc3c-68d1-50cf-ae8e-f72f9dac8413",
           "ca233f8e-302e-5e89-977a-c93dd5f2abba",
+          "95b43de1-57a0-507a-8770-4c476dd1f4ec",
           "6336c9a7-c75a-527f-9b35-254eb952b512",
           "58433a36-c808-5c66-98dc-1b82661d8944"
         ]
@@ -878,8 +1039,10 @@
           "72b34012-476a-50d2-abf3-f6c271a50f54",
           "905ccc99-694a-519b-93b4-5f22778d5c32",
           "85ff60ea-93e6-551d-aae1-eeac331a801c",
+          "69d11a2b-ff38-5c9f-901e-173c7d9102ae",
           "9439839c-cf4e-5d3f-b3a5-3977577f7e76",
           "da085a5c-60a6-5023-80b0-1f5a1dfc0e06",
+          "cb9f7863-af5c-5ace-a1f3-52027f8bf6f4",
           "d89f7440-724b-578f-b68f-896974b76ade",
           "6cb649f2-b091-5fcc-8214-1e76ee7b94e4"
         ]

@@ -24,19 +24,26 @@ gives its envelope:
 
 The filings give no floor plates, so this is the envelope, not the design.
 
-The day is one of 2027's equinoxes and solstices, picked with the Day widget
-of "List the day's sun steps". It counts from 1.5 hours after its sunrise to
-1.5 hours before its sunset (suntime), in New York time, in 10-minute steps;
-at the middle of each step astral gives the sun's azimuth and elevation. Only
-open ground counts: the cells under a roof are left out.
+A day counts from 1.5 hours after its sunrise to 1.5 hours before its sunset
+(suntime), in New York time, in 10-minute steps; at the middle of each step
+astral gives the sun's azimuth and elevation. "List the day's sun steps" cuts
+the day the maps and the day's plot show, one of 2027's equinoxes and
+solstices picked with its Day widget, and "List the year's sun steps" every
+day of 2027 alike. Only open ground counts: the cells under a roof are left
+out.
 
 In each scenario a Python node draws its buildings into a heights grid on the
-ground cells' grid, and two Autark compute steps, WebGPU shaders, march from
+ground cells' grid, and three Autark compute steps, WebGPU shaders, march from
 the ground toward the sun across it: one gives each cell's minutes in shadow
-that day, for the scenario's map; the other the share of Block 1259's open
-ground in shadow at each step. Outside the scenarios a plot draws both
-scenarios' shares through the day, a table compares their day on the block,
-and a map draws the shade the proposed building adds.
+on the day picked, for the scenario's map; another the share of Block 1259's
+open ground in shadow at each step of that day; the third, a row per day of
+the year, the minutes the block's open ground spends in shadow, on average.
+Outside the scenarios:
+- a plot draws both scenarios' shares through the day picked, with its window;
+- a plot draws both scenarios' time in shadow on each day of the year;
+- a table gives, for each month, the shade the proposed building adds a day,
+  as the month's average and standard deviation;
+- a map draws the shade the proposed building adds on the day picked.
 
     python scripts/build_example_bedford_shadow.py
 
@@ -66,6 +73,8 @@ COLUMN = 645
 ROW = 450
 #: The ground cells' side and the sun's step, which set how fine the shadow is.
 CELL_M, STEP_MIN = 3, 10
+#: The year every day of which is cut into sun steps.
+YEAR = 2027
 #: The days the Day widget offers: 2027's equinoxes and solstices, by their
 #: date in New York (the US Naval Observatory's table).
 DAYS = {"Spring equinox": "2027-03-20", "Summer solstice": "2027-06-21",
@@ -211,7 +220,7 @@ from astral.sun import azimuth, elevation
 from shapely.geometry import Point
 from suntime import Sun
 
-# The day the maps, the table and the plot show, one of 2027's equinoxes and
+# The day the maps and the day's plot show, one of 2027's equinoxes and
 # solstices (the Day widget), cut into the steps the GPU steps walk. The day
 # counts from 1.5 hours after its sunrise to 1.5 hours before its sunset
 # (suntime), in New York time, in steps of {STEP_MIN} minutes, the last one
@@ -273,6 +282,89 @@ steps["day"], steps["window_from"], steps["window_to"] = label, clock(start), cl
 steps["steps"] = [steps[["east", "north", "cot", "minutes"]].to_numpy().tolist()] + [None] * (len(steps) - 1)
 steps.metadata = {{"layerType": "points"}}
 return steps
+'''
+
+
+def year_steps_code(latitude: float, longitude: float) -> str:
+    """Every day's window and its sun steps, cut as the day's are."""
+    return f'''import datetime
+import math
+from zoneinfo import ZoneInfo
+
+import geopandas as gpd
+import pyproj
+from astral import Observer
+from astral.sun import azimuth, elevation
+from shapely.geometry import Point
+from suntime import Sun
+
+# Every day of {YEAR} cut into the steps the GPU step walks. A day counts from
+# 1.5 hours after its sunrise to 1.5 hours before its sunset (suntime), in New
+# York time, in steps of {STEP_MIN} minutes, the last one shorter. At the middle
+# of each step astral gives the sun's azimuth and its elevation, with
+# refraction. One point per day, at the site: its date, its window
+# (window_from, window_to) and the minutes it counts (window_min), and where
+# its steps start among the year's (first_step) and how many there are
+# (step_count).
+YEAR = {YEAR}
+LATITUDE, LONGITUDE = {latitude}, {longitude}  # the site, 1550 Bedford Avenue
+NEW_YORK = ZoneInfo("America/New_York")
+STEP = datetime.timedelta(minutes={STEP_MIN})
+MARGIN = datetime.timedelta(hours=1.5)
+
+# The ground cells are in metres in the site's UTM zone, whose north is not
+# quite true north: turn the sun's azimuth by the angle between the two.
+utm = gpd.GeoSeries([Point(LONGITUDE, LATITUDE)], crs=4326).estimate_utm_crs()
+to_grid = pyproj.Transformer.from_crs(4326, utm, always_xy=True)
+x0, y0 = to_grid.transform(LONGITUDE, LATITUDE)
+x1, y1 = to_grid.transform(LONGITUDE, LATITUDE + 0.01)
+turn = math.degrees(math.atan2(x1 - x0, y1 - y0))
+
+
+def clock(moment):
+    """*moment* as a New York clock reads it, to the minute: 8:46 AM EST."""
+    moment = (moment + datetime.timedelta(seconds=30)).replace(second=0, microsecond=0)
+    noon = "AM" if moment.hour < 12 else "PM"
+    return f"{{moment.hour % 12 or 12}}:{{moment.minute:02d}} {{noon}} {{moment.tzname()}}"
+
+
+sun = Sun(LATITUDE, LONGITUDE)
+observer = Observer(latitude=LATITUDE, longitude=LONGITUDE)
+days, steps, day = [], [], datetime.date(YEAR, 1, 1)
+while day.year == YEAR:
+    start = sun.get_sunrise_time(day, NEW_YORK) + MARGIN
+    end = sun.get_sunset_time(day, NEW_YORK) - MARGIN
+    # suntime works in UTC, where a summer sunset in New York falls on the next
+    # day: a window that does not run forward is a wrong day, not an empty one.
+    if not start < end:
+        raise ValueError(f"suntime gave {{day}} no window: {{start}} to {{end}}")
+    first, moment = len(steps), start
+    while moment < end:
+        length = min(STEP, end - moment)
+        middle = moment + length / 2
+        toward = math.radians(azimuth(observer, middle) + turn)
+        steps.append([
+            math.sin(toward),  # toward east
+            math.cos(toward),  # toward north
+            1 / math.tan(math.radians(elevation(observer, middle))),
+            length.total_seconds() / 60,
+        ])
+        moment += length
+    days.append({{
+        "date": day.isoformat(),
+        "window_from": clock(start),
+        "window_to": clock(end),
+        "window_min": (end - start).total_seconds() / 60,
+        "first_step": first,
+        "step_count": len(steps) - first,
+    }})
+    day += datetime.timedelta(days=1)
+year = gpd.GeoDataFrame(days, geometry=[Point(LONGITUDE, LATITUDE)] * len(days), crs=4326)
+# Every step of the year on the first point (toward east, toward north, cot of
+# the elevation, minutes), for the GPU step that walks each day's.
+year["steps"] = [steps] + [None] * (len(year) - 1)
+year.metadata = {{"layerType": "points"}}
+return year
 '''
 
 
@@ -377,7 +469,7 @@ READ_STEPS = '''import pandas as pd
 
 # The share of Block 1259's open ground in shadow at each step of the day
 # (share, in %), with the step's time and minutes and the day's window, as a
-# table the comparison reads. The GPU step hands on the steps, input_0's
+# table the day's plot reads. The GPU step hands on the steps, input_0's
 # first layer, with its result under compute.
 steps = [!! input_0:input_0 !!]
 if "share" not in steps.columns:
@@ -391,6 +483,36 @@ return pd.DataFrame({
     "window_from": steps["window_from"],
     "window_to": steps["window_to"],
 })
+'''
+
+READ_DAYS = '''import pandas as pd
+
+# Each day of the year on Block 1259's open ground: the minutes it spends in
+# shadow over the day's window, on average (shadow_min), the same as text
+# (in_shadow), and the window, a row per day. The GPU step hands on the days,
+# input_0's first layer, with its result under compute.
+def duration(minutes):
+    hours, rest = divmod(round(minutes), 60)
+    if not hours:
+        return f"{rest} min"
+    return f"{hours} h {rest} min" if rest else f"{hours} h"
+
+
+days = [!! input_0:input_0 !!]
+if "shadow_min" not in days.columns:
+    days["shadow_min"] = [row.get("shadow_min") if isinstance(row, dict) else None for row in days["compute"]]
+days = pd.DataFrame({
+    "date": days["date"],
+    "shadow_min": pd.to_numeric(days["shadow_min"]),
+    "window_from": days["window_from"],
+    "window_to": days["window_to"],
+    "window_min": pd.to_numeric(days["window_min"]),
+})
+days["in_shadow"] = [duration(minutes) for minutes in days["shadow_min"]]
+# Each day's noon written as UTC, so a plot draws the same date in a browser
+# anywhere.
+days["time"] = days["date"] + "T12:00:00Z"
+return days
 '''
 
 SHOWN = '''import numpy as np
@@ -462,33 +584,29 @@ from shapely.geometry import box
 return gpd.GeoDataFrame({"area": ["map"]}, geometry=[box(*input_0.total_bounds)], crs=input_0.crs)
 '''
 
-COMPARE = '''import pandas as pd
+COMPARE = '''import calendar
 
-# The day on Block 1259's open ground in both scenarios: each one's average
-# time in shadow over the day's window (the share in shadow at each step,
-# times the step's minutes, summed), and what the proposed building adds.
-# input_0 is the scenario without the proposed building, input_1 the one
-# with it.
-def duration(minutes):
-    hours, rest = divmod(round(minutes), 60)
-    if not hours:
-        return f"{rest} min"
-    return f"{hours} h {rest} min" if rest else f"{hours} h"
+import numpy as np
+import pandas as pd
 
-
+# The shade the proposed building adds on Block 1259's open ground a day (its
+# time in shadow with the building less its time without it, day by day),
+# month by month: the average over the month's days and their standard
+# deviation, in whole minutes. input_0 is the scenario without the proposed
+# building, input_1 the one with it, a row per day each.
 without, with_building = input_0, input_1
-dark_without = float((without["share"] / 100 * without["minutes"]).sum())
-dark_with = float((with_building["share"] / 100 * with_building["minutes"]).sum())
-day = with_building.iloc[0]
-return pd.DataFrame([{
-    "Day": day["day"],
-    "From": day["window_from"],
-    "To": day["window_to"],
-    "Time counted": duration(float(with_building["minutes"].sum())),
-    "Without the proposed building": duration(dark_without),
-    "With the proposed building": duration(dark_with),
-    "Added": duration(dark_with - dark_without),
-}])
+days = without[["date", "shadow_min"]].merge(
+    with_building[["date", "shadow_min"]], on="date", suffixes=("_without", "_with"))
+added = days["shadow_min_with"] - days["shadow_min_without"]
+rows = []
+for month, minutes in added.groupby(pd.to_datetime(days["date"]).dt.month):
+    rows.append({
+        "Month": calendar.month_name[month],
+        # The spread of the month's own days, all of them (ddof 0).
+        "Shade added per day (average ± standard deviation)":
+            f"{round(float(minutes.mean()))} ± {round(float(np.std(minutes)))} min",
+    })
+return pd.DataFrame(rows)
 '''
 
 
@@ -579,6 +697,49 @@ def block_pass() -> str:
     }]})
 
 
+def year_pass() -> str:
+    """The Autark compute step for the year: each day's minutes in shadow on
+    Block 1259's open ground, on average. input_0 is the year's days, the
+    first carrying every step, input_1 the scenario's buildings for the GPU.
+    A day is a row, so the step hands on 365 rows, not the year's steps."""
+    shader = [
+        "// The minutes Block 1259's open ground spends in shadow this day, on",
+        "// average: at each of the day's steps (steps: toward east, toward north,",
+        "// cot of the elevation, minutes; the day's run from first_step, step_count",
+        "// of them), the share of its spots (spots: x, y) a roof keeps from the",
+        "// sun, the ray marched across the heights grid as on the map, times the",
+        "// step's minutes.",
+        "var dark: f32 = 0.0;",
+        "for (var i = 0u; i < u32(step_count); i++) {",
+        "    let s = u32(first_step) + i;",
+        "    let sx = steps[s * 4u];",
+        "    let sy = steps[s * 4u + 1u];",
+        "    let cot = steps[s * 4u + 2u];",
+        "    var shaded_spots: f32 = 0.0;",
+        "    for (var p = 0u; p < spots_rows; p++) {",
+        "        let px = spots[p * 2u];",
+        "        let py = spots[p * 2u + 1u];",
+        *("        " + line for line in march("px", "py")),
+        "        if (shaded) { shaded_spots += 1.0; }",
+        "    }",
+        "    dark += steps[s * 4u + 3u] * shaded_spots / f32(max(spots_rows, 1u));",
+        "}",
+        "return dark;",
+    ]
+    return grammar({"compute": [{
+        "dataRef": "[!! input_0 !!]",
+        "attributes": {"first_step": "properties.first_step", "step_count": "properties.step_count"},
+        "uniforms": {"tallest": {"fromFeature": {"layer": "[!! input_1 !!]", "path": "properties.tallest"}}},
+        "uniformMatrices": {
+            "heights": {"fromFeature": {"layer": "[!! input_1 !!]", "path": "properties.heights"}},
+            "spots": {"fromFeature": {"layer": "[!! input_1 !!]", "path": "properties.spots"}, "cols": 2},
+            "steps": {"fromFeature": {"layer": "[!! input_0 !!]", "path": "properties.steps"}, "cols": 4},
+        },
+        "outputColumnName": "shadow_min",
+        "wglsFunction": shader,
+    }]})
+
+
 def shadow_map(value: str, title: str, scale: dict) -> str:
     """A map of one shaded layer, with the streets under it, Block 1259 over
     it and the buildings in 3D, the proposed one in its own color: input_0 is
@@ -603,37 +764,99 @@ def shadow_map(value: str, title: str, scale: dict) -> str:
     ]}})
 
 
-def plot() -> str:
-    """Both scenarios' share of Block 1259's open ground in shadow through the
-    day: the scenarios' per-step tables stacked by Curio as ``inputs``, a
-    line each in its scenario's color. The first scenario's line is the
-    widest, so where the building adds no shade both still show."""
-    spec = {
-        "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
-        "data": {"name": "[!! inputs !!]"},
-        "mark": {"type": "line", "point": True},
-        "encoding": {
-            # An hour at least between ticks (in milliseconds), so each label
-            # names an hour once.
-            "x": {"field": "time", "type": "temporal", "scale": {"type": "utc"},
-                  "axis": {"format": "%-I %p", "tickMinStep": 3600000}, "title": "Time (New York)"},
-            "y": {"field": "share", "type": "quantitative", "scale": {"domain": [0, 100]},
-                  "title": "Open ground in shadow (%)"},
-            "color": {"field": "scenario_name", "type": "nominal", "title": "Scenario",
-                      "scale": "SCENARIO_COLORS", "sort": "SCENARIO_ORDER",
-                      "legend": {"orient": "bottom", "direction": "vertical", "title": None}},
-            "strokeWidth": {"field": "scenario_name", "type": "nominal", "sort": "SCENARIO_ORDER",
-                            "scale": {"range": [5, 2]}, "legend": None},
-            "tooltip": [
-                {"field": "scenario_name", "type": "nominal", "title": "Scenario"},
-                {"field": "clock", "type": "nominal", "title": "Time"},
-                {"field": "share", "type": "quantitative", "title": "In shadow (%)", "format": ".0f"},
-            ],
-        },
-    }
+def vega(spec: dict) -> str:
+    """*spec* as the Vega node's text, with Curio's scenario chips in place."""
     return (json.dumps(spec, indent=2)
             .replace('"SCENARIO_COLORS"', "[!! scenario colors !!]")
             .replace('"SCENARIO_ORDER"', "[!! scenario order !!]") + "\n")
+
+
+#: Both plots' legend: over the plot, its names whole, one under the other
+#: where the plot is narrow.
+LEGEND = {"orient": "top", "direction": "horizontal", "title": None, "labelLimit": 0}
+NARROW_LEGEND = {**LEGEND, "direction": "vertical"}
+
+
+def plot() -> str:
+    """Both scenarios' share of Block 1259's open ground in shadow through the
+    day picked: the scenarios' per-step tables stacked by Curio as ``inputs``,
+    a line each in its scenario's color, and under the time axis the day's
+    window. The first scenario's line is the widest, so where the building
+    adds no shade both still show."""
+    return vega({
+        "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
+        "data": {"name": "[!! inputs !!]"},
+        "layer": [
+            {
+                "mark": {"type": "line", "point": True},
+                "encoding": {
+                    # An hour at least between ticks (in milliseconds), so each
+                    # label names an hour once.
+                    "x": {"field": "time", "type": "temporal", "scale": {"type": "utc"},
+                          "axis": {"format": "%-I %p", "tickMinStep": 3600000}, "title": None},
+                    "y": {"field": "share", "type": "quantitative", "scale": {"domain": [0, 100]},
+                          "title": "In shadow (%)"},
+                    "color": {"field": "scenario_name", "type": "nominal", "title": "Scenario",
+                              "scale": "SCENARIO_COLORS", "sort": "SCENARIO_ORDER", "legend": NARROW_LEGEND},
+                    "strokeWidth": {"field": "scenario_name", "type": "nominal", "sort": "SCENARIO_ORDER",
+                                    "scale": {"range": [5, 2]}, "legend": None},
+                    "tooltip": [
+                        {"field": "scenario_name", "type": "nominal", "title": "Scenario"},
+                        {"field": "clock", "type": "nominal", "title": "Time"},
+                        {"field": "share", "type": "quantitative", "title": "In shadow (%)", "format": ".0f"},
+                    ],
+                },
+            },
+            {
+                # The day's window, once, where the time axis's title goes.
+                "transform": [
+                    {"window": [{"op": "row_number", "as": "row"}]},
+                    {"filter": "datum.row == 1"},
+                    {"calculate": "'Counted from ' + datum.window_from + ' to ' + datum.window_to", "as": "window"},
+                ],
+                "mark": {"type": "text", "baseline": "top", "fontSize": 11, "fontWeight": "bold", "color": "#333"},
+                "encoding": {"x": {"value": {"expr": "width / 2"}}, "y": {"value": {"expr": "height + 22"}},
+                             "text": {"field": "window", "type": "nominal"}},
+            },
+        ],
+    })
+
+
+def year_plot() -> str:
+    """Both scenarios' time in shadow on Block 1259's open ground each day of
+    the year: the scenarios' per-day tables stacked by Curio as ``inputs``, a
+    line each in its scenario's color, the first the widest as on the day's
+    plot."""
+    return vega({
+        "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
+        "data": {"name": "[!! inputs !!]"},
+        "transform": [{"calculate": "datum.shadow_min / 60", "as": "hours"}],
+        "mark": {"type": "line"},
+        "encoding": {
+            # The whole year, so its first month is labeled too, with four
+            # weeks at least between ticks (in milliseconds), so each label
+            # names a month once.
+            "x": {"field": "time", "type": "temporal",
+                  "scale": {"type": "utc", "domain": [
+                      {"year": YEAR, "month": 1, "date": 1, "utc": True},
+                      {"year": YEAR, "month": 12, "date": 31, "hours": 23, "minutes": 59, "utc": True}]},
+                  "axis": {"format": "%b", "tickMinStep": 28 * 24 * 3600000}, "title": f"Day ({YEAR})"},
+            # From near the shortest day's time in shadow, so the shade the
+            # building adds shows on a plot as tall as a row.
+            "y": {"field": "hours", "type": "quantitative", "scale": {"zero": False}, "title": "In shadow (h)"},
+            "color": {"field": "scenario_name", "type": "nominal", "title": "Scenario",
+                      "scale": "SCENARIO_COLORS", "sort": "SCENARIO_ORDER", "legend": LEGEND},
+            "strokeWidth": {"field": "scenario_name", "type": "nominal", "sort": "SCENARIO_ORDER",
+                            "scale": {"range": [4, 1.5]}, "legend": None},
+            "tooltip": [
+                {"field": "scenario_name", "type": "nominal", "title": "Scenario"},
+                {"field": "date", "type": "nominal", "title": "Day"},
+                {"field": "in_shadow", "type": "nominal", "title": "In shadow"},
+                {"field": "window_from", "type": "nominal", "title": "Counted from"},
+                {"field": "window_to", "type": "nominal", "title": "To"},
+            ],
+        },
+    })
 
 
 def node(key, type_, x, y, content, goal, title=None, widgets=None, copied=None, size=None):
@@ -670,23 +893,28 @@ def edge(source, target, interaction=False):
             "targetHandle": handle}
 
 
-#: The dashboard in three columns: the three maps across the top, and under
-#: them the Day widget's node, the Map Editor under the map it edits (so each
-#: scenario's frame holds its own tiles only) and the plot; then the table;
-#: by node key.
+#: The dashboard in three columns: the three maps across the top; under them,
+#: as tall as the Day widget's node, that node, the Map Editor under the map
+#: it edits (so each scenario's frame holds its own tiles only) and the day's
+#: plot; then, as tall again, the plot of every day over the table of the
+#: months, which scrolls: a dashboard fits all its tiles in the window, so a
+#: table tall enough for twelve rows would shrink every tile; by node key.
+ROW_HEIGHT = 230
 LAYOUT = {
     "base-shadow-map": {"dashboardPinned": True, "dashboardX": 0, "dashboardY": 0, "dashboardWidth": 420, "dashboardHeight": 380},
     "shadow-map": {"dashboardPinned": True, "dashboardX": 430, "dashboardY": 0, "dashboardWidth": 420, "dashboardHeight": 380},
     "added-map": {"dashboardPinned": True, "dashboardX": 860, "dashboardY": 0, "dashboardWidth": 420, "dashboardHeight": 380},
-    "steps": {"dashboardPinned": True, "dashboardX": 0, "dashboardY": 390, "dashboardWidth": 250, "dashboardHeight": 230},
-    "add-building": {"dashboardPinned": True, "dashboardX": 430, "dashboardY": 390, "dashboardWidth": 420, "dashboardHeight": 460},
-    "plot": {"dashboardPinned": True, "dashboardX": 860, "dashboardY": 390, "dashboardWidth": 420, "dashboardHeight": 460},
-    "summary-view": {"dashboardPinned": True, "dashboardX": 0, "dashboardY": 860, "dashboardWidth": 1280, "dashboardHeight": 140},
+    "steps": {"dashboardPinned": True, "dashboardX": 0, "dashboardY": 390, "dashboardWidth": 250, "dashboardHeight": ROW_HEIGHT},
+    "add-building": {"dashboardPinned": True, "dashboardX": 430, "dashboardY": 390, "dashboardWidth": 420, "dashboardHeight": ROW_HEIGHT},
+    "plot": {"dashboardPinned": True, "dashboardX": 860, "dashboardY": 390, "dashboardWidth": 420, "dashboardHeight": ROW_HEIGHT},
+    "year-plot": {"dashboardPinned": True, "dashboardX": 0, "dashboardY": 630, "dashboardWidth": 1280, "dashboardHeight": ROW_HEIGHT},
+    "summary-view": {"dashboardPinned": True, "dashboardX": 0, "dashboardY": 870, "dashboardWidth": 1280, "dashboardHeight": ROW_HEIGHT},
 }
 
 
 #: The nodes of a scenario's chain, by key without the scenario's prefix.
-CHAIN = ("tower", "sun-rays", "block-rays", "shadow-cells", "block-steps", "shadow-shown", "shadow-map")
+CHAIN = ("tower", "sun-rays", "block-rays", "year-rays", "shadow-cells", "block-steps", "block-days",
+         "shadow-shown", "shadow-map")
 
 
 def scenario_nodes(scenario: dict, top: int) -> list[dict]:
@@ -707,12 +935,19 @@ def scenario_nodes(scenario: dict, top: int) -> list[dict]:
         node(p + "block-rays", "curio.builtin/autk-grammar", 3 * c, top + ROW, block_pass(),
              "On the GPU, at every step of the day, find the share of Block 1259's open ground a roof keeps from the "
              "sun.", title="Cast sun rays on Block 1259", copied=copied("block-rays")),
+        node(p + "year-rays", "curio.builtin/autk-grammar", 3 * c, top + 2 * ROW, year_pass(),
+             f"On the GPU, for every day of {YEAR}, find the minutes a roof keeps the sun from Block 1259's open "
+             "ground over the day's window, on average.", title="Cast sun rays on Block 1259 through the year",
+             copied=copied("year-rays")),
         node(p + "shadow-cells", "curio.builtin/computation-analysis", 4 * c, top, READ_CELLS,
              "Keep each open-ground cell's minutes in shadow and their share of the day's window.",
              title="Read shadow per cell", copied=copied("shadow-cells")),
         node(p + "block-steps", "curio.builtin/computation-analysis", 4 * c, top + ROW, READ_STEPS,
              "Keep the share of Block 1259's open ground in shadow at each step, with its time.",
              title="Read shadow on the block per step", copied=copied("block-steps")),
+        node(p + "block-days", "curio.builtin/computation-analysis", 4 * c, top + 2 * ROW, READ_DAYS,
+             "Add up each day's time in shadow on Block 1259's open ground, a row per day of the year.",
+             title="Read shadow on the block per day", copied=copied("block-days")),
         node(p + "shadow-shown", "curio.builtin/computation-analysis", 5 * c, top, SHOWN,
              "Gather the cells in shadow into classes of the share of the day's window for the map.",
              title="Keep shaded cells for the map",
@@ -741,6 +976,11 @@ def build() -> dict:
              title="Load Block 1259 outline"),
         node("streets", "curio.builtin/data-loading", 0, 2 * ROW, STREETS,
              "Load NYC's street centerlines around the site, each drawn as wide as its roadway.", title="Load streets"),
+        node("year-steps", "curio.builtin/computation-analysis", c, -ROW,
+             year_steps_code(round(site.y, 4), round(site.x, 4)),
+             f"For every day of {YEAR}, count from 1.5 hours after sunrise to 1.5 hours before sunset in New York "
+             f"time, in {STEP_MIN}-minute steps, with the sun's direction and height at each.",
+             title="List the year's sun steps"),
         node("steps", "curio.builtin/computation-analysis", c, 0, steps_code(round(site.y, 4), round(site.x, 4)),
              "For the day picked, an equinox or a solstice of 2027, count from 1.5 hours after sunrise to 1.5 hours "
              f"before sunset in New York time, in {STEP_MIN}-minute steps, with the sun's direction and height at "
@@ -771,15 +1011,18 @@ def build() -> dict:
              shadow_map("added_shown", "Shade added (minutes)", {}),
              "Map the shade the proposed building adds that day, with Block 1259, the buildings and the streets.",
              title="Map: shade the tower adds", size=(980, 700)),
-        node("compare", "curio.builtin/computation-analysis", 7 * c + 400, ROW + ROW // 2, COMPARE,
-             "Compare the day on Block 1259's open ground without and with the proposed building, and what it adds.",
-             title="Compare the scenarios on Block 1259"),
-        node("summary-view", "curio.builtin/vis-simple", 8 * c + 400, ROW + ROW // 2, "",
-             "Show the day on Block 1259's open ground in both scenarios and the shade the proposed building adds.",
-             title="Table: shadow on Block 1259", size=(980, 150)),
-        node("plot", "curio.builtin/vis-vega", 8 * c + 400, 2 * ROW + ROW // 2, plot(),
-             "Plot the share of Block 1259's open ground in shadow through the day, a line per scenario.",
-             title="Plot: shadow on Block 1259 through the day", size=(980, 500)),
+        node("plot", "curio.builtin/vis-vega", 8 * c + 400, ROW, plot(),
+             "Plot the share of Block 1259's open ground in shadow through the day picked, a line per scenario, "
+             "with the day's window.", title="Plot: shadow on Block 1259 through the day", size=(980, 500)),
+        node("year-plot", "curio.builtin/vis-vega", 8 * c + 400, 2 * ROW + ROW // 2, year_plot(),
+             f"Plot Block 1259's open ground's time in shadow on each day of {YEAR}, a line per scenario.",
+             title=f"Plot: shadow on Block 1259 each day of {YEAR}", size=(980, 500)),
+        node("compare", "curio.builtin/computation-analysis", 7 * c + 400, 4 * ROW, COMPARE,
+             "Average the shade the proposed building adds to Block 1259's open ground a day over each month, with "
+             "the standard deviation.", title="Compare the scenarios by month"),
+        node("summary-view", "curio.builtin/vis-simple", 8 * c + 400, 4 * ROW, "",
+             "Show, for each month, the shade the proposed building adds to Block 1259's open ground a day.",
+             title="Table: shade added on Block 1259 by month", size=(980, 720)),
     ]
     edges = [
         edge("buildings", "ground"), edge("block", "ground"),
@@ -792,8 +1035,10 @@ def build() -> dict:
             edge(buildings, p + "tower"), edge("ground", p + "tower"),
             edge("ground", p + "sun-rays"), edge(p + "tower", p + "sun-rays"), edge("steps", p + "sun-rays"),
             edge("steps", p + "block-rays"), edge(p + "tower", p + "block-rays"),
+            edge("year-steps", p + "year-rays"), edge(p + "tower", p + "year-rays"),
             edge(p + "sun-rays", p + "shadow-cells"),
             edge(p + "block-rays", p + "block-steps"),
+            edge(p + "year-rays", p + "block-days"),
             edge(p + "shadow-cells", p + "shadow-shown"),
             edge("map-area", p + "shadow-map"), edge(p + "shadow-shown", p + "shadow-map"),
             edge(buildings, p + "shadow-map"), edge("block", p + "shadow-map"), edge("streets", p + "shadow-map"),
@@ -808,7 +1053,8 @@ def build() -> dict:
         # The scenario without the proposed building first: Curio stacks a
         # node's inputs in the order of its circles.
         edge("base-block-steps", "plot"), edge("block-steps", "plot"),
-        edge("base-block-steps", "compare"), edge("block-steps", "compare"),
+        edge("base-block-days", "year-plot"), edge("block-days", "year-plot"),
+        edge("base-block-days", "compare"), edge("block-days", "compare"),
         edge("compare", "summary-view"),
     ]
     # A key that names no node would silently leave its tile off the dashboard.
