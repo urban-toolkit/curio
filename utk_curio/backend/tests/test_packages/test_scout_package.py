@@ -123,7 +123,7 @@ def test_scout_is_one_package_from_curio_under_mit():
         PACKAGE_ID, 1, "Scout", "Curio", "MIT",
     )
     assert manifest.read_only is True and manifest.kind == "node"
-    assert _manifest()["version"] == "1.0.0"
+    assert _manifest()["version"] == "1.1.0"
 
 
 def test_it_holds_the_templates_of_the_two_packages_it_replaced_and_eight_more_charts():

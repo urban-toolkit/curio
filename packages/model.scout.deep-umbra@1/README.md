@@ -19,7 +19,7 @@ The [Model Catalog](../../docs/MODEL-CATALOG.md) lists it.
 
 | Canonical id | Label | Input | Output |
 |---|---|---|---|
-| `model.scout.deep-umbra/accumulated-shadow` | Accumulated Shadow | The height raster of Rasterize Buildings | One RASTER: the accumulated shadow in minutes |
+| `model.scout.deep-umbra/accumulated-shadow` | Accumulated Shadow | The height raster of Rasterize Buildings; a second circle takes a VALUE, such as a season a node wired into it returns | One RASTER: the accumulated shadow in minutes |
 
 The node's cell:
 
@@ -36,6 +36,12 @@ The node's **Widgets** tab holds its setting:
 | Widget | Default | What it sets |
 |---|---|---|
 | Season (`season`) | `summer` | spring, summer or winter: the season's sun, and the minutes a day of shadow counts for (540, 720 and 360) |
+
+A season several Accumulated Shadow nodes share comes from one node that
+returns it, wired into each one's second circle, whose code then reads
+`season=input_1` in place of `[!! season !!]`, as the scenarios of the
+[Chicago Loop shadow](../../docs/examples/dataflows/chicago-loop-shadow-towers.json)
+test dataflow do.
 
 The input is a raster of building heights in metres in EPSG:3395 (World
 Mercator) on the zoom-16 tile grid, 256 cells a tile: Rasterize Buildings'

@@ -211,8 +211,9 @@ def test_the_flood_dataflows_averages_by_period_are_raster_calculators():
     period's depth with the package's ``raster_calculate``, and a node of no
     package is handed no package's modules, so both are Raster Calculators.
     They read the riverside tracts and the waterways, two layers, which the
-    calculator's input circles take beside rasters, as its starter says. No
-    node of the dataflow calls the old helpers."""
+    calculator's input circles take beside rasters, as its starter says, and
+    the region, a JSON value its circles take too. No node of the dataflow
+    calls the old helpers."""
     spec = json.loads(FLOOD.read_text(encoding="utf-8"))["dataflow"]
     averages = [n for n in spec["nodes"] if (n.get("metadata") or {}).get("packageTemplateLabel") == AVERAGE]
     assert len(averages) == 2, [n["id"] for n in averages]
@@ -226,7 +227,7 @@ def test_the_flood_dataflows_averages_by_period_are_raster_calculators():
     assert [n["id"] for n in spec["nodes"] if "curio_raster_" in (n.get("content") or "")] == []
     manifest = json.loads((SCOUT / "manifest.json").read_text(encoding="utf-8"))
     (calculator,) = [t for t in manifest["templates"] if t["id"] == "raster-calculator"]
-    assert [sorted(port["types"]) for port in calculator["inputPorts"]] == [["GEODATAFRAME", "RASTER"]]
+    assert [sorted(port["types"]) for port in calculator["inputPorts"]] == [["GEODATAFRAME", "JSON", "RASTER"]]
     assert "zones or a mask" in STARTER.read_text(encoding="utf-8")
 
 

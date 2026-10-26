@@ -164,6 +164,54 @@ class TestPlayShapesEachNode:
         assert recorder.calls["j"]["code"] == code
 
 
+class TestALoaderReadsWhatIsWiredIntoIt:
+    def test_a_loader_reads_the_dict_a_python_node_wired_into_it_returns(self):
+        """Data Loading takes inputs: a run on the server runs a loader after
+        the Python node wired into its first circle and hands it that node's
+        output, here the corners of an area, which its code reads as input_0.
+        Each step's code runs here as the sandbox runs it (``call_as_node``),
+        on the value its input names."""
+        from utk_curio.sandbox.util.input_names import call_as_node
+
+        area = node(
+            "area", content='return {"topleft": [!! topleft !!], "bottomright": [!! bottomright !!]}',
+            metadata={"widgets": [
+                {"name": "topleft", "type": "location", "default": {"lat": 41.62, "lon": -90.69}},
+                {"name": "bottomright", "type": "location", "default": {"lat": 41.41, "lon": -90.43}},
+            ]},
+        )
+        loader = node(
+            "load", "curio.builtin/data-loading",
+            'region = input_0\n'
+            'topleft, bottomright = region["topleft"], region["bottomright"]\n'
+            'bounds = (topleft["lon"], bottomright["lat"], bottomright["lon"], topleft["lat"])\n'
+            'return curio_load_data("data.test.area-raster", bounds=bounds)',
+        )
+        lock = threading.Lock()
+        values: dict = {}
+        handed: dict = {}
+
+        def load_data(dataset_id, bounds=None):
+            return {"dataset": dataset_id, "bounds": list(bounds)}
+
+        def execute(step, code, input_ref):
+            with lock:
+                handed[step.node_id] = input_ref
+                value = values.get((input_ref or {}).get("path"))
+            result = call_as_node(code, {"curio_load_data": load_data}, value, [0] if input_ref else None)
+            with lock:
+                values[f"art-{step.node_id}"] = result
+            return {"stdout": [], "stderr": "", "output": {"path": f"art-{step.node_id}", "dataType": "dict"}}
+
+        _, events, finished = run(spec([area, loader], [edge("area", "load", "in")]), execute)
+        assert [p["nodeId"] for k, p in events if k == "step_started"] == ["area", "load"]
+        assert handed == {"area": None, "load": {"path": "art-area", "dataType": "dict"}}
+        assert values["art-area"] == {"topleft": {"lat": 41.62, "lon": -90.69}, "bottomright": {"lat": 41.41, "lon": -90.43}}
+        assert values["art-load"] == {"dataset": "data.test.area-raster", "bounds": [-90.69, 41.41, -90.43, 41.62]}
+        assert finished["load"]["status"] == "ok"
+        assert outcome(events) == {"status": "succeeded", "ok": 2, "failed": 0, "skipped": 0, "waiting": 0}
+
+
 class TestFailuresStayOnTheirBranch:
     def test_a_failure_skips_what_it_feeds_and_the_other_branch_finishes(self):
         recorder, events, finished = run(spec(
