@@ -8,11 +8,14 @@ afterwards left rows and files for a user that no longer existed, under an id
 the next test's account is handed.
 
 So a reset first closes the door: from then on, a new request is refused (the
-caller answers 503) until the reset is done. Then it waits for the requests
-already running to finish, and only then deletes. The wait has a bound, so a
-request that never ends (a stream nobody reads any more) cannot stall the
-suite: the reset then goes ahead under it and names it, and no later reset
-waits for it again.
+caller answers 503 with :data:`REFUSAL`) until the reset is done. Then it waits
+for the requests already running to finish, and only then deletes. The wait
+has a bound, so a request that never ends (a stream nobody reads any more)
+cannot stall the suite: the reset then goes ahead under it and names it, and
+no later reset waits for it again.
+
+The liveness probe ``/live`` is neither counted nor refused: it reads nothing a
+reset deletes, and a backend that is resetting is up.
 
 Only a test rig builds one of these (``testing/routes.py``), so a server
 started without ``CURIO_TESTING`` counts nothing.
@@ -25,6 +28,11 @@ import threading
 #: How long a reset waits for the requests running when it starts. A page's
 #: workflow dependency check alone took up to 9.4 s on CI.
 RESET_WAIT_SECONDS = 30.0
+
+#: The ``error`` of the 503 a request gets while a reset runs. A client that
+#: may ask in the middle of another test's reset (the shard isolation e2e asks
+#: the other shards) asks again when it gets this.
+REFUSAL = "The test database is being reset."
 
 
 class InFlightRequests:
