@@ -217,7 +217,9 @@ describe('two sends in one batch still run the node', () => {
     });
 
     expect(applyGrammar.mock.calls.length - before).toBe(1);
-    expect(applyGrammar).toHaveBeenLastCalledWith(GRAMMAR_SPEC.replace(MARKER, 'resolved'));
+    // The spec, its references resolved (how to write it again follows it).
+    const calls = applyGrammar.mock.calls;
+    expect(calls[calls.length - 1][0]).toBe(GRAMMAR_SPEC.replace(MARKER, 'resolved'));
   });
 });
 
