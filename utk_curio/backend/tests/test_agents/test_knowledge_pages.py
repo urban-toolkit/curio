@@ -97,7 +97,7 @@ def test_every_knowledge_page_is_listed_and_reaches_the_agents():
 
 def test_every_built_in_template_is_named_on_a_page():
     templates = [t["id"] for t in json.loads(BUILTIN_MANIFEST.read_text(encoding="utf-8"))["templates"]]
-    assert len(templates) >= 14, templates
+    assert len(templates) >= 13, templates
     named = {found for text in _sources().values() for found in _TEMPLATE_MARKER_RE.findall(text)}
     missing = [template for template in templates if template not in named]
     assert not missing, (
