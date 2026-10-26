@@ -87,6 +87,7 @@ from utk_curio.backend.tests._support.crown_heights import (
 from utk_curio.common import shared_constants
 
 from .test_dashboard_page_e2e import (
+    _NODES_STANDING_JS,
     _Visitor,
     _catalog_ids,
     _enter,
@@ -351,6 +352,19 @@ def _day_reads(outputs: dict[str, str], ids: dict[str, str], row: dict) -> dict[
     }
     assert not off, f"{row['Day']} on the GPU sits more than {TOLERANCE_MIN} min from the CPU's: {off!r}"
     return shares
+
+
+def _page_story(page, console: list[str]) -> str:
+    """Where each node of *page* stands and what the page logged last, for a
+    failure to report."""
+    try:
+        standing = page.evaluate(_NODES_STANDING_JS)
+    except Exception as exc:  # noqa: BLE001 - the story is told with what can be read
+        standing = [f"could not be read: {exc}"]
+    return (
+        "\nThe page's nodes:\n  " + "\n  ".join(standing or ["none"])
+        + "\nThe page's last messages:\n  " + "\n  ".join(console[-40:] or ["none"])
+    )
 
 
 def _ran(starts: list) -> dict[str, str]:
@@ -1088,6 +1102,8 @@ def test_a_visitor_in_a_private_window_goes_through_the_four_days(
         page = ctx.new_page()
         errors: list[str] = []
         page.on("pageerror", lambda error: errors.append(str(error)))
+        console: list[str] = []
+        page.on("console", lambda message: console.append(f"[{message.type}] {message.text}"[:300]))
         starts: list = []
         page.on("response", lambda response: (
             starts.append(response)
@@ -1109,7 +1125,10 @@ def test_a_visitor_in_a_private_window_goes_through_the_four_days(
             for row in FOUR_DAYS:
                 day = row["Day"]
                 _pick_day(page, ids["steps"], day)
-                drawn = _maps_redrew(page, ids, f"the {day.lower()} picked")
+                try:
+                    drawn = _maps_redrew(page, ids, f"the {day.lower()} picked")
+                except AssertionError as failure:
+                    raise AssertionError(f"{failure}{_page_story(page, console)}") from None
                 for key in MAPS:
                     apart = _changed(opened[key], drawn[key])
                     if row is WINTER:
