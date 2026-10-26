@@ -13,10 +13,13 @@ tens of seconds without drawing one.
 
 This test plays such a page. An init script, installed before the app loads,
 holds the page's ResizeObserver and animation frame callbacks from the press on
-the node's corner until the test lets them go. The test runs the scene itself
-(``walkthroughs/layout.py``), without its captures, while they are held. Then it
-lets them go and checks that the node is framed whole: centred in the canvas,
-with the view React Flow holds drawn.
+the node's corner until the test lets them go. It does so in two ways
+(``OBSERVATIONS``): the browser still delivers its observations and only their
+callbacks wait, or the page's ResizeObservers stop observing for the hold, so the
+browser delivers none, as on a runner that draws no frame at all. The test runs
+the scene itself (``walkthroughs/layout.py``), without its captures, while they
+are held. Then it lets them go and checks that the node is framed whole: centred
+in the canvas, with the view React Flow holds drawn.
 
 Run::
 
@@ -27,6 +30,7 @@ from __future__ import annotations
 import json
 from typing import TYPE_CHECKING
 
+import pytest
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 
 from .utils import (
@@ -49,18 +53,29 @@ if TYPE_CHECKING:
 #: How far, in screen pixels, the framed node's centre may sit from the canvas's.
 CENTRE_SLACK_PX = 2
 
+#: What the browser does with the page's ResizeObservers during the hold, by test
+#: id: it delivers their observations and only the callbacks wait, or it delivers
+#: none at all, as on a page that draws no frame. The second is what a CI runner
+#: did once (our #1178's run 40375648529, attempt 1, e2e-desktop (11)).
+OBSERVATIONS = {"observations-held": True, "no-observations": False}
+
 # Before the app's own scripts, so React Flow's ResizeObserver and whatever takes
 # requestAnimationFrame go through it. A press on the node's corner handle, seen
 # before the handle's own listener, starts the hold: from then on the page runs
 # none of the callbacks the browser runs only when it draws a frame, as on a page
 # that draws none, until the test calls ``window.__curioTestRelease()``. Then it
-# runs them, in the order they came. The browser still delivers its observations;
-# only their callbacks wait. The ids of the canvas nodes in the held observations
-# are kept, to show that React Flow's own measure of the node was among them.
-_HOLD_FROM_THE_CORNER_JS = """((handleId) => {
+# runs them, in the order they came. With *observing*, the browser still delivers
+# its observations and only their callbacks wait; the ids of the canvas nodes in
+# the held observations are kept, to show that React Flow's own measure of the
+# node was among them. Without it, every ResizeObserver stops observing for the
+# hold, so the browser delivers none, and observes again on the release.
+_HOLD_FROM_THE_CORNER_JS = """((handleId, observing) => {
     const request = window.requestAnimationFrame.bind(window);
     const cancel = window.cancelAnimationFrame.bind(window);
     const Observer = window.ResizeObserver;
+    const observe = Observer.prototype.observe;
+    const disconnect = Observer.prototype.disconnect;
+    const observers = new Set();
     let held = null;
     let nextId = -1;
     window.__curioTestHolds = 0;
@@ -88,11 +103,33 @@ _HOLD_FROM_THE_CORNER_JS = """((handleId) => {
                 });
                 held.set(nextId--, () => callback(entries, observer));
             });
+            // What it observes, so a hold that stops it can start it again.
+            this.__curioTargets = new Map();
+            observers.add(this);
+        }
+        observe(target, options) {
+            this.__curioTargets.set(target, options);
+            if (held && !observing) return;
+            super.observe(target, options);
+        }
+        unobserve(target) {
+            this.__curioTargets.delete(target);
+            super.unobserve(target);
+        }
+        disconnect() {
+            this.__curioTargets.clear();
+            super.disconnect();
         }
     };
     window.__curioTestRelease = () => {
         const deferred = held ? [...held.values()] : [];
+        const stopped = held !== null && !observing;
         held = null;
+        if (stopped) {
+            observers.forEach((o) => o.__curioTargets.forEach((options, target) => {
+                observe.call(o, target, options);
+            }));
+        }
         deferred.forEach((run) => run());
     };
     document.addEventListener('mousedown', (event) => {
@@ -100,6 +137,7 @@ _HOLD_FROM_THE_CORNER_JS = """((handleId) => {
         if (held || !target || target.id !== handleId) return;
         held = new Map();
         window.__curioTestHolds += 1;
+        if (!observing) observers.forEach((o) => disconnect.call(o));
     }, true);
 })"""
 
@@ -157,9 +195,10 @@ _FRAMED_JS = (
 )
 
 
-def _hold_script(node_id: str) -> str:
+def _hold_script(node_id: str, observing: bool) -> str:
     """The hold, started by a press on *node_id*'s corner handle."""
-    return f"{_HOLD_FROM_THE_CORNER_JS}({json.dumps(node_id + 'resizer')});"
+    args = f"{json.dumps(node_id + 'resizer')}, {json.dumps(observing)}"
+    return f"{_HOLD_FROM_THE_CORNER_JS}({args});"
 
 
 def _near(size, want, slack: float = 8) -> bool:
@@ -168,15 +207,16 @@ def _near(size, want, slack: float = 8) -> bool:
     )
 
 
+@pytest.mark.parametrize("observing", list(OBSERVATIONS.values()), ids=list(OBSERVATIONS))
 def test_the_stacked_views_scene_frames_its_narrowed_node_on_a_page_that_draws_no_frame(
-    app_frontend: "FrontendPage", current_server: str, page,
+    app_frontend: "FrontendPage", current_server: str, page, observing: bool,
 ):
     require_project_page()
     require_user_auth()
 
     node_id = first_node_of_type(MULTI_VIEW_EXAMPLE, "vis-vega", containing="vconcat")
     page.emulate_media(reduced_motion="reduce")
-    page.context.add_init_script(_hold_script(node_id))
+    page.context.add_init_script(_hold_script(node_id, observing))
     stub_login_and_enter_workflow(
         page,
         frontend_url=app_frontend.base_url,
