@@ -331,7 +331,7 @@ def _mint_dataflow_plan(
     # #662: widgets and scenarios against the saved dataflow; each scenario
     # takes its color here, so the review card shows it.
     scenarios = plan_scenarios.existing_scenarios(spec)
-    scenario_errors = plan_scenarios.mint_errors(plan, available, existing_nodes, scenarios, remove_node_set)
+    scenario_errors = plan_scenarios.mint_errors(plan, available, existing_nodes, scenarios)
     if scenario_errors:
         return "refused", "\n- ".join([agent_text.message("plan.widgets-scenarios-invalid")] + scenario_errors), None
     plan_scenarios.assign_colors(plan, scenarios)

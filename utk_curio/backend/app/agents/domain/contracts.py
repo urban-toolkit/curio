@@ -821,14 +821,6 @@ def _widget_reference(_src: _Sources, name: str) -> str:
     return reference_text(_widget_name(name))
 
 
-def _shared_reference(_src: _Sources, name: str) -> str:
-    """The reference any node's code places the Parameter node *name* by:
-    its shared tag (``SHARED_PREFIX``)."""
-    from utk_curio.backend.app.execution.code_references import SHARED_PREFIX, reference_text
-
-    return reference_text(SHARED_PREFIX + _widget_name(name))
-
-
 def _not_code(src: _Sources) -> str:
     """The built-in templates whose nodes hold no Python or JavaScript code
     (``_control`` calls them uncontrollable or grammar), one ``- <label>`` line
@@ -1100,7 +1092,6 @@ PROMPT_FIELDS: dict[str, PromptField] = {
     "scenarios.chip": PromptField(_scenario_chip, takes_arg=True),
     "widgets.kinds": PromptField(_widget_kinds),
     "widgets.reference": PromptField(_widget_reference, takes_arg=True),
-    "widgets.shared": PromptField(_shared_reference, takes_arg=True),
     "builtin.not_code": PromptField(_not_code),
     "autk.grammar": PromptField(
         lambda src: render_autk_region(src.autk, _template_label(src, AUTK_TEMPLATE))

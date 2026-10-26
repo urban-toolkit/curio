@@ -68,14 +68,6 @@ class TestWidgets:
         assert plan is None
         assert errors == ["nodes[1].widgets[0] ('height_factor'): Enter a number from 0.5 to 4."]
 
-    def test_a_parameter_node_holds_exactly_one_widget(self):
-        parameter = {"ref": "season", "nodeType": "curio.builtin/parameter", "title": "Season", "intent": "the season"}
-        _, errors = _parse({"goal": "g", "nodes": [parameter]})
-        assert errors == ["nodes[0] is a Parameter node, which holds exactly one widget: give it in widgets"]
-        parameter["widgets"] = [{"name": "season", "type": "text", "default": "winter"}]
-        plan, errors = _parse({"goal": "g", "nodes": [parameter]})
-        assert errors == [] and plan["nodes"][0]["widgets"][0]["name"] == "season"
-
 
 class TestSelections:
     def test_a_plan_without_scenarios_has_no_key(self):

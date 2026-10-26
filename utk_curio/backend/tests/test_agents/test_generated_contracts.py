@@ -247,12 +247,12 @@ class TestThePromptFacts:
         assert "feed back into the pool" not in rule
 
     def test_the_widget_facts_come_from_the_runtime(self):
-        """#662: the kinds a widget takes and the references code places one
-        by are the runtime's own (``WIDGET_KINDS``, ``reference_text``,
-        ``SHARED_PREFIX``), and the prompts that teach widgets and scenarios to
-        the node-writing agents say exactly that."""
+        """#662: the kinds a widget takes and the reference code places one by
+        are the runtime's own (``WIDGET_KINDS``, ``reference_text``), and the
+        prompts that teach widgets and scenarios to the node-writing agents say
+        exactly that. A value several nodes read is a widget on one Python node
+        that returns it, wired into each reader."""
         from utk_curio.backend.app.execution.code_references import (
-            SHARED_PREFIX,
             WIDGET_KINDS,
             reference_text,
         )
@@ -261,30 +261,43 @@ class TestThePromptFacts:
         assert kinds == ", ".join(WIDGET_KINDS[:-1]) + " or " + WIDGET_KINDS[-1]
         factor = contracts.render_template("{{widgets.reference:factor}}")
         assert factor == reference_text("factor") == "[!! factor !!]"
-        season = contracts.render_template("{{widgets.shared:season}}")
-        assert season == reference_text(SHARED_PREFIX + "season") == "[!! @season !!]"
         with pytest.raises(contracts.PromptTemplateError, match="not a widget name"):
             contracts.render_template("{{widgets.reference:2x}}")
+        python = contracts.render_template("{{template.label:curio.builtin/computation-analysis}}")
         preamble = prompt_text("default_preamble.md")
         assert f'a "type" ({kinds})' in preamble
         assert "`[!! threshold !!]` for the widget named threshold" in preamble
-        assert f"`{season}` for the Parameter node named season" in preamble
+        assert (
+            f"A value several nodes read is a widget on one {python} node that returns it, wired into each reader."
+            in preamble
+        )
         assert "## Scenarios" in preamble and '"metadata"."copiedFrom"' in preamble
         orchestration = prompt_text("orchestration_instruction.md")
         assert f"`{factor}` for the widget named factor" in orchestration
+        assert "A value several nodes read is a widget on one Python node that returns it, wired into each reader." in (
+            orchestration
+        )
         assert '"duplicateOf"' in orchestration and '"copies"' in orchestration and '"values"' in orchestration
         content = prompt_text("new_content_prompt.md")
-        assert f"`{factor}` for the widget named factor" in content and '"sharedTags"' in content
+        assert f"`{factor}` for the widget named factor" in content
         assert "`[!! threshold !!]` for the widget named threshold" in prompt_text("node_build_instruction.md")
-        # No page or prompt teaches the old marker form any more.
+        # No page or prompt teaches the old marker form, or a shared tag, any more.
         for path in prompt_files():
             assert "$TYPE$" not in prompt_text(path.name), path.name
+            assert "[!! @" not in prompt_text(path.name), path.name
+            assert '"sharedTags"' not in prompt_text(path.name), path.name
+
+    def test_no_marker_names_a_shared_tag(self):
+        """A widget's value reaches another node by an edge, so no prompt field
+        writes a shared tag's reference."""
+        with pytest.raises(contracts.PromptTemplateError, match="which no prompt field defines"):
+            contracts.render_template("{{widgets.shared:season}}")
 
     def test_a_widget_name_that_ends_in_a_line_break_is_refused(self):
         """A marker's argument may hold a line break, and a widget name is read
         whole, as the Widgets tab reads it (``widgetChecks.cases.json``).
         Python's ``re.match`` lets a final line break through."""
-        for marker in ("{{widgets.reference:factor\n}}", "{{widgets.shared:season\n}}"):
+        for marker in ("{{widgets.reference:factor\n}}", "{{selections.reference:picked\n}}"):
             with pytest.raises(contracts.PromptTemplateError, match="not a widget name"):
                 contracts.render_template(marker)
 

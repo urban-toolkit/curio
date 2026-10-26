@@ -4,9 +4,9 @@ The grammar (``domain/widget_grammar.py``, ``domain/plan_scenarios.py``) checks
 what a plan says on its own and expands its duplicates into copies. This is
 what needs the saved dataflow:
 
-* at mint: a node that holds widgets is one whose code or spec places them, or
-  a Parameter node, whose name no other Parameter node has; an existing node a
-  selection names is in the dataflow and in no other scenario; a scenario
+* at mint: a node that holds widgets is one whose code or spec places them;
+  an existing node a selection names is in the dataflow and in no other
+  scenario; a scenario
   takes a name none of the dataflow's has, since scenario chips color and
   order scenarios by name; each scenario takes its color, as a scenario made
   on the canvas does;
@@ -25,8 +25,7 @@ from __future__ import annotations
 import uuid
 
 from utk_curio.backend.app.agents.domain import node_settings
-from utk_curio.backend.app.execution.code_references import check_widget_def, normalize_widgets
-from utk_curio.backend.app.execution.workflow_spec import PARAMETER_TYPE
+from utk_curio.backend.app.execution.code_references import normalize_widgets
 from utk_curio.backend.app.projects.scenarios import next_scenario_color, normalize_scenarios
 from utk_curio.backend.app.scenario_catalog.domain.duplicate import lineage_of
 from utk_curio.backend.app.agents.domain import agent_text
@@ -36,20 +35,6 @@ from utk_curio.backend.app.agents.domain import agent_text
 _PLACES_WIDGETS = ("code", "grammar")
 
 
-def _type(node: dict) -> str:
-    return str(node.get("type") or node.get("nodeType") or "").split("@", 1)[0]
-
-
-def _parameter_widgets(nodes, removed: set) -> list[dict]:
-    """The widgets the dataflow's Parameter nodes hold, the removed ones left out."""
-    return [
-        widget
-        for node in nodes
-        if _type(node) == PARAMETER_TYPE and node.get("id") not in removed
-        for widget in normalize_widgets((node.get("metadata") or {}).get("widgets"))
-    ]
-
-
 def existing_scenarios(spec: dict) -> list[dict]:
     """The dataflow's scenarios, as a save keeps them."""
     dataflow = spec.get("dataflow") or {}
@@ -57,11 +42,11 @@ def existing_scenarios(spec: dict) -> list[dict]:
     return normalize_scenarios(dataflow.get("scenarios"), node_ids)
 
 
-def mint_errors(plan: dict, available: dict, existing_nodes: dict, scenarios: list, removed: set) -> list[str]:
+def mint_errors(plan: dict, available: dict, existing_nodes: dict, scenarios: list) -> list[str]:
     """What the saved dataflow refuses in the plan's widgets and scenarios."""
     errors: list[str] = []
     for node in plan["nodes"]:
-        if not node.get("widgets") or node["nodeType"] == PARAMETER_TYPE:
+        if not node.get("widgets"):
             continue
         entry = available.get(node["nodeType"]) or {}
         if entry.get("contentKind") not in _PLACES_WIDGETS:
@@ -70,15 +55,6 @@ def mint_errors(plan: dict, available: dict, existing_nodes: dict, scenarios: li
                     "plan.widgets-not-placeable", ref=repr(node['ref']), label=entry.get('label') or node['nodeType'],
                 )
             )
-    # A shared tag's name is the Parameter node's: the Widgets tab's own rule.
-    taken = _parameter_widgets(existing_nodes.values(), removed)
-    for node in plan["nodes"]:
-        if node["nodeType"] != PARAMETER_TYPE:
-            continue
-        message = check_widget_def(node["widgets"][0], taken, parameter=True)
-        if message:
-            errors.append(agent_text.message("plan.node-problem", ref=repr(node['ref']), problem=message))
-        taken.append(node["widgets"][0])
     owner = {member: s["name"] for s in scenarios for member in s["nodes"]}
     taken = {s["name"] for s in scenarios}
     refs = {n["ref"] for n in plan["nodes"]}

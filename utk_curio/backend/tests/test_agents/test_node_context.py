@@ -60,15 +60,17 @@ class TestComposeNodeContext:
         assert len(ctx["currentContent"]) < 9000
         assert "truncated" in ctx["currentContent"]
 
-    def test_a_nodes_widgets_and_the_shared_tags_ride_the_context(self, tmp_curio):
+    def test_a_nodes_own_widgets_ride_the_context(self, tmp_curio):
         """#662: what the node's code may place as references: its own
-        widgets, and the values the dataflow's Parameter nodes hold."""
+        widgets, never another node's. A value several nodes read is a widget
+        on one node that returns it, which reaches each reader by an edge."""
         spec = _spec()
         spec["dataflow"]["nodes"][1]["metadata"] = {"widgets": [
             {"name": "factor", "type": "number", "label": "Factor", "default": 1, "value": 2},
         ]}
         spec["dataflow"]["nodes"].append({
-            "id": "p", "type": "curio.builtin/parameter@1", "goal": "Season",
+            "id": "v", "type": "curio.builtin/computation-analysis@1", "goal": "Season",
+            "content": "return [!! season !!]",
             "metadata": {"widgets": [
                 {"name": "season", "type": "choice", "default": "winter",
                  "options": {"choices": ["winter", "summer"]}},
@@ -76,11 +78,11 @@ class TestComposeNodeContext:
         })
         ctx = node_context.compose_node_context(KEY, PID, spec, "n1")
         assert ctx["widgets"] == [{"name": "factor", "type": "number", "label": "Factor", "value": 2}]
-        assert ctx["sharedTags"] == [
+        assert "sharedTags" not in ctx
+        # The value node's widget is its own, which its code places.
+        assert node_context.compose_node_context(KEY, PID, spec, "v")["widgets"] == [
             {"name": "season", "type": "choice", "value": "winter", "options": {"choices": ["winter", "summer"]}},
         ]
-        # A Parameter node's own widget is its shared tag, not a widget its code places.
-        assert "widgets" not in node_context.compose_node_context(KEY, PID, spec, "p")
 
     def test_a_node_without_widgets_is_described_as_before(self, tmp_curio):
         ctx = node_context.compose_node_context(KEY, PID, _spec(), "n1")

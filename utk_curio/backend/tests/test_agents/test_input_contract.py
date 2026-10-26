@@ -375,9 +375,9 @@ class TestCheck:
         assert ic.check(through_its_chip, self._shape()) == {"attribute": "crs", "name": "gdf", "line": 2}
 
     def test_widget_references_do_not_turn_the_gate_off(self):
-        # #662: a widget or shared tag is a value when the node runs. Left in
+        # #662: a widget or selection tag is a value when the node runs. Left in
         # place, the code did not parse and the gate let the list's `.crs` through.
-        code = "factor = [!! factor !!]\nseason = [!! @season !!]\nreturn input_0.crs"
+        code = "factor = [!! factor !!]\npicked = [!! selection picked !!]\nreturn input_0.crs"
         assert ic.check(code, self._shape()) == {"attribute": "crs", "name": "input_0", "line": 3}
         fine = "gdf = [!! input_0 !!][0]\ngdf['h'] = gdf['h'] * [!! factor !!]\nreturn gdf"
         assert ic.check(fine, self._shape()) is None
