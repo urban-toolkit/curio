@@ -19,11 +19,36 @@
  * (`globalThis.__curioBackendUrl`, set by index.tsx) into that blob, which is
  * where duckdbExtensionMirror.js reads it.
  *
+ * Every Autark map and plot builds its own DuckDB, and each one's worker
+ * fetched DuckDB's 36 MB module itself. Three maps on a dashboard asked for it
+ * at once; behind a proxy that compresses it on the fly, so with no length,
+ * Chromium hands the three to one cache write, and a cache that cannot hold the
+ * module (a private window's, in memory) fails the other two
+ * (net::ERR_CACHE_WRITE_FAILURE): two maps never drew. The page now downloads
+ * the module once and hands every database the same copy, as a blob URL
+ * (SHARED_MODULE_SOURCE); a download that fails is asked again by the next.
+ *
  * It fails the build, rather than a map at run time, when autk-db's code no
  * longer has the shape it rewrites.
  */
 
 const REGION = /\/\/#region src\/duckdb-browser\.ts[\s\S]*?\/\/#endregion/;
+
+/** One download of each DuckDB module the page's databases instantiate. */
+const SHARED_MODULE_SOURCE = `const __curioDuckdbModules = new Map();
+function __curioSharedDuckdbModule(url) {
+\tlet shared = __curioDuckdbModules.get(url);
+\tif (!shared) {
+\t\tshared = fetch(url).then((response) => {
+\t\t\tif (!response.ok) throw new Error(\`DuckDB's module \${url} answered \${response.status}\`);
+\t\t\treturn response.blob();
+\t\t}).then((blob) => URL.createObjectURL(new Blob([blob], { type: "application/wasm" })));
+\t\t__curioDuckdbModules.set(url, shared);
+\t\tshared.catch(() => __curioDuckdbModules.delete(url));
+\t}
+\treturn shared;
+}
+`;
 
 function fail(what) {
   throw new Error(
@@ -54,6 +79,14 @@ function rewriteDuckdbAssetUrls(source) {
       "`self.__curioBackendUrl = ${JSON.stringify(String(globalThis.__curioBackendUrl || \"\"))};" +
       `importScripts(\${JSON.stringify(${bundle}.mainWorker)});\``,
   );
+  const instantiate = /\.instantiate\((\w+)\.mainModule\)/;
+  if (!instantiate.test(rewritten)) fail("no instantiate(bundle.mainModule) to hand the shared module");
+  rewritten = rewritten.replace(
+    instantiate,
+    (_, bundle) => `.instantiate(await __curioSharedDuckdbModule(${bundle}.mainModule))`,
+  );
+  // After the region's own opening line, so the region still starts as it did.
+  rewritten = rewritten.replace(/^(.*\n)/, (line) => line + SHARED_MODULE_SOURCE);
   return source.replace(region[0], rewritten);
 }
 
@@ -61,3 +94,4 @@ module.exports = function autkDbDuckdbAssets(source) {
   return rewriteDuckdbAssetUrls(source);
 };
 module.exports.rewriteDuckdbAssetUrls = rewriteDuckdbAssetUrls;
+module.exports.SHARED_MODULE_SOURCE = SHARED_MODULE_SOURCE;

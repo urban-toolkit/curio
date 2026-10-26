@@ -30,6 +30,11 @@ after the server has run the Python before them, once for everyone (#1117).
   making again only the sun steps among the steps before the GPU steps. While
   the run goes, the maps, the plot and the table say they are computing. In a
   browser with no WebGPU, they say which step could not run.
+* A visitor in a private window goes through the four days. The page is served
+  as dev serves it, DuckDB's module compressed on the fly with no length, and
+  the browser's cache is the in-memory one a private window has: the three
+  maps share one download of the module, and each day's table, maps and plot
+  draw it, with no error in the page.
 
 The table's rows are the CPU reference's (``tests/_support/crown_heights.py``,
 which ``test_scripts/test_bedford_shadow_example.py`` pins): what the GPU
@@ -42,17 +47,29 @@ Run::
 """
 from __future__ import annotations
 
+import gzip
 import json
 import re
+import threading
 import time
+import urllib.error
+import urllib.request
 import uuid
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 import pytest
 from playwright.sync_api import expect
 
-from utk_curio.backend.tests._support.crown_heights import DURATIONS, SUMMER, TOLERANCE_MIN, WINTER, minutes
+from utk_curio.backend.tests._support.crown_heights import (
+    DURATIONS,
+    FOUR_DAYS,
+    SUMMER,
+    TOLERANCE_MIN,
+    WINTER,
+    minutes,
+)
 
 from .test_dashboard_page_e2e import (
     _Visitor,
@@ -881,3 +898,124 @@ def test_the_crown_heights_dashboard_link_dev_shares_works_on_this_deployment_to
     after = api_json(f"{current_server}/api/projects/{LINK_ID}", guest)
     assert after["spec"] == copy["spec"], "a visitor's run changed the shipped copy"
     assert not after["outputs"], "a visitor's run saved outputs to the shipped copy"
+
+
+#: Headers that belong to one connection, which a proxy does not pass on.
+_HOP_BY_HOP = frozenset({
+    "connection", "keep-alive", "proxy-authenticate", "proxy-authorization", "te", "trailer",
+    "trailers", "transfer-encoding", "upgrade",
+})
+
+
+class _CompressingProxy:
+    """The page server behind a proxy that compresses WebAssembly on the fly,
+    as dev's does (Caddy, zstd): the module arrives with no Content-Length,
+    so Chromium hands requests made at once to one cache write, and a cache
+    that cannot hold DuckDB's 36 MB module fails the joined ones
+    (net::ERR_CACHE_WRITE_FAILURE). Everything else passes as the page server
+    answers it. GET only: the page asks the backend at its own address
+    (``window.__CURIO_BACKEND_URL__``, conftest.py)."""
+
+    def __init__(self, upstream: str):
+        upstream = upstream.rstrip("/")
+
+        class Handler(BaseHTTPRequestHandler):
+            protocol_version = "HTTP/1.1"
+
+            def do_GET(self):  # noqa: N802 - http.server's name
+                asked = urllib.request.Request(upstream + self.path, headers={"Accept": self.headers.get("Accept", "*/*")})
+                try:
+                    with urllib.request.urlopen(asked, timeout=180) as answer:
+                        status, headers, body = answer.status, answer.headers.items(), answer.read()
+                except urllib.error.HTTPError as error:
+                    status, headers, body = error.code, error.headers.items(), error.read()
+                passed = [(key, value) for key, value in headers
+                          if key.lower() not in _HOP_BY_HOP and key.lower() != "content-length"]
+                self.send_response(status)
+                for key, value in passed:
+                    self.send_header(key, value)
+                if status == 200 and self.path.split("?", 1)[0].endswith(".wasm"):
+                    packed = gzip.compress(body, compresslevel=1)
+                    self.send_header("Content-Encoding", "gzip")
+                    self.send_header("Transfer-Encoding", "chunked")
+                    self.end_headers()
+                    for start in range(0, len(packed), 1 << 16):
+                        chunk = packed[start:start + (1 << 16)]
+                        self.wfile.write(f"{len(chunk):x}\r\n".encode() + chunk + b"\r\n")
+                    self.wfile.write(b"0\r\n\r\n")
+                    return
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+            def log_message(self, *args):
+                pass
+
+        self._server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        self._thread = threading.Thread(target=self._server.serve_forever, daemon=True)
+
+    def __enter__(self) -> str:
+        self._thread.start()
+        return f"http://127.0.0.1:{self._server.server_address[1]}"
+
+    def __exit__(self, *exc) -> None:
+        self._server.shutdown()
+        self._server.server_close()
+
+
+@pytest.mark.xdist_group("crown-heights-link")
+def test_a_visitor_in_a_private_window_goes_through_the_four_days(
+    app_frontend: "FrontendPage", current_server, browser, monkeypatch,
+):
+    """The shipped copy's dashboard as dev serves it, in a browser context
+    with no routes, so its HTTP cache works, in memory, as a private window's
+    (the other visits here route the page's requests, which turns the cache
+    off). It opens on the winter solstice with its three maps drawn, which
+    takes one download of DuckDB's module for them all. Then each day in the
+    order the Day radio lists them, ending on the winter solstice again: the
+    table reads the CPU's row for that day, the three maps and the plot draw
+    it, and the page logs no error."""
+    require_project_page()
+    require_user_auth()
+    ids = _ids()
+    colors = _colors()
+    # The shared guest's copy, seeded as dev seeds it (see the test above).
+    guest = api_json(f"{current_server}/api/auth/signin/guest", "", method="POST", payload={})["token"]
+    api_json(f"{current_server}/api/projects", guest)
+    hosted = _serve_hosted(app_frontend, current_server, monkeypatch)
+
+    with _CompressingProxy(hosted) as proxied:
+        ctx = browser.new_context()
+        page = ctx.new_page()
+        errors: list[str] = []
+        page.on("pageerror", lambda error: errors.append(str(error)))
+        try:
+            page.goto(f"{proxied}/dashboard/{LINK_ID}", wait_until="domcontentloaded")
+            page.get_by_test_id("open-dataflow-link").wait_for(state="visible", timeout=45000)
+            require_webgpu(page)
+            _shows_winter(page, ids, colors, "the link opened in a private window")
+            opened = _keep_drawing_maps(page, ids)
+            plot = page.evaluate(_PLOT_PIXELS_JS, ids["plot"])
+            for row in FOUR_DAYS:
+                day = row["Day"]
+                _pick_day(page, ids["steps"], day)
+                _table_reads(page, ids["summary-view"], row)
+                drawn = _maps_redrew(page, ids, f"the {day.lower()} picked")
+                for key in MAPS:
+                    apart = _changed(opened[key], drawn[key])
+                    if row is WINTER:
+                        assert apart <= 0.01, (
+                            f"{LABELS[key]} back on the winter solstice differs from the one the page opened "
+                            f"with in {apart:.2%} of its pixels"
+                        )
+                    else:
+                        assert apart > 0.005, (
+                            f"{LABELS[key]} for the {day.lower()} differs from the winter solstice's in only "
+                            f"{apart:.2%} of its pixels"
+                        )
+                _plot_redrew(page, ids["plot"], plot, colors)
+                _keep_drawing_maps(page, ids)
+                plot = page.evaluate(_PLOT_PIXELS_JS, ids["plot"])
+            assert not errors, f"the page logged errors while the days changed: {errors!r}"
+        finally:
+            ctx.close()
