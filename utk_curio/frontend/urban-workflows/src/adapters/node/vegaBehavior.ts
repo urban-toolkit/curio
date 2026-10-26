@@ -1,6 +1,7 @@
 
 import { useEffect, useRef } from 'react';
 import type { GrammarRedraw, NodeBehaviorHook } from '../../registry/types';
+import type { NodeOutput } from '../../hook/useNodeState';
 import { useVega } from '../../hook/useVega';
 import { useGrammarInputState } from '../../hook/useGrammarInputState';
 import { useStarterSpec } from '../../hook/useStarterSpec';
@@ -66,6 +67,23 @@ export const useVegaBehavior: NodeBehaviorHook = (data, nodeState) => {
     choose: chooseVegaStarter,
   });
 
+  // Set running to draw, by a run or by UniversalNode's draw from new rows,
+  // the chart owes that draw, and its compile says what it drew. Until then
+  // the chart's own redraws say nothing: useVega's, of new rows swapped into
+  // the view it holds, and a relabel. Said first, that would end the node's
+  // step before the compile hands its rows on, and GrammarEditor compiles only
+  // a node still running, so it would compile nothing. Set where the node is
+  // set running, at once: a redraw can end before React renders that.
+  const drawOwedRef = useRef(false);
+  const setOutputFromOutside = (output: NodeOutput) => {
+    drawOwedRef.current = output?.code === 'exec';
+    nodeState.setOutput(output);
+  };
+  // An outcome given another way, a run's skip among them, ends it too.
+  useEffect(() => {
+    if (nodeState.output?.code !== 'exec') drawOwedRef.current = false;
+  }, [nodeState.output]);
+
   // dev/136: compiling is not drawing. A schema-valid spec over zero rows
   // renders its axes and nothing else, and a spec whose encoded field is
   // entirely null renders an empty panel — both used to land as `success`, so
@@ -73,6 +91,7 @@ export const useVegaBehavior: NodeBehaviorHook = (data, nodeState) => {
   // the journal was told the node was fine. The same judgement for a chart's
   // first draw and for every redraw its new rows cause.
   const reportDrawn = (counts: RenderCounts | undefined) => {
+    drawOwedRef.current = false;
     const outcome = renderOutcome(counts ?? {});
     if (outcome.empty) {
       nodeState.setOutput({
@@ -87,6 +106,10 @@ export const useVegaBehavior: NodeBehaviorHook = (data, nodeState) => {
     }
     nodeState.setOutput({ code: 'success', content: '', outputType: '' });
   };
+  /** What a redraw of the chart's own drew, said unless it owes a draw (above). */
+  const reportRedrawn = (counts: RenderCounts | undefined) => {
+    if (!drawOwedRef.current) reportDrawn(counts);
+  };
 
   const { handleCompileGrammar } = useVega({
     data,
@@ -100,7 +123,7 @@ export const useVegaBehavior: NodeBehaviorHook = (data, nodeState) => {
     hasSpec: !isEmptySpecBuffer(nodeState.code) || generatedSpec !== undefined,
     // A chart first drawn over zero rows said so; when its rows arrive and it
     // draws them, that has to be said too.
-    onRedraw: reportDrawn,
+    onRedraw: reportRedrawn,
     // The names a spec reading `inputs` gives each input's rows.
     inputLabels,
   });
@@ -110,7 +133,9 @@ export const useVegaBehavior: NodeBehaviorHook = (data, nodeState) => {
   const appliedRef = useRef<{ spec: string; stacked: boolean; redraw?: GrammarRedraw; key: string } | null>(null);
   const draw = async (spec: string, how?: typeof AS_A_RELABEL) => {
     try {
-      reportDrawn(await handleCompileGrammar(spec, how));
+      const counts = await handleCompileGrammar(spec, how);
+      if (how) reportRedrawn(counts);
+      else reportDrawn(counts);
     } catch (error: any) {
       nodeState.setOutput({ code: 'error', content: error.message, outputType: '' });
       showToast(error.message, 'error');
@@ -168,6 +193,7 @@ export const useVegaBehavior: NodeBehaviorHook = (data, nodeState) => {
     outputIdOverride: 'vega' + data.nodeId,
     // Only ever offered for an empty buffer, so it cannot displace real work.
     defaultValueOverride: generatedSpec,
+    setOutputCallbackOverride: setOutputFromOutside,
   };
 };
 
