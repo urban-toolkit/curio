@@ -101,6 +101,61 @@ export function refitToContainer(
   if (spec.height === "container" && el.clientHeight > 0) view.height(el.clientHeight);
 }
 
+/** Whether *spec*'s plot is sized from its container: a `fit` autosize. */
+export function fitsItsContainer(spec: Record<string, unknown> | null | undefined): boolean {
+  if (!spec || typeof spec !== "object") return false;
+  const autosize = spec.autosize as string | { type?: unknown } | undefined;
+  const type = typeof autosize === "string" ? autosize : autosize?.type;
+  return type === "fit" || type === "fit-x" || type === "fit-y";
+}
+
+/** The most fit passes one settle makes (settleFit). */
+export const MAX_SETTLE_PASSES = 3;
+
+/** What settleFit reads and runs of a vega view. */
+export type SettlingView = {
+  width(): number;
+  height(): number;
+  origin(): number[];
+  resize(): { runAsync(): Promise<unknown> };
+};
+
+/**
+ * Fits a container-sized view again until its plot holds still.
+ *
+ * Vega fits a plot to its container in one pass. It lays the plot out for the
+ * axis labels it makes at the size it starts from, then draws the labels the
+ * fitted size makes, and an axis asks for about a tick per 40 px, so the two
+ * can differ. Fitted from its node's full height, a y axis up to 9 ticked every
+ * 0.5 ("0.0" to "9.0"), while the plot's own height draws a tick every 1 ("0"
+ * to "9"): the plot kept the room of the wider labels, an empty band beside the
+ * axis. A view that gets new rows in place starts from its plot's height and
+ * fitted, so the same rows were drawn two ways.
+ *
+ * Each pass starts from the size the pass before left, not from the mount
+ * (unlike refitToContainer), so the first pass that moves nothing has the
+ * layout that fits what it draws. At most MAX_SETTLE_PASSES, for an axis whose
+ * labels would flip back and forth. A view that cannot say where its plot is
+ * (a test's stand-in for vega's, which several suites trim to the members
+ * they use) is left as it is.
+ */
+export async function settleFit(view: SettlingView | null | undefined): Promise<void> {
+  if (!view || typeof view.origin !== "function") return;
+  for (let pass = 0; pass < MAX_SETTLE_PASSES; pass += 1) {
+    const before = layoutOf(view);
+    await view.resize().runAsync();
+    if (sameLayout(before, layoutOf(view))) return;
+  }
+}
+
+function layoutOf(view: SettlingView): number[] {
+  return [view.width(), view.height(), ...view.origin()];
+}
+
+function sameLayout(a: number[], b: number[]): boolean {
+  return a.length === b.length && a.every((value, index) => value === b[index]);
+}
+
 /**
  * Tells a genuine resize from a refit flipping the mount's scrollbars (#496).
  *

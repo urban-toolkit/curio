@@ -28,7 +28,9 @@ What replaced it, and what each test below pins:
 * a pinned node's own widgets are its tile's controls: a code node's in place
   of its code, a chart's above it. A pick on a code node's tile runs it on the
   server for the tiles below; a chart draws again with its own new value in
-  the page. A tile's code is read-only (#1117).
+  the page. A tile's code is read-only (#1117);
+* a tile's chart is laid out for the axis labels it draws, whether the page
+  drew it fresh, gave it new rows in place or fitted it again after a resize.
 
 The dataflow is built here rather than borrowed from ``docs/examples``: three
 nodes, no datasets, so a failure is about this feature and not about a seed.
@@ -1110,8 +1112,9 @@ def test_a_pick_on_a_pinned_code_nodes_tile_runs_it_and_the_chart_below_draws_ag
     The producer is pinned with a Rows choice of its own, as radio buttons,
     and the chart below it is pinned. A visitor's page shows the producer's
     tile as that control, with no code. Picking five runs the producer on the
-    server with it, and the chart draws five bars. The owner's dataflow stays
-    as it was.
+    server with it, and the chart draws five bars, laid out for the axis labels
+    it draws whichever of its redraws came last. The owner's dataflow stays as
+    it was.
     """
     require_project_page()
     require_user_auth()
@@ -1125,6 +1128,7 @@ def test_a_pick_on_a_pinned_code_nodes_tile_runs_it_and_the_chart_below_draws_ag
     hosted = _serve_hosted(app_frontend, current_server, monkeypatch)
 
     visitor = _Visitor(browser, current_server)
+    visitor.page.add_init_script(_KEEP_VEGA_VIEWS_JS)
     try:
         visitor.opens(hosted, project_id)
         visitor.waits_for("the saved chart", lambda: _chart_drew(visitor.page))
@@ -1154,6 +1158,7 @@ def test_a_pick_on_a_pinned_code_nodes_tile_runs_it_and_the_chart_below_draws_ag
         save_workflow_test_screenshot(
             visitor.page, TILE_CONTROLS_STEM, test_name="code_node_changed", sweep_toasts=True,
         )
+        _assert_chart_fits_its_labels(visitor.page, "the chart of five rows after the pick")
     finally:
         visitor.close()
 
@@ -1260,6 +1265,28 @@ _FIT_AGAIN_JS = """async (id) => {
 }"""
 
 
+# One read of the chart's layout, as the page drew it, for a wait on a timer:
+# true once it read the same *reads* times in a row.
+_CHART_LAYOUT_HOLDS_JS = """([id, reads]) => {
+    const mount = document.getElementById('vega' + id);
+    const live = (window.__curioTestVegaViews || []).filter((view) => view.container() === mount
+        && view._renderer && view._renderer.canvas() && view._renderer.canvas().isConnected);
+    const view = live[live.length - 1];
+    if (!view) return false;
+    const layout = JSON.stringify([view.width(), view.height(), view.origin()]);
+    const hold = window.__curioTestChartHold = window.__curioTestChartHold || { layout: null, reads: 0 };
+    hold.reads = layout === hold.layout ? hold.reads + 1 : 1;
+    hold.layout = layout;
+    return hold.reads >= reads;
+}"""
+
+
+def _wait_for_chart_layout_to_hold(page, *, reads: int = 5, timeout: float = 30000) -> None:
+    """Until the chart's layout reads the same *reads* times, 100 ms apart."""
+    page.evaluate("() => { delete window.__curioTestChartHold; }")
+    page.wait_for_function(_CHART_LAYOUT_HOLDS_JS, arg=[CHART, reads], polling=100, timeout=timeout)
+
+
 def _assert_chart_fits_its_labels(page, when: str) -> None:
     """The chart's plot is laid out for the axis labels it draws: one more fit
     pass of Vega's leaves it where it is."""
@@ -1291,7 +1318,8 @@ def test_a_tile_chart_drawn_from_saved_rows_is_laid_out_for_the_labels_it_draws(
     0.83% against its baseline about every other run.
 
     The producer is saved at five rows, so the visitor's page draws the chart
-    fresh from them every time.
+    fresh from them every time. A window resize fits it again from its tile
+    (vega-lite's own refit), so it is laid out again after one too.
     """
     require_project_page()
     require_user_auth()
@@ -1312,6 +1340,10 @@ def test_a_tile_chart_drawn_from_saved_rows_is_laid_out_for_the_labels_it_draws(
             "opening the dashboard started a run, though every tile has its saved output" + visitor.story()
         )
         _assert_chart_fits_its_labels(visitor.page, "the chart of the five saved rows")
+
+        visitor.page.evaluate("() => window.dispatchEvent(new Event('resize'))")
+        _wait_for_chart_layout_to_hold(visitor.page)
+        _assert_chart_fits_its_labels(visitor.page, "the chart after a window resize")
     finally:
         visitor.close()
 
