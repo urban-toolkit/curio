@@ -44,6 +44,8 @@ class TestTemplateContentKind:
         assert kinds["js-computation"] == "code"
         assert kinds["data-summary"] == "code"
         assert kinds["data-transformation"] == "code"
+        # Its code writes the file its Download button saves.
+        assert kinds["data-export"] == "code"
         # Its code is written for it from its edit list, and runs (#662).
         assert kinds["edit-features"] == "code"
         # A document: authored, validated, never executed.
@@ -54,8 +56,6 @@ class TestTemplateContentKind:
         assert kinds["data-pool"] == "none"       # editor none + an input port
         assert kinds["vis-simple"] == "none"
         assert kinds["spatial-join"] == "none"
-        # One Download button, nothing written (#226).
-        assert kinds["data-export"] == "none"
         # Set through the widget it holds (#662), not through written content.
         assert kinds["parameter"] == "none"
         # Its title and text are what its author wrote: a person, or the
@@ -178,6 +178,8 @@ class TestContentKindOverTheRoster:
 
     def test_without_a_roster_the_legacy_tables_answer(self):
         assert ws.content_kind("curio.builtin/data-loading") == "code"
+        # A Data Export's code writes its file, so agents write it as code.
+        assert ws.content_kind("curio.builtin/data-export@1") == "code"
         assert ws.content_kind("curio.builtin/vis-vega") == "grammar"
         assert ws.content_kind("curio.builtin/vis-simple") == "none"  # passive
         assert ws.content_kind("curio.builtin/data-pool") == "none"

@@ -400,6 +400,14 @@ OUTPUT_FILE_CALL = "curio_output_file"
 _OUTPUT_FILE_CALL_RE = re.compile(
     r"""\bcurio_output_file\(\s*[fFrRbBuU]{0,2}(?P<q>["'])(?:\\.|(?!(?P=q))[^\\\n])*(?P=q)\s*\)"""
 )
+#: ``curio_export(input_0, "trees.csv")`` writes the file its name names
+#: (sandbox/util/exports.py): the name, its second argument or ``name=``, is
+#: skipped as ``curio_output_file``'s is. The regex scan takes a first
+#: argument with no call in it, as ``input_0``.
+EXPORT_CALL = "curio_export"
+_EXPORT_CALL_RE = re.compile(
+    r"""\bcurio_export\([^()\n]*?,\s*(?:name\s*=\s*)?[fFrRbBuU]{0,2}(?P<q>["'])(?:\\.|(?!(?P=q))[^\\\n])*(?P=q)\s*\)"""
+)
 
 
 def _in_part_keyword(code: str, start: int, part_calls: list[int]) -> bool:
@@ -466,6 +474,12 @@ def _scan_python(code: str, loaders: frozenset[str]) -> list[SourceRef] | None:
             name = node.args[0] if node.args else None
             if isinstance(name, (ast.Constant, ast.JoinedStr)):
                 call_ids.add(id(name))
+        elif isinstance(node, ast.Call) and _call_name(node) == EXPORT_CALL:
+            # So does ``curio_export(input_0, "trees.csv")``'s name.
+            names = node.args[1:2] + [k.value for k in node.keywords if k.arg == "name"]
+            for name in names:
+                if isinstance(name, (ast.Constant, ast.JoinedStr)):
+                    call_ids.add(id(name))
     for node in ast.walk(tree):
         line = max(1, getattr(node, "lineno", 1) - offset)
         if isinstance(node, ast.JoinedStr):
@@ -517,6 +531,7 @@ def _scan_regex(code: str, loaders: tuple[str, ...]) -> list[SourceRef]:
             "catalog-id", match.group(3), code.count("\n", 0, match.start()) + 1, call=match.group(1),
         ))
     call_spans.extend(match.span() for match in _OUTPUT_FILE_CALL_RE.finditer(code))
+    call_spans.extend(match.span() for match in _EXPORT_CALL_RE.finditer(code))
     for match in _STRING_LITERAL_RE.finditer(code):
         if any(a <= match.start() < b for a, b in call_spans):
             continue

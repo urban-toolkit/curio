@@ -178,6 +178,8 @@ class TestThePromptFacts:
         assert {"- Data Pool", "- Simple View", "- Vega-Lite", "- Autark"} <= set(skipped)
         assert "- JS Computation" not in skipped
         assert "- Merge Flow" not in skipped
+        # A Data Export's code writes its file: it is checked as code.
+        assert "- Data Export" not in skipped
 
     def test_the_input_handles_and_the_input_chips_come_from_the_runtime(self):
         """The circles an edge names and the chips code reads its inputs by
@@ -530,6 +532,7 @@ class TestThePreambleVocabulary:
         assert f"- Vega-Lite: {vega['description']}" in lists["builtin.nodes"].splitlines()
         assert "- Vega-Lite: controllable through grammar." in lists["builtin.control"]
         assert "- JS Computation: controllable through JavaScript code." in lists["builtin.control"]
+        assert "- Data Export: controllable through python code." in lists["builtin.control"]
         # A loader can read values from the nodes wired into it, so it takes
         # every kind; a Note takes none.
         assert "- Data Loading: DATAFRAME, GEODATAFRAME, VALUE, LIST, JSON, RASTER" in lists["builtin.inputs"]

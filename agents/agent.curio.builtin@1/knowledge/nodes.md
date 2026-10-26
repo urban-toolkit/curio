@@ -20,7 +20,7 @@ A {{template.label:curio.builtin/data-summary}} node starts with python code tha
 
 A {{template.label:curio.builtin/js-computation}} node runs JavaScript in Node.js: each input circle is its own variable, input_0, input_1 and so on, and `return` passes its output on.
 
-A {{template.label:curio.builtin/data-export}} node holds no code: it offers the data on its input as a file to download, a table as CSV, a GeoDataFrame as GeoJSON and anything else as JSON.
+A {{template.label:curio.builtin/data-export}} node's python code writes the data on its input to a file, which its Download button saves; a run writes the file and never downloads it. It starts with a text widget named file_name and the code `return curio_export(input_0, {{widgets.reference:file_name}})`, which writes a table as CSV, a GeoDataFrame as GeoJSON, a raster as GeoTIFF and anything else as JSON, and returns the file's name. Code that writes another format writes it to `curio_output_file("<name>")` and returns that path.
 
 A {{template.label:curio.builtin/spatial-join}} node holds no code: it pairs the rows of the GeoDataFrames on its two input circles whose shapes meet. A plan or a node.create gives a new one its operation and output in "spatialJoin", and one already on the canvas changes them through node.settings.write.
 
