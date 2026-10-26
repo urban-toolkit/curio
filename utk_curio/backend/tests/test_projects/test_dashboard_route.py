@@ -183,6 +183,38 @@ def test_only_what_a_tile_reads_is_embedded(client, user_and_token, tmp_curio, m
     assert set(body["outputs"]) == {"py.parquet"}
 
 
+def test_a_tables_columns_reach_the_page_in_the_order_its_node_wrote_them(
+    client, user_and_token, tmp_curio, monkeypatch
+):
+    # A shared dashboard's table showed its columns alphabetically: the route
+    # answered through jsonify, which sorts every key, the columns of each
+    # embedded table among them. The page reads the columns in the order the
+    # JSON lists them.
+    _, token = user_and_token
+    pid = _create(client, token)
+    columns = ["Day", "From", "To", "Time counted", "Added"]
+
+    def reader(_saved_path_of):
+        return lambda filename: {"dataType": "dataframe", "data": {c: [c] for c in columns}, "schema": {}}
+
+    monkeypatch.setattr(services, "_dashboard_envelope_reader", reader)
+    monkeypatch.setattr(
+        services,
+        "load_shared_project",
+        lambda project_id: {
+            "project": type("D", (), {"name": "Dashboard"})(),
+            "spec": _spec_with_pinned_chart(),
+            "outputs": [{"node_id": "py", "filename": "py.parquet", "data_type": "dataframe"}],
+        },
+    )
+
+    resp = client.get(f"/api/projects/{pid}/dashboard")
+
+    assert resp.status_code == 200
+    body = json.loads(resp.get_data(as_text=True))
+    assert list(body["outputs"]["py.parquet"]["data"]) == columns
+
+
 # ---------------------------------------------------------------------------
 # A raster behind a pinned Autark map
 # ---------------------------------------------------------------------------

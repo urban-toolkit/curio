@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import asdict
-from flask import Blueprint, g, jsonify, request
+from flask import Blueprint, current_app, g, jsonify, request
 
 from utk_curio.backend.app.users.dependencies import get_current_token, require_auth
 from utk_curio.backend.app.projects import services
@@ -303,7 +303,13 @@ def get_dashboard_payload(project_id: str):
     except ProjectError as exc:
         return _error(str(exc), exc.status)
 
-    return jsonify(payload), 200
+    # Not jsonify, which sorts every key: an embedded table's columns would
+    # reach the page alphabetically instead of in the order its node wrote
+    # them, which is how a fetching page receives them.
+    return current_app.response_class(
+        current_app.json.dumps(payload, sort_keys=False, separators=(",", ":")),
+        status=200, mimetype=current_app.json.mimetype,
+    )
 
 
 # ---------------------------------------------------------------------------
