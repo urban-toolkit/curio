@@ -206,7 +206,11 @@ describe("a run started on the canvas", () => {
       kind: "step_finished", nodeId: "a", status: "ok", startedAt: 1700000000, finishedAt: 1700000002,
       reply: { stdout: ["ran a"], stderr: "", input: null, output: { path: "art-a", dataType: "dataframe" } },
     });
-    expect(shown("a")).toEqual({ code: "success", content: "stdout:\nran a\nSaved to file: art-a" });
+    expect(shown("a")).toEqual({
+      code: "success",
+      content: "stdout:\nran a\nSaved to file: art-a",
+      runKey: runKeyWithShared("return 1", undefined, [], undefined),
+    });
     expect(deps.applyNewOutput).toHaveBeenCalledWith({ nodeId: "a", output: { path: "art-a", dataType: "dataframe" } });
     expect(deps.nodeExecProv).toHaveBeenCalledTimes(1);
     expect(deps.nodeExecProv.mock.calls[0][3]).toBe("a");
@@ -243,7 +247,11 @@ describe("a run started on the canvas", () => {
       reply: { stdout: ["7 removed."], stderr: "", input: null, output: { path: "art-edit", dataType: "outputs" } },
     });
     const copy = { ...node("edit")!.data, input: { path: "art-layers", dataType: "list" } };
-    expect(copy.output).toEqual({ code: "success", content: "stdout:\n7 removed.\nSaved to file: art-edit" });
+    expect(copy.output).toEqual({
+      code: "success",
+      content: "stdout:\n7 removed.\nSaved to file: art-edit",
+      runKey: runKeyWithShared("return input_0", undefined, [], undefined),
+    });
     expect(copy.executedCode).toBe(runKeyWithShared("return input_0", undefined, [], undefined));
 
     live.emit({ kind: "step_finished", nodeId: "count", status: "error", stderrTail: "Traceback: boom" });

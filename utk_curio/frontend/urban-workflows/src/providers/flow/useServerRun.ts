@@ -18,6 +18,7 @@ import type { DatasetInstallWarning } from "../../api/projectsApi";
 import type { IOutput } from "./flowTypes";
 import type { PlayAllState } from "./usePlayAll";
 import { useStepOutcomes, type StepOutcomes } from "./useStepOutcomes";
+import { runKeysOf } from "../../utils/references/sharedParameters";
 import {
     STOPPED_MESSAGE,
     browserWalk,
@@ -58,6 +59,12 @@ interface FollowedRun {
     played: { nodeId: string; before: NodeOutput | undefined } | null;
     /** The nodes an automatic run ran (#845); null for any other run. */
     targets: readonly string[] | null;
+    /**
+     * Each node's run key when this tab saved the revision the run runs; a
+     * result is stamped with its node's. Null for a run of another tab or
+     * revision, whose results take the key their node holds when they land.
+     */
+    runKeys: Map<string, string> | null;
     controller: AbortController;
     done: boolean;
     refollows: number;
@@ -128,7 +135,9 @@ export function useServerRun({
         }
         if (run.applied.has(nodeId)) return;
         run.applied.add(nodeId);
-        if (change.kind === "result") showResult(nodeId, change, { live: run.startedHere });
+        if (change.kind === "result") {
+            showResult(nodeId, change, { live: run.startedHere, runKey: run.runKeys?.get(nodeId) });
+        }
         else if (change.kind === "skipped") showSkipped(nodeId, change.reason);
         else showOnNode(nodeId, { code: "error", content: STOPPED_MESSAGE });
     };
@@ -204,7 +213,9 @@ export function useServerRun({
 
     const attach = (
         record: Run,
-        { startedHere, played = null }: { startedHere: boolean; played?: FollowedRun["played"] },
+        { startedHere, played = null, runKeys = null }: {
+            startedHere: boolean; played?: FollowedRun["played"]; runKeys?: FollowedRun["runKeys"];
+        },
     ) => {
         const run: FollowedRun = {
             runId: record.id,
@@ -216,6 +227,7 @@ export function useServerRun({
             startedHere,
             played,
             targets: record.targetNodeIds?.length ? record.targetNodeIds : null,
+            runKeys,
             controller: new AbortController(),
             done: false,
             refollows: 0,
@@ -362,6 +374,10 @@ export function useServerRun({
             unmark();
             if (message) showToast(message, "error");
         };
+        // The server runs what the save writes: each node's key now is the one
+        // its result is stamped with, so a selection, widget value or code
+        // changed while the run goes leaves the node stale.
+        const runKeys = runKeysOf(reactFlow.getNodes());
         let saved: any;
         try {
             saved = await requestProjectSave();
@@ -415,7 +431,7 @@ export function useServerRun({
                     "info",
                 );
             }
-            attach(record, { startedHere: current });
+            attach(record, { startedHere: current, runKeys: current ? runKeys : null });
             return;
         }
         if (startingRef.current === starting) startingRef.current = null;
@@ -427,6 +443,7 @@ export function useServerRun({
         attach(record, {
             startedHere: true,
             played: targetNodeId ? { nodeId: targetNodeId, before: shownBefore } : null,
+            runKeys,
         });
     };
 
