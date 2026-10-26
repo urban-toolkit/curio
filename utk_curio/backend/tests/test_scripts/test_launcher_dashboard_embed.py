@@ -31,6 +31,7 @@ from __future__ import annotations
 import json
 import threading
 import urllib.request
+import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import pytest
@@ -57,7 +58,6 @@ class _StubBackend:
         self.payload = payload
         self.status = status
         self.paths = []
-        self.port = _free_port()
         outer = self
 
         class Handler(BaseHTTPRequestHandler):
@@ -76,7 +76,9 @@ class _StubBackend:
             def log_message(self, *args):
                 pass
 
-        self._server = ThreadingHTTPServer(("127.0.0.1", self.port), Handler)
+        # Bound on any free port at once, so no other process can take it first.
+        self._server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        self.port = self._server.server_address[1]
         self._thread = threading.Thread(target=self._server.serve_forever, daemon=True)
 
     def __enter__(self):
@@ -93,22 +95,32 @@ class _StubBackend:
 
 
 def _start_spa(tmp_path, backend_url: str) -> str:
+    """The page server on *tmp_path*'s dist. It binds the port it is given,
+    which another process may take between our pick and its bind: then its
+    thread ends, and another port is tried. One that answers is ours only if
+    it serves this dist's own probe file."""
     dist = tmp_path / "dist"
     dist.mkdir(exist_ok=True)
     (dist / "index.html").write_text(INDEX_BODY, encoding="utf-8")
-    port = _free_port()
-    thread = threading.Thread(
-        target=run_spa_static_server,
-        args=(str(dist), port, "", backend_url),
-        daemon=True,
-    )
-    thread.start()
-    url = f"http://127.0.0.1:{port}"
-    for _ in range(100):
-        try:
-            urllib.request.urlopen(f"{url}/index.html", timeout=1).read()
-            return url
-        except OSError:
+    probe = f"probe-{uuid.uuid4().hex}.txt"
+    (dist / probe).write_text(probe, encoding="utf-8")
+    for _attempt in range(5):
+        port = _free_port()
+        thread = threading.Thread(
+            target=run_spa_static_server,
+            args=(str(dist), port, "", backend_url),
+            daemon=True,
+        )
+        thread.start()
+        url = f"http://127.0.0.1:{port}"
+        for _ in range(100):
+            if not thread.is_alive():
+                break
+            try:
+                if urllib.request.urlopen(f"{url}/{probe}", timeout=1).read().decode("utf-8") == probe:
+                    return url
+            except OSError:
+                pass
             threading.Event().wait(0.05)
     pytest.fail("run_spa_static_server never came up")
 
