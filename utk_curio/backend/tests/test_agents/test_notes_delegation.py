@@ -163,8 +163,8 @@ def _write_shipped_builtin(user_key: str) -> None:
 class TestTheBuiltInNoteIsTheNotesTemplate:
     """Every dataflow can hold a Note, so the Researcher finds it with no
     package to enlist or write. The built-ins that draw their input (Data
-    Export, Data Pool, Simple View, Spatial Join) or hold a widget (Parameter)
-    are not notes, although they too have a behavior and no editor."""
+    Export, Data Pool, Simple View, Spatial Join) are not notes, although they
+    too have a behavior and no editor."""
 
     def _store(self, tmp_path, monkeypatch):
         monkeypatch.setenv("CURIO_LAUNCH_CWD", str(tmp_path))

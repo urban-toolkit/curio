@@ -16,8 +16,8 @@
   Autark node with no data of its own to load, a Spatial Join), so nothing
   below it can run until a tab does; ``missing`` is a node whose type names a
   package's template that no installed package provides (a saved Compare
-  Scenarios or Parameter node, a node of a package only another account's
-  store holds): the canvas cannot run it either, so a run fails it, naming the
+  Scenarios node, a node of a package only another account's store holds):
+  the canvas cannot run it either, so a run fails it, naming the
   type as the canvas's card for it does (:func:`missing_type_message`), and
   skips what it feeds. A node is what its
   template's declared ``behavior`` says (``projects/template_grammars``),

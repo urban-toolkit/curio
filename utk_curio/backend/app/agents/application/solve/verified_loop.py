@@ -695,8 +695,8 @@ class VerifiedRounds:
             return None
         grammar_id = workflow_spec.grammar_id_of(self.node_type, self.loop_templates)
         # #662: checked as it runs, its references resolved the way the canvas
-        # resolves them before it draws: widgets, input chips, shared tags, and
-        # in a Vega-Lite spec a column's name escaped where it reads a field,
+        # resolves them before it draws: widgets, input chips, and in a
+        # Vega-Lite spec a column's name escaped where it reads a field,
         # by the grammar the document is checked in.
         resolved, unresolved = self._resolved_document(document_validation.grammar_of(self.node_type, grammar_id))
         if unresolved:

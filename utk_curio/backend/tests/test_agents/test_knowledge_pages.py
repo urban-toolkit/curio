@@ -58,10 +58,10 @@ def _rendered() -> dict[str, str]:
 
 
 def _chip_kind(inner: str) -> str | None:
-    """The kind of the chip *inner* stands in: a widget, a shared tag, a
-    selection tag, an input with its layer and its column if it names them, a
-    scenario chip by the list it writes, the dataset of every input or one of
-    its columns. None for a scenario word no chip is."""
+    """The kind of the chip *inner* stands in: a widget, a selection tag, an
+    input with its layer and its column if it names them, a scenario chip by
+    the list it writes, the dataset of every input or one of its columns. None
+    for a scenario word no chip is."""
     from utk_curio.backend.app.execution.code_references import parse_reference
 
     parsed = parse_reference(inner)
