@@ -241,3 +241,18 @@ describe('backendHandler dispatch key (memo dev/91 commit 5)', () => {
     expect(dl.backendHandler).toBeUndefined();
   });
 });
+
+describe('widgetsWithCode: a node that shows its widgets above its code', () => {
+  afterEach(() => clearPackageNodes());
+
+  test('the descriptor carries the flag its template declares', () => {
+    const loader = { ...FIXTURE_PACK.templates[0], widgetsWithCode: true };
+    const [descriptor] = registerPackageTemplates([{ ...FIXTURE_PACK, templates: [loader] }]);
+    expect(descriptor.widgetsWithCode).toBe(true);
+  });
+
+  test('templates without it register without it', () => {
+    const [dl] = registerPackageTemplates([FIXTURE_PACK]);
+    expect(dl.widgetsWithCode).toBeUndefined();
+  });
+});

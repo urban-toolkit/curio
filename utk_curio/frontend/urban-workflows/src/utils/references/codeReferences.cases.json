@@ -72,6 +72,28 @@
       "expected": "# season is win ter\nx = \"win\\nter\""
     },
     {
+      "name": "a dataset widget writes its dataset's id as a text",
+      "language": "python",
+      "code": "data = curio_load_data([!! data !!])\nreturn data",
+      "widgets": [{"name": "data", "type": "dataset", "label": "Data", "default": "", "value": "data.utk.trees"}],
+      "expected": "data = curio_load_data(\"data.utk.trees\")\nreturn data"
+    },
+    {
+      "name": "code that reads an empty dataset widget is refused",
+      "language": "python",
+      "code": "data = curio_load_data([!! data !!])\nreturn data",
+      "widgets": [{"name": "data", "type": "dataset", "label": "Data", "default": ""}],
+      "expected": "data = curio_load_data([!! data !!])\nreturn data",
+      "problems": ["[!! data !!]: drop a file or a Data Catalog dataset on Data first."]
+    },
+    {
+      "name": "an empty dataset widget named in a comment stops nothing",
+      "language": "python",
+      "code": "# loads [!! data !!]\nreturn 1",
+      "widgets": [{"name": "data", "type": "dataset", "default": ""}],
+      "expected": "# loads \nreturn 1"
+    },
+    {
       "name": "a hash inside a string is not a comment",
       "language": "python",
       "code": "x = \"#\"; y = [!! n !!]",
