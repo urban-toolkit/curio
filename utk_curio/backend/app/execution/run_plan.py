@@ -11,16 +11,15 @@
 - :func:`node_role`: what a run does with a node. ``run`` executes it in the
   sandbox, as an executable template or an Autark node whose document only
   loads data (``autk_spec_kind``); ``forward`` passes its input on, as a chart,
-  a pool or a download does on the canvas, or has nothing to run, as a
-  Parameter node, whose value reaches the nodes that name it through their
-  code, or a Note; ``browser`` makes data only the browser can (an Autark
-  compute node, an Autark node with no data of its own to load, a Spatial
-  Join), so nothing below it can run until a tab does; ``missing`` is a node
-  whose type names a package's template that no installed package provides
-  (a saved Compare Scenarios node, a node of a package only another
-  account's store holds): the canvas cannot run it either, so a run fails it,
-  naming the type as the canvas's card for it does
-  (:func:`missing_type_message`), and skips what it feeds. A node is what its
+  a pool or a download does on the canvas, or has nothing to run, as a Note;
+  ``browser`` makes data only the browser can (an Autark compute node, an
+  Autark node with no data of its own to load, a Spatial Join), so nothing
+  below it can run until a tab does; ``missing`` is a node whose type names a
+  package's template that no installed package provides (a saved Compare
+  Scenarios or Parameter node, a node of a package only another account's
+  store holds): the canvas cannot run it either, so a run fails it, naming the
+  type as the canvas's card for it does (:func:`missing_type_message`), and
+  skips what it feeds. A node is what its
   template's declared ``behavior`` says (``projects/template_grammars``),
   never what its type is named.
 """
@@ -34,12 +33,11 @@ if TYPE_CHECKING:
 INTERACTION_HANDLE = "in/out"
 
 #: The behaviors of the nodes a run forwards besides the ones a dashboard walk
-#: passes through: a Data Export only offers a download, a Parameter node only
-#: holds a value, and a Note only holds text; none has anything to run. The
-#: built-in nodes of a type no template declares a behavior for are forwarded
-#: by their ids.
-_FORWARD_BEHAVIORS = frozenset({"data-export", "parameter", "note"})
-_FORWARD_TYPES = frozenset({"curio.builtin/data-export", "curio.builtin/parameter", "curio.builtin/note"})
+#: passes through: a Data Export only offers a download, and a Note only holds
+#: text; neither has anything to run. The built-in nodes of a type no template
+#: declares a behavior for are forwarded by their ids.
+_FORWARD_BEHAVIORS = frozenset({"data-export", "note"})
+_FORWARD_TYPES = frozenset({"curio.builtin/data-export", "curio.builtin/note"})
 
 
 def is_interaction_edge(edge: dict) -> bool:

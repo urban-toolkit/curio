@@ -293,6 +293,14 @@ class TestThePromptFacts:
         with pytest.raises(contracts.PromptTemplateError, match="which no prompt field defines"):
             contracts.render_template("{{widgets.shared:season}}")
 
+    def test_no_page_names_the_parameter_template(self):
+        """Builtin holds no Parameter template, so a page naming its label
+        would stop the backend's start; every page renders without it."""
+        with pytest.raises(contracts.PromptTemplateError, match="has no labelled template 'curio.builtin/parameter'"):
+            contracts.render_template("{{template.label:curio.builtin/parameter}}")
+        for path in prompt_files():
+            assert "curio.builtin/parameter" not in path.read_text(encoding="utf-8"), path.name
+
     def test_a_widget_name_that_ends_in_a_line_break_is_refused(self):
         """A marker's argument may hold a line break, and a widget name is read
         whole, as the Widgets tab reads it (``widgetChecks.cases.json``).

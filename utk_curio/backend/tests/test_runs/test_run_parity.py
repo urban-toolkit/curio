@@ -46,13 +46,15 @@ SCENARIOS = {
         )]),
         "a",
     ),
-    # #662: the value comes from a node with no edge.
-    "a Parameter node's value": (
-        spec([
-            node("p", "curio.builtin/parameter@1", "",
-                 metadata={"widgets": [{"name": "factor", "type": "number", "default": 2, "value": 5}]}),
-            node("a", content="return [!! @factor !!] * 2"),
-        ]),
+    # #662: a value several nodes read is a widget on one node that returns
+    # it, wired into each reader.
+    "a value node's value": (
+        spec(
+            [node("v", content="return [!! factor !!]",
+                  metadata={"widgets": [{"name": "factor", "type": "number", "default": 2, "value": 5}]}),
+             node("a", content="return input_0 * 2")],
+            [edge("v", "a")],
+        ),
         "a",
     ),
     # #662: the ids a view's selection picked, saved on the node that reads them.

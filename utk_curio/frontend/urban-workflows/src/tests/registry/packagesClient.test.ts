@@ -156,25 +156,25 @@ describe('registerPackageTemplates → NodeDescriptor', () => {
   });
 });
 
-describe('a template with no port (#662, the Parameter node)', () => {
+describe('a template with no port', () => {
   beforeEach(() => clearPackageNodes());
 
   test('has no handle, so no edge reaches it or leaves it', () => {
-    const parameter = {
+    const portless = {
       ...FIXTURE_PACK.templates[0],
-      id: 'curio.builtin/parameter@1',
-      templateId: 'parameter',
-      label: 'Parameter',
+      id: 'curio.builtin/portless@1',
+      templateId: 'portless',
+      label: 'Portless',
       category: 'flow',
-      iconRef: 'fa-solid:sliders',
-      behavior: 'parameter',
+      iconRef: 'fa-solid:cube',
+      behavior: null,
       paletteOrder: 12,
       editor: 'none' as const,
       hasCode: false,
       inputPorts: [],
       outputPorts: [],
     };
-    const [descriptor] = registerPackageTemplates([{ ...FIXTURE_PACK, templates: [parameter] }]);
+    const [descriptor] = registerPackageTemplates([{ ...FIXTURE_PACK, templates: [portless] }]);
     expect(descriptor.adapter.handles).toEqual([]);
     expect(descriptor.adapter.inputIconType).toBeUndefined();
     expect(descriptor.adapter.outputIconType).toBeUndefined();

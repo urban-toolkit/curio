@@ -28,8 +28,7 @@ def test_a_widget_is_checked_as_the_widgets_tab_checks_it():
     mismatches = [
         f"{case['name']}: {got!r}, the table says {case['expected']!r}"
         for case in cases
-        if (got := check_widget_def(case["def"], case.get("others") or [], case.get("parameter", False)))
-        != case["expected"]
+        if (got := check_widget_def(case["def"], case.get("others") or [])) != case["expected"]
     ]
     assert not mismatches, "\n".join(mismatches)
 
