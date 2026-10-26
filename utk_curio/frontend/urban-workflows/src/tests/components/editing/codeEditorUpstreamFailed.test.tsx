@@ -120,7 +120,7 @@ function play(
         pythonInterpreter: { interpretCode },
         ...(selections ? { selections } : {}),
     };
-    const props = (dirty: boolean) => ({
+    const props = (dirty: number) => ({
         setOutputCallback,
         data,
         output: { code: "exec", content: "" },
@@ -132,9 +132,9 @@ function play(
         defaultValue: CODE,
         floatCode: jest.fn(),
     });
-    const view = render(<CodeEditor {...props(false)} />);
+    const view = render(<CodeEditor {...props(0)} />);
     act(() => {
-        view.rerender(<CodeEditor {...props(true)} />);
+        view.rerender(<CodeEditor {...props(1)} />);
     });
     const answer = (reply: any) => act(() => { interpretCode.mock.calls[0][4](reply); });
     return { setOutputCallback, interpretCode, data, answer };

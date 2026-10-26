@@ -658,11 +658,13 @@ started.
 
 ## Several inputs
 
-Python Computation, Data Transformation, JS Computation, Data Pool, Vega-Lite and
-Autark nodes take several input edges, and so does a package node whose input port
-allows more than one. Connect an edge to the node's input circle and a new empty
-circle appears below it; each new edge takes the next circle. Circles are numbered
-from 0, top to bottom. A Data Pool shows each input as a tab, and each frame of
+Data Loading, Python Computation, Data Transformation, JS Computation, Data Pool,
+Vega-Lite and Autark nodes take several input edges, and so does a package node whose
+input port allows more than one. Connect an edge to the node's input circle and a new
+empty circle appears below it; each new edge takes the next circle. Circles are
+numbered from 0, top to bottom. A Data Loading node needs no input: wire a node into
+it when its code reads a value that node returns, such as the area several loaders
+read. A Data Pool shows each input as a tab, and each frame of
 an input that holds several, a Python tuple or a dict of frames, as a tab too: a
 dict's tab is named after its key.
 
@@ -1481,7 +1483,9 @@ a cell with no value is never counted.
 **A layer** (a GeoDataFrame) on an input circle is no raster: the node's code
 reads it as zones or a mask, for example with `rasterio.features.rasterize` on a
 raster's grid. The Quad Cities flood test dataflow's Average depth by period
-reads the riverside tracts and the waterways that way.
+reads the riverside tracts and the waterways that way. **A JSON value** on an
+input circle is read as it is: the same node reads its region's corners on its
+third circle, from the Python node that holds them.
 
 ## Notebook view
 

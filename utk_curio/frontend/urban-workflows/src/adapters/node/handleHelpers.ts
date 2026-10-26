@@ -13,7 +13,7 @@ export function standardInOut(): HandleDef[] {
   ];
 }
 
-/** Right source only (e.g. DataLoading). */
+/** Right source only: a template with outputs and no input port. */
 export function outputOnly(): HandleDef[] {
   return [
     { id: 'out', type: 'source', position: Position.Right, isConnectableOverride: suggestionGuard },

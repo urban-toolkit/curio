@@ -291,12 +291,11 @@ const UniversalNodeBody = React.memo(function UniversalNodeBody({ data, isConnec
   // is all it needs - on the canvas as much as on the dashboard. Keyed on the
   // input so a chart behind a Data Pool draws when the pool's fetch lands, and
   // guarded so the same input never recompiles twice.
-  // Never while a run is in flight: the runner compiles this node itself, and
-  // two ``sendCode`` calls in one tick cancel each other. Each one toggles the
-  // widgets pass, so two toggles in the same batch leave the flag where it
-  // started, the marker round trip never happens, and the node sits at "exec"
-  // until its watchdog. Whatever a run leaves behind is what this draws from
-  // the next time an input arrives. A run on the server counts too: its
+  // Never while a run is in flight: the runner compiles this node itself, so
+  // drawing it here too would draw it twice. (Two ``sendCode`` calls in one
+  // tick run the node once, with the last code: NodeEditor counts them.)
+  // Whatever a run leaves behind is what this draws from the next time an
+  // input arrives. A run on the server counts too: its
   // browser part compiles the maps and charts it walks as Run All does, and a
   // chart it leaves out draws here once the run ends, from the input that
   // arrived during it.
@@ -329,9 +328,8 @@ const UniversalNodeBody = React.memo(function UniversalNodeBody({ data, isConnec
    * Only the newest draw asked for goes. A Data Pool hands its rows on with
    * every fetch that lands, so a second input can arrive while the probe is
    * out, and every node waits on the same probe; so can a viewer's new value
-   * of the map's own widget. Drawing both would put two `sendCode` calls in
-   * one tick, which cancel each other (above): the map would never run, and
-   * would sit at "exec".
+   * of the map's own widget. Drawing both would draw the map twice, the first
+   * time from what is no longer its input.
    */
   const draw = () => {
     lastRenderedInputRef.current = data.input;

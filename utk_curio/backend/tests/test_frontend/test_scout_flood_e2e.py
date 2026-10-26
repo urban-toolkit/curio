@@ -1,8 +1,9 @@
 """SCOUT's flood example on SCOUT's whole grid, in two scenarios from Curio's own nodes and Scout's Raster Calculator, each on an Autark map, compared on an absolute difference and a chart, and weighed against CDC's Social Vulnerability Index on the riverside tracts (#662, step 18; #819; #914).
 
-The shipped test dataflow ``quad-cities-flood-vulnerability.json``: Parameter nodes for the
-period and the region's corners, at SCOUT's flood example's, which take every
-cell of SCOUT's 2592 by 2064 cell grid; three Data Loading nodes reading the
+The shipped test dataflow ``quad-cities-flood-vulnerability.json``: a Region and a
+Projection period Python node holding the region's corners and the period, at
+SCOUT's flood example's, which take every cell of SCOUT's 2592 by 2064 cell grid,
+each wired into the nodes that read it; three Data Loading nodes reading the
 region's window of SCOUT's rasters, which the Data Catalog holds whole; and two
 scenarios, "No NbS" and "NbS" (its copy), each holding a Raster Calculator
 (``curio.scout@1``) that
@@ -14,9 +15,10 @@ scenario's median flood depth (#720).
 
 Run All drives the whole path:
 
-1. The loaders read SCOUT's rasters by id, for the region and the period
-   (2020 - 2050, which SCOUT labels 2020 - 2040) the Parameter nodes hold,
-   and the seven calculators and the seven maps run.
+1. The Region and Projection period nodes run, and the loaders read SCOUT's
+   rasters by id, for the region and the period (2020 - 2050, which SCOUT
+   labels 2020 - 2040) those nodes hand them, and the seven calculators and
+   the seven maps run.
 2. Each scenario's map draws its depth, its legend titled "Flood depth (m)"
    and labelled 0 to 11, the color range both maps share.
 3. The change is a 2592 by 2064 cell raster in EPSG:4326 on SCOUT's grid,
@@ -104,6 +106,7 @@ MAP_TYPE = "curio.builtin/autk-grammar"
 COMPARE_TYPE = "curio.builtin/compare-scenarios"
 TRANSFORMATION_TYPE = "curio.builtin/data-transformation"
 PYTHON_TYPE = "curio.builtin/computation-analysis"
+LOADER_TYPE = "curio.builtin/data-loading"
 BARS_TYPE, POINTS_TYPE, GROUPED_BARS_TYPE = "curio.scout/bars", "curio.scout/points", "curio.scout/grouped-bars"
 CHART_TYPES = (BARS_TYPE, POINTS_TYPE, GROUPED_BARS_TYPE)
 COLORS = {"no-nbs": "#e76f51", "nbs": "#2a9d8f"}
@@ -191,14 +194,29 @@ def _members(spec: dict) -> set:
     return {node_id for scenario in spec["dataflow"]["scenarios"] for node_id in scenario["nodes"]}
 
 
+def _settings(spec: dict) -> dict:
+    """The Python nodes that hold the settings, by label: the ones in no
+    scenario that no edge reaches, Region and Projection period."""
+    members = _members(spec)
+    fed = {edge["target"] for edge in spec["dataflow"]["edges"]}
+    found = {
+        node["metadata"]["packageTemplateLabel"]: node["id"] for node in spec["dataflow"]["nodes"]
+        if node["type"] == PYTHON_TYPE and node["id"] not in members and node["id"] not in fed
+    }
+    assert sorted(found) == ["Projection period", "Region"], found
+    return found
+
+
 def _by_part_and_mode(spec: dict, types: tuple, mode_of) -> dict:
     """The nodes of *types* in no scenario, by the part of the scenarios that
-    feeds both their circles and by *mode_of* the node."""
+    feeds both their circles and by *mode_of* the node. The nodes that hold
+    the settings compare nothing."""
     nodes = {node["id"]: node for node in spec["dataflow"]["nodes"]}
     members = _members(spec)
+    settings = set(_settings(spec).values())
     found = {}
     for node in nodes.values():
-        if node["type"] not in types or node["id"] in members:
+        if node["type"] not in types or node["id"] in members or node["id"] in settings:
             continue
         (part,) = {_part(nodes[e["source"]]) for e in spec["dataflow"]["edges"] if e["target"] == node["id"]}
         found[(part, mode_of(node))] = node["id"]
@@ -429,9 +447,13 @@ def test_two_flood_scenarios_are_mapped_and_charted(
                   and "\nreturn raster_statistics(" in node["content"]]
     assert len(statistics) == 2, statistics
 
-    # 1. Run All: both scenarios read SCOUT's rasters for the shared region and period.
+    # 1. Run All: the Region and Projection period nodes hand the loaders the
+    # region and the period both scenarios read SCOUT's rasters for.
+    settings = list(_settings(spec).values())
+    loaders = _nodes_of(spec, LOADER_TYPE)
+    assert len(loaders) == 5, loaders
     run_all_and_wait(page, timeout_ms=600000)
-    for node_id, node_type in steps:
+    for node_id, node_type in [*((n, PYTHON_TYPE) for n in settings), *((n, LOADER_TYPE) for n in loaders), *steps]:
         status = wait_for_node_settled(page, node_id, node_type=node_type, timeout_ms=240000)
         assert status == "done", f"{node_type} did not run: {read_node_error_text(node_locator(page, node_id))}"
     for node_id in comparisons.values():

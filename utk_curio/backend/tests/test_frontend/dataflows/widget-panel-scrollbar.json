@@ -1,0 +1,211 @@
+{
+  "dataflow": {
+    "name": "Widget panel scrollbar",
+    "task": "",
+    "nodes": [
+      {
+        "id": "8f0c1e2a-5b3d-4c7e-9a61-2d4f6b8e0c13",
+        "type": "curio.builtin/parameter",
+        "x": 0,
+        "y": 0,
+        "content": "",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Choose the projection period both scenarios read.",
+        "metadata": {
+          "keywords": [],
+          "widgets": [
+            {
+              "name": "timeline",
+              "type": "choice",
+              "label": "Projection period",
+              "default": "2020 - 2050",
+              "options": {
+                "choices": [
+                  "2020 - 2050",
+                  "2050 - 2080",
+                  "2080 - 2100"
+                ],
+                "display": "radio"
+              }
+            }
+          ],
+          "packageTemplateLabel": "Projection period"
+        }
+      },
+      {
+        "id": "c1d2e3f4-0a1b-4c2d-8e3f-4a5b6c7d8e91",
+        "type": "curio.builtin/parameter",
+        "x": 0,
+        "y": 450,
+        "content": "",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Set the region's north-west corner.",
+        "metadata": {
+          "keywords": [],
+          "widgets": [
+            {
+              "name": "topleft",
+              "type": "location",
+              "label": "Top-left corner",
+              "default": {
+                "lat": 41.6242105,
+                "lon": -90.6879323
+              }
+            }
+          ],
+          "packageTemplateLabel": "Top-left corner"
+        }
+      },
+      {
+        "id": "d2e3f4a5-1b2c-4d3e-9f4a-5b6c7d8e9fa2",
+        "type": "curio.builtin/parameter",
+        "x": 0,
+        "y": 900,
+        "content": "",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Set the region's south-east corner.",
+        "metadata": {
+          "keywords": [],
+          "widgets": [
+            {
+              "name": "bottomright",
+              "type": "location",
+              "label": "Bottom-right corner",
+              "default": {
+                "lat": 41.4150156,
+                "lon": -90.4252158
+              }
+            }
+          ],
+          "packageTemplateLabel": "Bottom-right corner"
+        }
+      },
+      {
+        "id": "e3f4a5b6-2c3d-4e4f-8a5b-6c7d8e9fa0b3",
+        "type": "curio.builtin/data-loading",
+        "x": 650,
+        "y": 0,
+        "content": "# The region's window of SCOUT's nature-based solutions (NbS) class raster,\n# at its own cells: the corners are the two location Parameter nodes.\ntopleft, bottomright = [!! @topleft !!], [!! @bottomright !!]\nbounds = (topleft[\"lon\"], bottomright[\"lat\"], bottomright[\"lon\"], topleft[\"lat\"])\nsrc = curio_load_data(\"data.scout.flood-nbs-classes\", bounds=bounds)\nreturn src\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Read the region of SCOUT's nature-based solution classes.",
+        "metadata": {
+          "keywords": [],
+          "packageTemplateLabel": "NbS classes"
+        }
+      },
+      {
+        "id": "f4a5b6c7-3d4e-4f5a-9b6c-7d8e9fa0b1c4",
+        "type": "curio.builtin/data-loading",
+        "x": 650,
+        "y": 450,
+        "content": "# The region's window of the period's flood depth with NbS, in metres:\n# the period is the timeline Parameter node.\ntopleft, bottomright = [!! @topleft !!], [!! @bottomright !!]\nbounds = (topleft[\"lon\"], bottomright[\"lat\"], bottomright[\"lon\"], topleft[\"lat\"])\ndepths = {\n    \"2020 - 2050\": lambda: curio_load_data(\"data.scout.flood-depth-2020-2050-nbs\", bounds=bounds),\n    \"2050 - 2080\": lambda: curio_load_data(\"data.scout.flood-depth-2050-2080-nbs\", bounds=bounds),\n    \"2080 - 2100\": lambda: curio_load_data(\"data.scout.flood-depth-2080-2100-nbs\", bounds=bounds),\n}\nperiod = [!! @timeline !!]\nif period not in depths:\n    raise ValueError(f\"There is no flood projection for {period!r}. The periods: {', '.join(depths)}.\")\nsrc = depths[period]()\nreturn src\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Read the region's flood depth with nature-based solutions for the period.",
+        "metadata": {
+          "keywords": [],
+          "packageTemplateLabel": "Depth with NbS"
+        }
+      },
+      {
+        "id": "a5b6c7d8-4e5f-4a6b-8c7d-8e9fa0b1c2d5",
+        "type": "curio.builtin/data-loading",
+        "x": 650,
+        "y": 900,
+        "content": "# The region's window of the period's flood depth without NbS, in metres:\n# the period is the timeline Parameter node.\ntopleft, bottomright = [!! @topleft !!], [!! @bottomright !!]\nbounds = (topleft[\"lon\"], bottomright[\"lat\"], bottomright[\"lon\"], topleft[\"lat\"])\ndepths = {\n    \"2020 - 2050\": lambda: curio_load_data(\"data.scout.flood-depth-2020-2050-no-nbs\", bounds=bounds),\n    \"2050 - 2080\": lambda: curio_load_data(\"data.scout.flood-depth-2050-2080-no-nbs\", bounds=bounds),\n    \"2080 - 2100\": lambda: curio_load_data(\"data.scout.flood-depth-2080-2100-no-nbs\", bounds=bounds),\n}\nperiod = [!! @timeline !!]\nif period not in depths:\n    raise ValueError(f\"There is no flood projection for {period!r}. The periods: {', '.join(depths)}.\")\nsrc = depths[period]()\nreturn src\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Read the region's flood depth without nature-based solutions for the period.",
+        "metadata": {
+          "keywords": [],
+          "packageTemplateLabel": "Depth without NbS"
+        }
+      },
+      {
+        "id": "734c8488-4f85-4ed0-92b6-40f5a6841420",
+        "type": "curio.scout/raster-calculator",
+        "x": 1300,
+        "y": -450,
+        "content": "# Average depth by period: the mean flood depth over the riverside tracts' land\n# in each of SCOUT's three periods, with this node's nature-based solutions\n# (NbS) chosen as its scenario's Flood depth chooses them: a cell takes the\n# depth with NbS where its class is a chosen solution, and the depth without\n# NbS elsewhere. input_0 is the riverside tracts and input_1 NHD's waterways;\n# the corners are the two location Parameter nodes. A cell with no depth is dry\n# land, 0 m, the water is left out, and each cell counts by its area, as Tract\n# depth counts them.\nimport numpy as np\nimport pandas as pd\nfrom rasterio.features import rasterize\nfrom scout_rasters.raster_algebra import raster_calculate\n\nNBS_CLASSES = {\n    21: \"Bioswales/Infiltration trenches\",\n    31: \"Permeable pavements\",\n    43: \"Retention ponds\",\n    52: \"Bioswales/Infiltration trenches\",\n    71: \"Bioswales/Infiltration trenches\",\n    81: \"Bioswales/Infiltration trenches\",\n    90: \"Constructed wetlands\",\n    95: \"Constructed wetlands\",\n}\n#: A degree of a great circle on the mean Earth, 6371.0088 km in radius, in km.\nKM_PER_DEGREE = 111.19508\n\nchosen = [!! use_NBS_classes !!]\ncodes = [code for code, name in NBS_CLASSES.items() if name in chosen]\ntopleft, bottomright = [!! @topleft !!], [!! @bottomright !!]\nbounds = (topleft[\"lon\"], bottomright[\"lat\"], bottomright[\"lon\"], topleft[\"lat\"])\n# Each period's depth with NbS and without, read as the loaders read them.\ndepths = {\n    \"2020 - 2050\": (\n        lambda: curio_load_data(\"data.scout.flood-depth-2020-2050-nbs\", bounds=bounds),\n        lambda: curio_load_data(\"data.scout.flood-depth-2020-2050-no-nbs\", bounds=bounds),\n    ),\n    \"2050 - 2080\": (\n        lambda: curio_load_data(\"data.scout.flood-depth-2050-2080-nbs\", bounds=bounds),\n        lambda: curio_load_data(\"data.scout.flood-depth-2050-2080-no-nbs\", bounds=bounds),\n    ),\n    \"2080 - 2100\": (\n        lambda: curio_load_data(\"data.scout.flood-depth-2080-2100-nbs\", bounds=bounds),\n        lambda: curio_load_data(\"data.scout.flood-depth-2080-2100-no-nbs\", bounds=bounds),\n    ),\n}\n\ntracts, waterways = input_0, input_1\nclasses = curio_load_data(\"data.scout.flood-nbs-classes\", bounds=bounds)\ngrid = {\"out_shape\": (classes.height, classes.width), \"transform\": classes.transform, \"fill\": 0}\ninside = rasterize(((shape, 1) for shape in tracts.to_crs(classes.crs).geometry), dtype=\"uint8\", **grid) == 1\nwater = rasterize(((shape, 1) for shape in waterways.to_crs(classes.crs).geometry), dtype=\"uint8\", **grid) == 1\nland = inside & ~water\nt = classes.transform\nlatitude = t.f + t.e * (np.arange(classes.height) + 0.5)\nrow_km2 = abs(t.a) * abs(t.e) * KM_PER_DEGREE ** 2 * np.cos(np.radians(latitude))\narea = np.broadcast_to(row_km2[:, None], land.shape)[land]\nland_km2 = float(area.sum())\n\nrows = []\nfor period, (with_nbs, without_nbs) in depths.items():\n    nbs, none = with_nbs(), without_nbs()\n    depth = raster_calculate(\"choose\", [classes, nbs, none], codes=codes, output_file=curio_output_file)\n    cells = np.ma.filled(depth.read(1, masked=True).astype(\"float64\"), np.nan)[land]\n    cells[~np.isfinite(cells)] = 0.0\n    rows.append({\n        \"period\": period,\n        \"mean_depth_m\": round(float((cells * area).sum()) / land_km2, 3),\n        \"land_km2\": round(land_km2, 3),\n    })\n    for raster in (depth, nbs, none):\n        raster.close()\nclasses.close()\nreturn pd.DataFrame(rows)\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Average the flood depth over the riverside tracts' land in each period, with no nature-based solution in place.",
+        "metadata": {
+          "keywords": [],
+          "widgets": [
+            {
+              "name": "use_NBS_classes",
+              "type": "checkbox-group",
+              "label": "Nature-based solutions",
+              "default": [
+                "Bioswales/Infiltration trenches",
+                "Permeable pavements",
+                "Retention ponds",
+                "Constructed wetlands"
+              ],
+              "options": {
+                "choices": [
+                  "Bioswales/Infiltration trenches",
+                  "Permeable pavements",
+                  "Retention ponds",
+                  "Constructed wetlands"
+                ]
+              },
+              "value": []
+            }
+          ],
+          "packageTemplateLabel": "Average depth by period"
+        }
+      },
+      {
+        "id": "1d45af95-2eaa-4e21-94a9-0f4ea3430222",
+        "type": "curio.scout/raster-calculator",
+        "x": 1300,
+        "y": 1800,
+        "content": "# Average depth by period: the mean flood depth over the riverside tracts' land\n# in each of SCOUT's three periods, with this node's nature-based solutions\n# (NbS) chosen as its scenario's Flood depth chooses them: a cell takes the\n# depth with NbS where its class is a chosen solution, and the depth without\n# NbS elsewhere. input_0 is the riverside tracts and input_1 NHD's waterways;\n# the corners are the two location Parameter nodes. A cell with no depth is dry\n# land, 0 m, the water is left out, and each cell counts by its area, as Tract\n# depth counts them.\nimport numpy as np\nimport pandas as pd\nfrom rasterio.features import rasterize\nfrom scout_rasters.raster_algebra import raster_calculate\n\nNBS_CLASSES = {\n    21: \"Bioswales/Infiltration trenches\",\n    31: \"Permeable pavements\",\n    43: \"Retention ponds\",\n    52: \"Bioswales/Infiltration trenches\",\n    71: \"Bioswales/Infiltration trenches\",\n    81: \"Bioswales/Infiltration trenches\",\n    90: \"Constructed wetlands\",\n    95: \"Constructed wetlands\",\n}\n#: A degree of a great circle on the mean Earth, 6371.0088 km in radius, in km.\nKM_PER_DEGREE = 111.19508\n\nchosen = [!! use_NBS_classes !!]\ncodes = [code for code, name in NBS_CLASSES.items() if name in chosen]\ntopleft, bottomright = [!! @topleft !!], [!! @bottomright !!]\nbounds = (topleft[\"lon\"], bottomright[\"lat\"], bottomright[\"lon\"], topleft[\"lat\"])\n# Each period's depth with NbS and without, read as the loaders read them.\ndepths = {\n    \"2020 - 2050\": (\n        lambda: curio_load_data(\"data.scout.flood-depth-2020-2050-nbs\", bounds=bounds),\n        lambda: curio_load_data(\"data.scout.flood-depth-2020-2050-no-nbs\", bounds=bounds),\n    ),\n    \"2050 - 2080\": (\n        lambda: curio_load_data(\"data.scout.flood-depth-2050-2080-nbs\", bounds=bounds),\n        lambda: curio_load_data(\"data.scout.flood-depth-2050-2080-no-nbs\", bounds=bounds),\n    ),\n    \"2080 - 2100\": (\n        lambda: curio_load_data(\"data.scout.flood-depth-2080-2100-nbs\", bounds=bounds),\n        lambda: curio_load_data(\"data.scout.flood-depth-2080-2100-no-nbs\", bounds=bounds),\n    ),\n}\n\ntracts, waterways = input_0, input_1\nclasses = curio_load_data(\"data.scout.flood-nbs-classes\", bounds=bounds)\ngrid = {\"out_shape\": (classes.height, classes.width), \"transform\": classes.transform, \"fill\": 0}\ninside = rasterize(((shape, 1) for shape in tracts.to_crs(classes.crs).geometry), dtype=\"uint8\", **grid) == 1\nwater = rasterize(((shape, 1) for shape in waterways.to_crs(classes.crs).geometry), dtype=\"uint8\", **grid) == 1\nland = inside & ~water\nt = classes.transform\nlatitude = t.f + t.e * (np.arange(classes.height) + 0.5)\nrow_km2 = abs(t.a) * abs(t.e) * KM_PER_DEGREE ** 2 * np.cos(np.radians(latitude))\narea = np.broadcast_to(row_km2[:, None], land.shape)[land]\nland_km2 = float(area.sum())\n\nrows = []\nfor period, (with_nbs, without_nbs) in depths.items():\n    nbs, none = with_nbs(), without_nbs()\n    depth = raster_calculate(\"choose\", [classes, nbs, none], codes=codes, output_file=curio_output_file)\n    cells = np.ma.filled(depth.read(1, masked=True).astype(\"float64\"), np.nan)[land]\n    cells[~np.isfinite(cells)] = 0.0\n    rows.append({\n        \"period\": period,\n        \"mean_depth_m\": round(float((cells * area).sum()) / land_km2, 3),\n        \"land_km2\": round(land_km2, 3),\n    })\n    for raster in (depth, nbs, none):\n        raster.close()\nclasses.close()\nreturn pd.DataFrame(rows)\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Average the flood depth over the riverside tracts' land in each period, with every nature-based solution in place.",
+        "metadata": {
+          "keywords": [],
+          "widgets": [
+            {
+              "name": "use_NBS_classes",
+              "type": "checkbox-group",
+              "label": "Nature-based solutions",
+              "default": [
+                "Bioswales/Infiltration trenches",
+                "Permeable pavements",
+                "Retention ponds",
+                "Constructed wetlands"
+              ],
+              "options": {
+                "choices": [
+                  "Bioswales/Infiltration trenches",
+                  "Permeable pavements",
+                  "Retention ponds",
+                  "Constructed wetlands"
+                ]
+              },
+              "value": [
+                "Bioswales/Infiltration trenches",
+                "Permeable pavements",
+                "Retention ponds",
+                "Constructed wetlands"
+              ]
+            }
+          ],
+          "packageTemplateLabel": "Average depth by period",
+          "copiedFrom": [
+            "734c8488-4f85-4ed0-92b6-40f5a6841420"
+          ]
+        }
+      }
+    ],
+    "edges": []
+  }
+}
