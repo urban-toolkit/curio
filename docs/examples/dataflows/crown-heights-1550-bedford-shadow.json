@@ -11,7 +11,7 @@
         "type": "curio.builtin/data-loading",
         "x": 0,
         "y": 0,
-        "content": "# NYC's building footprints about 600 by 550 m around 1550 Bedford Avenue,\n# each with its roof height in metres (height) and DoITT's id (building_id).\n# The site is vacant, so no building stands on it.\nbuildings = curio_load_data(\"data.nyc.crown-heights-1550-bedford\", part=\"buildings.parquet\")\n# What the shadow map colors the buildings by: every building here stands today.\nbuildings[\"status\"] = \"Existing\"\n# Mark the frame as buildings, so an Autark map extrudes each footprint to its height.\nbuildings.metadata = {\"layerType\": \"buildings\"}\nreturn buildings\n",
+        "content": "# NYC's building footprints about 600 by 550 m around 1550 Bedford Avenue,\n# each with its roof height in metres (height) and DoITT's id (building_id).\n# The site is vacant, so no building stands on it.\nbuildings = curio_load_data(\"data.nyc.crown-heights-1550-bedford\", part=\"buildings.parquet\")\n# What the maps color the buildings by: every building here stands today.\nbuildings[\"status\"] = \"Existing\"\n# Mark the frame as buildings, so an Autark map extrudes each footprint to its height.\nbuildings.metadata = {\"layerType\": \"buildings\"}\nreturn buildings\n",
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "Load NYC's building footprints around 1550 Bedford Avenue with their roof heights in metres.",
@@ -52,119 +52,189 @@
         "title": "Load streets"
       },
       {
-        "id": "a4c2e1bb-5ed8-59d4-b9b1-9ad0b26eddeb",
-        "type": "curio.builtin/parameter",
+        "id": "8f8b8c77-6778-56b8-a500-39601670fee7",
+        "type": "curio.builtin/computation-analysis",
         "x": 645,
-        "y": 510,
-        "content": "",
+        "y": 0,
+        "content": "import datetime\nimport math\nfrom zoneinfo import ZoneInfo\n\nimport geopandas as gpd\nimport pyproj\nfrom astral import Observer\nfrom astral.sun import azimuth, elevation\nfrom shapely.geometry import Point\nfrom suntime import Sun\n\n# The day the maps, the table and the plot show, one of 2027's equinoxes and\n# solstices (the Day widget), cut into the steps the GPU steps walk. The day\n# counts from 1.5 hours after its sunrise to 1.5 hours before its sunset\n# (suntime), in New York time, in steps of 10 minutes, the last one\n# shorter. At the middle of each step astral gives the sun's azimuth and its\n# elevation, with refraction. One point per step, at the site.\nDAYS = {\"Spring equinox\": \"2027-03-20\", \"Summer solstice\": \"2027-06-21\", \"Fall equinox\": \"2027-09-23\", \"Winter solstice\": \"2027-12-21\"}\nLATITUDE, LONGITUDE = 40.6696, -73.9558  # the site, 1550 Bedford Avenue\nNEW_YORK = ZoneInfo(\"America/New_York\")\nSTEP = datetime.timedelta(minutes=10)\nMARGIN = datetime.timedelta(hours=1.5)\n\nlabel = [!! day !!]\nday = datetime.date.fromisoformat(DAYS[label])\nsun = Sun(LATITUDE, LONGITUDE)\nstart = sun.get_sunrise_time(day, NEW_YORK) + MARGIN\nend = sun.get_sunset_time(day, NEW_YORK) - MARGIN\n# suntime works in UTC, where a summer sunset in New York falls on the next\n# day: a window that does not run forward is a wrong day, not an empty one.\nif not start < end:\n    raise ValueError(f\"suntime gave {label} ({day}) no window: {start} to {end}\")\n\n# The ground cells are in metres in the site's UTM zone, whose north is not\n# quite true north: turn the sun's azimuth by the angle between the two.\nutm = gpd.GeoSeries([Point(LONGITUDE, LATITUDE)], crs=4326).estimate_utm_crs()\nto_grid = pyproj.Transformer.from_crs(4326, utm, always_xy=True)\nx0, y0 = to_grid.transform(LONGITUDE, LATITUDE)\nx1, y1 = to_grid.transform(LONGITUDE, LATITUDE + 0.01)\nturn = math.degrees(math.atan2(x1 - x0, y1 - y0))\n\n\ndef clock(moment):\n    \"\"\"*moment* as a New York clock reads it, to the minute: 8:46 AM EST.\"\"\"\n    moment = (moment + datetime.timedelta(seconds=30)).replace(second=0, microsecond=0)\n    noon = \"AM\" if moment.hour < 12 else \"PM\"\n    return f\"{moment.hour % 12 or 12}:{moment.minute:02d} {noon} {moment.tzname()}\"\n\n\nobserver = Observer(latitude=LATITUDE, longitude=LONGITUDE)\nrows, moment = [], start\nwhile moment < end:\n    length = min(STEP, end - moment)\n    middle = moment + length / 2\n    toward = math.radians(azimuth(observer, middle) + turn)\n    rows.append({\n        \"east\": math.sin(toward),\n        \"north\": math.cos(toward),\n        \"cot\": 1 / math.tan(math.radians(elevation(observer, middle))),\n        \"minutes\": length.total_seconds() / 60,\n        # The New York clock time written as if it were UTC, so a plot draws\n        # the same hours in a browser anywhere.\n        \"time\": middle.replace(tzinfo=None).isoformat(timespec=\"seconds\") + \"Z\",\n        \"clock\": clock(middle),\n    })\n    moment += length\nsteps = gpd.GeoDataFrame(rows, geometry=[Point(LONGITUDE, LATITUDE)] * len(rows), crs=4326)\nsteps[\"day\"], steps[\"window_from\"], steps[\"window_to\"] = label, clock(start), clock(end)\n# Every step on the first point, for the GPU step that walks the whole day\n# from each ground cell.\nsteps[\"steps\"] = [steps[[\"east\", \"north\", \"cot\", \"minutes\"]].to_numpy().tolist()] + [None] * (len(steps) - 1)\nsteps.metadata = {\"layerType\": \"points\"}\nreturn steps\n",
         "out": "DEFAULT",
         "in": "DEFAULT",
-        "goal": "Accumulate the shadow over one date, one month or the whole year.",
+        "goal": "For the day picked, an equinox or a solstice of 2027, count from 1.5 hours after sunrise to 1.5 hours before sunset in New York time, in 10-minute steps, with the sun's direction and height at each.",
         "metadata": {
           "keywords": [],
           "widgets": [
             {
-              "name": "period",
+              "name": "day",
               "type": "choice",
-              "label": "Accumulate over",
-              "default": "Date",
+              "label": "Day",
+              "default": "Winter solstice",
               "options": {
                 "choices": [
-                  "Date",
-                  "Month",
-                  "Year"
+                  "Spring equinox",
+                  "Summer solstice",
+                  "Fall equinox",
+                  "Winter solstice"
                 ],
                 "display": "radio"
               }
             }
           ],
-          "packageTemplateLabel": "Choose period: Date, Month or Year"
+          "packageTemplateLabel": "List the day's sun steps"
         },
-        "title": "Choose period: Date, Month or Year",
+        "title": "List the day's sun steps",
         "dashboardPinned": true,
-        "dashboardX": -217,
-        "dashboardY": 38,
-        "dashboardWidth": 384,
-        "dashboardHeight": 163
+        "dashboardX": 0,
+        "dashboardY": 390,
+        "dashboardWidth": 250,
+        "dashboardHeight": 230
       },
       {
-        "id": "bf22e3c5-08ec-5174-b112-41dd0955331e",
-        "type": "curio.builtin/parameter",
+        "id": "e891762d-1198-5a8c-b43a-b41b22582249",
+        "type": "curio.builtin/computation-analysis",
         "x": 645,
-        "y": 748,
-        "content": "",
+        "y": 450,
+        "content": "import geopandas as gpd\nimport numpy as np\nimport shapely\n\n# The open ground the shadow is counted on: square cells of 3 m over the\n# area around the buildings, but for those whose centre lies in an existing\n# building (input_0). Each cell holds its column and row, its centre in metres\n# from the grid's south-west corner (x east, y north), and on_block, whether\n# it lies on Block 1259 (input_1). The grid rides along on every cell (its\n# corner in the site's UTM zone, epsg, the cell's side, its columns and rows),\n# so the nodes that draw buildings into it draw them on these same cells.\nCELL = 3\nbuildings, block = input_0, input_1\nutm = buildings.estimate_utm_crs()\nroofs = buildings.to_crs(utm)\nwest, south, east, north = roofs.total_bounds\ncols, rows = int(np.ceil((east - west) / CELL)), int(np.ceil((north - south) / CELL))\ncol, row = np.meshgrid(np.arange(cols), np.arange(rows))\ncol, row = col.ravel(), row.ravel()\nx, y = (col + 0.5) * CELL, (row + 0.5) * CELL\ncentres = shapely.points(west + x, south + y)\n# The rule the buildings are drawn by: a centre in a footprint is under its roof.\nunder = np.zeros(len(centres), bool)\nunder[shapely.STRtree(roofs.geometry.values).query(centres, predicate=\"within\")[0]] = True\non_block = shapely.contains_xy(block.to_crs(utm).union_all(), west + x, south + y)\nkeep = ~under\ncells = gpd.GeoDataFrame(\n    {\"col\": col[keep], \"row\": row[keep], \"x\": x[keep], \"y\": y[keep], \"on_block\": on_block[keep].astype(int)},\n    geometry=shapely.box(west + x[keep] - CELL / 2, south + y[keep] - CELL / 2,\n                         west + x[keep] + CELL / 2, south + y[keep] + CELL / 2),\n    crs=utm,\n)\ncells[\"grid_west\"], cells[\"grid_south\"], cells[\"cell\"] = float(west), float(south), float(CELL)\ncells[\"cols\"], cells[\"rows\"], cells[\"epsg\"] = cols, rows, utm.to_epsg()\ncells = cells.to_crs(buildings.crs)\n# Tell the Autark map these are areas, so it fills them.\ncells.metadata = {\"layerType\": \"polygons\"}\nreturn cells\n",
         "out": "DEFAULT",
         "in": "DEFAULT",
-        "goal": "The date the shadow is accumulated over when Period is Date.",
+        "goal": "Cover the area with 3 m cells and keep the open ground, the cells outside every existing building, marking the ones on Block 1259.",
         "metadata": {
           "keywords": [],
-          "widgets": [
-            {
-              "name": "date",
-              "type": "date",
-              "label": "Date (when Period is Date)",
-              "default": "2027-12-21"
-            }
-          ],
-          "packageTemplateLabel": "Pick a date (for Date)"
+          "packageTemplateLabel": "Make open-ground grid"
         },
-        "title": "Pick a date (for Date)",
-        "dashboardPinned": true,
-        "dashboardX": -216,
-        "dashboardY": 218,
-        "dashboardWidth": 382,
-        "dashboardHeight": 166
+        "title": "Make open-ground grid"
       },
       {
-        "id": "cf406fab-ad41-5197-a647-7a7730d7f6f2",
-        "type": "curio.builtin/parameter",
+        "id": "2be9fdd4-c902-5a3e-af89-e0ad66f45a2c",
+        "type": "curio.builtin/computation-analysis",
         "x": 645,
-        "y": 986,
-        "content": "",
+        "y": 900,
+        "content": "import geopandas as gpd\nfrom shapely.geometry import box\n\n# The area the maps show, one box around every building. A map loads it first\n# and does not draw it: Autark clips every layer it loads after the first to\n# the first one's outline, so with this box first every layer stays whole.\nreturn gpd.GeoDataFrame({\"area\": [\"map\"]}, geometry=[box(*input_0.total_bounds)], crs=input_0.crs)\n",
         "out": "DEFAULT",
         "in": "DEFAULT",
-        "goal": "The month the shadow is accumulated over when Period is Month.",
+        "goal": "Make the box around every building that the maps load first, so Autark keeps their layers whole.",
         "metadata": {
           "keywords": [],
-          "widgets": [
-            {
-              "name": "month",
-              "type": "choice",
-              "label": "Month (when Period is Month)",
-              "default": "Dec",
-              "options": {
-                "choices": [
-                  "Jan",
-                  "Feb",
-                  "Mar",
-                  "Apr",
-                  "May",
-                  "Jun",
-                  "Jul",
-                  "Aug",
-                  "Sep",
-                  "Oct",
-                  "Nov",
-                  "Dec"
-                ],
-                "display": "dropdown"
-              }
-            }
-          ],
-          "packageTemplateLabel": "Pick a month (for Month)"
+          "packageTemplateLabel": "Map extent (keeps layers whole)"
         },
-        "title": "Pick a month (for Month)",
+        "title": "Map extent (keeps layers whole)"
+      },
+      {
+        "id": "6eaa947f-44ae-52e9-9c1d-ab93da3bf2d1",
+        "type": "curio.builtin/computation-analysis",
+        "x": 1290,
+        "y": -900,
+        "content": "import geopandas as gpd\nimport numpy as np\nimport shapely\nfrom shapely.geometry import box\n\n# This scenario's buildings (input_0) as the GPU steps read them, one feature:\n# heights, the roof over each cell of the ground grid (input_1), 0 where no\n# building stands, row by row from the south; tallest, the highest roof; and\n# spots, the centres of Block 1259's open-ground cells. A cell's height is the\n# roof of the building its centre lies in, the rule the grid drops cells by.\nbuildings, grid = input_0, input_1\nfirst = grid.iloc[0]\nutm = f\"EPSG:{int(first['epsg'])}\"\nwest, south, cell = float(first[\"grid_west\"]), float(first[\"grid_south\"]), float(first[\"cell\"])\ncols, rows = int(first[\"cols\"]), int(first[\"rows\"])\ncol, row = np.meshgrid(np.arange(cols), np.arange(rows))\ncentres = shapely.points(west + (col.ravel() + 0.5) * cell, south + (row.ravel() + 0.5) * cell)\nroofs = buildings.to_crs(utm)\ncentre, roof = shapely.STRtree(roofs.geometry.values).query(centres, predicate=\"within\")\nheights = np.zeros(rows * cols)\nnp.maximum.at(heights, centre, roofs[\"height\"].to_numpy(dtype=float)[roof])\non_block = grid[grid[\"on_block\"] == 1]\nprepared = gpd.GeoDataFrame(\n    {\n        \"heights\": [np.round(heights.reshape(rows, cols), 2).tolist()],\n        \"tallest\": [float(heights.max())],\n        \"spots\": [on_block[[\"x\", \"y\"]].to_numpy(dtype=float).tolist()],\n    },\n    geometry=[box(west, south, west + cols * cell, south + rows * cell)], crs=utm,\n).to_crs(4326)\nprepared.metadata = {\"layerType\": \"polygons\"}\nreturn prepared\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Draw this scenario's buildings into a heights grid on the ground cells, with Block 1259's open cells as the spots the block step reads.",
+        "metadata": {
+          "keywords": [],
+          "packageTemplateLabel": "Prepare buildings for the GPU"
+        },
+        "title": "Prepare buildings for the GPU"
+      },
+      {
+        "id": "7e4abb6d-a6df-538b-ba78-eff580600cbd",
+        "type": "curio.builtin/autk-grammar",
+        "x": 1935,
+        "y": -900,
+        "content": "{\n  \"compute\": [\n    {\n      \"dataRef\": \"[!! input_0 !!]\",\n      \"attributes\": {\n        \"x\": \"properties.x\",\n        \"y\": \"properties.y\"\n      },\n      \"uniforms\": {\n        \"tallest\": {\n          \"fromFeature\": {\n            \"layer\": \"[!! input_1 !!]\",\n            \"path\": \"properties.tallest\"\n          }\n        }\n      },\n      \"uniformMatrices\": {\n        \"heights\": {\n          \"fromFeature\": {\n            \"layer\": \"[!! input_1 !!]\",\n            \"path\": \"properties.heights\"\n          }\n        },\n        \"steps\": {\n          \"fromFeature\": {\n            \"layer\": \"[!! input_2 !!]\",\n            \"path\": \"properties.steps\"\n          },\n          \"cols\": 4\n        }\n      },\n      \"outputColumnName\": \"shadow_min\",\n      \"wglsFunction\": [\n        \"// Minutes this ground cell spends in shadow over the day: at each step\",\n        \"// (steps: toward east, toward north, cot of the elevation, minutes), the\",\n        \"// ray from the cell toward the sun across the heights grid. A cell under\",\n        \"// a roof in this scenario gets -1, and the next node leaves it out.\",\n        \"let own = heights[u32(floor(y / 3.0)) * heights_cols + u32(floor(x / 3.0))];\",\n        \"if (own > 0.0) { return -1.0; }\",\n        \"var total: f32 = 0.0;\",\n        \"for (var s = 0u; s < steps_rows; s++) {\",\n        \"    let sx = steps[s * 4u];\",\n        \"    let sy = steps[s * 4u + 1u];\",\n        \"    let cot = steps[s * 4u + 2u];\",\n        \"    var shaded = false;\",\n        \"    for (var t: f32 = 1.5; t <= tallest * cot; t += 1.5) {\",\n        \"        let col = i32(floor((x + sx * t) / 3.0));\",\n        \"        let row = i32(floor((y + sy * t) / 3.0));\",\n        \"        if (col < 0 || row < 0 || col >= i32(heights_cols) || row >= i32(heights_rows)) { break; }\",\n        \"        if (heights[u32(row) * heights_cols + u32(col)] * cot > t) { shaded = true; break; }\",\n        \"    }\",\n        \"    if (shaded) { total += steps[s * 4u + 3u]; }\",\n        \"}\",\n        \"return total;\"\n      ]\n    }\n  ]\n}\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "On the GPU, march from every ground cell toward the sun at every 10-minute step of the day and add up the minutes a roof blocks it.",
+        "metadata": {
+          "keywords": [],
+          "packageTemplateLabel": "Cast sun rays on the GPU"
+        },
+        "title": "Cast sun rays on the GPU"
+      },
+      {
+        "id": "50a5d9e8-a6f1-5386-b26a-4ad8e5076c17",
+        "type": "curio.builtin/autk-grammar",
+        "x": 1935,
+        "y": -450,
+        "content": "{\n  \"compute\": [\n    {\n      \"dataRef\": \"[!! input_0 !!]\",\n      \"attributes\": {\n        \"sx\": \"properties.east\",\n        \"sy\": \"properties.north\",\n        \"cot\": \"properties.cot\"\n      },\n      \"uniforms\": {\n        \"tallest\": {\n          \"fromFeature\": {\n            \"layer\": \"[!! input_1 !!]\",\n            \"path\": \"properties.tallest\"\n          }\n        }\n      },\n      \"uniformMatrices\": {\n        \"heights\": {\n          \"fromFeature\": {\n            \"layer\": \"[!! input_1 !!]\",\n            \"path\": \"properties.heights\"\n          }\n        },\n        \"spots\": {\n          \"fromFeature\": {\n            \"layer\": \"[!! input_1 !!]\",\n            \"path\": \"properties.spots\"\n          },\n          \"cols\": 2\n        }\n      },\n      \"outputColumnName\": \"share\",\n      \"wglsFunction\": [\n        \"// The share of Block 1259's open ground in shadow at this step (in %):\",\n        \"// from each of its spots (spots: x, y), the ray toward the sun, marched\",\n        \"// across the heights grid as on the map.\",\n        \"var dark: f32 = 0.0;\",\n        \"for (var p = 0u; p < spots_rows; p++) {\",\n        \"    let px = spots[p * 2u];\",\n        \"    let py = spots[p * 2u + 1u];\",\n        \"    var shaded = false;\",\n        \"    for (var t: f32 = 1.5; t <= tallest * cot; t += 1.5) {\",\n        \"        let col = i32(floor((px + sx * t) / 3.0));\",\n        \"        let row = i32(floor((py + sy * t) / 3.0));\",\n        \"        if (col < 0 || row < 0 || col >= i32(heights_cols) || row >= i32(heights_rows)) { break; }\",\n        \"        if (heights[u32(row) * heights_cols + u32(col)] * cot > t) { shaded = true; break; }\",\n        \"    }\",\n        \"    if (shaded) { dark += 1.0; }\",\n        \"}\",\n        \"return 100.0 * dark / f32(max(spots_rows, 1u));\"\n      ]\n    }\n  ]\n}\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "On the GPU, at every step of the day, find the share of Block 1259's open ground a roof keeps from the sun.",
+        "metadata": {
+          "keywords": [],
+          "packageTemplateLabel": "Cast sun rays on Block 1259"
+        },
+        "title": "Cast sun rays on Block 1259"
+      },
+      {
+        "id": "755fbc3c-68d1-50cf-ae8e-f72f9dac8413",
+        "type": "curio.builtin/computation-analysis",
+        "x": 2580,
+        "y": -900,
+        "content": "import pandas as pd\n\n# The ground cells with the minutes the GPU step found each in shadow that\n# day (shadow_min) and the share of the day's window that is (shadow_share,\n# in %). The step hands on the cells, input_0's first layer, with its result\n# under compute, and the day's steps as its third layer. A cell it marked -1\n# lies under a roof in this scenario, so it is left out.\ncells = [!! input_0:input_0 !!]\nsteps = [!! input_0:input_2 !!]\n# The GPU step hands its layers on as GeoJSON, in longitude and latitude.\nif cells.crs is None:\n    cells = cells.set_crs(4326)\nif \"shadow_min\" not in cells.columns:\n    cells[\"shadow_min\"] = [row.get(\"shadow_min\") if isinstance(row, dict) else None for row in cells[\"compute\"]]\ncells[\"shadow_min\"] = pd.to_numeric(cells[\"shadow_min\"])\ncells = cells[cells[\"shadow_min\"] >= 0].copy()\nwindow = float(pd.to_numeric(steps[\"minutes\"]).sum())\ncells[\"shadow_share\"] = 100 * cells[\"shadow_min\"] / window\ncells = cells[[\"col\", \"row\", \"x\", \"y\", \"on_block\", \"shadow_min\", \"shadow_share\", \"geometry\"]]\ncells.metadata = {\"layerType\": \"polygons\"}\nreturn cells\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Keep each open-ground cell's minutes in shadow and their share of the day's window.",
+        "metadata": {
+          "keywords": [],
+          "packageTemplateLabel": "Read shadow per cell"
+        },
+        "title": "Read shadow per cell"
+      },
+      {
+        "id": "ca233f8e-302e-5e89-977a-c93dd5f2abba",
+        "type": "curio.builtin/computation-analysis",
+        "x": 2580,
+        "y": -450,
+        "content": "import pandas as pd\n\n# The share of Block 1259's open ground in shadow at each step of the day\n# (share, in %), with the step's time and minutes and the day's window, as a\n# table the comparison reads. The GPU step hands on the steps, input_0's\n# first layer, with its result under compute.\nsteps = [!! input_0:input_0 !!]\nif \"share\" not in steps.columns:\n    steps[\"share\"] = [row.get(\"share\") if isinstance(row, dict) else None for row in steps[\"compute\"]]\nreturn pd.DataFrame({\n    \"time\": steps[\"time\"],\n    \"clock\": steps[\"clock\"],\n    \"share\": pd.to_numeric(steps[\"share\"]),\n    \"minutes\": pd.to_numeric(steps[\"minutes\"]),\n    \"day\": steps[\"day\"],\n    \"window_from\": steps[\"window_from\"],\n    \"window_to\": steps[\"window_to\"],\n})\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Keep the share of Block 1259's open ground in shadow at each step, with its time.",
+        "metadata": {
+          "keywords": [],
+          "packageTemplateLabel": "Read shadow on the block per step"
+        },
+        "title": "Read shadow on the block per step"
+      },
+      {
+        "id": "6336c9a7-c75a-527f-9b35-254eb952b512",
+        "type": "curio.builtin/computation-analysis",
+        "x": 3225,
+        "y": -900,
+        "content": "# What the map colors: the cells in shadow at all that day, by the share of\n# the day's window they spend in it (in %). The map sets the scale from 0 to\n# 100, so the two scenarios' maps color a share alike.\nshown = input_0[input_0[\"shadow_share\"] > 0].copy()\nshown.metadata = {\"layerType\": \"polygons\"}\nreturn shown\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Keep the cells in shadow at all for the map.",
+        "metadata": {
+          "keywords": [],
+          "packageTemplateLabel": "Keep shaded cells for the map"
+        },
+        "title": "Keep shaded cells for the map"
+      },
+      {
+        "id": "58433a36-c808-5c66-98dc-1b82661d8944",
+        "type": "curio.builtin/autk-grammar",
+        "x": 3870,
+        "y": -900,
+        "content": "{\n  \"map\": {\n    \"layerRefs\": [\n      {\n        \"dataRef\": \"[!! input_0 !!]\",\n        \"isSkip\": true\n      },\n      {\n        \"dataRef\": \"[!! input_4 !!]\",\n        \"color\": \"#d5d9df\",\n        \"stroke\": false,\n        \"title\": \"Streets\"\n      },\n      {\n        \"dataRef\": \"[!! input_2 !!]\",\n        \"selectFields\": [\n          \"building_id\"\n        ],\n        \"getFnv\": \"status\",\n        \"getFnvType\": \"categorical\",\n        \"colorMapInterpolator\": \"schemeTableau10\",\n        \"title\": \"Building\"\n      },\n      {\n        \"dataRef\": \"[!! input_1 !!]\",\n        \"isPick\": true,\n        \"getFnv\": \"shadow_share\",\n        \"getFnvType\": \"quantitative\",\n        \"isColorMap\": true,\n        \"colorMapInterpolator\": \"interpolateRdPu\",\n        \"colorMapRange\": [\n          0,\n          100\n        ],\n        \"stroke\": false,\n        \"opacity\": 0.9,\n        \"title\": \"Shadow (% of the day's window)\"\n      },\n      {\n        \"dataRef\": \"[!! input_3 !!]\",\n        \"color\": \"#ffd166\",\n        \"stroke\": \"#e09f00\",\n        \"opacity\": 0.4,\n        \"title\": \"Block 1259\"\n      }\n    ]\n  }\n}\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Map the shadow on the open ground without the proposed building, with the buildings, Block 1259 and the streets.",
+        "metadata": {
+          "keywords": [],
+          "packageTemplateLabel": "Map: without the proposed building"
+        },
+        "title": "Map: without the proposed building",
+        "width": 980,
+        "height": 700,
         "dashboardPinned": true,
-        "dashboardX": -215,
-        "dashboardY": 404,
-        "dashboardWidth": 382,
-        "dashboardHeight": 172
+        "dashboardX": 0,
+        "dashboardY": 0,
+        "dashboardWidth": 420,
+        "dashboardHeight": 380
       },
       {
         "id": "cc3e211a-6d1f-5b77-8afa-0918a1378fc0",
         "type": "curio.builtin/edit-features",
-        "x": 620,
-        "y": -109,
+        "x": 645,
+        "y": 1350,
         "content": "# Map Editor writes this code from its edit list: each edit, in the\n# order it was made, on the features whose key is one of its ids. It is\n# written again when the list changes.\nreturn curio_edit_features(input_0, [\n    {\"op\": \"add\", \"id\": 900000001, \"geometry\": {\"type\": \"Polygon\", \"coordinates\": [[[-73.9560346, 40.6694543], [-73.9557217, 40.6693888], [-73.9555914, 40.6697498], [-73.9559044, 40.6698147], [-73.9558949, 40.6698412], [-73.9555471, 40.669769], [-73.9557013, 40.6693418], [-73.9560489, 40.6694146], [-73.9560346, 40.6694543]]]}, \"crs\": \"EPSG:4326\", \"values\": {\"height\": 41.1, \"status\": \"Proposed: 1550 Bedford Ave\"}, \"label\": \"Base to 135 ft, 30 ft back from Eastern Parkway\"},\n    {\"op\": \"add\", \"id\": 900000002, \"geometry\": {\"type\": \"Polygon\", \"coordinates\": [[[-73.9555914, 40.6697498], [-73.9557217, 40.6693888], [-73.9560346, 40.6694543], [-73.9559946, 40.6695649], [-73.9559044, 40.6698147], [-73.9555914, 40.6697498]]]}, \"crs\": \"EPSG:4326\", \"values\": {\"height\": 56.4, \"status\": \"Proposed: 1550 Bedford Ave\"}, \"label\": \"Upper floors to 185 ft, set back above the base\"},\n], key=\"building_id\")\n",
         "out": "DEFAULT",
         "in": "DEFAULT",
@@ -175,168 +245,389 @@
         },
         "title": "Add proposed tower (1550 Bedford Ave)",
         "dashboardPinned": true,
-        "dashboardX": 186,
-        "dashboardY": 38,
-        "dashboardWidth": 448,
-        "dashboardHeight": 541
+        "dashboardX": 260,
+        "dashboardY": 390,
+        "dashboardWidth": 340,
+        "dashboardHeight": 330
       },
       {
         "id": "72b34012-476a-50d2-abf3-f6c271a50f54",
         "type": "curio.builtin/computation-analysis",
         "x": 1290,
-        "y": 0,
-        "content": "import geopandas as gpd\nimport shapely\nfrom shapely.geometry import box\n\n# The proposed building as the GPU shader reads it, one feature for the\n# whole building: corners, every part's outline in metres from the\n# building's centre (x east, y north), counter-clockwise and not closed, one\n# part after another; and parts, a row per part: its first corner, its\n# number of corners and its height in metres. A part is drawn as its convex\n# outline, which casts the shadow a U-shaped base does once the taller part\n# inside it is there too. input_0 is the buildings with the proposed one.\nbuildings = input_0\nutm = buildings.estimate_utm_crs()\nproposed = buildings[buildings[\"status\"] != \"Existing\"].to_crs(utm)\norigin = proposed.union_all().centroid\ncorners, parts = [], []\nfor outline, height in zip(proposed.geometry, proposed[\"height\"]):\n    hull = shapely.geometry.polygon.orient(outline.convex_hull, sign=1.0)\n    ring = [(x - origin.x, y - origin.y) for x, y in list(hull.exterior.coords)[:-1]]\n    parts.append([len(corners), len(ring), float(height)])\n    corners.extend([list(corner) for corner in ring])\ntower = gpd.GeoDataFrame(\n    {\"corners\": [corners], \"parts\": [parts], \"height_m\": [float(proposed[\"height\"].max())]},\n    geometry=[proposed.union_all()], crs=utm,\n).to_crs(buildings.crs)\ntower.metadata = {\"layerType\": \"polygons\"}\nreturn tower\n",
+        "y": 1350,
+        "content": "import geopandas as gpd\nimport numpy as np\nimport shapely\nfrom shapely.geometry import box\n\n# This scenario's buildings (input_0) as the GPU steps read them, one feature:\n# heights, the roof over each cell of the ground grid (input_1), 0 where no\n# building stands, row by row from the south; tallest, the highest roof; and\n# spots, the centres of Block 1259's open-ground cells. A cell's height is the\n# roof of the building its centre lies in, the rule the grid drops cells by.\nbuildings, grid = input_0, input_1\nfirst = grid.iloc[0]\nutm = f\"EPSG:{int(first['epsg'])}\"\nwest, south, cell = float(first[\"grid_west\"]), float(first[\"grid_south\"]), float(first[\"cell\"])\ncols, rows = int(first[\"cols\"]), int(first[\"rows\"])\ncol, row = np.meshgrid(np.arange(cols), np.arange(rows))\ncentres = shapely.points(west + (col.ravel() + 0.5) * cell, south + (row.ravel() + 0.5) * cell)\nroofs = buildings.to_crs(utm)\ncentre, roof = shapely.STRtree(roofs.geometry.values).query(centres, predicate=\"within\")\nheights = np.zeros(rows * cols)\nnp.maximum.at(heights, centre, roofs[\"height\"].to_numpy(dtype=float)[roof])\non_block = grid[grid[\"on_block\"] == 1]\nprepared = gpd.GeoDataFrame(\n    {\n        \"heights\": [np.round(heights.reshape(rows, cols), 2).tolist()],\n        \"tallest\": [float(heights.max())],\n        \"spots\": [on_block[[\"x\", \"y\"]].to_numpy(dtype=float).tolist()],\n    },\n    geometry=[box(west, south, west + cols * cell, south + rows * cell)], crs=utm,\n).to_crs(4326)\nprepared.metadata = {\"layerType\": \"polygons\"}\nreturn prepared\n",
         "out": "DEFAULT",
         "in": "DEFAULT",
-        "goal": "Hand the proposed building's parts to the shader: their corners in metres and their heights.",
+        "goal": "Draw this scenario's buildings into a heights grid on the ground cells, with Block 1259's open cells as the spots the block step reads.",
         "metadata": {
           "keywords": [],
-          "packageTemplateLabel": "Prepare tower for the GPU"
+          "copiedFrom": [
+            "6eaa947f-44ae-52e9-9c1d-ab93da3bf2d1"
+          ],
+          "packageTemplateLabel": "Prepare buildings for the GPU"
         },
-        "title": "Prepare tower for the GPU"
-      },
-      {
-        "id": "e891762d-1198-5a8c-b43a-b41b22582249",
-        "type": "curio.builtin/computation-analysis",
-        "x": 1290,
-        "y": 450,
-        "content": "import calendar\nimport datetime\n\nimport geopandas as gpd\nimport numpy as np\nimport shapely\n\n# The ground the proposed building's shadow is accumulated on: square cells of\n# CELL metres over the area around the buildings. For the GPU shader, each\n# cell holds its centre in metres from the proposed building's centre (x east,\n# y north) and the days of the year the selection covers (first_day,\n# last_day). on_block says whether the cell lies on Block 1259, input_1;\n# input_0 is the buildings with the proposed one added.\nCELL = 3\nYEAR = 2027\nbuildings, block = input_0, input_1\nperiod, date, month = [!! @period !!], [!! @date !!], [!! @month !!]\n\n# The days the selection covers: one date, a month, or the whole year.\nif period == \"Date\":\n    day = datetime.date.fromisoformat(str(date)[:10]).replace(year=YEAR)\n    first = last = day.timetuple().tm_yday\n    label = day.strftime(\"%b %d\")\nelif period == \"Month\":\n    number = list(calendar.month_abbr).index(month)\n    first = datetime.date(YEAR, number, 1).timetuple().tm_yday\n    last = first + calendar.monthrange(YEAR, number)[1] - 1\n    label = calendar.month_name[number]\nelse:\n    first, last, label = 1, 365, \"The whole year\"\n\n# Metres, in the buildings' UTM zone, centred on the proposed building.\nutm = buildings.estimate_utm_crs()\nproposed = buildings[buildings[\"status\"] != \"Existing\"].to_crs(utm)\norigin = proposed.union_all().centroid\nwest, south, east, north = buildings.to_crs(utm).total_bounds\nxs, ys = np.meshgrid(np.arange(west, east, CELL), np.arange(south, north, CELL))\nxs, ys = xs.ravel(), ys.ravel()\ncells = gpd.GeoDataFrame(\n    {\"x\": xs + CELL / 2 - origin.x, \"y\": ys + CELL / 2 - origin.y},\n    geometry=shapely.box(xs, ys, xs + CELL, ys + CELL), crs=utm,\n)\ncentres = cells.geometry.centroid\ncells[\"on_block\"] = centres.within(block.to_crs(utm).union_all()).astype(int)\n# Under the proposed building itself, where its shadow does not count.\ncells[\"under_building\"] = centres.within(proposed.union_all()).astype(int)\ncells[\"first_day\"], cells[\"last_day\"], cells[\"selection\"] = first, last, label\ncells[\"cell_m2\"] = CELL * CELL\ncells = cells.to_crs(buildings.crs)\n# Tell the Autark map these are areas, so it fills them.\ncells.metadata = {\"layerType\": \"polygons\"}\nreturn cells\n",
-        "out": "DEFAULT",
-        "in": "DEFAULT",
-        "goal": "Cover the area with 3 m ground cells and give them the days the selection covers.",
-        "metadata": {
-          "keywords": [],
-          "packageTemplateLabel": "Make ground grid and selected days"
-        },
-        "title": "Make ground grid and selected days"
+        "title": "Prepare buildings for the GPU"
       },
       {
         "id": "905ccc99-694a-519b-93b4-5f22778d5c32",
         "type": "curio.builtin/autk-grammar",
-        "x": 1957,
-        "y": 167,
-        "content": "{\n  \"compute\": [\n    {\n      \"dataRef\": \"[!! input_0 !!]\",\n      \"attributes\": {\n        \"x\": \"properties.x\",\n        \"y\": \"properties.y\",\n        \"first_day\": \"properties.first_day\",\n        \"last_day\": \"properties.last_day\"\n      },\n      \"uniforms\": {\n        \"latitude\": 40.6696\n      },\n      \"uniformMatrices\": {\n        \"corners\": {\n          \"fromFeature\": {\n            \"layer\": \"[!! input_1 !!]\",\n            \"path\": \"properties.corners\"\n          },\n          \"cols\": 2\n        },\n        \"parts\": {\n          \"fromFeature\": {\n            \"layer\": \"[!! input_1 !!]\",\n            \"path\": \"properties.parts\"\n          },\n          \"cols\": 3\n        }\n      },\n      \"outputColumnName\": \"shadow_min\",\n      \"wglsFunction\": [\n        \"// Minutes the proposed building shades this cell over first_day..last_day:\",\n        \"// the sun every 10 minutes of solar time, the cell in shadow when the\",\n        \"// ray from it toward the sun passes through a part below the part's height.\",\n        \"let pi = 3.14159265;\",\n        \"let lat = radians(latitude);\",\n        \"var total: f32 = 0.0;\",\n        \"for (var d = u32(first_day); d <= u32(last_day); d++) {\",\n        \"    // The sun's declination (Cooper's formula).\",\n        \"    let dec = radians(23.44) * sin(2.0 * pi * (284.0 + f32(d)) / 365.0);\",\n        \"    for (var k = 0u; k < 144u; k++) {\",\n        \"        let hour = radians((f32(k) * 10.0 + 5.0 - 720.0) / 4.0);\",\n        \"        let up = sin(lat) * sin(dec) + cos(lat) * cos(dec) * cos(hour);\",\n        \"        if (up <= 0.0) { continue; }\",\n        \"        let toward_e = -cos(dec) * sin(hour);\",\n        \"        let toward_n = cos(lat) * sin(dec) - sin(lat) * cos(dec) * cos(hour);\",\n        \"        let level = sqrt(toward_e * toward_e + toward_n * toward_n);\",\n        \"        let sx = toward_e / level;\",\n        \"        let sy = toward_n / level;\",\n        \"        var shaded = false;\",\n        \"        for (var p = 0u; p < parts_rows; p++) {\",\n        \"            let start = u32(parts[p * 3u]);\",\n        \"            let count = u32(parts[p * 3u + 1u]);\",\n        \"            // How far toward the sun the part can still block it.\",\n        \"            let reach = parts[p * 3u + 2u] * level / up;\",\n        \"            var lo: f32 = 0.0;\",\n        \"            var hi: f32 = reach;\",\n        \"            var crosses = true;\",\n        \"            for (var i = 0u; i < count; i++) {\",\n        \"                let a = start + i;\",\n        \"                let b = start + (i + 1u) % count;\",\n        \"                let ax = corners[a * 2u];\",\n        \"                let ay = corners[a * 2u + 1u];\",\n        \"                let nx = corners[b * 2u + 1u] - ay;\",\n        \"                let ny = ax - corners[b * 2u];\",\n        \"                let num = nx * (ax - x) + ny * (ay - y);\",\n        \"                let den = nx * sx + ny * sy;\",\n        \"                if (abs(den) < 1e-9) {\",\n        \"                    if (num < 0.0) { crosses = false; break; }\",\n        \"                } else if (den > 0.0) {\",\n        \"                    hi = min(hi, num / den);\",\n        \"                } else {\",\n        \"                    lo = max(lo, num / den);\",\n        \"                }\",\n        \"            }\",\n        \"            if (crosses && lo <= hi) { shaded = true; break; }\",\n        \"        }\",\n        \"        if (shaded) { total += 10.0; }\",\n        \"    }\",\n        \"}\",\n        \"return total;\"\n      ]\n    }\n  ]\n}\n",
+        "x": 1935,
+        "y": 1350,
+        "content": "{\n  \"compute\": [\n    {\n      \"dataRef\": \"[!! input_0 !!]\",\n      \"attributes\": {\n        \"x\": \"properties.x\",\n        \"y\": \"properties.y\"\n      },\n      \"uniforms\": {\n        \"tallest\": {\n          \"fromFeature\": {\n            \"layer\": \"[!! input_1 !!]\",\n            \"path\": \"properties.tallest\"\n          }\n        }\n      },\n      \"uniformMatrices\": {\n        \"heights\": {\n          \"fromFeature\": {\n            \"layer\": \"[!! input_1 !!]\",\n            \"path\": \"properties.heights\"\n          }\n        },\n        \"steps\": {\n          \"fromFeature\": {\n            \"layer\": \"[!! input_2 !!]\",\n            \"path\": \"properties.steps\"\n          },\n          \"cols\": 4\n        }\n      },\n      \"outputColumnName\": \"shadow_min\",\n      \"wglsFunction\": [\n        \"// Minutes this ground cell spends in shadow over the day: at each step\",\n        \"// (steps: toward east, toward north, cot of the elevation, minutes), the\",\n        \"// ray from the cell toward the sun across the heights grid. A cell under\",\n        \"// a roof in this scenario gets -1, and the next node leaves it out.\",\n        \"let own = heights[u32(floor(y / 3.0)) * heights_cols + u32(floor(x / 3.0))];\",\n        \"if (own > 0.0) { return -1.0; }\",\n        \"var total: f32 = 0.0;\",\n        \"for (var s = 0u; s < steps_rows; s++) {\",\n        \"    let sx = steps[s * 4u];\",\n        \"    let sy = steps[s * 4u + 1u];\",\n        \"    let cot = steps[s * 4u + 2u];\",\n        \"    var shaded = false;\",\n        \"    for (var t: f32 = 1.5; t <= tallest * cot; t += 1.5) {\",\n        \"        let col = i32(floor((x + sx * t) / 3.0));\",\n        \"        let row = i32(floor((y + sy * t) / 3.0));\",\n        \"        if (col < 0 || row < 0 || col >= i32(heights_cols) || row >= i32(heights_rows)) { break; }\",\n        \"        if (heights[u32(row) * heights_cols + u32(col)] * cot > t) { shaded = true; break; }\",\n        \"    }\",\n        \"    if (shaded) { total += steps[s * 4u + 3u]; }\",\n        \"}\",\n        \"return total;\"\n      ]\n    }\n  ]\n}\n",
         "out": "DEFAULT",
         "in": "DEFAULT",
-        "goal": "On the GPU, every 10 minutes of every selected day, find the ground cells the proposed building blocks the sun from, and accumulate their minutes of shadow.",
+        "goal": "On the GPU, march from every ground cell toward the sun at every 10-minute step of the day and add up the minutes a roof blocks it.",
         "metadata": {
           "keywords": [],
+          "copiedFrom": [
+            "7e4abb6d-a6df-538b-ba78-eff580600cbd"
+          ],
           "packageTemplateLabel": "Cast sun rays on the GPU"
         },
         "title": "Cast sun rays on the GPU"
       },
       {
+        "id": "85ff60ea-93e6-551d-aae1-eeac331a801c",
+        "type": "curio.builtin/autk-grammar",
+        "x": 1935,
+        "y": 1800,
+        "content": "{\n  \"compute\": [\n    {\n      \"dataRef\": \"[!! input_0 !!]\",\n      \"attributes\": {\n        \"sx\": \"properties.east\",\n        \"sy\": \"properties.north\",\n        \"cot\": \"properties.cot\"\n      },\n      \"uniforms\": {\n        \"tallest\": {\n          \"fromFeature\": {\n            \"layer\": \"[!! input_1 !!]\",\n            \"path\": \"properties.tallest\"\n          }\n        }\n      },\n      \"uniformMatrices\": {\n        \"heights\": {\n          \"fromFeature\": {\n            \"layer\": \"[!! input_1 !!]\",\n            \"path\": \"properties.heights\"\n          }\n        },\n        \"spots\": {\n          \"fromFeature\": {\n            \"layer\": \"[!! input_1 !!]\",\n            \"path\": \"properties.spots\"\n          },\n          \"cols\": 2\n        }\n      },\n      \"outputColumnName\": \"share\",\n      \"wglsFunction\": [\n        \"// The share of Block 1259's open ground in shadow at this step (in %):\",\n        \"// from each of its spots (spots: x, y), the ray toward the sun, marched\",\n        \"// across the heights grid as on the map.\",\n        \"var dark: f32 = 0.0;\",\n        \"for (var p = 0u; p < spots_rows; p++) {\",\n        \"    let px = spots[p * 2u];\",\n        \"    let py = spots[p * 2u + 1u];\",\n        \"    var shaded = false;\",\n        \"    for (var t: f32 = 1.5; t <= tallest * cot; t += 1.5) {\",\n        \"        let col = i32(floor((px + sx * t) / 3.0));\",\n        \"        let row = i32(floor((py + sy * t) / 3.0));\",\n        \"        if (col < 0 || row < 0 || col >= i32(heights_cols) || row >= i32(heights_rows)) { break; }\",\n        \"        if (heights[u32(row) * heights_cols + u32(col)] * cot > t) { shaded = true; break; }\",\n        \"    }\",\n        \"    if (shaded) { dark += 1.0; }\",\n        \"}\",\n        \"return 100.0 * dark / f32(max(spots_rows, 1u));\"\n      ]\n    }\n  ]\n}\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "On the GPU, at every step of the day, find the share of Block 1259's open ground a roof keeps from the sun.",
+        "metadata": {
+          "keywords": [],
+          "copiedFrom": [
+            "50a5d9e8-a6f1-5386-b26a-4ad8e5076c17"
+          ],
+          "packageTemplateLabel": "Cast sun rays on Block 1259"
+        },
+        "title": "Cast sun rays on Block 1259"
+      },
+      {
         "id": "9439839c-cf4e-5d3f-b3a5-3977577f7e76",
         "type": "curio.builtin/computation-analysis",
         "x": 2580,
-        "y": 225,
-        "content": "import pandas as pd\n\n# The ground cells with the minutes the GPU step found the proposed building\n# shades each over the selection (shadow_min) and the same in hours\n# (shadow_h). The step hands on the cells, input_0's first layer, with its\n# result under compute; the cells under the building are left out.\ncells = [!! input_0:input_0 !!]\n# The GPU step hands its layers on as GeoJSON, in longitude and latitude.\nif cells.crs is None:\n    cells = cells.set_crs(4326)\nif \"shadow_min\" not in cells.columns:\n    cells[\"shadow_min\"] = [row.get(\"shadow_min\") if isinstance(row, dict) else None for row in cells[\"compute\"]]\ncells = cells[cells[\"under_building\"] == 0].copy()\ncells[\"shadow_min\"] = pd.to_numeric(cells[\"shadow_min\"]).fillna(0.0)\ncells[\"shadow_h\"] = cells[\"shadow_min\"] / 60\ncells = cells[[\"x\", \"y\", \"on_block\", \"selection\", \"cell_m2\", \"shadow_min\", \"shadow_h\", \"geometry\"]]\ncells.metadata = {\"layerType\": \"polygons\"}\nreturn cells\n",
+        "y": 1350,
+        "content": "import pandas as pd\n\n# The ground cells with the minutes the GPU step found each in shadow that\n# day (shadow_min) and the share of the day's window that is (shadow_share,\n# in %). The step hands on the cells, input_0's first layer, with its result\n# under compute, and the day's steps as its third layer. A cell it marked -1\n# lies under a roof in this scenario, so it is left out.\ncells = [!! input_0:input_0 !!]\nsteps = [!! input_0:input_2 !!]\n# The GPU step hands its layers on as GeoJSON, in longitude and latitude.\nif cells.crs is None:\n    cells = cells.set_crs(4326)\nif \"shadow_min\" not in cells.columns:\n    cells[\"shadow_min\"] = [row.get(\"shadow_min\") if isinstance(row, dict) else None for row in cells[\"compute\"]]\ncells[\"shadow_min\"] = pd.to_numeric(cells[\"shadow_min\"])\ncells = cells[cells[\"shadow_min\"] >= 0].copy()\nwindow = float(pd.to_numeric(steps[\"minutes\"]).sum())\ncells[\"shadow_share\"] = 100 * cells[\"shadow_min\"] / window\ncells = cells[[\"col\", \"row\", \"x\", \"y\", \"on_block\", \"shadow_min\", \"shadow_share\", \"geometry\"]]\ncells.metadata = {\"layerType\": \"polygons\"}\nreturn cells\n",
         "out": "DEFAULT",
         "in": "DEFAULT",
-        "goal": "Keep each ground cell's accumulated shadow, in minutes and hours.",
+        "goal": "Keep each open-ground cell's minutes in shadow and their share of the day's window.",
         "metadata": {
           "keywords": [],
+          "copiedFrom": [
+            "755fbc3c-68d1-50cf-ae8e-f72f9dac8413"
+          ],
           "packageTemplateLabel": "Read shadow per cell"
         },
         "title": "Read shadow per cell"
       },
       {
-        "id": "d89f7440-724b-578f-b68f-896974b76ade",
+        "id": "da085a5c-60a6-5023-80b0-1f5a1dfc0e06",
         "type": "curio.builtin/computation-analysis",
-        "x": 3220,
-        "y": 230,
-        "content": "import math\n\nimport geopandas as gpd\nimport pandas as pd\nfrom shapely.geometry import box\n\n# What the map colors: the cells the proposed building shades at all, by\n# hours of shadow, the scale topped at the 90th percentile of them so the\n# far reach of the shadow stays visible beside the cells next to the building,\n# which it shades almost all day. input_0 is the shadow per cell, input_1 the\n# buildings with the proposed one.\nshaded = input_0[input_0[\"shadow_h\"] > 0].copy()\nif len(shaded):\n    top = float(shaded[\"shadow_h\"].quantile(0.9))\n    shaded[\"shadow_shown\"] = shaded[\"shadow_h\"].clip(upper=top)\n    # Autark's legend runs from the layer's lowest value to its highest, so\n    # two small cells hidden under the proposed building hold the whole hours\n    # below and above them: the legend reads from the floor to the ceiling.\n    low, high = math.floor(shaded[\"shadow_shown\"].min()), math.ceil(shaded[\"shadow_shown\"].max())\n    tower = input_1[input_1[\"status\"] != \"Existing\"].to_crs(shaded.crs).union_all().centroid\n    side = 1e-6\n    anchors = gpd.GeoDataFrame(\n        {\"shadow_shown\": [float(low), float(high)]},\n        geometry=[box(tower.x - side, tower.y - side, tower.x, tower.y),\n                  box(tower.x, tower.y, tower.x + side, tower.y + side)],\n        crs=shaded.crs,\n    )\n    shaded = pd.concat([shaded, anchors], ignore_index=True)\nshaded.metadata = {\"layerType\": \"polygons\"}\nreturn shaded\n",
+        "x": 2580,
+        "y": 1800,
+        "content": "import pandas as pd\n\n# The share of Block 1259's open ground in shadow at each step of the day\n# (share, in %), with the step's time and minutes and the day's window, as a\n# table the comparison reads. The GPU step hands on the steps, input_0's\n# first layer, with its result under compute.\nsteps = [!! input_0:input_0 !!]\nif \"share\" not in steps.columns:\n    steps[\"share\"] = [row.get(\"share\") if isinstance(row, dict) else None for row in steps[\"compute\"]]\nreturn pd.DataFrame({\n    \"time\": steps[\"time\"],\n    \"clock\": steps[\"clock\"],\n    \"share\": pd.to_numeric(steps[\"share\"]),\n    \"minutes\": pd.to_numeric(steps[\"minutes\"]),\n    \"day\": steps[\"day\"],\n    \"window_from\": steps[\"window_from\"],\n    \"window_to\": steps[\"window_to\"],\n})\n",
         "out": "DEFAULT",
         "in": "DEFAULT",
-        "goal": "Keep the cells the building shades and set the map's color scale.",
+        "goal": "Keep the share of Block 1259's open ground in shadow at each step, with its time.",
         "metadata": {
           "keywords": [],
+          "copiedFrom": [
+            "ca233f8e-302e-5e89-977a-c93dd5f2abba"
+          ],
+          "packageTemplateLabel": "Read shadow on the block per step"
+        },
+        "title": "Read shadow on the block per step"
+      },
+      {
+        "id": "d89f7440-724b-578f-b68f-896974b76ade",
+        "type": "curio.builtin/computation-analysis",
+        "x": 3225,
+        "y": 1350,
+        "content": "# What the map colors: the cells in shadow at all that day, by the share of\n# the day's window they spend in it (in %). The map sets the scale from 0 to\n# 100, so the two scenarios' maps color a share alike.\nshown = input_0[input_0[\"shadow_share\"] > 0].copy()\nshown.metadata = {\"layerType\": \"polygons\"}\nreturn shown\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Keep the cells in shadow at all for the map.",
+        "metadata": {
+          "keywords": [],
+          "copiedFrom": [
+            "6336c9a7-c75a-527f-9b35-254eb952b512"
+          ],
           "packageTemplateLabel": "Keep shaded cells for the map"
         },
         "title": "Keep shaded cells for the map"
       },
       {
-        "id": "2be9fdd4-c902-5a3e-af89-e0ad66f45a2c",
-        "type": "curio.builtin/computation-analysis",
-        "x": 3215,
-        "y": -181,
-        "content": "import geopandas as gpd\nfrom shapely.geometry import box\n\n# The area the map shows, one box around every building. The map loads it\n# first and does not draw it: Autark clips every layer it loads after the\n# first to the first one's outline, so with this box first every layer stays\n# whole.\nreturn gpd.GeoDataFrame({\"area\": [\"map\"]}, geometry=[box(*input_0.total_bounds)], crs=input_0.crs)\n",
-        "out": "DEFAULT",
-        "in": "DEFAULT",
-        "goal": "Make the box around every building that the map loads first, so Autark keeps its layers whole.",
-        "metadata": {
-          "keywords": [],
-          "packageTemplateLabel": "Map extent (keeps layers whole)"
-        },
-        "title": "Map extent (keeps layers whole)"
-      },
-      {
-        "id": "c244e3a8-9f0a-5d6d-9309-a5938cc22427",
-        "type": "curio.builtin/computation-analysis",
-        "x": 3225,
-        "y": 675,
-        "content": "import pandas as pd\n\n# The selection's answer: the proposed building's shade on a spot of Block\n# 1259, on average over the whole block (a spot the shadow never reaches\n# counts as 0). It is also the sunlight that spot loses.\ncells = input_0\nminutes = float(cells.loc[cells[\"on_block\"] == 1, \"shadow_min\"].mean())\nreturn pd.DataFrame([{\n    \"Selection\": cells[\"selection\"].iloc[0],\n    \"Shade added on Block 1259\": f\"{minutes:.0f} min\" if minutes < 90 else f\"{minutes / 60:,.1f} h\",\n}])\n",
-        "out": "DEFAULT",
-        "in": "DEFAULT",
-        "goal": "Average the proposed building's shade over Block 1259's spots.",
-        "metadata": {
-          "keywords": [],
-          "packageTemplateLabel": "Average shade on Block 1259"
-        },
-        "title": "Average shade on Block 1259"
-      },
-      {
         "id": "6cb649f2-b091-5fcc-8214-1e76ee7b94e4",
         "type": "curio.builtin/autk-grammar",
-        "x": 3862,
-        "y": 12,
-        "content": "{\n  \"map\": {\n    \"layerRefs\": [\n      {\n        \"dataRef\": \"[!! input_0 !!]\",\n        \"isSkip\": true\n      },\n      {\n        \"dataRef\": \"[!! input_4 !!]\",\n        \"color\": \"#d5d9df\",\n        \"stroke\": false,\n        \"title\": \"Streets\"\n      },\n      {\n        \"dataRef\": \"[!! input_2 !!]\",\n        \"selectFields\": [\n          \"building_id\"\n        ],\n        \"getFnv\": \"status\",\n        \"getFnvType\": \"categorical\",\n        \"colorMapInterpolator\": \"schemeTableau10\",\n        \"title\": \"Building\"\n      },\n      {\n        \"dataRef\": \"[!! input_1 !!]\",\n        \"isPick\": true,\n        \"getFnv\": \"shadow_shown\",\n        \"getFnvType\": \"quantitative\",\n        \"isColorMap\": true,\n        \"colorMapInterpolator\": \"interpolateRdPu\",\n        \"stroke\": false,\n        \"opacity\": 0.9,\n        \"title\": \"Accumulated shadow (hours)\"\n      },\n      {\n        \"dataRef\": \"[!! input_3 !!]\",\n        \"color\": \"#ffd166\",\n        \"stroke\": \"#e09f00\",\n        \"opacity\": 0.4,\n        \"title\": \"Block 1259\"\n      }\n    ]\n  }\n}\n",
+        "x": 3870,
+        "y": 1350,
+        "content": "{\n  \"map\": {\n    \"layerRefs\": [\n      {\n        \"dataRef\": \"[!! input_0 !!]\",\n        \"isSkip\": true\n      },\n      {\n        \"dataRef\": \"[!! input_4 !!]\",\n        \"color\": \"#d5d9df\",\n        \"stroke\": false,\n        \"title\": \"Streets\"\n      },\n      {\n        \"dataRef\": \"[!! input_2 !!]\",\n        \"selectFields\": [\n          \"building_id\"\n        ],\n        \"getFnv\": \"status\",\n        \"getFnvType\": \"categorical\",\n        \"colorMapInterpolator\": \"schemeTableau10\",\n        \"title\": \"Building\"\n      },\n      {\n        \"dataRef\": \"[!! input_1 !!]\",\n        \"isPick\": true,\n        \"getFnv\": \"shadow_share\",\n        \"getFnvType\": \"quantitative\",\n        \"isColorMap\": true,\n        \"colorMapInterpolator\": \"interpolateRdPu\",\n        \"colorMapRange\": [\n          0,\n          100\n        ],\n        \"stroke\": false,\n        \"opacity\": 0.9,\n        \"title\": \"Shadow (% of the day's window)\"\n      },\n      {\n        \"dataRef\": \"[!! input_3 !!]\",\n        \"color\": \"#ffd166\",\n        \"stroke\": \"#e09f00\",\n        \"opacity\": 0.4,\n        \"title\": \"Block 1259\"\n      }\n    ]\n  }\n}\n",
         "out": "DEFAULT",
         "in": "DEFAULT",
-        "goal": "Map the proposed building's accumulated shadow for the selection, with Block 1259 highlighted, the proposed building in its own color and the other buildings and streets around it.",
+        "goal": "Map the shadow on the open ground with the proposed building, with the buildings, Block 1259 and the streets.",
         "metadata": {
           "keywords": [],
-          "packageTemplateLabel": "Map: tower's accumulated shadow"
+          "copiedFrom": [
+            "58433a36-c808-5c66-98dc-1b82661d8944"
+          ],
+          "packageTemplateLabel": "Map: with the proposed building"
         },
-        "title": "Map: tower's accumulated shadow",
+        "title": "Map: with the proposed building",
         "width": 980,
         "height": 700,
         "dashboardPinned": true,
-        "dashboardX": 641,
-        "dashboardY": 38,
-        "dashboardWidth": 526,
-        "dashboardHeight": 374
+        "dashboardX": 430,
+        "dashboardY": 0,
+        "dashboardWidth": 420,
+        "dashboardHeight": 380
+      },
+      {
+        "id": "d0649118-6943-5803-86a0-e9f3e56c8fb6",
+        "type": "curio.builtin/computation-analysis",
+        "x": 4915,
+        "y": 0,
+        "content": "# The shade the proposed building adds on each open-ground cell that day:\n# the minutes in shadow with it (input_1) less the minutes without it\n# (input_0), cell by cell. The cells under the building itself are not\n# ground with it, so they drop out.\nwithout, with_building = input_0, input_1\nadded = with_building.merge(without[[\"col\", \"row\", \"shadow_min\"]], on=[\"col\", \"row\"], suffixes=(\"\", \"_without\"))\nadded[\"added_min\"] = added[\"shadow_min\"] - added[\"shadow_min_without\"]\nadded = added[[\"col\", \"row\", \"x\", \"y\", \"on_block\", \"added_min\", \"geometry\"]]\nadded.metadata = {\"layerType\": \"polygons\"}\nreturn added\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Subtract each open-ground cell's minutes in shadow without the proposed building from its minutes with it.",
+        "metadata": {
+          "keywords": [],
+          "packageTemplateLabel": "Shade the tower adds"
+        },
+        "title": "Shade the tower adds"
+      },
+      {
+        "id": "93f86091-2454-52f6-920a-dd11f6e39cda",
+        "type": "curio.builtin/computation-analysis",
+        "x": 5560,
+        "y": 0,
+        "content": "import math\n\nimport geopandas as gpd\nimport pandas as pd\nfrom shapely.geometry import box\n\n# What the map colors: the cells the proposed building shades at all, by the\n# minutes it adds, the scale topped at the 90th percentile of them so the far\n# reach of its shadow stays visible beside the cells next to it, which it\n# shades almost all day. input_0 is the shade added per cell, input_1 the\n# buildings with the proposed one.\nshaded = input_0[input_0[\"added_min\"] > 0].copy()\nif len(shaded):\n    top = float(shaded[\"added_min\"].quantile(0.9))\n    shaded[\"added_shown\"] = shaded[\"added_min\"].clip(upper=top)\n    # Autark's legend runs from the layer's lowest value to its highest, so\n    # two small cells hidden under the proposed building hold the whole\n    # minutes below and above them: the legend reads from floor to ceiling.\n    low, high = math.floor(shaded[\"added_shown\"].min()), math.ceil(shaded[\"added_shown\"].max())\n    tower = input_1[input_1[\"status\"] != \"Existing\"].to_crs(shaded.crs).union_all().centroid\n    side = 1e-6\n    anchors = gpd.GeoDataFrame(\n        {\"added_shown\": [float(low), float(high)]},\n        geometry=[box(tower.x - side, tower.y - side, tower.x, tower.y),\n                  box(tower.x, tower.y, tower.x + side, tower.y + side)],\n        crs=shaded.crs,\n    )\n    shaded = pd.concat([shaded, anchors], ignore_index=True)\nshaded.metadata = {\"layerType\": \"polygons\"}\nreturn shaded\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Keep the cells the proposed building shades and set the map's color scale.",
+        "metadata": {
+          "keywords": [],
+          "packageTemplateLabel": "Keep added shade for the map"
+        },
+        "title": "Keep added shade for the map"
+      },
+      {
+        "id": "90e511a7-098e-5cbf-b7c3-759e11ef6439",
+        "type": "curio.builtin/autk-grammar",
+        "x": 6205,
+        "y": -450,
+        "content": "{\n  \"map\": {\n    \"layerRefs\": [\n      {\n        \"dataRef\": \"[!! input_0 !!]\",\n        \"isSkip\": true\n      },\n      {\n        \"dataRef\": \"[!! input_4 !!]\",\n        \"color\": \"#d5d9df\",\n        \"stroke\": false,\n        \"title\": \"Streets\"\n      },\n      {\n        \"dataRef\": \"[!! input_2 !!]\",\n        \"selectFields\": [\n          \"building_id\"\n        ],\n        \"getFnv\": \"status\",\n        \"getFnvType\": \"categorical\",\n        \"colorMapInterpolator\": \"schemeTableau10\",\n        \"title\": \"Building\"\n      },\n      {\n        \"dataRef\": \"[!! input_1 !!]\",\n        \"isPick\": true,\n        \"getFnv\": \"added_shown\",\n        \"getFnvType\": \"quantitative\",\n        \"isColorMap\": true,\n        \"colorMapInterpolator\": \"interpolateRdPu\",\n        \"stroke\": false,\n        \"opacity\": 0.9,\n        \"title\": \"Shade added (minutes)\"\n      },\n      {\n        \"dataRef\": \"[!! input_3 !!]\",\n        \"color\": \"#ffd166\",\n        \"stroke\": \"#e09f00\",\n        \"opacity\": 0.4,\n        \"title\": \"Block 1259\"\n      }\n    ]\n  }\n}\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Map the shade the proposed building adds that day, with Block 1259, the buildings and the streets.",
+        "metadata": {
+          "keywords": [],
+          "packageTemplateLabel": "Map: shade the tower adds"
+        },
+        "title": "Map: shade the tower adds",
+        "width": 980,
+        "height": 700,
+        "dashboardPinned": true,
+        "dashboardX": 860,
+        "dashboardY": 0,
+        "dashboardWidth": 420,
+        "dashboardHeight": 380
+      },
+      {
+        "id": "6920455d-0912-512e-8c3e-97d0ed207152",
+        "type": "curio.builtin/computation-analysis",
+        "x": 4915,
+        "y": 675,
+        "content": "import pandas as pd\n\n# The day on Block 1259's open ground in both scenarios: each one's average\n# time in shadow over the day's window (the share in shadow at each step,\n# times the step's minutes, summed), and what the proposed building adds.\n# input_0 is the scenario without the proposed building, input_1 the one\n# with it.\ndef duration(minutes):\n    hours, rest = divmod(round(minutes), 60)\n    if not hours:\n        return f\"{rest} min\"\n    return f\"{hours} h {rest} min\" if rest else f\"{hours} h\"\n\n\nwithout, with_building = input_0, input_1\ndark_without = float((without[\"share\"] / 100 * without[\"minutes\"]).sum())\ndark_with = float((with_building[\"share\"] / 100 * with_building[\"minutes\"]).sum())\nday = with_building.iloc[0]\nreturn pd.DataFrame([{\n    \"Day\": day[\"day\"],\n    \"From\": day[\"window_from\"],\n    \"To\": day[\"window_to\"],\n    \"Time counted\": duration(float(with_building[\"minutes\"].sum())),\n    \"Without the proposed building\": duration(dark_without),\n    \"With the proposed building\": duration(dark_with),\n    \"Added\": duration(dark_with - dark_without),\n}])\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Compare the day on Block 1259's open ground without and with the proposed building, and what it adds.",
+        "metadata": {
+          "keywords": [],
+          "packageTemplateLabel": "Compare the scenarios on Block 1259"
+        },
+        "title": "Compare the scenarios on Block 1259"
       },
       {
         "id": "cc1be78d-9348-5650-9a91-d98f08959fcd",
         "type": "curio.builtin/vis-simple",
-        "x": 3862,
-        "y": 774,
+        "x": 5560,
+        "y": 675,
         "content": "",
         "out": "DEFAULT",
         "in": "DEFAULT",
-        "goal": "Show the shade the proposed building adds on Block 1259 for the selection.",
+        "goal": "Show the day on Block 1259's open ground in both scenarios and the shade the proposed building adds.",
         "metadata": {
           "keywords": [],
-          "packageTemplateLabel": "Table: shade added on Block 1259"
+          "packageTemplateLabel": "Table: shadow on Block 1259"
         },
-        "title": "Table: shade added on Block 1259",
-        "width": 979,
-        "height": 162,
+        "title": "Table: shadow on Block 1259",
+        "width": 980,
+        "height": 150,
         "dashboardPinned": true,
-        "dashboardX": 641,
-        "dashboardY": 418,
-        "dashboardWidth": 526,
-        "dashboardHeight": 159
+        "dashboardX": 0,
+        "dashboardY": 730,
+        "dashboardWidth": 1280,
+        "dashboardHeight": 140
+      },
+      {
+        "id": "2b37c095-3ed8-5653-847f-28f3850733ee",
+        "type": "curio.builtin/vis-vega",
+        "x": 5560,
+        "y": 1125,
+        "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v5.json\",\n  \"data\": {\n    \"name\": \"[!! inputs !!]\"\n  },\n  \"mark\": {\n    \"type\": \"line\",\n    \"point\": true\n  },\n  \"encoding\": {\n    \"x\": {\n      \"field\": \"time\",\n      \"type\": \"temporal\",\n      \"scale\": {\n        \"type\": \"utc\"\n      },\n      \"axis\": {\n        \"format\": \"%-I %p\"\n      },\n      \"title\": \"Time (New York)\"\n    },\n    \"y\": {\n      \"field\": \"share\",\n      \"type\": \"quantitative\",\n      \"scale\": {\n        \"domain\": [\n          0,\n          100\n        ]\n      },\n      \"title\": \"Block 1259's open ground in shadow (%)\"\n    },\n    \"color\": {\n      \"field\": \"scenario_name\",\n      \"type\": \"nominal\",\n      \"title\": \"Scenario\",\n      \"scale\": [!! scenario colors !!],\n      \"sort\": [!! scenario order !!]\n    },\n    \"tooltip\": [\n      {\n        \"field\": \"scenario_name\",\n        \"type\": \"nominal\",\n        \"title\": \"Scenario\"\n      },\n      {\n        \"field\": \"clock\",\n        \"type\": \"nominal\",\n        \"title\": \"Time\"\n      },\n      {\n        \"field\": \"share\",\n        \"type\": \"quantitative\",\n        \"title\": \"In shadow (%)\",\n        \"format\": \".0f\"\n      }\n    ]\n  }\n}\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Plot the share of Block 1259's open ground in shadow through the day, a line per scenario.",
+        "metadata": {
+          "keywords": [],
+          "packageTemplateLabel": "Plot: shadow on Block 1259 through the day"
+        },
+        "title": "Plot: shadow on Block 1259 through the day",
+        "width": 980,
+        "height": 500,
+        "dashboardPinned": true,
+        "dashboardX": 610,
+        "dashboardY": 390,
+        "dashboardWidth": 670,
+        "dashboardHeight": 330
       }
     ],
     "edges": [
+      {
+        "id": "reactflow__edge-e6bf2bc2-e88b-570d-8b5c-b121a93e5f42out-e891762d-1198-5a8c-b43a-b41b22582249in",
+        "source": "e6bf2bc2-e88b-570d-8b5c-b121a93e5f42",
+        "target": "e891762d-1198-5a8c-b43a-b41b22582249",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-f621df4f-9471-5b08-b29f-cd7fd34b22faout-e891762d-1198-5a8c-b43a-b41b22582249in_1",
+        "source": "f621df4f-9471-5b08-b29f-cd7fd34b22fa",
+        "target": "e891762d-1198-5a8c-b43a-b41b22582249",
+        "sourceHandle": "out",
+        "targetHandle": "in_1"
+      },
+      {
+        "id": "reactflow__edge-e6bf2bc2-e88b-570d-8b5c-b121a93e5f42out-2be9fdd4-c902-5a3e-af89-e0ad66f45a2cin",
+        "source": "e6bf2bc2-e88b-570d-8b5c-b121a93e5f42",
+        "target": "2be9fdd4-c902-5a3e-af89-e0ad66f45a2c",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
       {
         "id": "reactflow__edge-e6bf2bc2-e88b-570d-8b5c-b121a93e5f42out-cc3e211a-6d1f-5b77-8afa-0918a1378fc0in",
         "source": "e6bf2bc2-e88b-570d-8b5c-b121a93e5f42",
         "target": "cc3e211a-6d1f-5b77-8afa-0918a1378fc0",
         "sourceHandle": "out",
         "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-e6bf2bc2-e88b-570d-8b5c-b121a93e5f42out-6eaa947f-44ae-52e9-9c1d-ab93da3bf2d1in",
+        "source": "e6bf2bc2-e88b-570d-8b5c-b121a93e5f42",
+        "target": "6eaa947f-44ae-52e9-9c1d-ab93da3bf2d1",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-e891762d-1198-5a8c-b43a-b41b22582249out-6eaa947f-44ae-52e9-9c1d-ab93da3bf2d1in_1",
+        "source": "e891762d-1198-5a8c-b43a-b41b22582249",
+        "target": "6eaa947f-44ae-52e9-9c1d-ab93da3bf2d1",
+        "sourceHandle": "out",
+        "targetHandle": "in_1"
+      },
+      {
+        "id": "reactflow__edge-e891762d-1198-5a8c-b43a-b41b22582249out-7e4abb6d-a6df-538b-ba78-eff580600cbdin",
+        "source": "e891762d-1198-5a8c-b43a-b41b22582249",
+        "target": "7e4abb6d-a6df-538b-ba78-eff580600cbd",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-6eaa947f-44ae-52e9-9c1d-ab93da3bf2d1out-7e4abb6d-a6df-538b-ba78-eff580600cbdin_1",
+        "source": "6eaa947f-44ae-52e9-9c1d-ab93da3bf2d1",
+        "target": "7e4abb6d-a6df-538b-ba78-eff580600cbd",
+        "sourceHandle": "out",
+        "targetHandle": "in_1"
+      },
+      {
+        "id": "reactflow__edge-8f8b8c77-6778-56b8-a500-39601670fee7out-7e4abb6d-a6df-538b-ba78-eff580600cbdin_2",
+        "source": "8f8b8c77-6778-56b8-a500-39601670fee7",
+        "target": "7e4abb6d-a6df-538b-ba78-eff580600cbd",
+        "sourceHandle": "out",
+        "targetHandle": "in_2"
+      },
+      {
+        "id": "reactflow__edge-8f8b8c77-6778-56b8-a500-39601670fee7out-50a5d9e8-a6f1-5386-b26a-4ad8e5076c17in",
+        "source": "8f8b8c77-6778-56b8-a500-39601670fee7",
+        "target": "50a5d9e8-a6f1-5386-b26a-4ad8e5076c17",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-6eaa947f-44ae-52e9-9c1d-ab93da3bf2d1out-50a5d9e8-a6f1-5386-b26a-4ad8e5076c17in_1",
+        "source": "6eaa947f-44ae-52e9-9c1d-ab93da3bf2d1",
+        "target": "50a5d9e8-a6f1-5386-b26a-4ad8e5076c17",
+        "sourceHandle": "out",
+        "targetHandle": "in_1"
+      },
+      {
+        "id": "reactflow__edge-7e4abb6d-a6df-538b-ba78-eff580600cbdout-755fbc3c-68d1-50cf-ae8e-f72f9dac8413in",
+        "source": "7e4abb6d-a6df-538b-ba78-eff580600cbd",
+        "target": "755fbc3c-68d1-50cf-ae8e-f72f9dac8413",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-50a5d9e8-a6f1-5386-b26a-4ad8e5076c17out-ca233f8e-302e-5e89-977a-c93dd5f2abbain",
+        "source": "50a5d9e8-a6f1-5386-b26a-4ad8e5076c17",
+        "target": "ca233f8e-302e-5e89-977a-c93dd5f2abba",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-755fbc3c-68d1-50cf-ae8e-f72f9dac8413out-6336c9a7-c75a-527f-9b35-254eb952b512in",
+        "source": "755fbc3c-68d1-50cf-ae8e-f72f9dac8413",
+        "target": "6336c9a7-c75a-527f-9b35-254eb952b512",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-2be9fdd4-c902-5a3e-af89-e0ad66f45a2cout-58433a36-c808-5c66-98dc-1b82661d8944in",
+        "source": "2be9fdd4-c902-5a3e-af89-e0ad66f45a2c",
+        "target": "58433a36-c808-5c66-98dc-1b82661d8944",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-6336c9a7-c75a-527f-9b35-254eb952b512out-58433a36-c808-5c66-98dc-1b82661d8944in_1",
+        "source": "6336c9a7-c75a-527f-9b35-254eb952b512",
+        "target": "58433a36-c808-5c66-98dc-1b82661d8944",
+        "sourceHandle": "out",
+        "targetHandle": "in_1"
+      },
+      {
+        "id": "reactflow__edge-e6bf2bc2-e88b-570d-8b5c-b121a93e5f42out-58433a36-c808-5c66-98dc-1b82661d8944in_2",
+        "source": "e6bf2bc2-e88b-570d-8b5c-b121a93e5f42",
+        "target": "58433a36-c808-5c66-98dc-1b82661d8944",
+        "sourceHandle": "out",
+        "targetHandle": "in_2"
+      },
+      {
+        "id": "reactflow__edge-f621df4f-9471-5b08-b29f-cd7fd34b22faout-58433a36-c808-5c66-98dc-1b82661d8944in_3",
+        "source": "f621df4f-9471-5b08-b29f-cd7fd34b22fa",
+        "target": "58433a36-c808-5c66-98dc-1b82661d8944",
+        "sourceHandle": "out",
+        "targetHandle": "in_3"
+      },
+      {
+        "id": "reactflow__edge-6f07cb25-d7cc-5fe5-abf4-cfadafdffb59out-58433a36-c808-5c66-98dc-1b82661d8944in_4",
+        "source": "6f07cb25-d7cc-5fe5-abf4-cfadafdffb59",
+        "target": "58433a36-c808-5c66-98dc-1b82661d8944",
+        "sourceHandle": "out",
+        "targetHandle": "in_4"
       },
       {
         "id": "reactflow__edge-cc3e211a-6d1f-5b77-8afa-0918a1378fc0out-72b34012-476a-50d2-abf3-f6c271a50f54in",
@@ -346,16 +637,9 @@
         "targetHandle": "in"
       },
       {
-        "id": "reactflow__edge-cc3e211a-6d1f-5b77-8afa-0918a1378fc0out-e891762d-1198-5a8c-b43a-b41b22582249in",
-        "source": "cc3e211a-6d1f-5b77-8afa-0918a1378fc0",
-        "target": "e891762d-1198-5a8c-b43a-b41b22582249",
-        "sourceHandle": "out",
-        "targetHandle": "in"
-      },
-      {
-        "id": "reactflow__edge-f621df4f-9471-5b08-b29f-cd7fd34b22faout-e891762d-1198-5a8c-b43a-b41b22582249in_1",
-        "source": "f621df4f-9471-5b08-b29f-cd7fd34b22fa",
-        "target": "e891762d-1198-5a8c-b43a-b41b22582249",
+        "id": "reactflow__edge-e891762d-1198-5a8c-b43a-b41b22582249out-72b34012-476a-50d2-abf3-f6c271a50f54in_1",
+        "source": "e891762d-1198-5a8c-b43a-b41b22582249",
+        "target": "72b34012-476a-50d2-abf3-f6c271a50f54",
         "sourceHandle": "out",
         "targetHandle": "in_1"
       },
@@ -374,6 +658,27 @@
         "targetHandle": "in_1"
       },
       {
+        "id": "reactflow__edge-8f8b8c77-6778-56b8-a500-39601670fee7out-905ccc99-694a-519b-93b4-5f22778d5c32in_2",
+        "source": "8f8b8c77-6778-56b8-a500-39601670fee7",
+        "target": "905ccc99-694a-519b-93b4-5f22778d5c32",
+        "sourceHandle": "out",
+        "targetHandle": "in_2"
+      },
+      {
+        "id": "reactflow__edge-8f8b8c77-6778-56b8-a500-39601670fee7out-85ff60ea-93e6-551d-aae1-eeac331a801cin",
+        "source": "8f8b8c77-6778-56b8-a500-39601670fee7",
+        "target": "85ff60ea-93e6-551d-aae1-eeac331a801c",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-72b34012-476a-50d2-abf3-f6c271a50f54out-85ff60ea-93e6-551d-aae1-eeac331a801cin_1",
+        "source": "72b34012-476a-50d2-abf3-f6c271a50f54",
+        "target": "85ff60ea-93e6-551d-aae1-eeac331a801c",
+        "sourceHandle": "out",
+        "targetHandle": "in_1"
+      },
+      {
         "id": "reactflow__edge-905ccc99-694a-519b-93b4-5f22778d5c32out-9439839c-cf4e-5d3f-b3a5-3977577f7e76in",
         "source": "905ccc99-694a-519b-93b4-5f22778d5c32",
         "target": "9439839c-cf4e-5d3f-b3a5-3977577f7e76",
@@ -381,23 +686,16 @@
         "targetHandle": "in"
       },
       {
-        "id": "reactflow__edge-9439839c-cf4e-5d3f-b3a5-3977577f7e76out-d89f7440-724b-578f-b68f-896974b76adein",
-        "source": "9439839c-cf4e-5d3f-b3a5-3977577f7e76",
-        "target": "d89f7440-724b-578f-b68f-896974b76ade",
+        "id": "reactflow__edge-85ff60ea-93e6-551d-aae1-eeac331a801cout-da085a5c-60a6-5023-80b0-1f5a1dfc0e06in",
+        "source": "85ff60ea-93e6-551d-aae1-eeac331a801c",
+        "target": "da085a5c-60a6-5023-80b0-1f5a1dfc0e06",
         "sourceHandle": "out",
         "targetHandle": "in"
       },
       {
-        "id": "reactflow__edge-cc3e211a-6d1f-5b77-8afa-0918a1378fc0out-d89f7440-724b-578f-b68f-896974b76adein_1",
-        "source": "cc3e211a-6d1f-5b77-8afa-0918a1378fc0",
+        "id": "reactflow__edge-9439839c-cf4e-5d3f-b3a5-3977577f7e76out-d89f7440-724b-578f-b68f-896974b76adein",
+        "source": "9439839c-cf4e-5d3f-b3a5-3977577f7e76",
         "target": "d89f7440-724b-578f-b68f-896974b76ade",
-        "sourceHandle": "out",
-        "targetHandle": "in_1"
-      },
-      {
-        "id": "reactflow__edge-e6bf2bc2-e88b-570d-8b5c-b121a93e5f42out-2be9fdd4-c902-5a3e-af89-e0ad66f45a2cin",
-        "source": "e6bf2bc2-e88b-570d-8b5c-b121a93e5f42",
-        "target": "2be9fdd4-c902-5a3e-af89-e0ad66f45a2c",
         "sourceHandle": "out",
         "targetHandle": "in"
       },
@@ -445,15 +743,99 @@
         "type": "Interaction"
       },
       {
-        "id": "reactflow__edge-9439839c-cf4e-5d3f-b3a5-3977577f7e76out-c244e3a8-9f0a-5d6d-9309-a5938cc22427in",
-        "source": "9439839c-cf4e-5d3f-b3a5-3977577f7e76",
-        "target": "c244e3a8-9f0a-5d6d-9309-a5938cc22427",
+        "id": "reactflow__edge-755fbc3c-68d1-50cf-ae8e-f72f9dac8413out-d0649118-6943-5803-86a0-e9f3e56c8fb6in",
+        "source": "755fbc3c-68d1-50cf-ae8e-f72f9dac8413",
+        "target": "d0649118-6943-5803-86a0-e9f3e56c8fb6",
         "sourceHandle": "out",
         "targetHandle": "in"
       },
       {
-        "id": "reactflow__edge-c244e3a8-9f0a-5d6d-9309-a5938cc22427out-cc1be78d-9348-5650-9a91-d98f08959fcdin",
-        "source": "c244e3a8-9f0a-5d6d-9309-a5938cc22427",
+        "id": "reactflow__edge-9439839c-cf4e-5d3f-b3a5-3977577f7e76out-d0649118-6943-5803-86a0-e9f3e56c8fb6in_1",
+        "source": "9439839c-cf4e-5d3f-b3a5-3977577f7e76",
+        "target": "d0649118-6943-5803-86a0-e9f3e56c8fb6",
+        "sourceHandle": "out",
+        "targetHandle": "in_1"
+      },
+      {
+        "id": "reactflow__edge-d0649118-6943-5803-86a0-e9f3e56c8fb6out-93f86091-2454-52f6-920a-dd11f6e39cdain",
+        "source": "d0649118-6943-5803-86a0-e9f3e56c8fb6",
+        "target": "93f86091-2454-52f6-920a-dd11f6e39cda",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-cc3e211a-6d1f-5b77-8afa-0918a1378fc0out-93f86091-2454-52f6-920a-dd11f6e39cdain_1",
+        "source": "cc3e211a-6d1f-5b77-8afa-0918a1378fc0",
+        "target": "93f86091-2454-52f6-920a-dd11f6e39cda",
+        "sourceHandle": "out",
+        "targetHandle": "in_1"
+      },
+      {
+        "id": "reactflow__edge-2be9fdd4-c902-5a3e-af89-e0ad66f45a2cout-90e511a7-098e-5cbf-b7c3-759e11ef6439in",
+        "source": "2be9fdd4-c902-5a3e-af89-e0ad66f45a2c",
+        "target": "90e511a7-098e-5cbf-b7c3-759e11ef6439",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-93f86091-2454-52f6-920a-dd11f6e39cdaout-90e511a7-098e-5cbf-b7c3-759e11ef6439in_1",
+        "source": "93f86091-2454-52f6-920a-dd11f6e39cda",
+        "target": "90e511a7-098e-5cbf-b7c3-759e11ef6439",
+        "sourceHandle": "out",
+        "targetHandle": "in_1"
+      },
+      {
+        "id": "reactflow__edge-cc3e211a-6d1f-5b77-8afa-0918a1378fc0out-90e511a7-098e-5cbf-b7c3-759e11ef6439in_2",
+        "source": "cc3e211a-6d1f-5b77-8afa-0918a1378fc0",
+        "target": "90e511a7-098e-5cbf-b7c3-759e11ef6439",
+        "sourceHandle": "out",
+        "targetHandle": "in_2"
+      },
+      {
+        "id": "reactflow__edge-f621df4f-9471-5b08-b29f-cd7fd34b22faout-90e511a7-098e-5cbf-b7c3-759e11ef6439in_3",
+        "source": "f621df4f-9471-5b08-b29f-cd7fd34b22fa",
+        "target": "90e511a7-098e-5cbf-b7c3-759e11ef6439",
+        "sourceHandle": "out",
+        "targetHandle": "in_3"
+      },
+      {
+        "id": "reactflow__edge-6f07cb25-d7cc-5fe5-abf4-cfadafdffb59out-90e511a7-098e-5cbf-b7c3-759e11ef6439in_4",
+        "source": "6f07cb25-d7cc-5fe5-abf4-cfadafdffb59",
+        "target": "90e511a7-098e-5cbf-b7c3-759e11ef6439",
+        "sourceHandle": "out",
+        "targetHandle": "in_4"
+      },
+      {
+        "id": "reactflow__edge-ca233f8e-302e-5e89-977a-c93dd5f2abbaout-2b37c095-3ed8-5653-847f-28f3850733eein",
+        "source": "ca233f8e-302e-5e89-977a-c93dd5f2abba",
+        "target": "2b37c095-3ed8-5653-847f-28f3850733ee",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-da085a5c-60a6-5023-80b0-1f5a1dfc0e06out-2b37c095-3ed8-5653-847f-28f3850733eein_1",
+        "source": "da085a5c-60a6-5023-80b0-1f5a1dfc0e06",
+        "target": "2b37c095-3ed8-5653-847f-28f3850733ee",
+        "sourceHandle": "out",
+        "targetHandle": "in_1"
+      },
+      {
+        "id": "reactflow__edge-ca233f8e-302e-5e89-977a-c93dd5f2abbaout-6920455d-0912-512e-8c3e-97d0ed207152in",
+        "source": "ca233f8e-302e-5e89-977a-c93dd5f2abba",
+        "target": "6920455d-0912-512e-8c3e-97d0ed207152",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-da085a5c-60a6-5023-80b0-1f5a1dfc0e06out-6920455d-0912-512e-8c3e-97d0ed207152in_1",
+        "source": "da085a5c-60a6-5023-80b0-1f5a1dfc0e06",
+        "target": "6920455d-0912-512e-8c3e-97d0ed207152",
+        "sourceHandle": "out",
+        "targetHandle": "in_1"
+      },
+      {
+        "id": "reactflow__edge-6920455d-0912-512e-8c3e-97d0ed207152out-cc1be78d-9348-5650-9a91-d98f08959fcdin",
+        "source": "6920455d-0912-512e-8c3e-97d0ed207152",
         "target": "cc1be78d-9348-5650-9a91-d98f08959fcd",
         "sourceHandle": "out",
         "targetHandle": "in"
@@ -468,6 +850,39 @@
         "producerNodeId": null,
         "consumerNodeIds": [],
         "installedAt": "2026-10-22T00:00:00Z"
+      }
+    ],
+    "scenarios": [
+      {
+        "id": "without",
+        "name": "Without the proposed building",
+        "color": "#2a9d8f",
+        "description": "The existing buildings alone cast shadow.",
+        "nodes": [
+          "6eaa947f-44ae-52e9-9c1d-ab93da3bf2d1",
+          "7e4abb6d-a6df-538b-ba78-eff580600cbd",
+          "50a5d9e8-a6f1-5386-b26a-4ad8e5076c17",
+          "755fbc3c-68d1-50cf-ae8e-f72f9dac8413",
+          "ca233f8e-302e-5e89-977a-c93dd5f2abba",
+          "6336c9a7-c75a-527f-9b35-254eb952b512",
+          "58433a36-c808-5c66-98dc-1b82661d8944"
+        ]
+      },
+      {
+        "id": "with",
+        "name": "With the proposed building",
+        "color": "#e76f51",
+        "description": "The proposed building, added by the Map Editor, and the existing buildings cast shadow.",
+        "nodes": [
+          "cc3e211a-6d1f-5b77-8afa-0918a1378fc0",
+          "72b34012-476a-50d2-abf3-f6c271a50f54",
+          "905ccc99-694a-519b-93b4-5f22778d5c32",
+          "85ff60ea-93e6-551d-aae1-eeac331a801c",
+          "9439839c-cf4e-5d3f-b3a5-3977577f7e76",
+          "da085a5c-60a6-5023-80b0-1f5a1dfc0e06",
+          "d89f7440-724b-578f-b68f-896974b76ade",
+          "6cb649f2-b091-5fcc-8214-1e76ee7b94e4"
+        ]
       }
     ],
     "name": "Crown Heights shade from 1550 Bedford Avenue",
