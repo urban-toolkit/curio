@@ -530,10 +530,14 @@ class TestThePreambleVocabulary:
         assert f"- Vega-Lite: {vega['description']}" in lists["builtin.nodes"].splitlines()
         assert "- Vega-Lite: controllable through grammar." in lists["builtin.control"]
         assert "- JS Computation: controllable through JavaScript code." in lists["builtin.control"]
-        assert "- Data Loading: no input supported" in lists["builtin.inputs"]
+        # A loader can read values from the nodes wired into it, so it takes
+        # every kind; a Note takes none.
+        assert "- Data Loading: DATAFRAME, GEODATAFRAME, VALUE, LIST, JSON, RASTER" in lists["builtin.inputs"]
+        assert "- Note: no input supported" in lists["builtin.inputs"]
         # Vega-Lite takes a GeoDataFrame, which the hand-kept list said it did not.
         assert "- Vega-Lite: DATAFRAME, GEODATAFRAME" in lists["builtin.inputs"]
-        assert not any(line.startswith("- Data Loading:") for line in lists["builtin.input_count"].splitlines())
+        assert "- Data Loading: any number" in lists["builtin.input_count"].splitlines()
+        assert not any(line.startswith("- Note:") for line in lists["builtin.input_count"].splitlines())
         assert lists["builtin.interaction"].splitlines() == [
             f"- {t['label']}" for t in manifest["templates"] if t.get("bidirectional")
         ]

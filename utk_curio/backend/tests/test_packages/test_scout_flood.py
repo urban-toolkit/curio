@@ -9,9 +9,10 @@ per scenario takes
 the depth with nature-based solutions (NbS) where the class is a chosen one and
 the depth without elsewhere (``choose``), a second takes the depth's
 statistics, the median and the mean among them, and an Autark map draws the
-depth. Its Parameter nodes
-hold SCOUT's flood example's corners, which take every cell of SCOUT's 2592 by
-2064 cell grid, and its period, 2020 - 2050. SCOUT labels that period
+depth. Its Region node holds SCOUT's flood example's corners, which take every
+cell of SCOUT's 2592 by 2064 cell grid, and its Projection period node its
+period, 2020 - 2050: each a Python node that returns its widgets' values,
+wired into the nodes that read them. SCOUT labels that period
 2020 - 2040, though its next starts in 2050: komar41, one of SCOUT's authors,
 says it is 2020 - 2050. The widgets offer four kinds of NbS where SCOUT lists
 six names, since SCOUT lists bioswales twice (komar41): Bioswales/Infiltration
@@ -80,6 +81,7 @@ BY_PERIOD = "pd.DataFrame"
 #: The modules a run of a package's node is handed: a Raster Calculator's
 #: code imports its operations from Scout's ``scout_rasters``.
 PACKAGE_MODULES = {CALCULATOR: {"root": str(CALCULATOR_STARTER.parent), "names": ["scout_rasters"]}}
+#: The node a value several nodes read was once held by, read as ``[!! @name !!]``.
 PARAMETER = "curio.builtin/parameter"
 COMPARE = "curio.builtin/compare-scenarios"
 MAP = "curio.builtin/autk-grammar"
@@ -499,8 +501,30 @@ def _nodes(kind: str) -> list:
     return [n for n in _dataflow()["nodes"] if n["type"] == kind]
 
 
-def _parameters() -> dict:
-    return {n["metadata"]["widgets"][0]["name"]: n["metadata"]["widgets"][0] for n in _nodes(PARAMETER)}
+def _setting_nodes(spec: dict) -> dict:
+    """The Python nodes that hold the dataflow's settings, by their label: the
+    ones in no scenario that no edge reaches, Region and Projection period."""
+    members = _members(spec)
+    return {
+        node["metadata"]["packageTemplateLabel"]: node for node in spec["nodes"]
+        if node["type"] == PYTHON and node["id"] not in members and not _feeds(spec, node["id"])
+    }
+
+
+def _settings() -> dict:
+    """The settings' widgets, by name: the period and the region's corners."""
+    return {w["name"]: w for node in _setting_nodes(_dataflow()).values() for w in node["metadata"]["widgets"]}
+
+
+def _returned(node: dict):
+    """What a node that holds a setting returns, its widgets resolved: it
+    reads no input."""
+    from utk_curio.backend.app.execution.code_references import resolve_references
+    from utk_curio.sandbox.util.input_names import call_as_node
+
+    code, problems = resolve_references(node["content"], node["metadata"]["widgets"], "python")
+    assert problems == [], problems
+    return call_as_node(textwrap.indent(code, "    "), {})
 
 
 def _starters_statistics() -> str:
@@ -629,12 +653,15 @@ def _comparisons(spec: dict) -> dict:
     scenarios both their inputs are and what they do, as the Compare Scenarios
     nodes they replaced were keyed by their mode: a chart (``"chart"``), or a
     Raster Calculator or a Python node taking a change (``"difference"``).
-    ``("choose", "difference")`` takes the size of the change in depth."""
+    ``("choose", "difference")`` takes the size of the change in depth. The
+    Python nodes that hold the settings (:func:`_setting_nodes`) compare
+    nothing."""
     part_of = {node["id"]: part for parts in _scenario_parts(spec).values() for part, node in parts.items()}
     members = _members(spec)
+    settings = {node["id"] for node in _setting_nodes(spec).values()}
     found = {}
     for node in spec["nodes"]:
-        if node["id"] in members or node["type"] not in (CALCULATOR, PYTHON, *CHARTS):
+        if node["id"] in members or node["id"] in settings or node["type"] not in (CALCULATOR, PYTHON, *CHARTS):
             continue
         (part,) = {part_of[source] for source in _feeds(spec, node["id"]).values()}
         key = (part, "chart" if node["type"] in CHARTS else "difference")
@@ -668,7 +695,8 @@ def _map_after(spec: dict, node_id: str) -> dict:
 
 def test_the_dataflow_is_made_of_curios_own_nodes_and_scouts_raster_calculator():
     """One package, Scout, for the Raster Calculators and the charts, and
-    Curio's own nodes otherwise: three Parameter nodes; five Data Loading
+    Curio's own nodes otherwise: two Python nodes holding the settings, the
+    Region and the Projection period, and no Parameter node; five Data Loading
     nodes, three for the seven rasters and one each for the tracts and the
     waterways; a Data Transformation keeping the riverside tracts; three
     Raster Calculators per scenario, one choosing the depth, one taking its
@@ -689,29 +717,57 @@ def test_the_dataflow_is_made_of_curios_own_nodes_and_scouts_raster_calculator()
     for n in spec["nodes"]:
         counts[n["type"]] = counts.get(n["type"], 0) + 1
     assert counts == {
-        PARAMETER: 3, LOADING: 5, CALCULATOR: 7, TRANSFORMATION: 3, MAP: 7, PYTHON: 1, BARS: 1, POINTS: 1,
-        GROUPED_BARS: 1,
+        LOADING: 5, CALCULATOR: 7, TRANSFORMATION: 3, MAP: 7, PYTHON: 3, BARS: 1, POINTS: 1, GROUPED_BARS: 1,
     }
+    assert PARAMETER not in counts
+    assert sorted(_setting_nodes(spec)) == ["Projection period", "Region"]
     assert sorted(_returns(n) for n in _nodes(CALCULATOR)) == sorted(
         [CALCULATE, CALCULATE, CALCULATE, STATISTICS, STATISTICS, BY_PERIOD, BY_PERIOD])
     assert [n["id"] for n in spec["nodes"] if n.get("dashboardPinned")] == []
 
 
-def test_the_parameters_hold_scouts_period_and_corners():
+def test_the_settings_hold_scouts_period_and_corners_and_feed_their_readers():
     """SCOUT's flood example's period and corners, as its own dataflow sets
-    them. The periods are SCOUT's three, the first labelled 2020 - 2050 where
-    SCOUT labels it 2020 - 2040."""
-    parameters = _parameters()
-    assert set(parameters) == {"timeline", "topleft", "bottomright"}
-    timeline = parameters["timeline"]
+    them, each a widget of the Python node that returns it: the Projection
+    period node returns the period, and the Region node both corners, as a
+    dict. The periods are SCOUT's three, the first labelled 2020 - 2050 where
+    SCOUT labels it 2020 - 2040. The Region node feeds the three raster
+    loaders' first circle and each Average depth by period node's third, and
+    the Projection period node the two depth loaders' second; neither reads
+    anything or is in a scenario."""
+    spec = _dataflow()
+    nodes = _setting_nodes(spec)
+    region, period = nodes["Region"], nodes["Projection period"]
+    settings = _settings()
+    assert list(settings) == ["timeline", "topleft", "bottomright"]
+    assert [w["name"] for w in period["metadata"]["widgets"]] == ["timeline"]
+    assert [w["name"] for w in region["metadata"]["widgets"]] == ["topleft", "bottomright"]
+    timeline = settings["timeline"]
     assert timeline["type"] == "choice" and timeline["options"] == {"choices": list(PERIODS), "display": "radio"}
     assert timeline["options"]["choices"] == ["2020 - 2050", "2050 - 2080", "2080 - 2100"]
     assert timeline["default"] == "2020 - 2050"
-    assert [SCOUT_PERIODS[period] for period in timeline["options"]["choices"]] == _scout_periods()
+    assert [SCOUT_PERIODS[choice] for choice in timeline["options"]["choices"]] == _scout_periods()
     top, left, bottom, right = SCOUT_REGION
-    assert parameters["topleft"]["type"] == parameters["bottomright"]["type"] == "location"
-    assert parameters["topleft"]["default"] == {"lat": top, "lon": left}
-    assert parameters["bottomright"]["default"] == {"lat": bottom, "lon": right}
+    assert settings["topleft"]["type"] == settings["bottomright"]["type"] == "location"
+    assert settings["topleft"]["default"] == {"lat": top, "lon": left}
+    assert settings["bottomright"]["default"] == {"lat": bottom, "lon": right}
+    assert [w["label"] for w in (timeline, settings["topleft"], settings["bottomright"])] == [
+        "Projection period", "Top-left corner", "Bottom-right corner",
+    ]
+    assert _returned(period) == "2020 - 2050"
+    assert _returned(region) == {"topleft": {"lat": top, "lon": left}, "bottomright": {"lat": bottom, "lon": right}}
+
+    by_period = [parts["by period"]["id"] for parts in _scenario_parts(spec).values()]
+    depth_loaders = [_loader_of(_depth_id(PERIODS[0], nbs))["id"] for nbs in (True, False)]
+
+    def fed(source: str) -> list:
+        return sorted((e["target"], e["targetHandle"]) for e in spec["edges"] if e["source"] == source)
+
+    assert fed(region["id"]) == sorted(
+        [(_loader_of(CLASSES)["id"], "in"), *((loader, "in") for loader in depth_loaders),
+         *((node_id, "in_2") for node_id in by_period)]
+    )
+    assert fed(period["id"]) == sorted((loader, "in_1") for loader in depth_loaders)
 
 
 def test_the_four_kinds_of_nbs_are_scouts_classes():
@@ -760,8 +816,9 @@ def test_the_depth_datasets_are_named_by_the_periods_curio_shows():
 
 def test_the_loaders_read_their_datasets_by_id_and_the_rasters_with_the_regions_bounds():
     """Each Data Loading node reads its datasets by literal id, the only kind a
-    run resolves: SCOUT's rasters with the bounds the corners give, and the
-    tracts and the waterways whole, since they are cut to SCOUT's grid."""
+    run resolves: SCOUT's rasters with the bounds the region's corners give,
+    the region on the loader's first circle, and the tracts and the waterways
+    whole, since they are cut to SCOUT's grid."""
     from utk_curio.backend.app.datasets.domain.code_refs import dataset_ids_in_code
 
     read = sorted(tuple(dataset_ids_in_code(n["content"])) for n in _nodes(LOADING))
@@ -778,15 +835,17 @@ def test_the_loaders_read_their_datasets_by_id_and_the_rasters_with_the_regions_
         whole = re.findall(r"curio_load_data\(\"[^\"]+\"\)", loader["content"])
         if set(ids) <= set(RASTER_IDS):
             assert (len(windowed), len(whole)) == (len(ids), 0), loader["content"]
+            assert "\nregion = input_0\n" in loader["content"], loader["content"]
         else:
             assert (len(windowed), len(whole)) == (0, len(ids)) == (0, 1), loader["content"]
-    # The depth loaders read the period the Parameter node holds, by its label.
+    # The depth loaders read the period on their second circle, by the label
+    # the Projection period node returns it with.
     from utk_curio.backend.app.execution.code_references import resolve_references
 
-    shared = list(_parameters().values())
     for nbs in (True, False):
         loader = _loader_of(_depth_id(PERIODS[0], nbs))
-        resolved, problems = resolve_references(loader["content"], [], "python", shared=shared)
+        assert "\nperiod = input_1\n" in loader["content"], loader["content"]
+        resolved, problems = resolve_references(loader["content"], [], "python")
         assert problems == [], problems
         assert _period_keys(_function_body(resolved)) == list(PERIODS), loader["content"]
 
@@ -924,23 +983,25 @@ def test_the_riverside_tracts_read_cdcs_tracts_and_nhds_waterways_and_a_map_draw
 def test_each_scenario_averages_its_depth_over_each_tracts_land_and_in_each_period():
     """In each scenario, Tract depth reads its Flood depth on circle 0, the
     riverside tracts on circle 1 and the waterways on circle 2; Average depth
-    by period reads the riverside tracts and the waterways, and SCOUT's seven
-    rasters itself, by literal id with the corners' bounds, for each period
-    the Parameter node offers, choosing the depth with SCOUT's class table read
-    as the four kinds and the same solutions as its scenario's Flood depth.
-    Each holds one code in both scenarios, and the NbS ones are copies of the
-    No NbS ones."""
+    by period reads the riverside tracts, the waterways and the Region node's
+    region on circles 0, 1 and 2, and SCOUT's seven rasters itself, by literal
+    id with the region's bounds, for each period the Projection period node
+    offers, choosing the depth with SCOUT's class table read as the four kinds
+    and the same solutions as its scenario's Flood depth. Each holds one code
+    in both scenarios, and the NbS ones are copies of the No NbS ones."""
     from utk_curio.backend.app.datasets.domain.code_refs import dataset_ids_in_code
     from utk_curio.backend.app.execution.code_references import resolve_references
 
     spec = _dataflow()
     parts = _scenario_parts(spec)
     riverside, waterways = _riverside(spec)["id"], _loader_of(WATERWAYS)["id"]
+    region = _setting_nodes(spec)["Region"]["id"]
     for scenario, part in parts.items():
         assert _feeds(spec, part["tract depth"]["id"]) == {
             "in": part["choose"]["id"], "in_1": riverside, "in_2": waterways,
         }, scenario
-        assert _feeds(spec, part["by period"]["id"]) == {"in": riverside, "in_1": waterways}, scenario
+        assert _feeds(spec, part["by period"]["id"]) == {"in": riverside, "in_1": waterways, "in_2": region}, scenario
+        assert "\nregion = input_2\n" in part["by period"]["content"], scenario
         assert part["by period"]["metadata"]["widgets"] == part["choose"]["metadata"]["widgets"], scenario
     for name in ("tract depth", "by period"):
         (code,) = {part[name]["content"] for part in parts.values()}
@@ -950,11 +1011,10 @@ def test_each_scenario_averages_its_depth_over_each_tracts_land_and_in_each_peri
     assert sorted(dataset_ids_in_code(by_period["content"])) == sorted(RASTER_IDS)
     calls = re.findall(r"curio_load_data\(\"[^\"]+\", bounds=bounds\)", by_period["content"])
     assert len(calls) == len(RASTER_IDS), by_period["content"]
-    shared = list(_parameters().values())
-    resolved, problems = resolve_references(by_period["content"], by_period["metadata"]["widgets"], "python", shared=shared)
+    resolved, problems = resolve_references(by_period["content"], by_period["metadata"]["widgets"], "python")
     assert problems == [], problems
     assert _literal_dict(_function_body(resolved), "NBS_CLASSES") == _curio_classes()
-    assert _period_keys(_function_body(resolved)) == list(PERIODS) == _parameters()["timeline"]["options"]["choices"]
+    assert _period_keys(_function_body(resolved)) == list(PERIODS) == _settings()["timeline"]["options"]["choices"]
 
 
 def test_an_autark_map_after_the_tract_difference_draws_the_size_of_each_tracts_change():
@@ -1004,10 +1064,9 @@ def test_each_scenario_maps_its_tracts_mean_depth_over_the_depth_maps_range():
 def test_every_nodes_code_resolves_with_nothing_left_over():
     from utk_curio.backend.app.execution.code_references import resolve_references
 
-    shared = list(_parameters().values())
     for n in _dataflow()["nodes"]:
         if n["type"] in (LOADING, CALCULATOR, TRANSFORMATION, PYTHON):
-            code, problems = resolve_references(n["content"], n["metadata"].get("widgets") or [], "python", shared=shared)
+            code, problems = resolve_references(n["content"], n["metadata"].get("widgets") or [], "python")
             assert problems == [], (n["id"], problems)
             assert "[!!" not in code
             compile(_function_body(code), n["id"], "exec")
@@ -1096,34 +1155,48 @@ def _execute(code, file_path, node_type, data_type, workspace, **kwargs):
     )
 
 
-def _shared(region=None, period=None) -> list:
-    """The Parameter nodes' widgets, at *region* and *period* when given, else
-    at the values the dataflow holds."""
+def _settings_at(region=None, period=None) -> dict:
+    """The widgets of the nodes that hold the settings, the Region and the
+    Projection period nodes, by node id: at *region* and *period* when given,
+    else at the values the dataflow holds."""
     values = {}
     if region is not None:
         top, left, bottom, right = region
         values.update({"topleft": {"lat": top, "lon": left}, "bottomright": {"lat": bottom, "lon": right}})
     if period is not None:
         values["timeline"] = period
-    shared = []
-    for name, widget in _parameters().items():
-        widget = copy.deepcopy(widget)
-        if name in values:
-            widget["value"] = values[name]
-        shared.append(widget)
-    return shared
+    settings = {}
+    for node in _setting_nodes(_dataflow()).values():
+        widgets = []
+        for widget in node["metadata"]["widgets"]:
+            widget = copy.deepcopy(widget)
+            if widget["name"] in values:
+                widget["value"] = values[widget["name"]]
+            widgets.append(widget)
+        settings[node["id"]] = widgets
+    return settings
 
 
-def _runner(workspace, shared, *, fails=False):
+def _circle(handle: str) -> int:
+    """The input circle an edge's ``targetHandle`` names."""
+    return 0 if handle == "in" else int(handle.split("_")[1])
+
+
+def _fed_in_circle_order(spec: dict, node_id: str) -> list:
+    """The nodes on *node_id*'s circles, in circle order."""
+    return [source for handle, source in sorted(_feeds(spec, node_id).items(), key=lambda item: _circle(item[0]))]
+
+
+def _runner(workspace, *, fails=False):
     """Runs one node of the dataflow as Run All runs it in the sandbox, its
-    references resolved against *shared* and its package's modules handed to
-    it: ``(output, error)``."""
+    references resolved and its package's modules handed to it:
+    ``(output, error)``."""
     from utk_curio.backend.app.datasets.domain.code_refs import dataset_ids_in_code
     from utk_curio.backend.app.execution.code_references import resolve_references
 
     def run(node, file_path, data_type, widgets=(), circles=0):
         inputs = [{"slot": slot} for slot in range(circles)]
-        code, problems = resolve_references(node["content"], list(widgets), "python", inputs=inputs, shared=shared)
+        code, problems = resolve_references(node["content"], list(widgets), "python", inputs=inputs)
         assert problems == [], problems
         paths = {i: str(_data_file(i)) for i in dataset_ids_in_code(code)}
         result = _execute(code, file_path, node["type"], data_type, workspace, dataset_paths=paths,
@@ -1137,14 +1210,30 @@ def _runner(workspace, shared, *, fails=False):
     return run
 
 
-def _run_loaders(run) -> tuple[dict, str | None]:
-    """Every Data Loading node: SCOUT's rasters come out rasters, and the
-    tracts and the waterways layers."""
+def _run_loaders(run, settings: dict) -> tuple[dict, str | None]:
+    """The nodes that hold the settings, their widgets at *settings*
+    (:func:`_settings_at`), then every Data Loading node, on the outputs of
+    the nodes wired into it in circle order, as Run All runs them: the region
+    comes out a dict and the period a str, SCOUT's rasters rasters, and the
+    tracts and the waterways layers. Each node's output, by its id."""
     from utk_curio.backend.app.datasets.domain.code_refs import dataset_ids_in_code
 
+    spec = _dataflow()
+    nodes = {node["id"]: node for node in spec["nodes"]}
+    kinds = {"Region": "dict", "Projection period": "str"}
     loaded = {}
+    for node_id, widgets in settings.items():
+        output, error = run(nodes[node_id], "", "", widgets)
+        if error:
+            return loaded, error
+        assert output["dataType"] == kinds[nodes[node_id]["metadata"]["packageTemplateLabel"]], output
+        loaded[node_id] = output["path"]
     for loader in _nodes(LOADING):
-        output, error = run(loader, "", "")
+        fed = [loaded[source] for source in _fed_in_circle_order(spec, loader["id"])]
+        if len(fed) > 1:
+            output, error = run(loader, repr(fed), "outputs", circles=len(fed))
+        else:
+            output, error = run(loader, fed[0] if fed else "", "", circles=len(fed))
         if error:
             return loaded, error
         rasters = set(dataset_ids_in_code(loader["content"])) <= set(RASTER_IDS)
@@ -1156,8 +1245,9 @@ def _run_loaders(run) -> tuple[dict, str | None]:
 def _run_riverside_part(run, loaded: dict, depths: dict) -> dict:
     """The riverside tracts, then each scenario's Tract depth on its Flood
     depth (*depths*, the output of its Raster Calculator that chooses, by
-    scenario) and its Average depth by period, as Run All runs them: the
-    output of each, ``"riverside"`` and ``(scenario, part)``."""
+    scenario) and its Average depth by period, on the region its third circle
+    reads, as Run All runs them: the output of each, ``"riverside"`` and
+    ``(scenario, part)``."""
     spec = _dataflow()
     riverside = _riverside(spec)
     waterways = loaded[_loader_of(WATERWAYS)["id"]]
@@ -1170,7 +1260,9 @@ def _run_riverside_part(run, loaded: dict, depths: dict) -> dict:
         assert output["dataType"] == "geodataframe", output
         found[(scenario, "tract depth")] = output["path"]
         by_period = parts["by period"]
-        output, _ = run(by_period, repr([found["riverside"], waterways]), "outputs", by_period["metadata"]["widgets"])
+        region = loaded[_feeds(spec, by_period["id"])["in_2"]]
+        output, _ = run(by_period, repr([found["riverside"], waterways, region]), "outputs",
+                        by_period["metadata"]["widgets"])
         assert output["dataType"] == "dataframe", output
         found[(scenario, "by period")] = output["path"]
     return found
@@ -1182,8 +1274,8 @@ def _run_both_scenarios_riverside_part(workspace) -> dict:
     riverside part (:func:`_run_riverside_part`), with each output loaded."""
     from utk_curio.sandbox.util.parsers import load_from_duckdb
 
-    run = _runner(workspace, _shared())
-    loaded, error = _run_loaders(run)
+    run = _runner(workspace)
+    loaded, error = _run_loaders(run, _settings_at())
     assert error is None, error
     depths = {}
     for scenario, parts in _scenario_parts(_dataflow()).items():
@@ -1216,16 +1308,17 @@ def _run_scenario(run, loaded: dict, calculator: dict, statistics: dict, chosen=
 
 
 def run_dataflow(workspace, region=None, period=None, chosen=ALL_NBS, *, fails=False):
-    """Run the dataflow's loaders and one scenario's two Raster Calculators,
-    the one that chooses, then the one of statistics, as Run All runs them in
-    the sandbox, with the Parameter
-    nodes at *region* and *period* (the dataflow's own when not given) and the
-    calculator's widget at *chosen*: ``(depth artifact id, depth, statistics)``,
-    or with *fails* the first error."""
+    """Run the dataflow's Region and Projection period nodes, its loaders and
+    one scenario's two Raster Calculators, the one that chooses, then the one
+    of statistics, as Run All runs them in the sandbox, with the Region and
+    Projection period nodes' widgets at *region* and *period* (the dataflow's
+    own when not given) and the calculator's widget at *chosen*:
+    ``(depth artifact id, depth, statistics)``, or with *fails* the first
+    error."""
     from utk_curio.sandbox.util.parsers import load_from_duckdb
 
-    run = _runner(workspace, _shared(region, period), fails=fails)
-    loaded, error = _run_loaders(run)
+    run = _runner(workspace, fails=fails)
+    loaded, error = _run_loaders(run, _settings_at(region, period))
     if error:
         return error
     # No NbS's two calculators, the first of each in the dataflow's order; the
@@ -1282,7 +1375,8 @@ SCOUT_DEPTHS = {
 
 @pytest.mark.parametrize("period", sorted(SCOUT_DEPTHS))
 def test_both_scenarios_at_the_dataflows_corners_give_scouts_median_and_mean(workspace, monkeypatch, period):
-    """Run All's path at the dataflow's own corners: the loaders once, then
+    """Run All's path at the dataflow's own corners, the period set on the
+    Projection period node: the loaders once, then
     each scenario's Raster Calculator that chooses, with the solutions its
     widget holds, and its Raster Calculator of statistics. Without NbS the
     median flood depth is 7.164 m
@@ -1293,8 +1387,8 @@ def test_both_scenarios_at_the_dataflows_corners_give_scouts_median_and_mean(wor
     monkeypatch.chdir(workspace)
     spec = _dataflow()
     nodes = {n["id"]: n for n in spec["nodes"]}
-    run = _runner(workspace, _shared(period=period))
-    loaded, error = _run_loaders(run)
+    run = _runner(workspace)
+    loaded, error = _run_loaders(run, _settings_at(period=period))
     assert error is None, error
     found = {}
     for scenario in spec["scenarios"]:
@@ -1421,8 +1515,8 @@ def test_the_riverside_tracts_are_the_28_tracts_nhds_rivers_touch(workspace, mon
     from utk_curio.sandbox.util.parsers import load_from_duckdb
 
     monkeypatch.chdir(workspace)
-    run = _runner(workspace, _shared())
-    loaded, error = _run_loaders(run)
+    run = _runner(workspace)
+    loaded, error = _run_loaders(run, _settings_at())
     assert error is None, error
     riverside = _riverside(_dataflow())
     output, _ = run(riverside, repr([loaded[_loader_of(TRACTS)["id"]], loaded[_loader_of(WATERWAYS)["id"]]]), "outputs")
@@ -1628,7 +1722,7 @@ def test_a_tract_one_side_lacks_is_removed_or_added_as_compare_wrote_it(workspac
         "removed": (none, nbs[nbs["FIPS"] != left_out].reset_index(drop=True), left_out),
         "added": (none[none["FIPS"] != only_with_nbs].reset_index(drop=True), nbs, only_with_nbs),
     }
-    run = _runner(workspace, _shared())
+    run = _runner(workspace)
     node = _comparisons(_dataflow())[("tract depth", "difference")]
     numbers = ["E_TOTPOP", "RPL_THEMES", "mean_depth_m", "land_km2"]
     for change, (before, after, tract) in cases.items():
@@ -1677,8 +1771,8 @@ def test_the_median_chart_reads_each_scenarios_statistics_as_compare_stacked_the
     assert _feeds(spec, chart["id"]) == {"in": parts_of["no-nbs"]["statistics"]["id"],
                                          "in_1": parts_of["nbs"]["statistics"]["id"]}
     monkeypatch.chdir(workspace)
-    run = _runner(workspace, _shared())
-    loaded, error = _run_loaders(run)
+    run = _runner(workspace)
+    loaded, error = _run_loaders(run, _settings_at())
     assert error is None, error
     statistics = {}
     for scenario, parts in parts_of.items():
@@ -1769,8 +1863,8 @@ def test_the_depth_change_at_the_dataflows_corners_is_scouts_change(workspace, m
     from utk_curio.sandbox.util.parsers import load_from_duckdb
 
     monkeypatch.chdir(workspace)
-    run = _runner(workspace, _shared())
-    loaded, error = _run_loaders(run)
+    run = _runner(workspace)
+    loaded, error = _run_loaders(run, _settings_at())
     assert error is None, error
     depths = {}
     for scenario, parts in _scenario_parts(_dataflow()).items():

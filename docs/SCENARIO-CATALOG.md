@@ -92,7 +92,7 @@ A scenario dragged from the canvas drawer onto the canvas arrives as a copy, and
 
 - **Its levers** are copied with new ids. Each copy names the node it was copied from.
 - **Its fixed context** arrives as data. Each node it reads becomes a **Data Loading** node that reads a copy of the output that node saved in its project, wired where the context was. The copy is this dataflow's own: running the source project again changes its own output, not the copy. A Parameter node of its context is copied with its value.
-- **A context node with no saved output** runs first, on the server and in the scenario's project, which saves its output there; the drop then brings it. While it runs, a notice names it, such as "Running Buildings in Chicago Loop shadow with towers removed or edited for Existing". When the run fails, the message says why and nothing is added.
+- **A context node with no saved output** runs first, on the server and in the scenario's project, which saves its output there; the drop then brings it. While it runs, a notice names it, such as "Running Buildings and Season in Chicago Loop shadow with towers removed or edited for Existing". When the run fails, the message says why and nothing is added.
 - **Its outcomes** show the results its project saved, before anything runs.
 - **Packages** its nodes use are added to the dataflow, as **Add** in the Node Catalog adds one.
 - **The scenario** is collapsed where you dropped it, in its own color, and keeps its name and description.

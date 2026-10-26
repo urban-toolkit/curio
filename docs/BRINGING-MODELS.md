@@ -428,11 +428,22 @@ node's **Widgets** tab, or adds widgets of their own there and places them in
 the code; the package stays as it is. A changed value marks the node as needing
 a new run.
 
-`[!! @name !!]` reads a **Parameter** node's value instead: one value that
-several nodes share
-([USAGE.md, Shared values](USAGE.md#shared-values-the-parameter-node)). In the
-[Chicago Loop shadow with towers removed or edited](examples/dataflows/chicago-loop-shadow-towers.json) dataflow, both scenarios'
-Accumulated Shadow nodes read one season this way.
+One value that several nodes read is a widget of one Python node that returns
+it, wired into each node that reads it, on an input circle of its own. In the
+[Chicago Loop shadow with towers removed or edited](examples/dataflows/chicago-loop-shadow-towers.json) dataflow, a Season node
+holds Accumulated Shadow's Season widget and returns `[!! season !!]`, and both
+scenarios' Accumulated Shadow nodes read it on their second circle:
+
+```python
+return accumulated_shadow(input_0, season=input_1, model=model, output_file=curio_output_file)
+```
+
+Accumulated Shadow takes it because its template's one input port takes a
+value beside the raster, on up to two circles:
+
+```json
+"inputPorts": [{ "cardinality": "[1,2]", "types": ["RASTER", "VALUE"] }]
+```
 
 **Save as package node…** writes a node's widgets into the template it makes,
 with their values as the defaults

@@ -47,7 +47,7 @@
   "templates": [
     {
       "category": "computation",
-      "description": "SCOUT's accumulated shadow simulation: Deep Umbra, a generator network, predicts for each zoom-16 map tile how much of a season's day each cell spends in shadow, from the heights of the buildings on the tile and its eight neighbours, the tile's latitude and the season. Input: the raster of Rasterize Buildings: a RASTER of building heights in metres in EPSG:3395 on the zoom-16 tile grid. A tile with no data, which Rasterize Buildings gives a tile SCOUT wrote no file for, is not predicted. Output: one RASTER of the accumulated shadow in minutes on the input's grid, no data on the tiles not predicted, for an Autark map, band band_1. SCOUT's metrics, the mean and median accumulated shadow over the ground, are a Raster Calculator's statistics of this raster, with the heights on its input_1 as the mask and the ground where the height is under 1.08 m. The Widgets tab sets the season. The model is this package's, model.scout.deep-umbra.",
+      "description": "SCOUT's accumulated shadow simulation: Deep Umbra, a generator network, predicts for each zoom-16 map tile how much of a season's day each cell spends in shadow, from the heights of the buildings on the tile and its eight neighbours, the tile's latitude and the season. Input: the raster of Rasterize Buildings: a RASTER of building heights in metres in EPSG:3395 on the zoom-16 tile grid. A tile with no data, which Rasterize Buildings gives a tile SCOUT wrote no file for, is not predicted. Output: one RASTER of the accumulated shadow in minutes on the input's grid, no data on the tiles not predicted, for an Autark map, band band_1. SCOUT's metrics, the mean and median accumulated shadow over the ground, are a Raster Calculator's statistics of this raster, with the heights on its input_1 as the mask and the ground where the height is under 1.08 m. The Widgets tab sets the season. A season several nodes share can come from a node wired into the second input circle instead, a VALUE the code reads as input_1 in place of its Season widget. The model is this package's, model.scout.deep-umbra.",
       "editor": "code",
       "engine": "python",
       "hasCode": true,
@@ -57,8 +57,8 @@
       "id": "accumulated-shadow",
       "inputPorts": [
         {
-          "cardinality": "1",
-          "types": ["RASTER"]
+          "cardinality": "[1,2]",
+          "types": ["RASTER", "VALUE"]
         }
       ],
       "label": "Accumulated Shadow",
@@ -81,5 +81,5 @@
       ]
     }
   ],
-  "version": "1.0.0"
+  "version": "1.1.0"
 }
