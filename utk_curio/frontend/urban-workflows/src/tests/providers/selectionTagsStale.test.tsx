@@ -10,7 +10,7 @@ import { useSelectionTags } from "../../providers/flow/useSelectionTags";
 import { nodesToRunUpTo } from "../../providers/flow/runLevels";
 import { VisInteractionType } from "../../constants";
 import { objectRows } from "../../utils/selectionMatch";
-import { runKeyWithShared } from "../../utils/references/sharedParameters";
+import { runKeyOf } from "../../utils/references/runKeys";
 import { provideViewRows, resetViewSelections } from "../../utils/references/viewSelections";
 import type { SelectionTag } from "../../utils/references/selectionTags";
 
@@ -42,7 +42,7 @@ function setup() {
         code: CODE,
         selections: [TAG],
         output: { code: "success" },
-        executedCode: runKeyWithShared(CODE, undefined, [], [TAG]),
+        executedCode: runKeyOf(CODE, undefined, [TAG]),
       },
     },
     { id: "reader", data: { nodeId: "reader", code: "return input_0", output: { code: "success" }, executedCode: "return input_0" } },

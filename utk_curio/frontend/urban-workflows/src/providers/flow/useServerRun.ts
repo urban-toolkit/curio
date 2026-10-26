@@ -18,7 +18,7 @@ import type { DatasetInstallWarning } from "../../api/projectsApi";
 import type { IOutput } from "./flowTypes";
 import type { PlayAllState } from "./usePlayAll";
 import { useStepOutcomes, type StepOutcomes } from "./useStepOutcomes";
-import { runKeysOf } from "../../utils/references/sharedParameters";
+import { runKeysOf } from "../../utils/references/runKeys";
 import {
     STOPPED_MESSAGE,
     browserWalk,

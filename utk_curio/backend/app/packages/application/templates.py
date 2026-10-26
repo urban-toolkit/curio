@@ -290,9 +290,8 @@ def template_content_kind(template) -> str:
     - ``note``    — authored presentation content with no validator: dev/90
       A14's post-it profile (``editor: "none"``, NO input port and no widgets).
 
-    A template with ``editor: "none"`` that holds widgets (``hasWidgets``, the
-    Parameter node) is set through them, at ``metadata.widgets``: its content
-    is ``none``.
+    A template with ``editor: "none"`` that holds widgets (``hasWidgets``) is
+    set through them, at ``metadata.widgets``: its content is ``none``.
     """
     if bool(template.has_code):
         return CONTENT_KIND_CODE
@@ -314,8 +313,8 @@ def is_note_template(template) -> bool:
     """Whether a node of this template is a note: a behavior of its own draws
     what its author wrote, the ``note`` content kind. The built-in Note is one.
     A template whose behavior draws its input (a pool, a view, a join, a
-    download) or holds a widget (a Parameter node) is not, and neither is a
-    template with no behavior, which no surface draws."""
+    download) or holds a widget is not, and neither is a template with no
+    behavior, which no surface draws."""
     return bool(template.behavior) and template_content_kind(template) == CONTENT_KIND_NOTE
 
 

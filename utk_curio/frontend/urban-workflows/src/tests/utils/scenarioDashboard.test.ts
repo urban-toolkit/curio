@@ -1,9 +1,9 @@
 /**
  * The dashboard by scenario (#662): the tiles the scenarios share come first,
  * then one column per scenario, then the tiles that read their outcomes. A
- * shared Parameter node has no edge, so it is found as the scenarios' context
- * through its tag. With no pinned tile in a scenario, the dashboard keeps the
- * layout it has always had.
+ * value node wired into the scenarios is their context, as any node wired into
+ * them is. With no pinned tile in a scenario, the dashboard keeps the layout it
+ * has always had.
  */
 import { NodeType } from "../../constants";
 import {
@@ -24,8 +24,9 @@ function node(id: string, at: { x: number; y: number }, extra: Record<string, un
   } as any;
 }
 
-const parameter = (id: string, name: string, at: { x: number; y: number }) =>
-  node(id, at, { nodeType: "curio.builtin/parameter", code: undefined, widgets: [{ name, type: "number", default: 1 }] });
+/** A Python node that returns its widget *name*'s value to the nodes wired after it. */
+const valueNode = (id: string, name: string, at: { x: number; y: number }) =>
+  node(id, at, { code: `return [!! ${name} !!]`, widgets: [{ name, type: "number", default: 1 }] });
 
 function edge(source: string, target: string, targetHandle = "in") {
   return { id: `${source}-${target}`, source, target, sourceHandle: "out", targetHandle } as any;
@@ -106,23 +107,23 @@ describe("the columns", () => {
     expect(columns).toEqual([["load"], ["b1", "b2"], ["a1", "a2"], ["compare"]]);
   });
 
-  test("a shared Parameter node, read only through its tag, sits with the context", () => {
+  test("a value node wired into both scenarios sits with the context", () => {
     const nodes = [
-      parameter("season", "season", { x: 0, y: 900 }),
+      valueNode("season", "season", { x: 0, y: 900 }),
       node("load", { x: 0, y: 0 }),
-      node("a", { x: 600, y: 0 }, { code: "return input_0 * [!! @season !!]" }),
-      node("b", { x: 600, y: 600 }, { code: "return input_0 * [!! @season !!] * 2" }),
+      node("a", { x: 600, y: 0 }, { code: "return input_0 * input_1" }),
+      node("b", { x: 600, y: 600 }, { code: "return input_0 * input_1 * 2" }),
     ];
-    const edges = [edge("load", "a"), edge("load", "b")];
+    const edges = [edge("load", "a"), edge("load", "b"), edge("season", "a", "in_1"), edge("season", "b", "in_1")];
     const scenarios = [
       { ...BASE, nodes: ["a"] },
       { ...TALL, nodes: ["b"] },
     ];
     const pins = { season: true, load: true, a: true, b: true };
 
-    // An edgeless node comes first in Run All's levels, so it heads the column.
+    // Both feed the scenarios from Run All's first level, so the canvas orders them.
     expect(scenarioDashboard(nodes, edges, pins, scenarios)?.columns).toEqual([
-      ["season", "load"],
+      ["load", "season"],
       ["a"],
       ["b"],
     ]);
@@ -131,14 +132,14 @@ describe("the columns", () => {
     expect(at.get("season")!.x).toBeLessThan(at.get("a")!.x);
   });
 
-  test("a Parameter node inside a scenario is its lever, and stays in its column", () => {
+  test("a value node inside a scenario is its lever, and stays in its column", () => {
     const nodes = [
       node("load", { x: 0, y: 0 }),
-      parameter("height", "height", { x: 600, y: 600 }),
-      node("a", { x: 600, y: 0 }, { code: "return input_0 * [!! @height !!]" }),
+      valueNode("height", "height", { x: 600, y: 600 }),
+      node("a", { x: 600, y: 0 }, { code: "return input_0 * input_1" }),
       node("b", { x: 600, y: 1200 }),
     ];
-    const edges = [edge("load", "a"), edge("load", "b")];
+    const edges = [edge("load", "a"), edge("load", "b"), edge("height", "a", "in_1")];
     const scenarios = [
       { ...BASE, nodes: ["height", "a"] },
       { ...TALL, nodes: ["b"] },

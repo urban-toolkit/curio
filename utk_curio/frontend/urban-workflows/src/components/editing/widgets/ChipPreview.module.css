@@ -68,12 +68,6 @@
   color: var(--curio-accent-sky-fg);
 }
 
-.chipShared {
-  border-color: #e8c99a;
-  background: var(--curio-accent-amber-bg);
-  color: var(--curio-accent-amber-fg);
-}
-
 .chipSelection {
   border-color: #f2b9a3;
   background: var(--curio-accent-peach-bg);

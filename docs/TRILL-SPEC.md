@@ -85,11 +85,6 @@ that already holds a backslash as it is. An old
 `[!! name$TYPE$default !!]` marker, or a name the node has no widget for, fails
 the run with a message naming it.
 
-A `curio.builtin/parameter` node holds one widget in `metadata.widgets` and has
-no edges. Any node's `content` places it as `[!! @name !!]`, written and
-replaced as its own widgets are. A name no Parameter node has, or that two
-Parameter nodes have, fails the run with a message naming it.
-
 `metadata.selections` lists the node's selection tags, written only when it has
 any. Each entry is `{name, node, column, ids}`: `node` is the id of a Vega-Lite
 or Autark node, and `ids` the values of `column` in the rows that view's latest
@@ -144,8 +139,7 @@ imply (an Autark node, `import geopandas`, a raster dataset). A save that leaves
 - `source` names the project and scenario it was dragged in from.
 
 What enters a scenario from nodes outside it is its fixed context, its nodes are
-what it changes, and the outputs of its last nodes are what it produces. A
-Parameter node outside it whose tag its nodes' code names is context too.
+what it changes, and the outputs of its last nodes are what it produces.
 
 A node belongs to at most one scenario: a save that puts a node in two, or gives
 two scenarios one id, is refused. A save drops ids that are not nodes of the

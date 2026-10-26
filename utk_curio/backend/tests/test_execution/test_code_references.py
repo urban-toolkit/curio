@@ -65,8 +65,8 @@ class TestTheSharedCases:
             grammar = {"grammar": case["grammar"]} if "grammar" in case else {}
             try:
                 code, problems = resolve_references(
-                    case["code"], case["widgets"], case["language"], case.get("inputs", []), case.get("shared", []),
-                    case.get("selections", []), **grammar,
+                    case["code"], case["widgets"], case["language"], case.get("inputs", []),
+                    selections=case.get("selections", []), **grammar,
                 )
             except Exception as exc:  # one case that raises is a mismatch, the others are still read
                 mismatches.append(f"{case['name']}: raised {exc!r}")
@@ -94,9 +94,6 @@ class TestTheSharedCases:
             "the edge for this input was deleted",
             "names an input the old way",
             "has no column",
-            "no Parameter node is named",
-            "Parameter nodes are named",
-            "does not name a Parameter node",
             "has no selection tag named",
             "does not name a selection tag",
             "a selection tag takes",
@@ -123,11 +120,19 @@ class TestTheSharedCases:
             ]
             assert resolved, f"no layer reference resolves in a {language} case"
 
-    def test_the_table_has_shared_references_in_every_language(self):
+    def test_the_table_refuses_a_name_that_starts_with_at_in_every_language(self):
+        """``[!! @name !!]`` names no widget: a value several nodes read reaches
+        each by an edge, so no chip names another node's widget."""
         cases = _cases()
         for language in ("python", "javascript", "json"):
-            resolved = [c for c in cases if c["language"] == language and "[!! @" in c["code"] and not c.get("problems")]
-            assert resolved, f"no shared reference resolves in a {language} case"
+            refused = [
+                c for c in cases
+                if c["language"] == language and "[!! @" in c["code"]
+                and any(p.startswith("[!! @") and "does not name a widget." in p for p in c.get("problems", []))
+            ]
+            assert refused, f"no {language} case refuses a name that starts with @"
+            resolving = [c for c in cases if c["language"] == language and "[!! @" in c["expected"] and not c.get("problems")]
+            assert not resolving, f"a {language} case resolves a name that starts with @"
 
     def test_the_table_has_selection_references_in_every_language(self):
         cases = _cases()
@@ -277,7 +282,7 @@ class TestThePatternsAreShared:
         from utk_curio.backend.app.execution.code_references import parse_reference
 
         assert parse_reference("selection picked") == {"kind": "selection", "name": "picked"}
-        for inner, kind in (("selection", "widget"), ("selection_2", "widget"), ("@selection", "shared")):
+        for inner, kind in (("selection", "widget"), ("selection_2", "widget"), ("@selection", "widget")):
             assert parse_reference(inner)["kind"] == kind, inner
 
     def test_the_scenario_and_stacked_reference_patterns(self):
@@ -318,8 +323,8 @@ class TestThePatternsAreShared:
         assert tag["count"]["minimum"] == SELECTION_ID_CAP + 1
 
     def test_the_name_pattern(self):
-        """The Widgets tab, a Parameter node and a package manifest refuse a
-        name of another shape; the schemas refuse it in an editor too. The
+        """The Widgets tab and a package manifest refuse a name of another
+        shape; the schemas refuse it in an editor too. The
         packages domain, which imports no other feature, keeps its own copy for
         the widgets a function's parameters suggest."""
         from utk_curio.backend.app.execution.code_references import WIDGET_NAME_RE
@@ -343,8 +348,8 @@ class TestThePatternsAreShared:
         assert INPUT_NAME_ONLY_RE.fullmatch(STACKED_DATASET)
 
     def test_the_input_name_no_widget_takes(self):
-        """The Widgets tab, a Parameter node and a package manifest refuse one
-        name pattern; the schema refuses it in an editor too."""
+        """The Widgets tab and a package manifest refuse one name pattern; the
+        schema refuses it in an editor too."""
         from utk_curio.backend.app.execution.code_references import INPUT_NAME_ONLY_RE
 
         written = re.search(r"INPUT_NAME_ONLY_PATTERN = String\.raw`(.*?)`", self._ts("widgetModel.ts"))
@@ -470,14 +475,12 @@ class TestTheSpecCarriesWidgets:
 
     def test_a_name_that_ends_in_a_line_break_is_dropped_as_the_browser_drops_it(self):
         """The browser's ``normalizeWidgets`` reads the name pattern as
-        ECMA-262 does, where ``$`` ends the text, so it drops this widget, a
-        node's own or a Parameter node's. Python's ``re.match`` lets a final
-        line break through."""
-        from utk_curio.backend.app.execution.code_references import normalize_shared, normalize_widgets
+        ECMA-262 does, where ``$`` ends the text, so it drops this widget.
+        Python's ``re.match`` lets a final line break through."""
+        from utk_curio.backend.app.execution.code_references import normalize_widgets
 
         widget = {"name": "factor\n", "type": "number", "default": 1}
         assert normalize_widgets([widget]) == []
-        assert normalize_shared([widget]) == []
         spec = parse_workflow_dict({"dataflow": {"nodes": [
             {"id": "a", "type": "curio.builtin/data-loading", "content": "x", "metadata": {"widgets": [widget]}},
         ], "edges": []}})
@@ -653,62 +656,25 @@ class TestLayerChips:
         assert f"const {LAYER_HELPER} = (value, layer, slot = 0) =>" in wrapper
 
 
-def _parameter(node_id, widget):
-    return {"id": node_id, "type": "curio.builtin/parameter@1", "content": "", "metadata": {"widgets": [widget]}}
+class TestANameThatStartsWithAt:
+    """``[!! @name !!]`` names no widget: a value several nodes read is a
+    widget on one node that returns it, wired into each reader. A saved node
+    of the removed ``curio.builtin/parameter`` type changes nothing."""
 
-
-SHARED_FACTOR = {"name": "factor", "type": "number", "default": 2, "value": 5}
-
-
-class TestSharedTags:
-    """``[!! @name !!]`` names a Parameter node's widget. A Parameter node has
-    no edge, so the runner reads the dataflow's Parameter nodes, as the canvas
-    does."""
-
-    def test_the_spec_lists_its_parameter_nodes_widgets(self):
-        spec = parse_workflow_dict(_spec([_parameter("p", SHARED_FACTOR), _node("a", "x", FACTOR)]))
-        assert spec.shared_widgets() == [SHARED_FACTOR]
-
-    def test_one_parameter_node_drives_two_nodes(self, tmp_curio):
+    def test_it_fails_the_node_without_the_sandbox(self, tmp_curio):
         rec = _RecordingExec()
-        spec = _spec([
-            _parameter("p", SHARED_FACTOR),
-            _node("a", "return [!! @factor !!] * 10"),
-            _node("j", "return [!! @factor !!] + 1;", node_type="curio.builtin/js-computation"),
-        ])
-        for target in ("a", "j"):
-            report = runner.run_through_node(KEY, PID, spec, target, exec_fn=rec)
-            assert report["ok"] is True, report
-        # One call per node: the Parameter node itself never reaches the sandbox.
-        assert [endpoint for endpoint, _ in rec.calls] == ["/exec", "/execJs"]
-        assert "return 5 * 10" in rec.calls[0][1]["code"]
-        assert "return 5 + 1;" in rec.calls[1][1]["code"]
-
-    def test_a_widget_of_the_same_name_is_another_value(self, tmp_curio):
-        rec = _RecordingExec()
-        spec = _spec([_parameter("p", SHARED_FACTOR), _node("a", "return [!! @factor !!] - [!! factor !!]", FACTOR)])
-        report = runner.run_through_node(KEY, PID, spec, "a", exec_fn=rec)
-        assert report["ok"] is True
-        assert "return 5 - 3" in rec.calls[0][1]["code"]
-
-    def test_no_parameter_node_of_that_name_fails_the_node_without_the_sandbox(self, tmp_curio):
-        rec = _RecordingExec()
-        spec = _spec([_node("a", "return [!! @factor !!]", FACTOR)])
+        saved = {
+            "id": "p", "type": "curio.builtin/parameter@1", "content": "",
+            "metadata": {"widgets": [{"name": "factor", "type": "number", "default": 2, "value": 5}]},
+        }
+        spec = _spec([saved, _node("a", "return [!! @factor !!] - [!! factor !!]", FACTOR)])
         report = runner.run_through_node(KEY, PID, spec, "a", exec_fn=rec)
         assert rec.calls == []
         assert report["ok"] is False and report["blocker"] == "a"
-        assert "no Parameter node is named factor" in report["nodes"]["a"]["stderrTail"]
-
-    def test_two_parameter_nodes_of_one_name_fail_the_node(self, tmp_curio):
-        rec = _RecordingExec()
-        spec = _spec([
-            _parameter("p1", SHARED_FACTOR),
-            _parameter("p2", {**SHARED_FACTOR, "value": 7}),
-            _node("a", "return [!! @factor !!]"),
-        ])
-        report = runner.run_through_node(KEY, PID, spec, "a", exec_fn=rec)
-        assert rec.calls == []
-        assert "2 Parameter nodes are named factor" in report["nodes"]["a"]["stderrTail"]
+        assert (
+            "[!! @factor !!] does not name a widget. Widget names are letters, digits and underscores."
+            in report["nodes"]["a"]["stderrTail"]
+        )
 
 
 PICKED = {"name": "picked", "node": "chart", "column": "osm_id", "ids": [101, 104]}
@@ -786,7 +752,7 @@ class TestSelectionTags:
 
         tag = {**PICKED, "ids": list(range(SELECTION_ID_CAP + 1))}
         with pytest.raises(_reference_error()) as exc:
-            resolve_code_references("x = [!! selection picked !!]", (), "python", (), (), [tag])
+            resolve_code_references("x = [!! selection picked !!]", (), "python", (), selections=[tag])
         assert f"holds {SELECTION_ID_CAP + 1} ids, more than the {SELECTION_ID_CAP}" in str(exc.value)
 
     def test_a_tag_the_node_does_not_have_fails_the_node(self, tmp_curio):

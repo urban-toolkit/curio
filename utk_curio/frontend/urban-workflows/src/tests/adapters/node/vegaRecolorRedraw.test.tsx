@@ -160,7 +160,7 @@ const PICKED_BARS = '{"data": {"name": "[!! inputs !!]"}, "params": [{"name": "p
 /** The spec as the editor writes it with *labels*, each circle's. */
 const written = (labels: ReadonlyMap<number, ScenarioLabel>): string | null => {
   const inputs = [0, 1].map((slot) => ({ slot, scenario: labels.get(slot) }));
-  const { code, problems } = resolveReferences(PICKED_BARS, { widgets: [], inputs, shared: [] }, "json", "vega-lite");
+  const { code, problems } = resolveReferences(PICKED_BARS, { widgets: [], inputs }, "json", "vega-lite");
   return problems.length > 0 ? null : code;
 };
 

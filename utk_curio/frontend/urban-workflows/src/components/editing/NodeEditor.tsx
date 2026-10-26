@@ -43,10 +43,8 @@ import {
     type ReferenceScope,
 } from "../../utils/references/codeReferences";
 import { useInputScope } from "../../hook/useInputScope";
-import { useSharedWidgets } from "../../hook/useSharedWidgets";
 import { useSelectionViews } from "../../hook/useSelectionViews";
 import { normalizeSelections, type SelectionTag } from "../../utils/references/selectionTags";
-import { parameterPreviewOf } from "../../utils/references/sharedParameters";
 import { readSelectionRows } from "../../utils/references/viewSelections";
 import { nodeLabel } from "../scenarios/scenarioLabels";
 import type { ChipPreviewData } from "./widgets/ChipPreview";
@@ -204,29 +202,26 @@ function NodeEditor({
     // where Vega-Lite reads a field.
     const referenceGrammar = grammar && isVegaLiteNodeType(nodeType) ? VEGA_LITE : undefined;
 
-    // #662: what the node's references name: its widgets, its wired inputs,
-    // the Parameter nodes' shared tags and its selection tags. Input, layer,
-    // column, selection and shared tags sit above its code or spec.
+    // #662: what the node's references name: its widgets, its wired inputs
+    // and its selection tags. Input, layer, column and selection tags sit above
+    // its code or spec.
     const { inputs, emptyInputs, loadColumns, previews: inputPreviews, loadPreview } = useInputScope(data);
-    const shared = useSharedWidgets();
     const scope: ReferenceScope = useMemo(
         () => ({
             widgets: widgetsTab ? widgets : NO_WIDGETS,
             inputs,
-            shared,
             selections: widgetsTab ? selections : NO_SELECTIONS,
         }),
-        [widgetsTab, widgets, inputs, shared, selections],
+        [widgetsTab, widgets, inputs, selections],
     );
 
     // What the hover of a chip, in the code or in the header, previews
-    // (ChipPreview): each input's rows, read as its tooltip first shows; each
-    // Parameter node's title and how many nodes read it, and each selection
-    // tag's view and the rows its ids pick there, read as its tooltip shows.
+    // (ChipPreview): each input's rows, read as its tooltip first shows, and
+    // each selection tag's view and the rows its ids pick there, read as its
+    // tooltip shows.
     const [selectionRows, setSelectionRows] = useState<
         Record<string, { columns: string[]; rows: Record<string, unknown>[] } | { unreadable: true } | null>
     >({});
-    const [parameters, setParameters] = useState<Record<string, { node: string; readers: number }>>({});
     const flowNodeList: any[] = Array.isArray(flowNodes) ? flowNodes : [];
     const viewsFound: Record<string, string> = Object.fromEntries(
         selections.map((tag) => [tag.name, nodeLabel(flowNodeList.find((node) => node.id === tag.node), tag.node)]),
@@ -243,8 +238,8 @@ function NodeEditor({
         [viewsSignature, selectionRows],
     );
     const chipData: ChipPreviewData = useMemo(
-        () => ({ inputs: inputPreviews, parameters, selections: selectionPreviews }),
-        [inputPreviews, parameters, selectionPreviews],
+        () => ({ inputs: inputPreviews, selections: selectionPreviews }),
+        [inputPreviews, selectionPreviews],
     );
     const chipSnapshot = useMemo(
         () => ({ scope, language: widgetLanguage, data: chipData }),
@@ -261,15 +256,6 @@ function NodeEditor({
             if (tag) {
                 void readSelectionRows(tag).then((rows) => setSelectionRows((held) => ({ ...held, [tag.name]: rows })));
             }
-        } else if (parsed.kind === "shared") {
-            const parameter = parameterPreviewOf(flowNodeList, parsed.name);
-            setParameters((held) => {
-                if (JSON.stringify(held[parsed.name] ?? null) === JSON.stringify(parameter)) return held;
-                const next = { ...held };
-                if (parameter) next[parsed.name] = parameter;
-                else delete next[parsed.name];
-                return next;
-            });
         }
     });
     // The play callback is registered once, so a run without a Widgets tab
@@ -727,7 +713,6 @@ function NodeEditor({
                                             onResolveError={resolveError}
                                             inputs={inputs}
                                             emptyInputs={emptyInputs}
-                                            shared={shared}
                                             selections={selections}
                                             onSelectionsChange={updateSelections}
                                             views={views}

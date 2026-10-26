@@ -65,7 +65,7 @@ function written(id: string, values: Record<string, WidgetValue>): Json {
   const text = fs.readFileSync(path.join(SCOUT, source), "utf-8");
   const { code, problems } = resolveReferences(
     text,
-    { widgets: normalizeWidgets(set), inputs: BOXES, shared: [] },
+    { widgets: normalizeWidgets(set), inputs: BOXES },
     "json",
     "vega-lite",
   );

@@ -1,13 +1,14 @@
 import type { GraphPreview } from "../../api/projectsApi";
 import type { ScenarioDetails, ScenarioRow } from "../../services/scenarioCatalog";
 
-/** A four-node project: a loader and a Parameter feed a filter, which feeds a
- *  chart. The scenario's levers are the Parameter and the filter. Each node
- *  carries the category its template declares, as the server's preview does. */
+/** A four-node project: a loader and a value node, a Python node that returns
+ *  its widget's year, feed a filter, which feeds a chart. The scenario's levers
+ *  are the value node and the filter. Each node carries the category its
+ *  template declares, as the server's preview does. */
 export const HEAT_PREVIEW: GraphPreview = {
   nodes: [
     { id: "load", type: "curio.builtin/data-loading@1", category: "data", x: 0, y: 0 },
-    { id: "year", type: "curio.builtin/parameter@1", category: "flow", x: 0, y: 200 },
+    { id: "year", type: "curio.builtin/computation-analysis@1", category: "computation", x: 0, y: 200 },
     { id: "filter", type: "curio.builtin/data-transformation@1", category: "data", x: 300, y: 100 },
     { id: "chart", type: "curio.builtin/vis-vega@1", category: "vis_grammar", x: 600, y: 100 },
   ],
@@ -60,8 +61,8 @@ export function exampleScenario(over: Partial<ScenarioRow> = {}): ScenarioRow {
 }
 
 /** `heatScenario`'s details: a loader with a saved output as its fixed
- *  context, two levers (a Parameter without a title, a titled filter) and a
- *  chart as its outcome. */
+ *  context, two levers (the value node without a title, with a saved output,
+ *  and a titled filter) and a chart as its outcome. */
 export function heatDetails(row: ScenarioRow = heatScenario()): ScenarioDetails {
   return {
     ...row,
@@ -86,9 +87,18 @@ export function heatDetails(row: ScenarioRow = heatScenario()): ScenarioDetails 
     levers: [
       {
         id: "year",
-        type: "curio.builtin/parameter@1",
-        parameter: { name: "year", value: 2020 },
-        results: [],
+        type: "curio.builtin/computation-analysis@1",
+        results: [
+          {
+            datasetId: "d-year",
+            nodeId: "year",
+            title: "Year",
+            format: "json",
+            rowCount: null,
+            featureCount: null,
+            updatedAt: null,
+          },
+        ],
       },
       {
         id: "filter",

@@ -58,10 +58,10 @@ def _rendered() -> dict[str, str]:
 
 
 def _chip_kind(inner: str) -> str | None:
-    """The kind of the chip *inner* stands in: a widget, a shared tag, a
-    selection tag, an input with its layer and its column if it names them, a
-    scenario chip by the list it writes, the dataset of every input or one of
-    its columns. None for a scenario word no chip is."""
+    """The kind of the chip *inner* stands in: a widget, a selection tag, an
+    input with its layer and its column if it names them, a scenario chip by
+    the list it writes, the dataset of every input or one of its columns. None
+    for a scenario word no chip is."""
     from utk_curio.backend.app.execution.code_references import parse_reference
 
     parsed = parse_reference(inner)
@@ -97,7 +97,7 @@ def test_every_knowledge_page_is_listed_and_reaches_the_agents():
 
 def test_every_built_in_template_is_named_on_a_page():
     templates = [t["id"] for t in json.loads(BUILTIN_MANIFEST.read_text(encoding="utf-8"))["templates"]]
-    assert len(templates) >= 14, templates
+    assert len(templates) >= 13, templates
     named = {found for text in _sources().values() for found in _TEMPLATE_MARKER_RE.findall(text)}
     missing = [template for template in templates if template not in named]
     assert not missing, (

@@ -22,7 +22,6 @@ import {
   faObjectGroup,
   faRectangleList,
   faServer,
-  faSliders,
   faTable,
   faUpload,
 } from '@fortawesome/free-solid-svg-icons';
@@ -60,7 +59,6 @@ registerIcon('fa-solid:chart-line', faChartLine);
 registerIcon('fa-solid:table', faTable);
 registerIcon('fa-solid:city', faCity);
 registerIcon('fa-solid:object-group', faObjectGroup);
-registerIcon('fa-solid:sliders', faSliders);
 registerIcon('fa-solid:hand-pointer', faHandPointer);
 registerIcon('fa-solid:note-sticky', faNoteSticky);
 registerIcon('fa-solid:cube', faCube);

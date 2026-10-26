@@ -68,7 +68,7 @@ describe("DataflowThumbnail without a highlight", () => {
     // Each node: the white box, then its colour bar, in its category's colour.
     const barColours = [
       "var(--curio-category-data-fg)",
-      "var(--curio-category-package-fg)",
+      "var(--curio-category-computation-fg)",
       "var(--curio-category-data-fg)",
       "var(--curio-category-vis-fg)",
     ];

@@ -6,7 +6,7 @@ a dashboard walks through the nodes that show what reaches them
 (``dashboard_payload``, ``scenario_catalog/domain/parts``), a pinned
 comparison is its own dashboard source, a save keeps no output of its own for
 a chart (``services._is_sink_node_type``), and a run on the server hands on
-what a download, a Parameter node or a note receives (``execution/run_plan``).
+what a download or a note receives (``execution/run_plan``).
 The Data Catalog counts a dataset's consumers after the node that loads it, one
 whose template declares the ``loadsDataset`` flag, as the agents read it
 (``datasets/application/export``). A package template that declares a built-in

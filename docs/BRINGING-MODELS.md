@@ -753,4 +753,4 @@ authors' permission.
 - [MODEL-CATALOG.md](MODEL-CATALOG.md): the Model Catalog, and every manifest field.
 - [AUTHORING-NODES.md](AUTHORING-NODES.md): writing a node package, its widgets and its modules.
 - [NODE-CATALOG.md](NODE-CATALOG.md): how packages are installed and shared.
-- [USAGE.md](USAGE.md): building and running dataflows, widgets and Parameter nodes.
+- [USAGE.md](USAGE.md): building and running dataflows, and their widgets.

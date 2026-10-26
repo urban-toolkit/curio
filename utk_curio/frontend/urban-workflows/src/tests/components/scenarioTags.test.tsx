@@ -66,7 +66,7 @@ const strip = (wired: InputScope[], more: Record<string, unknown> = {}) =>
 
 /** What the chip *inner* writes over *wired*, as a run writes it, read back as JSON. */
 const written = (inner: string, wired: InputScope[]) =>
-  JSON.parse(resolveReferences(`[!! ${inner} !!]`, { widgets: [], inputs: wired, shared: [] }, "json").code);
+  JSON.parse(resolveReferences(`[!! ${inner} !!]`, { widgets: [], inputs: wired }, "json").code);
 
 /** Each chip of an input in Scenarios: its circle, the name beside its swatch, and its swatch's color. */
 const inputChipsOf = (chips: HTMLElement) =>

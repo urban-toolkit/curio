@@ -7,8 +7,7 @@ draws them with ``[!! scenario colors !!]`` and ``[!! scenario order !!]``:
 
 1. On the chart's Grammar tab, the header above the spec is one row of closed
    categories: Inputs 3 (``input_0``, ``input_1`` and ``inputs``), Scenarios 5
-   and Widgets 3. The dataflow's season is a node wired into its shadow nodes,
-   so no Shared category shows.
+   and Widgets 3.
 2. Opened, Scenarios shows both boxes' swatches, Existing's and Towers
    removed's, as one tag, then text colors and order, then a tag per input in
    the color of the box it comes from.

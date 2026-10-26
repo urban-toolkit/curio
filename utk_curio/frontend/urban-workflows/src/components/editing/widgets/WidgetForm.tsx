@@ -28,21 +28,18 @@ const numberText = (n: number | undefined) => (n === undefined ? "" : String(n))
 
 /**
  * Adding a widget, or editing one (#662). An existing widget keeps its name:
- * the code's references name it, so a new name is a new widget. A Parameter
- * node's widget (*parameter*) can be renamed, and the references to it follow.
+ * the code's references name it, so a new name is a new widget.
  */
 export function WidgetForm({
   initial,
   others,
   onSave,
   onCancel,
-  parameter = false,
 }: {
   initial?: WidgetDef;
   others: WidgetDef[];
   onSave: (def: WidgetDef) => void;
   onCancel: () => void;
-  parameter?: boolean;
 }) {
   const [name, setName] = useState(initial?.name ?? "");
   const [type, setType] = useState<WidgetKind>(initial?.type ?? "number");
@@ -81,7 +78,7 @@ export function WidgetForm({
     ...(label.trim() ? { label: label.trim() } : {}),
     ...(options ? { options } : {}),
   };
-  const problem = checkWidgetDef(candidate, others, parameter);
+  const problem = checkWidgetDef(candidate, others);
 
   // A slider's default follows its bounds, so a new bound does not leave it outside.
   const setBound = (which: "min" | "max", text: string) => {
@@ -99,7 +96,7 @@ export function WidgetForm({
           type="text"
           aria-label="Widget name"
           value={name}
-          disabled={initial !== undefined && !parameter}
+          disabled={initial !== undefined}
           placeholder="season"
           onChange={(e) => setName(e.target.value)}
         />
@@ -233,7 +230,7 @@ export function WidgetForm({
           Cancel
         </button>
         <button type="button" className={styles.primary} disabled={problem !== null} onClick={() => onSave(candidate)}>
-          {initial ? (parameter ? "Save parameter" : "Save widget") : parameter ? "Add parameter" : "Add widget"}
+          {initial ? "Save widget" : "Add widget"}
         </button>
       </span>
     </div>

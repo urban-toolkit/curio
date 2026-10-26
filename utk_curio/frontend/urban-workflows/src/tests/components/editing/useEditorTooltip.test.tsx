@@ -48,7 +48,7 @@ const MOUSE_TARGET_TYPE = {
 };
 
 const widgets: WidgetDef[] = [{ name: "season", type: "text", default: "summer" }];
-const scope: ReferenceScope = { widgets, inputs: [{ slot: 0, columns: ["height"] }], shared: [] };
+const scope: ReferenceScope = { widgets, inputs: [{ slot: 0, columns: ["height"] }] };
 
 type Listener = (event: unknown) => void;
 type Position = { lineNumber: number; column: number };

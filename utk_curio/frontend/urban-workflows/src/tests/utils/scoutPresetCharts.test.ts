@@ -117,7 +117,7 @@ function at(spec: Json, where: (string | number)[]): Json {
 function scopeOf(id: string, values: Record<string, WidgetValue>, boxes: ScenarioLabel[]): ReferenceScope {
   const widgets = template(id).widgets.map((w) => (w.name in values ? { ...w, value: values[w.name] } : w));
   const inputs: InputScope[] = boxes.map((box, slot) => ({ slot, scenario: { ...box, rank: slot } }));
-  return { widgets: normalizeWidgets(widgets), inputs, shared: [] };
+  return { widgets: normalizeWidgets(widgets), inputs };
 }
 
 /** *id*'s spec, its widgets set to *values*, as a chart draws it: its chips

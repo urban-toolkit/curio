@@ -3,8 +3,7 @@
  *
  * - its levers, the nodes in it, which an alternative changes;
  * - its fixed context, the nodes outside it that it reads, through an edge
- *   into it or through a shared tag (`[!! @name !!]`) its code names. A tag
- *   has no edge, so the edges alone would miss a Parameter node;
+ *   into it;
  * - its outcomes, the nodes in it whose output nothing in it reads, or that
  *   something outside it reads.
  *
@@ -13,8 +12,6 @@
  */
 import { directedEdgesOf } from "../../providers/flow/runLevels";
 import { dashboardSourceNodeIds, isPassThroughNode, producersFeeding } from "../dashboardLayout";
-import { sharedNamesIn } from "../references/codeReferences";
-import { isParameterNode, nodeCode, normalizeShared } from "../references/sharedParameters";
 import type { Scenario } from "./scenarioModel";
 
 type FlowNodeLike = { id: string; type?: string | null; data?: any };
@@ -68,20 +65,7 @@ export function scenarioParts(
     else if (fromInside && !toInside) readOutside.add(edge.source);
   }
 
-  const named = new Set(levers.flatMap((id) => sharedNamesIn(nodeCode(byId.get(id)!))));
-  if (named.size > 0) {
-    for (const node of nodes) {
-      if (members.has(node.id) || !isParameterNode(node)) continue;
-      if (normalizeShared(node.data?.widgets).some((widget) => named.has(widget.name))) {
-        context.add(node.id);
-      }
-    }
-  }
-
-  // A Parameter node has no output, so it is never an outcome.
-  const outcomes = levers.filter(
-    (id) => !isParameterNode(byId.get(id)!) && (!readInside.has(id) || readOutside.has(id)),
-  );
+  const outcomes = levers.filter((id) => !readInside.has(id) || readOutside.has(id));
   return {
     levers,
     context: nodes.filter((node) => context.has(node.id)).map((node) => node.id),
@@ -93,8 +77,7 @@ export function scenarioParts(
  * The nodes whose saved output stands for *id*'s, in canvas order: itself, or
  * for a pass-through (a chart, a Data Pool, a drawing Autark node), which
  * saves nothing itself, the nodes feeding it, the walk pinned dashboard tiles
- * use. A Parameter node's value is in the spec, so it has none. Kept in sync
- * with `saved_sources` in `scenario_catalog/domain/parts.py`.
+ * use. Kept in sync with `saved_sources` in `scenario_catalog/domain/parts.py`.
  */
 export function savedSourcesOf(
   id: string,
@@ -102,7 +85,7 @@ export function savedSourcesOf(
   edges: readonly FlowEdgeLike[],
 ): string[] {
   const node = nodes.find((n) => n.id === id);
-  if (!node || isParameterNode(node)) return [];
+  if (!node) return [];
   if (!isPassThroughNode(node)) return [id];
   const feeding = producersFeeding([id], nodes, edges);
   return nodes.filter((n) => feeding.has(n.id)).map((n) => n.id);

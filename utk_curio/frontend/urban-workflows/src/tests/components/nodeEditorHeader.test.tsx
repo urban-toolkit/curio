@@ -61,15 +61,17 @@ const WIDGETS = [
 ];
 const SPEC = '{\n  "data": {"name": "[!! inputs !!]"},\n  "mark": "bar"\n}';
 
-/** Two shadows, each in its box, feeding each chart; a season Parameter node beside them. */
+/** Two shadows, each in its box, feeding each chart; beside them a season
+ * value node wired to neither, whose widget is its own and in no other node's
+ * header. */
 function setFlow(targets: string[]) {
   mockFlow.nodes = [
     { id: "shadow-a", type: "curio.scout/raster-calculator", data: { title: "Shadow over the ground" } },
     { id: "shadow-b", type: "curio.scout/raster-calculator", data: { title: "Shadow over the ground" } },
     {
       id: "season",
-      type: "curio.builtin/parameter",
-      data: { widgets: [{ name: "season", type: "text", label: "Season", default: "summer" }] },
+      type: "curio.builtin/computation-analysis",
+      data: { code: "return [!! season !!]", widgets: [{ name: "season", type: "text", label: "Season", default: "summer" }] },
     },
     ...targets.map((id) => ({ id, type: "x", data: { title: "Mean accumulated shadow" } })),
   ];
@@ -128,7 +130,7 @@ test("a built-in Vega-Lite node and a Scout chart over the same inputs give the 
   const scoutHeader = headerOf(scout.container);
 
   expect(scoutHeader).toEqual(builtinHeader);
-  expect(builtinHeader.row).toEqual(["Inputs 3", "Scenarios 5", "Widgets 2", "Shared 1"]);
+  expect(builtinHeader.row).toEqual(["Inputs 3", "Scenarios 5", "Widgets 2"]);
   expect(builtinHeader.chips).toEqual({
     inputs: ["input_0 -> [!! input_0 !!]", "input_1 -> [!! input_1 !!]", "inputs -> [!! inputs !!]"],
     scenarios: [
@@ -139,7 +141,6 @@ test("a built-in Vega-Lite node and a Scout chart over the same inputs give the 
       "input_1Towers removed -> [!! scenario input_1 !!] #e76f51",
     ],
     widgets: ["y -> [!! y !!]", "y_title -> [!! y_title !!]"],
-    shared: ["@season -> [!! @season !!]"],
   });
 });
 
@@ -166,11 +167,10 @@ test("a code node over the same inputs shows no Scenarios and no inputs tag", ()
   setFlow(["code-node"]);
   const view = render(codeEditor("code-node"));
   expect(headerOf(view.container)).toEqual({
-    row: ["Inputs 2", "Widgets 2", "Shared 1"],
+    row: ["Inputs 2", "Widgets 2"],
     chips: {
       inputs: ["input_0 -> [!! input_0 !!]", "input_1 -> [!! input_1 !!]"],
       widgets: ["y -> [!! y !!]", "y_title -> [!! y_title !!]"],
-      shared: ["@season -> [!! @season !!]"],
     },
   });
 });

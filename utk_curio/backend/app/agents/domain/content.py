@@ -763,16 +763,12 @@ def _parse_dataflow_plan_verbose(raw: object) -> tuple[dict | None, list[str]]:
 
 def _plan_node_widgets(node: dict, raw: object, where: str) -> list[str]:
     """#662: a planned node's widgets, set on *node* (absent when it has none),
-    or the errors. A Parameter node holds exactly one: the value every node's
-    code places as a shared tag."""
+    or the errors."""
     from utk_curio.backend.app.agents.domain import widget_grammar
-    from utk_curio.backend.app.execution.workflow_spec import PARAMETER_TYPE
 
     widgets, problems = widget_grammar.parse_widgets(raw, f"{where}.widgets")
     if problems:
         return problems
-    if node["nodeType"].split("@", 1)[0] == PARAMETER_TYPE and len(widgets) != 1:
-        return [agent_text.message("plan.parameter-one-widget", where=where)]
     if widgets:
         node["widgets"] = widgets
     return []

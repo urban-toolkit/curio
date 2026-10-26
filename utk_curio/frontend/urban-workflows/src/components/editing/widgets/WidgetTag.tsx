@@ -7,7 +7,6 @@ import {
   INPUT_REF_MIME,
   SCENARIO_REF_MIME,
   SELECTION_REF_MIME,
-  SHARED_REF_MIME,
   WIDGET_REF_MIME,
   inWords,
 } from "./monacoCodeReferences";
@@ -25,7 +24,6 @@ import {
   scenarioInputReferenceInner,
   scenarioReferenceInner,
   selectionReferenceInner,
-  sharedReferenceInner,
   stackedFields,
   stackedReferenceInner,
   type CodeLanguage,
@@ -65,31 +63,6 @@ export function WidgetTag({
   );
 }
 
-/** A shared tag (#662): a Parameter node's widget, which any node's code can
- * name as `[!! @name !!]`. */
-export function SharedTag({
-  name,
-  onInsert,
-  disabled = false,
-}: {
-  name: string;
-  onInsert?: (inner: string) => void;
-  disabled?: boolean;
-}) {
-  return (
-    <ReferenceTag
-      className={styles.sharedTag}
-      mime={SHARED_REF_MIME}
-      inner={sharedReferenceInner(name)}
-      text={sharedReferenceInner(name)}
-      title={`The value of the Parameter node ${name}`}
-      dataAttributes={{ "data-shared-tag": name }}
-      onInsert={onInsert}
-      disabled={disabled}
-    />
-  );
-}
-
 /** A selection tag (#662): the ids of the rows a view's selection picks, which
  * the node's code names as `[!! selection name !!]`. */
 export function SelectionTag({
@@ -113,12 +86,6 @@ export function SelectionTag({
       disabled={disabled}
     />
   );
-}
-
-/** One tag per shared name, in order: two Parameter nodes with one name are
- * one tag, whose reference reports the clash. */
-export function uniqueSharedNames(shared: WidgetDef[]): string[] {
-  return Array.from(new Set(shared.map((w) => w.name)));
 }
 
 /** A tag that drags (or, clicked, inserts) the reference to *inner*. *label*
@@ -707,21 +674,19 @@ const CATEGORY_NAMES: Record<StripCategory, string> = {
   scenarios: "Scenarios",
   widgets: "Widgets",
   selections: "Selections",
-  shared: "Shared",
 };
 
 /** The attribute a category's name carries, which tests find it by. */
 const CATEGORY_NAME_ATTRIBUTES: Partial<Record<StripCategory, string>> = {
   inputs: "data-input-strip",
   selections: "data-selection-strip",
-  shared: "data-shared-strip",
 };
 
 /**
  * The header above a code or grammar editor (#662): every chip the node can
  * use, whatever its code or spec uses, in one row of categories, each with its
- * count and shown only when it has chips: Inputs, Scenarios, Widgets,
- * Selections and Shared. Every category starts closed; a click opens its chips
+ * count and shown only when it has chips: Inputs, Scenarios, Widgets and
+ * Selections. Every category starts closed; a click opens its chips
  * under the row, closing the category open, and a second click closes them.
  * The one open stays open for its node (*nodeId*) while the dataflow is open
  * (`stripCategories`).
@@ -740,8 +705,7 @@ const CATEGORY_NAME_ATTRIBUTES: Partial<Record<StripCategory, string>> = {
  *   scenario box: in a Vega-Lite spec the boxes' swatches, text colors and
  *   order, then, in a Vega-Lite or an Autark spec, a tag per input in its color
  *   (`ScenarioChips`).
- * - Widgets, Selections and Shared: the node's widgets, its selection tags and
- *   the dataflow's shared tags.
+ * - Widgets and Selections: the node's widgets and its selection tags.
  *
  * Code shows no Scenarios and no `inputs` tag. With a preview source
  * (*previews*), each tag's hover previews what its chip holds (ChipPreview).
@@ -750,7 +714,6 @@ export function ReferenceStrip({
   nodeId,
   widgets,
   inputs = [],
-  shared = [],
   selections = [],
   language,
   grammar,
@@ -763,7 +726,6 @@ export function ReferenceStrip({
   nodeId?: string | null;
   widgets: WidgetDef[];
   inputs?: InputScope[];
-  shared?: WidgetDef[];
   selections?: SelectionTagDef[];
   /** The editor's language: a spec's chips are `json`. */
   language?: CodeLanguage;
@@ -776,7 +738,6 @@ export function ReferenceStrip({
   disabled?: boolean;
 }) {
   const [open, toggle] = useOpenCategories(nodeId);
-  const sharedNames = uniqueSharedNames(shared);
   const spec = language === "json";
   const vegaLite = spec && grammar === VEGA_LITE;
   // A spec that reads inputs stacks one input as it stacks several.
@@ -788,7 +749,6 @@ export function ReferenceStrip({
     scenarios: scenarios ? (vegaLite ? SCENARIO_LISTS.length : 0) + inputs.length : 0,
     widgets: widgets.length,
     selections: selections.length,
-    shared: sharedNames.length,
   };
   const shown = STRIP_CATEGORIES.filter((category) => counts[category] > 0);
   if (shown.length === 0) return null;
@@ -816,8 +776,6 @@ export function ReferenceStrip({
         return selections.map((tag) => (
           <SelectionTag key={tag.name} name={tag.name} onInsert={onInsert} disabled={disabled} />
         ));
-      case "shared":
-        return sharedNames.map((name) => <SharedTag key={name} name={name} onInsert={onInsert} disabled={disabled} />);
     }
   };
 

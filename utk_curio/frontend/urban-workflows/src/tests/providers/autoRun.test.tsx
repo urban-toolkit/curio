@@ -1,7 +1,7 @@
 /**
- * Auto-run (#845): with "Run stale nodes automatically" on, a widget or
- * Parameter value change runs the nodes it touched and every node below them,
- * once the changes settle, through the run Run All starts. A change that
+ * Auto-run (#845): with "Run stale nodes automatically" on, a widget value
+ * change runs the nodes it touched and every node below them, once the
+ * changes settle, through the run Run All starts. A change that
  * arrives while a run goes waits for it and then runs once.
  */
 import { act, renderHook } from "@testing-library/react";

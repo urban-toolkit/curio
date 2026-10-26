@@ -2,9 +2,9 @@
 (:class:`KeptStepOutput`), a dashboard viewer's among them.
 
 A run is one press of Run All (no target), of a node's play button
-(``target_node_id`` set), or an automatic run after a widget or Parameter
-change (``target_node_ids``: the nodes the change touched and those below
-them, #845), executed on the server. Each node it touches has a step that says
+(``target_node_id`` set), or an automatic run after a widget change
+(``target_node_ids``: the nodes the change touched and those below them,
+#845), executed on the server. Each node it touches has a step that says
 what happened to it, when, and what it printed.
 
 Deleting a project deletes its runs: the backref below cascades through the

@@ -170,8 +170,8 @@ export interface FlowContextProps {
     attachLatestRun: (projectId: string) => Promise<void>;
     /** Auto-run is offered: Run All runs on the server here (#845). */
     autoRunAvailable: boolean;
-    /** A widget or Parameter value changed what *nodeIds* compute: with auto-run on, they and
-     * the nodes below them run once the changes settle (#845). */
+    /** A widget value changed what *nodeIds* compute: with auto-run on, they and the nodes
+     * below them run once the changes settle (#845). */
     requestAutoRun: (nodeIds: readonly string[]) => void;
     /** Run *nodeIds* and every node below them now, the nodes an automatic run takes
      * (`autoRunTargets`), whether auto-run is on or not: the Map Editor node's Commit edits. */

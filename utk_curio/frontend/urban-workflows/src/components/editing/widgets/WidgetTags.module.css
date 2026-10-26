@@ -245,14 +245,6 @@
   text-overflow: ellipsis;
 }
 
-/* A shared tag, a Parameter node's widget: amber, like its chips. */
-.sharedTag {
-  composes: tag;
-  border-color: #e8c99a;
-  background: var(--curio-accent-amber-bg);
-  color: var(--curio-accent-amber-fg);
-}
-
 /* A selection tag, the ids a view's selection picks: peach, like its chips. */
 .selectionTag {
   composes: tag;
@@ -306,8 +298,8 @@
   box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.2);
 }
 
-/* A node's Widgets tab and a Parameter node's body. A panel that holds more
-   than it shows scrolls with the Data Catalog's thin scrollbar. */
+/* A node's Widgets tab and a dashboard tile's controls. A panel that holds
+   more than it shows scrolls with the Data Catalog's thin scrollbar. */
 .panel {
   composes: thinScrollbar from "../../../styles/scrollbars.module.css";
   --widget-h: 22px;
@@ -430,8 +422,8 @@
   gap: 4px;
 }
 
-/* The dataflow's shared tags, below the node's own widgets: each with the
-   value its Parameter node holds. */
+/* The node's selection tags, below its own widgets (SelectionTags): each with
+   what it holds. */
 .shared {
   margin-top: 10px;
 }
@@ -441,12 +433,6 @@
   color: var(--curio-text-secondary);
   font-size: 10px;
   font-weight: 600;
-}
-
-/* A Parameter node's list of the nodes whose code uses it. */
-.users {
-  margin: 2px 0 0;
-  padding-left: 16px;
 }
 
 .sharedValue {

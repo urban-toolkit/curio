@@ -1,9 +1,8 @@
 /**
  * The controls a dashboard's viewer changes (#1117): the pin decides. Every
  * widget a pinned tile shows (NodeEditor shows a node's widgets as its tile's
- * controls), a pinned Parameter node's included, except the
- * kinds `contracts/dashboardRuns.json` keeps read-only, whose free value could
- * name another of the owner's datasets or files. The backend holds a viewer's
+ * controls), except the kinds `contracts/dashboardRuns.json` keeps read-only,
+ * whose free value could name another of the owner's datasets or files. The backend holds a viewer's
  * values to the same rule (`runs/viewer.py::dashboard_controls`).
  */
 import dashboardRuns from "../../contracts/dashboardRuns.json";

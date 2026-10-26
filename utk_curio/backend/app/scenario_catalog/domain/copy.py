@@ -2,10 +2,9 @@
 project's spec (#662).
 
 * Its levers, with the edges between them and the edges entering them.
-* Its fixed context. A Parameter node is copied with its value; any other
-  context node stands for the output it passes on, so it is the one node whose
-  saved output (``saved_sources``) arrives as data. A context node that
-  passes on several outputs, or none, cannot.
+* Its fixed context. A context node stands for the output it passes on, so it
+  is the one node whose saved output (``saved_sources``) arrives as data. A
+  context node that passes on several outputs, or none, cannot.
 * The outputs its outcomes show, which are the saved outputs of levers.
 * What the levers need: their packages, datasets and models.
 """
@@ -16,7 +15,6 @@ from typing import Any
 from utk_curio.backend.app.scenario_catalog.domain.duplicate import lineage_of
 from utk_curio.backend.app.scenario_catalog.domain.parts import (
     _template,
-    is_parameter_node,
     saved_sources,
     scenario_parts,
 )
@@ -53,15 +51,12 @@ def copy_plan(scenario: dict, nodes: list[dict], edges: list[dict], packages=Non
     for node_id in parts["context"]:
         node = by_id[node_id]
         entry: dict[str, Any] = {"nodeId": node_id, "label": node_label(node)}
-        if is_parameter_node(node):
-            entry["parameter"] = True
+        sources = saved_sources(node_id, nodes, edges, packages)
+        if len(sources) == 1:
+            source = by_id[sources[0]]
+            entry["source"] = {"nodeId": source["id"], "copiedFrom": lineage_of(source)}
         else:
-            sources = saved_sources(node_id, nodes, edges, packages)
-            if len(sources) == 1:
-                source = by_id[sources[0]]
-                entry["source"] = {"nodeId": source["id"], "copiedFrom": lineage_of(source)}
-            else:
-                entry["sources"] = sources
+            entry["sources"] = sources
         context.append(entry)
 
     outcomes = [
@@ -72,13 +67,12 @@ def copy_plan(scenario: dict, nodes: list[dict], edges: list[dict], packages=Non
         }
         for node_id in parts["outcomes"]
     ]
-    copied = [by_id[i] for i in levers] + [by_id[c["nodeId"]] for c in context if c.get("parameter")]
     return {
         "levers": levers,
         "context": context,
         "outcomes": outcomes,
         "dataflow": {
-            "nodes": copied,
+            "nodes": [by_id[i] for i in levers],
             "edges": [e for e in edges if e["target"] in inside],
         },
     }

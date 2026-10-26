@@ -56,7 +56,6 @@ const mockBuiltin = [
     { id: "curio.builtin/vis-simple@1", label: "Simple View", category: "vis_simple" },
     { id: "curio.builtin/data-summary@1", label: "Data Summary", category: "computation" },
     { id: "curio.builtin/js-computation@1", label: "JS Computation", category: "computation" },
-    { id: "curio.builtin/parameter@1", label: "Parameter", category: "flow" },
     { id: "curio.builtin/data-pool@1", label: "Data Pool", category: "data" },
     { id: "curio.builtin/edit-features@1", label: "Map Editor", category: "data" },
     { id: "curio.builtin/note@1", label: "Note", category: "flow" },
@@ -87,7 +86,7 @@ import ToolsMenu from "../../components/menus/nodes/ToolsMenu";
 /** The groups the tiles came in before, top to bottom: data and flow, then
  *  computation, then the views. */
 const GROUPS = [
-    ["data-loading", "data-export", "data-transformation", "spatial-join", "parameter", "data-pool", "edit-features", "note"],
+    ["data-loading", "data-export", "data-transformation", "spatial-join", "data-pool", "edit-features", "note"],
     ["computation-analysis", "data-summary", "js-computation"],
     ["autk-grammar", "vis-vega", "vis-simple"],
 ];

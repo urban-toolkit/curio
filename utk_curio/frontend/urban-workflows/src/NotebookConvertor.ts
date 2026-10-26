@@ -5,9 +5,8 @@ import { dataflowOrder } from "./utils/dataflowOrder";
 import { unversionedNodeType } from "./utils/flowNodeCanonicalType";
 import { inputSlotOf, slotHandleId } from "./utils/inputSlots";
 import { VEGA_LITE, inputNamesIn, resolveReferences, widgetLiteral } from "./utils/references/codeReferences";
-import { PARAMETER_NODE_TYPE, sharedWidgetsOfSpec } from "./utils/references/sharedParameters";
 import { normalizeSelections } from "./utils/references/selectionTags";
-import { normalizeWidgets, type WidgetDef, type WidgetValue } from "./utils/widgets/widgetModel";
+import { normalizeWidgets, type WidgetValue } from "./utils/widgets/widgetModel";
 import { INPUTS_DATASET, namesDataset, readsInputs, usesNamedDatasets } from "./utils/vegaDatasets";
 import { inputTableName } from "./contracts/autkGrammar";
 import { normalizeScenarios } from "./utils/scenarios/scenarioModel";
@@ -486,7 +485,6 @@ function generateCells(
   node: TrillNode,
   inputNodes: TrillNode[],
   inputSlots: number[] = [],
-  shared: WidgetDef[] = [],
   inputLabels: ReadonlyMap<number, ScenarioLabel> = new Map(),
 ): NotebookCell[] {
   // Specs saved since the curio.builtin@1 pack carry versioned ids (dev/64),
@@ -496,9 +494,9 @@ function generateCells(
   // A package's chart that draws with the Vega-Lite grammar is a Vega-Lite
   // chart here too (registry/vegaLiteNodes).
   const vegaChart = isVegaLiteNodeType(nodeType);
-  // The code the canvas runs: its widget, input, column, shared, selection and
-  // scenario references resolved, as the browser does before posting it (#662),
-  // each input labelled by the box its node is in.
+  // The code the canvas runs: its widget, input, column, selection and scenario
+  // references resolved, as the browser does before posting it (#662), each
+  // input labelled by the box its node is in.
   const language = vegaChart || nodeType === NodeType.AUTK_GRAMMAR
     ? "json"
     : nodeType === NodeType.JS_COMPUTATION ? "javascript" : "python";
@@ -510,7 +508,6 @@ function generateCells(
         const scenario = inputLabels.get(slot);
         return scenario ? { slot, scenario } : { slot };
       }),
-      shared,
       selections: normalizeSelections(node.metadata?.selections),
     },
     language,
@@ -628,11 +625,9 @@ function generateCells(
         ? "A JavaScript computation. Its source is preserved below; it cannot run in this notebook's Python kernel."
         : nodeType === SPATIAL_JOIN_TYPE
           ? "A spatial join, configured on the canvas rather than in code."
-          : nodeType === PARAMETER_NODE_TYPE
-            ? "A Parameter node. Its value is written into the cells of the nodes that use it."
-            : nodeType === NodeType.VIS_SIMPLE
-              ? "A Simple View node, which displays its input rather than computing anything."
-              : "This node is provided by a package and has no Python equivalent here.";
+          : nodeType === NodeType.VIS_SIMPLE
+            ? "A Simple View node, which displays its input rather than computing anything."
+            : "This node is provided by a package and has no Python equivalent here.";
   const fenced = content.trim()
     ? `\n\n\`\`\`\n${content}\n\`\`\``
     : "";
@@ -663,7 +658,6 @@ export function trillToNotebook(spec: TrillSpec): Notebook {
 
   const nodeById = new Map(nodes.map((n) => [n.id, n]));
   const ordered = dataflowOrder(nodes, edges.filter((edge) => edge.type !== "Interaction"));
-  const shared = sharedWidgetsOfSpec(nodes);
   // Each node and edge as the canvas holds it, and the boxes as the canvas
   // reads them, so an input is labelled here as the canvas labels it.
   const canvasNodes = nodes.map(canvasNodeOf);
@@ -681,7 +675,7 @@ export function trillToNotebook(spec: TrillSpec): Notebook {
     const labels = new Map(
       inputScenarios(node.id, canvasNodes, canvasEdges, scenarios).map((input) => [input.slot, input.label]),
     );
-    cells.push(...generateCells(node, inputNodes, wired.map((input) => input.slot), shared, labels));
+    cells.push(...generateCells(node, inputNodes, wired.map((input) => input.slot), labels));
   }
 
   return {
