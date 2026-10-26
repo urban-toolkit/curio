@@ -346,9 +346,10 @@ describe.each([
 
   test("a run in flight is left to draw the node itself", async () => {
     // The runner triggers the node it is running. Doing it here as well puts two
-    // `sendCode` calls in one tick, and each toggles the widgets pass: two
-    // toggles in a batch cancel, the marker round trip never happens, and the
-    // node sits at "exec" until its watchdog. Found by the end-to-end run.
+    // `sendCode` calls in one tick, which draw it twice. Before NodeEditor
+    // counted its sends, each toggled the widgets pass: two toggles in a batch
+    // cancelled, the marker round trip never happened, and the
+    // node sat at "exec" until its watchdog. Found by the end-to-end run.
     mockIsRunActive = true;
 
     await open(node({ input: INPUT_A }));
@@ -449,8 +450,9 @@ describe.each([
     });
 
     test("a new value and a new input in one render draw it once", async () => {
-      // Two `sendCode` calls in one tick cancel each other in the widgets
-      // pass: the tile would sit at "exec".
+      // Two `sendCode` calls in one tick would draw it twice (and, before
+      // NodeEditor counted its sends, cancelled each other, leaving the tile
+      // at "exec").
       const utils = await open(tile(1));
 
       await next(utils, tile(0.5, { input: INPUT_B }));
@@ -537,9 +539,10 @@ describe("only an Autark node", () => {
     // A Data Pool hands its rows on with every fetch that lands, so a map can
     // get a second input while it waits. On a GPU that is slow to answer,
     // both arrive while the probe is still out. Each queued a draw on that one
-    // answer, both ran in one tick, and two `sendCode` calls in one tick
-    // cancel each other in the widgets pass: the map never ran, and sat at
-    // "exec" with "Not drawn yet" (the dashboard tile on the arcade runners).
+    // answer, and both ran in one tick. Before NodeEditor counted its sends,
+    // two `sendCode` calls in one tick cancelled each other in the widgets
+    // pass: the map never ran, and sat at "exec" with "Not drawn yet" (the
+    // dashboard tile on the arcade runners). Drawn once, it draws the newest.
     let answer!: (support: { supported: boolean }) => void;
     mockWebGpuAnswer = new Promise((resolve) => { answer = resolve; });
     const utils = await mount(data(AUTARK, { code: MAP_SPEC, input: INPUT_A }));
@@ -601,8 +604,8 @@ describe("only an Autark node", () => {
 
   test("two new values of a tile's own widget before WebGPU answers draw it once", async () => {
     // Each value asks for a draw, and both wait on the one probe: two
-    // `sendCode` calls in one tick would cancel each other, and the map would
-    // sit at "exec".
+    // `sendCode` calls in one tick would draw it twice (and, before NodeEditor
+    // counted its sends, cancelled each other: the map sat at "exec").
     mockDashboardOn = true;
     mockFlowEdges = [{ id: "e", source: "up", target: "n1" }];
     const tile = (value: number) =>

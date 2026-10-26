@@ -128,7 +128,7 @@ function renderCodeEditor(defaultValue: string | undefined, opts: { readOnly?: b
         nodeType: "curio.builtin/python-computation@1" as any,
         replacedCode: "",
         sendCodeToWidgets,
-        replacedCodeDirty: false,
+        replacedCodeDirty: 0,
         readOnly: opts.readOnly ?? false,
         defaultValue: dv,
         floatCode,

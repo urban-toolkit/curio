@@ -24,7 +24,7 @@ type GrammarEditorProps = {
     applyGrammar?: any;
     replacedCode: string; // code with all marks resolved
     sendCodeToWidgets: any;
-    replacedCodeDirty: boolean;
+    replacedCodeDirty: number; // a count of the sends: a change applies the grammar
     defaultValue?: any;
     floatCode?: any;
     readOnly: boolean;
@@ -103,8 +103,8 @@ export default function GrammarEditor({
         onExternalApply: (value) => {
             setGrammar(value);
             // Same call CodeEditor makes, and for the same reason: WidgetsEditor
-            // only recomputes its marker list when `markersDirty` toggles, and
-            // this is the only thing that toggles it outside a run. Without it a
+            // only recomputes its marker list when `markersDirty` changes, and
+            // this is the only thing that changes it outside a run. Without it a
             // grammar spec's `[!! ... !!]` markers render no widgets until the
             // node has been played once.
             sendCodeToWidgets(value);

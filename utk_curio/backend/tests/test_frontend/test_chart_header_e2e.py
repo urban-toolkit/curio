@@ -6,8 +6,9 @@ reads the two scenarios' shadow statistics stacked, ``[!! inputs !!]``, and
 draws them with ``[!! scenario colors !!]`` and ``[!! scenario order !!]``:
 
 1. On the chart's Grammar tab, the header above the spec is one row of closed
-   categories: Inputs 3 (``input_0``, ``input_1`` and ``inputs``), Scenarios 5,
-   Widgets 3 and Shared 1 (the dataflow's Season Parameter node).
+   categories: Inputs 3 (``input_0``, ``input_1`` and ``inputs``), Scenarios 5
+   and Widgets 3. The dataflow's season is a node wired into its shadow nodes,
+   so no Shared category shows.
 2. Opened, Scenarios shows both boxes' swatches, Existing's and Towers
    removed's, as one tag, then text colors and order, then a tag per input in
    the color of the box it comes from.
@@ -223,12 +224,12 @@ def test_the_chart_header_lists_its_chips_and_each_scenario_tag_drags_its_chip(
     for chip in ('"[!! inputs !!]"', "[!! scenario colors !!]", "[!! scenario order !!]"):
         assert chip in shipped, f"the chart's editor holds no {chip}: {shipped!r}"
 
-    # 1. One row of closed categories, each with its count.
+    # 1. One row of closed categories, each with its count. The dataflow's
+    # season is a node wired into the shadow nodes, so nothing is shared by name.
     assert page.evaluate(_ROW_JS, CHART) == [
         {"category": "inputs", "label": "Inputs 3", "open": False},
         {"category": "scenarios", "label": "Scenarios 5", "open": False},
         {"category": "widgets", "label": "Widgets 3", "open": False},
-        {"category": "shared", "label": "Shared 1", "open": False},
     ], page.evaluate(_ROW_JS, CHART)
 
     # 2. Scenarios: both boxes' swatches as one tag, text colors, order, then

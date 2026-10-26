@@ -45,12 +45,16 @@ def _template_index() -> dict:
     source the schema suite reads (``test_trill_schema.py::_template_index``):
     one place says what a node kind is (``DEC-062``).
     """
+    from dataclasses import fields
+
+    # Each fact the value declares, read from its manifest key.
+    declared = {field.name for field in fields(TemplateFacts)}
     index: dict = {}
     for manifest_path in sorted((REPO_ROOT / "packages").glob("*/manifest.json")):
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
         package_id = str(manifest.get("id") or "")
         for template in manifest.get("templates") or []:
-            index[f"{package_id}/{template['id']}"] = TemplateFacts(
+            facts = dict(
                 template_id=str(template["id"]),
                 category=str(template.get("category") or "computation"),
                 engine=str(template.get("engine") or "python"),
@@ -59,11 +63,25 @@ def _template_index() -> dict:
                 has_grammar=bool(template.get("hasGrammar")),
                 behavior=template.get("behavior"),
                 backend_handler=template.get("backendHandler"),
+                loads_dataset=bool(template.get("loadsDataset")),
+            )
+            index[f"{package_id}/{template['id']}"] = TemplateFacts(
+                **{name: value for name, value in facts.items() if name in declared}
             )
     return index
 
 
 TEMPLATES = _template_index()
+
+
+def _manifest_template(canonical: str) -> dict:
+    """The template *canonical* names, as its package's manifest writes it."""
+    package_id, template_id = canonical.split("/", 1)
+    for manifest_path in sorted((REPO_ROOT / "packages").glob("*/manifest.json")):
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        if manifest.get("id") == package_id:
+            return next(t for t in manifest.get("templates") or [] if t.get("id") == template_id)
+    raise AssertionError(f"no package declares {canonical}")
 
 
 def _spec(nodes, edges, **dataflow):
@@ -238,22 +256,28 @@ class TestEdgeKindAndSlot:
 
     def test_an_interaction_edge_does_not_make_its_target_a_transform(self):
         """Role derivation walks DATA edges only: a node fed solely by an
-        interaction link is still the head of its flow."""
+        interaction link is still the head of its flow. The node is a data
+        template that declares no ``loadsDataset``, whose role its place in
+        the flow decides."""
         graph = canonical_graph_from_spec(
             _spec(
-                [_node("l", LOADER), _node("p", POOL, content="")],
-                [_edge("p", "l", type="Interaction")],
+                [_node("t", TRANSFORM), _node("p", POOL, content="")],
+                [_edge("p", "t", type="Interaction")],
             ),
             templates=TEMPLATES,
         )
         roles = {n.type: n.role for n in graph.nodes}
-        assert roles[LOADER] == "loader"
+        assert roles[TRANSFORM] == "loader"
 
 
 class TestRoles:
     def test_roles_come_from_manifest_facts_and_position(self):
-        assert role_for_template(TEMPLATES[LOADER], has_incoming_data_edge=False) == "loader"
-        assert role_for_template(TEMPLATES[LOADER], has_incoming_data_edge=True) == "transform"
+        # A data template that declares no loadsDataset is a loader at the
+        # head of a flow and a transform once something feeds it.
+        assert "loadsDataset" not in _manifest_template(TRANSFORM)
+        assert TEMPLATES[TRANSFORM].category == "data" and TEMPLATES[TRANSFORM].has_code
+        assert role_for_template(TEMPLATES[TRANSFORM], has_incoming_data_edge=False) == "loader"
+        assert role_for_template(TEMPLATES[TRANSFORM], has_incoming_data_edge=True) == "transform"
         assert role_for_template(TEMPLATES[VEGA], has_incoming_data_edge=True) == "visualization"
         assert role_for_template(TEMPLATES[POOL], has_incoming_data_edge=True) == "pool"
         assert role_for_template(
@@ -262,6 +286,26 @@ class TestRoles:
         assert role_for_template(
             TEMPLATES["curio.builtin/data-export"], has_incoming_data_edge=True
         ) == "export"
+
+    def test_a_template_that_declares_loads_dataset_is_a_loader_even_when_fed(self):
+        """Data Loading declares ``loadsDataset``: its node is a loader at the
+        head of a flow and still one when a node feeds it a value, such as
+        the region a loader reads from a node wired into it. The same edge
+        into a Data Transformation makes that a transform."""
+        assert _manifest_template(LOADER).get("loadsDataset") is True
+        assert TEMPLATES[LOADER].category == "data"
+        for incoming in (False, True):
+            assert role_for_template(TEMPLATES[LOADER], has_incoming_data_edge=incoming) == "loader", incoming
+        graph = canonical_graph_from_spec(
+            _spec(
+                [_node("v", ANALYSIS, content='return {"west": 0}'), _node("l", LOADER), _node("t", TRANSFORM)],
+                [_edge("v", "l", targetHandle="in"), _edge("v", "t", targetHandle="in")],
+            ),
+            templates=TEMPLATES,
+        )
+        assert {n.type: n.role for n in graph.nodes} == {
+            ANALYSIS: "analysis", LOADER: "loader", TRANSFORM: "transform",
+        }
 
     def test_a_flow_template_falls_through_to_the_generic_rules(self):
         """The ``merge`` role left with the Merge Flow (#662): no template

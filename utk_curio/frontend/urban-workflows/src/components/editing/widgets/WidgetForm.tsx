@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import styles from "./WidgetTags.module.css";
 import { WidgetControl } from "./WidgetControl";
+import { DatasetWidgetContext, type DatasetWidgetNode } from "./datasetWidgetContext";
 import {
   CHOICE_KINDS,
   NUMERIC_KINDS,
@@ -14,6 +15,10 @@ import {
   type WidgetOptions,
   type WidgetValue,
 } from "../../../utils/widgets/widgetModel";
+
+/** What a dataset widget's default control knows of a node: nothing, so it
+ * offers no Choose file. */
+const FORM_DATASET_NODE: DatasetWidgetNode = { describe: () => undefined, dropping: false };
 
 const parseChoices = (text: string): string[] =>
   text
@@ -225,7 +230,11 @@ export function WidgetForm({
       ) : null}
       <div className={styles.field}>
         Default
-        <WidgetControl widget={candidate} value={def} onChange={setDef} ariaLabel="Widget default" />
+        {/* A dataset widget is set by a drop on its node, not here: its
+            default control takes no file of its own. */}
+        <DatasetWidgetContext.Provider value={FORM_DATASET_NODE}>
+          <WidgetControl widget={candidate} value={def} onChange={setDef} ariaLabel="Widget default" />
+        </DatasetWidgetContext.Provider>
       </div>
       {problem ? <p className={styles.problem}>{problem}</p> : null}
       <span className={styles.formActions}>

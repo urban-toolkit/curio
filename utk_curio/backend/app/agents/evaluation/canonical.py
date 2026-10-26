@@ -81,6 +81,9 @@ class TemplateFacts:
     has_grammar: bool = False
     behavior: str | None = None
     backend_handler: str | None = None
+    #: ``loadsDataset``: a node of the template loads a dataset into the
+    #: dataflow, wherever it sits in the graph.
+    loads_dataset: bool = False
 
     @property
     def executable(self) -> bool:
@@ -229,7 +232,10 @@ def role_for_template(
     The one structural input is ``has_incoming_data_edge``: a ``data``-category
     code template is a *loader* at the head of a flow and a *transform* once
     something feeds it, which is exactly the distinction the walkthroughs draw
-    and the only one the manifest cannot make on its own.
+    and the only one the manifest cannot make on its own. A template that
+    declares ``loadsDataset``, such as Data Loading, says it on its own: its
+    node is a *loader* even when a node feeds it a value, such as the region
+    it reads.
 
     An unknown template (not in the index) is ``endpoint``: the harness knows
     nothing that would let it run, so it claims nothing.
@@ -255,6 +261,8 @@ def role_for_template(
     if facts.category == "computation":
         return "analysis"
     if facts.category == "data":
+        if facts.loads_dataset:
+            return "loader"
         return "transform" if has_incoming_data_edge else "loader"
     return "analysis"
 

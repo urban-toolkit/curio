@@ -15,7 +15,7 @@ function renderEditor(overrides: Partial<React.ComponentProps<typeof WidgetsEdit
     userCode: "",
     sendReplacedCode: jest.fn(),
     nodeId: "n1",
-    markersDirty: false,
+    markersDirty: 0,
     widgets: [],
     onWidgetsChange: jest.fn(),
     language: "python",
@@ -88,7 +88,7 @@ describe("a run", () => {
       userCode: "return [!! factor !!] * 2",
       widgets: [{ ...factor, value: 3 }],
     });
-    view.rerender(<WidgetsEditor {...props} markersDirty={true} />);
+    view.rerender(<WidgetsEditor {...props} markersDirty={1} />);
     expect(props.sendReplacedCode).toHaveBeenCalledWith("return 3 * 2");
     expect(props.onResolveError).not.toHaveBeenCalled();
   });
@@ -96,7 +96,7 @@ describe("a run", () => {
   test("a value changed since the last run is the one used", () => {
     const { props, view } = renderEditor({ userCode: "return [!! factor !!]", widgets: [factor] });
     view.rerender(
-      <WidgetsEditor {...props} widgets={[{ ...factor, value: 5 }]} markersDirty={true} />,
+      <WidgetsEditor {...props} widgets={[{ ...factor, value: 5 }]} markersDirty={1} />,
     );
     expect(props.sendReplacedCode).toHaveBeenCalledWith("return 5");
   });
@@ -109,14 +109,14 @@ describe("a run", () => {
     expect(screen.getByText(/is an old widget marker/)).toBeTruthy();
     expect(screen.getByText(/no widget named missing/)).toBeTruthy();
 
-    view.rerender(<WidgetsEditor {...props} markersDirty={true} />);
+    view.rerender(<WidgetsEditor {...props} markersDirty={1} />);
     expect(props.sendReplacedCode).not.toHaveBeenCalled();
     expect(props.onResolveError).toHaveBeenCalledWith(
       expect.stringMatching(/old widget marker[\s\S]*no widget named missing/),
     );
   });
 
-  test("mounting resolves nothing; only a toggle does", () => {
+  test("mounting resolves nothing; only a change of the count does", () => {
     const { props } = renderEditor({ userCode: "return [!! factor !!]", widgets: [factor] });
     expect(props.sendReplacedCode).not.toHaveBeenCalled();
   });
