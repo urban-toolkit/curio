@@ -99,7 +99,7 @@ describe("a node's Widgets tab", () => {
   };
 
   test("lists the shared tags under Shared, each with its Parameter node's value", () => {
-    const view = render(<WidgetsEditor {...props} userCode="" markersDirty={false} shared={[season, factor]} />);
+    const view = render(<WidgetsEditor {...props} userCode="" markersDirty={0} shared={[season, factor]} />);
     const rows = view.container.querySelectorAll("[data-shared-panel] [data-shared-row]");
     expect(Array.from(rows).map((r) => r.getAttribute("data-shared-row"))).toEqual(["season", "factor"]);
     expect(rows[0].textContent).toContain("Season");
@@ -109,7 +109,7 @@ describe("a node's Widgets tab", () => {
   });
 
   test("has no Shared list in a dataflow without Parameter nodes", () => {
-    const view = render(<WidgetsEditor {...props} userCode="" markersDirty={false} />);
+    const view = render(<WidgetsEditor {...props} userCode="" markersDirty={0} />);
     expect(view.container.querySelector("[data-shared-panel]")).toBeNull();
   });
 
@@ -123,7 +123,7 @@ describe("a node's Widgets tab", () => {
         sendReplacedCode={sendReplacedCode}
         onResolveError={onResolveError}
         userCode={code}
-        markersDirty={false}
+        markersDirty={0}
         shared={[season, factor]}
       />,
     );
@@ -133,7 +133,7 @@ describe("a node's Widgets tab", () => {
         sendReplacedCode={sendReplacedCode}
         onResolveError={onResolveError}
         userCode={code}
-        markersDirty={true}
+        markersDirty={1}
         shared={[season, factor]}
       />,
     );
@@ -150,7 +150,7 @@ describe("a node's Widgets tab", () => {
         sendReplacedCode={sendReplacedCode}
         onResolveError={onResolveError}
         userCode="s = [!! @season !!]"
-        markersDirty={false}
+        markersDirty={0}
       />,
     );
     view.rerender(
@@ -159,7 +159,7 @@ describe("a node's Widgets tab", () => {
         sendReplacedCode={sendReplacedCode}
         onResolveError={onResolveError}
         userCode="s = [!! @season !!]"
-        markersDirty={true}
+        markersDirty={1}
       />,
     );
     expect(sendReplacedCode).not.toHaveBeenCalled();

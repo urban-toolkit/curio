@@ -33,7 +33,7 @@ type WidgetsEditorProps = {
     userCode: any; // grammar or python, references unresolved
     sendReplacedCode: (code: string) => void; // bubble up the code with the references resolved
     nodeId: string;
-    markersDirty: boolean; // a toggle here resolves the references and sends the code on
+    markersDirty: number; // a change of this count resolves the references and sends the code on
     /** #662: the node's widgets, declared here and saved at metadata.widgets. */
     widgets: WidgetDef[];
     onWidgetsChange: (widgets: WidgetDef[]) => void;
