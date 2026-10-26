@@ -31,6 +31,7 @@ from utk_curio.backend.app.agents.infrastructure import agent_jobs
 from utk_curio.backend.app.projects import seed
 from utk_curio.backend.app.projects import services as project_services
 from utk_curio.backend.app.testing import routes as testing_routes
+from utk_curio.backend.app.testing.in_flight import REFUSAL
 from utk_curio.backend.extensions import db as _db
 from utk_curio.backend.tests._unit_fixtures import TestConfig, tmp_curio  # noqa: F401
 from utk_curio.backend.tests.test_datasets.test_save_lock_order import (
@@ -259,7 +260,8 @@ def test_the_liveness_probe_answers_while_a_reset_waits(app, user_id, signals, m
         f"a listing sent during the reset answered {late.status_code}: "
         f"{late.get_data(as_text=True)[:300]}"
     )
-    assert "reset" in late.get_json()["error"]
+    # What the shard isolation e2e asks again on.
+    assert late.get_json()["error"] == REFUSAL
     assert reset["value"].status_code == 200, reset["value"].get_data(as_text=True)
     assert _users() == 0
 

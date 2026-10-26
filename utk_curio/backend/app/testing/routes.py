@@ -44,7 +44,7 @@ from utk_curio.backend.config import _is_dev, _is_testing
 from utk_curio.backend.app.agents import service as agents_service
 from utk_curio.backend.app.agents.infrastructure import testing_provider
 from utk_curio.backend.extensions import db
-from utk_curio.backend.app.testing.in_flight import RESET_WAIT_SECONDS, InFlightRequests
+from utk_curio.backend.app.testing.in_flight import REFUSAL, RESET_WAIT_SECONDS, InFlightRequests
 from utk_curio.backend.app.users import repositories as user_repo
 from utk_curio.backend.app.users import security
 from utk_curio.backend.app.projects import services as project_services
@@ -89,21 +89,26 @@ def _guard():
 _IN_FLIGHT = "curio.testing.in_flight"
 #: Where a counted request keeps its token.
 _IN_FLIGHT_TOKEN = "curio.testing.in_flight_token"
+#: The liveness probe (``api/routes.py``), which says the backend is up. It
+#: reads nothing a reset deletes, and a backend that is resetting is up.
+_PROBE = "api.live"
 
 
 def _count_request_in():
-    """Count each request but the harness's own, or refuse it while a reset runs.
+    """Count each request but the harness's own and the liveness probe, or
+    refuse it while a reset runs.
 
     Refused rather than held: a request that arrives during a reset comes from
     a page whose test is over, and it would only run against the next test's
-    empty database.
+    empty database. The probe answers all the same: the shard isolation e2e
+    asks it of the other shards, which reset between their own tests (#1171).
     """
     in_flight = current_app.extensions.get(_IN_FLIGHT)
-    if in_flight is None or request.blueprint == testing_bp.name:
+    if in_flight is None or request.blueprint == testing_bp.name or request.endpoint == _PROBE:
         return None
     token = in_flight.enter(f"{request.method} {request.path}")
     if token is None:
-        return jsonify({"error": "The test database is being reset."}), 503
+        return jsonify({"error": REFUSAL}), 503
     request.environ[_IN_FLIGHT_TOKEN] = token
     return None
 
@@ -376,10 +381,11 @@ def reset_db():
         ids it is about to free. Pass ``false`` only to inspect what a previous
         test left behind; a test that skips it is asking to inherit it.
 
-    Before it deletes anything, it refuses new requests (503) and waits, up to
-    ``RESET_WAIT_SECONDS``, for the ones already running, so none of them
-    outlives its user (``in_flight.py``). One still running after that is
-    named in ``still_running`` and in the log, and the reset goes ahead.
+    Before it deletes anything, it refuses new requests but the liveness probe
+    (503) and waits, up to ``RESET_WAIT_SECONDS``, for the ones already
+    running, so none of them outlives its user (``in_flight.py``). One still
+    running after that is named in ``still_running`` and in the log, and the
+    reset goes ahead.
 
     The agent jobs still running are stopped first, as the user's Stop does,
     and waited for within the same bound: a Solve session keeps making passes
