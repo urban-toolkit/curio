@@ -58,6 +58,7 @@ from __future__ import annotations
 
 import gzip
 import json
+import os
 import re
 import threading
 import time
@@ -86,6 +87,7 @@ from utk_curio.backend.tests._support.crown_heights import (
 )
 from utk_curio.common import shared_constants
 
+from . import diagnostics
 from .test_dashboard_page_e2e import (
     _NODES_STANDING_JS,
     _Visitor,
@@ -1075,7 +1077,7 @@ class _CompressingProxy:
 
 @pytest.mark.xdist_group("crown-heights-link")
 def test_a_visitor_in_a_private_window_goes_through_the_four_days(
-    app_frontend: "FrontendPage", current_server, browser, monkeypatch,
+    app_frontend: "FrontendPage", current_server, browser, monkeypatch, request,
 ):
     """The shipped copy's dashboard as dev serves it, in a browser context
     with no routes, so its HTTP cache works, in memory, as a private window's
@@ -1100,6 +1102,7 @@ def test_a_visitor_in_a_private_window_goes_through_the_four_days(
     with _CompressingProxy(hosted) as proxied:
         ctx = browser.new_context()
         page = ctx.new_page()
+        diagnostics.watch_browser_log(page)
         errors: list[str] = []
         page.on("pageerror", lambda error: errors.append(str(error)))
         console: list[str] = []
@@ -1125,10 +1128,7 @@ def test_a_visitor_in_a_private_window_goes_through_the_four_days(
             for row in FOUR_DAYS:
                 day = row["Day"]
                 _pick_day(page, ids["steps"], day)
-                try:
-                    drawn = _maps_redrew(page, ids, f"the {day.lower()} picked")
-                except AssertionError as failure:
-                    raise AssertionError(f"{failure}{_page_story(page, console)}") from None
+                drawn = _maps_redrew(page, ids, f"the {day.lower()} picked")
                 for key in MAPS:
                     apart = _changed(opened[key], drawn[key])
                     if row is WINTER:
@@ -1158,5 +1158,18 @@ def test_a_visitor_in_a_private_window_goes_through_the_four_days(
                 _keep_drawing_maps(page, ids)
                 plot = page.evaluate(_PLOT_PIXELS_JS, ids["plot"])
             assert not errors, f"the page logged errors while the days changed: {errors!r}"
+        except Exception as failure:
+            # The harness records its own page, about:blank here, so this
+            # window's screenshot, nodes and log go with the failure, and the
+            # message says where each node stood.
+            written = diagnostics.capture(
+                page, os.path.join(diagnostics.failure_dir(request.node.nodeid), "private-window"),
+            )
+            answered = any(path.endswith("screenshot.png") for path in written)
+            story = _page_story(page, console) if answered else "\nThe page did not answer a screenshot."
+            if isinstance(failure, AssertionError):
+                raise AssertionError(f"{failure}{story}") from failure
+            print(story)
+            raise
         finally:
             ctx.close()
