@@ -28,11 +28,11 @@
         "title": "Lower Manhattan layers"
       },
       {
-        "id": "park-shade-season",
-        "type": "curio.builtin/parameter",
+        "id": "755abf58-59e0-5e25-ad1c-9a0a2e654c0e",
+        "type": "curio.builtin/computation-analysis",
         "x": 82,
         "y": 1864,
-        "content": "",
+        "content": "# The season all three scenarios' shadow runs in, which each Accumulated\n# Shadow node reads on input_1.\nreturn [!! season !!]\n",
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "The season all three scenarios' shadow runs in.",
@@ -56,60 +56,6 @@
           ]
         },
         "title": "Season"
-      },
-      {
-        "id": "park-shade-distance",
-        "type": "curio.builtin/parameter",
-        "x": 82,
-        "y": 2174,
-        "content": "",
-        "out": "DEFAULT",
-        "in": "DEFAULT",
-        "goal": "How close to a park a building part at least the Tall building height tall must be for the what-ifs to change it.",
-        "metadata": {
-          "keywords": [],
-          "widgets": [
-            {
-              "name": "park_distance",
-              "type": "number",
-              "label": "Distance from a park",
-              "default": 75,
-              "options": {
-                "min": 0,
-                "step": 5,
-                "units": "m"
-              }
-            }
-          ]
-        },
-        "title": "Distance from a park"
-      },
-      {
-        "id": "park-shade-tall",
-        "type": "curio.builtin/parameter",
-        "x": 82,
-        "y": 2484,
-        "content": "",
-        "out": "DEFAULT",
-        "in": "DEFAULT",
-        "goal": "The height from which the what-ifs change a building part near a park, and Height cap's cap.",
-        "metadata": {
-          "keywords": [],
-          "widgets": [
-            {
-              "name": "tall_height",
-              "type": "number",
-              "label": "Tall building height",
-              "default": 60,
-              "options": {
-                "min": 0,
-                "step": 5,
-                "units": "m"
-              }
-            }
-          ]
-        },
-        "title": "Tall building height"
       },
       {
         "id": "park-shade-heights",
@@ -181,12 +127,36 @@
         "type": "curio.builtin/computation-analysis",
         "x": 1935,
         "y": 1469,
-        "content": "import pandas as pd\n\n# The building parts the what-ifs change, by one rule for every park, so the\n# parks compare fairly: at least the Tall building height tall, and within the\n# Distance from a park of any park. input_0 is the buildings, a row per part;\n# input_1 the parks. Distances in metres, in the parks' UTM zone.\nbuildings, parks = input_0, input_1\ntall = float([!! @tall_height !!])\nutm = parks.estimate_utm_crs()\nfootprints = buildings.to_crs(utm).geometry\ndistance = pd.DataFrame({park: footprints.distance(outline)\n                         for park, outline in zip(parks[\"park\"], parks.to_crs(utm).geometry)})\nmarked = buildings.assign(nearest_park=distance.idxmin(axis=1), park_distance_m=distance.min(axis=1))\nmarked[\"around_park\"] = (marked[\"height\"] >= tall) & (marked[\"park_distance_m\"] <= float([!! @park_distance !!]))\n# What Height cap cuts a marked part down to: the Tall building height.\nmarked[\"height_cap_m\"] = tall\n# assign drops the frame's metadata: mark it as buildings again.\nmarked.metadata = {\"layerType\": \"buildings\"}\nreturn marked\n",
+        "content": "import pandas as pd\n\n# The building parts the what-ifs change, by one rule for every park, so the\n# parks compare fairly: at least the Tall building height tall, and within the\n# Distance from a park of any park. input_0 is the buildings, a row per part;\n# input_1 the parks. Distances in metres, in the parks' UTM zone.\nbuildings, parks = input_0, input_1\ntall = float([!! tall_height !!])\nutm = parks.estimate_utm_crs()\nfootprints = buildings.to_crs(utm).geometry\ndistance = pd.DataFrame({park: footprints.distance(outline)\n                         for park, outline in zip(parks[\"park\"], parks.to_crs(utm).geometry)})\nmarked = buildings.assign(nearest_park=distance.idxmin(axis=1), park_distance_m=distance.min(axis=1))\nmarked[\"around_park\"] = (marked[\"height\"] >= tall) & (marked[\"park_distance_m\"] <= float([!! park_distance !!]))\n# What Height cap cuts a marked part down to: the Tall building height.\nmarked[\"height_cap_m\"] = tall\n# assign drops the frame's metadata: mark it as buildings again.\nmarked.metadata = {\"layerType\": \"buildings\"}\nreturn marked\n",
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "Mark the building parts (input_0) the what-ifs change, by one rule for every park (input_1): around_park when at least the Tall building height tall and within the Distance from a park of any park, in metres in the parks' UTM zone; with each part's nearest_park and park_distance_m, and the Tall building height as height_cap_m, what Height cap cuts a marked part down to.",
         "metadata": {
-          "keywords": []
+          "keywords": [],
+          "widgets": [
+            {
+              "name": "park_distance",
+              "type": "number",
+              "label": "Distance from a park",
+              "default": 75,
+              "options": {
+                "min": 0,
+                "step": 5,
+                "units": "m"
+              }
+            },
+            {
+              "name": "tall_height",
+              "type": "number",
+              "label": "Tall building height",
+              "default": 60,
+              "options": {
+                "min": 0,
+                "step": 5,
+                "units": "m"
+              }
+            }
+          ]
         },
         "title": "Buildings around parks"
       },
@@ -238,7 +208,7 @@
         "type": "model.scout.deep-umbra/accumulated-shadow",
         "x": 1935,
         "y": 1899,
-        "content": "from deep_umbra import accumulated_shadow\nmodel = curio_load_model(\"model.scout.deep-umbra\")\nreturn accumulated_shadow(input_0, season=[!! @season !!], model=model, output_file=curio_output_file)\n",
+        "content": "from deep_umbra import accumulated_shadow\nmodel = curio_load_model(\"model.scout.deep-umbra\")\nreturn accumulated_shadow(input_0, season=input_1, model=model, output_file=curio_output_file)\n",
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "Predict the existing buildings' accumulated shadow with Deep Umbra.",
@@ -350,7 +320,7 @@
         "type": "model.scout.deep-umbra/accumulated-shadow",
         "x": 3905,
         "y": 1058,
-        "content": "from deep_umbra import accumulated_shadow\nmodel = curio_load_model(\"model.scout.deep-umbra\")\nreturn accumulated_shadow(input_0, season=[!! @season !!], model=model, output_file=curio_output_file)\n",
+        "content": "from deep_umbra import accumulated_shadow\nmodel = curio_load_model(\"model.scout.deep-umbra\")\nreturn accumulated_shadow(input_0, season=input_1, model=model, output_file=curio_output_file)\n",
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "Predict the towers removed buildings' accumulated shadow with Deep Umbra.",
@@ -462,7 +432,7 @@
         "type": "model.scout.deep-umbra/accumulated-shadow",
         "x": 3905,
         "y": 1488,
-        "content": "from deep_umbra import accumulated_shadow\nmodel = curio_load_model(\"model.scout.deep-umbra\")\nreturn accumulated_shadow(input_0, season=[!! @season !!], model=model, output_file=curio_output_file)\n",
+        "content": "from deep_umbra import accumulated_shadow\nmodel = curio_load_model(\"model.scout.deep-umbra\")\nreturn accumulated_shadow(input_0, season=input_1, model=model, output_file=curio_output_file)\n",
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "Predict the height cap buildings' accumulated shadow with Deep Umbra.",
@@ -967,6 +937,27 @@
         "target": "park-shade-capped-park-change-map",
         "sourceHandle": "out",
         "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-755abf58-59e0-5e25-ad1c-9a0a2e654c0eout-park-shade-existing-shadowin_1",
+        "source": "755abf58-59e0-5e25-ad1c-9a0a2e654c0e",
+        "target": "park-shade-existing-shadow",
+        "sourceHandle": "out",
+        "targetHandle": "in_1"
+      },
+      {
+        "id": "reactflow__edge-755abf58-59e0-5e25-ad1c-9a0a2e654c0eout-park-shade-removed-shadowin_1",
+        "source": "755abf58-59e0-5e25-ad1c-9a0a2e654c0e",
+        "target": "park-shade-removed-shadow",
+        "sourceHandle": "out",
+        "targetHandle": "in_1"
+      },
+      {
+        "id": "reactflow__edge-755abf58-59e0-5e25-ad1c-9a0a2e654c0eout-park-shade-capped-shadowin_1",
+        "source": "755abf58-59e0-5e25-ad1c-9a0a2e654c0e",
+        "target": "park-shade-capped-shadow",
+        "sourceHandle": "out",
+        "targetHandle": "in_1"
       }
     ],
     "scenarios": [

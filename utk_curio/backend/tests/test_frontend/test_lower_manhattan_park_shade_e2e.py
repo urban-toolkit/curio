@@ -7,8 +7,9 @@ node reads OpenStreetMap's parks of a box, the Financial District to City
 Hall, and the buildings of a box about 300 m larger on every side, up to the
 extract's edge, from ``lower_mnt.osm.pbf``, which the backend serves, so the
 run needs no network. Building heights, Open-air parks and Buildings around
-parks are the context, with the Season, Distance from a park and Tall
-building height Parameters. In
+parks, which holds the Distance from a park and the Tall building height as
+widgets, are the context, with the Season node, a Python node wired into
+every Accumulated Shadow. In
 Existing, Towers removed and Height cap (whose Map Editor nodes remove or cut
 down the building parts Buildings around parks marks, each linked to the map
 of the buildings it feeds), Rasterize Buildings
@@ -251,9 +252,8 @@ def test_three_scenarios_of_lower_manhattans_park_shade_are_charted_and_mapped(
         node_locator(page, node_id).wait_for(state="attached", timeout=45000)
 
     run_all_and_wait(page, timeout_ms=600000)
+    # Every node runs, the Season node too: no node holds a value it does not run.
     for node_id, node in nodes.items():
-        if node["type"] == "curio.builtin/parameter":
-            continue
         status = wait_for_node_settled(page, node_id, node_type=node["type"], timeout_ms=180000)
         assert status == "done", (
             f"{node['type']} {node_id} ended {status}: {read_node_error_text(node_locator(page, node_id))}"

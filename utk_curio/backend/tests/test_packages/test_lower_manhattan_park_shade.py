@@ -11,9 +11,11 @@ context:
 - Building heights gives every building part a height in metres;
 - Open-air parks keeps the named parks large enough to measure, in the open;
 - Buildings around parks marks the parts the what-ifs change, by one rule for
-  every park: at least the Tall building height tall (a Parameter, 60 m) and
-  within the Distance from a park (a Parameter, 75 m) of any park;
-- the Season Parameter, which every Accumulated Shadow reads.
+  every park: at least the Tall building height tall (a widget of its own,
+  60 m) and within the Distance from a park (a widget of its own, 75 m) of any
+  park;
+- the Season node, a Python node that holds the season and returns it, wired
+  into every Accumulated Shadow's second circle.
 
 Three scenarios: Existing; Towers removed, whose Map Editor node removes the
 marked parts; and Height cap, whose Map Editor node cuts them down to the
@@ -96,7 +98,7 @@ PARKS_BOX = [-74.018, 40.7, -74.004, 40.713]
 BUILDINGS_BOX = [-74.0194416, 40.698762, -74.0005, 40.7157]
 #: How much larger the buildings' box is, where the extract allows.
 MARGIN_M = 300
-#: The rule's defaults, the two Parameter nodes'.
+#: The rule's defaults, Buildings around parks' two widgets'.
 PARK_DISTANCE_M = 75
 TALL_HEIGHT_M = 60
 
@@ -260,13 +262,20 @@ def _node_id(key: str, what: str) -> str:
     return f"park-shade-{key}-{what}"
 
 
+def _season(spec: dict) -> dict:
+    """The one node titled Season: the Python node that holds the season."""
+    (season,) = [node for node in spec["nodes"] if node.get("title") == "Season"]
+    return season
+
+
 # ---------------------------------------------------------------------------
 # The file
 # ---------------------------------------------------------------------------
 
 def test_it_is_three_scenarios_over_one_context_from_the_extract():
-    """One Autark data node, three Parameter nodes and three code nodes are the
-    context; each scenario holds its lever (none in Existing), its package
+    """One Autark data node and four code nodes, the Season node among them,
+    are the context, and no Parameter node is left; each scenario holds its
+    lever (none in Existing), its package
     nodes, its shade per park and its two maps; the chart, the changes and
     the maps after the changes are in no scenario, and no Compare Scenarios
     node is left. No dataset: the data comes from the extract. The lockfile
@@ -291,7 +300,8 @@ def test_it_is_three_scenarios_over_one_context_from_the_extract():
                 below.add(edge["target"])
                 frontier.append(edge["target"])
     context = sorted(nodes[n]["type"] for n in nodes if n not in members | below)
-    assert context == sorted([AUTARK, PARAMETER, PARAMETER, PARAMETER, PYTHON, PYTHON, PYTHON]), context
+    assert context == sorted([AUTARK, PYTHON, PYTHON, PYTHON, PYTHON]), context
+    assert PARAMETER not in {node["type"] for node in spec["nodes"]}
     for scenario, _name, _color, key in SCENARIOS:
         types = sorted(nodes[n]["type"] for n in scenarios[scenario]["nodes"])
         lever = [] if scenario == "existing" else [INTERACTION]
@@ -344,7 +354,9 @@ def test_the_loader_reads_the_parks_box_and_the_buildings_box_around_it():
 def test_the_package_nodes_are_as_the_palette_drops_them():
     """Each scenario's Rasterize Buildings holds the template's source and
     widgets, and its Accumulated Shadow the template's cell reading the season
-    from the Season Parameter, whose widget is the template's."""
+    on its second circle, from the Season node, a Python node whose widget is
+    the template's and whose code returns it. Buildings around parks holds
+    the rule's two settings as widgets of its own."""
     spec = _dataflow()
     nodes = _nodes(spec)
     raster_template, raster_source = _template(RASTER_PACKAGE, RASTERIZE)
@@ -354,22 +366,25 @@ def test_the_package_nodes_are_as_the_palette_drops_them():
         assert rasterizer["type"] == RASTERIZE and rasterizer["content"] == raster_source
         assert rasterizer["metadata"]["widgets"] == raster_template["widgets"]
         assert shadow["type"] == SHADOW
-        assert shadow["content"] == umbra_source.replace("[!! season !!]", "[!! @season !!]")
+        assert shadow["content"] == umbra_source.replace("[!! season !!]", "input_1")
         assert not shadow["metadata"].get("widgets")
-    parameters = {n["title"]: n["metadata"]["widgets"] for n in spec["nodes"] if n["type"] == PARAMETER}
-    assert parameters["Season"] == umbra_template["widgets"]
-    assert [(w["name"], w["default"], w["options"]["units"]) for w in parameters["Distance from a park"]] == [
-        ("park_distance", PARK_DISTANCE_M, "m"),
-    ]
-    assert [(w["name"], w["default"], w["options"]["units"]) for w in parameters["Tall building height"]] == [
-        ("tall_height", TALL_HEIGHT_M, "m"),
+    season = _season(spec)
+    assert season["type"] == PYTHON
+    assert season["metadata"]["widgets"] == umbra_template["widgets"]
+    assert season["content"].rstrip("\n").endswith("\nreturn [!! season !!]"), season["content"]
+    around = nodes["park-shade-around"]
+    assert [(w["name"], w["label"], w["default"], w["options"]["units"]) for w in around["metadata"]["widgets"]] == [
+        ("park_distance", "Distance from a park", PARK_DISTANCE_M, "m"),
+        ("tall_height", "Tall building height", TALL_HEIGHT_M, "m"),
     ]
 
 
 def test_the_wiring_reads_each_input_where_its_code_does():
     """Building heights and Open-air parks read the loader's layers by name;
-    each scenario's chain starts at Building heights (Existing) or at its
-    lever, which reads Buildings around parks; each Shade per park reads its
+    Buildings around parks reads its two widgets; each scenario's chain starts
+    at Building heights (Existing) or at its lever, which reads Buildings
+    around parks; each Accumulated Shadow reads the season on input_1, from
+    the Season node, which reads nothing; each Shade per park reads its
     shadow on input_0 and the parks on input_1. Each lever is linked to the
     buildings map it feeds by an interaction edge, from its in/out dot to the
     map's, for selections both ways: the dataflow's only interaction edges."""
@@ -385,8 +400,13 @@ def test_the_wiring_reads_each_input_where_its_code_does():
     assert (into[("park-shade-around", "in")], into[("park-shade-around", "in_1")]) == (
         "park-shade-heights", "park-shade-parks",
     )
-    for code, name in (("[!! @tall_height !!]", "Tall building height"), ("[!! @park_distance !!]", "Distance")):
+    for code, name in (("[!! tall_height !!]", "Tall building height"), ("[!! park_distance !!]", "Distance")):
         assert code in nodes["park-shade-around"]["content"], name
+    season = _season(spec)["id"]
+    assert not [e for e in spec["edges"] if e["target"] == season]
+    assert sorted(e["target"] for e in spec["edges"] if e["source"] == season) == sorted(
+        _node_id(key, "shadow") for _s, _n, _c, key in SCENARIOS
+    )
     for scenario, _name, _color, key in SCENARIOS:
         start = "park-shade-heights" if scenario == "existing" else _node_id(key, "lever")
         if scenario != "existing":
@@ -394,6 +414,7 @@ def test_the_wiring_reads_each_input_where_its_code_does():
         assert into[(_node_id(key, "rasterize"), "in")] == start
         assert into[(_node_id(key, "buildings-map"), "in")] == start
         assert into[(_node_id(key, "shadow"), "in")] == _node_id(key, "rasterize")
+        assert into[(_node_id(key, "shadow"), "in_1")] == season
         assert into[(_node_id(key, "shadow-map"), "in")] == _node_id(key, "shadow")
         assert (into[(_node_id(key, "shade"), "in")], into[(_node_id(key, "shade"), "in_1")]) == (
             _node_id(key, "shadow"), "park-shade-parks",
@@ -563,7 +584,7 @@ def _load_layers(content: str) -> list:
     return load_from_duckdb(result["output"]["path"], session_id=None)
 
 
-def _run_code(node: dict, inputs: list, shared: list, media: Path):
+def _run_code(node: dict, inputs: list, media: Path):
     """*node*'s code, its references resolved as a run resolves them, run in
     the sandbox on *inputs* (one value per circle, each saved as its own
     upstream output): ``(the value it hands on, what it printed)``."""
@@ -573,10 +594,12 @@ def _run_code(node: dict, inputs: list, shared: list, media: Path):
 
     widgets = (node.get("metadata") or {}).get("widgets") or []
     code, problems = resolve_references(
-        node["content"], widgets, "python", inputs=[{"slot": slot} for slot in range(len(inputs))], shared=shared,
+        node["content"], widgets, "python", inputs=[{"slot": slot} for slot in range(len(inputs))],
     )
     assert problems == [], (node["id"], problems)
-    if len(inputs) == 1:
+    if not inputs:
+        file_path, data_type = "", ""
+    elif len(inputs) == 1:
         file_path, data_type = save_to_duckdb(inputs[0], node_id=f"{node['id']}-in"), ""
     else:
         file_path = repr([{"path": save_to_duckdb(value, node_id=f"{node['id']}-in-{slot}")}
@@ -603,7 +626,6 @@ def ran(tmp_path_factory):
     spec = _dataflow()
     nodes = _nodes(spec)
     into = _into(spec)
-    shared = [w for node in spec["nodes"] if node["type"] == PARAMETER for w in node["metadata"]["widgets"]]
     root = tmp_path_factory.mktemp("park-shade")
     with pytest.MonkeyPatch.context() as patch:
         patch.setenv("CURIO_LAUNCH_CWD", str(root))
@@ -624,14 +646,14 @@ def ran(tmp_path_factory):
                              key=lambda h: 0 if h == "in" else int(h.split("_")[1]))
             return [values[into[(node_id, h)]][0] for h in handles]
 
-        order = ["park-shade-heights", "park-shade-parks", "park-shade-around",
+        order = [_season(spec)["id"], "park-shade-heights", "park-shade-parks", "park-shade-around",
                  "park-shade-removed-lever", "park-shade-capped-lever"]
         for _scenario, _name, _color, key in SCENARIOS:
             order += [_node_id(key, "rasterize"), _node_id(key, "shadow"), _node_id(key, "shade")]
         for _scenario, _name, _color, key in SCENARIOS[1:]:
             order += [f"park-shade-{key}-change", f"park-shade-{key}-park-change"]
         for node_id in order:
-            values[node_id] = _run_code(nodes[node_id], inputs_of(node_id), shared, root / "media")
+            values[node_id] = _run_code(nodes[node_id], inputs_of(node_id), root / "media")
         yield values
         release_connection()
 
