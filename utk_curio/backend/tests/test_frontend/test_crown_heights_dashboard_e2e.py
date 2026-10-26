@@ -74,7 +74,6 @@ from .utils import (
     CLOSEUP_PIXEL_THRESHOLD,
     REPO_ROOT,
     api_json,
-    assert_autark_map_drawn,
     assert_vega_canvas_rendered,
     frame_nodes,
     held_server_nodes,
@@ -307,15 +306,18 @@ def _map_canvas(map_id: str) -> str:
 
 
 def _maps_drawn(page, ids: dict[str, str], what: str, *, frame: bool = False) -> None:
-    """Each of the three maps holds a whole drawing of its layers. With
-    *frame*, on a canvas, each map is framed on its own before it is read, as
-    ``test_scout_shadow_e2e`` frames its maps: framed together, the three sit
-    so far apart that each is a thumbnail, and its canvas read back blank."""
+    """Each of the three maps holds a whole drawing of its layers: mostly
+    opaque and steady (``_wait_for_map_drawn``) and more than a background's
+    few colours, as ``assert_autark_map_drawn`` asks. Both read the canvas in
+    the frame that draws it: a map left idle, as the canvas leaves its maps
+    after a Run All, reads back blank otherwise (#1125). With *frame*, on a
+    canvas, each map is framed on its own before it is read."""
     for key in MAPS:
         if frame:
             frame_nodes(page, [ids[key]])
         _wait_for_map_drawn(page, ids[key], what)
-        assert_autark_map_drawn(page, ids[key], timeout=60000)
+        colours = len(set(_map_pixels(page, ids[key]).getdata()))
+        assert colours > 8, f"the map {key} after {what} holds {colours} colours: a background, not a map"
 
 
 def _keep_drawing_maps(page, ids: dict[str, str]) -> dict:
