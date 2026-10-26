@@ -1523,13 +1523,15 @@ the page opens.
   copies either link.
 - **Save the dataflow** after changing anything else the page shows, such as a chart's
   spec: the page shows what is on disk.
-- **Controls**: anyone viewing the page can change a pinned Parameter node's value, and
-  the widgets of a pinned node that shows them. A change runs the nodes it reaches on the
-  server, with your datasets, models and packages and none of your keys, and the tiles
-  below show the result. A viewer never changes the dataflow, its saved outputs or your
-  Data Catalog, and putting the value back shows the saved outputs. Text,
-  text list and file widgets keep their saved value, and a node that reads a connection
-  key stops with a message.
+- **Controls**: a pinned node's widgets show on its tile, above a chart or map and in
+  place of a code node's code, and anyone viewing the page can change them and a pinned
+  Parameter node's value. A chart or map draws again with a new value of its own widget.
+  Any other change runs the nodes it reaches on the server, with your datasets, models and
+  packages and none of your keys, and the tiles below show the result. A viewer never
+  changes the dataflow, its saved outputs or your Data Catalog, and putting the value back
+  shows the saved outputs. Text, text list and file widgets keep their saved value, and a
+  node that reads a connection key stops with a message. A code node without widgets shows
+  its code, read-only.
 - **What a run makes**, on opening the page or after a change, is kept for 7 days and
   shown to every later viewer with the same values, without running again. After 7 days
   it is deleted, and the next viewer who needs it runs the nodes again.
