@@ -1,6 +1,6 @@
-"""The Crown Heights example's table on two of its days, shared by the CPU
-reference (``test_scripts/test_bedford_shadow_example.py``, a NumPy mirror of
-the example's GPU steps) and the dashboard e2e
+"""The Crown Heights example's table on each of its four days, shared by the
+CPU reference (``test_scripts/test_bedford_shadow_example.py``, a NumPy mirror
+of the example's GPU steps) and the dashboard e2e
 (``test_frontend/test_crown_heights_dashboard_e2e.py``, the GPU itself), so
 the GPU has to give what the CPU does.
 
@@ -8,6 +8,17 @@ Each row is keyed by the table's headers. The window's texts are what the
 table shows. The three durations are the CPU's minutes on Block 1259's open
 ground, which the table shows rounded to the minute ("3 h 55 min").
 """
+
+SPRING = {
+    "Day": "Spring equinox",
+    "From": "8:30 AM EDT",
+    "To": "5:38 PM EDT",
+    "Time counted": "9 h 8 min",
+    "Without the proposed building": 275.9,
+    "With the proposed building": 275.9,
+    # Nor at the equinoxes: only in winter is the sun low enough.
+    "Added": 0.0,
+}
 
 WINTER = {
     "Day": "Winter solstice",
@@ -29,6 +40,19 @@ SUMMER = {
     # The proposed building's shadow never reaches the block in summer.
     "Added": 0.0,
 }
+
+FALL = {
+    "Day": "Fall equinox",
+    "From": "8:14 AM EDT",
+    "To": "5:22 PM EDT",
+    "Time counted": "9 h 7 min",
+    "Without the proposed building": 275.76,
+    "With the proposed building": 275.76,
+    "Added": 0.0,
+}
+
+#: The four days in the order the Day radio lists them.
+FOUR_DAYS = (SPRING, SUMMER, FALL, WINTER)
 
 #: The three durations, in the table's order.
 DURATIONS = ("Without the proposed building", "With the proposed building", "Added")
