@@ -5,7 +5,7 @@ import { useProvenanceContext } from "../providers/ProvenanceProvider";
 import { formatDate, mapTypes } from "../utils/formatters";
 import { useFlowContext } from "../providers/FlowProvider";
 import { useToastContext } from "../providers/ToastProvider";
-import { applyContainerSizing, createFlipGuard, refitToContainer } from "../utils/vegaSpecSizing";
+import { applyContainerSizing, createFlipGuard, fitsItsContainer, refitToContainer, settleFit } from "../utils/vegaSpecSizing";
 import type { RenderCounts } from "../utils/renderOutcome";
 import { injectInputs, prepareVegaInputs, usesNamedDatasets, type VegaDataset } from "../utils/vegaInput";
 import { DEFAULT_INPUT_DATASET } from "../utils/vegaGeoSpec";
@@ -154,6 +154,21 @@ export const useVega = ({
   // The same spec after container sizing, which says whether the view's width
   // and height follow its mount (#496).
   const sizedSpecRef = React.useRef<Record<string, unknown> | null>(null);
+
+  /** Fits *view* again until its plot holds still, when *spec* fits it to its
+   * mount (utils/vegaSpecSizing's settleFit): Vega's one pass can leave the
+   * plot laid out for other axis labels than the ones it draws. */
+  const settleView = (view: any, spec: Record<string, unknown> | null): Promise<void> =>
+    view != null && fitsItsContainer(spec) ? settleFit(view) : Promise.resolve();
+  /** The chart as it stands, settled once the runs already asked of it are
+   * queued: a mount or window resize also runs vega's own refit from the
+   * mount's size (vega-lite's `container:resize` and `window:resize` signal
+   * updates), which can undo a settle made before it. */
+  const settleSoon = () => {
+    window.setTimeout(() => {
+      settleView(currentViewRef.current, sizedSpecRef.current).catch(() => undefined);
+    }, 0);
+  };
 
   // The rows the view holds, which a direct selection is matched against: the
   // first input's.
@@ -362,7 +377,10 @@ export const useVega = ({
     const { usableRows, usableFields } = usableCounts(values, lastSpecRef.current);
 
     if (prevView) {
-      prevView.change(DEFAULT_INPUT_DATASET, changeset).runAsync().then(() => {
+      // Settled before it says what it drew, as a compile is (below): new rows
+      // can bring axis labels of another width.
+      const sizedSpec = sizedSpecRef.current;
+      prevView.change(DEFAULT_INPUT_DATASET, changeset).runAsync().then(() => settleView(prevView, sizedSpec)).then(() => {
         const map = buildVgsidMap(prevView);
         if (map.size > 0) vgsidToIndexRef.current = map;
         applyDirectSelection(prevView);
@@ -440,11 +458,18 @@ export const useVega = ({
         // the mount's scrollbars, which would loop every frame.
         if (!flipping(`${el.clientWidth}x${el.clientHeight}`)) refitToContainer(view, el, sizedSpecRef.current);
         view.resize().runAsync();
+        settleSoon();
       }
     });
 
     if (el) ro.observe(el);
-    return () => ro.disconnect();
+    // vega-lite fits the chart again from its mount on every window resize,
+    // with or without a new mount size.
+    window.addEventListener("resize", settleSoon);
+    return () => {
+      ro.disconnect();
+      window.removeEventListener("resize", settleSoon);
+    };
   }, []);
 
 
@@ -719,7 +744,12 @@ export const useVega = ({
       // with that first draw, so the width is read again here (#496).
       refitToContainer(view, container, specObj);
       return view.resize().runAsync();
-    }).then(() => {
+    }).then(() => (
+      // A fit from the mount's size can leave the plot laid out for other axis
+      // labels than it draws: settled before the marks are counted, so the
+      // node says it drew once the layout holds.
+      settleView(view, specObj)
+    )).then(() => {
       const map = buildVgsidMap(view);
       if (map.size > 0) vgsidToIndexRef.current = map;
       applyDirectSelection(view);
