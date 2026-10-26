@@ -4,10 +4,10 @@
   "version": 1,
   "source": {
     "path": "docs/examples/dataflows/crown-heights-1550-bedford-shadow.json",
-    "sha256": "eb81466c10f131a05d82c032d378b6fb3654e68e574de042959526a7de347a22",
+    "sha256": "24ac00d14c52ef4a3d68cef18b736eabfb2e40c82085df37a8c26a300b8bf839",
     "walkthrough": null
   },
-  "prompt": "How much shade would the 18-story building proposed at 1550 Bedford Avenue in Crown Heights, Brooklyn add to the block across Eastern Parkway from it, between Franklin Avenue and Bedford Avenue? Use the Crown Heights dataset in the catalog: NYC's building footprints with their roof heights in metres, that block's outline and the site's lot, and the street centerlines with their roadway widths. Add the proposed building to the buildings as an edit a user can change on a map: its base to 135 feet on the lot, set back 30 feet from Eastern Parkway, and its upper floors to 185 feet, set back above the base, 10 feet from Eastern Parkway and Bedford Avenue and 15 feet from Union Street. Let the user choose to accumulate the shadow over one date, one month or the whole year, with a date picker and a month list. Cover the area with 3 metre ground cells and, on the GPU, cast sun rays from every cell every 10 minutes of every selected day, counting the minutes only the proposed building blocks the sun. Map the accumulated shadow in hours with the block highlighted, the proposed building in its own color and the other buildings and the streets around it, and show in a table the selection and the shade added on the block, the mean over its cells.",
+  "prompt": "Compare the shade on the block across Eastern Parkway from the 18-story building proposed at 1550 Bedford Avenue in Crown Heights, Brooklyn, between Franklin Avenue and Bedford Avenue, without and with that building, as two scenarios. Use the Crown Heights dataset in the catalog: NYC's building footprints with their roof heights in metres, that block's outline and the site's lot, and the street centerlines with their roadway widths. In the scenario with the building, add it to the buildings as an edit a user can change on a map: its base to 135 feet on the lot, set back 30 feet from Eastern Parkway, and its upper floors to 185 feet, set back above the base, 10 feet from Eastern Parkway and Bedford Avenue and 15 feet from Union Street. Let the user pick one day of 2027: the spring equinox, the summer solstice, the fall equinox or the winter solstice. Count that day from an hour and a half after sunrise to an hour and a half before sunset, in New York time, every 10 minutes, with sunrise and sunset from the suntime library and the sun's position from astral. Cover the area with 3 metre cells and keep only the open ground, outside the buildings. On the GPU, in each scenario, find how long each ground cell spends in the shadow of any building, and the share of the block's open ground in shadow at each step. Map each scenario's shadow and the shade the proposed building adds, with the block highlighted, the proposed building in its own color and the streets; plot the block's share in shadow through the day, a line per scenario; and show in a table the day, its window, and each scenario's average time in shadow on the block, with what the building adds.",
   "context": null,
   "required": {
     "datasets": [
@@ -26,6 +26,41 @@
       },
       {
         "ref": "visualization2",
+        "type": "curio.builtin/autk-grammar",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": true
+      },
+      {
+        "ref": "visualization3",
+        "type": "curio.builtin/autk-grammar",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": true
+      },
+      {
+        "ref": "visualization4",
+        "type": "curio.builtin/autk-grammar",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": true
+      },
+      {
+        "ref": "visualization5",
+        "type": "curio.builtin/autk-grammar",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": true
+      },
+      {
+        "ref": "visualization6",
+        "type": "curio.builtin/autk-grammar",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": true
+      },
+      {
+        "ref": "visualization7",
         "type": "curio.builtin/autk-grammar",
         "role": "visualization",
         "executable": false,
@@ -74,6 +109,62 @@
         "hasContent": true
       },
       {
+        "ref": "analysis7",
+        "type": "curio.builtin/computation-analysis",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis8",
+        "type": "curio.builtin/computation-analysis",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis9",
+        "type": "curio.builtin/computation-analysis",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis10",
+        "type": "curio.builtin/computation-analysis",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis11",
+        "type": "curio.builtin/computation-analysis",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis12",
+        "type": "curio.builtin/computation-analysis",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis13",
+        "type": "curio.builtin/computation-analysis",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis14",
+        "type": "curio.builtin/computation-analysis",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
         "ref": "loader1",
         "type": "curio.builtin/data-loading",
         "role": "loader",
@@ -102,98 +193,256 @@
         "hasContent": true
       },
       {
-        "ref": "endpoint1",
-        "type": "curio.builtin/parameter",
-        "role": "endpoint",
-        "executable": false,
-        "hasContent": false
-      },
-      {
-        "ref": "endpoint2",
-        "type": "curio.builtin/parameter",
-        "role": "endpoint",
-        "executable": false,
-        "hasContent": false
-      },
-      {
-        "ref": "endpoint3",
-        "type": "curio.builtin/parameter",
-        "role": "endpoint",
-        "executable": false,
-        "hasContent": false
-      },
-      {
-        "ref": "visualization3",
+        "ref": "visualization8",
         "type": "curio.builtin/vis-simple",
         "role": "visualization",
         "executable": false,
         "hasContent": false
+      },
+      {
+        "ref": "visualization9",
+        "type": "curio.builtin/vis-vega",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": true
       }
     ],
     "edges": [
       {
         "from": "visualization1",
-        "to": "analysis1",
+        "to": "analysis4",
         "kind": "data"
       },
       {
-        "from": "analysis1",
+        "from": "visualization2",
+        "to": "analysis5",
+        "kind": "data"
+      },
+      {
+        "from": "visualization3",
         "to": "analysis2",
         "kind": "data"
       },
       {
-        "from": "analysis1",
+        "from": "visualization4",
         "to": "analysis3",
         "kind": "data"
       },
       {
-        "from": "analysis2",
+        "from": "analysis1",
+        "to": "visualization1",
+        "kind": "data"
+      },
+      {
+        "from": "analysis1",
+        "to": "visualization2",
+        "kind": "data"
+      },
+      {
+        "from": "analysis1",
         "to": "visualization3",
+        "kind": "data",
+        "slot": 2
+      },
+      {
+        "from": "analysis1",
+        "to": "visualization4",
+        "kind": "data",
+        "slot": 2
+      },
+      {
+        "from": "analysis2",
+        "to": "analysis6",
+        "kind": "data"
+      },
+      {
+        "from": "analysis2",
+        "to": "analysis8",
         "kind": "data"
       },
       {
         "from": "analysis3",
-        "to": "visualization2",
+        "to": "analysis7",
+        "kind": "data"
+      },
+      {
+        "from": "analysis3",
+        "to": "analysis8",
         "kind": "data",
         "slot": 1
       },
       {
         "from": "analysis4",
-        "to": "visualization2",
+        "to": "analysis9",
+        "kind": "data"
+      },
+      {
+        "from": "analysis4",
+        "to": "visualization9",
         "kind": "data"
       },
       {
         "from": "analysis5",
-        "to": "visualization1",
-        "kind": "data"
+        "to": "analysis9",
+        "kind": "data",
+        "slot": 1
+      },
+      {
+        "from": "analysis5",
+        "to": "visualization9",
+        "kind": "data",
+        "slot": 1
       },
       {
         "from": "analysis6",
+        "to": "visualization5",
+        "kind": "data",
+        "slot": 1
+      },
+      {
+        "from": "analysis7",
+        "to": "visualization7",
+        "kind": "data",
+        "slot": 1
+      },
+      {
+        "from": "analysis8",
+        "to": "analysis10",
+        "kind": "data"
+      },
+      {
+        "from": "analysis9",
+        "to": "visualization8",
+        "kind": "data"
+      },
+      {
+        "from": "analysis10",
+        "to": "visualization6",
+        "kind": "data",
+        "slot": 1
+      },
+      {
+        "from": "analysis11",
         "to": "visualization1",
+        "kind": "data",
+        "slot": 1
+      },
+      {
+        "from": "analysis11",
+        "to": "visualization3",
+        "kind": "data",
+        "slot": 1
+      },
+      {
+        "from": "analysis12",
+        "to": "visualization2",
+        "kind": "data",
+        "slot": 1
+      },
+      {
+        "from": "analysis12",
+        "to": "visualization4",
+        "kind": "data",
+        "slot": 1
+      },
+      {
+        "from": "analysis13",
+        "to": "visualization5",
+        "kind": "data"
+      },
+      {
+        "from": "analysis13",
+        "to": "visualization6",
+        "kind": "data"
+      },
+      {
+        "from": "analysis13",
+        "to": "visualization7",
+        "kind": "data"
+      },
+      {
+        "from": "analysis14",
+        "to": "visualization3",
+        "kind": "data"
+      },
+      {
+        "from": "analysis14",
+        "to": "visualization4",
+        "kind": "data"
+      },
+      {
+        "from": "analysis14",
+        "to": "analysis11",
+        "kind": "data",
+        "slot": 1
+      },
+      {
+        "from": "analysis14",
+        "to": "analysis12",
         "kind": "data",
         "slot": 1
       },
       {
         "from": "loader1",
-        "to": "visualization2",
+        "to": "visualization5",
+        "kind": "data",
+        "slot": 4
+      },
+      {
+        "from": "loader1",
+        "to": "visualization6",
+        "kind": "data",
+        "slot": 4
+      },
+      {
+        "from": "loader1",
+        "to": "visualization7",
         "kind": "data",
         "slot": 4
       },
       {
         "from": "loader2",
-        "to": "visualization2",
+        "to": "visualization5",
         "kind": "data",
         "slot": 3
       },
       {
         "from": "loader2",
-        "to": "analysis5",
+        "to": "visualization6",
+        "kind": "data",
+        "slot": 3
+      },
+      {
+        "from": "loader2",
+        "to": "visualization7",
+        "kind": "data",
+        "slot": 3
+      },
+      {
+        "from": "loader2",
+        "to": "analysis14",
         "kind": "data",
         "slot": 1
       },
       {
         "from": "loader3",
-        "to": "analysis4",
+        "to": "visualization5",
+        "kind": "data",
+        "slot": 2
+      },
+      {
+        "from": "loader3",
+        "to": "analysis11",
+        "kind": "data"
+      },
+      {
+        "from": "loader3",
+        "to": "analysis13",
+        "kind": "data"
+      },
+      {
+        "from": "loader3",
+        "to": "analysis14",
         "kind": "data"
       },
       {
@@ -203,29 +452,30 @@
       },
       {
         "from": "transform1",
-        "to": "visualization2",
+        "to": "visualization6",
         "kind": "data",
         "slot": 2
       },
       {
         "from": "transform1",
-        "to": "visualization2",
+        "to": "visualization7",
+        "kind": "data",
+        "slot": 2
+      },
+      {
+        "from": "transform1",
+        "to": "visualization7",
         "kind": "interaction"
       },
       {
         "from": "transform1",
-        "to": "analysis3",
+        "to": "analysis10",
         "kind": "data",
         "slot": 1
       },
       {
         "from": "transform1",
-        "to": "analysis5",
-        "kind": "data"
-      },
-      {
-        "from": "transform1",
-        "to": "analysis6",
+        "to": "analysis12",
         "kind": "data"
       }
     ],
@@ -253,23 +503,23 @@
       "outputKind": "geodataframe"
     },
     {
-      "ref": "analysis5",
+      "ref": "analysis1",
+      "mustMention": [
+        "sunrise"
+      ],
+      "outputKind": "geodataframe"
+    },
+    {
+      "ref": "analysis14",
       "mustMention": [
         "cell"
       ],
       "outputKind": "geodataframe"
     },
     {
-      "ref": "analysis6",
+      "ref": "analysis12",
       "mustMention": [
         "height"
-      ],
-      "outputKind": "geodataframe"
-    },
-    {
-      "ref": "analysis1",
-      "mustMention": [
-        "shadow"
       ],
       "outputKind": "geodataframe"
     },
@@ -281,7 +531,21 @@
       "outputKind": "geodataframe"
     },
     {
-      "ref": "analysis2",
+      "ref": "analysis5",
+      "mustMention": [
+        "Block 1259"
+      ],
+      "outputKind": "dataframe"
+    },
+    {
+      "ref": "analysis8",
+      "mustMention": [
+        "shade"
+      ],
+      "outputKind": "geodataframe"
+    },
+    {
+      "ref": "analysis9",
       "mustMention": [
         "Block 1259"
       ],
@@ -305,7 +569,7 @@
     "skip": [
       {
         "when": "gpu",
-        "reason": "The Autark GPU compute stage that casts the sun rays needs hardware WebGPU; the plan and apply half of this fixture still runs offline.",
+        "reason": "The Autark GPU compute stages that march the sun rays need hardware WebGPU; the plan and apply half of this fixture still runs offline.",
         "scope": "execution"
       }
     ]
@@ -319,7 +583,7 @@
   "split": "train",
   "review": {
     "status": "pending-owner-review",
-    "draftedBy": "the Crown Heights 1550 Bedford Avenue shadow example, from the example JSON, 2026-10-23",
+    "draftedBy": "the Crown Heights 1550 Bedford Avenue shadow example rebuilt as two scenarios, from the example JSON, 2026-10-25",
     "reviewedBy": null,
     "reviewedAt": null
   },
@@ -334,5 +598,5 @@
     ],
     "notes": "The prompt, the expected graph and the plan target are authored in this repository; the export carries the dataset's identifier only. The dataset is NYC Open Data's Building Footprints and Centerline and the Department of City Planning's MapPLUTO, free to use under the NYC Open Data Terms of Use."
   },
-  "notes": "Three data loaders (buildings, Block 1259 and streets) and three Parameter nodes (the period, a date and a month). A Map Editor node adds the proposed building in two parts and feeds the map it is linked to by an interaction edge. Python nodes make the ground cells with the selection's days and hand the building's parts to an Autark compute step, a WGSL shader that accumulates each cell's minutes of the building's shadow; Python nodes then read the shadow per cell, keep the shaded cells for the map with its legend's whole-hour ends, make the map's extent and average the shade on Block 1259, which a Simple View shows. The Autark map draws the streets, the buildings, the shadow and the block."
+  "notes": "Fixed context: three data loaders (buildings, Block 1259 and streets), a Python node holding the Day widget that lists the day's sun steps (suntime and astral), the open-ground grid and the maps' extent. Two scenarios: without the proposed building, and with it, whose lever is a Map Editor node adding the building in two parts, linked to its scenario's map by an interaction edge. In each, a Python node draws the scenario's buildings into a heights grid, and two Autark compute steps march from the ground toward the sun across it: one gives each cell's minutes in shadow, the other the share of Block 1259's open ground in shadow at each step; Python nodes read them and keep the shaded cells for the scenario's map. Outside the scenarios a Python node takes the shade the proposed building adds per cell for a third map, another compares the scenarios on Block 1259 for a Simple View, and a Vega-Lite plot draws both scenarios' shares through the day from the stacked inputs."
 }
