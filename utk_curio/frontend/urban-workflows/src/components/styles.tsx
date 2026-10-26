@@ -1,4 +1,4 @@
-import React, { ReactNode, useState, useEffect, useRef } from "react";
+import React, { ReactNode, useState, useEffect, useMemo, useRef } from "react";
 import CSS from "csstype";
 
 import { useFlowContext } from "../providers/FlowProvider";
@@ -48,10 +48,17 @@ import { getNodeDescriptor, modelTypeOfPackage, tryGetNodeDescriptor } from "../
 import { NodeCategory, NodeTemplateId } from "../registry/types";
 import {
     applyDatasetToNodeData,
+    applyDatasetToWidget,
     canApplyDatasetToNode,
     hasDatasetDrag,
+    keptInCodeLoader,
     readDatasetDragPayload,
+    type DatasetDragPayload,
 } from "../services/datasetCatalog";
+import { datasetWidgetBindings, datasetWidgetReadBy } from "../utils/widgets/datasetWidgets";
+import { DatasetWidgetContext, type DatasetWidgetNode } from "./editing/widgets/datasetWidgetContext";
+import { hasFileDrag, useDataFileImport } from "./datasets/useDataFileImport";
+import { packageStarterCode } from "../adapters/node/packageNodeBehavior";
 import {
     applyModelToNodeData,
     canApplyModelToNode,
@@ -136,6 +143,8 @@ export const NodeContainer = ({
         dashboardOn,
         dashboardLocked,
         markDirty,
+        markNodeStale,
+        requestAutoRun,
         defaultSaveOutputDataset,
     } = useFlowContext();
     // A notebook cell is never minimized or resized: its width comes from the
@@ -164,9 +173,10 @@ export const NodeContainer = ({
     // chip. Read reactively from the React Flow store so it updates on selection.
     const isNodeSelected = useStore((s) => !!s.nodeInternals.get(nodeId)?.selected);
     const { getNodes } = useReactFlow();
-    // Nothing reads these two; they are called so the node keeps the hooks and
-    // the renders it had when it read them.
-    useStarterContext();
+    // The starters feed tells a dataset drop whether the code is still its
+    // template's starter. Nothing reads useCode; it is called so the node
+    // keeps the hooks and the renders it had when it read it.
+    const { getStarters } = useStarterContext();
     useCode();
     const [saveAsOpen, setSaveAsOpen] = useState(false);
     const [configOpen, setConfigOpen] = useState(false);
@@ -418,11 +428,73 @@ export const NodeContainer = ({
     // capture-phase listeners lets us intercept the event *before* Monaco.
     const resizableRef = useRef<HTMLDivElement>(null);
 
+    // Whether a file or a dataset this node takes is dragged over it, which
+    // its dataset widget shows.
+    const [dropping, setDropping] = useState(false);
+    const importDataFile = useDataFileImport();
+
+    // A dataset reaching this node, dropped as a Data Catalog card or as a
+    // file it has just imported: it sets the dataset widget the node's code
+    // reads, or, on a node with none, its loader goes into the code.
+    const takeDatasetRef = useRef<(dataset: DatasetDragPayload) => void>(() => {});
+    takeDatasetRef.current = (dataset: DatasetDragPayload) => {
+        // The node as it is now: an import may have taken a while.
+        const current = getNodes().find((node) => node.id === nodeId)?.data ?? data;
+        const live = code ?? current.code ?? current.defaultCode;
+        const widget = datasetWidgetReadBy(current.widgets, live);
+        if (widget) {
+            const next = applyDatasetToWidget(current, widget.name, dataset);
+            // What an ONNX model or a NetCDF file loads cannot leave the node:
+            // while its code is still the template's starter, it becomes the
+            // loader that keeps the value in the code.
+            const kept = keptInCodeLoader(dataset, widget.name);
+            const starter = packageStarterCode(tryGetNodeDescriptor(current.nodeType), getStarters);
+            const rewrite = kept !== null && starter !== undefined && (live ?? "").trim() === starter.trim();
+            updateDataNode(nodeId, rewrite ? { ...next, code: kept, defaultCode: kept } : next);
+            if (rewrite) {
+                updateDefaultCode(nodeId, kept);
+                sendCodeToWidgets?.(kept);
+            }
+            // As a value set in the Widgets tab: out of date, and run when
+            // automatic runs are on.
+            markNodeStale?.(nodeId);
+            markDirty();
+            requestAutoRun?.([nodeId]);
+        } else {
+            const applied = applyDatasetToNodeData(current, live, dataset);
+            updateDataNode(nodeId, applied.data);
+            updateDefaultCode(nodeId, applied.code);
+            sendCodeToWidgets?.(applied.code);
+            markDirty();
+        }
+        showToast(
+            `Applied ${dataset.title} to this node.`,
+            "success",
+            viewDatasetDetailsToast(openDatasetDetails, dataset.datasetId),
+        );
+    };
+    // Files from the computer, dropped on the node or chosen in its dataset
+    // widget: imported and added to the dataflow, then taken as a card is.
+    const takeFilesRef = useRef<(files: File[]) => void>(() => {});
+    takeFilesRef.current = (files: File[]) => {
+        void importDataFile(files).then((dataset) => {
+            if (dataset) takeDatasetRef.current(dataset);
+        });
+    };
+
     // Keep a ref to the handler so the capture listener always uses the latest
     // closure values (data, code, etc.) without needing to re-register.
     const datasetDropHandlerRef = useRef<(e: DragEvent) => void>(() => {});
     datasetDropHandlerRef.current = (e: DragEvent) => {
         if (!e.dataTransfer) return;
+        if (hasFileDrag(e.dataTransfer)) {
+            // A node that takes no dataset leaves the file to the canvas.
+            if (!canTakeFilesRef.current) return;
+            e.preventDefault();
+            e.stopPropagation();
+            takeFilesRef.current(Array.from(e.dataTransfer.files || []));
+            return;
+        }
         const dataset = readDatasetDragPayload(e.dataTransfer);
         if (!dataset) return;
         if (!canApplyDatasetToNode(data)) {
@@ -431,19 +503,13 @@ export const NodeContainer = ({
         }
         e.preventDefault();
         e.stopPropagation();
-        const applied = applyDatasetToNodeData(data, code ?? data.code ?? data.defaultCode, dataset);
-        updateDataNode(nodeId, applied.data);
-        updateDefaultCode(nodeId, applied.code);
-        sendCodeToWidgets?.(applied.code);
-        markDirty();
-        showToast(
-            `Applied ${dataset.title} to this node.`,
-            "success",
-            viewDatasetDetailsToast(openDatasetDetails, dataset.datasetId),
-        );
+        takeDatasetRef.current(dataset);
     };
     const canApplyRef = useRef(false);
     canApplyRef.current = canApplyDatasetToNode(data);
+    // A read-only canvas adds nothing to the dataflow.
+    const canTakeFilesRef = useRef(false);
+    canTakeFilesRef.current = canApplyRef.current && !sizeLocked && !dashboardOn;
 
     // --- Model drag-and-drop, through the same capture-phase listeners ---
     // A model goes only onto a node whose code calls `curio_load_model("...")`,
@@ -495,14 +561,27 @@ export const NodeContainer = ({
                 e.dataTransfer.dropEffect = "copy";
                 return;
             }
-            if (!hasDatasetDrag(e.dataTransfer)) return;
-            if (!canApplyRef.current) return;
+            if (hasFileDrag(e.dataTransfer)) {
+                if (!canTakeFilesRef.current) return;
+            } else {
+                if (!hasDatasetDrag(e.dataTransfer)) return;
+                if (!canApplyRef.current) return;
+            }
             e.preventDefault();
             e.stopPropagation();
             e.dataTransfer.dropEffect = "copy";
+            setDropping(true);
+        };
+
+        // Leaving the node, not moving between the elements inside it.
+        const handleDragLeave = (e: DragEvent) => {
+            const next = e.relatedTarget;
+            if (next instanceof globalThis.Node && el.contains(next)) return;
+            setDropping(false);
         };
 
         const handleDrop = (e: DragEvent) => {
+            setDropping(false);
             if (e.dataTransfer && hasModelDrag(e.dataTransfer)) {
                 modelDropHandlerRef.current(e);
                 return;
@@ -511,9 +590,11 @@ export const NodeContainer = ({
         };
 
         el.addEventListener("dragover", handleDragOver, true);
+        el.addEventListener("dragleave", handleDragLeave, true);
         el.addEventListener("drop", handleDrop, true);
         return () => {
             el.removeEventListener("dragover", handleDragOver, true);
+            el.removeEventListener("dragleave", handleDragLeave, true);
             el.removeEventListener("drop", handleDrop, true);
         };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -528,8 +609,12 @@ export const NodeContainer = ({
             event.dataTransfer.dropEffect = "copy";
             return;
         }
-        if (!hasDatasetDrag(event.dataTransfer)) return;
-        if (!canApplyDatasetToNode(data)) return;
+        if (hasFileDrag(event.dataTransfer)) {
+            if (!canTakeFilesRef.current) return;
+        } else {
+            if (!hasDatasetDrag(event.dataTransfer)) return;
+            if (!canApplyDatasetToNode(data)) return;
+        }
         event.preventDefault();
         event.stopPropagation();
         event.dataTransfer.dropEffect = "copy";
@@ -538,12 +623,37 @@ export const NodeContainer = ({
     const onDatasetDrop = (event: React.DragEvent<HTMLDivElement>) => {
         // Primary handling is done by the capture-phase native listener above.
         // This synthetic handler is kept only to prevent browser default actions
-        // (e.g. Monaco opening dropped file as text) for dataset and model drags
-        // that the native listener already handled.
-        if (!hasDatasetDrag(event.dataTransfer) && !hasModelDrag(event.dataTransfer)) return;
+        // (e.g. Monaco opening dropped file as text) for dataset, model and file
+        // drags that the native listener already handled. A file the node does
+        // not take goes on to the canvas.
+        if (hasFileDrag(event.dataTransfer)) {
+            if (!canTakeFilesRef.current) return;
+        } else if (!hasDatasetDrag(event.dataTransfer) && !hasModelDrag(event.dataTransfer)) {
+            return;
+        }
         event.preventDefault();
         event.stopPropagation();
     };
+
+    // What the node's dataset widgets read of it (editing/widgets/
+    // datasetWidgetContext): the title and format of the dataset each holds,
+    // the files Choose file picks, and whether a drop is over the node.
+    const datasetWidgetsKey = JSON.stringify(data.datasetWidgets ?? null);
+    const canTakeFiles = canTakeFilesRef.current;
+    const datasetWidgetNode: DatasetWidgetNode = useMemo(() => {
+        const bound = Object.values(datasetWidgetBindings(data));
+        return {
+            describe: (id: string) => {
+                const binding = bound.find((one) => one.id === id);
+                if (binding) return { title: binding.title, format: binding.format };
+                const listed = datasetsById?.get(id);
+                return listed ? { title: listed.title, format: listed.format } : undefined;
+            },
+            takeFiles: canTakeFiles ? (files: File[]) => takeFilesRef.current(files) : undefined,
+            dropping,
+        };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [datasetWidgetsKey, datasetsById, canTakeFiles, dropping]);
 
     // The header's icons, among the node's tools, which show while the pointer
     // is over the node or it is selected.
@@ -828,7 +938,9 @@ export const NodeContainer = ({
                     ...(notebookCell ? { paddingBottom: "8px" } : {}),
                 }}>
                     <NodeHeaderSlotContext.Provider value={dashboardOn ? null : tabSlot}>
-                        {children}
+                        <DatasetWidgetContext.Provider value={datasetWidgetNode}>
+                            {children}
+                        </DatasetWidgetContext.Provider>
                     </NodeHeaderSlotContext.Provider>
                 </div>
 

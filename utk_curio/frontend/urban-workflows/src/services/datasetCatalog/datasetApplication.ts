@@ -10,10 +10,19 @@ import {
 import {
   buildDatasetLoaderCode,
   datasetIdsInCode,
+  keptInCodeLoader,
   mergeDatasetLoaderCode,
 } from "./datasetLoaderSnippets";
 import { createLayerGroupDragPayload } from "./datasetPaletteGrouping";
 import { isSavedOutputOfDataflow } from "./producerLinkage";
+import {
+  datasetWidgetBindings,
+  datasetWidgetIds,
+  firstDatasetWidget,
+  withDatasetValue,
+  type DatasetWidgetBinding,
+} from "../../utils/widgets/datasetWidgets";
+import { normalizeWidgets, type WidgetDef } from "../../utils/widgets/widgetModel";
 
 type AppliedDataset = { id: string; title: string; uri: string; path?: string | null; format: string };
 
@@ -89,6 +98,45 @@ export function buildDatasetLoaderNodeOptions(
   };
 }
 
+/**
+ * Options for ``createCodeNode`` of a template with a dataset widget (Data
+ * Loading's Data, in *widgets*) after a dataset drop on the empty canvas: the
+ * node a drop on a fresh node of it makes. Its first dataset widget holds the
+ * dataset (``applyDatasetToWidget``), and its code is *starter*, the
+ * template's, or for a dataset whose value cannot leave the node, the loader
+ * that keeps it in the code. With no *starter* yet, the code is left out, and
+ * the node takes its template's starter when it mounts. Null when *widgets*
+ * hold no dataset widget.
+ */
+export function buildDatasetWidgetNodeOptions(
+  dataset: DatasetLike,
+  position: { x: number; y: number },
+  widgets: unknown,
+  starter: string | undefined,
+): (Omit<DatasetLoaderNodeOptions, "code"> & {
+  code?: string;
+  widgets: WidgetDef[];
+  datasetWidgets: Record<string, DatasetWidgetBinding>;
+}) | null {
+  const widget = firstDatasetWidget(widgets);
+  if (!widget) return null;
+  const data = applyDatasetToWidget(
+    { widgets: normalizeWidgets(widgets), datasetSource: buildDatasetSource(dataset) },
+    widget.name,
+    dataset,
+  );
+  const code = keptInCodeLoader(dataset, widget.name) ?? starter;
+  return {
+    position,
+    ...(code !== undefined ? { code } : {}),
+    widgets: data.widgets,
+    datasetRefs: data.datasetRefs,
+    appliedDatasets: data.appliedDatasets,
+    datasetWidgets: data.datasetWidgets,
+    datasetSource: data.datasetSource,
+  };
+}
+
 /** True when a node was created from the dataset palette (carries the linkage marker). */
 export function isDatasetPaletteNode(data: any): boolean {
   return !!data?.datasetSource?.datasetId;
@@ -145,7 +193,47 @@ export function nodeBoundDatasetIds(data: any): string[] {
     const id = (applied as any)?.id;
     if (typeof id === "string" && id) ids.add(id);
   }
+  // A dataset widget names what the node loads, whatever set it: a drop, the
+  // Widgets tab or an agent.
+  for (const id of datasetWidgetIds(data?.widgets)) ids.add(id);
   return Array.from(ids);
+}
+
+/**
+ * *data*, a node's data, with its dataset widget *widgetName* holding
+ * *dataset*: the widget holds the dataset's id (a layer group's own id), and
+ * the node's bindings (``datasetRefs``, ``appliedDatasets``) trade the ones the
+ * widget bound before for the dataset's, a group's member layers as a drop
+ * writes them. So a save puts the dataset in ``dataflow.datasets``, and usage
+ * counts and Remove from project see what the widget loads.
+ * ``datasetWidgets`` keeps what each widget bound, which a save keeps too, so
+ * the next dataset takes its place.
+ */
+export function applyDatasetToWidget(data: any, widgetName: string, dataset: DatasetLike): any {
+  const { refs, applied } = appliedDatasetsForPayload(dataset);
+  const bound = datasetWidgetBindings(data);
+  const elsewhere = new Set(
+    Object.entries(bound).flatMap(([name, binding]) => (name === widgetName ? [] : binding.refs)),
+  );
+  const dropped = new Set(
+    (bound[widgetName]?.refs || []).filter((id) => !elsewhere.has(id) && !refs.includes(id)),
+  );
+  bound[widgetName] = { id: datasetIdOf(dataset), title: dataset.title, format: dataset.format, refs };
+  const appliedDatasets = Object.fromEntries(
+    Object.entries({ ...(data?.appliedDatasets || {}), ...applied }).filter(([id]) => !dropped.has(id)),
+  );
+  return {
+    ...data,
+    widgets: withDatasetValue(data?.widgets, widgetName, datasetIdOf(dataset)),
+    datasetRefs: Array.from(
+      new Set([...(data?.datasetRefs || []).filter((id: string) => !dropped.has(id)), ...refs]),
+    ),
+    appliedDatasets,
+    datasetWidgets: bound,
+    // A node made from a dataset dropped on the canvas names it in its
+    // DATASET chip: the chip follows what the widget now loads.
+    ...(data?.datasetSource ? { datasetSource: buildDatasetSource(dataset) } : {}),
+  };
 }
 
 /**

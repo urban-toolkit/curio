@@ -16,6 +16,7 @@ import { canvasPositionOf } from "./utils/canvasPosition";
 import { canvasTemplateConfigToSpec } from "./utils/canvasTemplateConfigSpec";
 import { dataPoolToSpec } from "./utils/dataPoolSpec";
 import { normalizeWidgets } from "./utils/widgets/widgetModel";
+import { datasetWidgetBindings } from "./utils/widgets/datasetWidgets";
 import { normalizeSelections } from "./utils/references/selectionTags";
 import { normalizeScenarios, type Scenario } from "./utils/scenarios/scenarioModel";
 import { registeredCategory } from "./utils/graphPreviewCategories";
@@ -292,6 +293,16 @@ export class TrillGenerator {
                     trill_node.metadata = {};
 
                 trill_node.metadata.datasetSource = node.data.datasetSource;
+            }
+
+            // What each dataset widget was set to by a drop, and the refs it
+            // bound, so the next drop after a reload takes their place.
+            const datasetWidgets = datasetWidgetBindings(node.data);
+            if(Object.keys(datasetWidgets).length > 0){
+                if(trill_node.metadata == undefined)
+                    trill_node.metadata = {};
+
+                trill_node.metadata.datasetWidgets = datasetWidgets;
             }
 
             // The model a Model Catalog drop set, beside datasetRefs, so the

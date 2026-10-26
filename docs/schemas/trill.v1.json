@@ -455,6 +455,21 @@
           "description": "The Model Catalog model last dropped on this node, by id and name. Emitted only when set. The node runs the model its code names in `curio_load_model(...)`, and a ref counts only while the code names its id."
         },
         "datasetSource": { "$ref": "#/$defs/datasetSource" },
+        "datasetWidgets": {
+          "type": "object",
+          "description": "What each of the node's dataset widgets (widgets of type 'dataset') was set to by a dropped file or Data Catalog dataset, by widget name: the dataset's id (a layer group's own id), its title and format, which the widget shows, and the ids it added to 'datasetRefs' (a layer group's member layers), which the next dataset dropped on that widget replaces. Emitted only when set.",
+          "additionalProperties": {
+            "type": "object",
+            "required": ["id", "refs"],
+            "additionalProperties": false,
+            "properties": {
+              "id": { "type": "string", "minLength": 1 },
+              "title": { "type": "string" },
+              "format": { "type": "string" },
+              "refs": { "type": "array", "items": { "type": "string" } }
+            }
+          }
+        },
         "width": {
           "type": "number",
           "deprecated": true,

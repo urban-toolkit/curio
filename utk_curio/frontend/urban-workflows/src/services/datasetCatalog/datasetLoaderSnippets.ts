@@ -398,6 +398,23 @@ export function getDatasetLoaderSnippet(dataset: DatasetLike): DatasetLoaderSnip
   return snippetForFormat(dataset.format, datasetPath(dataset), idOf(dataset), autarkLayerType(dataset));
 }
 
+/**
+ * The code a node with a dataset widget runs for *dataset* when what it loads
+ * cannot leave the node (`KEPT_IN_CODE`: an onnxruntime session, an xarray
+ * Dataset): the loader a drop writes for that format, reading the widget
+ * *widgetName* in place of the id and returning nothing. Null for every other
+ * format, whose loaded value the node's code hands on as it is.
+ */
+export function keptInCodeLoader(dataset: DatasetLike, widgetName: string): string | null {
+  const variable = LOADED_VARIABLES[dataset.format];
+  if (!KEPT_IN_CODE.has(dataset.format) || !variable) return null;
+  return [
+    `${variable} = curio_load_data([!! ${widgetName} !!])`,
+    `# ${variable} cannot leave this node: return a table, a raster or a value made from it.`,
+    "",
+  ].join("\n");
+}
+
 export function buildDatasetLoaderCode(dataset: DatasetLike): string {
   const snippet = getDatasetLoaderSnippet(dataset);
   const parts: (string | null)[] = [...snippet.imports, "", snippet.code];
