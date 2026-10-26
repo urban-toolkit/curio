@@ -57,7 +57,7 @@ type CodeEditorProps = {
     nodeType: NodeTemplateId;
     replacedCode: string; // code with all marks resolved
     sendCodeToWidgets: any;
-    replacedCodeDirty: boolean;
+    replacedCodeDirty: number; // a count of the sends: a change runs the code
     readOnly: boolean;
     defaultValue?: any;
     floatCode?: any;

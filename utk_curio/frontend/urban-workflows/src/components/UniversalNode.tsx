@@ -291,12 +291,11 @@ const UniversalNodeBody = React.memo(function UniversalNodeBody({ data, isConnec
   // is all it needs - on the canvas as much as on the dashboard. Keyed on the
   // input so a chart behind a Data Pool draws when the pool's fetch lands, and
   // guarded so the same input never recompiles twice.
-  // Never while a run is in flight: the runner compiles this node itself, and
-  // two ``sendCode`` calls in one tick cancel each other. Each one toggles the
-  // widgets pass, so two toggles in the same batch leave the flag where it
-  // started, the marker round trip never happens, and the node sits at "exec"
-  // until its watchdog. Whatever a run leaves behind is what this draws from
-  // the next time an input arrives. A run on the server counts too: its
+  // Never while a run is in flight: the runner compiles this node itself, so
+  // drawing it here too would draw it twice. (Two ``sendCode`` calls in one
+  // tick run the node once, with the last code: NodeEditor counts them.)
+  // Whatever a run leaves behind is what this draws from the next time an
+  // input arrives. A run on the server counts too: its
   // browser part compiles the maps and charts it walks as Run All does, and a
   // chart it leaves out draws here once the run ends, from the input that
   // arrived during it.
@@ -314,6 +313,9 @@ const UniversalNodeBody = React.memo(function UniversalNodeBody({ data, isConnec
   const vegaChart = isVegaLiteNodeType(kind);
   const autarkRender = kind === NodeType.AUTK_GRAMMAR && classifyAutkSpecString(nodeState.code) === "render";
   const drawsFromInput = vegaChart || autarkRender;
+  // What lands while the node draws, a new input or a new value of its own
+  // widgets, is drawn once that draw ends (below).
+  const drawing = output?.code === "exec";
   /**
    * Draw the node as a Play does, from its input and its widgets' values as
    * they stand.
@@ -329,26 +331,32 @@ const UniversalNodeBody = React.memo(function UniversalNodeBody({ data, isConnec
    * Only the newest draw asked for goes. A Data Pool hands its rows on with
    * every fetch that lands, so a second input can arrive while the probe is
    * out, and every node waits on the same probe; so can a viewer's new value
-   * of the map's own widget. Drawing both would put two `sendCode` calls in
-   * one tick, which cancel each other (above): the map would never run, and
-   * would sit at "exec".
+   * of the map's own widget. Drawing both would draw the map twice, the first
+   * time from what is no longer its input.
    */
   const draw = () => {
-    lastRenderedInputRef.current = data.input;
-    drawnValuesRef.current = widgetValues;
     const seq = ++drawSeqRef.current;
     const code = nodeState.code;
-    if (!autarkRender) {
+    // The input and values a draw goes with count as drawn once it goes. One
+    // the probe's answer turns back (a run started, or the node is drawing)
+    // leaves them to the next draw, which the end of that run or draw asks for.
+    const input = data.input;
+    const values = widgetValues;
+    const send = () => {
+      lastRenderedInputRef.current = input;
+      drawnValuesRef.current = values;
       setOutputCallback({ code: "exec", content: "" });
       sendCode(code);
+    };
+    if (!autarkRender) {
+      send();
       return;
     }
     void detectWebGpuSupport().then((support) => {
       if (!support.supported && !(dashboardOn && !dashboardStoppedRef.current)) return;
       if (drawSeqRef.current !== seq) return;
       if (runInFlightRef.current || outputCodeRef.current === "exec") return;
-      setOutputCallback({ code: "exec", content: "" });
-      sendCode(code);
+      send();
     });
   };
   useEffect(() => {
@@ -371,7 +379,9 @@ const UniversalNodeBody = React.memo(function UniversalNodeBody({ data, isConnec
     // say whether it renders: the starter it is about to receive does.
     if (!drawsFromInput) return;
     if (!sendCode || disablePlay || specIsEmpty) return;
-    if (runInFlight || output?.code === "exec") return;
+    // Drawing: an input that lands meanwhile waits for that draw to end, which
+    // runs this again and draws it.
+    if (runInFlight || drawing) return;
     if (!hasInput) return;
     // A selection coming back through a Data Pool: the same rows with new
     // `interacted` flags, which useVega's hot reload sets on the rows the view
@@ -380,7 +390,7 @@ const UniversalNodeBody = React.memo(function UniversalNodeBody({ data, isConnec
     if (starterFillInputRef.current === data.input) return;
     if (lastRenderedInputRef.current === data.input) return;
     draw();
-  }, [kind, drawsFromInput, autarkRender, sendCode, disablePlay, specIsEmpty, writtenSpecIsEmpty, hasInput, data.input, runInFlight, dashboardOn]);
+  }, [kind, drawsFromInput, autarkRender, sendCode, disablePlay, specIsEmpty, writtenSpecIsEmpty, hasInput, data.input, runInFlight, drawing, dashboardOn]);
 
   // A wired Autark render tile draws by the rule above when its input lands. An
   // unwired one never receives an input, so it is drawn once here, on the
@@ -410,7 +420,6 @@ const UniversalNodeBody = React.memo(function UniversalNodeBody({ data, isConnec
   // from its document. After the two effects above, and every draw records
   // the values it drew with, so a render draws once. A value set while the
   // tile draws is drawn once that draw ends.
-  const drawing = output?.code === "exec";
   useEffect(() => {
     if (!dashboardOn || !drawsFromInput) return;
     if (drawnValuesRef.current === widgetValues) return;
