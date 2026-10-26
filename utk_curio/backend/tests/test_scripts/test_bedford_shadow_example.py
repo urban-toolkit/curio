@@ -250,15 +250,22 @@ def test_the_builder_writes_the_shipped_example(monkeypatch):
 
 def test_the_builder_draws_the_proposed_building_the_example_ships():
     import geopandas as gpd
+    import shapely
     from shapely.geometry import shape
 
     built, shipped = _builder().massing(), _shipped_edits()
     assert len(built) == len(shipped) == 2
     for mine, theirs in zip(built, shipped):
         assert {k: v for k, v in mine.items() if k != "geometry"} == {k: v for k, v in theirs.items() if k != "geometry"}
-        # In New York's state plane, square feet: a part covers thousands.
+        # In New York's state plane, in feet. GEOS builds differ in the last
+        # digits and in where an outline starts, and an overlay of two
+        # outlines that close may refuse to run, so they are compared by
+        # distance: no point of either lies 0.1 ft from the other (the
+        # builder rounds to 1e-7 degrees, under 0.05 ft here).
         a, b = gpd.GeoSeries([shape(mine["geometry"]), shape(theirs["geometry"])], crs=4326).to_crs(2263)
-        assert a.symmetric_difference(b).area < 1.0, (mine["label"], a.symmetric_difference(b).area)
+        assert a.is_valid and b.is_valid, (mine["label"], shapely.is_valid_reason(a), shapely.is_valid_reason(b))
+        apart = shapely.hausdorff_distance(a, b, densify=0.01)
+        assert apart < 0.1, (mine["label"], apart)
 
 
 @pytest.mark.parametrize("day", list(NOAA))
