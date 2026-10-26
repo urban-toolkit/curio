@@ -1007,7 +1007,9 @@ def test_another_failure_to_load_the_model_keeps_its_own_sentence(workspace, tmp
 def test_the_shipped_dataflow_runs_the_packages_as_the_palette_drops_them():
     """``chicago-loop-shadow-towers.json`` is how its CI run reaches this package: its nodes
     hold the templates' own sources and widgets, the shadow nodes reading the
-    season from the one Parameter node both scenarios share; each scenario's
+    season on their second circle from the one Season node both scenarios
+    share, a Python node that holds the template's Season widget and returns
+    it, and reads nothing; each scenario's
     Raster Calculator of statistics reads its shadow on input_0 and its
     heights, the mask, on input_1, straight from Rasterize Buildings, which feeds the
     shadow node too; each scenario maps its own shadow, with example 24's map,
@@ -1043,17 +1045,25 @@ def test_the_shipped_dataflow_runs_the_packages_as_the_palette_drops_them():
     shadows = by_type[NODE_TYPE]
     assert len(shadows) == 2
     for node in shadows:
-        assert node["content"] == _source().replace("[!! season !!]", "[!! @season !!]")
+        assert node["content"] == _source().replace("[!! season !!]", "input_1")
         assert not node["metadata"].get("widgets")
         assert model_ids_in_code(node["content"]) == [MODEL_ID]
         assert dataset_ids_in_code(node["content"]) == []
-    (parameter,) = by_type["curio.builtin/parameter"]
-    assert parameter["metadata"]["widgets"] == _template()["widgets"]
+    assert "curio.builtin/parameter" not in by_type
+    (season,) = by_type["curio.builtin/computation-analysis"]
+    assert season["title"] == "Season"
+    assert season["metadata"]["widgets"] == _template()["widgets"]
+    assert season["content"].rstrip("\n").endswith("\nreturn [!! season !!]"), season["content"]
 
     (loader,) = by_type["curio.builtin/data-loading"]
     assert dataset_ids_in_code(loader["content"]) == ["data.scout.loop-buildings"]
 
     into = {(edge["target"], edge["targetHandle"]): edge["source"] for edge in spec["edges"]}
+    # The Season node feeds each shadow node's second circle, and reads nothing.
+    assert sorted((e["target"], e["targetHandle"]) for e in spec["edges"] if e["source"] == season["id"]) == sorted(
+        (node["id"], "in_1") for node in shadows
+    )
+    assert not [e for e in spec["edges"] if e["target"] == season["id"]]
     statistics = [node for node in by_type[CALCULATOR_TYPE] if _takes_statistics(node)]
     assert len(statistics) == 2 and len(by_type[CALCULATOR_TYPE]) == 3
     for node in statistics:
@@ -1061,7 +1071,10 @@ def test_the_shipped_dataflow_runs_the_packages_as_the_palette_drops_them():
         assert shadow["type"] == NODE_TYPE
         assert heights["type"] == RASTERIZE_TYPE
         assert into[(shadow["id"], "in")] == heights["id"]
-    assert "curio.builtin/computation-analysis" not in by_type, "a node still picks a part of the rasterizer's output"
+    # The one Python node is the Season node, which reads no input.
+    assert [node["id"] for node in by_type["curio.builtin/computation-analysis"]] == [season["id"]], (
+        "a node still picks a part of the rasterizer's output"
+    )
 
     # Each scenario's shadow on a map of its own: example 24's shadow map, over
     # the range both scenarios' maps share, fed by the scenario's Accumulated

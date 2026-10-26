@@ -21,11 +21,11 @@
         "title": "Buildings"
       },
       {
-        "id": "32fa90a1-94a9-5a74-b768-41463f2f7078",
-        "type": "curio.builtin/parameter",
+        "id": "44d857bc-c25f-5c9b-8945-c43d60ba6301",
+        "type": "curio.builtin/computation-analysis",
         "x": 0,
         "y": 450,
-        "content": "",
+        "content": "# The season both scenarios' shadow runs in, which each Accumulated Shadow\n# node reads on input_1.\nreturn [!! season !!]\n",
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "The season both scenarios' shadow runs in.",
@@ -98,7 +98,7 @@
         "type": "model.scout.deep-umbra/accumulated-shadow",
         "x": 1290,
         "y": 0,
-        "content": "from deep_umbra import accumulated_shadow\nmodel = curio_load_model(\"model.scout.deep-umbra\")\nreturn accumulated_shadow(input_0, season=[!! @season !!], model=model, output_file=curio_output_file)\n",
+        "content": "from deep_umbra import accumulated_shadow\nmodel = curio_load_model(\"model.scout.deep-umbra\")\nreturn accumulated_shadow(input_0, season=input_1, model=model, output_file=curio_output_file)\n",
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "Predict the existing buildings' accumulated shadow with Deep Umbra.",
@@ -199,7 +199,7 @@
         "type": "model.scout.deep-umbra/accumulated-shadow",
         "x": 1935,
         "y": 900,
-        "content": "from deep_umbra import accumulated_shadow\nmodel = curio_load_model(\"model.scout.deep-umbra\")\nreturn accumulated_shadow(input_0, season=[!! @season !!], model=model, output_file=curio_output_file)\n",
+        "content": "from deep_umbra import accumulated_shadow\nmodel = curio_load_model(\"model.scout.deep-umbra\")\nreturn accumulated_shadow(input_0, season=input_1, model=model, output_file=curio_output_file)\n",
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "Predict the remaining buildings' accumulated shadow with Deep Umbra.",
@@ -458,6 +458,20 @@
         "target": "f09ef56c-42c4-56b6-ab30-cf7d3c752e6b",
         "sourceHandle": "out",
         "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-44d857bc-c25f-5c9b-8945-c43d60ba6301out-f7786d1f-9f64-5bbe-b007-dff18db386c6in_1",
+        "source": "44d857bc-c25f-5c9b-8945-c43d60ba6301",
+        "target": "f7786d1f-9f64-5bbe-b007-dff18db386c6",
+        "sourceHandle": "out",
+        "targetHandle": "in_1"
+      },
+      {
+        "id": "reactflow__edge-44d857bc-c25f-5c9b-8945-c43d60ba6301out-a2c5b8ed-658d-52ea-8e5b-18041d9385dein_1",
+        "source": "44d857bc-c25f-5c9b-8945-c43d60ba6301",
+        "target": "a2c5b8ed-658d-52ea-8e5b-18041d9385de",
+        "sourceHandle": "out",
+        "targetHandle": "in_1"
       }
     ],
     "scenarios": [
