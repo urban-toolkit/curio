@@ -796,7 +796,8 @@ class TestSessionFirstHour:
             _fit_view(page)
 
         with s.step("Wire the chart's output back into the loader",
-                    "A loader has no input port, so this should be refused.",
+                    "The loader already feeds the chart, so the edge would close a loop: "
+                    "this should be refused.",
                     expect="error"):
             connect_nodes(page, vega_id, loader_id, timeout=6000)
 

@@ -1,8 +1,9 @@
 """SCOUT's high-rise shadow case on the canvas, compared as two scenarios (#662, step 19).
 
 The shipped test dataflow ``chicago-loop-shadow-towers.json``: SCOUT's Chicago Loop buildings
-(the Data Catalog dataset ``data.scout.loop-buildings``) and a season Parameter
-node are the fixed context. In "Existing", Rasterize Buildings
+(the Data Catalog dataset ``data.scout.loop-buildings``) and a Season Python
+node, wired into each shadow node's second circle, are the fixed context. In
+"Existing", Rasterize Buildings
 (``curio.scout@1``) draws them into one zoom-16 height raster,
 Accumulated Shadow, the node of the model package ``model.scout.deep-umbra@1``,
 runs SCOUT's Deep Umbra model on it, in the season both scenarios share, an

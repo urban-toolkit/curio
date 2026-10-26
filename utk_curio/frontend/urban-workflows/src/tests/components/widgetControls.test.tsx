@@ -34,7 +34,7 @@ function renderEditor(overrides: Partial<React.ComponentProps<typeof WidgetsEdit
     userCode: "",
     sendReplacedCode: jest.fn(),
     nodeId: "n1",
-    markersDirty: false,
+    markersDirty: 0,
     widgets: [],
     onWidgetsChange: jest.fn(),
     language: "python",
@@ -237,7 +237,7 @@ describe("location", () => {
       userCode: "origin = [!! origin !!]",
       widgets: [{ ...origin, value: { lat: 41.8781, lon: -87.6298 } }],
     });
-    view.rerender(<WidgetsEditor {...props} markersDirty={true} />);
+    view.rerender(<WidgetsEditor {...props} markersDirty={1} />);
     expect(props.sendReplacedCode).toHaveBeenCalledWith('origin = {"lat": 41.8781, "lon": -87.6298}');
   });
 });

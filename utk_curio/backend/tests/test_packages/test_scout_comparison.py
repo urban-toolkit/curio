@@ -246,7 +246,7 @@ def test_the_package_is_scout_from_curio_under_mit_with_only_the_raster_nodes_li
 
     manifest = _manifest()
     assert (manifest["id"], manifest["name"]) == (PACKAGE_ID, "Scout")
-    assert (manifest["publisher"], manifest["license"], manifest["version"]) == ("Curio", "MIT", "1.0.0")
+    assert (manifest["publisher"], manifest["license"], manifest["version"]) == ("Curio", "MIT", "1.1.0")
     assert manifest["dependencies"] == {"js": {}, "packages": {}, "python": {
         "dask": ">=2026.8.0", "datashader": ">=0.19.1", "geopandas": ">=1.1.3", "numpy": "",
         "pandas": ">=3.0.2", "pillow": ">=12.2.0", "pyarrow": ">=24.0.0", "pyproj": ">=3.7.2",

@@ -1,7 +1,7 @@
 {
   "sha256": {
-    "README.md": "e0c90c2d4360b03757a3f20bce3544149e02c3f0c006f79e7d8dea5469fc9c56",
-    "manifest.json": "8cf2b7307938c4f513208117d169267e2f3da3fe3024c152c587f8690e9d70ef",
+    "README.md": "78d4e34ae50caf2b8dfbae2e5e6f7686c48d6ec01ad431657b13d7f44bac9a3d",
+    "manifest.json": "0c9df42ae23122e74854f5e0e515e47cced40acab230c0c953de7089591d8699",
     "models/deep_umbra.onnx": "67afb9d2d56bd0a12164e6e651214d56860ff689728c5b6f29486f21c3cb188e",
     "sources/accumulated-shadow.py": "8d7f91c0d46298757a08a92b1adf3520d98dc8c245f5168ab5905b61ab6c08d0",
     "sources/deep_umbra/__init__.py": "1bdadc7426e584b112413bf9435f5dd6e4947300fefd68616f215cef1446fd8b",

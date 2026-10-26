@@ -121,9 +121,14 @@ function NodeEditor({
     // GrammarEditor (whose empty model is "{}", not ""). Stays undefined for
     // nodes with no content (dev/70).
     const [defaultCode, setDefaultCode] = useState<string | undefined>(defaultValue);
-    const [markersDirty, setMarkersDirty] = useState<boolean>(false); // make WidgetsEditor update replacedCode
+    // Counts of the sends, which WidgetsEditor and the code or grammar editor
+    // act on when they change. As toggles, two sends in one batch flipped the
+    // flag twice and left it where it was: nothing resolved the references,
+    // and a played node sat at "exec" with nothing drawn. Counted, the node
+    // runs once, with the code the last send carried.
+    const [markersDirty, setMarkersDirty] = useState<number>(0); // make WidgetsEditor update replacedCode
     const [replacedCode, setReplacedCode] = useState<string>(""); // python or grammar with marks resolved
-    const [replacedCodeDirty, setReplacedCodeDirty] = useState<boolean>(false); // code has to rerun every time button is pressed (having changes or not)
+    const [replacedCodeDirty, setReplacedCodeDirty] = useState<number>(0); // code has to rerun every time button is pressed (having changes or not)
     const [fullscreen, setFullscreen] = useState<string>("");
     // Not the literal "code": grammar-only kinds (autk-grammar, vis-vega declare
     // hasCode:false) have no code pane, so hardcoding it left NO pane active on
@@ -334,9 +339,7 @@ function NodeEditor({
         primingWidgetsRef.current = false;
         if (!priming && (fullscreen == "" || fullscreen == undefined) && (outputId != undefined || contentComponent != undefined)) setActiveTab("output");
         setReplacedCode(code);
-        setReplacedCodeDirty((prev: boolean) => {
-            return !prev;
-        });
+        setReplacedCodeDirty((prev: number) => prev + 1);
     };
 
     /** A reference that does not resolve: on a run, the run ends with the
@@ -355,9 +358,9 @@ function NodeEditor({
             // Why: WidgetsEditor is the bridge that resolves references and
             // hands the result to CodeEditor (via sendReplacedCode). It only
             // mounts when the widgets tab is enabled, so for code nodes with
-            // hasWidgets=false (e.g. js-computation) the markersDirty toggle
-            // has no listener and CodeEditor's interpretCode is never reached
-            // — the play spinner spins forever. Resolve here instead, with the
+            // hasWidgets=false (e.g. js-computation) a change of markersDirty
+            // has no listener and CodeEditor's interpretCode is never reached:
+            // the play spinner spins forever. Resolve here instead, with the
             // same table, so input chips work in those nodes too.
             const { scope: runScope, emptyInputs: waiting, referenceGrammar: runGrammar } = runScopeRef.current;
             const resolved = resolveReferences(String(code ?? ""), runScope, widgetLanguage, runGrammar);
@@ -366,9 +369,7 @@ function NodeEditor({
             else sendReplacedCode(resolved.code);
             return;
         }
-        setMarkersDirty((prev: boolean) => {
-            return !prev;
-        });
+        setMarkersDirty((prev: number) => prev + 1);
     };
 
     /** ``sendCodeToWidgets`` for the load path: resolve markers, keep the tab.

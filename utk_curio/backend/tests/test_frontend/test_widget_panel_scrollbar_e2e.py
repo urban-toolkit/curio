@@ -1,7 +1,10 @@
 """Playwright E2E: a widget panel scrolls with the Data Catalog's thin scrollbar (#1003).
 
-The Quad Cities flood dataflow's "Top-left corner" Parameter node lists the
-five nodes whose code uses ``@topleft``. At the Parameter template's size, 360
+This test's own dataflow (``dataflows/widget-panel-scrollbar.json``) holds the
+three Parameter nodes the Quad Cities flood dataflow had before its shared
+values moved onto wired nodes, and the five nodes whose code used them. Its
+"Top-left corner" Parameter node lists the five nodes whose code uses
+``@topleft``. At the Parameter template's size, 360
 by 230, the node's bottom edge cuts the fifth line, and its panel scrolls.
 Every widget panel (a Parameter node's value and its form, a node's Widgets
 tab) scrolls with the scrollbar of the Data Catalog's panels, one rule for all
@@ -15,9 +18,9 @@ without ``::-webkit-scrollbar``. A bar that shows at rest takes room beside the
 content (``offsetWidth - clientWidth``); one that shows only while scrolling
 takes none.
 
-The dataflow holds the example's own nodes: its three Parameter nodes and the
-five whose code uses the corner. A new Parameter node beside them shows its
-form. The test opens a dataset's details in the Data Catalog, then the
+The dataflow holds those nodes, its three Parameter nodes and the five whose
+code uses the corner, with no edges. A new Parameter node beside them shows
+its form. The test opens a dataset's details in the Data Catalog, then the
 dataflow, and checks:
 
 1. The corner node lists five nodes, and the fifth ends below its panel's
@@ -48,7 +51,6 @@ from urllib.parse import quote
 
 from .test_widget_tags_e2e import _open_tab, _panel
 from .utils import (
-    REPO_ROOT,
     frame_node,
     node_locator,
     require_owner_view,
@@ -61,7 +63,7 @@ from .utils import (
 if TYPE_CHECKING:
     from .utils import FrontendPage
 
-EXAMPLE = Path(REPO_ROOT) / "docs" / "examples" / "dataflows" / "quad-cities-flood-vulnerability.json"
+DATAFLOW = Path(__file__).with_name("dataflows") / "widget-panel-scrollbar.json"
 PARAMETER_TYPE = "curio.builtin/parameter"
 #: The corner Parameter node's widget, and how many nodes' code uses it.
 CORNER = "topleft"
@@ -127,10 +129,12 @@ def _uses_corner(node: dict) -> bool:
 
 
 def _spec() -> dict:
-    """The example's Parameter nodes and the nodes whose code uses the corner,
+    """The dataflow's Parameter nodes and the nodes whose code uses the corner,
     and a new Parameter node, with no edges: nothing runs."""
-    nodes = json.loads(EXAMPLE.read_text(encoding="utf-8"))["dataflow"]["nodes"]
+    spec = json.loads(DATAFLOW.read_text(encoding="utf-8"))
+    nodes = spec["dataflow"]["nodes"]
     parameters = [node for node in nodes if node["type"].split("@")[0] == PARAMETER_TYPE]
+    assert len(parameters) == 3 and spec["dataflow"]["edges"] == [], spec["dataflow"]
     new = {
         "id": NEW_PARAMETER, "type": PARAMETER_TYPE, "x": 0, "y": 1350, "content": "",
         "in": "DEFAULT", "out": "DEFAULT", "goal": "", "metadata": {"keywords": []},
@@ -158,7 +162,7 @@ def test_widget_panels_scroll_with_the_data_catalogs_scrollbar(
     ]
     users = [node for node in nodes if _uses_corner(node)]
     assert len(users) == CORNER_USERS, (
-        f"the example's code uses @{CORNER} in {len(users)} nodes, not {CORNER_USERS}"
+        f"the dataflow's code uses @{CORNER} in {len(users)} nodes, not {CORNER_USERS}"
     )
     (widgets_node, *_) = [
         node["id"] for node in users

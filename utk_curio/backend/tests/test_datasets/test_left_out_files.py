@@ -822,10 +822,12 @@ def test_scouts_flood_rasters_are_downloaded_the_first_time_the_flood_dataflows_
     github = FakeGitHub().serve(monkeypatch)
     captured = _capture_sandbox(monkeypatch)
 
-    shared = [n["metadata"]["widgets"][0] for n in spec["nodes"] if n["type"] == "curio.builtin/parameter"]
+    # The loaders read the region and the period from the nodes wired into
+    # them, not from their code, so the datasets their code names are the same
+    # whatever those hold.
     codes = []
     for loader in (n for n in spec["nodes"] if n["type"] == "curio.builtin/data-loading"):
-        code, problems = resolve_references(loader["content"], [], "python", shared=shared)
+        code, problems = resolve_references(loader["content"], [], "python")
         assert problems == [], problems
         codes.append(textwrap.indent(code, "    "))
     fetched, read_in_place = [], []

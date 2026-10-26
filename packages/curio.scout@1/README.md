@@ -21,7 +21,7 @@ Catalog** dropdown.
 
 | Canonical id | Label | Input | Output |
 |---|---|---|---|
-| `curio.scout/raster-calculator` | Raster Calculator | One to three RASTERs on one grid, one per input circle; a GeoDataFrame on a circle is a layer its code reads as zones or a mask | One RASTER, or a DATAFRAME of one row of statistics |
+| `curio.scout/raster-calculator` | Raster Calculator | One to three RASTERs on one grid, one per input circle; a GeoDataFrame on a circle is a layer its code reads as zones or a mask, and a JSON value one its code reads as it is, such as a region's corners | One RASTER, or a DATAFRAME of one row of statistics |
 | `curio.scout/rasterize-buildings` | Rasterize Buildings | A buildings GeoDataFrame: polygons, a CRS and a column of heights in metres | One RASTER of heights in metres |
 
 ### Charts

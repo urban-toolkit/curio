@@ -859,8 +859,8 @@ def connect_nodes(page, source_id: str, target_id: str, *,
         except PlaywrightTimeoutError:
             raise AssertionError(
                 f"node {node_id} has no {handle_id!r} handle - check the "
-                f"node type's manifest ports (a data-loading node has no "
-                f"input, and a bidirectional node uses 'in/out')"
+                f"node type's manifest ports (a template with no input port, "
+                f"such as a Note, has no 'in', and a bidirectional node uses 'in/out')"
             ) from None
     src.scroll_into_view_if_needed()
     src_box, tgt_box = src.bounding_box(), tgt.bounding_box()

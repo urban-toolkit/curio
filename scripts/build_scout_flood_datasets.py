@@ -62,8 +62,8 @@ PUBLISHER = "SCOUT (urban-toolkit/scout)"
 DATAFLOW_CATEGORIES = {"tags": ["SCOUT"]}
 
 #: (top, left, bottom, right) in degrees: SCOUT's flood example's corners, the
-#: defaults of the quad-cities-flood-vulnerability dataflow's Parameter nodes. They hold every
-#: cell of SCOUT's grid.
+#: defaults of the quad-cities-flood-vulnerability dataflow's Region node's two
+#: corner widgets. They hold every cell of SCOUT's grid.
 SCOUT_REGION = (41.6242105, -90.6879323, 41.4150156, -90.4252158)
 #: On the edges of SCOUT's cells: columns 2016 to 2271 and rows 1552 to 1807,
 #: 256 by 256 cells that hold every NbS class code.
