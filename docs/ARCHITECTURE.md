@@ -760,8 +760,8 @@ A manifest's `templates[*]` entry maps cleanly to a `NodeDescriptor`:
   "behavior": "code",
   "engine": "python",
   "editor": "code",
-  "inputPorts": [],
-  "outputPorts": [{ "cardinality": "1", "types": ["DATAFRAME", "GEODATAFRAME", "RASTER"] }]
+  "inputPorts": [{ "cardinality": "[0,n]", "types": ["DATAFRAME", "GEODATAFRAME", "VALUE", "LIST", "JSON", "RASTER"] }],
+  "outputPorts": [{ "cardinality": "[1,n]", "types": ["DATAFRAME", "GEODATAFRAME", "VALUE", "LIST", "JSON", "RASTER"] }]
 }
 ```
 

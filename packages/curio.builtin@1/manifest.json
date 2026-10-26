@@ -34,7 +34,7 @@
   "templates": [
     {
       "category": "data",
-      "description": "The Data Loading box is responsible for getting data from the outside world into the dataflow.",
+      "description": "The Data Loading box is responsible for getting data from the outside world into the dataflow. It can also read values from the nodes wired into it, each input circle its own variable: input_0, input_1, and so on.",
       "editor": "code",
       "engine": "python",
       "hasCode": true,
@@ -42,7 +42,19 @@
       "hasWidgets": true,
       "iconRef": "fa-solid:upload",
       "id": "data-loading",
-      "inputPorts": [],
+      "inputPorts": [
+        {
+          "cardinality": "[0,n]",
+          "types": [
+            "DATAFRAME",
+            "GEODATAFRAME",
+            "VALUE",
+            "LIST",
+            "JSON",
+            "RASTER"
+          ]
+        }
+      ],
       "label": "Data Loading",
       "loadsDataset": true,
       "behavior": "code",
@@ -52,6 +64,9 @@
           "types": [
             "DATAFRAME",
             "GEODATAFRAME",
+            "VALUE",
+            "LIST",
+            "JSON",
             "RASTER"
           ]
         }

@@ -654,11 +654,13 @@ started.
 
 ## Several inputs
 
-Python Computation, Data Transformation, JS Computation, Data Pool, Vega-Lite and
-Autark nodes take several input edges, and so does a package node whose input port
-allows more than one. Connect an edge to the node's input circle and a new empty
-circle appears below it; each new edge takes the next circle. Circles are numbered
-from 0, top to bottom. A Data Pool shows each input as a tab, and each frame of
+Data Loading, Python Computation, Data Transformation, JS Computation, Data Pool,
+Vega-Lite and Autark nodes take several input edges, and so does a package node whose
+input port allows more than one. Connect an edge to the node's input circle and a new
+empty circle appears below it; each new edge takes the next circle. Circles are
+numbered from 0, top to bottom. A Data Loading node needs no input: wire a node into
+it when its code reads a value that node returns, such as the area several loaders
+read. A Data Pool shows each input as a tab, and each frame of
 an input that holds several, a Python tuple or a dict of frames, as a tab too: a
 dict's tab is named after its key.
 

@@ -62,6 +62,7 @@ def template_index(packages_root: Path | None = None) -> dict:
                 has_grammar=bool(template.get("hasGrammar")),
                 behavior=template.get("behavior"),
                 backend_handler=template.get("backendHandler"),
+                loads_dataset=bool(template.get("loadsDataset")),
             )
     return index
 
