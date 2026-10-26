@@ -1,4 +1,4 @@
 {
-  "readOnlyWidgetKinds": ["text", "text-list", "file"],
+  "readOnlyWidgetKinds": ["text", "text-list", "file", "dataset"],
   "runTokenHeader": "X-Curio-Run-Token"
 }

@@ -55,6 +55,8 @@ export interface PackageTemplatePayload {
   backendHandler?: string | null;
   /** Whether a node of this template loads the dataset it names. */
   loadsDataset?: boolean;
+  /** Whether a node of this template shows its widgets' controls above its code. */
+  widgetsWithCode?: boolean;
 }
 
 

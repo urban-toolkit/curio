@@ -36,7 +36,7 @@
   "templates": [
     {
       "category": "data",
-      "description": "The Data Loading box is responsible for getting data from the outside world into the dataflow.",
+      "description": "The Data Loading box brings data into the dataflow: drop a file or a Data Catalog dataset on its Data widget, and its code loads it.",
       "editor": "code",
       "engine": "python",
       "hasCode": true,
@@ -58,7 +58,17 @@
           ]
         }
       ],
-      "paletteOrder": 0
+      "paletteOrder": 0,
+      "source": "sources/data-loading.py",
+      "widgets": [
+        {
+          "name": "data",
+          "type": "dataset",
+          "label": "Data",
+          "default": ""
+        }
+      ],
+      "widgetsWithCode": true
     },
     {
       "category": "data",

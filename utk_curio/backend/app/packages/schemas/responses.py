@@ -81,6 +81,9 @@ def package_payload(manifest: PackageManifest, *, package_mtime_path: Path | Non
                 # the canvas's lineage and dataset drop read it, as the
                 # backend's ``loads_data`` and the agents do.
                 "loadsDataset": tpl.loads_dataset,
+                # Whether a node of this template shows its widgets' controls
+                # above its code (NodeEditor reads it).
+                "widgetsWithCode": tpl.widgets_with_code,
             }
         )
     payload = {

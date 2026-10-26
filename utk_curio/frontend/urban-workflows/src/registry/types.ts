@@ -245,6 +245,9 @@ export interface NodeDescriptor {
   /** True when the template declares `loadsDataset`: a node of it loads the
    *  dataset it names (`loadsData` in `registry/declaredNodes`). */
   loadsDataset?: boolean;
+  /** True when the template declares `widgetsWithCode`: a node of it shows its
+   *  widgets' controls above its code (NodeEditor). */
+  widgetsWithCode?: boolean;
   inPalette: boolean;
   paletteOrder?: number;
   /** Optional small label rendered as a badge over the icon in ToolsMenu (e.g. "AUTK", "Vega-Lite"). */

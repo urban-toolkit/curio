@@ -93,6 +93,8 @@ interface RawPackageTemplate {
   backendHandler?: string | null;
   /** Whether a node of this template loads the dataset it names. */
   loadsDataset?: boolean;
+  /** Whether a node of this template shows its widgets' controls above its code. */
+  widgetsWithCode?: boolean;
 }
 
 interface RawPackage {
@@ -292,6 +294,7 @@ function buildDescriptor(pkg: RawPackage, template: RawPackageTemplate, order: n
     ...(template.grammarId ? { grammarId: template.grammarId } : {}),
     ...(template.behavior ? { behavior: template.behavior } : {}),
     ...(template.loadsDataset === true ? { loadsDataset: true } : {}),
+    ...(template.widgetsWithCode === true ? { widgetsWithCode: true } : {}),
     ...(template.badge ? { badge: template.badge } : isBuiltin ? {} : { badge: 'PACKAGE' as const }),
     adapter: {
       handles,

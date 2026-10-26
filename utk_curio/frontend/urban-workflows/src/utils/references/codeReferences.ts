@@ -67,7 +67,13 @@
  * naming its new spelling.
  */
 
-import { WIDGET_NAME_RE, effectiveValue, type WidgetDef, type WidgetValue } from "../widgets/widgetModel";
+import {
+  WIDGET_NAME_RE,
+  effectiveValue,
+  emptyDatasetMessage,
+  type WidgetDef,
+  type WidgetValue,
+} from "../widgets/widgetModel";
 import { inputTableName } from "../../contracts/autkGrammar";
 import { vegaFieldName } from "../vegaFieldNames";
 import { isOverCap, overCapText, selectionSize, type SelectionTag } from "./selectionTags";
@@ -953,8 +959,14 @@ export function referenceProblem(
   if (!WIDGET_NAME_RE.test(inner)) {
     return `${reference} does not name a widget. Widget names are letters, digits and underscores.`;
   }
-  if (!scope.widgets.some((w) => w.name === inner)) {
+  const widget = scope.widgets.find((w) => w.name === inner);
+  if (widget === undefined) {
     return `${reference}: this node has no widget named ${inner}. Add it in the Widgets tab.`;
+  }
+  // An empty dataset widget names no dataset for the code to load; text
+  // that only mentions it, in a comment or a string, still writes "".
+  if (widget.type === "dataset" && context.kind === "code" && effectiveValue(widget) === "") {
+    return emptyDatasetMessage(reference, widget);
   }
   return null;
 }
