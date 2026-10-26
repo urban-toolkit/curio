@@ -11,10 +11,13 @@
  * unloadable under jest — extracting it is what makes this assertable at all.
  */
 import {
+  MAX_SETTLE_PASSES,
   applyContainerSizing,
   createFlipGuard,
+  fitsItsContainer,
   isMultiViewSpec,
   refitToContainer,
+  settleFit,
 } from "../../utils/vegaSpecSizing";
 
 describe("isMultiViewSpec", () => {
@@ -255,6 +258,119 @@ describe("useVega re-reads the mount before every resize (#496)", () => {
 
   test("the resize observer checks for a scrollbar flip before it refits", () => {
     expect(source).toMatch(/if \(!flipping\(`\$\{el\.clientWidth\}x\$\{el\.clientHeight\}`\)\) refitToContainer\(/);
+  });
+});
+
+/**
+ * Vega fits a plot to its container in one pass: laid out for the axis labels
+ * it makes at the size it starts from, it draws the labels its fitted size
+ * makes. A dashboard chart of five rows (up to 9) fitted from its tile's full
+ * height kept the room of labels "0.0" to "9.0" beside the "0" to "9" its plot
+ * draws, while the same rows given to the chart in place fitted. After a pick
+ * the tile showed one or the other, by which of its two redraws came last.
+ */
+describe("settleFit", () => {
+  type Layout = [width: number, height: number, x: number, y: number];
+
+  /** A view each fit pass of which moves it to the next of *layouts*, the
+   * last one holding, or with *cycle* starting them over. */
+  const fakeView = (layouts: Layout[], cycle = false) => {
+    let at = 0;
+    const view = {
+      passes: 0,
+      width: () => layouts[at][0],
+      height: () => layouts[at][1],
+      origin: () => [layouts[at][2], layouts[at][3]],
+      resize: () => view,
+      runAsync: async () => {
+        view.passes += 1;
+        at = cycle ? (at + 1) % layouts.length : Math.min(at + 1, layouts.length - 1);
+        return view;
+      },
+    };
+    return view;
+  };
+
+  test("a plot laid out for wider labels than it draws moves once, then holds", async () => {
+    const view = fakeView([[782, 467, 36, 5], [790, 467, 28, 5]]);
+    await settleFit(view);
+    expect([view.width(), view.height(), view.origin()]).toEqual([790, 467, [28, 5]]);
+    expect(view.passes).toBe(2);
+  });
+
+  test("a plot that fits what it draws takes one pass", async () => {
+    const view = fakeView([[790, 467, 28, 5]]);
+    await settleFit(view);
+    expect(view.passes).toBe(1);
+  });
+
+  test("a move of the height alone, or of the origin alone, is a move", async () => {
+    const taller = fakeView([[790, 440, 28, 5], [790, 467, 28, 5]]);
+    await settleFit(taller);
+    expect(taller.passes).toBe(2);
+    const lower = fakeView([[790, 467, 28, 5], [790, 467, 28, 9]]);
+    await settleFit(lower);
+    expect(lower.passes).toBe(2);
+  });
+
+  test("labels that flip back and forth stop after MAX_SETTLE_PASSES", async () => {
+    const view = fakeView([[782, 467, 36, 5], [790, 467, 28, 5]], true);
+    await settleFit(view);
+    expect(view.passes).toBe(MAX_SETTLE_PASSES);
+  });
+
+  test("no view, nothing to settle", async () => {
+    await expect(settleFit(null)).resolves.toBeUndefined();
+  });
+
+  test("a stand-in view that cannot say where its plot is is left as it is", async () => {
+    const runAsync = jest.fn(async () => undefined);
+    const trimmed: any = { width: () => 0, height: () => 0, resize: () => ({ runAsync }) };
+    await settleFit(trimmed);
+    expect(runAsync).not.toHaveBeenCalled();
+  });
+});
+
+describe("fitsItsContainer", () => {
+  test("a spec sized to its node fits it", () => {
+    expect(fitsItsContainer(applyContainerSizing({ mark: "bar" }))).toBe(true);
+    expect(fitsItsContainer(applyContainerSizing({ mark: "bar", width: 400 }))).toBe(true);
+    expect(fitsItsContainer(applyContainerSizing({ mark: "bar", height: 300 }))).toBe(true);
+  });
+
+  test("an author's autosize says it, as a word or an object", () => {
+    expect(fitsItsContainer({ mark: "bar", autosize: "fit" })).toBe(true);
+    expect(fitsItsContainer({ mark: "bar", autosize: { type: "pad" } })).toBe(false);
+  });
+
+  test("a spec that keeps its own size, or a multi-view one, does not", () => {
+    expect(fitsItsContainer(applyContainerSizing({ mark: "bar", width: 400, height: 300 }))).toBe(false);
+    expect(fitsItsContainer(applyContainerSizing({ vconcat: [{ mark: "bar" }] }))).toBe(false);
+    expect(fitsItsContainer(null)).toBe(false);
+  });
+});
+
+describe("useVega settles the fit after every draw and resize", () => {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const fs = require("fs") as typeof import("fs");
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const path = require("path") as typeof import("path");
+  const source = fs.readFileSync(path.resolve(__dirname, "../../hook/useVega.ts"), "utf8");
+
+  test("a compile settles after its refit, before its marks are counted", () => {
+    expect(source).toMatch(
+      /return view\.resize\(\)\.runAsync\(\);\s*\}\)\.then\(\(\) => \((\s*\/\/[^\n]*)*\s*settleView\(view, specObj\)\s*\)\)\.then\(\(\) => \{\s*const map = buildVgsidMap\(view\);/,
+    );
+  });
+
+  test("new rows given in place settle before the chart says what it drew", () => {
+    expect(source).toMatch(/\.runAsync\(\)\.then\(\(\) => settleView\(prevView, sizedSpec\)\)\.then\(/);
+  });
+
+  test("a mount or window resize settles after vega's own refit", () => {
+    expect(source).toMatch(/view\.resize\(\)\.runAsync\(\);\s*settleSoon\(\);/);
+    expect(source).toMatch(/window\.addEventListener\("resize", settleSoon\)/);
+    expect(source).toMatch(/window\.setTimeout\(\(\) => \{\s*settleView\(currentViewRef\.current, sizedSpecRef\.current\)/);
   });
 });
 

@@ -319,9 +319,29 @@ jobs:
           mkdir -p instance .curio
           export COMPOSE_FILE=docker-compose.yml:docker-compose.deploy.yml
           set -a; [ -f .env ] && . ./.env; set +a
-          # v0.16.0 bakes its backend address into the bundle. Set after .env so
-          # an older address there cannot win.
-          export BACKEND_URL=https://flow.urbantk.org/api
+          if grep -q -e '"--backend-url"' utk_curio/main.py 2>/dev/null; then
+            # Releases after v0.16.0 take the site's arguments, container name
+            # and host ports from docker-compose.site.yml, as curio-dev does.
+            # The name and ports read the same variables v0.16.0's compose
+            # file did. The backend is /api on whichever host serves the page.
+            compose_version="$(docker compose version --short)"
+            if [ "$(printf '%s\n' 2.24.4 "$compose_version" | sort -V | head -n1)" != 2.24.4 ]; then
+              echo "::error::Docker Compose $compose_version is older than 2.24.4, which docker-compose.site.yml needs"
+              exit 1
+            fi
+            cat > docker-compose.site.yml <<'SITE'
+          services:
+            curio:
+              container_name: ${CURIO_CONTAINER_NAME:-curio}
+              ports: !override ["${CURIO_PORT_5002:-5002}:5002", "${CURIO_PORT_8080:-8080}:8080"]
+              command: ["--backend-url", "/api"]
+          SITE
+            export COMPOSE_FILE=$COMPOSE_FILE:docker-compose.site.yml
+          else
+            # v0.16.0 bakes its backend address into the bundle. Set after .env
+            # so an older address there cannot win.
+            export BACKEND_URL=https://flow.urbantk.org/api
+          fi
           # Build while the old stack still serves: the site is offline only
           # from `down` until the new container boots, and a failed build
           # leaves the old stack up.

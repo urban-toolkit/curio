@@ -31,10 +31,13 @@ jobs:
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Skip if this is a version bump commit
+      - name: Skip a push of a version bump commit
         run: |
+          # Only a push can be a bump commit re-triggering this workflow. A
+          # dispatched release runs on main, whose head is almost always the
+          # last patch bump, so it must never skip.
           MSG=$(git log -1 --format="%s")
-          if [[ "$MSG" == chore:\ bump\ version\ to\ * ]]; then
+          if [[ "${{ github.event_name }}" == "push" && "$MSG" == chore:\ bump\ version\ to\ * ]]; then
             echo "SKIP=true" >> $GITHUB_ENV
           fi
 
