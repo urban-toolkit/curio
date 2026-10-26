@@ -247,8 +247,8 @@ def _run_node_loop(
         # dev/132 (closes dev/131 F4): topped up for a dataset that
         # arrived after this job started — the per-pill Solve and the
         # Finder's own delegation both come through here.
-        dataset_paths_fn=lambda codes: agents_grounding._session_dataset_paths(
-            project_id, acting_user, dataset_paths, codes
+        dataset_paths_fn=lambda codes, formats: agents_grounding._session_dataset_paths(
+            project_id, acting_user, dataset_paths, codes, formats
         ),
         # dev/133: an empty result is a failed round here too — the
         # per-node Solve is where the owner presses "solve this node".

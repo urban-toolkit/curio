@@ -1339,8 +1339,11 @@ Five design points worth knowing:
   can write beside the library or under HOME, and the execution account can do
   neither.
 - **No pickle in either direction.** A child's manifest carries a kind tag,
-  JSON scalars, and flat filenames only. Unpickling a hostile child's output in
-  the privileged parent would hand back most of what isolation removed.
+  JSON scalars, and flat filenames only. A list or dict that holds frames, such
+  as a layer group's layers, names each item as an output of its own, which the
+  parent stores as `list_of_ids` or `dict_of_ids`, as the in-process path does.
+  Unpickling a hostile child's output in the privileged parent would hand back
+  most of what isolation removed.
 - **Node code loses direct store access.** The in-process path seeds
   `load_from_duckdb` / `save_to_duckdb` / `save_dataset_parquet` into user
   scope; under isolation those names raise instead. Nodes exchange data through
@@ -1500,10 +1503,13 @@ fails open into a runtime error from the sandbox.
    `curio_data_path("<id>")` calls (single or double quoted), dedupes the
    ids, and caps them at `MAX_EXEC_DATASET_IDS` (32).
 2. It resolves them via `DatasetCatalogService.resolve_execution_paths`, which
-   refuses any path outside the allowed read roots. Resolution **fails open**: an
-   error yields an empty mapping rather than blocking the run.
+   refuses any path outside the allowed read roots. A layer group's id resolves
+   to its layers: each layer's path, and an entry among the formats that names
+   the layers in order, which `curio_load_data` reads into a dict. Resolution
+   **fails open**: an error yields an empty mapping rather than blocking the run.
 3. The resulting `{id: absPath}` map rides along on the `/exec` body. The sandbox
-   re-validates it (dict-shaped, stringified, ≤32 entries) and injects
+   re-validates it (dict-shaped, stringified, ≤32 entries the code names, plus
+   the layers of the groups among them) and injects
    `curio_data_path` into the user namespace, where an unknown id raises an
    actionable `RuntimeError` instead of returning a foreign path.
 4. Under fork isolation, `stage_dataset_paths`

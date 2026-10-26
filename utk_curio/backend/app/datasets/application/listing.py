@@ -32,7 +32,8 @@ from utk_curio.backend.app.datasets.domain.constants import SUPPORTED_SUFFIXES, 
 from utk_curio.backend.app.datasets.domain.layer_group import (
     build_layer_group_item,
     collapse_layer_groups,
-    sort_group_members,
+    layer_group_execution_format,
+    members_of,
 )
 from utk_curio.backend.app.datasets.domain.errors import DatasetCatalogError
 from utk_curio.backend.app.datasets.repositories.installed import InstalledDatasetRepository
@@ -544,6 +545,12 @@ class CatalogListing:
         keyed lookup instead of a full catalog listing on every node execution.
         Anything the index doesn't know - hub, workspace files, live outputs -
         falls back to the listing below.
+
+        A layer group's id (an OSM extract, a GeoPackage of several layers)
+        names no file: it resolves to its layers, each id to its own path,
+        and *formats* gets the group's entry, which names its layers in the
+        group card loader's order (``layer_group_execution_format``), so
+        ``curio_load_data("<group id>")`` reads them all.
         """
         if not dataset_ids:
             return {}
@@ -555,11 +562,10 @@ class CatalogListing:
             return resolved
 
         result = self._owner.list_catalog(dataflow_id=dataflow_id, include_hub=True)
-        by_id = {item["id"]: item for item in result["items"] if item.get("id")}
-        for dataset_id in pending:
-            item = by_id.get(dataset_id)
-            if item is None:
-                continue
+        items = [item for item in result["items"] if item.get("id")]
+        by_id = {item["id"]: item for item in items}
+
+        def resolve(dataset_id: str, item: dict[str, Any]) -> None:
             try:
                 path = self._paths._resolve_item_path(item)
             except Exception:  # noqa: BLE001 - one bad item must not drop the rest
@@ -567,11 +573,24 @@ class CatalogListing:
                     "Could not resolve execution path for dataset %s", dataset_id,
                     exc_info=True,
                 )
-                continue
+                return
             if path and Path(path).is_file():
                 resolved[dataset_id] = path
                 if formats is not None:
                     formats[dataset_id] = execution_format(item)
+
+        for dataset_id in pending:
+            if is_layer_group_id(dataset_id):
+                members = members_of(dataset_id, items)
+                for member in members:
+                    if member["id"] not in resolved:
+                        resolve(member["id"], member)
+                if members and formats is not None:
+                    formats[dataset_id] = layer_group_execution_format(members)
+                continue
+            item = by_id.get(dataset_id)
+            if item is not None:
+                resolve(dataset_id, item)
         return resolved
 
     def _resolve_execution_paths_from_index(
@@ -684,8 +703,7 @@ class CatalogListing:
         result = self._owner.list_catalog(
             dataflow_id=dataflow_id, include_hub=True, live_outputs=live_outputs
         )
-        members = [i for i in result["items"] if i.get("groupId") == group_id]
-        return sort_group_members(members)
+        return members_of(group_id, result["items"])
 
     def _preview_member(
         self, member: dict[str, Any], *, row_limit: int, offset: int
