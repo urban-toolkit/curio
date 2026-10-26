@@ -745,7 +745,7 @@ def plot() -> str:
                     "x": {"field": "time", "type": "temporal", "scale": {"type": "utc"},
                           "axis": {"format": "%-I %p", "tickMinStep": 3600000}, "title": None},
                     "y": {"field": "share", "type": "quantitative", "scale": {"domain": [0, 100]},
-                          "title": "Open ground in shadow (%)"},
+                          "title": "In shadow (%)"},
                     "color": {"field": "scenario_name", "type": "nominal", "title": "Scenario",
                               "scale": "SCENARIO_COLORS", "sort": "SCENARIO_ORDER", "legend": NARROW_LEGEND},
                     "strokeWidth": {"field": "scenario_name", "type": "nominal", "sort": "SCENARIO_ORDER",
@@ -791,7 +791,9 @@ def year_plot() -> str:
                       {"year": YEAR, "month": 1, "date": 1, "utc": True},
                       {"year": YEAR, "month": 12, "date": 31, "hours": 23, "minutes": 59, "utc": True}]},
                   "axis": {"format": "%b", "tickMinStep": 28 * 24 * 3600000}, "title": f"Day ({YEAR})"},
-            "y": {"field": "hours", "type": "quantitative", "title": "Open ground's time in shadow (h)"},
+            # From near the shortest day's time in shadow, so the shade the
+            # building adds shows on a plot as tall as a row.
+            "y": {"field": "hours", "type": "quantitative", "scale": {"zero": False}, "title": "In shadow (h)"},
             "color": {"field": "scenario_name", "type": "nominal", "title": "Scenario",
                       "scale": "SCENARIO_COLORS", "sort": "SCENARIO_ORDER", "legend": LEGEND},
             "strokeWidth": {"field": "scenario_name", "type": "nominal", "sort": "SCENARIO_ORDER",
@@ -844,20 +846,19 @@ def edge(source, target, interaction=False):
 #: The dashboard in three columns: the three maps across the top; under them,
 #: as tall as the Day widget's node, that node, the Map Editor under the map
 #: it edits (so each scenario's frame holds its own tiles only) and the day's
-#: plot; then the plot of every day over the table of the months, the two the
-#: same size, the table tall enough for its twelve rows; by node key.
-TABLE_HEIGHT = 730
+#: plot; then, as tall again, the plot of every day over the table of the
+#: months, which scrolls: a dashboard fits all its tiles in the window, so a
+#: table tall enough for twelve rows would shrink every tile; by node key.
+ROW_HEIGHT = 230
 LAYOUT = {
     "base-shadow-map": {"dashboardPinned": True, "dashboardX": 0, "dashboardY": 0, "dashboardWidth": 420, "dashboardHeight": 380},
     "shadow-map": {"dashboardPinned": True, "dashboardX": 430, "dashboardY": 0, "dashboardWidth": 420, "dashboardHeight": 380},
     "added-map": {"dashboardPinned": True, "dashboardX": 860, "dashboardY": 0, "dashboardWidth": 420, "dashboardHeight": 380},
-    "steps": {"dashboardPinned": True, "dashboardX": 0, "dashboardY": 390, "dashboardWidth": 250, "dashboardHeight": 230},
-    "add-building": {"dashboardPinned": True, "dashboardX": 430, "dashboardY": 390, "dashboardWidth": 420, "dashboardHeight": 230},
-    "plot": {"dashboardPinned": True, "dashboardX": 860, "dashboardY": 390, "dashboardWidth": 420, "dashboardHeight": 230},
-    "year-plot": {"dashboardPinned": True, "dashboardX": 0, "dashboardY": 630, "dashboardWidth": 1280,
-                  "dashboardHeight": TABLE_HEIGHT},
-    "summary-view": {"dashboardPinned": True, "dashboardX": 0, "dashboardY": 640 + TABLE_HEIGHT, "dashboardWidth": 1280,
-                     "dashboardHeight": TABLE_HEIGHT},
+    "steps": {"dashboardPinned": True, "dashboardX": 0, "dashboardY": 390, "dashboardWidth": 250, "dashboardHeight": ROW_HEIGHT},
+    "add-building": {"dashboardPinned": True, "dashboardX": 430, "dashboardY": 390, "dashboardWidth": 420, "dashboardHeight": ROW_HEIGHT},
+    "plot": {"dashboardPinned": True, "dashboardX": 860, "dashboardY": 390, "dashboardWidth": 420, "dashboardHeight": ROW_HEIGHT},
+    "year-plot": {"dashboardPinned": True, "dashboardX": 0, "dashboardY": 630, "dashboardWidth": 1280, "dashboardHeight": ROW_HEIGHT},
+    "summary-view": {"dashboardPinned": True, "dashboardX": 0, "dashboardY": 870, "dashboardWidth": 1280, "dashboardHeight": ROW_HEIGHT},
 }
 
 

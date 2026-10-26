@@ -64,7 +64,9 @@ import urllib.request
 import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from types import SimpleNamespace
 from typing import TYPE_CHECKING
+from urllib.parse import urlsplit
 
 import pytest
 from playwright.sync_api import expect
@@ -348,6 +350,20 @@ def _day_reads(outputs: dict[str, str], ids: dict[str, str], row: dict) -> dict[
     return shares
 
 
+def _outputs_of(streams: list) -> dict[str, str]:
+    """The output of every step the runs of *streams* finished, by node id, a
+    later run's over an earlier one's: each a run's stream as a page's
+    response listener caught it, read once it ends."""
+    texts = []
+    for stream in streams:
+        stream.finished()
+        texts.append(stream.text())
+    outputs: dict[str, str] = {}
+    for run in _step_outputs(SimpleNamespace(streams=texts)):
+        outputs.update(run)
+    return outputs
+
+
 def _year_reads(outputs: dict[str, str], ids: dict[str, str]) -> None:
     """What a run made of the year from what the page's GPU steps sent: each
     scenario's table of its days, which the year's plot draws, a row for each
@@ -618,7 +634,6 @@ def test_the_owner_shares_the_crown_heights_dashboard_and_each_visitor_tries_a_d
 
         winter_maps = _keep_drawing_maps(first.page, ids)
         winter_plot = first.page.evaluate(_PLOT_PIXELS_JS, ids["plot"])
-        year_plot = first.page.evaluate(_PLOT_PIXELS_JS, ids["year-plot"])
         months = _months_read(first.page, ids["summary-view"])
         _pick_day(first.page, ids["steps"], SUMMER["Day"])
         summer_maps: dict = {}
@@ -688,14 +703,12 @@ def test_the_owner_shares_the_crown_heights_dashboard_and_each_visitor_tries_a_d
             f"the run after the GPU steps did not make {unmade!r}: it ran {after_gpu!r}" + first.story()
         )
         # The day is the CPU's, and the year no day reaches stays as it was:
-        # its GPU steps, its days and months are not made again, and its plot
-        # and the table show what they showed.
+        # its GPU steps, its days and months are not made again, its plot
+        # still draws both lines and the table shows what it showed.
         summer_shares = _day_reads(after_gpu, ids, SUMMER)
         yearly = [key for key in (*YEAR_STEPS, *AFTER_YEAR) if ids[key] in before_gpu or ids[key] in after_gpu]
         assert not yearly, f"a day ran {yearly!r} again, which read the year" + first.story()
-        assert first.page.evaluate(_PLOT_PIXELS_JS, ids["year-plot"]) == year_plot, (
-            "the year's plot drew again for a day" + first.story()
-        )
+        first.waits_for("the year's plot", lambda: _plot_drew(first.page, ids["year-plot"], colors))
         assert _months_read(first.page, ids["summary-view"]) == months, "the table changed with the day" + first.story()
         first_sent = _sent_results(first)
         first_read = _files_read(first.asked)
@@ -877,7 +890,6 @@ def test_the_crown_heights_dashboard_link_dev_shares_works_on_this_deployment_to
 
         opened_maps = _keep_drawing_maps(visitor.page, ids)
         opened_plot = visitor.page.evaluate(_PLOT_PIXELS_JS, ids["plot"])
-        year_plot = visitor.page.evaluate(_PLOT_PIXELS_JS, ids["year-plot"])
         months = _months_read(visitor.page, ids["summary-view"])
         _pick_day(visitor.page, ids["steps"], SUMMER["Day"])
         summer_maps: dict = {}
@@ -915,9 +927,7 @@ def test_the_crown_heights_dashboard_link_dev_shares_works_on_this_deployment_to
         _day_reads(after_day, ids, SUMMER)
         yearly = [key for key in (*YEAR_STEPS, *AFTER_YEAR) if ids[key] in changed or ids[key] in after_day]
         assert not yearly, f"a day ran {yearly!r} again, which read the year" + visitor.story()
-        assert visitor.page.evaluate(_PLOT_PIXELS_JS, ids["year-plot"]) == year_plot, (
-            "the year's plot drew again for a day" + visitor.story()
-        )
+        visitor.waits_for("the year's plot", lambda: _plot_drew(visitor.page, ids["year-plot"], colors))
         assert _months_read(visitor.page, ids["summary-view"]) == months, "the table changed with the day" + visitor.story()
         assert _beyond_viewer_runs(visitor) == [], (
             "the dashboard asked the server for more than a viewer's run" + visitor.story()
@@ -1043,10 +1053,13 @@ def test_a_visitor_in_a_private_window_goes_through_the_four_days(
     with no routes, so its HTTP cache works, in memory, as a private window's
     (the other visits here route the page's requests, which turns the cache
     off). It opens on the winter solstice with its three maps drawn, which
-    takes one download of DuckDB's module for them all. Then each day in the
-    order the Day radio lists them, ending on the winter solstice again: the
-    three maps and the day's plot draw it, the year's plot and the table of
-    the CPU's months stay as they were, and the page logs no error."""
+    takes one download of DuckDB's module for them all, and what its run made
+    of the day and of the year is the CPU's. Then each day in the order the
+    Day radio lists them, ending on the winter solstice again: what the day's
+    runs made of it is the CPU's, the three maps and the day's plot draw it,
+    the year's plot draws on and the table keeps the CPU's months, and the
+    page logs no error. A response listener, not a route, reads each run's
+    stream, so the cache stays on."""
     require_project_page()
     require_user_auth()
     ids = _ids()
@@ -1061,14 +1074,21 @@ def test_a_visitor_in_a_private_window_goes_through_the_four_days(
         page = ctx.new_page()
         errors: list[str] = []
         page.on("pageerror", lambda error: errors.append(str(error)))
+        streams: list = []
+        page.on("response", lambda response: (
+            streams.append(response) if urlsplit(response.url).path.endswith("/stream") else None
+        ))
         try:
             page.goto(f"{proxied}/dashboard/{LINK_ID}", wait_until="domcontentloaded")
             page.get_by_test_id("open-dataflow-link").wait_for(state="visible", timeout=45000)
             require_webgpu(page)
             _shows_winter(page, ids, colors, "the link opened in a private window")
+            on_open = _outputs_of(streams)
+            _day_reads(on_open, ids, WINTER)
+            _year_reads(on_open, ids)
+            read = len(streams)
             opened = _keep_drawing_maps(page, ids)
             plot = page.evaluate(_PLOT_PIXELS_JS, ids["plot"])
-            year_plot = page.evaluate(_PLOT_PIXELS_JS, ids["year-plot"])
             months = _months_read(page, ids["summary-view"])
             for row in FOUR_DAYS:
                 day = row["Day"]
@@ -1087,9 +1107,18 @@ def test_a_visitor_in_a_private_window_goes_through_the_four_days(
                             f"{apart:.2%} of its pixels"
                         )
                 _plot_redrew(page, ids["plot"], plot, colors)
-                assert page.evaluate(_PLOT_PIXELS_JS, ids["year-plot"]) == year_plot, (
-                    f"the year's plot drew again for the {day.lower()}"
-                )
+                # What the day's runs made of it; the saved day may need none,
+                # its values kept from the run on open.
+                made = _outputs_of(streams[read:])
+                read = len(streams)
+                if made:
+                    yearly = [key for key in (*YEAR_STEPS, *AFTER_YEAR) if ids[key] in made]
+                    assert not yearly, f"the {day.lower()} ran {yearly!r} again, which read the year"
+                else:
+                    assert row is WINTER, f"the {day.lower()} drew with no run"
+                    made = on_open
+                _day_reads(made, ids, row)
+                _plot_drew(page, ids["year-plot"], colors)
                 assert _months_read(page, ids["summary-view"]) == months, f"the table changed for the {day.lower()}"
                 _keep_drawing_maps(page, ids)
                 plot = page.evaluate(_PLOT_PIXELS_JS, ids["plot"])
