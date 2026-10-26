@@ -305,6 +305,13 @@
         "shadow"
       ],
       "outputKind": "raster"
+    },
+    {
+      "ref": "analysis1",
+      "mustMention": [
+        "season"
+      ],
+      "outputKind": "str"
     }
   ],
   "execution": {

@@ -834,7 +834,7 @@ def test_each_parks_change_is_what_compares_difference_wrote(ran, tmp_path):
         assert ours.crs.to_epsg() == 4326
         reversed_parks = what_if.iloc[::-1].reset_index(drop=True)
         assert list(reversed_parks["park"]) == PARKS[::-1]
-        again, _printed = _run_code(nodes[f"park-shade-{key}-park-change"], [existing, reversed_parks], [],
+        again, _printed = _run_code(nodes[f"park-shade-{key}-park-change"], [existing, reversed_parks],
                                     tmp_path / "media")
         assert_geodataframe_equal(
             again, keyed_change(_through_the_store(existing), _through_the_store(reversed_parks), "park"),
@@ -873,7 +873,7 @@ def test_a_park_one_side_lacks_is_removed_or_added_as_compare_wrote_it(ran, tmp_
             "added": (existing[existing["park"] != ONLY_IN_THE_WHAT_IF].reset_index(drop=True), what_if),
         }
         for change, inputs in cases.items():
-            ours, _printed = _run_code(node, list(inputs), [], tmp_path / "media")
+            ours, _printed = _run_code(node, list(inputs), tmp_path / "media")
             compared = keyed_change(*(_through_the_store(value) for value in inputs), "park")
             assert list(ours.columns) == list(compared.columns), (scenario, change)
             assert ours.dtypes.astype(str).tolist() == compared.dtypes.astype(str).tolist(), (scenario, change)
@@ -934,7 +934,7 @@ def test_each_parks_change_on_fixed_tables_is_what_compare_wrote(ran, tmp_path):
                       held["oneSide"][scenario]["added"]),
         }
         for case, (inputs, fixture) in cases.items():
-            ours, _printed = _run_code(node, inputs, [], tmp_path / "media")
+            ours, _printed = _run_code(node, inputs, tmp_path / "media")
             assert_frame_matches(ours, fixture, what=f"the park change, {scenario}, {case}")
             rule = _through_the_store(keyed_change(*(_through_the_store(value) for value in inputs), "park"))
             assert_frame_matches(rule, fixture, what=f"keyed_change, {scenario}, {case}")
