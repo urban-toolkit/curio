@@ -417,7 +417,7 @@ def _read_json_artifact(rel_path):
     return json.loads(zlib.decompress(payload).decode("utf-8"))
 
 
-def save_to_duckdb(value, node_id=None, session_id=None):
+def save_to_duckdb(value, node_id=None, session_id=None, art_id=None):
     """
     Save a Python value to the artifacts table.
 
@@ -427,6 +427,8 @@ def save_to_duckdb(value, node_id=None, session_id=None):
         node_id: the workflow node id that produced this artifact.
         session_id: Bearer token of the session that produced this artifact.
                     Used to scope artifact access so concurrent sessions are isolated.
+        art_id: the id to store it as, when the run chose it before it ran
+                (its output folder is named after it, util/output_files.py).
 
     Returns:
         str: the id of the new artifact row.
@@ -434,7 +436,7 @@ def save_to_duckdb(value, node_id=None, session_id=None):
     init_db()
     con = get_connection()
     try:
-        art_id = _make_id()
+        art_id = art_id or _make_id()
 
         if value is None:
             con.execute(

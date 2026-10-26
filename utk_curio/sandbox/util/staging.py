@@ -537,12 +537,13 @@ def _insert_row(con, art_id, kind, *, node_id=None, session_id=None,
     )
 
 
-def persist_output(descriptor, *, node_id=None, session_id=None, exec_uid=None):
+def persist_output(descriptor, *, node_id=None, session_id=None, exec_uid=None, art_id=None):
     """Write a validated child output descriptor into the artifact store.
 
     *descriptor* must already have been through
     ``protocol.parse_child_result`` (which is what attaches the checked
-    absolute ``path`` to each file-backed entry). Returns the new artifact id.
+    absolute ``path`` to each file-backed entry). Returns the new artifact id:
+    *art_id* when the run chose it (``util/output_files.py``).
 
     File-backed payloads are **moved**, not parsed. The parent never reads a
     parquet a child wrote; it only relocates the bytes and records where they
@@ -551,7 +552,7 @@ def persist_output(descriptor, *, node_id=None, session_id=None, exec_uid=None):
     """
     init_db()
     con = get_connection()
-    return _persist(con, descriptor, node_id=node_id, session_id=session_id, exec_uid=exec_uid)
+    return _persist(con, descriptor, node_id=node_id, session_id=session_id, exec_uid=exec_uid, art_id=art_id)
 
 
 #: A file a child wrote, once the store holds it: the sandbox's own, readable
@@ -584,9 +585,9 @@ def _take_from_child(path):
         raise StagingError(f"could not take {Path(path).name} from the child: {exc}") from exc
 
 
-def _persist(con, descriptor, *, node_id, session_id, exec_uid=None):
+def _persist(con, descriptor, *, node_id, session_id, exec_uid=None, art_id=None):
     kind = descriptor["kind"]
-    art_id = _make_id()
+    art_id = art_id or _make_id()
 
     if kind == "outputs":
         child_ids = [

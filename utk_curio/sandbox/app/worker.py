@@ -584,8 +584,8 @@ def execute_code(code, file_path, node_type, data_type, launch_dir=None, session
 
     from utk_curio.sandbox.isolation.supervisor import cleanup_scratch
     from utk_curio.sandbox.util.package_modules import importable
-    from utk_curio.sandbox.util import input_names
-    from utk_curio.sandbox.util.parsers import load_artifact
+    from utk_curio.sandbox.util import input_names, output_files
+    from utk_curio.sandbox.util.parsers import _make_id, load_artifact
     from utk_curio.sandbox.util.user_code import compile_user_code
     save_to_duckdb   = _globals_cache['save_to_duckdb']
     detect_kind      = _globals_cache['detect_kind']
@@ -605,6 +605,10 @@ def execute_code(code, file_path, node_type, data_type, launch_dir=None, session
         t_load = t_code = t_save = t0
         # #468: the package's own modules, importable until the run ends.
         modules_dir, modules = _stage_package_modules(package_modules)
+        # The id the output is stored as, and the folder of the files the run
+        # returns, named after it (util/output_files.py): made when the code
+        # first writes there, removed when the run stores no output.
+        art_id = _make_id()
 
         try:
             # catch_warnings: a node's run keeps the warning filters it changes
@@ -636,6 +640,7 @@ def execute_code(code, file_path, node_type, data_type, launch_dir=None, session
                     collections=collections,
                     media_dir=media_dir,
                     models=models,
+                    output_dir=str(output_files.run_output_dir(art_id)),
                 )
                 # Code that still reads `arg` or `input`, or holds a chip spelled
                 # [!! input 0 !!], is told what to write instead, rather than
@@ -698,7 +703,7 @@ def execute_code(code, file_path, node_type, data_type, launch_dir=None, session
                 # it. A saved output is this artifact's own file, which the
                 # Data Catalog links (``bundle.install_node_output``), so a
                 # run with Save on writes nothing else.
-                result_path = save_to_duckdb(output, node_id=node_type, session_id=session_id)
+                result_path = save_to_duckdb(output, node_id=node_type, session_id=session_id, art_id=art_id)
 
                 result = {'path': result_path, 'dataType': out_kind}
                 t_save = time.perf_counter()
@@ -710,6 +715,8 @@ def execute_code(code, file_path, node_type, data_type, launch_dir=None, session
             os.chdir(original_dir)
             if modules_dir:
                 cleanup_scratch(modules_dir)
+            if not result['path']:
+                output_files.forget_run_output(art_id)
             # The connection stays open. It used to be dropped here so the
             # backend could open the file read-only between runs, which made
             # the handle's lifetime a negotiation between two processes: the
