@@ -381,10 +381,18 @@ return pd.DataFrame({
 })
 '''
 
-SHOWN = '''# What the map colors: the cells in shadow at all that day, by the share of
-# the day's window they spend in it (in %). The map sets the scale from 0 to
-# 100, so the two scenarios' maps color a share alike.
-shown = input_0[input_0["shadow_share"] > 0].copy()
+SHOWN = '''import numpy as np
+
+# What the map colors: the cells in shadow at all that day, by the share of
+# the day's window they spend in it (in %), in classes 5 points wide, each
+# drawn at its middle. Cells of a class that touch become one area: cell by
+# cell, the two scenarios' maps would outgrow the data a shared dashboard
+# carries. The map sets the scale from 0 to 100, so both maps color a share
+# alike.
+STEP = 5
+shaded = input_0.loc[input_0["shadow_share"] > 0, ["shadow_share", "geometry"]]
+shaded = shaded.assign(shadow_share=(np.ceil(shaded["shadow_share"] / STEP) - 0.5) * STEP)
+shown = shaded.dissolve(by="shadow_share", as_index=False).explode(index_parts=False).reset_index(drop=True)
 shown.metadata = {"layerType": "polygons"}
 return shown
 '''
@@ -412,7 +420,7 @@ from shapely.geometry import box
 # reach of its shadow stays visible beside the cells next to it, which it
 # shades almost all day. input_0 is the shade added per cell, input_1 the
 # buildings with the proposed one.
-shaded = input_0[input_0["added_min"] > 0].copy()
+shaded = input_0.loc[input_0["added_min"] > 0, ["added_min", "geometry"]].copy()
 if len(shaded):
     top = float(shaded["added_min"].quantile(0.9))
     shaded["added_shown"] = shaded["added_min"].clip(upper=top)
@@ -686,7 +694,8 @@ def scenario_nodes(scenario: dict, top: int) -> list[dict]:
              "Keep the share of Block 1259's open ground in shadow at each step, with its time.",
              title="Read shadow on the block per step", copied=copied("block-steps")),
         node(p + "shadow-shown", "curio.builtin/computation-analysis", 5 * c, top, SHOWN,
-             "Keep the cells in shadow at all for the map.", title="Keep shaded cells for the map",
+             "Gather the cells in shadow into classes of the share of the day's window for the map.",
+             title="Keep shaded cells for the map",
              copied=copied("shadow-shown")),
         node(p + "shadow-map", "curio.builtin/autk-grammar", 6 * c, top,
              shadow_map("shadow_share", "Shadow (% of the day's window)", {"colorMapRange": [0, 100]}),

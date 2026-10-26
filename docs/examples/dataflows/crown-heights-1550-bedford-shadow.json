@@ -198,10 +198,10 @@
         "type": "curio.builtin/computation-analysis",
         "x": 3225,
         "y": -900,
-        "content": "# What the map colors: the cells in shadow at all that day, by the share of\n# the day's window they spend in it (in %). The map sets the scale from 0 to\n# 100, so the two scenarios' maps color a share alike.\nshown = input_0[input_0[\"shadow_share\"] > 0].copy()\nshown.metadata = {\"layerType\": \"polygons\"}\nreturn shown\n",
+        "content": "import numpy as np\n\n# What the map colors: the cells in shadow at all that day, by the share of\n# the day's window they spend in it (in %), in classes 5 points wide, each\n# drawn at its middle. Cells of a class that touch become one area: cell by\n# cell, the two scenarios' maps would outgrow the data a shared dashboard\n# carries. The map sets the scale from 0 to 100, so both maps color a share\n# alike.\nSTEP = 5\nshaded = input_0.loc[input_0[\"shadow_share\"] > 0, [\"shadow_share\", \"geometry\"]]\nshaded = shaded.assign(shadow_share=(np.ceil(shaded[\"shadow_share\"] / STEP) - 0.5) * STEP)\nshown = shaded.dissolve(by=\"shadow_share\", as_index=False).explode(index_parts=False).reset_index(drop=True)\nshown.metadata = {\"layerType\": \"polygons\"}\nreturn shown\n",
         "out": "DEFAULT",
         "in": "DEFAULT",
-        "goal": "Keep the cells in shadow at all for the map.",
+        "goal": "Gather the cells in shadow into classes of the share of the day's window for the map.",
         "metadata": {
           "keywords": [],
           "packageTemplateLabel": "Keep shaded cells for the map"
@@ -345,10 +345,10 @@
         "type": "curio.builtin/computation-analysis",
         "x": 3225,
         "y": 1350,
-        "content": "# What the map colors: the cells in shadow at all that day, by the share of\n# the day's window they spend in it (in %). The map sets the scale from 0 to\n# 100, so the two scenarios' maps color a share alike.\nshown = input_0[input_0[\"shadow_share\"] > 0].copy()\nshown.metadata = {\"layerType\": \"polygons\"}\nreturn shown\n",
+        "content": "import numpy as np\n\n# What the map colors: the cells in shadow at all that day, by the share of\n# the day's window they spend in it (in %), in classes 5 points wide, each\n# drawn at its middle. Cells of a class that touch become one area: cell by\n# cell, the two scenarios' maps would outgrow the data a shared dashboard\n# carries. The map sets the scale from 0 to 100, so both maps color a share\n# alike.\nSTEP = 5\nshaded = input_0.loc[input_0[\"shadow_share\"] > 0, [\"shadow_share\", \"geometry\"]]\nshaded = shaded.assign(shadow_share=(np.ceil(shaded[\"shadow_share\"] / STEP) - 0.5) * STEP)\nshown = shaded.dissolve(by=\"shadow_share\", as_index=False).explode(index_parts=False).reset_index(drop=True)\nshown.metadata = {\"layerType\": \"polygons\"}\nreturn shown\n",
         "out": "DEFAULT",
         "in": "DEFAULT",
-        "goal": "Keep the cells in shadow at all for the map.",
+        "goal": "Gather the cells in shadow into classes of the share of the day's window for the map.",
         "metadata": {
           "keywords": [],
           "copiedFrom": [
@@ -403,7 +403,7 @@
         "type": "curio.builtin/computation-analysis",
         "x": 5560,
         "y": 0,
-        "content": "import math\n\nimport geopandas as gpd\nimport pandas as pd\nfrom shapely.geometry import box\n\n# What the map colors: the cells the proposed building shades at all, by the\n# minutes it adds, the scale topped at the 90th percentile of them so the far\n# reach of its shadow stays visible beside the cells next to it, which it\n# shades almost all day. input_0 is the shade added per cell, input_1 the\n# buildings with the proposed one.\nshaded = input_0[input_0[\"added_min\"] > 0].copy()\nif len(shaded):\n    top = float(shaded[\"added_min\"].quantile(0.9))\n    shaded[\"added_shown\"] = shaded[\"added_min\"].clip(upper=top)\n    # Autark's legend runs from the layer's lowest value to its highest, so\n    # two small cells hidden under the proposed building hold the whole\n    # minutes below and above them: the legend reads from floor to ceiling.\n    low, high = math.floor(shaded[\"added_shown\"].min()), math.ceil(shaded[\"added_shown\"].max())\n    tower = input_1[input_1[\"status\"] != \"Existing\"].to_crs(shaded.crs).union_all().centroid\n    side = 1e-6\n    anchors = gpd.GeoDataFrame(\n        {\"added_shown\": [float(low), float(high)]},\n        geometry=[box(tower.x - side, tower.y - side, tower.x, tower.y),\n                  box(tower.x, tower.y, tower.x + side, tower.y + side)],\n        crs=shaded.crs,\n    )\n    shaded = pd.concat([shaded, anchors], ignore_index=True)\nshaded.metadata = {\"layerType\": \"polygons\"}\nreturn shaded\n",
+        "content": "import math\n\nimport geopandas as gpd\nimport pandas as pd\nfrom shapely.geometry import box\n\n# What the map colors: the cells the proposed building shades at all, by the\n# minutes it adds, the scale topped at the 90th percentile of them so the far\n# reach of its shadow stays visible beside the cells next to it, which it\n# shades almost all day. input_0 is the shade added per cell, input_1 the\n# buildings with the proposed one.\nshaded = input_0.loc[input_0[\"added_min\"] > 0, [\"added_min\", \"geometry\"]].copy()\nif len(shaded):\n    top = float(shaded[\"added_min\"].quantile(0.9))\n    shaded[\"added_shown\"] = shaded[\"added_min\"].clip(upper=top)\n    # Autark's legend runs from the layer's lowest value to its highest, so\n    # two small cells hidden under the proposed building hold the whole\n    # minutes below and above them: the legend reads from floor to ceiling.\n    low, high = math.floor(shaded[\"added_shown\"].min()), math.ceil(shaded[\"added_shown\"].max())\n    tower = input_1[input_1[\"status\"] != \"Existing\"].to_crs(shaded.crs).union_all().centroid\n    side = 1e-6\n    anchors = gpd.GeoDataFrame(\n        {\"added_shown\": [float(low), float(high)]},\n        geometry=[box(tower.x - side, tower.y - side, tower.x, tower.y),\n                  box(tower.x, tower.y, tower.x + side, tower.y + side)],\n        crs=shaded.crs,\n    )\n    shaded = pd.concat([shaded, anchors], ignore_index=True)\nshaded.metadata = {\"layerType\": \"polygons\"}\nreturn shaded\n",
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "Keep the cells the proposed building shades and set the map's color scale.",

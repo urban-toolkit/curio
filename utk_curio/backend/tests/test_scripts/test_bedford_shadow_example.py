@@ -331,6 +331,30 @@ def test_two_scenarios_share_no_node_and_the_map_editor_edits_a_map_of_its_own()
     assert linked == [_id("shadow-map")] and linked[0] in scenarios["with"]
 
 
+def test_what_the_pinned_tiles_read_fits_the_page_a_shared_dashboard_carries():
+    """A shared dashboard carries the saved outputs its tiles read in its
+    page, up to ``DEFAULT_PAYLOAD_LIMIT_BYTES``; past it the page is refused
+    and a visitor sees no tile. On the winter solstice, when the most open
+    ground is in shadow, what the pinned tiles read stays under half of it,
+    the scenario maps' cells gathered into classes."""
+    from utk_curio.backend.app.projects.dashboard_payload import DEFAULT_PAYLOAD_LIMIT_BYTES
+
+    buildings, block, edited, _ground = _inputs()
+    day = _day("Winter solstice")
+    added = _run("added", day["without"]["cells"], day["with"]["cells"])
+    read = {
+        "base-shadow-shown": _run("base-shadow-shown", day["without"]["cells"]),
+        "shadow-shown": _run("shadow-shown", day["with"]["cells"]),
+        "added-shown": _run("added-shown", added, edited),
+        "buildings": buildings, "add-building": edited, "block": block, "streets": _run("streets"),
+        "map-area": _run("map-area", buildings), "steps": _steps("Winter solstice"),
+        "base-block-steps": day["without"]["steps"], "block-steps": day["with"]["steps"],
+        "compare": _run("compare", day["without"]["steps"], day["with"]["steps"]),
+    }
+    sizes = {key: len(frame.to_json().encode("utf-8")) for key, frame in read.items()}
+    assert sum(sizes.values()) < DEFAULT_PAYLOAD_LIMIT_BYTES / 2, sizes
+
+
 @pytest.mark.parametrize("row", [WINTER, SUMMER], ids=["winter", "summer"])
 def test_the_cpu_march_gives_the_day_the_dashboard_pins(row):
     day = row["Day"]
