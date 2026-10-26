@@ -20,7 +20,7 @@ This guide is in four parts:
 
 A scenario splits its dataflow into three parts:
 
-- **Fixed context:** the nodes outside the scenario that it reads, through an edge into it or through a Parameter node's tag its code uses.
+- **Fixed context:** the nodes outside the scenario that it reads, through an edge into it.
 - **Levers:** the nodes in the scenario, which is what an alternative changes.
 - **Outcomes:** the outputs of the scenario's last nodes, which is what gets compared.
 
@@ -78,7 +78,7 @@ A scenario's details show its name, color, project and description, and its proj
 
 | List | Holds | Each node shows |
 |---|---|---|
-| **Fixed context** | The nodes outside the scenario that it reads | Its name, the output its project saved, and for a Parameter node, its value |
+| **Fixed context** | The nodes outside the scenario that it reads | Its name, and the output its project saved |
 | **Levers** | The nodes in the scenario | Its name, and the output its project saved |
 | **Outcomes** | The scenario's last nodes | Its name, and the output its project saved |
 
@@ -91,7 +91,7 @@ A chart or a Data Pool saves nothing itself, so its saved result is the output o
 A scenario dragged from the canvas drawer onto the canvas arrives as a copy, and editing either one leaves the other as it is:
 
 - **Its levers** are copied with new ids. Each copy names the node it was copied from.
-- **Its fixed context** arrives as data. Each node it reads becomes a **Data Loading** node that reads a copy of the output that node saved in its project, wired where the context was. The copy is this dataflow's own: running the source project again changes its own output, not the copy. A Parameter node of its context is copied with its value.
+- **Its fixed context** arrives as data. Each node it reads becomes a **Data Loading** node that reads a copy of the output that node saved in its project, wired where the context was. The copy is this dataflow's own: running the source project again changes its own output, not the copy.
 - **A context node with no saved output** runs first, on the server and in the scenario's project, which saves its output there; the drop then brings it. While it runs, a notice names it, such as "Running Buildings and Season in Chicago Loop shadow with towers removed or edited for Existing". When the run fails, the message says why and nothing is added.
 - **Its outcomes** show the results its project saved, before anything runs.
 - **Packages** its nodes use are added to the dataflow, as **Add** in the Node Catalog adds one.
@@ -104,8 +104,7 @@ To use your own data instead, double-click the box, delete the Data Loading node
 A drop is refused, and nothing is added, when:
 
 - a node of its fixed context has no saved output and cannot run on the server: only the browser runs it (an Autark compute node, for one), you are a guest on a hosted Curio, or Curio runs with `--no-project`. Run the scenario in its project and save it, then drag it again;
-- its nodes need a package, a dataset or a model your account does not have, or a package your account cannot add; the message names it;
-- it brings a Parameter node whose name the dataflow already uses: rename yours, then drag it again.
+- its nodes need a package, a dataset or a model your account does not have, or a package your account cannot add; the message names it.
 
 ---
 
