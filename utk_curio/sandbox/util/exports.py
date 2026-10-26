@@ -5,9 +5,10 @@ the call returns the file's name, which is the output of a Data Export node:
 its Download button reads the file that name names (``util/output_files.py``).
 
 What the data is decides how it is written: a table as CSV, a GeoDataFrame as
-GeoJSON, a raster as GeoTIFF, and anything else as JSON. An empty name names
-the file after the data (a layer's name, else ``data_export``), and a name with
-no extension gets the format's.
+GeoJSON, a raster as GeoTIFF, and anything else as JSON. An empty name is
+``data_export``, which the node's Download names after what feeds the node
+(``utils/dataExportTarget.ts`` in the canvas), and a name with no extension
+gets the format's.
 """
 
 from __future__ import annotations
@@ -56,22 +57,11 @@ def _plain(text: str) -> str:
     return _TRAILING.sub("", text)
 
 
-def data_name(data) -> str:
-    """The name *data* carries of its own: a layer's, as Curio keeps it on a
-    GeoDataFrame (``metadata["name"]``) or a table (``attrs["name"]``)."""
-    for holder in (getattr(data, "metadata", None), getattr(data, "attrs", None)):
-        if isinstance(holder, dict) and isinstance(holder.get("name"), str):
-            return holder["name"]
-    return ""
-
-
 def export_name(name, data) -> str:
-    """The file *name* names for *data*: made plain, named after the data when
+    """The file *name* names for *data*: made plain, ``data_export`` when
     empty, and given the data's format's extension when it has none."""
     extension = extension_for(data)
-    stem = _plain(str(name) if name is not None else "")
-    if not stem:
-        stem = _plain(data_name(data)) or DEFAULT_STEM
+    stem = _plain(str(name) if name is not None else "") or DEFAULT_STEM
     if "." not in stem:
         return f"{stem[: MAX_NAME_CHARS - len(extension) - 1]}.{extension}"
     return stem[:MAX_NAME_CHARS]

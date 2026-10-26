@@ -31,10 +31,22 @@ def test_unversioned_node_type_strips_major_suffix():
     "curio.builtin/vis-vega",
     "curio.builtin/vis-vega@1",
     "curio.builtin/vis-simple@2",
+    "curio.builtin/data-export",
+    "curio.builtin/data-export@1",
 ])
 def test_sink_check_tolerates_versioned_types(node_type):
     assert _is_sink_node_type(node_type) is True
     assert _is_sink_node(node_type) is True
+
+
+def test_a_data_export_is_a_sink_by_the_behavior_its_template_declares():
+    """A Data Export's output is the name of the file its code wrote, which is
+    no dataset: no computed dataset is ever made of it, whether its template
+    is the built-in one or a package's that declares its behavior."""
+    from utk_curio.backend.app.projects.services import _SINK_BEHAVIORS
+
+    assert "data-export" in _SINK_BEHAVIORS
+    assert "curio.builtin/data-export" in _SINK_NODE_TYPES
 
 
 @pytest.mark.parametrize("node_type", [

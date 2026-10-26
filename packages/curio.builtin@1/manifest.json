@@ -87,16 +87,12 @@
     },
     {
       "category": "data",
-      "containerStyle": {
-        "nodeHeight": 170,
-        "nodeWidth": 320
-      },
-      "description": "One Download button for the data connected to it. The file is named after the node or dataset that feeds it, and its format follows the data: a table downloads as CSV, a geodataframe as GeoJSON, anything else as JSON.",
-      "editor": "none",
+      "description": "The Data Export box writes the data connected to it to a file, and its Download button saves the file: its code writes a table as CSV, a GeoDataFrame as GeoJSON, a raster as GeoTIFF and anything else as JSON. File name names the file; left empty, the download is named after the node or dataset that feeds it.",
+      "editor": "code",
       "engine": "python",
-      "hasCode": false,
+      "hasCode": true,
       "hasGrammar": false,
-      "hasWidgets": false,
+      "hasWidgets": true,
       "iconRef": "fa-solid:download",
       "id": "data-export",
       "inputPorts": [
@@ -112,7 +108,17 @@
       "label": "Data Export",
       "behavior": "data-export",
       "outputPorts": [],
-      "paletteOrder": 1
+      "paletteOrder": 1,
+      "source": "sources/data-export.py",
+      "widgets": [
+        {
+          "name": "file_name",
+          "type": "text",
+          "label": "File name",
+          "default": ""
+        }
+      ],
+      "widgetsWithCode": true
     },
     {
       "category": "data",

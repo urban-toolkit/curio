@@ -96,6 +96,19 @@ def folder_of(path_text) -> str | None:
     return first
 
 
+def folders_named_by(rows) -> set:
+    """The run folders (their artifact ids) that store rows, ``(kind,
+    value_str)``, name a file in: a raster's file, or a text output's path.
+    A raster one run returned can be what a later run returns too."""
+    named = set()
+    for kind, value in rows:
+        if kind in ("raster", "str"):
+            folder = folder_of(value)
+            if folder:
+                named.add(folder)
+    return named
+
+
 def _scratch_entry(value, scratch_dir) -> str | None:
     """The flat name in *scratch_dir* a text output names: the text itself
     when it is one plain name, the name of a path directly inside it."""

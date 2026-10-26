@@ -185,9 +185,16 @@ describe("the height of a cell's output", () => {
   });
 
   test("a table, a summary, a control or a note takes its own height up to 360px", () => {
-    for (const kind of ["data-pool", "vis-simple", "data-summary", "parameter", "spatial-join", "data-export", "note"]) {
+    for (const kind of ["data-pool", "vis-simple", "data-summary", "parameter", "spatial-join", "note"]) {
       expect(notebookOutputBox(`curio.builtin/${kind}@1`)).toEqual({ maxHeight: 360, overflow: "auto" });
     }
+  });
+
+  test("a Data Export is a code node, its controls above its code: its box is a code node's", () => {
+    expect(notebookOutputBox("curio.builtin/data-export@1")).toEqual(
+      notebookOutputBox("curio.builtin/data-transformation@1"),
+    );
+    expect(notebookOutputBox("curio.builtin/data-export@1")).toEqual({ height: 360, overflow: "auto" });
   });
 
   test("anything else, made to fill a node, gets a definite 360px", () => {

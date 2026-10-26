@@ -1,37 +1,15 @@
 /**
- * What a Data Export node will hand you, decided from what is connected to it.
+ * The name a Data Export node's file downloads under.
  *
- * The node used to ask for the format in a dropdown and name every file
- * ``data_export`` regardless of its input (#226). Both were guesses the node
- * could make itself: the payload already says what shape it is, and the input
- * already knows what it is called.
+ * The node's code writes the file (`curio_export` in the sandbox) and its
+ * output is the file's name. A file named in File name, or by code of its own,
+ * downloads under that name. A file `curio_export` named by default, File name
+ * left empty, takes the name of what feeds the node instead: the input
+ * dataset's name, else the feeding node's label, with the file's extension.
  */
 
-/** A JSON payload has no better shape to fall back to. */
-const DEFAULT_FORMAT = "json" as const;
-const DEFAULT_STEM = "data_export";
-
-export type ExportFormat = "csv" | "geojson" | "json";
-
-export const EXPORT_MIME: Record<ExportFormat, string> = {
-  csv: "text/csv;charset=utf-8",
-  geojson: "application/geo+json",
-  json: "application/json",
-};
-
-/**
- * The format the payload is already in.
- *
- * Deliberately keyed on ``dataType`` rather than on inspecting the data: it is
- * the same field ``ConnectionValidator`` and every other node reads, so an
- * export cannot disagree with what the edge claimed to carry.
- */
-export function exportFormatFor(dataType: unknown): ExportFormat {
-  const kind = typeof dataType === "string" ? dataType.trim().toLowerCase() : "";
-  if (kind === "geodataframe") return "geojson";
-  if (kind === "dataframe") return "csv";
-  return DEFAULT_FORMAT;
-}
+/** The stem `curio_export` gives a file when File name is empty. */
+export const DEFAULT_STEM = "data_export";
 
 /** Characters a filename cannot carry on Windows, plus the path separators. */
 const UNSAFE_FILENAME_CHARS = /[<>:"|?*]/g;
@@ -68,29 +46,31 @@ export function sanitizeExportStem(name: unknown): string {
   return cleaned.slice(0, 80);
 }
 
-export interface ExportTarget {
-  format: ExportFormat;
-  /** The full name the download will carry, extension included. */
-  filename: string;
+/** The name of the file an output names: the text itself, or a path's last part. */
+export function exportFileName(value: unknown): string {
+  if (typeof value !== "string") return "";
+  const parts = value.split(PATH_SEPARATORS);
+  return parts[parts.length - 1] ?? "";
 }
 
 /**
- * Resolve the file a run of this node would produce.
- *
- * *sourceName* is the best name we have for the input, in preference order:
- * the linked dataset's title, then the upstream node's display label. Both are
- * optional, and the fallback is the old hardcoded stem so a node with an
- * unnamed input still exports something sensible.
+ * The name the file *file* (the node's output) downloads under. *sourceName*
+ * is the best name for what feeds the node when its input names no dataset:
+ * the linked dataset's title, else the feeding node's display label.
  */
-export function resolveExportTarget(
-  input: { dataType?: unknown; dataset?: unknown } | null | undefined,
+export function exportDownloadName(
+  file: unknown,
+  input?: { dataset?: unknown } | null,
   sourceName?: string | null,
-): ExportTarget {
-  const format = exportFormatFor(input?.dataType);
+): string {
+  const name = exportFileName(file);
+  const dot = name.lastIndexOf(".");
+  const stem = dot > 0 ? name.slice(0, dot) : name;
+  if (stem !== DEFAULT_STEM) return name;
+  const extension = dot > 0 ? name.slice(dot) : "";
   const fromDataset =
     typeof input?.dataset === "string"
       ? sanitizeExportStem(input.dataset.replace(/\.[^.]+$/, ""))
       : "";
-  const stem = fromDataset || sanitizeExportStem(sourceName) || DEFAULT_STEM;
-  return { format, filename: `${stem}.${format}` };
+  return `${fromDataset || sanitizeExportStem(sourceName) || DEFAULT_STEM}${extension}`;
 }

@@ -190,6 +190,31 @@ describe("trillToNotebook", () => {
     expect(cell.source.split("\n").pop()).toBe("result_m = node_m(input_0=data_b, input_1=data_a)");
   });
 
+  it("writes a Data Export node as the code node it is: its code a function, its File name written in", () => {
+    const nb = trillToNotebook({
+      dataflow: {
+        ...spec([], []).dataflow,
+        nodes: [
+          { id: "src", type: NodeType.DATA_LOADING, content: "return 1\n", x: 0, y: 0 },
+          {
+            id: "out",
+            type: `${NodeType.DATA_EXPORT}@1`,
+            content: "return curio_export(input_0, [!! file_name !!])\n",
+            metadata: { widgets: [{ name: "file_name", type: "text", label: "File name", default: "", value: "trees" }] },
+            x: 700,
+            y: 0,
+          },
+        ],
+        edges: [{ id: "e0", source: "src", target: "out" }],
+      },
+    } as TrillSpec);
+    const cell = codeCells(nb).find((c) => c.source.includes("def node_out(input_0=None):"))!;
+    expect(cell).toBeDefined();
+    expect(cell.source).toContain('    return curio_export(input_0, "trees")');
+    expect(cell.source.split("\n").pop()).toBe("result_out = node_out(input_0=data_src)");
+    expect(topLevelReturns(cell.source)).toEqual([]);
+  });
+
   it("records a node a Python kernel cannot run instead of dropping it", () => {
     const nb = trillToNotebook(
       spec([{ id: "js", type: NodeType.JS_COMPUTATION, content: "return input_0 * 2;" }])

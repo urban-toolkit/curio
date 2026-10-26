@@ -34,12 +34,11 @@ if TYPE_CHECKING:
 INTERACTION_HANDLE = "in/out"
 
 #: The behaviors of the nodes a run forwards besides the ones a dashboard walk
-#: passes through: a Data Export only offers a download, a Parameter node only
-#: holds a value, and a Note only holds text; none has anything to run. The
-#: built-in nodes of a type no template declares a behavior for are forwarded
-#: by their ids.
-_FORWARD_BEHAVIORS = frozenset({"data-export", "parameter", "note"})
-_FORWARD_TYPES = frozenset({"curio.builtin/data-export", "curio.builtin/parameter", "curio.builtin/note"})
+#: passes through: a Parameter node only holds a value, and a Note only holds
+#: text; neither has anything to run. The built-in nodes of a type no template
+#: declares a behavior for are forwarded by their ids.
+_FORWARD_BEHAVIORS = frozenset({"parameter", "note"})
+_FORWARD_TYPES = frozenset({"curio.builtin/parameter", "curio.builtin/note"})
 
 
 def is_interaction_edge(edge: dict) -> bool:

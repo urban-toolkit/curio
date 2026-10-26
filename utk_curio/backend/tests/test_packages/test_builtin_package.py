@@ -165,19 +165,40 @@ def test_map_edits_names_no_what_differs(builtin_package_dir: Path):
             assert word not in line, line
 
 
-def test_only_data_loading_ships_a_starter(builtin_package_dir: Path):
-    """Data Loading opens with the code that loads what its Data widget holds;
-    every other built-in template opens empty, and ships no starter file."""
+#: The built-in templates that ship a starter, and its file.
+BUILTIN_STARTERS = {
+    "data-loading": "sources/data-loading.py",
+    "data-export": "sources/data-export.py",
+}
+
+
+def test_only_data_loading_and_data_export_ship_a_starter(builtin_package_dir: Path):
+    """Data Loading opens with the code that loads what its Data widget holds,
+    and Data Export with the code that writes its input to the file its File
+    name widget names; every other built-in template opens empty, and ships no
+    starter file."""
     manifest = load_package_manifest(builtin_package_dir)
     for template in manifest.templates:
-        if template.template_id == "data-loading":
-            assert template.source == "sources/data-loading.py"
-        else:
-            assert template.source is None, (
-                f"built-in template {template.template_id} must not declare a source"
-            )
+        assert template.source == BUILTIN_STARTERS.get(template.template_id), (
+            f"built-in template {template.template_id} declares source {template.source!r}"
+        )
     shipped = sorted(p.name for p in (builtin_package_dir / "sources").iterdir())
-    assert shipped == ["data-loading.py"], shipped
+    assert shipped == ["data-export.py", "data-loading.py"], shipped
+    assert (builtin_package_dir / "sources" / "data-export.py").read_text(encoding="utf-8") == (
+        "return curio_export(input_0, [!! file_name !!])\n"
+    )
+
+
+def test_data_export_is_a_python_code_node_with_a_file_name_above_its_code(builtin_package_dir: Path):
+    """Data Export runs its code: its File name widget's control sits above
+    the code, and it keeps its behavior, one input and no output."""
+    manifest = load_package_manifest(builtin_package_dir)
+    export = next(t for t in manifest.templates if t.template_id == "data-export")
+    assert (export.editor, export.engine, export.has_code, export.has_widgets) == ("code", "python", True, True)
+    assert export.behavior == "data-export"
+    assert export.widgets == [{"name": "file_name", "type": "text", "label": "File name", "default": ""}]
+    assert export.widgets_with_code is True
+    assert len(export.input_ports) == 1 and export.output_ports == []
 
 
 def test_every_catalog_package_validates_against_schema():

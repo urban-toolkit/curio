@@ -20,6 +20,11 @@
  *   - Saved nodes (`data.code` is already defined when the hook first
  *     runs — even if it's an empty string) are left untouched. The user
  *     intentionally saved whatever they saved.
+ *   - Except a node saved with no code and none of the widgets its template
+ *     declares: it was saved before its template had a starter (a Data
+ *     Export from before its code), since a node opened with the starter
+ *     holds the template's widgets from then on. It opens with the starter
+ *     and the widgets, as a fresh drop does.
  *
  * Implementation:
  *
@@ -57,6 +62,20 @@ export function packageStarterCode(
   return hit?.code || undefined;
 }
 
+/**
+ * Whether a node restored with *code* and *widgets* was saved before its
+ * template had a starter: no code, and none of the widgets the template
+ * declares, which a node opened with the starter holds from then on.
+ */
+export function savedBeforeItsStarter(
+  code: unknown,
+  widgets: unknown,
+  descriptor: NodeDescriptor | undefined,
+): boolean {
+  return typeof code === 'string' && code.trim() === '' && widgets === undefined
+    && (descriptor?.widgets?.length ?? 0) > 0;
+}
+
 export const usePackageNodeBehavior: NodeBehaviorHook = (data, nodeState) => {
   const { getStarters } = useStarterContext();
   const descriptor = tryGetNodeDescriptor(data.nodeType);
@@ -66,14 +85,21 @@ export const usePackageNodeBehavior: NodeBehaviorHook = (data, nodeState) => {
   // It is not part of the typed `NodeBehaviorData` surface, so we read it
   // through a narrow cast — we only care whether it was *defined* at mount.
   const initialCodeRef = useRef<unknown>((data as { code?: unknown }).code);
+  // And whether the node held widgets then: a node saved with no code and
+  // none of its template's widgets predates the starter.
+  const initialWidgetsRef = useRef<unknown>((data as { widgets?: unknown }).widgets);
   const hasInjectedRef = useRef(false);
   const [override, setOverride] = useState<string | undefined>(undefined);
 
   useEffect(() => {
     if (hasInjectedRef.current) return;
 
-    // Reload / remount / copy-paste — never inject after instantiation.
-    if (initialCodeRef.current !== undefined) {
+    // Reload / remount / copy-paste — never inject after instantiation, but
+    // into a node saved before its template had a starter.
+    if (
+      initialCodeRef.current !== undefined
+      && !savedBeforeItsStarter(initialCodeRef.current, initialWidgetsRef.current, descriptor)
+    ) {
       hasInjectedRef.current = true;
       return;
     }
@@ -102,10 +128,14 @@ export const usePackageNodeBehavior: NodeBehaviorHook = (data, nodeState) => {
       hasInjectedRef.current = true;
       // #662: the starter's [!! name !!] references need the widgets the
       // template declares. Seeded beside the code, once, like the code.
-      const node = data as { widgets?: unknown };
+      const node = data as { widgets?: unknown; defaultCode?: unknown };
       if (node.widgets === undefined && descriptor.widgets && descriptor.widgets.length > 0) {
         node.widgets = descriptor.widgets.map((w) => ({ ...w }));
       }
+      // A restored node's editor goes back to the code it was loaded with
+      // once the override is consumed (UniversalNode's defaultValue): the
+      // starter, from now on, not the empty code it was saved with.
+      if (initialCodeRef.current !== undefined) node.defaultCode = hit.code;
       setOverride(hit.code);
     }
     // else: templates not loaded yet — wait for the next effect run.

@@ -94,6 +94,9 @@ type NodeEditorProps = {
     provenance?: boolean;
     customWidgetsCallback?: any;
     contentComponent?: any;
+    /** The behavior's own controls, beside the widgets' controls
+     * (registry/types, NodeBehaviorResult.controlsComponent). */
+    controlsComponent?: React.ReactNode;
     disableWidgets?: boolean; // Added prop to freeze widget buttons
 };
 
@@ -114,6 +117,7 @@ function NodeEditor({
     provenance,
     customWidgetsCallback,
     contentComponent,
+    controlsComponent,
     disableWidgets,
 }: NodeEditorProps) {
     const [userCode, setUserCode] = useState<string>(""); // python or grammar with marks unresolved
@@ -304,7 +308,11 @@ function NodeEditor({
     // node's code, whose pane stays mounted and hidden, since its editor holds
     // the node's run.
     const hasOutputPane = outputId != undefined || contentComponent != undefined;
-    const tileControls = dashboardOn && widgetsTab && widgets.length > 0;
+    // The behavior's own controls (Data Export's Download) sit beside the
+    // widgets' controls, wherever those are shown: on a tile, and in the
+    // strip above the code.
+    const hasOwnControls = controlsComponent != undefined && controlsComponent !== false;
+    const tileControls = Boolean(dashboardOn) && ((widgetsTab && widgets.length > 0) || hasOwnControls);
     const controlsAboveOutput = tileControls && hasOutputPane;
     // A template that declares widgetsWithCode shows its widgets' controls
     // above its code on the canvas (Data Loading's Data), so what the code
@@ -610,6 +618,24 @@ function NodeEditor({
     // Under a tile's controls the output fills what they leave, and under a
     // node's controls its code does.
     const belowControls: CSS.Properties = { flex: 1, minHeight: 0 };
+    // The behavior's own controls, at the right of the widgets' controls and
+    // level with their last row's control.
+    const ownControls = hasOwnControls ? (
+        <div
+            className="nowheel nodrag"
+            data-node-controls="true"
+            style={{ flex: "none", display: "flex", alignItems: "flex-end", padding: "8px 10px 14px 0" }}
+        >
+            {controlsComponent}
+        </div>
+    ) : null;
+    // The widgets' controls with the behavior's own beside them, in one row.
+    const controlsRow = (widgetControls: React.ReactNode, style: CSS.Properties) => (
+        <div data-controls-row="true" style={{ display: "flex", minWidth: 0, ...style }}>
+            <div style={{ flex: 1, minWidth: 0 }}>{widgetControls}</div>
+            {ownControls}
+        </div>
+    );
     const codeEditor = (
         <CodeEditor
             floatCode={floatCode}
@@ -698,12 +724,24 @@ function NodeEditor({
                             >
                                 {tileControls && !hasOutputPane ? (
                                     <Tab.Pane eventKey="controls" style={paneStyle}>
-                                        <WidgetValueControls
-                                            widgets={widgets}
-                                            dashboard
-                                            disabled={disableWidgets}
-                                            onCommit={commitControlValue}
-                                        />
+                                        {ownControls ? controlsRow(
+                                            widgetsTab && widgets.length > 0 ? (
+                                                <WidgetValueControls
+                                                    widgets={widgets}
+                                                    dashboard
+                                                    disabled={disableWidgets}
+                                                    onCommit={commitControlValue}
+                                                />
+                                            ) : null,
+                                            { height: "100%" },
+                                        ) : (
+                                            <WidgetValueControls
+                                                widgets={widgets}
+                                                dashboard
+                                                disabled={disableWidgets}
+                                                onCommit={commitControlValue}
+                                            />
+                                        )}
                                     </Tab.Pane>
                                 ) : null}
 
@@ -720,7 +758,17 @@ function NodeEditor({
                                                 data-controls-with-code="true"
                                                 style={inCell ? undefined : { display: "flex", flexDirection: "column", height: "100%" }}
                                             >
-                                                {controlsWithCode ? (
+                                                {ownControls ? controlsRow(
+                                                    controlsWithCode ? (
+                                                        <WidgetValueControls
+                                                            widgets={widgets}
+                                                            disabled={disableWidgets || readOnly}
+                                                            onCommit={commitControlValue}
+                                                            aboveOutput
+                                                        />
+                                                    ) : null,
+                                                    { flex: "none", maxHeight: "50%", overflow: "hidden" },
+                                                ) : controlsWithCode ? (
                                                     <WidgetValueControls
                                                         widgets={widgets}
                                                         disabled={disableWidgets || readOnly}

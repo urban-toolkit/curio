@@ -175,7 +175,6 @@ const NATURAL_HEIGHT_KINDS: ReadonlySet<string> = new Set([
   NodeType.DATA_POOL,
   NodeType.VIS_SIMPLE,
   NodeType.DATA_SUMMARY,
-  NodeType.DATA_EXPORT,
   "curio.builtin/parameter",
   "curio.builtin/spatial-join",
   "curio.builtin/note",

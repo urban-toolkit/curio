@@ -27,6 +27,8 @@ let mockNodeExecStatus: Record<string, string> = {};
 const mockSignalNodeExecDone = jest.fn();
 const mockPlayNodesUpTo = jest.fn();
 let mockIsRunActive = false;
+// Each node's last output, as the flow records it: a Data Export reads its own.
+let mockOutputs: any[] = [];
 // A dashboard's page: a viewer's run going (serverRunActive), or why it stopped.
 let mockDashboard: { dashboardOn?: boolean; serverRunActive?: boolean; dashboardStopped?: string | null } = {};
 jest.mock('../../../providers/FlowProvider', () => ({
@@ -37,6 +39,8 @@ jest.mock('../../../providers/FlowProvider', () => ({
     signalNodeExecDone: mockSignalNodeExecDone,
     playNodesUpTo: mockPlayNodesUpTo,
     isRunActive: mockIsRunActive,
+    outputs: mockOutputs,
+    nodes: [],
     ...mockDashboard,
   }),
 }));
@@ -137,6 +141,8 @@ jest.mock('@urban-toolkit/autk-db', () => ({
 import { useCodeNodeBehavior } from '../../../adapters/node/codeNodeBehavior';
 import { useDataExportBehavior } from '../../../adapters/node/dataExportBehavior';
 import { triggerBlobDownload } from '../../../services/packages/packagesBlobTransport';
+import { fetchData } from '../../../services/api';
+import { runKeyWithShared } from '../../../utils/references/sharedParameters';
 import { useVegaBehavior } from '../../../adapters/node/vegaBehavior';
 import { useSimpleVisBehavior } from '../../../adapters/node/simpleVisBehavior';
 import { standardInOut, withInputCircles } from '../../../adapters/node/handleHelpers';
@@ -193,6 +199,7 @@ const BEHAVIOR_RESULT_KEYS: (keyof NodeBehaviorResult)[] = [
   'setSendCodeCallbackOverride',
   'showLoading',
   'contentComponent',
+  'controlsComponent',
   'setOutputCallbackOverride',
   'outputOverride',
   'outputIdOverride',
@@ -234,88 +241,99 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
   });
 
   describe('useDataExportBehavior', () => {
+    // `/output-file`, as the backend answers it: the file an output names.
+    const realFetch = (global as any).fetch;
+    const mockFetch = jest.fn();
+    beforeEach(() => { (global as any).fetch = mockFetch; });
     afterEach(() => {
+      (global as any).fetch = realFetch;
+      mockFetch.mockReset();
       mockEdges = [];
       mockNodes = {};
       mockIsRunActive = false;
+      mockOutputs = [];
       mockPlayNodesUpTo.mockClear();
       (triggerBlobDownload as jest.Mock).mockClear();
+      (fetchData as jest.Mock).mockReset();
+      (fetchData as jest.Mock).mockResolvedValue({ data: {}, dataType: 'dataframe' });
     });
 
     const WIRED = [{ id: 'e1', source: 'upstream-1', target: 'node-1' }];
-    const UPSTREAM = {
-      'upstream-1': { id: 'upstream-1', data: { nodeType: 'curio.builtin/data-loading@1' } },
-    };
+    const CODE = 'return curio_export(input_0, [!! file_name !!])\n';
+    const FILE = new Blob(['a,b\n1,2\n'], { type: 'text/csv' });
 
-    // #226: the node is the Download button, nothing else.
-    function renderBody(result: any) {
-      return render(<>{result.current.contentComponent}</>);
+    /** What the route answers: the file, or a refusal with its reason. */
+    function serves(reply: { ok: boolean; status?: number; body?: unknown }) {
+      mockFetch.mockImplementation(async () => ({
+        ok: reply.ok,
+        status: reply.status ?? 200,
+        blob: async () => FILE,
+        json: async () => reply.body ?? {},
+      }));
     }
-    function exportButton(result: any): HTMLButtonElement {
-      const { container } = renderBody(result);
-      return container.querySelector('button') as HTMLButtonElement;
+    /** The addresses the node asked for a file at. */
+    const askedFor = () => mockFetch.mock.calls.map(([url]) => String(url));
+
+    /** The node's own output: the artifact its run stored, the file's name. */
+    function wroteFile(path: string, name: string) {
+      mockOutputs = [{ nodeId: 'node-1', output: { path, dataType: 'str' } }];
+      (fetchData as jest.Mock).mockImplementation(async (asked: string) => (
+        asked === path ? { dataType: 'str', data: name } : { data: {}, dataType: 'dataframe' }
+      ));
     }
 
-    test('is a body with one button: no run override, no code, no widgets', async () => {
+    /** A Data Export node whose last run *succeeded* with the code and
+     *  widgets it holds now, or with others (a stale result). */
+    function exportNode(succeeded: boolean, { stale = false } = {}) {
+      const data = makeMockData({ nodeType: 'curio.builtin/data-export@1', input: { path: 'in', dataType: 'dataframe' } as any });
+      if (succeeded) {
+        (data as any).executedCode = runKeyWithShared(stale ? 'return 1\n' : CODE, undefined, [], undefined);
+      }
+      const nodeState = makeMockNodeState({
+        code: CODE,
+        output: { code: succeeded ? 'success' : '', content: '', outputType: '' },
+      } as any);
+      return { data, nodeState };
+    }
+
+    function mount(data: NodeBehaviorData, nodeState: UseNodeStateReturn) {
+      return renderHook(
+        ({ data: d, nodeState: s }) => useDataExportBehavior(d, s),
+        { initialProps: { data, nodeState } },
+      );
+    }
+
+    /** The node's controls, as the strip above its code shows them. */
+    function controls(result: { current: NodeBehaviorResult }) {
+      return render(<>{result.current.controlsComponent}</>).container;
+    }
+    function downloadButton(result: { current: NodeBehaviorResult }): HTMLButtonElement {
+      return controls(result).querySelector('button[data-download-button]') as HTMLButtonElement;
+    }
+
+    test('adds a Download control to the strip above its code: no Output tab, and it runs as any code node', async () => {
       const result = await callBehavior(useDataExportBehavior);
       assertValidBehaviorResult(result.current);
-      expect(result.current.contentComponent).toBeDefined();
-      // No sendCode means no play button, and a Run All releases the node
-      // without downloading (UniversalNode).
+      expect(result.current.controlsComponent).toBeDefined();
+      // A contentComponent is what makes NodeEditor show an Output tab.
+      expect(result.current.contentComponent).toBeUndefined();
+      // Its play runs its code: nothing replaces the code node's run.
       expect(result.current.sendCodeOverride).toBeUndefined();
-      expect(result.current.customWidgetsCallback).toBeUndefined();
-      // Nor the output panel, whose Output / Error / Warning tabs filled the
-      // node: the body is the button and one status line. OutputContent is
-      // mocked above as a div reading "output".
-      const { container } = renderBody(result);
+      expect(result.current.setSendCodeCallbackOverride).toBeUndefined();
+      const container = controls(result);
       expect(container.querySelectorAll('button')).toHaveLength(1);
       expect(container.textContent).not.toContain('output');
     });
 
-    test('names the file after the node feeding it', async () => {
-      mockEdges = WIRED;
-      mockNodes = UPSTREAM;
-      const result = await callBehavior(useDataExportBehavior, {
-        input: { path: 'p', dataType: 'dataframe' },
-      });
-      expect(exportButton(result).textContent).not.toContain('data_export');
-    });
-
-    test('prefers a renamed upstream node title', async () => {
-      mockEdges = WIRED;
-      mockNodes = {
-        'upstream-1': {
-          id: 'upstream-1',
-          data: {
-            nodeType: 'curio.builtin/data-loading@1',
-            datasetSource: { title: 'boundaries.geojson' },
-          },
-        },
-      };
-      const result = await callBehavior(useDataExportBehavior, {
-        input: { path: 'p', dataType: 'geodataframe' },
-      });
-      expect(exportButton(result).textContent).toContain('boundaries.geojson');
-    });
-
-    test('falls back to the default stem when the upstream has no name', async () => {
-      mockEdges = WIRED;
-      const result = await callBehavior(useDataExportBehavior, {
-        input: { path: 'p', dataType: 'dataframe' },
-      });
-      expect(exportButton(result).textContent).toContain('data_export.csv');
-    });
-
     test('unconnected: the button is disabled and says why', async () => {
       const result = await callBehavior(useDataExportBehavior);
-      const { container, getByText } = renderBody(result);
-      expect((container.querySelector('button') as HTMLButtonElement).disabled).toBe(true);
-      expect(getByText('Connect a dataset to export it')).toBeTruthy();
+      const button = downloadButton(result);
+      expect(button.disabled).toBe(true);
+      expect(controls(result).textContent).toContain('Connect a dataset to export it');
     });
 
-    // #513: it used to set a success output on mount and on every input, so
-    // the header read "Done" (and the runtime journal recorded a success)
-    // before anything had run, connected or not.
+    // #513: a success output set on mount read "Done" before anything had
+    // run. The node's output is its code's run's alone.
     test.each([
       ['unconnected', ''],
       ['connected', { path: 'p', dataType: 'dataframe' }],
@@ -323,82 +341,118 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
       const setOutput = jest.fn();
       await callBehavior(useDataExportBehavior, { input: input as any }, { setOutput });
       expect(setOutput).not.toHaveBeenCalled();
+      expect(mockFetch).not.toHaveBeenCalled();
     });
 
-    test('a click downloads the input it has, without a run', async () => {
+    test('with a current result, a click downloads the file the route serves, under its name, without a run', async () => {
       mockEdges = WIRED;
-      const setOutput = jest.fn();
-      const result = await callBehavior(
-        useDataExportBehavior, { input: { path: 'p', dataType: 'dataframe' } }, { setOutput },
-      );
+      wroteFile('art-1', 'trees.csv');
+      serves({ ok: true });
+      const { data, nodeState } = exportNode(true);
+      const { result } = mount(data, nodeState);
+      await waitFor(() => expect(downloadButton(result).textContent).toBe('Download trees.csv'));
 
-      const button = exportButton(result);
-      await act(async () => { button.click(); });
+      const setOutput = nodeState.setOutput as jest.Mock;
+      await act(async () => { downloadButton(result).click(); });
 
       await waitFor(() => expect(triggerBlobDownload).toHaveBeenCalledTimes(1));
-      expect((triggerBlobDownload as jest.Mock).mock.calls[0][1]).toBe('data_export.csv');
+      // Asked by the output's artifact id, never by a path.
+      expect(askedFor()).toEqual([expect.stringMatching(/\/output-file\?fileName=art-1$/)]);
+      expect(triggerBlobDownload).toHaveBeenCalledWith(FILE, 'trees.csv');
       expect(mockPlayNodesUpTo).not.toHaveBeenCalled();
-      expect(setOutput.mock.calls.map(([o]) => o.code)).toEqual(['exec', 'success']);
-      expect(setOutput).toHaveBeenLastCalledWith(
-        expect.objectContaining({ content: 'Downloaded data_export.csv' }),
-      );
+      // The download never stands in for the node's own run.
+      expect(setOutput).not.toHaveBeenCalled();
+      await waitFor(() => expect(controls(result).textContent).toContain('Downloaded trees.csv'));
     });
 
-    test('with no input yet, a click runs the upstream nodes, then downloads once', async () => {
+    test('a file named by default downloads under the name of what feeds the node', async () => {
       mockEdges = WIRED;
-      const nodeState = makeMockNodeState({ setOutput: jest.fn() });
-      const { result, rerender } = renderHook(
-        ({ data }) => useDataExportBehavior(data, nodeState),
-        { initialProps: { data: makeMockData({ input: '' }) } },
-      );
+      mockNodes = {
+        'upstream-1': {
+          id: 'upstream-1',
+          data: { nodeType: 'curio.builtin/data-loading@1', datasetSource: { title: 'boundaries.geojson' } },
+        },
+      };
+      wroteFile('art-1', 'data_export.geojson');
+      serves({ ok: true });
+      const { data, nodeState } = exportNode(true);
+      const { result } = mount(data, nodeState);
+      await waitFor(() => expect(downloadButton(result).textContent).toBe('Download boundaries.geojson'));
+      await act(async () => { downloadButton(result).click(); });
+      await waitFor(() => expect(triggerBlobDownload).toHaveBeenCalledWith(FILE, 'boundaries.geojson'));
+    });
 
-      const { container } = render(<>{result.current.contentComponent}</>);
-      const button = container.querySelector('button') as HTMLButtonElement;
-      await act(async () => { button.click(); });
+    test('with no result, a click runs the node and the nodes before it, then downloads the file that run wrote, once', async () => {
+      mockEdges = WIRED;
+      serves({ ok: true });
+      const { data, nodeState } = exportNode(false);
+      const { result, rerender } = mount(data, nodeState);
+
+      await act(async () => { downloadButton(result).click(); });
       expect(mockPlayNodesUpTo).toHaveBeenCalledWith('node-1');
-      expect(triggerBlobDownload).not.toHaveBeenCalled();
+      expect(mockFetch).not.toHaveBeenCalled();
 
-      // The run starts, the input arrives, the run ends.
+      // The run starts, the node writes its file, the run ends.
       mockIsRunActive = true;
-      await act(async () => { rerender({ data: makeMockData({ input: '' }) }); });
-      await act(async () => {
-        rerender({ data: makeMockData({ input: { path: 'p', dataType: 'dataframe' } as any }) });
-      });
-      expect(triggerBlobDownload).not.toHaveBeenCalled();
+      await act(async () => { rerender({ data, nodeState }); });
+      wroteFile('art-2', 'trees.csv');
+      const ran = { ...nodeState, output: { code: 'success', content: '', outputType: '' } } as UseNodeStateReturn;
+      await act(async () => { rerender({ data, nodeState: ran }); });
+      expect(mockFetch).not.toHaveBeenCalled();
       mockIsRunActive = false;
-      await act(async () => {
-        rerender({ data: makeMockData({ input: { path: 'p', dataType: 'dataframe' } as any }) });
-      });
+      await act(async () => { rerender({ data, nodeState: ran }); });
 
       await waitFor(() => expect(triggerBlobDownload).toHaveBeenCalledTimes(1));
-      await act(async () => {
-        rerender({ data: makeMockData({ input: { path: 'p', dataType: 'dataframe' } as any }) });
-      });
+      expect(askedFor()).toEqual([expect.stringMatching(/\/output-file\?fileName=art-2$/)]);
+      expect(triggerBlobDownload).toHaveBeenCalledWith(FILE, 'trees.csv');
+      await act(async () => { rerender({ data, nodeState: ran }); });
       expect(triggerBlobDownload).toHaveBeenCalledTimes(1);
     });
 
-    test('a run that leaves no input reports that nothing could be exported', async () => {
+    test('a result older than the node\'s code or widgets runs again before it downloads', async () => {
       mockEdges = WIRED;
-      const setOutput = jest.fn();
-      const nodeState = makeMockNodeState({ setOutput });
-      const { result, rerender } = renderHook(
-        ({ data }) => useDataExportBehavior(data, nodeState),
-        { initialProps: { data: makeMockData({ input: '' }) } },
-      );
-
-      const { container } = render(<>{result.current.contentComponent}</>);
-      const button = container.querySelector('button') as HTMLButtonElement;
-      await act(async () => { button.click(); });
-      mockIsRunActive = true;
-      await act(async () => { rerender({ data: makeMockData({ input: '' }) }); });
-      mockIsRunActive = false;
-      await act(async () => { rerender({ data: makeMockData({ input: '' }) }); });
-
-      expect(triggerBlobDownload).not.toHaveBeenCalled();
-      expect(setOutput).toHaveBeenLastCalledWith(
-        expect.objectContaining({ code: 'error', content: expect.stringContaining('produced no output') }),
-      );
+      wroteFile('art-1', 'trees.csv');
+      const { data, nodeState } = exportNode(true, { stale: true });
+      const { result } = mount(data, nodeState);
+      await act(async () => { downloadButton(result).click(); });
+      expect(mockPlayNodesUpTo).toHaveBeenCalledWith('node-1');
+      expect(mockFetch).not.toHaveBeenCalled();
     });
+
+    test('a run that fails hands out nothing, not even the file an earlier run wrote', async () => {
+      mockEdges = WIRED;
+      wroteFile('art-1', 'trees.csv');
+      const { data, nodeState } = exportNode(true, { stale: true });
+      const { result, rerender } = mount(data, nodeState);
+      await act(async () => { downloadButton(result).click(); });
+
+      mockIsRunActive = true;
+      await act(async () => { rerender({ data, nodeState }); });
+      const failed = { ...nodeState, output: { code: 'error', content: 'Traceback', outputType: '' } } as UseNodeStateReturn;
+      mockIsRunActive = false;
+      await act(async () => { rerender({ data, nodeState: failed }); });
+
+      expect(mockFetch).not.toHaveBeenCalled();
+      expect(triggerBlobDownload).not.toHaveBeenCalled();
+      expect(controls(result).textContent).toContain('Could not export: the node failed.');
+    });
+
+    test('a download the route refuses says why, and saves nothing', async () => {
+      mockEdges = WIRED;
+      wroteFile('art-1', '/etc/passwd');
+      serves({
+        ok: false,
+        status: 403,
+        body: { error: 'outside', message: 'This node\'s output names a file outside the folder of the run that made it.' },
+      });
+      const { data, nodeState } = exportNode(true);
+      const { result } = mount(data, nodeState);
+      await act(async () => { downloadButton(result).click(); });
+      await waitFor(() => expect(controls(result).textContent).toContain('outside the folder of the run that made it'));
+      expect(triggerBlobDownload).not.toHaveBeenCalled();
+    });
+
+
   });
 
   describe('useVegaBehavior', () => {
