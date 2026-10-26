@@ -36,6 +36,40 @@ export function keyedFramesAsOutputs(value: unknown): { dataType: "outputs"; dat
 }
 
 /**
+ * A frame's envelope with its columns, or each feature's properties, in the
+ * order of the envelope's `columns` list, as `parseOutput` lists them. `/get`
+ * answers JSON with its keys sorted, while an Arrow answer keeps the frame's
+ * order, and a table shows its columns in the order of the keys. A name the
+ * list does not hold comes after those it does; anything else is returned
+ * as it is. The backend's twin is `_in_frame_order` (projects/dashboard_payload.py).
+ */
+export function inFrameOrder<T>(envelope: T): T {
+  if (!isEnvelope(envelope)) return envelope;
+  const order = (envelope as { columns?: unknown }).columns;
+  if (!Array.isArray(order)) return envelope;
+  const rank = new Map<unknown, number>(order.map((name, index): [unknown, number] => [name, index]));
+  const ordered = (record: Record<string, unknown>) => Object.fromEntries(
+    Object.keys(record)
+      .map((name, index) => ({ name, index, at: rank.get(name) ?? rank.size }))
+      .sort((a, b) => a.at - b.at || a.index - b.index)
+      .map(({ name }): [string, unknown] => [name, record[name]]),
+  );
+  const data = envelope.data as any;
+  if (envelope.dataType === "dataframe" && data && typeof data === "object" && !Array.isArray(data)) {
+    return { ...envelope, data: ordered(data) } as T;
+  }
+  if (envelope.dataType === "geodataframe" && data && Array.isArray(data.features)) {
+    const features = data.features.map((feature: any) => (
+      feature && feature.properties && typeof feature.properties === "object"
+        ? { ...feature, properties: ordered(feature.properties) }
+        : feature
+    ));
+    return { ...envelope, data: { ...data, features } } as T;
+  }
+  return envelope;
+}
+
+/**
  * *value* with the sandbox's value envelopes peeled off, through lists and
  * tuples. Frames and rasters keep theirs, since what reads them needs the
  * dataType; an object whose dataType is anything else is user data that

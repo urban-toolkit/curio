@@ -1,6 +1,7 @@
 import { getToken } from "../utils/authApi";
 import { backendUrl } from "../utils/backendUrl";
 import { embeddedArtifact, EmbeddedEnvelope, embeddedRaster, EmbeddedRaster } from "../standalone/dashboardPayload";
+import { inFrameOrder } from "../utils/sandboxEnvelope";
 import { dashboardRunRead } from "./runs/dashboardRunFiles";
 import { dataflowRead } from "./dataflowReads";
 
@@ -169,7 +170,8 @@ export async function fetchData(fileName: string) {
 
         console.log(`Fetched data`, jsonData);
 
-        return jsonData;
+        // As the Arrow answer has it: a frame's columns in the frame's order.
+        return inFrameOrder(jsonData);
     } catch (error: unknown) {
         console.error("Error:", error instanceof Error ? error.message : String(error));
         throw error;

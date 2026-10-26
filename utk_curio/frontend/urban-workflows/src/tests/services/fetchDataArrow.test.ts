@@ -141,6 +141,34 @@ describe("fetchData", () => {
         expect(Array.from(result.data.n)).toEqual([1, 2]);
     });
 
+    it("puts a frame's columns back in the frame's order on the JSON fallback", async () => {
+        // Another account reads a shared dataflow's saved output: the Arrow
+        // route reads only its own session (404), and /get's JSON comes with
+        // its keys sorted. A table shows its columns in the order of the keys.
+        const sorted = {
+            data: { Added: [26], Day: ["Winter solstice"], From: ["8:46 AM"], To: ["3:01 PM"] },
+            dataType: "dataframe",
+            columns: ["Day", "From", "To", "Added"],
+            filename: "a1",
+        };
+        const fetchMock = jest
+            .fn()
+            .mockResolvedValueOnce({ ok: false, status: 404, headers: new Headers() })
+            .mockResolvedValueOnce({
+                ok: true,
+                status: 200,
+                headers: new Headers({ "Content-Type": "application/json" }),
+                json: async () => sorted,
+            });
+        (global as any).fetch = fetchMock;
+
+        const result = await fetchData("a1");
+
+        expect(fetchMock).toHaveBeenCalledTimes(2);
+        expect(Object.keys(result.data)).toEqual(["Day", "From", "To", "Added"]);
+        expect(result.data).toEqual(sorted.data);
+    });
+
     it("still throws when the JSON fallback itself fails", async () => {
         const fetchMock = jest
             .fn()
