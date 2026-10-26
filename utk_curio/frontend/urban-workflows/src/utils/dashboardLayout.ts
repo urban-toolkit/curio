@@ -296,7 +296,10 @@ export function isPassThroughNode(node: { type?: string | null; data?: any }): b
  * A pinned node's own output is not in the set. What a tile renders comes from
  * its input; a node that renders its own run output instead (a code node's
  * stdout pane, a Data Summary's table) has nothing a saved dataset could
- * restore, so saving it would add a dataset that nothing reads.
+ * restore, so saving it would add a dataset that nothing reads. A pinned code
+ * node with widgets shows them in place of its code, as its tile's controls
+ * (NodeEditor): what it makes reaches the page through the tiles it feeds,
+ * and is saved as theirs.
  */
 export function dashboardSourceNodeIds(
   nodes: readonly { id: string; type?: string | null; data?: any }[],

@@ -30,7 +30,7 @@ import { resolveNodeDisplayLabel } from "../../utils/palettePackageFactoryDraft"
 import { unversionedNodeType } from "../../utils/flowNodeCanonicalType";
 import { notebookOutputBox } from "../../utils/notebookLayout";
 import { useNodeHeaderSlot } from "./nodeHeaderSlot";
-import { normalizeWidgets, type WidgetDef } from "../../utils/widgets/widgetModel";
+import { normalizeWidgets, type WidgetDef, type WidgetValue } from "../../utils/widgets/widgetModel";
 import { registerNodeSettingWriter, withWidgetValues } from "../../utils/nodeSettingsWriters";
 import { isVegaLiteNodeType } from "../../registry/vegaLiteNodes";
 import {
@@ -51,6 +51,7 @@ import { readSelectionRows } from "../../utils/references/viewSelections";
 import { nodeLabel } from "../scenarios/scenarioLabels";
 import type { ChipPreviewData } from "./widgets/ChipPreview";
 import { useChipPreviewSource } from "./widgets/chipPreviewSource";
+import { WidgetValueControls } from "./widgets/WidgetValueControls";
 
 const NO_WIDGETS: WidgetDef[] = [];
 const NO_SELECTIONS: SelectionTag[] = [];
@@ -161,6 +162,14 @@ function NodeEditor({
         if (!widgetsTab) return undefined;
         return registerNodeSettingWriter(data.nodeId, "widgets", (values) => writeValuesRef.current(values));
     }, [data.nodeId, widgetsTab]);
+    // A control on the node's dashboard tile sets a value as the Widgets tab
+    // does, and a viewer's run takes it (#1117). Read from node data, which
+    // updateWidgets writes at once: two controls that settle together each
+    // keep the other's value.
+    const commitTileValue = (name: string, value: WidgetValue) => {
+        updateWidgets(withWidgetValues(normalizeWidgets(data.widgets), { [name]: value }));
+        requestAutoRun?.([data.nodeId]);
+    };
 
     // #662: the node's selection tags, each holding the ids a view's selection
     // picks. Held in node data as widgets are (saved at metadata.selections);
@@ -280,11 +289,17 @@ function NodeEditor({
             return applyGrammar(spec, redraw);
         }
         : undefined;
-    // A dashboard tile shows its output, not its editor. Only when it HAS an
-    // output pane: a code node's result is the text box under its editor, so
-    // forcing the pane unconditionally rendered a pinned code node as an empty
-    // tile with nothing reachable on it.
+    // A dashboard tile shows its output, not its editor, when it HAS an output
+    // pane, a chart's or a map's. A code node's result is the text box under
+    // its editor, so forcing the pane unconditionally rendered a pinned code
+    // node as an empty tile with nothing reachable on it: it shows its code.
+    // A node with widgets shows them as the tile's controls (#1117): above its
+    // chart or map, which fills the rest of the tile, or in place of a code
+    // node's code, whose pane stays mounted and hidden, since its editor holds
+    // the node's run.
     const hasOutputPane = outputId != undefined || contentComponent != undefined;
+    const tileControls = dashboardOn && widgetsTab && widgets.length > 0;
+    const controlsAboveOutput = tileControls && hasOutputPane;
     // A notebook cell shows its input and its output at once: the output pane
     // stays visible under the input tabs (Node.css), so a run, which would
     // switch to the Output tab, leaves the input tab in place.
@@ -296,9 +311,11 @@ function NodeEditor({
     const split = inCell && hasOutputPane && Boolean(code || grammar);
     const effectiveTab = dashboardOn && hasOutputPane
         ? "output"
-        : split && activeTab === "output"
-            ? resolveInitialEditorTab({ code, grammar, widgets: widgetsTab })
-            : activeTab;
+        : tileControls
+            ? "controls"
+            : split && activeTab === "output"
+                ? resolveInitialEditorTab({ code, grammar, widgets: widgetsTab })
+                : activeTab;
 
     const contentComponentBypass = useRef(false);
     // Set while a *load* is priming the widgets, so the marker round-trip it
@@ -580,6 +597,44 @@ function NodeEditor({
         </Nav>
     ) : null;
 
+    // Under a tile's controls the output fills what they leave.
+    const belowControls: CSS.Properties = { flex: 1, minHeight: 0 };
+    const outputMount = outputId != undefined ? (
+        // Vega sizes its canvas in CSS px from the compiled spec, so a
+        // multi-view chart is taller than the pane and was simply cut off
+        // (#202). This div scrolls now; the parent Tab.Pane stays
+        // overflow:hidden so the node box itself cannot spill onto the
+        // canvas.
+        //
+        // `nowheel` is load-bearing, not decoration: without it React Flow's
+        // ZoomPane swallows the wheel event and zooms the canvas instead of
+        // scrolling the chart.
+        //
+        // In a cell the chart needs a definite height to fit to.
+        <div
+            id={outputId}
+            className="nodrag nowheel curio-vega-mount"
+            style={{
+                textAlign: "center",
+                width: "100%",
+                ...(controlsAboveOutput ? belowControls : { height: inCell ? px(outputBox.height) : "100%" }),
+                ...(inCell && outputBox.maxHeight !== undefined ? { maxHeight: px(outputBox.maxHeight) } : {}),
+                overflow: "auto",
+            }}
+        ></div>
+    ) : contentComponent != undefined ? (
+        // Each content component lays out and scrolls its own body. In a cell
+        // its box comes from its kind.
+        <div
+            className="curio-content-mount"
+            style={inCell
+                ? { height: px(outputBox.height), maxHeight: px(outputBox.maxHeight), overflow: outputBox.overflow }
+                : controlsAboveOutput ? belowControls : { height: "100%" }}
+        >
+            {contentComponent}
+        </div>
+    ) : null;
+
     return (
         <>
             <div
@@ -604,6 +659,17 @@ function NodeEditor({
                                 className={split ? "curio-notebook-split" : undefined}
                                 style={{ ...activeTabContentStyle, zIndex: 10 }}
                             >
+                                {tileControls && !hasOutputPane ? (
+                                    <Tab.Pane eventKey="controls" style={paneStyle}>
+                                        <WidgetValueControls
+                                            widgets={widgets}
+                                            dashboard
+                                            disabled={disableWidgets}
+                                            onCommit={commitTileValue}
+                                        />
+                                    </Tab.Pane>
+                                ) : null}
+
                                 {code ? (
                                     <Tab.Pane
                                         eventKey="code"
@@ -611,7 +677,9 @@ function NodeEditor({
                                     >
                                         <CodeEditor
                                             floatCode={floatCode}
-                                            readOnly={readOnly}
+                                            // A tile's code is read-only: Save
+                                            // layout would save a stray edit.
+                                            readOnly={readOnly || !!dashboardOn}
                                             defaultValue={defaultCode}
                                             replacedCodeDirty={
                                                 replacedCodeDirty
@@ -703,49 +771,24 @@ function NodeEditor({
                                         className={split ? "curio-notebook-output" : undefined}
                                         style={inCell ? undefined : { height: "100%", overflow: "hidden" }}
                                     >
-                                        {outputId != undefined ? (
-                                            // Vega sizes its canvas in CSS px
-                                            // from the compiled spec, so a
-                                            // multi-view chart is taller than
-                                            // the pane and was simply cut off
-                                            // (#202). This div scrolls now;
-                                            // the parent Tab.Pane stays
-                                            // overflow:hidden so the node box
-                                            // itself cannot spill onto the
-                                            // canvas.
-                                            //
-                                            // `nowheel` is load-bearing, not
-                                            // decoration: without it React
-                                            // Flow's ZoomPane swallows the
-                                            // wheel event and zooms the canvas
-                                            // instead of scrolling the chart.
-                                            //
-                                            // In a cell the chart needs a
-                                            // definite height to fit to.
+                                        {controlsAboveOutput ? (
+                                            // The controls at their own
+                                            // height, and the output below
+                                            // filling the rest of the tile.
                                             <div
-                                                id={outputId}
-                                                className="nodrag nowheel curio-vega-mount"
-                                                style={{
-                                                    textAlign: "center",
-                                                    width: "100%",
-                                                    height: inCell ? px(outputBox.height) : "100%",
-                                                    ...(inCell && outputBox.maxHeight !== undefined ? { maxHeight: px(outputBox.maxHeight) } : {}),
-                                                    overflow: "auto",
-                                                }}
-                                            ></div>
-                                        ) : (
-                                            // Each content component lays out
-                                            // and scrolls its own body. In a
-                                            // cell its box comes from its kind.
-                                            <div
-                                                className="curio-content-mount"
-                                                style={inCell
-                                                    ? { height: px(outputBox.height), maxHeight: px(outputBox.maxHeight), overflow: outputBox.overflow }
-                                                    : { height: "100%" }}
+                                                data-tile-column="true"
+                                                style={{ display: "flex", flexDirection: "column", height: "100%" }}
                                             >
-                                                {contentComponent}
+                                                <WidgetValueControls
+                                                    widgets={widgets}
+                                                    dashboard
+                                                    disabled={disableWidgets}
+                                                    onCommit={commitTileValue}
+                                                    aboveOutput
+                                                />
+                                                {outputMount}
                                             </div>
-                                        )}
+                                        ) : outputMount}
                                     </Tab.Pane>
                                 ) : null}
                             </Tab.Content>

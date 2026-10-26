@@ -24,6 +24,7 @@ import { classifyAutkSpecString } from '../utils/autkSpecKind';
 import { unversionedNodeType } from '../utils/flowNodeCanonicalType';
 import { hasIncomingEdge, upstreamErroredMessage } from '../utils/nodeEmptyState';
 import { isEmptySpecBuffer } from '../utils/starterSpec';
+import { widgetValuesKey } from '../utils/widgets/dashboardControls';
 import {
   DASHBOARD_TILE_DEFAULT_HEIGHT,
   DASHBOARD_TILE_DEFAULT_WIDTH,
@@ -191,6 +192,14 @@ const UniversalNodeBody = React.memo(function UniversalNodeBody({ data, isConnec
   // the restore path can tell an authoring gesture from a reload. See below.
   const starterFillInputRef = useRef<unknown>(undefined);
   const outputCodeRef = useRef(output?.code);
+  // On a dashboard, the values of the node's own widgets, which a viewer
+  // changes on its tile (#1117), and those it last drew with: a chart or a map
+  // draws again with new ones (below). Every draw records them, and counts
+  // itself (`drawSeqRef`), so an Autark draw still waiting for WebGPU knows a
+  // later one took its place.
+  const widgetValues = dashboardOn ? widgetValuesKey(data.widgets) : "";
+  const drawnValuesRef = useRef(widgetValues);
+  const drawSeqRef = useRef(0);
 
   // Lock-on-focus / unlock-on-blur. Safe to call always: useCollab()
   // returns no-op handlers when collaboration is disabled.
@@ -223,6 +232,8 @@ const UniversalNodeBody = React.memo(function UniversalNodeBody({ data, isConnec
     setOutputCallback({ code: "exec", content: "" });
     sendCode(nodeState.code);
     lastRenderedInputRef.current = data.input;
+    drawnValuesRef.current = widgetValues;
+    drawSeqRef.current += 1;
     if (collab.enabled) collab.signalExecDisplay(data.nodeId);
   }, [data.triggerExec]);
 
@@ -303,6 +314,43 @@ const UniversalNodeBody = React.memo(function UniversalNodeBody({ data, isConnec
   const vegaChart = isVegaLiteNodeType(kind);
   const autarkRender = kind === NodeType.AUTK_GRAMMAR && classifyAutkSpecString(nodeState.code) === "render";
   const drawsFromInput = vegaChart || autarkRender;
+  /**
+   * Draw the node as a Play does, from its input and its widgets' values as
+   * they stand.
+   *
+   * An Autark map needs WebGPU. Without it, opening a project must not raise
+   * one error per map: the node keeps its "not drawn yet" body, and a Play
+   * shows the in-node explanation. The probe is async, so the run state is
+   * read again once it answers. A dashboard's map has no Play for its
+   * visitor: it runs anyway, and its body says why it cannot draw, with no
+   * toast (autkGrammarBehavior). Not after a run stopped short of it: the
+   * tile names the step that could not run instead (useDashboardRun).
+   *
+   * Only the newest draw asked for goes. A Data Pool hands its rows on with
+   * every fetch that lands, so a second input can arrive while the probe is
+   * out, and every node waits on the same probe; so can a viewer's new value
+   * of the map's own widget. Drawing both would put two `sendCode` calls in
+   * one tick, which cancel each other (above): the map would never run, and
+   * would sit at "exec".
+   */
+  const draw = () => {
+    lastRenderedInputRef.current = data.input;
+    drawnValuesRef.current = widgetValues;
+    const seq = ++drawSeqRef.current;
+    const code = nodeState.code;
+    if (!autarkRender) {
+      setOutputCallback({ code: "exec", content: "" });
+      sendCode(code);
+      return;
+    }
+    void detectWebGpuSupport().then((support) => {
+      if (!support.supported && !(dashboardOn && !dashboardStoppedRef.current)) return;
+      if (drawSeqRef.current !== seq) return;
+      if (runInFlightRef.current || outputCodeRef.current === "exec") return;
+      setOutputCallback({ code: "exec", content: "" });
+      sendCode(code);
+    });
+  };
   useEffect(() => {
     if (!vegaChart && kind !== NodeType.AUTK_GRAMMAR) return;
     // An input that lands while the buffer is still empty belongs to a node
@@ -331,34 +379,7 @@ const UniversalNodeBody = React.memo(function UniversalNodeBody({ data, isConnec
     if (isSelectionEcho(data.input)) return;
     if (starterFillInputRef.current === data.input) return;
     if (lastRenderedInputRef.current === data.input) return;
-    lastRenderedInputRef.current = data.input;
-    const code = nodeState.code;
-    if (!autarkRender) {
-      setOutputCallback({ code: "exec", content: "" });
-      sendCode(code);
-      return;
-    }
-    // An Autark map needs WebGPU. Without it, opening a project must not raise
-    // one error per map: the node keeps its "not drawn yet" body, and a Play
-    // shows the in-node explanation. The probe is async, so the run state is
-    // read again once it answers. A dashboard's map has no Play for its
-    // visitor: it runs anyway, and its body says why it cannot draw, with no
-    // toast (autkGrammarBehavior). Not after a run stopped short of it: the
-    // tile names the step that could not run instead (useDashboardRun).
-    //
-    // Only the newest input draws. A Data Pool hands its rows on with every
-    // fetch that lands, so a second input can arrive while the probe is out,
-    // and every node waits on the same probe. Drawing both would put two
-    // `sendCode` calls in one tick, which cancel each other (above): the map
-    // would never run, and would sit at "exec".
-    const input = data.input;
-    void detectWebGpuSupport().then((support) => {
-      if (!support.supported && !(dashboardOn && !dashboardStoppedRef.current)) return;
-      if (lastRenderedInputRef.current !== input) return;
-      if (runInFlightRef.current || outputCodeRef.current === "exec") return;
-      setOutputCallback({ code: "exec", content: "" });
-      sendCode(code);
-    });
+    draw();
   }, [kind, drawsFromInput, autarkRender, sendCode, disablePlay, specIsEmpty, writtenSpecIsEmpty, hasInput, data.input, runInFlight, dashboardOn]);
 
   // A wired Autark render tile draws by the rule above when its input lands. An
@@ -377,9 +398,27 @@ const UniversalNodeBody = React.memo(function UniversalNodeBody({ data, isConnec
     if (runInFlight || output?.code === "exec") return;
     if (connected) return;
     autoRenderedRef.current = true;
+    drawnValuesRef.current = widgetValues;
+    drawSeqRef.current += 1;
     setOutputCallback({ code: "exec", content: "" });
     sendCode(nodeState.code);
   }, [isPinnedAutarkTile, sendCode, disablePlay, specIsEmpty, connected, hasInput, runInFlight]);
+
+  // A tile's own widgets are a viewer's controls on a dashboard (#1117), and
+  // the server never runs a pinned node: a new value draws the chart or map
+  // again here, as a new input does, from its input or, for an unwired map,
+  // from its document. After the two effects above, and every draw records
+  // the values it drew with, so a render draws once. A value set while the
+  // tile draws is drawn once that draw ends.
+  const drawing = output?.code === "exec";
+  useEffect(() => {
+    if (!dashboardOn || !drawsFromInput) return;
+    if (drawnValuesRef.current === widgetValues) return;
+    if (!sendCode || disablePlay || specIsEmpty) return;
+    if (runInFlight || drawing) return;
+    if (!hasInput && !(autarkRender && !connected)) return;
+    draw();
+  }, [dashboardOn, drawsFromInput, widgetValues, sendCode, disablePlay, specIsEmpty, runInFlight, drawing, hasInput, autarkRender, connected]);
 
   useEffect(() => {
     outputCodeRef.current = output?.code;
