@@ -4,8 +4,8 @@
  * Two coupled behaviours, both previously untested:
  *
  * 1. GrammarEditor never called `sendCodeToWidgets`, unlike CodeEditor. That call
- *    is the only thing that toggles `markersDirty` outside a run, and
- *    WidgetsEditor only recomputes its marker list on that toggle — so a grammar
+ *    is the only thing that changes `markersDirty` outside a run, and
+ *    WidgetsEditor only recomputes its marker list on that change, so a grammar
  *    spec containing `[!! name$WIDGET$default !!]` rendered no widgets until the
  *    node had been played once. Nothing shipped hits it (no grammar template or
  *    example uses markers) but autk-grammar and vis-vega both declare
@@ -25,7 +25,7 @@
  * the synchronous one a `hasWidgets: false` node takes.
  *
  * WidgetsEditor is stubbed with a stand-in that mimics the one thing that
- * matters here — on a `markersDirty` toggle it resolves markers and pushes the
+ * matters here: on a change of `markersDirty` it resolves markers and pushes the
  * result back through `sendReplacedCode`. The real component's marker parsing is
  * its own concern and is not what these tests are about.
  */
@@ -64,8 +64,8 @@ jest.mock('../../components/editing/WidgetsEditor', () => {
     default: ({ userCode, markersDirty, sendReplacedCode }: any) => {
       const bypass = ReactLib.useRef(false);
       ReactLib.useEffect(() => {
-        // Mirrors the real component: a markersDirty toggle resolves the markers
-        // and hands the substituted source back to the editor.
+        // Mirrors the real component: a change of markersDirty resolves the
+        // markers and hands the substituted source back to the editor.
         if (bypass.current) {
           sendReplacedCode(String(userCode ?? '').replace(/\[!!.*?!!\]/g, 'resolved'));
         }
@@ -185,6 +185,39 @@ describe('during a run the output tab still takes focus', () => {
 
     act(() => { play!('return 1\n'); });
     expect(activePane()).toBe('output');
+  });
+});
+
+describe('two sends in one batch still run the node', () => {
+  // Anything that sends a node's code twice in one batch, two draws asked for
+  // at once, say, used to flip a boolean twice: the flips cancelled, nothing
+  // resolved the references, and the node sat at "exec" with nothing drawn,
+  // as dashboard maps did on the arcade runners. A count changes with every
+  // send, so the node runs once, with the last code.
+  test('two plays in one act run the grammar once', () => {
+    let play: ((code: string) => void) | undefined;
+    const applyGrammar = jest.fn();
+    const props: any = {
+      ...baseProps,
+      applyGrammar,
+      // Played: the node waits for the grammar the plays send.
+      output: { code: 'exec', content: '' },
+      setSendCodeCallback: (cb: any) => { play = cb; },
+      code: false,
+      grammar: true,
+      widgets: true,
+      defaultValue: GRAMMAR_SPEC,
+    };
+    render(<NodeEditor {...props} />);
+    const before = applyGrammar.mock.calls.length;
+
+    act(() => {
+      play!(GRAMMAR_SPEC);
+      play!(GRAMMAR_SPEC);
+    });
+
+    expect(applyGrammar.mock.calls.length - before).toBe(1);
+    expect(applyGrammar).toHaveBeenLastCalledWith(GRAMMAR_SPEC.replace(MARKER, 'resolved'));
   });
 });
 

@@ -98,7 +98,7 @@ function renderGrammarEditor(defaultValue: string | undefined, floatCode = jest.
         applyGrammar: jest.fn(),
         replacedCode: "",
         sendCodeToWidgets: jest.fn(),
-        replacedCodeDirty: false,
+        replacedCodeDirty: 0,
         defaultValue: dv,
         floatCode,
         readOnly: false,
@@ -237,7 +237,7 @@ describe("GrammarEditor content sync (dev/70)", () => {
             applyGrammar: jest.fn(),
             replacedCode: "",
             sendCodeToWidgets,
-            replacedCodeDirty: false,
+            replacedCodeDirty: 0,
             defaultValue: DEFAULT_SPEC,
             floatCode,
             readOnly: false,
@@ -275,7 +275,7 @@ describe("GrammarEditor run failures reach the node (#271)", () => {
         const setOutputCallback = jest.fn();
         const applyGrammar = jest.fn().mockRejectedValue(new Error("boom"));
         const consoleError = jest.spyOn(console, "error").mockImplementation(() => {});
-        const props = (dirty: boolean) => ({
+        const props = (dirty: number) => ({
             output: { code: "exec", content: "" },
             nodeId: "n1",
             applyGrammar,
@@ -287,9 +287,9 @@ describe("GrammarEditor run failures reach the node (#271)", () => {
             readOnly: false,
             setOutputCallback,
         });
-        const view = render(<GrammarEditor {...props(false)} />);
-        // The first dirty toggle is swallowed by the mount bypass; the second runs.
-        view.rerender(<GrammarEditor {...props(true)} />);
+        const view = render(<GrammarEditor {...props(0)} />);
+        // The first count is swallowed by the mount bypass; the next one runs.
+        view.rerender(<GrammarEditor {...props(1)} />);
 
         await waitFor(() => {
             expect(setOutputCallback).toHaveBeenCalledWith({ code: "error", content: "boom" });

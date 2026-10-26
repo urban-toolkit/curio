@@ -25,7 +25,7 @@ function renderTab(
             userCode={userCode}
             sendReplacedCode={jest.fn()}
             nodeId="n1"
-            markersDirty={false}
+            markersDirty={0}
             widgets={widgets}
             onWidgetsChange={onWidgetsChange}
             onValueChange={onValueChange}
