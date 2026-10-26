@@ -796,7 +796,7 @@ def read_node_code(page, node_id: str, *, timeout: float = 15000) -> str:
 
 #: The categories of chips a node's header lists, in its row's order
 #: (``ReferenceStrip`` in WidgetTag.tsx).
-STRIP_CATEGORIES = ("inputs", "scenarios", "widgets", "selections", "shared")
+STRIP_CATEGORIES = ("inputs", "scenarios", "widgets", "selections")
 
 
 def open_strip_category(page, node_id: str, category: str, *, timeout: float = 15000):

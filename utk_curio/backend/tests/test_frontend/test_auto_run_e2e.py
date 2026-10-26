@@ -1,16 +1,16 @@
 """Playwright E2E: "Run stale nodes automatically" (#845).
 
-A dataflow holds a Parameter node with a slider, ``factor``; a Python node that
-reads it; a node below that one; and a node apart from both. This drives the
-whole path in a browser, on the server runs a signed-in canvas makes:
+A dataflow holds a Python node that reads a slider of its own, ``factor``; a
+node below that one; and a node apart from both. This drives the whole path in
+a browser, on the server runs a signed-in canvas makes:
 
 1. Run All once.
 2. With the toggle off, as in a new dataflow, a slider move runs nothing: the
    nodes keep their outputs until the next Run All, as before. The View menu
    offers the toggle, off.
-3. Turn it on. A slider move runs the node that reads the parameter and the
-   node below it, on their own, as one run on the server; the node apart does
-   not run.
+3. Turn it on. A slider move runs the node that reads the slider and the node
+   below it, on their own, as one run on the server; the node apart does not
+   run.
 4. Code typed into a node runs nothing.
 5. Save and reopen: the toggle is still on. Turn it off: a slider move runs
    nothing again.
@@ -30,12 +30,14 @@ from typing import TYPE_CHECKING
 
 from playwright.sync_api import expect
 
+from .test_widget_tags_e2e import _open_tab, _panel
 from .utils import (
     _wait_for_reactflow_ready,
     api_json,
     frame_node,
     node_execution_timeout_ms,
     node_locator,
+    park_pointer,
     read_node_output_text,
     require_owner_view,
     require_project_page,
@@ -51,11 +53,9 @@ if TYPE_CHECKING:
     from .utils import FrontendPage
 
 PYTHON = "curio.builtin/computation-analysis"
-PARAMETER = "curio.builtin/parameter"
 FRAMES = "auto-run-845"
 TOGGLE = "Run stale nodes automatically"
 
-PARAM_ID = "factor-parameter"
 READS_ID = "reads-factor"
 BELOW_ID = "below-reader"
 APART_ID = "apart"
@@ -65,10 +65,9 @@ def _spec() -> dict:
     slider = {"name": "factor", "type": "slider", "label": "Factor", "default": 2,
               "options": {"min": 0, "max": 10, "step": 1}}
     nodes = [
-        {"id": PARAM_ID, "type": PARAMETER, "x": 80, "y": 80, "content": "", "title": "Factor",
-         "metadata": {"widgets": [slider]}},
         {"id": READS_ID, "type": PYTHON, "x": 700, "y": 80,
-         "content": "value = [!! @factor !!]\nprint(f'<<A {value * 10}>>')\nreturn value * 10\n"},
+         "content": "value = [!! factor !!]\nprint(f'<<A {value * 10}>>')\nreturn value * 10\n",
+         "metadata": {"widgets": [slider]}},
         {"id": BELOW_ID, "type": PYTHON, "x": 1320, "y": 80,
          "content": "print(f'<<B {input_0 + 1}>>')\nreturn input_0 + 1\n"},
         {"id": APART_ID, "type": PYTHON, "x": 700, "y": 520,
@@ -106,12 +105,14 @@ def _wait_for_output(page, node_id: str, needle: str, what: str) -> None:
 
 
 def _slider(page):
-    return node_locator(page, PARAM_ID).locator("[data-parameter-panel]").first.get_by_label("Factor", exact=True)
+    return _panel(page, READS_ID).get_by_label("Factor", exact=True)
 
 
 def _move_slider(page, steps: int) -> None:
-    """Move the slider *steps* to the right, one key press a step, as a drag does."""
-    frame_node(page, PARAM_ID)
+    """Move the slider, in its node's Widgets tab, *steps* to the right, one
+    key press a step, as a drag does."""
+    frame_node(page, READS_ID)
+    _open_tab(page, READS_ID, "widgets")
     slider = _slider(page)
     slider.focus()
     for _ in range(steps):
@@ -139,9 +140,11 @@ def _set_auto_run(page, on: bool) -> None:
 
 
 def _frame(page, test_name: str) -> None:
-    """The whole dataflow, with the mouse on empty canvas: the last click (a menu
-    row, Run All) otherwise leaves a node's or a button's hover look in the frame."""
-    page.mouse.move(1260, 440)
+    """The whole dataflow, the slider's node back on its code and output, with
+    the mouse on empty canvas: the last click (a menu row, Run All) otherwise
+    leaves a node's or a button's hover look in the frame."""
+    _open_tab(page, READS_ID, "code")
+    park_pointer(page)
     save_workflow_test_screenshot(page, FRAMES, test_name=test_name, sweep_toasts=True)
 
 
@@ -222,7 +225,7 @@ def test_a_slider_move_runs_the_stale_nodes_only_when_auto_run_is_on(
     page.goto(f"{app_frontend.base_url}/projects")
     page.wait_for_load_state("domcontentloaded")
     page.goto(f"{app_frontend.base_url}/dataflow/{project_id}")
-    node_locator(page, PARAM_ID).wait_for(state="visible", timeout=45000)
+    node_locator(page, READS_ID).wait_for(state="visible", timeout=45000)
     _view_menu(page).click()
     expect(_toggle(page)).to_have_attribute("aria-pressed", "true", timeout=15000)
     save_workflow_test_screenshot(
