@@ -262,7 +262,8 @@ def _table_reads(page, table_id: str, expected: dict, *, timeout_ms: int = RUN_T
     """Wait until the table shows *expected*'s day, and return its row, which
     is the CPU reference's: the same headers in the same order, the window as
     the CPU writes it, and each duration within ``TOLERANCE_MIN`` of the CPU's
-    minutes, Added being what With adds to Without. Where the CPU finds no
+    minutes once the table's rounding to whole minutes is allowed for, Added
+    being what With adds to Without. Where the CPU finds no
     shade, the table reads "0 min"."""
     row = _table_row(page, table_id, expected["Day"], timeout_ms=timeout_ms)
     assert list(row) == list(expected), f"the table's headers are {list(row)!r}, not {list(expected)!r}"
@@ -271,11 +272,14 @@ def _table_reads(page, table_id: str, expected: dict, *, timeout_ms: int = RUN_T
         f"the table reads {row!r}, not {expected['Day']}'s window as the CPU writes it: {expected!r}"
     )
     shown = {header: minutes(row[header]) for header in DURATIONS}
+    # The table shows whole minutes, so a duration reads up to half a minute
+    # off the GPU's own minutes, on top of what the GPU may differ by.
+    allowed = TOLERANCE_MIN + 0.5
     off = {
         header: f"{row[header]}, the CPU's {expected[header]} min"
-        for header in DURATIONS if abs(shown[header] - expected[header]) > TOLERANCE_MIN
+        for header in DURATIONS if abs(shown[header] - expected[header]) > allowed
     }
-    assert not off, f"the table's durations sit more than {TOLERANCE_MIN} min from the CPU's: {off!r}"
+    assert not off, f"the table's durations sit more than {allowed} min from the CPU's: {off!r}"
     # DURATIONS is in the table's order: Without, With, Added.
     without, with_building, added = (shown[header] for header in DURATIONS)
     assert abs(added - (with_building - without)) <= 2 * TOLERANCE_MIN, (
