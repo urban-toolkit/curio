@@ -1479,7 +1479,9 @@ a cell with no value is never counted.
 **A layer** (a GeoDataFrame) on an input circle is no raster: the node's code
 reads it as zones or a mask, for example with `rasterio.features.rasterize` on a
 raster's grid. The Quad Cities flood test dataflow's Average depth by period
-reads the riverside tracts and the waterways that way.
+reads the riverside tracts and the waterways that way. **A JSON value** on an
+input circle is read as it is: the same node reads its region's corners on its
+third circle, from the Python node that holds them.
 
 ## Notebook view
 
