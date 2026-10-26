@@ -176,9 +176,21 @@ _CANVAS_COUNT_JS = """
     .filter((el) => !el.closest('[data-curio-modal-shell="true"]')).length
 """
 
-_CANVAS_SETTLED_JS = """
-([sel, want]) => Array.from(document.querySelectorAll(sel))
-    .filter((el) => !el.closest('[data-curio-modal-shell="true"]')).length === want
+# Whether the canvas shows *want* nodes and every connection React Flow holds.
+# React Flow keeps a node it has not measured hidden, and draws no connection
+# to it, so the nodes must all show and the drawn connections match the held.
+_CANVAS_DRAWN_JS = """
+(want) => {
+    const outside = (el) => !el.closest('[data-curio-modal-shell="true"]');
+    const nodes = Array.from(document.querySelectorAll('.react-flow__node')).filter(outside);
+    if (nodes.length !== want || nodes.some((el) => el.style.visibility === 'hidden')) {
+        return false;
+    }
+    const flow = window.__curio_reactFlow;
+    if (!flow) return false;
+    const held = flow.getEdges().filter((edge) => !edge.hidden).length;
+    return Array.from(document.querySelectorAll('.react-flow__edge')).filter(outside).length === held;
+}
 """
 
 
@@ -191,18 +203,25 @@ def canvas_graph(page) -> dict:
 
 
 def await_canvas_nodes(page, want: int, *, timeout: float = 15000) -> None:
-    """Wait for the canvas to hold *want* nodes.
+    """Wait for the canvas to show *want* nodes and the connections between them.
 
-    Reverting rebuilds the canvas through React state, so the count lands a tick
-    or two after the click. Swallowing the timeout is deliberate: the assertion
-    that follows reports the actual counts, which says far more than
-    ``TimeoutError`` would.
+    A revert hands React Flow new node objects, without the sizes it measured,
+    so React Flow hides those nodes and draws none of their connections until
+    it measures them again, in a ResizeObserver callback that runs only when
+    the browser draws a frame. A revert between two versions of 6 nodes keeps 6
+    on the canvas throughout, so a wait on the node count alone returned at
+    once, and the read after it found no connection on a runner that had drawn
+    no frame yet (#1168). So this waits until every node shows and the canvas
+    draws as many connections as React Flow holds: the graph as drawn, whatever
+    the caller expects, which the assertion that follows checks.
+
+    Polled on a timer, since what it waits for comes with a frame. Swallowing
+    the timeout is deliberate: the assertion that follows reports the actual
+    counts, which says far more than ``TimeoutError`` would.
     """
     try:
-        page.wait_for_function(
-            _CANVAS_SETTLED_JS, arg=[".react-flow__node", want], timeout=timeout,
-        )
-    except Exception:
+        page.wait_for_function(_CANVAS_DRAWN_JS, arg=want, polling=100, timeout=timeout)
+    except PlaywrightTimeoutError:
         pass
 
 
