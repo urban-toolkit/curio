@@ -1,6 +1,7 @@
 # What `curio.py setup --with-examples` installs from the package manifests,
 # which CI's image installs before its source (the Dockerfile's CURIO_CI_SETUP).
 # Written by scripts/ci_requirements.py; a unit test checks it is current.
+astral>=3.2.0
 av>=15.0.0
 dask>=2026.8.0
 datashader>=0.19.1
@@ -23,4 +24,5 @@ scikit-learn>=1.6.0
 scipy>=1.13.0
 shapely>=2.0.0
 spatialpandas>=0.5.0
+suntime>=1.4.0
 xarray>=2026.1.0

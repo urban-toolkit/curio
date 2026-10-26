@@ -183,6 +183,65 @@ def test_only_what_a_tile_reads_is_embedded(client, user_and_token, tmp_curio, m
     assert set(body["outputs"]) == {"py.parquet"}
 
 
+#: A frame's columns in the order its code wrote them, which sorted JSON loses.
+FRAME_COLUMNS = ["Day", "From", "To", "Time counted", "Added"]
+
+
+def _embedded(client, token, monkeypatch, envelope):
+    """What the page receives of *envelope*, saved for the pinned chart."""
+    pid = _create(client, token)
+    monkeypatch.setattr(services, "_dashboard_envelope_reader", lambda _saved_path_of: lambda filename: envelope)
+    monkeypatch.setattr(
+        services,
+        "load_shared_project",
+        lambda project_id: {
+            "project": type("D", (), {"name": "Dashboard"})(),
+            "spec": _spec_with_pinned_chart(),
+            "outputs": [{"node_id": "py", "filename": "py.parquet", "data_type": envelope["dataType"]}],
+        },
+    )
+    resp = client.get(f"/api/projects/{pid}/dashboard")
+    assert resp.status_code == 200
+    return json.loads(resp.get_data(as_text=True))["outputs"]["py.parquet"]
+
+
+def test_a_tables_columns_reach_the_page_in_the_frames_order(client, user_and_token, tmp_curio, monkeypatch):
+    # #1166: a shared dashboard's table showed its columns alphabetically. The
+    # page lists a table's columns in the order its JSON gives them, and the
+    # route answered through jsonify, which sorts keys; the sandbox's `/get`
+    # sends them in the frame's order (test_get_saved_output_in_place.py).
+    _, token = user_and_token
+    envelope = {
+        "dataType": "dataframe",
+        "data": {name: [name] for name in FRAME_COLUMNS},
+        "columns": FRAME_COLUMNS,
+        "schema": {},
+    }
+
+    embedded = _embedded(client, token, monkeypatch, envelope)
+
+    assert list(embedded["data"]) == FRAME_COLUMNS
+
+
+def test_a_features_properties_reach_the_page_in_the_frames_order(client, user_and_token, tmp_curio, monkeypatch):
+    _, token = user_and_token
+    feature = {
+        "type": "Feature",
+        "properties": {name: name for name in FRAME_COLUMNS},
+        "geometry": {"type": "Point", "coordinates": [0, 0]},
+    }
+    envelope = {
+        "dataType": "geodataframe",
+        "data": {"type": "FeatureCollection", "features": [feature]},
+        "columns": [*FRAME_COLUMNS, "geometry"],
+        "schema": {},
+    }
+
+    embedded = _embedded(client, token, monkeypatch, envelope)
+
+    assert list(embedded["data"]["features"][0]["properties"]) == FRAME_COLUMNS
+
+
 # ---------------------------------------------------------------------------
 # A raster behind a pinned Autark map
 # ---------------------------------------------------------------------------

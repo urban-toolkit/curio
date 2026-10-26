@@ -13,7 +13,8 @@ What runs: the saved dataflow with the values laid over it in memory, planned
 as a server run plans one (``run_engine.plan_run``). Its targets are the nodes
 whose outputs the tiles read (``dashboard_source_node_ids``) that the change
 reaches, or that have no saved output; the owner's saved outputs stand in for
-every node the change does not reach. Each step runs in the owner's store as
+every node the change does not reach, but one the page needs and cannot read
+(:func:`_plan_for_the_page`). Each step runs in the owner's store as
 Play runs it there (``node_exec``), with no connection key: a node whose code
 reads one stops and says so. Nothing it makes is installed, recorded or
 journaled, and the saved spec is never written.
@@ -27,9 +28,10 @@ a run sweeps at its end, and at the first start after a restart.
 
 A step only a browser runs (an Autark compute node, a Spatial Join) is the
 page's. The run ends asking for it (``needs_canvas``), as a canvas's run on
-the server does; the page runs the node and sends what it made
-(:func:`keep_tab_result`), and its next start, with the same token, runs the
-steps below on that (``browserOutputs``). The server cannot check what a
+the server does, or ends ``succeeded`` when only a tile reads it; either way
+the page runs the node and sends what it made (:func:`keep_tab_result`), and
+its next start, with the same token, runs the steps below on that
+(``browserOutputs``), or nothing, when the step was a tile's own. The server cannot check what a
 browser sends, so that output and every one made from it are kept for that
 page alone, for ``kept.TAB_OWN_HOURS``.
 
@@ -287,8 +289,9 @@ def start_viewer_run(
     values already going.
 
     A saved result answers whoever made it: the owner's saved output stands in
-    for every node the values do not reach, and an output kept from an earlier
-    run (:func:`step_key`) for every step someone ran before; only what neither
+    for every node the values do not reach, but one the page needs and cannot
+    read (:func:`_plan_for_the_page`), and an output kept from an earlier run
+    (:func:`step_key`) for every step someone ran before; only what neither
     holds runs. Opening the page, with the saved values, costs the visitor's
     address nothing: only the values a visitor tries count against its
     budget, and a start that joins a run costs nothing either.
@@ -306,7 +309,7 @@ def start_viewer_run(
     from flask import current_app
 
     from utk_curio.backend.app.execution.node_names import template_labels
-    from utk_curio.backend.app.execution.run_engine import PlanError, plan_run
+    from utk_curio.backend.app.execution.run_engine import PlanError
     from utk_curio.backend.app.execution.workflow_spec import parse_workflow_dict
     from utk_curio.backend.app.packages.service import roster_templates
     from utk_curio.backend.app.projects import storage
@@ -341,9 +344,10 @@ def start_viewer_run(
         parse_workflow_dict(overlaid, templates=templates, labels=labels),
     )
     saved_by_node = {ref.node_id: ref for ref in saved}
+    # A tile's own step that the page made and sent is done: the page shows it.
     targets = sorted(
         node_id for node_id in dashboard_source_node_ids(overlaid, packages)
-        if node_id in reached or node_id not in saved_by_node
+        if (node_id in reached or node_id not in saved_by_node) and node_id not in tab
     )
     if not targets:
         return {"runId": None, "token": None, "joined": False, "nodeIds": []}
@@ -352,9 +356,11 @@ def start_viewer_run(
         for node_id, ref in saved_by_node.items() if node_id not in reached
     }
     reuse.update(tab)
+    # The page holds the tiles' saved outputs it opened with, and its own results.
+    held = (dashboard_source_node_ids(spec, packages) & set(saved_by_node)) | set(tab)
     try:
-        plan = plan_run(
-            overlaid, target_node_ids=targets, reuse=reuse,
+        plan = _plan_for_the_page(
+            overlaid, targets, reuse, held,
             templates=templates, labels=labels, packages=packages,
         )
     except PlanError as exc:
@@ -592,3 +598,46 @@ def _below(plan, nodes) -> frozenset:
                 reached.add(node_id)
                 below.add(node_id)
     return frozenset(below)
+
+
+def _plan_for_the_page(spec: dict, targets: list, reuse: dict, held: set, **options):
+    """The run's plan (``run_engine.plan_run`` with *options*), where no saved
+    output stands in for a node the page needs and cannot read.
+
+    The page plays the steps left to it on what it holds (*held*: the tiles'
+    saved outputs it opened with, and its own results) and on what the run
+    sends; the dashboard's routes read only what runs kept, never the owner's
+    other saved outputs. So a node whose saved output feeds such a step,
+    directly or through nodes that forward what reaches them, runs too, and
+    its output reaches the page as a step's does (a kept one answers at once).
+    """
+    from utk_curio.backend.app.execution.run_engine import plan_run
+
+    reuse = dict(reuse)
+    while True:
+        plan = plan_run(spec, target_node_ids=targets, reuse=reuse, **options)
+        unread = _unread_by_the_page(plan, held)
+        if not unread:
+            return plan
+        for node_id in unread:
+            del reuse[node_id]
+
+
+def _unread_by_the_page(plan, held: set) -> set:
+    """The nodes of *plan* whose saved outputs stand in for an input of a step
+    the page plays, or of a node forwarding to one, that the page does not
+    hold (*held*)."""
+    walk = [node_id for node_id, step in plan.steps.items() if step.role == "browser"]
+    seen, unread = set(), set()
+    while walk:
+        node_id = walk.pop()
+        if node_id in seen:
+            continue
+        seen.add(node_id)
+        for upstream in plan.spec.upstream_nodes(node_id):
+            if upstream in plan.reuse:
+                if upstream not in held:
+                    unread.add(upstream)
+            elif upstream in plan.steps and plan.steps[upstream].role == "forward":
+                walk.append(upstream)
+    return unread

@@ -22,7 +22,9 @@ export interface MonacoEditorLike {
 // Replace the editor's whole content while keeping the user's undo history
 // and cursor. `setValue` would wipe the undo stack and park the cursor at the
 // document start; `executeEdits` alone parks it at the end — so edit, then
-// restore the previous position clamped into the new content.
+// restore the previous position clamped into the new content. A read-only
+// editor (a dashboard tile's) refuses every edit, so it gets the content
+// whole: it has no undo history to keep.
 function setEditorContent(editor: MonacoEditorLike, value: string) {
     if (editor.getValue() === value) return;
     const model = editor.getModel();
@@ -32,9 +34,13 @@ function setEditorContent(editor: MonacoEditorLike, value: string) {
     }
     const prevPosition = editor.getPosition?.() ?? null;
     editor.pushUndoStop?.();
-    editor.executeEdits("curio.external-content", [
+    const edited = editor.executeEdits("curio.external-content", [
         { range: model.getFullModelRange(), text: value, forceMoveMarkers: true },
     ]);
+    if (edited === false) {
+        editor.setValue(value);
+        return;
+    }
     editor.pushUndoStop?.();
     if (prevPosition && editor.setPosition) {
         editor.setPosition(

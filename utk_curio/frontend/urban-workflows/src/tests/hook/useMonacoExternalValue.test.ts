@@ -127,6 +127,19 @@ describe("useMonacoExternalValue", () => {
         expect(editor.pushUndoStop).toHaveBeenCalledTimes(2);
     });
 
+    test("a read-only editor, which takes no edit, gets the content whole", () => {
+        // A dashboard tile's code editor is read-only, and Monaco refuses
+        // executeEdits there: the tile showed no code.
+        const editor = makeFakeEditor();
+        editor.executeEdits.mockImplementation(() => false);
+        const { result } = renderExternalValue("print(1)");
+
+        act(() => result.current.attachEditor(editor));
+
+        expect(editor.getValue()).toBe("print(1)");
+        expect(editor.setValue).toHaveBeenCalledWith("print(1)");
+    });
+
     test("a value applied before mount is synced onto the editor at attach", () => {
         const { result, onExternalApply } = renderExternalValue("early content");
         // No editor yet: baseline + callback move, nothing crashes.

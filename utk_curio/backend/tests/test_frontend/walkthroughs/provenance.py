@@ -161,6 +161,7 @@ def provenance_graph_navigation(ctx: Ctx) -> None:
          "checked it, so reverting to a version whose edges named nodes it does "
          "not hold tore the canvas down. Such an edge is now dropped instead.",
     tests=["src/tests/providers/onConnectMissingEndpoint.test.tsx",
+           "test_frontend/test_provenance_revert_e2e.py",
            "test_frontend/test_walkthrough_baselines.py"],
 )
 def provenance_reverting_to_a_previous_version(ctx: Ctx) -> None:

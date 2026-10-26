@@ -11,7 +11,7 @@ import type { NodeBehaviorHook } from "../../registry/types";
 import { useFlowContext } from "../../providers/FlowProvider";
 import styles from "../../components/editing/widgets/WidgetTags.module.css";
 import { SharedTag } from "../../components/editing/widgets/WidgetTag";
-import { WidgetControl } from "../../components/editing/widgets/WidgetControl";
+import { WidgetValueRow } from "../../components/editing/widgets/WidgetValueControls";
 import { WidgetForm } from "../../components/editing/widgets/WidgetForm";
 import {
   checkWidgetValue,
@@ -20,15 +20,10 @@ import {
   type WidgetDef,
   type WidgetValue,
 } from "../../utils/widgets/widgetModel";
-import { changeableOnDashboard } from "../../utils/widgets/dashboardControls";
 import { nodesUsingShared, sharedWidgetsOf, withSharedRenamed } from "../../utils/references/sharedParameters";
 import { codeEditRevision, subscribeToCodeEdits } from "../../utils/references/codeEdits";
 import { registerNodeSettingWriter } from "../../utils/nodeSettingsWriters";
 import { resolveNodeDisplayLabel } from "../../utils/palettePackageFactoryDraft";
-
-/** How long a value waits for the next keystroke or slider step before it
- * reaches the dataflow. Leaving the control sends it at once. */
-const VALUE_SETTLE_MS = 300;
 
 function labelOf(data: any, fallback: string): string {
   try {
@@ -51,16 +46,9 @@ function ParameterBody({ data }: { data: any }) {
   useSyncExternalStore(subscribeToCodeEdits, codeEditRevision);
   const users = widget ? nodesUsingShared(all, widget.name) : [];
 
-  // The value shown follows the control at once; the dataflow hears of it when
-  // the control settles, so a slider drag does not re-render every node per step.
-  const committed = widget ? effectiveValue(widget) : null;
-  const committedKey = JSON.stringify(committed);
-  const [shown, setShown] = useState<WidgetValue>(committed);
-  const pending = useRef<{ value: WidgetValue } | null>(null);
-  const timer = useRef<number | undefined>(undefined);
-  useEffect(() => {
-    if (pending.current === null) setShown(committed);
-  }, [committedKey]);
+  // The control's row holds a value until it settles (WidgetValueRow), so a
+  // slider drag does not re-render every node per step.
+  const committedKey = JSON.stringify(widget ? effectiveValue(widget) : null);
 
   const write = (next: WidgetDef[]) => {
     updateDataNode(data.nodeId, { ...data, widgets: next });
@@ -84,23 +72,12 @@ function ParameterBody({ data }: { data: any }) {
     requestAutoRun?.(nodesUsingShared(all, widget.name).map((node) => node.id));
   };
 
-  const flush = () => {
-    window.clearTimeout(timer.current);
-    const change = pending.current;
-    pending.current = null;
-    if (change) commit(change.value);
-  };
-  const flushRef = useRef(flush);
-  flushRef.current = flush;
-  useEffect(() => () => flushRef.current(), []);
-
   // An agent's applied change gives the widget a new value as its control
-  // does (utils/nodeSettingsWriters), in place of one still settling.
+  // does (utils/nodeSettingsWriters), in place of one still settling, which
+  // its row then drops.
   const takeValueRef = useRef<(values: Record<string, unknown>) => void>(() => undefined);
   takeValueRef.current = (values) => {
     if (!widget || !Object.prototype.hasOwnProperty.call(values, widget.name)) return;
-    window.clearTimeout(timer.current);
-    pending.current = null;
     commit(values[widget.name] as WidgetValue);
   };
   useEffect(
@@ -108,20 +85,13 @@ function ParameterBody({ data }: { data: any }) {
     [data.nodeId],
   );
 
-  const setValue = (value: WidgetValue) => {
-    setShown(value);
-    pending.current = { value };
-    window.clearTimeout(timer.current);
-    timer.current = window.setTimeout(() => flushRef.current(), VALUE_SETTLE_MS);
-  };
-
   const add = (def: WidgetDef) => {
     write([def]);
     setEditing(false);
   };
 
+  // The row is gone while the form shows, and sent what it held as it went.
   const save = (previous: WidgetDef, next: WidgetDef) => {
-    flush();
     // The set value survives an edit that keeps it valid.
     const keep =
       previous.value !== undefined &&
@@ -164,39 +134,31 @@ function ParameterBody({ data }: { data: any }) {
   }
 
   return (
-    <div
-      className={`nowheel nodrag ${styles.panel}`}
-      data-parameter-panel="true"
-      onBlur={() => flush()}
-    >
-      <div className={styles.row} data-widget-row={widget.name}>
-        <span className={styles.rowLabel}>{widget.label || widget.name}</span>
-        <SharedTag name={widget.name} disabled={dashboardOn} />
-        <span className={styles.rowControl}>
-          {/* A viewer changes a pinned control, except a read-only kind (#1117). */}
-          <WidgetControl
-            widget={widget}
-            value={shown}
-            disabled={dashboardOn && !changeableOnDashboard(widget)}
-            onChange={setValue}
-          />
-        </span>
-        {!dashboardOn ? (
-          <span className={styles.rowActions}>
-            <button
-              type="button"
-              className={styles.button}
-              aria-label={`Edit parameter ${widget.name}`}
-              onClick={() => {
-                flush();
-                setEditing(true);
-              }}
-            >
-              Edit
-            </button>
-          </span>
-        ) : null}
-      </div>
+    <div className={`nowheel nodrag ${styles.panel}`} data-parameter-panel="true">
+      {/* A viewer changes a pinned control, except a read-only kind (#1117). */}
+      <WidgetValueRow
+        widget={widget}
+        dashboard={dashboardOn}
+        onCommit={(_name, value) => commit(value)}
+        tag={<SharedTag name={widget.name} disabled={dashboardOn} />}
+        actions={(flush) =>
+          !dashboardOn ? (
+            <span className={styles.rowActions}>
+              <button
+                type="button"
+                className={styles.button}
+                aria-label={`Edit parameter ${widget.name}`}
+                onClick={() => {
+                  flush();
+                  setEditing(true);
+                }}
+              >
+                Edit
+              </button>
+            </span>
+          ) : null
+        }
+      />
       {held.length > 1 ? (
         <p className={styles.problem}>
           This node holds {held.length} widgets, and a Parameter node holds one. Each is shared; move the others to
