@@ -5,9 +5,9 @@ which reads the live canvas:
 
 * its levers, the nodes in it, in the scenario's order;
 * its fixed context, the nodes outside it that it reads, through an edge into
-  it or through a shared tag (``[!! @name !!]``) its code names;
+  it;
 * its outcomes, the levers whose output nothing in it reads, or that something
-  outside it reads. A Parameter node has no output, so it is never one.
+  outside it reads.
 
 A pass-through (a chart, a Data Pool, a drawing Autark node) saves nothing
 itself; :func:`saved_sources` resolves it to the nodes feeding it, the walk
@@ -21,9 +21,6 @@ from __future__ import annotations
 from collections import deque
 from typing import TYPE_CHECKING, Optional
 
-from utk_curio.backend.app.datasets.domain.code_refs import node_code
-from utk_curio.backend.app.execution.code_references import normalize_shared, shared_names_in
-from utk_curio.backend.app.execution.workflow_spec import PARAMETER_TYPE
 from utk_curio.backend.app.projects.dashboard_payload import passes_through
 
 if TYPE_CHECKING:
@@ -31,12 +28,8 @@ if TYPE_CHECKING:
 
 
 def _template(node: dict) -> str:
-    """``curio.builtin/parameter@1`` -> ``curio.builtin/parameter``."""
+    """``curio.builtin/data-loading@1`` -> ``curio.builtin/data-loading``."""
     return str(node.get("type") or "").split("@", 1)[0]
-
-
-def is_parameter_node(node: dict) -> bool:
-    return _template(node) == PARAMETER_TYPE
 
 
 def _catalog_templates(packages: Optional["TemplateGrammars"]) -> "TemplateGrammars":
@@ -101,20 +94,7 @@ def scenario_parts(scenario: dict, nodes: list[dict], edges: list[dict]) -> dict
         elif from_inside and not to_inside:
             read_outside.add(edge["source"])
 
-    named = {name for node_id in levers for name in shared_names_in(node_code(by_id[node_id]))}
-    if named:
-        for node in nodes:
-            if node["id"] in members or not is_parameter_node(node):
-                continue
-            widgets = normalize_shared((node.get("metadata") or {}).get("widgets"))
-            if any(widget["name"] in named for widget in widgets):
-                context.add(node["id"])
-
-    outcomes = [
-        node_id for node_id in levers
-        if not is_parameter_node(by_id[node_id])
-        and (node_id not in read_inside or node_id in read_outside)
-    ]
+    outcomes = [node_id for node_id in levers if node_id not in read_inside or node_id in read_outside]
     return {
         "levers": levers,
         "context": [n["id"] for n in nodes if n["id"] in context],
@@ -159,12 +139,11 @@ def saved_sources(
     packages: Optional["TemplateGrammars"] = None,
 ) -> list[str]:
     """The nodes whose saved output stands for *node_id*'s, in dataflow order:
-    itself, or for a pass-through the nodes feeding it. A Parameter node's
-    value is in the spec, so it has none. *packages* reads the manifests
-    (``TemplateGrammars.for_account()`` when None)."""
+    itself, or for a pass-through the nodes feeding it. *packages* reads the
+    manifests (``TemplateGrammars.for_account()`` when None)."""
     by_id = {n["id"]: n for n in nodes}
     node = by_id.get(node_id)
-    if node is None or is_parameter_node(node):
+    if node is None:
         return []
     packages = _catalog_templates(packages)
     if not is_pass_through(node, packages):

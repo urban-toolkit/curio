@@ -199,30 +199,6 @@ def test_the_details_name_context_levers_and_outcomes_with_their_saved_outputs(c
     assert "path" not in json.dumps(body["context"] + body["levers"] + body["outcomes"])
 
 
-def test_a_shared_parameter_is_context_with_its_value(client, user_and_token):
-    _, token = user_and_token
-    spec = _spec("Shadows", [{**TALL, "nodes": ["b"]}])
-    spec["dataflow"]["nodes"].append({
-        "id": "season", "type": "curio.builtin/parameter@1", "content": "", "x": 0, "y": 300,
-        "metadata": {"widgets": [{"name": "season", "type": "text", "default": "winter", "value": "summer"}]},
-    })
-    spec["dataflow"]["nodes"][3]["content"] = "return [!! @season !!]"
-    resp = client.post(
-        "/api/projects",
-        data=json.dumps({"name": "Shadows", "spec": spec, "outputs": []}),
-        headers=_headers(token),
-    )
-    assert resp.status_code == 201, resp.get_data(as_text=True)
-    project_id = resp.get_json()["id"]
-
-    body = _details(client, token, project_id, "s2").get_json()
-
-    assert [n["id"] for n in body["context"]] == ["load", "season"]
-    season = body["context"][1]
-    assert season["parameter"] == {"name": "season", "value": "summer"}
-    assert season["results"] == []
-
-
 def test_the_catalog_needs_a_signed_in_account(client):
     assert client.get("/api/scenarios/catalog").status_code == 401
     assert client.get("/api/scenarios/p/s").status_code == 401

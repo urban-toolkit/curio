@@ -1,9 +1,8 @@
 /**
  * The dashboard by scenario (#662): which column each pinned tile goes in.
  *
- * - First the tiles the scenarios share: their fixed context (a shared
- *   Parameter node among it), and any other pinned tile that no scenario's
- *   outcome reaches.
+ * - First the tiles the scenarios share: their fixed context, and any other
+ *   pinned tile that no scenario's outcome reaches.
  * - Then one column per scenario, in the scenarios' order, holding its pinned
  *   nodes.
  * - Last the tiles outside every scenario that read their outcomes, such as a

@@ -2,9 +2,9 @@
  * A scenario's fixed context, levers and outcomes, read from the live graph
  * (#662), and the outputs a scenario has saved.
  *
- * The context is what enters the selection: an edge from outside, or a shared
- * tag (`[!! @name !!]`) its code names, which has no edge. The outcomes are the
- * levers whose output nothing inside reads, or that something outside reads.
+ * The context is what enters the selection: an edge from outside, a value
+ * node's among them. The outcomes are the levers whose output nothing inside
+ * reads, or that something outside reads.
  */
 import { NodeType } from "../../constants";
 import {
@@ -25,8 +25,9 @@ function node(id: string, extra: Record<string, unknown> = {}) {
   } as any;
 }
 
-const parameter = (id: string, name: string) =>
-  node(id, { nodeType: "curio.builtin/parameter", code: undefined, widgets: [{ name, type: "number", default: 1 }] });
+/** A Python node that returns its widget *name*'s value to the nodes wired after it. */
+const valueNode = (id: string, name: string) =>
+  node(id, { code: `return [!! ${name} !!]`, widgets: [{ name, type: "number", default: 1 }] });
 
 const chart = (id: string) => node(id, { nodeType: NodeType.VIS_VEGA, code: "{}" });
 
@@ -68,20 +69,22 @@ describe("scenarioParts", () => {
     expect(parts.outcomes).toEqual(["pool", "a"]);
   });
 
-  test("a context reached only through a shared tag is found, though no edge leads from it", () => {
-    const withTag = [
+  test("a value node wired into a lever is context, and one wired into nothing is not", () => {
+    const withValue = [
       ...nodes.filter((n) => n.id !== "a"),
-      node("a", { code: "return input_0 * [!! @season !!]" }),
-      parameter("season-node", "season"),
-      parameter("unused-node", "height"),
+      node("a", { code: "return input_0 * input_1" }),
+      valueNode("season-node", "season"),
+      valueNode("unused-node", "height"),
     ];
-    const parts = scenarioParts(scenario(["a", "b"]), withTag, edges);
+    const wired = [...edges, edge("season-node", "a", { targetHandle: "in_1" })];
+    const parts = scenarioParts(scenario(["a", "b"]), withValue, wired);
     expect(parts.context).toEqual(["pool", "season-node"]);
   });
 
-  test("a Parameter node inside the scenario is a lever, never its context or an outcome", () => {
-    const withTag = [...nodes.filter((n) => n.id !== "a"), node("a", { code: "[!! @season !!]" }), parameter("p", "season")];
-    const parts = scenarioParts(scenario(["p", "a", "b"]), withTag, edges);
+  test("a value node inside the scenario that a lever reads is a lever, never its context or an outcome", () => {
+    const withValue = [...nodes.filter((n) => n.id !== "a"), node("a", { code: "return input_1" }), valueNode("p", "season")];
+    const wired = [...edges, edge("p", "a", { targetHandle: "in_1" })];
+    const parts = scenarioParts(scenario(["p", "a", "b"]), withValue, wired);
     expect(parts.levers).toEqual(["p", "a", "b"]);
     expect(parts.context).toEqual(["pool"]);
     expect(parts.outcomes).toEqual(["b"]);
@@ -134,9 +137,9 @@ describe("the outputs a scenario saves", () => {
     expect([...scenarioSourceNodeIds(nodes, edges, [scenario(["a", "chart"])])].sort()).toEqual(["a", "load"]);
   });
 
-  test("a Parameter node in the context saves nothing: its value is in the spec", () => {
-    const nodes = [node("a", { code: "[!! @season !!]" }), parameter("p", "season")];
-    expect([...scenarioSourceNodeIds(nodes, [], [scenario(["a"])])]).toEqual(["a"]);
+  test("a value node in the context saves its output, which a drop brings as data", () => {
+    const nodes = [node("a"), valueNode("p", "season")];
+    expect([...scenarioSourceNodeIds(nodes, [edge("p", "a")], [scenario(["a"])])].sort()).toEqual(["a", "p"]);
   });
 
   test("the save rule adds a scenario's to a pinned tile's, and without scenarios is the tile's alone", () => {
