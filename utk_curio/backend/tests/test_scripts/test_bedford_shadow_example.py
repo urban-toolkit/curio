@@ -222,11 +222,43 @@ def _clock(text: str, day: str) -> datetime.datetime:
     return sunrise.replace(hour=hour, minute=minute, second=0)
 
 
-def test_the_builder_writes_the_shipped_example():
+def _builder():
     spec = importlib.util.spec_from_file_location("_scripts_build_example_bedford_shadow", SCRIPT)
     builder = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(builder)
+    return builder
+
+
+def _shipped_edits() -> list:
+    """The edits the shipped Map Editor node makes, read back from its code."""
+    import ast
+
+    code = _node("add-building")["content"]
+    tree = ast.parse("def node():\n" + textwrap.indent(code, "    "))
+    call = next(n for n in ast.walk(tree) if isinstance(n, ast.Call) and getattr(n.func, "id", "") == "curio_edit_features")
+    return ast.literal_eval(call.args[1])
+
+
+def test_the_builder_writes_the_shipped_example(monkeypatch):
+    # The proposed building's outlines come from GEOS, whose versions keep
+    # different vertices along the same edges; the next test compares their
+    # shapes. Here the builder writes everything else from the shipped ones.
+    builder = _builder()
+    monkeypatch.setattr(builder, "massing", _shipped_edits)
     _same(builder.build(), json.loads(EXAMPLE.read_text(encoding="utf-8")))
+
+
+def test_the_builder_draws_the_proposed_building_the_example_ships():
+    import geopandas as gpd
+    from shapely.geometry import shape
+
+    built, shipped = _builder().massing(), _shipped_edits()
+    assert len(built) == len(shipped) == 2
+    for mine, theirs in zip(built, shipped):
+        assert {k: v for k, v in mine.items() if k != "geometry"} == {k: v for k, v in theirs.items() if k != "geometry"}
+        # In New York's state plane, square feet: a part covers thousands.
+        a, b = gpd.GeoSeries([shape(mine["geometry"]), shape(theirs["geometry"])], crs=4326).to_crs(2263)
+        assert a.symmetric_difference(b).area < 1.0, (mine["label"], a.symmetric_difference(b).area)
 
 
 @pytest.mark.parametrize("day", list(NOAA))
