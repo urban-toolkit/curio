@@ -155,6 +155,10 @@ PAGE_STEPS = ("base-sun-rays", "base-block-rays", "sun-rays", "block-rays")
 #: and each scenario's buildings for the GPU. Of the steps before the page's,
 #: only the day's sun steps (``steps``) read the day.
 DAY_BLIND = ("buildings", "block", "streets", "add-building", "map-area", "ground", "base-tower", "tower")
+#: Of those, what the page's steps read: the open-ground grid and each
+#: scenario's buildings for the GPU. No tile reads them, so the page holds no
+#: saved copy, and a run of a day hands them on, kept or made again.
+PAGE_INPUTS = ("ground", "base-tower", "tower")
 #: What the server makes after the page's steps, from what the page made.
 AFTER_PAGE = (
     "base-shadow-cells", "base-block-steps", "base-shadow-shown",
@@ -588,10 +592,20 @@ def test_the_owner_shares_the_crown_heights_dashboard_and_each_visitor_tries_a_d
             f"the run before the GPU steps did not make the day's sun steps: it ran {before_gpu!r}" + first.story()
         )
         # What the day does not reach runs only if the owner's save did not
-        # keep it: here, each scenario's buildings for the GPU.
+        # keep it (here, each scenario's buildings for the GPU), or if the
+        # page's steps read it: the page cannot read the owner's saved
+        # open-ground grid, so the run hands it on.
         saved = [key for key in DAY_BLIND if ids[key] in recorded]
-        reran = [key for key in saved if ids[key] in before_gpu or ids[key] in after_gpu]
+        reran = [
+            key for key in saved
+            if key not in PAGE_INPUTS and (ids[key] in before_gpu or ids[key] in after_gpu)
+        ]
         assert not reran, f"a day ran {reran!r} again, which it does not reach" + first.story()
+        unsent = [key for key in PAGE_INPUTS if ids[key] not in before_gpu]
+        assert not unsent, (
+            f"the run before the GPU steps did not hand the page {unsent!r}, which they read: "
+            f"it ran {before_gpu!r}" + first.story()
+        )
         unsaved = [key for key in DAY_BLIND if key not in saved and ids[key] not in before_gpu]
         assert not unsaved, (
             f"the run before the GPU steps did not make {unsaved!r}, which the owner's save did not keep: "
