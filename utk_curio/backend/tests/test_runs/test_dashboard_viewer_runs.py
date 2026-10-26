@@ -1139,6 +1139,330 @@ class TestTheStepsLeftToThePage:
         assert resp.status_code == 429, resp.get_data(as_text=True)
 
 
+#: Two scenarios of two GPU steps each, as the Crown Heights shadow dashboard
+#: has them: the page runs all four side by side on Grid, none below another.
+FOUR_GPU = ("gpu-a1", "gpu-a2", "gpu-b1", "gpu-b2")
+
+
+def _four_gpu_nodes():
+    """Grid; under it scenario A's two GPU steps and scenario B's two; then
+    each scenario's After, which reads its own two and a chart reads."""
+    return [
+        {"id": "param", "type": PARAMETER, "content": "", "dashboardPinned": True,
+         "metadata": {"widgets": [_period()]}},
+        {"id": "grid", "type": CODE, "content": "# node grid\nreturn [!! @period !!]"},
+        *({"id": node_id, "type": AUTARK, "content": COMPUTE} for node_id in FOUR_GPU),
+        {"id": "after-a", "type": CODE, "content": "# node after-a\nreturn [input_0, input_1]"},
+        {"id": "after-b", "type": CODE, "content": "# node after-b\nreturn [input_0, input_1]"},
+        {"id": "chart-a", "type": CHART, "content": "{}", "dashboardPinned": True},
+        {"id": "chart-b", "type": CHART, "content": "{}", "dashboardPinned": True},
+    ]
+
+
+FOUR_GPU_EDGES = [
+    *({"id": f"grid-{node_id}", "source": "grid", "target": node_id} for node_id in FOUR_GPU),
+    {"id": "gpu-a1-after-a", "source": "gpu-a1", "target": "after-a", "targetHandle": "in"},
+    {"id": "gpu-a2-after-a", "source": "gpu-a2", "target": "after-a", "targetHandle": "in_1"},
+    {"id": "gpu-b1-after-b", "source": "gpu-b1", "target": "after-b", "targetHandle": "in"},
+    {"id": "gpu-b2-after-b", "source": "gpu-b2", "target": "after-b", "targetHandle": "in_1"},
+    {"id": "after-a-chart-a", "source": "after-a", "target": "chart-a"},
+    {"id": "after-b-chart-b", "source": "after-b", "target": "chart-b"},
+]
+
+
+class TestFourStepsLeftToThePage:
+    """Four steps only a browser runs, two to a scenario: the run asks the
+    page for all four at once, the page sends each one's result as its step
+    finishes, and a step below them runs once the page's start names both of
+    its own."""
+
+    @pytest.fixture()
+    def four(self, client, user_and_token, sandbox, saved):
+        from utk_curio.backend.app.projects.schemas import OutputRef
+
+        _, token = user_and_token
+        saved[:] = [
+            OutputRef(node_id=node_id, filename=f"saved-{node_id}", data_type="str")
+            for node_id in ("after-a", "after-b")
+        ]
+        return _create(client, token, nodes=_four_gpu_nodes(), edges=FOUR_GPU_EDGES)
+
+    @staticmethod
+    def _send(client, project_id, started, order):
+        """The page sends what it made of each step in *order*, as each one
+        finishes: ``{nodeId: the output it was kept as}``."""
+        pages = {}
+        for node_id in order:
+            sent = _keep_step(
+                client, project_id, started["runId"], started["token"],
+                node_id=node_id, value={**LAYER, "layerName": node_id},
+            )
+            assert sent.status_code == 200, sent.get_data(as_text=True)
+            pages[node_id] = sent.get_json()["output"]["path"]
+        return pages
+
+    def test_the_run_ends_asking_the_page_for_all_four_at_once(self, client, four, sandbox):
+        from utk_curio.backend.app.runs import viewer
+
+        started = _month(client, four)
+        events = _events(client, four, started["runId"], started["token"])
+
+        steps = {payload["nodeId"]: payload["status"] for kind, payload in events if kind == "step_finished"}
+        assert steps == {
+            "grid": "ok", **{node_id: "browser" for node_id in FOUR_GPU},
+            "after-a": "waiting", "after-b": "waiting",
+        }
+        assert events[-1][0] == "run_finished" and events[-1][1]["status"] == "needs_canvas"
+        assert [node for node, _body in sandbox.runs] == ["grid"]
+        assert sorted(viewer._RUNS[started["runId"]]["browserSteps"]) == sorted(FOUR_GPU)
+
+    def test_the_page_sends_each_steps_result_in_whatever_order_they_finish(self, client, four, sandbox):
+        from utk_curio.backend.app.runs import kept
+        from utk_curio.backend.app.runs.models import KeptStepOutput
+
+        started = _month(client, four)
+        order = ["gpu-b2", "gpu-a1", "gpu-b1", "gpu-a2"]
+
+        pages = self._send(client, four, started, order)
+
+        # Each written to the sandbox as it came, and kept as that step's, for this page alone.
+        assert [stored["value"]["layerName"] for stored in sandbox.stored] == order
+        assert len(set(pages.values())) == len(FOUR_GPU)
+        for node_id, path in pages.items():
+            entry = KeptStepOutput.query.filter_by(project_id=four, output_path=path).one()
+            assert entry.node_id == node_id
+            assert entry.private_to == kept.digest(started["token"])
+
+    def test_the_next_start_naming_all_four_runs_each_scenarios_step_on_its_own_two(self, client, four, sandbox):
+        from utk_curio.backend.app.runs import kept, viewer
+        from utk_curio.backend.app.runs.models import KeptStepOutput
+
+        first = _month(client, four)
+        pages = self._send(client, four, first, ["gpu-b2", "gpu-a1", "gpu-b1", "gpu-a2"])
+
+        resp = _on_the_page(client, four, pages, first["token"])
+        assert resp.status_code == 202, resp.get_data(as_text=True)
+        second = resp.get_json()
+        _wait(second["runId"])
+
+        assert second["token"] == first["token"]
+        events = _events(client, four, second["runId"], second["token"])
+        steps = {payload["nodeId"]: payload["status"] for kind, payload in events if kind == "step_finished"}
+        # The page's results stand in for the four GPU steps, which no longer run.
+        assert steps["after-a"] == "ok" and steps["after-b"] == "ok"
+        assert not set(FOUR_GPU) & set(steps)
+        assert steps.get("grid", "ok") == "ok"
+        assert events[-1][1]["status"] == "succeeded"
+        assert viewer._RUNS[second["runId"]]["browserSteps"] == []
+        # Grid ran in the first run only; each scenario's After ran once, in either order.
+        ran = [node for node, _body in sandbox.runs]
+        assert ran[0] == "grid" and sorted(ran[1:]) == ["after-a", "after-b"]
+        # Each read its own scenario's two results, on the circles they are wired to.
+        bodies = dict(sandbox.runs)
+        for after, pair in (("after-a", ("gpu-a1", "gpu-a2")), ("after-b", ("gpu-b1", "gpu-b2"))):
+            body = bodies[after]
+            assert body["dataType"] == "outputs", body
+            assert [ref["path"] for ref in body["file_path"]] == [pages[node_id] for node_id in pair], body
+            assert body["input_slots"] == [0, 1], body
+            entry = KeptStepOutput.query.filter_by(project_id=four, node_id=after).one()
+            assert entry.private_to == kept.digest(first["token"])
+
+    def test_a_next_start_missing_one_leaves_the_steps_below_it_waiting(self, client, four, sandbox):
+        from utk_curio.backend.app.runs import viewer
+
+        first = _month(client, four)
+        # The page could not make scenario B's second step: it names the other three.
+        pages = self._send(client, four, first, ["gpu-a1", "gpu-a2", "gpu-b1"])
+
+        resp = _on_the_page(client, four, pages, first["token"])
+        assert resp.status_code == 202, resp.get_data(as_text=True)
+        second = resp.get_json()
+        _wait(second["runId"])
+
+        events = _events(client, four, second["runId"], second["token"])
+        steps = {payload["nodeId"]: payload["status"] for kind, payload in events if kind == "step_finished"}
+        # Scenario B's After keeps waiting, and the run asks the page for the missing step again.
+        assert steps["gpu-b2"] == "browser" and steps["after-b"] == "waiting"
+        assert events[-1][1]["status"] == "needs_canvas"
+        assert viewer._RUNS[second["runId"]]["browserSteps"] == ["gpu-b2"]
+        # Scenario A's After has both of its own and runs; After B never ran.
+        assert steps["after-a"] == "ok"
+        assert not {"gpu-a1", "gpu-a2", "gpu-b1"} & set(steps)
+        assert [node for node, _body in sandbox.runs] == ["grid", "after-a"]
+
+
+def _tile_on_gpu_nodes():
+    """Grid, then the GPU step the page runs, which a pinned chart reads
+    directly: nothing on the server comes after it."""
+    return [
+        {"id": "param", "type": PARAMETER, "content": "", "dashboardPinned": True,
+         "metadata": {"widgets": [_period()]}},
+        {"id": "grid", "type": CODE, "content": "# node grid\nreturn [!! @period !!]"},
+        {"id": "gpu", "type": AUTARK, "content": COMPUTE},
+        {"id": "chart", "type": CHART, "content": "{}", "dashboardPinned": True},
+    ]
+
+
+TILE_ON_GPU_EDGES = [
+    {"id": "grid-gpu", "source": "grid", "target": "gpu"},
+    {"id": "gpu-chart", "source": "gpu", "target": "chart"},
+]
+
+
+class TestATilesOwnStepLeftToThePage:
+    """A tile reads a step only a browser runs directly: the run leaves the
+    step to the page with nothing on the server after it, so it ends
+    ``succeeded``; the start that names what the page made of it runs
+    nothing more, and the tile shows the page's result."""
+
+    @pytest.fixture()
+    def tile(self, client, user_and_token, sandbox, saved):
+        from utk_curio.backend.app.projects.schemas import OutputRef
+
+        saved[:] = [OutputRef(node_id="gpu", filename="saved-gpu", data_type="dict")]
+        return _create(client, user_and_token[1], nodes=_tile_on_gpu_nodes(), edges=TILE_ON_GPU_EDGES)
+
+    def test_the_run_leaves_the_tiles_step_to_the_page_with_nothing_after_it(self, client, tile, sandbox):
+        from utk_curio.backend.app.runs import viewer
+
+        started = _month(client, tile)
+        events = _events(client, tile, started["runId"], started["token"])
+
+        steps = {payload["nodeId"]: payload["status"] for kind, payload in events if kind == "step_finished"}
+        assert steps == {"grid": "ok", "gpu": "browser"}
+        assert events[-1][0] == "run_finished" and events[-1][1]["status"] == "succeeded"
+        assert viewer._RUNS[started["runId"]]["browserSteps"] == ["gpu"]
+
+    def test_the_start_naming_what_the_page_made_of_it_runs_nothing_more(self, client, tile, sandbox):
+        first = _month(client, tile)
+        page = _keep_step(client, tile, first["runId"], first["token"]).get_json()["output"]["path"]
+
+        resp = _on_the_page(client, tile, {"gpu": page}, first["token"])
+
+        # Planned again, the step would go back to the page, and the page
+        # would send it again, without end.
+        assert resp.status_code == 200, resp.get_data(as_text=True)
+        assert resp.get_json() == {"runId": None, "token": None, "joined": False, "nodeIds": []}
+        assert [node for node, _body in sandbox.runs] == ["grid"]
+
+
+POOL = "curio.builtin/data-pool"
+
+
+def _gpu_on_ground_nodes(*extra):
+    """Grid, which reads Period, and Ground, which reads no control; the GPU
+    step the page runs on both; then After, which the chart reads. No tile
+    reads Ground."""
+    return [
+        {"id": "param", "type": PARAMETER, "content": "", "dashboardPinned": True,
+         "metadata": {"widgets": [_period()]}},
+        {"id": "grid", "type": CODE, "content": "# node grid\nreturn [!! @period !!]"},
+        {"id": "ground", "type": CODE, "content": "# node ground\nreturn 'open ground'"},
+        {"id": "gpu", "type": AUTARK, "content": COMPUTE},
+        {"id": "after", "type": CODE, "content": "# node after\nreturn input_0"},
+        {"id": "chart", "type": CHART, "content": "{}", "dashboardPinned": True},
+        *extra,
+    ]
+
+
+GPU_ON_GROUND_EDGES = [
+    {"id": "grid-gpu", "source": "grid", "target": "gpu", "targetHandle": "in"},
+    {"id": "ground-gpu", "source": "ground", "target": "gpu", "targetHandle": "in_1"},
+    {"id": "gpu-after", "source": "gpu", "target": "after"},
+    {"id": "after-chart", "source": "after", "target": "chart"},
+]
+
+
+class TestASavedInputOfAStepLeftToThePage:
+    """The page plays a step left to it on what it holds, the tiles' saved
+    outputs and its own results, and on what the run sends: the dashboard's
+    routes read only what runs kept. A node feeding that step whose saved
+    output no tile reads, as the Crown Heights shadow dashboard's open-ground
+    grid feeds its GPU steps, runs in the viewer's run, and its output
+    reaches the page as a step's does."""
+
+    @pytest.fixture()
+    def owner(self, user_and_token, sandbox, saved):
+        from utk_curio.backend.app.projects.schemas import OutputRef
+
+        saved[:] = [
+            OutputRef(node_id=node_id, filename=f"saved-{node_id}", data_type="str")
+            for node_id in ("ground", "after")
+        ]
+        return user_and_token[1]
+
+    @staticmethod
+    def _steps(events):
+        return {payload["nodeId"]: payload for kind, payload in events if kind == "step_finished"}
+
+    def test_a_saved_input_no_tile_reads_runs_and_the_page_can_read_it(self, client, owner, sandbox):
+        from utk_curio.backend.app.runs import kept
+        from utk_curio.backend.app.runs.models import KeptStepOutput
+
+        project_id = _create(client, owner, nodes=_gpu_on_ground_nodes(), edges=GPU_ON_GROUND_EDGES)
+        started = _month(client, project_id)
+        events = _events(client, project_id, started["runId"], started["token"])
+
+        steps = self._steps(events)
+        assert {node_id: step["status"] for node_id, step in steps.items()} == {
+            "grid": "ok", "ground": "ok", "gpu": "browser", "after": "waiting",
+        }
+        assert events[-1][1]["status"] == "needs_canvas"
+        assert sorted(node for node, _body in sandbox.runs) == ["grid", "ground"]
+        # Kept for every page: the dashboard's routes read it with no token.
+        path = steps["ground"]["output"]["path"]
+        assert path.startswith("art-ground-"), path
+        assert KeptStepOutput.query.filter_by(project_id=project_id, node_id="ground").one().private_to is None
+        assert kept.readable_output(project_id, path, None).node_id == "ground"
+
+    def test_the_start_that_goes_on_from_the_page_does_not_run_it_again(self, client, owner, sandbox):
+        project_id = _create(client, owner, nodes=_gpu_on_ground_nodes(), edges=GPU_ON_GROUND_EDGES)
+        first = _month(client, project_id)
+        page = _keep_step(client, project_id, first["runId"], first["token"]).get_json()["output"]["path"]
+
+        resp = _on_the_page(client, project_id, {"gpu": page}, first["token"])
+        assert resp.status_code == 202, resp.get_data(as_text=True)
+        second = resp.get_json()
+        _wait(second["runId"])
+
+        steps = self._steps(_events(client, project_id, second["runId"], second["token"]))
+        assert steps["after"]["status"] == "ok" and not {"ground", "gpu"} & set(steps)
+        ran = [node for node, _body in sandbox.runs]
+        assert sorted(ran[:2]) == ["grid", "ground"] and ran[2:] == ["after"]
+
+    def test_a_saved_input_a_tile_reads_is_the_one_the_page_opened_with(self, client, owner, sandbox):
+        nodes = _gpu_on_ground_nodes({"id": "ground-chart", "type": CHART, "content": "{}", "dashboardPinned": True})
+        edges = [*GPU_ON_GROUND_EDGES, {"id": "ground-ground-chart", "source": "ground", "target": "ground-chart"}]
+        project_id = _create(client, owner, nodes=nodes, edges=edges)
+        started = _month(client, project_id)
+
+        steps = self._steps(_events(client, project_id, started["runId"], started["token"]))
+        # The page holds Ground's saved output, which a tile reads: nothing runs it again.
+        assert {node_id: step["status"] for node_id, step in steps.items()} == {
+            "grid": "ok", "gpu": "browser", "after": "waiting",
+        }
+        assert [node for node, _body in sandbox.runs] == ["grid"]
+
+    def test_a_saved_input_that_reaches_the_step_through_a_pool_runs_too(self, client, owner, sandbox, saved):
+        from utk_curio.backend.app.projects.schemas import OutputRef
+
+        # The pool's output is saved too: it forwards Ground's, which the page cannot read either.
+        saved.append(OutputRef(node_id="pool", filename="saved-pool", data_type="str"))
+        nodes = _gpu_on_ground_nodes({"id": "pool", "type": POOL, "content": ""})
+        edges = [edge for edge in GPU_ON_GROUND_EDGES if edge["id"] != "ground-gpu"] + [
+            {"id": "ground-pool", "source": "ground", "target": "pool"},
+            {"id": "pool-gpu", "source": "pool", "target": "gpu", "targetHandle": "in_1"},
+        ]
+        project_id = _create(client, owner, nodes=nodes, edges=edges)
+        started = _month(client, project_id)
+
+        steps = self._steps(_events(client, project_id, started["runId"], started["token"]))
+        assert {node_id: step["status"] for node_id, step in steps.items()} == {
+            "grid": "ok", "ground": "ok", "pool": "forwarded", "gpu": "browser", "after": "waiting",
+        }
+        assert sorted(node for node, _body in sandbox.runs) == ["grid", "ground"]
+
+
 class TestAWrapperAStepReads:
     """A viewer's step runs in a kept session of its own, which reads what any
     kept run made, and the sandbox reads each output a wrapper among its

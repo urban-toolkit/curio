@@ -243,7 +243,10 @@ export function useDashboardRun({ enabled, reactFlow, outcomes, outputsRef, show
     const onEvent = (run: FollowedDashboardRun, event: DashboardRunEvent) => {
         if (followedRef.current !== run) return;
         if (event.kind === "run_finished") {
-            if (event.status === "needs_canvas" && run.browserSteps.length > 0) {
+            // The steps left to the page are its to play, whether nodes below
+            // them wait (`needs_canvas`) or only a tile reads them (`succeeded`).
+            const leftToPage = event.status === "needs_canvas" || event.status === "succeeded";
+            if (leftToPage && run.browserSteps.length > 0) {
                 run.handedToPage = true;
                 void finishInPage(run);
             } else {

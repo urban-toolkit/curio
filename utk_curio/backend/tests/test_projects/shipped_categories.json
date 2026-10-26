@@ -539,6 +539,7 @@
   "dataflows/crown-heights-1550-bedford-shadow": {
     "tags": [
       "Autark",
+      "Vega-Lite",
       "GeoPandas",
       "Pandas",
       "GPU compute"

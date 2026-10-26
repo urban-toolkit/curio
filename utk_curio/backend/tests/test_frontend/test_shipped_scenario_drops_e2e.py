@@ -3,8 +3,8 @@ ran, and runs where it lands.
 
 The shipped dataflows with scenarios are example 06 and the test dataflows
 ``scenarios``, ``chicago-loop-shadow-towers``, ``quad-cities-flood-vulnerability``, ``chicago-rain-wind-routing``,
-``lower-manhattan-park-shade`` and ``scenario-comparison-charts``; there is one
-test per scenario. Each signs in a fresh account, whose first listing seeds its
+``lower-manhattan-park-shade``, ``scenario-comparison-charts`` and
+``crown-heights-1550-bedford-shadow``; there is one test per scenario. Each signs in a fresh account, whose first listing seeds its
 own copies of the shipped dataflows. Those have never run, so the scenario's
 fixed context has no saved output. Then, in an empty dataflow:
 
@@ -88,6 +88,7 @@ SHIPPED = (
     "docs/examples/dataflows/chicago-rain-wind-routing.json",
     "docs/examples/dataflows/lower-manhattan-park-shade.json",
     "docs/examples/dataflows/scenario-comparison-charts.json",
+    "docs/examples/dataflows/crown-heights-1550-bedford-shadow.json",
 )
 
 DRAWER = '[data-curio-scenario-catalog-drawer="true"]'
