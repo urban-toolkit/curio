@@ -94,6 +94,8 @@ def massing() -> list[dict]:
     state plane (feet), Eastern Parkway's to the north, Bedford Avenue's to the
     east and Union Street's to the south."""
     import geopandas as gpd
+    import shapely
+    import shapely.geometry
     from shapely.geometry import LineString, mapping
 
     lot = gpd.read_file(REPO / "datasets" / f"{DATA}@1" / "data" / "site.geojson").to_crs(2263).geometry.iloc[0]
@@ -120,10 +122,20 @@ def massing() -> list[dict]:
         top = top.difference(strip(street[name], feet + (GRADE_SETBACK_FT if name == "eastern_parkway" else 0)))
     parts = gpd.GeoSeries([base.difference(top), top], crs=2263).to_crs(4326)
 
-    def rounded(geometry):
+    def on_grid(geometry):
         shape = mapping(geometry)
         return {"type": shape["type"], "coordinates": json.loads(json.dumps(shape["coordinates"]),
                 parse_float=lambda v: round(float(v), 7))}
+
+    def rounded(geometry):
+        """*geometry* as GeoJSON, its coordinates rounded to 1e-7 degrees. A
+        GEOS build whose last digits leave two vertices a hair apart can cross
+        itself once rounded, which the Map Editor refuses (#1115): GEOS then
+        snaps it to that grid itself, which keeps the outline valid."""
+        out = on_grid(geometry)
+        if not shapely.geometry.shape(out).is_valid:
+            out = on_grid(shapely.set_precision(geometry, 1e-7))
+        return out
 
     return [
         {"op": "add", "id": 900000001, "geometry": rounded(parts.iloc[0]), "crs": "EPSG:4326",
