@@ -31,6 +31,7 @@ from utk_curio.backend.app.agents.infrastructure import agent_jobs
 from utk_curio.backend.app.projects import seed
 from utk_curio.backend.app.projects import services as project_services
 from utk_curio.backend.app.testing import routes as testing_routes
+from utk_curio.backend.app.testing.in_flight import REFUSAL
 from utk_curio.backend.extensions import db as _db
 from utk_curio.backend.tests._unit_fixtures import TestConfig, tmp_curio  # noqa: F401
 from utk_curio.backend.tests.test_datasets.test_save_lock_order import (
@@ -226,6 +227,41 @@ def test_a_request_that_arrives_during_a_reset_is_refused_before_it_starts(
     assert late_took < STEP_SECONDS
     assert entered == ["listing"], f"listings that reached list_projects: {entered}"
     assert listing["value"].status_code == 200, listing["value"].get_data(as_text=True)
+    assert reset["value"].status_code == 200, reset["value"].get_data(as_text=True)
+    assert _users() == 0
+
+
+def test_the_liveness_probe_answers_while_a_reset_waits(app, user_id, signals, monkeypatch):
+    """A backend that is resetting is up: ``/live`` answers while a reset
+    waits, and a listing sent in the same wait is still refused.
+
+    Each e2e shard resets its own database between its tests while the other
+    shards run theirs. The shard isolation e2e asked a sibling's ``/live`` in
+    the middle of such a reset, got 503, and called that shard down (#1171)."""
+    reached, release, _entered = _hold_the_listing(monkeypatch, "listing")
+
+    threads: list = []
+    try:
+        _start(threads, "listing", lambda: _list(app))
+        assert reached.wait(STEP_SECONDS), "the listing never reached list_projects"
+        reset = _start(threads, "reset", lambda: _reset(app, signals))
+        assert signals.settled.wait(STEP_SECONDS), "the reset neither waited nor finished"
+        assert signals.waits.is_set(), f"the reset did not wait for {HELD}"
+        probe = app.test_client().get("/live")
+        late = _list(app)
+    finally:
+        _release_and_join(threads, release)
+
+    assert probe.status_code == 200, (
+        f"/live answered {probe.status_code} while a reset waited for {HELD}: "
+        f"{probe.get_data(as_text=True)[:300]}"
+    )
+    assert late.status_code == 503, (
+        f"a listing sent during the reset answered {late.status_code}: "
+        f"{late.get_data(as_text=True)[:300]}"
+    )
+    # What the shard isolation e2e asks again on.
+    assert late.get_json()["error"] == REFUSAL
     assert reset["value"].status_code == 200, reset["value"].get_data(as_text=True)
     assert _users() == 0
 
