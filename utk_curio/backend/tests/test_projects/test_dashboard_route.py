@@ -183,7 +183,7 @@ def test_only_what_a_tile_reads_is_embedded(client, user_and_token, tmp_curio, m
     assert set(body["outputs"]) == {"py.parquet"}
 
 
-#: A frame's columns in its own order, which its JSON objects lose.
+#: A frame's columns in the order its code wrote them, which sorted JSON loses.
 FRAME_COLUMNS = ["Day", "From", "To", "Time counted", "Added"]
 
 
@@ -207,13 +207,13 @@ def _embedded(client, token, monkeypatch, envelope):
 
 def test_a_tables_columns_reach_the_page_in_the_frames_order(client, user_and_token, tmp_curio, monkeypatch):
     # #1166: a shared dashboard's table showed its columns alphabetically. The
-    # sandbox answers through jsonify, which sorts the keys of a dataframe's
-    # columns, and the page lists a table's columns in the order its JSON
-    # gives them. The envelope's own `columns` list keeps the frame's order.
+    # page lists a table's columns in the order its JSON gives them, and the
+    # route answered through jsonify, which sorts keys; the sandbox's `/get`
+    # sends them in the frame's order (test_get_saved_output_in_place.py).
     _, token = user_and_token
     envelope = {
         "dataType": "dataframe",
-        "data": {name: [name] for name in sorted(FRAME_COLUMNS)},
+        "data": {name: [name] for name in FRAME_COLUMNS},
         "columns": FRAME_COLUMNS,
         "schema": {},
     }
@@ -227,7 +227,7 @@ def test_a_features_properties_reach_the_page_in_the_frames_order(client, user_a
     _, token = user_and_token
     feature = {
         "type": "Feature",
-        "properties": {name: name for name in sorted(FRAME_COLUMNS)},
+        "properties": {name: name for name in FRAME_COLUMNS},
         "geometry": {"type": "Point", "coordinates": [0, 0]},
     }
     envelope = {

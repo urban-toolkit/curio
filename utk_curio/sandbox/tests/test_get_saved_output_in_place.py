@@ -105,6 +105,27 @@ class SavedOutputInPlaceTestCase(unittest.TestCase):
         self.assertEqual(body["dataType"], "geodataframe")
         self.assertEqual(body["data"]["type"], "FeatureCollection")
 
+    def test_a_saved_frames_columns_come_in_the_order_its_code_wrote_them(self):
+        # Another account reads a shared dataflow's saved outputs here, as
+        # JSON, and a table shows its columns in the order of these keys.
+        frame = pd.DataFrame({"Day": ["Winter solstice"], "From": ["8:46 AM"], "To": ["3:01 PM"], "Added": [25.6]})
+        name = parsers.save_dataset_parquet(frame, "dataframe")
+
+        body = self.get(name, self.installed(name)).get_json()
+
+        self.assertEqual(list(body["data"]), ["Day", "From", "To", "Added"])
+
+    def test_a_saved_features_properties_come_in_the_order_its_code_wrote_them(self):
+        frame = gpd.GeoDataFrame(
+            {"Without": [1.0], "With": [2.0], "Added": [1.0]},
+            geometry=[Point(-73.95, 40.67)], crs="EPSG:4326",
+        )
+        name = parsers.save_dataset_parquet(frame, "geodataframe")
+
+        body = self.get(name, self.installed(name)).get_json()
+
+        self.assertEqual(list(body["data"]["features"][0]["properties"]), ["Without", "With", "Added"])
+
     def test_parquet_bytes_under_a_bare_artifact_id_are_detected_by_magic(self):
         # A computed dataset installed from an artifact can carry its id, with
         # no extension to go on.
@@ -132,6 +153,14 @@ class SavedOutputInPlaceTestCase(unittest.TestCase):
         self.assertEqual(body["dataType"], "dict")
         self.assertEqual(body["data"], payload)
 
+    def test_a_dicts_keys_come_in_the_order_its_code_wrote_them(self):
+        art_id = "1700000000006_beef0006"
+        (self.dataset / art_id).write_text(json.dumps({"zone": 1, "area": 2, "mean": 3}), encoding="utf-8")
+
+        body = self.get(art_id, self.dataset / art_id).get_json()
+
+        self.assertEqual(list(body["data"]), ["zone", "area", "mean"])
+
     def test_plain_json_bytes_are_served(self):
         art_id = "1700000000002_beef0002"
         (self.dataset / art_id).write_text(json.dumps([1, 2, 3]), encoding="utf-8")
@@ -153,6 +182,17 @@ class SavedOutputInPlaceTestCase(unittest.TestCase):
         self.assertEqual(body["previewRows"], 2)
         self.assertEqual(body["totalRows"], 10)
         self.assertEqual(len(body["data"]["n"]), 2)
+
+    def test_a_frames_preview_keeps_the_order_its_code_wrote_its_columns_in(self):
+        # A Data Pool shows its rows from this preview of the store's frame.
+        self.init_store()
+        frame = pd.DataFrame({"zone": ["a", "b", "c"], "area": [1.0, 2.0, 3.0], "mean": [4, 5, 6]})
+        art_id = parsers.save_to_duckdb(frame, node_id="t")
+
+        body = self.get(art_id, maxRows=2).get_json()
+
+        self.assertTrue(body["preview"])
+        self.assertEqual(list(body["data"]), ["zone", "area", "mean"])
 
     # -- precedence and refusals -------------------------------------------
 

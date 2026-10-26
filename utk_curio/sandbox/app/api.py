@@ -324,7 +324,13 @@ def get_artifact():
         data['preview'] = True
         data['previewRows'] = min(max_rows, total_rows)
         data['totalRows'] = total_rows
-    return jsonify(data)
+    # Keys unsorted (jsonify sorts them): a table's columns, a feature's
+    # properties and a dict's keys reach a page in the order the code wrote
+    # them, which a table and a Data Pool show.
+    return app.response_class(
+        app.json.dumps(data, sort_keys=False, separators=(",", ":")),
+        status=200, mimetype=app.json.mimetype,
+    )
 
 
 #: Rows per record batch on the Arrow route: what one fetch holds at a time.

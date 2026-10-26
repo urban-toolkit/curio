@@ -424,36 +424,6 @@ def _json_bytes(value: object) -> int:
     return len(json.dumps(value, default=str).encode("utf-8"))
 
 
-def _in_frame_order(envelope: dict) -> dict:
-    """*envelope* with its frame's columns in the frame's own order (#1166).
-
-    The sandbox answers through ``jsonify``, which sorts an object's keys: a
-    dataframe's columns and a feature's properties arrive alphabetical, and a
-    page shows a table's columns in the order its rows list them. The
-    envelope's ``columns`` list keeps the frame's order, so the keys are put
-    back in it; a name the list does not hold keeps its place after them.
-    """
-    order = envelope.get("columns") if isinstance(envelope, dict) else None
-    if not isinstance(order, list):
-        return envelope
-    rank = {name: index for index, name in enumerate(order)}
-
-    def ordered(record: dict) -> dict:
-        return {name: record[name] for name in sorted(record, key=lambda n: rank.get(n, len(rank)))}
-
-    data = envelope.get("data")
-    if envelope.get("dataType") == "dataframe" and isinstance(data, dict):
-        return {**envelope, "data": ordered(data)}
-    if envelope.get("dataType") == "geodataframe" and isinstance(data, dict) and isinstance(data.get("features"), list):
-        features = [
-            {**feature, "properties": ordered(feature["properties"])}
-            if isinstance(feature, dict) and isinstance(feature.get("properties"), dict) else feature
-            for feature in data["features"]
-        ]
-        return {**envelope, "data": {**data, "features": features}}
-    return envelope
-
-
 @dataclass
 class DashboardPayload:
     """What gets inlined into the page."""
@@ -580,7 +550,6 @@ def build_dashboard_payload(
         if envelope is None:
             cannot_read(node_id, filename, "the sandbox answered nothing")
             continue
-        envelope = _in_frame_order(envelope)
         outputs[filename] = envelope
         size = _json_bytes(envelope)
         for part in raster_places(envelope, data_type) if fetch_raster else []:
