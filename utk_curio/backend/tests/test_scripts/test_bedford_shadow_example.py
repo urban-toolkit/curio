@@ -196,11 +196,35 @@ def _steps(day: str):
     return _run("steps", day=day)
 
 
+def _year_pass(year, prepared) -> dict:
+    """The mirror of "Cast sun rays on Block 1259 through the year": each
+    day's minutes in shadow on the block's open ground, on average, added up
+    step by step in 32-bit floats as the shader adds them."""
+    heights, tallest, spots = _grid(prepared)
+    steps = np.asarray(year["steps"].iloc[0], dtype=np.float32)
+    shaded = np.zeros(len(steps), np.float32)
+    for start in range(0, len(steps), 1500):
+        chunk = steps[start:start + 1500]
+        hits = _march(np.tile(spots[:, 0], len(chunk)), np.tile(spots[:, 1], len(chunk)),
+                      *(np.repeat(chunk[:, k], len(spots)) for k in range(3)), heights, tallest)
+        shaded[start:start + len(chunk)] = hits.reshape(len(chunk), len(spots)).sum(axis=1)
+    count = np.float32(max(len(spots), 1))
+    days = []
+    for first, many in zip(year["first_step"], year["step_count"]):
+        dark = np.float32(0)
+        for s in range(first, first + many):
+            dark = np.float32(dark + np.float32(steps[s, 3] * shaded[s]) / count)
+        days.append(float(dark))
+    marked = year.copy()
+    marked["shadow_min"] = days
+    return _layers(input_0=marked, input_1=prepared)
+
+
 @lru_cache(maxsize=None)
 def _days(scenario: str):
     """The scenario's time in shadow on the block, a row per day of the year,
-    from its block step over the year's steps."""
-    return _run(PREFIX[scenario] + "block-days", _block_pass(_year(), _prepared()[scenario]))
+    from its compute step over the year's days."""
+    return _run(PREFIX[scenario] + "block-days", _year_pass(_year(), _prepared()[scenario]))
 
 
 @lru_cache(maxsize=None)
@@ -317,23 +341,29 @@ def test_a_day_counts_from_an_hour_and_a_half_after_sunrise_to_an_hour_and_a_hal
     # The year's node cuts the day as the day's node does, so the day's plot
     # and the year's plot and table read the same day.
     year = _year()
-    on_date = year[year["date"] == NOAA[day][0][:10]]
-    columns = ["east", "north", "cot", "minutes", "time", "window_from", "window_to"]
-    assert on_date[columns].reset_index(drop=True).equals(steps[columns])
+    of_year = year[year["date"] == NOAA[day][0][:10]].iloc[0]
+    first, many = of_year["first_step"], of_year["step_count"]
+    assert np.array_equal(np.asarray(year["steps"].iloc[0][first:first + many]), whole)
+    assert (of_year["window_from"], of_year["window_to"]) == (steps["window_from"].iloc[0], steps["window_to"].iloc[0])
 
 
 def test_the_year_counts_every_day_of_2027_alike():
     year = _year()
-    dates = [(datetime.date(2027, 1, 1) + datetime.timedelta(days=n)).isoformat() for n in range(365)]
-    assert sorted(set(year["date"])) == dates
-    assert (year["cot"] > 0).all(), "the sun is up at every step"
-    for date, steps in year.groupby("date"):
-        lengths = steps["minutes"].to_numpy()
-        assert (lengths > 0).all() and (lengths <= 10).all() and (lengths[:-1] == 10).all(), date
-        assert steps["window_from"].nunique() == 1 and steps["window_to"].nunique() == 1, date
+    assert list(year["date"]) == [(datetime.date(2027, 1, 1) + datetime.timedelta(days=n)).isoformat()
+                                  for n in range(365)]
+    # Every step of the year on the first day's point, each day's after the
+    # one before's.
+    steps = np.asarray(year["steps"].iloc[0])
+    assert year["steps"].iloc[1:].isna().all()
+    assert list(year["first_step"]) == [0, *np.cumsum(year["step_count"])[:-1]]
+    assert year["step_count"].sum() == len(steps) == 20332
     # About 6 hours of 10-minute steps on the shortest days, 12 on the longest.
-    per_day = year.groupby("date").size()
-    assert per_day.min() == 38 and per_day.max() == 73
+    assert year["step_count"].min() == 38 and year["step_count"].max() == 73
+    assert (steps[:, 2] > 0).all(), "the sun is up at every step"
+    for date, first, many, window in zip(year["date"], year["first_step"], year["step_count"], year["window_min"]):
+        lengths = steps[first:first + many, 3]
+        assert (lengths > 0).all() and (lengths <= 10).all() and (lengths[:-1] == 10).all(), date
+        assert lengths.sum() == pytest.approx(window), date
 
 
 def test_the_ground_is_open_and_the_block_spots_lie_on_it():
@@ -429,10 +459,11 @@ def test_the_cpu_march_gives_the_four_days_their_rows(row):
     for scenario in PREFIX:
         # The year's plot says the day's time in shadow as it rounds.
         assert minutes(of_year[scenario]["in_shadow"]) == round(of_year[scenario]["shadow_min"]), scenario
-        # The day's plot draws the steps the year's row adds up.
+        # The day's plot draws the steps the year's row adds up, but for the
+        # last digits: the year's step adds them in 32-bit floats.
         steps = scenarios[scenario]["steps"]
         dark = float((steps["share"] / 100 * steps["minutes"]).sum())
-        assert dark == pytest.approx(of_year[scenario]["shadow_min"], abs=1e-6), scenario
+        assert dark == pytest.approx(of_year[scenario]["shadow_min"], abs=0.01), scenario
     # The map's step and the block's step march alike: the cells of the block
     # gain on average what the block's steps add.
     cells = {scenario: scenarios[scenario]["cells"] for scenario in PREFIX}

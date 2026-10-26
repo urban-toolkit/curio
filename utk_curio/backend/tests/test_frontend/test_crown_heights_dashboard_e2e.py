@@ -12,8 +12,9 @@ scenario in its color on both, and the table of the shade the tower adds a
 day, month by month. Each scenario casts its sun rays in three Autark compute
 steps, which only a browser runs: two read the day, the third the year. On a
 dashboard each visitor's own page runs those a run leaves it, after the
-server has run the Python before them, once for everyone (#1117); a day
-reaches the day's two, never the year's.
+server has run the Python before them, once for everyone (#1117). A day
+reaches the day's two; the year's run again only where the dashboard saved
+nothing for its tiles.
 
 * The owner runs the example, saves it and shares it. The Share menu copies
   the dashboard's link and the dataflow's, and opens the dashboard for the
@@ -31,10 +32,11 @@ reaches the day's two, never the year's.
   a shipped dataflow (``projects/seed.py``) has an id made from the example's
   file name, the same on every deployment. Opened at that link, a dashboard no
   one ran fills its tiles through a run, the year's GPU steps among them, and
-  another day draws the maps and the day's plot again, making again only the
-  day's sun steps among the steps before the GPU steps. While the run goes,
-  the maps, the plots and the table say they are computing. In a browser with
-  no WebGPU, they say which step could not run.
+  another day draws them again, the year's too since that copy saves
+  nothing, making again only the day's sun steps among the steps before the
+  GPU steps. While the run goes, the maps, the plots and the table say they
+  are computing. In a browser with no WebGPU, they say which step could not
+  run.
 * A visitor in a private window goes through the four days. The page is served
   as dev serves it, DuckDB's module compressed on the fly with no length, and
   the browser's cache is the in-memory one a private window has: the three
@@ -82,6 +84,7 @@ from utk_curio.backend.tests._support.crown_heights import (
     WINTER,
     average_and_sd,
 )
+from utk_curio.common import shared_constants
 
 from .test_dashboard_page_e2e import (
     _Visitor,
@@ -186,9 +189,9 @@ LABELS = {
 #: what the server makes before them, so a run of a day leaves all four to the
 #: page at once, and the start going on from them makes the rest.
 PAGE_STEPS = ("base-sun-rays", "base-block-rays", "sun-rays", "block-rays")
-#: Each scenario's compute step over the year's steps, which no day reaches: a
-#: run makes it only when nothing saved or kept stands for it, as when the
-#: shipped copy opens.
+#: Each scenario's compute step over the year's days, which no day reaches: a
+#: run makes it only where the dashboard saved nothing for the tiles it feeds,
+#: as on the shipped copy, on open and on each day.
 YEAR_STEPS = ("base-year-rays", "year-rays")
 #: What the server makes before the page's steps that the day does not reach:
 #: the loads, the Map Editor's edits, the maps' extent, the open-ground grid,
@@ -350,14 +353,24 @@ def _day_reads(outputs: dict[str, str], ids: dict[str, str], row: dict) -> dict[
     return shares
 
 
-def _outputs_of(streams: list) -> dict[str, str]:
-    """The output of every step the runs of *streams* finished, by node id, a
-    later run's over an earlier one's: each a run's stream as a page's
-    response listener caught it, read once it ends."""
+def _ran(starts: list) -> dict[str, str]:
+    """The output of every step the runs of *starts* finished, by node id, a
+    later run's over an earlier one's. Each start is the backend's answer to a
+    page starting a viewer's run, as a response listener caught it; the run's
+    events are read again from the backend, which replays a run whole, with
+    the token the start answered. A start that needed no run has none. Not the
+    page's own stream: the page may end one early, and Playwright then never
+    says it finished."""
+    header = shared_constants.read("dashboardRuns")["runTokenHeader"]
     texts = []
-    for stream in streams:
-        stream.finished()
-        texts.append(stream.text())
+    for start in starts:
+        answer = start.json()
+        if not answer.get("runId"):
+            continue
+        url = f"{start.url.split('?', 1)[0]}/{answer['runId']}/stream"
+        asked = urllib.request.Request(url, headers={header: answer["token"]})
+        with urllib.request.urlopen(asked, timeout=RUN_TIMEOUT_MS / 1000) as stream:
+            texts.append(stream.read().decode("utf-8"))
     outputs: dict[str, str] = {}
     for run in _step_outputs(SimpleNamespace(streams=texts)):
         outputs.update(run)
@@ -910,8 +923,10 @@ def test_the_crown_heights_dashboard_link_dev_shares_works_on_this_deployment_to
         assert len(_runs_started(visitor.asked)) == 4, (
             "a day started other than one run and its sequel" + visitor.story()
         )
-        assert _page_steps(visitor.asked) == sorted(open_steps + page_steps), (
-            "the page did not run each of the day's four GPU steps once for the day" + visitor.story()
+        # This copy saves nothing, so a day's run makes every tile's steps
+        # again, the year's among them.
+        assert _page_steps(visitor.asked) == sorted(open_steps * 2), (
+            "the page did not run each of the six GPU steps once for the day" + visitor.story()
         )
         # Only the sun steps read the day: everything else before the GPU
         # steps is what the run on open kept, handed on again or not asked for.
@@ -923,10 +938,9 @@ def test_the_crown_heights_dashboard_link_dev_shares_works_on_this_deployment_to
             assert changed.get(ids[key]) in (None, opened[0][ids[key]]), (
                 f"{LABELS[key]} ({key}) ran again for the summer solstice, which it does not read" + visitor.story()
             )
-        # The day is the CPU's, and the year no day reaches stays as it was.
+        # The day is the CPU's, and the year, made again, reads as before.
         _day_reads(after_day, ids, SUMMER)
-        yearly = [key for key in (*YEAR_STEPS, *AFTER_YEAR) if ids[key] in changed or ids[key] in after_day]
-        assert not yearly, f"a day ran {yearly!r} again, which read the year" + visitor.story()
+        _year_reads(after_day, ids)
         visitor.waits_for("the year's plot", lambda: _plot_drew(visitor.page, ids["year-plot"], colors))
         assert _months_read(visitor.page, ids["summary-view"]) == months, "the table changed with the day" + visitor.story()
         assert _beyond_viewer_runs(visitor) == [], (
@@ -1074,19 +1088,21 @@ def test_a_visitor_in_a_private_window_goes_through_the_four_days(
         page = ctx.new_page()
         errors: list[str] = []
         page.on("pageerror", lambda error: errors.append(str(error)))
-        streams: list = []
+        starts: list = []
         page.on("response", lambda response: (
-            streams.append(response) if urlsplit(response.url).path.endswith("/stream") else None
+            starts.append(response)
+            if response.request.method == "POST" and urlsplit(response.url).path.endswith("/dashboard/runs")
+            else None
         ))
         try:
             page.goto(f"{proxied}/dashboard/{LINK_ID}", wait_until="domcontentloaded")
             page.get_by_test_id("open-dataflow-link").wait_for(state="visible", timeout=45000)
             require_webgpu(page)
             _shows_winter(page, ids, colors, "the link opened in a private window")
-            on_open = _outputs_of(streams)
+            on_open = _ran(starts)
             _day_reads(on_open, ids, WINTER)
             _year_reads(on_open, ids)
-            read = len(streams)
+            read = len(starts)
             opened = _keep_drawing_maps(page, ids)
             plot = page.evaluate(_PLOT_PIXELS_JS, ids["plot"])
             months = _months_read(page, ids["summary-view"])
@@ -1107,17 +1123,17 @@ def test_a_visitor_in_a_private_window_goes_through_the_four_days(
                             f"{apart:.2%} of its pixels"
                         )
                 _plot_redrew(page, ids["plot"], plot, colors)
-                # What the day's runs made of it; the saved day may need none,
-                # its values kept from the run on open.
-                made = _outputs_of(streams[read:])
-                read = len(streams)
-                if made:
-                    yearly = [key for key in (*YEAR_STEPS, *AFTER_YEAR) if ids[key] in made]
-                    assert not yearly, f"the {day.lower()} ran {yearly!r} again, which read the year"
-                else:
+                # What the day's runs made of it, or, for the day the page
+                # opened on, what the run on open made if the day needed no
+                # run. This copy saves nothing, so a day's run makes the
+                # year's tiles again too: they must read as before.
+                made = _ran(starts[read:])
+                read = len(starts)
+                if not made:
                     assert row is WINTER, f"the {day.lower()} drew with no run"
                     made = on_open
                 _day_reads(made, ids, row)
+                _year_reads(made, ids)
                 _plot_drew(page, ids["year-plot"], colors)
                 assert _months_read(page, ids["summary-view"]) == months, f"the table changed for the {day.lower()}"
                 _keep_drawing_maps(page, ids)

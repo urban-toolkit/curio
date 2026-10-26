@@ -35,8 +35,9 @@ out.
 In each scenario a Python node draws its buildings into a heights grid on the
 ground cells' grid, and three Autark compute steps, WebGPU shaders, march from
 the ground toward the sun across it: one gives each cell's minutes in shadow
-on the day picked, for the scenario's map; the two others the share of Block
-1259's open ground in shadow at each step, of the day picked and of the year.
+on the day picked, for the scenario's map; another the share of Block 1259's
+open ground in shadow at each step of that day; the third, a row per day of
+the year, the minutes the block's open ground spends in shadow, on average.
 Outside the scenarios:
 - a plot draws both scenarios' shares through the day picked, with its window;
 - a plot draws both scenarios' time in shadow on each day of the year;
@@ -297,12 +298,14 @@ from astral.sun import azimuth, elevation
 from shapely.geometry import Point
 from suntime import Sun
 
-# Every day of {YEAR} cut into the steps the GPU steps walk. A day counts from
+# Every day of {YEAR} cut into the steps the GPU step walks. A day counts from
 # 1.5 hours after its sunrise to 1.5 hours before its sunset (suntime), in New
 # York time, in steps of {STEP_MIN} minutes, the last one shorter. At the middle
 # of each step astral gives the sun's azimuth and its elevation, with
-# refraction. One point per step, at the site, with its day (date) and the
-# day's window (window_from, window_to).
+# refraction. One point per day, at the site: its date, its window
+# (window_from, window_to) and the minutes it counts (window_min), and where
+# its steps start among the year's (first_step) and how many there are
+# (step_count).
 YEAR = {YEAR}
 LATITUDE, LONGITUDE = {latitude}, {longitude}  # the site, 1550 Bedford Avenue
 NEW_YORK = ZoneInfo("America/New_York")
@@ -327,7 +330,7 @@ def clock(moment):
 
 sun = Sun(LATITUDE, LONGITUDE)
 observer = Observer(latitude=LATITUDE, longitude=LONGITUDE)
-rows, day = [], datetime.date(YEAR, 1, 1)
+days, steps, day = [], [], datetime.date(YEAR, 1, 1)
 while day.year == YEAR:
     start = sun.get_sunrise_time(day, NEW_YORK) + MARGIN
     end = sun.get_sunset_time(day, NEW_YORK) - MARGIN
@@ -335,29 +338,33 @@ while day.year == YEAR:
     # day: a window that does not run forward is a wrong day, not an empty one.
     if not start < end:
         raise ValueError(f"suntime gave {{day}} no window: {{start}} to {{end}}")
-    moment = start
+    first, moment = len(steps), start
     while moment < end:
         length = min(STEP, end - moment)
         middle = moment + length / 2
         toward = math.radians(azimuth(observer, middle) + turn)
-        rows.append({{
-            "date": day.isoformat(),
-            "east": math.sin(toward),
-            "north": math.cos(toward),
-            "cot": 1 / math.tan(math.radians(elevation(observer, middle))),
-            "minutes": length.total_seconds() / 60,
-            # The New York clock time written as if it were UTC, so a plot
-            # draws the same hours in a browser anywhere.
-            "time": middle.replace(tzinfo=None).isoformat(timespec="seconds") + "Z",
-            "clock": clock(middle),
-            "window_from": clock(start),
-            "window_to": clock(end),
-        }})
+        steps.append([
+            math.sin(toward),  # toward east
+            math.cos(toward),  # toward north
+            1 / math.tan(math.radians(elevation(observer, middle))),
+            length.total_seconds() / 60,
+        ])
         moment += length
+    days.append({{
+        "date": day.isoformat(),
+        "window_from": clock(start),
+        "window_to": clock(end),
+        "window_min": (end - start).total_seconds() / 60,
+        "first_step": first,
+        "step_count": len(steps) - first,
+    }})
     day += datetime.timedelta(days=1)
-steps = gpd.GeoDataFrame(rows, geometry=[Point(LONGITUDE, LATITUDE)] * len(rows), crs=4326)
-steps.metadata = {{"layerType": "points"}}
-return steps
+year = gpd.GeoDataFrame(days, geometry=[Point(LONGITUDE, LATITUDE)] * len(days), crs=4326)
+# Every step of the year on the first point (toward east, toward north, cot of
+# the elevation, minutes), for the GPU step that walks each day's.
+year["steps"] = [steps] + [None] * (len(year) - 1)
+year.metadata = {{"layerType": "points"}}
+return year
 '''
 
 
@@ -480,11 +487,10 @@ return pd.DataFrame({
 
 READ_DAYS = '''import pandas as pd
 
-# Each day of the year on Block 1259's open ground: the time it spends in
-# shadow over the day's window (shadow_min: the share in shadow at each step
-# times the step's minutes, summed), the same as text (in_shadow), and the
-# window, a row per day. The GPU step hands on the year's steps, input_0's
-# first layer, with its result under compute.
+# Each day of the year on Block 1259's open ground: the minutes it spends in
+# shadow over the day's window, on average (shadow_min), the same as text
+# (in_shadow), and the window, a row per day. The GPU step hands on the days,
+# input_0's first layer, with its result under compute.
 def duration(minutes):
     hours, rest = divmod(round(minutes), 60)
     if not hours:
@@ -492,15 +498,16 @@ def duration(minutes):
     return f"{hours} h {rest} min" if rest else f"{hours} h"
 
 
-year = [!! input_0:input_0 !!]
-if "share" not in year.columns:
-    year["share"] = [row.get("share") if isinstance(row, dict) else None for row in year["compute"]]
-year["minutes"] = pd.to_numeric(year["minutes"])
-year["dark"] = pd.to_numeric(year["share"]) / 100 * year["minutes"]
-days = year.groupby("date", sort=True).agg(
-    shadow_min=("dark", "sum"), window_min=("minutes", "sum"),
-    window_from=("window_from", "first"), window_to=("window_to", "first"),
-).reset_index()
+days = [!! input_0:input_0 !!]
+if "shadow_min" not in days.columns:
+    days["shadow_min"] = [row.get("shadow_min") if isinstance(row, dict) else None for row in days["compute"]]
+days = pd.DataFrame({
+    "date": days["date"],
+    "shadow_min": pd.to_numeric(days["shadow_min"]),
+    "window_from": days["window_from"],
+    "window_to": days["window_to"],
+    "window_min": pd.to_numeric(days["window_min"]),
+})
 days["in_shadow"] = [duration(minutes) for minutes in days["shadow_min"]]
 # Each day's noon written as UTC, so a plot draws the same date in a browser
 # anywhere.
@@ -661,9 +668,9 @@ def cells_pass() -> str:
 
 
 def block_pass() -> str:
-    """The Autark compute step for the block: at each step, the share of Block
-    1259's open ground in shadow. input_0 is the steps, the day's or the
-    year's, input_1 the scenario's buildings for the GPU."""
+    """The Autark compute step for the block: at each step of the day, the
+    share of Block 1259's open ground in shadow. input_0 is the day's steps,
+    input_1 the scenario's buildings for the GPU."""
     shader = [
         "// The share of Block 1259's open ground in shadow at this step (in %):",
         "// from each of its spots (spots: x, y), the ray toward the sun, marched",
@@ -686,6 +693,49 @@ def block_pass() -> str:
             "spots": {"fromFeature": {"layer": "[!! input_1 !!]", "path": "properties.spots"}, "cols": 2},
         },
         "outputColumnName": "share",
+        "wglsFunction": shader,
+    }]})
+
+
+def year_pass() -> str:
+    """The Autark compute step for the year: each day's minutes in shadow on
+    Block 1259's open ground, on average. input_0 is the year's days, the
+    first carrying every step, input_1 the scenario's buildings for the GPU.
+    A day is a row, so the step hands on 365 rows, not the year's steps."""
+    shader = [
+        "// The minutes Block 1259's open ground spends in shadow this day, on",
+        "// average: at each of the day's steps (steps: toward east, toward north,",
+        "// cot of the elevation, minutes; the day's run from first_step, step_count",
+        "// of them), the share of its spots (spots: x, y) a roof keeps from the",
+        "// sun, the ray marched across the heights grid as on the map, times the",
+        "// step's minutes.",
+        "var dark: f32 = 0.0;",
+        "for (var i = 0u; i < u32(step_count); i++) {",
+        "    let s = u32(first_step) + i;",
+        "    let sx = steps[s * 4u];",
+        "    let sy = steps[s * 4u + 1u];",
+        "    let cot = steps[s * 4u + 2u];",
+        "    var shaded_spots: f32 = 0.0;",
+        "    for (var p = 0u; p < spots_rows; p++) {",
+        "        let px = spots[p * 2u];",
+        "        let py = spots[p * 2u + 1u];",
+        *("        " + line for line in march("px", "py")),
+        "        if (shaded) { shaded_spots += 1.0; }",
+        "    }",
+        "    dark += steps[s * 4u + 3u] * shaded_spots / f32(max(spots_rows, 1u));",
+        "}",
+        "return dark;",
+    ]
+    return grammar({"compute": [{
+        "dataRef": "[!! input_0 !!]",
+        "attributes": {"first_step": "properties.first_step", "step_count": "properties.step_count"},
+        "uniforms": {"tallest": {"fromFeature": {"layer": "[!! input_1 !!]", "path": "properties.tallest"}}},
+        "uniformMatrices": {
+            "heights": {"fromFeature": {"layer": "[!! input_1 !!]", "path": "properties.heights"}},
+            "spots": {"fromFeature": {"layer": "[!! input_1 !!]", "path": "properties.spots"}, "cols": 2},
+            "steps": {"fromFeature": {"layer": "[!! input_0 !!]", "path": "properties.steps"}, "cols": 4},
+        },
+        "outputColumnName": "shadow_min",
         "wglsFunction": shader,
     }]})
 
@@ -885,9 +935,10 @@ def scenario_nodes(scenario: dict, top: int) -> list[dict]:
         node(p + "block-rays", "curio.builtin/autk-grammar", 3 * c, top + ROW, block_pass(),
              "On the GPU, at every step of the day, find the share of Block 1259's open ground a roof keeps from the "
              "sun.", title="Cast sun rays on Block 1259", copied=copied("block-rays")),
-        node(p + "year-rays", "curio.builtin/autk-grammar", 3 * c, top + 2 * ROW, block_pass(),
-             f"On the GPU, at every step of every day of {YEAR}, find the share of Block 1259's open ground a roof "
-             "keeps from the sun.", title="Cast sun rays on Block 1259 through the year", copied=copied("year-rays")),
+        node(p + "year-rays", "curio.builtin/autk-grammar", 3 * c, top + 2 * ROW, year_pass(),
+             f"On the GPU, for every day of {YEAR}, find the minutes a roof keeps the sun from Block 1259's open "
+             "ground over the day's window, on average.", title="Cast sun rays on Block 1259 through the year",
+             copied=copied("year-rays")),
         node(p + "shadow-cells", "curio.builtin/computation-analysis", 4 * c, top, READ_CELLS,
              "Keep each open-ground cell's minutes in shadow and their share of the day's window.",
              title="Read shadow per cell", copied=copied("shadow-cells")),
