@@ -140,6 +140,57 @@ describe('useVegaBehavior — an empty plot is a failed render', () => {
     expect(last.kind).toBe('empty-render:no-input-rows');
   });
 
+  // A chart set running to draw (UniversalNode, through the behavior's
+  // setOutputCallbackOverride) owes that draw. Its own redraws say nothing
+  // until the draw does: said first, they ended the node's step before the
+  // draw compiled, and GrammarEditor, which compiles only a running node,
+  // then compiled nothing (universalNodeChartRedraw.test.tsx).
+  test('a redraw while the chart owes a draw says nothing, and the draw says what it drew', async () => {
+    mockCounts = { rowsIn: 3, drawn: 3 };
+    const setOutput = jest.fn();
+    const data: any = { nodeId: 'vega-1', input: '', outputCallback: jest.fn() };
+    let hook: any;
+    await act(async () => {
+      hook = renderHook(() =>
+        useVegaBehavior(data, { code: SPEC, setOutput, templateData: { code: SPEC } } as any),
+      ).result;
+    });
+    const said = () => setOutput.mock.calls.map((c) => c[0].code);
+
+    act(() => hook.current.setOutputCallbackOverride({ code: 'exec', content: '' }));
+    act(() => mockOnRedraw!({ rowsIn: 5, drawn: 5 }));
+    expect(said()).toEqual(['exec']);
+
+    await act(async () => {
+      await hook.current.applyGrammar(SPEC);
+    });
+    expect(said()).toEqual(['exec', 'success']);
+
+    // Drawn, the chart's redraws speak again.
+    act(() => mockOnRedraw!({ rowsIn: 0, drawn: 0 }));
+    expect(said()).toEqual(['exec', 'success', 'error']);
+  });
+
+  test('an outcome given another way, as a run skips the chart, ends the draw it owed', async () => {
+    const setOutput = jest.fn();
+    const data: any = { nodeId: 'vega-1', input: '', outputCallback: jest.fn() };
+    const running = { code: SPEC, setOutput, templateData: { code: SPEC }, output: { code: 'exec', content: '' } };
+    let hook: any;
+    await act(async () => {
+      hook = renderHook(({ nodeState }) => useVegaBehavior(data, nodeState as any), {
+        initialProps: { nodeState: running },
+      });
+    });
+    act(() => hook.result.current.setOutputCallbackOverride({ code: 'exec', content: '' }));
+
+    // UniversalNode writes a skip to the node's state directly.
+    await act(async () => {
+      hook.rerender({ nodeState: { ...running, output: { code: 'error', content: 'skipped' } } });
+    });
+    act(() => mockOnRedraw!({ rowsIn: 5, drawn: 5 }));
+    expect(setOutput.mock.calls[setOutput.mock.calls.length - 1][0].code).toBe('success');
+  });
+
   test('a compile failure is still reported as its own error', async () => {
     mockCounts = { rowsIn: 1, drawn: 1 };
     mockCompile.mockRejectedValueOnce(new Error('outputs is not a valid input type'));
