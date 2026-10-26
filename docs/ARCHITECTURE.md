@@ -2715,7 +2715,11 @@ from the computer that `useDataFileImport` first imports
 (`datasetCatalogApi.importDataset`) and adds to the dataflow
 (`addDatasetToDataflow`, the drawer's Add to project), sets the first dataset
 widget the node's code reads (`datasetWidgetReadBy`), and on any other node the
-loader is merged into the code (`mergeDatasetLoaderCode`). The dataset control's
+loader is merged into the code (`mergeDatasetLoaderCode`). While the code is one
+a drop wrote from the template's starter (`isWidgetLoaderCode`), it becomes the
+one for the new dataset (`widgetLoaderCode`): the starter, naming a GeoTIFF's
+`bounds` (`LOADER_OPTIONS`), or for an ONNX model or a NetCDF file the loader
+that keeps the value in the code (`keptInCodeLoader`). The dataset control's
 **Choose file** hands its files to the same path through
 `DatasetWidgetContext`. Setting the widget trades the bindings it made before
 for the new dataset's (`applyDatasetToWidget`: `datasetRefs`, `appliedDatasets`,
@@ -2724,6 +2728,14 @@ save writes at `metadata.datasetWidgets`; `nodeBoundDatasetIds` also reads the
 widgets' values. On the empty canvas, `MainCanvas` makes the Data Loading node a
 drop on a fresh one would make (`buildDatasetWidgetNodeOptions`). The kind is
 read-only on a dashboard tile (`contracts/dashboardRuns.json`).
+
+The id a dataset widget holds is in no literal call until a run writes it in.
+Play, server runs and viewer runs scan the code they send, with its references
+written in. The scans of a saved spec read each node's code through
+`code_references.node_run_code`, which writes in the node's own widgets: Solve's
+dataset paths (`VerifiedRounds._round_dataset_paths`), the collections of
+`resolve_spec_collections` (Solve's validation, an agent's node run) and Solve's
+blocker signature, so a dataset dropped on an upstream loader is progress.
 
 ### Auth Routes
 

@@ -28,6 +28,7 @@ from .utils import (
     CANVAS_DROP_TARGET,
     canvas_nodes,
     connect_nodes,
+    dataset_widget_state,
     drag_builtin_to_canvas,
     node_locator,
     read_node_code,
@@ -37,6 +38,7 @@ from .utils import (
     save_node_closeup,
     set_node_code,
     stub_login_and_enter_workflow,
+    wait_for_node_code,
 )
 
 if TYPE_CHECKING:
@@ -50,6 +52,8 @@ TREES = "tree_id,height\n1,10\n2,12\n3,9\n"
 PARKS = "park_id,area\n1,5.5\n2,7.25\n"
 ROW_MARKER = "ROWS"
 COUNT_ROWS = f'print("{ROW_MARKER}", len(input_0))\nreturn input_0\n'
+#: The Data widget above the code. The node's Widgets tab draws it too.
+DATA_WIDGET = "[data-controls-with-code] [data-dataset-drop]"
 
 # Drops a file named *name* holding *text* on the element *selector* names, at
 # its centre, with dragenter, dragover and drop, as a drop from the desktop
@@ -72,27 +76,10 @@ _DROP_FILE_JS = r"""({ selector, name, text, type }) => {
 }"""
 
 
-# Whether the node *nodeId*'s editor holds *code*: what its Monaco model says,
-# as read_node_code reads it.
-_EDITOR_HOLDS_JS = r"""({ nodeId, code }) => {
-    const nodeEl = document.querySelector(`.react-flow__node[data-id="${nodeId}"]`);
-    const editorEl = nodeEl && nodeEl.querySelector(".monaco-editor");
-    if (!editorEl) return false;
-    const editors = (window.monaco && window.monaco.editor.getEditors()) || [];
-    const match = editors.find((e) => editorEl.contains(e.getDomNode()));
-    return !!match && match.getValue() === code;
-}"""
-
-
 def _opens_with_the_starter(page, node_id: str) -> None:
     """The node's editor holds the starter, which reaches a fresh node from the
     starters the canvas loaded, so it may come a moment after the node."""
-    try:
-        page.wait_for_function(_EDITOR_HOLDS_JS, arg={"nodeId": node_id, "code": STARTER}, timeout=30000)
-    except Exception as exc:
-        raise AssertionError(
-            f"the node's code is not Data Loading's starter: {read_node_code(page, node_id)!r}"
-        ) from exc
+    wait_for_node_code(page, node_id, STARTER)
 
 
 def _enter(page, base: str, server: str, name: str) -> dict:
@@ -112,11 +99,12 @@ def _drop_file(page, selector: str, name: str, text: str, type: str = "text/csv"
 
 
 def _data_widget(page, node_id: str):
-    return node_locator(page, node_id).locator("[data-dataset-drop]")
+    return node_locator(page, node_id).locator(DATA_WIDGET)
 
 
 def _holds(page, node_id: str, title: str) -> None:
-    """The node's Data widget names the dataset it holds."""
+    """The node's Data widget names the dataset it holds, an imported one, and
+    the node is bound to it, as a save keeps it."""
     widget = _data_widget(page, node_id)
     try:
         expect(widget).to_have_attribute("data-dataset-drop", "set", timeout=60000)
@@ -125,6 +113,9 @@ def _holds(page, node_id: str, title: str) -> None:
         raise AssertionError(
             f"the Data widget does not hold {title!r}: it says {widget.text_content()!r}"
         ) from exc
+    state = dataset_widget_state(page, node_id)
+    assert str(state["value"]).startswith("imported."), state
+    assert state["value"] in state["datasetRefs"], state
 
 
 def _rows_reach_the_next_node(page, loader: str, rows: int) -> None:
@@ -167,7 +158,7 @@ def test_a_csv_dropped_on_the_node_is_imported_and_loaded(
     # A drop sets the widget the code reads: the starter has to be there.
     _opens_with_the_starter(page, loader)
 
-    _drop_file(page, f'.react-flow__node[data-id="{loader}"] [data-dataset-drop]', "trees.csv", TREES)
+    _drop_file(page, f'.react-flow__node[data-id="{loader}"] {DATA_WIDGET}', "trees.csv", TREES)
 
     _holds(page, loader, "Trees")
     # The code stays the starter: the widget is what changed.

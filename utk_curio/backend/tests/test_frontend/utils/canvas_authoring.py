@@ -794,6 +794,39 @@ def read_node_code(page, node_id: str, *, timeout: float = 15000) -> str:
     return code
 
 
+def wait_for_node_code(page, node_id: str, code: str, *, timeout: float = 30000) -> None:
+    """Wait until *node_id*'s editor holds *code*. What a template or a drop
+    writes may reach the editor a moment after the node: a fresh node takes
+    its starter from the starters the canvas loaded."""
+    try:
+        page.wait_for_function(_NODE_CODE_IS_JS, arg={"nodeId": node_id, "code": code}, timeout=timeout)
+    except PlaywrightTimeoutError as exc:
+        raise AssertionError(
+            f"node {node_id} holds {read_node_code(page, node_id)!r}, not {code!r}"
+        ) from exc
+
+
+_DATASET_WIDGET_JS = r"""({ nodeId, name }) => {
+    const node = window.__curio_reactFlow.getNodes().find((n) => n.id === nodeId);
+    if (!node) return null;
+    const widget = (node.data.widgets || []).find((w) => w && w.name === name);
+    const refs = node.data.datasetRefs;
+    return {
+        value: widget ? (widget.value ?? widget.default ?? null) : null,
+        datasetRefs: Array.isArray(refs) ? refs.map(String) : [],
+    };
+}"""
+
+
+def dataset_widget_state(page, node_id: str, name: str = "data") -> dict:
+    """What *node_id*'s dataset widget *name* holds (``value``, a Data Catalog
+    id), and the datasets the node is bound to (``datasetRefs``, which a save
+    keeps and the Data Catalog counts)."""
+    state = page.evaluate(_DATASET_WIDGET_JS, {"nodeId": node_id, "name": name})
+    assert state is not None, f"node {node_id} is not on the canvas"
+    return state
+
+
 #: The categories of chips a node's header lists, in its row's order
 #: (``ReferenceStrip`` in WidgetTag.tsx).
 STRIP_CATEGORIES = ("inputs", "scenarios", "widgets", "selections", "shared")

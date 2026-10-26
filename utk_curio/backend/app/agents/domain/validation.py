@@ -119,9 +119,18 @@ def validate_candidate(
     from utk_curio.backend.app.discovery.application.exec_collections import (
         resolve_spec_collections,
     )
+    from utk_curio.backend.app.execution.code_references import node_run_code
 
+    dataflow = (spec_dict or {}).get("dataflow") or {}
+    node = next(
+        (n for n in dataflow.get("nodes") or []
+         if isinstance(n, dict) and n.get("id") == node_id),
+        {},
+    )
+    # The candidate as the run writes it, with the node's widgets.
     collections, media_dir = resolve_spec_collections(
-        spec_dict, exec_user_key or user_key, candidate_content, user=acting_user,
+        spec_dict, exec_user_key or user_key, node_run_code({**node, "content": candidate_content}),
+        user=acting_user,
     )
     report = runner.run_through_node(
         user_key, project_id, spec_dict, node_id,
@@ -137,12 +146,6 @@ def validate_candidate(
     )
     executed = [nid for nid, rec in report["nodes"].items() if rec.get("executed")]
     reused = [nid for nid, rec in report["nodes"].items() if rec.get("status") == "reused"]
-    dataflow = (spec_dict or {}).get("dataflow") or {}
-    node = next(
-        (n for n in dataflow.get("nodes") or []
-         if isinstance(n, dict) and n.get("id") == node_id),
-        {},
-    )
     evidence: dict = {
         "order": report["order"],
         "executedNodes": executed,

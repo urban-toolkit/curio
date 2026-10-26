@@ -199,6 +199,8 @@ from .canvas_authoring import (  # noqa: F401
     drag_to_canvas_with_the_mouse,
     set_node_code,
     read_node_code,
+    wait_for_node_code,
+    dataset_widget_state,
     STRIP_CATEGORIES,
     open_strip_category,
     connect_nodes,

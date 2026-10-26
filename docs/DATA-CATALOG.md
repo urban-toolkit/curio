@@ -137,7 +137,8 @@ Adding a dataset to a dataflow creates nothing on the canvas. You use it by **dr
   return data
   ```
 
-- **Drop onto a Data Loading node**: its **Data** widget takes the dataset, and Curio says *"Applied `<title>` to this node."* So does any node whose code reads a **Dataset** widget ([Widgets](USAGE.md#widgets)). A NetCDF file or an ONNX model loads as a value a node cannot pass on, so on a node whose code is still the starter above, the code becomes `ds = curio_load_data([!! data !!])` (`session` for a model), with no return, for you to finish.
+  For a GeoTIFF, the call names the window it reads: `curio_load_data([!! data !!], bounds=None)`.
+- **Drop onto a Data Loading node**: its **Data** widget takes the dataset, and Curio says *"Applied `<title>` to this node."* So does any node whose code reads a **Dataset** widget ([Widgets](USAGE.md#widgets)). Until you edit the code, it follows the dataset: a GeoTIFF's names its bounds, and a NetCDF file or an ONNX model, which load as a value a node cannot pass on, get `ds = curio_load_data([!! data !!])` (`session` for a model), with no return, for you to finish.
 - **Drop onto another node**: the loader code is merged into that node's code under a `# Curio dataset loader: <title>` marker, and Curio says *"Applied `<title>` to this node."* If the node's code ends in a `return`, the loader goes before it and the return is rewritten.
 
 The merged Python is one line, `curio_load_data("<datasetId>")` (`curio_load_data("<datasetId>", bounds=None)` for a GeoTIFF), which reads the dataset the way its format is read:

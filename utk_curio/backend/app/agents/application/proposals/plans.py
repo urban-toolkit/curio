@@ -905,16 +905,7 @@ def apply_plan_node(
     applied_ids = proposal.setdefault("appliedNodeIds", {})
     session_id = record.get("sessionId")
     if ref in applied_refs:
-        # Idempotent: the node exists; say so honestly, change nothing.
-        return {
-            "attachmentId": attachment_id,
-            "proposalId": proposal_id,
-            "status": "already-applied",
-            "ref": ref,
-            "nodeId": applied_ids.get(ref),
-            "appliedRefs": list(applied_refs),
-            "builderSession": record.get("builderSession"),
-        }
+        return _already_applied(attachment_id, proposal_id, ref, applied_ids.get(ref), applied_refs, record)
     try:
         available = {t["id"] for t in packages_services.available_templates(user_key, project_id)}
     except Exception as exc:
@@ -942,10 +933,8 @@ def apply_plan_node(
     )
     dataflow = spec.setdefault("dataflow", {})
     starters = _content_starters(user_key, project_id, [plan_node])
-    declared = _declared_widgets(user_key, project_id, [plan_node])
-    created = _created_plan_node(
-        proposal, plan_node, ref, dataflow.setdefault("nodes", []), starters.get(ref), declared.get(ref),
-    )
+    declared = _declared_widgets(user_key, project_id, [plan_node]).get(ref)
+    created = _created_plan_node(proposal, plan_node, ref, dataflow.setdefault("nodes", []), starters.get(ref), declared)
     node_id = created["id"]
     dataflow["nodes"].append(created)
     applied_refs.append(ref)
@@ -1028,6 +1017,21 @@ def apply_plan_node(
         # What left the dataflow when this apply completed the plan, for the
         # live canvas.
         **(removals or {}),
+    }
+
+
+def _already_applied(attachment_id: str, proposal_id: str, ref: str, node_id: str | None,
+                     applied_refs: list, record: dict) -> dict:
+    """What applying a ref again answers. Idempotent: the node exists; say so honestly, change
+    nothing."""
+    return {
+        "attachmentId": attachment_id,
+        "proposalId": proposal_id,
+        "status": "already-applied",
+        "ref": ref,
+        "nodeId": node_id,
+        "appliedRefs": list(applied_refs),
+        "builderSession": record.get("builderSession"),
     }
 
 

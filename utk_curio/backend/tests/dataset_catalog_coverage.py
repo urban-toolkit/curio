@@ -130,9 +130,11 @@ def catalog_datasets() -> list[CatalogDataset]:
 class FormatPlan:
     """How to consume - and what to assert about - one dataset format."""
 
-    #: Substring the generated loader node must contain, mirroring
-    #: ``snippetForFormat`` in ``datasetLoaderSnippets.ts``.
-    loader_marker: str
+    #: The code of the Data Loading node a drop of the dataset on the canvas
+    #: makes, whose Data widget holds the dataset: the node's starter, or what
+    #: a drop writes from it for the format (``widgetLoaderCode`` in
+    #: ``datasetLoaderSnippets.ts``).
+    loader_code: str
     #: Downstream Data Transformation source. Prints ``NAME=value;`` markers and
     #: returns a frame the view stage (if any) can chart.
     transform_code: str
@@ -140,11 +142,25 @@ class FormatPlan:
     vega_spec: str | None
     #: Marker name -> expected value, parsed from the committed data file.
     expectations: Callable[[Path], dict[str, str]]
-    #: Code the test appends to the generated loader, for a format whose value
-    #: stays in the loader's own code (``KEPT_IN_CODE`` in
-    #: ``datasetLoaderSnippets.ts``: a node's output cannot carry it). The
-    #: loader uses the value there and returns a table its consumer reads.
+    #: Code the test appends to the loader, for a format whose value stays in
+    #: the loader's own code (``KEPT_IN_CODE`` in ``datasetLoaderSnippets.ts``:
+    #: a node's output cannot carry it). The loader uses the value there and
+    #: returns a table its consumer reads.
     loader_suffix: str | None = None
+
+
+#: Data Loading's starter (``packages/curio.builtin@1/sources/data-loading.py``),
+#: which loads what its Data widget holds and hands it on.
+_STARTER = "data = curio_load_data([!! data !!])\nreturn data\n"
+
+#: A GeoTIFF's loader names its window, ``bounds``, so its node shows it.
+_GEOTIFF_LOADER = "data = curio_load_data([!! data !!], bounds=None)\nreturn data\n"
+
+#: An xarray Dataset cannot leave its node, so the loader keeps it in the code.
+_NETCDF_LOADER = (
+    "ds = curio_load_data([!! data !!])\n"
+    "# ds cannot leave this node: return a table, a raster or a value made from it.\n"
+)
 
 
 _CSV_TRANSFORM = '''df = input_0
@@ -509,13 +525,13 @@ def _bundle_expectations(data_file: Path) -> dict[str, str]:
 
 FORMAT_PLANS: dict[str, FormatPlan] = {
     "csv": FormatPlan(
-        loader_marker="df = curio_load_data(",
+        loader_code=_STARTER,
         transform_code=_CSV_TRANSFORM,
         vega_spec=None,
         expectations=_csv_expectations,
     ),
     "geojson": FormatPlan(
-        loader_marker="gdf = curio_load_data(",
+        loader_code=_STARTER,
         transform_code=_GEOJSON_TRANSFORM,
         vega_spec=_GEOJSON_VEGA_SPEC,
         expectations=_geojson_expectations,
@@ -523,32 +539,34 @@ FORMAT_PLANS: dict[str, FormatPlan] = {
     "parquet": FormatPlan(
         # curio_load_data reads it geo first; CURIO_E2E_GEO in the transform
         # is what proves a geo dataset reloads as a GeoDataFrame.
-        loader_marker="df = curio_load_data(",
+        loader_code=_STARTER,
         transform_code=_PARQUET_TRANSFORM,
         vega_spec=_PARQUET_VEGA_SPEC,
         expectations=_parquet_expectations,
     ),
     "geotiff": FormatPlan(
-        loader_marker="src = curio_load_data(",
+        loader_code=_GEOTIFF_LOADER,
         transform_code=_GEOTIFF_TRANSFORM,
         vega_spec=_GEOTIFF_VEGA_SPEC,
         expectations=_geotiff_expectations,
     ),
     "collection": FormatPlan(
-        loader_marker="collection = curio_load_collection(",
+        # curio_load_data reads a collection as curio_load_collection does,
+        # each file's path added; CURIO_E2E_READABLE proves the paths.
+        loader_code=_STARTER,
         transform_code=_COLLECTION_TRANSFORM,
         vega_spec=None,
         expectations=_collection_expectations,
     ),
     "netcdf": FormatPlan(
-        loader_marker="ds = curio_load_data(",
+        loader_code=_NETCDF_LOADER,
         transform_code=_NETCDF_TRANSFORM,
         vega_spec=None,
         expectations=_netcdf_expectations,
         loader_suffix=_NETCDF_LOADER_SUFFIX,
     ),
     "bundle": FormatPlan(
-        loader_marker="bundle = curio_load_data(",
+        loader_code=_STARTER,
         transform_code=_BUNDLE_TRANSFORM,
         vega_spec=None,
         expectations=_bundle_expectations,

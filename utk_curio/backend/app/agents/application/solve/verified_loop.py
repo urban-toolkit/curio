@@ -51,6 +51,7 @@ from utk_curio.backend.app.agents.application.solve import session as agents_ses
 from utk_curio.backend.app.agents.application.turns import grounding as agents_grounding
 from utk_curio.backend.app.agents.domain import validation as agents_validation
 from utk_curio.backend.app.execution import workflow_spec
+from utk_curio.backend.app.execution.code_references import node_run_code
 from utk_curio.backend.app.packages import service as packages_services
 from utk_curio.backend.app.agents.domain import agent_text
 
@@ -567,12 +568,15 @@ class VerifiedRounds:
         if self.dataset_paths_fn is None:
             return None
         try:
+            # As the run writes each node's code: a dataset widget's id is in
+            # no literal call before (node_run_code).
             slice_codes = [
-                str(n.get("content") or "")
+                node_run_code(n)
                 for n in ((self.spec.get("dataflow") or {}).get("nodes") or [])
                 if isinstance(n, dict)
             ]
-            return self.dataset_paths_fn([self.candidate, *slice_codes]) or None
+            candidate = node_run_code({**self.node, "content": self.candidate})
+            return self.dataset_paths_fn([candidate, *slice_codes]) or None
         except Exception:
             return None
 

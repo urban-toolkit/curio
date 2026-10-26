@@ -116,6 +116,27 @@ def test_the_starter_writes_the_id_the_widget_holds():
     ]
 
 
+def test_a_scan_reads_the_id_the_data_widget_holds():
+    """The id a dataset widget holds is in no literal call until the run
+    writes it in, so the scans for the datasets and collections a run reads
+    look at the code as the run writes it (``node_run_code``)."""
+    from utk_curio.backend.app.datasets.domain.code_refs import dataset_ids_in_code
+    from utk_curio.backend.app.execution.code_references import node_run_code
+
+    source = (BUILTIN / "sources" / "data-loading.py").read_text(encoding="utf-8")
+    node = {"id": "load", "content": source, "metadata": {"widgets": [{**DATA, "value": "data.utk.trees"}]}}
+    assert node_run_code(node) == 'data = curio_load_data("data.utk.trees")\nreturn data\n'
+    assert dataset_ids_in_code(node_run_code(node)) == ["data.utk.trees"]
+    # An empty widget and a reference to no widget stay as written.
+    assert node_run_code({**node, "metadata": {"widgets": [DATA]}}) == source
+    other = {**node, "content": "x = [!! other !!]\nreturn curio_load_data([!! data !!])"}
+    assert node_run_code(other) == 'x = [!! other !!]\nreturn curio_load_data("data.utk.trees")'
+    # Without widgets, the code; without code, nothing.
+    assert node_run_code({"content": source}) == source
+    assert node_run_code({"metadata": {"widgets": [DATA]}}) == ""
+    assert node_run_code("not a node") == ""
+
+
 # ---------------------------------------------------------------------------
 # declared_widgets
 # ---------------------------------------------------------------------------
