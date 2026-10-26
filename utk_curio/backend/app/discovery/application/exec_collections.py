@@ -61,14 +61,17 @@ def resolve_exec_collections(code: str, user_key: str | None, *, user=None) -> t
 def resolve_spec_collections(
     spec_dict: dict | None, user_key: str | None, *extra: str | None, user=None,
 ) -> tuple[dict, str | None]:
-    """:func:`resolve_exec_collections` for every node's code in *spec_dict*
-    plus *extra* (a candidate not yet in the spec).
+    """:func:`resolve_exec_collections` for every node's code in *spec_dict*,
+    as a run writes it (``node_run_code``: a dataset widget may hold a
+    collection's id), plus *extra* (a candidate not yet in the spec).
 
     *user* is the account's ``User`` row. A caller on a thread of its own
     (Solve's validation, a node run's worker) passes the one it captured in
     the request; without it, the request's user is used when there is one.
     """
-    codes = [str(n.get("content") or "") for n in ((spec_dict or {}).get("dataflow") or {}).get("nodes") or [] if isinstance(n, dict)]
+    from utk_curio.backend.app.execution.code_references import node_run_code
+
+    codes = [node_run_code(n) for n in ((spec_dict or {}).get("dataflow") or {}).get("nodes") or [] if isinstance(n, dict)]
     codes.extend(str(c or "") for c in extra)
     if user is None:
         try:

@@ -51,8 +51,9 @@ import {
     applyDatasetToWidget,
     canApplyDatasetToNode,
     hasDatasetDrag,
-    keptInCodeLoader,
+    isWidgetLoaderCode,
     readDatasetDragPayload,
+    widgetLoaderCode,
     type DatasetDragPayload,
 } from "../services/datasetCatalog";
 import { datasetWidgetBindings, datasetWidgetReadBy } from "../utils/widgets/datasetWidgets";
@@ -444,16 +445,19 @@ export const NodeContainer = ({
         const widget = datasetWidgetReadBy(current.widgets, live);
         if (widget) {
             const next = applyDatasetToWidget(current, widget.name, dataset);
-            // What an ONNX model or a NetCDF file loads cannot leave the node:
-            // while its code is still the template's starter, it becomes the
-            // loader that keeps the value in the code.
-            const kept = keptInCodeLoader(dataset, widget.name);
+            // While its code is one a drop wrote from the template's starter,
+            // it becomes the one for this dataset: what an ONNX model or a
+            // NetCDF file loads cannot leave the node, so its loader keeps the
+            // value in the code, and a GeoTIFF's names its bounds.
             const starter = packageStarterCode(tryGetNodeDescriptor(current.nodeType), getStarters);
-            const rewrite = kept !== null && starter !== undefined && (live ?? "").trim() === starter.trim();
-            updateDataNode(nodeId, rewrite ? { ...next, code: kept, defaultCode: kept } : next);
+            const written = starter !== undefined && isWidgetLoaderCode(live, widget.name, starter)
+                ? widgetLoaderCode(dataset, widget.name, starter)
+                : undefined;
+            const rewrite = written !== undefined && written !== live;
+            updateDataNode(nodeId, rewrite ? { ...next, code: written, defaultCode: written } : next);
             if (rewrite) {
-                updateDefaultCode(nodeId, kept);
-                sendCodeToWidgets?.(kept);
+                updateDefaultCode(nodeId, written);
+                sendCodeToWidgets?.(written);
             }
             // As a value set in the Widgets tab: out of date, and run when
             // automatic runs are on.

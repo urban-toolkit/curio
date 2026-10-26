@@ -277,12 +277,17 @@ def test_truncated_builtin_self_heals(tmp_curio, real_fixtures_root):
     builtin = _builtin_dir()
     (builtin / "manifest.json").unlink()
     for stray in builtin.iterdir():
-        if stray.name != "integrity.json":
+        if stray.name == "integrity.json":
+            continue
+        if stray.is_dir():
+            shutil.rmtree(stray)
+        else:
             stray.unlink()
     assert [p.name for p in builtin.iterdir()] == ["integrity.json"]
 
     assert builtin.name in seed_dev_packages(user_key="guest")
     assert (builtin / "manifest.json").is_file()
+    assert (builtin / "sources" / "data-loading.py").is_file()
     assert _template_count() == expected
 
 

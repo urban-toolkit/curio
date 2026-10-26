@@ -535,11 +535,14 @@ def _blocker_signature(spec: dict | None, node_id: str, *, user_key: str | None 
     selection; when none of those moved, a new attempt would ask the same
     question of the same model with the same inputs.
     """
+    from utk_curio.backend.app.execution.code_references import node_run_code
     from utk_curio.backend.app.execution.workflow_spec import parse_workflow_dict
 
     dataflow = (spec or {}).get("dataflow") or {}
+    # As a run writes it: a dataset dropped on an upstream loader's widget
+    # is progress too.
     nodes = {
-        n.get("id"): str(n.get("content") or "")
+        n.get("id"): node_run_code(n)
         for n in dataflow.get("nodes") or []
         if isinstance(n, dict)
     }

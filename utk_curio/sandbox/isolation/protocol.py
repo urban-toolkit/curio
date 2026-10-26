@@ -70,16 +70,21 @@ INPUT_NONE = {"kind": "none"}
 
 # The kinds a node output may carry. Mirrors codec.detect_kind's return values.
 # 'unknown' is deliberately absent: detect_kind returns it for objects Curio
-# cannot store, and save_to_duckdb already raises on them, so a child claiming
-# 'unknown' is either confused or probing.
+# cannot store, and both the child and save_to_duckdb refuse them
+# (codec.cannot_hand_on), so a child claiming 'unknown' is either confused or
+# probing.
 VALID_KINDS = frozenset({
     "null", "bool", "int", "float", "str",
     "list", "dict", "dataframe", "geodataframe", "raster", "outputs",
 })
 
 # Kinds whose payload is a file in the scratch directory rather than an inline
-# JSON value. Everything else must be inline and small.
+# JSON value. Everything else must be inline and small. A list or dict that
+# holds values JSON cannot carry (frames, rasters) names its items instead,
+# each an output of its own: ``{"kind": "list", "items": [descriptor, ...]}``
+# or ``{"kind": "dict", "items": {"key": descriptor, ...}}``.
 FILE_BACKED_KINDS = frozenset({"dataframe", "geodataframe", "raster", "list", "dict"})
+CONTAINER_KINDS = frozenset({"list", "dict"})
 
 # A flat filename: no directory separators, no parent refs, no leading dot.
 # The parent joins this to the scratch dir itself, so anything that could
@@ -198,6 +203,9 @@ def validate_payload(payload, *, _depth=0):
             "items": [validate_payload(item, _depth=_depth + 1) for item in items],
         }
 
+    if kind in CONTAINER_KINDS and "items" in payload:
+        return {"kind": kind, "items": _validate_items(kind, payload, _depth)}
+
     if kind in FILE_BACKED_KINDS:
         name = payload.get("file")
         if name is None:
@@ -212,6 +220,24 @@ def validate_payload(payload, *, _depth=0):
         return result
 
     return {"kind": kind, "value": _check_inline_value(kind, payload.get("value"))}
+
+
+def _validate_items(kind, payload, depth):
+    """The items of a list or dict that names its items rather than a file:
+    a list of descriptors for a list, descriptors under text keys for a dict,
+    at most :data:`MAX_OUTPUTS_ITEMS`, never beside a file."""
+    items = payload["items"]
+    if "file" in payload:
+        raise ProtocolError(f"kind {kind!r} names a file or its items, not both")
+    if not isinstance(items, list if kind == "list" else dict):
+        raise ProtocolError(f"kind {kind!r} must carry its items as a {'list' if kind == 'list' else 'object'}")
+    if len(items) > MAX_OUTPUTS_ITEMS:
+        raise ProtocolError(f"{kind} has {len(items)} items, over the {MAX_OUTPUTS_ITEMS} cap")
+    if kind == "list":
+        return [validate_payload(item, _depth=depth + 1) for item in items]
+    if not all(isinstance(key, str) for key in items):
+        raise ProtocolError("a dict's items must be keyed by strings")
+    return {key: validate_payload(item, _depth=depth + 1) for key, item in items.items()}
 
 
 def _validate_stdout(raw):
@@ -325,8 +351,9 @@ def parse_child_result(raw, *, scratch_dir=None):
 
 def _resolve_files(descriptor, scratch_dir):
     """Attach a checked absolute path to every file-backed descriptor."""
-    if descriptor["kind"] == "outputs":
-        for item in descriptor["items"]:
+    items = descriptor.get("items")
+    if items is not None:
+        for item in items.values() if isinstance(items, dict) else items:
             _resolve_files(item, scratch_dir)
         return
     if "file" in descriptor:

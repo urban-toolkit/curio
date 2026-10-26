@@ -10,8 +10,8 @@ import {
 import {
   buildDatasetLoaderCode,
   datasetIdsInCode,
-  keptInCodeLoader,
   mergeDatasetLoaderCode,
+  widgetLoaderCode,
 } from "./datasetLoaderSnippets";
 import { createLayerGroupDragPayload } from "./datasetPaletteGrouping";
 import { isSavedOutputOfDataflow } from "./producerLinkage";
@@ -102,11 +102,12 @@ export function buildDatasetLoaderNodeOptions(
  * Options for ``createCodeNode`` of a template with a dataset widget (Data
  * Loading's Data, in *widgets*) after a dataset drop on the empty canvas: the
  * node a drop on a fresh node of it makes. Its first dataset widget holds the
- * dataset (``applyDatasetToWidget``), and its code is *starter*, the
- * template's, or for a dataset whose value cannot leave the node, the loader
- * that keeps it in the code. With no *starter* yet, the code is left out, and
- * the node takes its template's starter when it mounts. Null when *widgets*
- * hold no dataset widget.
+ * dataset (``applyDatasetToWidget``), and its code is what a drop writes from
+ * *starter*, the template's (``widgetLoaderCode``): the starter, naming a
+ * GeoTIFF's bounds, or for a dataset whose value cannot leave the node, the
+ * loader that keeps it in the code. With no *starter* yet, the code is left
+ * out, and the node takes its template's starter when it mounts. Null when
+ * *widgets* hold no dataset widget.
  */
 export function buildDatasetWidgetNodeOptions(
   dataset: DatasetLike,
@@ -125,7 +126,7 @@ export function buildDatasetWidgetNodeOptions(
     widget.name,
     dataset,
   );
-  const code = keptInCodeLoader(dataset, widget.name) ?? starter;
+  const code = widgetLoaderCode(dataset, widget.name, starter);
   return {
     position,
     ...(code !== undefined ? { code } : {}),

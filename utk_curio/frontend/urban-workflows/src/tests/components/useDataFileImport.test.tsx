@@ -10,11 +10,6 @@ const mockEnsureProjectId = jest.fn();
 const mockSetDataflowDatasets = jest.fn();
 const mockShowToast = jest.fn();
 let mockHostedGuest = false;
-const mockApi = {
-  importDataset: jest.fn(),
-  getDataset: jest.fn(),
-  installToDataflow: jest.fn(),
-};
 
 jest.mock("../../providers/FlowProvider", () => ({
   useFlowContext: () => ({
@@ -31,10 +26,17 @@ jest.mock("../../components/apiSettings/useHostedGuest", () => ({
 }));
 jest.mock("../../services/datasetCatalog", () => ({
   ...jest.requireActual("../../services/datasetCatalog"),
-  datasetCatalogApi: mockApi,
+  datasetCatalogApi: {
+    importDataset: jest.fn(),
+    getDataset: jest.fn(),
+    installToDataflow: jest.fn(),
+  },
 }));
 
 import { notImportableMessage, useDataFileImport } from "../../components/datasets/useDataFileImport";
+import { datasetCatalogApi } from "../../services/datasetCatalog";
+
+const mockApi = datasetCatalogApi as unknown as Record<"importDataset" | "getDataset" | "installToDataflow", jest.Mock>;
 
 function item(id: string, overrides: Record<string, unknown> = {}) {
   return {

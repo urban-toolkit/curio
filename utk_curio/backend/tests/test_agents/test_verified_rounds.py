@@ -124,6 +124,29 @@ class TestVerifiedRounds:
         assert outcome["attempts"][0]["verdict"] == "pass"
         assert [k for k, _ in events] == ["generation_round", "node_executed", "round_verdict"]
 
+    def test_a_rounds_dataset_formats_reach_the_sandbox_with_its_paths(self, app, tmp_curio):
+        """A round's run sends how each dataset is read beside its path, as
+        Play does: a layer group's entry names the layers that
+        ``curio_load_data("<group id>")`` reads by their own paths."""
+        node = {"id": "n1", "type": CA, "goal": "stats", "content": "return 1"}
+        exec_fn = _Exec()
+        group = {"format": "layer-group", "layers": [["roads", "imported.xroads"]]}
+
+        def paths_and_formats(codes, formats):
+            formats.update({"gpkg.x1a2b3c4": group, "imported.xroads": {"format": "parquet"}})
+            return {"imported.xroads": "/store/roads.parquet"}
+
+        _events, outcome, _inputs = _rounds(
+            app, node, replies=[], exec_fn=exec_fn, start_from_current=True,
+            dataset_paths_fn=paths_and_formats,
+        )
+        assert outcome["verdict"] == "pass", outcome
+        payload = exec_fn.calls[0]
+        assert payload.get("dataset_paths") == {"imported.xroads": "/store/roads.parquet"}
+        assert payload.get("dataset_formats") == {
+            "gpkg.x1a2b3c4": group, "imported.xroads": {"format": "parquet"},
+        }
+
     def test_start_from_current_failing_content_is_corrected_and_the_trail_says_so(self, app, tmp_curio):
         node = {"id": "n1", "type": CA, "goal": "stats", "content": "bad_current()\nreturn 1"}
         exec_fn = _Exec(fail_markers=("bad_current",))
@@ -821,6 +844,48 @@ class TestExecDatasetPaths:
             assert packages_grounding._exec_dataset_paths("proj", "df = pd.DataFrame()") == {}
             assert calls == []
             assert packages_grounding._exec_dataset_paths("proj", 'curio_data_path("ds")') == {}
+
+
+class TestDatasetWidgetsInTheRound:
+    """A Data Loading node reads the dataset its Data widget holds, so the id
+    is in no literal call of its code: a round asks for the paths of the code
+    as the run writes it (``node_run_code``), and a dataset dropped on an
+    upstream loader's widget counts as progress for a node that waits."""
+
+    STARTER = "data = curio_load_data([!! data !!])\nreturn data\n"
+
+    def _loader(self, value: str) -> dict:
+        widget = {"name": "data", "type": "dataset", "label": "Data", "default": "", "value": value}
+        return {"id": "a", "type": DL, "goal": "load", "content": self.STARTER, "metadata": {"widgets": [widget]}}
+
+    def _spec(self, value: str) -> tuple[dict, dict]:
+        node_t = {"id": "t", "type": CA, "goal": "stats", "content": ""}
+        spec = {"dataflow": {"nodes": [self._loader(value), node_t],
+                             "edges": [{"id": "e1", "source": "a", "target": "t"}], "name": "wf", "task": "stats"}}
+        return node_t, spec
+
+    def test_an_ancestor_loading_its_data_widget_gets_its_path(self, app, tmp_curio):
+        node_t, spec = self._spec("imported.xtrees")
+        asked: list[list[str]] = []
+
+        def paths(codes, formats=None):
+            asked.append(list(codes))
+            return {"imported.xtrees": "/store/trees.csv"}
+
+        exec_fn = _Exec()
+        events, outcome, inputs = _rounds(
+            app, node_t, replies=["df = input_0\nreturn df.describe()"], exec_fn=exec_fn, spec=spec,
+            dataset_paths_fn=paths,
+        )
+        assert outcome["verdict"] == "pass", outcome
+        assert any('data = curio_load_data("imported.xtrees")' in code for code in asked[0]), asked
+        [loader_call] = [call for call in exec_fn.calls if "curio_load_data" in call["code"]]
+        assert loader_call["dataset_paths"] == {"imported.xtrees": "/store/trees.csv"}
+
+    def test_a_dataset_dropped_on_an_upstream_loader_is_progress(self):
+        _, empty = self._spec("")
+        _, set_ = self._spec("imported.xtrees")
+        assert packages_session._blocker_signature(empty, "t") != packages_session._blocker_signature(set_, "t")
 
 
 TEMPLATES = [

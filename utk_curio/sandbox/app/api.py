@@ -11,6 +11,7 @@ import os
 
 from utk_curio.sandbox.app.worker import _worker_init, execute_code, execute_js_code, chdir_locked
 from utk_curio.sandbox.util import package_modules as package_modules_util
+from utk_curio.sandbox.util.catalog_helpers import dataset_refs
 from utk_curio.sandbox.util.input_names import parse_slots
 from utk_curio.sandbox.util.secrets import shape_secrets
 from utk_curio.sandbox.util.db import connection_in_use
@@ -865,31 +866,19 @@ def exec():
     if isinstance(save_dataset, str):
         save_dataset = save_dataset.strip().lower() not in ('0', 'false', 'no', 'off')
     # {datasetId: absolutePath} resolved by the backend for the code's
-    # curio_load_data / curio_data_path calls. Defensive re-shaping mirrors the
-    # backend's MAX_EXEC_DATASET_IDS cap.
-    dataset_paths = request.json.get('dataset_paths') or {}
+    # curio_load_data / curio_data_path calls, and {datasetId: {"format",
+    # "layerType"}}: how curio_load_data reads each of those datasets, from
+    # the backend's catalog, with an entry for each layer group naming its
+    # layers. Defensive re-shaping mirrors the backend's MAX_EXEC_DATASET_IDS
+    # cap, past which only a group's layers go (catalog_helpers.dataset_refs).
+    dataset_paths, dataset_formats = dataset_refs(
+        request.json.get('dataset_paths'), request.json.get('dataset_formats'),
+    )
     # Isolated mode gives each user their own work directory, so a node's
     # relative reads and writes land somewhere that persists and belongs to
     # them. The backend is the only component that knows who is logged in; it
     # sends the storage key, not a name, and only the isolated path uses it.
     user_key = request.json.get('user_key') or None
-    if not isinstance(dataset_paths, dict):
-        dataset_paths = {}
-    dataset_paths = {
-        str(key): str(value)
-        for key, value in list(dataset_paths.items())[:32]
-        if value
-    }
-    # {datasetId: {"format", "layerType"}}: how curio_load_data reads each of
-    # those datasets, from the backend's catalog.
-    dataset_formats = request.json.get('dataset_formats') or {}
-    if not isinstance(dataset_formats, dict):
-        dataset_formats = {}
-    dataset_formats = {
-        str(key): {k: str(v) for k, v in value.items() if k in ('format', 'layerType') and v}
-        for key, value in list(dataset_formats.items())[:32]
-        if isinstance(value, dict) and str(key) in dataset_paths
-    }
     # dev/116: {name: value} for the code's curio_secret("<name>") calls,
     # resolved by the backend from the user's connection keys. Injected as a
     # callable in both execution modes; never an env var, never staged, never

@@ -28,6 +28,8 @@ from utk_curio.backend.app.agents.application.solve import budgets as agents_bud
 from utk_curio.backend.app.agents.application.turns import roster as agents_roster
 from utk_curio.backend.app.agents.domain import document_validation
 from utk_curio.backend.app.datasets.domain.code_refs import dataset_ids_in_code
+from utk_curio.backend.app.datasets.domain.constants import is_layer_group_id, layer_group_kind
+from utk_curio.backend.app.datasets.domain.layer_group import group_base_title, ids_read, layer_group_formats
 from utk_curio.backend.app.execution import workflow_spec
 from utk_curio.backend.app.projects import storage as projects_storage
 from utk_curio.backend.app.agents.domain import agent_text
@@ -59,7 +61,7 @@ def _resolve_catalog_execution_paths(project_id: str, dataset_ids: list) -> dict
         return {}
 
 
-def _dataset_path_topup(project_id: str, user_obj, mapping: dict, ids: list) -> dict:
+def _dataset_path_topup(project_id: str, user_obj, mapping: dict, ids: list, formats: dict | None = None) -> dict:
     """Resolve dataset ids the eager mapping does not have, as *user_obj*.
 
     dev/131 F4, closed by dev/132: the sandbox path mapping is resolved when a
@@ -69,7 +71,8 @@ def _dataset_path_topup(project_id: str, user_obj, mapping: dict, ids: list) -> 
     path inside the running job and its node stayed pending until the next
     Solve. The acting user is what the resolution actually needs, and a job can
     hold that from its start; the top-up caches into the same mapping, so one
-    new id costs one lookup per session.
+    new id costs one lookup per session. *formats*, when given, is filled
+    with how each id it resolves is read (``resolve_execution_paths``).
     """
     missing = [i for i in ids if i and i not in mapping]
     if not missing or user_obj is None:
@@ -79,8 +82,9 @@ def _dataset_path_topup(project_id: str, user_obj, mapping: dict, ids: list) -> 
             DatasetCatalogService,
         )
 
+        read_as = {} if formats is None else {"formats": formats}
         resolved = DatasetCatalogService(user_obj).resolve_execution_paths(
-            missing, dataflow_id=project_id
+            missing, dataflow_id=project_id, **read_as
         ) or {}
     except Exception:  # noqa: BLE001 — an unresolvable id fails loudly IN the sandbox
         log.warning("Could not top up catalog paths for project %s", project_id,
@@ -104,29 +108,43 @@ def _dataset_ids_in(codes: list) -> list[str]:
     return out
 
 
-def _session_dataset_paths(project_id: str, user_obj, mapping: dict, codes: list) -> dict:
+def _session_dataset_paths(
+    project_id: str, user_obj, mapping: dict, codes: list, formats: dict | None = None,
+) -> dict:
     """The paths *codes* need — from the eager mapping, topped up for anything
-    that arrived since the session started (dev/131 F4)."""
+    that arrived since the session started (dev/131 F4).
+
+    With *formats*, a layer group the codes name gets its layers' paths, and
+    *formats* its entry and its layers' (``layer_group_formats``), so
+    ``curio_load_data("<group id>")`` runs as on Play. A group's id has no
+    path to keep, so it is resolved again for each run; every other dataset
+    is read by its path alone, as before."""
     ids = _dataset_ids_in(codes)
+    found: dict | None = None if formats is None else {}
     if ids:
-        _dataset_path_topup(project_id, user_obj, mapping, ids)
-    return _filter_dataset_paths(mapping, codes)
+        _dataset_path_topup(project_id, user_obj, mapping, ids, found)
+    if formats is None:
+        return _filter_dataset_paths(mapping, codes)
+    groups = layer_group_formats(ids, found)
+    formats.update(groups)
+    return _filter_dataset_paths(mapping, codes, groups)
 
 
-def _filter_dataset_paths(mapping: dict, codes: list) -> dict:
-    """The subset of a precomputed mapping that *codes* reference — pure, so a
-    worker thread can call it."""
+def _filter_dataset_paths(mapping: dict, codes: list, formats: dict | None = None) -> dict:
+    """The subset of a precomputed mapping that *codes* reference, with the
+    layers of each layer group they name whose entry *formats* holds. Pure,
+    so a worker thread can call it."""
     if not mapping:
         return {}
     out: dict = {}
     for code in codes:
-        for dataset_id in dataset_ids_in_code(code):
+        for dataset_id in ids_read(dataset_ids_in_code(code), formats or {}):
             if dataset_id in mapping:
                 out[dataset_id] = mapping[dataset_id]
     return out
 
 
-def _exec_dataset_paths(project_id: str, *codes: str) -> dict:
+def _exec_dataset_paths(project_id: str, *codes: str, formats: dict | None = None) -> dict:
     """dev/115: the ``{datasetId: absolutePath}`` mapping the sandbox needs for
     every ``curio_data_path("<id>")`` and ``curio_load_collection("<id>")`` call
     in *codes* — resolved the way ``/processPythonCode`` resolves it
@@ -134,7 +152,9 @@ def _exec_dataset_paths(project_id: str, *codes: str) -> dict:
     an unmapped id raises a clear per-id error inside the sandbox, which the
     correction loop then sees. Needs the request context (``g.user``); a Solve
     batch precomputes it in the request thread and hands the mapping to its
-    workers."""
+    workers. *formats*, when given, gets the entries of the layer groups the
+    codes name and of their layers, as :func:`_session_dataset_paths` gives
+    them."""
     ids = _dataset_ids_in(list(codes))[:32]
     if not ids:
         return {}
@@ -146,9 +166,13 @@ def _exec_dataset_paths(project_id: str, *codes: str) -> dict:
         )
 
         user = getattr(g, "user", None) if has_request_context() else None
+        found: dict = {}
+        read_as = {} if formats is None else {"formats": found}
         resolved = DatasetCatalogService(user).resolve_execution_paths(
-            ids, dataflow_id=project_id
+            ids, dataflow_id=project_id, **read_as
         )
+        if formats is not None:
+            formats.update(layer_group_formats(ids, found))
         return dict(resolved or {})
     except Exception:  # resolution must never fail a validation run
         log.warning(
@@ -492,6 +516,7 @@ def _catalog_grounding_refs(project_id: str, items: list | None = None) -> tuple
         items = _catalog_listing_items(project_id)
     by_path: dict = {}
     by_id: dict = {}
+    groups: dict[str, list] = {}
     for item in items or []:
         if not isinstance(item, dict) or not item.get("id"):
             continue
@@ -505,6 +530,19 @@ def _catalog_grounding_refs(project_id: str, items: list | None = None) -> tuple
         by_id[ref.dataset_id] = ref
         if isinstance(path, str) and path.strip():
             by_path[path] = ref
+        group_id = item.get("groupId")
+        if isinstance(group_id, str) and is_layer_group_id(group_id):
+            groups.setdefault(group_id, []).append(item)
+    # A layer group's own id, which ``curio_load_data("<group id>")`` loads as
+    # its layers (a Data widget holds one once an OSM extract or a GeoPackage
+    # is dropped), is known when its layers are.
+    for group_id, members in groups.items():
+        by_id.setdefault(group_id, source_grounding.CatalogRef(
+            dataset_id=group_id,
+            title=group_base_title(members, group_id),
+            format=layer_group_kind(group_id) or "",
+            path="",
+        ))
     return by_path, by_id
 
 

@@ -488,10 +488,26 @@ def serialize_output(value, scratch_dir, *, slot="out"):
 
     if kind in ("list", "dict"):
         name = f"{slot}.json"
-        with open(os.path.join(scratch_dir, name), "w", encoding="utf-8") as handle:
-            json.dump(codec._json_safe_value(value), handle, ensure_ascii=False,
-                      allow_nan=False)
-        return {"kind": kind, "file": name}
+        path = os.path.join(scratch_dir, name)
+        try:
+            with open(path, "w", encoding="utf-8") as handle:
+                json.dump(codec._json_safe_value(value), handle, ensure_ascii=False,
+                          allow_nan=False)
+            return {"kind": kind, "file": name}
+        except TypeError:
+            # It holds values JSON cannot carry, such as a layer group's
+            # frames: each item is an output of its own, as save_to_duckdb
+            # stores it in process (list_of_ids, dict_of_ids).
+            os.remove(path)
+        if kind == "list":
+            return {"kind": kind, "items": [
+                serialize_output(item, scratch_dir, slot=f"{slot}_{index}")
+                for index, item in enumerate(value)
+            ]}
+        return {"kind": kind, "items": {
+            _json_key(key): serialize_output(item, scratch_dir, slot=f"{slot}_{index}")
+            for index, (key, item) in enumerate(value.items())
+        }}
 
     if kind == "geodataframe":
         name = f"{slot}.parquet"
@@ -522,9 +538,17 @@ def serialize_output(value, scratch_dir, *, slot="out"):
             raise ValueError("raster output has no backing file")
         return {"kind": "raster", "file": name}
 
-    raise ValueError(
-        f"node returned {type(value).__name__}, which Curio cannot store"
-    )
+    raise codec.cannot_hand_on(value)
+
+
+def _json_key(key):
+    """*key* as JSON writes a dict's key, which the store's ``dict_of_ids``
+    keeps in process; a key JSON cannot write fails as it would there."""
+    if isinstance(key, str):
+        return key
+    if key is None or isinstance(key, (bool, int, float)):
+        return json.dumps(key)
+    raise TypeError(f"keys must be str, int, float, bool or None, not {type(key).__name__}")
 
 
 # ---------------------------------------------------------------------------

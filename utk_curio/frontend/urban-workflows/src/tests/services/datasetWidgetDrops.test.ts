@@ -7,8 +7,10 @@
 import {
   applyDatasetToWidget,
   buildDatasetWidgetNodeOptions,
+  isWidgetLoaderCode,
   keptInCodeLoader,
   nodeBoundDatasetIds,
+  widgetLoaderCode,
   type DatasetCatalogItem,
   type DatasetDragPayload,
 } from "../../services/datasetCatalog";
@@ -166,8 +168,60 @@ describe("a dataset dropped on the empty canvas", () => {
     expect(options!.code).toBe(keptInCodeLoader(card("imported.xclimate", { format: "netcdf" }), "data"));
   });
 
+  test("a GeoTIFF's node names its bounds, as a dropped raster's loader always did", () => {
+    const options = buildDatasetWidgetNodeOptions(
+      card("imported.xdepth", { format: "geotiff" }),
+      { x: 0, y: 0 },
+      [DATA],
+      STARTER,
+    );
+    expect(options!.code).toBe("data = curio_load_data([!! data !!], bounds=None)\nreturn data\n");
+  });
+
   test("a template with no dataset widget is left to the loader code a drop writes", () => {
     expect(buildDatasetWidgetNodeOptions(card("x.y"), { x: 0, y: 0 }, [], STARTER)).toBeNull();
+  });
+});
+
+describe("the code a drop writes from the starter", () => {
+  const NETCDF = keptInCodeLoader(card("a", { format: "netcdf" }), "data")!;
+  const ONNX = keptInCodeLoader(card("a", { format: "onnx" }), "data")!;
+  const GEOTIFF = "data = curio_load_data([!! data !!], bounds=None)\nreturn data\n";
+
+  test("is the starter for a value the node hands on, naming a GeoTIFF's bounds", () => {
+    expect(widgetLoaderCode(card("a"), "data", STARTER)).toBe(STARTER);
+    expect(widgetLoaderCode(card("a", { format: "parquet" }), "data", STARTER)).toBe(STARTER);
+    expect(widgetLoaderCode(card("a", { format: "geotiff" }), "data", STARTER)).toBe(GEOTIFF);
+    expect(widgetLoaderCode(card("a", { format: "netcdf" }), "data", STARTER)).toBe(NETCDF);
+  });
+
+  test("names a GeoTIFF's bounds only where the starter reads the widget", () => {
+    const custom = "import rasterio\nreturn rasterio.open([!! data !!])\n";
+    expect(widgetLoaderCode(card("a", { format: "geotiff" }), "data", custom)).toBe(custom);
+  });
+
+  test("before the starters have come, is the loader that keeps a value in the code, or nothing", () => {
+    expect(widgetLoaderCode(card("a"), "data", undefined)).toBeUndefined();
+    expect(widgetLoaderCode(card("a", { format: "geotiff" }), "data", undefined)).toBeUndefined();
+    expect(widgetLoaderCode(card("a", { format: "onnx" }), "data", undefined)).toBe(ONNX);
+  });
+
+  test("is followed by the next drop while no one has edited it", () => {
+    for (const written of [STARTER, `${STARTER}\n`, NETCDF, ONNX, GEOTIFF]) {
+      expect(isWidgetLoaderCode(written, "data", STARTER)).toBe(true);
+    }
+    // A CSV after a NetCDF file returns its table again, and a NetCDF file
+    // after a GeoTIFF keeps its Dataset in the code.
+    expect(widgetLoaderCode(card("b"), "data", STARTER)).toBe(STARTER);
+    expect(widgetLoaderCode(card("b", { format: "netcdf" }), "data", STARTER)).toBe(NETCDF);
+  });
+
+  test("is left alone once someone has edited it", () => {
+    expect(isWidgetLoaderCode(`${STARTER}print(len(data))\n`, "data", STARTER)).toBe(false);
+    expect(isWidgetLoaderCode(NETCDF.replace("# ds", "print(ds)\n# ds"), "data", STARTER)).toBe(false);
+    expect(isWidgetLoaderCode(STARTER.replace("data !!", "other !!"), "data", STARTER)).toBe(false);
+    expect(isWidgetLoaderCode(undefined, "data", STARTER)).toBe(false);
+    expect(isWidgetLoaderCode("", "data", STARTER)).toBe(false);
   });
 });
 

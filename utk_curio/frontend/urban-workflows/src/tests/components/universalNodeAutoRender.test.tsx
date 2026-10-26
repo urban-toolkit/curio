@@ -363,6 +363,32 @@ describe.each([
     expect(mockSendCode).not.toHaveBeenCalled();
   });
 
+  test("an input that lands while it draws is drawn once that draw ends", async () => {
+    // New rows can land while the node still draws the last ones: a dashboard
+    // map drawing one day when the next day's rows arrive. They wait for that
+    // draw, as a widget's new value does (below), and are drawn once it ends.
+    // Before, nothing drew them, and the node kept the rows it had drawn.
+    const utils = await open(node({ input: INPUT_A }));
+    expect(mockSendCode).toHaveBeenCalledTimes(1);
+
+    await next(utils, { ...node({ input: INPUT_B }), output: { code: "exec" } });
+    expect(mockSendCode).toHaveBeenCalledTimes(1);
+
+    await next(utils, { ...node({ input: INPUT_B }), output: { code: "success", content: "" } });
+
+    expect(mockSendCode).toHaveBeenCalledTimes(2);
+    expect(mockSendCode).toHaveBeenLastCalledWith(spec);
+  });
+
+  test("but a draw that ends on the input it drew is not drawn again", async () => {
+    const utils = await open(node({ input: INPUT_A }));
+    await next(utils, { ...node({ input: INPUT_A }), output: { code: "exec" } });
+
+    await next(utils, { ...node({ input: INPUT_A }), output: { code: "success", content: "" } });
+
+    expect(mockSendCode).toHaveBeenCalledTimes(1);
+  });
+
   test("once the run ends, a restored input still draws", async () => {
     mockIsRunActive = true;
     const utils = await open(node({ input: INPUT_A }));
@@ -552,6 +578,26 @@ describe("only an Autark node", () => {
     await act(async () => { answer({ supported: true }); });
 
     expect(mockSetOutput).toHaveBeenCalledTimes(1);
+    expect(mockSendCode).toHaveBeenCalledTimes(1);
+    expect(mockSendCode).toHaveBeenCalledWith(MAP_SPEC);
+  });
+
+  test("a draw WebGPU's answer turns back leaves its input to be drawn once the run ends", async () => {
+    // The probe can answer after a run started, and the draw it was asked for
+    // then does not go. It used to count its input as drawn all the same, so
+    // the end of the run drew nothing, and the map kept what it showed.
+    let answer!: (support: { supported: boolean }) => void;
+    mockWebGpuAnswer = new Promise((resolve) => { answer = resolve; });
+    const utils = await mount(data(AUTARK, { code: MAP_SPEC, input: INPUT_A }));
+    mockServerRunActive = true;
+    await rerenderWith(utils, data(AUTARK, { code: MAP_SPEC, input: INPUT_A }));
+    await act(async () => { answer({ supported: true }); });
+    expect(mockSendCode).not.toHaveBeenCalled();
+
+    mockServerRunActive = false;
+    await rerenderWith(utils, data(AUTARK, { code: MAP_SPEC, input: INPUT_A }));
+    await settle();
+
     expect(mockSendCode).toHaveBeenCalledTimes(1);
     expect(mockSendCode).toHaveBeenCalledWith(MAP_SPEC);
   });

@@ -100,6 +100,7 @@ def validate_candidate(
     progress=None,
     available_templates: dict | None = None,
     dataset_paths: dict | None = None,
+    dataset_formats: dict | None = None,
     exec_user_key: str | None = None,
     secrets: dict | None = None,
     prior_outputs: dict | None = None,
@@ -109,9 +110,10 @@ def validate_candidate(
 ) -> dict:
     """Run the dataflow through *node_id* with the candidate overlaid and
     return ``{"verdict", "evidence"}`` (see module docstring). dev/115:
-    ``dataset_paths`` / ``exec_user_key`` ride through to the runner so the
-    Data Catalog's ``curio_data_path("<id>")`` loaders resolve exactly as
-    on Play. ``acting_user`` (#485) is the account's ``User`` row, captured in
+    ``dataset_paths`` / ``dataset_formats`` / ``exec_user_key`` ride through
+    to the runner so the Data Catalog's ``curio_data_path("<id>")`` loaders
+    resolve exactly as on Play. ``acting_user`` (#485) is the account's
+    ``User`` row, captured in
     the request: validation runs on a thread of its own, where the account's
     collections and added models cannot be found without it. With
     *keep_stdout*, a pass also holds ``stdout``, the target's whole output,
@@ -119,15 +121,25 @@ def validate_candidate(
     from utk_curio.backend.app.discovery.application.exec_collections import (
         resolve_spec_collections,
     )
+    from utk_curio.backend.app.execution.code_references import node_run_code
 
+    dataflow = (spec_dict or {}).get("dataflow") or {}
+    node = next(
+        (n for n in dataflow.get("nodes") or []
+         if isinstance(n, dict) and n.get("id") == node_id),
+        {},
+    )
+    # The candidate as the run writes it, with the node's widgets.
     collections, media_dir = resolve_spec_collections(
-        spec_dict, exec_user_key or user_key, candidate_content, user=acting_user,
+        spec_dict, exec_user_key or user_key, node_run_code({**node, "content": candidate_content}),
+        user=acting_user,
     )
     report = runner.run_through_node(
         user_key, project_id, spec_dict, node_id,
         candidate_content=candidate_content,
         session_id=session_id, exec_fn=exec_fn, progress=progress,
-        dataset_paths=dataset_paths, exec_user_key=exec_user_key, secrets=secrets,
+        dataset_paths=dataset_paths, dataset_formats=dataset_formats,
+        exec_user_key=exec_user_key, secrets=secrets,
         collections=collections, media_dir=media_dir,
         prior_outputs=prior_outputs,
         strict_upstream=True,  # dev/118: an empty upstream is a blocker, never None downstream
@@ -137,12 +149,6 @@ def validate_candidate(
     )
     executed = [nid for nid, rec in report["nodes"].items() if rec.get("executed")]
     reused = [nid for nid, rec in report["nodes"].items() if rec.get("status") == "reused"]
-    dataflow = (spec_dict or {}).get("dataflow") or {}
-    node = next(
-        (n for n in dataflow.get("nodes") or []
-         if isinstance(n, dict) and n.get("id") == node_id),
-        {},
-    )
     evidence: dict = {
         "order": report["order"],
         "executedNodes": executed,

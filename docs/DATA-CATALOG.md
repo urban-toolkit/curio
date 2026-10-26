@@ -137,7 +137,8 @@ Adding a dataset to a dataflow creates nothing on the canvas. You use it by **dr
   return data
   ```
 
-- **Drop onto a Data Loading node**: its **Data** widget takes the dataset, and Curio says *"Applied `<title>` to this node."* So does any node whose code reads a **Dataset** widget ([Widgets](USAGE.md#widgets)). A NetCDF file or an ONNX model loads as a value a node cannot pass on, so on a node whose code is still the starter above, the code becomes `ds = curio_load_data([!! data !!])` (`session` for a model), with no return, for you to finish.
+  For a GeoTIFF, the call names the window it reads: `curio_load_data([!! data !!], bounds=None)`.
+- **Drop onto a Data Loading node**: its **Data** widget takes the dataset, and Curio says *"Applied `<title>` to this node."* So does any node whose code reads a **Dataset** widget ([Widgets](USAGE.md#widgets)). Until you edit the code, it follows the dataset: a GeoTIFF's names its bounds, and a NetCDF file or an ONNX model, which load as a value a node cannot pass on, get `ds = curio_load_data([!! data !!])` (`session` for a model), with no return, for you to finish.
 - **Drop onto another node**: the loader code is merged into that node's code under a `# Curio dataset loader: <title>` marker, and Curio says *"Applied `<title>` to this node."* If the node's code ends in a `return`, the loader goes before it and the return is rewritten.
 
 The merged Python is one line, `curio_load_data("<datasetId>")` (`curio_load_data("<datasetId>", bounds=None)` for a GeoTIFF), which reads the dataset the way its format is read:
@@ -152,8 +153,8 @@ The merged Python is one line, `curio_load_data("<datasetId>")` (`curio_load_dat
 | `onnx` | An onnxruntime `InferenceSession` on the CPU → `session`. onnxruntime comes with a model that runs on ONNX, such as DDRNet23-Slim, when it is added. |
 | `netcdf` | An xarray `Dataset`, read with netCDF4 → `ds` |
 | `bundle` | Every part, in the tuple, list or dict the producing node returned → `bundle`. `part="<file>"` reads one part. |
-| OSM, GeoPackage or GTFS group | A `layers` dict, one `curio_load_data` per layer |
-| NetCDF group | A `layers` dict, one `curio_load_data` per variable |
+| OSM, GeoPackage or GTFS group | A `layers` dict, one `curio_load_data` per layer. `curio_load_data("<groupId>")` loads the same dict. |
+| NetCDF group | A `layers` dict, one `curio_load_data` per variable. `curio_load_data("<groupId>")` loads the same dict. |
 | `collection` | `curio_load_collection("<datasetId>")`: the collection's index, one row per file with a readable `path` → `collection` |
 
 A node's output cannot be a model session or an xarray Dataset, so the loader for an `onnx` or `netcdf` dataset, or a NetCDF group, returns nothing: the node's own code uses `session` or `ds` and returns a table, a raster or a value.

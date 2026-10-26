@@ -598,6 +598,24 @@ def _persist(con, descriptor, *, node_id, session_id, exec_uid=None, art_id=None
                     value_json=json.dumps(child_ids))
         return art_id
 
+    if kind in ("list", "dict") and "items" in descriptor:
+        # A list or dict holding frames or rasters: each item an artifact of
+        # its own, as save_to_duckdb stores one in process.
+        items = descriptor["items"]
+        if kind == "list":
+            stored = [
+                _persist(con, item, node_id=node_id, session_id=session_id, exec_uid=exec_uid)
+                for item in items
+            ]
+        else:
+            stored = {
+                key: _persist(con, item, node_id=node_id, session_id=session_id, exec_uid=exec_uid)
+                for key, item in items.items()
+            }
+        _insert_row(con, art_id, f"{kind}_of_ids", node_id=node_id, session_id=session_id,
+                    value_json=json.dumps(stored))
+        return art_id
+
     if kind == "null":
         _insert_row(con, art_id, "null", node_id=node_id, session_id=session_id)
         return art_id

@@ -2,17 +2,19 @@
 
 ``docs/examples/dataflows/crown-heights-1550-bedford-shadow.json`` is written
 by ``scripts/build_example_bedford_shadow.py``. It has two scenarios, without
-and with the building proposed at 1550 Bedford Avenue, on one of 2027's
-equinoxes and solstices. A day counts from 1.5 hours after its sunrise to 1.5
-hours before its sunset (suntime), in New York time, in 10-minute steps with
-astral's sun at the middle of each, and only open ground counts.
+and with the building proposed at 1550 Bedford Avenue. Its maps show one of
+2027's equinoxes and solstices, and its year's plot and table every day of
+2027. A day counts from 1.5 hours after its sunrise to 1.5 hours before its
+sunset (suntime), in New York time, in 10-minute steps with astral's sun at
+the middle of each, and only open ground counts.
 
 Here the example's own Python nodes run on the shipped data as the sandbox
 runs them (``call_as_node``, Curio's reference resolution, the Map Editor's
 ``curio_edit_features``), and its two GPU steps run as a NumPy mirror of their
 WGSL march, in 32-bit floats. The mirror's minutes on Block 1259 for each of
-the four days are the ones ``_support/crown_heights.py`` holds, which the
-dashboard e2e checks the GPU against.
+the four days, and its table of the months, are the ones
+``_support/crown_heights.py`` holds, which the dashboard e2e checks the GPU
+against.
 
 The example's node code imports suntime and astral when it runs, so this
 module imports neither.
@@ -29,9 +31,10 @@ from functools import lru_cache
 from pathlib import Path
 
 import numpy as np
+import pandas as pd
 import pytest
 
-from utk_curio.backend.tests._support.crown_heights import DURATIONS, FOUR_DAYS, minutes
+from utk_curio.backend.tests._support.crown_heights import DURATIONS, FOUR_DAYS, MONTH_HEADER, MONTHS, minutes
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
 SCRIPT = REPO_ROOT / "scripts" / "build_example_bedford_shadow.py"
@@ -103,19 +106,25 @@ def _layers(**frames) -> dict:
 
 def _march(px, py, sx, sy, cot, heights, tallest):
     """The WGSL march (``march`` in the builder), in 32-bit floats: whether
-    the ray from each point toward the sun passes under a roof."""
+    the ray from each point toward its sun passes under a roof. *sx*, *sy*
+    and *cot* are one sun for every point, or one sun per point."""
     rows, cols = heights.shape
+    sx, sy, cot = (np.broadcast_to(np.asarray(value, np.float32), px.shape) for value in (sx, sy, cot))
+    limit = tallest * cot
     shaded = np.zeros(len(px), bool)
+    walking = np.arange(len(px))
     half = CELL / np.float32(2)
     t = half
-    while t <= tallest * cot:
-        col = np.floor((px + sx * t) / CELL).astype(np.int64)
-        row = np.floor((py + sy * t) / CELL).astype(np.int64)
+    while walking.size:
+        walking = walking[t <= limit[walking]]
+        col = np.floor((px[walking] + sx[walking] * t) / CELL).astype(np.int64)
+        row = np.floor((py[walking] + sy[walking] * t) / CELL).astype(np.int64)
         # The shader stops a ray where it leaves the grid; it never comes back.
-        live = (col >= 0) & (row >= 0) & (col < cols) & (row < rows) & ~shaded
-        hit = np.zeros(len(px), bool)
-        hit[live] = heights[row[live], col[live]] * cot > t
-        shaded |= hit
+        inside = (col >= 0) & (row >= 0) & (col < cols) & (row < rows)
+        walking, col, row = walking[inside], col[inside], row[inside]
+        hit = heights[row, col] * cot[walking] > t
+        shaded[walking[hit]] = True
+        walking = walking[~hit]
         t = np.float32(t + half)
     return shaded
 
@@ -142,13 +151,16 @@ def _cells_pass(ground, prepared, steps) -> dict:
 
 def _block_pass(steps, prepared) -> dict:
     """The mirror of "Cast sun rays on Block 1259": the share of its open
-    ground in shadow at each step."""
+    ground in shadow at each step, many steps at once."""
     heights, tallest, spots = _grid(prepared)
+    suns = steps[["east", "north", "cot"]].to_numpy(np.float32)
     shares = []
-    for east, north, cot in steps[["east", "north", "cot"]].to_numpy():
-        shaded = _march(spots[:, 0], spots[:, 1], np.float32(east), np.float32(north), np.float32(cot),
-                        heights, tallest)
-        shares.append(float(np.float32(100) * np.float32(shaded.sum()) / np.float32(max(len(spots), 1))))
+    for start in range(0, len(suns), 1500):
+        chunk = suns[start:start + 1500]
+        shaded = _march(np.tile(spots[:, 0], len(chunk)), np.tile(spots[:, 1], len(chunk)),
+                        *(np.repeat(chunk[:, k], len(spots)) for k in range(3)), heights, tallest)
+        dark = shaded.reshape(len(chunk), len(spots)).sum(axis=1).astype(np.float32)
+        shares += (np.float32(100) * dark / np.float32(max(len(spots), 1))).astype(float).tolist()
     marked = steps.copy()
     marked["share"] = shares
     return _layers(input_0=marked, input_1=prepared)
@@ -170,9 +182,49 @@ def _prepared():
     return {"without": _run("base-tower", buildings, ground), "with": _run("tower", edited, ground)}
 
 
+#: Each scenario's prefix of its nodes' keys.
+PREFIX = {"without": "base-", "with": ""}
+
+
+@lru_cache(maxsize=None)
+def _year():
+    return _run("year-steps")
+
+
 @lru_cache(maxsize=None)
 def _steps(day: str):
     return _run("steps", day=day)
+
+
+def _year_pass(year, prepared) -> dict:
+    """The mirror of "Cast sun rays on Block 1259 through the year": each
+    day's minutes in shadow on the block's open ground, on average, added up
+    step by step in 32-bit floats as the shader adds them."""
+    heights, tallest, spots = _grid(prepared)
+    steps = np.asarray(year["steps"].iloc[0], dtype=np.float32)
+    shaded = np.zeros(len(steps), np.float32)
+    for start in range(0, len(steps), 1500):
+        chunk = steps[start:start + 1500]
+        hits = _march(np.tile(spots[:, 0], len(chunk)), np.tile(spots[:, 1], len(chunk)),
+                      *(np.repeat(chunk[:, k], len(spots)) for k in range(3)), heights, tallest)
+        shaded[start:start + len(chunk)] = hits.reshape(len(chunk), len(spots)).sum(axis=1)
+    count = np.float32(max(len(spots), 1))
+    days = []
+    for first, many in zip(year["first_step"], year["step_count"]):
+        dark = np.float32(0)
+        for s in range(first, first + many):
+            dark = np.float32(dark + np.float32(steps[s, 3] * shaded[s]) / count)
+        days.append(float(dark))
+    marked = year.copy()
+    marked["shadow_min"] = days
+    return _layers(input_0=marked, input_1=prepared)
+
+
+@lru_cache(maxsize=None)
+def _days(scenario: str):
+    """The scenario's time in shadow on the block, a row per day of the year,
+    from its compute step over the year's days."""
+    return _run(PREFIX[scenario] + "block-days", _year_pass(_year(), _prepared()[scenario]))
 
 
 @lru_cache(maxsize=None)
@@ -181,7 +233,7 @@ def _day(day: str):
     *_rest, ground = _inputs()
     steps = _steps(day)
     out = {}
-    for scenario, prefix in (("without", "base-"), ("with", "")):
+    for scenario, prefix in PREFIX.items():
         prepared = _prepared()[scenario]
         out[scenario] = {
             "steps": _run(prefix + "block-steps", _block_pass(steps, prepared)),
@@ -286,6 +338,32 @@ def test_a_day_counts_from_an_hour_and_a_half_after_sunrise_to_an_hour_and_a_hal
     whole = steps["steps"].iloc[0]
     assert np.allclose(whole, steps[["east", "north", "cot", "minutes"]].to_numpy())
     assert steps["steps"].iloc[1:].isna().all()
+    # The year's node cuts the day as the day's node does, so the day's plot
+    # and the year's plot and table read the same day.
+    year = _year()
+    of_year = year[year["date"] == NOAA[day][0][:10]].iloc[0]
+    first, many = of_year["first_step"], of_year["step_count"]
+    assert np.array_equal(np.asarray(year["steps"].iloc[0][first:first + many]), whole)
+    assert (of_year["window_from"], of_year["window_to"]) == (steps["window_from"].iloc[0], steps["window_to"].iloc[0])
+
+
+def test_the_year_counts_every_day_of_2027_alike():
+    year = _year()
+    assert list(year["date"]) == [(datetime.date(2027, 1, 1) + datetime.timedelta(days=n)).isoformat()
+                                  for n in range(365)]
+    # Every step of the year on the first day's point, each day's after the
+    # one before's.
+    steps = np.asarray(year["steps"].iloc[0])
+    assert year["steps"].iloc[1:].isna().all()
+    assert list(year["first_step"]) == [0, *np.cumsum(year["step_count"])[:-1]]
+    assert year["step_count"].sum() == len(steps) == 20332
+    # About 6 hours of 10-minute steps on the shortest days, 12 on the longest.
+    assert year["step_count"].min() == 38 and year["step_count"].max() == 73
+    assert (steps[:, 2] > 0).all(), "the sun is up at every step"
+    for date, first, many, window in zip(year["date"], year["first_step"], year["step_count"], year["window_min"]):
+        lengths = steps[first:first + many, 3]
+        assert (lengths > 0).all() and (lengths <= 10).all() and (lengths[:-1] == 10).all(), date
+        assert lengths.sum() == pytest.approx(window), date
 
 
 def test_the_ground_is_open_and_the_block_spots_lie_on_it():
@@ -318,7 +396,7 @@ def test_without_the_proposed_building_no_part_of_it_stands_and_with_it_both_par
 
 def test_each_gpu_step_needs_at_most_eight_storage_buffers():
     computes = [n for n in _spec()["nodes"] if n["type"] == "curio.builtin/autk-grammar" and '"compute"' in n["content"]]
-    assert len(computes) == 4, "two GPU steps in each scenario"
+    assert len(computes) == 6, "three GPU steps in each scenario"
     for node in computes:
         for step in json.loads(node["content"])["compute"]:
             batched = [u for u in step.get("uniforms", {}).values()
@@ -356,30 +434,54 @@ def test_what_the_pinned_tiles_read_fits_the_page_a_shared_dashboard_carries():
         "buildings": buildings, "add-building": edited, "block": block, "streets": _run("streets"),
         "map-area": _run("map-area", buildings), "steps": _steps("Winter solstice"),
         "base-block-steps": day["without"]["steps"], "block-steps": day["with"]["steps"],
-        "compare": _run("compare", day["without"]["steps"], day["with"]["steps"]),
+        "base-block-days": _days("without"), "block-days": _days("with"),
+        "compare": _run("compare", _days("without"), _days("with")),
     }
     sizes = {key: len(frame.to_json().encode("utf-8")) for key, frame in read.items()}
     assert sum(sizes.values()) < DEFAULT_PAYLOAD_LIMIT_BYTES / 2, sizes
 
 
 @pytest.mark.parametrize("row", FOUR_DAYS, ids=["spring", "summer", "fall", "winter"])
-def test_the_cpu_march_gives_the_day_the_dashboard_pins(row):
+def test_the_cpu_march_gives_the_four_days_their_rows(row):
     day = row["Day"]
     scenarios = _day(day)
-    table = _run("compare", scenarios["without"]["steps"], scenarios["with"]["steps"])
-    shown = table.iloc[0].to_dict()
-    for header in ("Day", "From", "To", "Time counted"):
-        assert shown[header] == row[header], header
-    dark = {scenario: float((scenarios[scenario]["steps"]["share"] / 100 * scenarios[scenario]["steps"]["minutes"]).sum())
-            for scenario in ("without", "with")}
-    got = {"Without the proposed building": dark["without"], "With the proposed building": dark["with"],
-           "Added": dark["with"] - dark["without"]}
+    assert row["Date"] == NOAA[day][0][:10]
+    of_year = {scenario: _days(scenario).set_index("date").loc[row["Date"]] for scenario in PREFIX}
+    # The day's window, as its plot shows it, and the time it counts.
+    first = scenarios["with"]["steps"].iloc[0]
+    assert (first["day"], first["window_from"], first["window_to"]) == (row["Day"], row["From"], row["To"])
+    assert round(of_year["with"]["window_min"]) == minutes(row["Time counted"])
+    got = {"Without the proposed building": of_year["without"]["shadow_min"],
+           "With the proposed building": of_year["with"]["shadow_min"],
+           "Added": of_year["with"]["shadow_min"] - of_year["without"]["shadow_min"]}
     for header in DURATIONS:
         assert got[header] == pytest.approx(row[header], abs=0.05), header
-        assert minutes(shown[header]) == round(got[header]), header
+    for scenario in PREFIX:
+        # The year's plot says the day's time in shadow as it rounds.
+        assert minutes(of_year[scenario]["in_shadow"]) == round(of_year[scenario]["shadow_min"]), scenario
+        # The day's plot draws the steps the year's row adds up, but for the
+        # last digits: the year's step adds them in 32-bit floats.
+        steps = scenarios[scenario]["steps"]
+        dark = float((steps["share"] / 100 * steps["minutes"]).sum())
+        assert dark == pytest.approx(of_year[scenario]["shadow_min"], abs=0.01), scenario
     # The map's step and the block's step march alike: the cells of the block
     # gain on average what the block's steps add.
-    cells = {scenario: scenarios[scenario]["cells"] for scenario in ("without", "with")}
+    cells = {scenario: scenarios[scenario]["cells"] for scenario in PREFIX}
     added = _run("added", cells["without"], cells["with"])
     assert (added["added_min"] >= 0).all(), "the proposed building only adds shade"
     assert added.loc[added["on_block"] == 1, "added_min"].mean() == pytest.approx(got["Added"], abs=0.05)
+
+
+def test_the_cpu_march_gives_the_months_the_dashboard_pins():
+    table = _run("compare", _days("without"), _days("with"))
+    assert list(table.columns) == ["Month", MONTH_HEADER]
+    assert table.to_dict("records") == [{k: row[k] for k in ("Month", MONTH_HEADER)} for row in MONTHS]
+    # The figures before the table rounds them, which the e2e holds the
+    # GPU's to.
+    both = _days("without")[["date", "shadow_min"]].merge(
+        _days("with")[["date", "shadow_min"]], on="date", suffixes=("_without", "_with"))
+    added = both["shadow_min_with"] - both["shadow_min_without"]
+    assert (added >= 0).all(), "the proposed building only adds shade"
+    for row, (_month, month) in zip(MONTHS, added.groupby(pd.to_datetime(both["date"]).dt.month), strict=True):
+        assert month.mean() == pytest.approx(row["average"], abs=0.01), row["Month"]
+        assert float(np.std(month)) == pytest.approx(row["sd"], abs=0.01), row["Month"]

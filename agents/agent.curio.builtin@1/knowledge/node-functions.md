@@ -8,7 +8,7 @@ An argument that names an item of a catalog says which: a Data Catalog dataset o
 
 Engines: python.
 
-Reads a dataset the way its format is read: a CSV file as a DataFrame, a GeoJSON file or a shapefile as a GeoDataFrame, a Parquet file as a GeoDataFrame when it has geometry and a DataFrame otherwise, a JSON file as its document, a GeoTIFF as an open rasterio dataset, a NetCDF file as an xarray Dataset, an ONNX file as an onnxruntime session, a collection as its index, and the result of a node that returned several values as the tuple, list or dict it returned.
+Reads a dataset the way its format is read: a CSV file as a DataFrame, a GeoJSON file or a shapefile as a GeoDataFrame, a Parquet file as a GeoDataFrame when it has geometry and a DataFrame otherwise, a JSON file as its document, a GeoTIFF as an open rasterio dataset, a NetCDF file as an xarray Dataset, an ONNX file as an onnxruntime session, a collection as its index, a layer group, such as an OSM extract or a GeoPackage of several layers, as a dict of its layers by name, and the result of a node that returned several values as the tuple, list or dict it returned.
 
 - `dataset_id` (a Data Catalog dataset): the dataset's id.
 - `bounds`: `(west, south, east, north)` in a GeoTIFF's CRS: only the cells whose centres lie inside are read, at the raster's own cell size.

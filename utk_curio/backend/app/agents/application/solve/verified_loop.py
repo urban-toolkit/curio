@@ -51,6 +51,7 @@ from utk_curio.backend.app.agents.application.solve import session as agents_ses
 from utk_curio.backend.app.agents.application.turns import grounding as agents_grounding
 from utk_curio.backend.app.agents.domain import validation as agents_validation
 from utk_curio.backend.app.execution import workflow_spec
+from utk_curio.backend.app.execution.code_references import node_run_code
 from utk_curio.backend.app.packages import service as packages_services
 from utk_curio.backend.app.agents.domain import agent_text
 
@@ -150,6 +151,7 @@ class VerifiedRounds:
         self.use_current = False
         self.reuse_retried = False
         self.dataset_paths = None
+        self.dataset_formats = None
         self.secrets = None
         # The whole output of the round's run, which only the skipped edits
         # check reads: never part of a verdict, an attempt or an event.
@@ -564,17 +566,25 @@ class VerifiedRounds:
     # ── stage: the sandbox ──────────────────────────────────────────────────
 
     def _round_dataset_paths(self):
+        """``(paths, formats)`` of the datasets the candidate and its slice
+        read: *dataset_paths_fn* gives the paths and fills the formats, such
+        as a layer group's entry naming its layers."""
         if self.dataset_paths_fn is None:
-            return None
+            return None, None
         try:
+            # As the run writes each node's code: a dataset widget's id is in
+            # no literal call before (node_run_code).
             slice_codes = [
-                str(n.get("content") or "")
+                node_run_code(n)
                 for n in ((self.spec.get("dataflow") or {}).get("nodes") or [])
                 if isinstance(n, dict)
             ]
-            return self.dataset_paths_fn([self.candidate, *slice_codes]) or None
+            candidate = node_run_code({**self.node, "content": self.candidate})
+            formats: dict = {}
+            paths = self.dataset_paths_fn([candidate, *slice_codes], formats) or None
+            return paths, formats or None
         except Exception:
-            return None
+            return None, None
 
     def _round_secrets(self):
         # dev/116: the connection keys THIS candidate names, resolved per round
@@ -596,7 +606,7 @@ class VerifiedRounds:
         except Exception:
             return None
 
-    def _validate_with(self, prior, candidate_text, paths, secret_values):
+    def _validate_with(self, prior, candidate_text, paths, formats, secret_values):
         progress_queue: _queue.Queue = _queue.Queue()
 
         def _run_validation():
@@ -606,6 +616,7 @@ class VerifiedRounds:
                     exec_fn=self.exec_fn,
                     available_templates=self.available,
                     dataset_paths=paths,
+                    dataset_formats=formats,
                     exec_user_key=self.exec_user_key,
                     secrets=secret_values,
                     prior_outputs=prior,
@@ -638,18 +649,18 @@ class VerifiedRounds:
         """The candidate runs with ITS dataset paths, connection keys and the
         batch's prior outputs; a vanished reused input re-runs the slice whole,
         once, silently."""
-        self.dataset_paths = self._round_dataset_paths()
+        self.dataset_paths, self.dataset_formats = self._round_dataset_paths()
         self.secrets = self._round_secrets()
         prior_outputs = self._round_prior_outputs()
         candidate = self.candidate
         self.verdict_result = yield from self._validate_with(
-            prior_outputs, candidate, self.dataset_paths, self.secrets)
+            prior_outputs, candidate, self.dataset_paths, self.dataset_formats, self.secrets)
         self.reuse_retried = False
         if prior_outputs and agents_session._looks_like_a_vanished_reused_input(self.verdict_result):
             # A reused artifact is gone (the sandbox store moved on): that is
             # not the candidate's fault. Once, silently, the slice runs whole.
             self.verdict_result = yield from self._validate_with(
-                None, candidate, self.dataset_paths, self.secrets)
+                None, candidate, self.dataset_paths, self.dataset_formats, self.secrets)
             self.reuse_retried = True
         self.round_stdout = self.verdict_result.pop("stdout", None)
         return None

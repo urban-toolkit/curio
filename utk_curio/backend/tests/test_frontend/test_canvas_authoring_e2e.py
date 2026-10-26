@@ -39,10 +39,10 @@ from .utils import (
     canvas_node_type,
     close_tools_palette,
     connect_nodes,
+    dataset_widget_state,
     drag_to_canvas,
     drag_builtin_to_canvas,
     open_tools_palette,
-    read_node_code,
     require_project_page,
     require_user_auth,
     run_node_and_wait,
@@ -51,6 +51,7 @@ from .utils import (
     set_node_code,
     require_owner_view,
     stub_login_and_enter_workflow,
+    wait_for_node_code,
 )
 
 if TYPE_CHECKING:
@@ -71,6 +72,7 @@ DRAWER_ROOT = '[data-curio-dataset-catalog-drawer="true"]'
 CARD = 'article:not([role="status"])'
 
 LOADER_TYPE = "curio.builtin/data-loading"
+LOADER_STARTER = "data = curio_load_data([!! data !!])\nreturn data\n"
 TRANSFORM_TYPE = "curio.builtin/data-transformation"
 TRANSFORM_TILE = "#tile-data-transformation"
 
@@ -210,9 +212,12 @@ def test_build_and_run_dataflow_from_scratch(
         "dropping a dataset must take the dataset branch of handleDrop and "
         "create a Data Loading node"
     )
-    loader_code = read_node_code(page, loader_id)
-    assert "df = curio_load_data(" in loader_code and "return df" in loader_code, (
-        f"generated loader code does not load the CSV:\n{loader_code}"
+    # Its Data widget holds the dataset, and its code, Data Loading's starter,
+    # loads what the widget holds and hands it on.
+    wait_for_node_code(page, loader_id, LOADER_STARTER)
+    state = dataset_widget_state(page, loader_id)
+    assert state["value"] == DATASET_ID and DATASET_ID in state["datasetRefs"], (
+        f"the loader does not hold the CSV: {state}"
     )
 
     # 3. SECOND NODE, from the rail's Built-in palette.
@@ -258,11 +263,16 @@ def test_build_and_run_dataflow_from_scratch(
     assert ROW_MARKER in saved_nodes[transform_id]["content"], (
         "the code typed into the node was not persisted with it"
     )
-    assert DATASET_ID in {
-        ref.get("id") for ref in (dataflow.get("datasets") or [])
-    } or DATASET_ID in loader_code, (
-        "the dataflow does not record the dataset it loads"
+    # The loader keeps its code, the dataset its Data widget holds, and its
+    # binding to the dataset, which the Data Catalog counts.
+    loader = saved_nodes[loader_id]
+    metadata = loader.get("metadata") or {}
+    data_widget = next((w for w in metadata.get("widgets") or [] if w.get("name") == "data"), {})
+    assert loader["content"] == LOADER_STARTER, loader
+    assert data_widget.get("value") == DATASET_ID, (
+        f"the dataflow does not record the dataset it loads: {metadata}"
     )
+    assert DATASET_ID in (metadata.get("datasetRefs") or []), metadata
     # Visual baseline for a canvas nobody hand-checks otherwise. The semantic
     # assertions above cover what each node computed; this covers what the
     # canvas *looks* like - most usefully that the edge is actually drawn, which

@@ -20,6 +20,12 @@ layers all ship in the catalog every account shares.
 
 NetCDF variables stored a file each form a group too (``netcdf.``): their
 manifests carry the group id and each variable's name as its ``layerName``.
+
+A run whose code names the group's id, ``curio_load_data("<group id>")``,
+reads the group as the card's loader does: each layer by its own id, under the
+name the loader gives it (:func:`named_layers`). The run is sent each layer's
+path and an entry for the group naming its layers
+(:func:`layer_group_execution_format`).
 """
 
 from __future__ import annotations
@@ -40,6 +46,7 @@ from utk_curio.backend.app.datasets.domain.constants import (
     layer_group_kind,
 )
 from utk_curio.backend.app.datasets.infrastructure.catalog_utils import iso_from_timestamp
+from utk_curio.sandbox.util.catalog_helpers import layer_group_entry, layers_of_group
 
 # Strips a trailing " (points)" / " (multipolygons)" layer suffix from a member
 # title to recover the import's base name.
@@ -96,18 +103,26 @@ def _shared_catalog_member(member: dict[str, Any]) -> bool:
     return isinstance(folder, str) and bool(folder) and account_folder_origin(folder) is None
 
 
+def named_layers(members: list[dict[str, Any]]) -> list[tuple[str, str]]:
+    """``(name, dataset id)`` of each layer of a group, *members* in the
+    group's order (:func:`sort_group_members`): its layer name, else its
+    title, else ``layer_<i>``, as the canvas palette's group drag names them
+    (``osmGroupLoaderSnippet`` in ``datasetLoaderSnippets.ts``). A layer
+    whose id may not be written into code is left out."""
+    return [
+        (member.get("layerName") or member.get("title") or f"layer_{index}", member["id"])
+        for index, member in enumerate(members)
+        if is_safe_dataset_id(member.get("id"))
+    ]
+
+
 def _members_loader_snippet(fmt: str, members: list[dict[str, Any]]) -> dict[str, Any]:
     """Every member read by its own id into one ``layers`` dict, keyed by its
-    layer name, as the canvas palette's group drag reads them
-    (``osmGroupLoaderSnippet`` in ``datasetLoaderSnippets.ts``). Returned
-    unless *fmt* is kept in the node's code."""
+    layer name (:func:`named_layers`). Returned unless *fmt* is kept in the
+    node's code."""
     lines = ["layers = {}"]
-    for index, member in enumerate(members):
-        member_id = member.get("id")
-        if not is_safe_dataset_id(member_id):
-            continue
-        key = member.get("layerName") or member.get("title") or f"layer_{index}"
-        lines.append(f"layers[{json.dumps(key)}] = curio_load_data({json.dumps(member_id)})")
+    for name, member_id in named_layers(members):
+        lines.append(f"layers[{json.dumps(name)}] = curio_load_data({json.dumps(member_id)})")
     return {
         "language": "python",
         "imports": [],
@@ -131,6 +146,45 @@ def sort_group_members(members: list[dict[str, Any]]) -> list[dict[str, Any]]:
             m.get("layerName") or "",
         ),
     )
+
+
+def members_of(group_id: str, items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """The layers of the group *group_id* among the un-collapsed catalog
+    *items*, in the group's order."""
+    return sort_group_members([item for item in items if item.get("groupId") == group_id])
+
+
+def layer_group_execution_format(members: list[dict[str, Any]]) -> dict[str, Any]:
+    """How the sandbox's ``curio_load_data`` reads a group whose layers are
+    *members*, in its order: a dict of its layers by name, each read as its
+    own id is (``catalog_helpers.layer_group_entry``)."""
+    return layer_group_entry(named_layers(members))
+
+
+def ids_read(dataset_ids: list[str], formats: dict[str, Any]) -> list[str]:
+    """The datasets a run of code naming *dataset_ids* reads, *formats* as
+    ``resolve_execution_paths`` filled them: each id, and after a layer
+    group's, the ids of its layers."""
+    read: list[str] = []
+    for dataset_id in dataset_ids:
+        layers = layers_of_group((formats or {}).get(dataset_id)) or []
+        for each in [dataset_id, *(layer_id for _name, layer_id in layers)]:
+            if each not in read:
+                read.append(each)
+    return read
+
+
+def layer_group_formats(dataset_ids: list[str], formats: dict[str, Any]) -> dict[str, Any]:
+    """The entries of *formats* for the layer groups among *dataset_ids* and
+    for their layers, and no other."""
+    found: dict[str, Any] = {}
+    for dataset_id in dataset_ids:
+        layers = layers_of_group((formats or {}).get(dataset_id))
+        if layers is None:
+            continue
+        found[dataset_id] = formats[dataset_id]
+        found.update((layer_id, formats[layer_id]) for _name, layer_id in layers if layer_id in formats)
+    return found
 
 
 def group_base_title(members: list[dict[str, Any]], group_id: str) -> str:

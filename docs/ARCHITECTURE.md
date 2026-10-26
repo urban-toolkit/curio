@@ -1339,8 +1339,11 @@ Five design points worth knowing:
   can write beside the library or under HOME, and the execution account can do
   neither.
 - **No pickle in either direction.** A child's manifest carries a kind tag,
-  JSON scalars, and flat filenames only. Unpickling a hostile child's output in
-  the privileged parent would hand back most of what isolation removed.
+  JSON scalars, and flat filenames only. A list or dict that holds frames, such
+  as a layer group's layers, names each item as an output of its own, which the
+  parent stores as `list_of_ids` or `dict_of_ids`, as the in-process path does.
+  Unpickling a hostile child's output in the privileged parent would hand back
+  most of what isolation removed.
 - **Node code loses direct store access.** The in-process path seeds
   `load_from_duckdb` / `save_to_duckdb` / `save_dataset_parquet` into user
   scope; under isolation those names raise instead. Nodes exchange data through
@@ -1500,10 +1503,13 @@ fails open into a runtime error from the sandbox.
    `curio_data_path("<id>")` calls (single or double quoted), dedupes the
    ids, and caps them at `MAX_EXEC_DATASET_IDS` (32).
 2. It resolves them via `DatasetCatalogService.resolve_execution_paths`, which
-   refuses any path outside the allowed read roots. Resolution **fails open**: an
-   error yields an empty mapping rather than blocking the run.
+   refuses any path outside the allowed read roots. A layer group's id resolves
+   to its layers: each layer's path, and an entry among the formats that names
+   the layers in order, which `curio_load_data` reads into a dict. Resolution
+   **fails open**: an error yields an empty mapping rather than blocking the run.
 3. The resulting `{id: absPath}` map rides along on the `/exec` body. The sandbox
-   re-validates it (dict-shaped, stringified, ≤32 entries) and injects
+   re-validates it (dict-shaped, stringified, ≤32 entries the code names, plus
+   the layers of the groups among them) and injects
    `curio_data_path` into the user namespace, where an unknown id raises an
    actionable `RuntimeError` instead of returning a foreign path.
 4. Under fork isolation, `stage_dataset_paths`
@@ -2715,7 +2721,11 @@ from the computer that `useDataFileImport` first imports
 (`datasetCatalogApi.importDataset`) and adds to the dataflow
 (`addDatasetToDataflow`, the drawer's Add to project), sets the first dataset
 widget the node's code reads (`datasetWidgetReadBy`), and on any other node the
-loader is merged into the code (`mergeDatasetLoaderCode`). The dataset control's
+loader is merged into the code (`mergeDatasetLoaderCode`). While the code is one
+a drop wrote from the template's starter (`isWidgetLoaderCode`), it becomes the
+one for the new dataset (`widgetLoaderCode`): the starter, naming a GeoTIFF's
+`bounds` (`LOADER_OPTIONS`), or for an ONNX model or a NetCDF file the loader
+that keeps the value in the code (`keptInCodeLoader`). The dataset control's
 **Choose file** hands its files to the same path through
 `DatasetWidgetContext`. Setting the widget trades the bindings it made before
 for the new dataset's (`applyDatasetToWidget`: `datasetRefs`, `appliedDatasets`,
@@ -2724,6 +2734,14 @@ save writes at `metadata.datasetWidgets`; `nodeBoundDatasetIds` also reads the
 widgets' values. On the empty canvas, `MainCanvas` makes the Data Loading node a
 drop on a fresh one would make (`buildDatasetWidgetNodeOptions`). The kind is
 read-only on a dashboard tile (`contracts/dashboardRuns.json`).
+
+The id a dataset widget holds is in no literal call until a run writes it in.
+Play, server runs and viewer runs scan the code they send, with its references
+written in. The scans of a saved spec read each node's code through
+`code_references.node_run_code`, which writes in the node's own widgets: Solve's
+dataset paths (`VerifiedRounds._round_dataset_paths`), the collections of
+`resolve_spec_collections` (Solve's validation, an agent's node run) and Solve's
+blocker signature, so a dataset dropped on an upstream loader is progress.
 
 ### Auth Routes
 

@@ -1503,3 +1503,21 @@ def resolve_references(
         last = ref.end()
     out.append(code[last:])
     return "".join(out), problems
+
+
+def node_run_code(node) -> str:
+    """A saved spec node's code (``content``) with its own widgets written in
+    as a run writes them, every other reference left as written: what a scan
+    for the datasets and collections a run reads looks at, since the id a
+    dataset widget holds is in no literal ``curio_load_data`` call until then.
+    Never raises: a scan must not fail its run."""
+    if not isinstance(node, dict) or not isinstance(node.get("content"), str):
+        return ""
+    code = node["content"]
+    metadata = node.get("metadata")
+    if "[!!" not in code or not isinstance(metadata, dict):
+        return code
+    try:
+        return resolve_references(code, metadata.get("widgets") or [])[0]
+    except Exception:  # noqa: BLE001 - a scan reads what it can
+        return code
