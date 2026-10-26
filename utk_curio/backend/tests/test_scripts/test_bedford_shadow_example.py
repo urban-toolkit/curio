@@ -10,9 +10,9 @@ astral's sun at the middle of each, and only open ground counts.
 Here the example's own Python nodes run on the shipped data as the sandbox
 runs them (``call_as_node``, Curio's reference resolution, the Map Editor's
 ``curio_edit_features``), and its two GPU steps run as a NumPy mirror of their
-WGSL march, in 32-bit floats. The mirror's minutes on Block 1259 for the
-winter and summer solstices are the ones ``_support/crown_heights.py`` holds,
-which the dashboard e2e checks the GPU against.
+WGSL march, in 32-bit floats. The mirror's minutes on Block 1259 for each of
+the four days are the ones ``_support/crown_heights.py`` holds, which the
+dashboard e2e checks the GPU against.
 
 The example's node code imports suntime and astral when it runs, so this
 module imports neither.
@@ -31,7 +31,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from utk_curio.backend.tests._support.crown_heights import DURATIONS, SUMMER, WINTER, minutes
+from utk_curio.backend.tests._support.crown_heights import DURATIONS, FOUR_DAYS, minutes
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
 SCRIPT = REPO_ROOT / "scripts" / "build_example_bedford_shadow.py"
@@ -362,7 +362,7 @@ def test_what_the_pinned_tiles_read_fits_the_page_a_shared_dashboard_carries():
     assert sum(sizes.values()) < DEFAULT_PAYLOAD_LIMIT_BYTES / 2, sizes
 
 
-@pytest.mark.parametrize("row", [WINTER, SUMMER], ids=["winter", "summer"])
+@pytest.mark.parametrize("row", FOUR_DAYS, ids=["spring", "summer", "fall", "winter"])
 def test_the_cpu_march_gives_the_day_the_dashboard_pins(row):
     day = row["Day"]
     scenarios = _day(day)
