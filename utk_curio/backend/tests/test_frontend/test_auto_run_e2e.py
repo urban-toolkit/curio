@@ -140,10 +140,12 @@ def _set_auto_run(page, on: bool) -> None:
 
 
 def _frame(page, test_name: str) -> None:
-    """The whole dataflow, the slider's node back on its code and output, with
-    the mouse on empty canvas: the last click (a menu row, Run All) otherwise
-    leaves a node's or a button's hover look in the frame."""
-    _open_tab(page, READS_ID, "code")
+    """The whole dataflow, the slider's node on its Widgets tab so the frame shows
+    the slider where it was moved, with the mouse on empty canvas: the last click
+    (a menu row, Run All) otherwise leaves a node's or a button's hover look in the
+    frame."""
+    _open_tab(page, READS_ID, "widgets")
+    expect(_slider(page)).to_be_visible()
     park_pointer(page)
     save_workflow_test_screenshot(page, FRAMES, test_name=test_name, sweep_toasts=True)
 
