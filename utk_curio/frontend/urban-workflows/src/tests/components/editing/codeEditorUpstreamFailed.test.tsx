@@ -86,7 +86,7 @@ jest.mock("../../../hook/usePackageBackendRun", () => ({
 }));
 
 import CodeEditor from "../../../components/editing/CodeEditor";
-import { runKeyWithShared } from "../../../utils/references/sharedParameters";
+import { runKeyOf } from "../../../utils/references/runKeys";
 
 const PYTHON = "curio.builtin/computation-analysis";
 const CODE = "sp = input_0['sp_units']\nreturn sp";
@@ -241,7 +241,7 @@ describe("a run's result carries the key it was sent with", () => {
         expect(setOutputCallback).toHaveBeenLastCalledWith({
             code: "success",
             content: "Saved to file: art-n1",
-            runKey: runKeyWithShared(sentCode, undefined, [], SELECTED),
+            runKey: runKeyOf(sentCode, undefined, SELECTED),
         });
     });
 
@@ -256,7 +256,7 @@ describe("a run's result carries the key it was sent with", () => {
         expect(setOutputCallback).toHaveBeenLastCalledWith({
             code: "success",
             content: "done",
-            runKey: runKeyWithShared(CODE, undefined, [], SELECTED),
+            runKey: runKeyOf(CODE, undefined, SELECTED),
         });
     });
 });

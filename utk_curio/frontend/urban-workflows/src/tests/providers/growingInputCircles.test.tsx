@@ -330,7 +330,7 @@ describe('deleting an edge closes the gap', () => {
 });
 
 describe('deleting an edge, with inputs read as input_k', () => {
-  const scope = (slots: number[]) => ({ widgets: [], inputs: slots.map((slot) => ({ slot })), shared: [] });
+  const scope = (slots: number[]) => ({ widgets: [], inputs: slots.map((slot) => ({ slot })) });
 
   test('later circles move up, and their chips and typed names follow', async () => {
     await fanIn(

@@ -97,7 +97,7 @@ const CHIP_BARS = BARS.replace('"name":"inputs"', '"name":"[!! inputs !!]"');
 function asTheEditorWrites(raw: string): string {
   expect(raw).toContain("[!! inputs !!]");
   const { code, problems } = resolveReferences(
-    raw, { widgets: [], inputs: [{ slot: 0 }, { slot: 1 }], shared: [] }, "json", "vega-lite",
+    raw, { widgets: [], inputs: [{ slot: 0 }, { slot: 1 }] }, "json", "vega-lite",
   );
   expect(problems).toEqual([]);
   return code;

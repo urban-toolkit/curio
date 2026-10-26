@@ -12,8 +12,8 @@
  * - The stacked `inputs`: the inputs it stacks and its first rows, which begin
  *   with scenario_name, scenario and __input__; `inputs.<field>` reads like a
  *   column.
- * - A widget, a Parameter, a selection, the scenario chips, a chip with a
- *   problem; and an input not run, stale, failed or being read.
+ * - A widget, a selection, the scenario chips, a chip with a problem; and an
+ *   input not run, stale, failed or being read.
  * - Its caps: 5 rows by 6 columns, cells cut at 24 characters, a tuple's first
  *   3 parts with 3 rows each; numbers with at most 4 decimals, null in grey.
  */
@@ -96,7 +96,6 @@ function show(props: {
 const scopeOf = (inputs: InputScope[], extra: Partial<ReferenceScope> = {}): ReferenceScope => ({
   widgets: [],
   inputs,
-  shared: [],
   ...extra,
 });
 
@@ -567,7 +566,7 @@ describe("the stacked inputs", () => {
   });
 });
 
-describe("a widget and a Parameter", () => {
+describe("a widget", () => {
   const combine: WidgetDef = {
     name: "combine",
     type: "choice",
@@ -602,20 +601,14 @@ describe("a widget and a Parameter", () => {
     expect(linesOf(root)).toEqual(["Number: 16", "Range 1 to 20, step 1", "writes 16"]);
   });
 
-  test("Chicago Loop's Season Parameter: its node, how many nodes read it, what it writes", () => {
-    const root = show({
-      inner: "@season",
-      scope: scopeOf(LOOP_INPUTS, { shared: [season] }),
-      language: "python",
-      data: { parameters: { season: { node: "Season", readers: 2 } } },
-    });
-    expect(root.getAttribute("data-chip-preview")).toBe("shared");
-    expect(headOf(root)).toBe("@season from the Parameter node Season");
+  test("Chicago Loop's Season node: its own Season radio, its choices, and what it writes", () => {
+    const root = show({ inner: "season", scope: scopeOf(LOOP_INPUTS, { widgets: [season] }), language: "python" });
+    expect(root.getAttribute("data-chip-preview")).toBe("widget");
+    expect(headOf(root)).toBe("season a Choice widget");
     expect(linesOf(root)).toEqual([
       "Choice: summer",
       "Choices: spring, summer, winter",
       'writes "summer"',
-      "Read by 2 nodes",
     ]);
   });
 });

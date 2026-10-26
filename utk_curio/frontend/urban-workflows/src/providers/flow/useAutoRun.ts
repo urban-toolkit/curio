@@ -1,6 +1,6 @@
 // Auto-run (#845): with the dataflow's "Run stale nodes automatically" on, a
-// widget or Parameter value change runs the nodes it touched and every node
-// below them, once the changes settle, through the run Run All starts. On a
+// widget value change runs the nodes it touched and every node below them,
+// once the changes settle, through the run Run All starts. On a
 // dashboard it is always on and starts a viewer's run (useDashboardRun, #1117).
 // Only those value changes ask for it: code typed into a node, a new edge, and
 // a brush that rewrites a selection tag mark nodes stale and run nothing.
@@ -89,7 +89,7 @@ export function useAutoRun({ enabled, runActive, reactFlow, start }: {
         if (targets.length) startRef.current(targets);
     }, [reactFlow, dropWaiting]);
 
-    /** A widget or Parameter value changed what *nodeIds* compute. */
+    /** A widget value changed what *nodeIds* compute. */
     const requestAutoRun = useCallback((nodeIds: readonly string[]) => {
         if (!enabledRef.current || nodeIds.length === 0) return;
         nodeIds.forEach((id) => touched.current.add(id));

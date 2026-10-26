@@ -6,7 +6,7 @@ import React, { useRef } from "react";
 import type { Node, ReactFlowInstance } from "reactflow";
 import type { NodeOutput } from "../../hook/useNodeState";
 import { executionResultOutput, recordExecProvenance } from "../../utils/executionResult";
-import { runKeyOfData, sharedWidgetsOf } from "../../utils/references/sharedParameters";
+import { runKeyOfData } from "../../utils/references/runKeys";
 import type { IOutput } from "./flowTypes";
 import type { NodeChange } from "./serverRunSteps";
 
@@ -48,7 +48,7 @@ export function useStepOutcomes({
             if (!onlyIfRunning) {
                 data.output = output;
                 if (output.code === "success") {
-                    data.executedCode = output.runKey ?? runKeyOfData(data, sharedWidgetsOf(nds));
+                    data.executedCode = output.runKey ?? runKeyOfData(data);
                 }
             }
             return { ...node, data };

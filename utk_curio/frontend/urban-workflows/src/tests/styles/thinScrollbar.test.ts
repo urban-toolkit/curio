@@ -8,9 +8,9 @@ import { NODE_EDITOR_SCROLLING, SCROLLBAR_PX } from "../../components/editing/no
  * and every node's code or spec editor (#1004), defined once in
  * styles/scrollbars.module.css.
  *
- * A Parameter node's "Used by" list can run past the node's bottom edge, and
- * its panel scrolls. The widget panels take the Data Catalog's scrollbar
- * through the same code: each panel composes the shared class, and no
+ * A node's Widgets tab can run past the node's bottom edge, and its panel
+ * scrolls. The widget panels take the Data Catalog's scrollbar through the
+ * same code: each panel composes the shared class, and no
  * stylesheet keeps a copy of its rules, so the look is defined in one place.
  *
  * Chrome, Edge and Safari draw it from its ::-webkit-scrollbar rules, a 6 px

@@ -37,7 +37,7 @@ import {
   nodeChangeFor,
 } from "../../providers/flow/serverRunSteps";
 import { nodesToRunUpTo } from "../../providers/flow/runLevels";
-import { runKeyWithShared } from "../../utils/references/sharedParameters";
+import { runKeyOf } from "../../utils/references/runKeys";
 
 const api = runsApi as jest.Mocked<typeof runsApi>;
 
@@ -209,7 +209,7 @@ describe("a run started on the canvas", () => {
     expect(shown("a")).toEqual({
       code: "success",
       content: "stdout:\nran a\nSaved to file: art-a",
-      runKey: runKeyWithShared("return 1", undefined, [], undefined),
+      runKey: runKeyOf("return 1", undefined, undefined),
     });
     expect(deps.applyNewOutput).toHaveBeenCalledWith({ nodeId: "a", output: { path: "art-a", dataType: "dataframe" } });
     expect(deps.nodeExecProv).toHaveBeenCalledTimes(1);
@@ -250,9 +250,9 @@ describe("a run started on the canvas", () => {
     expect(copy.output).toEqual({
       code: "success",
       content: "stdout:\n7 removed.\nSaved to file: art-edit",
-      runKey: runKeyWithShared("return input_0", undefined, [], undefined),
+      runKey: runKeyOf("return input_0", undefined, undefined),
     });
-    expect(copy.executedCode).toBe(runKeyWithShared("return input_0", undefined, [], undefined));
+    expect(copy.executedCode).toBe(runKeyOf("return input_0", undefined, undefined));
 
     live.emit({ kind: "step_finished", nodeId: "count", status: "error", stderrTail: "Traceback: boom" });
     expect(node("count")!.data.output).toMatchObject({ code: "error", content: "Traceback: boom" });
@@ -283,7 +283,7 @@ describe("a run started on the canvas", () => {
       reply: { stdout: ["<<N 5>>"], stderr: "", input: null, output: { path: "art-count", dataType: "dataframe" } },
     });
 
-    const ranWith = runKeyWithShared(code, undefined, [], sent);
+    const ranWith = runKeyOf(code, undefined, sent);
     expect(node("count")!.data.serverOutput.output.runKey).toBe(ranWith);
     expect(node("count")!.data.executedCode).toBe(ranWith);
     const { willRun } = nodesToRunUpTo(
@@ -408,7 +408,7 @@ describe("a run started on the canvas", () => {
     api.start.mockResolvedValue(run("r1", [step("b"), step("c", { level: 1 }), step("chart", { level: 2, role: "forward" })], {
       trigger: "auto", targetNodeIds: ["b", "c", "chart"], wholeDataflow: false,
     }));
-    const current = { output: { code: "success" }, code: "x", executedCode: runKeyWithShared("x", undefined, [], undefined) };
+    const current = { output: { code: "success" }, code: "x", executedCode: runKeyOf("x", undefined, undefined) };
     const { hook, deps, shown } = harness(
       [{ id: "a", data: current }, { id: "b", data: { output: { code: "success", content: "old b" } } }, { id: "c" }, { id: "chart" }],
       [

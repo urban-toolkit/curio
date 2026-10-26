@@ -41,7 +41,7 @@ const JOIN_INPUTS: InputScope[] = [
   { slot: 1, edge: "e1", label: "Python Computation", dataType: "outputs", columns: [], dtypes: {}, layers: [], tuple: 2 },
   { slot: 2, edge: "e2", label: "Data Loading", dataType: "geodataframe" },
 ];
-const SCOPE: ReferenceScope = { widgets: [], inputs: JOIN_INPUTS, shared: [] };
+const SCOPE: ReferenceScope = { widgets: [], inputs: JOIN_INPUTS };
 const SUMMARY: InputSource = { title: "Summarize", type: "Python Computation", status: "done" };
 /** The join's line that unpacks the tuple: its chip runs from column 16 to 31. */
 const CODE = "means, peaks = [!! input_1 !!]\n";

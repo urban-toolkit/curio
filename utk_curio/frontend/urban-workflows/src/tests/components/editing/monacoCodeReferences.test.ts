@@ -29,14 +29,13 @@ function fakeEditor(position: { lineNumber: number; column: number } | null = { 
 }
 
 const widgets: WidgetDef[] = [{ name: "season", type: "text", default: "summer", value: "winter" }];
-const scope: ReferenceScope = { widgets, inputs: [], shared: [] };
+const scope: ReferenceScope = { widgets, inputs: [] };
 const withInputs: ReferenceScope = {
   widgets,
   inputs: [
     { slot: 0, label: "Roads", dataType: "geodataframe", columns: ["length"], dtypes: { length: "float64" } },
     { slot: 1, label: "Parcels" },
   ],
-  shared: [],
 };
 
 describe("inserting a reference", () => {
@@ -248,7 +247,6 @@ describe("a scenario chip's hover", () => {
       { slot: 0, label: "Weekday", scenario: { name: "Weekday", color: "#8a8f98" } },
       { slot: 1, label: "Weekend", scenario: { name: "Weekend", color: "#8a8f98" } },
     ],
-    shared: [],
   };
   const writes = (inner: string, over: ReferenceScope) => resolveReferences(referenceText(inner), over, "json").code;
   const hoverOf = (inner: string, over: ReferenceScope) => {

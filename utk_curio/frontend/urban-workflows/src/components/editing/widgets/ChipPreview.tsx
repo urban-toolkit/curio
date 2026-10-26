@@ -16,9 +16,8 @@
  * - The stacked `inputs` (utils/scenarios/stackedInputs): the inputs it stacks
  *   and its first rows, which begin with scenario_name, scenario and
  *   __input__; `inputs.<field>` reads like a column.
- * - A widget or a Parameter: its control, its value, its choices or range,
- *   and what the chip writes; a Parameter, its node and how many nodes read it.
- *   A selection: its view, its ids, and the rows they pick once the view has
+ * - A widget: its control, its value, its choices or range, and what the chip
+ *   writes. A selection: its view, its ids, and the rows they pick once the view has
  *   drawn. The scenario chips: each box's swatch, name and color, and what the
  *   chip writes.
  * - A chip with a problem shows the problem. An input not run, stale, failed
@@ -133,8 +132,6 @@ type Row = Record<string, unknown>;
 export interface ChipPreviewData {
   /** Each input's preview state, by its circle (hook/useInputScope). */
   inputs?: Record<number, InputPreviewState>;
-  /** Each shared tag's Parameter node, by the tag's name (`parameterPreviewOf`). */
-  parameters?: Record<string, { node: string; readers: number }>;
   /** Each selection tag's view, by the tag's name: its title, and the rows
    * the tag's ids pick once the view has drawn (`readSelectionRows`): null
    * before, `{ unreadable: true }` when the view failed to hand them over. */
@@ -926,28 +923,6 @@ function widgetParts(name: string, scope: ReferenceScope, language: CodeLanguage
   return { kind: "widget", head, body: widgetLines(widget, language) };
 }
 
-function sharedParts(inner: string, name: string, scope: ReferenceScope, language: CodeLanguage, data?: ChipPreviewData): Parts {
-  const widget = scope.shared.find((w) => w.name === name);
-  const parameter = data?.parameters?.[name];
-  const head = (
-    <Head chip={inner} chipClass={styles.chipShared}>
-      {" "}
-      <Text>{parameter ? `from the Parameter node ${parameter.node}` : "from its Parameter node"}</Text>
-    </Head>
-  );
-  if (!widget) return { kind: "shared", head, body: <Line>No Parameter node holds a widget named {name}.</Line> };
-  return {
-    kind: "shared",
-    head,
-    body: (
-      <>
-        {widgetLines(widget, language)}
-        {parameter ? <Line>Read by {countOf(parameter.readers, "node", "nodes")}</Line> : null}
-      </>
-    ),
-  };
-}
-
 function selectionParts(inner: string, name: string, scope: ReferenceScope, data?: ChipPreviewData): Parts {
   const tag = (scope.selections ?? []).find((t) => t.name === name);
   const view = data?.selections?.[name];
@@ -1087,8 +1062,6 @@ function partsOf({ inner, scope, language, data, problem }: ChipPreviewProps): P
       return stackedFieldParts(parsed.column, scope, data);
     case "widget":
       return widgetParts(parsed.name, scope, language);
-    case "shared":
-      return sharedParts(inner, parsed.name, scope, language, data);
     case "selection":
       return selectionParts(inner, parsed.name, scope, data);
     case "scenario":

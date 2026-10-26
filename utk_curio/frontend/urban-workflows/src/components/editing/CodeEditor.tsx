@@ -15,7 +15,7 @@ import Editor, { Monaco } from "@monaco-editor/react";
 import { useFlowContext } from "../../providers/FlowProvider";
 import { shouldSaveOutputOnRun } from "../../utils/saveOutputDataset";
 import { executionResultOutput } from "../../utils/executionResult";
-import { runKeyWithShared, sharedWidgetsOf } from "../../utils/references/sharedParameters";
+import { runKeyOf } from "../../utils/references/runKeys";
 import { registerRunNodeAction } from "./runNodeMonacoAction";
 import { MissingModuleNotice, type InstallState } from "./MissingModuleNotice";
 import { MIN_PROGRESS_MS, readInstallResponse } from "../../utils/libraryInstall";
@@ -47,7 +47,7 @@ import { NODE_EDITOR_SCROLLING } from "./nodeEditorScrolling";
 /** In a notebook cell the output takes its own height up to this, then scrolls. */
 const NOTEBOOK_OUTPUT_MAX = 320;
 
-const NO_REFERENCES: ReferenceScope = { widgets: [], inputs: [], shared: [] };
+const NO_REFERENCES: ReferenceScope = { widgets: [], inputs: [] };
 const NO_INPUTS: InputScope[] = [];
 
 type CodeEditorProps = {
@@ -431,7 +431,7 @@ function CodeEditor({
         // What the run is sent with. Its result is stamped with this key, so a
         // selection, widget value or code changed while it runs leaves the
         // node stale.
-        const runKey = runKeyWithShared(code, data.widgets, sharedWidgetsOf(nodes ?? []), data.selections);
+        const runKey = runKeyOf(code, data.widgets, data.selections);
         if (backendRun) {
             // dev/91: a backendHandler template Runs through the package
             // backend sandbox — registry-driven dispatch, never another
@@ -598,7 +598,6 @@ function CodeEditor({
                 nodeId={data?.nodeId}
                 widgets={references.widgets}
                 inputs={stripInputs}
-                shared={references.shared}
                 selections={references.selections}
                 language={widgetLanguage}
                 disabled={readOnly}

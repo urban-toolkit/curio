@@ -1,8 +1,8 @@
 /**
  * A signal that some node's code changed. A node's code is mirrored into its
  * data by direct mutation (useNodeState), not through the flow's state, so a
- * view that reads every node's code, such as a Parameter node's list of the
- * nodes that use it, listens here (`useSyncExternalStore`).
+ * view that reads a node's code as it changes, such as the Map Editor's list
+ * of its edits, listens here (`useSyncExternalStore`).
  */
 let revision = 0;
 const listeners = new Set<() => void>();

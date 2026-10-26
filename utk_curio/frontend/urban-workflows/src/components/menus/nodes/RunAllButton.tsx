@@ -28,7 +28,7 @@ export function RunAllButton() {
                     isRunActive
                         ? "Cancel the run in progress"
                         : autoRunOn
-                            ? "Run all nodes. Stale nodes also run on their own after a widget or Parameter change."
+                            ? "Run all nodes. Stale nodes also run on their own after a widget change."
                             : "Run all nodes"
                 }
                 aria-label={isRunActive ? "Cancel run" : "Run all nodes"}

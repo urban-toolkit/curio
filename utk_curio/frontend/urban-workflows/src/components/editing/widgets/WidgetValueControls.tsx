@@ -1,8 +1,7 @@
 /**
  * A node's widgets as controls that set their values (#662): a label and a
  * WidgetControl each. A pinned node's dashboard tile shows them (NodeEditor),
- * where a viewer changes every kind but the read-only ones (#1117), and a
- * Parameter node's body shows its one.
+ * where a viewer changes every kind but the read-only ones (#1117).
  *
  * A value reaches the node when its control settles, VALUE_SETTLE_MS after the
  * last keystroke or slider step, or at once when the control is left, so a
@@ -26,14 +25,10 @@ type RowProps = {
   dashboard?: boolean;
   /** Every control frozen. */
   disabled?: boolean;
-  /** Between the label and the control: a Parameter node's tag. */
-  tag?: React.ReactNode;
-  /** After the control, given the row's flush: a Parameter node's Edit button. */
-  actions?: (flush: () => void) => React.ReactNode;
 };
 
 /** One widget: its label above its control, and the row's settling value. */
-export function WidgetValueRow({ widget, onCommit, dashboard = false, disabled = false, tag, actions }: RowProps) {
+export function WidgetValueRow({ widget, onCommit, dashboard = false, disabled = false }: RowProps) {
   // The value shown follows the control at once; the node hears of it when
   // the control settles.
   const committed = effectiveValue(widget);
@@ -77,15 +72,9 @@ export function WidgetValueRow({ widget, onCommit, dashboard = false, disabled =
     timer.current = window.setTimeout(() => flushRef.current(), VALUE_SETTLE_MS);
   };
 
-  const plain = tag === undefined && actions === undefined;
   return (
-    <div
-      className={plain ? `${styles.row} ${styles.plainRow}` : styles.row}
-      data-widget-row={widget.name}
-      onBlur={() => flush()}
-    >
+    <div className={`${styles.row} ${styles.plainRow}`} data-widget-row={widget.name} onBlur={() => flush()}>
       <span className={styles.rowLabel}>{widget.label || widget.name}</span>
-      {tag}
       <span className={styles.rowControl}>
         <WidgetControl
           widget={widget}
@@ -94,7 +83,6 @@ export function WidgetValueRow({ widget, onCommit, dashboard = false, disabled =
           onChange={setValue}
         />
       </span>
-      {actions?.(flush)}
     </div>
   );
 }

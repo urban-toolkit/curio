@@ -11,13 +11,13 @@
 import cases from "../../utils/widgets/widgetChecks.cases.json";
 import { checkWidgetDef, checkWidgetValue, normalizeWidgets, type WidgetDef } from "../../utils/widgets/widgetModel";
 
-type DefinitionCase = { name: string; def: WidgetDef; others?: WidgetDef[]; parameter?: boolean; expected: string | null };
+type DefinitionCase = { name: string; def: WidgetDef; others?: WidgetDef[]; expected: string | null };
 type ValueCase = { name: string; widget: Pick<WidgetDef, "type" | "options">; value: unknown; expected: string | null };
 type DeclaredCase = { name: string; widget: Record<string, unknown>; expected: string | null };
 
 describe("the shared widget check cases", () => {
   test.each((cases.definitions as unknown as DefinitionCase[]).map((c) => [c.name, c]))("a widget: %s", (_name, c) => {
-    expect(checkWidgetDef(c.def, c.others ?? [], c.parameter ?? false)).toBe(c.expected);
+    expect(checkWidgetDef(c.def, c.others ?? [])).toBe(c.expected);
   });
 
   test.each((cases.values as unknown as ValueCase[]).map((c) => [c.name, c]))("a value: %s", (_name, c) => {

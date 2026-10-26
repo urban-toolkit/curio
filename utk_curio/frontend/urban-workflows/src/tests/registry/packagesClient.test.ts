@@ -210,6 +210,16 @@ describe('the built-in Note', () => {
   });
 });
 
+describe('the built-in behaviors', () => {
+  test('hold no Parameter node: Builtin has no such template, so a saved one draws the removed type card', () => {
+    expect(getBehavior('parameter')).toBeUndefined();
+    for (const key of ['code', 'data-export', 'data-pool', 'data-summary', 'vega', 'simple-vis', 'autk-grammar',
+      'spatial-join', 'edit-features', 'note']) {
+      expect([key, getBehavior(key) !== undefined]).toEqual([key, true]);
+    }
+  });
+});
+
 describe('backendHandler dispatch key (memo dev/91 commit 5)', () => {
   afterEach(() => clearPackageNodes());
 

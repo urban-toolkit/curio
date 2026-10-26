@@ -171,11 +171,11 @@ describe("each expander is a chevron button", () => {
     const view = render(
       chart([stats(0), stats(1, TOWERS)], {
         widgets: [{ name: "y", type: "text", default: "mean" }],
-        shared: [{ name: "season", type: "text", default: "summer" }],
+        selections: [{ name: "picked", node: "scatter", column: "osm_id", ids: [101] }],
       }),
     );
     const row = headerRow(view.container);
-    expect(row.map((entry) => entry.category)).toEqual(["inputs", "scenarios", "widgets", "shared"]);
+    expect(row.map((entry) => entry.category)).toEqual(["inputs", "scenarios", "widgets", "selections"]);
     for (const entry of row) {
       const button = categoryButton(view.container, entry.category as StripCategory)!;
       expect([button.getAttribute("aria-expanded"), chevronOf(button)]).toEqual(["false", "down"]);

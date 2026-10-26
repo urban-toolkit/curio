@@ -1,7 +1,7 @@
 /**
  * Auto-run through the real FlowProvider (#845). Where Run All runs on the
- * server (a signed-in owner's dataflow), a widget or Parameter change runs the
- * touched nodes through that same start. Where it does not (a hosted guest),
+ * server (a signed-in owner's dataflow), a widget change runs the touched
+ * nodes through that same start. Where it does not (a hosted guest),
  * auto-run is not offered and runs nothing. On a dashboard the toggle is not
  * offered either, and every change reruns the dashboard as a viewer's run,
  * which never changes the dataflow (#1117). A brush that rewrites
@@ -112,7 +112,7 @@ import { AUTO_RUN_SETTLE_MS } from '../../providers/flow/useAutoRun';
 import { VisInteractionType } from '../../constants';
 import { objectRows } from '../../utils/selectionMatch';
 import { provideViewRows, resetViewSelections } from '../../utils/references/viewSelections';
-import { runKeyWithShared } from '../../utils/references/sharedParameters';
+import { runKeyOf } from '../../utils/references/runKeys';
 
 type UserContextValue = React.ContextType<typeof UserContext>;
 
@@ -215,7 +215,7 @@ async function renderFlow(value: UserContextValue, { dashboardOn = false } = {})
           code: CODE,
           selections: [TAG],
           output: { code: 'success' },
-          executedCode: runKeyWithShared(CODE, undefined, [], [TAG]),
+          executedCode: runKeyOf(CODE, undefined, [TAG]),
         },
       } as any,
       undefined,
