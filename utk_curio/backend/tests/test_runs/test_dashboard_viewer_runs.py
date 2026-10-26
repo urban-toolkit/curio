@@ -358,6 +358,63 @@ class TestAViewerRunsTheDashboard:
         assert sandbox.runs[0][1]["file_path"] == "saved-load"
 
 
+def _own_widget_nodes(*, chart_content="{}", chart_widgets=()):
+    """Grid, pinned, reading a Period widget of its own, feeds the pinned chart."""
+    return [
+        {"id": "grid", "type": CODE, "content": "# node grid\nreturn [!! period !!]", "dashboardPinned": True,
+         "metadata": {"widgets": [_period()]}},
+        {"id": "chart", "type": CHART, "content": chart_content, "dashboardPinned": True,
+         "metadata": {"widgets": list(chart_widgets)}},
+    ]
+
+
+class TestAPinnedNodesOwnWidgets:
+    """A pinned node's widgets are its tile's controls (#1117): a viewer's
+    change to a pinned code node's own widget runs it with the new value, and
+    the tile below it shows what it made."""
+
+    def test_a_pinned_code_nodes_own_widget_reruns_it_for_the_tile_below(self, client, user_and_token, sandbox, saved):
+        _, token = user_and_token
+        pid = _create(client, token, _own_widget_nodes())
+
+        started = _run(client, pid, {"grid": {"period": "Month"}})
+
+        assert started.status_code == 202, started.get_data(as_text=True)
+        body = started.get_json()
+        assert body["nodeIds"] == ["grid"]
+        _wait(body["runId"])
+        assert [node for node, _ in sandbox.runs] == ["grid"]
+        assert '"Month"' in sandbox.runs[0][1]["code"]
+        finished = [p for k, p in _events(client, pid, body["runId"], body["token"]) if k == "step_finished"]
+        assert [(p["nodeId"], p["status"]) for p in finished] == [("grid", "ok")]
+
+    def test_its_saved_value_needs_no_run(self, client, user_and_token, sandbox, saved):
+        _, token = user_and_token
+        pid = _create(client, token, _own_widget_nodes())
+
+        resp = _run(client, pid, {"grid": {"period": "Date"}})
+
+        assert resp.status_code == 200, resp.get_data(as_text=True)
+        assert resp.get_json() == {"runId": None, "token": None, "joined": False, "nodeIds": []}
+        assert sandbox.runs == []
+
+    def test_a_pinned_charts_own_widget_runs_nothing_on_the_server(self, client, user_and_token, sandbox, saved):
+        """The chart draws with its new value in the page; the server takes
+        the value and runs no node for it."""
+        _, token = user_and_token
+        opacity = {"name": "opacity", "type": "slider", "label": "Opacity", "default": 1,
+                   "options": {"min": 0.1, "max": 1, "step": 0.1}}
+        pid = _create(client, token, _own_widget_nodes(
+            chart_content='{"mark": {"type": "bar", "opacity": [!! opacity !!]}}', chart_widgets=[opacity],
+        ))
+
+        resp = _run(client, pid, {"grid": {"period": "Date"}, "chart": {"opacity": 0.5}})
+
+        assert resp.status_code == 200, resp.get_data(as_text=True)
+        assert resp.get_json() == {"runId": None, "token": None, "joined": False, "nodeIds": []}
+        assert sandbox.runs == []
+
+
 class TestRefusedValues:
     @pytest.mark.parametrize("values, words", [
         ({"param": {"period": "Week"}}, "Pick one of the choices"),

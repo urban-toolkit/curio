@@ -24,7 +24,11 @@ What replaced it, and what each test below pins:
   what a page sends, and what is made from it, is kept for that page alone
   (#1117);
 * a dataflow's scenarios each get a column of tiles under a header in their
-  color, and Arrange by scenario puts the tiles back in them (#662).
+  color, and Arrange by scenario puts the tiles back in them (#662);
+* a pinned node's own widgets are its tile's controls: a code node's in place
+  of its code, a chart's above it. A pick on a code node's tile runs it on the
+  server for the tiles below; a chart draws again with its own new value in
+  the page. A tile's code is read-only (#1117).
 
 The dataflow is built here rather than borrowed from ``docs/examples``: three
 nodes, no datasets, so a failure is about this feature and not about a seed.
@@ -56,6 +60,7 @@ from .utils import (
     node_locator,
     park_pointer,
     play_node,
+    read_node_code,
     require_owner_view,
     require_project_page,
     require_user_auth,
@@ -1042,6 +1047,178 @@ def test_tiles_below_a_step_that_fails_name_it_with_no_node_to_open(
 
 
 # ---------------------------------------------------------------------------
+# A pinned node's own widgets are its tile's controls (#1117)
+# ---------------------------------------------------------------------------
+
+TILE_CONTROLS_STEM = "dashboard-tile-controls"
+
+#: How many rows the producer makes, by a Rows choice of its own: the three
+#: the owner saved, or five.
+OWN_ROWS_PRODUCER_CODE = (
+    "import pandas as pd\n\n"
+    "rows = [!! rows !!]\n"
+    "counts = {'three': [3, 7, 5], 'five': [3, 7, 5, 9, 4]}[rows]\n"
+    "return pd.DataFrame({'category': list('abcde')[:len(counts)], 'count': counts})\n"
+)
+
+#: The chart's bars, as opaque as its own Opacity slider says.
+OWN_OPACITY_CHART_SPEC = """{
+  "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
+  "mark": {"type": "bar", "opacity": [!! opacity !!]},
+  "encoding": {
+    "x": {"field": "category", "type": "nominal"},
+    "y": {"field": "count", "type": "quantitative"}
+  }
+}"""
+
+
+def _own_rows_spec() -> dict:
+    """The chart's dataflow, its producer pinned with a Rows choice of its own,
+    shown as radio buttons."""
+    spec = _spec()
+    spec["dataflow"]["name"] = "Dashboard code node controls e2e"
+    producer = spec["dataflow"]["nodes"][0]
+    producer["content"] = OWN_ROWS_PRODUCER_CODE
+    producer["dashboardPinned"] = True
+    producer["metadata"]["widgets"] = [{
+        "name": "rows", "type": "choice", "label": "Rows", "default": "three",
+        "options": {"choices": ["three", "five"], "display": "radio"},
+    }]
+    return spec
+
+
+def _own_opacity_spec() -> dict:
+    """The chart's dataflow, the chart with an Opacity slider of its own."""
+    spec = _spec()
+    spec["dataflow"]["name"] = "Dashboard chart controls e2e"
+    chart = spec["dataflow"]["nodes"][2]
+    chart["content"] = OWN_OPACITY_CHART_SPEC
+    chart["metadata"]["widgets"] = [{
+        "name": "opacity", "type": "slider", "label": "Opacity", "default": 1,
+        "options": {"min": 0.1, "max": 1, "step": 0.1},
+    }]
+    return spec
+
+
+def test_a_pick_on_a_pinned_code_nodes_tile_runs_it_and_the_chart_below_draws_again(
+    app_frontend: "FrontendPage", current_server, page, browser, monkeypatch,
+):
+    """A pinned code node's widgets are its tile's controls, in place of its
+    code.
+
+    The producer is pinned with a Rows choice of its own, as radio buttons,
+    and the chart below it is pinned. A visitor's page shows the producer's
+    tile as that control, with no code. Picking five runs the producer on the
+    server with it, and the chart draws five bars. The owner's dataflow stays
+    as it was.
+    """
+    require_project_page()
+    require_user_auth()
+    session = _pinned_and_saved(
+        page, app_frontend, current_server, prefix="dash_own_rows", spec=_own_rows_spec(),
+    )
+    project_id = session["project"]["id"]
+    # Off the canvas first: it can still save on its way out.
+    page.goto("about:blank")
+    before = _project(current_server, session["token"], project_id)
+    hosted = _serve_hosted(app_frontend, current_server, monkeypatch)
+
+    visitor = _Visitor(browser, current_server)
+    try:
+        visitor.opens(hosted, project_id)
+        visitor.waits_for("the saved chart", lambda: _chart_drew(visitor.page))
+        tile = node_locator(visitor.page, PRODUCER)
+        five = _pick(visitor.page, PRODUCER, "five")
+        visitor.waits_for("the producer's Rows on its tile", lambda: expect(five).to_be_enabled(timeout=10000))
+        expect(tile.locator("[data-widget-controls]")).to_be_visible()
+        expect(tile.locator(".monaco-editor")).to_be_hidden()
+        assert _runs_started(visitor.asked) == [], (
+            "opening the dashboard started a run, though every tile has its saved output" + visitor.story()
+        )
+        park_pointer(visitor.page)
+        save_workflow_test_screenshot(
+            visitor.page, TILE_CONTROLS_STEM, test_name="code_node_opened", sweep_toasts=True,
+        )
+        saved_pixels = visitor.page.evaluate(_CHART_PIXELS_JS, CHART)
+
+        five.check()
+        five.blur()
+        visitor.waits_for("the chart of five rows", lambda: _chart_redrew(visitor.page, saved_pixels))
+        visitor.waits_for_runs(1)
+        assert len(_runs_started(visitor.asked)) == 1, "one pick started other than one run" + visitor.story()
+        ran = _step_outputs(visitor)
+        assert ran and ran[0].get(PRODUCER), f"the run did not run the producer: {ran!r}" + visitor.story()
+        assert _files_read(visitor.asked), "the chart drew without reading what the run made" + visitor.story()
+        park_pointer(visitor.page)
+        save_workflow_test_screenshot(
+            visitor.page, TILE_CONTROLS_STEM, test_name="code_node_changed", sweep_toasts=True,
+        )
+    finally:
+        visitor.close()
+
+    after = _project(current_server, session["token"], project_id)
+    assert after["spec"] == before["spec"], "a visitor's pick changed the owner's dataflow"
+
+
+def test_a_pinned_charts_own_slider_draws_it_again_with_no_run(
+    app_frontend: "FrontendPage", current_server, page, browser, monkeypatch,
+):
+    """A pinned chart's widgets are its tile's controls, above the chart.
+
+    The server never runs a pinned node: moving the chart's Opacity to its
+    least draws the chart again in the visitor's page, fainter, and the run
+    the change asks for has nothing to run. The owner's dataflow stays as it
+    was.
+    """
+    require_project_page()
+    require_user_auth()
+    session = _pinned_and_saved(
+        page, app_frontend, current_server, prefix="dash_own_slider", spec=_own_opacity_spec(),
+    )
+    project_id = session["project"]["id"]
+    page.goto("about:blank")
+    before = _project(current_server, session["token"], project_id)
+    hosted = _serve_hosted(app_frontend, current_server, monkeypatch)
+
+    visitor = _Visitor(browser, current_server)
+    try:
+        visitor.opens(hosted, project_id)
+        visitor.waits_for("the saved chart", lambda: _chart_drew(visitor.page))
+        opacity = node_locator(visitor.page, CHART).get_by_role("slider", name="Opacity")
+        visitor.waits_for("the chart's Opacity on its tile", lambda: expect(opacity).to_be_enabled(timeout=10000))
+        controls = node_locator(visitor.page, CHART).locator("[data-widget-controls]").bounding_box()
+        drawn = visitor.page.locator(f"#vega{CHART} canvas").first.bounding_box()
+        assert controls and drawn, "the tile has no controls or no chart to measure"
+        assert controls["y"] + controls["height"] <= drawn["y"] + 1, (
+            f"the controls {controls!r} are not above the chart {drawn!r}"
+        )
+        park_pointer(visitor.page)
+        save_workflow_test_screenshot(
+            visitor.page, TILE_CONTROLS_STEM, test_name="chart_opened", sweep_toasts=True,
+        )
+        saved_pixels = visitor.page.evaluate(_CHART_PIXELS_JS, CHART)
+
+        opacity.press("Home")
+        visitor.waits_for("the chart's fainter bars", lambda: _chart_redrew(visitor.page, saved_pixels))
+        opacity.blur()
+        visitor.waits_for_runs(1)
+        assert len(_runs_started(visitor.asked)) == 1, "one change started other than one run" + visitor.story()
+        assert _step_outputs(visitor) == [], "the server ran a node for the chart's own value" + visitor.story()
+        assert _files_read(visitor.asked) == set(), (
+            "the chart drew its own value from what a run made, not in the page" + visitor.story()
+        )
+        park_pointer(visitor.page)
+        save_workflow_test_screenshot(
+            visitor.page, TILE_CONTROLS_STEM, test_name="chart_changed", sweep_toasts=True,
+        )
+    finally:
+        visitor.close()
+
+    after = _project(current_server, session["token"], project_id)
+    assert after["spec"] == before["spec"], "a visitor's value changed the owner's dataflow"
+
+
+# ---------------------------------------------------------------------------
 # A step only a browser runs (#1117)
 # ---------------------------------------------------------------------------
 
@@ -1497,6 +1674,16 @@ def test_scenarios_get_a_column_each_under_a_header_in_their_color(
         )
         assert header.get_by_role("button").count() == 0, "a dashboard header offers a button"
     assert page.locator("[data-scenario-frame]").count() == 2
+
+    # A code node with no widget shows its code on its tile, read-only (#1117):
+    # Save layout below would save a stray edit.
+    code = "return input_0\n"
+    assert read_node_code(page, SCN_BASE) == code, "the tile does not show its node's code"
+    editor = node_locator(page, SCN_BASE).locator(".monaco-editor").first
+    editor.locator(".view-lines").first.click()
+    assert editor.evaluate("(el) => el.contains(document.activeElement)"), "the click did not reach the tile's editor"
+    page.keyboard.type("x = 1")
+    assert read_node_code(page, SCN_BASE) == code, "a tile's code took an edit"
 
     # Drag a scenario's tile away, then put every tile back in its column.
     page.get_by_test_id("edit-layout-btn").click()
