@@ -601,9 +601,10 @@ def plot() -> str:
         "data": {"name": "[!! inputs !!]"},
         "mark": {"type": "line", "point": True},
         "encoding": {
+            # An hour at least between ticks (in milliseconds), so each label
+            # names an hour once.
             "x": {"field": "time", "type": "temporal", "scale": {"type": "utc"},
-                  "axis": {"format": "%-I %p", "tickCount": {"interval": "hour", "step": 1}},
-                  "title": "Time (New York)"},
+                  "axis": {"format": "%-I %p", "tickMinStep": 3600000}, "title": "Time (New York)"},
             "y": {"field": "share", "type": "quantitative", "scale": {"domain": [0, 100]},
                   "title": "Block 1259's open ground in shadow (%)"},
             "color": {"field": "scenario_name", "type": "nominal", "title": "Scenario",
