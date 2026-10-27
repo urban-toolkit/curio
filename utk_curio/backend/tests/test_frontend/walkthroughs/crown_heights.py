@@ -809,6 +809,7 @@ def crown_heights_scenarios(ctx: Ctx) -> None:
         "id => !document.querySelector(`.react-flow__node[data-id='${id}']`)", arg=TABLE, timeout=10000,
     )
     _frame_all(ctx)
+    ctx.capture("two-scenarios", fit_reactflow=False)
     ctx.beat(2500)
     ctx.mark("clip", "end")
 
