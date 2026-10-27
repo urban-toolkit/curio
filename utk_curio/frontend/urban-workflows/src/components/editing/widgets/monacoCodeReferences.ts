@@ -20,7 +20,12 @@ import {
   type ChipMark,
   type ChipSpan,
 } from "./referenceChips";
-import { effectiveValue, type WidgetDef, type WidgetValue } from "../../../utils/widgets/widgetModel";
+import {
+  effectiveValue,
+  emptyDatasetMessage,
+  type WidgetDef,
+  type WidgetValue,
+} from "../../../utils/widgets/widgetModel";
 import { anyFromABox } from "../../../utils/scenarios/scenarioColors";
 import {
   findReferences,
@@ -161,7 +166,13 @@ export function referenceMarks(code: string, scope: ReferenceScope, language: Co
     const start = offsetToPosition(code, ref.start);
     const end = offsetToPosition(code, ref.end);
     const written = code.slice(ref.start, ref.end);
-    const problem = referenceProblem(written, ref.inner, scope, contexts[index], language);
+    const found = referenceProblem(written, ref.inner, scope, contexts[index], language);
+    // A dataset widget that holds no dataset yet is a node waiting for its
+    // data, not code at fault: its chip is drawn as any other, and its hover
+    // says what to drop. A run still refuses it.
+    const widget = scope.widgets.find((w) => w.name === ref.inner);
+    const waiting = found !== null && widget?.type === "dataset" && found === emptyDatasetMessage(written, widget);
+    const problem = waiting ? null : found;
     // The name starts after "[!!" and the spaces that follow it.
     let nameStart = ref.start + 3;
     while (nameStart < ref.end && /\s/.test(code[nameStart])) nameStart += 1;
@@ -175,7 +186,7 @@ export function referenceMarks(code: string, scope: ReferenceScope, language: Co
       name: ref.inner,
       kind,
       problem,
-      hover: problem ?? hoverFor(ref.inner, scope, language),
+      hover: found ?? hoverFor(ref.inner, scope, language),
       // An input or column chip is drawn like a widget's, in green, and so are
       // the dataset inputs and its fields; a selection in peach; a scenario
       // chip in lilac.

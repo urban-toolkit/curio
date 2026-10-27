@@ -175,7 +175,8 @@ def test_a_csv_dropped_on_the_node_is_imported_and_loaded(
     _holds(page, loader, "Trees")
     # The code stays the starter: the widget is what changed.
     _opens_with_the_starter(page, loader)
-    save_node_closeup(page, STEM, loader, test_name=f"{STEM}_after_a_drop")
+    # The import's toasts would sit over the node's right edge.
+    save_node_closeup(page, STEM, loader, test_name=f"{STEM}_after_a_drop", sweep_toasts=True)
     _rows_reach_the_next_node(page, loader, 3)
 
 
