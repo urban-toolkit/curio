@@ -1054,6 +1054,10 @@ def _created_plan_node(proposal: dict, plan_node: dict, ref: str, nodes: list,
         "x": float(pos.get("x", 80.0)),
         "y": float(pos.get("y", 80.0)),
     }
+    # Titled as the plan names it, as a node an agent creates on its own is
+    # (apply.py), so its header shows the title, not its template's name.
+    if plan_node.get("title"):
+        created["title"] = plan_node["title"]
     metadata = plan_scenarios.created_node_metadata(
         plan_node, proposal.get("appliedNodeIds") or {}, nodes, starter, declared,
     )
@@ -1766,6 +1770,9 @@ def _create_plan_nodes(user_key, spec: dict, nodes: list, plan: dict, proposal: 
             "x": float(pos.get("x", base_x + depth * _PLAN_COLUMN_OFFSET)),
             "y": float(pos.get("y", base_y + row * _PLAN_ROW_OFFSET)),
         }
+        # Titled as the plan names it, as ``_created_plan_node`` titles a row.
+        if plan_node.get("title"):
+            created["title"] = plan_node["title"]
         # #662: its widgets, and for a copy its lineage; a copy follows the
         # node it copies in the plan, so that node is already created.
         metadata = plan_scenarios.created_node_metadata(
