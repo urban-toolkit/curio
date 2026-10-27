@@ -389,10 +389,10 @@
           "items": { "$ref": "#/$defs/widget" },
           "description": "The widgets a freshly dropped node of this template starts with (#662). The template's source places each one as a `[!! name !!]` reference."
         },
-        "opensOnWidgets": {
+        "opensOnControls": {
           "type": "boolean",
           "default": false,
-          "description": "When true, a node of this template opens on its Widgets tab, where the user sets what its code reads, while its code reads one of its widgets. Its code stays on the Code tab. A node whose code reads none of its widgets, or that has none, opens on its code."
+          "description": "When true, a node of this template shows only its controls on its Widgets tab: a label and a control for each of its widgets, with no tag, Edit, Delete, Add widget or selections, as a dashboard tile shows them. It opens there while its code reads one of its widgets, and its code stays on the Code tab. A node whose code reads none of its widgets, or that has none, opens on its code."
         },
         "starterIsContent": {
           "type": "boolean",

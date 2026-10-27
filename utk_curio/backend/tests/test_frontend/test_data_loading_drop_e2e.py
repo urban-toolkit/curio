@@ -1,12 +1,15 @@
 """Playwright E2E: a Data Loading node loads a file dropped on it or picked with Choose file.
 
-A fresh Data Loading node opens on its Widgets tab, where its Data widget is,
-with its starter code, ``data = curio_load_data([!! data !!])``, on its Code
-tab. A CSV file from the computer dropped
+A fresh Data Loading node opens on its Widgets tab, which shows only its Data
+box: no tag, Edit, Delete, Add widget or selections, as Data Export's shows
+only its File name and Download, while a Python node's keeps them all. Its
+starter code, ``data = curio_load_data([!! data !!])``, is on its Code tab. A
+CSV file from the computer dropped
 on the node is imported into the Data Catalog and added to the dataflow, the
 widget names it, the code stays the starter, and a run hands the file's rows
 to the node after it. Choose file, the widget's file dialog, does the same,
 and a file dropped on the empty canvas makes a Data Loading node that loads it.
+A GeoTIFF's loader names the window it reads, and the node shows no error.
 On a node whose code reads no dataset widget, a dropped file's loader goes into
 the code, as a Data Catalog card's does.
 
@@ -28,6 +31,7 @@ from playwright.sync_api import expect
 
 from .utils import (
     CANVAS_DROP_TARGET,
+    assert_shows_only_controls,
     canvas_nodes,
     connect_nodes,
     dataset_widget_state,
@@ -55,10 +59,28 @@ TREES = "tree_id,height\n1,10\n2,12\n3,9\n"
 PARKS = "park_id,area\n1,5.5\n2,7.25\n"
 ROW_MARKER = "ROWS"
 COUNT_ROWS = f'print("{ROW_MARKER}", len(input_0))\nreturn input_0\n'
-#: The Data widget, on the node's Widgets tab.
-DATA_WIDGET = "[data-widgets-panel] [data-dataset-drop]"
+#: What a GeoTIFF taken on a fresh node makes of its starter: the loader names
+#: the window it reads.
+GEOTIFF_LOADER = "data = curio_load_data([!! data !!], bounds=None)\nreturn data\n"
+#: The Data box, on the node's Widgets tab, which shows only its controls.
+DATA_WIDGET = "[data-widget-controls] [data-dataset-drop]"
 #: The node's Widgets tab, which a Data Loading node opens on.
 WIDGETS_TAB = '.nav-link[data-rr-ui-event-key="widgets"]'
+
+# Records, from now on, every status the node *nodeId* shows and every error
+# it names, so a test can tell that it never failed, even for a moment.
+_WATCH_STATUS_JS = r"""(nodeId) => {
+    const el = document.querySelector(`.react-flow__node[data-id="${nodeId}"] [data-curio-node-status]`);
+    if (!el) return false;
+    const seen = { statuses: [el.getAttribute("data-curio-node-status")], errors: [] };
+    window.__curioNodeStatusSeen = seen;
+    new MutationObserver(() => {
+        seen.statuses.push(el.getAttribute("data-curio-node-status"));
+        const error = el.getAttribute("data-curio-node-error");
+        if (error) seen.errors.push(error);
+    }).observe(el, { attributes: true, attributeFilter: ["data-curio-node-status", "data-curio-node-error"] });
+    return true;
+}"""
 
 # Drops a file named *name* holding *text* on the element *selector* names, at
 # *at* from its top-left corner (its centre without one), with dragenter,
@@ -153,8 +175,8 @@ def test_a_fresh_data_loading_node_opens_on_its_data_widget(
 
     loader = drag_builtin_to_canvas(page, "#tile-data-loading", at=(170, 200))
 
-    # It opens on its Widgets tab, where the Data widget is; the starter is on
-    # its Code tab.
+    # It opens on its Widgets tab, which shows only the Data box; the starter
+    # is on its Code tab.
     expect(node_locator(page, loader).locator(WIDGETS_TAB)).to_have_class(
         re.compile(r"\bactive\b"), timeout=30000,
     )
@@ -162,8 +184,91 @@ def test_a_fresh_data_loading_node_opens_on_its_data_widget(
     expect(widget).to_have_attribute("data-dataset-drop", "empty", timeout=30000)
     expect(widget).to_contain_text("Drop a file or a Data Catalog dataset here")
     expect(widget.get_by_text("Choose file", exact=True)).to_be_visible()
+    assert_shows_only_controls(page, loader)
     _opens_with_the_starter(page, loader)
     save_node_closeup(page, STEM, loader, test_name=f"{STEM}_fresh_node")
+
+
+def test_data_loading_and_data_export_show_only_their_controls_and_a_python_node_the_whole_tab(
+    app_frontend: "FrontendPage", current_server: str, page,
+):
+    require_user_auth()
+    _enter(page, app_frontend.base_url, current_server, "Data Loading controls only")
+    # Three nodes side by side, so the view takes them at half size.
+    set_canvas_zoom(page, 0.5)
+    loader = drag_builtin_to_canvas(page, "#tile-data-loading", at=(120, 150))
+    export = drag_builtin_to_canvas(page, "#tile-data-export", at=(420, 150))
+    python = drag_builtin_to_canvas(page, "#tile-data-transformation", at=(720, 150))
+
+    # Data Loading and Data Export open on their Widgets tab, which shows only
+    # their controls: the Data box, and File name with Download.
+    for node_id in (loader, export):
+        expect(node_locator(page, node_id).locator(WIDGETS_TAB)).to_have_class(
+            re.compile(r"\bactive\b"), timeout=30000,
+        )
+        assert_shows_only_controls(page, node_id)
+    expect(_data_widget(page, loader)).to_be_visible()
+    controls = node_locator(page, export).locator("[data-widget-controls]")
+    expect(controls.get_by_label("File name", exact=True)).to_be_visible()
+    expect(controls.locator('[data-node-controls] button[aria-label^="Download"]')).to_have_count(1)
+
+    # A Python node's Widgets tab keeps everything that edits its widgets.
+    node_locator(page, python).locator(WIDGETS_TAB).dispatch_event("click")
+    panel = node_locator(page, python).locator("[data-widgets-panel]")
+    expect(panel).to_be_visible(timeout=10000)
+    panel.get_by_role("button", name="Add widget", exact=True).click()
+    panel.get_by_label("Widget name").fill("factor")
+    panel.get_by_label("Widget type").select_option("number")
+    panel.get_by_label("Widget label").fill("Factor")
+    panel.get_by_label("Widget default").fill("2")
+    panel.get_by_role("button", name="Add widget", exact=True).click()
+    expect(panel.locator('[data-widget-row="factor"] [data-widget-tag="factor"]')).to_have_count(1)
+    expect(panel.get_by_role("button", name="Edit widget factor")).to_be_visible()
+    expect(panel.get_by_role("button", name="Delete widget factor")).to_be_visible()
+    expect(panel.get_by_role("button", name="Add widget", exact=True)).to_be_visible()
+    expect(node_locator(page, python).locator("[data-widget-controls]")).to_have_count(0)
+
+
+def _geotiff_bytes() -> bytes:
+    """A GeoTIFF of 4 by 3 heights, made here as the export test makes one."""
+    import numpy as np
+    from rasterio.io import MemoryFile
+    from rasterio.transform import from_origin
+
+    with MemoryFile() as memory:
+        with memory.open(
+            driver="GTiff", width=4, height=3, count=1, dtype="float32",
+            crs="EPSG:32616", transform=from_origin(440000, 4640000, 30, 30), nodata=-1,
+        ) as raster:
+            raster.write(np.arange(12, dtype="float32").reshape(3, 4), 1)
+        return memory.read()
+
+
+def test_a_geotiff_chosen_on_a_fresh_node_names_its_window_and_the_node_shows_no_error(
+    app_frontend: "FrontendPage", current_server: str, page,
+):
+    require_user_auth()
+    _enter(page, app_frontend.base_url, current_server, "Data Loading GeoTIFF")
+    loader = drag_builtin_to_canvas(page, "#tile-data-loading", at=(170, 200))
+    # The Data box, whichever pane holds it: what fails is the drop, not the tab.
+    box = node_locator(page, loader).locator("[data-dataset-drop]")
+    box.wait_for(state="visible", timeout=30000)
+    _opens_with_the_starter(page, loader)
+    assert page.evaluate(_WATCH_STATUS_JS, loader), "the node shows no status to watch"
+
+    with page.expect_file_chooser(timeout=15000) as chooser:
+        box.get_by_text("Choose file", exact=True).click()
+    chooser.value.set_files({"name": "heights.tif", "mimeType": "image/tiff", "buffer": _geotiff_bytes()})
+
+    expect(box).to_have_attribute("data-dataset-drop", "set", timeout=60000)
+    expect(box).to_contain_text("Heights", timeout=10000)
+    state = dataset_widget_state(page, loader)
+    assert str(state["value"]).startswith("imported.") and state["value"] in state["datasetRefs"], state
+    # The starter becomes the GeoTIFF's loader, which names its window.
+    wait_for_node_code(page, loader, GEOTIFF_LOADER)
+    seen = page.evaluate("() => window.__curioNodeStatusSeen")
+    # The node holds the file its code reads: nothing failed, not for a moment.
+    assert "error" not in seen["statuses"] and seen["errors"] == [], seen
 
 
 def test_a_csv_dropped_on_the_node_is_imported_and_loaded(

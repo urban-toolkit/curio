@@ -202,6 +202,7 @@ from .canvas_authoring import (  # noqa: F401
     read_node_code,
     wait_for_node_code,
     dataset_widget_state,
+    assert_shows_only_controls,
     STRIP_CATEGORIES,
     open_strip_category,
     connect_nodes,

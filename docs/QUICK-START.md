@@ -25,9 +25,7 @@ To work from a CSV or GeoJSON file instead, keep the node's own code and drop
 the file on the node's **Data** box, on its **Widgets** tab, or click **Choose
 file** there and pick it:
 Curio adds the file to your Data Catalog and the node loads it. See
-[DATA-CATALOG.md](DATA-CATALOG.md#3-using-a-dataset-in-a-dataflow). To set a
-value without editing the code, such as a threshold, add a widget in the node's
-**Widgets** tab and drag its tag into the code; see [Widgets](USAGE.md#widgets).
+[DATA-CATALOG.md](DATA-CATALOG.md#3-using-a-dataset-in-a-dataflow).
 
 Next, drag a `Vega-Lite` node onto the canvas and connect its input handle to the output of the `Data Loading` node. Switch to the `Grammar` view and enter the following Vega-Lite specification:
 

@@ -1,9 +1,10 @@
 /**
  * A node's widgets as controls that set their values (#662, #1117), the rows a
- * pinned node's dashboard tile shows: a label and a control each. A value
- * reaches the node once its control settles, or at once when it is left; a
- * value set from outside while one settles replaces it; on a dashboard a
- * read-only kind stays disabled.
+ * pinned node's dashboard tile shows, and the Widgets tab of a template that
+ * shows only its controls: a label and a control each, then the node's own
+ * controls. A value reaches the node once its control settles, or at once when
+ * it is left; a value set from outside while one settles replaces it; on a
+ * dashboard a read-only kind stays disabled.
  */
 import React from "react";
 import { act, fireEvent, render, screen } from "@testing-library/react";
@@ -105,6 +106,26 @@ describe("a tile's controls", () => {
     render(<WidgetValueControls widgets={[note]} onCommit={jest.fn()} />);
 
     expect(numberInput("Note").disabled).toBe(false);
+  });
+
+  test("controls of the node's own sit under its widgets' rows, and only when it has some", () => {
+    const fileName: WidgetDef = { name: "file_name", type: "text", label: "File name", default: "" };
+    const download = <button type="button">Download trees.csv</button>;
+    const { container, rerender } = render(
+      <WidgetValueControls widgets={[fileName, factor]} onCommit={jest.fn()} controls={download} />,
+    );
+
+    const panel = container.querySelector<HTMLElement>("[data-widget-controls]")!;
+    const own = panel.querySelector<HTMLElement>("[data-node-controls]");
+    expect(own?.textContent).toBe("Download trees.csv");
+    // After the last widget's row, the panel's last part.
+    const order = Array.from(panel.children);
+    const lastRow = panel.querySelector('[data-widget-row="factor"]')!;
+    expect(order.indexOf(own!)).toBe(order.indexOf(lastRow) + 1);
+    expect(order.indexOf(own!)).toBe(order.length - 1);
+
+    rerender(<WidgetValueControls widgets={[fileName]} onCommit={jest.fn()} />);
+    expect(container.querySelector("[data-node-controls]")).toBeNull();
   });
 
   test("above an output they keep their own height; else they fill their pane", () => {

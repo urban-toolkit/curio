@@ -252,17 +252,16 @@ describe('backendHandler dispatch key (memo dev/91 commit 5)', () => {
   });
 });
 
-describe('opensOnWidgets: a node that opens on its Widgets tab', () => {
+describe('opensOnControls: a node whose Widgets tab shows only its controls, and opens there', () => {
   afterEach(() => clearPackageNodes());
 
-  test('the descriptor carries the flag its template declares', () => {
-    const loader = { ...FIXTURE_PACK.templates[0], opensOnWidgets: true };
+  test('the descriptor carries the flag its template declares, and a template without it registers without it', () => {
+    const loader = { ...FIXTURE_PACK.templates[0], opensOnControls: true };
     const [descriptor] = registerPackageTemplates([{ ...FIXTURE_PACK, templates: [loader] }]);
-    expect(descriptor.opensOnWidgets).toBe(true);
-  });
+    expect(descriptor.opensOnControls).toBe(true);
 
-  test('templates without it register without it', () => {
+    clearPackageNodes();
     const [dl] = registerPackageTemplates([FIXTURE_PACK]);
-    expect(dl.opensOnWidgets).toBeUndefined();
+    expect(dl.opensOnControls).toBeUndefined();
   });
 });

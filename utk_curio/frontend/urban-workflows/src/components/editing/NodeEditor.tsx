@@ -136,13 +136,16 @@ function NodeEditor({
     const [replacedCodeDirty, setReplacedCodeDirty] = useState<number>(0); // code has to rerun every time button is pressed (having changes or not)
     const [fullscreen, setFullscreen] = useState<string>("");
     const { dashboardOn, markDirty, markNodeStale, requestAutoRun, nodes: flowNodes } = useFlowContext();
-    // A template that declares opensOnWidgets (Data Loading) opens on its
-    // Widgets tab, where the user sets what its code reads, while its code
-    // reads one of its widgets; its code stays on the Code tab. A node whose
-    // code reads none, such as an example's literal loader, opens on its code.
-    const opensOnWidgets = !dashboardOn && widgetsTab && code
-        && tryGetNodeDescriptor(nodeType)?.opensOnWidgets === true;
-    const widgetsFirst = (written: unknown, held: unknown) => opensOnWidgets && readsAWidget(held, written);
+    // A template that declares opensOnControls (Data Loading, Data Export)
+    // shows only its controls on its Widgets tab, as a dashboard tile shows
+    // them: each widget's label and control, then the behavior's own (Data
+    // Export's Download), with no tags, edits, new widgets or selections. The
+    // node opens there while its code reads one of its widgets; its code stays
+    // on the Code tab. A node whose code reads none, such as an example's
+    // literal loader, opens on its code.
+    const controlsOnly = widgetsTab && tryGetNodeDescriptor(nodeType)?.opensOnControls === true;
+    const opensOnControls = !dashboardOn && controlsOnly && code;
+    const widgetsFirst = (written: unknown, held: unknown) => opensOnControls && readsAWidget(held, written);
     // Not the literal "code": grammar-only kinds (autk-grammar, vis-vega declare
     // hasCode:false) have no code pane, so hardcoding it left NO pane active on
     // mount and the editor rendered inside a display:none tab (#157).
@@ -193,11 +196,12 @@ function NodeEditor({
         if (!widgetsTab) return undefined;
         return registerNodeSettingWriter(data.nodeId, "widgets", (values) => writeValuesRef.current(values));
     }, [data.nodeId, widgetsTab]);
-    // A control on the node's dashboard tile sets a value as the Widgets tab
-    // does, and a viewer's run takes it (#1117). Read from node data, which
-    // updateWidgets writes at once: two controls that settle together each
-    // keep the other's value.
-    const commitTileValue = (name: string, value: WidgetValue) => {
+    // A control on the node's dashboard tile, or on the Widgets tab of a node
+    // that shows only its controls, sets a value as the full Widgets tab does,
+    // and a run takes it (a viewer's on a tile, #1117). Read from node data,
+    // which updateWidgets writes at once: two controls that settle together
+    // each keep the other's value.
+    const commitValue = (name: string, value: WidgetValue) => {
         updateWidgets(withWidgetValues(normalizeWidgets(data.widgets), { [name]: value }));
         requestAutoRun?.([data.nodeId]);
     };
@@ -286,10 +290,11 @@ function NodeEditor({
             }
         }
     });
-    // The play callback is registered once, so a run without a Widgets tab
-    // reads the scope from here.
-    const runScopeRef = useRef({ scope, emptyInputs, referenceGrammar });
-    runScopeRef.current = { scope, emptyInputs, referenceGrammar };
+    // The play callback is registered once, so a run without the full Widgets
+    // tab reads the scope from here, and whether WidgetsEditor resolves it.
+    const editorResolves = widgetsTab && !controlsOnly;
+    const runScopeRef = useRef({ scope, emptyInputs, referenceGrammar, editorResolves });
+    runScopeRef.current = { scope, emptyInputs, referenceGrammar, editorResolves };
     // The code last handed to the widgets, its chips unresolved, and what the
     // last resolution came from, so a grammar node's spec can be written again
     // for new scenario labels.
@@ -372,14 +377,15 @@ function NodeEditor({
     const sendCodeToWidgets = (code: string) => {
         userCodeRef.current = String(code ?? "");
         setUserCode(code);
-        if (!widgetsTab) {
+        if (!runScopeRef.current.editorResolves) {
             // Why: WidgetsEditor is the bridge that resolves references and
             // hands the result to CodeEditor (via sendReplacedCode). It only
-            // mounts when the widgets tab is enabled, so for code nodes with
-            // hasWidgets=false (e.g. js-computation) a change of markersDirty
-            // has no listener and CodeEditor's interpretCode is never reached:
-            // the play spinner spins forever. Resolve here instead, with the
-            // same table, so input chips work in those nodes too.
+            // mounts on the full widgets tab, so for code nodes with
+            // hasWidgets=false (e.g. js-computation), and for a node that
+            // shows only its controls (opensOnControls), a change of
+            // markersDirty has no listener and CodeEditor's interpretCode is
+            // never reached: the play spinner spins forever. Resolve here
+            // instead, with the same table, so chips work in those nodes too.
             const { scope: runScope, emptyInputs: waiting, referenceGrammar: runGrammar } = runScopeRef.current;
             const resolved = resolveReferences(String(code ?? ""), runScope, widgetLanguage, runGrammar);
             if (waiting.length > 0) resolveError(describeEmptyInputs(waiting, runScope.inputs));
@@ -693,7 +699,7 @@ function NodeEditor({
                                                 widgets={widgets}
                                                 dashboard
                                                 disabled={disableWidgets}
-                                                onCommit={commitTileValue}
+                                                onCommit={commitValue}
                                             />
                                         ) : null}
                                         {ownControls}
@@ -737,32 +743,45 @@ function NodeEditor({
                                         eventKey="widgets"
                                         style={widgetsPaneStyle}
                                     >
-                                        <WidgetsEditor
-                                            customWidgetsCallback={
-                                                customWidgetsCallback
-                                            }
-                                            markersDirty={markersDirty}
-                                            sendReplacedCode={sendReplacedCode}
-                                            userCode={userCode}
-                                            nodeId={data.nodeId}
-                                            data={{...data, nodeType}}
-                                            disableWidgets={disableWidgets}
-                                            valuesOnly={dashboardOn}
-                                            widgets={widgets}
-                                            onWidgetsChange={updateWidgets}
-                                            onValueChange={() => requestAutoRun?.([data.nodeId])}
-                                            language={widgetLanguage}
-                                            grammar={referenceGrammar}
-                                            onResolveError={resolveError}
-                                            inputs={inputs}
-                                            emptyInputs={emptyInputs}
-                                            selections={selections}
-                                            onSelectionsChange={updateSelections}
-                                            views={views}
-                                            nodeIds={nodeIds}
-                                            // A tile shows them with its own controls.
-                                            controls={dashboardOn ? undefined : controlsComponent}
-                                        />
+                                        {controlsOnly ? (
+                                            // Only the controls, as the node's
+                                            // tile shows them; on a dashboard
+                                            // the tile's own pane holds them.
+                                            dashboardOn ? null : (
+                                                <WidgetValueControls
+                                                    widgets={widgets}
+                                                    disabled={disableWidgets}
+                                                    onCommit={commitValue}
+                                                    controls={hasOwnControls ? controlsComponent : undefined}
+                                                    empty="This node has no widgets."
+                                                />
+                                            )
+                                        ) : (
+                                            <WidgetsEditor
+                                                customWidgetsCallback={
+                                                    customWidgetsCallback
+                                                }
+                                                markersDirty={markersDirty}
+                                                sendReplacedCode={sendReplacedCode}
+                                                userCode={userCode}
+                                                nodeId={data.nodeId}
+                                                data={{...data, nodeType}}
+                                                disableWidgets={disableWidgets}
+                                                valuesOnly={dashboardOn}
+                                                widgets={widgets}
+                                                onWidgetsChange={updateWidgets}
+                                                onValueChange={() => requestAutoRun?.([data.nodeId])}
+                                                language={widgetLanguage}
+                                                grammar={referenceGrammar}
+                                                onResolveError={resolveError}
+                                                inputs={inputs}
+                                                emptyInputs={emptyInputs}
+                                                selections={selections}
+                                                onSelectionsChange={updateSelections}
+                                                views={views}
+                                                nodeIds={nodeIds}
+                                            />
+                                        )}
                                     </Tab.Pane>
                                 ) : null}
 
@@ -814,7 +833,7 @@ function NodeEditor({
                                                     widgets={widgets}
                                                     dashboard
                                                     disabled={disableWidgets}
-                                                    onCommit={commitTileValue}
+                                                    onCommit={commitValue}
                                                     aboveOutput
                                                 />
                                                 {ownControls}

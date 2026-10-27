@@ -455,10 +455,11 @@ export const NodeContainer = ({
                 : undefined;
             const rewrite = written !== undefined && written !== live;
             updateDataNode(nodeId, rewrite ? { ...next, code: written, defaultCode: written } : next);
-            if (rewrite) {
-                updateDefaultCode(nodeId, written);
-                sendCodeToWidgets?.(written);
-            }
+            // The editor takes the new code as content that arrived whole and
+            // primes the widgets with it (CodeEditor). Sent as a run's code
+            // here, it was resolved before the node held the dataset, and an
+            // empty Data failed the node.
+            if (rewrite) updateDefaultCode(nodeId, written);
             // As a value set in the Widgets tab: out of date, and run when
             // automatic runs are on.
             markNodeStale?.(nodeId);
