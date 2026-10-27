@@ -4,6 +4,7 @@ back, and running a dataflow's code nodes without a browser.
 
 import os
 import json
+import re
 import textwrap
 from pathlib import Path
 # import zlib
@@ -184,6 +185,13 @@ _ROW_COLUMNS = {
     "str": "value_str",
     "raster": "value_str",
 }
+#: A run's own folder in a stored path: each Python run writes the files it
+#: returns in ``outputs/<the id its output is stored as>/``
+#: (``sandbox/util/output_files.py``), so two runs of one node name the same
+#: file in two folders, in a raster's row or in a text output that names a
+#: path. Such a path is compared with the folder's id left out.
+_RUN_FOLDER_ID = re.compile(r"(?<=/outputs/)[0-9]{1,20}_[0-9a-f]{8}(?=/)")
+_PATH_KINDS = ("str", "raster")
 #: The Arrow route's headers that say what a table is. X-Curio-Filename is
 #: left out: it names the artifact, so it differs between any two.
 _TABLE_HEADERS = (
@@ -299,7 +307,8 @@ def snapshot_artifact(artifact_id: str) -> dict:
       time, kept as a pyarrow Table with the headers that describe it;
     * a list or dict: the digest of its stored JSON;
     * a tuple, or a list or dict of frames: each value it names, the same way;
-    * anything else in the row: the row's value.
+    * anything else in the row: the row's value, a path in a run's own folder
+      with that folder's id left out (``_RUN_FOLDER_ID``).
 
     A kind this does not know, or a JSON file this process cannot see, is read
     as the envelope, as before.
@@ -308,7 +317,10 @@ def snapshot_artifact(artifact_id: str) -> dict:
     kind = meta.get("kind")
     if kind in _ROW_COLUMNS:
         column = _ROW_COLUMNS[kind]
-        return {"kind": kind, "value": meta.get(column) if column else None}
+        value = meta.get(column) if column else None
+        if kind in _PATH_KINDS and isinstance(value, str):
+            value = _RUN_FOLDER_ID.sub("<run>", value)
+        return {"kind": kind, "value": value}
     if kind in _TABLE_KINDS:
         table, headers = _artifact_table(artifact_id)
         return {"kind": kind, "table": table, "headers": headers}

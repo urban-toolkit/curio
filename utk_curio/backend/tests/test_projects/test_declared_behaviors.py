@@ -72,7 +72,8 @@ ACME = _manifest("acme.tools", [
     *(_template(template_id, "code") for template_id in NAMED_LIKE_A_BUILTIN),
     # Templates that declare a built-in's behavior, under names of their own.
     _template("pool", "data-pool", category="data", editor="none", has_code=False),
-    _template("download", "data-export", category="data", editor="none", has_code=False),
+    # A Data Export of its own: code that writes a file, as the built-in's does.
+    _template("download", "data-export", category="data"),
     _template("sticky", "note", category="flow", inputs=0, editor="none", has_code=False),
     _template("bars", "vega", category="vis_grammar", editor="grammar", has_code=False, grammar="vega-lite"),
     # Templates that declare loadsDataset bring data into the dataflow, as Data Loading does.
@@ -215,15 +216,26 @@ def test_a_run_does_not_forward_a_package_template_named_like_a_builtin(catalog,
     assert node_role(named, roster) == "run"
 
 
-@pytest.mark.parametrize("template_id", ["download", "sticky", "pool", "bars"])
+@pytest.mark.parametrize("template_id", ["sticky", "pool", "bars"])
 def test_a_run_forwards_a_package_template_that_declares_a_forwarded_behavior(catalog, template_id):
     from utk_curio.backend.app.execution.run_plan import node_role
 
     assert node_role(node("n", f"acme.tools/{template_id}@1", "{}")) == "forward"
 
 
+def test_a_run_never_forwards_a_package_template_that_declares_the_data_exports_behavior(catalog):
+    """A Data Export's code writes its file: a run runs it when the roster
+    says it runs, and never hands its input on in its place."""
+    from utk_curio.backend.app.execution.run_plan import node_role
+
+    download = node("n", "acme.tools/download@1", 'return curio_export(input_0, "x")')
+    assert node_role(download) == "browser"
+    roster = {"acme.tools/download": {"executable": True, "engine": "python", "contentKind": "code"}}
+    assert node_role(download, roster) == "run"
+
+
 @pytest.mark.parametrize("node_type, content, role", [
-    ("curio.builtin/data-export@1", "", "forward"),
+    ("curio.builtin/data-export@1", "", "run"),
     ("curio.builtin/note@1", "# A note", "forward"),
     # A saved Parameter node: no package provides its template any more.
     ("curio.builtin/parameter", "", "missing"),

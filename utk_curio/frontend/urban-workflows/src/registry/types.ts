@@ -171,6 +171,12 @@ export interface NodeBehaviorResult {
   showLoading?: boolean;
   /** Custom React subtree rendered inside the NodeEditor content area. */
   contentComponent?: React.ReactNode;
+  /**
+   * Controls of the node's own, with its widgets' controls: under their rows
+   * on its Widgets tab, and under its dashboard tile's controls. Data Export's
+   * Download button.
+   */
+  controlsComponent?: React.ReactNode;
   /** Replace `nodeState.setOutput`, used when output state is managed locally (DataPool). */
   setOutputCallbackOverride?: any;
   outputOverride?: ICodeData;

@@ -6,12 +6,12 @@
  *
  * `fetchData`, `fetchPreviewData` and `fetchRaster` (`services/api.ts`) ask
  * here after the page's embedded outputs, so every reader of an artifact finds
- * them.
+ * them, and so does `fetchOutputFile` (`services/outputFiles.ts`).
  */
 import { backendUrl } from "../../utils/backendUrl";
 import { RUN_TOKEN_HEADER } from "./dashboardRunsApi";
 
-export type DashboardRead = "get" | "get-preview" | "raster";
+export type DashboardRead = "get" | "get-preview" | "raster" | "output-file";
 
 interface Remembered {
   projectId: string;

@@ -51,6 +51,15 @@ Gives the path to write a file the node returns, such as a raster or a mosaic's 
 
 - `name`: one plain file name, such as `mosaic.vrt`.
 
+### curio_export(data, name="")
+
+Engines: python.
+
+Writes data to a file the node returns, a table as CSV, a GeoDataFrame as GeoJSON, a raster as GeoTIFF and anything else as JSON, and gives the file's name: a Data Export node's code is one such call, naming the file after its File name widget, and its Download button saves the file.
+
+- `data`: what to write, such as `input_0`.
+- `name`: the file's name, which ends in its format's extension: a name with none gets it, a name ending in another data format's, such as `trees.csv` for a GeoDataFrame, gets it in that one's place, and an empty one is `data_export`.
+
 ### curio_load_model(model_id)
 
 Engines: python.

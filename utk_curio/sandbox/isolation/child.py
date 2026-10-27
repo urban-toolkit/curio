@@ -640,6 +640,9 @@ def run_node(request, namespace_factory):
     captured_stdout = io.StringIO()
     captured_stderr = io.StringIO()
     succeeded_imports = []
+    # The names curio_output_file gave this node: the files of the scratch
+    # directory the parent may keep for the output (util/output_files.py).
+    output_names = []
     output_descriptor = None
     ok = False
 
@@ -666,6 +669,7 @@ def run_node(request, namespace_factory):
                 # A file a node returns must sit in scratch, flat-named: the
                 # parent moves it into the artifact store from there.
                 output_dir=scratch_dir,
+                output_names=output_names,
             )
 
             # Code that still reads `arg` or `input`, or holds a chip spelled
@@ -744,6 +748,7 @@ def run_node(request, namespace_factory):
         "stderr": redact(captured_stderr.getvalue(), secrets)[:_MAX_STDERR_CHARS],
         "output": output_descriptor,
         "imports": succeeded_imports,
+        "outputFiles": output_names,
     }
 
 

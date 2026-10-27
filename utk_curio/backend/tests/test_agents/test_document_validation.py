@@ -376,11 +376,17 @@ class TestShippedAutarkDocuments:
 
 class TestRouting:
     def test_a_passive_boxes_marker_is_nothing_to_write(self):
-        for kind in ("curio.builtin/data-export", "curio.builtin/data-pool",
-                     "curio.builtin/vis-simple"):
+        for kind in ("curio.builtin/data-pool", "curio.builtin/vis-simple"):
             verdict = dv.validate(kind, "not controllable")
             assert verdict["status"] == dv.STATUS_UNCHECKED
             assert verdict["passive"] is True
+
+    def test_a_data_export_is_code_an_agent_writes_not_a_passive_box(self):
+        """Its code writes the file its Download saves: a marker in its place
+        is no content, and the node is never passed over as passive."""
+        for kind in ("curio.builtin/data-export", "curio.builtin/data-export@1"):
+            assert dv.validate(kind, "not controllable")["passive"] is False
+            assert dv.validate(kind, "not controllable", content_kind="code")["passive"] is False
 
     def test_passive_is_the_rosters_content_kind(self):
         # A template that authors nothing is passive, whatever its name.

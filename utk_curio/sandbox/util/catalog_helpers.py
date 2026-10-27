@@ -422,6 +422,7 @@ def install_catalog_helpers(
     models: dict | None,
     model_base: str | None = None,
     output_dir: str | None = None,
+    output_names: list | None = None,
 ) -> None:
     """Put the catalog helpers into one execution's *namespace*.
 
@@ -430,14 +431,18 @@ def install_catalog_helpers(
     as the backend resolved it, and a layer group's id has an entry naming its
     layers (:func:`layer_group_entry`), each of which has a file and a format
     of its own. *models* is ``{id: folder}``, relative to *model_base* when
-    staged.
+    staged. *output_dir* is the folder the run's files go to, and
+    *output_names* a list that gets each name given there
+    (``collections.make_collection_helpers``).
     """
     from utk_curio.sandbox.util.collections import make_collection_helpers
     from utk_curio.sandbox.util.models import make_model_folder
     from utk_curio.sandbox.util.vision import make_curio_segment
 
     known_formats = {str(k): dict(v) for k, v in (formats or {}).items() if isinstance(v, dict)}
-    collection_helpers = make_collection_helpers(data_path, collections, media_dir, output_dir=output_dir)
+    collection_helpers = make_collection_helpers(
+        data_path, collections, media_dir, output_dir=output_dir, output_names=output_names,
+    )
     curio_load_collection = collection_helpers["curio_load_collection"]
     model_folder = make_model_folder(models, base=model_base)
 

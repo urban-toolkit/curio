@@ -7,15 +7,16 @@ import { getFlowNodeCanonicalType } from "./flowNodeCanonicalType";
 import { isDatasetPaletteNode } from "../services/datasetCatalog/datasetApplication";
 
 /**
- * The behaviors of the visualization "sink" nodes. They consume a dataframe to
- * render a chart and pass their INPUT straight through as their output
- * (outputCallback(nodeId, data.input)) so they can sit mid-chain, and they never
- * produce a NEW dataset. Saving their passthrough would auto-install a
- * redundant computed dataset that just duplicates the upstream node's output
- * (same file, different node id). Kept equal with the backend
- * ``_SINK_BEHAVIORS`` (utk_curio/backend/app/projects/services.py).
+ * The behaviors of the "sink" nodes, which never produce a NEW dataset. The
+ * charts consume a dataframe to render and pass their INPUT straight through
+ * as their output (outputCallback(nodeId, data.input)) so they can sit
+ * mid-chain: saving their passthrough would auto-install a redundant computed
+ * dataset that just duplicates the upstream node's output (same file,
+ * different node id). A Data Export's output is the name of the file it wrote,
+ * no dataset either. Kept equal with the backend ``_SINK_BEHAVIORS``
+ * (utk_curio/backend/app/projects/services.py).
  */
-const NON_PRODUCING_BEHAVIORS: ReadonlySet<string> = new Set(["vega", "simple-vis"]);
+const NON_PRODUCING_BEHAVIORS: ReadonlySet<string> = new Set(["vega", "simple-vis", "data-export"]);
 
 /**
  * The built-in sink nodes, for a type no template declares a behavior for.
@@ -28,6 +29,7 @@ const NON_PRODUCING_BEHAVIORS: ReadonlySet<string> = new Set(["vega", "simple-vi
 export const NON_PRODUCING_NODE_TYPES: ReadonlySet<string> = new Set([
   NodeType.VIS_VEGA,
   NodeType.VIS_SIMPLE,
+  NodeType.DATA_EXPORT,
 ]);
 
 /**

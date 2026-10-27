@@ -115,3 +115,13 @@ def get_output_raster(project_id: str):
 
     entry, error = _kept(project_id)
     return error or relay_raster(request.args["fileName"], entry.session_id)
+
+
+@dashboard_runs_bp.route("/api/projects/<project_id>/dashboard/outputs/output-file", methods=["GET"])
+def get_output_file(project_id: str):
+    """``/output-file`` for a file a viewer's run wrote on this dashboard: a
+    Data Export's, to download."""
+    from utk_curio.backend.app.api.routes import relay_output_file
+
+    entry, error = _kept(project_id)
+    return error or relay_output_file(request.args["fileName"], entry.session_id)

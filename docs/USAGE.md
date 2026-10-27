@@ -407,6 +407,28 @@ A Data Loading node opens on its **Widgets** tab, on its **Data** widget: drop
 a file or a Data Catalog dataset on the node, or click **Choose file** to pick
 a file, and its code, on the **Code** tab, loads it ([Data Catalog](#data-catalog)).
 
+A Data Export node opens on its **Widgets** tab, on its **File name** and its
+**Download** button. Its code, on the **Code** tab,
+`return curio_export(input_0, [!! file_name !!])`, writes the data wired into
+it to a file: a table as CSV, a GeoDataFrame as GeoJSON, a raster as GeoTIFF
+and anything else as JSON. Once the node has run, the button names the file,
+and **Download** saves it. When the node's result is out of date,
+**Download** first runs the node and the nodes above it.
+
+- The file ends in its format's extension: **File name** `trees` gives
+  `trees.csv` for a table, and `trees.csv` gives `trees.geojson` for a
+  GeoDataFrame.
+- With **File name** empty, the file is named after the node or dataset wired
+  into it.
+- To write another format, write it in the code to a file of the node's and
+  return that file:
+
+  ```python
+  path = curio_output_file("trees.parquet")
+  input_0.to_parquet(path)
+  return path
+  ```
+
 Above the code or spec, one row lists every chip the node can use, by category:
 **Inputs**, **Scenarios**, **Widgets** and **Selections**, each with its count,
 and each only when it has chips. The categories start closed. Click
@@ -465,6 +487,8 @@ saved under its title by its first run.
   dataflow is open.
 - An Autark node that only loads data (a `data` section, with no map, plot or
   compute step) runs on the server, like a code node.
+- A Data Export node writes its file and downloads nothing: its **Download**
+  button saves the file.
 - A node that needs data only the browser makes (an Autark compute node, a
   Spatial Join) runs, with the nodes below it, in a tab. The tab that
   started the run runs them by itself; otherwise opening the dataflow offers

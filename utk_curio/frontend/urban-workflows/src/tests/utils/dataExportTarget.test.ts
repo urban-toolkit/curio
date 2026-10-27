@@ -1,45 +1,20 @@
 /**
- * What the Data Export node will hand you (#226).
+ * The name a Data Export node's file downloads under (#226).
  *
- * The node asked for a format in a dropdown and then wrote every file as
- * ``data_export`` regardless of its input. Both were guesses it could make
- * itself: the payload already declares its shape, and the input already has a
- * name. Three exports from one dataflow therefore collided in the download
+ * The node's code writes the file and its output is the file's name. A file
+ * named in File name, or by code of its own, downloads under that name. A
+ * file `curio_export` named by default (`data_export.<ext>`, File name left
+ * empty) takes the name of what feeds the node, with the file's extension:
+ * the input dataset's name, else the feeding node's label, else data_export.
+ * Three exports from one dataflow therefore do not collide in the download
  * folder under a single filename.
  */
 import {
-  EXPORT_MIME,
-  exportFormatFor,
-  resolveExportTarget,
+  DEFAULT_STEM,
+  exportDownloadName,
+  exportFileName,
   sanitizeExportStem,
 } from "../../utils/dataExportTarget";
-
-describe("exportFormatFor", () => {
-  test("follows the payload's declared shape", () => {
-    expect(exportFormatFor("geodataframe")).toBe("geojson");
-    expect(exportFormatFor("dataframe")).toBe("csv");
-  });
-
-  test("is case- and whitespace-tolerant", () => {
-    // dataType reaches the frontend from the sandbox, so it is not worth
-    // depending on its exact casing.
-    expect(exportFormatFor(" GeoDataFrame ")).toBe("geojson");
-  });
-
-  test("falls back to json for anything else", () => {
-    // Including raster and scalar payloads: there is no better shape to make
-    // of them, and offering CSV for a raster was a choice that could only fail.
-    for (const kind of ["raster", "value", "list", "", undefined, null, 42]) {
-      expect(exportFormatFor(kind)).toBe("json");
-    }
-  });
-
-  test("every format has a mime type", () => {
-    for (const format of ["csv", "geojson", "json"] as const) {
-      expect(EXPORT_MIME[format]).toBeTruthy();
-    }
-  });
-});
 
 describe("sanitizeExportStem", () => {
   test("keeps an ordinary title readable", () => {
@@ -66,31 +41,63 @@ describe("sanitizeExportStem", () => {
   });
 });
 
-describe("resolveExportTarget", () => {
-  test("names the file after the input dataset", () => {
-    expect(
-      resolveExportTarget({ dataType: "geodataframe", dataset: "chicago_boundary.parquet" }),
-    ).toEqual({ format: "geojson", filename: "chicago_boundary.geojson" });
+describe("exportFileName", () => {
+  test("is the name of the file an output names: the name itself, or a path's last part", () => {
+    expect(exportFileName("trees.csv")).toBe("trees.csv");
+    expect(exportFileName("/srv/curio/data/outputs/1792000000000_0a1b2c3d/trees.parquet")).toBe("trees.parquet");
+    expect(exportFileName("C:\\data\\trees.csv")).toBe("trees.csv");
+  });
+
+  test("is empty for an output that names no file", () => {
+    for (const value of [undefined, null, 42, "", {}, "/srv/outputs/"]) {
+      expect(exportFileName(value)).toBe("");
+    }
+  });
+});
+
+describe("exportDownloadName", () => {
+  test("the stem curio_export gives an unnamed file is data_export", () => {
+    expect(DEFAULT_STEM).toBe("data_export");
+  });
+
+  test("a file named in File name, or by code of its own, keeps its name", () => {
+    expect(exportDownloadName("trees.csv", { dataset: "parks.csv" }, "Trip Summary")).toBe("trees.csv");
+    expect(exportDownloadName("/srv/outputs/1792000000000_0a1b2c3d/report.parquet", null, "Trip Summary")).toBe(
+      "report.parquet",
+    );
+  });
+
+  test("a file named by default takes the input dataset's name, with the file's extension", () => {
+    expect(exportDownloadName("data_export.geojson", { dataset: "chicago_boundary.parquet" }, "Loader")).toBe(
+      "chicago_boundary.geojson",
+    );
+    expect(exportDownloadName("data_export.tif", { dataset: "heights.tif" })).toBe("heights.tif");
   });
 
   test("falls back to the producing node's name", () => {
     // A computed output has no dataset filename of its own.
-    expect(resolveExportTarget({ dataType: "dataframe" }, "Trip Summary")).toEqual({
-      format: "csv",
-      filename: "Trip_Summary.csv",
-    });
+    expect(exportDownloadName("data_export.csv", {}, "Trip Summary")).toBe("Trip_Summary.csv");
   });
 
-  test("falls back to the old stem when nothing names the input", () => {
-    // The previous behaviour for every export, kept as the last resort so an
-    // unnamed input still produces something sensible.
-    expect(resolveExportTarget({ dataType: "dataframe" }).filename).toBe("data_export.csv");
-    expect(resolveExportTarget(null).filename).toBe("data_export.json");
+  test("a source named after its file gives its name once, with the file's own extension", () => {
+    // A dataset dropped from the computer keeps its file's name as its title.
+    expect(exportDownloadName("data_export.geojson", null, "boundaries.geojson")).toBe("boundaries.geojson");
+    expect(exportDownloadName("data_export.geojson", null, "trees.csv")).toBe("trees.geojson");
+    // A dot that starts no data format's extension is part of the name.
+    expect(exportDownloadName("data_export.csv", null, "St. Louis parcels")).toBe("St._Louis_parcels.csv");
+  });
+
+  test("falls back to the default stem when nothing names the input", () => {
+    expect(exportDownloadName("data_export.csv", null)).toBe("data_export.csv");
+    expect(exportDownloadName("data_export.json", undefined, null)).toBe("data_export.json");
   });
 
   test("a dataset name that sanitizes away does not win over the node name", () => {
-    expect(resolveExportTarget({ dataType: "dataframe", dataset: "...." }, "Fallback").filename).toBe(
-      "Fallback.csv",
-    );
+    expect(exportDownloadName("data_export.csv", { dataset: "...." }, "Fallback")).toBe("Fallback.csv");
+  });
+
+  test("an output that names no file has no download name", () => {
+    expect(exportDownloadName("", { dataset: "x.csv" }, "Node")).toBe("");
+    expect(exportDownloadName(42, { dataset: "x.csv" }, "Node")).toBe("");
   });
 });

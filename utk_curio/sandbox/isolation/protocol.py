@@ -106,6 +106,7 @@ MAX_OUTPUTS_ITEMS = 256               # tuple fan-out from one node
 MAX_INLINE_STRING_CHARS = 1 << 20
 MAX_IMPORT_STATEMENTS = 128
 MAX_IMPORT_STATEMENT_CHARS = 500
+MAX_OUTPUT_FILES = 256                # names curio_output_file gave one child
 
 
 def validate_scratch_filename(name):
@@ -280,6 +281,17 @@ def _validate_imports(raw):
     return statements
 
 
+def _validate_output_files(raw):
+    """The names ``curio_output_file`` gave the child: flat file names in its
+    scratch directory, of which the parent keeps only the one a text output
+    names (``util/output_files.keep_named_file``)."""
+    if raw is None:
+        return []
+    if not isinstance(raw, list):
+        raise ProtocolError("outputFiles must be a list of file names")
+    return [validate_scratch_filename(name) for name in raw[:MAX_OUTPUT_FILES]]
+
+
 def parse_child_result(raw, *, scratch_dir=None):
     """Parse and validate the JSON a child wrote back.
 
@@ -287,8 +299,9 @@ def parse_child_result(raw, *, scratch_dir=None):
     given, every file-backed payload is additionally resolved and checked for
     containment, which is the check that catches a planted symlink.
 
-    Returns a dict with keys ``ok``, ``stdout``, ``stderr``, ``output`` and
-    ``imports``. Raises :class:`ProtocolError` for anything malformed.
+    Returns a dict with keys ``ok``, ``stdout``, ``stderr``, ``output``,
+    ``imports`` and ``outputFiles``. Raises :class:`ProtocolError` for
+    anything malformed.
     """
     if isinstance(raw, bytes):
         if len(raw) > MAX_MANIFEST_BYTES:
@@ -321,6 +334,7 @@ def parse_child_result(raw, *, scratch_dir=None):
         "stdout": _validate_stdout(payload.get("stdout")),
         "stderr": stderr,
         "imports": _validate_imports(payload.get("imports")),
+        "outputFiles": _validate_output_files(payload.get("outputFiles")),
         "output": None,
     }
 

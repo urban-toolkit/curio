@@ -201,11 +201,44 @@ describe("DATA_POOL is a save-trigger extra, not a shared sink", () => {
     expect(isNonProducingNodeType(`${DATA_POOL}@1`)).toBe(false);
   });
 
-  test('the shared sink set is exactly the two view nodes', () => {
+  test('the shared sink set is exactly the two view nodes and Data Export', () => {
     expect([...NON_PRODUCING_NODE_TYPES].sort()).toEqual([
+      'curio.builtin/data-export',
       'curio.builtin/vis-simple',
       'curio.builtin/vis-vega',
     ]);
+  });
+});
+
+describe('a Data Export saves no dataset of its own', () => {
+  // Its output is the name of the file its code wrote, no dataset: its
+  // footer has no save toggle, and a run or a save never installs it.
+  const { isNonProducingNodeType, showsSaveOutputToggle } = require('../../utils/saveOutputDataset');
+
+  test('it is a sink, versioned or not', () => {
+    expect(isNonProducingNodeType('curio.builtin/data-export')).toBe(true);
+    expect(isNonProducingNodeType('curio.builtin/data-export@1')).toBe(true);
+  });
+
+  test('its footer has no save toggle', () => {
+    expect(showsSaveOutputToggle({ nodeType: 'curio.builtin/data-export@1' }, false)).toBe(false);
+  });
+
+  test('its output is never among the outputs a save installs, whatever its toggle says', () => {
+    const outputs = [
+      { nodeId: 'py', output: { path: 'art_py', dataType: 'dataframe' } },
+      { nodeId: 'export', output: { path: 'art_export', dataType: 'str' } },
+    ];
+    const nodes = [
+      { id: 'py', type: '__curioUniversalNode', data: { nodeId: 'py', nodeType: 'curio.builtin/computation-analysis@1' } },
+      {
+        id: 'export',
+        type: '__curioUniversalNode',
+        data: { nodeId: 'export', nodeType: 'curio.builtin/data-export@1', saveOutputDataset: true },
+      },
+    ];
+    const refs = buildSaveableLiveOutputs(outputs, nodes, true) ?? [];
+    expect(refs.map((r) => r.node_id)).toEqual(['py']);
   });
 });
 

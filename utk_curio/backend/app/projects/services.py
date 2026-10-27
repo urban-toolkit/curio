@@ -44,23 +44,25 @@ def shipped_dataflow_paths() -> Dict[str, Path]:
     return {s.key: s.path for s in shipped_dataflows()}
 
 
-# Visualization "sink" nodes: they consume a dataframe to render and pass their
-# INPUT straight through as their output, so they never produce a new dataset.
-# A computed dataset ref keyed on such a node is always a duplicate of the
-# upstream producer's output (same file, different node id), pruned on save.
-# A node is one when its template declares a chart's behavior, and a built-in
-# node of a type no template declares a behavior for is one by its id.
-_SINK_BEHAVIORS = frozenset({"vega", "simple-vis"})
+# "Sink" nodes, which never produce a new dataset. A chart consumes a dataframe
+# to render and passes its INPUT straight through as its output, so a computed
+# dataset ref keyed on it is always a duplicate of the upstream producer's
+# output (same file, different node id), pruned on save. A Data Export's output
+# is the name of the file it wrote, which is no dataset either. A node is one
+# when its template declares one of these behaviors, and a built-in node of a
+# type no template declares a behavior for is one by its id.
+_SINK_BEHAVIORS = frozenset({"vega", "simple-vis", "data-export"})
 _SINK_NODE_TYPES = frozenset({
     "curio.builtin/vis-vega",
     "curio.builtin/vis-simple",
+    "curio.builtin/data-export",
 })
 
 
 def _is_sink_node_type(node_type, packages=None) -> bool:
-    """Whether a node of *node_type* is a visualization sink, as the canvas's
-    ``isNonProducingNodeType`` reads it: its template declares a chart's
-    behavior (``_SINK_BEHAVIORS``) or draws with the Vega-Lite grammar
+    """Whether a node of *node_type* is a sink, as the canvas's
+    ``isNonProducingNodeType`` reads it: its template declares a chart's or a
+    Data Export's behavior (``_SINK_BEHAVIORS``) or draws with the Vega-Lite grammar
     (``template_grammars``). A type whose template declares no behavior is a
     sink when it is in ``_SINK_NODE_TYPES``, tolerant of the versioned form
     palette-dragged nodes carry (``curio.builtin/vis-vega@1``) (#169).

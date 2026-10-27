@@ -401,6 +401,15 @@
   grid-area: tag;
 }
 
+/* Controls of the node's own under its widgets' rows (Data Export's Download),
+   at the right, as the rows' controls end. */
+.nodeControls {
+  display: flex;
+  justify-content: flex-end;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--curio-border);
+}
+
 .rowLabel {
   grid-area: label;
   overflow: hidden;
